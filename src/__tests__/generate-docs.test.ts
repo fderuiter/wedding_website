@@ -231,6 +231,7 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
           serverOnlyRows.length,
       ).toBe(expectedKeys.length);
 
+      expect(table).toContain('| `setupCompleted` |');
       expect(table).toContain('`Masked secret (hasSmtpPass)`');
       expect(table).toContain('`Masked secret (hasResendApiKey)`');
       expect(table).toContain('`Masked secret (hasSendgridApiKey)`');
@@ -250,7 +251,9 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       expect(apiSection).toContain('| `/api/live` | `src/app/api/live/route.ts` | `GET` | `Public` |');
       expect(apiSection).toContain('| `/api/registry/claim` | `src/app/api/registry/claim/route.ts` | `GET`, `POST` | `Public` |');
       expect(apiSection).toContain('| `/api/admin/broadcast/[id]` | `src/app/api/admin/broadcast/[id]/route.ts` | `GET` | `Admin-only` |');
+      expect(apiSection).toContain('| `/api/admin/contributors/[id]` | `src/app/api/admin/contributors/[id]/route.ts` | `PATCH`, `DELETE` | `Admin-only` |');
       expect(apiSection).toContain('| `/api/admin/contributors/[id]/action` | `src/app/api/admin/contributors/[id]/action/route.ts` | `POST` | `Admin-only` |');
+      expect(apiSection).toContain('| `/api/admin/registry/items/[id]/unclaim` | `src/app/api/admin/registry/items/[id]/unclaim/route.ts` | `POST` | `Admin-only` |');
 
       expect(apiSection).toContain('| `/api/admin/invitation-codes/catalog` | `src/app/api/admin/invitation-codes/catalog/route.ts` | `GET` | `Admin-only` |');
       expect(apiSection).toContain('| `/api/admin/invitation-codes/rsvps` | `src/app/api/admin/invitation-codes/rsvps/route.ts` | `GET`, `PUT` | `Admin-only` |');

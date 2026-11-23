@@ -1349,6 +1349,10 @@
                                 "guestName": {
                                   "type": "string"
                                 },
+                                "householdName": {
+                                  "nullable": true,
+                                  "type": "string"
+                                },
                                 "addressLine1": {
                                   "nullable": true,
                                   "type": "string"
@@ -6407,6 +6411,507 @@
         }
       }
     },
+    "/api/admin/contributors/{id}": {
+      "patch": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "PATCH /api/admin/contributors/[id]",
+        "description": "Endpoint for /api/admin/contributors/[id]",
+        "security": [
+          {
+            "adminCookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "email": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "amount": {
+                    "type": "number",
+                    "minimum": 0,
+                    "exclusiveMinimum": true
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "RESERVED",
+                      "CONFIRMED",
+                      "CANCELLED",
+                      "REFUNDED"
+                    ]
+                  },
+                  "message": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 1000
+                  },
+                  "confirmVerifiedPayment": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                },
+                "description": "Partial contributor update requiring at least one editable field (name, email, amount, status, or message).",
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "required": [
+                      "name"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "email"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "amount"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "message"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "contributor": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            },
+                            "isPlusOne": {
+                              "type": "boolean"
+                            },
+                            "amount": {
+                              "type": "number"
+                            },
+                            "refundedAmount": {
+                              "type": "number"
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "CANCELLED",
+                                "RESERVED",
+                                "CONFIRMED",
+                                "REFUNDED"
+                              ]
+                            },
+                            "coverFee": {
+                              "type": "boolean"
+                            },
+                            "feeAmount": {
+                              "type": "number"
+                            },
+                            "date": {
+                              "type": "string"
+                            },
+                            "thankYouStatus": {
+                              "type": "string"
+                            },
+                            "thankYouSentAt": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "transactionTimestamp": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "id": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "email": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "message": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "thankYouNote": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "stripePaymentIntentId": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "stripeChargeId": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "retailerOrderNumber": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "carrier": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "trackingNumber": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "confirmationEmailSentAt": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "alertEmailSentAt": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "reminderEmailSentAt": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "registryItemId": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "registryItem": {
+                              "type": "object",
+                              "additionalProperties": true,
+                              "nullable": true
+                            },
+                            "invitationCodeId": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "invitationCode": {
+                              "type": "object",
+                              "additionalProperties": true,
+                              "nullable": true
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "isPlusOne",
+                            "amount",
+                            "refundedAmount",
+                            "status",
+                            "coverFee",
+                            "feeAmount",
+                            "date",
+                            "thankYouStatus",
+                            "thankYouSentAt",
+                            "transactionTimestamp"
+                          ]
+                        },
+                        "item": {
+                          "nullable": true,
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                              }
+                            },
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "boolean"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "contributor",
+                        "item"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "DELETE /api/admin/contributors/[id]",
+        "description": "Endpoint for /api/admin/contributors/[id]",
+        "security": [
+          {
+            "adminCookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "confirmVerifiedPayment",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirmVerifiedPayment": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "deletedId": {
+                          "type": "string"
+                        },
+                        "item": {
+                          "nullable": true,
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                              }
+                            },
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "boolean"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "deletedId",
+                        "item"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/features": {
       "get": {
         "tags": [
@@ -9447,10 +9952,14 @@
                       "enum": [
                         true
                       ]
+                    },
+                    "requiresSetup": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
-                    "success"
+                    "success",
+                    "requiresSetup"
                   ]
                 }
               }
@@ -10046,6 +10555,9 @@
                           "defaultPaymentHandle": {
                             "type": "string",
                             "maxLength": 255
+                          },
+                          "setupCompleted": {
+                            "type": "boolean"
                           },
                           "smtpPass": {
                             "nullable": true,
@@ -11688,6 +12200,9 @@
                         "defaultPaymentHandle": {
                           "type": "string",
                           "maxLength": 255
+                        },
+                        "setupCompleted": {
+                          "type": "boolean"
                         },
                         "smtpPass": {
                           "nullable": true,
@@ -14235,6 +14750,153 @@
         }
       }
     },
+    "/api/admin/registry/items/{id}/unclaim": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "POST /api/admin/registry/items/[id]/unclaim",
+        "description": "Endpoint for /api/admin/registry/items/[id]/unclaim",
+        "security": [
+          {
+            "adminCookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirmVerifiedPayment": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "item": {
+                          "nullable": true,
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                              }
+                            },
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "boolean"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "item"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/sample-data": {
       "get": {
         "tags": [
@@ -15590,6 +16252,9 @@
                     "type": "string",
                     "maxLength": 255
                   },
+                  "setupCompleted": {
+                    "type": "boolean"
+                  },
                   "modules": {
                     "type": "object",
                     "properties": {
@@ -16161,6 +16826,9 @@
                     "type": "string",
                     "maxLength": 255
                   },
+                  "setupCompleted": {
+                    "type": "boolean"
+                  },
                   "modules": {
                     "type": "object",
                     "properties": {
@@ -16309,6 +16977,9 @@
                     "initialized": {
                       "type": "boolean"
                     },
+                    "setupCompleted": {
+                      "type": "boolean"
+                    },
                     "requiresSetup": {
                       "type": "boolean"
                     }
@@ -16316,6 +16987,7 @@
                   "required": [
                     "success",
                     "initialized",
+                    "setupCompleted",
                     "requiresSetup"
                   ]
                 }
@@ -16539,12 +17211,15 @@
                   "showAddToCalendar": {
                     "type": "boolean"
                   },
+                  "setupCompleted": {
+                    "type": "boolean"
+                  },
                   "subdomain": {
                     "nullable": true,
                     "type": "string"
                   }
                 },
-                "description": "First-run site setup and authenticated configuration payload. Requires either password (validated against ADMIN_PASSWORD_HASH or ADMIN_PASSWORD during step-1 setup authentication) or full site initialization fields (non-placeholder baseUrl plus partner1Name & partner2Name or legacy brideName & groomName; unauthenticated first-run requests must also include password).",
+                "description": "First-run site setup and authenticated configuration payload. Requires either password (validated against ADMIN_PASSWORD_HASH or ADMIN_PASSWORD during step-1 setup authentication), setupCompleted (for authenticated wizard completion), or full site initialization fields (non-placeholder baseUrl plus partner1Name & partner2Name or legacy brideName & groomName; unauthenticated first-run requests must also include password).",
                 "anyOf": [
                   {
                     "type": "object",
@@ -16555,6 +17230,17 @@
                       "password": {
                         "type": "string",
                         "minLength": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "setupCompleted"
+                    ],
+                    "properties": {
+                      "setupCompleted": {
+                        "type": "boolean"
                       }
                     }
                   },
@@ -16625,12 +17311,23 @@
                           ]
                         },
                         "initialized": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "setupCompleted": {
+                          "type": "boolean"
+                        },
+                        "requiresSetup": {
                           "type": "boolean"
                         }
                       },
                       "required": [
                         "success",
-                        "initialized"
+                        "initialized",
+                        "setupCompleted",
+                        "requiresSetup"
                       ]
                     },
                     {
@@ -16641,10 +17338,40 @@
                           "enum": [
                             true
                           ]
+                        },
+                        "initialized": {
+                          "type": "boolean"
+                        },
+                        "setupCompleted": {
+                          "type": "boolean"
+                        },
+                        "requiresSetup": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
-                        "success"
+                        "success",
+                        "initialized",
+                        "setupCompleted",
+                        "requiresSetup"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "setupCompleted": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "success",
+                        "setupCompleted"
                       ],
                       "additionalProperties": true
                     }
@@ -17366,6 +18093,10 @@
                     "nullable": true,
                     "type": "string",
                     "maxLength": 2000
+                  },
+                  "invitationCodeId": {
+                    "nullable": true,
+                    "type": "string"
                   }
                 }
               }
@@ -18088,6 +18819,285 @@
                     "items",
                     "metrics",
                     "pagination"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "POST /api/admin/thank-you-notes",
+        "description": "Endpoint for /api/admin/thank-you-notes",
+        "security": [
+          {
+            "adminCookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "email": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "amount": {
+                    "type": "number",
+                    "minimum": 0,
+                    "exclusiveMinimum": true
+                  },
+                  "date": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    ]
+                  },
+                  "message": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 1000
+                  },
+                  "registryItemId": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "invitationCodeId": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "thankYouStatus": {
+                    "default": "Unsent",
+                    "type": "string",
+                    "enum": [
+                      "Unsent",
+                      "Sent",
+                      "Not Needed"
+                    ]
+                  },
+                  "thankYouNote": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "name",
+                  "amount"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "item": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "isPlusOne": {
+                          "type": "boolean"
+                        },
+                        "amount": {
+                          "type": "number"
+                        },
+                        "refundedAmount": {
+                          "type": "number"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "CANCELLED",
+                            "RESERVED",
+                            "CONFIRMED",
+                            "REFUNDED"
+                          ]
+                        },
+                        "coverFee": {
+                          "type": "boolean"
+                        },
+                        "feeAmount": {
+                          "type": "number"
+                        },
+                        "date": {
+                          "type": "string"
+                        },
+                        "thankYouStatus": {
+                          "type": "string"
+                        },
+                        "thankYouSentAt": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "transactionTimestamp": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "id": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "email": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "message": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "thankYouNote": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "stripePaymentIntentId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "stripeChargeId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "retailerOrderNumber": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "carrier": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "trackingNumber": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "confirmationEmailSentAt": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "alertEmailSentAt": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "reminderEmailSentAt": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "registryItemId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "registryItem": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "nullable": true
+                        },
+                        "invitationCodeId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "invitationCode": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "isPlusOne",
+                        "amount",
+                        "refundedAmount",
+                        "status",
+                        "coverFee",
+                        "feeAmount",
+                        "date",
+                        "thankYouStatus",
+                        "thankYouSentAt",
+                        "transactionTimestamp"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "item"
                   ]
                 }
               }

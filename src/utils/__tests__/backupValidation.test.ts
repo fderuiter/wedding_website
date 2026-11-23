@@ -484,7 +484,7 @@ describe('DatabaseBackupSchema Validation Tests', () => {
         ...APP_CONFIG_SECRET_KEYS,
       ].sort();
 
-      expect(APP_CONFIG_BACKUP_KEYS).toHaveLength(79);
+      expect(APP_CONFIG_BACKUP_KEYS).toHaveLength(80);
       expect(APP_CONFIG_SECRET_KEYS).toHaveLength(4);
       expect(combinedKeys).toEqual(prismaNames);
 
@@ -494,7 +494,7 @@ describe('DatabaseBackupSchema Validation Tests', () => {
       expect(overlap).toEqual([]);
     });
 
-    test('sanitizeAppConfigForBackup retains all 79 non-secret columns and strips secrets and virtual DTO keys', () => {
+    test('sanitizeAppConfigForBackup retains all 80 non-secret columns and strips secrets and virtual DTO keys', () => {
       const fullParsedDto = AppConfigSchema.parse({
         id: 'global',
         subdomain: 'couple',
@@ -651,6 +651,7 @@ describe('DatabaseBackupSchema Validation Tests', () => {
           col === 'showCountdown' ||
           col === 'showAddToCalendar' ||
           col === 'rsvpOpen' ||
+          col === 'setupCompleted' ||
           col === 'smtpSecure'
         ) {
           populatedSnapshot[col] = true;

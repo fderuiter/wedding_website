@@ -1,0 +1,9 @@
+{
+  "name": "@prisma/dev",
+  "version": "0.0.0-disabled",
+  "private": true,
+  "exports": {
+    ".": "./index.cjs",
+    "./internal/state": "./index.cjs"
+  }
+}

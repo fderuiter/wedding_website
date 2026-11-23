@@ -336,6 +336,9 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     expect(openapi.paths['/api/uploads/{path}']?.get).toBeDefined();
     expect(openapi.paths['/api/uploads/{path}']?.head).toBeDefined();
     expect(openapi.paths['/api/admin/broadcast/{id}']?.get).toBeDefined();
+    expect(openapi.paths['/api/admin/contributors/{id}']?.patch).toBeDefined();
+    expect(openapi.paths['/api/admin/contributors/{id}']?.delete).toBeDefined();
+    expect(openapi.paths['/api/admin/registry/items/{id}/unclaim']?.post).toBeDefined();
     expect(openapi.paths['/api/admin/invitation-codes/merge']?.post).toBeDefined();
 
     const ogRoute = openapi.paths['/api/og'];

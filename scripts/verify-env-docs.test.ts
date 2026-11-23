@@ -309,12 +309,13 @@ describe('verify-env-docs section-aware validation', () => {
         fs.copyFileSync(path.join(repoRoot, relPath), dest);
       }
 
-      fs.writeFileSync(
-        path.join(tempDir, 'src/env.ts'),
-        fs
-          .readFileSync(path.join(tempDir, 'src/env.ts'), 'utf8')
-          .replace('CRON_SECRET: z.string().min(16).optional(),', 'CRON_SECRET: z.string().min(16).optional(),\n  SYNTHETIC_FEATURE_FLAG: z.string().optional(),')
+      const originalEnvTs = fs.readFileSync(path.join(tempDir, 'src/env.ts'), 'utf8');
+      const updatedEnvTs = originalEnvTs.replace(
+        /(CRON_SECRET:\s*z\.string\(\)[^\n]*,)/,
+        '$1\n  SYNTHETIC_FEATURE_FLAG: z.string().optional(),'
       );
+      expect(updatedEnvTs).toContain('SYNTHETIC_FEATURE_FLAG');
+      fs.writeFileSync(path.join(tempDir, 'src/env.ts'), updatedEnvTs);
       fs.appendFileSync(path.join(tempDir, '.env.example'), '\n# SYNTHETIC_FEATURE_FLAG="enabled"\n');
       fs.writeFileSync(
         path.join(tempDir, 'docker-compose.yml'),

@@ -63,9 +63,12 @@ Supplying `DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POST
 
 Serverless execution environments have ephemeral local storage (`/tmp` only). All persistent media uploads are handled via the provider-agnostic S3 storage client (`@aws-sdk/client-s3`).
 
-1. Provision a bucket on **Cloudflare R2** or **AWS S3**.
-2. Configure `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, and `S3_PUBLIC_URL` in Vercel Project Settings.
-3. Uploads streaming through `/api/admin/upload` write directly to S3/R2 and generate public CDN URLs.
+1. Provision a bucket on **Cloudflare R2**, **Google Cloud Storage** (with S3 Interoperability enabled), or **AWS S3**.
+2. Configure the six `S3_*` environment variables (`S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT`, and `S3_PUBLIC_URL`) in Vercel Project Settings:
+   *   **Cloudflare R2**: Set `S3_BUCKET`, `S3_REGION=auto`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com`, and `S3_PUBLIC_URL=https://assets.wedding.mydomain.com` (an R2 Custom Domain or public `https://pub-<id>.r2.dev` URL; private `*.r2.cloudflarestorage.com` endpoints require `S3_PUBLIC_URL`).
+   *   **Google Cloud Storage (S3 Interoperability)**: Enable Cloud Storage HMAC keys and set `S3_BUCKET`, `S3_REGION=us-central1` (matching your bucket region), `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT=https://storage.googleapis.com`, and optional `S3_PUBLIC_URL`.
+   *   **AWS S3**: Set `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` (with `S3_ENDPOINT` omitted and `S3_PUBLIC_URL` optional for CloudFront).
+3. Uploads streaming through `/api/admin/upload` and `/api/guest/photos/upload` write directly to object storage and generate public CDN URLs.
 
 ---
 

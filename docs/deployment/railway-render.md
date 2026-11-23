@@ -35,9 +35,14 @@ For the complete environment variable matrix, defaults, and persisted `prisma/sc
 
 *   **Core Production Credentials**: Set `NODE_ENV=production`, `DATABASE_URL` (auto-shared by Railway PostgreSQL or copied from Render's Internal Database URL; bound to `datasource.url` in `prisma.config.ts`), `ADMIN_PASSWORD` (`scrypt:[saltBase64]:[keyBase64]`), `ALLOWED_HOSTS` (include your custom domain plus `*.up.railway.app` or `*.onrender.com`; read-only `GET` and `HEAD` probes to `/api/live`, `/api/health`, and `/api/ready` enforce syntactic `Host` validation only, so internal probe hosts like `healthcheck.railway.app` do not need to be listed), `TRUST_PROXY=true`, `GUEST_PASSCODE`, and `GUEST_SESSION_SECRET` (32+ characters, distinct from `GUEST_PASSCODE`). If `DATABASE_URL` uses an external PgBouncer pooler, store a direct connection URL in `POSTGRES_URL_NON_POOLING` (`prisma.config.ts`) for release migration overrides.
 *   **Storage & Optional Integrations**:
-    *   **Railway**: Containers have ephemeral disks, so configure `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` (plus optional `S3_ENDPOINT` / `S3_PUBLIC_URL`) for durable uploads.
+    *   **Railway**: Containers have ephemeral disks, so configure `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` (plus `S3_ENDPOINT` / `S3_PUBLIC_URL` as needed; see Section 4) for durable uploads.
     *   **Render**: Either configure `S3_*` object storage or mount a Render Persistent Disk at `/app/public/uploads`.
     *   **Payments & Cron**: Optionally set `STRIPE_SECRET_KEY` + `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` (+ `STRIPE_WEBHOOK_SECRET`) for card checkout and `CRON_SECRET` for scheduled broadcast jobs.
+
+| Variable | Required | Platform Binding Notes |
+|---|---|---|
+| `HOSTNAME` | Nixpacks only | Network interface bound by standalone `server.js`. Set `HOSTNAME=0.0.0.0` when deploying via Railway Nixpacks (preconfigured via `ENV HOSTNAME="0.0.0.0"` in `Dockerfile`). |
+| `PORT` | Managed | Automatically injected by Railway and Render ingress (`ENV PORT=3000` default in `Dockerfile`). |
 
 ---
 
@@ -48,16 +53,16 @@ Database migrations run automatically during the pre-deployment phase before new
 ### Railway Migration Command
 In Railway **Settings > Deploy > Custom Build / Pre-deploy Command**:
 ```bash
-DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING npx prisma migrate deploy
+DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING ./node_modules/.bin/prisma migrate deploy
 ```
 
 ### Render Migration Command
-In Render **Web Service Settings > Release Command**:
+In Render **Web Service Settings > Build & Deploy > Pre-Deploy Command**:
 ```bash
-DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING npx prisma migrate deploy
+DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING ./node_modules/.bin/prisma migrate deploy
 ```
 
-*Note: `prisma.config.ts` binds `datasource.url` to `DATABASE_URL` and `datasource.shadowDatabaseUrl` to `POSTGRES_URL_NON_POOLING`. Supplying `DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING` routes `prisma migrate deploy` directly to the unpooled PostgreSQL endpoint when `POSTGRES_URL_NON_POOLING` is set (falling back to `DATABASE_URL` when unset) and unsets `POSTGRES_URL_NON_POOLING` for the migration subprocess so Prisma acquires migration advisory locks without triggering `P3025`.*
+*Note: The official `Dockerfile` packages the isolated offline Prisma CLI at `/usr/local/bin/prisma` symlinked at `./node_modules/.bin/prisma` (which also works on native Node.js/Nixpacks buildpacks without `npx` or npm registry traffic). `prisma.config.ts` binds `datasource.url` to `DATABASE_URL` and `datasource.shadowDatabaseUrl` to `POSTGRES_URL_NON_POOLING`. Supplying `DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING` routes `prisma migrate deploy` directly to the unpooled PostgreSQL endpoint when `POSTGRES_URL_NON_POOLING` is set (falling back to `DATABASE_URL` when unset) and unsets `POSTGRES_URL_NON_POOLING` for the migration subprocess so Prisma acquires migration advisory locks without triggering `P3025`.*
 
 ---
 
@@ -69,8 +74,11 @@ Render allows mounting a persistent disk to preserve uploads without external ob
 2. Click **Add Disk**: Name `wedding-uploads`, Mount Path `/app/public/uploads`, Size `10 GB`.
 3. In standalone mode (`server.js`), files written to `/app/public/uploads` are streamed dynamically at `/uploads/*` (`src/app/api/uploads/[...path]/route.ts`, with `X-Content-Type-Options: nosniff`) without restarting the container.
 
-### Option B: S3 / Cloudflare R2 Storage (Recommended for Railway & Render)
-Provide `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` environment variables. Uploads will be written directly to S3/R2 and served globally.
+### Option B: S3 / Cloudflare R2 / Google Cloud Storage (Recommended for Railway & Render)
+Configure all six S3-compatible environment variables as needed (`S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT`, and `S3_PUBLIC_URL`):
+*   **Cloudflare R2**: Set `S3_BUCKET`, `S3_REGION=auto`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com`, and `S3_PUBLIC_URL=https://assets.wedding.mydomain.com` (an R2 Custom Domain or public `https://pub-<id>.r2.dev` URL; private `*.r2.cloudflarestorage.com` endpoints require `S3_PUBLIC_URL`).
+*   **Google Cloud Storage (S3 Interoperability)**: Enable Cloud Storage HMAC keys and set `S3_BUCKET`, `S3_REGION=us-central1` (matching your bucket region), `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT=https://storage.googleapis.com`, and optional `S3_PUBLIC_URL`.
+*   **AWS S3**: Set `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` (with `S3_ENDPOINT` omitted and `S3_PUBLIC_URL` optional for CloudFront).
 
 ---
 
@@ -93,9 +101,11 @@ Both Railway and Render provide automatic TLS certificates via Let's Encrypt.
 ## 6. Build & Deploy Commands
 
 ### Railway Deployment (Docker or Nixpacks)
-*   **Build Provider**: Select **Docker** to use the root `Dockerfile`, or **Nixpacks**.
-*   **Build Command**: `npm run build`
-*   **Start Command**: `npm start` (or automatically executed via `Dockerfile` entrypoint).
+*   **Option A — Docker (Recommended)**: Select **Docker** as the build provider to use the root `Dockerfile`, which installs build-time `devDependencies`, runs `postbuild`, sets `ENV HOSTNAME="0.0.0.0"`, and executes `docker-entrypoint.sh` automatically.
+*   **Option B — Nixpacks**: Because `NODE_ENV=production` omits `devDependencies` (`prisma`, `typescript`, `@tailwindcss/postcss`, and `@types/*` in `package.json`) needed by `npm run build` (`prisma generate && next build`), and `npm start` launches `node .next/standalone/server.js`:
+    *   **Variables**: Set `HOSTNAME=0.0.0.0` so standalone `server.js` binds to `0.0.0.0` for Railway ingress and healthcheck traffic.
+    *   **Build Command**: `npm ci --include=dev && npm run build && npm run postbuild` (installs required build-time `devDependencies` and copies `.next/static` and `public` into `.next/standalone/`).
+    *   **Start Command**: `npm start`
 
 ### Render Deployment
 *   **Environment**: Docker (uses root `Dockerfile`).

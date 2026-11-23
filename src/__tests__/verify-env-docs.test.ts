@@ -276,7 +276,12 @@ describe('AST-Based Environment Documentation Validation Parser', () => {
       });
       expect(specs.get('S3_ENDPOINT')).toEqual({
         key: 'S3_ENDPOINT',
-        classification: 'optional',
+        classification: 'conditional',
+        defaultValue: null,
+      });
+      expect(specs.get('S3_PUBLIC_URL')).toEqual({
+        key: 'S3_PUBLIC_URL',
+        classification: 'conditional',
         defaultValue: null,
       });
       expect(specs.get('STRIPE_SECRET_KEY')).toEqual({
