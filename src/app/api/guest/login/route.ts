@@ -52,7 +52,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   if (matchesSharedPasscode) {
     const iat = Date.now();
     const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
-    const token = await signGuestToken({ guest: true, iat, exp });
+    const token = await signGuestToken({ guest: true, jti: crypto.randomUUID(), iat, exp });
 
     const response = NextResponse.json({ success: true, sessionType: 'guest' });
     response.cookies.set(GUEST_COOKIE, token, {

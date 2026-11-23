@@ -20,6 +20,7 @@ import {
   extractDietaryTags,
   hasAddressCollectionTag,
 } from '@/features/registry';
+import { buildArchetypeSeedData, isStaticExportBuild } from '@/lib/sampleData/builder';
 import {
   SubEventRsvpSubmissionItem,
   BatchUpdateSubEventAccessDTO,
@@ -281,6 +282,14 @@ export class SubEventService {
       return null;
     }
 
+    if (isStaticExportBuild()) {
+      const normalizedCode = code.trim().toUpperCase();
+      const guest = buildArchetypeSeedData('classic').guests.find(
+        (g) => g.code.toUpperCase() === normalizedCode
+      );
+      return guest ? Math.max(0, guest.plusOneAllocations ?? 0) : null;
+    }
+
     const hydrated = this.getHydratedInvitation(code);
     if (hydrated) {
       return Math.max(0, hydrated.plusOneAllocations ?? 0);
@@ -304,6 +313,14 @@ export class SubEventService {
   async getSavedPlusOneNamesForGuest(code?: string | null): Promise<string[]> {
     if (!code || typeof code !== 'string' || !code.trim()) {
       return [];
+    }
+
+    if (isStaticExportBuild()) {
+      const normalizedCode = code.trim().toUpperCase();
+      const guest = buildArchetypeSeedData('classic').guests.find(
+        (g) => g.code.toUpperCase() === normalizedCode
+      );
+      return guest ? computeSavedPlusOneNames(guest) : [];
     }
 
     const hydrated = this.getHydratedInvitation(code);
@@ -337,6 +354,59 @@ export class SubEventService {
   async getSubEventByIdForGuest(id: string, code?: string | null): Promise<ScheduleEventWithRsvp> {
     if (!id || typeof id !== 'string' || !id.trim()) {
       throw new ApiError(404, 'Sub-event ID is required.');
+    }
+
+    if (isStaticExportBuild()) {
+      const seed = buildArchetypeSeedData('classic');
+      const trimmedId = id.trim();
+      const normalizedCode = code && typeof code === 'string' ? code.trim().toUpperCase() : '';
+      const matchedGuest = normalizedCode
+        ? seed.guests.find((g) => g.code.toUpperCase() === normalizedCode)
+        : undefined;
+      const found = seed.subEvents.find((evt) => evt.id === trimmedId);
+      if (!found) {
+        throw new ApiError(404, `Sub-event with ID ${id} not found.`);
+      }
+      if (found.isPrivate) {
+        const hasAccess =
+          matchedGuest &&
+          found.accesses.some((acc) => acc.invitationCodeId === matchedGuest.id);
+        if (!hasAccess) {
+          throw new ApiError(
+            403,
+            `Forbidden: You do not have access to private event "${found.title}".`
+          );
+        }
+      }
+      const rsvp = matchedGuest
+        ? found.rsvps.find((entry) => entry.invitationCodeId === matchedGuest.id) ?? null
+        : null;
+
+      return {
+        id: found.id,
+        title: found.title,
+        description: found.description || '',
+        startTime: found.startTime.toISOString(),
+        endTime: found.endTime.toISOString(),
+        locationName: found.locationName || '',
+        location: found.location || '',
+        category: found.category || '',
+        isPrivate: found.isPrivate,
+        isReadOnly: false,
+        attireRules: found.attireRules || null,
+        mealOptions: normalizeMealOptions(found.mealOptions),
+        customQuestions: normalizeCustomQuestions(found.customQuestions),
+        userRsvp: rsvp
+          ? {
+            status: rsvp.status,
+            plusOneCount: rsvp.plusOneCount,
+            dietaryNotes: rsvp.dietaryNotes || '',
+            mealSelections: normalizeMealSelections(rsvp.mealSelections),
+            customAnswers: normalizeCustomAnswers(rsvp.customAnswers),
+            plusOneNames: normalizePlusOneNames(rsvp.plusOneNames),
+          }
+          : null,
+      };
     }
 
     let invitationCodeId: string | null = null;
@@ -461,6 +531,52 @@ export class SubEventService {
    * Authenticated guests receive public sub-events plus private sub-events assigned to their invitation code.
    */
   async getScheduleForGuest(code?: string | null): Promise<ScheduleEventWithRsvp[]> {
+    if (isStaticExportBuild()) {
+      const seed = buildArchetypeSeedData('classic');
+      const normalizedCode = code && typeof code === 'string' ? code.trim().toUpperCase() : '';
+      const matchedGuest = normalizedCode
+        ? seed.guests.find((g) => g.code.toUpperCase() === normalizedCode)
+        : undefined;
+
+      return seed.subEvents
+        .filter((evt) => {
+          if (!evt.isPrivate) return true;
+          if (!matchedGuest) return false;
+          return evt.accesses.some((acc) => acc.invitationCodeId === matchedGuest.id);
+        })
+        .sort((a, b) => a.startTime.getTime() - b.startTime.getTime())
+        .map((evt) => {
+          const rsvp = matchedGuest
+            ? evt.rsvps.find((entry) => entry.invitationCodeId === matchedGuest.id) ?? null
+            : null;
+          return {
+            id: evt.id,
+            title: evt.title,
+            description: evt.description || '',
+            startTime: evt.startTime.toISOString(),
+            endTime: evt.endTime.toISOString(),
+            locationName: evt.locationName || '',
+            location: evt.location || '',
+            category: evt.category || '',
+            isPrivate: evt.isPrivate,
+            isReadOnly: false,
+            attireRules: evt.attireRules || null,
+            mealOptions: normalizeMealOptions(evt.mealOptions),
+            customQuestions: normalizeCustomQuestions(evt.customQuestions),
+            userRsvp: rsvp
+              ? {
+                status: rsvp.status,
+                plusOneCount: rsvp.plusOneCount,
+                dietaryNotes: rsvp.dietaryNotes || '',
+                mealSelections: normalizeMealSelections(rsvp.mealSelections),
+                customAnswers: normalizeCustomAnswers(rsvp.customAnswers),
+                plusOneNames: normalizePlusOneNames(rsvp.plusOneNames),
+              }
+              : null,
+          };
+        });
+    }
+
     let invitationCodeId: string | null = null;
 
     if (code && typeof code === 'string' && code.trim()) {
@@ -1323,33 +1439,6 @@ export class SubEventService {
     const limit = Math.min(100, Math.max(1, rawLimit));
     const skip = (page - 1) * limit;
 
-    const where: Record<string, unknown> = {};
-
-    if (params?.search && params.search.trim()) {
-      const q = params.search.trim();
-      where.OR = [
-        { guestName: { contains: q, mode: 'insensitive' } },
-        { code: { contains: q, mode: 'insensitive' } },
-        { householdName: { contains: q, mode: 'insensitive' } },
-      ];
-    }
-
-    if (params?.partyTag && params.partyTag !== 'all' && params.partyTag.trim()) {
-      where.partyTags = { has: params.partyTag.trim() };
-    }
-
-    if (params?.partyGroup && params.partyGroup !== 'all' && params.partyGroup.trim()) {
-      where.partyGroup = params.partyGroup.trim();
-    }
-
-    if (params?.householdName && params.householdName !== 'all' && params.householdName.trim()) {
-      where.householdName = params.householdName.trim();
-    }
-
-    const countPromise: Promise<number> = this.client.invitationCode.count
-      ? this.client.invitationCode.count({ where })
-      : this.client.invitationCode.findMany({ where }).then((rows: unknown[]) => rows.length);
-
     let rawSubEvents: any = [];
     let invitationCodes: any = [];
     let rawPartyGroups: string[] = [];
@@ -1358,7 +1447,73 @@ export class SubEventService {
     let rawRsvpsByInvitationCodeId: Record<string, any[]> = {};
     let total = 0;
 
-    if (typeof this.client.$queryRaw === 'function') {
+    if (isStaticExportBuild()) {
+      const seed = buildArchetypeSeedData('classic');
+      let filteredGuests = [...seed.guests];
+
+      if (params?.search && params.search.trim()) {
+        const q = params.search.trim().toLowerCase();
+        filteredGuests = filteredGuests.filter(
+          (g) =>
+            g.guestName.toLowerCase().includes(q) ||
+            g.code.toLowerCase().includes(q) ||
+            (g.householdName || '').toLowerCase().includes(q)
+        );
+      }
+      if (params?.partyTag && params.partyTag !== 'all' && params.partyTag.trim()) {
+        const targetTag = params.partyTag.trim();
+        filteredGuests = filteredGuests.filter((g) => (g.partyTags || []).includes(targetTag));
+      }
+      if (params?.partyGroup && params.partyGroup !== 'all' && params.partyGroup.trim()) {
+        const targetGroup = params.partyGroup.trim();
+        filteredGuests = filteredGuests.filter((g) => g.partyGroup === targetGroup);
+      }
+      if (params?.householdName && params.householdName !== 'all' && params.householdName.trim()) {
+        const targetHousehold = params.householdName.trim();
+        filteredGuests = filteredGuests.filter((g) => g.householdName === targetHousehold);
+      }
+
+      filteredGuests.sort((a, b) => a.guestName.localeCompare(b.guestName));
+      total = filteredGuests.length;
+      invitationCodes = filteredGuests.slice(skip, skip + limit);
+      rawSubEvents = seed.subEvents;
+      rawPartyGroups = seed.guests.map((g) => g.partyGroup || '');
+      rawHouseholdNames = seed.guests.map((g) => g.householdName || '');
+      rawPartyTags = seed.guests.flatMap((g) => g.partyTags || []);
+      for (const se of seed.subEvents) {
+        for (const r of se.rsvps) {
+          const existing = rawRsvpsByInvitationCodeId[r.invitationCodeId] ?? [];
+          existing.push(r);
+          rawRsvpsByInvitationCodeId[r.invitationCodeId] = existing;
+        }
+      }
+    } else if (typeof this.client.$queryRaw === 'function') {
+      const where: Record<string, unknown> = {};
+
+      if (params?.search && params.search.trim()) {
+        const q = params.search.trim();
+        where.OR = [
+          { guestName: { contains: q, mode: 'insensitive' } },
+          { code: { contains: q, mode: 'insensitive' } },
+          { householdName: { contains: q, mode: 'insensitive' } },
+        ];
+      }
+
+      if (params?.partyTag && params.partyTag !== 'all' && params.partyTag.trim()) {
+        where.partyTags = { has: params.partyTag.trim() };
+      }
+
+      if (params?.partyGroup && params.partyGroup !== 'all' && params.partyGroup.trim()) {
+        where.partyGroup = params.partyGroup.trim();
+      }
+
+      if (params?.householdName && params.householdName !== 'all' && params.householdName.trim()) {
+        where.householdName = params.householdName.trim();
+      }
+
+      const countPromise: Promise<number> = this.client.invitationCode.count
+        ? this.client.invitationCode.count({ where })
+        : this.client.invitationCode.findMany({ where }).then((rows: unknown[]) => rows.length);
       const metadataPromise = this.client.$queryRaw`
         WITH code_filters AS MATERIALIZED (
           SELECT "partyGroup", "householdName", "partyTags"
@@ -1510,6 +1665,33 @@ export class SubEventService {
         }
       }
     } else {
+      const where: Record<string, unknown> = {};
+
+      if (params?.search && params.search.trim()) {
+        const q = params.search.trim();
+        where.OR = [
+          { guestName: { contains: q, mode: 'insensitive' } },
+          { code: { contains: q, mode: 'insensitive' } },
+          { householdName: { contains: q, mode: 'insensitive' } },
+        ];
+      }
+
+      if (params?.partyTag && params.partyTag !== 'all' && params.partyTag.trim()) {
+        where.partyTags = { has: params.partyTag.trim() };
+      }
+
+      if (params?.partyGroup && params.partyGroup !== 'all' && params.partyGroup.trim()) {
+        where.partyGroup = params.partyGroup.trim();
+      }
+
+      if (params?.householdName && params.householdName !== 'all' && params.householdName.trim()) {
+        where.householdName = params.householdName.trim();
+      }
+
+      const countPromise: Promise<number> = this.client.invitationCode.count
+        ? this.client.invitationCode.count({ where })
+        : this.client.invitationCode.findMany({ where }).then((rows: unknown[]) => rows.length);
+
       const canFindCodes = Boolean(this.client.invitationCode.findMany);
       const [
         resolvedSubEvents,
@@ -1888,47 +2070,53 @@ export class SubEventService {
    * dietary & kids totals (skipping declined rows), and custom question breakdowns.
    */
   async getRsvpSummary(): Promise<RsvpSummaryResponse> {
-    const [invitations, subEvents] = await Promise.all([
-      this.client.invitationCode.findMany({
-        where: { isSample: false },
-        select: {
-          id: true,
-          guestName: true,
-          used: true,
-          isSample: true,
-          plusOneAllocations: true,
-          plusOneFirstName: true,
-          plusOneLastName: true,
-          dietaryNotes: true,
-          partyTags: true,
-          extraFields: true,
-        },
-      }),
-      this.client.subEvent.findMany({
-        orderBy: [{ startTime: 'asc' }, { createdAt: 'asc' }],
-        include: {
-          accesses: {
-            select: { invitationCodeId: true },
+    const isStatic = isStaticExportBuild();
+    const [invitations, subEvents] = isStatic
+      ? (() => {
+        const seed = buildArchetypeSeedData('classic');
+        return [seed.guests, seed.subEvents] as const;
+      })()
+      : await Promise.all([
+        this.client.invitationCode.findMany({
+          where: { isSample: false },
+          select: {
+            id: true,
+            guestName: true,
+            used: true,
+            isSample: true,
+            plusOneAllocations: true,
+            plusOneFirstName: true,
+            plusOneLastName: true,
+            dietaryNotes: true,
+            partyTags: true,
+            extraFields: true,
           },
-          rsvps: {
-            select: {
-              id: true,
-              invitationCodeId: true,
-              status: true,
-              plusOneCount: true,
-              plusOneNames: true,
-              mealSelections: true,
-              dietaryNotes: true,
-              customAnswers: true,
+        }),
+        this.client.subEvent.findMany({
+          orderBy: [{ startTime: 'asc' }, { createdAt: 'asc' }],
+          include: {
+            accesses: {
+              select: { invitationCodeId: true },
+            },
+            rsvps: {
+              select: {
+                id: true,
+                invitationCodeId: true,
+                status: true,
+                plusOneCount: true,
+                plusOneNames: true,
+                mealSelections: true,
+                dietaryNotes: true,
+                customAnswers: true,
+              },
             },
           },
-        },
-      }),
-    ]);
+        }),
+      ]);
 
     const inviteList: any[] = Array.isArray(invitations)
       ? invitations.filter(
-        (inv: any) => !inv?.isSample && !hasAddressCollectionTag(inv?.partyTags)
+        (inv: any) => (isStatic || !inv?.isSample) && !hasAddressCollectionTag(inv?.partyTags)
       )
       : [];
     const subEventList: any[] = Array.isArray(subEvents) ? subEvents : [];
@@ -2352,6 +2540,50 @@ export class SubEventService {
    * and current SubEventRsvp rows for admin inspection/editing.
    */
   async getAdminInvitationRsvps(invitationCodeId: string): Promise<AdminInvitationRsvpsDetail> {
+    if (isStaticExportBuild()) {
+      const seed = buildArchetypeSeedData('classic');
+      const invite = seed.guests.find((g) => g.id === invitationCodeId);
+      if (!invite) {
+        throw new ApiError(404, 'Invitation code not found.');
+      }
+      return {
+        invitationCode: {
+          id: invite.id,
+          code: invite.code,
+          guestName: invite.guestName,
+          used: Boolean(invite.used),
+          plusOneAllocations: invite.plusOneAllocations ?? 0,
+          plusOneFirstName: invite.plusOneFirstName ?? null,
+          plusOneLastName: invite.plusOneLastName ?? null,
+          dietaryNotes: invite.dietaryNotes ?? null,
+          extraFields: parseExtraFieldsObject(invite.extraFields),
+        },
+        subEvents: seed.subEvents.map((se) => ({
+          id: se.id,
+          title: se.title,
+          isPrivate: Boolean(se.isPrivate),
+          hasAccess:
+            !se.isPrivate ||
+            se.accesses.some((acc) => acc.invitationCodeId === invitationCodeId),
+          mealOptions: normalizeMealOptions(se.mealOptions),
+          customQuestions: normalizeCustomQuestions(se.customQuestions),
+        })),
+        rsvps: seed.subEvents
+          .flatMap((se) => se.rsvps)
+          .filter((r) => r.invitationCodeId === invitationCodeId)
+          .map((r) => ({
+            id: r.id,
+            subEventId: r.subEventId,
+            status: r.status,
+            plusOneCount: r.plusOneCount ?? 0,
+            plusOneNames: normalizePlusOneNames(r.plusOneNames),
+            mealSelections: normalizeMealSelections(r.mealSelections),
+            dietaryNotes: r.dietaryNotes ?? null,
+            customAnswers: normalizeCustomAnswers(r.customAnswers),
+          })),
+      };
+    }
+
     const invite = await this.client.invitationCode.findUnique({
       where: { id: invitationCodeId },
     });

@@ -92,6 +92,8 @@ const IGNORED_ROOT_DIRECTORIES = new Set([
   '.yarn',
   'coverage',
   '.next',
+  '.next-export',
+  '.api-backup-export',
   '.swc',
   '.turbo',
   'out',
@@ -439,10 +441,12 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     'scripts/a11y-report.mjs',
     'scripts/seed.ts',
     'scripts/verify-doc-sync.ts',
+    'scripts/build-export.mjs',
     'scripts/test-standalone.mjs',
     'scripts/test-container.mjs',
     'README.md',
     'docs/developer-setup.md',
+    'docs/runtime-contract.md',
     'docs/versioning.md',
     '.github/CONTRIBUTING.md',
     '.github/TESTING.md',
@@ -470,6 +474,7 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   const tsconfigBuildRaw = fs.readFileSync(path.join(repoRoot, 'tsconfig.build.json'), 'utf8');
   const composeRaw = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf8');
   const ciComposeRaw = fs.readFileSync(path.join(repoRoot, 'docker-compose.ci.yml'), 'utf8');
+  const buildExportRaw = fs.readFileSync(path.join(repoRoot, 'scripts/build-export.mjs'), 'utf8');
   const testStandaloneRaw = fs.readFileSync(path.join(repoRoot, 'scripts/test-standalone.mjs'), 'utf8');
   const testContainerRaw = fs.readFileSync(path.join(repoRoot, 'scripts/test-container.mjs'), 'utf8');
   const playwrightConfigRaw = fs.readFileSync(path.join(repoRoot, 'playwright.config.ts'), 'utf8');
@@ -490,6 +495,10 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   );
   const readmeRaw = fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf8');
   const devSetupRaw = fs.readFileSync(path.join(repoRoot, 'docs/developer-setup.md'), 'utf8');
+  const runtimeContractRaw = fs.readFileSync(
+    path.join(repoRoot, 'docs/runtime-contract.md'),
+    'utf8'
+  );
   const versioningRaw = fs.readFileSync(path.join(repoRoot, 'docs/versioning.md'), 'utf8');
   const contributingRaw = fs.readFileSync(path.join(repoRoot, '.github/CONTRIBUTING.md'), 'utf8');
   const testingRaw = fs.readFileSync(path.join(repoRoot, '.github/TESTING.md'), 'utf8');
@@ -607,6 +616,37 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     if (!scriptRaw.includes('docker-compose.ci.yml') || !scriptRaw.includes('.env.ci')) {
       errors.push(`${scriptLabel}: Must pass "--env-file .env.ci" with isolated "docker-compose.ci.yml" override manifest`);
     }
+  }
+  for (const [scriptLabel, scriptRaw, expectedProject] of [
+    ['scripts/test-standalone.mjs', testStandaloneRaw, 'wedding-smoke-standalone'],
+    ['scripts/test-container.mjs', testContainerRaw, 'wedding-smoke-container'],
+  ] as const) {
+    if (!scriptRaw.includes("'-p'") || !scriptRaw.includes(expectedProject)) {
+      errors.push(
+        `${scriptLabel}: Must isolate Docker Compose project via "-p ${expectedProject}"`
+      );
+    }
+  }
+  if (/lsof\s+-ti:3000|kill\s+-9/.test(testContainerRaw)) {
+    errors.push(
+      'scripts/test-container.mjs: Must select a free loopback port instead of killing port 3000 processes'
+    );
+  }
+  if (
+    !buildExportRaw.includes('export-stage') ||
+    /renameSync\s*\(\s*apiDir\s*,\s*backupDir\s*\)/.test(buildExportRaw)
+  ) {
+    errors.push(
+      'scripts/build-export.mjs: Must stage static exports inside ".next/export-stage" instead of renaming src/app/api in place'
+    );
+  }
+  if (
+    !runtimeContractRaw.includes('.next/export-stage') ||
+    /moves\s+`src\/app\/api`\s+to\s+`\.api-backup-export`/i.test(runtimeContractRaw)
+  ) {
+    errors.push(
+      'docs/runtime-contract.md: Must document staged static exports inside ".next/export-stage" instead of moving src/app/api to .api-backup-export'
+    );
   }
   if (!/NODE_ENV:\s*process\.env\.CI\s*\?\s*'production'\s*:\s*'development'/.test(playwrightConfigRaw)) {
     errors.push(
@@ -1286,11 +1326,22 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
       !content.includes('test-standalone.mjs') ||
       !content.includes('test-container.mjs') ||
       !content.includes('.env.ci') ||
-      !/docker compose(?:\s+(?:--env-file|-f)\s+\S+)*\s+down\s+-v/.test(content) ||
+      !content.includes('wedding-smoke-standalone') ||
+      !content.includes('wedding-smoke-container') ||
+      !/docker compose(?:\s+(?:-p|--env-file|-f)\s+\S+)*\s+down\s+-v/.test(content) ||
       !content.includes('npm run build')
     ) {
       errors.push(
-        `${docLabel}: Must warn that scripts/test-standalone.mjs requires "npm run build" and joins scripts/test-container.mjs (.env.ci) in running "docker compose down -v"`
+        `${docLabel}: Must document that scripts/test-standalone.mjs requires "npm run build" and joins scripts/test-container.mjs (.env.ci) in isolating Compose projects (-p wedding-smoke-standalone / -p wedding-smoke-container) before "docker compose ... down -v"`
+      );
+    }
+    if (
+      /(?:delet(?:es|ing)|wip(?:es|ing))\s+local\s+Docker\s+Compose\s+PostgreSQL\s+volumes\s*\(`db_data`\)/i.test(
+        content
+      )
+    ) {
+      errors.push(
+        `${docLabel}: Stale warning claiming smoke scripts delete/wipe local Docker Compose PostgreSQL volumes ("db_data")`
       );
     }
   }

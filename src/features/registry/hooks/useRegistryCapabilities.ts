@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/apiClient';
 import { isValidStripePublishableKey, type StripeCapability } from '@/lib/stripe.client';
+import { useOptionalDemo } from '@/components/demo/DemoContext';
+import { DEMO_SHIPPING_ADDRESS } from '@/lib/demo/demoSeed';
 import type { RegistryShippingAddress } from '../types';
 
 interface RegistryCapabilitiesPayload extends StripeCapability {
@@ -47,6 +49,8 @@ export function useRegistryCapabilities(
   options: { enabled?: boolean } = {}
 ): RegistryCapabilitiesState {
   const { enabled = true } = options;
+  const demo = useOptionalDemo();
+  const isDemoMode = Boolean(demo?.isDemoMode);
   const [state, setState] = useState<InternalCapabilitiesState>(() => {
     const fallback = getClientEnvCapabilityFallback();
     return {
@@ -56,7 +60,7 @@ export function useRegistryCapabilities(
   });
 
   useEffect(() => {
-    if (!enabled) {
+    if (!enabled || isDemoMode) {
       return;
     }
 
@@ -104,7 +108,18 @@ export function useRegistryCapabilities(
     return () => {
       active = false;
     };
-  }, [enabled]);
+  }, [enabled, isDemoMode]);
+
+  if (enabled && isDemoMode) {
+    return {
+      cardCheckoutEnabled: true,
+      stripePublishableKey: null,
+      defaultPaymentHandleType: 'Venmo',
+      defaultPaymentHandle: '@alex-and-taylor',
+      shippingAddress: DEMO_SHIPPING_ADDRESS,
+      isCapabilitiesLoading: false,
+    };
+  }
 
   return {
     cardCheckoutEnabled: state.cardCheckoutEnabled,

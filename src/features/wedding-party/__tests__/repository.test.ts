@@ -49,7 +49,8 @@ describe('WeddingPartyRepository', () => {
         const result = await repo.getMembers();
         expect(mockClient.weddingPartyMember.findMany).not.toHaveBeenCalled();
         expect(result.length).toBeGreaterThan(0);
-        expect(result[0].name).toBe('Jordan Rivera');
+        expect(result[0].name).toBe('Jessica Davis');
+        expect(result[0].photo?.url).toBeTruthy();
       } finally {
         if (prevStaticExport === undefined) {
           delete process.env.STATIC_EXPORT;
