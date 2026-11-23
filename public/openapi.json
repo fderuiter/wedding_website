@@ -15379,6 +15379,12 @@
                         },
                         "faqs": {
                           "type": "number"
+                        },
+                        "photos": {
+                          "type": "number"
+                        },
+                        "subEvents": {
+                          "type": "number"
                         }
                       },
                       "required": [
@@ -15387,7 +15393,9 @@
                         "seating",
                         "weddingParty",
                         "attractions",
-                        "faqs"
+                        "faqs",
+                        "photos",
+                        "subEvents"
                       ]
                     }
                   },
@@ -15494,6 +15502,12 @@
                         },
                         "faqs": {
                           "type": "number"
+                        },
+                        "photos": {
+                          "type": "number"
+                        },
+                        "subEvents": {
+                          "type": "number"
                         }
                       },
                       "required": [
@@ -15502,7 +15516,9 @@
                         "seating",
                         "weddingParty",
                         "attractions",
-                        "faqs"
+                        "faqs",
+                        "photos",
+                        "subEvents"
                       ]
                     }
                   },

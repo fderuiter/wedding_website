@@ -38,10 +38,16 @@ import {
   isValidStripePublishableKey,
 } from '@/lib/stripe.client';
 import { apiClient } from '@/lib/apiClient';
+import { useOptionalDemo } from '@/components/demo/DemoContext';
+import {
+  SIMULATED_TEST_CARDS,
+  SimulatedCardCheckout,
+  type SimulatedTestCardId,
+} from './SimulatedCardCheckout';
 
 const FIXED_PRESETS = [50, 100, 250];
 
-type FundPaymentMode = 'direct' | 'card' | 'unavailable';
+type FundPaymentMode = 'claim' | 'direct' | 'card' | 'unavailable';
 
 /**
  * @interface RegistryItemCardProps
@@ -177,11 +183,17 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   isAdmin = false,
 }) => {
   const { resolvedTheme } = useTheme();
+  const demo = useOptionalDemo();
+  const isDemoMode = Boolean(demo?.isDemoMode);
+  const isSampleLocked = Boolean(item.isSample && !isDemoMode);
   const stripeControllerRef = useRef<StripeControllerHandle | null>(null);
   const syncedPaymentIntentRef = useRef<SyncedPaymentIntentSnapshot | null>(null);
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const claimRadioRef = useRef<HTMLButtonElement | null>(null);
   const directRadioRef = useRef<HTMLButtonElement | null>(null);
   const cardRadioRef = useRef<HTMLButtonElement | null>(null);
+  const [simulatedCardId, setSimulatedCardId] = useState<SimulatedTestCardId>('approved_visa');
+  const [simulatedBillingZip, setSimulatedBillingZip] = useState('60611');
 
   const {
     isValidatingCode,
@@ -275,41 +287,50 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   const isFund = item.itemType === 'CASH_FUND' || item.itemType === 'EXPERIENCE_FUND';
   const isPayableGroupGift = Boolean(isFund || item.isGroupGift);
   const effectiveHandle = resolveEffectivePaymentHandle(item, {
-    defaultPaymentHandleType,
-    defaultPaymentHandle,
+    defaultPaymentHandleType: defaultPaymentHandleType ?? (isDemoMode ? 'Venmo' : null),
+    defaultPaymentHandle: defaultPaymentHandle ?? (isDemoMode ? '@alex-and-taylor' : null),
   });
   const effectiveHandleType = effectiveHandle.paymentHandleType;
   const effectiveHandleValue = effectiveHandle.paymentHandle;
   const hasPaymentHandle = Boolean(effectiveHandleValue);
-  const effectiveCardCheckoutEnabled = resolveEffectiveCardCheckoutEnabled(
-    cardCheckoutEnabled,
-    stripePublishableKey
-  );
+  const effectiveCardCheckoutEnabled = isDemoMode
+    ? true
+    : resolveEffectiveCardCheckoutEnabled(cardCheckoutEnabled, stripePublishableKey);
 
-  const isDualMode = isPayableGroupGift && hasPaymentHandle && effectiveCardCheckoutEnabled;
+  const isDualMode = isDemoMode
+    ? true
+    : isPayableGroupGift && hasPaymentHandle && effectiveCardCheckoutEnabled;
   const isUnconfiguredGroupGift =
-    isPayableGroupGift && !hasPaymentHandle && !effectiveCardCheckoutEnabled;
+    !isDemoMode && isPayableGroupGift && !hasPaymentHandle && !effectiveCardCheckoutEnabled;
 
-  const modeBaseKey = `${item.id}-${hasPaymentHandle ? 'handle' : 'nohandle'}`;
+  const modeBaseKey = `${item.id}-${hasPaymentHandle ? 'handle' : 'nohandle'}-${isDemoMode ? 'demo' : 'live'}`;
   const [selectedModeOverride, setSelectedModeOverride] = useState<{
     key: string;
-    mode: 'direct' | 'card';
+    mode: 'claim' | 'direct' | 'card';
   } | null>(null);
 
-  const selectedMode: 'direct' | 'card' =
+  const defaultSelectedMode: 'claim' | 'direct' | 'card' = isDemoMode
+    ? isPayableGroupGift
+      ? 'card'
+      : 'claim'
+    : hasPaymentHandle
+      ? 'direct'
+      : 'card';
+
+  const selectedMode: 'claim' | 'direct' | 'card' =
     selectedModeOverride && selectedModeOverride.key === modeBaseKey
       ? selectedModeOverride.mode
-      : hasPaymentHandle
-        ? 'direct'
-        : 'card';
+      : defaultSelectedMode;
 
   const activePaymentMode: FundPaymentMode | null = useMemo(() => {
+    if (isDemoMode) return selectedMode;
     if (!isPayableGroupGift) return null;
     if (isUnconfiguredGroupGift) return 'unavailable';
     if (hasPaymentHandle && !effectiveCardCheckoutEnabled) return 'direct';
     if (!hasPaymentHandle && effectiveCardCheckoutEnabled) return 'card';
     return selectedMode;
   }, [
+    isDemoMode,
     isPayableGroupGift,
     isUnconfiguredGroupGift,
     hasPaymentHandle,
@@ -317,8 +338,14 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     selectedMode,
   ]);
 
-  const isDirectMode = isPayableGroupGift && activePaymentMode === 'direct';
-  const isCardMode = isPayableGroupGift && activePaymentMode === 'card';
+  const isClaimMode = isDemoMode ? activePaymentMode === 'claim' : !isPayableGroupGift;
+  const isDirectMode = isDemoMode
+    ? activePaymentMode === 'direct'
+    : isPayableGroupGift && activePaymentMode === 'direct';
+  const isCardMode = isDemoMode
+    ? activePaymentMode === 'card'
+    : isPayableGroupGift && activePaymentMode === 'card';
+  const showFeeDisclosurePanel = isDemoMode ? isDirectMode || isCardMode : isPayableGroupGift;
   const isBusy = isSubmitting || isCardProcessing;
   const isEffectiveSubmitDisabled = isSubmitDisabled || isCardProcessing;
 
@@ -331,10 +358,10 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     feeAmount: number;
   } | null>(null);
 
-  const handleSelectMode = (mode: 'direct' | 'card') => {
+  const handleSelectMode = (mode: 'claim' | 'direct' | 'card') => {
     setSelectedModeOverride({ key: modeBaseKey, mode });
     setSubmissionError(null);
-    if (mode === 'direct') {
+    if (mode !== 'card') {
       setCoverFee(false);
       if (syncTimerRef.current) {
         clearTimeout(syncTimerRef.current);
@@ -389,11 +416,11 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   );
 
   const stripePromise = useMemo(() => {
-    if (!isCardMode || item.isSample || (item.purchased && !isSubmitting)) {
+    if (isDemoMode || !isCardMode || isSampleLocked || (item.purchased && !isSubmitting)) {
       return null;
     }
     return getStripePromise(stripePublishableKey);
-  }, [isCardMode, item.isSample, item.purchased, isSubmitting, stripePublishableKey]);
+  }, [isDemoMode, isCardMode, isSampleLocked, item.purchased, isSubmitting, stripePublishableKey]);
 
   // Reset synced PaymentIntent ref and state when item.id changes or Card Checkout mode exits
   const prevItemIdRef = useRef(item.id);
@@ -407,7 +434,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
 
   // Sync PaymentIntent pricing dynamically only when Card Checkout mode is active
   useEffect(() => {
-    if (!isCardMode || item.isSample || item.purchased || isSubmitting || isSuccess) return;
+    if (isDemoMode || !isCardMode || isSampleLocked || item.purchased || isSubmitting || isSuccess) return;
     const baseAmountCents = Math.round(baseContributionAmount * 100);
     const remainingAmountCents = Math.round(remainingAmount * 100);
     if (baseContributionAmount <= 0 || baseAmountCents > remainingAmountCents) return;
@@ -521,8 +548,9 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
       }
     };
   }, [
+    isDemoMode,
     item.id,
-    item.isSample,
+    isSampleLocked,
     item.purchased,
     remainingAmount,
     isSubmitting,
@@ -532,12 +560,12 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     effectiveCoverFee,
   ]);
 
-  // Form submission handling direct transfer, physical claims, and embedded Stripe Elements confirmation
+  // Form submission handling direct transfer, physical claims, simulated demo card checkout, and embedded Stripe Elements confirmation
   const handlePaymentSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    if (!isPayableGroupGift) {
-      await handleSubmit(e);
+    if (isClaimMode) {
+      await handleSubmit(e, undefined, { coverFeeOverride: false });
       return;
     }
 
@@ -550,8 +578,40 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
       return;
     }
 
-    // Card Checkout mode: validate fields before creating/confirming Stripe PaymentIntent
+    // Card Checkout mode: validate fields before processing
     if (!validateContribution()) {
+      return;
+    }
+
+    if (isDemoMode) {
+      setSubmissionError(null);
+      const selectedCard =
+        SIMULATED_TEST_CARDS.find((c) => c.id === simulatedCardId) ?? SIMULATED_TEST_CARDS[0];
+      if (selectedCard.outcome === 'declined') {
+        setPhase('error');
+        setSubmissionError(
+          selectedCard.declineMessage ||
+            'Simulated card declined. Gift funding totals remain unchanged.'
+        );
+        return;
+      }
+
+      setIsCardProcessing(true);
+      try {
+        const cleanSuffix = item.id.replace(/[^a-zA-Z0-9]/g, '').slice(-8) || 'gift';
+        const demoIntentId = `pi_demo_${cleanSuffix}_${Date.now().toString(36)}`;
+        await handleSubmit(e, demoIntentId);
+        setPaymentTransactionId(demoIntentId);
+      } catch (err: unknown) {
+        setPhase('error');
+        setSubmissionError(
+          err instanceof Error && err.message
+            ? err.message
+            : 'Simulated payment processing failed.'
+        );
+      } finally {
+        setIsCardProcessing(false);
+      }
       return;
     }
 
@@ -817,12 +877,12 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
 
     let paymentMethodLine = 'Physical Gift Claim';
     if (paymentTransactionId) {
-      paymentMethodLine = 'Card Checkout';
-    } else if (isPayableGroupGift && hasPaymentHandle) {
+      paymentMethodLine = isDemoMode ? 'Simulated Card Checkout (Demo)' : 'Card Checkout';
+    } else if ((isDemoMode ? isDirectMode : isPayableGroupGift) && hasPaymentHandle) {
       paymentMethodLine = effectiveHandleType
         ? `Direct Transfer (${effectiveHandleType}: ${effectiveHandleValue})`
         : `Direct Transfer (${effectiveHandleValue})`;
-    } else if (item.isGroupGift) {
+    } else if (item.isGroupGift && !isClaimMode) {
       paymentMethodLine = 'Group Gift Contribution';
     }
 
@@ -941,7 +1001,11 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
 
   const isClaimedReadOnly = (item.purchased || isFullyFunded) && !isSuccess;
   const showDirectTransferDetails =
-    hasPaymentHandle && !isClaimedReadOnly && (!isPayableGroupGift || isDirectMode || item.isSample);
+    hasPaymentHandle &&
+    !isClaimedReadOnly &&
+    (isDemoMode
+      ? isDirectMode
+      : !isPayableGroupGift || isDirectMode || isSampleLocked);
 
   return (
     <div
@@ -951,7 +1015,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
       <Button
         variant="ghost"
         size="sm"
-        className="absolute top-3 right-3"
+        className="absolute top-3 right-3 z-10 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm"
         onClick={onClose}
         aria-label="Close modal"
       >
@@ -987,7 +1051,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
         )}
       </div>
 
-      {isDualMode && !item.isSample && !isSuccess && (!item.purchased || isBusy) && (
+      {isDualMode && !isSampleLocked && !isSuccess && (!item.purchased || isBusy) && (
         <div className="mb-3 mt-2">
           <p
             id={`payment-mode-label-${item.id}`}
@@ -999,29 +1063,64 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             role="radiogroup"
             aria-label="Payment method"
             data-testid="payment-mode-selector"
-            className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700"
+            className={`grid grid-cols-1 ${isDemoMode ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} gap-2 p-1 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700`}
           >
+            {isDemoMode && (
+              <button
+                ref={claimRadioRef}
+                type="button"
+                role="radio"
+                data-testid="payment-mode-claim"
+                aria-checked={activePaymentMode === 'claim'}
+                tabIndex={activePaymentMode === 'claim' ? 0 : -1}
+                disabled={isSubmitting}
+                onClick={() => handleSelectMode('claim')}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    handleSelectMode('direct');
+                    directRadioRef.current?.focus();
+                  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    handleSelectMode('card');
+                    cardRadioRef.current?.focus();
+                  }
+                }}
+                className={`min-h-[36px] px-3 py-2 rounded-md text-sm font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                  activePaymentMode === 'claim'
+                    ? 'bg-white dark:bg-gray-800 text-primary shadow-sm border border-primary/30'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                }`}
+              >
+                Physical Claim
+              </button>
+            )}
             <button
               ref={directRadioRef}
               type="button"
               role="radio"
+              data-testid="payment-mode-direct"
               aria-checked={activePaymentMode === 'direct'}
               tabIndex={activePaymentMode === 'direct' ? 0 : -1}
               disabled={isSubmitting}
               onClick={() => handleSelectMode('direct')}
               onKeyDown={(e) => {
-                if (
-                  e.key === 'ArrowRight' ||
-                  e.key === 'ArrowDown' ||
-                  e.key === 'ArrowLeft' ||
-                  e.key === 'ArrowUp'
-                ) {
+                if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
                   e.preventDefault();
                   handleSelectMode('card');
                   cardRadioRef.current?.focus();
+                } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  if (isDemoMode) {
+                    handleSelectMode('claim');
+                    claimRadioRef.current?.focus();
+                  } else {
+                    handleSelectMode('card');
+                    cardRadioRef.current?.focus();
+                  }
                 }
               }}
-              className={`px-3 py-2 rounded-md text-sm font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+              className={`min-h-[36px] px-3 py-2 rounded-md text-sm font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                 activePaymentMode === 'direct'
                   ? 'bg-white dark:bg-gray-800 text-primary shadow-sm border border-primary/30'
                   : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
@@ -1033,23 +1132,28 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
               ref={cardRadioRef}
               type="button"
               role="radio"
+              data-testid="payment-mode-card"
               aria-checked={activePaymentMode === 'card'}
               tabIndex={activePaymentMode === 'card' ? 0 : -1}
               disabled={isSubmitting}
               onClick={() => handleSelectMode('card')}
               onKeyDown={(e) => {
-                if (
-                  e.key === 'ArrowLeft' ||
-                  e.key === 'ArrowUp' ||
-                  e.key === 'ArrowRight' ||
-                  e.key === 'ArrowDown'
-                ) {
+                if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
                   e.preventDefault();
                   handleSelectMode('direct');
                   directRadioRef.current?.focus();
+                } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  if (isDemoMode) {
+                    handleSelectMode('claim');
+                    claimRadioRef.current?.focus();
+                  } else {
+                    handleSelectMode('direct');
+                    directRadioRef.current?.focus();
+                  }
                 }
               }}
-              className={`px-3 py-2 rounded-md text-sm font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+              className={`min-h-[36px] px-3 py-2 rounded-md text-sm font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                 activePaymentMode === 'card'
                   ? 'bg-white dark:bg-gray-800 text-primary shadow-sm border border-primary/30'
                   : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
@@ -1061,8 +1165,8 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
         </div>
       )}
 
-      {/* Embedded Stripe Elements supported payment methods notice (only in Card Checkout mode) */}
-      {isCardMode && !item.isSample && !isClaimedReadOnly && (
+      {/* Embedded Stripe Elements supported payment methods notice (only in live Card Checkout mode) */}
+      {isCardMode && !isSampleLocked && !isDemoMode && !isClaimedReadOnly && (
         <div
           data-testid="stripe-payment-notice"
           className="mb-3 p-3 bg-slate-50 dark:bg-slate-900/60 rounded-md border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
@@ -1121,7 +1225,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                 </AccessibleExternalLink>
               )}
             </div>
-            {isDirectMode && !item.isSample && !isSuccess && !item.purchased && (
+            {isDirectMode && !isSampleLocked && !isSuccess && !item.purchased && (
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5">
                 Send your gift using the handle or QR code, then record your contribution below so the couple can thank you.
               </p>
@@ -1216,7 +1320,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
         </div>
       )}
 
-      {item.isSample ? (
+      {isSampleLocked ? (
         <div className="mt-5 pt-4 border-t border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/40 p-3.5 rounded-lg text-amber-900 dark:text-amber-100 text-sm">
           <span className="font-bold block mb-1">Demo / Sample Registry Item</span>
           Sample items demonstrate registry formatting and layout. Real payments and guest contributions are disabled on sample items.
@@ -1239,7 +1343,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                 Your reservation for <span className="font-semibold">{item.name}</span> has been cancelled so other wedding guests can choose this gift.
               </p>
             </>
-          ) : isPayableGroupGift && !paymentTransactionId && hasPaymentHandle ? (
+          ) : (isDemoMode ? isDirectMode : isPayableGroupGift) && !paymentTransactionId && hasPaymentHandle ? (
             <>
               <h3 className="text-xl font-bold text-green-700 dark:text-green-400 mb-1">
                 Direct Transfer Recorded!
@@ -1433,7 +1537,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                 <Button
                   type="button"
                   variant="ghost"
-                  className="text-red-500 hover:text-red-700"
+                  className="text-red-700 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
                   disabled={isSubmitting}
                   onClick={handleClearCode}
                 >
@@ -1442,11 +1546,15 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
               )}
             </div>
             {codeError && <FormMessage>{codeError}</FormMessage>}
-            {isCodeLocked && <p className="text-sm text-green-600 mt-1">Code verified! Name pre-filled.</p>}
+            {isCodeLocked && (
+              <p className="text-sm text-green-700 dark:text-green-400 mt-1">
+                Code verified! Name pre-filled.
+              </p>
+            )}
           </FormGroup>
           <FormGroup state={fieldErrors.name ? 'error' : 'default'} className="mb-3">
             <Label>
-              Your Name <span className="text-red-500">*</span>
+              Your Name <span className="text-red-700 dark:text-red-400">*</span>
             </Label>
             <Input
               type="text"
@@ -1471,7 +1579,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
           {!item.isGroupGift && requestedUnits > 1 && (
             <FormGroup state={fieldErrors.units ? 'error' : 'default'} className="mb-3">
               <Label>
-                Quantity to Claim <span className="text-red-500">*</span>
+                Quantity to Claim <span className="text-red-700 dark:text-red-400">*</span>
               </Label>
               <Select
                 data-testid="unit-quantity-select"
@@ -1494,7 +1602,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
           {item.isGroupGift && (
             <FormGroup state={fieldErrors.amount ? 'error' : 'default'} className="mb-3">
               <Label>
-                Contribution Amount <span className="text-red-500">*</span>
+                Contribution Amount <span className="text-red-700 dark:text-red-400">*</span>
               </Label>
               {remainingAmount > 0 && (
                 <div
@@ -1566,8 +1674,11 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             </FormGroup>
           )}
 
-          {isPayableGroupGift && (
-            <div className="mb-4 p-3.5 bg-slate-50 dark:bg-slate-900/80 rounded-lg border border-slate-200 dark:border-slate-700 text-sm">
+          {showFeeDisclosurePanel && (
+            <div
+              data-testid="fee-disclosure-panel"
+              className="mb-4 p-3.5 bg-slate-50 dark:bg-slate-900/80 rounded-lg border border-slate-200 dark:border-slate-700 text-sm"
+            >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-1.5 font-semibold text-gray-800 dark:text-gray-200">
                   <Icon name="Info" className="w-4 h-4 text-primary shrink-0" aria-hidden="true" />
@@ -1638,14 +1749,31 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             </div>
           )}
 
-          {/* Embedded Stripe Elements Card and Wallet Input — mounted only in Card Checkout mode */}
-          {isCardMode && (
+          {/* Simulated Card Checkout in demo mode; Stripe Elements only in live server mode */}
+          {isCardMode && isDemoMode && (
+            <SimulatedCardCheckout
+              selectedCardId={simulatedCardId}
+              onSelectCard={(nextId) => {
+                setSimulatedCardId(nextId);
+                setSubmissionError(null);
+              }}
+              billingZip={simulatedBillingZip}
+              onBillingZipChange={setSimulatedBillingZip}
+              totalChargeAmount={
+                effectiveCoverFee
+                  ? Math.round((baseContributionAmount + estimatedProcessingFee) * 100) / 100
+                  : baseContributionAmount
+              }
+              disabled={isBusy}
+            />
+          )}
+          {isCardMode && !isDemoMode && (
             <Elements stripe={stripePromise} options={elementsOptions}>
               <StripeCardPaymentSection controllerRef={stripeControllerRef} />
             </Elements>
           )}
 
-          {isVendorUrlSafe && !isPayableGroupGift && (
+          {isVendorUrlSafe && isClaimMode && (
             <div
               data-testid="external-order-tracking-fields"
               className="mb-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 space-y-2.5"
@@ -1884,16 +2012,18 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
               </>
             ) : isDirectMode ? (
               'Record Direct Transfer'
+            ) : isClaimMode ? (
+              'Claim Gift'
             ) : item.isGroupGift ? (
               'Submit Contribution'
             ) : (
-              'Claim Gift'
+              'Submit Card Gift'
             )}
           </Button>
         </form>
       ) : (
         <div className="mt-5 pt-4 border-t border-primary text-center">
-          <p className="text-xl font-semibold text-green-600">
+          <p className="text-xl font-semibold text-green-700 dark:text-green-400">
             {item.isGroupGift ? 'This gift is fully funded!' : 'This gift has been claimed!'}
           </p>
           {isAdmin && item.purchaserName && item.purchaserName !== 'Anonymous' && !item.isGroupGift && (

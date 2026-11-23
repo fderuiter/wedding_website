@@ -486,7 +486,7 @@ const BackupSnapshotVersionSchema = z.object({
   author: z.string().max(255).nullable().optional(),
 });
 
-// Full database backup structure schema across all 15 Prisma models
+// Full database backup structure schema across the 15 domain Prisma models (excludes ephemeral AuthLockout rows)
 export const DatabaseBackupSchema = z.object({
   version: z.string().optional(),
   schemaVersion: z.string().optional(),

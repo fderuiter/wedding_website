@@ -13,6 +13,7 @@ import {
   GuestClaimActions,
 } from '../types';
 import { checkAdminClient } from '@/core/auth/auth.client';
+import { useOptionalDemo } from '@/components/demo/DemoContext';
 
 import { apiClient } from '@/lib/apiClient';
 import { useEntityOrchestration } from '@/hooks/useEntityOrchestration';
@@ -117,6 +118,7 @@ function mapRegistryQueryData(
 }
 
 export function useRegistry() {
+  const demo = useOptionalDemo();
   const queryClient = useQueryClient();
   const { confirm } = useToast();
   const {
@@ -156,7 +158,7 @@ export function useRegistry() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [demo?.persona]);
 
   const {
     data: queryResult,
@@ -178,14 +180,28 @@ export function useRegistry() {
     enabled: false,
   });
 
+  const isDemoMode = Boolean(demo?.isDemoMode);
+  const demoRegistryItems = demo?.activeDataset.registryItems;
+
   const items = useMemo<RegistryItem[]>(() => {
+    if (isDemoMode && demoRegistryItems) {
+      return demoRegistryItems;
+    }
     if (!queryResult) return EMPTY_ITEMS;
     if (Array.isArray(queryResult)) return queryResult;
     if (typeof queryResult === 'object' && Array.isArray(queryResult.items)) {
       return queryResult.items;
     }
     return EMPTY_ITEMS;
-  }, [queryResult]);
+  }, [demoRegistryItems, isDemoMode, queryResult]);
+
+  const effectiveSelectedItem = useMemo<RegistryItem | null>(() => {
+    if (!selectedItem) return null;
+    if (!isDemoMode || !demoRegistryItems) return selectedItem;
+    return demoRegistryItems.find((i) => i.id === selectedItem.id) ?? null;
+  }, [demoRegistryItems, isDemoMode, selectedItem]);
+
+  const effectiveIsModalOpen = isModalOpen && Boolean(effectiveSelectedItem);
 
   const {
     categories,
@@ -527,8 +543,8 @@ export function useRegistry() {
     isLoading,
     error,
     refetch,
-    selectedItem,
-    isModalOpen,
+    selectedItem: effectiveSelectedItem,
+    isModalOpen: effectiveIsModalOpen,
     setVisibleItemsCount,
     isAdmin,
     cardCheckoutEnabled,
