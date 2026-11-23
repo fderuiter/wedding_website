@@ -18,7 +18,6 @@ export function useAdminBroadcast() {
   const {
     data: history = [],
     isLoading: loadingHistory,
-    error: historyError,
   } = useQuery<BroadcastHistoryItem[], Error>({
     queryKey: historyQueryKey,
     queryFn: async () => {
@@ -109,7 +108,6 @@ export function useAdminBroadcast() {
   return {
     history,
     loadingHistory,
-    historyError: historyError ? historyError.message : null,
     sendBroadcast,
     sending,
     sendTestBroadcast,
@@ -123,6 +121,5 @@ export function useAdminBroadcast() {
     testingConnection,
     cancelScheduledBroadcast,
     cancelling,
-    refetchHistory: () => queryClient.invalidateQueries({ queryKey: historyQueryKey }),
   };
 }

@@ -726,138 +726,156 @@ export async function dispatchContributionNotifications(
     } = await import('@/features/broadcast');
     const messagingProvider = new MultiChannelMessagingProvider(activeConfig);
 
+    const emailBranches: Array<Promise<void>> = [];
+
     if (hasValidGuestEmail) {
-      let claimedGuestEmail = false;
-      try {
-        claimedGuestEmail = await claimSendTimestamp(
-          savedContributor,
-          'confirmation',
-          repository,
-          dbClient
-        );
-        if (claimedGuestEmail) {
-          const { subject, body } = buildGuestConfirmationEmail({
-            contributorName,
-            itemName,
-            isPayableGroupGift,
-            paymentHandle,
-            paymentHandleType,
-            baseAmount,
-            coverFee,
-            feeAmount,
-            totalCharged,
-            stripePaymentIntentId,
-            isReserved,
-            confirmActionUrl,
-            cancelActionUrl,
-            referenceId,
-            formattedDate,
-            registryUrl,
-            escapeHtmlEntities,
-            sanitizeEmailSubject,
-          });
-          const result = await messagingProvider.sendEmail({
-            to: guestEmailRaw,
-            subject,
-            body,
-          });
-          if (!result.success) {
-            await releaseSendTimestamp(savedContributor, 'confirmation', repository, dbClient);
-            logger.warn('Failed to send registry guest confirmation email', {
+      emailBranches.push(
+        (async () => {
+          let claimedGuestEmail = false;
+          try {
+            claimedGuestEmail = await claimSendTimestamp(
+              savedContributor,
+              'confirmation',
+              repository,
+              dbClient
+            );
+            if (claimedGuestEmail) {
+              const { subject, body } = buildGuestConfirmationEmail({
+                contributorName,
+                itemName,
+                isPayableGroupGift,
+                paymentHandle,
+                paymentHandleType,
+                baseAmount,
+                coverFee,
+                feeAmount,
+                totalCharged,
+                stripePaymentIntentId,
+                isReserved,
+                confirmActionUrl,
+                cancelActionUrl,
+                referenceId,
+                formattedDate,
+                registryUrl,
+                escapeHtmlEntities,
+                sanitizeEmailSubject,
+              });
+              const result = await messagingProvider.sendEmail({
+                to: guestEmailRaw,
+                subject,
+                body,
+              });
+              if (!result.success) {
+                await releaseSendTimestamp(savedContributor, 'confirmation', repository, dbClient);
+                logger.warn('Failed to send registry guest confirmation email', {
+                  itemId,
+                  contributorId: savedContributor.id,
+                  recipientRole: 'guest',
+                  provider: providerName,
+                  reason: sanitizeProviderFailureReason(result.error, sensitiveLiterals),
+                });
+              }
+            }
+          } catch (guestErr: unknown) {
+            if (claimedGuestEmail) {
+              await releaseSendTimestamp(savedContributor, 'confirmation', repository, dbClient);
+            }
+            logger.warn('Unexpected error sending registry guest confirmation email', {
               itemId,
               contributorId: savedContributor.id,
               recipientRole: 'guest',
               provider: providerName,
-              reason: sanitizeProviderFailureReason(result.error, sensitiveLiterals),
+              reason: sanitizeProviderFailureReason(guestErr, sensitiveLiterals),
             });
           }
-        }
-      } catch (guestErr: unknown) {
-        if (claimedGuestEmail) {
-          await releaseSendTimestamp(savedContributor, 'confirmation', repository, dbClient);
-        }
-        logger.warn('Unexpected error sending registry guest confirmation email', {
-          itemId,
-          contributorId: savedContributor.id,
-          recipientRole: 'guest',
-          provider: providerName,
-          reason: sanitizeProviderFailureReason(guestErr, sensitiveLiterals),
-        });
-      }
+        })()
+      );
     }
 
     if (hasValidCoupleEmail && !isReserved) {
-      let claimedAlertEmail = false;
-      try {
-        claimedAlertEmail = await claimSendTimestamp(
-          savedContributor,
-          'alert',
-          repository,
-          dbClient
-        );
-        if (claimedAlertEmail) {
-          let paymentTypeLabel = 'Physical Gift Claim';
-          if (stripePaymentIntentId) {
-            paymentTypeLabel = 'Card Checkout';
-          } else if (isPayableGroupGift && paymentHandle) {
-            paymentTypeLabel = paymentHandleType
-              ? `Direct Transfer (${paymentHandleType})`
-              : 'Direct Transfer';
-          } else if (isGroupGift) {
-            paymentTypeLabel = 'Group Gift Contribution';
-          }
+      emailBranches.push(
+        (async () => {
+          let claimedAlertEmail = false;
+          try {
+            claimedAlertEmail = await claimSendTimestamp(
+              savedContributor,
+              'alert',
+              repository,
+              dbClient
+            );
+            if (claimedAlertEmail) {
+              let paymentTypeLabel = 'Physical Gift Claim';
+              if (stripePaymentIntentId) {
+                paymentTypeLabel = 'Card Checkout';
+              } else if (isPayableGroupGift && paymentHandle) {
+                paymentTypeLabel = paymentHandleType
+                  ? `Direct Transfer (${paymentHandleType})`
+                  : 'Direct Transfer';
+              } else if (isGroupGift) {
+                paymentTypeLabel = 'Group Gift Contribution';
+              }
 
-          const { subject, body } = buildCoupleAlertEmail({
-            contributorName,
-            itemName,
-            baseAmount,
-            coverFee,
-            feeAmount,
-            paymentTypeLabel,
-            guestMessage,
-            retailerOrderNumber,
-            carrier,
-            trackingNumber,
-            dashboardUrl,
-            escapeHtmlEntities,
-            sanitizeEmailSubject,
-          });
-          const result = await messagingProvider.sendEmail({
-            to: coupleEmailRaw,
-            subject,
-            body,
-          });
-          if (!result.success) {
-            await releaseSendTimestamp(savedContributor, 'alert', repository, dbClient);
-            logger.warn('Failed to send registry couple alert email', {
+              const { subject, body } = buildCoupleAlertEmail({
+                contributorName,
+                itemName,
+                baseAmount,
+                coverFee,
+                feeAmount,
+                paymentTypeLabel,
+                guestMessage,
+                retailerOrderNumber,
+                carrier,
+                trackingNumber,
+                dashboardUrl,
+                escapeHtmlEntities,
+                sanitizeEmailSubject,
+              });
+              const result = await messagingProvider.sendEmail({
+                to: coupleEmailRaw,
+                subject,
+                body,
+              });
+              if (!result.success) {
+                await releaseSendTimestamp(savedContributor, 'alert', repository, dbClient);
+                logger.warn('Failed to send registry couple alert email', {
+                  itemId,
+                  contributorId: savedContributor.id,
+                  recipientRole: 'couple',
+                  provider: providerName,
+                  reason: sanitizeProviderFailureReason(result.error, sensitiveLiterals),
+                });
+              }
+            }
+          } catch (alertErr: unknown) {
+            if (claimedAlertEmail) {
+              await releaseSendTimestamp(savedContributor, 'alert', repository, dbClient);
+            }
+            logger.warn('Unexpected error sending registry couple alert email', {
               itemId,
               contributorId: savedContributor.id,
               recipientRole: 'couple',
               provider: providerName,
-              reason: sanitizeProviderFailureReason(result.error, sensitiveLiterals),
+              reason: sanitizeProviderFailureReason(alertErr, sensitiveLiterals),
             });
           }
-        }
-      } catch (alertErr: unknown) {
-        if (claimedAlertEmail) {
-          await releaseSendTimestamp(savedContributor, 'alert', repository, dbClient);
-        }
-        logger.warn('Unexpected error sending registry couple alert email', {
-          itemId,
-          contributorId: savedContributor.id,
-          recipientRole: 'couple',
-          provider: providerName,
-          reason: sanitizeProviderFailureReason(alertErr, sensitiveLiterals),
-        });
-      }
+        })()
+      );
+    }
+
+    if (emailBranches.length > 0) {
+      await Promise.allSettled(emailBranches);
     }
   } catch (err: unknown) {
     logger.warn('Registry notification pipeline encountered an unexpected error', {
       itemId,
       reason: sanitizeProviderFailureReason(err, [
         contribution.email,
+        typeof params.config?.contactEmail === 'string' ? params.config.contactEmail : undefined,
         contribution.name,
         contribution.message,
+        contribution.retailerOrderNumber,
+        contribution.carrier,
+        contribution.trackingNumber,
       ]),
     });
   }

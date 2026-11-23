@@ -138,6 +138,14 @@ export function normalizeInvitationCode(value: unknown): string {
   return trimmed ? trimmed.toUpperCase() : '';
 }
 
+export function sanitizeGuestPhoneInput(value: unknown): string {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  if (typeof value !== 'string') return '';
+  return value.trim().replace(/^'(?=[+\d(])/, '').trim();
+}
+
 export function validateGuestPhone(value: unknown): string | null {
   if (value === undefined || value === null) return null;
   if (typeof value !== 'string') {
@@ -353,7 +361,6 @@ export function validateInvitationGuestFieldsWithColumns(
   }
 
   if (
-    mode === 'service' &&
     record.extraFields &&
     typeof record.extraFields === 'object' &&
     !Array.isArray(record.extraFields)

@@ -4,6 +4,8 @@ import React, { useMemo, useState } from 'react';
 import { Dialog, useDirtyConfirmClose } from '@/components/ui/Dialog';
 import { useToast } from '@/components/ui/ToastProvider';
 import { SeatingTableDTO } from '../schemas';
+import { resolveDetailedSeatAssignments } from '../seatLayout';
+import { getGuestsHeadcount } from '../utils/seatingHelpers';
 
 interface TableModalProps {
   isOpen: boolean;
@@ -92,15 +94,53 @@ function TableModalForm({
     onDirtyChange(isTableFormDirty(next, initialSnapshot));
   };
 
-  const currentSeatedCount = table?.invitationCodes?.length || 0;
+  const currentSeatedCount = useMemo(
+    () => getGuestsHeadcount(table?.invitationCodes || []),
+    [table?.invitationCodes]
+  );
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const seatsAboveNewCapacity = useMemo(() => {
+    if (!table?.invitationCodes || table.invitationCodes.length === 0) {
+      return [] as number[];
+    }
+    const baselineMaxCap = Math.max(initialSnapshot.capacity, table.capacity);
+    const resolvedAtOriginal = resolveDetailedSeatAssignments(
+      table.invitationCodes,
+      baselineMaxCap
+    );
+    const highSeats: number[] = [];
+    resolvedAtOriginal.forEach((_entry, seatNum) => {
+      if (seatNum > capacity) {
+        highSeats.push(seatNum);
+      }
+    });
+    for (const guest of table.invitationCodes) {
+      if (
+        typeof guest.seatNumber === 'number' &&
+        guest.seatNumber > capacity &&
+        !highSeats.includes(guest.seatNumber)
+      ) {
+        highSeats.push(guest.seatNumber);
+      }
+    }
+    return highSeats.sort((a, b) => a - b);
+  }, [table, initialSnapshot.capacity, capacity]);
+
+  const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!name.trim()) return;
 
     if (table && capacity < currentSeatedCount) {
       const confirmed = await confirm(
-        `Warning: This table currently has ${currentSeatedCount} seated guests, which exceeds the new capacity of ${capacity}. Are you sure you want to save?`
+        `Warning: This table currently has ${currentSeatedCount} seated guest${currentSeatedCount === 1 ? '' : 's'}, which exceeds the new capacity of ${capacity}. Are you sure you want to save?`
+      );
+      if (!confirmed) {
+        return;
+      }
+    } else if (table && seatsAboveNewCapacity.length > 0) {
+      const seatListLabel = seatsAboveNewCapacity.map((s) => `Seat ${s}`).join(', ');
+      const confirmed = await confirm(
+        `Warning: Lowering capacity to ${capacity} will repack ${seatListLabel} into seats 1–${capacity}. Are you sure you want to save?`
       );
       if (!confirmed) {
         return;
@@ -182,11 +222,15 @@ function TableModalForm({
             }}
             className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
           />
-          {table && capacity < currentSeatedCount && (
+          {table && capacity < currentSeatedCount ? (
             <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400 font-medium" data-testid="capacity-warning">
               Warning: Table has {currentSeatedCount} seated guest{currentSeatedCount === 1 ? '' : 's'}. Lowering capacity below {currentSeatedCount} exceeds current occupancy.
             </p>
-          )}
+          ) : table && seatsAboveNewCapacity.length > 0 ? (
+            <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400 font-medium" data-testid="capacity-warning">
+              Warning: Lowering capacity to {capacity} will repack {seatsAboveNewCapacity.map((s) => `Seat ${s}`).join(', ')} into seats 1–{capacity}.
+            </p>
+          ) : null}
         </div>
       </div>
 

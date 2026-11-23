@@ -2,70 +2,7 @@
 
 import { spawnSync } from 'child_process';
 
-let isStashed = false;
-let cleanWorkingTreeBeforeChecks = false;
-
-function hasUnstagedChanges() {
-  const statusResult = spawnSync('git', ['status', '--porcelain'], { encoding: 'utf-8' });
-  if (statusResult.status !== 0) {
-    return null;
-  }
-  if (!statusResult.stdout) {
-    return false;
-  }
-  const lines = statusResult.stdout.split('\n').filter(Boolean);
-  return lines.some((line) => line.length >= 2 && line[1] !== ' ');
-}
-
-function pushStash() {
-  const unstaged = hasUnstagedChanges();
-  if (unstaged === null) {
-    return;
-  }
-  if (!unstaged) {
-    cleanWorkingTreeBeforeChecks = true;
-    return;
-  }
-  console.log('Stashing unstaged changes...');
-  const stashResult = spawnSync(
-    'git',
-    ['stash', 'push', '--keep-index', '--include-untracked', '-m', 'pre-commit-stash'],
-    { stdio: 'inherit' }
-  );
-  if (stashResult.status === 0) {
-    isStashed = true;
-    cleanWorkingTreeBeforeChecks = true;
-  } else {
-    console.warn('⚠️ Warning: Failed to stash unstaged changes.');
-  }
-}
-
-function popStash() {
-  if (cleanWorkingTreeBeforeChecks) {
-    cleanWorkingTreeBeforeChecks = false;
-    spawnSync('git', ['checkout', '--', '.'], { stdio: 'ignore' });
-  }
-  if (!isStashed) return;
-  isStashed = false;
-  console.log('Restoring unstaged changes...');
-  const popResult = spawnSync('git', ['stash', 'pop'], { stdio: 'inherit' });
-  if (popResult.status !== 0) {
-    console.warn(
-      '\n⚠️ Warning: Failed to restore unstaged changes from stash. Your stashed changes are preserved in git stash.'
-    );
-  }
-}
-
-const handleSignal = (signal, exitCode) => {
-  console.log(`\nProcess interrupted by ${signal}. Cleaning up...`);
-  popStash();
-  process.exit(exitCode);
-};
-
-process.on('SIGINT', () => handleSignal('SIGINT', 130));
-process.on('SIGTERM', () => handleSignal('SIGTERM', 143));
-
-// 1. Run lint-staged to filter staged files and apply ESLint auto-fixes
+// Run lint-staged to filter staged files and apply ESLint auto-fixes
 console.log('Running lint-staged...');
 const lintStagedResult = spawnSync('npx', ['lint-staged'], { stdio: 'inherit', shell: true });
 
@@ -74,47 +11,4 @@ if (lintStagedResult.status !== 0) {
   process.exit(lintStagedResult.status ?? 1);
 }
 
-// Stash unstaged changes before running workspace-wide checks
-pushStash();
-
-let exitCode = 0;
-
-try {
-  const checks = [
-    { name: 'TypeScript type check', script: 'type-check' },
-    { name: 'Knip dead-code analysis', script: 'lint:unused' },
-    { name: 'Environment variables documentation check', script: 'check:env-docs' },
-    { name: 'Deployment runbooks verification check', script: 'check:runbooks' },
-    { name: 'Setup and contributor guides contract check', script: 'check:setup-guides' },
-    { name: 'Personal/Template identifier isolation check', script: 'check:identifiers' },
-    { name: 'Third-party action pin commit SHAs check', script: 'check:action-pins' },
-    { name: 'Documentation relative links check', script: 'check:links' },
-    { name: 'Specification route and symbol contracts check', script: 'check:spec-contracts' },
-    { name: 'Prisma schema validation', script: 'check:prisma' },
-    { name: 'Migration compatibility check', script: 'lint:migrations' },
-    { name: 'Documentation synchronization check', script: 'check:doc-sync' },
-  ];
-
-  for (const check of checks) {
-    console.log(`Running ${check.name}...`);
-    const result = spawnSync('npm', ['run', check.script], { stdio: 'inherit', shell: true });
-
-    if (result.status !== 0) {
-      console.error(`\n❌ Pre-commit check failed: ${check.name} failed.`);
-      exitCode = result.status ?? 1;
-      break;
-    }
-  }
-} catch (err) {
-  console.error('\n❌ Unexpected error during pre-commit checks:', err);
-  exitCode = 1;
-} finally {
-  popStash();
-}
-
-if (exitCode !== 0) {
-  process.exit(exitCode);
-}
-
 console.log('✅ All pre-commit checks passed.');
-

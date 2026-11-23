@@ -470,7 +470,7 @@ export default function AdminSettingsPage() {
     syncThemeOverrideRows(nextRows);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!localConfig) return;
     if (themeTokensError) {
@@ -515,7 +515,7 @@ export default function AdminSettingsPage() {
     }
   };
 
-  const handleCreateProfile = async (e: React.FormEvent) => {
+  const handleCreateProfile = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     setCreateError('');
     try {

@@ -39,7 +39,7 @@ function WeddingPartyManagerModalContent({ isOpen, onClose }: WeddingPartyManage
     setIsEditing(true);
   };
 
-  const handleSave = async (e: React.FormEvent) => {
+  const handleSave = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     setSaving(true);
     try {

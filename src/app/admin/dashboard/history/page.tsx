@@ -380,7 +380,7 @@ function HistoryTimelineContent({
             </div>
 
             <div>
-              <h4 className="text-sm font-semibold mb-2">Recipient Delivery Statuses:</h4>
+              <h3 className="text-sm font-semibold mb-2">Recipient Delivery Statuses:</h3>
               <div className="max-h-60 overflow-y-auto border rounded divide-y dark:divide-zinc-700">
                 {selectedBroadcast.recipients?.map((r: any) => (
                   <div key={r.id} className="p-2 text-xs flex justify-between items-center gap-2">
