@@ -20862,29 +20862,7 @@
                       "type": "string"
                     },
                     "error": {
-                      "nullable": true,
-                      "anyOf": [
-                        {
-                          "type": "object",
-                          "additionalProperties": true
-                        },
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "additionalProperties": true
-                          }
-                        },
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "number"
-                        },
-                        {
-                          "type": "boolean"
-                        }
-                      ]
+                      "type": "string"
                     },
                     "timestamp": {
                       "type": "string"

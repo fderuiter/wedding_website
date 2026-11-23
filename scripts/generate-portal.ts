@@ -227,9 +227,11 @@ export function cleanStagedPortalDocs(portalDir: string = PORTAL_DIR): number {
   return removedCount;
 }
 
-export async function generatePortal() {
+export async function generatePortal(options: GeneratePortalOptions = {}) {
+  const rootDir = options.rootDir ?? ROOT_DIR;
+  const portalDir = options.portalDir ?? PORTAL_DIR;
   console.log('--- Step 1: Validating documentation cross-links ---');
-  const linkCheckResult = await checkDocLinks();
+  const linkCheckResult = await checkDocLinks(rootDir);
   if (!linkCheckResult.passed) {
     console.error(`❌ Link validation failed with ${linkCheckResult.errors.length} broken links!`);
     linkCheckResult.errors.forEach(err => {
@@ -239,37 +241,35 @@ export async function generatePortal() {
   }
   console.log(`✅ Pre-compilation link check passed (${linkCheckResult.count} Markdown files verified).`);
 
-  console.log('\n--- Step 2: Synchronizing architecture & OpenAPI specifications ---');
-  // Explicitly invoke generateConfigTable, generateRoutesDiagram, and generateApiRoutesSection
-  const configTable = generateConfigTable();
-  const routesDiagram = generateRoutesDiagram();
-  const apiRoutesSection = generateApiRoutesSection();
-  if (!configTable || !routesDiagram || !apiRoutesSection) {
-    throw new Error('Failed to generate configuration table, route diagram, or API routes inventory');
+  if (shouldSkipPortalDocSync(options, rootDir)) {
+    console.log('\n--- Step 2: Reusing pre-generated architecture & OpenAPI specifications ---');
+  } else {
+    console.log('\n--- Step 2: Synchronizing architecture & OpenAPI specifications ---');
+    const configTable = generateConfigTable();
+    const routesDiagram = generateRoutesDiagram();
+    const apiRoutesSection = generateApiRoutesSection();
+    if (!configTable || !routesDiagram || !apiRoutesSection) {
+      throw new Error('Failed to generate configuration table, route diagram, or API routes inventory');
+    }
+    updateArchitectureMd();
+    updateFeatureModulesMd();
+    await generateOpenApiSpec();
   }
 
-  // Update ARCHITECTURE.md, FEATURE_MODULES.md, and OpenAPI specification
-  updateArchitectureMd();
-  updateFeatureModulesMd();
-  await generateOpenApiSpec();
-
-  console.log(`\n--- Step 3: Staging ${ARCHITECTURAL_DOCS.length} architectural specifications into docs-portal ---`);
-  const removedStale = cleanStagedPortalDocs(PORTAL_DIR);
+  console.log(`\n--- Step 3: Staging ${(options.docs ?? ARCHITECTURAL_DOCS).length} architectural specifications into docs-portal ---`);
+  const removedStale = cleanStagedPortalDocs(portalDir);
   if (removedStale > 0) {
     console.log(`🧹 Cleaned ${removedStale} previously staged Markdown file(s).`);
   }
   let stagedCount = 0;
-
-  for (const doc of ARCHITECTURAL_DOCS) {
-    stagePortalDoc(doc, ROOT_DIR, PORTAL_DIR, false);
+  for (const doc of options.docs ?? ARCHITECTURAL_DOCS) {
+    stagePortalDoc(doc, rootDir, portalDir, false);
     stagedCount++;
   }
-
   console.log(`✅ Successfully staged all ${stagedCount} architectural specifications into VitePress folders.`);
 
   console.log('\n--- Step 4: Staging OpenAPI schema into portal assets ---');
-  stageOpenApiAsset(ROOT_DIR, PORTAL_DIR, true);
-
+  stageOpenApiAsset(rootDir, portalDir, true);
   console.log('\n✅ Portal generation and staging complete!');
 }
 
@@ -366,6 +366,32 @@ function stageOpenApiAsset(
     console.log(`✅ Copied openapi.json to ${openApiDest}`);
   }
   return true;
+}
+
+export interface GeneratePortalOptions {
+  stageOnly?: boolean;
+  skipDocSync?: boolean;
+  rootDir?: string;
+  portalDir?: string;
+  docs?: readonly DocMapping[];
+}
+
+const PRE_GENERATED_PORTAL_ARTIFACTS = [
+  'ARCHITECTURE.md',
+  'FEATURE_MODULES.md',
+  'public/openapi.json',
+] as const;
+
+function shouldSkipPortalDocSync(
+  options: GeneratePortalOptions,
+  rootDir: string = ROOT_DIR
+): boolean {
+  if (!options.stageOnly && !options.skipDocSync && process.env.SKIP_DOC_SYNC !== 'true') {
+    return false;
+  }
+  return PRE_GENERATED_PORTAL_ARTIFACTS.every(relPath =>
+    fs.existsSync(path.join(rootDir, relPath))
+  );
 }
 
 export interface WatchPortalOptions {
@@ -491,14 +517,20 @@ async function runCli(rawArgs: string[]): Promise<void> {
   const watchMode = rawArgs.includes('--watch');
   const serveMode = rawArgs.includes('--serve');
   const skipSync = rawArgs.includes('--skip-sync') || process.env.SKIP_DOC_SYNC === 'true';
+  const stageOnly = rawArgs.includes('--stage-only') || rawArgs.includes('--skip-doc-sync');
   const vitepressArgs = rawArgs.filter(
-    arg => arg !== '--watch' && arg !== '--serve' && arg !== '--skip-sync'
+    arg =>
+      arg !== '--watch' &&
+      arg !== '--serve' &&
+      arg !== '--stage-only' &&
+      arg !== '--skip-doc-sync' &&
+      arg !== '--skip-sync'
   );
 
   if (skipSync) {
     stagePortalAssetsOnly();
   } else {
-    await generatePortal();
+    await generatePortal({ stageOnly });
   }
 
   if (!watchMode && !serveMode) {

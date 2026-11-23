@@ -530,4 +530,45 @@ describe('GuestEditorForm', () => {
       expect(onClose).toHaveBeenCalledTimes(1);
     });
   });
+
+  it('loads legacy phoneNumber and Phone Number extraFields keys and normalizes them into extraFields.phone on save', async () => {
+    const onClose = jest.fn();
+    const onSave = jest.fn().mockResolvedValue(undefined);
+
+    const { unmount } = render(
+      <GuestEditorModal
+        isOpen={true}
+        guest={{
+          ...sampleGuest,
+          extraFields: {
+            'Phone Number': "'+15557654321",
+            phoneNumber: '+15550000000',
+            attendanceStatus: 'attending',
+          },
+        }}
+        onClose={onClose}
+        onSave={onSave}
+      />
+    );
+
+    const phoneInput = screen.getByLabelText('Phone') as HTMLInputElement;
+    expect(phoneInput.value).toBe('+15550000000');
+
+    fireEvent.change(phoneInput, { target: { value: '+1 (555) 888-9999' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Guest Changes' }));
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledWith(
+        'guest-1',
+        expect.objectContaining({
+          extraFields: {
+            attendanceStatus: 'attending',
+            phone: '+15558889999',
+          },
+        })
+      );
+    });
+
+    unmount();
+  });
 });

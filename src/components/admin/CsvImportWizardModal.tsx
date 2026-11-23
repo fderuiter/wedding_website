@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useReducer, useMemo, useEffect, useRef, useCallback } from 'react';
-import { Dialog } from '@/components/ui/Dialog';
+import { Dialog, useDirtyConfirmClose } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input } from '@/components/ui/forms';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -12,6 +12,7 @@ import {
   combineFirstAndLastName,
   consolidateHouseholdCsvRows,
   generateFailedRowsCsv,
+  parsePlusOneNameCell,
   MAX_CSV_FILE_SIZE,
   ParsedCsvRow,
   ColumnMappingOptions,
@@ -20,8 +21,11 @@ import {
 } from '@/utils/csv';
 import type { DryRunValidationSummary, DryRunValidationResponse } from '@/features/registry';
 import {
+  normalizeGuestPhone,
   normalizeInvitationCode,
   normalizePartyTags,
+  sanitizeGuestPhoneInput,
+  validateGuestPhone,
   type BatchInvitationCodeRecord,
   type InvitationCollisionStrategy,
 } from '@/utils/invitationValidation';
@@ -45,6 +49,7 @@ interface CsvImportPersistedState {
   guestLastNameCol: string;
   codeCol: string;
   emailCol: string;
+  phoneCol: string;
   addressLine1Col: string;
   addressLine2Col: string;
   cityCol: string;
@@ -53,6 +58,7 @@ interface CsvImportPersistedState {
   countryCol: string;
   dietaryNotesCol: string;
   plusOneCol: string;
+  plusOneNameCol: string;
   plusOneFirstNameCol: string;
   plusOneLastNameCol: string;
   householdNameCol: string;
@@ -82,6 +88,7 @@ const initialCsvImportState: CsvImportPersistedState = {
   guestLastNameCol: '',
   codeCol: '',
   emailCol: '',
+  phoneCol: '',
   addressLine1Col: '',
   addressLine2Col: '',
   cityCol: '',
@@ -90,6 +97,7 @@ const initialCsvImportState: CsvImportPersistedState = {
   countryCol: '',
   dietaryNotesCol: '',
   plusOneCol: '',
+  plusOneNameCol: '',
   plusOneFirstNameCol: '',
   plusOneLastNameCol: '',
   householdNameCol: '',
@@ -118,6 +126,7 @@ const STEP_2_COLUMN_DESCRIPTORS: readonly ColumnMappingDescriptor[] = [
   { id: 'map-guest-last-name', label: 'Guest Last Name Column (Optional)', field: 'guestLastNameCol', emptyOptionLabel: '-- Unmapped --' },
   { id: 'map-invitation-code', label: 'Invitation Code Column (Optional)', field: 'codeCol', emptyOptionLabel: '-- Auto-Generate Blank Codes --' },
   { id: 'map-email', label: 'Email Address Column (Optional)', field: 'emailCol', emptyOptionLabel: '-- Unmapped --' },
+  { id: 'map-phone', label: 'Phone Number Column (Optional)', field: 'phoneCol', emptyOptionLabel: '-- Unmapped --' },
   { id: 'map-dietary-notes', label: 'Dietary Notes / Allergies (Optional)', field: 'dietaryNotesCol', emptyOptionLabel: '-- Unmapped --' },
   { id: 'map-address-line1', label: 'Address Line 1 Column (Optional)', field: 'addressLine1Col', emptyOptionLabel: '-- Unmapped --' },
   { id: 'map-address-line2', label: 'Address Line 2 Column (Optional)', field: 'addressLine2Col', emptyOptionLabel: '-- Unmapped --' },
@@ -126,6 +135,7 @@ const STEP_2_COLUMN_DESCRIPTORS: readonly ColumnMappingDescriptor[] = [
   { id: 'map-zip-code', label: 'ZIP / Postal Code Column (Optional)', field: 'zipCodeCol', emptyOptionLabel: '-- Unmapped --' },
   { id: 'map-country', label: 'Country Column (Optional)', field: 'countryCol', emptyOptionLabel: '-- Unmapped --' },
   { id: 'map-plus-ones', label: 'Plus-One Allocations Column (Optional)', field: 'plusOneCol', emptyOptionLabel: '-- Default to 0 --' },
+  { id: 'map-plus-one-name', label: 'Plus-One Name Column (Optional)', field: 'plusOneNameCol', emptyOptionLabel: '-- Unmapped --' },
   { id: 'map-plus-one-first-name', label: 'Plus-One First Name Column (Optional)', field: 'plusOneFirstNameCol', emptyOptionLabel: '-- Unmapped --' },
   { id: 'map-plus-one-last-name', label: 'Plus-One Last Name Column (Optional)', field: 'plusOneLastNameCol', emptyOptionLabel: '-- Unmapped --' },
   { id: 'map-household-name', label: 'Household Name Column (Optional)', field: 'householdNameCol', emptyOptionLabel: '-- Unmapped --' },
@@ -137,6 +147,7 @@ const EDITABLE_MAPPING: ColumnMappingOptions = {
   guestNameCol: 'GuestNameField',
   codeCol: 'CodeField',
   emailCol: 'EmailField',
+  phoneCol: 'PhoneField',
   addressLine1Col: 'AddressLine1Field',
   addressLine2Col: 'AddressLine2Field',
   cityCol: 'CityField',
@@ -156,6 +167,7 @@ const HOISTED_EDITABLE_MAPPED_COLS = new Set([
   'GuestNameField',
   'CodeField',
   'EmailField',
+  'PhoneField',
   'AddressLine1Field',
   'AddressLine2Field',
   'CityField',
@@ -176,6 +188,7 @@ function toRowRecord(r: EditableRow): Record<string, string> {
     GuestNameField: r.guestName,
     CodeField: r.code,
     EmailField: r.email,
+    PhoneField: r.phone || '',
     AddressLine1Field: r.addressLine1,
     AddressLine2Field: r.addressLine2,
     CityField: r.city,
@@ -192,10 +205,36 @@ function toRowRecord(r: EditableRow): Record<string, string> {
   };
   if (r.extraFields) {
     Object.entries(r.extraFields).forEach(([k, v]) => {
-      rowObj[k] = v;
+      if (k !== 'phone' && k !== 'plusOneNames' && typeof v === 'string') {
+        rowObj[k] = v;
+      }
     });
   }
   return rowObj;
+}
+
+function validateEditableWizardRow(
+  r: EditableRow,
+  idx: number,
+  mapping: ColumnMappingOptions,
+  freqMap: Map<string, number>,
+  dbSet: Set<string>
+): ParsedCsvRow {
+  const validated = validateSingleCsvRow(
+    toRowRecord(r),
+    idx,
+    mapping,
+    freqMap,
+    dbSet,
+    HOISTED_EDITABLE_MAPPED_COLS
+  );
+  if (Array.isArray(r.extraFields?.plusOneNames) && r.extraFields.plusOneNames.length > 0) {
+    validated.extraFields = {
+      ...(validated.extraFields || {}),
+      plusOneNames: r.extraFields.plusOneNames,
+    };
+  }
+  return validated;
 }
 
 function computeFullValidation(rows: EditableRow[], extraCols: string[], dbSet: Set<string>) {
@@ -213,7 +252,7 @@ function computeFullValidation(rows: EditableRow[], extraCols: string[], dbSet: 
   };
 
   const parsed = rows.map((r, idx) =>
-    validateSingleCsvRow(toRowRecord(r), idx, mapping, freqMap, dbSet, HOISTED_EDITABLE_MAPPED_COLS)
+    validateEditableWizardRow(r, idx, mapping, freqMap, dbSet)
   );
 
   return { parsed, freqMap };
@@ -224,25 +263,58 @@ function buildBatchImportPayload(
   collisionStrategy: InvitationCollisionStrategy
 ): { records: BatchInvitationCodeRecord[]; collisionStrategy: InvitationCollisionStrategy } {
   return {
-    records: rows.map((r) => ({
-      guestName: r.guestName,
-      code: r.code || undefined,
-      email: r.email || undefined,
-      addressLine1: r.addressLine1 || undefined,
-      addressLine2: r.addressLine2 || undefined,
-      city: r.city || undefined,
-      state: r.state || undefined,
-      zipCode: r.zipCode || undefined,
-      country: r.country || undefined,
-      dietaryNotes: r.dietaryNotes || undefined,
-      plusOneAllocations: r.plusOneAllocations !== '' ? parseInt(r.plusOneAllocations, 10) : 0,
-      plusOneFirstName: r.plusOneFirstName.trim() || undefined,
-      plusOneLastName: r.plusOneLastName.trim() || undefined,
-      householdName: r.householdName.trim() || undefined,
-      partyGroup: r.partyGroup.trim() || undefined,
-      partyTags: r.partyTags ? normalizePartyTags(r.partyTags) : undefined,
-      extraFields: Object.keys(r.extraFields || {}).length > 0 ? r.extraFields : undefined,
-    })),
+    records: rows.map((r) => {
+      const rawAlloc = (r.plusOneAllocations || '').trim();
+      const parsedAlloc =
+        rawAlloc === ''
+          ? undefined
+          : /^\d+$/.test(rawAlloc)
+            ? parseInt(rawAlloc, 10)
+            : (rawAlloc as unknown as number);
+
+      const recordExtra: Record<string, unknown> = {};
+      if (r.extraFields) {
+        for (const [k, v] of Object.entries(r.extraFields)) {
+          if (k === 'phone') continue;
+          if (k === 'plusOneNames' && Array.isArray(v)) {
+            const cleaned = v.map((item) => item.trim()).filter(Boolean);
+            if (cleaned.length > 0) {
+              recordExtra.plusOneNames = cleaned;
+            }
+          } else if (typeof v === 'string' && v.trim() !== '') {
+            recordExtra[k] = v.trim();
+          }
+        }
+      }
+
+      const rawPhone = sanitizeGuestPhoneInput(
+        r.phone ?? (typeof r.extraFields?.phone === 'string' ? r.extraFields.phone : '')
+      );
+      if (rawPhone) {
+        const phoneErr = validateGuestPhone(rawPhone);
+        recordExtra.phone = phoneErr ? rawPhone : (normalizeGuestPhone(rawPhone) ?? rawPhone);
+      }
+
+      return {
+        guestName: r.guestName,
+        code: r.code || undefined,
+        email: r.email || undefined,
+        addressLine1: r.addressLine1 || undefined,
+        addressLine2: r.addressLine2 || undefined,
+        city: r.city || undefined,
+        state: r.state || undefined,
+        zipCode: r.zipCode || undefined,
+        country: r.country || undefined,
+        dietaryNotes: r.dietaryNotes || undefined,
+        plusOneAllocations: parsedAlloc,
+        plusOneFirstName: r.plusOneFirstName.trim() || undefined,
+        plusOneLastName: r.plusOneLastName.trim() || undefined,
+        householdName: r.householdName.trim() || undefined,
+        partyGroup: r.partyGroup.trim() || undefined,
+        partyTags: r.partyTags ? normalizePartyTags(r.partyTags) : undefined,
+        extraFields: Object.keys(recordExtra).length > 0 ? recordExtra : undefined,
+      };
+    }),
     collisionStrategy,
   };
 }
@@ -257,6 +329,7 @@ type EditableField =
   | 'guestName'
   | 'code'
   | 'email'
+  | 'phone'
   | 'addressLine1'
   | 'addressLine2'
   | 'city'
@@ -309,6 +382,9 @@ function inferCsvErrorField(err: string): EditableField | null {
   }
   if (lower.includes('email')) {
     return 'email';
+  }
+  if (lower.includes('phone')) {
+    return 'phone';
   }
   if (lower.includes('address line 1')) {
     return 'addressLine1';
@@ -444,6 +520,18 @@ const EditableTableRow = React.memo(function EditableTableRow({
       </td>
       <td className="p-2">
         <Input
+          type="tel"
+          value={editableRow?.phone || ''}
+          aria-label={`Phone Number for row ${row.rowIndex}`}
+          aria-describedby={getCellDescribedBy('phone')}
+          placeholder="Optional"
+          onChange={(e) => onCellEdit(index, 'phone', e.target.value)}
+          sizeVariant="compact"
+          state={getCellState('phone')}
+        />
+      </td>
+      <td className="p-2">
+        <Input
           type="text"
           value={editableRow?.addressLine1 || ''}
           aria-label={`Address Line 1 for row ${row.rowIndex}`}
@@ -530,7 +618,8 @@ const EditableTableRow = React.memo(function EditableTableRow({
         <Input
           type="number"
           min="0"
-          value={editableRow?.plusOneAllocations ?? '0'}
+          value={editableRow?.plusOneAllocations ?? ''}
+          placeholder="0"
           aria-label={`Plus-One Allocation for row ${row.rowIndex}`}
           aria-describedby={getCellDescribedBy('plusOneAllocations')}
           onChange={(e) => onCellEdit(index, 'plusOneAllocations', e.target.value)}
@@ -600,28 +689,49 @@ const EditableTableRow = React.memo(function EditableTableRow({
         />
       </td>
       <td className="p-2">
-        {Object.keys(editableRow?.extraFields || {}).length > 0 ? (
-          <div className="space-y-1">
-            {Object.entries(editableRow.extraFields).map(([k, v]) => (
-              <div key={k} className="flex items-center gap-1 text-[11px]">
-                <span className="font-semibold text-gray-600 dark:text-zinc-400 truncate max-w-[60px]" title={k}>
-                  {k}:
-                </span>
-                <Input
-                  type="text"
-                  value={v}
-                  aria-label={`Extra attribute ${k} for row ${row.rowIndex}`}
-                  onChange={(e) => onExtraFieldEdit(index, k, e.target.value)}
-                  sizeVariant="compact"
-                  state="default"
-                  className="w-20 text-[11px] h-6 px-1.5 py-0.5"
-                />
-              </div>
-            ))}
-          </div>
-        ) : (
-          <span className="text-gray-400 italic text-[11px]">None</span>
-        )}
+        {(() => {
+          const customEntries = Object.entries(editableRow?.extraFields || {}).filter(
+            (entry): entry is [string, string] =>
+              entry[0] !== 'phone' &&
+              entry[0] !== 'plusOneNames' &&
+              typeof entry[1] === 'string'
+          );
+          const companionNames = Array.isArray(editableRow?.extraFields?.plusOneNames)
+            ? editableRow.extraFields.plusOneNames.filter(
+              (n): n is string => typeof n === 'string' && Boolean(n.trim())
+            )
+            : [];
+
+          if (customEntries.length === 0 && companionNames.length === 0) {
+            return <span className="text-gray-400 italic text-[11px]">None</span>;
+          }
+
+          return (
+            <div className="space-y-1">
+              {companionNames.length > 0 && (
+                <div className="text-[10px] font-medium text-purple-700 dark:text-purple-300">
+                  Companions: {companionNames.join(', ')}
+                </div>
+              )}
+              {customEntries.map(([k, v]) => (
+                <div key={k} className="flex items-center gap-1 text-[11px]">
+                  <span className="font-semibold text-gray-600 dark:text-zinc-400 truncate max-w-[60px]" title={k}>
+                    {k}:
+                  </span>
+                  <Input
+                    type="text"
+                    value={v}
+                    aria-label={`Extra attribute ${k} for row ${row.rowIndex}`}
+                    onChange={(e) => onExtraFieldEdit(index, k, e.target.value)}
+                    sizeVariant="compact"
+                    state="default"
+                    className="w-20 text-[11px] h-6 px-1.5 py-0.5"
+                  />
+                </div>
+              ))}
+            </div>
+          );
+        })()}
       </td>
       <td className="p-2 space-y-1">
         {/* Status Badge */}
@@ -730,6 +840,7 @@ type WizardAction =
     guestLastNameCol?: string;
     suggestedCodeCol: string;
     suggestedEmailCol: string;
+    suggestedPhoneCol: string;
     suggestedAddressLine1Col: string;
     suggestedAddressLine2Col: string;
     suggestedCityCol: string;
@@ -738,6 +849,7 @@ type WizardAction =
     suggestedCountryCol: string;
     suggestedDietaryNotesCol: string;
     suggestedPlusOneCol: string;
+    suggestedPlusOneNameCol: string;
     suggestedPlusOneFirstNameCol: string;
     suggestedPlusOneLastNameCol: string;
     suggestedHouseholdNameCol: string;
@@ -916,6 +1028,7 @@ function wizardReducer(
         guestLastNameCol: action.suggestedGuestLastNameCol || action.guestLastNameCol || '',
         codeCol: action.suggestedCodeCol,
         emailCol: action.suggestedEmailCol,
+        phoneCol: action.suggestedPhoneCol,
         addressLine1Col: action.suggestedAddressLine1Col,
         addressLine2Col: action.suggestedAddressLine2Col,
         cityCol: action.suggestedCityCol,
@@ -924,6 +1037,7 @@ function wizardReducer(
         countryCol: action.suggestedCountryCol,
         dietaryNotesCol: action.suggestedDietaryNotesCol,
         plusOneCol: action.suggestedPlusOneCol,
+        plusOneNameCol: action.suggestedPlusOneNameCol,
         plusOneFirstNameCol: action.suggestedPlusOneFirstNameCol,
         plusOneLastNameCol: action.suggestedPlusOneLastNameCol,
         householdNameCol: action.suggestedHouseholdNameCol,
@@ -978,10 +1092,31 @@ function wizardReducer(
       if (!oldRow) return state;
 
       const updatedEditableRows = [...state.editableRows];
-      const updatedRow = {
+      const updatedRow: EditableRow = {
         ...oldRow,
         [field]: updatedValue,
       };
+      if (
+        (field === 'plusOneFirstName' || field === 'plusOneLastName') &&
+        Array.isArray(oldRow.extraFields?.plusOneNames) &&
+        oldRow.extraFields.plusOneNames.length > 0
+      ) {
+        const updatedPrimaryCompanion = combineFirstAndLastName(
+          updatedRow.plusOneFirstName,
+          updatedRow.plusOneLastName
+        );
+        const restCompanions = oldRow.extraFields.plusOneNames.slice(1);
+        const nextCompanions = updatedPrimaryCompanion
+          ? [updatedPrimaryCompanion, ...restCompanions]
+          : restCompanions;
+        const nextExtra = { ...oldRow.extraFields };
+        if (nextCompanions.length > 0) {
+          nextExtra.plusOneNames = nextCompanions;
+        } else {
+          delete nextExtra.plusOneNames;
+        }
+        updatedRow.extraFields = nextExtra;
+      }
       updatedEditableRows[index] = updatedRow;
 
       const mapping: ColumnMappingOptions = {
@@ -994,13 +1129,12 @@ function wizardReducer(
 
       if (field !== 'code') {
         if (nextValidated.length === updatedEditableRows.length) {
-          nextValidated[index] = validateSingleCsvRow(
-            toRowRecord(updatedRow),
+          nextValidated[index] = validateEditableWizardRow(
+            updatedRow,
             index,
             mapping,
             state.codeFrequencyMap,
-            existingDbSet,
-            HOISTED_EDITABLE_MAPPED_COLS
+            existingDbSet
           );
         }
       } else {
@@ -1023,13 +1157,12 @@ function wizardReducer(
               const rCode = i === index ? newCode : (updatedEditableRows[i].code || '').trim().toUpperCase();
               if (i === index || rCode === oldCode || rCode === newCode) {
                 const rowToVal = i === index ? updatedRow : updatedEditableRows[i];
-                nextValidated[i] = validateSingleCsvRow(
-                  toRowRecord(rowToVal),
+                nextValidated[i] = validateEditableWizardRow(
+                  rowToVal,
                   i,
                   mapping,
                   nextFreqMap,
-                  existingDbSet,
-                  HOISTED_EDITABLE_MAPPED_COLS
+                  existingDbSet
                 );
               }
             }
@@ -1065,13 +1198,12 @@ function wizardReducer(
 
       const nextValidated = [...state.validatedRows];
       if (nextValidated.length === updatedEditableRows.length) {
-        nextValidated[index] = validateSingleCsvRow(
-          toRowRecord(updatedRow),
+        nextValidated[index] = validateEditableWizardRow(
+          updatedRow,
           index,
           mapping,
           state.codeFrequencyMap,
-          existingDbSet,
-          HOISTED_EDITABLE_MAPPED_COLS
+          existingDbSet
         );
       }
 
@@ -1108,13 +1240,12 @@ function wizardReducer(
       const nextValidated = remainingValidated.map((row, i) => {
         const rCode = (remainingEditable[i].code || '').trim().toUpperCase();
         if (rCode === deletedCode) {
-          return validateSingleCsvRow(
-            toRowRecord(remainingEditable[i]),
+          return validateEditableWizardRow(
+            remainingEditable[i],
             i,
             mapping,
             nextFreqMap,
-            existingDbSet,
-            HOISTED_EDITABLE_MAPPED_COLS
+            existingDbSet
           );
         }
         return { ...row, rowIndex: i + 1 };
@@ -1254,6 +1385,7 @@ export function CsvImportWizardModal({
     guestLastNameCol,
     codeCol,
     emailCol,
+    phoneCol,
     addressLine1Col,
     addressLine2Col,
     cityCol,
@@ -1262,6 +1394,7 @@ export function CsvImportWizardModal({
     countryCol,
     dietaryNotesCol,
     plusOneCol,
+    plusOneNameCol,
     plusOneFirstNameCol,
     plusOneLastNameCol,
     householdNameCol,
@@ -1319,6 +1452,7 @@ export function CsvImportWizardModal({
     state.guestLastNameCol,
     state.codeCol,
     state.emailCol,
+    state.phoneCol,
     state.addressLine1Col,
     state.addressLine2Col,
     state.cityCol,
@@ -1327,6 +1461,7 @@ export function CsvImportWizardModal({
     state.countryCol,
     state.dietaryNotesCol,
     state.plusOneCol,
+    state.plusOneNameCol,
     state.plusOneFirstNameCol,
     state.plusOneLastNameCol,
     state.householdNameCol,
@@ -1396,31 +1531,6 @@ export function CsvImportWizardModal({
         return;
       }
 
-      const mappedStandard = new Set(
-        [
-          parsed.suggestedGuestNameCol,
-          parsed.suggestedGuestFirstNameCol || parsed.guestFirstNameCol,
-          parsed.suggestedGuestLastNameCol || parsed.guestLastNameCol,
-          parsed.suggestedCodeCol,
-          parsed.suggestedEmailCol,
-          parsed.suggestedAddressLine1Col,
-          parsed.suggestedAddressLine2Col,
-          parsed.suggestedCityCol,
-          parsed.suggestedStateCol,
-          parsed.suggestedZipCodeCol,
-          parsed.suggestedCountryCol,
-          parsed.suggestedDietaryNotesCol,
-          parsed.suggestedPlusOneCol,
-          parsed.suggestedPlusOneFirstNameCol,
-          parsed.suggestedPlusOneLastNameCol,
-          parsed.suggestedHouseholdNameCol,
-          parsed.suggestedPartyGroupCol,
-          parsed.suggestedPartyTagsCol,
-        ].filter(Boolean)
-      );
-
-      const selectedExtraCols = parsed.headers.filter((h) => !mappedStandard.has(h));
-
       dispatch({
         type: 'FILE_UPLOADED',
         fileName: file.name,
@@ -1433,6 +1543,7 @@ export function CsvImportWizardModal({
         guestLastNameCol: parsed.suggestedGuestLastNameCol || parsed.guestLastNameCol || '',
         suggestedCodeCol: parsed.suggestedCodeCol,
         suggestedEmailCol: parsed.suggestedEmailCol || '',
+        suggestedPhoneCol: parsed.suggestedPhoneCol || '',
         suggestedAddressLine1Col: parsed.suggestedAddressLine1Col || '',
         suggestedAddressLine2Col: parsed.suggestedAddressLine2Col || '',
         suggestedCityCol: parsed.suggestedCityCol || '',
@@ -1441,12 +1552,13 @@ export function CsvImportWizardModal({
         suggestedCountryCol: parsed.suggestedCountryCol || '',
         suggestedDietaryNotesCol: parsed.suggestedDietaryNotesCol || '',
         suggestedPlusOneCol: parsed.suggestedPlusOneCol || '',
+        suggestedPlusOneNameCol: parsed.suggestedPlusOneNameCol || '',
         suggestedPlusOneFirstNameCol: parsed.suggestedPlusOneFirstNameCol || '',
         suggestedPlusOneLastNameCol: parsed.suggestedPlusOneLastNameCol || '',
         suggestedHouseholdNameCol: parsed.suggestedHouseholdNameCol || '',
         suggestedPartyGroupCol: parsed.suggestedPartyGroupCol || '',
         suggestedPartyTagsCol: parsed.suggestedPartyTagsCol || '',
-        selectedExtraCols,
+        selectedExtraCols: [],
       });
     };
 
@@ -1460,7 +1572,7 @@ export function CsvImportWizardModal({
     }
 
     const initialMapped: EditableRow[] = rawRows.map((r) => {
-      const extraFields: Record<string, string> = {};
+      const extraFields: Record<string, string | string[]> = {};
       selectedExtraCols.forEach((col) => {
         if (r[col] !== undefined && r[col].trim() !== '') {
           extraFields[col] = r[col].trim();
@@ -1477,10 +1589,24 @@ export function CsvImportWizardModal({
         );
       }
 
+      let plusOneFirstName = plusOneFirstNameCol ? (r[plusOneFirstNameCol] || '').trim() : '';
+      let plusOneLastName = plusOneLastNameCol ? (r[plusOneLastNameCol] || '').trim() : '';
+      if (plusOneNameCol && r[plusOneNameCol]) {
+        const parsedCompanion = parsePlusOneNameCell(r[plusOneNameCol]);
+        if (!plusOneFirstName && !plusOneLastName) {
+          plusOneFirstName = parsedCompanion.firstName;
+          plusOneLastName = parsedCompanion.lastName;
+        }
+        if (parsedCompanion.plusOneNames && parsedCompanion.plusOneNames.length > 0) {
+          extraFields.plusOneNames = parsedCompanion.plusOneNames;
+        }
+      }
+
       return {
         guestName,
         code: codeCol ? (r[codeCol] || '').trim().toUpperCase() : '',
         email: emailCol ? (r[emailCol] || '').trim() : '',
+        phone: phoneCol ? sanitizeGuestPhoneInput(r[phoneCol]) : '',
         addressLine1: addressLine1Col ? (r[addressLine1Col] || '').trim() : '',
         addressLine2: addressLine2Col ? (r[addressLine2Col] || '').trim() : '',
         city: cityCol ? (r[cityCol] || '').trim() : '',
@@ -1488,9 +1614,9 @@ export function CsvImportWizardModal({
         zipCode: zipCodeCol ? (r[zipCodeCol] || '').trim() : '',
         country: countryCol ? (r[countryCol] || '').trim() : '',
         dietaryNotes: dietaryNotesCol ? (r[dietaryNotesCol] || '').trim() : '',
-        plusOneAllocations: plusOneCol ? (r[plusOneCol] || '').trim() : '0',
-        plusOneFirstName: plusOneFirstNameCol ? (r[plusOneFirstNameCol] || '').trim() : '',
-        plusOneLastName: plusOneLastNameCol ? (r[plusOneLastNameCol] || '').trim() : '',
+        plusOneAllocations: plusOneCol ? (r[plusOneCol] || '').trim() : '',
+        plusOneFirstName,
+        plusOneLastName,
         householdName: householdNameCol ? (r[householdNameCol] || '').trim() : '',
         partyGroup: partyGroupCol ? (r[partyGroupCol] || '').trim() : '',
         partyTags: partyTagsCol ? (r[partyTagsCol] || '').trim() : '',
@@ -1498,11 +1624,9 @@ export function CsvImportWizardModal({
       };
     });
 
-    const activeGroupByField: 'householdName' | 'partyGroup' | null = householdNameCol
+    const activeGroupByField: 'householdName' | null = householdNameCol
       ? 'householdName'
-      : partyGroupCol
-        ? 'partyGroup'
-        : null;
+      : null;
 
     const mappedRows =
       groupByHousehold && activeGroupByField
@@ -1887,7 +2011,7 @@ export function CsvImportWizardModal({
     }
   };
 
-  const handleResetModal = () => {
+  const handleResetModal = useCallback(() => {
     if (typeof window !== 'undefined') {
       try {
         window.sessionStorage.removeItem('csv_import_wizard_draft');
@@ -1897,7 +2021,14 @@ export function CsvImportWizardModal({
     }
     dispatch({ type: 'RESET_MODAL' });
     onClose();
-  };
+  }, [dispatch, onClose]);
+
+  const isDirty =
+    step === 2 ||
+    step === 3 ||
+    (step === 4 && failedRows.length > 0);
+
+  const handleRequestClose = useDirtyConfirmClose(isDirty, handleResetModal);
 
   // Get unmapped headers for custom field checkbox selection
   const mappedStandardHeaders = useMemo(() => {
@@ -1908,6 +2039,7 @@ export function CsvImportWizardModal({
         guestLastNameCol,
         codeCol,
         emailCol,
+        phoneCol,
         addressLine1Col,
         addressLine2Col,
         cityCol,
@@ -1916,6 +2048,7 @@ export function CsvImportWizardModal({
         countryCol,
         dietaryNotesCol,
         plusOneCol,
+        plusOneNameCol,
         plusOneFirstNameCol,
         plusOneLastNameCol,
         householdNameCol,
@@ -1929,6 +2062,7 @@ export function CsvImportWizardModal({
     guestLastNameCol,
     codeCol,
     emailCol,
+    phoneCol,
     addressLine1Col,
     addressLine2Col,
     cityCol,
@@ -1937,6 +2071,7 @@ export function CsvImportWizardModal({
     countryCol,
     dietaryNotesCol,
     plusOneCol,
+    plusOneNameCol,
     plusOneFirstNameCol,
     plusOneLastNameCol,
     householdNameCol,
@@ -1952,6 +2087,7 @@ export function CsvImportWizardModal({
     <Dialog
       isOpen={isOpen}
       onClose={handleResetModal}
+      isDirty={isDirty}
       title={
         <div className="flex items-center justify-between">
           <span className="font-extrabold text-xl text-primary">Import Guest Invitation Codes</span>
@@ -2131,12 +2267,12 @@ export function CsvImportWizardModal({
                 />
                 <span className="space-y-0.5">
                   <span className="block text-xs font-bold text-gray-900 dark:text-zinc-100">
-                    Consolidate rows sharing a Household or Party onto one invitation
+                    Consolidate rows sharing a Household Name onto one invitation
                   </span>
                   <span className="block text-xs text-gray-600 dark:text-zinc-300">
-                    {householdNameCol || partyGroupCol
-                      ? `Rows sharing the same "${householdNameCol || partyGroupCol}" value will be grouped into one invitation with companion names, combined plus-one allocations, dietary notes, and tags.`
-                      : 'Select a Household Name or Party Side / Group column above to consolidate multi-row households onto one invitation.'}
+                    {householdNameCol
+                      ? `Rows sharing the same "${householdNameCol}" value will be grouped into one invitation with companion names, combined plus-one allocations, dietary notes, and tags.`
+                      : 'Select a Household Name column above to consolidate multi-row households onto one invitation.'}
                   </span>
                 </span>
               </label>
@@ -2169,6 +2305,11 @@ export function CsvImportWizardModal({
                           <strong>Email:</strong> {r[emailCol] || <em className="text-gray-400">&lt;none&gt;</em>}
                         </span>
                       )}
+                      {phoneCol && (
+                        <span>
+                          <strong>Phone:</strong> {sanitizeGuestPhoneInput(r[phoneCol]) || <em className="text-gray-400">&lt;none&gt;</em>}
+                        </span>
+                      )}
                       {dietaryNotesCol && (
                         <span>
                           <strong>Dietary:</strong> {r[dietaryNotesCol] || <em className="text-gray-400">&lt;none&gt;</em>}
@@ -2177,6 +2318,11 @@ export function CsvImportWizardModal({
                       {plusOneCol && (
                         <span>
                           <strong>Plus-Ones:</strong> {r[plusOneCol] || '0'}
+                        </span>
+                      )}
+                      {plusOneNameCol && (
+                        <span>
+                          <strong>Plus-One Name:</strong> {r[plusOneNameCol] || <em className="text-gray-400">&lt;none&gt;</em>}
                         </span>
                       )}
                       {plusOneFirstNameCol && (
@@ -2305,6 +2451,7 @@ export function CsvImportWizardModal({
                     <th scope="col" className="p-2 min-w-[120px]">Guest Name</th>
                     <th scope="col" className="p-2 min-w-[110px]">Invitation Code</th>
                     <th scope="col" className="p-2 min-w-[120px]">Email</th>
+                    <th scope="col" className="p-2 min-w-[120px]">Phone</th>
                     <th scope="col" className="p-2 min-w-[120px]">Address Line 1</th>
                     <th scope="col" className="p-2 min-w-[100px]">Address Line 2</th>
                     <th scope="col" className="p-2 min-w-[100px]">City</th>
@@ -2340,7 +2487,7 @@ export function CsvImportWizardModal({
                   })}
                   {filteredRows.length === 0 && (
                     <tr>
-                      <td colSpan={20} className="p-4 text-center text-gray-500">
+                      <td colSpan={21} className="p-4 text-center text-gray-500">
                         {editableRows.length === 0 ? 'No rows remaining.' : 'No rows match the selected status filter.'}
                       </td>
                     </tr>
@@ -2419,7 +2566,7 @@ export function CsvImportWizardModal({
             )}
 
             <div className="pt-2">
-              <Button onClick={handleResetModal}>Close Wizard</Button>
+              <Button onClick={handleRequestClose}>Close Wizard</Button>
             </div>
           </div>
         )}
