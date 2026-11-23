@@ -3,6 +3,17 @@
 services:
   db:
     image: postgres:15-alpine@sha256:e18480a22d6e48f4d816a6696769b1ec09ac73a824c5649e49c7d8b684913f3d
+    shm_size: "256mb"
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: "512m"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       POSTGRES_USER: ${DB_USER:-wedding}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
@@ -20,20 +31,26 @@ services:
 
   migration:
     image: wedding-website:latest
-    build:
-      context: .
+    pull_policy: never
     command: ./node_modules/.bin/prisma migrate deploy
     init: true
+    stop_grace_period: 30s
     read_only: true
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: "512m"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     tmpfs:
       - /tmp
     environment:
-      DATABASE_URL: ${CONTAINER_DATABASE_URL:-postgres://${DB_USER:-wedding}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-wedding}}
-      POSTGRES_URL_NON_POOLING: ${POSTGRES_URL_NON_POOLING:-}
+      DATABASE_URL: ${CONTAINER_DATABASE_URL:-${POSTGRES_URL_NON_POOLING:-postgres://${DB_USER:-wedding}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-wedding}}}
     depends_on:
       db:
         condition: service_healthy
@@ -52,6 +69,13 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: "1g"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     tmpfs:
       - /tmp
       - /app/.next/cache:uid=1001,gid=1001,mode=0755
@@ -79,6 +103,38 @@ services:
       NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       E2E_TEST: ${E2E_TEST:-false}
+      SITE_PARTNER1_NAME: ${SITE_PARTNER1_NAME:-}
+      SITE_PARTNER2_NAME: ${SITE_PARTNER2_NAME:-}
+      SITE_BRIDE_NAME: ${SITE_BRIDE_NAME:-}
+      SITE_GROOM_NAME: ${SITE_GROOM_NAME:-}
+      SITE_WEDDING_DATE: ${SITE_WEDDING_DATE:-}
+      SITE_BASE_URL: ${SITE_BASE_URL:-}
+      SITE_VENUE_NAME: ${SITE_VENUE_NAME:-}
+      SITE_VENUE_ADDRESS: ${SITE_VENUE_ADDRESS:-}
+      SITE_VENUE_CITY: ${SITE_VENUE_CITY:-}
+      SITE_VENUE_STATE: ${SITE_VENUE_STATE:-}
+      SITE_VENUE_ZIP: ${SITE_VENUE_ZIP:-}
+      SITE_LATITUDE: ${SITE_LATITUDE:-}
+      SITE_LONGITUDE: ${SITE_LONGITUDE:-}
+      SITE_TIMEZONE: ${SITE_TIMEZONE:-}
+      SITE_COLOR_PRIMARY: ${SITE_COLOR_PRIMARY:-}
+      SITE_COLOR_SECONDARY: ${SITE_COLOR_SECONDARY:-}
+      SITE_THEME_PRESET: ${SITE_THEME_PRESET:-}
+      SITE_THEME_TOKENS: ${SITE_THEME_TOKENS:-}
+      SITE_SHOW_COUNTDOWN: ${SITE_SHOW_COUNTDOWN:-}
+      SITE_SHOW_ADD_TO_CALENDAR: ${SITE_SHOW_ADD_TO_CALENDAR:-}
+      SITE_SEO_TITLE: ${SITE_SEO_TITLE:-}
+      SITE_SEO_DESCRIPTION: ${SITE_SEO_DESCRIPTION:-}
+      SITE_BRAND_MONOGRAM: ${SITE_BRAND_MONOGRAM:-}
+      SITE_BRAND_LOGO_URL: ${SITE_BRAND_LOGO_URL:-}
+      SITE_BRAND_LOGO_ALT: ${SITE_BRAND_LOGO_ALT:-}
+      SITE_HERO_IMAGE_URL: ${SITE_HERO_IMAGE_URL:-}
+      SITE_HERO_IMAGE_ALT: ${SITE_HERO_IMAGE_ALT:-}
+      SITE_BRAND_WATERMARK_URL: ${SITE_BRAND_WATERMARK_URL:-}
+      SITE_BRAND_WATERMARK_ALT: ${SITE_BRAND_WATERMARK_ALT:-}
+      SITE_BADGE_GRAPHIC_URL: ${SITE_BADGE_GRAPHIC_URL:-}
+      SITE_BADGE_GRAPHIC_ALT: ${SITE_BADGE_GRAPHIC_ALT:-}
+      SITE_CONTACT_EMAIL: ${SITE_CONTACT_EMAIL:-}
     volumes:
       - uploads_data:/app/public/uploads
     depends_on:

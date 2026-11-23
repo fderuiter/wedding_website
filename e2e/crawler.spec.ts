@@ -135,7 +135,6 @@ async function createCrawlerContext(
 test.describe('Dynamic Route Crawler & Link Audit', () => {
   test(
     'Unauthenticated guest should be redirected to login screen on protected routes',
-    { tag: '@smoke' },
     async ({ browser }) => {
       test.setTimeout(120000);
       const guestCookieValue = generateGuestCookieValue();
@@ -166,10 +165,8 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
   );
 
   for (const route of START_ROUTES) {
-    const isSmokeRoute = route === '/' || route === '/admin/login';
     test(
       `Authenticated admin should successfully render route ${route} and verify internal links`,
-      isSmokeRoute ? { tag: '@smoke' } : {},
       async ({ browser }) => {
         test.setTimeout(90000);
         const cookieValue = generateAdminCookieValue();

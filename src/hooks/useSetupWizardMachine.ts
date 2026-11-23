@@ -353,7 +353,6 @@ export function useSetupWizardMachine(initialValues?: Partial<SetupWizardPersist
 
   return {
     state,
-    dispatch,
     setStep,
     updateDraft,
     toggleModule: (moduleKey: string) => {

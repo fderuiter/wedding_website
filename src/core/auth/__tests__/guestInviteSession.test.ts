@@ -312,6 +312,44 @@ describe('guestInviteSession', () => {
       expect(session).toBeNull();
       expect(mockFindUnique).not.toHaveBeenCalled();
     });
+
+    it('memoizes verified invitation lookup within the same NextRequest without caching across distinct requests', async () => {
+      mockFindUnique.mockResolvedValue({
+        id: 'inv-memo-1',
+        code: 'MEMO2026',
+        guestName: 'Memoized Household',
+        isSample: false,
+      });
+
+      const token = await signGuestInviteSessionToken({
+        code: 'MEMO2026',
+        guestName: 'Memoized Household',
+      });
+      const sameReq = new NextRequest('http://localhost/api/registry/contribute', {
+        method: 'POST',
+        headers: { cookie: `${GUEST_INVITE_COOKIE}=${token}` },
+      });
+
+      const [firstCall, secondCall] = await Promise.all([
+        getGuestInviteSession(sameReq),
+        getGuestInviteSession(sameReq),
+      ]);
+      const thirdCall = await getGuestInviteSession(sameReq);
+
+      expect(firstCall?.code).toBe('MEMO2026');
+      expect(secondCall?.code).toBe('MEMO2026');
+      expect(thirdCall?.code).toBe('MEMO2026');
+      expect(mockFindUnique).toHaveBeenCalledTimes(1);
+
+      // Subsequent distinct request re-queries the database and sees revocation immediately
+      mockFindUnique.mockResolvedValueOnce(null);
+      const nextReq = new NextRequest('http://localhost/api/registry/contribute', {
+        method: 'POST',
+        headers: { cookie: `${GUEST_INVITE_COOKIE}=${token}` },
+      });
+      expect(await getGuestInviteSession(nextReq)).toBeNull();
+      expect(mockFindUnique).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe('buildGuestLoginRedirectTarget', () => {

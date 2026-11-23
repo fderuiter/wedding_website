@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { createAuditSnapshot } from '@/lib/audit';
 import { coordinateSchema, isSafeMediaOrPhotoUrl } from '@/utils/validation';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
@@ -199,11 +200,11 @@ export const POST = withApiMiddleware(
         ...(snapshotData.cutoffDate !== undefined
           ? {
             cutoffDate:
-                snapshotData.cutoffDate instanceof Date
-                  ? snapshotData.cutoffDate.toISOString()
-                  : snapshotData.cutoffDate === null
-                    ? null
-                    : String(snapshotData.cutoffDate),
+              snapshotData.cutoffDate instanceof Date
+                ? snapshotData.cutoffDate.toISOString()
+                : snapshotData.cutoffDate === null
+                  ? null
+                  : String(snapshotData.cutoffDate),
           }
           : {}),
         ...(snapshotData.shuttleInfo !== undefined
@@ -418,7 +419,7 @@ export const POST = withApiMiddleware(
         ...(Array.isArray(snapshotData.customQuestions)
           ? {
             customQuestions:
-                snapshotData.customQuestions as Prisma.InputJsonValue,
+              snapshotData.customQuestions as Prisma.InputJsonValue,
           }
           : {}),
       };
@@ -466,7 +467,7 @@ export const POST = withApiMiddleware(
         ...(Array.isArray(snapshotData.mealSelections)
           ? {
             mealSelections:
-                snapshotData.mealSelections as Prisma.InputJsonValue,
+              snapshotData.mealSelections as Prisma.InputJsonValue,
           }
           : {}),
         ...(snapshotData.customAnswers &&
@@ -474,7 +475,7 @@ export const POST = withApiMiddleware(
         !Array.isArray(snapshotData.customAnswers)
           ? {
             customAnswers:
-                snapshotData.customAnswers as Prisma.InputJsonValue,
+              snapshotData.customAnswers as Prisma.InputJsonValue,
           }
           : {}),
         ...(Array.isArray(snapshotData.plusOneNames)
@@ -561,14 +562,12 @@ export const POST = withApiMiddleware(
         ? stripAppConfigSecrets(rawSnapshotData)
         : rawSnapshotData;
 
-    await prisma.snapshotVersion.create({
-      data: {
-        entityType: version.entityType,
-        entityId: version.entityId,
-        data: rollbackSnapshotPayload,
-        author: 'Admin (Rollback)',
-      },
-    });
+    await createAuditSnapshot(
+      version.entityType,
+      version.entityId,
+      rollbackSnapshotPayload,
+      'Admin (Rollback)',
+    );
 
     return NextResponse.json({ success: true, restoredTo: id });
   },

@@ -5,6 +5,7 @@ import { spawnSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { parseDocument } from 'yaml';
 
 const WORKFLOWS_DIR = path.join(process.cwd(), '.github', 'workflows');
 
@@ -75,6 +76,8 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
   const publishWorkflow = readWorkflow('publish-artifact.yml');
   const deployWorkflow = readWorkflow('deploy.yml');
   const migrateWorkflow = readWorkflow('db-migrate.yml');
+  const deployProviderWorkflow = readWorkflow('deploy-provider.yml');
+  const rollbackWorkflow = readWorkflow('rollback.yml');
 
   it('preserves CI workflow triggers, job names, upstream action-pin verification, and zero-secret execution', () => {
     expect(ciWorkflow).toContain('name: CI');
@@ -83,12 +86,25 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(onSection).toContain('branches: [ main ]');
     expect(onSection).toContain('pull_request:');
 
-    for (const jobId of ['verify:', 'unit-test:', 'build:', 'e2e-test:', 'deploy-docs:']) {
+    for (const jobId of ['verify:', 'unit-test:', 'build:', 'container-arm64:', 'e2e-test:', 'deploy-docs:']) {
       expect(ciWorkflow).toContain(`  ${jobId}`);
     }
     expect(ciWorkflow).toContain('GITHUB_TOKEN: ${{ github.token }}');
     expect(ciWorkflow).toContain('run: npm run check:action-pins -- --verify-upstream');
     expect(ciWorkflow).not.toContain('secrets.');
+
+    const trivyMatches =
+      ciWorkflow.match(/aquasecurity\/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25/g) ?? [];
+    expect(trivyMatches).toHaveLength(2);
+
+    const buildSection = ciWorkflow.split(/\n  container-arm64:\n/)[0]?.split(/\n  build:\n/)[1] ?? '';
+    const arm64Section = ciWorkflow.split(/\n  storybook-build:\n/)[0]?.split(/\n  container-arm64:\n/)[1] ?? '';
+    for (const section of [buildSection, arm64Section]) {
+      expect(section).toContain('aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25');
+      expect(section).toContain('image-ref: wedding-website:latest');
+      expect(section).toContain("severity: 'CRITICAL,HIGH'");
+      expect(section).toContain("exit-code: '1'");
+    }
   });
 
   it('removes standalone main branch push trigger from publish-artifact.yml while retaining v* tags, workflow_dispatch, and workflow_call', () => {
@@ -102,11 +118,13 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(onSection).toContain('commit_sha:');
   });
 
-  it('scopes top-level permissions to contents: read and restricts write/actions permissions to individual jobs', () => {
+  it('scopes top-level permissions to contents: read and restricts write/actions/deployments permissions to individual jobs', () => {
     for (const [name, content] of [
       ['publish-artifact.yml', publishWorkflow],
       ['deploy.yml', deployWorkflow],
       ['db-migrate.yml', migrateWorkflow],
+      ['deploy-provider.yml', deployProviderWorkflow],
+      ['rollback.yml', rollbackWorkflow],
     ] as const) {
       const topPermissions = extractTopLevelSection(content, 'permissions');
       expect({ name, topPermissions }).toEqual({
@@ -115,11 +133,18 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       });
     }
 
-    const [buildJobSection = '', publishJobSection = ''] = publishWorkflow.split(/\n  publish:\n/);
+    const [beforePublishSection = '', publishJobSection = ''] = publishWorkflow.split(/\n  publish:\n/);
+    const [preflightJobSection = '', buildJobSection = ''] = beforePublishSection.split(/\n  build:\n/);
+
+    // Job preflight scopes contents: read and actions: read strictly inside preflight
+    expect(preflightJobSection).toMatch(
+      /preflight:\n[\s\S]*?permissions:\n\s+contents: read\n\s+actions: read/
+    );
+    expect(publishWorkflow.match(/actions:\s*read/g) ?? []).toHaveLength(1);
 
     // Job build retains only contents: read and security-events: write, with zero registry credentials
     expect(buildJobSection).toMatch(
-      /build:\n[\s\S]*?permissions:\n\s+contents: read\n\s+security-events: write\n\s+strategy:/
+      /permissions:\n\s+contents: read\n\s+security-events: write\n\s+strategy:/
     );
     expect(buildJobSection).not.toContain('packages: write');
     expect(buildJobSection).not.toContain('id-token: write');
@@ -136,13 +161,24 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
 
     // Caller deploy.yml retains union of callee-required permissions for publish-artifact workflow_call
     expect(deployWorkflow).toMatch(
-      /publish-artifact:\n[\s\S]*?permissions:\n\s+contents: read\n\s+packages: write\n\s+security-events: write\n\s+id-token: write\n\s+attestations: write/
+      /publish-artifact:\n[\s\S]*?permissions:\n\s+contents: read\n\s+actions: read\n\s+packages: write\n\s+security-events: write\n\s+id-token: write\n\s+attestations: write/
     );
 
-    // actions: read in deploy.yml lives strictly inside ci-gate
+    // actions: read in deploy.yml lives strictly inside ci-gate and reusable-workflow caller jobs (never top-level)
     const actionsReadMatches = deployWorkflow.match(/actions:\s*read/g) ?? [];
-    expect(actionsReadMatches).toHaveLength(1);
+    expect(actionsReadMatches).toHaveLength(6);
     expect(deployWorkflow).toMatch(/ci-gate:[\s\S]*?permissions:\n\s+actions: read/);
+
+    // deployments: read lives strictly at job scope in caller jobs and deploy-provider.yml
+    expect(deployWorkflow.match(/deployments:\s*read/g) ?? []).toHaveLength(4);
+    expect(deployProviderWorkflow.match(/deployments:\s*read/g) ?? []).toHaveLength(1);
+    expect(rollbackWorkflow.match(/deployments:\s*read/g) ?? []).toHaveLength(1);
+
+    // Shared release concurrency group prevents v* tag and main runs from racing on :latest or BuildKit caches
+    const publishConcurrency = extractTopLevelSection(publishWorkflow, 'concurrency');
+    expect(publishConcurrency).toContain('group: publish-artifact-release');
+    expect(publishConcurrency).toContain('cancel-in-progress: false');
+    expect(publishConcurrency).not.toContain('github.ref');
   });
 
   it('triggers deploy.yml via workflow_run on CI completion for main instead of push', () => {
@@ -188,15 +224,36 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     // Resolved SHA aligned in schema-compatibility only on workflow_run after ancestry check (preventing default-branch cache poisoning on workflow_dispatch) and passed to workflow calls
     expect(deployWorkflow).not.toContain('ref: ${{ needs.ci-gate.outputs.target_sha }}');
     expect(deployWorkflow).toMatch(
-      /schema-compatibility:[\s\S]*?fetch-depth:\s*0[\s\S]*?if:\s*github\.event_name == 'workflow_run'[\s\S]*?TARGET_SHA:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}[\s\S]*?git merge-base --is-ancestor "\$TARGET_SHA" HEAD[\s\S]*?git checkout --detach "\$TARGET_SHA"/
+      /schema-compatibility:[\s\S]*?fetch-depth:\s*0[\s\S]*?if:\s*github\.event_name == 'workflow_run' \|\| inputs\.image_tag != ''[\s\S]*?TARGET_SHA:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}[\s\S]*?git merge-base --is-ancestor "\$TARGET_SHA" HEAD[\s\S]*?git checkout --detach "\$TARGET_SHA"/
     );
     expect(deployWorkflow).toContain('commit_sha: ${{ needs.ci-gate.outputs.target_sha }}');
+    expect(
+      deployWorkflow.match(/commit_sha:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}/g) ?? []
+    ).toHaveLength(7);
+    expect(deployWorkflow).toMatch(
+      /staging-deploy-provider:[\s\S]*?commit_sha:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}/
+    );
+    expect(deployWorkflow).toMatch(
+      /staging-rollback:[\s\S]*?needs:\s*\[ci-gate,\s*publish-artifact,\s*staging-deploy-provider,\s*staging-verify-deployment\][\s\S]*?commit_sha:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}/
+    );
+    expect(deployWorkflow).toMatch(
+      /production-deploy-provider:[\s\S]*?commit_sha:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}/
+    );
+    expect(deployWorkflow).toMatch(
+      /production-rollback:[\s\S]*?needs:\s*\[ci-gate,\s*publish-artifact,\s*production-deploy-provider,\s*production-verify-deployment\][\s\S]*?commit_sha:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}/
+    );
     expect(deployWorkflow).toContain('tag_name: ${{ needs.ci-gate.outputs.target_sha }}');
     expect(deployWorkflow).not.toContain('|| github.sha');
 
     expect(publishWorkflow).toContain('ref: ${{ inputs.commit_sha }}');
     expect(publishWorkflow).toContain('INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}');
     expect(migrateWorkflow).toContain('ref: ${{ inputs.commit_sha }}');
+    expect(deployProviderWorkflow).toContain('ref: ${{ inputs.commit_sha }}');
+    expect(deployProviderWorkflow).toContain('fetch-depth: 2');
+    expect(deployProviderWorkflow).toContain('CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}');
+    expect(rollbackWorkflow).toContain('ref: ${{ inputs.commit_sha }}');
+    expect(rollbackWorkflow).toContain('CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}');
+    expect(rollbackWorkflow).toContain("commit_sha: ${{ inputs.commit_sha || '' }}");
   });
 
   it('passes event fields and inputs via env variables with zero direct ${{ ... }} interpolation in run scripts', () => {
@@ -204,6 +261,8 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       ['deploy.yml', deployWorkflow],
       ['publish-artifact.yml', publishWorkflow],
       ['db-migrate.yml', migrateWorkflow],
+      ['deploy-provider.yml', deployProviderWorkflow],
+      ['rollback.yml', rollbackWorkflow],
     ] as const) {
       const runBlocks = extractRunBlocks(content);
       expect(runBlocks.length).toBeGreaterThan(0);
@@ -302,6 +361,58 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       );
       expect(branchOutputs).not.toContain(':latest');
 
+      // Verify manual workflow_dispatch on main with explicit commit_sha (empty tag_name) publishes ONLY the SHA tag and never overwrites :latest
+      fs.writeFileSync(outputFile, '');
+      const manualCommitShaRes = spawnSync('bash', ['-eo', 'pipefail', '-c', computeTagScript!], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          GITHUB_OUTPUT: outputFile,
+          REGISTRY: 'ghcr.io',
+          GITHUB_REPOSITORY: 'fderuiter/wedding_website',
+          GITHUB_SHA: 'ffffffffffffffffffffffffffffffffffffffff',
+          GITHUB_REF: 'refs/heads/main',
+          GITHUB_REF_NAME: 'main',
+          RAW_INPUT_TAG: '',
+          INPUT_COMMIT_SHA: sampleSha,
+          DOCKERHUB_USERNAME: 'fderuiter',
+          DOCKERHUB_TOKEN: 'dckr_pat_test',
+        },
+      });
+      expect(manualCommitShaRes.status).toBe(0);
+      const manualCommitShaOutputs = fs.readFileSync(outputFile, 'utf8');
+      expect(manualCommitShaOutputs).toContain(`tag_name=${sampleSha}`);
+      expect(manualCommitShaOutputs).toContain(
+        `tags=ghcr.io/fderuiter/wedding_website:${sampleSha},fderuiter/wedding-website:${sampleSha}`
+      );
+      expect(manualCommitShaOutputs).not.toContain(':latest');
+
+      // Verify manual workflow_dispatch on main with explicit commit_sha and custom tag_name publishes custom + SHA tags and never :latest
+      fs.writeFileSync(outputFile, '');
+      const manualCustomTagRes = spawnSync('bash', ['-eo', 'pipefail', '-c', computeTagScript!], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          GITHUB_OUTPUT: outputFile,
+          REGISTRY: 'ghcr.io',
+          GITHUB_REPOSITORY: 'fderuiter/wedding_website',
+          GITHUB_SHA: 'ffffffffffffffffffffffffffffffffffffffff',
+          GITHUB_REF: 'refs/heads/main',
+          GITHUB_REF_NAME: 'main',
+          RAW_INPUT_TAG: 'hotfix-20261122',
+          INPUT_COMMIT_SHA: sampleSha,
+          DOCKERHUB_USERNAME: 'fderuiter',
+          DOCKERHUB_TOKEN: 'dckr_pat_test',
+        },
+      });
+      expect(manualCustomTagRes.status).toBe(0);
+      const manualCustomTagOutputs = fs.readFileSync(outputFile, 'utf8');
+      expect(manualCustomTagOutputs).toContain('tag_name=hotfix-20261122');
+      expect(manualCustomTagOutputs).toContain(
+        `tags=ghcr.io/fderuiter/wedding_website:hotfix-20261122,ghcr.io/fderuiter/wedding_website:${sampleSha},fderuiter/wedding-website:hotfix-20261122,fderuiter/wedding-website:${sampleSha}`
+      );
+      expect(manualCustomTagOutputs).not.toContain(':latest');
+
       // Verify workflow_call with explicit commit SHA tag publishes only the SHA tag
       fs.writeFileSync(outputFile, '');
       const shaRes = spawnSync('bash', ['-eo', 'pipefail', '-c', computeTagScript!], {
@@ -347,8 +458,10 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       expect(publishWorkflow).toContain(`target=${mountTarget}`);
     }
 
-    // Verify build job compiles once as an OCI archive with provenance: false & sbom: false, loads wedding-website:latest, scans, smoke-tests, and uploads zstd archive without registry login
-    const buildJobSection = publishWorkflow.split(/\n  publish:\n/)[0] ?? '';
+    // Verify build job depends on preflight, compiles once as an OCI archive with provenance: false & sbom: false, loads wedding-website:latest, scans, smoke-tests, and uploads zstd archive without registry login
+    expect(publishWorkflow.match(/uses:\s*docker\/build-push-action@/g)).toHaveLength(1);
+    const buildJobSection = publishWorkflow.split(/\n  publish:\n/)[0]?.split(/\n  build:\n/)[1] ?? '';
+    expect(buildJobSection).toContain('needs: [preflight]');
     expect(buildJobSection.match(/uses:\s*docker\/build-push-action@/g)).toHaveLength(1);
     expect(buildJobSection).toContain('provenance: false');
     expect(buildJobSection).toContain('sbom: false');
@@ -616,8 +729,13 @@ if (args[0] === 'buildx' && args[1] === 'imagetools' && args[2] === 'create') {
   process.exit(0);
 }
 if (args[0] === 'buildx' && args[1] === 'imagetools' && args[2] === 'inspect') {
+  const targetRef = args[args.length - 1] || '';
+  const isDockerHub = !targetRef.startsWith('ghcr.io/');
   if (args.includes('--raw')) {
-    const manifests = process.env.OMIT_ARM64 === 'true'
+    const omitArm =
+      process.env.OMIT_ARM64 === 'true' ||
+      (isDockerHub && process.env.OMIT_DOCKERHUB_ARM64 === 'true');
+    const manifests = omitArm
       ? [{ platform: { os: 'linux', architecture: 'amd64' } }]
       : [
           { platform: { os: 'linux', architecture: 'amd64' } },
@@ -661,6 +779,26 @@ process.exit(1);
       expect(calls).toContain(
         'buildx imagetools inspect --format {{.Manifest.Digest}} fderuiter/wedding-website:v0.1.0'
       );
+      expect(calls).toContain('buildx imagetools inspect --raw fderuiter/wedding-website:v0.1.0');
+
+      // Verify missing linux/arm64 manifest on Docker Hub also fails closed
+      const dockerHubFailRes = spawnSync('bash', ['-eo', 'pipefail', '-c', mergeScript!], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+          GITHUB_OUTPUT: outputFile,
+          IMAGE_REPOSITORY: 'ghcr.io/fderuiter/wedding_website',
+          DOCKERHUB_REPOSITORY: 'fderuiter/wedding-website',
+          PRIMARY_URI: 'ghcr.io/fderuiter/wedding_website:v0.1.0',
+          TAGS: 'ghcr.io/fderuiter/wedding_website:v0.1.0,fderuiter/wedding-website:v0.1.0',
+          OMIT_DOCKERHUB_ARM64: 'true',
+        },
+      });
+      expect(dockerHubFailRes.status).not.toBe(0);
+      expect(dockerHubFailRes.stdout + dockerHubFailRes.stderr).toContain(
+        "Published multi-platform index 'fderuiter/wedding-website:v0.1.0' is missing linux/arm64 manifest"
+      );
 
       // Verify missing linux/arm64 manifest in merged index fails closed
       const failRes = spawnSync('bash', ['-eo', 'pipefail', '-c', mergeScript!], {
@@ -681,5 +819,352 @@ process.exit(1);
       fs.rmSync(digestsDir, { recursive: true, force: true });
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
+  });
+
+  it('resolves target_sha from release_ref or image_digest OIDC provenance and checks out the tag commit in schema-compatibility', async () => {
+    const http = await import('http');
+    const { spawn } = await import('child_process');
+    const runBashAsync = (
+      script: string,
+      options: { cwd?: string; env: NodeJS.ProcessEnv }
+    ): Promise<{ status: number | null; stdout: string; stderr: string }> =>
+      new Promise((resolve) => {
+        const child = spawn('bash', ['-eo', 'pipefail', '-c', script], {
+          cwd: options.cwd,
+          env: options.env,
+        });
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', (chunk) => {
+          stdout += chunk.toString();
+        });
+        child.stderr.on('data', (chunk) => {
+          stderr += chunk.toString();
+        });
+        child.on('close', (code) => {
+          resolve({ status: code, stdout, stderr });
+        });
+      });
+
+    const runBlocks = extractRunBlocks(deployWorkflow);
+    const resolveShaScript = runBlocks.find((block) => block.includes('REF_RESOLVED_SHA='));
+    const alignWorkspaceScript = runBlocks.find((block) => block.includes('git checkout --detach "$TARGET_SHA"'));
+    expect(resolveShaScript).toBeDefined();
+    expect(alignWorkspaceScript).toBeDefined();
+
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deploy-release-ref-test-'));
+    const binDir = path.join(tempDir, 'bin');
+    const repoDir = path.join(tempDir, 'repo');
+    const outputFile = path.join(tempDir, 'github_output.txt');
+    fs.mkdirSync(binDir, { recursive: true });
+    fs.mkdirSync(repoDir, { recursive: true });
+
+    // Create real git repo where v0.1.0 is tagged on an earlier commit and main HEAD has a newer migration
+    spawnSync('git', ['init', '-b', 'main'], { cwd: repoDir });
+    spawnSync('git', ['config', 'user.name', 'Test'], { cwd: repoDir });
+    spawnSync('git', ['config', 'user.email', 'test@example.com'], { cwd: repoDir });
+    fs.mkdirSync(path.join(repoDir, 'prisma', 'migrations', '0001_v010'), { recursive: true });
+    fs.writeFileSync(path.join(repoDir, 'prisma', 'migrations', '0001_v010', 'migration.sql'), 'SELECT 1;');
+    spawnSync('git', ['add', '.'], { cwd: repoDir });
+    spawnSync('git', ['commit', '-m', 'v0.1.0 release'], { cwd: repoDir });
+    const v010Sha = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf8' }).stdout.trim();
+    spawnSync('git', ['tag', '-a', 'v0.1.0', '-m', 'Release v0.1.0'], { cwd: repoDir });
+
+    fs.mkdirSync(path.join(repoDir, 'prisma', 'migrations', '0002_unreleased_main'), { recursive: true });
+    fs.writeFileSync(
+      path.join(repoDir, 'prisma', 'migrations', '0002_unreleased_main', 'migration.sql'),
+      'ALTER TABLE "Guest" ADD COLUMN "futureField" TEXT;'
+    );
+    spawnSync('git', ['add', '.'], { cwd: repoDir });
+    spawnSync('git', ['commit', '-m', 'unreleased main migration'], { cwd: repoDir });
+    const mainHeadSha = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf8' }).stdout.trim();
+    expect(v010Sha).not.toBe(mainHeadSha);
+
+    const sampleDigest = 'sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789';
+    const otherDigest = 'sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
+
+    const ghShim = path.join(binDir, 'gh');
+    fs.writeFileSync(
+      ghShim,
+      `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === 'attestation' && args[1] === 'verify' && args.includes('--format') && args.includes('json')) {
+  const uri = args[2] || '';
+  if (uri.endsWith('@${sampleDigest}')) {
+    process.stdout.write(JSON.stringify([
+      {
+        verificationResult: {
+          statement: {
+            predicate: {
+              buildDefinition: {
+                resolvedDependencies: [
+                  {
+                    uri: 'git+https://github.com/fderuiter/wedding_website@refs/tags/v0.1.0',
+                    digest: { gitCommit: '${v010Sha}' }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    ]));
+    process.exit(0);
+  }
+  if (uri.endsWith('@${otherDigest}')) {
+    process.stdout.write(JSON.stringify([
+      {
+        verificationResult: {
+          statement: {
+            predicate: {
+              buildDefinition: {
+                resolvedDependencies: [
+                  { digest: { gitCommit: '${mainHeadSha}' } }
+                ]
+              }
+            }
+          }
+        }
+      }
+    ]));
+    process.exit(0);
+  }
+}
+process.exit(1);
+`,
+      { mode: 0o755 }
+    );
+
+    const apiServer = http.createServer((req, res) => {
+      res.setHeader('Content-Type', 'application/json');
+      if (req.url === '/repos/fderuiter/wedding_website/commits/v0.1.0') {
+        res.writeHead(200);
+        res.end(JSON.stringify({ sha: v010Sha }));
+        return;
+      }
+      res.writeHead(404);
+      res.end(JSON.stringify({ message: 'Not Found' }));
+    });
+    await new Promise<void>((resolve) => apiServer.listen(0, '127.0.0.1', () => resolve()));
+    const addr = apiServer.address();
+    const port = typeof addr === 'object' && addr ? addr.port : 0;
+
+    try {
+      // 1. Dispatching with release_ref: v0.1.0 resolves target_sha to v0.1.0's commit instead of main HEAD
+      fs.writeFileSync(outputFile, '');
+      const refRes = await runBashAsync(resolveShaScript!, {
+        env: {
+          ...process.env,
+          PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+          GITHUB_OUTPUT: outputFile,
+          GITHUB_REPOSITORY: 'fderuiter/wedding_website',
+          GITHUB_API_URL: `http://127.0.0.1:${port}`,
+          GH_TOKEN: 'ghs_test_token',
+          REPO_OWNER: 'fderuiter',
+          SIGNER_WORKFLOW: 'fderuiter/wedding_website/.github/workflows/publish-artifact.yml',
+          EVENT_NAME: 'workflow_dispatch',
+          WORKFLOW_RUN_HEAD_SHA: '',
+          CURRENT_SHA: mainHeadSha,
+          RELEASE_REF: 'v0.1.0',
+          IMAGE_DIGEST: '',
+        },
+      });
+      expect(refRes.status).toBe(0);
+      expect(fs.readFileSync(outputFile, 'utf8')).toContain(`target_sha=${v010Sha}`);
+
+      // 2. Dispatching with image_digest resolves target_sha from OIDC provenance attestation JSON
+      fs.writeFileSync(outputFile, '');
+      const digestRes = await runBashAsync(resolveShaScript!, {
+        env: {
+          ...process.env,
+          PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+          GITHUB_OUTPUT: outputFile,
+          GITHUB_REPOSITORY: 'fderuiter/wedding_website',
+          GITHUB_API_URL: `http://127.0.0.1:${port}`,
+          GH_TOKEN: 'ghs_test_token',
+          REPO_OWNER: 'fderuiter',
+          SIGNER_WORKFLOW: 'fderuiter/wedding_website/.github/workflows/publish-artifact.yml',
+          EVENT_NAME: 'workflow_dispatch',
+          WORKFLOW_RUN_HEAD_SHA: '',
+          CURRENT_SHA: mainHeadSha,
+          RELEASE_REF: '',
+          IMAGE_DIGEST: sampleDigest,
+        },
+      });
+      expect(digestRes.status).toBe(0);
+      expect(fs.readFileSync(outputFile, 'utf8')).toContain(`target_sha=${v010Sha}`);
+
+      // 3. Mismatched release_ref + image_digest fails closed
+      const mismatchRes = await runBashAsync(resolveShaScript!, {
+        env: {
+          ...process.env,
+          PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+          GITHUB_OUTPUT: outputFile,
+          GITHUB_REPOSITORY: 'fderuiter/wedding_website',
+          GITHUB_API_URL: `http://127.0.0.1:${port}`,
+          GH_TOKEN: 'ghs_test_token',
+          REPO_OWNER: 'fderuiter',
+          SIGNER_WORKFLOW: 'fderuiter/wedding_website/.github/workflows/publish-artifact.yml',
+          EVENT_NAME: 'workflow_dispatch',
+          WORKFLOW_RUN_HEAD_SHA: '',
+          CURRENT_SHA: mainHeadSha,
+          RELEASE_REF: 'v0.1.0',
+          IMAGE_DIGEST: otherDigest,
+        },
+      });
+      expect(mismatchRes.status).not.toBe(0);
+      expect(mismatchRes.stdout + mismatchRes.stderr).toContain('Commit mismatch');
+
+      // 4. schema-compatibility Align Workspace to Verified Commit SHA checks out v0.1.0 commit (excluding unreleased main migration)
+      const alignRes = await runBashAsync(alignWorkspaceScript!, {
+        cwd: repoDir,
+        env: {
+          ...process.env,
+          EVENT_NAME: 'workflow_dispatch',
+          GITHUB_REF: 'refs/heads/main',
+          TARGET_SHA: v010Sha,
+        },
+      });
+      expect(alignRes.status).toBe(0);
+      const checkedOutHead = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf8' }).stdout.trim();
+      expect(checkedOutHead).toBe(v010Sha);
+      expect(fs.existsSync(path.join(repoDir, 'prisma', 'migrations', '0002_unreleased_main'))).toBe(false);
+    } finally {
+      await new Promise<void>((resolve) => apiServer.close(() => resolve()));
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('enforces origin/main ancestry and completed successful ci.yml run in publish-artifact.yml preflight before building', async () => {
+    const parsed = parseDocument(publishWorkflow, { version: '1.2', strict: true }).toJS() as {
+      jobs?: {
+        preflight?: {
+          steps?: Array<{ name?: string; run?: string; with?: { script?: string } }>;
+        };
+      };
+    };
+    const steps = parsed.jobs?.preflight?.steps ?? [];
+    const ancestryStep = steps.find((s) => s.name === 'Verify Commit SHA & Main Branch Ancestry');
+    const ciStep = steps.find((s) => s.name === 'Verify Successful CI Run for Commit');
+    expect(ancestryStep?.run).toBeDefined();
+    expect(ciStep?.with?.script).toBeDefined();
+
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'publish-preflight-test-'));
+    const bareOrigin = path.join(tempRoot, 'origin.git');
+    const workRepo = path.join(tempRoot, 'work');
+    const outputFile = path.join(tempRoot, 'github_output.txt');
+
+    try {
+      spawnSync('git', ['init', '--bare', bareOrigin], { stdio: 'pipe' });
+      spawnSync('git', ['init', '-b', 'main', workRepo], { stdio: 'pipe' });
+      spawnSync('git', ['-C', workRepo, 'config', 'user.email', 'ci@example.com'], { stdio: 'pipe' });
+      spawnSync('git', ['-C', workRepo, 'config', 'user.name', 'CI Bot'], { stdio: 'pipe' });
+      spawnSync('git', ['-C', workRepo, 'remote', 'add', 'origin', bareOrigin], { stdio: 'pipe' });
+
+      fs.writeFileSync(path.join(workRepo, 'file.txt'), 'v1\n');
+      spawnSync('git', ['-C', workRepo, 'add', 'file.txt'], { stdio: 'pipe' });
+      spawnSync('git', ['-C', workRepo, 'commit', '-m', 'c1'], { stdio: 'pipe' });
+      const ancestorSha = spawnSync('git', ['-C', workRepo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+
+      fs.writeFileSync(path.join(workRepo, 'file.txt'), 'v2\n');
+      spawnSync('git', ['-C', workRepo, 'add', 'file.txt'], { stdio: 'pipe' });
+      spawnSync('git', ['-C', workRepo, 'commit', '-m', 'c2'], { stdio: 'pipe' });
+      const mainHeadSha = spawnSync('git', ['-C', workRepo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+      spawnSync('git', ['-C', workRepo, 'push', 'origin', 'main'], { stdio: 'pipe' });
+
+      spawnSync('git', ['-C', workRepo, 'checkout', '-b', 'feature/unmerged', ancestorSha], { stdio: 'pipe' });
+      fs.writeFileSync(path.join(workRepo, 'feature.txt'), 'unmerged\n');
+      spawnSync('git', ['-C', workRepo, 'add', 'feature.txt'], { stdio: 'pipe' });
+      spawnSync('git', ['-C', workRepo, 'commit', '-m', 'unmerged commit'], { stdio: 'pipe' });
+      const unmergedSha = spawnSync('git', ['-C', workRepo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+
+      // Ancestor of origin/main succeeds
+      fs.writeFileSync(outputFile, '');
+      const okAncestor = spawnSync('bash', ['-eo', 'pipefail', '-c', ancestryStep!.run!], {
+        cwd: workRepo,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          GITHUB_OUTPUT: outputFile,
+          INPUT_COMMIT_SHA: ancestorSha,
+          CURRENT_SHA: mainHeadSha,
+        },
+      });
+      expect(okAncestor.status).toBe(0);
+      expect(fs.readFileSync(outputFile, 'utf8')).toContain(`resolved_sha=${ancestorSha}`);
+
+      // Unmerged commit fails closed
+      fs.writeFileSync(outputFile, '');
+      const badBranch = spawnSync('bash', ['-eo', 'pipefail', '-c', ancestryStep!.run!], {
+        cwd: workRepo,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          GITHUB_OUTPUT: outputFile,
+          INPUT_COMMIT_SHA: '',
+          CURRENT_SHA: unmergedSha,
+        },
+      });
+      expect(badBranch.status).not.toBe(0);
+      expect(badBranch.stdout + badBranch.stderr).toContain('is not an ancestor of origin/main');
+
+      // Execute github-script CI gate against simulated GitHub REST API responses
+      const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
+        ...args: string[]
+      ) => (github: unknown, context: unknown, core: unknown) => Promise<void>;
+      const runCiGate = new AsyncFunction('github', 'context', 'core', ciStep!.with!.script!);
+
+      const prevTarget = process.env.TARGET_SHA;
+      process.env.TARGET_SHA = mainHeadSha;
+      try {
+        const failedMessages: string[] = [];
+        await runCiGate(
+          {
+            rest: { actions: { listWorkflowRuns: 'listWorkflowRuns' } },
+            paginate: async () => [
+              { conclusion: 'failure', head_sha: mainHeadSha, head_repository: { full_name: 'fderuiter/wedding_website' } },
+            ],
+          },
+          { repo: { owner: 'fderuiter', repo: 'wedding_website' } },
+          { setFailed: (msg: string) => failedMessages.push(msg), info: () => undefined }
+        );
+        expect(failedMessages).toHaveLength(1);
+        expect(failedMessages[0]).toContain('No completed successful CI workflow run found');
+
+        const okFailures: string[] = [];
+        const okInfos: string[] = [];
+        await runCiGate(
+          {
+            rest: { actions: { listWorkflowRuns: 'listWorkflowRuns' } },
+            paginate: async () => [
+              {
+                id: 901,
+                run_number: 42,
+                conclusion: 'success',
+                head_sha: mainHeadSha,
+                head_repository: { full_name: 'fderuiter/wedding_website' },
+              },
+            ],
+          },
+          { repo: { owner: 'fderuiter', repo: 'wedding_website' } },
+          { setFailed: (msg: string) => okFailures.push(msg), info: (msg: string) => okInfos.push(msg) }
+        );
+        expect(okFailures).toHaveLength(0);
+        expect(okInfos[0]).toContain('Verified successful CI run #42');
+      } finally {
+        if (prevTarget === undefined) delete process.env.TARGET_SHA;
+        else process.env.TARGET_SHA = prevTarget;
+      }
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('pins isolated prisma-cli dependencies to package-lock.json via npm ci in Dockerfile', () => {
+    const dockerfile = fs.readFileSync(path.join(process.cwd(), 'Dockerfile'), 'utf8');
+    const prismaStage = dockerfile.split('# Builder stage')[0] ?? '';
+    expect(prismaStage).toContain('/opt/prisma-cli/package-lock.json');
+    expect(prismaStage).toContain('npm ci --omit=dev --no-audit --no-fund');
+    expect(prismaStage).not.toContain('npm install');
   });
 });

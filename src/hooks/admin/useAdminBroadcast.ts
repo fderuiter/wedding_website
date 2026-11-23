@@ -35,7 +35,6 @@ export function useAdminBroadcast(options: UseAdminBroadcastOptions = {}) {
   const {
     data: history = [],
     isLoading: loadingHistory,
-    error: historyError,
   } = useQuery<BroadcastHistoryItem[], Error>({
     queryKey: [...HISTORY_QUERY_KEY, { page: safePage, limit: clampedLimit }],
     queryFn: async () => {
@@ -129,7 +128,6 @@ export function useAdminBroadcast(options: UseAdminBroadcastOptions = {}) {
   return {
     history,
     loadingHistory,
-    historyError: historyError ? historyError.message : null,
     sendBroadcast,
     sending,
     sendTestBroadcast,
@@ -143,6 +141,5 @@ export function useAdminBroadcast(options: UseAdminBroadcastOptions = {}) {
     testingConnection,
     cancelScheduledBroadcast,
     cancelling,
-    refetchHistory: invalidateBroadcastQueries,
   };
 }

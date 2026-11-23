@@ -201,7 +201,7 @@ test(
       // 5. Batch-seat Vance Household onto 1-sided Head Table
       await page
         .getByRole('button', {
-          name: new RegExp(`Seat Vance Household ${runTag} household`),
+          name: new RegExp(`Seat Household for Vance Household ${runTag}`),
         })
         .click();
       const hhTableSelect = page.locator('#household-assign-table-select');

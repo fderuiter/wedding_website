@@ -21,6 +21,12 @@ interface ContainmentOptions {
    */
   containmentRoot?: string;
   /**
+   * Optional pre-resolved canonical (`fs.promises.realpath`) path for `containmentRoot`
+   * (when `containmentRoot` equals `baseDir` or is omitted, also used for `baseDir`),
+   * avoiding repeated `fs.realpath` calls on the root across batch operations.
+   */
+  canonicalRoot?: string;
+  /**
    * Require raw and decoded input paths to begin with a single leading `/`.
    */
   requireLeadingSlash?: boolean;
@@ -133,10 +139,17 @@ export async function resolveContainedExistingPath(
     throw new PathContainmentError('Path escapes containment root');
   }
 
-  const fs = await import('fs/promises');
+  const fsModule = await import('fs/promises');
+  const fs: typeof import('fs/promises') = fsModule.default ?? fsModule;
+  const providedCanonicalRoot =
+    typeof options.canonicalRoot === 'string' && options.canonicalRoot.length > 0
+      ? path.resolve(options.canonicalRoot)
+      : undefined;
 
   let canonicalBase = resolvedBase;
-  if (typeof fs.realpath === 'function') {
+  if (providedCanonicalRoot && resolvedRoot === resolvedBase) {
+    canonicalBase = providedCanonicalRoot;
+  } else if (typeof fs.realpath === 'function') {
     try {
       canonicalBase = await fs.realpath(resolvedBase);
     } catch (err: unknown) {
@@ -151,6 +164,11 @@ export async function resolveContainedExistingPath(
   let canonicalRoot = resolvedRoot;
   if (resolvedRoot === resolvedBase) {
     canonicalRoot = canonicalBase;
+  } else if (providedCanonicalRoot) {
+    canonicalRoot = providedCanonicalRoot;
+    if (!isPathInsideRoot(canonicalBase, canonicalRoot, false)) {
+      throw new PathContainmentError('Containment root escapes base directory');
+    }
   } else if (typeof fs.realpath === 'function') {
     try {
       canonicalRoot = await fs.realpath(resolvedRoot);
@@ -189,6 +207,9 @@ export async function resolveContainedExistingPath(
       // Verify existing ancestor directories stay inside canonicalRoot
       let ancestor = path.dirname(resolvedTarget);
       while (isPathInsideRoot(resolvedRoot, ancestor, true)) {
+        if (providedCanonicalRoot && ancestor === resolvedRoot) {
+          break;
+        }
         try {
           const realAncestor = await fs.realpath(ancestor);
           if (!isPathInsideRoot(canonicalRoot, realAncestor, true)) {

@@ -109,8 +109,13 @@ describe('ReceptionSlideshowClient', () => {
       />
     );
 
-    // Click 5s button
-    const btn5s = screen.getByTestId('slideshow-duration-5s-btn');
+    // Click 5s button (accessible name begins with visible "5s")
+    const btn5s = screen.getByRole('button', {
+      name: '5s cycle photo every 5 seconds',
+    });
+    expect(
+      screen.getByRole('button', { name: '8s cycle photo every 8 seconds' })
+    ).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(btn5s);
     expect(btn5s).toHaveAttribute('aria-pressed', 'true');
 
@@ -129,7 +134,9 @@ describe('ReceptionSlideshowClient', () => {
     );
 
     // Switch to 10s button
-    const btn10s = screen.getByTestId('slideshow-duration-10s-btn');
+    const btn10s = screen.getByRole('button', {
+      name: '10s cycle photo every 10 seconds',
+    });
     fireEvent.click(btn10s);
     expect(btn10s).toHaveAttribute('aria-pressed', 'true');
 
@@ -1100,7 +1107,7 @@ describe('ReceptionSlideshowClient', () => {
   });
 
   it('has no automated axe accessibility violations on slideshow controls in playing or paused states', async () => {
-    render(
+    const { container } = render(
       <ReceptionSlideshowClient
         initialPhotos={samplePhotos}
         uploadUrl="https://wedding.example.com/photos"
@@ -1115,12 +1122,15 @@ describe('ReceptionSlideshowClient', () => {
     const secondaryControls = screen.getByTestId('slideshow-secondary-controls');
     const playPauseBtn = screen.getByTestId('slideshow-play-pause-btn');
 
-    expect(await axe(secondaryControls)).toHaveNoViolations();
-    expect(await axe(playPauseBtn)).toHaveNoViolations();
+    const axeRules = { rules: { 'label-content-name-mismatch': { enabled: true } } };
+    expect(await axe(container, axeRules)).toHaveNoViolations();
+    expect(await axe(secondaryControls, axeRules)).toHaveNoViolations();
+    expect(await axe(playPauseBtn, axeRules)).toHaveNoViolations();
 
     fireEvent.click(playPauseBtn);
-    expect(await axe(secondaryControls)).toHaveNoViolations();
-    expect(await axe(playPauseBtn)).toHaveNoViolations();
+    expect(await axe(container, axeRules)).toHaveNoViolations();
+    expect(await axe(secondaryControls, axeRules)).toHaveNoViolations();
+    expect(await axe(playPauseBtn, axeRules)).toHaveNoViolations();
   });
 
   it('displays guest caption and uploaderName attribution on initial photos and newly polled photos', async () => {
