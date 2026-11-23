@@ -24,6 +24,8 @@ export interface BroadcastTemplateContext {
   householdName?: string;
   weddingDate?: string;
   venueName?: string;
+  venueLocation?: string;
+  coupleNames?: string;
   [key: string]: any;
 }
 

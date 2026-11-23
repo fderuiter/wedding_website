@@ -29,7 +29,7 @@ jest.mock('@/lib/config', () => ({
   getAppConfig: jest.fn().mockResolvedValue({
     weddingDate: new Date('2026-10-25'),
     venueName: 'Grand Hall',
-    emailProvider: 'smtp',
+    emailProvider: 'none',
     broadcastBatchSize: 50,
     broadcastBatchDelayMs: 0,
   }),
@@ -885,7 +885,7 @@ describe('BroadcastService', () => {
         contactEmail: 'host@example.com',
         weddingDate: new Date('2026-10-25'),
         venueName: 'Grand Hall',
-        emailProvider: 'smtp',
+        emailProvider: 'none',
       });
 
       const res = await BroadcastService.sendTestBroadcast({
@@ -909,6 +909,7 @@ describe('BroadcastService', () => {
     it('does not duplicate [TEST] prefix if subject already has it', async () => {
       (getAppConfig as jest.Mock).mockResolvedValueOnce({
         contactEmail: 'host@example.com',
+        emailProvider: 'none',
       });
 
       const res = await BroadcastService.sendTestBroadcast({
@@ -1215,7 +1216,7 @@ describe('BroadcastService', () => {
 
       expect(prisma.broadcastRecipient.findMany).not.toHaveBeenCalled();
       expect(prisma.broadcastRecipient.count).toHaveBeenCalledWith({
-        where: { broadcastId: 'b-mixed', status: 'SENT' },
+        where: { broadcastId: 'b-mixed', status: { in: ['SENT', 'VIEWED'] } },
       });
       expect(prisma.broadcastRecipient.count).toHaveBeenCalledWith({
         where: { broadcastId: 'b-mixed', status: 'FAILED' },
@@ -1768,6 +1769,133 @@ describe('BroadcastService', () => {
 
       sendEmailSpy.mockRestore();
       warnSpy.mockRestore();
+    });
+
+    it('renders themed htmlBody in EMAIL renderPreview for stationery cards and strips [CARD:...] directive on SMS', async () => {
+      (getAppConfig as jest.Mock).mockResolvedValueOnce({
+        partner1Name: 'Sarah',
+        partner2Name: 'Dan',
+        weddingDate: new Date('2026-10-25T16:00:00Z'),
+        venueName: 'Grand Hall',
+        venueCity: 'Austin',
+        venueState: 'TX',
+        colorPrimary: '#2C3E50',
+        colorSecondary: '#B8860B',
+        baseUrl: 'https://celebrate.example.com',
+        emailProvider: 'none',
+      });
+      (prisma.invitationCode.findUnique as jest.Mock).mockResolvedValueOnce({
+        id: 'card-guest-1',
+        guestName: 'Alice Smith',
+        code: 'ALICE2026',
+        householdName: 'Smith Family',
+        email: 'alice@example.com',
+      });
+
+      const emailCardPreview = await BroadcastService.renderPreview({
+        channel: 'EMAIL',
+        subject: 'You Are Invited: {{coupleNames}}',
+        body: '[CARD:formal-invitation]\nDear {{guestName}},\n\nRSVP: {{rsvpUrl}}',
+        sampleGuestId: 'card-guest-1',
+      });
+
+      expect(emailCardPreview.subject).toBe('You Are Invited: Sarah & Dan');
+      expect(emailCardPreview.htmlBody).toBeDefined();
+      expect(emailCardPreview.htmlBody).toContain('Sarah &amp; Dan');
+      expect(emailCardPreview.htmlBody).toContain('https://calendar.google.com/calendar/render');
+      expect(emailCardPreview.htmlBody).toContain('https://celebrate.example.com/guest?code=ALICE2026');
+
+      (prisma.invitationCode.findUnique as jest.Mock).mockResolvedValueOnce({
+        id: 'card-guest-1',
+        guestName: 'Alice Smith',
+        code: 'ALICE2026',
+        extraFields: { phone: '+15551112222' },
+      });
+
+      const smsPreview = await BroadcastService.renderPreview({
+        channel: 'SMS',
+        body: '[CARD:save-the-date]\nSave the Date, {{guestName}}! {{rsvpUrl}}',
+        sampleGuestId: 'card-guest-1',
+      });
+      expect(smsPreview.body).not.toContain('[CARD:save-the-date]');
+      expect(smsPreview.htmlBody).toBeUndefined();
+    });
+
+    it('marks recipients FAILED when emailProvider is smtp with blank smtpHost and counts VIEWED recipients in sentCount during per-recipient resend', async () => {
+      (getAppConfig as jest.Mock).mockResolvedValueOnce({
+        weddingDate: new Date('2026-10-25'),
+        venueName: 'Grand Hall',
+        emailProvider: 'smtp',
+        smtpHost: '   ',
+        broadcastBatchSize: 10,
+        broadcastBatchDelayMs: 0,
+      });
+      (prisma.invitationCode.findMany as jest.Mock).mockResolvedValueOnce([
+        { id: 'g-smtp-missing', guestName: 'Unconfigured Guest', code: 'U1', email: 'u@example.com' },
+      ]);
+      (prisma.broadcastMessage.create as jest.Mock).mockResolvedValueOnce({
+        id: 'bm-smtp-fail',
+        status: 'SENDING',
+      });
+      (prisma.broadcastRecipient.create as jest.Mock).mockResolvedValueOnce({
+        id: 'br-smtp-fail',
+      });
+      (prisma.broadcastRecipient.update as jest.Mock).mockResolvedValueOnce({});
+      (prisma.broadcastMessage.update as jest.Mock).mockResolvedValueOnce({
+        id: 'bm-smtp-fail',
+        status: 'FAILED',
+        sentCount: 0,
+        failedCount: 1,
+      });
+
+      await BroadcastService.sendBroadcast({
+        channel: 'EMAIL',
+        subject: 'Hello',
+        body: 'Test',
+      });
+
+      expect(prisma.broadcastRecipient.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: expect.any(String) },
+          data: expect.objectContaining({
+            status: 'FAILED',
+            error: expect.stringMatching(/SMTP Host is missing/i),
+          }),
+        })
+      );
+
+      // Per-recipient resend preserves VIEWED rows inside sentCount query
+      (prisma.broadcastMessage.findUnique as jest.Mock).mockResolvedValueOnce({
+        id: 'bm-resend-single',
+        channel: 'EMAIL',
+        subject: 'Formal Invite',
+        body: 'Welcome {{guestName}}',
+        recipients: [
+          {
+            id: 'rec-target',
+            guestName: 'Resend Target',
+            destination: 'target@example.com',
+            status: 'SENT',
+            invitationCode: { code: 'TARGET26', householdName: 'Target HH' },
+          },
+        ],
+      });
+      (prisma.broadcastRecipient.updateMany as jest.Mock).mockResolvedValueOnce({ count: 1 });
+      (prisma.broadcastRecipient.count as jest.Mock)
+        .mockResolvedValueOnce(3)
+        .mockResolvedValueOnce(0);
+      (prisma.broadcastMessage.update as jest.Mock).mockResolvedValueOnce({
+        id: 'bm-resend-single',
+        status: 'SENT',
+        sentCount: 3,
+        failedCount: 0,
+      });
+
+      await BroadcastService.retryFailedRecipients('bm-resend-single', ['rec-target']);
+
+      expect(prisma.broadcastRecipient.count).toHaveBeenCalledWith({
+        where: { broadcastId: 'bm-resend-single', status: { in: ['SENT', 'VIEWED'] } },
+      });
     });
   });
 });

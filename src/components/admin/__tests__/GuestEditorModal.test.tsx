@@ -370,7 +370,7 @@ describe('GuestEditorForm', () => {
     ['Country', COUNTRY_MAX_LENGTH],
   ];
 
-  it('enforces all 17 controls, all 13 maxLength attributes, and zero jest-axe violations in both create and edit modes', async () => {
+  it('enforces all 18 controls, all 14 maxLength attributes, and zero jest-axe violations in both create and edit modes', async () => {
     const { container: createContainer, unmount: unmountCreate } = render(
       <GuestEditorForm
         mode="create"
@@ -393,12 +393,13 @@ describe('GuestEditorForm', () => {
     expect(screen.getByLabelText('Plus-One Allocations')).toBeInTheDocument();
     expect(screen.getByLabelText('Party Tags (Comma-Separated)')).toBeInTheDocument();
     expect(screen.getByLabelText('Dietary Notes')).toBeInTheDocument();
+    expect(screen.getByLabelText('Household Notes')).toHaveAttribute('maxLength', '1000');
     expect(screen.queryByTestId('code-change-warning')).not.toBeInTheDocument();
 
     const createControls = createContainer.querySelectorAll('input, textarea');
-    expect(createControls).toHaveLength(17);
+    expect(createControls).toHaveLength(18);
     const createMaxLengthControls = createContainer.querySelectorAll('[maxlength]');
-    expect(createMaxLengthControls).toHaveLength(13);
+    expect(createMaxLengthControls).toHaveLength(14);
 
     const createAxe = await axe(createContainer);
     expect(createAxe).toHaveNoViolations();
@@ -421,8 +422,8 @@ describe('GuestEditorForm', () => {
     for (const [label, max] of expectedMaxLengths) {
       expect(screen.getByLabelText(label)).toHaveAttribute('maxLength', String(max));
     }
-    expect(editContainer.querySelectorAll('input, textarea')).toHaveLength(17);
-    expect(editContainer.querySelectorAll('[maxlength]')).toHaveLength(13);
+    expect(editContainer.querySelectorAll('input, textarea')).toHaveLength(18);
+    expect(editContainer.querySelectorAll('[maxlength]')).toHaveLength(14);
 
     const editAxe = await axe(editContainer);
     expect(editAxe).toHaveNoViolations();
@@ -528,6 +529,44 @@ describe('GuestEditorForm', () => {
     await waitFor(() => {
       expect(confirmDialog).not.toBeInTheDocument();
       expect(onClose).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('loads and saves Household Notes in extraFields.householdNotes separately from dietaryNotes', async () => {
+    const onSave = jest.fn().mockResolvedValue({});
+    render(
+      <GuestEditorForm
+        mode="edit"
+        guest={{
+          ...sampleGuest,
+          dietaryNotes: 'Nut allergy',
+          extraFields: { phone: '+15551234567', householdNotes: 'Bringing infant stroller' },
+        }}
+        onClose={jest.fn()}
+        onSave={onSave}
+      />
+    );
+
+    const householdInput = screen.getByLabelText('Household Notes');
+    expect(householdInput).toHaveValue('Bringing infant stroller');
+    expect(screen.getByLabelText('Dietary Notes')).toHaveValue('Nut allergy');
+
+    fireEvent.change(householdInput, {
+      target: { value: 'Updated: arriving Friday evening' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Guest Changes' }));
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledWith(
+        sampleGuest.id,
+        expect.objectContaining({
+          dietaryNotes: 'Nut allergy',
+          extraFields: expect.objectContaining({
+            phone: '+15551234567',
+            householdNotes: 'Updated: arriving Friday evening',
+          }),
+        })
+      );
     });
   });
 });

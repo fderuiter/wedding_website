@@ -55,6 +55,7 @@ interface GuestFormState {
   plusOneFirstName: string;
   plusOneLastName: string;
   dietaryNotes: string;
+  householdNotes: string;
   addressLine1: string;
   addressLine2: string;
   city: string;
@@ -77,6 +78,11 @@ function getInitialGuestPhone(guest: InvitationCodeDTO): string {
   return typeof rawPhone === 'string' ? rawPhone : '';
 }
 
+function getInitialHouseholdNotes(guest: InvitationCodeDTO): string {
+  const extra = getInitialExtraFieldsObject(guest.extraFields);
+  return typeof extra.householdNotes === 'string' ? extra.householdNotes : '';
+}
+
 function createInitialGuestFormState(guest?: InvitationCodeDTO | null): GuestFormState {
   if (!guest) {
     return {
@@ -91,6 +97,7 @@ function createInitialGuestFormState(guest?: InvitationCodeDTO | null): GuestFor
       plusOneFirstName: '',
       plusOneLastName: '',
       dietaryNotes: '',
+      householdNotes: '',
       addressLine1: '',
       addressLine2: '',
       city: '',
@@ -112,6 +119,7 @@ function createInitialGuestFormState(guest?: InvitationCodeDTO | null): GuestFor
     plusOneFirstName: guest.plusOneFirstName ?? '',
     plusOneLastName: guest.plusOneLastName ?? '',
     dietaryNotes: guest.dietaryNotes ?? '',
+    householdNotes: getInitialHouseholdNotes(guest),
     addressLine1: guest.addressLine1 ?? '',
     addressLine2: guest.addressLine2 ?? '',
     city: guest.city ?? '',
@@ -220,6 +228,7 @@ const GuestEditorFormInner = React.forwardRef<HTMLFormElement, GuestEditorFormPr
       const normalizedPlusOneFirstName = normalizeNullableString(formState.plusOneFirstName);
       const normalizedPlusOneLastName = normalizeNullableString(formState.plusOneLastName);
       const normalizedDietaryNotes = normalizeNullableString(formState.dietaryNotes);
+      const normalizedHouseholdNotes = normalizeNullableString(formState.householdNotes);
       const normalizedAddressLine1 = normalizeNullableString(formState.addressLine1);
       const normalizedAddressLine2 = normalizeNullableString(formState.addressLine2);
       const normalizedCity = normalizeNullableString(formState.city);
@@ -231,6 +240,7 @@ const GuestEditorFormInner = React.forwardRef<HTMLFormElement, GuestEditorFormPr
 
       if (isEditMode && guest) {
         const originalPhone = normalizeGuestPhone(getInitialGuestPhone(guest));
+        const originalHouseholdNotes = normalizeNullableString(getInitialHouseholdNotes(guest));
         payload = {
           guestName: trimmedName,
           code: trimmedCode,
@@ -250,13 +260,18 @@ const GuestEditorFormInner = React.forwardRef<HTMLFormElement, GuestEditorFormPr
           country: normalizedCountry,
         };
 
-        if (normalizedPhone !== originalPhone) {
+        if (normalizedPhone !== originalPhone || normalizedHouseholdNotes !== originalHouseholdNotes) {
           const nextExtraFields = getInitialExtraFieldsObject(guest.extraFields);
           if (normalizedPhone) {
             nextExtraFields.phone = normalizedPhone;
           } else {
             delete nextExtraFields.phone;
             delete nextExtraFields.mobile;
+          }
+          if (normalizedHouseholdNotes) {
+            nextExtraFields.householdNotes = normalizedHouseholdNotes;
+          } else {
+            delete nextExtraFields.householdNotes;
           }
           payload.extraFields = nextExtraFields;
         }
@@ -280,7 +295,10 @@ const GuestEditorFormInner = React.forwardRef<HTMLFormElement, GuestEditorFormPr
         if (normalizedState) payload.state = normalizedState;
         if (normalizedZipCode) payload.zipCode = normalizedZipCode;
         if (normalizedCountry) payload.country = normalizedCountry;
-        if (normalizedPhone) payload.extraFields = { phone: normalizedPhone };
+        const extraFields: Record<string, unknown> = {};
+        if (normalizedPhone) extraFields.phone = normalizedPhone;
+        if (normalizedHouseholdNotes) extraFields.householdNotes = normalizedHouseholdNotes;
+        if (Object.keys(extraFields).length > 0) payload.extraFields = extraFields;
       }
 
       const fieldErrors = validateInvitationGuestFields(payload, { mode: 'row' });
@@ -468,6 +486,17 @@ const GuestEditorFormInner = React.forwardRef<HTMLFormElement, GuestEditorFormPr
                 value={formState.partyTags}
                 onChange={(e) => updateField('partyTags', e.target.value)}
                 placeholder="e.g. VIP, Out of Town"
+              />
+            </FormGroup>
+
+            <FormGroup className="sm:col-span-2">
+              <Label>Household Notes</Label>
+              <Textarea
+                rows={2}
+                maxLength={1000}
+                value={formState.householdNotes}
+                onChange={(e) => updateField('householdNotes', e.target.value)}
+                placeholder="e.g. Family of 4, special mailing instructions"
               />
             </FormGroup>
 

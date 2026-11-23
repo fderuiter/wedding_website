@@ -1,3 +1,5 @@
+/** @jest-environment node */
+
 import { POST as sendRoute } from '../send/route';
 import { POST as previewRoute } from '../preview/route';
 import { GET as historyRoute } from '../history/route';
@@ -215,20 +217,55 @@ describe('Broadcast API Routes', () => {
     expect(res.status).toBe(500);
   });
 
-  it('POST /api/admin/broadcast/test-connection returns connection result', async () => {
-    const req = new NextRequest('http://localhost/api/admin/broadcast/test-connection', {
+  it('POST /api/admin/broadcast/test-connection verifies live SMTP greeting/EHLO/QUIT and fails when unreachable', async () => {
+    const net = await import('node:net');
+    const smtpServer = net.createServer((sock) => {
+      sock.write('220 127.0.0.1 ESMTP Ready\r\n');
+      sock.on('data', (chunk) => {
+        const text = chunk.toString('utf8').toUpperCase();
+        if (text.startsWith('EHLO ')) {
+          sock.write('250-127.0.0.1\r\n250 OK\r\n');
+        } else if (text.startsWith('QUIT')) {
+          sock.write('221 Bye\r\n', () => sock.end());
+        }
+      });
+    });
+    await new Promise<void>((resolve) => smtpServer.listen(0, '127.0.0.1', () => resolve()));
+    const port = (smtpServer.address() as import('node:net').AddressInfo).port;
+
+    try {
+      const req = new NextRequest('http://localhost/api/admin/broadcast/test-connection', {
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'email',
+          provider: 'smtp',
+          smtpHost: '127.0.0.1',
+          smtpPort: port,
+          smtpSecure: false,
+        }),
+      });
+
+      const res = await testConnRoute(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.success).toBe(true);
+    } finally {
+      await new Promise<void>((resolve) => smtpServer.close(() => resolve()));
+    }
+
+    const failReq = new NextRequest('http://localhost/api/admin/broadcast/test-connection', {
       method: 'POST',
       body: JSON.stringify({
         type: 'email',
         provider: 'smtp',
-        smtpHost: 'smtp.test.com',
+        smtpHost: '127.0.0.1',
+        smtpPort: 1,
       }),
     });
-
-    const res = await testConnRoute(req);
-    expect(res.status).toBe(200);
-    const json = await res.json();
-    expect(json.success).toBe(true);
+    const failRes = await testConnRoute(failReq);
+    expect(failRes.status).toBe(200);
+    const failJson = await failRes.json();
+    expect(failJson.success).toBe(false);
   });
 
   it('POST /api/admin/broadcast/test-connection returns 400 for invalid schema', async () => {

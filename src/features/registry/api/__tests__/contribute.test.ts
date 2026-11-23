@@ -737,5 +737,123 @@ describe('POST /api/registry/contribute', () => {
         expect(serializedWarnings).not.toContain('Congrats!');
       }
     );
+
+    it('rolls back confirmationEmailSentAt and alertEmailSentAt to null when sendEmail returns { success: false } or throws so retries succeed', async () => {
+      const state: {
+        confirmationEmailSentAt: Date | null;
+        alertEmailSentAt: Date | null;
+      } = {
+        confirmationEmailSentAt: null,
+        alertEmailSentAt: null,
+      };
+
+      (prisma.contributor.updateMany as jest.Mock).mockImplementation(async ({ where, data }) => {
+        if ('confirmationEmailSentAt' in data) {
+          if (data.confirmationEmailSentAt === null) {
+            state.confirmationEmailSentAt = null;
+            return { count: 1 };
+          }
+          if (where.confirmationEmailSentAt === null && state.confirmationEmailSentAt === null) {
+            state.confirmationEmailSentAt = data.confirmationEmailSentAt;
+            return { count: 1 };
+          }
+          return { count: 0 };
+        }
+        if ('alertEmailSentAt' in data) {
+          if (data.alertEmailSentAt === null) {
+            state.alertEmailSentAt = null;
+            return { count: 1 };
+          }
+          if (where.alertEmailSentAt === null && state.alertEmailSentAt === null) {
+            state.alertEmailSentAt = data.alertEmailSentAt;
+            return { count: 1 };
+          }
+          return { count: 0 };
+        }
+        return { count: 0 };
+      });
+
+      const smtpConfig = {
+        modules: ['registry', 'groupGifting'],
+        emailProvider: 'smtp',
+        smtpHost: 'smtp.wedding.test',
+        contactEmail: 'couple@wedding.test',
+        baseUrl: 'https://couple.wedding.test',
+      };
+      (getAppConfig as jest.Mock).mockResolvedValue(smtpConfig);
+
+      mockPaymentIntentsRetrieve.mockResolvedValue({
+        id: 'pi_retry_test',
+        status: 'succeeded',
+        amount: 5000,
+        amount_received: 5000,
+        currency: 'usd',
+        metadata: { itemId: 'item-123', baseAmount: '50.00', coverFee: 'false' },
+        latest_charge: 'ch_retry_test',
+        created: 1731763200,
+      });
+
+      (registryService.contributeToItem as jest.Mock).mockResolvedValue({
+        ...mockItem,
+        amountContributed: 50,
+        contributors: [
+          {
+            id: 'contrib-retry-1',
+            name: 'Retry Guest',
+            email: 'retry@example.com',
+            amount: 50,
+            status: 'CONFIRMED',
+            stripePaymentIntentId: 'pi_retry_test',
+          },
+        ],
+      });
+
+      // Attempt 1: guest receipt returns { success: false }, couple alert throws -> both timestamps rolled back to null
+      sendEmailSpy
+        .mockResolvedValueOnce({ success: false, error: 'SMTP temporary failure' })
+        .mockRejectedValueOnce(new Error('Socket reset'));
+
+      const req1 = new NextRequest('http://localhost:3000/api/registry/contribute', {
+        method: 'POST',
+        body: JSON.stringify({
+          itemId: 'item-123',
+          name: 'Retry Guest',
+          email: 'retry@example.com',
+          amount: 50,
+          paymentIntentId: 'pi_retry_test',
+        }),
+      });
+      const res1 = await POST(req1);
+      expect(res1.status).toBe(200);
+      expect(state.confirmationEmailSentAt).toBeNull();
+      expect(state.alertEmailSentAt).toBeNull();
+
+      // Attempt 2 (retry): sendEmail succeeds -> both timestamps remain set and emails deliver
+      sendEmailSpy.mockResolvedValue({ success: true });
+      const req2 = new NextRequest('http://localhost:3000/api/registry/contribute', {
+        method: 'POST',
+        body: JSON.stringify({
+          itemId: 'item-123',
+          name: 'Retry Guest',
+          email: 'retry@example.com',
+          amount: 50,
+          paymentIntentId: 'pi_retry_test',
+        }),
+      });
+      const res2 = await POST(req2);
+      expect(res2.status).toBe(200);
+      expect(state.confirmationEmailSentAt).toBeInstanceOf(Date);
+      expect(state.alertEmailSentAt).toBeInstanceOf(Date);
+
+      // Also verify dispatchConfirmedContributionAlert rolls back alertEmailSentAt when sendEmail fails
+      state.alertEmailSentAt = null;
+      sendEmailSpy.mockResolvedValueOnce({ success: false, error: 'SMTP down' });
+      await dispatchConfirmedContributionAlert({
+        contributor: { id: 'contrib-retry-1', name: 'Retry Guest', amount: 50, status: 'CONFIRMED' },
+        item: mockItem,
+        config: smtpConfig,
+      });
+      expect(state.alertEmailSentAt).toBeNull();
+    });
   });
 });

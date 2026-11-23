@@ -35,6 +35,13 @@ const useSafeSearchParams: () => { get: (_key: string) => string | null } | null
     ? NextNavigation.useSearchParams
     : () => null;
 
+function countViewedRecipients(recipients: unknown): number {
+  if (!Array.isArray(recipients)) return 0;
+  return recipients.filter(
+    (r) => r && typeof r === 'object' && (r as { status?: string }).status === 'VIEWED'
+  ).length;
+}
+
 function resolveInitialHistoryTab(
   searchParams: { get: (_key: string) => string | null } | null
 ): 'timeline' | 'broadcasts' {
@@ -99,6 +106,21 @@ function HistoryTimelineContent({
       }
     } catch (e: any) {
       addToast(e.message || 'Retry failed.', 'error');
+    }
+  };
+
+  const handleResendRecipient = async (
+    broadcastId: string,
+    recipient: { id: string; guestName: string }
+  ) => {
+    try {
+      const updated = await retryBroadcast({ broadcastId, recipientIds: [recipient.id] });
+      addToast(`Resent broadcast to ${recipient.guestName}.`, 'success');
+      if (updated && selectedBroadcast && selectedBroadcast.id === broadcastId) {
+        setSelectedBroadcast(updated);
+      }
+    } catch (e: any) {
+      addToast(e.message || 'Resend failed.', 'error');
     }
   };
 
@@ -266,6 +288,11 @@ function HistoryTimelineContent({
                     </TableCell>
                     <TableCell className="text-sm">
                       <span className="font-semibold">{item.sentCount}</span> / {item.totalRecipients} sent
+                      {countViewedRecipients(item.recipients) > 0 && (
+                        <span className="text-blue-600 dark:text-blue-400 font-semibold ml-1">
+                          ({countViewedRecipients(item.recipients)} viewed)
+                        </span>
+                      )}
                       {item.failedCount > 0 && <span className="text-red-500 font-bold ml-1">({item.failedCount} failed)</span>}
                     </TableCell>
                     <TableCell>
@@ -334,6 +361,7 @@ function HistoryTimelineContent({
                 <div><strong>Scheduled For:</strong> {formatDate(selectedBroadcast.scheduledFor)}</div>
               )}
               <div><strong>Sent Count:</strong> {selectedBroadcast.sentCount} / {selectedBroadcast.totalRecipients}</div>
+              <div><strong>Viewed Count:</strong> {countViewedRecipients(selectedBroadcast.recipients)}</div>
               <div><strong>Failed Count:</strong> {selectedBroadcast.failedCount}</div>
             </div>
 
@@ -355,16 +383,37 @@ function HistoryTimelineContent({
               <h4 className="text-sm font-semibold mb-2">Recipient Delivery Statuses:</h4>
               <div className="max-h-60 overflow-y-auto border rounded divide-y dark:divide-zinc-700">
                 {selectedBroadcast.recipients?.map((r: any) => (
-                  <div key={r.id} className="p-2 text-xs flex justify-between items-center">
+                  <div key={r.id} className="p-2 text-xs flex justify-between items-center gap-2">
                     <div>
                       <span className="font-semibold">{r.guestName}</span> ({r.destination})
                       {r.error && <span className="block text-red-500 text-[11px] mt-0.5">{r.error}</span>}
                     </div>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                      r.status === 'SENT' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                    }`}>
-                      {r.status}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        r.status === 'VIEWED'
+                          ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200'
+                          : r.status === 'SENT'
+                            ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200'
+                            : r.status === 'PENDING'
+                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
+                              : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200'
+                      }`}>
+                        {r.status}
+                      </span>
+                      {selectedBroadcast.status !== 'SCHEDULED' &&
+                        selectedBroadcast.status !== 'CANCELLED' && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="text-[11px] py-0.5 px-2 h-auto"
+                          disabled={retrying}
+                          aria-label={`Resend to ${r.guestName}`}
+                          onClick={() => void handleResendRecipient(selectedBroadcast.id, r)}
+                        >
+                          Resend
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

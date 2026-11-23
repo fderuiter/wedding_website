@@ -429,7 +429,7 @@ export default function AdminSettingsPage() {
         smtpUser: localConfig?.smtpUser,
         smtpPass: localConfig?.smtpPass,
         smtpFrom: localConfig?.smtpFrom,
-        smtpSecure: Boolean(localConfig?.smtpSecure),
+        smtpSecure: Boolean(localConfig?.smtpSecure) || Number(localConfig?.smtpPort) === 465,
         resendApiKey: localConfig?.resendApiKey,
         resendFrom: localConfig?.resendFrom,
         sendgridApiKey: localConfig?.sendgridApiKey,
@@ -563,12 +563,16 @@ export default function AdminSettingsPage() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
+    const nextValue =
+      e.target instanceof HTMLInputElement && e.target.type === 'checkbox'
+        ? e.target.checked
+        : value;
     setLocalConfig((prev: any) => {
-      const next = { ...prev, [name]: value };
+      const next = { ...prev, [name]: nextValue };
       if (name === 'partner1Name') {
-        next.brideName = value;
+        next.brideName = nextValue;
       } else if (name === 'partner2Name') {
-        next.groomName = value;
+        next.groomName = nextValue;
       }
       return next;
     });
@@ -1466,6 +1470,22 @@ export default function AdminSettingsPage() {
                           onChange={handleChange}
                           placeholder={localConfig.hasSmtpPass ? 'Leave blank to keep saved password' : 'Enter SMTP password'}
                         />
+                      </FormGroup>
+                      <FormGroup className="flex items-end pb-2">
+                        <label
+                          htmlFor="smtpSecure"
+                          className="inline-flex items-center gap-2 text-sm font-medium text-gray-800 dark:text-gray-200 cursor-pointer"
+                        >
+                          <input
+                            id="smtpSecure"
+                            type="checkbox"
+                            name="smtpSecure"
+                            checked={Boolean(localConfig.smtpSecure) || Number(localConfig.smtpPort) === 465}
+                            onChange={handleChange}
+                            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                          />
+                          <span>Implicit TLS (Port 465 / SMTPS)</span>
+                        </label>
                       </FormGroup>
                     </div>
                   </div>

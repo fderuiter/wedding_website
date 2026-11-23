@@ -1,7 +1,13 @@
 import { prisma } from '@/lib/prisma';
 import { getAppConfig } from '@/lib/config';
 import { generateSecureUUID } from '@/utils/uuid';
-import { buildGuestRsvpUrl, renderBroadcastTemplate, sanitizeEmailSubject } from './template';
+import {
+  buildGuestRsvpUrl,
+  isStationeryCardBody,
+  renderBroadcastTemplate,
+  sanitizeEmailSubject,
+  stripStationeryCardDirective,
+} from './template';
 import {
   filterTargetGuestsInMemory,
   getGuestPhone,
@@ -33,7 +39,7 @@ function resolveBroadcastBaseUrl(
     baseUrlWarning,
   };
 }
-import { MultiChannelMessagingProvider } from './providers';
+import { MultiChannelMessagingProvider, formatEmailHtmlBody } from './providers';
 import {
   SendBroadcastInput,
   PreviewBroadcastInput,
@@ -87,10 +93,38 @@ export class BroadcastService {
       code?: string | null;
       householdName?: string | null;
     },
-    config: { weddingDate?: Date | string | null; venueName?: string | null } | null | undefined,
+    config:
+      | {
+        weddingDate?: Date | string | null;
+        venueName?: string | null;
+        venueAddress?: string | null;
+        venueCity?: string | null;
+        venueState?: string | null;
+        partner1Name?: string | null;
+        partner2Name?: string | null;
+        brideName?: string | null;
+        groomName?: string | null;
+        heroTitle?: string | null;
+      }
+      | null
+      | undefined,
     baseUrl: string
   ): BroadcastTemplateContext {
     const invitationCode = guest.code || '';
+    const p1 = (config?.partner1Name || config?.brideName || '').trim();
+    const p2 = (config?.partner2Name || config?.groomName || '').trim();
+    const coupleNames =
+      p1 && p2 ? `${p1} & ${p2}` : p1 || p2 || config?.heroTitle || 'Our Wedding';
+    const venueLocation = [
+      config?.venueName,
+      config?.venueAddress,
+      config?.venueCity,
+      config?.venueState,
+    ]
+      .map((part) => (typeof part === 'string' ? part.trim() : ''))
+      .filter(Boolean)
+      .join(', ');
+
     return {
       guestName: guest.guestName ?? '',
       invitationCode,
@@ -100,6 +134,8 @@ export class BroadcastService {
       householdName: guest.householdName || '',
       weddingDate: this.formatWeddingDate(config?.weddingDate),
       venueName: config?.venueName || '',
+      venueLocation,
+      coupleNames,
     };
   }
 
@@ -109,7 +145,7 @@ export class BroadcastService {
       code?: string | null;
       householdName?: string | null;
     };
-    config: { weddingDate?: Date | string | null; venueName?: string | null } | null | undefined;
+    config: Record<string, any> | null | undefined;
     baseUrl: string;
     channel: BroadcastChannel;
     body: string;
@@ -120,7 +156,10 @@ export class BroadcastService {
     const context = this.buildTemplateContext(params.guest, params.config, params.baseUrl);
     const isEmail = params.channel === 'EMAIL';
     const escapeHtml = isEmail && (params.escapeEmailBody ?? true);
-    const renderedBody = renderBroadcastTemplate(params.body, context, { escapeHtml });
+    const effectiveTemplateBody = isEmail
+      ? params.body
+      : stripStationeryCardDirective(params.body);
+    const renderedBody = renderBroadcastTemplate(effectiveTemplateBody, context, { escapeHtml });
 
     if (params.isTest) {
       if (!isEmail) {
@@ -471,10 +510,22 @@ export class BroadcastService {
         }
         : {};
 
+    const htmlBody =
+      input.channel === 'EMAIL' && isStationeryCardBody(rendered.body)
+        ? formatEmailHtmlBody(rendered.body, {
+          ...(config as Record<string, any>),
+          baseUrl,
+          rsvpUrl: buildGuestRsvpUrl(baseUrl, sampleGuest.code || ''),
+        })
+        : undefined;
+
     return {
       channel: input.channel,
       subject: rendered.subject,
-      body: rendered.body,
+      body: isStationeryCardBody(rendered.body)
+        ? stripStationeryCardDirective(rendered.body)
+        : rendered.body,
+      ...(htmlBody ? { htmlBody } : {}),
       sampleGuestName: sampleGuest.guestName,
       destination,
       ...audienceCounts,
@@ -883,7 +934,7 @@ export class BroadcastService {
 
     const [sentCount, failedCount] = await Promise.all([
       prisma.broadcastRecipient.count({
-        where: { broadcastId, status: 'SENT' },
+        where: { broadcastId, status: { in: ['SENT', 'VIEWED'] } },
       }),
       prisma.broadcastRecipient.count({
         where: { broadcastId, status: 'FAILED' },
