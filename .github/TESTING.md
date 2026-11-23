@@ -110,16 +110,17 @@ A variety of verification scripts in [package.json](../package.json) support com
 - **Standalone Server Smoke Test:**
   ```bash
   npm run build
+  npm run check:standalone -- --require-standalone
   npm run test:standalone
   ```
-  Runs [`scripts/test-standalone.mjs`](../scripts/test-standalone.mjs) to verify that standalone Next.js production builds (`.next/standalone/server.js`) boot cleanly and pass health/readiness probes.
-  > **Warning:** `npm run test:standalone` requires running `npm run build` beforehand (it exits immediately if `.next/standalone/server.js` is missing) and executes `docker compose down -v` (with `--env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml`) during cleanup, **deleting local Docker Compose PostgreSQL volumes (`db_data`)**.
+  Verifies post-build standalone asset staging (`.next/standalone/server.js`, `.next/standalone/.next/static`, and `.next/standalone/public` via [`scripts/check-docker-build.ts`](../scripts/check-docker-build.ts)) and runs [`scripts/test-standalone.mjs`](../scripts/test-standalone.mjs) + [`scripts/smoke-runner.mjs`](../scripts/smoke-runner.mjs) to check PostgreSQL TCP readiness (`pg_isready -h localhost`), clean migrations (`POSTGRES_URL_NON_POOLING` unset), `/assets/favicon.png`, `/api/ready`, `/api/registry/validate-code`, and authenticated `/api/registry/items`.
+  > **Warning:** `npm run test:standalone` requires running `npm run build` beforehand (it exits immediately if `.next/standalone/server.js`, `.next/standalone/.next/static`, or `.next/standalone/public` is missing) and executes `docker compose down -v` (with `--env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml`) at startup and cleanup, **deleting local Docker Compose PostgreSQL volumes (`db_data`)**.
 
 - **OCI Container Smoke Test:**
   ```bash
   npm run test:container
   ```
-  Runs [`scripts/test-container.mjs`](../scripts/test-container.mjs) with [`.env.ci`](../.env.ci) and [`docker-compose.ci.yml`](../docker-compose.ci.yml) to build the production Docker container and verify clean-database Prisma migrations, bootstrapping, and service readiness.
+  Runs [`scripts/test-container.mjs`](../scripts/test-container.mjs) with [`.env.ci`](../.env.ci) and [`docker-compose.ci.yml`](../docker-compose.ci.yml) to build the production Docker container, execute the containerized `migration` service (`docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml run --rm migration`) by default even when `node_modules/.bin/prisma` exists on the host, and verify schema readiness, static assets, authenticated data-backed routes, `pg.Pool` connection bounds, and `SIGTERM` draining.
   > **Warning:** Like `npm run test:standalone`, `npm run test:container` executes `docker compose down -v` (with `--env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml`) at startup and cleanup, **wiping local Docker Compose PostgreSQL volumes (`db_data`)**.
 
 - **Static Repository & Document Checks:**
