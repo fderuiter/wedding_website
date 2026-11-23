@@ -5,9 +5,35 @@ import { useSeatingState } from '@/features/seating';
 
 // Mock useSeatingState
 jest.mock('@/features/seating', () => {
-  const actual = jest.requireActual('@/features/seating');
+  const {
+    FloorplanCanvas,
+    UnassignedGuestPanel,
+    TableModal,
+    PrintableFloorplan,
+    resolveDetailedSeatAssignments,
+    resolveSeatAssignments,
+    ADDRESS_COLLECTION_TAG,
+    getDietaryBadges,
+    getGuestAttendanceStatus,
+    getGuestCompanionNames,
+    getGuestPartySize,
+    getGuestsHeadcount,
+    isGuestEligibleForSeating,
+  } = jest.requireActual('@/features/seating');
   return {
-    ...actual,
+    FloorplanCanvas,
+    UnassignedGuestPanel,
+    TableModal,
+    PrintableFloorplan,
+    resolveDetailedSeatAssignments,
+    resolveSeatAssignments,
+    ADDRESS_COLLECTION_TAG,
+    getDietaryBadges,
+    getGuestAttendanceStatus,
+    getGuestCompanionNames,
+    getGuestPartySize,
+    getGuestsHeadcount,
+    isGuestEligibleForSeating,
     useSeatingState: jest.fn(),
   };
 });

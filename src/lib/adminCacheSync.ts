@@ -2,7 +2,7 @@ import type { QueryClient, QueryKey } from '@tanstack/react-query';
 
 const ADMIN_CACHE_SYNC_EVENT = 'admin-cache-sync';
 
-export type AdminCacheSyncScope = 'sample-data' | 'milestones' | 'seating' | 'settings';
+type AdminCacheSyncScope = 'sample-data' | 'milestones' | 'seating' | 'settings';
 
 interface AdminCacheSyncDetail {
   scopes: AdminCacheSyncScope[];
