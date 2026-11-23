@@ -5,6 +5,7 @@ import { PhotoGalleryClient } from '@/components/photos/PhotoGalleryClient';
 import { getAppConfig } from '@/lib/config';
 import { contentService } from '@/features/content';
 import { isAdminRequest } from '@/core/auth/auth.server';
+import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 
 // Mock dependencies
 jest.mock('@/lib/config', () => ({
@@ -20,6 +21,11 @@ jest.mock('@/lib/modules', () => ({
 
 jest.mock('@/core/auth/auth.server', () => ({
   isAdminRequest: jest.fn().mockResolvedValue(false),
+}));
+
+jest.mock('@/core/auth/guestInviteSession', () => ({
+  enforceActiveGuestPageSession: jest.fn().mockResolvedValue(undefined),
+  getGuestInviteSession: jest.fn().mockResolvedValue(null),
 }));
 
 jest.mock('@/features/content', () => ({
@@ -45,6 +51,7 @@ describe('PhotosPage', () => {
     });
     (contentService.getPublicPhotos as jest.Mock).mockResolvedValue([]);
     (isAdminRequest as jest.Mock).mockResolvedValue(false);
+    (getGuestInviteSession as jest.Mock).mockResolvedValue(null);
   });
 
   it('passes empty initialPhotos and omits hardcoded Google Photos links when zero approved photos exist', async () => {
@@ -194,5 +201,79 @@ describe('PhotosPage', () => {
       }),
       undefined
     );
+  });
+
+  it('activates guest tab via searchParams.tab=guest, prefills defaultUploaderName from getGuestInviteSession, and prioritizes title over caption', async () => {
+    (getGuestInviteSession as jest.Mock).mockResolvedValue({
+      code: 'RIVERA26',
+      guestName: 'The Rivera Household',
+      guestIds: ['g1'],
+    });
+    (contentService.getPublicPhotos as jest.Mock).mockResolvedValue([
+      {
+        id: 'curated-node-1',
+        type: 'Photo',
+        tags: ['gallery', 'curated'],
+        data: {
+          url: '/uploads/curated-1.jpg',
+          title: 'Admin Edited Title',
+          caption: 'Old Caption',
+          status: 'APPROVED',
+          isVisible: true,
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ]);
+
+    const pageElement = await PhotosPage({
+      searchParams: Promise.resolve({ tab: 'guest' }),
+    });
+    render(pageElement);
+
+    expect(PhotoGalleryClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        defaultTab: 'guest',
+        defaultUploaderName: 'The Rivera Household',
+        initialPhotos: [
+          expect.objectContaining({
+            id: 'curated-node-1',
+            title: 'Admin Edited Title',
+            caption: 'Old Caption',
+          }),
+        ],
+      }),
+      undefined
+    );
+  });
+
+  it('skips searchParams, isAdminRequest, and getGuestInviteSession when STATIC_EXPORT=true', async () => {
+    const prevStaticExport = process.env.STATIC_EXPORT;
+    process.env.STATIC_EXPORT = 'true';
+    const dynamicSearchParams = Promise.reject(new Error('searchParams should not be read during static export'));
+
+    try {
+      const pageElement = await PhotosPage({ searchParams: dynamicSearchParams });
+      render(pageElement);
+
+      expect(isAdminRequest).not.toHaveBeenCalled();
+      expect(getGuestInviteSession).not.toHaveBeenCalled();
+      expect(PhotoGalleryClient).toHaveBeenCalledWith(
+        {
+          initialPhotos: [],
+          defaultTab: 'curated',
+          isAdmin: false,
+        },
+        undefined
+      );
+    } finally {
+      if (prevStaticExport === undefined) {
+        delete process.env.STATIC_EXPORT;
+      } else {
+        process.env.STATIC_EXPORT = prevStaticExport;
+      }
+      // Prevent unhandled rejection warning on the unused rejected promise
+      dynamicSearchParams.catch(() => {});
+    }
   });
 });

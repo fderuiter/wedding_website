@@ -885,6 +885,8 @@ export const PhotoModerationSchema = z.object({
   photoId: z.string().optional(),
   action: z.enum(['approve', 'reject', 'APPROVE', 'REJECT']).optional(),
   status: z.enum(['APPROVED', 'REJECTED']).optional(),
+  caption: z.string().max(500, 'Caption must be 500 characters or fewer').optional(),
+  uploaderName: z.string().max(100, 'Uploader name must be 100 characters or fewer').optional(),
 }).superRefine((data, ctx) => {
   if (!data.action && !data.status) {
     ctx.addIssue({
@@ -908,6 +910,8 @@ export const QueuePhotoModerationSchema = z.object({
   photoId: z.string().min(1).optional(),
   action: z.enum(['approve', 'reject', 'APPROVE', 'REJECT']).optional(),
   status: z.enum(['APPROVED', 'REJECTED']).optional(),
+  caption: z.string().max(500, 'Caption must be 500 characters or fewer').optional(),
+  uploaderName: z.string().max(100, 'Uploader name must be 100 characters or fewer').optional(),
 }).superRefine((data, ctx) => {
   if (!data.id && !data.nodeId && !data.photoId) {
     ctx.addIssue({

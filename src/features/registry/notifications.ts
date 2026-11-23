@@ -253,6 +253,50 @@ async function claimSendTimestamp(
   return false;
 }
 
+async function releaseSendTimestamp(
+  contributor: ContributorCandidate,
+  kind: 'confirmation' | 'alert',
+  repository: IRegistryRepository | undefined,
+  dbClient: any
+): Promise<void> {
+  const field = kind === 'confirmation' ? 'confirmationEmailSentAt' : 'alertEmailSentAt';
+  try {
+    if (contributor.id) {
+      if (repository && typeof repository.releaseContributorEmailSend === 'function') {
+        await repository.releaseContributorEmailSend(contributor.id, kind);
+        return;
+      }
+      if (typeof registryService?.releaseContributorEmailSend === 'function') {
+        await registryService.releaseContributorEmailSend(contributor.id, kind);
+        return;
+      }
+      if (typeof registryRepository?.releaseContributorEmailSend === 'function') {
+        await registryRepository.releaseContributorEmailSend(contributor.id, kind);
+        return;
+      }
+      if (typeof dbClient?.contributor?.updateMany === 'function') {
+        await dbClient.contributor.updateMany({
+          where: { id: contributor.id },
+          data: { [field]: null },
+        });
+        return;
+      }
+    }
+
+    if (
+      contributor.stripePaymentIntentId &&
+      typeof dbClient?.contributor?.updateMany === 'function'
+    ) {
+      await dbClient.contributor.updateMany({
+        where: { stripePaymentIntentId: contributor.stripePaymentIntentId },
+        data: { [field]: null },
+      });
+    }
+  } catch {
+    // Best-effort timestamp release; never throw from notification pipeline
+  }
+}
+
 function buildGuestConfirmationEmail(options: {
   contributorName: string;
   itemName: string;
@@ -687,8 +731,9 @@ export async function dispatchContributionNotifications(
     if (hasValidGuestEmail) {
       emailBranches.push(
         (async () => {
+          let claimedGuestEmail = false;
           try {
-            const claimedGuestEmail = await claimSendTimestamp(
+            claimedGuestEmail = await claimSendTimestamp(
               savedContributor,
               'confirmation',
               repository,
@@ -721,6 +766,7 @@ export async function dispatchContributionNotifications(
                 body,
               });
               if (!result.success) {
+                await releaseSendTimestamp(savedContributor, 'confirmation', repository, dbClient);
                 logger.warn('Failed to send registry guest confirmation email', {
                   itemId,
                   contributorId: savedContributor.id,
@@ -731,6 +777,9 @@ export async function dispatchContributionNotifications(
               }
             }
           } catch (guestErr: unknown) {
+            if (claimedGuestEmail) {
+              await releaseSendTimestamp(savedContributor, 'confirmation', repository, dbClient);
+            }
             logger.warn('Unexpected error sending registry guest confirmation email', {
               itemId,
               contributorId: savedContributor.id,
@@ -746,8 +795,9 @@ export async function dispatchContributionNotifications(
     if (hasValidCoupleEmail && !isReserved) {
       emailBranches.push(
         (async () => {
+          let claimedAlertEmail = false;
           try {
-            const claimedAlertEmail = await claimSendTimestamp(
+            claimedAlertEmail = await claimSendTimestamp(
               savedContributor,
               'alert',
               repository,
@@ -786,6 +836,7 @@ export async function dispatchContributionNotifications(
                 body,
               });
               if (!result.success) {
+                await releaseSendTimestamp(savedContributor, 'alert', repository, dbClient);
                 logger.warn('Failed to send registry couple alert email', {
                   itemId,
                   contributorId: savedContributor.id,
@@ -796,6 +847,9 @@ export async function dispatchContributionNotifications(
               }
             }
           } catch (alertErr: unknown) {
+            if (claimedAlertEmail) {
+              await releaseSendTimestamp(savedContributor, 'alert', repository, dbClient);
+            }
             logger.warn('Unexpected error sending registry couple alert email', {
               itemId,
               contributorId: savedContributor.id,
@@ -840,6 +894,8 @@ export async function dispatchConfirmedContributionAlert(params: {
 }): Promise<void> {
   const { contributor, item, requestUrl, repository } = params;
 
+  let claimedAlertEmail = false;
+  let dbClient: any = prisma;
   try {
     const activeConfig = params.config ?? (await getAppConfig());
     if (!isEmailProviderConfigured(activeConfig)) {
@@ -852,8 +908,8 @@ export async function dispatchConfirmedContributionAlert(params: {
       return;
     }
 
-    const dbClient = (repository as any)?.client ?? prisma;
-    const claimedAlertEmail = await claimSendTimestamp(
+    dbClient = (repository as any)?.client ?? prisma;
+    claimedAlertEmail = await claimSendTimestamp(
       contributor,
       'alert',
       repository,
@@ -941,6 +997,7 @@ export async function dispatchConfirmedContributionAlert(params: {
       body,
     });
     if (!result.success) {
+      await releaseSendTimestamp(contributor, 'alert', repository, dbClient);
       logger.warn('Failed to send confirmed contribution couple alert email', {
         itemId: item?.id,
         contributorId: contributor.id,
@@ -950,6 +1007,9 @@ export async function dispatchConfirmedContributionAlert(params: {
       });
     }
   } catch (err: unknown) {
+    if (claimedAlertEmail) {
+      await releaseSendTimestamp(contributor, 'alert', repository, dbClient);
+    }
     logger.warn('Unexpected error sending confirmed contribution couple alert email', {
       itemId: item?.id,
       contributorId: contributor.id,

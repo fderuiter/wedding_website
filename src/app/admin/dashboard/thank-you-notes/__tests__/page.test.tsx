@@ -112,9 +112,40 @@ describe('ThankYouNotesPage', () => {
     const notNeededTab = screen.getByRole('tab', { name: 'Not Needed' });
 
     expect(allTab).toHaveAttribute('aria-selected', 'true');
+    expect(allTab).toHaveAttribute('tabIndex', '0');
+    expect(allTab).toHaveAttribute('aria-controls', 'thank-you-notes-panel');
     expect(unsentTab).toHaveAttribute('aria-selected', 'false');
+    expect(unsentTab).toHaveAttribute('tabIndex', '-1');
+    expect(unsentTab).toHaveAttribute('aria-controls', 'thank-you-notes-panel');
     expect(sentTab).toHaveAttribute('aria-selected', 'false');
+    expect(sentTab).toHaveAttribute('tabIndex', '-1');
     expect(notNeededTab).toHaveAttribute('aria-selected', 'false');
+    expect(notNeededTab).toHaveAttribute('tabIndex', '-1');
+
+    const tabpanel = screen.getByRole('tabpanel');
+    expect(tabpanel).toHaveAttribute('id', 'thank-you-notes-panel');
+    expect(tabpanel).toHaveAttribute('aria-labelledby', allTab.getAttribute('id'));
+
+    // Keyboard navigation across filter tabs (ArrowRight, End, Home, ArrowLeft)
+    allTab.focus();
+    fireEvent.keyDown(allTab, { key: 'ArrowRight' });
+    expect(unsentTab).toHaveFocus();
+    expect(unsentTab).toHaveAttribute('aria-selected', 'true');
+    expect(unsentTab).toHaveAttribute('tabIndex', '0');
+    expect(tabpanel).toHaveAttribute('aria-labelledby', unsentTab.getAttribute('id'));
+
+    fireEvent.keyDown(unsentTab, { key: 'End' });
+    expect(notNeededTab).toHaveFocus();
+    expect(notNeededTab).toHaveAttribute('aria-selected', 'true');
+    expect(tabpanel).toHaveAttribute('aria-labelledby', notNeededTab.getAttribute('id'));
+
+    fireEvent.keyDown(notNeededTab, { key: 'ArrowLeft' });
+    expect(sentTab).toHaveFocus();
+    expect(sentTab).toHaveAttribute('aria-selected', 'true');
+
+    fireEvent.keyDown(sentTab, { key: 'Home' });
+    expect(allTab).toHaveFocus();
+    expect(allTab).toHaveAttribute('aria-selected', 'true');
 
     const searchInput = screen.getByPlaceholderText('Search contributor name or gift item...');
     fireEvent.change(searchInput, { target: { value: 'Alice' } });
@@ -282,6 +313,30 @@ describe('ThankYouNotesPage', () => {
     fireEvent.mouseDown(document.body);
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     expect(document.activeElement).toBe(trigger);
+  });
+
+  it('closes export address labels dropdown cleanly when clicking the open trigger button', async () => {
+    render(
+      <ToastProvider>
+        <ThankYouNotesPage />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Alice Johnson')).toBeInTheDocument();
+    });
+
+    const trigger = screen.getByRole('button', { name: /Export Address Labels/i });
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+
+    fireEvent.mouseDown(trigger);
+    fireEvent.mouseUp(trigger);
+    fireEvent.click(trigger);
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
 
   it('opens export address labels dropdown with ArrowDown or ArrowUp on trigger button', async () => {

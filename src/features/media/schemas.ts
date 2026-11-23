@@ -23,6 +23,8 @@ export const MediaSchema = z.object({
   isDecorative: z.boolean(),
   isSample: z.boolean().optional().default(false),
   publishToGallery: z.boolean().optional(),
+  caption: z.string().max(500).optional(),
+  uploaderName: z.string().max(100).optional(),
   createdAt: z.union([z.date(), z.string()]).optional(),
   updatedAt: z.union([z.date(), z.string()]).optional(),
 });
@@ -34,6 +36,8 @@ export const MediaCreateSchema = z.object({
   altText: z.string().nullable(),
   isDecorative: z.boolean().default(false),
   publishToGallery: z.boolean().optional(),
+  caption: z.string().max(500, 'Caption must be 500 characters or fewer').optional(),
+  uploaderName: z.string().max(100, 'Uploader name must be 100 characters or fewer').optional(),
 });
 
 export const MediaUpdateSchema = MediaCreateSchema.partial();

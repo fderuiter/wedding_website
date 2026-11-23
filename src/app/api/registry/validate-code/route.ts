@@ -54,6 +54,18 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     throw new ApiError(404, 'Invalid invitation code.');
   }
 
+  if (invite.id && typeof prisma.broadcastRecipient?.updateMany === 'function') {
+    await prisma.broadcastRecipient.updateMany({
+      where: {
+        invitationCodeId: invite.id,
+        status: 'SENT',
+      },
+      data: {
+        status: 'VIEWED',
+      },
+    });
+  }
+
   const token = await signGuestInviteSessionToken({
     code: invite.code,
     guestName: invite.guestName,
