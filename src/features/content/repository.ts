@@ -32,6 +32,50 @@ function parseStoredContentNode(node: unknown): ContentNodeDTO {
   throw parsed.error;
 }
 
+const STATIC_MOCK_PHOTO_NODES_RAW = [
+  {
+    id: '11111111-1111-4111-8111-111111111111',
+    type: 'Photo' as const,
+    tags: ['gallery', 'curated'],
+    data: {
+      url: '/images/sunset-embrace.jpg',
+      title: 'Sunset Embrace',
+      altText: 'Couple embracing at sunset on the estate grounds',
+      caption: 'Golden hour portraits at The Glasshouse Estate.',
+      status: 'APPROVED' as const,
+      isVisible: true,
+      publishToGallery: true,
+    },
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+  },
+];
+
+function isStaticExportBuild(): boolean {
+  return (
+    process.env.STATIC_EXPORT === 'true' ||
+    process.env.STATIC_EXPORT === '1' ||
+    process.env.npm_lifecycle_event === 'build:export'
+  );
+}
+
+function getStaticMockPhotoNodes(options?: GetNodesByTypeOptions): ContentNodeDTO[] {
+  let mockNodes = STATIC_MOCK_PHOTO_NODES_RAW.map((n) => parseStoredPhotoNode(n));
+  if (options?.since) {
+    const sinceDate = options.since instanceof Date ? options.since : new Date(options.since);
+    if (!isNaN(sinceDate.getTime())) {
+      mockNodes = mockNodes.filter((n) => n.createdAt > sinceDate);
+    }
+  }
+  if (options?.limit !== undefined) {
+    const limit = Math.floor(Number(options.limit));
+    if (!isNaN(limit) && limit > 0) {
+      mockNodes = mockNodes.slice(0, limit > 100 ? 100 : limit);
+    }
+  }
+  return mockNodes;
+}
+
 export class ContentRepository implements IContentRepository {
   constructor(public client: any = prisma) {}
 
@@ -51,6 +95,16 @@ export class ContentRepository implements IContentRepository {
 
     const skip = (page - 1) * limit;
     const take = limit;
+
+    if (isStaticExportBuild()) {
+      return {
+        photos: [],
+        total: 0,
+        page,
+        limit,
+        totalPages: 0,
+      };
+    }
 
     const where: any = {
       type: 'Photo',
@@ -100,6 +154,9 @@ export class ContentRepository implements IContentRepository {
   }
 
   async getFeatures(configIdOrSubdomain: string = 'global') {
+    if (isStaticExportBuild()) {
+      return [];
+    }
     const target = isMultisiteEnabled() ? configIdOrSubdomain : 'global';
     let config = await this.client.appConfig.findUnique({ where: { id: target } });
     if (!config && isMultisiteEnabled()) {
@@ -130,6 +187,13 @@ export class ContentRepository implements IContentRepository {
   }
 
   async getNodesByType(type: string, options?: GetNodesByTypeOptions): Promise<ContentNodeDTO[]> {
+    if (isStaticExportBuild()) {
+      if (type !== 'Photo') {
+        return [];
+      }
+      return getStaticMockPhotoNodes(options);
+    }
+
     const where: any = { type };
     if (options?.since) {
       const sinceDate = options.since instanceof Date ? options.since : new Date(options.since);
@@ -155,6 +219,10 @@ export class ContentRepository implements IContentRepository {
   }
 
   async getPublicPhotos(options?: GetNodesByTypeOptions): Promise<ContentNodeDTO[]> {
+    if (isStaticExportBuild()) {
+      return getStaticMockPhotoNodes(options);
+    }
+
     let take: number | undefined;
     if (options?.limit !== undefined) {
       const limit = Math.floor(Number(options.limit));
@@ -262,7 +330,7 @@ export class ContentRepository implements IContentRepository {
   }
 
   async getEntityBoundMediaIds(mediaIds: string[]): Promise<Set<string>> {
-    if (!mediaIds.length || !this.client.media?.findMany) {
+    if (isStaticExportBuild() || !mediaIds.length || !this.client.media?.findMany) {
       return new Set();
     }
 
@@ -296,6 +364,10 @@ export class ContentRepository implements IContentRepository {
   }
 
   async getNodeById(id: string): Promise<ContentNodeDTO | null> {
+    if (isStaticExportBuild()) {
+      const match = STATIC_MOCK_PHOTO_NODES_RAW.find((n) => n.id === id);
+      return match ? parseStoredContentNode(match) : null;
+    }
     const node = await this.client.contentNode.findUnique({
       where: { id }
     });

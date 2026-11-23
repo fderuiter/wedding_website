@@ -261,16 +261,35 @@ function checkDockerfileContent(
 
   const instructions = parseDockerfileInstructions(dockerfileContent);
   const stageAliases = new Set<string>();
+  const nodeDerivedStages = new Set<string>();
   let foundNodeBaseImage = false;
   let currentStage: string | null = null;
+  let hasBaseStage = false;
+  let baseStageLine = 1;
+  let seenBaseGlobalNpmrc = false;
   let hasBuilderStage = false;
   let seenBuilderNpmCi = false;
   let builderNpmCiLine = 1;
   let seenBuilderBuildDocker = false;
+  let hasRunnerStage = false;
+  let runnerStageLine = 1;
+  let runnerInheritedNode = false;
+  let seenRunnerNodeBinaryCopy = false;
   const builderCopiedBeforeNpmCi: string[] = [];
   const builderCopiedAfterNpmCi = new Set<string>();
 
   for (const instr of instructions) {
+    if (/(?:^|[\s>'"])\/etc\/npmrc(?:\s|['";&|]|$)/.test(instr.text)) {
+      violations.push({
+        filePath: relPath,
+        lineNumber: instr.startLine,
+        lineContent: instr.firstLineContent,
+        imageRef: '/etc/npmrc',
+        reason:
+          'Dockerfile must write global npm configuration to "/usr/local/etc/npmrc" ($PREFIX/etc/npmrc) instead of "/etc/npmrc".',
+      });
+    }
+
     const fromMatch = instr.text.match(/^FROM\s+(.*)$/i);
     if (fromMatch) {
       const rest = fromMatch[1].trim();
@@ -279,6 +298,7 @@ function checkDockerfileContent(
         const imageSpec = parsedFrom[1];
         const stageAlias = parsedFrom[2];
         const lowerImage = imageSpec.toLowerCase();
+        let isNodeImage = nodeDerivedStages.has(lowerImage);
 
         if (lowerImage !== 'scratch' && !stageAliases.has(lowerImage) && !imageSpec.includes('${{')) {
           validateExternalImageRef(
@@ -293,6 +313,7 @@ function checkDockerfileContent(
           const rawRepo = imageSpec.trim().replace(/^['"]|['"]$/g, '').split('@')[0];
           const normalizedRepo = normalizeImageKey(rawRepo);
           if (normalizedRepo === 'node' || normalizedRepo.startsWith('node:')) {
+            isNodeImage = true;
             foundNodeBaseImage = true;
             if (expectedNodeMajor) {
               const expectedPrefix = `node:${expectedNodeMajor}-bookworm-slim`;
@@ -312,15 +333,54 @@ function checkDockerfileContent(
         if (stageAlias) {
           const normalizedAlias = stageAlias.toLowerCase();
           stageAliases.add(normalizedAlias);
+          if (isNodeImage) {
+            nodeDerivedStages.add(normalizedAlias);
+          }
           currentStage = normalizedAlias;
-          if (normalizedAlias === 'builder') {
+          if (normalizedAlias === 'base') {
+            hasBaseStage = true;
+            baseStageLine = instr.startLine;
+          } else if (normalizedAlias === 'builder') {
             hasBuilderStage = true;
+          } else if (normalizedAlias === 'runner') {
+            hasRunnerStage = true;
+            runnerStageLine = instr.startLine;
+            if (isNodeImage) {
+              runnerInheritedNode = true;
+              violations.push({
+                filePath: relPath,
+                lineNumber: instr.startLine,
+                lineContent: instr.firstLineContent,
+                imageRef: 'npm',
+                reason: `Dockerfile runner stage must not inherit from Node.js stage/image "${imageSpec}" (which ships npm, npx, corepack, yarn, and /usr/local/include/node); base runner on a minimal OS image (e.g. debian:bookworm-slim) and copy only /usr/local/bin/node.`,
+              });
+            }
           }
         } else {
           currentStage = null;
         }
       }
       continue;
+    }
+
+    if (currentStage === 'runner' && /^COPY\b/i.test(instr.text)) {
+      if (/\/usr\/local\/bin\/node\s+\/usr\/local\/bin\/node(?:\s|$)/.test(instr.text)) {
+        seenRunnerNodeBinaryCopy = true;
+      }
+      const forbiddenRunnerCopyMatch = instr.text.match(
+        /\/usr\/local\/(?:lib\/node_modules(?:\/npm)?|include\/node)\b|(?:^|[\s'"/])(npm|npx|corepack|yarn)(?:$|[\s'"/])/
+      );
+      if (forbiddenRunnerCopyMatch) {
+        const forbiddenRef = forbiddenRunnerCopyMatch[1] ?? forbiddenRunnerCopyMatch[0].trim();
+        violations.push({
+          filePath: relPath,
+          lineNumber: instr.startLine,
+          lineContent: instr.firstLineContent,
+          imageRef: forbiddenRef,
+          reason:
+            'Dockerfile runner stage must omit npm, npx, corepack, yarn, /usr/local/lib/node_modules/npm, and /usr/local/include/node.',
+        });
+      }
     }
 
     const copyFromMatch = instr.text.match(/^COPY\s+(?:--\S+\s+)*--from=([^\s]+)\b/i);
@@ -390,6 +450,42 @@ function checkDockerfileContent(
     }
 
     const runMatch = instr.text.match(/^RUN\s+(.*)$/i);
+    if (runMatch && currentStage === 'base') {
+      if (/update-notifier=false[\s\S]*\/usr\/local\/etc\/npmrc/.test(runMatch[1])) {
+        seenBaseGlobalNpmrc = true;
+      }
+    }
+
+    if (runMatch && currentStage === 'prisma-cli') {
+      if (/\bnpm\s+install\b/.test(runMatch[1])) {
+        violations.push({
+          filePath: relPath,
+          lineNumber: instr.startLine,
+          lineContent: instr.firstLineContent,
+          imageRef: 'npm install',
+          reason:
+            'Dockerfile prisma-cli stage must use "npm ci" with a committed lockfile instead of unpinned "npm install".',
+        });
+      }
+    }
+
+    if (runMatch && currentStage === 'runner') {
+      const forbiddenRunnerRunMatch = runMatch[1].match(
+        /\/usr\/local\/(?:lib\/node_modules(?:\/npm)?|include\/node)\b|\b(npm|npx|corepack|yarn)\b/
+      );
+      if (forbiddenRunnerRunMatch) {
+        const forbiddenRef = forbiddenRunnerRunMatch[1] ?? forbiddenRunnerRunMatch[0].trim();
+        violations.push({
+          filePath: relPath,
+          lineNumber: instr.startLine,
+          lineContent: instr.firstLineContent,
+          imageRef: forbiddenRef,
+          reason:
+            'Dockerfile runner stage must forbid npm, npx, corepack, yarn, /usr/local/lib/node_modules/npm, and /usr/local/include/node.',
+        });
+      }
+    }
+
     if (runMatch && currentStage === 'builder') {
       const runBody = runMatch[1];
 
@@ -561,6 +657,27 @@ function checkDockerfileContent(
         reason: 'Dockerfile builder stage must execute "npm run build:docker".',
       });
     }
+  }
+
+  if (hasBaseStage && !seenBaseGlobalNpmrc) {
+    violations.push({
+      filePath: relPath,
+      lineNumber: baseStageLine,
+      lineContent: '',
+      imageRef: '/usr/local/etc/npmrc',
+      reason:
+        'Dockerfile base stage must write "update-notifier=false" to "/usr/local/etc/npmrc" ($PREFIX/etc/npmrc).',
+    });
+  }
+
+  if (hasRunnerStage && !runnerInheritedNode && !seenRunnerNodeBinaryCopy) {
+    violations.push({
+      filePath: relPath,
+      lineNumber: runnerStageLine,
+      lineContent: '',
+      imageRef: '/usr/local/bin/node',
+      reason: 'Dockerfile runner stage must copy "/usr/local/bin/node" into "/usr/local/bin/node".',
+    });
   }
 
   if (expectedNodeMajor && !foundNodeBaseImage) {
@@ -1461,6 +1578,61 @@ export function checkDockerBuild(
           });
         }
       }
+      const forbiddenStandalonePaths = [
+        ['node_modules', 'pdfkit', 'js', 'pdfkit.standalone.js'],
+        ['node_modules', 'pdfkit', 'js', 'pdfkit.browser.js'],
+        ['node_modules', 'pdfkit', 'js', 'pdfkit.old.js'],
+        ['node_modules', 'fontkit', 'dist', 'browser.cjs'],
+      ];
+      for (const segments of forbiddenStandalonePaths) {
+        const candidatePath = path.join(standaloneDir, ...segments);
+        if (fs.existsSync(candidatePath)) {
+          const relStandalone = ['.next', 'standalone', ...segments].join('/');
+          violations.push({
+            filePath: relStandalone,
+            lineNumber: 1,
+            lineContent: '',
+            imageRef: segments[segments.length - 1],
+            reason: `${relStandalone} browser/.old bundle must be excluded from standalone output.`,
+          });
+        }
+      }
+    }
+  }
+
+  // 8. Verify isolated Prisma CLI lockfile version parity with root package-lock.json (prisma, @prisma/config, effect)
+  const rootLockPath = path.join(rootDir, 'package-lock.json');
+  const cliLockPath = path.join(rootDir, 'docker', 'prisma-cli', 'package-lock.json');
+  if (fs.existsSync(rootLockPath) && fs.existsSync(cliLockPath)) {
+    try {
+      const rootLock = JSON.parse(fs.readFileSync(rootLockPath, 'utf8')) as {
+        packages?: Record<string, { version?: string }>;
+      };
+      const cliLock = JSON.parse(fs.readFileSync(cliLockPath, 'utf8')) as {
+        packages?: Record<string, { version?: string }>;
+      };
+      for (const pkgKey of ['node_modules/prisma', 'node_modules/@prisma/config', 'node_modules/effect']) {
+        const rootVersion = rootLock.packages?.[pkgKey]?.version;
+        const cliVersion = cliLock.packages?.[pkgKey]?.version;
+        if (rootVersion && cliVersion !== rootVersion) {
+          const pkgName = pkgKey.replace(/^node_modules\//, '');
+          violations.push({
+            filePath: 'docker/prisma-cli/package-lock.json',
+            lineNumber: 1,
+            lineContent: '',
+            imageRef: pkgName,
+            reason: `docker/prisma-cli/package-lock.json pins "${pkgName}" to "${cliVersion ?? 'missing'}", which does not match "${rootVersion}" in package-lock.json.`,
+          });
+        }
+      }
+    } catch (err) {
+      violations.push({
+        filePath: 'docker/prisma-cli/package-lock.json',
+        lineNumber: 1,
+        lineContent: '',
+        imageRef: 'package-lock.json',
+        reason: `Failed to parse package-lock.json or docker/prisma-cli/package-lock.json: ${(err as Error).message}`,
+      });
     }
   }
 
