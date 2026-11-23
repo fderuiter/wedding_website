@@ -7,53 +7,74 @@ WORKDIR /app
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
-    apt-get update && apt-get install -y --no-install-recommends \
+    apt-get update && apt-get upgrade -y --no-install-recommends && \
+    apt-get install -y --no-install-recommends \
     openssl \
     ca-certificates \
     tini && \
-    printf 'update-notifier=false\n' > /etc/npmrc
+    mkdir -p /usr/local/etc && \
+    printf 'update-notifier=false\n' | tee /usr/local/etc/npmrc > /etc/npmrc
 
-# Isolated Prisma CLI stage (excludes Studio, @prisma/dev, and builder devDependencies)
+# Isolated Prisma CLI stage (excludes Studio, @prisma/dev, and builder devDependencies; pinned to package-lock.json)
 FROM base AS prisma-cli
 WORKDIR /opt/prisma-cli
 COPY package-lock.json /tmp/package-lock.json
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
     node -e ' \
       const fs = require("fs"); \
+      const path = require("path"); \
       const lock = JSON.parse(fs.readFileSync("/tmp/package-lock.json", "utf8")); \
-      const prismaVersion = lock.packages?.["node_modules/prisma"]?.version || "7.10.1"; \
-      const configVersion = lock.packages?.["node_modules/@prisma/config"]?.version || prismaVersion; \
-      const effectVersion = lock.packages?.["node_modules/effect"]?.version || "3.22.5"; \
-      fs.mkdirSync("/opt/prisma-cli/stubs/studio-core", { recursive: true }); \
-      fs.writeFileSync("/opt/prisma-cli/stubs/studio-core/package.json", JSON.stringify({ \
-        name: "@prisma/studio-core", \
-        version: "0.0.0-disabled", \
-        private: true, \
-        exports: { \
-          "./data/bff": "./index.cjs", \
-          "./data/mysql2": "./index.cjs", \
-          "./data/node-sqlite": "./index.cjs", \
-          "./data/postgresjs": "./index.cjs" \
+      const srcPackages = lock.packages || {}; \
+      const prismaVersion = srcPackages["node_modules/prisma"]?.version; \
+      const configVersion = srcPackages["node_modules/@prisma/config"]?.version; \
+      const effectVersion = srcPackages["node_modules/effect"]?.version; \
+      if (!prismaVersion || !configVersion || !effectVersion) { \
+        throw new Error("Missing required Prisma CLI package entries in package-lock.json"); \
+      } \
+      const stubs = { \
+        "@prisma/studio-core": { \
+          dir: "stubs/studio-core", \
+          pkg: { \
+            name: "@prisma/studio-core", \
+            version: "0.0.0-disabled", \
+            private: true, \
+            exports: { \
+              "./data/bff": "./index.cjs", \
+              "./data/mysql2": "./index.cjs", \
+              "./data/node-sqlite": "./index.cjs", \
+              "./data/postgresjs": "./index.cjs" \
+            } \
+          }, \
+          code: "module.exports = {};\n" \
+        }, \
+        "@prisma/dev": { \
+          dir: "stubs/prisma-dev", \
+          pkg: { \
+            name: "@prisma/dev", \
+            version: "0.0.0-disabled", \
+            private: true, \
+            exports: { ".": "./index.cjs", "./internal/state": "./index.cjs" } \
+          }, \
+          code: "module.exports = { ServerState: { scan: async () => [] } };\n" \
+        }, \
+        "mysql2": { \
+          dir: "stubs/mysql2", \
+          pkg: { name: "mysql2", version: "0.0.0-disabled", private: true, main: "index.cjs" }, \
+          code: "module.exports = {};\n" \
+        }, \
+        "postgres": { \
+          dir: "stubs/postgres", \
+          pkg: { name: "postgres", version: "0.0.0-disabled", private: true, main: "index.cjs" }, \
+          code: "module.exports = {};\n" \
         } \
-      }, null, 2)); \
-      fs.writeFileSync("/opt/prisma-cli/stubs/studio-core/index.cjs", "module.exports = {};\n"); \
-      fs.mkdirSync("/opt/prisma-cli/stubs/prisma-dev", { recursive: true }); \
-      fs.writeFileSync("/opt/prisma-cli/stubs/prisma-dev/package.json", JSON.stringify({ \
-        name: "@prisma/dev", \
-        version: "0.0.0-disabled", \
-        private: true, \
-        exports: { ".": "./index.cjs", "./internal/state": "./index.cjs" } \
-      }, null, 2)); \
-      fs.writeFileSync("/opt/prisma-cli/stubs/prisma-dev/index.cjs", "module.exports = { ServerState: { scan: async () => [] } };\n"); \
-      fs.mkdirSync("/opt/prisma-cli/stubs/empty", { recursive: true }); \
-      fs.writeFileSync("/opt/prisma-cli/stubs/empty/package.json", JSON.stringify({ \
-        name: "empty-stub", \
-        version: "0.0.0-disabled", \
-        private: true, \
-        main: "index.cjs" \
-      }, null, 2)); \
-      fs.writeFileSync("/opt/prisma-cli/stubs/empty/index.cjs", "module.exports = {};\n"); \
-      fs.writeFileSync("/opt/prisma-cli/package.json", JSON.stringify({ \
+      }; \
+      for (const stub of Object.values(stubs)) { \
+        const fullDir = path.join("/opt/prisma-cli", stub.dir); \
+        fs.mkdirSync(fullDir, { recursive: true }); \
+        fs.writeFileSync(path.join(fullDir, "package.json"), JSON.stringify(stub.pkg, null, 2) + "\n"); \
+        fs.writeFileSync(path.join(fullDir, "index.cjs"), stub.code); \
+      } \
+      const rootPkg = { \
         name: "prisma-cli-isolated", \
         private: true, \
         dependencies: { \
@@ -62,19 +83,71 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked \
         }, \
         overrides: { \
           "effect": effectVersion, \
-          "@prisma/studio-core": "file:/opt/prisma-cli/stubs/studio-core", \
-          "@prisma/dev": "file:/opt/prisma-cli/stubs/prisma-dev", \
-          "mysql2": "file:/opt/prisma-cli/stubs/empty", \
-          "postgres": "file:/opt/prisma-cli/stubs/empty" \
+          "@prisma/studio-core": "file:stubs/studio-core", \
+          "@prisma/dev": "file:stubs/prisma-dev", \
+          "mysql2": "file:stubs/mysql2", \
+          "postgres": "file:stubs/postgres" \
         } \
-      }, null, 2)); \
+      }; \
+      fs.writeFileSync("/opt/prisma-cli/package.json", JSON.stringify(rootPkg, null, 2) + "\n"); \
+      const outPackages = { "": { name: rootPkg.name, dependencies: rootPkg.dependencies } }; \
+      for (const [pkgName, stub] of Object.entries(stubs)) { \
+        outPackages[stub.dir] = { name: stub.pkg.name, version: stub.pkg.version }; \
+        outPackages["node_modules/" + pkgName] = { resolved: stub.dir, link: true }; \
+      } \
+      function resolveKey(parentKey, depName) { \
+        let prefix = parentKey; \
+        while (true) { \
+          const candidate = prefix ? prefix + "/node_modules/" + depName : "node_modules/" + depName; \
+          if (srcPackages[candidate]) return candidate; \
+          const prevIdx = prefix.lastIndexOf("/node_modules/"); \
+          if (prevIdx === -1) break; \
+          prefix = prefix.slice(0, prevIdx); \
+        } \
+        return "node_modules/" + depName; \
+      } \
+      const queue = ["node_modules/@prisma/config", "node_modules/prisma"]; \
+      const visited = new Set(); \
+      while (queue.length > 0) { \
+        const key = queue.shift(); \
+        if (visited.has(key)) continue; \
+        visited.add(key); \
+        const pkgName = key.replace(/^(?:.*\/)?node_modules\//, ""); \
+        if (stubs[pkgName]) continue; \
+        const entry = srcPackages[key]; \
+        if (!entry) throw new Error("Lockfile missing reachable package: " + key); \
+        const cloned = { ...entry }; \
+        delete cloned.dev; \
+        delete cloned.devOptional; \
+        if (cloned.dependencies) { \
+          cloned.dependencies = { ...cloned.dependencies }; \
+          for (const dep of Object.keys(cloned.dependencies)) { \
+            if (stubs[dep]) cloned.dependencies[dep] = "file:" + stubs[dep].dir; \
+            else queue.push(resolveKey(key, dep)); \
+          } \
+        } \
+        if (cloned.optionalDependencies) { \
+          for (const dep of Object.keys(cloned.optionalDependencies)) { \
+            if (!stubs[dep]) { \
+              const optKey = resolveKey(key, dep); \
+              if (srcPackages[optKey]) queue.push(optKey); \
+            } \
+          } \
+        } \
+        outPackages[key] = cloned; \
+      } \
+      fs.writeFileSync("/opt/prisma-cli/package-lock.json", JSON.stringify({ \
+        name: rootPkg.name, \
+        lockfileVersion: lock.lockfileVersion || 3, \
+        requires: true, \
+        packages: outPackages \
+      }, null, 2) + "\n"); \
       fs.unlinkSync("/tmp/package-lock.json"); \
     ' && \
-    npm install --install-links --omit=dev --no-audit --no-fund && \
+    npm ci --omit=dev --no-audit --no-fund && \
     /opt/prisma-cli/node_modules/.bin/prisma --version | grep -q "schema-engine-cli" && \
     rm -rf \
       /opt/prisma-cli/package-lock.json \
-      /opt/prisma-cli/stubs \
       /opt/prisma-cli/node_modules/prisma/build/studio.js \
       /opt/prisma-cli/node_modules/prisma/build/studio.css \
       /opt/prisma-cli/node_modules/prisma/build/xdg-open \
@@ -146,9 +219,10 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 
-# Copy Prisma schema, config, and standalone password hash utility owned by root:root
+# Copy Prisma schema, config, shared PostgreSQL URI normalizer, and standalone password hash utility owned by root:root
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
+COPY --from=builder /app/src/lib/postgres-url.js ./src/lib/postgres-url.js
 COPY --from=builder /app/scripts/generate-password-hash.mjs ./scripts/generate-password-hash.mjs
 
 # Link ./node_modules/.bin/prisma (root:root), pre-create runtime cache/upload mountpoints, and strip setuid/setgid bits

@@ -9,9 +9,7 @@ const require = createRequire(import.meta.url);
 
 const config: StorybookConfig = {
   stories: ['../src/**/*.stories.@(js|jsx|mjs|ts|tsx)'],
-  addons: [
-    '@storybook/addon-essentials',
-  ],
+  addons: [],
   framework: {
     name: '@storybook/react-webpack5',
     options: {

@@ -54,6 +54,7 @@ describe('SeatingTableAdminService Auto-Assign Bulk Integration', () => {
     await realPrisma.snapshotVersion.deleteMany();
     await realPrisma.invitationCode.deleteMany();
     await realPrisma.seatingTable.deleteMany();
+    await pool.query('VACUUM ANALYZE "SnapshotVersion", "InvitationCode", "SeatingTable";');
     await realPrisma.$disconnect();
     await pool.end();
   });

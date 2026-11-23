@@ -1,38 +1,12 @@
 import { validateAndResolveHost } from './ssrf';
 import { Agent, Dispatcher1Wrapper, type Dispatcher } from 'undici';
 
-class PinnedAgent extends Agent {
-  private legacyAdapter?: Dispatcher1Wrapper;
-
-  override dispatch(
-    options: Dispatcher.DispatchOptions,
-    handler: Dispatcher.DispatchHandler
-  ): boolean {
-    if (
-      handler &&
-      typeof handler === 'object' &&
-      typeof handler.onRequestStart !== 'function'
-    ) {
-      if (!this.legacyAdapter) {
-        const superDispatch = super.dispatch.bind(this);
-        this.legacyAdapter = new Dispatcher1Wrapper({
-          dispatch: superDispatch,
-          close: super.close.bind(this),
-          destroy: super.destroy.bind(this),
-        } as unknown as Dispatcher);
-      }
-      return this.legacyAdapter.dispatch(options, handler);
-    }
-    return super.dispatch(options, handler);
-  }
-}
-
 /**
  * Creates an undici Agent that pins the socket connection to a specific resolved IP.
  * Standard HTTP headers (e.g. Host) and TLS SNI continue to use the original hostname.
  */
 export function createPinnedDispatcher(address: string, family: number): Agent {
-  return new PinnedAgent({
+  const agent = new Agent({
     connect: {
       lookup: (_hostname, opts, cb) => {
         let callback = cb;
@@ -49,6 +23,14 @@ export function createPinnedDispatcher(address: string, family: number): Agent {
       },
     },
   });
+
+  const rawDispatch = agent.dispatch.bind(agent);
+  const legacyDispatcher = new Dispatcher1Wrapper({
+    dispatch: rawDispatch,
+  } as unknown as Dispatcher);
+  agent.dispatch = legacyDispatcher.dispatch.bind(legacyDispatcher);
+
+  return agent;
 }
 
 /**

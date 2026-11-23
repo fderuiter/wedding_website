@@ -827,8 +827,6 @@ export interface UseSeatingStateReturn {
   unassignedGuests: InvitationCodeDTO[];
   isLoading: boolean;
   errorMsg: string | null;
-  dispatch: React.Dispatch<SeatingAction>;
-  fetchData: () => Promise<void>;
   assignGuestToTable: (
     guestId: string,
     tableId: string | null,
@@ -1634,8 +1632,6 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
     unassignedGuests,
     isLoading: state.isLoading,
     errorMsg: state.error,
-    dispatch,
-    fetchData,
     assignGuestToTable,
     assignGuestsToTable,
     clearTableSeats,

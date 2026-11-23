@@ -136,7 +136,7 @@ function TableModalForm({
     onDirtyChange(isTableFormDirty(nextSnapshot, initialSnapshot));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!name.trim()) return;
 

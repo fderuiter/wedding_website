@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isValidPostgresUrl, normalizePostgresUrl } from './lib/postgres-url.js';
 
 const PLACEHOLDER_STRIPE_KEYS = new Set([
   'sk_test_placeholder_mock_key',
@@ -94,29 +95,50 @@ function parseTrustProxy(val: unknown): boolean | number {
   return false;
 }
 
+// Conditionally skip production secret placeholder validation during build (e.g., for Next.js compilation or Prisma generation)
+const isEdge = process.env.NEXT_RUNTIME === 'edge';
+const procArgv = (!isEdge && typeof process !== 'undefined' && Array.isArray(process['argv'])) ? process['argv'] : [];
+const isScriptRun = procArgv.some((arg: unknown) => typeof arg === 'string' && (
+  arg.includes('seed') ||
+  arg.includes('generate-') ||
+  arg.includes('check-') ||
+  arg.includes('verify-') ||
+  arg.includes('preflight-')
+));
+
+const isStaticExport = process.env.STATIC_EXPORT === 'true' ||
+                       process.env.STATIC_EXPORT === '1' ||
+                       process.env.npm_lifecycle_event === 'build:export';
+
+const isBuildTime = isEdge ||
+                    isStaticExport ||
+                    process.env.NEXT_PHASE === 'phase-production-build' ||
+                    process.env.npm_lifecycle_event === 'build' ||
+                    process.env.npm_lifecycle_event === 'build:docker' ||
+                    process.env.npm_lifecycle_event === 'build:export' ||
+                    process.env.npm_lifecycle_event === 'prebuild' ||
+                    process.env.npm_lifecycle_event === 'prisma:generate' ||
+                    process.env.npm_lifecycle_event === 'db:seed' ||
+                    isScriptRun ||
+                    process.env.NODE_ENV === 'test' ||
+                    process.env.JEST_WORKER_ID !== undefined;
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required').refine(val => {
-    try {
-      new URL(val);
-      return val.startsWith('postgres://') || val.startsWith('postgresql://');
-    } catch {
-      return false;
-    }
+    return isValidPostgresUrl(val);
   }, {
     message: 'DATABASE_URL must be a valid PostgreSQL URL',
-  }),
+  }).transform(val => normalizePostgresUrl(val)),
   POSTGRES_URL_NON_POOLING: z.string().optional().refine(val => {
     if (!val) return true;
-    try {
-      new URL(val);
-      return val.startsWith('postgres://') || val.startsWith('postgresql://');
-    } catch {
-      return false;
-    }
+    return isValidPostgresUrl(val);
   }, {
     message: 'POSTGRES_URL_NON_POOLING must be a valid PostgreSQL URL',
-  }).transform(val => normalizeOptionalEnv(val)),
+  }).transform(val => {
+    const normalized = normalizeOptionalEnv(val);
+    return normalized ? normalizePostgresUrl(normalized) : undefined;
+  }),
   ADMIN_PASSWORD: z
     .string()
     .min(1, 'ADMIN_PASSWORD is required')
@@ -166,7 +188,7 @@ const envSchema = z.object({
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().optional().transform(val => normalizeOptionalEnv(val)),
   STRIPE_WEBHOOK_SECRET: z.string().optional().transform(val => normalizeOptionalEnv(val)),
 }).superRefine((data, ctx) => {
-  if (data.NODE_ENV === 'production') {
+  if (data.NODE_ENV === 'production' && !isBuildTime) {
     const isE2ETestMode = process.env.E2E_TEST === 'true';
     const trimmedAdminHash = data.ADMIN_PASSWORD?.trim() ?? '';
     if (
@@ -294,34 +316,6 @@ const envSchema = z.object({
   }
 });
 
-// Conditionally skip validation during build (e.g., for Prisma generation without secrets)
-// Some CI setups might use NEXT_PHASE or just npm_lifecycle_event.
-const isEdge = process.env.NEXT_RUNTIME === 'edge';
-const procArgv = (!isEdge && typeof process !== 'undefined' && Array.isArray(process['argv'])) ? process['argv'] : [];
-const isScriptRun = procArgv.some((arg: unknown) => typeof arg === 'string' && (
-  arg.includes('seed') ||
-  arg.includes('generate-') ||
-  arg.includes('check-') ||
-  arg.includes('verify-') ||
-  arg.includes('preflight-')
-));
-
-const isStaticExport = process.env.STATIC_EXPORT === 'true' ||
-                       process.env.STATIC_EXPORT === '1' ||
-                       process.env.npm_lifecycle_event === 'build:export';
-
-const isBuildTime = isEdge ||
-                    isStaticExport ||
-                    process.env.npm_lifecycle_event === 'build' ||
-                    process.env.npm_lifecycle_event === 'build:docker' ||
-                    process.env.npm_lifecycle_event === 'build:export' ||
-                    process.env.npm_lifecycle_event === 'prebuild' ||
-                    process.env.npm_lifecycle_event === 'prisma:generate' ||
-                    process.env.npm_lifecycle_event === 'db:seed' ||
-                    isScriptRun ||
-                    process.env.NODE_ENV === 'test' ||
-                    process.env.JEST_WORKER_ID !== undefined;
-
 // In production runtime, strictly require valid environment variables
 if (process.env.NODE_ENV === 'production' && !isBuildTime && process.env.NEXT_RUNTIME !== 'edge') {
   const isE2ETestMode = process.env.E2E_TEST === 'true';
@@ -419,8 +413,12 @@ if (process.env.NEXT_RUNTIME === 'edge' || isStaticExport || (isBuildTime && (!p
   // Use fallbacks for build tasks
   _env = {
     NODE_ENV: (process.env.NODE_ENV as 'development' | 'test' | 'production') || 'development',
-    DATABASE_URL: process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost:5432/dummy',
-    POSTGRES_URL_NON_POOLING: process.env.POSTGRES_URL_NON_POOLING || 'postgresql://dummy:dummy@localhost:5432/dummy_shadow',
+    DATABASE_URL: process.env.DATABASE_URL && isValidPostgresUrl(process.env.DATABASE_URL)
+      ? normalizePostgresUrl(process.env.DATABASE_URL)
+      : (process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost:5432/dummy'),
+    POSTGRES_URL_NON_POOLING: process.env.POSTGRES_URL_NON_POOLING && isValidPostgresUrl(process.env.POSTGRES_URL_NON_POOLING)
+      ? normalizePostgresUrl(process.env.POSTGRES_URL_NON_POOLING)
+      : (process.env.POSTGRES_URL_NON_POOLING || 'postgresql://dummy:dummy@localhost:5432/dummy_shadow'),
     ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || BUILD_FALLBACK_ADMIN_PASSWORD,
     ALLOWED_HOSTS: process.env.ALLOWED_HOSTS || 'localhost,127.0.0.1,*.localhost',
     MULTISITE_ENABLED: process.env.MULTISITE_ENABLED === 'true' || process.env.MULTISITE_ENABLED === '1',
@@ -458,6 +456,9 @@ export const env = new Proxy(_env, {
         return val !== undefined && val !== '' ? parseTrustProxy(val) : target.TRUST_PROXY;
       }
       if (val !== undefined && val !== '') {
+        if (prop === 'DATABASE_URL' || prop === 'POSTGRES_URL_NON_POOLING') {
+          return isValidPostgresUrl(val) ? normalizePostgresUrl(val) : val;
+        }
         if (prop === 'MULTISITE_ENABLED' || prop === 'RUN_MIGRATIONS') {
           return val === 'true' || val === '1';
         }
