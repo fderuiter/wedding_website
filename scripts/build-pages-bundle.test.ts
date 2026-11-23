@@ -89,6 +89,7 @@ describe('build-pages-bundle', () => {
       expect(recordedCalls[0].env.VITEPRESS_BASE).toBe('/wedding_website/');
       expect(recordedCalls[1].env.STATIC_EXPORT).toBe('true');
       expect(recordedCalls[1].env.NEXT_PUBLIC_BASE_PATH).toBe('/wedding_website/demo');
+      expect(recordedCalls[2].env.NEXT_PUBLIC_BASE_PATH).toBe('/wedding_website/storybook');
 
       expect(fs.existsSync(path.join(result.distDir, 'index.html'))).toBe(true);
       expect(fs.existsSync(path.join(result.distDir, 'api', 'index.html'))).toBe(true);

@@ -1212,6 +1212,29 @@ export async function routeDemoApiRequest(
     });
   }
 
+  const adminUnclaimMatch = normalizedPath.match(/^\/api\/admin\/registry\/items\/([^/]+)\/unclaim$/);
+  if (adminUnclaimMatch && method === 'POST') {
+    const itemId = decodeURIComponent(adminUnclaimMatch[1]);
+    let updatedItem: RegistryItem | undefined;
+    updateDemoState((draft) => {
+      const target = draft.registryItems.find((i) => i.id === itemId);
+      if (!target) return;
+      target.purchased = false;
+      target.purchaserName = null;
+      for (const c of target.contributors ?? []) {
+        if (c.status === 'CONFIRMED' || c.status === 'RESERVED') {
+          c.status = 'CANCELLED';
+        }
+      }
+      recalcRegistryItemTotals(target);
+      updatedItem = target;
+    });
+    if (!updatedItem) {
+      return jsonResponse({ error: 'Registry item not found.' }, 404);
+    }
+    return jsonResponse({ item: sanitizeRegistryItem(updatedItem) });
+  }
+
   const contribActionMatch = normalizedPath.match(/^\/api\/admin\/contributors\/([^/]+)\/action$/);
   if (contribActionMatch && method === 'POST') {
     const contribId = decodeURIComponent(contribActionMatch[1]);
@@ -1245,7 +1268,112 @@ export async function routeDemoApiRequest(
     });
   }
 
+  const contribIdMatch = normalizedPath.match(/^\/api\/admin\/contributors\/([^/]+)$/);
+  if (contribIdMatch && (method === 'PATCH' || method === 'DELETE')) {
+    const contribId = decodeURIComponent(contribIdMatch[1]);
+    if (method === 'PATCH') {
+      const body = await readJsonBody(init, requestObj);
+      let updatedContrib: ContributorRecord | undefined;
+      let updatedItem: RegistryItem | undefined;
+      updateDemoState((draft) => {
+        for (const item of draft.registryItems) {
+          const contrib = (item.contributors ?? []).find((c) => c.id === contribId);
+          if (contrib) {
+            if (typeof body.name === 'string') contrib.name = body.name.trim();
+            if (body.email !== undefined) {
+              contrib.email = body.email ? String(body.email).trim() : null;
+            }
+            if (body.amount !== undefined) contrib.amount = Number(body.amount);
+            if (typeof body.status === 'string') {
+              contrib.status = body.status as ContributorRecord['status'];
+            }
+            if (body.message !== undefined) {
+              contrib.message = body.message ? String(body.message) : null;
+            }
+            recalcRegistryItemTotals(item);
+            updatedContrib = contrib;
+            updatedItem = item;
+            break;
+          }
+        }
+      });
+      if (!updatedContrib || !updatedItem) {
+        return jsonResponse({ error: 'Contribution not found.' }, 404);
+      }
+      return jsonResponse({
+        contributor: updatedContrib,
+        item: sanitizeRegistryItem(updatedItem),
+      });
+    }
+
+    let deletedFromItem: RegistryItem | undefined;
+    let deleted = false;
+    updateDemoState((draft) => {
+      for (const item of draft.registryItems) {
+        const before = (item.contributors ?? []).length;
+        if (before === 0) continue;
+        const remaining = (item.contributors ?? []).filter((c) => c.id !== contribId);
+        if (remaining.length !== before) {
+          item.contributors = remaining;
+          recalcRegistryItemTotals(item);
+          deletedFromItem = item;
+          deleted = true;
+          break;
+        }
+      }
+    });
+    if (!deleted) {
+      return jsonResponse({ error: 'Contribution not found.' }, 404);
+    }
+    return jsonResponse({
+      deletedId: contribId,
+      item: deletedFromItem ? sanitizeRegistryItem(deletedFromItem) : null,
+    });
+  }
+
   // --- Thank-You Notes ---
+  if (normalizedPath === '/api/admin/thank-you-notes' && method === 'POST') {
+    const body = await readJsonBody(init, requestObj);
+    let createdGift: Record<string, unknown> | null = null;
+    updateDemoState((draft) => {
+      const targetItem =
+        draft.registryItems.find((i) => i.id === body.registryItemId) ?? draft.registryItems[0];
+      if (!targetItem) return;
+      const newContrib: ContributorRecord = {
+        id: makeId('demo-contrib'),
+        name: String(body.name ?? 'Offline Guest').trim(),
+        email: body.email ? String(body.email).trim() : null,
+        isPlusOne: false,
+        amount: Number(body.amount ?? 100),
+        refundedAmount: 0,
+        status: 'CONFIRMED',
+        coverFee: false,
+        feeAmount: 0,
+        message: body.message ? String(body.message) : null,
+        date: body.date ? new Date(String(body.date)).toISOString() : new Date().toISOString(),
+        transactionTimestamp: null,
+        thankYouStatus: typeof body.thankYouStatus === 'string' ? body.thankYouStatus : 'Unsent',
+        thankYouSentAt: body.thankYouStatus === 'Sent' ? new Date().toISOString() : null,
+        thankYouNote: body.thankYouNote ? String(body.thankYouNote) : null,
+        registryItemId: targetItem.id,
+      };
+      if (!Array.isArray(targetItem.contributors)) {
+        targetItem.contributors = [];
+      }
+      targetItem.contributors.unshift(newContrib);
+      createdGift = {
+        ...newContrib,
+        registryItem: {
+          id: targetItem.id,
+          name: targetItem.name,
+          category: targetItem.category,
+        },
+        invitationCodeId: null,
+        invitationCode: null,
+      };
+    });
+    return jsonResponse({ success: true, item: createdGift }, 201);
+  }
   if (normalizedPath === '/api/admin/thank-you-notes/export') {
     const rows = ['Contributor,Email,Gift,Amount,Status,ThankYouStatus,Address'];
     for (const item of state.registryItems) {

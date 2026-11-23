@@ -199,13 +199,12 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
     );
     await page.screenshot({ path: '/tmp/pages-portal.png', animations: 'disabled' });
 
-    await page.goto(`${origin}${SUBPATH_PREFIX}/api/`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${origin}${SUBPATH_PREFIX}/api/`, { waitUntil: 'networkidle' });
     await expect(page.locator('body')).toContainText('API');
 
     // 2. Storybook Component Showcase (/wedding_website/storybook/)
-    await page.goto(`${origin}${SUBPATH_PREFIX}/storybook/`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${origin}${SUBPATH_PREFIX}/storybook/`, { waitUntil: 'networkidle' });
     await expect(page.locator('#root, #storybook-root, body').first()).toBeVisible();
-    await page.waitForTimeout(1000);
     await page.screenshot({ path: '/tmp/pages-storybook.png', animations: 'disabled' });
 
     // 3. Guest Experience & Demo Toolbar (/wedding_website/demo/)
@@ -234,10 +233,9 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
       '/heart',
     ]) {
       await page.goto(`${origin}${SUBPATH_PREFIX}/demo${guestRoute}`, {
-        waitUntil: 'domcontentloaded',
+        waitUntil: 'networkidle',
       });
       await expect(page.getByTestId('demo-toolbar')).toBeVisible();
-      await page.waitForTimeout(400);
     }
 
     // 4. Gift Registry Interactive Contribution + Session Persistence + Reset Demo Data
@@ -317,10 +315,9 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
 
     for (const adminRoute of adminSubRoutes) {
       await page.goto(`${origin}${SUBPATH_PREFIX}/demo${adminRoute}`, {
-        waitUntil: 'domcontentloaded',
+        waitUntil: 'networkidle',
       });
       await expect(page.getByTestId('demo-toolbar')).toBeVisible();
-      await page.waitForTimeout(350);
     }
 
     // Verify lazy-loaded broadcast detail API endpoint in static demo runtime

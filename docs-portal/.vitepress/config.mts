@@ -15,7 +15,8 @@ export default withMermaid(
     markdown: {
       languageAlias: {
         env: 'dotenv',
-        caddy: 'nginx'
+        caddy: 'nginx',
+        cron: 'shellscript'
       },
       config(md) {
         const defaultCodeInline = md.renderer.rules.code_inline!;

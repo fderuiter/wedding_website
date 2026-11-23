@@ -144,7 +144,9 @@ export function buildPagesBundle(options = {}) {
       'npm',
       ['run', 'build-storybook'],
       config.rootDir,
-      {}
+      {
+        NEXT_PUBLIC_BASE_PATH: config.storybookBasePath.replace(/\/+$/, ''),
+      }
     );
 
     if (!fs.existsSync(path.join(config.storybookOutDir, 'index.html'))) {
