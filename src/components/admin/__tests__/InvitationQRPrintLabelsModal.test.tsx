@@ -1,5 +1,8 @@
 import { render, screen, fireEvent } from '@testing-library/react';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import { InvitationQRPrintLabelsModal } from '../InvitationQRPrintLabelsModal';
+
+expect.extend(toHaveNoViolations);
 
 describe('InvitationQRPrintLabelsModal Component', () => {
   const sampleCodes = [
@@ -116,7 +119,7 @@ describe('InvitationQRPrintLabelsModal Component', () => {
     jest.useRealTimers();
   });
 
-  it('triggers window.print when Print Sheet button is clicked', () => {
+  it('triggers window.print when Print Sheet button is clicked and passes jest-axe', async () => {
     const originalPrint = window.print;
     const mockPrint = jest.fn();
     window.print = mockPrint;
@@ -125,7 +128,12 @@ describe('InvitationQRPrintLabelsModal Component', () => {
       <InvitationQRPrintLabelsModal isOpen={true} onClose={jest.fn()} codes={sampleCodes} />
     );
 
-    const printBtn = screen.getByRole('button', { name: /Print label sheet/i });
+    const dialog = screen.getByRole('dialog', { name: 'Printable Invitation QR Labels' });
+    expect(
+      await axe(dialog, { rules: { 'label-content-name-mismatch': { enabled: true } } })
+    ).toHaveNoViolations();
+
+    const printBtn = screen.getByRole('button', { name: 'Print Sheet of QR code labels' });
     fireEvent.click(printBtn);
 
     expect(mockPrint).toHaveBeenCalled();
@@ -175,7 +183,7 @@ describe('InvitationQRPrintLabelsModal Component', () => {
     expect(container.querySelector('.printable-qr-portal-root')).toBeNull();
 
     // Initially only 30 of 60 QR canvases are rendered -> Print Sheet must be disabled
-    const printBtn = screen.getByRole('button', { name: /Print label sheet/i });
+    const printBtn = screen.getByRole('button', { name: 'Print Sheet of QR code labels' });
     expect(printBtn).toBeDisabled();
 
     // Advance timers so all 60 labels complete rendering -> Print Sheet becomes enabled
@@ -198,7 +206,7 @@ describe('InvitationQRPrintLabelsModal Component', () => {
         <InvitationQRPrintLabelsModal isOpen={true} onClose={jest.fn()} codes={[]} />
       </QueryClientProvider>
     );
-    expect(screen.getByRole('button', { name: /Print label sheet/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Print Sheet of QR code labels' })).toBeDisabled();
 
     jest.useRealTimers();
   });

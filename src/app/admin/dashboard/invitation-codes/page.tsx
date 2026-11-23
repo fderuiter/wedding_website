@@ -398,7 +398,7 @@ const InvitationCodeRowActions = React.memo<InvitationCodeRowActionsProps>(
             variant="primary"
             size="sm"
             data-testid={`promote-guest-${item.id}`}
-            aria-label={`Promote ${item.guestName} to invited guest`}
+            srContext={`for ${item.guestName}`}
             onClick={() => onPromote(item)}
           >
             Promote to Invited

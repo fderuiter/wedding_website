@@ -55,7 +55,7 @@ export default function MaintenanceHubPage() {
     }
   };
 
-  const handleImport = async (e: React.FormEvent) => {
+  const handleImport = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!file || preflightState !== 'valid') {
       return;

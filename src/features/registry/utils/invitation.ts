@@ -1,5 +1,3 @@
-import crypto from 'crypto';
-
 export type AttendanceStatus = 'attending' | 'declined' | 'pending';
 
 export interface AttendanceStatusItem {
@@ -357,15 +355,27 @@ export function isAddressComplete(item?: AddressItem | null): boolean {
   );
 }
 
+const INVITATION_CODE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+const INVITATION_CODE_LENGTH = 8;
+const INVITATION_CODE_MAX_UNBIASED_BYTE = 252;
+
 /**
  * Generates an eight-character cryptographically random alphanumeric string using uppercase characters and numbers.
  */
 export function generateRandomCode(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let result = '';
-  for (let i = 0; i < 8; i++) {
-    result += chars.charAt(crypto.randomInt(0, chars.length));
+  const randomBytes = new Uint8Array(16);
+
+  while (result.length < INVITATION_CODE_LENGTH) {
+    globalThis.crypto.getRandomValues(randomBytes);
+    for (let i = 0; i < randomBytes.length && result.length < INVITATION_CODE_LENGTH; i++) {
+      const byte = randomBytes[i];
+      if (byte < INVITATION_CODE_MAX_UNBIASED_BYTE) {
+        result += INVITATION_CODE_CHARS.charAt(byte % INVITATION_CODE_CHARS.length);
+      }
+    }
   }
+
   return result;
 }
 

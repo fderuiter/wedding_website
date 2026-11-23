@@ -798,7 +798,7 @@ describe('InvitationCodesDashboardPage', () => {
 
       expect(screen.getByRole('dialog', { name: 'Guest Invitation QR Preview' })).toBeInTheDocument();
       expect(screen.getByTestId('qr-modal-guest-name')).toHaveTextContent('Alice Smith');
-      expect(screen.getByRole('button', { name: /Download QR code as PNG image/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Download PNG QR code image/i })).toBeInTheDocument();
     });
 
     it('opens print labels modal from the global header and batch toolbar', () => {

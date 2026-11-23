@@ -1,0 +1,95 @@
+# Standby Loopback Rollout Overlay (scripts/rollout-vps.sh)
+# Layer on top of docker-compose.yml during zero-downtime VPS updates:
+#   docker compose -f docker-compose.yml -f docker-compose.rollout.yml ...
+
+services:
+  app-standby:
+    image: wedding-website:latest
+    pull_policy: never
+    ports:
+      - "127.0.0.1:${STANDBY_PORT:-3001}:3000"
+    init: true
+    stop_grace_period: 15s
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: "1g"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    tmpfs:
+      - /tmp
+      - /app/.next/cache:uid=1001,gid=1001,mode=0755
+    environment:
+      HOSTNAME: "0.0.0.0"
+      NODE_ENV: production
+      DATABASE_URL: ${CONTAINER_DATABASE_URL:-postgres://${DB_USER:-wedding}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-wedding}}
+      POSTGRES_URL_NON_POOLING: ${POSTGRES_URL_NON_POOLING:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,*.localhost}
+      MULTISITE_ENABLED: ${MULTISITE_ENABLED:-false}
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-false}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      GUEST_PASSCODE: ${GUEST_PASSCODE:?GUEST_PASSCODE is required}
+      GUEST_SESSION_SECRET: ${GUEST_SESSION_SECRET:?GUEST_SESSION_SECRET is required}
+      HISTORY_VERSION_LIMIT: ${HISTORY_VERSION_LIMIT:-50}
+      CRON_SECRET: ${CRON_SECRET:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_REGION: ${S3_REGION:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      E2E_TEST: ${E2E_TEST:-false}
+      SITE_PARTNER1_NAME: ${SITE_PARTNER1_NAME:-}
+      SITE_PARTNER2_NAME: ${SITE_PARTNER2_NAME:-}
+      SITE_BRIDE_NAME: ${SITE_BRIDE_NAME:-}
+      SITE_GROOM_NAME: ${SITE_GROOM_NAME:-}
+      SITE_WEDDING_DATE: ${SITE_WEDDING_DATE:-}
+      SITE_BASE_URL: ${SITE_BASE_URL:-}
+      SITE_VENUE_NAME: ${SITE_VENUE_NAME:-}
+      SITE_VENUE_ADDRESS: ${SITE_VENUE_ADDRESS:-}
+      SITE_VENUE_CITY: ${SITE_VENUE_CITY:-}
+      SITE_VENUE_STATE: ${SITE_VENUE_STATE:-}
+      SITE_VENUE_ZIP: ${SITE_VENUE_ZIP:-}
+      SITE_LATITUDE: ${SITE_LATITUDE:-}
+      SITE_LONGITUDE: ${SITE_LONGITUDE:-}
+      SITE_TIMEZONE: ${SITE_TIMEZONE:-}
+      SITE_COLOR_PRIMARY: ${SITE_COLOR_PRIMARY:-}
+      SITE_COLOR_SECONDARY: ${SITE_COLOR_SECONDARY:-}
+      SITE_THEME_PRESET: ${SITE_THEME_PRESET:-}
+      SITE_THEME_TOKENS: ${SITE_THEME_TOKENS:-}
+      SITE_SHOW_COUNTDOWN: ${SITE_SHOW_COUNTDOWN:-}
+      SITE_SHOW_ADD_TO_CALENDAR: ${SITE_SHOW_ADD_TO_CALENDAR:-}
+      SITE_SEO_TITLE: ${SITE_SEO_TITLE:-}
+      SITE_SEO_DESCRIPTION: ${SITE_SEO_DESCRIPTION:-}
+      SITE_BRAND_MONOGRAM: ${SITE_BRAND_MONOGRAM:-}
+      SITE_BRAND_LOGO_URL: ${SITE_BRAND_LOGO_URL:-}
+      SITE_BRAND_LOGO_ALT: ${SITE_BRAND_LOGO_ALT:-}
+      SITE_HERO_IMAGE_URL: ${SITE_HERO_IMAGE_URL:-}
+      SITE_HERO_IMAGE_ALT: ${SITE_HERO_IMAGE_ALT:-}
+      SITE_BRAND_WATERMARK_URL: ${SITE_BRAND_WATERMARK_URL:-}
+      SITE_BRAND_WATERMARK_ALT: ${SITE_BRAND_WATERMARK_ALT:-}
+      SITE_BADGE_GRAPHIC_URL: ${SITE_BADGE_GRAPHIC_URL:-}
+      SITE_BADGE_GRAPHIC_ALT: ${SITE_BADGE_GRAPHIC_ALT:-}
+      SITE_CONTACT_EMAIL: ${SITE_CONTACT_EMAIL:-}
+    volumes:
+      - uploads_data:/app/public/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const h=(process.env.ALLOWED_HOSTS||'localhost').split(',').map((s)=>s.trim().replace(/^\\*\\./,'')).find(Boolean)||'localhost';fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live',{headers:{Host:h}}).then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

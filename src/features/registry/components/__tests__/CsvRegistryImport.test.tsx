@@ -1,7 +1,10 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import { CsvRegistryImport } from '../CsvRegistryImport';
 import { apiClient } from '@/lib/apiClient';
+
+expect.extend(toHaveNoViolations);
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({
@@ -22,6 +25,7 @@ jest.mock('@/lib/apiClient', () => ({
 }));
 
 const mockApiClientPost = apiClient.post as jest.Mock;
+const csvPromptRegex = /Click to upload or drag and drop your CSV file here/i;
 
 describe('CsvRegistryImport', () => {
   beforeEach(() => {
@@ -29,15 +33,19 @@ describe('CsvRegistryImport', () => {
     jest.clearAllMocks();
   });
 
-  it('rejects files larger than 5MB with an error message', async () => {
-    render(<CsvRegistryImport />);
+  it('rejects files larger than 5MB with an error message and passes jest-axe', async () => {
+    const { container } = render(<CsvRegistryImport />);
 
     // Create a 6MB dummy file
     const largeFile = new File([new ArrayBuffer(6 * 1024 * 1024)], 'giant_catalog.csv', {
       type: 'text/csv',
     });
 
-    const dropZone = screen.getByRole('button', { name: /Upload CSV file drop zone/i });
+    const dropZone = screen.getByRole('button', { name: csvPromptRegex });
+    expect(
+      await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
+    ).toHaveNoViolations();
+
     fireEvent.drop(dropZone, {
       dataTransfer: {
         files: [largeFile],
@@ -47,27 +55,61 @@ describe('CsvRegistryImport', () => {
     expect(
       await screen.findByText(/Uploaded CSV files must not exceed 5 megabytes in file size/i)
     ).toBeInTheDocument();
+    expect(
+      await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
+    ).toHaveNoViolations();
   });
 
-  it('parses valid CSV file and displays items in preview table', async () => {
-    render(<CsvRegistryImport />);
+  it('parses valid CSV file, updates dropzone accessible name during parsing, and displays items in preview table', async () => {
+    const OriginalFileReader = global.FileReader;
+    let triggerLoad!: () => void;
 
-    const csvContent = `Product Name,Price,Category,Quantity,Vendor URL
+    class ControlledFileReader {
+      onload: ((e: ProgressEvent<FileReader>) => void) | null = null;
+      onerror: (() => void) | null = null;
+      readAsText(blob: Blob) {
+        triggerLoad = () => {
+          const reader = new OriginalFileReader();
+          reader.onload = (ev) => this.onload?.(ev);
+          reader.readAsText(blob);
+        };
+      }
+    }
+    global.FileReader = ControlledFileReader as unknown as typeof FileReader;
+
+    try {
+      const { container } = render(<CsvRegistryImport />);
+
+      const csvContent = `Product Name,Price,Category,Quantity,Vendor URL
 Cast Iron Skillet,35.00,Kitchen,1,https://example.com/skillet
 Wine Glasses Set,45.00,Dining,2,https://example.com/glasses`;
 
-    const file = new File([csvContent], 'gifts.csv', { type: 'text/csv' });
+      const file = new File([csvContent], 'gifts.csv', { type: 'text/csv' });
 
-    const dropZone = screen.getByRole('button', { name: /Upload CSV file drop zone/i });
-    fireEvent.drop(dropZone, {
-      dataTransfer: {
-        files: [file],
-      },
-    });
+      const dropZone = screen.getByRole('button', { name: csvPromptRegex });
+      fireEvent.drop(dropZone, {
+        dataTransfer: {
+          files: [file],
+        },
+      });
 
-    expect(await screen.findByText('Cast Iron Skillet')).toBeInTheDocument();
-    expect(screen.getByText('Wine Glasses Set')).toBeInTheDocument();
-    expect(screen.getByText('2 Ready to Import')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Parsing CSV file...' })).toBeInTheDocument();
+      expect(
+        await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
+      ).toHaveNoViolations();
+
+      triggerLoad();
+
+      expect(await screen.findByText('Cast Iron Skillet')).toBeInTheDocument();
+      expect(screen.getByText('Wine Glasses Set')).toBeInTheDocument();
+      expect(screen.getByText('2 Ready to Import')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'gifts.csv' })).toBeInTheDocument();
+      expect(
+        await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
+      ).toHaveNoViolations();
+    } finally {
+      global.FileReader = OriginalFileReader;
+    }
   });
 
   it('downloads sample CSV template when button is clicked', () => {
@@ -100,7 +142,7 @@ Air Fryer,99.99,Kitchen`;
 
     const file = new File([csvContent], 'gifts.csv', { type: 'text/csv' });
 
-    const dropZone = screen.getByRole('button', { name: /Upload CSV file drop zone/i });
+    const dropZone = screen.getByRole('button', { name: csvPromptRegex });
     fireEvent.drop(dropZone, {
       dataTransfer: {
         files: [file],
@@ -132,7 +174,7 @@ Air Fryer,99.99,Kitchen`;
 Linen Sheet Set,180.00,Bedroom,1`;
     const file = new File([csvContent], 'bedroom_registry.csv', { type: 'text/csv' });
 
-    const dropZone = screen.getByRole('button', { name: /Upload CSV file drop zone/i });
+    const dropZone = screen.getByRole('button', { name: csvPromptRegex });
     fireEvent.drop(dropZone, {
       dataTransfer: {
         files: [file],

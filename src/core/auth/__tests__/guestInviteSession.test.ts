@@ -3,6 +3,7 @@
 import { NextRequest } from 'next/server';
 import {
   GUEST_INVITE_COOKIE,
+  buildGuestLoginRedirectTarget,
   getGuestInviteSession,
   signGuestInviteSessionToken,
   verifyGuestInviteSessionToken,
@@ -331,6 +332,69 @@ describe('guestInviteSession', () => {
       const session = await getGuestInviteSession(req);
       expect(session).toBeNull();
       expect(mockFindUnique).not.toHaveBeenCalled();
+    });
+
+    it('memoizes verified invitation lookup within the same NextRequest without caching across distinct requests', async () => {
+      mockFindUnique.mockResolvedValue({
+        id: 'inv-memo-1',
+        code: 'MEMO2026',
+        guestName: 'Memoized Household',
+        isSample: false,
+      });
+
+      const token = await signGuestInviteSessionToken({
+        code: 'MEMO2026',
+        guestName: 'Memoized Household',
+      });
+      const sameReq = new NextRequest('http://localhost/api/registry/contribute', {
+        method: 'POST',
+        headers: { cookie: `${GUEST_INVITE_COOKIE}=${token}` },
+      });
+
+      const [firstCall, secondCall] = await Promise.all([
+        getGuestInviteSession(sameReq),
+        getGuestInviteSession(sameReq),
+      ]);
+      const thirdCall = await getGuestInviteSession(sameReq);
+
+      expect(firstCall?.code).toBe('MEMO2026');
+      expect(secondCall?.code).toBe('MEMO2026');
+      expect(thirdCall?.code).toBe('MEMO2026');
+      expect(mockFindUnique).toHaveBeenCalledTimes(1);
+
+      // Subsequent distinct request re-queries the database and sees revocation immediately
+      mockFindUnique.mockResolvedValueOnce(null);
+      const nextReq = new NextRequest('http://localhost/api/registry/contribute', {
+        method: 'POST',
+        headers: { cookie: `${GUEST_INVITE_COOKIE}=${token}` },
+      });
+      expect(await getGuestInviteSession(nextReq)).toBeNull();
+      expect(mockFindUnique).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('buildGuestLoginRedirectTarget', () => {
+    it('preserves valid same-origin relative paths including query strings and hashes', () => {
+      expect(buildGuestLoginRedirectTarget('/photos')).toBe('/guest/login?callbackUrl=%2Fphotos');
+      expect(buildGuestLoginRedirectTarget('/rsvp?tab=dinner#details')).toBe(
+        '/guest/login?callbackUrl=%2Frsvp%3Ftab%3Ddinner%23details'
+      );
+    });
+
+    it('falls back to /guest/login for control characters, backslashes, protocol-relative URLs, or /guest/login loops', () => {
+      expect(buildGuestLoginRedirectTarget(null)).toBe('/guest/login');
+      expect(buildGuestLoginRedirectTarget('')).toBe('/guest/login');
+      expect(buildGuestLoginRedirectTarget('//evil.test')).toBe('/guest/login');
+      expect(buildGuestLoginRedirectTarget('///evil.test')).toBe('/guest/login');
+      expect(buildGuestLoginRedirectTarget('/\\evil.test')).toBe('/guest/login');
+      expect(buildGuestLoginRedirectTarget('/\t/evil.test')).toBe('/guest/login');
+      expect(buildGuestLoginRedirectTarget('/\n/evil.test')).toBe('/guest/login');
+      expect(buildGuestLoginRedirectTarget('/\r/evil.test')).toBe('/guest/login');
+      expect(buildGuestLoginRedirectTarget('https://evil.test')).toBe('/guest/login');
+      expect(buildGuestLoginRedirectTarget('/guest/login')).toBe('/guest/login');
+      expect(buildGuestLoginRedirectTarget('/guest/login?callbackUrl=%2Frsvp')).toBe('/guest/login');
+      expect(buildGuestLoginRedirectTarget('/guest/login#help')).toBe('/guest/login');
+      expect(buildGuestLoginRedirectTarget('/rsvp/../guest/login')).toBe('/guest/login');
     });
   });
 });

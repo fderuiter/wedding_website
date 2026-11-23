@@ -15,6 +15,7 @@ const mockSendBroadcast = jest.fn();
 const mockPreviewBroadcast = jest.fn();
 const mockSendTestBroadcast = jest.fn();
 let mockCountRecipients: jest.Mock | undefined = undefined;
+let mockSendingTest = false;
 
 jest.mock('@/hooks/admin/useAdminBroadcast', () => ({
   useAdminBroadcast: () => ({
@@ -24,7 +25,7 @@ jest.mock('@/hooks/admin/useAdminBroadcast', () => ({
     ...(mockCountRecipients ? { countRecipients: mockCountRecipients } : {}),
     sending: false,
     previewing: false,
-    sendingTest: false,
+    sendingTest: mockSendingTest,
   }),
 }));
 
@@ -37,6 +38,7 @@ describe('BroadcastModal Component', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockCountRecipients = undefined;
+    mockSendingTest = false;
   });
 
   it('renders modal title and form elements when open', () => {
@@ -615,5 +617,27 @@ describe('BroadcastModal Component', () => {
       expect(mockCountRecipients).toHaveBeenCalledWith({ attendanceStatus: 'attending' });
       expect(screen.getByTestId('broadcast-audience-counts')).toHaveTextContent('80 matched guests');
     });
+  });
+
+  it('updates Send Test button accessible name across default, custom destination, and busy Sending Test... states and passes jest-axe', async () => {
+    const { rerender } = render(<BroadcastModal {...defaultProps} />);
+
+    const dialog = screen.getByRole('dialog');
+    const axeRules = { rules: { 'label-content-name-mismatch': { enabled: true } } };
+
+    expect(screen.getByRole('button', { name: 'Send Test to Me' })).toBeInTheDocument();
+    expect(await axe(dialog, axeRules)).toHaveNoViolations();
+
+    fireEvent.change(screen.getByLabelText('Test Destination (Optional)'), {
+      target: { value: 'planner@wedding.example' },
+    });
+    expect(screen.getByRole('button', { name: 'Send Test' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Send Test to Me' })).not.toBeInTheDocument();
+    expect(await axe(dialog, axeRules)).toHaveNoViolations();
+
+    mockSendingTest = true;
+    rerender(<BroadcastModal {...defaultProps} />);
+    expect(screen.getByRole('button', { name: 'Sending Test...' })).toBeDisabled();
+    expect(await axe(dialog, axeRules)).toHaveNoViolations();
   });
 });

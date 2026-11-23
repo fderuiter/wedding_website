@@ -160,7 +160,7 @@ export const InvitationQRPreviewModal: React.FC<InvitationQRPreviewModalProps> =
               variant="secondary"
               size="sm"
               onClick={handleCopyLink}
-              aria-label="Copy personalized RSVP and address portal URL"
+              srContext="personalized RSVP and address portal URL"
               className="shrink-0 flex items-center gap-1.5"
             >
               <Icon name={copied ? 'Check' : 'Copy'} size={15} />
@@ -185,7 +185,7 @@ export const InvitationQRPreviewModal: React.FC<InvitationQRPreviewModalProps> =
             size="sm"
             onClick={handleDownloadPng}
             className="flex items-center gap-1.5"
-            aria-label="Download QR code as PNG image"
+            srContext="QR code image"
           >
             <Icon name="Download" size={15} />
             <span>Download PNG</span>

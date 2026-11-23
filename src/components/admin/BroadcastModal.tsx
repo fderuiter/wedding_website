@@ -967,7 +967,6 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
           variant="secondary"
           onClick={handleSendTest}
           disabled={sendingTest || sending || !body.trim() || (channel === 'EMAIL' && !subject.trim())}
-          aria-label="Send Test to Me"
         >
           {sendingTest ? 'Sending Test...' : (testDestination.trim() ? 'Send Test' : 'Send Test to Me')}
         </Button>

@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { getAppConfig } from '@/lib/config';
 import { createAuditSnapshot, createBatchAuditSnapshots } from '@/lib/audit';
+import { executeInTransaction } from '@/lib/transaction';
 import { ApiError } from '@/utils/ApiError';
 import {
   evaluateRsvpCutoff,
@@ -1240,7 +1241,7 @@ export class SubEventService {
     const limit = Math.min(100, Math.max(1, rawLimit));
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where: Record<string, unknown> = {};
 
     if (params?.search && params.search.trim()) {
       const q = params.search.trim();
@@ -1263,87 +1264,237 @@ export class SubEventService {
       where.householdName = params.householdName.trim();
     }
 
-    const subEvents = await this.client.subEvent.findMany({
-      include: {
-        accesses: {
+    const countPromise: Promise<number> = this.client.invitationCode.count
+      ? this.client.invitationCode.count({ where })
+      : this.client.invitationCode.findMany({ where }).then((rows: unknown[]) => rows.length);
+
+    let rawSubEvents: any = [];
+    let invitationCodes: any = [];
+    let rawPartyGroups: string[] = [];
+    let rawHouseholdNames: string[] = [];
+    let rawPartyTags: string[] = [];
+    let total = 0;
+
+    if (typeof this.client.$queryRaw === 'function') {
+      const metadataPromise = this.client.$queryRaw`
+        WITH code_filters AS MATERIALIZED (
+          SELECT "partyGroup", "householdName", "partyTags"
+          FROM "InvitationCode"
+        ),
+        distinct_groups AS (
+          SELECT DISTINCT "partyGroup" AS val
+          FROM code_filters
+          WHERE "partyGroup" IS NOT NULL AND "partyGroup" <> ''
+        ),
+        distinct_households AS (
+          SELECT DISTINCT "householdName" AS val
+          FROM code_filters
+          WHERE "householdName" IS NOT NULL AND "householdName" <> ''
+        ),
+        distinct_tags AS (
+          SELECT DISTINCT btrim(tag) AS val
+          FROM code_filters,
+          LATERAL unnest("partyTags") AS tag
+          WHERE tag IS NOT NULL AND btrim(tag) <> ''
+        ),
+        sub_event_grants AS (
+          SELECT
+            sa."subEventId",
+            ARRAY_AGG(sa."invitationCodeId" ORDER BY sa."id" ASC) AS "allowedInvitationCodeIds"
+          FROM "SubEventAccess" sa
+          GROUP BY sa."subEventId"
+        )
+        SELECT
+          COALESCE(
+            (
+              SELECT json_agg(
+                json_build_object(
+                  'id', s."id",
+                  'title', s."title",
+                  'description', s."description",
+                  'startTime', CASE
+                    WHEN s."startTime" IS NULL THEN NULL
+                    ELSE to_char(s."startTime", 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+                  END,
+                  'endTime', CASE
+                    WHEN s."endTime" IS NULL THEN NULL
+                    ELSE to_char(s."endTime", 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+                  END,
+                  'locationName', s."locationName",
+                  'location', s."location",
+                  'category', s."category",
+                  'isPrivate', s."isPrivate",
+                  'mealOptions', s."mealOptions",
+                  'customQuestions', s."customQuestions",
+                  'allowedInvitationCodeIds', COALESCE(seg."allowedInvitationCodeIds", ARRAY[]::text[])
+                )
+                ORDER BY s."startTime" ASC, s."id" ASC
+              )
+              FROM "SubEvent" s
+              LEFT JOIN sub_event_grants seg ON seg."subEventId" = s."id"
+            ),
+            '[]'::json
+          ) AS "subEvents",
+          COALESCE((SELECT ARRAY_AGG(val) FROM distinct_groups), ARRAY[]::text[]) AS "partyGroups",
+          COALESCE((SELECT ARRAY_AGG(val) FROM distinct_households), ARRAY[]::text[]) AS "householdNames",
+          COALESCE((SELECT ARRAY_AGG(val) FROM distinct_tags), ARRAY[]::text[]) AS "partyTags"
+      `;
+
+      const [resolvedTotal, resolvedCodes, metadataRows] = await Promise.all([
+        countPromise,
+        this.client.invitationCode.findMany({
+          where,
+          skip,
+          take: limit,
           select: {
-            invitationCodeId: true,
+            id: true,
+            code: true,
+            guestName: true,
+            householdName: true,
+            partyGroup: true,
+            partyTags: true,
           },
-        },
-      },
-      orderBy: {
-        startTime: 'asc',
-      },
-    });
+          orderBy: {
+            guestName: 'asc',
+          },
+        }),
+        metadataPromise,
+      ]);
 
-    const total = this.client.invitationCode.count
-      ? await this.client.invitationCode.count({ where })
-      : (await this.client.invitationCode.findMany({ where })).length;
+      total = Number(resolvedTotal ?? 0);
+      invitationCodes = resolvedCodes || [];
 
-    const invitationCodes = await this.client.invitationCode.findMany({
-      where,
-      skip,
-      take: limit,
-      select: {
-        id: true,
-        code: true,
-        guestName: true,
-        householdName: true,
-        partyGroup: true,
-        partyTags: true,
-        subEventAccesses: {
+      const metaRow = Array.isArray(metadataRows) && metadataRows.length > 0 ? metadataRows[0] : null;
+      if (metaRow) {
+        if (Array.isArray(metaRow.subEvents)) {
+          rawSubEvents = metaRow.subEvents;
+        } else if (typeof metaRow.subEvents === 'string') {
+          try {
+            const parsed = JSON.parse(metaRow.subEvents);
+            if (Array.isArray(parsed)) rawSubEvents = parsed;
+          } catch {
+            rawSubEvents = [];
+          }
+        }
+        rawPartyGroups = Array.isArray(metaRow.partyGroups) ? metaRow.partyGroups : [];
+        rawHouseholdNames = Array.isArray(metaRow.householdNames) ? metaRow.householdNames : [];
+        rawPartyTags = Array.isArray(metaRow.partyTags) ? metaRow.partyTags : [];
+      }
+    } else {
+      const canFindCodes = Boolean(this.client.invitationCode.findMany);
+      const [
+        resolvedSubEvents,
+        resolvedTotal,
+        resolvedCodes,
+        groupsRaw,
+        householdsRaw,
+        tagsRaw,
+      ] = await Promise.all([
+        this.client.subEvent.findMany({
+          include: {
+            accesses: {
+              select: {
+                invitationCodeId: true,
+              },
+              orderBy: {
+                id: 'asc',
+              },
+            },
+          },
+          orderBy: [{ startTime: 'asc' }, { id: 'asc' }],
+        }),
+        countPromise,
+        this.client.invitationCode.findMany({
+          where,
+          skip,
+          take: limit,
           select: {
-            subEventId: true,
+            id: true,
+            code: true,
+            guestName: true,
+            householdName: true,
+            partyGroup: true,
+            partyTags: true,
+            subEventAccesses: {
+              select: {
+                subEventId: true,
+              },
+            },
           },
-        },
-      },
-      orderBy: {
-        guestName: 'asc',
-      },
-    });
+          orderBy: {
+            guestName: 'asc',
+          },
+        }),
+        canFindCodes
+          ? this.client.invitationCode.findMany({
+            where: { partyGroup: { not: null } },
+            select: { partyGroup: true },
+            distinct: ['partyGroup'],
+          })
+          : Promise.resolve([]),
+        canFindCodes
+          ? this.client.invitationCode.findMany({
+            where: { householdName: { not: null } },
+            select: { householdName: true },
+            distinct: ['householdName'],
+          })
+          : Promise.resolve([]),
+        canFindCodes
+          ? this.client.invitationCode.findMany({
+            select: { partyTags: true },
+          })
+          : Promise.resolve([]),
+      ]);
 
-    let partyGroups: string[] = [];
-    if (this.client.invitationCode.findMany) {
-      const groupsRaw = await this.client.invitationCode.findMany({
-        where: { partyGroup: { not: null } },
-        select: { partyGroup: true },
-        distinct: ['partyGroup'],
-      });
-      partyGroups = Array.from<string>(
-        new Set(groupsRaw.map((g: any) => g.partyGroup).filter(Boolean))
-      ).sort();
-    }
-
-    let householdNames: string[] = [];
-    if (this.client.invitationCode.findMany) {
-      const householdsRaw = await this.client.invitationCode.findMany({
-        where: { householdName: { not: null } },
-        select: { householdName: true },
-        distinct: ['householdName'],
-      });
-      householdNames = Array.from<string>(
-        new Set(householdsRaw.map((h: any) => h.householdName).filter(Boolean))
-      ).sort();
-    }
-
-    let partyTags: string[] = [];
-    if (this.client.invitationCode.findMany) {
-      const tagsRaw = await this.client.invitationCode.findMany({
-        select: { partyTags: true },
-      });
-      const tagSet = new Set<string>();
-      tagsRaw.forEach((t: any) => {
+      rawSubEvents = resolvedSubEvents || [];
+      total = Number(resolvedTotal ?? 0);
+      invitationCodes = resolvedCodes || [];
+      rawPartyGroups = (groupsRaw || []).map((g: any) => g.partyGroup);
+      rawHouseholdNames = (householdsRaw || []).map((h: any) => h.householdName);
+      (tagsRaw || []).forEach((t: any) => {
         (t.partyTags || []).forEach((tag: string) => {
-          if (tag && tag.trim()) tagSet.add(tag.trim());
+          if (tag && tag.trim()) rawPartyTags.push(tag.trim());
         });
       });
-      partyTags = Array.from(tagSet).sort();
     }
 
-    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const partyGroups = Array.from<string>(
+      new Set(rawPartyGroups.filter((g): g is string => typeof g === 'string' && g.length > 0))
+    ).sort();
 
-    return {
-      subEvents: (subEvents || []).map((e: any) => ({
+    const householdNames = Array.from<string>(
+      new Set(rawHouseholdNames.filter((h): h is string => typeof h === 'string' && h.length > 0))
+    ).sort();
+
+    const partyTags = Array.from<string>(
+      new Set(
+        rawPartyTags
+          .map((tag) => (typeof tag === 'string' ? tag.trim() : ''))
+          .filter(Boolean)
+      )
+    ).sort();
+
+    const normalizedSubEvents: Array<{
+      id: string;
+      title: string;
+      description?: string;
+      startTime?: string | null;
+      endTime?: string | null;
+      locationName?: string;
+      location?: string;
+      category?: string;
+      isPrivate: boolean;
+      mealOptions?: MealOptionDTO[];
+      customQuestions?: CustomRsvpQuestionDTO[];
+      allowedInvitationCodeIds: string[];
+    }> = (rawSubEvents || []).map((e: any) => {
+      const allowedInvitationCodeIds: string[] = Array.isArray(e.allowedInvitationCodeIds)
+        ? e.allowedInvitationCodeIds
+        : e.accesses
+          ? e.accesses.map((a: any) => a.invitationCodeId)
+          : [];
+
+      return {
         id: e.id,
         title: e.title,
         description: e.description || '',
@@ -1357,17 +1508,59 @@ export class SubEventService {
         ...(e.customQuestions !== undefined
           ? { customQuestions: normalizeCustomQuestions(e.customQuestions) }
           : {}),
-        allowedInvitationCodeIds: e.accesses ? e.accesses.map((a: any) => a.invitationCodeId) : [],
-      })),
-      invitationCodes: (invitationCodes || []).map((c: any) => ({
+        allowedInvitationCodeIds,
+      };
+    });
+
+    const allowedSubEventsByCodeId = new Map<string, string[]>();
+    for (const evt of normalizedSubEvents) {
+      for (const codeId of evt.allowedInvitationCodeIds) {
+        let list = allowedSubEventsByCodeId.get(codeId);
+        if (!list) {
+          list = [];
+          allowedSubEventsByCodeId.set(codeId, list);
+        }
+        list.push(evt.id);
+      }
+    }
+
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+
+    const normalizedInvitationCodes: Array<{
+      id: string;
+      code: string;
+      guestName: string;
+      householdName?: string | null;
+      partyGroup?: string | null;
+      partyTags?: string[];
+      allowedSubEventIds: string[];
+    }> = (invitationCodes || []).map((c: any) => {
+      const mappedFromEvents = allowedSubEventsByCodeId.get(c.id) ?? [];
+      let allowedSubEventIds = mappedFromEvents;
+      if (Array.isArray(c.subEventAccesses) && c.subEventAccesses.length > 0) {
+        const merged = new Set<string>(mappedFromEvents);
+        for (const a of c.subEventAccesses) {
+          if (a?.subEventId) {
+            merged.add(a.subEventId);
+          }
+        }
+        allowedSubEventIds = Array.from(merged);
+      }
+
+      return {
         id: c.id,
         code: c.code,
         guestName: c.guestName,
         householdName: c.householdName || null,
         partyGroup: c.partyGroup || null,
         partyTags: c.partyTags || [],
-        allowedSubEventIds: c.subEventAccesses ? c.subEventAccesses.map((a: any) => a.subEventId) : [],
-      })),
+        allowedSubEventIds,
+      };
+    });
+
+    return {
+      subEvents: normalizedSubEvents,
+      invitationCodes: normalizedInvitationCodes,
       pagination: {
         total,
         page,
@@ -2272,7 +2465,7 @@ export class SubEventService {
       }
     }
 
-    return this.client.$transaction(async (tx: any) => {
+    return executeInTransaction(this.client, async (tx: any) => {
       if (input.clearAll) {
         await tx.subEventRsvp.deleteMany({
           where: { invitationCodeId: invite.id },
@@ -2448,7 +2641,7 @@ export class SubEventService {
       }
     }
 
-    return this.client.$transaction(async (tx: any) => {
+    return executeInTransaction(this.client, async (tx: any) => {
       const updatedRecords: any[] = [];
 
       for (const invite of invites) {
