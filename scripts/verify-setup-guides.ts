@@ -92,6 +92,7 @@ const IGNORED_ROOT_DIRECTORIES = new Set([
   '.yarn',
   'coverage',
   '.next',
+  '.next-export',
   '.swc',
   '.turbo',
   'out',

@@ -360,5 +360,35 @@ describe('Hybrid Storage Provider', () => {
       expect(result.valid).toBe(false);
       expect(result.error).toContain('S3_BUCKET');
     });
+
+    it('strips outer quotes from S3_* env vars and rejects R2 S3_REGION=auto without S3_ENDPOINT or *.r2.cloudflarestorage.com without S3_PUBLIC_URL', async () => {
+      process.env.S3_REGION = '"auto"';
+      delete process.env.S3_ENDPOINT;
+      expect(() => getStorageProvider()).toThrow(/S3_ENDPOINT/);
+
+      resetStorageProvider();
+      process.env.S3_ENDPOINT = '"https://acct123.r2.cloudflarestorage.com"';
+      delete process.env.S3_PUBLIC_URL;
+      expect(() => getStorageProvider()).toThrow(/S3_PUBLIC_URL/);
+
+      resetStorageProvider();
+      process.env.S3_BUCKET = '"quoted-bucket"';
+      process.env.S3_PUBLIC_URL = '"https://assets.wedding.example.com/"';
+      const provider = getStorageProvider();
+      expect(provider.getPublicUrl('uploads/photo.jpg')).toBe(
+        'https://assets.wedding.example.com/uploads/photo.jpg'
+      );
+      expect(await provider.validateConfig()).toEqual({ valid: true });
+
+      delete process.env.S3_PUBLIC_URL;
+      const missingPublicResult = await provider.validateConfig();
+      expect(missingPublicResult.valid).toBe(false);
+      expect(missingPublicResult.error).toContain('S3_PUBLIC_URL');
+
+      delete process.env.S3_ENDPOINT;
+      const missingEndpointResult = await provider.validateConfig();
+      expect(missingEndpointResult.valid).toBe(false);
+      expect(missingEndpointResult.error).toContain('S3_ENDPOINT');
+    });
   });
 });

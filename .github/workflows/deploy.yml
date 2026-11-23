@@ -178,7 +178,7 @@ jobs:
           IMAGE_TAG_SHA=""
           REF_RESOLVED_SHA=""
           ATTESTED_SHA=""
-          EFFECTIVE_IMAGE_DIGEST="${IMAGE_DIGEST:-${INPUT_IMAGE_DIGEST:-}}"
+          EFFECTIVE_IMAGE_DIGEST="${INPUT_IMAGE_DIGEST:-${IMAGE_DIGEST:-}}"
 
           if [ "$EVENT_NAME" = "workflow_run" ]; then
             TARGET_SHA="$WORKFLOW_RUN_HEAD_SHA"
@@ -255,52 +255,79 @@ jobs:
               fi
               REPO_LOWER=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
               IMAGE_URI="ghcr.io/${REPO_LOWER}@${EFFECTIVE_IMAGE_DIGEST}"
+
+              if command -v docker >/dev/null 2>&1 && [ -n "${GITHUB_ACTOR_LOGIN:-}" ]; then
+                printf '%s\n' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR_LOGIN" --password-stdin >/dev/null 2>&1 || true
+              fi
+
               echo "Verifying OIDC provenance attestation to resolve source commit SHA for oci://${IMAGE_URI}..."
 
               if ! ATTESTATION_JSON=$(gh attestation verify "oci://${IMAGE_URI}" \
                 --owner "$REPO_OWNER" \
                 --signer-workflow "$SIGNER_WORKFLOW" \
                 --format json); then
-                echo "::error::OIDC build provenance verification failed for oci://${IMAGE_URI} (expected owner '${REPO_OWNER}' and signer workflow '${SIGNER_WORKFLOW}')."
+                echo "::error::OIDC build provenance verification failed for oci://${IMAGE_URI} (expected owner '${REPO_OWNER}' and signer workflow '${SIGNER_WORKFLOW}'). Release aborted."
                 exit 1
               fi
 
-              ATTESTED_SHA=$(printf '%s' "$ATTESTATION_JSON" | jq -r '
-                [
-                  (if type == "array" then .[] else . end)
-                  | (
-                      .verificationResult.signature.certificate.sourceRepositoryDigest,
-                      .verificationResult.statement.predicate.buildDefinition.resolvedDependencies[]?.digest.gitCommit,
-                      .verificationResult.statement.predicate.buildDefinition.resolvedDependencies[]?.digest.sha1,
-                      .verificationResult.statement.predicate.buildDefinition.internalParameters.github.sha,
-                      .verificationResult.statement.predicate.invocation.configSource.digest.sha1,
-                      .verificationResult.statement.predicate.materials[]?.digest.sha1,
-                      .verificationResult.statement.subject[]?.annotations["org.opencontainers.image.revision"],
-                      .statement.predicate.buildDefinition.resolvedDependencies[]?.digest.gitCommit,
-                      .statement.predicate.buildDefinition.resolvedDependencies[]?.digest.sha1,
-                      .statement.predicate.buildDefinition.internalParameters.github.sha,
-                      .statement.predicate.invocation.configSource.digest.sha1,
-                      .statement.subject[]?.annotations["org.opencontainers.image.revision"]
+              INDEX_REVISION=""
+              if command -v docker >/dev/null 2>&1 && [ -n "${GITHUB_ACTOR_LOGIN:-}" ]; then
+                RAW_INDEX_JSON=$(docker buildx imagetools inspect --raw "$IMAGE_URI" 2>/dev/null || true)
+                if [[ "${RAW_INDEX_JSON#"${RAW_INDEX_JSON%%[![:space:]]*}"}" == \{* ]]; then
+                  INDEX_REVISION=$(printf '%s' "$RAW_INDEX_JSON" | jq -r '
+                    (
+                      .annotations["org.opencontainers.image.revision"]
+                      // .config.Labels["org.opencontainers.image.revision"]
+                      // ([.manifests[]?.annotations["org.opencontainers.image.revision"] | select(type == "string" and test("^[a-fA-F0-9]{40}$"))][0])
+                      // empty
                     )
-                  | select(type == "string" and test("^[a-fA-F0-9]{40}$"))
-                ] | .[0] // empty
-              ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
-
-              if [ -z "$ATTESTED_SHA" ] && command -v docker >/dev/null 2>&1; then
-                if [ -n "${GH_TOKEN:-}" ] && [ -n "${GITHUB_ACTOR_LOGIN:-}" ]; then
-                  printf '%s\n' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR_LOGIN" --password-stdin >/dev/null 2>&1 || true
-                fi
-                RAW_MANIFEST=$(docker buildx imagetools inspect --raw "$IMAGE_URI" 2>/dev/null || true)
-                if [[ "${RAW_MANIFEST#"${RAW_MANIFEST%%[![:space:]]*}"}" == \{* ]]; then
-                  ATTESTED_SHA=$(printf '%s' "$RAW_MANIFEST" | jq -r '
-                    .annotations["org.opencontainers.image.revision"]
-                    // .config.Labels["org.opencontainers.image.revision"]
-                    // ([.manifests[]?.annotations["org.opencontainers.image.revision"] | select(type == "string" and length > 0)] | .[0])
-                    // empty
                   ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+                fi
+                if [[ ! "$INDEX_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
+                  INDEX_REVISION=""
                 fi
               fi
 
+              SLSA_INPUT_REVISION=$(printf '%s' "$ATTESTATION_JSON" | jq -r '
+                [
+                  (if type == "array" then .[] else . end)
+                  | (.verificationResult.statement.predicate // .statement.predicate // .predicate // empty)
+                  | .buildDefinition.externalParameters.inputs.commit_sha
+                  | select(type == "string" and test("^[a-fA-F0-9]{40}$"))
+                ][0] // empty
+              ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+              if [[ ! "$SLSA_INPUT_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
+                SLSA_INPUT_REVISION=""
+              fi
+
+              if [ -n "$INDEX_REVISION" ] && [ -n "$SLSA_INPUT_REVISION" ] && [ "$INDEX_REVISION" != "$SLSA_INPUT_REVISION" ]; then
+                echo "::error::Attested OCI index revision '${INDEX_REVISION}' conflicts with SLSA input commit_sha '${SLSA_INPUT_REVISION}' for '${IMAGE_URI}'. Release aborted."
+                exit 1
+              fi
+
+              SLSA_REVISION=$(printf '%s' "$ATTESTATION_JSON" | jq -r '
+                [
+                  (if type == "array" then .[] else . end)
+                  | (
+                      ((.verificationResult.statement.predicate // .statement.predicate // .predicate // empty) | (
+                        .buildDefinition.externalParameters.inputs.commit_sha,
+                        (.buildDefinition.resolvedDependencies[]? | (.digest.gitCommit, .digest.sha1)),
+                        .buildDefinition.internalParameters.github.sha,
+                        .invocation.configSource.digest.sha1,
+                        (.materials[]? | (.digest.gitCommit, .digest.sha1))
+                      )),
+                      .verificationResult.signature.certificate.sourceRepositoryDigest,
+                      .verificationResult.statement.subject[]?.annotations["org.opencontainers.image.revision"],
+                      .statement.subject[]?.annotations["org.opencontainers.image.revision"]
+                    )
+                  | select(type == "string" and test("^[a-fA-F0-9]{40}$"))
+                ][0] // empty
+              ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+              if [[ ! "$SLSA_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
+                SLSA_REVISION=""
+              fi
+
+              ATTESTED_SHA="${INDEX_REVISION:-${SLSA_REVISION}}"
               if [[ ! "$ATTESTED_SHA" =~ ^[a-f0-9]{40}$ ]] && [ -z "$COMMIT_INPUT_SHA" ]; then
                 echo "::error::Failed to extract 40-character source commit SHA from OIDC provenance attestation or OCI revision metadata for oci://${IMAGE_URI}."
                 exit 1
@@ -361,7 +388,9 @@ jobs:
         with:
           script: |
             const targetSha = process.env.TARGET_SHA;
+            const normalizedTargetSha = (targetSha || '').toLowerCase();
             const fullRepo = `${context.repo.owner}/${context.repo.repo}`;
+            const normalizedFullRepo = fullRepo.toLowerCase();
             const runs = await github.paginate(
               github.rest.actions.listWorkflowRuns,
               {
@@ -377,8 +406,8 @@ jobs:
             const successfulRun = runs.find(
               (run) =>
                 run.conclusion === 'success' &&
-                run.head_sha === targetSha &&
-                (!run.head_repository || run.head_repository.full_name === fullRepo)
+                (run.head_sha || '').toLowerCase() === normalizedTargetSha &&
+                (!run.head_repository || (run.head_repository.full_name || '').toLowerCase() === normalizedFullRepo)
             );
 
             if (!successfulRun) {
@@ -426,21 +455,43 @@ jobs:
         if: github.event_name == 'workflow_run' || inputs.image_tag != '' || inputs.release_ref != '' || inputs.image_digest != '' || needs.ci-gate.outputs.target_sha != github.sha
         env:
           EVENT_NAME: ${{ github.event_name }}
+          INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
+          RELEASE_REF: ${{ inputs.release_ref }}
+          INPUT_IMAGE_DIGEST: ${{ inputs.image_digest }}
           TARGET_SHA: ${{ needs.ci-gate.outputs.target_sha }}
         run: |
-          if [ "$EVENT_NAME" = "workflow_run" ]; then
+          if [[ ! "$TARGET_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            echo "::error::Target commit '${TARGET_SHA}' is not a valid 40-character hexadecimal commit SHA."
+            exit 1
+          fi
+
+          if [ "$EVENT_NAME" = "workflow_run" ] || { [ -n "${INPUT_IMAGE_TAG:-}" ] && [ -z "${INPUT_IMAGE_DIGEST:-}" ] && [ -z "${RELEASE_REF:-}" ]; }; then
             if ! git merge-base --is-ancestor "$TARGET_SHA" HEAD; then
               echo "::error::Target commit ${TARGET_SHA} is not an ancestor of ${GITHUB_REF}."
               exit 1
             fi
-          elif ! git merge-base --is-ancestor "$TARGET_SHA" HEAD; then
-            git fetch --no-tags origin "+refs/tags/v*:refs/tags/v*" 2>/dev/null || true
-            MATCHING_TAG=$(git tag --list 'v*' --points-at "$TARGET_SHA" | head -n 1 || true)
-            if [ -z "$MATCHING_TAG" ]; then
-              echo "::error::Target commit ${TARGET_SHA} is neither an ancestor of ${GITHUB_REF} nor pointed to by a v* release tag."
+          elif [ -n "${RELEASE_REF:-}" ] && [ -z "${INPUT_IMAGE_DIGEST:-}" ]; then
+            if ! git merge-base --is-ancestor "$TARGET_SHA" HEAD; then
+              git fetch --no-tags origin "+refs/tags/v*:refs/tags/v*" 2>/dev/null || true
+              MATCHING_TAG=$(git tag --list 'v*' --points-at "$TARGET_SHA" | head -n 1 || true)
+              if [ -z "$MATCHING_TAG" ]; then
+                echo "::error::Target commit ${TARGET_SHA} is neither an ancestor of ${GITHUB_REF} nor pointed to by a v* release tag."
+                exit 1
+              fi
+            fi
+            if ! git cat-file -e "${TARGET_SHA}^{commit}" 2>/dev/null; then
+              git fetch --no-tags origin "$TARGET_SHA" --depth=2 || true
+            fi
+          else
+            if ! git cat-file -e "${TARGET_SHA}^{commit}" 2>/dev/null; then
+              git fetch --no-tags origin "$TARGET_SHA" --depth=2 || true
+            fi
+            if ! git cat-file -e "${TARGET_SHA}^{commit}" 2>/dev/null; then
+              echo "::error::Signed source revision ${TARGET_SHA} does not exist in repository ${GITHUB_REPOSITORY}."
               exit 1
             fi
           fi
+
           git checkout --detach "$TARGET_SHA"
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

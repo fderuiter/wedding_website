@@ -152,6 +152,25 @@ function RegistryPageContent() {
     visible: { opacity: 1, y: 0, transition: { duration: 0.5 } },
   };
 
+  const hasCategorySelection = Array.isArray(categoryFilter)
+    ? categoryFilter.length > 0
+    : Boolean(categoryFilter && categoryFilter !== 'All');
+  const hasPriceSelection =
+    Array.isArray(priceRange) &&
+    priceRange.length === 2 &&
+    (priceRange[0] > minPrice || priceRange[1] < maxPrice);
+  const hasSortSelection = Boolean(
+    sortOption && sortOption !== 'default' && (sortOption as string) !== 'recommended'
+  );
+  const hasActiveFilters = Boolean(
+    (searchQuery && searchQuery.trim() !== '') ||
+      hasCategorySelection ||
+      hasPriceSelection ||
+      showGroupGiftsOnly ||
+      showAvailableOnly ||
+      hasSortSelection
+  );
+
   return (
     <ErrorBoundary title="Registry Error" message="An unexpected error occurred while displaying the registry.">
       <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-primary selection:text-[var(--color-text-on-primary)] dark:selection:bg-primary pb-32 px-2 sm:px-4">
@@ -169,7 +188,7 @@ function RegistryPageContent() {
           Wedding Registry
         </motion.h1>
         <nav
-          className="sticky top-0 z-30 bg-white/90 dark:bg-gray-800/90 backdrop-blur border-b border-primary dark:border-gray-700 max-w-4xl mx-auto px-2 sm:px-6 mb-10 flex flex-col gap-4 py-4 rounded-xl shadow-md"
+          className="sticky top-16 z-30 bg-white/90 dark:bg-gray-800/90 backdrop-blur border-b border-primary dark:border-gray-700 max-w-4xl mx-auto px-2 sm:px-6 mb-10 flex flex-col gap-4 py-4 rounded-xl shadow-md"
           aria-label="Registry Filters"
           role="navigation"
         >
@@ -252,6 +271,17 @@ function RegistryPageContent() {
                 Show only available gifts
               </Label>
             </FormGroup>
+            {hasActiveFilters && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleClearFilters}
+                data-testid="inline-clear-filters-button"
+              >
+                Clear Filters
+              </Button>
+            )}
           </div>
         </nav>
 

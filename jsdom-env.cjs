@@ -16,7 +16,8 @@ class CustomEnvironment extends JSDOMEnvironment {
     if (typeof CompressionStream !== 'undefined') this.global.CompressionStream = CompressionStream;
     if (typeof DecompressionStream !== 'undefined') this.global.DecompressionStream = DecompressionStream;
     const { MessageChannel, MessagePort } = require('node:worker_threads');
-    const BaseMessageChannel = globalThis.MessageChannel || MessageChannel;
+    const BaseMessageChannel =
+      this.global.MessageChannel || globalThis.MessageChannel || MessageChannel;
     this._messageChannels = [];
     const trackedChannels = this._messageChannels;
     this.global.MessageChannel = class TrackedMessageChannel extends BaseMessageChannel {
