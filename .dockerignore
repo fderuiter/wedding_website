@@ -93,4 +93,5 @@ lerna-debug.log*
 
 # 8. TypeScript & ESLint build caches
 tsconfig.tsbuildinfo
+*.tsbuildinfo
 .eslintcache
