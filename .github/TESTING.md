@@ -120,15 +120,15 @@ A variety of verification scripts in [package.json](../package.json) support com
   npm run check:standalone -- --require-standalone
   npm run test:standalone
   ```
-  Verifies post-build standalone asset staging (`.next/standalone/server.js`, `.next/standalone/.next/static`, and `.next/standalone/public` via [`scripts/check-docker-build.ts`](../scripts/check-docker-build.ts)) and runs [`scripts/test-standalone.mjs`](../scripts/test-standalone.mjs) + [`scripts/smoke-runner.mjs`](../scripts/smoke-runner.mjs) to check PostgreSQL TCP readiness (`pg_isready -h localhost`), clean migrations (`POSTGRES_URL_NON_POOLING` unset), `/assets/favicon.png`, `/api/ready`, `/api/registry/validate-code`, and authenticated `/api/registry/items`.
-  > **Warning:** `npm run test:standalone` requires running `npm run build` beforehand (it exits immediately if `.next/standalone/server.js`, `.next/standalone/.next/static`, or `.next/standalone/public` is missing) and executes `docker compose down -v` (with `--env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml`) at startup and cleanup, **deleting local Docker Compose PostgreSQL volumes (`db_data`)**.
+  Verifies post-build standalone asset staging (`.next/standalone/server.js`, `.next/standalone/.next/static`, and `.next/standalone/public` via [`scripts/check-docker-build.ts`](../scripts/check-docker-build.ts)) and runs [`scripts/test-standalone.mjs`](../scripts/test-standalone.mjs) + [`scripts/smoke-runner.mjs`](../scripts/smoke-runner.mjs) to check PostgreSQL TCP readiness (`pg_isready -h localhost`), clean migrations (`POSTGRES_URL_NON_POOLING` unset), `/assets/favicon.png`, `/api/ready`, `/api/registry/validate-code`, authenticated `/api/registry/items`, and worker-based HEIC photo upload transcoding.
+  > **Note:** `npm run test:standalone` requires running `npm run build` beforehand (it exits immediately if `.next/standalone/server.js`, `.next/standalone/.next/static`, or `.next/standalone/public` is missing). When `DATABASE_URL` is unset, it selects free loopback `PORT` and `DB_PORT` values (honoring `TEST_PORT` and `DB_PORT` overrides) and runs `docker compose -p wedding-smoke-standalone --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml down -v` at startup and cleanup so isolated smoke volumes are torn down while preserving default local `db_data` and `uploads_data` volumes; when `DATABASE_URL` is set explicitly, it skips starting or tearing down the isolated database container and targets that URL directly.
 
 - **OCI Container Smoke Test:**
   ```bash
   npm run test:container
   ```
-  Runs [`scripts/test-container.mjs`](../scripts/test-container.mjs) with [`.env.ci`](../.env.ci) and [`docker-compose.ci.yml`](../docker-compose.ci.yml) to build the production Docker container, execute the containerized `migration` service (`docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml run --rm migration`) by default even when `node_modules/.bin/prisma` exists on the host, and verify schema readiness, static assets, authenticated data-backed routes, `pg.Pool` connection bounds, and `SIGTERM` draining.
-  > **Warning:** Like `npm run test:standalone`, `npm run test:container` executes `docker compose down -v` (with `--env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml`) at startup and cleanup, **wiping local Docker Compose PostgreSQL volumes (`db_data`)**.
+  Runs [`scripts/test-container.mjs`](../scripts/test-container.mjs) with [`.env.ci`](../.env.ci) and [`docker-compose.ci.yml`](../docker-compose.ci.yml) to build the production Docker container, execute the containerized `migration` service (`docker compose -p wedding-smoke-container --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml run --rm migration`) by default even when `node_modules/.bin/prisma` exists on the host, and verify schema readiness, static assets, authenticated data-backed routes, worker-based HEIC photo upload transcoding, `pg.Pool` connection bounds, and `SIGTERM` draining.
+  > **Note:** `npm run test:container` selects free loopback `PORT` and `DB_PORT` values (honoring `TEST_PORT` and `DB_PORT` overrides without killing existing processes on port `3000`) and executes `docker compose -p wedding-smoke-container --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml down -v` at startup and cleanup, isolating smoke containers and volumes so default local `db_data` and `uploads_data` volumes remain untouched.
 
 - **Static Repository & Document Checks:**
   ```bash
@@ -163,7 +163,7 @@ A variety of verification scripts in [package.json](../package.json) support com
   ```bash
   npm run build:export
   ```
-  Compiles the database-free static HTML showcase (`output: 'export'`) inside an isolated staged workspace without `src/app/api` ([scripts/build-export.mjs](../scripts/build-export.mjs)), isolating export build caches in `.next-export` ([next.config.ts](../next.config.ts)) while preserving `src/app/api` and `.next/standalone` in the repository root, matching the parallel `static-export-build` CI job in [.github/workflows/ci.yml](workflows/ci.yml).
+  Compiles the database-free static HTML showcase (`output: 'export'`) inside `.next/export-stage` without `src/app/api` ([scripts/build-export.mjs](../scripts/build-export.mjs)), isolating export build caches in `.next-export/cache` ([next.config.ts](../next.config.ts)) while preserving `src/app/api` and `.next/standalone` in the repository root, matching the parallel `static-export-build` CI job in [.github/workflows/ci.yml](workflows/ci.yml).
 
 - **Complete Quality Gate:**
   ```bash

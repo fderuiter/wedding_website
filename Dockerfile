@@ -77,7 +77,7 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked \
     npm ci --ignore-scripts
 
 COPY prisma ./prisma
-COPY prisma.config.ts next.config.ts postcss.config.mjs tsconfig.json tsconfig.build.json next-env.d.ts ./
+COPY prisma.config.ts next.config.ts postcss.config.mjs tsconfig.json tsconfig.build.json ./
 COPY assets ./assets
 COPY public ./public
 COPY src ./src

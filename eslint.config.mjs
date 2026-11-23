@@ -214,6 +214,7 @@ const eslintConfig = [
       '.next/**',
       '.next-export/**',
       'out/**',
+      '.api-backup-export/**',
       'node_modules/**',
       'docker/prisma-cli/**',
       'coverage/**',

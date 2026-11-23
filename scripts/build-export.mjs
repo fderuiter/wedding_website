@@ -3,15 +3,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const rootDir = path.resolve(__dirname, '..');
+const SCRIPT_DIR = typeof __dirname !== 'undefined'
+  ? __dirname
+  : path.dirname(fileURLToPath(import.meta.url));
+const rootDir = path.resolve(SCRIPT_DIR, '..');
 
-const exportRootDir = path.join(rootDir, '.next-export');
-const exportCacheDir = path.join(exportRootDir, 'cache');
-const rootOutDir = path.join(rootDir, 'out');
-
-const ROOT_FILES_TO_STAGE = [
+const ROOT_CONFIG_FILES = [
   'package.json',
   'next.config.ts',
   'postcss.config.mjs',
@@ -19,10 +16,6 @@ const ROOT_FILES_TO_STAGE = [
   'tsconfig.build.json',
   'next-env.d.ts',
 ];
-
-let stageDir = null;
-let cacheMovedIntoStage = false;
-let cleanedUp = false;
 
 function moveOrCopyDir(sourceDir, targetDir) {
   fs.rmSync(targetDir, { recursive: true, force: true });
@@ -35,148 +28,229 @@ function moveOrCopyDir(sourceDir, targetDir) {
   }
 }
 
-function persistStageCache() {
-  if (!stageDir) {
-    return;
+export function restoreLegacyApiBackup(targetRoot = rootDir) {
+  const apiDir = path.join(targetRoot, 'src', 'app', 'api');
+  const legacyBackupDir = path.join(targetRoot, '.api-backup-export');
+  if (!fs.existsSync(apiDir) && fs.existsSync(legacyBackupDir)) {
+    fs.mkdirSync(path.dirname(apiDir), { recursive: true });
+    fs.renameSync(legacyBackupDir, apiDir);
+    return true;
   }
-  const stagedCacheDir = path.join(stageDir, '.next', 'cache');
-  if (fs.existsSync(stagedCacheDir)) {
-    try {
-      moveOrCopyDir(stagedCacheDir, exportCacheDir);
-      cacheMovedIntoStage = false;
-    } catch (err) {
-      console.error('Failed to persist static export build cache:', err);
-    }
-  }
+  return false;
 }
 
-function cleanup() {
-  if (cleanedUp) {
-    return;
-  }
-  cleanedUp = true;
+export function stageExportWorkspace(targetRoot = rootDir) {
+  restoreLegacyApiBackup(targetRoot);
 
-  if (cacheMovedIntoStage) {
-    persistStageCache();
-  }
+  const stageDir = path.join(targetRoot, '.next', 'export-stage');
+  fs.rmSync(stageDir, { recursive: true, force: true });
+  fs.mkdirSync(stageDir, { recursive: true });
 
-  if (stageDir && fs.existsSync(stageDir)) {
-    try {
-      fs.rmSync(stageDir, { recursive: true, force: true });
-    } catch (err) {
-      console.error('Failed to remove staged export workspace:', err);
-    }
-  }
-}
-
-function handleSignal(signal) {
-  cleanup();
-  process.exit(signal === 'SIGINT' ? 130 : 143);
-}
-
-process.on('SIGINT', () => handleSignal('SIGINT'));
-process.on('SIGTERM', () => handleSignal('SIGTERM'));
-process.on('SIGHUP', () => handleSignal('SIGHUP'));
-process.on('exit', () => cleanup());
-
-function stageWorkspace() {
-  fs.mkdirSync(exportRootDir, { recursive: true });
-  const dir = fs.mkdtempSync(path.join(exportRootDir, 'stage-'));
-
-  for (const relFile of ROOT_FILES_TO_STAGE) {
-    const srcPath = path.join(rootDir, relFile);
-    if (fs.existsSync(srcPath)) {
-      fs.cpSync(srcPath, path.join(dir, relFile));
+  for (const relFile of ROOT_CONFIG_FILES) {
+    const srcFile = path.join(targetRoot, relFile);
+    if (fs.existsSync(srcFile)) {
+      fs.copyFileSync(srcFile, path.join(stageDir, relFile));
     }
   }
 
-  const publicSrc = path.join(rootDir, 'public');
-  if (fs.existsSync(publicSrc)) {
-    fs.cpSync(publicSrc, path.join(dir, 'public'), { recursive: true });
+  const assetsDir = path.join(targetRoot, 'assets');
+  if (fs.existsSync(assetsDir)) {
+    fs.cpSync(assetsDir, path.join(stageDir, 'assets'), { recursive: true });
   }
 
-  const srcSourceDir = path.join(rootDir, 'src');
-  const srcTargetDir = path.join(dir, 'src');
-  fs.cpSync(srcSourceDir, srcTargetDir, {
-    recursive: true,
-    filter: (sourcePath) => {
-      const rel = path.relative(srcSourceDir, sourcePath).replace(/\\/g, '/');
-      return rel !== 'app/api' && !rel.startsWith('app/api/');
-    },
-  });
-
-  if (fs.existsSync(exportCacheDir)) {
-    const stagedNextCacheDir = path.join(dir, '.next', 'cache');
-    moveOrCopyDir(exportCacheDir, stagedNextCacheDir);
-    cacheMovedIntoStage = true;
+  const publicDir = path.join(targetRoot, 'public');
+  if (fs.existsSync(publicDir)) {
+    const uploadsDir = path.resolve(publicDir, 'uploads');
+    const mockWorkerPath = path.resolve(publicDir, 'mockServiceWorker.js');
+    fs.cpSync(publicDir, path.join(stageDir, 'public'), {
+      recursive: true,
+      filter: (sourcePath) => {
+        const resolved = path.resolve(sourcePath);
+        if (resolved === mockWorkerPath) {
+          return false;
+        }
+        if (resolved === uploadsDir || resolved.startsWith(`${uploadsDir}${path.sep}`)) {
+          return false;
+        }
+        return true;
+      },
+    });
   }
 
-  return dir;
+  const srcDir = path.join(targetRoot, 'src');
+  if (fs.existsSync(srcDir)) {
+    const apiDir = path.resolve(srcDir, 'app', 'api');
+    fs.cpSync(srcDir, path.join(stageDir, 'src'), {
+      recursive: true,
+      filter: (sourcePath) => {
+        const resolved = path.resolve(sourcePath);
+        if (resolved === apiDir || resolved.startsWith(`${apiDir}${path.sep}`)) {
+          return false;
+        }
+        return true;
+      },
+    });
+  }
+
+  const rootExportCacheDir = path.join(targetRoot, '.next-export', 'cache');
+  if (fs.existsSync(rootExportCacheDir)) {
+    moveOrCopyDir(rootExportCacheDir, path.join(stageDir, '.next-export', 'cache'));
+  }
+
+  return stageDir;
 }
 
-function resolveStagedExportOutput(dir) {
-  const candidates = [
-    path.join(dir, '.next-export'),
-    path.join(dir, 'out'),
+export function persistExportStageCache(
+  targetRoot = rootDir,
+  stageDir = path.join(targetRoot, '.next', 'export-stage')
+) {
+  const rootExportCacheDir = path.join(targetRoot, '.next-export', 'cache');
+  const cacheCandidates = [
+    path.join(stageDir, '.next-export', 'cache'),
+    path.join(stageDir, '.next', 'cache'),
   ];
-  for (const candidate of candidates) {
-    if (fs.existsSync(path.join(candidate, 'index.html'))) {
-      return candidate;
+  for (const stagedCacheDir of cacheCandidates) {
+    if (fs.existsSync(stagedCacheDir)) {
+      try {
+        moveOrCopyDir(stagedCacheDir, rootExportCacheDir);
+        return true;
+      } catch (err) {
+        console.error('Failed to persist static export build cache:', err);
+        return false;
+      }
     }
+  }
+  return false;
+}
+
+function resolveStagedExportOutputDir(stageDir) {
+  const stagedOutDir = path.join(stageDir, 'out');
+  const stagedNextExportDir = path.join(stageDir, '.next-export');
+
+  if (fs.existsSync(path.join(stagedOutDir, 'index.html'))) {
+    return stagedOutDir;
+  }
+  if (fs.existsSync(path.join(stagedNextExportDir, 'index.html'))) {
+    return stagedNextExportDir;
+  }
+  if (fs.existsSync(stagedOutDir)) {
+    return stagedOutDir;
   }
   return null;
 }
 
-try {
-  stageDir = stageWorkspace();
+export function promoteStagedExportOutput(
+  targetRoot = rootDir,
+  stageDir = path.join(targetRoot, '.next', 'export-stage')
+) {
+  persistExportStageCache(targetRoot, stageDir);
 
-  const nextBin = path.join(
-    rootDir,
-    'node_modules',
-    '.bin',
-    process.platform === 'win32' ? 'next.cmd' : 'next'
-  );
+  const stagedExportDir = resolveStagedExportOutputDir(stageDir);
+  const rootOutDir = path.join(targetRoot, 'out');
 
-  const child = spawn(nextBin, ['build'], {
-    cwd: stageDir,
-    stdio: 'inherit',
-    env: {
-      ...process.env,
-      STATIC_EXPORT: 'true',
-    },
-  });
+  if (!stagedExportDir) {
+    throw new Error(
+      `Expected static export output directory at ${path.join(stageDir, 'out')} or ${path.join(stageDir, '.next-export')}`
+    );
+  }
 
-  child.on('error', (err) => {
-    cleanup();
-    console.error('Failed to spawn next build:', err);
-    process.exit(1);
-  });
+  moveOrCopyDir(stagedExportDir, rootOutDir);
+  return rootOutDir;
+}
 
-  child.on('close', (code) => {
-    const exitCode = code ?? 1;
-    if (exitCode !== 0) {
-      cleanup();
-      process.exit(exitCode);
-    }
-
+export function cleanupExportStage(targetRoot = rootDir) {
+  const stageDir = path.join(targetRoot, '.next', 'export-stage');
+  if (fs.existsSync(stageDir)) {
+    persistExportStageCache(targetRoot, stageDir);
     try {
-      persistStageCache();
-      const stagedExportDir = resolveStagedExportOutput(stageDir);
-      if (!stagedExportDir) {
-        throw new Error('Static export completed without generating index.html in staged output.');
-      }
-      moveOrCopyDir(stagedExportDir, rootOutDir);
-    } catch (copyErr) {
-      cleanup();
-      console.error('Failed to finalize static export output:', copyErr);
-      process.exit(1);
+      fs.rmSync(stageDir, { recursive: true, force: true });
+    } catch (err) {
+      console.error('Failed to clean up export staging directory:', err);
     }
+  }
+}
 
+function runBuildExport(targetRoot = rootDir) {
+  let cleaned = false;
+  const cleanup = () => {
+    if (!cleaned) {
+      cleaned = true;
+      cleanupExportStage(targetRoot);
+    }
+  };
+
+  const onSigint = () => {
     cleanup();
-    process.exit(0);
-  });
-} catch (error) {
-  cleanup();
-  console.error('Export build failed:', error);
-  process.exit(1);
+    process.exit(130);
+  };
+  const onSigterm = () => {
+    cleanup();
+    process.exit(143);
+  };
+  const onSighup = () => {
+    cleanup();
+    process.exit(143);
+  };
+
+  process.on('SIGINT', onSigint);
+  process.on('SIGTERM', onSigterm);
+  process.on('SIGHUP', onSighup);
+  process.on('exit', cleanup);
+
+  try {
+    const stageDir = stageExportWorkspace(targetRoot);
+    const nextBin = path.join(
+      targetRoot,
+      'node_modules',
+      '.bin',
+      process.platform === 'win32' ? 'next.cmd' : 'next'
+    );
+
+    const child = spawn(nextBin, ['build'], {
+      cwd: stageDir,
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        STATIC_EXPORT: 'true',
+      },
+    });
+
+    child.on('error', (err) => {
+      cleanup();
+      console.error('Failed to spawn next build:', err);
+      process.exit(1);
+    });
+
+    child.on('close', (code) => {
+      const exitCode = code ?? 1;
+      if (exitCode !== 0) {
+        cleanup();
+        process.exit(exitCode);
+        return;
+      }
+
+      try {
+        promoteStagedExportOutput(targetRoot, stageDir);
+      } catch (err) {
+        console.error('Failed to promote static export output:', err);
+        cleanup();
+        process.exit(1);
+        return;
+      }
+      cleanup();
+      process.exit(0);
+    });
+  } catch (error) {
+    cleanup();
+    console.error('Export build failed:', error);
+    process.exit(1);
+  }
+}
+
+const isDirectCall =
+  typeof process.argv[1] === 'string' &&
+  process.argv[1].endsWith('build-export.mjs');
+
+if (isDirectCall) {
+  runBuildExport();
 }
