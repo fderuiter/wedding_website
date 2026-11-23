@@ -19,7 +19,7 @@ import {
   resolveLocalTsModule,
   updateFeatureModulesMd,
 } from '../../scripts/generate-docs';
-import { AppConfigSchema, PublicAppConfigSchema } from '../features/content/schemas';
+import { AppConfigSchema, PublicAppConfigSchema } from '@/features/content';
 import { DEFAULT_MODULE_CONFIG, FEATURE_METADATA } from '../lib/modules';
 
 describe('Documentation Generator - getZodType & Spec Tables', () => {

@@ -524,15 +524,18 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     expect(unprotectedOpKeys).toEqual(expectedPublicOpKeys);
     expect(unprotectedOpKeys).toEqual(
       expect.arrayContaining([
+        'GET /api/admin/me',
         'GET /api/admin/setup',
         'GET /api/health',
         'GET /api/live',
+        'GET /api/og',
         'GET /api/ready',
         'GET /api/registry/claim',
         'GET /api/registry/validate-code',
         'GET /api/uploads/{path}',
         'HEAD /api/uploads/{path}',
         'POST /api/admin/login',
+        'POST /api/admin/logout',
         'POST /api/admin/setup',
         'POST /api/guest/address/public',
         'POST /api/guest/login',

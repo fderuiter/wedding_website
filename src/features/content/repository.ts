@@ -5,8 +5,11 @@ import type { IContentRepository, PendingPhotosOptions, PaginatedPendingPhotosRe
 import { ContentNodeSchema, PhotoNodeSchema, PhotoDataSchema, AppConfigSchema, ContentNodeDTO, AppConfigDTO } from './schemas';
 import { executeInTransaction } from '@/lib/transaction';
 import { createAuditSnapshot } from '@/lib/audit';
-import { isMultisiteEnabled } from '@/lib/config';
 import { buildArchetypeSeedData, isStaticExportBuild } from '@/lib/sampleData/builder';
+
+function isMultisiteEnabled(): boolean {
+  return process.env.MULTISITE_ENABLED === 'true' || process.env.MULTISITE_ENABLED === '1';
+}
 
 const StoredLegacyPhotoNodeSchema = PhotoNodeSchema.extend({
   data: PhotoDataSchema.extend({

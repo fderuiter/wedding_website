@@ -2,6 +2,10 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import ts from 'typescript';
+import {
+  getMiddlewarePublicApiExclusions,
+  isMiddlewarePublicApiMethod,
+} from './generate-docs';
 import { ARCHITECTURAL_DOCS } from './check-doc-links';
 
 interface RouteContractEntry {
@@ -2025,6 +2029,234 @@ function verifySymbolInModule(
   return `Symbol "${citation.symbol}" is not declared or exported in ${citation.srcRelPath}`;
 }
 
+interface UnprotectedRouteSpec {
+  sourceRelPath: string;
+  routePath: string;
+  methods?: string[];
+}
+
+function extractUnprotectedApiRoutes(rootDir: string): UnprotectedRouteSpec[] {
+  const results: UnprotectedRouteSpec[] = [];
+  const routesFilePath = path.join(rootDir, 'src/lib/routes.ts');
+
+  if (fs.existsSync(routesFilePath)) {
+    const sf = getCachedSourceFile(routesFilePath).sf;
+    function visit(node: ts.Node) {
+      if (
+        ts.isVariableDeclaration(node) &&
+        ts.isIdentifier(node.name) &&
+        node.name.text === 'APP_ROUTES' &&
+        node.initializer &&
+        ts.isArrayLiteralExpression(node.initializer)
+      ) {
+        for (const el of node.initializer.elements) {
+          if (!ts.isObjectLiteralExpression(el)) continue;
+          let routePath: string | null = null;
+          const roles: string[] = [];
+          const methods: string[] = [];
+          let hasRequiredModule = false;
+
+          for (const prop of el.properties) {
+            if (!ts.isPropertyAssignment(prop) || !ts.isIdentifier(prop.name)) continue;
+            const propName = prop.name.text;
+            if (propName === 'path' && ts.isStringLiteralLike(prop.initializer)) {
+              routePath = prop.initializer.text;
+            } else if (propName === 'roles' && ts.isArrayLiteralExpression(prop.initializer)) {
+              for (const roleEl of prop.initializer.elements) {
+                if (ts.isStringLiteralLike(roleEl)) {
+                  roles.push(roleEl.text);
+                }
+              }
+            } else if (propName === 'methods' && ts.isArrayLiteralExpression(prop.initializer)) {
+              for (const methodEl of prop.initializer.elements) {
+                if (ts.isStringLiteralLike(methodEl)) {
+                  methods.push(methodEl.text.toUpperCase());
+                }
+              }
+            } else if (propName === 'requiredModule') {
+              hasRequiredModule = true;
+            }
+          }
+
+          if (
+            routePath &&
+            routePath.startsWith('/api/') &&
+            roles.includes('public') &&
+            !hasRequiredModule
+          ) {
+            results.push({
+              sourceRelPath: 'src/lib/routes.ts',
+              routePath,
+              methods: methods.length > 0 ? methods : undefined,
+            });
+          }
+        }
+      }
+      ts.forEachChild(node, visit);
+    }
+    visit(sf);
+  }
+
+  const metadataFilePath = path.join(rootDir, 'src/app/metadata.ts');
+  if (fs.existsSync(metadataFilePath)) {
+    const metadataSource = fs.readFileSync(metadataFilePath, 'utf8');
+    if (/\/api\/og(?=[?'"`\s/]|$)/.test(metadataSource)) {
+      if (!results.some((r) => r.routePath === '/api/og')) {
+        results.push({
+          sourceRelPath: 'src/app/metadata.ts',
+          routePath: '/api/og',
+          methods: ['GET'],
+        });
+      }
+    }
+  }
+
+  return results;
+}
+
+function collectAuthModulePaths(rootDir: string): string[] {
+  const authDir = path.join(rootDir, 'src/core/auth');
+  if (!fs.existsSync(authDir)) return [];
+
+  const entries = fs.readdirSync(authDir, { withFileTypes: true });
+  return entries
+    .filter(
+      (entry) =>
+        entry.isFile() &&
+        /\.tsx?$/.test(entry.name) &&
+        !/\.(?:test|spec)\.tsx?$/.test(entry.name) &&
+        !entry.name.endsWith('.d.ts'),
+    )
+    .map((entry) => `src/core/auth/${entry.name}`)
+    .sort();
+}
+
+function collectSiteEnvOverridesFromConfig(rootDir: string): string[] {
+  const configPath = path.join(rootDir, 'src/lib/config.ts');
+  if (!fs.existsSync(configPath)) return [];
+
+  const sf = getCachedSourceFile(configPath).sf;
+  const found = new Set<string>();
+
+  function visit(node: ts.Node) {
+    if (
+      ts.isPropertyAccessExpression(node) &&
+      node.name.text.startsWith('SITE_') &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      ts.isIdentifier(node.expression.expression) &&
+      node.expression.expression.text === 'process' &&
+      node.expression.name.text === 'env'
+    ) {
+      found.add(node.name.text);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sf);
+
+  return Array.from(found).sort();
+}
+
+function stripFencesAndHtmlComments(markdown: string): string {
+  const lines = markdown.split(/\r?\n/);
+  const kept: string[] = [];
+  let inFence = false;
+  let fenceChar = '';
+  let fenceLen = 0;
+
+  for (const line of lines) {
+    const fenceMatch = line.match(/^\s{0,3}(`{3,}|~{3,})(.*)$/);
+    if (fenceMatch) {
+      const marker = fenceMatch[1];
+      const trailing = fenceMatch[2];
+      if (!inFence) {
+        inFence = true;
+        fenceChar = marker[0];
+        fenceLen = marker.length;
+        continue;
+      } else if (
+        marker[0] === fenceChar &&
+        marker.length >= fenceLen &&
+        trailing.trim() === ''
+      ) {
+        inFence = false;
+        fenceChar = '';
+        fenceLen = 0;
+        continue;
+      }
+    }
+    if (inFence) continue;
+    if (line.trim().startsWith('<!--') && line.trim().endsWith('-->')) continue;
+    kept.push(line);
+  }
+
+  return kept.join('\n');
+}
+
+function verifyArchitectureAndMiddlewareContracts(
+  rootDir: string,
+  apiEntries: RouteContractEntry[],
+  specFiles: string[],
+  errors: string[],
+): void {
+  const middlewarePath = path.join(rootDir, 'src/middleware.ts');
+  const unprotectedRoutes = extractUnprotectedApiRoutes(rootDir);
+  const archAbsPath = path.join(rootDir, 'ARCHITECTURE.md');
+  const hasArchSpec = specFiles.includes('ARCHITECTURE.md') && fs.existsSync(archAbsPath);
+  const archProse = hasArchSpec
+    ? stripFencesAndHtmlComments(fs.readFileSync(archAbsPath, 'utf8'))
+    : null;
+
+  if (unprotectedRoutes.length > 0 && fs.existsSync(middlewarePath)) {
+    const middlewareExclusions = getMiddlewarePublicApiExclusions(rootDir);
+    for (const item of unprotectedRoutes) {
+      const matchingEntry = apiEntries.find((e) => e.routePath === item.routePath);
+      const targetMethods =
+        item.methods ??
+        (matchingEntry && matchingEntry.methods.length > 0 ? matchingEntry.methods : ['GET']);
+
+      for (const method of targetMethods) {
+        if (!isMiddlewarePublicApiMethod(item.routePath, method, middlewareExclusions)) {
+          errors.push(
+            `${item.sourceRelPath}: Unprotected API route "${item.routePath}" (${method}) is not excluded from the cookie gate in src/middleware.ts`,
+          );
+        }
+      }
+
+      if (archProse !== null && matchingEntry) {
+        const escapedRoute = item.routePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const publicTableRowRegex = new RegExp(
+          `^\\|\\s*\`${escapedRoute}\`\\s*\\|[^\\n]*\\|\\s*\`Public\`\\s*\\|\\s*$`,
+          'm',
+        );
+        if (!publicTableRowRegex.test(archProse)) {
+          errors.push(
+            `ARCHITECTURE.md: Unprotected API route "${item.routePath}" from ${item.sourceRelPath} is not documented with Access Tier \`Public\``,
+          );
+        }
+      }
+    }
+  }
+
+  if (archProse !== null) {
+    for (const authModuleRel of collectAuthModulePaths(rootDir)) {
+      if (!archProse.includes(authModuleRel)) {
+        errors.push(
+          `ARCHITECTURE.md: Authentication module "${authModuleRel}" in src/core/auth/ is not documented in ARCHITECTURE.md`,
+        );
+      }
+    }
+
+    for (const siteEnvVar of collectSiteEnvOverridesFromConfig(rootDir)) {
+      const envRegex = new RegExp(`\\b${siteEnvVar}\\b`);
+      if (!envRegex.test(archProse)) {
+        errors.push(
+          `ARCHITECTURE.md: Environment variable override "${siteEnvVar}" in src/lib/config.ts is not documented in ARCHITECTURE.md`,
+        );
+      }
+    }
+  }
+}
+
 function verifyOpenApiProbeContracts(rootDir: string): string[] {
   const openapiPath = path.join(rootDir, 'public/openapi.json');
   if (!fs.existsSync(openapiPath)) {
@@ -2322,6 +2554,8 @@ export function verifySpecContracts(
       }
     }
   }
+
+  verifyArchitectureAndMiddlewareContracts(rootDir, apiEntries, specFiles, errors);
 
   return {
     errors,
