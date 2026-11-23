@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useId } from 'react';
 import { Icon } from '@/components/ui/Icon';
+import { UploadAlert } from '@/components/ui/UploadStatus';
 import { cn } from '@/utils/cn';
 import { apiClient } from '@/lib/apiClient';
 import {
@@ -174,6 +175,19 @@ function Dropzone({
 
   return (
     <div className="w-full">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={allowedExtensions.join(',')}
+        onChange={handleInputChange}
+        disabled={disabled || isBusy}
+        tabIndex={-1}
+        aria-hidden="true"
+        style={{ display: 'none' }}
+        className="hidden"
+        data-testid="dropzone-file-input"
+      />
+
       <div
         ref={ref}
         role="button"
@@ -197,19 +211,6 @@ function Dropzone({
         )}
         {...props}
       >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={allowedExtensions.join(',')}
-          onChange={handleInputChange}
-          disabled={disabled || isBusy}
-          tabIndex={-1}
-          aria-hidden="true"
-          style={{ display: 'none' }}
-          className="hidden"
-          data-testid="dropzone-file-input"
-        />
-
         <Icon
           name={isBusy ? 'Loader2' : 'UploadCloud'}
           className={cn(
@@ -230,9 +231,9 @@ function Dropzone({
       </div>
 
       {activeError && (
-        <p id={errorId} role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">
+        <UploadAlert id={errorId} className="mt-2 text-sm">
           {activeError}
-        </p>
+        </UploadAlert>
       )}
     </div>
   );

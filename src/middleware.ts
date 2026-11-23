@@ -4,7 +4,7 @@ import { isAdminRequest } from '@/core/auth/auth.server';
 import { isGuestRequest } from '@/core/auth/guest.server';
 import { getSignedGuestInviteSession } from '@/core/auth/guestInviteToken';
 import { isProtectedRoute } from '@/lib/routes';
-import { isHostAllowed } from '@/utils/hostValidation';
+import { isHostAllowed, isHostSyntaxValid } from '@/utils/hostValidation';
 import { getSafeCallbackUrl } from '@/utils/safeCallbackUrl';
 import { timingSafeEqualJS } from '@/utils/crypto';
 
@@ -33,20 +33,29 @@ function isValidCronAuthorization(request: NextRequest): boolean {
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const method = request.method;
+  const method = (request.method || 'GET').toUpperCase();
   const normalizedPath = pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
-  const isProbeRequest =
+  const isReadOnlyProbeRequest =
     (method === 'GET' || method === 'HEAD') &&
     (normalizedPath === '/api/live' ||
       normalizedPath === '/api/health' ||
       normalizedPath === '/api/ready');
 
-  // Validate Host header at perimeter before executing any route logic,
-  // exempting only GET/HEAD container orchestrator health probes.
-  const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0].trim();
-  const host = forwardedHost || request.headers.get('host') || request.nextUrl?.host;
+  // Validate Host header at perimeter before executing any route logic
+  const rawForwardedHost = request.headers.get('x-forwarded-host');
+  const rawHost = request.headers.get('host');
+  const hasMalformedForwardedHost =
+    rawForwardedHost !== null &&
+    (/[\r\n\x00-\x1f\x7f]/.test(rawForwardedHost) || !rawForwardedHost.trim());
+  const hasInvalidRawHost = rawHost !== null && !isHostSyntaxValid(rawHost);
+  const forwardedHost = rawForwardedHost?.split(',')[0].trim();
+  const host = forwardedHost || (rawHost !== null ? rawHost : request.nextUrl?.host);
 
-  if (!isProbeRequest && !isHostAllowed(host)) {
+  if (
+    hasMalformedForwardedHost ||
+    hasInvalidRawHost ||
+    (isReadOnlyProbeRequest ? !isHostSyntaxValid(host) : !isHostAllowed(host))
+  ) {
     return NextResponse.json(
       { error: 'Invalid Host header' },
       { status: 400 }

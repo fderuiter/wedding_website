@@ -1012,6 +1012,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     'src/app/api/uploads/[...path]/route.ts',
     'src/app/api/admin/maintenance/export/route.ts',
     'scripts/preflight-env.ts',
+    'ARCHITECTURE.md',
     'CHANGELOG.md',
     'DEPLOYMENT.md',
     'docs/upgrading.md',
@@ -1022,6 +1023,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     'docs/deployment/gcp-cloud-run.md',
     'docs/deployment/docker-vps.md',
     'docs/deployment/railway-render.md',
+    'scripts/generate-docs.ts',
     '.github/dependabot.yml',
     '.github/workflows/ci.yml',
     '.github/workflows/storybook.yml',
@@ -1315,17 +1317,8 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
-  // Verify nonexistent gcloud probe flags and unescaped commas in --set-env-vars across all runbooks
-  const invalidGcloudProbeFlagRegex =
-    /--(?:startup|liveness)-probe-(?:type|request-path|port|initial-delay|period|timeout|failure-threshold)\b/;
+  // Verify unescaped commas in gcloud --set-env-vars across all runbooks
   for (const [relPath, content] of runbookContents.entries()) {
-    const invalidProbeMatch = content.match(invalidGcloudProbeFlagRegex);
-    if (invalidProbeMatch) {
-      errors.push(
-        `${relPath}: Uses nonexistent gcloud flag "${invalidProbeMatch[0]}" (use \`--startup-probe\` / \`--liveness-probe\` map flags with \`httpGet.path=...\`)`
-      );
-    }
-
     for (const line of extractFencedLogicalLines(content)) {
       if (!/\bgcloud\b/.test(line)) {
         continue;
@@ -1378,17 +1371,24 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
-  const hasValidCloudRunStartupProbe = gcpFencedLines.some(
-    (line) =>
-      /--startup-probe(?:=|\s+)/.test(line) && line.includes('httpGet.path=/api/health')
-  );
-  const hasValidCloudRunLivenessProbe = gcpFencedLines.some(
-    (line) =>
-      /--liveness-probe(?:=|\s+)/.test(line) && line.includes('httpGet.path=/api/live')
-  );
-  if (!hasValidCloudRunStartupProbe || !hasValidCloudRunLivenessProbe) {
+  for (const [relPath, content] of runbookContents.entries()) {
+    const invalidProbeFlagMatches = content.match(/--(?:startup|liveness)-probe-[a-z0-9-]+/gi) ?? [];
+    for (const invalidFlag of Array.from(new Set(invalidProbeFlagMatches))) {
+      errors.push(
+        `${relPath}: Invalid Cloud Run CLI flag "${invalidFlag}"; use composite \`--liveness-probe=httpGet.path=...,httpGet.port=...\` or Knative \`startupProbe\` / \`livenessProbe\` YAML blocks`
+      );
+    }
+  }
+
+  if (
+    !gcpMd.includes('--liveness-probe=httpGet.path=/api/live,httpGet.port=3000,periodSeconds=30') ||
+    !gcpMd.includes('startupProbe:') ||
+    !gcpMd.includes('livenessProbe:') ||
+    !gcpMd.includes('path: /api/health') ||
+    !gcpMd.includes('path: /api/live')
+  ) {
     errors.push(
-      'docs/deployment/gcp-cloud-run.md: Must configure `--startup-probe` (`httpGet.path=/api/health`) and `--liveness-probe` (`httpGet.path=/api/live`)'
+      'docs/deployment/gcp-cloud-run.md: Must document `--liveness-probe=httpGet.path=/api/live,httpGet.port=3000,periodSeconds=30` and Knative `startupProbe` (`/api/health`) and `livenessProbe` (`/api/live`) YAML blocks'
     );
   }
 
@@ -1806,6 +1806,36 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
+  const architectureMd = fs.readFileSync(path.join(repoRoot, 'ARCHITECTURE.md'), 'utf8');
+  const staleArchitectureNodeRegex = new RegExp(
+    `^-\\s+\\*\\*Node\\.js\\*\\*:\\s*v(?!${expectedNodeMajor}\\b)\\d+`,
+    'm'
+  );
+  if (
+    !architectureMd.includes(`- **Node.js**: v${expectedNodeMajor}.x`) ||
+    staleArchitectureNodeRegex.test(architectureMd)
+  ) {
+    errors.push(
+      `ARCHITECTURE.md: Must specify \`- **Node.js**: v${expectedNodeMajor}.x\` matching .nvmrc`
+    );
+  }
+
+  const generateDocsRaw = fs.readFileSync(path.join(repoRoot, 'scripts/generate-docs.ts'), 'utf8');
+  const generateEnvSpecsSection =
+    generateDocsRaw.split('export function generateEnvSpecs')[1]?.split('// 4. Update ARCHITECTURE.md')[0] ?? '';
+  const staleGenerateDocsNodeLiteralRegex = new RegExp(
+    `['"\`]v?(?!${expectedNodeMajor}\\b)\\d+\\.x['"\`]`
+  );
+  if (
+    !generateEnvSpecsSection ||
+    !generateEnvSpecsSection.includes(`${expectedNodeMajor}.x`) ||
+    staleGenerateDocsNodeLiteralRegex.test(generateEnvSpecsSection)
+  ) {
+    errors.push(
+      `scripts/generate-docs.ts: \`generateEnvSpecs\` must specify Node.js \`${expectedNodeMajor}.x\` matching .nvmrc`
+    );
+  }
+
   const workflowsCheckDir = path.join(repoRoot, '.github/workflows');
   const workflowYamlEntries = fs
     .readdirSync(workflowsCheckDir)
@@ -1831,9 +1861,19 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       if (!isSeq(stepsNode)) {
         continue;
       }
+      let jobHasSetupNode = false;
+      let jobInvokesNodeRuntime = false;
       for (const stepItem of stepsNode.items) {
         if (!isMap(stepItem)) {
           continue;
+        }
+        const runNode: unknown = stepItem.get('run', true);
+        if (
+          isScalar(runNode) &&
+          typeof runNode.value === 'string' &&
+          /(?:^|\s|&&|\|\||;)(?:node|npm|npx)\s/.test(runNode.value)
+        ) {
+          jobInvokesNodeRuntime = true;
         }
         const usesNode: unknown = stepItem.get('uses', true);
         if (
@@ -1843,6 +1883,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
         ) {
           continue;
         }
+        jobHasSetupNode = true;
         setupNodeStepCount += 1;
         const withNode: unknown = stepItem.get('with', true);
         const versionFileNode: unknown = isMap(withNode)
@@ -1860,6 +1901,11 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
             `${wfRelPath} (job "${jobKey}"): \`actions/setup-node\` must set \`node-version-file: '.nvmrc'\` without hardcoded \`node-version\``
           );
         }
+      }
+      if (jobInvokesNodeRuntime && !jobHasSetupNode) {
+        errors.push(
+          `${wfRelPath} (job "${jobKey}"): Workflow job invokes node/npm/npx without \`actions/setup-node\` bound to \`.nvmrc\``
+        );
       }
     }
   }
@@ -1914,10 +1960,87 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       '.github/dependabot.yml: Missing `version-update:semver-major` ignore rule for `node` under `docker` ecosystem'
     );
   }
+  if (!hasDependabotMajorIgnore('docker-compose', 'postgres')) {
+    errors.push(
+      '.github/dependabot.yml: Missing `version-update:semver-major` ignore rule for `postgres` under `docker-compose` ecosystem'
+    );
+  }
   if (!hasDependabotMajorIgnore('npm', '@types/node')) {
     errors.push(
       '.github/dependabot.yml: Missing `version-update:semver-major` ignore rule for `@types/node` under `npm` ecosystem'
     );
+  }
+
+  // Verify PostgreSQL 15 parity across docker-compose.yml, .github/workflows/ci.yml, and runtime/deployment docs
+  const expectedPostgresMajor = '15';
+  const expectedPostgresImagePrefix = `postgres:${expectedPostgresMajor}-alpine@sha256:`;
+  const mismatchedPostgresImageRegex = new RegExp(
+    `\\bpostgres:(?!//|${expectedPostgresMajor}-alpine@sha256:[a-f0-9]{64}\\b)[A-Za-z0-9][A-Za-z0-9._@-]*`
+  );
+  if (
+    !composeRaw.includes(expectedPostgresImagePrefix) ||
+    mismatchedPostgresImageRegex.test(composeRaw)
+  ) {
+    errors.push(
+      `docker-compose.yml: \`db\` service must pin \`postgres:${expectedPostgresMajor}-alpine@sha256:<64-hex>\` to preserve \`db_data\` volume compatibility`
+    );
+  }
+  const ciSharesComposeDbImage =
+    ciWorkflowRaw.includes('db_image: ${{ steps.resolve-db-image.outputs.db_image }}') &&
+    ciWorkflowRaw.includes('docker-compose.yml') &&
+    ciWorkflowRaw.includes('["services", "db", "image"]');
+  const ciDocForDbCheck = parseDocument(ciWorkflowRaw, { version: '1.2' });
+  const ciJobsForDbCheck: unknown = isMap(ciDocForDbCheck.contents)
+    ? ciDocForDbCheck.contents.get('jobs', true)
+    : null;
+  const ciDbServiceImages: string[] = [];
+  if (isMap(ciJobsForDbCheck)) {
+    for (const jobPair of ciJobsForDbCheck.items) {
+      const jobMap: unknown = jobPair.value;
+      const servicesMap: unknown = isMap(jobMap) ? jobMap.get('services', true) : null;
+      const dbServiceMap: unknown = isMap(servicesMap) ? servicesMap.get('db', true) : null;
+      const dbImageNode: unknown = isMap(dbServiceMap) ? dbServiceMap.get('image', true) : null;
+      if (isScalar(dbImageNode) && typeof dbImageNode.value === 'string') {
+        ciDbServiceImages.push(dbImageNode.value.trim());
+      }
+    }
+  }
+  const pinnedPostgresRegex = new RegExp(
+    `^postgres:${expectedPostgresMajor}-alpine@sha256:[a-f0-9]{64}$`
+  );
+  const allCiDbImagesAligned =
+    ciDbServiceImages.length > 0 &&
+    ciDbServiceImages.every(
+      (img) =>
+        pinnedPostgresRegex.test(img) ||
+        (ciSharesComposeDbImage && img === '${{ needs.verify.outputs.db_image }}')
+    );
+  if (!allCiDbImagesAligned || mismatchedPostgresImageRegex.test(ciWorkflowRaw)) {
+    errors.push(
+      `.github/workflows/ci.yml: PostgreSQL service containers must pin \`postgres:${expectedPostgresMajor}-alpine@sha256:<64-hex>\` (or \`\${{ needs.verify.outputs.db_image }}\`) matching docker-compose.yml`
+    );
+  }
+  if (
+    !runtimeContractMd.includes(`PostgreSQL version **${expectedPostgresMajor}.0 or higher**`) ||
+    !runtimeContractMd.includes(`PostgreSQL ${expectedPostgresMajor}-alpine`) ||
+    new RegExp(`PostgreSQL\\s+(?!${expectedPostgresMajor}-alpine\\b)\\d+-alpine`).test(runtimeContractMd)
+  ) {
+    errors.push(
+      `docs/runtime-contract.md: Must specify PostgreSQL ${expectedPostgresMajor}.0+ and \`PostgreSQL ${expectedPostgresMajor}-alpine\` matching docker-compose.yml`
+    );
+  }
+  for (const [docLabel, docContent] of [
+    ['DEPLOYMENT.md', deploymentMd],
+    ['docs/deployment/README.md', deploymentOverviewMd],
+  ] as const) {
+    if (
+      !docContent.includes(`PostgreSQL ${expectedPostgresMajor}+`) ||
+      new RegExp(`\\bPostgreSQL\\s+(?!${expectedPostgresMajor}\\+)\\d+\\+`).test(docContent)
+    ) {
+      errors.push(
+        `${docLabel}: Must specify \`PostgreSQL ${expectedPostgresMajor}+\` matching docker-compose.yml`
+      );
+    }
   }
 
   // Verify standalone /uploads/* rewrite and nosniff upload route contract
@@ -1930,28 +2053,53 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     errors.push('src/app/api/uploads/[...path]/route.ts: Must set `X-Content-Type-Options: nosniff` on responses');
   }
 
-  // Verify middleware webhook, probe host exemption, & uploads exclusions preserve ALLOWED_HOSTS check
+  // Verify container healthchecks call loopback /api/live directly without Host header overrides
+  const forbiddenHealthcheckHostOverride = /fetch\([^\r\n]*\/api\/live[^\r\n]*headers\s*:\s*\{\s*Host\b/i;
+  if (forbiddenHealthcheckHostOverride.test(dockerfileRaw)) {
+    errors.push('Dockerfile: `HEALTHCHECK` on `/api/live` must not override `Host` header in `fetch()`');
+  }
+  if (forbiddenHealthcheckHostOverride.test(composeRaw)) {
+    errors.push('docker-compose.yml: `app` `healthcheck` on `/api/live` must not override `Host` header in `fetch()`');
+  }
+  const rolloutComposePath = path.join(repoRoot, 'docker-compose.rollout.yml');
+  if (
+    fs.existsSync(rolloutComposePath) &&
+    forbiddenHealthcheckHostOverride.test(fs.readFileSync(rolloutComposePath, 'utf8'))
+  ) {
+    errors.push(
+      'docker-compose.rollout.yml: `app-standby` `healthcheck` on `/api/live` must not override `Host` header in `fetch()`'
+    );
+  }
+  if (forbiddenHealthcheckHostOverride.test(dockerMd)) {
+    errors.push('docs/deployment/docker-vps.md: Documented `healthcheck` on `/api/live` must not override `Host` header in `fetch()`');
+  }
+
+  // Verify middleware probe syntax validation & webhook/uploads exclusions preserve ALLOWED_HOSTS check
   const middlewareRaw = fs.readFileSync(path.join(repoRoot, 'src/middleware.ts'), 'utf8');
   const hostCheckIdx = middlewareRaw.indexOf('!isHostAllowed(');
+  const syntaxCheckIdx = middlewareRaw.indexOf('!isHostSyntaxValid(');
   const excludedGuardIdx = middlewareRaw.indexOf('const isExcluded');
   if (hostCheckIdx === -1 || excludedGuardIdx === -1 || hostCheckIdx > excludedGuardIdx) {
     errors.push('src/middleware.ts: `isHostAllowed` perimeter check must execute before `isExcluded` evaluation');
   }
+  if (syntaxCheckIdx === -1 || syntaxCheckIdx > excludedGuardIdx) {
+    errors.push('src/middleware.ts: `isHostSyntaxValid` probe perimeter check must execute before `isExcluded` evaluation');
+  }
   if (
-    !middlewareRaw.includes('!isProbeRequest && !isHostAllowed(') ||
+    !middlewareRaw.includes('isReadOnlyProbeRequest ? !isHostSyntaxValid(host) : !isHostAllowed(host)') ||
     !middlewareRaw.includes("method === 'GET' || method === 'HEAD'")
   ) {
     errors.push(
-      'src/middleware.ts: Must exempt `GET` and `HEAD` probes on `/api/live`, `/api/health`, and `/api/ready` from `isHostAllowed` while enforcing `ALLOWED_HOSTS` on all other requests'
+      'src/middleware.ts: Must validate `GET` and `HEAD` probes on `/api/live`, `/api/health`, and `/api/ready` with `isHostSyntaxValid` while enforcing `isHostAllowed` on all other requests'
     );
   }
   if (
-    !runtimeContractMd.includes('--startup-probe') ||
+    !runtimeContractMd.includes('startupProbe') ||
     !runtimeContractMd.includes('--liveness-probe') ||
     !runtimeContractMd.includes('healthcheck.railway.app')
   ) {
     errors.push(
-      'docs/runtime-contract.md: Must document `--startup-probe`, `--liveness-probe`, and `healthcheck.railway.app` probe host exemptions'
+      'docs/runtime-contract.md: Must document `startupProbe`, `--liveness-probe`, and `healthcheck.railway.app` probe host behavior'
     );
   }
   if (!middlewareRaw.includes("normalizedPath === '/api/registry/webhook/stripe'")) {

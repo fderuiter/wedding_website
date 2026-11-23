@@ -32,35 +32,104 @@ describe('/api/live perimeter and middleware exemptions', () => {
     expect(gatedRes.status).toBe(401);
   });
 
-  it('allows GET and HEAD probes on /api/live, /api/health, and /api/ready with healthcheck.railway.app or internal kubelet IPs while rejecting non-probe routes and POST /api/live', async () => {
-    for (const probePath of ['/api/live', '/api/health', '/api/ready']) {
-      for (const method of ['GET', 'HEAD']) {
-        for (const probeHost of ['healthcheck.railway.app', '169.254.169.126:3000']) {
-          const probeReq = new NextRequest(`http://localhost:3000${probePath}`, {
+  it('allows GET and HEAD requests to /api/live, /api/health, and /api/ready with unlisted orchestrator or loopback Host headers', async () => {
+    process.env.ALLOWED_HOSTS = 'wedding.example.com';
+
+    const probePaths = ['/api/live', '/api/health', '/api/ready'];
+    const probeMethods = ['GET', 'HEAD'] as const;
+    const probeHosts = [
+      'healthcheck.railway.app',
+      '169.254.1.1:3000',
+      '169.254.169.126:3000',
+      '127.0.0.1:3000',
+    ];
+
+    for (const probePath of probePaths) {
+      for (const method of probeMethods) {
+        for (const host of probeHosts) {
+          const req = new NextRequest(`http://127.0.0.1:3000${probePath}`, {
             method,
-            headers: { host: probeHost },
+            headers: { host },
           });
-          const probeRes = await middleware(probeReq);
-          expect(probeRes.status).toBe(200);
+          const res = await middleware(req);
+          expect(res.status).toBe(200);
+          expect(res.headers.get('location')).toBeNull();
         }
       }
     }
+  });
 
-    const photosReq = new NextRequest('http://evil.attacker.invalid/api/photos', {
+  it('rejects GET /api/live with HTTP 400 when Host or X-Forwarded-Host header is CRLF-injected or syntactically malformed', async () => {
+    const malformedHosts = [
+      '',
+      '   ',
+      'healthcheck.railway.app\r\nX-Injected: evil',
+      '127.0.0.1:3000\nHost: evil.com',
+      'healthcheck.railway.app, evil.com',
+      'healthcheck .railway.app',
+      '127.0.0.1:0',
+      '127.0.0.1:65536',
+      '127.0.0.1:abc',
+      ':3000',
+    ];
+
+    for (const badHost of malformedHosts) {
+      const req = new NextRequest('http://localhost:3000/api/live', {
+        method: 'GET',
+        headers: { host: badHost },
+      });
+      const res = await middleware(req);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'Invalid Host header' });
+    }
+
+    const badForwardedReq = new NextRequest('http://localhost:3000/api/live', {
       method: 'GET',
-      headers: { host: 'evil.attacker.invalid' },
+      headers: {
+        host: '127.0.0.1:3000',
+        'x-forwarded-host': 'healthcheck.railway.app\r\nX-Injected: 1',
+      },
     });
-    const photosRes = await middleware(photosReq);
-    expect(photosRes.status).toBe(400);
-    expect(await photosRes.json()).toEqual({ error: 'Invalid Host header' });
+    const badForwardedRes = await middleware(badForwardedReq);
+    expect(badForwardedRes.status).toBe(400);
+    expect(await badForwardedRes.json()).toEqual({ error: 'Invalid Host header' });
+  });
 
-    const postLiveReq = new NextRequest('http://evil.attacker.invalid/api/live', {
-      method: 'POST',
-      headers: { host: 'healthcheck.railway.app' },
-    });
-    const postLiveRes = await middleware(postLiveReq);
-    expect(postLiveRes.status).toBe(400);
-    expect(await postLiveRes.json()).toEqual({ error: 'Invalid Host header' });
+  it('enforces ALLOWED_HOSTS on non-read-only methods (e.g. POST) targeting probe paths', async () => {
+    process.env.ALLOWED_HOSTS = 'wedding.example.com';
+
+    for (const probePath of ['/api/live', '/api/health', '/api/ready']) {
+      const req = new NextRequest(`http://127.0.0.1:3000${probePath}`, {
+        method: 'POST',
+        headers: { host: 'healthcheck.railway.app' },
+      });
+      const res = await middleware(req);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'Invalid Host header' });
+    }
+  });
+
+  it('enforces ALLOWED_HOSTS on non-probe routes (/api/photos, /api/registry/webhook/stripe, /api/cron/broadcasts, /uploads/photo.png)', async () => {
+    process.env.ALLOWED_HOSTS = 'wedding.example.com';
+
+    const nonProbeRequests: Array<{ path: string; method: string }> = [
+      { path: '/api/photos', method: 'GET' },
+      { path: '/api/registry/webhook/stripe', method: 'POST' },
+      { path: '/api/cron/broadcasts', method: 'GET' },
+      { path: '/uploads/photo.png', method: 'GET' },
+    ];
+
+    for (const host of ['healthcheck.railway.app', 'evil.attacker.invalid']) {
+      for (const { path: targetPath, method } of nonProbeRequests) {
+        const req = new NextRequest(`http://127.0.0.1:3000${targetPath}`, {
+          method,
+          headers: { host },
+        });
+        const res = await middleware(req);
+        expect(res.status).toBe(400);
+        expect(await res.json()).toEqual({ error: 'Invalid Host header' });
+      }
+    }
   });
 
   it('exempts /api/live from rate limiting inside withApiMiddleware even with limit=1', async () => {

@@ -22,6 +22,108 @@ function getAllowedHosts(): string[] {
     .filter(Boolean);
 }
 
+interface ParsedHostHeader {
+  cleanHost: string;
+  hostname: string;
+  port: string | undefined;
+}
+
+/**
+ * Parses and validates the syntax of a single HTTP Host authority value.
+ * Rejects empty strings, whitespace, control/CRLF characters, comma-separated
+ * host lists, malformed IPv6 brackets, invalid characters, and invalid ports.
+ */
+function parseHostHeader(hostHeader: string | null | undefined): ParsedHostHeader | null {
+  if (!hostHeader || typeof hostHeader !== 'string') {
+    return null;
+  }
+
+  // Reject control/CRLF characters, any whitespace, or multiple comma-separated hosts
+  if (
+    /[\r\n\x00-\x1f\x7f]/.test(hostHeader) ||
+    /\s/.test(hostHeader) ||
+    hostHeader.includes(',')
+  ) {
+    return null;
+  }
+
+  const normalized = hostHeader.toLowerCase();
+
+  // Remove single trailing DNS root dot if present (e.g. "example.com.")
+  const cleanHost = normalized.replace(/\.$/, '');
+  if (!cleanHost) {
+    return null;
+  }
+
+  let hostname = cleanHost;
+  let port: string | undefined;
+
+  if (cleanHost.startsWith('[')) {
+    const bracketEnd = cleanHost.indexOf(']');
+    if (bracketEnd <= 1) {
+      return null;
+    }
+    hostname = cleanHost.substring(0, bracketEnd + 1);
+    const remainder = cleanHost.substring(bracketEnd + 1);
+    if (remainder.length > 0) {
+      if (!remainder.startsWith(':')) {
+        return null;
+      }
+      port = remainder.substring(1);
+    }
+  } else if (cleanHost.includes(':')) {
+    const parts = cleanHost.split(':');
+    if (parts.length !== 2 || !parts[0]) {
+      return null;
+    }
+    hostname = parts[0].replace(/\.$/, '');
+    port = parts[1];
+  }
+
+  // Port check: if port delimiter is present, must be numeric in valid TCP port range 1..65535
+  if (port !== undefined) {
+    if (!/^\d+$/.test(port)) {
+      return null;
+    }
+    const portNumber = Number(port);
+    if (portNumber < 1 || portNumber > 65535) {
+      return null;
+    }
+  }
+
+  // Hostname check: must not be empty or contain path, userinfo, query, fragment, or empty labels
+  if (
+    !hostname ||
+    /[/@\\?#]/.test(hostname) ||
+    (!hostname.startsWith('[') && (hostname.startsWith('.') || hostname.includes('..')))
+  ) {
+    return null;
+  }
+
+  if (hostname.startsWith('[')) {
+    const ipv6Body = hostname.slice(1, -1);
+    if (!ipv6Body || !/^[0-9a-f:.]+$/.test(ipv6Body) || !ipv6Body.includes(':')) {
+      return null;
+    }
+  } else if (hostname.includes('[') || hostname.includes(']')) {
+    return null;
+  }
+
+  return { cleanHost, hostname, port };
+}
+
+/**
+ * Validates that a Host header is syntactically well-formed without checking ALLOWED_HOSTS.
+ * Used by stateless read-only health probes so orchestrator/internal probe hosts succeed
+ * while header-injection and malformed Host headers are still rejected at the perimeter.
+ *
+ * @param hostHeader - The raw Host or resolved X-Forwarded-Host authority value
+ * @returns true if the host header has valid single-authority syntax; false otherwise.
+ */
+export function isHostSyntaxValid(hostHeader: string | null | undefined): boolean {
+  return parseHostHeader(hostHeader) !== null;
+}
+
 /**
  * Evaluates an incoming Host or X-Forwarded-Host header against the configured allowed host rules.
  *
@@ -33,55 +135,12 @@ export function isHostAllowed(
   hostHeader: string | null | undefined,
   customAllowedHosts?: string[]
 ): boolean {
-  if (!hostHeader || typeof hostHeader !== 'string') {
+  const parsed = parseHostHeader(hostHeader);
+  if (!parsed) {
     return false;
   }
 
-  const trimmed = hostHeader.trim().toLowerCase();
-  if (!trimmed || trimmed.includes(',') || /\s/.test(trimmed)) {
-    return false;
-  }
-
-  // Header injection protection: no CRLF characters
-  if (/[\r\n]/.test(trimmed)) {
-    return false;
-  }
-
-  // Remove trailing dot if present (e.g. "example.com.")
-  const cleanHost = trimmed.replace(/\.$/, '');
-
-  // Extract hostname and port
-  let hostname = cleanHost;
-  let port: string | undefined;
-
-  if (cleanHost.startsWith('[')) {
-    const bracketEnd = cleanHost.indexOf(']');
-    if (bracketEnd !== -1) {
-      hostname = cleanHost.substring(0, bracketEnd + 1);
-      if (cleanHost.charAt(bracketEnd + 1) === ':') {
-        port = cleanHost.substring(bracketEnd + 2);
-      }
-    }
-  } else if (cleanHost.includes(':')) {
-    const parts = cleanHost.split(':');
-    if (parts.length === 2) {
-      hostname = parts[0];
-      port = parts[1];
-    } else {
-      // Multiple colons without brackets -> invalid format
-      return false;
-    }
-  }
-
-  // Port check: if port exists, must be numeric and valid port range
-  if (port !== undefined && (!/^\d+$/.test(port) || Number(port) > 65535)) {
-    return false;
-  }
-
-  // Hostname check: must not contain invalid characters like /, @, \, or control chars
-  if (/[/@\\]/.test(hostname)) {
-    return false;
-  }
+  const { cleanHost, hostname, port } = parsed;
 
   const rules = customAllowedHosts ?? getAllowedHosts();
   if (rules.length === 0) {

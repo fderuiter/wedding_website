@@ -122,5 +122,18 @@ describe('Button', () => {
       await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
     ).toHaveNoViolations();
   });
+
+  test('supports inverse variant with opaque toast action tokens, two-tone focus ring, and forced-colors outline', async () => {
+    const { container, getByRole } = render(<Button variant="inverse">Undo</Button>);
+    const button = getByRole('button', { name: 'Undo' });
+
+    expect(button).toHaveClass('bg-[var(--toast-action-bg,#ffffff)]');
+    expect(button).toHaveClass('text-[var(--toast-action-text,#111827)]');
+    expect(button).toHaveClass('hover:bg-[var(--toast-action-hover-bg,#e5e7eb)]');
+    expect(button).toHaveClass('focus-visible:ring-[var(--toast-action-bg,#ffffff)]');
+    expect(button).toHaveClass('focus-visible:ring-offset-[var(--toast-action-text,#111827)]');
+    expect(button).toHaveClass('forced-colors:border');
+    expect(await axe(container)).toHaveNoViolations();
+  });
 });
 
