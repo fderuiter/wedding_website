@@ -105,7 +105,7 @@ export interface UseRegistryContributionMachineReturn {
   handleVerifyCode: () => Promise<boolean>;
   handleClearCode: () => Promise<void>;
   handleSubmit: (
-    e?: React.FormEvent,
+    e?: React.SubmitEvent<HTMLFormElement>,
     paymentIntentId?: string,
     options?: { coverFeeOverride?: boolean }
   ) => Promise<void>;
@@ -513,7 +513,7 @@ export function useRegistryContributionMachine({
   // Action: Submit contribution
   const handleSubmit = useCallback(
     async (
-      e?: React.FormEvent,
+      e?: React.SubmitEvent<HTMLFormElement>,
       paymentIntentId?: string,
       options?: { coverFeeOverride?: boolean }
     ) => {

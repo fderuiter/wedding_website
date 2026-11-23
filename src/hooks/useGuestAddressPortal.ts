@@ -1,6 +1,6 @@
 'use client';
 
-import { useReducer, useEffect, useRef, useCallback, type FormEvent } from 'react';
+import { useReducer, useEffect, useRef, useCallback, type SubmitEvent } from 'react';
 import { useToast } from '@/components/ui/ToastProvider';
 
 type GuestPortalStatus = 'idle' | 'validating' | 'authenticated' | 'saving' | 'error';
@@ -474,7 +474,7 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
   }, []);
 
   const handleValidateCode = useCallback(
-    async (e?: FormEvent) => {
+    async (e?: SubmitEvent<HTMLFormElement>) => {
       if (e?.preventDefault) {
         e.preventDefault();
       }
@@ -495,7 +495,7 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
   );
 
   const handleSaveAddress = useCallback(
-    async (e?: FormEvent) => {
+    async (e?: SubmitEvent<HTMLFormElement>) => {
       if (e?.preventDefault) {
         e.preventDefault();
       }

@@ -176,7 +176,7 @@ const GuestEditorFormInner = React.forwardRef<HTMLFormElement, GuestEditorFormPr
       if (validationError) setValidationError(null);
     };
 
-    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
       e.preventDefault();
 
       const trimmedName = formState.guestName.trim();
