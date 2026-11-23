@@ -73,7 +73,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   });
 
   const normalizedInvitationCodes: Prisma.InvitationCodeCreateManyInput[] = (data.invitationCode ?? []).map((inv) => {
-    const { extraFields, tableId, seatNumber, ...rest } = inv;
+    const { extraFields, tableId, seatNumber, plusOneSeatNumbers, ...rest } = inv;
     const resolvedTableId = tableId && validTableIds.has(tableId) ? tableId : tableId === null ? null : undefined;
     const shouldClearOrphanTable = Boolean(tableId && !validTableIds.has(tableId));
     return {
@@ -82,10 +82,11 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
         ? { extraFields: serializeDatesForJson(extraFields) }
         : {}),
       ...(shouldClearOrphanTable
-        ? { tableId: null, seatNumber: null }
+        ? { tableId: null, seatNumber: null, plusOneSeatNumbers: [] }
         : {
           ...(resolvedTableId !== undefined ? { tableId: resolvedTableId } : {}),
           ...(seatNumber !== undefined ? { seatNumber } : {}),
+          ...(plusOneSeatNumbers !== undefined ? { plusOneSeatNumbers } : {}),
         }),
     };
   });

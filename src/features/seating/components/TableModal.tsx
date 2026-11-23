@@ -5,7 +5,11 @@ import { Dialog, useDirtyConfirmClose } from '@/components/ui/Dialog';
 import { useToast } from '@/components/ui/ToastProvider';
 import { SeatingTableDTO } from '../schemas';
 import { resolveDetailedSeatAssignments } from '../seatLayout';
-import { getGuestsHeadcount } from '../utils/seatingHelpers';
+import {
+  getDefaultShapeDimensions,
+  getGuestsHeadcount,
+  isLandmarkTableShape,
+} from '../utils/seatingHelpers';
 
 interface TableModalProps {
   isOpen: boolean;
@@ -29,10 +33,12 @@ interface TableFormSnapshot {
 }
 
 function createInitialTableSnapshot(table: SeatingTableDTO | null): TableFormSnapshot {
+  const initialShape = ((table?.shape as TableShapeValue) || 'round');
+  const defaultCap = isLandmarkTableShape(initialShape) ? 0 : 8;
   return {
     name: table?.name ?? '',
-    shape: (table?.shape as TableShapeValue) || 'round',
-    capacity: table ? table.capacity : 8,
+    shape: initialShape,
+    capacity: table ? table.capacity : defaultCap,
     width: table?.width || 120,
     height: table?.height || 120,
     rotation: table?.rotation || 0,
@@ -94,13 +100,14 @@ function TableModalForm({
     onDirtyChange(isTableFormDirty(next, initialSnapshot));
   };
 
+  const isLandmark = isLandmarkTableShape(shape);
   const currentSeatedCount = useMemo(
     () => getGuestsHeadcount(table?.invitationCodes || []),
     [table?.invitationCodes]
   );
 
   const seatsAboveNewCapacity = useMemo(() => {
-    if (!table?.invitationCodes || table.invitationCodes.length === 0) {
+    if (isLandmark || !table?.invitationCodes || table.invitationCodes.length === 0) {
       return [] as number[];
     }
     const baselineMaxCap = Math.max(initialSnapshot.capacity, table.capacity);
@@ -124,20 +131,54 @@ function TableModalForm({
       }
     }
     return highSeats.sort((a, b) => a - b);
-  }, [table, initialSnapshot.capacity, capacity]);
+  }, [isLandmark, table, initialSnapshot.capacity, capacity]);
+
+  const handleShapeChange = (val: TableShapeValue) => {
+    const nextIsLandmark = isLandmarkTableShape(val);
+    const prevWasLandmark = isLandmarkTableShape(shape) || capacity === 0;
+    let nextCapacity = capacity;
+    let nextWidth = width;
+    let nextHeight = height;
+
+    if (nextIsLandmark) {
+      const defaults = getDefaultShapeDimensions(val);
+      nextCapacity = 0;
+      if (!table) {
+        nextWidth = defaults.width;
+        nextHeight = defaults.height;
+      }
+    } else if (prevWasLandmark) {
+      const defaults = getDefaultShapeDimensions(val);
+      nextCapacity = defaults.defaultCapacity;
+    }
+
+    setShape(val);
+    setCapacity(nextCapacity);
+    setWidth(nextWidth);
+    setHeight(nextHeight);
+
+    const nextSnapshot: TableFormSnapshot = {
+      ...currentSnapshot,
+      shape: val,
+      capacity: nextCapacity,
+      width: nextWidth,
+      height: nextHeight,
+    };
+    onDirtyChange(isTableFormDirty(nextSnapshot, initialSnapshot));
+  };
 
   const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!name.trim()) return;
 
-    if (table && capacity < currentSeatedCount) {
+    if (!isLandmark && table && capacity < currentSeatedCount) {
       const confirmed = await confirm(
         `Warning: This table currently has ${currentSeatedCount} seated guest${currentSeatedCount === 1 ? '' : 's'}, which exceeds the new capacity of ${capacity}. Are you sure you want to save?`
       );
       if (!confirmed) {
         return;
       }
-    } else if (table && seatsAboveNewCapacity.length > 0) {
+    } else if (!isLandmark && table && seatsAboveNewCapacity.length > 0) {
       const seatListLabel = seatsAboveNewCapacity.map((s) => `Seat ${s}`).join(', ');
       const confirmed = await confirm(
         `Warning: Lowering capacity to ${capacity} will repack ${seatListLabel} into seats 1–${capacity}. Are you sure you want to save?`
@@ -151,7 +192,7 @@ function TableModalForm({
       ...(table ? { id: table.id } : {}),
       name: name.trim(),
       shape,
-      capacity,
+      capacity: isLandmark ? 0 : capacity,
       width,
       height,
       rotation,
@@ -177,7 +218,7 @@ function TableModalForm({
             setName(val);
             updateSnapshotField('name', val);
           }}
-          placeholder="e.g. Table 1 - Family"
+          placeholder="e.g. Table 1 - Family or Dance Floor"
           className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
         />
       </div>
@@ -190,18 +231,23 @@ function TableModalForm({
           <select
             id="table-shape"
             value={shape}
-            onChange={(e) => {
-              const val = e.target.value as TableShapeValue;
-              setShape(val);
-              updateSnapshotField('shape', val);
-            }}
+            onChange={(e) => handleShapeChange(e.target.value as TableShapeValue)}
             className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
           >
-            <option value="round">Round</option>
-            <option value="rectangular">Rectangular</option>
-            <option value="square">Square</option>
-            <option value="head">Head Table (1-Sided)</option>
-            <option value="sweetheart">Sweetheart (1-Sided)</option>
+            <optgroup label="Guest Tables">
+              <option value="round">Round</option>
+              <option value="rectangular">Rectangular</option>
+              <option value="square">Square</option>
+              <option value="head">Head Table (1-Sided)</option>
+              <option value="sweetheart">Sweetheart (1-Sided)</option>
+            </optgroup>
+            <optgroup label="Room Landmarks (0 Seats)">
+              <option value="dance-floor">Dance Floor (Landmark)</option>
+              <option value="bar">Bar (Landmark)</option>
+              <option value="dj">DJ Booth (Landmark)</option>
+              <option value="buffet">Buffet (Landmark)</option>
+              <option value="cake">Cake Table (Landmark)</option>
+            </optgroup>
           </select>
         </div>
 
@@ -212,17 +258,24 @@ function TableModalForm({
           <input
             id="table-capacity"
             type="number"
-            min={1}
-            max={50}
-            value={capacity}
+            min={isLandmark ? 0 : 1}
+            max={isLandmark ? 0 : 50}
+            disabled={isLandmark}
+            value={isLandmark ? 0 : capacity}
             onChange={(e) => {
+              if (isLandmark) return;
               const val = parseInt(e.target.value) || 1;
               setCapacity(val);
               updateSnapshotField('capacity', val);
             }}
-            className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+            className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 disabled:opacity-60 disabled:cursor-not-allowed"
           />
-          {table && capacity < currentSeatedCount ? (
+          {isLandmark && (
+            <p className="mt-1 text-[11px] text-gray-600 dark:text-gray-400" data-testid="landmark-capacity-note">
+              Room landmarks have 0 guest seats.
+            </p>
+          )}
+          {!isLandmark && table && capacity < currentSeatedCount ? (
             <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400 font-medium" data-testid="capacity-warning">
               Warning: Table has {currentSeatedCount} seated guest{currentSeatedCount === 1 ? '' : 's'}. Lowering capacity below {currentSeatedCount} exceeds current occupancy.
             </p>

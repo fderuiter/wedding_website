@@ -246,6 +246,7 @@ model InvitationCode {
   tableId            String?
   table              SeatingTable? @relation(fields: [tableId], references: [id], onDelete: SetNull)
   seatNumber         Int?
+  plusOneSeatNumbers Int[]         @default([])
   isSample           Boolean       @default(false)
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
