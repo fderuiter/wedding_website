@@ -10,6 +10,7 @@ const INSTALL_HOOKS_PATH = path.join(REPO_ROOT, 'scripts', 'install-git-hooks.js
 const VERIFY_DOC_SYNC_PATH = path.join(REPO_ROOT, 'scripts', 'verify-doc-sync.ts');
 const TSX_CLI_PATH = path.join(REPO_ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs');
 const LINT_STAGED_CLI_PATH = path.join(REPO_ROOT, 'node_modules', 'lint-staged', 'bin', 'lint-staged.js');
+const PACKAGE_JSON_PATH = path.join(REPO_ROOT, 'package.json');
 
 describe('Split Git hooks (.githooks/pre-commit and .githooks/pre-push)', () => {
   let tempDir: string;
@@ -131,7 +132,7 @@ process.exit(0);
           name: 'hook-test-fixture',
           private: true,
           'lint-staged': {
-            '*.ts': `node ${path.join(tempDir, '.lint-task.cjs')}`,
+            '*.{js,jsx,ts,tsx,mjs,cjs}': `node ${path.join(tempDir, '.lint-task.cjs')}`,
           },
         },
         null,
@@ -147,6 +148,9 @@ if (process.env.SIMULATE_CONCURRENT_SAVE === '1') {
   fs.writeFileSync(concurrentPath, 'concurrent editor save during commit\\n');
 }
 for (const file of process.argv.slice(2)) {
+  if (!fs.existsSync(file)) {
+    continue;
+  }
   const text = fs.readFileSync(file, 'utf8');
   if (text.includes('LINT_ERROR_TOKEN')) {
     console.error('Lint error in ' + file);
@@ -273,6 +277,138 @@ for (const file of process.argv.slice(2)) {
 
       const stashList = execSync('git stash list', { cwd: tempDir, encoding: 'utf-8' }).trim();
       expect(stashList).toBe('');
+    });
+
+    it('preserves AM, MD, RM, same-line MM, binary unstaged edits, nested untracked files, pre-existing git stash entries, and MERGE_HEAD', () => {
+      fs.writeFileSync(path.join(tempDir, 'delete-later.mjs'), 'export const del = 1;\n');
+      fs.writeFileSync(path.join(tempDir, 'rename-old.mjs'), 'export const renamed = 1;\n');
+      fs.writeFileSync(path.join(tempDir, 'binary.dat'), Buffer.from([0x00, 0x01, 0x02, 0x03]));
+      execSync('git add . && git commit -m "Add baseline edge-case fixtures"', {
+        cwd: tempDir,
+        stdio: 'ignore',
+      });
+
+      // Pre-existing user stash entry and MERGE_HEAD must remain untouched
+      fs.writeFileSync(path.join(tempDir, 'notes.txt'), 'user stashed wip\n');
+      execSync('git stash push -m "existing-user-stash"', { cwd: tempDir, stdio: 'ignore' });
+      const headSha = execSync('git rev-parse HEAD', { cwd: tempDir, encoding: 'utf-8' }).trim();
+      fs.writeFileSync(path.join(tempDir, '.git', 'MERGE_HEAD'), `${headSha}\n`);
+
+      // 1. MM file where staged and unstaged edits touch the exact same line
+      fs.writeFileSync(path.join(tempDir, 'partial.ts'), 'export const alpha = 100;\n');
+      execSync('git add partial.ts', { cwd: tempDir, stdio: 'ignore' });
+      fs.writeFileSync(
+        path.join(tempDir, 'partial.ts'),
+        'export const alpha = 200;\nexport const beta = 300;\n'
+      );
+
+      // 2. AM file (staged addition with unstaged edits)
+      fs.writeFileSync(path.join(tempDir, 'added.cjs'), "const p = require('path');\nmodule.exports = p;\n");
+      execSync('git add added.cjs', { cwd: tempDir, stdio: 'ignore' });
+      fs.writeFileSync(
+        path.join(tempDir, 'added.cjs'),
+        "const p = require('path');\nmodule.exports = { p };\n"
+      );
+
+      // 3. MD file (staged modification with unstaged deletion)
+      fs.writeFileSync(path.join(tempDir, 'delete-later.mjs'), 'export const del = 2;\n');
+      execSync('git add delete-later.mjs', { cwd: tempDir, stdio: 'ignore' });
+      fs.unlinkSync(path.join(tempDir, 'delete-later.mjs'));
+
+      // 4. RM file (staged rename with unstaged modification)
+      execSync('git mv rename-old.mjs rename-new.mjs', { cwd: tempDir, stdio: 'ignore' });
+      fs.writeFileSync(path.join(tempDir, 'rename-new.mjs'), 'export const renamed = 3;\n');
+
+      // 5. Binary unstaged edit + nested untracked file
+      const unstagedBinary = Buffer.from([0x00, 0xff, 0x10, 0x20, 0x30]);
+      fs.writeFileSync(path.join(tempDir, 'binary.dat'), unstagedBinary);
+      fs.mkdirSync(path.join(tempDir, 'drafts', 'nested'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, 'drafts', 'nested', 'wip.txt'), 'untracked draft\n');
+
+      const statusBefore = execSync('git status --porcelain', { cwd: tempDir, encoding: 'utf-8' });
+
+      const result = runHook(PRE_COMMIT_PATH, { USE_REAL_LINT_STAGED: '1' });
+      expect(result.status).toBe(0);
+
+      const statusAfter = execSync('git status --porcelain', { cwd: tempDir, encoding: 'utf-8' });
+      expect(statusAfter).not.toContain('UU');
+      expect(statusAfter).toBe(statusBefore);
+      expect(fs.readFileSync(path.join(tempDir, 'partial.ts'), 'utf-8')).toBe(
+        'export const alpha = 200;\nexport const beta = 300;\n'
+      );
+      expect(fs.readFileSync(path.join(tempDir, 'added.cjs'), 'utf-8')).toBe(
+        "const p = require('path');\nmodule.exports = { p };\n"
+      );
+      expect(fs.existsSync(path.join(tempDir, 'delete-later.mjs'))).toBe(false);
+      expect(fs.readFileSync(path.join(tempDir, 'rename-new.mjs'), 'utf-8')).toBe(
+        'export const renamed = 3;\n'
+      );
+      expect(Buffer.compare(fs.readFileSync(path.join(tempDir, 'binary.dat')), unstagedBinary)).toBe(0);
+      expect(fs.readFileSync(path.join(tempDir, 'drafts', 'nested', 'wip.txt'), 'utf-8')).toBe(
+        'untracked draft\n'
+      );
+
+      const stashList = execSync('git stash list', { cwd: tempDir, encoding: 'utf-8' }).trim();
+      expect(stashList).toContain('existing-user-stash');
+      expect(fs.readFileSync(path.join(tempDir, '.git', 'MERGE_HEAD'), 'utf-8')).toBe(`${headSha}\n`);
+    });
+
+    it('configures lint-staged to check staged .mjs and .cjs files and enforces ESLint rules on them', () => {
+      const pkg = JSON.parse(fs.readFileSync(PACKAGE_JSON_PATH, 'utf-8')) as {
+        'lint-staged'?: Record<string, string>;
+      };
+      expect(pkg['lint-staged']).toEqual({
+        '*.{js,jsx,ts,tsx,mjs,cjs}': 'eslint --fix',
+      });
+
+      // Wire real ESLint flat config and node_modules into tempDir to verify end-to-end lint-staged behavior
+      fs.writeFileSync(
+        path.join(tempDir, 'package.json'),
+        JSON.stringify(
+          { name: 'temp-lint-test', private: true, 'lint-staged': pkg['lint-staged'] },
+          null,
+          2
+        ) + '\n'
+      );
+      fs.symlinkSync(path.join(REPO_ROOT, 'node_modules'), path.join(tempDir, 'node_modules'));
+      fs.symlinkSync(path.join(REPO_ROOT, 'eslint.config.mjs'), path.join(tempDir, 'eslint.config.mjs'));
+      fs.symlinkSync(path.join(REPO_ROOT, 'eslint-rules'), path.join(tempDir, 'eslint-rules'));
+      fs.writeFileSync(
+        path.join(tempDir, '.gitignore'),
+        '.test-bin/\n.executed-checks.log\n.lint-task.cjs\nnode_modules\neslint.config.mjs\neslint-rules\n'
+      );
+      execSync('git add package.json .gitignore && git commit -m "Configure real ESLint lint-staged"', {
+        cwd: tempDir,
+        stdio: 'ignore',
+      });
+
+      // 1. Staged .mjs with disallowed require() must fail lint-staged
+      fs.writeFileSync(path.join(tempDir, 'bad-script.mjs'), "const fs = require('fs');\nexport default fs;\n");
+      execSync('git add bad-script.mjs', { cwd: tempDir, stdio: 'ignore' });
+
+      const failResult = runHook(PRE_COMMIT_PATH, { USE_REAL_LINT_STAGED: '1' });
+      const failOutput = `${failResult.stdout}\n${failResult.stderr}`;
+      expect(failResult.status).not.toBe(0);
+      expect(failOutput).toContain('Pre-commit check failed: ESLint / lint-staged validation failed.');
+      execSync('git rm -f bad-script.mjs', { cwd: tempDir, stdio: 'ignore' });
+
+      // 2. Staged .mjs and .cjs with auto-fixable stylistic quotes/semicolons (and valid require() in .cjs) must auto-fix and pass
+      fs.writeFileSync(path.join(tempDir, 'helper.mjs'), 'export const greeting = "hello"\n');
+      fs.writeFileSync(
+        path.join(tempDir, 'env-shim.cjs'),
+        'const path = require("path")\nmodule.exports = path\n'
+      );
+      execSync('git add helper.mjs env-shim.cjs', { cwd: tempDir, stdio: 'ignore' });
+
+      const passResult = runHook(PRE_COMMIT_PATH, { USE_REAL_LINT_STAGED: '1' });
+      expect(passResult.status).toBe(0);
+      expect(passResult.stdout).toContain('All pre-commit checks passed.');
+      expect(fs.readFileSync(path.join(tempDir, 'helper.mjs'), 'utf-8')).toBe(
+        "export const greeting = 'hello';\n"
+      );
+      expect(fs.readFileSync(path.join(tempDir, 'env-shim.cjs'), 'utf-8')).toBe(
+        "const path = require('path');\nmodule.exports = path;\n"
+      );
     });
   });
 
