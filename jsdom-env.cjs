@@ -16,7 +16,9 @@ class CustomEnvironment extends JSDOMEnvironment {
     if (typeof CompressionStream !== 'undefined') this.global.CompressionStream = CompressionStream;
     if (typeof DecompressionStream !== 'undefined') this.global.DecompressionStream = DecompressionStream;
     const { MessagePort } = require('node:worker_threads');
-    if (typeof this.global.MessagePort === 'undefined') this.global.MessagePort = MessagePort;
+    if (typeof this.global.MessagePort === 'undefined') {
+      this.global.MessagePort = globalThis.MessagePort || MessagePort;
+    }
     const { setImmediate, clearImmediate } = require('node:timers');
     if (typeof this.global.setImmediate === 'undefined') this.global.setImmediate = setImmediate;
     if (typeof this.global.clearImmediate === 'undefined') this.global.clearImmediate = clearImmediate;
@@ -27,9 +29,6 @@ class CustomEnvironment extends JSDOMEnvironment {
       addEventListener() {}
       removeEventListener() {}
     };
-    if (typeof this.global.MessagePort === 'undefined') {
-      this.global.MessagePort = class MessagePort extends this.global.EventTarget {};
-    }
     this.global.crypto = require('node:crypto').webcrypto;
     const originalFetch = fetch;
     this.global.fetch = (input, init) => {

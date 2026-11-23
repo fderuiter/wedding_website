@@ -1,5 +1,9 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import { GuestPhotoDropzone } from '../GuestPhotoDropzone';
+
+expect.extend(toHaveNoViolations);
 
 // Global fetch mock
 const originalFetch = global.fetch;
@@ -348,7 +352,7 @@ describe('GuestPhotoDropzone', () => {
     expect(capturedSignal?.aborted).toBe(false);
 
     // Click remove button
-    const removeButton = screen.getByLabelText('Remove item');
+    const removeButton = screen.getByLabelText('Remove cancel-me.jpg');
     fireEvent.click(removeButton);
 
     expect(abortSpy).toHaveBeenCalled();
@@ -491,7 +495,80 @@ describe('GuestPhotoDropzone', () => {
     });
   });
 
-  it('displays Published Live badge and live notice banner when auto-approval returns APPROVED + isVisible', async () => {
+  it('maintains sequential h2 heading hierarchy, accessible progressbar/alert/status semantics, per-file action labels, and zero axe violations', async () => {
+    let resolveActiveUpload: ((_val: unknown) => void) | undefined;
+    (global.fetch as jest.Mock)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveActiveUpload = resolve;
+          })
+      )
+      .mockRejectedValueOnce(new Error('Upload timeout'));
+
+    const { container } = render(
+      <main>
+        <h1>Photo Gallery</h1>
+        <GuestPhotoDropzone />
+      </main>
+    );
+
+    const fileInput = screen.getByTestId('guest-photo-file-input');
+    const activeFile = new File(['active-bytes'], 'ceremony-vows.jpg', { type: 'image/jpeg' });
+    const failingFile = new File(['fail-bytes'], 'reception-dance.jpg', { type: 'image/jpeg' });
+
+    fireEvent.change(fileInput, { target: { files: [activeFile, failingFile] } });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('upload-error-badge')).toHaveTextContent('Failed');
+    });
+
+    // Heading order: Upload Status is an h2 sibling, and Clear status button is outside the heading
+    const statusHeading = screen.getByRole('heading', { level: 2, name: 'Upload Status' });
+    const clearButton = screen.getByTestId('clear-status-button');
+    expect(statusHeading.contains(clearButton)).toBe(false);
+
+    // Active upload exposes role="progressbar" with aria-valuemin/max/now and filename aria-label
+    const progressbar = screen.getByRole('progressbar', { name: 'Uploading ceremony-vows.jpg' });
+    expect(progressbar).toHaveAttribute('aria-valuemin', '0');
+    expect(progressbar).toHaveAttribute('aria-valuemax', '100');
+    expect(progressbar).toHaveAttribute('aria-valuenow');
+
+    // Failed upload exposes role="alert" and per-file Retry + Remove buttons with size="sm" (h-8 >= 24px)
+    expect(screen.getByTestId('upload-error-message')).toHaveAttribute('role', 'alert');
+    const retryBtn = screen.getByRole('button', { name: 'Retry upload for reception-dance.jpg' });
+    const removeFailedBtn = screen.getByRole('button', { name: 'Remove reception-dance.jpg' });
+    const removeActiveBtn = screen.getByRole('button', { name: 'Remove ceremony-vows.jpg' });
+    expect(retryBtn).toHaveClass('h-8');
+    expect(removeFailedBtn).toHaveClass('h-8');
+    expect(removeActiveBtn).toHaveClass('h-8');
+
+    expect(await axe(container)).toHaveNoViolations();
+
+    // Complete active upload as pending review and verify polite role="status" notice
+    resolveActiveUpload?.({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: [
+          {
+            id: 'media-pending-1',
+            nodeId: 'node-pending-1',
+            url: '/uploads/photos/ceremony-vows.jpg',
+            status: 'PENDING',
+            isVisible: false,
+          },
+        ],
+      }),
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('upload-pending-notice')).toHaveAttribute('role', 'status');
+    });
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it('displays Published Live badge and accessible live status banner when auto-approval returns APPROVED + isVisible', async () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -510,7 +587,12 @@ describe('GuestPhotoDropzone', () => {
       }),
     });
 
-    render(<GuestPhotoDropzone />);
+    const { container } = render(
+      <main>
+        <h1>Photo Gallery</h1>
+        <GuestPhotoDropzone />
+      </main>
+    );
 
     const file = new File(['jpeg bytes'], 'live.jpg', { type: 'image/jpeg' });
     fireEvent.change(screen.getByTestId('guest-photo-file-input'), {
@@ -519,8 +601,9 @@ describe('GuestPhotoDropzone', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('upload-success-badge')).toHaveTextContent('Published Live');
-      expect(screen.getByTestId('upload-live-notice')).toBeInTheDocument();
+      expect(screen.getByTestId('upload-live-notice')).toHaveAttribute('role', 'status');
       expect(screen.queryByTestId('upload-pending-notice')).not.toBeInTheDocument();
     });
+    expect(await axe(container)).toHaveNoViolations();
   });
 });

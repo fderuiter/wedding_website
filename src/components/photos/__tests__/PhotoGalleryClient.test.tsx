@@ -1,7 +1,10 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import { PhotoGalleryClient } from '../PhotoGalleryClient';
 import { ToastProvider } from '@/components/ui/ToastProvider';
+
+expect.extend(toHaveNoViolations);
 
 const originalFetch = global.fetch;
 
@@ -851,5 +854,54 @@ describe('PhotoGalleryClient', () => {
       expect(screen.getByText('Dance Floor Encore')).toBeInTheDocument();
       expect(screen.getByTestId('upload-live-notice')).toBeInTheDocument();
     });
+  });
+
+  it('eliminates redundant thumbnail/lightbox captions and generic aria-label violations under jest-axe', async () => {
+    const { container } = render(
+      <main>
+        <h1>Photo Gallery</h1>
+        <PhotoGalleryClient
+          initialPhotos={[
+            {
+              id: 'curated-a11y-1',
+              url: '/uploads/curated-vows.jpg',
+              title: 'Garden Vows',
+              isGuestUpload: false,
+            },
+            {
+              id: 'guest-a11y-1',
+              url: '/uploads/guest-toast.jpg',
+              caption: 'Champagne Toast',
+              uploaderName: 'Cousin Leo',
+              isGuestUpload: true,
+            },
+          ]}
+        />
+      </main>
+    );
+
+    // Curated view: thumbnail button keeps View <title> accessible name and MediaImage alt, while visual overlay is aria-hidden
+    const curatedThumb = screen.getByTestId('photo-thumbnail-0');
+    expect(curatedThumb).toHaveAttribute('aria-label', 'View Garden Vows');
+    expect(screen.getByAltText('Garden Vows')).toBeInTheDocument();
+    expect(await axe(container)).toHaveNoViolations();
+
+    // Open lightbox on curated photo: counter is polite role="status" without prohibited generic aria-label, caption is aria-hidden
+    fireEvent.click(curatedThumb);
+    const counter = screen.getByTestId('lightbox-counter');
+    expect(counter).toHaveAttribute('role', 'status');
+    expect(counter).toHaveAttribute('aria-live', 'polite');
+    expect(counter).toHaveAttribute('aria-atomic', 'true');
+    expect(counter).not.toHaveAttribute('aria-label');
+    expect(counter).toHaveTextContent('Photo 1 of 1: Garden Vows');
+    expect(screen.getByTestId('lightbox-caption')).toHaveAttribute('aria-hidden', 'true');
+    expect(await axe(container)).toHaveNoViolations();
+
+    // Close lightbox and switch to Guest Uploads tab
+    fireEvent.click(screen.getByTestId('lightbox-close-btn'));
+    fireEvent.click(screen.getByTestId('tab-guest'));
+    const guestThumb = screen.getByTestId('photo-thumbnail-0');
+    expect(guestThumb).toHaveAttribute('aria-label', 'View Champagne Toast');
+    expect(await axe(container)).toHaveNoViolations();
   });
 });

@@ -73,6 +73,7 @@ describe('Snapshot Pruning PostgreSQL Window Delete Integration', () => {
       process.env.HISTORY_VERSION_LIMIT = originalLimit;
     }
     await prisma.snapshotVersion.deleteMany();
+    await prisma.$executeRawUnsafe('ANALYZE "SnapshotVersion";');
     await prisma.$disconnect();
     const globalState = globalThis as unknown as {
       prisma?: unknown;
