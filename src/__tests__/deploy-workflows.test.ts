@@ -210,6 +210,7 @@ process.exit(1);
 
   it('passes workflow inputs and GH_TOKEN strictly via env blocks without ${{ ... }} inside deploy-provider.yml run scripts', () => {
     const stepNames = [
+      'Validate Commit SHA Input',
       'Resolve Artifact Image URI',
       'Verify Artifact Provenance Attestation',
       'Verify Selected Provider Credentials',
@@ -378,8 +379,12 @@ process.exit(1);
     expect(cloudRunDoc).toContain('gh attestation verify');
     expect(deploymentDoc).toContain('vars.SERVICE_URL');
     expect(deploymentDoc).toContain('secrets.SERVICE_URL');
+    expect(deploymentDoc).toContain('commit_sha');
+    expect(deploymentDoc).toContain('deployments: write');
     expect(cloudRunDoc).toContain('vars.SERVICE_URL');
     expect(cloudRunDoc).toContain('secrets.SERVICE_URL');
+    expect(cloudRunDoc).toContain('commit_sha: ${{ needs.ci-gate.outputs.target_sha }}');
+    expect(cloudRunDoc).toContain('deployments: write');
   });
 
   it('resolves vars.SERVICE_URL, cloudrun url, and secrets.SERVICE_URL in order without exporting secret-only fallback to $GITHUB_OUTPUT', () => {

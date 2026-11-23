@@ -51,8 +51,8 @@ on:
         required: false
         default: ''
         type: string
-      target_sha:
-        description: 'Optional verified 40-character target commit SHA for checkout alignment and provenance tracking'
+      commit_sha:
+        description: 'Optional 40-character commit SHA to check out and anchor rollback history against (defaults to github.sha)'
         required: false
         default: ''
         type: string
@@ -62,6 +62,11 @@ on:
         description: 'Target Deployment Environment'
         required: false
         default: 'production'
+        type: string
+      commit_sha:
+        description: 'Optional 40-character commit SHA to check out and anchor rollback history against (defaults to github.sha)'
+        required: false
+        default: ''
         type: string
       image_digest:
         description: 'Immutable OCI Image Digest (sha256:<64-hex>) to deploy'
@@ -93,11 +98,6 @@ on:
         type: string
       cloud_run_region:
         description: 'Optional Cloud Run region override (defaults to vars.CLOUD_RUN_REGION or us-central1)'
-        required: false
-        default: ''
-        type: string
-      target_sha:
-        description: 'Optional verified 40-character target commit SHA for checkout alignment and provenance tracking'
         required: false
         default: ''
         type: string
@@ -170,34 +170,37 @@ jobs:
       cloud_run_service: ${{ steps.capture-previous.outputs.cloud_run_service }}
       cloud_run_region: ${{ steps.capture-previous.outputs.cloud_run_region }}
     steps:
+      - name: Validate Commit SHA Input
+        id: validate-sha
+        env:
+          INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          if [ -n "${INPUT_COMMIT_SHA:-}" ] && [[ ! "$INPUT_COMMIT_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            echo "::error::Invalid commit_sha '${INPUT_COMMIT_SHA}'. Must be a 40-character hexadecimal commit SHA."
+            exit 1
+          fi
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.target_sha }}
-          fetch-depth: 0
+          ref: ${{ inputs.commit_sha }}
+          fetch-depth: 2
 
       - name: Resolve Artifact Image URI
         id: resolve
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_ACTOR_LOGIN: ${{ github.actor }}
+          INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
           RAW_DIGEST: ${{ inputs.image_digest }}
           RAW_TAG: ${{ inputs.image_tag }}
-          TARGET_SHA: ${{ inputs.target_sha }}
           TARGET_ENV: ${{ inputs.environment || 'production' }}
           ROLLBACK_ENV: ${{ inputs.rollback_environment }}
           PROVIDER: ${{ inputs.provider || 'google-cloud-run' }}
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
         run: |
-          if [ -n "${TARGET_SHA:-}" ] && [[ ! "$TARGET_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
-            echo "::error::Invalid target_sha '${TARGET_SHA}'. Must be a 40-character hexadecimal commit SHA."
+          if [ -n "${INPUT_COMMIT_SHA:-}" ] && [[ ! "$INPUT_COMMIT_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            echo "::error::Invalid commit_sha '${INPUT_COMMIT_SHA}'. Must be a 40-character hexadecimal commit SHA."
             exit 1
-          fi
-
-          if [ -n "${TARGET_SHA:-}" ] && [ -d .git ]; then
-            HEAD_NOW=$(git rev-parse HEAD 2>/dev/null || true)
-            if [ -n "$HEAD_NOW" ] && [ "$HEAD_NOW" != "$TARGET_SHA" ] && git cat-file -e "${TARGET_SHA}^{commit}" 2>/dev/null; then
-              git checkout --detach "$TARGET_SHA"
-            fi
           fi
 
           if [[ ! "$TARGET_ENV" =~ ^(production|staging|development)$ ]]; then
@@ -274,8 +277,8 @@ jobs:
           IMAGE_URI="ghcr.io/${REPO_LOWER}@${RESOLVED_DIGEST}"
           CLOUD_RUN_LABELS=""
           LABEL_SHA=""
-          if [[ "${TARGET_SHA:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
-            LABEL_SHA=$(printf '%s' "$TARGET_SHA" | tr '[:upper:]' '[:lower:]')
+          if [[ "${INPUT_COMMIT_SHA:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            LABEL_SHA=$(printf '%s' "$INPUT_COMMIT_SHA" | tr '[:upper:]' '[:lower:]')
           elif [[ "${RAW_TAG:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
             LABEL_SHA=$(printf '%s' "$RAW_TAG" | tr '[:upper:]' '[:lower:]')
           fi
@@ -425,8 +428,8 @@ jobs:
           CLOUD_RUN_REGION: ${{ vars.CLOUD_RUN_REGION }}
           INCOMING_TAG: ${{ inputs.image_tag || '' }}
           INCOMING_DIGEST: ${{ steps.resolve.outputs.image_digest }}
-          TARGET_SHA: ${{ inputs.target_sha }}
-          CURRENT_SHA: ${{ github.sha }}
+          INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
+          CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
           GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
@@ -438,13 +441,23 @@ jobs:
           REPO_OWNER: ${{ github.repository_owner }}
           SIGNER_WORKFLOW: ${{ github.repository }}/.github/workflows/publish-artifact.yml
         run: |
+          if [ -n "${INPUT_COMMIT_SHA:-}" ]; then
+            if [[ ! "$INPUT_COMMIT_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+              echo "::error::Invalid commit_sha '${INPUT_COMMIT_SHA}'. Must be a 40-character hexadecimal commit SHA."
+              exit 1
+            fi
+            CURRENT_SHA="$INPUT_COMMIT_SHA"
+          else
+            CURRENT_SHA="${CURRENT_SHA:-${GITHUB_SHA:-}}"
+          fi
+
           PREVIOUS_IMAGE_TAG=""
           PREVIOUS_IMAGE_DIGEST=""
           TAG_SOURCE="none"
 
           EFFECTIVE_TARGET_SHA=""
-          if [[ "${TARGET_SHA:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
-            EFFECTIVE_TARGET_SHA="$TARGET_SHA"
+          if [[ "${INPUT_COMMIT_SHA:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            EFFECTIVE_TARGET_SHA="$INPUT_COMMIT_SHA"
           elif [[ "${INCOMING_TAG:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
             EFFECTIVE_TARGET_SHA="$INCOMING_TAG"
           elif [[ "${CURRENT_SHA:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
@@ -459,10 +472,10 @@ jobs:
             if [ "$candidate" = "latest" ] || [ "$candidate" = "${INCOMING_TAG:-}" ]; then
               return 1
             fi
-            if [ -n "$EFFECTIVE_TARGET_SHA" ] && [ "$candidate" = "$EFFECTIVE_TARGET_SHA" ]; then
+            if [ -n "$EFFECTIVE_TARGET_SHA" ] && [ "${candidate,,}" = "${EFFECTIVE_TARGET_SHA,,}" ]; then
               return 1
             fi
-            if [ -z "$EFFECTIVE_TARGET_SHA" ] && [ -n "${CURRENT_SHA:-}" ] && [ "$candidate" = "$CURRENT_SHA" ]; then
+            if [ -z "$EFFECTIVE_TARGET_SHA" ] && [ -n "${CURRENT_SHA:-}" ] && [ "${candidate,,}" = "${CURRENT_SHA,,}" ]; then
               return 1
             fi
             if [[ ! "$candidate" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
@@ -680,11 +693,20 @@ jobs:
             DEPLOYMENTS_JSON=$(curl -fsSL --connect-timeout 5 --max-time 10 \
               -H "Accept: application/vnd.github+json" \
               -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              "${API_BASE}/repos/${GITHUB_REPOSITORY}/deployments?environment=${EFFECTIVE_ENV}&per_page=15" 2>/dev/null || true)
+              "${API_BASE}/repos/${GITHUB_REPOSITORY}/deployments?environment=${EFFECTIVE_ENV}&per_page=20" 2>/dev/null || true)
             if [[ "${DEPLOYMENTS_JSON#"${DEPLOYMENTS_JSON%%[![:space:]]*}"}" == \[* ]]; then
               while IFS='|' read -r DEP_ID DEP_SHA DEP_TAG DEP_DIGEST DEP_DRY_RUN; do
                 [ -z "$DEP_ID" ] && continue
                 if [ "$DEP_DRY_RUN" = "true" ]; then
+                  continue
+                fi
+                CANDIDATE_DEP_TAG=""
+                if [ -n "${DEP_TAG:-}" ] && is_valid_previous_tag "$DEP_TAG"; then
+                  CANDIDATE_DEP_TAG="$DEP_TAG"
+                elif [[ "${DEP_SHA:-}" =~ ^[a-fA-F0-9]{40}$ ]] && is_valid_previous_tag "$DEP_SHA"; then
+                  CANDIDATE_DEP_TAG="$DEP_SHA"
+                fi
+                if [ -z "$CANDIDATE_DEP_TAG" ] && { [ -n "$PREVIOUS_IMAGE_DIGEST" ] || ! is_valid_previous_digest "${DEP_DIGEST:-}"; }; then
                   continue
                 fi
                 STATUSES_JSON=$(curl -fsSL --connect-timeout 5 --max-time 10 \
@@ -693,35 +715,32 @@ jobs:
                   "${API_BASE}/repos/${GITHUB_REPOSITORY}/deployments/${DEP_ID}/statuses?per_page=10" 2>/dev/null || true)
                 ACTIVE_STATE=""
                 if [[ "${STATUSES_JSON#"${STATUSES_JSON%%[![:space:]]*}"}" == \[* ]]; then
-                  ACTIVE_STATE=$(printf '%s' "$STATUSES_JSON" | jq -r '[.[]? | select(.state != "inactive") | .state] | .[0] // empty' 2>/dev/null || true)
+                  ACTIVE_STATE=$(printf '%s' "$STATUSES_JSON" | jq -r '[.[]? | select(.state != null and .state != "inactive") | .state] | .[0] // empty' 2>/dev/null || true)
                 fi
                 if [ "$ACTIVE_STATE" != "success" ]; then
                   continue
                 fi
-                CANDIDATE_DEP_TAG="${DEP_TAG:-}"
-                if [ -z "$CANDIDATE_DEP_TAG" ] && [ -z "${DEP_DIGEST:-}" ]; then
-                  CANDIDATE_DEP_TAG="${DEP_SHA:-}"
-                fi
-                if is_valid_previous_tag "$CANDIDATE_DEP_TAG"; then
+                if [ -n "$CANDIDATE_DEP_TAG" ]; then
                   PREVIOUS_IMAGE_TAG="$CANDIDATE_DEP_TAG"
                   if [ -z "$PREVIOUS_IMAGE_DIGEST" ] && is_valid_previous_digest "${DEP_DIGEST:-}"; then
                     PREVIOUS_IMAGE_DIGEST="$DEP_DIGEST"
                   fi
                   TAG_SOURCE="github-deployments"
                   break
-                elif [ -z "$CANDIDATE_DEP_TAG" ] && is_valid_previous_digest "${DEP_DIGEST:-}"; then
-                  if [ -z "$PREVIOUS_IMAGE_DIGEST" ]; then
-                    PREVIOUS_IMAGE_DIGEST="$DEP_DIGEST"
-                  fi
+                elif is_valid_previous_digest "${DEP_DIGEST:-}"; then
+                  PREVIOUS_IMAGE_DIGEST="$DEP_DIGEST"
                 fi
-              done < <(printf '%s' "$DEPLOYMENTS_JSON" | jq -r '
-                .[]? | [
-                  (.id | tostring),
-                  (.sha // ""),
-                  ((.payload | if type == "object" then (.image_tag // .commit_sha // "") else "" end) | tostring),
-                  ((.payload | if type == "object" then (.image_digest // "") else "" end) | tostring),
-                  ((.payload | if type == "object" then (.dry_run // false) else false end) | tostring)
-                ] | join("|")
+              done < <(printf '%s' "$DEPLOYMENTS_JSON" | jq -r --arg env "$EFFECTIVE_ENV" '
+                .[]?
+                | select((.environment // $env) == $env and .id != null)
+                | [
+                    (.id | tostring),
+                    (.sha // ""),
+                    ((.payload | if type == "object" then (.image_tag // .commit_sha // "") else "" end) | tostring),
+                    ((.payload | if type == "object" then (.image_digest // "") else "" end) | tostring),
+                    ((.payload | if type == "object" then (.dry_run // false) else false end) | tostring)
+                  ]
+                | join("|")
               ' 2>/dev/null || true)
             fi
           fi
@@ -797,8 +816,8 @@ jobs:
           fi
 
           if [ -z "$PREVIOUS_IMAGE_TAG" ]; then
-            PARENT_BASE_REF="${EFFECTIVE_TARGET_SHA:-HEAD}"
-            GIT_PREV_SHA=$(git rev-parse --verify "${PARENT_BASE_REF}^1" 2>/dev/null || true)
+            GIT_REF_TARGET="${EFFECTIVE_TARGET_SHA:-${CURRENT_SHA:-HEAD}}"
+            GIT_PREV_SHA=$(git rev-parse --verify "${GIT_REF_TARGET}^1" 2>/dev/null || true)
             if is_valid_previous_tag "$GIT_PREV_SHA"; then
               PREVIOUS_IMAGE_TAG="$GIT_PREV_SHA"
               TAG_SOURCE="git-parent-sha"
@@ -813,8 +832,14 @@ jobs:
                 -H "Accept: application/vnd.github+json" \
                 -H "Authorization: Bearer ${GITHUB_TOKEN}" \
                 "${API_BASE}/repos/${GITHUB_REPOSITORY}/commits?sha=${COMMIT_QUERY_SHA}&per_page=2" 2>/dev/null || true)
-              if [[ "${COMMITS_JSON#"${COMMITS_JSON%%[![:space:]]*}"}" == \[* ]]; then
-                API_PREV_SHA=$(printf '%s' "$COMMITS_JSON" | jq -r --arg sha "$COMMIT_QUERY_SHA" --arg tag "${INCOMING_TAG:-}" '[.[].sha | select(. != null and . != "" and . != $sha and . != $tag and test("^[a-fA-F0-9]{40}$"))] | .[0] // empty' 2>/dev/null || true)
+              if [ -n "$COMMITS_JSON" ]; then
+                API_PREV_SHA=$(printf '%s' "$COMMITS_JSON" | jq -r --arg sha "$COMMIT_QUERY_SHA" --arg tag "${INCOMING_TAG:-}" '
+                  if type == "array" then
+                    ([.[0]?.parents[0]?.sha, .[].sha] | map(select(. != null and . != "" and ((. | ascii_downcase) != ($sha | ascii_downcase)) and . != $tag and test("^[a-fA-F0-9]{40}$")))) | .[0] // empty
+                  else
+                    empty
+                  end
+                ' 2>/dev/null || true)
                 if is_valid_previous_tag "$API_PREV_SHA"; then
                   PREVIOUS_IMAGE_TAG="$API_PREV_SHA"
                   TAG_SOURCE="github-commits-api"
@@ -903,8 +928,8 @@ jobs:
           IMAGE_URI: ${{ steps.resolve.outputs.image_uri }}
           IMAGE_DIGEST: ${{ steps.resolve.outputs.image_digest }}
           IMAGE_TAG: ${{ inputs.image_tag || '' }}
-          TARGET_SHA: ${{ inputs.target_sha }}
-          CURRENT_SHA: ${{ github.sha }}
+          INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
+          CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}
           VAR_SERVICE_URL: ${{ vars.SERVICE_URL }}
           CLOUDRUN_URL: ${{ steps.cloudrun.outputs.url }}
         run: |
@@ -921,9 +946,9 @@ jobs:
 
           DEPLOY_REF=""
           COMMIT_SHA_META=""
-          if [[ "${TARGET_SHA:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
-            DEPLOY_REF="$TARGET_SHA"
-            COMMIT_SHA_META="$TARGET_SHA"
+          if [[ "${INPUT_COMMIT_SHA:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            DEPLOY_REF="$INPUT_COMMIT_SHA"
+            COMMIT_SHA_META="$INPUT_COMMIT_SHA"
           elif [[ "${IMAGE_TAG:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
             DEPLOY_REF="$IMAGE_TAG"
             COMMIT_SHA_META="$IMAGE_TAG"

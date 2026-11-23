@@ -65,7 +65,7 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
     git commit -m "fix: Correct spelling on registry item description"
     ```
 
-    Committing triggers [`.githooks/pre-commit`](../.githooks/pre-commit) (installed automatically by `npm ci`), which runs `npx lint-staged` (`eslint --fix` on staged `*.{js,jsx,ts,tsx}` files) without stashing or resetting unstaged edits or untracked files.
+    Committing triggers [`.githooks/pre-commit`](../.githooks/pre-commit) (installed automatically by `npm ci`), which runs `npx lint-staged` (`eslint --fix` on staged `*.{js,jsx,ts,tsx,mjs,cjs}` files) without stashing or resetting unstaged edits or untracked files.
 
 8. **Push to Your Fork:**
 
