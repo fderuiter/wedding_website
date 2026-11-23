@@ -394,5 +394,107 @@ describe('pdf.service - generateSeatingChartPdf', () => {
       expect(pageSrc).toContain('min-w-6 min-h-6');
       expect(pageSrc).toContain('aria-label={`Unassign ${guest.guestName}`}');
     });
+
+    it('renders contiguous companion seat dots and party attendee headcount in generateSeatingChartPdf', async () => {
+      const drawnCircles: Array<{ x: number; y: number; r: number; fill?: string }> = [];
+      const renderedTexts: string[] = [];
+      const originalCircle = PDFDocument.prototype.circle;
+      const originalFillAndStroke = PDFDocument.prototype.fillAndStroke;
+      const originalText = PDFDocument.prototype.text;
+      let pendingCircle: { x: number; y: number; r: number; fill?: string } | null = null;
+
+      jest.spyOn(PDFDocument.prototype, 'circle').mockImplementation(function (
+        this: PDFKit.PDFDocument,
+        ...args: unknown[]
+      ) {
+        const [x, y, r] = args as [number, number, number];
+        pendingCircle = { x, y, r };
+        drawnCircles.push(pendingCircle);
+        return originalCircle.call(this, x, y, r);
+      });
+
+      jest.spyOn(PDFDocument.prototype, 'fillAndStroke').mockImplementation(function (
+        this: PDFKit.PDFDocument,
+        ...args: unknown[]
+      ) {
+        const [fillColor, strokeColor] = args as [
+          PDFKit.Mixins.ColorValue | undefined,
+          PDFKit.Mixins.ColorValue | undefined,
+        ];
+        if (pendingCircle && typeof fillColor === 'string') {
+          pendingCircle.fill = fillColor;
+          pendingCircle = null;
+        }
+        return originalFillAndStroke.call(this, fillColor, strokeColor);
+      });
+
+      jest.spyOn(PDFDocument.prototype, 'text').mockImplementation(function (
+        this: PDFKit.PDFDocument,
+        ...args: unknown[]
+      ) {
+        if (typeof args[0] === 'string') {
+          renderedTexts.push(args[0]);
+        }
+        return (originalText as (...a: unknown[]) => PDFKit.PDFDocument).apply(this, args);
+      });
+
+      const coupleTable: SeatingTableDTO = {
+        id: 'tbl-pdf-couple',
+        name: 'Couple Table',
+        shape: 'round',
+        capacity: 4,
+        x: 120,
+        y: 120,
+        width: 120,
+        height: 120,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [
+          {
+            id: 'g-pdf-couple',
+            guestName: 'Jordan Taylor',
+            code: 'PDFCPL',
+            seatNumber: 1,
+            used: true,
+            isSample: false,
+            partyTags: [],
+            plusOneAllocations: 1,
+            extraFields: {
+              attending: true,
+              plusOneCount: 1,
+              plusOneNames: ['Morgan Taylor'],
+            },
+          } as InvitationCodeDTO,
+        ],
+      };
+
+      const unassignedCouple = [
+        {
+          id: 'u-pdf-couple',
+          guestName: 'Alex Rivera',
+          code: 'PDFU1',
+          used: false,
+          isSample: false,
+          partyTags: [],
+          plusOneAllocations: 1,
+        } as InvitationCodeDTO,
+      ];
+
+      await generateSeatingChartPdf([coupleTable], unassignedCouple);
+
+      // 1 round table circle + 4 seat dots + 3 legend dots = 8 circles; Seats 1 and 2 are both filled (#0284c7)
+      expect(drawnCircles).toHaveLength(8);
+      const seatCircles = drawnCircles.slice(1, 5);
+      expect(seatCircles[0].fill).toBe('#0284c7');
+      expect(seatCircles[1].fill).toBe('#0284c7');
+      expect(seatCircles[2].fill).toBe('#ffffff');
+      expect(seatCircles[3].fill).toBe('#ffffff');
+
+      const joined = renderedTexts.join(' | ');
+      expect(joined).toContain('2/4 seats');
+      expect(joined).toContain('Seat 1 | Jordan Taylor');
+      expect(joined).toContain('Seat 2 | Morgan Taylor (Jordan Taylor +1)');
+      expect(joined).toContain('Unassigned Guests (2)');
+    });
   });
 });
