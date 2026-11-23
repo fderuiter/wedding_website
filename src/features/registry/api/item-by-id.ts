@@ -7,7 +7,7 @@ import { createValidatedRoute } from '@/utils/createValidatedRoute';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
-import { sanitizeRegistryItem } from '../lib/masking';
+import { maskRegistryItem, sanitizeRegistryItem } from '../lib/masking';
 
 async function assertRegistryEnabled(): Promise<void> {
   const config = await getAppConfig();
@@ -27,7 +27,7 @@ export const GET = withApiMiddleware(async (request: NextRequest, { params }: { 
   }
 
   if (!isAdmin) {
-    return NextResponse.json(item);
+    return NextResponse.json(maskRegistryItem(item));
   }
   return NextResponse.json(sanitizeRegistryItem(item));
 });
