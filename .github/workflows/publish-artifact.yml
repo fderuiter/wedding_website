@@ -39,12 +39,109 @@ permissions:
   contents: read
 
 concurrency:
-  group: publish-artifact-${{ github.ref }}
+  group: publish-artifact-release
   cancel-in-progress: false
 
 jobs:
+  preflight:
+    name: Verify Main Ancestry & CI Status
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      resolved_sha: ${{ steps.resolve.outputs.resolved_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Verify Commit SHA & Main Branch Ancestry
+        id: resolve
+        env:
+          INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          if [ -n "$INPUT_COMMIT_SHA" ] && [[ ! "$INPUT_COMMIT_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            echo "::error::Invalid commit_sha '${INPUT_COMMIT_SHA}'. Must be a 40-character hexadecimal commit SHA."
+            exit 1
+          fi
+
+          RESOLVED_SHA="${INPUT_COMMIT_SHA:-${CURRENT_SHA}}"
+          if [[ ! "$RESOLVED_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            echo "::error::Resolved target SHA '${RESOLVED_SHA}' is not a valid 40-character commit SHA."
+            exit 1
+          fi
+
+          if git remote get-url origin >/dev/null 2>&1; then
+            git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          fi
+
+          if ! git show-ref --verify --quiet refs/remotes/origin/main; then
+            echo "::error::Missing refs/remotes/origin/main reference required to verify main branch ancestry."
+            exit 1
+          fi
+
+          if ! git cat-file -e "${RESOLVED_SHA}^{commit}" 2>/dev/null; then
+            if git remote get-url origin >/dev/null 2>&1; then
+              git fetch --no-tags origin "$RESOLVED_SHA" || true
+            fi
+          fi
+
+          if ! git cat-file -e "${RESOLVED_SHA}^{commit}" 2>/dev/null; then
+            echo "::error::Commit '${RESOLVED_SHA}' does not exist in repository history."
+            exit 1
+          fi
+
+          if ! git merge-base --is-ancestor "$RESOLVED_SHA" refs/remotes/origin/main; then
+            echo "::error::Target commit '${RESOLVED_SHA}' is not an ancestor of origin/main. Refusing to build or sign unmerged artifact."
+            exit 1
+          fi
+
+          echo "resolved_sha=${RESOLVED_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Verified target commit ${RESOLVED_SHA} is an ancestor of origin/main."
+
+      - name: Verify Successful CI Run for Commit
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          TARGET_SHA: ${{ steps.resolve.outputs.resolved_sha }}
+        with:
+          script: |
+            const targetSha = process.env.TARGET_SHA;
+            const fullRepo = `${context.repo.owner}/${context.repo.repo}`;
+            const runs = await github.paginate(
+              github.rest.actions.listWorkflowRuns,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'ci.yml',
+                head_sha: targetSha,
+                status: 'completed',
+                per_page: 100,
+              }
+            );
+
+            const successfulRun = runs.find(
+              (run) =>
+                run.conclusion === 'success' &&
+                run.head_sha === targetSha &&
+                (!run.head_repository || run.head_repository.full_name === fullRepo)
+            );
+
+            if (!successfulRun) {
+              core.setFailed(
+                `No completed successful CI workflow run found for commit ${targetSha} in ${fullRepo}. Artifact publication aborted.`
+              );
+              return;
+            }
+
+            core.info(
+              `Verified successful CI run #${successfulRun.run_number} (ID: ${successfulRun.id}) for commit ${targetSha}.`
+            );
+
   build:
     name: Build, Scan & Smoke Test (${{ matrix.platform }})
+    needs: [preflight]
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -97,7 +194,7 @@ jobs:
           fi
 
           PUBLISH_LATEST="false"
-          if [ -z "$RAW_INPUT_TAG" ]; then
+          if [ -z "$RAW_INPUT_TAG" ] && [ -z "$INPUT_COMMIT_SHA" ]; then
             if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
               PUBLISH_LATEST="true"
             elif [[ "${GITHUB_REF}" == refs/tags/v* ]] && [ -n "${GITHUB_REF_NAME}" ] && [[ "${GITHUB_REF_NAME}" != *-* ]]; then
@@ -205,12 +302,39 @@ jobs:
         with:
           context: .
           platforms: ${{ matrix.platform }}
-          load: true
-          tags: |
-            wedding-website:latest
-            ${{ steps.meta.outputs.primary_uri }}-${{ matrix.arch }}
+          tags: wedding-website:latest
+          outputs: type=oci,dest=/tmp/wedding-website-${{ matrix.arch }}.oci.tar
           cache-from: type=gha,scope=app-${{ matrix.arch }}
           cache-to: type=gha,scope=app-${{ matrix.arch }},mode=max
+
+      - name: Load OCI Archive into Local Docker Engine
+        id: oci_archive
+        env:
+          ARCH: ${{ matrix.arch }}
+          PRIMARY_URI: ${{ steps.meta.outputs.primary_uri }}
+        run: |
+          OCI_ARCHIVE="/tmp/wedding-website-${ARCH}.oci.tar"
+          if [ ! -f "$OCI_ARCHIVE" ]; then
+            echo "::error::Expected OCI archive '${OCI_ARCHIVE}' was not produced by Buildx."
+            exit 1
+          fi
+
+          ARCHIVE_DIGEST=$(tar -xOf "$OCI_ARCHIVE" index.json | jq -r '.manifests[0].digest // empty')
+          if [[ ! "$ARCHIVE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "::error::Failed to read valid OCI manifest digest from '${OCI_ARCHIVE}' (got '${ARCHIVE_DIGEST}')."
+            exit 1
+          fi
+
+          if ! docker load -i "$OCI_ARCHIVE"; then
+            if ! command -v skopeo >/dev/null 2>&1; then
+              sudo apt-get update && sudo apt-get install -y --no-install-recommends skopeo
+            fi
+            skopeo copy "oci-archive:${OCI_ARCHIVE}" "docker-daemon:wedding-website:latest"
+          fi
+          docker tag wedding-website:latest "${PRIMARY_URI}-${ARCH}"
+
+          echo "archive_path=${OCI_ARCHIVE}" >> "$GITHUB_OUTPUT"
+          echo "archive_digest=${ARCHIVE_DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Persist BuildKit Cache Mounts
         if: steps.buildkit-deps-cache.outputs.cache-hit != 'true' || steps.buildkit-next-cache.outputs.cache-hit != 'true'
@@ -263,7 +387,7 @@ jobs:
       - name: Scan Native Container Image with Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ steps.meta.outputs.primary_uri }}-${{ matrix.arch }}
+          input: /tmp/wedding-website-${{ matrix.arch }}.oci.tar
           format: 'sarif'
           output: 'trivy-results-${{ matrix.arch }}.sarif'
           severity: 'CRITICAL,HIGH'
@@ -296,26 +420,69 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Push Verified Architecture Digest
+      - name: Push Verified OCI Archive by Digest
         id: push_digest
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          platforms: ${{ matrix.platform }}
-          outputs: type=image,"name=${{ steps.meta.outputs.registries }}",push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=app-${{ matrix.arch }}
-
-      - name: Export Architecture Digest Metadata
         env:
           ARCH: ${{ matrix.arch }}
-          DIGEST: ${{ steps.push_digest.outputs.digest }}
+          OCI_ARCHIVE: ${{ steps.oci_archive.outputs.archive_path }}
+          EXPECTED_DIGEST: ${{ steps.oci_archive.outputs.archive_digest }}
+          IMAGE_REPO: ${{ steps.meta.outputs.image_repository }}
+          DOCKERHUB_REPO: ${{ steps.meta.outputs.dockerhub_repository }}
         run: |
-          if [[ ! "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
-            echo "::error::Invalid digest '${DIGEST}' emitted for architecture '${ARCH}'."
+          if [ ! -f "$OCI_ARCHIVE" ]; then
+            echo "::error::Scanned OCI archive '${OCI_ARCHIVE}' not found."
             exit 1
           fi
+
+          ACTUAL_ARCHIVE_DIGEST=$(tar -xOf "$OCI_ARCHIVE" index.json | jq -r '.manifests[0].digest // empty')
+          if [[ ! "$EXPECTED_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]] || [ "$ACTUAL_ARCHIVE_DIGEST" != "$EXPECTED_DIGEST" ]; then
+            echo "::error::OCI archive digest integrity check failed for '${ARCH}': expected '${EXPECTED_DIGEST}', found '${ACTUAL_ARCHIVE_DIGEST}'."
+            exit 1
+          fi
+
+          if ! command -v skopeo >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y --no-install-recommends skopeo
+          fi
+
+          AUTH_ARGS=()
+          DOCKER_AUTH_FILE="${DOCKER_CONFIG:-$HOME/.docker}/config.json"
+          if [ -f "$DOCKER_AUTH_FILE" ]; then
+            AUTH_ARGS+=("--authfile" "$DOCKER_AUTH_FILE")
+          fi
+
+          GHCR_DIGEST_FILE="/tmp/${ARCH}-ghcr.digest"
+          skopeo copy \
+            "${AUTH_ARGS[@]}" \
+            --preserve-digests \
+            --digestfile "$GHCR_DIGEST_FILE" \
+            "oci-archive:${OCI_ARCHIVE}" \
+            "docker://${IMAGE_REPO}@${EXPECTED_DIGEST}"
+
+          PUSHED_GHCR_DIGEST=$(tr -d '[:space:]' < "$GHCR_DIGEST_FILE")
+          if [ "$PUSHED_GHCR_DIGEST" != "$EXPECTED_DIGEST" ]; then
+            echo "::error::GHCR digest mismatch for '${ARCH}': expected '${EXPECTED_DIGEST}', got '${PUSHED_GHCR_DIGEST}'."
+            exit 1
+          fi
+
+          if [ -n "$DOCKERHUB_REPO" ]; then
+            DOCKERHUB_DIGEST_FILE="/tmp/${ARCH}-dockerhub.digest"
+            skopeo copy \
+              "${AUTH_ARGS[@]}" \
+              --preserve-digests \
+              --digestfile "$DOCKERHUB_DIGEST_FILE" \
+              "oci-archive:${OCI_ARCHIVE}" \
+              "docker://docker.io/${DOCKERHUB_REPO}@${EXPECTED_DIGEST}"
+
+            PUSHED_DOCKERHUB_DIGEST=$(tr -d '[:space:]' < "$DOCKERHUB_DIGEST_FILE")
+            if [ "$PUSHED_DOCKERHUB_DIGEST" != "$EXPECTED_DIGEST" ]; then
+              echo "::error::Docker Hub digest mismatch for '${ARCH}': expected '${EXPECTED_DIGEST}', got '${PUSHED_DOCKERHUB_DIGEST}'."
+              exit 1
+            fi
+          fi
+
           mkdir -p /tmp/digests
-          printf '%s\n' "$DIGEST" > "/tmp/digests/${ARCH}.digest"
+          printf '%s\n' "$EXPECTED_DIGEST" > "/tmp/digests/${ARCH}.digest"
+          echo "digest=${EXPECTED_DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Upload Architecture Digest Artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -376,7 +543,7 @@ jobs:
           fi
 
           PUBLISH_LATEST="false"
-          if [ -z "$RAW_INPUT_TAG" ]; then
+          if [ -z "$RAW_INPUT_TAG" ] && [ -z "$INPUT_COMMIT_SHA" ]; then
             if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
               PUBLISH_LATEST="true"
             elif [[ "${GITHUB_REF}" == refs/tags/v* ]] && [ -n "${GITHUB_REF_NAME}" ] && [[ "${GITHUB_REF_NAME}" != *-* ]]; then
@@ -444,6 +611,7 @@ jobs:
         env:
           IMAGE_REPOSITORY: ${{ steps.meta.outputs.image_repository }}
           DOCKERHUB_REPOSITORY: ${{ steps.meta.outputs.dockerhub_repository }}
+          TAG_NAME: ${{ steps.meta.outputs.tag_name }}
           PRIMARY_URI: ${{ steps.meta.outputs.primary_uri }}
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |
@@ -505,11 +673,39 @@ jobs:
 
           echo "digest=${INDEX_DIGEST}" >> "$GITHUB_OUTPUT"
 
+          if [ -n "$DOCKERHUB_REPOSITORY" ] && [ "${#DOCKERHUB_TAG_ARGS[@]}" -gt 0 ]; then
+            EFFECTIVE_TAG_NAME="${TAG_NAME:-${PRIMARY_URI##*:}}"
+            DOCKERHUB_PRIMARY_URI="docker.io/${DOCKERHUB_REPOSITORY}:${EFFECTIVE_TAG_NAME}"
+            DOCKERHUB_INDEX_DIGEST=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$DOCKERHUB_PRIMARY_URI")
+            if [[ ! "$DOCKERHUB_INDEX_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+              echo "::error::Failed to resolve valid sha256 multi-platform index digest for '${DOCKERHUB_PRIMARY_URI}' (got '${DOCKERHUB_INDEX_DIGEST}')."
+              exit 1
+            fi
+
+            DOCKERHUB_RAW_INDEX=$(docker buildx imagetools inspect --raw "$DOCKERHUB_PRIMARY_URI")
+            for expected_arch in amd64 arm64; do
+              if ! printf '%s' "$DOCKERHUB_RAW_INDEX" | jq -e --arg arch "$expected_arch" '.manifests[]? | select(.platform.os == "linux" and .platform.architecture == $arch)' >/dev/null; then
+                echo "::error::Published Docker Hub multi-platform index '${DOCKERHUB_PRIMARY_URI}' is missing linux/${expected_arch} manifest."
+                exit 1
+              fi
+            done
+
+            echo "dockerhub_digest=${DOCKERHUB_INDEX_DIGEST}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Attest Build Provenance
         uses: actions/attest-build-provenance@c0744595e72338575084a4bf85ed76e1eb521ddf # v2.2.3
         with:
           subject-name: ${{ steps.meta.outputs.image_repository }}
           subject-digest: ${{ steps.merge.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest Docker Hub Build Provenance
+        if: steps.meta.outputs.dockerhub_repository != ''
+        uses: actions/attest-build-provenance@c0744595e72338575084a4bf85ed76e1eb521ddf # v2.2.3
+        with:
+          subject-name: docker.io/${{ steps.meta.outputs.dockerhub_repository }}
+          subject-digest: ${{ steps.merge.outputs.dockerhub_digest }}
           push-to-registry: true
 
       - name: Summary

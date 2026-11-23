@@ -311,7 +311,7 @@ Google Cloud Run provides free, automatically managed TLS certificates for custo
 ## 6. Build & Deploy Commands
 
 ### Automated Deployment via GitHub Actions
-The repository includes `.github/workflows/deploy.yml`, `.github/workflows/publish-artifact.yml`, `.github/workflows/db-migrate.yml`, `.github/workflows/deploy-provider.yml`, and `.github/workflows/rollback.yml`. Automated staging-to-production releases (`deploy.yml`) trigger via `workflow_run` after `CI` succeeds on `main` pushes (or via `workflow_dispatch`); pushing a `v*` tag triggers `publish-artifact.yml` to publish `ghcr.io/<owner>/<repo>:<GITHUB_REF_NAME>` (e.g., `:v0.1.0`) alongside `ghcr.io/<owner>/<repo>:<sha>`, which can then be promoted via `deploy-provider.yml` (`image_tag: v0.1.0`), `deploy.yml` (`image_digest`), or manual CLI deployment below:
+The repository includes `.github/workflows/deploy.yml`, `.github/workflows/publish-artifact.yml`, `.github/workflows/db-migrate.yml`, `.github/workflows/deploy-provider.yml`, and `.github/workflows/rollback.yml`. Automated staging-to-production releases (`deploy.yml`) trigger via `workflow_run` after `CI` succeeds on `main` pushes (or via `workflow_dispatch` with optional `image_tag` or `image_digest`); pushing a `v*` tag triggers `publish-artifact.yml` (after verifying `origin/main` ancestry and `ci.yml` success) without automatically invoking `deploy.yml`, publishing `ghcr.io/<owner>/<repo>:<GITHUB_REF_NAME>` (e.g., `:v0.1.0`) alongside `ghcr.io/<owner>/<repo>:<sha>`, which can then be promoted via `deploy.yml` (`image_tag: v0.1.0`, running `db-migrate.yml` first before `deploy-provider.yml`), `deploy-provider.yml` (`image_tag: v0.1.0` after `db-migrate.yml`), or manual CLI deployment below:
 *   **GitHub Environment Variables** (`staging`, `production`, and optional `production-rollback`):
     *   `SERVICE_URL`: Public base URL of the Cloud Run service for post-deploy and post-rollback `/api/health` verification (`vars.SERVICE_URL` primary so job outputs and deployment summaries remain unmasked; `secrets.SERVICE_URL` is supported as a legacy fallback during migration).
     *   `CLOUD_RUN_SERVICE`: Target Cloud Run service name for the environment (defaults to `wedding-website-staging` in `staging` and `wedding-website` in `production`, allowing isolated staging and production services within a single shared GCP project).
@@ -326,18 +326,19 @@ The repository includes `.github/workflows/deploy.yml`, `.github/workflows/publi
     *   `DATABASE_URL`, `ADMIN_PASSWORD` (`scrypt:[saltBase64]:[keyBase64]`), `GUEST_PASSCODE` (unique non-default passcode), and `GUEST_SESSION_SECRET` (at least 32 characters and distinct from `GUEST_PASSCODE` per `src/env.ts`).
 
 ### Manual CLI Deployment
-`.github/workflows/publish-artifact.yml` publishes multi-arch OCI images and OIDC build provenance attestations to `ghcr.io`, and `.github/workflows/deploy-provider.yml` rejects mutable `:latest` tags. Always deploy `wedding-website-staging` (staging) and `wedding-website` (production) using a verified immutable `ghcr.io` `@sha256:` digest and mount `GUEST_SESSION_SECRET` alongside the other production secrets:
+`.github/workflows/publish-artifact.yml` publishes multi-arch OCI images and OIDC build provenance attestations to `ghcr.io` (and `docker.io` when Docker Hub secrets are configured), and `.github/workflows/deploy-provider.yml` rejects mutable `:latest` tags while enforcing `--source-ref`, `ci.yml`, and `db-migrate.yml` status. Always deploy `wedding-website-staging` (staging) and `wedding-website` (production) using a verified immutable `ghcr.io` `@sha256:` digest and mount `GUEST_SESSION_SECRET` alongside the other production secrets:
 ```bash
 # 1. Authenticate with GCP via interactive gcloud login (or service account key fallback GCP_SA_KEY)
 gcloud auth activate-service-account --key-file="$GCP_SA_KEY"
 gcloud config set project YOUR_PROJECT_ID
 
-# 2. Resolve and verify the immutable ghcr.io OCI digest for a release tag or commit SHA
+# 2. Resolve and verify the immutable ghcr.io OCI digest and OIDC source-ref for a release tag
 RELEASE_TAG="v0.1.0"
 IMAGE_DIGEST=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "ghcr.io/fderuiter/wedding_website:${RELEASE_TAG}")
 gh attestation verify "oci://ghcr.io/fderuiter/wedding_website@${IMAGE_DIGEST}" \
     --owner fderuiter \
-    --signer-workflow fderuiter/wedding_website/.github/workflows/publish-artifact.yml
+    --signer-workflow fderuiter/wedding_website/.github/workflows/publish-artifact.yml \
+    --source-ref "refs/tags/${RELEASE_TAG}"
 
 # 3a. Deploy digest-pinned container revision to isolated staging Cloud Run service wedding-website-staging
 gcloud run deploy wedding-website-staging \
