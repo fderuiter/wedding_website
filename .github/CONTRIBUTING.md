@@ -49,7 +49,8 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
      - `npm run check:links` - Validate relative documentation links across Markdown files.
      - `npm run check:spec-contracts` - Verify `/api/*` routes, HTTP methods, dynamic `ENTITY_KEY` slugs, and TypeScript symbols cited in architectural specifications match live codebase exports.
      - `npm run check:prisma` & `npm run lint:migrations` - Validate Prisma schema structure and migration compatibility.
-     - `npm run check:standalone` - Verify Next.js standalone build & container portability.
+     - `npm run check:standalone` / `npm run check:standalone -- --require-standalone` - Verify container digest pins, BuildKit APT caches, and `next.config.ts` portability pre-build (`npm run check:standalone`), or require `.next/standalone/server.js`, `.next/standalone/.next/static`, and `.next/standalone/public` post-build (`npm run check:standalone -- --require-standalone`).
+     - `npm run test:standalone` & `npm run test:container` - Run standalone (`npm run build` required beforehand) and container-first clean-database smoke checks (executing `docker compose -f docker-compose.yml -f docker-compose.ci.yml run --rm migration` by default plus shared `/assets/favicon.png`, `/api/ready`, `/api/registry/validate-code`, and authenticated `/api/registry/items` probes; warning: both run `docker compose down -v` and wipe local `db_data`).
      - `npm run check:doc-sync` - Verify generated documentation (`public/openapi.json`, `ARCHITECTURE.md`, and `FEATURE_MODULES.md`) is synchronized with codebase schemas without drift.
      - `npm run docs:build` - Verify static VitePress documentation portal builds successfully.
      - `npm run build-storybook` - Verify static Storybook component showcase, story imports, and MSW mock handlers compile cleanly via Webpack.
