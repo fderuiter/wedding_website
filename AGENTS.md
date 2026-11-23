@@ -4,7 +4,7 @@ This guide defines the local bootstrap, architecture boundaries, TypeScript conf
 
 ## 1. Environment Bootstrap
 
-- **Node.js & npm:** Node.js **v22.x LTS** (`^22.12.0`, pinned in [`.nvmrc`](.nvmrc)) and **`npm@10.9.x`** (`^10.9.0`, enforced via [`.npmrc`](.npmrc) and `devEngines` in [`package.json`](package.json); run `nvm use` if `nvm` is available).
+- **Node.js & npm:** Node.js **v22.x LTS** (`>=22.22.1 <23.0.0`, pinned in [`.nvmrc`](.nvmrc)) and **`npm@10.9.x`** (`^10.9.0`, enforced via [`.npmrc`](.npmrc) and `devEngines` in [`package.json`](package.json); run `nvm use` if `nvm` is available).
 - **Install dependencies:**
   ```bash
   CI=true npm ci
@@ -127,7 +127,7 @@ npm run build-storybook
 
 ### Accessibility Quality Gate (`npm run test:a11y` & `npm run test:a11y:unit`)
 
-For fast component-only `jest-axe` checks across the 56 `src/` accessibility suites without starting Docker (`--coverage=false`):
+For fast component-only `jest-axe` checks across the 58 `src/` accessibility suites without starting Docker (`--coverage=false`):
 
 ```bash
 npm run test:a11y:unit
@@ -149,7 +149,7 @@ CI=true npm run test:a11y
 This invokes `node scripts/a11y-report.mjs --run` ([`scripts/a11y-report.mjs`](scripts/a11y-report.mjs)), which:
 
 1. Clears stale `test-results/` data.
-2. Runs the targeted `--unit` component pass (`npx jest --runInBand --coverage=false --runTestsByPath ...` across the 56 `src/` `jest-axe` suites), initializing `test-results/jest-a11y-violations.json` and recording any component-level `jest-axe` violations via [`jest.setup.js`](jest.setup.js).
+2. Runs the targeted `--unit` component pass (`npx jest --runInBand --coverage=false --runTestsByPath ...` across the 58 `src/` `jest-axe` suites), initializing `test-results/jest-a11y-violations.json` and recording any component-level `jest-axe` violations via [`jest.setup.js`](jest.setup.js).
 3. Reseeds `wedding_test` via `npx tsx scripts/seed.ts` ([`scripts/seed.ts`](scripts/seed.ts)) to restore valid `AppConfig` data wiped by Jest integration teardowns so [`src/app/layout.tsx`](src/app/layout.tsx) skips `<SetupWizard />`.
 4. Runs `npx playwright test --grep @a11y` in bundled Chromium against `http://localhost:3000` (which uses `test-results/playwright` as Playwright's `outputDir` in [`playwright.config.ts`](playwright.config.ts) so startup cleanup preserves JSON artifacts, and persists unfiltered route-keyed `@axe-core/playwright` violations into `test-results/playwright-a11y-violations.json` via [`e2e/verification.spec.ts`](e2e/verification.spec.ts)).
 5. Always writes `test-results/a11y-summary.md` first, then exits non-zero if the component pass failed, seeding failed, Playwright failed, or `totalViolations > 0`.

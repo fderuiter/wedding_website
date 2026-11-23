@@ -174,6 +174,10 @@ export interface IRegistryRepository {
     contributorId: string,
     kind: 'confirmation' | 'alert'
   ): Promise<boolean>;
+  releaseContributorEmailSend?(
+    contributorId: string,
+    kind: 'confirmation' | 'alert'
+  ): Promise<void>;
   confirmContribution?(
     contributorId: string,
     author?: string

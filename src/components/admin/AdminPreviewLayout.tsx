@@ -14,6 +14,15 @@ interface AdminPreviewLayoutProps {
   onRestore?: () => void;
 }
 
+function buildPreviewIframeSrc(previewUrl: string): string {
+  const hashIndex = previewUrl.indexOf('#');
+  const basePath = hashIndex >= 0 ? previewUrl.slice(0, hashIndex) : previewUrl;
+  const hashFragment = hashIndex >= 0 ? previewUrl.slice(hashIndex) : '';
+  const normalizedBase = basePath || '/';
+  const separator = normalizedBase.includes('?') ? '&' : '?';
+  return `${normalizedBase}${separator}preview=true${hashFragment}`;
+}
+
 export default function AdminPreviewLayout({ 
   children, 
   previewUrl, 
@@ -24,9 +33,28 @@ export default function AdminPreviewLayout({
 }: AdminPreviewLayoutProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [viewState, setViewState] = useState<'Live' | 'Draft' | 'Historical'>('Live');
+  const [mobilePane, setMobilePane] = useState<'editor' | 'preview'>('editor');
   const [versions, setVersions] = useState<any[]>([]);
   const [showVersions, setShowVersions] = useState(false);
   const { confirm, addToast } = useToast();
+
+  const postDraftToIframe = (payloadData: unknown = draftData) => {
+    if (
+      typeof window === 'undefined' ||
+      !window.location?.origin ||
+      !iframeRef.current?.contentWindow
+    ) {
+      return;
+    }
+    iframeRef.current.contentWindow.postMessage(
+      {
+        type: 'DRAFT_UPDATE',
+        draftType,
+        draftData: payloadData,
+      },
+      window.location.origin
+    );
+  };
 
   // Send draft updates to the iframe within 500ms
   useEffect(() => {
@@ -36,16 +64,11 @@ export default function AdminPreviewLayout({
     setViewState(showVersions ? 'Historical' : 'Draft');
 
     const timer = setTimeout(() => {
-      if (iframeRef.current && iframeRef.current.contentWindow) {
-        iframeRef.current.contentWindow.postMessage({
-          type: 'DRAFT_UPDATE',
-          draftType,
-          draftData
-        }, '*');
-      }
+      postDraftToIframe(draftData);
     }, 300); // 300ms debounce
 
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftData, draftType, showVersions]);
 
   useEffect(() => {
@@ -80,14 +103,64 @@ export default function AdminPreviewLayout({
     }
   };
 
+  const iframeSrc = buildPreviewIframeSrc(previewUrl);
+
   return (
-    <div className="flex h-screen w-full bg-gray-100 dark:bg-gray-900 overflow-hidden">
+    <div className="flex flex-col md:flex-row h-screen w-full bg-gray-100 dark:bg-gray-900 overflow-hidden">
+      {/* Mobile Full-Width Workspace Switcher */}
+      <div
+        role="tablist"
+        aria-label="Studio workspace views"
+        data-testid="studio-mobile-tabs"
+        className="flex md:hidden w-full border-b border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0 z-20"
+      >
+        <button
+          id="studio-mobile-tab-editor"
+          type="button"
+          role="tab"
+          aria-selected={mobilePane === 'editor'}
+          aria-controls="studio-left-pane"
+          data-testid="studio-mobile-tab-editor"
+          onClick={() => setMobilePane('editor')}
+          className={`flex-1 py-3 px-4 text-sm font-semibold border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${
+            mobilePane === 'editor'
+              ? 'border-primary text-primary bg-gray-50 dark:bg-gray-900/50'
+              : 'border-transparent text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+          }`}
+        >
+          Editor
+        </button>
+        <button
+          id="studio-mobile-tab-preview"
+          type="button"
+          role="tab"
+          aria-selected={mobilePane === 'preview'}
+          aria-controls="studio-right-pane"
+          data-testid="studio-mobile-tab-preview"
+          onClick={() => setMobilePane('preview')}
+          className={`flex-1 py-3 px-4 text-sm font-semibold border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${
+            mobilePane === 'preview'
+              ? 'border-primary text-primary bg-gray-50 dark:bg-gray-900/50'
+              : 'border-transparent text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+          }`}
+        >
+          Live Preview
+        </button>
+      </div>
+
       {/* Editor Pane */}
-      <div className="w-1/2 h-full overflow-y-auto border-r border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xl z-10 relative">
-        <div className="absolute top-4 right-4 flex space-x-2">
-          <button 
+      <div
+        id="studio-left-pane"
+        data-testid="studio-left-pane"
+        className={`${
+          mobilePane === 'editor' ? 'flex' : 'hidden'
+        } md:flex flex-col w-full md:w-1/2 flex-1 min-h-0 md:h-full overflow-y-auto md:border-r border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xl z-10 relative`}
+      >
+        <div className="flex items-center justify-end px-4 sm:px-6 pt-3 pb-2 border-b border-gray-100 dark:border-gray-700/60 shrink-0">
+          <button
+            type="button"
             onClick={() => setShowVersions(!showVersions)}
-            className="px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded text-sm font-semibold hover:bg-gray-300"
+            className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-100 rounded-lg text-sm font-semibold hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
           >
             {showVersions ? 'Hide History' : 'Version History'}
           </button>
@@ -103,30 +176,26 @@ export default function AdminPreviewLayout({
           <div className="space-y-4">
             {versions.length === 0 && <p className="text-gray-500 dark:text-gray-400">No versions found.</p>}
             {versions.map((v) => (
-              <div key={v.id} className="p-4 border rounded bg-gray-50 dark:bg-gray-800 flex justify-between items-center">
+              <div key={v.id} className="p-4 border rounded bg-gray-50 dark:bg-gray-800 flex flex-wrap gap-3 justify-between items-center">
                 <div>
                   <p className="font-semibold">{formatDate(v.createdAt, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
                   <p className="text-sm text-gray-500 dark:text-gray-400">By {v.author}</p>
                 </div>
-                <div className="space-x-2">
+                <div className="flex gap-2">
                   <button
+                    type="button"
                     onClick={() => {
-                      // send this historical data to the iframe
-                      if (iframeRef.current && iframeRef.current.contentWindow) {
-                        iframeRef.current.contentWindow.postMessage({
-                          type: 'DRAFT_UPDATE',
-                          draftType,
-                          draftData: v.data
-                        }, '*');
-                      }
+                      postDraftToIframe(v.data);
+                      setMobilePane('preview');
                     }}
-                    className="px-3 py-1 bg-blue-500 text-white rounded text-sm"
+                    className="px-3 py-1 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700"
                   >
                     Preview
                   </button>
                   <button
+                    type="button"
                     onClick={() => handleRestore(v.id)}
-                    className="px-3 py-1 bg-primary text-white rounded text-sm"
+                    className="px-3 py-1 bg-primary text-white rounded text-sm font-medium"
                   >
                     Restore
                   </button>
@@ -138,7 +207,7 @@ export default function AdminPreviewLayout({
 
         <div
           data-testid="studio-editor-pane"
-          className={showVersions ? 'hidden' : 'h-full'}
+          className={showVersions ? 'hidden' : 'flex-1'}
           hidden={showVersions}
           aria-hidden={showVersions}
         >
@@ -147,12 +216,18 @@ export default function AdminPreviewLayout({
       </div>
 
       {/* Preview Pane */}
-      <div className="w-1/2 h-full relative bg-gray-50 dark:bg-black">
+      <div
+        id="studio-right-pane"
+        data-testid="studio-right-pane"
+        className={`${
+          mobilePane === 'preview' ? 'flex' : 'hidden'
+        } md:flex flex-col w-full md:w-1/2 flex-1 min-h-0 md:h-full relative bg-gray-50 dark:bg-black`}
+      >
         {/* Visual Indicator */}
-        <div className="absolute top-4 right-4 z-20">
+        <div className="absolute top-4 right-4 z-20 pointer-events-none">
           <span className={`px-3 py-1 rounded-full text-xs font-bold text-white shadow-lg ${
             viewState === 'Draft' ? 'bg-secondary' : 
-              viewState === 'Historical' ? 'bg-purple-600' : 'bg-green-600'
+              viewState === 'Historical' ? 'bg-purple-600' : 'bg-green-700'
           }`}>
             {viewState} Preview
           </span>
@@ -160,8 +235,9 @@ export default function AdminPreviewLayout({
         
         <iframe 
           ref={iframeRef}
-          src={`${previewUrl}?preview=true`} 
-          className="w-full h-full border-none"
+          src={iframeSrc}
+          onLoad={() => postDraftToIframe(draftData)}
+          className="w-full h-full flex-1 border-none"
           title="Live Preview"
         />
       </div>

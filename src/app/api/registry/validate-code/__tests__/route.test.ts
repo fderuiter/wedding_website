@@ -11,11 +11,15 @@ jest.mock('@/lib/prisma', () => ({
     invitationCode: {
       findUnique: jest.fn(),
     },
+    broadcastRecipient: {
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
   },
 }));
 
 describe('GET /api/registry/validate-code', () => {
   const mockFindUnique = prisma.invitationCode.findUnique as jest.Mock;
+  const mockRecipientUpdateMany = prisma.broadcastRecipient.updateMany as jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -33,13 +37,15 @@ describe('GET /api/registry/validate-code', () => {
     const missingRes = await GET(new NextRequest('http://localhost/api/registry/validate-code?code=NOPE1234'));
     expect(missingRes.status).toBe(404);
 
-    mockFindUnique.mockResolvedValueOnce({ code: 'SAMPLE12', guestName: 'Sample Guest', isSample: true });
+    mockFindUnique.mockResolvedValueOnce({ id: 'sample-1', code: 'SAMPLE12', guestName: 'Sample Guest', isSample: true });
     const sampleRes = await GET(new NextRequest('http://localhost/api/registry/validate-code?code=SAMPLE12'));
     expect(sampleRes.status).toBe(404);
+    expect(mockRecipientUpdateMany).not.toHaveBeenCalled();
   });
 
-  test('issues guest_invite_session cookie on valid non-sample invitation code', async () => {
+  test('issues guest_invite_session cookie and transitions SENT BroadcastRecipient rows to VIEWED on valid non-sample invitation code', async () => {
     mockFindUnique.mockResolvedValueOnce({
+      id: 'inv-valid-1',
       code: 'VALID123',
       guestName: 'Alex & Sam',
       isSample: false,
@@ -54,6 +60,15 @@ describe('GET /api/registry/validate-code', () => {
       code: 'VALID123',
     });
     expect(res.cookies.get(GUEST_INVITE_COOKIE)?.value).toBeTruthy();
+    expect(mockRecipientUpdateMany).toHaveBeenCalledWith({
+      where: {
+        invitationCodeId: 'inv-valid-1',
+        status: 'SENT',
+      },
+      data: {
+        status: 'VIEWED',
+      },
+    });
   });
 
   test('enforces 5-attempt lockout per 15 minutes and returns 429 on 6th attempt', async () => {

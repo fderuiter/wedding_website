@@ -487,6 +487,49 @@ describe('Configuration System Layers & Precedence', () => {
     await expect(getAppConfig('global')).rejects.toThrow(/Production Configuration Validation Failure/);
   });
 
+  it('ignores empty and whitespace-only strings in SITE_WEDDING_DATE, SITE_LATITUDE, and SITE_LONGITUDE without failing AppConfigSchema.parse', async () => {
+    const savedWeddingDate = process.env.SITE_WEDDING_DATE;
+    const savedLatitude = process.env.SITE_LATITUDE;
+    const savedLongitude = process.env.SITE_LONGITUDE;
+
+    try {
+      (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+      process.env.SITE_WEDDING_DATE = '';
+      process.env.SITE_LATITUDE = '   ';
+      process.env.SITE_LONGITUDE = '';
+
+      const fallbackDate = new Date('2027-06-19T17:00:00.000Z');
+      (prisma.appConfig.findUnique as jest.Mock).mockResolvedValue({
+        ...baseConfig,
+        id: 'global',
+        weddingDate: fallbackDate,
+        latitude: 30.2672,
+        longitude: -97.7431,
+      });
+
+      const effectiveConfig = await getAppConfig('global');
+      expect(effectiveConfig.weddingDate).toEqual(fallbackDate);
+      expect(effectiveConfig.latitude).toBe(30.2672);
+      expect(effectiveConfig.longitude).toBe(-97.7431);
+    } finally {
+      if (savedWeddingDate === undefined) {
+        delete process.env.SITE_WEDDING_DATE;
+      } else {
+        process.env.SITE_WEDDING_DATE = savedWeddingDate;
+      }
+      if (savedLatitude === undefined) {
+        delete process.env.SITE_LATITUDE;
+      } else {
+        process.env.SITE_LATITUDE = savedLatitude;
+      }
+      if (savedLongitude === undefined) {
+        delete process.env.SITE_LONGITUDE;
+      } else {
+        process.env.SITE_LONGITUDE = savedLongitude;
+      }
+    }
+  });
+
   it('skips empty and whitespace-only SITE_* strings across all 32 keys without ZodError or SetupWizard resets', async () => {
     (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
     process.env.E2E_TEST = 'false';
