@@ -227,7 +227,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     // Resolved SHA aligned in schema-compatibility on workflow_run or non-HEAD target_sha after ancestry check and passed to workflow calls
     expect(deployWorkflow).not.toContain('ref: ${{ needs.ci-gate.outputs.target_sha }}');
     expect(deployWorkflow).toMatch(
-      /schema-compatibility:[\s\S]*?fetch-depth:\s*0[\s\S]*?if:\s*github\.event_name == 'workflow_run' \|\| inputs\.image_tag != '' \|\| needs\.ci-gate\.outputs\.target_sha != github\.sha[\s\S]*?TARGET_SHA:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}[\s\S]*?git merge-base --is-ancestor "\$TARGET_SHA" HEAD[\s\S]*?git checkout --detach "\$TARGET_SHA"/
+      /schema-compatibility:[\s\S]*?fetch-depth:\s*0[\s\S]*?if:\s*github\.event_name == 'workflow_run' \|\| inputs\.image_tag != '' \|\| inputs\.release_ref != '' \|\| inputs\.image_digest != '' \|\| needs\.ci-gate\.outputs\.target_sha != github\.sha[\s\S]*?TARGET_SHA:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}[\s\S]*?git merge-base --is-ancestor "\$TARGET_SHA" HEAD[\s\S]*?git checkout --detach "\$TARGET_SHA"/
     );
     expect(deployWorkflow).toContain('commit_sha: ${{ needs.ci-gate.outputs.target_sha }}');
     expect(
@@ -851,6 +851,220 @@ process.exit(1);
       expect(failRes.status).not.toBe(0);
     } finally {
       fs.rmSync(digestsDir, { recursive: true, force: true });
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('resolves target_sha from release_ref or image_digest OIDC provenance and checks out the tag commit in schema-compatibility', async () => {
+    const http = await import('http');
+    const { spawn } = await import('child_process');
+    const runBashAsync = (
+      script: string,
+      options: { cwd?: string; env: NodeJS.ProcessEnv }
+    ): Promise<{ status: number | null; stdout: string; stderr: string }> =>
+      new Promise((resolve) => {
+        const child = spawn('bash', ['-eo', 'pipefail', '-c', script], {
+          cwd: options.cwd,
+          env: options.env,
+        });
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', (chunk) => {
+          stdout += chunk.toString();
+        });
+        child.stderr.on('data', (chunk) => {
+          stderr += chunk.toString();
+        });
+        child.on('close', (code) => {
+          resolve({ status: code, stdout, stderr });
+        });
+      });
+
+    const runBlocks = extractRunBlocks(deployWorkflow);
+    const resolveShaScript = runBlocks.find((block) => block.includes('REF_RESOLVED_SHA='));
+    const alignWorkspaceScript = runBlocks.find((block) => block.includes('git checkout --detach "$TARGET_SHA"'));
+    expect(resolveShaScript).toBeDefined();
+    expect(alignWorkspaceScript).toBeDefined();
+
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deploy-release-ref-test-'));
+    const binDir = path.join(tempDir, 'bin');
+    const repoDir = path.join(tempDir, 'repo');
+    const outputFile = path.join(tempDir, 'github_output.txt');
+    fs.mkdirSync(binDir, { recursive: true });
+    fs.mkdirSync(repoDir, { recursive: true });
+
+    // Create real git repo where v0.1.0 is tagged on an earlier commit and main HEAD has a newer migration
+    spawnSync('git', ['init', '-b', 'main'], { cwd: repoDir });
+    spawnSync('git', ['config', 'user.name', 'Test'], { cwd: repoDir });
+    spawnSync('git', ['config', 'user.email', 'test@example.com'], { cwd: repoDir });
+    fs.mkdirSync(path.join(repoDir, 'prisma', 'migrations', '0001_v010'), { recursive: true });
+    fs.writeFileSync(path.join(repoDir, 'prisma', 'migrations', '0001_v010', 'migration.sql'), 'SELECT 1;');
+    spawnSync('git', ['add', '.'], { cwd: repoDir });
+    spawnSync('git', ['commit', '-m', 'v0.1.0 release'], { cwd: repoDir });
+    const v010Sha = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf8' }).stdout.trim();
+    spawnSync('git', ['tag', '-a', 'v0.1.0', '-m', 'Release v0.1.0'], { cwd: repoDir });
+
+    fs.mkdirSync(path.join(repoDir, 'prisma', 'migrations', '0002_unreleased_main'), { recursive: true });
+    fs.writeFileSync(
+      path.join(repoDir, 'prisma', 'migrations', '0002_unreleased_main', 'migration.sql'),
+      'ALTER TABLE "Guest" ADD COLUMN "futureField" TEXT;'
+    );
+    spawnSync('git', ['add', '.'], { cwd: repoDir });
+    spawnSync('git', ['commit', '-m', 'unreleased main migration'], { cwd: repoDir });
+    const mainHeadSha = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf8' }).stdout.trim();
+    expect(v010Sha).not.toBe(mainHeadSha);
+
+    const sampleDigest = 'sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789';
+    const otherDigest = 'sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
+
+    const ghShim = path.join(binDir, 'gh');
+    fs.writeFileSync(
+      ghShim,
+      `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === 'attestation' && args[1] === 'verify' && args.includes('--format') && args.includes('json')) {
+  const uri = args[2] || '';
+  if (uri.endsWith('@${sampleDigest}')) {
+    process.stdout.write(JSON.stringify([
+      {
+        verificationResult: {
+          statement: {
+            predicate: {
+              buildDefinition: {
+                resolvedDependencies: [
+                  {
+                    uri: 'git+https://github.com/fderuiter/wedding_website@refs/tags/v0.1.0',
+                    digest: { gitCommit: '${v010Sha}' }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    ]));
+    process.exit(0);
+  }
+  if (uri.endsWith('@${otherDigest}')) {
+    process.stdout.write(JSON.stringify([
+      {
+        verificationResult: {
+          statement: {
+            predicate: {
+              buildDefinition: {
+                resolvedDependencies: [
+                  { digest: { gitCommit: '${mainHeadSha}' } }
+                ]
+              }
+            }
+          }
+        }
+      }
+    ]));
+    process.exit(0);
+  }
+}
+process.exit(1);
+`,
+      { mode: 0o755 }
+    );
+
+    const apiServer = http.createServer((req, res) => {
+      res.setHeader('Content-Type', 'application/json');
+      if (req.url === '/repos/fderuiter/wedding_website/commits/v0.1.0') {
+        res.writeHead(200);
+        res.end(JSON.stringify({ sha: v010Sha }));
+        return;
+      }
+      res.writeHead(404);
+      res.end(JSON.stringify({ message: 'Not Found' }));
+    });
+    await new Promise<void>((resolve) => apiServer.listen(0, '127.0.0.1', () => resolve()));
+    const addr = apiServer.address();
+    const port = typeof addr === 'object' && addr ? addr.port : 0;
+
+    try {
+      // 1. Dispatching with release_ref: v0.1.0 resolves target_sha to v0.1.0's commit instead of main HEAD
+      fs.writeFileSync(outputFile, '');
+      const refRes = await runBashAsync(resolveShaScript!, {
+        env: {
+          ...process.env,
+          PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+          GITHUB_OUTPUT: outputFile,
+          GITHUB_REPOSITORY: 'fderuiter/wedding_website',
+          GITHUB_API_URL: `http://127.0.0.1:${port}`,
+          GH_TOKEN: 'ghs_test_token',
+          REPO_OWNER: 'fderuiter',
+          SIGNER_WORKFLOW: 'fderuiter/wedding_website/.github/workflows/publish-artifact.yml',
+          EVENT_NAME: 'workflow_dispatch',
+          WORKFLOW_RUN_HEAD_SHA: '',
+          CURRENT_SHA: mainHeadSha,
+          RELEASE_REF: 'v0.1.0',
+          IMAGE_DIGEST: '',
+        },
+      });
+      expect(refRes.status).toBe(0);
+      expect(fs.readFileSync(outputFile, 'utf8')).toContain(`target_sha=${v010Sha}`);
+
+      // 2. Dispatching with image_digest resolves target_sha from OIDC provenance attestation JSON
+      fs.writeFileSync(outputFile, '');
+      const digestRes = await runBashAsync(resolveShaScript!, {
+        env: {
+          ...process.env,
+          PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+          GITHUB_OUTPUT: outputFile,
+          GITHUB_REPOSITORY: 'fderuiter/wedding_website',
+          GITHUB_API_URL: `http://127.0.0.1:${port}`,
+          GH_TOKEN: 'ghs_test_token',
+          REPO_OWNER: 'fderuiter',
+          SIGNER_WORKFLOW: 'fderuiter/wedding_website/.github/workflows/publish-artifact.yml',
+          EVENT_NAME: 'workflow_dispatch',
+          WORKFLOW_RUN_HEAD_SHA: '',
+          CURRENT_SHA: mainHeadSha,
+          RELEASE_REF: '',
+          IMAGE_DIGEST: sampleDigest,
+        },
+      });
+      expect(digestRes.status).toBe(0);
+      expect(fs.readFileSync(outputFile, 'utf8')).toContain(`target_sha=${v010Sha}`);
+
+      // 3. Mismatched release_ref + image_digest fails closed
+      const mismatchRes = await runBashAsync(resolveShaScript!, {
+        env: {
+          ...process.env,
+          PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+          GITHUB_OUTPUT: outputFile,
+          GITHUB_REPOSITORY: 'fderuiter/wedding_website',
+          GITHUB_API_URL: `http://127.0.0.1:${port}`,
+          GH_TOKEN: 'ghs_test_token',
+          REPO_OWNER: 'fderuiter',
+          SIGNER_WORKFLOW: 'fderuiter/wedding_website/.github/workflows/publish-artifact.yml',
+          EVENT_NAME: 'workflow_dispatch',
+          WORKFLOW_RUN_HEAD_SHA: '',
+          CURRENT_SHA: mainHeadSha,
+          RELEASE_REF: 'v0.1.0',
+          IMAGE_DIGEST: otherDigest,
+        },
+      });
+      expect(mismatchRes.status).not.toBe(0);
+      expect(mismatchRes.stdout + mismatchRes.stderr).toContain('Commit mismatch');
+
+      // 4. schema-compatibility Align Workspace to Verified Commit SHA checks out v0.1.0 commit (excluding unreleased main migration)
+      const alignRes = await runBashAsync(alignWorkspaceScript!, {
+        cwd: repoDir,
+        env: {
+          ...process.env,
+          EVENT_NAME: 'workflow_dispatch',
+          GITHUB_REF: 'refs/heads/main',
+          TARGET_SHA: v010Sha,
+        },
+      });
+      expect(alignRes.status).toBe(0);
+      const checkedOutHead = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf8' }).stdout.trim();
+      expect(checkedOutHead).toBe(v010Sha);
+      expect(fs.existsSync(path.join(repoDir, 'prisma', 'migrations', '0002_unreleased_main'))).toBe(false);
+    } finally {
+      await new Promise<void>((resolve) => apiServer.close(() => resolve()));
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });

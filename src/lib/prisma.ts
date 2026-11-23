@@ -22,10 +22,13 @@ const DEFAULT_POSTGRES_QUERY_TIMEOUT_MS = 10_000;
 const createPrismaRuntime = (): { prisma: PrismaClient; pool: Pool } => {
   console.log('DEBUG [createPrismaClient]: Initializing PostgreSQL database client');
   const { poolConfig, adapterOptions } = buildPostgresRuntimeConfig(env.DATABASE_URL);
-  const pool = new Pool({
+  const resolvedPoolConfig = {
     ...poolConfig,
     query_timeout: poolConfig.query_timeout ?? DEFAULT_POSTGRES_QUERY_TIMEOUT_MS,
-  });
+  };
+  const pool = new Pool(
+    env.NODE_ENV === 'test' ? { ...resolvedPoolConfig, allowExitOnIdle: true } : resolvedPoolConfig
+  );
   const adapter = new PrismaPg(pool, adapterOptions);
   const client = new PrismaClient({ adapter });
   return { prisma: client, pool };
