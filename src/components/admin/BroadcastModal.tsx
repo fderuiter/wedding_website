@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { SegmentedTabs, SegmentedTabPanel } from '@/components/ui/SegmentedTabs';
@@ -18,6 +19,57 @@ import {
   summarizeBroadcastAudience,
 } from '@/features/broadcast';
 
+interface BroadcastSubEventOption {
+  id: string;
+  title: string;
+  isPrivate?: boolean;
+}
+
+interface BroadcastPreviewData {
+  subject?: string;
+  body?: string;
+  sampleGuestName?: string;
+  destination?: string;
+  recipientCount?: number;
+  matchedCount?: number;
+  missingContactCount?: number;
+  baseUrlWarning?: string;
+}
+
+interface BroadcastTestSendResult {
+  destination?: string;
+  baseUrlWarning?: string;
+}
+
+interface BroadcastSendResult {
+  status?: string;
+  scheduledFor?: string;
+  sentCount?: number;
+  failedCount?: number;
+  baseUrlWarning?: string;
+}
+
+function useSafeRouter() {
+  try {
+    return useRouter();
+  } catch {
+    return null;
+  }
+}
+
+function getBroadcastErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) {
+    return err.message;
+  }
+  if (typeof err === 'object' && err !== null && 'message' in err) {
+    const candidate = (err as { message?: unknown }).message;
+    if (typeof candidate === 'string' && candidate) {
+      return candidate;
+    }
+  }
+  return fallback;
+}
+
 export interface BroadcastModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -25,8 +77,8 @@ export interface BroadcastModalProps {
   targetFilters?: BroadcastTargetFilters;
   selectedCount?: number;
   initialRecipientCount?: number;
-  guests?: Array<Record<string, any>>;
-  subEvents?: any[];
+  guests?: Array<Record<string, unknown>>;
+  subEvents?: BroadcastSubEventOption[];
   adminEmail?: string;
   adminPhone?: string;
   onViewDeliveryLogs?: () => void;
@@ -89,6 +141,7 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
   adminPhone,
   onViewDeliveryLogs,
 }) => {
+  const router = useSafeRouter();
   const { addToast } = useToast();
   const { contactEmail } = useTheme();
   const defaultAdminEmail = adminEmail || contactEmail || '';
@@ -120,7 +173,7 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
   const [body, setBody] = useState('');
   const [testDestination, setTestDestination] = useState('');
   const [activeTab, setActiveTab] = useState<'compose' | 'preview'>('compose');
-  const [previewResult, setPreviewResult] = useState<any>(null);
+  const [previewResult, setPreviewResult] = useState<BroadcastPreviewData | null>(null);
   const [lastPreviewSignature, setLastPreviewSignature] = useState<string | null>(null);
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduledFor, setScheduledFor] = useState('');
@@ -296,8 +349,16 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
   const navigateToDeliveryLogs = () => {
     if (onViewDeliveryLogs) {
       onViewDeliveryLogs();
-    } else if (typeof window !== 'undefined') {
-      window.location.assign('/admin/dashboard/history?tab=broadcasts');
+      return;
+    }
+    if (router?.push) {
+      router.push('/admin/dashboard/history?tab=broadcasts');
+      return;
+    }
+    if (typeof window !== 'undefined') {
+      window.location.assign(
+        new URL('/admin/dashboard/history?tab=broadcasts', window.location.origin).href
+      );
     }
   };
 
@@ -363,12 +424,12 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
       targetFilters: effectiveTargetFilters,
     });
     try {
-      const res: any = await previewBroadcast({
+      const res = (await previewBroadcast({
         channel,
         subject: channel === 'EMAIL' ? subject : undefined,
         body,
         targetFilters: effectiveTargetFilters,
-      });
+      })) as BroadcastPreviewData | null;
       setPreviewResult(res);
       if (typeof res?.recipientCount === 'number') {
         setRecipientCount(res.recipientCount);
@@ -383,8 +444,8 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
       if (options?.switchToPreview) {
         setActiveTab('preview');
       }
-    } catch (err: any) {
-      addToast(err.message || 'Failed to generate preview', 'error');
+    } catch (err: unknown) {
+      addToast(getBroadcastErrorMessage(err, 'Failed to generate preview'), 'error');
     }
   };
 
@@ -418,12 +479,12 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
     }
 
     try {
-      const result: any = await sendTestBroadcast({
+      const result = (await sendTestBroadcast({
         channel,
         subject: channel === 'EMAIL' ? subject : undefined,
         body,
         destination: testDestination.trim() || undefined,
-      });
+      })) as BroadcastTestSendResult | null;
 
       if (result?.baseUrlWarning) {
         setBaseUrlWarning(result.baseUrlWarning);
@@ -434,8 +495,8 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
         `Test ${channel === 'EMAIL' ? 'email' : 'SMS'} sent to ${recipient}!`,
         'success'
       );
-    } catch (err: any) {
-      addToast(err.message || 'Failed to dispatch test broadcast', 'error');
+    } catch (err: unknown) {
+      addToast(getBroadcastErrorMessage(err, 'Failed to dispatch test broadcast'), 'error');
     }
   };
 
@@ -461,13 +522,13 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
 
     try {
       const scheduledIso = isScheduled && scheduledFor ? new Date(scheduledFor).toISOString() : undefined;
-      const result: any = await sendBroadcast({
+      const result = (await sendBroadcast({
         channel,
         subject: channel === 'EMAIL' ? subject : undefined,
         body,
         targetFilters: effectiveTargetFilters,
         scheduledFor: scheduledIso,
-      });
+      })) as BroadcastSendResult;
 
       const deliveryLogsAction = {
         label: 'View Delivery Logs',
@@ -496,8 +557,8 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
         addToast(result.baseUrlWarning, 'info');
       }
       onClose();
-    } catch (err: any) {
-      addToast(err.message || 'Failed to dispatch broadcast', 'error');
+    } catch (err: unknown) {
+      addToast(getBroadcastErrorMessage(err, 'Failed to dispatch broadcast'), 'error');
     }
   };
 

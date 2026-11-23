@@ -243,5 +243,148 @@ describe('SubEventAdminService', () => {
         } as any)
       ).rejects.toThrow(/Meal option label is required/i);
     });
+
+    it('migrates renamed choice answers and refreshes InvitationCode RSVP projections transactionally on update and delete', async () => {
+      const updatedSubEventRecord = {
+        id: 'se-1',
+        title: 'Evening Reception',
+        mealOptions: [
+          { id: 'm-salmon', label: 'Citrus Salmon', dietaryTags: ['dairy-free'] },
+          { id: 'm-kids', label: 'Kids Mac & Cheese', dietaryTags: ['kids'] },
+        ],
+        customQuestions: [
+          {
+            id: 'q-shuttle',
+            prompt: 'Shuttle pickup?',
+            type: 'choice',
+            required: true,
+            options: ['Grand Lobby 4:30pm', 'Self-drive'],
+          },
+        ],
+      };
+
+      mockPrismaClient.subEventRsvp = {
+        findMany: jest
+          .fn()
+          // 1st call: admin.service.update queries existing RSVPs for subEventId='se-1'
+          .mockResolvedValueOnce([
+            {
+              id: 'rsvp-1',
+              invitationCodeId: 'inv-1',
+              subEventId: 'se-1',
+              status: 'attending',
+              plusOneCount: 1,
+              dietaryNotes: 'No dairy',
+              mealSelections: ['m-salmon', 'm-kids'],
+              customAnswers: { 'q-shuttle': 'Hotel Lobby 4pm' },
+              plusOneNames: ['Sam Child'],
+            },
+          ])
+          // 2nd call: syncInvitationCodeFromDbRsvps queries updated RSVPs with subEvent included
+          .mockResolvedValueOnce([
+            {
+              id: 'rsvp-1',
+              invitationCodeId: 'inv-1',
+              subEventId: 'se-1',
+              status: 'attending',
+              plusOneCount: 1,
+              dietaryNotes: 'No dairy',
+              mealSelections: ['m-salmon', 'm-kids'],
+              customAnswers: { 'q-shuttle': 'Grand Lobby 4:30pm' },
+              plusOneNames: ['Sam Child'],
+              subEvent: updatedSubEventRecord,
+            },
+          ])
+          // 3rd call: admin.service.delete queries affected invitationCodeIds before deleting se-1
+          .mockResolvedValueOnce([{ invitationCodeId: 'inv-1' }])
+          // 4th call: syncInvitationCodeFromDbRsvps queries remaining RSVPs after se-1 cascaded
+          .mockResolvedValueOnce([]),
+        update: jest.fn().mockResolvedValue({}),
+      };
+      mockPrismaClient.invitationCode = {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'inv-1',
+            guestName: 'Alex Parent',
+            used: true,
+            usedAt: new Date('2026-06-01T00:00:00.000Z'),
+            plusOneAllocations: 1,
+            plusOneFirstName: 'Sam',
+            plusOneLastName: 'Child',
+            dietaryNotes: 'No dairy',
+            extraFields: { attendanceStatus: 'attending', mealSummary: 'Stale summary' },
+          },
+        ]),
+        update: jest.fn().mockImplementation(({ where, data }: any) =>
+          Promise.resolve({ id: where.id, ...data })
+        ),
+      };
+      mockPrismaClient.subEvent.update.mockImplementation(({ where, data }: any) =>
+        Promise.resolve({ id: where.id, ...data })
+      );
+
+      await service.update('se-1', {
+        title: 'Evening Reception',
+        mealOptions: [
+          { id: 'm-salmon', label: 'Citrus Salmon', dietaryTags: ['dairy-free'] },
+          { id: 'm-kids', label: 'Kids Mac & Cheese', dietaryTags: ['kids'] },
+        ],
+        customQuestions: [
+          {
+            id: 'q-shuttle',
+            prompt: 'Shuttle pickup?',
+            type: 'choice',
+            required: true,
+            options: ['Grand Lobby 4:30pm', 'Self-drive'],
+          },
+        ],
+        choiceRenames: {
+          'q-shuttle': {
+            'Hotel Lobby 4pm': 'Grand Lobby 4:30pm',
+          },
+        },
+      } as any);
+
+      expect(mockPrismaClient.subEvent.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'se-1' },
+          data: expect.not.objectContaining({ choiceRenames: expect.anything() }),
+        })
+      );
+      expect(mockPrismaClient.subEventRsvp.update).toHaveBeenCalledWith({
+        where: { id: 'rsvp-1' },
+        data: {
+          customAnswers: { 'q-shuttle': 'Grand Lobby 4:30pm' },
+        },
+      });
+      expect(mockPrismaClient.invitationCode.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'inv-1' },
+          data: expect.objectContaining({
+            extraFields: expect.objectContaining({
+              mealSummary:
+                'Alex Parent: Citrus Salmon (dairy-free); Sam Child: Kids Mac & Cheese (kids)',
+              customAnswersSummary: 'Shuttle pickup?: Grand Lobby 4:30pm',
+            }),
+          }),
+        })
+      );
+
+      // Deleting the sub-event resyncs affected invitations excluding the deleted sub-event
+      mockPrismaClient.invitationCode.update.mockClear();
+      mockPrismaClient.subEvent.delete.mockResolvedValue({ id: 'se-1' });
+
+      await service.delete('se-1');
+      expect(mockPrismaClient.subEvent.delete).toHaveBeenCalledWith({ where: { id: 'se-1' } });
+      expect(mockPrismaClient.invitationCode.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'inv-1' },
+          data: expect.objectContaining({
+            used: false,
+            extraFields: {},
+          }),
+        })
+      );
+    });
   });
 });

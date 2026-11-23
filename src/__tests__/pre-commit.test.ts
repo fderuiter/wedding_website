@@ -358,7 +358,7 @@ for (const file of process.argv.slice(2)) {
         'lint-staged'?: Record<string, string>;
       };
       expect(pkg['lint-staged']).toEqual({
-        '*.{js,jsx,ts,tsx,mjs,cjs}': 'eslint --fix',
+        '*.{js,jsx,ts,tsx,mjs,cjs}': 'eslint --fix --max-warnings=0',
       });
 
       // Wire real ESLint flat config and node_modules into tempDir to verify end-to-end lint-staged behavior

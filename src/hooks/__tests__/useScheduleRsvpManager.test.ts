@@ -591,4 +591,61 @@ describe('useScheduleRsvpManager', () => {
     expect(declinedState.customAnswers).toEqual({});
     expect(declinedState.plusOneNames).toEqual([]);
   });
+
+  it('shares companion full names across schedule cards and blocks blank companion names on meal events', async () => {
+    const multiCardEvents = [
+      {
+        id: 'se-welcome',
+        title: 'Welcome Drinks',
+        mealOptions: [],
+        customQuestions: [],
+        userRsvp: { status: 'pending' as const, plusOneCount: 0, dietaryNotes: '' },
+      },
+      {
+        id: 'se-dinner',
+        title: 'Plated Reception',
+        mealOptions: [{ id: 'm-1', label: 'Short Rib', dietaryTags: [] }],
+        customQuestions: [],
+        userRsvp: { status: 'pending' as const, plusOneCount: 0, dietaryNotes: '' },
+      },
+    ];
+
+    const { result } = renderHook(() =>
+      useScheduleRsvpManager({
+        initialEvents: multiCardEvents,
+        maxPlusOnes: 1,
+      })
+    );
+
+    // Attending Plated Reception with +1 and meals selected, but blank companion name -> blocked
+    act(() => {
+      result.current.updateRsvp('se-dinner', {
+        status: 'attending',
+        plusOneCount: 1,
+        mealSelections: ['m-1', 'm-1'],
+        plusOneNames: [''],
+      });
+    });
+
+    let dinnerOk = true;
+    await act(async () => {
+      dinnerOk = await result.current.submitSingle('se-dinner');
+    });
+    expect(dinnerOk).toBe(false);
+    expect(result.current.getRsvpState('se-dinner').error).toMatch(/companion|plus-one/i);
+    expect(global.fetch).not.toHaveBeenCalled();
+
+    // Entering companion name on Welcome Drinks propagates to Plated Reception
+    act(() => {
+      result.current.updateRsvp('se-welcome', {
+        status: 'attending',
+        plusOneCount: 1,
+        plusOneNames: ['Riley Companion'],
+      });
+    });
+
+    expect(result.current.getRsvpState('se-dinner').current.plusOneNames).toEqual([
+      'Riley Companion',
+    ]);
+  });
 });
