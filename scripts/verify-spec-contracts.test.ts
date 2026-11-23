@@ -612,4 +612,90 @@ export function isProtectedRoute() { return false; }
       'FEATURE_MODULES.md:6: Constant "RECIPIENT_CHUNK_SIZE" in src/features/broadcast/service.ts has value 250, expected 500',
     ]);
   });
+
+  it('enforces interactive demo runtime module, DEMO_STORAGE_KEY, and build:export coverage across ARCHITECTURE.md, docs/runtime-contract.md, and DEPLOYMENT.md', () => {
+    expect(verifySpecContracts(process.cwd()).errors).toEqual([]);
+
+    writeFixture(
+      tempDir,
+      'package.json',
+      JSON.stringify({ name: 'demo-spec-fixture', scripts: { 'build:export': 'node scripts/build-export.mjs' } }),
+    );
+    writeFixture(
+      tempDir,
+      'src/components/layout/RootLayoutClient.tsx',
+      'export default function RootLayoutClient() { return null; }\n',
+    );
+    writeFixture(
+      tempDir,
+      'src/components/demo/DemoContext.tsx',
+      'export function DemoProvider() { return null; }\n',
+    );
+    writeFixture(
+      tempDir,
+      'src/components/demo/DemoToolbar.tsx',
+      'export function DemoToolbar() { return null; }\n',
+    );
+    writeFixture(
+      tempDir,
+      'src/lib/demo/demoStore.ts',
+      "const DEMO_STORAGE_KEY = 'wedding_showcase_demo_v1';\nexport function hydrateDemoStateFromStorage() { return DEMO_STORAGE_KEY; }\n",
+    );
+    writeFixture(
+      tempDir,
+      'src/lib/demo/demoApiHandler.ts',
+      'export function installDemoFetchInterceptor() { return () => {}; }\n',
+    );
+    writeFixture(
+      tempDir,
+      'src/lib/sampleData/builder.ts',
+      'export function buildArchetypeSeedData() { return {}; }\n',
+    );
+    writeFixture(
+      tempDir,
+      'src/features/registry/components/SimulatedCardCheckout.tsx',
+      'export const SIMULATED_TEST_CARDS = [];\nexport function SimulatedCardCheckout() { return null; }\n',
+    );
+    writeFixture(
+      tempDir,
+      'src/app/admin/setup/page.tsx',
+      'export default function AdminSetupPage() { return null; }\n',
+    );
+
+    const completeSpecLines = [
+      '# Demo Runtime Spec',
+      '- Build with `npm run build:export`.',
+      '- Layout: `RootLayoutClient` in [src/components/layout/RootLayoutClient.tsx](src/components/layout/RootLayoutClient.tsx), `DemoProvider` in [src/components/demo/DemoContext.tsx](src/components/demo/DemoContext.tsx), and `DemoToolbar` in [src/components/demo/DemoToolbar.tsx](src/components/demo/DemoToolbar.tsx).',
+      '- Store: `wedding_showcase_demo_v1` via `hydrateDemoStateFromStorage` in [src/lib/demo/demoStore.ts](src/lib/demo/demoStore.ts) and `buildArchetypeSeedData` in [src/lib/sampleData/builder.ts](src/lib/sampleData/builder.ts).',
+      '- Interceptor & Checkout: `installDemoFetchInterceptor` in [src/lib/demo/demoApiHandler.ts](src/lib/demo/demoApiHandler.ts), `SimulatedCardCheckout` in [src/features/registry/components/SimulatedCardCheckout.tsx](src/features/registry/components/SimulatedCardCheckout.tsx), and `AdminSetupPage` in [src/app/admin/setup/page.tsx](src/app/admin/setup/page.tsx).',
+    ].join('\n');
+
+    writeFixture(tempDir, 'ARCHITECTURE.md', completeSpecLines);
+    writeFixture(
+      tempDir,
+      'docs/runtime-contract.md',
+      completeSpecLines.replace(/\]\(src\//g, '](../src/'),
+    );
+    writeFixture(
+      tempDir,
+      'DEPLOYMENT.md',
+      '# Incomplete Deployment Spec\nOmits demo runtime modules and storage key.\n',
+    );
+
+    const result = verifySpecContracts(tempDir, {
+      specFiles: ['ARCHITECTURE.md', 'docs/runtime-contract.md', 'DEPLOYMENT.md'],
+    });
+    expect(result.errors).toEqual([
+      'DEPLOYMENT.md: Interactive demo runtime module "src/components/layout/RootLayoutClient.tsx" is not documented in DEPLOYMENT.md',
+      'DEPLOYMENT.md: Interactive demo runtime module "src/components/demo/DemoContext.tsx" is not documented in DEPLOYMENT.md',
+      'DEPLOYMENT.md: Interactive demo runtime module "src/components/demo/DemoToolbar.tsx" is not documented in DEPLOYMENT.md',
+      'DEPLOYMENT.md: Interactive demo runtime module "src/lib/demo/demoStore.ts" is not documented in DEPLOYMENT.md',
+      'DEPLOYMENT.md: Interactive demo runtime module "src/lib/demo/demoApiHandler.ts" is not documented in DEPLOYMENT.md',
+      'DEPLOYMENT.md: Interactive demo runtime module "src/lib/sampleData/builder.ts" is not documented in DEPLOYMENT.md',
+      'DEPLOYMENT.md: Interactive demo runtime module "src/features/registry/components/SimulatedCardCheckout.tsx" is not documented in DEPLOYMENT.md',
+      'DEPLOYMENT.md: Interactive demo runtime module "src/app/admin/setup/page.tsx" is not documented in DEPLOYMENT.md',
+      'DEPLOYMENT.md: Demo storage key "wedding_showcase_demo_v1" from src/lib/demo/demoStore.ts is not documented in DEPLOYMENT.md',
+      'DEPLOYMENT.md: Static showcase export script "build:export" from package.json is not documented in DEPLOYMENT.md',
+    ]);
+  });
 });

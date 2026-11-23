@@ -90,3 +90,44 @@ export function stripBasePath(url: string, basePathOverride?: string): string {
   }
   return remainder.startsWith('/') ? remainder : `/${remainder}`;
 }
+
+export type ShowcaseRoute = '/' | '/api/' | '/storybook/';
+
+/**
+ * Resolves the parent showcase portal base path from `NEXT_PUBLIC_BASE_PATH`
+ * without introducing additional environment variables.
+ *
+ * Examples:
+ * - `''`, `'/'`, or `'/demo'` -> `''`
+ * - `'/wedding_website/demo'` -> `'/wedding_website'`
+ * - `'/org/preview/demo'` -> `'/org/preview'`
+ */
+export function getShowcasePortalBasePath(basePathOverride?: string): string {
+  const basePath =
+    basePathOverride !== undefined
+      ? normalizeBasePath(basePathOverride)
+      : getBasePath();
+
+  if (!basePath || basePath === '/demo') {
+    return '';
+  }
+
+  if (basePath.endsWith('/demo')) {
+    return basePath.slice(0, -'/demo'.length);
+  }
+
+  return basePath;
+}
+
+/**
+ * Builds a subpath-safe sibling showcase URL (`/`, `/api/`, or `/storybook/`)
+ * relative to the active `NEXT_PUBLIC_BASE_PATH` deployment prefix.
+ */
+export function resolveShowcasePath(
+  route: ShowcaseRoute,
+  basePathOverride?: string,
+): string {
+  const portalBase = getShowcasePortalBasePath(basePathOverride);
+  return `${portalBase}${route}`;
+}
+

@@ -37,7 +37,7 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
      npm run quality
      # or: npm run check:all
      ```
-     Executes all static checks, linters, documentation portal and Storybook static builds, and unit/integration tests via [scripts/check-quality.ts](../scripts/check-quality.ts) (see [AGENTS.md](../AGENTS.md) and [TESTING.md](TESTING.md) for details).
+     Executes all static checks, linters, documentation portal (`npm run docs:build`), Storybook (`npm run build-storybook`), and static HTML showcase (`npm run build:export`) builds, and unit/integration tests (`npm run test:cov`) via [scripts/check-quality.ts](../scripts/check-quality.ts) (see [AGENTS.md](../AGENTS.md) and [TESTING.md](TESTING.md) for details).
 
    - **Targeted Quality & Documentation Sync Commands:**
      - `npm run check:static` - Run the shared static and container configuration checks defined in [`scripts/check-quality.ts`](../scripts/check-quality.ts) (`--static`).

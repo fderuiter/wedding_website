@@ -1,7 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import { AccessibleExternalLink } from '@/components/ui/AccessibleExternalLink';
 import { Icon } from '@/components/ui/Icon';
+import { resolveShowcasePath } from '@/lib/basePath';
 import { ARCHETYPE_PRESETS, type ArchetypeId } from '@/lib/sampleData/archetypes';
 import { THEME_PRESET_KEYS, type ThemePreset } from '@/lib/theme/presets';
 import type { DemoPersona } from '@/lib/demo/demoStore';
@@ -23,6 +25,9 @@ const PRESET_LABELS: Record<ThemePreset, string> = {
   editorial: 'Editorial',
 };
 
+const SHOWCASE_LINK_CLASS =
+  'inline-flex items-center gap-1 min-h-[32px] min-w-[32px] px-2.5 py-1 rounded-md text-xs font-semibold border border-slate-300 dark:border-slate-600 bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 dark:focus-visible:ring-slate-100';
+
 export function DemoToolbar() {
   const demo = useOptionalDemo();
   const [copiedCode, setCopiedCode] = useState(false);
@@ -43,6 +48,9 @@ export function DemoToolbar() {
     resetDemo,
   } = demo;
 
+  const docsHref = resolveShowcasePath('/');
+  const apiHref = resolveShowcasePath('/api/');
+  const storybookHref = resolveShowcasePath('/storybook/');
   const sampleCode = ARCHETYPE_PRESETS[archetype]?.guests[0]?.code ?? 'SMITH2026';
 
   const handleCopySampleCode = async () => {
@@ -65,10 +73,44 @@ export function DemoToolbar() {
     >
       <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950">
               Interactive Showcase
             </span>
+            <nav
+              aria-label="Showcase navigation"
+              data-testid="demo-showcase-links"
+              className="inline-flex flex-wrap items-center gap-1.5"
+            >
+              <a
+                href={docsHref}
+                data-testid="demo-link-docs"
+                data-static-demo-bypass="true"
+                className={SHOWCASE_LINK_CLASS}
+              >
+                <Icon name="ArrowLeft" className="w-3.5 h-3.5" />
+                <span>Docs Portal</span>
+              </a>
+              <a
+                href={apiHref}
+                data-testid="demo-link-api"
+                data-static-demo-bypass="true"
+                className={SHOWCASE_LINK_CLASS}
+              >
+                <Icon name="Globe" className="w-3.5 h-3.5" />
+                <span>API Explorer</span>
+              </a>
+              <AccessibleExternalLink
+                href={storybookHref}
+                data-testid="demo-link-storybook"
+                data-static-demo-bypass="true"
+                showIcon
+                iconClassName="w-3.5 h-3.5 ml-0.5"
+                className={SHOWCASE_LINK_CLASS}
+              >
+                <span>Storybook</span>
+              </AccessibleExternalLink>
+            </nav>
             {isToolbarCollapsed && (
               <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
                 Role:{' '}
