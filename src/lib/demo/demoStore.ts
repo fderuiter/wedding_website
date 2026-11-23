@@ -365,9 +365,11 @@ export function resetDemoState(): void {
   emitChange();
 }
 
-export function getActiveArchetypeDataset(): ArchetypeDataset {
-  const current = state.datasets[state.archetype] ?? state.datasets.classic;
-  const activeSet = new Set(state.activeModules);
+export function getActiveArchetypeDataset(
+  targetState: DemoStoreState = state
+): ArchetypeDataset {
+  const current = targetState.datasets[targetState.archetype] ?? targetState.datasets.classic;
+  const activeSet = new Set(targetState.activeModules);
   return {
     registryItems: activeSet.has('registry')
       ? current.registryItems

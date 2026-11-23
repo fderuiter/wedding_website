@@ -231,13 +231,8 @@ function ActiveDemoProvider({ children }: { children: React.ReactNode }) {
   }, [pathname, queryClient, router, setPreviewConfig, toast]);
 
   const activeDataset = useMemo(() => {
-    return getActiveArchetypeDataset();
-  }, [
-    storeState.archetype,
-    storeState.activeModules,
-    storeState.datasets,
-    storeState.resetCounter,
-  ]);
+    return getActiveArchetypeDataset(storeState);
+  }, [storeState]);
 
   const contextValue = useMemo<DemoContextValue>(
     () => ({

@@ -485,7 +485,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
           .filter((u) => typeof u.invitationCodeId === 'string')
           .map((u) => [u.invitationCodeId as string, u])
       );
-      let updatedGuests: InvitationCodeDTO[] = [];
+      const updatedGuests: InvitationCodeDTO[] = [];
       mutateActiveDataset((current) => {
         const nextGuests = current.guests.map((g) => {
           const match = updateMap.get(g.id);
@@ -666,6 +666,10 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
       }));
       return jsonResponse({ success: true, data: attraction }, 201);
     }
+  }
+
+  if (path === '/api/admin/broadcast/history' && method === 'GET') {
+    return jsonResponse({ success: true, data: [] });
   }
 
   // Safe fallback for read-only admin overview widgets on static export
