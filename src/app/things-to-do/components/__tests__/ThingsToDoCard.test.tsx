@@ -150,4 +150,30 @@ describe('ThingsToDoCard', () => {
 
     expect(screen.queryByText('Directions')).not.toBeInTheDocument();
   });
+
+  it('displays distance from venue when both venue and attraction have valid non-zero coordinates', () => {
+    const hotelWithCoords: AttractionDTO = {
+      ...mockHotelAttraction,
+      latitude: 41.8998,
+      longitude: -87.6233,
+    };
+
+    const { rerender } = render(
+      <ThingsToDoCard
+        attraction={hotelWithCoords}
+        venueCoords={{ latitude: 41.8796, longitude: -87.6237 }}
+      />
+    );
+
+    expect(screen.getByTestId('venue-distance-badge')).toHaveTextContent('1.4 mi from venue');
+
+    // Hides badge when venue coordinates are (0, 0)
+    rerender(
+      <ThingsToDoCard
+        attraction={hotelWithCoords}
+        venueCoords={{ latitude: 0, longitude: 0 }}
+      />
+    );
+    expect(screen.queryByTestId('venue-distance-badge')).not.toBeInTheDocument();
+  });
 });

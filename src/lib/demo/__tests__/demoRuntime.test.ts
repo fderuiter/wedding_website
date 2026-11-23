@@ -607,6 +607,38 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
       expect(setupStatusPayload.initialized).toBe(true);
       expect(setupStatusPayload.setupCompleted).toBe(true);
 
+      expect((await window.fetch('/api/admin/geocode?q=a')).status).toBe(400);
+      const geocodeRes = await (
+        await window.fetch('/api/admin/geocode?q=Glasshouse%20Estate&limit=5')
+      ).json();
+      expect(geocodeRes.success).toBe(true);
+      expect(geocodeRes.data).toHaveLength(1);
+      expect(geocodeRes.data[0]).toMatchObject({
+        name: 'Glasshouse Estate',
+        city: 'Chicago',
+        state: 'IL',
+      });
+      expect(
+        (
+          await window.fetch('/api/admin/setup', {
+            method: 'POST',
+            body: JSON.stringify({
+              partner1Name: 'Alex',
+              partner2Name: 'Taylor',
+              venueName: 'Glasshouse Estate',
+              venueAddress: '123 Oak Ave',
+              venueCity: 'Chicago',
+              venueState: 'IL',
+              venueZip: '60601',
+              latitude: 41.8842,
+              longitude: -87.6324,
+            }),
+          })
+        ).status
+      ).toBe(200);
+      expect(getDemoState().configOverrides.venueAddress).toBe('123 Oak Ave');
+      expect(getDemoState().configOverrides.latitude).toBe(41.8842);
+
       const milestonesPayload = await (await window.fetch('/api/admin/onboarding-milestones')).json();
       expect(milestonesPayload.data.milestones).toHaveLength(5);
 

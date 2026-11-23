@@ -119,8 +119,16 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
       );
     }
     if (typeof body.venueName === 'string') overrides.venueName = body.venueName;
+    if (typeof body.venueAddress === 'string') overrides.venueAddress = body.venueAddress;
     if (typeof body.venueCity === 'string') overrides.venueCity = body.venueCity;
     if (typeof body.venueState === 'string') overrides.venueState = body.venueState;
+    if (typeof body.venueZip === 'string') overrides.venueZip = body.venueZip;
+    if (typeof body.latitude === 'number' && Number.isFinite(body.latitude)) {
+      overrides.latitude = body.latitude;
+    }
+    if (typeof body.longitude === 'number' && Number.isFinite(body.longitude)) {
+      overrides.longitude = body.longitude;
+    }
     if (typeof body.timezone === 'string') overrides.timezone = body.timezone;
     if (typeof body.contactEmail === 'string') overrides.contactEmail = body.contactEmail;
     if (
@@ -134,6 +142,57 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
     updateDemoConfigOverrides(overrides);
     setDemoSetupAuthenticated(true);
     return jsonResponse({ success: true });
+  }
+
+  if (path === '/api/admin/geocode' && method === 'GET') {
+    const q = (url.searchParams.get('q') || '').trim();
+    if (q.length < 2) {
+      return jsonResponse({ success: false, error: 'Search query is required.' }, 400);
+    }
+    const archetype = getDemoState().archetype;
+    const region =
+      archetype === 'destination'
+        ? {
+          streetAddress: '450 Ocean Drive',
+          city: 'Miami Beach',
+          state: 'FL',
+          zip: '33139',
+          latitude: 25.7743,
+          longitude: -80.1304,
+        }
+        : archetype === 'romantic'
+          ? {
+            streetAddress: '1120 Silverado Trail',
+            city: 'Napa',
+            state: 'CA',
+            zip: '94558',
+            latitude: 38.2975,
+            longitude: -122.2869,
+          }
+          : {
+            streetAddress: '123 Oak Ave',
+            city: 'Chicago',
+            state: 'IL',
+            zip: '60601',
+            latitude: 41.8842,
+            longitude: -87.6324,
+          };
+    return jsonResponse({
+      success: true,
+      data: [
+        {
+          displayName: `${q}, ${region.streetAddress}, ${region.city}, ${region.state} ${region.zip}, United States`,
+          name: q,
+          streetAddress: region.streetAddress,
+          city: region.city,
+          state: region.state,
+          zip: region.zip,
+          country: 'United States',
+          latitude: region.latitude,
+          longitude: region.longitude,
+        },
+      ],
+    });
   }
 
   // 2. Sample data status, seed, and purge

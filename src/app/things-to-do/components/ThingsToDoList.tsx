@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import ThingsToDoCard from './ThingsToDoCard';
+import type { VenueMapPin } from './ThingsToDoMap';
 import type { AttractionDTO } from '@/features/attractions';
 import { useFilter } from '@/hooks/useFilter';
 import { CategoryFilter } from '@/components/ui/CategoryFilter';
@@ -12,6 +13,7 @@ import { useOptionalDemo } from '@/components/demo/DemoContext';
 interface ThingsToDoListProps {
   attractions: AttractionDTO[];
   defaultCenter?: [number, number];
+  venue?: VenueMapPin | null;
 }
 
 const ThingsToDoMap = dynamic(() => import('./ThingsToDoMap'), {
@@ -19,7 +21,11 @@ const ThingsToDoMap = dynamic(() => import('./ThingsToDoMap'), {
   loading: () => <div className="bg-gray-200 dark:bg-gray-800 animate-pulse w-full h-full" />,
 });
 
-const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAttractions, defaultCenter }) => {
+const ThingsToDoList: React.FC<ThingsToDoListProps> = ({
+  attractions: initialAttractions,
+  defaultCenter,
+  venue,
+}) => {
   const demo = useOptionalDemo();
   const [draftAttractions, setDraftAttractions] = useState(initialAttractions);
   const attractions = demo?.isDemoMode ? demo.activeDataset.attractions : draftAttractions;
@@ -43,6 +49,50 @@ const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAtt
     }
   }, []);
 
+  let effectiveCenter = defaultCenter;
+  let effectiveVenue = venue;
+  if (demo?.isDemoMode) {
+    const overrideLat = demo.configOverrides.latitude;
+    const overrideLng = demo.configOverrides.longitude;
+    if (
+      typeof overrideLat === 'number' &&
+      typeof overrideLng === 'number' &&
+      Number.isFinite(overrideLat) &&
+      Number.isFinite(overrideLng) &&
+      (overrideLat !== 0 || overrideLng !== 0)
+    ) {
+      effectiveCenter = [overrideLat, overrideLng];
+      effectiveVenue = {
+        name: demo.configOverrides.venueName?.trim() || venue?.name || 'Wedding Venue',
+        address: demo.configOverrides.venueAddress?.trim() || venue?.address || '',
+        latitude: overrideLat,
+        longitude: overrideLng,
+      };
+    } else if (demo.archetype === 'destination') {
+      effectiveCenter = [25.7743, -80.1304];
+      effectiveVenue = {
+        name: 'Oceanview Palms Beachfront Pavilion',
+        address: '450 Ocean Drive, Miami Beach, FL 33139',
+        latitude: 25.7743,
+        longitude: -80.1304,
+      };
+    } else if (demo.archetype === 'romantic') {
+      effectiveCenter = [38.2975, -122.2869];
+      effectiveVenue = {
+        name: 'Willow Creek Botanical Arbor',
+        address: '1120 Silverado Trail, Napa, CA 94558',
+        latitude: 38.2975,
+        longitude: -122.2869,
+      };
+    }
+  }
+
+  const venueCoords = effectiveVenue
+    ? { latitude: effectiveVenue.latitude, longitude: effectiveVenue.longitude }
+    : effectiveCenter
+      ? { latitude: effectiveCenter[0], longitude: effectiveCenter[1] }
+      : undefined;
+
   return (
     <div>
       <div className="flex justify-center gap-2 mb-8 flex-wrap print:hidden">
@@ -56,7 +106,11 @@ const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAtt
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8" style={{ minHeight: '600px' }}>
         <div className="relative h-96 lg:h-full rounded-lg overflow-hidden shadow-lg print:hidden">
-          <ThingsToDoMap attractions={filteredAttractions} defaultCenter={defaultCenter} />
+          <ThingsToDoMap
+            attractions={filteredAttractions}
+            defaultCenter={effectiveCenter}
+            venue={effectiveVenue}
+          />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 print:grid-cols-2 print:overflow-visible">
           {filteredAttractions.length === 0 ? (
@@ -73,7 +127,11 @@ const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAtt
             </div>
           ) : (
             filteredAttractions.map((attraction) => (
-              <ThingsToDoCard key={attraction.id || attraction.name} attraction={attraction} />
+              <ThingsToDoCard
+                key={attraction.id || attraction.name}
+                attraction={attraction}
+                venueCoords={venueCoords}
+              />
             ))
           )}
         </div>
