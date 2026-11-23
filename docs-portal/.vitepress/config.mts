@@ -124,6 +124,11 @@ export default withMermaid(
     },
     mermaid: {
       theme: 'default'
+    },
+    vite: {
+      optimizeDeps: {
+        include: ['mermaid']
+      }
     }
   })
 );

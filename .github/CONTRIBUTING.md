@@ -53,7 +53,7 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
      - `npm run check:doc-sync` - Verify generated documentation (`public/openapi.json`, `ARCHITECTURE.md`, and `FEATURE_MODULES.md`) is synchronized with codebase schemas without drift.
      - `npm run docs:build` - Verify static VitePress documentation portal builds successfully.
      - `npm run build-storybook` - Verify static Storybook component showcase, story imports, and MSW mock handlers compile cleanly via Webpack.
-     - `npm run typecheck` (or `npm run type-check`) - Check TypeScript types across `tsconfig.json`, `tsconfig.test.json`, `tsconfig.e2e.json`, and `tsconfig.scripts.json` (production app, unit/integration tests and `src/mocks`, Playwright E2E specs, and `scripts/`).
+     - `npm run typecheck` (or `npm run type-check`) - Check TypeScript types across `tsconfig.json`, `tsconfig.build.json`, `tsconfig.test.json`, `tsconfig.e2e.json`, and `tsconfig.scripts.json` (workspace IDE project, isolated production app build, unit/integration tests and `src/mocks`, Playwright E2E specs, and `scripts/`).
      - `npm run lint` & `npm run lint:unused` - Run ESLint and Knip unused export analysis.
      - `npm test` - Run Jest unit and integration tests.
      - `npx playwright test` - Run Playwright E2E and smoke tests against the isolated `wedding_test` database (automatically initialized and seeded when `CI` and `TEST_CONTAINER` are unset; stop any running `npm run dev` on port `3000` first, or opt into `PLAYWRIGHT_REUSE_SERVER=true` only when the existing server targets `wedding_test` with aligned `GUEST_SESSION_SECRET`, `GUEST_PASSCODE`, and `ADMIN_PASSWORD` values).
@@ -120,7 +120,7 @@ All new utility functions placed in the global `src/utils/` folder must follow t
 
 ## Code Style
 
-* **TypeScript:** Strict mode (`strict`, `noUnusedLocals`, `noUnusedParameters`) is enforced across all four `tsconfig*.json` files. Explicitly define types and avoid `any`.
+* **TypeScript:** Strict mode (`strict`, `noUnusedLocals`, `noUnusedParameters`) is enforced across all five `tsconfig*.json` files. Explicitly define types and avoid `any`.
 * **React:** Functional components with Hooks are the way.
 * **Tailwind CSS:** Utility classes first. Avoid custom CSS unless absolutely necessary.
 * **Formatting & Imports (`eslint.config.mjs`):** Single quotes, 2-space indentation, semicolons, zero unused imports, no `require()` outside `.cjs`, and cross-feature imports strictly via `@/features/<domain>` public barrels are enforced as **errors** by `npm run lint` (use `npm run lint:fix` to auto-format).

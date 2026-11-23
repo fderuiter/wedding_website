@@ -11,7 +11,7 @@ describe('Production Boot Guest Session Secret Validation', () => {
   const valid32Secret = 'a-secure-guest-session-secret-32-chars-minimum!';
   const validGuestPasscode = 'custom-production-guest-passcode-2026';
 
-  function runEnvBoot(envOverrides: Record<string, string | undefined>) {
+  function runEnvBoot(envOverrides: Record<string, string | undefined>, extraArgs: string[] = []) {
     // Construct clean env object
     const cleanEnv: Record<string, string> = {
       PATH: process.env.PATH || '',
@@ -25,7 +25,7 @@ describe('Production Boot Guest Session Secret Validation', () => {
 
     return spawnSync(
       process.execPath,
-      ['--input-type=module', '-e', 'import("./src/env.ts")'],
+      ['--input-type=module', '-e', 'import("./src/env.ts")', ...extraArgs],
       {
         cwd: rootDir,
         env: cleanEnv as unknown as NodeJS.ProcessEnv,
@@ -216,6 +216,14 @@ describe('Production Boot Guest Session Secret Validation', () => {
         STATIC_EXPORT: 'true',
       });
       expect(exportRes.status).toBe(0);
+
+      const preflightRes = runEnvBoot(
+        {
+          NODE_ENV: 'production',
+        },
+        ['scripts/preflight-migration-summary.ts']
+      );
+      expect(preflightRes.status).toBe(0);
     });
   });
 

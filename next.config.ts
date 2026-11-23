@@ -44,6 +44,9 @@ const basePath = isStaticExport && rawBasePath && rawBasePath !== '/'
 const nextConfig: NextConfig = {
   // Support dual-mode build: output: 'standalone' by default, 'export' for static showcases
   output: isStaticExport ? 'export' : 'standalone',
+  typescript: {
+    tsconfigPath: './tsconfig.build.json',
+  },
   serverExternalPackages: ['sharp', 'heic-decode', 'libheif-js', 'pdfkit'],
   outputFileTracingIncludes: {
     '/api/admin/seating/export': [

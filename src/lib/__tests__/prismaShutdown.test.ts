@@ -49,7 +49,7 @@ describe('Prisma and pg.Pool graceful shutdown hooks', () => {
         $disconnect: mockDisconnect,
       })),
     }));
-    jest.doMock('../../env', () => ({
+    jest.doMock('@/env', () => ({
       env: {
         DATABASE_URL: 'postgresql://wedding:wedding123@localhost:5432/wedding_test',
         NODE_ENV: 'test',
@@ -126,7 +126,7 @@ describe('Prisma and pg.Pool graceful shutdown hooks', () => {
         $disconnect: mockDisconnect,
       })),
     }));
-    jest.doMock('../../env', () => ({
+    jest.doMock('@/env', () => ({
       env: {
         DATABASE_URL: 'postgresql://wedding:wedding123@localhost:5432/wedding_test',
         NODE_ENV: 'production',

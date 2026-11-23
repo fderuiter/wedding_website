@@ -10,6 +10,7 @@ function copyFixtureFiles(srcRoot: string, destRoot: string): void {
     'prisma.config.ts',
     'package.json',
     'tsconfig.json',
+    'tsconfig.build.json',
     'docker-compose.yml',
     'docker-compose.ci.yml',
     'eslint.config.mjs',
@@ -196,7 +197,8 @@ describe('verify-setup-guides contract check', () => {
       agentsPath,
       fs
         .readFileSync(agentsPath, 'utf8')
-        .replace('`jest.setup.js`, ', '')
+        .replace(/`jest\.setup\.js`, /g, '')
+        .replace('`**/*.stories.tsx`, ', '')
         .replace(
           '8. TypeScript Typecheck across all four project configs (`npm run typecheck`)\n9. ESLint Code Linting (`npm run lint`)\n10. Knip Unused Export Analysis (`npm run lint:unused`)\n11. Verify Migration Compatibility (`npm run lint:migrations`)',
           '8. Verify Migration Compatibility (`npm run lint:migrations`)\n9. TypeScript Typecheck across all four project configs (`npm run typecheck`)\n10. ESLint Code Linting (`npm run lint`)\n11. Knip Unused Export Analysis (`npm run lint:unused`)'
@@ -209,6 +211,7 @@ describe('verify-setup-guides contract check', () => {
         '.github/TESTING.md: Must report .env.test GUEST_PASSCODE value "build-fallback-guest-passcode"',
         expect.stringContaining('.github/TESTING.md: Must warn that scripts/test-standalone.mjs requires "npm run build"'),
         'AGENTS.md: Missing tsconfig.json exclude entry "jest.setup.js" in TypeScript Configuration Split section',
+        'AGENTS.md: Missing tsconfig.build.json exclude entry "**/*.stories.tsx" in TypeScript Configuration Split section',
         'AGENTS.md: Full Local Quality Gate section misorders check-quality.ts step "npm run lint:migrations"',
       ])
     );
