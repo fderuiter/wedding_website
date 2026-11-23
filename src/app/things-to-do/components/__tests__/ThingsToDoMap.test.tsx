@@ -1,6 +1,11 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import ThingsToDoMap, { calculateBoundsAndCentroid, createMapMarkerIcon } from '../ThingsToDoMap';
+import ThingsToDoMap, {
+  calculateBoundsAndCentroid,
+  createMapMarkerIcon,
+  createVenueMarkerIcon,
+  type VenueMapPin,
+} from '../ThingsToDoMap';
 import { useTheme } from '@/components/ThemeProvider';
 
 jest.mock('@/components/ThemeProvider', () => ({
@@ -280,5 +285,53 @@ describe('ThingsToDoMap', () => {
       window.matchMedia = prevMatchMedia;
       document.documentElement.className = '';
     }
+  });
+
+  it('filters out (0, 0) coordinates and renders empty map placeholder when no valid coordinates exist', () => {
+    const zeroAttractions = [
+      {
+        id: 'zero-1',
+        name: 'Zero Hotel',
+        description: 'Unresolved pin',
+        category: 'hotel',
+        latitude: 0,
+        longitude: 0,
+      },
+    ] as any;
+
+    render(
+      <ThingsToDoMap
+        attractions={zeroAttractions}
+        defaultCenter={[0, 0]}
+        venue={{ name: 'TBD Venue', latitude: 0, longitude: 0 }}
+      />
+    );
+
+    expect(screen.getByTestId('map-empty-placeholder')).toBeInTheDocument();
+    expect(screen.queryByTestId('map-container')).not.toBeInTheDocument();
+  });
+
+  it('plots a distinct Wedding Venue pin and includes it in bounds alongside attractions', () => {
+    const venueIcon = createVenueMarkerIcon('The Glasshouse');
+    expect(venueIcon.options.className).toBe('custom-venue-map-pin');
+    expect(venueIcon.options.iconSize).toEqual([44, 44]);
+
+    const venuePin: VenueMapPin = {
+      name: 'The Glasshouse',
+      address: '660 12th Ave, New York, NY 10019',
+      latitude: 45.2,
+      longitude: -90.2,
+    };
+
+    render(<ThingsToDoMap attractions={attractions} venue={venuePin} />);
+
+    const markers = screen.getAllByTestId('marker');
+    expect(markers).toHaveLength(attractions.length + 1);
+    expect(markers[0]).toHaveAttribute('data-icon-class', 'custom-venue-map-pin');
+    expect(screen.getByText('Wedding Venue')).toBeInTheDocument();
+    expect(screen.getByText('The Glasshouse')).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Directions to The Glasshouse (opens in a new tab)' })
+    ).toHaveAttribute('href', 'https://www.google.com/maps/dir/?api=1&destination=45.2,-90.2');
   });
 });
