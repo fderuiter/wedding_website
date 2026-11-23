@@ -1,9 +1,13 @@
 import { InvitationCodeDTO } from '@/features/registry';
 import {
   formatCompanionSeatLabel,
-  getGuestPartySize,
+  getDietaryBadges,
   getGuestsHeadcount,
+  getInvitationPartyMembers,
+  isLandmarkTableShape,
   isOneSidedTableShape,
+  type DietaryBadgeInfo,
+  type PartyMemberAttendeeInfo,
 } from './utils/seatingHelpers';
 
 interface SeatPositionOptions {
@@ -25,12 +29,19 @@ interface SeatCoordinates {
 export interface ResolvedSeatOccupant {
   seatNumber: number;
   guest: InvitationCodeDTO;
-  isCompanion: boolean;
-  companionIndex: number;
+  attendeeName: string;
   displayName: string;
+  isCompanion: boolean;
+  isPlusOne: boolean;
+  companionIndex: number;
+  plusOneIndex: number | null;
   partySize: number;
   primarySeatNumber: number;
+  mealChoice: string | null;
+  dietaryBadges: DietaryBadgeInfo[];
 }
+
+export type ResolvedSeatEntry = ResolvedSeatOccupant;
 
 function findContiguousBlock(
   occupied: Set<number>,
@@ -64,12 +75,60 @@ function takeNextOpenSeat(occupied: Set<number>, startSearchAt: number = 1): num
   return seat;
 }
 
+function resolvePartyMembersWithFallback(guest: InvitationCodeDTO): PartyMemberAttendeeInfo[] {
+  const members = getInvitationPartyMembers(guest);
+  if (members.length > 0) {
+    return members;
+  }
+  return [
+    {
+      attendeeName: (guest.guestName || 'Guest').trim() || 'Guest',
+      isPlusOne: false,
+      plusOneIndex: null,
+      mealChoice: null,
+      dietaryBadges: getDietaryBadges(guest.dietaryNotes, guest.extraFields, guest.partyTags),
+    },
+  ];
+}
+
+function buildSeatOccupant(
+  guest: InvitationCodeDTO,
+  seatNumber: number,
+  primarySeatNumber: number,
+  members: PartyMemberAttendeeInfo[],
+  memberIndex: number
+): ResolvedSeatOccupant {
+  const member = members[memberIndex] || members[0];
+  const isCompanion = memberIndex > 0;
+  const companionIndex = isCompanion ? memberIndex - 1 : -1;
+  const displayName = isCompanion
+    ? formatCompanionSeatLabel(guest, companionIndex)
+    : guest.guestName;
+
+  return {
+    seatNumber,
+    guest,
+    attendeeName: member.attendeeName,
+    displayName,
+    isCompanion,
+    isPlusOne: isCompanion,
+    companionIndex,
+    plusOneIndex: isCompanion ? companionIndex : null,
+    partySize: members.length,
+    primarySeatNumber,
+    mealChoice: member.mealChoice,
+    dietaryBadges: member.dietaryBadges,
+  };
+}
+
 /**
- * Resolves seated guests and their plus-one companions onto 1-indexed chairs.
+ * Resolves seated guests and their plus-one companions onto distinct 1-indexed chairs.
  *
+ * - Returns an empty map for zero-capacity landmarks (`capacity <= 0`).
  * - Clamps out-of-range explicit `seatNumber > capacity` into `1..capacity` when open chairs exist.
  * - Preserves valid explicit primary `seatNumber` values in `1..capacity` first (first-seen wins on collisions).
- * - Allocates contiguous companion chairs (`primarySeat + 1..`) when unoccupied, falling back to open chairs in `1..capacity`.
+ * - Honors valid `plusOneSeatNumbers` in `1..capacity` when unoccupied, otherwise prefers contiguous chairs
+ *   after `primarySeat` (`primarySeat + 1..`), falling back to open chairs in `1..capacity`.
  * - Places unnumbered or clamped parties into contiguous blocks in `1..capacity` before fragmented or overflow seats.
  */
 export function resolveDetailedSeatAssignments(
@@ -77,7 +136,7 @@ export function resolveDetailedSeatAssignments(
   capacity: number
 ): Map<number, ResolvedSeatOccupant> {
   const detailedMap = new Map<number, ResolvedSeatOccupant>();
-  if (!guests || guests.length === 0) {
+  if (!guests || guests.length === 0 || capacity <= 0) {
     return detailedMap;
   }
 
@@ -89,14 +148,20 @@ export function resolveDetailedSeatAssignments(
   interface PlacedPrimaryEntry {
     guest: InvitationCodeDTO;
     primarySeat: number;
-    partySize: number;
+    members: PartyMemberAttendeeInfo[];
+  }
+
+  interface UnplacedPartyEntry {
+    guest: InvitationCodeDTO;
+    members: PartyMemberAttendeeInfo[];
   }
 
   const placedExplicit: PlacedPrimaryEntry[] = [];
-  const unplacedGuests: InvitationCodeDTO[] = [];
+  const unplacedParties: UnplacedPartyEntry[] = [];
 
   // Pass 1a: Claim valid explicit primary seats within 1..safeCapacity
   for (const guest of guests) {
+    const members = resolvePartyMembersWithFallback(guest);
     const explicitSeat = guest.seatNumber;
     if (
       typeof explicitSeat === 'number' &&
@@ -105,50 +170,61 @@ export function resolveDetailedSeatAssignments(
       explicitSeat <= safeCapacity &&
       !occupied.has(explicitSeat)
     ) {
-      const partySize = getGuestPartySize(guest);
       occupied.add(explicitSeat);
-      detailedMap.set(explicitSeat, {
-        seatNumber: explicitSeat,
-        guest,
-        isCompanion: false,
-        companionIndex: -1,
-        displayName: guest.guestName,
-        partySize,
-        primarySeatNumber: explicitSeat,
-      });
-      placedExplicit.push({ guest, primarySeat: explicitSeat, partySize });
+      detailedMap.set(
+        explicitSeat,
+        buildSeatOccupant(guest, explicitSeat, explicitSeat, members, 0)
+      );
+      placedExplicit.push({ guest, primarySeat: explicitSeat, members });
     } else {
-      unplacedGuests.push(guest);
+      unplacedParties.push({ guest, members });
     }
   }
 
-  // Pass 1b: Allocate companion chairs for Pass 1a parties (preferring contiguous chairs after primarySeat)
+  // Pass 1b: Allocate companion chairs for Pass 1a parties (honoring explicit plusOneSeatNumbers, else contiguous)
   for (const entry of placedExplicit) {
-    const companionCount = entry.partySize - 1;
+    const companionCount = entry.members.length - 1;
+    const explicitPlusOneSeats = Array.isArray(entry.guest.plusOneSeatNumbers)
+      ? entry.guest.plusOneSeatNumbers
+      : [];
+
     for (let cIdx = 0; cIdx < companionCount; cIdx++) {
+      const explicitCompanionSeat = explicitPlusOneSeats[cIdx];
       const preferredSeat = entry.primarySeat + cIdx + 1;
       let assignedCompanionSeat: number;
-      if (preferredSeat <= safeCapacity && !occupied.has(preferredSeat)) {
+
+      if (
+        typeof explicitCompanionSeat === 'number' &&
+        Number.isInteger(explicitCompanionSeat) &&
+        explicitCompanionSeat >= 1 &&
+        explicitCompanionSeat <= safeCapacity &&
+        !occupied.has(explicitCompanionSeat)
+      ) {
+        occupied.add(explicitCompanionSeat);
+        assignedCompanionSeat = explicitCompanionSeat;
+      } else if (preferredSeat <= safeCapacity && !occupied.has(preferredSeat)) {
         occupied.add(preferredSeat);
         assignedCompanionSeat = preferredSeat;
       } else {
         assignedCompanionSeat = takeNextOpenSeat(occupied, 1);
       }
-      detailedMap.set(assignedCompanionSeat, {
-        seatNumber: assignedCompanionSeat,
-        guest: entry.guest,
-        isCompanion: true,
-        companionIndex: cIdx,
-        displayName: formatCompanionSeatLabel(entry.guest, cIdx),
-        partySize: entry.partySize,
-        primarySeatNumber: entry.primarySeat,
-      });
+
+      detailedMap.set(
+        assignedCompanionSeat,
+        buildSeatOccupant(
+          entry.guest,
+          assignedCompanionSeat,
+          entry.primarySeat,
+          entry.members,
+          cIdx + 1
+        )
+      );
     }
   }
 
   // Pass 2: Place unnumbered, colliding, or clamped (seatNumber > capacity) parties
-  for (const guest of unplacedGuests) {
-    const partySize = getGuestPartySize(guest);
+  for (const { guest, members } of unplacedParties) {
+    const partySize = members.length;
     const contiguousStart =
       partySize > 1
         ? (findContiguousBlock(occupied, partySize, safeCapacity) ??
@@ -159,36 +235,26 @@ export function resolveDetailedSeatAssignments(
       for (let offset = 0; offset < partySize; offset++) {
         const seatNum = contiguousStart + offset;
         occupied.add(seatNum);
-        const isCompanion = offset > 0;
-        const cIdx = offset - 1;
-        detailedMap.set(seatNum, {
-          seatNumber: seatNum,
-          guest,
-          isCompanion,
-          companionIndex: isCompanion ? cIdx : -1,
-          displayName: isCompanion ? formatCompanionSeatLabel(guest, cIdx) : guest.guestName,
-          partySize,
-          primarySeatNumber: contiguousStart,
-        });
+        detailedMap.set(
+          seatNum,
+          buildSeatOccupant(guest, seatNum, contiguousStart, members, offset)
+        );
       }
     } else {
       const primarySeat = takeNextOpenSeat(occupied, 1);
-      detailedMap.set(primarySeat, {
-        seatNumber: primarySeat,
-        guest,
-        isCompanion: false,
-        companionIndex: -1,
-        displayName: guest.guestName,
-        partySize,
-        primarySeatNumber: primarySeat,
-      });
+      detailedMap.set(
+        primarySeat,
+        buildSeatOccupant(guest, primarySeat, primarySeat, members, 0)
+      );
 
       for (let cIdx = 0; cIdx < partySize - 1; cIdx++) {
-        const companionSeat = takeNextOpenSeat(occupied, primarySeat + 1 <= safeCapacity ? primarySeat + 1 : 1);
+        const companionSeat = takeNextOpenSeat(
+          occupied,
+          primarySeat + 1 <= safeCapacity ? primarySeat + 1 : 1
+        );
         const boundedCompanionSeat =
           companionSeat > safeCapacity
             ? (() => {
-              // Check if an earlier seat in 1..safeCapacity is still open before overflowing
               for (let s = 1; s <= safeCapacity; s++) {
                 if (!occupied.has(s)) {
                   occupied.delete(companionSeat);
@@ -200,15 +266,10 @@ export function resolveDetailedSeatAssignments(
             })()
             : companionSeat;
 
-        detailedMap.set(boundedCompanionSeat, {
-          seatNumber: boundedCompanionSeat,
-          guest,
-          isCompanion: true,
-          companionIndex: cIdx,
-          displayName: formatCompanionSeatLabel(guest, cIdx),
-          partySize,
-          primarySeatNumber: primarySeat,
-        });
+        detailedMap.set(
+          boundedCompanionSeat,
+          buildSeatOccupant(guest, boundedCompanionSeat, primarySeat, members, cIdx + 1)
+        );
       }
     }
   }
@@ -256,7 +317,7 @@ export function repackTableSeatNumbers(
 
 /**
  * Computes consistent 2D center coordinates for a 1-indexed seat around a round, 1-sided (head/sweetheart),
- * or 4-sided rectangular/square table.
+ * or 4-sided rectangular/square table. Landmarks do not place seats.
  */
 export function computeSeatPosition({
   shape,
@@ -268,6 +329,13 @@ export function computeSeatPosition({
   originX = 0,
   originY = 0,
 }: SeatPositionOptions): SeatCoordinates {
+  if (isLandmarkTableShape(shape) || capacity <= 0) {
+    return {
+      x: originX + width / 2,
+      y: originY + height / 2,
+    };
+  }
+
   const safeCapacity = Math.max(1, capacity);
   const shapeLower = (shape || 'round').toLowerCase();
 

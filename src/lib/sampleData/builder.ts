@@ -331,6 +331,7 @@ function createSeedDataForArchetype(archetypeId: ArchetypeId): ArchetypeSeedData
       usedAt: null,
       tableId,
       seatNumber: guest.seatNumber ?? null,
+      plusOneSeatNumbers: [],
       seatTableName: guest.seatTableName,
       isSample: true,
       createdAt: guestStamp,
