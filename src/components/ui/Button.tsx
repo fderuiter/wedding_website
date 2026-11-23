@@ -6,6 +6,7 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'outline';
   size?: 'sm' | 'md' | 'lg';
   pressed?: boolean;
+  srContext?: string;
 }
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
@@ -15,6 +16,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       variant = 'primary',
       size = 'md',
       pressed,
+      srContext,
       style,
       disabled,
       type,
@@ -103,6 +105,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           />
         )}
         {children}
+        {srContext ? <span className="sr-only">{` ${srContext}`}</span> : null}
       </button>
     );
   }

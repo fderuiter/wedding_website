@@ -164,7 +164,9 @@ describe('Capability-Aware Dual-Mode Fund Checkout UI', () => {
 
     // Direct transfer details (handle, link, QR code) are visible
     expect(screen.getByText('@couple-honeymoon')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Open payment link for Venmo/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: /Open Link for Venmo \(opens in a new tab\)/i })
+    ).toBeInTheDocument();
     expect(screen.getByLabelText(/QR code to pay via Venmo/i)).toBeInTheDocument();
 
     // No mode selector, no Stripe payment notice, and no card inputs

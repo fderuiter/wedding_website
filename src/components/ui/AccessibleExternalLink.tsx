@@ -8,6 +8,7 @@ export interface AccessibleExternalLinkProps
   showIcon?: boolean;
   iconClassName?: string;
   iconSize?: number | string;
+  srContext?: string;
   srText?: string;
 }
 
@@ -23,6 +24,7 @@ export const AccessibleExternalLink = React.forwardRef<
       showIcon = false,
       iconClassName,
       iconSize,
+      srContext,
       srText = '(opens in a new tab)',
       'aria-label': ariaLabel,
       ...props
@@ -56,7 +58,9 @@ export const AccessibleExternalLink = React.forwardRef<
             className={cn(iconClassName || 'w-4 h-4 ml-1')}
           />
         )}{!computedAriaLabel && (
-          <span className="sr-only"> {srText}</span>
+          <span className="sr-only">
+            {srContext ? ` ${srContext} ${srText}` : ` ${srText}`}
+          </span>
         )}</a>
     );
   }

@@ -257,7 +257,7 @@ export const WeddingPartyCard = React.forwardRef<HTMLDivElement, WeddingPartyCar
               <Button
                 variant="outline"
                 size="sm"
-                aria-label={`Move ${member.name || 'member'} up`}
+                srContext={member.name || 'member'}
                 disabled={disableMoveUp || isTemp}
                 onClick={() => onMove('up')}
               >
@@ -266,7 +266,7 @@ export const WeddingPartyCard = React.forwardRef<HTMLDivElement, WeddingPartyCar
               <Button
                 variant="outline"
                 size="sm"
-                aria-label={`Move ${member.name || 'member'} down`}
+                srContext={member.name || 'member'}
                 disabled={disableMoveDown || isTemp}
                 onClick={() => onMove('down')}
               >
