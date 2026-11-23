@@ -10,6 +10,7 @@ import {
   parseDockerfileEnvKeys,
   parseRuntimeContractTables,
   scanProcessEnvFromSource,
+  validateConfigSiteOverrideParity,
   validateProviderRunbookScope,
   validateRuntimeContract,
   verifyEnvDocs,
@@ -341,6 +342,90 @@ describe('AST-Based Environment Documentation Validation Parser', () => {
           expect.stringContaining('Classification mismatch for GUEST_SESSION_SECRET'),
           expect.stringContaining('Default value mismatch for HISTORY_VERSION_LIMIT'),
           expect.stringContaining('Stale or unrecognized variable STALE_REMOVED_VAR'),
+        ])
+      );
+    });
+
+    it('enforces RUN_MIGRATIONS=1, E2E_TEST fallback blocklist warnings, synced brideName/groomName targets, and empty-string SITE_* warnings', () => {
+      const liveRuntimeContract = fs.readFileSync(
+        path.join(process.cwd(), 'docs/runtime-contract.md'),
+        'utf8'
+      );
+      const liveEnvContent = fs.readFileSync(path.join(process.cwd(), 'src/env.ts'), 'utf8');
+      const liveConfigContent = fs.readFileSync(
+        path.join(process.cwd(), 'src/lib/config.ts'),
+        'utf8'
+      );
+      const liveSpecs = extractEnvSchemaSpecs(liveEnvContent);
+      const { keys: liveOperatorKeys, sources: liveSources } = collectOperatorEnvKeys(
+        process.cwd()
+      );
+
+      expect(
+        validateRuntimeContract(liveRuntimeContract, liveOperatorKeys, liveSpecs, liveSources)
+      ).toEqual([]);
+      expect(validateConfigSiteOverrideParity(liveConfigContent, liveRuntimeContract)).toEqual([]);
+
+      const regressedContract = liveRuntimeContract
+        .replace(/RUN_MIGRATIONS=1/g, 'RUN_MIGRATIONS=true')
+        .replace(/`1`/g, '`true`')
+        .replace(/E2E_FALLBACK_\*/g, 'REDACTED_TOKEN')
+        .replace(/fallback-secret/gi, 'test-mode')
+        .replace(/blocklist(?:ed|s)?/gi, 'checked')
+        .replace(/`partner1Name`, `brideName`/g, '`partner1Name`')
+        .replace(/`partner2Name`, `groomName`/g, '`partner2Name`')
+        .replace(/trimmed via `readNonEmptySiteEnv`/g, 'evaluated directly')
+        .replace(/blank\/whitespace values are ignored/g, 'empty strings (`""`) fail');
+
+      const contractErrors = validateRuntimeContract(
+        regressedContract,
+        liveOperatorKeys,
+        liveSpecs,
+        liveSources
+      );
+      expect(contractErrors).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('Incomplete RUN_MIGRATIONS contract in docs/runtime-contract.md'),
+          expect.stringContaining('Incomplete E2E_TEST security warning in docs/runtime-contract.md'),
+          expect.stringContaining(
+            'Target AppConfig field mismatch for SITE_PARTNER1_NAME in docs/runtime-contract.md: expected [partner1Name, brideName], missing [brideName]'
+          ),
+          expect.stringContaining(
+            'Target AppConfig field mismatch for SITE_PARTNER2_NAME in docs/runtime-contract.md: expected [partner2Name, groomName], missing [groomName]'
+          ),
+          expect.stringContaining(
+            'Outdated validation contract for SITE_WEDDING_DATE in docs/runtime-contract.md'
+          ),
+          expect.stringContaining(
+            'Outdated validation contract for SITE_LATITUDE in docs/runtime-contract.md'
+          ),
+          expect.stringContaining(
+            'Outdated validation contract for SITE_LONGITUDE in docs/runtime-contract.md'
+          ),
+        ])
+      );
+
+      const configParityErrors = validateConfigSiteOverrideParity(
+        liveConfigContent,
+        regressedContract
+      );
+      expect(configParityErrors).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining(
+            'docs/runtime-contract.md: SITE_PARTNER1_NAME must list synced `brideName` target field from src/lib/config.ts'
+          ),
+          expect.stringContaining(
+            'docs/runtime-contract.md: SITE_PARTNER2_NAME must list synced `groomName` target field from src/lib/config.ts'
+          ),
+          expect.stringContaining(
+            'docs/runtime-contract.md: SITE_WEDDING_DATE uses readNonEmptySiteEnv in src/lib/config.ts'
+          ),
+          expect.stringContaining(
+            'docs/runtime-contract.md: SITE_LATITUDE uses readNonEmptySiteEnv in src/lib/config.ts'
+          ),
+          expect.stringContaining(
+            'docs/runtime-contract.md: SITE_LONGITUDE uses readNonEmptySiteEnv in src/lib/config.ts'
+          ),
         ])
       );
     });

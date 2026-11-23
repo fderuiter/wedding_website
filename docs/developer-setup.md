@@ -31,7 +31,7 @@ Before installing the application, verify that your machine meets the minimum sy
    npm ci
    ```
 
-   The `postinstall` lifecycle hook automatically runs `prisma generate` to compile the Prisma Client.
+   The `postinstall` lifecycle hook automatically runs `prisma generate` to compile the Prisma Client and records `node_modules/.package-lock-hash` so the first test run skips redundant dependency installation.
 
 ---
 
@@ -147,7 +147,7 @@ If you start `npm run dev` with an **unseeded** database, navigating to `http://
 
 Before opening a pull request, run the shared quality workflow (`npm run check:static` for fast static checks or `npm run quality` for the full pre-push suite). Rather than duplicating test, linting, and agent rules here, refer to each authoritative guide:
 
-- **[Testing Strategy](../.github/TESTING.md)**: Jest unit/integration tests (`npm test`), `wedding_test` pretest database isolation, Playwright E2E (`npm run test:e2e`), WCAG 2.2 AA accessibility audits (`npm run test:a11y`), and standalone/container smoke tests.
+- **[Testing Strategy](../.github/TESTING.md)**: Fast cached local Jest unit/integration tests (`npm test`), coverage threshold verification (`npm run test:cov`), `wedding_test` pretest database isolation, Playwright E2E (`npm run test:e2e`), WCAG 2.2 AA accessibility audits (`npm run test:a11y`), and standalone/container smoke tests.
 - **[Contribution Guidelines](../.github/CONTRIBUTING.md)**: Feature module scaffolding (`npm run scaffold`), ESLint/Knip rules, `.githooks/pre-commit` workflow, and documentation synchronization (`npm run check:doc-sync`).
 - **[Agent & Architecture Guidelines](../AGENTS.md)**: Module boundaries, the five-file TypeScript configuration split (`npm run typecheck`), and non-interactive verification workflows.
 - **[Application Runtime Contract](./runtime-contract.md)** & **[Deployment Strategy](../DEPLOYMENT.md)**: Canonical environment variable matrix, persisted `prisma/schema.prisma` entities, and cloud hosting recipes.

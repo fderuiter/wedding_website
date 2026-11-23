@@ -142,10 +142,8 @@ WHERE c."invitationCodeId" IS NOT NULL
   AND NOT EXISTS (SELECT 1 FROM "InvitationCode" ic WHERE ic."id" = c."invitationCodeId");
 
 -- AlterTable
-ALTER TABLE "AppConfig"
-  ALTER COLUMN "weddingDate" SET DEFAULT CURRENT_TIMESTAMP,
-  ALTER COLUMN "seoKeywords" SET DEFAULT '{{partner1Name}} and {{partner2Name}}''s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{partner1Name}} and {{partner2Name}} registry, wedding details, wedding ceremony, wedding reception',
-  ALTER COLUMN "updatedAt" DROP DEFAULT;
+ALTER TABLE "AppConfig" ALTER COLUMN "seoKeywords" SET DEFAULT '{{partner1Name}} and {{partner2Name}}''s wedding, wedding website, {{venueName}} wedding, {{venueCity}} {{venueState}} wedding, {{partner1Name}} and {{partner2Name}} registry, wedding details, wedding ceremony, wedding reception',
+ALTER COLUMN "updatedAt" DROP DEFAULT;
 
 -- AlterTable
 ALTER TABLE "Attraction" ALTER COLUMN "updatedAt" DROP DEFAULT;
@@ -177,7 +175,7 @@ ALTER TABLE "WeddingPartyMember" ALTER COLUMN "updatedAt" DROP DEFAULT;
 -- CreateIndex
 CREATE INDEX IF NOT EXISTS "SnapshotVersion_entityType_entityId_createdAt_idx" ON "SnapshotVersion"("entityType", "entityId", "createdAt" DESC);
 
--- AddForeignKey (idempotent across overlapping schema reconciliation migrations)
+-- AddForeignKey
 DO $$
 BEGIN
   IF NOT EXISTS (

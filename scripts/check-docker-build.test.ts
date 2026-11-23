@@ -28,8 +28,20 @@ function writeValidFixtureWorkspace(targetDir: string): void {
         name: 'wedding-website-fixture',
         private: true,
         engines: {
-          node: '^22.12.0',
+          node: '22.x',
           npm: '^10.9.0',
+        },
+        devEngines: {
+          runtime: {
+            name: 'node',
+            version: '^22.12.0',
+            onFail: 'error',
+          },
+          packageManager: {
+            name: 'npm',
+            version: '^10.9.0',
+            onFail: 'error',
+          },
         },
       },
       null,
@@ -77,6 +89,7 @@ function writeValidFixtureWorkspace(targetDir: string): void {
       'COPY --from=base /usr/local/bin/node /usr/local/bin/node',
       'COPY --from=prisma-cli /opt/prisma-cli /opt/prisma-cli',
       'COPY --from=builder /app/prisma.config.ts ./prisma.config.ts',
+      'COPY --from=builder /app/scripts/generate-password-hash.mjs ./scripts/generate-password-hash.mjs',
       'RUN ln -sf /usr/local/bin/prisma /app/node_modules/.bin/prisma && \\',
       '    find / -xdev -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true',
       'HEALTHCHECK CMD node -e "fetch(\'http://127.0.0.1:3000/api/live\')"',
@@ -103,6 +116,8 @@ function writeValidFixtureWorkspace(targetDir: string): void {
       '      context: .',
       '  app:',
       '    image: wedding-website:latest',
+      '    init: true',
+      '    stop_grace_period: 15s',
       '    build:',
       '      context: .',
       '',
@@ -154,7 +169,7 @@ function writeValidFixtureWorkspace(targetDir: string): void {
     [
       '#!/bin/sh',
       'export NPM_CONFIG_UPDATE_NOTIFIER=false',
-      'if [ "$RUN_MIGRATIONS" = "true" ]; then',
+      'if [ "$RUN_MIGRATIONS" = "true" ] || [ "$RUN_MIGRATIONS" = "1" ]; then',
       '  ./node_modules/.bin/prisma migrate deploy',
       'fi',
       'exec "$@"',
@@ -698,6 +713,117 @@ describe('check-docker-build', () => {
     expect(checkDockerBuild(tempDir, { requireStandalone: true })).toEqual({ violations: [] });
   });
 
+  it('rejects devEngines drift, /opt/prisma-cli under /app, broad /app/scripts copy, missing RUN_MIGRATIONS=1, and short stop_grace_period', () => {
+    fs.writeFileSync(
+      path.join(tempDir, 'package.json'),
+      `${JSON.stringify(
+        {
+          name: 'wedding-website-fixture',
+          private: true,
+          engines: {
+            node: '^22.12.0',
+            npm: '^9.0.0',
+          },
+          devEngines: {
+            runtime: {
+              name: 'node',
+              version: '^22.0.0',
+              onFail: 'warn',
+            },
+            packageManager: {
+              name: 'npm',
+              version: '^9.0.0',
+              onFail: 'warn',
+            },
+          },
+        },
+        null,
+        2
+      )}\n`
+    );
+
+    const dockerfilePath = path.join(tempDir, 'Dockerfile');
+    fs.writeFileSync(
+      dockerfilePath,
+      fs
+        .readFileSync(dockerfilePath, 'utf8')
+        .replace(
+          'COPY --from=prisma-cli /opt/prisma-cli /opt/prisma-cli',
+          'COPY --from=prisma-cli /opt/prisma-cli ./prisma-cli'
+        )
+        .replace(
+          'COPY --from=builder /app/scripts/generate-password-hash.mjs ./scripts/generate-password-hash.mjs',
+          'COPY --from=builder /app/scripts ./scripts'
+        )
+    );
+
+    const composePath = path.join(tempDir, 'docker-compose.yml');
+    fs.writeFileSync(
+      composePath,
+      fs
+        .readFileSync(composePath, 'utf8')
+        .replace('    init: true\n', '')
+        .replace('    stop_grace_period: 15s', '    stop_grace_period: 5s')
+    );
+
+    const entrypointPath = path.join(tempDir, 'docker-entrypoint.sh');
+    fs.writeFileSync(
+      entrypointPath,
+      fs
+        .readFileSync(entrypointPath, 'utf8')
+        .replace(
+          'if [ "$RUN_MIGRATIONS" = "true" ] || [ "$RUN_MIGRATIONS" = "1" ]; then',
+          'if [ "$RUN_MIGRATIONS" = "true" ]; then'
+        )
+    );
+
+    const { violations } = checkDockerBuild(tempDir);
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filePath: 'package.json',
+          imageRef: 'engines.npm',
+        }),
+        expect.objectContaining({
+          filePath: 'package.json',
+          imageRef: 'devEngines.runtime',
+        }),
+        expect.objectContaining({
+          filePath: 'package.json',
+          imageRef: 'devEngines.packageManager',
+        }),
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: '/opt/prisma-cli',
+        }),
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: '/app/prisma-cli',
+        }),
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: 'scripts/generate-password-hash.mjs',
+        }),
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: '/app/scripts',
+        }),
+        expect.objectContaining({
+          filePath: 'docker-compose.yml',
+          imageRef: 'app.init',
+        }),
+        expect.objectContaining({
+          filePath: 'docker-compose.yml',
+          imageRef: 'app.stop_grace_period',
+        }),
+        expect.objectContaining({
+          filePath: 'docker-entrypoint.sh',
+          imageRef: 'RUN_MIGRATIONS=1',
+        }),
+      ])
+    );
+  });
+
   it('enforces /usr/local/etc/npmrc in base, committed npm ci in prisma-cli, and forbids npm/npx/corepack/yarn in runner', () => {
     fs.writeFileSync(
       path.join(tempDir, 'Dockerfile'),
@@ -830,6 +956,8 @@ describe('check-docker-build', () => {
         '    pull_policy: never',
         '  app:',
         '    image: wedding-website:latest',
+        '    init: true',
+        '    stop_grace_period: 15s',
         '    build:',
         '      context: .',
         '',
@@ -862,6 +990,8 @@ describe('check-docker-build', () => {
         '    image: wedding-website:latest',
         '  app:',
         '    image: wedding-website:latest',
+        '    init: true',
+        '    stop_grace_period: 15s',
         '    build:',
         '      context: .',
         '',
@@ -916,6 +1046,8 @@ describe('check-docker-build', () => {
         `    image: postgres:15-alpine@${bumpedDigest}`,
         '  app:',
         '    image: wedding-website:latest',
+        '    init: true',
+        '    stop_grace_period: 15s',
         '    build:',
         '      context: .',
         '',

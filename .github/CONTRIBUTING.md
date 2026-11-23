@@ -43,7 +43,7 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
      - `npm run check:static` - Run the shared static and container configuration checks defined in [`scripts/check-quality.ts`](../scripts/check-quality.ts) (`--static`).
      - `npm run check:doc-sync` - Verify generated documentation (`public/openapi.json`, `ARCHITECTURE.md`, and `FEATURE_MODULES.md`) is synchronized with codebase schemas without drift (`npx tsx scripts/generate-openapi.ts && npx tsx scripts/generate-docs.ts`).
      - `npm run typecheck`, `npm run lint`, & `npm run lint:unused` - Check TypeScript types (see [AGENTS.md](../AGENTS.md) for the five-file `tsconfig*.json` split), ESLint rules (`--max-warnings 0` with `.eslintcache` and the shrink-only `LEGACY_EXPLICIT_ANY_BASELINE_FILES` ratchet), and Knip unused exports.
-     - `npm test`, `npm run test:e2e`, & `npm run test:a11y` - Run Jest unit/integration tests, Playwright E2E specs, and WCAG 2.2 AA accessibility audits (see [TESTING.md](TESTING.md) for `wedding_test` database isolation, E2E secret alignment, and container smoke tests).
+     - `npm test`, `npm run test:cov`, `npm run test:e2e`, & `npm run test:a11y` - Run fast local Jest unit/integration tests (`npm test`, or `npm test -- <path>`), enforce global `80%` line / `68%` branch coverage (`npm run test:cov`), run Playwright E2E specs, and run WCAG 2.2 AA accessibility audits (see [TESTING.md](TESTING.md) for `wedding_test` database isolation, E2E secret alignment, and container smoke tests).
 7. **Commit Your Changes:** Write clear commit messages. Something like `fix: Correct spelling on registry item description` or `feat: Add animation to RSVP button`.
 
     ```bash

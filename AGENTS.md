@@ -9,7 +9,7 @@ This guide defines the local bootstrap, architecture boundaries, TypeScript conf
   ```bash
   CI=true npm ci
   ```
-  *(Setting `CI=true` skips `.githooks` reconfiguration inside non-interactive sandboxes while still running Prisma Client generation via `postinstall`.)*
+  *(Setting `CI=true` skips `.githooks` reconfiguration inside non-interactive sandboxes while still running Prisma Client generation and `node_modules/.package-lock-hash` recording via `postinstall`.)*
 - **Regenerate Prisma Client (after schema edits):**
   ```bash
   npm run prisma:generate
@@ -61,14 +61,14 @@ Invoke the unified quality workflow in [`scripts/check-quality.ts`](scripts/chec
 # Fast static, contract, doc-sync, and container digest checks (matches CI verify job):
 npm run check:static
 
-# Full pre-push verification (static checks, typecheck, lint, Knip, docs:build, build-storybook, build:export, and Jest):
+# Full pre-push verification (static checks, typecheck, lint, Knip, docs:build, build-storybook, build:export, and Jest coverage):
 npm run quality
 ```
 
 - **Split Local Git Hooks:** [`.githooks/pre-commit`](.githooks/pre-commit) runs only `npx lint-staged` on staged files without stashing or resetting workspace edits, while [`.githooks/pre-push`](.githooks/pre-push) runs `npm run type-check`, `npm run lint:unused`, and lightweight static checks prior to push (see [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md)).
-- **Targeted Iteration:** Run `npx jest <path/to/file.test.ts> --coverage=false` for fast unit/integration feedback, `npm run typecheck && npm run lint && npm run lint:unused` for static code health, `npm run build-storybook` whenever modifying UI stories, `.storybook/*`, or [`src/mocks/handlers.ts`](src/mocks/handlers.ts) (`storybook-build` in CI), and `npm run build:export` whenever modifying App Router pages, layouts, dynamic segments, or repositories ([`scripts/build-export.mjs`](scripts/build-export.mjs) stages sources without `src/app/api`, caches under `.next-export`, and matches the parallel `static-export-build` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
+- **Targeted Iteration:** Run `npm test -- <path/to/file.test.ts>` (or `npm run test:watch`) for fast cached unit/integration feedback without coverage overhead, `npm run test:cov` to enforce global `80%` line and `68%` branch coverage thresholds, `npm run typecheck && npm run lint && npm run lint:unused` for static code health, `npm run build-storybook` whenever modifying UI stories, `.storybook/*`, or [`src/mocks/handlers.ts`](src/mocks/handlers.ts) (`storybook-build` in CI), and `npm run build:export` whenever modifying App Router pages, layouts, dynamic segments, or repositories ([`scripts/build-export.mjs`](scripts/build-export.mjs) stages sources without `src/app/api`, caches under `.next-export`, and matches the parallel `static-export-build` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
 - **CI & Release Provenance Gates:** `ci.yml` executes full verification on pull requests, `main` pushes, `v*` version tag pushes (restricting `deploy-docs` to `main` pushes and published releases), and published releases; [`publish-artifact.yml`](.github/workflows/publish-artifact.yml), [`deploy-provider.yml`](.github/workflows/deploy-provider.yml), and [`deploy.yml`](.github/workflows/deploy.yml) require a passing `ci.yml` run for the verified 40-character source revision (`org.opencontainers.image.revision` / SLSA provenance) and update `:latest` only for the highest stable `vMAJOR.MINOR.PATCH` release tag.
-- **Authoritative Testing & Setup Runbooks:** Refer to [`.github/TESTING.md`](.github/TESTING.md) for `scripts/pretest.mjs` `wedding_test` database isolation, Playwright E2E execution (`npm run test:e2e`), WCAG 2.2 AA accessibility audits (`npm run test:a11y`), PostgreSQL migration drift checks, and standalone/container smoke tests (`npm run test:standalone`, `npm run test:container`), and to [`docs/developer-setup.md`](docs/developer-setup.md) for local `.env` and `SetupWizard` bootstrap.
+- **Authoritative Testing & Setup Runbooks:** Refer to [`.github/TESTING.md`](.github/TESTING.md) for `scripts/pretest.mjs` `wedding_test` database isolation and preflight hash caching, Playwright E2E execution (`npm run test:e2e`), WCAG 2.2 AA accessibility audits (`npm run test:a11y`), PostgreSQL migration drift checks, and standalone/container smoke tests (`npm run test:standalone`, `npm run test:container`), and to [`docs/developer-setup.md`](docs/developer-setup.md) for local `.env` and `SetupWizard` bootstrap.
 
 ## 5. Repository Conventions & Guardrails
 

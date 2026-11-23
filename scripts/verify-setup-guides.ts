@@ -679,14 +679,24 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   if (pretestMjsRaw.includes('--legacy-peer-deps')) {
     errors.push('scripts/pretest.mjs: Must run "npm ci" without "--legacy-peer-deps" to match CI');
   }
-  if (
-    !pretestMjsRaw.includes('.package-lock.json') ||
-    !pretestMjsRaw.includes('TEST_DATABASE_URL') ||
-    !pretestMjsRaw.includes('node:net') ||
-    !pretestMjsRaw.includes('--stage-only')
-  ) {
+  if (pretestMjsRaw.includes('generate-portal.ts')) {
     errors.push(
-      'scripts/pretest.mjs: Must enforce CI-aware ".package-lock.json" alignment, "TEST_DATABASE_URL" preservation, TCP readiness probing ("node:net"), and "--stage-only" portal staging'
+      'scripts/pretest.mjs: Must not unconditionally run "scripts/generate-portal.ts" during test preflight'
+    );
+  }
+  if (pretestMjsRaw.includes('npm_lifecycle_event')) {
+    errors.push(
+      'scripts/pretest.mjs: Must not inspect "npm_lifecycle_event" or fall back to "npm run build"'
+    );
+  }
+  if (!pretestMjsRaw.includes('TEST_DATABASE_URL')) {
+    errors.push(
+      'scripts/pretest.mjs: Must honor explicit "TEST_DATABASE_URL" overrides before falling back to local Docker defaults'
+    );
+  }
+  if (!pretestMjsRaw.includes('.package-lock.json') || !pretestMjsRaw.includes('node:net')) {
+    errors.push(
+      'scripts/pretest.mjs: Must enforce CI-aware ".package-lock.json" alignment and TCP readiness probing ("node:net")'
     );
   }
   if (!jestSetupRaw.includes('TEST_DATABASE_URL') || !jestSetupRaw.includes('process.env.CI')) {
@@ -785,6 +795,16 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   }
   if (!staticStepScripts.includes('check:standalone')) {
     errors.push('scripts/check-quality.ts: staticSteps must include "npm run check:standalone"');
+  }
+
+  const postinstallCmd = scripts['postinstall'] ?? '';
+  if (
+    !postinstallCmd.includes('scripts/pretest.mjs --record-install-state') &&
+    !postinstallCmd.includes('.package-lock-hash')
+  ) {
+    errors.push(
+      'package.json: "postinstall" must record lockfile state via "scripts/pretest.mjs --record-install-state" or ".package-lock-hash"'
+    );
   }
 
   const pretestCmd = scripts['pretest'] ?? '';
@@ -961,6 +981,9 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     errors.push('scripts/check-quality.ts: Missing "check:setup-guides" step');
   } else if (docsBuildQualityIdx !== -1 && setupGuidesQualityIdx >= docsBuildQualityIdx) {
     errors.push('scripts/check-quality.ts: "check:setup-guides" must run before "npm run docs:build"');
+  }
+  if (!qualityCommands.includes('npm run test:cov')) {
+    errors.push('scripts/check-quality.ts: Must run "npm run test:cov" to enforce global coverage thresholds');
   }
 
   // 3. README.md overview & docs/developer-setup.md canonical setup contract checks
@@ -1247,14 +1270,15 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   }
   for (const pretestToken of [
     'jest-a11y-violations.json',
-    'generate-portal.ts',
-    'npm_lifecycle_event',
     '.package-lock.json',
+    '.package-lock-hash',
     'TEST_DATABASE_URL',
-    '--stage-only',
+    'test:cov',
   ]) {
     if (!testingRaw.includes(pretestToken)) {
-      errors.push(`.github/TESTING.md: Missing scripts/pretest.mjs step reference "${pretestToken}"`);
+      errors.push(
+        `.github/TESTING.md: Missing scripts/pretest.mjs or coverage workflow reference "${pretestToken}"`
+      );
     }
   }
   if (
@@ -1292,6 +1316,20 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
         `AGENTS.md: Missing tsconfig.build.json exclude entry "${excludePattern}" in TypeScript Configuration Split section`
       );
     }
+  }
+
+  const testingPretestSection = extractMarkdownSection(
+    testingRaw,
+    /^###\s+Pretest Lifecycle\b/,
+    /^##\s+/
+  );
+  if (
+    testingPretestSection.includes('npx tsx scripts/generate-portal.ts') ||
+    testingPretestSection.includes('npm_lifecycle_event')
+  ) {
+    errors.push(
+      '.github/TESTING.md: Pretest Lifecycle section must not claim scripts/pretest.mjs runs "npx tsx scripts/generate-portal.ts" or inspects "npm_lifecycle_event"'
+    );
   }
 
   const agentsQualitySection = extractMarkdownSection(
