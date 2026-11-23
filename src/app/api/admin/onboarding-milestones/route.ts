@@ -3,8 +3,35 @@ import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { getAppConfig, isSiteInitialized } from '@/lib/config';
+import { hasCustomStoryText, hasNonPlaceholderVenueDetails } from '@/lib/setupCopy';
 import { isFeatureEnabled } from '@/lib/modules';
 import { prisma } from '@/lib/prisma';
+
+function isScheduleContentNodeRecord(node: {
+  type?: unknown;
+  tags?: unknown;
+  data?: unknown;
+}): boolean {
+  const data =
+    node?.data && typeof node.data === 'object' && !Array.isArray(node.data)
+      ? (node.data as Record<string, unknown>)
+      : {};
+  if (data.isSample === true || data.isSample === 'true') return false;
+  if (data.isPrivate === true || data.isPrivate === 'true') return false;
+
+  const tags = Array.isArray(node?.tags) ? node.tags : [];
+  const hasScheduleTag = tags.includes('Schedule') || tags.includes('schedule');
+  const hasStartTime = typeof data.startTime === 'string' && data.startTime.trim().length > 0;
+  const hasCeremonyTitle =
+    typeof data.ceremonyTitle === 'string' && data.ceremonyTitle.trim().length > 0;
+
+  return (
+    node?.type === 'Schedule' ||
+    hasScheduleTag ||
+    hasStartTime ||
+    (node?.type === 'Logistics' && hasCeremonyTitle)
+  );
+}
 
 /**
  * Evaluates administrative onboarding setup milestones using aggregate database counts
@@ -19,22 +46,35 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
   const config = await getAppConfig();
   const registryEnabled = isFeatureEnabled('registry', config?.modules);
 
-  const [guestCount, registryCount, seatingCount, faqNodes] = await Promise.all([
-    prisma.invitationCode.count({ where: { isSample: false } }),
-    registryEnabled
-      ? prisma.registryItem.count({ where: { isSample: false } })
-      : Promise.resolve(0),
-    prisma.seatingTable.count({ where: { isSample: false } }),
-    prisma.contentNode?.findMany
-      ? prisma.contentNode.findMany({
-        where: { type: 'FAQ' },
-        select: { data: true },
-      })
-      : Promise.resolve([]),
-  ]);
+  const [guestCount, registryCount, seatingCount, publicSubEventCount, candidateContentNodes] =
+    await Promise.all([
+      prisma.invitationCode.count({ where: { isSample: false } }),
+      registryEnabled
+        ? prisma.registryItem.count({ where: { isSample: false } })
+        : Promise.resolve(0),
+      prisma.seatingTable.count({ where: { isSample: false } }),
+      prisma.subEvent?.count
+        ? prisma.subEvent.count({ where: { isPrivate: false } })
+        : Promise.resolve(0),
+      prisma.contentNode?.findMany
+        ? prisma.contentNode.findMany({
+          where: {
+            OR: [
+              { type: 'FAQ' },
+              { type: 'Schedule' },
+              { type: 'Logistics' },
+              { tags: { has: 'Schedule' } },
+              { tags: { has: 'schedule' } },
+            ],
+          },
+          select: { type: true, tags: true, data: true },
+        })
+        : Promise.resolve([]),
+    ]);
 
-  const nonSampleVisibleFaqCount = Array.isArray(faqNodes)
-    ? faqNodes.filter((node) => {
+  const nonSampleVisibleFaqCount = Array.isArray(candidateContentNodes)
+    ? candidateContentNodes.filter((node) => {
+      if (node?.type !== undefined && node.type !== 'FAQ') return false;
       const data =
         node?.data && typeof node.data === 'object' && !Array.isArray(node.data)
           ? (node.data as Record<string, unknown>)
@@ -47,15 +87,15 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
     }).length
     : 0;
 
+  const hasPublicScheduleContentNode = Array.isArray(candidateContentNodes)
+    ? candidateContentNodes.some((node) => isScheduleContentNodeRecord(node))
+    : false;
+  const hasPublicScheduleEvent = publicSubEventCount > 0 || hasPublicScheduleContentNode;
+  const customStoryConfigured = hasCustomStoryText(config);
+
   const partner1 = (config?.partner1Name || config?.brideName || '').trim();
   const partner2 = (config?.partner2Name || config?.groomName || '').trim();
   const baseUrl = (config?.baseUrl || '').trim();
-  const rawVenueName = (config?.venueName || '').trim();
-  const normalizedVenueName = rawVenueName.toUpperCase();
-  const hasVenueName =
-    Boolean(rawVenueName) &&
-    normalizedVenueName !== 'TBD' &&
-    normalizedVenueName !== 'TBD VENUE';
   const hasWeddingDate =
     config?.weddingDate !== null &&
     config?.weddingDate !== undefined &&
@@ -64,8 +104,9 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
   const weddingDetailsCompleted =
     Boolean(partner1 && partner2 && baseUrl) &&
     hasWeddingDate &&
-    hasVenueName &&
-    isSiteInitialized(config);
+    isSiteInitialized(config) &&
+    hasNonPlaceholderVenueDetails(config);
+  const storyAndScheduleCompleted = customStoryConfigured && hasPublicScheduleEvent;
 
   const guestListCompleted = guestCount > 0;
   const registryCompleted = registryCount > 0;
@@ -80,6 +121,18 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
       completed: weddingDetailsCompleted,
       href: '/admin/dashboard/settings',
       actionLabel: weddingDetailsCompleted ? 'Edit Wedding Details' : 'Configure Wedding Details',
+    },
+    {
+      id: 'story-and-schedule',
+      title: 'Story & Schedule',
+      description: 'Share your custom couple story and publish at least one public schedule event.',
+      completed: storyAndScheduleCompleted,
+      href: !customStoryConfigured ? '/admin/dashboard/settings' : '/admin/dashboard/sub-events',
+      actionLabel: storyAndScheduleCompleted
+        ? 'Edit Story & Schedule'
+        : !customStoryConfigured
+          ? 'Write Our Story'
+          : 'Add Schedule Event',
     },
     {
       id: 'guest-list',

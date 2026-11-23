@@ -304,4 +304,41 @@ describe('OnboardingChecklist', () => {
       expect(screen.getByText('3 of 4 milestones completed (1 pending)')).toBeInTheDocument();
     });
   });
+
+  it('renders the Story & Schedule milestone and navigates to Content Hub on click', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        completedCount: 1,
+        pendingCount: 1,
+        totalCount: 2,
+        allComplete: false,
+        milestones: [
+          {
+            id: 'wedding-details',
+            title: 'Wedding Details',
+            description: 'Configure partner names, venue details, and your public website URL.',
+            completed: true,
+            href: '/admin/dashboard/settings',
+            actionLabel: 'Edit Wedding Details',
+          },
+          {
+            id: 'story-and-schedule',
+            title: 'Story & Schedule',
+            description: 'Write your wedding story and publish at least one public schedule event.',
+            completed: false,
+            href: '/admin/dashboard/content',
+            actionLabel: 'Add Story & Schedule',
+          },
+        ],
+      }),
+    });
+
+    render(<OnboardingChecklist />);
+
+    expect(await screen.findByText('Story & Schedule')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Add Story & Schedule' }));
+    expect(mockPush).toHaveBeenCalledWith('/admin/dashboard/content');
+  });
 });
