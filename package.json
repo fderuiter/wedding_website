@@ -53,7 +53,7 @@
     "test:container": "node scripts/test-container.mjs",
     "migrate:dev": "dotenv -c development -- prisma migrate dev",
     "migrate:deploy": "dotenv -c development -- prisma migrate deploy",
-    "migrate:status": "tsx scripts/preflight-migration-summary.ts",
+    "migrate:status": "dotenv -c development -- tsx scripts/preflight-migration-summary.ts --require-db",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "db:seed": "dotenv -c development -- tsx scripts/seed.ts",
