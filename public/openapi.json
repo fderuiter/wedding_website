@@ -16679,54 +16679,18 @@
                       "type": "object",
                       "properties": {
                         "subEvents": {
-                          "nullable": true,
-                          "anyOf": [
-                            {
-                              "type": "object",
-                              "additionalProperties": true
-                            },
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "additionalProperties": true
-                              }
-                            },
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "number"
-                            },
-                            {
-                              "type": "boolean"
-                            }
-                          ]
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": true
+                          }
                         },
                         "invitationCodes": {
-                          "nullable": true,
-                          "anyOf": [
-                            {
-                              "type": "object",
-                              "additionalProperties": true
-                            },
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "additionalProperties": true
-                              }
-                            },
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "number"
-                            },
-                            {
-                              "type": "boolean"
-                            }
-                          ]
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": true
+                          }
                         },
                         "pagination": {
                           "type": "object",
@@ -20106,6 +20070,16 @@
           },
           "401": {
             "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
             "content": {
               "application/json": {
                 "schema": {
