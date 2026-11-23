@@ -166,7 +166,6 @@ export const createLaxUrlSchema = (fieldName = 'URL') =>
     .or(z.literal(''));
 
 export const safeUrlSchema = createLaxUrlSchema('URL');
-export const safeImageUrlSchema = createLaxUrlSchema('Image URL');
 
 /**
  * Iteratively percent-decodes a URL path up to 3 rounds (including per-segment decoding
@@ -233,7 +232,7 @@ export function decodeUrlPathSafely(rawInput: string): string | null {
  * Validates that a local URL path contains no parent traversal (`..`), empty/protocol-relative
  * double slashes (`//`), backslashes (`\`), or null bytes (`\0`) in raw or percent-decoded forms.
  */
-export function isSafeLocalPathUrl(
+function isSafeLocalPathUrl(
   val: string,
   options: { requireLeadingSlash?: boolean } = {}
 ): boolean {
