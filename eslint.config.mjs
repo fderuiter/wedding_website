@@ -31,6 +31,8 @@ const eslintConfig = [
       'storybook-static/**',
       'public/mockServiceWorker.js',
       '.next/**',
+      'out/**',
+      '.api-backup-export/**',
       'node_modules/**',
       'coverage/**',
       'dist/**',

@@ -526,7 +526,6 @@ function checkDockerfileContent(
         'postcss.config.mjs',
         'tsconfig.json',
         'tsconfig.build.json',
-        'next-env.d.ts',
         'assets',
         'public',
         'src',
@@ -1115,9 +1114,13 @@ export function checkDockerBuild(rootDir: string = ROOT_DIR): {
     });
   }
 
-  // 7. Check if build was executed and generated standalone directory
+  // 7. Check if production build was executed and generated standalone directory
   const standaloneDir = path.join(rootDir, '.next', 'standalone');
-  if (fs.existsSync(path.join(rootDir, '.next'))) {
+  const hasProductionBuildMarker =
+    fs.existsSync(path.join(rootDir, '.next', 'BUILD_ID')) ||
+    fs.existsSync(path.join(rootDir, '.next', 'routes-manifest.json')) ||
+    fs.existsSync(standaloneDir);
+  if (hasProductionBuildMarker) {
     if (!fs.existsSync(standaloneDir)) {
       violations.push({
         filePath: '.next/standalone',

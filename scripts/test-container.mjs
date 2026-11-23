@@ -5,19 +5,30 @@ import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const rootDir = path.resolve(__dirname, '..');
+const SCRIPT_DIR = typeof __dirname !== 'undefined'
+  ? __dirname
+  : path.dirname(fileURLToPath(import.meta.url));
+const rootDir = path.resolve(SCRIPT_DIR, '..');
 
-const PORT = process.env.TEST_PORT || '3000';
-const BASE_URL = `http://127.0.0.1:${PORT}`;
-const COMPOSE_ARGS = ['-f', 'docker-compose.yml', '-f', 'docker-compose.ci.yml'];
+export const COMPOSE_ARGS = [
+  '-p',
+  'wedding-smoke-container',
+  '-f',
+  'docker-compose.yml',
+  '-f',
+  'docker-compose.ci.yml',
+];
+
 const CI_ADMIN_PASSWORD =
   'scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==';
 
 const DEFAULT_GHA_CACHE_SCOPE = process.arch === 'arm64' ? 'app-arm64' : 'app-amd64';
 
-function buildCiComposeEnv(extra = {}) {
+/**
+ * @param {Record<string, string | undefined>} [extra]
+ * @returns {Record<string, string | undefined>}
+ */
+export function buildCiComposeEnv(extra = {}) {
   return {
     ...process.env,
     GHA_CACHE_SCOPE: process.env.GHA_CACHE_SCOPE || DEFAULT_GHA_CACHE_SCOPE,
@@ -33,6 +44,39 @@ function buildCiComposeEnv(extra = {}) {
   };
 }
 
+export async function getAvailableLoopbackPort(overridePort, excludePorts = []) {
+  if (overridePort !== undefined && overridePort !== null && String(overridePort).trim() !== '') {
+    const parsed = Number.parseInt(String(overridePort).trim(), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 65535) {
+      throw new Error(`Invalid port override: ${overridePort}`);
+    }
+    return parsed;
+  }
+
+  const excluded = new Set(excludePorts.map((p) => Number(p)));
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const port = await new Promise((resolve, reject) => {
+      const server = net.createServer();
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', () => {
+        const addr = server.address();
+        const assignedPort = typeof addr === 'object' && addr ? addr.port : 0;
+        server.close((closeErr) => {
+          if (closeErr) {
+            reject(closeErr);
+            return;
+          }
+          resolve(assignedPort);
+        });
+      });
+    });
+    if (!excluded.has(port)) {
+      return port;
+    }
+  }
+  throw new Error('Failed to allocate a distinct loopback port.');
+}
+
 function runCommand(command, args, options = {}) {
   console.log(`> ${command} ${args.join(' ')}`);
   const result = child_process.spawnSync(command, args, {
@@ -46,16 +90,16 @@ function runCommand(command, args, options = {}) {
   }
 }
 
-function request(urlPath, timeoutMs = 5000) {
+function request(urlPath, baseUrl, port, timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
-    const fullUrl = new URL(urlPath, BASE_URL);
+    const fullUrl = new URL(urlPath, baseUrl);
     const req = http.get(fullUrl, {
       headers: {
-        'Host': `127.0.0.1:${PORT}`,
-      }
+        Host: `127.0.0.1:${port}`,
+      },
     }, (res) => {
       let data = '';
-      res.on('data', chunk => { data += chunk; });
+      res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => {
         resolve({ statusCode: res.statusCode, headers: res.headers, body: data });
       });
@@ -71,7 +115,7 @@ function request(urlPath, timeoutMs = 5000) {
 function queryContainerDb(sql, composeEnv) {
   const res = child_process.spawnSync(
     'docker',
-    ['compose', ...COMPOSE_ARGS, 'exec', '-T', 'db', 'psql', '-v', 'ON_ERROR_STOP=1', '-At', '-U', 'wedding', '-d', 'wedding', '-c', sql],
+    ['compose', ...COMPOSE_ARGS, 'exec', '-T', 'db', 'psql', '-v', 'ON_ERROR_STOP=1', '-At', '-U', composeEnv.DB_USER, '-d', composeEnv.DB_NAME, '-c', sql],
     { cwd: rootDir, env: composeEnv, encoding: 'utf8' }
   );
   if (res.status !== 0) {
@@ -80,8 +124,7 @@ function queryContainerDb(sql, composeEnv) {
   return res.stdout.trim();
 }
 
-function printLogs() {
-  const composeEnv = buildCiComposeEnv();
+function printLogs(composeEnv) {
   console.error('\n=== Actionable Migration Container Logs ===');
   child_process.spawnSync('docker', ['compose', ...COMPOSE_ARGS, 'logs', 'migration'], { stdio: 'inherit', shell: true, cwd: rootDir, env: composeEnv });
   console.error('\n=== Actionable App Container Logs ===');
@@ -90,57 +133,52 @@ function printLogs() {
   child_process.spawnSync('docker', ['compose', ...COMPOSE_ARGS, 'logs', 'db'], { stdio: 'inherit', shell: true, cwd: rootDir, env: composeEnv });
 }
 
-async function getAvailableDbPort() {
-  if (process.env.DB_PORT) {
-    return parseInt(process.env.DB_PORT, 10);
-  }
-  return new Promise((resolve) => {
-    const server = net.createServer();
-    server.once('error', () => {
-      resolve(5433);
-    });
-    server.once('listening', () => {
-      server.close(() => resolve(5432));
-    });
-    server.listen(5432, '127.0.0.1');
-  });
-}
-
-async function main() {
+export async function main() {
   console.log('=== OCI Container & Clean Database Smoke Test ===');
 
   let passed = false;
+  let activeComposeEnv = buildCiComposeEnv();
 
   try {
-    // 1. Clean up any leftover containers and lingering port listeners before selecting ports
-    console.log('Cleaning up any existing containers and listeners...');
-    child_process.spawnSync('docker', ['compose', ...COMPOSE_ARGS, 'down', '-v'], { stdio: 'ignore', shell: true, cwd: rootDir, env: buildCiComposeEnv() });
-    try {
-      child_process.spawnSync('lsof -ti:3000 | xargs kill -9 2>/dev/null || true', { shell: true, stdio: 'ignore' });
-    } catch {
-      // Ignore if lsof is not available
-    }
+    // 1. Clean up any leftover isolated smoke containers before selecting ports
+    console.log('Cleaning up any existing isolated smoke containers...');
+    child_process.spawnSync('docker', ['compose', ...COMPOSE_ARGS, 'down', '-v'], {
+      stdio: 'ignore',
+      shell: true,
+      cwd: rootDir,
+      env: activeComposeEnv,
+    });
 
-    const dbPort = await getAvailableDbPort();
-    process.env.DB_PORT = dbPort.toString();
-    console.log(`Using host database port ${dbPort} for container smoke test...`);
+    const appPortNum = await getAvailableLoopbackPort(process.env.TEST_PORT);
+    const dbPort = await getAvailableLoopbackPort(process.env.DB_PORT, [appPortNum]);
+    const PORT = String(appPortNum);
+    const BASE_URL = `http://127.0.0.1:${PORT}`;
+    activeComposeEnv = buildCiComposeEnv({
+      PORT,
+      DB_PORT: dbPort.toString(),
+    });
+    console.log(`Using isolated loopback ports PORT=${PORT} and DB_PORT=${dbPort} for container smoke test...`);
 
     // 2. Start PostgreSQL from scratch
     console.log('Starting clean PostgreSQL database container...');
     runCommand('docker', ['compose', ...COMPOSE_ARGS, 'up', '-d', 'db'], {
-      env: buildCiComposeEnv({ DB_PORT: dbPort.toString() })
+      env: activeComposeEnv,
     });
 
     // 3. Wait for PostgreSQL container health check & port opening
     console.log('Waiting for PostgreSQL container to become ready...');
     let dbReady = false;
     for (let i = 0; i < 30; i++) {
-      const check = child_process.spawnSync('docker', ['compose', ...COMPOSE_ARGS, 'exec', '-T', 'db', 'pg_isready', '-U', 'wedding', '-d', 'wedding'], { stdio: 'ignore', shell: true, cwd: rootDir, env: buildCiComposeEnv({ DB_PORT: dbPort.toString() }) });
+      const check = child_process.spawnSync(
+        'docker',
+        ['compose', ...COMPOSE_ARGS, 'exec', '-T', 'db', 'pg_isready', '-U', activeComposeEnv.DB_USER, '-d', activeComposeEnv.DB_NAME],
+        { stdio: 'ignore', shell: true, cwd: rootDir, env: activeComposeEnv }
+      );
       if (check.status === 0) {
         dbReady = true;
         break;
       }
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise((r) => setTimeout(r, 1000));
     }
 
     if (!dbReady) {
@@ -160,12 +198,12 @@ async function main() {
         portReady = true;
         break;
       } catch {
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise((r) => setTimeout(r, 1000));
       }
     }
 
     if (!portReady) {
-      throw new Error(`PostgreSQL port ${dbPort} not reachable on localhost within 30 seconds.`);
+      throw new Error(`PostgreSQL port ${dbPort} not reachable on 127.0.0.1 within 30 seconds.`);
     }
 
     console.log('✅ PostgreSQL container is ready!');
@@ -179,30 +217,30 @@ async function main() {
       process.platform === 'win32' ? 'prisma.cmd' : 'prisma'
     );
     const useHostPrisma = !forceContainerMigration && fs.existsSync(hostPrismaBin);
-    const composeEnv = buildCiComposeEnv({ DB_PORT: dbPort.toString() });
+    const composeEnv = activeComposeEnv;
 
     if (skipImageBuild) {
       runCommand('docker', ['image', 'inspect', 'wedding-website:latest'], {
         stdio: 'ignore',
-        env: composeEnv
+        env: composeEnv,
       });
     } else if (!useHostPrisma) {
       console.log('Building OCI image via Docker Compose ahead of container-based migration smoke test...');
       runCommand('docker', ['compose', ...COMPOSE_ARGS, 'build', 'app'], {
-        env: composeEnv
+        env: composeEnv,
       });
     }
 
     // 4. Test clean-database migration path
     console.log('Testing clean-database Prisma migration deploy path...');
     if (useHostPrisma) {
-      const testDbUrl = `postgresql://wedding:wedding123@localhost:${dbPort}/wedding`;
+      const testDbUrl = `postgresql://${composeEnv.DB_USER}:${composeEnv.DB_PASSWORD}@127.0.0.1:${dbPort}/${composeEnv.DB_NAME}`;
       runCommand('npx', ['prisma', 'migrate', 'deploy'], {
-        env: { ...process.env, DATABASE_URL: testDbUrl, DB_PORT: dbPort.toString() }
+        env: { ...process.env, DATABASE_URL: testDbUrl, DB_PORT: dbPort.toString() },
       });
     } else {
       runCommand('docker', ['compose', ...COMPOSE_ARGS, 'run', '--rm', 'migration'], {
-        env: composeEnv
+        env: composeEnv,
       });
     }
     console.log('✅ Clean-database migrations applied successfully!');
@@ -213,21 +251,21 @@ async function main() {
     } else if (useHostPrisma) {
       console.log('Building OCI image and starting app container via Docker Compose...');
       runCommand('docker', ['compose', ...COMPOSE_ARGS, 'build', 'app'], {
-        env: composeEnv
+        env: composeEnv,
       });
     } else {
       console.log('Starting newly built OCI app container via Docker Compose...');
     }
     runCommand('docker', ['compose', ...COMPOSE_ARGS, 'up', '-d', '--no-build', 'app'], {
-      env: composeEnv
+      env: composeEnv,
     });
 
     // 6. Poll app container health/readiness
-    console.log('Waiting for application container to respond on http://127.0.0.1:3000...');
+    console.log(`Waiting for application container to respond on ${BASE_URL}...`);
     let appReady = false;
     for (let i = 0; i < 60; i++) {
       try {
-        const res = await request('/api/health');
+        const res = await request('/api/health', BASE_URL, PORT);
         if (res.statusCode === 200) {
           appReady = true;
           break;
@@ -235,7 +273,7 @@ async function main() {
       } catch {
         // Retry
       }
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise((r) => setTimeout(r, 2000));
     }
 
     if (!appReady) {
@@ -246,7 +284,7 @@ async function main() {
 
     // 7. Verify Liveness Probe
     console.log('Testing GET /api/live against container...');
-    const liveRes = await request('/api/live');
+    const liveRes = await request('/api/live', BASE_URL, PORT);
     if (liveRes.statusCode !== 200) {
       throw new Error(`Container /api/live returned status ${liveRes.statusCode}`);
     }
@@ -258,7 +296,7 @@ async function main() {
 
     // 8. Verify Health Probe
     console.log('Testing GET /api/health against container...');
-    const healthRes = await request('/api/health');
+    const healthRes = await request('/api/health', BASE_URL, PORT);
     if (healthRes.statusCode !== 200) {
       throw new Error(`Container /api/health returned status ${healthRes.statusCode}`);
     }
@@ -271,7 +309,7 @@ async function main() {
 
     // 9. Verify Readiness Probe
     console.log('Testing GET /api/ready against container...');
-    const readyRes = await request('/api/ready');
+    const readyRes = await request('/api/ready', BASE_URL, PORT);
     if (readyRes.statusCode !== 200) {
       throw new Error(`Container /api/ready returned status ${readyRes.statusCode}`);
     }
@@ -281,7 +319,7 @@ async function main() {
     }
     console.log('✅ Container /api/ready OK');
 
-    // 9. Verify Representative Public Routes
+    // 9b. Verify Representative Public Routes
     const routesToTest = [
       { path: '/guest/login', expectedStatus: 200, name: 'Guest Login page' },
       { path: '/', expectedStatus: 303, name: 'Home page (redirects when unauthenticated)' },
@@ -290,7 +328,7 @@ async function main() {
 
     for (const route of routesToTest) {
       console.log(`Testing container route ${route.name} (${route.path})...`);
-      const res = await request(route.path);
+      const res = await request(route.path, BASE_URL, PORT);
       if (res.statusCode !== route.expectedStatus) {
         throw new Error(`Container route ${route.path} returned status ${res.statusCode}, expected ${route.expectedStatus}`);
       }
@@ -300,8 +338,8 @@ async function main() {
     // 10. Verify shared globalThis pool across concurrent API and SSR traffic (<= 10 PostgreSQL connections)
     console.log('Testing shared pg.Pool connection cap across concurrent API and SSR traffic...');
     const concurrentRequests = [
-      ...Array.from({ length: 12 }, () => request('/api/ready', 15000)),
-      ...Array.from({ length: 12 }, () => request('/guest/login', 15000)),
+      ...Array.from({ length: 12 }, () => request('/api/ready', BASE_URL, PORT, 15000)),
+      ...Array.from({ length: 12 }, () => request('/guest/login', BASE_URL, PORT, 15000)),
     ];
     const concurrentResults = await Promise.all(concurrentRequests);
     for (const [idx, res] of concurrentResults.entries()) {
@@ -311,10 +349,10 @@ async function main() {
     }
 
     const activeBackendsRaw = queryContainerDb(
-      "SELECT count(*) FROM pg_stat_activity WHERE datname = 'wedding' AND usename = 'wedding' AND pid <> pg_backend_pid();",
+      `SELECT count(*) FROM pg_stat_activity WHERE datname = '${composeEnv.DB_NAME}' AND usename = '${composeEnv.DB_USER}' AND pid <> pg_backend_pid();`,
       composeEnv
     );
-    const activeBackends = parseInt(activeBackendsRaw, 10);
+    const activeBackends = Number.parseInt(activeBackendsRaw, 10);
     if (!Number.isFinite(activeBackends) || activeBackends < 1 || activeBackends > 10) {
       throw new Error(`Expected 1..10 PostgreSQL pool connections across API & SSR runtimes, observed ${activeBackendsRaw}`);
     }
@@ -354,7 +392,7 @@ async function main() {
 
     const lockProc = child_process.spawn(
       'docker',
-      ['compose', ...COMPOSE_ARGS, 'exec', '-T', 'db', 'psql', '-v', 'ON_ERROR_STOP=1', '-At', '-U', 'wedding', '-d', 'wedding'],
+      ['compose', ...COMPOSE_ARGS, 'exec', '-T', 'db', 'psql', '-v', 'ON_ERROR_STOP=1', '-At', '-U', composeEnv.DB_USER, '-d', composeEnv.DB_NAME],
       { cwd: rootDir, env: composeEnv, stdio: ['pipe', 'pipe', 'pipe'] }
     );
 
@@ -387,13 +425,13 @@ async function main() {
       await lockReadyPromise;
 
       // Issue in-flight SSR request that blocks on "AppConfig" inside getAppConfig()
-      const inflightPromise = request('/guest/login', 15000);
+      const inflightPromise = request('/guest/login', BASE_URL, PORT, 15000);
 
       let queryBlockedInDb = false;
       for (let i = 0; i < 50; i++) {
-        const waitingCount = parseInt(
+        const waitingCount = Number.parseInt(
           queryContainerDb(
-            "SELECT count(*) FROM pg_stat_activity WHERE datname = 'wedding' AND wait_event_type = 'Lock' AND state = 'active';",
+            `SELECT count(*) FROM pg_stat_activity WHERE datname = '${composeEnv.DB_NAME}' AND wait_event_type = 'Lock' AND state = 'active';`,
             composeEnv
           ),
           10
@@ -508,17 +546,27 @@ async function main() {
     console.log('🎉 Container execution & migration smoke tests PASSED!');
     console.log('=============================================');
     passed = true;
-
   } catch (err) {
     console.error('\n❌ Container Smoke Test FAILED!');
     console.error(err.message || err);
-    printLogs();
+    printLogs(activeComposeEnv);
     process.exitCode = 1;
   } finally {
     console.log('Cleaning up container resources...');
-    child_process.spawnSync('docker', ['compose', ...COMPOSE_ARGS, 'down', '-v'], { stdio: 'ignore', shell: true, cwd: rootDir, env: buildCiComposeEnv() });
+    child_process.spawnSync('docker', ['compose', ...COMPOSE_ARGS, 'down', '-v'], {
+      stdio: 'ignore',
+      shell: true,
+      cwd: rootDir,
+      env: activeComposeEnv,
+    });
     process.exit(passed ? 0 : 1);
   }
 }
 
-main();
+const isDirectCall =
+  typeof process.argv[1] === 'string' &&
+  process.argv[1].endsWith('test-container.mjs');
+
+if (isDirectCall) {
+  main();
+}

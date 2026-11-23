@@ -113,14 +113,14 @@ A variety of verification scripts in [package.json](../package.json) support com
   npm run test:standalone
   ```
   Runs [`scripts/test-standalone.mjs`](../scripts/test-standalone.mjs) to verify that standalone Next.js production builds (`.next/standalone/server.js`) boot cleanly and pass health/readiness probes.
-  > **Warning:** `npm run test:standalone` requires running `npm run build` beforehand (it exits immediately if `.next/standalone/server.js` is missing) and executes `docker compose down -v` (with `-f docker-compose.yml -f docker-compose.ci.yml`) during cleanup, **deleting local Docker Compose PostgreSQL volumes (`db_data`)**.
+  > **Note:** `npm run test:standalone` requires running `npm run build` beforehand (it exits immediately if `.next/standalone/server.js` is missing). When `DATABASE_URL` is unset, it selects free loopback `PORT` and `DB_PORT` values (honoring `TEST_PORT` and `DB_PORT` overrides) and runs `docker compose -p wedding-smoke-standalone -f docker-compose.yml -f docker-compose.ci.yml down -v` during cleanup so isolated smoke volumes are torn down while preserving default local `db_data` and `uploads_data` volumes; when `DATABASE_URL` is set explicitly, it skips starting or tearing down the isolated database container and targets that URL directly.
 
 - **OCI Container Smoke Test:**
   ```bash
   npm run test:container
   ```
   Runs [`scripts/test-container.mjs`](../scripts/test-container.mjs) with [`docker-compose.ci.yml`](../docker-compose.ci.yml) to build the production Docker container and verify clean-database Prisma migrations, bootstrapping, and service readiness.
-  > **Warning:** Like `npm run test:standalone`, `npm run test:container` executes `docker compose down -v` (with `-f docker-compose.yml -f docker-compose.ci.yml`) at startup and cleanup, **wiping local Docker Compose PostgreSQL volumes (`db_data`)**.
+  > **Note:** `npm run test:container` selects free loopback `PORT` and `DB_PORT` values (honoring `TEST_PORT` and `DB_PORT` overrides without killing existing processes on port `3000`) and executes `docker compose -p wedding-smoke-container -f docker-compose.yml -f docker-compose.ci.yml down -v` at startup and cleanup, isolating smoke containers and volumes so default local `db_data` and `uploads_data` volumes remain untouched.
 
 - **Static Repository & Document Checks:**
   ```bash
