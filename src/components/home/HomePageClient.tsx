@@ -27,6 +27,7 @@ import { useTheme } from '@/components/ThemeProvider';
 import { getPresetTokens, parseMotionEasing, parseDurationSec } from '@/lib/theme/presets';
 import { sanitizeUrl } from '@/utils/validation';
 import { MediaImage } from '@/components/MediaImage';
+import { useStaticDemoPageOverrides } from '@/lib/staticDemo/runtime';
 
 function getSafeBackgroundImageStyle(rawUrl?: string): string | undefined {
   if (!rawUrl || typeof rawUrl !== 'string') return undefined;
@@ -93,9 +94,21 @@ export default function HomePageClient({
   contentNodes?: ContentNodeDTO[];
   attractions?: AttractionDTO[];
 }) {
-  const [config, setConfig] = useState<PublicAppConfig>(initialConfig);
-  const [contentNodes, setContentNodes] = useState<ContentNodeDTO[]>(initialContentNodes);
-  const [attractions, setAttractions] = useState<AttractionDTO[]>(initialAttractions);
+  const demoOverrides = useStaticDemoPageOverrides();
+  const [draftConfig, setDraftConfig] = useState<Partial<PublicAppConfig> | null>(null);
+  const [draftContentNodes, setDraftContentNodes] = useState<ContentNodeDTO[] | null>(null);
+  const [draftAttractions, setDraftAttractions] = useState<AttractionDTO[] | null>(null);
+
+  const baseConfig = demoOverrides?.config ?? initialConfig;
+  const config = useMemo<PublicAppConfig>(
+    () => (draftConfig ? { ...baseConfig, ...draftConfig } : baseConfig),
+    [baseConfig, draftConfig],
+  );
+  const contentNodes =
+    draftContentNodes ?? demoOverrides?.contentNodes ?? initialContentNodes;
+  const attractions =
+    draftAttractions ?? demoOverrides?.attractions ?? initialAttractions;
+
   const isAdminPreview = useSyncExternalStore(
     subscribePreviewNoop,
     getAdminPreviewClientSnapshot,
@@ -127,11 +140,11 @@ export default function HomePageClient({
       const handleMessage = (event: MessageEvent) => {
         if (event.data?.type === 'DRAFT_UPDATE') {
           if (event.data.draftType === 'config' && event.data.draftData) {
-            setConfig((prev) => ({ ...prev, ...event.data.draftData }));
+            setDraftConfig((prev) => ({ ...(prev ?? {}), ...event.data.draftData }));
           } else if (event.data.draftType === 'content' && Array.isArray(event.data.draftData)) {
-            setContentNodes(event.data.draftData);
+            setDraftContentNodes(event.data.draftData);
           } else if (event.data.draftType === 'attractions' && Array.isArray(event.data.draftData)) {
-            setAttractions(event.data.draftData);
+            setDraftAttractions(event.data.draftData);
           }
         }
       };

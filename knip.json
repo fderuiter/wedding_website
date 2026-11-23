@@ -18,6 +18,9 @@
     "src/utils/storage.ts",
     "src/utils/validation.ts",
     "src/utils/backupValidation.ts",
+    "src/lib/staticDemo/runtime.noop.ts",
+    "src/mocks/handlers.ts",
+    "src/mocks/server.ts",
     "scripts/*.ts",
     "scripts/*.mjs",
     "scripts/*.js"

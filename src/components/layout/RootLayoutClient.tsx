@@ -11,8 +11,16 @@ import {
 } from '@/components/guest/GuestHelpModal';
 import { GlobalRadialGlow } from '@/components/ui/GlobalRadialGlow';
 import { useToast } from '@/components/ui/ToastProvider';
+import { useTheme } from '@/components/ThemeProvider';
+import type { ThemePreset } from '@/lib/theme/presets';
 import { MotionGlobalConfig } from 'framer-motion';
 import type { ContentNodeDTO } from '@/features/content';
+import SetupWizard from '@/components/setup/SetupWizard';
+import {
+  ensureStaticDemoRuntime,
+  useStaticDemoPageOverrides,
+  StaticDemoMount,
+} from '@/lib/staticDemo/runtime';
 
 if (typeof window !== 'undefined' && window.navigator.userAgent.includes('HeadlessChrome')) {
   MotionGlobalConfig.skipAnimations = true;
@@ -45,12 +53,21 @@ export default function RootLayoutClient({
   config,
   faqs,
 }: RootLayoutClientProps) {
+  ensureStaticDemoRuntime();
+  const demoOverrides = useStaticDemoPageOverrides();
+  const { setPreviewConfig } = useTheme();
   const [isAdmin, setIsAdmin] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
   const headerRef = useRef<HTMLElement>(null);
   const [mainPaddingTop, setMainPaddingTop] = useState(0);
   const { addToast } = useToast();
+
+  const effectiveConfig = demoOverrides?.config ?? config;
+  const effectiveFaqs = demoOverrides?.faqs ?? faqs;
+  const effectiveIsAdmin = demoOverrides
+    ? demoOverrides.isAdminAuthenticated
+    : isAdmin;
 
   const [queryClient] = useState(() => new QueryClient({
     mutationCache: new MutationCache({
@@ -80,6 +97,22 @@ export default function RootLayoutClient({
       },
     }),
   }));
+
+  useEffect(() => {
+    if (!demoOverrides || typeof setPreviewConfig !== 'function') return;
+    if (typeof window !== 'undefined' && window !== window.parent) return;
+    setPreviewConfig({
+      themePreset: demoOverrides.config.themePreset as ThemePreset,
+      colorPrimary: demoOverrides.config.colorPrimary,
+      colorSecondary: demoOverrides.config.colorSecondary,
+    });
+  }, [
+    demoOverrides,
+    demoOverrides?.config.themePreset,
+    demoOverrides?.config.colorPrimary,
+    demoOverrides?.config.colorSecondary,
+    setPreviewConfig,
+  ]);
 
   useEffect(() => {
     const checkLoginStatus = () => {
@@ -128,8 +161,8 @@ export default function RootLayoutClient({
   };
 
   const helpConfig = useMemo<GuestHelpConfig>(() => {
-    if (!faqs) return config;
-    const mappedFaqs: GuestHelpFaqItem[] = faqs
+    if (!effectiveFaqs) return effectiveConfig;
+    const mappedFaqs: GuestHelpFaqItem[] = effectiveFaqs
       .filter((n): n is Extract<ContentNodeDTO, { type: 'FAQ' }> => n.type === 'FAQ')
       .map((n, index) => ({
         id: n.id,
@@ -141,10 +174,20 @@ export default function RootLayoutClient({
           typeof n.data.displayOrder === 'number' ? n.data.displayOrder : index,
       }));
     return {
-      ...config,
+      ...effectiveConfig,
       faqs: mappedFaqs,
     };
-  }, [config, faqs]);
+  }, [effectiveConfig, effectiveFaqs]);
+
+  if (demoOverrides?.isSetupMode) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <GlobalRadialGlow />
+        <SetupWizard />
+        <StaticDemoMount queryClient={queryClient} />
+      </QueryClientProvider>
+    );
+  }
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -153,10 +196,10 @@ export default function RootLayoutClient({
         {!isStandalonePage && (
           <Navbar
             headerRef={headerRef}
-            isAdmin={isAdmin}
+            isAdmin={effectiveIsAdmin}
             handleLogout={handleLogout}
-            config={config}
-            hasVisibleFaqs={faqs ? faqs.length > 0 : undefined}
+            config={effectiveConfig}
+            hasVisibleFaqs={effectiveFaqs ? effectiveFaqs.length > 0 : undefined}
           />
         )}
         {isAdminDashboardPage ? (
@@ -168,6 +211,7 @@ export default function RootLayoutClient({
             {children}
           </main>
         )}
+        <StaticDemoMount queryClient={queryClient} />
       </GuestHelpProvider>
     </QueryClientProvider>
   );

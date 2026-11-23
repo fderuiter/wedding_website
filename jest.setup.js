@@ -232,9 +232,13 @@ import { toHaveNoViolations } from 'jest-axe';
 
 expect.extend(toHaveNoViolations);
 import { server } from './src/mocks/server';
+import { resetMswDemoState } from './src/mocks/handlers';
 
 beforeAll(() => {
   if (process.env.LIVE_TESTS !== 'true') {
+    globalThis.__TEST_PREMOCKED_FETCH__ = Boolean(
+      globalThis.fetch && globalThis.fetch._isMockFunction,
+    );
     server.listen();
     if (typeof globalThis.fetch === 'function') {
       const mswFetch = globalThis.fetch;
@@ -256,6 +260,7 @@ afterEach(async () => {
   }
   if (process.env.LIVE_TESTS !== 'true') {
     server.resetHandlers();
+    resetMswDemoState();
   }
   if (typeof cachedRateLimitModule?.resetRateLimitsForTesting === 'function') {
     cachedRateLimitModule.resetRateLimitsForTesting();
