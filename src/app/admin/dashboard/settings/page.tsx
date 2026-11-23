@@ -20,7 +20,8 @@ import { FEATURE_METADATA, FeatureId, resolveModuleConfig } from '@/lib/modules'
 import { ThemeConfigurationPanel } from '@/components/admin/ThemeConfigurationPanel';
 import { AddressLookupInput } from '@/components/admin/AddressLookupInput';
 import { isNonPlaceholderVenueText } from '@/utils/maps';
-import { stripPresetDefaultTokens } from '@/lib/theme/presets';
+import { MediaImage } from '@/components/MediaImage';
+import { stripPresetDefaultTokens, type ThemePreset } from '@/lib/theme/presets';
 import { cssTokenKeyRegex, isValidCssTokenValue } from '@/features/content';
 import {
   DEFAULT_RSVP_CLOSED_MESSAGE,
@@ -199,20 +200,144 @@ interface ThemeOverrideRow {
   value: string;
 }
 
+interface SettingsBrandingProfile {
+  id: string;
+  subdomain?: string | null;
+  partner1Name?: string | null;
+  partner2Name?: string | null;
+  brideName?: string | null;
+  groomName?: string | null;
+}
+
+interface SettingsDraftConfig {
+  id?: string;
+  multisiteEnabled?: boolean;
+  subdomain?: string | null;
+  partner1Name?: string;
+  partner2Name?: string;
+  brideName?: string;
+  groomName?: string;
+  weddingDate?: string;
+  baseUrl?: string;
+  contactEmail?: string;
+  photoAlbumUrl?: string;
+  venueName?: string;
+  venueAddress?: string;
+  venueCity?: string;
+  venueState?: string;
+  venueZip?: string;
+  timezone?: string;
+  latitude?: number | string;
+  longitude?: number | string;
+  shippingRecipientName?: string;
+  shippingPhone?: string;
+  shippingAddressLine1?: string;
+  shippingAddressLine2?: string;
+  shippingCity?: string;
+  shippingState?: string;
+  shippingZip?: string;
+  shippingCountry?: string;
+  shippingDeliveryNotes?: string;
+  defaultPaymentHandleType?: string;
+  defaultPaymentHandle?: string;
+  rsvpOpen?: boolean;
+  rsvpDeadlineDate?: string;
+  rsvpGracePeriodHours?: number;
+  rsvpClosedMessage?: string;
+  heroTitle?: string;
+  heroSubtitle?: string;
+  storyText?: string;
+  venueDescription?: string;
+  travelAdvice?: string;
+  colorPrimary?: string;
+  colorSecondary?: string;
+  themePreset?: ThemePreset | string;
+  layoutContainerMaxWidth?: string;
+  layoutGridGap?: string;
+  layoutCardPadding?: string;
+  layoutBorderRadius?: string;
+  themeTokens?: Record<string, string>;
+  printBg?: string;
+  printText?: string;
+  printBorder?: string;
+  printHeaderBorder?: string;
+  printBadgeBg?: string;
+  modules?: Parameters<typeof resolveModuleConfig>[0];
+  showCountdown?: boolean;
+  showAddToCalendar?: boolean;
+  emailProvider?: string;
+  smsProvider?: string;
+  smtpHost?: string;
+  smtpPort?: number | string;
+  smtpFrom?: string;
+  smtpUser?: string;
+  smtpPass?: string;
+  smtpSecure?: boolean;
+  hasSmtpPass?: boolean;
+  resendApiKey?: string;
+  resendFrom?: string;
+  hasResendApiKey?: boolean;
+  sendgridApiKey?: string;
+  sendgridFrom?: string;
+  hasSendgridApiKey?: boolean;
+  twilioAccountSid?: string;
+  twilioAuthToken?: string;
+  twilioFromNumber?: string;
+  hasTwilioAuthToken?: boolean;
+  broadcastBatchSize?: number | string;
+  broadcastBatchDelayMs?: number | string;
+  brandMonogram?: string;
+  brandLogoAlt?: string;
+  brandLogoUrl?: string;
+  heroImageAlt?: string;
+  heroImageUrl?: string;
+  brandWatermarkAlt?: string;
+  brandWatermarkUrl?: string;
+  badgeGraphicAlt?: string;
+  badgeGraphicUrl?: string;
+  seoTitle?: string;
+  seoDescription?: string;
+  seoKeywords?: string;
+  faviconUrl?: string;
+  ogImageUrl?: string;
+  [key: string]: unknown;
+}
+
+function getSettingsErrorMessage(err: unknown, fallback = ''): string {
+  if (err instanceof Error && err.message) {
+    return err.message;
+  }
+  if (typeof err === 'object' && err !== null && 'message' in err) {
+    const candidate = (err as { message?: unknown }).message;
+    if (typeof candidate === 'string' && candidate) {
+      return candidate;
+    }
+  }
+  if (typeof err === 'string' && err) {
+    return err;
+  }
+  return fallback;
+}
+
 function isPrintTokenKey(key: string): boolean {
   return key.startsWith('--print-');
 }
 
-function extractThemeOverrideRows(cfg: any): ThemeOverrideRow[] {
-  if (!cfg?.themeTokens) return [];
+function extractThemeOverrideRows(
+  cfg: SettingsDraftConfig | null | undefined
+): ThemeOverrideRow[] {
+  const rawTokens: unknown = cfg?.themeTokens;
+  if (!rawTokens) return [];
   try {
-    const tokensObj = typeof cfg.themeTokens === 'string'
-      ? JSON.parse(cfg.themeTokens)
-      : cfg.themeTokens;
+    const tokensObj =
+      typeof rawTokens === 'string' ? JSON.parse(rawTokens) : rawTokens;
     if (!tokensObj || typeof tokensObj !== 'object' || Array.isArray(tokensObj)) {
       return [];
     }
-    const sparseTokens = stripPresetDefaultTokens(tokensObj, cfg?.themePreset);
+    const sparseTokens = stripPresetDefaultTokens(
+      tokensObj as Record<string, string>,
+      cfg?.themePreset
+    );
     return Object.entries(sparseTokens)
       .filter(([key]) => !isPrintTokenKey(key))
       .map(([key, val], idx) => ({
@@ -241,7 +366,7 @@ function validateThemeOverrideRow(row: ThemeOverrideRow): string {
   return '';
 }
 
-function normalizeComparableConfigValue(config: Record<string, any>, key: string): unknown {
+function normalizeComparableConfigValue(config: SettingsDraftConfig, key: string): unknown {
   if (key === 'partner1Name' || key === 'brideName') {
     return config.partner1Name ?? config.brideName ?? '';
   }
@@ -253,8 +378,8 @@ function normalizeComparableConfigValue(config: Record<string, any>, key: string
 }
 
 function hasSettingsDraftChanges(
-  currentConfig: Record<string, any> | null,
-  baseConfig: Record<string, any> | null,
+  currentConfig: SettingsDraftConfig | null,
+  baseConfig: SettingsDraftConfig | null,
   currentRows: ThemeOverrideRow[],
   baseRows: ThemeOverrideRow[]
 ): boolean {
@@ -300,11 +425,17 @@ export default function AdminSettingsPage() {
 
   const { testConnection, testingConnection } = useAdminBroadcast();
 
-  const [configOverride, setConfigOverride] = useState<{ base: any; value: any } | null>(null);
-  const [overrideRowsState, setOverrideRowsState] = useState<{ base: any; rows: ThemeOverrideRow[] } | null>(null);
+  const [configOverride, setConfigOverride] = useState<{
+    base: SettingsDraftConfig | null | undefined;
+    value: SettingsDraftConfig | null;
+  } | null>(null);
+  const [overrideRowsState, setOverrideRowsState] = useState<{
+    base: SettingsDraftConfig | null | undefined;
+    rows: ThemeOverrideRow[];
+  } | null>(null);
   const [savedBaselineState, setSavedBaselineState] = useState<{
-    base: any;
-    config: any;
+    base: SettingsDraftConfig | null | undefined;
+    config: SettingsDraftConfig | null;
     rows: ThemeOverrideRow[];
   } | null>(null);
   const [themeTokensError, setThemeTokensError] = useState('');
@@ -312,24 +443,26 @@ export default function AdminSettingsPage() {
   const [newProfileData, setNewProfileData] = useState({ partner1Name: '', partner2Name: '', subdomain: '' });
   const [createError, setCreateError] = useState('');
 
-  const localConfig = configOverride && configOverride.base === initialConfig
-    ? configOverride.value
-    : (initialConfig ?? null);
+  const localConfig: SettingsDraftConfig | null =
+    configOverride && configOverride.base === initialConfig
+      ? configOverride.value
+      : ((initialConfig as SettingsDraftConfig | null | undefined) ?? null);
   const themeOverrideRows = useMemo(
     () =>
       overrideRowsState && overrideRowsState.base === initialConfig
         ? overrideRowsState.rows
-        : extractThemeOverrideRows(initialConfig),
+        : extractThemeOverrideRows(initialConfig as SettingsDraftConfig | null | undefined),
     [overrideRowsState, initialConfig]
   );
-  const baselineConfig = savedBaselineState && savedBaselineState.base === initialConfig
-    ? savedBaselineState.config
-    : (initialConfig ?? null);
+  const baselineConfig: SettingsDraftConfig | null =
+    savedBaselineState && savedBaselineState.base === initialConfig
+      ? savedBaselineState.config
+      : ((initialConfig as SettingsDraftConfig | null | undefined) ?? null);
   const baselineRows = useMemo(
     () =>
       savedBaselineState && savedBaselineState.base === initialConfig
         ? savedBaselineState.rows
-        : extractThemeOverrideRows(initialConfig),
+        : extractThemeOverrideRows(initialConfig as SettingsDraftConfig | null | undefined),
     [savedBaselineState, initialConfig]
   );
 
@@ -373,13 +506,24 @@ export default function AdminSettingsPage() {
     return true;
   }, [isDirty, confirm]);
 
-  const setLocalConfig = useCallback((updater: any) => {
-    setConfigOverride((prev) => {
-      const current = prev && prev.base === initialConfig ? prev.value : (initialConfig ?? null);
-      const next = typeof updater === 'function' ? updater(current) : updater;
-      return { base: initialConfig, value: next };
-    });
-  }, [initialConfig]);
+  const setLocalConfig = useCallback(
+    (
+      updater:
+        | SettingsDraftConfig
+        | null
+        | ((prev: SettingsDraftConfig | null) => SettingsDraftConfig | null)
+    ) => {
+      setConfigOverride((prev) => {
+        const current =
+          prev && prev.base === initialConfig
+            ? prev.value
+            : ((initialConfig as SettingsDraftConfig | null | undefined) ?? null);
+        const next = typeof updater === 'function' ? updater(current) : updater;
+        return { base: initialConfig as SettingsDraftConfig | null | undefined, value: next };
+      });
+    },
+    [initialConfig]
+  );
 
   const syncThemeOverrideRows = useCallback((nextRows: ThemeOverrideRow[]) => {
     setOverrideRowsState({ base: initialConfig, rows: nextRows });
@@ -401,7 +545,7 @@ export default function AdminSettingsPage() {
     setThemeTokensError(combinedError);
 
     if (!combinedError) {
-      setLocalConfig((prev: any) => {
+      setLocalConfig((prev) => {
         const existingTokens = prev?.themeTokens && typeof prev.themeTokens === 'object' ? prev.themeTokens : {};
         const preservedPrintTokens: Record<string, string> = {};
         for (const [k, v] of Object.entries(existingTokens)) {
@@ -416,14 +560,14 @@ export default function AdminSettingsPage() {
             customTokens[trimmedKey] = row.value;
           }
         }
-        return { ...prev, themeTokens: customTokens };
+        return { ...(prev ?? {}), themeTokens: customTokens };
       });
     }
   }, [initialConfig, setLocalConfig]);
 
   const handleTestConnection = async (type: 'email' | 'sms') => {
     try {
-      const res: any = await testConnection({
+      const res = (await testConnection({
         type,
         provider: type === 'email' ? localConfig?.emailProvider : localConfig?.smsProvider,
         smtpHost: localConfig?.smtpHost,
@@ -439,15 +583,15 @@ export default function AdminSettingsPage() {
         twilioAccountSid: localConfig?.twilioAccountSid,
         twilioAuthToken: localConfig?.twilioAuthToken,
         twilioFromNumber: localConfig?.twilioFromNumber,
-      });
+      })) as { success?: boolean; error?: string };
 
       if (res.success) {
         addToast(`Successfully verified ${type.toUpperCase()} provider configuration!`, 'success');
       } else {
         addToast(`Connection test failed: ${res.error || 'Unknown error'}`, 'error');
       }
-    } catch (err: any) {
-      addToast(`Connection test failed: ${err.message}`, 'error');
+    } catch (err: unknown) {
+      addToast(`Connection test failed: ${getSettingsErrorMessage(err, 'Unknown error')}`, 'error');
     }
   };
 
@@ -492,8 +636,8 @@ export default function AdminSettingsPage() {
         ...localConfig,
         themeTokens: payloadThemeTokens,
       };
-      const saved: any = await saveSettings(payloadToSave);
-      const nextSavedConfig = {
+      const saved = (await saveSettings(payloadToSave)) as Partial<SettingsDraftConfig> | null;
+      const nextSavedConfig: SettingsDraftConfig = {
         ...localConfig,
         ...(saved && typeof saved === 'object' ? saved : {}),
         weddingDate:
@@ -507,13 +651,13 @@ export default function AdminSettingsPage() {
       };
       setLocalConfig(nextSavedConfig);
       setSavedBaselineState({
-        base: initialConfig,
+        base: initialConfig as SettingsDraftConfig | null | undefined,
         config: nextSavedConfig,
         rows: themeOverrideRows,
       });
       addToast('Branding profile saved successfully.', 'success');
-    } catch (err: any) {
-      addToast(err.message || 'Failed to save profile', 'error');
+    } catch (err: unknown) {
+      addToast(getSettingsErrorMessage(err, 'Failed to save profile'), 'error');
     }
   };
 
@@ -521,7 +665,7 @@ export default function AdminSettingsPage() {
     e.preventDefault();
     setCreateError('');
     try {
-      const created = await createProfile(newProfileData);
+      const created = (await createProfile(newProfileData)) as { id?: string } | null;
       addToast('Staging profile created successfully!', 'success');
       setIsCreateOpen(false);
       setNewProfileData({ partner1Name: '', partner2Name: '', subdomain: '' });
@@ -532,8 +676,10 @@ export default function AdminSettingsPage() {
         setSelectedProfileId(created.id);
         setLocalConfig(null);
       }
-    } catch (err: any) {
-      setCreateError(err.message || 'Failed to create profile. Ensure subdomain is unique.');
+    } catch (err: unknown) {
+      setCreateError(
+        getSettingsErrorMessage(err, 'Failed to create profile. Ensure subdomain is unique.')
+      );
     }
   };
 
@@ -556,17 +702,17 @@ export default function AdminSettingsPage() {
 
     try {
       const { url } = await apiClient.post<{ url: string }>('/api/admin/upload', formData);
-      setLocalConfig((prev: any) => ({ ...prev, [fieldName]: url }));
+      setLocalConfig((prev) => ({ ...(prev ?? {}), [fieldName]: url }));
       addToast(`${fieldName} uploaded successfully.`, 'success');
-    } catch (err: any) {
-      addToast(`Upload failed: ${err.message || err}`, 'error');
+    } catch (err: unknown) {
+      addToast(`Upload failed: ${getSettingsErrorMessage(err, 'Unknown error')}`, 'error');
     }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setLocalConfig((prev: any) => {
-      const next = { ...prev, [name]: value };
+    setLocalConfig((prev) => {
+      const next: SettingsDraftConfig = { ...(prev ?? {}), [name]: value };
       if (name === 'partner1Name') {
         next.brideName = value;
       } else if (name === 'partner2Name') {
@@ -657,7 +803,7 @@ export default function AdminSettingsPage() {
                       className="w-auto"
                     >
                       {Array.isArray(profiles) ? (
-                        profiles.map((p: any) => {
+                        (profiles as SettingsBrandingProfile[]).map((p) => {
                           const isCurrent = p.id === selectedProfileId;
                           const p1 = (isCurrent ? (localConfig?.partner1Name || localConfig?.brideName) : (p.partner1Name || p.brideName)) || p.partner1Name || p.brideName || 'Partner 1';
                           const p2 = (isCurrent ? (localConfig?.partner2Name || localConfig?.groomName) : (p.partner2Name || p.groomName)) || p.partner2Name || p.groomName || 'Partner 2';
@@ -719,7 +865,7 @@ export default function AdminSettingsPage() {
                         value={localConfig.subdomain || ''}
                         onChange={(e) => {
                           const sanitized = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
-                          setLocalConfig((prev: any) => ({ ...prev, subdomain: sanitized }));
+                          setLocalConfig((prev) => ({ ...(prev ?? {}), subdomain: sanitized }));
                         }}
                         placeholder="e.g. promptops"
                       />
@@ -737,12 +883,22 @@ export default function AdminSettingsPage() {
                   placeholder="Search venue name or street address..."
                   helperText="Select a verified location to fill street address, postal code, and map coordinates automatically."
                   verifiedCoordinates={{
-                    latitude: localConfig.latitude,
-                    longitude: localConfig.longitude,
+                    latitude:
+                      typeof localConfig.latitude === 'number'
+                        ? localConfig.latitude
+                        : localConfig.latitude !== undefined && localConfig.latitude !== ''
+                          ? Number(localConfig.latitude)
+                          : undefined,
+                    longitude:
+                      typeof localConfig.longitude === 'number'
+                        ? localConfig.longitude
+                        : localConfig.longitude !== undefined && localConfig.longitude !== ''
+                          ? Number(localConfig.longitude)
+                          : undefined,
                   }}
                   onSelect={(match) => {
-                    setLocalConfig((prev: any) => ({
-                      ...prev,
+                    setLocalConfig((prev) => ({
+                      ...(prev ?? {}),
                       venueName:
                         !isNonPlaceholderVenueText(prev?.venueName) && match.name
                           ? match.name
@@ -781,8 +937,8 @@ export default function AdminSettingsPage() {
                   <FormGroup>
                     <Label>Venue Timezone</Label>
                     <SearchableTimezoneSelect
-                      value={localConfig.timezone}
-                      onChange={(val) => setLocalConfig((prev: any) => ({ ...prev, timezone: val }))}
+                      value={localConfig.timezone || ''}
+                      onChange={(val) => setLocalConfig((prev) => ({ ...(prev ?? {}), timezone: val }))}
                     />
                   </FormGroup>
                 </div>
@@ -1019,8 +1175,8 @@ export default function AdminSettingsPage() {
                     type="checkbox"
                     checked={localConfig.rsvpOpen !== false}
                     onChange={(e) =>
-                      setLocalConfig((prev: any) => ({
-                        ...prev,
+                      setLocalConfig((prev) => ({
+                        ...(prev ?? {}),
                         rsvpOpen: e.target.checked,
                       }))
                     }
@@ -1040,8 +1196,8 @@ export default function AdminSettingsPage() {
                           variant="secondary"
                           size="sm"
                           onClick={() =>
-                            setLocalConfig((prev: any) => ({
-                              ...prev,
+                            setLocalConfig((prev) => ({
+                              ...(prev ?? {}),
                               rsvpDeadlineDate: '',
                             }))
                           }
@@ -1069,8 +1225,8 @@ export default function AdminSettingsPage() {
                       name="rsvpGracePeriodHours"
                       value={String(localConfig.rsvpGracePeriodHours ?? 0)}
                       onChange={(e) =>
-                        setLocalConfig((prev: any) => ({
-                          ...prev,
+                        setLocalConfig((prev) => ({
+                          ...(prev ?? {}),
                           rsvpGracePeriodHours: Number(e.target.value),
                         }))
                       }
@@ -1180,10 +1336,13 @@ export default function AdminSettingsPage() {
                         );
                         return Object.prototype.hasOwnProperty.call(cleaned, k);
                       });
-                      setOverrideRowsState({ base: initialConfig, rows: filteredRows });
+                      setOverrideRowsState({
+                        base: initialConfig as SettingsDraftConfig | null | undefined,
+                        rows: filteredRows,
+                      });
                     }
 
-                    setLocalConfig((prev: any) => {
+                    setLocalConfig((prev) => {
                       const activePrevPreset = prev?.themePreset || 'classic';
                       const activeNextPreset =
                         (updated.themePreset as string | undefined) || activePrevPreset;
@@ -1211,7 +1370,7 @@ export default function AdminSettingsPage() {
                       }
 
                       return {
-                        ...prev,
+                        ...(prev ?? {}),
                         ...updated,
                         themeTokens: nextThemeTokens,
                       };
@@ -1360,20 +1519,20 @@ export default function AdminSettingsPage() {
                                 updatedModules.groupGifting = false;
                               }
                               if (featureId === 'countdown') {
-                                setLocalConfig((prev: any) => ({
-                                  ...prev,
+                                setLocalConfig((prev) => ({
+                                  ...(prev ?? {}),
                                   showCountdown: newChecked,
                                   modules: updatedModules,
                                 }));
                               } else if (featureId === 'addToCalendar') {
-                                setLocalConfig((prev: any) => ({
-                                  ...prev,
+                                setLocalConfig((prev) => ({
+                                  ...(prev ?? {}),
                                   showAddToCalendar: newChecked,
                                   modules: updatedModules,
                                 }));
                               } else {
-                                setLocalConfig((prev: any) => ({
-                                  ...prev,
+                                setLocalConfig((prev) => ({
+                                  ...(prev ?? {}),
                                   modules: updatedModules,
                                 }));
                               }
@@ -1668,7 +1827,7 @@ export default function AdminSettingsPage() {
                       />
                       {localConfig.brandLogoUrl && (
                         <div className="flex items-center gap-2">
-                          <img
+                          <MediaImage
                             src={localConfig.brandLogoUrl}
                             alt={localConfig.brandLogoAlt || 'Brand logo preview'}
                             className="h-10 max-h-12 w-auto object-contain bg-gray-100 dark:bg-gray-700 rounded p-1"
@@ -1717,7 +1876,7 @@ export default function AdminSettingsPage() {
                         />
                         {localConfig.heroImageUrl && (
                           <div className="flex items-center gap-2">
-                            <img
+                            <MediaImage
                               src={localConfig.heroImageUrl}
                               alt={localConfig.heroImageAlt || 'Hero visual preview'}
                               className="h-12 w-20 object-cover bg-gray-100 dark:bg-gray-700 rounded p-1"
@@ -1767,7 +1926,7 @@ export default function AdminSettingsPage() {
                         />
                         {localConfig.brandWatermarkUrl && (
                           <div className="flex items-center gap-2">
-                            <img
+                            <MediaImage
                               src={localConfig.brandWatermarkUrl}
                               alt={localConfig.brandWatermarkAlt || 'Brand watermark preview'}
                               className="h-10 max-h-12 w-auto object-contain bg-gray-100 dark:bg-gray-700 rounded p-1"
@@ -1817,7 +1976,7 @@ export default function AdminSettingsPage() {
                         />
                         {localConfig.badgeGraphicUrl && (
                           <div className="flex items-center gap-2">
-                            <img
+                            <MediaImage
                               src={localConfig.badgeGraphicUrl}
                               alt={localConfig.badgeGraphicAlt || 'Badge graphic preview'}
                               className="h-10 max-h-12 w-auto object-contain bg-gray-100 dark:bg-gray-700 rounded p-1"
@@ -1855,7 +2014,7 @@ export default function AdminSettingsPage() {
                       <Input type="file" accept=".ico,.png,image/png,image/x-icon" onChange={(e) => handleUpload(e, 'faviconUrl')} className="file:pt-1" />
                       {localConfig.faviconUrl && (
                         <div className="flex items-center gap-2">
-                          <img src={localConfig.faviconUrl} alt="Favicon preview" className="w-8 h-8 object-contain bg-gray-100 dark:bg-gray-700 rounded" />
+                          <MediaImage src={localConfig.faviconUrl} alt="Favicon preview" className="w-8 h-8 object-contain bg-gray-100 dark:bg-gray-700 rounded" />
                           <span className="text-xs text-gray-500 dark:text-gray-400 break-all">{localConfig.faviconUrl}</span>
                         </div>
                       )}
@@ -1867,7 +2026,7 @@ export default function AdminSettingsPage() {
                       <Input type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" onChange={(e) => handleUpload(e, 'ogImageUrl')} className="file:pt-1" />
                       {localConfig.ogImageUrl && (
                         <div className="flex items-center gap-2">
-                          <img src={localConfig.ogImageUrl} alt="OG Image preview" className="w-32 h-auto object-contain bg-gray-100 dark:bg-gray-700 rounded" />
+                          <MediaImage src={localConfig.ogImageUrl} alt="OG Image preview" className="w-32 h-auto object-contain bg-gray-100 dark:bg-gray-700 rounded" />
                           <span className="text-xs text-gray-500 dark:text-gray-400 break-all">{localConfig.ogImageUrl}</span>
                         </div>
                       )}

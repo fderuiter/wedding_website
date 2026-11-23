@@ -1,10 +1,12 @@
 import { POST as sendRoute } from '../send/route';
 import { POST as previewRoute } from '../preview/route';
 import { GET as historyRoute } from '../history/route';
+import { GET as detailRoute } from '../[id]/route';
 import { POST as retryRoute } from '../retry/route';
 import { POST as testConnRoute } from '../test-connection/route';
 import { POST as testSendRoute } from '../test-send/route';
 import { NextRequest } from 'next/server';
+import { isAdminRequest } from '@/core/auth/auth.server';
 import { BroadcastService } from '@/features/broadcast';
 import { resetRateLimitsForTesting } from '@/utils/rateLimit';
 
@@ -18,6 +20,27 @@ jest.mock('@/features/broadcast/service', () => ({
     sendTestBroadcast: jest.fn().mockResolvedValue({ success: true, channel: 'EMAIL', destination: 'host@example.com', subject: '[TEST] Test Subject', body: 'Test Body' }),
     renderPreview: jest.fn().mockResolvedValue({ body: 'Rendered Body', destination: 'test@example.com' }),
     getBroadcastHistory: jest.fn().mockResolvedValue([{ id: 'b1', status: 'SENT' }]),
+    countBroadcastHistory: jest.fn().mockResolvedValue(1),
+    getBroadcastById: jest.fn().mockResolvedValue({
+      id: 'b1',
+      channel: 'EMAIL',
+      subject: 'Welcome',
+      body: 'Full body',
+      status: 'SENT',
+      totalRecipients: 1,
+      sentCount: 1,
+      failedCount: 0,
+      createdAt: '2026-06-01T12:00:00.000Z',
+      recipients: [
+        {
+          id: 'r1',
+          guestName: 'Alice',
+          destination: 'alice@example.com',
+          status: 'SENT',
+          error: null,
+        },
+      ],
+    }),
     retryFailedRecipients: jest.fn().mockResolvedValue({ id: 'b1', status: 'SENT' }),
   },
 }));
@@ -161,6 +184,81 @@ describe('Broadcast API Routes', () => {
     const req = new NextRequest('http://localhost/api/admin/broadcast/history');
     const res = await historyRoute(req);
     expect(res.status).toBe(500);
+  });
+
+  it('GET /api/admin/broadcast/history parses page and caps limit at 100 with pagination headers', async () => {
+    (BroadcastService.getBroadcastHistory as jest.Mock).mockResolvedValueOnce([
+      { id: 'b-page-2', status: 'SENT' },
+    ]);
+    (BroadcastService.countBroadcastHistory as jest.Mock).mockResolvedValueOnce(135);
+
+    const req = new NextRequest('http://localhost/api/admin/broadcast/history?page=2&limit=500');
+    const res = await historyRoute(req);
+
+    expect(res.status).toBe(200);
+    expect(BroadcastService.getBroadcastHistory).toHaveBeenLastCalledWith({
+      page: 2,
+      limit: 100,
+    });
+    expect(res.headers.get('X-Total-Count')).toBe('135');
+    expect(res.headers.get('X-Page')).toBe('2');
+    expect(res.headers.get('X-Limit')).toBe('100');
+    expect(res.headers.get('X-Total-Pages')).toBe('2');
+    expect(res.headers.get('X-Has-Prev-Page')).toBe('true');
+    expect(res.headers.get('X-Has-Next-Page')).toBe('false');
+    const json = await res.json();
+    expect(Array.isArray(json.data)).toBe(true);
+  });
+
+  it('GET /api/admin/broadcast/history returns 400 for invalid page or limit parameters', async () => {
+    const badLimitReq = new NextRequest('http://localhost/api/admin/broadcast/history?limit=0');
+    const badLimitRes = await historyRoute(badLimitReq);
+    expect(badLimitRes.status).toBe(400);
+
+    const badPageReq = new NextRequest('http://localhost/api/admin/broadcast/history?page=abc');
+    const badPageRes = await historyRoute(badPageReq);
+    expect(badPageRes.status).toBe(400);
+  });
+
+  describe('GET /api/admin/broadcast/[id]', () => {
+    it('returns full broadcast details and recipients for a known ID', async () => {
+      const req = new NextRequest('http://localhost/api/admin/broadcast/b1');
+      const res = await detailRoute(req, { params: Promise.resolve({ id: 'b1' }) });
+
+      expect(res.status).toBe(200);
+      expect(BroadcastService.getBroadcastById).toHaveBeenCalledWith('b1');
+      const json = await res.json();
+      expect(json.data.id).toBe('b1');
+      expect(json.data.body).toBe('Full body');
+      expect(json.data.recipients).toHaveLength(1);
+      expect(json.data.recipients[0].guestName).toBe('Alice');
+    });
+
+    it('returns 404 when broadcast ID does not exist', async () => {
+      (BroadcastService.getBroadcastById as jest.Mock).mockResolvedValueOnce(null);
+      const req = new NextRequest('http://localhost/api/admin/broadcast/unknown-id');
+      const res = await detailRoute(req, { params: Promise.resolve({ id: 'unknown-id' }) });
+
+      expect(res.status).toBe(404);
+      const json = await res.json();
+      expect(json.success).toBe(false);
+    });
+
+    it('returns 401 when caller is unauthenticated', async () => {
+      (isAdminRequest as jest.Mock).mockResolvedValueOnce(false);
+      const req = new NextRequest('http://localhost/api/admin/broadcast/b1');
+      const res = await detailRoute(req, { params: Promise.resolve({ id: 'b1' }) });
+
+      expect(res.status).toBe(401);
+    });
+
+    it('returns 500 when BroadcastService.getBroadcastById throws', async () => {
+      (BroadcastService.getBroadcastById as jest.Mock).mockRejectedValueOnce(new Error('DB failure'));
+      const req = new NextRequest('http://localhost/api/admin/broadcast/b1');
+      const res = await detailRoute(req, { params: Promise.resolve({ id: 'b1' }) });
+
+      expect(res.status).toBe(500);
+    });
   });
 
   it('POST /api/admin/broadcast/retry retries failed recipients', async () => {

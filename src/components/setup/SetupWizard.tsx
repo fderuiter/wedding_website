@@ -1,5 +1,6 @@
 'use client';
 import React, { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { FormGroup, Label, Input, FormMessage, Checkbox } from '@/components/ui/forms';
@@ -48,6 +49,27 @@ function isDefaultUrl(url: string): boolean {
 
 type Step2ErrorField = 'partner1' | 'partner2' | 'siteUrl' | 'contactEmail';
 
+function useSafeRouter() {
+  try {
+    return useRouter();
+  } catch {
+    return null;
+  }
+}
+
+function getSetupErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) {
+    return err.message;
+  }
+  if (typeof err === 'object' && err !== null && 'message' in err) {
+    const candidate = (err as { message?: unknown }).message;
+    if (typeof candidate === 'string' && candidate) {
+      return candidate;
+    }
+  }
+  return fallback;
+}
+
 function syncAdminLoginState() {
   if (typeof window === 'undefined') return;
   try {
@@ -80,6 +102,7 @@ function resolveStep2BackendErrorField(message: string): Step2ErrorField {
 }
 
 function SetupWizardContent() {
+  const router = useSafeRouter();
   const {
     state,
     setStep,
@@ -192,8 +215,14 @@ function SetupWizardContent() {
     }
   }, [step, themePreset, colorPrimary, colorSecondary, setPreviewConfig]);
 
-  const handleThemeChange = (fields: Record<string, any>) => {
-    if (fields.themePreset !== undefined) setThemePreset(fields.themePreset);
+  const handleThemeChange = (
+    fields: Partial<{
+      themePreset: ThemePreset | string;
+      colorPrimary: string;
+      colorSecondary: string;
+    }>
+  ) => {
+    if (fields.themePreset !== undefined) setThemePreset(fields.themePreset as ThemePreset);
     if (fields.colorPrimary !== undefined) setColorPrimary(fields.colorPrimary);
     if (fields.colorSecondary !== undefined) setColorSecondary(fields.colorSecondary);
   };
@@ -216,8 +245,8 @@ function SetupWizardContent() {
         passwordInputRef.current?.focus();
         passwordInputRef.current?.select();
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to log in.');
+    } catch (err: unknown) {
+      setError(getSetupErrorMessage(err, 'Failed to log in.'));
       passwordInputRef.current?.focus();
       passwordInputRef.current?.select();
     }
@@ -319,9 +348,9 @@ function SetupWizardContent() {
         setError(errMsg);
         focusStep2Field(targetField);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setStep2ErrorField('siteUrl');
-      setError(err.message || 'Failed to save config.');
+      setError(getSetupErrorMessage(err, 'Failed to save config.'));
       siteUrlInputRef.current?.focus();
     }
   };
@@ -347,8 +376,8 @@ function SetupWizardContent() {
         await fetch('/api/admin/sample-data', { method: 'DELETE' });
       }
       setStep(4);
-    } catch (err: any) {
-      setError(err.message || 'Error configuring sample data.');
+    } catch (err: unknown) {
+      setError(getSetupErrorMessage(err, 'Error configuring sample data.'));
     }
   };
 
@@ -771,7 +800,14 @@ function SetupWizardContent() {
                 onClick={() => {
                   syncAdminLoginState();
                   clearPersistedState();
-                  window.location.href = '/admin/dashboard';
+                  if (router?.push) {
+                    router.push('/admin/dashboard');
+                    router.refresh?.();
+                  } else if (typeof window !== 'undefined') {
+                    window.location.assign(
+                      new URL('/admin/dashboard', window.location.origin).href
+                    );
+                  }
                 }}
                 variant="primary"
                 className="flex-1 py-3"
