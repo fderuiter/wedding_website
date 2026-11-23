@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import ThingsToDoCard from './ThingsToDoCard';
+import type { VenueMapPin } from './ThingsToDoMap';
 import type { AttractionDTO } from '@/features/attractions';
 import { useFilter } from '@/hooks/useFilter';
 import { CategoryFilter } from '@/components/ui/CategoryFilter';
@@ -11,6 +12,7 @@ import EmptyState from '@/components/EmptyState';
 interface ThingsToDoListProps {
   attractions: AttractionDTO[];
   defaultCenter?: [number, number];
+  venue?: VenueMapPin | null;
 }
 
 const ThingsToDoMap = dynamic(() => import('./ThingsToDoMap'), {
@@ -18,7 +20,11 @@ const ThingsToDoMap = dynamic(() => import('./ThingsToDoMap'), {
   loading: () => <div className="bg-gray-200 dark:bg-gray-800 animate-pulse w-full h-full" />,
 });
 
-const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAttractions, defaultCenter }) => {
+const ThingsToDoList: React.FC<ThingsToDoListProps> = ({
+  attractions: initialAttractions,
+  defaultCenter,
+  venue,
+}) => {
   const [attractions, setAttractions] = useState(initialAttractions);
 
   const {
@@ -40,6 +46,12 @@ const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAtt
     }
   }, []);
 
+  const venueCoords = venue
+    ? { latitude: venue.latitude, longitude: venue.longitude }
+    : defaultCenter
+      ? { latitude: defaultCenter[0], longitude: defaultCenter[1] }
+      : undefined;
+
   return (
     <div>
       <div className="flex justify-center gap-2 mb-8 flex-wrap print:hidden">
@@ -53,7 +65,11 @@ const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAtt
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8" style={{ minHeight: '600px' }}>
         <div className="relative h-96 lg:h-full rounded-lg overflow-hidden shadow-lg print:hidden">
-          <ThingsToDoMap attractions={filteredAttractions} defaultCenter={defaultCenter} />
+          <ThingsToDoMap
+            attractions={filteredAttractions}
+            defaultCenter={defaultCenter}
+            venue={venue}
+          />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 print:grid-cols-2 print:overflow-visible">
           {filteredAttractions.length === 0 ? (
@@ -70,7 +86,11 @@ const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAtt
             </div>
           ) : (
             filteredAttractions.map((attraction) => (
-              <ThingsToDoCard key={attraction.id || attraction.name} attraction={attraction} />
+              <ThingsToDoCard
+                key={attraction.id || attraction.name}
+                attraction={attraction}
+                venueCoords={venueCoords}
+              />
             ))
           )}
         </div>

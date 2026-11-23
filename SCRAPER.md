@@ -28,9 +28,9 @@ Both endpoints require an authenticated administrator session (`isProtectedRoute
 
 ## SSRF Protection & Redirect Validation
 
-All outbound requests execute through `safeFetch` ([src/utils/safeFetch.ts](src/utils/safeFetch.ts#L37-L110)) with browser-like `User-Agent` and `Accept` headers:
+All outbound requests execute through `safeFetch` ([src/utils/safeFetch.ts](src/utils/safeFetch.ts#L52-L125)) with browser-like `User-Agent` and `Accept` headers:
 
-1. **Protocol Allowlist**: Only `http:` and `https:` URLs are permitted ([src/utils/validation.ts](src/utils/validation.ts#L348-L353) and [src/utils/safeFetch.ts](src/utils/safeFetch.ts#L51-L54)).
+1. **Protocol Allowlist**: Only `http:` and `https:` URLs are permitted ([src/utils/validation.ts](src/utils/validation.ts#L348-L353) and [src/utils/safeFetch.ts](src/utils/safeFetch.ts#L67-L69)).
 2. **DNS Resolution & Private Range Blocking**: Before opening a socket, `validateAndResolveHost` resolves the target hostname and blocks loopback (`127.0.0.0/8`, `::1`), private RFC 1918 ranges, link-local / cloud metadata addresses (`169.254.0.0/16`, `fe80::/10`), CGNAT (`100.64.0.0/10`), multicast, and unspecified IPs.
 3. **DNS-Rebinding Pinning**: `safeFetch` attaches a per-request `undici` `Agent` dispatcher (`createPinnedDispatcher`) whose custom `lookup` callback pins the TCP/TLS connection to the exact validated IP address so an attacker cannot rebind DNS between validation and socket connection.
 4. **Validated Redirect Hops**: Redirects are followed manually (`redirect: 'manual'`) for up to **`5` hops** (`maxRedirects = 5`), re-running full URL and SSRF IP validation on every `Location` target before following the hop.

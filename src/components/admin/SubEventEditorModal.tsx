@@ -62,6 +62,7 @@ interface SubEventFormSnapshot {
   title: string;
   description: string;
   locationName: string;
+  location: string;
   category: string;
   startTime: string;
   endTime: string;
@@ -82,6 +83,7 @@ function createInitialSubEventSnapshot(
     title: editingEvent ? (editingEvent.title ?? '') : '',
     description: editingEvent ? (editingEvent.description ?? '') : '',
     locationName: editingEvent ? (editingEvent.locationName ?? '') : '',
+    location: editingEvent ? (editingEvent.location ?? '') : '',
     category: editingEvent ? (editingEvent.category ?? '') : '',
     startTime: editingEvent ? toDateTimeLocalValue(editingEvent.startTime, timeZone) : '',
     endTime: editingEvent ? toDateTimeLocalValue(editingEvent.endTime, timeZone) : '',
@@ -122,6 +124,7 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
   const [title, setTitle] = useState(() => initialSnapshot.title);
   const [description, setDescription] = useState(() => initialSnapshot.description);
   const [locationName, setLocationName] = useState(() => initialSnapshot.locationName);
+  const [location, setLocation] = useState(() => initialSnapshot.location);
   const [category, setCategory] = useState(() => initialSnapshot.category);
   const [startTime, setStartTime] = useState(() => initialSnapshot.startTime);
   const [endTime, setEndTime] = useState(() => initialSnapshot.endTime);
@@ -150,6 +153,7 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
     title,
     description,
     locationName,
+    location,
     category,
     startTime,
     endTime,
@@ -456,6 +460,7 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
         title: title.trim(),
         description: isEditMode ? description.trim() : description.trim() || undefined,
         locationName: isEditMode ? locationName.trim() : locationName.trim() || undefined,
+        location: isEditMode ? location.trim() : location.trim() || undefined,
         category: isEditMode ? category.trim() : category.trim() || undefined,
         startTime: fromDateTimeLocalValue(startTime, timezone),
         endTime: fromDateTimeLocalValue(endTime, timezone),
@@ -552,19 +557,33 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
         </FormGroup>
 
         <FormGroup>
-          <Label>Category</Label>
+          <Label>Street Address</Label>
           <Input
             type="text"
-            value={category}
+            value={location}
             onChange={(e) => {
               const val = e.target.value;
-              setCategory(val);
-              updateSnapshotField('category', val);
+              setLocation(val);
+              updateSnapshotField('location', val);
             }}
-            placeholder="e.g. Dining"
+            placeholder="e.g. 500 Lake Shore Dr, Chicago, IL"
           />
         </FormGroup>
       </div>
+
+      <FormGroup>
+        <Label>Category</Label>
+        <Input
+          type="text"
+          value={category}
+          onChange={(e) => {
+            const val = e.target.value;
+            setCategory(val);
+            updateSnapshotField('category', val);
+          }}
+          placeholder="e.g. Dining"
+        />
+      </FormGroup>
 
       <FormGroup>
         <Label>Description</Label>

@@ -220,14 +220,16 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       expect(table).toContain('`Masked secret (hasTwilioAuthToken)`');
     });
 
-    it('lists all 81 API route handlers and marks /api/media and /api/admin/invitation-codes/merge Admin-only, /api/registry/webhook/stripe stripeSignature, and /api/live, /api/guest/session, and /api/uploads/[...path] Public', () => {
+    it('lists all 82 API route handlers and marks /api/media, /api/admin/geocode, and /api/admin/invitation-codes/merge Admin-only, /api/registry/webhook/stripe stripeSignature, and /api/live, /api/guest/session, and /api/uploads/[...path] Public', () => {
       const apiSection = generateApiRoutesSection();
-      expect(apiSection).toContain('Total API route handlers: **81**');
+      expect(apiSection).toContain('Total API route handlers: **82**');
 
       const handlerRows = apiSection
         .split('\n')
         .filter((line) => line.startsWith('| `/api/'));
-      expect(handlerRows).toHaveLength(81);
+      expect(handlerRows).toHaveLength(82);
+
+      expect(apiSection).toContain('| `/api/admin/geocode` | `src/app/api/admin/geocode/route.ts` | `GET` | `Admin-only` |');
 
       expect(apiSection).toContain('| `/api/live` | `src/app/api/live/route.ts` | `GET` | `Public` |');
       expect(apiSection).toContain('| `/api/guest/session` | `src/app/api/guest/session/route.ts` | `GET`, `DELETE` | `Public` |');

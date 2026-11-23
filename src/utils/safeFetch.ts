@@ -2,11 +2,26 @@ import { validateAndResolveHost } from './ssrf';
 import { Agent, Dispatcher1Wrapper, type Dispatcher } from 'undici';
 
 /**
+ * Custom undici Agent that bridges Node's built-in fetch (Dispatcher v1 handler contract)
+ * with undici v8's Dispatcher v2 handler contract while preserving `instanceof Agent`.
+ */
+class PinnedAgent extends Agent {
+  private readonly legacyWrapper = new Dispatcher1Wrapper(this);
+
+  override dispatch(options: Agent.DispatchOptions, handler: Dispatcher.DispatchHandler): boolean {
+    if (handler && typeof handler === 'object' && typeof handler.onRequestStart !== 'function') {
+      return this.legacyWrapper.dispatch(options, handler);
+    }
+    return super.dispatch(options, handler);
+  }
+}
+
+/**
  * Creates an undici Agent that pins the socket connection to a specific resolved IP.
  * Standard HTTP headers (e.g. Host) and TLS SNI continue to use the original hostname.
  */
 export function createPinnedDispatcher(address: string, family: number): Agent {
-  return bridgeLegacyDispatcher(new Agent({
+  return new PinnedAgent({
     connect: {
       lookup: (_hostname, opts, cb) => {
         let callback = cb;
@@ -22,7 +37,7 @@ export function createPinnedDispatcher(address: string, family: number): Agent {
         }
       },
     },
-  }));
+  });
 }
 
 /**
@@ -107,13 +122,4 @@ export async function safeFetch(url: string, options: RequestInit = {}): Promise
       return res;
     }
   }
-}
-
-function bridgeLegacyDispatcher(agent: Agent): Agent {
-  const target: Dispatcher = Object.assign(Object.create(agent) as Dispatcher, {
-    dispatch: agent.dispatch.bind(agent),
-  });
-  const wrapper = new Dispatcher1Wrapper(target);
-  agent.dispatch = wrapper.dispatch.bind(wrapper);
-  return agent;
 }
