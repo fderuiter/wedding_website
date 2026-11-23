@@ -92,13 +92,15 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked \
 # Builder stage
 FROM base AS builder
 COPY package.json package-lock.json .npmrc ./
-COPY prisma ./prisma
-COPY prisma.config.ts ./
-COPY src/lib/postgres-url.js ./src/lib/postgres-url.js
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
     npm ci --ignore-scripts
 
-COPY . .
+COPY prisma ./prisma
+COPY prisma.config.ts next.config.ts postcss.config.mjs tsconfig.json tsconfig.build.json next-env.d.ts ./
+COPY assets ./assets
+COPY public ./public
+COPY src ./src
+COPY scripts/generate-password-hash.mjs ./scripts/generate-password-hash.mjs
 
 # Generate Prisma Client once and build standalone Next.js output without linters or doc generators
 RUN --mount=type=cache,target=/app/.next/cache,sharing=locked \

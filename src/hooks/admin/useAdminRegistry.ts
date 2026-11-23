@@ -142,11 +142,77 @@ export function useAdminRegistry(options?: AdminHookOptions) {
     },
   });
 
+  const { mutateAsync: mutateContributorAction, isPending: isContributorActionPending } =
+    useMutation({
+      mutationFn: async ({
+        contributorId,
+        action,
+      }: {
+        contributorId: string;
+        action: 'confirm' | 'remind' | 'void';
+      }) => {
+        return apiClient.post<{
+          action: 'confirm' | 'remind' | 'void';
+          changed: boolean;
+          contributor: {
+            id: string;
+            status: string;
+            refundedAmount: number;
+            reminderEmailSentAt?: string | null;
+          };
+          item?: RegistryItem | null;
+        }>(`/api/admin/contributors/${encodeURIComponent(contributorId)}/action`, {
+          action,
+        });
+      },
+      onSuccess: (response) => {
+        if (response?.item && response.item.id) {
+          const updatedItem = response.item;
+          queryClient.setQueryData<RegistryItem[] | undefined>(
+            ADMIN_REGISTRY_QUERY_KEY,
+            (old) =>
+              Array.isArray(old)
+                ? old.map((entry) => (entry.id === updatedItem.id ? updatedItem : entry))
+                : old
+          );
+        } else if (response?.contributor?.id) {
+          queryClient.setQueryData<RegistryItem[] | undefined>(
+            ADMIN_REGISTRY_QUERY_KEY,
+            (old) =>
+              Array.isArray(old)
+                ? old.map((entry) => ({
+                  ...entry,
+                  contributors: Array.isArray(entry.contributors)
+                    ? entry.contributors.map((c) =>
+                      c.id === response.contributor.id
+                        ? {
+                          ...c,
+                          status: response.contributor.status as any,
+                          refundedAmount: response.contributor.refundedAmount,
+                          reminderEmailSentAt: response.contributor.reminderEmailSentAt,
+                        }
+                        : c
+                    )
+                    : entry.contributors,
+                }))
+                : old
+          );
+        }
+        queryClient.invalidateQueries({ queryKey: ADMIN_REGISTRY_QUERY_KEY });
+        invalidateRelatedRegistryQueries();
+      },
+    });
+
   return {
     ...orchestration,
     reorderItems: (orderedIds: string[]) => mutateReorderItems(orderedIds),
     toggleMostWanted: (id: string, isMostWanted: boolean) =>
       mutateToggleMostWanted({ id, isMostWanted }),
+    performContributorAction: (
+      contributorId: string,
+      action: 'confirm' | 'remind' | 'void'
+    ) => mutateContributorAction({ contributorId, action }),
+    isContributorActionPending,
   };
 }
 

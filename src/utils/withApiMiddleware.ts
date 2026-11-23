@@ -37,6 +37,7 @@ function isInviteRevocationExcludedApiPath(normalizedPathname: string): boolean 
     normalizedPathname === '/api/guest/login' ||
     normalizedPathname === '/api/guest/address' ||
     normalizedPathname === '/api/guest/address/public' ||
+    normalizedPathname === '/api/registry/claim' ||
     normalizedPathname === '/api/registry/validate-code' ||
     normalizedPathname === '/api/registry/session' ||
     normalizedPathname === '/api/registry/webhook/stripe' ||

@@ -193,6 +193,8 @@ describe('RegistryPage end-to-end contribution receipt and cache sync integratio
             {
               name: 'Jane Donor',
               amount: 50,
+              refundedAmount: 0,
+              status: 'CONFIRMED',
               coverFee: false,
               feeAmount: 0,
               date: new Date().toISOString(),

@@ -5,7 +5,7 @@ import type { SetStateAction } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient, useMutation, useQuery } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/ToastProvider';
-import { RegistryItem, PaginatedRegistryItems, OrderTrackingDetails } from '../types';
+import { RegistryItem, PaginatedRegistryItems, OrderTrackingDetails, GuestClaimActions } from '../types';
 import { checkAdminClient } from '@/core/auth/auth.client';
 
 import { apiClient } from '@/lib/apiClient';
@@ -57,6 +57,8 @@ function applyOptimisticContribution(item: RegistryItem, variables: ContributeVa
         {
           name: variables.purchaserName,
           amount: variables.amount,
+          refundedAmount: 0,
+          status: variables.paymentIntentId ? 'CONFIRMED' : 'RESERVED',
           coverFee: effectiveCoverFee,
           feeAmount: effectiveCoverFee
             ? Math.round(variables.amount * CARD_PROCESSING_FEE_RATE * 100) / 100
@@ -290,7 +292,10 @@ export function useRegistry() {
     },
     onSuccess: (updatedItem, variables) => {
       if (updatedItem && typeof updatedItem === 'object' && 'id' in updatedItem && updatedItem.id) {
-        const nextItem = updatedItem as RegistryItem;
+        const { claimActions: _claimActions, ...itemFields } = updatedItem as RegistryItem & {
+          claimActions?: GuestClaimActions;
+        };
+        const nextItem = itemFields as RegistryItem;
         queryClient.setQueriesData<RegistryQueryData>(
           { queryKey: ['registry-items'] },
           (old) => mapRegistryQueryData(old, (item) => (item.id === nextItem.id ? nextItem : item))
@@ -461,7 +466,7 @@ export function useRegistry() {
     paymentIntentId?: string,
     orderDetails?: OrderTrackingDetails
   ) => {
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<unknown>((resolve, reject) => {
       contribute(
         {
           itemId,
@@ -477,8 +482,8 @@ export function useRegistry() {
           trackingNumber: orderDetails?.trackingNumber || undefined,
         },
         {
-          onSuccess: () => {
-            resolve();
+          onSuccess: (data) => {
+            resolve(data);
           },
           onError: (error) => {
             reject(error);
@@ -487,6 +492,17 @@ export function useRegistry() {
       );
     });
   }, [contribute]);
+
+  const syncItemInCache = useCallback((nextItem: RegistryItem) => {
+    if (!nextItem || !nextItem.id) return;
+    queryClient.setQueriesData<RegistryQueryData>(
+      { queryKey: ['registry-items'] },
+      (old) => mapRegistryQueryData(old, (item) => (item.id === nextItem.id ? nextItem : item))
+    );
+    setSelectedItem((prev) => (prev && prev.id === nextItem.id ? nextItem : prev));
+    queryClient.invalidateQueries({ queryKey: ['admin-registry'] });
+    queryClient.invalidateQueries({ queryKey: ['admin-registry-item', nextItem.id] });
+  }, [queryClient]);
 
   const handleClearFilters = useCallback(() => {
     setCategoryFilter([]);
@@ -544,5 +560,6 @@ export function useRegistry() {
     handleEdit,
     handleDelete,
     handleContribute,
+    syncItemInCache,
   };
 }

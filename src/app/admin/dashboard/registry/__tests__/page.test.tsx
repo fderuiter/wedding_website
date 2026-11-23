@@ -9,7 +9,7 @@ import AdminRegistryPage from '../page';
 import type { RegistryItem } from '@/features/registry';
 import { checkAdminClient as mockCheckAdminClient } from '@/core/auth/auth.client';
 import { createMockMedia } from '@/testing/factories/mediaFactory';
-import { createMockRegistryItem } from '@/testing/factories/registryFactory';
+import { createMockContributor, createMockRegistryItem } from '@/testing/factories/registryFactory';
 
 let capturedDragEndHandlers: Array<(_result: DropResult) => void> = [];
 
@@ -647,5 +647,140 @@ describe('AdminRegistryPage', () => {
         })
       );
     });
+  });
+
+  it('displays contributor lifecycle badges and executes Confirm, Polite Reminder, and Void actions without deleting records', async () => {
+    const itemWithContributors = createMockRegistryItem({
+      id: 'item-lifecycle-1',
+      name: 'Honeymoon Fund',
+      isGroupGift: true,
+      price: 500,
+      amountContributed: 250,
+      purchased: false,
+      contributors: [
+        createMockContributor({
+          id: 'c-res-1',
+          name: 'Alex Reserved',
+          email: 'alex@example.com',
+          amount: 100,
+          refundedAmount: 0,
+          status: 'RESERVED',
+          date: '2026-06-01T12:00:00.000Z',
+        }),
+        createMockContributor({
+          id: 'c-part-1',
+          name: 'Casey Partial',
+          email: 'casey@example.com',
+          amount: 200,
+          refundedAmount: 50,
+          status: 'CONFIRMED',
+          date: '2026-06-02T12:00:00.000Z',
+          stripeChargeId: 'ch_partial_1',
+        }),
+        createMockContributor({
+          id: 'c-ref-1',
+          name: 'Riley Refunded',
+          email: 'riley@example.com',
+          amount: 75,
+          refundedAmount: 75,
+          status: 'REFUNDED',
+          date: '2026-06-03T12:00:00.000Z',
+        }),
+      ],
+    });
+
+    mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+      if (url === '/api/registry/items?limit=500') {
+        return Promise.resolve({ ok: true, json: async () => [itemWithContributors] });
+      }
+      if (url === '/api/registry/capabilities') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            data: {
+              cardCheckoutEnabled: true,
+              stripePublishableKey: 'pk_test_123',
+              defaultPaymentHandleType: 'Venmo',
+              defaultPaymentHandle: '@couple',
+            },
+          }),
+        });
+      }
+      if (url.startsWith('/api/admin/contributors/') && options?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            data: { action: JSON.parse(String(options.body)).action },
+          }),
+        });
+      }
+      return Promise.reject(new Error(`Unhandled request: ${url}`));
+    });
+
+    const { container } = renderWithProviders(
+      <main>
+        <AdminRegistryPage />
+      </main>
+    );
+
+    expect((await screen.findAllByText('Reserved')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Confirmed').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Partial Refund (-$50.00)').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Refunded').length).toBeGreaterThan(0);
+
+    // Refunded contributor has no destructive/active action buttons
+    expect(
+      screen.queryByRole('button', { name: 'Void contribution from Riley Refunded' })
+    ).not.toBeInTheDocument();
+
+    // Polite Reminder action
+    fireEvent.click(
+      screen.getAllByRole('button', { name: 'Send polite reminder to Alex Reserved' })[0]
+    );
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/admin/contributors/c-res-1/action',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ action: 'remind' }),
+        })
+      );
+    });
+
+    // Confirm action
+    fireEvent.click(
+      screen.getAllByRole('button', { name: 'Confirm contribution from Alex Reserved' })[0]
+    );
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/admin/contributors/c-res-1/action',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ action: 'confirm' }),
+        })
+      );
+    });
+
+    // Void action prompts confirmation dialog and preserves row history
+    fireEvent.click(
+      screen.getAllByRole('button', { name: 'Void contribution from Casey Partial' })[0]
+    );
+    const dialogConfirmBtn = await screen.findByRole('button', { name: 'Confirm' });
+    fireEvent.click(dialogConfirmBtn);
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/admin/contributors/c-part-1/action',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ action: 'void' }),
+        })
+      );
+    });
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 });

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { RegistryItem, OrderTrackingDetails } from '../types';
+import { RegistryItem, OrderTrackingDetails, GuestClaimActions } from '../types';
 import { ContributionSchema } from '../schemas';
 import { apiClient } from '@/lib/apiClient';
 import { useGuestSession } from '../context/GuestSessionContext';
@@ -39,7 +39,7 @@ export interface UseRegistryContributionMachineOptions {
     email?: string,
     paymentIntentId?: string,
     orderDetails?: OrderTrackingDetails
-  ) => Promise<void>;
+  ) => Promise<unknown>;
   initialContributorName?: string;
   initialEmail?: string;
   initialAmount?: number | string;
@@ -74,8 +74,9 @@ export interface UseRegistryContributionMachineReturn {
   carrier: string;
   trackingNumber: string;
 
-  // Payment transaction reference
+  // Payment transaction reference & signed guest claim actions
   paymentTransactionId: string | null;
+  claimActions: GuestClaimActions | null;
 
   // Field error partitions
   fieldErrors: ContributionFieldErrors;
@@ -154,6 +155,7 @@ export function useRegistryContributionMachine({
   const [codeErrorState, setCodeError] = useState<string | null>(null);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [paymentTransactionId, setPaymentTransactionId] = useState<string | null>(null);
+  const [claimActions, setClaimActions] = useState<GuestClaimActions | null>(null);
 
   // AbortController for cancelling in-flight validation requests
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -607,8 +609,9 @@ export function useRegistryContributionMachine({
 
       setPhase('submitting');
       try {
+        let contributeResult: unknown;
         if (orderDetailsPayload) {
-          await onContribute(
+          contributeResult = await onContribute(
             item.id,
             validData.name,
             finalAmount,
@@ -620,7 +623,7 @@ export function useRegistryContributionMachine({
             orderDetailsPayload
           );
         } else if (paymentIntentId !== undefined && onContribute.length >= 8) {
-          await onContribute(
+          contributeResult = await onContribute(
             item.id,
             validData.name,
             finalAmount,
@@ -631,7 +634,7 @@ export function useRegistryContributionMachine({
             paymentIntentId
           );
         } else if (validData.email !== undefined || validData.coverFee) {
-          await onContribute(
+          contributeResult = await onContribute(
             item.id,
             validData.name,
             finalAmount,
@@ -641,7 +644,7 @@ export function useRegistryContributionMachine({
             validData.email || undefined
           );
         } else if (validData.code !== undefined || validData.message !== undefined) {
-          await onContribute(
+          contributeResult = await onContribute(
             item.id,
             validData.name,
             finalAmount,
@@ -649,7 +652,20 @@ export function useRegistryContributionMachine({
             validData.message || undefined
           );
         } else {
-          await onContribute(item.id, validData.name, finalAmount);
+          contributeResult = await onContribute(item.id, validData.name, finalAmount);
+        }
+        if (
+          !paymentIntentId &&
+          contributeResult &&
+          typeof contributeResult === 'object' &&
+          'claimActions' in contributeResult &&
+          (contributeResult as { claimActions?: GuestClaimActions }).claimActions
+        ) {
+          setClaimActions(
+            (contributeResult as { claimActions?: GuestClaimActions }).claimActions ?? null
+          );
+        } else {
+          setClaimActions(null);
         }
         setPaymentTransactionId(paymentIntentId ?? null);
         setPhase('success');
@@ -723,6 +739,7 @@ export function useRegistryContributionMachine({
     trackingNumber,
 
     paymentTransactionId,
+    claimActions,
 
     fieldErrors,
     codeError,
