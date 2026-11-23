@@ -1,12 +1,12 @@
 import { validateAndResolveHost } from './ssrf';
-import { Agent } from 'undici';
+import { Agent, Dispatcher1Wrapper, type Dispatcher } from 'undici';
 
 /**
  * Creates an undici Agent that pins the socket connection to a specific resolved IP.
  * Standard HTTP headers (e.g. Host) and TLS SNI continue to use the original hostname.
  */
 export function createPinnedDispatcher(address: string, family: number): Agent {
-  return new Agent({
+  const agent = new Agent({
     connect: {
       lookup: (_hostname, opts, cb) => {
         let callback = cb;
@@ -23,6 +23,14 @@ export function createPinnedDispatcher(address: string, family: number): Agent {
       },
     },
   });
+
+  const rawDispatch = agent.dispatch.bind(agent);
+  const legacyDispatcher = new Dispatcher1Wrapper({
+    dispatch: rawDispatch,
+  } as unknown as Dispatcher);
+  agent.dispatch = legacyDispatcher.dispatch.bind(legacyDispatcher);
+
+  return agent;
 }
 
 /**

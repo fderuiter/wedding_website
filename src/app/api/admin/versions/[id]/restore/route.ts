@@ -199,11 +199,11 @@ export const POST = withApiMiddleware(
         ...(snapshotData.cutoffDate !== undefined
           ? {
             cutoffDate:
-                snapshotData.cutoffDate instanceof Date
-                  ? snapshotData.cutoffDate.toISOString()
-                  : snapshotData.cutoffDate === null
-                    ? null
-                    : String(snapshotData.cutoffDate),
+              snapshotData.cutoffDate instanceof Date
+                ? snapshotData.cutoffDate.toISOString()
+                : snapshotData.cutoffDate === null
+                  ? null
+                  : String(snapshotData.cutoffDate),
           }
           : {}),
         ...(snapshotData.shuttleInfo !== undefined
@@ -418,7 +418,7 @@ export const POST = withApiMiddleware(
         ...(Array.isArray(snapshotData.customQuestions)
           ? {
             customQuestions:
-                snapshotData.customQuestions as Prisma.InputJsonValue,
+              snapshotData.customQuestions as Prisma.InputJsonValue,
           }
           : {}),
       };
@@ -466,7 +466,7 @@ export const POST = withApiMiddleware(
         ...(Array.isArray(snapshotData.mealSelections)
           ? {
             mealSelections:
-                snapshotData.mealSelections as Prisma.InputJsonValue,
+              snapshotData.mealSelections as Prisma.InputJsonValue,
           }
           : {}),
         ...(snapshotData.customAnswers &&
@@ -474,7 +474,7 @@ export const POST = withApiMiddleware(
         !Array.isArray(snapshotData.customAnswers)
           ? {
             customAnswers:
-                snapshotData.customAnswers as Prisma.InputJsonValue,
+              snapshotData.customAnswers as Prisma.InputJsonValue,
           }
           : {}),
         ...(Array.isArray(snapshotData.plusOneNames)

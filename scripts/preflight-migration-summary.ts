@@ -591,13 +591,21 @@ function appendStepSummary(summaryFile: string | undefined, markdownSummary: str
  */
 export function runPreflightCheck(options?: PreflightCheckOptions): { success: boolean; summary: string } {
   const workDir = options?.cwd ? path.resolve(options.cwd) : process.cwd();
-  const environment = options?.environment || process.env.TARGET_ENVIRONMENT || process.env.NODE_ENV || 'production';
   const migrationsDir = options?.migrationsDir || path.join(workDir, 'prisma', 'migrations');
   const summaryFile = options?.stepSummaryFile || process.env.GITHUB_STEP_SUMMARY;
   const requireDb = Boolean(options?.requireDb);
   const offline = Boolean(options?.offline);
   const baseRef = options?.baseRef || DEFAULT_BASE_REF;
   const headRef = options?.headRef;
+  const databaseUrl =
+    options?.databaseUrl !== undefined ? options.databaseUrl : process.env.DATABASE_URL;
+  const isOfflineMode =
+    options?.mockOutput === undefined && (offline || (!requireDb && !databaseUrl?.trim()));
+  const environment =
+    options?.environment ||
+    process.env.TARGET_ENVIRONMENT ||
+    process.env.NODE_ENV ||
+    (isOfflineMode ? 'offline' : 'development');
 
   if (requireDb && offline) {
     const conflictSummary = formatPreflightSummary({
@@ -635,11 +643,8 @@ export function runPreflightCheck(options?: PreflightCheckOptions): { success: b
     return { success: false, summary: badRefSummary };
   }
 
-  const databaseUrl =
-    options?.databaseUrl !== undefined ? options.databaseUrl : process.env.DATABASE_URL;
-
   // Offline git-diff mode when `--offline` is passed or when `DATABASE_URL` is absent without `--require-db`
-  if (options?.mockOutput === undefined && (offline || (!requireDb && !databaseUrl?.trim()))) {
+  if (isOfflineMode) {
     console.log(
       `Running offline preflight migration diff against "${baseRef}" (live database NOT QUERIED)...`
     );
