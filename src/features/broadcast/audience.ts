@@ -38,8 +38,16 @@ export function parseGuestExtraFields(extraFields: unknown): Record<string, unkn
 export function getGuestPhone(guest: { extraFields?: unknown } | null | undefined): string {
   if (!guest) return '';
   const extra = parseGuestExtraFields(guest.extraFields);
-  const phoneVal = extra.phone ?? extra.mobile;
-  return typeof phoneVal === 'string' ? phoneVal.trim() : '';
+  const candidates = [extra.phone, extra.mobile, extra.phoneNumber, extra['Phone Number']];
+  for (const val of candidates) {
+    if (typeof val === 'string' && val.trim()) {
+      return val.trim().replace(/^'(?=[+\d(])/, '').trim();
+    }
+    if (typeof val === 'number' && Number.isFinite(val)) {
+      return String(val);
+    }
+  }
+  return '';
 }
 
 export function hasBroadcastChannelContact(

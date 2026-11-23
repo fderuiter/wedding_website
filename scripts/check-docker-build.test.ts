@@ -739,4 +739,130 @@ describe('check-docker-build', () => {
       ])
     );
   });
+
+  describe('standalone output verification (pre-build vs --require-standalone)', () => {
+    function writeValidStandaloneBundle(targetDir: string): void {
+      const standaloneDir = path.join(targetDir, '.next', 'standalone');
+      const staticChunksDir = path.join(standaloneDir, '.next', 'static', 'chunks');
+      const publicAssetsDir = path.join(standaloneDir, 'public', 'assets');
+      fs.mkdirSync(staticChunksDir, { recursive: true });
+      fs.mkdirSync(publicAssetsDir, { recursive: true });
+      fs.writeFileSync(path.join(standaloneDir, 'server.js'), 'console.log("standalone");\n');
+      fs.writeFileSync(path.join(staticChunksDir, 'main.js'), 'console.log("chunk");\n');
+      fs.writeFileSync(path.join(publicAssetsDir, 'favicon.png'), 'png-bytes');
+    }
+
+    it('passes in pre-build mode when .next does not exist, and fails with --require-standalone', () => {
+      expect(checkDockerBuild(tempDir).violations).toEqual([]);
+
+      const requireRes = checkDockerBuild(tempDir, { requireStandalone: true });
+      expect(requireRes.violations).toEqual([
+        expect.objectContaining({
+          filePath: '.next',
+          imageRef: '.next',
+        }),
+      ]);
+
+      const cliResult = spawnSync(
+        process.execPath,
+        [TSX_CLI_PATH, CHECK_SCRIPT_PATH, '--require-standalone'],
+        {
+          cwd: tempDir,
+          encoding: 'utf8',
+        }
+      );
+      expect(cliResult.status).toBe(1);
+      expect(cliResult.stderr).toContain('.next build output directory is missing');
+    });
+
+    it('exits with code 0 under --require-standalone when server.js, .next/static, and public are staged cleanly', () => {
+      writeValidStandaloneBundle(tempDir);
+
+      expect(checkDockerBuild(tempDir, { requireStandalone: true }).violations).toEqual([]);
+
+      const cliResult = spawnSync(
+        process.execPath,
+        [TSX_CLI_PATH, CHECK_SCRIPT_PATH, '--require-standalone'],
+        {
+          cwd: tempDir,
+          encoding: 'utf8',
+        }
+      );
+      expect(cliResult.status).toBe(0);
+      expect(cliResult.stdout).toContain('passed');
+    });
+
+    it('fails with --require-standalone when server.js, .next/standalone/.next/static, or .next/standalone/public is missing', () => {
+      writeValidStandaloneBundle(tempDir);
+      fs.rmSync(path.join(tempDir, '.next', 'standalone', 'server.js'));
+      fs.rmSync(path.join(tempDir, '.next', 'standalone', '.next', 'static'), {
+        recursive: true,
+        force: true,
+      });
+      fs.rmSync(path.join(tempDir, '.next', 'standalone', 'public'), {
+        recursive: true,
+        force: true,
+      });
+
+      const { violations } = checkDockerBuild(tempDir, { requireStandalone: true });
+      expect(violations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            filePath: '.next/standalone/server.js',
+            imageRef: 'server.js',
+          }),
+          expect.objectContaining({
+            filePath: '.next/standalone/.next/static',
+            imageRef: '.next/standalone/.next/static',
+          }),
+          expect.objectContaining({
+            filePath: '.next/standalone/public',
+            imageRef: '.next/standalone/public',
+          }),
+        ])
+      );
+
+      const cliResult = spawnSync(
+        process.execPath,
+        [TSX_CLI_PATH, CHECK_SCRIPT_PATH, '--require-standalone'],
+        {
+          cwd: tempDir,
+          encoding: 'utf8',
+        }
+      );
+      expect(cliResult.status).toBe(1);
+    });
+
+    it('fails when standalone assets contain nested duplicate directories or mockServiceWorker.js contamination', () => {
+      writeValidStandaloneBundle(tempDir);
+      fs.mkdirSync(path.join(tempDir, '.next', 'standalone', 'public', 'public'), {
+        recursive: true,
+      });
+      fs.mkdirSync(path.join(tempDir, '.next', 'standalone', '.next', 'static', 'static'), {
+        recursive: true,
+      });
+      fs.writeFileSync(
+        path.join(tempDir, '.next', 'standalone', 'public', 'mockServiceWorker.js'),
+        '// dev worker\n'
+      );
+
+      const { violations } = checkDockerBuild(tempDir, { requireStandalone: true });
+      expect(violations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            filePath: '.next/standalone/public/public',
+            imageRef: 'public/public',
+          }),
+          expect.objectContaining({
+            filePath: '.next/standalone/.next/static/static',
+            imageRef: 'static/static',
+          }),
+          expect.objectContaining({
+            filePath: '.next/standalone/public/mockServiceWorker.js',
+            imageRef: 'mockServiceWorker.js',
+          }),
+        ])
+      );
+    });
+  });
 });

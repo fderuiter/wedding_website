@@ -43,7 +43,7 @@ BEGIN
             ri."image" IS NOT NULL
             AND BTRIM(ri."image") <> ''
             AND LENGTH(BTRIM(ri."image")) <= 2000
-            AND POSITION(CHR(92) IN BTRIM(ri."image")) = 0
+            AND POSITION(E'\\' IN BTRIM(ri."image")) = 0
             AND BTRIM(ri."image") !~* '%(00|5c)'
             AND (
               BTRIM(ri."image") ~ '^https?://[^/\s?#]+(/[^\s]*)?$'
