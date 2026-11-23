@@ -12,7 +12,7 @@ export interface Step {
 export interface QualityRunOptions {
   cwd?: string;
   stepsToRun?: Step[];
-  execCommand?: (_command: string, _cwd: string) => void;
+  execCommand?: (command: string, cwd: string) => void;
 }
 
 export function cleanupPortalTempDirs(cwd: string = process.cwd()): void {

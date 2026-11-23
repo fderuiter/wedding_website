@@ -32,8 +32,8 @@
     "build:export": "node scripts/build-export.mjs",
     "postbuild": "[ -d .next/standalone ] && rm -rf .next/standalone/.next/static .next/standalone/public && cp -r .next/static .next/standalone/.next/static && cp -r public .next/standalone/public && rm -f .next/standalone/public/mockServiceWorker.js || true",
     "start": "node .next/standalone/server.js",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
+    "lint": "eslint . --cache --cache-location .eslintcache --max-warnings 0",
+    "lint:fix": "eslint . --cache --cache-location .eslintcache --fix --max-warnings 0",
     "lint:migrations": "tsx scripts/verify-migration-compatibility.ts",
     "lint:unused": "knip",
     "lint:unused:fix": "knip --fix --allow-remove-files",
@@ -162,6 +162,7 @@
     "ts-morph": "^28.0.0",
     "tsx": "^4.23.15",
     "typescript": "^5.8.2",
+    "typescript-eslint": "^8.72.0",
     "vitepress": "^1.6.4",
     "vitepress-plugin-mermaid": "^2.0.17",
     "yaml": "^2.9.1"
