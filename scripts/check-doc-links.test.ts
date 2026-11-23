@@ -6,20 +6,36 @@ import {
   checkDocLinks,
   checkLinksInFile,
   checkVitePressConfigLinks,
+  ExtractedMermaidBlock,
   extractMarkdownHeadings,
+  FenceTransitionResult,
   findInlineCodeEnd,
   findMarkdownFiles,
+  FrontmatterScanMode,
   githubSlugify,
+  HtmlCommentScanMode,
+  IntraFileAnchorMode,
   LinkError,
+  LinkTargetValidationOptions,
+  MarkdownFenceState,
   MarkdownHeading,
+  MarkdownScanOptions,
   ParsedMarkdownLink,
+  PortalRouteMode,
+  QueryTargetMode,
   resolveVitePressHeadingSlug,
   safeDecodeURIComponent,
   scanLinksAndCodeInLine,
+  scanMarkdownDocument,
+  ScannedMermaidBlock,
+  stepMarkdownFence,
   stripHtmlTags,
   stripInlineMarkdown,
+  transformNonFencedMarkdownLines,
+  validateLinkTarget,
   vitepressSlugify,
 } from './check-doc-links';
+import { escapeVueMustache, rewriteMarkdownLinks } from './generate-portal';
 
 describe('check-doc-links', () => {
   let tempDir: string;
@@ -380,5 +396,304 @@ describe('check-doc-links', () => {
 
     expect(proc.status).toBe(1);
     expect(proc.stderr).toContain('Dead documentation link(s) detected');
+  });
+
+  it('enforces explicit queryTargetMode, portalRouteMode, and intraFileAnchorMode flags in validateLinkTarget', async () => {
+    fs.mkdirSync(path.join(tempDir, 'docs-portal/.vitepress'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tempDir, 'ARCHITECTURE.md'),
+      '# System Architecture\n\n## Runtime Layers\n',
+      'utf8'
+    );
+    const configAbs = path.join(tempDir, 'docs-portal/.vitepress/config.mts');
+    fs.writeFileSync(
+      configAbs,
+      [
+        "import { defineConfig } from 'vitepress';",
+        'export default defineConfig({',
+        '  themeConfig: {',
+        "    nav: [{ text: 'Query Nav', link: '?tab=1' }, { text: 'Hash Nav', link: '#L1' }],",
+        '  },',
+        '});',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const portalDocAbs = path.join(tempDir, 'docs-portal/index.md');
+    fs.writeFileSync(
+      portalDocAbs,
+      [
+        '---',
+        'hero:',
+        '  actions:',
+        '    - text: Frontmatter Query',
+        '      link: "?tab=1"',
+        '---',
+        '# Portal Home',
+        '',
+        '- [Skipped Body Query](?tab=1)',
+        '- [Skipped Body Query With Hash](?tab=1#runtime-layers)',
+        '- [Root Portal Fallback](/architecture/architecture#runtime-layers)',
+        '- [Relative Portal Miss](architecture/architecture)',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const skipQueryMode: QueryTargetMode = 'skip';
+    const errorQueryMode: QueryTargetMode = 'error';
+    const fallbackPortalMode: PortalRouteMode = 'root-fallback';
+    const alwaysPortalMode: PortalRouteMode = 'always';
+    const nonePortalMode: PortalRouteMode = 'none';
+    const directAnchorMode: IntraFileAnchorMode = 'direct';
+    const mdOnlyAnchorMode: IntraFileAnchorMode = 'markdown-only';
+
+    const makeOpts = (
+      queryTargetMode: QueryTargetMode,
+      portalRouteMode: PortalRouteMode,
+      intraFileAnchorMode: IntraFileAnchorMode
+    ): LinkTargetValidationOptions => ({
+      queryTargetMode,
+      portalRouteMode,
+      intraFileAnchorMode,
+    });
+
+    const querySkipErrors: LinkError[] = [];
+    validateLinkTarget(
+      '?tab=1',
+      portalDocAbs,
+      'docs-portal/index.md',
+      9,
+      'Query',
+      makeOpts(skipQueryMode, fallbackPortalMode, directAnchorMode),
+      querySkipErrors,
+      tempDir
+    );
+    expect(querySkipErrors).toEqual([]);
+
+    const queryErrErrors: LinkError[] = [];
+    validateLinkTarget(
+      '?tab=1',
+      portalDocAbs,
+      'docs-portal/index.md',
+      5,
+      'Query',
+      makeOpts(errorQueryMode, alwaysPortalMode, mdOnlyAnchorMode),
+      queryErrErrors,
+      tempDir
+    );
+    expect(queryErrErrors).toEqual([
+      {
+        sourceFile: 'docs-portal/index.md',
+        line: 5,
+        linkText: 'Query',
+        targetPath: '?tab=1',
+        resolvedPath: 'docs-portal/index.md',
+      },
+    ]);
+
+    // Portal route modes: 'always' resolves relative routes, 'root-fallback' only falls back on '/', 'none' checks filesystem only
+    const alwaysErrors: LinkError[] = [];
+    validateLinkTarget(
+      'architecture/architecture#runtime-layers',
+      portalDocAbs,
+      'docs-portal/index.md',
+      12,
+      'Rel Portal',
+      makeOpts(errorQueryMode, alwaysPortalMode, mdOnlyAnchorMode),
+      alwaysErrors,
+      tempDir
+    );
+    expect(alwaysErrors).toEqual([]);
+
+    const noneErrors: LinkError[] = [];
+    validateLinkTarget(
+      '/architecture/architecture',
+      portalDocAbs,
+      'docs-portal/index.md',
+      11,
+      'Root Non-Portal',
+      makeOpts(skipQueryMode, nonePortalMode, directAnchorMode),
+      noneErrors,
+      tempDir
+    );
+    expect(noneErrors).toHaveLength(1);
+    expect(noneErrors[0].resolvedPath).toBe('architecture/architecture');
+
+    // Intra-file anchor modes on non-Markdown source (.mts)
+    const directMtsErrors: LinkError[] = [];
+    validateLinkTarget(
+      '#L1-L3',
+      configAbs,
+      'docs-portal/.vitepress/config.mts',
+      4,
+      'Line Anchor',
+      makeOpts(errorQueryMode, alwaysPortalMode, directAnchorMode),
+      directMtsErrors,
+      tempDir
+    );
+    expect(directMtsErrors).toEqual([]);
+
+    const mdOnlyMtsErrors: LinkError[] = [];
+    validateLinkTarget(
+      '#L1-L3',
+      configAbs,
+      'docs-portal/.vitepress/config.mts',
+      4,
+      'Line Anchor',
+      makeOpts(errorQueryMode, alwaysPortalMode, mdOnlyAnchorMode),
+      mdOnlyMtsErrors,
+      tempDir
+    );
+    expect(mdOnlyMtsErrors).toHaveLength(1);
+
+    // End-to-end checkDocLinks across portal body, frontmatter, and config.mts
+    const res = await checkDocLinks(tempDir);
+    expect(res.passed).toBe(false);
+    expect(res.errors).toEqual([
+      expect.objectContaining({
+        sourceFile: 'docs-portal/index.md',
+        line: 5,
+        linkText: 'Frontmatter Query',
+        targetPath: '?tab=1',
+      }),
+      expect.objectContaining({
+        sourceFile: 'docs-portal/index.md',
+        line: 12,
+        linkText: 'Relative Portal Miss',
+        targetPath: 'architecture/architecture',
+        resolvedPath: 'docs-portal/architecture/architecture',
+      }),
+      expect.objectContaining({
+        sourceFile: 'docs-portal/.vitepress/config.mts',
+        line: 4,
+        linkText: 'Query Nav',
+        targetPath: '?tab=1',
+      }),
+      expect.objectContaining({
+        sourceFile: 'docs-portal/.vitepress/config.mts',
+        line: 4,
+        linkText: 'Hash Nav',
+        targetPath: '#L1',
+      }),
+    ]);
+  });
+
+  it('handles stripped vs padded HTML comments, CRLF transforms, and unclosed Mermaid blocks in shared scanners', async () => {
+    const fenceState: MarkdownFenceState = { inFence: false, fenceChar: '', fenceLen: 0 };
+    const inlineTickResult: FenceTransitionResult = stepMarkdownFence('```not-a-fence`tick```', fenceState);
+    expect(inlineTickResult).toEqual({ kind: 'outside' });
+    expect(stepMarkdownFence('```ts', fenceState)).toEqual({ kind: 'open', infoString: 'ts' });
+    expect(stepMarkdownFence('~~~', fenceState)).toEqual({ kind: 'inside' });
+    expect(stepMarkdownFence('````  ', fenceState)).toEqual({ kind: 'close' });
+
+    const stripMode: HtmlCommentScanMode = 'strip';
+    const padMode: HtmlCommentScanMode = 'pad';
+    const collectFm: FrontmatterScanMode = 'collect';
+
+    const commentDoc = [
+      '---',
+      'title: Scanner Test',
+      '---',
+      '<!-- ## Hidden Heading -->',
+      '<!-- prefix --> ## Visible Heading',
+      '<!-- multi',
+      '## Still Commented',
+      'end --> `src/sample.ts` (L1-L9)',
+      '```mermaid',
+      'graph TD',
+      '    subgraph Bad (Unclosed Fence With Unquoted Parens)',
+      '        A[Node]',
+    ].join('\n');
+
+    const headings = extractMarkdownHeadings(commentDoc);
+    expect(headings.map(h => h.rawText)).toEqual(['Visible Heading']);
+
+    const strippedLines: string[] = [];
+    const strippedOptions: MarkdownScanOptions = {
+      frontmatterMode: 'skip',
+      htmlCommentMode: stripMode,
+    };
+    scanMarkdownDocument(commentDoc, line => strippedLines.push(line), strippedOptions);
+    expect(strippedLines).toContain(' ## Visible Heading');
+    expect(strippedLines).toContain(' `src/sample.ts` (L1-L9)');
+
+    const paddedLines: string[] = [];
+    const capturedFm: string[] = [];
+    const capturedMermaid: ScannedMermaidBlock[] = [];
+    scanMarkdownDocument(
+      commentDoc,
+      line => paddedLines.push(line),
+      {
+        frontmatterMode: collectFm,
+        htmlCommentMode: padMode,
+        onFrontmatter: lines => capturedFm.push(...lines),
+        onMermaidBlock: block => capturedMermaid.push(block),
+      }
+    );
+    expect(capturedFm).toEqual(['title: Scanner Test']);
+    // Line 6 ('<!-- multi') emits '' at index 2; line 8 ('end --> ...') replaces 7-char 'end -->' with 7 spaces at index 3
+    expect(paddedLines[2]).toBe('');
+    expect(paddedLines[3]).toBe('        `src/sample.ts` (L1-L9)');
+    expect(capturedMermaid).toEqual([
+      {
+        fenceStartLine: 9,
+        code: [
+          'graph TD',
+          '    subgraph Bad (Unclosed Fence With Unquoted Parens)',
+          '        A[Node]',
+        ].join('\n'),
+      },
+    ]);
+
+    // Verify checkLinksInFile + checkDocLinks preserve column alignment after padded HTML comments and catch unclosed Mermaid blocks
+    fs.mkdirSync(path.join(tempDir, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'src/sample.ts'), 'line1\nline2\nline3\n', 'utf8');
+    const mdAbs = path.join(tempDir, 'UNCLOSED.md');
+    fs.writeFileSync(mdAbs, commentDoc, 'utf8');
+
+    const fileErrors: LinkError[] = [];
+    const extractedBlocks: ExtractedMermaidBlock[] = [];
+    checkLinksInFile(mdAbs, fileErrors, tempDir, new Map(), new Map(), extractedBlocks);
+    expect(fileErrors).toEqual([
+      expect.objectContaining({
+        sourceFile: 'UNCLOSED.md',
+        line: 8,
+        targetPath: 'src/sample.ts (L1-L9)',
+      }),
+    ]);
+    expect(extractedBlocks).toHaveLength(1);
+    expect(extractedBlocks[0].fenceStartLine).toBe(9);
+
+    const fullRes = await checkDocLinks(tempDir);
+    expect(fullRes.passed).toBe(false);
+    expect(fullRes.errors).toEqual([
+      expect.objectContaining({
+        sourceFile: 'UNCLOSED.md',
+        line: 8,
+        targetPath: 'src/sample.ts (L1-L9)',
+      }),
+      expect.objectContaining({
+        sourceFile: 'UNCLOSED.md',
+        line: 11,
+        linkText: 'mermaid diagram',
+        targetPath: '```mermaid',
+      }),
+    ]);
+
+    // Verify transformNonFencedMarkdownLines preserves mixed CRLF/LF endings and leaves HTML comments untouched
+    const crlfInput =
+      '<!-- [keep](src/sample.ts) {{ a }} -->\r\n```ts\r\n{{ insideFence }}\r\n```\nTail {{ b }}';
+    const transformed = transformNonFencedMarkdownLines(
+      crlfInput,
+      (line, n) => `${n}:${line}`
+    );
+    expect(transformed).toBe(
+      '1:<!-- [keep](src/sample.ts) {{ a }} -->\r\n```ts\r\n{{ insideFence }}\r\n```\n5:Tail {{ b }}'
+    );
+
+    const portalRewritten = escapeVueMustache(rewriteMarkdownLinks(crlfInput, 'UNCLOSED.md', tempDir));
+    expect(portalRewritten).toBe(
+      '<!-- [keep](https://github.com/fderuiter/wedding_website/blob/main/src/sample.ts) &#123;&#123; a &#125;&#125; -->\r\n```ts\r\n{{ insideFence }}\r\n```\nTail &#123;&#123; b &#125;&#125;'
+    );
   });
 });

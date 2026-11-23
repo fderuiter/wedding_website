@@ -14,9 +14,7 @@ export function deferAfterCommit(txClient: unknown, callback: PostCommitCallback
 }
 
 export async function executeInTransaction<T>(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   client: any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   fn: (_tx: any) => Promise<T>
 ): Promise<T> {
   if (
@@ -26,7 +24,6 @@ export async function executeInTransaction<T>(
     typeof client.$transaction === 'function'
   ) {
     let committedCallbacks: PostCommitCallback[] = [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await client.$transaction(async (tx: any) => {
       const hasTxObject = Boolean(tx && typeof tx === 'object');
       const isNested = hasTxObject && activeTransactionCallbacks.has(tx);

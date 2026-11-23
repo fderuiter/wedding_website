@@ -476,7 +476,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
     }
   };
 
-  const handleQuickAssignSubmit = (e: React.FormEvent) => {
+  const handleQuickAssignSubmit = (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (selectedGuestForModal && targetTableId) {
       if (targetSeatNumber !== undefined) {
@@ -499,7 +499,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
     setTargetHouseholdTableId(firstFittingTable ? firstFittingTable.id : '');
   };
 
-  const handleHouseholdAssignSubmit = async (e: React.FormEvent) => {
+  const handleHouseholdAssignSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!selectedHouseholdForModal || !targetHouseholdTableId) return;
 

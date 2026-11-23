@@ -1,95 +1,12 @@
 import { validateAndResolveHost } from './ssrf';
-import { Agent, type Dispatcher } from 'undici';
-
-interface LegacyUndiciDispatchHandlers {
-  onConnect?: (_abort: (_err?: Error) => void, _context?: unknown) => void;
-  onHeaders?: (
-    _statusCode: number,
-    _rawHeaders: Buffer[],
-    _resume: () => void,
-    _statusText: string
-  ) => boolean | void;
-  onData?: (_chunk: Uint8Array) => boolean | void;
-  onComplete?: (_rawTrailers: string[] | null) => void;
-  onError?: (_err: Error) => void;
-}
-
-class PinnedAgent extends Agent {
-  override dispatch(
-    options: Dispatcher.DispatchOptions,
-    handler: Dispatcher.DispatchHandler
-  ): boolean {
-    if (handler && typeof handler.onRequestStart !== 'function') {
-      const legacy = handler as unknown as LegacyUndiciDispatchHandlers;
-      if (typeof legacy.onHeaders === 'function') {
-        const adapted: Dispatcher.DispatchHandler = {
-          onRequestStart(controller, context) {
-            legacy.onConnect?.(
-              (err?: Error) => controller.abort(err ?? new Error('Request aborted')),
-              context
-            );
-          },
-          onResponseStart(controller, statusCode, headers, statusMessage) {
-            const rawCtrl = controller as Dispatcher.DispatchController & {
-              rawHeaders?: Buffer[];
-            };
-            let rawHeaders: Buffer[];
-            if (Array.isArray(rawCtrl.rawHeaders)) {
-              rawHeaders = rawCtrl.rawHeaders;
-            } else {
-              rawHeaders = [];
-              for (const [key, val] of Object.entries(headers ?? {})) {
-                if (Array.isArray(val)) {
-                  for (const item of val) {
-                    rawHeaders.push(Buffer.from(key), Buffer.from(String(item)));
-                  }
-                } else if (val !== undefined) {
-                  rawHeaders.push(Buffer.from(key), Buffer.from(String(val)));
-                }
-              }
-            }
-            if (
-              legacy.onHeaders?.(
-                statusCode,
-                rawHeaders,
-                () => controller.resume(),
-                statusMessage ?? ''
-              ) === false
-            ) {
-              controller.pause();
-            }
-          },
-          onResponseData(controller, chunk) {
-            if (legacy.onData?.(chunk) === false) {
-              controller.pause();
-            }
-          },
-          onResponseEnd(controller) {
-            const rawCtrl = controller as Dispatcher.DispatchController & {
-              rawTrailers?: Buffer[];
-            };
-            const trailers = Array.isArray(rawCtrl.rawTrailers)
-              ? rawCtrl.rawTrailers.map((t) => t.toString())
-              : null;
-            legacy.onComplete?.(trailers);
-          },
-          onResponseError(_controller, error) {
-            legacy.onError?.(error);
-          },
-        };
-        return super.dispatch(options, adapted);
-      }
-    }
-    return super.dispatch(options, handler);
-  }
-}
+import { Agent, Dispatcher1Wrapper, type Dispatcher } from 'undici';
 
 /**
  * Creates an undici Agent that pins the socket connection to a specific resolved IP.
  * Standard HTTP headers (e.g. Host) and TLS SNI continue to use the original hostname.
  */
 export function createPinnedDispatcher(address: string, family: number): Agent {
-  return new PinnedAgent({
+  const agent = new Agent({
     connect: {
       lookup: (_hostname, opts, cb) => {
         let callback = cb;
@@ -106,6 +23,14 @@ export function createPinnedDispatcher(address: string, family: number): Agent {
       },
     },
   });
+
+  const rawDispatch = agent.dispatch.bind(agent);
+  const legacyDispatcher = new Dispatcher1Wrapper({
+    dispatch: rawDispatch,
+  } as unknown as Dispatcher);
+  agent.dispatch = legacyDispatcher.dispatch.bind(legacyDispatcher);
+
+  return agent;
 }
 
 /**

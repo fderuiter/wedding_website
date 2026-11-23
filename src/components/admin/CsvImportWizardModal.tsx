@@ -103,6 +103,36 @@ const initialCsvImportState: CsvImportPersistedState = {
   importSummary: null,
 };
 
+type CsvColumnMappingField = Extract<keyof CsvImportPersistedState, `${string}Col`>;
+
+interface ColumnMappingDescriptor {
+  id: string;
+  label: string;
+  field: CsvColumnMappingField;
+  emptyOptionLabel: string;
+}
+
+const STEP_2_COLUMN_DESCRIPTORS: readonly ColumnMappingDescriptor[] = [
+  { id: 'map-guest-name', label: 'Guest Name Column (Required)', field: 'guestNameCol', emptyOptionLabel: '-- Select Column --' },
+  { id: 'map-guest-first-name', label: 'Guest First Name Column (Optional)', field: 'guestFirstNameCol', emptyOptionLabel: '-- Unmapped --' },
+  { id: 'map-guest-last-name', label: 'Guest Last Name Column (Optional)', field: 'guestLastNameCol', emptyOptionLabel: '-- Unmapped --' },
+  { id: 'map-invitation-code', label: 'Invitation Code Column (Optional)', field: 'codeCol', emptyOptionLabel: '-- Auto-Generate Blank Codes --' },
+  { id: 'map-email', label: 'Email Address Column (Optional)', field: 'emailCol', emptyOptionLabel: '-- Unmapped --' },
+  { id: 'map-dietary-notes', label: 'Dietary Notes / Allergies (Optional)', field: 'dietaryNotesCol', emptyOptionLabel: '-- Unmapped --' },
+  { id: 'map-address-line1', label: 'Address Line 1 Column (Optional)', field: 'addressLine1Col', emptyOptionLabel: '-- Unmapped --' },
+  { id: 'map-address-line2', label: 'Address Line 2 Column (Optional)', field: 'addressLine2Col', emptyOptionLabel: '-- Unmapped --' },
+  { id: 'map-city', label: 'City Column (Optional)', field: 'cityCol', emptyOptionLabel: '-- Unmapped --' },
+  { id: 'map-state', label: 'State / Province Column (Optional)', field: 'stateCol', emptyOptionLabel: '-- Unmapped --' },
+  { id: 'map-zip-code', label: 'ZIP / Postal Code Column (Optional)', field: 'zipCodeCol', emptyOptionLabel: '-- Unmapped --' },
+  { id: 'map-country', label: 'Country Column (Optional)', field: 'countryCol', emptyOptionLabel: '-- Unmapped --' },
+  { id: 'map-plus-ones', label: 'Plus-One Allocations Column (Optional)', field: 'plusOneCol', emptyOptionLabel: '-- Default to 0 --' },
+  { id: 'map-plus-one-first-name', label: 'Plus-One First Name Column (Optional)', field: 'plusOneFirstNameCol', emptyOptionLabel: '-- Unmapped --' },
+  { id: 'map-plus-one-last-name', label: 'Plus-One Last Name Column (Optional)', field: 'plusOneLastNameCol', emptyOptionLabel: '-- Unmapped --' },
+  { id: 'map-household-name', label: 'Household Name Column (Optional)', field: 'householdNameCol', emptyOptionLabel: '-- Unmapped --' },
+  { id: 'map-party-group', label: 'Party Side / Group Column (Optional)', field: 'partyGroupCol', emptyOptionLabel: '-- Unmapped --' },
+  { id: 'map-party-tags', label: 'Party Tags Column (Optional)', field: 'partyTagsCol', emptyOptionLabel: '-- Unmapped --' },
+];
+
 const EDITABLE_MAPPING: ColumnMappingOptions = {
   guestNameCol: 'GuestNameField',
   codeCol: 'CodeField',
@@ -1317,25 +1347,6 @@ export function CsvImportWizardModal({
     dispatch({ type: 'SET_STATUS_FILTER', filter });
   const toggleExtraCol = (header: string) => dispatch({ type: 'TOGGLE_EXTRA_COL', header });
 
-  const setGuestNameCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'guestNameCol', value: val });
-  const setGuestFirstNameCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'guestFirstNameCol', value: val });
-  const setGuestLastNameCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'guestLastNameCol', value: val });
-  const setCodeCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'codeCol', value: val });
-  const setEmailCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'emailCol', value: val });
-  const setAddressLine1Col = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'addressLine1Col', value: val });
-  const setAddressLine2Col = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'addressLine2Col', value: val });
-  const setCityCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'cityCol', value: val });
-  const setStateCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'stateCol', value: val });
-  const setZipCodeCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'zipCodeCol', value: val });
-  const setCountryCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'countryCol', value: val });
-  const setDietaryNotesCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'dietaryNotesCol', value: val });
-  const setPlusOneCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'plusOneCol', value: val });
-  const setPlusOneFirstNameCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'plusOneFirstNameCol', value: val });
-  const setPlusOneLastNameCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'plusOneLastNameCol', value: val });
-  const setHouseholdNameCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'householdNameCol', value: val });
-  const setPartyGroupCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'partyGroupCol', value: val });
-  const setPartyTagsCol = (val: string) => dispatch({ type: 'SET_COLUMN_MAPPING', field: 'partyTagsCol', value: val });
-
   const handleDownloadSample = () => {
     const sampleCsv = generateSampleCsvTemplate();
     const blob = new Blob([sampleCsv], { type: 'text/csv;charset=utf-8;' });
@@ -2058,311 +2069,30 @@ export function CsvImportWizardModal({
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormGroup>
-                <Label htmlFor="map-guest-name">Guest Name Column (Required)</Label>
-                <select
-                  id="map-guest-name"
-                  value={guestNameCol}
-                  onChange={(e) => setGuestNameCol(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm text-gray-900 dark:text-zinc-100"
-                >
-                  <option value="">-- Select Column --</option>
-                  {csvHeaders.map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
-              </FormGroup>
-
-              <FormGroup>
-                <Label htmlFor="map-guest-first-name">Guest First Name Column (Optional)</Label>
-                <select
-                  id="map-guest-first-name"
-                  value={guestFirstNameCol}
-                  onChange={(e) => setGuestFirstNameCol(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm text-gray-900 dark:text-zinc-100"
-                >
-                  <option value="">-- Unmapped --</option>
-                  {csvHeaders.map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
-              </FormGroup>
-
-              <FormGroup>
-                <Label htmlFor="map-guest-last-name">Guest Last Name Column (Optional)</Label>
-                <select
-                  id="map-guest-last-name"
-                  value={guestLastNameCol}
-                  onChange={(e) => setGuestLastNameCol(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm text-gray-900 dark:text-zinc-100"
-                >
-                  <option value="">-- Unmapped --</option>
-                  {csvHeaders.map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
-              </FormGroup>
-
-              <FormGroup>
-                <Label htmlFor="map-invitation-code">Invitation Code Column (Optional)</Label>
-                <select
-                  id="map-invitation-code"
-                  value={codeCol}
-                  onChange={(e) => setCodeCol(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm text-gray-900 dark:text-zinc-100"
-                >
-                  <option value="">-- Auto-Generate Blank Codes --</option>
-                  {csvHeaders.map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
-              </FormGroup>
-
-              <FormGroup>
-                <Label htmlFor="map-email">Email Address Column (Optional)</Label>
-                <select
-                  id="map-email"
-                  value={emailCol}
-                  onChange={(e) => setEmailCol(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm text-gray-900 dark:text-zinc-100"
-                >
-                  <option value="">-- Unmapped --</option>
-                  {csvHeaders.map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
-              </FormGroup>
-
-              <FormGroup>
-                <Label htmlFor="map-dietary-notes">Dietary Notes / Allergies (Optional)</Label>
-                <select
-                  id="map-dietary-notes"
-                  value={dietaryNotesCol}
-                  onChange={(e) => setDietaryNotesCol(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm text-gray-900 dark:text-zinc-100"
-                >
-                  <option value="">-- Unmapped --</option>
-                  {csvHeaders.map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
-              </FormGroup>
-
-              <FormGroup>
-                <Label htmlFor="map-address-line1">Address Line 1 Column (Optional)</Label>
-                <select
-                  id="map-address-line1"
-                  value={addressLine1Col}
-                  onChange={(e) => setAddressLine1Col(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
-                >
-                  <option value="">-- Unmapped --</option>
-                  {csvHeaders.map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
-              </FormGroup>
-
-              <FormGroup>
-                <Label htmlFor="map-address-line2">Address Line 2 Column (Optional)</Label>
-                <select
-                  id="map-address-line2"
-                  value={addressLine2Col}
-                  onChange={(e) => setAddressLine2Col(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
-                >
-                  <option value="">-- Unmapped --</option>
-                  {csvHeaders.map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
-              </FormGroup>
-
-              <FormGroup>
-                <Label htmlFor="map-city">City Column (Optional)</Label>
-                <select
-                  id="map-city"
-                  value={cityCol}
-                  onChange={(e) => setCityCol(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
-                >
-                  <option value="">-- Unmapped --</option>
-                  {csvHeaders.map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
-              </FormGroup>
-
-              <FormGroup>
-                <Label htmlFor="map-state">State / Province Column (Optional)</Label>
-                <select
-                  id="map-state"
-                  value={stateCol}
-                  onChange={(e) => setStateCol(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
-                >
-                  <option value="">-- Unmapped --</option>
-                  {csvHeaders.map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
-              </FormGroup>
-
-              <FormGroup>
-                <Label htmlFor="map-zip-code">ZIP / Postal Code Column (Optional)</Label>
-                <select
-                  id="map-zip-code"
-                  value={zipCodeCol}
-                  onChange={(e) => setZipCodeCol(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
-                >
-                  <option value="">-- Unmapped --</option>
-                  {csvHeaders.map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
-              </FormGroup>
-
-              <FormGroup>
-                <Label htmlFor="map-country">Country Column (Optional)</Label>
-                <select
-                  id="map-country"
-                  value={countryCol}
-                  onChange={(e) => setCountryCol(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
-                >
-                  <option value="">-- Unmapped --</option>
-                  {csvHeaders.map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
-              </FormGroup>
-
-              <FormGroup>
-                <Label htmlFor="map-plus-ones">Plus-One Allocations Column (Optional)</Label>
-                <select
-                  id="map-plus-ones"
-                  value={plusOneCol}
-                  onChange={(e) => setPlusOneCol(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm text-gray-900 dark:text-zinc-100"
-                >
-                  <option value="">-- Default to 0 --</option>
-                  {csvHeaders.map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
-              </FormGroup>
-
-              <FormGroup>
-                <Label htmlFor="map-plus-one-first-name">Plus-One First Name Column (Optional)</Label>
-                <select
-                  id="map-plus-one-first-name"
-                  value={plusOneFirstNameCol}
-                  onChange={(e) => setPlusOneFirstNameCol(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
-                >
-                  <option value="">-- Unmapped --</option>
-                  {csvHeaders.map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
-              </FormGroup>
-
-              <FormGroup>
-                <Label htmlFor="map-plus-one-last-name">Plus-One Last Name Column (Optional)</Label>
-                <select
-                  id="map-plus-one-last-name"
-                  value={plusOneLastNameCol}
-                  onChange={(e) => setPlusOneLastNameCol(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
-                >
-                  <option value="">-- Unmapped --</option>
-                  {csvHeaders.map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
-              </FormGroup>
-
-              <FormGroup>
-                <Label htmlFor="map-household-name">Household Name Column (Optional)</Label>
-                <select
-                  id="map-household-name"
-                  value={householdNameCol}
-                  onChange={(e) => setHouseholdNameCol(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
-                >
-                  <option value="">-- Unmapped --</option>
-                  {csvHeaders.map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
-              </FormGroup>
-
-              <FormGroup>
-                <Label htmlFor="map-party-group">Party Side / Group Column (Optional)</Label>
-                <select
-                  id="map-party-group"
-                  value={partyGroupCol}
-                  onChange={(e) => setPartyGroupCol(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
-                >
-                  <option value="">-- Unmapped --</option>
-                  {csvHeaders.map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
-              </FormGroup>
-
-              <FormGroup>
-                <Label htmlFor="map-party-tags">Party Tags Column (Optional)</Label>
-                <select
-                  id="map-party-tags"
-                  value={partyTagsCol}
-                  onChange={(e) => setPartyTagsCol(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm"
-                >
-                  <option value="">-- Unmapped --</option>
-                  {csvHeaders.map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
-              </FormGroup>
+              {STEP_2_COLUMN_DESCRIPTORS.map((descriptor) => (
+                <FormGroup key={descriptor.id}>
+                  <Label htmlFor={descriptor.id}>{descriptor.label}</Label>
+                  <select
+                    id={descriptor.id}
+                    value={state[descriptor.field]}
+                    onChange={(e) =>
+                      dispatch({
+                        type: 'SET_COLUMN_MAPPING',
+                        field: descriptor.field,
+                        value: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-sm text-gray-900 dark:text-zinc-100"
+                  >
+                    <option value="">{descriptor.emptyOptionLabel}</option>
+                    {csvHeaders.map((h) => (
+                      <option key={h} value={h}>
+                        {h}
+                      </option>
+                    ))}
+                  </select>
+                </FormGroup>
+              ))}
             </div>
 
             {/* Custom Extra Headers Section */}
