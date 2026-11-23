@@ -6,7 +6,8 @@ import { CategoryFilter } from '@/components/ui/CategoryFilter';
 import { Input, FormGroup, Label } from '@/components/ui/forms';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
-import type { ContentNodeDTO } from '@/features/content';
+import { isFaqNodeVisible, type ContentNodeDTO } from '@/features/content';
+import { tokenizeSafeLinks, type SafeLinkToken } from '@/utils/linkifyText';
 
 interface FAQDataPayload {
   question?: string;
@@ -14,6 +15,8 @@ interface FAQDataPayload {
   category?: string;
   categoryTags?: string[] | string;
   keywords?: string[] | string;
+  isVisible?: boolean | string;
+  displayOrder?: number;
 }
 
 export type FAQItemInput = Extract<ContentNodeDTO, { type: 'FAQ' }> | FAQDataPayload;
@@ -80,6 +83,25 @@ function normalizeFaqItem(item: FAQItemInput, index: number): NormalizedFAQItem 
   };
 }
 
+function renderSanitizedAnswerTokens(tokens: SafeLinkToken[]): React.ReactNode {
+  return tokens.map((token, idx) => {
+    if (token.type === 'link') {
+      return (
+        <a
+          key={`faq-link-${idx}-${token.href}`}
+          href={token.href}
+          target={token.isExternal ? '_blank' : undefined}
+          rel={token.isExternal ? 'noopener noreferrer' : undefined}
+          className="underline underline-offset-2 font-medium text-[var(--color-primary-text,var(--color-primary,#B91C1C))] dark:text-red-300 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-sm"
+        >
+          {token.label}
+        </a>
+      );
+    }
+    return <React.Fragment key={`faq-text-${idx}`}>{token.value}</React.Fragment>;
+  });
+}
+
 /**
  * An interactive, accessible client-side FAQ Accordion component
  * supporting category filtering, real-time search, expand/collapse toggles,
@@ -92,9 +114,18 @@ const FaqAccordion: React.FC<FaqAccordionProps> = ({ faqs, className = '' }) => 
 
   const buttonRefs = useRef<Map<string, HTMLButtonElement | null>>(new Map());
 
-  // Normalize all input FAQ items
+  // Normalize all visible input FAQ items
   const normalizedFaqs = useMemo(() => {
-    return faqs.map((faq, idx) => normalizeFaqItem(faq, idx));
+    return faqs
+      .filter((faq) => {
+        const payload =
+          'data' in faq && faq.data
+            ? (faq.data as Record<string, unknown>)
+            : (faq as Record<string, unknown>);
+        return isFaqNodeVisible({ data: payload });
+      })
+      .map((faq, idx) => normalizeFaqItem(faq, idx))
+      .filter((faq) => Boolean(faq.question || faq.answer));
   }, [faqs]);
 
   // Aggregate all unique categories
@@ -356,7 +387,9 @@ const FaqAccordion: React.FC<FaqAccordionProps> = ({ faqs, className = '' }) => 
                       className="overflow-hidden"
                     >
                       <div className="p-4 pt-1 border-t border-gray-100 dark:border-gray-700/50 text-gray-700 dark:text-gray-300 leading-relaxed">
-                        <p className="whitespace-pre-wrap">{faq.answer}</p>
+                        <p className="whitespace-pre-wrap">
+                          {renderSanitizedAnswerTokens(tokenizeSafeLinks(faq.answer))}
+                        </p>
                         {faq.keywords.length > 0 && (
                           <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
                             <span className="font-medium">Keywords:</span>

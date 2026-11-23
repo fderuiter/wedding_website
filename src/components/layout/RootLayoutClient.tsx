@@ -1,13 +1,18 @@
 'use client';
 
-import { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect, useMemo } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { QueryClient, QueryClientProvider, MutationCache } from '@tanstack/react-query';
 import Navbar from './Navbar';
-import { GuestHelpProvider } from '@/components/guest/GuestHelpModal';
+import {
+  GuestHelpProvider,
+  type GuestHelpConfig,
+  type GuestHelpFaqItem,
+} from '@/components/guest/GuestHelpModal';
 import { GlobalRadialGlow } from '@/components/ui/GlobalRadialGlow';
 import { useToast } from '@/components/ui/ToastProvider';
 import { MotionGlobalConfig } from 'framer-motion';
+import type { ContentNodeDTO } from '@/features/content';
 
 if (typeof window !== 'undefined' && window.navigator.userAgent.includes('HeadlessChrome')) {
   MotionGlobalConfig.skipAnimations = true;
@@ -24,6 +29,7 @@ import type { PublicAppConfig } from '@/lib/config';
 interface RootLayoutClientProps {
   children: React.ReactNode;
   config: PublicAppConfig;
+  faqs?: ContentNodeDTO[];
 }
 
 /**
@@ -37,6 +43,7 @@ interface RootLayoutClientProps {
 export default function RootLayoutClient({
   children,
   config,
+  faqs,
 }: RootLayoutClientProps) {
   const [isAdmin, setIsAdmin] = useState(false);
   const router = useRouter();
@@ -120,9 +127,28 @@ export default function RootLayoutClient({
     }
   };
 
+  const helpConfig = useMemo<GuestHelpConfig>(() => {
+    if (!faqs) return config;
+    const mappedFaqs: GuestHelpFaqItem[] = faqs
+      .filter((n): n is Extract<ContentNodeDTO, { type: 'FAQ' }> => n.type === 'FAQ')
+      .map((n, index) => ({
+        id: n.id,
+        question: n.data.question || '',
+        answer: n.data.answer || '',
+        category: n.data.category,
+        isVisible: n.data.isVisible,
+        displayOrder:
+          typeof n.data.displayOrder === 'number' ? n.data.displayOrder : index,
+      }));
+    return {
+      ...config,
+      faqs: mappedFaqs,
+    };
+  }, [config, faqs]);
+
   return (
     <QueryClientProvider client={queryClient}>
-      <GuestHelpProvider config={config} pathname={pathname}>
+      <GuestHelpProvider config={helpConfig} pathname={pathname}>
         <GlobalRadialGlow />
         {!isStandalonePage && (
           <Navbar
@@ -130,6 +156,7 @@ export default function RootLayoutClient({
             isAdmin={isAdmin}
             handleLogout={handleLogout}
             config={config}
+            hasVisibleFaqs={faqs ? faqs.length > 0 : undefined}
           />
         )}
         {isAdminDashboardPage ? (

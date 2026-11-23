@@ -1,5 +1,8 @@
 import { render, screen, fireEvent } from '@testing-library/react';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import { FaqAccordion, FAQItemInput } from '../FaqAccordion';
+
+expect.extend(toHaveNoViolations);
 
 describe('FaqAccordion Component', () => {
   const sampleFaqs: FAQItemInput[] = [
@@ -176,5 +179,70 @@ describe('FaqAccordion Component', () => {
 
     expect(screen.getByText(/no matching faqs found/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /clear search & filters/i })).toBeInTheDocument();
+  });
+
+  it('filters out hidden FAQs (isVisible: false), renders sanitized links in answers without raw HTML, and passes axe', async () => {
+    const richFaqs: FAQItemInput[] = [
+      {
+        id: 'faq-links',
+        type: 'FAQ',
+        tags: ['FAQ'],
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-01-01'),
+        data: {
+          question: 'How do we book hotel rooms or contact the couple?',
+          answer:
+            'Book at https://hotel.example.com/block, view [Wedding Registry](/registry), email hosts@example.com, or call +1 (555) 222-3333. <script>alert("xss")</script> [Malicious](javascript:alert(1))',
+          category: 'Travel',
+          categoryTags: undefined,
+          keywords: undefined,
+          isVisible: true,
+        },
+      },
+      {
+        id: 'faq-hidden',
+        type: 'FAQ',
+        tags: ['FAQ'],
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-01-01'),
+        data: {
+          question: 'Hidden draft question?',
+          answer: 'Should not appear on public accordion.',
+          category: 'General',
+          categoryTags: undefined,
+          keywords: undefined,
+          isVisible: false,
+        },
+      },
+    ];
+
+    const { container } = render(<FaqAccordion faqs={richFaqs} />);
+
+    expect(screen.queryByText(/hidden draft question\?/i)).not.toBeInTheDocument();
+
+    const trigger = screen.getByRole('button', {
+      name: /how do we book hotel rooms or contact the couple\?/i,
+    });
+    fireEvent.click(trigger);
+
+    const extLink = screen.getByRole('link', { name: 'https://hotel.example.com/block' });
+    expect(extLink).toHaveAttribute('href', 'https://hotel.example.com/block');
+    expect(extLink).toHaveAttribute('target', '_blank');
+    expect(extLink).toHaveAttribute('rel', 'noopener noreferrer');
+
+    const registryLink = screen.getByRole('link', { name: 'Wedding Registry' });
+    expect(registryLink).toHaveAttribute('href', '/registry');
+    expect(registryLink).not.toHaveAttribute('target');
+
+    const emailLink = screen.getByRole('link', { name: 'hosts@example.com' });
+    expect(emailLink).toHaveAttribute('href', 'mailto:hosts@example.com');
+
+    const telLink = screen.getByRole('link', { name: '+1 (555) 222-3333' });
+    expect(telLink).toHaveAttribute('href', 'tel:+15552223333');
+
+    expect(container.innerHTML).not.toContain('<script>');
+    expect(container.innerHTML).not.toContain('javascript:');
+
+    expect(await axe(container)).toHaveNoViolations();
   });
 });
