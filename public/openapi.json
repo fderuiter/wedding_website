@@ -4847,6 +4847,10 @@
                         "sentCount": {
                           "type": "number"
                         },
+                        "viewedCount": {
+                          "type": "number",
+                          "nullable": true
+                        },
                         "failedCount": {
                           "type": "number"
                         },
@@ -5085,6 +5089,10 @@
                           },
                           "sentCount": {
                             "type": "number"
+                          },
+                          "viewedCount": {
+                            "type": "number",
+                            "nullable": true
                           },
                           "failedCount": {
                             "type": "number"
@@ -20215,66 +20223,20 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "success": {
-                          "type": "boolean",
-                          "enum": [
-                            true
-                          ]
-                        },
-                        "message": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "success",
-                        "message"
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
                       ]
                     },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "success": {
-                          "type": "boolean",
-                          "enum": [
-                            true
-                          ]
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "id": {
-                              "type": "string"
-                            },
-                            "guestName": {
-                              "type": "string"
-                            },
-                            "partyTags": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            }
-                          },
-                          "required": [
-                            "id",
-                            "guestName",
-                            "partyTags"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "success",
-                        "message",
-                        "data"
-                      ]
+                    "message": {
+                      "type": "string"
                     }
+                  },
+                  "required": [
+                    "success",
+                    "message"
                   ]
                 }
               }

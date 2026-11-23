@@ -745,6 +745,18 @@ export function computeMergedInvitationPreview(
     }
   }
 
+  const mergedHouseholdNotes = mergeDietaryNotes(
+    all.map((rec) => {
+      const ef = rec.extraFields;
+      return ef && typeof ef === 'object' && !Array.isArray(ef) && typeof ef.householdNotes === 'string'
+        ? ef.householdNotes
+        : null;
+    })
+  );
+  if (mergedHouseholdNotes) {
+    mergedExtra.householdNotes = mergedHouseholdNotes;
+  }
+
   const used = all.some((rec) => Boolean(rec.used));
   const usedAtSource = all.find((rec) => rec.usedAt !== null && rec.usedAt !== undefined);
   const usedAt = usedAtSource?.usedAt ?? null;

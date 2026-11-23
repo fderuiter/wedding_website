@@ -55,6 +55,7 @@ interface GuestFormState {
   plusOneFirstName: string;
   plusOneLastName: string;
   dietaryNotes: string;
+  householdNotes: string;
   addressLine1: string;
   addressLine2: string;
   city: string;
@@ -96,6 +97,11 @@ function getInitialGuestPhone(guest: InvitationCodeDTO): string {
   return '';
 }
 
+function getInitialHouseholdNotes(guest: InvitationCodeDTO): string {
+  const extra = getInitialExtraFieldsObject(guest.extraFields);
+  return typeof extra.householdNotes === 'string' ? extra.householdNotes : '';
+}
+
 function createInitialGuestFormState(guest?: InvitationCodeDTO | null): GuestFormState {
   if (!guest) {
     return {
@@ -110,6 +116,7 @@ function createInitialGuestFormState(guest?: InvitationCodeDTO | null): GuestFor
       plusOneFirstName: '',
       plusOneLastName: '',
       dietaryNotes: '',
+      householdNotes: '',
       addressLine1: '',
       addressLine2: '',
       city: '',
@@ -131,6 +138,7 @@ function createInitialGuestFormState(guest?: InvitationCodeDTO | null): GuestFor
     plusOneFirstName: guest.plusOneFirstName ?? '',
     plusOneLastName: guest.plusOneLastName ?? '',
     dietaryNotes: guest.dietaryNotes ?? '',
+    householdNotes: getInitialHouseholdNotes(guest),
     addressLine1: guest.addressLine1 ?? '',
     addressLine2: guest.addressLine2 ?? '',
     city: guest.city ?? '',
@@ -250,6 +258,7 @@ function GuestEditorFormInner(props: GuestEditorFormProps) {
     const normalizedPlusOneFirstName = normalizeNullableString(formState.plusOneFirstName);
     const normalizedPlusOneLastName = normalizeNullableString(formState.plusOneLastName);
     const normalizedDietaryNotes = normalizeNullableString(formState.dietaryNotes);
+    const normalizedHouseholdNotes = normalizeNullableString(formState.householdNotes);
     const normalizedAddressLine1 = normalizeNullableString(formState.addressLine1);
     const normalizedAddressLine2 = normalizeNullableString(formState.addressLine2);
     const normalizedCity = normalizeNullableString(formState.city);
@@ -261,6 +270,7 @@ function GuestEditorFormInner(props: GuestEditorFormProps) {
 
     if (isEditMode && guest) {
       const originalPhone = normalizeGuestPhone(getInitialGuestPhone(guest));
+      const originalHouseholdNotes = normalizeNullableString(getInitialHouseholdNotes(guest));
       payload = {
         guestName: trimmedName,
         code: trimmedCode,
@@ -280,17 +290,26 @@ function GuestEditorFormInner(props: GuestEditorFormProps) {
         country: normalizedCountry,
       };
 
-      if (normalizedPhone !== originalPhone) {
+      if (normalizedPhone !== originalPhone || normalizedHouseholdNotes !== originalHouseholdNotes) {
         const nextExtraFields = getInitialExtraFieldsObject(guest.extraFields);
-        if (normalizedPhone) {
-          nextExtraFields.phone = normalizedPhone;
-          delete nextExtraFields.phoneNumber;
-          delete nextExtraFields['Phone Number'];
-        } else {
-          delete nextExtraFields.phone;
-          delete nextExtraFields.mobile;
-          delete nextExtraFields.phoneNumber;
-          delete nextExtraFields['Phone Number'];
+        if (normalizedPhone !== originalPhone) {
+          if (normalizedPhone) {
+            nextExtraFields.phone = normalizedPhone;
+            delete nextExtraFields.phoneNumber;
+            delete nextExtraFields['Phone Number'];
+          } else {
+            delete nextExtraFields.phone;
+            delete nextExtraFields.mobile;
+            delete nextExtraFields.phoneNumber;
+            delete nextExtraFields['Phone Number'];
+          }
+        }
+        if (normalizedHouseholdNotes !== originalHouseholdNotes) {
+          if (normalizedHouseholdNotes) {
+            nextExtraFields.householdNotes = normalizedHouseholdNotes;
+          } else {
+            delete nextExtraFields.householdNotes;
+          }
         }
         payload.extraFields = nextExtraFields;
       }
@@ -314,7 +333,10 @@ function GuestEditorFormInner(props: GuestEditorFormProps) {
       if (normalizedState) payload.state = normalizedState;
       if (normalizedZipCode) payload.zipCode = normalizedZipCode;
       if (normalizedCountry) payload.country = normalizedCountry;
-      if (normalizedPhone) payload.extraFields = { phone: normalizedPhone };
+      const extraFields: Record<string, unknown> = {};
+      if (normalizedPhone) extraFields.phone = normalizedPhone;
+      if (normalizedHouseholdNotes) extraFields.householdNotes = normalizedHouseholdNotes;
+      if (Object.keys(extraFields).length > 0) payload.extraFields = extraFields;
     }
 
     const fieldErrors = validateInvitationGuestFields(payload, { mode: 'row' });
@@ -506,6 +528,17 @@ function GuestEditorFormInner(props: GuestEditorFormProps) {
               value={formState.partyTags}
               onChange={(e) => updateField('partyTags', e.target.value)}
               placeholder="e.g. VIP, Out of Town"
+            />
+          </FormGroup>
+
+          <FormGroup className="sm:col-span-2">
+            <Label>Household Notes</Label>
+            <Textarea
+              rows={2}
+              maxLength={1000}
+              value={formState.householdNotes}
+              onChange={(e) => updateField('householdNotes', e.target.value)}
+              placeholder="e.g. Family of 4, special mailing instructions"
             />
           </FormGroup>
 
