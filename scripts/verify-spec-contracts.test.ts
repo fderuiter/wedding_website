@@ -207,6 +207,175 @@ export function getStripeCapability() {
     ]);
   });
 
+  it('resolves GitHub blob URLs (including percent-encoded dynamic route segments) and bolded symbol citations', () => {
+    writeFixture(
+      tempDir,
+      'src/app/api/media/[id]/route.ts',
+      'export async function DELETE() { return Response.json({ deleted: true }); }\n',
+    );
+    writeFixture(
+      tempDir,
+      'docs/ASSET_STORAGE.md',
+      [
+        '# Asset Storage',
+        '- **`getStripeCapability`** ([src/lib/stripe.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/lib/stripe.ts)).',
+        '- **`DELETE`** ([src/app/api/media/[id]/route.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/app/api/media/%5Bid%5D/route.ts)).',
+        '- **`missingStorageHelper`** ([src/lib/stripe.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/lib/stripe.ts)).',
+      ].join('\n'),
+    );
+
+    const result = verifySpecContracts(tempDir, { specFiles: ['docs/ASSET_STORAGE.md'] });
+    expect(result.checkedSymbols).toBe(3);
+    expect(result.errors).toEqual([
+      'docs/ASSET_STORAGE.md:4: Symbol "missingStorageHelper" is not declared or exported in src/lib/stripe.ts',
+    ]);
+  });
+
+  it('fails when unprotected routes in src/lib/routes.ts or src/app/metadata.ts drift from src/middleware.ts or ARCHITECTURE.md', () => {
+    writeFixture(
+      tempDir,
+      'src/app/api/admin/me/route.ts',
+      'export async function GET() { return Response.json({ isAdmin: false }); }\n',
+    );
+    writeFixture(
+      tempDir,
+      'src/app/api/admin/logout/route.ts',
+      'export async function POST() { return Response.json({ success: true }); }\n',
+    );
+    writeFixture(
+      tempDir,
+      'src/app/api/og/route.tsx',
+      'export async function GET() { return new Response("png"); }\n',
+    );
+    writeFixture(
+      tempDir,
+      'src/lib/routes.ts',
+      `const APP_ROUTES = [
+  { path: '/api/admin/me', roles: ['public', 'admin'], exact: true },
+  { path: '/api/admin/logout', roles: ['public', 'admin'], exact: true },
+];
+export function isProtectedRoute() { return false; }
+`,
+    );
+    writeFixture(
+      tempDir,
+      'src/app/metadata.ts',
+      "export const ogUrl = '/api/og?p1=Alex';\n",
+    );
+    writeFixture(
+      tempDir,
+      'src/middleware.ts',
+      `export function middleware(request: { nextUrl: { pathname: string }; method: string }) {
+  const normalizedPath = request.nextUrl.pathname;
+  const method = request.method;
+  const isExcluded = (normalizedPath === '/api/admin/me' && method === 'GET');
+  return isExcluded;
+}
+`,
+    );
+    writeFixture(
+      tempDir,
+      'ARCHITECTURE.md',
+      [
+        '# Architecture',
+        '| Route | Handler | Methods | Access Tier |',
+        '|---|---|---|---|',
+        '| `/api/admin/me` | `src/app/api/admin/me/route.ts` | `GET` | `Guest / Admin` |',
+        '| `/api/admin/logout` | `src/app/api/admin/logout/route.ts` | `POST` | `Public` |',
+        '| `/api/og` | `src/app/api/og/route.tsx` | `GET` | `Public` |',
+      ].join('\n'),
+    );
+
+    const driftResult = verifySpecContracts(tempDir);
+    expect(driftResult.errors).toEqual([
+      'ARCHITECTURE.md: Unprotected API route "/api/admin/me" from src/lib/routes.ts is not documented with Access Tier `Public`',
+      'src/lib/routes.ts: Unprotected API route "/api/admin/logout" (POST) is not excluded from the cookie gate in src/middleware.ts',
+      'src/app/metadata.ts: Unprotected API route "/api/og" (GET) is not excluded from the cookie gate in src/middleware.ts',
+    ]);
+
+    writeFixture(
+      tempDir,
+      'src/middleware.ts',
+      `export function middleware(request: { nextUrl: { pathname: string }; method: string }) {
+  const normalizedPath = request.nextUrl.pathname;
+  const method = request.method;
+  const isExcluded =
+    (normalizedPath === '/api/admin/me' && method === 'GET') ||
+    (normalizedPath === '/api/admin/logout' && method === 'POST') ||
+    (normalizedPath === '/api/og' && method === 'GET');
+  return isExcluded;
+}
+`,
+    );
+    writeFixture(
+      tempDir,
+      'ARCHITECTURE.md',
+      [
+        '# Architecture',
+        '| Route | Handler | Methods | Access Tier |',
+        '|---|---|---|---|',
+        '| `/api/admin/me` | `src/app/api/admin/me/route.ts` | `GET` | `Public` |',
+        '| `/api/admin/logout` | `src/app/api/admin/logout/route.ts` | `POST` | `Public` |',
+        '| `/api/og` | `src/app/api/og/route.tsx` | `GET` | `Public` |',
+      ].join('\n'),
+    );
+
+    const fixedResult = verifySpecContracts(tempDir);
+    expect(fixedResult.errors).toEqual([]);
+  });
+
+  it('fails when a module in src/core/auth/ or a SITE_* override in src/lib/config.ts is missing from ARCHITECTURE.md', () => {
+    writeFixture(
+      tempDir,
+      'src/core/auth/guestInviteToken.ts',
+      'export function getSignedGuestInviteSession() { return null; }\n',
+    );
+    writeFixture(
+      tempDir,
+      'src/core/auth/guestInviteSession.ts',
+      'export function getGuestInviteSession() { return null; }\n',
+    );
+    writeFixture(
+      tempDir,
+      'src/lib/config.ts',
+      `export function getEnvConfigOverrides() {
+  return {
+    p1: process.env.SITE_PARTNER1_NAME,
+    theme: process.env.SITE_THEME_TOKENS,
+  };
+}
+`,
+    );
+    writeFixture(
+      tempDir,
+      'ARCHITECTURE.md',
+      [
+        '# Architecture',
+        '- Documented auth module: `src/core/auth/guestInviteSession.ts`.',
+        '- Documented env override: `SITE_PARTNER1_NAME`.',
+      ].join('\n'),
+    );
+
+    const driftResult = verifySpecContracts(tempDir);
+    expect(driftResult.errors).toEqual([
+      'ARCHITECTURE.md: Authentication module "src/core/auth/guestInviteToken.ts" in src/core/auth/ is not documented in ARCHITECTURE.md',
+      'ARCHITECTURE.md: Environment variable override "SITE_THEME_TOKENS" in src/lib/config.ts is not documented in ARCHITECTURE.md',
+    ]);
+
+    writeFixture(
+      tempDir,
+      'ARCHITECTURE.md',
+      [
+        '# Architecture',
+        '- Documented auth modules: `src/core/auth/guestInviteSession.ts` and `src/core/auth/guestInviteToken.ts`.',
+        '- Documented env overrides: `SITE_PARTNER1_NAME` and `SITE_THEME_TOKENS`.',
+      ].join('\n'),
+    );
+
+    const fixedResult = verifySpecContracts(tempDir);
+    expect(fixedResult.errors).toEqual([]);
+  });
+
   it('rejects missing HTTP 503 probe schemas or leaked stripped fields on GET /api/health in public/openapi.json', () => {
     writeFixture(
       tempDir,

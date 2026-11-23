@@ -289,4 +289,73 @@ describe('Middleware Route Classification and Authorization Bypass', () => {
       expect(getWebhookRes.status).toBe(401);
     });
   });
+
+  describe('Public Open Graph and Admin Auth Lifecycle Exclusions (/api/og, /api/admin/me, /api/admin/logout)', () => {
+    it('allows unauthenticated GET /api/og, GET /api/admin/me, and POST /api/admin/logout through middleware while blocking non-exempt methods', async () => {
+      for (const [method, url] of [
+        ['GET', 'http://localhost:3000/api/og'],
+        ['GET', 'http://localhost:3000/api/og/'],
+        ['GET', 'http://localhost:3000/api/admin/me'],
+        ['GET', 'http://localhost:3000/api/admin/me/'],
+        ['POST', 'http://localhost:3000/api/admin/logout'],
+        ['POST', 'http://localhost:3000/api/admin/logout/'],
+      ] as const) {
+        const req = new NextRequest(url, {
+          method,
+          headers: { host: 'localhost:3000' },
+        });
+        const res = await middleware(req);
+        expect(res.status).toBe(200);
+        expect(res.headers.get('location')).toBeNull();
+      }
+
+      for (const [method, url] of [
+        ['POST', 'http://localhost:3000/api/og'],
+        ['POST', 'http://localhost:3000/api/admin/me'],
+        ['GET', 'http://localhost:3000/api/admin/logout'],
+      ] as const) {
+        const req = new NextRequest(url, {
+          method,
+          headers: { host: 'localhost:3000' },
+        });
+        const res = await middleware(req);
+        expect(res.status).toBe(401);
+      }
+    });
+
+    it('serves image/png from GET /api/og, { isAdmin: false } from GET /api/admin/me, and clears admin_auth on POST /api/admin/logout without cookies', async () => {
+      const { GET: getOg } = await import('@/app/api/og/route');
+      const { GET: getAdminMe } = await import('@/app/api/admin/me/route');
+      const { POST: postAdminLogout } = await import('@/app/api/admin/logout/route');
+
+      const ogRes = await getOg(
+        new Request('http://localhost:3000/api/og?p1=Alex&p2=Taylor')
+      );
+      expect(ogRes.status).toBe(200);
+      expect(ogRes.headers.get('content-type')).toContain('image/png');
+
+      const meRes = await getAdminMe(
+        new NextRequest('http://localhost:3000/api/admin/me', {
+          headers: { host: 'localhost:3000' },
+        })
+      );
+      expect(meRes.status).toBe(200);
+      await expect(meRes.json()).resolves.toEqual({
+        success: true,
+        isAdmin: false,
+      });
+
+      const logoutRes = await postAdminLogout(
+        new NextRequest('http://localhost:3000/api/admin/logout', {
+          method: 'POST',
+          headers: { host: 'localhost:3000' },
+        })
+      );
+      expect(logoutRes.status).toBe(200);
+      await expect(logoutRes.json()).resolves.toEqual({ success: true });
+      const setCookie = logoutRes.headers.get('set-cookie') ?? '';
+      expect(setCookie).toContain(`${ADMIN_COOKIE}=`);
+      expect(setCookie).toMatch(/Max-Age=0/i);
+    });
+  });
 });
