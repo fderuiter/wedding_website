@@ -41,8 +41,8 @@ Before Jest executes, npm automatically triggers the `pretest`, `pretest:watch`,
 2. **Lifecycle-Aware Execution:** Inspects `npm_lifecycle_event` — when the lifecycle event includes `test` (`npm test`, `npm run test:watch`, `npm run test:cov`, `npm run pretest`), it runs the unit/integration preparation steps below; if invoked directly outside a `*test*` lifecycle event, it falls back to running a full `npm run build`.
 3. **Accessibility Violation Reset:** Initializes `test-results/jest-a11y-violations.json` to `[]` before Jest runs component-level `jest-axe` assertions.
 4. **PostgreSQL Container Orchestration & Graceful Fallback:** Checks if Docker is active (`docker info`). If running, it starts the local PostgreSQL container via `docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml up -d db` and polls `pg_isready -U wedding` until ready; if Docker is unavailable, it logs a notice and falls back gracefully to existing PostgreSQL connections.
-5. **Strict Test Environment Isolation:** Clears parent shell database and admin variables (`DATABASE_URL`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGHOST`, `PGPORT`, `PGDATASOURCE`, `ADMIN_PASSWORD`) and loads dedicated test settings from [`.env.test`](../.env.test) (`GUEST_PASSCODE="build-fallback-guest-passcode"`, `GUEST_SESSION_SECRET="playwright-e2e-session-secret-32-chars-min"`), targeting the isolated `wedding_test` database (`postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public`) so test runs never modify local development data.
-6. **Schema Synchronization & Prisma Generation:** Pushes the current schema to `wedding_test` via `npx prisma db push --accept-data-loss` and runs `npm run prisma:generate` so Prisma Client stays aligned with active models.
+5. **Strict Test Environment Isolation:** Clears parent shell database and admin variables (`DATABASE_URL`, `POSTGRES_URL_NON_POOLING`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGHOST`, `PGPORT`, `PGDATASOURCE`, `ADMIN_PASSWORD`) and loads dedicated test settings from [`.env.test`](../.env.test) (`GUEST_PASSCODE="build-fallback-guest-passcode"`, `GUEST_SESSION_SECRET="playwright-e2e-session-secret-32-chars-min"`), targeting the isolated `wedding_test` database (`postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public`) so test runs never modify local development data.
+6. **Schema Synchronization & Prisma Generation:** Ensures `wedding_test` exists and applies committed forward-only migrations via `npx prisma migrate deploy` (automatically resetting the `public` schema on `wedding_test` and retrying once if prior local `prisma db push` state triggers Prisma error `P3005`), then runs `npm run prisma:generate` so Prisma Client stays aligned with active models.
 7. **Documentation Portal Staging:** Runs `npx tsx scripts/generate-portal.ts` ([`scripts/generate-portal.ts`](../scripts/generate-portal.ts)) to validate relative Markdown links, synchronize OpenAPI/architecture docs, and stage `docs-portal/development/` before Jest executes portal verification suites.
 
 ## Test Structure & Architecture
@@ -138,6 +138,13 @@ A variety of verification scripts in [package.json](../package.json) support com
   - `npm run lint:migrations`: Verifies database migration compatibility.
   - `npm run check:doc-sync`: Verifies generated OpenAPI (`public/openapi.json`), architecture (`ARCHITECTURE.md`), and feature module (`FEATURE_MODULES.md`) documentation match current schemas.
   - `npm run check:setup-guides`: Verifies setup, contributor, and testing guides stay aligned with `.env.example`, `.env.test`, `package.json`, `.githooks/pre-commit`, `.githooks/pre-push`, `scripts/check-quality.ts`, and `tsconfig.json`.
+
+- **PostgreSQL Migration Drift Verification (`Verify Prisma Migration Sync`):**
+  ```bash
+  POSTGRES_URL_NON_POOLING="postgresql://wedding:wedding123@localhost:5432/wedding_shadow?schema=public" \
+    npx prisma migrate diff --from-migrations prisma/migrations --to-schema prisma/schema.prisma --exit-code
+  ```
+  Mirrors the `Verify Prisma Migration Sync` CI gate in the `unit-test` job of [.github/workflows/ci.yml](workflows/ci.yml), replaying `prisma/migrations/` against an isolated `wedding_shadow` PostgreSQL database bound via [prisma.config.ts](../prisma.config.ts) (`shadowDatabaseUrl`). Ensure `wedding_shadow` exists on your local PostgreSQL container (`docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml exec -T db psql -U wedding -d postgres -c 'CREATE DATABASE wedding_shadow;'`), and run `npm run migrate:dev` to generate and commit forward-only SQL migrations whenever schema drift is detected (exit code `2`).
 
 - **Storybook Static Showcase Build:**
   ```bash

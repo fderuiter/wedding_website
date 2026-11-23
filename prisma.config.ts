@@ -142,7 +142,8 @@ export function resolvePrismaShadowDatabaseUrl(
 
   const [command, subcommand] = extractPrismaCliCommand(argv);
   const isShadowMigrateCommand =
-    command === 'migrate' && (subcommand === 'dev' || subcommand === 'reset');
+    command === 'migrate' &&
+    (subcommand === 'dev' || subcommand === 'reset' || subcommand === 'diff');
   if (!isShadowMigrateCommand) {
     return undefined;
   }
