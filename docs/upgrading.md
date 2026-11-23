@@ -166,8 +166,8 @@ npm ci
 # 2. Validate local .env secrets before migrating/restarting
 npm run preflight:env -- --no-compose --env-file .env
 
-# 3. Apply pending forward-only Prisma migrations and regenerate Prisma Client
-npm run migrate:deploy
+# 3. Apply pending forward-only Prisma migrations against production .env and regenerate Prisma Client
+dotenv -e .env -- npx prisma migrate deploy
 npm run prisma:generate
 
 # 4. Build standalone Next.js bundle and restart service
@@ -175,7 +175,7 @@ npm run build
 npm start
 ```
 
-> **Note:** `npm run migrate:deploy` executes `prisma migrate deploy` (configured via `prisma.config.ts`), inspecting `_prisma_migrations` and applying only unapplied SQL files from `prisma/migrations/`. If `DATABASE_URL` points to PgBouncer, run `DATABASE_URL="$POSTGRES_URL_NON_POOLING" env -u POSTGRES_URL_NON_POOLING npx prisma migrate deploy`.
+> **Local vs. Production Migration CLI Note:** On production hosts, CI/CD runners, and PaaS targets, invoke `npx prisma migrate deploy` directly against an exported `DATABASE_URL` (or `dotenv -e .env -- npx prisma migrate deploy` when loading a host `.env` file), inspecting `_prisma_migrations` via [`prisma.config.ts`](../prisma.config.ts) and applying only unapplied SQL files from `prisma/migrations/`. If `DATABASE_URL` points to PgBouncer, run `DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING npx prisma migrate deploy` (`prisma.config.ts` also auto-promotes `POSTGRES_URL_NON_POOLING` when `DATABASE_URL` uses PgBouncer). Reserve `npm run migrate:deploy` for local development fork verification: it wraps `dotenv -c development -- prisma migrate deploy`, which cascades `.env.development.local`, `.env.local`, `.env.development`, and `.env` and would load local `.env.development` overrides if present on a host.
 
 ### Step 7: Verify Local `.env` Secrets & Configuration Preflight
 
@@ -221,6 +221,7 @@ curl -fsS http://127.0.0.1:3000/api/health -H "Host: localhost"
 Upstream releases may add or refine configuration fields in `AppConfig` or feature module schemas:
 
 - **Non-Breaking Schema Additions**: New columns in `prisma/schema.prisma` include safe `@default(...)` values or nullable types so forward-only migrations populate existing `AppConfig` rows without downtime.
+- **Expand-Migrate-Contract Schema Evolution**: Upstream database changes follow the three-phase **Expand-Migrate-Contract** policy (see [`docs/versioning.md`](./versioning.md) and [`DEPLOYMENT.md`](../DEPLOYMENT.md)) enforced by `npm run lint:migrations` ([`scripts/verify-migration-compatibility.ts`](../scripts/verify-migration-compatibility.ts)). Phase 1 (**Expand**) and Phase 2 (**Migrate**) releases keep `prisma/migrations/` strictly additive so `N-1` rollbacks remain safe; destructive Phase 3 (**Contract**) cleanups occur only in subsequent releases after code migration and require explicit statement-scoped `-- allow-destructive: <reason>` SQL annotations.
 - **Persisted Feature Module Toggles (`AppConfig.modules`)**: `ModuleConfigSchema` in `src/lib/modules.ts` persists the 9 feature toggles (`registry`, `groupGifting`, `weather`, `weddingParty`, `attractions`, `gallery`, `countdown`, `addToCalendar`, `interactive3D`) in `AppConfig.modules` (disabling `registry` automatically disables `groupGifting`; guest passcode gating is enforced globally via `GUEST_PASSCODE` and `GUEST_SESSION_SECRET`).
 - **Zod Validation Fallbacks**: Zod schemas (`src/features/content/schemas.ts`) apply defaults gracefully when parsing older database records or snapshots.
 
@@ -254,7 +255,7 @@ If an upgraded deployment fails health checks after Step 6, revert immediately t
      wedding-website:previous
    ```
 3. **Host Node.js Rollback**: Check out the previous Git tag or commit (`git checkout <previous-tag-or-sha>`), run `npm ci && npm run build`, and restart `npm start`.
-4. **Forward-Only Database Migrations**: Prisma migrations are strictly forward-only (automatic destructive down-migrations are intentionally unsupported). Additive migrations remain backward-compatible with `wedding-website:previous`; if a major upgrade requires full database recovery, restore from the pre-upgrade `pg_dump` snapshot or `/admin/dashboard/maintenance` backup below.
+4. **Forward-Only Database Migrations (`Expand-Migrate-Contract`)**: Prisma migrations are strictly forward-only (automatic destructive down-migrations are intentionally unsupported). Phase 1/2 additive migrations enforced by `npm run lint:migrations` remain backward-compatible with `wedding-website:previous`; if a major Phase 3 contract upgrade requires full database recovery, restore from the pre-upgrade `pg_dump` snapshot or `/admin/dashboard/maintenance` backup below.
 
 ### Prisma Migration Drift
 If you edited `prisma/schema.prisma` directly in your local fork without generating a migration, Prisma may report schema drift during upgrade.
@@ -282,5 +283,5 @@ Use this checklist for every upstream upgrade:
 - [ ] Reviewed [`CHANGELOG.md`](../CHANGELOG.md) for `Adopter Action Required: Yes`, breaking changes, and new `.env` or `:?` secret guards.
 - [ ] Merged upstream branch (`git merge upstream/main`) and resolved any merge conflicts.
 - [ ] Validated local `.env` secrets via `npm run preflight:env` (`npx tsx scripts/preflight-env.ts --env-file .env`).
-- [ ] Applied forward-only migrations and rebuilt (`docker compose up -d --build` preserving `db_data` & `uploads_data`, standalone `docker run` with `RUN_MIGRATIONS=true`, or `npm ci && npm run migrate:deploy && npm run build`).
+- [ ] Applied forward-only migrations and rebuilt (`docker compose up -d --build` preserving `db_data` & `uploads_data`, standalone `docker run` with `RUN_MIGRATIONS=true`, production host `npm ci && dotenv -e .env -- npx prisma migrate deploy && npm run build` against `DATABASE_URL` / `POSTGRES_URL_NON_POOLING`, or local fork `npm run migrate:deploy` via `dotenv -c development`).
 - [ ] Verified `/api/live` and `/api/health` readiness probes (and local `npm test` if running a modified fork).
