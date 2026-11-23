@@ -6113,7 +6113,9 @@
                   },
                   "smtpPort": {
                     "nullable": true,
-                    "type": "number"
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
                   },
                   "smtpUser": {
                     "nullable": true,
