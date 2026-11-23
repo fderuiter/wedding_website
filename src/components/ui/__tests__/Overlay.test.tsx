@@ -1,5 +1,5 @@
-import React from 'react';
-import { render } from '@testing-library/react';
+import React, { useRef, useState } from 'react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import { Overlay } from '../Overlay';
@@ -69,6 +69,66 @@ describe('Overlay', () => {
 
     const results = await axe(container);
     expect(results).toHaveNoViolations();
+  });
+
+  test('forwards aria-label (ARIA14) for standalone modal dialogs and passes axe', async () => {
+    const { container } = render(
+      <Overlay isOpen={true} onClose={() => {}} role="dialog" aria-modal="true" aria-label="Mobile navigation menu">
+        <button type="button">Close navigation menu</button>
+      </Overlay>
+    );
+
+    const dialog = screen.getByRole('dialog', { name: 'Mobile navigation menu' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  test('excludes optional triggerRef from outside mousedown so toggle button closes cleanly', async () => {
+    function TriggeredOverlayFixture() {
+      const [open, setOpen] = useState(false);
+      const triggerRef = useRef<HTMLButtonElement>(null);
+
+      return (
+        <div>
+          <button
+            ref={triggerRef}
+            type="button"
+            aria-expanded={open}
+            onClick={() => setOpen((prev) => !prev)}
+          >
+            Toggle Drawer
+          </button>
+          <Overlay
+            isOpen={open}
+            onClose={() => setOpen(false)}
+            triggerRef={triggerRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Test Drawer"
+          >
+            <button type="button" onClick={() => setOpen(false)}>
+              Close Drawer
+            </button>
+          </Overlay>
+        </div>
+      );
+    }
+
+    render(<TriggeredOverlayFixture />);
+    const trigger = screen.getByRole('button', { name: 'Toggle Drawer' });
+
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('dialog', { name: 'Test Drawer' })).toBeInTheDocument();
+
+    fireEvent.mouseDown(trigger);
+    fireEvent.mouseUp(trigger);
+    fireEvent.click(trigger);
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
   });
 });
 

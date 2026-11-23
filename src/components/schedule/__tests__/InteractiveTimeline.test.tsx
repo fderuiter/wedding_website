@@ -95,7 +95,7 @@ describe('InteractiveTimeline Component', () => {
     expect(screen.getByText('Evening Reception')).toBeInTheDocument();
   });
 
-  it('displays location, attire rules, and per-event calendar export button', () => {
+  it('displays location, attire rules, and per-event calendar export button with unique menu IDs', () => {
     render(<InteractiveTimeline events={sampleEvents} timezone="UTC" />);
 
     expect(screen.getByText('The Oak Room')).toBeInTheDocument();
@@ -103,6 +103,16 @@ describe('InteractiveTimeline Component', () => {
 
     const calendarButtons = screen.getAllByRole('button', { name: /add to calendar/i });
     expect(calendarButtons.length).toBe(3);
+
+    const triggerIds = calendarButtons.map((btn) => btn.getAttribute('id'));
+    const menuIds = calendarButtons.map((btn) => btn.getAttribute('aria-controls'));
+    expect(new Set(triggerIds).size).toBe(3);
+    expect(new Set(menuIds).size).toBe(3);
+
+    fireEvent.click(calendarButtons[1]);
+    const openMenu = screen.getByRole('menu');
+    expect(openMenu).toHaveAttribute('id', menuIds[1]);
+    expect(openMenu).toHaveAttribute('aria-labelledby', triggerIds[1]);
   });
 
   it('returns null when no structured events exist', () => {
