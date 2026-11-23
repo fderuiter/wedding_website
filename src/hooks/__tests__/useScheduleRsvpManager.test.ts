@@ -574,4 +574,82 @@ describe('useScheduleRsvpManager', () => {
     expect(declinedState.customAnswers).toEqual({});
     expect(declinedState.plusOneNames).toEqual([]);
   });
+
+  it('rejects submitSingle and submitBatch when status remains pending', async () => {
+    const { result } = renderHook(() =>
+      useScheduleRsvpManager({
+        initialEvents: [
+          {
+            id: 'event-pending',
+            title: 'Ceremony',
+            userRsvp: { status: 'pending', plusOneCount: 0, dietaryNotes: '' },
+          },
+        ],
+      })
+    );
+
+    act(() => {
+      result.current.updateRsvp('event-pending', { dietaryNotes: 'Gluten-free' });
+    });
+
+    let singleOk = true;
+    await act(async () => {
+      singleOk = await result.current.submitSingle('event-pending');
+    });
+    expect(singleOk).toBe(false);
+    expect(result.current.getRsvpState('event-pending').error).toBe(
+      'Please select Attending or Declined before saving.'
+    );
+    expect(global.fetch).not.toHaveBeenCalled();
+
+    let batchOk = true;
+    await act(async () => {
+      batchOk = await result.current.submitBatch();
+    });
+    expect(batchOk).toBe(false);
+    expect(result.current.batchError).toBe('Please select Attending or Declined before saving.');
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('sends clearDietaryNotes: true when baseline dietary notes are intentionally cleared', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: [{ id: 'r1', subEventId: 'event-prefill', status: 'attending', plusOneCount: 0, dietaryNotes: '' }],
+      }),
+    });
+
+    const { result } = renderHook(() =>
+      useScheduleRsvpManager({
+        initialEvents: [
+          {
+            id: 'event-prefill',
+            title: 'Ceremony',
+            userRsvp: { status: 'pending', plusOneCount: 0, dietaryNotes: 'Peanut allergy' },
+          },
+        ],
+      })
+    );
+
+    act(() => {
+      result.current.updateRsvp('event-prefill', { status: 'attending', dietaryNotes: '' });
+    });
+
+    await act(async () => {
+      await result.current.submitSingle('event-prefill');
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith('/api/rsvp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subEventId: 'event-prefill',
+        status: 'attending',
+        plusOneCount: 0,
+        dietaryNotes: '',
+        clearDietaryNotes: true,
+      }),
+    });
+  });
 });

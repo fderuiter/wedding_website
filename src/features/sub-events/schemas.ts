@@ -89,7 +89,9 @@ export const SubEventUpdateInputSchema = deriveAdminInputSchema(SubEventSchema, 
 
 export const SubEventRsvpSubmissionItemSchema = z.object({
   subEventId: z.string().min(1, 'Sub-event ID is required.'),
-  status: z.enum(['attending', 'declined', 'pending']),
+  status: z.enum(['attending', 'declined'], {
+    message: 'Please select Attending or Declined before saving.',
+  }),
   plusOneCount: z
     .number()
     .int()
@@ -98,6 +100,7 @@ export const SubEventRsvpSubmissionItemSchema = z.object({
     .optional()
     .default(0),
   dietaryNotes: z.string().optional().default(''),
+  clearDietaryNotes: z.boolean().optional(),
   mealSelections: z.array(z.string().max(100)).max(MAX_RSVP_PLUS_ONE_COUNT + 1).optional(),
   customAnswers: z.record(z.string().max(100), z.string().max(1000)).optional(),
   plusOneNames: z.array(z.string().max(120)).max(MAX_RSVP_PLUS_ONE_COUNT).optional(),

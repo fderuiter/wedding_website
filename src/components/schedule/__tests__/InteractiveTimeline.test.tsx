@@ -686,18 +686,20 @@ describe('InteractiveTimeline Component', () => {
       });
       expect(rehearsalRadioGroup).toBeInTheDocument();
 
-      const pendingRadio = within(rehearsalRadioGroup).getByRole('radio', { name: /pending/i });
+      expect(
+        within(rehearsalRadioGroup).queryByRole('radio', { name: /pending/i })
+      ).not.toBeInTheDocument();
       const attendingRadio = within(rehearsalRadioGroup).getByRole('radio', { name: /attending/i });
       const declinedRadio = within(rehearsalRadioGroup).getByRole('radio', { name: /declined/i });
 
-      expect(pendingRadio).toHaveAttribute('aria-checked', 'true');
-      expect(pendingRadio.querySelector('svg[aria-hidden="true"]')).toBeInTheDocument();
       expect(attendingRadio).toHaveAttribute('aria-checked', 'false');
+      expect(declinedRadio).toHaveAttribute('aria-checked', 'false');
 
-      pendingRadio.focus();
-      fireEvent.keyDown(pendingRadio, { key: 'Home' });
+      attendingRadio.focus();
+      fireEvent.keyDown(attendingRadio, { key: 'Home' });
       expect(attendingRadio).toHaveFocus();
       expect(attendingRadio).toHaveAttribute('aria-checked', 'true');
+      expect(attendingRadio.querySelector('svg[aria-hidden="true"]')).toBeInTheDocument();
 
       fireEvent.keyDown(attendingRadio, { key: 'ArrowRight' });
       expect(declinedRadio).toHaveFocus();
@@ -954,6 +956,132 @@ describe('InteractiveTimeline Component', () => {
         },
         plusOneNames: ['John Doe'],
       });
+    });
+
+    it('hides editable RSVP forms and shows inline invite prompt when isGuest is false', async () => {
+      (global.fetch as jest.Mock).mockImplementation(async (url) => {
+        if (url === '/api/schedule') {
+          return {
+            ok: true,
+            json: async () => ({
+              success: true,
+              isGuest: false,
+              guestName: null,
+              plusOneAllocations: null,
+              rsvpOpen: true,
+              rsvpDeadlineDate: '2026-08-15',
+              rsvpFormattedDeadline: 'August 15, 2026',
+              timezone: 'America/Los_Angeles',
+              data: [
+                {
+                  id: 'se-public',
+                  title: 'Wedding Ceremony',
+                  startTime: '2026-09-19T22:00:00.000Z',
+                  endTime: '2026-09-19T23:00:00.000Z',
+                  category: 'Ceremony',
+                  isPrivate: false,
+                  isReadOnly: false,
+                  userRsvp: null,
+                },
+              ],
+            }),
+          };
+        }
+        return { ok: false, json: async () => ({}) };
+      });
+
+      render(
+        <InteractiveTimeline events={[]} timezone="America/Los_Angeles" emptyStateMessage="No events" />
+      );
+
+      const prompt = await screen.findByTestId('rsvp-invite-prompt-se-public');
+      expect(prompt).toHaveTextContent(/Have a household invitation code\?/i);
+      expect(within(prompt).getByRole('link', { name: /Enter Invitation Code/i })).toHaveAttribute(
+        'href',
+        '/guest'
+      );
+      expect(screen.queryByTestId('rsvp-card-se-public')).not.toBeInTheDocument();
+
+      // Deadline banner renders friendly timezone label
+      const deadlineBanner = screen.getByTestId('schedule-rsvp-deadline-banner');
+      expect(deadlineBanner).toHaveTextContent('Pacific Time (PT)');
+
+      // Calendar export menu passes ctz=America%2FLos_Angeles to Google Calendar URL
+      const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
+      try {
+        fireEvent.click(screen.getByRole('button', { name: /add to calendar/i }));
+        fireEvent.click(screen.getByRole('menuitem', { name: /^Google$/i }));
+        expect(openSpy).toHaveBeenCalledWith(
+          expect.stringContaining('ctz=America%2FLos_Angeles'),
+          expect.any(String),
+          expect.any(String)
+        );
+      } finally {
+        openSpy.mockRestore();
+      }
+    });
+
+    it('caps plusOneAllocations: null to 0 for authenticated guests and promotes pending edits to attending', async () => {
+      (global.fetch as jest.Mock).mockImplementation(async (url) => {
+        if (url === '/api/schedule') {
+          return {
+            ok: true,
+            json: async () => ({
+              success: true,
+              isGuest: true,
+              guestName: 'Alex Guest',
+              plusOneAllocations: null,
+              rsvpOpen: true,
+              timezone: 'America/Los_Angeles',
+              data: [
+                {
+                  id: 'se-dinner',
+                  title: 'Plated Dinner',
+                  startTime: '2026-09-19T18:00:00.000Z',
+                  category: 'Reception',
+                  isPrivate: false,
+                  isReadOnly: false,
+                  mealOptions: [{ id: 'm-1', label: 'Filet Mignon', dietaryTags: [] }],
+                  customQuestions: [
+                    { id: 'q-1', prompt: 'Shuttle needed?', type: 'text', required: true, options: [] },
+                  ],
+                  userRsvp: {
+                    status: 'pending',
+                    plusOneCount: 0,
+                    dietaryNotes: 'No peanuts',
+                  },
+                },
+              ],
+            }),
+          };
+        }
+        return { ok: false, json: async () => ({}) };
+      });
+
+      render(
+        <InteractiveTimeline events={[]} timezone="America/Los_Angeles" emptyStateMessage="No events" />
+      );
+
+      const card = await screen.findByTestId('rsvp-card-se-dinner');
+      const plusOneInput = within(card).getByLabelText(/plus-one count/i) as HTMLInputElement;
+      expect(plusOneInput).toBeDisabled();
+      expect(plusOneInput).toHaveAttribute('max', '0');
+
+      // Pre-populated dietary notes are shown
+      const dietaryInput = within(card).getByLabelText(/dietary requirements \/ notes/i) as HTMLInputElement;
+      expect(dietaryInput.value).toBe('No peanuts');
+
+      // Meal and custom question sections are hidden while unresponded ('pending')
+      expect(within(card).queryByTestId('rsvp-meals-se-dinner')).not.toBeInTheDocument();
+
+      // Editing dietary notes automatically promotes status to 'attending' and reveals meal & question inputs
+      fireEvent.change(dietaryInput, { target: { value: 'No peanuts or tree nuts' } });
+      expect(within(card).getByRole('radio', { name: /^attending$/i })).toHaveAttribute(
+        'aria-checked',
+        'true'
+      );
+      expect(within(card).getByTestId('rsvp-meals-se-dinner')).toBeInTheDocument();
+      expect(within(card).getByTestId('rsvp-questions-se-dinner')).toBeInTheDocument();
     });
   });
 });

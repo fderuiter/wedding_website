@@ -94,7 +94,7 @@ describe('SubEventService', () => {
 
       expect(mockPrisma.invitationCode.findUnique).toHaveBeenCalledWith({
         where: { code: 'VIPGUEST', isSample: false },
-        select: { id: true },
+        select: { id: true, dietaryNotes: true },
       });
 
       expect(events).toHaveLength(2);
@@ -171,13 +171,56 @@ describe('SubEventService', () => {
 
       expect(mockPrisma.invitationCode.findUnique).toHaveBeenCalledWith({
         where: { code: 'SMITH2026', isSample: false },
-        select: { id: true },
+        select: { id: true, dietaryNotes: true },
       });
       expect(mockPrisma.subEvent.findMany).toHaveBeenCalledWith({
         where: { isPrivate: false },
         orderBy: { startTime: 'asc' },
       });
       expect(events).toHaveLength(1);
+    });
+
+    it('pre-populates userRsvp dietaryNotes from InvitationCode when guest has no SubEventRsvp yet', async () => {
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-allergy',
+        code: 'ALLERGY26',
+        dietaryNotes: 'Severe peanut allergy',
+      });
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        {
+          id: 'se-ceremony',
+          title: 'Ceremony',
+          isPrivate: false,
+          startTime: new Date('2026-06-20T15:00:00Z'),
+          rsvps: [],
+        },
+        {
+          id: 'se-dinner',
+          title: 'Reception Dinner',
+          isPrivate: false,
+          startTime: new Date('2026-06-20T18:00:00Z'),
+          rsvps: [
+            {
+              status: 'attending',
+              plusOneCount: 0,
+              dietaryNotes: 'Vegan, Severe peanut allergy',
+            },
+          ],
+        },
+      ]);
+
+      const events = await service.getScheduleForGuest('ALLERGY26');
+
+      expect(events[0].userRsvp).toEqual({
+        status: 'pending',
+        plusOneCount: 0,
+        dietaryNotes: 'Severe peanut allergy',
+      });
+      expect(events[1].userRsvp).toEqual({
+        status: 'attending',
+        plusOneCount: 0,
+        dietaryNotes: 'Vegan, Severe peanut allergy',
+      });
     });
   });
 
@@ -318,7 +361,30 @@ describe('SubEventService', () => {
       });
       expect(mockPrisma.invitationCode.findUnique).toHaveBeenCalledWith({
         where: { code: 'SMITH2026', isSample: false },
-        select: { id: true },
+        select: { id: true, dietaryNotes: true },
+      });
+    });
+
+    it('pre-populates userRsvp dietaryNotes on getSubEventByIdForGuest when guest has no SubEventRsvp yet', async () => {
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-allergy',
+        code: 'ALLERGY26',
+        dietaryNotes: 'Celiac gluten-free',
+      });
+      mockPrisma.subEvent.findUnique.mockResolvedValue({
+        id: 'se-1',
+        title: 'Reception',
+        isPrivate: false,
+        startTime: new Date('2026-06-20T18:00:00Z'),
+        accesses: [],
+        rsvps: [],
+      });
+
+      const event = await service.getSubEventByIdForGuest('se-1', 'ALLERGY26');
+      expect(event.userRsvp).toEqual({
+        status: 'pending',
+        plusOneCount: 0,
+        dietaryNotes: 'Celiac gluten-free',
       });
     });
 
@@ -1532,6 +1598,136 @@ describe('SubEventService', () => {
       );
       expect(audienceSummary.matchedCount).toBe(1);
       expect(audienceSummary.reachableCount).toBe(1);
+    });
+
+    it('rejects pending status in submitSubEventRsvps with HTTP 400', async () => {
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-pending',
+        guestName: 'Pending Guest',
+        plusOneAllocations: 1,
+      });
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        { id: 'se-1', title: 'Ceremony', isPrivate: false, accesses: [] },
+      ]);
+
+      await expect(
+        service.submitSubEventRsvps('PENDINGCODE', [
+          { subEventId: 'se-1', status: 'pending' as any, plusOneCount: 0, dietaryNotes: '' },
+        ])
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        message: 'Please select Attending or Declined before saving.',
+      });
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('preserves pre-seeded InvitationCode.dietaryNotes when RSVP notes stay blank, and clears when clearDietaryNotes is true', async () => {
+      mockPrisma.invitationCode.findUnique
+        .mockResolvedValueOnce({
+          id: 'inv-preserve',
+          guestName: 'Allergy Guest',
+          plusOneAllocations: 0,
+        })
+        .mockResolvedValueOnce({
+          used: false,
+          usedAt: null,
+          plusOneFirstName: null,
+          plusOneLastName: null,
+          dietaryNotes: 'Severe tree nut allergy',
+          extraFields: null,
+        });
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        { id: 'se-1', title: 'Ceremony', isPrivate: false, accesses: [] },
+      ]);
+      mockPrisma.subEventRsvp.findMany
+        .mockResolvedValueOnce([]) // priorRsvps before upsert
+        .mockResolvedValueOnce([
+          {
+            id: 'rsvp-1',
+            subEventId: 'se-1',
+            invitationCodeId: 'inv-preserve',
+            status: 'attending',
+            plusOneCount: 0,
+            dietaryNotes: '',
+            mealSelections: [],
+            customAnswers: {},
+            plusOneNames: [],
+            subEvent: { title: 'Ceremony', startTime: new Date('2026-06-20T15:00:00Z'), mealOptions: [], customQuestions: [] },
+          },
+        ]);
+      mockPrisma.subEventRsvp.upsert.mockResolvedValue({
+        id: 'rsvp-1',
+        subEventId: 'se-1',
+        invitationCodeId: 'inv-preserve',
+        status: 'attending',
+        plusOneCount: 0,
+        dietaryNotes: '',
+      });
+
+      await service.submitSubEventRsvps('PRESERVE26', [
+        { subEventId: 'se-1', status: 'attending', plusOneCount: 0, dietaryNotes: '' },
+      ]);
+
+      expect(mockPrisma.invitationCode.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'inv-preserve' },
+          data: expect.objectContaining({
+            dietaryNotes: 'Severe tree nut allergy',
+          }),
+        })
+      );
+
+      // Now intentionally clear pre-filled dietary notes via clearDietaryNotes: true
+      mockPrisma.invitationCode.update.mockClear();
+      mockPrisma.invitationCode.findUnique
+        .mockResolvedValueOnce({
+          id: 'inv-preserve',
+          guestName: 'Allergy Guest',
+          plusOneAllocations: 0,
+        })
+        .mockResolvedValueOnce({
+          used: true,
+          usedAt: new Date('2026-06-01T00:00:00Z'),
+          plusOneFirstName: null,
+          plusOneLastName: null,
+          dietaryNotes: 'Severe tree nut allergy',
+          extraFields: null,
+        });
+      mockPrisma.subEventRsvp.findMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          {
+            id: 'rsvp-1',
+            subEventId: 'se-1',
+            invitationCodeId: 'inv-preserve',
+            status: 'attending',
+            plusOneCount: 0,
+            dietaryNotes: '',
+            mealSelections: [],
+            customAnswers: {},
+            plusOneNames: [],
+            subEvent: { title: 'Ceremony', startTime: new Date('2026-06-20T15:00:00Z'), mealOptions: [], customQuestions: [] },
+          },
+        ]);
+
+      await service.submitSubEventRsvps('PRESERVE26', [
+        {
+          subEventId: 'se-1',
+          status: 'attending',
+          plusOneCount: 0,
+          dietaryNotes: '',
+          clearDietaryNotes: true,
+        },
+      ]);
+
+      expect(mockPrisma.invitationCode.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'inv-preserve' },
+          data: expect.objectContaining({
+            dietaryNotes: null,
+          }),
+        })
+      );
     });
   });
 });

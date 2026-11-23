@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import InteractiveTimeline, {
   type ScheduleRsvpStatusInfo,
 } from '@/components/schedule/InteractiveTimeline';
@@ -14,12 +14,14 @@ import {
 } from '@/components/guest/GuestHelpModal';
 import { useTheme } from '@/components/ThemeProvider';
 import { useGuestAddressPortal } from '@/hooks/useGuestAddressPortal';
+import { formatFriendlyTimezone } from '@/utils/dateTime';
 
 export default function GuestAddressPage() {
   const {
     state,
     handleValidateCode,
     handleSaveAddress,
+    handleSwitchHousehold,
     handleRetry,
     setField,
     setCode,
@@ -30,6 +32,12 @@ export default function GuestAddressPage() {
   } = useGuestAddressPortal();
   const theme = useTheme();
   const [rsvpStatus, setRsvpStatus] = useState<ScheduleRsvpStatusInfo | null>(null);
+  const codeInputRef = useRef<HTMLInputElement | null>(null);
+
+  const focusInvitationCodeInput = useCallback(() => {
+    codeInputRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+    codeInputRef.current?.focus();
+  }, []);
 
   const emailContact = useMemo(
     () => getSafeHostEmailLink(theme.contactEmail),
@@ -40,7 +48,7 @@ export default function GuestAddressPage() {
     [theme.contactPhone]
   );
 
-  const { form, code, guestName, error, status } = state;
+  const { form, code, guestName, error, codeGuidance, status, sessionType } = state;
 
   if (isLoading) {
     return (
@@ -56,70 +64,150 @@ export default function GuestAddressPage() {
   }
 
   if (!isAuthenticated) {
+    const isPasscodeVisitor = sessionType === 'passcode';
+    const codeEntryCard = (
+      <div
+        className={`w-full ${
+          isPasscodeVisitor ? 'max-w-2xl mx-auto' : 'max-w-md'
+        } bg-white dark:bg-zinc-800 rounded-3xl shadow-xl p-8 border border-gray-100 dark:border-zinc-700 space-y-6`}
+      >
+        <div className="text-center space-y-2">
+          <h1 className="text-2xl font-bold text-[var(--color-primary-text)] dark:text-red-300">
+            Guest RSVP &amp; Address Portal
+          </h1>
+          <p className="text-sm text-gray-600 dark:text-zinc-300">
+            {isPasscodeVisitor
+              ? 'You are signed in with the shared website passcode. Enter your personal household invitation code to unlock RSVPs, meal selections, private events, and mailing address updates.'
+              : 'Enter your personal invitation code to RSVP to your wedding events and share or update your postal mailing address.'}
+          </p>
+        </div>
+
+        {codeGuidance && (
+          <div
+            role="status"
+            data-testid="guest-portal-passcode-guidance"
+            className="rounded-2xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/35 p-4 text-sm text-amber-950 dark:text-amber-100"
+          >
+            <div className="flex items-start gap-2.5">
+              <Icon
+                name="HelpCircle"
+                className="h-5 w-5 text-amber-700 dark:text-amber-300 shrink-0 mt-0.5"
+              />
+              <p className="font-medium leading-snug">{codeGuidance}</p>
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <div
+            role="alert"
+            data-testid="guest-portal-error-alert"
+            className="rounded-2xl border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/30 p-4 text-sm text-rose-800 dark:text-rose-200 space-y-3"
+          >
+            <div className="flex items-start gap-2.5">
+              <Icon
+                name="AlertTriangle"
+                className="h-5 w-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5"
+              />
+              <p className="font-medium leading-snug">{error}</p>
+            </div>
+            {status === 'error' && (
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRetry}
+                  disabled={isValidating}
+                >
+                  Retry
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
+        <form onSubmit={handleValidateCode} className="space-y-4">
+          <FormGroup>
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="guest-invitation-code" className="mb-0">
+                Invitation Code
+              </Label>
+              <GuestHelpTrigger defaultCategory="passcode" label="Need Help?" />
+            </div>
+            <Input
+              ref={codeInputRef}
+              id="guest-invitation-code"
+              type="text"
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              placeholder="e.g. LOVE2026"
+              className="uppercase font-mono tracking-wider"
+              required
+            />
+          </FormGroup>
+
+          <Button type="submit" className="w-full" disabled={isValidating}>
+            {isValidating ? 'Verifying Code...' : 'Access Guest Portal'}
+          </Button>
+        </form>
+      </div>
+    );
+
+    if (isPasscodeVisitor) {
+      return (
+        <div className="min-h-screen bg-[var(--color-background)] px-4 py-10 sm:py-12 text-[var(--color-foreground)]">
+          <div className="mx-auto w-full max-w-4xl space-y-10">
+            {codeEntryCard}
+
+            {rsvpStatus && rsvpStatus.rsvpOpen && rsvpStatus.rsvpFormattedDeadline && (
+              <section
+                aria-label="RSVP deadline notice"
+                data-testid="guest-rsvp-deadline-banner"
+                className="rounded-3xl border border-amber-200 dark:border-amber-800/80 bg-amber-50/90 dark:bg-amber-950/30 p-5 sm:p-6 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+              >
+                <div className="flex items-start gap-3">
+                  <Icon
+                    name="Calendar"
+                    className="h-5 w-5 text-amber-800 dark:text-amber-300 shrink-0 mt-0.5"
+                  />
+                  <div className="text-sm text-amber-950 dark:text-amber-100 space-y-0.5">
+                    <p className="font-bold">
+                      RSVP Deadline: {rsvpStatus.rsvpFormattedDeadline}
+                    </p>
+                    <p>
+                      Online RSVPs remain open through midnight on{' '}
+                      <strong>{rsvpStatus.rsvpFormattedDeadline}</strong> (
+                      {formatFriendlyTimezone(rsvpStatus.timezone)}).
+                    </p>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            <div
+              data-testid="guest-public-schedule-section"
+              className="bg-white dark:bg-zinc-800 rounded-3xl shadow-xl p-6 sm:p-8 border border-gray-100 dark:border-zinc-700"
+            >
+              <InteractiveTimeline
+                events={[]}
+                timezone={theme.timezone || undefined}
+                title="Public Wedding Schedule"
+                className="!px-0 !py-2"
+                emptyStateMessage="Wedding schedule events will appear here as soon as they are published."
+                hideStatusBanner
+                onRsvpStatusChange={setRsvpStatus}
+                onRequestInvitationCode={focusInvitationCodeInput}
+              />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--color-background)] px-4 py-12 text-[var(--color-foreground)]">
-        <div className="w-full max-w-md bg-white dark:bg-zinc-800 rounded-3xl shadow-xl p-8 border border-gray-100 dark:border-zinc-700 space-y-6">
-          <div className="text-center space-y-2">
-            <h1 className="text-2xl font-bold text-[var(--color-primary-text)] dark:text-red-300">Guest RSVP &amp; Address Portal</h1>
-            <p className="text-sm text-gray-600 dark:text-zinc-300">
-              Enter your personal invitation code to RSVP to your wedding events and share or update
-              your postal mailing address.
-            </p>
-          </div>
-
-          {error && (
-            <div
-              role="alert"
-              data-testid="guest-portal-error-alert"
-              className="rounded-2xl border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/30 p-4 text-sm text-rose-800 dark:text-rose-200 space-y-3"
-            >
-              <div className="flex items-start gap-2.5">
-                <Icon
-                  name="AlertTriangle"
-                  className="h-5 w-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5"
-                />
-                <p className="font-medium leading-snug">{error}</p>
-              </div>
-              {status === 'error' && (
-                <div className="flex justify-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleRetry}
-                    disabled={isValidating}
-                  >
-                    Retry
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-
-          <form onSubmit={handleValidateCode} className="space-y-4">
-            <FormGroup>
-              <div className="flex items-center justify-between gap-2">
-                <Label htmlFor="guest-invitation-code" className="mb-0">
-                  Invitation Code
-                </Label>
-                <GuestHelpTrigger defaultCategory="passcode" label="Need Help?" />
-              </div>
-              <Input
-                id="guest-invitation-code"
-                type="text"
-                value={code}
-                onChange={(e) => setCode(e.target.value.toUpperCase())}
-                placeholder="e.g. LOVE2026"
-                className="uppercase font-mono tracking-wider"
-                required
-              />
-            </FormGroup>
-
-            <Button type="submit" className="w-full" disabled={isValidating}>
-              {isValidating ? 'Verifying Code...' : 'Access Guest Portal'}
-            </Button>
-          </form>
-        </div>
+        {codeEntryCard}
       </div>
     );
   }
@@ -145,6 +233,15 @@ export default function GuestAddressPage() {
                 <span className="font-mono tracking-wider">{code}</span>
               </div>
             )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleSwitchHousehold}
+              data-testid="guest-switch-household-button"
+            >
+              Switch Household
+            </Button>
             <GuestHelpTrigger
               defaultCategory="dietary"
               label="Need Help?"
@@ -181,7 +278,8 @@ export default function GuestAddressPage() {
                 </p>
                 <p>
                   Online RSVPs remain open through midnight on{' '}
-                  <strong>{rsvpStatus.rsvpFormattedDeadline}</strong> ({rsvpStatus.timezone}).
+                  <strong>{rsvpStatus.rsvpFormattedDeadline}</strong> (
+                  {formatFriendlyTimezone(rsvpStatus.timezone)}).
                 </p>
               </div>
             </div>
@@ -253,6 +351,7 @@ export default function GuestAddressPage() {
         >
           <InteractiveTimeline
             events={[]}
+            timezone={theme.timezone || undefined}
             title="Your Wedding Schedule & RSVPs"
             className="!px-0 !py-2"
             emptyStateMessage="Wedding schedule events will appear here as soon as they are published."

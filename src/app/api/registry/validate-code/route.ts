@@ -1,22 +1,50 @@
+import crypto from 'node:crypto';
 import { NextResponse, NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { env } from '@/env';
 import { ApiError } from '@/utils/ApiError';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { signGuestInviteSessionToken, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
 
+function safeComparePasscode(a: string, b: string): boolean {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const hashA = crypto.createHash('sha256').update(a).digest();
+  const hashB = crypto.createHash('sha256').update(b).digest();
+  return crypto.timingSafeEqual(hashA, hashB);
+}
+
 export const GET = withApiMiddleware(async (request: NextRequest) => {
   const { searchParams } = new URL(request.url);
-  const code = searchParams.get('code')?.trim().toUpperCase();
+  const rawCode = searchParams.get('code')?.trim() || '';
+  const code = rawCode.toUpperCase();
 
   if (!code) {
     throw new ApiError(400, 'Code is required.');
   }
 
   const invite = await prisma.invitationCode.findUnique({
-    where: { code }
+    where: { code },
   });
 
   if (!invite || invite.isSample) {
+    const isProduction = (process.env.NODE_ENV || env.NODE_ENV) === 'production';
+    const expectedPasscode = (
+      isProduction ? (process.env.GUEST_PASSCODE ?? '') : (process.env.GUEST_PASSCODE ?? env.GUEST_PASSCODE ?? '')
+    ).trim();
+
+    if (
+      expectedPasscode &&
+      (safeComparePasscode(rawCode, expectedPasscode) ||
+        safeComparePasscode(code, expectedPasscode.toUpperCase()))
+    ) {
+      return NextResponse.json({
+        valid: false,
+        reason: 'shared_passcode',
+        error:
+          'That is the shared website passcode. Please enter the personal household invitation code printed on your invitation.',
+      });
+    }
+
     throw new ApiError(404, 'Invalid invitation code.');
   }
 

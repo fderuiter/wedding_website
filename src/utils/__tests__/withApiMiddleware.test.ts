@@ -517,6 +517,15 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
       const res = await middleware(req, {});
       expect(res.status).toBe(200);
       expect(handler).toHaveBeenCalledTimes(1);
+
+      const guestSessionReq = new NextRequest('http://localhost/api/guest/session', {
+        headers: {
+          cookie: `${GUEST_INVITE_COOKIE}=${revokedToken}`,
+        },
+      });
+      const guestSessionRes = await middleware(guestSessionReq, {});
+      expect(guestSessionRes.status).toBe(200);
+      expect(handler).toHaveBeenCalledTimes(2);
     });
   });
 });

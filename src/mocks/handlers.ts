@@ -115,6 +115,34 @@ export const handlers = [
     });
   }),
 
+  http.get('*/api/guest/session', () => {
+    return HttpResponse.json({
+      success: true,
+      data: {
+        status: 'none',
+        isVerified: false,
+        invitationCode: null,
+        code: null,
+        guestName: null,
+        hasPasscodeSession: false,
+      },
+    });
+  }),
+
+  http.delete('*/api/guest/session', () => {
+    return HttpResponse.json({
+      success: true,
+      data: {
+        status: 'none',
+        isVerified: false,
+        invitationCode: null,
+        code: null,
+        guestName: null,
+        hasPasscodeSession: false,
+      },
+    });
+  }),
+
   // Schedule API handler for InteractiveTimeline
   http.get('*/api/schedule', () => {
     return HttpResponse.json({

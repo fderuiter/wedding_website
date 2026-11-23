@@ -18,6 +18,12 @@ import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input, Textarea, Select, FormMessage } from '@/components/ui/forms';
 import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
 import { useToast } from '@/components/ui/ToastProvider';
+import { useTheme } from '@/components/ThemeProvider';
+import {
+  toDateTimeLocalValue,
+  fromDateTimeLocalValue,
+  isValidIanaTimeZone,
+} from '@/utils/dateTime';
 
 const STANDARD_CONTENT_TYPES = ['FAQ', 'Logistics', 'Schedule', 'Photo'] as const;
 type StandardContentType = (typeof STANDARD_CONTENT_TYPES)[number];
@@ -211,31 +217,16 @@ function formatListForInput(val: unknown): string {
   return '';
 }
 
-function toDatetimeLocalValue(isoVal: unknown): string {
+function toDatetimeLocalValue(isoVal: unknown, timeZone?: string): string {
   if (typeof isoVal !== 'string' || !isoVal.trim()) return '';
-  const trimmed = isoVal.trim();
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(trimmed)) {
-    return trimmed;
-  }
-  const parsed = new Date(trimmed);
-  if (isNaN(parsed.getTime())) return '';
-  const yyyy = parsed.getFullYear();
-  const mm = String(parsed.getMonth() + 1).padStart(2, '0');
-  const dd = String(parsed.getDate()).padStart(2, '0');
-  const hh = String(parsed.getHours()).padStart(2, '0');
-  const min = String(parsed.getMinutes()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+  return toDateTimeLocalValue(isoVal, timeZone);
 }
 
-function toIsoTimestamp(localVal: string): string | undefined {
-  const trimmed = localVal.trim();
-  if (!trimmed) return undefined;
-  const parsed = new Date(trimmed);
-  if (isNaN(parsed.getTime())) return undefined;
-  return parsed.toISOString();
+function toIsoTimestamp(localVal: string, timeZone?: string): string | undefined {
+  return fromDateTimeLocalValue(localVal, timeZone) ?? undefined;
 }
 
-function formatReadableTimestamp(isoVal: unknown): string {
+function formatReadableTimestamp(isoVal: unknown, timeZone?: string): string {
   if (typeof isoVal !== 'string' || !isoVal.trim()) return '';
   const parsed = new Date(isoVal);
   if (isNaN(parsed.getTime())) return isoVal;
@@ -245,10 +236,14 @@ function formatReadableTimestamp(isoVal: unknown): string {
     year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
+    ...(timeZone && isValidIanaTimeZone(timeZone) ? { timeZone } : {}),
   });
 }
 
-function buildFormStateFromNode(node: ContentNodeDTO): {
+function buildFormStateFromNode(
+  node: ContentNodeDTO,
+  timeZone?: string
+): {
   form: ContentFormState;
   extraData: Record<string, unknown>;
 } {
@@ -302,8 +297,8 @@ function buildFormStateFromNode(node: ContentNodeDTO): {
         : typeof rawData.attire === 'string'
           ? rawData.attire
           : '',
-    startTime: toDatetimeLocalValue(rawData.startTime),
-    endTime: toDatetimeLocalValue(rawData.endTime),
+    startTime: toDatetimeLocalValue(rawData.startTime, timeZone),
+    endTime: toDatetimeLocalValue(rawData.endTime, timeZone),
     ceremonyTitle: typeof rawData.ceremonyTitle === 'string' ? rawData.ceremonyTitle : '',
     ceremonyTime: typeof rawData.ceremonyTime === 'string' ? rawData.ceremonyTime : '',
     receptionTitle: typeof rawData.receptionTitle === 'string' ? rawData.receptionTitle : '',
@@ -325,7 +320,8 @@ function buildTypedNodeData(
   nodeType: string,
   form: ContentFormState,
   extraData: Record<string, unknown>,
-  isNewNode: boolean
+  isNewNode: boolean,
+  timeZone?: string
 ): Record<string, unknown> {
   if (nodeType === 'FAQ') {
     const keywords = parseCommaList(form.faqKeywords);
@@ -344,8 +340,8 @@ function buildTypedNodeData(
   }
 
   if (nodeType === 'Logistics') {
-    const startTime = toIsoTimestamp(form.startTime);
-    const endTime = toIsoTimestamp(form.endTime);
+    const startTime = toIsoTimestamp(form.startTime, timeZone);
+    const endTime = toIsoTimestamp(form.endTime, timeZone);
     const categoryTags = parseCommaList(form.categoryTags);
     const data: Record<string, unknown> = {
       ...extraData,
@@ -368,8 +364,8 @@ function buildTypedNodeData(
   }
 
   if (nodeType === 'Schedule') {
-    const startTime = toIsoTimestamp(form.startTime);
-    const endTime = toIsoTimestamp(form.endTime);
+    const startTime = toIsoTimestamp(form.startTime, timeZone);
+    const endTime = toIsoTimestamp(form.endTime, timeZone);
     const categoryTags = parseCommaList(form.categoryTags);
     return {
       ...extraData,
@@ -406,7 +402,10 @@ function buildTypedNodeData(
   };
 }
 
-function summarizeNodePreview(node: ContentNodeDTO): {
+function summarizeNodePreview(
+  node: ContentNodeDTO,
+  timeZone?: string
+): {
   heading: string;
   details: string;
   badge?: { label: string; tone: 'success' | 'warning' | 'neutral' };
@@ -438,8 +437,8 @@ function summarizeNodePreview(node: ContentNodeDTO): {
 
   if (node.type === 'Schedule') {
     const title = typeof d.title === 'string' && d.title.trim() ? d.title.trim() : 'Untitled schedule item';
-    const startLabel = formatReadableTimestamp(d.startTime);
-    const endLabel = formatReadableTimestamp(d.endTime);
+    const startLabel = formatReadableTimestamp(d.startTime, timeZone);
+    const endLabel = formatReadableTimestamp(d.endTime, timeZone);
     const location =
       typeof d.locationName === 'string' && d.locationName.trim()
         ? d.locationName.trim()
@@ -536,6 +535,8 @@ function ContentDashboardContent({
   const router = useRouter();
   const { containerRef, captureFocusTarget } = useFocusSuccessor<HTMLDivElement>();
   const { confirm, addToast } = useToast();
+  const { timezone } = useTheme();
+  const effectiveTimezone = timezone || undefined;
 
   const [activeFilter, setActiveFilter] = useState<ContentFilterTab>('ALL');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -673,7 +674,7 @@ function ContentDashboardContent({
   };
 
   const handleOpenEdit = (node: ContentNodeDTO) => {
-    const { form, extraData: preserved } = buildFormStateFromNode(node);
+    const { form, extraData: preserved } = buildFormStateFromNode(node, effectiveTimezone);
     setCurrentNode(node);
     setFormState(form);
     setExtraData(preserved);
@@ -725,8 +726,8 @@ function ContentDashboardContent({
     }
 
     if (activeType === 'Schedule' || activeType === 'Logistics') {
-      const startIso = toIsoTimestamp(formState.startTime);
-      const endIso = toIsoTimestamp(formState.endTime);
+      const startIso = toIsoTimestamp(formState.startTime, effectiveTimezone);
+      const endIso = toIsoTimestamp(formState.endTime, effectiveTimezone);
       if (formState.startTime.trim() && !startIso) {
         setFormError('Please enter a valid start date and time.');
         return;
@@ -764,7 +765,13 @@ function ContentDashboardContent({
         nextFaqOrder !== undefined && extraData.displayOrder === undefined
           ? { ...extraData, displayOrder: nextFaqOrder }
           : extraData;
-      const payloadData = buildTypedNodeData(activeType, formState, baseExtra, !currentNode.id);
+      const payloadData = buildTypedNodeData(
+        activeType,
+        formState,
+        baseExtra,
+        !currentNode.id,
+        effectiveTimezone
+      );
       const payload: Partial<ContentNodeDTO> = {
         type: activeType,
         tags: parsedTags.length > 0 ? parsedTags : parseCommaList(defaultTagsForType(activeType)),
@@ -962,7 +969,13 @@ function ContentDashboardContent({
     id: currentNode.id || 'draft',
     type: selectedType,
     tags: draftTags.length > 0 ? draftTags : parseCommaList(defaultTagsForType(selectedType)),
-    data: buildTypedNodeData(selectedType, formState, extraData, !currentNode.id),
+    data: buildTypedNodeData(
+      selectedType,
+      formState,
+      extraData,
+      !currentNode.id,
+      effectiveTimezone
+    ),
     createdAt: currentNode.createdAt || new Date(),
     updatedAt: currentNode.updatedAt || new Date(),
   } as ContentNodeDTO;
@@ -1595,7 +1608,7 @@ function ContentDashboardContent({
           ref={containerRef}
         >
           {filteredNodes.map((node) => {
-            const preview = summarizeNodePreview(node);
+            const preview = summarizeNodePreview(node, effectiveTimezone);
             const isTemp = node.id.startsWith('temp-');
             const isSelected = activeSelectedIds.includes(node.id);
             const isFaq = node.type === 'FAQ';

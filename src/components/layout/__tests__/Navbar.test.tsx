@@ -405,4 +405,65 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
   });
+
+  it('displays Switch Household action when /api/guest/session reports invitation status and calls DELETE on click', async () => {
+    const originalFetch = global.fetch;
+    let deleted = false;
+    global.fetch = jest.fn().mockImplementation(async (input: any, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input?.url || '';
+      if (url.includes('/api/guest/session') && init?.method === 'DELETE') {
+        deleted = true;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: { status: 'passcode', isVerified: false, hasPasscodeSession: true },
+          }),
+        };
+      }
+      if (url.includes('/api/guest/session')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: deleted
+              ? { status: 'passcode', isVerified: false, hasPasscodeSession: true }
+              : {
+                status: 'invitation',
+                isVerified: true,
+                code: 'DARCY26',
+                guestName: 'Fitzwilliam Darcy',
+                hasPasscodeSession: true,
+              },
+          }),
+        };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    }) as any;
+
+    try {
+      render(
+        <Navbar
+          isAdmin={false}
+          handleLogout={jest.fn()}
+          headerRef={headerRef}
+          config={mockConfig}
+        />
+      );
+
+      const switchBtn = await screen.findByTestId('navbar-switch-household-button');
+      expect(switchBtn).toHaveTextContent('Switch Household');
+
+      fireEvent.click(switchBtn);
+
+      await waitFor(() => {
+        expect(deleted).toBe(true);
+        expect(screen.queryByTestId('navbar-switch-household-button')).not.toBeInTheDocument();
+      });
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
 });

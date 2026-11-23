@@ -1,10 +1,14 @@
 'use client';
 
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import type { ContentNodeDTO } from '@/features/content';
 import AddToCalendar from '@/components/AddToCalendar';
 import EmptyState from '@/components/EmptyState';
+import { useTheme } from '@/components/ThemeProvider';
 import { formatScheduleEventToCalendarEvent } from '@/utils/calendar';
+import { formatFriendlyTimezone } from '@/utils/dateTime';
+import { subscribeGuestSessionChanged } from '@/utils/guestSessionEvents';
 import {
   MAX_RSVP_PLUS_ONE_COUNT,
   normalizeMealOptions,
@@ -75,6 +79,7 @@ interface InteractiveTimelineProps {
   rsvpClosedMessage?: string;
   hideStatusBanner?: boolean;
   onRsvpStatusChange?: (_status: ScheduleRsvpStatusInfo) => void;
+  onRequestInvitationCode?: () => void;
 }
 
 /**
@@ -208,7 +213,7 @@ function normalizeEvents(nodes: ContentNodeDTO[]): ScheduleEventItem[] {
 
 export default function InteractiveTimeline({
   events: initialNodes,
-  timezone = 'UTC',
+  timezone,
   title = 'Schedule of Events',
   className = '',
   maxPlusOnes,
@@ -218,7 +223,9 @@ export default function InteractiveTimeline({
   rsvpClosedMessage: rsvpClosedMessageProp,
   hideStatusBanner = false,
   onRsvpStatusChange,
+  onRequestInvitationCode,
 }: InteractiveTimelineProps) {
+  const theme = useTheme();
   const [subEventsFromApi, setSubEventsFromApi] = useState<ScheduleEventItem[] | null>(null);
   const [isGuest, setIsGuest] = useState(false);
   const [guestName, setGuestName] = useState<string | null>(null);
@@ -259,7 +266,7 @@ export default function InteractiveTimeline({
     apiFormattedDeadline !== undefined
       ? apiFormattedDeadline
       : (rsvpFormattedDeadlineProp ?? null);
-  const effectiveTimezone = apiTimezone || timezone || 'UTC';
+  const effectiveTimezone = apiTimezone || timezone || theme.timezone || 'UTC';
   const effectiveClosedMessage =
     sanitizeRsvpClosedMessage(apiClosedMessage ?? rsvpClosedMessageProp) ||
     DEFAULT_RSVP_CLOSED_MESSAGE;
@@ -292,9 +299,12 @@ export default function InteractiveTimeline({
   const effectiveMaxPlusOnes =
     apiMaxPlusOnes !== undefined
       ? apiMaxPlusOnes
-      : typeof maxPlusOnes === 'number'
-        ? Math.max(0, maxPlusOnes)
-        : undefined;
+      : maxPlusOnes === null
+        ? 0
+        : typeof maxPlusOnes === 'number'
+          ? Math.max(0, maxPlusOnes)
+          : undefined;
+  const resolvedMaxPlusOnes = effectiveMaxPlusOnes === null ? 0 : effectiveMaxPlusOnes;
 
   const initialEvents = useMemo(() => {
     return initialNodes.map((node) => {
@@ -320,7 +330,7 @@ export default function InteractiveTimeline({
 
   const rsvpManager = useScheduleRsvpManager({
     initialEvents,
-    maxPlusOnes: effectiveMaxPlusOnes,
+    maxPlusOnes: resolvedMaxPlusOnes,
     defaultPlusOneNames: apiSavedPlusOneNames,
     onRsvpClosed: handleRsvpClosedMidSession,
   });
@@ -354,6 +364,12 @@ export default function InteractiveTimeline({
         if (json.isGuest) {
           setIsGuest(true);
           setGuestName(json.guestName || null);
+        } else if ('isGuest' in json) {
+          setIsGuest(false);
+          setGuestName(null);
+          if (json.plusOneAllocations === undefined) {
+            setApiMaxPlusOnes(undefined);
+          }
         }
         const rawSavedNames = Array.isArray(json.savedPlusOneNames)
           ? json.savedPlusOneNames
@@ -449,6 +465,12 @@ export default function InteractiveTimeline({
     return () => {
       cancelled = true;
     };
+  }, [fetchAndApplySchedule]);
+
+  useEffect(() => {
+    return subscribeGuestSessionChanged(() => {
+      void fetchAndApplySchedule();
+    });
   }, [fetchAndApplySchedule]);
 
   const normalizedEvents = useMemo(() => {
@@ -631,14 +653,17 @@ export default function InteractiveTimeline({
           <p className="font-medium">
             Please submit or update your RSVPs by{' '}
             <strong className="font-bold">{effectiveFormattedDeadline}</strong> (midnight in{' '}
-            <span className="font-semibold">{effectiveTimezone}</span>).
+            <span className="font-semibold">{formatFriendlyTimezone(effectiveTimezone)}</span>).
           </p>
         </div>
       )}
 
       {!hideStatusBanner &&
         !effectiveRsvpOpen &&
-        (isGuest || normalizedEvents.some((ev) => ev.userRsvp !== undefined)) && (
+        (isGuest ||
+          normalizedEvents.some(
+            (ev) => ev.userRsvp !== undefined && ev.userRsvp !== null
+          )) && (
         <div
           role="status"
           data-testid="schedule-rsvp-closed-banner"
@@ -732,7 +757,7 @@ export default function InteractiveTimeline({
                   description: event.description,
                 },
                 undefined,
-                timezone
+                effectiveTimezone
               );
 
               const timeSlotStr = formatTimeSlot(event.startTime, event.endTime, effectiveTimezone);
@@ -835,8 +860,50 @@ export default function InteractiveTimeline({
                       {event.description && <p className="pt-2 opacity-80">{event.description}</p>}
                     </div>
 
-                    {/* Interactive RSVP Form or Read-Only Saved Summary for Authenticated Guests */}
-                    {!event.isReadOnly && (isGuest || event.userRsvp !== undefined) && (() => {
+                    {/* Inline Callout for Shared-Passcode Visitors to Unlock Household RSVPs */}
+                    {(() => {
+                      const hasExplicitUserRsvp =
+                        event.userRsvp !== undefined && event.userRsvp !== null;
+                      const canShowRsvp = !event.isReadOnly && (isGuest || hasExplicitUserRsvp);
+
+                      if (!event.isReadOnly && effectiveRsvpOpen && !canShowRsvp) {
+                        return (
+                          <div
+                            data-testid={`rsvp-invite-prompt-${event.id}`}
+                            className="mb-6 p-4 rounded-xl border border-amber-200 dark:border-amber-800/70 bg-amber-50/70 dark:bg-amber-950/25 text-gray-900 dark:text-zinc-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+                          >
+                            <div className="space-y-0.5 text-xs sm:text-sm">
+                              <p className="font-semibold text-amber-950 dark:text-amber-100">
+                                Have a household invitation code?
+                              </p>
+                              <p className="text-amber-900/90 dark:text-amber-200/90">
+                                Enter your personal invitation code to RSVP, choose entrées, and share dietary notes for {event.title}.
+                              </p>
+                            </div>
+                            {onRequestInvitationCode ? (
+                              <button
+                                type="button"
+                                onClick={onRequestInvitationCode}
+                                className="px-4 py-2 rounded-lg bg-primary text-white text-xs font-semibold shadow-sm hover:opacity-90 transition-opacity shrink-0 self-start sm:self-center"
+                              >
+                                Enter Invitation Code
+                              </button>
+                            ) : (
+                              <Link
+                                href="/guest"
+                                className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-primary text-white text-xs font-semibold shadow-sm hover:opacity-90 transition-opacity shrink-0 self-start sm:self-center"
+                              >
+                                Enter Invitation Code
+                              </Link>
+                            )}
+                          </div>
+                        );
+                      }
+
+                      if (!canShowRsvp) {
+                        return null;
+                      }
+
                       const itemState = rsvpManager.getRsvpState(event.id);
                       const eventMealOptions = event.mealOptions ?? [];
                       const eventCustomQuestions = event.customQuestions ?? [];
@@ -957,14 +1024,14 @@ export default function InteractiveTimeline({
                       }
 
                       const isControlDisabled = rsvpManager.isAnySubmitting || itemState.isSubmitting;
-                      const isZeroPlusOneAllowance = effectiveMaxPlusOnes === 0;
+                      const isZeroPlusOneAllowance = resolvedMaxPlusOnes === 0;
                       const isDeclined = itemState.current.status === 'declined';
                       const isAttending = itemState.current.status === 'attending';
                       const isPlusOneDisabled =
                         isControlDisabled || isZeroPlusOneAllowance || isDeclined;
                       const plusOneMaxAttr =
-                        typeof effectiveMaxPlusOnes === 'number'
-                          ? Math.min(MAX_RSVP_PLUS_ONE_COUNT, Math.max(0, effectiveMaxPlusOnes))
+                        typeof resolvedMaxPlusOnes === 'number'
+                          ? Math.min(MAX_RSVP_PLUS_ONE_COUNT, Math.max(0, resolvedMaxPlusOnes))
                           : MAX_RSVP_PLUS_ONE_COUNT;
                       const attendingPlusOneCount =
                         isZeroPlusOneAllowance || !isAttending ? 0 : itemState.current.plusOneCount;
@@ -1000,10 +1067,14 @@ export default function InteractiveTimeline({
                           <ToggleButtonGroup
                             mode="radiogroup"
                             aria-labelledby={`rsvp-heading-${event.id}`}
-                            value={itemState.current.status}
+                            value={
+                              itemState.current.status === 'pending'
+                                ? null
+                                : itemState.current.status
+                            }
                             onChange={(st) => rsvpManager.updateRsvp(event.id, { status: st })}
                             className="flex flex-wrap gap-2 mb-3 bg-transparent dark:bg-transparent p-0 border-0 rounded-none"
-                            options={(['attending', 'declined', 'pending'] as const).map((st) => ({
+                            options={(['attending', 'declined'] as const).map((st) => ({
                               value: st,
                               label: st,
                               disabled: isControlDisabled,
@@ -1011,9 +1082,7 @@ export default function InteractiveTimeline({
                               activeClassName:
                                 st === 'attending'
                                   ? 'bg-emerald-700 text-white border border-emerald-900 ring-2 ring-offset-1 ring-emerald-700 dark:ring-emerald-400 shadow-sm'
-                                  : st === 'declined'
-                                    ? 'bg-rose-700 text-white border border-rose-900 ring-2 ring-offset-1 ring-rose-700 dark:ring-rose-400 shadow-sm'
-                                    : 'bg-amber-700 text-white border border-amber-900 ring-2 ring-offset-1 ring-amber-700 dark:ring-amber-400 shadow-sm',
+                                  : 'bg-rose-700 text-white border border-rose-900 ring-2 ring-offset-1 ring-rose-700 dark:ring-rose-400 shadow-sm',
                               inactiveClassName:
                                 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-100',
                             }))}
@@ -1026,11 +1095,11 @@ export default function InteractiveTimeline({
                                 className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1"
                               >
                                 Plus-One Count
-                                {typeof effectiveMaxPlusOnes === 'number' && (
+                                {typeof resolvedMaxPlusOnes === 'number' && (
                                   <span className="ml-1 font-normal text-gray-600 dark:text-gray-400">
-                                    {effectiveMaxPlusOnes === 0
+                                    {resolvedMaxPlusOnes === 0
                                       ? '(No plus-ones allocated)'
-                                      : `(Max ${effectiveMaxPlusOnes})`}
+                                      : `(Max ${resolvedMaxPlusOnes})`}
                                   </span>
                                 )}
                               </label>
@@ -1048,6 +1117,9 @@ export default function InteractiveTimeline({
                                 onChange={(e) => {
                                   if (isZeroPlusOneAllowance || isDeclined) return;
                                   rsvpManager.updateRsvp(event.id, {
+                                    ...(itemState.current.status === 'pending'
+                                      ? { status: 'attending' }
+                                      : {}),
                                     plusOneCount: Math.max(0, parseInt(e.target.value, 10) || 0),
                                   });
                                 }}
@@ -1070,6 +1142,9 @@ export default function InteractiveTimeline({
                                 value={itemState.current.dietaryNotes}
                                 onChange={(e) =>
                                   rsvpManager.updateRsvp(event.id, {
+                                    ...(itemState.current.status === 'pending'
+                                      ? { status: 'attending' }
+                                      : {}),
                                     dietaryNotes: e.target.value,
                                   })
                                 }

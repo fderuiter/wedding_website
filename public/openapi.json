@@ -10320,6 +10320,32 @@
         }
       }
     },
+    "/api/guest/session": {
+      "get": {
+        "tags": [
+          "Guest"
+        ],
+        "summary": "GET /api/guest/session",
+        "description": "Endpoint for /api/guest/session",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Guest"
+        ],
+        "summary": "DELETE /api/guest/session",
+        "description": "Endpoint for /api/guest/session",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -12193,7 +12219,7 @@
           {
             "name": "code",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
             }
@@ -12297,8 +12323,7 @@
                               "type": "string",
                               "enum": [
                                 "attending",
-                                "declined",
-                                "pending"
+                                "declined"
                               ]
                             },
                             "plusOneCount": {
@@ -12310,6 +12335,9 @@
                             "dietaryNotes": {
                               "default": "",
                               "type": "string"
+                            },
+                            "clearDietaryNotes": {
+                              "type": "boolean"
                             },
                             "mealSelections": {
                               "maxItems": 21,
@@ -12357,8 +12385,7 @@
                         "type": "string",
                         "enum": [
                           "attending",
-                          "declined",
-                          "pending"
+                          "declined"
                         ]
                       },
                       "plusOneCount": {
@@ -12370,6 +12397,9 @@
                       "dietaryNotes": {
                         "default": "",
                         "type": "string"
+                      },
+                      "clearDietaryNotes": {
+                        "type": "boolean"
                       },
                       "mealSelections": {
                         "maxItems": 21,

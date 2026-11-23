@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { QueryClient, QueryClientProvider, QueryClientContext } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/ToastProvider';
+import { useTheme } from '@/components/ThemeProvider';
 import { Button } from '@/components/ui/Button';
 import { Table } from '@/components/ui/Table';
 import { useAdminSubEvents } from '@/hooks/admin/useAdminSubEvents';
@@ -168,6 +169,8 @@ async function requestSubEventsRsvpSummary(): Promise<Record<string, SubEventRsv
 
 function SubEventsMatrixPageContent() {
   const { addToast } = useToast();
+  const { timezone } = useTheme();
+  const effectiveTimezone = timezone || undefined;
   const {
     create: createSubEvent,
     update: updateSubEvent,
@@ -724,7 +727,11 @@ function SubEventsMatrixPageContent() {
 
                 {/* Sub-Events Column Headers */}
                 {subEvents.map((evt) => {
-                  const scheduleLabel = formatSubEventSchedule(evt.startTime, evt.endTime);
+                  const scheduleLabel = formatSubEventSchedule(
+                    evt.startTime,
+                    evt.endTime,
+                    effectiveTimezone
+                  );
                   const eventSummary = rsvpSummaryByEvent[evt.id];
                   return (
                     <th key={evt.id} scope="col" className="p-3 font-semibold text-gray-900 dark:text-white min-w-[220px] border-l border-gray-200 dark:border-gray-700 align-top">
@@ -1030,6 +1037,7 @@ function SubEventsMatrixPageContent() {
         }}
         editingEvent={editingSubEvent}
         onSave={handleSaveSubEvent}
+        timezone={effectiveTimezone}
       />
 
       <SubEventDeleteConfirmModal

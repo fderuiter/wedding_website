@@ -20,6 +20,7 @@ import {
   formatRsvpDeadlineDate,
   sanitizeRsvpClosedMessage,
 } from '@/utils/rsvpDeadline';
+import { formatFriendlyTimezone } from '@/utils/dateTime';
 import { cn } from '@/utils/cn';
 import { tokenizeSafeLinks } from '@/utils/linkifyText';
 
@@ -300,7 +301,10 @@ export const GuestHelpModal = React.forwardRef<HTMLDivElement, GuestHelpModalPro
           };
         }
         if (formattedCutoffDate) {
-          const tzDetail = sanitizedTimezone ? ` (midnight in ${sanitizedTimezone})` : '';
+          const friendlyTimezone = sanitizedTimezone
+            ? formatFriendlyTimezone(sanitizedTimezone)
+            : '';
+          const tzDetail = friendlyTimezone ? ` (midnight in ${friendlyTimezone})` : '';
           return {
             ...tab,
             items: [

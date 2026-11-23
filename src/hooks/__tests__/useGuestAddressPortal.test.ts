@@ -1,4 +1,5 @@
 import { renderHook, act, waitFor } from '@testing-library/react';
+import { notifyGuestSessionChanged } from '@/utils/guestSessionEvents';
 import {
   useGuestAddressPortal,
   guestAddressPortalReducer,
@@ -79,8 +80,10 @@ describe('guestAddressPortalReducer', () => {
 
   it('preserves sessionActive and form inputs on transient SAVE_FAILURE', () => {
     const authenticatedState: GuestAddressPortalState = {
+      ...initialGuestPortalState,
       status: 'authenticated',
       sessionActive: true,
+      sessionType: 'invitation',
       isInitialLoading: false,
       code: 'SUMMER2026',
       guestName: 'Elizabeth Bennet',
@@ -118,8 +121,10 @@ describe('guestAddressPortalReducer', () => {
 
   it('resets sessionActive to false on auth-related SAVE_FAILURE (401/403)', () => {
     const authenticatedState: GuestAddressPortalState = {
+      ...initialGuestPortalState,
       status: 'authenticated',
       sessionActive: true,
+      sessionType: 'invitation',
       isInitialLoading: false,
       code: 'SUMMER2026',
       guestName: 'Elizabeth Bennet',
@@ -140,8 +145,10 @@ describe('guestAddressPortalReducer', () => {
 
   it('updates baseline and form upon SAVE_SUCCESS', () => {
     const authenticatedState: GuestAddressPortalState = {
+      ...initialGuestPortalState,
       status: 'saving',
       sessionActive: true,
+      sessionType: 'invitation',
       isInitialLoading: false,
       code: 'SUMMER2026',
       guestName: 'Elizabeth Bennet',
@@ -196,6 +203,7 @@ describe('guestAddressPortalReducer', () => {
 
 describe('useGuestAddressPortal hook', () => {
   beforeEach(() => {
+    global.fetch = globalFetch;
     globalFetch.mockReset();
     mockAddToast.mockReset();
     window.history.pushState({}, '', '/guest');
@@ -621,6 +629,200 @@ describe('useGuestAddressPortal hook', () => {
 
     replaceStateSpy.mockRestore();
     window.history.replaceState({}, '', '/');
+  });
+
+  it('sets sessionType to passcode without calling /api/guest/address when /api/guest/session reports passcode', async () => {
+    globalFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        success: true,
+        data: {
+          status: 'passcode',
+          isVerified: false,
+          invitationCode: null,
+          code: null,
+          guestName: null,
+          hasPasscodeSession: true,
+        },
+      }),
+    });
+
+    const { result } = renderHook(() => useGuestAddressPortal());
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(result.current.state.sessionType).toBe('passcode');
+    expect(result.current.state.hasPasscodeSession).toBe(true);
+
+    const calledUrls = globalFetch.mock.calls.map((c) => String(c[0]));
+    expect(calledUrls).toEqual(['/api/guest/session']);
+    expect(calledUrls.some((u) => u.includes('/api/guest/address'))).toBe(false);
+  });
+
+  it('surfaces friendly guidance without error toast when validate-code returns reason: shared_passcode', async () => {
+    globalFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          data: { status: 'passcode', isVerified: false, hasPasscodeSession: true },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          data: {
+            valid: false,
+            reason: 'shared_passcode',
+            error: 'That is the shared website passcode. Please enter your unique household invitation code.',
+          },
+        }),
+      });
+
+    const { result } = renderHook(() => useGuestAddressPortal());
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    act(() => {
+      result.current.setCode('WEDDING2026');
+    });
+
+    await act(async () => {
+      await result.current.handleValidateCode();
+    });
+
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(result.current.state.error).toBeNull();
+    expect(result.current.state.codeGuidance).toContain('shared website passcode');
+    expect(mockAddToast).not.toHaveBeenCalledWith(expect.anything(), 'error');
+  });
+
+  it('clears household session via handleSwitchHousehold while preserving passcode sessionType', async () => {
+    globalFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          data: {
+            status: 'invitation',
+            isVerified: true,
+            code: 'DARCY2026',
+            guestName: 'Fitzwilliam Darcy',
+            hasPasscodeSession: true,
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          data: {
+            guestName: 'Fitzwilliam Darcy',
+            code: 'DARCY2026',
+            addressLine1: 'Pemberley',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          data: {
+            status: 'passcode',
+            isVerified: false,
+            hasPasscodeSession: true,
+          },
+        }),
+      });
+
+    const { result } = renderHook(() => useGuestAddressPortal());
+
+    await waitFor(() => {
+      expect(result.current.isAuthenticated).toBe(true);
+    });
+
+    await act(async () => {
+      await result.current.handleSwitchHousehold();
+    });
+
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(result.current.state.sessionType).toBe('passcode');
+    expect(result.current.state.guestName).toBe('');
+    expect(globalFetch).toHaveBeenLastCalledWith('/api/guest/session', { method: 'DELETE' });
+  });
+
+  it('clears household code and address when an external session switch event transitions to passcode', async () => {
+    globalFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          data: {
+            status: 'invitation',
+            isVerified: true,
+            code: 'DARCY2026',
+            guestName: 'Fitzwilliam Darcy',
+            hasPasscodeSession: true,
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          data: {
+            guestName: 'Fitzwilliam Darcy',
+            code: 'DARCY2026',
+            addressLine1: 'Pemberley',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          data: {
+            status: 'passcode',
+            isVerified: false,
+            hasPasscodeSession: true,
+          },
+        }),
+      });
+
+    const { result } = renderHook(() => useGuestAddressPortal());
+
+    await waitFor(() => {
+      expect(result.current.isAuthenticated).toBe(true);
+    });
+    expect(result.current.state.code).toBe('DARCY2026');
+    expect(result.current.state.form.addressLine1).toBe('Pemberley');
+
+    await act(async () => {
+      notifyGuestSessionChanged();
+    });
+
+    await waitFor(() => {
+      expect(result.current.isAuthenticated).toBe(false);
+    });
+    expect(result.current.state.sessionType).toBe('passcode');
+    expect(result.current.state.code).toBe('');
+    expect(result.current.state.guestName).toBe('');
+    expect(result.current.state.form.addressLine1).toBe('');
   });
 });
 

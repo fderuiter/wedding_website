@@ -5,6 +5,7 @@ import { Dialog, useDirtyConfirmClose } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input, Textarea, Checkbox, Select } from '@/components/ui/forms';
 import { useToast } from '@/components/ui/ToastProvider';
+import { useTheme } from '@/components/ThemeProvider';
 import {
   toDateTimeLocalValue,
   fromDateTimeLocalValue,
@@ -51,6 +52,7 @@ interface SubEventEditorModalProps {
   existingSubEvents?: EditableSubEvent[];
   onSelectEdit?: (_subEvent: EditableSubEvent | null) => void;
   onRequestDelete?: (_subEvent: EditableSubEvent) => void;
+  timezone?: string;
 }
 
 interface SubEventFormSnapshot {
@@ -65,7 +67,10 @@ interface SubEventFormSnapshot {
   customQuestionsJson: string;
 }
 
-function createInitialSubEventSnapshot(editingEvent: EditableSubEvent | null): SubEventFormSnapshot {
+function createInitialSubEventSnapshot(
+  editingEvent: EditableSubEvent | null,
+  timeZone?: string
+): SubEventFormSnapshot {
   const initialMeals = editingEvent ? normalizeMealOptions(editingEvent.mealOptions) : [];
   const initialQuestions = editingEvent
     ? normalizeCustomQuestions(editingEvent.customQuestions)
@@ -75,8 +80,8 @@ function createInitialSubEventSnapshot(editingEvent: EditableSubEvent | null): S
     description: editingEvent ? (editingEvent.description ?? '') : '',
     locationName: editingEvent ? (editingEvent.locationName ?? '') : '',
     category: editingEvent ? (editingEvent.category ?? '') : '',
-    startTime: editingEvent ? toDateTimeLocalValue(editingEvent.startTime) : '',
-    endTime: editingEvent ? toDateTimeLocalValue(editingEvent.endTime) : '',
+    startTime: editingEvent ? toDateTimeLocalValue(editingEvent.startTime, timeZone) : '',
+    endTime: editingEvent ? toDateTimeLocalValue(editingEvent.endTime, timeZone) : '',
     isPrivate: editingEvent ? Boolean(editingEvent.isPrivate) : true,
     mealOptionsJson: JSON.stringify(initialMeals),
     customQuestionsJson: JSON.stringify(initialQuestions),
@@ -94,6 +99,7 @@ interface SubEventEditorFormProps {
   onClose: () => void;
   onSave: (_payload: Partial<SubEventDTO>, _editingId?: string) => Promise<unknown>;
   onDirtyChange: (_isDirty: boolean) => void;
+  timezone?: string;
 }
 
 const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
@@ -101,11 +107,12 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
   onClose,
   onSave,
   onDirtyChange,
+  timezone,
 }) => {
   const { addToast } = useToast();
   const initialSnapshot = useMemo(
-    () => createInitialSubEventSnapshot(editingEvent),
-    [editingEvent]
+    () => createInitialSubEventSnapshot(editingEvent, timezone),
+    [editingEvent, timezone]
   );
   const [title, setTitle] = useState(() => initialSnapshot.title);
   const [description, setDescription] = useState(() => initialSnapshot.description);
@@ -365,8 +372,8 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
         description: isEditMode ? description.trim() : description.trim() || undefined,
         locationName: isEditMode ? locationName.trim() : locationName.trim() || undefined,
         category: isEditMode ? category.trim() : category.trim() || undefined,
-        startTime: fromDateTimeLocalValue(startTime),
-        endTime: fromDateTimeLocalValue(endTime),
+        startTime: fromDateTimeLocalValue(startTime, timezone),
+        endTime: fromDateTimeLocalValue(endTime, timezone),
         isPrivate,
         mealOptions: cleanedMeals,
         customQuestions: cleanedQuestions,
@@ -834,6 +841,7 @@ interface SubEventEditorModalBodyProps {
   onRequestDelete?: (_subEvent: EditableSubEvent) => void;
   isDirty: boolean;
   onDirtyChange: (_isDirty: boolean) => void;
+  timezone?: string;
 }
 
 const SubEventEditorModalBody: React.FC<SubEventEditorModalBodyProps> = ({
@@ -845,6 +853,7 @@ const SubEventEditorModalBody: React.FC<SubEventEditorModalBodyProps> = ({
   onRequestDelete,
   isDirty,
   onDirtyChange,
+  timezone,
 }) => {
   const { confirm } = useToast();
   const isEditMode = Boolean(editingEvent);
@@ -881,7 +890,7 @@ const SubEventEditorModalBody: React.FC<SubEventEditorModalBodyProps> = ({
           </div>
           <ul className="divide-y divide-gray-200 dark:divide-zinc-700 max-h-40 overflow-y-auto">
             {existingSubEvents.map((evt) => {
-              const scheduleText = formatSubEventSchedule(evt.startTime, evt.endTime);
+              const scheduleText = formatSubEventSchedule(evt.startTime, evt.endTime, timezone);
               const isSelected = editingEvent?.id === evt.id;
               return (
                 <li
@@ -937,11 +946,12 @@ const SubEventEditorModalBody: React.FC<SubEventEditorModalBodyProps> = ({
       )}
 
       <SubEventEditorForm
-        key={editingEvent?.id ?? 'create'}
+        key={`${editingEvent?.id ?? 'create'}-${timezone ?? 'local'}`}
         editingEvent={editingEvent}
         onClose={onClose}
         onSave={onSave}
         onDirtyChange={onDirtyChange}
+        timezone={timezone}
       />
     </div>
   );
@@ -955,7 +965,10 @@ export const SubEventEditorModal: React.FC<SubEventEditorModalProps> = ({
   existingSubEvents,
   onSelectEdit,
   onRequestDelete,
+  timezone,
 }) => {
+  const theme = useTheme();
+  const effectiveTimezone = timezone || theme.timezone || undefined;
   const [dirtyEntry, setDirtyEntry] = useState<{ key: string; isDirty: boolean }>({
     key: '',
     isDirty: false,
@@ -985,6 +998,7 @@ export const SubEventEditorModal: React.FC<SubEventEditorModalProps> = ({
         onRequestDelete={onRequestDelete}
         isDirty={isDirty}
         onDirtyChange={(nextDirty) => setDirtyEntry({ key: editingKey, isDirty: nextDirty })}
+        timezone={effectiveTimezone}
       />
     </Dialog>
   );
