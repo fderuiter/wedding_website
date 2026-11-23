@@ -10,11 +10,13 @@ class CustomEnvironment extends JSDOMEnvironment {
     this.global.TextEncoder = TextEncoder;
     this.global.TextDecoder = TextDecoder;
     const { TransformStream, ReadableStream, WritableStream, CompressionStream, DecompressionStream } = require('node:stream/web');
+    const { MessagePort } = require('node:worker_threads');
     this.global.TransformStream = TransformStream;
     this.global.ReadableStream = ReadableStream;
     this.global.WritableStream = WritableStream;
     if (typeof CompressionStream !== 'undefined') this.global.CompressionStream = CompressionStream;
     if (typeof DecompressionStream !== 'undefined') this.global.DecompressionStream = DecompressionStream;
+    if (typeof this.global.MessagePort === 'undefined') this.global.MessagePort = MessagePort;
     this.global.BroadcastChannel = globalThis.BroadcastChannel || class BroadcastChannel {
       constructor(name) { this.name = name; }
       postMessage() {}

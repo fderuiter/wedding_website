@@ -1504,4 +1504,114 @@ describe('RegistryItemCard Component', () => {
       expect(screen.getByTestId('direct-transfer-instructions')).toHaveTextContent('@site-default-venmo');
     });
   });
+
+  describe('Post-claim lifecycle confirmation and cancellation controls', () => {
+    it('renders Reserved badge and lets guest confirm gift sent via signed token', async () => {
+      const claimOnContribute = jest.fn().mockResolvedValue({
+        claimActions: {
+          confirmToken: 'signed-confirm-token-1',
+          cancelToken: 'signed-cancel-token-1',
+          status: 'RESERVED',
+        },
+      });
+      const mockOnItemUpdated = jest.fn();
+      const confirmedItem = {
+        ...mockSingleItem,
+        purchased: true,
+        amountContributed: 100,
+        purchaserName: 'Alex Claimer',
+      };
+      (apiClient.post as jest.Mock).mockResolvedValueOnce({
+        action: 'confirm',
+        status: 'CONFIRMED',
+        changed: true,
+        item: confirmedItem,
+      });
+
+      render(
+        <ToastProvider>
+          <Overlay isOpen={true} onClose={mockOnClose}>
+            <RegistryItemCard
+              item={mockSingleItem}
+              onClose={mockOnClose}
+              onContribute={claimOnContribute}
+              onItemUpdated={mockOnItemUpdated}
+            />
+          </Overlay>
+        </ToastProvider>
+      );
+
+      fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Alex Claimer' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
+
+      const controls = await screen.findByTestId('post-claim-lifecycle-controls');
+      expect(controls).toHaveTextContent('Reserved');
+
+      fireEvent.click(screen.getByTestId('post-claim-confirm-button'));
+
+      await waitFor(() => {
+        expect(apiClient.post).toHaveBeenCalledWith('/api/registry/claim', {
+          token: 'signed-confirm-token-1',
+        });
+      });
+
+      expect(await screen.findByText('Confirmed')).toBeInTheDocument();
+      expect(
+        screen.getByText(/Payment completion confirmed — the couple has been notified of your gift!/i)
+      ).toBeInTheDocument();
+      expect(mockOnItemUpdated).toHaveBeenCalledWith(confirmedItem);
+    });
+
+    it('lets guest cancel a RESERVED claim via signed token and reopens item state', async () => {
+      const claimOnContribute = jest.fn().mockResolvedValue({
+        claimActions: {
+          confirmToken: 'signed-confirm-token-2',
+          cancelToken: 'signed-cancel-token-2',
+          status: 'RESERVED',
+        },
+      });
+      const mockOnItemUpdated = jest.fn();
+      const reopenedItem = {
+        ...mockSingleItem,
+        purchased: false,
+        amountContributed: 0,
+        purchaserName: null,
+      };
+      (apiClient.post as jest.Mock).mockResolvedValueOnce({
+        action: 'cancel',
+        status: 'CANCELLED',
+        changed: true,
+        item: reopenedItem,
+      });
+
+      render(
+        <ToastProvider>
+          <Overlay isOpen={true} onClose={mockOnClose}>
+            <RegistryItemCard
+              item={mockSingleItem}
+              onClose={mockOnClose}
+              onContribute={claimOnContribute}
+              onItemUpdated={mockOnItemUpdated}
+            />
+          </Overlay>
+        </ToastProvider>
+      );
+
+      fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Taylor Guest' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
+
+      await screen.findByTestId('post-claim-lifecycle-controls');
+      fireEvent.click(screen.getByTestId('post-claim-cancel-button'));
+
+      await waitFor(() => {
+        expect(apiClient.post).toHaveBeenCalledWith('/api/registry/claim', {
+          token: 'signed-cancel-token-2',
+        });
+      });
+
+      expect(await screen.findByText('Reservation Released')).toBeInTheDocument();
+      expect(screen.getByText('Cancelled')).toBeInTheDocument();
+      expect(mockOnItemUpdated).toHaveBeenCalledWith(reopenedItem);
+    });
+  });
 });

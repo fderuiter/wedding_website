@@ -312,4 +312,66 @@ describe('DatabaseBackupSchema Validation Tests', () => {
       expect(() => DatabaseBackupSchema.parse(badDate)).toThrow();
     });
   });
+
+  describe('Contributor Lifecycle & Refund Backup Compatibility', () => {
+    test('accepts legacy contributors without status/refundedAmount and modern contributors with lifecycle fields', () => {
+      const backup: any = getValidBackup();
+      backup.contributor = [
+        {
+          id: 'legacy-contrib-1',
+          name: 'Legacy Donor',
+          amount: 100,
+          date: new Date('2026-06-01T00:00:00.000Z'),
+          createdAt: new Date('2026-06-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-06-01T00:00:00.000Z'),
+          registryItemId: 'item-1',
+        },
+        {
+          id: 'modern-contrib-2',
+          name: 'Modern Donor',
+          email: 'modern@example.com',
+          amount: 150,
+          refundedAmount: 25,
+          status: 'RESERVED',
+          reminderEmailSentAt: new Date('2026-06-05T00:00:00.000Z'),
+          date: new Date('2026-06-02T00:00:00.000Z'),
+          createdAt: new Date('2026-06-02T00:00:00.000Z'),
+          updatedAt: new Date('2026-06-05T00:00:00.000Z'),
+          registryItemId: 'item-1',
+        },
+      ];
+
+      const parsed = DatabaseBackupSchema.parse(backup);
+      expect(parsed.contributor).toHaveLength(2);
+      expect(parsed.contributor?.[1].status).toBe('RESERVED');
+      expect(parsed.contributor?.[1].refundedAmount).toBe(25);
+    });
+
+    test('rejects unknown contributor status or negative refundedAmount in backups', () => {
+      const badStatusBackup: any = getValidBackup();
+      badStatusBackup.contributor = [
+        {
+          id: 'bad-status',
+          name: 'Guest',
+          amount: 50,
+          status: 'EXPIRED_INVALID',
+          date: new Date(),
+        },
+      ];
+      expect(() => DatabaseBackupSchema.parse(badStatusBackup)).toThrow();
+
+      const negativeRefundBackup: any = getValidBackup();
+      negativeRefundBackup.contributor = [
+        {
+          id: 'bad-refund',
+          name: 'Guest',
+          amount: 50,
+          refundedAmount: -10,
+          status: 'CONFIRMED',
+          date: new Date(),
+        },
+      ];
+      expect(() => DatabaseBackupSchema.parse(negativeRefundBackup)).toThrow();
+    });
+  });
 });

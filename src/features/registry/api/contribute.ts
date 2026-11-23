@@ -10,6 +10,8 @@ import { isFeatureEnabled } from '@/lib/modules';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { getStripeInstance, validatePaymentIntentInvariants } from '@/lib/stripe';
 import { dispatchContributionNotifications } from '../notifications';
+import { signContributorActionToken } from '../lib/contributorToken';
+import type { GuestClaimActions } from '../types';
 import { resolveEffectivePaymentHandle } from '../utils/paymentUrls';
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
@@ -148,11 +150,52 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     },
     config,
     requestUrl: request.url,
+    isReservation: !stripePaymentIntentId,
   });
 
   const isAdmin = await isAdminRequest(request);
   if (!isAdmin) {
-    return NextResponse.json(maskRegistryItem(updatedItem));
+    let claimActions: GuestClaimActions | undefined;
+    if (!stripePaymentIntentId) {
+      const previousIds = new Set(
+        (Array.isArray(targetItem?.contributors) ? targetItem.contributors : [])
+          .map((c) => c?.id)
+          .filter((id): id is string => Boolean(id))
+      );
+      const updatedContributors = Array.isArray(updatedItem.contributors)
+        ? updatedItem.contributors
+        : [];
+      const newlyAdded = updatedContributors.filter((c) => c?.id && !previousIds.has(c.id));
+      const matchedContributor =
+        newlyAdded.length > 0
+          ? newlyAdded[newlyAdded.length - 1]
+          : [...updatedContributors]
+            .reverse()
+            .find((c) => c?.id && c.name === name && c.amount === amount);
+
+      if (matchedContributor?.id) {
+        try {
+          const [confirmToken, cancelToken] = await Promise.all([
+            signContributorActionToken({
+              contributorId: matchedContributor.id,
+              action: 'confirm',
+            }),
+            signContributorActionToken({
+              contributorId: matchedContributor.id,
+              action: 'cancel',
+            }),
+          ]);
+          claimActions = { confirmToken, cancelToken };
+        } catch {
+          claimActions = undefined;
+        }
+      }
+    }
+
+    const maskedItem = maskRegistryItem(updatedItem);
+    return NextResponse.json(
+      claimActions ? { ...maskedItem, claimActions } : maskedItem
+    );
   }
   return NextResponse.json(sanitizeRegistryItem(updatedItem));
 });

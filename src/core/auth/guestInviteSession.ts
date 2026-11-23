@@ -201,6 +201,8 @@ export async function enforceActiveGuestPageSession(): Promise<void> {
       callbackUrlHeader.startsWith('/guest/login?') ||
       callbackUrlHeader === '/guest/collect' ||
       callbackUrlHeader.startsWith('/guest/collect?') ||
+      callbackUrlHeader === '/guest/claim' ||
+      callbackUrlHeader.startsWith('/guest/claim?') ||
       callbackUrlHeader === '/admin' ||
       callbackUrlHeader.startsWith('/admin/'))
   ) {

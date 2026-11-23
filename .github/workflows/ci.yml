@@ -244,24 +244,138 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Cache Next.js build
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Expose GitHub Runtime for BuildKit Cache
+        uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
+
+      - name: Cache BuildKit APT and npm mounts (amd64)
+        id: buildkit-deps-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: |
-            ${{ github.workspace }}/.next/cache
-          key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx') }}
+          path: /tmp/buildkit-mounts/deps
+          key: buildkit-deps-amd64-${{ hashFiles('Dockerfile', 'package-lock.json', '.npmrc') }}
           restore-keys: |
-            ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
+            buildkit-deps-amd64-
 
-      - name: Build project
-        run: npm run build
+      - name: Cache BuildKit Next.js mount (amd64)
+        id: buildkit-next-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /tmp/buildkit-mounts/next
+          key: buildkit-next-amd64-${{ hashFiles('package-lock.json') }}-${{ hashFiles('next.config.ts', 'postcss.config.mjs', 'tsconfig.json', 'tsconfig.build.json', 'prisma/schema.prisma', 'src/**') }}
+          restore-keys: |
+            buildkit-next-amd64-${{ hashFiles('package-lock.json') }}-
+            buildkit-next-amd64-
 
-      - name: Copy standalone static assets
+      - name: Hydrate BuildKit Cache Mounts (amd64)
+        env:
+          TARGET_PLATFORM: linux/amd64
+          MOUNT_CACHE_DIR: /tmp/buildkit-mounts
         run: |
-          rm -rf .next/standalone/.next/static .next/standalone/public
-          cp -r .next/static .next/standalone/.next/static
-          cp -r public .next/standalone/public
-          rm -f .next/standalone/public/mockServiceWorker.js
+          BASE_IMAGE=$(awk '/^FROM / {print $2; exit}' Dockerfile)
+          CTX_DIR=$(mktemp -d)
+          trap 'rm -rf "$CTX_DIR"' EXIT
+          HAS_ARCHIVE=false
+          if [ -f "$MOUNT_CACHE_DIR/deps/mounts.tar" ]; then
+            cp "$MOUNT_CACHE_DIR/deps/mounts.tar" "$CTX_DIR/deps.tar"
+            HAS_ARCHIVE=true
+          fi
+          if [ -f "$MOUNT_CACHE_DIR/next/mounts.tar" ]; then
+            cp "$MOUNT_CACHE_DIR/next/mounts.tar" "$CTX_DIR/next.tar"
+            HAS_ARCHIVE=true
+          fi
+          if [ "$HAS_ARCHIVE" = "false" ]; then
+            echo "No persisted BuildKit cache mounts found; skipping hydration."
+            exit 0
+          fi
+          printf '%s\n' \
+            '# syntax=docker/dockerfile:1' \
+            "FROM ${BASE_IMAGE}" \
+            'ARG CACHEBUST=1' \
+            'RUN --mount=type=bind,target=/ctx \' \
+            '    --mount=type=cache,target=/var/cache/apt,sharing=locked \' \
+            '    --mount=type=cache,target=/var/lib/apt,sharing=locked \' \
+            '    --mount=type=cache,target=/root/.npm,sharing=locked \' \
+            '    --mount=type=cache,target=/app/.next/cache,sharing=locked \' \
+            '    echo "$CACHEBUST" >/dev/null && \' \
+            '    if [ -f /ctx/deps.tar ]; then tar -xf /ctx/deps.tar -C /; fi && \' \
+            '    if [ -f /ctx/next.tar ]; then tar -xf /ctx/next.tar -C /; fi' \
+            | docker buildx build \
+              --platform "$TARGET_PLATFORM" \
+              --build-arg "CACHEBUST=$(date +%s%N)" \
+              --output type=cacheonly \
+              -f - "$CTX_DIR"
+
+      - name: Build OCI Container Image (amd64)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: wedding-website:latest
+          cache-from: type=gha,scope=app-amd64
+          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,scope=app-amd64,mode=max' || '' }}
+
+      - name: Persist BuildKit Cache Mounts (amd64)
+        if: steps.buildkit-deps-cache.outputs.cache-hit != 'true' || steps.buildkit-next-cache.outputs.cache-hit != 'true'
+        env:
+          TARGET_PLATFORM: linux/amd64
+          MOUNT_CACHE_DIR: /tmp/buildkit-mounts
+          DEPS_CACHE_HIT: ${{ steps.buildkit-deps-cache.outputs.cache-hit }}
+          NEXT_CACHE_HIT: ${{ steps.buildkit-next-cache.outputs.cache-hit }}
+        run: |
+          BASE_IMAGE=$(awk '/^FROM / {print $2; exit}' Dockerfile)
+          EMPTY_DIR=$(mktemp -d)
+          OUT_DIR=$(mktemp -d)
+          trap 'rm -rf "$EMPTY_DIR" "$OUT_DIR"' EXIT
+          EXPORT_DEPS="false"
+          EXPORT_NEXT="false"
+          if [ "$DEPS_CACHE_HIT" != "true" ]; then EXPORT_DEPS="true"; fi
+          if [ "$NEXT_CACHE_HIT" != "true" ]; then EXPORT_NEXT="true"; fi
+          printf '%s\n' \
+            '# syntax=docker/dockerfile:1' \
+            "FROM ${BASE_IMAGE} AS exporter" \
+            'ARG CACHEBUST=1' \
+            'ARG EXPORT_DEPS=false' \
+            'ARG EXPORT_NEXT=false' \
+            'RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \' \
+            '    --mount=type=cache,target=/var/lib/apt,sharing=locked \' \
+            '    --mount=type=cache,target=/root/.npm,sharing=locked \' \
+            '    --mount=type=cache,target=/app/.next/cache,sharing=locked \' \
+            '    echo "$CACHEBUST" >/dev/null && \' \
+            '    mkdir -p /out /var/cache/apt /var/lib/apt /root/.npm /app/.next/cache && \' \
+            '    if [ "$EXPORT_DEPS" = "true" ]; then mkdir -p /out/deps && tar -cf /out/deps/mounts.tar -C / var/cache/apt var/lib/apt root/.npm; fi && \' \
+            '    if [ "$EXPORT_NEXT" = "true" ]; then mkdir -p /out/next && tar -cf /out/next/mounts.tar -C / app/.next/cache; fi' \
+            'FROM scratch' \
+            'COPY --from=exporter /out /' \
+            | docker buildx build \
+              --platform "$TARGET_PLATFORM" \
+              --build-arg "CACHEBUST=$(date +%s%N)" \
+              --build-arg "EXPORT_DEPS=${EXPORT_DEPS}" \
+              --build-arg "EXPORT_NEXT=${EXPORT_NEXT}" \
+              --output "type=local,dest=${OUT_DIR}" \
+              -f - "$EMPTY_DIR"
+          if [ -f "$OUT_DIR/deps/mounts.tar" ]; then
+            mkdir -p "$MOUNT_CACHE_DIR/deps"
+            mv -f "$OUT_DIR/deps/mounts.tar" "$MOUNT_CACHE_DIR/deps/mounts.tar"
+          fi
+          if [ -f "$OUT_DIR/next/mounts.tar" ]; then
+            mkdir -p "$MOUNT_CACHE_DIR/next"
+            mv -f "$OUT_DIR/next/mounts.tar" "$MOUNT_CACHE_DIR/next/mounts.tar"
+          fi
+
+      - name: Extract Standalone Output from Container Image
+        run: |
+          rm -rf .next
+          mkdir -p .next/standalone
+          CID=$(docker create wedding-website:latest)
+          trap 'docker rm -f "$CID" >/dev/null 2>&1 || true' EXIT
+          docker cp "$CID:/app/." .next/standalone/
+          rm -f .next/standalone/node_modules/.bin/prisma
+          cp -r .next/standalone/.next/static .next/static
+
       - name: Run Standalone Execution Smoke Test
         run: npm run test:standalone
 
@@ -271,14 +385,9 @@ jobs:
       - name: Security Dependency Audit
         run: npm run check:audit
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
-      - name: Expose GitHub Runtime for BuildKit Cache
-        uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
-
       - name: Run OCI Container & Clean Database Smoke Test
         env:
+          SKIP_IMAGE_BUILD: 'true'
           GHA_CACHE_SCOPE: app-amd64
         run: npm run test:container
 
@@ -324,8 +433,125 @@ jobs:
       - name: Expose GitHub Runtime for BuildKit Cache
         uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
 
+      - name: Cache BuildKit APT and npm mounts (arm64)
+        id: buildkit-deps-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /tmp/buildkit-mounts/deps
+          key: buildkit-deps-arm64-${{ hashFiles('Dockerfile', 'package-lock.json', '.npmrc') }}
+          restore-keys: |
+            buildkit-deps-arm64-
+
+      - name: Cache BuildKit Next.js mount (arm64)
+        id: buildkit-next-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /tmp/buildkit-mounts/next
+          key: buildkit-next-arm64-${{ hashFiles('package-lock.json') }}-${{ hashFiles('next.config.ts', 'postcss.config.mjs', 'tsconfig.json', 'tsconfig.build.json', 'prisma/schema.prisma', 'src/**') }}
+          restore-keys: |
+            buildkit-next-arm64-${{ hashFiles('package-lock.json') }}-
+            buildkit-next-arm64-
+
+      - name: Hydrate BuildKit Cache Mounts (arm64)
+        env:
+          TARGET_PLATFORM: linux/arm64
+          MOUNT_CACHE_DIR: /tmp/buildkit-mounts
+        run: |
+          BASE_IMAGE=$(awk '/^FROM / {print $2; exit}' Dockerfile)
+          CTX_DIR=$(mktemp -d)
+          trap 'rm -rf "$CTX_DIR"' EXIT
+          HAS_ARCHIVE=false
+          if [ -f "$MOUNT_CACHE_DIR/deps/mounts.tar" ]; then
+            cp "$MOUNT_CACHE_DIR/deps/mounts.tar" "$CTX_DIR/deps.tar"
+            HAS_ARCHIVE=true
+          fi
+          if [ -f "$MOUNT_CACHE_DIR/next/mounts.tar" ]; then
+            cp "$MOUNT_CACHE_DIR/next/mounts.tar" "$CTX_DIR/next.tar"
+            HAS_ARCHIVE=true
+          fi
+          if [ "$HAS_ARCHIVE" = "false" ]; then
+            echo "No persisted BuildKit cache mounts found; skipping hydration."
+            exit 0
+          fi
+          printf '%s\n' \
+            '# syntax=docker/dockerfile:1' \
+            "FROM ${BASE_IMAGE}" \
+            'ARG CACHEBUST=1' \
+            'RUN --mount=type=bind,target=/ctx \' \
+            '    --mount=type=cache,target=/var/cache/apt,sharing=locked \' \
+            '    --mount=type=cache,target=/var/lib/apt,sharing=locked \' \
+            '    --mount=type=cache,target=/root/.npm,sharing=locked \' \
+            '    --mount=type=cache,target=/app/.next/cache,sharing=locked \' \
+            '    echo "$CACHEBUST" >/dev/null && \' \
+            '    if [ -f /ctx/deps.tar ]; then tar -xf /ctx/deps.tar -C /; fi && \' \
+            '    if [ -f /ctx/next.tar ]; then tar -xf /ctx/next.tar -C /; fi' \
+            | docker buildx build \
+              --platform "$TARGET_PLATFORM" \
+              --build-arg "CACHEBUST=$(date +%s%N)" \
+              --output type=cacheonly \
+              -f - "$CTX_DIR"
+
+      - name: Build Native ARM64 OCI Container Image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/arm64
+          load: true
+          tags: wedding-website:latest
+          cache-from: type=gha,scope=app-arm64
+          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,scope=app-arm64,mode=max' || '' }}
+
+      - name: Persist BuildKit Cache Mounts (arm64)
+        if: steps.buildkit-deps-cache.outputs.cache-hit != 'true' || steps.buildkit-next-cache.outputs.cache-hit != 'true'
+        env:
+          TARGET_PLATFORM: linux/arm64
+          MOUNT_CACHE_DIR: /tmp/buildkit-mounts
+          DEPS_CACHE_HIT: ${{ steps.buildkit-deps-cache.outputs.cache-hit }}
+          NEXT_CACHE_HIT: ${{ steps.buildkit-next-cache.outputs.cache-hit }}
+        run: |
+          BASE_IMAGE=$(awk '/^FROM / {print $2; exit}' Dockerfile)
+          EMPTY_DIR=$(mktemp -d)
+          OUT_DIR=$(mktemp -d)
+          trap 'rm -rf "$EMPTY_DIR" "$OUT_DIR"' EXIT
+          EXPORT_DEPS="false"
+          EXPORT_NEXT="false"
+          if [ "$DEPS_CACHE_HIT" != "true" ]; then EXPORT_DEPS="true"; fi
+          if [ "$NEXT_CACHE_HIT" != "true" ]; then EXPORT_NEXT="true"; fi
+          printf '%s\n' \
+            '# syntax=docker/dockerfile:1' \
+            "FROM ${BASE_IMAGE} AS exporter" \
+            'ARG CACHEBUST=1' \
+            'ARG EXPORT_DEPS=false' \
+            'ARG EXPORT_NEXT=false' \
+            'RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \' \
+            '    --mount=type=cache,target=/var/lib/apt,sharing=locked \' \
+            '    --mount=type=cache,target=/root/.npm,sharing=locked \' \
+            '    --mount=type=cache,target=/app/.next/cache,sharing=locked \' \
+            '    echo "$CACHEBUST" >/dev/null && \' \
+            '    mkdir -p /out /var/cache/apt /var/lib/apt /root/.npm /app/.next/cache && \' \
+            '    if [ "$EXPORT_DEPS" = "true" ]; then mkdir -p /out/deps && tar -cf /out/deps/mounts.tar -C / var/cache/apt var/lib/apt root/.npm; fi && \' \
+            '    if [ "$EXPORT_NEXT" = "true" ]; then mkdir -p /out/next && tar -cf /out/next/mounts.tar -C / app/.next/cache; fi' \
+            'FROM scratch' \
+            'COPY --from=exporter /out /' \
+            | docker buildx build \
+              --platform "$TARGET_PLATFORM" \
+              --build-arg "CACHEBUST=$(date +%s%N)" \
+              --build-arg "EXPORT_DEPS=${EXPORT_DEPS}" \
+              --build-arg "EXPORT_NEXT=${EXPORT_NEXT}" \
+              --output "type=local,dest=${OUT_DIR}" \
+              -f - "$EMPTY_DIR"
+          if [ -f "$OUT_DIR/deps/mounts.tar" ]; then
+            mkdir -p "$MOUNT_CACHE_DIR/deps"
+            mv -f "$OUT_DIR/deps/mounts.tar" "$MOUNT_CACHE_DIR/deps/mounts.tar"
+          fi
+          if [ -f "$OUT_DIR/next/mounts.tar" ]; then
+            mkdir -p "$MOUNT_CACHE_DIR/next"
+            mv -f "$OUT_DIR/next/mounts.tar" "$MOUNT_CACHE_DIR/next/mounts.tar"
+          fi
+
       - name: Run Native ARM64 OCI Container & Clean Database Smoke Test
         env:
+          SKIP_IMAGE_BUILD: 'true'
           GHA_CACHE_SCOPE: app-arm64
         run: node scripts/test-container.mjs
 

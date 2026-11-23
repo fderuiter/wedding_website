@@ -20,6 +20,7 @@ jest.mock('@/lib/config', () => ({
 jest.mock('../../service', () => ({
   registryService: {
     contributeToItem: jest.fn(),
+    reconcileStripeAdjustment: jest.fn(),
   },
 }));
 
@@ -354,6 +355,170 @@ describe('POST /api/registry/webhook/stripe', () => {
     } finally {
       sendEmailSpy.mockRestore();
       warnSpy.mockRestore();
+    }
+  });
+
+  it('processes charge.refunded (partial and full) and charge.dispute.created idempotently and alerts the couple', async () => {
+    const sendEmailSpy = jest
+      .spyOn(MultiChannelMessagingProvider.prototype, 'sendEmail')
+      .mockResolvedValue({ success: true });
+
+    try {
+      (getAppConfig as jest.Mock).mockResolvedValue({
+        modules: ['registry', 'groupGifting'],
+        emailProvider: 'smtp',
+        smtpHost: 'smtp.wedding.test',
+        contactEmail: 'couple@wedding.test',
+        baseUrl: 'https://couple.wedding.test',
+      });
+
+      // 1. Partial refund ($30 of $100)
+      mockConstructEvent.mockReturnValueOnce({
+        id: 'evt_partial_refund',
+        type: 'charge.refunded',
+        data: {
+          object: {
+            id: 'ch_refund_partial_1',
+            payment_intent: 'pi_refund_partial_1',
+            amount: 10000,
+            amount_refunded: 3000,
+            refunded: false,
+          },
+        },
+      });
+      (registryService.reconcileStripeAdjustment as jest.Mock).mockResolvedValueOnce({
+        matched: true,
+        changed: true,
+        contributor: {
+          id: 'c-1',
+          name: 'Dana Cardholder',
+          amount: 100,
+          refundedAmount: 30,
+          status: 'CONFIRMED',
+        },
+        item: {
+          id: 'item-1',
+          name: 'Honeymoon Fund',
+          amountContributed: 70,
+          purchased: false,
+        },
+        previousStatus: 'CONFIRMED',
+        previousRefundedAmount: 0,
+        refundedAmount: 30,
+      });
+
+      const partialRes = await POST(
+        new NextRequest('http://localhost:3000/api/registry/webhook/stripe', {
+          method: 'POST',
+          headers: { 'stripe-signature': 't=12345,v1=validsig' },
+          body: JSON.stringify({ type: 'charge.refunded' }),
+        })
+      );
+      expect(partialRes.status).toBe(200);
+      expect(registryService.reconcileStripeAdjustment).toHaveBeenCalledWith({
+        stripeChargeId: 'ch_refund_partial_1',
+        stripePaymentIntentId: 'pi_refund_partial_1',
+        refundedCents: 3000,
+        forceFullReversal: false,
+      });
+      expect(sendEmailSpy).toHaveBeenCalledTimes(1);
+      expect(sendEmailSpy.mock.calls[0][0].subject).toContain('Partial Refund Processed');
+      expect(sendEmailSpy.mock.calls[0][0].body).toContain('-$30.00');
+      expect(sendEmailSpy.mock.calls[0][0].body).toContain('$70.00');
+
+      // 2. Duplicate charge.refunded delivery -> changed: false sends zero additional emails
+      mockConstructEvent.mockReturnValueOnce({
+        id: 'evt_partial_refund_dup',
+        type: 'charge.refunded',
+        data: {
+          object: {
+            id: 'ch_refund_partial_1',
+            payment_intent: 'pi_refund_partial_1',
+            amount: 10000,
+            amount_refunded: 3000,
+            refunded: false,
+          },
+        },
+      });
+      (registryService.reconcileStripeAdjustment as jest.Mock).mockResolvedValueOnce({
+        matched: true,
+        changed: false,
+        contributor: {
+          id: 'c-1',
+          name: 'Dana Cardholder',
+          amount: 100,
+          refundedAmount: 30,
+          status: 'CONFIRMED',
+        },
+        item: null,
+        previousStatus: 'CONFIRMED',
+        previousRefundedAmount: 30,
+        refundedAmount: 30,
+      });
+
+      const dupRes = await POST(
+        new NextRequest('http://localhost:3000/api/registry/webhook/stripe', {
+          method: 'POST',
+          headers: { 'stripe-signature': 't=12345,v1=validsig' },
+          body: JSON.stringify({ type: 'charge.refunded' }),
+        })
+      );
+      expect(dupRes.status).toBe(200);
+      expect(sendEmailSpy).toHaveBeenCalledTimes(1);
+
+      // 3. Dispute opened -> reconciles disputed cents and sends dispute ledger alert
+      mockConstructEvent.mockReturnValueOnce({
+        id: 'evt_dispute_1',
+        type: 'charge.dispute.created',
+        data: {
+          object: {
+            id: 'dp_1',
+            charge: 'ch_disputed_1',
+            payment_intent: 'pi_disputed_1',
+            amount: 10000,
+          },
+        },
+      });
+      (registryService.reconcileStripeAdjustment as jest.Mock).mockResolvedValueOnce({
+        matched: true,
+        changed: true,
+        contributor: {
+          id: 'c-2',
+          name: 'Disputed Donor',
+          amount: 100,
+          refundedAmount: 100,
+          status: 'REFUNDED',
+        },
+        item: {
+          id: 'item-2',
+          name: 'Espresso Machine',
+          amountContributed: 0,
+          purchased: false,
+        },
+        previousStatus: 'CONFIRMED',
+        previousRefundedAmount: 0,
+        refundedAmount: 100,
+      });
+
+      const disputeRes = await POST(
+        new NextRequest('http://localhost:3000/api/registry/webhook/stripe', {
+          method: 'POST',
+          headers: { 'stripe-signature': 't=12345,v1=validsig' },
+          body: JSON.stringify({ type: 'charge.dispute.created' }),
+        })
+      );
+      expect(disputeRes.status).toBe(200);
+      expect(registryService.reconcileStripeAdjustment).toHaveBeenCalledWith({
+        stripeChargeId: 'ch_disputed_1',
+        stripePaymentIntentId: 'pi_disputed_1',
+        refundedCents: 10000,
+        forceFullReversal: false,
+      });
+      expect(sendEmailSpy).toHaveBeenCalledTimes(2);
+      expect(sendEmailSpy.mock.calls[1][0].subject).toContain('Card Dispute Opened');
+      expect(sendEmailSpy.mock.calls[1][0].body).toContain('Reopened for guest contributions');
+    } finally {
+      sendEmailSpy.mockRestore();
     }
   });
 });

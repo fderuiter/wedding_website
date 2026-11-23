@@ -6,8 +6,21 @@ import {
   REGISTRY_DEFAULT_PAGE_LIMIT,
   REGISTRY_MAX_CATALOG_LIMIT,
 } from '@/utils/registryPagination';
-import type { IRegistryRepository, GetItemsOptions, PaginatedRegistryItems, CreateRegistryItemInput } from './types';
-import { RegistryItemSchema, RegistryItemDTO } from './schemas';
+import type {
+  IRegistryRepository,
+  GetItemsOptions,
+  PaginatedRegistryItems,
+  CreateRegistryItemInput,
+  ContributorLifecycleResult,
+  ContributorRecord,
+  StripeLedgerReconciliationResult,
+} from './types';
+import {
+  ContributorSchema,
+  ContributorStatus,
+  RegistryItemSchema,
+  RegistryItemDTO,
+} from './schemas';
 
 /**
  * @class RegistryRepository
@@ -408,6 +421,9 @@ class RegistryRepository implements IRegistryRepository {
           ? `${item.purchaserName}, ${finalName}`
           : finalName
         : item.purchaserName;
+      const initialStatus: ContributorStatus = contribution.stripePaymentIntentId
+        ? 'CONFIRMED'
+        : 'RESERVED';
 
       const updatedItem = await txClient.registryItem.update({
         where: { id: itemId },
@@ -422,6 +438,7 @@ class RegistryRepository implements IRegistryRepository {
               name: finalName,
               email: emailToSave,
               amount: contribution.amount,
+              status: initialStatus,
               coverFee,
               feeAmount,
               message: messageToSave,
@@ -501,6 +518,413 @@ class RegistryRepository implements IRegistryRepository {
     });
 
     return Boolean(result && result.count === 1);
+  }
+
+  private normalizeStatus(rawStatus: unknown): ContributorStatus {
+    const normalized = typeof rawStatus === 'string' ? rawStatus.trim().toUpperCase() : 'CONFIRMED';
+    if (
+      normalized === 'RESERVED' ||
+      normalized === 'CONFIRMED' ||
+      normalized === 'CANCELLED' ||
+      normalized === 'REFUNDED'
+    ) {
+      return normalized;
+    }
+    return 'CONFIRMED';
+  }
+
+  private async recomputeItemLedger(
+    txClient: any,
+    itemId: string | null | undefined
+  ): Promise<RegistryItemDTO | null> {
+    if (!itemId) {
+      return null;
+    }
+
+    if (typeof txClient.$queryRaw === 'function') {
+      await txClient.$queryRaw`SELECT id FROM "RegistryItem" WHERE id = ${itemId} FOR UPDATE`;
+    }
+
+    const item = await txClient.registryItem.findUnique({
+      where: { id: itemId },
+      include: { image: true, contributors: true },
+    });
+
+    if (!item) {
+      return null;
+    }
+
+    const isFund = item.itemType === 'CASH_FUND' || item.itemType === 'EXPERIENCE_FUND';
+    const quantity = isFund ? 1 : Math.max(1, Math.floor(item.quantity || 1));
+    const unitPriceCents = Math.round(item.price * 100);
+    const totalTargetCents = unitPriceCents * quantity;
+    const isGroupGift = Boolean(isFund || item.isGroupGift);
+
+    const contributorsList: any[] = Array.isArray(item.contributors) ? [...item.contributors] : [];
+    contributorsList.sort((a, b) => {
+      const aTime = a?.date ? new Date(a.date).getTime() : 0;
+      const bTime = b?.date ? new Date(b.date).getTime() : 0;
+      return aTime - bTime;
+    });
+
+    let activeNetCents = 0;
+    const activeNames: string[] = [];
+
+    for (const contributor of contributorsList) {
+      const status = this.normalizeStatus(contributor?.status);
+      if (status !== 'RESERVED' && status !== 'CONFIRMED') {
+        continue;
+      }
+
+      const grossCents = Math.max(0, Math.round((Number(contributor?.amount) || 0) * 100));
+      const refundedCents = Math.max(0, Math.round((Number(contributor?.refundedAmount) || 0) * 100));
+      const netCents = Math.max(0, grossCents - refundedCents);
+
+      activeNetCents += netCents;
+      if (netCents > 0 && typeof contributor?.name === 'string' && contributor.name.trim()) {
+        activeNames.push(contributor.name.trim());
+      }
+    }
+
+    const nextAmountContributed = activeNetCents / 100;
+    const nextPurchased = totalTargetCents > 0 ? activeNetCents >= totalTargetCents : false;
+    const nextPurchaserName = !isGroupGift
+      ? activeNames.length > 0
+        ? activeNames.join(', ')
+        : null
+      : item.purchaserName ?? null;
+
+    const updatedItem = await txClient.registryItem.update({
+      where: { id: itemId },
+      data: {
+        amountContributed: nextAmountContributed,
+        purchased: nextPurchased,
+        ...(!isGroupGift ? { purchaserName: nextPurchaserName } : {}),
+      },
+      include: { image: true, contributors: true },
+    });
+
+    return RegistryItemSchema.parse(updatedItem);
+  }
+
+  async getContributorWithItem(
+    contributorId: string
+  ): Promise<{ contributor: ContributorRecord; item: RegistryItemDTO | null } | null> {
+    if (!contributorId) return null;
+    const contributor = await this.client.contributor.findUnique({
+      where: { id: contributorId },
+    });
+    if (!contributor) {
+      return null;
+    }
+
+    let item: RegistryItemDTO | null = null;
+    if (contributor.registryItemId) {
+      const rawItem = await this.client.registryItem.findUnique({
+        where: { id: contributor.registryItemId },
+        include: { image: true, contributors: true },
+      });
+      if (rawItem) {
+        item = RegistryItemSchema.parse(rawItem);
+      }
+    }
+
+    return {
+      contributor: ContributorSchema.parse(contributor),
+      item,
+    };
+  }
+
+  async markContributorReminderSent(contributorId: string): Promise<ContributorRecord> {
+    const updated = await this.client.contributor.update({
+      where: { id: contributorId },
+      data: { reminderEmailSentAt: new Date() },
+    });
+    return ContributorSchema.parse(updated);
+  }
+
+  async confirmContribution(
+    contributorId: string,
+    author: string = 'Guest'
+  ): Promise<ContributorLifecycleResult> {
+    return executeInTransaction(this.client, async (txClient: any) => {
+      const existing = await txClient.contributor.findUnique({
+        where: { id: contributorId },
+      });
+      if (!existing) {
+        throw new ApiError(404, 'Contribution record not found.');
+      }
+
+      const previousStatus = this.normalizeStatus(existing.status);
+      if (previousStatus === 'CANCELLED' || previousStatus === 'REFUNDED') {
+        throw new ApiError(
+          409,
+          `Cannot confirm a contribution that is already ${previousStatus.toLowerCase()}.`
+        );
+      }
+
+      if (previousStatus === 'CONFIRMED') {
+        const currentItem = existing.registryItemId
+          ? await txClient.registryItem.findUnique({
+            where: { id: existing.registryItemId },
+            include: { image: true, contributors: true },
+          })
+          : null;
+        return {
+          contributor: ContributorSchema.parse(existing),
+          item: currentItem ? RegistryItemSchema.parse(currentItem) : null,
+          previousStatus,
+          changed: false,
+        };
+      }
+
+      const updated = await txClient.contributor.update({
+        where: { id: contributorId },
+        data: { status: 'CONFIRMED' },
+      });
+      await createAuditSnapshot('Contributor', updated.id, updated, author, txClient);
+
+      const item = await this.recomputeItemLedger(txClient, updated.registryItemId);
+      if (item) {
+        await createAuditSnapshot('RegistryItem', item.id, item, author, txClient);
+      }
+
+      return {
+        contributor: ContributorSchema.parse(updated),
+        item,
+        previousStatus,
+        changed: true,
+      };
+    });
+  }
+
+  async cancelReservedContribution(
+    contributorId: string,
+    author: string = 'Guest'
+  ): Promise<ContributorLifecycleResult> {
+    return executeInTransaction(this.client, async (txClient: any) => {
+      const existing = await txClient.contributor.findUnique({
+        where: { id: contributorId },
+      });
+      if (!existing) {
+        throw new ApiError(404, 'Contribution record not found.');
+      }
+
+      const previousStatus = this.normalizeStatus(existing.status);
+      if (previousStatus === 'CANCELLED') {
+        const currentItem = existing.registryItemId
+          ? await txClient.registryItem.findUnique({
+            where: { id: existing.registryItemId },
+            include: { image: true, contributors: true },
+          })
+          : null;
+        return {
+          contributor: ContributorSchema.parse(existing),
+          item: currentItem ? RegistryItemSchema.parse(currentItem) : null,
+          previousStatus,
+          changed: false,
+        };
+      }
+
+      if (previousStatus !== 'RESERVED') {
+        throw new ApiError(
+          409,
+          'This gift has already been confirmed and cannot be cancelled via reservation link. Please contact the couple if you need assistance.'
+        );
+      }
+
+      const shouldMarkThankYouNotNeeded =
+        (existing.thankYouStatus || 'Unsent').trim().toLowerCase() === 'unsent';
+
+      const updated = await txClient.contributor.update({
+        where: { id: contributorId },
+        data: {
+          status: 'CANCELLED',
+          ...(shouldMarkThankYouNotNeeded ? { thankYouStatus: 'Not Needed' } : {}),
+        },
+      });
+      await createAuditSnapshot('Contributor', updated.id, updated, author, txClient);
+
+      const item = await this.recomputeItemLedger(txClient, updated.registryItemId);
+      if (item) {
+        await createAuditSnapshot('RegistryItem', item.id, item, author, txClient);
+      }
+
+      return {
+        contributor: ContributorSchema.parse(updated),
+        item,
+        previousStatus,
+        changed: true,
+      };
+    });
+  }
+
+  async voidContribution(
+    contributorId: string,
+    author: string = 'Admin'
+  ): Promise<ContributorLifecycleResult> {
+    return executeInTransaction(this.client, async (txClient: any) => {
+      const existing = await txClient.contributor.findUnique({
+        where: { id: contributorId },
+      });
+      if (!existing) {
+        throw new ApiError(404, 'Contribution record not found.');
+      }
+
+      const previousStatus = this.normalizeStatus(existing.status);
+      if (previousStatus === 'CANCELLED' || previousStatus === 'REFUNDED') {
+        const currentItem = existing.registryItemId
+          ? await txClient.registryItem.findUnique({
+            where: { id: existing.registryItemId },
+            include: { image: true, contributors: true },
+          })
+          : null;
+        return {
+          contributor: ContributorSchema.parse(existing),
+          item: currentItem ? RegistryItemSchema.parse(currentItem) : null,
+          previousStatus,
+          changed: false,
+        };
+      }
+
+      const shouldMarkThankYouNotNeeded =
+        (existing.thankYouStatus || 'Unsent').trim().toLowerCase() === 'unsent';
+
+      const updated = await txClient.contributor.update({
+        where: { id: contributorId },
+        data: {
+          status: 'CANCELLED',
+          ...(shouldMarkThankYouNotNeeded ? { thankYouStatus: 'Not Needed' } : {}),
+        },
+      });
+      await createAuditSnapshot('Contributor', updated.id, updated, author, txClient);
+
+      const item = await this.recomputeItemLedger(txClient, updated.registryItemId);
+      if (item) {
+        await createAuditSnapshot('RegistryItem', item.id, item, author, txClient);
+      }
+
+      return {
+        contributor: ContributorSchema.parse(updated),
+        item,
+        previousStatus,
+        changed: true,
+      };
+    });
+  }
+
+  async reconcileStripeAdjustment(params: {
+    stripeChargeId?: string | null;
+    stripePaymentIntentId?: string | null;
+    refundedCents: number;
+    forceFullReversal?: boolean;
+  }): Promise<StripeLedgerReconciliationResult> {
+    const chargeId = params.stripeChargeId?.trim() || '';
+    const paymentIntentId = params.stripePaymentIntentId?.trim() || '';
+
+    return executeInTransaction(this.client, async (txClient: any) => {
+      let located = chargeId
+        ? await txClient.contributor.findFirst({ where: { stripeChargeId: chargeId } })
+        : null;
+      if (!located && paymentIntentId) {
+        located = await txClient.contributor.findFirst({
+          where: { stripePaymentIntentId: paymentIntentId },
+        });
+      }
+
+      if (!located) {
+        return {
+          matched: false,
+          changed: false,
+          contributor: null,
+          item: null,
+          previousStatus: null,
+          previousRefundedAmount: 0,
+          refundedAmount: 0,
+        };
+      }
+
+      if (located.registryItemId && typeof txClient.$queryRaw === 'function') {
+        await txClient.$queryRaw`SELECT id FROM "RegistryItem" WHERE id = ${located.registryItemId} FOR UPDATE`;
+      }
+
+      const existing =
+        (await txClient.contributor.findUnique({ where: { id: located.id } })) ?? located;
+
+      const grossCents = Math.max(0, Math.round((Number(existing.amount) || 0) * 100));
+      const prevRefundedCents = Math.max(
+        0,
+        Math.round((Number(existing.refundedAmount) || 0) * 100)
+      );
+      const previousStatus = this.normalizeStatus(existing.status);
+
+      const requestedCents = params.forceFullReversal
+        ? grossCents
+        : Math.max(0, Math.round(params.refundedCents));
+      const targetRefundedCents = Math.min(
+        grossCents,
+        Math.max(prevRefundedCents, requestedCents)
+      );
+      const nextRefundedAmount = targetRefundedCents / 100;
+      const isFullyRefunded = grossCents > 0 && targetRefundedCents >= grossCents;
+      const nextStatus: ContributorStatus = isFullyRefunded
+        ? 'REFUNDED'
+        : previousStatus === 'CANCELLED' || previousStatus === 'REFUNDED'
+          ? previousStatus
+          : 'CONFIRMED';
+
+      const chargeNeedsBackfill = Boolean(chargeId && !existing.stripeChargeId);
+      const changed =
+        targetRefundedCents !== prevRefundedCents || nextStatus !== previousStatus;
+
+      if (!changed && !chargeNeedsBackfill) {
+        const currentItem = existing.registryItemId
+          ? await txClient.registryItem.findUnique({
+            where: { id: existing.registryItemId },
+            include: { image: true, contributors: true },
+          })
+          : null;
+        return {
+          matched: true,
+          changed: false,
+          contributor: ContributorSchema.parse(existing),
+          item: currentItem ? RegistryItemSchema.parse(currentItem) : null,
+          previousStatus,
+          previousRefundedAmount: prevRefundedCents / 100,
+          refundedAmount: nextRefundedAmount,
+        };
+      }
+
+      const shouldMarkThankYouNotNeeded =
+        isFullyRefunded &&
+        (existing.thankYouStatus || 'Unsent').trim().toLowerCase() === 'unsent';
+
+      const updated = await txClient.contributor.update({
+        where: { id: existing.id },
+        data: {
+          refundedAmount: nextRefundedAmount,
+          status: nextStatus,
+          ...(chargeNeedsBackfill ? { stripeChargeId: chargeId } : {}),
+          ...(shouldMarkThankYouNotNeeded ? { thankYouStatus: 'Not Needed' } : {}),
+        },
+      });
+      await createAuditSnapshot('Contributor', updated.id, updated, 'Stripe Webhook', txClient);
+
+      const item = await this.recomputeItemLedger(txClient, updated.registryItemId);
+      if (item && changed) {
+        await createAuditSnapshot('RegistryItem', item.id, item, 'Stripe Webhook', txClient);
+      }
+
+      return {
+        matched: true,
+        changed,
+        contributor: ContributorSchema.parse(updated),
+        item,
+        previousStatus,
+        previousRefundedAmount: prevRefundedCents / 100,
+        refundedAmount: nextRefundedAmount,
+      };
+    });
   }
 }
 
