@@ -1,15 +1,24 @@
 'use client';
 
-import { useState, useEffect, useRef, useLayoutEffect, useMemo } from 'react';
+import {
+  useState,
+  useEffect,
+  useRef,
+  useLayoutEffect,
+  useMemo,
+  useSyncExternalStore,
+} from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { QueryClient, QueryClientProvider, MutationCache } from '@tanstack/react-query';
 import Navbar from './Navbar';
+import { HomeFooterContent } from '@/components/home/HomeFooterContent';
 import {
   GuestHelpProvider,
   type GuestHelpConfig,
   type GuestHelpFaqItem,
 } from '@/components/guest/GuestHelpModal';
 import { GlobalRadialGlow } from '@/components/ui/GlobalRadialGlow';
+import { MainLandmark, SiteFooter } from '@/components/ui/Layout';
 import { useToast } from '@/components/ui/ToastProvider';
 import { MotionGlobalConfig } from 'framer-motion';
 import type { ContentNodeDTO } from '@/features/content';
@@ -17,6 +26,7 @@ import {
   invalidateOnboardingMilestones,
   invalidateSampleDataCaches,
 } from '@/lib/adminCacheSync';
+import { isFeatureEnabled } from '@/lib/modules';
 
 if (typeof window !== 'undefined' && window.navigator.userAgent.includes('HeadlessChrome')) {
   MotionGlobalConfig.skipAnimations = true;
@@ -39,20 +49,75 @@ interface RootLayoutClientProps {
   config: PublicAppConfig;
   faqs?: ContentNodeDTO[];
   isStaticExport?: boolean;
+  isPreview?: boolean;
+}
+
+function subscribeToPreviewLocation(onStoreChange: () => void) {
+  if (typeof window === 'undefined') {
+    return () => {};
+  }
+  window.addEventListener('popstate', onStoreChange);
+  return () => {
+    window.removeEventListener('popstate', onStoreChange);
+  };
+}
+
+function getPreviewSearchSnapshot(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  return new URLSearchParams(window.location.search).get('preview') === 'true';
+}
+
+function getServerPreviewSearchSnapshot(): boolean {
+  return false;
 }
 
 function RootLayoutInner({
   children,
   config: baseConfig,
   faqs: baseFaqs,
+  isPreview: isPreviewProp,
 }: Omit<RootLayoutClientProps, 'isStaticExport'>) {
   const demo = useOptionalDemo();
   const isDemoMode = Boolean(demo?.isDemoMode);
+  const isPreviewQuery = useSyncExternalStore(
+    subscribeToPreviewLocation,
+    getPreviewSearchSnapshot,
+    getServerPreviewSearchSnapshot
+  );
+  const isPreview = isPreviewProp ?? isPreviewQuery;
+  const [previewDraftConfig, setPreviewDraftConfig] =
+    useState<Partial<PublicAppConfig> | null>(null);
   const [storageIsAdmin, setStorageIsAdmin] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
   const headerRef = useRef<HTMLElement>(null);
   const [mainPaddingTop, setMainPaddingTop] = useState(0);
+
+  useEffect(() => {
+    if (!isPreview || typeof window === 'undefined') return;
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (
+        event.data?.type === 'DRAFT_UPDATE' &&
+        event.data.draftType === 'config' &&
+        event.data.draftData &&
+        typeof event.data.draftData === 'object'
+      ) {
+        setPreviewDraftConfig((prev) => ({
+          ...(prev ?? {}),
+          ...(event.data.draftData as Partial<PublicAppConfig>),
+        }));
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, [isPreview]);
 
   useEffect(() => {
     if (isDemoMode) return;
@@ -73,12 +138,16 @@ function RootLayoutInner({
   const isAdmin = isDemoMode ? demo?.persona === 'admin' : storageIsAdmin;
 
   const effectiveConfig = useMemo<PublicAppConfig>(() => {
-    if (!isDemoMode || !demo) return baseConfig;
+    const withPreview =
+      isPreview && previewDraftConfig
+        ? { ...baseConfig, ...previewDraftConfig }
+        : baseConfig;
+    if (!isDemoMode || !demo) return withPreview;
     return {
-      ...baseConfig,
+      ...withPreview,
       ...demo.configOverrides,
     };
-  }, [baseConfig, demo, isDemoMode]);
+  }, [baseConfig, demo, isDemoMode, isPreview, previewDraftConfig]);
 
   const effectiveFaqs = useMemo<ContentNodeDTO[] | undefined>(() => {
     if (!isDemoMode || !demo) return baseFaqs;
@@ -101,8 +170,11 @@ function RootLayoutInner({
 
   const normalizedPathname =
     pathname && pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+  const isHomePage = normalizedPathname === '/';
   const isHeartPage = normalizedPathname === '/heart';
-  const isSlideshowPage = normalizedPathname === '/photos/slideshow';
+  const isSlideshowPage =
+    normalizedPathname === '/photos/slideshow' &&
+    isFeatureEnabled('gallery', effectiveConfig.modules);
   const isSetupPage =
     normalizedPathname === '/admin/setup' ||
     Boolean(normalizedPathname?.startsWith('/admin/setup/'));
@@ -111,6 +183,7 @@ function RootLayoutInner({
     normalizedPathname === '/admin/dashboard' ||
     Boolean(normalizedPathname?.startsWith('/admin/dashboard/')) ||
     isSetupPage;
+  const delegatesMainLandmark = isAdminDashboardPage || isSlideshowPage;
 
   const handleLogout = async () => {
     if (isDemoMode && demo) {
@@ -147,7 +220,7 @@ function RootLayoutInner({
     };
   }, [effectiveConfig, effectiveFaqs]);
 
-  const bottomToolbarClearance = isDemoMode
+  const bottomToolbarClearance = isDemoMode && !isPreview
     ? demo?.isToolbarCollapsed
       ? 'pb-16'
       : 'pb-28'
@@ -172,28 +245,50 @@ function RootLayoutInner({
               handleLogout={handleLogout}
               config={effectiveConfig}
               hasVisibleFaqs={effectiveFaqs ? effectiveFaqs.length > 0 : undefined}
+              isPreview={isPreview}
             />
           )}
-          {isAdminDashboardPage ? (
+          {delegatesMainLandmark ? (
             <div
               className={bottomToolbarClearance}
               style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}
             >
               {children}
             </div>
-          ) : (
-            <main
-              aria-label="Application Content"
-              id="main-content"
+          ) : isPreview ? (
+            <MainLandmark
+              suppressLandmark
+              role="region"
+              aria-label="Live Preview"
               className={bottomToolbarClearance}
               style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}
             >
               {children}
-            </main>
+              {isHomePage && (
+                <SiteFooter suppressLandmark>
+                  <HomeFooterContent config={effectiveConfig} />
+                </SiteFooter>
+              )}
+            </MainLandmark>
+          ) : (
+            <>
+              <MainLandmark
+                aria-label="Application Content"
+                className={!isHomePage ? bottomToolbarClearance : undefined}
+                style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}
+              >
+                {children}
+              </MainLandmark>
+              {isHomePage && (
+                <SiteFooter className={bottomToolbarClearance}>
+                  <HomeFooterContent config={effectiveConfig} />
+                </SiteFooter>
+              )}
+            </>
           )}
         </>
       )}
-      {isDemoMode && <DemoToolbar />}
+      {isDemoMode && !isPreview && <DemoToolbar />}
     </GuestHelpProvider>
   );
 }
@@ -211,6 +306,7 @@ export default function RootLayoutClient({
   config,
   faqs,
   isStaticExport = false,
+  isPreview,
 }: RootLayoutClientProps) {
   const { addToast } = useToast();
   const [queryClient] = useState(() => {
@@ -252,7 +348,7 @@ export default function RootLayoutClient({
   return (
     <QueryClientProvider client={queryClient}>
       <DemoProvider enabled={isStaticExport}>
-        <RootLayoutInner config={config} faqs={faqs}>
+        <RootLayoutInner config={config} faqs={faqs} isPreview={isPreview}>
           {children}
         </RootLayoutInner>
       </DemoProvider>

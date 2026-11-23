@@ -128,9 +128,16 @@ export default function GuestAddressPage() {
     <div className="min-h-screen bg-[var(--color-background)] px-4 py-10 sm:py-12 text-[var(--color-foreground)]">
       <div className="mx-auto w-full max-w-4xl space-y-10">
         {/* Welcome Banner */}
-        <header className="bg-white dark:bg-zinc-800 rounded-3xl shadow-md p-6 sm:p-8 border border-gray-100 dark:border-zinc-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div
+          role="region"
+          aria-labelledby="guest-portal-welcome-heading"
+          className="bg-white dark:bg-zinc-800 rounded-3xl shadow-md p-6 sm:p-8 border border-gray-100 dark:border-zinc-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+        >
           <div className="space-y-1">
-            <h1 className="text-2xl sm:text-3xl font-bold text-[var(--color-primary-text)] dark:text-red-300">
+            <h1
+              id="guest-portal-welcome-heading"
+              className="text-2xl sm:text-3xl font-bold text-[var(--color-primary-text)] dark:text-red-300"
+            >
               Guest RSVP &amp; Address Portal
             </h1>
             <p className="text-sm sm:text-base text-gray-600 dark:text-zinc-300">
@@ -161,7 +168,7 @@ export default function GuestAddressPage() {
               }
             />
           </div>
-        </header>
+        </div>
 
         {/* RSVP Deadline or Closed Status Banner */}
         {rsvpStatus && rsvpStatus.rsvpOpen && rsvpStatus.rsvpFormattedDeadline && (

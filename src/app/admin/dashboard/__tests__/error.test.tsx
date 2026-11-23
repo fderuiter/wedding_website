@@ -64,8 +64,10 @@ describe('AdminDashboardError Boundary', () => {
     expect(screen.getByRole('navigation', { name: 'Admin Navigation' })).toBeInTheDocument();
 
     // Main section renders the localized error boundary rather than full page unmounting
-    const mainElement = screen.getByRole('main');
+    const mainElement = screen.getByRole('main', { name: 'Admin Dashboard Content' });
     expect(mainElement).toBeInTheDocument();
+    expect(mainElement).toHaveAttribute('id', 'main-content');
+    expect(mainElement).toHaveAttribute('tabindex', '-1');
     expect(screen.getByRole('heading', { level: 2, name: 'Admin Dashboard Error' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Try Again' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Dashboard Overview' })).toBeInTheDocument();

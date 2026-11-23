@@ -2,7 +2,15 @@ import { render, screen, fireEvent, within, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe } from 'jest-axe';
 import HomePageClient from '../HomePageClient';
+import RootLayoutClient from '@/components/layout/RootLayoutClient';
+import { ToastProvider } from '@/components/ui/ToastProvider';
+import { a11yConfig } from '@/a11y-config';
 import type { PublicAppConfig } from '@/lib/config';
+
+jest.mock('next/navigation', () => ({
+  usePathname: () => '/',
+  useRouter: () => ({ push: jest.fn() }),
+}));
 
 // Mock framer-motion
 jest.mock('framer-motion', () => {
@@ -403,15 +411,27 @@ describe('HomePageClient', () => {
     expect(results).toHaveNoViolations();
   });
 
-  test('renders subtle accessible Admin Login link in the footer and passes axe', async () => {
-    render(<HomePageClient config={mockConfig} />);
+  test('renders subtle accessible Admin Login link in top-level SiteFooter outside main#main-content and passes axe', async () => {
+    const { container } = render(
+      <ToastProvider>
+        <RootLayoutClient config={mockConfig}>
+          <HomePageClient config={mockConfig} />
+        </RootLayoutClient>
+      </ToastProvider>
+    );
+
+    const main = screen.getByRole('main');
+    expect(main).toHaveAttribute('id', 'main-content');
+    expect(main).toHaveAttribute('tabindex', '-1');
+    expect(within(main).queryByRole('contentinfo')).not.toBeInTheDocument();
 
     const footer = screen.getByRole('contentinfo');
+    expect(main.contains(footer)).toBe(false);
     const loginLink = within(footer).getByRole('link', { name: /admin login/i });
     expect(loginLink).toBeInTheDocument();
     expect(loginLink).toHaveAttribute('href', '/admin/login');
 
-    const results = await axe(footer);
+    const results = await axe(container, a11yConfig);
     expect(results).toHaveNoViolations();
   });
 

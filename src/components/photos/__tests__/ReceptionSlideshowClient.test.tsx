@@ -2,6 +2,16 @@ import { render, screen, act, fireEvent, createEvent } from '@testing-library/re
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import { ReceptionSlideshowClient } from '../ReceptionSlideshowClient';
+import RootLayoutClient from '@/components/layout/RootLayoutClient';
+import { ToastProvider } from '@/components/ui/ToastProvider';
+import { a11yConfig } from '@/a11y-config';
+import type { PublicAppConfig } from '@/lib/config';
+
+let mockSlideshowPathname = '/photos/slideshow';
+jest.mock('next/navigation', () => ({
+  usePathname: () => mockSlideshowPathname,
+  useRouter: () => ({ push: jest.fn() }),
+}));
 
 expect.extend(toHaveNoViolations);
 
@@ -1318,5 +1328,59 @@ describe('ReceptionSlideshowClient', () => {
         process.env.NEXT_PUBLIC_BASE_PATH = previousBasePath;
       }
     }
+  });
+
+  it('composes with RootLayoutClient on /photos/slideshow to expose one top-level main#main-content, one sibling complementary QR overlay, a toolbar control bar, and zero axe violations', async () => {
+    mockSlideshowPathname = '/photos/slideshow';
+    const mockPublicConfig = {
+      partner1Name: 'Alex',
+      partner2Name: 'Taylor',
+      brideName: 'Alex',
+      groomName: 'Taylor',
+      weddingDate: new Date('2026-10-18T16:00:00Z'),
+      baseUrl: 'https://wedding.example.com',
+      modules: { gallery: true },
+      features: [],
+    } as unknown as PublicAppConfig;
+
+    const { container } = render(
+      <ToastProvider>
+        <RootLayoutClient config={mockPublicConfig}>
+          <ReceptionSlideshowClient
+            initialPhotos={samplePhotos}
+            uploadUrl="https://wedding.example.com/photos"
+          />
+        </RootLayoutClient>
+      </ToastProvider>
+    );
+
+    act(() => {
+      jest.advanceTimersByTime(50);
+    });
+    jest.useRealTimers();
+
+    const mains = screen.getAllByRole('main');
+    expect(mains).toHaveLength(1);
+    const mainLandmark = mains[0]!;
+    expect(mainLandmark).toHaveAttribute('id', 'main-content');
+    expect(mainLandmark).toHaveAttribute('tabindex', '-1');
+    expect(mainLandmark).toHaveAttribute('aria-label', 'Live Wedding Reception Slideshow');
+    expect(container.querySelectorAll('main main')).toHaveLength(0);
+
+    const qrComplementary = screen.getByRole('complementary', {
+      name: 'Guest Photo Upload QR Code',
+    });
+    expect(qrComplementary).toBeInTheDocument();
+    expect(mainLandmark.contains(qrComplementary)).toBe(false);
+
+    const toolbar = screen.getByRole('toolbar', { name: 'Slideshow Controls' });
+    expect(toolbar).toBeInTheDocument();
+    expect(mainLandmark.contains(toolbar)).toBe(true);
+
+    expect(await axe(container, a11yConfig)).toHaveNoViolations();
+
+    fireEvent.click(screen.getByTestId('slideshow-qr-close-btn'));
+    expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
+    expect(await axe(container, a11yConfig)).toHaveNoViolations();
   });
 });

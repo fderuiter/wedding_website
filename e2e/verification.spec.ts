@@ -35,9 +35,22 @@ test.describe('UI Verification', { tag: '@a11y' }, () => {
       await page.goto('/', { waitUntil: 'domcontentloaded' });
       expect(new URL(page.url()).pathname).toBe('/');
 
-      // The main content should be visible
+      // The main content should be visible, focusable, and free of nested main elements
       const mainContent = page.locator('main#main-content');
       await expect(mainContent).toBeVisible();
+      await expect(mainContent).toHaveAttribute('tabindex', '-1');
+      await expect(page.locator('main')).toHaveCount(1);
+      await expect(page.locator('main main')).toHaveCount(0);
+
+      // Top-level contentinfo footer must sit outside main#main-content
+      const siteFooter = page.getByRole('contentinfo');
+      await expect(siteFooter).toBeVisible();
+      const footerOutsideMain = await page.evaluate(() => {
+        const main = document.querySelector('main#main-content');
+        const footer = document.querySelector('footer');
+        return Boolean(main && footer && !main.contains(footer));
+      });
+      expect(footerOutsideMain).toBe(true);
 
       // Run accessibility audit
       const axeBuilder = new AxeBuilder({ page }).withTags(a11yConfig.runOnly.values);
@@ -133,6 +146,8 @@ test.describe('UI Verification', { tag: '@a11y' }, () => {
     await expect(
       page.getByRole('heading', { name: 'Interactive Seating Chart & Reception Floorplan' })
     ).toBeVisible();
+    await expect(page.locator('main')).toHaveCount(1);
+    await expect(page.locator('main main')).toHaveCount(0);
 
     const axeBuilder = new AxeBuilder({ page }).withTags(a11yConfig.runOnly.values);
     if (a11yConfig.rules) {
@@ -141,6 +156,12 @@ test.describe('UI Verification', { tag: '@a11y' }, () => {
     const results = await axeBuilder.analyze();
     recordRouteViolations('/admin/dashboard/seating-chart', results.violations);
     expect(results.violations).toEqual([]);
+
+    await page.emulateMedia({ media: 'print' });
+    await expect(
+      page.getByRole('region', { name: 'Reception Seating Roster & Floorplan' })
+    ).toBeVisible();
+    await page.emulateMedia({ media: 'screen' });
   });
 
   test('should pass axe accessibility scan including label-content-name-mismatch on /photos/slideshow in light and dark modes', async ({
@@ -172,6 +193,14 @@ test.describe('UI Verification', { tag: '@a11y' }, () => {
         page.getByRole('button', { name: '10s cycle photo every 10 seconds' })
       ).toBeVisible();
 
+      await expect(page.locator('main#main-content')).toHaveAttribute('tabindex', '-1');
+      await expect(page.locator('main')).toHaveCount(1);
+      await expect(page.locator('main main')).toHaveCount(0);
+      await expect(
+        page.getByRole('complementary', { name: 'Guest Photo Upload QR Code' })
+      ).toBeVisible();
+      await expect(page.getByRole('toolbar', { name: 'Slideshow Controls' })).toBeVisible();
+
       const axeBuilder = new AxeBuilder({ page })
         .withTags(a11yConfig.runOnly.values)
         .options({
@@ -182,6 +211,80 @@ test.describe('UI Verification', { tag: '@a11y' }, () => {
         });
       const results = await axeBuilder.analyze();
       recordRouteViolations(`/photos/slideshow (${mode})`, results.violations);
+      expect(results.violations).toEqual([]);
+    }
+  });
+
+  test('should pass axe accessibility scan on /guest/collect with one top-level main#main-content and zero violations', async ({
+    context,
+    page,
+  }) => {
+    await seedGuestAuthCookies(context);
+
+    await page.goto('/guest/collect', { waitUntil: 'domcontentloaded' });
+    expect(new URL(page.url()).pathname).toBe('/guest/collect');
+    await expect(page.getByRole('heading', { name: 'Mailing Address Form' })).toBeVisible();
+    await expect(page.locator('main')).toHaveCount(1);
+    await expect(page.locator('main main')).toHaveCount(0);
+    await expect(page.locator('main#main-content')).toHaveAttribute('tabindex', '-1');
+
+    const axeBuilder = new AxeBuilder({ page })
+      .withTags(a11yConfig.runOnly.values)
+      .options({ rules: a11yConfig.rules });
+    const results = await axeBuilder.analyze();
+    recordRouteViolations('/guest/collect', results.violations);
+    expect(results.violations).toEqual([]);
+  });
+
+  test('should pass axe accessibility scan across all admin studio preview routes without duplicate iframe landmarks', async ({
+    context,
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await seedAdminAndGuestAuthCookies(context);
+
+    const studioPreviewRoutes = [
+      '/admin/dashboard/settings',
+      '/admin/dashboard/content',
+      '/admin/dashboard/wedding-party',
+      '/admin/dashboard/attractions',
+    ] as const;
+
+    for (const studioRoute of studioPreviewRoutes) {
+      await page.goto(studioRoute, { waitUntil: 'domcontentloaded' });
+      expect(new URL(page.url()).pathname).toBe(studioRoute);
+
+      const previewIframe = page.locator('iframe[title="Live Preview"]');
+      await expect(previewIframe).toBeVisible();
+
+      const previewFrame = page.frameLocator('iframe[title="Live Preview"]');
+      await expect(previewFrame.getByRole('region', { name: 'Live Preview' })).toBeAttached({
+        timeout: 15_000,
+      });
+      await expect(previewFrame.locator('h1').first()).toBeVisible({
+        timeout: 15_000,
+      });
+      await expect
+        .poll(
+          async () =>
+            previewFrame
+              .locator('#home-main > section:first-child [style*="opacity"]')
+              .evaluateAll((els) => els.every((el) => Number(getComputedStyle(el).opacity) >= 0.99)),
+          { timeout: 10_000 }
+        )
+        .toBe(true);
+      await expect(previewFrame.locator('main')).toHaveCount(0);
+      await expect(previewFrame.locator('header')).toHaveCount(0);
+      await expect(previewFrame.locator('footer')).toHaveCount(0);
+
+      await expect(page.locator('main')).toHaveCount(1);
+      await expect(page.locator('main main')).toHaveCount(0);
+
+      const axeBuilder = new AxeBuilder({ page })
+        .withTags(a11yConfig.runOnly.values)
+        .options({ rules: a11yConfig.rules });
+      const results = await axeBuilder.analyze();
+      recordRouteViolations(studioRoute, results.violations);
       expect(results.violations).toEqual([]);
     }
   });

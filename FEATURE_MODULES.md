@@ -80,7 +80,7 @@ export const ModuleConfigSchema = z.object({
   - `/things-to-do` (`attractions`)
   - `/photos` and `/photos/slideshow` (`gallery`)
   - `/heart` (`interactive3D`)
-- **Homepage (`/`) Conditional Widgets & Schedule Fallback ([src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L290-L474) & [src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L571-L620))**:
+- **Homepage (`/`) Conditional Widgets & Schedule Fallback ([src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L290-L474), [src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L571-L597), & [src/components/home/HomeFooterContent.tsx](src/components/home/HomeFooterContent.tsx))**:
   - Renders the countdown widget only when `config.showCountdown && isFeatureEnabled('countdown', config.modules)`.
   - Renders the Add-to-Calendar button only when `config.showAddToCalendar && isFeatureEnabled('addToCalendar', config.modules)`.
   - In the `details` section ([src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L290-L345)), renders `InteractiveTimeline` when structured `Schedule` or `startTime` entries exist in `contentNodes`, and falls back to `Logistics` ceremony/reception summary cards (`ceremonyTitle`, `receptionTitle`) when no structured timeline entries are present.

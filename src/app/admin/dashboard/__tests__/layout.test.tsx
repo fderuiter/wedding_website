@@ -1,9 +1,13 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe } from 'jest-axe';
 import AdminDashboardLayout from '../layout';
 import { AdminNav } from '../AdminNav';
+import RootLayoutClient from '@/components/layout/RootLayoutClient';
+import { ThemeProvider } from '@/components/ThemeProvider';
 import { ToastProvider } from '@/components/ui/ToastProvider';
-import { getAppConfig } from '@/lib/config';
+import { a11yConfig } from '@/a11y-config';
+import { getAppConfig, type PublicAppConfig } from '@/lib/config';
 
 let mockPathname = '/admin/dashboard';
 
@@ -63,15 +67,17 @@ describe('AdminDashboardLayout and AdminNav', () => {
     expect(settingsLink).not.toHaveAttribute('aria-current');
   });
 
-  it('renders a semantic <main> landmark element in layout', async () => {
+  it('renders a semantic <main> landmark element with id="main-content" and tabIndex="-1" in layout', async () => {
     const layoutElement = await AdminDashboardLayout({
       children: <div data-testid="test-child">Admin Content</div>,
     });
 
     render(<ToastProvider>{layoutElement}</ToastProvider>);
 
-    const mainElement = screen.getByRole('main');
+    const mainElement = screen.getByRole('main', { name: 'Admin Dashboard Content' });
     expect(mainElement).toBeInTheDocument();
+    expect(mainElement).toHaveAttribute('id', 'main-content');
+    expect(mainElement).toHaveAttribute('tabindex', '-1');
     expect(mainElement).toHaveTextContent('Admin Content');
   });
 
@@ -110,5 +116,106 @@ describe('AdminDashboardLayout and AdminNav', () => {
     expect(within(navElement).getByRole('link', { name: 'Invitation Codes' })).toBeInTheDocument();
     expect(within(navElement).queryByRole('link', { name: 'Registry' })).not.toBeInTheDocument();
     expect(within(navElement).queryByRole('link', { name: 'Thank-You Notes' })).not.toBeInTheDocument();
+  });
+
+  it('composes with RootLayoutClient to expose one top-level main#main-content after Navbar, AdminNav, and SampleDataBanner with zero axe violations', async () => {
+    mockPathname = '/admin/dashboard';
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        hasSampleData: true,
+        counts: { guests: 5, weddingParty: 3, faqs: 4 },
+      }),
+    }) as jest.Mock;
+
+    try {
+      const publicConfig = {
+        partner1Name: 'Alex',
+        partner2Name: 'Taylor',
+        brideName: 'Alex',
+        groomName: 'Taylor',
+        weddingDate: new Date('2026-10-18T16:00:00Z'),
+        venueName: 'Grand Conservatory',
+        venueAddress: '100 Main St',
+        venueCity: 'Chicago',
+        venueState: 'IL',
+        venueZip: '60601',
+        latitude: 41.8781,
+        longitude: -87.6298,
+        storyText: 'Our story',
+        venueDescription: 'Venue details',
+        travelAdvice: 'Travel advice',
+        heroTitle: 'Alex & Taylor',
+        heroSubtitle: 'Celebrate with us',
+        seoTitle: 'Alex & Taylor Wedding',
+        seoDescription: 'Wedding details',
+        showCountdown: true,
+        showAddToCalendar: true,
+        rsvpOpen: true,
+        isRsvpOpen: true,
+        baseUrl: 'https://alexandtaylor.example',
+        timezone: 'America/Chicago',
+        modules: {},
+        features: [],
+      } as unknown as PublicAppConfig;
+
+      const layoutElement = await AdminDashboardLayout({
+        children: (
+          <section aria-labelledby="dashboard-overview-heading">
+            <h2 id="dashboard-overview-heading">Overview Metrics</h2>
+            <p>Active RSVPs</p>
+          </section>
+        ),
+      });
+
+      const { container } = render(
+        <ThemeProvider config={publicConfig}>
+          <ToastProvider>
+            <RootLayoutClient config={publicConfig}>
+              {layoutElement}
+            </RootLayoutClient>
+          </ToastProvider>
+        </ThemeProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('region', { name: 'Sample Data Notification' })).toBeInTheDocument();
+      });
+
+      const mains = screen.getAllByRole('main');
+      expect(mains).toHaveLength(1);
+      const mainElement = mains[0]!;
+      expect(mainElement).toHaveAttribute('id', 'main-content');
+      expect(mainElement).toHaveAttribute('tabindex', '-1');
+      expect(container.querySelectorAll('main main')).toHaveLength(0);
+
+      const banners = screen.getAllByRole('banner');
+      expect(banners).toHaveLength(1);
+      expect(banners[0]).toHaveAttribute('aria-label', 'Site header');
+
+      const adminRegion = screen.getByRole('region', { name: 'Admin Dashboard' });
+      const adminNav = screen.getByRole('navigation', { name: 'Admin Navigation' });
+      const sampleBanner = screen.getByRole('region', { name: 'Sample Data Notification' });
+
+      expect(
+        banners[0]!.compareDocumentPosition(mainElement) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy();
+      expect(
+        adminRegion.compareDocumentPosition(mainElement) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy();
+      expect(
+        adminNav.compareDocumentPosition(mainElement) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy();
+      expect(
+        sampleBanner.compareDocumentPosition(mainElement) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy();
+
+      const axeResults = await axe(container, a11yConfig);
+      expect(axeResults).toHaveNoViolations();
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 });

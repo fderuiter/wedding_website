@@ -1,6 +1,15 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import { Container, Card, Heading, type HeadingProps } from '../Layout';
+import {
+  Container,
+  Card,
+  Heading,
+  MainLandmark,
+  SiteFooter,
+  type HeadingProps,
+  type MainLandmarkProps,
+  type SiteFooterProps,
+} from '../Layout';
 
 describe('Layout Components', () => {
   test('Layout components render without crashing', () => {
@@ -132,5 +141,74 @@ describe('Layout Components', () => {
 
     expect(ref.current).toBeInstanceOf(HTMLHeadingElement);
     expect(ref.current?.tagName).toBe(level.toUpperCase());
+  });
+
+  test('MainLandmark renders main#main-content with tabIndex=-1 by default, forwards ref, and supports suppressLandmark', () => {
+    const mainRef = React.createRef<HTMLElement>();
+    const mainProps: MainLandmarkProps = {
+      'aria-label': 'Primary Content',
+      className: 'custom-main',
+      style: { paddingTop: '64px' },
+    };
+
+    const { rerender } = render(
+      <MainLandmark ref={mainRef} {...mainProps}>
+        Main Child
+      </MainLandmark>
+    );
+
+    const mainEl = screen.getByRole('main', { name: 'Primary Content' });
+    expect(mainEl).toHaveAttribute('id', 'main-content');
+    expect(mainEl).toHaveAttribute('tabindex', '-1');
+    expect(mainEl).toHaveClass('custom-main');
+    expect(mainEl).toHaveStyle({ paddingTop: '64px' });
+    expect(mainRef.current).toBe(mainEl);
+
+    rerender(
+      <MainLandmark
+        ref={mainRef}
+        suppressLandmark
+        role="region"
+        aria-label="Preview Content"
+        className="preview-wrapper"
+      >
+        Preview Child
+      </MainLandmark>
+    );
+
+    expect(screen.queryByRole('main')).not.toBeInTheDocument();
+    const previewEl = screen.getByRole('region', { name: 'Preview Content' });
+    expect(previewEl.tagName).toBe('DIV');
+    expect(previewEl).toHaveAttribute('id', 'main-content');
+    expect(previewEl).toHaveAttribute('tabindex', '-1');
+    expect(previewEl).toHaveClass('preview-wrapper');
+  });
+
+  test('SiteFooter renders top-level contentinfo footer, forwards ref, and supports suppressLandmark', () => {
+    const footerRef = React.createRef<HTMLElement>();
+    const footerProps: SiteFooterProps = {
+      className: 'pb-16',
+    };
+
+    const { rerender } = render(
+      <SiteFooter ref={footerRef} {...footerProps}>
+        Footer Text
+      </SiteFooter>
+    );
+
+    const footerEl = screen.getByRole('contentinfo');
+    expect(footerEl.tagName).toBe('FOOTER');
+    expect(footerEl).toHaveClass('pb-16');
+    expect(footerEl).toHaveTextContent('Footer Text');
+    expect(footerRef.current).toBe(footerEl);
+
+    rerender(
+      <SiteFooter suppressLandmark data-testid="suppressed-footer">
+        Preview Footer
+      </SiteFooter>
+    );
+
+    expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument();
+    expect(screen.getByTestId('suppressed-footer').tagName).toBe('DIV');
   });
 });
