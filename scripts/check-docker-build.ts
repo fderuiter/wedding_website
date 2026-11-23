@@ -663,7 +663,6 @@ function checkDockerfileContent(
         'postcss.config.mjs',
         'tsconfig.json',
         'tsconfig.build.json',
-        'next-env.d.ts',
         'assets',
         'public',
         'src',
@@ -1574,10 +1573,16 @@ export function checkDockerBuild(
     });
   }
 
-  // 7. Check standalone build artifacts (.next/standalone) when present or required (--require-standalone)
+  // 7. Check standalone build artifacts (.next/standalone) when present from a production build or required (--require-standalone)
   const nextDir = path.join(rootDir, '.next');
   const standaloneDir = path.join(nextDir, 'standalone');
   const hasNextDir = fs.existsSync(nextDir) && fs.statSync(nextDir).isDirectory();
+  const hasStandaloneDir =
+    fs.existsSync(standaloneDir) && fs.statSync(standaloneDir).isDirectory();
+  const hasProductionBuildMarker =
+    fs.existsSync(path.join(nextDir, 'BUILD_ID')) ||
+    fs.existsSync(path.join(nextDir, 'routes-manifest.json')) ||
+    hasStandaloneDir;
 
   if (requireStandalone && !hasNextDir) {
     violations.push({
@@ -1588,9 +1593,7 @@ export function checkDockerBuild(
       reason:
         ".next build output directory is missing while --require-standalone is enabled. Run 'npm run build' first.",
     });
-  } else if (requireStandalone || hasNextDir) {
-    const hasStandaloneDir =
-      fs.existsSync(standaloneDir) && fs.statSync(standaloneDir).isDirectory();
+  } else if (requireStandalone || hasProductionBuildMarker) {
     if (!hasStandaloneDir) {
       violations.push({
         filePath: '.next/standalone',

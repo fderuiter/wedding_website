@@ -54,6 +54,8 @@
     "node_modules",
     "jest.setup.js",
     "out",
+    ".next-export",
+    ".next/export-stage",
     "storybook-static",
     "coverage",
     "playwright-report",
