@@ -21128,7 +21128,44 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "status",
+                    "timestamp",
+                    "database",
+                    "error"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "degraded"
+                      ]
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "database": {
+                      "type": "string",
+                      "enum": [
+                        "disconnected"
+                      ]
+                    },
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "Database connection failed"
+                      ]
+                    }
+                  }
                 }
               }
             }
