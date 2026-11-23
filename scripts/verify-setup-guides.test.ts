@@ -8,6 +8,7 @@ function copyFixtureFiles(srcRoot: string, destRoot: string): void {
     '.nvmrc',
     '.npmrc',
     '.env.example',
+    '.env.ci',
     '.env.test',
     'prisma.config.ts',
     'package.json',
@@ -334,7 +335,26 @@ describe('verify-setup-guides contract check', () => {
     const envExamplePath = path.join(tempDir, '.env.example');
     fs.writeFileSync(
       envExamplePath,
-      `${fs.readFileSync(envExamplePath, 'utf8')}\n# legacy scrypt:c2FsdA==:aGFzaA==\n`
+      `${fs
+        .readFileSync(envExamplePath, 'utf8')
+        .replace('# NODE_ENV=development', 'NODE_ENV=development')
+        .replace('DB_PASSWORD="wedding123"', '# DB_PASSWORD="wedding123"')}\n# legacy scrypt:c2FsdA==:aGFzaA==\n`
+    );
+
+    const playwrightPath = path.join(tempDir, 'playwright.config.ts');
+    fs.writeFileSync(
+      playwrightPath,
+      fs
+        .readFileSync(playwrightPath, 'utf8')
+        .replace("NODE_ENV: process.env.CI ? 'production' : 'development',", "NODE_ENV: 'production',")
+    );
+
+    const readmePath = path.join(tempDir, 'README.md');
+    fs.writeFileSync(
+      readmePath,
+      fs
+        .readFileSync(readmePath, 'utf8')
+        .replace('    docker compose up -d db', '    DB_PASSWORD=wedding123 docker compose up -d db')
     );
 
     const errors = verifySetupGuides(tempDir);
@@ -342,7 +362,13 @@ describe('verify-setup-guides contract check', () => {
       expect.arrayContaining([
         expect.stringContaining('docker-compose.yml: Must not declare default fallback secret ${DB_PASSWORD:-...}'),
         expect.stringContaining('docker-compose.yml: Must bind PostgreSQL strictly to 127.0.0.1:${DB_PORT:-5432}:5432'),
-        expect.stringContaining('scripts/test-container.mjs: Must invoke isolated "docker-compose.ci.yml" override manifest'),
+        expect.stringContaining(
+          'scripts/test-container.mjs: Must pass "--env-file .env.ci" with isolated "docker-compose.ci.yml" override manifest'
+        ),
+        expect.stringContaining('.env.example: Must omit active NODE_ENV assignment'),
+        expect.stringContaining('.env.example: Must define active DB_PASSWORD="wedding123"'),
+        expect.stringContaining('playwright.config.ts: Must set webServer.env.NODE_ENV to "development" locally'),
+        expect.stringContaining('README.md: Must prescribe bare "docker compose up -d db"'),
         expect.stringContaining('.env.example: Must not contain invalid 4-byte placeholder hash'),
       ])
     );
