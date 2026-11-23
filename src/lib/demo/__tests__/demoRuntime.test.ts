@@ -479,13 +479,62 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
           await window.fetch('/api/admin/seating/assign', {
             method: 'POST',
             body: JSON.stringify({
-              assignments: [{ invitationCodeId: guestsList[0].id, tableId: newTable.id, seatNumber: 2 }],
+              assignments: [
+                {
+                  invitationCodeId: guestsList[0].id,
+                  tableId: newTable.id,
+                  seatNumber: 2,
+                  plusOneSeatNumbers: [3],
+                },
+              ],
             }),
+          })
+        ).status
+      ).toBe(200);
+      expect(
+        (
+          await window.fetch('/api/admin/seating/assign', {
+            method: 'POST',
+            body: JSON.stringify({
+              invitationCodeIds: [guestsList[0].id],
+              tableId: newTable.id,
+              action: 'assignBatch',
+            }),
+          })
+        ).status
+      ).toBe(200);
+      expect(
+        (
+          await window.fetch('/api/admin/seating/assign', {
+            method: 'POST',
+            body: JSON.stringify({
+              invitationCodeIds: [guestsList[0].id],
+              tableId: null,
+              action: 'clearTable',
+            }),
+          })
+        ).status
+      ).toBe(200);
+      const landmarkTable = (
+        await (
+          await window.fetch('/api/admin/seating-tables', {
+            method: 'POST',
+            body: JSON.stringify({ name: 'Dance Floor', shape: 'dance-floor', capacity: 0 }),
+          })
+        ).json()
+      ).data;
+      expect(landmarkTable.capacity).toBe(0);
+      expect(
+        (
+          await window.fetch('/api/admin/seating/auto-assign', {
+            method: 'POST',
+            body: JSON.stringify({ keepHouseholdsIntact: true }),
           })
         ).status
       ).toBe(200);
       // Deleting table also unassigns seated guests on that table
       expect((await window.fetch(`/api/admin/seating-tables/${newTable.id}`, { method: 'DELETE' })).status).toBe(200);
+      expect((await window.fetch(`/api/admin/seating-tables/${landmarkTable.id}`, { method: 'DELETE' })).status).toBe(200);
       expect((await window.fetch('/api/admin/seating-tables/missing', { method: 'DELETE' })).status).toBe(404);
 
       expect(

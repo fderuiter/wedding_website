@@ -24,6 +24,11 @@ import {
   updateDemoGuestAddress,
 } from './demoStore';
 
+const DEMO_LANDMARK_SHAPES = new Set<string>(['dance-floor', 'bar', 'dj', 'buffet', 'cake']);
+function isDemoLandmarkShape(shape?: string): boolean {
+  return Boolean(shape && DEMO_LANDMARK_SHAPES.has(shape));
+}
+
 function jsonResponse(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), {
     status,
@@ -422,22 +427,34 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
     }
     if (method === 'POST') {
       const body = await parseJsonBody(init);
+      const validShapes: ReadonlyArray<SeatingTableDTO['shape']> = [
+        'round',
+        'rectangular',
+        'square',
+        'head',
+        'sweetheart',
+        'dance-floor',
+        'bar',
+        'dj',
+        'buffet',
+        'cake',
+      ];
+      const resolvedShape: SeatingTableDTO['shape'] =
+        typeof body.shape === 'string' &&
+        validShapes.includes(body.shape as SeatingTableDTO['shape'])
+          ? (body.shape as SeatingTableDTO['shape'])
+          : 'round';
+      const isLandmark = isDemoLandmarkShape(resolvedShape);
       const newTable: SeatingTableDTO = {
         id: `demo-table-${Date.now()}`,
-        name: String(body.name || 'New Table'),
-        shape:
-          body.shape === 'rectangular' ||
-          body.shape === 'square' ||
-          body.shape === 'head' ||
-          body.shape === 'sweetheart'
-            ? body.shape
-            : 'round',
-        capacity: Number(body.capacity || 8),
-        x: Number(body.x || 200),
-        y: Number(body.y || 200),
-        width: Number(body.width || 120),
-        height: Number(body.height || 120),
-        rotation: Number(body.rotation || 0),
+        name: String(body.name || (isLandmark ? 'Landmark' : 'New Table')),
+        shape: resolvedShape,
+        capacity: isLandmark ? 0 : typeof body.capacity === 'number' ? body.capacity : 8,
+        x: typeof body.x === 'number' ? body.x : 200,
+        y: typeof body.y === 'number' ? body.y : 200,
+        width: typeof body.width === 'number' ? body.width : 120,
+        height: typeof body.height === 'number' ? body.height : 120,
+        rotation: typeof body.rotation === 'number' ? body.rotation : 0,
         isSample: false,
         invitationCodes: [],
       };
@@ -456,12 +473,22 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
 
     if (method === 'PUT' || method === 'PATCH') {
       const body = await parseJsonBody(init);
+      const nextShape =
+        typeof body.shape === 'string' ? (body.shape as SeatingTableDTO['shape']) : existing.shape;
+      const isLandmark = isDemoLandmarkShape(nextShape);
       const updated: SeatingTableDTO = {
         ...existing,
         ...(typeof body.name === 'string' ? { name: body.name } : {}),
-        ...(typeof body.capacity === 'number' ? { capacity: body.capacity } : {}),
+        shape: nextShape,
+        capacity: isLandmark
+          ? 0
+          : typeof body.capacity === 'number'
+            ? body.capacity
+            : existing.capacity,
         ...(typeof body.x === 'number' ? { x: body.x } : {}),
         ...(typeof body.y === 'number' ? { y: body.y } : {}),
+        ...(typeof body.width === 'number' ? { width: body.width } : {}),
+        ...(typeof body.height === 'number' ? { height: body.height } : {}),
         ...(typeof body.rotation === 'number' ? { rotation: body.rotation } : {}),
       };
       mutateActiveDataset((current) => ({
@@ -475,7 +502,9 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
         ...current,
         seatingTables: current.seatingTables.filter((t) => t.id !== tableId),
         guests: current.guests.map((g) =>
-          g.tableId === tableId ? { ...g, tableId: null, seatNumber: null } : g
+          g.tableId === tableId
+            ? { ...g, tableId: null, seatNumber: null, plusOneSeatNumbers: [] }
+            : g
         ),
       }));
       return jsonResponse({ success: true });
@@ -484,11 +513,63 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
 
   if (path === '/api/admin/seating/assign' && method === 'POST') {
     const body = await parseJsonBody(init);
+    if (Array.isArray(body.invitationCodeIds)) {
+      const targetIds = new Set(
+        body.invitationCodeIds.filter((id): id is string => typeof id === 'string')
+      );
+      const targetTableId = typeof body.tableId === 'string' ? body.tableId : null;
+      const updatedGuests: InvitationCodeDTO[] = [];
+      mutateActiveDataset((current) => {
+        const occupiedOnTable = new Set<number>(
+          targetTableId
+            ? current.guests
+              .filter((g) => g.tableId === targetTableId && !targetIds.has(g.id))
+              .flatMap((g) => [
+                ...(typeof g.seatNumber === 'number' ? [g.seatNumber] : []),
+                ...(Array.isArray(g.plusOneSeatNumbers) ? g.plusOneSeatNumbers : []),
+              ])
+            : []
+        );
+        let nextSeat = 1;
+        const claimSeat = () => {
+          while (occupiedOnTable.has(nextSeat)) nextSeat += 1;
+          occupiedOnTable.add(nextSeat);
+          return nextSeat;
+        };
+        const nextGuests = current.guests.map((g) => {
+          if (!targetIds.has(g.id)) return g;
+          if (!targetTableId) {
+            const cleared: InvitationCodeDTO = {
+              ...g,
+              tableId: null,
+              seatNumber: null,
+              plusOneSeatNumbers: [],
+            };
+            updatedGuests.push(cleared);
+            return cleared;
+          }
+          const primarySeat = claimSeat();
+          const plusOneCount = Math.max(0, g.plusOneAllocations ?? 0);
+          const plusOneSeatNumbers = Array.from({ length: plusOneCount }, () => claimSeat());
+          const assigned: InvitationCodeDTO = {
+            ...g,
+            tableId: targetTableId,
+            seatNumber: primarySeat,
+            plusOneSeatNumbers,
+          };
+          updatedGuests.push(assigned);
+          return assigned;
+        });
+        return { ...current, guests: nextGuests };
+      });
+      return jsonResponse({ success: true, data: { updatedGuests } });
+    }
     if (Array.isArray(body.assignments)) {
       const updates = body.assignments as Array<{
         invitationCodeId?: string;
         tableId?: string | null;
         seatNumber?: number | null;
+        plusOneSeatNumbers?: number[];
       }>;
       const updateMap = new Map(
         updates
@@ -500,10 +581,15 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
         const nextGuests = current.guests.map((g) => {
           const match = updateMap.get(g.id);
           if (!match) return g;
+          const nextTableId = match.tableId ?? null;
           const next: InvitationCodeDTO = {
             ...g,
-            tableId: match.tableId ?? null,
-            seatNumber: match.seatNumber ?? null,
+            tableId: nextTableId,
+            seatNumber: nextTableId ? (match.seatNumber ?? null) : null,
+            plusOneSeatNumbers:
+              nextTableId && Array.isArray(match.plusOneSeatNumbers)
+                ? match.plusOneSeatNumbers.filter((n): n is number => typeof n === 'number')
+                : [],
           };
           updatedGuests.push(next);
           return next;
@@ -514,12 +600,16 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
     }
     const guestId = String(body.invitationCodeId || '');
     const tableId = typeof body.tableId === 'string' ? body.tableId : null;
-    const seatNumber = typeof body.seatNumber === 'number' ? body.seatNumber : null;
+    const seatNumber = tableId && typeof body.seatNumber === 'number' ? body.seatNumber : null;
+    const plusOneSeatNumbers =
+      tableId && Array.isArray(body.plusOneSeatNumbers)
+        ? body.plusOneSeatNumbers.filter((n): n is number => typeof n === 'number')
+        : [];
     let updatedGuest: InvitationCodeDTO | null = null;
     mutateActiveDataset((current) => {
       const nextGuests = current.guests.map((g) => {
         if (g.id !== guestId) return g;
-        const next: InvitationCodeDTO = { ...g, tableId, seatNumber };
+        const next: InvitationCodeDTO = { ...g, tableId, seatNumber, plusOneSeatNumbers };
         updatedGuest = next;
         return next;
       });
@@ -527,6 +617,62 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
     });
     if (!updatedGuest) return jsonResponse({ error: 'Guest not found' }, 404);
     return jsonResponse({ success: true, data: updatedGuest });
+  }
+
+  if (path === '/api/admin/seating/auto-assign' && method === 'POST') {
+    const assignedGuests: InvitationCodeDTO[] = [];
+    let unassignedCount = 0;
+    mutateActiveDataset((current) => {
+      const guestTables = current.seatingTables.filter((t) => !isDemoLandmarkShape(t.shape));
+      const occupiedByTable = new Map<string, Set<number>>();
+      for (const table of guestTables) {
+        occupiedByTable.set(table.id, new Set<number>());
+      }
+      for (const g of current.guests) {
+        if (g.tableId && occupiedByTable.has(g.tableId)) {
+          const set = occupiedByTable.get(g.tableId)!;
+          if (typeof g.seatNumber === 'number') set.add(g.seatNumber);
+          if (Array.isArray(g.plusOneSeatNumbers)) {
+            for (const ps of g.plusOneSeatNumbers) set.add(ps);
+          }
+        }
+      }
+      const nextGuests = current.guests.map((g) => {
+        if (g.tableId) return g;
+        const needed = 1 + Math.max(0, g.plusOneAllocations ?? 0);
+        const targetTable = guestTables.find((t) => {
+          const occupied = occupiedByTable.get(t.id)!;
+          return t.capacity - occupied.size >= needed;
+        });
+        if (!targetTable) {
+          unassignedCount += 1;
+          return g;
+        }
+        const occupied = occupiedByTable.get(targetTable.id)!;
+        const claim = () => {
+          let s = 1;
+          while (occupied.has(s)) s += 1;
+          occupied.add(s);
+          return s;
+        };
+        const seatNumber = claim();
+        const plusOneSeatNumbers = Array.from({ length: needed - 1 }, () => claim());
+        const updated: InvitationCodeDTO = {
+          ...g,
+          tableId: targetTable.id,
+          seatNumber,
+          plusOneSeatNumbers,
+        };
+        assignedGuests.push(updated);
+        return updated;
+      });
+      return { ...current, guests: nextGuests };
+    });
+    return jsonResponse({
+      assignedCount: assignedGuests.length,
+      unassignedCount,
+      assignedGuests,
+    });
   }
 
   if (path === '/api/admin/invitation-codes/catalog' || path === '/api/admin/invitation-codes') {
