@@ -60,8 +60,30 @@ function decodeStrictBase64ByteLength(b64: string): number | null {
   }
 }
 
+function stripEnvQuotes(val: string): string {
+  const trimmed = val.trim();
+  if (
+    trimmed.length >= 2 &&
+    ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+      (trimmed.startsWith("'") && trimmed.endsWith("'")))
+  ) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+}
+
+function isCloudflareR2ApiEndpoint(endpoint: string): boolean {
+  try {
+    const host = new URL(endpoint).hostname.toLowerCase();
+    return host === 'r2.cloudflarestorage.com' || host.endsWith('.r2.cloudflarestorage.com');
+  } catch {
+    return /(?:^|\/\/|\.)r2\.cloudflarestorage\.com(?:[:/]|$)/i.test(endpoint);
+  }
+}
+
 function isValidScryptAdminPassword(val: string): boolean {
-  const parts = val.split(':');
+  const normalized = stripEnvQuotes(val);
+  const parts = normalized.split(':');
   if (parts.length !== 3 || parts[0] !== 'scrypt') {
     return false;
   }
@@ -72,8 +94,8 @@ function isValidScryptAdminPassword(val: string): boolean {
 
 function normalizeOptionalEnv(val: string | undefined): string | undefined {
   if (!val) return undefined;
-  const trimmed = val.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
+  const unquoted = stripEnvQuotes(val);
+  return unquoted.length > 0 ? unquoted : undefined;
 }
 
 function parseTrustProxy(val: unknown): boolean | number {
@@ -84,7 +106,7 @@ function parseTrustProxy(val: unknown): boolean | number {
     return val === 0 ? false : val;
   }
   if (typeof val === 'string') {
-    const trimmed = val.trim().toLowerCase();
+    const trimmed = stripEnvQuotes(val).toLowerCase();
     if (trimmed === '' || trimmed === 'false' || trimmed === '0') return false;
     if (trimmed === 'true') return true;
     if (/^\d+$/.test(trimmed)) {
@@ -125,14 +147,15 @@ const isBuildTime = isEdge ||
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required').refine(val => {
-    return isValidPostgresUrl(val);
+  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required').transform(stripEnvQuotes).refine(val => {
+    return val.length > 0 && isValidPostgresUrl(val);
   }, {
     message: 'DATABASE_URL must be a valid PostgreSQL URL',
   }).transform(val => normalizePostgresUrl(val)),
   POSTGRES_URL_NON_POOLING: z.string().optional().refine(val => {
-    if (!val) return true;
-    return isValidPostgresUrl(val);
+    const normalized = normalizeOptionalEnv(val);
+    if (!normalized) return true;
+    return isValidPostgresUrl(normalized);
   }, {
     message: 'POSTGRES_URL_NON_POOLING must be a valid PostgreSQL URL',
   }).transform(val => {
@@ -142,11 +165,12 @@ const envSchema = z.object({
   ADMIN_PASSWORD: z
     .string()
     .min(1, 'ADMIN_PASSWORD is required')
+    .transform(stripEnvQuotes)
     .refine(isValidScryptAdminPassword, {
       message:
         'ADMIN_PASSWORD must be in the format scrypt:[16-byte saltBase64]:[64-byte keyBase64]',
     }),
-  ALLOWED_HOSTS: z.string().default('localhost,127.0.0.1,*.localhost').refine(val => {
+  ALLOWED_HOSTS: z.string().default('localhost,127.0.0.1,*.localhost').transform(stripEnvQuotes).refine(val => {
     if (!val || typeof val !== 'string') return false;
     const hosts = val.split(',').map(h => h.trim()).filter(Boolean);
     if (hosts.length === 0) return false;
@@ -157,10 +181,16 @@ const envSchema = z.object({
     message: 'ALLOWED_HOSTS must be a non-empty comma-separated list of valid host domains or wildcard patterns',
   }),
   MULTISITE_ENABLED: z.union([z.boolean(), z.string()])
-    .transform(val => val === true || val === 'true' || val === '1')
+    .transform(val => {
+      const normalized = typeof val === 'string' ? stripEnvQuotes(val) : val;
+      return normalized === true || normalized === 'true' || normalized === '1';
+    })
     .default(false),
   RUN_MIGRATIONS: z.union([z.boolean(), z.string()])
-    .transform(val => val === true || val === 'true' || val === '1')
+    .transform(val => {
+      const normalized = typeof val === 'string' ? stripEnvQuotes(val) : val;
+      return normalized === true || normalized === 'true' || normalized === '1';
+    })
     .default(false),
   TRUST_PROXY: z.union([z.boolean(), z.number().int().min(0), z.string()])
     .optional()
@@ -168,15 +198,18 @@ const envSchema = z.object({
     .refine(val => {
       if (typeof val === 'boolean') return true;
       if (typeof val === 'number') return Number.isInteger(val) && val >= 0;
-      const trimmed = val.trim().toLowerCase();
+      const trimmed = stripEnvQuotes(val).toLowerCase();
       return trimmed === '' || trimmed === 'true' || trimmed === 'false' || /^\d+$/.test(trimmed);
     }, {
       message: 'TRUST_PROXY must be true, false, or a non-negative integer hop count',
     })
     .transform((val): boolean | number => parseTrustProxy(val)),
-  GUEST_PASSCODE: z.string().default('wedding2026'),
-  GUEST_SESSION_SECRET: z.string().default('default-guest-session-secret'),
-  HISTORY_VERSION_LIMIT: z.coerce.number().min(1).default(50),
+  GUEST_PASSCODE: z.string().default('wedding2026').transform(stripEnvQuotes),
+  GUEST_SESSION_SECRET: z.string().default('default-guest-session-secret').transform(stripEnvQuotes),
+  HISTORY_VERSION_LIMIT: z.preprocess(
+    val => (typeof val === 'string' ? stripEnvQuotes(val) : val),
+    z.coerce.number().min(1)
+  ).default(50),
   CRON_SECRET: z.string().optional().transform(val => normalizeOptionalEnv(val)),
   S3_BUCKET: z.string().optional().transform(val => normalizeOptionalEnv(val)),
   S3_REGION: z.string().optional().transform(val => normalizeOptionalEnv(val)),
@@ -255,6 +288,22 @@ const envSchema = z.object({
       });
     });
   }
+  if (data.S3_REGION?.toLowerCase() === 'auto' && !data.S3_ENDPOINT) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['S3_ENDPOINT'],
+      message:
+        'Cloudflare R2 configurations with S3_REGION=auto must specify S3_ENDPOINT (for example, https://<ACCOUNT_ID>.r2.cloudflarestorage.com)',
+    });
+  }
+  if (data.S3_ENDPOINT && isCloudflareR2ApiEndpoint(data.S3_ENDPOINT) && !data.S3_PUBLIC_URL) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['S3_PUBLIC_URL'],
+      message:
+        'Cloudflare R2 private API endpoints (*.r2.cloudflarestorage.com) cannot serve public assets directly; configure S3_PUBLIC_URL',
+    });
+  }
 
   const stripeSecretKey = normalizeOptionalEnv(data.STRIPE_SECRET_KEY);
   const stripePublishableKey = normalizeOptionalEnv(data.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
@@ -318,12 +367,12 @@ const envSchema = z.object({
 
 // In production runtime, strictly require valid environment variables
 if (process.env.NODE_ENV === 'production' && !isBuildTime && process.env.NEXT_RUNTIME !== 'edge') {
-  const isE2ETestMode = process.env.E2E_TEST === 'true';
-  if (!process.env.ADMIN_PASSWORD) {
+  const isE2ETestMode = normalizeOptionalEnv(process.env.E2E_TEST) === 'true';
+  const trimmedAdminPassword = normalizeOptionalEnv(process.env.ADMIN_PASSWORD);
+  if (!trimmedAdminPassword) {
     console.error('❌ Security Error: ADMIN_PASSWORD environment variable is missing in production environment.');
     throw new Error('ADMIN_PASSWORD environment variable is required in production.');
   }
-  const trimmedAdminPassword = process.env.ADMIN_PASSWORD.trim();
   if (!isValidScryptAdminPassword(trimmedAdminPassword)) {
     console.error(
       '❌ Security Error: ADMIN_PASSWORD must be in the format scrypt:[16-byte saltBase64]:[64-byte keyBase64].'
@@ -339,26 +388,27 @@ if (process.env.NODE_ENV === 'production' && !isBuildTime && process.env.NEXT_RU
     console.error('❌ Security Error: ADMIN_PASSWORD must not use a placeholder or E2E fallback hash in production.');
     throw new Error('ADMIN_PASSWORD must not use a placeholder or E2E fallback hash in production.');
   }
-  if (!process.env.GUEST_SESSION_SECRET) {
+  const normalizedGuestSessionSecret = normalizeOptionalEnv(process.env.GUEST_SESSION_SECRET);
+  if (!normalizedGuestSessionSecret) {
     console.error('❌ Security Error: GUEST_SESSION_SECRET environment variable is missing in production environment.');
     throw new Error('GUEST_SESSION_SECRET environment variable is required in production.');
   }
-  if (process.env.GUEST_SESSION_SECRET === 'default-guest-session-secret') {
+  if (normalizedGuestSessionSecret === 'default-guest-session-secret') {
     console.error('❌ Security Error: GUEST_SESSION_SECRET must not use the default fallback secret in production.');
     throw new Error('GUEST_SESSION_SECRET must not use the default fallback secret in production.');
   }
   if (
-    ALWAYS_BLOCKED_PROD_SESSION_SECRETS.has(process.env.GUEST_SESSION_SECRET) ||
-    (!isE2ETestMode && E2E_FALLBACK_SESSION_SECRETS.has(process.env.GUEST_SESSION_SECRET))
+    ALWAYS_BLOCKED_PROD_SESSION_SECRETS.has(normalizedGuestSessionSecret) ||
+    (!isE2ETestMode && E2E_FALLBACK_SESSION_SECRETS.has(normalizedGuestSessionSecret))
   ) {
     console.error('❌ Security Error: GUEST_SESSION_SECRET must not use a placeholder or E2E fallback secret in production.');
     throw new Error('GUEST_SESSION_SECRET must not use a placeholder or E2E fallback secret in production.');
   }
-  if (process.env.GUEST_SESSION_SECRET.length < 32) {
+  if (normalizedGuestSessionSecret.length < 32) {
     console.error('❌ Security Error: GUEST_SESSION_SECRET must be at least 32 characters long in production.');
     throw new Error('GUEST_SESSION_SECRET must be at least 32 characters long in production.');
   }
-  const trimmedGuestPasscode = process.env.GUEST_PASSCODE?.trim();
+  const trimmedGuestPasscode = normalizeOptionalEnv(process.env.GUEST_PASSCODE);
   if (!trimmedGuestPasscode) {
     console.error('❌ Security Error: GUEST_PASSCODE environment variable is missing in production environment.');
     throw new Error('GUEST_PASSCODE environment variable is required in production.');
@@ -374,19 +424,36 @@ if (process.env.NODE_ENV === 'production' && !isBuildTime && process.env.NEXT_RU
     console.error('❌ Security Error: GUEST_PASSCODE must not use a placeholder or E2E fallback passcode in production.');
     throw new Error('GUEST_PASSCODE must not use a placeholder or E2E fallback passcode in production.');
   }
-  if (process.env.GUEST_SESSION_SECRET === process.env.GUEST_PASSCODE || process.env.GUEST_SESSION_SECRET === trimmedGuestPasscode) {
+  if (normalizedGuestSessionSecret === trimmedGuestPasscode) {
     console.error('❌ Security Error: GUEST_SESSION_SECRET must not match GUEST_PASSCODE.');
     throw new Error('GUEST_SESSION_SECRET must not match GUEST_PASSCODE.');
   }
 }
 
-// Even during build, fail if incomplete S3 credentials are provided explicitly
+// Even during build, fail if incomplete or invalid S3/R2 credentials are provided explicitly
 const keys = ['S3_BUCKET', 'S3_REGION', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY'] as const;
-const presentKeys = keys.filter(key => !!process.env[key]);
+const presentKeys = keys.filter(key => Boolean(normalizeOptionalEnv(process.env[key])));
 if (presentKeys.length > 0 && presentKeys.length < keys.length) {
-  const missingKeys = keys.filter(key => !process.env[key]);
+  const missingKeys = keys.filter(key => !normalizeOptionalEnv(process.env[key]));
   console.error('❌ Incomplete S3 credentials provided in environment variables:', missingKeys.join(', '));
   throw new Error('Incomplete S3 credentials provided in environment variables');
+}
+const bootS3Region = normalizeOptionalEnv(process.env.S3_REGION);
+const bootS3Endpoint = normalizeOptionalEnv(process.env.S3_ENDPOINT);
+const bootS3PublicUrl = normalizeOptionalEnv(process.env.S3_PUBLIC_URL);
+if (bootS3Region?.toLowerCase() === 'auto' && !bootS3Endpoint) {
+  console.error('❌ Invalid S3 configuration: S3_REGION=auto (Cloudflare R2) requires S3_ENDPOINT.');
+  throw new Error(
+    'Cloudflare R2 configurations with S3_REGION=auto must specify S3_ENDPOINT (for example, https://<ACCOUNT_ID>.r2.cloudflarestorage.com)'
+  );
+}
+if (bootS3Endpoint && isCloudflareR2ApiEndpoint(bootS3Endpoint) && !bootS3PublicUrl) {
+  console.error(
+    '❌ Invalid S3 configuration: Private Cloudflare R2 API endpoints (*.r2.cloudflarestorage.com) require S3_PUBLIC_URL.'
+  );
+  throw new Error(
+    'Cloudflare R2 private API endpoints (*.r2.cloudflarestorage.com) cannot serve public assets directly; configure S3_PUBLIC_URL'
+  );
 }
 
 // Fail fast if incomplete or invalid Stripe card credentials are provided
@@ -409,31 +476,36 @@ if (process.env.NODE_ENV !== 'test') {
 
 let _env: z.infer<typeof envSchema>;
 
-if (process.env.NEXT_RUNTIME === 'edge' || isStaticExport || (isBuildTime && (!process.env.DATABASE_URL || !process.env.ADMIN_PASSWORD || !process.env.ALLOWED_HOSTS || !process.env.GUEST_PASSCODE || !process.env.GUEST_SESSION_SECRET))) {
+if (process.env.NEXT_RUNTIME === 'edge' || isStaticExport || (isBuildTime && (!normalizeOptionalEnv(process.env.DATABASE_URL) || !normalizeOptionalEnv(process.env.ADMIN_PASSWORD) || !normalizeOptionalEnv(process.env.ALLOWED_HOSTS) || !normalizeOptionalEnv(process.env.GUEST_PASSCODE) || !normalizeOptionalEnv(process.env.GUEST_SESSION_SECRET)))) {
   // Use fallbacks for build tasks
+  const fallbackDbUrl = normalizeOptionalEnv(process.env.DATABASE_URL);
+  const fallbackShadowUrl = normalizeOptionalEnv(process.env.POSTGRES_URL_NON_POOLING);
+  const fallbackMultisite = normalizeOptionalEnv(process.env.MULTISITE_ENABLED);
+  const fallbackMigrations = normalizeOptionalEnv(process.env.RUN_MIGRATIONS);
+  const fallbackHistoryLimit = normalizeOptionalEnv(process.env.HISTORY_VERSION_LIMIT);
   _env = {
-    NODE_ENV: (process.env.NODE_ENV as 'development' | 'test' | 'production') || 'development',
-    DATABASE_URL: process.env.DATABASE_URL && isValidPostgresUrl(process.env.DATABASE_URL)
-      ? normalizePostgresUrl(process.env.DATABASE_URL)
-      : (process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost:5432/dummy'),
-    POSTGRES_URL_NON_POOLING: process.env.POSTGRES_URL_NON_POOLING && isValidPostgresUrl(process.env.POSTGRES_URL_NON_POOLING)
-      ? normalizePostgresUrl(process.env.POSTGRES_URL_NON_POOLING)
-      : (process.env.POSTGRES_URL_NON_POOLING || 'postgresql://dummy:dummy@localhost:5432/dummy_shadow'),
-    ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || BUILD_FALLBACK_ADMIN_PASSWORD,
-    ALLOWED_HOSTS: process.env.ALLOWED_HOSTS || 'localhost,127.0.0.1,*.localhost',
-    MULTISITE_ENABLED: process.env.MULTISITE_ENABLED === 'true' || process.env.MULTISITE_ENABLED === '1',
-    RUN_MIGRATIONS: process.env.RUN_MIGRATIONS === 'true' || process.env.RUN_MIGRATIONS === '1',
+    NODE_ENV: (normalizeOptionalEnv(process.env.NODE_ENV) as 'development' | 'test' | 'production') || 'development',
+    DATABASE_URL: fallbackDbUrl && isValidPostgresUrl(fallbackDbUrl)
+      ? normalizePostgresUrl(fallbackDbUrl)
+      : (fallbackDbUrl || 'postgresql://dummy:dummy@localhost:5432/dummy'),
+    POSTGRES_URL_NON_POOLING: fallbackShadowUrl && isValidPostgresUrl(fallbackShadowUrl)
+      ? normalizePostgresUrl(fallbackShadowUrl)
+      : (fallbackShadowUrl || 'postgresql://dummy:dummy@localhost:5432/dummy_shadow'),
+    ADMIN_PASSWORD: normalizeOptionalEnv(process.env.ADMIN_PASSWORD) || BUILD_FALLBACK_ADMIN_PASSWORD,
+    ALLOWED_HOSTS: normalizeOptionalEnv(process.env.ALLOWED_HOSTS) || 'localhost,127.0.0.1,*.localhost',
+    MULTISITE_ENABLED: fallbackMultisite === 'true' || fallbackMultisite === '1',
+    RUN_MIGRATIONS: fallbackMigrations === 'true' || fallbackMigrations === '1',
     TRUST_PROXY: parseTrustProxy(process.env.TRUST_PROXY),
-    GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'wedding2026',
-    GUEST_SESSION_SECRET: process.env.GUEST_SESSION_SECRET || 'default-guest-session-secret',
-    HISTORY_VERSION_LIMIT: process.env.HISTORY_VERSION_LIMIT ? parseInt(process.env.HISTORY_VERSION_LIMIT, 10) : 50,
-    CRON_SECRET: process.env.CRON_SECRET || undefined,
-    S3_BUCKET: process.env.S3_BUCKET || undefined,
-    S3_REGION: process.env.S3_REGION || undefined,
-    S3_ACCESS_KEY_ID: process.env.S3_ACCESS_KEY_ID || undefined,
-    S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY || undefined,
-    S3_ENDPOINT: process.env.S3_ENDPOINT || undefined,
-    S3_PUBLIC_URL: process.env.S3_PUBLIC_URL || undefined,
+    GUEST_PASSCODE: normalizeOptionalEnv(process.env.GUEST_PASSCODE) || 'wedding2026',
+    GUEST_SESSION_SECRET: normalizeOptionalEnv(process.env.GUEST_SESSION_SECRET) || 'default-guest-session-secret',
+    HISTORY_VERSION_LIMIT: fallbackHistoryLimit ? parseInt(fallbackHistoryLimit, 10) : 50,
+    CRON_SECRET: normalizeOptionalEnv(process.env.CRON_SECRET),
+    S3_BUCKET: normalizeOptionalEnv(process.env.S3_BUCKET),
+    S3_REGION: normalizeOptionalEnv(process.env.S3_REGION),
+    S3_ACCESS_KEY_ID: normalizeOptionalEnv(process.env.S3_ACCESS_KEY_ID),
+    S3_SECRET_ACCESS_KEY: normalizeOptionalEnv(process.env.S3_SECRET_ACCESS_KEY),
+    S3_ENDPOINT: normalizeOptionalEnv(process.env.S3_ENDPOINT),
+    S3_PUBLIC_URL: normalizeOptionalEnv(process.env.S3_PUBLIC_URL),
     STRIPE_SECRET_KEY: normalizeOptionalEnv(process.env.STRIPE_SECRET_KEY),
     NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: normalizeOptionalEnv(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY),
     STRIPE_WEBHOOK_SECRET: normalizeOptionalEnv(process.env.STRIPE_WEBHOOK_SECRET),
@@ -451,11 +523,15 @@ if (process.env.NEXT_RUNTIME === 'edge' || isStaticExport || (isBuildTime && (!p
 export const env = new Proxy(_env, {
   get(target, prop) {
     if (typeof prop === 'string') {
-      const val = process.env[prop];
+      const rawVal = process.env[prop];
       if (prop === 'TRUST_PROXY') {
-        return val !== undefined && val !== '' ? parseTrustProxy(val) : target.TRUST_PROXY;
+        return rawVal !== undefined && rawVal !== '' ? parseTrustProxy(rawVal) : target.TRUST_PROXY;
       }
-      if (val !== undefined && val !== '') {
+      if (rawVal !== undefined && rawVal !== '') {
+        const val = stripEnvQuotes(rawVal);
+        if (val === '') {
+          return target[prop as keyof typeof target];
+        }
         if (prop === 'DATABASE_URL' || prop === 'POSTGRES_URL_NON_POOLING') {
           return isValidPostgresUrl(val) ? normalizePostgresUrl(val) : val;
         }

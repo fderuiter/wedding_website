@@ -33,6 +33,7 @@ const APP_ROUTES: AppRoute[] = [
   
   // Admin Navigation
   { path: '/admin/dashboard', label: 'Dashboard', roles: ['admin'], showInNav: true, exact: false },
+  { path: '/admin/setup', roles: ['admin'], showInNav: false, exact: false },
   
   // Protected UI Routes
   { path: '/registry/add-item', roles: ['admin'], exact: false, requiredModule: 'registry' },

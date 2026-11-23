@@ -101,6 +101,7 @@ export class ThankYouService {
               id: true,
               code: true,
               guestName: true,
+              householdName: true,
               addressLine1: true,
               addressLine2: true,
               city: true,
@@ -169,11 +170,187 @@ export class ThankYouService {
   }
 
   /**
-   * Updates an individual contributor's thank-you status, sent timestamp, or note draft.
+   * Records an offline gift contribution (cash, check, or off-registry physical gift)
+   * with optional RegistryItem ledger reconciliation and InvitationCode household linking.
+   */
+  async createOfflineGift(
+    data: {
+      name: string;
+      email?: string | null;
+      amount: number;
+      date?: Date | string;
+      message?: string | null;
+      registryItemId?: string | null;
+      invitationCodeId?: string | null;
+      thankYouStatus?: 'Unsent' | 'Sent' | 'Not Needed';
+      thankYouNote?: string | null;
+    },
+    author: string = 'Admin'
+  ) {
+    return executeInTransaction(this.client, async (txClient: any) => {
+      const targetItemId =
+        data.registryItemId && data.registryItemId.trim() ? data.registryItemId.trim() : null;
+      const targetInviteId =
+        data.invitationCodeId && data.invitationCodeId.trim()
+          ? data.invitationCodeId.trim()
+          : null;
+
+      if (targetInviteId) {
+        const invite = await txClient.invitationCode.findUnique({
+          where: { id: targetInviteId },
+        });
+        if (!invite) {
+          throw new ApiError(404, 'Invitation code not found');
+        }
+      }
+
+      if (targetItemId) {
+        if (typeof txClient.$queryRaw === 'function') {
+          await txClient.$queryRaw`SELECT id FROM "RegistryItem" WHERE id = ${targetItemId} FOR UPDATE`;
+        }
+        const targetItem = await txClient.registryItem.findUnique({
+          where: { id: targetItemId },
+        });
+        if (!targetItem) {
+          throw new ApiError(404, 'Registry item not found');
+        }
+      }
+
+      const resolvedStatus = data.thankYouStatus || 'Unsent';
+      const resolvedSentAt = resolvedStatus === 'Sent' ? new Date() : null;
+
+      const created = await txClient.contributor.create({
+        data: {
+          name: data.name.trim(),
+          email: data.email && data.email.trim() ? data.email.trim() : null,
+          amount: data.amount,
+          status: 'CONFIRMED',
+          message: data.message && data.message.trim() ? data.message.trim() : null,
+          date: data.date ? new Date(data.date) : new Date(),
+          thankYouStatus: resolvedStatus,
+          thankYouSentAt: resolvedSentAt,
+          thankYouNote:
+            data.thankYouNote && data.thankYouNote.trim() ? data.thankYouNote.trim() : null,
+          registryItemId: targetItemId,
+          invitationCodeId: targetInviteId,
+        },
+        include: {
+          registryItem: {
+            select: {
+              id: true,
+              name: true,
+              category: true,
+            },
+          },
+          invitationCode: {
+            select: {
+              id: true,
+              code: true,
+              guestName: true,
+              householdName: true,
+              addressLine1: true,
+              addressLine2: true,
+              city: true,
+              state: true,
+              zipCode: true,
+              country: true,
+            },
+          },
+        },
+      });
+
+      await createAuditSnapshot('Contributor', created.id, created, author, txClient);
+
+      if (targetItemId) {
+        const itemWithContributors = await txClient.registryItem.findUnique({
+          where: { id: targetItemId },
+          include: { image: true, contributors: true },
+        });
+        if (itemWithContributors) {
+          const isFund =
+            itemWithContributors.itemType === 'CASH_FUND' ||
+            itemWithContributors.itemType === 'EXPERIENCE_FUND';
+          const quantity = isFund
+            ? 1
+            : Math.max(1, Math.floor(itemWithContributors.quantity || 1));
+          const unitPriceCents = Math.round(itemWithContributors.price * 100);
+          const totalTargetCents = unitPriceCents * quantity;
+          const isGroupGift = Boolean(isFund || itemWithContributors.isGroupGift);
+          const contributorsList: any[] = Array.isArray(itemWithContributors.contributors)
+            ? [...itemWithContributors.contributors]
+            : [];
+
+          let activeNetCents = 0;
+          const activeNames: string[] = [];
+          for (const contributor of contributorsList) {
+            const rawSt =
+              typeof contributor?.status === 'string'
+                ? contributor.status.trim().toUpperCase()
+                : 'CONFIRMED';
+            if (rawSt !== 'RESERVED' && rawSt !== 'CONFIRMED') {
+              continue;
+            }
+            const grossCents = Math.max(
+              0,
+              Math.round((Number(contributor?.amount) || 0) * 100)
+            );
+            const refundedCents = Math.max(
+              0,
+              Math.round((Number(contributor?.refundedAmount) || 0) * 100)
+            );
+            const netCents = Math.max(0, grossCents - refundedCents);
+            activeNetCents += netCents;
+            if (netCents > 0 && typeof contributor?.name === 'string' && contributor.name.trim()) {
+              activeNames.push(contributor.name.trim());
+            }
+          }
+
+          const nextAmountContributed = activeNetCents / 100;
+          const nextPurchased = totalTargetCents > 0 ? activeNetCents >= totalTargetCents : false;
+          const nextPurchaserName = !isGroupGift
+            ? activeNames.length > 0
+              ? activeNames.join(', ')
+              : null
+            : activeNetCents === 0
+              ? null
+              : itemWithContributors.purchaserName ?? null;
+
+          const updatedItem = await txClient.registryItem.update({
+            where: { id: targetItemId },
+            data: {
+              amountContributed: nextAmountContributed,
+              purchased: nextPurchased,
+              ...(!isGroupGift || activeNetCents === 0
+                ? { purchaserName: nextPurchaserName }
+                : {}),
+            },
+            include: { image: true, contributors: true },
+          });
+          await createAuditSnapshot(
+            'RegistryItem',
+            updatedItem.id,
+            updatedItem,
+            author,
+            txClient
+          );
+        }
+      }
+
+      return ContributorSchema.parse(created);
+    });
+  }
+
+  /**
+   * Updates an individual contributor's thank-you status, sent timestamp, note draft, or household link.
    */
   async updateThankYouNote(
     id: string,
-    data: { thankYouStatus?: string; thankYouSentAt?: Date | string | null; thankYouNote?: string | null },
+    data: {
+      thankYouStatus?: string;
+      thankYouSentAt?: Date | string | null;
+      thankYouNote?: string | null;
+      invitationCodeId?: string | null;
+    },
     author: string = 'Admin'
   ) {
     const existing = await this.client.contributor.findUnique({
@@ -191,6 +368,7 @@ export class ThankYouService {
             id: true,
             code: true,
             guestName: true,
+            householdName: true,
             addressLine1: true,
             addressLine2: true,
             city: true,
@@ -226,6 +404,22 @@ export class ThankYouService {
       updateData.thankYouNote = data.thankYouNote;
     }
 
+    if (data.invitationCodeId !== undefined) {
+      const targetInviteId =
+        data.invitationCodeId && data.invitationCodeId.trim()
+          ? data.invitationCodeId.trim()
+          : null;
+      if (targetInviteId) {
+        const invite = await this.client.invitationCode.findUnique({
+          where: { id: targetInviteId },
+        });
+        if (!invite) {
+          throw new ApiError(404, 'Invitation code not found');
+        }
+      }
+      updateData.invitationCodeId = targetInviteId;
+    }
+
     const updated = await this.client.contributor.update({
       where: { id },
       data: updateData,
@@ -242,6 +436,7 @@ export class ThankYouService {
             id: true,
             code: true,
             guestName: true,
+            householdName: true,
             addressLine1: true,
             addressLine2: true,
             city: true,
@@ -308,6 +503,7 @@ export class ThankYouService {
               id: true,
               code: true,
               guestName: true,
+              householdName: true,
               addressLine1: true,
               addressLine2: true,
               city: true,
@@ -353,6 +549,12 @@ export class ThankYouService {
             'Retailer Order Number',
             'Carrier',
             'Tracking Number',
+            'Address Line 1',
+            'Address Line 2',
+            'City',
+            'State',
+            'ZIP Code',
+            'Country',
           ];
           const headerRow = headers.map(escapeCsvCell).join(',') + '\n';
           controller.enqueue(encoder.encode(headerRow));
@@ -382,6 +584,16 @@ export class ThankYouService {
                   select: {
                     name: true,
                     category: true,
+                  },
+                },
+                invitationCode: {
+                  select: {
+                    addressLine1: true,
+                    addressLine2: true,
+                    city: true,
+                    state: true,
+                    zipCode: true,
+                    country: true,
                   },
                 },
               },
@@ -414,6 +626,12 @@ export class ThankYouService {
                 escapeCsvCell(item.retailerOrderNumber || ''),
                 escapeCsvCell(item.carrier || ''),
                 escapeCsvCell(item.trackingNumber || ''),
+                escapeCsvCell(item.invitationCode?.addressLine1 || ''),
+                escapeCsvCell(item.invitationCode?.addressLine2 || ''),
+                escapeCsvCell(item.invitationCode?.city || ''),
+                escapeCsvCell(item.invitationCode?.state || ''),
+                escapeCsvCell(item.invitationCode?.zipCode || ''),
+                escapeCsvCell(item.invitationCode?.country || ''),
               ].join(',') + '\n';
 
               chunkCsv += row;

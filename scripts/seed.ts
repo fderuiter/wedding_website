@@ -19,6 +19,9 @@ async function main() {
     longitude: -122.2868,
     heroTitle: 'Jane & John',
     heroSubtitle: 'Are getting married!',
+    seoTitle: '',
+    seoDescription: '',
+    setupCompleted: true,
   };
 
   await prisma.appConfig.upsert({

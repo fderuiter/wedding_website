@@ -187,8 +187,7 @@ describe('Route and Error Metadata Coverage (WCAG 2.4.2 Page Titled)', () => {
       }
 
       const requiresNoIndex =
-        route === '/admin/login' ||
-        route.startsWith('/admin/dashboard') ||
+        route.startsWith('/admin/') ||
         route === '/guest' ||
         route.startsWith('/guest/') ||
         route === '/registry/add-item' ||
@@ -203,6 +202,7 @@ describe('Route and Error Metadata Coverage (WCAG 2.4.2 Page Titled)', () => {
     expect(untitledRoutes).toEqual([]);
 
     // Verify key required routes explicitly exist and have descriptive titles
+    expect(titlesByRoute.get('/admin/setup')).toBe('Initial Site Setup');
     expect(titlesByRoute.get('/admin/dashboard/registry')).toBe('Registry Management');
     expect(titlesByRoute.get('/registry')).toBe('Gift Registry');
     expect(titlesByRoute.get('/registry/add-item')).toBe('Add Registry Item');

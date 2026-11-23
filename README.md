@@ -42,12 +42,12 @@ The primary goal of this project is to provide a personal, customizable, and cos
     *   "Add to Calendar" (`.ics` and Google Calendar) generation and live wedding countdown widgets.
 *   **Custom Gift Registry, Cash Funds & Checkout:**
     *   **Physical Gifts & Dedicated Funds:** Configure `PHYSICAL` gifts alongside `CASH_FUND` and `EXPERIENCE_FUND` items in [`src/features/registry/components/RegistryItemForm.tsx`](./src/features/registry/components/RegistryItemForm.tsx), complete with optional peer-to-peer payment handles (`Venmo`, `PayPal`, `Cash App`, `Zelle`, or `Custom`).
-    *   **Stripe Card Checkout & Group Gifting:** Accept direct card contributions via **Stripe** `PaymentIntent` flows with optional processing-fee coverage (`calculateContributionAmounts` in [`src/features/registry/api/payment-intent.ts`](./src/features/registry/api/payment-intent.ts)), or let multiple guests fund shared group gifts with real-time progress bars.
+    *   **Stripe Card Checkout & Group Gifting:** Accept direct card contributions via **Stripe** `PaymentIntent` flows with optional processing-fee coverage (`calculateContributionAmounts` in [`src/features/registry/api/payment-intent.ts`](./src/features/registry/api/payment-intent.ts#L73-L75)), or let multiple guests fund shared group gifts with real-time progress bars.
     *   **Single, Batch URL & CSV Imports:** Pre-fill product metadata via single-URL Open Graph/retailer scraping, ingest up to **20** store URLs in parallel (`BatchUrlScraper`), or import external registry spreadsheets via CSV (`CsvRegistryImport`) in [`src/features/registry/pages/add-item.tsx`](./src/features/registry/pages/add-item.tsx).
     *   **Filtering & Sorting:** Guests can browse registry items by category, price range, availability, and "Most Wanted" highlights.
 *   **Guest Households, RSVPs, Seating & Broadcasts:**
     *   **Household Invitation Sessions & Cutoffs:** Authenticate invited households with signed `GUEST_INVITE_COOKIE` sessions (`enforceActiveGuestPageSession` in [`src/core/auth/guestInviteSession.ts`](./src/core/auth/guestInviteSession.ts)), per-sub-event access matrices, and venue-timezone midnight RSVP cutoffs (`getVenueMidnightCutoffUtcMs`) with configurable grace periods (`0`–`168` hours in [`src/utils/rsvpDeadline.ts`](./src/utils/rsvpDeadline.ts)).
-    *   **Interactive Seating Chart:** Arrange reception tables, auto-assign or drag-and-drop eligible guests with undo support (`useSeatingState`), and print floorplans (`FloorplanCanvas` and `PrintableFloorplan` in [`src/app/admin/dashboard/seating-chart/SeatingChartClient.tsx`](./src/app/admin/dashboard/seating-chart/SeatingChartClient.tsx)).
+    *   **Interactive Seating Chart:** Arrange reception tables, auto-assign or drag-and-drop eligible guests with undo support (`useSeatingState`), and print floorplans (`FloorplanCanvas` and `PrintableFloorplan` in [`src/app/admin/dashboard/seating-chart/SeatingChartClient.tsx`](./src/app/admin/dashboard/seating-chart/SeatingChartClient.tsx#L4-L20)).
     *   **Multi-Provider Guest Broadcasts:** Compose targeted email and SMS announcements (`BroadcastModalForm` in [`src/components/admin/BroadcastModal.tsx`](./src/components/admin/BroadcastModal.tsx)) with audience filters, live previews, test sends, scheduled delivery, and retry logs across **Resend**, **SendGrid**, and **Twilio** adapters (see [`docs/BROADCASTS.md`](./docs/BROADCASTS.md)).
 *   **Moderated Photo Gallery & Media Pipeline:**
     *   **Curated & Guest Albums:** Display curated couple galleries alongside moderated guest photo uploads (`PhotosPage` in [`src/app/photos/page.tsx`](./src/app/photos/page.tsx)) with responsive lightbox viewing, live reception slideshows, and admin ZIP archive exports.
@@ -219,6 +219,7 @@ If you cloned or forked this template to host your own wedding website, you can 
 *   `.github`: GitHub Actions CI/CD workflows, contributor and testing guides, and issue/PR templates.
 *   `.storybook`: Storybook 8 configuration and preview decorators for isolated UI component development.
 *   `assets`: Source brand assets and bundled fonts used during builds and image generation.
+*   `docker`: Isolated Prisma CLI lockfile and offline package stubs for the production container image.
 *   `docs`: Developer onboarding, runtime contract, feature specifications, and deployment runbooks.
 *   `docs-portal`: VitePress documentation portal configuration, interactive OpenAPI explorer, and staged specs.
 *   `e2e`: End-to-end browser, smoke, and accessibility test suites (Playwright).

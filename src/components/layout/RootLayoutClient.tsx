@@ -13,6 +13,10 @@ import { GlobalRadialGlow } from '@/components/ui/GlobalRadialGlow';
 import { useToast } from '@/components/ui/ToastProvider';
 import { MotionGlobalConfig } from 'framer-motion';
 import type { ContentNodeDTO } from '@/features/content';
+import {
+  invalidateOnboardingMilestones,
+  invalidateSampleDataCaches,
+} from '@/lib/adminCacheSync';
 
 if (typeof window !== 'undefined' && window.navigator.userAgent.includes('HeadlessChrome')) {
   MotionGlobalConfig.skipAnimations = true;
@@ -51,35 +55,41 @@ export default function RootLayoutClient({
   const headerRef = useRef<HTMLElement>(null);
   const [mainPaddingTop, setMainPaddingTop] = useState(0);
   const { addToast } = useToast();
-
-  const [queryClient] = useState(() => new QueryClient({
-    mutationCache: new MutationCache({
-      onSuccess: (_data, _variables, _context, mutation) => {
-        if (mutation.meta?.successMessage) {
-          addToast(mutation.meta.successMessage as string, 'success');
-        } else if (mutation.meta?.showSuccessToast !== false) {
-          addToast('Operation completed successfully!', 'success');
-        }
-      },
-      onError: (error: any, _variables, _context, mutation) => {
-        if (mutation.meta?.errorMessage) {
-          addToast(mutation.meta.errorMessage as string, 'error');
-        } else if (mutation.meta?.showErrorToast !== false) {
-          let message = error?.message || 'An error occurred during the operation.';
-          if (error && typeof error === 'object' && 'status' in error) {
-            switch (error.status) {
-              case 400: message = 'Invalid request. Please check your inputs.'; break;
-              case 401: message = 'Please log in to continue.'; break;
-              case 403: message = 'You do not have permission to perform this action.'; break;
-              case 404: message = 'The requested resource was not found.'; break;
-              case 500: message = 'An unexpected server error occurred. Please try again later.'; break;
-            }
+  const [queryClient] = useState(() => {
+    const client: QueryClient = new QueryClient({
+      mutationCache: new MutationCache({
+        onSuccess: (_data, _variables, _context, mutation) => {
+          invalidateOnboardingMilestones(client);
+          if (mutation.meta?.successMessage) {
+            addToast(mutation.meta.successMessage as string, 'success');
+          } else if (mutation.meta?.showSuccessToast !== false) {
+            addToast('Operation completed successfully!', 'success');
           }
-          addToast(message, 'error');
-        }
-      },
-    }),
-  }));
+        },
+        onError: (error: any, _variables, _context, mutation) => {
+          if (error && typeof error === 'object' && 'status' in error && error.status === 404) {
+            void invalidateSampleDataCaches(client);
+          }
+          if (mutation.meta?.errorMessage) {
+            addToast(mutation.meta.errorMessage as string, 'error');
+          } else if (mutation.meta?.showErrorToast !== false) {
+            let message = error?.message || 'An error occurred during the operation.';
+            if (error && typeof error === 'object' && 'status' in error) {
+              switch (error.status) {
+                case 400: message = 'Invalid request. Please check your inputs.'; break;
+                case 401: message = 'Please log in to continue.'; break;
+                case 403: message = 'You do not have permission to perform this action.'; break;
+                case 404: message = 'The requested resource was not found.'; break;
+                case 500: message = 'An unexpected server error occurred. Please try again later.'; break;
+              }
+            }
+            addToast(message, 'error');
+          }
+        },
+      }),
+    });
+    return client;
+  });
 
   useEffect(() => {
     const checkLoginStatus = () => {
@@ -111,9 +121,12 @@ export default function RootLayoutClient({
 
   const isHeartPage = pathname === '/heart';
   const isSlideshowPage = pathname === '/photos/slideshow';
-  const isStandalonePage = isHeartPage || isSlideshowPage;
+  const isSetupPage = pathname === '/admin/setup' || pathname?.startsWith('/admin/setup/');
+  const isStandalonePage = isHeartPage || isSlideshowPage || isSetupPage;
   const isAdminDashboardPage =
-    pathname === '/admin/dashboard' || pathname?.startsWith('/admin/dashboard/');
+    pathname === '/admin/dashboard' ||
+    pathname?.startsWith('/admin/dashboard/') ||
+    isSetupPage;
 
   const handleLogout = async () => {
     try {
