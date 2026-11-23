@@ -15,7 +15,10 @@ class CustomEnvironment extends JSDOMEnvironment {
     this.global.WritableStream = WritableStream;
     if (typeof CompressionStream !== 'undefined') this.global.CompressionStream = CompressionStream;
     if (typeof DecompressionStream !== 'undefined') this.global.DecompressionStream = DecompressionStream;
-    const { MessagePort } = require('node:worker_threads');
+    const { MessageChannel, MessagePort } = require('node:worker_threads');
+    if (typeof this.global.MessageChannel === 'undefined') {
+      this.global.MessageChannel = globalThis.MessageChannel || MessageChannel;
+    }
     if (typeof this.global.MessagePort === 'undefined') {
       this.global.MessagePort = globalThis.MessagePort || MessagePort;
     }

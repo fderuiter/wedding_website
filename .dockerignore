@@ -5,6 +5,7 @@ node_modules
 # 2. Next.js / Turbopack / Storybook / Portal build compilation caches and outputs
 .turbo
 .next
+.next-export
 .api-backup-export
 next-env.d.ts
 out

@@ -6,6 +6,7 @@ import path from 'path';
 import nextConfig from '../next.config';
 import {
   cleanupExportStage,
+  persistExportStageCache,
   promoteStagedExportOutput,
   restoreLegacyApiBackup,
   stageExportWorkspace,
@@ -185,6 +186,37 @@ describe('local smoke isolation, staged static exports, and untracked next-env.d
 
       cleanupExportStage(tempDir);
       expect(fs.existsSync(stageDir)).toBe(false);
+
+      // Verify .next-export/cache round-trip into .next/export-stage and back without leaking into out/
+      fs.mkdirSync(path.join(tempDir, '.next-export', 'cache', 'webpack'), { recursive: true });
+      fs.writeFileSync(
+        path.join(tempDir, '.next-export', 'cache', 'webpack', 'pack.gz'),
+        'cached-bundle'
+      );
+      const cachedStageDir = stageExportWorkspace(tempDir);
+      expect(
+        fs.readFileSync(
+          path.join(cachedStageDir, '.next-export', 'cache', 'webpack', 'pack.gz'),
+          'utf8'
+        )
+      ).toBe('cached-bundle');
+
+      fs.mkdirSync(path.join(cachedStageDir, '.next-export'), { recursive: true });
+      fs.writeFileSync(
+        path.join(cachedStageDir, '.next-export', 'index.html'),
+        '<html>distDir export</html>'
+      );
+      expect(persistExportStageCache(tempDir, cachedStageDir)).toBe(true);
+      promoteStagedExportOutput(tempDir, cachedStageDir);
+      cleanupExportStage(tempDir);
+
+      expect(
+        fs.readFileSync(path.join(tempDir, '.next-export', 'cache', 'webpack', 'pack.gz'), 'utf8')
+      ).toBe('cached-bundle');
+      expect(fs.readFileSync(path.join(tempDir, 'out', 'index.html'), 'utf8')).toBe(
+        '<html>distDir export</html>'
+      );
+      expect(fs.existsSync(path.join(tempDir, 'out', 'cache'))).toBe(false);
     });
 
     it('restores legacy .api-backup-export if an interrupted prior run left src/app/api missing', () => {
@@ -260,7 +292,7 @@ describe('local smoke isolation, staged static exports, and untracked next-env.d
   describe('ignore rules for out/, .api-backup-export/, .next/export-stage, and untracked next-env.d.ts', () => {
     it('ignores out/ and .api-backup-export/ in check-personal-identifiers, .gitignore, and eslint.config.mjs', () => {
       expect(ALLOWLIST_PREFIXES).toEqual(
-        expect.arrayContaining(['.next/', 'out/', '.api-backup-export/'])
+        expect.arrayContaining(['.next/', '.next-export/', 'out/', '.api-backup-export/'])
       );
       expect(isAllowlisted('out', true)).toBe(true);
       expect(isAllowlisted('out/index.html', false)).toBe(true);
@@ -283,6 +315,7 @@ describe('local smoke isolation, staged static exports, and untracked next-env.d
       const tsconfig = JSON.parse(
         fs.readFileSync(path.join(repoRoot, 'tsconfig.json'), 'utf8')
       ) as { exclude?: string[]; include?: string[] };
+      expect(tsconfig.exclude).toContain('.next-export');
       expect(tsconfig.exclude).toContain('.next/export-stage');
     });
 

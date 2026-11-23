@@ -14,7 +14,19 @@ const ROOT_CONFIG_FILES = [
   'postcss.config.mjs',
   'tsconfig.json',
   'tsconfig.build.json',
+  'next-env.d.ts',
 ];
+
+function moveOrCopyDir(sourceDir, targetDir) {
+  fs.rmSync(targetDir, { recursive: true, force: true });
+  fs.mkdirSync(path.dirname(targetDir), { recursive: true });
+  try {
+    fs.renameSync(sourceDir, targetDir);
+  } catch {
+    fs.cpSync(sourceDir, targetDir, { recursive: true });
+    fs.rmSync(sourceDir, { recursive: true, force: true });
+  }
+}
 
 export function restoreLegacyApiBackup(targetRoot = rootDir) {
   const apiDir = path.join(targetRoot, 'src', 'app', 'api');
@@ -80,33 +92,76 @@ export function stageExportWorkspace(targetRoot = rootDir) {
     });
   }
 
+  const rootExportCacheDir = path.join(targetRoot, '.next-export', 'cache');
+  if (fs.existsSync(rootExportCacheDir)) {
+    moveOrCopyDir(rootExportCacheDir, path.join(stageDir, '.next-export', 'cache'));
+  }
+
   return stageDir;
+}
+
+export function persistExportStageCache(
+  targetRoot = rootDir,
+  stageDir = path.join(targetRoot, '.next', 'export-stage')
+) {
+  const rootExportCacheDir = path.join(targetRoot, '.next-export', 'cache');
+  const cacheCandidates = [
+    path.join(stageDir, '.next-export', 'cache'),
+    path.join(stageDir, '.next', 'cache'),
+  ];
+  for (const stagedCacheDir of cacheCandidates) {
+    if (fs.existsSync(stagedCacheDir)) {
+      try {
+        moveOrCopyDir(stagedCacheDir, rootExportCacheDir);
+        return true;
+      } catch (err) {
+        console.error('Failed to persist static export build cache:', err);
+        return false;
+      }
+    }
+  }
+  return false;
+}
+
+function resolveStagedExportOutputDir(stageDir) {
+  const stagedOutDir = path.join(stageDir, 'out');
+  const stagedNextExportDir = path.join(stageDir, '.next-export');
+
+  if (fs.existsSync(path.join(stagedOutDir, 'index.html'))) {
+    return stagedOutDir;
+  }
+  if (fs.existsSync(path.join(stagedNextExportDir, 'index.html'))) {
+    return stagedNextExportDir;
+  }
+  if (fs.existsSync(stagedOutDir)) {
+    return stagedOutDir;
+  }
+  return null;
 }
 
 export function promoteStagedExportOutput(
   targetRoot = rootDir,
   stageDir = path.join(targetRoot, '.next', 'export-stage')
 ) {
-  const stagedOutDir = path.join(stageDir, 'out');
+  persistExportStageCache(targetRoot, stageDir);
+
+  const stagedExportDir = resolveStagedExportOutputDir(stageDir);
   const rootOutDir = path.join(targetRoot, 'out');
 
-  if (!fs.existsSync(stagedOutDir)) {
-    throw new Error(`Expected static export output directory at ${stagedOutDir}`);
+  if (!stagedExportDir) {
+    throw new Error(
+      `Expected static export output directory at ${path.join(stageDir, 'out')} or ${path.join(stageDir, '.next-export')}`
+    );
   }
 
-  fs.rmSync(rootOutDir, { recursive: true, force: true });
-  try {
-    fs.renameSync(stagedOutDir, rootOutDir);
-  } catch {
-    fs.cpSync(stagedOutDir, rootOutDir, { recursive: true });
-    fs.rmSync(stagedOutDir, { recursive: true, force: true });
-  }
+  moveOrCopyDir(stagedExportDir, rootOutDir);
   return rootOutDir;
 }
 
 export function cleanupExportStage(targetRoot = rootDir) {
   const stageDir = path.join(targetRoot, '.next', 'export-stage');
   if (fs.existsSync(stageDir)) {
+    persistExportStageCache(targetRoot, stageDir);
     try {
       fs.rmSync(stageDir, { recursive: true, force: true });
     } catch (err) {
@@ -167,10 +222,15 @@ function runBuildExport(targetRoot = rootDir) {
     });
 
     child.on('close', (code) => {
+      const exitCode = code ?? 1;
+      if (exitCode !== 0) {
+        cleanup();
+        process.exit(exitCode);
+        return;
+      }
+
       try {
-        if (code === 0) {
-          promoteStagedExportOutput(targetRoot, stageDir);
-        }
+        promoteStagedExportOutput(targetRoot, stageDir);
       } catch (err) {
         console.error('Failed to promote static export output:', err);
         cleanup();
@@ -178,7 +238,7 @@ function runBuildExport(targetRoot = rootDir) {
         return;
       }
       cleanup();
-      process.exit(code ?? 0);
+      process.exit(0);
     });
   } catch (error) {
     cleanup();

@@ -9,6 +9,15 @@ import { enforceActiveGuestPageSession, getGuestInviteSession } from '@/core/aut
 import { isFeatureEnabled } from '@/lib/modules';
 import { withPageQuery } from '@/lib/query-wrapper';
 
+function cleanVenueField(value: string | null | undefined): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const upper = trimmed.toUpperCase();
+  if (upper === 'TBD' || upper === 'TBD VENUE') return undefined;
+  return trimmed;
+}
+
 /**
  * Build homepage metadata and embedded schema.org JSON-LD from application configuration.
  *
@@ -18,17 +27,47 @@ export async function generateMetadata(): Promise<Metadata> {
   const config = await getAppConfig();
   const partner1 = config.partner1Name || config.brideName || '';
   const partner2 = config.partner2Name || config.groomName || '';
+  const cleanVenueName = cleanVenueField(config.venueName);
+  const cleanStreetAddress = cleanVenueField(config.venueAddress);
+  const cleanLocality = cleanVenueField(config.venueCity);
+  const cleanRegion = cleanVenueField(config.venueState);
+  const cleanPostalCode = cleanVenueField(config.venueZip);
+
   const title = partner1 && partner2
     ? `${partner1} & ${partner2}'s Wedding`
     : 'Wedding Website';
   const description = config.seoDescription || (
     partner1 && partner2
-      ? `Join ${partner1} and ${partner2} for their wedding celebration${config.venueName ? ` at ${config.venueName}` : ''}.`
+      ? `Join ${partner1} and ${partner2} for their wedding celebration${cleanVenueName ? ` at ${cleanVenueName}` : ''}.`
       : 'Welcome to our wedding website.'
   );
   const baseUrl = config.baseUrl || 'http://localhost:3000';
   const ogImageUrl = config.ogImageUrl || '/images/placeholder.png';
   const imageUrl = ogImageUrl.startsWith('http') ? ogImageUrl : `${baseUrl}${ogImageUrl}`;
+
+  const addressFields: Record<string, string> = {};
+  if (cleanStreetAddress) addressFields.streetAddress = cleanStreetAddress;
+  if (cleanLocality) addressFields.addressLocality = cleanLocality;
+  if (cleanRegion) addressFields.addressRegion = cleanRegion;
+  if (cleanPostalCode) addressFields.postalCode = cleanPostalCode;
+
+  const hasAddressFields = Object.keys(addressFields).length > 0;
+  const location =
+    cleanVenueName || hasAddressFields
+      ? {
+        '@type': 'Place',
+        ...(cleanVenueName ? { name: cleanVenueName } : {}),
+        ...(hasAddressFields
+          ? {
+            address: {
+              '@type': 'PostalAddress',
+              ...addressFields,
+              addressCountry: 'US',
+            },
+          }
+          : {}),
+      }
+      : undefined;
 
   const jsonLd = {
     '@context': 'https://schema.org',
@@ -37,18 +76,7 @@ export async function generateMetadata(): Promise<Metadata> {
     startDate: config.weddingDate.toISOString(),
     eventStatus: 'https://schema.org/EventScheduled',
     eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
-    location: {
-      '@type': 'Place',
-      name: config.venueName,
-      address: {
-        '@type': 'PostalAddress',
-        streetAddress: config.venueAddress,
-        addressLocality: config.venueCity,
-        addressRegion: config.venueState,
-        postalCode: config.venueZip,
-        addressCountry: 'US',
-      },
-    },
+    ...(location ? { location } : {}),
     description,
   };
 
