@@ -3,6 +3,7 @@ import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { normalizeSafeCallbackPath } from '@/utils/safeCallbackUrl';
 import { isAdminRequest } from './auth.server';
 import { isGuestRequest } from './guest.server';
 import {
@@ -127,6 +128,11 @@ async function resolveServerCookieGuestInviteSession(): Promise<GuestInviteSessi
 
 const getCachedServerCookieGuestInviteSession = cache(resolveServerCookieGuestInviteSession);
 
+const requestActiveSessionCache = new WeakMap<
+  object,
+  Map<string, Promise<GuestInviteSessionPayload | null>>
+>();
+
 /**
  * Retrieve verified guest invitation session from NextRequest or cookieStore,
  * confirming that the session code still matches an active, non-sample InvitationCode record.
@@ -145,18 +151,34 @@ export async function getGuestInviteSession(req?: NextRequest): Promise<GuestInv
     return null;
   }
 
+  if (typeof req === 'object') {
+    const cacheKey = `${signedPayload.code}:${signedPayload.guestName}:${signedPayload.exp ?? ''}`;
+    let bySessionKey = requestActiveSessionCache.get(req);
+    const cached = bySessionKey?.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const sessionPromise = resolveActiveInvitationSession(signedPayload).catch((err) => {
+      bySessionKey?.delete(cacheKey);
+      throw err;
+    });
+
+    if (!bySessionKey) {
+      bySessionKey = new Map();
+      requestActiveSessionCache.set(req, bySessionKey);
+    }
+    bySessionKey.set(cacheKey, sessionPromise);
+    return sessionPromise;
+  }
+
   return resolveActiveInvitationSession(signedPayload);
 }
 
-function buildGuestLoginRedirectTarget(callbackPath: string | null): string {
-  if (
-    callbackPath &&
-    callbackPath.startsWith('/') &&
-    !callbackPath.startsWith('//') &&
-    callbackPath !== '/guest/login' &&
-    !callbackPath.startsWith('/guest/login?')
-  ) {
-    return `/guest/login?callbackUrl=${encodeURIComponent(callbackPath)}`;
+export function buildGuestLoginRedirectTarget(callbackPath: string | null): string {
+  const safeCallbackPath = normalizeSafeCallbackPath(callbackPath);
+  if (safeCallbackPath) {
+    return `/guest/login?callbackUrl=${encodeURIComponent(safeCallbackPath)}`;
   }
 
   return '/guest/login';

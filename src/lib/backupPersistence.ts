@@ -9,7 +9,7 @@ export const APP_CONFIG_SECRET_KEYS = [
 
 export type AppConfigSecretKey = (typeof APP_CONFIG_SECRET_KEYS)[number];
 
-const APP_CONFIG_BACKUP_KEYS = [
+export const APP_CONFIG_BACKUP_KEYS = [
   'id',
   'partner1Name',
   'partner2Name',
@@ -35,6 +35,7 @@ const APP_CONFIG_BACKUP_KEYS = [
   'contactEmail',
   'photoAlbumUrl',
   'autoApproveGuestPhotos',
+  'guestPhotoQrTokenVersion',
   'faviconUrl',
   'ogImageUrl',
   'brandMonogram',
@@ -113,12 +114,30 @@ export function mergeAppConfigSecrets(
 }
 
 export function stripAppConfigSecrets<T extends Record<string, unknown>>(payload: T): T {
-  if (!APP_CONFIG_SECRET_KEYS.some((secretKey) => secretKey in payload)) {
+  const hasTopLevelSecrets = APP_CONFIG_SECRET_KEYS.some((secretKey) => secretKey in payload);
+  const rawPrevious = payload.previous;
+  const hasPreviousSecrets =
+    rawPrevious &&
+    typeof rawPrevious === 'object' &&
+    !Array.isArray(rawPrevious) &&
+    APP_CONFIG_SECRET_KEYS.some(
+      (secretKey) => secretKey in (rawPrevious as Record<string, unknown>),
+    );
+  if (!hasTopLevelSecrets && !hasPreviousSecrets) {
     return payload;
   }
   const copy: Record<string, unknown> = { ...payload };
   for (const secretKey of APP_CONFIG_SECRET_KEYS) {
     delete copy[secretKey];
+  }
+  if (hasPreviousSecrets) {
+    const sanitizedPrevious: Record<string, unknown> = {
+      ...(rawPrevious as Record<string, unknown>),
+    };
+    for (const secretKey of APP_CONFIG_SECRET_KEYS) {
+      delete sanitizedPrevious[secretKey];
+    }
+    copy.previous = sanitizedPrevious;
   }
   return copy as T;
 }
@@ -128,7 +147,7 @@ export function parseOptionalDate(value: unknown): Date | null {
     return null;
   }
   if (value instanceof Date) {
-    return value;
+    return Number.isNaN(value.getTime()) ? null : value;
   }
   if (typeof value === 'string' || typeof value === 'number') {
     const parsed = new Date(value);

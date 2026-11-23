@@ -81,6 +81,11 @@ export async function verifyGuestInviteSessionToken(token: string): Promise<Gues
   }
 }
 
+const requestSignedSessionCache = new WeakMap<
+  object,
+  Map<string, Promise<GuestInviteSessionPayload | null>>
+>();
+
 /**
  * Reads and verifies the HMAC signature and expiration of the guest_invite_session cookie
  * without performing database lookups (Edge-compatible).
@@ -88,6 +93,26 @@ export async function verifyGuestInviteSessionToken(token: string): Promise<Gues
 export async function getSignedGuestInviteSession(req?: NextRequest): Promise<GuestInviteSessionPayload | null> {
   const cookieValue = await readRequestCookie(GUEST_INVITE_COOKIE, req, { suppressErrors: true });
   if (!cookieValue) return null;
+
+  if (req && typeof req === 'object') {
+    let byCookie = requestSignedSessionCache.get(req);
+    const cached = byCookie?.get(cookieValue);
+    if (cached) {
+      return cached;
+    }
+
+    const verificationPromise = verifyGuestInviteSessionToken(cookieValue).catch((err) => {
+      byCookie?.delete(cookieValue);
+      throw err;
+    });
+
+    if (!byCookie) {
+      byCookie = new Map();
+      requestSignedSessionCache.set(req, byCookie);
+    }
+    byCookie.set(cookieValue, verificationPromise);
+    return verificationPromise;
+  }
 
   return verifyGuestInviteSessionToken(cookieValue);
 }

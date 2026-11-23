@@ -12,6 +12,7 @@ import Dropzone from '@/components/Dropzone';
 import EmptyState from '@/components/EmptyState';
 import { Icon } from '@/components/ui/Icon';
 import { EnsureToastProvider, useToast } from '@/components/ui/ToastProvider';
+import { triggerNativeExportDownload } from '@/utils/exportDownload';
 
 interface PendingPhoto {
   id: string;
@@ -79,7 +80,7 @@ function MediaDashboardContent({
   const [selectedPendingIds, setSelectedPendingIds] = useState<string[]>([]);
   const [isExporting, setIsExporting] = useState(false);
   const [qrModalOpen, setQrModalOpen] = useState(false);
-  const { confirm } = useToast();
+  const { confirm, addToast } = useToast();
 
   const handleOpenQrModal = () => {
     setQrModalOpen(true);
@@ -219,35 +220,17 @@ function MediaDashboardContent({
   const handleExportZip = async (targetIds?: string[]) => {
     setIsExporting(true);
     try {
-      const payload = targetIds && targetIds.length > 0 ? { ids: targetIds } : undefined;
-      const url = '/api/media/export';
-
-      let res: Response;
-      if (payload) {
-        res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-      } else {
-        res = await fetch(url);
-      }
-
-      if (!res.ok) {
-        throw new Error(`Export request failed with HTTP ${res.status}`);
-      }
-
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = targetIds && targetIds.length > 0 ? 'selected-media.zip' : 'media-export.zip';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(blobUrl);
+      const hasTargetIds = Boolean(targetIds && targetIds.length > 0);
+      const filename = hasTargetIds ? 'selected-media.zip' : 'media-export.zip';
+      await triggerNativeExportDownload({
+        url: '/api/media/export',
+        filename,
+        payload: hasTargetIds ? { ids: targetIds } : undefined,
+      });
     } catch (e) {
       console.error('Failed to export media archive:', e);
+      addToast('Failed to export media archive. Please retry the download.', 'error');
+      setA11yNotice('Failed to export media archive. Please retry the download.');
     } finally {
       setIsExporting(false);
     }

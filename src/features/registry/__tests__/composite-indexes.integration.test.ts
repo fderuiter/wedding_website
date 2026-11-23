@@ -28,7 +28,7 @@ describe('Composite & Foreign Key Indexes Verification', () => {
         SELECT tablename, indexname, indexdef 
         FROM pg_indexes 
         WHERE schemaname = 'public' 
-          AND tablename IN ('Contributor', 'RegistryItem', 'BroadcastRecipient')
+          AND tablename IN ('Contributor', 'RegistryItem', 'BroadcastRecipient', 'SnapshotVersion')
         ORDER BY tablename, indexname;
       `);
 
@@ -48,6 +48,9 @@ describe('Composite & Foreign Key Indexes Verification', () => {
       expect(indexNames).toContain('BroadcastRecipient_invitationCodeId_idx');
       expect(indexNames).toContain('BroadcastRecipient_broadcastId_status_idx');
 
+      // SnapshotVersion indexes
+      expect(indexNames).toContain('SnapshotVersion_entityType_entityId_createdAt_idx');
+
       // Verify column order in composite indexes: equality columns precede sort/range columns
       const contributorStatusDateIdx = res.rows.find((r) => r.indexname === 'Contributor_thankYouStatus_date_idx');
       expect(contributorStatusDateIdx?.indexdef).toMatch(/USING btree \("thankYouStatus", date\)/i);
@@ -57,6 +60,31 @@ describe('Composite & Foreign Key Indexes Verification', () => {
 
       const broadcastStatusIdx = res.rows.find((r) => r.indexname === 'BroadcastRecipient_broadcastId_status_idx');
       expect(broadcastStatusIdx?.indexdef).toMatch(/USING btree \("broadcastId", status\)/i);
+
+      const snapshotEntityHistoryIdx = res.rows.find(
+        (r) => r.indexname === 'SnapshotVersion_entityType_entityId_createdAt_idx'
+      );
+      expect(snapshotEntityHistoryIdx?.indexdef).toMatch(
+        /USING btree \("entityType", "entityId", "createdAt" DESC\)/i
+      );
+    });
+
+    it('defines all reconciled foreign key constraints in pg_constraint', async () => {
+      const res = await pool.query<{ conname: string }>(`
+        SELECT c.conname
+        FROM pg_constraint c
+        JOIN pg_namespace n ON n.oid = c.connamespace
+        WHERE n.nspname = 'public'
+          AND c.contype = 'f'
+        ORDER BY c.conname;
+      `);
+
+      const constraintNames = res.rows.map((r) => r.conname);
+      expect(constraintNames).toContain('WeddingPartyMember_photoId_fkey');
+      expect(constraintNames).toContain('Attraction_imageId_fkey');
+      expect(constraintNames).toContain('RegistryItem_imageId_fkey');
+      expect(constraintNames).toContain('Contributor_registryItemId_fkey');
+      expect(constraintNames).toContain('Contributor_invitationCodeId_fkey');
     });
   });
 
@@ -119,6 +147,20 @@ describe('Composite & Foreign Key Indexes Verification', () => {
 
       const planText = explainRes.rows.map((r) => r['QUERY PLAN']).join('\n');
       expect(planText).toContain('RegistryItem_category_price_idx');
+      expect(planText).not.toMatch(/\bSort\b/i);
+    });
+
+    it('executes SnapshotVersion entity history lookup without Sort nodes', async () => {
+      const explainRes = await pool.query<{ 'QUERY PLAN': string }>(`
+        EXPLAIN SELECT * FROM "SnapshotVersion"
+        WHERE "entityType" = 'RegistryItem'
+          AND "entityId" = '00000000-0000-0000-0000-000000000000'
+        ORDER BY "createdAt" DESC
+        LIMIT 20;
+      `);
+
+      const planText = explainRes.rows.map((r) => r['QUERY PLAN']).join('\n');
+      expect(planText).toContain('SnapshotVersion_entityType_entityId_createdAt_idx');
       expect(planText).not.toMatch(/\bSort\b/i);
     });
   });

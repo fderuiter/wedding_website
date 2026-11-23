@@ -14,6 +14,7 @@ import {
 } from '@/core/auth/photoUploadToken';
 import { isProtectedRoute } from '@/lib/routes';
 import { isHostAllowed } from '@/utils/hostValidation';
+import { getSafeCallbackUrl } from '@/utils/safeCallbackUrl';
 import { timingSafeEqualJS } from '@/utils/crypto';
 
 function setPhotoSessionCookieOnResponse(response: NextResponse, sessionToken: string): void {
@@ -191,10 +192,8 @@ export async function middleware(request: NextRequest) {
         incomingParams.delete(PHOTO_QR_QUERY_PARAM);
       }
       const cleanSearch = incomingParams.toString();
-      loginUrl.searchParams.set(
-        'callbackUrl',
-        cleanSearch ? `${pathname}?${cleanSearch}` : pathname
-      );
+      const candidateCallbackUrl = cleanSearch ? `${pathname}?${cleanSearch}` : pathname;
+      loginUrl.searchParams.set('callbackUrl', getSafeCallbackUrl(candidateCallbackUrl));
       if (incomingCode) {
         loginUrl.searchParams.set('code', incomingCode);
       }

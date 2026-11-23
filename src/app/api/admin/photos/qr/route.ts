@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
+import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { getAppConfig, toPublicAppConfig } from '@/lib/config';
+import { getAppConfig } from '@/lib/config';
+import { sanitizeAppConfigForBackup } from '@/lib/backupPersistence';
 import { DEFAULT_MODULE_CONFIG, isFeatureEnabled } from '@/lib/modules';
 import { buildSignedPhotoUploadUrl } from '@/core/auth/photoUploadToken';
 import { AdminPhotoQrUpdateSchema } from '@/features/content';
@@ -135,10 +137,10 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
       data: {
         entityType: 'AppConfig',
         entityId: updatedRow.id || 'global',
-        data: toPublicAppConfig({
+        data: sanitizeAppConfigForBackup({
           ...config,
           ...updatedRow,
-        }) as any,
+        }) as Prisma.InputJsonValue,
         author: 'Admin',
       },
     });

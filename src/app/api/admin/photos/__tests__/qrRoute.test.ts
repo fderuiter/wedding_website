@@ -3,7 +3,7 @@
 import { NextRequest } from 'next/server';
 
 const mockGetAppConfig = jest.fn();
-const mockToPublicAppConfig = jest.fn((cfg: unknown) => cfg);
+const mockSanitizeAppConfigForBackup = jest.fn((cfg: unknown) => cfg);
 const mockUpsertAppConfig = jest.fn();
 const mockCreateSnapshotVersion = jest.fn();
 const mockRevalidatePath = jest.fn();
@@ -15,7 +15,10 @@ jest.mock('next/cache', () => ({
 
 jest.mock('@/lib/config', () => ({
   getAppConfig: (...args: unknown[]) => mockGetAppConfig(...args),
-  toPublicAppConfig: (cfg: unknown) => mockToPublicAppConfig(cfg),
+}));
+
+jest.mock('@/lib/backupPersistence', () => ({
+  sanitizeAppConfigForBackup: (cfg: unknown) => mockSanitizeAppConfigForBackup(cfg),
 }));
 
 jest.mock('@/core/auth/auth.server', () => {
