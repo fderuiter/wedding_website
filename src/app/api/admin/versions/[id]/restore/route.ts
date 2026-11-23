@@ -68,6 +68,7 @@ interface SnapshotPayload extends Record<string, unknown> {
   action?: string;
   code?: string;
   seatNumber?: number | null;
+  plusOneSeatNumbers?: number[];
   guestName?: string;
   email?: string | null;
   addressLine1?: string | null;
@@ -406,6 +407,13 @@ export const POST = withApiMiddleware(
             seatNumber: resolvedTableId
               ? (snapshotData.seatNumber ?? null)
               : null,
+            plusOneSeatNumbers:
+              resolvedTableId && Array.isArray(snapshotData.plusOneSeatNumbers)
+                ? snapshotData.plusOneSeatNumbers.filter(
+                  (n: unknown): n is number =>
+                    typeof n === 'number' && Number.isInteger(n),
+                )
+                : [],
           },
         });
       } else {
@@ -450,6 +458,13 @@ export const POST = withApiMiddleware(
           seatNumber: resolvedTableId
             ? (snapshotData.seatNumber ?? null)
             : null,
+          plusOneSeatNumbers:
+            resolvedTableId && Array.isArray(snapshotData.plusOneSeatNumbers)
+              ? snapshotData.plusOneSeatNumbers.filter(
+                (n: unknown): n is number =>
+                  typeof n === 'number' && Number.isInteger(n),
+              )
+              : [],
           ...(snapshotData.isSample !== undefined
             ? { isSample: Boolean(snapshotData.isSample) }
             : {}),
