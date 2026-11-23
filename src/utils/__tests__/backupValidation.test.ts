@@ -10,7 +10,7 @@ import {
   APP_CONFIG_BACKUP_KEYS,
   APP_CONFIG_SECRET_KEYS,
   sanitizeAppConfigForBackup,
-} from '@/lib/appConfigBackup';
+} from '@/lib/backupPersistence';
 import {
   AppConfigSchema,
   translateAppConfigSnapshot,
@@ -645,7 +645,7 @@ describe('DatabaseBackupSchema Validation Tests', () => {
 
     test('client-reachable backup validation and key modules do not import server-only modules', () => {
       for (const relFile of [
-        'src/lib/appConfigBackup.ts',
+        'src/lib/backupPersistence.ts',
         'src/utils/backupValidation.ts',
       ]) {
         const content = fs.readFileSync(

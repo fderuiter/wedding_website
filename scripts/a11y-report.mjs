@@ -1,6 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import childProcess from 'child_process';
+import { fileURLToPath } from 'url';
+
+const SCRIPT_REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 function normalizePlaywrightViolations(rawData) {
   if (Array.isArray(rawData)) {
@@ -93,18 +96,84 @@ function defaultRunStep(command, args, cwd, envOverrides) {
   return typeof result.status === 'number' ? result.status : 1;
 }
 
+export function findJestAxeSuites(cwd = process.cwd()) {
+  const candidateSrc = path.join(cwd, 'src');
+  const searchRoot = fs.existsSync(candidateSrc) ? cwd : SCRIPT_REPO_ROOT;
+  const srcDir = path.join(searchRoot, 'src');
+  if (!fs.existsSync(srcDir)) {
+    return [];
+  }
+
+  const suites = [];
+  function walk(dir) {
+    const entries = fs
+      .readdirSync(dir, { withFileTypes: true })
+      .sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+      } else if (
+        entry.isFile() &&
+        /\.(?:test|spec)\.[jt]sx?$/.test(entry.name) &&
+        !entry.name.endsWith('.skip.tsx')
+      ) {
+        const content = fs.readFileSync(fullPath, 'utf8');
+        if (content.includes('jest-axe')) {
+          suites.push(path.relative(searchRoot, fullPath).split(path.sep).join('/'));
+        }
+      }
+    }
+  }
+
+  walk(srcDir);
+  return suites.sort();
+}
+
+export function runA11yUnit(options = {}) {
+  const cwd = options.cwd || process.cwd();
+  const runStep = options.runStep || defaultRunStep;
+  const suites = findJestAxeSuites(cwd);
+  if (suites.length === 0) {
+    return 1;
+  }
+
+  const resultsDir = path.join(cwd, 'test-results');
+  fs.mkdirSync(resultsDir, { recursive: true });
+  const jestFile = path.join(resultsDir, 'jest-a11y-violations.json');
+  fs.writeFileSync(jestFile, '[]\n', 'utf8');
+
+  const jestStatus = runStep(
+    'npx',
+    ['jest', '--runInBand', '--coverage=false', '--runTestsByPath', ...suites],
+    cwd
+  );
+  if (jestStatus !== 0) {
+    return jestStatus;
+  }
+
+  if (fs.existsSync(jestFile)) {
+    const recorded = JSON.parse(fs.readFileSync(jestFile, 'utf8'));
+    if (Array.isArray(recorded) && recorded.length > 0) {
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
 export function runA11ySuite(options = {}) {
   const cwd = options.cwd || process.cwd();
   const runStep = options.runStep || defaultRunStep;
 
   fs.rmSync(path.join(cwd, 'test-results'), { recursive: true, force: true });
 
-  const jestStatus = runStep('npm', ['test'], cwd);
+  const jestStatus = runA11yUnit({ cwd, runStep });
   const seedStatus = runStep('npx', ['tsx', 'scripts/seed.ts'], cwd, {
     DATABASE_URL: process.env.DATABASE_URL || DEFAULT_TEST_DATABASE_URL,
     ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || DEFAULT_TEST_ADMIN_PASSWORD,
   });
-  const playwrightStatus = runStep('npx', ['playwright', 'test'], cwd);
+  const playwrightStatus = runStep('npx', ['playwright', 'test', '--grep', '@a11y'], cwd);
   const { totalViolations } = generateReport({ cwd });
 
   if (jestStatus !== 0) {
@@ -123,6 +192,12 @@ export function runA11ySuite(options = {}) {
 }
 
 export function main(argv = process.argv.slice(2), options = {}) {
+  if (argv.includes('--unit')) {
+    const exitCode = runA11yUnit(options);
+    process.exit(exitCode);
+    return;
+  }
+
   if (argv.includes('--run')) {
     const exitCode = runA11ySuite(options);
     process.exit(exitCode);

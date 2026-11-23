@@ -4,6 +4,22 @@
   "private": true,
   "type": "module",
   "license": "AGPL-3.0-or-later",
+  "engines": {
+    "node": "^22.12.0",
+    "npm": "^10.9.0"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "^22.12.0",
+      "onFail": "error"
+    },
+    "packageManager": {
+      "name": "npm",
+      "version": "^10.9.0",
+      "onFail": "error"
+    }
+  },
   "sideEffects": [
     "*.css",
     "**/*.css"
@@ -21,8 +37,8 @@
     "lint:migrations": "tsx scripts/verify-migration-compatibility.ts",
     "lint:unused": "knip",
     "lint:unused:fix": "knip --fix --allow-remove-files",
-    "type-check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tsconfig.e2e.json && tsc --noEmit -p tsconfig.scripts.json",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tsconfig.e2e.json && tsc --noEmit -p tsconfig.scripts.json",
+    "type-check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.build.json && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tsconfig.e2e.json && tsc --noEmit -p tsconfig.scripts.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.build.json && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tsconfig.e2e.json && tsc --noEmit -p tsconfig.scripts.json",
     "pretest": "node scripts/pretest.mjs",
     "pretest:watch": "npm run pretest",
     "pretest:cov": "npm run pretest",
@@ -30,6 +46,9 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage --runInBand",
     "test:a11y": "node scripts/a11y-report.mjs --run",
+    "test:a11y:unit": "node scripts/a11y-report.mjs --unit",
+    "test:e2e": "playwright test",
+    "test:e2e:smoke": "playwright test --grep @smoke",
     "test:standalone": "node scripts/test-standalone.mjs",
     "test:container": "node scripts/test-container.mjs",
     "migrate:dev": "dotenv -c development -- prisma migrate dev",
@@ -51,7 +70,7 @@
     "check:spec-contracts": "npx tsx scripts/verify-spec-contracts.ts",
     "check:static": "npm run check:env-docs && npm run check:runbooks && npm run check:identifiers && npm run check:action-pins && npm run check:links && npm run check:spec-contracts && npm run check:prisma && npm run lint:migrations && npm run check:doc-sync && npm run check:setup-guides",
     "check:audit": "npm audit --omit=dev --audit-level=high",
-    "docs:dev": "npx tsx scripts/generate-portal.ts && vitepress dev docs-portal",
+    "docs:dev": "npx tsx scripts/generate-portal.ts --watch --serve",
     "docs:build": "npx tsx scripts/generate-portal.ts && vitepress build docs-portal",
     "docs:preview": "vitepress preview docs-portal",
     "quality": "npx tsx scripts/check-quality.ts",
@@ -97,10 +116,12 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
+    "@babel/preset-env": "^7.29.14",
+    "@babel/preset-react": "^7.29.7",
+    "@babel/preset-typescript": "^7.29.7",
     "@eslint/eslintrc": "^3.3.7",
     "@playwright/test": "^1.64.1",
     "@storybook/addon-essentials": "^8.6.14",
-    "@storybook/nextjs": "^8.6.19",
     "@storybook/react": "^8.6.19",
     "@storybook/react-webpack5": "^8.6.19",
     "@stylistic/eslint-plugin": "^5.10.0",
@@ -113,7 +134,7 @@
     "@types/jest": "^30.0.0",
     "@types/jest-axe": "^3.5.9",
     "@types/leaflet": "^1.9.22",
-    "@types/node": "^26.6.5",
+    "@types/node": "^22.12.0",
     "@types/pdfkit": "^0.17.7",
     "@types/pg": "^8.23.1",
     "@types/react": "^19.3.0",
@@ -148,9 +169,6 @@
   "overrides": {
     "archiver": {
       "minimatch": "^11.0.8"
-    },
-    "@storybook/nextjs": {
-      "next": "$next"
     },
     "effect": "^3.22.5",
     "image-size": "^2.1.0",

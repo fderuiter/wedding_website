@@ -19,6 +19,10 @@ import {
 import { headers } from 'next/headers';
 
 import { DEFAULT_MODULE_CONFIG, resolveModuleConfig } from './modules';
+import {
+  hasNonEmptySecret as hasConfiguredSecret,
+  sanitizeAppConfigForBackup,
+} from './backupPersistence';
 import { stripPresetDefaultTokens } from './theme/presets';
 
 export function isMultisiteEnabled(): boolean {
@@ -332,10 +336,6 @@ const PUBLIC_APP_CONFIG_KEYS = Object.keys(
   PublicAppConfigSchema.shape,
 ) as Array<keyof PublicAppConfigDTO>;
 
-function hasConfiguredSecret(value: unknown): boolean {
-  return typeof value === 'string' && value.trim().length > 0;
-}
-
 export interface AdminAppConfig extends PublicAppConfig {
   rsvpGracePeriodHours: number;
   emailProvider: string;
@@ -421,10 +421,7 @@ export function toPublicAppConfig<T extends AppConfigDTO | Record<string, any>>(
   return partialSanitized as PublicAppConfig;
 }
 
-export {
-  APP_CONFIG_SECRET_KEYS,
-  sanitizeAppConfigForBackup,
-} from './appConfigBackup';
+export { sanitizeAppConfigForBackup };
 
 /**
  * Produce a masked admin view of the application configuration that omits raw
@@ -519,7 +516,7 @@ async function getSubdomainFromHeaders(): Promise<string | null> {
     }
 
     return null;
-  } catch (e) {
+  } catch {
     return null;
   }
 }

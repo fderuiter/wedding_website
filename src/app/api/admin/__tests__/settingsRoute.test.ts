@@ -65,7 +65,7 @@ import {
 import {
   APP_CONFIG_BACKUP_KEYS,
   APP_CONFIG_SECRET_KEYS,
-} from '@/lib/appConfigBackup';
+} from '@/lib/backupPersistence';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { revalidatePath } from 'next/cache';
 import {

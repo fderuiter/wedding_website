@@ -1,4 +1,3 @@
-import React from 'react';
 import type { Preview } from '@storybook/react';
 import { initialize, mswLoader } from 'msw-storybook-addon';
 import '../src/app/globals.css';
@@ -8,7 +7,7 @@ import { defaultHandlers } from '../src/mocks/handlers';
 
 // Initialize MSW for browser Storybook sandbox
 initialize({
-  onUnhandledRequest: 'bypass',
+  onUnhandledFrame: 'bypass',
   serviceWorker: {
     url: './mockServiceWorker.js',
   },

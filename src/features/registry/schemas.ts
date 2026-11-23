@@ -5,6 +5,7 @@ import {
   createLaxUrlSchema,
   deriveAdminInputSchema,
 } from '@/utils/validationPrimitives';
+import { parseOptionalDate } from '@/lib/backupPersistence';
 import {
   INVITATION_CODE_MAX_LENGTH,
   GUEST_NAME_MAX_LENGTH,
@@ -419,18 +420,6 @@ export function translateSnapshotToActive(snapshotData: any) {
   };
 }
 
-function parseSnapshotOptionalDate(value: unknown): Date | null {
-  if (value === null || value === undefined || value === '') return null;
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? null : value;
-  }
-  if (typeof value === 'string' || typeof value === 'number') {
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-  return null;
-}
-
 const CONTRIBUTOR_NULLABLE_STRING_COLUMNS = [
   'email',
   'message',
@@ -522,7 +511,7 @@ export function translateContributorSnapshot(
     snapshotData.date !== ''
   ) {
     const resolvedDate =
-      parseSnapshotOptionalDate(snapshotData.date) ?? new Date();
+      parseOptionalDate(snapshotData.date) ?? new Date();
     update.date = resolvedDate;
     create.date = resolvedDate;
   } else {
@@ -555,7 +544,7 @@ export function translateContributorSnapshot(
   for (const key of CONTRIBUTOR_NULLABLE_DATE_COLUMNS) {
     const raw = snapshotData[key];
     if (raw !== undefined) {
-      const resolved = parseSnapshotOptionalDate(raw);
+      const resolved = parseOptionalDate(raw);
       update[key] = resolved;
       create[key] = resolved;
     } else {

@@ -10,7 +10,7 @@ import {
   resolveModuleConfig,
   DEFAULT_MODULE_CONFIG,
 } from '@/lib/modules';
-import { APP_CONFIG_SECRET_KEYS } from '@/lib/appConfigBackup';
+import { APP_CONFIG_SECRET_KEYS, hasNonEmptySecret } from '@/lib/backupPersistence';
 import {
   isValidRsvpDeadlineDate,
   isValidRsvpGracePeriodHours,
@@ -1006,591 +1006,123 @@ export function isPrivateContentNode(
 }
 
 export const AppConfigSchema = z.object({
-  id: z
-    .string()
-    .describe(
-      'Unique configuration profile identifier (defaults to "global" in single-site deployments).',
-    ),
-  subdomain: z
-    .string()
-    .nullable()
-    .optional()
-    .describe(
-      'Optional subdomain slug for AppConfig branding/profile routing when MULTISITE_ENABLED is active (the other 14 Prisma tables remain shared).',
-    ),
-  multisiteEnabled: z
-    .boolean()
-    .optional()
-    .describe(
-      'Runtime flag resolved from MULTISITE_ENABLED indicating whether subdomain AppConfig profile routing is active (14 other Prisma tables are shared).',
-    ),
-  partner1Name: z
-    .string()
-    .default('')
-    .describe(
-      'Primary display name for the first partner across headings, metadata, and monograms.',
-    ),
-  partner2Name: z
-    .string()
-    .default('')
-    .describe(
-      'Primary display name for the second partner across headings, metadata, and monograms.',
-    ),
-  brideName: z
-    .string()
-    .nullable()
-    .optional()
-    .describe(
-      'Legacy optional alias for the first partner name retained for backward compatibility.',
-    ),
-  groomName: z
-    .string()
-    .nullable()
-    .optional()
-    .describe(
-      'Legacy optional alias for the second partner name retained for backward compatibility.',
-    ),
-  weddingDate: z
-    .date()
-    .describe(
-      'Scheduled wedding ceremony date and timestamp used by countdowns and calendar exports.',
-    ),
-  baseUrl: z
-    .string()
-    .describe(
-      'Canonical public base URL of the deployed wedding website used for SEO and Open Graph tags.',
-    ),
-  venueName: z
-    .string()
-    .describe(
-      'Display name of the primary wedding ceremony or reception venue.',
-    ),
-  venueAddress: z
-    .string()
-    .describe('Street address of the primary wedding venue.'),
-  venueCity: z
-    .string()
-    .describe('City where the primary wedding venue is located.'),
-  venueState: z
-    .string()
-    .describe('State, province, or region of the primary wedding venue.'),
-  venueZip: z
-    .string()
-    .describe('Postal or ZIP code of the primary wedding venue.'),
-  latitude: z
-    .number()
-    .describe(
-      'Geographic latitude coordinate of the venue used for maps and live weather forecasts.',
-    ),
-  longitude: z
-    .number()
-    .describe(
-      'Geographic longitude coordinate of the venue used for maps and live weather forecasts.',
-    ),
-  storyText: z
-    .string()
-    .describe(
-      'Couple story narrative displayed on the homepage story section.',
-    ),
-  venueDescription: z
-    .string()
-    .describe(
-      'Descriptive overview of the wedding venue grounds, setting, and amenities.',
-    ),
-  travelAdvice: z
-    .string()
-    .describe(
-      'Travel, airport, parking, and local transit guidance for attending guests.',
-    ),
-  heroTitle: z
-    .string()
-    .describe('Main headline rendered inside the homepage hero banner.'),
-  heroSubtitle: z
-    .string()
-    .describe('Secondary tagline rendered beneath the homepage hero headline.'),
-  seoTitle: z
-    .string()
-    .describe(
-      'HTML document title and social preview title for search engines and link cards.',
-    ),
-  seoDescription: z
-    .string()
-    .describe(
-      'Meta description summarizing the wedding website for search engines and Open Graph previews.',
-    ),
-  contactEmail: z
-    .string()
-    .default('')
-    .describe(
-      'Public host contact email address displayed for guest inquiries.',
-    ),
-  photoAlbumUrl: z
-    .string()
-    .default('')
-    .describe(
-      'Optional external shared photo album URL displayed on the public gallery page.',
-    ),
-  faviconUrl: z
-    .string()
-    .describe('Asset path or safe URL for the browser tab favicon icon.'),
-  ogImageUrl: z
-    .string()
-    .describe(
-      'Default Open Graph social sharing preview image URL or asset path.',
-    ),
-  brandMonogram: z
-    .string()
-    .nullable()
-    .optional()
-    .describe(
-      'Custom monogram text overriding initials derived from partner names.',
-    ),
-  brandLogoUrl: z
-    .string()
-    .nullable()
-    .optional()
-    .describe(
-      'Optional custom brand logo image URL or asset path rendered in navigation.',
-    ),
-  brandLogoAlt: z
-    .string()
-    .nullable()
-    .optional()
-    .describe('Accessible alt text describing the custom brand logo image.'),
-  heroImageUrl: z
-    .string()
-    .nullable()
-    .optional()
-    .describe(
-      'Optional custom hero background or featured image URL on the homepage.',
-    ),
-  heroImageAlt: z
-    .string()
-    .nullable()
-    .optional()
-    .describe('Accessible alt text describing the homepage hero image.'),
-  brandWatermarkUrl: z
-    .string()
-    .nullable()
-    .optional()
-    .describe(
-      'Optional decorative watermark graphic URL rendered in page backgrounds.',
-    ),
-  brandWatermarkAlt: z
-    .string()
-    .nullable()
-    .optional()
-    .describe(
-      'Accessible alt text for the brand watermark graphic when non-decorative.',
-    ),
-  badgeGraphicUrl: z
-    .string()
-    .nullable()
-    .optional()
-    .describe(
-      'Optional emblem or badge graphic URL displayed in headers or footers.',
-    ),
-  badgeGraphicAlt: z
-    .string()
-    .nullable()
-    .optional()
-    .describe('Accessible alt text describing the custom badge graphic.'),
-  seoKeywords: z
-    .string()
-    .describe(
-      'Comma-separated SEO meta keywords template supporting partner and venue placeholders.',
-    ),
-  colorPrimary: z
-    .string()
-    .default('#B91C1C')
-    .describe(
-      'Primary brand hex color applied to accents, buttons, and interactive highlights.',
-    ),
-  colorSecondary: z
-    .string()
-    .default('#B45309')
-    .describe(
-      'Secondary brand hex color applied to complementary badges, borders, and highlights.',
-    ),
-  themePreset: z
-    .enum(['classic', 'modern', 'romantic', 'minimal', 'editorial'])
-    .default('classic')
-    .describe(
-      'Named visual theme preset controlling baseline palette and typographic styling.',
-    ),
-  themeTokens: z
-    .union([
-      z.string().transform((str) => {
-        try {
-          return JSON.parse(str);
-        } catch (e) {
-          return {};
-        }
-      }),
-      ThemeTokensSchema,
-      z.record(z.string(), z.string()),
-    ])
-    .pipe(ThemeTokensSchema)
-    .default({})
-    .describe(
-      'Custom CSS custom property overrides (--* tokens) merged atop the active theme preset.',
-    ),
-  typographyScale: TypographyScaleSchema.optional()
-    .default(() => TypographyScaleSchema.parse({}))
-    .describe(
-      'Virtual DTO typography scale tokens defining font sizes, weights, and line heights.',
-    ),
-  spacingScale: SpacingScaleSchema.optional()
-    .default(() => SpacingScaleSchema.parse({}))
-    .describe(
-      'Virtual DTO spacing scale tokens defining rhythm units, container width, grid gap, and card padding.',
-    ),
-  borderTreatment: BorderTreatmentSchema.optional()
-    .default(() => BorderTreatmentSchema.parse({}))
-    .describe(
-      'Virtual DTO border radius, width, and stroke style design tokens.',
-    ),
-  brandDimensions: BrandDimensionsSchema.optional()
-    .default(() => BrandDimensionsSchema.parse({}))
-    .describe(
-      'Virtual DTO composite dimensions for brand logos, hero height, watermarks, and badges.',
-    ),
-  brandLogoWidth: layoutTokenSchema
-    .optional()
-    .default('120px')
-    .describe('Virtual DTO CSS width token for the header brand logo.'),
-  brandLogoHeight: layoutTokenSchema
-    .optional()
-    .default('40px')
-    .describe('Virtual DTO CSS height token for the header brand logo.'),
-  brandHeroHeight: layoutTokenSchema
-    .optional()
-    .default('400px')
-    .describe('Virtual DTO CSS height token for the homepage hero banner.'),
-  brandWatermarkWidth: layoutTokenSchema
-    .optional()
-    .default('200px')
-    .describe('Virtual DTO CSS width token for background watermark graphics.'),
-  brandWatermarkOpacity: z
-    .string()
-    .optional()
-    .default('0.1')
-    .describe(
-      'Virtual DTO CSS opacity value (0 to 1) applied to brand watermark graphics.',
-    ),
-  brandBadgeSize: layoutTokenSchema
-    .optional()
-    .default('48px')
-    .describe(
-      'Virtual DTO CSS size token for decorative brand badge graphics.',
-    ),
-  layoutContainerMaxWidth: layoutTokenSchema
-    .optional()
-    .default('64rem')
-    .describe('Maximum CSS width token for primary page content containers.'),
-  layoutGridGap: layoutTokenSchema
-    .optional()
-    .default('1.5rem')
-    .describe('Default CSS gap token between multi-column layout grid items.'),
-  layoutCardPadding: layoutTokenSchema
-    .optional()
-    .default('2rem')
-    .describe(
-      'Default internal CSS padding token for surface cards and panels.',
-    ),
-  layoutBorderRadius: layoutTokenSchema
-    .optional()
-    .default('1rem')
-    .describe(
-      'Default CSS border-radius token applied to cards, inputs, and dialogs.',
-    ),
-  fontHeading: fontTokenSchema.describe(
-    'Virtual DTO CSS font-family token used for display headings and titles.',
-  ),
-  fontBody: fontTokenSchema.describe(
-    'Virtual DTO CSS font-family token used for body copy and UI controls.',
-  ),
-  fontMono: fontTokenSchema.describe(
-    'Virtual DTO CSS font-family token used for invitation codes and tabular values.',
-  ),
-  timezone: z
-    .string()
-    .default('America/Chicago')
-    .describe(
-      'IANA timezone identifier used to format event schedules and countdown timers.',
-    ),
-  showCountdown: z
-    .boolean()
-    .default(true)
-    .describe(
-      'Toggle controlling whether the live wedding countdown widget renders on public pages.',
-    ),
-  showAddToCalendar: z
-    .boolean()
-    .default(true)
-    .describe(
-      'Toggle controlling whether Add-to-Calendar links and ICS downloads are shown.',
-    ),
-  rsvpOpen: z
-    .boolean()
-    .default(true)
-    .describe(
-      'Manual toggle controlling whether online guest RSVP submissions and edits are enabled.',
-    ),
-  isRsvpOpen: z
-    .boolean()
-    .optional()
-    .describe(
-      'Virtual server-evaluated flag indicating whether online RSVPs are currently open after evaluating manual lock, cutoff date, and grace period.',
-    ),
-  rsvpDeadlineDate: z
-    .string()
-    .default('')
-    .describe(
-      'Optional global RSVP cutoff calendar date (YYYY-MM-DD) enforced at midnight in the venue timezone.',
-    ),
-  rsvpGracePeriodHours: z
-    .number()
-    .int()
-    .default(0)
-    .describe(
-      'Admin-only silent grace window in hours (0, 12, 24, 48, 72, or 168) after the midnight RSVP cutoff; omitted from public DTOs.',
-    ),
-  rsvpClosedMessage: z
-    .string()
-    .default('')
-    .transform((val) => sanitizeRsvpClosedMessage(val))
-    .describe(
-      'Sanitized custom message displayed to guests and returned by RSVP APIs once online RSVPs close.',
-    ),
-  emailProvider: z
-    .string()
-    .default('smtp')
-    .describe(
-      'Active outbound email transport provider identifier (smtp, resend, or sendgrid).',
-    ),
-  smtpHost: z
-    .string()
-    .nullable()
-    .optional()
-    .default('')
-    .describe(
-      'Hostname of the outbound SMTP relay server for guest broadcasts.',
-    ),
-  smtpPort: z
-    .number()
-    .nullable()
-    .optional()
-    .default(587)
-    .describe(
-      'TCP port number used when connecting to the outbound SMTP server.',
-    ),
-  smtpUser: z
-    .string()
-    .nullable()
-    .optional()
-    .default('')
-    .describe(
-      'Authentication username for the configured outbound SMTP server.',
-    ),
-  smtpPass: z
-    .string()
-    .nullable()
-    .optional()
-    .default('')
-    .describe(
-      'Authentication password for the SMTP server; omitted from public DTOs and masked as hasSmtpPass in admin DTOs.',
-    ),
-  smtpFrom: z
-    .string()
-    .nullable()
-    .optional()
-    .default('')
-    .describe(
-      'Sender email address used in the From header of SMTP broadcast emails.',
-    ),
-  smtpSecure: z
-    .boolean()
-    .nullable()
-    .optional()
-    .default(false)
-    .describe(
-      'Whether the SMTP transport establishes implicit TLS on connection.',
-    ),
-  resendApiKey: z
-    .string()
-    .nullable()
-    .optional()
-    .default('')
-    .describe(
-      'API key for Resend email delivery; omitted from public DTOs and masked as hasResendApiKey in admin DTOs.',
-    ),
-  resendFrom: z
-    .string()
-    .nullable()
-    .optional()
-    .default('')
-    .describe(
-      'Verified sender email address used for outbound Resend broadcasts.',
-    ),
-  sendgridApiKey: z
-    .string()
-    .nullable()
-    .optional()
-    .default('')
-    .describe(
-      'API key for SendGrid email delivery; omitted from public DTOs and masked as hasSendgridApiKey in admin DTOs.',
-    ),
-  sendgridFrom: z
-    .string()
-    .nullable()
-    .optional()
-    .default('')
-    .describe(
-      'Verified sender email address used for outbound SendGrid broadcasts.',
-    ),
-  smsProvider: z
-    .string()
-    .nullable()
-    .optional()
-    .default('none')
-    .describe(
-      'Active outbound SMS broadcast provider identifier (none or twilio).',
-    ),
-  twilioAccountSid: z
-    .string()
-    .nullable()
-    .optional()
-    .default('')
-    .describe('Twilio Account SID used for dispatching SMS guest broadcasts.'),
-  twilioAuthToken: z
-    .string()
-    .nullable()
-    .optional()
-    .default('')
-    .describe(
-      'Twilio Auth Token secret; omitted from public DTOs and masked as hasTwilioAuthToken in admin DTOs.',
-    ),
-  twilioFromNumber: z
-    .string()
-    .nullable()
-    .optional()
-    .default('')
-    .describe(
-      'Twilio E.164 sender phone number or messaging source for SMS broadcasts.',
-    ),
-  broadcastBatchSize: z
-    .number()
-    .default(50)
-    .describe(
-      'Maximum number of broadcast recipients processed per delivery batch.',
-    ),
-  broadcastBatchDelayMs: z
-    .number()
-    .default(500)
-    .describe(
-      'Delay in milliseconds between consecutive outbound broadcast batches.',
-    ),
-  shippingRecipientName: z
-    .string()
-    .default('')
-    .describe(
-      'Recipient full name for registry gift shipping; omitted from public DTOs and served only to authenticated guests and admins.',
-    ),
-  shippingAddressLine1: z
-    .string()
-    .default('')
-    .describe(
-      'Primary street address line for registry gift deliveries; omitted from public DTOs.',
-    ),
-  shippingAddressLine2: z
-    .string()
-    .default('')
-    .describe(
-      'Optional apartment, suite, or unit line for registry gift deliveries; omitted from public DTOs.',
-    ),
-  shippingCity: z
-    .string()
-    .default('')
-    .describe('City for registry gift deliveries; omitted from public DTOs.'),
-  shippingState: z
-    .string()
-    .default('')
-    .describe(
-      'State, province, or region for registry gift deliveries; omitted from public DTOs.',
-    ),
-  shippingZip: z
-    .string()
-    .default('')
-    .describe(
-      'Postal or ZIP code for registry gift deliveries; omitted from public DTOs.',
-    ),
-  shippingCountry: z
-    .string()
-    .default('')
-    .describe(
-      'Destination country for registry gift deliveries; omitted from public DTOs.',
-    ),
-  shippingPhone: z
-    .string()
-    .default('')
-    .describe(
-      'Carrier contact phone number for registry gift deliveries; omitted from public DTOs.',
-    ),
-  shippingDeliveryNotes: z
-    .string()
-    .default('')
-    .describe(
-      'Optional carrier or concierge instructions for registry gift deliveries; omitted from public DTOs.',
-    ),
-  defaultPaymentHandleType: z
-    .string()
-    .default('')
-    .describe(
-      'Site-wide fallback peer-to-peer payment service (Venmo, PayPal, Cash App, Zelle, or Custom) for group gifts without an item-level handle; omitted from public DTOs.',
-    ),
-  defaultPaymentHandle: z
-    .string()
-    .default('')
-    .describe(
-      'Site-wide fallback peer-to-peer payment handle or username for group gifts without an item-level handle; omitted from public DTOs.',
-    ),
-  modules: z
-    .any()
-    .optional()
-    .transform((val): z.input<typeof ModuleConfigSchema> =>
-      resolveModuleConfig(val),
-    )
-    .pipe(ModuleConfigSchema)
-    .default(DEFAULT_MODULE_CONFIG)
-    .describe(
-      'Persisted feature module enablement map validated against ModuleConfigSchema with dependency resolution.',
-    ),
-  features: z
-    .union([
-      z.string().transform((str) => {
-        try {
-          return JSON.parse(str);
-        } catch (e) {
-          return [];
-        }
-      }),
-      z.any(),
-    ])
-    .pipe(z.array(FeatureSchema))
-    .describe(
-      'Ordered homepage content section definitions controlling section titles, visibility, and copy.',
-    ),
-  createdAt: z
-    .date()
-    .describe(
-      'Timestamp recording when the configuration record was initially created.',
-    ),
-  updatedAt: z
-    .date()
-    .describe(
-      'Timestamp recording when the configuration record was last modified.',
-    ),
+  id: z.string().describe('Unique configuration profile identifier (defaults to "global" in single-site deployments).'),
+  subdomain: z.string().nullable().optional().describe('Optional subdomain slug for AppConfig branding/profile routing when MULTISITE_ENABLED is active (the other 14 Prisma tables remain shared).'),
+  multisiteEnabled: z.boolean().optional().describe('Runtime flag resolved from MULTISITE_ENABLED indicating whether subdomain AppConfig profile routing is active (14 other Prisma tables are shared).'),
+  partner1Name: z.string().default('').describe('Primary display name for the first partner across headings, metadata, and monograms.'),
+  partner2Name: z.string().default('').describe('Primary display name for the second partner across headings, metadata, and monograms.'),
+  brideName: z.string().nullable().optional().describe('Legacy optional alias for the first partner name retained for backward compatibility.'),
+  groomName: z.string().nullable().optional().describe('Legacy optional alias for the second partner name retained for backward compatibility.'),
+  weddingDate: z.date().describe('Scheduled wedding ceremony date and timestamp used by countdowns and calendar exports.'),
+  baseUrl: z.string().describe('Canonical public base URL of the deployed wedding website used for SEO and Open Graph tags.'),
+  venueName: z.string().describe('Display name of the primary wedding ceremony or reception venue.'),
+  venueAddress: z.string().describe('Street address of the primary wedding venue.'),
+  venueCity: z.string().describe('City where the primary wedding venue is located.'),
+  venueState: z.string().describe('State, province, or region of the primary wedding venue.'),
+  venueZip: z.string().describe('Postal or ZIP code of the primary wedding venue.'),
+  latitude: z.number().describe('Geographic latitude coordinate of the venue used for maps and live weather forecasts.'),
+  longitude: z.number().describe('Geographic longitude coordinate of the venue used for maps and live weather forecasts.'),
+  storyText: z.string().describe('Couple story narrative displayed on the homepage story section.'),
+  venueDescription: z.string().describe('Descriptive overview of the wedding venue grounds, setting, and amenities.'),
+  travelAdvice: z.string().describe('Travel, airport, parking, and local transit guidance for attending guests.'),
+  heroTitle: z.string().describe('Main headline rendered inside the homepage hero banner.'),
+  heroSubtitle: z.string().describe('Secondary tagline rendered beneath the homepage hero headline.'),
+  seoTitle: z.string().describe('HTML document title and social preview title for search engines and link cards.'),
+  seoDescription: z.string().describe('Meta description summarizing the wedding website for search engines and Open Graph previews.'),
+  contactEmail: z.string().default('').describe('Public host contact email address displayed for guest inquiries.'),
+  photoAlbumUrl: z.string().default('').describe('Optional external shared photo album URL displayed on the public gallery page.'),
+  faviconUrl: z.string().describe('Asset path or safe URL for the browser tab favicon icon.'),
+  ogImageUrl: z.string().describe('Default Open Graph social sharing preview image URL or asset path.'),
+  brandMonogram: z.string().nullable().optional().describe('Custom monogram text overriding initials derived from partner names.'),
+  brandLogoUrl: z.string().nullable().optional().describe('Optional custom brand logo image URL or asset path rendered in navigation.'),
+  brandLogoAlt: z.string().nullable().optional().describe('Accessible alt text describing the custom brand logo image.'),
+  heroImageUrl: z.string().nullable().optional().describe('Optional custom hero background or featured image URL on the homepage.'),
+  heroImageAlt: z.string().nullable().optional().describe('Accessible alt text describing the homepage hero image.'),
+  brandWatermarkUrl: z.string().nullable().optional().describe('Optional decorative watermark graphic URL rendered in page backgrounds.'),
+  brandWatermarkAlt: z.string().nullable().optional().describe('Accessible alt text for the brand watermark graphic when non-decorative.'),
+  badgeGraphicUrl: z.string().nullable().optional().describe('Optional emblem or badge graphic URL displayed in headers or footers.'),
+  badgeGraphicAlt: z.string().nullable().optional().describe('Accessible alt text describing the custom badge graphic.'),
+  seoKeywords: z.string().describe('Comma-separated SEO meta keywords template supporting partner and venue placeholders.'),
+  colorPrimary: z.string().default('#B91C1C').describe('Primary brand hex color applied to accents, buttons, and interactive highlights.'),
+  colorSecondary: z.string().default('#B45309').describe('Secondary brand hex color applied to complementary badges, borders, and highlights.'),
+  themePreset: z.enum(['classic', 'modern', 'romantic', 'minimal', 'editorial']).default('classic').describe('Named visual theme preset controlling baseline palette and typographic styling.'),
+  themeTokens: z.union([
+    z.string().transform((str) => {
+      try {
+        return JSON.parse(str);
+      } catch {
+        return {};
+      }
+    }),
+    ThemeTokensSchema,
+    z.record(z.string(), z.string())
+  ]).pipe(ThemeTokensSchema).default({}).describe('Custom CSS custom property overrides (--* tokens) merged atop the active theme preset.'),
+  typographyScale: TypographyScaleSchema.optional().default(() => TypographyScaleSchema.parse({})).describe('Virtual DTO typography scale tokens defining font sizes, weights, and line heights.'),
+  spacingScale: SpacingScaleSchema.optional().default(() => SpacingScaleSchema.parse({})).describe('Virtual DTO spacing scale tokens defining rhythm units, container width, grid gap, and card padding.'),
+  borderTreatment: BorderTreatmentSchema.optional().default(() => BorderTreatmentSchema.parse({})).describe('Virtual DTO border radius, width, and stroke style design tokens.'),
+  brandDimensions: BrandDimensionsSchema.optional().default(() => BrandDimensionsSchema.parse({})).describe('Virtual DTO composite dimensions for brand logos, hero height, watermarks, and badges.'),
+  brandLogoWidth: layoutTokenSchema.optional().default('120px').describe('Virtual DTO CSS width token for the header brand logo.'),
+  brandLogoHeight: layoutTokenSchema.optional().default('40px').describe('Virtual DTO CSS height token for the header brand logo.'),
+  brandHeroHeight: layoutTokenSchema.optional().default('400px').describe('Virtual DTO CSS height token for the homepage hero banner.'),
+  brandWatermarkWidth: layoutTokenSchema.optional().default('200px').describe('Virtual DTO CSS width token for background watermark graphics.'),
+  brandWatermarkOpacity: z.string().optional().default('0.1').describe('Virtual DTO CSS opacity value (0 to 1) applied to brand watermark graphics.'),
+  brandBadgeSize: layoutTokenSchema.optional().default('48px').describe('Virtual DTO CSS size token for decorative brand badge graphics.'),
+  layoutContainerMaxWidth: layoutTokenSchema.optional().default('64rem').describe('Maximum CSS width token for primary page content containers.'),
+  layoutGridGap: layoutTokenSchema.optional().default('1.5rem').describe('Default CSS gap token between multi-column layout grid items.'),
+  layoutCardPadding: layoutTokenSchema.optional().default('2rem').describe('Default internal CSS padding token for surface cards and panels.'),
+  layoutBorderRadius: layoutTokenSchema.optional().default('1rem').describe('Default CSS border-radius token applied to cards, inputs, and dialogs.'),
+  fontHeading: fontTokenSchema.describe('Virtual DTO CSS font-family token used for display headings and titles.'),
+  fontBody: fontTokenSchema.describe('Virtual DTO CSS font-family token used for body copy and UI controls.'),
+  fontMono: fontTokenSchema.describe('Virtual DTO CSS font-family token used for invitation codes and tabular values.'),
+  timezone: z.string().default('America/Chicago').describe('IANA timezone identifier used to format event schedules and countdown timers.'),
+  showCountdown: z.boolean().default(true).describe('Toggle controlling whether the live wedding countdown widget renders on public pages.'),
+  showAddToCalendar: z.boolean().default(true).describe('Toggle controlling whether Add-to-Calendar links and ICS downloads are shown.'),
+  rsvpOpen: z.boolean().default(true).describe('Manual toggle controlling whether online guest RSVP submissions and edits are enabled.'),
+  isRsvpOpen: z.boolean().optional().describe('Virtual server-evaluated flag indicating whether online RSVPs are currently open after evaluating manual lock, cutoff date, and grace period.'),
+  rsvpDeadlineDate: z.string().default('').describe('Optional global RSVP cutoff calendar date (YYYY-MM-DD) enforced at midnight in the venue timezone.'),
+  rsvpGracePeriodHours: z.number().int().default(0).describe('Admin-only silent grace window in hours (0, 12, 24, 48, 72, or 168) after the midnight RSVP cutoff; omitted from public DTOs.'),
+  rsvpClosedMessage: z.string().default('').transform((val) => sanitizeRsvpClosedMessage(val)).describe('Sanitized custom message displayed to guests and returned by RSVP APIs once online RSVPs close.'),
+  emailProvider: z.string().default('smtp').describe('Active outbound email transport provider identifier (smtp, resend, or sendgrid).'),
+  smtpHost: z.string().nullable().optional().default('').describe('Hostname of the outbound SMTP relay server for guest broadcasts.'),
+  smtpPort: z.number().nullable().optional().default(587).describe('TCP port number used when connecting to the outbound SMTP server.'),
+  smtpUser: z.string().nullable().optional().default('').describe('Authentication username for the configured outbound SMTP server.'),
+  smtpPass: z.string().nullable().optional().default('').describe('Authentication password for the SMTP server; omitted from public DTOs and masked as hasSmtpPass in admin DTOs.'),
+  smtpFrom: z.string().nullable().optional().default('').describe('Sender email address used in the From header of SMTP broadcast emails.'),
+  smtpSecure: z.boolean().nullable().optional().default(false).describe('Whether the SMTP transport establishes implicit TLS on connection.'),
+  resendApiKey: z.string().nullable().optional().default('').describe('API key for Resend email delivery; omitted from public DTOs and masked as hasResendApiKey in admin DTOs.'),
+  resendFrom: z.string().nullable().optional().default('').describe('Verified sender email address used for outbound Resend broadcasts.'),
+  sendgridApiKey: z.string().nullable().optional().default('').describe('API key for SendGrid email delivery; omitted from public DTOs and masked as hasSendgridApiKey in admin DTOs.'),
+  sendgridFrom: z.string().nullable().optional().default('').describe('Verified sender email address used for outbound SendGrid broadcasts.'),
+  smsProvider: z.string().nullable().optional().default('none').describe('Active outbound SMS broadcast provider identifier (none or twilio).'),
+  twilioAccountSid: z.string().nullable().optional().default('').describe('Twilio Account SID used for dispatching SMS guest broadcasts.'),
+  twilioAuthToken: z.string().nullable().optional().default('').describe('Twilio Auth Token secret; omitted from public DTOs and masked as hasTwilioAuthToken in admin DTOs.'),
+  twilioFromNumber: z.string().nullable().optional().default('').describe('Twilio E.164 sender phone number or messaging source for SMS broadcasts.'),
+  broadcastBatchSize: z.number().default(50).describe('Maximum number of broadcast recipients processed per delivery batch.'),
+  broadcastBatchDelayMs: z.number().default(500).describe('Delay in milliseconds between consecutive outbound broadcast batches.'),
+  shippingRecipientName: z.string().default('').describe('Recipient full name for registry gift shipping; omitted from public DTOs and served only to authenticated guests and admins.'),
+  shippingAddressLine1: z.string().default('').describe('Primary street address line for registry gift deliveries; omitted from public DTOs.'),
+  shippingAddressLine2: z.string().default('').describe('Optional apartment, suite, or unit line for registry gift deliveries; omitted from public DTOs.'),
+  shippingCity: z.string().default('').describe('City for registry gift deliveries; omitted from public DTOs.'),
+  shippingState: z.string().default('').describe('State, province, or region for registry gift deliveries; omitted from public DTOs.'),
+  shippingZip: z.string().default('').describe('Postal or ZIP code for registry gift deliveries; omitted from public DTOs.'),
+  shippingCountry: z.string().default('').describe('Destination country for registry gift deliveries; omitted from public DTOs.'),
+  shippingPhone: z.string().default('').describe('Carrier contact phone number for registry gift deliveries; omitted from public DTOs.'),
+  shippingDeliveryNotes: z.string().default('').describe('Optional carrier or concierge instructions for registry gift deliveries; omitted from public DTOs.'),
+  defaultPaymentHandleType: z.string().default('').describe('Site-wide fallback peer-to-peer payment service (Venmo, PayPal, Cash App, Zelle, or Custom) for group gifts without an item-level handle; omitted from public DTOs.'),
+  defaultPaymentHandle: z.string().default('').describe('Site-wide fallback peer-to-peer payment handle or username for group gifts without an item-level handle; omitted from public DTOs.'),
+  modules: z.any().optional().transform((val): z.input<typeof ModuleConfigSchema> => resolveModuleConfig(val)).pipe(ModuleConfigSchema).default(DEFAULT_MODULE_CONFIG).describe('Persisted feature module enablement map validated against ModuleConfigSchema with dependency resolution.'),
+  features: z.union([
+    z.string().transform((str) => {
+      try {
+        return JSON.parse(str);
+      } catch {
+        return [];
+      }
+    }),
+    z.any()
+  ]).pipe(z.array(FeatureSchema)).describe('Ordered homepage content section definitions controlling section titles, visibility, and copy.'),
+  createdAt: z.date().describe('Timestamp recording when the configuration record was initially created.'),
+  updatedAt: z.date().describe('Timestamp recording when the configuration record was last modified.'),
 });
 
 export type AppConfigDTO = z.infer<typeof AppConfigSchema>;
@@ -2166,7 +1698,7 @@ export function translateAppConfigSnapshot(
 
   for (const secretKey of APP_CONFIG_SECRET_KEYS) {
     const val = snapshotData[secretKey];
-    if (typeof val === 'string' && val.trim().length > 0) {
+    if (hasNonEmptySecret(val)) {
       update[secretKey] = val;
       create[secretKey] = val;
     }

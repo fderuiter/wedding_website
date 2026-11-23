@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Authoritative Runtime Contract: docs/runtime-contract.md
-FROM node:26-bookworm-slim@sha256:5df79989ed685e09f0a98019db4cebfb22fb9df1a53c0161664a011f7ff6b0f1 AS base
+FROM node:22-bookworm-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee AS base
 WORKDIR /app
 
 # Install OpenSSL and tini once for Prisma TLS, PID 1 signal forwarding, and zombie reaping
@@ -91,7 +91,7 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked \
 
 # Builder stage
 FROM base AS builder
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json .npmrc ./
 COPY prisma ./prisma
 COPY prisma.config.ts ./
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \

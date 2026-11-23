@@ -5,24 +5,14 @@ test.describe('Maintenance Hub Pre-flight Validation Visual Tests', () => {
   test('displays pre-flight summary card for valid backup and diagnostic error panel for invalid backup', async ({
     page,
     context,
-  }) => {
+  }, testInfo) => {
     test.setTimeout(60000);
 
     // Set admin and guest cookies across both loopback origins
     await seedAdminAndGuestAuthCookies(context);
 
-    try {
-      await page.goto('/admin/dashboard/maintenance', { waitUntil: 'domcontentloaded' });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('crashed') || msg.includes('closed') || msg.includes('net::ERR_ABORTED')) {
-        await seedAdminAndGuestAuthCookies(context).catch(() => {});
-        page = await context.newPage();
-        await page.goto('/admin/dashboard/maintenance', { waitUntil: 'domcontentloaded', timeout: 30000 });
-      } else {
-        throw err;
-      }
-    }
+    await page.goto('/admin/dashboard/maintenance', { waitUntil: 'domcontentloaded' });
+    expect(new URL(page.url()).pathname).toBe('/admin/dashboard/maintenance');
 
     // 1. Valid backup test
     const validBackup = {
@@ -77,7 +67,11 @@ test.describe('Maintenance Hub Pre-flight Validation Visual Tests', () => {
     await expect(page.locator('text=valid-backup.json')).toBeVisible({ timeout: 15000 });
 
     // Take screenshot of valid pre-flight summary
-    await page.screenshot({ path: '/tmp/maintenance-preflight-valid.png', fullPage: true });
+    await page.screenshot({
+      path: testInfo.outputPath('maintenance-preflight-valid.png'),
+      fullPage: true,
+      animations: 'disabled',
+    });
 
     // 1b. Unified v2.0 15-model backup pre-flight summary verification
     const nowIso = new Date().toISOString();
@@ -190,7 +184,11 @@ test.describe('Maintenance Hub Pre-flight Validation Visual Tests', () => {
     await expect(page.locator('text=Broadcasts:')).toBeVisible({ timeout: 15000 });
     await expect(page.locator('text=Snapshots:')).toBeVisible({ timeout: 15000 });
 
-    await page.screenshot({ path: '/tmp/maintenance-preflight-v2.png', fullPage: true });
+    await page.screenshot({
+      path: testInfo.outputPath('maintenance-preflight-v2.png'),
+      fullPage: true,
+      animations: 'disabled',
+    });
 
     // 2. Invalid backup test
     const invalidBackup = {
@@ -231,6 +229,10 @@ test.describe('Maintenance Hub Pre-flight Validation Visual Tests', () => {
     await expect(page.locator('text=Site Settings (Entry 1) — Website URL')).toBeVisible({ timeout: 15000 });
 
     // Take screenshot of invalid pre-flight diagnostic report
-    await page.screenshot({ path: '/tmp/maintenance-preflight-invalid.png', fullPage: true });
+    await page.screenshot({
+      path: testInfo.outputPath('maintenance-preflight-invalid.png'),
+      fullPage: true,
+      animations: 'disabled',
+    });
   });
 });

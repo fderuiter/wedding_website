@@ -67,21 +67,22 @@ For detailed onboarding, local setup workflows, and testing runbooks, see the [D
 
 ### Prerequisites
 
-*   **Node.js**: LTS version recommended (v22+).
+*   **Node.js & npm**: Node.js **v22.x LTS** (`^22.12.0`, pinned in [`.nvmrc`](./.nvmrc)) and **`npm@10.9.x`** (`^10.9.0`, enforced via [`.npmrc`](./.npmrc) and `devEngines` in [`package.json`](./package.json)).
 *   **Git**: For version control.
 *   **PostgreSQL Database**: Compatible with local PostgreSQL, the bundled Docker Compose `db` service (`DB_PASSWORD=wedding123 docker compose up -d db` after `cp .env.example .env`, binding `127.0.0.1:5432:5432` with user `wedding`, password `wedding123`, database `wedding` via [`docker-compose.yml`](./docker-compose.yml) and [`docker-compose.ci.yml`](./docker-compose.ci.yml)), or cloud providers (e.g. Neon, Supabase, Railway, RDS, Cloud SQL). See [DEPLOYMENT.md](./DEPLOYMENT.md) for the PostgreSQL Database Contract and operational guidance.
 
 ### Installation Steps
 
-1.  **Clone the repository:**
+1.  **Clone the repository and select Node.js 22 LTS:**
     ```bash
     git clone https://github.com/fderuiter/wedding_website.git
     cd wedding_website
+    nvm use
     ```
 
-2.  **Install dependencies:**
+2.  **Install dependencies cleanly from the lockfile:**
     ```bash
-    npm install
+    npm ci
     ```
 
 ### Environment Variables

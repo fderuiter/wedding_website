@@ -1,6 +1,6 @@
 function sanitizeContributor(contributor: any) {
   if (!contributor) return contributor;
-  const { email, ...rest } = contributor;
+  const { email: _email, ...rest } = contributor;
   return rest;
 }
 
@@ -23,7 +23,13 @@ export function sanitizeRegistryItems(items: any) {
 
 function maskContributor(contributor: any) {
   if (!contributor) return contributor;
-  const { email, retailerOrderNumber, trackingNumber, carrier, ...rest } = contributor;
+  const {
+    email: _email,
+    retailerOrderNumber: _retailerOrderNumber,
+    trackingNumber: _trackingNumber,
+    carrier: _carrier,
+    ...rest
+  } = contributor;
   return {
     ...rest,
     name: 'Anonymous',

@@ -8,7 +8,7 @@ import { isSiteInitialized } from '@/lib/config';
 import {
   APP_CONFIG_BACKUP_KEYS,
   APP_CONFIG_SECRET_KEYS,
-} from '@/lib/appConfigBackup';
+} from '@/lib/backupPersistence';
 import { AppConfigSchema } from '@/features/content';
 import { resetRateLimitsForTesting } from '@/utils/rateLimit';
 
