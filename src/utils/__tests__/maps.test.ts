@@ -1,4 +1,15 @@
-import { resolveDirectionsUrl } from '../maps';
+import {
+  resolveDirectionsUrl,
+  hasValidCoordinates,
+  isNonPlaceholderVenueText,
+  formatVenueStreetAddress,
+  formatFullVenueLocation,
+  joinEventLocations,
+  calculateDistanceMiles,
+  formatDistanceFromVenue,
+  type VenueAddressParts,
+  type LatLonCoordinates,
+} from '../maps';
 
 describe('resolveDirectionsUrl', () => {
   it('returns undefined when location is null or undefined', () => {
@@ -127,5 +138,72 @@ describe('resolveDirectionsUrl', () => {
     expect(
       resolveDirectionsUrl({ directions: '500 Floral Way', latitude: 37.7749, longitude: -122.4194 })
     ).toBe('https://www.google.com/maps/dir/?api=1&destination=37.7749,-122.4194');
+  });
+
+  it('ignores placeholder TBD strings when coordinates are (0, 0)', () => {
+    expect(resolveDirectionsUrl({ directions: 'TBD', latitude: 0, longitude: 0 })).toBeUndefined();
+  });
+});
+
+describe('coordinate, venue formatting, and distance helpers', () => {
+  it('validates coordinates and rejects (0, 0), NaN, and out-of-range values', () => {
+    const valid: LatLonCoordinates = { latitude: 41.8781, longitude: -87.6298 };
+    expect(hasValidCoordinates(valid.latitude, valid.longitude)).toBe(true);
+    expect(hasValidCoordinates(0, 0)).toBe(false);
+    expect(hasValidCoordinates(0, -87.6)).toBe(true);
+    expect(hasValidCoordinates(NaN, -87.6)).toBe(false);
+    expect(hasValidCoordinates(91, 0)).toBe(false);
+    expect(hasValidCoordinates(0, -181)).toBe(false);
+  });
+
+  it('formats street and full venue locations while filtering placeholder values', () => {
+    expect(isNonPlaceholderVenueText('TBD')).toBe(false);
+    expect(isNonPlaceholderVenueText('N/A')).toBe(false);
+    expect(isNonPlaceholderVenueText('00000')).toBe(false);
+    expect(isNonPlaceholderVenueText('500 Floral Way')).toBe(true);
+
+    const fullParts: VenueAddressParts = {
+      venueName: 'Botanic Conservatory',
+      venueAddress: '500 Floral Way',
+      venueCity: 'Chicago',
+      venueState: 'IL',
+      venueZip: '60611',
+    };
+    expect(formatVenueStreetAddress(fullParts)).toBe('500 Floral Way, Chicago, IL 60611');
+    expect(formatFullVenueLocation(fullParts)).toBe(
+      'Botanic Conservatory, 500 Floral Way, Chicago, IL 60611'
+    );
+
+    const placeholderParts: VenueAddressParts = {
+      venueName: 'TBD',
+      venueAddress: 'TBD',
+      venueCity: 'Austin',
+      venueState: 'TX',
+      venueZip: 'TBD',
+    };
+    expect(formatVenueStreetAddress(placeholderParts)).toBe('Austin, TX');
+    expect(formatFullVenueLocation(placeholderParts)).toBe('Austin, TX');
+  });
+
+  it('joins sub-event locationName and street location cleanly', () => {
+    expect(joinEventLocations('Grace Church', '123 Church St')).toBe('Grace Church, 123 Church St');
+    expect(joinEventLocations('Grace Church, 123 Church St', '123 Church St')).toBe(
+      'Grace Church, 123 Church St'
+    );
+    expect(joinEventLocations('TBD', '123 Church St')).toBe('123 Church St');
+    expect(joinEventLocations(null, undefined)).toBe('');
+  });
+
+  it('computes Haversine miles and formats readable venue distances', () => {
+    const venue = { latitude: 41.8796, longitude: -87.6237 };
+    const nearbyHotel = { latitude: 41.8998, longitude: -87.6233 };
+    const adjacentSpot = { latitude: 41.88, longitude: -87.6238 };
+
+    expect(
+      calculateDistanceMiles(venue.latitude, venue.longitude, nearbyHotel.latitude, nearbyHotel.longitude)
+    ).toBeCloseTo(1.395, 2);
+    expect(formatDistanceFromVenue(venue, nearbyHotel)).toBe('1.4 mi from venue');
+    expect(formatDistanceFromVenue(venue, adjacentSpot)).toBe('< 0.1 mi from venue');
+    expect(formatDistanceFromVenue({ latitude: 0, longitude: 0 }, nearbyHotel)).toBeNull();
   });
 });

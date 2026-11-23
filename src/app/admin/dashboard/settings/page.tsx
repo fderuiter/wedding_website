@@ -18,6 +18,8 @@ import { useAdminBroadcast } from '@/hooks/admin/useAdminBroadcast';
 import { MAX_UPLOAD_SIZE, ACCEPTED_IMAGE_TYPES } from '@/utils/validation';
 import { FEATURE_METADATA, FeatureId, resolveModuleConfig } from '@/lib/modules';
 import { ThemeConfigurationPanel } from '@/components/admin/ThemeConfigurationPanel';
+import { AddressLookupInput } from '@/components/admin/AddressLookupInput';
+import { isNonPlaceholderVenueText } from '@/utils/maps';
 import { MediaImage } from '@/components/MediaImage';
 import { stripPresetDefaultTokens, type ThemePreset } from '@/lib/theme/presets';
 import { cssTokenKeyRegex, isValidCssTokenValue } from '@/features/content';
@@ -882,6 +884,42 @@ export default function AdminSettingsPage() {
 
               <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
                 <h2 className="text-xl font-semibold mb-4">Venue & Location</h2>
+                <AddressLookupInput
+                  id="settings-venue-lookup"
+                  label="Search Address"
+                  placeholder="Search venue name or street address..."
+                  helperText="Select a verified location to fill street address, postal code, and map coordinates automatically."
+                  verifiedCoordinates={{
+                    latitude:
+                      typeof localConfig.latitude === 'number'
+                        ? localConfig.latitude
+                        : localConfig.latitude !== undefined && localConfig.latitude !== ''
+                          ? Number(localConfig.latitude)
+                          : undefined,
+                    longitude:
+                      typeof localConfig.longitude === 'number'
+                        ? localConfig.longitude
+                        : localConfig.longitude !== undefined && localConfig.longitude !== ''
+                          ? Number(localConfig.longitude)
+                          : undefined,
+                  }}
+                  onSelect={(match) => {
+                    setLocalConfig((prev) => ({
+                      ...(prev ?? {}),
+                      venueName:
+                        !isNonPlaceholderVenueText(prev?.venueName) && match.name
+                          ? match.name
+                          : prev?.venueName || match.name,
+                      venueAddress:
+                        match.streetAddress || match.displayName || prev?.venueAddress || '',
+                      venueCity: match.city || prev?.venueCity || '',
+                      venueState: match.state || prev?.venueState || '',
+                      venueZip: match.zip || prev?.venueZip || '',
+                      latitude: match.latitude,
+                      longitude: match.longitude,
+                    }));
+                  }}
+                />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormGroup>
                     <Label>Venue Name</Label>
@@ -911,16 +949,24 @@ export default function AdminSettingsPage() {
                     />
                   </FormGroup>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                  <FormGroup>
-                    <Label>Latitude</Label>
-                    <Input required type="number" step="any" name="latitude" value={localConfig.latitude || 0} onChange={handleChange} />
-                  </FormGroup>
-                  <FormGroup>
-                    <Label>Longitude</Label>
-                    <Input required type="number" step="any" name="longitude" value={localConfig.longitude || 0} onChange={handleChange} />
-                  </FormGroup>
-                </div>
+                <details className="mt-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-900/40 p-3">
+                  <summary className="cursor-pointer select-none font-medium text-sm text-gray-700 dark:text-gray-200 min-h-11 flex items-center justify-between gap-2">
+                    <span>Manual Coordinates (Optional)</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      Override decimal latitude &amp; longitude
+                    </span>
+                  </summary>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3">
+                    <FormGroup>
+                      <Label>Latitude</Label>
+                      <Input type="number" step="any" name="latitude" value={localConfig.latitude ?? 0} onChange={handleChange} />
+                    </FormGroup>
+                    <FormGroup>
+                      <Label>Longitude</Label>
+                      <Input type="number" step="any" name="longitude" value={localConfig.longitude ?? 0} onChange={handleChange} />
+                    </FormGroup>
+                  </div>
+                </details>
               </section>
 
               <section

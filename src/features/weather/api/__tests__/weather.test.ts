@@ -288,6 +288,40 @@ describe('Weather API Route', () => {
       expect(fallback.daily.temperature_2m_max[0]).toBe(36);
       expect(fallback.daily.temperature_2m_min[0]).toBe(25);
     });
+
+    it('should filter out (0, 0) coordinates and use temperate defaults instead of tropical Gulf of Guinea data', async () => {
+      // January at (0, 0) would be ~84F if treated as equatorial; temperate fallback (40.7128N) is 52F
+      const fallback = getLocalizedClimateFallback(0, 0, '2027-01-15', '2026-12-30');
+      expect(fallback.daily.temperature_2m_max[0]).toBe(52);
+
+      const nearDate = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
+      mockGetAppConfig.mockResolvedValue({
+        ...APP_DEFAULTS,
+        weddingDate: nearDate,
+        timezone: 'UTC',
+        venueName: 'TBD',
+        venueAddress: 'TBD',
+        venueCity: 'TBD',
+        venueState: 'TBD',
+        venueZip: 'TBD',
+        latitude: 0,
+        longitude: 0,
+        modules: { weather: { enabled: true } },
+      } as any);
+
+      let requestedUrl = '';
+      server.use(
+        http.get('https://api.open-meteo.com/v1/forecast', ({ request }) => {
+          requestedUrl = request.url;
+          return HttpResponse.json({ daily: { time: [nearDate.toISOString().split('T')[0]] } });
+        })
+      );
+
+      await getWeatherForecast();
+      expect(requestedUrl).not.toContain('latitude=0&');
+      expect(requestedUrl).toContain('latitude=40.7128');
+      expect(requestedUrl).toContain('longitude=-74.006');
+    });
   });
 });
 
