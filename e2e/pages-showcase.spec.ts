@@ -249,21 +249,6 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
     await page.getByTestId('demo-archetype-select').selectOption('classic');
     await page.screenshot({ path: '/tmp/pages-demo-guest.png', animations: 'disabled' });
 
-    for (const guestRoute of [
-      '/wedding-party',
-      '/things-to-do',
-      '/photos',
-      '/photos/slideshow',
-      '/weather',
-      '/heart',
-      '/guest/collect',
-    ]) {
-      await page.goto(`${origin}${SUBPATH_PREFIX}/demo${guestRoute}`, {
-        waitUntil: 'domcontentloaded',
-      });
-      await waitForDemoHydration(page);
-    }
-
     // Gift Registry Interactive Contribution + Storage Persistence + Reset Demo
     await page.goto(`${origin}${SUBPATH_PREFIX}/demo/registry`, { waitUntil: 'domcontentloaded' });
     await waitForDemoHydration(page);
@@ -316,6 +301,53 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
     expect(monitors.consoleErrors).toEqual([]);
   });
 
+  test('serves Guest sub-routes and 3D Heart physics cleanly under /wedding_website/demo', async ({
+    context,
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await stubExternalRequests(context);
+    const monitors = attachStrictRuntimeMonitors(page);
+
+    for (const guestRoute of [
+      '/wedding-party',
+      '/things-to-do',
+      '/photos',
+      '/weather',
+      '/guest/collect',
+      '/photos/slideshow',
+    ]) {
+      const routePage = guestRoute === '/photos' ? await context.newPage() : page;
+      const routeMonitors =
+        routePage === page ? null : attachStrictRuntimeMonitors(routePage);
+      await routePage.goto(`${origin}${SUBPATH_PREFIX}/demo${guestRoute}`, {
+        waitUntil: 'domcontentloaded',
+      });
+      await waitForDemoHydration(routePage);
+      if (routeMonitors && routePage !== page) {
+        expect(routeMonitors.pageErrors).toEqual([]);
+        expect(routeMonitors.failedResponses).toEqual([]);
+        expect(routeMonitors.consoleErrors).toEqual([]);
+        await routePage.close();
+      }
+    }
+
+    const heartPage = await context.newPage();
+    const heartMonitors = attachStrictRuntimeMonitors(heartPage);
+    await heartPage.goto(`${origin}${SUBPATH_PREFIX}/demo/heart`, {
+      waitUntil: 'domcontentloaded',
+    });
+    await waitForDemoHydration(heartPage);
+    expect(heartMonitors.pageErrors).toEqual([]);
+    expect(heartMonitors.failedResponses).toEqual([]);
+    expect(heartMonitors.consoleErrors).toEqual([]);
+    await heartPage.close();
+
+    expect(monitors.pageErrors).toEqual([]);
+    expect(monitors.failedResponses).toEqual([]);
+    expect(monitors.consoleErrors).toEqual([]);
+  });
+
   test('serves Admin Control Panel and all 14 dashboard modules cleanly under /wedding_website/', async ({
     context,
     page,
@@ -324,11 +356,11 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
     await stubExternalRequests(context);
     const monitors = attachStrictRuntimeMonitors(page);
 
-    await page.goto(`${origin}${SUBPATH_PREFIX}/demo/`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${origin}${SUBPATH_PREFIX}/demo/`, { waitUntil: 'load' });
     await waitForDemoHydration(page);
     await page.getByTestId('demo-persona-admin').click();
     await page.goto(`${origin}${SUBPATH_PREFIX}/demo/admin/dashboard`, {
-      waitUntil: 'domcontentloaded',
+      waitUntil: 'load',
     });
     await waitForDemoHydration(page);
     await expect(page.locator('body')).toContainText('Dashboard');
@@ -350,14 +382,24 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
       '/admin/dashboard/maintenance',
     ];
 
+    const adminNav = page.getByRole('navigation', { name: 'Admin Navigation' });
     for (const adminRoute of adminSubRoutes) {
       await test.step(`Admin route ${adminRoute}`, async () => {
-        await page.goto(`${origin}${SUBPATH_PREFIX}/demo${adminRoute}`, {
-          waitUntil: 'domcontentloaded',
-        });
+        const navLink = adminNav
+          .locator(
+            `a[href="${SUBPATH_PREFIX}/demo${adminRoute}/"], a[href="${SUBPATH_PREFIX}/demo${adminRoute}"]`,
+          )
+          .first();
+        await expect(navLink).toBeVisible();
+        await navLink.click();
+        await expect(page).toHaveURL(new RegExp(`${SUBPATH_PREFIX}/demo${adminRoute}/?$`));
+        await expect(navLink).toHaveAttribute('aria-current', 'page');
         await waitForDemoHydration(page);
       });
     }
+
+    await page.reload({ waitUntil: 'load' });
+    await waitForDemoHydration(page);
 
     expect(monitors.pageErrors).toEqual([]);
     expect(monitors.failedResponses).toEqual([]);

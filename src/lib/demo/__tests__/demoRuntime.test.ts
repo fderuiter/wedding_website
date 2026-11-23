@@ -1,4 +1,5 @@
 import { buildArchetypeDataset, DEMO_SHIPPING_ADDRESS } from '../demoSeed';
+import { createDemoStore } from '@/lib/staticDemo/store';
 import {
   getBasePath,
   getPortalBaseUrl,
@@ -105,6 +106,32 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
     expect(active.weddingParty).toEqual([]);
     expect(active.attractions).toEqual([]);
     expect(active.faqs).toEqual([]);
+
+    // Re-hydrating when staticDemo store already has matching activeArchetype preserves its snapshot
+    const prevInstalled = window.__STATIC_DEMO_INSTALLED__;
+    try {
+      const matchingStore = createDemoStore({ storage: null, initialArchetype: 'destination' });
+      const matchingSwitchSpy = jest.spyOn(matchingStore, 'switchArchetype');
+      window.__STATIC_DEMO_INSTALLED__ = {
+        store: matchingStore,
+        routeRequest: jest.fn(),
+        uninstall: jest.fn(),
+      };
+      hydrateDemoStateFromStorage();
+      expect(matchingSwitchSpy).not.toHaveBeenCalled();
+
+      const differentStore = createDemoStore({ storage: null, initialArchetype: 'classic' });
+      const differentSwitchSpy = jest.spyOn(differentStore, 'switchArchetype');
+      window.__STATIC_DEMO_INSTALLED__ = {
+        store: differentStore,
+        routeRequest: jest.fn(),
+        uninstall: jest.fn(),
+      };
+      hydrateDemoStateFromStorage();
+      expect(differentSwitchSpy).toHaveBeenCalledWith('destination');
+    } finally {
+      window.__STATIC_DEMO_INSTALLED__ = prevInstalled;
+    }
 
     unsubscribe();
   });

@@ -76,7 +76,7 @@
     "docs:build": "npx tsx scripts/generate-portal.ts && vitepress build docs-portal",
     "docs:preview": "vitepress preview docs-portal",
     "pages:build": "node scripts/build-pages-bundle.mjs",
-    "pages:verify": "TEST_CONTAINER=true playwright test e2e/pages-showcase.spec.ts",
+    "pages:verify": "ulimit -n $(ulimit -Hn) 2>/dev/null || true; TEST_CONTAINER=true playwright test e2e/pages-showcase.spec.ts",
     "quality": "npx tsx scripts/check-quality.ts",
     "check:all": "npm run quality",
     "scaffold": "node scripts/scaffold-feature.mjs",

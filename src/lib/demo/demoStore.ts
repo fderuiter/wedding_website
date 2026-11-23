@@ -114,6 +114,7 @@ function syncTableGuests(
 }
 
 interface StaticDemoStoreBridge {
+  getSnapshot?: () => { activeArchetype?: ArchetypeId };
   switchArchetype: (archetype: ArchetypeId) => unknown;
   setSetupMode: (enabled: boolean) => unknown;
   reset: (archetype?: ArchetypeId) => unknown;
@@ -326,7 +327,9 @@ export function hydrateDemoStateFromStorage(): void {
     };
     const bridge = getStaticDemoStoreBridge();
     if (bridge) {
-      bridge.switchArchetype(state.archetype);
+      if (bridge.getSnapshot?.().activeArchetype !== state.archetype) {
+        bridge.switchArchetype(state.archetype);
+      }
       syncStaticDemoThemePreset(state.themePreset);
       syncStaticDemoPersona(state.persona, state.setupAuthenticated);
       syncStaticDemoConfigOverrides(state.configOverrides);
