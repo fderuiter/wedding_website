@@ -175,12 +175,12 @@ The application expects to be deployed behind an HTTP reverse proxy, load balanc
 
 - **Transport Security**: Production deployments assume HTTPS termination at the reverse proxy/ingress layer.
 - **Security Headers (Standalone / Server Mode Only)**: When running in standalone/server mode (`!isStaticExport`), `next.config.ts` (`headers()`) automatically injects the following HTTP security headers on all routes (`/(.*)`):
-  - `Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com; frame-src 'self' https://js.stripe.com https://hooks.stripe.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https:; frame-ancestors 'self';`
+  - `Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://js.stripe.com; worker-src 'self' blob:; frame-src 'self' https://js.stripe.com https://hooks.stripe.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https:; frame-ancestors 'self';`
   - `Strict-Transport-Security: max-age=31536000; includeSubDomains`
   - `X-Frame-Options: SAMEORIGIN`
   - `X-Content-Type-Options: nosniff`
   - `Referrer-Policy: strict-origin-when-cross-origin`
-- **Static Export Header Caveat**: Next.js `headers()` is disabled when `STATIC_EXPORT` is `'true'` or `'1'` (`output: 'export'`). Operators serving static showcase builds must configure equivalent `Content-Security-Policy`, HSTS, framing, MIME-sniffing, and referrer headers at their CDN, static host, or reverse-proxy layer.
+- **Static Export Header Caveat**: Next.js `headers()` is disabled when `STATIC_EXPORT` is `'true'` or `'1'` (`output: 'export'`). Operators serving static showcase builds must configure equivalent `Content-Security-Policy` (including `worker-src 'self' blob:` and `blob:` in `script-src` so `/heart` 3D text `blob:` workers and `importScripts` module hydration succeed), HSTS, framing, MIME-sniffing, and referrer headers at their CDN, static host, or reverse-proxy layer.
 
 ---
 
