@@ -467,7 +467,7 @@ export default function MaintenanceHubPage() {
                                   ? 'bg-primary text-white animate-pulse'
                                   : isFailed
                                     ? 'bg-red-600 text-white'
-                                    : 'bg-gray-200 dark:bg-gray-700 text-gray-500'
+                                    : 'bg-gray-200 dark:bg-gray-700 text-muted-text'
                             }`}
                           >
                             {isPast ? '✓' : isFailed ? '✕' : idx + 1}
@@ -480,7 +480,7 @@ export default function MaintenanceHubPage() {
                                   ? 'text-primary font-bold'
                                   : isFailed
                                     ? 'text-red-600 dark:text-red-400 font-bold'
-                                    : 'text-gray-400 dark:text-gray-500'
+                                    : 'text-muted-text'
                             }`}
                           >
                             {s.label}

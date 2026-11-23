@@ -103,6 +103,8 @@ export const BackupAppConfigSchema = z.object({
   seoDescription: AppConfigSchema.shape.seoDescription.optional(),
   contactEmail: RawUpdateAppConfigSchema.shape.contactEmail.optional(),
   photoAlbumUrl: RawUpdateAppConfigSchema.shape.photoAlbumUrl.optional(),
+  autoApproveGuestPhotos: z.boolean().optional(),
+  guestPhotoQrTokenVersion: z.number().int().min(1).optional(),
   faviconUrl: RawUpdateAppConfigSchema.shape.faviconUrl.optional(),
   ogImageUrl: RawUpdateAppConfigSchema.shape.ogImageUrl.optional(),
   brandMonogram: z.string().nullable().optional(),

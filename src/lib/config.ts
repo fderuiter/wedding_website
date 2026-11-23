@@ -68,6 +68,8 @@ export const APP_DEFAULTS: LocalAppConfig = {
   seoDescription: '',
   contactEmail: '',
   photoAlbumUrl: '',
+  autoApproveGuestPhotos: false,
+  guestPhotoQrTokenVersion: 1,
   faviconUrl: '/assets/favicon.png',
   ogImageUrl: '/images/placeholder.png',
   brandMonogram: undefined,
@@ -353,6 +355,7 @@ const PUBLIC_APP_CONFIG_KEYS = Object.keys(
 ) as Array<keyof PublicAppConfigDTO>;
 
 export interface AdminAppConfig extends PublicAppConfig {
+  autoApproveGuestPhotos: boolean;
   rsvpGracePeriodHours: number;
   emailProvider: string;
   smtpHost: string;
@@ -537,6 +540,7 @@ export function toAdminAppConfig<T extends AppConfigDTO | Record<string, any>>(
 
   return {
     ...publicConfig,
+    autoApproveGuestPhotos: Boolean(raw.autoApproveGuestPhotos),
     features: resolveRawFeatures(raw.features, publicConfig.features),
     rsvpOpen: typeof raw.rsvpOpen === 'boolean' ? raw.rsvpOpen : true,
     rsvpGracePeriodHours:

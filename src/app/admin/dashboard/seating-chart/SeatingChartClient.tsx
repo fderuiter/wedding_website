@@ -22,7 +22,10 @@ import {
   isGuestEligibleForSeating,
   isLandmarkTable,
 } from '@/features/seating';
+import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
+import { Input } from '@/components/ui/forms';
+import { Icon } from '@/components/ui/Icon';
 import { EnsureToastProvider, useToast } from '@/components/ui/ToastProvider';
 import {
   InvitationCodeDTO,
@@ -55,10 +58,21 @@ function SeatingChartAdminContent() {
   } = useSeatingState();
 
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
+  const [placementTableId, setPlacementTableId] = useState<string | null>(null);
+  const [inspectorAnnouncement, setInspectorAnnouncement] = useState('');
   const [isTableModalOpen, setIsTableModalOpen] = useState(false);
   const [editingTable, setEditingTable] = useState<SeatingTableDTO | null>(null);
   const [assignSeatTarget, setAssignSeatTarget] = useState<{ tableId: string; seatNumber: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+
+  const isPlacementMode = Boolean(selectedTableId && placementTableId === selectedTableId);
+
+  const nudgeSelectedTableBy = (table: SeatingTableDTO, dx: number, dy: number) => {
+    const nextX = Math.max(0, Math.round(table.x + dx));
+    const nextY = Math.max(0, Math.round(table.y + dy));
+    handleUpdateTablePosition(table.id, nextX, nextY);
+    setInspectorAnnouncement(`${table.name} moved to X ${nextX}, Y ${nextY}.`);
+  };
 
   // Compute search matching stats with memoization (excluding unseated ineligible records)
   const normalizedQuery = searchQuery.trim().toLowerCase();
@@ -357,31 +371,31 @@ function SeatingChartAdminContent() {
               Search all guests across floorplan and unassigned list
             </label>
             <div className="relative">
-              <input
+              <Input
                 id="global-guest-search"
                 type="text"
+                sizeVariant="compact"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search guest name or code across floorplan..."
-                className="w-full pl-9 pr-8 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
+                className="!pl-9 !pr-9 !py-2 !text-xs"
               />
-              <svg
-                className="w-4 h-4 text-gray-400 absolute left-3 top-2.5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
+              <Icon
+                name="Search"
+                size={16}
+                className="text-muted-text absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+              />
               {searchQuery && (
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="sm"
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 min-w-6 min-h-6 inline-flex items-center justify-center text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 font-bold text-xs rounded"
                   aria-label="Clear search query"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 !h-7 !w-7 min-w-6 min-h-6 !p-0 text-muted-text hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800"
                 >
-                  ×
-                </button>
+                  <Icon name="X" size={14} />
+                </Button>
               )}
             </div>
           </div>
@@ -433,6 +447,9 @@ function SeatingChartAdminContent() {
 
           {/* Interactive 2D Floorplan Canvas Area */}
           <div className="lg:col-span-3 space-y-4">
+            <div className="sr-only" aria-live="polite" aria-atomic="true">
+              {inspectorAnnouncement}
+            </div>
             <FloorplanCanvas
               tables={tables}
               guests={allGuests}
@@ -446,6 +463,10 @@ function SeatingChartAdminContent() {
               searchQuery={searchQuery}
               onOpenSeatAssignModal={(tableId, seatNumber) => setAssignSeatTarget({ tableId, seatNumber })}
               onAddTable={handleCreateTable}
+              placementMode={isPlacementMode}
+              onPlacementModeChange={(active) =>
+                setPlacementTableId(active ? selectedTableId : null)
+              }
             />
 
             {/* Selected Table Inspector Bar */}
@@ -591,7 +612,7 @@ function SeatingChartAdminContent() {
                                 <button
                                   type="button"
                                   onClick={() => handleUnassignGuest(guest.id)}
-                                  className="min-w-6 min-h-6 inline-flex items-center justify-center text-gray-600 hover:text-red-600 dark:text-gray-200 dark:hover:text-red-400 font-bold ml-0.5 rounded"
+                                  className="min-w-6 min-h-6 inline-flex items-center justify-center text-gray-700 hover:text-red-700 dark:text-gray-200 dark:hover:text-red-300 font-bold ml-0.5 rounded"
                                   title="Unassign guest"
                                   aria-label={`Unassign ${guest.guestName}`}
                                 >
@@ -608,62 +629,145 @@ function SeatingChartAdminContent() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700/60 p-1 rounded-lg border border-gray-200 dark:border-gray-600">
-                      <button
+                    <div
+                      role="group"
+                      aria-label={`Position controls for ${selectedTable.name}`}
+                      data-testid="inspector-position-controls"
+                      className="flex flex-wrap items-center gap-1 bg-gray-100 dark:bg-gray-700/60 p-1 rounded-lg border border-gray-200 dark:border-gray-600"
+                    >
+                      <Button
                         type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => nudgeSelectedTableBy(selectedTable, -20, 0)}
+                        aria-label={`Nudge ${selectedTable.name} left`}
+                        title="Nudge left (20px)"
+                        className="!h-7 !w-7 min-w-[28px] min-h-[28px] !p-0 text-gray-800 dark:text-gray-100 hover:bg-white dark:hover:bg-gray-600"
+                      >
+                        <Icon name="ArrowLeft" size={14} />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => nudgeSelectedTableBy(selectedTable, 0, -20)}
+                        aria-label={`Nudge ${selectedTable.name} up`}
+                        title="Nudge up (20px)"
+                        className="!h-7 !w-7 min-w-[28px] min-h-[28px] !p-0 text-gray-800 dark:text-gray-100 hover:bg-white dark:hover:bg-gray-600"
+                      >
+                        <Icon name="ArrowUp" size={14} />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => nudgeSelectedTableBy(selectedTable, 0, 20)}
+                        aria-label={`Nudge ${selectedTable.name} down`}
+                        title="Nudge down (20px)"
+                        className="!h-7 !w-7 min-w-[28px] min-h-[28px] !p-0 text-gray-800 dark:text-gray-100 hover:bg-white dark:hover:bg-gray-600"
+                      >
+                        <Icon name="ArrowDown" size={14} />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => nudgeSelectedTableBy(selectedTable, 20, 0)}
+                        aria-label={`Nudge ${selectedTable.name} right`}
+                        title="Nudge right (20px)"
+                        className="!h-7 !w-7 min-w-[28px] min-h-[28px] !p-0 text-gray-800 dark:text-gray-100 hover:bg-white dark:hover:bg-gray-600"
+                      >
+                        <Icon name="ArrowRight" size={14} />
+                      </Button>
+                      <span
+                        data-testid="inspector-coordinates"
+                        className="px-1.5 font-mono text-[11px] font-semibold text-gray-700 dark:text-gray-200"
+                      >
+                        X: {Math.round(selectedTable.x)}, Y: {Math.round(selectedTable.y)}
+                      </span>
+                      <Button
+                        type="button"
+                        variant={isPlacementMode ? 'primary' : 'outline'}
+                        size="sm"
+                        pressed={isPlacementMode}
+                        srContext={`for ${selectedTable.name}`}
+                        onClick={() =>
+                          setPlacementTableId(isPlacementMode ? null : selectedTable.id)
+                        }
+                        title="Toggle click-to-place mode on floorplan"
+                        className="!h-7 min-h-[28px] !px-2.5 !py-0.5 !text-[11px]"
+                      >
+                        Place Table
+                      </Button>
+                    </div>
+                    <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700/60 p-1 rounded-lg border border-gray-200 dark:border-gray-600">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
                         onClick={() => {
                           const current = selectedTable.rotation || 0;
                           const next = (current - 45 + 360) % 360;
                           handleUpdateTableRotation(selectedTable.id, next);
                         }}
-                        className="min-w-[32px] min-h-[26px] inline-flex items-center justify-center px-2 py-1 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-600 rounded shadow-2xs"
+                        srContext={`for ${selectedTable.name}`}
+                        className="!h-7 min-w-[32px] min-h-[28px] !px-2 !py-0.5 !text-xs font-semibold text-gray-800 dark:text-gray-100 hover:bg-white dark:hover:bg-gray-600"
                         title="Rotate -45°"
                       >
                         -45°
-                      </button>
+                      </Button>
                       <span className="px-1.5 font-mono text-xs font-bold text-primary">
                         {selectedTable.rotation || 0}°
                       </span>
-                      <button
+                      <Button
                         type="button"
+                        variant="ghost"
+                        size="sm"
                         onClick={() => {
                           const current = selectedTable.rotation || 0;
                           const next = (current + 45) % 360;
                           handleUpdateTableRotation(selectedTable.id, next);
                         }}
-                        className="min-w-[32px] min-h-[26px] inline-flex items-center justify-center px-2 py-1 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-600 rounded shadow-2xs"
+                        srContext={`for ${selectedTable.name}`}
+                        className="!h-7 min-w-[32px] min-h-[28px] !px-2 !py-0.5 !text-xs font-semibold text-gray-800 dark:text-gray-100 hover:bg-white dark:hover:bg-gray-600"
                         title="Rotate +45°"
                       >
                         +45°
-                      </button>
+                      </Button>
                     </div>
                     {!selectedIsLandmark && (
-                      <button
+                      <Button
                         type="button"
+                        variant="outline"
+                        size="sm"
                         data-testid="clear-table-seats-button"
                         onClick={() => handleClearTableSeats(selectedTable.id)}
                         disabled={(selectedTable.invitationCodes?.length || 0) === 0}
-                        className="min-h-[30px] px-3 py-1.5 text-xs font-medium bg-amber-50 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200 hover:bg-amber-100 rounded-lg border border-amber-300 dark:border-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="!h-8 min-h-[30px] !px-3 !py-1.5 !text-xs font-medium !bg-amber-50 !text-amber-900 dark:!bg-amber-950/50 dark:!text-amber-200 hover:!bg-amber-100 !border-amber-300 dark:!border-amber-700"
                       >
                         Clear Seats
-                      </button>
+                      </Button>
                     )}
-                    <button
+                    <Button
                       type="button"
+                      variant="outline"
+                      size="sm"
                       onClick={() => handleEditTable(selectedTable)}
-                      className="min-h-[30px] px-3 py-1.5 text-xs font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                      className="!h-8 min-h-[30px] !px-3 !py-1.5 !text-xs font-medium"
                     >
                       Edit Properties
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
+                      variant="danger"
+                      size="sm"
                       onClick={() => {
                         void handleRequestDeleteTable(selectedTable);
                       }}
-                      className="min-h-[30px] px-3 py-1.5 text-xs font-medium bg-red-50 text-red-800 dark:bg-red-950/50 dark:text-red-300 hover:bg-red-100 rounded-lg border border-red-200"
+                      className="!h-8 min-h-[30px] !px-3 !py-1.5 !text-xs font-medium"
                     >
                       Delete Table
-                    </button>
+                    </Button>
                   </div>
                 </div>
               );

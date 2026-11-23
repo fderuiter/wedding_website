@@ -7,7 +7,7 @@ import InteractiveTimeline, {
 import { Button } from '@/components/ui/Button';
 import { FormGroup, FormMessage, Input, Label } from '@/components/ui/forms';
 import { Icon } from '@/components/ui/Icon';
-import { useToast } from '@/components/ui/ToastProvider';
+import { useOptionalToast } from '@/components/ui/ToastProvider';
 import {
   GuestHelpTrigger,
   getSafeHostEmailLink,
@@ -30,7 +30,7 @@ export default function GuestAddressPage() {
     isAuthenticated,
   } = useGuestAddressPortal();
   const theme = useTheme();
-  const toastContext = useToast();
+  const toastContext = useOptionalToast();
   const [rsvpStatus, setRsvpStatus] = useState<ScheduleRsvpStatusInfo | null>(null);
 
   const emailContact = useMemo(

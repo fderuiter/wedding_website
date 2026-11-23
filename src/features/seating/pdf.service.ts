@@ -5,7 +5,11 @@ import {
   formatGuestCustomAnswers,
   formatGuestMealSelections,
 } from '@/features/registry';
-import { computeSeatPosition, resolveDetailedSeatAssignments } from './seatLayout';
+import {
+  computeScaledTableDimensions,
+  computeSeatPosition,
+  resolveDetailedSeatAssignments,
+} from './seatLayout';
 import {
   computeTableMealCounts,
   getDietaryBadges,
@@ -134,8 +138,13 @@ export async function generateSeatingChartPdf(
         let maxY = -Infinity;
 
         tables.forEach((t) => {
-          const w = t.width || 120;
-          const h = t.height || 120;
+          const { width: w, height: h } = computeScaledTableDimensions({
+            shape: t.shape,
+            capacity: t.capacity,
+            width: t.width,
+            height: t.height,
+            rotation: t.rotation,
+          });
           if (t.x < minX) minX = t.x;
           if (t.y < minY) minY = t.y;
           if (t.x + w > maxX) maxX = t.x + w;
@@ -167,8 +176,15 @@ export async function generateSeatingChartPdf(
         const offsetY = drawAreaTop + (drawAreaHeight - scaledBboxH) / 2 - minY * scale;
 
         tables.forEach((table) => {
-          const tw = (table.width || 120) * scale;
-          const th = (table.height || 120) * scale;
+          const scaledBounds = computeScaledTableDimensions({
+            shape: table.shape,
+            capacity: table.capacity,
+            width: table.width,
+            height: table.height,
+            rotation: table.rotation,
+          });
+          const tw = scaledBounds.width * scale;
+          const th = scaledBounds.height * scale;
           const tx = offsetX + table.x * scale;
           const ty = offsetY + table.y * scale;
           const shapeLower = (table.shape || 'round').toLowerCase();

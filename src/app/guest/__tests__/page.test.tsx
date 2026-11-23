@@ -10,6 +10,10 @@ jest.mock('@/components/ui/ToastProvider', () => ({
   useToast: () => ({
     addToast: mockAddToast,
   }),
+  useOptionalToast: () => ({
+    addToast: mockAddToast,
+    toasts: [],
+  }),
 }));
 
 const globalFetch = jest.fn();
@@ -348,8 +352,8 @@ describe('GuestAddressPage (/guest)', () => {
     });
 
     // Session is reset, returns to invitation code entry form
-    expect(await screen.findByText('Guest RSVP & Address Portal')).toBeInTheDocument();
-    expect(screen.getByLabelText('Invitation Code')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Invitation Code')).toBeInTheDocument();
+    expect(screen.getByText('Guest RSVP & Address Portal')).toBeInTheDocument();
   });
 
   it('renders both personalized RSVP controls (public + authorized private SubEvents) and mailing address form when visiting /guest?code=<valid_code>', async () => {

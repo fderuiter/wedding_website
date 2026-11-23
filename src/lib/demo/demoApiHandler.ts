@@ -16,7 +16,7 @@ import type {
 import type { SeatingTableDTO } from '@/features/seating';
 import type { WeddingPartyMemberDTO, WeddingPartySide } from '@/features/wedding-party';
 import type { AttractionDTO } from '@/features/attractions';
-import { stripBasePath } from '@/lib/basePath';
+import { stripBasePath, withBasePath } from '@/lib/basePath';
 import { DEMO_SHIPPING_ADDRESS } from './demoSeed';
 import {
   applyDemoSampleSelection,
@@ -37,6 +37,8 @@ import {
 } from './demoStore';
 
 const DEMO_LANDMARK_SHAPES = new Set<string>(['dance-floor', 'bar', 'dj', 'buffet', 'cake']);
+let demoAutoApproveGuestPhotos = false;
+let demoPhotoQrTokenVersion = 1;
 
 function isDemoLandmarkShape(shape?: string): boolean {
   return Boolean(shape && DEMO_LANDMARK_SHAPES.has(shape));
@@ -1619,6 +1621,26 @@ async function handleDemoApi(
   const delegatedExtended = await delegateToStaticDemoRouter(rawInput ?? url, init, method, path);
   if (delegatedExtended) {
     return delegatedExtended;
+  }
+
+  if (path === '/api/admin/photos/qr') {
+    if (method === 'POST') {
+      const body = await parseJsonBody(init);
+      if (typeof body.autoApproveGuestPhotos === 'boolean') {
+        demoAutoApproveGuestPhotos = body.autoApproveGuestPhotos;
+      }
+      if (body.action === 'rotate') {
+        demoPhotoQrTokenVersion += 1;
+      }
+    }
+    if (method === 'GET' || method === 'POST') {
+      return jsonResponse({
+        success: true,
+        uploadUrl: `${url.origin}${withBasePath('/photos')}?tab=guest&v=${demoPhotoQrTokenVersion}`,
+        tokenVersion: demoPhotoQrTokenVersion,
+        autoApproveGuestPhotos: demoAutoApproveGuestPhotos,
+      });
+    }
   }
 
   // Health & readiness probes (standalone DemoProvider fallback)

@@ -1,0 +1,307 @@
+name: Deploy Stage
+
+permissions:
+  contents: read
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Target deployment environment (staging or production)'
+        required: true
+        type: string
+      commit_sha:
+        description: 'Verified commit SHA to check out for database migrations and default image tag'
+        required: true
+        type: string
+      image_digest:
+        description: 'Immutable OCI image digest (sha256:<64-hex>) to deploy'
+        required: false
+        default: ''
+        type: string
+      image_tag:
+        description: 'OCI image tag or commit SHA fallback'
+        required: false
+        default: ''
+        type: string
+      previous_tag:
+        description: 'Optional immutable container image tag override to restore on failure'
+        required: false
+        default: ''
+        type: string
+      provider:
+        description: 'Hosting provider adapter'
+        required: false
+        default: 'google-cloud-run'
+        type: string
+      cloud_run_service:
+        description: 'Optional Cloud Run service name override (defaults to vars.CLOUD_RUN_SERVICE or environment-isolated service name)'
+        required: false
+        default: ''
+        type: string
+      cloud_run_region:
+        description: 'Optional Cloud Run region override (defaults to vars.CLOUD_RUN_REGION or us-central1)'
+        required: false
+        default: ''
+        type: string
+      rollback_environment:
+        description: 'Optional unguarded GitHub Environment holding rollback secrets'
+        required: false
+        default: ''
+        type: string
+      dry_run:
+        description: 'Run stage deployment and verification in explicit dry-run validation mode'
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      DATABASE_URL:
+        required: false
+      GCP_SA_KEY:
+        required: false
+      GCP_PROJECT_ID:
+        required: false
+      DEPLOY_WEBHOOK_URL:
+        required: false
+      DEPLOY_WEBHOOK_SECRET:
+        required: false
+      SERVICE_URL:
+        required: false
+    outputs:
+      health_status:
+        description: 'Post-deployment health verification status'
+        value: ${{ jobs.verify-deployment.outputs.health_status }}
+      service_url:
+        description: 'Target deployment service URL'
+        value: ${{ jobs.deploy-provider.outputs.service_url }}
+      image_digest:
+        description: 'Verified immutable OCI image digest deployed'
+        value: ${{ jobs.deploy-provider.outputs.image_digest }}
+      image_uri:
+        description: 'Full digest-pinned OCI image URI deployed'
+        value: ${{ jobs.deploy-provider.outputs.image_uri }}
+
+concurrency:
+  group: deploy-env-${{ inputs.environment }}
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  database-migration:
+    name: Database Migration (${{ inputs.environment }})
+    uses: ./.github/workflows/db-migrate.yml
+    with:
+      environment: ${{ inputs.environment }}
+      commit_sha: ${{ inputs.commit_sha }}
+      confirm: true
+      caller_holds_lock: true
+    secrets: inherit
+
+  deploy-provider:
+    name: Provider Deployment (${{ inputs.environment }})
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      attestations: read
+      deployments: write
+      id-token: write
+    needs: [database-migration]
+    if: "!cancelled() && needs.database-migration.result == 'success'"
+    uses: ./.github/workflows/deploy-provider.yml
+    with:
+      environment: ${{ inputs.environment }}
+      commit_sha: ${{ inputs.commit_sha }}
+      image_digest: ${{ inputs.image_digest }}
+      image_tag: ${{ inputs.image_tag || inputs.commit_sha }}
+      provider: ${{ inputs.provider || 'google-cloud-run' }}
+      cloud_run_service: ${{ inputs.cloud_run_service || '' }}
+      cloud_run_region: ${{ inputs.cloud_run_region || '' }}
+      dry_run: ${{ inputs.dry_run || false }}
+      caller_holds_lock: true
+    secrets: inherit
+
+  verify-deployment:
+    name: Post-Deployment Health Verification (${{ inputs.environment }})
+    needs: [deploy-provider]
+    if: "!cancelled() && needs.deploy-provider.result == 'success'"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: ${{ inputs.environment }}
+    outputs:
+      health_status: ${{ steps.health-probe.outputs.health_status }}
+    steps:
+      - name: Execute Post-Deployment Health Probe Verification
+        id: health-probe
+        env:
+          TARGET_ENV: ${{ inputs.environment }}
+          VAR_SERVICE_URL: ${{ vars.SERVICE_URL }}
+          SERVICE_URL: ${{ needs.deploy-provider.outputs.service_url }}
+          SECRET_SERVICE_URL: ${{ secrets.SERVICE_URL }}
+          IS_DRY_RUN: ${{ (inputs.dry_run && needs.deploy-provider.outputs.is_dry_run == 'true') && 'true' || 'false' }}
+        run: |
+          TARGET_ENV="${TARGET_ENV:-production}"
+          case "$TARGET_ENV" in
+            staging)
+              ENV_TITLE="Staging"
+              ENV_UPPER="STAGING"
+              ;;
+            production)
+              ENV_TITLE="Production"
+              ENV_UPPER="PRODUCTION"
+              ;;
+            *)
+              ENV_TITLE="$TARGET_ENV"
+              ENV_UPPER=$(printf '%s' "$TARGET_ENV" | tr '[:lower:]' '[:upper:]')
+              ;;
+          esac
+
+          RESOLVED_URL="${VAR_SERVICE_URL:-}"
+          if [ -z "$RESOLVED_URL" ] && [ -n "${SERVICE_URL:-}" ] && [ "$SERVICE_URL" != "***" ]; then
+            RESOLVED_URL="$SERVICE_URL"
+          fi
+          if [ -z "$RESOLVED_URL" ]; then
+            RESOLVED_URL="${SECRET_SERVICE_URL:-}"
+          fi
+
+          if [ "${IS_DRY_RUN:-false}" = "true" ]; then
+            TARGET_URL="${RESOLVED_URL:-http://127.0.0.1:3000}"
+          else
+            TARGET_URL="$RESOLVED_URL"
+          fi
+          TARGET_URL="${TARGET_URL%/}"
+
+          if [ -z "$TARGET_URL" ] || [[ ! "$TARGET_URL" =~ ^https?://[^[:space:]]+ ]]; then
+            echo "::error::Missing or invalid SERVICE_URL for ${TARGET_ENV} health verification. Configure vars.SERVICE_URL (recommended) or legacy secrets.SERVICE_URL with a valid http:// or https:// URL in the '${TARGET_ENV}' GitHub Environment."
+            echo "health_status=unhealthy" >> "$GITHUB_OUTPUT"
+            echo "### 🔴 ${ENV_TITLE} Post-Deployment Health Verification Failed" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Environment:** \`${TARGET_ENV}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Target Service URL:** \`${TARGET_URL:-unconfigured}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Health Endpoint:** \`/api/health\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **HTTP Status:** \`invalid-url\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Verification Outcome:** \`UNHEALTHY\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Action:** Triggering automated rollback pipeline with N-1 schema compatibility verification..." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          HEALTH_ENDPOINT="${TARGET_URL}/api/health"
+
+          echo "=================================================="
+          echo "    ${ENV_UPPER} HEALTH CHECK VERIFICATION PROBE    "
+          echo "=================================================="
+          echo "Target Service URL : ${TARGET_URL}"
+          echo "Health Probe Path  : ${HEALTH_ENDPOINT}"
+          echo "Dry Run Environment: ${IS_DRY_RUN}"
+          echo "=================================================="
+
+          MAX_TIMEOUT=120
+          START_TIME=$(date +%s)
+          DELAY=2
+          SUCCESS=false
+          HTTP_STATUS=""
+          RESPONSE_BODY=""
+
+          while true; do
+            CURRENT_TIME=$(date +%s)
+            ELAPSED=$((CURRENT_TIME - START_TIME))
+            if [ $ELAPSED -ge $MAX_TIMEOUT ]; then
+              echo "❌ Health check timed out after ${MAX_TIMEOUT} seconds."
+              break
+            fi
+
+            echo "Polling ${HEALTH_ENDPOINT} (elapsed: ${ELAPSED}s)..."
+
+            HTTP_RESPONSE=$(curl -s -S --connect-timeout 5 --max-time 10 -w "\nHTTP_STATUS_CODE:%{http_code}" "${HEALTH_ENDPOINT}" || true)
+            HTTP_STATUS=$(printf '%s\n' "$HTTP_RESPONSE" | grep "HTTP_STATUS_CODE:" | tail -n 1 | cut -d':' -f2 || true)
+            RESPONSE_BODY=$(printf '%s\n' "$HTTP_RESPONSE" | sed '/HTTP_STATUS_CODE:/d')
+
+            if [ "$HTTP_STATUS" = "200" ]; then
+              PAYLOAD_KIND=$(printf '%s' "$RESPONSE_BODY" | jq -r 'if type != "object" then "invalid" elif has("success") then (if .success == true and (.data | type) == "object" then "wrapped" else "rejected" end) else "unwrapped" end' 2>/dev/null || true)
+              STATUS_VAL=""
+              DB_STATUS=""
+              if [ "$PAYLOAD_KIND" = "wrapped" ]; then
+                STATUS_VAL=$(printf '%s' "$RESPONSE_BODY" | jq -r '.data.status // empty' 2>/dev/null || true)
+                DB_STATUS=$(printf '%s' "$RESPONSE_BODY" | jq -r '.data.database // empty' 2>/dev/null || true)
+              elif [ "$PAYLOAD_KIND" = "unwrapped" ]; then
+                STATUS_VAL=$(printf '%s' "$RESPONSE_BODY" | jq -r '(.status) // empty' 2>/dev/null || true)
+                DB_STATUS=$(printf '%s' "$RESPONSE_BODY" | jq -r '(.database) // empty' 2>/dev/null || true)
+              fi
+
+              if [ "$DB_STATUS" = "connected" ] && [ "$STATUS_VAL" = "ok" ]; then
+                echo "✅ ${ENV_TITLE} health check probe succeeded! HTTP ${HTTP_STATUS}, status: ${STATUS_VAL}, database: ${DB_STATUS}"
+                SUCCESS=true
+                break
+              else
+                echo "⚠️ Endpoint returned 200 but payload unhealthy. status: '${STATUS_VAL}', database: '${DB_STATUS}'. Retrying in ${DELAY}s..."
+              fi
+            else
+              echo "⚠️ Probe query failed with HTTP status '${HTTP_STATUS:-unreachable}'. Retrying in ${DELAY}s..."
+            fi
+
+            if [ "$IS_DRY_RUN" = "true" ] && { [ -z "$HTTP_STATUS" ] || [ "$HTTP_STATUS" = "000" ]; }; then
+              if [ $ELAPSED -ge 6 ]; then
+                echo "::notice::Dry-run ${TARGET_ENV} environment detected without live endpoint. Dry-run health verification probe validated."
+                SUCCESS=true
+                HTTP_STATUS="200 (dry-run)"
+                RESPONSE_BODY='{"success":true,"data":{"status":"ok","database":"connected","mode":"dry-run"}}'
+                break
+              fi
+            fi
+
+            sleep $DELAY
+            DELAY=$((DELAY * 2))
+            if [ $DELAY -gt 16 ]; then
+              DELAY=16
+            fi
+          done
+
+          if [ "$SUCCESS" = "true" ]; then
+            echo "health_status=healthy" >> "$GITHUB_OUTPUT"
+            echo "### 🟢 ${ENV_TITLE} Post-Deployment Health Verification Passed" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Environment:** \`${TARGET_ENV}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Target Service URL:** \`${TARGET_URL}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Health Endpoint:** \`/api/health\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **HTTP Status:** \`${HTTP_STATUS}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Verification Outcome:** \`HEALTHY\`" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          else
+            echo "health_status=unhealthy" >> "$GITHUB_OUTPUT"
+            echo "### 🔴 ${ENV_TITLE} Post-Deployment Health Verification Failed" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Environment:** \`${TARGET_ENV}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Target Service URL:** \`${TARGET_URL}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Health Endpoint:** \`/api/health\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **HTTP Status:** \`${HTTP_STATUS:-unreachable}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Last Response:** \`${RESPONSE_BODY}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Verification Outcome:** \`UNHEALTHY\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Action:** Triggering automated rollback pipeline with N-1 schema compatibility verification..." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+  rollback:
+    name: Automated Rollback (${{ inputs.environment }})
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      attestations: read
+      deployments: write
+      id-token: write
+    needs: [deploy-provider, verify-deployment]
+    if: |
+      (failure() || cancelled()) &&
+      needs.deploy-provider.result == 'success' &&
+      (needs.verify-deployment.result == 'failure' || needs.verify-deployment.result == 'cancelled')
+    uses: ./.github/workflows/rollback.yml
+    with:
+      target_environment: ${{ inputs.environment }}
+      rollback_environment: ${{ inputs.rollback_environment || '' }}
+      commit_sha: ${{ inputs.commit_sha }}
+      previous_digest: ${{ inputs.previous_tag == '' && needs.deploy-provider.outputs.previous_image_digest || '' }}
+      previous_tag: ${{ (inputs.previous_tag != '' && inputs.previous_tag != 'latest' && inputs.previous_tag) || needs.deploy-provider.outputs.previous_image_tag }}
+      provider: ${{ inputs.provider || 'google-cloud-run' }}
+      cloud_run_service: ${{ inputs.cloud_run_service || needs.deploy-provider.outputs.cloud_run_service || '' }}
+      cloud_run_region: ${{ inputs.cloud_run_region || needs.deploy-provider.outputs.cloud_run_region || '' }}
+      reason: ${{ format('Automated {0} post-deployment health check failure on /api/health', inputs.environment) }}
+      dry_run: ${{ inputs.dry_run || false }}
+      caller_holds_lock: true
+    secrets: inherit

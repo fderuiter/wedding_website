@@ -41,6 +41,7 @@ permissions:
 concurrency:
   group: publish-artifact-release
   cancel-in-progress: false
+  queue: max
 
 jobs:
   preflight:

@@ -120,6 +120,22 @@
   --dialog-title-color: var(--color-foreground);
   --dialog-desc-color: #4B5563;
 
+  --btn-outline-border: #6b7280;
+  --input-bg: #ffffff;
+  --input-border: #6b7280;
+  --input-focus-ring: #b91c1c;
+  --input-error-border: #dc2626;
+  --input-error-focus-ring: #dc2626;
+  --input-success-border: #15803d;
+  --input-success-focus-ring: #15803d;
+  --input-warning-border: #b45309;
+  --input-warning-focus-ring: #b45309;
+  --form-label-text: #111827;
+  --form-message-text: #4b5563;
+  --form-error-text: #b91c1c;
+  --form-success-text: #166534;
+  --form-warning-text: #78350f;
+
   --print-bg: #FFFFFF;
   --print-text: #111827;
   --print-border: #E5E7EB;
@@ -134,6 +150,9 @@
   --floorplan-table-radius: 0.75rem;
   --floorplan-seat-assigned-bg: var(--color-primary, #B91C1C);
   --floorplan-seat-assigned-text: #ffffff;
+  --floorplan-seat-dimmed-bg: #e5e7eb;
+  --floorplan-seat-dimmed-text: #374151;
+  --floorplan-seat-dimmed-border: #9ca3af;
   --floorplan-seat-unassigned-hover: #fef2f2;
   --floorplan-status-overcapacity-bg: #fef2f2;
   --floorplan-status-overcapacity-border: #ef4444;
@@ -194,8 +213,9 @@
   --dialog-title-color: var(--color-foreground);
   --dialog-desc-color: #9CA3AF;
 
+  --btn-outline-border: #9ca3af;
   --input-bg: #1f2937;
-  --input-border: #4b5563;
+  --input-border: #9ca3af;
   --input-focus-ring: #f9fafb;
   --input-error-border: #f87171;
   --input-error-focus-ring: #f87171;
@@ -216,6 +236,9 @@
   --floorplan-table-border: #374151;
   --floorplan-seat-assigned-bg: var(--color-primary, #B91C1C);
   --floorplan-seat-assigned-text: #ffffff;
+  --floorplan-seat-dimmed-bg: #374151;
+  --floorplan-seat-dimmed-text: #f3f4f6;
+  --floorplan-seat-dimmed-border: #6b7280;
   --floorplan-seat-unassigned-hover: #374151;
   --floorplan-status-overcapacity-bg: #450a0a;
   --floorplan-status-overcapacity-border: #dc2626;

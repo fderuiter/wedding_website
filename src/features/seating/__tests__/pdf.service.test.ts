@@ -658,5 +658,75 @@ describe('pdf.service - generateSeatingChartPdf', () => {
         jest.restoreAllMocks();
       }
     });
+
+    it('scales 50-seat round and rectangular table schematics so all 50 perimeter seats render cleanly', async () => {
+      const drawnCircles: Array<{ x: number; y: number; r: number }> = [];
+      const drawnRects: Array<{ x: number; y: number; w: number; h: number }> = [];
+
+      const originalCircle = PDFDocument.prototype.circle;
+      const originalRoundedRect = PDFDocument.prototype.roundedRect;
+
+      jest.spyOn(PDFDocument.prototype, 'circle').mockImplementation(function (
+        this: PDFKit.PDFDocument,
+        ...args: unknown[]
+      ) {
+        const [x, y, r] = args as [number, number, number];
+        drawnCircles.push({ x, y, r });
+        return (originalCircle as (...a: unknown[]) => PDFKit.PDFDocument).apply(this, args);
+      });
+      jest.spyOn(PDFDocument.prototype, 'roundedRect').mockImplementation(function (
+        this: PDFKit.PDFDocument,
+        ...args: unknown[]
+      ) {
+        const [x, y, w, h] = args as [number, number, number, number];
+        drawnRects.push({ x, y, w, h });
+        return (originalRoundedRect as (...a: unknown[]) => PDFKit.PDFDocument).apply(this, args);
+      });
+
+      try {
+        const galaRound50: SeatingTableDTO = {
+          id: 'tbl-round-50',
+          name: 'Grand Gala Round 50',
+          shape: 'round',
+          capacity: 50,
+          x: 80,
+          y: 80,
+          width: 120,
+          height: 120,
+          rotation: 0,
+          isSample: false,
+          invitationCodes: [],
+        };
+        const banquetRect50: SeatingTableDTO = {
+          id: 'tbl-rect-50',
+          name: 'Grand Banquet 50',
+          shape: 'rectangular',
+          capacity: 50,
+          x: 900,
+          y: 80,
+          width: 250,
+          height: 100,
+          rotation: 30,
+          isSample: false,
+          invitationCodes: [],
+        };
+
+        const pdfBuffer = await generateSeatingChartPdf([galaRound50, banquetRect50], []);
+        expect(pdfBuffer.slice(0, 5).toString('ascii')).toBe('%PDF-');
+
+        // 1 round table outline + 50 round seats + 50 rect seats + 3 legend dots = 104 circles
+        expect(drawnCircles).toHaveLength(104);
+        for (const circle of drawnCircles) {
+          expect(circle.r).toBeGreaterThan(0);
+          expect(Number.isFinite(circle.x)).toBe(true);
+          expect(Number.isFinite(circle.y)).toBe(true);
+        }
+        // Rectangular table roundedRect width exceeds unscaled 100px height aspect
+        const tableRect = drawnRects[drawnRects.length - 1];
+        expect(tableRect.w).toBeGreaterThan(tableRect.h);
+      } finally {
+        jest.restoreAllMocks();
+      }
+    });
   });
 });

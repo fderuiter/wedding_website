@@ -1,10 +1,12 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
+import { Button } from '@/components/ui/Button';
 import { Dialog, useDirtyConfirmClose } from '@/components/ui/Dialog';
+import { Input } from '@/components/ui/forms';
 import { useToast } from '@/components/ui/ToastProvider';
 import { SeatingTableDTO } from '../schemas';
-import { resolveDetailedSeatAssignments } from '../seatLayout';
+import { computeScaledTableDimensions, resolveDetailedSeatAssignments } from '../seatLayout';
 import {
   getDefaultShapeDimensions,
   getGuestsHeadcount,
@@ -101,6 +103,19 @@ function TableModalForm({
   };
 
   const isLandmark = isLandmarkTableShape(shape);
+  const scaledBounds = useMemo(
+    () =>
+      computeScaledTableDimensions({
+        shape,
+        capacity: isLandmark ? 0 : capacity,
+        width,
+        height,
+        rotation,
+      }),
+    [shape, isLandmark, capacity, width, height, rotation]
+  );
+  const isPerimeterAutoScaled =
+    !isLandmark && (scaledBounds.width > width || scaledBounds.height > height);
   const currentSeatedCount = useMemo(
     () => getGuestsHeadcount(table?.invitationCodes || []),
     [table?.invitationCodes]
@@ -208,9 +223,10 @@ function TableModalForm({
         <label htmlFor="table-name" className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
           Table Name
         </label>
-        <input
+        <Input
           id="table-name"
           type="text"
+          sizeVariant="compact"
           required
           value={name}
           onChange={(e) => {
@@ -219,7 +235,7 @@ function TableModalForm({
             updateSnapshotField('name', val);
           }}
           placeholder="e.g. Table 1 - Family or Dance Floor"
-          className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
+          className="h-9 px-3 py-2 text-xs rounded-lg border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
         />
       </div>
 
@@ -255,9 +271,10 @@ function TableModalForm({
           <label htmlFor="table-capacity" className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
             Seating Capacity
           </label>
-          <input
+          <Input
             id="table-capacity"
             type="number"
+            sizeVariant="compact"
             min={isLandmark ? 0 : 1}
             max={isLandmark ? 0 : 50}
             disabled={isLandmark}
@@ -268,7 +285,7 @@ function TableModalForm({
               setCapacity(val);
               updateSnapshotField('capacity', val);
             }}
-            className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 disabled:opacity-60 disabled:cursor-not-allowed"
+            className="h-9 px-3 py-2 text-xs rounded-lg border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 disabled:opacity-60 disabled:cursor-not-allowed"
           />
           {isLandmark && (
             <p className="mt-1 text-[11px] text-gray-600 dark:text-gray-400" data-testid="landmark-capacity-note">
@@ -292,9 +309,10 @@ function TableModalForm({
           <label htmlFor="table-width" className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
             Width (px)
           </label>
-          <input
+          <Input
             id="table-width"
             type="number"
+            sizeVariant="compact"
             min={60}
             max={400}
             value={width}
@@ -303,7 +321,7 @@ function TableModalForm({
               setWidth(val);
               updateSnapshotField('width', val);
             }}
-            className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+            className="h-9 px-3 py-2 text-xs rounded-lg border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
           />
         </div>
 
@@ -311,9 +329,10 @@ function TableModalForm({
           <label htmlFor="table-height" className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
             Height (px)
           </label>
-          <input
+          <Input
             id="table-height"
             type="number"
+            sizeVariant="compact"
             min={60}
             max={400}
             value={height}
@@ -322,7 +341,7 @@ function TableModalForm({
               setHeight(val);
               updateSnapshotField('height', val);
             }}
-            className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+            className="h-9 px-3 py-2 text-xs rounded-lg border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
           />
         </div>
 
@@ -330,9 +349,10 @@ function TableModalForm({
           <label htmlFor="table-rotation" className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
             Rotation (°)
           </label>
-          <input
+          <Input
             id="table-rotation"
             type="number"
+            sizeVariant="compact"
             min={0}
             max={360}
             value={rotation}
@@ -341,19 +361,29 @@ function TableModalForm({
               setRotation(val);
               updateSnapshotField('rotation', val);
             }}
-            className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+            className="h-9 px-3 py-2 text-xs rounded-lg border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
           />
         </div>
       </div>
+
+      {isPerimeterAutoScaled && (
+        <p
+          data-testid="scaled-bounds-note"
+          className="text-[11px] text-gray-600 dark:text-gray-300"
+        >
+          Rendered floorplan &amp; PDF bounds automatically expand to {scaledBounds.width} × {scaledBounds.height} px so all {capacity} seats remain separated.
+        </p>
+      )}
 
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label htmlFor="table-x" className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
             X Position (px)
           </label>
-          <input
+          <Input
             id="table-x"
             type="number"
+            sizeVariant="compact"
             min={0}
             max={2000}
             value={x}
@@ -362,16 +392,17 @@ function TableModalForm({
               setX(val);
               updateSnapshotField('x', val);
             }}
-            className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
+            className="h-9 px-3 py-2 text-xs rounded-lg border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
           />
         </div>
         <div>
           <label htmlFor="table-y" className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
             Y Position (px)
           </label>
-          <input
+          <Input
             id="table-y"
             type="number"
+            sizeVariant="compact"
             min={0}
             max={2000}
             value={y}
@@ -380,15 +411,17 @@ function TableModalForm({
               setY(val);
               updateSnapshotField('y', val);
             }}
-            className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
+            className="h-9 px-3 py-2 text-xs rounded-lg border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
           />
         </div>
       </div>
 
       <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-700">
         {table && onDelete ? (
-          <button
+          <Button
             type="button"
+            variant="danger"
+            size="sm"
             onClick={() => {
               void (async () => {
                 const confirmed = await confirm(
@@ -400,28 +433,32 @@ function TableModalForm({
                 }
               })();
             }}
-            className="px-3 py-2 text-xs font-medium bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900 rounded-lg border border-red-200 dark:border-red-800 transition-colors"
+            className="px-3 py-2 text-xs font-medium"
           >
             Delete Table
-          </button>
+          </Button>
         ) : (
           <div></div>
         )}
 
         <div className="flex gap-2">
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             onClick={handleRequestClose}
-            className="px-4 py-2 text-xs font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            className="px-4 py-2 text-xs font-medium text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600"
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="submit"
-            className="px-4 py-2 text-xs font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors shadow-xs"
+            variant="primary"
+            size="sm"
+            className="px-4 py-2 text-xs font-medium"
           >
             {table ? 'Save Changes' : 'Create Table'}
-          </button>
+          </Button>
         </div>
       </div>
     </form>

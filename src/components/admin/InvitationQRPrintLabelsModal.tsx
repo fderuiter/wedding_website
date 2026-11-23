@@ -182,7 +182,7 @@ const InvitationQRPrintLabelsContent: React.FC<InvitationQRPrintLabelsContentPro
                 <div className="mt-1 font-mono text-xs font-semibold text-red-600 tracking-wide">
                   {item.code}
                 </div>
-                <div className="mt-0.5 text-[9px] uppercase tracking-wider text-gray-400 font-sans">
+                <div className="mt-0.5 text-[9px] uppercase tracking-wider text-muted-text font-sans">
                   Scan to RSVP
                 </div>
               </div>
