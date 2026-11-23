@@ -2,7 +2,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/features/admin';
 import { REGISTRY_MAX_CATALOG_LIMIT } from '@/utils/registryPagination';
 import { useAdminEntityOrchestration, type AdminHookOptions } from './useAdminEntityOrchestration';
-import type { RegistryItem } from '@/features/registry';
+import type {
+  AdminUpdateContributorInput,
+  ContributorStatus,
+  RegistryItem,
+} from '@/features/registry';
 
 const ADMIN_REGISTRY_QUERY_KEY = ['admin-registry'] as const;
 const ADMIN_REGISTRY_ENTITY_ENDPOINT = '/api/admin/registry-items';
@@ -203,6 +207,97 @@ export function useAdminRegistry(options?: AdminHookOptions) {
       },
     });
 
+  const { mutateAsync: mutateUnclaimItem, isPending: isUnclaimPending } = useMutation({
+    mutationFn: async ({
+      itemId,
+      confirmVerifiedPayment = false,
+    }: {
+      itemId: string;
+      confirmVerifiedPayment?: boolean;
+    }) => {
+      const res = await apiClient.post<{ item?: RegistryItem }>(
+        `/api/admin/registry/items/${encodeURIComponent(itemId)}/unclaim`,
+        { confirmVerifiedPayment }
+      );
+      return unwrapRegistryItemResponse(res) as RegistryItem | null;
+    },
+    onSuccess: (updatedItem, { itemId }) => {
+      if (updatedItem) {
+        queryClient.setQueryData<RegistryItem[] | undefined>(
+          ADMIN_REGISTRY_QUERY_KEY,
+          (old) =>
+            Array.isArray(old)
+              ? old.map((entry) => (entry.id === itemId ? { ...entry, ...updatedItem } : entry))
+              : old
+        );
+      }
+      queryClient.invalidateQueries({ queryKey: ADMIN_REGISTRY_QUERY_KEY });
+      invalidateRelatedRegistryQueries();
+    },
+  });
+
+  const { mutateAsync: mutateUpdateContributor, isPending: isUpdateContributorPending } =
+    useMutation({
+      mutationFn: async ({
+        contributorId,
+        data,
+      }: {
+        contributorId: string;
+        data: Partial<AdminUpdateContributorInput>;
+      }) => {
+        return apiClient.patch<{
+          contributor: RegistryItem['contributors'][number];
+          item?: RegistryItem | null;
+        }>(`/api/admin/contributors/${encodeURIComponent(contributorId)}`, data);
+      },
+      onSuccess: (response) => {
+        if (response?.item && response.item.id) {
+          const updatedItem = response.item;
+          queryClient.setQueryData<RegistryItem[] | undefined>(
+            ADMIN_REGISTRY_QUERY_KEY,
+            (old) =>
+              Array.isArray(old)
+                ? old.map((entry) => (entry.id === updatedItem.id ? updatedItem : entry))
+                : old
+          );
+        }
+        queryClient.invalidateQueries({ queryKey: ADMIN_REGISTRY_QUERY_KEY });
+        invalidateRelatedRegistryQueries();
+      },
+    });
+
+  const { mutateAsync: mutateDeleteContributor, isPending: isDeleteContributorPending } =
+    useMutation({
+      mutationFn: async ({
+        contributorId,
+        confirmVerifiedPayment = false,
+      }: {
+        contributorId: string;
+        confirmVerifiedPayment?: boolean;
+      }) => {
+        return apiClient.delete<{
+          deletedId: string;
+          item?: RegistryItem | null;
+        }>(`/api/admin/contributors/${encodeURIComponent(contributorId)}`, {
+          confirmVerifiedPayment,
+        });
+      },
+      onSuccess: (response) => {
+        if (response?.item && response.item.id) {
+          const updatedItem = response.item;
+          queryClient.setQueryData<RegistryItem[] | undefined>(
+            ADMIN_REGISTRY_QUERY_KEY,
+            (old) =>
+              Array.isArray(old)
+                ? old.map((entry) => (entry.id === updatedItem.id ? updatedItem : entry))
+                : old
+          );
+        }
+        queryClient.invalidateQueries({ queryKey: ADMIN_REGISTRY_QUERY_KEY });
+        invalidateRelatedRegistryQueries();
+      },
+    });
+
   return {
     ...orchestration,
     reorderItems: (orderedIds: string[]) => mutateReorderItems(orderedIds),
@@ -213,6 +308,24 @@ export function useAdminRegistry(options?: AdminHookOptions) {
       action: 'confirm' | 'remind' | 'void'
     ) => mutateContributorAction({ contributorId, action }),
     isContributorActionPending,
+    unclaimItem: (itemId: string, confirmVerifiedPayment = false) =>
+      mutateUnclaimItem({ itemId, confirmVerifiedPayment }),
+    isUnclaimPending,
+    updateContributor: (
+      contributorId: string,
+      data: {
+        name?: string;
+        email?: string | null;
+        amount?: number;
+        status?: ContributorStatus;
+        message?: string | null;
+        confirmVerifiedPayment?: boolean;
+      }
+    ) => mutateUpdateContributor({ contributorId, data }),
+    isUpdateContributorPending,
+    deleteContributor: (contributorId: string, confirmVerifiedPayment = false) =>
+      mutateDeleteContributor({ contributorId, confirmVerifiedPayment }),
+    isDeleteContributorPending,
   };
 }
 

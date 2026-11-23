@@ -116,6 +116,15 @@ export function isValidProductionScryptHash(val: string): boolean {
   return saltBytes === SCRYPT_SALT_BYTES && keyBytes === SCRYPT_KEY_BYTES;
 }
 
+function isCloudflareR2ApiEndpoint(endpoint: string): boolean {
+  try {
+    const host = new URL(endpoint).hostname.toLowerCase();
+    return host === 'r2.cloudflarestorage.com' || host.endsWith('.r2.cloudflarestorage.com');
+  } catch {
+    return /(?:^|\/\/|\.)r2\.cloudflarestorage\.com(?:[:/]|$)/i.test(endpoint);
+  }
+}
+
 function stripUnquotedInlineComment(rawVal: string): string {
   for (let i = 0; i < rawVal.length; i++) {
     if (rawVal[i] === '#' && (i === 0 || /\s/.test(rawVal[i - 1]))) {
@@ -554,7 +563,7 @@ export function validateOperatorEnv(
     }
   }
 
-  // 8. S3 all-or-nothing credential group
+  // 8. S3 all-or-nothing credential group & Cloudflare R2 endpoint/public URL invariants
   const presentS3Keys = S3_REQUIRED_GROUP.filter((key) => Boolean(normalizeOptional(getVal(key))));
   if (presentS3Keys.length > 0 && presentS3Keys.length < S3_REQUIRED_GROUP.length) {
     for (const key of S3_REQUIRED_GROUP) {
@@ -567,6 +576,26 @@ export function validateOperatorEnv(
         });
       }
     }
+  }
+
+  const s3Region = normalizeOptional(getVal('S3_REGION'));
+  const s3Endpoint = normalizeOptional(getVal('S3_ENDPOINT'));
+  const s3PublicUrl = normalizeOptional(getVal('S3_PUBLIC_URL'));
+  if (s3Region?.toLowerCase() === 'auto' && !s3Endpoint) {
+    issues.push({
+      key: 'S3_ENDPOINT',
+      rule: 'missing-r2-s3-endpoint',
+      message: 'Cloudflare R2 configurations with S3_REGION=auto must specify S3_ENDPOINT.',
+      remediation: 'Set S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com alongside S3_PUBLIC_URL when S3_REGION=auto.',
+    });
+  }
+  if (s3Endpoint && isCloudflareR2ApiEndpoint(s3Endpoint) && !s3PublicUrl) {
+    issues.push({
+      key: 'S3_PUBLIC_URL',
+      rule: 'missing-r2-s3-public-url',
+      message: 'Cloudflare R2 private API endpoints (*.r2.cloudflarestorage.com) cannot serve public assets directly; S3_PUBLIC_URL is required.',
+      remediation: 'Set S3_PUBLIC_URL to your R2 Custom Domain or public https://pub-<id>.r2.dev URL.',
+    });
   }
 
   // 9. Stripe paired keys, key prefixes, & placeholder rejection

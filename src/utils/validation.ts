@@ -291,16 +291,24 @@ export const AdminSetupSchema = z.object({
   timezone: z.string().optional(),
   showCountdown: z.boolean().optional(),
   showAddToCalendar: z.boolean().optional(),
+  setupCompleted: z.boolean().optional(),
   subdomain: z.string().nullable().optional(),
 }).meta({
   description:
-    'First-run site setup and authenticated configuration payload. Requires either password (validated against ADMIN_PASSWORD_HASH or ADMIN_PASSWORD during step-1 setup authentication) or full site initialization fields (non-placeholder baseUrl plus partner1Name & partner2Name or legacy brideName & groomName; unauthenticated first-run requests must also include password).',
+    'First-run site setup and authenticated configuration payload. Requires either password (validated against ADMIN_PASSWORD_HASH or ADMIN_PASSWORD during step-1 setup authentication), setupCompleted (for authenticated wizard completion), or full site initialization fields (non-placeholder baseUrl plus partner1Name & partner2Name or legacy brideName & groomName; unauthenticated first-run requests must also include password).',
   anyOf: [
     {
       type: 'object',
       required: ['password'],
       properties: {
         password: { type: 'string', minLength: 1 },
+      },
+    },
+    {
+      type: 'object',
+      required: ['setupCompleted'],
+      properties: {
+        setupCompleted: { type: 'boolean' },
       },
     },
     {

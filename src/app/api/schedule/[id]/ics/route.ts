@@ -17,9 +17,10 @@ export const GET = withApiMiddleware(
     }
 
     const session = await getGuestInviteSession(request);
-    const event = await subEventService.getSubEventByIdForGuest(id.trim(), session?.code);
-
-    const config = await getAppConfig();
+    const [event, config] = await Promise.all([
+      subEventService.getSubEventByIdForGuest(id.trim(), session?.code),
+      getAppConfig(),
+    ]);
     const timezone = config?.timezone || 'UTC';
 
     const combinedLocation = joinEventLocations(event.locationName, event.location);

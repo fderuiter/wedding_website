@@ -262,17 +262,22 @@ export function useSetupWizardMachine(initialValues?: Partial<SetupWizardPersist
     initialValues,
     (customInit) => {
       let savedDraft: Partial<SetupWizardPersistedState> = {};
+      let hasSessionDraft = false;
       if (typeof window !== 'undefined') {
         try {
           const item = window.sessionStorage.getItem(SETUP_WIZARD_STORAGE_KEY);
           if (item) {
             savedDraft = JSON.parse(item);
+            hasSessionDraft = true;
           }
         } catch (err) {
           console.warn(`useSetupWizardMachine: Failed to read "${SETUP_WIZARD_STORAGE_KEY}":`, err);
         }
       }
-      return createInitialMachineState({ ...savedDraft, ...customInit });
+      const mergedInit = hasSessionDraft
+        ? { ...customInit, ...savedDraft }
+        : { ...savedDraft, ...customInit };
+      return createInitialMachineState(mergedInit);
     }
   );
 
