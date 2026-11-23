@@ -37,7 +37,7 @@ npm run test:cov
 
 Before Jest executes, npm automatically triggers the `pretest`, `pretest:watch`, and `pretest:cov` lifecycle hooks in [package.json](../package.json), invoking [scripts/pretest.mjs](../scripts/pretest.mjs). This orchestrates dependency synchronization, database containerization, and schema isolation:
 
-1. **Dependency Alignment:** Verifies `package-lock.json` SHA-256 hash consistency against `node_modules/.package-lock-hash`. If packages are missing or lockfile changes are detected, it triggers a clean installation (`npm ci --legacy-peer-deps`).
+1. **Dependency Alignment:** Verifies `package-lock.json` SHA-256 hash consistency against `node_modules/.package-lock-hash`. If packages are missing or lockfile changes are detected, it triggers a clean installation (`npm ci`).
 2. **Lifecycle-Aware Execution:** Inspects `npm_lifecycle_event` — when the lifecycle event includes `test` (`npm test`, `npm run test:watch`, `npm run test:cov`, `npm run pretest`), it runs the unit/integration preparation steps below; if invoked directly outside a `*test*` lifecycle event, it falls back to running a full `npm run build`.
 3. **Accessibility Violation Reset:** Initializes `test-results/jest-a11y-violations.json` to `[]` before Jest runs component-level `jest-axe` assertions.
 4. **PostgreSQL Container Orchestration & Graceful Fallback:** Checks if Docker is active (`docker info`). If running, it starts the local PostgreSQL container via `docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d db` and polls `pg_isready -U wedding` until ready; if Docker is unavailable, it logs a notice and falls back gracefully to existing PostgreSQL connections.
@@ -84,22 +84,28 @@ A variety of verification scripts in [package.json](../package.json) support com
   ```
   Runs pretest container automation followed by Jest in sequential band execution (`jest --runInBand`).
 
-- **Playwright End-to-End Tests:**
+- **Playwright End-to-End & Smoke Tests:**
   ```bash
-  npx playwright test
+  npm run test:e2e
+  # Fast smoke subset (@smoke):
+  npm run test:e2e:smoke
   ```
-  Executes browser-based end-to-end tests against a Next.js application instance backed by the isolated `wedding_test` database.
-  - **Automated `wedding_test` Bootstrap:** When `CI` and `TEST_CONTAINER` are unset, [playwright.config.ts](../playwright.config.ts) automatically starts the Docker Compose PostgreSQL `db` container (if Docker is running), synchronizes the schema (`npx prisma db push --accept-data-loss`), and seeds `AppConfig` (`npx tsx scripts/seed.ts`) in `wedding_test` before launching `npm run dev` and probing `/api/ready`.
-  - **Isolated Server Lifecycle & Explicit Reuse Opt-In:** [playwright.config.ts](../playwright.config.ts) disables `reuseExistingServer` by default so Playwright never silently reuses a running `npm run dev` process bound to `.env` (which targets the `wedding` development database and uses local `GUEST_SESSION_SECRET`, `GUEST_PASSCODE`, and `ADMIN_PASSWORD` values that cause `src/core/auth/guest.server.ts` to reject E2E cookies). Stop any running `npm run dev` on port `3000` before running `npx playwright test`, or set `PLAYWRIGHT_REUSE_SERVER=true` (when `CI` is unset) only when the existing server explicitly targets `wedding_test` and shares aligned E2E session secrets.
+  Executes browser-based end-to-end tests in bundled Chromium against `http://localhost:3000` backed by the isolated `wedding_test` database (honoring optional `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` overrides when set).
+  - **Automated `wedding_test` Bootstrap:** When `CI` and `TEST_CONTAINER` are unset, [playwright.config.ts](../playwright.config.ts) automatically starts the Docker Compose PostgreSQL `db` container (if Docker is running), synchronizes the schema (`npx prisma db push --accept-data-loss`), and seeds `AppConfig` (`npx tsx scripts/seed.ts`) in `wedding_test` before launching `npm run dev` on `http://localhost:3000` and probing `/api/ready`.
+  - **Isolated Server Lifecycle & Explicit Reuse Opt-In:** [playwright.config.ts](../playwright.config.ts) disables `reuseExistingServer` by default so Playwright never silently reuses a running `npm run dev` process bound to `.env` (which targets the `wedding` development database and uses local `GUEST_SESSION_SECRET`, `GUEST_PASSCODE`, and `ADMIN_PASSWORD` values that cause `src/core/auth/guest.server.ts` to reject E2E cookies). Stop any running `npm run dev` on port `3000` before running `npm run test:e2e` (`npx playwright test`), or set `PLAYWRIGHT_REUSE_SERVER=true` (when `CI` is unset) only when the existing server explicitly targets `wedding_test` and shares aligned E2E session secrets.
   - **E2E Cookie Signing & Secret Alignment:** Playwright specs authenticate using shared helpers in [e2e/helpers/auth.ts](../e2e/helpers/auth.ts), which sign `guest_auth` cookies with `GUEST_SESSION_SECRET` and `admin_auth` cookies with a domain-separated HMAC key derived from the decoded 64-byte `ADMIN_PASSWORD` scrypt hash across both `http://127.0.0.1:3000` and `http://localhost:3000`.
   - **Default Local & Container Secrets:** [playwright.config.ts](../playwright.config.ts), [docker-compose.ci.yml](../docker-compose.ci.yml), [.env.test](../.env.test), and [e2e/helpers/auth.ts](../e2e/helpers/auth.ts) all align on the default 32+-character `GUEST_SESSION_SECRET` (`playwright-e2e-session-secret-32-chars-min`) and 64-byte E2E `ADMIN_PASSWORD` scrypt hash. For `GUEST_PASSCODE`, `playwright.config.ts`, `docker-compose.ci.yml`, and `e2e/helpers/auth.ts` default to `playwright-e2e-guest-passcode` (so `npx playwright test` and `TEST_CONTAINER=true npx playwright test` work without manual secret configuration when using `-f docker-compose.yml -f docker-compose.ci.yml`), whereas `.env.test` (loaded by `scripts/pretest.mjs` for Jest runs) sets `GUEST_PASSCODE` to `build-fallback-guest-passcode`.
   - **Custom Secret Overrides:** When overriding `GUEST_SESSION_SECRET`, `GUEST_PASSCODE`, or `ADMIN_PASSWORD` locally or in CI, provide identical values to both the application server (or container) and the Playwright runner, ensuring `GUEST_SESSION_SECRET` is at least 32 characters long and never matches `GUEST_PASSCODE`.
 
 - **Accessibility (A11y) Audits:**
   ```bash
+  # Fast component-only jest-axe checks (40 src/ suites, no Docker required):
+  npm run test:a11y:unit
+
+  # Full component + @a11y Playwright WCAG 2.2 AA audit:
   npm run test:a11y
   ```
-  Runs [scripts/a11y-report.mjs](../scripts/a11y-report.mjs) (`--run`), which executes `npm test`, reseeds `wedding_test` via `npx tsx scripts/seed.ts` ([scripts/seed.ts](../scripts/seed.ts)) to restore valid `AppConfig` data wiped by Jest integration teardowns (skipping `<SetupWizard />` in `src/app/layout.tsx`), runs `npx playwright test`, and writes `test-results/a11y-summary.md` (for production standalone mode, run `npm run build && CI=true npm run test:a11y`).
+  `npm run test:a11y:unit` runs [scripts/a11y-report.mjs](../scripts/a11y-report.mjs) (`--unit`), executing only the 40 `src/` `jest-axe` suites with `--coverage=false` and recording component violations to `test-results/jest-a11y-violations.json`. `npm run test:a11y` runs `scripts/a11y-report.mjs` (`--run`), which cleans `test-results/`, runs the targeted `--unit` component pass, reseeds `wedding_test` via `npx tsx scripts/seed.ts` ([scripts/seed.ts](../scripts/seed.ts)) to restore valid `AppConfig` data wiped by Jest integration teardowns (skipping `<SetupWizard />` in `src/app/layout.tsx`), runs `npx playwright test --grep @a11y`, and writes unfiltered WCAG 2.2 AA violations to `test-results/a11y-summary.md` (for production standalone mode, run `npm run build && CI=true npm run test:a11y`).
 
 - **Standalone Server Smoke Test:**
   ```bash

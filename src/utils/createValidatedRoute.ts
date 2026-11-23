@@ -23,7 +23,7 @@ export function createValidatedRoute<T extends z.ZodType>(config: ValidatedRoute
     if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
       try {
         body = await req.clone().json();
-      } catch (e) {
+      } catch {
         return NextResponse.json(
           { success: false, error: 'Invalid JSON payload' },
           { status: 400 }

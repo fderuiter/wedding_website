@@ -1,11 +1,19 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Dialog, useDirtyConfirmClose } from '@/components/ui/Dialog';
 import { EnsureToastProvider } from '@/components/ui/ToastProvider';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input, Textarea } from '@/components/ui/forms';
-import type { InvitationCodeDTO } from '@/features/registry';
+import {
+  getAttendanceStatus,
+  formatGuestPlusOneNames,
+  type InvitationCodeDTO,
+} from '@/features/registry';
+import type {
+  AdminInvitationRsvpsDetail,
+  AdminSubEventRsvpOverrideItemDTO,
+} from '@/features/sub-events';
 import { cn } from '@/utils/cn';
 import {
   ADDRESS_LINE_MAX_LENGTH,
@@ -32,6 +40,7 @@ interface GuestEditorModalProps {
   onClose: () => void;
   guest: InvitationCodeDTO | null;
   onSave: (_id: string, _payload: Partial<InvitationCodeDTO>) => Promise<unknown>;
+  onRsvpUpdated?: () => void;
 }
 
 interface GuestFormState {
@@ -134,6 +143,9 @@ type GuestEditorFormProps =
     mode: 'edit';
     guest: InvitationCodeDTO;
     onSave: (_id: string, _payload: Partial<InvitationCodeDTO>) => Promise<unknown>;
+    rsvpOverrideSlot?: React.ReactNode;
+    rsvpDirty?: boolean;
+    onSaveRsvpOverrides?: () => Promise<void>;
   });
 
 const GuestEditorFormInner = React.forwardRef<HTMLFormElement, GuestEditorFormProps>(
@@ -141,13 +153,15 @@ const GuestEditorFormInner = React.forwardRef<HTMLFormElement, GuestEditorFormPr
     const { onClose, onDirtyChange, actionsAlign = 'end', className } = props;
     const isEditMode = props.mode === 'edit';
     const guest = isEditMode ? props.guest : null;
+    const rsvpDirty = isEditMode ? Boolean(props.rsvpDirty) : false;
 
     const initialFormState = useMemo(() => createInitialGuestFormState(guest), [guest]);
     const [formState, setFormState] = useState<GuestFormState>(() => initialFormState);
     const [validationError, setValidationError] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
 
-    const isDirty = isGuestFormDirty(formState, initialFormState);
+    const isProfileDirty = isGuestFormDirty(formState, initialFormState);
+    const isDirty = isProfileDirty || rsvpDirty;
     const handleRequestClose = useDirtyConfirmClose(isDirty, onClose);
 
     const originalCodeNormalized = guest ? normalizeInvitationCode(guest.code) : '';
@@ -158,7 +172,7 @@ const GuestEditorFormInner = React.forwardRef<HTMLFormElement, GuestEditorFormPr
     const updateField = <K extends keyof GuestFormState>(field: K, value: GuestFormState[K]) => {
       const next = { ...formState, [field]: value };
       setFormState(next);
-      onDirtyChange?.(isGuestFormDirty(next, initialFormState));
+      onDirtyChange?.(isGuestFormDirty(next, initialFormState) || rsvpDirty);
       if (validationError) setValidationError(null);
     };
 
@@ -279,6 +293,9 @@ const GuestEditorFormInner = React.forwardRef<HTMLFormElement, GuestEditorFormPr
       try {
         if (props.mode === 'edit') {
           await props.onSave(props.guest.id, payload);
+          if (props.rsvpDirty && props.onSaveRsvpOverrides) {
+            await props.onSaveRsvpOverrides();
+          }
         } else {
           await props.onCreate(payload);
         }
@@ -539,6 +556,8 @@ const GuestEditorFormInner = React.forwardRef<HTMLFormElement, GuestEditorFormPr
           </div>
         </div>
 
+        {isEditMode && props.rsvpOverrideSlot}
+
         {actionsAlign === 'start' ? (
           <div className="flex gap-4 pt-3 border-t border-gray-100 dark:border-zinc-800">
             <Button type="submit" variant="primary" disabled={isSaving}>
@@ -573,11 +592,555 @@ export const GuestEditorForm = React.forwardRef<HTMLFormElement, GuestEditorForm
 );
 GuestEditorForm.displayName = 'GuestEditorForm';
 
+interface EventRsvpDraft {
+  status: 'unresponded' | 'attending' | 'declined' | 'pending' | 'clear';
+  plusOneCount: number;
+  plusOneNames: string[];
+  mealSelections: string[];
+  dietaryNotes: string;
+  customAnswers: Record<string, string>;
+}
+
+const selectControlClassName =
+  'w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/30';
+
+interface GuestEditorModalBodyProps {
+  guest: InvitationCodeDTO;
+  onClose: () => void;
+  onSave: (_id: string, _payload: Partial<InvitationCodeDTO>) => Promise<unknown>;
+  onRsvpUpdated?: () => void;
+  onCombinedDirtyChange: (_dirty: boolean) => void;
+}
+
+const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
+  guest,
+  onClose,
+  onSave,
+  onRsvpUpdated,
+  onCombinedDirtyChange,
+}) => {
+  const initialExtra = useMemo(() => getInitialExtraFieldsObject(guest.extraFields), [guest]);
+  const [profileDirty, setProfileDirty] = useState(false);
+  const [rsvpDirty, setRsvpDirty] = useState(false);
+  const [clearAllPending, setClearAllPending] = useState(false);
+  const [overallStatus, setOverallStatus] = useState<'attending' | 'declined' | 'pending'>(() =>
+    getAttendanceStatus(guest)
+  );
+  const [directPlusOneCount, setDirectPlusOneCount] = useState<string>(() => {
+    if (typeof initialExtra.plusOneCount === 'number' && initialExtra.plusOneCount >= 0) {
+      return String(Math.floor(initialExtra.plusOneCount));
+    }
+    if (guest.plusOneFirstName || guest.plusOneLastName) {
+      return '1';
+    }
+    return '0';
+  });
+  const [directPlusOneNames, setDirectPlusOneNames] = useState<string>(() =>
+    formatGuestPlusOneNames(guest)
+  );
+  const [subEvents, setSubEvents] = useState<AdminInvitationRsvpsDetail['subEvents']>([]);
+  const [eventDrafts, setEventDrafts] = useState<Record<string, EventRsvpDraft>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    if (typeof fetch !== 'function') return;
+
+    void fetch(`/api/admin/invitation-codes/rsvps?invitationCodeId=${encodeURIComponent(guest.id)}`)
+      .then(async (res) => {
+        if (!res || !res.ok) return null;
+        const json = await res.json().catch(() => null);
+        return (json?.data ?? json) as AdminInvitationRsvpsDetail | null;
+      })
+      .then((detail) => {
+        if (cancelled || !detail || !Array.isArray(detail.subEvents)) return;
+        const rsvpMap = new Map(
+          (Array.isArray(detail.rsvps) ? detail.rsvps : []).map((r) => [r.subEventId, r])
+        );
+        const initialDrafts: Record<string, EventRsvpDraft> = {};
+        for (const se of detail.subEvents) {
+          const existing = rsvpMap.get(se.id);
+          initialDrafts[se.id] = existing
+            ? {
+              status: existing.status,
+              plusOneCount: existing.plusOneCount ?? 0,
+              plusOneNames: Array.isArray(existing.plusOneNames) ? existing.plusOneNames : [],
+              mealSelections: Array.isArray(existing.mealSelections) ? existing.mealSelections : [],
+              dietaryNotes: existing.dietaryNotes ?? '',
+              customAnswers: existing.customAnswers ? { ...existing.customAnswers } : {},
+            }
+            : {
+              status: 'unresponded',
+              plusOneCount: 0,
+              plusOneNames: [],
+              mealSelections: [],
+              dietaryNotes: '',
+              customAnswers: {},
+            };
+        }
+        setSubEvents(detail.subEvents);
+        setEventDrafts(initialDrafts);
+      })
+      .catch(() => {
+        // Ignore unmocked fetch in isolated unit tests
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [guest.id]);
+
+  const markRsvpDirty = (nextRsvpDirty: boolean) => {
+    setRsvpDirty(nextRsvpDirty);
+    onCombinedDirtyChange(profileDirty || nextRsvpDirty);
+  };
+
+  const handleProfileDirtyChange = (nextProfileDirty: boolean) => {
+    setProfileDirty(nextProfileDirty);
+    onCombinedDirtyChange(nextProfileDirty || rsvpDirty);
+  };
+
+  const updateEventDraft = (subEventId: string, updater: (_prev: EventRsvpDraft) => EventRsvpDraft) => {
+    setEventDrafts((prev) => {
+      const current = prev[subEventId] ?? {
+        status: 'unresponded',
+        plusOneCount: 0,
+        plusOneNames: [],
+        mealSelections: [],
+        dietaryNotes: '',
+        customAnswers: {},
+      };
+      return {
+        ...prev,
+        [subEventId]: updater(current),
+      };
+    });
+    setClearAllPending(false);
+    markRsvpDirty(true);
+  };
+
+  const handleSaveRsvpOverrides = async () => {
+    if (!rsvpDirty) return;
+
+    let bodyPayload: Record<string, unknown>;
+    if (clearAllPending) {
+      bodyPayload = {
+        invitationCodeId: guest.id,
+        clearAll: true,
+      };
+    } else if (subEvents.length > 0) {
+      const rsvpsPayload: AdminSubEventRsvpOverrideItemDTO[] = [];
+      for (const se of subEvents) {
+        const draft = eventDrafts[se.id];
+        if (!draft || draft.status === 'unresponded') continue;
+        rsvpsPayload.push({
+          subEventId: se.id,
+          status: draft.status,
+          plusOneCount: draft.status === 'attending' ? Math.max(0, draft.plusOneCount) : 0,
+          plusOneNames:
+            draft.status === 'attending'
+              ? draft.plusOneNames.slice(0, Math.max(0, draft.plusOneCount))
+              : [],
+          mealSelections:
+            draft.status === 'attending'
+              ? draft.mealSelections.slice(0, 1 + Math.max(0, draft.plusOneCount))
+              : [],
+          dietaryNotes: draft.dietaryNotes.trim() || null,
+          customAnswers: draft.status !== 'declined' ? draft.customAnswers : {},
+        });
+      }
+      bodyPayload = {
+        invitationCodeId: guest.id,
+        overallAttendanceStatus: overallStatus,
+        rsvps: rsvpsPayload,
+      };
+    } else {
+      const parsedPlusOnes = Math.max(0, parseInt(directPlusOneCount, 10) || 0);
+      const parsedNames = directPlusOneNames
+        .split(',')
+        .map((n) => n.trim())
+        .filter(Boolean)
+        .slice(0, parsedPlusOnes);
+      bodyPayload = {
+        invitationCodeId: guest.id,
+        overallAttendanceStatus: overallStatus,
+        plusOneCount: overallStatus === 'attending' ? parsedPlusOnes : 0,
+        plusOneNames: overallStatus === 'attending' ? parsedNames : [],
+      };
+    }
+
+    const res = await fetch('/api/admin/invitation-codes/rsvps', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(bodyPayload),
+    });
+
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(errBody?.error || 'Failed to save RSVP overrides.');
+    }
+
+    onRsvpUpdated?.();
+  };
+
+  const rsvpOverrideSection = (
+    <div
+      className="pt-3 border-t border-gray-100 dark:border-zinc-800 space-y-4"
+      data-testid="guest-rsvp-overrides-section"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-zinc-400">
+            RSVP &amp; Meal Overrides (Admin)
+          </h3>
+          <p className="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">
+            Record or adjust RSVPs, plus-ones, meal choices, and custom answers even after the public deadline.
+          </p>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            setClearAllPending(true);
+            markRsvpDirty(true);
+          }}
+        >
+          Clear RSVP Responses
+        </Button>
+      </div>
+
+      {clearAllPending ? (
+        <div
+          className="rounded-lg border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-950 dark:border-amber-700/60 dark:bg-amber-950/50 dark:text-amber-200 flex items-center justify-between gap-3"
+          data-testid="rsvp-clear-pending-banner"
+        >
+          <span>
+            All RSVP responses and meal selections for this guest will be cleared when you save.
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setClearAllPending(false);
+            }}
+          >
+            Undo Clear
+          </Button>
+        </div>
+      ) : subEvents.length === 0 ? (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <FormGroup>
+            <Label htmlFor="guest-overall-rsvp-status">Overall RSVP Status</Label>
+            <select
+              id="guest-overall-rsvp-status"
+              aria-label="Overall RSVP Status"
+              value={overallStatus}
+              onChange={(e) => {
+                setOverallStatus(e.target.value as 'attending' | 'declined' | 'pending');
+                markRsvpDirty(true);
+              }}
+              className={selectControlClassName}
+            >
+              <option value="pending">Pending</option>
+              <option value="attending">Attending</option>
+              <option value="declined">Declined</option>
+            </select>
+          </FormGroup>
+
+          {overallStatus === 'attending' && (
+            <>
+              <FormGroup>
+                <Label htmlFor="guest-attending-plus-one-count">Attending Plus-One Count</Label>
+                <Input
+                  id="guest-attending-plus-one-count"
+                  aria-label="Attending Plus-One Count"
+                  type="number"
+                  min={0}
+                  max={20}
+                  value={directPlusOneCount}
+                  onChange={(e) => {
+                    setDirectPlusOneCount(e.target.value);
+                    markRsvpDirty(true);
+                  }}
+                />
+              </FormGroup>
+              <FormGroup>
+                <Label htmlFor="guest-attending-plus-one-names">Attending Plus-One Names</Label>
+                <Input
+                  id="guest-attending-plus-one-names"
+                  aria-label="Attending Plus-One Names"
+                  type="text"
+                  value={directPlusOneNames}
+                  onChange={(e) => {
+                    setDirectPlusOneNames(e.target.value);
+                    markRsvpDirty(true);
+                  }}
+                  placeholder="Jordan Smith, Casey Smith"
+                />
+              </FormGroup>
+            </>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {subEvents.map((se) => {
+            const draft = eventDrafts[se.id] ?? {
+              status: 'unresponded',
+              plusOneCount: 0,
+              plusOneNames: [],
+              mealSelections: [],
+              dietaryNotes: '',
+              customAnswers: {},
+            };
+            const partySize = 1 + Math.max(0, draft.plusOneCount);
+
+            return (
+              <div
+                key={se.id}
+                data-testid={`rsvp-override-event-${se.id}`}
+                className="p-3.5 rounded-xl border border-gray-200 dark:border-zinc-700 bg-gray-50/70 dark:bg-zinc-900/60 space-y-3"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                      {se.title}
+                    </span>
+                    <span
+                      className={cn(
+                        'text-[10px] px-1.5 py-0.5 rounded uppercase font-bold',
+                        se.isPrivate
+                          ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200'
+                          : 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-200'
+                      )}
+                    >
+                      {se.isPrivate ? 'Private' : 'Public'}
+                    </span>
+                  </div>
+
+                  <div className="w-48">
+                    <select
+                      aria-label={`RSVP status for ${se.title}`}
+                      value={draft.status}
+                      onChange={(e) => {
+                        const nextStatus = e.target.value as EventRsvpDraft['status'];
+                        updateEventDraft(se.id, (prev) => ({
+                          ...prev,
+                          status: nextStatus,
+                        }));
+                      }}
+                      className={selectControlClassName}
+                    >
+                      <option value="unresponded">No Response</option>
+                      <option value="attending">Attending</option>
+                      <option value="declined">Declined</option>
+                      <option value="pending">Pending</option>
+                      <option value="clear">Clear Response</option>
+                    </select>
+                  </div>
+                </div>
+
+                {draft.status === 'attending' && (
+                  <div className="space-y-3 pt-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <FormGroup>
+                        <Label htmlFor={`rsvp-plus-ones-${se.id}`}>Attending Plus-Ones</Label>
+                        <Input
+                          id={`rsvp-plus-ones-${se.id}`}
+                          aria-label={`Attending plus-ones for ${se.title}`}
+                          type="number"
+                          min={0}
+                          max={20}
+                          value={String(draft.plusOneCount)}
+                          onChange={(e) => {
+                            const count = Math.max(0, Math.min(20, parseInt(e.target.value, 10) || 0));
+                            updateEventDraft(se.id, (prev) => ({
+                              ...prev,
+                              plusOneCount: count,
+                            }));
+                          }}
+                        />
+                      </FormGroup>
+
+                      <FormGroup className="sm:col-span-2">
+                        <Label htmlFor={`rsvp-dietary-${se.id}`}>Event Dietary Notes</Label>
+                        <Input
+                          id={`rsvp-dietary-${se.id}`}
+                          aria-label={`Event dietary notes for ${se.title}`}
+                          type="text"
+                          maxLength={500}
+                          value={draft.dietaryNotes}
+                          onChange={(e) =>
+                            updateEventDraft(se.id, (prev) => ({
+                              ...prev,
+                              dietaryNotes: e.target.value,
+                            }))
+                          }
+                          placeholder="e.g. No shellfish"
+                        />
+                      </FormGroup>
+                    </div>
+
+                    {draft.plusOneCount > 0 && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {Array.from({ length: draft.plusOneCount }, (_, idx) => (
+                          <FormGroup key={`po-name-${se.id}-${idx}`}>
+                            <Label htmlFor={`rsvp-po-name-${se.id}-${idx}`}>
+                              Plus-One #{idx + 1} Name
+                            </Label>
+                            <Input
+                              id={`rsvp-po-name-${se.id}-${idx}`}
+                              aria-label={`Plus-one ${idx + 1} name for ${se.title}`}
+                              type="text"
+                              maxLength={120}
+                              value={draft.plusOneNames[idx] ?? ''}
+                              onChange={(e) =>
+                                updateEventDraft(se.id, (prev) => {
+                                  const nextNames = [...prev.plusOneNames];
+                                  nextNames[idx] = e.target.value;
+                                  return { ...prev, plusOneNames: nextNames };
+                                })
+                              }
+                              placeholder={`Plus-One #${idx + 1} full name`}
+                            />
+                          </FormGroup>
+                        ))}
+                      </div>
+                    )}
+
+                    {se.mealOptions.length > 0 && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {Array.from({ length: partySize }, (_, attendeeIdx) => {
+                          const attendeeLabel =
+                            attendeeIdx === 0
+                              ? `${guest.guestName || 'Primary Guest'} Meal`
+                              : `${draft.plusOneNames[attendeeIdx - 1]?.trim() || `Plus-One #${attendeeIdx}`} Meal`;
+                          const selectAriaLabel =
+                            attendeeIdx === 0
+                              ? `Meal selection for primary guest (${se.title})`
+                              : `Meal selection for plus-one ${attendeeIdx} (${se.title})`;
+                          const fieldId = `rsvp-meal-${se.id}-${attendeeIdx}`;
+
+                          return (
+                            <FormGroup key={fieldId}>
+                              <Label htmlFor={fieldId}>{attendeeLabel}</Label>
+                              <select
+                                id={fieldId}
+                                aria-label={selectAriaLabel}
+                                value={draft.mealSelections[attendeeIdx] ?? ''}
+                                onChange={(e) =>
+                                  updateEventDraft(se.id, (prev) => {
+                                    const nextMeals = [...prev.mealSelections];
+                                    nextMeals[attendeeIdx] = e.target.value;
+                                    return { ...prev, mealSelections: nextMeals };
+                                  })
+                                }
+                                className={selectControlClassName}
+                              >
+                                <option value="">-- Select meal --</option>
+                                {se.mealOptions.map((opt) => (
+                                  <option key={opt.id} value={opt.id}>
+                                    {opt.label}
+                                    {opt.dietaryTags.length > 0
+                                      ? ` (${opt.dietaryTags.join(', ')})`
+                                      : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            </FormGroup>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {(draft.status === 'attending' || draft.status === 'pending') &&
+                  se.customQuestions.length > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    {se.customQuestions.map((q) => {
+                      const qFieldId = `rsvp-question-${se.id}-${q.id}`;
+                      const qAriaLabel = `${q.prompt} (${se.title})`;
+                      const currentVal = draft.customAnswers[q.id] ?? '';
+
+                      return (
+                        <FormGroup key={qFieldId}>
+                          <Label htmlFor={qFieldId}>{q.prompt}</Label>
+                          {q.type === 'choice' ? (
+                            <select
+                              id={qFieldId}
+                              aria-label={qAriaLabel}
+                              value={currentVal}
+                              onChange={(e) =>
+                                updateEventDraft(se.id, (prev) => ({
+                                  ...prev,
+                                  customAnswers: {
+                                    ...prev.customAnswers,
+                                    [q.id]: e.target.value,
+                                  },
+                                }))
+                              }
+                              className={selectControlClassName}
+                            >
+                              <option value="">-- Select response --</option>
+                              {q.options.map((opt) => (
+                                <option key={opt} value={opt}>
+                                  {opt}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <Input
+                              id={qFieldId}
+                              aria-label={qAriaLabel}
+                              type="text"
+                              maxLength={500}
+                              value={currentVal}
+                              onChange={(e) =>
+                                updateEventDraft(se.id, (prev) => ({
+                                  ...prev,
+                                  customAnswers: {
+                                    ...prev.customAnswers,
+                                    [q.id]: e.target.value,
+                                  },
+                                }))
+                              }
+                              placeholder="Enter response"
+                            />
+                          )}
+                        </FormGroup>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <GuestEditorForm
+      mode="edit"
+      guest={guest}
+      onClose={onClose}
+      onSave={onSave}
+      rsvpOverrideSlot={rsvpOverrideSection}
+      rsvpDirty={rsvpDirty}
+      onSaveRsvpOverrides={handleSaveRsvpOverrides}
+      onDirtyChange={handleProfileDirtyChange}
+    />
+  );
+};
+
 export const GuestEditorModal: React.FC<GuestEditorModalProps> = ({
   isOpen,
   onClose,
   guest,
   onSave,
+  onRsvpUpdated,
 }) => {
   const [dirtyEntry, setDirtyEntry] = useState<{ guestId: string; isDirty: boolean }>({
     guestId: '',
@@ -594,17 +1157,17 @@ export const GuestEditorModal: React.FC<GuestEditorModalProps> = ({
       onClose={onClose}
       isDirty={isDirty}
       title="Edit Guest Details"
-      description="Update guest profile, party grouping, dietary notes, or mailing address. Existing seating assignments and RSVP responses are preserved."
+      description="Update guest profile, party grouping, dietary notes, mailing address, or admin RSVP and meal overrides. Existing seating assignments are preserved."
       className="max-w-2xl max-h-[90vh] flex flex-col"
       contentClassName="px-6 py-4 overflow-y-auto max-h-[75vh]"
     >
-      <GuestEditorForm
+      <GuestEditorModalBody
         key={guest.id}
-        mode="edit"
         guest={guest}
         onClose={onClose}
         onSave={onSave}
-        onDirtyChange={(nextDirty) => setDirtyEntry({ guestId: guest.id, isDirty: nextDirty })}
+        onRsvpUpdated={onRsvpUpdated}
+        onCombinedDirtyChange={(nextDirty) => setDirtyEntry({ guestId: guest.id, isDirty: nextDirty })}
       />
     </Dialog>
   );

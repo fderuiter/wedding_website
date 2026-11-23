@@ -103,6 +103,10 @@ describe('AdminDashboardPage (Decoupled Overview)', () => {
       'href',
       '/admin/dashboard/seating-chart'
     );
+    expect(screen.getByTestId('overview-card-content')).toHaveAttribute(
+      'href',
+      '/admin/dashboard/content'
+    );
     expect(screen.getByTestId('overview-card-media')).toHaveAttribute(
       'href',
       '/admin/dashboard/media'

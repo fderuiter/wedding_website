@@ -3,6 +3,7 @@
  */
 
 import { ContentRepository } from '../repository';
+import { ContentNodeAdminService } from '../admin.service';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 
@@ -182,5 +183,40 @@ describe('Content Domain Database Integration', () => {
 
     expect(snapshots).toHaveLength(0);
     expect(nodes).toHaveLength(0);
+  });
+
+  test('ContentNodeAdminService.reorder updates JSONB displayOrder atomically and writes audit snapshots', async () => {
+    await realPrisma.contentNode.createMany({
+      data: [
+        {
+          id: 'faq-reorder-a',
+          type: 'FAQ',
+          tags: ['Homepage', 'FAQ'],
+          data: { question: 'Question A', answer: 'Answer A', displayOrder: 0, isVisible: true },
+        },
+        {
+          id: 'faq-reorder-b',
+          type: 'FAQ',
+          tags: ['Homepage', 'FAQ'],
+          data: { question: 'Question B', answer: 'Answer B', displayOrder: 1, isVisible: true },
+        },
+      ],
+    });
+
+    const adminService = new ContentNodeAdminService(realPrisma);
+    await adminService.reorder(['faq-reorder-b', 'faq-reorder-a'], 'ReorderTester');
+
+    const nodeA = await realPrisma.contentNode.findUnique({ where: { id: 'faq-reorder-a' } });
+    const nodeB = await realPrisma.contentNode.findUnique({ where: { id: 'faq-reorder-b' } });
+
+    expect((nodeB.data as Record<string, unknown>).displayOrder).toBe(0);
+    expect((nodeB.data as Record<string, unknown>).question).toBe('Question B');
+    expect((nodeA.data as Record<string, unknown>).displayOrder).toBe(1);
+    expect((nodeA.data as Record<string, unknown>).question).toBe('Question A');
+
+    const snapshots = await realPrisma.snapshotVersion.findMany({
+      where: { entityType: 'ContentNode', author: 'ReorderTester' },
+    });
+    expect(snapshots).toHaveLength(2);
   });
 });

@@ -34,7 +34,7 @@ function SearchableTimezoneSelect({ value, onChange }: SearchableTimezoneSelectP
   const ianaTimezones = useMemo(() => {
     try {
       return Intl.supportedValuesOf('timeZone');
-    } catch (e) {
+    } catch {
       return ['America/Chicago', 'UTC'];
     }
   }, []);

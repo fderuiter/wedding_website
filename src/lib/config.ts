@@ -8,6 +8,12 @@ import { evaluateRsvpCutoff, sanitizeRsvpClosedMessage } from '../utils/rsvpDead
 import { headers } from 'next/headers';
 
 import { DEFAULT_MODULE_CONFIG, resolveModuleConfig } from './modules';
+import {
+  APP_CONFIG_SECRET_KEYS,
+  hasNonEmptySecret as hasConfiguredSecret,
+  sanitizeAppConfigForBackup,
+  type AppConfigSecretKey,
+} from './backupPersistence';
 import { stripPresetDefaultTokens } from './theme/presets';
 
 export function isMultisiteEnabled(): boolean {
@@ -257,10 +263,6 @@ function getEnvConfigOverrides(): Partial<LocalAppConfig> {
 
 const PUBLIC_APP_CONFIG_KEYS = Object.keys(PublicAppConfigSchema.shape) as Array<keyof PublicAppConfigDTO>;
 
-function hasConfiguredSecret(value: unknown): boolean {
-  return typeof value === 'string' && value.trim().length > 0;
-}
-
 export interface AdminAppConfig extends PublicAppConfig {
   rsvpGracePeriodHours: number;
   emailProvider: string;
@@ -341,133 +343,7 @@ export function toPublicAppConfig<T extends AppConfigDTO | Record<string, any>>(
   return partialSanitized as PublicAppConfig;
 }
 
-export const APP_CONFIG_SECRET_KEYS = [
-  'smtpPass',
-  'resendApiKey',
-  'sendgridApiKey',
-  'twilioAuthToken',
-] as const;
-
-export type AppConfigSecretKey = (typeof APP_CONFIG_SECRET_KEYS)[number];
-
-const APP_CONFIG_BACKUP_KEYS = [
-  'id',
-  'partner1Name',
-  'partner2Name',
-  'brideName',
-  'groomName',
-  'subdomain',
-  'weddingDate',
-  'baseUrl',
-  'venueName',
-  'venueAddress',
-  'venueCity',
-  'venueState',
-  'venueZip',
-  'latitude',
-  'longitude',
-  'storyText',
-  'venueDescription',
-  'travelAdvice',
-  'heroTitle',
-  'heroSubtitle',
-  'seoTitle',
-  'seoDescription',
-  'contactEmail',
-  'photoAlbumUrl',
-  'faviconUrl',
-  'ogImageUrl',
-  'brandMonogram',
-  'brandLogoUrl',
-  'brandLogoAlt',
-  'heroImageUrl',
-  'heroImageAlt',
-  'brandWatermarkUrl',
-  'brandWatermarkAlt',
-  'badgeGraphicUrl',
-  'badgeGraphicAlt',
-  'seoKeywords',
-  'colorPrimary',
-  'colorSecondary',
-  'themePreset',
-  'themeTokens',
-  'layoutContainerMaxWidth',
-  'layoutGridGap',
-  'layoutCardPadding',
-  'layoutBorderRadius',
-  'features',
-  'modules',
-  'timezone',
-  'showCountdown',
-  'showAddToCalendar',
-  'rsvpOpen',
-  'rsvpDeadlineDate',
-  'rsvpGracePeriodHours',
-  'rsvpClosedMessage',
-  'emailProvider',
-  'smtpHost',
-  'smtpPort',
-  'smtpUser',
-  'smtpFrom',
-  'smtpSecure',
-  'resendFrom',
-  'sendgridFrom',
-  'smsProvider',
-  'twilioAccountSid',
-  'twilioFromNumber',
-  'broadcastBatchSize',
-  'broadcastBatchDelayMs',
-  'shippingRecipientName',
-  'shippingAddressLine1',
-  'shippingAddressLine2',
-  'shippingCity',
-  'shippingState',
-  'shippingZip',
-  'shippingCountry',
-  'shippingPhone',
-  'shippingDeliveryNotes',
-  'defaultPaymentHandleType',
-  'defaultPaymentHandle',
-  'createdAt',
-  'updatedAt',
-] as const;
-
-/**
- * Sanitize an `AppConfig` database row or snapshot payload for backup export by
- * retaining only persisted non-secret database columns (excluding raw provider
- * credentials and virtual DTO keys).
- */
-export function sanitizeAppConfigForBackup(
-  config: Record<string, unknown> | null | undefined,
-): Record<string, unknown> {
-  if (!config || typeof config !== 'object' || Array.isArray(config)) {
-    return {};
-  }
-
-  const sanitized: Record<string, unknown> = {};
-  for (const key of APP_CONFIG_BACKUP_KEYS) {
-    if (key in config && config[key] !== undefined) {
-      if (key === 'modules') {
-        const rawModules =
-          config.modules && typeof config.modules === 'object' && !Array.isArray(config.modules)
-            ? (config.modules as Record<string, unknown>)
-            : {};
-        sanitized.modules = resolveModuleConfig({
-          ...(typeof config.showCountdown === 'boolean' && rawModules.countdown === undefined
-            ? { countdown: config.showCountdown }
-            : {}),
-          ...(typeof config.showAddToCalendar === 'boolean' && rawModules.addToCalendar === undefined
-            ? { addToCalendar: config.showAddToCalendar }
-            : {}),
-          ...rawModules,
-        });
-      } else {
-        sanitized[key] = config[key];
-      }
-    }
-  }
-  return sanitized;
-}
+export { APP_CONFIG_SECRET_KEYS, sanitizeAppConfigForBackup, type AppConfigSecretKey };
 
 /**
  * Produce a masked admin view of the application configuration that omits raw
@@ -544,7 +420,7 @@ async function getSubdomainFromHeaders(): Promise<string | null> {
     }
     
     return null;
-  } catch (e) {
+  } catch {
     return null;
   }
 }

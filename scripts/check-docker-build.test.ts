@@ -19,6 +19,23 @@ function writeValidFixtureWorkspace(targetDir: string): void {
   const workflowsDir = path.join(targetDir, '.github', 'workflows');
   fs.mkdirSync(workflowsDir, { recursive: true });
 
+  fs.writeFileSync(path.join(targetDir, '.nvmrc'), '22\n');
+  fs.writeFileSync(
+    path.join(targetDir, 'package.json'),
+    `${JSON.stringify(
+      {
+        name: 'wedding-website-fixture',
+        private: true,
+        engines: {
+          node: '^22.12.0',
+          npm: '^10.9.0',
+        },
+      },
+      null,
+      2
+    )}\n`
+  );
+
   fs.writeFileSync(
     path.join(targetDir, 'Dockerfile'),
     [
@@ -35,11 +52,11 @@ function writeValidFixtureWorkspace(targetDir: string): void {
       'FROM base AS prisma-cli',
       'WORKDIR /opt/prisma-cli',
       'FROM base AS builder',
-      'COPY package.json package-lock.json ./',
+      'COPY package.json package-lock.json .npmrc ./',
       'RUN --mount=type=cache,target=/root/.npm,sharing=locked \\',
       '    npm ci --ignore-scripts',
       'COPY prisma ./prisma',
-      'COPY prisma.config.ts next.config.ts postcss.config.mjs tsconfig.json next-env.d.ts ./',
+      'COPY prisma.config.ts next.config.ts postcss.config.mjs tsconfig.json tsconfig.build.json next-env.d.ts ./',
       'COPY assets ./assets',
       'COPY public ./public',
       'COPY src ./src',
@@ -437,6 +454,50 @@ describe('check-docker-build', () => {
     );
   });
 
+  it('rejects Node.js major version drift across Dockerfile, .nvmrc, and package.json', () => {
+    const dockerfilePath = path.join(tempDir, 'Dockerfile');
+    fs.writeFileSync(
+      dockerfilePath,
+      fs
+        .readFileSync(dockerfilePath, 'utf8')
+        .replace(`node:22-bookworm-slim@${NODE_DIGEST}`, `node:26-bookworm-slim@${NODE_DIGEST}`)
+    );
+
+    const pkgPath = path.join(tempDir, 'package.json');
+    fs.writeFileSync(
+      pkgPath,
+      `${JSON.stringify(
+        {
+          name: 'wedding-website-fixture',
+          private: true,
+          engines: {
+            node: '^20.11.0',
+            npm: '^10.9.0',
+          },
+        },
+        null,
+        2
+      )}\n`
+    );
+
+    const { violations } = checkDockerBuild(tempDir);
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          lineNumber: 2,
+          imageRef: 'node:26-bookworm-slim',
+          reason: expect.stringContaining('does not match expected "node:22-bookworm-slim" from .nvmrc'),
+        }),
+        expect.objectContaining({
+          filePath: 'package.json',
+          imageRef: 'engines.node',
+          reason: expect.stringContaining('does not match .nvmrc ("22")'),
+        }),
+      ])
+    );
+  });
+
   it('rejects premature prisma copy before npm ci, COPY . ., missing explicit builder inputs, and docker-entrypoint.sh in builder', () => {
     fs.writeFileSync(
       path.join(tempDir, 'Dockerfile'),
@@ -475,7 +536,7 @@ describe('check-docker-build', () => {
         expect.objectContaining({
           filePath: 'Dockerfile',
           imageRef: 'prisma',
-          reason: expect.stringContaining('copy only package.json and package-lock.json before "npm ci --ignore-scripts"'),
+          reason: expect.stringContaining('before "npm ci --ignore-scripts"'),
         }),
         expect.objectContaining({
           filePath: 'Dockerfile',
@@ -500,6 +561,10 @@ describe('check-docker-build', () => {
         expect.objectContaining({
           filePath: 'Dockerfile',
           imageRef: 'assets',
+        }),
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: 'tsconfig.build.json',
         }),
       ])
     );

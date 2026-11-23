@@ -1,11 +1,10 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
-import { useRouter } from 'next/navigation';
-import { apiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useFormPersist } from '@/hooks/useFormPersist';
 import { RegistryPreviewTable, PreviewRegistryItem } from './RegistryPreviewTable';
+import { useRegistryPreviewImport } from '../hooks/useRegistryPreviewImport';
 import {
   parseRegistryCsv,
   generateRegistryCsvTemplate,
@@ -29,7 +28,6 @@ const INITIAL_CSV_DRAFT: CsvRegistryImportDraft = {
 };
 
 export const CsvRegistryImport: React.FC<CsvRegistryImportProps> = ({ onSuccess }) => {
-  const router = useRouter();
   const { addToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -39,7 +37,6 @@ export const CsvRegistryImport: React.FC<CsvRegistryImportProps> = ({ onSuccess 
   );
   const { fileName, fileSize, items } = draft;
   const [isParsing, setIsParsing] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -51,24 +48,36 @@ export const CsvRegistryImport: React.FC<CsvRegistryImportProps> = ({ onSuccess 
     setDraft((prev) => ({ ...prev, fileSize: nextFileSize }));
   };
 
-  const setItems = (
-    updater: PreviewRegistryItem[] | ((_prev: PreviewRegistryItem[]) => PreviewRegistryItem[])
-  ) => {
-    setDraft((prev) => ({
-      ...prev,
-      items: typeof updater === 'function' ? updater(prev.items) : updater,
-    }));
-  };
-
-  const hasDraft = Boolean(fileName) || items.length > 0;
-
-  const handleResetDraft = () => {
-    setErrorMessage(null);
+  const resetPersistedDraft = () => {
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
     setDraft(INITIAL_CSV_DRAFT);
     clearPersistedState();
+  };
+
+  const {
+    isSubmitting,
+    setItems,
+    handleUpdateItem,
+    handleRemoveItem,
+    handleRemoveInvalid,
+    handleImport,
+  } = useRegistryPreviewImport({
+    items,
+    setDraft,
+    onResetDraft: resetPersistedDraft,
+    onSuccess,
+    includePaymentHandles: true,
+    formatSuccessToast: (validCount) =>
+      `Successfully imported ${validCount} items to your registry!`,
+  });
+
+  const hasDraft = Boolean(fileName) || items.length > 0;
+
+  const handleResetDraft = () => {
+    setErrorMessage(null);
+    resetPersistedDraft();
   };
 
   const processFile = (file: File) => {
@@ -156,70 +165,6 @@ export const CsvRegistryImport: React.FC<CsvRegistryImportProps> = ({ onSuccess 
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-  };
-
-  const handleUpdateItem = (id: string, updated: Partial<PreviewRegistryItem>) => {
-    setItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, ...updated } : item))
-    );
-  };
-
-  const handleRemoveItem = (id: string) => {
-    setItems((prev) => prev.filter((item) => item.id !== id));
-  };
-
-  const handleRemoveInvalid = () => {
-    setItems((prev) => prev.filter((item) => item.isValid));
-  };
-
-  const handleImport = async () => {
-    const validItems = items.filter((it) => it.isValid);
-    if (validItems.length === 0) {
-      addToast('No valid items to import.', 'error');
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      const payload = {
-        items: validItems.map((it) => ({
-          name: it.name,
-          price: it.price || 0,
-          quantity: it.quantity || 1,
-          category: it.category || 'Uncategorized',
-          description: it.description || '',
-          vendorUrl: it.vendorUrl || undefined,
-          imageUrl: it.imageUrl || '/images/placeholder.png',
-          imageAlt: it.imageAlt || undefined,
-          isGroupGift: it.isGroupGift,
-          isMostWanted: it.isMostWanted,
-          ...(it.isGroupGift && it.paymentHandleType
-            ? { paymentHandleType: it.paymentHandleType }
-            : {}),
-          ...(it.isGroupGift && it.paymentHandle
-            ? { paymentHandle: it.paymentHandle }
-            : {}),
-        })),
-      };
-
-      await apiClient.post('/api/registry/items/batch', payload);
-
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-      setDraft(INITIAL_CSV_DRAFT);
-      clearPersistedState();
-      addToast(`Successfully imported ${validItems.length} items to your registry!`, 'success');
-      if (onSuccess) {
-        onSuccess();
-      } else {
-        router.push('/admin/dashboard/registry');
-      }
-    } catch (err: any) {
-      addToast(`Failed to import items: ${err?.message || 'Unknown error'}`, 'error');
-    } finally {
-      setIsSubmitting(false);
-    }
   };
 
   return (

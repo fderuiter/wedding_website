@@ -147,7 +147,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /tmp/buildkit-mounts/deps
-          key: buildkit-deps-${{ matrix.arch }}-${{ hashFiles('Dockerfile', 'package-lock.json') }}
+          key: buildkit-deps-${{ matrix.arch }}-${{ hashFiles('Dockerfile', 'package-lock.json', '.npmrc') }}
           restore-keys: |
             buildkit-deps-${{ matrix.arch }}-
 
@@ -156,7 +156,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /tmp/buildkit-mounts/next
-          key: buildkit-next-${{ matrix.arch }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('next.config.ts', 'postcss.config.mjs', 'tsconfig.json', 'prisma/schema.prisma', 'src/**') }}
+          key: buildkit-next-${{ matrix.arch }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('next.config.ts', 'postcss.config.mjs', 'tsconfig.json', 'tsconfig.build.json', 'prisma/schema.prisma', 'src/**') }}
           restore-keys: |
             buildkit-next-${{ matrix.arch }}-${{ hashFiles('package-lock.json') }}-
             buildkit-next-${{ matrix.arch }}-

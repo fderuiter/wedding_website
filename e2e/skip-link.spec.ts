@@ -1,28 +1,18 @@
 import { test, expect } from '@playwright/test';
 import { seedGuestAuthCookies } from './helpers/auth';
 
-test.describe('Skip Link Accessibility', () => {
-  test('skip link appears with high contrast styles and focus outline on tab', async ({ context, page }) => {
+test.describe('Skip Link Accessibility', { tag: ['@a11y', '@smoke'] }, () => {
+  test('skip link appears with high contrast styles and focus outline on tab', async ({ context, page }, testInfo) => {
     await seedGuestAuthCookies(context);
 
-    try {
-      await page.goto('/', { waitUntil: 'load' });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('crashed') || msg.includes('closed') || msg.includes('net::ERR_ABORTED')) {
-        await seedGuestAuthCookies(context).catch(() => {});
-        page = await context.newPage();
-        await page.goto('/', { waitUntil: 'load', timeout: 30000 });
-      } else {
-        throw err;
-      }
-    }
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     expect(new URL(page.url()).pathname).toBe('/');
-    await page.waitForSelector('a.skip-link');
+
+    const skipLink = page.locator('a.skip-link');
+    await expect(skipLink).toBeAttached();
     await page.focus('body');
     await page.keyboard.press('Tab');
 
-    const skipLink = page.locator('a.skip-link');
     await expect(skipLink).toBeFocused();
     await expect(skipLink).toBeVisible();
 
@@ -36,6 +26,9 @@ test.describe('Skip Link Accessibility', () => {
     expect(outlineStyle).toBe('solid');
     expect(outlineColor).toBe('rgb(185, 28, 28)'); // #B91C1C
 
-    await page.screenshot({ path: '/tmp/skip-link-focused.png' });
+    await page.screenshot({
+      path: testInfo.outputPath('skip-link-focused.png'),
+      animations: 'disabled',
+    });
   });
 });

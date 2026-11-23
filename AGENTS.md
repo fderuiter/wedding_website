@@ -4,7 +4,7 @@ This guide defines the local bootstrap, architecture boundaries, TypeScript conf
 
 ## 1. Environment Bootstrap
 
-- **Node.js:** v22+
+- **Node.js & npm:** Node.js **v22.x LTS** (`^22.12.0`, pinned in [`.nvmrc`](.nvmrc)) and **`npm@10.9.x`** (`^10.9.0`, enforced via [`.npmrc`](.npmrc) and `devEngines` in [`package.json`](package.json); run `nvm use` if `nvm` is available).
 - **Install dependencies:**
   ```bash
   CI=true npm ci
@@ -27,14 +27,15 @@ This guide defines the local bootstrap, architecture boundaries, TypeScript conf
 
 ## 3. TypeScript Configuration Split
 
-TypeScript verification is split across four project files so production builds never absorb test or runner globals while every TypeScript file in the repository is strictly checked:
+TypeScript verification is split across five project files so IDEs get complete workspace diagnostics while production builds never absorb test, Storybook, VitePress, or runner globals:
 
-1. [`tsconfig.json`](tsconfig.json) — Production Next.js config (`compilerOptions.types: ["node"]`). Excludes `node_modules`, `jest.setup.js`, `scripts`, `e2e`, `src/mocks`, `**/__tests__/**/*`, `**/*.test.ts`, and `**/*.test.tsx` so `npm run build` (`next build`) validates only production runtime code.
-2. [`tsconfig.test.json`](tsconfig.test.json) — Extends `tsconfig.json` with `types: ["node", "jest", "@testing-library/jest-dom", "jest-axe"]` and includes `src/**/__tests__/**/*`, `src/**/*.test.{ts,tsx}`, `scripts/**/*.test.ts`, `src/mocks/**/*.ts`, and `src/testing/**/*.ts`.
-3. [`tsconfig.e2e.json`](tsconfig.e2e.json) — Extends `tsconfig.json` with `types: ["node"]` and checks [`playwright.config.ts`](playwright.config.ts) and `e2e/**/*.ts`.
-4. [`tsconfig.scripts.json`](tsconfig.scripts.json) — Extends `tsconfig.json` with `types: ["node"]` and checks `scripts/**/*.ts` (excluding `scripts/**/*.test.ts`, without `.ts` import extensions as `allowImportingTsExtensions` is not enabled).
+1. [`tsconfig.json`](tsconfig.json) — Unified root IDE and workspace config (`compilerOptions.types: ["node", "jest", "@testing-library/jest-dom", "jest-axe"]`). Includes app sources, tests, mocks, factories, CLI scripts, E2E specs, `.storybook/**/*`, and `docs-portal/.vitepress/**/*`, while excluding `node_modules`, `jest.setup.js`, `out`, `storybook-static`, `coverage`, `playwright-report`, `test-results`, `docs-portal/.vitepress/cache`, and `docs-portal/.vitepress/dist` so `tsserver` attaches every tracked TypeScript file cleanly.
+2. [`tsconfig.build.json`](tsconfig.build.json) — Isolated non-composite production Next.js build config referenced by `typescript.tsconfigPath` in [`next.config.ts`](next.config.ts) (`compilerOptions.types: ["node"]`, `incremental: false`). Excludes `node_modules`, `out`, `storybook-static`, `jest.setup.js`, `scripts`, `e2e`, `.storybook`, `docs-portal`, `playwright.config.ts`, `prisma.config.ts`, `src/mocks`, `src/testing`, `**/*.stories.ts`, `**/*.stories.tsx`, `**/__tests__/**/*`, `**/*.test.ts`, `**/*.test.tsx`, `**/*.spec.ts`, and `**/*.spec.tsx` so `npm run build` (`next build`) validates only production runtime code.
+3. [`tsconfig.test.json`](tsconfig.test.json) — Extends `tsconfig.json` with `types: ["node", "jest", "@testing-library/jest-dom", "jest-axe"]` and includes `src/**/__tests__/**/*`, `src/**/*.test.{ts,tsx}`, `scripts/**/*.test.ts`, `src/mocks/**/*.ts`, and `src/testing/**/*.ts`.
+4. [`tsconfig.e2e.json`](tsconfig.e2e.json) — Extends `tsconfig.json` with `types: ["node"]` and checks [`playwright.config.ts`](playwright.config.ts) and `e2e/**/*.ts`.
+5. [`tsconfig.scripts.json`](tsconfig.scripts.json) — Extends `tsconfig.json` with `types: ["node"]` and checks `scripts/**/*.ts` (excluding `scripts/**/*.test.ts`, without `.ts` import extensions as `allowImportingTsExtensions` is not enabled).
 
-Run all four TypeScript projects locally with:
+Run all five TypeScript projects locally with:
 
 ```bash
 npm run typecheck
@@ -46,6 +47,7 @@ To check a single project during targeted edits:
 
 ```bash
 npx tsc --noEmit -p tsconfig.json
+npx tsc --noEmit -p tsconfig.build.json
 npx tsc --noEmit -p tsconfig.test.json
 npx tsc --noEmit -p tsconfig.e2e.json
 npx tsc --noEmit -p tsconfig.scripts.json
@@ -111,9 +113,15 @@ npm run build-storybook
 - **Interactive Development:** Run `npm run storybook` to launch the local Storybook server on port `6006`.
 - **Pre-Commit Hook Scope:** `npm run build-storybook` is intentionally kept out of [`.githooks/pre-commit`](.githooks/pre-commit) so local commits stay fast, and `/storybook-static` remains ignored via [`.gitignore`](.gitignore).
 
-### Accessibility Quality Gate (`npm run test:a11y`)
+### Accessibility Quality Gate (`npm run test:a11y` & `npm run test:a11y:unit`)
 
-To run the complete WCAG accessibility quality gate locally (documented in [`.github/TESTING.md`](.github/TESTING.md)):
+For fast component-only `jest-axe` checks across the 40 `src/` accessibility suites without starting Docker (`--coverage=false`):
+
+```bash
+npm run test:a11y:unit
+```
+
+To run the complete WCAG 2.2 AA accessibility quality gate locally (documented in [`.github/TESTING.md`](.github/TESTING.md)):
 
 ```bash
 npm run test:a11y
@@ -129,10 +137,10 @@ CI=true npm run test:a11y
 This invokes `node scripts/a11y-report.mjs --run` ([`scripts/a11y-report.mjs`](scripts/a11y-report.mjs)), which:
 
 1. Clears stale `test-results/` data.
-2. Runs `npm test` (which invokes [`scripts/pretest.mjs`](scripts/pretest.mjs) to initialize `test-results/jest-a11y-violations.json` and records any component-level `jest-axe` violations via [`jest.setup.js`](jest.setup.js)).
+2. Runs the targeted `--unit` component pass (`npx jest --runInBand --coverage=false --runTestsByPath ...` across the 40 `src/` `jest-axe` suites), initializing `test-results/jest-a11y-violations.json` and recording any component-level `jest-axe` violations via [`jest.setup.js`](jest.setup.js).
 3. Reseeds `wedding_test` via `npx tsx scripts/seed.ts` ([`scripts/seed.ts`](scripts/seed.ts)) to restore valid `AppConfig` data wiped by Jest integration teardowns so [`src/app/layout.tsx`](src/app/layout.tsx) skips `<SetupWizard />`.
-4. Runs `npx playwright test` (which uses `test-results/playwright` as Playwright's `outputDir` in [`playwright.config.ts`](playwright.config.ts) so startup cleanup preserves JSON artifacts, and persists route-keyed `@axe-core/playwright` violations into `test-results/playwright-a11y-violations.json` via [`e2e/verification.spec.ts`](e2e/verification.spec.ts)).
-5. Always writes `test-results/a11y-summary.md` first, then exits non-zero if Jest failed, seeding failed, Playwright failed, or `totalViolations > 0`.
+4. Runs `npx playwright test --grep @a11y` in bundled Chromium against `http://localhost:3000` (which uses `test-results/playwright` as Playwright's `outputDir` in [`playwright.config.ts`](playwright.config.ts) so startup cleanup preserves JSON artifacts, and persists unfiltered route-keyed `@axe-core/playwright` violations into `test-results/playwright-a11y-violations.json` via [`e2e/verification.spec.ts`](e2e/verification.spec.ts)).
+5. Always writes `test-results/a11y-summary.md` first, then exits non-zero if the component pass failed, seeding failed, Playwright failed, or `totalViolations > 0`.
 
 To regenerate `test-results/a11y-summary.md` from existing JSON artifacts without re-running the test suites (as done in CI after downloading artifacts):
 
@@ -159,7 +167,7 @@ node scripts/a11y-report.mjs
 - **Targeted Unit Tests:** `npx jest <path/to/file.test.ts> --coverage=false` (use `npm test` to run [`scripts/pretest.mjs`](scripts/pretest.mjs) and the full suite with isolated `wedding_test` database setup and coverage thresholds in [`jest.config.mjs`](jest.config.mjs)).
 - **Production Next.js Build:** `npm run build`
 - **Standalone & Container Smoke Tests:** `npm run test:standalone` ([`scripts/test-standalone.mjs`](scripts/test-standalone.mjs), **requires running `npm run build` first**) and `npm run test:container` ([`scripts/test-container.mjs`](scripts/test-container.mjs), layering [`docker-compose.ci.yml`](docker-compose.ci.yml)). **Warning:** Both smoke test scripts run `docker compose down -v` (with `-f docker-compose.yml -f docker-compose.ci.yml`), which deletes local Docker Compose PostgreSQL volumes (`db_data`).
-- **End-to-End Browser Tests:** `npx playwright test` (automatically initializes and seeds `wedding_test` when `CI` and `TEST_CONTAINER` are unset; stop any running `npm run dev` on port `3000` first, or set `PLAYWRIGHT_REUSE_SERVER=true` only when the existing server targets `wedding_test` with aligned E2E secrets)
+- **End-to-End & Smoke Browser Tests:** `npm run test:e2e` (`npx playwright test`) and `npm run test:e2e:smoke` (`playwright test --grep @smoke`) against `http://localhost:3000` in bundled Chromium (automatically initializes and seeds `wedding_test` when `CI` and `TEST_CONTAINER` are unset; stop any running `npm run dev` on port `3000` first, or set `PLAYWRIGHT_REUSE_SERVER=true` only when the existing server targets `wedding_test` with aligned E2E secrets)
 
 ## 6. Repository Conventions & Guardrails
 

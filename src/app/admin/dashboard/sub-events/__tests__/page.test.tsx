@@ -496,4 +496,105 @@ describe('SubEventsMatrixPage', () => {
       expect.objectContaining({ method: 'PUT' })
     );
   });
+
+  test('renders live Attending, Declined, Pending, and meal option badges per event column header from rsvp-summary', async () => {
+    const baseFetch = global.fetch;
+    global.fetch = jest.fn().mockImplementation((url: string, options?: any) => {
+      if (url === '/api/admin/sub-events/rsvp-summary') {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              success: true,
+              data: {
+                global: {
+                  totalInvitations: 2,
+                  attendingHouseholds: 1,
+                  declinedHouseholds: 1,
+                  pendingHouseholds: 0,
+                  attendingHeadcount: 3,
+                  attendingPlusOnes: 2,
+                  declinedHeadcount: 1,
+                  pendingHeadcount: 0,
+                  dietary: {
+                    totalWithRestrictions: 0,
+                    glutenFree: 0,
+                    vegetarian: 0,
+                    vegan: 0,
+                    dairyFree: 0,
+                    nutFree: 0,
+                    halal: 0,
+                    kosher: 0,
+                    other: 0,
+                    kids: 0,
+                  },
+                  mealTotals: [
+                    {
+                      optionId: 'm-beef',
+                      label: 'Short Rib',
+                      count: 2,
+                      subEventId: 'se-rehearsal',
+                      subEventTitle: 'Rehearsal Dinner',
+                      dietaryTags: [],
+                    },
+                  ],
+                  questionBreakdowns: [],
+                },
+                subEvents: [
+                  {
+                    subEventId: 'se-rehearsal',
+                    title: 'Rehearsal Dinner',
+                    isPrivate: true,
+                    invitedCount: 1,
+                    attendingCount: 1,
+                    attendingHeadcount: 2,
+                    attendingPlusOnes: 1,
+                    declinedCount: 0,
+                    pendingCount: 0,
+                    kidsCount: 0,
+                    mealCounts: [
+                      { optionId: 'm-beef', label: 'Short Rib', dietaryTags: [], count: 2 },
+                    ],
+                    dietaryCounts: {},
+                    questionBreakdowns: [],
+                  },
+                  {
+                    subEventId: 'se-ceremony',
+                    title: 'Main Ceremony',
+                    isPrivate: false,
+                    invitedCount: 2,
+                    attendingCount: 1,
+                    attendingHeadcount: 3,
+                    attendingPlusOnes: 2,
+                    declinedCount: 1,
+                    pendingCount: 0,
+                    kidsCount: 0,
+                    mealCounts: [],
+                    dietaryCounts: {},
+                    questionBreakdowns: [],
+                  },
+                ],
+              },
+            }),
+        });
+      }
+      return (baseFetch as any)(url, options);
+    }) as any;
+
+    const { container } = render(<SubEventsMatrixPage />);
+
+    const rehearsalBadges = await screen.findByTestId('sub-event-rsvp-badges-se-rehearsal');
+    expect(rehearsalBadges).toHaveTextContent('Attending: 2');
+    expect(rehearsalBadges).toHaveTextContent('Declined: 0');
+    expect(rehearsalBadges).toHaveTextContent('Pending: 0');
+    expect(rehearsalBadges).toHaveTextContent('Short Rib: 2');
+
+    const ceremonyBadges = screen.getByTestId('sub-event-rsvp-badges-se-ceremony');
+    expect(ceremonyBadges).toHaveTextContent('Attending: 3');
+    expect(ceremonyBadges).toHaveTextContent('Declined: 1');
+    expect(ceremonyBadges).toHaveTextContent('Pending: 0');
+
+    const axeResults = await axe(container);
+    expect(axeResults).toHaveNoViolations();
+  });
 });

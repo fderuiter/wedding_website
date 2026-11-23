@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { registryService } from '../service';
 import { BatchCreateRegistryItemsSchema } from '../schemas';
+import { mapCreateRegistryItemInput } from './mapCreateRegistryItemInput';
 import { createValidatedRoute } from '@/utils/createValidatedRoute';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
@@ -22,23 +23,9 @@ export const POST = createValidatedRoute({
 
     const { items } = body;
 
-    const itemsToCreate = items.map((newItemData: any) => ({
-      itemType: newItemData.itemType,
-      paymentHandleType: newItemData.paymentHandleType,
-      paymentHandle: newItemData.paymentHandle,
-      name: newItemData.name,
-      description: newItemData.description || '',
-      category: newItemData.category || 'Uncategorized',
-      price: newItemData.price,
-      imageUrl: newItemData.imageUrl || '/images/placeholder.png',
-      imageAlt: newItemData.imageAlt,
-      imageDecorative: newItemData.imageDecorative,
-      vendorUrl: newItemData.vendorUrl || null,
-      quantity: newItemData.quantity,
-      isGroupGift: newItemData.isGroupGift || false,
-      isMostWanted: newItemData.isMostWanted ?? false,
-      displayOrder: newItemData.displayOrder ?? 0,
-    }));
+    const itemsToCreate = items.map((newItemData) =>
+      mapCreateRegistryItemInput(newItemData)
+    );
 
     const createdItems = await registryService.createBatchItems(itemsToCreate);
 

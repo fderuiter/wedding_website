@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { INVITATION_MAX_CATALOG_LIMIT } from '@/utils/invitationPagination';
 // eslint-disable-next-line no-restricted-imports
 import { createMediaAssociationSchema } from '@/features/media/schemas';
 import { createLaxUrlSchema, deriveAdminInputSchema } from '@/utils/validationPrimitives';
@@ -258,7 +259,9 @@ export const InvitationCodeSchema = z.object({
   updatedAt: z.union([z.string(), z.date()]).optional(),
 });
 
-export type InvitationCodeDTO = z.infer<typeof InvitationCodeSchema>;
+export type InvitationCodeDTO = z.infer<typeof InvitationCodeSchema> & {
+  subEventRsvps?: InvitationSubEventRsvpSummaryDTO[];
+};
 
 export const InvitationCodeInputSchema = deriveAdminInputSchema(InvitationCodeSchema, false).extend({
   code: InvitationCodeSchema.shape.code.optional().or(z.literal('')),
@@ -478,6 +481,40 @@ export interface MergeInvitationCodesResult {
     seatTransferred: boolean;
   };
 }
+
+export const InvitationCatalogQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(
+      INVITATION_MAX_CATALOG_LIMIT,
+      `Limit cannot exceed ${INVITATION_MAX_CATALOG_LIMIT}.`
+    )
+    .default(INVITATION_MAX_CATALOG_LIMIT),
+  search: z.string().trim().max(200).optional(),
+  orderBy: z
+    .enum(['createdAt', 'guestName', 'code', 'householdName', 'partyGroup', 'usedAt'])
+    .default('createdAt'),
+  orderDir: z.enum(['asc', 'desc']).default('desc'),
+});
+
+export type InvitationCatalogQueryDTO = z.infer<typeof InvitationCatalogQuerySchema>;
+
+export interface InvitationSubEventRsvpSummaryDTO {
+  id: string;
+  subEventId: string;
+  subEventTitle: string;
+  status: 'attending' | 'declined' | 'pending';
+  plusOneCount: number;
+  plusOneNames: string[];
+  mealSelections: string[];
+  dietaryNotes: string | null;
+  customAnswers: Record<string, string>;
+  updatedAt?: string;
+}
+
 
 
 

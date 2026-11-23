@@ -313,4 +313,125 @@ describe('LogisticsRepository Chronological Sorting', () => {
 
     await expect(customRepo.getLogisticsNodes()).resolves.toEqual([]);
   });
+
+  it('queries FAQ nodes without requiring a Homepage tag, excludes hidden FAQs, and sorts by displayOrder then createdAt', async () => {
+    const mockContentFindMany = jest.fn().mockResolvedValue([
+      {
+        id: 'faq-order-2',
+        type: 'FAQ',
+        tags: ['FAQ'],
+        data: {
+          question: 'Second FAQ',
+          answer: 'Answer two',
+          displayOrder: 2,
+          isVisible: true,
+        },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+      {
+        id: 'faq-hidden',
+        type: 'FAQ',
+        tags: ['Homepage', 'FAQ'],
+        data: {
+          question: 'Hidden FAQ',
+          answer: 'Secret draft',
+          displayOrder: 0,
+          isVisible: false,
+        },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+      {
+        id: 'faq-order-1',
+        type: 'FAQ',
+        tags: [],
+        data: {
+          question: 'First FAQ',
+          answer: 'Answer one',
+          displayOrder: 1,
+          isVisible: true,
+        },
+        createdAt: new Date('2026-01-03T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-03T00:00:00.000Z'),
+      },
+      {
+        id: 'faq-legacy-early',
+        type: 'FAQ',
+        tags: ['FAQ'],
+        data: {
+          question: 'Legacy Early FAQ',
+          answer: 'Created earlier without displayOrder',
+        },
+        createdAt: new Date('2026-01-02T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-02T00:00:00.000Z'),
+      },
+      {
+        id: 'faq-legacy-late',
+        type: 'FAQ',
+        tags: ['FAQ'],
+        data: {
+          question: 'Legacy Late FAQ',
+          answer: 'Created later without displayOrder',
+        },
+        createdAt: new Date('2026-01-04T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-04T00:00:00.000Z'),
+      },
+    ]);
+
+    const customRepo = new LogisticsRepository({
+      contentNode: { findMany: mockContentFindMany },
+      subEvent: { findMany: jest.fn().mockResolvedValue([]) },
+    });
+    const customService = new LogisticsService(customRepo);
+
+    const nodes = await customService.getHomepageLogistics();
+    expect(mockContentFindMany).toHaveBeenCalledWith({
+      where: {
+        OR: expect.arrayContaining([
+          { tags: { has: 'Homepage' } },
+          { tags: { has: 'Schedule' } },
+          { type: 'FAQ' },
+        ]),
+      },
+    });
+    expect(nodes.map((n) => n.id)).toEqual([
+      'faq-order-1',
+      'faq-order-2',
+      'faq-legacy-early',
+      'faq-legacy-late',
+    ]);
+
+    const visibleFaqs = await customService.getVisibleFaqs();
+    expect(visibleFaqs.map((n) => n.id)).toEqual([
+      'faq-order-1',
+      'faq-order-2',
+      'faq-legacy-early',
+      'faq-legacy-late',
+    ]);
+  });
+
+  it('returns generic mock FAQ nodes alongside Schedule and Logistics nodes when STATIC_EXPORT=true', async () => {
+    const prevStaticExport = process.env.STATIC_EXPORT;
+    process.env.STATIC_EXPORT = 'true';
+
+    try {
+      const staticRepo = new LogisticsRepository();
+      const staticService = new LogisticsService(staticRepo);
+
+      const allNodes = await staticService.getHomepageLogistics();
+      const faqNodes = allNodes.filter((n) => n.type === 'FAQ');
+      expect(faqNodes.length).toBeGreaterThanOrEqual(3);
+
+      const visibleFaqs = await staticService.getVisibleFaqs();
+      expect(visibleFaqs.length).toBe(faqNodes.length);
+      expect(visibleFaqs.every((n) => n.type === 'FAQ')).toBe(true);
+    } finally {
+      if (prevStaticExport === undefined) {
+        delete process.env.STATIC_EXPORT;
+      } else {
+        process.env.STATIC_EXPORT = prevStaticExport;
+      }
+    }
+  });
 });

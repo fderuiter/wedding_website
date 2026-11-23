@@ -26,7 +26,7 @@ jobs:
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: '.nvmrc'
           cache: 'npm'
 
       - name: Install dependencies
@@ -208,7 +208,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: '.nvmrc'
           cache: 'npm'
       - name: Install dependencies
         run: npm ci
@@ -239,7 +239,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: '.nvmrc'
           cache: 'npm'
       - name: Install dependencies
         run: npm ci
@@ -255,7 +255,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /tmp/buildkit-mounts/deps
-          key: buildkit-deps-amd64-${{ hashFiles('Dockerfile', 'package-lock.json') }}
+          key: buildkit-deps-amd64-${{ hashFiles('Dockerfile', 'package-lock.json', '.npmrc') }}
           restore-keys: |
             buildkit-deps-amd64-
 
@@ -264,7 +264,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /tmp/buildkit-mounts/next
-          key: buildkit-next-amd64-${{ hashFiles('package-lock.json') }}-${{ hashFiles('next.config.ts', 'postcss.config.mjs', 'tsconfig.json', 'prisma/schema.prisma', 'src/**') }}
+          key: buildkit-next-amd64-${{ hashFiles('package-lock.json') }}-${{ hashFiles('next.config.ts', 'postcss.config.mjs', 'tsconfig.json', 'tsconfig.build.json', 'prisma/schema.prisma', 'src/**') }}
           restore-keys: |
             buildkit-next-amd64-${{ hashFiles('package-lock.json') }}-
             buildkit-next-amd64-
@@ -438,7 +438,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /tmp/buildkit-mounts/deps
-          key: buildkit-deps-arm64-${{ hashFiles('Dockerfile', 'package-lock.json') }}
+          key: buildkit-deps-arm64-${{ hashFiles('Dockerfile', 'package-lock.json', '.npmrc') }}
           restore-keys: |
             buildkit-deps-arm64-
 
@@ -447,7 +447,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /tmp/buildkit-mounts/next
-          key: buildkit-next-arm64-${{ hashFiles('package-lock.json') }}-${{ hashFiles('next.config.ts', 'postcss.config.mjs', 'tsconfig.json', 'prisma/schema.prisma', 'src/**') }}
+          key: buildkit-next-arm64-${{ hashFiles('package-lock.json') }}-${{ hashFiles('next.config.ts', 'postcss.config.mjs', 'tsconfig.json', 'tsconfig.build.json', 'prisma/schema.prisma', 'src/**') }}
           restore-keys: |
             buildkit-next-arm64-${{ hashFiles('package-lock.json') }}-
             buildkit-next-arm64-
@@ -564,7 +564,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: '.nvmrc'
           cache: 'npm'
       - name: Install dependencies
         run: npm ci
@@ -607,7 +607,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: '.nvmrc'
           cache: 'npm'
       - name: Install dependencies
         run: npm ci
@@ -798,7 +798,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: '.nvmrc'
           cache: 'npm'
       - name: Install dependencies
         run: npm ci

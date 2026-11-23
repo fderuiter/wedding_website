@@ -1,45 +1,19 @@
 import { test, expect } from '@playwright/test';
 import { seedAdminAndGuestAuthCookies } from './helpers/auth';
 
-test('capture bulk selection toolbar and batch delete modal screenshots', async ({ context, page }) => {
+test('capture bulk selection toolbar and batch delete modal screenshots', async ({ context, page }, testInfo) => {
   test.setTimeout(90000);
 
   await seedAdminAndGuestAuthCookies(context);
 
   // Go to invitation codes dashboard
-  let attempt = 0;
-  while (attempt < 4) {
-    attempt++;
-    try {
-      await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'domcontentloaded', timeout: 25000 });
-      await expect(page.getByRole('heading', { name: 'Pre-Authorized Guest Invitation Codes' })).toBeVisible({ timeout: 30000 });
-      break;
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (
-        attempt < 4 &&
-        (msg.includes('crashed') ||
-         msg.includes('closed') ||
-         msg.includes('Timeout') ||
-         msg.includes('timeout') ||
-         msg.includes('net::ERR_ABORTED'))
-      ) {
-        console.log(`[capture-bulk-selection] Retry attempt ${attempt} due to: ${msg.slice(0, 80)}`);
-        await page.close().catch(() => {});
-        await seedAdminAndGuestAuthCookies(context).catch(() => {});
-        page = await context.newPage();
-      } else {
-        throw err;
-      }
-    }
-  }
+  await page.goto('/admin/dashboard/invitation-codes', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('heading', { name: 'Pre-Authorized Guest Invitation Codes' })).toBeVisible({ timeout: 30000 });
 
-  // Wait for page to finish loading data
-  await page.waitForResponse(resp => resp.url().includes('/api/admin/invitation-codes') && resp.status() === 200, { timeout: 15000 }).catch(() => {});
   // Check if there are codes. If none, click Generate New Code first to create a couple.
   const generateBtn = page.getByRole('button', { name: 'Generate New Code' });
   const countBtn = page.getByRole('tab', { name: /^All \(\d+\)$/ }).or(page.getByRole('button', { name: /^All \(\d+\)$/ })).first();
-  await countBtn.waitFor({ state: 'visible', timeout: 30000 });
+  await expect(countBtn).toBeVisible({ timeout: 30000 });
   const countText = await countBtn.innerText();
   if (countText.includes('All (0)')) {
     // Generate code 1
@@ -67,7 +41,11 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
   const toolbar = page.getByRole('region', { name: 'Batch actions toolbar' });
   await expect(toolbar).toBeVisible({ timeout: 15000 });
 
-  await page.screenshot({ path: '/tmp/bulk-selection-toolbar.png', fullPage: true });
+  await page.screenshot({
+    path: testInfo.outputPath('bulk-selection-toolbar.png'),
+    fullPage: true,
+    animations: 'disabled',
+  });
 
   // Open Batch Delete Modal
   const deleteBtn = page.getByRole('button', { name: 'Delete Selected' });
@@ -77,5 +55,9 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
   const modal = page.getByRole('alertdialog', { name: 'Confirm Batch Deletion' });
   await expect(modal).toBeVisible({ timeout: 15000 });
 
-  await page.screenshot({ path: '/tmp/batch-delete-modal.png', fullPage: true });
+  await page.screenshot({
+    path: testInfo.outputPath('batch-delete-modal.png'),
+    fullPage: true,
+    animations: 'disabled',
+  });
 });
