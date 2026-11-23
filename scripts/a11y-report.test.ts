@@ -183,7 +183,7 @@ describe('a11y-report', () => {
   describe('findJestAxeSuites & runA11yUnit', () => {
     it('dynamically discovers all src/ jest-axe suites in the live repository without hardcoded counts', () => {
       const suites = findJestAxeSuites(process.cwd());
-      expect(suites.length).toBeGreaterThanOrEqual(54);
+      expect(suites.length).toBeGreaterThanOrEqual(56);
       expect(new Set(suites).size).toBe(suites.length);
       expect(suites).toEqual([...suites].sort());
       for (const relSuite of suites) {

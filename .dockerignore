@@ -6,6 +6,8 @@ node_modules
 .turbo
 .next
 .next-export
+.api-backup-export
+next-env.d.ts
 out
 build
 storybook-static

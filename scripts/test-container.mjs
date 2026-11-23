@@ -1,9 +1,9 @@
 import child_process from 'node:child_process';
 import fs from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  getAvailableDbPort,
   httpRequest as smokeHttpRequest,
   runCheckedCommand as runCommand,
   runSmokeRouteProbes,
@@ -11,14 +11,14 @@ import {
   waitForServerReady,
 } from './smoke-runner.mjs';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const rootDir = path.resolve(__dirname, '..');
+const SCRIPT_DIR = typeof __dirname !== 'undefined'
+  ? __dirname
+  : path.dirname(fileURLToPath(import.meta.url));
+const rootDir = path.resolve(SCRIPT_DIR, '..');
 
-const PORT = process.env.TEST_PORT || '3000';
-const HOST_HEADER = `127.0.0.1:${PORT}`;
-const BASE_URL = `http://${HOST_HEADER}`;
-const COMPOSE_ARGS = [
+export const COMPOSE_ARGS = [
+  '-p',
+  'wedding-smoke-container',
   '--env-file',
   '.env.ci',
   '-f',
@@ -26,6 +26,7 @@ const COMPOSE_ARGS = [
   '-f',
   'docker-compose.ci.yml',
 ];
+
 const CI_ADMIN_PASSWORD =
   'scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==';
 
@@ -39,11 +40,15 @@ const WORKER_ERROR_LOG_PATTERN =
 
 const DEFAULT_GHA_CACHE_SCOPE = process.arch === 'arm64' ? 'app-arm64' : 'app-amd64';
 
-function buildCiComposeEnv(extra = {}) {
+/**
+ * @param {Record<string, string | undefined>} [extra]
+ * @returns {Record<string, string | undefined>}
+ */
+export function buildCiComposeEnv(extra = {}) {
   const dbUser = process.env.DB_USER || 'wedding';
   const dbPassword = process.env.DB_PASSWORD || 'wedding123';
   const dbName = process.env.DB_NAME || 'wedding';
-  const env = {
+  return {
     ...process.env,
     NODE_ENV: 'production',
     GHA_CACHE_SCOPE: process.env.GHA_CACHE_SCOPE || DEFAULT_GHA_CACHE_SCOPE,
@@ -60,25 +65,46 @@ function buildCiComposeEnv(extra = {}) {
     POSTGRES_URL_NON_POOLING: '',
     ...extra,
   };
-  return env;
 }
 
-function httpRequest(urlPath, options = {}) {
-  return smokeHttpRequest(BASE_URL, urlPath, {
-    hostHeader: HOST_HEADER,
-    ...options,
-  });
-}
+export async function getAvailableLoopbackPort(overridePort, excludePorts = []) {
+  if (overridePort !== undefined && overridePort !== null && String(overridePort).trim() !== '') {
+    const parsed = Number.parseInt(String(overridePort).trim(), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 65535) {
+      throw new Error(`Invalid port override: ${overridePort}`);
+    }
+    return parsed;
+  }
 
-function request(urlPath, timeoutMs = 5000) {
-  return httpRequest(urlPath, { timeoutMs });
+  const excluded = new Set(excludePorts.map((p) => Number(p)));
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const port = await new Promise((resolve, reject) => {
+      const server = net.createServer();
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', () => {
+        const addr = server.address();
+        const assignedPort = typeof addr === 'object' && addr ? addr.port : 0;
+        server.close((closeErr) => {
+          if (closeErr) {
+            reject(closeErr);
+            return;
+          }
+          resolve(assignedPort);
+        });
+      });
+    });
+    if (!excluded.has(port)) {
+      return port;
+    }
+  }
+  throw new Error('Failed to allocate a distinct loopback port.');
 }
 
 function buildHeicMultipartPayload(boundary) {
   const preamble = Buffer.from(
     `--${boundary}\r\n` +
-    'Content-Disposition: form-data; name="file"; filename="smoke-test.HEIC"\r\n' +
-    'Content-Type: image/heic\r\n\r\n',
+      'Content-Disposition: form-data; name="file"; filename="smoke-test.HEIC"\r\n' +
+      'Content-Type: image/heic\r\n\r\n',
     'utf8'
   );
   const epilogue = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
@@ -99,9 +125,9 @@ function queryContainerDb(sql, composeEnv) {
       'ON_ERROR_STOP=1',
       '-At',
       '-U',
-      'wedding',
+      composeEnv.DB_USER,
       '-d',
-      'wedding',
+      composeEnv.DB_NAME,
       '-c',
       sql,
     ],
@@ -113,8 +139,7 @@ function queryContainerDb(sql, composeEnv) {
   return res.stdout.trim();
 }
 
-function printLogs() {
-  const composeEnv = buildCiComposeEnv();
+function printLogs(composeEnv) {
   console.error('\n=== Actionable Migration Container Logs ===');
   child_process.spawnSync('docker', ['compose', ...COMPOSE_ARGS, 'logs', 'migration'], {
     stdio: 'inherit',
@@ -142,29 +167,38 @@ async function main() {
   console.log('=== OCI Container & Clean Database Smoke Test ===');
 
   let passed = false;
+  let activeComposeEnv = buildCiComposeEnv();
 
   try {
-    // 1. Clean up any leftover containers and lingering port listeners before selecting ports
-    console.log('Cleaning up any existing containers and listeners...');
+    // 1. Clean up any leftover isolated smoke containers before selecting ports
+    console.log('Cleaning up any existing isolated smoke containers...');
     child_process.spawnSync('docker', ['compose', ...COMPOSE_ARGS, 'down', '-v'], {
       stdio: 'ignore',
       shell: process.platform === 'win32',
       cwd: rootDir,
-      env: buildCiComposeEnv(),
+      env: activeComposeEnv,
     });
-    try {
-      child_process.spawnSync('lsof -ti:3000 | xargs kill -9 2>/dev/null || true', {
-        shell: true,
-        stdio: 'ignore',
-      });
-    } catch {
-      // Ignore if lsof is not available
-    }
 
-    const dbPort = await getAvailableDbPort();
-    process.env.DB_PORT = dbPort.toString();
-    const composeEnv = buildCiComposeEnv({ DB_PORT: dbPort.toString() });
-    console.log(`Using host database port ${dbPort} for container smoke test...`);
+    const appPortNum = await getAvailableLoopbackPort(process.env.TEST_PORT);
+    const dbPort = await getAvailableLoopbackPort(process.env.DB_PORT, [appPortNum]);
+    const PORT = String(appPortNum);
+    const HOST_HEADER = `127.0.0.1:${PORT}`;
+    const BASE_URL = `http://${HOST_HEADER}`;
+    const httpRequest = (urlPath, options = {}) =>
+      smokeHttpRequest(BASE_URL, urlPath, {
+        hostHeader: HOST_HEADER,
+        ...options,
+      });
+    const request = (urlPath, timeoutMs = 5000) => httpRequest(urlPath, { timeoutMs });
+
+    activeComposeEnv = buildCiComposeEnv({
+      PORT,
+      DB_PORT: dbPort.toString(),
+    });
+    const composeEnv = activeComposeEnv;
+    console.log(
+      `Using isolated loopback ports PORT=${PORT} and DB_PORT=${dbPort} for container smoke test...`
+    );
 
     // 2. Start PostgreSQL from scratch
     console.log('Starting clean PostgreSQL database container...');
@@ -220,7 +254,7 @@ async function main() {
     if (useHostPrisma) {
       const migrateEnv = {
         ...process.env,
-        DATABASE_URL: `postgresql://wedding:wedding123@localhost:${dbPort}/wedding`,
+        DATABASE_URL: `postgresql://${composeEnv.DB_USER}:${composeEnv.DB_PASSWORD}@127.0.0.1:${dbPort}/${composeEnv.DB_NAME}`,
         DB_PORT: dbPort.toString(),
       };
       delete migrateEnv.POSTGRES_URL_NON_POOLING;
@@ -275,7 +309,9 @@ async function main() {
     });
 
     // 8. Verify Guest Login, Read-Only Container Worker HEIC Upload, /api/live Responsiveness, and Zero Worker Errors
-    console.log('Testing container POST /api/guest/login and HEIC worker upload to /api/guest/photos/upload...');
+    console.log(
+      'Testing container POST /api/guest/login and HEIC worker upload to /api/guest/photos/upload...'
+    );
     const loginPayload = JSON.stringify({ passcode: composeEnv.GUEST_PASSCODE });
     const loginRes = await httpRequest('/api/guest/login', {
       method: 'POST',
@@ -286,7 +322,9 @@ async function main() {
       body: loginPayload,
     });
     if (loginRes.statusCode !== 200) {
-      throw new Error(`Container guest login failed with status ${loginRes.statusCode}: ${loginRes.body}`);
+      throw new Error(
+        `Container guest login failed with status ${loginRes.statusCode}: ${loginRes.body}`
+      );
     }
     const rawSetCookie = loginRes.headers['set-cookie'];
     const setCookies = Array.isArray(rawSetCookie) ? rawSetCookie : (rawSetCookie ? [rawSetCookie] : []);
@@ -314,33 +352,54 @@ async function main() {
     ]);
 
     if (uploadRes.statusCode !== 201) {
-      throw new Error(`Container HEIC photo upload returned status ${uploadRes.statusCode}: ${uploadRes.body}`);
+      throw new Error(
+        `Container HEIC photo upload returned status ${uploadRes.statusCode}: ${uploadRes.body}`
+      );
     }
     const uploadJson = JSON.parse(uploadRes.body);
     const uploadedUrl = uploadJson?.data?.[0]?.url;
-    if (uploadJson.success !== true || typeof uploadedUrl !== 'string' || !/^\/uploads\/photos\/[a-f0-9]+\.jpg$/.test(uploadedUrl)) {
+    if (
+      uploadJson.success !== true ||
+      typeof uploadedUrl !== 'string' ||
+      !/^\/uploads\/photos\/[a-f0-9]+\.jpg$/.test(uploadedUrl)
+    ) {
       throw new Error(`Unexpected container HEIC upload response payload: ${uploadRes.body}`);
     }
     if (duringUploadLiveRes.statusCode !== 200) {
-      throw new Error(`Concurrent container /api/live during HEIC upload returned status ${duringUploadLiveRes.statusCode}`);
+      throw new Error(
+        `Concurrent container /api/live during HEIC upload returned status ${duringUploadLiveRes.statusCode}`
+      );
     }
     const postUploadLiveRes = await request('/api/live', 1000);
     if (postUploadLiveRes.statusCode !== 200 || JSON.parse(postUploadLiveRes.body).status !== 'alive') {
-      throw new Error(`Post-upload container /api/live check failed (${postUploadLiveRes.statusCode}): ${postUploadLiveRes.body}`);
+      throw new Error(
+        `Post-upload container /api/live check failed (${postUploadLiveRes.statusCode}): ${postUploadLiveRes.body}`
+      );
     }
 
-    const appLogsAfterUpload = child_process.spawnSync(
-      'docker',
-      ['compose', ...COMPOSE_ARGS, 'logs', '--no-color', 'app'],
-      { cwd: rootDir, env: composeEnv, encoding: 'utf8' }
-    ).stdout || '';
+    const appLogsAfterUpload =
+      child_process.spawnSync(
+        'docker',
+        ['compose', ...COMPOSE_ARGS, 'logs', '--no-color', 'app'],
+        { cwd: rootDir, env: composeEnv, encoding: 'utf8' }
+      ).stdout || '';
     if (WORKER_ERROR_LOG_PATTERN.test(appLogsAfterUpload)) {
-      throw new Error(`App container logged worker or sanitization errors during HEIC upload:\n${appLogsAfterUpload}`);
+      throw new Error(
+        `App container logged worker or sanitization errors during HEIC upload:\n${appLogsAfterUpload}`
+      );
     }
-    if (!appLogsAfterUpload.includes('Successfully transcoded and sanitized HEIC/HEIF image to image/jpeg')) {
-      throw new Error(`Expected container worker HEIC transcoding confirmation in logs, observed:\n${appLogsAfterUpload}`);
+    if (
+      !appLogsAfterUpload.includes(
+        'Successfully transcoded and sanitized HEIC/HEIF image to image/jpeg'
+      )
+    ) {
+      throw new Error(
+        `Expected container worker HEIC transcoding confirmation in logs, observed:\n${appLogsAfterUpload}`
+      );
     }
-    console.log(`✅ Container HEIC upload transcoded via worker (${uploadedUrl}), /api/live responsive, 0 worker errors`);
+    console.log(
+      `✅ Container HEIC upload transcoded via worker (${uploadedUrl}), /api/live responsive, 0 worker errors`
+    );
 
     // 9. Verify shared globalThis pool across concurrent API and SSR traffic (<= 10 PostgreSQL connections)
     console.log('Testing shared pg.Pool connection cap across concurrent API and SSR traffic...');
@@ -358,10 +417,10 @@ async function main() {
     }
 
     const activeBackendsRaw = queryContainerDb(
-      "SELECT count(*) FROM pg_stat_activity WHERE datname = 'wedding' AND usename = 'wedding' AND pid <> pg_backend_pid();",
+      `SELECT count(*) FROM pg_stat_activity WHERE datname = '${composeEnv.DB_NAME}' AND usename = '${composeEnv.DB_USER}' AND pid <> pg_backend_pid();`,
       composeEnv
     );
-    const activeBackends = parseInt(activeBackendsRaw, 10);
+    const activeBackends = Number.parseInt(activeBackendsRaw, 10);
     if (!Number.isFinite(activeBackends) || activeBackends < 1 || activeBackends > 10) {
       throw new Error(
         `Expected 1..10 PostgreSQL pool connections across API & SSR runtimes, observed ${activeBackendsRaw}`
@@ -387,7 +446,7 @@ async function main() {
       `✅ Shared globalThis pool verified (${activeBackends} PostgreSQL connections <= 10, 1 runtime initialization)`
     );
 
-    // 9. Verify in-flight request completes with HTTP 200 during SIGTERM (> 4500 ms drain) before container exits with 143
+    // 10. Verify in-flight request completes with HTTP 200 during SIGTERM (> 4500 ms drain) before container exits with 143
     console.log('Testing in-flight SSR request completion during SIGTERM graceful shutdown...');
     const containerIdRes = child_process.spawnSync(
       'docker',
@@ -420,9 +479,9 @@ async function main() {
         'ON_ERROR_STOP=1',
         '-At',
         '-U',
-        'wedding',
+        composeEnv.DB_USER,
         '-d',
-        'wedding',
+        composeEnv.DB_NAME,
       ],
       { cwd: rootDir, env: composeEnv, stdio: ['pipe', 'pipe', 'pipe'] }
     );
@@ -466,9 +525,9 @@ async function main() {
 
       let queryBlockedInDb = false;
       for (let i = 0; i < 50; i++) {
-        const waitingCount = parseInt(
+        const waitingCount = Number.parseInt(
           queryContainerDb(
-            "SELECT count(*) FROM pg_stat_activity WHERE datname = 'wedding' AND wait_event_type = 'Lock' AND state = 'active';",
+            `SELECT count(*) FROM pg_stat_activity WHERE datname = '${composeEnv.DB_NAME}' AND wait_event_type = 'Lock' AND state = 'active';`,
             composeEnv
           ),
           10
@@ -604,7 +663,7 @@ async function main() {
   } catch (err) {
     console.error('\n❌ Container Smoke Test FAILED!');
     console.error(err instanceof Error ? err.message : err);
-    printLogs();
+    printLogs(activeComposeEnv);
     process.exitCode = 1;
   } finally {
     console.log('Cleaning up container resources...');
@@ -612,10 +671,16 @@ async function main() {
       stdio: 'ignore',
       shell: process.platform === 'win32',
       cwd: rootDir,
-      env: buildCiComposeEnv(),
+      env: activeComposeEnv,
     });
     process.exit(passed ? 0 : 1);
   }
 }
 
-main();
+const isDirectCall =
+  typeof process.argv[1] === 'string' &&
+  process.argv[1].endsWith('test-container.mjs');
+
+if (isDirectCall) {
+  main();
+}

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import WeddingPartyCard from './WeddingPartyCard';
 import type { WeddingPartyMemberDTO } from '@/features/wedding-party';
+import { useOptionalDemo } from '@/components/demo/DemoContext';
 import { cn } from '@/utils/cn';
 
 interface WeddingPartyListProps {
@@ -19,14 +20,16 @@ const TABS: { id: TabFilter; label: string }[] = [
 ];
 
 const WeddingPartyList: React.FC<WeddingPartyListProps> = ({ members: initialMembers }) => {
+  const demo = useOptionalDemo();
   const [draftOverride, setDraftOverride] = useState<{
     base: WeddingPartyMemberDTO[];
     members: WeddingPartyMemberDTO[];
   } | null>(null);
   const [activeTab, setActiveTab] = useState<TabFilter>('ALL');
 
-  const members =
-    draftOverride && draftOverride.base === initialMembers
+  const members = demo?.isDemoMode
+    ? demo.activeDataset.weddingParty
+    : draftOverride && draftOverride.base === initialMembers
       ? draftOverride.members
       : initialMembers;
 
