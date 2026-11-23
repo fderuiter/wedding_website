@@ -48,6 +48,14 @@ interface GuestEventRsvpPill {
   plusOneCount: number;
 }
 
+function getGuestHouseholdNotes(item: InvitationCodeDTO): string {
+  const extra =
+    item.extraFields && typeof item.extraFields === 'object' && !Array.isArray(item.extraFields)
+      ? (item.extraFields as Record<string, unknown>)
+      : null;
+  return extra && typeof extra.householdNotes === 'string' ? extra.householdNotes.trim() : '';
+}
+
 function getGuestAttendingPlusOneCount(item: InvitationCodeDTO): number {
   if (getAttendanceStatus(item) !== 'attending') return 0;
 
@@ -171,6 +179,7 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
     const attendingPlusOneCount = getGuestAttendingPlusOneCount(item);
     const mealSelectionsDisplay = formatGuestMealSelections(item);
     const customAnswersDisplay = formatGuestCustomAnswers(item);
+    const householdNotesDisplay = getGuestHouseholdNotes(item);
     const eventRsvpPills = getGuestEventRsvpPills(item, subEvents);
 
     return (
@@ -289,6 +298,14 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
             </span>
           </span>
         </div>
+        {householdNotesDisplay && (
+          <div
+            className="mt-2 mr-1.5 inline-flex items-center gap-1.5 bg-purple-50 dark:bg-purple-950/40 text-purple-800 dark:text-purple-200 border border-purple-200 dark:border-purple-800/60 text-xs px-2.5 py-1 rounded-full font-medium"
+            data-testid="household-notes-badge"
+          >
+            <span className="font-semibold">Household Note:</span> {householdNotesDisplay}
+          </div>
+        )}
         {item.dietaryNotes && item.dietaryNotes.trim() && (
           <div className="mt-2 inline-flex items-center gap-1.5 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700/50 text-xs px-2.5 py-1 rounded-full font-medium" data-testid="dietary-badge">
             <span className="font-semibold">Dietary:</span> {item.dietaryNotes.trim()}
@@ -380,14 +397,23 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
 
 interface InvitationCodeRowActionsProps {
   item: InvitationCodeDTO;
+  onSendInvite: (_item: InvitationCodeDTO) => void;
   onEdit: (_item: InvitationCodeDTO) => void;
   onDelete: (_id: string, _e: React.MouseEvent<HTMLButtonElement>) => void;
 }
 
 const InvitationCodeRowActions = React.memo<InvitationCodeRowActionsProps>(
-  function InvitationCodeRowActions({ item, onEdit, onDelete }) {
+  function InvitationCodeRowActions({ item, onSendInvite, onEdit, onDelete }) {
     return (
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-2 shrink-0 flex-wrap">
+        <Button
+          variant="secondary"
+          size="sm"
+          aria-label={`Send invite to ${item.guestName}`}
+          onClick={() => onSendInvite(item)}
+        >
+          Send Invite
+        </Button>
         <Button
           variant="secondary"
           size="sm"
@@ -422,6 +448,7 @@ const InvitationCodeRow = React.memo<InvitationCodeRowProps>(function Invitation
   onToggleSelect,
   onPreviewQr,
   onToggleSubEventAccess,
+  onSendInvite,
   onEdit,
   onDelete,
 }) {
@@ -443,7 +470,12 @@ const InvitationCodeRow = React.memo<InvitationCodeRowProps>(function Invitation
           onToggleSubEventAccess={onToggleSubEventAccess}
         />
       </div>
-      <InvitationCodeRowActions item={item} onEdit={onEdit} onDelete={onDelete} />
+      <InvitationCodeRowActions
+        item={item}
+        onSendInvite={onSendInvite}
+        onEdit={onEdit}
+        onDelete={onDelete}
+      />
     </div>
   );
 });
@@ -522,6 +554,9 @@ export default function InvitationCodesDashboardPage() {
   const [bulkSubEventModalOpen, setBulkSubEventModalOpen] = useState(false);
   const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
   const [broadcastModalFilters, setBroadcastModalFilters] = useState<any>(undefined);
+  const [broadcastInitialTemplateId, setBroadcastInitialTemplateId] = useState<
+    'save-the-date' | 'formal-invitation' | undefined
+  >(undefined);
   const [qrPreviewGuest, setQrPreviewGuest] = useState<InvitationQRPreviewGuest | null>(null);
   const [isPrintLabelsModalOpen, setIsPrintLabelsModalOpen] = useState(false);
   const [printLabelsList, setPrintLabelsList] = useState<PrintableInvitationCode[]>([]);
@@ -943,6 +978,7 @@ export default function InvitationCodesDashboardPage() {
         .toLowerCase()
         .includes(query);
       const matchesDietary = item.dietaryNotes ? item.dietaryNotes.toLowerCase().includes(query) : false;
+      const matchesHouseholdNotes = getGuestHouseholdNotes(item).toLowerCase().includes(query);
       const matchesHousehold = item.householdName ? item.householdName.toLowerCase().includes(query) : false;
       const matchesPartyGroup = item.partyGroup ? item.partyGroup.toLowerCase().includes(query) : false;
       const matchesTags = item.partyTags ? item.partyTags.some((t) => t.toLowerCase().includes(query)) : false;
@@ -958,6 +994,7 @@ export default function InvitationCodesDashboardPage() {
         matchesCustomAnswers ||
         matchesAddress ||
         matchesDietary ||
+        matchesHouseholdNotes ||
         matchesHousehold ||
         matchesPartyGroup ||
         matchesTags
@@ -1003,6 +1040,12 @@ export default function InvitationCodesDashboardPage() {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
+  }, []);
+
+  const handleSendInviteToGuest = useCallback((item: InvitationCodeDTO) => {
+    setBroadcastModalFilters({ selectedIds: [item.id] });
+    setBroadcastInitialTemplateId('formal-invitation');
+    setIsBroadcastModalOpen(true);
   }, []);
 
   const handleBatchMarkRedeemed = async () => {
@@ -1317,6 +1360,7 @@ export default function InvitationCodesDashboardPage() {
               setBroadcastModalFilters(
                 Object.keys(nextFilters).length > 0 ? nextFilters : undefined
               );
+              setBroadcastInitialTemplateId(undefined);
               setIsBroadcastModalOpen(true);
             }}>Send Broadcast</Button>
             <Link
@@ -1702,6 +1746,7 @@ export default function InvitationCodesDashboardPage() {
                 onToggleSelect={handleToggleSelectRow}
                 onPreviewQr={setQrPreviewGuest}
                 onToggleSubEventAccess={handleToggleSubEventAccess}
+                onSendInvite={handleSendInviteToGuest}
                 onEdit={setEditingGuest}
                 onDelete={handleDelete}
               />
@@ -1812,6 +1857,7 @@ export default function InvitationCodesDashboardPage() {
             <div className="flex flex-wrap items-center gap-2">
               <Button size="sm" variant="secondary" onClick={() => {
                 setBroadcastModalFilters({ selectedIds });
+                setBroadcastInitialTemplateId(undefined);
                 setIsBroadcastModalOpen(true);
               }}>
                 Send Broadcast ({selectedIds.length})
@@ -2226,6 +2272,13 @@ export default function InvitationCodesDashboardPage() {
                       .join(', ') || 'No address provided'}
                   </div>
                   <div className="sm:col-span-2">
+                    <span className="font-semibold">Household Notes:</span>{' '}
+                    {typeof mergePreview.extraFields?.householdNotes === 'string' &&
+                    mergePreview.extraFields.householdNotes.trim()
+                      ? mergePreview.extraFields.householdNotes
+                      : 'None'}
+                  </div>
+                  <div className="sm:col-span-2">
                     <span className="font-semibold">Dietary Notes:</span>{' '}
                     {mergePreview.dietaryNotes || 'None'}
                   </div>
@@ -2297,7 +2350,11 @@ export default function InvitationCodesDashboardPage() {
 
         <BroadcastModal
           isOpen={isBroadcastModalOpen}
-          onClose={() => setIsBroadcastModalOpen(false)}
+          onClose={() => {
+            setIsBroadcastModalOpen(false);
+            setBroadcastInitialTemplateId(undefined);
+          }}
+          initialTemplateId={broadcastInitialTemplateId}
           targetFilters={broadcastModalFilters}
           selectedCount={broadcastModalFilters?.selectedIds?.length}
           guests={codes}

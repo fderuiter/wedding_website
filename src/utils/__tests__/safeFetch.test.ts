@@ -238,4 +238,46 @@ describe('safeFetch', () => {
     );
     expect(mockFetch).toHaveBeenCalledTimes(6); // 1 start + 5 redirects = 6 fetch attempts, 6th redirect is blocked
   });
+
+  it('should adapt legacy v1 dispatch handlers from Node 22 built-in fetch', async () => {
+    const superDispatchSpy = jest
+      .spyOn(Agent.prototype, 'dispatch')
+      .mockReturnValue(true);
+    const dispatcher = createPinnedDispatcher('93.184.216.34', 4);
+
+    try {
+      const legacyV1Handler = {
+        onConnect: jest.fn(),
+        onHeaders: jest.fn(),
+        onData: jest.fn(),
+        onComplete: jest.fn(),
+        onError: jest.fn(),
+      };
+
+      const result = dispatcher.dispatch(
+        { origin: 'https://example.com', path: '/item', method: 'GET' },
+        legacyV1Handler as unknown as Parameters<Agent['dispatch']>[1],
+      );
+
+      expect(result).toBe(true);
+      expect(superDispatchSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          origin: 'https://example.com',
+          path: '/item',
+          method: 'GET',
+          allowH2: false,
+        }),
+        expect.objectContaining({
+          onRequestStart: expect.any(Function),
+          onResponseStart: expect.any(Function),
+          onResponseData: expect.any(Function),
+          onResponseEnd: expect.any(Function),
+          onResponseError: expect.any(Function),
+        }),
+      );
+    } finally {
+      superDispatchSpy.mockRestore();
+      await dispatcher.close();
+    }
+  });
 });

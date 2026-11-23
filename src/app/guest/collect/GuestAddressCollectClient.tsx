@@ -7,6 +7,7 @@ import { GuestHelpTrigger } from '@/components/guest/GuestHelpModal';
 
 type AddressFieldKey =
   | 'guestName'
+  | 'householdName'
   | 'email'
   | 'phone'
   | 'addressLine1'
@@ -19,6 +20,7 @@ type AddressFieldKey =
 
 const ADDRESS_FIELD_KEYS: ReadonlyArray<AddressFieldKey> = [
   'guestName',
+  'householdName',
   'email',
   'phone',
   'addressLine1',
@@ -65,6 +67,7 @@ function extractFieldErrors(details: unknown): Partial<Record<AddressFieldKey, s
 export default function GuestAddressCollectPage() {
   const [formData, setFormData] = useState({
     guestName: '',
+    householdName: '',
     email: '',
     phone: '',
     addressLine1: '',
@@ -114,6 +117,7 @@ export default function GuestAddressCollectPage() {
         },
         body: JSON.stringify({
           guestName: formData.guestName.trim(),
+          householdName: formData.householdName.trim() || undefined,
           email: formData.email.trim() || undefined,
           phone: formData.phone.trim() || undefined,
           addressLine1: formData.addressLine1.trim() || undefined,
@@ -157,6 +161,7 @@ export default function GuestAddressCollectPage() {
   const handleReset = () => {
     setFormData({
       guestName: '',
+      householdName: '',
       email: '',
       phone: '',
       addressLine1: '',
@@ -255,6 +260,22 @@ export default function GuestAddressCollectPage() {
               <FormMessage id={errorMessage ? 'guestName-error' : 'address-collect-error'}>
                 {fieldErrors.guestName}
               </FormMessage>
+            )}
+          </FormGroup>
+
+          <FormGroup state={fieldErrors.householdName ? 'error' : 'default'}>
+            <Label>Household Name (Optional)</Label>
+            <Input
+              type="text"
+              name="householdName"
+              placeholder="e.g. The Doe Family"
+              value={formData.householdName}
+              onChange={handleChange}
+              autoComplete="organization"
+              maxLength={100}
+            />
+            {fieldErrors.householdName && (
+              <FormMessage>{fieldErrors.householdName}</FormMessage>
             )}
           </FormGroup>
 
@@ -390,11 +411,11 @@ export default function GuestAddressCollectPage() {
           </div>
 
           <FormGroup state={fieldErrors.notes ? 'error' : 'default'}>
-            <Label>Household Notes / Additional Info (Optional)</Label>
+            <Label>Household Notes (Optional)</Label>
             <Textarea
               name="notes"
               rows={3}
-              placeholder="Family of 4, children names, special mailing instructions, etc."
+              placeholder="Family members, children names, or mailing instructions (please save dietary needs for your RSVP)"
               value={formData.notes}
               onChange={handleChange}
               maxLength={1000}

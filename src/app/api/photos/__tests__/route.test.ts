@@ -72,6 +72,7 @@ describe('GET /api/photos', () => {
       title: 'First Dance',
       altText: 'Couple first dance',
       createdAt: '2026-06-20T18:00:00.000Z',
+      updatedAt: '2026-06-20T18:00:00.000Z',
     });
     expect(json.photos[1]).toEqual({
       id: 'photo-2',
@@ -79,10 +80,11 @@ describe('GET /api/photos', () => {
       title: 'Cake Cutting',
       altText: 'Cake Cutting',
       createdAt: '2026-06-20T18:30:00.000Z',
+      updatedAt: '2026-06-20T18:30:00.000Z',
     });
   });
 
-  it('includes guest caption, uploaderName, and isGuestUpload flag on approved guest uploads', async () => {
+  it('includes guest caption, uploaderName, updatedAt, and prioritizes explicit title over caption', async () => {
     mockGetPublicPhotos.mockResolvedValue([
       {
         id: 'guest-node-1',
@@ -92,7 +94,7 @@ describe('GET /api/photos', () => {
         updatedAt: new Date('2026-06-20T20:05:00.000Z'),
         data: {
           url: '/uploads/photos/sparklers.jpg',
-          title: 'Sparkler exit!',
+          title: 'Admin Polished Title',
           altText: 'Sparkler exit!',
           caption: 'Sparkler exit!',
           uploaderName: 'Aunt Clara',
@@ -111,12 +113,13 @@ describe('GET /api/photos', () => {
       {
         id: 'guest-node-1',
         url: '/uploads/photos/sparklers.jpg',
-        title: 'Sparkler exit!',
+        title: 'Admin Polished Title',
         altText: 'Sparkler exit!',
         caption: 'Sparkler exit!',
         uploaderName: 'Aunt Clara',
         isGuestUpload: true,
         createdAt: '2026-06-20T20:00:00.000Z',
+        updatedAt: '2026-06-20T20:05:00.000Z',
       },
     ]);
   });

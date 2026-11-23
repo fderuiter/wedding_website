@@ -108,13 +108,13 @@ A variety of verification scripts in [package.json](../package.json) support com
 
 - **Accessibility (A11y) Audits:**
   ```bash
-  # Fast component-only jest-axe checks (57 src/ suites, no Docker required):
+  # Fast component-only jest-axe checks (58 src/ suites, no Docker required):
   npm run test:a11y:unit
 
   # Full component + @a11y Playwright WCAG 2.2 AA audit:
   npm run test:a11y
   ```
-  `npm run test:a11y:unit` runs [scripts/a11y-report.mjs](../scripts/a11y-report.mjs) (`--unit`), executing only the 57 `src/` `jest-axe` suites with `--coverage=false` and recording component violations to `test-results/jest-a11y-violations.json`. `npm run test:a11y` runs `scripts/a11y-report.mjs` (`--run`), which cleans `test-results/`, runs the targeted `--unit` component pass, reseeds `wedding_test` via `npx tsx scripts/seed.ts` ([scripts/seed.ts](../scripts/seed.ts)) to restore valid `AppConfig` data wiped by Jest integration teardowns (skipping `<SetupWizard />` in `src/app/layout.tsx`), runs `npx playwright test --grep @a11y`, and writes unfiltered WCAG 2.2 AA violations to `test-results/a11y-summary.md` (for production standalone mode, run `npm run build && CI=true npm run test:a11y`). In [.github/workflows/ci.yml](workflows/ci.yml), an isolated `a11y-report` job depends on `unit-test`, `e2e-test`, and `static-demo-e2e` (`if: '!cancelled()'`), downloads `jest-a11y-violations`, `playwright-a11y-violations`, and `static-demo-a11y-violations`, marks missing suite artifacts as incomplete in `test-results/a11y-summary.md`, and updates the `<!-- a11y-report -->` pull request comment and `$GITHUB_STEP_SUMMARY` even when violations exit non-zero.
+  `npm run test:a11y:unit` runs [scripts/a11y-report.mjs](../scripts/a11y-report.mjs) (`--unit`), executing only the 58 `src/` `jest-axe` suites with `--coverage=false` and recording component violations to `test-results/jest-a11y-violations.json`. `npm run test:a11y` runs `scripts/a11y-report.mjs` (`--run`), which cleans `test-results/`, runs the targeted `--unit` component pass, reseeds `wedding_test` via `npx tsx scripts/seed.ts` ([scripts/seed.ts](../scripts/seed.ts)) to restore valid `AppConfig` data wiped by Jest integration teardowns (skipping `<SetupWizard />` in `src/app/layout.tsx`), runs `npx playwright test --grep @a11y`, and writes unfiltered WCAG 2.2 AA violations to `test-results/a11y-summary.md` (for production standalone mode, run `npm run build && CI=true npm run test:a11y`). In [.github/workflows/ci.yml](workflows/ci.yml), an isolated `a11y-report` job depends on `unit-test`, `e2e-test`, and `static-demo-e2e` (`if: '!cancelled()'`), downloads `jest-a11y-violations`, `playwright-a11y-violations`, and `static-demo-a11y-violations`, marks missing suite artifacts as incomplete in `test-results/a11y-summary.md`, and updates the `<!-- a11y-report -->` pull request comment and `$GITHUB_STEP_SUMMARY` even when violations exit non-zero.
 
 - **Standalone Server Smoke Test:**
   ```bash
