@@ -3,54 +3,56 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import { cn } from '@/utils/cn';
 
-export interface AccessibleStepProps extends React.HTMLAttributes<HTMLDivElement> {
+export interface AccessibleStepProps extends React.ComponentPropsWithRef<'div'> {
   isActive: boolean;
   children: React.ReactNode;
   className?: string;
 }
 
-export const AccessibleStep = React.forwardRef<HTMLDivElement, AccessibleStepProps>(
-  ({ isActive, children, className, ...props }, ref) => {
-    const containerRef = useRef<HTMLDivElement>(null);
-    const isFirstRender = useRef(true);
+export function AccessibleStep({
+  isActive,
+  children,
+  className,
+  ref,
+  ...props
+}: AccessibleStepProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isFirstRender = useRef(true);
 
-    const setRef = useCallback(
-      (node: HTMLDivElement | null) => {
-        containerRef.current = node;
-        if (typeof ref === 'function') {
-          ref(node);
-        } else if (ref) {
-          ref.current = node;
-        }
-      },
-      [ref]
-    );
-
-    useEffect(() => {
-      if (isFirstRender.current) {
-        isFirstRender.current = false;
-        return;
+  const setRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      containerRef.current = node;
+      if (typeof ref === 'function') {
+        ref(node);
+      } else if (ref) {
+        ref.current = node;
       }
-      if (isActive && containerRef.current) {
-        containerRef.current.focus();
-      }
-    }, [isActive]);
+    },
+    [ref]
+  );
 
-    if (!isActive) return null;
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    if (isActive && containerRef.current) {
+      containerRef.current.focus();
+    }
+  }, [isActive]);
 
-    return (
-      <div
-        ref={setRef}
-        tabIndex={-1}
-        aria-hidden={!isActive}
-        className={cn('outline-none', className)}
-        {...props}
-      >
-        {children}
-      </div>
-    );
-  }
-);
+  if (!isActive) return null;
 
-AccessibleStep.displayName = 'AccessibleStep';
+  return (
+    <div
+      ref={setRef}
+      tabIndex={-1}
+      aria-hidden={!isActive}
+      className={cn('outline-none', className)}
+      {...props}
+    >
+      {children}
+    </div>
+  );
+}
 

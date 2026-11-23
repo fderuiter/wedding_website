@@ -11,7 +11,7 @@ const rootDir = path.resolve(__dirname, '..');
 
 const PORT = process.env.TEST_PORT || '3001';
 const BASE_URL = `http://127.0.0.1:${PORT}`;
-const COMPOSE_ARGS = ['-f', 'docker-compose.yml', '-f', 'docker-compose.ci.yml'];
+const COMPOSE_ARGS = ['--env-file', '.env.ci', '-f', 'docker-compose.yml', '-f', 'docker-compose.ci.yml'];
 
 function createEphemeralScryptHash() {
   const salt = crypto.randomBytes(16);

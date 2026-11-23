@@ -113,7 +113,15 @@ async function main() {
 
       if (dockerRunning) {
         console.log('Ensuring local PostgreSQL database container is running...');
-        const ciComposeArgs = ['compose', '-f', 'docker-compose.yml', '-f', 'docker-compose.ci.yml'];
+        const ciComposeArgs = [
+          'compose',
+          '--env-file',
+          '.env.ci',
+          '-f',
+          'docker-compose.yml',
+          '-f',
+          'docker-compose.ci.yml',
+        ];
         const ciComposeEnv = {
           ...process.env,
           DB_USER: process.env.DB_USER || 'wedding',
