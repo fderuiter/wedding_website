@@ -31,7 +31,7 @@ import {
   calculateContributionAmounts,
   getStripePromise,
   isValidStripePublishableKey,
-} from '@/lib/stripe';
+} from '@/lib/stripe.client';
 import { apiClient } from '@/lib/apiClient';
 
 const FIXED_PRESETS = [50, 100, 250];
@@ -499,7 +499,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   ]);
 
   // Form submission handling direct transfer, physical claims, and embedded Stripe Elements confirmation
-  const handlePaymentSubmit = async (e: React.FormEvent) => {
+  const handlePaymentSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     if (!isPayableGroupGift) {
@@ -1044,7 +1044,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                 <AccessibleExternalLink
                   href={paymentUrl}
                   className="inline-flex items-center gap-1 text-xs text-primary dark:text-primary hover:underline font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
-                  aria-label={`Open payment link for ${effectiveHandleType || 'Payment App'}`}
+                  srContext={`for ${effectiveHandleType || 'Payment App'}`}
                   showIcon
                   iconClassName="w-3.5 h-3.5"
                 >
@@ -1113,7 +1113,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
           size="sm"
           onClick={handleShare}
           className="inline-flex items-center gap-1.5 text-sm"
-          aria-label={`Share ${item.name}`}
+          srContext={`for ${item.name}`}
         >
           <Icon name={copied ? 'Check' : 'Share2'} className="w-4 h-4" />
           {copied ? 'Link Copied!' : 'Share Gift'}

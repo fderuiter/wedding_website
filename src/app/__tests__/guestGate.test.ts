@@ -536,6 +536,16 @@ describe('Edge-enforced Guest Passcode Gate', () => {
       expect(redirectUrl.searchParams.get('callbackUrl')).toBe('/schedule?tab=dinner');
     });
 
+    it('falls back callbackUrl to / when unauthenticated request pathname starts with multiple slashes', async () => {
+      const req = new NextRequest('http://localhost///evil.test?tab=1');
+      const res = await middleware(req);
+      expect(res.status).toBe(303);
+      const location = res.headers.get('location')!;
+      const redirectUrl = new URL(location);
+      expect(redirectUrl.pathname).toBe('/guest/login');
+      expect(redirectUrl.searchParams.get('callbackUrl')).toBe('/');
+    });
+
     it('returns immediate 401 for unauthenticated API requests instead of redirect', async () => {
       const req = new NextRequest('http://localhost/api/weather');
       const res = await middleware(req);
