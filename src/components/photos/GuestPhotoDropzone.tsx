@@ -603,7 +603,7 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
                             size="sm"
                             onClick={() => handleRetry(item.id)}
                             data-testid={`retry-upload-${item.id}`}
-                            aria-label={`Retry upload for ${item.filename}`}
+                            srContext={`upload for ${item.filename}`}
                             className="gap-1 px-2.5 border-[var(--color-error-text,#dc2626)] text-[var(--color-error-text,#dc2626)] hover:bg-red-50 dark:hover:bg-red-950/40"
                           >
                             <Icon name="RotateCw" className="w-3.5 h-3.5 shrink-0" />

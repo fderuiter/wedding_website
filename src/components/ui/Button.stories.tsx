@@ -20,6 +20,9 @@ const meta: Meta<typeof Button> = {
     pressed: {
       control: 'boolean',
     },
+    srContext: {
+      control: 'text',
+    },
   },
   args: {
     children: 'Click Me',
@@ -99,10 +102,10 @@ export const AllSizes: Story = {
 export const TogglePressed: Story = {
   render: () => (
     <div className="flex items-center gap-4">
-      <Button variant="outline" pressed={true} aria-label="Our Story: Visible">
+      <Button variant="outline" pressed={true} srContext="for Our Story">
         Visible
       </Button>
-      <Button variant="ghost" pressed={false} aria-label="Wedding Day Details: Hidden">
+      <Button variant="ghost" pressed={false} srContext="for Wedding Day Details">
         Hidden
       </Button>
     </div>

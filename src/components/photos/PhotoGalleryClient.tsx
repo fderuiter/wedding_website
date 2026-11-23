@@ -8,6 +8,7 @@ import { MediaImage } from '@/components/MediaImage';
 import { Button } from '@/components/ui/Button';
 import { SegmentedTabs } from '@/components/ui/SegmentedTabs';
 import { useOptionalToast } from '@/components/ui/ToastProvider';
+import { triggerNativeExportDownload } from '@/utils/exportDownload';
 
 export type PhotoCategory = 'curated' | 'guest';
 
@@ -178,33 +179,18 @@ export function PhotoGalleryClient({
     setSelectedPhotoIndex(null);
   };
 
-  const handleDownload = async (url: string, bodyPayload?: object, filename = 'guest-photos.zip') => {
+  const handleDownload = async (
+    url: string,
+    bodyPayload?: { ids?: string[]; tag?: string; category?: string },
+    filename = 'guest-photos.zip'
+  ) => {
     setIsExporting(true);
     try {
-      let response: Response;
-      if (bodyPayload) {
-        response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(bodyPayload),
-        });
-      } else {
-        response = await fetch(url);
-      }
-
-      if (!response.ok) {
-        throw new Error(`Export failed with HTTP ${response.status}`);
-      }
-
-      const blob = await response.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(blobUrl);
+      await triggerNativeExportDownload({
+        url,
+        filename,
+        payload: bodyPayload,
+      });
     } catch (err) {
       console.error('Failed to export photos archive:', err);
       toast?.addToast('Failed to export photos. Please retry the download.', 'error');

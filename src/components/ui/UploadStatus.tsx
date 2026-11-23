@@ -2,12 +2,18 @@ import React from 'react';
 import { cn } from '@/utils/cn';
 import { Icon } from './Icon';
 
-export interface UploadAlertProps extends React.HTMLAttributes<HTMLParagraphElement> {
+export interface UploadAlertProps extends React.ComponentPropsWithRef<'p'> {
   showIcon?: boolean;
 }
 
-export const UploadAlert = React.forwardRef<HTMLParagraphElement, UploadAlertProps>(
-  ({ className, showIcon = false, children, ...props }, ref) => (
+export function UploadAlert({
+  className,
+  showIcon = false,
+  children,
+  ref,
+  ...props
+}: UploadAlertProps) {
+  return (
     <p
       ref={ref}
       role="alert"
@@ -22,16 +28,21 @@ export const UploadAlert = React.forwardRef<HTMLParagraphElement, UploadAlertPro
       )}
       <span>{children}</span>
     </p>
-  )
-);
-UploadAlert.displayName = 'UploadAlert';
+  );
+}
 
-export interface UploadStatusNoticeProps extends React.HTMLAttributes<HTMLDivElement> {
+export interface UploadStatusNoticeProps extends React.ComponentPropsWithRef<'div'> {
   showIcon?: boolean;
 }
 
-export const UploadStatusNotice = React.forwardRef<HTMLDivElement, UploadStatusNoticeProps>(
-  ({ className, showIcon = true, children, ...props }, ref) => (
+export function UploadStatusNotice({
+  className,
+  showIcon = true,
+  children,
+  ref,
+  ...props
+}: UploadStatusNoticeProps) {
+  return (
     <div
       ref={ref}
       role="status"
@@ -45,39 +56,42 @@ export const UploadStatusNotice = React.forwardRef<HTMLDivElement, UploadStatusN
       {showIcon && <Icon name="Info" className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />}
       <span>{children}</span>
     </div>
-  )
-);
-UploadStatusNotice.displayName = 'UploadStatusNotice';
+  );
+}
 
-export interface UploadProgressBarProps extends React.HTMLAttributes<HTMLDivElement> {
+export interface UploadProgressBarProps extends React.ComponentPropsWithRef<'div'> {
   value: number;
   filename: string;
 }
 
-export const UploadProgressBar = React.forwardRef<HTMLDivElement, UploadProgressBarProps>(
-  ({ value, filename, className, 'aria-label': ariaLabel, ...props }, ref) => {
-    const clampedValue = Math.max(0, Math.min(100, Math.round(value)));
+export function UploadProgressBar({
+  value,
+  filename,
+  className,
+  'aria-label': ariaLabel,
+  ref,
+  ...props
+}: UploadProgressBarProps) {
+  const clampedValue = Math.max(0, Math.min(100, Math.round(value)));
 
-    return (
+  return (
+    <div
+      ref={ref}
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={clampedValue}
+      aria-label={ariaLabel ?? `Uploading ${filename}`}
+      className={cn(
+        'w-full bg-stone-200 dark:bg-stone-800 rounded-full h-2 overflow-hidden forced-colors:border forced-colors:border-[ButtonText]',
+        className
+      )}
+      {...props}
+    >
       <div
-        ref={ref}
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={clampedValue}
-        aria-label={ariaLabel ?? `Uploading ${filename}`}
-        className={cn(
-          'w-full bg-stone-200 dark:bg-stone-800 rounded-full h-2 overflow-hidden forced-colors:border forced-colors:border-[ButtonText]',
-          className
-        )}
-        {...props}
-      >
-        <div
-          className="bg-[var(--color-primary,#B91C1C)] h-full rounded-full transition-all duration-300 forced-colors:bg-[Highlight]"
-          style={{ width: `${clampedValue}%` }}
-        />
-      </div>
-    );
-  }
-);
-UploadProgressBar.displayName = 'UploadProgressBar';
+        className="bg-[var(--color-primary,#B91C1C)] h-full rounded-full transition-all duration-300 forced-colors:bg-[Highlight]"
+        style={{ width: `${clampedValue}%` }}
+      />
+    </div>
+  );
+}
