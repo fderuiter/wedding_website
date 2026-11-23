@@ -2,6 +2,11 @@
 
 import { GET, PUT, POST } from '../settings/route';
 import { NextRequest } from 'next/server';
+import { geocodeBestMatch } from '@/lib/geocoding';
+
+jest.mock('@/lib/geocoding', () => ({
+  geocodeBestMatch: jest.fn().mockResolvedValue(null),
+}));
 
 jest.mock('@/lib/prisma', () => ({
   prisma: {
@@ -1005,5 +1010,62 @@ describe('toAppConfigDbPayload mapper', () => {
     expect(json.data.modules).toEqual(expectedResolvedModules);
     expect(json.data.showCountdown).toBe(false);
     expect(json.data.showAddToCalendar).toBe(false);
+  });
+
+  it('auto-geocodes non-placeholder venue address on PUT when coordinates are (0, 0)', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValueOnce({
+      ...updatedConfig,
+      id: 'global',
+      latitude: 0,
+      longitude: 0,
+    });
+    (mockPrisma.appConfig.update as jest.Mock).mockImplementationOnce(async ({ data }) => ({
+      ...updatedConfig,
+      ...data,
+    }));
+
+    const mockGeocode = geocodeBestMatch as jest.MockedFunction<typeof geocodeBestMatch>;
+    mockGeocode.mockClear();
+    mockGeocode.mockResolvedValueOnce({
+      displayName: '500 Floral Way, Chicago, IL 60611, USA',
+      name: 'Botanic Conservatory',
+      streetAddress: '500 Floral Way',
+      city: 'Chicago',
+      state: 'IL',
+      zip: '60611',
+      country: 'USA',
+      latitude: 41.8796,
+      longitude: -87.6237,
+    });
+
+    const req = makeAuthReq({
+      ...validConfigData,
+      venueName: 'Botanic Conservatory',
+      venueAddress: '500 Floral Way',
+      venueCity: 'Chicago',
+      venueState: 'IL',
+      venueZip: '60611',
+      latitude: 0,
+      longitude: 0,
+    });
+
+    const res = await PUT(req);
+    expect(res.status).toBe(200);
+    expect(mockGeocode).toHaveBeenCalledWith([
+      'Botanic Conservatory',
+      '500 Floral Way',
+      'Chicago',
+      'IL',
+      '60611',
+    ]);
+    expect(mockPrisma.appConfig.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          latitude: 41.8796,
+          longitude: -87.6237,
+        }),
+      })
+    );
   });
 });

@@ -452,5 +452,104 @@ describe('HomePageClient', () => {
     const results = await axe(faqSection);
     expect(results).toHaveNoViolations();
   });
+
+  test('renders venue name, street address, directions link, hero calendar full location, and hotel distance even when structured schedule events replace detailsNode', async () => {
+    const configWithVenueCoords: PublicAppConfig = {
+      ...mockConfig,
+      venueName: 'Botanic Conservatory',
+      venueAddress: '500 Floral Way',
+      venueCity: 'Chicago',
+      venueState: 'IL',
+      venueZip: '60611',
+      latitude: 41.8796,
+      longitude: -87.6237,
+      showAddToCalendar: true,
+      modules: { countdown: true, gallery: true, addToCalendar: true, attractions: true },
+    } as any;
+
+    const structuredScheduleNodes = [
+      {
+        id: 'se-structured-1',
+        type: 'Schedule' as const,
+        tags: ['Homepage', 'Schedule'],
+        data: {
+          title: 'Ceremony',
+          startTime: '2026-12-31T18:00:00Z',
+          locationName: 'Main Lawn',
+          location: '500 Floral Way, Chicago, IL',
+          category: 'Ceremony',
+        },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ];
+
+    const hotels = [
+      {
+        id: 'hotel-drake',
+        name: 'The Drake Hotel',
+        description: 'Historic lakeside hotel.',
+        imageUrl: '/images/placeholder.png',
+        image: null,
+        website: 'https://example.com/drake',
+        directions: '140 E Walton Pl, Chicago, IL',
+        category: 'hotel',
+        latitude: 41.8998,
+        longitude: -87.6233,
+        isVisible: true,
+        isSample: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
+
+    const { container } = render(
+      <HomePageClient
+        config={configWithVenueCoords}
+        contentNodes={structuredScheduleNodes as any}
+        attractions={hotels as any}
+      />
+    );
+
+    // Venue section retains name, street address, description, and Google Maps directions link
+    const venueSection = container.querySelector('#venue') as HTMLElement;
+    expect(venueSection).toBeInTheDocument();
+    expect(
+      within(venueSection).getByRole('heading', { name: 'Botanic Conservatory' })
+    ).toBeInTheDocument();
+    expect(
+      within(venueSection).getByText('500 Floral Way, Chicago, IL 60611')
+    ).toBeInTheDocument();
+    const directionsLink = within(venueSection).getByRole('link', {
+      name: /Get directions to Botanic Conservatory/i,
+    });
+    expect(directionsLink).toHaveClass('min-h-11', 'min-w-11');
+    expect(directionsLink).toHaveAttribute(
+      'href',
+      'https://www.google.com/maps/dir/?api=1&destination=41.8796,-87.6237'
+    );
+    expect(within(venueSection).getByText('A beautiful venue.')).toBeInTheDocument();
+
+    // Hero Add to Calendar menu includes venueAddress and venueZip in Google Calendar URL
+    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
+    try {
+      const calendarTrigger = screen.getAllByRole('button', { name: /add to calendar/i })[0];
+      fireEvent.click(calendarTrigger);
+      const googleCalItem = await screen.findByRole('menuitem', { name: /^Google$/i });
+      fireEvent.click(googleCalItem);
+      expect(openSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Botanic+Conservatory%2C+500+Floral+Way%2C+Chicago%2C+IL+60611'),
+        '_blank',
+        'noopener,noreferrer'
+      );
+    } finally {
+      openSpy.mockRestore();
+    }
+
+    // Accommodations hotel card displays distance from venue
+    expect(screen.getByTestId('venue-distance-badge')).toHaveTextContent('1.4 mi from venue');
+
+    expect(await axe(venueSection)).toHaveNoViolations();
+  });
 });
 

@@ -301,6 +301,20 @@ export const UpdateFeaturesSchema = z.object({
   features: z.array(FeatureSchema)
 });
 
+export const AdminGeocodeQuerySchema = z.object({
+  q: z
+    .string({ message: 'Search query is required.' })
+    .trim()
+    .min(2, 'Search query must be at least 2 characters.')
+    .max(300, 'Search query must be 300 characters or fewer.'),
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1, 'Limit must be at least 1.')
+    .max(10, 'Limit cannot exceed 10.')
+    .default(5),
+});
+
 export const ImportBackupSchema = z.object({
   version: z.string().optional(),
   schemaVersion: z.string().optional(),

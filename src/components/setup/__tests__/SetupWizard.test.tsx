@@ -1240,4 +1240,91 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
       document.documentElement.className = '';
     }
   });
+
+  test('collects Street Address, Postal Code, and AddressLookupInput coordinates in Step 2 instead of hardcoding TBD and zeros', async () => {
+    (checkAdminClient as jest.Mock).mockResolvedValue(true);
+
+    let submittedSetupBody: Record<string, unknown> | null = null;
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/api/admin/geocode')) {
+        return {
+          ok: true,
+          json: async () => ({
+            success: true,
+            data: [
+              {
+                displayName: 'The Glasshouse, 660 12th Ave, New York, NY 10019, USA',
+                name: 'The Glasshouse',
+                streetAddress: '660 12th Ave',
+                city: 'New York',
+                state: 'NY',
+                zip: '10019',
+                country: 'USA',
+                latitude: 40.7654,
+                longitude: -73.9965,
+              },
+            ],
+          }),
+        };
+      }
+      if (url.includes('/api/admin/setup') && init?.method === 'POST') {
+        submittedSetupBody = JSON.parse(String(init.body));
+        return {
+          ok: true,
+          json: async () => ({ success: true }),
+        };
+      }
+      return { ok: true, json: async () => ({ initialized: false, requiresSetup: true }) };
+    }) as unknown as typeof fetch;
+
+    window.sessionStorage.setItem(
+      'setup_wizard_draft',
+      JSON.stringify({
+        step: 2,
+        partner1Name: 'Alex',
+        partner2Name: 'Sam',
+        weddingDate: '2026-10-10',
+        baseUrl: 'https://alexandsam.com',
+      })
+    );
+
+    try {
+      renderWithProviders(<SetupWizard />);
+
+      await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
+
+      const lookupInput = screen.getByRole('combobox', { name: 'Lookup Address' });
+      fireEvent.change(lookupInput, { target: { value: 'The Glasshouse' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Lookup' }));
+
+      const listbox = await screen.findByRole('listbox');
+      fireEvent.click(listbox.querySelector('[role="option"]')!);
+
+      expect(screen.getByLabelText('Venue Name')).toHaveValue('The Glasshouse');
+      expect(screen.getByLabelText('Street Address')).toHaveValue('660 12th Ave');
+      expect(screen.getByLabelText('City')).toHaveValue('New York');
+      expect(screen.getByLabelText('State')).toHaveValue('NY');
+      expect(screen.getByLabelText('Postal / Zip Code')).toHaveValue('10019');
+
+      fireEvent.click(screen.getByRole('button', { name: /Next Step/i }));
+
+      await waitFor(() => {
+        expect(submittedSetupBody).not.toBeNull();
+      });
+
+      expect(submittedSetupBody).toMatchObject({
+        venueName: 'The Glasshouse',
+        venueAddress: '660 12th Ave',
+        venueCity: 'New York',
+        venueState: 'NY',
+        venueZip: '10019',
+        latitude: 40.7654,
+        longitude: -73.9965,
+      });
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
 });

@@ -120,16 +120,17 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     return operations;
   }
 
-  it('discovers all 77 route files (.ts and .tsx) and 106 HTTP operations including GET /api/live, GET /api/og, GET /api/uploads/{path}, and POST /api/admin/invitation-codes/merge', () => {
+  it('discovers all 78 route files (.ts and .tsx) and 107 HTTP operations including GET /api/live, GET /api/og, GET /api/uploads/{path}, GET /api/admin/geocode, and POST /api/admin/invitation-codes/merge', () => {
     expect(openapi.openapi).toBe('3.0.3');
 
     const routePaths = Object.keys(openapi.paths);
-    expect(routePaths).toHaveLength(77);
+    expect(routePaths).toHaveLength(78);
 
     const operations = getAllOperations();
-    expect(operations).toHaveLength(106);
+    expect(operations).toHaveLength(107);
 
     expect(openapi.paths['/api/uploads/{path}']?.get).toBeDefined();
+    expect(openapi.paths['/api/admin/geocode']?.get).toBeDefined();
     expect(openapi.paths['/api/admin/invitation-codes/merge']?.post).toBeDefined();
 
     const ogRoute = openapi.paths['/api/og'];
@@ -254,7 +255,7 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     expect(schema.required ?? []).toHaveLength(0);
   });
 
-  it('defines components.securitySchemes across all 94 protected operations and query parameters across all 20 query operations', () => {
+  it('defines components.securitySchemes across all 95 protected operations and query parameters across all 21 query operations', () => {
     const schemes = openapi.components?.securitySchemes;
     expect(schemes).toBeDefined();
     expect(schemes?.adminCookieAuth).toEqual(
@@ -277,7 +278,7 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     const protectedOps = operations.filter(
       ({ operation }) => Array.isArray(operation.security) && operation.security.length > 0
     );
-    expect(protectedOps).toHaveLength(94);
+    expect(protectedOps).toHaveLength(95);
 
     const unprotectedOpKeys = operations
       .filter(({ operation }) => !operation.security || operation.security.length === 0)
@@ -315,11 +316,11 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
       { adminCookieAuth: [] },
     ]);
 
-    // Verify 20 query operations
+    // Verify 21 query operations
     const queryOps = operations.filter(({ operation }) =>
       (operation.parameters ?? []).some((param) => param.in === 'query')
     );
-    expect(queryOps).toHaveLength(20);
+    expect(queryOps).toHaveLength(21);
 
     // Shared handler GET /api/media/export has query params whereas POST /api/media/export does not
     const mediaExportGetParams = (openapi.paths['/api/media/export']?.get as OpenApiOperation)
@@ -564,13 +565,13 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     }
   });
 
-  it('defines top-level domain tags and assigns declared tags across all 106 operations', () => {
+  it('defines top-level domain tags and assigns declared tags across all 107 operations', () => {
     expect(Array.isArray(openapi.tags)).toBe(true);
     expect((openapi.tags ?? []).length).toBeGreaterThanOrEqual(12);
 
     const declaredTags = new Set((openapi.tags ?? []).map((t) => t.name));
     const operations = getAllOperations();
-    expect(operations).toHaveLength(106);
+    expect(operations).toHaveLength(107);
 
     for (const { operation } of operations) {
       expect(Array.isArray(operation.tags)).toBe(true);

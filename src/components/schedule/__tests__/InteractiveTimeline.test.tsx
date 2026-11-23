@@ -955,5 +955,53 @@ describe('InteractiveTimeline Component', () => {
         plusOneNames: ['John Doe'],
       });
     });
+
+    it('renders joined locationName and street location with an accessible Get Directions link', async () => {
+      (global.fetch as jest.Mock).mockImplementation(async (url) => {
+        if (url === '/api/schedule') {
+          return {
+            ok: true,
+            json: async () => ({
+              success: true,
+              isGuest: false,
+              timezone: 'America/Chicago',
+              data: [
+                {
+                  id: 'se-dir-1',
+                  title: 'Garden Ceremony',
+                  startTime: '2026-06-20T16:00:00.000Z',
+                  locationName: 'Rose Pavilion',
+                  location: '1000 Lake Cook Rd, Glencoe, IL 60022',
+                  category: 'Ceremony',
+                  isPrivate: false,
+                },
+              ],
+            }),
+          };
+        }
+        return { ok: false, json: async () => ({}) };
+      });
+
+      const { container } = render(
+        <InteractiveTimeline events={[]} timezone="America/Chicago" emptyStateMessage="No events" />
+      );
+
+      expect(
+        await screen.findByText('Rose Pavilion, 1000 Lake Cook Rd, Glencoe, IL 60022')
+      ).toBeInTheDocument();
+
+      const dirLink = screen.getByRole('link', {
+        name: /Get directions to Rose Pavilion, 1000 Lake Cook Rd, Glencoe, IL 60022/i,
+      });
+      expect(dirLink).toHaveClass('min-h-11', 'min-w-11');
+      expect(dirLink).toHaveAttribute(
+        'href',
+        'https://www.google.com/maps/dir/?api=1&destination=Rose%20Pavilion%2C%201000%20Lake%20Cook%20Rd%2C%20Glencoe%2C%20IL%2060022'
+      );
+      expect(dirLink).toHaveAttribute('target', '_blank');
+      expect(dirLink).toHaveAttribute('rel', 'noopener noreferrer');
+
+      expect(await axe(container)).toHaveNoViolations();
+    });
   });
 });

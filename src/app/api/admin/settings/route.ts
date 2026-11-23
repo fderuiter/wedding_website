@@ -8,6 +8,39 @@ import { AppConfigSchema, CreateAppConfigProfileSchema, UpdateAppConfigSchema, t
 import { resolveModuleConfig } from '@/lib/modules';
 import { stripPresetDefaultTokens } from '@/lib/theme/presets';
 import { formatZodError } from '@/utils/validation';
+import { geocodeBestMatch } from '@/lib/geocoding';
+import { hasValidCoordinates } from '@/utils/maps';
+
+async function resolveVenueCoordinatesIfZero<
+  T extends {
+    venueName?: string;
+    venueAddress?: string;
+    venueCity?: string;
+    venueState?: string;
+    venueZip?: string;
+    latitude: number;
+    longitude: number;
+  }
+>(data: T): Promise<T> {
+  if (hasValidCoordinates(data.latitude, data.longitude)) {
+    return data;
+  }
+  const match = await geocodeBestMatch([
+    data.venueName,
+    data.venueAddress,
+    data.venueCity,
+    data.venueState,
+    data.venueZip,
+  ]);
+  if (match) {
+    return {
+      ...data,
+      latitude: match.latitude,
+      longitude: match.longitude,
+    };
+  }
+  return data;
+}
 
 function resolveSecretField(
   incoming: string | null | undefined,
@@ -69,7 +102,7 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
     throw new ApiError(400, `Validation Error: ${formatZodError(parseResult.error)}`);
   }
 
-  const validData = parseResult.data;
+  const validData = await resolveVenueCoordinatesIfZero(parseResult.data);
 
   const existing = await prisma.appConfig.findUnique({
     where: { id: targetId },
@@ -172,7 +205,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     throw new ApiError(400, `Validation Error: ${formatZodError(parseResult.error)}`);
   }
 
-  const validData = parseResult.data;
+  const validData = await resolveVenueCoordinatesIfZero(parseResult.data);
 
   if (validData.subdomain) {
     const duplicate = await prisma.appConfig.findUnique({
