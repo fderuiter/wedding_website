@@ -668,8 +668,38 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
     }
   }
 
+  if (path === '/api/admin/sub-events/rsvp-summary' && method === 'GET') {
+    return jsonResponse({ success: true, data: null });
+  }
+
+  if (path === '/api/admin/sub-events/access' && method === 'GET') {
+    return jsonResponse({
+      success: true,
+      data: {
+        subEvents: [],
+        invitationCodes: [],
+      },
+    });
+  }
+
+  if (path === '/api/admin/sub-events/access/batch' && method === 'POST') {
+    return jsonResponse({ success: true, data: { updatedCount: 0 } });
+  }
+
+  if (path === '/api/admin/sub-events' && method === 'GET') {
+    return jsonResponse({ success: true, data: [] });
+  }
+
+  if (path === '/api/admin/invitation-codes/rsvps' && method === 'GET') {
+    return jsonResponse({ success: true, data: [] });
+  }
+
   if (path === '/api/admin/broadcast/history' && method === 'GET') {
     return jsonResponse({ success: true, data: [] });
+  }
+
+  if (path.startsWith('/api/admin/broadcast/') && method === 'GET') {
+    return jsonResponse({ error: 'Broadcast message not found in demo mode.' }, 404);
   }
 
   // Safe fallback for read-only admin overview widgets on static export

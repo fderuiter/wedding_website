@@ -274,6 +274,22 @@ describe('DemoToolbar & DemoProvider', () => {
     expect(window.localStorage.getItem('isAdminLoggedIn')).toBeNull();
   });
 
+  it('renders nothing when demo mode is disabled and copies sample invite code when enabled', async () => {
+    const writeTextMock = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: writeTextMock },
+      configurable: true,
+    });
+
+    const disabledView = renderDemoShell(false);
+    expect(screen.queryByTestId('demo-toolbar')).not.toBeInTheDocument();
+    disabledView.unmount();
+
+    renderDemoShell(true);
+    fireEvent.click(screen.getByTestId('demo-sample-code-button'));
+    expect(writeTextMock).toHaveBeenCalledWith('SMITH2026');
+  });
+
   it('has zero axe accessibility violations in light and dark modes', async () => {
     const { container } = renderDemoShell(true);
     const lightResults = await axe(container);

@@ -258,6 +258,38 @@ describe('SimulatedCardCheckout & Demo Registry Item Flows', () => {
     });
   });
 
+  it('supports roving arrow-key navigation across simulated test cards and billing ZIP input', () => {
+    renderDemoItemModal({ enabled: true, itemIndex: 3 });
+
+    const visaBtn = screen.getByTestId('simulated-card-option-approved_visa');
+    const mastercardBtn = screen.getByTestId('simulated-card-option-approved_mastercard');
+    const declinedBtn = screen.getByTestId('simulated-card-option-declined_insufficient_funds');
+
+    expect(visaBtn).toHaveAttribute('aria-checked', 'true');
+
+    fireEvent.keyDown(visaBtn, { key: 'ArrowDown' });
+    expect(mastercardBtn).toHaveAttribute('aria-checked', 'true');
+    expect(document.activeElement).toBe(mastercardBtn);
+
+    fireEvent.keyDown(mastercardBtn, { key: 'ArrowRight' });
+    expect(declinedBtn).toHaveAttribute('aria-checked', 'true');
+    expect(document.activeElement).toBe(declinedBtn);
+
+    fireEvent.keyDown(declinedBtn, { key: 'ArrowUp' });
+    expect(mastercardBtn).toHaveAttribute('aria-checked', 'true');
+
+    fireEvent.keyDown(mastercardBtn, { key: 'ArrowLeft' });
+    expect(visaBtn).toHaveAttribute('aria-checked', 'true');
+
+    // Non-navigation keys are ignored cleanly
+    fireEvent.keyDown(visaBtn, { key: 'Tab' });
+    expect(visaBtn).toHaveAttribute('aria-checked', 'true');
+
+    const zipInput = screen.getByLabelText(/Billing ZIP \/ Postal Code/i);
+    fireEvent.change(zipInput, { target: { value: '94559' } });
+    expect(zipInput).toHaveValue('94559');
+  });
+
   it('has zero axe accessibility violations on SimulatedCardCheckout inside RegistryItemCard', async () => {
     const { baseElement } = renderDemoItemModal({ enabled: true, itemIndex: 3 });
     const results = await axe(baseElement);
