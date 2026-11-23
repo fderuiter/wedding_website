@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdminToken, ADMIN_COOKIE } from '@/core/auth/auth.server';
+import { verifyGuestToken, GUEST_COOKIE } from '@/core/auth/guest.server';
+import {
+  getSignedGuestInviteSession,
+  verifyGuestInviteSessionToken,
+  GUEST_INVITE_COOKIE,
+} from '@/core/auth/guestInviteToken';
 import { env } from '@/env';
+import { normalizeSocketIp, readVerifiedSocketIp } from '@/lib/socket-ip-boundary.js';
 
 interface RateLimitInfo {
   count: number;
@@ -10,6 +17,10 @@ interface RateLimitInfo {
 interface RateLimitStore {
   map: Map<string, RateLimitInfo>;
   earliestResetTime: number;
+}
+
+interface RateLimitBehaviorOptions {
+  increment?: boolean;
 }
 
 export type RateLimitBucket = 'general' | 'auth';
@@ -38,6 +49,7 @@ const KNOWN_STATIC_API_PATHS = new Set([
   '/api/admin/invitation-codes/batch/validate',
   '/api/admin/invitation-codes/catalog',
   '/api/admin/invitation-codes/export',
+  '/api/admin/invitation-codes/merge',
   '/api/admin/invitation-codes/rsvps',
   '/api/admin/invitation-codes/validate',
   '/api/admin/login',
@@ -77,6 +89,7 @@ const KNOWN_STATIC_API_PATHS = new Set([
   '/api/photos/upload',
   '/api/ready',
   '/api/registry/capabilities',
+  '/api/registry/claim',
   '/api/registry/contribute',
   '/api/registry/items',
   '/api/registry/items/batch',
@@ -131,8 +144,14 @@ export function normalizeApiPathname(pathname: string): string {
   if (/^\/api\/admin\/broadcast\/(?!(?:history|preview|retry|send|test-connection|test-send)$)[^/]+$/.test(cleaned)) {
     return '/api/admin/broadcast/:id';
   }
+  if (/^\/api\/admin\/contributors\/[^/]+\/action$/.test(cleaned)) {
+    return '/api/admin/contributors/:id/action';
+  }
   if (/^\/api\/admin\/photos\/(?!moderation$)[^/]+$/.test(cleaned)) {
     return '/api/admin/photos/:id';
+  }
+  if (/^\/api\/admin\/registry\/items\/[^/]+\/unclaim$/.test(cleaned)) {
+    return '/api/admin/registry/items/:id/unclaim';
   }
   if (/^\/api\/admin\/thank-you-notes\/(?!(?:batch|export|export-labels)$)[^/]+$/.test(cleaned)) {
     return '/api/admin/thank-you-notes/:id';
@@ -148,6 +167,9 @@ export function normalizeApiPathname(pathname: string): string {
   }
   if (/^\/api\/schedule\/[^/]+\/ics$/.test(cleaned)) {
     return '/api/schedule/:id/ics';
+  }
+  if (/^\/api\/uploads\/.+$/.test(cleaned)) {
+    return '/api/uploads/:path';
   }
 
   const segments = cleaned.split('/').filter(Boolean); // segments[0] === 'api'
@@ -187,47 +209,59 @@ function pruneExpiredEntries(store: RateLimitStore, now: number): void {
 }
 
 function getClientIp(req: NextRequest): string {
-  // 1. Prioritize req.ip from Next.js runtime when available
-  const reqIp = (req as { ip?: string }).ip;
-  if (reqIp) {
-    return reqIp;
-  }
-
-  // 2. Only inspect X-Forwarded-For / X-Real-IP when TRUST_PROXY is explicitly enabled
   const trustProxy = env.TRUST_PROXY;
+
+  // 1. When TRUST_PROXY is disabled, never trust X-Forwarded-For or X-Real-IP;
+  //    read only the HMAC-verified internal socket IP stamped at the HTTP boundary.
   if (!trustProxy) {
-    return '127.0.0.1';
+    return readVerifiedSocketIp(req.headers) ?? '127.0.0.1';
   }
 
   const hops = typeof trustProxy === 'number' ? Math.max(1, Math.trunc(trustProxy)) : 1;
 
-  // 3. Evaluate trusted hop in x-forwarded-for header from reverse proxy
+  // 2. Evaluate trusted hop in x-forwarded-for header from reverse proxy
   const rawForwarded = req.headers.get('x-forwarded-for');
   if (rawForwarded) {
     const parts = rawForwarded.split(',').map((p) => p.trim()).filter(Boolean);
     if (parts.length > 0) {
-      return parts[Math.max(0, parts.length - hops)];
+      const candidate = parts[Math.max(0, parts.length - hops)];
+      return normalizeSocketIp(candidate) ?? candidate;
     }
   }
 
-  // 4. Fallback: x-real-ip when x-forwarded-for is missing and proxy trust is enabled
+  // 3. Fallback: x-real-ip when x-forwarded-for is missing and proxy trust is enabled
   const realIp = req.headers.get('x-real-ip');
   if (realIp && realIp.trim()) {
-    return realIp.trim();
+    const trimmed = realIp.trim();
+    return normalizeSocketIp(trimmed) ?? trimmed;
   }
 
-  // 5. Fall back to loopback IP when no trusted address exists
-  return '127.0.0.1';
+  // 4. Fall back to verified socket IP or loopback IP when no forwarded address exists
+  return readVerifiedSocketIp(req.headers) ?? '127.0.0.1';
+}
+
+function readRawCookieFromRequest(req: NextRequest, cookieName: string): string | undefined {
+  const directCookie = req.cookies?.get?.(cookieName)?.value;
+  if (directCookie) {
+    return directCookie;
+  }
+  if (typeof req.headers?.get !== 'function') {
+    return undefined;
+  }
+  const cookieHeader = req.headers.get('cookie');
+  if (!cookieHeader) {
+    return undefined;
+  }
+  const match = cookieHeader
+    .split(';')
+    .map((segment) => segment.trim())
+    .find((segment) => segment.startsWith(`${cookieName}=`));
+  return match ? match.slice(cookieName.length + 1) : undefined;
 }
 
 async function getSessionOrIp(req: NextRequest): Promise<string> {
-  const cookieName = ADMIN_COOKIE || 'admin_auth';
-  const adminCookie =
-    req.cookies?.get?.(cookieName)?.value ||
-    (typeof req.headers?.get === 'function'
-      ? req.headers.get('cookie')?.split(';').find((c) => c.trim().startsWith(`${cookieName}=`))?.trim().slice(cookieName.length + 1)
-      : undefined);
-
+  const adminCookieName = ADMIN_COOKIE || 'admin_auth';
+  const adminCookie = readRawCookieFromRequest(req, adminCookieName);
   if (adminCookie) {
     try {
       if (typeof verifyAdminToken === 'function') {
@@ -237,9 +271,43 @@ async function getSessionOrIp(req: NextRequest): Promise<string> {
         }
       }
     } catch {
-      // Malformed or invalid cookie falls back to client IP
+      // Malformed or invalid admin cookie falls through
     }
   }
+
+  const inviteCookieName = GUEST_INVITE_COOKIE || 'guest_invite_session';
+  const inviteCookie = readRawCookieFromRequest(req, inviteCookieName);
+  if (inviteCookie) {
+    try {
+      const payload =
+        typeof getSignedGuestInviteSession === 'function'
+          ? await getSignedGuestInviteSession(req)
+          : typeof verifyGuestInviteSessionToken === 'function'
+            ? await verifyGuestInviteSessionToken(inviteCookie)
+            : null;
+      if (payload && payload.code && payload.guestName) {
+        return `session:invite:${inviteCookie}`;
+      }
+    } catch {
+      // Malformed or invalid guest invite cookie falls through
+    }
+  }
+
+  const guestCookieName = GUEST_COOKIE || 'guest_auth';
+  const guestCookie = readRawCookieFromRequest(req, guestCookieName);
+  if (guestCookie) {
+    try {
+      if (typeof verifyGuestToken === 'function') {
+        const payload = await verifyGuestToken(guestCookie);
+        if (payload && payload.guest === true) {
+          return `session:guest:${guestCookie}`;
+        }
+      }
+    } catch {
+      // Malformed or invalid guest cookie falls through
+    }
+  }
+
   return getClientIp(req);
 }
 
@@ -248,10 +316,9 @@ export async function rateLimit(
   limit: number,
   windowMs: number,
   keyPrefix?: string,
-  bucket?: RateLimitBucket
+  bucket?: RateLimitBucket,
+  behavior?: RateLimitBehaviorOptions
 ): Promise<NextResponse | null> {
-  const identifier = await getSessionOrIp(req);
-
   let rawPathname = '';
   try {
     rawPathname = req.nextUrl?.pathname || (req.url ? new URL(req.url, 'http://localhost').pathname : '');
@@ -260,9 +327,15 @@ export async function rateLimit(
   }
 
   const method = req.method || 'GET';
+  const isLockoutEndpoint = isAuthLockoutRoute(rawPathname, method);
   const resolvedBucket: RateLimitBucket =
-    bucket ?? (isAuthLockoutRoute(rawPathname, method) ? 'auth' : 'general');
+    bucket ?? (isLockoutEndpoint ? 'auth' : 'general');
+  const identifier =
+    resolvedBucket === 'auth' || isLockoutEndpoint
+      ? getClientIp(req)
+      : await getSessionOrIp(req);
   const store = resolvedBucket === 'auth' ? authStore : generalStore;
+  const shouldIncrement = behavior?.increment !== false;
 
   const normalizedPathname = normalizeApiPathname(rawPathname);
   const key = keyPrefix ? `${keyPrefix}:${identifier}` : `${normalizedPathname}:${identifier}`;
@@ -272,6 +345,9 @@ export async function rateLimit(
 
   if (!info || info.resetTime < now) {
     pruneExpiredEntries(store, now);
+    if (!shouldIncrement) {
+      return null;
+    }
     if (!store.map.has(key)) {
       while (store.map.size >= MAX_RATE_LIMIT_KEYS) {
         const oldestKey = store.map.keys().next().value;
@@ -294,8 +370,28 @@ export async function rateLimit(
     return NextResponse.json({ error: 'Too many requests, please try again later.' }, { status: 429 });
   }
 
-  info.count += 1;
+  if (shouldIncrement) {
+    info.count += 1;
+  }
   return null;
+}
+
+export async function checkAuthLockout(
+  req: NextRequest,
+  limit: number = 5,
+  windowMs: number = 15 * 60 * 1000,
+  keyPrefix?: string
+): Promise<NextResponse | null> {
+  return rateLimit(req, limit, windowMs, keyPrefix, 'auth', { increment: false });
+}
+
+export async function recordFailedAuthAttempt(
+  req: NextRequest,
+  limit: number = 5,
+  windowMs: number = 15 * 60 * 1000,
+  keyPrefix?: string
+): Promise<void> {
+  await rateLimit(req, limit, windowMs, keyPrefix, 'auth', { increment: true });
 }
 
 /**

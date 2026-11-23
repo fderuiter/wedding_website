@@ -49,7 +49,7 @@ test.describe('Metadata', { tag: '@smoke' }, () => {
     page,
   }) => {
     test.setTimeout(120000);
-    await seedAdminAndGuestAuthCookies(context);
+    const seededCookies = await seedAdminAndGuestAuthCookies(context);
 
     const routeExpectations: Array<{
       path: string;
@@ -82,7 +82,17 @@ test.describe('Metadata', { tag: '@smoke' }, () => {
     const observedTitles = new Set<string>();
 
     for (const entry of routeExpectations) {
-      await page.goto(entry.path, { waitUntil: 'domcontentloaded' });
+      await seedAdminAndGuestAuthCookies(context, seededCookies);
+      try {
+        await page.goto(entry.path, { waitUntil: 'domcontentloaded' });
+      } catch (err) {
+        if (err instanceof Error && err.message.includes('ERR_ABORTED')) {
+          await seedAdminAndGuestAuthCookies(context, seededCookies);
+          await page.goto(entry.path, { waitUntil: 'domcontentloaded' });
+        } else {
+          throw err;
+        }
+      }
       expect(new URL(page.url()).pathname).toBe(entry.expectedPathname ?? entry.path);
 
       const escapedPrefix = entry.expectedPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

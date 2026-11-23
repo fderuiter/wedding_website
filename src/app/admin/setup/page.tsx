@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { createPageMetadata } from '@/app/metadata';
 import SetupWizard, { type SetupWizardSavedConfig } from '@/components/setup/SetupWizard';
 import { getAppConfig, isSiteInitialized, isSetupCompleted } from '@/lib/config';
+import { isNonPlaceholderVenueText } from '@/utils/maps';
 
 export const metadata: Metadata = createPageMetadata({
   title: 'Initial Site Setup',
@@ -41,7 +42,7 @@ export default async function AdminSetupPage() {
         ? config.weddingDate.toISOString().slice(0, 10)
         : '';
     const cleanVenue = (val: string | null | undefined) =>
-      val && val.trim().toUpperCase() !== 'TBD' ? val.trim() : '';
+      isNonPlaceholderVenueText(val) ? val.trim() : '';
 
     initialSavedConfig = {
       step: 3,
@@ -51,8 +52,18 @@ export default async function AdminSetupPage() {
       baseUrl: config.baseUrl || '',
       contactEmail: config.contactEmail || '',
       venueName: cleanVenue(config.venueName),
+      venueAddress: cleanVenue(config.venueAddress),
       venueCity: cleanVenue(config.venueCity),
       venueState: cleanVenue(config.venueState),
+      venueZip: cleanVenue(config.venueZip),
+      latitude:
+        typeof config.latitude === 'number' && Number.isFinite(config.latitude)
+          ? config.latitude
+          : 0,
+      longitude:
+        typeof config.longitude === 'number' && Number.isFinite(config.longitude)
+          ? config.longitude
+          : 0,
       timezone: config.timezone || 'America/Chicago',
       themePreset: config.themePreset,
       colorPrimary: config.colorPrimary,

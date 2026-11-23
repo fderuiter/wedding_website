@@ -496,6 +496,8 @@ function parseDockerComposeContract(composeContent: string): {
   appHealthcheckTargetsLive: boolean;
   appHasEnvFile: boolean;
   appHostname: string | null;
+  appInit: boolean;
+  appStopGracePeriod: string | null;
   appReadOnly: boolean;
   appCapDropAll: boolean;
   appNoNewPrivileges: boolean;
@@ -534,6 +536,8 @@ function parseDockerComposeContract(composeContent: string): {
   let appHealthcheckTargetsLive = false;
   let appHasEnvFile = false;
   let appHostname: string | null = null;
+  let appInit = false;
+  let appStopGracePeriod: string | null = null;
   let appReadOnly = false;
   let appCapDropAll = false;
   let appNoNewPrivileges = false;
@@ -647,6 +651,13 @@ function parseDockerComposeContract(composeContent: string): {
         if (/^    read_only:\s*true\s*(?:#.*)?$/.test(line)) {
           appReadOnly = true;
         }
+        if (/^    init:\s*true\s*(?:#.*)?$/.test(line)) {
+          appInit = true;
+        }
+        const stopGraceMatch = line.match(/^    stop_grace_period:\s*(.+?)\s*(?:#.*)?$/);
+        if (stopGraceMatch) {
+          appStopGracePeriod = stopGraceMatch[1].replace(/^["']|["']$/g, '').trim();
+        }
       }
       if (/^    healthcheck:\s*$/.test(line)) {
         appHasHealthcheck = true;
@@ -720,6 +731,8 @@ function parseDockerComposeContract(composeContent: string): {
     appHealthcheckTargetsLive,
     appHasEnvFile,
     appHostname,
+    appInit,
+    appStopGracePeriod,
     appReadOnly,
     appCapDropAll,
     appNoNewPrivileges,
@@ -1007,7 +1020,10 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     'vercel.json',
     'src/env.ts',
     'src/lib/config.ts',
+    'src/lib/prisma.ts',
+    'src/lib/postgres-url.js',
     'src/lib/modules.ts',
+    'src/utils/withApiMiddleware.ts',
     'src/middleware.ts',
     'src/app/api/uploads/[...path]/route.ts',
     'src/app/api/admin/maintenance/export/route.ts',
@@ -1622,6 +1638,11 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
           `docs/deployment/docker-vps.md: Rollback \`docker run\` command must not deploy mutable :latest tag: \`${line}\``
         );
       }
+      if (!/(?:^|\s)--stop-timeout(?:=|\s+)15(?:\s|$)/.test(line)) {
+        errors.push(
+          `docs/deployment/docker-vps.md: Rollback \`docker run\` command must pass \`--stop-timeout 15\` matching stop_grace_period: \`${line}\``
+        );
+      }
       if (/\$\{DB_(?:USER|PASSWORD|NAME)\b/.test(line)) {
         errors.push(
           `docs/deployment/docker-vps.md: Rollback \`docker run\` command must not expand unset host \${DB_*} variables over \`--env-file .env\`: \`${line}\``
@@ -1834,6 +1855,171 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     errors.push(
       `scripts/generate-docs.ts: \`generateEnvSpecs\` must specify Node.js \`${expectedNodeMajor}.x\` matching .nvmrc`
     );
+  }
+
+  // Verify npm packageManager lock (^10.9.0 & devEngines) and exact devEngines.runtime Node range (^22.12.0) across package.json and runbooks
+  const expectedNodeRange = packageJson.devEngines?.runtime?.version ?? '^22.12.0';
+  const expectedNpmRange = packageJson.engines?.npm ?? '^10.9.0';
+  if (
+    !packageJson.engines?.npm ||
+    packageJson.devEngines?.runtime?.name !== 'node' ||
+    packageJson.devEngines?.runtime?.onFail !== 'error' ||
+    packageJson.devEngines?.packageManager?.name !== 'npm' ||
+    packageJson.devEngines?.packageManager?.version !== packageJson.engines.npm ||
+    packageJson.devEngines?.packageManager?.onFail !== 'error'
+  ) {
+    errors.push(
+      'package.json: `engines.npm`, `devEngines.runtime`, and `devEngines.packageManager` (`onFail: "error"`) must lock Node (`^22.12.0`) and npm (`^10.9.0`)'
+    );
+  }
+  for (const [docLabel, docContent] of [
+    ['docs/runtime-contract.md', runtimeContractMd],
+    ['DEPLOYMENT.md', deploymentMd],
+    ['docs/deployment/README.md', deploymentOverviewMd],
+    ['docs/deployment/docker-vps.md', dockerMd],
+  ] as const) {
+    if (!docContent.includes(expectedNodeRange) || !docContent.includes(expectedNpmRange) || !docContent.includes('devEngines')) {
+      errors.push(
+        `${docLabel}: Must document Node \`${expectedNodeRange}\` and \`npm\` \`${expectedNpmRange}\` (\`devEngines\` in \`package.json\`)`
+      );
+    }
+  }
+
+  // Verify PostgreSQL 15+ baseline and reject stale PostgreSQL 14 claims
+  for (const [docLabel, docContent] of runbookContents.entries()) {
+    if (/\bPostgreSQL\s+14\b/i.test(docContent)) {
+      errors.push(`${docLabel}: References stale "PostgreSQL 14" instead of PostgreSQL 15+`);
+    }
+  }
+  for (const [docLabel, docContent] of [
+    ['docs/runtime-contract.md', runtimeContractMd],
+    ['DEPLOYMENT.md', deploymentMd],
+    ['docs/deployment/README.md', deploymentOverviewMd],
+    ['docs/deployment/docker-vps.md', dockerMd],
+  ] as const) {
+    if (
+      !/(?:PostgreSQL\s+(?:version\s+)?(?:\*\*)?15(?:\.0\b|\+|\s+or\s+higher\b)|postgres:15-alpine\b)/i.test(
+        docContent
+      )
+    ) {
+      errors.push(`${docLabel}: Must specify PostgreSQL 15+ minimum database requirement`);
+    }
+  }
+
+  // Verify container layout (/opt/prisma-cli outside /app and /app/scripts/generate-password-hash.mjs), RUN_MIGRATIONS=1, and offline Compose migrations
+  const entrypointRaw = fs.readFileSync(path.join(repoRoot, 'docker-entrypoint.sh'), 'utf8');
+  if (
+    !/\[\s*"\$RUN_MIGRATIONS"\s*=\s*"true"\s*\]/.test(entrypointRaw) ||
+    !/\[\s*"\$RUN_MIGRATIONS"\s*=\s*"1"\s*\]/.test(entrypointRaw)
+  ) {
+    errors.push('docker-entrypoint.sh: Must accept both RUN_MIGRATIONS="true" and RUN_MIGRATIONS="1"');
+  }
+  if (!runtimeContractMd.includes('/opt/prisma-cli') || !/outside\s+`\/app`/i.test(runtimeContractMd)) {
+    errors.push('docs/runtime-contract.md: Must state that Dockerfile installs `/opt/prisma-cli` outside `/app`');
+  }
+  if (!runtimeContractMd.includes('/app/scripts/generate-password-hash.mjs')) {
+    errors.push(
+      'docs/runtime-contract.md: Must state that Dockerfile copies `/app/scripts/generate-password-hash.mjs` rather than the entire `scripts` directory'
+    );
+  }
+  if (
+    /(?:\/opt\/prisma-cli[^.\n]*packaged under\s+`?\/app`?|packaged under\s+`?\/app`?[^.\n]*\/opt\/prisma-cli)/i.test(
+      runtimeContractMd
+    )
+  ) {
+    errors.push('docs/runtime-contract.md: Stale claim that `/opt/prisma-cli` is packaged under `/app`');
+  }
+  if (!runtimeContractMd.includes('RUN_MIGRATIONS=1')) {
+    errors.push('docs/runtime-contract.md: Must document `RUN_MIGRATIONS=1` alongside `RUN_MIGRATIONS=true`');
+  }
+  for (const [docLabel, docContent] of [
+    ['DEPLOYMENT.md', deploymentMd],
+    ['docs/deployment/README.md', deploymentOverviewMd],
+  ] as const) {
+    if (!docContent.includes('./node_modules/.bin/prisma migrate deploy')) {
+      errors.push(
+        `${docLabel}: Must document offline \`./node_modules/.bin/prisma migrate deploy\` for the Docker Compose \`migration\` service`
+      );
+    }
+    for (const line of docContent.split(/\r?\n/)) {
+      if (
+        /`?migration`?\s+(?:task\s+)?service\s+(?:runs|executes)\s+`npx\s+prisma\s+migrate\s+deploy`/i.test(
+          line
+        )
+      ) {
+        errors.push(
+          `${docLabel}: Stale claim that Docker Compose \`migration\` service runs \`npx prisma migrate deploy\` instead of \`./node_modules/.bin/prisma migrate deploy\``
+        );
+      }
+    }
+  }
+
+  // Verify /api/live liveness vs /api/health 503 field stripping & referenceId masking
+  const apiMiddlewareRaw = fs.readFileSync(path.join(repoRoot, 'src/utils/withApiMiddleware.ts'), 'utf8');
+  const healthProbeSection = extractSectionSlice(
+    deploymentMd,
+    /^##\s+Health Checks & Liveness Probes\b/,
+    '## '
+  );
+  if (
+    !healthProbeSection.includes('/api/live') ||
+    /query\s+`?\/api\/health`?[^.\n]*for\s+liveness/i.test(deploymentMd)
+  ) {
+    errors.push(
+      'DEPLOYMENT.md: Health Checks & Liveness Probes section must direct container liveness checks to `/api/live` rather than `/api/health`'
+    );
+  }
+  if (apiMiddlewareRaw.includes('referenceId') && apiMiddlewareRaw.includes('response.status >= 400')) {
+    for (const [docLabel, docContent] of [
+      ['docs/runtime-contract.md', runtimeContractMd],
+      ['DEPLOYMENT.md', deploymentMd],
+      ['docs/deployment/docker-vps.md', dockerMd],
+    ] as const) {
+      if (
+        !docContent.includes('referenceId') ||
+        !/strip(?:s|ping)\s+`status`,\s*`database`,\s*and\s*`timestamp`/i.test(docContent)
+      ) {
+        errors.push(
+          `${docLabel}: Must document that \`withApiMiddleware\` strips \`status\`, \`database\`, and \`timestamp\` from \`GET /api/health\` 503 responses and includes \`referenceId\` in production`
+        );
+      }
+    }
+  }
+
+  // Verify Prisma pool timeout, shutdown drain timers (5000ms), exit codes (130/143), and stop_grace_period: 15s
+  const prismaTsRaw = fs.readFileSync(path.join(repoRoot, 'src/lib/prisma.ts'), 'utf8');
+  const postgresUrlRaw = fs.readFileSync(path.join(repoRoot, 'src/lib/postgres-url.js'), 'utf8');
+  const connTimeoutMatch = postgresUrlRaw.match(/DEFAULT_POSTGRES_CONNECTION_TIMEOUT_MS\s*=\s*([0-9_]+)/);
+  const expectedConnTimeoutMs = connTimeoutMatch
+    ? Number(connTimeoutMatch[1].replace(/_/g, ''))
+    : 10000;
+  const drainTimerMatch = prismaTsRaw.match(/setTimeout\([\s\S]{0,120}?,\s*(\d+)\s*\)/);
+  const expectedDrainTimerMs = drainTimerMatch ? Number(drainTimerMatch[1]) : 5000;
+
+  if (!composeContract.appInit || composeContract.appStopGracePeriod !== '15s') {
+    errors.push('docker-compose.yml: `app` service must configure `init: true` and `stop_grace_period: 15s`');
+  }
+  if (
+    !runtimeContractMd.includes('globalThis') ||
+    !runtimeContractMd.includes(`${expectedConnTimeoutMs}ms`) ||
+    !runtimeContractMd.includes('process.exit') ||
+    !runtimeContractMd.includes(`${expectedDrainTimerMs}ms`) ||
+    !runtimeContractMd.includes('`130`') ||
+    !runtimeContractMd.includes('`143`') ||
+    !runtimeContractMd.includes('stop_grace_period: 15s')
+  ) {
+    errors.push(
+      `docs/runtime-contract.md: Must document Prisma \`globalThis\` pool sharing, \`${expectedConnTimeoutMs}ms\` default connection timeout, \`process.exit\` interception, \`${expectedDrainTimerMs}ms\` drain timer, exit codes \`130\`/\`143\`, and \`stop_grace_period: 15s\``
+    );
+  }
+  for (const [docLabel, docContent] of [
+    ['DEPLOYMENT.md', deploymentMd],
+    ['docs/deployment/README.md', deploymentOverviewMd],
+    ['docs/deployment/docker-vps.md', dockerMd],
+  ] as const) {
+    if (!docContent.includes('stop_grace_period: 15s') || !docContent.includes('--stop-timeout 15')) {
+      errors.push(`${docLabel}: Must document \`stop_grace_period: 15s\` and \`--stop-timeout 15\``);
+    }
   }
 
   const workflowsCheckDir = path.join(repoRoot, '.github/workflows');
