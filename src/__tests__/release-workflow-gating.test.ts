@@ -83,10 +83,33 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(onSection).toContain('branches: [ main ]');
     expect(onSection).toContain('pull_request:');
 
-    for (const jobId of ['verify:', 'unit-test:', 'build:', 'e2e-test:', 'deploy-docs:']) {
+    for (const jobId of [
+      'verify:',
+      'unit-test:',
+      'build:',
+      'storybook-build:',
+      'static-export-build:',
+      'e2e-test:',
+      'deploy-docs:',
+    ]) {
       expect(ciWorkflow).toContain(`  ${jobId}`);
     }
     expect(ciWorkflow).not.toContain('secrets.');
+
+    // static-export-build runs in parallel after verify with read-only permissions and zero DB services
+    const staticExportMatch = ciWorkflow.match(
+      /  static-export-build:\n([\s\S]*?)(?=\n  [a-z0-9-]+:|\s*$)/
+    );
+    expect(staticExportMatch).not.toBeNull();
+    const staticExportJob = staticExportMatch?.[1] ?? '';
+    expect(staticExportJob).toContain('needs: verify');
+    expect(staticExportJob).toMatch(/permissions:\n\s+contents: read/);
+    expect(staticExportJob).not.toContain('services:');
+    expect(staticExportJob).toContain('path: .next-export/cache');
+    expect(staticExportJob).toContain('npm run build:export');
+
+    // e2e-test keeps needs: [build, unit-test] so static export checks never delay Playwright runs
+    expect(ciWorkflow).toMatch(/  e2e-test:\n\s+needs: \[build, unit-test\]/);
   });
 
   it('removes standalone main branch push trigger from publish-artifact.yml while retaining v* tags, workflow_dispatch, and workflow_call', () => {

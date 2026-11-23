@@ -5,7 +5,7 @@ node_modules
 # 2. Next.js / Turbopack / Storybook / Portal build compilation caches and outputs
 .turbo
 .next
-.api-backup-export
+.next-export
 out
 build
 storybook-static

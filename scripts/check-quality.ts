@@ -37,6 +37,17 @@ export function cleanupStorybookStaticDir(cwd: string = process.cwd()): void {
   }
 }
 
+export function cleanupStaticExportOutDir(cwd: string = process.cwd()): void {
+  const outDir = path.join(cwd, 'out');
+  if (fs.existsSync(outDir)) {
+    try {
+      fs.rmSync(outDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+}
+
 export const steps: Step[] = [
   { name: 'Verify Environment Documentation', command: 'npx tsx scripts/verify-env-docs.ts' },
   { name: 'Verify Deployment Runbooks', command: 'npx tsx scripts/verify-deployment-runbooks.ts' },
@@ -73,6 +84,11 @@ export const steps: Step[] = [
     command: 'npm run build-storybook',
     remediation: 'Storybook static showcase compilation failed.\nRun "npm run build-storybook" (or "npm run storybook") locally to inspect Webpack build errors, broken story imports in "src/**/*.stories.tsx", or mock handler mismatches in ".storybook/preview.tsx" and "src/mocks/handlers.ts".',
   },
+  {
+    name: 'Build Static HTML Showcase',
+    command: 'npm run build:export',
+    remediation: 'Static HTML showcase export failed.\nRun "npm run build:export" locally to inspect Next.js static prerender errors. Ensure public/showcase routes do not import "@/app/api/*", guard dynamic server APIs ("cookies()", "headers()") and Prisma queries when "STATIC_EXPORT" is enabled, and define "generateStaticParams()" on dynamic App Router segments.',
+  },
   { name: 'Unit & Integration Tests', command: 'npm test' },
 ];
 
@@ -103,6 +119,9 @@ export function main(options: QualityRunOptions = {}): void {
       }
       if (step.command.includes('build-storybook')) {
         cleanupStorybookStaticDir(cwd);
+      }
+      if (step.command.includes('build:export')) {
+        cleanupStaticExportOutDir(cwd);
       }
       console.error(`\n❌ [${i + 1}/${total}] ${step.name} FAILED!`);
       console.error(`\nCommand: "${step.command}"\n`);

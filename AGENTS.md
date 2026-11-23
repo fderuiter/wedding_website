@@ -99,7 +99,19 @@ npm run quality
 13. Verify Setup & Contributor Guides Contract (`npm run check:setup-guides` / [`scripts/verify-setup-guides.ts`](scripts/verify-setup-guides.ts))
 14. Build Static Documentation Portal (`npm run docs:build`)
 15. Build Static Storybook Showcase (`npm run build-storybook`) — prints remediation instructions and removes any partial `storybook-static` output on failure
-16. Unit & Integration Tests (`npm test`) — invokes [`scripts/pretest.mjs`](scripts/pretest.mjs) (verifies `node_modules/.package-lock-hash`, checks `npm_lifecycle_event` and falls back to `npm run build` if invoked outside a `*test*` lifecycle, resets `test-results/jest-a11y-violations.json`, starts `docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d db` + polls `pg_isready`, isolates env vars from `.env.test` against `wedding_test`, runs `npx prisma db push --accept-data-loss` and `npm run prisma:generate`, and stages portal docs via `npx tsx scripts/generate-portal.ts`) before running `jest --runInBand`
+16. Build Static HTML Showcase (`npm run build:export`) — compiles inside an isolated staged workspace without `src/app/api`, isolates export build cache in `.next-export`, prints remediation instructions, and removes any partial `out/` output on failure
+17. Unit & Integration Tests (`npm test`) — invokes [`scripts/pretest.mjs`](scripts/pretest.mjs) (verifies `node_modules/.package-lock-hash`, checks `npm_lifecycle_event` and falls back to `npm run build` if invoked outside a `*test*` lifecycle, resets `test-results/jest-a11y-violations.json`, starts `docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d db` + polls `pg_isready`, isolates env vars from `.env.test` against `wedding_test`, runs `npx prisma db push --accept-data-loss` and `npm run prisma:generate`, and stages portal docs via `npx tsx scripts/generate-portal.ts`) before running `jest --runInBand`
+
+### Static HTML Showcase Verification (`npm run build:export`)
+
+Whenever you add or modify App Router pages, layouts, dynamic route segments, or server repositories, verify that the database-free static HTML showcase compiles cleanly:
+
+```bash
+npm run build:export
+```
+
+- **Staged Workspace & Cache Isolation:** [`scripts/build-export.mjs`](scripts/build-export.mjs) copies build-relevant sources into an isolated temporary folder without `src/app/api`, isolates Next.js static export build caching under `.next-export` via [`next.config.ts`](next.config.ts), and writes the generated static bundle to `out/` while leaving `src/app/api` and `.next/standalone` untouched in the repository root.
+- **CI Parity:** Pull requests and pushes to `main` execute a parallel `static-export-build` job after `verify` in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) without PostgreSQL services or secrets, caching `.next-export/cache` and verifying `out/index.html` and route HTML files with zero `[PageQueryError]` logs.
 
 ### Storybook Static Showcase Verification
 
