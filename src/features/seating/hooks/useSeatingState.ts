@@ -610,9 +610,11 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         ? guestsData
         : Array.isArray(guestsData?.items)
           ? guestsData.items
-          : Array.isArray(guestsData?.data)
-            ? guestsData.data
-            : [];
+          : Array.isArray(guestsData?.data?.items)
+            ? guestsData.data.items
+            : Array.isArray(guestsData?.data)
+              ? guestsData.data
+              : [];
 
       dispatch({
         type: 'INIT_DATA',

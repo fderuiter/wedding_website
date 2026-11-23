@@ -30,6 +30,8 @@ interface BatchUpdateTagsResponse {
 
 interface AdminSingleRsvpOverrideResponse {
   success?: boolean;
+  invitationCode?: InvitationCodeDTO;
+  rsvps?: unknown[];
   data?: {
     invitationCode?: InvitationCodeDTO;
     rsvps?: unknown[];
@@ -38,6 +40,8 @@ interface AdminSingleRsvpOverrideResponse {
 
 interface AdminBatchAttendanceResponse {
   success?: boolean;
+  updatedCount?: number;
+  records?: InvitationCodeDTO[];
   data?: {
     updatedCount?: number;
     records?: InvitationCodeDTO[];
@@ -224,7 +228,7 @@ export function useAdminInvitationCodes(options?: AdminHookOptions) {
     mutationFn: async (payload: AdminSingleGuestRsvpOverrideDTO) =>
       apiClient.put<AdminSingleRsvpOverrideResponse>(`${INVITATION_CODES_ENDPOINT}/rsvps`, payload),
     onSuccess: (response, variables) => {
-      const updatedInvite = response?.data?.invitationCode;
+      const updatedInvite = response?.invitationCode ?? response?.data?.invitationCode;
       if (updatedInvite) {
         queryClient.setQueryData<InvitationCacheValue | undefined>(
           INVITATION_CODES_QUERY_KEY,
@@ -250,7 +254,7 @@ export function useAdminInvitationCodes(options?: AdminHookOptions) {
     mutationFn: async (payload: AdminBatchAttendanceOverrideDTO) =>
       apiClient.put<AdminBatchAttendanceResponse>(`${INVITATION_CODES_ENDPOINT}/rsvps`, payload),
     onSuccess: (response) => {
-      const updatedRecords = response?.data?.records;
+      const updatedRecords = response?.records ?? response?.data?.records;
       if (Array.isArray(updatedRecords) && updatedRecords.length > 0) {
         const byId = new Map(updatedRecords.map((rec) => [rec.id, rec]));
         queryClient.setQueryData<InvitationCacheValue | undefined>(
