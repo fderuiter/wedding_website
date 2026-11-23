@@ -229,6 +229,7 @@ const rawUpdateAppConfigBaseSchema = z.object({
   shippingDeliveryNotes: z.string().trim().max(1000, 'Shipping delivery notes must be under 1000 characters.').nullable().transform((val) => val ?? '').optional(),
   defaultPaymentHandleType: z.string().trim().max(100, 'Default payment service must be under 100 characters.').nullable().transform((val) => val ?? '').optional(),
   defaultPaymentHandle: z.string().trim().max(255, 'Default payment handle must be under 255 characters.').nullable().transform((val) => val ?? '').optional(),
+  setupCompleted: z.boolean().optional(),
   modules: ModuleConfigSchema.partial().optional(),
   timezone: z.string().refine(
     (val) => {
@@ -451,6 +452,7 @@ export function toAppConfigDbPayload(data: z.infer<typeof UpdateAppConfigSchema>
     shippingDeliveryNotes: data.shippingDeliveryNotes,
     defaultPaymentHandleType: data.defaultPaymentHandleType,
     defaultPaymentHandle: data.defaultPaymentHandle,
+    ...(typeof data.setupCompleted === 'boolean' ? { setupCompleted: data.setupCompleted } : {}),
   };
 }
 
@@ -878,6 +880,7 @@ export const AppConfigSchema = z.object({
   shippingDeliveryNotes: z.string().default('').describe('Optional carrier or concierge instructions for registry gift deliveries; omitted from public DTOs.'),
   defaultPaymentHandleType: z.string().default('').describe('Site-wide fallback peer-to-peer payment service (Venmo, PayPal, Cash App, Zelle, or Custom) for group gifts without an item-level handle; omitted from public DTOs.'),
   defaultPaymentHandle: z.string().default('').describe('Site-wide fallback peer-to-peer payment handle or username for group gifts without an item-level handle; omitted from public DTOs.'),
+  setupCompleted: z.boolean().default(true).describe('Admin-only flag tracking whether the five-step onboarding setup wizard has been completed; omitted from public DTOs.'),
   modules: z.any().optional().transform((val): z.input<typeof ModuleConfigSchema> => resolveModuleConfig(val)).pipe(ModuleConfigSchema).default(DEFAULT_MODULE_CONFIG).describe('Persisted feature module enablement map validated against ModuleConfigSchema with dependency resolution.'),
   features: z.union([
     z.string().transform((str) => {

@@ -89,6 +89,7 @@ flowchart LR
     node_admin__dashboard__thank_d_you_d_notes["thank-you-notes"]
     node_admin__dashboard__wedding_d_party["wedding-party"]
     node_admin__login["login"]
+    node_admin__setup["setup"]
     node_api["api"]
     node_api__admin["admin"]
     node_api__admin___lb_entity_rb_["[entity]"]
@@ -217,6 +218,7 @@ flowchart LR
     node_admin__dashboard --> node_admin__dashboard__thank_d_you_d_notes
     node_admin__dashboard --> node_admin__dashboard__wedding_d_party
     node_admin --> node_admin__login
+    node_admin --> node_admin__setup
     App --> node_api
     node_api --> node_api__admin
     node_api__admin --> node_api__admin___lb_entity_rb_
@@ -345,6 +347,7 @@ flowchart LR
     class node_admin__dashboard__thank_d_you_d_notes page;
     class node_admin__dashboard__wedding_d_party page;
     class node_admin__login page;
+    class node_admin__setup page;
     class node_api__admin___lb_entity_rb_ api;
     class node_api__admin___lb_entity_rb____lb_id_rb_ api;
     class node_api__admin___lb_entity_rb___batch api;
@@ -857,6 +860,7 @@ Import and export formats include versioning metadata (`schemaVersion: "1.0"`) t
 | `shippingDeliveryNotes` | `string` | `Prisma` | `Admin-only` | Optional carrier or concierge instructions for registry gift deliveries; omitted from public DTOs. |
 | `defaultPaymentHandleType` | `string` | `Prisma` | `Admin-only` | Site-wide fallback peer-to-peer payment service (Venmo, PayPal, Cash App, Zelle, or Custom) for group gifts without an item-level handle; omitted from public DTOs. |
 | `defaultPaymentHandle` | `string` | `Prisma` | `Admin-only` | Site-wide fallback peer-to-peer payment handle or username for group gifts without an item-level handle; omitted from public DTOs. |
+| `setupCompleted` | `boolean` | `Prisma` | `Admin-only` | Admin-only flag tracking whether the five-step onboarding setup wizard has been completed; omitted from public DTOs. |
 | `modules` | `object` | `Prisma` | `Public` | Persisted feature module enablement map validated against ModuleConfigSchema with dependency resolution. |
 | `features` | `object[]` | `Prisma` | `Public` | Ordered homepage content section definitions controlling section titles, visibility, and copy. |
 | `createdAt` | `date` | `Prisma` | `Public` | Timestamp recording when the configuration record was initially created. |

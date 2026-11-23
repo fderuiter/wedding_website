@@ -274,6 +274,7 @@ export const AdminSetupSchema = z.object({
   timezone: z.string().optional(),
   showCountdown: z.boolean().optional(),
   showAddToCalendar: z.boolean().optional(),
+  setupCompleted: z.boolean().optional(),
   subdomain: z.string().nullable().optional(),
 });
 

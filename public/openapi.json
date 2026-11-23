@@ -8410,6 +8410,9 @@
                     "type": "string",
                     "maxLength": 255
                   },
+                  "setupCompleted": {
+                    "type": "boolean"
+                  },
                   "modules": {
                     "type": "object",
                     "properties": {
@@ -8908,6 +8911,9 @@
                     "type": "string",
                     "maxLength": 255
                   },
+                  "setupCompleted": {
+                    "type": "boolean"
+                  },
                   "modules": {
                     "type": "object",
                     "properties": {
@@ -9175,6 +9181,9 @@
                     "type": "boolean"
                   },
                   "showAddToCalendar": {
+                    "type": "boolean"
+                  },
+                  "setupCompleted": {
                     "type": "boolean"
                   },
                   "subdomain": {

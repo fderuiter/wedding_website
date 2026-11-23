@@ -143,7 +143,9 @@ jest.mock('@/core/auth/guestInviteSession', () => ({
   getGuestInviteSession: () => mockGetGuestInviteSession(),
 }));
 
-const HomePage = require('../page').default;
+const pageModule = require('../page');
+const HomePage = pageModule.default;
+const generateMetadata = pageModule.generateMetadata;
 
 describe('Home Page', () => {
   beforeEach(() => {
@@ -164,8 +166,8 @@ describe('Home Page', () => {
     await screen.findByRole('link', { name: 'Our Story' });
     await screen.findByRole('link', { name: 'View Photos' });
 
-    // Gallery and hero heading render
-    expect(screen.getByRole('heading', { name: 'We Tied the Knot!' })).toBeInTheDocument();
+    // Gallery and pre-wedding hero heading render
+    expect(screen.getByRole('heading', { name: 'Bride & Groom' })).toBeInTheDocument();
 
     expect(screen.getByRole('link', { name: 'Our Story' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'View Photos' })).toBeInTheDocument();
@@ -493,5 +495,59 @@ describe('Home Page', () => {
 
     expect(screen.getByText('Accommodation details coming soon...')).toBeInTheDocument();
     expect(screen.getByText('Travel details coming soon...')).toBeInTheDocument();
+  });
+
+  it('omits TBD and empty venue strings from homepage ceremony details, footer, and Event JSON-LD', async () => {
+    (getAppConfig as jest.Mock).mockResolvedValue({
+      ...defaultMockConfig,
+      venueName: 'TBD',
+      venueAddress: '',
+      venueCity: 'TBD',
+      venueState: '   ',
+      venueZip: '',
+      heroTitle: '',
+      heroSubtitle: '',
+    });
+    mockGetHomepageLogistics.mockResolvedValue([]);
+
+    const metadata = await generateMetadata();
+    const rawJsonLd = metadata.other?.['application/ld+json'];
+    expect(rawJsonLd).toBeDefined();
+    const parsedJsonLd = JSON.parse(rawJsonLd as string);
+    expect(parsedJsonLd['@type']).toBe('Event');
+    expect(parsedJsonLd.location).toBeUndefined();
+
+    const Component = await HomePage();
+    const { container } = render(Component);
+
+    expect(screen.getByRole('heading', { name: 'Bride & Groom' })).toBeInTheDocument();
+    expect(container.textContent).not.toContain('We Tied the Knot!');
+    expect(container.textContent).not.toContain('TBD');
+  });
+
+  it('includes structured Place and PostalAddress in Event JSON-LD when venue fields are populated', async () => {
+    (getAppConfig as jest.Mock).mockResolvedValue({
+      ...defaultMockConfig,
+      venueName: 'Conservatory Hall',
+      venueAddress: '500 Park Ave',
+      venueCity: 'Minneapolis',
+      venueState: 'MN',
+      venueZip: '55401',
+    });
+
+    const metadata = await generateMetadata();
+    const parsedJsonLd = JSON.parse(metadata.other['application/ld+json'] as string);
+    expect(parsedJsonLd.location).toEqual({
+      '@type': 'Place',
+      name: 'Conservatory Hall',
+      address: {
+        '@type': 'PostalAddress',
+        streetAddress: '500 Park Ave',
+        addressLocality: 'Minneapolis',
+        addressRegion: 'MN',
+        postalCode: '55401',
+        addressCountry: 'US',
+      },
+    });
   });
 });

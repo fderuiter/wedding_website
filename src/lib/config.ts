@@ -121,6 +121,7 @@ export const APP_DEFAULTS: LocalAppConfig = {
   shippingDeliveryNotes: '',
   defaultPaymentHandleType: '',
   defaultPaymentHandle: '',
+  setupCompleted: true,
   modules: DEFAULT_MODULE_CONFIG,
   features: [],
   createdAt: new Date(),
@@ -187,6 +188,14 @@ export function isSiteInitialized(config: AppConfigDTO | null | undefined): bool
   if ((p1 === 'Partner 1' && p2 === 'Partner 2') || (p1 === 'Abbigayle' && p2 === 'Frederick')) return false;
   if (config.baseUrl.includes('wedding.example')) return false;
   return true;
+}
+
+/**
+ * Determine if the initial multi-step admin setup wizard has been completed.
+ */
+export function isSetupCompleted(config: AppConfigDTO | null | undefined): boolean {
+  if (!isSiteInitialized(config)) return false;
+  return config?.setupCompleted !== false;
 }
 
 /**
@@ -289,6 +298,7 @@ export interface AdminAppConfig extends PublicAppConfig {
   shippingDeliveryNotes: string;
   defaultPaymentHandleType: string;
   defaultPaymentHandle: string;
+  setupCompleted: boolean;
   hasSmtpPass: boolean;
   hasResendApiKey: boolean;
   hasSendgridApiKey: boolean;
@@ -386,6 +396,7 @@ export function toAdminAppConfig<T extends AppConfigDTO | Record<string, any>>(c
     shippingDeliveryNotes: raw.shippingDeliveryNotes ?? '',
     defaultPaymentHandleType: raw.defaultPaymentHandleType ?? '',
     defaultPaymentHandle: raw.defaultPaymentHandle ?? '',
+    setupCompleted: raw.setupCompleted !== false,
     hasSmtpPass: hasConfiguredSecret(raw.smtpPass),
     hasResendApiKey: hasConfiguredSecret(raw.resendApiKey),
     hasSendgridApiKey: hasConfiguredSecret(raw.sendgridApiKey),
