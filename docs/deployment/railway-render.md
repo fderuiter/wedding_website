@@ -56,6 +56,7 @@ Set environment variables in the platform dashboard (Railway: **Variables** tab;
 | `STRIPE_SECRET_KEY` | No | Server-side Stripe secret key (`sk_...` / `rk_...`), paired with `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` for card checkout. |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | No | Client-side Stripe publishable key (`pk_...`), paired with `STRIPE_SECRET_KEY` for card checkout. |
 | `STRIPE_WEBHOOK_SECRET` | No | Stripe webhook signing secret (`whsec_...`) for `/api/registry/webhook/stripe`. |
+| `HOSTNAME` | No | Network interface bound by standalone `server.js` (set `0.0.0.0` when deploying via Railway Nixpacks; preconfigured via `ENV HOSTNAME="0.0.0.0"` in `Dockerfile`). |
 
 *\* Note: On Render, you can alternatively mount a Render Persistent Disk at `/app/public/uploads` for local storage.*
 
@@ -72,7 +73,7 @@ DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NO
 ```
 
 ### Render Migration Command
-In Render **Web Service Settings > Release Command**:
+In Render **Web Service Settings > Build & Deploy > Pre-Deploy Command**:
 ```bash
 DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING ./node_modules/.bin/prisma migrate deploy
 ```
@@ -89,8 +90,11 @@ Render allows mounting a persistent disk to preserve uploads without external ob
 2. Click **Add Disk**: Name `wedding-uploads`, Mount Path `/app/public/uploads`, Size `10 GB`.
 3. In standalone mode (`server.js`), files written to `/app/public/uploads` are streamed dynamically at `/uploads/*` (`src/app/api/uploads/[...path]/route.ts`, with `X-Content-Type-Options: nosniff`) without restarting the container.
 
-### Option B: S3 / Cloudflare R2 Storage (Recommended for Railway & Render)
-Provide `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` environment variables. Uploads will be written directly to S3/R2 and served globally.
+### Option B: S3 / Cloudflare R2 / Google Cloud Storage (Recommended for Railway & Render)
+Configure all six S3-compatible environment variables as needed (`S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT`, and `S3_PUBLIC_URL`):
+*   **Cloudflare R2**: Set `S3_BUCKET`, `S3_REGION=auto`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com`, and `S3_PUBLIC_URL=https://assets.wedding.mydomain.com` (an R2 Custom Domain or public `https://pub-<id>.r2.dev` URL; private `*.r2.cloudflarestorage.com` endpoints require `S3_PUBLIC_URL`).
+*   **Google Cloud Storage (S3 Interoperability)**: Enable Cloud Storage HMAC keys and set `S3_BUCKET`, `S3_REGION=us-central1` (matching your bucket region), `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT=https://storage.googleapis.com`, and optional `S3_PUBLIC_URL`.
+*   **AWS S3**: Set `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` (with `S3_ENDPOINT` omitted and `S3_PUBLIC_URL` optional for CloudFront).
 
 ---
 
@@ -113,9 +117,11 @@ Both Railway and Render provide automatic TLS certificates via Let's Encrypt.
 ## 6. Build & Deploy Commands
 
 ### Railway Deployment (Docker or Nixpacks)
-*   **Build Provider**: Select **Docker** to use the root `Dockerfile`, or **Nixpacks**.
-*   **Build Command**: `npm run build`
-*   **Start Command**: `npm start` (or automatically executed via `Dockerfile` entrypoint).
+*   **Option A — Docker (Recommended)**: Select **Docker** as the build provider to use the root `Dockerfile`, which installs build-time `devDependencies`, runs `postbuild`, sets `ENV HOSTNAME="0.0.0.0"`, and executes `docker-entrypoint.sh` automatically.
+*   **Option B — Nixpacks**: Because `NODE_ENV=production` omits `devDependencies` (`prisma`, `typescript`, `@tailwindcss/postcss`, and `@types/*` in `package.json`) needed by `npm run build` (`prisma generate && next build`), and `npm start` launches `node .next/standalone/server.js`:
+    *   **Variables**: Set `HOSTNAME=0.0.0.0` so standalone `server.js` binds to `0.0.0.0` for Railway ingress and healthcheck traffic.
+    *   **Build Command**: `npm ci --include=dev && npm run build && npm run postbuild` (installs required build-time `devDependencies` and copies `.next/static` and `public` into `.next/standalone/`).
+    *   **Start Command**: `npm start`
 
 ### Render Deployment
 *   **Environment**: Docker (uses root `Dockerfile`).

@@ -288,13 +288,14 @@ IMAGE_DIGEST="sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789a
 gcloud run jobs create wedding-migrate \
     --image="ghcr.io/fderuiter/wedding_website@${IMAGE_DIGEST}" \
     --args="./node_modules/.bin/prisma,migrate,deploy" \
+    --set-cloudsql-instances=YOUR_PROJECT_ID:us-central1:wedding-db \
     --set-secrets="DATABASE_URL=DATABASE_URL_DIRECT:latest" \
     --region=us-central1
 
 gcloud run jobs execute wedding-migrate --region=us-central1 --wait
 ```
 
-*Note: Omitting `--command` preserves the container `ENTRYPOINT` (`/usr/bin/tini -s -- docker-entrypoint.sh`), which validates `DATABASE_URL`, unsets `POSTGRES_URL_NON_POOLING`, and invokes `./node_modules/.bin/prisma migrate deploy` (`/usr/local/bin/prisma`) offline without `npx` or npm registry traffic. Bind `DATABASE_URL` in the Cloud Run Job to a direct, non-pooling PostgreSQL secret (`DATABASE_URL_DIRECT` or `DATABASE_URL` if already unpooled) as an explicit `DATABASE_URL` override to bypass PgBouncer.*
+*Note: Omitting `--command` preserves the container `ENTRYPOINT` (`/usr/bin/tini -s -- docker-entrypoint.sh`), which validates `DATABASE_URL`, unsets `POSTGRES_URL_NON_POOLING`, and invokes `./node_modules/.bin/prisma migrate deploy` (`/usr/local/bin/prisma`) offline without `npx` or npm registry traffic. Attach `--set-cloudsql-instances` when connecting via Cloud SQL Auth Proxy Unix sockets (omit if using an external TCP PostgreSQL host), and bind `DATABASE_URL` in the Cloud Run Job to a direct, non-pooling PostgreSQL secret (`DATABASE_URL_DIRECT` or `DATABASE_URL` if already unpooled) as an explicit `DATABASE_URL` override to bypass PgBouncer.*
 
 ---
 
@@ -302,9 +303,12 @@ gcloud run jobs execute wedding-migrate --region=us-central1 --wait
 
 Cloud Run containers have ephemeral, read-only root filesystems. Persistent asset storage **must** use S3-compatible object storage (Cloudflare R2, AWS S3, or Google Cloud Storage with S3 Interoperability enabled):
 
-1. Create a Google Cloud Storage bucket or Cloudflare R2 bucket.
-2. Enable Cloud Storage S3 Interoperability or obtain Cloudflare R2 API tokens.
-3. Pass `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, and `S3_PUBLIC_URL` as Cloud Run environment secrets.
+1. Create a Google Cloud Storage bucket, Cloudflare R2 bucket, or AWS S3 bucket.
+2. Enable Cloud Storage S3 Interoperability (HMAC keys) or generate Cloudflare R2 / AWS S3 API credentials.
+3. Configure the six `S3_*` variables (`S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT`, and `S3_PUBLIC_URL`) in GCP Secret Manager / Cloud Run environment settings:
+   * **Google Cloud Storage (S3 Interoperability)**: Set `S3_BUCKET`, `S3_REGION=us-central1` (matching your bucket region), `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT=https://storage.googleapis.com`, and optional `S3_PUBLIC_URL`.
+   * **Cloudflare R2**: Set `S3_BUCKET`, `S3_REGION=auto`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com`, and `S3_PUBLIC_URL=https://assets.wedding.mydomain.com` (an R2 Custom Domain or public `https://pub-<id>.r2.dev` URL; private `*.r2.cloudflarestorage.com` endpoints require `S3_PUBLIC_URL`).
+   * **AWS S3**: Set `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` (with `S3_ENDPOINT` omitted and `S3_PUBLIC_URL` optional for CloudFront).
 
 ---
 
@@ -353,13 +357,14 @@ gh attestation verify "oci://ghcr.io/fderuiter/wedding_website@${IMAGE_DIGEST}" 
     --source-ref "refs/tags/${RELEASE_TAG}"
 
 # 3a. Deploy digest-pinned container revision to isolated staging Cloud Run service wedding-website-staging
+#     Use gcloud custom delimiter syntax (`^|^`) so commas inside ALLOWED_HOSTS are not parsed as new env var keys
 gcloud run deploy wedding-website-staging \
     --image="ghcr.io/fderuiter/wedding_website@${IMAGE_DIGEST}" \
     --platform=managed \
     --region=us-central1 \
     --allow-unauthenticated \
     --add-cloudsql-instances=YOUR_PROJECT_ID:us-central1:wedding-staging-db \
-    --set-env-vars="NODE_ENV=production,ALLOWED_HOSTS=staging.wedding.mydomain.com,*.run.app" \
+    --set-env-vars="^|^NODE_ENV=production|ALLOWED_HOSTS=staging.wedding.mydomain.com,*.run.app" \
     --set-secrets="DATABASE_URL=STAGING_DATABASE_URL:latest,ADMIN_PASSWORD=ADMIN_PASSWORD:latest,GUEST_PASSCODE=GUEST_PASSCODE:latest,GUEST_SESSION_SECRET=GUEST_SESSION_SECRET:latest" \
     --port=3000
 
@@ -370,7 +375,7 @@ gcloud run deploy wedding-website \
     --region=us-central1 \
     --allow-unauthenticated \
     --add-cloudsql-instances=YOUR_PROJECT_ID:us-central1:wedding-db \
-    --set-env-vars="NODE_ENV=production,ALLOWED_HOSTS=wedding.mydomain.com,*.run.app" \
+    --set-env-vars="^|^NODE_ENV=production|ALLOWED_HOSTS=wedding.mydomain.com,*.run.app" \
     --set-secrets="DATABASE_URL=DATABASE_URL:latest,ADMIN_PASSWORD=ADMIN_PASSWORD:latest,GUEST_PASSCODE=GUEST_PASSCODE:latest,GUEST_SESSION_SECRET=GUEST_SESSION_SECRET:latest" \
     --port=3000
 ```

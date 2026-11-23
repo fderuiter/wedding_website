@@ -195,7 +195,7 @@ npx tsx scripts/preflight-env.ts --no-compose --env-file .env
 - **Missing or Default Docker Compose `:?` Secret Guards**: `DB_PASSWORD`, `ADMIN_PASSWORD`, `GUEST_PASSCODE`, or `GUEST_SESSION_SECRET` unset/empty in `.env`, `DB_PASSWORD` left at the disposable `.env.example` / `.env.ci` default, invalid `CONTAINER_DATABASE_URL` overrides, or values containing unescaped `$` characters that Docker Compose would interpolate (escape literal `$` as `$$` or use single quotes).
 - **Legacy or Placeholder `ADMIN_PASSWORD` Hashes**: Plaintext passwords, legacy non-64-byte scrypt hashes, `.env.example` dummy hashes, or E2E test hashes (generate a valid 16-byte salt / 64-byte scrypt key with `node scripts/generate-password-hash.mjs "your-strong-password"`).
 - **Blocked `GUEST_PASSCODE` or Weak `GUEST_SESSION_SECRET`**: Default `wedding2026` or placeholder guest passcodes, session secrets shorter than 32 characters (`openssl rand -hex 32`), or `GUEST_SESSION_SECRET` matching `GUEST_PASSCODE`.
-- **Unpaired or Placeholder Integration Keys**: `STRIPE_SECRET_KEY` set without `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` (or vice versa), invalid `sk_`/`rk_`/`pk_`/`whsec_` prefixes, incomplete `S3_*` credentials, or `E2E_TEST=true` left enabled in production.
+- **Unpaired or Placeholder Integration Keys**: `STRIPE_SECRET_KEY` set without `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` (or vice versa), invalid `sk_`/`rk_`/`pk_`/`whsec_` prefixes, incomplete `S3_*` credentials, Cloudflare R2 `S3_REGION=auto` without `S3_ENDPOINT` or private `*.r2.cloudflarestorage.com` endpoints without `S3_PUBLIC_URL`, or `E2E_TEST=true` left enabled in production.
 
 > **Maintainer Note:** If you are contributing documentation or schema changes to a fork, also run `npx tsx scripts/verify-env-docs.ts` (`npm run check:env-docs`) and `npm run check:runbooks` to verify committed Markdown docs and `.env.example`.
 
@@ -237,7 +237,7 @@ If an upgraded deployment fails health checks after Step 6, revert immediately t
    docker tag wedding-website:previous wedding-website:latest
    docker compose up -d --no-deps app
    ```
-2. **Standalone `docker run` Rollback (attaching Compose network, loopback port mapping, and persistent `uploads_data` volume)**:
+2. **Standalone `docker run` Rollback (attaching Compose network, loopback port mapping, persistent `uploads_data` volume, and `DATABASE_URL` from `--env-file .env`)**:
    ```bash
    docker compose stop app
    docker run -d --name app-rollback \
@@ -250,7 +250,6 @@ If an upgraded deployment fails health checks after Step 6, revert immediately t
      --tmpfs /app/.next/cache:uid=1001,gid=1001,mode=0755 \
      -v wedding_website_uploads_data:/app/public/uploads \
      --env-file .env \
-     -e DATABASE_URL="postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}" \
      -e E2E_TEST=false \
      wedding-website:previous
    ```
