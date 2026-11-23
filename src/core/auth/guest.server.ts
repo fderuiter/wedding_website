@@ -59,36 +59,32 @@ export async function signGuestToken(payload: GuestTokenPayload): Promise<string
   return signCompactToken(normalizedPayload, secret);
 }
 
-async function verifyGuestToken(token: string): Promise<GuestTokenPayload | null> {
+export async function verifyGuestToken(token: string): Promise<GuestTokenPayload | null> {
   if (!token || typeof token !== 'string') return null;
 
   try {
     const secret = await getSecret();
     if (!secret) return null;
-    return verifyCompactToken<GuestTokenPayload>(token, secret);
+    const payload = await verifyCompactToken<GuestTokenPayload>(token, secret);
+    if (!payload || payload.guest !== true) {
+      return null;
+    }
+
+    const now = Date.now();
+    if (payload.exp && payload.exp < now) {
+      return null;
+    }
+
+    return payload;
   } catch {
     return null;
   }
-}
-
-export async function verifyGuestSessionToken(token: string): Promise<GuestTokenPayload | null> {
-  const payload = await verifyGuestToken(token);
-  if (!payload || payload.guest !== true) {
-    return null;
-  }
-
-  const now = Date.now();
-  if (payload.exp && payload.exp < now) {
-    return null;
-  }
-
-  return payload;
 }
 
 export async function isGuestRequest(req?: NextRequest): Promise<boolean> {
   const cookieValue = await readRequestCookie(GUEST_COOKIE, req);
   if (!cookieValue) return false;
 
-  const payload = await verifyGuestSessionToken(cookieValue);
-  return payload !== null;
+  const payload = await verifyGuestToken(cookieValue);
+  return Boolean(payload && payload.guest === true);
 }

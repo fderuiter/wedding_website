@@ -76,8 +76,13 @@ export function withApiMiddleware(
   options?: ApiMiddlewareOptions
 ) {
   const executeWithMiddleware = async (req?: NextRequest, context?: any): Promise<NextResponse> => {
+    let isHealthPath = false;
     let shouldTrackAuthFailures = false;
+    let resolvedBucket: RateLimitBucket = 'general';
+    let authLimit = 5;
     let authWindowMs = 15 * 60 * 1000;
+    let prechecksCompleted = false;
+
     try {
       let pathname = '/';
       let method = 'GET';
@@ -92,26 +97,47 @@ export function withApiMiddleware(
         method = req.method || 'GET';
       }
       const normalizedPathname = pathname.length > 1 ? pathname.replace(/\/+$/, '') || '/' : pathname;
-      const isHealthPath = normalizedPathname === '/api/health' || normalizedPathname === '/api/live';
+      isHealthPath = normalizedPathname === '/api/health' || normalizedPathname === '/api/live';
       const isLoginPath = isAuthLockoutRoute(normalizedPathname, method);
+      resolvedBucket = options?.bucket ?? (isLoginPath ? 'auth' : 'general');
+      authLimit = options?.limit ?? 5;
+      authWindowMs = options?.windowMs ?? 15 * 60 * 1000;
       
       const isAdminPath = isProtectedRoute(pathname, method);
 
       // 1. Rate Limiting
-      // Stricter limits for login/credential checks, general limits for everything else; probe endpoints (/api/health, /api/live) are exempt
+      // Check active authStore lockouts before handlers run, cap bursts at 100 req/min in generalStore,
+      // and increment authStore only on failed attempts (status >= 400); probe endpoints (/api/health, /api/live) are exempt.
       if (!isHealthPath) {
-        const limit = options?.limit ?? (isLoginPath ? 5 : 100);
-        const windowMs = options?.windowMs ?? (isLoginPath ? 15 * 60 * 1000 : 60 * 1000);
-        const bucket: RateLimitBucket = options?.bucket ?? (isLoginPath ? 'auth' : 'general');
-        const hasRateLimitHeaders = Boolean(req && req.headers && typeof req.headers.get === 'function');
-        authWindowMs = windowMs;
-        shouldTrackAuthFailures = bucket === 'auth' && hasRateLimitHeaders;
+        const hasReadableHeaders = Boolean(req && req.headers && typeof req.headers.get === 'function');
+        shouldTrackAuthFailures = resolvedBucket === 'auth' && hasReadableHeaders;
+        let rateLimitResponse: NextResponse | null = null;
 
-        const rateLimitResponse = hasRateLimitHeaders
-          ? bucket === 'auth'
-            ? await checkAuthLockout(req as NextRequest, limit, windowMs, options?.keyPrefix, options?.authInstance)
-            : await rateLimit(req as NextRequest, limit, windowMs, options?.keyPrefix, bucket)
-          : null;
+        if (hasReadableHeaders && req) {
+          if (resolvedBucket === 'auth') {
+            rateLimitResponse = await checkAuthLockout(
+              req,
+              authLimit,
+              authWindowMs,
+              options?.keyPrefix,
+              options?.authInstance
+            );
+
+            if (!rateLimitResponse) {
+              rateLimitResponse = await rateLimit(
+                req,
+                100,
+                60 * 1000,
+                options?.keyPrefix,
+                'general'
+              );
+            }
+          } else {
+            const limit = options?.limit ?? 100;
+            const windowMs = options?.windowMs ?? 60 * 1000;
+            rateLimitResponse = await rateLimit(req, limit, windowMs, options?.keyPrefix, 'general');
+          }
+        }
         
         if (rateLimitResponse) {
           // If rate limit exceeded, standardise its error response
@@ -122,6 +148,8 @@ export function withApiMiddleware(
           );
         }
       }
+
+      prechecksCompleted = true;
 
       // 2. Admin & Active Guest Invite Verification
       if (isAdminPath) {
@@ -157,7 +185,13 @@ export function withApiMiddleware(
       // 3. Execute Handler
       const response = await handler(req as NextRequest, context);
 
-      if (shouldTrackAuthFailures && req && isAuthFailureStatus(response.status)) {
+      if (
+        shouldTrackAuthFailures &&
+        !isHealthPath &&
+        prechecksCompleted &&
+        req &&
+        isAuthFailureStatus(response.status)
+      ) {
         await recordAuthFailure(req, authWindowMs, options?.keyPrefix, options?.authInstance);
       }
       
@@ -253,10 +287,22 @@ export function withApiMiddleware(
       return finalResponse;
       
     } catch (error: any) {
-      if (error instanceof ApiError && error.statusCode < 500) {
-        if (shouldTrackAuthFailures && req && isAuthFailureStatus(error.statusCode)) {
+      const errorStatus = error instanceof ApiError ? error.statusCode : 500;
+      if (
+        shouldTrackAuthFailures &&
+        !isHealthPath &&
+        prechecksCompleted &&
+        req &&
+        isAuthFailureStatus(errorStatus)
+      ) {
+        try {
           await recordAuthFailure(req, authWindowMs, options?.keyPrefix, options?.authInstance);
+        } catch {
+          // Preserve original error response if lockout recording fails
         }
+      }
+
+      if (error instanceof ApiError && error.statusCode < 500) {
         return NextResponse.json(
           { 
             success: false, 

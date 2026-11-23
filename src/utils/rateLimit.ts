@@ -3,7 +3,7 @@ import { isIP } from 'node:net';
 import { NextRequest, NextResponse } from 'next/server';
 import type { Pool, QueryResultRow } from 'pg';
 import { verifyAdminToken, ADMIN_COOKIE } from '@/core/auth/auth.server';
-import { verifyGuestSessionToken, GUEST_COOKIE } from '@/core/auth/guest.server';
+import { verifyGuestToken, GUEST_COOKIE } from '@/core/auth/guest.server';
 import {
   getSignedGuestInviteSession,
   verifyGuestInviteSessionToken,
@@ -12,6 +12,7 @@ import {
 import { env } from '@/env';
 import { logger } from '@/lib/logger';
 import * as prismaModule from '@/lib/prisma';
+import { normalizeSocketIp, readVerifiedSocketIp } from '@/lib/socket-ip-boundary.js';
 
 interface RateLimitInfo {
   count: number;
@@ -21,6 +22,10 @@ interface RateLimitInfo {
 interface RateLimitStore {
   map: Map<string, RateLimitInfo>;
   earliestResetTime: number;
+}
+
+interface RateLimitBehaviorOptions {
+  increment?: boolean;
 }
 
 export type RateLimitBucket = 'general' | 'auth';
@@ -52,10 +57,12 @@ const KNOWN_STATIC_API_PATHS = new Set([
   '/api/admin/broadcast/test-connection',
   '/api/admin/broadcast/test-send',
   '/api/admin/features',
+  '/api/admin/geocode',
   '/api/admin/invitation-codes/batch',
   '/api/admin/invitation-codes/batch/validate',
   '/api/admin/invitation-codes/catalog',
   '/api/admin/invitation-codes/export',
+  '/api/admin/invitation-codes/merge',
   '/api/admin/invitation-codes/rsvps',
   '/api/admin/invitation-codes/validate',
   '/api/admin/login',
@@ -95,6 +102,7 @@ const KNOWN_STATIC_API_PATHS = new Set([
   '/api/photos/upload',
   '/api/ready',
   '/api/registry/capabilities',
+  '/api/registry/claim',
   '/api/registry/contribute',
   '/api/registry/items',
   '/api/registry/items/batch',
@@ -149,17 +157,20 @@ export function normalizeApiPathname(pathname: string): string {
   if (/^\/api\/admin\/broadcast\/(?!(?:history|preview|retry|send|test-connection|test-send)$)[^/]+$/.test(cleaned)) {
     return '/api/admin/broadcast/:id';
   }
+  if (/^\/api\/admin\/contributors\/[^/]+\/action$/.test(cleaned)) {
+    return '/api/admin/contributors/:id/action';
+  }
   if (/^\/api\/admin\/photos\/(?!moderation$)[^/]+$/.test(cleaned)) {
     return '/api/admin/photos/:id';
+  }
+  if (/^\/api\/admin\/registry\/items\/[^/]+\/unclaim$/.test(cleaned)) {
+    return '/api/admin/registry/items/:id/unclaim';
   }
   if (/^\/api\/admin\/thank-you-notes\/(?!(?:batch|export|export-labels)$)[^/]+$/.test(cleaned)) {
     return '/api/admin/thank-you-notes/:id';
   }
   if (/^\/api\/admin\/versions\/[^/]+\/restore$/.test(cleaned)) {
     return '/api/admin/versions/:id/restore';
-  }
-  if (/^\/api\/admin\/registry\/items\/[^/]+\/unclaim$/.test(cleaned)) {
-    return '/api/admin/registry/items/:id/unclaim';
   }
   if (/^\/api\/media\/(?!export$)[^/]+$/.test(cleaned)) {
     return '/api/media/:id';
@@ -169,6 +180,9 @@ export function normalizeApiPathname(pathname: string): string {
   }
   if (/^\/api\/schedule\/[^/]+\/ics$/.test(cleaned)) {
     return '/api/schedule/:id/ics';
+  }
+  if (/^\/api\/uploads\/.+$/.test(cleaned)) {
+    return '/api/uploads/:path';
   }
 
   const segments = cleaned.split('/').filter(Boolean); // segments[0] === 'api'
@@ -253,7 +267,8 @@ function isStoreEntryLockedOut(store: RateLimitStore, key: string, limit: number
 /**
  * Sanitizes a single forwarded IP token by trimming quotes/whitespace, stripping
  * port suffixes on IPv4 (`1.2.3.4:54321`) and bracketed IPv6 (`[2001:db8::1]:8443`),
- * stripping IPv6 zone identifiers, and validating via `node:net` `isIP`.
+ * canonicalizing IPv4-mapped IPv6 addresses, stripping IPv6 zone identifiers, and
+ * validating via `node:net` `isIP`.
  */
 export function sanitizeIpToken(rawToken: string): string | null {
   if (!rawToken || typeof rawToken !== 'string') {
@@ -273,19 +288,20 @@ export function sanitizeIpToken(rawToken: string): string | null {
 
   const bracketedMatch = token.match(/^\[([^\]]+)\](?::\d+)?$/);
   if (bracketedMatch) {
+    const normalizedBracketed = normalizeSocketIp(bracketedMatch[1]);
+    if (normalizedBracketed) {
+      return normalizedBracketed;
+    }
     const ipv6Candidate = bracketedMatch[1].split('%')[0];
     return isIP(ipv6Candidate) === 6 ? ipv6Candidate.toLowerCase() : null;
   }
 
-  const withoutZone = token.includes('%') ? token.split('%')[0] : token;
-  const directVersion = isIP(withoutZone);
-  if (directVersion === 4) {
-    return withoutZone;
-  }
-  if (directVersion === 6) {
-    return withoutZone.toLowerCase();
+  const normalizedDirect = normalizeSocketIp(token);
+  if (normalizedDirect) {
+    return normalizedDirect;
   }
 
+  const withoutZone = token.includes('%') ? token.split('%')[0] : token;
   const ipv4WithPortMatch = withoutZone.match(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/);
   if (ipv4WithPortMatch && isIP(ipv4WithPortMatch[1]) === 4) {
     return ipv4WithPortMatch[1];
@@ -295,16 +311,28 @@ export function sanitizeIpToken(rawToken: string): string | null {
 }
 
 export function getClientIp(req: NextRequest): string {
+  if (req && typeof req === 'object' && 'ip' in req) {
+    try {
+      delete (req as { ip?: string }).ip;
+    } catch {
+      // Ignore non-configurable property descriptors
+    }
+  }
+
   const trustProxy = env.TRUST_PROXY;
+  const hasHeaderReader = typeof req.headers?.get === 'function';
+
+  // 1. When TRUST_PROXY is disabled, never trust X-Forwarded-For or X-Real-IP;
+  //    read only the HMAC-verified internal socket IP stamped at the HTTP boundary.
   if (!trustProxy) {
     const isProduction = (process.env.NODE_ENV || env.NODE_ENV) === 'production';
-    if (isProduction && !hasWarnedUntrustedProxyHeaders && typeof req.headers?.get === 'function') {
+    if (isProduction && !hasWarnedUntrustedProxyHeaders && hasHeaderReader) {
       const hasForwardedFor = Boolean(req.headers.get('x-forwarded-for')?.trim());
       const hasRealIp = Boolean(req.headers.get('x-real-ip')?.trim());
       if (hasForwardedFor || hasRealIp) {
         hasWarnedUntrustedProxyHeaders = true;
         logger.warn(
-          'Forwarded IP headers detected while TRUST_PROXY is disabled; rate limiting is falling back to 127.0.0.1. Configure TRUST_PROXY to match your reverse-proxy hop count.',
+          'Forwarded IP headers detected while TRUST_PROXY is disabled; rate limiting is ignoring forwarded headers. Configure TRUST_PROXY to match your reverse-proxy hop count.',
           {
             trustProxy: false,
             headers: [
@@ -315,12 +343,13 @@ export function getClientIp(req: NextRequest): string {
         );
       }
     }
-    return '127.0.0.1';
+    return (hasHeaderReader ? readVerifiedSocketIp(req.headers) : null) ?? '127.0.0.1';
   }
 
   const hops = typeof trustProxy === 'number' ? Math.max(1, Math.trunc(trustProxy)) : 1;
 
-  const rawForwarded = typeof req.headers?.get === 'function' ? req.headers.get('x-forwarded-for') : null;
+  // 2. Evaluate trusted hop in x-forwarded-for header from reverse proxy
+  const rawForwarded = hasHeaderReader ? req.headers.get('x-forwarded-for') : null;
   if (rawForwarded) {
     const parts = rawForwarded
       .split(',')
@@ -335,7 +364,8 @@ export function getClientIp(req: NextRequest): string {
     }
   }
 
-  const realIp = typeof req.headers?.get === 'function' ? req.headers.get('x-real-ip') : null;
+  // 3. Fallback: x-real-ip when x-forwarded-for is missing and proxy trust is enabled
+  const realIp = hasHeaderReader ? req.headers.get('x-real-ip') : null;
   if (realIp) {
     const sanitizedRealIp = sanitizeIpToken(realIp);
     if (sanitizedRealIp) {
@@ -343,7 +373,8 @@ export function getClientIp(req: NextRequest): string {
     }
   }
 
-  return '127.0.0.1';
+  // 4. Fall back to verified socket IP or loopback IP when no valid forwarded address exists
+  return (hasHeaderReader ? readVerifiedSocketIp(req.headers) : null) ?? '127.0.0.1';
 }
 
 function extractRequestCookie(req: NextRequest, cookieName: string): string | undefined {
@@ -382,7 +413,7 @@ async function getSessionOrIp(req: NextRequest): Promise<string> {
         }
       }
     } catch {
-      // Invalid or malformed admin cookie falls through
+      // Malformed or invalid admin cookie falls through
     }
   }
 
@@ -396,11 +427,11 @@ async function getSessionOrIp(req: NextRequest): Promise<string> {
           : typeof verifyGuestInviteSessionToken === 'function'
             ? await verifyGuestInviteSessionToken(inviteCookie)
             : null;
-      if (payload && payload.code) {
+      if (payload && payload.code && payload.guestName) {
         return `session:invite:${inviteCookie}`;
       }
     } catch {
-      // Invalid or malformed invite session cookie falls through
+      // Malformed or invalid guest invite cookie falls through
     }
   }
 
@@ -408,14 +439,14 @@ async function getSessionOrIp(req: NextRequest): Promise<string> {
   const guestCookie = extractRequestCookie(req, guestCookieName);
   if (guestCookie) {
     try {
-      if (typeof verifyGuestSessionToken === 'function') {
-        const payload = await verifyGuestSessionToken(guestCookie);
+      if (typeof verifyGuestToken === 'function') {
+        const payload = await verifyGuestToken(guestCookie);
         if (payload && payload.guest === true) {
           return `session:guest:${guestCookie}`;
         }
       }
     } catch {
-      // Invalid or malformed guest cookie falls through
+      // Malformed or invalid guest cookie falls through
     }
   }
 
@@ -656,8 +687,8 @@ const defaultAuthLockoutInstance = createAuthLockoutInstance({ store: authStore 
 
 export async function checkAuthLockout(
   req: NextRequest,
-  limit: number,
-  windowMs: number,
+  limit: number = 5,
+  windowMs: number = 15 * 60 * 1000,
   keyPrefix?: string,
   instance: AuthLockoutInstance = defaultAuthLockoutInstance
 ): Promise<NextResponse | null> {
@@ -666,7 +697,17 @@ export async function checkAuthLockout(
 
 export async function recordAuthFailure(
   req: NextRequest,
-  windowMs: number,
+  windowMs: number = 15 * 60 * 1000,
+  keyPrefix?: string,
+  instance: AuthLockoutInstance = defaultAuthLockoutInstance
+): Promise<void> {
+  return instance.recordFailure(req, windowMs, keyPrefix);
+}
+
+export async function recordFailedAuthAttempt(
+  req: NextRequest,
+  _limit: number = 5,
+  windowMs: number = 15 * 60 * 1000,
   keyPrefix?: string,
   instance: AuthLockoutInstance = defaultAuthLockoutInstance
 ): Promise<void> {
@@ -678,28 +719,37 @@ export async function rateLimit(
   limit: number,
   windowMs: number,
   keyPrefix?: string,
-  bucket?: RateLimitBucket
+  bucket?: RateLimitBucket,
+  behavior?: RateLimitBehaviorOptions
 ): Promise<NextResponse | null> {
   const rawPathname = extractRawPathname(req);
   const method = req.method || 'GET';
+  const isLockoutEndpoint = isAuthLockoutRoute(rawPathname, method);
   const resolvedBucket: RateLimitBucket =
-    bucket ?? (isAuthLockoutRoute(rawPathname, method) ? 'auth' : 'general');
+    bucket ?? (isLockoutEndpoint ? 'auth' : 'general');
+  const shouldIncrement = behavior?.increment !== false;
 
   if (resolvedBucket === 'auth') {
     const blocked = await checkAuthLockout(req, limit, windowMs, keyPrefix);
     if (blocked) {
       return blocked;
     }
-    await recordAuthFailure(req, windowMs, keyPrefix);
+    if (shouldIncrement) {
+      await recordAuthFailure(req, windowMs, keyPrefix);
+    }
     return null;
   }
 
-  const identifier = await getSessionOrIp(req);
+  const identifier = isLockoutEndpoint ? getClientIp(req) : await getSessionOrIp(req);
   const key = buildRateLimitKey(rawPathname, identifier, keyPrefix);
   const now = Date.now();
   const info = generalStore.map.get(key);
 
   if (!info || info.resetTime < now) {
+    pruneExpiredEntries(generalStore, now);
+    if (!shouldIncrement) {
+      return null;
+    }
     syncStoreEntry(generalStore, key, { count: 1, resetTime: now + windowMs }, now);
     return null;
   }
@@ -708,7 +758,9 @@ export async function rateLimit(
     return NextResponse.json({ error: 'Too many requests, please try again later.' }, { status: 429 });
   }
 
-  info.count += 1;
+  if (shouldIncrement) {
+    info.count += 1;
+  }
   return null;
 }
 

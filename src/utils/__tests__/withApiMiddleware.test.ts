@@ -7,6 +7,7 @@ import { GUEST_INVITE_COOKIE, getGuestInviteSession, signGuestInviteSessionToken
 import { GUEST_COOKIE, signGuestToken } from '@/core/auth/guest.server';
 import { ADMIN_COOKIE, signAdminToken } from '@/core/auth/auth.server';
 import { prisma } from '@/lib/prisma';
+import { createVerifiedSocketIpHeaders } from '@/lib/socket-ip-boundary.js';
 
 describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
   let loggerSpy: jest.SpyInstance;
@@ -241,99 +242,126 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
       expect(handler).toHaveBeenCalledTimes(10);
     });
 
-    test('permits 10 consecutive valid logins (200) on /api/admin/login while returning 429 on the 6th failed attempt (401)', async () => {
-      const validHandler = jest.fn().mockResolvedValue(
-        new Response(JSON.stringify({ success: true }), {
+    test('allows 10 consecutive valid logins on /api/admin/login while enforcing strict 5 failed-attempt lockout and isolating socket IPs', async () => {
+      let shouldFail = false;
+      const handler = jest.fn().mockImplementation(() => {
+        if (shouldFail) {
+          throw new ApiError(401, 'Invalid password');
+        }
+        return new Response(JSON.stringify({ success: true }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
-        })
-      );
-      const validMiddleware = withApiMiddleware(validHandler);
+        });
+      });
+      const middleware = withApiMiddleware(handler);
 
+      // Ten valid logins from 127.0.0.2 all return 200 without consuming the 5-attempt lockout
       for (let i = 0; i < 10; i++) {
         const req = new NextRequest('http://localhost/api/admin/login', {
           method: 'POST',
-          headers: { 'x-forwarded-for': '192.168.1.102' },
+          headers: createVerifiedSocketIpHeaders('127.0.0.2'),
         });
-        const res = await validMiddleware(req, {});
+        const res = await middleware(req, {});
         expect(res.status).toBe(200);
       }
-      expect(validHandler).toHaveBeenCalledTimes(10);
 
-      const failedHandler = jest.fn().mockRejectedValue(new ApiError(401, 'Invalid password.'));
-      const failedMiddleware = withApiMiddleware(failedHandler);
-
+      // Five failed attempts from 127.0.0.2 trigger lockout on the 6th attempt
+      shouldFail = true;
       for (let i = 0; i < 5; i++) {
         const req = new NextRequest('http://localhost/api/admin/login', {
           method: 'POST',
-          headers: { 'x-forwarded-for': '192.168.1.102' },
+          headers: createVerifiedSocketIpHeaders('127.0.0.2', {
+            'x-forwarded-for': `198.51.100.${i + 1}`,
+          }),
         });
-        const res = await failedMiddleware(req, {});
+        const res = await middleware(req, {});
         expect(res.status).toBe(401);
       }
 
+      shouldFail = false;
+      const callsBeforeBlocked = handler.mock.calls.length;
       const req6 = new NextRequest('http://localhost/api/admin/login', {
         method: 'POST',
-        headers: { 'x-forwarded-for': '192.168.1.102' },
+        headers: createVerifiedSocketIpHeaders('127.0.0.2'),
       });
-      const res6 = await failedMiddleware(req6, {});
+      const res6 = await middleware(req6, {});
       expect(res6.status).toBe(429);
+      expect(handler).toHaveBeenCalledTimes(callsBeforeBlocked);
       const body = await res6.json();
       expect(body.success).toBe(false);
       expect(body.error).toContain('Too many requests');
-      expect(failedHandler).toHaveBeenCalledTimes(5);
+
+      // Valid login from a distinct socket IP (127.0.0.3) still succeeds with 200
+      const validPeerReq = new NextRequest('http://localhost/api/admin/login', {
+        method: 'POST',
+        headers: createVerifiedSocketIpHeaders('127.0.0.3'),
+      });
+      const validPeerRes = await middleware(validPeerReq, {});
+      expect(validPeerRes.status).toBe(200);
     });
 
-    test('permits 10 consecutive valid logins (200) on /api/guest/login while returning 429 on the 6th failed attempt (401)', async () => {
-      let shouldFail = false;
-      const handler = jest.fn().mockImplementation(async () =>
+    test('allows 10 consecutive valid logins on /api/guest/login, locks out after 5 failed 401 responses, and caps total bursts at 100/min', async () => {
+      let statusToReturn = 200;
+      const handler = jest.fn().mockImplementation(() =>
         new Response(
-          JSON.stringify(shouldFail ? { success: false, error: 'Incorrect passcode' } : { success: true }),
-          {
-            status: shouldFail ? 401 : 200,
-            headers: { 'content-type': 'application/json' },
-          }
+          JSON.stringify(statusToReturn === 200 ? { success: true } : { success: false, error: 'Incorrect passcode' }),
+          { status: statusToReturn, headers: { 'content-type': 'application/json' } }
         )
       );
       const middleware = withApiMiddleware(handler);
 
+      // Ten valid guest logins from 127.0.0.2 succeed
       for (let i = 0; i < 10; i++) {
         const req = new NextRequest('http://localhost/api/guest/login', {
           method: 'POST',
-          headers: { 'x-forwarded-for': '192.168.1.103' },
+          headers: createVerifiedSocketIpHeaders('127.0.0.2'),
         });
         const res = await middleware(req, {});
         expect(res.status).toBe(200);
       }
 
-      shouldFail = true;
+      // Five failed guest logins from 127.0.0.2 trigger 429 on next request
+      statusToReturn = 401;
       for (let i = 0; i < 5; i++) {
         const req = new NextRequest('http://localhost/api/guest/login', {
           method: 'POST',
-          headers: { 'x-forwarded-for': '192.168.1.103' },
+          headers: createVerifiedSocketIpHeaders('127.0.0.2'),
         });
         const res = await middleware(req, {});
         expect(res.status).toBe(401);
       }
 
-      const req6 = new NextRequest('http://localhost/api/guest/login', {
+      const lockedReq = new NextRequest('http://localhost/api/guest/login', {
         method: 'POST',
-        headers: { 'x-forwarded-for': '192.168.1.103' },
+        headers: createVerifiedSocketIpHeaders('127.0.0.2'),
       });
-      const res6 = await middleware(req6, {});
-      expect(res6.status).toBe(429);
-      expect(handler).toHaveBeenCalledTimes(15);
+      const lockedRes = await middleware(lockedReq, {});
+      expect(lockedRes.status).toBe(429);
+
+      // On another socket IP (127.0.0.3), generalStore caps total burst requests at 100/min
+      statusToReturn = 200;
+      for (let i = 0; i < 100; i++) {
+        const burstReq = new NextRequest('http://localhost/api/guest/login', {
+          method: 'POST',
+          headers: createVerifiedSocketIpHeaders('127.0.0.3'),
+        });
+        const burstRes = await middleware(burstReq, {});
+        expect(burstRes.status).toBe(200);
+      }
+      const burst101Req = new NextRequest('http://localhost/api/guest/login', {
+        method: 'POST',
+        headers: createVerifiedSocketIpHeaders('127.0.0.3'),
+      });
+      const burst101Res = await middleware(burst101Req, {});
+      expect(burst101Res.status).toBe(429);
     });
 
-    test('enforces strict 5 failed-attempt limit (403) on POST /api/admin/setup while keeping GET /api/admin/setup under general quota', async () => {
-      const handler = jest.fn().mockImplementation(async (req: NextRequest) => {
+    test('enforces strict 5 failed-attempt limit on POST /api/admin/setup while keeping GET /api/admin/setup under general quota', async () => {
+      const handler = jest.fn().mockImplementation((req: NextRequest) => {
         if (req.method === 'POST') {
-          return new Response(JSON.stringify({ success: false, error: 'Forbidden' }), {
-            status: 403,
-            headers: { 'content-type': 'application/json' },
-          });
+          throw new ApiError(403, 'Initial setup has already been completed.');
         }
-        return new Response(JSON.stringify({ success: true, initialized: false }), {
+        return new Response(JSON.stringify({ success: true, initialized: true }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         });
@@ -347,7 +375,7 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
         expect(getRes.status).toBe(200);
       }
 
-      // 5 failed POST attempts return 403, 6th POST attempt returns 429
+      // 5 failed POST attempts pass to handler (403), 6th POST attempt returns 429 before handler
       for (let i = 0; i < 5; i++) {
         const postReq = new NextRequest('http://localhost/api/admin/setup', { method: 'POST' });
         const postRes = await middleware(postReq, {});
@@ -364,14 +392,27 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
       expect(statusResAfterLockout.status).toBe(200);
     });
 
-    test('enforces strict 5 request limit on GET /api/registry/validate-code', async () => {
-      const handler = jest.fn().mockResolvedValue(
-        new Response(JSON.stringify({ error: 'Invalid invitation code.' }), {
+    test('allows 6+ valid checks on GET /api/registry/validate-code and enforces 5 failed-attempt lockout', async () => {
+      const handler = jest.fn().mockImplementation((req: NextRequest) => {
+        const code = req.nextUrl.searchParams.get('code');
+        if (code === 'VALID2026') {
+          return new Response(JSON.stringify({ valid: true, guestName: 'Valid Household' }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        return new Response(JSON.stringify({ error: 'Invalid invitation code.' }), {
           status: 404,
           headers: { 'content-type': 'application/json' },
-        })
-      );
+        });
+      });
       const middleware = withApiMiddleware(handler);
+
+      for (let i = 0; i < 6; i++) {
+        const validReq = new NextRequest('http://localhost/api/registry/validate-code?code=VALID2026');
+        const validRes = await middleware(validReq, {});
+        expect(validRes.status).toBe(200);
+      }
 
       for (let i = 0; i < 5; i++) {
         const req = new NextRequest(`http://localhost/api/registry/validate-code?code=CODE000${i}`);
@@ -379,7 +420,7 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
         expect(res.status).toBe(404);
       }
 
-      const req6 = new NextRequest('http://localhost/api/registry/validate-code?code=CODE0006');
+      const req6 = new NextRequest('http://localhost/api/registry/validate-code?code=VALID2026');
       const res6 = await middleware(req6, {});
       expect(res6.status).toBe(429);
     });
