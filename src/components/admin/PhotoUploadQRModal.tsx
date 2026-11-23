@@ -215,10 +215,10 @@ export const PhotoUploadQRModal: React.FC<PhotoUploadQRModalProps> = ({
                 size="sm"
                 onClick={handleCopyLink}
                 data-testid="copy-photo-qr-link-btn"
-                aria-label="Copy signed photo upload link"
+                srContext="signed photo upload link"
                 className="shrink-0 flex items-center gap-1.5"
               >
-                <Icon name={copied ? 'Check' : 'Copy'} size={15} />
+                <Icon name={copied ? 'Check' : 'Copy'} size={15} aria-hidden="true" />
                 <span>{copied ? 'Copied' : 'Copy'}</span>
               </Button>
             </div>
@@ -234,7 +234,12 @@ export const PhotoUploadQRModal: React.FC<PhotoUploadQRModalProps> = ({
               data-testid="rotate-photo-qr-token-btn"
               className="flex items-center gap-1.5 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800 hover:bg-rose-50 dark:hover:bg-rose-950/40"
             >
-              <Icon name="RotateCw" size={15} className={isRotating ? 'animate-spin' : ''} />
+              <Icon
+                name="RotateCw"
+                size={15}
+                className={isRotating ? 'animate-spin' : ''}
+                aria-hidden="true"
+              />
               <span>{isRotating ? 'Rotating...' : 'Rotate Link'}</span>
             </Button>
 
@@ -254,10 +259,10 @@ export const PhotoUploadQRModal: React.FC<PhotoUploadQRModalProps> = ({
                 size="sm"
                 onClick={handleDownloadPng}
                 data-testid="download-photo-qr-png-btn"
-                aria-label="Download 512x512 QR code as PNG image"
+                srContext="512x512 QR code image"
                 className="flex items-center gap-1.5"
               >
-                <Icon name="Download" size={15} />
+                <Icon name="Download" size={15} aria-hidden="true" />
                 <span>Download PNG</span>
               </Button>
               <Button
@@ -300,7 +305,7 @@ export const PhotoUploadQRModal: React.FC<PhotoUploadQRModalProps> = ({
                   size="sm"
                   onClick={handlePrintNow}
                   data-testid="print-photo-qr-cards-btn"
-                  aria-label="Print QR cards or Avery sheet"
+                  srContext="of QR cards or Avery labels"
                 >
                   Print Sheet
                 </Button>
@@ -329,7 +334,6 @@ export const PhotoUploadQRModal: React.FC<PhotoUploadQRModalProps> = ({
                   data-testid="photo-qr-print-template-select"
                   value={template}
                   onChange={(e) => handleTemplateChange(e.target.value as PhotoPrintTemplateType)}
-                  aria-label="Select print layout template"
                   className="w-full text-xs bg-white dark:bg-zinc-900 text-stone-900 dark:text-stone-100 border border-stone-300 dark:border-zinc-700 rounded-md px-2.5 py-2"
                 >
                   <option value="table_cards">Reception Table Cards (4 per page)</option>
@@ -350,7 +354,6 @@ export const PhotoUploadQRModal: React.FC<PhotoUploadQRModalProps> = ({
                   data-testid="photo-qr-print-copies-select"
                   value={copies}
                   onChange={(e) => setCopies(Number(e.target.value))}
-                  aria-label="Select number of copies to print"
                   className="w-full text-xs bg-white dark:bg-zinc-900 text-stone-900 dark:text-stone-100 border border-stone-300 dark:border-zinc-700 rounded-md px-2.5 py-2"
                 >
                   <option value={4}>4 cards</option>

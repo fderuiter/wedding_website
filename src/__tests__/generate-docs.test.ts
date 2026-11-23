@@ -157,7 +157,7 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       expect(getZodType(shape.features)).toBe('object[]');
 
       const entries = Object.entries(shape);
-      expect(entries).toHaveLength(100);
+      expect(entries).toHaveLength(101);
 
       for (const [key, value] of entries) {
         const type = getZodType(value);
@@ -192,7 +192,7 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
   });
 
   describe('Generated AppConfig and API Route Specifications', () => {
-    it('distinguishes 85 Prisma columns, 15 virtual DTO fields, 69 public fields, 26 admin-only fields, 1 server-only field, and 4 masked secrets', () => {
+    it('distinguishes 86 Prisma columns, 15 virtual DTO fields, 69 public fields, 27 admin-only fields, 1 server-only field, and 4 masked secrets', () => {
       const table = generateConfigTable();
       expect(table).not.toContain('Configuration field for');
 
@@ -200,7 +200,7 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
         .trim()
         .split('\n')
         .slice(2);
-      expect(rows).toHaveLength(100);
+      expect(rows).toHaveLength(101);
 
       const prismaRows = rows.filter((r) => r.includes('| `Prisma` |'));
       const virtualRows = rows.filter((r) => r.includes('| `Virtual DTO` |'));
@@ -209,10 +209,10 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       const serverOnlyRows = rows.filter((r) => r.includes('| `Server-only` |'));
       const maskedSecretRows = rows.filter((r) => r.includes('| `Masked secret ('));
 
-      expect(prismaRows).toHaveLength(85);
+      expect(prismaRows).toHaveLength(86);
       expect(virtualRows).toHaveLength(15);
       expect(publicRows).toHaveLength(69);
-      expect(adminOnlyRows).toHaveLength(26);
+      expect(adminOnlyRows).toHaveLength(27);
       expect(serverOnlyRows).toHaveLength(1);
       expect(maskedSecretRows).toHaveLength(4);
 
@@ -222,14 +222,14 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       expect(table).toContain('`Masked secret (hasTwilioAuthToken)`');
     });
 
-    it('lists all 79 API route handlers and marks /api/media, /api/admin/photos/qr, and /api/admin/invitation-codes/merge Admin-only, /api/registry/webhook/stripe stripeSignature, and /api/live and /api/uploads/[...path] Public', () => {
+    it('lists all 81 API route handlers and marks /api/media, /api/admin/photos/qr, and /api/admin/invitation-codes/merge Admin-only, /api/registry/webhook/stripe stripeSignature, and /api/live and /api/uploads/[...path] Public', () => {
       const apiSection = generateApiRoutesSection();
-      expect(apiSection).toContain('Total API route handlers: **79**');
+      expect(apiSection).toContain('Total API route handlers: **81**');
 
       const handlerRows = apiSection
         .split('\n')
         .filter((line) => line.startsWith('| `/api/'));
-      expect(handlerRows).toHaveLength(79);
+      expect(handlerRows).toHaveLength(81);
 
       expect(apiSection).toContain('| `/api/live` | `src/app/api/live/route.ts` | `GET` | `Public` |');
       expect(apiSection).toContain('| `/api/admin/photos/qr` | `src/app/api/admin/photos/qr/route.ts` | `GET`, `POST` | `Admin-only` |');

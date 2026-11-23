@@ -49,7 +49,8 @@ export async function signGuestInviteSessionToken(
   const iat = payload.iat ?? Date.now();
   const exp = payload.exp ?? (iat + 7 * 24 * 60 * 60 * 1000); // 7 days
   const fullPayload: GuestInviteSessionPayload = {
-    ...payload,
+    code: payload.code,
+    guestName: payload.guestName,
     iat,
     exp,
   };
@@ -96,22 +97,25 @@ export async function getSignedGuestInviteSession(req?: NextRequest): Promise<Gu
 
   if (req && typeof req === 'object') {
     let byCookie = requestSignedSessionCache.get(req);
-    const cached = byCookie?.get(cookieValue);
-    if (cached) {
-      return cached;
+    let cached = byCookie?.get(cookieValue);
+    if (!cached) {
+      cached = verifyGuestInviteSessionToken(cookieValue).catch((err) => {
+        byCookie?.delete(cookieValue);
+        throw err;
+      });
+      if (!byCookie) {
+        byCookie = new Map();
+        requestSignedSessionCache.set(req, byCookie);
+      }
+      byCookie.set(cookieValue, cached);
     }
 
-    const verificationPromise = verifyGuestInviteSessionToken(cookieValue).catch((err) => {
-      byCookie?.delete(cookieValue);
-      throw err;
-    });
-
-    if (!byCookie) {
-      byCookie = new Map();
-      requestSignedSessionCache.set(req, byCookie);
+    const payload = await cached;
+    if (!payload) return null;
+    if (payload.exp && payload.exp < Date.now()) {
+      return null;
     }
-    byCookie.set(cookieValue, verificationPromise);
-    return verificationPromise;
+    return payload;
   }
 
   return verifyGuestInviteSessionToken(cookieValue);

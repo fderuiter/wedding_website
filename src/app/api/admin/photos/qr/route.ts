@@ -129,6 +129,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
       rsvpDeadlineDate: config.rsvpDeadlineDate || '',
       rsvpGracePeriodHours: config.rsvpGracePeriodHours ?? 0,
       rsvpClosedMessage: config.rsvpClosedMessage || '',
+      setupCompleted: config.setupCompleted ?? true,
     },
   });
 

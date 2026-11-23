@@ -3,6 +3,11 @@ import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import {
+  buildHydratedGuestInvitation,
+  getOrLoadGuestSession,
+  setHydratedGuestInvitation,
+} from '@/lib/requestContext';
 import { normalizeSafeCallbackPath } from '@/utils/safeCallbackUrl';
 import { isAdminRequest } from './auth.server';
 import { isGuestRequest } from './guest.server';
@@ -14,10 +19,13 @@ import {
   verifyGuestInviteSessionToken,
 } from './guestInviteToken';
 import {
+  GUEST_PHOTO_COOKIE,
   type PhotoUploadSessionPayload,
   getSignedPhotoUploadSession,
   isPhotoScopedPagePath,
+  verifyPhotoUploadSessionToken,
 } from './photoUploadToken';
+import { readRequestCookie } from './tokenCookieHelpers';
 
 export {
   GUEST_INVITE_COOKIE,
@@ -26,7 +34,7 @@ export {
   verifyGuestInviteSessionToken,
 };
 
-interface InvitationLookupRecord {
+interface InvitationLookupRecord extends Record<string, unknown> {
   code?: string;
   guestName?: string;
   isSample?: boolean;
@@ -64,7 +72,8 @@ function isStaticExportBuild(): boolean {
 }
 
 async function resolveActiveInvitationSession(
-  payload: GuestInviteSessionPayload
+  payload: GuestInviteSessionPayload,
+  req?: NextRequest
 ): Promise<GuestInviteSessionPayload | null> {
   const normalizedCode = payload.code.trim().toUpperCase();
   if (!normalizedCode) {
@@ -100,17 +109,47 @@ async function resolveActiveInvitationSession(
       return null;
     }
 
+    const resolvedGuestName =
+      typeof invite.guestName === 'string' && invite.guestName.trim()
+        ? invite.guestName
+        : payload.guestName;
+
+    setHydratedGuestInvitation(
+      buildHydratedGuestInvitation(invite, normalizedCode, resolvedGuestName),
+      req
+    );
+
     return {
       ...payload,
       code: payload.code,
-      guestName:
-        typeof invite.guestName === 'string' && invite.guestName.trim()
-          ? invite.guestName
-          : payload.guestName,
+      guestName: resolvedGuestName,
     };
   } catch {
     return null;
   }
+}
+
+function buildGuestSessionCacheKey(payload: GuestInviteSessionPayload): string {
+  return `${payload.code}:${payload.guestName}:${payload.exp ?? ''}`;
+}
+
+const getCachedServerSignedGuestInviteSession = cache(() => getSignedGuestInviteSession());
+const getCachedVerifiedPhotoUploadSession = cache((cookieValue: string) =>
+  verifyPhotoUploadSessionToken(cookieValue)
+);
+
+async function resolveServerSignedPhotoUploadSession(): Promise<PhotoUploadSessionPayload | null> {
+  const cookieValue = await readRequestCookie(GUEST_PHOTO_COOKIE, undefined, {
+    suppressErrors: true,
+  });
+  if (!cookieValue) {
+    return null;
+  }
+  const payload = await getCachedVerifiedPhotoUploadSession(cookieValue);
+  if (!payload || payload.exp < Date.now()) {
+    return null;
+  }
+  return payload;
 }
 
 async function resolveServerCookieGuestInviteSession(): Promise<GuestInviteSessionPayload | null> {
@@ -118,20 +157,16 @@ async function resolveServerCookieGuestInviteSession(): Promise<GuestInviteSessi
     return null;
   }
 
-  const signedPayload = await getSignedGuestInviteSession();
+  const signedPayload = await getCachedServerSignedGuestInviteSession();
   if (!signedPayload) {
     return null;
   }
 
-  return resolveActiveInvitationSession(signedPayload);
+  const cacheKey = buildGuestSessionCacheKey(signedPayload);
+  return getOrLoadGuestSession(undefined, cacheKey, () =>
+    resolveActiveInvitationSession(signedPayload)
+  );
 }
-
-const getCachedServerCookieGuestInviteSession = cache(resolveServerCookieGuestInviteSession);
-
-const requestActiveSessionCache = new WeakMap<
-  object,
-  Map<string, Promise<GuestInviteSessionPayload | null>>
->();
 
 /**
  * Retrieve verified guest invitation session from NextRequest or cookieStore,
@@ -143,7 +178,7 @@ export async function getGuestInviteSession(req?: NextRequest): Promise<GuestInv
   }
 
   if (!req) {
-    return getCachedServerCookieGuestInviteSession();
+    return resolveServerCookieGuestInviteSession();
   }
 
   const signedPayload = await getSignedGuestInviteSession(req);
@@ -151,28 +186,10 @@ export async function getGuestInviteSession(req?: NextRequest): Promise<GuestInv
     return null;
   }
 
-  if (typeof req === 'object') {
-    const cacheKey = `${signedPayload.code}:${signedPayload.guestName}:${signedPayload.exp ?? ''}`;
-    let bySessionKey = requestActiveSessionCache.get(req);
-    const cached = bySessionKey?.get(cacheKey);
-    if (cached) {
-      return cached;
-    }
-
-    const sessionPromise = resolveActiveInvitationSession(signedPayload).catch((err) => {
-      bySessionKey?.delete(cacheKey);
-      throw err;
-    });
-
-    if (!bySessionKey) {
-      bySessionKey = new Map();
-      requestActiveSessionCache.set(req, bySessionKey);
-    }
-    bySessionKey.set(cacheKey, sessionPromise);
-    return sessionPromise;
-  }
-
-  return resolveActiveInvitationSession(signedPayload);
+  const cacheKey = buildGuestSessionCacheKey(signedPayload);
+  return getOrLoadGuestSession(req, cacheKey, () =>
+    resolveActiveInvitationSession(signedPayload, req)
+  );
 }
 
 export function buildGuestLoginRedirectTarget(callbackPath: string | null): string {
@@ -253,7 +270,9 @@ export async function getActivePhotoUploadSession(
     return null;
   }
 
-  const signedPayload = await getSignedPhotoUploadSession(req);
+  const signedPayload = req
+    ? await getSignedPhotoUploadSession(req)
+    : await resolveServerSignedPhotoUploadSession();
   if (!signedPayload) {
     return null;
   }
@@ -277,8 +296,8 @@ export async function enforceActiveGuestPageSession(): Promise<void> {
     return;
   }
 
-  const signedInvite = await getSignedGuestInviteSession();
-  const signedPhoto = await getSignedPhotoUploadSession();
+  const signedInvite = await getCachedServerSignedGuestInviteSession();
+  const signedPhoto = await resolveServerSignedPhotoUploadSession();
   if (!signedInvite && !signedPhoto) {
     return;
   }

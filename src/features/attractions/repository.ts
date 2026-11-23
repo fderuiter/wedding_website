@@ -44,16 +44,19 @@ const STATIC_MOCK_ATTRACTIONS_RAW = [
   },
 ];
 
+function isStaticExportBuild(): boolean {
+  return (
+    process.env.STATIC_EXPORT === 'true' ||
+    process.env.STATIC_EXPORT === '1' ||
+    process.env.npm_lifecycle_event === 'build:export'
+  );
+}
+
 class AttractionsRepository {
   constructor(public client: any = prisma) {}
 
   async getVisibleAttractions(): Promise<AttractionDTO[]> {
-    const isStaticExport =
-      process.env.STATIC_EXPORT === 'true' ||
-      process.env.STATIC_EXPORT === '1' ||
-      process.env.npm_lifecycle_event === 'build:export';
-
-    if (isStaticExport) {
+    if (isStaticExportBuild()) {
       return STATIC_MOCK_ATTRACTIONS_RAW.map((a) => AttractionSchema.parse(a));
     }
 

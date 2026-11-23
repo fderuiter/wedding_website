@@ -57,7 +57,11 @@ describe('PhotoUploadQRModal Component', () => {
     const qrCanvas = screen.getByLabelText('Guest photo upload QR code');
     expect(qrCanvas).toBeInTheDocument();
 
-    const results = await axe(container);
+    const results = await axe(container, {
+      rules: {
+        'label-content-name-mismatch': { enabled: true },
+      },
+    });
     expect(results).toHaveNoViolations();
   });
 
@@ -68,7 +72,7 @@ describe('PhotoUploadQRModal Component', () => {
       clipboard: { writeText: writeTextMock },
     });
 
-    render(<PhotoUploadQRModal {...defaultProps} />);
+    const { container } = render(<PhotoUploadQRModal {...defaultProps} />);
 
     fireEvent.click(screen.getByTestId('copy-photo-qr-link-btn'));
 
@@ -79,6 +83,13 @@ describe('PhotoUploadQRModal Component', () => {
         'success'
       );
     });
+
+    const copiedAxeResults = await axe(container, {
+      rules: {
+        'label-content-name-mismatch': { enabled: true },
+      },
+    });
+    expect(copiedAxeResults).toHaveNoViolations();
 
     Object.assign(navigator, { clipboard: originalClipboard });
   });
@@ -136,8 +147,12 @@ describe('PhotoUploadQRModal Component', () => {
     expect(select.value).toBe('avery_5160');
     expect(screen.getAllByTestId('qr-label-card')).toHaveLength(30);
 
-    // Accessibility check in print mode
-    const results = await axe(container);
+    // Accessibility check in print mode (including WCAG 2.5.3 label-content-name-mismatch)
+    const results = await axe(container, {
+      rules: {
+        'label-content-name-mismatch': { enabled: true },
+      },
+    });
     expect(results).toHaveNoViolations();
 
     // Trigger print

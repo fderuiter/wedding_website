@@ -152,6 +152,11 @@ export async function verifyPhotoUploadSessionToken(
   }
 }
 
+const requestSignedPhotoSessionCache = new WeakMap<
+  object,
+  Map<string, Promise<PhotoUploadSessionPayload | null>>
+>();
+
 /**
  * Reads and verifies the HMAC signature and expiration of the guest_photo_session cookie (Edge-compatible).
  */
@@ -162,6 +167,32 @@ export async function getSignedPhotoUploadSession(
   if (!cookieValue) {
     return null;
   }
+
+  if (req && typeof req === 'object') {
+    let byCookie = requestSignedPhotoSessionCache.get(req);
+    let cached = byCookie?.get(cookieValue);
+    if (!cached) {
+      cached = verifyPhotoUploadSessionToken(cookieValue).catch((err) => {
+        byCookie?.delete(cookieValue);
+        throw err;
+      });
+      if (!byCookie) {
+        byCookie = new Map();
+        requestSignedPhotoSessionCache.set(req, byCookie);
+      }
+      byCookie.set(cookieValue, cached);
+    }
+
+    const payload = await cached;
+    if (!payload) {
+      return null;
+    }
+    if (payload.exp < Date.now()) {
+      return null;
+    }
+    return payload;
+  }
+
   return verifyPhotoUploadSessionToken(cookieValue);
 }
 
