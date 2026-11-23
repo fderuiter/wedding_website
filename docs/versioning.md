@@ -64,10 +64,11 @@ To prevent unexpected breakage for downstream forks:
 2. **Deprecation Windows**:
    - Before removing or altering an established feature, API route, or component interface, maintainers must flag it as deprecated for **at least one MINOR release cycle** (or a minimum window of 30 days).
    - Code deprecations must be marked using TypeScript `@deprecated` JSDoc annotations and produce runtime warning logs where applicable.
-3. **Database Schema Breaking Changes**:
-   - Destructive database alterations (such as column renames or table deletions) must be executed in a two-phase release process:
-     - **Phase 1 (Minor Release)**: Introduce the new column/model alongside the old one and mirror writes or support legacy fallback. Mark the old field as `@deprecated`.
-     - **Phase 2 (Major Release)**: Remove the deprecated field and finalize the migration after the deprecation window expires.
+3. **Database Schema Breaking Changes (`Expand-Migrate-Contract`)**:
+   - Destructive or non-backward-compatible database alterations (such as column/table drops, renames, type changes, or tightening nullability) must follow the three-phase **Expand-Migrate-Contract** release policy (aligned with [`DEPLOYMENT.md`](../DEPLOYMENT.md), [`ARCHITECTURE.md`](../ARCHITECTURE.md), and [`docs/upgrading.md`](./upgrading.md)):
+     - **Phase 1: Expand** *(Minor Release)*: Introduce additive, backward-compatible schema changes only—new tables, nullable columns, `DROP NOT NULL`, or `NOT NULL` columns accompanied by an explicit `DEFAULT`. Automated pre-deployment linting via `npm run lint:migrations` ([`scripts/verify-migration-compatibility.ts`](../scripts/verify-migration-compatibility.ts)) blocks unannotated destructive or `N-1`-incompatible DDL in CI and deployment workflows.
+     - **Phase 2: Migrate** *(Transition & Backfill)*: Deploy application code that dual-reads/dual-writes across old and new schema structures (marking superseded code paths `@deprecated`) and backfill existing rows while preserving `N-1` container rollback safety.
+     - **Phase 3: Contract** *(Subsequent / Major Release)*: After the deprecation window expires and no active application version queries the obsolete columns or tables, remove the deprecated schema structures in a dedicated migration annotated with a statement-scoped `-- allow-destructive: <reason>` SQL comment (requiring a non-empty `<reason>`).
 
 ---
 
@@ -77,8 +78,11 @@ Database migrations manage schema transitions safely across upstream and downstr
 
 - **Prisma Migration Files**: All database schema changes must be created using Prisma migration CLI (`npm run migrate:dev -- --name <descriptive_name>`) and committed under `prisma/migrations/`.
 - **Association with Releases**: Migration folders in `prisma/migrations/` are immutable and tied directly to the release commit in which they were introduced.
-- **Downstream Execution**: Downstream adopters execute `npm run migrate:deploy` (`npx prisma migrate deploy`), which inspects the `_prisma_migrations` tracking table in PostgreSQL and applies only unapplied migrations.
-- **Non-Destructive Defaults**: All new columns in minor releases MUST provide a default value (e.g., `@default("")`, `@default(false)`, `@default(now())`) or be optional (`?`) so existing database rows migrate without data loss or downtime.
+- **Local vs. Production Migration Execution**:
+  - **Local Development (`npm run migrate:deploy`)**: Wraps `dotenv -c development -- prisma migrate deploy`, which cascades `.env.development.local`, `.env.local`, `.env.development`, and `.env` before inspecting `_prisma_migrations`. Use `npm run migrate:deploy` only in local development environments where `.env.development*` files are expected.
+  - **Production & CI/CD (`npx prisma migrate deploy`)**: Production pipelines and bare-metal/VM hosts execute `npx prisma migrate deploy` directly against `DATABASE_URL` (bound in [`prisma.config.ts`](../prisma.config.ts), or `DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING npx prisma migrate deploy` when `DATABASE_URL` uses a transaction-mode connection pooler; Docker Compose and standalone OCI containers run `./node_modules/.bin/prisma migrate deploy` offline without `dotenv-cli`).
+- **Automated Compatibility Linting (`npm run lint:migrations`)**: [`scripts/verify-migration-compatibility.ts`](../scripts/verify-migration-compatibility.ts) inspects every SQL statement in `prisma/migrations/` during local quality gates, PR checks, and release workflows, rejecting unannotated destructive or `N-1`-incompatible DDL (`DROP TABLE`, `DROP COLUMN`, `RENAME COLUMN`, `RENAME TO`, `DROP CONSTRAINT`, `DROP TYPE`, `TRUNCATE`, `SET NOT NULL`, `SET DATA TYPE`, and `ADD COLUMN ... NOT NULL` without `DEFAULT`) unless explicitly authorized for a Phase 3 contract cleanup via `-- allow-destructive: <reason>`.
+- **Non-Destructive Defaults**: All new columns in minor (Phase 1 Expand) releases MUST provide a default value (e.g., `@default("")`, `@default(false)`, `@default(now())`) or be optional (`?`) so existing database rows and `N-1` containers operate without data loss or downtime.
 
 ---
 
@@ -103,7 +107,7 @@ Configuration settings (stored in `AppConfig` and defined in `src/features/conte
 ### Maintainer Checklist for Identifying Action Items
 When reviewing PRs and tagging releases, maintainers must check if adopters need to take action:
 
-- [ ] Does this PR alter `prisma/schema.prisma`? -> **Action Required**: Run `npm run migrate:deploy`.
+- [ ] Does this PR alter `prisma/schema.prisma` or `prisma/migrations/`? -> **Action Required**: Verify `npm run lint:migrations` passes and instruct adopters to apply migrations (`npx prisma migrate deploy` against `DATABASE_URL` / `POSTGRES_URL_NON_POOLING` in production, `./node_modules/.bin/prisma migrate deploy` in containers, or `npm run migrate:deploy` locally via `dotenv -c development`).
 - [ ] Does this PR add or change environment variables in `src/env.ts` or `.env.example`? -> **Action Required**: Update local `.env` files.
 - [ ] Does this PR change `AppConfig` or content schemas in `src/features/content/schemas.ts`? -> **Action Required**: Review site settings in Admin UI.
 - [ ] Does this PR update `package.json` dependencies or Node engine versions? -> **Action Required**: Run `npm ci`.

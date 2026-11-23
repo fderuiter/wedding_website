@@ -1419,6 +1419,18 @@ describe('FloorplanCanvas component', () => {
         screen.getByText('Cannot assign guests to landmark "Main Dance Floor".')
       ).toBeInTheDocument();
     });
+
+    it('renders empty floorplan heading as h2 by default and supports emptyHeadingLevel override', () => {
+      const { rerender } = render(<FloorplanCanvas {...defaultProps} tables={[]} />);
+      expect(
+        screen.getByRole('heading', { level: 2, name: 'No Tables Created Yet' })
+      ).toBeInTheDocument();
+
+      rerender(<FloorplanCanvas {...defaultProps} tables={[]} emptyHeadingLevel="h3" />);
+      expect(
+        screen.getByRole('heading', { level: 3, name: 'No Tables Created Yet' })
+      ).toBeInTheDocument();
+    });
   });
 });
 

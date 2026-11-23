@@ -24,7 +24,7 @@ describe('Root Error Boundary', () => {
       </ToastProvider>
     );
 
-    expect(screen.getByRole('heading', { level: 2, name: 'Something went wrong!' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Something went wrong!' })).toBeInTheDocument();
     expect(screen.getAllByText(/unexpected error occurred while loading this page/i).length).toBeGreaterThanOrEqual(1);
 
     const retryBtn = screen.getByRole('button', { name: 'Try Again' });

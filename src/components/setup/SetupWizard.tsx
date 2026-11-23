@@ -32,14 +32,22 @@ import { AddressLookupInput } from '@/components/admin/AddressLookupInput';
 import { isNonPlaceholderVenueText } from '@/utils/maps';
 import { ThemeProvider, useTheme } from '@/components/ThemeProvider';
 import { useOptionalDemo } from '@/components/demo/DemoContext';
-import { ThemePreset } from '@/lib/theme/presets';
+import { ThemePreset, getPresetTokens, getServerExportTokens } from '@/lib/theme/presets';
 import { ARCHETYPE_PRESETS, ArchetypeId } from '@/lib/sampleData/archetypes';
+import { Icon } from '@/components/ui/Icon';
+import Countdown from '@/components/Countdown';
 import {
   ensureStaticDemoRuntime,
   getStaticDemoSavedSetupConfig,
   completeStaticDemoSetup,
 } from '@/lib/staticDemo/runtime';
 import { withBasePath } from '@/lib/basePath';
+import {
+  cleanOptionalSetupText,
+  formatCleanVenueParts,
+  isUpcomingWeddingDate,
+  synthesizeSetupStarterCopy,
+} from '@/lib/setupCopy';
 
 /**
  * Render a multi-step admin setup wizard for configuring a wedding site.
@@ -115,6 +123,27 @@ function resolveStep2BackendErrorField(message: string): Step2ErrorField {
     return 'partner1';
   }
   return 'siteUrl';
+}
+
+function getReadableTextOnHex(hexColor: string): string {
+  const cleaned = hexColor.trim().replace(/^#/, '');
+  const full =
+    cleaned.length === 3
+      ? cleaned
+        .split('')
+        .map((ch) => ch + ch)
+        .join('')
+      : cleaned;
+  if (!/^[0-9a-fA-F]{6}$/.test(full)) {
+    return '#ffffff';
+  }
+  const r = parseInt(full.slice(0, 2), 16) / 255;
+  const g = parseInt(full.slice(2, 4), 16) / 255;
+  const b = parseInt(full.slice(4, 6), 16) / 255;
+  const toLinear = (c: number) =>
+    c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  const lum = 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+  return lum > 0.179 ? '#111827' : '#ffffff';
 }
 
 export interface SetupWizardSavedConfig extends Partial<SetupWizardPersistedState> {
@@ -255,7 +284,7 @@ function SetupWizardContent({
     updateDraft({ importedGuestCount: nonSampleCount });
   };
 
-  // Theme state
+  // Theme & Step 2 live preview state
   const { setPreviewConfig } = useTheme();
   const [themePreset, setThemePreset] = useState<ThemePreset>(
     initialSavedConfig?.themePreset ?? 'classic'
@@ -266,7 +295,32 @@ function SetupWizardContent({
   const [colorSecondary, setColorSecondary] = useState(
     initialSavedConfig?.colorSecondary ?? '#2D3748'
   );
+  const [step2Viewport, setStep2Viewport] = useState<'desktop' | 'mobile'>('desktop');
+  const step2DesktopBtnRef = useRef<HTMLButtonElement>(null);
+  const step2MobileBtnRef = useRef<HTMLButtonElement>(null);
   const [step2ErrorField, setStep2ErrorField] = useState<Step2ErrorField>('siteUrl');
+
+  const handleStep2ViewportKeyDown = (
+    e: React.KeyboardEvent<HTMLButtonElement>,
+    current: 'desktop' | 'mobile',
+  ) => {
+    let next: 'desktop' | 'mobile' | null = null;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      next = current === 'desktop' ? 'mobile' : 'desktop';
+    } else if (e.key === 'Home') {
+      next = 'desktop';
+    } else if (e.key === 'End') {
+      next = 'mobile';
+    }
+    if (!next) return;
+    e.preventDefault();
+    setStep2Viewport(next);
+    if (next === 'desktop') {
+      step2DesktopBtnRef.current?.focus();
+    } else {
+      step2MobileBtnRef.current?.focus();
+    }
+  };
   const partner1InputRef = useRef<HTMLInputElement>(null);
   const partner2InputRef = useRef<HTMLInputElement>(null);
   const siteUrlInputRef = useRef<HTMLInputElement>(null);
@@ -400,11 +454,32 @@ function SetupWizardContent({
       return;
     }
 
+    const cleanedVenueName = cleanOptionalSetupText(venueName);
+    const cleanedVenueAddress = cleanOptionalSetupText(venueAddress);
+    const cleanedVenueCity = cleanOptionalSetupText(venueCity);
+    const cleanedVenueState = cleanOptionalSetupText(venueState);
+    const cleanedVenueZip = cleanOptionalSetupText(venueZip);
+    const resolvedTimezone = timezone || 'America/Chicago';
+    const starterCopy = synthesizeSetupStarterCopy({
+      partner1Name: trimmedPartner1,
+      partner2Name: trimmedPartner2,
+      weddingDate,
+      timezone: resolvedTimezone,
+      venueName: cleanedVenueName,
+      venueCity: cleanedVenueCity,
+      venueState: cleanedVenueState,
+    });
+
     updateDraft({
       partner1Name: trimmedPartner1,
       partner2Name: trimmedPartner2,
       baseUrl: trimmedBaseUrl,
       contactEmail: trimmedContactEmail,
+      venueName: cleanedVenueName,
+      venueAddress: cleanedVenueAddress,
+      venueCity: cleanedVenueCity,
+      venueState: cleanedVenueState,
+      venueZip: cleanedVenueZip,
     });
 
     if (isDemoMode && demo) {
@@ -413,15 +488,21 @@ function SetupWizardContent({
         partner2Name: trimmedPartner2,
         weddingDate: weddingDate ? new Date(`${weddingDate}T16:00:00Z`) : new Date('2026-10-18T16:00:00Z'),
         contactEmail: trimmedContactEmail,
-        venueName: venueName?.trim() || '',
-        venueAddress: venueAddress?.trim() || '',
-        venueCity: venueCity?.trim() || '',
-        venueState: venueState?.trim() || '',
-        venueZip: venueZip?.trim() || '',
+        venueName: cleanedVenueName,
+        venueAddress: cleanedVenueAddress,
+        venueCity: cleanedVenueCity,
+        venueState: cleanedVenueState,
+        venueZip: cleanedVenueZip,
         latitude: typeof latitude === 'number' && Number.isFinite(latitude) ? latitude : 0,
         longitude: typeof longitude === 'number' && Number.isFinite(longitude) ? longitude : 0,
-        heroTitle: `${trimmedPartner1} & ${trimmedPartner2}`,
-        timezone: timezone || 'America/Chicago',
+        heroTitle: starterCopy.heroTitle,
+        heroSubtitle: starterCopy.heroSubtitle,
+        storyText: starterCopy.storyText,
+        venueDescription: '',
+        travelAdvice: '',
+        seoTitle: starterCopy.seoTitle,
+        seoDescription: starterCopy.seoDescription,
+        timezone: resolvedTimezone,
         themePreset,
         colorPrimary,
         colorSecondary,
@@ -442,21 +523,21 @@ function SetupWizardContent({
           weddingDate,
           baseUrl: trimmedBaseUrl,
           contactEmail: trimmedContactEmail,
-          venueName: venueName?.trim() || '',
-          venueAddress: venueAddress?.trim() || '',
-          venueCity: venueCity?.trim() || '',
-          venueState: venueState?.trim() || '',
-          venueZip: venueZip?.trim() || '',
-          timezone: timezone || 'America/Chicago',
+          venueName: cleanedVenueName,
+          venueAddress: cleanedVenueAddress,
+          venueCity: cleanedVenueCity,
+          venueState: cleanedVenueState,
+          venueZip: cleanedVenueZip,
+          timezone: resolvedTimezone,
           latitude: typeof latitude === 'number' && Number.isFinite(latitude) ? latitude : 0,
           longitude: typeof longitude === 'number' && Number.isFinite(longitude) ? longitude : 0,
-          storyText: '',
+          storyText: starterCopy.storyText,
           venueDescription: '',
           travelAdvice: '',
-          heroTitle: `${trimmedPartner1} & ${trimmedPartner2}`,
-          heroSubtitle: '',
-          seoTitle: `${trimmedPartner1} & ${trimmedPartner2}'s Wedding`,
-          seoDescription: `Join ${trimmedPartner1} and ${trimmedPartner2} for their wedding celebration.`,
+          heroTitle: starterCopy.heroTitle,
+          heroSubtitle: starterCopy.heroSubtitle,
+          seoTitle: starterCopy.seoTitle,
+          seoDescription: starterCopy.seoDescription,
           themePreset,
           colorPrimary,
           colorSecondary,
@@ -526,6 +607,41 @@ function SetupWizardContent({
       setError(getSetupErrorMessage(err, 'Error configuring sample data.'));
     }
   };
+
+  const previewVenue = formatCleanVenueParts({
+    venueName,
+    venueAddress,
+    venueCity,
+    venueState,
+    venueZip,
+  });
+  const previewStarterCopy = synthesizeSetupStarterCopy({
+    partner1Name: partner1Name.trim() || 'Partner One',
+    partner2Name: partner2Name.trim() || 'Partner Two',
+    weddingDate,
+    timezone: timezone || 'America/Chicago',
+    venueName: previewVenue.venueName,
+    venueCity: previewVenue.venueCity,
+    venueState: previewVenue.venueState,
+  });
+  const previewExportTokens = getServerExportTokens(themePreset, null, {
+    colorPrimary,
+    colorSecondary,
+  });
+  const previewCompTokens = getPresetTokens(themePreset, 'light');
+  const previewCardRadius = previewCompTokens['--schedule-card-radius'] || '1rem';
+  const previewBtnRadius = previewCompTokens['--btn-radius'] || '9999px';
+  const previewCtaTextColor = getReadableTextOnHex(colorPrimary);
+  const previewParsedDate = weddingDate
+    ? /^\d{4}-\d{2}-\d{2}$/.test(weddingDate.trim())
+      ? new Date(`${weddingDate.trim()}T16:00:00.000Z`)
+      : new Date(weddingDate)
+    : null;
+  const hasValidPreviewDate = Boolean(
+    previewParsedDate && !Number.isNaN(previewParsedDate.getTime())
+  );
+  const showPreviewCountdown =
+    hasValidPreviewDate && isUpcomingWeddingDate(weddingDate);
 
   const handleCompleteAndExit = async () => {
     completeStaticDemoSetup();
@@ -607,8 +723,8 @@ function SetupWizardContent({
       </AccessibleStep>
 
       <AccessibleStep isActive={step === 2}>
-        <Container>
-          <Card className="max-w-xl">
+        <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          <Card className="w-full max-w-none lg:col-span-7">
             <Heading as="h2" className="mb-4">Step 2: The Essentials</Heading>
             <p className="mb-4 text-gray-700 dark:text-gray-200">Let&apos;s start with your names and when the big day is.</p>
             <form onSubmit={handleSaveConfig} className="space-y-4">
@@ -763,7 +879,185 @@ function SetupWizardContent({
               </div>
             </form>
           </Card>
-        </Container>
+
+          <aside
+            aria-label="Live guest homepage preview"
+            data-testid="step2-live-preview"
+            className="w-full lg:col-span-5 lg:sticky lg:top-8 rounded-2xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg overflow-hidden"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-900">
+              <div className="flex items-center gap-2">
+                <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" aria-hidden="true" />
+                <span className="text-xs font-semibold uppercase tracking-wide text-gray-800 dark:text-zinc-200">
+                  Live Guest Preview
+                </span>
+              </div>
+
+              <div
+                role="group"
+                aria-label="Step 2 preview viewport"
+                className="inline-flex items-center rounded-lg bg-gray-200/80 dark:bg-zinc-800 p-0.5 border border-gray-300 dark:border-zinc-700"
+              >
+                <button
+                  ref={step2DesktopBtnRef}
+                  type="button"
+                  aria-pressed={step2Viewport === 'desktop'}
+                  onClick={() => setStep2Viewport('desktop')}
+                  onKeyDown={(e) => handleStep2ViewportKeyDown(e, 'desktop')}
+                  className={`inline-flex min-h-[30px] items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                    step2Viewport === 'desktop'
+                      ? 'bg-white dark:bg-zinc-700 text-gray-900 dark:text-white shadow-xs'
+                      : 'text-gray-700 dark:text-zinc-300 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Icon name="Monitor" size={13} />
+                  <span>Desktop</span>
+                </button>
+                <button
+                  ref={step2MobileBtnRef}
+                  type="button"
+                  aria-pressed={step2Viewport === 'mobile'}
+                  onClick={() => setStep2Viewport('mobile')}
+                  onKeyDown={(e) => handleStep2ViewportKeyDown(e, 'mobile')}
+                  className={`inline-flex min-h-[30px] items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                    step2Viewport === 'mobile'
+                      ? 'bg-white dark:bg-zinc-700 text-gray-900 dark:text-white shadow-xs'
+                      : 'text-gray-700 dark:text-zinc-300 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Icon name="Smartphone" size={13} />
+                  <span>Mobile (375px)</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 bg-gray-100 dark:bg-zinc-950 flex justify-center">
+              <div
+                data-testid="step2-preview-frame"
+                data-viewport={step2Viewport}
+                style={{
+                  width: step2Viewport === 'mobile' ? '375px' : '100%',
+                  maxWidth: '100%',
+                  backgroundColor: previewExportTokens.canvasBg,
+                  fontFamily: previewExportTokens.fontBody,
+                  color: '#111827',
+                }}
+                className={`transition-all overflow-hidden border border-black/10 ${
+                  step2Viewport === 'mobile'
+                    ? 'rounded-[1.5rem] shadow-xl'
+                    : 'w-full rounded-xl shadow-md'
+                }`}
+              >
+                <div className="px-5 py-7 text-center space-y-4">
+                  <div
+                    className="inline-block h-1 w-12 rounded-full"
+                    style={{ backgroundColor: colorSecondary }}
+                    aria-hidden="true"
+                  />
+                  <p
+                    data-testid="step2-preview-headline"
+                    className={`${step2Viewport === 'mobile' ? 'text-2xl' : 'text-3xl'} font-bold tracking-tight leading-tight`}
+                    style={{
+                      fontFamily: previewExportTokens.fontHeading,
+                      color: '#111827',
+                    }}
+                  >
+                    {previewStarterCopy.heroTitle}
+                  </p>
+                  <p
+                    data-testid="step2-preview-subtitle"
+                    className="text-sm leading-relaxed"
+                    style={{ color: '#374151' }}
+                  >
+                    {previewStarterCopy.heroSubtitle}
+                  </p>
+
+                  {(previewStarterCopy.formattedDate || previewVenue.shortLocation) && (
+                    <div className="flex flex-wrap items-center justify-center gap-2 text-xs font-medium">
+                      {previewStarterCopy.formattedDate && (
+                        <span
+                          className="px-3 py-1 border border-black/15"
+                          style={{
+                            backgroundColor: previewExportTokens.cardBg,
+                            color: '#111827',
+                            borderRadius: previewBtnRadius,
+                          }}
+                        >
+                          {previewStarterCopy.formattedDate}
+                        </span>
+                      )}
+                      {previewVenue.shortLocation && (
+                        <span
+                          data-testid="step2-preview-venue"
+                          className="px-3 py-1 border border-black/15"
+                          style={{
+                            backgroundColor: previewExportTokens.cardBg,
+                            color: '#111827',
+                            borderRadius: previewBtnRadius,
+                          }}
+                        >
+                          {previewVenue.venueName && previewVenue.cityState
+                            ? `${previewVenue.venueName} · ${previewVenue.cityState}`
+                            : previewVenue.shortLocation}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {showPreviewCountdown && previewParsedDate && (
+                    <div
+                      data-testid="step2-preview-countdown"
+                      className="text-sm font-semibold py-1.5 px-3 inline-block border border-black/10"
+                      style={{
+                        backgroundColor: previewExportTokens.cardBg,
+                        color: '#111827',
+                        borderRadius: previewCardRadius,
+                      }}
+                    >
+                      <Countdown targetDate={previewParsedDate.toISOString()} />
+                    </div>
+                  )}
+
+                  <div className="pt-1">
+                    <span
+                      className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-semibold shadow-sm"
+                      style={{
+                        backgroundColor: colorPrimary,
+                        color: previewCtaTextColor,
+                        borderRadius: previewBtnRadius,
+                      }}
+                    >
+                      Our Story
+                    </span>
+                  </div>
+
+                  {previewStarterCopy.storyText && (
+                    <div
+                      className="mt-4 p-4 text-left border border-black/10 space-y-1.5"
+                      style={{
+                        backgroundColor: previewExportTokens.cardBg,
+                        borderRadius: previewCardRadius,
+                      }}
+                    >
+                      <p
+                        className="text-sm font-bold"
+                        style={{
+                          fontFamily: previewExportTokens.fontHeading,
+                          color: '#111827',
+                        }}
+                      >
+                        Our Story
+                      </p>
+                      <p className="text-xs leading-relaxed" style={{ color: '#374151' }}>
+                        {previewStarterCopy.storyText}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </aside>
+        </div>
       </AccessibleStep>
 
       <AccessibleStep isActive={step === 3}>
@@ -1067,6 +1361,8 @@ function SetupWizardContent({
           <WeddingPartyManagerModal
             isOpen={activeModal === 'weddingParty'}
             onClose={closeModal}
+            partner1Name={partner1Name}
+            partner2Name={partner2Name}
           />
 
           <AttractionsManagerModal

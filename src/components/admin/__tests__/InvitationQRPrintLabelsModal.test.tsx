@@ -210,4 +210,26 @@ describe('InvitationQRPrintLabelsModal Component', () => {
 
     jest.useRealTimers();
   });
+
+  it('defaults modal title heading to h2 so page-level h1 remains unique with zero heading-order violations', async () => {
+    render(
+      <main>
+        <h1>Pre-Authorized Guest Invitation Codes</h1>
+        <InvitationQRPrintLabelsModal isOpen={true} onClose={jest.fn()} codes={sampleCodes} />
+      </main>
+    );
+
+    expect(document.body.querySelectorAll('h1')).toHaveLength(1);
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Printable Invitation QR Labels' })
+    ).toBeInTheDocument();
+    expect(
+      await axe(document.body, {
+        rules: {
+          'page-has-heading-one': { enabled: true },
+          'heading-order': { enabled: true },
+        },
+      })
+    ).toHaveNoViolations();
+  });
 });

@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/Button';
+import { Heading, type HeadingLevel } from '@/components/ui/Layout';
 import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
 import { EnsureToastProvider } from '@/components/ui/ToastProvider';
 import { resolveConfiguredBaseUrl, useAdminSettings } from '@/hooks/admin/useAdminSettings';
@@ -24,6 +25,7 @@ export interface InvitationQRPrintLabelsModalProps {
   isOpen: boolean;
   onClose: () => void;
   codes: PrintableInvitationCode[];
+  headingLevel?: HeadingLevel;
 }
 
 const CHUNK_SIZE = 30;
@@ -223,6 +225,7 @@ export const InvitationQRPrintLabelsModal: React.FC<InvitationQRPrintLabelsModal
   isOpen,
   onClose,
   codes,
+  headingLevel = 'h2',
 }) => {
   const handleClose = () => {
     if (typeof document !== 'undefined') {
@@ -274,9 +277,15 @@ export const InvitationQRPrintLabelsModal: React.FC<InvitationQRPrintLabelsModal
           aria-hidden="true"
         />
         <div className="printable-qr-dialog-panel relative z-10 max-w-4xl w-full rounded-2xl bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 shadow-2xl p-6">
-          <h1 id="printable-qr-modal-title" className="sr-only no-print">
+          <Heading
+            as={headingLevel}
+            variant="none"
+            unstyledColor
+            id="printable-qr-modal-title"
+            className="sr-only no-print"
+          >
             Printable Invitation QR Labels
-          </h1>
+          </Heading>
           <InvitationQRPrintLabelsContent
             key={codes.length}
             codes={codes}

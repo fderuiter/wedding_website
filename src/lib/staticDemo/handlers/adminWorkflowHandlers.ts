@@ -1,4 +1,9 @@
 import { formatCurrency } from '@/utils/intl';
+import {
+  cleanOptionalSetupText,
+  hasCustomStoryText,
+  hasNonPlaceholderVenueDetails,
+} from '@/lib/setupCopy';
 import { isValidArchetypeId, buildArchetypeSeedSnapshot } from '../seeds';
 import type {
   DemoBroadcastMessageRecord,
@@ -262,19 +267,19 @@ export async function handleAdminWorkflowRoutes(
           config.contactEmail = body.contactEmail.trim();
         }
         if (typeof body.venueName === 'string') {
-          config.venueName = body.venueName.trim();
+          config.venueName = cleanOptionalSetupText(body.venueName);
         }
         if (typeof body.venueAddress === 'string') {
-          config.venueAddress = body.venueAddress.trim();
+          config.venueAddress = cleanOptionalSetupText(body.venueAddress);
         }
         if (typeof body.venueCity === 'string') {
-          config.venueCity = body.venueCity.trim();
+          config.venueCity = cleanOptionalSetupText(body.venueCity);
         }
         if (typeof body.venueState === 'string') {
-          config.venueState = body.venueState.trim();
+          config.venueState = cleanOptionalSetupText(body.venueState);
         }
         if (typeof body.venueZip === 'string') {
-          config.venueZip = body.venueZip.trim();
+          config.venueZip = cleanOptionalSetupText(body.venueZip);
         }
         if (typeof body.latitude === 'number' && Number.isFinite(body.latitude)) {
           config.latitude = body.latitude;
@@ -294,11 +299,29 @@ export async function handleAdminWorkflowRoutes(
         if (typeof body.colorSecondary === 'string' && body.colorSecondary.trim()) {
           config.colorSecondary = body.colorSecondary.trim();
         }
+        if (typeof body.heroSubtitle === 'string') {
+          config.heroSubtitle = body.heroSubtitle.trim();
+        }
+        if (typeof body.storyText === 'string') {
+          config.storyText = cleanOptionalSetupText(body.storyText);
+        }
+        if (typeof body.venueDescription === 'string') {
+          config.venueDescription = cleanOptionalSetupText(body.venueDescription);
+        }
+        if (typeof body.travelAdvice === 'string') {
+          config.travelAdvice = cleanOptionalSetupText(body.travelAdvice);
+        }
+        if (typeof body.seoDescription === 'string') {
+          config.seoDescription = body.seoDescription.trim();
+        }
         config.heroTitle =
           typeof body.heroTitle === 'string' && body.heroTitle.trim()
             ? body.heroTitle.trim()
             : `${partner1Name} & ${partner2Name}`;
-        config.seoTitle = `${partner1Name} & ${partner2Name} Wedding`;
+        config.seoTitle =
+          typeof body.seoTitle === 'string' && body.seoTitle.trim()
+            ? body.seoTitle.trim()
+            : `${partner1Name} & ${partner2Name} Wedding`;
         config.setupCompleted = requestedSetupCompleted;
         draft.setupStep2Saved = !requestedSetupCompleted;
         if (requestedSetupCompleted) {
@@ -381,12 +404,6 @@ export async function handleAdminWorkflowRoutes(
   if (pathname === '/api/admin/onboarding-milestones' && method === 'GET') {
     const snapshot = store.getSnapshot();
     const config = getActiveAppConfig(snapshot);
-    const rawVenueName = (config.venueName || '').trim();
-    const normalizedVenueName = rawVenueName.toUpperCase();
-    const hasVenueName =
-      Boolean(rawVenueName) &&
-      normalizedVenueName !== 'TBD' &&
-      normalizedVenueName !== 'TBD VENUE';
     const hasWeddingDate =
       Boolean(config.weddingDate?.trim()) &&
       !Number.isNaN(new Date(config.weddingDate).getTime());
@@ -398,7 +415,29 @@ export async function handleAdminWorkflowRoutes(
           config.baseUrl.trim(),
       ) &&
       hasWeddingDate &&
-      hasVenueName;
+      hasNonPlaceholderVenueDetails(config);
+    const customStoryConfigured = hasCustomStoryText(config);
+    const hasPublicSubEvent = snapshot.subEvent.some((s) => !s.isPrivate);
+    const hasPublicScheduleNode = snapshot.contentNode.some((node) => {
+      const data = node.data ?? {};
+      if (data.isSample === true || data.isSample === 'true') return false;
+      if (data.isPrivate === true || data.isPrivate === 'true') return false;
+      const hasScheduleTag =
+        node.tags.includes('Schedule') || node.tags.includes('schedule');
+      const hasStartTime =
+        typeof data.startTime === 'string' && data.startTime.trim().length > 0;
+      const hasCeremonyTitle =
+        typeof data.ceremonyTitle === 'string' &&
+        data.ceremonyTitle.trim().length > 0;
+      return (
+        node.type === 'Schedule' ||
+        hasScheduleTag ||
+        hasStartTime ||
+        (node.type === 'Logistics' && hasCeremonyTitle)
+      );
+    });
+    const storyAndScheduleCompleted =
+      customStoryConfigured && (hasPublicSubEvent || hasPublicScheduleNode);
     const guestListCompleted = snapshot.invitationCode.some(
       (i) =>
         !i.isSample &&
@@ -427,6 +466,21 @@ export async function handleAdminWorkflowRoutes(
         actionLabel: weddingDetailsCompleted
           ? 'Edit Wedding Details'
           : 'Configure Wedding Details',
+      },
+      {
+        id: 'story-and-schedule',
+        title: 'Story & Schedule',
+        description:
+          'Share your custom couple story and publish at least one public schedule event.',
+        completed: storyAndScheduleCompleted,
+        href: !customStoryConfigured
+          ? '/admin/dashboard/settings'
+          : '/admin/dashboard/sub-events',
+        actionLabel: storyAndScheduleCompleted
+          ? 'Edit Story & Schedule'
+          : !customStoryConfigured
+            ? 'Write Our Story'
+            : 'Add Schedule Event',
       },
       {
         id: 'guest-list',

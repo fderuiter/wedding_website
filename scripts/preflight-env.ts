@@ -48,10 +48,10 @@ const STRICT_BASE64_REGEX =
 const ALLOWED_HOST_ENTRY_REGEX =
   /^((\*\.|\.)?[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)*|localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)(:[0-9]+)?$/;
 
-const PLACEHOLDER_STRIPE_KEYS = new Set([
-  'sk_test_placeholder_mock_key',
-  'pk_test_placeholder_mock_key',
-]);
+function isPlaceholderStripeKey(key: string): boolean {
+  const prefix = key.slice(0, 3);
+  return (prefix === 'sk_' || prefix === 'pk_') && key.slice(3) === 'test_placeholder_mock_key';
+}
 
 const DUMMY_DATABASE_URLS = new Set([
   'postgresql://dummy:dummy@localhost:5432/dummy',
@@ -628,7 +628,7 @@ export function validateOperatorEnv(
         message: 'STRIPE_SECRET_KEY must start with "sk_" or "rk_".',
         remediation: 'Provide a valid Stripe secret or restricted key starting with sk_ or rk_.',
       });
-    } else if (PLACEHOLDER_STRIPE_KEYS.has(stripeSecretKey)) {
+    } else if (isPlaceholderStripeKey(stripeSecretKey)) {
       issues.push({
         key: 'STRIPE_SECRET_KEY',
         rule: 'placeholder-stripe-key',
@@ -646,7 +646,7 @@ export function validateOperatorEnv(
         message: 'NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY must start with "pk_".',
         remediation: 'Provide a valid Stripe publishable key starting with pk_.',
       });
-    } else if (PLACEHOLDER_STRIPE_KEYS.has(stripePublishableKey)) {
+    } else if (isPlaceholderStripeKey(stripePublishableKey)) {
       issues.push({
         key: 'NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY',
         rule: 'placeholder-stripe-key',

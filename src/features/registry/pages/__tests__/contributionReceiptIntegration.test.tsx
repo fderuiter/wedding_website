@@ -263,8 +263,17 @@ describe('RegistryPage end-to-end contribution receipt and cache sync integratio
       paymentIntentId: 'pi_verified_receipt_456',
     });
 
+    const getRegistryCardArticle = (name: string) => {
+      const article = screen
+        .getAllByRole('heading', { level: 2, name })
+        .map((heading) => heading.closest('article'))
+        .find((el): el is HTMLElement => el !== null);
+      expect(article).toBeDefined();
+      return article!;
+    };
+
     // Background card in the registry grid immediately reflects the updated cache state
-    const fundCard = screen.getByRole('heading', { level: 3, name: 'Tokyo Honeymoon Fund' }).closest('article')!;
+    const fundCard = getRegistryCardArticle('Tokyo Honeymoon Fund');
     expect(fundCard).toBeInTheDocument();
     expect(within(fundCard).getByText('Fully Funded')).toBeInTheDocument();
 
@@ -307,7 +316,10 @@ describe('RegistryPage end-to-end contribution receipt and cache sync integratio
     });
 
     // Underlying RegistryCard is immediately marked Claimed
-    const claimedCard = screen.getByRole('heading', { level: 3, name: 'Pour-Over Electric Kettle' }).closest('article')!;
+    const claimedCard = screen
+      .getAllByRole('heading', { level: 2, name: 'Pour-Over Electric Kettle' })
+      .map((heading) => heading.closest('article'))
+      .find((el): el is HTMLElement => el !== null)!;
     expect(claimedCard).toBeInTheDocument();
     expect(within(claimedCard).getByText('Claimed')).toBeInTheDocument();
 
@@ -352,7 +364,10 @@ describe('RegistryPage end-to-end contribution receipt and cache sync integratio
     expect(await within(dialog).findByText('Temporary server error')).toBeInTheDocument();
     expect(nameInput).toHaveValue('Alex Retry');
     expect(messageInput).toHaveValue('Best wishes!');
-    const kettleCardBeforeRetry = screen.getByRole('heading', { level: 3, name: 'Pour-Over Electric Kettle' }).closest('article')!;
+    const kettleCardBeforeRetry = screen
+      .getAllByRole('heading', { level: 2, name: 'Pour-Over Electric Kettle' })
+      .map((heading) => heading.closest('article'))
+      .find((el): el is HTMLElement => el !== null)!;
     expect(within(kettleCardBeforeRetry).queryByText('Claimed')).not.toBeInTheDocument();
 
     // Retry succeeds
@@ -360,7 +375,10 @@ describe('RegistryPage end-to-end contribution receipt and cache sync integratio
     await waitFor(() => {
       expect(within(dialog).getByText('Contribution Confirmed!')).toBeInTheDocument();
     });
-    const kettleCardAfterRetry = screen.getByRole('heading', { level: 3, name: 'Pour-Over Electric Kettle' }).closest('article')!;
+    const kettleCardAfterRetry = screen
+      .getAllByRole('heading', { level: 2, name: 'Pour-Over Electric Kettle' })
+      .map((heading) => heading.closest('article'))
+      .find((el): el is HTMLElement => el !== null)!;
     expect(within(kettleCardAfterRetry).getByText('Claimed')).toBeInTheDocument();
   });
 

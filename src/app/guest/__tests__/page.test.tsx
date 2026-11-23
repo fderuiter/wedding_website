@@ -1,6 +1,9 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import GuestAddressPage from '../page';
+
+expect.extend(toHaveNoViolations);
 
 const mockAddToast = jest.fn();
 jest.mock('@/components/ui/ToastProvider', () => ({
@@ -30,8 +33,8 @@ describe('GuestAddressPage (/guest)', () => {
 
     render(<GuestAddressPage />);
 
-    expect(await screen.findByText('Guest RSVP & Address Portal')).toBeInTheDocument();
-    expect(screen.getByLabelText('Invitation Code')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Invitation Code')).toBeInTheDocument();
+    expect(screen.getByText('Guest RSVP & Address Portal')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Access Guest Portal/i })).toBeInTheDocument();
   });
 
@@ -640,5 +643,69 @@ describe('GuestAddressPage (/guest)', () => {
     await waitFor(() => {
       expect(addressPatchSaved).toBe(true);
     });
+  });
+
+  it('binds #guest-invitation-code to aria-invalid="true" and aria-describedby on failed validation and passes jest-axe', async () => {
+    globalFetch
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({ success: false, error: 'Unauthorized' }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({ success: false, error: 'Invitation code not found.' }),
+      });
+
+    const { container } = render(<GuestAddressPage />);
+
+    const codeInput = (await screen.findByLabelText('Invitation Code')) as HTMLInputElement;
+    expect(codeInput).toHaveAttribute('id', 'guest-invitation-code');
+    expect(codeInput).toHaveAttribute('aria-invalid', 'false');
+
+    fireEvent.change(codeInput, { target: { value: 'NOTVALID' } });
+    fireEvent.click(screen.getByRole('button', { name: /Access Guest Portal/i }));
+
+    const alertMsg = await screen.findByRole('alert');
+    expect(alertMsg).toHaveTextContent('Invitation code not found.');
+    expect(codeInput).toHaveAttribute('aria-invalid', 'true');
+    expect(codeInput).toHaveAttribute('aria-describedby', alertMsg.id);
+    expect(mockAddToast).not.toHaveBeenCalled();
+
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it('exposes standard W3C postal autoComplete tokens on all six mailing address inputs and passes jest-axe', async () => {
+    globalFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        success: true,
+        data: {
+          guestName: 'Elinor Dashwood',
+          code: 'NORLAND26',
+          addressLine1: '123 Main Street',
+          addressLine2: 'Apt 4B',
+          city: 'San Francisco',
+          state: 'CA',
+          zipCode: '94102',
+          country: 'United States',
+        },
+      }),
+    });
+
+    const { container } = render(<GuestAddressPage />);
+
+    expect(await screen.findByText('Mailing Address')).toBeInTheDocument();
+
+    expect(screen.getByLabelText('Address Line 1')).toHaveAttribute('autocomplete', 'address-line1');
+    expect(screen.getByLabelText('Address Line 2 (Optional)')).toHaveAttribute('autocomplete', 'address-line2');
+    expect(screen.getByLabelText('City')).toHaveAttribute('autocomplete', 'address-level2');
+    expect(screen.getByLabelText('State / Province / Region')).toHaveAttribute('autocomplete', 'address-level1');
+    expect(screen.getByLabelText('ZIP / Postal Code')).toHaveAttribute('autocomplete', 'postal-code');
+    expect(screen.getByLabelText('Country')).toHaveAttribute('autocomplete', 'country-name');
+
+    expect(await axe(container)).toHaveNoViolations();
   });
 });
