@@ -924,7 +924,7 @@ function SubEventsMatrixPageContent() {
                           >
                             Edit
                           </button>
-                          <span className="text-gray-300 dark:text-gray-600">|</span>
+                          <span aria-hidden="true" className="text-muted-text">|</span>
                           <button
                             type="button"
                             aria-label={`Delete sub-event ${evt.title}`}
@@ -957,7 +957,7 @@ function SubEventsMatrixPageContent() {
                             </button>
                           </div>
                         ) : (
-                          <span className="text-[11px] text-gray-400 dark:text-gray-500 italic mt-0.5">
+                          <span className="text-[11px] text-muted-text italic mt-0.5">
                             Accessible to all guests
                           </span>
                         )}

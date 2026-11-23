@@ -365,7 +365,7 @@ function MediaDashboardContent({
               <button
                 type="button"
                 onClick={() => setDrawerOpen(false)}
-                className="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 p-1 rounded-lg"
+                className="text-muted-text hover:text-stone-600 dark:hover:text-stone-200 p-1 rounded-lg"
                 aria-label="Close moderation drawer"
               >
                 <Icon name="X" className="w-5 h-5" />
@@ -479,7 +479,7 @@ function MediaDashboardContent({
                           </div>
                         )}
                         <div className="text-xs text-stone-500 dark:text-stone-400 mb-3 flex items-center gap-1">
-                          <Icon name="Calendar" className="w-3 h-3 text-stone-400" />
+                          <Icon name="Calendar" className="w-3 h-3 text-muted-text" />
                           <span>Submitted {createdDate}</span>
                         </div>
 

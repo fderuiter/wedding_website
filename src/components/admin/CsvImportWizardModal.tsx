@@ -482,7 +482,7 @@ const EditableTableRow = React.memo(function EditableTableRow({
               : 'hover:bg-gray-50 dark:hover:bg-zinc-800/40 text-gray-900 dark:text-zinc-100'
       }
     >
-      <td className="p-2 text-center font-mono text-gray-400 dark:text-zinc-500">{row.rowIndex}</td>
+      <td className="p-2 text-center font-mono text-muted-text">{row.rowIndex}</td>
       <td className="p-2">
         <Input
           type="text"
@@ -704,7 +704,7 @@ const EditableTableRow = React.memo(function EditableTableRow({
             : [];
 
           if (customEntries.length === 0 && companionNames.length === 0) {
-            return <span className="text-gray-400 italic text-[11px]">None</span>;
+            return <span className="text-muted-text italic text-[11px]">None</span>;
           }
 
           return (
@@ -2318,7 +2318,7 @@ export function CsvImportWizardModal({
 
             {/* Preview snippet */}
             <div className="bg-gray-50 dark:bg-zinc-800 p-3 rounded-lg border border-gray-200 dark:border-zinc-700">
-              <h4 className="text-xs font-bold uppercase text-gray-500 mb-2">Sample Data Preview (First 3 rows)</h4>
+              <h4 className="text-xs font-bold uppercase text-muted-text mb-2">Sample Data Preview (First 3 rows)</h4>
               <div className="space-y-1 text-xs">
                 {rawRows.slice(0, 3).map((r, i) => {
                   let previewName = '';
@@ -2340,17 +2340,17 @@ export function CsvImportWizardModal({
                       </span>
                       {emailCol && (
                         <span>
-                          <strong>Email:</strong> {r[emailCol] || <em className="text-gray-400">&lt;none&gt;</em>}
+                          <strong>Email:</strong> {r[emailCol] || <em className="text-muted-text">&lt;none&gt;</em>}
                         </span>
                       )}
                       {phoneCol && (
                         <span>
-                          <strong>Phone:</strong> {sanitizeGuestPhoneInput(r[phoneCol]) || <em className="text-gray-400">&lt;none&gt;</em>}
+                          <strong>Phone:</strong> {sanitizeGuestPhoneInput(r[phoneCol]) || <em className="text-muted-text">&lt;none&gt;</em>}
                         </span>
                       )}
                       {dietaryNotesCol && (
                         <span>
-                          <strong>Dietary:</strong> {r[dietaryNotesCol] || <em className="text-gray-400">&lt;none&gt;</em>}
+                          <strong>Dietary:</strong> {r[dietaryNotesCol] || <em className="text-muted-text">&lt;none&gt;</em>}
                         </span>
                       )}
                       {plusOneCol && (
@@ -2360,17 +2360,17 @@ export function CsvImportWizardModal({
                       )}
                       {plusOneNameCol && (
                         <span>
-                          <strong>Plus-One Name:</strong> {r[plusOneNameCol] || <em className="text-gray-400">&lt;none&gt;</em>}
+                          <strong>Plus-One Name:</strong> {r[plusOneNameCol] || <em className="text-muted-text">&lt;none&gt;</em>}
                         </span>
                       )}
                       {plusOneFirstNameCol && (
                         <span>
-                          <strong>Plus-One First:</strong> {r[plusOneFirstNameCol] || <em className="text-gray-400">&lt;none&gt;</em>}
+                          <strong>Plus-One First:</strong> {r[plusOneFirstNameCol] || <em className="text-muted-text">&lt;none&gt;</em>}
                         </span>
                       )}
                       {plusOneLastNameCol && (
                         <span>
-                          <strong>Plus-One Last:</strong> {r[plusOneLastNameCol] || <em className="text-gray-400">&lt;none&gt;</em>}
+                          <strong>Plus-One Last:</strong> {r[plusOneLastNameCol] || <em className="text-muted-text">&lt;none&gt;</em>}
                         </span>
                       )}
                     </div>
@@ -2409,7 +2409,7 @@ export function CsvImportWizardModal({
                   Updated: {summary.updatedCount}
                 </span>
                 {isValidating && (
-                  <span className="text-[11px] text-gray-500 italic animate-pulse">
+                  <span className="text-[11px] text-muted-text italic animate-pulse">
                     Validating...
                   </span>
                 )}
@@ -2525,7 +2525,7 @@ export function CsvImportWizardModal({
                   })}
                   {filteredRows.length === 0 && (
                     <tr>
-                      <td colSpan={21} className="p-4 text-center text-gray-500">
+                      <td colSpan={21} className="p-4 text-center text-muted-text">
                         {editableRows.length === 0 ? 'No rows remaining.' : 'No rows match the selected status filter.'}
                       </td>
                     </tr>
@@ -2574,15 +2574,15 @@ export function CsvImportWizardModal({
             <div className="grid grid-cols-3 gap-3 bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl border border-gray-200 dark:border-zinc-700 text-center max-w-md mx-auto">
               <div>
                 <div className="text-2xl font-black text-primary">{importSummary ? importSummary.imported : 0}</div>
-                <div className="text-xs uppercase font-semibold text-gray-500">Imported</div>
+                <div className="text-xs uppercase font-semibold text-muted-text">Imported</div>
               </div>
               <div>
                 <div className="text-2xl font-black text-amber-600">{importSummary ? importSummary.skipped : 0}</div>
-                <div className="text-xs uppercase font-semibold text-gray-500">Skipped</div>
+                <div className="text-xs uppercase font-semibold text-muted-text">Skipped</div>
               </div>
               <div>
                 <div className="text-2xl font-black text-blue-600">{importSummary ? importSummary.updated : 0}</div>
-                <div className="text-xs uppercase font-semibold text-gray-500">Updated</div>
+                <div className="text-xs uppercase font-semibold text-muted-text">Updated</div>
               </div>
             </div>
 

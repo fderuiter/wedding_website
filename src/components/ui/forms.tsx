@@ -190,8 +190,8 @@ export function Label({
       className={cn(
         'block text-sm font-semibold leading-none',
         state === 'error' ? 'text-[var(--form-error-text,var(--color-error-text,#dc2626))]' :
-          state === 'success' ? 'text-[var(--form-success-text,#16a34a)]' :
-            state === 'warning' ? 'text-[var(--form-warning-text,#ca8a04)]' :
+          state === 'success' ? 'text-[var(--form-success-text,var(--color-status-success-text,#166534))]' :
+            state === 'warning' ? 'text-[var(--form-warning-text,var(--color-warning-text,#78350f))]' :
               'text-[var(--form-label-text,var(--color-primary-text,#111827))]',
         className
       )}
@@ -230,10 +230,10 @@ export function Input({
   };
 
   const stateStyles = {
-    default: 'border-[var(--input-border,var(--color-surface-border,#d1d5db))] focus-visible:ring-[var(--input-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
-    error: 'border-[var(--input-error-border,var(--color-error-text,#ef4444))] focus-visible:ring-[var(--input-error-focus-ring,var(--color-error-text,#ef4444))]',
-    success: 'border-[var(--input-success-border,#22c55e)] focus-visible:ring-[var(--input-success-focus-ring,#22c55e)]',
-    warning: 'border-[var(--input-warning-border,#f59e0b)] focus-visible:ring-[var(--input-warning-focus-ring,#f59e0b)]',
+    default: 'border-[var(--input-border,var(--color-surface-border,#6b7280))] focus-visible:ring-[var(--input-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
+    error: 'border-[var(--input-error-border,var(--color-error-text,#dc2626))] focus-visible:ring-[var(--input-error-focus-ring,var(--color-error-text,#dc2626))]',
+    success: 'border-[var(--input-success-border,var(--color-status-success-text,#15803d))] focus-visible:ring-[var(--input-success-focus-ring,var(--color-status-success-text,#15803d))]',
+    warning: 'border-[var(--input-warning-border,var(--color-warning-text,#b45309))] focus-visible:ring-[var(--input-warning-focus-ring,var(--color-warning-text,#b45309))]',
   };
 
   return (
@@ -277,10 +277,10 @@ export function Textarea({
   });
 
   const stateStyles = {
-    default: 'border-[var(--input-border,var(--color-surface-border,#d1d5db))] focus-visible:ring-[var(--input-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
-    error: 'border-[var(--input-error-border,var(--color-error-text,#ef4444))] focus-visible:ring-[var(--input-error-focus-ring,var(--color-error-text,#ef4444))]',
-    success: 'border-[var(--input-success-border,#22c55e)] focus-visible:ring-[var(--input-success-focus-ring,#22c55e)]',
-    warning: 'border-[var(--input-warning-border,#f59e0b)] focus-visible:ring-[var(--input-warning-focus-ring,#f59e0b)]',
+    default: 'border-[var(--input-border,var(--color-surface-border,#6b7280))] focus-visible:ring-[var(--input-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
+    error: 'border-[var(--input-error-border,var(--color-error-text,#dc2626))] focus-visible:ring-[var(--input-error-focus-ring,var(--color-error-text,#dc2626))]',
+    success: 'border-[var(--input-success-border,var(--color-status-success-text,#15803d))] focus-visible:ring-[var(--input-success-focus-ring,var(--color-status-success-text,#15803d))]',
+    warning: 'border-[var(--input-warning-border,var(--color-warning-text,#b45309))] focus-visible:ring-[var(--input-warning-focus-ring,var(--color-warning-text,#b45309))]',
   };
 
   return (
@@ -322,10 +322,10 @@ export function Select({
   });
 
   const stateStyles = {
-    default: 'border-[var(--input-border,var(--color-surface-border,#d1d5db))] focus-visible:ring-[var(--input-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
-    error: 'border-[var(--input-error-border,var(--color-error-text,#ef4444))] focus-visible:ring-[var(--input-error-focus-ring,var(--color-error-text,#ef4444))]',
-    success: 'border-[var(--input-success-border,#22c55e)] focus-visible:ring-[var(--input-success-focus-ring,#22c55e)]',
-    warning: 'border-[var(--input-warning-border,#f59e0b)] focus-visible:ring-[var(--input-warning-focus-ring,#f59e0b)]',
+    default: 'border-[var(--input-border,var(--color-surface-border,#6b7280))] focus-visible:ring-[var(--input-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
+    error: 'border-[var(--input-error-border,var(--color-error-text,#dc2626))] focus-visible:ring-[var(--input-error-focus-ring,var(--color-error-text,#dc2626))]',
+    success: 'border-[var(--input-success-border,var(--color-status-success-text,#15803d))] focus-visible:ring-[var(--input-success-focus-ring,var(--color-status-success-text,#15803d))]',
+    warning: 'border-[var(--input-warning-border,var(--color-warning-text,#b45309))] focus-visible:ring-[var(--input-warning-focus-ring,var(--color-warning-text,#b45309))]',
   };
 
   return (
@@ -367,10 +367,10 @@ export function Checkbox({
   });
 
   const stateStyles = {
-    default: 'border-[var(--input-border,var(--color-surface-border,#d1d5db))] text-[var(--color-primary,#B91C1C)] focus-visible:ring-[var(--input-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
-    error: 'border-[var(--input-error-border,var(--color-error-text,#ef4444))] text-[var(--form-error-text,var(--color-error-text,#ef4444))] focus-visible:ring-[var(--input-error-focus-ring,var(--color-error-text,#ef4444))]',
-    success: 'border-[var(--input-success-border,#22c55e)] text-[var(--form-success-text,#22c55e)] focus-visible:ring-[var(--input-success-focus-ring,#22c55e)]',
-    warning: 'border-[var(--input-warning-border,#f59e0b)] text-[var(--form-warning-text,#ca8a04)] focus-visible:ring-[var(--input-warning-focus-ring,#f59e0b)]',
+    default: 'border-[var(--input-border,var(--color-surface-border,#6b7280))] text-[var(--color-primary,#B91C1C)] focus-visible:ring-[var(--input-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
+    error: 'border-[var(--input-error-border,var(--color-error-text,#dc2626))] text-[var(--form-error-text,var(--color-error-text,#dc2626))] focus-visible:ring-[var(--input-error-focus-ring,var(--color-error-text,#dc2626))]',
+    success: 'border-[var(--input-success-border,var(--color-status-success-text,#15803d))] text-[var(--form-success-text,var(--color-status-success-text,#166534))] focus-visible:ring-[var(--input-success-focus-ring,var(--color-status-success-text,#15803d))]',
+    warning: 'border-[var(--input-warning-border,var(--color-warning-text,#b45309))] text-[var(--form-warning-text,var(--color-warning-text,#78350f))] focus-visible:ring-[var(--input-warning-focus-ring,var(--color-warning-text,#b45309))]',
   };
 
   return (
@@ -421,10 +421,10 @@ export function FormMessage({
   }, [resolvedId, hasContent, registerMessage]);
 
   const stateStyles = {
-    default: 'text-[var(--form-message-text,var(--color-secondary-text,#6b7280))]',
+    default: 'text-[var(--form-message-text,var(--color-muted-text,#4b5563))]',
     error: 'text-[var(--form-error-text,var(--color-error-text,#dc2626))] font-medium',
-    success: 'text-[var(--form-success-text,#16a34a)] font-medium',
-    warning: 'text-[var(--form-warning-text,#ca8a04)] font-medium',
+    success: 'text-[var(--form-success-text,var(--color-status-success-text,#166534))] font-medium',
+    warning: 'text-[var(--form-warning-text,var(--color-warning-text,#78350f))] font-medium',
   };
 
   const role = propRole ?? (state === 'error' ? 'alert' : 'status');

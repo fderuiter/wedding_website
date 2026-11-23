@@ -103,7 +103,7 @@ function WeddingPartyManagerModalContent({ isOpen, onClose }: WeddingPartyManage
         )}
 
         {isLoading && (
-          <div className="py-8 text-center text-gray-500">Loading wedding party members...</div>
+          <div className="py-8 text-center text-muted-text">Loading wedding party members...</div>
         )}
 
         {error && (

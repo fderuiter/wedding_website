@@ -157,7 +157,15 @@ jest.mock('@react-three/rapier', () => {
 });
 
 jest.mock('next/link', () => {
-  const MockLink = ({ children, href }: { children: React.ReactNode; href: string }) => <a href={href}>{children}</a>;
+  const MockLink = ({
+    children,
+    href,
+    ...rest
+  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { children: React.ReactNode; href: string }) => (
+    <a href={href} {...rest}>
+      {children}
+    </a>
+  );
   MockLink.displayName = 'MockLink';
   return MockLink;
 });
@@ -452,5 +460,35 @@ describe('HeartClient Easter Egg Accessibility and Live Region', () => {
 
     getContextSpy.mockRestore();
     delete (window as Window & { WebGL2RenderingContext?: unknown }).WebGL2RenderingContext;
+  });
+
+  it('renders calibrated inverse Button and Link overlay controls without raw bg-white/80 or nested button-inside-anchor markup in both WebGL and fallback views', () => {
+    const { unmount } = render(<HeartClient partner1Name="Abbi" partner2Name="Fred" />);
+
+    const resetBtn = screen.getByRole('button', { name: 'Reset heart' });
+    const backHomeLink = screen.getByRole('link', { name: 'Back Home' });
+
+    expect(resetBtn).toHaveClass('bg-[var(--toast-action-bg,#ffffff)]');
+    expect(resetBtn).toHaveClass('text-[var(--toast-action-text,#111827)]');
+    expect(resetBtn).toHaveClass('focus-visible:ring-[var(--toast-action-bg,#ffffff)]');
+    expect(resetBtn).not.toHaveClass('bg-white/80');
+    expect(backHomeLink).toHaveClass('bg-[var(--toast-action-bg,#ffffff)]');
+    expect(backHomeLink).toHaveClass('text-[var(--toast-action-text,#111827)]');
+    expect(backHomeLink).toHaveClass('focus-visible:ring-[var(--toast-action-bg,#ffffff)]');
+    expect(backHomeLink).not.toHaveClass('bg-white/80');
+    expect(backHomeLink.querySelector('button')).toBeNull();
+
+    unmount();
+
+    (window as Window & { __mockWebGLSupport?: boolean }).__mockWebGLSupport = false;
+    render(<HeartClient partner1Name="Abbi" partner2Name="Fred" />);
+
+    expect(screen.getByTestId('webgl-fallback-container')).toBeInTheDocument();
+    const fallbackBackLink = screen.getByRole('link', { name: 'Back Home' });
+    expect(fallbackBackLink).toHaveClass('bg-[var(--toast-action-bg,#ffffff)]');
+    expect(fallbackBackLink).toHaveClass('text-[var(--toast-action-text,#111827)]');
+    expect(fallbackBackLink).toHaveClass('focus-visible:ring-[var(--toast-action-bg,#ffffff)]');
+    expect(fallbackBackLink).not.toHaveClass('bg-white/80');
+    expect(fallbackBackLink.querySelector('button')).toBeNull();
   });
 });
