@@ -434,8 +434,8 @@ export function generateDynamicStyles(
     darkCustomTokenOverrides[k] = v;
   }
 
-  const lightPresetTokens = {
-    ...baseLightTokens,
+  const lightPresetTokens: Record<string, string> = {
+    ...(baseLightTokens as unknown as Record<string, string>),
     ...sanitizedCustomTokens,
   };
 
@@ -443,6 +443,57 @@ export function generateDynamicStyles(
     ...(baseDarkTokens as unknown as Record<string, string>),
     ...darkCustomTokenOverrides,
   };
+
+  const calibrateInverseAndToastTokens = (
+    targetTokens: Record<string, string>,
+    hasCustomBadgeText: boolean
+  ) => {
+    const resolveHex = (raw: string | undefined, fallback: string): string => {
+      if (!raw) return fallback;
+      const parsed = parseColorRgb(raw);
+      return parsed ? rgbToHex(parsed.r, parsed.g, parsed.b) : fallback;
+    };
+
+    const actionBgHex = resolveHex(targetTokens['--toast-action-bg'], '#ffffff');
+    const actionHoverBgHex = resolveHex(targetTokens['--toast-action-hover-bg'], '#e5e7eb');
+    const rawActionTextHex = resolveHex(targetTokens['--toast-action-text'], '#111827');
+
+    let calibratedActionText = optimizeContrast(rawActionTextHex, actionBgHex, 4.5);
+    calibratedActionText = optimizeContrast(calibratedActionText, actionHoverBgHex, 4.5);
+    let finalHoverBgHex = actionHoverBgHex;
+    if (getContrastRatio(hexToRgb(calibratedActionText), hexToRgb(actionBgHex)) < 4.5) {
+      const bgLum = getLuminance(hexToRgb(actionBgHex));
+      finalHoverBgHex = bgLum > 0.179 ? '#e5e7eb' : '#1f2937';
+      calibratedActionText = optimizeContrast(
+        optimizeContrast(rawActionTextHex, actionBgHex, 4.5),
+        finalHoverBgHex,
+        4.5
+      );
+    }
+
+    targetTokens['--toast-action-bg'] = actionBgHex;
+    targetTokens['--toast-action-hover-bg'] = finalHoverBgHex;
+    targetTokens['--toast-action-text'] = calibratedActionText;
+
+    const badgeInverseBgHex = resolveHex(targetTokens['--badge-inverse-bg'], '#ffffff');
+    const useCustomPrimaryForBadge =
+      !hasCustomBadgeText && safePrimary.toLowerCase() !== '#b91c1c' && preset === 'classic';
+    const rawBadgeTextHex = useCustomPrimaryForBadge
+      ? safePrimary
+      : resolveHex(targetTokens['--badge-inverse-text'], safePrimary);
+
+    targetTokens['--badge-inverse-bg'] = badgeInverseBgHex;
+    targetTokens['--badge-inverse-text'] = optimizeContrast(rawBadgeTextHex, badgeInverseBgHex, 4.5);
+  };
+
+  calibrateInverseAndToastTokens(
+    lightPresetTokens,
+    '--badge-inverse-text' in sanitizedCustomTokens
+  );
+  calibrateInverseAndToastTokens(
+    darkPresetTokens,
+    '--badge-inverse-text' in darkCustomTokenOverrides
+  );
 
   const darkCardAndInputBg = resolveDarkSurfaceBg(
     resolveDarkSurfaceBg('#18181b', darkPresetTokens['--card-bg']),

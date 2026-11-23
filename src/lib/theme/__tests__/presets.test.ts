@@ -78,9 +78,19 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(tokens['--toast-confirm-text']).toBeDefined();
       expect(tokens['--toast-radius']).toBeDefined();
       expect(tokens['--toast-close-hover-bg']).toBeDefined();
+      expect(tokens['--toast-action-bg']).toBeDefined();
+      expect(tokens['--toast-action-hover-bg']).toBeDefined();
+      expect(tokens['--toast-action-text']).toBeDefined();
+      expect(tokens['--badge-inverse-bg']).toBeDefined();
+      expect(tokens['--badge-inverse-text']).toBeDefined();
 
       // Check dark tokens schema
       expect(tokens.darkTokens).toBeDefined();
+      expect(tokens.darkTokens?.['--toast-action-bg']).toBeDefined();
+      expect(tokens.darkTokens?.['--toast-action-hover-bg']).toBeDefined();
+      expect(tokens.darkTokens?.['--toast-action-text']).toBeDefined();
+      expect(tokens.darkTokens?.['--badge-inverse-bg']).toBeDefined();
+      expect(tokens.darkTokens?.['--badge-inverse-text']).toBeDefined();
       expect(tokens.darkTokens?.['--dialog-bg']).toBeDefined();
       expect(tokens.darkTokens?.['--dialog-border-color']).toBeDefined();
       expect(tokens.darkTokens?.['--dialog-title-color']).toBeDefined();

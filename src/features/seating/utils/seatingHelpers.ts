@@ -7,7 +7,14 @@ import {
 export const ADDRESS_COLLECTION_TAG = 'address-collection';
 
 export interface DietaryBadgeInfo {
-  category: 'gluten-free' | 'vegan' | 'vegetarian' | 'dairy-free' | 'nut-free' | 'other';
+  category:
+    | 'gluten-free'
+    | 'vegan'
+    | 'vegetarian'
+    | 'dairy-free'
+    | 'nut-free'
+    | 'kids'
+    | 'other';
   shortLabel: string;
   label: string;
 }
@@ -103,35 +110,58 @@ export function isGuestEligibleForSeating(guest: SeatingGuestCandidate): boolean
  */
 export function getDietaryBadges(
   notes: string | null | undefined,
-  structuredSource?: unknown
+  structuredSource?: unknown,
+  partyTags?: unknown
 ): DietaryBadgeInfo[] {
-  if (!matchDietaryCategory(notes, 'has_restriction', structuredSource)) {
+  const trimmed = notes ? notes.trim() : '';
+  const hasPartyKidsTag =
+    Array.isArray(partyTags) &&
+    partyTags.some(
+      (tag) =>
+        typeof tag === 'string' && /^(kid|kids|child|children|kids[-_ ]meal)$/i.test(tag.trim())
+    );
+  const hasKids = hasPartyKidsTag || matchDietaryCategory(trimmed, 'kids', structuredSource);
+  const hasRestriction = matchDietaryCategory(notes, 'has_restriction', structuredSource);
+
+  if (!hasRestriction && !hasKids) {
     return [];
   }
 
-  const trimmed = notes ? notes.trim() : '';
   const badges: DietaryBadgeInfo[] = [];
 
-  if (matchDietaryCategory(trimmed, 'gluten-free', structuredSource)) {
-    badges.push({ category: 'gluten-free', shortLabel: 'GF', label: 'Gluten-Free' });
+  if (hasRestriction) {
+    if (matchDietaryCategory(trimmed, 'gluten-free', structuredSource)) {
+      badges.push({ category: 'gluten-free', shortLabel: 'GF', label: 'Gluten-Free' });
+    }
+    if (matchDietaryCategory(trimmed, 'vegan', structuredSource)) {
+      badges.push({ category: 'vegan', shortLabel: 'VG', label: 'Vegan' });
+    }
+    if (matchDietaryCategory(trimmed, 'vegetarian', structuredSource)) {
+      badges.push({ category: 'vegetarian', shortLabel: 'V', label: 'Vegetarian' });
+    }
+    if (matchDietaryCategory(trimmed, 'dairy-free', structuredSource)) {
+      badges.push({ category: 'dairy-free', shortLabel: 'DF', label: 'Dairy-Free' });
+    }
+    if (matchDietaryCategory(trimmed, 'nut-free', structuredSource)) {
+      badges.push({ category: 'nut-free', shortLabel: 'NF', label: 'Nut-Free' });
+    }
   }
-  if (matchDietaryCategory(trimmed, 'vegan', structuredSource)) {
-    badges.push({ category: 'vegan', shortLabel: 'VG', label: 'Vegan' });
+
+  if (hasKids) {
+    badges.push({ category: 'kids', shortLabel: 'KIDS', label: 'Kids Meal' });
   }
-  if (matchDietaryCategory(trimmed, 'vegetarian', structuredSource)) {
-    badges.push({ category: 'vegetarian', shortLabel: 'V', label: 'Vegetarian' });
-  }
-  if (matchDietaryCategory(trimmed, 'dairy-free', structuredSource)) {
-    badges.push({ category: 'dairy-free', shortLabel: 'DF', label: 'Dairy-Free' });
-  }
-  if (matchDietaryCategory(trimmed, 'nut-free', structuredSource)) {
-    badges.push({ category: 'nut-free', shortLabel: 'NF', label: 'Nut-Free' });
-  }
-  if (matchDietaryCategory(trimmed, 'other', structuredSource)) {
-    const fallbackLabel = trimmed || 'Dietary Restriction';
-    const cleanLabel =
-      fallbackLabel.length > 24 ? `${fallbackLabel.slice(0, 22).trimEnd()}…` : fallbackLabel;
-    badges.push({ category: 'other', shortLabel: 'DIET', label: cleanLabel });
+
+  if (hasRestriction && matchDietaryCategory(trimmed, 'other', structuredSource)) {
+    const isPureKidsNote =
+      Boolean(trimmed) &&
+      /^(kid|kids|child|children)(\s+meals?)?$/i.test(trimmed) &&
+      !matchDietaryCategory(null, 'other', structuredSource);
+    if (!isPureKidsNote) {
+      const fallbackLabel = trimmed || 'Dietary Restriction';
+      const cleanLabel =
+        fallbackLabel.length > 24 ? `${fallbackLabel.slice(0, 22).trimEnd()}…` : fallbackLabel;
+      badges.push({ category: 'other', shortLabel: 'DIET', label: cleanLabel });
+    }
   }
 
   return badges;

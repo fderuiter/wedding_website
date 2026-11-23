@@ -29,7 +29,7 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
 
 5. **Make Your Changes:** Write your code, fix the bug, or improve the docs while adhering to our TypeScript, React, Tailwind CSS, and ESLint rules:
    - **Scaffold New Feature Modules:** When introducing a new domain feature under `src/features/`, run `npm run scaffold -- <feature-name>` ([`scripts/scaffold-feature.mjs`](../scripts/scaffold-feature.mjs), kebab-case) to generate the standard `api/`, `components/`, `hooks/`, `lib/`, `schemas.ts`, `types.ts`, `repository.ts`, `service.ts`, and public `index.ts` barrel structure.
-   - **Strict ESLint Enforcement:** Run `npm run lint` (or `npm run lint:fix`). [`eslint.config.mjs`](../eslint.config.mjs) enforces **error-level** rules that fail builds, pre-commit hooks, and CI — including single quotes (`@stylistic/quotes`), 2-space indentation (`@stylistic/indent`), required semicolons (`@stylistic/semi`), public feature barrel imports only (`no-restricted-imports` banning `@/features/*/*`), utility import boundaries (`local-rules/no-restricted-utility-imports`), no `require()` imports outside `.cjs` (`@typescript-eslint/no-require-imports`), and zero unused imports (`unused-imports/no-unused-imports`).
+   - **Strict ESLint Enforcement:** Run `npm run lint` (or `npm run lint:fix`). [`eslint.config.mjs`](../eslint.config.mjs) enforces **error-level** rules that fail builds, pre-commit hooks, and CI — including single quotes (`@stylistic/quotes`), 2-space indentation (`@stylistic/indent`), required semicolons (`@stylistic/semi`), `prefer-const`, public feature barrel imports only (`no-restricted-imports` banning `@/features/*/*`), utility import boundaries (`local-rules/no-restricted-utility-imports`), no `require()` imports outside `.cjs` (`@typescript-eslint/no-require-imports`), zero unused imports or variables (`unused-imports/no-unused-imports`, `unused-imports/no-unused-vars`), React Hook dependencies (`react-hooks/exhaustive-deps`), JSX entities and ARIA role support (`react/no-unescaped-entities`, `jsx-a11y/role-supports-aria-props`), Next.js image/navigation guardrails (`@next/next/no-img-element`, `@next/next/no-location-assign-relative-destination`), and `@typescript-eslint/no-explicit-any` outside the shrink-only `LEGACY_EXPLICIT_ANY_BASELINE_FILES` list — with `--max-warnings 0` enforced in `npm run lint` and `--max-warnings=0` on staged files in `lint-staged`.
 6. **Test Your Changes & Run Quality Gates:** Before submitting your PR, ensure all quality gates pass locally. You can run all checks at once or individual commands:
 
    - **Run All Quality Checks:**
@@ -42,7 +42,7 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
    - **Targeted Quality & Documentation Sync Commands:**
      - `npm run check:static` - Run the shared static and container configuration checks defined in [`scripts/check-quality.ts`](../scripts/check-quality.ts) (`--static`).
      - `npm run check:doc-sync` - Verify generated documentation (`public/openapi.json`, `ARCHITECTURE.md`, and `FEATURE_MODULES.md`) is synchronized with codebase schemas without drift (`npx tsx scripts/generate-openapi.ts && npx tsx scripts/generate-docs.ts`).
-     - `npm run typecheck`, `npm run lint`, & `npm run lint:unused` - Check TypeScript types (see [AGENTS.md](../AGENTS.md) for the five-file `tsconfig*.json` split), ESLint rules, and Knip unused exports.
+     - `npm run typecheck`, `npm run lint`, & `npm run lint:unused` - Check TypeScript types (see [AGENTS.md](../AGENTS.md) for the five-file `tsconfig*.json` split), ESLint rules (`--max-warnings 0` with `.eslintcache` and the shrink-only `LEGACY_EXPLICIT_ANY_BASELINE_FILES` ratchet), and Knip unused exports.
      - `npm test`, `npm run test:e2e`, & `npm run test:a11y` - Run Jest unit/integration tests, Playwright E2E specs, and WCAG 2.2 AA accessibility audits (see [TESTING.md](TESTING.md) for `wedding_test` database isolation, E2E secret alignment, and container smoke tests).
 7. **Commit Your Changes:** Write clear commit messages. Something like `fix: Correct spelling on registry item description` or `feat: Add animation to RSVP button`.
 
@@ -51,7 +51,7 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
     git commit -m "fix: Correct spelling on registry item description"
     ```
 
-    Committing triggers [`.githooks/pre-commit`](../.githooks/pre-commit) (installed automatically by `npm ci`), which runs `npx lint-staged` (`eslint --fix` on staged `*.{js,jsx,ts,tsx,mjs,cjs}` files) without stashing or resetting unstaged edits or untracked files.
+    Committing triggers [`.githooks/pre-commit`](../.githooks/pre-commit) (installed automatically by `npm ci`), which runs `npx lint-staged` (`eslint --fix --max-warnings=0` on staged `*.{js,jsx,ts,tsx,mjs,cjs}` files) without stashing or resetting unstaged edits or untracked files.
 
 8. **Push to Your Fork:**
 
@@ -109,7 +109,7 @@ All new utility functions placed in the global `src/utils/` folder must follow t
 * **TypeScript:** Strict mode (`strict`, `noUnusedLocals`, `noUnusedParameters`) is enforced across all five `tsconfig*.json` files. Explicitly define types and avoid `any`.
 * **React:** Functional components with Hooks are the way.
 * **Tailwind CSS:** Utility classes first. Avoid custom CSS unless absolutely necessary.
-* **Formatting & Imports (`eslint.config.mjs`):** Single quotes, 2-space indentation, semicolons, zero unused imports, no `require()` outside `.cjs`, and cross-feature imports strictly via `@/features/<domain>` public barrels are enforced as **errors** by `npm run lint` (use `npm run lint:fix` to auto-format).
+* **Formatting & Imports (`eslint.config.mjs`):** Single quotes, 2-space indentation, semicolons, `prefer-const`, zero unused imports or variables (`unused-imports/no-unused-imports`, `unused-imports/no-unused-vars`), no `require()` outside `.cjs`, cross-feature imports strictly via `@/features/<domain>` public barrels, React Hook dependencies (`react-hooks/exhaustive-deps`), JSX entity/ARIA role rules (`react/no-unescaped-entities`, `jsx-a11y/role-supports-aria-props`), Next.js image/navigation rules (`@next/next/no-img-element`, `@next/next/no-location-assign-relative-destination`), and `@typescript-eslint/no-explicit-any` outside the shrink-only legacy baseline are enforced as **errors** by `npm run lint` (`--max-warnings 0`; use `npm run lint:fix` to auto-format) and `lint-staged` (`--max-warnings=0`).
 
 ## Code of Conduct
 

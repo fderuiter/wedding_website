@@ -210,14 +210,14 @@ Instead of building on the VPS, operators can pull attested multi-arch `ghcr.io`
     ports:
       - "127.0.0.1:${PORT:-3000}:3000"
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"const h=(process.env.ALLOWED_HOSTS||'localhost').split(',').map((s)=>s.trim().replace(/^\\*\\./,'')).find(Boolean)||'localhost';fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live',{headers:{Host:h}}).then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))\""]
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live').then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))\""]
       interval: 15s
       timeout: 5s
       retries: 3
       start_period: 20s
 ```
 
-Verify live container status with `docker compose ps`. Continuous container liveness checks hit `/api/live` (`{ "status": "alive", "timestamp": "..." }`) so brief PostgreSQL blips do not restart warm containers, while deployment rollout and readiness checks query `/api/health` (returning HTTP `200 OK` when PostgreSQL is connected, or `/api/ready` for unwrapped readiness status):
+Verify live container status with `docker compose ps`. Stateless `GET` and `HEAD` probes to `/api/live`, `/api/health`, and `/api/ready` enforce syntactic `Host` validation only, so loopback `127.0.0.1` probes succeed without `Host` header overrides even when `ALLOWED_HOSTS` lists only public domains. Continuous container liveness checks hit `/api/live` (`{ "status": "alive", "timestamp": "..." }`) so brief PostgreSQL blips do not restart warm containers, while deployment rollout and readiness checks query `/api/health` (returning HTTP `200 OK` when PostgreSQL is connected, or `/api/ready` for unwrapped readiness status):
 ```json
 {
   "success": true,

@@ -187,4 +187,29 @@ describe('Dropzone Component', () => {
 
     expect(onUploadError).toHaveBeenCalledWith('Network error during upload');
   });
+
+  it('exposes shared UploadAlert semantics and sibling file input and passes jest-axe in resting and error states', async () => {
+    const { container } = render(<Dropzone />);
+    const axeRules = { rules: { 'label-content-name-mismatch': { enabled: true } } };
+    expect(await axe(container, axeRules)).toHaveNoViolations();
+
+    const dropzone = screen.getByRole('button', { name: defaultPrompt });
+    const fileInput = screen.getByTestId('dropzone-file-input');
+    expect(dropzone.contains(fileInput)).toBe(false);
+
+    const invalidFile = new File(['dummy content'], 'document.pdf', {
+      type: 'application/pdf',
+    });
+
+    fireEvent.drop(dropzone, {
+      dataTransfer: {
+        files: [invalidFile],
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveClass('text-[var(--color-error-text,#dc2626)]');
+    });
+    expect(await axe(container, axeRules)).toHaveNoViolations();
+  });
 });

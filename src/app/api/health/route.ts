@@ -21,6 +21,11 @@ export const GET = withApiMiddleware(async () => {
       database: dbStatus,
       ...(isHealthy ? {} : { error: 'Database connection failed' }),
     },
-    { status: statusCode }
+    {
+      status: statusCode,
+      headers: {
+        'Cache-Control': 'no-store',
+      },
+    }
   );
 });

@@ -85,7 +85,11 @@ export const SubEventSchema = z.object({
 export type SubEventDTO = z.infer<typeof SubEventSchema>;
 
 export const SubEventInputSchema = deriveAdminInputSchema(SubEventSchema, false);
-export const SubEventUpdateInputSchema = deriveAdminInputSchema(SubEventSchema, true);
+export const SubEventUpdateInputSchema = deriveAdminInputSchema(SubEventSchema, true).extend({
+  choiceRenames: z
+    .record(z.string().max(100), z.record(z.string().max(150), z.string().max(150)))
+    .optional(),
+});
 
 export const SubEventRsvpSubmissionItemSchema = z.object({
   subEventId: z.string().min(1, 'Sub-event ID is required.'),
@@ -138,6 +142,24 @@ export const GetAccessMatrixQuerySchema = z.object({
 });
 
 export type GetAccessMatrixQueryDTO = z.infer<typeof GetAccessMatrixQuerySchema>;
+
+export interface AccessMatrixGuestEventRsvp {
+  status: 'attending' | 'declined' | 'pending';
+  plusOneCount: number;
+  plusOneNames: string[];
+  dietaryNotes: string | null;
+  meals: Array<{
+    attendee: string;
+    optionId: string;
+    label: string;
+    dietaryTags: string[];
+  }>;
+  answers: Array<{
+    questionId: string;
+    prompt: string;
+    answer: string;
+  }>;
+}
 
 export const AdminInvitationRsvpsQuerySchema = z.object({
   invitationCodeId: z.string().trim().min(1, 'invitationCodeId is required.'),

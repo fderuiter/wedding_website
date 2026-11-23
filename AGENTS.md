@@ -9,7 +9,7 @@ This guide defines the local bootstrap, architecture boundaries, TypeScript conf
   ```bash
   CI=true npm ci
   ```
-  *(Setting `CI=true` skips `.githooks` reconfiguration inside non-interactive sandboxes while still running Prisma Client generation and documentation sync via `postinstall`.)*
+  *(Setting `CI=true` skips `.githooks` reconfiguration inside non-interactive sandboxes while still running Prisma Client generation via `postinstall`.)*
 - **Regenerate Prisma Client (after schema edits):**
   ```bash
   npm run prisma:generate
@@ -66,12 +66,12 @@ npm run quality
 ```
 
 - **Split Local Git Hooks:** [`.githooks/pre-commit`](.githooks/pre-commit) runs only `npx lint-staged` on staged files without stashing or resetting workspace edits, while [`.githooks/pre-push`](.githooks/pre-push) runs `npm run type-check`, `npm run lint:unused`, and lightweight static checks prior to push (see [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md)).
-- **Targeted Iteration:** Run `npx jest <path/to/file.test.ts> --coverage=false` for fast unit/integration feedback, `npm run typecheck && npm run lint && npm run lint:unused` for static code health, and `npm run build-storybook` whenever modifying UI stories, `.storybook/*`, or [`src/mocks/handlers.ts`](src/mocks/handlers.ts).
+- **Targeted Iteration:** Run `npx jest <path/to/file.test.ts> --coverage=false` for fast unit/integration feedback, `npm run typecheck && npm run lint && npm run lint:unused` for static code health, and `npm run build-storybook` whenever modifying UI stories, `.storybook/*`, or [`src/mocks/handlers.ts`](src/mocks/handlers.ts) (in CI, `storybook-build` and `storybook.yml` install via `npm ci --ignore-scripts` and cache Webpack output).
 - **Authoritative Testing & Setup Runbooks:** Refer to [`.github/TESTING.md`](.github/TESTING.md) for `scripts/pretest.mjs` `wedding_test` database isolation, Playwright E2E execution (`npm run test:e2e`), WCAG 2.2 AA accessibility audits (`npm run test:a11y`), PostgreSQL migration drift checks, and standalone/container smoke tests (`npm run test:standalone`, `npm run test:container`), and to [`docs/developer-setup.md`](docs/developer-setup.md) for local `.env` and `SetupWizard` bootstrap.
 
 ## 5. Repository Conventions & Guardrails
 
-- **Strict Compiler Rules:** Preserve `strict`, `noUnusedLocals`, and `noUnusedParameters` in [`tsconfig.json`](tsconfig.json). Fix types at the source instead of disabling rules or adding `@ts-ignore` / `@ts-expect-error` directives.
+- **Strict Compiler & Linter Rules:** Preserve `strict`, `noUnusedLocals`, and `noUnusedParameters` in [`tsconfig.json`](tsconfig.json), and keep ESLint (`--max-warnings 0` in `npm run lint`, `--max-warnings=0` in `lint-staged`, and the shrink-only `LEGACY_EXPLICIT_ANY_BASELINE_FILES` ratchet in [`eslint.config.mjs`](eslint.config.mjs)) and Axe ([`src/a11y-config.ts`](src/a11y-config.ts)) error-clean. Fix types and lint errors at the source instead of disabling rules or adding `@ts-ignore` / `@ts-expect-error` directives.
 - **API Route Middleware:** Wrap Next.js route handlers with `withApiMiddleware` ([`src/utils/withApiMiddleware.ts`](src/utils/withApiMiddleware.ts)). Zero-argument handlers (e.g. `withApiMiddleware(async () => ...)`) and optional `context` in direct unit test calls (`await GET(req)`) are supported.
 - **Playwright Auth Helpers:** Import E2E cookie generators and context seeders strictly from [`e2e/helpers/auth.ts`](e2e/helpers/auth.ts) rather than duplicating HMAC token signing inside `e2e/*.spec.ts` files (see [`.github/TESTING.md`](.github/TESTING.md) for secret alignment rules).
 - **Typed Test Fixtures & Knip:** Build test data with `createMockMedia` ([`src/testing/factories/mediaFactory.ts`](src/testing/factories/mediaFactory.ts)) and `createMockRegistryItem`, `createMockContributor`, `createMockCreateRegistryItemInput`, or `createMockInvitationCode` ([`src/testing/factories/registryFactory.ts`](src/testing/factories/registryFactory.ts)) whenever schemas in [`src/features/media/schemas.ts`](src/features/media/schemas.ts) or [`src/features/registry/schemas.ts`](src/features/registry/schemas.ts) evolve. Register any new test-only helper entrypoints in [`knip.json`](knip.json) so `npm run lint:unused` reports zero unused files or exports.
