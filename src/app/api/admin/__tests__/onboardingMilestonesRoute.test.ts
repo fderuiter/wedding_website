@@ -122,7 +122,16 @@ describe('GET /api/admin/onboarding-milestones', () => {
     expect(body.totalCount).toBe(5);
     expect(body.allComplete).toBe(false);
 
-    expect(prisma.invitationCode.count).toHaveBeenCalledWith({ where: { isSample: false } });
+    expect(prisma.invitationCode.count).toHaveBeenCalledWith({
+      where: {
+        isSample: false,
+        NOT: {
+          partyTags: {
+            has: 'address-collection',
+          },
+        },
+      },
+    });
     expect(prisma.registryItem.count).toHaveBeenCalledWith({ where: { isSample: false } });
     expect(prisma.seatingTable.count).toHaveBeenCalledWith({ where: { isSample: false } });
     expect(prisma.contentNode.findMany).toHaveBeenCalledWith({

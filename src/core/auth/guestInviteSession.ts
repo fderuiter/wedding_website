@@ -24,6 +24,14 @@ interface InvitationLookupRecord {
   code?: string;
   guestName?: string;
   isSample?: boolean;
+  partyTags?: unknown;
+}
+
+function hasUnpromotedAddressCollectionTag(partyTags: unknown): boolean {
+  if (!Array.isArray(partyTags)) return false;
+  return partyTags.some(
+    (tag) => typeof tag === 'string' && tag.trim().toLowerCase() === 'address-collection'
+  );
 }
 
 interface InvitationCodeLookupDelegate {
@@ -76,7 +84,7 @@ async function resolveActiveInvitationSession(
       });
     }
 
-    if (!invite || invite.isSample === true) {
+    if (!invite || invite.isSample === true || hasUnpromotedAddressCollectionTag(invite.partyTags)) {
       return null;
     }
 

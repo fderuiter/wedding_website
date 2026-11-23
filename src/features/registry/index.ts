@@ -131,6 +131,8 @@ export {
   formatGuestPlusOneNames,
   formatGuestMealSelections,
   formatGuestCustomAnswers,
+  hasAddressCollectionTag,
+  extractHouseholdNotes,
   isAddressComplete,
   generateRandomCode,
 } from './utils/invitation';

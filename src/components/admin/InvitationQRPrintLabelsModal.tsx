@@ -1,9 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Dialog } from '@/components/ui/Dialog';
+import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/Button';
 import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
+import { EnsureToastProvider } from '@/components/ui/ToastProvider';
+import { resolveConfiguredBaseUrl, useAdminSettings } from '@/hooks/admin/useAdminSettings';
 
 export interface PrintableInvitationCode {
   id: string;
@@ -34,12 +36,15 @@ const InvitationQRPrintLabelsContent: React.FC<InvitationQRPrintLabelsContentPro
   codes,
   onClose,
 }) => {
+  const { config } = useAdminSettings();
   const [template, setTemplate] = useState<LabelTemplateType>('avery_5163');
-  const [renderedCount, setRenderedCount] = useState<number>(CHUNK_SIZE);
+  const [renderedCount, setRenderedCount] = useState<number>(() =>
+    Math.min(CHUNK_SIZE, codes.length)
+  );
 
-  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const baseOrigin = resolveConfiguredBaseUrl(config?.baseUrl);
 
-  // Non-blocking chunked progressive rendering for up to 500 items
+  // Non-blocking chunked progressive rendering for up to 1,000 items
   useEffect(() => {
     if (renderedCount < codes.length) {
       const timer = setTimeout(() => {
@@ -53,7 +58,11 @@ const InvitationQRPrintLabelsContent: React.FC<InvitationQRPrintLabelsContentPro
     return codes.slice(0, renderedCount);
   }, [codes, renderedCount]);
 
+  const isRenderingPending = renderedCount < codes.length;
+  const isPrintDisabled = codes.length === 0 || isRenderingPending;
+
   const handlePrintNow = () => {
+    if (isPrintDisabled) return;
     if (typeof window !== 'undefined') {
       window.print();
     }
@@ -61,6 +70,12 @@ const InvitationQRPrintLabelsContent: React.FC<InvitationQRPrintLabelsContentPro
 
   const isAvery5163 = template === 'avery_5163';
   const qrCanvasSize = isAvery5163 ? 84 : 54;
+  const sheetTemplateClass = isAvery5163
+    ? 'qr-print-sheet--avery-5163'
+    : 'qr-print-sheet--avery-5160';
+  const cardTemplateClass = isAvery5163
+    ? 'qr-label-card--avery-5163'
+    : 'qr-label-card--avery-5160';
 
   return (
     <div className="printable-qr-labels-area space-y-6">
@@ -94,6 +109,7 @@ const InvitationQRPrintLabelsContent: React.FC<InvitationQRPrintLabelsContentPro
             variant="primary"
             size="sm"
             onClick={handlePrintNow}
+            disabled={isPrintDisabled}
             className="flex items-center gap-1.5"
             aria-label="Print label sheet"
           >
@@ -116,7 +132,7 @@ const InvitationQRPrintLabelsContent: React.FC<InvitationQRPrintLabelsContentPro
       </div>
 
       {/* Progress indicator during large rendering */}
-      {renderedCount < codes.length && (
+      {isRenderingPending && (
         <div className="no-print py-2 px-3 bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-200 rounded-lg text-xs flex items-center justify-between">
           <span>Preparing QR code canvases...</span>
           <span className="font-semibold">{renderedCount} / {codes.length}</span>
@@ -126,7 +142,8 @@ const InvitationQRPrintLabelsContent: React.FC<InvitationQRPrintLabelsContentPro
       {/* Printable Sheet Grid Container */}
       <div
         data-testid="qr-print-sheet"
-        className={`qr-print-sheet grid gap-3 max-h-[70vh] overflow-y-auto p-2 border border-gray-100 dark:border-zinc-800 rounded-lg bg-white ${
+        data-template={template}
+        className={`qr-print-sheet ${sheetTemplateClass} grid gap-3 max-h-[70vh] overflow-y-auto p-2 border border-gray-100 dark:border-zinc-800 rounded-lg bg-white ${
           isAvery5163 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3'
         }`}
         style={{
@@ -134,15 +151,15 @@ const InvitationQRPrintLabelsContent: React.FC<InvitationQRPrintLabelsContentPro
         }}
       >
         {visibleCodes.map((item) => {
-          const rsvpUrl = `${origin}/guest?code=${encodeURIComponent(item.code || '')}`;
+          const rsvpUrl = `${baseOrigin}/guest?code=${encodeURIComponent(item.code || '')}`;
           const plusOne = [item.plusOneFirstName, item.plusOneLastName].filter(Boolean).join(' ');
 
           return (
             <div
               key={item.id}
               data-testid="qr-label-card"
-              className={`qr-label-card border border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-3 bg-white text-gray-900 flex items-center gap-3 break-inside-avoid ${
-                isAvery5163 ? 'min-h-[1.9in]' : 'min-h-[0.95in] p-2'
+              className={`qr-label-card ${cardTemplateClass} border border-dashed border-gray-300 dark:border-gray-600 rounded-lg bg-white text-gray-900 flex items-center gap-3 break-inside-avoid ${
+                isAvery5163 ? 'min-h-[1.9in] p-3' : 'min-h-[0.95in] p-2'
               }`}
               style={{
                 pageBreakInside: 'avoid',
@@ -151,7 +168,7 @@ const InvitationQRPrintLabelsContent: React.FC<InvitationQRPrintLabelsContentPro
               }}
             >
               {/* QR Canvas */}
-              <div className="shrink-0 p-1 bg-white rounded border border-gray-100 flex items-center justify-center">
+              <div className="qr-label-qr-box shrink-0 p-1 bg-white rounded border border-gray-100 flex items-center justify-center">
                 <ThemedQRCode
                   value={rsvpUrl}
                   size={qrCanvasSize * 2}
@@ -164,24 +181,24 @@ const InvitationQRPrintLabelsContent: React.FC<InvitationQRPrintLabelsContentPro
               </div>
 
               {/* Label Guest Details */}
-              <div className="flex-1 min-w-0 leading-tight">
-                <div className="font-bold text-sm text-gray-900 truncate" title={item.guestName}>
+              <div className="qr-label-details flex-1 min-w-0 leading-tight">
+                <div className="qr-label-guest-name font-bold text-sm text-gray-900 truncate" title={item.guestName}>
                   {item.guestName}
                 </div>
                 {plusOne && (
-                  <div className="text-[11px] text-gray-600 truncate">
+                  <div className="qr-label-plus-one text-[11px] text-gray-600 truncate">
                     &amp; {plusOne}
                   </div>
                 )}
                 {item.householdName && !plusOne && (
-                  <div className="text-[10px] text-purple-700 truncate font-medium">
+                  <div className="qr-label-household text-[10px] text-purple-700 truncate font-medium">
                     {item.householdName}
                   </div>
                 )}
-                <div className="mt-1 font-mono text-xs font-semibold text-red-600 tracking-wide">
+                <div className="qr-label-code mt-1 font-mono text-xs font-semibold text-red-600 tracking-wide">
                   {item.code}
                 </div>
-                <div className="mt-0.5 text-[9px] uppercase tracking-wider text-gray-400 font-sans">
+                <div className="qr-label-cta mt-0.5 text-[9px] uppercase tracking-wider text-gray-400 font-sans">
                   Scan to RSVP
                 </div>
               </div>
@@ -198,6 +215,13 @@ export const InvitationQRPrintLabelsModal: React.FC<InvitationQRPrintLabelsModal
   onClose,
   codes,
 }) => {
+  const handleClose = () => {
+    if (typeof document !== 'undefined') {
+      document.body.classList.remove('printing-qr-labels');
+    }
+    onClose();
+  };
+
   useEffect(() => {
     if (typeof document === 'undefined') return;
     if (isOpen) {
@@ -210,27 +234,49 @@ export const InvitationQRPrintLabelsModal: React.FC<InvitationQRPrintLabelsModal
     };
   }, [isOpen]);
 
-  const handleClose = () => {
-    if (typeof document !== 'undefined') {
-      document.body.classList.remove('printing-qr-labels');
-    }
-    onClose();
-  };
+  useEffect(() => {
+    if (!isOpen || typeof window === 'undefined') return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        if (typeof document !== 'undefined') {
+          document.body.classList.remove('printing-qr-labels');
+        }
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
+  if (!isOpen || typeof document === 'undefined') return null;
 
-  return (
-    <Dialog
-      isOpen={isOpen}
-      onClose={handleClose}
-      title="Printable Invitation QR Labels"
-      className="max-w-4xl w-full p-6 printable-qr-modal-dialog"
-    >
-      <InvitationQRPrintLabelsContent
-        key={codes.length}
-        codes={codes}
-        onClose={handleClose}
-      />
-    </Dialog>
+  const modalContent = (
+    <EnsureToastProvider>
+      <div
+        className="printable-qr-portal-root fixed inset-0 z-50 flex items-center justify-center p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="printable-qr-modal-title"
+      >
+        <div
+          className="printable-qr-backdrop no-print fixed inset-0 bg-black/60 backdrop-blur-sm"
+          onClick={handleClose}
+          aria-hidden="true"
+        />
+        <div className="printable-qr-dialog-panel relative z-10 max-w-4xl w-full rounded-2xl bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 shadow-2xl p-6">
+          <h1 id="printable-qr-modal-title" className="sr-only no-print">
+            Printable Invitation QR Labels
+          </h1>
+          <InvitationQRPrintLabelsContent
+            key={codes.length}
+            codes={codes}
+            onClose={handleClose}
+          />
+        </div>
+      </div>
+    </EnsureToastProvider>
   );
+
+  return createPortal(modalContent, document.body);
 };

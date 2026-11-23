@@ -413,6 +413,28 @@ const publicHouseholdNameField = z
   .or(z.literal(''))
   .nullable();
 
+const createRequiredPublicAddressField = (max: number, label: string) =>
+  z
+    .string({ message: `${label} is required.` })
+    .refine((val) => !disallowedPublicTextPattern.test(val), {
+      message: `${label} cannot contain HTML brackets or control characters.`,
+    })
+    .trim()
+    .min(1, `${label} is required and must be under ${max} characters.`)
+    .max(max, `${label} is required and must be under ${max} characters.`);
+
+const createOptionalPublicAddressField = (max: number, label: string) =>
+  z
+    .string()
+    .refine((val) => !disallowedPublicTextPattern.test(val), {
+      message: `${label} cannot contain HTML brackets or control characters.`,
+    })
+    .trim()
+    .max(max, `${label} must be under ${max} characters.`)
+    .optional()
+    .or(z.literal(''))
+    .nullable();
+
 export const PublicAddressCollectSchema = z.object({
   guestName: publicGuestNameField,
   email: optionalNullableEmailField,
@@ -437,7 +459,12 @@ export const PublicAddressCollectSchema = z.object({
     .nullable(),
   mobile: z.string().optional().nullable(),
   phoneNumber: z.string().optional().nullable(),
-  ...optionalAddressFields,
+  addressLine1: createRequiredPublicAddressField(ADDRESS_LINE_MAX_LENGTH, 'Street address'),
+  addressLine2: createOptionalPublicAddressField(ADDRESS_LINE_MAX_LENGTH, 'Address Line 2'),
+  city: createRequiredPublicAddressField(CITY_MAX_LENGTH, 'City'),
+  state: createRequiredPublicAddressField(STATE_MAX_LENGTH, 'State / Province'),
+  zipCode: createRequiredPublicAddressField(ZIP_CODE_MAX_LENGTH, 'ZIP / Postal code'),
+  country: createOptionalPublicAddressField(COUNTRY_MAX_LENGTH, 'Country'),
   householdName: publicHouseholdNameField,
   notes: z.string().trim().max(1000, 'Notes must be under 1000 characters.').optional().or(z.literal('')).nullable(),
   website: z.string().optional().nullable(),

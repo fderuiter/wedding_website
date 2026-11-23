@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { signGuestToken, GUEST_COOKIE } from '@/core/auth/guest.server';
 import { signGuestInviteSessionToken, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
+import { hasAddressCollectionTag } from '@/features/registry';
 import { prisma } from '@/lib/prisma';
 import { env } from '@/env';
 import { GuestLoginSchema } from '@/utils/validation';
@@ -64,7 +65,12 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     return response;
   }
 
-  let invite: { code: string; guestName: string; isSample?: boolean } | null = null;
+  let invite: {
+    code: string;
+    guestName: string;
+    isSample?: boolean;
+    partyTags?: string[];
+  } | null = null;
   if (trimmedCode.length > 0) {
     if (typeof prisma.invitationCode?.findFirst === 'function') {
       invite = await prisma.invitationCode.findFirst({
@@ -80,7 +86,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     }
   }
 
-  if (invite && !invite.isSample) {
+  if (invite && !invite.isSample && !hasAddressCollectionTag(invite.partyTags)) {
     const iat = Date.now();
     const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
     const inviteToken = await signGuestInviteSessionToken({

@@ -7,6 +7,7 @@ import { FormGroup, Label, Input } from '@/components/ui/forms';
 import { Icon } from '@/components/ui/Icon';
 import { useToast } from '@/components/ui/ToastProvider';
 import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
+import { resolveConfiguredBaseUrl, useAdminSettings } from '@/hooks/admin/useAdminSettings';
 
 export interface InvitationQRPreviewGuest {
   id?: string;
@@ -30,13 +31,14 @@ export const InvitationQRPreviewModal: React.FC<InvitationQRPreviewModalProps> =
   guest,
 }) => {
   const { addToast } = useToast();
+  const { config } = useAdminSettings();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [copied, setCopied] = useState(false);
 
   if (!guest) return null;
 
-  const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  const rsvpUrl = `${origin}/guest?code=${encodeURIComponent(guest.code || '')}`;
+  const baseOrigin = resolveConfiguredBaseUrl(config?.baseUrl);
+  const rsvpUrl = `${baseOrigin}/guest?code=${encodeURIComponent(guest.code || '')}`;
   const plusOneName = [guest.plusOneFirstName, guest.plusOneLastName].filter(Boolean).join(' ');
 
   const handleCopyLink = async () => {

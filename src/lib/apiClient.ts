@@ -9,6 +9,102 @@ interface ApiClientConfig {
   onUnauthorized?: () => void;
 }
 
+export interface ApiPaginationMeta {
+  totalCount?: number;
+  page?: number;
+  limit?: number;
+  totalPages?: number;
+  hasNextPage?: boolean;
+  hasPrevPage?: boolean;
+  nextCursor?: string | null;
+}
+
+export interface ApiResponseWithMeta<T> {
+  data: T;
+  meta: ApiPaginationMeta;
+}
+
+const API_PAGINATION_META_SYMBOL = Symbol.for('wedding.apiClient.paginationMeta');
+
+function parseHeaderInt(value: string | null | undefined): number | undefined {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  const parsed = Number.parseInt(value.trim(), 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function parseHeaderBool(value: string | null | undefined): boolean | undefined {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'true') return true;
+  if (normalized === 'false') return false;
+  return undefined;
+}
+
+function extractPaginationMetaFromHeaders(headers?: Headers | Record<string, string> | null): ApiPaginationMeta {
+  if (!headers) return {};
+
+  const readHeader = (name: string): string | null => {
+    if (typeof (headers as Headers).get === 'function') {
+      return (headers as Headers).get(name);
+    }
+    const lower = name.toLowerCase();
+    for (const [k, v] of Object.entries(headers as Record<string, string>)) {
+      if (k.toLowerCase() === lower && typeof v === 'string') {
+        return v;
+      }
+    }
+    return null;
+  };
+
+  const totalCount = parseHeaderInt(readHeader('x-total-count'));
+  const page = parseHeaderInt(readHeader('x-page')) ?? parseHeaderInt(readHeader('x-current-page'));
+  const limit = parseHeaderInt(readHeader('x-limit')) ?? parseHeaderInt(readHeader('x-per-page'));
+  const totalPages = parseHeaderInt(readHeader('x-total-pages'));
+  const hasNextPage = parseHeaderBool(readHeader('x-has-next-page'));
+  const hasPrevPage = parseHeaderBool(readHeader('x-has-prev-page'));
+  const rawNextCursor = readHeader('x-next-cursor');
+  const nextCursor = rawNextCursor && rawNextCursor.trim() ? rawNextCursor.trim() : undefined;
+
+  const meta: ApiPaginationMeta = {};
+  if (totalCount !== undefined) meta.totalCount = totalCount;
+  if (page !== undefined) meta.page = page;
+  if (limit !== undefined) meta.limit = limit;
+  if (totalPages !== undefined) meta.totalPages = totalPages;
+  if (hasNextPage !== undefined) meta.hasNextPage = hasNextPage;
+  if (hasPrevPage !== undefined) meta.hasPrevPage = hasPrevPage;
+  if (nextCursor !== undefined) meta.nextCursor = nextCursor;
+  return meta;
+}
+
+export function attachResponsePaginationMeta<T>(target: T, meta: ApiPaginationMeta): T {
+  if (
+    target &&
+    typeof target === 'object' &&
+    Object.keys(meta).length > 0
+  ) {
+    try {
+      Object.defineProperty(target, API_PAGINATION_META_SYMBOL, {
+        value: meta,
+        enumerable: false,
+        configurable: true,
+        writable: true,
+      });
+    } catch {
+      // Frozen objects cannot receive symbols; callers can still use getWithMeta
+    }
+  }
+  return target;
+}
+
+export function getResponsePaginationMeta(value: unknown): ApiPaginationMeta | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const attached = (value as Record<symbol, ApiPaginationMeta | undefined>)[API_PAGINATION_META_SYMBOL];
+  if (attached && typeof attached === 'object') {
+    return attached;
+  }
+  return undefined;
+}
+
 export class ApiClient {
   private config: ApiClientConfig;
 
@@ -16,18 +112,21 @@ export class ApiClient {
     this.config = config;
   }
 
-  private async handleResponse<T>(res: Response): Promise<T> {
+  private async handleResponseWithMeta<T>(res: Response): Promise<ApiResponseWithMeta<T>> {
     let isJson = false;
     if (res.headers && typeof res.headers.get === 'function') {
       isJson = res.headers.get('content-type')?.includes('application/json') ?? false;
     } else {
       // Fallback for mocked fetch where headers might not be a proper Headers object
-      isJson = true; 
+      isJson = true;
     }
-    
+
     let data: any;
     if (isJson && typeof res.json === 'function') {
       data = await res.json();
+    } else if (isJson && typeof res.text === 'function') {
+      const rawText = await res.text();
+      data = rawText ? JSON.parse(rawText) : {};
     } else if (!isJson && typeof res.text === 'function') {
       data = await res.text();
     } else {
@@ -42,15 +141,46 @@ export class ApiClient {
       throw new ApiError(res.status || 500, message, data);
     }
 
-    // Unwrap the standard response format if present
-    if (data && typeof data === 'object' && 'success' in data && 'data' in data) {
-      return data.data as T;
-    }
+    const headerMeta = extractPaginationMetaFromHeaders(res.headers as Headers | undefined);
 
-    return data as T;
+    // Unwrap the standard response format if present
+    const unwrapped =
+      data && typeof data === 'object' && 'success' in data && 'data' in data
+        ? (data.data as T)
+        : (data as T);
+
+    const payloadTotal =
+      unwrapped &&
+      typeof unwrapped === 'object' &&
+      !Array.isArray(unwrapped) &&
+      typeof (unwrapped as unknown as { total?: unknown }).total === 'number'
+        ? (unwrapped as unknown as { total: number }).total
+        : data &&
+            typeof data === 'object' &&
+            !Array.isArray(data) &&
+            typeof (data as { total?: unknown }).total === 'number'
+          ? (data as { total: number }).total
+          : undefined;
+
+    const mergedMeta: ApiPaginationMeta = {
+      ...(payloadTotal !== undefined ? { totalCount: payloadTotal } : {}),
+      ...headerMeta,
+    };
+
+    attachResponsePaginationMeta(unwrapped, mergedMeta);
+
+    return {
+      data: unwrapped,
+      meta: mergedMeta,
+    };
   }
 
-  async request<T = any>(url: string, options: RequestInit = {}): Promise<T> {
+  private async handleResponse<T>(res: Response): Promise<T> {
+    const result = await this.handleResponseWithMeta<T>(res);
+    return result.data;
+  }
+
+  private buildFetchOptions(options: RequestInit = {}): RequestInit {
     const fetchOptions: RequestInit = { ...options };
 
     if (options.body && !(options.body instanceof FormData)) {
@@ -74,9 +204,23 @@ export class ApiClient {
       }
     }
 
-    const res = await fetch(url, fetchOptions);
+    return fetchOptions;
+  }
 
+  async requestWithMeta<T = any>(url: string, options: RequestInit = {}): Promise<ApiResponseWithMeta<T>> {
+    const fetchOptions = this.buildFetchOptions(options);
+    const res = await fetch(url, fetchOptions);
+    return this.handleResponseWithMeta<T>(res);
+  }
+
+  async request<T = any>(url: string, options: RequestInit = {}): Promise<T> {
+    const fetchOptions = this.buildFetchOptions(options);
+    const res = await fetch(url, fetchOptions);
     return this.handleResponse<T>(res);
+  }
+
+  getWithMeta<T = any>(url: string, options?: Omit<RequestInit, 'method' | 'body'>): Promise<ApiResponseWithMeta<T>> {
+    return this.requestWithMeta<T>(url, { ...options, method: 'GET' });
   }
 
   get<T = any>(url: string, options?: Omit<RequestInit, 'method' | 'body'>): Promise<T> {

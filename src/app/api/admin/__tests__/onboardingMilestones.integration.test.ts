@@ -151,6 +151,28 @@ describe('GET /api/admin/onboarding-milestones (PostgreSQL integration)', () => 
     });
     createdTableIds.push(table.id);
 
+    const unpromotedCollector = await prisma.invitationCode.create({
+      data: {
+        code: 'ADDR-COLLECT-01',
+        guestName: 'Prospect Household',
+        addressLine1: '100 Prospect St',
+        city: 'Austin',
+        state: 'TX',
+        zipCode: '78701',
+        partyTags: ['address-collection'],
+        isSample: false,
+      },
+    });
+    createdInvitationIds.push(unpromotedCollector.id);
+
+    clearReactTestCache();
+    const resWithOnlyCollector = await GET(await makeAdminRequest(), {});
+    const collectorOnlyBody = await resWithOnlyCollector.json();
+    expect(
+      collectorOnlyBody.milestones.find((m: OnboardingMilestone) => m.id === 'guest-list')
+        ?.completed
+    ).toBe(false);
+
     const guest = await prisma.invitationCode.create({
       data: {
         code: 'REAL-MILESTONE-01',

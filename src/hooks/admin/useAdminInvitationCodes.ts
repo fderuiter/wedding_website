@@ -49,6 +49,7 @@ interface AdminBatchAttendanceResponse {
 }
 
 const ADMIN_RSVP_SUMMARY_QUERY_KEY = ['admin-rsvp-summary'] as const;
+const ADMIN_ONBOARDING_MILESTONES_QUERY_KEY = ['admin-onboarding-milestones'] as const;
 const INVITATION_CODES_QUERY_KEY = ['admin-invitation-codes'] as const;
 const INVITATION_CODES_ENDPOINT = '/api/admin/invitation-codes';
 const INVITATION_CODES_CATALOG_ENDPOINT = `${INVITATION_CODES_ENDPOINT}/catalog?limit=${INVITATION_MAX_CATALOG_LIMIT}`;
@@ -95,7 +96,10 @@ function computeNextTags(
   return Array.from(new Set([...current, ...cleanTags]));
 }
 
-const INVITATION_INVALIDATE_QUERY_KEYS = [ADMIN_RSVP_SUMMARY_QUERY_KEY] as const;
+const INVITATION_INVALIDATE_QUERY_KEYS = [
+  ADMIN_RSVP_SUMMARY_QUERY_KEY,
+  ADMIN_ONBOARDING_MILESTONES_QUERY_KEY,
+] as const;
 
 export function useAdminInvitationCodes(options?: AdminHookOptions) {
   const queryClient = useQueryClient();
@@ -110,6 +114,11 @@ export function useAdminInvitationCodes(options?: AdminHookOptions) {
 
   const invalidateRsvpSummary = () => {
     queryClient.invalidateQueries({ queryKey: ADMIN_RSVP_SUMMARY_QUERY_KEY });
+  };
+
+  const invalidateDependentAdminQueries = () => {
+    queryClient.invalidateQueries({ queryKey: ADMIN_RSVP_SUMMARY_QUERY_KEY });
+    queryClient.invalidateQueries({ queryKey: ADMIN_ONBOARDING_MILESTONES_QUERY_KEY });
   };
 
   const { mutateAsync: mutateBatchUpdateTags } = useMutation({
@@ -163,6 +172,7 @@ export function useAdminInvitationCodes(options?: AdminHookOptions) {
               })
             )
         );
+        invalidateDependentAdminQueries();
         return;
       }
 
@@ -179,6 +189,7 @@ export function useAdminInvitationCodes(options?: AdminHookOptions) {
             )
           )
       );
+      invalidateDependentAdminQueries();
     },
     onError: (_err, _variables, context) => {
       if (context && context.previousData !== undefined) {
@@ -217,6 +228,7 @@ export function useAdminInvitationCodes(options?: AdminHookOptions) {
               )
           )
       );
+      invalidateDependentAdminQueries();
     },
     meta: {
       showSuccessToast: false,

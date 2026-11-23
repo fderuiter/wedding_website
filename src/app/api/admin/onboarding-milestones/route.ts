@@ -20,7 +20,16 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
   const registryEnabled = isFeatureEnabled('registry', config?.modules);
 
   const [guestCount, registryCount, seatingCount, faqNodes] = await Promise.all([
-    prisma.invitationCode.count({ where: { isSample: false } }),
+    prisma.invitationCode.count({
+      where: {
+        isSample: false,
+        NOT: {
+          partyTags: {
+            has: 'address-collection',
+          },
+        },
+      },
+    }),
     registryEnabled
       ? prisma.registryItem.count({ where: { isSample: false } })
       : Promise.resolve(0),

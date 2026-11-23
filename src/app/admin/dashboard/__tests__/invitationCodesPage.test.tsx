@@ -22,14 +22,21 @@ jest.mock('@/hooks/admin/useAdminInvitationCodes');
 
 // Mock CsvImportWizardModal
 jest.mock('@/components/admin/CsvImportWizardModal', () => ({
-  CsvImportWizardModal: ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => (
+  CsvImportWizardModal: ({
+    isOpen,
+    onClose,
+    existingCodes,
+  }: {
+    isOpen: boolean;
+    onClose: () => void;
+    existingCodes?: string[];
+  }) =>
     isOpen ? (
-      <div data-testid="csv-modal">
+      <div data-testid="csv-modal" data-existing-codes={JSON.stringify(existingCodes ?? [])}>
         <p>CSV Import Modal</p>
         <button onClick={onClose}>Close CSV Modal</button>
       </div>
-    ) : null
-  ),
+    ) : null,
 }));
 
 const mockCodes = [
@@ -2207,6 +2214,206 @@ describe('InvitationCodesDashboardPage', () => {
       const axeResults = await axe(container);
       expect(axeResults).toHaveNoViolations();
     }, 20000);
+  });
+
+  describe('Full-catalog 122-household search, tag isolation, private sub-events, and QR label sample exclusion', () => {
+    it('searches across all 122 households (finding household 50), paginates locally, and passes all 122 codes to CSV duplicate checker', () => {
+      const catalog122 = Array.from({ length: 122 }, (_, idx) => ({
+        id: `hh-${idx + 1}`,
+        guestName: `Household ${idx + 1}`,
+        code: `CODE${String(idx + 1).padStart(4, '0')}`,
+        email: `hh${idx + 1}@example.com`,
+        used: false,
+      }));
+
+      (useAdminInvitationCodes as jest.Mock).mockReturnValue({
+        data: catalog122,
+        totalCount: 122,
+        isLoading: false,
+        error: null,
+        create: mockCreate,
+        update: mockUpdate,
+        remove: mockRemove,
+        removeBatch: mockRemoveBatch,
+        updateBatch: mockUpdateBatch,
+        batchUpdateTags: mockBatchUpdateTags,
+        mergeDuplicates: mockMergeDuplicates,
+        fetchAll: mockFetchAll,
+      });
+
+      renderComponent();
+
+      // Default page size is 50 -> Household 1..50 are on page 1 and Household 75 is on page 2
+      expect(screen.getByText('Household 1')).toBeInTheDocument();
+      expect(screen.queryByText('Household 75')).not.toBeInTheDocument();
+
+      // Search finds Household 50 and Household 75 across the full 122-household catalog
+      const searchInput = screen.getByRole('textbox', { name: 'Search invitation codes' });
+      fireEvent.change(searchInput, { target: { value: 'Household 50' } });
+      expect(screen.getByText('Household 50')).toBeInTheDocument();
+      expect(screen.queryByText('Household 1')).not.toBeInTheDocument();
+
+      fireEvent.change(searchInput, { target: { value: 'Household 75' } });
+      expect(screen.getByText('Household 75')).toBeInTheDocument();
+
+      // CSV Import receives all 122 existing codes for duplicate detection
+      fireEvent.click(screen.getByRole('button', { name: /Import CSV/i }));
+      const csvModal = screen.getByTestId('csv-modal');
+      const passedCodes = JSON.parse(csvModal.getAttribute('data-existing-codes') || '[]');
+      expect(passedCodes).toHaveLength(122);
+      expect(passedCodes).toContain('CODE0050');
+      expect(passedCodes).toContain('CODE0122');
+    });
+
+    it('isolates householdNotes from catering summaries and promotes address-collection cards via Promote to Invited', async () => {
+      mockBatchUpdateTags.mockResolvedValueOnce({ updatedCount: 1 });
+
+      (useAdminInvitationCodes as jest.Mock).mockReturnValue({
+        data: [
+          {
+            id: 'prospect-1',
+            guestName: 'Prospect Household',
+            code: 'PROSPECT1',
+            addressLine1: '100 Main St',
+            city: 'Austin',
+            state: 'TX',
+            zipCode: '78701',
+            dietaryNotes: null,
+            extraFields: { householdNotes: 'Vegan note in mailing form; ring bell twice' },
+            partyTags: ['address-collection'],
+            used: false,
+          },
+        ],
+        isLoading: false,
+        error: null,
+        create: mockCreate,
+        update: mockUpdate,
+        remove: mockRemove,
+        removeBatch: mockRemoveBatch,
+        updateBatch: mockUpdateBatch,
+        batchUpdateTags: mockBatchUpdateTags,
+        mergeDuplicates: mockMergeDuplicates,
+        fetchAll: mockFetchAll,
+      });
+
+      renderComponent();
+
+      // Household notes badge is shown, while Catering Summary widget records 0 dietary restrictions
+      expect(screen.getByTestId('household-notes-badge')).toHaveTextContent(
+        'Vegan note in mailing form; ring bell twice'
+      );
+      const cateringWidget = screen.getByTestId('catering-summary-widget');
+      expect(within(cateringWidget).getByText('0 Guests with Dietary Notes')).toBeInTheDocument();
+      expect(within(cateringWidget).getByTestId('rsvp-headcount-summary')).toHaveTextContent(
+        'Attending: 0 Guests (0 Households)'
+      );
+
+      const promoteBtn = screen.getByTestId('promote-guest-prospect-1');
+      expect(promoteBtn).toHaveTextContent('Promote to Invited');
+      fireEvent.click(promoteBtn);
+
+      await waitFor(() => {
+        expect(mockBatchUpdateTags).toHaveBeenCalledWith(
+          ['prospect-1'],
+          ['address-collection'],
+          'remove'
+        );
+      });
+    });
+
+    it('lists only private sub-events on guest cards and Batch Sub-Event Access modal, and shows clear message when none exist', async () => {
+      const originalFetch = global.fetch;
+      global.fetch = jest.fn().mockImplementation((url: string) => {
+        if (typeof url === 'string' && url.includes('/api/admin/sub-events/access')) {
+          const payload = {
+            success: true,
+            data: {
+              subEvents: [
+                { id: 'pub-ceremony', title: 'Public Ceremony', isPrivate: false },
+              ],
+              invitationCodes: [],
+            },
+          };
+          return Promise.resolve({
+            ok: true,
+            headers: new Headers({ 'Content-Type': 'application/json' }),
+            json: () => Promise.resolve(payload),
+            text: () => Promise.resolve(JSON.stringify(payload)),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          headers: new Headers({ 'Content-Type': 'application/json' }),
+          text: () => Promise.resolve(JSON.stringify({ success: true, data: {} })),
+          json: () => Promise.resolve({ success: true, data: {} }),
+        });
+      }) as unknown as typeof fetch;
+
+      try {
+        renderComponent();
+
+        const emptyNotices = await screen.findAllByText(
+          'No private sub-events configured. Public sub-events are accessible to all invited guests.'
+        );
+        expect(emptyNotices.length).toBeGreaterThan(0);
+        expect(screen.queryByLabelText(/Public Ceremony/i)).not.toBeInTheDocument();
+
+        // Select a guest card and open Batch Sub-Event Access modal
+        fireEvent.click(
+          screen.getByRole('checkbox', { name: 'Select invitation code for Alice Smith' })
+        );
+        fireEvent.click(screen.getByRole('button', { name: /Sub-Event Access/i }));
+
+        const modal = await screen.findByRole('dialog', { name: /Batch Sub-Event Access/i });
+        expect(
+          within(modal).getByText(
+            'No private sub-events configured. Public sub-events are accessible to all invited guests.'
+          )
+        ).toBeInTheDocument();
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
+    it('excludes sample rows (isSample: true) when opening Printable QR Labels', async () => {
+      (useAdminInvitationCodes as jest.Mock).mockReturnValue({
+        data: [
+          {
+            id: 'real-1',
+            guestName: 'Real Household',
+            code: 'REAL0001',
+            isSample: false,
+            used: false,
+          },
+          {
+            id: 'sample-1',
+            guestName: 'Sample Household',
+            code: 'SMPL0001',
+            isSample: true,
+            used: false,
+          },
+        ],
+        isLoading: false,
+        error: null,
+        create: mockCreate,
+        update: mockUpdate,
+        remove: mockRemove,
+        removeBatch: mockRemoveBatch,
+        updateBatch: mockUpdateBatch,
+        batchUpdateTags: mockBatchUpdateTags,
+        mergeDuplicates: mockMergeDuplicates,
+        fetchAll: mockFetchAll,
+      });
+
+      renderComponent();
+
+      fireEvent.click(screen.getByRole('button', { name: /Print QR Labels/i }));
+
+      expect(await screen.findByText(/Print QR Code Labels \(1 guest\)/i)).toBeInTheDocument();
+      const printSheet = screen.getByTestId('qr-print-sheet');
+      expect(within(printSheet).getByText('REAL0001')).toBeInTheDocument();
+      expect(within(printSheet).queryByText('SMPL0001')).not.toBeInTheDocument();
+    });
   });
 });
 

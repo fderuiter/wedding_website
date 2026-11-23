@@ -323,6 +323,28 @@ export function formatGuestCustomAnswers(item: { extraFields?: unknown }): strin
 }
 
 /**
+ * Checks whether an InvitationCode partyTags list includes the unpromoted 'address-collection' tag (case-insensitive).
+ */
+export function hasAddressCollectionTag(partyTags?: unknown): boolean {
+  if (!Array.isArray(partyTags)) return false;
+  return partyTags.some(
+    (tag) => typeof tag === 'string' && tag.trim().toLowerCase() === 'address-collection'
+  );
+}
+
+/**
+ * Extracts household notes stored in InvitationCode.extraFields.householdNotes without mixing with dietaryNotes.
+ */
+export function extractHouseholdNotes(source?: unknown): string {
+  if (!source) return '';
+  const record = parseExtraFieldsObject(source);
+  if (!record) return '';
+  const extra =
+    record.extraFields !== undefined ? parseExtraFieldsObject(record.extraFields) ?? record : record;
+  return typeof extra.householdNotes === 'string' ? extra.householdNotes.trim() : '';
+}
+
+/**
  * Checks whether address contains all standard required fields
  * (addressLine1, city, state, zipCode).
  */

@@ -8,7 +8,11 @@ import {
   type RsvpCutoffEvaluation,
 } from '@/utils/rsvpDeadline';
 import { isPrivateContentNode } from '@/features/content';
-import { getAttendanceStatus, extractDietaryTags } from '@/features/registry';
+import {
+  getAttendanceStatus,
+  extractDietaryTags,
+  hasAddressCollectionTag,
+} from '@/features/registry';
 import {
   SubEventRsvpSubmissionItem,
   BatchUpdateSubEventAccessDTO,
@@ -1419,7 +1423,9 @@ export class SubEventService {
       }),
     ]);
 
-    const inviteList: any[] = Array.isArray(invitations) ? invitations : [];
+    const inviteList: any[] = Array.isArray(invitations)
+      ? invitations.filter((inv) => !hasAddressCollectionTag(inv?.partyTags))
+      : [];
     const subEventList: any[] = Array.isArray(subEvents) ? subEvents : [];
     const inviteById = new Map<string, any>(inviteList.map((inv) => [inv.id, inv]));
     const allInviteIds = new Set<string>(inviteList.map((inv) => inv.id));

@@ -758,7 +758,9 @@ function SetupWizardContent() {
             isOpen={activeModal === 'csv'}
             onClose={closeModal}
             onImportComplete={handleGuestImportComplete}
-            existingCodes={invitationCodes.map((c) => c.code)}
+            existingCodes={invitationCodes
+              .map((c) => c.code)
+              .filter((code): code is string => Boolean(code && code.trim()))}
           />
         </>
       )}

@@ -187,6 +187,12 @@ On an **unseeded** installation (before `AppConfig` satisfies `isSiteInitialized
 2.  Enter the password you configured in `ADMIN_PASSWORD`.
 3.  Upon successful login, you will be redirected to `/admin/dashboard`.
 
+### Guest Households, Address Collection & QR Label Printing
+
+*   **Bounded Household Catalog & Pagination:** `GET /api/admin/invitation-codes` supports bounded full-catalog fetches up to `limit=1000` (while other `/api/admin/[entity]` resources remain capped at `100`) and exposes `X-Total-Count` and pagination headers through `apiClient`. The Invitation Codes dashboard paginates cards locally while computing search, RSVP totals, catering summaries, CSV duplicate checks, and server-backed broadcast recipient counts across the full household list.
+*   **Public Address Collection & Promotion:** Visitors submitting `/guest/collect` (`POST /api/guest/address/public`) must provide `guestName`, `addressLine1`, `city`, `state`, and `zipCode`. Free-text form notes are stored in `extraFields.householdNotes` (keeping `dietaryNotes` isolated for catering summaries), and new submissions carry the `address-collection` tag without an active invitation code. Unpromoted `address-collection` entries cannot authenticate at `/api/guest/login`, validate codes, match `/api/guest/lookup`, or complete the `Guest List` onboarding milestone until an admin clicks **Promote to Invited** on `/admin/dashboard/invitation-codes`.
+*   **Private Sub-Event Access & Avery QR Labels:** Guest card sub-event toggles and **Batch Sub-Event Access** list only private sub-events (`isPrivate: true`), since public sub-events are open to all invited guests. Printable QR label sheets render through a `document.body` portal formatted for Avery 5160 (3 columns, 30 per Letter sheet) and Avery 5163 (2 columns, 10 per Letter sheet), exclude sample rows (`isSample: true`), and encode canonical RSVP links from `AppConfig.baseUrl`.
+
 ### Registry Management
 
 *   **Adding Items:** From the dashboard, click "Add New Item". You can paste a product URL to auto-fill details or enter them manually.

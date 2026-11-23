@@ -76,6 +76,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   const normalizedPhone = phone ? phone.trim() : '';
   const normalizedEmail = email ? email.trim() : '';
   const normalizedGuestName = guestName ? guestName.trim() : '';
+  const normalizedHouseholdNotes = notes ? notes.trim() : '';
 
   // 4. Generate Unique Invitation Code
   let uniqueCode = '';
@@ -100,6 +101,15 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   }
 
   // 5. Create InvitationCode Record Tagged with 'address-collection'
+  const extraFields: Record<string, string> = {};
+  if (normalizedPhone) {
+    extraFields.phone = normalizedPhone;
+    extraFields.mobile = normalizedPhone;
+  }
+  if (normalizedHouseholdNotes) {
+    extraFields.householdNotes = normalizedHouseholdNotes;
+  }
+
   const createData: Record<string, any> = {
     code: uniqueCode,
     guestName: normalizedGuestName,
@@ -111,16 +121,13 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     zipCode: zipCode || null,
     country: country || null,
     householdName: householdName || null,
-    dietaryNotes: notes || null,
+    dietaryNotes: null,
     partyTags: ['address-collection'],
     used: false,
   };
 
-  if (normalizedPhone) {
-    createData.extraFields = {
-      phone: normalizedPhone,
-      mobile: normalizedPhone,
-    };
+  if (Object.keys(extraFields).length > 0) {
+    createData.extraFields = extraFields;
   }
 
   const newRecord = await prisma.invitationCode.create({

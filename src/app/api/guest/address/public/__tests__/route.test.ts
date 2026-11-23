@@ -18,6 +18,13 @@ jest.mock('@/lib/prisma', () => ({
 
 const mockPrisma = prisma as jest.Mocked<typeof prisma>;
 
+const basePostalFields = {
+  addressLine1: '789 Oak Ave',
+  city: 'Austin',
+  state: 'TX',
+  zipCode: '78701',
+};
+
 describe('Public Address Collection API (/api/guest/address/public)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -25,7 +32,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
     (mockPrisma.invitationCode.findFirst as jest.Mock).mockResolvedValue(null);
   });
 
-  test('creates new InvitationCode with partyTags ["address-collection"] on valid submission', async () => {
+  test('creates new InvitationCode with partyTags ["address-collection"] and isolates notes in extraFields.householdNotes', async () => {
     (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue(null);
     (mockPrisma.invitationCode.create as jest.Mock).mockImplementation(async ({ data }) => ({
       id: 'generated-id-1',
@@ -35,10 +42,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
     const payload = {
       guestName: 'Jane Prospect',
       email: 'jane@example.com',
-      addressLine1: '789 Oak Ave',
-      city: 'Austin',
-      state: 'TX',
-      zipCode: '78701',
+      ...basePostalFields,
       country: 'United States',
       notes: 'Family of 3',
     };
@@ -64,7 +68,10 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
     expect(createdData.guestName).toBe('Jane Prospect');
     expect(createdData.partyTags).toEqual(['address-collection']);
     expect(createdData.addressLine1).toBe('789 Oak Ave');
-    expect(createdData.dietaryNotes).toBe('Family of 3');
+    expect(createdData.dietaryNotes).toBeNull();
+    expect(createdData.extraFields).toEqual({
+      householdNotes: 'Family of 3',
+    });
   });
 
   test('creates a new record when submission matches existing email instead of updating', async () => {
@@ -83,7 +90,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
       state: 'TX',
       zipCode: '78701',
       country: 'United States',
-      notes: 'Gluten free',
+      notes: 'Apartment buzzer #42',
     };
 
     const req = new NextRequest('http://localhost/api/guest/address/public', {
@@ -116,7 +123,10 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
         zipCode: '78701',
         country: 'United States',
         householdName: null,
-        dietaryNotes: 'Gluten free',
+        dietaryNotes: null,
+        extraFields: {
+          householdNotes: 'Apartment buzzer #42',
+        },
         partyTags: ['address-collection'],
         used: false,
       },
@@ -177,7 +187,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
     });
   });
 
-  test('persists dietary notes on new record without updating existing records', async () => {
+  test('persists public form notes in extraFields.householdNotes while keeping dietaryNotes null', async () => {
     (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue(null);
     (mockPrisma.invitationCode.create as jest.Mock).mockImplementation(async ({ data }) => ({
       id: 'new-guest-diet-1',
@@ -188,7 +198,10 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
       guestName: 'Alice Smith',
       email: 'alice@example.com',
       addressLine1: '2 Second Ave',
-      notes: 'No shellfish',
+      city: 'Boston',
+      state: 'MA',
+      zipCode: '02108',
+      notes: 'Moving in June; vegan household note',
     };
 
     const req = new NextRequest('http://localhost/api/guest/address/public', {
@@ -204,14 +217,17 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           guestName: 'Alice Smith',
-          dietaryNotes: 'No shellfish',
+          dietaryNotes: null,
+          extraFields: {
+            householdNotes: 'Moving in June; vegan household note',
+          },
           partyTags: ['address-collection'],
         }),
       })
     );
   });
 
-  test('creates new record with null dietary notes when notes are not provided', async () => {
+  test('creates new record with null dietary notes and omitted extraFields when notes and phone are not provided', async () => {
     (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue(null);
     (mockPrisma.invitationCode.create as jest.Mock).mockImplementation(async ({ data }) => ({
       id: 'new-guest-diet-2',
@@ -222,6 +238,9 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
       guestName: 'Bob Brown',
       email: 'bob@example.com',
       addressLine1: '10 Maple St',
+      city: 'Chicago',
+      state: 'IL',
+      zipCode: '60601',
     };
 
     const req = new NextRequest('http://localhost/api/guest/address/public', {
@@ -233,21 +252,17 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
     expect(res.status).toBe(200);
 
     expect(mockPrisma.invitationCode.update).not.toHaveBeenCalled();
-    expect(mockPrisma.invitationCode.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          guestName: 'Bob Brown',
-          dietaryNotes: null,
-          partyTags: ['address-collection'],
-        }),
-      })
-    );
+    const createdData = (mockPrisma.invitationCode.create as jest.Mock).mock.calls[0][0].data;
+    expect(createdData.guestName).toBe('Bob Brown');
+    expect(createdData.dietaryNotes).toBeNull();
+    expect(createdData.extraFields).toBeUndefined();
+    expect(createdData.partyTags).toEqual(['address-collection']);
   });
 
   test('returns 400 Bad Request when guestName is missing', async () => {
     const payload = {
       email: 'jane@example.com',
-      addressLine1: '789 Oak Ave',
+      ...basePostalFields,
     };
 
     const req = new NextRequest('http://localhost/api/guest/address/public', {
@@ -264,9 +279,37 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
     expect(mockPrisma.invitationCode.create).not.toHaveBeenCalled();
   });
 
+  test.each([
+    ['addressLine1', { ...basePostalFields, addressLine1: '   ' }, 'Street address is required'],
+    ['city', { ...basePostalFields, city: '' }, 'City is required'],
+    ['state', { ...basePostalFields, state: '' }, 'State / Province is required'],
+    ['zipCode', { ...basePostalFields, zipCode: ' ' }, 'ZIP / Postal code is required'],
+  ])(
+    'returns 400 Bad Request with field details when %s is missing or blank',
+    async (fieldName, postalOverride, expectedMessage) => {
+      const req = new NextRequest('http://localhost/api/guest/address/public', {
+        method: 'POST',
+        body: JSON.stringify({
+          guestName: 'Postal Check Guest',
+          ...postalOverride,
+        }),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(400);
+
+      const body = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error).toContain(expectedMessage);
+      expect(body.details?.[fieldName]?._errors?.[0]).toContain(expectedMessage);
+      expect(mockPrisma.invitationCode.create).not.toHaveBeenCalled();
+    }
+  );
+
   test('returns 400 Bad Request when field exceeds max length', async () => {
     const payload = {
       guestName: 'A'.repeat(105), // Exceeds 100 limit
+      ...basePostalFields,
     };
 
     const req = new NextRequest('http://localhost/api/guest/address/public', {
@@ -309,7 +352,10 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
       ...data,
     }));
 
-    const payload = { guestName: 'Rate Limit Test' };
+    const payload = {
+      guestName: 'Rate Limit Test',
+      ...basePostalFields,
+    };
 
     // Send 10 valid requests
     for (let i = 0; i < 10; i++) {
@@ -334,7 +380,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
   });
 
   describe('Phone number handling & extraFields persistence', () => {
-    test('creates new InvitationCode with extraFields containing phone and mobile when valid phone is provided', async () => {
+    test('creates new InvitationCode with extraFields containing phone, mobile, and householdNotes when provided', async () => {
       (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue(null);
       (mockPrisma.invitationCode.create as jest.Mock).mockImplementation(async ({ data }) => ({
         id: 'phone-guest-id',
@@ -345,7 +391,8 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
         guestName: 'Phone Guest',
         email: 'phoneguest@example.com',
         phone: '+1 (555) 123-4567',
-        addressLine1: '100 Main St',
+        ...basePostalFields,
+        notes: 'Gate code 1234',
       };
 
       const req = new NextRequest('http://localhost/api/guest/address/public', {
@@ -362,9 +409,11 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
 
       const createdData = (mockPrisma.invitationCode.create as jest.Mock).mock.calls[0][0].data;
       expect(createdData.guestName).toBe('Phone Guest');
+      expect(createdData.dietaryNotes).toBeNull();
       expect(createdData.extraFields).toEqual({
         phone: '+15551234567',
         mobile: '+15551234567',
+        householdNotes: 'Gate code 1234',
       });
     });
 
@@ -378,6 +427,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
       const payload = {
         guestName: 'Format Guest',
         phone: '  +1-555.234.5678  ',
+        ...basePostalFields,
       };
 
       const req = new NextRequest('http://localhost/api/guest/address/public', {
@@ -405,6 +455,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
       const payload = {
         guestName: 'Alias Guest',
         mobile: '+15559876543',
+        ...basePostalFields,
       };
 
       const req = new NextRequest('http://localhost/api/guest/address/public', {
@@ -433,6 +484,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
         guestName: 'Existing Guest',
         email: 'merge@example.com',
         phone: '+1 (555) 333-4444',
+        ...basePostalFields,
       };
 
       const req = new NextRequest('http://localhost/api/guest/address/public', {
@@ -470,6 +522,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
       const payload = {
         guestName: 'Guest Matching By Name',
         phone: '+1 (555) 444-5555',
+        ...basePostalFields,
       };
 
       const req = new NextRequest('http://localhost/api/guest/address/public', {
@@ -500,6 +553,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
       const payload = {
         guestName: 'Invalid Guest',
         phone: 'not-a-valid-phone',
+        ...basePostalFields,
       };
 
       const req = new NextRequest('http://localhost/api/guest/address/public', {
@@ -520,6 +574,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
       const payload = {
         guestName: 'Long Phone Guest',
         phone: '+1234567890123456789012345678901', // 32 characters
+        ...basePostalFields,
       };
 
       const req = new NextRequest('http://localhost/api/guest/address/public', {
@@ -542,6 +597,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
         guestName: '<b data-canary="guest-html-marker">CanaryGuest</b>',
         householdName: '<i data-canary="household-html-marker">CanaryHousehold</i>',
         email: 'canary-recipient@example.invalid',
+        ...basePostalFields,
       };
 
       const req1 = new NextRequest('http://localhost/api/guest/address/public', {
@@ -556,6 +612,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
         body: JSON.stringify({
           guestName: 'Valid Guest',
           householdName: 'Household\nInjected',
+          ...basePostalFields,
         }),
       });
       const res2 = await POST(req2);
@@ -577,6 +634,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
           guestName: "Élodie O'Connor-St. Clair",
           householdName: "O'Connor & Müller-Søren.",
           email: 'elodie@example.com',
+          ...basePostalFields,
         }),
       });
 
