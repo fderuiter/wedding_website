@@ -122,14 +122,14 @@ For standalone server streaming, `LocalStorageProvider` additionally exposes `op
 The application defines distinct file size, batch, and format validation rules for administrative asset uploads versus guest photo submissions:
 
 #### Administrative Upload Constraints
-- **Maximum File Size**: 5 MB (`MAX_UPLOAD_SIZE = 5 * 1024 * 1024`), defined in [src/utils/validationPrimitives.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/validationPrimitives.ts#L38-L45) and enforced by `AdminUploadSchema` in [src/utils/validation.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/validation.ts#L197-L211).
+- **Maximum File Size**: 5 MB (`MAX_UPLOAD_SIZE = 5 * 1024 * 1024`), defined in [src/utils/validationPrimitives.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/validationPrimitives.ts#L38-L45) and enforced by `AdminUploadSchema` in [src/utils/validation.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/validation.ts#L223-L237).
 - **Allowed MIME Types**: JPEG (`image/jpeg`), PNG (`image/png`), ICO (`image/x-icon`, `image/vnd.microsoft.icon`).
 - **Allowed Extensions**: `.jpg`, `.jpeg`, `.png`, `.ico`.
 - **Extension & MIME Consistency**: Uploaded file extensions must match declared MIME types (`MIME_TO_EXTENSIONS`).
 
 #### Guest Photo Upload Constraints
-- **Maximum File Size**: 10 MB per file (`MAX_GUEST_PHOTO_SIZE = 10 * 1024 * 1024`), defined in [src/utils/validationPrimitives.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/validationPrimitives.ts#L71-L82) and enforced per file by `SingleGuestPhotoSchema` in [src/utils/validation.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/validation.ts#L123-L146).
-- **Batch Upload Cap**: Maximum **10 photos per upload request** (`files: z.array(SingleGuestPhotoSchema).min(1).max(10)`), with optional `uploaderName` (`<= 100` chars) and `caption` (`<= 500` chars) validated in `GuestPhotoUploadSchema` ([src/utils/validation.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/validation.ts#L157-L195)).
+- **Maximum File Size**: 10 MB per file (`MAX_GUEST_PHOTO_SIZE = 10 * 1024 * 1024`), defined in [src/utils/validationPrimitives.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/validationPrimitives.ts#L71-L82) and enforced per file by `SingleGuestPhotoSchema` in [src/utils/validation.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/validation.ts#L149-L172).
+- **Batch Upload Cap**: Maximum **10 photos per upload request** (`files: z.array(SingleGuestPhotoSchema).min(1).max(10)`), with optional `uploaderName` (`<= 100` chars) and `caption` (`<= 500` chars) validated in `GuestPhotoUploadSchema` ([src/utils/validation.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/validation.ts#L183-L221)).
 - **Allowed MIME Types**: JPEG (`image/jpeg`), PNG (`image/png`), WebP (`image/webp`), and HEIC/HEIF (`image/heic`, `image/heif`, `image/heic-sequence`, `image/heif-sequence`, or empty/`application/octet-stream` when paired with `.heic`/`.heif`).
 - **Allowed Extensions**: `.jpg`, `.jpeg`, `.png`, `.webp`, `.heic`, `.heif` (excluding `.ico`).
 
@@ -143,17 +143,18 @@ Persisted configuration, media, and local path URLs are validated by the URL gua
 
 ### 3. Image Sanitization & Processing Pipeline
 
-All uploaded image files undergo server-side sanitization prior to persistence via `sanitizeImage` in [src/utils/imageProcessor.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/imageProcessor.ts#L522-L572) and `processImageWorkerBuffer` in [src/utils/imageProcessorWorker.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/imageProcessorWorker.ts#L136-L185):
+All uploaded image files undergo server-side sanitization prior to persistence via `sanitizeImage` in [src/utils/imageProcessor.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/imageProcessor.ts#L430-L490) and `processImageWorkerBuffer` in [src/utils/imageProcessorWorker.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/imageProcessorWorker.ts#L253-L325):
+- **Pre-Decode Byte & Dimension Guards**: Rejects inputs larger than `MAX_GUEST_PHOTO_SIZE` (`10 * 1024 * 1024`) prior to buffering/decoding, validates ISOBMFF `ispe` spatial extents via `parseHeicSpatialExtents` before lazy `heic-decode` WASM loading, and enforces `MAX_IMAGE_PIXELS` (`64000000` via Sharp `limitInputPixels`) and `MAX_IMAGE_DIMENSION` (`12000` max side).
 - **EXIF Metadata Stripping**: Strips all embedded EXIF metadata, GPS geotags, camera model identifiers, and timestamps to protect guest and administrator privacy.
 - **Auto-Rotation**: Automatically rotates images based on embedded EXIF orientation tags (`.rotate()`) prior to metadata stripping so photos render with correct orientation.
 - **Format & HEIC Handling**: Sharp sanitization preserves JPEG, PNG, and WebP formats and transcodes HEIC/HEIF frames (lazily loaded `heic-decode` + Sharp) into sanitized `image/jpeg` files. Non-Sharp formats (such as ICO) skip sanitization safely without error.
 
 ### 4. Worker Thread Offloading & Timeout Handling
 
-To protect the main Node.js event loop from CPU-heavy image processing tasks, sanitization is offloaded to a bounded pool of warm background worker threads using `offloadSanitizeToWorker` in [src/utils/imageProcessor.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/imageProcessor.ts#L464-L486):
-- **Worker Thread Execution**: Image buffer processing runs inside reusable Node.js worker threads (`imageProcessorWorker.ts`) that `unref()` while idle and transfer `ArrayBuffer` payloads once ready.
+To protect the main Node.js event loop from CPU-heavy image processing tasks, sanitization is offloaded to a bounded pool of warm background worker threads using `offloadSanitizeToWorker` in [src/utils/imageProcessor.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/imageProcessor.ts#L368-L394):
+- **Worker Thread Execution**: Image buffer processing runs inside reusable Node.js worker threads (`new Worker(new URL('./imageProcessorWorker.ts', import.meta.url), { workerData: { isImageProcessorPoolWorker: true } })`, or `--experimental-strip-types` under `NODE_ENV === 'test'`) that `unref()` while idle, transfer `ArrayBuffer` payloads once ready, and never fall back to the main thread.
 - **Default 10-Second Worker Timeout**: A strict 10-second timeout (`timeoutMs = 10000`) is enforced per sanitization job.
-- **Timeout & Error Behavior**: If worker execution exceeds 10 seconds or encounters unrecoverable corruption, any stalled worker is terminated (`worker.terminate()`) and an HTTP 400 error response is returned (`ApiError(400, 'Image sanitization failed. Worker thread timed out.')`).
+- **Timeout & Error Behavior**: If worker execution exceeds 10 seconds, emits an error, or exits unexpectedly, the failure is logged with `logger.error`, any stalled or crashed worker is evicted and terminated (`worker.terminate()`), and an HTTP 400 error response is returned (`ApiError(400, 'Image sanitization failed. Worker thread timed out.')` on timeout or `ApiError(400, ...)` on error/exit).
 
 ### 5. Credential Safety
 - Cloud credentials (`S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`) are exclusively accessible on the server side (Node.js runtime).
