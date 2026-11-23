@@ -610,11 +610,18 @@ export default function HistoryTimelinePage() {
     () =>
       new QueryClient({
         defaultOptions: {
-          queries: { retry: false },
-          mutations: { retry: false },
+          queries: { retry: false, gcTime: Infinity },
+          mutations: { retry: false, gcTime: Infinity },
         },
       })
   );
+
+  useEffect(() => {
+    if (existingQueryClient) return;
+    return () => {
+      fallbackQueryClient.clear();
+    };
+  }, [existingQueryClient, fallbackQueryClient]);
 
   if (existingQueryClient) {
     return <HistoryTimelinePageContainer />;

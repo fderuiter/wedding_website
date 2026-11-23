@@ -5,6 +5,7 @@ import { execSync } from 'child_process';
 import {
   checkDocDrift,
   verifyDocSync,
+  runDocGeneration,
   main,
   DEFAULT_DOC_FILES,
 } from './verify-doc-sync';
@@ -366,6 +367,56 @@ describe('verify-doc-sync', () => {
       expect(mockConsoleError).toHaveBeenCalledWith(
         expect.stringContaining('Documentation Generation Failed!')
       );
+    });
+  });
+
+  describe('Single-pass OpenAPI generation contract', () => {
+    it('invokes generate-openapi.ts once in runDocGeneration and passes --skip-openapi to generate-docs.ts', () => {
+      const repoRoot = process.cwd();
+      const counterFile = path.join(tempDir, 'openapi-count.txt');
+      fs.mkdirSync(path.join(tempDir, 'scripts'), { recursive: true });
+
+      fs.writeFileSync(
+        path.join(tempDir, 'scripts', 'generate-openapi.ts'),
+        [
+          "import fs from 'fs';",
+          `const p = ${JSON.stringify(counterFile)};`,
+          'const prev = fs.existsSync(p) ? Number(fs.readFileSync(p, \'utf8\')) : 0;',
+          'fs.writeFileSync(p, String(prev + 1));',
+        ].join('\n')
+      );
+
+      fs.writeFileSync(
+        path.join(tempDir, 'scripts', 'generate-docs.ts'),
+        [
+          "import fs from 'fs';",
+          `const p = ${JSON.stringify(counterFile)};`,
+          "if (!process.argv.includes('--skip-openapi')) {",
+          "  const prev = fs.existsSync(p) ? Number(fs.readFileSync(p, 'utf8')) : 0;",
+          '  fs.writeFileSync(p, String(prev + 1));',
+          '}',
+        ].join('\n')
+      );
+
+      const prevPath = process.env.PATH;
+      process.env.PATH = `${path.join(repoRoot, 'node_modules', '.bin')}${path.delimiter}${prevPath ?? ''}`;
+      try {
+        runDocGeneration(tempDir);
+      } finally {
+        process.env.PATH = prevPath;
+      }
+      expect(fs.readFileSync(counterFile, 'utf8')).toBe('1');
+
+      const ciYaml = fs.readFileSync(path.join(repoRoot, '.github', 'workflows', 'ci.yml'), 'utf8');
+      expect(ciYaml).toContain('npx tsx scripts/generate-openapi.ts');
+      expect(ciYaml).toContain('npx tsx scripts/generate-docs.ts --skip-openapi');
+
+      const generateDocsSource = fs.readFileSync(
+        path.join(repoRoot, 'scripts', 'generate-docs.ts'),
+        'utf8'
+      );
+      expect(generateDocsSource).toContain("if (!process.argv.includes('--skip-openapi'))");
+      expect(generateDocsSource).toContain('generateOpenApiSpec()');
     });
   });
 });

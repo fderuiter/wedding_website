@@ -1171,9 +1171,9 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     );
   }
 
-  if (!composeContract.migrationDatabaseUrl?.startsWith('${DATABASE_URL:-')) {
+  if (!composeContract.migrationDatabaseUrl?.startsWith('${CONTAINER_DATABASE_URL:-')) {
     errors.push(
-      'docker-compose.yml: `migration` service must honor explicit `DATABASE_URL` overrides (`${DATABASE_URL:-...}`)'
+      'docker-compose.yml: `migration` service must scope container `DATABASE_URL` overrides via `${CONTAINER_DATABASE_URL:-...}`'
     );
   }
   if (composeContract.migrationCommand !== './node_modules/.bin/prisma migrate deploy') {
@@ -1207,9 +1207,9 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   if (!composeContract.appHasHealthcheck || !composeContract.appHealthcheckTargetsLive) {
     errors.push('docker-compose.yml: `app` service healthcheck must probe `/api/live`');
   }
-  if (!composeContract.appEnvMap.get('DATABASE_URL')?.startsWith('${DATABASE_URL:-')) {
+  if (!composeContract.appEnvMap.get('DATABASE_URL')?.startsWith('${CONTAINER_DATABASE_URL:-')) {
     errors.push(
-      'docker-compose.yml: `app` service must honor explicit `DATABASE_URL` overrides (`${DATABASE_URL:-...}`)'
+      'docker-compose.yml: `app` service must scope container `DATABASE_URL` overrides via `${CONTAINER_DATABASE_URL:-...}`'
     );
   }
   if (composeContract.appEnvMap.get('E2E_TEST') !== '${E2E_TEST:-false}') {
@@ -1266,7 +1266,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   }
 
   if (!composeContract.appHasEnvFile) {
-    for (const envVar of ['DB_USER', 'DB_PASSWORD', 'DB_NAME', 'DB_PORT']) {
+    for (const envVar of ['DB_USER', 'DB_PASSWORD', 'DB_NAME', 'DB_PORT', 'CONTAINER_DATABASE_URL']) {
       if (composeContract.interpolatedVars.includes(envVar) && !dockerMd.includes(envVar)) {
         errors.push(
           `docs/deployment/docker-vps.md: Missing Compose-interpolated variable "${envVar}" from docker-compose.yml`

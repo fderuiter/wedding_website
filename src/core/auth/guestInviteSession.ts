@@ -3,6 +3,7 @@ import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { normalizeSafeCallbackPath } from '@/utils/safeCallbackUrl';
 import { isAdminRequest } from './auth.server';
 import { isGuestRequest } from './guest.server';
 import {
@@ -129,15 +130,10 @@ export async function getGuestInviteSession(req?: NextRequest): Promise<GuestInv
   return resolveActiveInvitationSession(signedPayload);
 }
 
-function buildGuestLoginRedirectTarget(callbackPath: string | null): string {
-  if (
-    callbackPath &&
-    callbackPath.startsWith('/') &&
-    !callbackPath.startsWith('//') &&
-    callbackPath !== '/guest/login' &&
-    !callbackPath.startsWith('/guest/login?')
-  ) {
-    return `/guest/login?callbackUrl=${encodeURIComponent(callbackPath)}`;
+export function buildGuestLoginRedirectTarget(callbackPath: string | null): string {
+  const safeCallbackPath = normalizeSafeCallbackPath(callbackPath);
+  if (safeCallbackPath) {
+    return `/guest/login?callbackUrl=${encodeURIComponent(safeCallbackPath)}`;
   }
 
   return '/guest/login';

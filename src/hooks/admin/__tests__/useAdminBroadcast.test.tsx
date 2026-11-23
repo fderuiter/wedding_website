@@ -18,6 +18,15 @@ describe('useAdminBroadcast', () => {
   const mockPost = apiClient.post as jest.MockedFunction<typeof apiClient.post>;
   const mockDelete = apiClient.delete as jest.MockedFunction<typeof apiClient.delete>;
 
+  function createTestQueryClient() {
+    return new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, gcTime: Infinity },
+        mutations: { retry: false, gcTime: Infinity },
+      },
+    });
+  }
+
   function createWrapper(queryClient: QueryClient) {
     return function Wrapper({ children }: { children: React.ReactNode }) {
       return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
@@ -29,9 +38,7 @@ describe('useAdminBroadcast', () => {
   });
 
   it('skips GET /api/admin/broadcast/history by default when fetchHistory is omitted', () => {
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    const queryClient = createTestQueryClient();
 
     const { result } = renderHook(() => useAdminBroadcast(), {
       wrapper: createWrapper(queryClient),
@@ -40,12 +47,11 @@ describe('useAdminBroadcast', () => {
     expect(mockGet).not.toHaveBeenCalled();
     expect(result.current.history).toEqual([]);
     expect(result.current.loadingHistory).toBe(false);
+    queryClient.clear();
   });
 
   it('fetches bounded summary history rows when fetchHistory is true and caps limit at 100', async () => {
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    const queryClient = createTestQueryClient();
     mockGet.mockResolvedValueOnce([
       {
         id: 'bc-1',
@@ -71,12 +77,11 @@ describe('useAdminBroadcast', () => {
 
     expect(mockGet).toHaveBeenCalledTimes(1);
     expect(mockGet).toHaveBeenCalledWith('/api/admin/broadcast/history?page=1&limit=100');
+    queryClient.clear();
   });
 
   it('invalidates both summary and detail broadcast queries after retryBroadcast and cancelScheduledBroadcast', async () => {
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-    });
+    const queryClient = createTestQueryClient();
     const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
 
     mockPost.mockResolvedValueOnce({ id: 'bc-1', status: 'SENT' });
