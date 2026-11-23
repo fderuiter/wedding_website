@@ -3,6 +3,7 @@
  */
 
 import { ContentRepository } from '../repository';
+import { ContentService } from '../service';
 import { ContentNodeAdminService } from '../admin.service';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -22,10 +23,15 @@ const adapter = new PrismaPg(pool);
 const realPrisma = new PrismaClient({ adapter });
 
 const contentRepo = new ContentRepository(realPrisma);
+const contentSvc = new ContentService(contentRepo);
 
 describe('Content Domain Database Integration', () => {
   beforeEach(async () => {
     // Isolate test database states between runs to prevent cross-test data pollution
+    await realPrisma.weddingPartyMember.deleteMany();
+    await realPrisma.attraction.deleteMany();
+    await realPrisma.registryItem.deleteMany();
+    await realPrisma.media.deleteMany();
     await realPrisma.snapshotVersion.deleteMany();
     await realPrisma.contentNode.deleteMany();
     await realPrisma.appConfig.deleteMany();
@@ -45,6 +51,10 @@ describe('Content Domain Database Integration', () => {
   });
 
   afterAll(async () => {
+    await realPrisma.weddingPartyMember.deleteMany();
+    await realPrisma.attraction.deleteMany();
+    await realPrisma.registryItem.deleteMany();
+    await realPrisma.media.deleteMany();
     await realPrisma.snapshotVersion.deleteMany();
     await realPrisma.contentNode.deleteMany();
     await realPrisma.appConfig.deleteMany();
@@ -218,5 +228,178 @@ describe('Content Domain Database Integration', () => {
       where: { entityType: 'ContentNode', author: 'ReorderTester' },
     });
     expect(snapshots).toHaveLength(2);
+  });
+
+  test('getPublicPhotos filters approved visible photos in PostgreSQL, applies limit and since to eligible rows, and accepts legacy URLs', async () => {
+    const t1 = new Date('2026-06-20T10:00:00.000Z');
+    const t2 = new Date('2026-06-20T11:00:00.000Z');
+    const t3 = new Date('2026-06-20T12:00:00.000Z');
+    const t4 = new Date('2026-06-20T13:00:00.000Z');
+    const t5 = new Date('2026-06-20T14:00:00.000Z');
+    const t6 = new Date('2026-06-20T15:00:00.000Z');
+
+    await realPrisma.contentNode.createMany({
+      data: [
+        {
+          id: 'pub-legacy-url',
+          type: 'Photo',
+          tags: ['gallery'],
+          data: { url: '/../legacy-stored-ceremony.jpg', status: 'APPROVED', isVisible: true },
+          createdAt: t1,
+        },
+        {
+          id: 'pub-approved-1',
+          type: 'Photo',
+          tags: ['gallery'],
+          data: { url: '/uploads/photos/approved-1.jpg', status: 'APPROVED', isVisible: true },
+          createdAt: t2,
+        },
+        {
+          id: 'pub-approved-2',
+          type: 'Photo',
+          tags: ['gallery', 'guest-upload'],
+          data: { url: '/uploads/photos/approved-2.jpg', status: 'APPROVED', isVisible: true },
+          createdAt: t3,
+        },
+        {
+          id: 'hidden-approved',
+          type: 'Photo',
+          tags: ['gallery'],
+          data: { url: '/uploads/photos/hidden.jpg', status: 'APPROVED', isVisible: false },
+          createdAt: t4,
+        },
+        {
+          id: 'pending-newer',
+          type: 'Photo',
+          tags: ['gallery', 'guest-upload'],
+          data: { url: '/uploads/photos/pending.jpg', status: 'PENDING', isVisible: false },
+          createdAt: t5,
+        },
+        {
+          id: 'rejected-newest',
+          type: 'Photo',
+          tags: ['gallery', 'guest-upload'],
+          data: { url: '/uploads/photos/rejected.jpg', status: 'REJECTED', isVisible: false },
+          createdAt: t6,
+        },
+      ],
+    });
+
+    const allPublic = await contentSvc.getPublicPhotos();
+    expect(allPublic.map((n) => n.id)).toEqual(['pub-approved-2', 'pub-approved-1', 'pub-legacy-url']);
+
+    // Newer PENDING/REJECTED/hidden rows must never displace approved rows under limit
+    const bounded = await contentSvc.getPublicPhotos({ limit: 2 });
+    expect(bounded.map((n) => n.id)).toEqual(['pub-approved-2', 'pub-approved-1']);
+
+    // Incremental since queries exclude unmoderated newer uploads and order newest-first
+    const sinceT1 = await contentSvc.getPublicPhotos({ since: t1 });
+    expect(sinceT1.map((n) => n.id)).toEqual(['pub-approved-2', 'pub-approved-1']);
+
+    const sinceT3 = await contentSvc.getPublicPhotos({ since: t3 });
+    expect(sinceT3).toEqual([]);
+  });
+
+  test('getPublicPhotos excludes entity-bound media before applying row limits unless publishToGallery is true', async () => {
+    const [partyMedia, attractionMedia, registryMedia, publishedRegistryMedia] = await Promise.all([
+      realPrisma.media.create({ data: { url: '/uploads/party.jpg', altText: 'Best Man' } }),
+      realPrisma.media.create({ data: { url: '/uploads/hotel.jpg', altText: 'Hotel' } }),
+      realPrisma.media.create({ data: { url: '/uploads/toaster.jpg', altText: 'Toaster' } }),
+      realPrisma.media.create({ data: { url: '/uploads/published-gift.jpg', altText: 'Published Gift' } }),
+    ]);
+
+    await realPrisma.weddingPartyMember.create({
+      data: { name: 'Alex', role: 'Best Man', bio: 'Bio', photoId: partyMedia.id },
+    });
+    await realPrisma.attraction.create({
+      data: {
+        name: 'Grand Hotel',
+        description: 'Block',
+        imageId: attractionMedia.id,
+        category: 'Hotel',
+        website: 'https://hotel.example.com',
+        directions: '1 Main St',
+        latitude: 30.2,
+        longitude: -97.7,
+      },
+    });
+    await realPrisma.registryItem.createMany({
+      data: [
+        {
+          name: 'Toaster',
+          description: '2-slice',
+          category: 'Kitchen',
+          price: 50,
+          imageId: registryMedia.id,
+        },
+        {
+          name: 'Published Gift',
+          description: 'Shared in gallery',
+          category: 'Home',
+          price: 120,
+          imageId: publishedRegistryMedia.id,
+        },
+      ],
+    });
+
+    await realPrisma.contentNode.createMany({
+      data: [
+        {
+          id: 'photo-older-curated',
+          type: 'Photo',
+          tags: ['gallery'],
+          data: { url: '/uploads/curated.jpg', status: 'APPROVED', isVisible: true },
+          createdAt: new Date('2026-06-20T10:00:00.000Z'),
+        },
+        {
+          id: 'photo-published-entity',
+          type: 'Photo',
+          tags: ['gallery', 'curated'],
+          data: {
+            url: publishedRegistryMedia.url,
+            status: 'APPROVED',
+            isVisible: true,
+            mediaId: publishedRegistryMedia.id,
+            publishToGallery: true,
+          },
+          createdAt: new Date('2026-06-20T11:00:00.000Z'),
+        },
+        {
+          id: 'photo-bound-party',
+          type: 'Photo',
+          tags: ['gallery'],
+          data: { url: partyMedia.url, status: 'APPROVED', isVisible: true, mediaId: partyMedia.id },
+          createdAt: new Date('2026-06-20T12:00:00.000Z'),
+        },
+        {
+          id: 'photo-bound-attraction',
+          type: 'Photo',
+          tags: ['gallery'],
+          data: {
+            url: attractionMedia.url,
+            status: 'APPROVED',
+            isVisible: true,
+            mediaId: attractionMedia.id,
+            publishToGallery: false,
+          },
+          createdAt: new Date('2026-06-20T13:00:00.000Z'),
+        },
+        {
+          id: 'photo-bound-registry',
+          type: 'Photo',
+          tags: ['gallery'],
+          data: { url: registryMedia.url, status: 'APPROVED', isVisible: true, mediaId: registryMedia.id },
+          createdAt: new Date('2026-06-20T14:00:00.000Z'),
+        },
+      ],
+    });
+
+    // Unbounded query excludes the 3 newer unpublished entity-bound photos
+    const unbounded = await contentSvc.getPublicPhotos();
+    expect(unbounded.map((n) => n.id)).toEqual(['photo-published-entity', 'photo-older-curated']);
+
+    // Bounded limit=2 query still returns both eligible photos even though 3 newer rows are entity-bound
+    const bounded = await contentSvc.getPublicPhotos({ limit: 2 });
+    expect(bounded.map((n) => n.id)).toEqual(['photo-published-entity', 'photo-older-curated']);
   });
 });
