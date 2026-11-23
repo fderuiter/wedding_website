@@ -1706,4 +1706,69 @@ describe('RegistryItemCard Component', () => {
       expect(mockOnItemUpdated).toHaveBeenCalledWith(reopenedItem);
     });
   });
+
+  it('expands optional return-address section and forwards giver postal fields to onContribute', async () => {
+    const captureContribute = jest.fn().mockResolvedValue(undefined);
+    render(
+      <Overlay isOpen={true} onClose={mockOnClose}>
+        <RegistryItemCard
+          item={mockSingleItem}
+          onClose={mockOnClose}
+          onContribute={captureContribute}
+        />
+      </Overlay>
+    );
+
+    const toggleBtn = screen.getByTestId('toggle-return-address-button');
+    expect(toggleBtn).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByTestId('contributor-return-address-fields')).not.toBeInTheDocument();
+
+    fireEvent.click(toggleBtn);
+    expect(toggleBtn).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId('contributor-return-address-fields')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Jordan Donor' } });
+    fireEvent.change(screen.getByLabelText(/^Address Line 1$/i), {
+      target: { value: '742 Evergreen Terrace' },
+    });
+    fireEvent.change(screen.getByLabelText(/Address Line 2/i), {
+      target: { value: 'Apt 2B' },
+    });
+    fireEvent.change(screen.getByLabelText(/^City$/i), {
+      target: { value: 'Springfield' },
+    });
+    fireEvent.change(screen.getByLabelText(/State \/ Province/i), {
+      target: { value: 'IL' },
+    });
+    fireEvent.change(screen.getByLabelText(/ZIP \/ Postal Code/i), {
+      target: { value: '62704' },
+    });
+    fireEvent.change(screen.getByLabelText(/Country/i), {
+      target: { value: 'USA' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
+
+    await waitFor(() => {
+      expect(captureContribute).toHaveBeenCalledWith(
+        'item-1',
+        'Jordan Donor',
+        100,
+        undefined,
+        undefined,
+        false,
+        undefined,
+        undefined,
+        undefined,
+        {
+          addressLine1: '742 Evergreen Terrace',
+          addressLine2: 'Apt 2B',
+          city: 'Springfield',
+          state: 'IL',
+          zipCode: '62704',
+          country: 'USA',
+        }
+      );
+    });
+  });
 });

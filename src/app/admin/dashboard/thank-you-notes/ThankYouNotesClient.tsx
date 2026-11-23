@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, useId } from 'react'
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/ToastProvider';
 import { Button } from '@/components/ui/Button';
+import { Dialog } from '@/components/ui/Dialog';
 import { Input, Label, Textarea, FormGroup } from '@/components/ui/forms';
 import { SegmentedTabs, SegmentedTabPanel } from '@/components/ui/SegmentedTabs';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
@@ -21,6 +22,12 @@ interface ThankYouContributorItem {
   id: string;
   name: string;
   email?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zipCode?: string | null;
+  country?: string | null;
   message?: string | null;
   amount: number;
   refundedAmount?: number;
@@ -29,6 +36,7 @@ interface ThankYouContributorItem {
   date: string;
   thankYouStatus: 'Unsent' | 'Sent' | 'Not Needed' | string;
   thankYouSentAt?: string | null;
+  thankYouEmailSentAt?: string | null;
   thankYouNote?: string | null;
   stripePaymentIntentId?: string | null;
   stripeChargeId?: string | null;
@@ -47,6 +55,7 @@ interface ThankYouContributorItem {
     id?: string;
     code?: string;
     guestName?: string;
+    email?: string | null;
     householdName?: string | null;
     addressLine1?: string | null;
     addressLine2?: string | null;
@@ -57,21 +66,74 @@ interface ThankYouContributorItem {
   } | null;
 }
 
-interface InvitationOption {
+interface InvitationHouseholdOption {
   id: string;
   code: string;
   guestName: string;
+  email?: string | null;
   householdName?: string | null;
   addressLine1?: string | null;
+  addressLine2?: string | null;
   city?: string | null;
   state?: string | null;
   zipCode?: string | null;
+  country?: string | null;
 }
 
 interface RegistryItemOption {
   id: string;
   name: string;
   category?: string;
+}
+
+function resolveDisplayAddress(item: ThankYouContributorItem): {
+  summary: string | null;
+  source: 'contributor' | 'household' | 'none';
+} {
+  const contribParts = [
+    item.addressLine1?.trim(),
+    item.addressLine2?.trim(),
+    item.city?.trim(),
+    item.state?.trim(),
+    item.zipCode?.trim(),
+    item.country?.trim(),
+  ].filter(Boolean);
+
+  if (contribParts.length > 0) {
+    const cityState = [item.city?.trim(), item.state?.trim()].filter(Boolean).join(', ');
+    const line = [
+      item.addressLine1?.trim(),
+      item.addressLine2?.trim(),
+      [cityState, item.zipCode?.trim()].filter(Boolean).join(' '),
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return { summary: line || contribParts.join(', '), source: 'contributor' };
+  }
+
+  const invite = item.invitationCode;
+  const inviteParts = [
+    invite?.addressLine1?.trim(),
+    invite?.addressLine2?.trim(),
+    invite?.city?.trim(),
+    invite?.state?.trim(),
+    invite?.zipCode?.trim(),
+    invite?.country?.trim(),
+  ].filter(Boolean);
+
+  if (inviteParts.length > 0) {
+    const cityState = [invite?.city?.trim(), invite?.state?.trim()].filter(Boolean).join(', ');
+    const line = [
+      invite?.addressLine1?.trim(),
+      invite?.addressLine2?.trim(),
+      [cityState, invite?.zipCode?.trim()].filter(Boolean).join(' '),
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return { summary: line || inviteParts.join(', '), source: 'household' };
+  }
+
+  return { summary: null, source: 'none' };
 }
 
 type ThankYouMetrics = ProgressMetrics;
@@ -196,11 +258,39 @@ export default function ThankYouNotesPage() {
   const [editStatus, setEditStatus] = useState<'Unsent' | 'Sent' | 'Not Needed'>('Unsent');
   const [editNote, setEditNote] = useState<string>('');
   const [editSentAt, setEditSentAt] = useState<string>('');
-  const [editInvitationCodeId, setEditInvitationCodeId] = useState<string>('');
-  const [initialEditInvitationCodeId, setInitialEditInvitationCodeId] = useState<string>('');
+  const [editAddressLine1, setEditAddressLine1] = useState<string>('');
+  const [editAddressLine2, setEditAddressLine2] = useState<string>('');
+  const [editCity, setEditCity] = useState<string>('');
+  const [editState, setEditState] = useState<string>('');
+  const [editZipCode, setEditZipCode] = useState<string>('');
+  const [editCountry, setEditCountry] = useState<string>('');
+  const [editInvitationCodeId, setEditInvitationCodeId] = useState<string | null>(null);
+  const [editLinkedHouseholdLabel, setEditLinkedHouseholdLabel] = useState<string>('');
+  const [syncAddressToGuest, setSyncAddressToGuest] = useState<boolean>(false);
+  const [householdSearchQuery, setHouseholdSearchQuery] = useState<string>('');
+  const [householdResults, setHouseholdResults] = useState<InvitationHouseholdOption[]>([]);
+  const [isSearchingHouseholds, setIsSearchingHouseholds] = useState<boolean>(false);
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
   const [pendingActionId, setPendingActionId] = useState<string | null>(null);
+  const [skipUnaddressedLabels, setSkipUnaddressedLabels] = useState<boolean>(false);
+
+  // Email composer modal state
+  const [composerItem, setComposerItem] = useState<ThankYouContributorItem | null>(null);
+  const [composerTemplateId, setComposerTemplateId] = useState<string>('');
+  const [composerRecipientEmail, setComposerRecipientEmail] = useState<string>('');
+  const [composerSubject, setComposerSubject] = useState<string>('');
+  const [composerBody, setComposerBody] = useState<string>('');
+  const [composerPreview, setComposerPreview] = useState<{
+    subject: string;
+    textBody: string;
+    htmlBody: string;
+    to: string | null;
+    testRecipient: string | null;
+  } | null>(null);
+  const [composerSubmittingMode, setComposerSubmittingMode] = useState<
+    'preview' | 'test' | 'send' | null
+  >(null);
 
   // Offline gift creation & lookup options state
   const [isOfflineFormOpen, setIsOfflineFormOpen] = useState(false);
@@ -214,7 +304,7 @@ export default function ThankYouNotesPage() {
   const [offlineNote, setOfflineNote] = useState('');
   const [isCreatingOffline, setIsCreatingOffline] = useState(false);
 
-  const [invitationOptions, setInvitationOptions] = useState<InvitationOption[]>([]);
+  const [invitationOptions, setInvitationOptions] = useState<InvitationHouseholdOption[]>([]);
   const [registryItemOptions, setRegistryItemOptions] = useState<RegistryItemOption[]>([]);
   const lookupRequestedRef = useRef(false);
 
@@ -322,6 +412,9 @@ export default function ThankYouNotesPage() {
     }
     if (searchQuery.trim()) {
       params.set('search', searchQuery.trim());
+    }
+    if (skipUnaddressedLabels) {
+      params.set('skipUnaddressed', 'true');
     }
     const query = params.toString();
     const url = `/api/admin/thank-you-notes/export-labels?${query}`;
@@ -434,14 +527,184 @@ export default function ThankYouNotesPage() {
     setEditSentAt(
       item.thankYouSentAt ? new Date(item.thankYouSentAt).toISOString().split('T')[0] : ''
     );
-    const currentInviteId = item.invitationCodeId || item.invitationCode?.id || '';
+    setEditAddressLine1(item.addressLine1 || '');
+    setEditAddressLine2(item.addressLine2 || '');
+    setEditCity(item.city || '');
+    setEditState(item.state || '');
+    setEditZipCode(item.zipCode || '');
+    setEditCountry(item.country || '');
+    const currentInviteId = item.invitationCodeId ?? item.invitationCode?.id ?? null;
     setEditInvitationCodeId(currentInviteId);
-    setInitialEditInvitationCodeId(currentInviteId);
+    setEditLinkedHouseholdLabel(
+      item.invitationCode?.guestName || item.invitationCode?.householdName
+        ? `${item.invitationCode.householdName || item.invitationCode.guestName}${item.invitationCode.code ? ` (${item.invitationCode.code})` : ''}`
+        : ''
+    );
+    setSyncAddressToGuest(false);
+    setHouseholdSearchQuery('');
+    setHouseholdResults([]);
   };
 
   const cancelEditing = () => {
     setEditingId(null);
     setSelectedTemplate('');
+    setHouseholdSearchQuery('');
+    setHouseholdResults([]);
+    setSyncAddressToGuest(false);
+  };
+
+  const handleHouseholdSearch = async (query: string) => {
+    setHouseholdSearchQuery(query);
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setHouseholdResults([]);
+      return;
+    }
+
+    setIsSearchingHouseholds(true);
+    try {
+      const params = new URLSearchParams({ search: trimmed, limit: '8' });
+      const res = await fetch(`/api/admin/invitation-codes/catalog?${params.toString()}`);
+      if (!res.ok) {
+        throw new Error('Failed to search guest households.');
+      }
+      const json = await res.json();
+      const payload = json?.data ?? json;
+      setHouseholdResults(Array.isArray(payload?.items) ? payload.items : []);
+    } catch {
+      setHouseholdResults([]);
+    } finally {
+      setIsSearchingHouseholds(false);
+    }
+  };
+
+  const handleSelectHousehold = (household: InvitationHouseholdOption) => {
+    setEditInvitationCodeId(household.id);
+    setEditLinkedHouseholdLabel(
+      `${household.guestName}${household.code ? ` (${household.code})` : ''}`
+    );
+    setHouseholdSearchQuery('');
+    setHouseholdResults([]);
+    if (
+      !editAddressLine1.trim() &&
+      !editCity.trim() &&
+      !editState.trim() &&
+      !editZipCode.trim() &&
+      household.addressLine1
+    ) {
+      setEditAddressLine1(household.addressLine1 || '');
+      setEditAddressLine2(household.addressLine2 || '');
+      setEditCity(household.city || '');
+      setEditState(household.state || '');
+      setEditZipCode(household.zipCode || '');
+      setEditCountry(household.country || '');
+    }
+  };
+
+  const handleUnlinkHousehold = () => {
+    setEditInvitationCodeId(null);
+    setEditLinkedHouseholdLabel('');
+    setSyncAddressToGuest(false);
+  };
+
+  const openEmailComposer = (item: ThankYouContributorItem) => {
+    setComposerItem(item);
+    setComposerTemplateId('');
+    setComposerRecipientEmail(item.email || item.invitationCode?.email || '');
+    setComposerSubject('Thank you for your generous gift!');
+    const initialBody =
+      item.thankYouNote?.trim() ||
+      substituteThankYouTemplateTokens(THANK_YOU_TEMPLATES[0].template, {
+        guestName: item.name || item.invitationCode?.guestName,
+        giftName: item.registryItem?.name || 'wedding gift',
+        amount: item.amount,
+      });
+    setComposerBody(initialBody);
+    setComposerPreview(null);
+  };
+
+  const closeEmailComposer = () => {
+    setComposerItem(null);
+    setComposerPreview(null);
+    setComposerSubmittingMode(null);
+  };
+
+  const handleComposerTemplateChange = (templateId: string) => {
+    setComposerTemplateId(templateId);
+    if (!templateId || !composerItem) return;
+    const tmpl = THANK_YOU_TEMPLATES.find((t) => t.id === templateId);
+    if (!tmpl) return;
+    const populated = substituteThankYouTemplateTokens(tmpl.template, {
+      guestName: composerItem.name || composerItem.invitationCode?.guestName,
+      giftName: composerItem.registryItem?.name || 'wedding gift',
+      amount: composerItem.amount,
+    });
+    setComposerBody(populated);
+    setComposerPreview(null);
+  };
+
+  const handleComposerAction = async (mode: 'preview' | 'test' | 'send') => {
+    if (!composerItem) return;
+    if (!composerBody.trim()) {
+      addToast('Please enter a thank-you message body.', 'error');
+      return;
+    }
+
+    setComposerSubmittingMode(mode);
+    try {
+      const res = await fetch(
+        `/api/admin/thank-you-notes/${encodeURIComponent(composerItem.id)}/send-email`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mode,
+            subject: composerSubject.trim() || undefined,
+            body: composerBody,
+            recipientEmail: composerRecipientEmail.trim() || undefined,
+          }),
+        }
+      );
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const errMessage =
+          (typeof json?.error === 'string' ? json.error : json?.error?.message) ||
+          `Failed to ${mode} thank-you email.`;
+        throw new Error(errMessage);
+      }
+      const data = json?.data ?? json;
+
+      if (mode === 'preview') {
+        setComposerPreview({
+          subject: data.subject || composerSubject,
+          textBody: data.textBody || composerBody,
+          htmlBody: data.htmlBody || '',
+          to: data.to || null,
+          testRecipient: data.testRecipient || null,
+        });
+      } else if (mode === 'test') {
+        setComposerPreview({
+          subject: data.subject || composerSubject,
+          textBody: data.textBody || composerBody,
+          htmlBody: data.htmlBody || '',
+          to: data.to || null,
+          testRecipient: data.testRecipient || null,
+        });
+        addToast(`Sent test thank-you email to ${data.to || 'couple inbox'}.`, 'success');
+      } else {
+        addToast(`Thank-you email sent to ${data.to || composerItem.name}.`, 'success');
+        closeEmailComposer();
+        await fetchData();
+      }
+    } catch (err: unknown) {
+      addToast(
+        err instanceof Error && err.message ? err.message : 'Failed to process thank-you email.',
+        'error'
+      );
+    } finally {
+      setComposerSubmittingMode(null);
+    }
   };
 
   const openOfflineGiftForm = () => {
@@ -549,10 +812,15 @@ export default function ThankYouNotesPage() {
         thankYouStatus: editStatus,
         thankYouNote: editNote.trim() || null,
         thankYouSentAt: editSentAt ? new Date(editSentAt).toISOString() : null,
+        invitationCodeId: editInvitationCodeId || null,
+        addressLine1: editAddressLine1.trim() || null,
+        addressLine2: editAddressLine2.trim() || null,
+        city: editCity.trim() || null,
+        state: editState.trim() || null,
+        zipCode: editZipCode.trim() || null,
+        country: editCountry.trim() || null,
+        ...(syncAddressToGuest && editInvitationCodeId ? { syncAddressToGuest: true } : {}),
       };
-      if (editInvitationCodeId !== initialEditInvitationCodeId) {
-        payload.invitationCodeId = editInvitationCodeId || null;
-      }
 
       const res = await fetch(`/api/admin/thank-you-notes/${id}`, {
         method: 'PATCH',
@@ -655,13 +923,22 @@ export default function ThankYouNotesPage() {
             Track, draft, and organize thank-you notes for all your wedding gift contributors.
           </p>
         </div>
-        <div className="flex gap-2 flex-wrap relative">
+        <div className="flex gap-2 items-center flex-wrap relative">
           <Button variant="primary" onClick={openOfflineGiftForm}>
             Record Offline Gift
           </Button>
           <Button variant="secondary" onClick={handleExportCsv}>
             Export CSV
           </Button>
+          <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs font-medium text-gray-700 dark:text-gray-200 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={skipUnaddressedLabels}
+              onChange={(e) => setSkipUnaddressedLabels(e.target.checked)}
+              className="rounded border-gray-300 text-primary focus:ring-primary h-3.5 w-3.5"
+            />
+            Skip unaddressed labels
+          </label>
           <div className="relative inline-block text-left">
             <Button
               ref={exportTriggerRef}
@@ -1050,65 +1327,238 @@ export default function ThankYouNotesPage() {
                         />
                       </TableCell>
 
-                      <TableCell className="font-semibold text-gray-900 dark:text-white">
+                      <TableCell className="font-semibold text-gray-900 dark:text-white align-top">
                         <div>{item.name}</div>
-                        {item.email && (
-                          <div className="text-xs text-gray-500 font-normal">{item.email}</div>
+                        {(item.email || item.invitationCode?.email) && (
+                          <div className="text-xs text-gray-500 font-normal">
+                            {item.email || item.invitationCode?.email}
+                          </div>
                         )}
-                        {isEditing ? (
-                          <div className="mt-1.5 font-normal">
-                            <label
-                              htmlFor={`edit-household-${item.id}`}
-                              className="block text-[11px] font-medium text-gray-700 dark:text-gray-300 mb-0.5"
-                            >
-                              Household Address
-                            </label>
-                            <select
-                              id={`edit-household-${item.id}`}
-                              aria-label={`Household address for ${item.name}`}
-                              value={editInvitationCodeId}
-                              onChange={(e) => setEditInvitationCodeId(e.target.value)}
-                              className="w-full text-xs p-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                            >
-                              <option value="">No linked household</option>
-                              {item.invitationCode?.id &&
-                                !invitationOptions.some((opt) => opt.id === item.invitationCode?.id) && (
-                                <option value={item.invitationCode.id}>
-                                  {item.invitationCode.householdName ||
+                        {(item.invitationCode?.guestName || item.invitationCode?.householdName) && (
+                          <div
+                            data-testid={`linked-household-${item.id}`}
+                            className="mt-1 inline-flex items-center gap-1 rounded bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 text-[11px] font-medium text-indigo-800 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-800"
+                          >
+                            Household: {item.invitationCode.guestName || item.invitationCode.householdName}
+                            {item.invitationCode.code ? ` (${item.invitationCode.code})` : ''}
+                          </div>
+                        )}
+                        {(() => {
+                          const resolved = resolveDisplayAddress(item);
+                          if (resolved.summary) {
+                            return (
+                              <div
+                                data-testid={`resolved-address-${item.id}`}
+                                className="text-[11px] text-gray-600 dark:text-gray-300 font-normal truncate max-w-xs mt-1"
+                                title={resolved.summary}
+                              >
+                                📍 {resolved.summary}
+                              </div>
+                            );
+                          }
+                          return (
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5 font-normal">
+                              <span className="text-[11px] text-gray-500 dark:text-gray-400 italic">
+                                No address on file
+                              </span>
+                              {!isEditing && (
+                                <button
+                                  type="button"
+                                  onClick={() => startEditing(item)}
+                                  aria-label={`Link Address for ${item.name}`}
+                                  className="text-[11px] font-medium text-primary underline hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-primary rounded"
+                                >
+                                  Link Address
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {isEditing && (
+                          <div className="mt-3 space-y-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/80 p-2.5 font-normal text-xs">
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <label
+                                  htmlFor={`edit-household-${item.id}`}
+                                  className="font-semibold text-gray-800 dark:text-gray-200"
+                                >
+                                  Guest Household Link
+                                </label>
+                                {editInvitationCodeId && (
+                                  <button
+                                    type="button"
+                                    onClick={handleUnlinkHousehold}
+                                    aria-label={`Unlink household for ${item.name}`}
+                                    className="text-[11px] font-semibold text-red-700 dark:text-red-400 hover:underline"
+                                  >
+                                    Unlink
+                                  </button>
+                                )}
+                              </div>
+                              <select
+                                id={`edit-household-${item.id}`}
+                                aria-label={`Household address for ${item.name}`}
+                                value={editInvitationCodeId || ''}
+                                onChange={(e) => {
+                                  const nextId = e.target.value;
+                                  if (!nextId) {
+                                    handleUnlinkHousehold();
+                                    return;
+                                  }
+                                  const matched = invitationOptions.find((opt) => opt.id === nextId);
+                                  if (matched) {
+                                    handleSelectHousehold(matched);
+                                  } else {
+                                    setEditInvitationCodeId(nextId);
+                                  }
+                                }}
+                                className="w-full text-xs p-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                              >
+                                <option value="">No linked household</option>
+                                {item.invitationCode?.id &&
+                                  !invitationOptions.some((opt) => opt.id === item.invitationCode?.id) && (
+                                  <option value={item.invitationCode.id}>
+                                    {item.invitationCode.householdName ||
                                       item.invitationCode.guestName ||
                                       item.invitationCode.code}
-                                </option>
+                                  </option>
+                                )}
+                                {editInvitationCodeId &&
+                                  editInvitationCodeId !== item.invitationCode?.id &&
+                                  !invitationOptions.some((opt) => opt.id === editInvitationCodeId) && (
+                                  <option value={editInvitationCodeId}>
+                                    {editLinkedHouseholdLabel || editInvitationCodeId}
+                                  </option>
+                                )}
+                                {invitationOptions.map((inv) => (
+                                  <option key={inv.id} value={inv.id}>
+                                    {inv.householdName || inv.guestName} ({inv.code})
+                                    {inv.addressLine1
+                                      ? ` — ${inv.addressLine1}${inv.city ? `, ${inv.city}` : ''}`
+                                      : ' — No address'}
+                                  </option>
+                                ))}
+                              </select>
+                              {editInvitationCodeId ? (
+                                <div className="text-[11px] text-indigo-800 dark:text-indigo-200 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-1 rounded border border-indigo-200 dark:border-indigo-800">
+                                  Linked: {editLinkedHouseholdLabel || editInvitationCodeId}
+                                </div>
+                              ) : (
+                                <div className="text-[11px] text-gray-600 dark:text-gray-400">
+                                  Not linked to a guest household
+                                </div>
                               )}
-                              {invitationOptions.map((inv) => (
-                                <option key={inv.id} value={inv.id}>
-                                  {inv.householdName || inv.guestName} ({inv.code})
-                                  {inv.addressLine1
-                                    ? ` — ${inv.addressLine1}${inv.city ? `, ${inv.city}` : ''}`
-                                    : ' — No address'}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        ) : item.invitationCode?.addressLine1 ? (
-                          <div
-                            className="text-[11px] text-gray-500 font-normal truncate max-w-xs mt-0.5"
-                            title={`${item.invitationCode.addressLine1}${item.invitationCode.city ? `, ${item.invitationCode.city}` : ''}`}
-                          >
-                            📍 {item.invitationCode.addressLine1}{item.invitationCode.city ? `, ${item.invitationCode.city}` : ''}
-                          </div>
-                        ) : (
-                          <div className="mt-0.5 flex flex-wrap items-center gap-1.5 font-normal">
-                            <span className="text-[11px] text-gray-400 italic">
-                              No address on file
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => startEditing(item)}
-                              aria-label={`Link Address for ${item.name}`}
-                              className="text-[11px] font-medium text-primary underline hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-primary rounded"
-                            >
-                              Link Address
-                            </button>
+                              <input
+                                type="text"
+                                aria-label={`Search guest household for ${item.name}`}
+                                value={householdSearchQuery}
+                                onChange={(e) => void handleHouseholdSearch(e.target.value)}
+                                placeholder="Search guest name, code, or email..."
+                                className="w-full text-xs p-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                              />
+                              {isSearchingHouseholds && (
+                                <div className="text-[11px] text-gray-600 dark:text-gray-400">
+                                  Searching households...
+                                </div>
+                              )}
+                              {householdResults.length > 0 && (
+                                <ul
+                                  aria-label={`Household search results for ${item.name}`}
+                                  className="max-h-36 overflow-y-auto divide-y divide-gray-200 dark:divide-gray-700 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800"
+                                >
+                                  {householdResults.map((option) => (
+                                    <li key={option.id}>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSelectHousehold(option)}
+                                        className="w-full text-left px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 text-xs text-gray-800 dark:text-gray-100"
+                                      >
+                                        <span className="font-semibold">{option.guestName}</span>{' '}
+                                        <span className="text-gray-600 dark:text-gray-400">
+                                          ({option.code})
+                                        </span>
+                                        {option.addressLine1 && (
+                                          <span className="block text-[10px] text-gray-600 dark:text-gray-400 truncate">
+                                            {option.addressLine1}
+                                            {option.city ? `, ${option.city}` : ''}
+                                          </span>
+                                        )}
+                                      </button>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+
+                            <div className="space-y-1.5 pt-1 border-t border-gray-200 dark:border-gray-700">
+                              <span className="font-semibold text-gray-800 dark:text-gray-200 block">
+                                Contributor Return Address
+                              </span>
+                              <input
+                                type="text"
+                                aria-label={`Address Line 1 for ${item.name}`}
+                                value={editAddressLine1}
+                                onChange={(e) => setEditAddressLine1(e.target.value)}
+                                placeholder="Street address"
+                                className="w-full text-xs p-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                              />
+                              <input
+                                type="text"
+                                aria-label={`Address Line 2 for ${item.name}`}
+                                value={editAddressLine2}
+                                onChange={(e) => setEditAddressLine2(e.target.value)}
+                                placeholder="Apt, suite, unit (optional)"
+                                className="w-full text-xs p-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                              />
+                              <div className="grid grid-cols-2 gap-1.5">
+                                <input
+                                  type="text"
+                                  aria-label={`City for ${item.name}`}
+                                  value={editCity}
+                                  onChange={(e) => setEditCity(e.target.value)}
+                                  placeholder="City"
+                                  className="w-full text-xs p-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                                <input
+                                  type="text"
+                                  aria-label={`State for ${item.name}`}
+                                  value={editState}
+                                  onChange={(e) => setEditState(e.target.value)}
+                                  placeholder="State / Province"
+                                  className="w-full text-xs p-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                              <div className="grid grid-cols-2 gap-1.5">
+                                <input
+                                  type="text"
+                                  aria-label={`Zip Code for ${item.name}`}
+                                  value={editZipCode}
+                                  onChange={(e) => setEditZipCode(e.target.value)}
+                                  placeholder="ZIP / Postal"
+                                  className="w-full text-xs p-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                                <input
+                                  type="text"
+                                  aria-label={`Country for ${item.name}`}
+                                  value={editCountry}
+                                  onChange={(e) => setEditCountry(e.target.value)}
+                                  placeholder="Country"
+                                  className="w-full text-xs p-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </div>
+                              {editInvitationCodeId && (
+                                <label className="inline-flex items-center gap-1.5 pt-1 text-[11px] text-gray-700 dark:text-gray-300 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={syncAddressToGuest}
+                                    onChange={(e) => setSyncAddressToGuest(e.target.checked)}
+                                    className="rounded border-gray-300 text-primary focus:ring-primary h-3.5 w-3.5"
+                                  />
+                                  Sync address to linked guest household
+                                </label>
+                              )}
+                            </div>
                           </div>
                         )}
                       </TableCell>
@@ -1199,10 +1649,21 @@ export default function ThankYouNotesPage() {
                             onChange={(e) => setEditSentAt(e.target.value)}
                             className="text-xs p-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                           />
-                        ) : item.thankYouSentAt ? (
-                          formatDate(item.thankYouSentAt)
                         ) : (
-                          <span className="text-gray-400">—</span>
+                          <div className="space-y-0.5">
+                            <div>
+                              {item.thankYouSentAt ? (
+                                formatDate(item.thankYouSentAt)
+                              ) : (
+                                <span className="text-gray-500 dark:text-gray-400">—</span>
+                              )}
+                            </div>
+                            {item.thankYouEmailSentAt && (
+                              <div className="text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
+                                Emailed {formatDate(item.thankYouEmailSentAt)}
+                              </div>
+                            )}
+                          </div>
                         )}
                       </TableCell>
 
@@ -1314,6 +1775,14 @@ export default function ThankYouNotesPage() {
                             )}
                             <Button
                               size="sm"
+                              variant="outline"
+                              onClick={() => openEmailComposer(item)}
+                              aria-label={`Compose thank-you email for ${item.name}`}
+                            >
+                              Send Email
+                            </Button>
+                            <Button
+                              size="sm"
                               variant="secondary"
                               onClick={() => startEditing(item)}
                               aria-label={`Edit thank-you note for ${item.name}`}
@@ -1385,6 +1854,173 @@ export default function ThankYouNotesPage() {
           </div>
         )}
       </SegmentedTabPanel>
+
+      {/* Thank-You Email Composer Modal */}
+      <Dialog
+        isOpen={Boolean(composerItem)}
+        onClose={closeEmailComposer}
+        title={
+          composerItem
+            ? `Compose Thank-You Email — ${composerItem.name}`
+            : 'Compose Thank-You Email'
+        }
+        description="Select a starter template, customize the subject and message, preview the formatted email, or send a test copy before emailing the contributor."
+        className="max-w-2xl"
+      >
+        {composerItem && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label
+                  htmlFor="thank-you-composer-template"
+                  className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1"
+                >
+                  Starter Template
+                </label>
+                <select
+                  id="thank-you-composer-template"
+                  value={composerTemplateId}
+                  onChange={(e) => handleComposerTemplateChange(e.target.value)}
+                  className="w-full text-sm p-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                >
+                  <option value="">Keep current draft...</option>
+                  {THANK_YOU_TEMPLATES.map((tmpl) => (
+                    <option key={tmpl.id} value={tmpl.id}>
+                      {tmpl.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label
+                  htmlFor="thank-you-composer-recipient"
+                  className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1"
+                >
+                  Recipient Email
+                </label>
+                <input
+                  id="thank-you-composer-recipient"
+                  type="email"
+                  value={composerRecipientEmail}
+                  onChange={(e) => setComposerRecipientEmail(e.target.value)}
+                  placeholder="guest@example.com"
+                  className="w-full text-sm p-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label
+                htmlFor="thank-you-composer-subject"
+                className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1"
+              >
+                Email Subject
+              </label>
+              <input
+                id="thank-you-composer-subject"
+                type="text"
+                value={composerSubject}
+                onChange={(e) => {
+                  setComposerSubject(e.target.value);
+                  setComposerPreview(null);
+                }}
+                placeholder="Thank you so much for your generous gift!"
+                className="w-full text-sm p-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="thank-you-composer-body"
+                className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1"
+              >
+                Message Body
+              </label>
+              <textarea
+                id="thank-you-composer-body"
+                rows={5}
+                value={composerBody}
+                onChange={(e) => {
+                  setComposerBody(e.target.value);
+                  setComposerPreview(null);
+                }}
+                placeholder="Write a personal thank-you message..."
+                className="w-full text-sm p-2.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+              />
+              <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                Supports placeholders: <code>{'{{guestName}}'}</code>, <code>{'{{giftName}}'}</code>,{' '}
+                <code>{'{{amount}}'}</code>
+              </p>
+            </div>
+
+            {composerPreview && (
+              <div
+                data-testid="thank-you-email-preview"
+                className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/70 p-3 space-y-2 text-xs"
+              >
+                <div className="flex flex-wrap justify-between gap-2 border-b border-gray-200 dark:border-gray-700 pb-1.5">
+                  <div>
+                    <span className="font-semibold text-gray-700 dark:text-gray-200">Subject:</span>{' '}
+                    <span className="text-gray-900 dark:text-white">{composerPreview.subject}</span>
+                  </div>
+                  {composerPreview.to && (
+                    <div>
+                      <span className="font-semibold text-gray-700 dark:text-gray-200">To:</span>{' '}
+                      <span className="text-gray-800 dark:text-gray-200">{composerPreview.to}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="whitespace-pre-wrap text-sm text-gray-800 dark:text-gray-100">
+                  {composerPreview.textBody}
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={composerSubmittingMode !== null}
+                  onClick={() => void handleComposerAction('preview')}
+                >
+                  {composerSubmittingMode === 'preview' ? 'Previewing...' : 'Preview Email'}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={composerSubmittingMode !== null}
+                  onClick={() => void handleComposerAction('test')}
+                >
+                  {composerSubmittingMode === 'test' ? 'Sending Test...' : 'Send Test Email'}
+                </Button>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={composerSubmittingMode !== null}
+                  onClick={closeEmailComposer}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="primary"
+                  disabled={composerSubmittingMode !== null}
+                  onClick={() => void handleComposerAction('send')}
+                >
+                  {composerSubmittingMode === 'send' ? 'Sending...' : 'Send Thank-You Email'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </Dialog>
     </div>
   );
 }

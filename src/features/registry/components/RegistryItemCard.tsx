@@ -4,7 +4,12 @@ import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-
 import type { Stripe, StripeElements } from '@stripe/stripe-js';
 import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
 import { useTheme } from '@/components/ThemeProvider';
-import { RegistryItem, RegistryShippingAddress, OrderTrackingDetails } from '../types';
+import {
+  RegistryItem,
+  RegistryShippingAddress,
+  OrderTrackingDetails,
+  ContributorAddressDetails,
+} from '../types';
 import { ContributorLifecycleBadge } from './ContributorLifecycleBadge';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
 import { MediaImage } from '@/components/MediaImage';
@@ -60,7 +65,8 @@ interface RegistryItemCardProps {
     coverFee?: boolean,
     email?: string,
     paymentIntentId?: string,
-    orderDetails?: OrderTrackingDetails
+    orderDetails?: OrderTrackingDetails,
+    addressDetails?: ContributorAddressDetails
   ) => Promise<unknown>;
   onItemUpdated?: (item: RegistryItem) => void;
   titleId?: string;
@@ -88,6 +94,12 @@ interface SyncedPaymentIntentSnapshot {
   email: string;
   message: string;
   code: string;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  state: string;
+  zipCode: string;
+  country: string;
   isMock?: boolean;
 }
 
@@ -200,6 +212,12 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     retailerOrderNumber,
     carrier,
     trackingNumber,
+    addressLine1,
+    addressLine2,
+    city,
+    state,
+    zipCode,
+    country,
 
     paymentTransactionId,
     claimActions,
@@ -217,6 +235,12 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     setRetailerOrderNumber,
     setCarrier,
     setTrackingNumber,
+    setAddressLine1,
+    setAddressLine2,
+    setCity,
+    setState,
+    setZipCode,
+    setCountry,
     setPaymentTransactionId,
     setPhase,
     setSubmissionError,
@@ -233,6 +257,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   const toastContext = useOptionalToast();
   const [copiedReceiptKey, setCopiedReceiptKey] = useState<string | null>(null);
   const [copiedAddress, setCopiedAddress] = useState(false);
+  const [isReturnAddressOpen, setIsReturnAddressOpen] = useState(false);
   const [isCardProcessing, setIsCardProcessing] = useState(false);
   const [postClaimOverride, setPostClaimOverride] = useState<{
     key: string;
@@ -459,6 +484,12 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             email: '',
             message: '',
             code: '',
+            addressLine1: '',
+            addressLine2: '',
+            city: '',
+            state: '',
+            zipCode: '',
+            country: '',
             isMock: false,
           };
           setPaymentIntentData({
@@ -489,6 +520,12 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             email: '',
             message: '',
             code: '',
+            addressLine1: '',
+            addressLine2: '',
+            city: '',
+            state: '',
+            zipCode: '',
+            country: '',
             isMock: true,
           };
           setPaymentIntentData({
@@ -598,6 +635,12 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
       const normalizedEmail = email.trim();
       const normalizedMessage = message;
       const normalizedCode = invitationCode.trim();
+      const normalizedAddressLine1 = addressLine1.trim();
+      const normalizedAddressLine2 = addressLine2.trim();
+      const normalizedCity = city.trim();
+      const normalizedState = state.trim();
+      const normalizedZipCode = zipCode.trim();
+      const normalizedCountry = country.trim();
 
       const needsIntentSync =
         !currentSynced ||
@@ -610,7 +653,13 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
         currentSynced.name !== normalizedName ||
         currentSynced.email !== normalizedEmail ||
         currentSynced.message !== normalizedMessage ||
-        currentSynced.code !== normalizedCode;
+        currentSynced.code !== normalizedCode ||
+        currentSynced.addressLine1 !== normalizedAddressLine1 ||
+        currentSynced.addressLine2 !== normalizedAddressLine2 ||
+        currentSynced.city !== normalizedCity ||
+        currentSynced.state !== normalizedState ||
+        currentSynced.zipCode !== normalizedZipCode ||
+        currentSynced.country !== normalizedCountry;
 
       let intentId = hasRealSyncedIntent
         ? currentSynced?.paymentIntentId ?? activeStateIntent?.paymentIntentId
@@ -639,6 +688,12 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             email,
             message,
             code: invitationCode,
+            ...(normalizedAddressLine1 ? { addressLine1: normalizedAddressLine1 } : {}),
+            ...(normalizedAddressLine2 ? { addressLine2: normalizedAddressLine2 } : {}),
+            ...(normalizedCity ? { city: normalizedCity } : {}),
+            ...(normalizedState ? { state: normalizedState } : {}),
+            ...(normalizedZipCode ? { zipCode: normalizedZipCode } : {}),
+            ...(normalizedCountry ? { country: normalizedCountry } : {}),
           });
           if (intentRes?.paymentIntentId && intentRes?.clientSecret) {
             intentId = intentRes.paymentIntentId;
@@ -654,6 +709,12 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
               email: normalizedEmail,
               message: normalizedMessage,
               code: normalizedCode,
+              addressLine1: normalizedAddressLine1,
+              addressLine2: normalizedAddressLine2,
+              city: normalizedCity,
+              state: normalizedState,
+              zipCode: normalizedZipCode,
+              country: normalizedCountry,
               isMock: false,
             };
             setPaymentIntentData({
@@ -1770,6 +1831,155 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
               </div>
             </div>
           )}
+
+          <div className="mb-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/50">
+            <button
+              type="button"
+              data-testid="toggle-return-address-button"
+              aria-expanded={Boolean(
+                isReturnAddressOpen ||
+                  fieldErrors.addressLine1 ||
+                  fieldErrors.addressLine2 ||
+                  fieldErrors.city ||
+                  fieldErrors.state ||
+                  fieldErrors.zipCode ||
+                  fieldErrors.country
+              )}
+              aria-controls={`contributor-return-address-${item.id}`}
+              disabled={isBusy}
+              onClick={() => setIsReturnAddressOpen((prev) => !prev)}
+              className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left text-xs font-semibold text-gray-800 dark:text-gray-200 hover:bg-slate-100 dark:hover:bg-slate-800/80 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <Icon name="MapPin" className="w-3.5 h-3.5 text-primary shrink-0" />
+                <span>Return Address (Optional — for our thank-you card)</span>
+              </span>
+              <Icon
+                name="ChevronDown"
+                className={`w-4 h-4 text-gray-500 transition-transform ${
+                  isReturnAddressOpen ||
+                  fieldErrors.addressLine1 ||
+                  fieldErrors.addressLine2 ||
+                  fieldErrors.city ||
+                  fieldErrors.state ||
+                  fieldErrors.zipCode ||
+                  fieldErrors.country
+                    ? 'rotate-180'
+                    : ''
+                }`}
+              />
+            </button>
+            {(isReturnAddressOpen ||
+              Boolean(
+                fieldErrors.addressLine1 ||
+                  fieldErrors.addressLine2 ||
+                  fieldErrors.city ||
+                  fieldErrors.state ||
+                  fieldErrors.zipCode ||
+                  fieldErrors.country
+              )) && (
+              <div
+                id={`contributor-return-address-${item.id}`}
+                data-testid="contributor-return-address-fields"
+                className="px-3 pb-3 pt-1 space-y-2.5 border-t border-slate-200 dark:border-slate-700"
+              >
+                <FormGroup state={fieldErrors.addressLine1 ? 'error' : 'default'} className="mb-0">
+                  <Label htmlFor={`return-address-line1-${item.id}`}>Address Line 1</Label>
+                  <Input
+                    id={`return-address-line1-${item.id}`}
+                    type="text"
+                    placeholder="123 Maple Street"
+                    value={addressLine1}
+                    onChange={(e) => setAddressLine1(e.target.value)}
+                    disabled={isBusy}
+                    maxLength={200}
+                    autoComplete="address-line1"
+                  />
+                  {fieldErrors.addressLine1 && (
+                    <FormMessage>{fieldErrors.addressLine1}</FormMessage>
+                  )}
+                </FormGroup>
+                <FormGroup state={fieldErrors.addressLine2 ? 'error' : 'default'} className="mb-0">
+                  <Label htmlFor={`return-address-line2-${item.id}`}>
+                    Address Line 2 (Optional)
+                  </Label>
+                  <Input
+                    id={`return-address-line2-${item.id}`}
+                    type="text"
+                    placeholder="Apt 4B"
+                    value={addressLine2}
+                    onChange={(e) => setAddressLine2(e.target.value)}
+                    disabled={isBusy}
+                    maxLength={200}
+                    autoComplete="address-line2"
+                  />
+                  {fieldErrors.addressLine2 && (
+                    <FormMessage>{fieldErrors.addressLine2}</FormMessage>
+                  )}
+                </FormGroup>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <FormGroup state={fieldErrors.city ? 'error' : 'default'} className="mb-0">
+                    <Label htmlFor={`return-address-city-${item.id}`}>City</Label>
+                    <Input
+                      id={`return-address-city-${item.id}`}
+                      type="text"
+                      placeholder="Austin"
+                      value={city}
+                      onChange={(e) => setCity(e.target.value)}
+                      disabled={isBusy}
+                      maxLength={100}
+                      autoComplete="address-level2"
+                    />
+                    {fieldErrors.city && <FormMessage>{fieldErrors.city}</FormMessage>}
+                  </FormGroup>
+                  <FormGroup state={fieldErrors.state ? 'error' : 'default'} className="mb-0">
+                    <Label htmlFor={`return-address-state-${item.id}`}>State / Province</Label>
+                    <Input
+                      id={`return-address-state-${item.id}`}
+                      type="text"
+                      placeholder="TX"
+                      value={state}
+                      onChange={(e) => setState(e.target.value)}
+                      disabled={isBusy}
+                      maxLength={100}
+                      autoComplete="address-level1"
+                    />
+                    {fieldErrors.state && <FormMessage>{fieldErrors.state}</FormMessage>}
+                  </FormGroup>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <FormGroup state={fieldErrors.zipCode ? 'error' : 'default'} className="mb-0">
+                    <Label htmlFor={`return-address-zip-${item.id}`}>ZIP / Postal Code</Label>
+                    <Input
+                      id={`return-address-zip-${item.id}`}
+                      type="text"
+                      placeholder="78701"
+                      value={zipCode}
+                      onChange={(e) => setZipCode(e.target.value)}
+                      disabled={isBusy}
+                      maxLength={20}
+                      autoComplete="postal-code"
+                    />
+                    {fieldErrors.zipCode && <FormMessage>{fieldErrors.zipCode}</FormMessage>}
+                  </FormGroup>
+                  <FormGroup state={fieldErrors.country ? 'error' : 'default'} className="mb-0">
+                    <Label htmlFor={`return-address-country-${item.id}`}>Country (Optional)</Label>
+                    <Input
+                      id={`return-address-country-${item.id}`}
+                      type="text"
+                      placeholder="United States"
+                      value={country}
+                      onChange={(e) => setCountry(e.target.value)}
+                      disabled={isBusy}
+                      maxLength={100}
+                      autoComplete="country-name"
+                    />
+                    {fieldErrors.country && <FormMessage>{fieldErrors.country}</FormMessage>}
+                  </FormGroup>
+                </div>
+              </div>
+            )}
+          </div>
 
           <FormGroup state={fieldErrors.message ? 'error' : 'default'} className="mb-3">
             <Label>Personal Message (Optional)</Label>
