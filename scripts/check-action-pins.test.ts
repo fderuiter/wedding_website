@@ -49,6 +49,8 @@ describe('check-action-pins', () => {
         '    runs-on: ubuntu-latest',
         '    steps:',
         '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
+        '        with:',
+        '          persist-credentials: false',
         '      - name: Verify Artifact Provenance Attestation',
         '        id: provenance',
         "        if: !(inputs.dry_run && inputs.image_digest == '' && inputs.image_tag == 'latest')",
@@ -61,7 +63,7 @@ describe('check-action-pins', () => {
     expect(violations).toHaveLength(1);
     expect(violations[0]).toMatchObject({
       filePath: '.github/workflows/broken-tag.yml',
-      lineNumber: 13,
+      lineNumber: 15,
       actionRef: 'TAG_RESOLVE_FAILED',
     });
     expect(violations[0].reason).toContain('TAG_RESOLVE_FAILED');
@@ -88,6 +90,8 @@ describe('check-action-pins', () => {
         '    runs-on: ubuntu-latest',
         '    steps:',
         '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
+        '        with:',
+        '          persist-credentials: false',
         '      - uses: ./.github/workflows/local.yml',
         '      - name: Verify Artifact Provenance Attestation',
         '        id: provenance',
@@ -133,6 +137,8 @@ describe('check-action-pins', () => {
         '    runs-on: ubuntu-latest',
         '    steps:',
         '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
+        '        with:',
+        '          persist-credentials: false',
         '      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # pinned without semver tag',
         '      - uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3',
         '',
@@ -149,7 +155,7 @@ describe('check-action-pins', () => {
     expect(violations[0].reason).toContain('Missing inline "# v..." version comment');
     expect(violations[1]).toMatchObject({
       filePath: '.github/workflows/missing-version-comment.yml',
-      lineNumber: 11,
+      lineNumber: 13,
       actionRef: 'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1',
     });
     expect(violations[1].reason).toContain('Missing inline "# v..." version comment');
@@ -229,7 +235,11 @@ describe('check-action-pins', () => {
           '    runs-on: ubuntu-latest',
           '    steps:',
           `      - uses: actions/checkout@${validCheckoutSha} # v7.0.1`,
+          '        with:',
+          '          persist-credentials: false',
           `      - uses: actions/checkout@${validCheckoutSha} # v7.0.1`,
+          '        with:',
+          '          persist-credentials: false',
           `      - uses: github/codeql-action/upload-sarif@${validCodeqlSha} # v4.39.3`,
           `      - uses: actions/attest-build-provenance@${brokenAttestSha} # v2.2.3`,
           '',
@@ -255,7 +265,7 @@ describe('check-action-pins', () => {
       expect(upstreamRes.violations).toHaveLength(1);
       expect(upstreamRes.violations[0]).toMatchObject({
         filePath: '.github/workflows/upstream-check.yml',
-        lineNumber: 13,
+        lineNumber: 17,
         actionRef: `actions/attest-build-provenance@${brokenAttestSha}`,
       });
       expect(upstreamRes.violations[0].reason).toContain(
@@ -288,5 +298,78 @@ describe('check-action-pins', () => {
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
+  });
+
+  it('enforces AST policies for persist-credentials, PR runtime/write tokens, rollback_environment, and release caches', () => {
+    fs.writeFileSync(
+      path.join(workflowsDir, 'ci.yml'),
+      [
+        'name: Insecure CI',
+        'on:',
+        '  pull_request:',
+        'jobs:',
+        '  verify:',
+        '    runs-on: ubuntu-latest',
+        '    permissions:',
+        '      contents: read',
+        '      pull-requests: write',
+        '    steps:',
+        '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
+        '      - run: npm ci',
+        '      - uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0',
+        '',
+      ].join('\n')
+    );
+
+    fs.writeFileSync(
+      path.join(workflowsDir, 'deploy-provider.yml'),
+      [
+        'name: Insecure Deploy Provider',
+        'on:',
+        '  workflow_dispatch:',
+        '    inputs:',
+        '      rollback_environment:',
+        '        type: string',
+        'jobs:',
+        '  deploy:',
+        '    runs-on: ubuntu-latest',
+        "    environment: ${{ inputs.rollback_environment || inputs.environment || 'production' }}",
+        '    steps:',
+        '      - run: echo "deploy"',
+        '',
+      ].join('\n')
+    );
+
+    fs.writeFileSync(
+      path.join(workflowsDir, 'publish-artifact.yml'),
+      [
+        'name: Insecure Publish Artifact',
+        'on:',
+        '  workflow_dispatch:',
+        'jobs:',
+        '  build:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0',
+        '        with:',
+        '          path: /tmp/buildkit-mounts/deps',
+        "          key: buildkit-deps-amd64-${{ hashFiles('package-lock.json') }}",
+        '          restore-keys: |',
+        '            buildkit-deps-amd64-',
+        '      - run: tar -xf /ctx/deps.tar -C /',
+        '',
+      ].join('\n')
+    );
+
+    const { violations } = checkActionPins(workflowsDir);
+    const reasons = violations.map((v) => v.reason);
+    expect(reasons.some((r) => r.includes('with.persist-credentials: false'))).toBe(true);
+    expect(reasons.some((r) => r.includes('crazy-max/ghaction-github-runtime must be guarded'))).toBe(true);
+    expect(reasons.some((r) => r.includes('executes npm install/ci on pull_request while holding write permissions'))).toBe(true);
+    expect(reasons.some((r) => r.includes('"rollback_environment" must not be exposed on workflow_dispatch'))).toBe(true);
+    expect(reasons.some((r) => r.includes('references rollback_environment without guarding on "github.event_name == \'workflow_call\'"'))).toBe(true);
+    expect(reasons.some((r) => r.includes('"release-" namespaced cache key'))).toBe(true);
+    expect(reasons.some((r) => r.includes('omit prefix "restore-keys"'))).toBe(true);
+    expect(reasons.some((r) => r.includes('--no-same-owner --no-same-permissions'))).toBe(true);
   });
 });

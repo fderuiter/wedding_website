@@ -297,6 +297,27 @@ describe('guestInviteSession', () => {
       expect(session).toBeNull();
     });
 
+    it('returns null when the matching invitation record has partyTags containing address-collection', async () => {
+      mockFindUnique.mockResolvedValue({
+        id: 'inv-collect-1',
+        code: 'COLLECT26',
+        guestName: 'Collector Household',
+        isSample: false,
+        partyTags: ['address-collection'],
+      });
+
+      const token = await signGuestInviteSessionToken({
+        code: 'COLLECT26',
+        guestName: 'Collector Household',
+      });
+      const req = new NextRequest('http://localhost/api/photos', {
+        headers: { cookie: `${GUEST_INVITE_COOKIE}=${token}` },
+      });
+
+      const session = await getGuestInviteSession(req);
+      expect(session).toBeNull();
+    });
+
     it('skips database lookups and returns null during STATIC_EXPORT builds', async () => {
       process.env.STATIC_EXPORT = 'true';
 

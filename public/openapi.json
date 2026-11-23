@@ -3037,6 +3037,62 @@
         "responses": {
           "200": {
             "description": "Successful response",
+            "headers": {
+              "X-Total-Count": {
+                "description": "Total matching record count before pagination",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Page": {
+                "description": "Current 1-based page number",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Limit": {
+                "description": "Effective page size limit applied to the query",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Total-Pages": {
+                "description": "Total pages available at the current limit",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Per-Page": {
+                "description": "Effective page size limit alias",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Current-Page": {
+                "description": "Current 1-based page number alias",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Has-Next-Page": {
+                "description": "Whether a subsequent page exists",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "X-Has-Prev-Page": {
+                "description": "Whether a preceding page exists",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "X-Next-Cursor": {
+                "description": "Cursor identifier for fetching the next page",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -5059,6 +5115,62 @@
         "responses": {
           "200": {
             "description": "Successful response",
+            "headers": {
+              "X-Total-Count": {
+                "description": "Total matching record count before pagination",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Page": {
+                "description": "Current 1-based page number",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Limit": {
+                "description": "Effective page size limit applied to the query",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Total-Pages": {
+                "description": "Total pages available at the current limit",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Per-Page": {
+                "description": "Effective page size limit alias",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Current-Page": {
+                "description": "Current 1-based page number alias",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Has-Next-Page": {
+                "description": "Whether a subsequent page exists",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "X-Has-Prev-Page": {
+                "description": "Whether a preceding page exists",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "X-Next-Cursor": {
+                "description": "Cursor identifier for fetching the next page",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -6001,7 +6113,9 @@
                   },
                   "smtpPort": {
                     "nullable": true,
-                    "type": "number"
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
                   },
                   "smtpUser": {
                     "nullable": true,
@@ -8962,6 +9076,32 @@
         "responses": {
           "200": {
             "description": "Successful response",
+            "headers": {
+              "X-Total-Count": {
+                "description": "Total matching record count before pagination",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Page": {
+                "description": "Current 1-based page number",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Limit": {
+                "description": "Effective page size limit applied to the query",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Total-Pages": {
+                "description": "Total pages available at the current limit",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -20772,19 +20912,9 @@
                     "type": "string"
                   },
                   "addressLine1": {
-                    "nullable": true,
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "maxLength": 150
-                      },
-                      {
-                        "type": "string",
-                        "enum": [
-                          ""
-                        ]
-                      }
-                    ]
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 150
                   },
                   "addressLine2": {
                     "nullable": true,
@@ -20802,49 +20932,19 @@
                     ]
                   },
                   "city": {
-                    "nullable": true,
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "maxLength": 100
-                      },
-                      {
-                        "type": "string",
-                        "enum": [
-                          ""
-                        ]
-                      }
-                    ]
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
                   },
                   "state": {
-                    "nullable": true,
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "maxLength": 100
-                      },
-                      {
-                        "type": "string",
-                        "enum": [
-                          ""
-                        ]
-                      }
-                    ]
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
                   },
                   "zipCode": {
-                    "nullable": true,
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "maxLength": 20
-                      },
-                      {
-                        "type": "string",
-                        "enum": [
-                          ""
-                        ]
-                      }
-                    ]
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 20
                   },
                   "country": {
                     "nullable": true,
@@ -20901,7 +21001,11 @@
                   }
                 },
                 "required": [
-                  "guestName"
+                  "guestName",
+                  "addressLine1",
+                  "city",
+                  "state",
+                  "zipCode"
                 ]
               }
             }
