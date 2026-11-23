@@ -517,9 +517,9 @@ export function ReceptionSlideshowClient({
             </svg>
             Gallery
           </Link>
-          <span className="text-xs uppercase tracking-wider font-semibold text-stone-300 drop-shadow-md">
+          <h1 className="text-xs uppercase tracking-wider font-semibold text-stone-300 drop-shadow-md">
             Live Reception Slideshow
-          </span>
+          </h1>
         </div>
 
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-xs font-medium text-stone-200">
@@ -585,7 +585,7 @@ export function ReceptionSlideshowClient({
         >
           <div className="flex items-start justify-between gap-3 mb-3">
             <div>
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
                 <svg
                   className="w-5 h-5 text-amber-400"
                   fill="none"
@@ -602,7 +602,7 @@ export function ReceptionSlideshowClient({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
                 Upload Your Photos
-              </h3>
+              </h2>
               <p className="text-xs text-stone-300 mt-0.5">
                 Scan with your phone to display your photos on screen!
               </p>

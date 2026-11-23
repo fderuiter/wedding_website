@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { MediaImage } from '@/components/MediaImage';
 import type { AttractionDTO } from '@/features/attractions';
 import { Icon } from '@/components/ui/Icon';
+import { Heading, type HeadingLevel } from '@/components/ui/Layout';
 import { sanitizeUrl } from '@/utils/validation';
 import {
   resolveDirectionsUrl,
@@ -20,6 +21,7 @@ import {
 interface ThingsToDoCardProps {
   attraction: AttractionDTO;
   venueCoords?: LatLonCoordinates | null;
+  headingLevel?: HeadingLevel;
 }
 
 /**
@@ -29,7 +31,11 @@ interface ThingsToDoCardProps {
  * @param {ThingsToDoCardProps} props - The props for the component.
  * @returns {JSX.Element} The rendered ThingsToDoCard component.
  */
-const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction, venueCoords }) => {
+const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({
+  attraction,
+  venueCoords,
+  headingLevel = 'h2',
+}) => {
   const [copied, setCopied] = useState(false);
 
   const handleCopyCode = async () => {
@@ -91,7 +97,14 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction, venueCoords
         />
       </div>
       <div className="p-6 flex flex-col flex-grow">
-        <h3 className="text-2xl font-bold mb-2 text-primary dark:text-primary">{attraction.name}</h3>
+        <Heading
+          as={headingLevel}
+          variant="none"
+          unstyledColor
+          className="text-2xl font-bold mb-2 text-primary dark:text-primary"
+        >
+          {attraction.name}
+        </Heading>
         {distanceLabel && (
           <p
             data-testid="venue-distance-badge"

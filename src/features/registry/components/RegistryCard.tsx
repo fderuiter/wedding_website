@@ -11,6 +11,7 @@ import { Interactive3DCard } from '@/components/ui/Interactive3DCard';
 import { formatCurrency } from '@/utils/intl';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
+import { Heading, type HeadingLevel } from '@/components/ui/Layout';
 import { useShareItem } from '../hooks/useShareItem';
 import { resolveEffectivePaymentHandle } from '../utils/paymentUrls';
 import { withBasePath } from '@/lib/basePath';
@@ -35,6 +36,8 @@ interface RegistryCardProps {
   onEdit?: (id: string) => void;
   /** Function to call when the delete button is clicked. */
   onDelete?: (id: string) => void;
+  /** Semantic HTML heading rank for the item title. Defaults to 'h2'. */
+  headingLevel?: HeadingLevel;
 }
 
 /**
@@ -56,6 +59,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({
   defaultPaymentHandle,
   onEdit,
   onDelete,
+  headingLevel = 'h2',
 }) => {
   const status = getRegistryItemStatus(item);
   const isClaimed = status === 'claimed' || status === 'fullyFunded';
@@ -149,7 +153,15 @@ const RegistryCard: React.FC<RegistryCardProps> = ({
         </Button>
       </div>
       <div className="p-[var(--card-padding)] pb-16 relative z-20 flex flex-col gap-2">
-        <h3 className="text-2xl font-extrabold truncate text-primary" title={item.name}>{item.name}</h3>
+        <Heading
+          as={headingLevel}
+          variant="none"
+          unstyledColor
+          className="text-2xl font-extrabold truncate text-primary"
+          title={item.name}
+        >
+          {item.name}
+        </Heading>
         <div className="flex items-center justify-between gap-2">
           <p className="text-base text-muted font-medium">{item.category}</p>
           {item.itemType === 'CASH_FUND' && (
