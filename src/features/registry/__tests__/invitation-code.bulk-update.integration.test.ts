@@ -3,6 +3,7 @@
  */
 
 import { InvitationCodeAdminService } from '../invitation-code.admin.service';
+import { getAttendanceStatus } from '../utils/invitation';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 
@@ -894,6 +895,161 @@ describe('InvitationCodeAdminService Bulk SQL Update Integration', () => {
       expect(mergedDeclined.record.tableId).toBeNull();
       expect(mergedDeclined.record.seatNumber).toBeNull();
       expect(mergedDeclined.record.extraFields).toEqual({ attendanceStatus: 'declined' });
+    });
+
+    it('merges JSONB extraFields without overwriting live RSVP keys or unmapped plusOneAllocations in PostgreSQL', async () => {
+      await Promise.all([
+        realPrisma.invitationCode.create({
+          data: {
+            code: 'RSVPATT1',
+            guestName: 'Attending Guest',
+            email: 'attending@example.com',
+            used: true,
+            plusOneAllocations: 2,
+            extraFields: {
+              attendanceStatus: 'attending',
+              plusOneCount: 1,
+              plusOneNames: ['Submitted Companion'],
+              dietaryTags: ['vegan'],
+              mealSelections: [{ attendeeIndex: 0, guestName: 'Attending Guest', optionId: 'gnocchi' }],
+              mealSummary: 'Attending Guest: Truffle Gnocchi (vegan)',
+              customAnswers: [{ questionId: 'shuttle', answer: 'Yes' }],
+              customAnswersSummary: 'Shuttle?: Yes',
+              phone: '+15551112222',
+            },
+          },
+        }),
+        realPrisma.invitationCode.create({
+          data: {
+            code: 'RSVPDEC1',
+            guestName: 'Declined Guest',
+            email: 'declined@example.com',
+            used: true,
+            plusOneAllocations: 1,
+            extraFields: {
+              attendanceStatus: 'declined',
+              plusOneCount: 0,
+              plusOneNames: [],
+              phone: '+15553334444',
+            },
+          },
+        }),
+        realPrisma.invitationCode.create({
+          data: {
+            code: 'PENDING1',
+            guestName: 'Pending Guest',
+            used: false,
+            plusOneAllocations: 1,
+            extraFields: {
+              tableNote: 'Window seat',
+            },
+          },
+        }),
+      ]);
+
+      const result = await service.importBatch(
+        [
+          {
+            code: 'RSVPATT1',
+            guestName: 'Attending Guest',
+            addressLine1: '742 Evergreen Terrace',
+            city: 'Springfield',
+            state: 'IL',
+            zipCode: '62704',
+            country: 'USA',
+            // Omitted plusOneAllocations (undefined) must preserve existing 2
+            extraFields: {
+              hotelBlock: 'Marriott',
+              // Attempted reserved RSVP overwrites from unmapped CSV columns or pre-populated companion names
+              attendanceStatus: 'pending',
+              mealSelections: 'Overwritten',
+              customAnswers: 'Overwritten',
+              plusOneCount: 0,
+              plusOneNames: ['Spreadsheet Companion'],
+            },
+          },
+          {
+            code: 'RSVPDEC1',
+            guestName: 'Declined Guest',
+            addressLine1: '10 Downing St',
+            city: 'London',
+            country: 'UK',
+            extraFields: {
+              giftSent: 'Thank you card queued',
+              attendanceStatus: 'attending',
+              plusOneNames: ['Should Not Apply'],
+            },
+          },
+          {
+            code: 'PENDING1',
+            guestName: 'Pending Guest',
+            extraFields: {
+              plusOneNames: ['Pre-Populated Companion'],
+              hotelBlock: 'Hilton',
+            },
+          },
+          {
+            code: 'NEWUNMAP',
+            guestName: 'Brand New Guest',
+          // Omitted plusOneAllocations on create should default to 0
+          },
+        ],
+        'update',
+        'TestAdmin'
+      );
+
+      expect(result).toEqual({
+        success: true,
+        count: 4,
+        imported: 1,
+        skipped: 0,
+        updated: 3,
+      });
+
+      const attendingAfter = await realPrisma.invitationCode.findUnique({ where: { code: 'RSVPATT1' } });
+      expect(attendingAfter).not.toBeNull();
+      expect(attendingAfter!.plusOneAllocations).toBe(2);
+      expect(attendingAfter!.addressLine1).toBe('742 Evergreen Terrace');
+      expect(getAttendanceStatus(attendingAfter!)).toBe('attending');
+      expect(attendingAfter!.extraFields).toEqual({
+        attendanceStatus: 'attending',
+        plusOneCount: 1,
+        plusOneNames: ['Submitted Companion'],
+        dietaryTags: ['vegan'],
+        mealSelections: [{ attendeeIndex: 0, guestName: 'Attending Guest', optionId: 'gnocchi' }],
+        mealSummary: 'Attending Guest: Truffle Gnocchi (vegan)',
+        customAnswers: [{ questionId: 'shuttle', answer: 'Yes' }],
+        customAnswersSummary: 'Shuttle?: Yes',
+        phone: '+15551112222',
+        hotelBlock: 'Marriott',
+      });
+
+      const declinedAfter = await realPrisma.invitationCode.findUnique({ where: { code: 'RSVPDEC1' } });
+      expect(declinedAfter).not.toBeNull();
+      expect(declinedAfter!.used).toBe(true);
+      expect(declinedAfter!.plusOneAllocations).toBe(1);
+      // Constraint 2: getAttendanceStatus must still return 'declined' (not 'attending' from used=true)
+      expect(getAttendanceStatus(declinedAfter!)).toBe('declined');
+      expect(declinedAfter!.extraFields).toEqual({
+        attendanceStatus: 'declined',
+        plusOneCount: 0,
+        plusOneNames: [],
+        phone: '+15553334444',
+        giftSent: 'Thank you card queued',
+      });
+
+      const pendingAfter = await realPrisma.invitationCode.findUnique({ where: { code: 'PENDING1' } });
+      expect(pendingAfter).not.toBeNull();
+      expect(pendingAfter!.plusOneAllocations).toBe(1);
+      expect(pendingAfter!.extraFields).toEqual({
+        tableNote: 'Window seat',
+        plusOneNames: ['Pre-Populated Companion'],
+        hotelBlock: 'Hilton',
+      });
+
+      const createdNew = await realPrisma.invitationCode.findUnique({ where: { code: 'NEWUNMAP' } });
+      expect(createdNew).not.toBeNull();
+      expect(createdNew!.plusOneAllocations).toBe(0);
     });
   });
 });

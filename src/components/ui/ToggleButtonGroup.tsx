@@ -20,7 +20,7 @@ type GroupAccessibleLabel =
   | { 'aria-labelledby': string; 'aria-label'?: string };
 
 type BaseToggleButtonGroupProps<T extends string = string> = Omit<
-  React.HTMLAttributes<HTMLDivElement>,
+  React.ComponentPropsWithRef<'div'>,
   'onChange' | 'aria-label' | 'aria-labelledby' | 'role'
 > &
   GroupAccessibleLabel & {
@@ -74,10 +74,7 @@ function findLastEnabledIndex<T extends string>(options: ToggleButtonOption<T>[]
   return -1;
 }
 
-function ToggleButtonGroupInner<T extends string = string>(
-  props: ToggleButtonGroupProps<T>,
-  ref: React.ForwardedRef<HTMLDivElement>
-) {
+export function ToggleButtonGroup<T extends string = string>(props: ToggleButtonGroupProps<T>) {
   const {
     options,
     mode = 'radiogroup',
@@ -89,6 +86,7 @@ function ToggleButtonGroupInner<T extends string = string>(
     activateOnFocus,
     'aria-label': ariaLabel,
     'aria-labelledby': ariaLabelledBy,
+    ref,
     ...rest
   } = props;
 
@@ -269,11 +267,3 @@ function ToggleButtonGroupInner<T extends string = string>(
     </div>
   );
 }
-
-export const ToggleButtonGroup = React.forwardRef(ToggleButtonGroupInner) as (<
-  T extends string = string,
->(
-  _props: ToggleButtonGroupProps<T> & { ref?: React.ForwardedRef<HTMLDivElement> }
-) => React.ReactElement) & { displayName?: string };
-
-ToggleButtonGroup.displayName = 'ToggleButtonGroup';

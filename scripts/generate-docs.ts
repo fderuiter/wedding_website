@@ -2,6 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import ts from 'typescript';
+import { z } from 'zod';
+import type { $ZodType, $ZodTypes } from 'zod/v4/core';
 import { AppConfigSchema, PublicAppConfigSchema } from '../src/features/content/schemas';
 import {
   DEFAULT_MODULE_CONFIG,
@@ -39,123 +41,124 @@ function compareAscii(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-// 1. Generate Configuration Markdown from Schema
-export function getZodType(schema: any): string {
-  if (!schema) return 'unknown';
-
-  let s = schema;
-  let depth = 0;
-  while (s && depth < 20) {
-    depth++;
-    const t = s.type || s._def?.typeName;
-    if (
-      t === 'default' || t === 'ZodDefault' ||
-      t === 'optional' || t === 'ZodOptional' ||
-      t === 'exactOptional' || t === 'ZodExactOptional' ||
-      t === 'nullable' || t === 'ZodNullable' ||
-      t === 'prefault' || t === 'ZodPrefault' ||
-      t === 'nonoptional' || t === 'ZodNonOptional' ||
-      t === 'readonly' || t === 'ZodReadonly' ||
-      t === 'catch' || t === 'ZodCatch' ||
-      t === 'brand' || t === 'ZodBrand'
-    ) {
-      s = s.def?.innerType || s._def?.innerType || (typeof s.unwrap === 'function' ? s.unwrap() : undefined);
-    } else if (t === 'effects' || t === 'ZodEffects') {
-      s = s.def?.schema || s._def?.schema || s.def?.innerType || s._def?.innerType || (typeof s.unwrap === 'function' ? s.unwrap() : undefined);
-    } else if (t === 'pipe' || t === 'pipeline' || t === 'ZodPipe' || t === 'ZodPipeline') {
-      const out = s.def?.out || s._def?.out || s.out;
-      if (out && (out.type === 'transform' || out._def?.typeName === 'ZodTransform')) {
-        s = s.def?.in || s._def?.in || s.in;
-      } else if (out) {
-        s = out;
-      } else {
-        s = s.def?.in || s._def?.in || s.in;
-      }
-    } else {
-      break;
-    }
+function isZodSchema(value: unknown): value is $ZodTypes {
+  if (!value || typeof value !== 'object' || !('_zod' in value)) {
+    return false;
   }
-
-  if (!s) return 'unknown';
-
-  const t = s.type || s._def?.typeName;
-  if (t === 'string' || t === 'ZodString') return 'string';
-  if (t === 'number' || t === 'ZodNumber') return 'number';
-  if (t === 'boolean' || t === 'ZodBoolean') return 'boolean';
-  if (t === 'date' || t === 'ZodDate') return 'date';
-  if (t === 'literal' || t === 'ZodLiteral') {
-    const val = s.value !== undefined ? s.value : (s.def?.value ?? s._def?.value);
-    return typeof val === 'string' ? `'${val}'` : String(val);
+  const zod = value._zod;
+  if (!zod || typeof zod !== 'object' || !('def' in zod)) {
+    return false;
   }
-  if (t === 'enum' || t === 'ZodEnum') {
-    const values = s.options || s._def?.values || (s.def?.entries ? Object.keys(s.def.entries) : undefined) || (s.enum ? Object.keys(s.enum) : undefined);
-    return values && values.length > 0 ? values.map((v: any) => typeof v === 'string' ? `'${v}'` : String(v)).join(' | ') : 'enum';
-  }
-  if (t === 'record' || t === 'ZodRecord') return 'record';
-  if (t === 'union' || t === 'ZodUnion') {
-    const options = s.options || s.def?.options || s._def?.options;
-    return options?.map(getZodType).join(' | ') || 'union';
-  }
-  if (t === 'array' || t === 'ZodArray') {
-    const element = s.element || s.def?.element || (typeof s.def?.type === 'object' ? s.def.type : undefined) || (typeof s._def?.type === 'object' ? s._def.type : undefined);
-    return getZodType(element) + '[]';
-  }
-  if (t === 'object' || t === 'ZodObject') return 'object';
-  if (t === 'any' || t === 'ZodAny' || t === 'transform' || t === 'ZodTransform') return 'any';
-  if (t === 'unknown' || t === 'ZodUnknown') return 'unknown';
-
-  return t || 'unknown';
+  const def = zod.def;
+  return Boolean(def && typeof def === 'object' && 'type' in def && typeof def.type === 'string');
 }
 
-export function getZodDescription(schema: any): string | undefined {
-  if (!schema || typeof schema !== 'object') return undefined;
+// 1. Generate Configuration Markdown from Schema
+export function getZodType(schema: unknown): string {
+  if (!isZodSchema(schema)) return 'unknown';
 
-  const visited = new Set<object>();
-  const queue: any[] = [schema];
+  let current: $ZodTypes = schema;
+  let depth = 0;
+  while (depth < 20) {
+    depth++;
+    const def = current._zod.def;
+    let next: unknown;
+    switch (def.type) {
+      case 'default':
+      case 'optional':
+      case 'nullable':
+      case 'prefault':
+      case 'nonoptional':
+      case 'readonly':
+      case 'catch':
+        next = def.innerType;
+        break;
+      case 'pipe':
+        next = isZodSchema(def.out) && def.out._zod.def.type !== 'transform' ? def.out : def.in;
+        break;
+      default:
+        next = undefined;
+        break;
+    }
+
+    if (next === undefined) {
+      break;
+    }
+    if (!isZodSchema(next)) {
+      return 'unknown';
+    }
+    current = next;
+  }
+
+  const def = current._zod.def;
+  switch (def.type) {
+    case 'string':
+    case 'number':
+    case 'boolean':
+    case 'date':
+    case 'record':
+    case 'object':
+    case 'unknown':
+      return def.type;
+    case 'literal':
+      return def.values.length > 0
+        ? def.values.map((v) => (typeof v === 'string' ? `'${v}'` : String(v))).join(' | ')
+        : 'literal';
+    case 'enum': {
+      const values = z.util.getEnumValues(def.entries);
+      return values.length > 0
+        ? values.map((v) => (typeof v === 'string' ? `'${v}'` : String(v))).join(' | ')
+        : 'enum';
+    }
+    case 'union':
+      return def.options.length > 0
+        ? def.options.map((option) => getZodType(option)).join(' | ')
+        : 'union';
+    case 'array':
+      return `${getZodType(def.element)}[]`;
+    case 'any':
+    case 'transform':
+      return 'any';
+    default:
+      return def.type || 'unknown';
+  }
+}
+
+export function getZodDescription(schema: unknown): string | undefined {
+  if (!isZodSchema(schema)) return undefined;
+
+  const visited = new Set<$ZodType>();
+  const queue: $ZodTypes[] = [schema];
 
   while (queue.length > 0 && visited.size < 40) {
-    const s = queue.shift();
-    if (!s || typeof s !== 'object' || visited.has(s)) continue;
-    visited.add(s);
+    const current = queue.shift();
+    if (!current || visited.has(current)) continue;
+    visited.add(current);
 
+    const directDesc =
+      'description' in current && typeof current.description === 'string' && current.description.trim().length > 0
+        ? current.description
+        : undefined;
+    const registryDesc = z.globalRegistry.get(current)?.description;
     const rawDesc =
-      typeof s.description === 'string' && s.description.trim().length > 0
-        ? s.description
-        : typeof s.def?.description === 'string' && s.def.description.trim().length > 0
-          ? s.def.description
-          : typeof s._def?.description === 'string' && s._def.description.trim().length > 0
-            ? s._def.description
-            : undefined;
+      directDesc ??
+      (typeof registryDesc === 'string' && registryDesc.trim().length > 0 ? registryDesc : undefined);
 
     if (rawDesc) {
       return rawDesc.trim();
     }
 
-    let unwrapped: any;
-    if (typeof s.unwrap === 'function') {
-      try {
-        unwrapped = s.unwrap();
-      } catch {
-        unwrapped = undefined;
-      }
+    const def = current._zod.def;
+    const nextCandidates: $ZodType[] = [];
+    if ('innerType' in def) {
+      nextCandidates.push(def.innerType);
+    }
+    if (def.type === 'pipe') {
+      nextCandidates.push(def.out, def.in);
     }
 
-    const nextCandidates = [
-      s.def?.innerType,
-      s._def?.innerType,
-      s.def?.schema,
-      s._def?.schema,
-      s.def?.out,
-      s._def?.out,
-      s.out,
-      s.def?.in,
-      s._def?.in,
-      s.in,
-      unwrapped,
-    ];
-
     for (const candidate of nextCandidates) {
-      if (candidate && typeof candidate === 'object' && !visited.has(candidate)) {
+      if (isZodSchema(candidate) && !visited.has(candidate)) {
         queue.push(candidate);
       }
     }
@@ -2470,5 +2473,10 @@ const isMain = typeof process.argv[1] === 'string' &&
 if (isMain) {
   updateArchitectureMd();
   updateFeatureModulesMd();
-  void generateOpenApiSpec();
+  if (!process.argv.includes('--skip-openapi')) {
+    generateOpenApiSpec().catch((err) => {
+      console.error('Failed to generate OpenAPI specification:', err);
+      process.exit(1);
+    });
+  }
 }

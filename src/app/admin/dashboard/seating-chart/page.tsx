@@ -8,16 +8,22 @@ import {
   TableModal,
   PrintableFloorplan,
   useSeatingState,
+  resolveDetailedSeatAssignments,
   resolveSeatAssignments,
   ADDRESS_COLLECTION_TAG,
   getDietaryBadges,
   getGuestAttendanceStatus,
+  getGuestCompanionNames,
+  getGuestPartySize,
+  getGuestsHeadcount,
   isGuestEligibleForSeating,
 } from '@/features/seating';
 import { Dialog } from '@/components/ui/Dialog';
+import { EnsureToastProvider, useToast } from '@/components/ui/ToastProvider';
 import { InvitationCodeDTO } from '@/features/registry';
 
-export default function SeatingChartAdminPage() {
+function SeatingChartAdminContent() {
+  const { confirm } = useToast();
   const {
     tables,
     allGuests,
@@ -121,21 +127,50 @@ export default function SeatingChartAdminPage() {
     await saveTable(tableData);
   };
 
-  const handleDeleteTable = async (tableId: string) => {
+  const handleDeleteTableConfirmed = async (tableId: string) => {
     setSelectedTableId(null);
     await deleteTable(tableId);
   };
 
+  const handleRequestDeleteTable = async (table: SeatingTableDTO) => {
+    const seatedGuests = table.invitationCodes || [];
+    if (seatedGuests.length > 0) {
+      const seatedHeadcount = getGuestsHeadcount(seatedGuests);
+      const confirmed = await confirm(
+        `Are you sure you want to delete "${table.name}"? ${seatedHeadcount} seated guest${seatedHeadcount === 1 ? '' : 's'} will become unassigned.`
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+    await handleDeleteTableConfirmed(table.id);
+  };
+
   const selectedTable = tables.find((t) => t.id === selectedTableId) || null;
-  const selectedTableSeatLookup = useMemo(() => {
-    const lookup = new Map<string, number>();
-    if (!selectedTable?.invitationCodes) return lookup;
-    const seatMap = resolveSeatAssignments(selectedTable.invitationCodes, selectedTable.capacity);
-    seatMap.forEach((g, seatNum) => {
-      if (g.id) lookup.set(g.id, seatNum);
-    });
-    return lookup;
+  const selectedTableSeatedHeadcount = useMemo(
+    () => (selectedTable ? getGuestsHeadcount(selectedTable.invitationCodes || []) : 0),
+    [selectedTable]
+  );
+  const selectedTableDetailedSeats = useMemo(() => {
+    if (!selectedTable?.invitationCodes) return [];
+    return Array.from(
+      resolveDetailedSeatAssignments(selectedTable.invitationCodes, selectedTable.capacity).values()
+    ).sort((a, b) => a.seatNumber - b.seatNumber);
   }, [selectedTable]);
+
+  const selectedTableSeatsByGuestId = useMemo(() => {
+    const lookup = new Map<string, number[]>();
+    for (const entry of selectedTableDetailedSeats) {
+      if (!entry.guest.id) continue;
+      const list = lookup.get(entry.guest.id);
+      if (list) {
+        list.push(entry.seatNumber);
+      } else {
+        lookup.set(entry.guest.id, [entry.seatNumber]);
+      }
+    }
+    return lookup;
+  }, [selectedTableDetailedSeats]);
 
   return (
     <div className="space-y-6">
@@ -340,6 +375,7 @@ export default function SeatingChartAdminPage() {
           <div className="lg:col-span-3 space-y-4">
             <FloorplanCanvas
               tables={tables}
+              guests={allGuests}
               selectedTableId={selectedTableId}
               onSelectTable={setSelectedTableId}
               onUpdateTablePosition={handleUpdateTablePosition}
@@ -359,7 +395,7 @@ export default function SeatingChartAdminPage() {
                   <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
                     {selectedTable.name}
                     <span className="text-xs font-normal text-gray-600 dark:text-gray-300">
-                      ({selectedTable.shape}, {selectedTable.capacity} capacity, {selectedTable.invitationCodes?.length || 0} seated)
+                      ({selectedTable.shape}, {selectedTable.capacity} capacity, {selectedTableSeatedHeadcount} seated)
                     </span>
                   </h3>
                   {selectedTable.invitationCodes && selectedTable.invitationCodes.length > 0 ? (
@@ -370,6 +406,12 @@ export default function SeatingChartAdminPage() {
                         const visibleTags = (guest.partyTags || []).filter(
                           (tag) => tag.trim().toLowerCase() !== ADDRESS_COLLECTION_TAG
                         );
+                        const resolvedSeats = selectedTableSeatsByGuestId.get(guest.id) || [];
+                        const companions = !isDeclined ? getGuestCompanionNames(guest) : [];
+                        const seatPrefix =
+                          resolvedSeats.length > 1
+                            ? `Seats ${resolvedSeats.join(', ')}`
+                            : `Seat ${resolvedSeats[0] || guest.seatNumber || '?'}`;
 
                         return (
                           <span
@@ -382,7 +424,8 @@ export default function SeatingChartAdminPage() {
                             }`}
                           >
                             <span>
-                              Seat {guest.seatNumber || selectedTableSeatLookup.get(guest.id) || '?'}: {guest.guestName}
+                              {seatPrefix}: {guest.guestName}
+                              {companions.length > 0 ? ` (+${companions.length}: ${companions.join(', ')})` : ''}
                             </span>
                             {isDeclined && (
                               <span
@@ -489,7 +532,9 @@ export default function SeatingChartAdminPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleDeleteTable(selectedTable.id)}
+                    onClick={() => {
+                      void handleRequestDeleteTable(selectedTable);
+                    }}
                     className="min-h-[30px] px-3 py-1.5 text-xs font-medium bg-red-50 text-red-800 dark:bg-red-950/50 dark:text-red-300 hover:bg-red-100 rounded-lg border border-red-200"
                   >
                     Delete Table
@@ -507,7 +552,7 @@ export default function SeatingChartAdminPage() {
         table={editingTable}
         onClose={() => setIsTableModalOpen(false)}
         onSave={handleSaveTable}
-        onDelete={handleDeleteTable}
+        onDelete={handleDeleteTableConfirmed}
       />
 
       {/* Target Seat Assignment Modal */}
@@ -537,56 +582,78 @@ export default function SeatingChartAdminPage() {
                 </button>
               </div>
             </div>
-          ) : (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                const formData = new FormData(e.currentTarget);
-                const guestId = formData.get('guestId') as string;
-                if (guestId && assignSeatTarget) {
-                  handleAssignGuestToTable(guestId, assignSeatTarget.tableId, assignSeatTarget.seatNumber);
-                  setAssignSeatTarget(null);
-                }
-              }}
-              className="space-y-3"
-            >
-              <div>
-                <label htmlFor="modal-assign-guest" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Select Guest
-                </label>
-                <select
-                  id="modal-assign-guest"
-                  name="guestId"
-                  required
-                  defaultValue={unassignedGuests[0]?.id || ''}
-                  className="w-full min-h-[32px] px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
-                >
-                  {unassignedGuests.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.guestName} ({g.code})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setAssignSeatTarget(null)}
-                  className="min-h-[30px] px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="min-h-[30px] px-3 py-1.5 text-xs bg-primary text-white font-medium rounded-lg hover:bg-primary/90"
-                >
-                  Assign Guest
-                </button>
-              </div>
-            </form>
-          )
+          ) : (() => {
+            const modalTable = tables.find((t) => t.id === assignSeatTarget.tableId);
+            const openSeats = modalTable
+              ? Math.max(0, modalTable.capacity - getGuestsHeadcount(modalTable.invitationCodes || []))
+              : Infinity;
+            const firstFittingGuest = unassignedGuests.find((g) => getGuestPartySize(g) <= openSeats);
+
+            return (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const formData = new FormData(e.currentTarget);
+                  const guestId = formData.get('guestId') as string;
+                  if (guestId && assignSeatTarget) {
+                    handleAssignGuestToTable(guestId, assignSeatTarget.tableId, assignSeatTarget.seatNumber);
+                    setAssignSeatTarget(null);
+                  }
+                }}
+                className="space-y-3"
+              >
+                <div>
+                  <label htmlFor="modal-assign-guest" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Select Guest
+                  </label>
+                  <select
+                    id="modal-assign-guest"
+                    name="guestId"
+                    required
+                    defaultValue={firstFittingGuest?.id || unassignedGuests[0]?.id || ''}
+                    className="w-full min-h-[32px] px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                  >
+                    {unassignedGuests.map((g) => {
+                      const pSize = getGuestPartySize(g);
+                      const fits = pSize <= openSeats;
+                      return (
+                        <option key={g.id} value={g.id} disabled={!fits}>
+                          {g.guestName} ({g.code}){pSize > 1 ? ` - ${pSize} seats` : ''}
+                          {!fits ? ' (insufficient open seats)' : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setAssignSeatTarget(null)}
+                    className="min-h-[30px] px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!firstFittingGuest}
+                    className="min-h-[30px] px-3 py-1.5 text-xs bg-primary text-white font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    Assign Guest
+                  </button>
+                </div>
+              </form>
+            );
+          })()
         )}
       </Dialog>
     </div>
+  );
+}
+
+export default function SeatingChartAdminPage() {
+  return (
+    <EnsureToastProvider>
+      <SeatingChartAdminContent />
+    </EnsureToastProvider>
   );
 }
