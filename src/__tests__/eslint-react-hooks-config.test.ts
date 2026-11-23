@@ -71,7 +71,7 @@ describe('eslint-plugin-react-hooks configuration and rule enforcement', () => {
     expect(packageJson.devDependencies?.['typescript-eslint']).toBeDefined();
     expect(packageJson.devDependencies?.['@typescript-eslint/eslint-plugin']).toBeDefined();
     expect(packageJson.scripts?.lint).toMatch(/\beslint\s+\.\s+--max-warnings=\d+\b/);
-    expect(packageJson['lint-staged']?.['*.{js,jsx,ts,tsx}']).toContain('--max-warnings=0');
+    expect(packageJson['lint-staged']?.['*.{js,jsx,ts,tsx,mjs,cjs}']).toContain('--max-warnings=0');
   });
 
   it('preserves authentic implementations for all five React 19 react-hooks rules', () => {

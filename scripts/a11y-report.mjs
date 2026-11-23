@@ -29,12 +29,13 @@ function normalizePlaywrightViolations(rawData) {
 export function generateReport(options = {}) {
   const cwd = options.cwd || process.cwd();
   let totalViolations = 0;
+  const incompleteSuites = [];
   let report = '## Accessibility Health Summary\n\n';
 
   const jestFile = path.join(cwd, 'test-results', 'jest-a11y-violations.json');
+  report += '### Component Level (Jest)\n';
   if (fs.existsSync(jestFile)) {
     const jestViolations = JSON.parse(fs.readFileSync(jestFile, 'utf8'));
-    report += '### Component Level (Jest)\n';
     if (jestViolations.length === 0) {
       report += '✅ No accessibility violations found in components.\n\n';
     } else {
@@ -45,13 +46,17 @@ export function generateReport(options = {}) {
       });
       report += '\n';
     }
+  } else {
+    incompleteSuites.push('jest');
+    report +=
+      '⚠️ Incomplete: Jest accessibility artifact (`test-results/jest-a11y-violations.json`) was not found.\n\n';
   }
 
   const pwFile = path.join(cwd, 'test-results', 'playwright-a11y-violations.json');
+  report += '### Page Level (Playwright)\n';
   if (fs.existsSync(pwFile)) {
     const parsedPw = JSON.parse(fs.readFileSync(pwFile, 'utf8'));
     const pwViolations = normalizePlaywrightViolations(parsedPw);
-    report += '### Page Level (Playwright)\n';
     if (pwViolations.length === 0) {
       report += '✅ No accessibility violations found in pages.\n\n';
     } else {
@@ -63,8 +68,15 @@ export function generateReport(options = {}) {
       });
       report += '\n';
     }
+  } else {
+    incompleteSuites.push('playwright');
+    report +=
+      '⚠️ Incomplete: Playwright accessibility artifact (`test-results/playwright-a11y-violations.json`) was not found.\n\n';
   }
 
+  if (incompleteSuites.length > 0) {
+    report += `**Status:** Incomplete (${incompleteSuites.join(', ')} results missing)\n`;
+  }
   report += `**Total Accessibility Violations:** ${totalViolations}\n`;
   const outputPath = path.join(cwd, 'test-results', 'a11y-summary.md');
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
@@ -74,6 +86,7 @@ export function generateReport(options = {}) {
   return {
     report,
     totalViolations,
+    incompleteSuites,
     outputPath,
   };
 }
