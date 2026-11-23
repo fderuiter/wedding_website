@@ -31,9 +31,21 @@ updates:
       - dependency-name: "@types/node"
         versions: [">= 23.0.0"]
         update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript"
+        versions: [">= 6.1.0"]
+        update-types: ["version-update:semver-major"]
     groups:
       production-dependencies:
         dependency-type: "production"
       development-dependencies:
         dependency-type: "development"
+
+  - package-ecosystem: "npm"
+    directory: "/docker/prisma-cli"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      production-dependencies:
+        dependency-type: "production"
 
