@@ -225,9 +225,16 @@ jobs:
           echo "- **N-1 Container Compatibility:** \`VERIFIED\`" >> $GITHUB_STEP_SUMMARY
 
       - name: Generate Pre-Flight Schema Migration & SQL DDL Summary
+        env:
+          TARGET_ENVIRONMENT: ${{ inputs.environment || 'production' }}
+          BEFORE_SHA: ${{ github.event.before || '' }}
         run: |
           echo "Generating pre-flight schema migration and SQL DDL summary for release review..."
-          npx tsx scripts/preflight-migration-summary.ts --offline
+          if [[ "${BEFORE_SHA:-}" =~ ^[a-fA-F0-9]{40}$ ]] && [[ ! "${BEFORE_SHA}" =~ ^0+$ ]] && git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+            npx tsx scripts/preflight-migration-summary.ts --offline --base-ref "$BEFORE_SHA"
+          else
+            npx tsx scripts/preflight-migration-summary.ts --offline
+          fi
 
   publish-artifact:
     name: Publish Release Artifact

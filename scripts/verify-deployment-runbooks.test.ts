@@ -459,4 +459,48 @@ describe('verify-deployment-runbooks', () => {
       ])
     );
   });
+
+  it('rejects --command="npx" on Cloud Run jobs, unguarded DATABASE_URL overrides on docker compose run, and missing /usr/local/etc/npmrc in Dockerfile', () => {
+    const gcpPath = path.join(tempDir, 'docs/deployment/gcp-cloud-run.md');
+    fs.writeFileSync(
+      gcpPath,
+      fs
+        .readFileSync(gcpPath, 'utf8')
+        .replace(
+          '--args="./node_modules/.bin/prisma,migrate,deploy"',
+          '--command="npx" \\\n    --args="prisma,migrate,deploy"'
+        )
+    );
+
+    const dockerPath = path.join(tempDir, 'docs/deployment/docker-vps.md');
+    fs.writeFileSync(
+      dockerPath,
+      `${fs.readFileSync(dockerPath, 'utf8')}\nUnguarded Compose override: \`docker compose run --rm -e DATABASE_URL="$POSTGRES_URL_NON_POOLING" migration\`\n`
+    );
+
+    const dockerfilePath = path.join(tempDir, 'Dockerfile');
+    fs.writeFileSync(
+      dockerfilePath,
+      fs.readFileSync(dockerfilePath, 'utf8').replace('/usr/local/etc/npmrc', '/tmp/unused-npmrc')
+    );
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          'docs/deployment/gcp-cloud-run.md: Cloud Run job command'
+        ),
+        expect.stringContaining('must not override ENTRYPOINT with `--command`'),
+        expect.stringContaining(
+          'docs/deployment/gcp-cloud-run.md: Cloud Run migration job must pass `--args="./node_modules/.bin/prisma,migrate,deploy"` without `--command`'
+        ),
+        expect.stringContaining(
+          'docs/deployment/docker-vps.md: `docker compose run --rm -e DATABASE_URL="$POSTGRES_URL_NON_POOLING" migration` overrides DATABASE_URL on `docker compose run` without unsetting or clearing POSTGRES_URL_NON_POOLING'
+        ),
+        expect.stringContaining(
+          'Dockerfile: Must write `update-notifier=false` to `/usr/local/etc/npmrc`'
+        ),
+      ])
+    );
+  });
 });
