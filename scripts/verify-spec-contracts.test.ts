@@ -207,6 +207,30 @@ export function getStripeCapability() {
     ]);
   });
 
+  it('resolves GitHub blob URLs (including percent-encoded dynamic route segments) and bolded symbol citations', () => {
+    writeFixture(
+      tempDir,
+      'src/app/api/media/[id]/route.ts',
+      'export async function DELETE() { return Response.json({ deleted: true }); }\n',
+    );
+    writeFixture(
+      tempDir,
+      'docs/ASSET_STORAGE.md',
+      [
+        '# Asset Storage',
+        '- **`getStripeCapability`** ([src/lib/stripe.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/lib/stripe.ts)).',
+        '- **`DELETE`** ([src/app/api/media/[id]/route.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/app/api/media/%5Bid%5D/route.ts)).',
+        '- **`missingStorageHelper`** ([src/lib/stripe.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/lib/stripe.ts)).',
+      ].join('\n'),
+    );
+
+    const result = verifySpecContracts(tempDir, { specFiles: ['docs/ASSET_STORAGE.md'] });
+    expect(result.checkedSymbols).toBe(3);
+    expect(result.errors).toEqual([
+      'docs/ASSET_STORAGE.md:4: Symbol "missingStorageHelper" is not declared or exported in src/lib/stripe.ts',
+    ]);
+  });
+
   it('fails when unprotected routes in src/lib/routes.ts or src/app/metadata.ts drift from src/middleware.ts or ARCHITECTURE.md', () => {
     writeFixture(
       tempDir,

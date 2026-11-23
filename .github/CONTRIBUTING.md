@@ -39,26 +39,11 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
      ```
      Executes all static checks, linters, documentation portal and Storybook static builds, and unit/integration tests via [scripts/check-quality.ts](../scripts/check-quality.ts) (see [AGENTS.md](../AGENTS.md) and [TESTING.md](TESTING.md) for details).
 
-   - **Individual Quality Checks:**
-     - `npm run check:static` - Run the full static verification bundle (`check:env-docs`, `check:runbooks`, `check:identifiers`, `check:action-pins`, `check:links`, `check:spec-contracts`, `check:prisma`, `lint:migrations`, `check:doc-sync`, and `check:setup-guides`).
-     - `npm run check:env-docs` - Ensure environment variables match `.env.example` and deployment documentation.
-     - `npm run check:runbooks` - Verify deployment runbooks match live workflows, Docker Compose, and Prisma 7 contracts.
-     - `npm run check:setup-guides` - Verify setup, testing, and contributor guides match `.env.example`, `.env.test`, scripts, hooks, and `tsconfig.json`.
-     - `npm run check:identifiers` - Guard against hardcoded personal/template identifiers in core runtime files.
-     - `npm run check:action-pins` - Validate strict YAML 1.2 syntax in `.github/workflows/` and ensure third-party GitHub Actions are pinned to 40-character commit SHAs with inline `# v...` version comments (pass `-- --verify-upstream` in CI to verify upstream commit existence).
-     - `npm run check:links` - Validate relative documentation links across Markdown files.
-     - `npm run check:spec-contracts` - Verify `/api/*` routes, HTTP methods, dynamic `ENTITY_KEY` slugs, and TypeScript symbols cited in architectural specifications match live codebase exports.
-     - `npm run check:prisma` & `npm run lint:migrations` - Validate Prisma schema structure and migration compatibility.
-     - `npm run check:standalone` / `npm run check:standalone -- --require-standalone` - Verify container digest pins, BuildKit APT caches, and `next.config.ts` portability pre-build (`npm run check:standalone`), or require `.next/standalone/server.js`, `.next/standalone/.next/static`, and `.next/standalone/public` post-build (`npm run check:standalone -- --require-standalone`).
-     - `npm run test:standalone` & `npm run test:container` - Run standalone (`npm run build` required beforehand) and container-first clean-database smoke checks (executing `docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml run --rm migration` by default plus shared `/assets/favicon.png`, `/api/ready`, `/api/registry/validate-code`, and authenticated `/api/registry/items` probes; warning: both run `docker compose down -v` and wipe local `db_data`).
-     - `npm run check:doc-sync` - Verify generated documentation (`public/openapi.json`, `ARCHITECTURE.md`, and `FEATURE_MODULES.md`) is synchronized with codebase schemas without drift.
-     - `npm run docs:build` - Verify static VitePress documentation portal builds successfully.
-     - `npm run build-storybook` - Verify static Storybook component showcase, story imports, and MSW mock handlers compile cleanly via Webpack.
-     - `npm run typecheck` (or `npm run type-check`) - Check TypeScript types across `tsconfig.json`, `tsconfig.build.json`, `tsconfig.test.json`, `tsconfig.e2e.json`, and `tsconfig.scripts.json` (workspace IDE project, isolated production app build, unit/integration tests and `src/mocks`, Playwright E2E specs, and `scripts/`).
-     - `npm run lint` & `npm run lint:unused` - Run ESLint (`--max-warnings 0` with `.eslintcache` and the shrink-only `LEGACY_EXPLICIT_ANY_BASELINE_FILES` ratchet) and Knip unused export analysis.
-     - `npm test` & `npm run test:cov` - Run Jest unit and integration tests locally (`npm test`, or `npm test -- <path>` for targeted suites) and verify global `80%` line / `68%` branch coverage (`npm run test:cov`).
-     - `npm run test:e2e` / `npm run test:e2e:smoke` (`npx playwright test`) - Run Playwright E2E or `@smoke`-tagged browser tests in bundled Chromium against `http://localhost:3000` and the isolated `wedding_test` database (automatically initialized and seeded when `CI` and `TEST_CONTAINER` are unset; stop any running `npm run dev` on port `3000` first, or opt into `PLAYWRIGHT_REUSE_SERVER=true` only when the existing server targets `wedding_test` with aligned `GUEST_SESSION_SECRET`, `GUEST_PASSCODE`, and `ADMIN_PASSWORD` values).
-     - `npm run test:a11y:unit` & `npm run test:a11y` - Run targeted `src/` `jest-axe` component suites (`--unit`), or chain component checks, `wedding_test` reseeding (`npx tsx scripts/seed.ts`), and `@a11y` Playwright WCAG 2.2 AA audits (`--run`) to generate `test-results/a11y-summary.md`.
+   - **Targeted Quality & Documentation Sync Commands:**
+     - `npm run check:static` - Run the shared static and container configuration checks defined in [`scripts/check-quality.ts`](../scripts/check-quality.ts) (`--static`).
+     - `npm run check:doc-sync` - Verify generated documentation (`public/openapi.json`, `ARCHITECTURE.md`, and `FEATURE_MODULES.md`) is synchronized with codebase schemas without drift (`npx tsx scripts/generate-openapi.ts && npx tsx scripts/generate-docs.ts`).
+     - `npm run typecheck`, `npm run lint`, & `npm run lint:unused` - Check TypeScript types (see [AGENTS.md](../AGENTS.md) for the five-file `tsconfig*.json` split), ESLint rules (`--max-warnings 0` with `.eslintcache` and the shrink-only `LEGACY_EXPLICIT_ANY_BASELINE_FILES` ratchet), and Knip unused exports.
+     - `npm test`, `npm run test:cov`, `npm run test:e2e`, & `npm run test:a11y` - Run fast local Jest unit/integration tests (`npm test`, or `npm test -- <path>`), enforce global `80%` line / `68%` branch coverage (`npm run test:cov`), run Playwright E2E specs, and run WCAG 2.2 AA accessibility audits (see [TESTING.md](TESTING.md) for `wedding_test` database isolation, E2E secret alignment, and container smoke tests).
 7. **Commit Your Changes:** Write clear commit messages. Something like `fix: Correct spelling on registry item description` or `feat: Add animation to RSVP button`.
 
     ```bash
@@ -74,7 +59,7 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
     git push origin fix/registry-typo
     ```
 
-    Pushing triggers [`.githooks/pre-push`](../.githooks/pre-push) (installed automatically by `npm ci`), which runs twelve sequential workspace checks without stashing or resetting local files: `npm run type-check`, `npm run lint:unused`, `npm run check:env-docs`, `npm run check:runbooks`, `npm run check:setup-guides`, `npm run check:identifiers`, `npm run check:action-pins`, `npm run check:links`, `npm run check:spec-contracts`, `npm run check:prisma`, `npm run lint:migrations`, and `npm run check:doc-sync`.
+    Pushing triggers [`.githooks/pre-push`](../.githooks/pre-push) (installed automatically by `npm ci`), which runs lightweight workspace checks without stashing or resetting local files: `npm run type-check`, `npm run lint:unused`, `npm run check:env-docs`, `npm run check:runbooks`, `npm run check:setup-guides`, `npm run check:identifiers`, `npm run check:action-pins`, `npm run check:links`, `npm run check:spec-contracts`, `npm run check:prisma`, `npm run lint:migrations`, and `npm run check:doc-sync`.
 
 9. **Open a Pull Request (PR):** Go back to the *original* `fderuiter/wedding_website` repository on GitHub. You should see a prompt to create a Pull Request from your new branch. Click it!
     * Give your PR a clear title and description.
