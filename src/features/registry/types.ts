@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { ContributorSchema, ContributorStatus, RegistryItemDTO } from './schemas';
+import {
+  AdminUpdateContributorInput,
+  ContributorSchema,
+  ContributorStatus,
+  RegistryItemDTO,
+} from './schemas';
 import { formatCurrency } from '@/utils/intl';
 
 export type RegistryItem = RegistryItemDTO;
@@ -16,6 +21,11 @@ export interface ContributorLifecycleResult {
   item: RegistryItemDTO | null;
   previousStatus: ContributorStatus;
   changed: boolean;
+}
+
+export interface ContributorDeleteResult {
+  deletedId: string;
+  item: RegistryItemDTO | null;
 }
 
 export interface StripeLedgerReconciliationResult {
@@ -60,8 +70,6 @@ export const THANK_YOU_TEMPLATES: ThankYouTemplate[] = [
       'Dear {{guestName}}, thank you so much for celebrating with us and for your generous {{giftName}}! We are so blessed to have you in our lives.',
   },
 ];
-
-export const DEFAULT_THANK_YOU_TEMPLATES = THANK_YOU_TEMPLATES;
 
 export function substituteThankYouTemplateTokens(
   template: string,
@@ -175,5 +183,20 @@ export interface IRegistryRepository {
     refundedCents: number;
     forceFullReversal?: boolean;
   }): Promise<StripeLedgerReconciliationResult>;
+  unclaimItem?(
+    itemId: string,
+    options?: { confirmVerifiedPayment?: boolean },
+    author?: string
+  ): Promise<RegistryItemDTO>;
+  updateContributor?(
+    contributorId: string,
+    data: Partial<AdminUpdateContributorInput>,
+    author?: string
+  ): Promise<{ contributor: ContributorRecord; item: RegistryItemDTO | null }>;
+  deleteContributor?(
+    contributorId: string,
+    options?: { confirmVerifiedPayment?: boolean },
+    author?: string
+  ): Promise<ContributorDeleteResult>;
 }
 

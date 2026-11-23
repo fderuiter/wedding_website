@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { ApiClient } from '@/lib/apiClient';
 import { generateSecureUUID } from '@/utils/uuid';
+import { ADMIN_ONBOARDING_MILESTONES_QUERY_KEY } from '@/lib/adminCacheSync';
 
 const EMPTY_ARRAY: readonly never[] = Object.freeze([]);
 
@@ -92,6 +93,7 @@ export function useEntityOrchestration<T extends { id: string }>({
   const queryClient = useQueryClient();
 
   const invalidateRelatedQueries = () => {
+    queryClient.invalidateQueries({ queryKey: ADMIN_ONBOARDING_MILESTONES_QUERY_KEY });
     if (!invalidateQueryKeys) return;
     for (const key of invalidateQueryKeys) {
       queryClient.invalidateQueries({ queryKey: key });

@@ -8,9 +8,15 @@ import { signGuestInviteSessionToken, GUEST_INVITE_COOKIE } from '@/core/auth/gu
 
 function safeComparePasscode(a: string, b: string): boolean {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
-  const hashA = crypto.createHash('sha256').update(a).digest();
-  const hashB = crypto.createHash('sha256').update(b).digest();
-  return crypto.timingSafeEqual(hashA, hashB);
+  const bufA = Buffer.from(a, 'utf8');
+  const bufB = Buffer.from(b, 'utf8');
+  const maxLen = Math.max(bufA.length, bufB.length, 1);
+  const paddedA = Buffer.alloc(maxLen);
+  const paddedB = Buffer.alloc(maxLen);
+  bufA.copy(paddedA);
+  bufB.copy(paddedB);
+  const bytesEqual = crypto.timingSafeEqual(paddedA, paddedB);
+  return bytesEqual && bufA.length === bufB.length;
 }
 
 export const GET = withApiMiddleware(async (request: NextRequest) => {

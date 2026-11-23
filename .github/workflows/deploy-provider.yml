@@ -356,9 +356,107 @@ jobs:
               exit 1
             fi
           fi
+
+          if ! ATTESTATION_JSON=$(gh attestation verify "oci://${IMAGE_URI}" \
+            --owner "$REPO_OWNER" \
+            --signer-workflow "$SIGNER_WORKFLOW" \
+            --source-ref "$EXPECTED_SOURCE_REF" \
+            --format json); then
+            echo "::error::OIDC build provenance JSON verification failed for oci://${IMAGE_URI}. Blocking deployment."
+            exit 1
+          fi
+
+          RAW_INDEX_JSON=$(docker buildx imagetools inspect --raw "$IMAGE_URI" 2>/dev/null || true)
+          INDEX_REVISION=$(printf '%s' "$RAW_INDEX_JSON" | jq -r '
+            (
+              .annotations["org.opencontainers.image.revision"]
+              // ([.manifests[]?.annotations["org.opencontainers.image.revision"] | select(type == "string" and test("^[a-fA-F0-9]{40}$"))][0])
+              // empty
+            )
+          ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+          if [[ ! "$INDEX_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
+            INDEX_REVISION=""
+          fi
+
+          SLSA_INPUT_REVISION=$(printf '%s' "$ATTESTATION_JSON" | jq -r '
+            [
+              (if type == "array" then .[] else . end)
+              | (.verificationResult.statement.predicate // .statement.predicate // .predicate // empty)
+              | .buildDefinition.externalParameters.inputs.commit_sha
+              | select(type == "string" and test("^[a-fA-F0-9]{40}$"))
+            ][0] // empty
+          ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+          if [[ ! "$SLSA_INPUT_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
+            SLSA_INPUT_REVISION=""
+          fi
+
+          if [ -n "$INDEX_REVISION" ] && [ -n "$SLSA_INPUT_REVISION" ] && [ "$INDEX_REVISION" != "$SLSA_INPUT_REVISION" ]; then
+            echo "::error::Attested OCI index revision '${INDEX_REVISION}' conflicts with SLSA input commit_sha '${SLSA_INPUT_REVISION}' for '${IMAGE_URI}'. Blocking deployment."
+            exit 1
+          fi
+
+          SLSA_REVISION=$(printf '%s' "$ATTESTATION_JSON" | jq -r '
+            [
+              (if type == "array" then .[] else . end)
+              | (
+                  ((.verificationResult.statement.predicate // .statement.predicate // .predicate // empty) | (
+                    .buildDefinition.externalParameters.inputs.commit_sha,
+                    (.buildDefinition.resolvedDependencies[]? | (.digest.gitCommit, .digest.sha1)),
+                    .buildDefinition.internalParameters.github.sha,
+                    .invocation.configSource.digest.sha1,
+                    (.materials[]? | (.digest.gitCommit, .digest.sha1))
+                  )),
+                  .verificationResult.signature.certificate.sourceRepositoryDigest
+                )
+              | select(type == "string" and test("^[a-fA-F0-9]{40}$"))
+            ][0] // empty
+          ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+          if [[ ! "$SLSA_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
+            SLSA_REVISION=""
+          fi
+
+          SOURCE_REVISION="${INDEX_REVISION:-${SLSA_REVISION}}"
+          if [[ ! "$SOURCE_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "::error::Unable to resolve a signed 40-character source revision from OCI metadata or SLSA provenance for oci://${IMAGE_URI}. Blocking deployment."
+            exit 1
+          fi
+
+          API_BASE="${GITHUB_API_URL:-https://api.github.com}"
+          AUTH_ARGS=()
+          if [ -n "${GH_TOKEN:-}" ]; then
+            AUTH_ARGS=(-H "Authorization: Bearer ${GH_TOKEN}")
+          fi
+
+          if ! CI_RUNS_JSON=$(curl -fsSL \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${AUTH_ARGS[@]}" \
+            "${API_BASE}/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${SOURCE_REVISION}&status=completed&per_page=100"); then
+            echo "::error::Failed to query ci.yml workflow runs for signed source revision '${SOURCE_REVISION}' in '${GITHUB_REPOSITORY}'. Blocking deployment."
+            exit 1
+          fi
+
+          VERIFIED_CI_RUN_ID=$(printf '%s' "$CI_RUNS_JSON" | jq -r \
+            --arg sha "$SOURCE_REVISION" \
+            --arg repo "$GITHUB_REPOSITORY" '
+            [
+              .workflow_runs[]?
+              | select(.status == "completed" and .conclusion == "success")
+              | select((.head_sha // "" | ascii_downcase) == ($sha | ascii_downcase))
+              | select((.head_repository == null) or ((.head_repository.full_name // "" | ascii_downcase) == ($repo | ascii_downcase)))
+              | (.id | tostring)
+            ][0] // empty
+          ')
+
+          if [ -z "$VERIFIED_CI_RUN_ID" ]; then
+            echo "::error::No completed successful ci.yml workflow run found for signed source revision '${SOURCE_REVISION}' in '${GITHUB_REPOSITORY}'. Blocking deployment."
+            exit 1
+          fi
+
           echo "source_ref=${EXPECTED_SOURCE_REF}" >> "$GITHUB_OUTPUT"
+          echo "source_revision=${SOURCE_REVISION}" >> "$GITHUB_OUTPUT"
           echo "attestation_status=verified" >> "$GITHUB_OUTPUT"
-          echo "Verified OIDC build provenance attestation for ${IMAGE_DIGEST} (${EXPECTED_SOURCE_REF})."
+          echo "Verified OIDC build provenance attestation (${EXPECTED_SOURCE_REF}) and passing ci.yml run (ID: ${VERIFIED_CI_RUN_ID}) for ${IMAGE_DIGEST} (revision: ${SOURCE_REVISION})."
 
       - name: Resolve Standalone Promotion Commit & Main Ancestry
         id: standalone-target

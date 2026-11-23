@@ -10,17 +10,12 @@ import {
   MAX_UPLOAD_SIZE,
   MIME_TO_EXTENSIONS,
   coordinateSchema,
-  createLaxUrlSchema,
   decodeUrlPathSafely,
-  deriveAdminInputSchema,
   formatZodError,
   getFileExtension,
   getNormalizedExtension,
   isHeicExtension,
-  isSafeConfigAssetUrl,
-  isSafeLocalPathUrl,
   isSafeMediaOrPhotoUrl,
-  safeImageUrlSchema,
   safeUrlSchema,
   sanitizeUrl,
 } from './validationPrimitives';
@@ -33,19 +28,13 @@ export {
   HEIC_EXTENSIONS,
   MAX_GUEST_PHOTO_SIZE,
   MAX_UPLOAD_SIZE,
-  MIME_TO_EXTENSIONS,
   coordinateSchema,
-  createLaxUrlSchema,
   decodeUrlPathSafely,
-  deriveAdminInputSchema,
   formatZodError,
   getFileExtension,
   getNormalizedExtension,
   isHeicExtension,
-  isSafeConfigAssetUrl,
-  isSafeLocalPathUrl,
   isSafeMediaOrPhotoUrl,
-  safeImageUrlSchema,
   safeUrlSchema,
   sanitizeUrl,
 };
@@ -146,7 +135,7 @@ export const GuestLookupSchema = z.object({
   ],
 });
 
-export const SingleGuestPhotoSchema = z.any()
+const SingleGuestPhotoSchema = z.any()
   .refine((val) => val !== null && val !== undefined, { message: 'No file provided' })
   .refine((file) => typeof file === 'object' && typeof file?.size === 'number' && file?.size <= MAX_GUEST_PHOTO_SIZE, { message: 'File size exceeds 10MB limit' })
   .refine((file) => {
@@ -302,16 +291,24 @@ export const AdminSetupSchema = z.object({
   timezone: z.string().optional(),
   showCountdown: z.boolean().optional(),
   showAddToCalendar: z.boolean().optional(),
+  setupCompleted: z.boolean().optional(),
   subdomain: z.string().nullable().optional(),
 }).meta({
   description:
-    'First-run site setup and authenticated configuration payload. Requires either password (validated against ADMIN_PASSWORD_HASH or ADMIN_PASSWORD during step-1 setup authentication) or full site initialization fields (non-placeholder baseUrl plus partner1Name & partner2Name or legacy brideName & groomName; unauthenticated first-run requests must also include password).',
+    'First-run site setup and authenticated configuration payload. Requires either password (validated against ADMIN_PASSWORD_HASH or ADMIN_PASSWORD during step-1 setup authentication), setupCompleted (for authenticated wizard completion), or full site initialization fields (non-placeholder baseUrl plus partner1Name & partner2Name or legacy brideName & groomName; unauthenticated first-run requests must also include password).',
   anyOf: [
     {
       type: 'object',
       required: ['password'],
       properties: {
         password: { type: 'string', minLength: 1 },
+      },
+    },
+    {
+      type: 'object',
+      required: ['setupCompleted'],
+      properties: {
+        setupCompleted: { type: 'boolean' },
       },
     },
     {

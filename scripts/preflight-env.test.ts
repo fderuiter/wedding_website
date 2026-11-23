@@ -258,6 +258,76 @@ describe('scripts/preflight-env.ts', () => {
     expect(combinedOutput).not.toContain('AAAAAAAAAAAAAAAAAAAAAA==');
   });
 
+  it('rejects Cloudflare R2 S3_REGION=auto without S3_ENDPOINT and private *.r2.cloudflarestorage.com endpoints without S3_PUBLIC_URL without leaking account IDs', () => {
+    const validHash = generateValidAdminScryptHash();
+    const canaryAccountId = 'CANARY_R2_ACCOUNT_987654';
+
+    const missingEndpointEntries = parseDotenvContent([
+      'DB_PASSWORD=a9f3e71b24c80d6512ab98cd34ef56789012abcd3456ef78',
+      `ADMIN_PASSWORD="${validHash}"`,
+      'GUEST_PASSCODE="autumn-orchard-celebration-2027"',
+      'GUEST_SESSION_SECRET="8f4a2e9c1d7b3a6f0e5c8d2a9b4f7e1c3d6a8b0e2f4c6d8a1b3e5f7a9c0d2e4f"',
+      'S3_BUCKET=wedding-assets',
+      'S3_REGION=auto',
+      'S3_ACCESS_KEY_ID=r2-access-key',
+      'S3_SECRET_ACCESS_KEY=r2-secret-key',
+    ].join('\n'));
+
+    const missingEndpointRes = validateOperatorEnv(missingEndpointEntries, {
+      target: 'compose',
+      composeContent: liveComposeRaw,
+    });
+    expect(missingEndpointRes.issues).toEqual([
+      expect.objectContaining({
+        key: 'S3_ENDPOINT',
+        rule: 'missing-r2-s3-endpoint',
+      }),
+    ]);
+
+    const missingPublicUrlEntries = parseDotenvContent([
+      'DB_PASSWORD=a9f3e71b24c80d6512ab98cd34ef56789012abcd3456ef78',
+      `ADMIN_PASSWORD="${validHash}"`,
+      'GUEST_PASSCODE="autumn-orchard-celebration-2027"',
+      'GUEST_SESSION_SECRET="8f4a2e9c1d7b3a6f0e5c8d2a9b4f7e1c3d6a8b0e2f4c6d8a1b3e5f7a9c0d2e4f"',
+      'S3_BUCKET=wedding-assets',
+      'S3_REGION=auto',
+      'S3_ACCESS_KEY_ID=r2-access-key',
+      'S3_SECRET_ACCESS_KEY=r2-secret-key',
+      `S3_ENDPOINT=https://${canaryAccountId}.r2.cloudflarestorage.com`,
+    ].join('\n'));
+
+    const missingPublicUrlRes = validateOperatorEnv(missingPublicUrlEntries, {
+      target: 'compose',
+      composeContent: liveComposeRaw,
+    });
+    expect(missingPublicUrlRes.issues).toEqual([
+      expect.objectContaining({
+        key: 'S3_PUBLIC_URL',
+        rule: 'missing-r2-s3-public-url',
+      }),
+    ]);
+    expect(JSON.stringify(missingPublicUrlRes.issues)).not.toContain(canaryAccountId);
+
+    const validR2Entries = parseDotenvContent([
+      'DB_PASSWORD=a9f3e71b24c80d6512ab98cd34ef56789012abcd3456ef78',
+      `ADMIN_PASSWORD="${validHash}"`,
+      'GUEST_PASSCODE="autumn-orchard-celebration-2027"',
+      'GUEST_SESSION_SECRET="8f4a2e9c1d7b3a6f0e5c8d2a9b4f7e1c3d6a8b0e2f4c6d8a1b3e5f7a9c0d2e4f"',
+      'S3_BUCKET=wedding-assets',
+      'S3_REGION=auto',
+      'S3_ACCESS_KEY_ID=r2-access-key',
+      'S3_SECRET_ACCESS_KEY=r2-secret-key',
+      `S3_ENDPOINT=https://${canaryAccountId}.r2.cloudflarestorage.com`,
+      'S3_PUBLIC_URL=https://assets.wedding.example.com',
+    ].join('\n'));
+
+    const validR2Res = validateOperatorEnv(validR2Entries, {
+      target: 'compose',
+      composeContent: liveComposeRaw,
+    });
+    expect(validR2Res.issues).toEqual([]);
+  });
+
   it('handles --help and missing .env files cleanly', () => {
     const helpRes = runPreflightCli(['--help'], tempDir);
     expect(helpRes.exitCode).toBe(0);

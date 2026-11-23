@@ -151,17 +151,36 @@ describe('Composite & Foreign Key Indexes Verification', () => {
     });
 
     it('executes SnapshotVersion entity history lookup without Sort nodes', async () => {
-      const explainRes = await pool.query<{ 'QUERY PLAN': string }>(`
-        EXPLAIN SELECT * FROM "SnapshotVersion"
-        WHERE "entityType" = 'RegistryItem'
-          AND "entityId" = '00000000-0000-0000-0000-000000000000'
-        ORDER BY "createdAt" DESC
-        LIMIT 20;
+      await pool.query(`
+        INSERT INTO "SnapshotVersion" ("id", "entityType", "entityId", "data", "createdAt")
+        SELECT
+          '00000000-0000-4000-8000-' || lpad(i::text, 12, '0'),
+          CASE WHEN i % 2 = 0 THEN 'RegistryItem' ELSE 'ContentNode' END,
+          '11111111-1111-4111-8111-' || lpad((i % 25)::text, 12, '0'),
+          '{}'::jsonb,
+          NOW() - (i || ' minutes')::interval
+        FROM generate_series(1, 50) AS s(i);
       `);
+      await pool.query('ANALYZE "SnapshotVersion";');
 
-      const planText = explainRes.rows.map((r) => r['QUERY PLAN']).join('\n');
-      expect(planText).toContain('SnapshotVersion_entityType_entityId_createdAt_idx');
-      expect(planText).not.toMatch(/\bSort\b/i);
+      try {
+        const explainRes = await pool.query<{ 'QUERY PLAN': string }>(`
+          EXPLAIN SELECT * FROM "SnapshotVersion"
+          WHERE "entityType" = 'RegistryItem'
+            AND "entityId" = '00000000-0000-0000-0000-000000000000'
+          ORDER BY "createdAt" DESC
+          LIMIT 20;
+        `);
+
+        const planText = explainRes.rows.map((r) => r['QUERY PLAN']).join('\n');
+        expect(planText).toContain('SnapshotVersion_entityType_entityId_createdAt_idx');
+        expect(planText).not.toMatch(/\bSort\b/i);
+      } finally {
+        await pool.query(`
+          DELETE FROM "SnapshotVersion"
+          WHERE "id" LIKE '00000000-0000-4000-8000-%';
+        `);
+      }
     });
   });
 });
