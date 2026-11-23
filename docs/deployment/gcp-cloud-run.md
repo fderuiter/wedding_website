@@ -49,7 +49,7 @@ For the complete environment variable matrix, defaults, and persisted `prisma/sc
     *   **Object Storage (Required for Uploads)**: Because Cloud Run container filesystems are ephemeral and read-only, configure `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` (plus optional `S3_ENDPOINT` and `S3_PUBLIC_URL` for Cloudflare R2 or GCS S3 Interop).
     *   **Optional Integrations**: `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` (when enabling card checkout), and `CRON_SECRET` (when scheduling `/api/cron/broadcasts` via Cloud Scheduler).
 *   **Cloud Run Service Environment Variables (`--set-env-vars`)**:
-    *   Set `NODE_ENV=production`, `ALLOWED_HOSTS` (including your custom domain and `*.run.app`; read-only `GET` and `HEAD` probes to `/api/live`, `/api/health`, and `/api/ready` enforce syntactic `Host` validation only, so internal Cloud Run pod-IP probes require no extra `ALLOWED_HOSTS` entries), `TRUST_PROXY=true` (so rate limiting honors Cloud Run ingress `X-Forwarded-For`), and optional `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` when paired with `STRIPE_SECRET_KEY`.
+    *   Set `NODE_ENV=production`, `ALLOWED_HOSTS` (including your custom domain and `*.run.app`; read-only `GET` and `HEAD` probes to `/api/live`, `/api/health`, and `/api/ready` enforce syntactic `Host` validation only, so internal Cloud Run pod-IP probes require no extra `ALLOWED_HOSTS` entries), `TRUST_PROXY=2` (so rate limiting resolves client IPs across Google Cloud external load balancer and Cloud Run ingress hops), and optional `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` when paired with `STRIPE_SECRET_KEY`.
 
 ---
 
@@ -345,7 +345,7 @@ gcloud run deploy wedding-website-staging \
     --region=us-central1 \
     --allow-unauthenticated \
     --add-cloudsql-instances=YOUR_PROJECT_ID:us-central1:wedding-staging-db \
-    --set-env-vars="^|^NODE_ENV=production|ALLOWED_HOSTS=staging.wedding.mydomain.com,*.run.app" \
+    --set-env-vars="^|^NODE_ENV=production|TRUST_PROXY=2|ALLOWED_HOSTS=staging.wedding.mydomain.com,*.run.app" \
     --set-secrets="DATABASE_URL=STAGING_DATABASE_URL:latest,ADMIN_PASSWORD=ADMIN_PASSWORD:latest,GUEST_PASSCODE=GUEST_PASSCODE:latest,GUEST_SESSION_SECRET=GUEST_SESSION_SECRET:latest" \
     --port=3000
 
@@ -356,7 +356,7 @@ gcloud run deploy wedding-website \
     --region=us-central1 \
     --allow-unauthenticated \
     --add-cloudsql-instances=YOUR_PROJECT_ID:us-central1:wedding-db \
-    --set-env-vars="^|^NODE_ENV=production|ALLOWED_HOSTS=wedding.mydomain.com,*.run.app" \
+    --set-env-vars="^|^NODE_ENV=production|TRUST_PROXY=2|ALLOWED_HOSTS=wedding.mydomain.com,*.run.app" \
     --set-secrets="DATABASE_URL=DATABASE_URL:latest,ADMIN_PASSWORD=ADMIN_PASSWORD:latest,GUEST_PASSCODE=GUEST_PASSCODE:latest,GUEST_SESSION_SECRET=GUEST_SESSION_SECRET:latest" \
     --port=3000
 ```

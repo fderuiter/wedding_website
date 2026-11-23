@@ -663,7 +663,6 @@ function checkDockerfileContent(
         'postcss.config.mjs',
         'tsconfig.json',
         'tsconfig.build.json',
-        'next-env.d.ts',
         'assets',
         'public',
         'src',
@@ -1485,12 +1484,17 @@ export function checkDockerBuild(
     });
   }
 
-  // 7. Check standalone build artifacts (.next/standalone) when present or required (--require-standalone)
+  // 7. Check standalone build artifacts (.next/standalone) when present from a production build or required (--require-standalone)
   const nextDir = path.join(rootDir, '.next');
   const standaloneDir = path.join(nextDir, 'standalone');
   const hasNextDir = fs.existsSync(nextDir) && fs.statSync(nextDir).isDirectory();
   const hasStandaloneDir =
     hasNextDir && fs.existsSync(standaloneDir) && fs.statSync(standaloneDir).isDirectory();
+  const hasProductionBuildMarker =
+    hasNextDir &&
+    (fs.existsSync(path.join(nextDir, 'BUILD_ID')) ||
+      fs.existsSync(path.join(nextDir, 'routes-manifest.json')) ||
+      hasStandaloneDir);
 
   if (requireStandalone && !hasNextDir) {
     violations.push({
@@ -1501,7 +1505,7 @@ export function checkDockerBuild(
       reason:
         ".next build output directory is missing while --require-standalone is enabled. Run 'npm run build' first.",
     });
-  } else if (requireStandalone && !hasStandaloneDir) {
+  } else if ((requireStandalone || hasProductionBuildMarker) && !hasStandaloneDir) {
     violations.push({
       filePath: '.next/standalone',
       lineNumber: 1,
@@ -1588,24 +1592,24 @@ export function checkDockerBuild(
             '.next/standalone/public/mockServiceWorker.js must not be bundled in standalone output.',
         });
       }
-      const forbiddenStandalonePaths = [
-        ['node_modules', 'pdfkit', 'js', 'pdfkit.standalone.js'],
-        ['node_modules', 'pdfkit', 'js', 'pdfkit.browser.js'],
-        ['node_modules', 'pdfkit', 'js', 'pdfkit.old.js'],
-        ['node_modules', 'fontkit', 'dist', 'browser.cjs'],
-      ];
-      for (const segments of forbiddenStandalonePaths) {
-        const candidatePath = path.join(standaloneDir, ...segments);
-        if (fs.existsSync(candidatePath)) {
-          const relStandalone = ['.next', 'standalone', ...segments].join('/');
-          violations.push({
-            filePath: relStandalone,
-            lineNumber: 1,
-            lineContent: '',
-            imageRef: segments[segments.length - 1],
-            reason: `${relStandalone} browser/.old bundle must be excluded from standalone output.`,
-          });
-        }
+    }
+    const forbiddenStandalonePaths = [
+      ['node_modules', 'pdfkit', 'js', 'pdfkit.standalone.js'],
+      ['node_modules', 'pdfkit', 'js', 'pdfkit.browser.js'],
+      ['node_modules', 'pdfkit', 'js', 'pdfkit.old.js'],
+      ['node_modules', 'fontkit', 'dist', 'browser.cjs'],
+    ];
+    for (const segments of forbiddenStandalonePaths) {
+      const candidatePath = path.join(standaloneDir, ...segments);
+      if (fs.existsSync(candidatePath)) {
+        const relStandalone = ['.next', 'standalone', ...segments].join('/');
+        violations.push({
+          filePath: relStandalone,
+          lineNumber: 1,
+          lineContent: '',
+          imageRef: segments[segments.length - 1],
+          reason: `${relStandalone} browser/.old bundle must be excluded from standalone output.`,
+        });
       }
     }
   }

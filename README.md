@@ -2,7 +2,7 @@
 
 This project is an open-source, self-hostable wedding website and celebration management platform built with Next.js, TypeScript, and PostgreSQL. It combines guest invitation workflows, multi-event RSVPs, interactive seating charts, photo moderation, scheduled broadcasts, a customizable gift registry, 3D interactive scenes, and full-site backups without vendor lock-in.
 
-**[Live Demo](https://abbifred.com/)** | **[Developer Setup](./docs/developer-setup.md)** | **[Architecture Overview](./ARCHITECTURE.md)** | **[Runtime Contract](./docs/runtime-contract.md)** | **[Deployment Recipes](./DEPLOYMENT.md)** | **[API Specification](./public/openapi.json)** | **[Asset Storage System](./docs/ASSET_STORAGE.md)** | **[Downstream Upgrade Guide](./docs/upgrading.md)** | **[Versioning Policy](./docs/versioning.md)**
+**[Documentation Portal](https://fderuiter.github.io/wedding_website/)** | **[Live Demo](https://fderuiter.github.io/wedding_website/demo/)** | **[Storybook](https://fderuiter.github.io/wedding_website/storybook/)** | **[Developer Setup](./docs/developer-setup.md)** | **[Architecture Overview](./ARCHITECTURE.md)** | **[Runtime Contract](./docs/runtime-contract.md)** | **[Deployment Recipes](./DEPLOYMENT.md)** | **[API Specification](./public/openapi.json)** | **[Asset Storage System](./docs/ASSET_STORAGE.md)** | **[Downstream Upgrade Guide](./docs/upgrading.md)** | **[Versioning Policy](./docs/versioning.md)**
 
 ## Table of Contents
 
@@ -37,7 +37,7 @@ The primary goal of this project is to provide a personal, customizable, and cos
 *   **3D Interactive Experiences & Theme Studio:**
     *   Interactive **React Three Fiber** and **Rapier** 3D scenes, **Framer Motion** transitions, 9 runtime feature toggles, "Add to Calendar" links, live weather forecasts, wedding party profiles (`WeddingPartyMember`), and local travel guides (`Attraction`).
 *   **Full-Site Backups & Portable Administration:**
-    *   Password-protected `/admin/dashboard` across 14 admin workspaces with content version history (`ContentNode`, `SnapshotVersion`) and streaming `v2.0` **15-model full-site backups** (JSON/ZIP export and restore across every persisted `prisma/schema.prisma` entity).
+    *   Password-protected `/admin/dashboard` across 14 admin workspaces with content version history (`ContentNode`, `SnapshotVersion`), PostgreSQL-backed auth lockout protection (`AuthLockout`), and streaming `v2.0` **15-model full-site backups** (JSON/ZIP export and restore across all 15 domain `prisma/schema.prisma` entities, excluding ephemeral `AuthLockout` rows).
 
 ## Tech Stack
 

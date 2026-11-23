@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
 // Prohibited personal or template domain/names in runtime code
 const PROHIBITED_IDENTIFIERS = [
@@ -19,12 +20,13 @@ const ALLOWLIST_PATHS = new Set([
   'package-lock.json',
 ]);
 
-const ALLOWLIST_PREFIXES = [
+export const ALLOWLIST_PREFIXES = [
   '.git/',
   'node_modules/',
   '.next/',
   '.next-export/',
   'out/',
+  '.api-backup-export/',
   'storybook-static/',
   'coverage/',
   'test-results/',
@@ -51,7 +53,7 @@ interface MatchResult {
   lineContent: string;
 }
 
-function isAllowlisted(relPath: string, isDir = false): boolean {
+export function isAllowlisted(relPath: string, isDir = false): boolean {
   const normalized = relPath.replace(/\\/g, '/');
   const pathToCheck = isDir && !normalized.endsWith('/') ? `${normalized}/` : normalized;
   if (ALLOWLIST_PATHS.has(normalized)) {
@@ -148,4 +150,12 @@ ACTIONABLE REMEDIATION:
   }
 }
 
-main();
+const isDirectExecution =
+  typeof process.argv[1] === 'string' &&
+  (path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url)) ||
+    process.argv[1].endsWith('check-personal-identifiers.ts') ||
+    process.argv[1].endsWith('check-personal-identifiers.js'));
+
+if (isDirectExecution) {
+  main();
+}

@@ -27,10 +27,12 @@ function copyFixtureFiles(srcRoot: string, destRoot: string): void {
     'scripts/a11y-report.mjs',
     'scripts/seed.ts',
     'scripts/verify-doc-sync.ts',
+    'scripts/build-export.mjs',
     'scripts/test-standalone.mjs',
     'scripts/test-container.mjs',
     'README.md',
     'docs/developer-setup.md',
+    'docs/runtime-contract.md',
     'docs/versioning.md',
     '.github/CONTRIBUTING.md',
     '.github/TESTING.md',
@@ -201,14 +203,15 @@ describe('verify-setup-guides contract check', () => {
     );
   });
 
-  it('rejects .env.test GUEST_PASSCODE drift, missing smoke test volume warnings, missing tsconfig exclusions, and missing unified quality commands in AGENTS.md', () => {
+  it('rejects .env.test GUEST_PASSCODE drift, missing smoke project isolation docs, stale db_data wipe warnings, missing tsconfig exclusions, and missing unified quality commands in AGENTS.md', () => {
     const testingPath = path.join(tempDir, '.github/TESTING.md');
     fs.writeFileSync(
       testingPath,
       fs
         .readFileSync(testingPath, 'utf8')
         .replace(/build-fallback-guest-passcode/g, 'playwright-e2e-guest-passcode')
-        .replace(/docker compose(?:\s+(?:--env-file|-f)\s+\S+)*\s+down\s+-v/g, 'docker compose stop')
+        .replace(/docker compose(?:\s+(?:-p|--env-file|-f)\s+\S+)*\s+down\s+-v/g, 'docker compose stop')
+        .concat('\nDeleting local Docker Compose PostgreSQL volumes (`db_data`).\n')
     );
 
     const agentsPath = path.join(tempDir, 'AGENTS.md');
@@ -217,18 +220,38 @@ describe('verify-setup-guides contract check', () => {
       fs
         .readFileSync(agentsPath, 'utf8')
         .replace(/`jest\.setup\.js`, /g, '')
+        .replace(/`\.next\/export-stage`, /g, '')
         .replace('`**/*.stories.tsx`, ', '')
         .replace(/npm run quality/g, 'npm run legacy-gate')
+    );
+
+    const runtimeContractPath = path.join(tempDir, 'docs/runtime-contract.md');
+    fs.writeFileSync(
+      runtimeContractPath,
+      fs
+        .readFileSync(runtimeContractPath, 'utf8')
+        .replace(/\.next\/export-stage/g, '.legacy-stage')
+    );
+
+    const testContainerPath = path.join(tempDir, 'scripts/test-container.mjs');
+    fs.writeFileSync(
+      testContainerPath,
+      `${fs.readFileSync(testContainerPath, 'utf8').replace(/wedding-smoke-container/g, 'default-stack')}\n// lsof -ti:3000 | xargs kill -9\n`
     );
 
     const errors = verifySetupGuides(tempDir);
     expect(errors).toEqual(
       expect.arrayContaining([
         '.github/TESTING.md: Must report .env.test GUEST_PASSCODE value "build-fallback-guest-passcode"',
-        expect.stringContaining('.github/TESTING.md: Must warn that scripts/test-standalone.mjs requires "npm run build"'),
+        expect.stringContaining('.github/TESTING.md: Must document that scripts/test-standalone.mjs requires "npm run build"'),
+        expect.stringContaining('.github/TESTING.md: Stale warning claiming smoke scripts delete/wipe local Docker Compose PostgreSQL volumes'),
         'AGENTS.md: Missing tsconfig.json exclude entry "jest.setup.js" in TypeScript Configuration Split section',
+        'AGENTS.md: Missing tsconfig.json exclude entry ".next/export-stage" in TypeScript Configuration Split section',
         'AGENTS.md: Missing tsconfig.build.json exclude entry "**/*.stories.tsx" in TypeScript Configuration Split section',
         expect.stringContaining('AGENTS.md: Verification & Quality Gates section must prescribe "npm run check:static" and "npm run quality"'),
+        expect.stringContaining('docs/runtime-contract.md: Must document staged static exports inside ".next/export-stage"'),
+        'scripts/test-container.mjs: Must isolate Docker Compose project via "-p wedding-smoke-container"',
+        'scripts/test-container.mjs: Must select a free loopback port instead of killing port 3000 processes',
       ])
     );
   });
@@ -533,8 +556,8 @@ describe('verify-setup-guides contract check', () => {
       fs
         .readFileSync(pkgPath, 'utf8')
         .replace(
-          '"postinstall": "prisma generate && node scripts/pretest.mjs --record-install-state"',
-          '"postinstall": "prisma generate"'
+          ' && node scripts/pretest.mjs --record-install-state',
+          ''
         )
     );
 

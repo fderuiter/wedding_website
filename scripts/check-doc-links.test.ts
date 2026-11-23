@@ -844,4 +844,72 @@ describe('check-doc-links', () => {
       '<!-- [keep](https://github.com/fderuiter/wedding_website/blob/main/src/sample.ts) &#123;&#123; a &#125;&#125; -->\r\n```ts\r\n{{ insideFence }}\r\n```\nTail &#123;&#123; b &#125;&#125;'
     );
   });
+
+  it('allows /demo/ and /storybook/ in VitePress config and portal frontmatter while rejecting broken routes and fragments', () => {
+    const portalDir = path.join(tempDir, 'docs-portal', '.vitepress');
+    fs.mkdirSync(portalDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(portalDir, 'config.mts'),
+      [
+        "import { defineConfig } from 'vitepress';",
+        'export default defineConfig({',
+        '  themeConfig: {',
+        '    nav: [',
+        "      { text: 'Live Demo', link: '/demo/', target: '_self' },",
+        "      { text: 'Storybook', link: '/storybook/', target: '_self' },",
+        "      { text: 'Broken Route', link: '/nonexistent-doc-route/' },",
+        "      { text: 'Demo Anchor', link: '/demo/#invalid-anchor' }",
+        '    ]',
+        '  }',
+        '});',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const configErrors: LinkError[] = [];
+    checkVitePressConfigLinks(tempDir, configErrors);
+    expect(configErrors).toEqual([
+      expect.objectContaining({
+        sourceFile: 'docs-portal/.vitepress/config.mts',
+        linkText: 'Broken Route',
+        targetPath: '/nonexistent-doc-route/',
+      }),
+      expect.objectContaining({
+        sourceFile: 'docs-portal/.vitepress/config.mts',
+        linkText: 'Demo Anchor',
+        targetPath: '/demo/#invalid-anchor',
+      }),
+    ]);
+
+    const indexAbs = path.join(tempDir, 'docs-portal', 'index.md');
+    fs.writeFileSync(
+      indexAbs,
+      [
+        '---',
+        'layout: home',
+        'hero:',
+        '  actions:',
+        '    - text: Live Demo',
+        '      link: /demo/',
+        '      target: _self',
+        '    - text: Storybook',
+        '      link: /storybook/',
+        '      target: _self',
+        '    - text: Missing Guide',
+        '      link: /guides/missing-page',
+        '---',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const fmErrors: LinkError[] = [];
+    checkLinksInFile(indexAbs, fmErrors, tempDir);
+    expect(fmErrors).toEqual([
+      expect.objectContaining({
+        sourceFile: 'docs-portal/index.md',
+        linkText: 'Missing Guide',
+        targetPath: '/guides/missing-page',
+      }),
+    ]);
+  });
 });
