@@ -50,13 +50,40 @@ moduleModule.createRequire = function (filename) {
   return origCreateRequire.call(this, filename);
 };
 
-// Strict Test Environment Isolation: Ignore parent shell environment variables during Jest test execution
+// Strict Test Environment Isolation: Preserve explicit CI or TEST_DATABASE_URL overrides while isolating local .env
 (() => {
   const rootDir = process.cwd();
   const envPath = path.join(rootDir, '.env.test');
 
+  const rawCi = String(process.env.CI ?? '').trim().toLowerCase();
+  const isCi = rawCi === 'true' || rawCi === '1';
+  const rawTestDbUrl =
+    typeof process.env.TEST_DATABASE_URL === 'string' ? process.env.TEST_DATABASE_URL.trim() : '';
+  const callerDbUrl =
+    typeof process.env.DATABASE_URL === 'string' ? process.env.DATABASE_URL.trim() : '';
+
+  let preservedDbUrl;
+  if (rawTestDbUrl && rawTestDbUrl.toLowerCase() !== 'false' && rawTestDbUrl !== '0') {
+    preservedDbUrl =
+      rawTestDbUrl.toLowerCase() === 'true' || rawTestDbUrl === '1'
+        ? callerDbUrl || undefined
+        : rawTestDbUrl;
+  } else if (isCi && callerDbUrl) {
+    preservedDbUrl = callerDbUrl;
+  }
+
   // Clear parent shell database variables and other isolated test variables to ensure clean isolation
-  const pgVars = ['DATABASE_URL', 'PGDATABASE', 'PGUSER', 'PGPASSWORD', 'PGHOST', 'PGPORT', 'PGDATASOURCE', 'ADMIN_PASSWORD'];
+  const pgVars = [
+    'DATABASE_URL',
+    'POSTGRES_URL_NON_POOLING',
+    'PGDATABASE',
+    'PGUSER',
+    'PGPASSWORD',
+    'PGHOST',
+    'PGPORT',
+    'PGDATASOURCE',
+    'ADMIN_PASSWORD',
+  ];
   for (const v of pgVars) {
     delete process.env[v];
   }
@@ -69,8 +96,11 @@ moduleModule.createRequire = function (filename) {
     }
   }
 
-  // Determine the isolated test database URL from dedicated test settings, or use safe fallback
-  const testDbUrl = process.env.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public';
+  // Determine the isolated test database URL from explicit override, dedicated test settings, or safe fallback
+  const testDbUrl =
+    preservedDbUrl ||
+    process.env.DATABASE_URL ||
+    'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public';
 
   process.env.DATABASE_URL = testDbUrl;
 })();
