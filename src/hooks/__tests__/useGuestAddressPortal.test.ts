@@ -616,6 +616,44 @@ describe('useGuestAddressPortal hook', () => {
     replaceStateSpy.mockRestore();
     window.history.replaceState({}, '', '/');
   });
+
+  it('sets inline validation error without firing duplicate error toast on empty or invalid code', async () => {
+    globalFetch
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({ success: false, error: 'Unauthorized' }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({ success: false, error: 'Code not recognized.' }),
+      });
+
+    const { result } = renderHook(() => useGuestAddressPortal());
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.handleValidateCode();
+    });
+
+    expect(result.current.state.error).toBe('Please enter your invitation code.');
+    expect(mockAddToast).not.toHaveBeenCalled();
+
+    act(() => {
+      result.current.setCode('UNKNOWN1');
+    });
+
+    await act(async () => {
+      await result.current.handleValidateCode();
+    });
+
+    expect(result.current.state.error).toBe('Code not recognized.');
+    expect(mockAddToast).not.toHaveBeenCalled();
+  });
 });
 
 describe('Helper error utilities', () => {
