@@ -513,4 +513,45 @@ describe('Isomorphic Theme Stylesheet Generation', () => {
       expect(getContrastRatio(hexToRgb(darkFormErr), hexToRgb(darkCardBg))).toBeGreaterThanOrEqual(4.5);
     }
   });
+
+  it('calibrates --toast-action-* and --badge-inverse-* tokens to >= 4.5:1 contrast across all 5 presets and custom brand palettes', async () => {
+    const { THEME_PRESET_KEYS } = await import('@/lib/theme/presets');
+
+    const extractVar = (blockCss: string, varName: string): string => {
+      const escaped = varName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const m = blockCss.match(new RegExp(`${escaped}:\\s*([^;]+);`, 'i'));
+      return m ? m[1].trim() : '';
+    };
+
+    const customPalettes = [
+      { primary: '#B91C1C', secondary: '#B45309' },
+      { primary: '#F59E0B', secondary: '#10B981' },
+      { primary: '#0EA5E9', secondary: '#6366F1' },
+    ];
+
+    for (const preset of THEME_PRESET_KEYS) {
+      for (const palette of customPalettes) {
+        const css = generateDynamicStyles(palette.primary, palette.secondary, preset, {
+          '--toast-action-bg': '#ffffff',
+          '--toast-action-hover-bg': '#fef3c7',
+          '--toast-action-text': '#f59e0b',
+        });
+
+        const rootBlock = css.match(/:root\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+        const darkBlock = css.match(/\.dark\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+
+        for (const block of [rootBlock, darkBlock]) {
+          const actionBg = extractVar(block, '--toast-action-bg');
+          const actionHoverBg = extractVar(block, '--toast-action-hover-bg');
+          const actionText = extractVar(block, '--toast-action-text');
+          const badgeBg = extractVar(block, '--badge-inverse-bg');
+          const badgeText = extractVar(block, '--badge-inverse-text');
+
+          expect(getContrastRatio(hexToRgb(actionText), hexToRgb(actionBg))).toBeGreaterThanOrEqual(4.5);
+          expect(getContrastRatio(hexToRgb(actionText), hexToRgb(actionHoverBg))).toBeGreaterThanOrEqual(4.5);
+          expect(getContrastRatio(hexToRgb(badgeText), hexToRgb(badgeBg))).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+    }
+  });
 });

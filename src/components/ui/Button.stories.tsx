@@ -8,7 +8,7 @@ const meta: Meta<typeof Button> = {
   argTypes: {
     variant: {
       control: 'select',
-      options: ['primary', 'secondary', 'danger', 'ghost', 'outline'],
+      options: ['primary', 'secondary', 'danger', 'ghost', 'outline', 'inverse'],
     },
     size: {
       control: 'select',
@@ -68,6 +68,17 @@ export const Outline: Story = {
     variant: 'outline',
     children: 'Outline Action',
   },
+};
+
+export const Inverse: Story = {
+  render: () => (
+    <div className="p-4 rounded-lg bg-[#15803d] text-white inline-flex items-center gap-3">
+      <span className="text-sm">Photo uploaded</span>
+      <Button variant="inverse" size="sm">
+        Undo
+      </Button>
+    </div>
+  ),
 };
 
 export const Disabled: Story = {

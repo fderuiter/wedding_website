@@ -386,7 +386,7 @@ function shouldSkipPortalDocSync(
   options: GeneratePortalOptions,
   rootDir: string = ROOT_DIR
 ): boolean {
-  if (!options.stageOnly && !options.skipDocSync) {
+  if (!options.stageOnly && !options.skipDocSync && process.env.SKIP_DOC_SYNC !== 'true') {
     return false;
   }
   return PRE_GENERATED_PORTAL_ARTIFACTS.every(relPath =>
@@ -497,19 +497,41 @@ export function watchPortalDocs(options: WatchPortalOptions = {}): { close: () =
   };
 }
 
+function stagePortalAssetsOnly(): void {
+  console.log(`--- Staging ${ARCHITECTURAL_DOCS.length} architectural specifications into docs-portal ---`);
+  const removedStale = cleanStagedPortalDocs(PORTAL_DIR);
+  if (removedStale > 0) {
+    console.log(`🧹 Cleaned ${removedStale} previously staged Markdown file(s).`);
+  }
+  let stagedCount = 0;
+  for (const doc of ARCHITECTURAL_DOCS) {
+    stagePortalDoc(doc, ROOT_DIR, PORTAL_DIR, false);
+    stagedCount++;
+  }
+  console.log(`✅ Successfully staged all ${stagedCount} architectural specifications into VitePress folders.`);
+  stageOpenApiAsset(ROOT_DIR, PORTAL_DIR, true);
+  console.log('\n✅ Portal staging complete!');
+}
+
 async function runCli(rawArgs: string[]): Promise<void> {
   const watchMode = rawArgs.includes('--watch');
   const serveMode = rawArgs.includes('--serve');
+  const skipSync = rawArgs.includes('--skip-sync') || process.env.SKIP_DOC_SYNC === 'true';
   const stageOnly = rawArgs.includes('--stage-only') || rawArgs.includes('--skip-doc-sync');
   const vitepressArgs = rawArgs.filter(
     arg =>
       arg !== '--watch' &&
       arg !== '--serve' &&
       arg !== '--stage-only' &&
-      arg !== '--skip-doc-sync'
+      arg !== '--skip-doc-sync' &&
+      arg !== '--skip-sync'
   );
 
-  await generatePortal({ stageOnly });
+  if (skipSync) {
+    stagePortalAssetsOnly();
+  } else {
+    await generatePortal({ stageOnly });
+  }
 
   if (!watchMode && !serveMode) {
     return;

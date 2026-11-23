@@ -241,6 +241,66 @@ describe('PrintableFloorplan component', () => {
     expect(screen.getByText('Seat 2: Unnumbered Guest')).toBeInTheDocument();
   });
 
+  it('renders companion names, entrée selections, Kids Meal badges, and custom answers for seated and unassigned guests', () => {
+    const tablesWithDetails: SeatingTableDTO[] = [
+      {
+        ...mockTables[0],
+        invitationCodes: [
+          createMockInvitationCode({
+            id: 'g-rich',
+            code: 'RICH1',
+            guestName: 'Elena Gilbert',
+            seatNumber: 1,
+            used: true,
+            extraFields: {
+              attendanceStatus: 'attending',
+              plusOneNames: ['Damon Salvatore', 'Bonnie Bennett'],
+              dietaryTags: ['kids'],
+              mealSummary: 'Reception - Elena Gilbert: Herb Salmon; Bonnie Bennett: Kids Pasta (kids)',
+              customAnswersSummary: 'Reception - Shuttle?: Yes',
+            },
+          }),
+        ],
+      },
+    ];
+
+    const unassignedWithDetails: InvitationCodeDTO[] = [
+      createMockInvitationCode({
+        id: 'u-rich',
+        code: 'URICH1',
+        guestName: 'Caroline Forbes',
+        used: true,
+        plusOneFirstName: 'Klaus',
+        plusOneLastName: 'Mikaelson',
+        extraFields: {
+          attendanceStatus: 'attending',
+          mealSummary: 'Reception - Caroline Forbes: Truffle Risotto',
+          customAnswersSummary: 'Reception - Song?: Halo',
+        },
+      }),
+    ];
+
+    render(
+      <PrintableFloorplan tables={tablesWithDetails} unassignedGuests={unassignedWithDetails} />
+    );
+
+    expect(screen.getByText('Seat 1: Elena Gilbert')).toBeInTheDocument();
+    expect(screen.getByText('Seat 2: Damon Salvatore (Elena Gilbert +1)')).toBeInTheDocument();
+    expect(screen.getByText('Seat 3: Bonnie Bennett (Elena Gilbert +2)')).toBeInTheDocument();
+    expect(screen.getByText('Caroline Forbes (+1: Klaus Mikaelson)')).toBeInTheDocument();
+
+    const mealEls = screen.getAllByTestId('printable-meal-selections');
+    expect(mealEls.map((el) => el.textContent).join(' ')).toContain('Herb Salmon');
+    expect(mealEls.map((el) => el.textContent).join(' ')).toContain('Truffle Risotto');
+
+    const answerEls = screen.getAllByTestId('printable-custom-answers');
+    expect(answerEls.map((el) => el.textContent).join(' ')).toContain('Shuttle?: Yes');
+    expect(answerEls.map((el) => el.textContent).join(' ')).toContain('Song?: Halo');
+
+    const badges = screen.getAllByTestId('printable-dietary-badge');
+    expect(badges.map((b) => b.textContent).join(' ')).toContain('Kids Meal');
+  });
+
   it('expands multi-person InvitationCode parties into companion seat rows and reports total attendee headcounts', () => {
     const coupleTables: SeatingTableDTO[] = [
       {
