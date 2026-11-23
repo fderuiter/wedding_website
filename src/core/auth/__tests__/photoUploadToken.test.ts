@@ -149,6 +149,7 @@ describe('Photo Upload Scoped Tokens & Cross-Cookie Non-Replayability', () => {
     expect(isPhotoScopedPagePath('/registry')).toBe(false);
 
     expect(isPhotoScopedApiRoute('/api/photos', 'GET')).toBe(true);
+    expect(isPhotoScopedApiRoute('/api/photos', 'HEAD')).toBe(true);
     expect(isPhotoScopedApiRoute('/api/photos', 'POST')).toBe(false);
     expect(isPhotoScopedApiRoute('/api/guest/photos/upload', 'POST')).toBe(true);
     expect(isPhotoScopedApiRoute('/api/guest/photos/upload', 'GET')).toBe(false);

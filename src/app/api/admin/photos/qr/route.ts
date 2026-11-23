@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
-import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { createAuditSnapshot } from '@/lib/audit';
 import { getAppConfig } from '@/lib/config';
 import { sanitizeAppConfigForBackup } from '@/lib/backupPersistence';
 import { DEFAULT_MODULE_CONFIG, isFeatureEnabled } from '@/lib/modules';
@@ -133,17 +133,15 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   });
 
   if (prisma.snapshotVersion && typeof prisma.snapshotVersion.create === 'function') {
-    await prisma.snapshotVersion.create({
-      data: {
-        entityType: 'AppConfig',
-        entityId: updatedRow.id || 'global',
-        data: sanitizeAppConfigForBackup({
-          ...config,
-          ...updatedRow,
-        }) as Prisma.InputJsonValue,
-        author: 'Admin',
-      },
-    });
+    await createAuditSnapshot(
+      'AppConfig',
+      updatedRow.id || 'global',
+      sanitizeAppConfigForBackup({
+        ...config,
+        ...updatedRow,
+      }),
+      'Admin'
+    );
   }
 
   try {

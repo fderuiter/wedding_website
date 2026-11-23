@@ -6,6 +6,7 @@ const mockGetAppConfig = jest.fn();
 const mockSanitizeAppConfigForBackup = jest.fn((cfg: unknown) => cfg);
 const mockUpsertAppConfig = jest.fn();
 const mockCreateSnapshotVersion = jest.fn();
+const mockExecuteRaw = jest.fn();
 const mockRevalidatePath = jest.fn();
 const mockIsAdminRequest = jest.fn();
 
@@ -37,6 +38,7 @@ jest.mock('@/lib/prisma', () => ({
     snapshotVersion: {
       create: (...args: unknown[]) => mockCreateSnapshotVersion(...args),
     },
+    $executeRaw: (...args: unknown[]) => mockExecuteRaw(...args),
   },
 }));
 
@@ -72,6 +74,7 @@ describe('/api/admin/photos/qr Route', () => {
       })
     );
     mockCreateSnapshotVersion.mockResolvedValue({ id: 'snap-1' });
+    mockExecuteRaw.mockResolvedValue(0);
   });
 
   afterAll(() => {
@@ -138,6 +141,8 @@ describe('/api/admin/photos/qr Route', () => {
         }),
       })
     );
+    await Promise.resolve();
+    expect(mockExecuteRaw).toHaveBeenCalled();
     expect(mockRevalidatePath).toHaveBeenCalledWith('/photos/slideshow');
     expect(json.tokenVersion).toBe(3);
 

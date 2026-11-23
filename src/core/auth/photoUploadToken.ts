@@ -190,7 +190,7 @@ export function isPhotoScopedPagePath(normalizedPath: string): boolean {
  */
 export function isPhotoScopedApiRoute(normalizedPath: string, method?: string): boolean {
   const upperMethod = (method || 'GET').toUpperCase();
-  if (normalizedPath === '/api/photos' && upperMethod === 'GET') {
+  if (normalizedPath === '/api/photos' && (upperMethod === 'GET' || upperMethod === 'HEAD')) {
     return true;
   }
   if (

@@ -122,7 +122,7 @@ export async function middleware(request: NextRequest) {
     const loginUrl = new URL('/guest/login', request.url);
     loginUrl.searchParams.set(
       'callbackUrl',
-      `${cleanTargetUrl.pathname}${cleanTargetUrl.search}`
+      getSafeCallbackUrl(`${cleanTargetUrl.pathname}${cleanTargetUrl.search}`)
     );
     return NextResponse.redirect(loginUrl, { status: 303 });
   }
@@ -210,7 +210,7 @@ export async function middleware(request: NextRequest) {
         const cleanSearch = request.nextUrl.search;
         loginUrl.searchParams.set(
           'callbackUrl',
-          cleanSearch ? `${pathname}${cleanSearch}` : pathname
+          getSafeCallbackUrl(cleanSearch ? `${pathname}${cleanSearch}` : pathname)
         );
         return NextResponse.redirect(loginUrl, { status: 303 });
       }
