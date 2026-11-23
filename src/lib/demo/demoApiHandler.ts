@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { ARCHETYPE_PRESETS, type ArchetypeId } from '@/lib/sampleData/archetypes';
 import { THEME_PRESET_KEYS, type ThemePreset } from '@/lib/theme/presets';
 import type { PublicAppConfig } from '@/lib/config';
@@ -5,6 +6,17 @@ import type { InvitationCodeDTO, RegistryItem } from '@/features/registry';
 import type { SeatingTableDTO } from '@/features/seating';
 import type { WeddingPartyMemberDTO, WeddingPartySide } from '@/features/wedding-party';
 import type { AttractionDTO } from '@/features/attractions';
+import {
+  ADDRESS_LINE_MAX_LENGTH,
+  CITY_MAX_LENGTH,
+  COUNTRY_MAX_LENGTH,
+  GUEST_NAME_MAX_LENGTH,
+  HOUSEHOLD_NAME_MAX_LENGTH,
+  normalizePartyTags,
+  PHONE_MAX_LENGTH,
+  STATE_MAX_LENGTH,
+  ZIP_CODE_MAX_LENGTH,
+} from '@/utils/invitationValidation';
 import { DEMO_SHIPPING_ADDRESS } from './demoSeed';
 import {
   applyDemoSampleSelection,
@@ -29,10 +41,90 @@ function isDemoLandmarkShape(shape?: string): boolean {
   return Boolean(shape && DEMO_LANDMARK_SHAPES.has(shape));
 }
 
-function jsonResponse(payload: unknown, status = 200): Response {
+let demoEntitySeq = 0;
+function nextDemoEntityId(prefix: string): string {
+  demoEntitySeq += 1;
+  return `${prefix}-${Date.now()}-${demoEntitySeq}`;
+}
+
+const DISALLOWED_DEMO_PUBLIC_TEXT_PATTERN = /[<>]|[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
+const DEMO_PHONE_PATTERN = /^\+?[\d\s()./-]{7,30}$/;
+const DEMO_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function generateDemoInvitationCode(length = 8): string {
+  let code = '';
+  for (let i = 0; i < length; i += 1) {
+    code += DEMO_CODE_CHARS[Math.floor(Math.random() * DEMO_CODE_CHARS.length)];
+  }
+  return code;
+}
+
+function createRequiredDemoPostalField(max: number, label: string) {
+  return z
+    .string({ message: `${label} is required.` })
+    .refine((val) => !DISALLOWED_DEMO_PUBLIC_TEXT_PATTERN.test(val), {
+      message: `${label} cannot contain HTML brackets or control characters.`,
+    })
+    .trim()
+    .min(1, `${label} is required and must be under ${max} characters.`)
+    .max(max, `${label} is required and must be under ${max} characters.`);
+}
+
+function createOptionalDemoPostalField(max: number, label: string) {
+  return z
+    .string()
+    .refine((val) => !DISALLOWED_DEMO_PUBLIC_TEXT_PATTERN.test(val), {
+      message: `${label} cannot contain HTML brackets or control characters.`,
+    })
+    .trim()
+    .max(max, `${label} must be under ${max} characters.`)
+    .optional()
+    .or(z.literal(''))
+    .nullable();
+}
+
+const DemoPublicAddressCollectSchema = z.object({
+  guestName: createRequiredDemoPostalField(GUEST_NAME_MAX_LENGTH, 'Guest name'),
+  email: z.string().trim().email('Invalid email address.').optional().or(z.literal('')).nullable(),
+  phone: z
+    .string()
+    .trim()
+    .max(PHONE_MAX_LENGTH, `Phone number must be under ${PHONE_MAX_LENGTH} characters.`)
+    .refine(
+      (val) => {
+        if (!val) return true;
+        if (!DEMO_PHONE_PATTERN.test(val)) return false;
+        return val.replace(/\D/g, '').length >= 7;
+      },
+      { message: 'Invalid phone number format.' }
+    )
+    .optional()
+    .nullable(),
+  addressLine1: createRequiredDemoPostalField(ADDRESS_LINE_MAX_LENGTH, 'Street address'),
+  addressLine2: createOptionalDemoPostalField(ADDRESS_LINE_MAX_LENGTH, 'Address Line 2'),
+  city: createRequiredDemoPostalField(CITY_MAX_LENGTH, 'City'),
+  state: createRequiredDemoPostalField(STATE_MAX_LENGTH, 'State / Province'),
+  zipCode: createRequiredDemoPostalField(ZIP_CODE_MAX_LENGTH, 'ZIP / Postal code'),
+  country: createOptionalDemoPostalField(COUNTRY_MAX_LENGTH, 'Country'),
+  householdName: createOptionalDemoPostalField(HOUSEHOLD_NAME_MAX_LENGTH, 'Household name'),
+  notes: z.string().trim().max(1000, 'Notes must be under 1000 characters.').optional().or(z.literal('')).nullable(),
+});
+
+function isDemoAddressCollectionOnly(partyTags: unknown): boolean {
+  return normalizePartyTags(partyTags).includes('address-collection');
+}
+
+function jsonResponse(
+  payload: unknown,
+  status = 200,
+  extraHeaders?: Record<string, string>
+): Response {
   return new Response(JSON.stringify(payload), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...extraHeaders,
+    },
   });
 }
 
@@ -272,7 +364,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
     }
     if (method === 'POST') {
       const body = await parseJsonBody(init);
-      const id = `demo-custom-item-${Date.now()}`;
+      const id = nextDemoEntityId('demo-custom-item');
       const newItem: RegistryItem = {
         id,
         name: String(body.name || 'Custom Gift'),
@@ -437,7 +529,84 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
     }
   }
 
-  // 4. Guest Address Portal
+  // 4. Guest Address Portal & Public Address Collection
+  if (path === '/api/guest/address/public' && method === 'POST') {
+    const body = await parseJsonBody(init);
+    if (!body.guestName && typeof body.name === 'string') body.guestName = body.name;
+    if (!body.addressLine1 && typeof body.streetAddress === 'string') {
+      body.addressLine1 = body.streetAddress;
+    }
+    if (!body.zipCode && typeof body.postalCode === 'string') body.zipCode = body.postalCode;
+    if (!body.notes && typeof body.householdNotes === 'string') body.notes = body.householdNotes;
+    if (!body.phone && typeof body.mobile === 'string') body.phone = body.mobile;
+    if (!body.phone && typeof body.phoneNumber === 'string') body.phone = body.phoneNumber;
+
+    const honeypotVal = body.website || body.honeypot || body.hp_field || body.confirm_email;
+    if (typeof honeypotVal === 'string' && honeypotVal.trim().length > 0) {
+      return jsonResponse({ success: true, message: 'Address submitted successfully.' });
+    }
+
+    const parseResult = DemoPublicAddressCollectSchema.safeParse(body);
+    if (!parseResult.success) {
+      const errorMsg = parseResult.error.issues[0]?.message || 'Invalid address input.';
+      return jsonResponse(
+        { success: false, error: errorMsg, details: z.formatError(parseResult.error) },
+        400
+      );
+    }
+
+    const payload = parseResult.data;
+    const existingCodes = new Set(
+      getActiveArchetypeDataset().guests.map((g) => g.code.toUpperCase())
+    );
+    let uniqueCode = generateDemoInvitationCode();
+    let attempts = 0;
+    while (existingCodes.has(uniqueCode.toUpperCase()) && attempts < 10) {
+      uniqueCode = generateDemoInvitationCode();
+      attempts += 1;
+    }
+
+    const extraFields: Record<string, string> = {};
+    if (payload.phone?.trim()) {
+      extraFields.phone = payload.phone.trim();
+      extraFields.mobile = payload.phone.trim();
+    }
+    if (payload.notes?.trim()) {
+      extraFields.householdNotes = payload.notes.trim();
+    }
+
+    const createdGuest: InvitationCodeDTO = {
+      id: nextDemoEntityId('demo-collect'),
+      code: uniqueCode,
+      guestName: payload.guestName.trim(),
+      email: payload.email?.trim() || null,
+      addressLine1: payload.addressLine1 || null,
+      addressLine2: payload.addressLine2 || null,
+      city: payload.city || null,
+      state: payload.state || null,
+      zipCode: payload.zipCode || null,
+      country: payload.country || null,
+      householdName: payload.householdName || '',
+      dietaryNotes: null,
+      ...(Object.keys(extraFields).length > 0 ? { extraFields } : {}),
+      partyGroup: '',
+      partyTags: ['address-collection'],
+      plusOneAllocations: 0,
+      used: false,
+      isSample: false,
+    };
+
+    mutateActiveDataset((current) => ({
+      ...current,
+      guests: [...current.guests, createdGuest],
+    }));
+
+    return jsonResponse({
+      success: true,
+      message: 'Address submitted successfully.',
+    });
+  }
+
   if (path === '/api/guest/address') {
     const session = getDemoState().guestSession;
     if (!session) {
@@ -514,7 +683,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
           : 'round';
       const isLandmark = isDemoLandmarkShape(resolvedShape);
       const newTable: SeatingTableDTO = {
-        id: `demo-table-${Date.now()}`,
+        id: nextDemoEntityId('demo-table'),
         name: String(body.name || (isLandmark ? 'Landmark' : 'New Table')),
         shape: resolvedShape,
         capacity: isLandmark ? 0 : typeof body.capacity === 'number' ? body.capacity : 8,
@@ -746,22 +915,31 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
   if (path === '/api/admin/invitation-codes/catalog' || path === '/api/admin/invitation-codes') {
     if (method === 'GET') {
       const guests = getActiveArchetypeDataset().guests;
-      return jsonResponse({
-        success: true,
-        data: {
-          items: guests,
-          total: guests.length,
-          page: 1,
-          limit: Math.max(50, guests.length),
-          totalPages: 1,
+      return jsonResponse(
+        {
+          success: true,
+          data: {
+            items: guests,
+            total: guests.length,
+            page: 1,
+            limit: Math.max(50, guests.length),
+            totalPages: 1,
+          },
         },
-      });
+        200,
+        {
+          'X-Total-Count': String(guests.length),
+          'X-Page': '1',
+          'X-Limit': String(Math.max(50, guests.length)),
+          'X-Total-Pages': '1',
+        }
+      );
     }
     if (method === 'POST') {
       const body = await parseJsonBody(init);
       const code = String(body.code || `GUEST${Date.now().toString().slice(-4)}`).toUpperCase();
       const newGuest: InvitationCodeDTO = {
-        id: `demo-guest-${Date.now()}`,
+        id: nextDemoEntityId('demo-guest'),
         code,
         guestName: String(body.guestName || 'Invited Guest'),
         householdName: typeof body.householdName === 'string' ? body.householdName : '',
@@ -779,6 +957,48 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
       }));
       return jsonResponse({ success: true, data: newGuest }, 201);
     }
+  }
+
+  if (path === '/api/admin/invitation-codes/batch' && method === 'POST') {
+    const body = await parseJsonBody(init);
+    const ids = Array.isArray(body.ids)
+      ? body.ids.filter((id): id is string => typeof id === 'string')
+      : [];
+    const idSet = new Set(ids);
+    const cleanTags = normalizePartyTags(body.tags, { dedupe: true });
+    const action = body.action === 'remove' || body.action === 'replace' ? body.action : 'add';
+    const updatedRecords: InvitationCodeDTO[] = [];
+
+    if (idSet.size > 0) {
+      mutateActiveDataset((current) => ({
+        ...current,
+        guests: current.guests.map((guest) => {
+          if (!idSet.has(guest.id)) return guest;
+          const existing = normalizePartyTags(guest.partyTags, { dedupe: true });
+          const nextTags =
+            action === 'replace'
+              ? [...cleanTags]
+              : action === 'remove'
+                ? existing.filter((tag) => !cleanTags.includes(tag))
+                : Array.from(new Set([...existing, ...cleanTags]));
+          const updated: InvitationCodeDTO = { ...guest, partyTags: nextTags };
+          updatedRecords.push(updated);
+          return updated;
+        }),
+      }));
+    }
+
+    return jsonResponse({
+      success: true,
+      count: updatedRecords.length,
+      updatedCount: updatedRecords.length,
+      records: updatedRecords,
+      data: {
+        count: updatedRecords.length,
+        updatedCount: updatedRecords.length,
+        records: updatedRecords,
+      },
+    });
   }
 
   if (path === '/api/admin/invitation-codes/import' && method === 'POST') {
@@ -832,7 +1052,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
           ? body.side
           : 'JOINT';
       const member: WeddingPartyMemberDTO = {
-        id: `demo-party-${Date.now()}`,
+        id: nextDemoEntityId('demo-party'),
         name: String(body.name || 'Party Member'),
         role: String(body.role || 'Attendant'),
         bio: String(body.bio || ''),
@@ -864,7 +1084,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
       const body = await parseJsonBody(init);
       const now = new Date();
       const attraction: AttractionDTO = {
-        id: `demo-attraction-${Date.now()}`,
+        id: nextDemoEntityId('demo-attraction'),
         name: String(body.name || 'Local Spot'),
         description: String(body.description || ''),
         category: String(body.category || 'Activities'),
@@ -933,7 +1153,9 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
     const weddingDetailsCompleted =
       Boolean(state.configOverrides.partner1Name && state.configOverrides.partner2Name) &&
       Boolean(venueName && venueName.toUpperCase() !== 'TBD');
-    const guestListCompleted = dataset.guests.some((g) => !g.isSample);
+    const guestListCompleted = dataset.guests.some(
+      (g) => !g.isSample && !isDemoAddressCollectionOnly(g.partyTags)
+    );
     const registryCompleted = dataset.registryItems.some((i) => !i.isSample);
     const seatingCompleted = dataset.seatingTables.some((t) => !t.isSample);
     const faqCompleted = dataset.faqs.some((n) => n.type === 'FAQ' && !n.data.isSample);
@@ -1128,7 +1350,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
   if (path === '/api/admin/thank-you-notes' && method === 'POST') {
     const body = await parseJsonBody(init);
     const created = {
-      id: `demo-offline-gift-${Date.now()}`,
+      id: nextDemoEntityId('demo-offline-gift'),
       name: String(body.name || 'Offline Contributor').trim(),
       email: typeof body.email === 'string' ? body.email : null,
       amount: Number(body.amount || 50),

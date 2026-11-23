@@ -1475,6 +1475,26 @@ function detectMiddlewareWrapped(directNodes: Node[], allNodes: Node[]): boolean
   return false;
 }
 
+function detectHealthProbeWrapped(
+  directNodes: Node[],
+  allNodes: Node[],
+  routePath: string
+): boolean {
+  if (routePath === '/api/health') {
+    return true;
+  }
+  for (const n of [...directNodes, ...allNodes]) {
+    if (!Node.isCallExpression(n)) continue;
+    const exprText = n.getExpression().getText();
+    if (exprText !== 'withApiMiddleware' && exprText !== 'createValidatedRoute') continue;
+    const optionsArg = n.getArguments()[1];
+    if (optionsArg && /\bisHealthProbe\s*:\s*true\b/.test(optionsArg.getText())) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function tryMergeCompatibleObjectEnumSchemas(
   schemas: Array<Record<string, any>>
 ): Record<string, any> | null {
@@ -1609,6 +1629,8 @@ function extractOperationResponses(opts: ExtractOperationResponsesOptions): Reco
 
   const usesMiddleware = detectMiddlewareWrapped(directNodes, allNodes);
   const documentedHeaders = extractResponseHeadersFromNodes(allNodes);
+  const isHealthProbe =
+    usesMiddleware && detectHealthProbeWrapped(directNodes, allNodes, routePath);
   const { statusBranchesByVar, equalityCondByVar } = extractLocalStatusBranches(allNodes);
   const exportMediaByStatus = new Map<number, string[]>();
   const jsonSchemasByStatus = new Map<number, Array<Record<string, any>>>();
@@ -1679,6 +1701,23 @@ function extractOperationResponses(opts: ExtractOperationResponsesOptions): Reco
             if (!usesMiddleware) {
               const schema = rawProbeSchema ?? inferSchemaFromExpression(payloadArg).schema;
               recordJsonSchema(status, schema);
+            } else if (isHealthProbe) {
+              const baseSchema = rawProbeSchema ?? inferSchemaFromExpression(payloadArg).schema;
+              if (baseSchema && baseSchema.type === 'object' && baseSchema.properties) {
+                const baseRequired = Array.isArray(baseSchema.required) ? baseSchema.required : [];
+                const mergedRequired = [
+                  'success',
+                  ...baseRequired.filter((k: string) => k !== 'success'),
+                ];
+                recordJsonSchema(status, {
+                  type: 'object',
+                  required: mergedRequired,
+                  properties: {
+                    success: { type: 'boolean', enum: [false] },
+                    ...baseSchema.properties,
+                  },
+                });
+              }
             }
           }
         }
@@ -1830,11 +1869,15 @@ function extractOperationResponses(opts: ExtractOperationResponsesOptions): Reco
   for (const errStatus of sortedErrorStatuses) {
     const description = ERROR_STATUS_DESCRIPTIONS[errStatus] || 'Error response';
     if (usesMiddleware) {
+      const healthErrSchemas = isHealthProbe ? (jsonSchemasByStatus.get(errStatus) ?? []) : [];
       responses[String(errStatus)] = {
         description,
         content: {
           'application/json': {
-            schema: { $ref: '#/components/schemas/ApiErrorEnvelope' },
+            schema:
+              healthErrSchemas.length > 0
+                ? mergeDistinctSchemas(healthErrSchemas)
+                : { $ref: '#/components/schemas/ApiErrorEnvelope' },
           },
         },
       };

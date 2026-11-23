@@ -31,6 +31,7 @@ export interface PhotoGalleryClientProps {
   initialPhotos: (PublicPhotoItem | string)[];
   defaultTab?: PhotoCategory;
   isAdmin?: boolean;
+  defaultUploaderName?: string;
 }
 
 function normalizeInitialPhotos(items: (PublicPhotoItem | string)[]): NormalizedPhotoItem[] {
@@ -49,9 +50,10 @@ function normalizeInitialPhotos(items: (PublicPhotoItem | string)[]): Normalized
       const isGuest = Boolean(item.isGuestUpload || item.category === 'guest');
       const caption = item.caption?.trim() || undefined;
       const uploaderName = item.uploaderName?.trim() || undefined;
+      const explicitTitle = item.title?.trim() || undefined;
       const resolvedTitle =
+        explicitTitle ||
         caption ||
-        item.title ||
         (uploaderName ? `Photo by ${uploaderName}` : undefined) ||
         (isGuest ? 'Guest Photo' : `Wedding photo ${index + 1}`);
       return {
@@ -68,6 +70,61 @@ function normalizeInitialPhotos(items: (PublicPhotoItem | string)[]): Normalized
     .filter((p): p is NormalizedPhotoItem => p !== null);
 }
 
+function mapDraftContentNodesToPhotos(draftNodes: unknown[]): NormalizedPhotoItem[] {
+  return draftNodes
+    .map((rawNode, index): NormalizedPhotoItem | null => {
+      if (!rawNode || typeof rawNode !== 'object') return null;
+      const node = rawNode as {
+        id?: string;
+        type?: string;
+        tags?: unknown;
+        data?: Record<string, unknown> | null;
+      };
+      if (node.type !== 'Photo') return null;
+      const data = node.data && typeof node.data === 'object' ? node.data : {};
+      const rawStatus = typeof data.status === 'string' ? data.status.toUpperCase() : undefined;
+      if (rawStatus === 'PENDING' || rawStatus === 'REJECTED') return null;
+      if (data.isVisible === false) return null;
+
+      const url =
+        (typeof data.url === 'string' && data.url.trim()) ||
+        (typeof data.imageUrl === 'string' && data.imageUrl.trim()) ||
+        '';
+      if (!url) return null;
+
+      const tags = Array.isArray(node.tags) ? node.tags : [];
+      const isGuest = tags.includes('guest-upload');
+      const caption =
+        typeof data.caption === 'string' && data.caption.trim() ? data.caption.trim() : undefined;
+      const uploaderName =
+        typeof data.uploaderName === 'string' && data.uploaderName.trim()
+          ? data.uploaderName.trim()
+          : undefined;
+      const explicitTitle =
+        typeof data.title === 'string' && data.title.trim() ? data.title.trim() : undefined;
+      const explicitAlt =
+        typeof data.altText === 'string' && data.altText.trim() ? data.altText.trim() : undefined;
+      const resolvedTitle =
+        explicitTitle ||
+        caption ||
+        explicitAlt ||
+        (uploaderName ? `Photo by ${uploaderName}` : undefined) ||
+        (isGuest ? 'Guest Photo' : `Wedding photo ${index + 1}`);
+
+      return {
+        ...(typeof node.id === 'string' ? { id: node.id } : {}),
+        ...(typeof data.mediaId === 'string' && data.mediaId ? { mediaId: data.mediaId } : {}),
+        url,
+        title: resolvedTitle,
+        ...(caption ? { caption } : {}),
+        ...(uploaderName ? { uploaderName } : {}),
+        isGuestUpload: isGuest,
+        category: isGuest ? 'guest' : 'curated',
+      };
+    })
+    .filter((item): item is NormalizedPhotoItem => item !== null);
+}
+
 const emptySubscribe = () => () => {};
 const getClientHydratedSnapshot = () => true;
 const getServerHydratedSnapshot = () => false;
@@ -76,6 +133,7 @@ export function PhotoGalleryClient({
   initialPhotos,
   defaultTab,
   isAdmin = false,
+  defaultUploaderName,
 }: PhotoGalleryClientProps) {
   const toast = useOptionalToast();
   const [photos, setPhotos] = useState<NormalizedPhotoItem[]>(() => normalizeInitialPhotos(initialPhotos));
@@ -88,6 +146,7 @@ export function PhotoGalleryClient({
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
   const [selectedUrls, setSelectedUrls] = useState<Set<string>>(new Set());
   const [isExporting, setIsExporting] = useState(false);
+  const shouldFocusDropzoneRef = useRef(false);
   const isHydrated = useSyncExternalStore(
     emptySubscribe,
     getClientHydratedSnapshot,
@@ -101,6 +160,43 @@ export function PhotoGalleryClient({
   const galleryGridRef = useRef<HTMLDivElement | null>(null);
   const lightboxModalRef = useRef<HTMLDivElement | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
+  const guestDropzoneRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (activeTab === 'guest' && shouldFocusDropzoneRef.current) {
+      shouldFocusDropzoneRef.current = false;
+      guestDropzoneRef.current?.focus();
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const isIframe = window !== window.parent;
+    const isPreviewQuery = new URLSearchParams(window.location.search).get('preview') === 'true';
+    if (!isIframe && !isPreviewQuery) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (
+        event.data?.type === 'DRAFT_UPDATE' &&
+        event.data.draftType === 'content' &&
+        Array.isArray(event.data.draftData)
+      ) {
+        const nextPhotos = mapDraftContentNodesToPhotos(event.data.draftData);
+        setPhotos(nextPhotos);
+        setActiveTab((prevTab) => {
+          const hasCurated = nextPhotos.some((p) => p.category === 'curated');
+          const hasGuest = nextPhotos.some((p) => p.category === 'guest');
+          if (prevTab === 'curated' && !hasCurated && hasGuest) return 'guest';
+          if (prevTab === 'guest' && !hasGuest && hasCurated) return 'curated';
+          return prevTab;
+        });
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
 
   const curatedPhotos = photos.filter((p) => p.category === 'curated');
   const guestPhotos = photos.filter((p) => p.category === 'guest' || p.isGuestUpload);
@@ -177,6 +273,11 @@ export function PhotoGalleryClient({
   const handleTabChange = (tab: PhotoCategory) => {
     setActiveTab(tab);
     setSelectedPhotoIndex(null);
+  };
+
+  const handleActivateGuestUpload = () => {
+    shouldFocusDropzoneRef.current = true;
+    handleTabChange('guest');
   };
 
   const handleDownload = async (
@@ -432,11 +533,22 @@ export function PhotoGalleryClient({
           className="space-y-4 focus:outline-none"
           data-testid="curated-photos-section"
         >
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-2xl font-bold text-stone-800 dark:text-stone-200 flex items-center gap-2">
               <Icon name="Camera" className="w-6 h-6 text-primary" />
               Curated Wedding Photos{curatedPhotos.length > 0 ? ` (${curatedPhotos.length})` : ''}
             </h2>
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={handleActivateGuestUpload}
+              data-testid="curated-upload-cta"
+              className="inline-flex items-center gap-2"
+            >
+              <Icon name="Upload" className="w-4 h-4" />
+              <span>Upload Guest Photos</span>
+            </Button>
           </div>
 
           {curatedPhotos.length > 0 ? (
@@ -538,7 +650,11 @@ export function PhotoGalleryClient({
         >
           {/* Upload Dropzone */}
           <section className="max-w-2xl mx-auto" aria-label="Upload Photos">
-            <GuestPhotoDropzone onUploadSuccess={handleUploadSuccess} />
+            <GuestPhotoDropzone
+              onUploadSuccess={handleUploadSuccess}
+              defaultUploaderName={defaultUploaderName}
+              dropzoneRef={guestDropzoneRef}
+            />
           </section>
 
           {/* Guest Uploaded Photos Grid / Gallery Section */}

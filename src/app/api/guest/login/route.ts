@@ -66,6 +66,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   }
 
   let invite: {
+    id?: string;
     code: string;
     guestName: string;
     isSample?: boolean;
@@ -87,6 +88,18 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   }
 
   if (invite && !invite.isSample && !hasAddressCollectionTag(invite.partyTags)) {
+    if (invite.id && typeof prisma.broadcastRecipient?.updateMany === 'function') {
+      await prisma.broadcastRecipient.updateMany({
+        where: {
+          invitationCodeId: invite.id,
+          status: 'SENT',
+        },
+        data: {
+          status: 'VIEWED',
+        },
+      });
+    }
+
     const iat = Date.now();
     const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
     const inviteToken = await signGuestInviteSessionToken({

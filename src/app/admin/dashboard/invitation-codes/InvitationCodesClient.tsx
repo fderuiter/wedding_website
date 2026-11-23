@@ -285,17 +285,17 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
             </span>
           </span>
         </div>
+        {householdNotesDisplay && (
+          <div
+            className="mt-2 mr-1.5 inline-flex items-center gap-1.5 bg-purple-50 dark:bg-purple-950/40 text-purple-800 dark:text-purple-200 border border-purple-200 dark:border-purple-800/60 text-xs px-2.5 py-1 rounded-full font-medium"
+            data-testid="household-notes-badge"
+          >
+            <span className="font-semibold">Household Note:</span> {householdNotesDisplay}
+          </div>
+        )}
         {item.dietaryNotes && item.dietaryNotes.trim() && (
           <div className="mt-2 inline-flex items-center gap-1.5 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700/50 text-xs px-2.5 py-1 rounded-full font-medium" data-testid="dietary-badge">
             <span className="font-semibold">Dietary:</span> {item.dietaryNotes.trim()}
-          </div>
-        )}
-        {householdNotesDisplay && (
-          <div
-            className="mt-2 inline-flex items-center gap-1.5 bg-teal-50 dark:bg-teal-950/40 text-teal-900 dark:text-teal-200 border border-teal-200 dark:border-teal-800 text-xs px-2.5 py-1 rounded-full font-medium"
-            data-testid="household-notes-badge"
-          >
-            <span className="font-semibold">Household Notes:</span> {householdNotesDisplay}
           </div>
         )}
 
@@ -387,16 +387,17 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
 interface InvitationCodeRowActionsProps {
   item: InvitationCodeDTO;
   onPromote?: (_item: InvitationCodeDTO) => void;
+  onSendInvite: (_item: InvitationCodeDTO) => void;
   onEdit: (_item: InvitationCodeDTO) => void;
   onDelete: (_id: string, _e: React.MouseEvent<HTMLButtonElement>) => void;
 }
 
 const InvitationCodeRowActions = React.memo<InvitationCodeRowActionsProps>(
-  function InvitationCodeRowActions({ item, onPromote, onEdit, onDelete }) {
+  function InvitationCodeRowActions({ item, onPromote, onSendInvite, onEdit, onDelete }) {
     const isAddressCollectionOnly = hasAddressCollectionTag(item.partyTags);
     return (
       <div className="flex flex-wrap items-center gap-2 shrink-0">
-        {isAddressCollectionOnly && onPromote && (
+        {isAddressCollectionOnly && onPromote ? (
           <Button
             variant="primary"
             size="sm"
@@ -405,6 +406,15 @@ const InvitationCodeRowActions = React.memo<InvitationCodeRowActionsProps>(
             onClick={() => onPromote(item)}
           >
             Promote to Invited
+          </Button>
+        ) : (
+          <Button
+            variant="secondary"
+            size="sm"
+            aria-label={`Send invite to ${item.guestName}`}
+            onClick={() => onSendInvite(item)}
+          >
+            Send Invite
           </Button>
         )}
         <Button
@@ -442,6 +452,7 @@ const InvitationCodeRow = React.memo<InvitationCodeRowProps>(function Invitation
   onPreviewQr,
   onToggleSubEventAccess,
   onPromote,
+  onSendInvite,
   onEdit,
   onDelete,
 }) {
@@ -466,6 +477,7 @@ const InvitationCodeRow = React.memo<InvitationCodeRowProps>(function Invitation
       <InvitationCodeRowActions
         item={item}
         onPromote={onPromote}
+        onSendInvite={onSendInvite}
         onEdit={onEdit}
         onDelete={onDelete}
       />
@@ -547,6 +559,9 @@ export default function InvitationCodesDashboardPage() {
   const [bulkSubEventModalOpen, setBulkSubEventModalOpen] = useState(false);
   const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
   const [broadcastModalFilters, setBroadcastModalFilters] = useState<any>(undefined);
+  const [broadcastInitialTemplateId, setBroadcastInitialTemplateId] = useState<
+    'save-the-date' | 'formal-invitation' | undefined
+  >(undefined);
   const [qrPreviewGuest, setQrPreviewGuest] = useState<InvitationQRPreviewGuest | null>(null);
   const [isPrintLabelsModalOpen, setIsPrintLabelsModalOpen] = useState(false);
   const [printLabelsList, setPrintLabelsList] = useState<PrintableInvitationCode[]>([]);
@@ -1040,6 +1055,12 @@ export default function InvitationCodesDashboardPage() {
     );
   }, []);
 
+  const handleSendInviteToGuest = useCallback((item: InvitationCodeDTO) => {
+    setBroadcastModalFilters({ selectedIds: [item.id] });
+    setBroadcastInitialTemplateId('formal-invitation');
+    setIsBroadcastModalOpen(true);
+  }, []);
+
   const handleBatchMarkRedeemed = async () => {
     if (selectedIds.length === 0) return;
     try {
@@ -1387,6 +1408,7 @@ export default function InvitationCodesDashboardPage() {
               setBroadcastModalFilters(
                 Object.keys(nextFilters).length > 0 ? nextFilters : undefined
               );
+              setBroadcastInitialTemplateId(undefined);
               setIsBroadcastModalOpen(true);
             }}>Send Broadcast</Button>
             <Link
@@ -1773,6 +1795,7 @@ export default function InvitationCodesDashboardPage() {
                 onPreviewQr={setQrPreviewGuest}
                 onToggleSubEventAccess={handleToggleSubEventAccess}
                 onPromote={handlePromoteGuest}
+                onSendInvite={handleSendInviteToGuest}
                 onEdit={setEditingGuest}
                 onDelete={handleDelete}
               />
@@ -1883,6 +1906,7 @@ export default function InvitationCodesDashboardPage() {
             <div className="flex flex-wrap items-center gap-2">
               <Button size="sm" variant="secondary" onClick={() => {
                 setBroadcastModalFilters({ selectedIds });
+                setBroadcastInitialTemplateId(undefined);
                 setIsBroadcastModalOpen(true);
               }}>
                 Send Broadcast ({selectedIds.length})
@@ -2303,6 +2327,13 @@ export default function InvitationCodesDashboardPage() {
                       .join(', ') || 'No address provided'}
                   </div>
                   <div className="sm:col-span-2">
+                    <span className="font-semibold">Household Notes:</span>{' '}
+                    {typeof mergePreview.extraFields?.householdNotes === 'string' &&
+                    mergePreview.extraFields.householdNotes.trim()
+                      ? mergePreview.extraFields.householdNotes
+                      : 'None'}
+                  </div>
+                  <div className="sm:col-span-2">
                     <span className="font-semibold">Dietary Notes:</span>{' '}
                     {mergePreview.dietaryNotes || 'None'}
                   </div>
@@ -2374,7 +2405,11 @@ export default function InvitationCodesDashboardPage() {
 
         <BroadcastModal
           isOpen={isBroadcastModalOpen}
-          onClose={() => setIsBroadcastModalOpen(false)}
+          onClose={() => {
+            setIsBroadcastModalOpen(false);
+            setBroadcastInitialTemplateId(undefined);
+          }}
+          initialTemplateId={broadcastInitialTemplateId}
           targetFilters={broadcastModalFilters}
           selectedCount={broadcastModalFilters?.selectedIds?.length}
           guests={codes}

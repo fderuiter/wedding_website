@@ -18,8 +18,10 @@ export interface OverlayProps {
   layoutClassName?: string;
   role?: string;
   'aria-modal'?: boolean | 'true' | 'false';
+  'aria-label'?: string;
   'aria-labelledby'?: string;
   'aria-describedby'?: string;
+  triggerRef?: React.RefObject<HTMLElement | null>;
   ref?: React.Ref<HTMLDivElement>;
 }
 
@@ -34,11 +36,13 @@ export function Overlay({
   layoutClassName = 'fixed inset-0 z-50 flex items-center justify-center p-4',
   role,
   'aria-modal': ariaModal,
+  'aria-label': ariaLabel,
   'aria-labelledby': ariaLabelledby,
   'aria-describedby': ariaDescribedby,
+  triggerRef,
   ref,
 }: OverlayProps) {
-  const { overlayRef, handleBackdropClick } = useOverlay(isOpen, onClose);
+  const { overlayRef, handleBackdropClick } = useOverlay(isOpen, onClose, { triggerRef });
   const { themePreset } = useTheme();
   const presetTokens = getPresetTokens(themePreset);
   const durationNormal = parseDurationSec(presetTokens['--motion-duration-normal'], 0.2);
@@ -94,6 +98,7 @@ export function Overlay({
           aria-hidden={!isOpen ? true : undefined}
           role={role}
           aria-modal={ariaModal}
+          aria-label={ariaLabel}
           aria-labelledby={ariaLabelledby}
           aria-describedby={ariaDescribedby}
         >

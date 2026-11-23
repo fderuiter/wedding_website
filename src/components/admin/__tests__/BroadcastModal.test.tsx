@@ -619,6 +619,42 @@ describe('BroadcastModal Component', () => {
     });
   });
 
+  it('preselects initialTemplateId="formal-invitation" and renders the themed HTML stationery card in Live Preview', async () => {
+    mockPreviewBroadcast.mockResolvedValueOnce({
+      subject: 'Formal Invitation: Sarah & Dan',
+      body: '[CARD:formal-invitation]\nDear Alice Smith,\n\nRSVP: https://wedding.example.com/guest?code=ALICE2026',
+      htmlBody:
+        '<div role="presentation"><h1>Sarah &amp; Dan</h1><a href="https://wedding.example.com/guest?code=ALICE2026">RSVP Online</a><a href="https://calendar.google.com/calendar/render?action=TEMPLATE">Google Calendar</a></div>',
+      sampleGuestName: 'Alice Smith',
+      destination: 'alice@example.com',
+    });
+
+    render(
+      <BroadcastModal
+        {...defaultProps}
+        initialTemplateId="formal-invitation"
+        selectedCount={1}
+        targetFilters={{ selectedIds: ['g1'] }}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: 'Save the Date' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Formal Invitation' })).toBeInTheDocument();
+    expect((screen.getByLabelText('Message Body') as HTMLTextAreaElement).value).toContain(
+      '[CARD:formal-invitation]'
+    );
+
+    fireEvent.click(screen.getByRole('tab', { name: /Live Preview/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('broadcast-stationery-card-preview')).toBeInTheDocument();
+    });
+    const cardPreview = screen.getByTestId('broadcast-stationery-card-preview');
+    expect(cardPreview).toHaveTextContent('Sarah & Dan');
+    expect(cardPreview).toHaveTextContent('RSVP Online');
+    expect(cardPreview).toHaveTextContent('Google Calendar');
+  });
+
   it('updates Send Test button accessible name across default, custom destination, and busy Sending Test... states and passes jest-axe', async () => {
     const { rerender } = render(<BroadcastModal {...defaultProps} />);
 

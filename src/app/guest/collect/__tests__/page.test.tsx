@@ -20,6 +20,7 @@ describe('GuestAddressCollectPage (/guest/collect)', () => {
     expect(screen.getByText('Mailing Address Form')).toBeInTheDocument();
     expect(screen.getByLabelText(/Full Name/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Full Name/i)).toHaveAttribute('autocomplete', 'name');
+    expect(screen.getByLabelText(/Household Name/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Email Address/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Email Address/i)).toHaveAttribute('autocomplete', 'email');
     expect(screen.getByLabelText(/Street Address Line 1/i)).toBeInTheDocument();
