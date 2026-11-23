@@ -27,6 +27,7 @@ import {
 } from '../dtoMappers';
 import { isDemoLandmarkShape } from '../exporters';
 import { createDemoSvgDataUrl } from '../svgAssets';
+import { INVITATION_MAX_CATALOG_LIMIT } from '@/utils/invitationPagination';
 
 const VALID_DEMO_TABLE_SHAPES = new Set<DemoSeatingTableShape>([
   'round',
@@ -744,8 +745,10 @@ export async function handleAdminEntityRoutes(
     if (method === 'GET') {
       const snapshot = store.getSnapshot();
       const allRecords = listEntityDtos(snapshot, slug, searchParams);
+      const maxCatalogLimit =
+        slug === 'invitation-codes' ? INVITATION_MAX_CATALOG_LIMIT : 100;
       const limit = Math.min(
-        100,
+        maxCatalogLimit,
         Math.max(1, parseInt(searchParams.get('limit') || '50', 10) || 50),
       );
       const page = Math.max(

@@ -1879,8 +1879,13 @@ process.exit(0);
       const migrateFailures: string[] = [];
       await runStandaloneGate(
         {
-          rest: { actions: { listWorkflowRuns: 'listWorkflowRuns' } },
-          paginate: async (_fn: unknown, opts: { workflow_id: string }) =>
+          rest: {
+            actions: {
+              listWorkflowRuns: 'listWorkflowRuns',
+              listJobsForWorkflowRun: 'listJobsForWorkflowRun',
+            },
+          },
+          paginate: async (_fn: unknown, opts: { workflow_id?: string }) =>
             opts.workflow_id === 'ci.yml'
               ? [{ id: 1, run_number: 7, conclusion: 'success', head_sha: mainSha }]
               : [],
@@ -1891,19 +1896,70 @@ process.exit(0);
       expect(migrateFailures).toHaveLength(1);
       expect(migrateFailures[0]).toContain('no completed successful db-migrate.yml workflow run found');
 
-      // 3. Succeeds when both ci.yml and db-migrate.yml succeeded for targetSha
+      // 2b. Fails closed when db-migrate.yml only succeeded for staging while TARGET_ENV is production
+      const wrongEnvFailures: string[] = [];
+      await runStandaloneGate(
+        {
+          rest: {
+            actions: {
+              listWorkflowRuns: 'listWorkflowRuns',
+              listJobsForWorkflowRun: 'listJobsForWorkflowRun',
+            },
+          },
+          paginate: async (fn: unknown) =>
+            fn === 'listJobsForWorkflowRun'
+              ? [
+                {
+                  id: 19,
+                  name: 'Execute Database Migrations',
+                  conclusion: 'success',
+                  steps: [
+                    { name: 'Verify Manual Migration Confirmation', conclusion: 'success' },
+                    { name: 'Record Target Environment (staging)', conclusion: 'success' },
+                  ],
+                },
+              ]
+              : [{ id: 10, run_number: 14, conclusion: 'success', head_sha: mainSha }],
+        },
+        { repo: { owner: 'OwnerOrg', repo: 'Wedding_Website' } },
+        { setFailed: (msg: string) => wrongEnvFailures.push(msg), info: () => undefined }
+      );
+      expect(wrongEnvFailures).toHaveLength(1);
+      expect(wrongEnvFailures[0]).toContain(
+        `no completed successful db-migrate.yml workflow run found for commit ${mainSha} (production)`
+      );
+
+      // 3. Succeeds when both ci.yml and db-migrate.yml succeeded for targetSha and TARGET_ENV
       const bothFailures: string[] = [];
       const bothInfos: string[] = [];
       await runStandaloneGate(
         {
-          rest: { actions: { listWorkflowRuns: 'listWorkflowRuns' } },
-          paginate: async () => [{ id: 10, run_number: 15, conclusion: 'success', head_sha: mainSha }],
+          rest: {
+            actions: {
+              listWorkflowRuns: 'listWorkflowRuns',
+              listJobsForWorkflowRun: 'listJobsForWorkflowRun',
+            },
+          },
+          paginate: async (fn: unknown) =>
+            fn === 'listJobsForWorkflowRun'
+              ? [
+                {
+                  id: 20,
+                  name: 'Execute Database Migrations',
+                  conclusion: 'success',
+                  steps: [
+                    { name: 'Verify Manual Migration Confirmation', conclusion: 'success' },
+                    { name: 'Record Target Environment (production)', conclusion: 'success' },
+                  ],
+                },
+              ]
+              : [{ id: 10, run_number: 15, conclusion: 'success', head_sha: mainSha }],
         },
         { repo: { owner: 'OwnerOrg', repo: 'Wedding_Website' } },
         { setFailed: (msg: string) => bothFailures.push(msg), info: (msg: string) => bothInfos.push(msg) }
       );
       expect(bothFailures).toHaveLength(0);
-      expect(bothInfos[0]).toContain('Verified CI run #15 and database migration run #15');
+      expect(bothInfos[0]).toContain('Verified CI run #15 and database migration run #15 (production)');
     } finally {
       if (prevSha === undefined) delete process.env.TARGET_SHA;
       else process.env.TARGET_SHA = prevSha;
@@ -2061,5 +2117,62 @@ process.exit(1);
     expect(offlineSummary).toContain('ALTER TABLE "Rsvp" ADD COLUMN "notes" TEXT');
     expect(offlineSummary).not.toContain('PENDING MIGRATIONS DETECTED');
     expect(offlineSummary).not.toContain('20261120020000_old_four');
+  });
+
+  it('removes rollback_environment from workflow_dispatch in deploy.yml and deploy-provider.yml, binds deploy environment only on workflow_call, and preserves explicit GH_TOKEN auth on git fetch with persist-credentials: false', () => {
+    const deployDoc = parseDocument(deployYml, { version: '1.2', strict: true }).toJS() as {
+      on?: {
+        workflow_dispatch?: { inputs?: Record<string, unknown> };
+        workflow_call?: { inputs?: Record<string, unknown> };
+      };
+      jobs?: {
+        staging?: { with?: Record<string, string> };
+        production?: { with?: Record<string, string> };
+      };
+    };
+    const providerDoc = parseDocument(deployProviderYml, { version: '1.2', strict: true }).toJS() as {
+      on?: {
+        workflow_dispatch?: { inputs?: Record<string, unknown> };
+        workflow_call?: { inputs?: Record<string, unknown> };
+      };
+      jobs?: {
+        deploy?: {
+          environment?: string;
+          steps?: Array<{ uses?: string; with?: Record<string, unknown> }>;
+        };
+      };
+    };
+
+    expect(deployDoc.on?.workflow_dispatch?.inputs).not.toHaveProperty('rollback_environment');
+    expect(deployDoc.on?.workflow_call?.inputs).toHaveProperty('rollback_environment');
+    expect(providerDoc.on?.workflow_dispatch?.inputs).not.toHaveProperty('rollback_environment');
+    expect(providerDoc.on?.workflow_call?.inputs).toHaveProperty('rollback_environment');
+
+    expect(providerDoc.jobs?.deploy?.environment).toBe(
+      "${{ (github.event_name == 'workflow_call' && inputs.rollback_environment) || inputs.environment || 'production' }}"
+    );
+    expect(deployDoc.jobs?.staging?.with?.rollback_environment).toBe(
+      "${{ (github.event_name == 'workflow_call' && inputs.rollback_environment) || vars.STAGING_ROLLBACK_ENVIRONMENT || '' }}"
+    );
+    expect(deployDoc.jobs?.production?.with?.rollback_environment).toBe(
+      "${{ (github.event_name == 'workflow_call' && inputs.rollback_environment) || vars.PRODUCTION_ROLLBACK_ENVIRONMENT || '' }}"
+    );
+
+    const checkoutSteps = (providerDoc.jobs?.deploy?.steps ?? []).filter((s) =>
+      s.uses?.startsWith('actions/checkout@')
+    );
+    expect(checkoutSteps.length).toBeGreaterThan(0);
+    for (const step of checkoutSteps) {
+      expect(step.with?.['persist-credentials']).toBe(false);
+    }
+
+    for (const script of [
+      extractStepRunScript(deployYml, 'Resolve Target Commit SHA'),
+      extractStepRunScript(deployYml, 'Align Workspace to Verified Commit SHA'),
+      extractStepRunScript(deployProviderYml, 'Resolve Standalone Promotion Commit & Main Ancestry'),
+    ]) {
+      expect(script).toContain('http.${ORIGIN_SERVER}/.extraheader=AUTHORIZATION: basic');
+      expect(script).toContain('git "${GIT_AUTH_ARGS[@]}" fetch');
+    }
   });
 });

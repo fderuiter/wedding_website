@@ -11,6 +11,33 @@ import { NextRequest } from 'next/server';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { BroadcastService } from '@/features/broadcast';
 import { resetRateLimitsForTesting } from '@/utils/rateLimit';
+import { validateAndResolveHost } from '@/utils/ssrf';
+import { isAllowedSmtpPort } from '@/utils/validationPrimitives';
+
+jest.mock('@/utils/ssrf', () => {
+  const actual = jest.requireActual('@/utils/ssrf');
+  return {
+    ...actual,
+    validateAndResolveHost: jest.fn(actual.validateAndResolveHost),
+  };
+});
+
+jest.mock('@/utils/validationPrimitives', () => {
+  const actual = jest.requireActual('@/utils/validationPrimitives');
+  return {
+    ...actual,
+    isAllowedSmtpPort: jest.fn(actual.isAllowedSmtpPort),
+  };
+});
+
+const actualSsrf = jest.requireActual('@/utils/ssrf') as typeof import('@/utils/ssrf');
+const actualValidationPrimitives = jest.requireActual(
+  '@/utils/validationPrimitives'
+) as typeof import('@/utils/validationPrimitives');
+const mockValidateAndResolveHost = validateAndResolveHost as jest.MockedFunction<
+  typeof validateAndResolveHost
+>;
+const mockIsAllowedSmtpPort = isAllowedSmtpPort as jest.MockedFunction<typeof isAllowedSmtpPort>;
 
 jest.mock('@/core/auth/auth.server', () => ({
   isAdminRequest: jest.fn().mockResolvedValue(true),
@@ -52,6 +79,11 @@ jest.mock('@/lib/config', () => ({
 }));
 
 describe('Broadcast API Routes', () => {
+  afterEach(() => {
+    mockValidateAndResolveHost.mockImplementation(actualSsrf.validateAndResolveHost);
+    mockIsAllowedSmtpPort.mockImplementation(actualValidationPrimitives.isAllowedSmtpPort);
+  });
+
   it('POST /api/admin/broadcast/send returns broadcast result', async () => {
     const req = new NextRequest('http://localhost/api/admin/broadcast/send', {
       method: 'POST',
@@ -330,6 +362,11 @@ describe('Broadcast API Routes', () => {
     });
     await new Promise<void>((resolve) => smtpServer.listen(0, '127.0.0.1', () => resolve()));
     const port = (smtpServer.address() as import('node:net').AddressInfo).port;
+    mockValidateAndResolveHost.mockResolvedValue({ address: '127.0.0.1', family: 4 });
+    mockIsAllowedSmtpPort.mockImplementation(
+      (candidatePort: number) =>
+        actualValidationPrimitives.isAllowedSmtpPort(candidatePort) || candidatePort === port
+    );
 
     try {
       const req = new NextRequest('http://localhost/api/admin/broadcast/test-connection', {
@@ -337,7 +374,7 @@ describe('Broadcast API Routes', () => {
         body: JSON.stringify({
           type: 'email',
           provider: 'smtp',
-          smtpHost: '127.0.0.1',
+          smtpHost: 'smtp.example.org',
           smtpPort: port,
           smtpSecure: false,
         }),
@@ -356,14 +393,27 @@ describe('Broadcast API Routes', () => {
       body: JSON.stringify({
         type: 'email',
         provider: 'smtp',
-        smtpHost: '127.0.0.1',
-        smtpPort: 1,
+        smtpHost: 'smtp.example.org',
+        smtpPort: port,
       }),
     });
     const failRes = await testConnRoute(failReq);
     expect(failRes.status).toBe(200);
     const failJson = await failRes.json();
     expect(failJson.success).toBe(false);
+
+    mockIsAllowedSmtpPort.mockImplementation(actualValidationPrimitives.isAllowedSmtpPort);
+    const badPortReq = new NextRequest('http://localhost/api/admin/broadcast/test-connection', {
+      method: 'POST',
+      body: JSON.stringify({
+        type: 'email',
+        provider: 'smtp',
+        smtpHost: 'smtp.example.org',
+        smtpPort: 22,
+      }),
+    });
+    const badPortRes = await testConnRoute(badPortReq);
+    expect(badPortRes.status).toBe(400);
   });
 
   it('POST /api/admin/broadcast/test-connection returns 400 for invalid schema', async () => {

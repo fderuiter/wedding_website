@@ -166,6 +166,33 @@ describe('POST /api/guest/lookup', () => {
       const setCookieHeaders = res.headers.get('set-cookie') || '';
       expect(setCookieHeaders).not.toContain(`${GUEST_INVITE_COOKIE}=`);
     });
+
+    it('rejects unpromoted address-collection records with 404 when no invited match exists', async () => {
+      mockFindFirst
+        .mockResolvedValueOnce({
+          id: 'inv-collect-1',
+          code: 'COLLECT99',
+          guestName: 'Prospect Family',
+          partyTags: ['address-collection'],
+          isSample: false,
+        })
+        .mockResolvedValueOnce(null);
+
+      const req = new NextRequest('http://localhost/api/guest/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: 'Prospect Family' }),
+      });
+      const res = await lookupRoute(req);
+      expect(res.status).toBe(404);
+      expect(mockFindFirst).toHaveBeenCalledTimes(2);
+      expect(mockFindFirst).toHaveBeenLastCalledWith({
+        where: expect.objectContaining({
+          isSample: false,
+          NOT: { partyTags: { has: 'address-collection' } },
+        }),
+      });
+    });
   });
 
   describe('Successful Lookups & Session Boundary', () => {

@@ -5,13 +5,28 @@ import { PhotoGalleryClient } from '@/components/photos/PhotoGalleryClient';
 import { getAppConfig } from '@/lib/config';
 import { contentService } from '@/features/content';
 import { isAdminRequest } from '@/core/auth/auth.server';
-import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
+import { isGuestRequest } from '@/core/auth/guest.server';
+import {
+  getActivePhotoUploadSession,
+  getGuestInviteSession,
+} from '@/core/auth/guestInviteSession';
+import { getSignedPhotoUploadSession } from '@/core/auth/photoUploadToken';
+
+const mockRedirect = jest.fn((url: string) => {
+  throw new Error(`NEXT_REDIRECT:${url}`);
+});
+
+jest.mock('next/navigation', () => ({
+  notFound: jest.fn(),
+  redirect: (url: string) => mockRedirect(url),
+}));
 
 // Mock dependencies
 jest.mock('@/lib/config', () => ({
   getAppConfig: jest.fn().mockResolvedValue({
     modules: { gallery: true },
     photoAlbumUrl: '',
+    guestPhotoQrTokenVersion: 1,
   }),
 }));
 
@@ -23,11 +38,19 @@ jest.mock('@/core/auth/auth.server', () => ({
   isAdminRequest: jest.fn().mockResolvedValue(false),
 }));
 
+jest.mock('@/core/auth/guest.server', () => ({
+  isGuestRequest: jest.fn().mockResolvedValue(false),
+}));
+
 jest.mock('@/core/auth/guestInviteSession', () => ({
   enforceActiveGuestPageSession: jest.fn().mockResolvedValue(undefined),
+  getActivePhotoUploadSession: jest.fn().mockResolvedValue(null),
   getGuestInviteSession: jest.fn().mockResolvedValue(null),
 }));
 
+jest.mock('@/core/auth/photoUploadToken', () => ({
+  getSignedPhotoUploadSession: jest.fn().mockResolvedValue(null),
+}));
 jest.mock('@/features/content', () => ({
   contentService: {
     getPublicPhotos: jest.fn().mockResolvedValue([]),
@@ -43,15 +66,30 @@ jest.mock('@/components/photos/PhotoGalleryClient', () => ({
 }));
 
 describe('PhotosPage', () => {
+  const originalStaticExport = process.env.STATIC_EXPORT;
+
   beforeEach(() => {
     jest.clearAllMocks();
+    delete process.env.STATIC_EXPORT;
     (getAppConfig as unknown as jest.Mock).mockResolvedValue({
       modules: { gallery: true },
       photoAlbumUrl: '',
+      guestPhotoQrTokenVersion: 1,
     });
     (contentService.getPublicPhotos as jest.Mock).mockResolvedValue([]);
     (isAdminRequest as jest.Mock).mockResolvedValue(false);
+    (isGuestRequest as jest.Mock).mockResolvedValue(false);
     (getGuestInviteSession as jest.Mock).mockResolvedValue(null);
+    (getSignedPhotoUploadSession as jest.Mock).mockResolvedValue(null);
+    (getActivePhotoUploadSession as jest.Mock).mockResolvedValue(null);
+  });
+
+  afterAll(() => {
+    if (originalStaticExport === undefined) {
+      delete process.env.STATIC_EXPORT;
+    } else {
+      process.env.STATIC_EXPORT = originalStaticExport;
+    }
   });
 
   it('passes empty initialPhotos and omits hardcoded Google Photos links when zero approved photos exist', async () => {
@@ -247,10 +285,51 @@ describe('PhotosPage', () => {
     );
   });
 
-  it('skips searchParams, isAdminRequest, and getGuestInviteSession when STATIC_EXPORT=true', async () => {
+  it('defaults photo-scoped visitors to the guest upload tab even without ?tab=guest', async () => {
+    (getSignedPhotoUploadSession as jest.Mock).mockResolvedValue({
+      purpose: 'photo_upload_session',
+      v: 1,
+      iat: 1000,
+      exp: 9999999999999,
+    });
+    (getActivePhotoUploadSession as jest.Mock).mockResolvedValue({
+      purpose: 'photo_upload_session',
+      v: 1,
+      iat: 1000,
+      exp: 9999999999999,
+    });
+
+    const pageElement = await PhotosPage();
+    render(pageElement);
+
+    expect(PhotoGalleryClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        defaultTab: 'guest',
+      }),
+      undefined
+    );
+  });
+
+  it('redirects photo-scoped visitors to /guest/login when QR token version was rotated', async () => {
+    (getSignedPhotoUploadSession as jest.Mock).mockResolvedValue({
+      purpose: 'photo_upload_session',
+      v: 1,
+      iat: 1000,
+      exp: 9999999999999,
+    });
+    (getActivePhotoUploadSession as jest.Mock).mockResolvedValue(null);
+
+    await expect(PhotosPage()).rejects.toThrow(
+      'NEXT_REDIRECT:/guest/login?callbackUrl=%2Fphotos%3Ftab%3Dguest'
+    );
+  });
+
+  it('skips searchParams, isAdminRequest, getGuestInviteSession, and getSignedPhotoUploadSession when STATIC_EXPORT=true', async () => {
     const prevStaticExport = process.env.STATIC_EXPORT;
     process.env.STATIC_EXPORT = 'true';
-    const dynamicSearchParams = Promise.reject(new Error('searchParams should not be read during static export'));
+    const dynamicSearchParams = Promise.reject(
+      new Error('searchParams should not be read during static export')
+    );
 
     try {
       const pageElement = await PhotosPage({ searchParams: dynamicSearchParams });
@@ -258,6 +337,7 @@ describe('PhotosPage', () => {
 
       expect(isAdminRequest).not.toHaveBeenCalled();
       expect(getGuestInviteSession).not.toHaveBeenCalled();
+      expect(getSignedPhotoUploadSession).not.toHaveBeenCalled();
       expect(PhotoGalleryClient).toHaveBeenCalledWith(
         {
           initialPhotos: [],

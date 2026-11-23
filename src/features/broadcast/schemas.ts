@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isAllowedSmtpPort } from '@/utils/validationPrimitives';
 
 const BroadcastTargetFiltersSchema = z.object({
   partyTags: z.array(z.string()).optional(),
@@ -78,7 +79,14 @@ export const TestConnectionSchema = z.object({
   type: z.enum(['email', 'sms']),
   provider: z.string().nullable().optional(),
   smtpHost: z.string().nullable().optional(),
-  smtpPort: z.number().nullable().optional(),
+  smtpPort: z
+    .number()
+    .int()
+    .refine((val) => isAllowedSmtpPort(val), {
+      message: 'SMTP port must be 25, 465, 587, or 2525.',
+    })
+    .nullable()
+    .optional(),
   smtpUser: z.string().nullable().optional(),
   smtpPass: z.string().nullable().optional(),
   smtpFrom: z.string().nullable().optional(),

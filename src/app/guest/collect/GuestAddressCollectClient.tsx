@@ -230,7 +230,7 @@ export default function GuestAddressCollectPage() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} noValidate className="space-y-4">
           {/* Honeypot Field (Hidden from human users) */}
           <div className="hidden" aria-hidden="true" style={{ display: 'none' }}>
             <label htmlFor="website">Website</label>
@@ -312,7 +312,7 @@ export default function GuestAddressCollectPage() {
           </FormGroup>
 
           <FormGroup state={fieldErrors.addressLine1 ? 'error' : 'default'}>
-            <Label>Street Address Line 1 (Optional)</Label>
+            <Label>Street Address Line 1 <span className="text-red-500">*</span></Label>
             <Input
               type="text"
               name="addressLine1"
@@ -320,6 +320,7 @@ export default function GuestAddressCollectPage() {
               value={formData.addressLine1}
               onChange={handleChange}
               autoComplete="address-line1"
+              required
               maxLength={150}
             />
             {fieldErrors.addressLine1 && (
@@ -345,7 +346,7 @@ export default function GuestAddressCollectPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FormGroup state={fieldErrors.city ? 'error' : 'default'}>
-              <Label>City (Optional)</Label>
+              <Label>City <span className="text-red-500">*</span></Label>
               <Input
                 type="text"
                 name="city"
@@ -353,6 +354,7 @@ export default function GuestAddressCollectPage() {
                 value={formData.city}
                 onChange={handleChange}
                 autoComplete="address-level2"
+                required
                 maxLength={100}
               />
               {fieldErrors.city && (
@@ -361,7 +363,7 @@ export default function GuestAddressCollectPage() {
             </FormGroup>
 
             <FormGroup state={fieldErrors.state ? 'error' : 'default'}>
-              <Label>State / Province (Optional)</Label>
+              <Label>State / Province <span className="text-red-500">*</span></Label>
               <Input
                 type="text"
                 name="state"
@@ -369,6 +371,7 @@ export default function GuestAddressCollectPage() {
                 value={formData.state}
                 onChange={handleChange}
                 autoComplete="address-level1"
+                required
                 maxLength={100}
               />
               {fieldErrors.state && (
@@ -379,7 +382,7 @@ export default function GuestAddressCollectPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FormGroup state={fieldErrors.zipCode ? 'error' : 'default'}>
-              <Label>ZIP / Postal Code (Optional)</Label>
+              <Label>ZIP / Postal Code <span className="text-red-500">*</span></Label>
               <Input
                 type="text"
                 name="zipCode"
@@ -387,6 +390,7 @@ export default function GuestAddressCollectPage() {
                 value={formData.zipCode}
                 onChange={handleChange}
                 autoComplete="postal-code"
+                required
                 maxLength={20}
               />
               {fieldErrors.zipCode && (

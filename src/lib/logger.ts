@@ -7,7 +7,8 @@ const LEVELS: Record<LogLevel, number> = {
   error: 30,
 };
 
-const SENSITIVE_KEYS = /password|passcode|secret|cookie|authorization|token|bearer|database_url/i;
+const SENSITIVE_KEYS =
+  /password|passcode|smtp[_-]?pass|secret|cookie|authorization|token|bearer|database_url|api[_-]?key|access[_-]?key/i;
 
 function redactLogData(data: any, depth = 0): any {
   if (depth > 5 || data === null || data === undefined) return data;

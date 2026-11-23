@@ -44,6 +44,7 @@ export interface UploadStatus {
   order?: number;
   uploaderName?: string;
   caption?: string;
+  publishedLive?: boolean;
 }
 
 interface GuestPhotoDropzoneProps {
@@ -157,6 +158,9 @@ export function GuestPhotoDropzone({
       }
 
       const firstPhoto = Array.isArray(json.data) ? json.data[0] : json.data;
+      const publishedLive = Boolean(
+        firstPhoto && firstPhoto.status === 'APPROVED' && firstPhoto.isVisible !== false
+      );
 
       if (isMountedRef.current) {
         setUploads((prev) => {
@@ -167,6 +171,7 @@ export function GuestPhotoDropzone({
                 status: 'success' as const,
                 progress: 100,
                 url: firstPhoto?.url,
+                publishedLive,
               }
               : item
           );
@@ -655,13 +660,23 @@ export function GuestPhotoDropzone({
                       </span>
                     )}
                     {item.status === 'success' && (
-                      <span
-                        className="text-xs text-[var(--color-warning-text,#78350f)] flex items-center gap-1 font-medium"
-                        data-testid="upload-success-badge"
-                      >
-                        <Icon name="Check" className="w-3.5 h-3.5 shrink-0" />
-                        <span>Uploaded (Pending Review)</span>
-                      </span>
+                      item.publishedLive ? (
+                        <span
+                          className="text-xs text-[var(--color-status-success-text,#166534)] flex items-center gap-1 font-medium"
+                          data-testid="upload-success-badge"
+                        >
+                          <Icon name="Check" className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                          <span>Published Live</span>
+                        </span>
+                      ) : (
+                        <span
+                          className="text-xs text-[var(--color-warning-text,#78350f)] flex items-center gap-1 font-medium"
+                          data-testid="upload-success-badge"
+                        >
+                          <Icon name="Check" className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                          <span>Uploaded (Pending Review)</span>
+                        </span>
+                      )
                     )}
                     {item.status === 'error' && (
                       <div className="flex items-center gap-2">
@@ -706,12 +721,29 @@ export function GuestPhotoDropzone({
                 )}
 
                 {item.status === 'success' && (
-                  <UploadStatusNotice data-testid="upload-pending-notice">
-                    <span className="sr-only">{`${item.filename}: `}</span>
-                    <span>
-                      Uploaded! Your photo is waiting for couple approval before appearing in the public gallery.
-                    </span>
-                  </UploadStatusNotice>
+                  item.publishedLive ? (
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      data-testid="upload-live-notice"
+                      className="text-xs font-medium bg-emerald-500/10 text-[var(--color-status-success-text,#166534)] p-2 rounded-lg border border-emerald-500/30 flex items-center gap-1.5"
+                    >
+                      <Icon name="Check" className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                      <span>
+                        <span className="sr-only">{`${item.filename}: `}</span>
+                        <span>
+                          Published live! Your photo is now visible in the gallery and reception slideshow.
+                        </span>
+                      </span>
+                    </div>
+                  ) : (
+                    <UploadStatusNotice data-testid="upload-pending-notice">
+                      <span className="sr-only">{`${item.filename}: `}</span>
+                      <span>
+                        Uploaded! Your photo is waiting for couple approval before appearing in the public gallery.
+                      </span>
+                    </UploadStatusNotice>
+                  )
                 )}
 
                 {item.status === 'error' && item.errorMessage && (
