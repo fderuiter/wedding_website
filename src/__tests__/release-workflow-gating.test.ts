@@ -75,6 +75,8 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
   const publishWorkflow = readWorkflow('publish-artifact.yml');
   const deployWorkflow = readWorkflow('deploy.yml');
   const migrateWorkflow = readWorkflow('db-migrate.yml');
+  const deployProviderWorkflow = readWorkflow('deploy-provider.yml');
+  const rollbackWorkflow = readWorkflow('rollback.yml');
 
   it('preserves CI workflow triggers, job names, upstream action-pin verification, and zero-secret execution', () => {
     expect(ciWorkflow).toContain('name: CI');
@@ -102,11 +104,13 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(onSection).toContain('commit_sha:');
   });
 
-  it('scopes top-level permissions to contents: read and restricts write/actions permissions to individual jobs', () => {
+  it('scopes top-level permissions to contents: read and restricts write/actions/deployments permissions to individual jobs', () => {
     for (const [name, content] of [
       ['publish-artifact.yml', publishWorkflow],
       ['deploy.yml', deployWorkflow],
       ['db-migrate.yml', migrateWorkflow],
+      ['deploy-provider.yml', deployProviderWorkflow],
+      ['rollback.yml', rollbackWorkflow],
     ] as const) {
       const topPermissions = extractTopLevelSection(content, 'permissions');
       expect({ name, topPermissions }).toEqual({
@@ -143,6 +147,11 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     const actionsReadMatches = deployWorkflow.match(/actions:\s*read/g) ?? [];
     expect(actionsReadMatches).toHaveLength(1);
     expect(deployWorkflow).toMatch(/ci-gate:[\s\S]*?permissions:\n\s+actions: read/);
+
+    // deployments: read lives strictly at job scope in caller jobs and deploy-provider.yml
+    expect(deployWorkflow.match(/deployments:\s*read/g) ?? []).toHaveLength(4);
+    expect(deployProviderWorkflow.match(/deployments:\s*read/g) ?? []).toHaveLength(1);
+    expect(rollbackWorkflow.match(/deployments:\s*read/g) ?? []).toHaveLength(1);
   });
 
   it('triggers deploy.yml via workflow_run on CI completion for main instead of push', () => {
@@ -191,12 +200,33 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       /schema-compatibility:[\s\S]*?fetch-depth:\s*0[\s\S]*?if:\s*github\.event_name == 'workflow_run'[\s\S]*?TARGET_SHA:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}[\s\S]*?git merge-base --is-ancestor "\$TARGET_SHA" HEAD[\s\S]*?git checkout --detach "\$TARGET_SHA"/
     );
     expect(deployWorkflow).toContain('commit_sha: ${{ needs.ci-gate.outputs.target_sha }}');
+    expect(
+      deployWorkflow.match(/commit_sha:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}/g) ?? []
+    ).toHaveLength(7);
+    expect(deployWorkflow).toMatch(
+      /staging-deploy-provider:[\s\S]*?commit_sha:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}/
+    );
+    expect(deployWorkflow).toMatch(
+      /staging-rollback:[\s\S]*?needs:\s*\[ci-gate,\s*publish-artifact,\s*staging-deploy-provider,\s*staging-verify-deployment\][\s\S]*?commit_sha:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}/
+    );
+    expect(deployWorkflow).toMatch(
+      /production-deploy-provider:[\s\S]*?commit_sha:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}/
+    );
+    expect(deployWorkflow).toMatch(
+      /production-rollback:[\s\S]*?needs:\s*\[ci-gate,\s*publish-artifact,\s*production-deploy-provider,\s*production-verify-deployment\][\s\S]*?commit_sha:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}/
+    );
     expect(deployWorkflow).toContain('tag_name: ${{ needs.ci-gate.outputs.target_sha }}');
     expect(deployWorkflow).not.toContain('|| github.sha');
 
     expect(publishWorkflow).toContain('ref: ${{ inputs.commit_sha }}');
     expect(publishWorkflow).toContain('INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}');
     expect(migrateWorkflow).toContain('ref: ${{ inputs.commit_sha }}');
+    expect(deployProviderWorkflow).toContain('ref: ${{ inputs.commit_sha }}');
+    expect(deployProviderWorkflow).toContain('fetch-depth: 2');
+    expect(deployProviderWorkflow).toContain('CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}');
+    expect(rollbackWorkflow).toContain('ref: ${{ inputs.commit_sha }}');
+    expect(rollbackWorkflow).toContain('CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}');
+    expect(rollbackWorkflow).toContain("commit_sha: ${{ inputs.commit_sha || '' }}");
   });
 
   it('passes event fields and inputs via env variables with zero direct ${{ ... }} interpolation in run scripts', () => {
@@ -204,6 +234,8 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       ['deploy.yml', deployWorkflow],
       ['publish-artifact.yml', publishWorkflow],
       ['db-migrate.yml', migrateWorkflow],
+      ['deploy-provider.yml', deployProviderWorkflow],
+      ['rollback.yml', rollbackWorkflow],
     ] as const) {
       const runBlocks = extractRunBlocks(content);
       expect(runBlocks.length).toBeGreaterThan(0);
