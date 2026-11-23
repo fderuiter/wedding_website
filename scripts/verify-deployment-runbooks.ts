@@ -219,6 +219,14 @@ function validateDocumentedPostgresUrlsInRunbook(
         }
 
         const prefixBeforeMatch = snippet.slice(0, assignMatch.index + assignMatch[0].indexOf(envKey));
+        // Intentional container flag clearing an optional shadow URL (`-e POSTGRES_URL_NON_POOLING=""`)
+        if (
+          unquotedValue === '' &&
+          envKey !== 'DATABASE_URL' &&
+          /(?:^|\s)(?:-e|--env)(?:=|\s*)$/.test(prefixBeforeMatch)
+        ) {
+          continue;
+        }
         if (
           /--(?:set|update)-secrets\b/.test(prefixBeforeMatch) ||
           (/--(?:set|update)-secrets\b/.test(snippet) &&
@@ -957,6 +965,46 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       [urlEnvKey ?? 'DATABASE_URL', shadowUrlEnvKey ?? 'POSTGRES_URL_NON_POOLING'],
       errors
     );
+
+    const orderedSnippets = extractOrderedSnippets(content);
+    for (const { text: snippetText } of orderedSnippets) {
+      if (/\bgcloud\s+run\s+jobs\s+(?:create|update|deploy)\b/.test(snippetText)) {
+        if (/--(?:command|entrypoint)(?:=|\s+)["']?(?:\/usr\/local\/bin\/)?npx["']?(?:\s|$)/.test(snippetText) || /--(?:command|entrypoint)(?:=|\s+)/.test(snippetText)) {
+          errors.push(
+            `${relPath}: Cloud Run job command \`${snippetText}\` must not override ENTRYPOINT with \`--command\` (e.g. \`--command="npx"\`); omit \`--command\` and pass \`--args="./node_modules/.bin/prisma,migrate,deploy"\` to preserve \`/usr/bin/tini\` and \`docker-entrypoint.sh\``
+          );
+        }
+        if (
+          /--args(?:=|\s+)["']?(?:npx,|prisma,migrate)/.test(snippetText) &&
+          !snippetText.includes('./node_modules/.bin/prisma,migrate')
+        ) {
+          errors.push(
+            `${relPath}: Cloud Run job command \`${snippetText}\` must pass \`--args="./node_modules/.bin/prisma,migrate,deploy"\` to invoke the isolated Prisma CLI offline`
+          );
+        }
+      }
+
+      if (
+        prismaMajor >= 7 &&
+        urlEnvKey &&
+        shadowUrlEnvKey &&
+        /\bdocker(?:\s+compose|-compose)\b[\s\S]*?\brun\b/.test(snippetText) &&
+        new RegExp(`(?:^|[\\s"'])${urlEnvKey}=`).test(snippetText)
+      ) {
+        const guardsShadowEnv =
+          new RegExp(`(?:env\\s+-u\\s+${shadowUrlEnvKey}|unset\\s+${shadowUrlEnvKey})`).test(
+            snippetText
+          ) ||
+          new RegExp(
+            `(?:-e|--env)(?:=|\\s+)${shadowUrlEnvKey}=(?:""|''|(?=\\s|$))`
+          ).test(snippetText);
+        if (!guardsShadowEnv) {
+          errors.push(
+            `${relPath}: \`${snippetText}\` overrides ${urlEnvKey} on \`docker compose run\` without unsetting or clearing ${shadowUrlEnvKey} (triggers Prisma 7 P3025 shadow database collision)`
+          );
+        }
+      }
+    }
   }
 
   // Verify Vercel prisma migrate deploy explicitly overrides DATABASE_URL when non-pooling URL is documented
@@ -1091,6 +1139,18 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
         'docs/deployment/gcp-cloud-run.md: Manual `gcloud run deploy` command omits mandatory GUEST_SESSION_SECRET'
       );
     }
+  }
+
+  const gcpMigrateJobLines = gcpFencedLines.filter((line) =>
+    /\bgcloud\s+run\s+jobs\s+create\b/.test(line)
+  );
+  if (
+    gcpMigrateJobLines.length === 0 ||
+    !gcpMigrateJobLines.some((line) => line.includes('./node_modules/.bin/prisma,migrate,deploy'))
+  ) {
+    errors.push(
+      'docs/deployment/gcp-cloud-run.md: Cloud Run migration job must pass `--args="./node_modules/.bin/prisma,migrate,deploy"` without `--command`'
+    );
   }
 
   if (
@@ -1313,6 +1373,11 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   const runtimeContractMd = runbookContents.get('docs/runtime-contract.md') ?? '';
   if (!/^ENV\s+HOSTNAME=(?:"0\.0\.0\.0"|'0\.0\.0\.0'|0\.0\.0\.0)\s*$/m.test(dockerfileRaw)) {
     errors.push('Dockerfile: Missing `ENV HOSTNAME="0.0.0.0"` in runner image');
+  }
+  if (!dockerfileRaw.includes('/usr/local/etc/npmrc') || !dockerfileRaw.includes('update-notifier=false')) {
+    errors.push(
+      'Dockerfile: Must write `update-notifier=false` to `/usr/local/etc/npmrc` to suppress npm update notices in Node global config'
+    );
   }
   if (composeContract.appHostname !== '0.0.0.0') {
     errors.push('docker-compose.yml: `app` service must set `HOSTNAME: "0.0.0.0"`');

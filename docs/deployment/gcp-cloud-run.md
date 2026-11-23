@@ -274,15 +274,14 @@ IMAGE_DIGEST="sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789a
 
 gcloud run jobs create wedding-migrate \
     --image="ghcr.io/fderuiter/wedding_website@${IMAGE_DIGEST}" \
-    --command="npx" \
-    --args="prisma,migrate,deploy" \
+    --args="./node_modules/.bin/prisma,migrate,deploy" \
     --set-secrets="DATABASE_URL=DATABASE_URL_DIRECT:latest" \
     --region=us-central1
 
 gcloud run jobs execute wedding-migrate --region=us-central1 --wait
 ```
 
-*Note: Because `prisma.config.ts` binds `datasource.url` to `DATABASE_URL` (not `POSTGRES_URL_NON_POOLING`), `prisma migrate deploy` reads `DATABASE_URL`. Bind `DATABASE_URL` in the Cloud Run Job to a direct, non-pooling PostgreSQL secret (`DATABASE_URL_DIRECT` or `DATABASE_URL` if already unpooled) as an explicit `DATABASE_URL` override to bypass PgBouncer.*
+*Note: Omitting `--command` preserves the container `ENTRYPOINT` (`/usr/bin/tini -s -- docker-entrypoint.sh`), which validates `DATABASE_URL`, unsets `POSTGRES_URL_NON_POOLING`, and invokes `./node_modules/.bin/prisma migrate deploy` (`/usr/local/bin/prisma`) offline without `npx` or npm registry traffic. Bind `DATABASE_URL` in the Cloud Run Job to a direct, non-pooling PostgreSQL secret (`DATABASE_URL_DIRECT` or `DATABASE_URL` if already unpooled) as an explicit `DATABASE_URL` override to bypass PgBouncer.*
 
 ---
 

@@ -56,6 +56,7 @@ jobs:
   migrate:
     name: Execute Database Migrations
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: ${{ inputs.environment || 'production' }}
     outputs:
       schema_compatibility_status: ${{ steps.lint_migrations.outputs.schema_compatibility_status }}
@@ -165,16 +166,20 @@ jobs:
 
       - name: Pre-flight schema migration check and summary
         id: status_check
+        timeout-minutes: 5
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           TARGET_ENVIRONMENT: ${{ inputs.environment || 'production' }}
+          PGOPTIONS: "-c lock_timeout=5000ms -c statement_timeout=30000ms"
         run: |
+          unset POSTGRES_URL_NON_POOLING
           echo "Executing pre-flight Prisma migration status audit & SQL DDL summary..."
-          npx tsx scripts/preflight-migration-summary.ts
+          env -u POSTGRES_URL_NON_POOLING npx tsx scripts/preflight-migration-summary.ts
 
       - name: Run Prisma Migrate Deploy
         id: migrate
         if: steps.confirm_gate.outcome == 'success'
+        timeout-minutes: 5
         env:
           CONFIRM: ${{ inputs.confirm && 'true' || 'false' }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -184,8 +189,9 @@ jobs:
             echo "::error::Database migration execution aborted: 'confirm' input must be set to true."
             exit 1
           fi
+          unset POSTGRES_URL_NON_POOLING
           echo "Executing database migrations..."
-          npx prisma migrate deploy
+          env -u POSTGRES_URL_NON_POOLING npx prisma migrate deploy
 
       - name: Handle Migration Failure
         if: failure() && steps.confirm_gate.outcome == 'success'

@@ -78,17 +78,23 @@ The application validates the following runtime environment variables via `src/e
 ### Primary Path: Dedicated `migration` Service in `docker-compose.yml`
 `docker-compose.yml` decouples schema migrations from application container boot:
 1. `db` starts `postgres:15-alpine` bound to `127.0.0.1:${DB_PORT:-5432}:5432` and waits until its `pg_isready` healthcheck reports `service_healthy`.
-2. `migration` runs `./node_modules/.bin/prisma migrate deploy` offline (`restart: "no"`, `read_only: true`, `cap_drop: [ALL]`, `tmpfs: [/tmp]`) against `DATABASE_URL` (`${DATABASE_URL:-postgres://${DB_USER:-wedding}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-wedding}}`).
+2. `migration` runs `./node_modules/.bin/prisma migrate deploy` offline (`restart: "no"`, `read_only: true`, `cap_drop: [ALL]`, `tmpfs: [/tmp]`) against `DATABASE_URL` (`${DATABASE_URL:-${POSTGRES_URL_NON_POOLING:-postgres://${DB_USER:-wedding}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-wedding}}}`) without forwarding `POSTGRES_URL_NON_POOLING`.
 3. `app` defaults `RUN_MIGRATIONS` to `false` (`${RUN_MIGRATIONS:-false}`) and waits on `migration` (`condition: service_completed_successfully`) before executing `node server.js` behind `/usr/bin/tini`.
 
 To run migrations on demand via Docker Compose:
 ```bash
 docker compose run --rm migration
 ```
-If overriding `DATABASE_URL` to use an external PgBouncer pooler, pass an explicit non-pooled `DATABASE_URL` override to `migration` (`docker compose run --rm -e DATABASE_URL="$POSTGRES_URL_NON_POOLING" migration`).
+If overriding `DATABASE_URL` to use an external PgBouncer pooler, pass an explicit non-pooled `DATABASE_URL` override to `migration` while unsetting and clearing `POSTGRES_URL_NON_POOLING` so Prisma 7 never sees matching primary and shadow database URLs (`P3025`):
+```bash
+env -u POSTGRES_URL_NON_POOLING docker compose run --rm \
+  -e DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" \
+  -e POSTGRES_URL_NON_POOLING="" \
+  migration
+```
 
 ### Standalone Container Path (`docker-entrypoint.sh`)
-When running the image directly via `docker run` without Docker Compose's `migration` service, set `RUN_MIGRATIONS=true` so `docker-entrypoint.sh` validates `DATABASE_URL` and executes `./node_modules/.bin/prisma migrate deploy` locally (with npm update checks disabled) prior to `node server.js`.
+When running the image directly via `docker run` without Docker Compose's `migration` service, set `RUN_MIGRATIONS=true` so `docker-entrypoint.sh` validates `DATABASE_URL`, unsets `POSTGRES_URL_NON_POOLING`, and executes `./node_modules/.bin/prisma migrate deploy` locally (with npm update checks disabled) prior to `node server.js`.
 
 ---
 
