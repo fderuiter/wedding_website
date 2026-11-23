@@ -1,35 +1,17 @@
 import { Worker } from 'node:worker_threads';
 import path from 'node:path';
-import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { logger } from '@/lib/logger';
 import { ApiError } from '@/utils/ApiError';
-import { getFileExtension, isHeicExtension } from './validationPrimitives';
+import {
+  getFileExtension,
+  isHeicExtension,
+  MAX_GUEST_PHOTO_SIZE,
+} from './validationPrimitives';
 import {
   isHeicBuffer,
-  processImageWorkerBuffer,
   type ProcessImageWorkerOptions,
   type WorkerResult,
 } from './imageProcessorWorker';
-
-function getWorkerPath(): string {
-  try {
-    if (typeof import.meta.url === 'string' && import.meta.url.startsWith('file:')) {
-      const currentDir = path.dirname(fileURLToPath(import.meta.url));
-      const tsPath = path.join(currentDir, 'imageProcessorWorker.ts');
-      const jsPath = path.join(currentDir, 'imageProcessorWorker.js');
-      const mjsPath = path.join(currentDir, 'imageProcessorWorker.mjs');
-
-      if (fs.existsSync(tsPath)) return tsPath;
-      if (fs.existsSync(jsPath)) return jsPath;
-      if (fs.existsSync(mjsPath)) return mjsPath;
-    }
-  } catch {
-    // Fall back to workspace path resolution below
-  }
-
-  return path.join(process.cwd(), 'src', 'utils', 'imageProcessorWorker.ts');
-}
 
 function offloadSanitizeToWorker(
   buffer: Uint8Array,
@@ -38,13 +20,26 @@ function offloadSanitizeToWorker(
 ): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
     try {
-      const workerPath = getWorkerPath();
-      const execArgv = workerPath.endsWith('.ts') ? ['--experimental-strip-types'] : undefined;
+      const workerData = {
+        buffer,
+        expectHeic: Boolean(options?.expectHeic),
+        maxBytes: options?.maxBytes ?? MAX_GUEST_PHOTO_SIZE,
+      };
 
-      const worker = new Worker(workerPath, {
-        workerData: { buffer, expectHeic: Boolean(options?.expectHeic) },
-        execArgv,
-      });
+      let worker: Worker;
+      if (process.env.NODE_ENV === 'test') {
+        worker = new Worker(
+          path.resolve(process.cwd(), 'src', 'utils', 'imageProcessorWorker.ts'),
+          {
+            workerData,
+            execArgv: ['--experimental-strip-types'],
+          }
+        );
+      } else {
+        worker = new Worker(new URL('./imageProcessorWorker.ts', import.meta.url), {
+          workerData,
+        });
+      }
 
       let settled = false;
 
@@ -53,7 +48,8 @@ function offloadSanitizeToWorker(
         settled = true;
         if (timer) clearTimeout(timer);
         timer = null;
-        worker.terminate();
+        logger.error(`Image processor worker timed out after ${timeoutMs}ms`);
+        void worker.terminate();
         reject(new ApiError(400, 'Image sanitization failed. Worker thread timed out.'));
       }, timeoutMs);
 
@@ -63,7 +59,7 @@ function offloadSanitizeToWorker(
           timer = null;
         }
         settled = true;
-        worker.terminate();
+        void worker.terminate();
       };
 
       worker.on('message', (result: WorkerResult) => {
@@ -72,37 +68,27 @@ function offloadSanitizeToWorker(
         if (result.success) {
           resolve(result.buffer);
         } else {
+          logger.error('Image processor worker failed to sanitize image:', result.error);
           reject(new ApiError(400, 'Image sanitization failed. The file may be corrupt or invalid.'));
         }
       });
 
-      worker.on('error', () => {
+      worker.on('error', (err) => {
         if (settled) return;
         cleanup();
-        processImageWorkerBuffer(buffer, options)
-          .then(resolve)
-          .catch(() => {
-            reject(new ApiError(400, 'Image sanitization failed. The file may be corrupt or invalid.'));
-          });
+        logger.error('Image processor worker emitted an error:', err);
+        reject(new ApiError(400, 'Image sanitization failed. The file may be corrupt or invalid.'));
       });
 
       worker.on('exit', (code) => {
         if (settled) return;
         cleanup();
-        if (code !== 0) {
-          processImageWorkerBuffer(buffer, options)
-            .then(resolve)
-            .catch(() => {
-              reject(new ApiError(400, 'Image sanitization failed. The file may be corrupt or invalid.'));
-            });
-        }
+        logger.error(`Image processor worker exited unexpectedly with code ${code}`);
+        reject(new ApiError(400, 'Image sanitization failed. The file may be corrupt or invalid.'));
       });
-    } catch {
-      processImageWorkerBuffer(buffer, options)
-        .then(resolve)
-        .catch(() => {
-          reject(new ApiError(400, 'Image sanitization failed. The file may be corrupt or invalid.'));
-        });
+    } catch (err) {
+      logger.error('Failed to initialize image processor worker:', err);
+      reject(new ApiError(400, 'Image sanitization failed. The file may be corrupt or invalid.'));
     }
   });
 }
@@ -160,12 +146,21 @@ export async function sanitizeImage(file: File): Promise<File> {
   }
 
   try {
+    if (typeof file.size === 'number' && file.size > MAX_GUEST_PHOTO_SIZE) {
+      throw new ApiError(400, 'Image sanitization failed. File size exceeds maximum allowed limit.');
+    }
+
     const arrayBuffer = await file.arrayBuffer();
+    if (arrayBuffer.byteLength > MAX_GUEST_PHOTO_SIZE) {
+      throw new ApiError(400, 'Image sanitization failed. File size exceeds maximum allowed limit.');
+    }
+
     const buffer = new Uint8Array(arrayBuffer);
     const transcodeToJpeg = isHeicInput || isHeicBuffer(buffer);
 
     const sanitizedBuffer = await offloadSanitizeToWorker(buffer, 10000, {
       expectHeic: isHeicInput,
+      maxBytes: MAX_GUEST_PHOTO_SIZE,
     });
 
     if (transcodeToJpeg) {

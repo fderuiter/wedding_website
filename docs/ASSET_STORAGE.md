@@ -143,17 +143,18 @@ Persisted configuration, media, and local path URLs are validated by the URL gua
 
 ### 3. Image Sanitization & Processing Pipeline
 
-All uploaded image files undergo server-side sanitization prior to persistence via `sanitizeImage` in [src/utils/imageProcessor.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/imageProcessor.ts#L144-L186) and `processImageWorkerBuffer` in [src/utils/imageProcessorWorker.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/imageProcessorWorker.ts#L108-L156):
+All uploaded image files undergo server-side sanitization prior to persistence via `sanitizeImage` in [src/utils/imageProcessor.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/imageProcessor.ts#L130-L181) and `processImageWorkerBuffer` in [src/utils/imageProcessorWorker.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/imageProcessorWorker.ts#L224-L295):
+- **Pre-Decode Byte & Dimension Guards**: Rejects inputs larger than `MAX_GUEST_PHOTO_SIZE` (`10 * 1024 * 1024`) prior to buffering/decoding, validates ISOBMFF `ispe` spatial extents via `parseHeicSpatialExtents` before `heic-decode`, and enforces `MAX_IMAGE_PIXELS` (`64000000` via Sharp `limitInputPixels`) and `MAX_IMAGE_DIMENSION` (`12000` max side).
 - **EXIF Metadata Stripping**: Strips all embedded EXIF metadata, GPS geotags, camera model identifiers, and timestamps to protect guest and administrator privacy.
 - **Auto-Rotation**: Automatically rotates images based on embedded EXIF orientation tags (`.rotate()`) prior to metadata stripping so photos render with correct orientation.
 - **Format & HEIC Handling**: Sharp sanitization preserves JPEG, PNG, and WebP formats and transcodes HEIC/HEIF frames (`heic-decode` + Sharp) into sanitized `image/jpeg` files. Non-Sharp formats (such as ICO) skip sanitization safely without error.
 
 ### 4. Worker Thread Offloading & Timeout Handling
 
-To protect the main Node.js event loop from CPU-heavy image processing tasks, sanitization is offloaded to background worker threads using `offloadSanitizeToWorker` in [src/utils/imageProcessor.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/imageProcessor.ts#L34-L108):
-- **Worker Thread Execution**: Image buffer processing runs inside a separate Node.js worker thread (`imageProcessorWorker.ts`).
+To protect the main Node.js event loop from CPU-heavy image processing tasks, sanitization is offloaded to background worker threads using `offloadSanitizeToWorker` in [src/utils/imageProcessor.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/imageProcessor.ts#L16-L94):
+- **Worker Thread Execution**: Image buffer processing runs inside a separate Node.js worker thread (`new Worker(new URL('./imageProcessorWorker.ts', import.meta.url), { workerData })`, or `--experimental-strip-types` under `NODE_ENV === 'test'`) without falling back to the main thread.
 - **Default 10-Second Worker Timeout**: A strict 10-second timeout (`timeoutMs = 10000`) is enforced per sanitization job.
-- **Timeout & Error Behavior**: If worker execution exceeds 10 seconds or encounters unrecoverable corruption, worker execution is terminated (`worker.terminate()`) and an HTTP 400 error response is returned (`ApiError(400, 'Image sanitization failed. Worker thread timed out.')`).
+- **Timeout & Error Behavior**: If worker execution exceeds 10 seconds, emits an error, or exits unexpectedly, the failure is logged with `logger.error`, worker execution is terminated (`worker.terminate()`), and an HTTP 400 error response is returned (`ApiError(400, ...)`).
 
 ### 5. Credential Safety
 - Cloud credentials (`S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`) are exclusively accessible on the server side (Node.js runtime).
