@@ -119,7 +119,7 @@ describe('verify-setup-guides contract check', () => {
       fs
         .readFileSync(prismaConfigPath, 'utf8')
         .replace(
-          'shadowDatabaseUrl: process.env.POSTGRES_URL_NON_POOLING || undefined,',
+          'shadowDatabaseUrl: resolvePrismaShadowDatabaseUrl(process.env.POSTGRES_URL_NON_POOLING, process.env.DATABASE_URL),',
           "shadowDatabaseUrl: process.env.POSTGRES_URL_NON_POOLING ?? 'postgresql://dummy:dummy@localhost:5432/dummy_shadow',"
         )
     );
