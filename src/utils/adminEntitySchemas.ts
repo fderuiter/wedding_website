@@ -26,7 +26,7 @@ import {
   SubEventUpdateInputSchema,
 } from '@/features/sub-events';
 
-export const AdminEntityCreateSchema = z.xor([
+export const AdminEntityCreateSchema = z.union([
   ContentNodeInputSchema,
   WeddingPartyInputSchema,
   AttractionCreateInputSchema,
@@ -36,7 +36,7 @@ export const AdminEntityCreateSchema = z.xor([
   SubEventInputSchema,
 ]);
 
-export const AdminEntityUpdateSchema = z.xor([
+export const AdminEntityUpdateSchema = z.union([
   ContentNodeUpdateInputSchema,
   WeddingPartyUpdateInputSchema,
   AttractionInputSchema,
