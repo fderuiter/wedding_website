@@ -66,8 +66,8 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
     ```
 
     Committing triggers [`.githooks/pre-commit`](../.githooks/pre-commit) (installed automatically by `npm ci`), which:
-    1. Runs `npx lint-staged` (`eslint --fix` on staged `*.{js,jsx,ts,tsx}` files).
-    2. Temporarily stashes unstaged changes (`git stash push --keep-index --include-untracked`) and runs twelve sequential workspace checks before restoring stashed edits: `npm run type-check`, `npm run lint:unused`, `npm run check:env-docs`, `npm run check:runbooks`, `npm run check:setup-guides`, `npm run check:identifiers`, `npm run check:action-pins`, `npm run check:links`, `npm run check:spec-contracts`, `npm run check:prisma`, `npm run lint:migrations`, and `npm run check:doc-sync`.
+    1. Runs `npx lint-staged` (`eslint --fix` on staged `*.{js,jsx,ts,tsx,mjs,cjs}` files).
+    2. Temporarily backs up unstaged patches and untracked files under `.git/` (`git diff --binary`, moving untracked files, and `git restore --worktree`) and runs twelve sequential workspace checks before restoring backed-up edits (`git apply`): `npm run type-check`, `npm run lint:unused`, `npm run check:env-docs`, `npm run check:runbooks`, `npm run check:setup-guides`, `npm run check:identifiers`, `npm run check:action-pins`, `npm run check:links`, `npm run check:spec-contracts`, `npm run check:prisma`, `npm run lint:migrations`, and `npm run check:doc-sync`.
 
 8. **Push to Your Fork:**
 

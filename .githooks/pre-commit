@@ -1,65 +1,370 @@
 #!/usr/bin/env node
 
-import { spawnSync } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
+import fs from 'fs';
+import path from 'path';
 
-let isStashed = false;
-let cleanWorkingTreeBeforeChecks = false;
+const MAX_GIT_BUFFER = 64 * 1024 * 1024;
 
-function hasUnstagedChanges() {
-  const statusResult = spawnSync('git', ['status', '--porcelain'], { encoding: 'utf-8' });
-  if (statusResult.status !== 0) {
+let backupState = null;
+let isRestored = false;
+let activeChild = null;
+let interruptedExitCode = null;
+
+function resolveGitPaths() {
+  const topLevelRes = spawnSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf-8' });
+  const gitDirRes = spawnSync('git', ['rev-parse', '--git-dir'], { encoding: 'utf-8' });
+  if (
+    topLevelRes.status !== 0 ||
+    gitDirRes.status !== 0 ||
+    !topLevelRes.stdout ||
+    !gitDirRes.stdout
+  ) {
     return null;
   }
-  if (!statusResult.stdout) {
+  const repoRoot = path.resolve(topLevelRes.stdout.trim());
+  const gitDir = path.resolve(process.cwd(), gitDirRes.stdout.trim());
+  return { repoRoot, gitDir };
+}
+
+function listUntrackedFiles(repoRoot) {
+  const res = spawnSync('git', ['ls-files', '-z', '--others', '--exclude-standard'], {
+    cwd: repoRoot,
+    maxBuffer: MAX_GIT_BUFFER,
+  });
+  if (res.status !== 0 || res.error) {
+    return null;
+  }
+  if (!res.stdout || res.stdout.length === 0) {
+    return [];
+  }
+  return res.stdout
+    .toString('utf-8')
+    .split('\0')
+    .filter(Boolean)
+    .map((entry) => entry.replace(/\/+$/, ''))
+    .filter(Boolean);
+}
+
+function hasIndexEntries(repoRoot) {
+  const res = spawnSync('git', ['ls-files', '-z'], {
+    cwd: repoRoot,
+    maxBuffer: MAX_GIT_BUFFER,
+  });
+  return res.status === 0 && !res.error && Boolean(res.stdout && res.stdout.length > 0);
+}
+
+function copyEntryFallback(src, dest) {
+  const stat = fs.lstatSync(src);
+  if (stat.isSymbolicLink()) {
+    fs.symlinkSync(fs.readlinkSync(src), dest);
+    return;
+  }
+  if (stat.isDirectory()) {
+    fs.mkdirSync(dest, { recursive: true, mode: stat.mode });
+    for (const child of fs.readdirSync(src)) {
+      copyEntryFallback(path.join(src, child), path.join(dest, child));
+    }
+    return;
+  }
+  fs.copyFileSync(src, dest);
+  fs.chmodSync(dest, stat.mode);
+}
+
+function moveEntry(src, dest) {
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  try {
+    fs.renameSync(src, dest);
+  } catch (err) {
+    if (err && err.code === 'EXDEV') {
+      copyEntryFallback(src, dest);
+      fs.rmSync(src, { recursive: true, force: true });
+      return;
+    }
+    throw err;
+  }
+}
+
+function pruneEmptyParents(filePath, stopDir) {
+  let current = path.dirname(filePath);
+  const normalizedStop = path.resolve(stopDir);
+  while (current !== normalizedStop && current.startsWith(`${normalizedStop}${path.sep}`)) {
+    try {
+      fs.rmdirSync(current);
+      current = path.dirname(current);
+    } catch {
+      break;
+    }
+  }
+}
+
+function backupUnstagedChanges() {
+  const gitPaths = resolveGitPaths();
+  if (!gitPaths) {
+    console.error('\n❌ Pre-commit check failed: Unable to determine Git repository directory.');
     return false;
   }
-  const lines = statusResult.stdout.split('\n').filter(Boolean);
-  return lines.some((line) => line.length >= 2 && line[1] !== ' ');
-}
 
-function pushStash() {
-  const unstaged = hasUnstagedChanges();
-  if (unstaged === null) {
-    return;
+  const { repoRoot, gitDir } = gitPaths;
+  const untrackedFiles = listUntrackedFiles(repoRoot);
+  if (untrackedFiles === null) {
+    console.error('\n❌ Pre-commit check failed: Unable to inspect untracked files.');
+    return false;
   }
-  if (!unstaged) {
-    cleanWorkingTreeBeforeChecks = true;
-    return;
+
+  let backupDir;
+  try {
+    backupDir = fs.mkdtempSync(path.join(gitDir, 'pre-commit-backup-'));
+  } catch (err) {
+    console.error('\n❌ Pre-commit check failed: Unable to create backup folder in .git/:', err);
+    return false;
   }
-  console.log('Stashing unstaged changes...');
-  const stashResult = spawnSync(
+
+  const patchFile = path.join(backupDir, 'unstaged.patch');
+  const diffRes = spawnSync(
     'git',
-    ['stash', 'push', '--keep-index', '--include-untracked', '-m', 'pre-commit-stash'],
-    { stdio: 'inherit' }
+    [
+      'diff',
+      '--binary',
+      '--unified=0',
+      '--no-color',
+      '--no-ext-diff',
+      '--no-textconv',
+      '--no-renames',
+      '--src-prefix=a/',
+      '--dst-prefix=b/',
+      `--output=${patchFile}`,
+    ],
+    { cwd: repoRoot, stdio: 'inherit' }
   );
-  if (stashResult.status === 0) {
-    isStashed = true;
-    cleanWorkingTreeBeforeChecks = true;
-  } else {
-    console.warn('⚠️ Warning: Failed to stash unstaged changes.');
-  }
-}
-
-function popStash() {
-  if (cleanWorkingTreeBeforeChecks) {
-    cleanWorkingTreeBeforeChecks = false;
-    spawnSync('git', ['checkout', '--', '.'], { stdio: 'ignore' });
-  }
-  if (!isStashed) return;
-  isStashed = false;
-  console.log('Restoring unstaged changes...');
-  const popResult = spawnSync('git', ['stash', 'pop'], { stdio: 'inherit' });
-  if (popResult.status !== 0) {
-    console.warn(
-      '\n⚠️ Warning: Failed to restore unstaged changes from stash. Your stashed changes are preserved in git stash.'
+  if (diffRes.status !== 0 || diffRes.error) {
+    console.error(
+      `\n❌ Pre-commit check failed: Failed to back up unstaged diff. Backup preserved in ${backupDir}`
     );
+    return false;
   }
+
+  let patchSize = 0;
+  try {
+    patchSize = fs.existsSync(patchFile) ? fs.statSync(patchFile).size : 0;
+  } catch (err) {
+    console.error(
+      `\n❌ Pre-commit check failed: Unable to read saved unstaged patch. Backup preserved in ${backupDir}`,
+      err
+    );
+    return false;
+  }
+
+  if (patchSize === 0 && untrackedFiles.length === 0) {
+    fs.rmSync(backupDir, { recursive: true, force: true });
+    backupState = {
+      repoRoot,
+      backupDir: null,
+      patchFile: null,
+      hasPatch: false,
+      movedUntracked: [],
+      worktreeIsolated: true,
+    };
+    return true;
+  }
+
+  console.log('Backing up unstaged changes...');
+  const untrackedBackupRoot = path.join(backupDir, 'untracked');
+  const movedUntracked = [];
+
+  try {
+    fs.writeFileSync(
+      path.join(backupDir, 'manifest.json'),
+      `${JSON.stringify(
+        {
+          createdAt: new Date().toISOString(),
+          hasPatch: patchSize > 0,
+          untrackedFiles,
+        },
+        null,
+        2
+      )}\n`
+    );
+
+    for (const relPath of untrackedFiles) {
+      const srcPath = path.join(repoRoot, relPath);
+      const destPath = path.join(untrackedBackupRoot, relPath);
+      moveEntry(srcPath, destPath);
+      movedUntracked.push(relPath);
+      pruneEmptyParents(srcPath, repoRoot);
+    }
+  } catch (err) {
+    console.error(
+      `\n❌ Pre-commit check failed: Failed to back up untracked files. Backup preserved in ${backupDir}`,
+      err
+    );
+    return false;
+  }
+
+  if (patchSize > 0 && hasIndexEntries(repoRoot)) {
+    const restoreRes = spawnSync('git', ['restore', '--worktree', '--', '.'], {
+      cwd: repoRoot,
+      stdio: 'inherit',
+    });
+    if (restoreRes.status !== 0 || restoreRes.error) {
+      console.error(
+        `\n❌ Pre-commit check failed: Failed to isolate staged worktree. Backup preserved in ${backupDir}`
+      );
+      return false;
+    }
+  }
+
+  backupState = {
+    repoRoot,
+    backupDir,
+    patchFile,
+    hasPatch: patchSize > 0,
+    movedUntracked,
+    worktreeIsolated: true,
+  };
+  return true;
 }
 
-const handleSignal = (signal, exitCode) => {
+function restoreUnstagedChanges() {
+  if (isRestored) {
+    return true;
+  }
+  isRestored = true;
+
+  if (!backupState) {
+    return true;
+  }
+
+  const { repoRoot, backupDir, patchFile, hasPatch, movedUntracked, worktreeIsolated } =
+    backupState;
+  let restoreFailed = false;
+
+  if (worktreeIsolated) {
+    if (hasIndexEntries(repoRoot)) {
+      const resetRes = spawnSync('git', ['restore', '--worktree', '--', '.'], {
+        cwd: repoRoot,
+        stdio: 'ignore',
+      });
+      if (resetRes.status !== 0 || resetRes.error) {
+        restoreFailed = true;
+      }
+    }
+
+    const generatedUntracked = listUntrackedFiles(repoRoot);
+    if (generatedUntracked === null) {
+      restoreFailed = true;
+    } else {
+      for (const relPath of generatedUntracked) {
+        const targetPath = path.join(repoRoot, relPath);
+        try {
+          fs.rmSync(targetPath, { recursive: true, force: true });
+          pruneEmptyParents(targetPath, repoRoot);
+        } catch {
+          restoreFailed = true;
+        }
+      }
+    }
+  }
+
+  if (!backupDir) {
+    if (restoreFailed) {
+      console.error('\n❌ Failed to clean check-generated changes from working tree.');
+      return false;
+    }
+    return true;
+  }
+
+  console.log('Restoring unstaged changes...');
+
+  if (hasPatch) {
+    if (!patchFile || !fs.existsSync(patchFile)) {
+      restoreFailed = true;
+    } else {
+      const applyRes = spawnSync(
+        'git',
+        ['apply', '--binary', '--unidiff-zero', '--whitespace=nowarn', patchFile],
+        { cwd: repoRoot, stdio: 'inherit' }
+      );
+      if (applyRes.status !== 0 || applyRes.error) {
+        restoreFailed = true;
+      }
+    }
+  }
+
+  const untrackedBackupRoot = path.join(backupDir, 'untracked');
+  for (const relPath of movedUntracked) {
+    const backupSrc = path.join(untrackedBackupRoot, relPath);
+    const destPath = path.join(repoRoot, relPath);
+    try {
+      fs.lstatSync(backupSrc);
+      if (restoreFailed) {
+        fs.mkdirSync(path.dirname(destPath), { recursive: true });
+        copyEntryFallback(backupSrc, destPath);
+      } else {
+        moveEntry(backupSrc, destPath);
+      }
+    } catch {
+      restoreFailed = true;
+    }
+  }
+
+  if (restoreFailed) {
+    console.error(`\n❌ Failed to restore unstaged changes. Backup preserved in ${backupDir}`);
+    return false;
+  }
+
+  try {
+    fs.rmSync(backupDir, { recursive: true, force: true });
+  } catch {
+    // Ignore non-critical backup folder cleanup error after successful restore
+  }
+  return true;
+}
+
+function runShellCommand(command, args) {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, { stdio: 'inherit', shell: true });
+    activeChild = child;
+    let settled = false;
+    const finish = (status) => {
+      if (settled) return;
+      settled = true;
+      if (activeChild === child) {
+        activeChild = null;
+      }
+      resolve(status);
+    };
+    child.on('error', () => finish(1));
+    child.on('close', (code) => finish(code ?? 1));
+  });
+}
+
+const handleSignal = (signal, signalExitCode) => {
+  if (interruptedExitCode !== null) {
+    return;
+  }
+  interruptedExitCode = signalExitCode;
   console.log(`\nProcess interrupted by ${signal}. Cleaning up...`);
-  popStash();
-  process.exit(exitCode);
+  if (activeChild) {
+    const childToStop = activeChild;
+    try {
+      childToStop.kill(signal);
+    } catch {
+      // Ignore child kill error
+    }
+    setTimeout(() => {
+      try {
+        childToStop.kill('SIGKILL');
+      } catch {
+        // Ignore fallback kill error
+      }
+      restoreUnstagedChanges();
+      process.exit(signalExitCode);
+    }, 1000).unref();
+    return;
+  }
+  restoreUnstagedChanges();
+  process.exit(signalExitCode);
 };
 
 process.on('SIGINT', () => handleSignal('SIGINT', 130));
@@ -67,15 +372,21 @@ process.on('SIGTERM', () => handleSignal('SIGTERM', 143));
 
 // 1. Run lint-staged to filter staged files and apply ESLint auto-fixes
 console.log('Running lint-staged...');
-const lintStagedResult = spawnSync('npx', ['lint-staged'], { stdio: 'inherit', shell: true });
+const lintStagedStatus = await runShellCommand('npx', ['lint-staged']);
 
-if (lintStagedResult.status !== 0) {
-  console.error('\n❌ Pre-commit check failed: ESLint / lint-staged validation failed.');
-  process.exit(lintStagedResult.status ?? 1);
+if (interruptedExitCode !== null) {
+  process.exit(interruptedExitCode);
 }
 
-// Stash unstaged changes before running workspace-wide checks
-pushStash();
+if (lintStagedStatus !== 0) {
+  console.error('\n❌ Pre-commit check failed: ESLint / lint-staged validation failed.');
+  process.exit(lintStagedStatus);
+}
+
+// Back up unstaged patches and untracked files before running workspace-wide checks
+if (!backupUnstagedChanges()) {
+  process.exit(1);
+}
 
 let exitCode = 0;
 
@@ -96,12 +407,22 @@ try {
   ];
 
   for (const check of checks) {
-    console.log(`Running ${check.name}...`);
-    const result = spawnSync('npm', ['run', check.script], { stdio: 'inherit', shell: true });
+    if (interruptedExitCode !== null) {
+      exitCode = interruptedExitCode;
+      break;
+    }
 
-    if (result.status !== 0) {
+    console.log(`Running ${check.name}...`);
+    const status = await runShellCommand('npm', ['run', check.script]);
+
+    if (interruptedExitCode !== null) {
+      exitCode = interruptedExitCode;
+      break;
+    }
+
+    if (status !== 0) {
       console.error(`\n❌ Pre-commit check failed: ${check.name} failed.`);
-      exitCode = result.status ?? 1;
+      exitCode = status;
       break;
     }
   }
@@ -109,7 +430,12 @@ try {
   console.error('\n❌ Unexpected error during pre-commit checks:', err);
   exitCode = 1;
 } finally {
-  popStash();
+  const restoredOk = restoreUnstagedChanges();
+  if (interruptedExitCode !== null) {
+    exitCode = interruptedExitCode;
+  } else if (!restoredOk && exitCode === 0) {
+    exitCode = 1;
+  }
 }
 
 if (exitCode !== 0) {
