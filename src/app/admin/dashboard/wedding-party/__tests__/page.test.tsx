@@ -77,7 +77,7 @@ describe('WeddingPartyDashboardPage Reordering', () => {
   it('renders Move Up and Move Down buttons and handles reordering', async () => {
     render(<WeddingPartyDashboardPage />);
 
-    const moveDownButtons = screen.getAllByRole('button', { name: /move alice down/i });
+    const moveDownButtons = screen.getAllByRole('button', { name: /move down alice/i });
     expect(moveDownButtons[0]).not.toBeDisabled();
 
     fireEvent.click(moveDownButtons[0]);
@@ -90,10 +90,10 @@ describe('WeddingPartyDashboardPage Reordering', () => {
   it('disables Move Up on the first member and Move Down on the last member', () => {
     render(<WeddingPartyDashboardPage />);
 
-    const aliceMoveUp = screen.getByRole('button', { name: /move alice up/i });
+    const aliceMoveUp = screen.getByRole('button', { name: /move up alice/i });
     expect(aliceMoveUp).toBeDisabled();
 
-    const bobMoveDown = screen.getByRole('button', { name: /move bob down/i });
+    const bobMoveDown = screen.getByRole('button', { name: /move down bob/i });
     expect(bobMoveDown).toBeDisabled();
   });
 });
