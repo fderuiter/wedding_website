@@ -1224,10 +1224,14 @@ export function verifyEnvDocs(cwd: string = process.cwd()): void {
   let failed = false;
 
   const dockerfilePath = path.join(cwd, 'Dockerfile');
+  const composePath = path.join(cwd, 'docker-compose.yml');
+  const composeContent = fs.existsSync(composePath) ? fs.readFileSync(composePath, 'utf-8') : undefined;
+  const envExampleKeys = composeContent
+    ? Array.from(new Set([...envSchemaKeys, ...parseComposeEnvKeys(composeContent)]))
+    : envSchemaKeys;
+
   if (fs.existsSync(dockerfilePath)) {
     const dockerfileContent = fs.readFileSync(dockerfilePath, 'utf-8');
-    const composePath = path.join(cwd, 'docker-compose.yml');
-    const composeContent = fs.existsSync(composePath) ? fs.readFileSync(composePath, 'utf-8') : undefined;
     for (const hostErr of validateContainerHostnameBinding(dockerfileContent, composeContent)) {
       console.error(`❌ ${hostErr}`);
       failed = true;
@@ -1244,7 +1248,11 @@ export function verifyEnvDocs(cwd: string = process.cwd()): void {
     const docErrors =
       doc.name === 'docs/runtime-contract.md'
         ? validateRuntimeContract(docContent, operatorKeys, envSpecs, sources)
-        : validateEnvDocContent(doc.name, docContent, envSchemaKeys);
+        : validateEnvDocContent(
+          doc.name,
+          docContent,
+          doc.name === '.env.example' ? envExampleKeys : envSchemaKeys
+        );
 
     for (const err of docErrors) {
       console.error(`❌ ${err}`);

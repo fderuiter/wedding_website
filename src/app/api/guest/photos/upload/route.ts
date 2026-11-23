@@ -9,6 +9,42 @@ import { isFeatureEnabled } from '@/lib/modules';
 import { mediaRepository } from '@/features/media';
 import { contentRepository } from '@/features/content';
 
+const BATCH_SANITIZE_CONCURRENCY = 4;
+const BATCH_PERSIST_CONCURRENCY = 4;
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  mapper: (_item: T, _index: number) => Promise<R>
+): Promise<R[]> {
+  if (items.length === 0) {
+    return [];
+  }
+
+  const limit = Math.max(1, Math.min(concurrency, items.length));
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  let aborted = false;
+
+  const runWorker = async (): Promise<void> => {
+    while (!aborted) {
+      const currentIndex = nextIndex++;
+      if (currentIndex >= items.length) {
+        return;
+      }
+      try {
+        results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+      } catch (err) {
+        aborted = true;
+        throw err;
+      }
+    }
+  };
+
+  await Promise.all(Array.from({ length: limit }, () => runWorker()));
+  return results;
+}
+
 export const POST = withApiMiddleware(async (req: NextRequest) => {
   const config = await getAppConfig();
   if (!isFeatureEnabled('gallery', config.modules)) {
@@ -44,53 +80,63 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   const caption = parsed.data.caption;
   const publicTitle = caption || (uploaderName ? `Photo by ${uploaderName}` : 'Guest Photo');
   const actorName = uploaderName || 'Guest';
-  const uploadedPhotos = [];
 
-  for (const file of files) {
-    const originalFilename = file.name || undefined;
-    const sanitizedFile = await sanitizeImage(file);
+  const sanitizedBatch = await mapWithConcurrency(
+    files,
+    BATCH_SANITIZE_CONCURRENCY,
+    async (file) => ({
+      originalFilename: file.name || undefined,
+      sanitizedFile: await sanitizeImage(file),
+    })
+  );
 
-    const storageResult = await getStorageProvider().upload(sanitizedFile, { folder: 'uploads/photos' });
+  const storage = getStorageProvider();
+  const uploadedPhotos = await mapWithConcurrency(
+    sanitizedBatch,
+    BATCH_PERSIST_CONCURRENCY,
+    async ({ originalFilename, sanitizedFile }) => {
+      const storageResult = await storage.upload(sanitizedFile, { folder: 'uploads/photos' });
 
-    // Record in Media table
-    const media = await mediaRepository.createMedia({
-      url: storageResult.url,
-      altText: publicTitle,
-      isDecorative: false,
-    }, actorName);
-
-    // Record as ContentNode of type 'Photo' for public gallery feeds
-    const photoNode = await contentRepository.createNode({
-      type: 'Photo',
-      tags: ['gallery', 'guest-upload'],
-      data: {
+      // Record in Media table
+      const media = await mediaRepository.createMedia({
         url: storageResult.url,
-        isVisible: false,
-        status: 'PENDING',
-        title: publicTitle,
         altText: publicTitle,
-        mediaId: media.id,
+        isDecorative: false,
+      }, actorName);
+
+      // Record as ContentNode of type 'Photo' for public gallery feeds
+      const photoNode = await contentRepository.createNode({
+        type: 'Photo',
+        tags: ['gallery', 'guest-upload'],
+        data: {
+          url: storageResult.url,
+          isVisible: false,
+          status: 'PENDING',
+          title: publicTitle,
+          altText: publicTitle,
+          mediaId: media.id,
+          ...(uploaderName ? { uploaderName } : {}),
+          ...(caption ? { caption } : {}),
+          ...(originalFilename ? { originalFilename } : {}),
+        },
+      }, actorName);
+
+      return {
+        id: media.id,
+        url: storageResult.url,
+        altText: media.altText,
+        title: publicTitle,
         ...(uploaderName ? { uploaderName } : {}),
         ...(caption ? { caption } : {}),
         ...(originalFilename ? { originalFilename } : {}),
-      },
-    }, actorName);
-
-    uploadedPhotos.push({
-      id: media.id,
-      url: storageResult.url,
-      altText: media.altText,
-      title: publicTitle,
-      ...(uploaderName ? { uploaderName } : {}),
-      ...(caption ? { caption } : {}),
-      ...(originalFilename ? { originalFilename } : {}),
-      createdAt: media.createdAt,
-      nodeId: photoNode.id,
-      status: 'PENDING',
-      isVisible: false,
-      message: 'Photo submitted successfully. It will be reviewed by the couple before appearing in the gallery.',
-    });
-  }
+        createdAt: media.createdAt,
+        nodeId: photoNode.id,
+        status: 'PENDING',
+        isVisible: false,
+        message: 'Photo submitted successfully. It will be reviewed by the couple before appearing in the gallery.',
+      };
+    }
+  );
 
   return NextResponse.json(
     {
