@@ -634,5 +634,28 @@ describe('Guest Session Security Integration', () => {
       );
       expect(adminFallbackRes.status).toBe(200);
     });
+
+    test('rejects unpromoted address-collection records on POST /api/guest/login with 401 and sets zero session cookies', async () => {
+      (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValueOnce({
+        id: 'addr-col-1',
+        code: 'ADDRONLY1',
+        guestName: 'Unpromoted Prospect',
+        isSample: false,
+        partyTags: ['address-collection'],
+      });
+
+      const res = await guestLoginPost(
+        new NextRequest('http://localhost:3000/api/guest/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ passcode: 'ADDRONLY1' }),
+        })
+      );
+
+      expect(res.status).toBe(401);
+      const body = await res.json();
+      expect(body.success).toBe(false);
+      expect(res.headers.get('set-cookie') || '').toBe('');
+    });
   });
 });

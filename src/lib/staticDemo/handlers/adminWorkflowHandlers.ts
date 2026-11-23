@@ -453,7 +453,8 @@ export async function handleAdminWorkflowRoutes(
       hasWeddingDate &&
       hasNonPlaceholderVenueDetails(config);
     const customStoryConfigured = hasCustomStoryText(config);
-    const hasPublicScheduleContentNode = snapshot.contentNode.some((node) => {
+    const hasPublicSubEvent = snapshot.subEvent.some((s) => !s.isPrivate);
+    const hasPublicScheduleNode = snapshot.contentNode.some((node) => {
       const data = node.data ?? {};
       if (data.isSample === true || data.isSample === 'true') return false;
       if (data.isPrivate === true || data.isPrivate === 'true') return false;
@@ -471,12 +472,15 @@ export async function handleAdminWorkflowRoutes(
         (node.type === 'Logistics' && hasCeremonyTitle)
       );
     });
-    const hasPublicScheduleEvent =
-      snapshot.subEvent.some((ev) => !ev.isPrivate) ||
-      hasPublicScheduleContentNode;
     const storyAndScheduleCompleted =
-      customStoryConfigured && hasPublicScheduleEvent;
-    const guestListCompleted = snapshot.invitationCode.some((i) => !i.isSample);
+      customStoryConfigured && (hasPublicSubEvent || hasPublicScheduleNode);
+    const guestListCompleted = snapshot.invitationCode.some(
+      (i) =>
+        !i.isSample &&
+        !i.partyTags.some(
+          (tag) => tag.trim().toLowerCase() === 'address-collection',
+        ),
+    );
     const registryCompleted = snapshot.registryItem.some((r) => !r.isSample);
     const seatingCompleted = snapshot.seatingTable.some((t) => !t.isSample);
     const faqCompleted = snapshot.contentNode.some(
@@ -1431,6 +1435,35 @@ export async function handleAdminWorkflowRoutes(
             inv.partyTags = patch.partyTags.filter(
               (t): t is string => typeof t === 'string',
             );
+          } else if (Array.isArray(patch.tags)) {
+            const incomingTags = patch.tags
+              .filter((t): t is string => typeof t === 'string')
+              .map((t) => t.trim())
+              .filter(Boolean);
+            const incomingLower = new Set(
+              incomingTags.map((t) => t.toLowerCase()),
+            );
+            const tagAction =
+              patch.action === 'remove' || patch.action === 'replace'
+                ? patch.action
+                : 'add';
+            if (tagAction === 'replace') {
+              inv.partyTags = [...incomingTags];
+            } else if (tagAction === 'remove') {
+              inv.partyTags = inv.partyTags.filter(
+                (existing) => !incomingLower.has(existing.trim().toLowerCase()),
+              );
+            } else {
+              const existingLower = new Set(
+                inv.partyTags.map((t) => t.trim().toLowerCase()),
+              );
+              for (const tag of incomingTags) {
+                if (!existingLower.has(tag.toLowerCase())) {
+                  inv.partyTags.push(tag);
+                  existingLower.add(tag.toLowerCase());
+                }
+              }
+            }
           }
           if (typeof patch.partyGroup === 'string') {
             inv.partyGroup = patch.partyGroup;
@@ -2018,7 +2051,14 @@ export async function handleAdminWorkflowRoutes(
 
   if (pathname === '/api/admin/sub-events/rsvp-summary' && method === 'GET') {
     const snapshot = store.getSnapshot();
-    const invitations = snapshot.invitationCode;
+    const invitations = snapshot.invitationCode.filter(
+      (inv) =>
+        !inv.isSample &&
+        !inv.partyTags.some(
+          (tag) => tag.trim().toLowerCase() === 'address-collection',
+        ),
+    );
+    const eligibleInviteIds = new Set(invitations.map((inv) => inv.id));
     let attendingHouseholds = 0;
     let declinedHouseholds = 0;
     let pendingHouseholds = 0;
@@ -2082,12 +2122,16 @@ export async function handleAdminWorkflowRoutes(
     }
 
     const subEventSummaries = snapshot.subEvent.map((ev) => {
-      const rsvps = snapshot.subEventRsvp.filter((r) => r.subEventId === ev.id);
+      const rsvps = snapshot.subEventRsvp.filter(
+        (r) => r.subEventId === ev.id && eligibleInviteIds.has(r.invitationCodeId),
+      );
       const attending = rsvps.filter((r) => r.status === 'attending');
       const declined = rsvps.filter((r) => r.status === 'declined');
       const plusOnes = attending.reduce((s, r) => s + r.plusOneCount, 0);
       const invitedCount = ev.isPrivate
-        ? snapshot.subEventAccess.filter((a) => a.subEventId === ev.id).length
+        ? snapshot.subEventAccess.filter(
+          (a) => a.subEventId === ev.id && eligibleInviteIds.has(a.invitationCodeId),
+        ).length
         : invitations.length;
       const pendingCount = Math.max(
         0,
@@ -3383,12 +3427,33 @@ export async function handleAdminWorkflowRoutes(
       config.baseUrl,
     );
 
+    const rawFilters =
+      body.targetFilters &&
+      typeof body.targetFilters === 'object' &&
+      !Array.isArray(body.targetFilters)
+        ? (body.targetFilters as Record<string, unknown>)
+        : null;
+    const requestedTags = Array.isArray(rawFilters?.partyTags)
+      ? rawFilters.partyTags
+        .filter((t): t is string => typeof t === 'string')
+        .map((t) => t.trim().toLowerCase())
+      : [];
+    const explicitlyTargetsAddressCollection =
+      requestedTags.includes('address-collection');
+    const eligibleBroadcastGuests = snapshot.invitationCode.filter(
+      (g) =>
+        explicitlyTargetsAddressCollection ||
+        !g.partyTags.some(
+          (tag) => tag.trim().toLowerCase() === 'address-collection',
+        ),
+    );
+
     return wrapMiddlewareJson({
       subject: renderedSubject,
       body: renderedBody,
       html: `<div style="font-family:sans-serif;line-height:1.5">${renderedBody.replace(/\n/g, '<br/>')}</div>`,
-      recipientCount: snapshot.invitationCode.length,
-      matchedGuests: snapshot.invitationCode.map((g) => ({
+      recipientCount: eligibleBroadcastGuests.length,
+      matchedGuests: eligibleBroadcastGuests.map((g) => ({
         id: g.id,
         guestName: g.guestName,
         email: g.email,

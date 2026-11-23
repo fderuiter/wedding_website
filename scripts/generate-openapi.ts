@@ -910,6 +910,101 @@ function resolveSymbolDeclarations(sym: any): Node[] {
   return targetSym?.getDeclarations?.() ?? [];
 }
 
+const DOCUMENTED_RESPONSE_HEADERS: Record<
+  string,
+  { description: string; schema: Record<string, string> }
+> = {
+  'X-Total-Count': {
+    description: 'Total matching record count before pagination',
+    schema: { type: 'integer' },
+  },
+  'X-Page': {
+    description: 'Current 1-based page number',
+    schema: { type: 'integer' },
+  },
+  'X-Limit': {
+    description: 'Effective page size limit applied to the query',
+    schema: { type: 'integer' },
+  },
+  'X-Total-Pages': {
+    description: 'Total pages available at the current limit',
+    schema: { type: 'integer' },
+  },
+  'X-Per-Page': {
+    description: 'Effective page size limit alias',
+    schema: { type: 'integer' },
+  },
+  'X-Current-Page': {
+    description: 'Current 1-based page number alias',
+    schema: { type: 'integer' },
+  },
+  'X-Has-Next-Page': {
+    description: 'Whether a subsequent page exists',
+    schema: { type: 'boolean' },
+  },
+  'X-Has-Prev-Page': {
+    description: 'Whether a preceding page exists',
+    schema: { type: 'boolean' },
+  },
+  'X-Next-Cursor': {
+    description: 'Cursor identifier for fetching the next page',
+    schema: { type: 'string' },
+  },
+};
+
+function extractResponseHeadersFromNodes(
+  allNodes: Node[]
+): Record<string, { description: string; schema: Record<string, string> }> {
+  const discovered = new Set<string>();
+
+  for (const n of allNodes) {
+    if (Node.isPropertyAssignment(n)) {
+      const rawName = n.getName().replace(/^['"]|['"]$/g, '');
+      if (DOCUMENTED_RESPONSE_HEADERS[rawName]) {
+        discovered.add(rawName);
+      }
+    } else if (Node.isElementAccessExpression(n)) {
+      const arg = n.getArgumentExpression();
+      if (arg && (Node.isStringLiteral(arg) || Node.isNoSubstitutionTemplateLiteral(arg))) {
+        const rawName = arg.getLiteralValue();
+        if (DOCUMENTED_RESPONSE_HEADERS[rawName]) {
+          discovered.add(rawName);
+        }
+      }
+    } else if (Node.isCallExpression(n)) {
+      const expr = n.getExpression();
+      if (
+        Node.isPropertyAccessExpression(expr) &&
+        expr.getName() === 'set' &&
+        expr.getExpression().getText().endsWith('headers')
+      ) {
+        const firstArg = n.getArguments()[0];
+        if (
+          firstArg &&
+          (Node.isStringLiteral(firstArg) || Node.isNoSubstitutionTemplateLiteral(firstArg))
+        ) {
+          const rawName = firstArg.getLiteralValue();
+          if (DOCUMENTED_RESPONSE_HEADERS[rawName]) {
+            discovered.add(rawName);
+          }
+        }
+      }
+    }
+  }
+
+  const headers: Record<string, { description: string; schema: Record<string, string> }> = {};
+  for (const headerName of Object.keys(DOCUMENTED_RESPONSE_HEADERS)) {
+    if (discovered.has(headerName)) {
+      headers[headerName] = {
+        description: DOCUMENTED_RESPONSE_HEADERS[headerName].description,
+        schema: { ...DOCUMENTED_RESPONSE_HEADERS[headerName].schema },
+      };
+    }
+  }
+
+  return headers;
+}
+
 function resolveObjectLiteral(node: Node | undefined, overrideSym?: any): Node | undefined {
   if (!node && !overrideSym) return undefined;
   if (node && Node.isObjectLiteralExpression(node)) return node;
@@ -1510,6 +1605,7 @@ function extractOperationResponses(opts: ExtractOperationResponsesOptions): Reco
   } = opts;
 
   const usesMiddleware = detectMiddlewareWrapped(directNodes, allNodes);
+  const documentedHeaders = extractResponseHeadersFromNodes(allNodes);
   const isHealthProbe =
     usesMiddleware && detectHealthProbeWrapped(directNodes, allNodes, routePath);
   const { statusBranchesByVar, equalityCondByVar } = extractLocalStatusBranches(allNodes);
@@ -1692,10 +1788,13 @@ function extractOperationResponses(opts: ExtractOperationResponsesOptions): Reco
               : 'Successful response',
     };
 
-    if (dynamicHeaders && Object.keys(dynamicHeaders).length > 0) {
-      responseObj.headers = dynamicHeaders;
-    } else if (attachmentHeaders && Object.keys(attachmentHeaders).length > 0) {
-      responseObj.headers = attachmentHeaders;
+    const mergedHeaders: Record<string, { description: string; schema: Record<string, any> }> = {
+      ...(status === 200 ? documentedHeaders : {}),
+      ...(attachmentHeaders ?? {}),
+      ...(dynamicHeaders ?? {}),
+    };
+    if (Object.keys(mergedHeaders).length > 0) {
+      responseObj.headers = mergedHeaders;
     }
 
     if (exportMedia.length > 0) {

@@ -424,6 +424,11 @@ a.skip-link:focus, .skip-link:focus, a.skip-link:focus-visible, .skip-link:focus
     margin: 0.4in;
   }
 
+  @page qr-avery-sheet {
+    size: letter portrait;
+    margin: 36pt 12pt;
+  }
+
   :root, .dark {
     --color-primary-light: var(--print-badge-bg) !important;
     --color-secondary-light: var(--print-badge-bg) !important;
@@ -459,24 +464,35 @@ a.skip-link:focus, .skip-link:focus, a.skip-link:focus-visible, .skip-link:focus
     text-decoration: underline !important;
   }
 
-  /* Dedicated QR label sheet printing layout */
+  /* Dedicated QR label sheet printing layout (Avery 5160 & Avery 5163 + in-Dialog photo QR cards) */
   body.printing-qr-labels {
     background-color: #ffffff !important;
     color: #000000 !important;
     margin: 0 !important;
     padding: 0 !important;
+    min-height: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
   }
 
-  body.printing-qr-labels * {
+  body.printing-qr-labels.printing-qr-portal {
+    page: qr-avery-sheet;
+  }
+
+  body.printing-qr-labels.printing-qr-portal > *:not(.printable-qr-portal-root) {
+    display: none !important;
+  }
+
+  body.printing-qr-labels:not(.printing-qr-portal) * {
     visibility: hidden;
   }
 
-  body.printing-qr-labels .printable-qr-labels-area,
-  body.printing-qr-labels .printable-qr-labels-area * {
+  body.printing-qr-labels:not(.printing-qr-portal) .printable-qr-labels-area,
+  body.printing-qr-labels:not(.printing-qr-portal) .printable-qr-labels-area * {
     visibility: visible;
   }
 
-  body.printing-qr-labels .printable-qr-labels-area {
+  body.printing-qr-labels:not(.printing-qr-portal) .printable-qr-labels-area {
     position: absolute !important;
     left: 0 !important;
     top: 0 !important;
@@ -488,6 +504,28 @@ a.skip-link:focus, .skip-link:focus, a.skip-link:focus-visible, .skip-link:focus
     overflow: visible !important;
   }
 
+  body.printing-qr-labels.printing-qr-portal .printable-qr-portal-root,
+  body.printing-qr-labels.printing-qr-portal .printable-qr-dialog-panel,
+  body.printing-qr-labels.printing-qr-portal .printable-qr-labels-area {
+    position: static !important;
+    inset: auto !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    overflow: visible !important;
+    transform: none !important;
+  }
+
+  body.printing-qr-labels .printable-qr-backdrop,
   body.printing-qr-labels .printable-qr-labels-area .no-print {
     display: none !important;
   }
@@ -495,23 +533,97 @@ a.skip-link:focus, .skip-link:focus, a.skip-link:focus-visible, .skip-link:focus
   body.printing-qr-labels .qr-print-sheet {
     display: grid !important;
     gap: 0.12in !important;
+    width: 100% !important;
     max-height: none !important;
+    min-height: 0 !important;
+    height: auto !important;
     overflow: visible !important;
     border: none !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
     padding: 0 !important;
     background: #ffffff !important;
+  }
+
+  /* Avery 5160: 3 cols x 10 rows (30 per Letter sheet), 189pt x 72pt, 9pt col gap, 13.5pt left margin */
+  body.printing-qr-labels .qr-print-sheet--avery-5160 {
+    grid-template-columns: repeat(3, 189pt) !important;
+    column-gap: 9pt !important;
+    row-gap: 0 !important;
+    padding: 0 1.5pt !important;
+  }
+
+  /* Avery 5163: 2 cols x 5 rows (10 per Letter sheet), 288pt x 144pt, 12pt col gap, 12pt left margin */
+  body.printing-qr-labels .qr-print-sheet--avery-5163 {
+    grid-template-columns: repeat(2, 288pt) !important;
+    column-gap: 12pt !important;
+    row-gap: 0 !important;
+    padding: 0 !important;
   }
 
   body.printing-qr-labels .qr-label-card {
     page-break-inside: avoid !important;
     break-inside: avoid !important;
-    border: 1px dashed #cccccc !important;
-    border-radius: 4px !important;
+    border: 0.5pt dashed #cccccc !important;
+    border-radius: 2pt !important;
     background: #ffffff !important;
     color: #000000 !important;
     box-shadow: none !important;
+    margin: 0 !important;
     overflow: hidden !important;
     box-sizing: border-box !important;
+  }
+
+  body.printing-qr-labels .qr-label-card--avery-5160 {
+    width: 189pt !important;
+    height: 72pt !important;
+    min-height: 72pt !important;
+    max-height: 72pt !important;
+    padding: 6pt !important;
+    gap: 6pt !important;
+    font-size: 9pt !important;
+    line-height: 1.15 !important;
+  }
+
+  body.printing-qr-labels .qr-label-card--avery-5160 .qr-label-qr-box {
+    padding: 1pt !important;
+    border: none !important;
+  }
+
+  body.printing-qr-labels .qr-label-card--avery-5160 .qr-label-qr-box canvas,
+  body.printing-qr-labels .qr-label-card--avery-5160 .qr-label-qr-box svg {
+    width: 48pt !important;
+    height: 48pt !important;
+  }
+
+  body.printing-qr-labels .qr-label-card--avery-5160 .qr-label-guest-name {
+    font-size: 9pt !important;
+    line-height: 1.15 !important;
+  }
+
+  body.printing-qr-labels .qr-label-card--avery-5160 .qr-label-plus-one,
+  body.printing-qr-labels .qr-label-card--avery-5160 .qr-label-household,
+  body.printing-qr-labels .qr-label-card--avery-5160 .qr-label-code {
+    font-size: 8pt !important;
+    line-height: 1.1 !important;
+    margin-top: 1pt !important;
+  }
+
+  body.printing-qr-labels .qr-label-card--avery-5160 .qr-label-cta {
+    font-size: 6.5pt !important;
+    line-height: 1.1 !important;
+    margin-top: 1pt !important;
+  }
+
+  body.printing-qr-labels .qr-label-card--avery-5163 {
+    width: 288pt !important;
+    height: 144pt !important;
+    min-height: 144pt !important;
+    max-height: 144pt !important;
+    padding: 12pt !important;
+    gap: 10pt !important;
+    font-size: 12pt !important;
+    line-height: 1.25 !important;
   }
 }
 
