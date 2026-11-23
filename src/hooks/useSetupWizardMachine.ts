@@ -16,8 +16,12 @@ export interface SetupWizardPersistedState {
   baseUrl: string;
   contactEmail?: string;
   venueName: string;
+  venueAddress?: string;
   venueCity: string;
   venueState: string;
+  venueZip?: string;
+  latitude?: number;
+  longitude?: number;
   timezone: string;
   sampleArchetype: ArchetypeId;
   selectedModules: string[];
@@ -32,8 +36,12 @@ export const initialSetupWizardState: SetupWizardPersistedState = {
   baseUrl: '',
   contactEmail: '',
   venueName: '',
+  venueAddress: '',
   venueCity: '',
   venueState: '',
+  venueZip: '',
+  latitude: 0,
+  longitude: 0,
   timezone: 'America/Chicago',
   sampleArchetype: 'classic',
   selectedModules: ['registry', 'guests', 'seating', 'weddingParty', 'attractions', 'faqs'],
@@ -305,8 +313,12 @@ export function useSetupWizardMachine(initialValues?: Partial<SetupWizardPersist
         baseUrl: state.baseUrl,
         contactEmail: state.contactEmail,
         venueName: state.venueName,
+        venueAddress: state.venueAddress ?? '',
         venueCity: state.venueCity,
         venueState: state.venueState,
+        venueZip: state.venueZip ?? '',
+        latitude: state.latitude ?? 0,
+        longitude: state.longitude ?? 0,
         timezone: state.timezone,
         sampleArchetype: state.sampleArchetype,
         selectedModules: state.selectedModules,
@@ -326,8 +338,12 @@ export function useSetupWizardMachine(initialValues?: Partial<SetupWizardPersist
     state.baseUrl,
     state.contactEmail,
     state.venueName,
+    state.venueAddress,
     state.venueCity,
     state.venueState,
+    state.venueZip,
+    state.latitude,
+    state.longitude,
     state.timezone,
     state.sampleArchetype,
     state.selectedModules,

@@ -13,6 +13,7 @@ import {
   main,
   parseDatabaseEndpoint,
   probeTcpReadiness,
+  recordInstallState,
   resolveTestEnvironment,
   shouldGeneratePrismaClient,
   shouldInstallDependencies,
@@ -235,7 +236,6 @@ describe('CI-aware pretest & Jest setup environment orchestration', () => {
       const customCiDbUrl = 'postgresql://wedding:wedding123@127.0.0.1:5439/ci_test?schema=public';
       const env: Record<string, string | undefined> = {
         CI: 'true',
-        npm_lifecycle_event: 'pretest',
         DATABASE_URL: customCiDbUrl,
       };
 
@@ -244,6 +244,7 @@ describe('CI-aware pretest & Jest setup environment orchestration', () => {
       await main({
         rootDir: tempDir,
         env,
+        argv: ['node', 'scripts/pretest.mjs'],
         ensureDatabase: async () => {},
         probeTcp: async (host: string, port: number) => {
           probeCalls.push({ host, port });
@@ -261,7 +262,6 @@ describe('CI-aware pretest & Jest setup environment orchestration', () => {
       expect(probeCalls).toEqual([{ host: '127.0.0.1', port: 5439 }]);
       expect(commands.map((c) => `${c.cmd} ${c.args.join(' ')}`)).toEqual([
         'npx prisma migrate deploy',
-        'npx tsx scripts/generate-portal.ts --stage-only',
       ]);
       expect(commands[0]?.env?.DATABASE_URL).toBe(customCiDbUrl);
       expect(
@@ -282,13 +282,13 @@ describe('CI-aware pretest & Jest setup environment orchestration', () => {
 
       const events: string[] = [];
       const env: Record<string, string | undefined> = {
-        npm_lifecycle_event: 'pretest',
         DATABASE_URL: 'postgresql://wedding:wedding123@localhost:5432/wedding_dev?schema=public',
       };
 
       await main({
         rootDir: tempDir,
         env,
+        argv: ['node', 'scripts/pretest.mjs'],
         ensureDatabase: async () => {},
         probeTcp: async (host: string, port: number) => {
           events.push(`probe:${host}:${port}`);
@@ -332,7 +332,82 @@ describe('CI-aware pretest & Jest setup environment orchestration', () => {
       // Verify isolated DATABASE_URL from .env.test
       expect(env.DATABASE_URL).toBe(DEFAULT_TEST_DATABASE_URL);
       expect(events).toContain('spawn:npx prisma migrate deploy');
-      expect(events).toContain('spawn:npx tsx scripts/generate-portal.ts --stage-only');
+      expect(events.some((e) => e.includes('generate-portal.ts'))).toBe(false);
+    });
+
+    it('records install state and skips prisma migrate deploy on warm runs until schema or migrations change', async () => {
+      const lockContent = '{"name":"wedding_website","lockfileVersion":3}\n';
+      fs.writeFileSync(path.join(tempDir, 'package-lock.json'), lockContent, 'utf8');
+      fs.mkdirSync(path.join(tempDir, 'prisma/migrations/20260101000000_init'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, 'prisma/schema.prisma'), 'model AppConfig { id Int @id }\n', 'utf8');
+      fs.writeFileSync(
+        path.join(tempDir, 'prisma/migrations/20260101000000_init/migration.sql'),
+        'CREATE TABLE "AppConfig" ("id" INTEGER PRIMARY KEY);\n',
+        'utf8'
+      );
+      fs.mkdirSync(path.join(tempDir, 'node_modules/.prisma/client'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, 'node_modules/.prisma/client/index.js'), 'export {};\n', 'utf8');
+
+      recordInstallState(tempDir);
+      expect(shouldInstallDependencies({ rootDir: tempDir, env: {} })).toBe(false);
+      expect(shouldGeneratePrismaClient({ rootDir: tempDir, env: {} })).toBe(false);
+
+      const spawned: string[] = [];
+      await main({
+        rootDir: tempDir,
+        env: { TEST_DATABASE_URL: DEFAULT_TEST_DATABASE_URL },
+        argv: ['node', 'scripts/pretest.mjs'],
+        ensureDatabase: async () => {},
+        probeTcp: async () => true,
+        probeDbState: async () => ({ hasAppConfigTable: true, allMigrationsApplied: true }),
+        spawnSync: (cmd: string, args: string[]) => {
+          spawned.push(`${cmd} ${args.join(' ')}`);
+          return { status: 0 };
+        },
+        exit: (code: number) => {
+          throw new Error(`Unexpected exit(${code})`);
+        },
+      });
+      // First run executes migrate deploy and records dbSync state
+      expect(spawned).toEqual(['npx prisma migrate deploy']);
+
+      spawned.length = 0;
+      await main({
+        rootDir: tempDir,
+        env: { TEST_DATABASE_URL: DEFAULT_TEST_DATABASE_URL },
+        argv: ['node', 'scripts/pretest.mjs'],
+        ensureDatabase: async () => {},
+        probeTcp: async () => true,
+        probeDbState: async () => ({ hasAppConfigTable: true, allMigrationsApplied: true }),
+        spawnSync: (cmd: string, args: string[]) => {
+          spawned.push(`${cmd} ${args.join(' ')}`);
+          return { status: 0 };
+        },
+        exit: (code: number) => {
+          throw new Error(`Unexpected exit(${code})`);
+        },
+      });
+      // Warm run skips both migrate deploy and prisma:generate
+      expect(spawned).toEqual([]);
+
+      // Modifying schema.prisma invalidates both dbSync and prismaClientSchemaHash
+      fs.appendFileSync(path.join(tempDir, 'prisma/schema.prisma'), '// comment\n', 'utf8');
+      await main({
+        rootDir: tempDir,
+        env: { TEST_DATABASE_URL: DEFAULT_TEST_DATABASE_URL },
+        argv: ['node', 'scripts/pretest.mjs'],
+        ensureDatabase: async () => {},
+        probeTcp: async () => true,
+        probeDbState: async () => ({ hasAppConfigTable: true, allMigrationsApplied: true }),
+        spawnSync: (cmd: string, args: string[]) => {
+          spawned.push(`${cmd} ${args.join(' ')}`);
+          return { status: 0 };
+        },
+        exit: (code: number) => {
+          throw new Error(`Unexpected exit(${code})`);
+        },
+      });
+      expect(spawned).toEqual(['npx prisma migrate deploy', 'npm run prisma:generate']);
     });
 
     it('resets isolated test schema and retries prisma migrate deploy on P3005 error', async () => {
@@ -349,9 +424,9 @@ describe('CI-aware pretest & Jest setup environment orchestration', () => {
         rootDir: tempDir,
         env: {
           CI: 'true',
-          npm_lifecycle_event: 'pretest',
           DATABASE_URL: DEFAULT_TEST_DATABASE_URL,
         },
+        argv: ['node', 'scripts/pretest.mjs'],
         ensureDatabase: async () => {},
         resetSchema: async (url: string, schema: string) => {
           resetCalls.push({ url, schema });

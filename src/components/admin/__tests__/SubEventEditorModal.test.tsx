@@ -309,4 +309,37 @@ describe('SubEventEditorModal & SubEventDeleteConfirmModal', () => {
       },
     });
   });
+
+  it('exposes Street Address (SubEvent.location) input and includes it in onSave payload', async () => {
+    const onSave = jest.fn().mockResolvedValue({});
+
+    render(
+      <ToastProvider>
+        <SubEventEditorModal
+          isOpen={true}
+          onClose={jest.fn()}
+          editingEvent={{ ...sampleEvents[0], location: '500 Lake Shore Dr, Chicago, IL' }}
+          onSave={onSave}
+        />
+      </ToastProvider>
+    );
+
+    const streetInput = screen.getByLabelText('Street Address') as HTMLInputElement;
+    expect(streetInput.value).toBe('500 Lake Shore Dr, Chicago, IL');
+
+    fireEvent.change(streetInput, {
+      target: { value: '600 E Grand Ave, Chicago, IL 60611' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledTimes(1);
+    });
+
+    expect(onSave.mock.calls[0][0]).toMatchObject({
+      locationName: 'Grand Ballroom',
+      location: '600 E Grand Ave, Chicago, IL 60611',
+    });
+  });
 });

@@ -207,6 +207,119 @@ export function getStripeCapability() {
     ]);
   });
 
+  it('rejects missing HTTP 503 probe schemas or leaked stripped fields on GET /api/health in public/openapi.json', () => {
+    writeFixture(
+      tempDir,
+      'public/openapi.json',
+      JSON.stringify(
+        {
+          openapi: '3.0.3',
+          paths: {
+            '/api/live': {
+              get: {
+                responses: {
+                  '200': {
+                    content: {
+                      'application/json': {
+                        schema: {
+                          type: 'object',
+                          properties: {
+                            status: { type: 'string', enum: ['alive'] },
+                            timestamp: { type: 'string', format: 'date-time' },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            '/api/health': {
+              get: {
+                responses: {
+                  '200': {
+                    content: {
+                      'application/json': {
+                        schema: {
+                          type: 'object',
+                          properties: {
+                            success: { type: 'boolean', enum: [true] },
+                            data: {
+                              type: 'object',
+                              properties: {
+                                status: { type: 'string', enum: ['ok'] },
+                                database: { type: 'string', enum: ['connected'] },
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                  '503': {
+                    content: {
+                      'application/json': {
+                        schema: {
+                          type: 'object',
+                          properties: {
+                            success: { type: 'boolean', enum: [false] },
+                            error: { type: 'string' },
+                            referenceId: { type: 'string' },
+                            status: { type: 'string', enum: ['unhealthy'] },
+                            database: { type: 'string', enum: ['disconnected'] },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            '/api/ready': {
+              get: {
+                responses: {
+                  '200': {
+                    content: {
+                      'application/json': {
+                        schema: {
+                          type: 'object',
+                          properties: {
+                            status: { type: 'string', enum: ['ready'] },
+                            database: { type: 'string', enum: ['connected'] },
+                            timestamp: { type: 'string', format: 'date-time' },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const result = verifySpecContracts(tempDir);
+    expect(result.errors).toEqual([
+      'public/openapi.json: GET /api/health HTTP "503" schema must omit "status" (stripped by src/utils/withApiMiddleware.ts)',
+      'public/openapi.json: GET /api/health HTTP "503" schema must omit "database" (stripped by src/utils/withApiMiddleware.ts)',
+      'public/openapi.json: GET /api/ready must document HTTP "503" unwrapped schema with status="unhealthy", database="disconnected", error, and timestamp',
+    ]);
+
+    writeFixture(
+      tempDir,
+      'src/app/api/ready/route.ts',
+      'function buildSchemaUnavailableResponse() { return {}; }\nexport async function GET() { return buildSchemaUnavailableResponse(); }\n',
+    );
+    const schemaAwareResult = verifySpecContracts(tempDir);
+    expect(schemaAwareResult.errors).toContain(
+      'public/openapi.json: GET /api/ready must document HTTP "503" unwrapped schema with status="unhealthy", database enum ["connected", "disconnected"], error, and timestamp',
+    );
+  });
+
   it('rejects local/imported AST tokens on bare module citations while allowing scoped #L slice checks', () => {
     writeFixture(
       tempDir,
