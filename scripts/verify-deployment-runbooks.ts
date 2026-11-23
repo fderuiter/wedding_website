@@ -1317,9 +1317,44 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
+  // Verify unescaped commas in gcloud --set-env-vars across all runbooks
+  for (const [relPath, content] of runbookContents.entries()) {
+    for (const line of extractFencedLogicalLines(content)) {
+      if (!/\bgcloud\b/.test(line)) {
+        continue;
+      }
+      const envVarsFlagRegex = /--(?:set|update)-env-vars(?:=|\s+)(?:"([^"]*)"|'([^']*)'|(\S+))/g;
+      let envFlagMatch: RegExpExecArray | null;
+      while ((envFlagMatch = envVarsFlagRegex.exec(line)) !== null) {
+        const rawSpec = envFlagMatch[1] ?? envFlagMatch[2] ?? envFlagMatch[3] ?? '';
+        let delimiter = ',';
+        let body = rawSpec;
+        const customDelimMatch = rawSpec.match(/^\^(.+?)\^(.*)$/);
+        if (customDelimMatch) {
+          delimiter = customDelimMatch[1];
+          body = customDelimMatch[2];
+        }
+        const entries = body.split(delimiter).filter((item) => item.length > 0);
+        const hasMalformedEntry =
+          entries.length === 0 ||
+          entries.some((entry) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(entry));
+        if (hasMalformedEntry) {
+          errors.push(
+            `${relPath}: Unescaped delimiter/comma in gcloud \`--set-env-vars\` value "${rawSpec}" (use \`^|^KEY=VAL1,VAL2|...\` custom delimiter escaping)`
+          );
+        }
+      }
+    }
+  }
+
   const gcpMigrateJobLines = gcpFencedLines.filter((line) =>
-    /\bgcloud\s+run\s+jobs\s+create\b/.test(line)
+    /\bgcloud\s+run\s+jobs\s+(?:create|update)\s+wedding-migrate\b/.test(line)
   );
+  if (gcpMigrateJobLines.length === 0) {
+    errors.push(
+      'docs/deployment/gcp-cloud-run.md: Missing `gcloud run jobs create wedding-migrate` secondary migration command'
+    );
+  }
   if (
     gcpMigrateJobLines.length === 0 ||
     !gcpMigrateJobLines.some((line) => line.includes('./node_modules/.bin/prisma,migrate,deploy'))
@@ -1327,6 +1362,13 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     errors.push(
       'docs/deployment/gcp-cloud-run.md: Cloud Run migration job must pass `--args="./node_modules/.bin/prisma,migrate,deploy"` without `--command`'
     );
+  }
+  for (const jobLine of gcpMigrateJobLines) {
+    if (!/--(?:set|add)-cloudsql-instances(?:=|\s+)\S+/.test(jobLine)) {
+      errors.push(
+        'docs/deployment/gcp-cloud-run.md: `wedding-migrate` Cloud Run Job must attach Cloud SQL via `--set-cloudsql-instances` (or `--add-cloudsql-instances`)'
+      );
+    }
   }
 
   for (const [relPath, content] of runbookContents.entries()) {
@@ -1534,6 +1576,33 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
+  const dockerSection1 = extractSectionSlice(dockerMd, /^##\s+1\.\s+Database\b/, '## ');
+  const dockerSection6 = extractSectionSlice(dockerMd, /^##\s+6\.\s+Build\s+&\s+Deploy\b/, '## ');
+  for (const [secLabel, secContent] of [
+    ['Section 1', dockerSection1],
+    ['Section 6', dockerSection6],
+  ] as const) {
+    if (/^\s*(?:DATABASE_URL|POSTGRES_URL_NON_POOLING)=["']/m.test(secContent)) {
+      errors.push(
+        `docs/deployment/docker-vps.md (${secLabel}): Must not wrap \`.env\` DATABASE_URL / POSTGRES_URL_NON_POOLING values in quotes (breaks \`docker run --env-file\`)`
+      );
+    }
+  }
+  const dockerSection6FencedLines = extractFencedLogicalLines(dockerSection6);
+  const hasHostNodeHashCmd = dockerSection6FencedLines.some(
+    (line) =>
+      line.includes('generate-password-hash.mjs') && !/\bdocker\b/.test(line)
+  );
+  const hasDockerHashCmd = dockerSection6FencedLines.some(
+    (line) =>
+      line.includes('generate-password-hash.mjs') && /\bdocker\b/.test(line)
+  );
+  if (hasHostNodeHashCmd || !hasDockerHashCmd) {
+    errors.push(
+      'docs/deployment/docker-vps.md (Section 6): Must generate `ADMIN_HASH` inside Docker (`docker run --rm ... node scripts/generate-password-hash.mjs ...`) without requiring host `node`'
+    );
+  }
+
   const dockerRollbackSection = extractSectionSlice(dockerMd, /^##\s+8\.\s+Rollback\b/, '## ');
   const rollbackLines = extractFencedLogicalLines(dockerRollbackSection);
   for (const line of rollbackLines) {
@@ -1553,6 +1622,82 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
           `docs/deployment/docker-vps.md: Rollback \`docker run\` command must not deploy mutable :latest tag: \`${line}\``
         );
       }
+      if (/\$\{DB_(?:USER|PASSWORD|NAME)\b/.test(line)) {
+        errors.push(
+          `docs/deployment/docker-vps.md: Rollback \`docker run\` command must not expand unset host \${DB_*} variables over \`--env-file .env\`: \`${line}\``
+        );
+      }
+    }
+  }
+
+  // Verify Railway & Render PaaS runbook invariants (HOSTNAME=0.0.0.0, Pre-Deploy Command, Nixpacks devDependencies + postbuild, healthcheck.railway.app)
+  const railwayRenderMd = runbookContents.get('docs/deployment/railway-render.md') ?? '';
+  if (/\bRelease\s+Command\b/i.test(railwayRenderMd)) {
+    errors.push(
+      'docs/deployment/railway-render.md: References nonexistent Render "Release Command" (must use Render "Pre-Deploy Command")'
+    );
+  }
+  if (!/\bPre-Deploy\s+Command\b/.test(railwayRenderMd)) {
+    errors.push(
+      'docs/deployment/railway-render.md: Must document Render `Pre-Deploy Command` for `npx prisma migrate deploy`'
+    );
+  }
+  if (!/\|\s*`HOSTNAME`\s*\|/.test(railwayRenderMd) || !railwayRenderMd.includes('HOSTNAME=0.0.0.0')) {
+    errors.push(
+      'docs/deployment/railway-render.md: Must document `HOSTNAME` (`HOSTNAME=0.0.0.0`) in Section 2 and Nixpacks setup'
+    );
+  }
+  const railwayBuildSection = extractSectionSlice(
+    railwayRenderMd,
+    /^##\s+6\.\s+Build\s+&\s+Deploy\b/,
+    '## '
+  );
+  if (
+    !railwayBuildSection.includes('npm ci --include=dev') ||
+    !railwayBuildSection.includes('npm run postbuild')
+  ) {
+    errors.push(
+      'docs/deployment/railway-render.md (Section 6): Railway Nixpacks instructions must include `npm ci --include=dev` and `npm run postbuild`'
+    );
+  }
+  if (!railwayRenderMd.includes('healthcheck.railway.app')) {
+    errors.push(
+      'docs/deployment/railway-render.md: Must document `healthcheck.railway.app` probe host support'
+    );
+  }
+
+  // Verify Section 4 Asset Storage lists all six S3_* keys across all four provider guides
+  const providerGuides = [
+    'docs/deployment/docker-vps.md',
+    'docs/deployment/gcp-cloud-run.md',
+    'docs/deployment/railway-render.md',
+    'docs/deployment/vercel.md',
+  ] as const;
+  const requiredS3SectionKeys = [
+    'S3_BUCKET',
+    'S3_REGION',
+    'S3_ACCESS_KEY_ID',
+    'S3_SECRET_ACCESS_KEY',
+    'S3_ENDPOINT',
+    'S3_PUBLIC_URL',
+  ] as const;
+  for (const guideRelPath of providerGuides) {
+    const guideText = runbookContents.get(guideRelPath) ?? '';
+    const assetSection = extractSectionSlice(guideText, /^##\s+4\.\s+Asset\s+Storage\b/, '## ');
+    if (!assetSection) {
+      errors.push(`${guideRelPath}: Missing "## 4. Asset Storage" section`);
+      continue;
+    }
+    const missingS3Keys = requiredS3SectionKeys.filter((key) => !assetSection.includes(key));
+    if (missingS3Keys.length > 0) {
+      errors.push(
+        `${guideRelPath} (Section 4): Missing S3 configuration keys: ${missingS3Keys.join(', ')}`
+      );
+    }
+    if (!assetSection.includes('r2.cloudflarestorage.com') || !assetSection.includes('storage.googleapis.com')) {
+      errors.push(
+        `${guideRelPath} (Section 4): Must document both Cloudflare R2 (\`*.r2.cloudflarestorage.com\`) and Google Cloud Storage (\`https://storage.googleapis.com\`) S3_ENDPOINT examples`
+      );
     }
   }
 
@@ -1840,17 +1985,17 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       `docker-compose.yml: \`db\` service must pin \`postgres:${expectedPostgresMajor}-alpine@sha256:<64-hex>\` to preserve \`db_data\` volume compatibility`
     );
   }
-  const delegatesPostgresImageFromCompose =
+  const ciDelegatesPostgresImageToCompose =
+    ciWorkflowRaw.includes('docker-compose.yml') &&
+    ciWorkflowRaw.includes('["services", "db", "image"]') &&
     ciWorkflowRaw.includes('steps.resolve-db-image.outputs.db_image') &&
-    ciWorkflowRaw.includes('needs.verify.outputs.db_image') &&
-    ciWorkflowRaw.includes('docker-compose.yml');
+    ciWorkflowRaw.includes('${{ needs.verify.outputs.db_image }}');
   if (
-    (!ciWorkflowRaw.includes(expectedPostgresImagePrefix) &&
-      !delegatesPostgresImageFromCompose) ||
+    (!ciWorkflowRaw.includes(expectedPostgresImagePrefix) && !ciDelegatesPostgresImageToCompose) ||
     mismatchedPostgresImageRegex.test(ciWorkflowRaw)
   ) {
     errors.push(
-      `.github/workflows/ci.yml: PostgreSQL service containers must pin \`postgres:${expectedPostgresMajor}-alpine@sha256:<64-hex>\` matching docker-compose.yml`
+      `.github/workflows/ci.yml: PostgreSQL service containers must pin \`postgres:${expectedPostgresMajor}-alpine@sha256:<64-hex>\` (or \`\${{ needs.verify.outputs.db_image }}\`) matching docker-compose.yml`
     );
   }
   if (
@@ -1917,6 +2062,23 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   }
   if (syntaxCheckIdx === -1 || syntaxCheckIdx > excludedGuardIdx) {
     errors.push('src/middleware.ts: `isHostSyntaxValid` probe perimeter check must execute before `isExcluded` evaluation');
+  }
+  if (
+    !middlewareRaw.includes('isReadOnlyProbeRequest ? !isHostSyntaxValid(host) : !isHostAllowed(host)') ||
+    !middlewareRaw.includes("method === 'GET' || method === 'HEAD'")
+  ) {
+    errors.push(
+      'src/middleware.ts: Must validate `GET` and `HEAD` probes on `/api/live`, `/api/health`, and `/api/ready` with `isHostSyntaxValid` while enforcing `isHostAllowed` on all other requests'
+    );
+  }
+  if (
+    !runtimeContractMd.includes('startupProbe') ||
+    !runtimeContractMd.includes('--liveness-probe') ||
+    !runtimeContractMd.includes('healthcheck.railway.app')
+  ) {
+    errors.push(
+      'docs/runtime-contract.md: Must document `startupProbe`, `--liveness-probe`, and `healthcheck.railway.app` probe host behavior'
+    );
   }
   if (!middlewareRaw.includes("normalizedPath === '/api/registry/webhook/stripe'")) {
     errors.push('src/middleware.ts: Must exclude `/api/registry/webhook/stripe` from session cookie checks');
@@ -2797,6 +2959,11 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       if (/:latest(?:\s|$)/.test(line)) {
         errors.push(
           `docs/upgrading.md: Rollback \`docker run\` command must not deploy mutable :latest tag: \`${line}\` (Remediation: Deploy wedding-website:previous)`
+        );
+      }
+      if (/\$\{DB_(?:USER|PASSWORD|NAME)\b/.test(line)) {
+        errors.push(
+          `docs/upgrading.md: Rollback \`docker run\` command must not expand unset host \${DB_*} variables over \`--env-file .env\`: \`${line}\` (Remediation: Load DATABASE_URL from --env-file .env)`
         );
       }
     }

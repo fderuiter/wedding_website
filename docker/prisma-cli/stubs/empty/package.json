@@ -1,0 +1,6 @@
+{
+  "name": "empty-stub",
+  "version": "0.0.0-disabled",
+  "private": true,
+  "main": "index.cjs"
+}
