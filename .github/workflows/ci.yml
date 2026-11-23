@@ -78,7 +78,7 @@ jobs:
         id: verify-docs
         run: |
           npx tsx scripts/generate-openapi.ts
-          npx tsx scripts/generate-docs.ts
+          npx tsx scripts/generate-docs.ts --skip-openapi
           
           # Capture status before creating any files
           STATUS=$(git status --porcelain)

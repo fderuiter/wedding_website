@@ -2473,5 +2473,10 @@ const isMain = typeof process.argv[1] === 'string' &&
 if (isMain) {
   updateArchitectureMd();
   updateFeatureModulesMd();
-  void generateOpenApiSpec();
+  if (!process.argv.includes('--skip-openapi')) {
+    generateOpenApiSpec().catch((err) => {
+      console.error('Failed to generate OpenAPI specification:', err);
+      process.exit(1);
+    });
+  }
 }
