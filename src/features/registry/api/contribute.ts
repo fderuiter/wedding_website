@@ -192,7 +192,10 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
       }
     }
 
-    const maskedItem = maskRegistryItem(updatedItem);
+    const maskedItem = maskRegistryItem({
+      ...updatedItem,
+      contributors: [],
+    });
     return NextResponse.json(
       claimActions ? { ...maskedItem, claimActions } : maskedItem
     );

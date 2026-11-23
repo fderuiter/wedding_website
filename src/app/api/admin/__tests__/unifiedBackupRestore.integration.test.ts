@@ -17,7 +17,9 @@ jest.mock('@/core/auth/auth.server', () => ({
   isAdminRequest: jest.fn(),
 }));
 
-const mockIsAdminRequest = isAdminRequest as jest.MockedFunction<typeof isAdminRequest>;
+const mockIsAdminRequest = isAdminRequest as jest.MockedFunction<
+  typeof isAdminRequest
+>;
 
 async function wipeAllTables() {
   await prisma.$transaction([
@@ -40,7 +42,9 @@ async function wipeAllTables() {
 }
 
 async function readStreamResponseJson(res: Response) {
-  const maybeMock = res as unknown as { bodyContent?: ReadableStream<Uint8Array> };
+  const maybeMock = res as unknown as {
+    bodyContent?: ReadableStream<Uint8Array>;
+  };
   const stream = maybeMock.bodyContent ?? res.body;
   if (stream && typeof stream.getReader === 'function') {
     const reader = stream.getReader();
@@ -132,7 +136,10 @@ describe('Unified 15-Model Backup, Restore & Rollback PostgreSQL Integration', (
         id: 'node-faq-1',
         type: 'FAQ',
         tags: ['Homepage', 'FAQ'],
-        data: { question: 'Is parking available?', answer: 'Complimentary valet at main gate.' },
+        data: {
+          question: 'Is parking available?',
+          answer: 'Complimentary valet at main gate.',
+        },
       },
     });
 
@@ -346,7 +353,9 @@ describe('Unified 15-Model Backup, Restore & Rollback PostgreSQL Integration', (
     expect(exportedCfg.layoutContainerMaxWidth).toBe('72rem');
     expect(exportedCfg.brandLogoUrl).toBe('/images/logo.svg');
     expect(exportedJson.snapshotVersion[0].data.smtpPass).toBeUndefined();
-    expect(exportedJson.snapshotVersion[0].data.multisiteEnabled).toBeUndefined();
+    expect(
+      exportedJson.snapshotVersion[0].data.multisiteEnabled,
+    ).toBeUndefined();
 
     // 2. Wipe database completely and perform clean restore into empty DB
     await wipeAllTables();
@@ -371,7 +380,9 @@ describe('Unified 15-Model Backup, Restore & Rollback PostgreSQL Integration', (
       where: { id: 'contrib-guest-1' },
     });
     expect(restoredContrib.invitationCodeId).toBe('guest-001');
-    expect(restoredContrib.thankYouNote).toBe('Thank you so much for celebrating with us!');
+    expect(restoredContrib.thankYouNote).toBe(
+      'Thank you so much for celebrating with us!',
+    );
     expect(restoredContrib.coverFee).toBe(true);
 
     // 3. Seed live provider secrets and verify re-import preserves them when backup omits secrets
@@ -393,7 +404,9 @@ describe('Unified 15-Model Backup, Restore & Rollback PostgreSQL Integration', (
     );
     expect(preserveImportRes.status).toBe(200);
 
-    const restoredCfg = await prisma.appConfig.findUniqueOrThrow({ where: { id: 'global' } });
+    const restoredCfg = await prisma.appConfig.findUniqueOrThrow({
+      where: { id: 'global' },
+    });
     expect(restoredCfg.smtpPass).toBe('preserved-live-smtp-pass');
     expect(restoredCfg.resendApiKey).toBe('preserved-live-resend-key');
     expect(restoredCfg.sendgridApiKey).toBe('preserved-live-sendgrid-key');
@@ -475,7 +488,9 @@ describe('Unified 15-Model Backup, Restore & Rollback PostgreSQL Integration', (
     );
     expect(res.status).toBe(200);
 
-    const contrib = await prisma.contributor.findUniqueOrThrow({ where: { id: 'c-legacy' } });
+    const contrib = await prisma.contributor.findUniqueOrThrow({
+      where: { id: 'c-legacy' },
+    });
     expect(contrib.invitationCodeId).toBeNull();
     expect(contrib.registryItemId).toBe('ri-legacy');
 
@@ -487,6 +502,9 @@ describe('Unified 15-Model Backup, Restore & Rollback PostgreSQL Integration', (
       data: {
         id: 'global',
         partner1Name: 'Edited Name',
+        rsvpGracePeriodHours: 48,
+        shippingRecipientName: 'Live Recipient',
+        defaultPaymentHandle: '@live-handle',
         smtpHost: 'smtp.live.example.com',
         smtpPass: 'keep-this-smtp-secret',
         twilioAuthToken: 'keep-this-twilio-secret',
@@ -508,29 +526,169 @@ describe('Unified 15-Model Backup, Restore & Rollback PostgreSQL Integration', (
     });
 
     const restoreAppRes = await restoreVersion(
-      new NextRequest(`http://localhost/api/admin/versions/${appSnap.id}/restore`, { method: 'POST' }),
+      new NextRequest(
+        `http://localhost/api/admin/versions/${appSnap.id}/restore`,
+        { method: 'POST' },
+      ),
       { params: Promise.resolve({ id: appSnap.id }) },
     );
     expect(restoreAppRes.status).toBe(200);
 
-    const rolledBackConfig = await prisma.appConfig.findUniqueOrThrow({ where: { id: 'global' } });
+    const rolledBackConfig = await prisma.appConfig.findUniqueOrThrow({
+      where: { id: 'global' },
+    });
     expect(rolledBackConfig.partner1Name).toBe('Original Name');
     expect(rolledBackConfig.brandMonogram).toBe('O&T');
     expect(rolledBackConfig.brandLogoUrl).toBe('/images/original-logo.svg');
     expect(rolledBackConfig.layoutContainerMaxWidth).toBe('68rem');
+    expect(rolledBackConfig.rsvpGracePeriodHours).toBe(48);
+    expect(rolledBackConfig.shippingRecipientName).toBe('Live Recipient');
+    expect(rolledBackConfig.defaultPaymentHandle).toBe('@live-handle');
     expect(rolledBackConfig.smtpHost).toBe('smtp.live.example.com');
     expect(rolledBackConfig.smtpPass).toBe('keep-this-smtp-secret');
     expect(rolledBackConfig.twilioAuthToken).toBe('keep-this-twilio-secret');
+
+    const fullAppSnap = await prisma.snapshotVersion.create({
+      data: {
+        entityType: 'AppConfig',
+        entityId: 'global',
+        data: {
+          partner1Name: 'Restored Partner 1',
+          partner2Name: 'Restored Partner 2',
+          rsvpOpen: false,
+          rsvpDeadlineDate: '2026-10-01',
+          rsvpGracePeriodHours: 24,
+          rsvpClosedMessage: '<b>Window closed</b>',
+          shippingRecipientName: 'Restored Couple',
+          shippingAddressLine1: '742 Evergreen Terrace',
+          shippingAddressLine2: 'Unit 2',
+          shippingCity: 'Springfield',
+          shippingState: 'IL',
+          shippingZip: '62704',
+          shippingCountry: 'USA',
+          shippingPhone: '217-555-0100',
+          shippingDeliveryNotes: 'Ring bell',
+          defaultPaymentHandleType: 'Venmo',
+          defaultPaymentHandle: '@restored-couple',
+        },
+      },
+    });
+    const fullRestoreRes = await restoreVersion(
+      new NextRequest(
+        `http://localhost/api/admin/versions/${fullAppSnap.id}/restore`,
+        {
+          method: 'POST',
+        },
+      ),
+      { params: Promise.resolve({ id: fullAppSnap.id }) },
+    );
+    expect(fullRestoreRes.status).toBe(200);
+
+    const fullyRestoredConfig = await prisma.appConfig.findUniqueOrThrow({
+      where: { id: 'global' },
+    });
+    expect(fullyRestoredConfig.rsvpOpen).toBe(false);
+    expect(fullyRestoredConfig.rsvpDeadlineDate).toBe('2026-10-01');
+    expect(fullyRestoredConfig.rsvpGracePeriodHours).toBe(24);
+    expect(fullyRestoredConfig.rsvpClosedMessage).toBe('Window closed');
+    expect(fullyRestoredConfig.shippingRecipientName).toBe('Restored Couple');
+    expect(fullyRestoredConfig.shippingAddressLine1).toBe(
+      '742 Evergreen Terrace',
+    );
+    expect(fullyRestoredConfig.shippingAddressLine2).toBe('Unit 2');
+    expect(fullyRestoredConfig.shippingCity).toBe('Springfield');
+    expect(fullyRestoredConfig.shippingState).toBe('IL');
+    expect(fullyRestoredConfig.shippingZip).toBe('62704');
+    expect(fullyRestoredConfig.shippingCountry).toBe('USA');
+    expect(fullyRestoredConfig.shippingPhone).toBe('217-555-0100');
+    expect(fullyRestoredConfig.shippingDeliveryNotes).toBe('Ring bell');
+    expect(fullyRestoredConfig.defaultPaymentHandleType).toBe('Venmo');
+    expect(fullyRestoredConfig.defaultPaymentHandle).toBe('@restored-couple');
+    expect(fullyRestoredConfig.smtpPass).toBe('keep-this-smtp-secret');
+    expect(fullyRestoredConfig.twilioAuthToken).toBe('keep-this-twilio-secret');
+
+    await prisma.media.create({
+      data: { id: 'media-contrib-rollback', url: '/images/gift.jpg' },
+    });
+    await prisma.registryItem.create({
+      data: {
+        id: 'reg-contrib-rollback',
+        name: 'Stand Mixer',
+        description: 'Kitchen mixer',
+        category: 'Kitchen',
+        price: 350,
+        imageId: 'media-contrib-rollback',
+        quantity: 1,
+      },
+    });
+    const contribSnap = await prisma.snapshotVersion.create({
+      data: {
+        entityType: 'Contributor',
+        entityId: 'contrib-tracking-rollback',
+        data: {
+          name: 'Casey Rivera',
+          email: 'casey@example.com',
+          amount: 350,
+          refundedAmount: 50,
+          status: 'RESERVED',
+          date: '2026-07-01T10:00:00.000Z',
+          thankYouStatus: 'Sent',
+          confirmationEmailSentAt: '2026-07-01T10:01:00.000Z',
+          alertEmailSentAt: '2026-07-01T10:01:05.000Z',
+          reminderEmailSentAt: '2026-07-02T10:00:00.000Z',
+          retailerOrderNumber: 'AMZ-112-999',
+          carrier: 'FedEx',
+          trackingNumber: '777123456789',
+          registryItemId: 'reg-contrib-rollback',
+        },
+      },
+    });
+    const contribRestoreRes = await restoreVersion(
+      new NextRequest(
+        `http://localhost/api/admin/versions/${contribSnap.id}/restore`,
+        {
+          method: 'POST',
+        },
+      ),
+      { params: Promise.resolve({ id: contribSnap.id }) },
+    );
+    expect(contribRestoreRes.status).toBe(200);
+    const restoredContrib = await prisma.contributor.findUniqueOrThrow({
+      where: { id: 'contrib-tracking-rollback' },
+    });
+    expect(restoredContrib.refundedAmount).toBe(50);
+    expect(restoredContrib.status).toBe('RESERVED');
+    expect(restoredContrib.confirmationEmailSentAt?.toISOString()).toBe(
+      '2026-07-01T10:01:00.000Z',
+    );
+    expect(restoredContrib.alertEmailSentAt?.toISOString()).toBe(
+      '2026-07-01T10:01:05.000Z',
+    );
+    expect(restoredContrib.reminderEmailSentAt?.toISOString()).toBe(
+      '2026-07-02T10:00:00.000Z',
+    );
+    expect(restoredContrib.retailerOrderNumber).toBe('AMZ-112-999');
+    expect(restoredContrib.carrier).toBe('FedEx');
+    expect(restoredContrib.trackingNumber).toBe('777123456789');
 
     const tableSnap = await prisma.snapshotVersion.create({
       data: {
         entityType: 'SeatingTable',
         entityId: 'st-rollback',
-        data: { name: 'Sweetheart Table', shape: 'round', capacity: 2, x: 40, y: 80 },
+        data: {
+          name: 'Sweetheart Table',
+          shape: 'round',
+          capacity: 2,
+          x: 40,
+          y: 80,
+        },
       },
     });
     const tableRes = await restoreVersion(
-      new NextRequest(`http://localhost/api/admin/versions/${tableSnap.id}/restore`, { method: 'POST' }),
+      new NextRequest(
+        `http://localhost/api/admin/versions/${tableSnap.id}/restore`,
+        { method: 'POST' },
+      ),
       { params: Promise.resolve({ id: tableSnap.id }) },
     );
     expect(tableRes.status).toBe(200);
@@ -549,7 +707,10 @@ describe('Unified 15-Model Backup, Restore & Rollback PostgreSQL Integration', (
       },
     });
     const inviteRes = await restoreVersion(
-      new NextRequest(`http://localhost/api/admin/versions/${inviteSnap.id}/restore`, { method: 'POST' }),
+      new NextRequest(
+        `http://localhost/api/admin/versions/${inviteSnap.id}/restore`,
+        { method: 'POST' },
+      ),
       { params: Promise.resolve({ id: inviteSnap.id }) },
     );
     expect(inviteRes.status).toBe(200);
@@ -559,5 +720,67 @@ describe('Unified 15-Model Backup, Restore & Rollback PostgreSQL Integration', (
     expect(restoredInvite.dietaryNotes).toBe('Vegan');
     expect(restoredInvite.tableId).toBe('st-rollback');
     expect(restoredInvite.seatNumber).toBe(1);
+  });
+
+  it('exports and imports a v2.0 backup where all 10 SQL-nullable outbound messaging columns are null', async () => {
+    await prisma.appConfig.create({
+      data: {
+        id: 'global',
+        partner1Name: 'Null',
+        partner2Name: 'Delivery',
+        baseUrl: 'https://wedding.example.com',
+        smtpHost: null,
+        smtpPort: null,
+        smtpUser: null,
+        smtpFrom: null,
+        smtpSecure: null,
+        resendFrom: null,
+        sendgridFrom: null,
+        smsProvider: null,
+        twilioAccountSid: null,
+        twilioFromNumber: null,
+        smtpPass: 'preserved-smtp-secret',
+      },
+    });
+
+    const exportRes = await exportBackup(
+      new NextRequest('http://localhost/api/admin/maintenance/export', {
+        method: 'GET',
+      }),
+      {},
+    );
+    expect(exportRes.status).toBe(200);
+    const exportedJson = await readStreamResponseJson(exportRes);
+    expect(exportedJson.appConfig[0].smtpHost).toBeNull();
+    expect(exportedJson.appConfig[0].smtpPort).toBeNull();
+    expect(exportedJson.appConfig[0].smtpSecure).toBeNull();
+    expect(exportedJson.appConfig[0].twilioAccountSid).toBeNull();
+
+    const importRes = await importBackup(
+      new NextRequest('http://localhost/api/admin/maintenance/import', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(exportedJson),
+      }),
+      {},
+    );
+    expect(importRes.status).toBe(200);
+
+    const importedConfig = await prisma.appConfig.findUniqueOrThrow({
+      where: { id: 'global' },
+    });
+    expect(importedConfig.smtpHost).toBeNull();
+    expect(importedConfig.smtpPort).toBeNull();
+    expect(importedConfig.smtpUser).toBeNull();
+    expect(importedConfig.smtpFrom).toBeNull();
+    expect(importedConfig.smtpSecure).toBeNull();
+    expect(importedConfig.resendFrom).toBeNull();
+    expect(importedConfig.sendgridFrom).toBeNull();
+    expect(importedConfig.smsProvider).toBeNull();
+    expect(importedConfig.twilioAccountSid).toBeNull();
+    expect(importedConfig.twilioFromNumber).toBeNull();
+    expect(importedConfig.smtpPass).toBe('preserved-smtp-secret');
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
   });
 });

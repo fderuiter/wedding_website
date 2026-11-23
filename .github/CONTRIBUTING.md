@@ -45,7 +45,7 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
      - `npm run check:runbooks` - Verify deployment runbooks match live workflows, Docker Compose, and Prisma 7 contracts.
      - `npm run check:setup-guides` - Verify setup, testing, and contributor guides match `.env.example`, `.env.test`, scripts, hooks, and `tsconfig.json`.
      - `npm run check:identifiers` - Guard against hardcoded personal/template identifiers in core runtime files.
-     - `npm run check:action-pins` - Validate strict YAML 1.2 syntax in `.github/workflows/` and ensure third-party GitHub Actions are pinned to 40-character commit SHAs.
+     - `npm run check:action-pins` - Validate strict YAML 1.2 syntax in `.github/workflows/` and ensure third-party GitHub Actions are pinned to 40-character commit SHAs with inline `# v...` version comments (pass `-- --verify-upstream` in CI to verify upstream commit existence).
      - `npm run check:links` - Validate relative documentation links across Markdown files.
      - `npm run check:spec-contracts` - Verify `/api/*` routes, HTTP methods, dynamic `ENTITY_KEY` slugs, and TypeScript symbols cited in architectural specifications match live codebase exports.
      - `npm run check:prisma` & `npm run lint:migrations` - Validate Prisma schema structure and migration compatibility.
@@ -65,15 +65,15 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
     git commit -m "fix: Correct spelling on registry item description"
     ```
 
-    Committing triggers [`.githooks/pre-commit`](../.githooks/pre-commit) (installed automatically by `npm ci`), which:
-    1. Runs `npx lint-staged` (`eslint --fix` on staged `*.{js,jsx,ts,tsx,mjs,cjs}` files).
-    2. Temporarily backs up unstaged patches and untracked files under `.git/` (`git diff --binary`, moving untracked files, and `git restore --worktree`) and runs twelve sequential workspace checks before restoring backed-up edits (`git apply`): `npm run type-check`, `npm run lint:unused`, `npm run check:env-docs`, `npm run check:runbooks`, `npm run check:setup-guides`, `npm run check:identifiers`, `npm run check:action-pins`, `npm run check:links`, `npm run check:spec-contracts`, `npm run check:prisma`, `npm run lint:migrations`, and `npm run check:doc-sync`.
+    Committing triggers [`.githooks/pre-commit`](../.githooks/pre-commit) (installed automatically by `npm ci`), which runs `npx lint-staged` (`eslint --fix` on staged `*.{js,jsx,ts,tsx,mjs,cjs}` files) without stashing or resetting unstaged edits or untracked files.
 
 8. **Push to Your Fork:**
 
     ```bash
     git push origin fix/registry-typo
     ```
+
+    Pushing triggers [`.githooks/pre-push`](../.githooks/pre-push) (installed automatically by `npm ci`), which runs twelve sequential workspace checks without stashing or resetting local files: `npm run type-check`, `npm run lint:unused`, `npm run check:env-docs`, `npm run check:runbooks`, `npm run check:setup-guides`, `npm run check:identifiers`, `npm run check:action-pins`, `npm run check:links`, `npm run check:spec-contracts`, `npm run check:prisma`, `npm run lint:migrations`, and `npm run check:doc-sync`.
 
 9. **Open a Pull Request (PR):** Go back to the *original* `fderuiter/wedding_website` repository on GitHub. You should see a prompt to create a Pull Request from your new branch. Click it!
     * Give your PR a clear title and description.

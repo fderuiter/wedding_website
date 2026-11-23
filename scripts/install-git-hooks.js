@@ -29,13 +29,15 @@ try {
   execSync('git config core.hooksPath .githooks', { stdio: 'inherit' });
   console.log('Successfully configured Git hooks path to .githooks');
 
-  // Set executable permissions on .githooks/pre-commit natively
-  const preCommitPath = path.join(__dirname, '../.githooks/pre-commit');
-  if (fs.existsSync(preCommitPath)) {
-    fs.chmodSync(preCommitPath, 0o755);
-    console.log('Successfully set executable permissions on .githooks/pre-commit');
-  } else {
-    console.warn('Warning: .githooks/pre-commit not found.');
+  // Set executable permissions on .githooks/pre-commit and .githooks/pre-push natively
+  for (const hookName of ['pre-commit', 'pre-push']) {
+    const hookPath = path.join(__dirname, `../.githooks/${hookName}`);
+    if (fs.existsSync(hookPath)) {
+      fs.chmodSync(hookPath, 0o755);
+      console.log(`Successfully set executable permissions on .githooks/${hookName}`);
+    } else {
+      console.warn(`Warning: .githooks/${hookName} not found.`);
+    }
   }
 } catch (err) {
   console.warn('Warning: Failed to configure Git hooks:', err.message);
