@@ -260,4 +260,59 @@ describe('SeatingChartAdminPage Dialog integration', () => {
     fireEvent.click(undoBtn);
     expect(mockUndoLastBatchAction).toHaveBeenCalledTimes(1);
   });
+
+  test('renders companion names, entrée selections, KIDS badges, and custom answers in table inspector', () => {
+    const tableWithEnrichedGuest = {
+      ...mockTable,
+      capacity: 4,
+      invitationCodes: [
+        {
+          id: 'g-enriched',
+          guestName: 'Elena Gilbert',
+          code: 'ELENA01',
+          tableId: 'table-1',
+          seatNumber: 1,
+          used: true,
+          dietaryNotes: null,
+          extraFields: {
+            attendanceStatus: 'attending',
+            plusOneNames: ['Damon Salvatore', 'Bonnie Bennett'],
+            dietaryTags: ['kids'],
+            mealSummary:
+              'Reception - Elena Gilbert: Herb Salmon; Bonnie Bennett: Kids Pasta (kids)',
+            customAnswersSummary: 'Reception - Need shuttle?: Yes',
+          },
+        },
+      ],
+    };
+
+    (useSeatingState as jest.Mock).mockReturnValue({
+      tables: [tableWithEnrichedGuest],
+      allGuests: tableWithEnrichedGuest.invitationCodes,
+      unassignedGuests: [],
+      isLoading: false,
+      errorMsg: null,
+      assignGuestToTable: mockAssignGuestToTable,
+      unassignGuest: mockUnassignGuest,
+      applyAutoAssignResult: mockApplyAutoAssignResult,
+      saveTable: mockSaveTable,
+      deleteTable: mockDeleteTable,
+      updateTablePosition: mockUpdateTablePosition,
+      updateTableRotation: mockUpdateTableRotation,
+    });
+
+    render(<SeatingChartAdminPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Table 1 - Head Table, shape/i }));
+
+    expect(screen.getByTestId('inspector-companion-names')).toHaveTextContent(
+      '+1: Damon Salvatore, Bonnie Bennett'
+    );
+    expect(screen.getByTestId('inspector-meal-selections')).toHaveTextContent('Herb Salmon');
+    expect(screen.getByTestId('inspector-meal-selections')).toHaveTextContent('Kids Pasta');
+    expect(screen.getByTestId('inspector-dietary-badge')).toHaveTextContent('KIDS');
+    expect(screen.getByTestId('inspector-custom-answers')).toHaveTextContent(
+      'Need shuttle?: Yes'
+    );
+  });
 });

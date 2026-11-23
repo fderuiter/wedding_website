@@ -47,7 +47,10 @@ interface SubEventEditorModalProps {
   isOpen: boolean;
   onClose: () => void;
   editingEvent?: EditableSubEvent | null;
-  onSave: (_payload: Partial<SubEventDTO>, _editingId?: string) => Promise<unknown>;
+  onSave: (
+    _payload: Partial<SubEventDTO> & { choiceRenames?: Record<string, Record<string, string>> },
+    _editingId?: string
+  ) => Promise<unknown>;
   existingSubEvents?: EditableSubEvent[];
   onSelectEdit?: (_subEvent: EditableSubEvent | null) => void;
   onRequestDelete?: (_subEvent: EditableSubEvent) => void;
@@ -92,8 +95,9 @@ function isSubEventDirty(current: SubEventFormSnapshot, initial: SubEventFormSna
 interface SubEventEditorFormProps {
   editingEvent: EditableSubEvent | null;
   onClose: () => void;
-  onSave: (_payload: Partial<SubEventDTO>, _editingId?: string) => Promise<unknown>;
+  onSave: (_payload: Partial<SubEventDTO> & { choiceRenames?: Record<string, Record<string, string>> }, _editingId?: string) => Promise<unknown>;
   onDirtyChange: (_isDirty: boolean) => void;
+  existingEventsSection?: React.ReactNode;
 }
 
 const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
@@ -101,6 +105,7 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
   onClose,
   onSave,
   onDirtyChange,
+  existingEventsSection,
 }) => {
   const { addToast } = useToast();
   const initialSnapshot = useMemo(
@@ -120,6 +125,17 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
   const [customQuestions, setCustomQuestions] = useState<CustomRsvpQuestionDTO[]>(() =>
     editingEvent ? normalizeCustomQuestions(editingEvent.customQuestions) : []
   );
+  const [choiceOrigins, setChoiceOrigins] = useState<Record<string, Array<string | null>>>(() => {
+    if (!editingEvent) return {};
+    const initial = normalizeCustomQuestions(editingEvent.customQuestions);
+    const origins: Record<string, Array<string | null>> = {};
+    for (const q of initial) {
+      if (q.type === 'choice') {
+        origins[q.id] = q.options.map((opt) => opt.trim() || null);
+      }
+    }
+    return origins;
+  });
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -223,6 +239,18 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
     index: number,
     patch: Partial<CustomRsvpQuestionDTO>
   ) => {
+    const targetQuestion = customQuestions[index];
+    if (targetQuestion && patch.type !== undefined && patch.type !== targetQuestion.type) {
+      setChoiceOrigins((prev) => {
+        const next = { ...prev };
+        if (patch.type === 'text') {
+          next[targetQuestion.id] = [];
+        } else if (patch.type === 'choice' && (!next[targetQuestion.id] || next[targetQuestion.id].length === 0)) {
+          next[targetQuestion.id] = [null, null];
+        }
+        return next;
+      });
+    }
     applyNextCustomQuestions(
       customQuestions.map((item, idx) => {
         if (idx !== index) return item;
@@ -250,11 +278,26 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
   };
 
   const handleRemoveCustomQuestion = (index: number) => {
+    const removed = customQuestions[index];
+    if (removed) {
+      setChoiceOrigins((prev) => {
+        const next = { ...prev };
+        delete next[removed.id];
+        return next;
+      });
+    }
     applyNextCustomQuestions(customQuestions.filter((_, idx) => idx !== index));
     if (validationError) setValidationError(null);
   };
 
   const handleAddQuestionChoice = (questionIndex: number) => {
+    const targetQuestion = customQuestions[questionIndex];
+    if (targetQuestion) {
+      setChoiceOrigins((prev) => ({
+        ...prev,
+        [targetQuestion.id]: [...(prev[targetQuestion.id] ?? targetQuestion.options.map(() => null)), null],
+      }));
+    }
     applyNextCustomQuestions(
       customQuestions.map((item, idx) =>
         idx === questionIndex ? { ...item, options: [...item.options, ''] } : item
@@ -281,6 +324,17 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
   };
 
   const handleRemoveQuestionChoice = (questionIndex: number, choiceIndex: number) => {
+    const targetQuestion = customQuestions[questionIndex];
+    if (targetQuestion) {
+      setChoiceOrigins((prev) => {
+        const existingOrigins = prev[targetQuestion.id];
+        if (!existingOrigins) return prev;
+        return {
+          ...prev,
+          [targetQuestion.id]: existingOrigins.filter((_, cIdx) => cIdx !== choiceIndex),
+        };
+      });
+    }
     applyNextCustomQuestions(
       customQuestions.map((item, idx) =>
         idx === questionIndex
@@ -356,11 +410,42 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
           : [],
     }));
 
+    const choiceRenames: Record<string, Record<string, string>> = {};
+    if (isEditMode) {
+      for (const item of customQuestions) {
+        if (item.type !== 'choice') continue;
+        const qId = item.id.trim();
+        if (!qId) continue;
+        const origins = choiceOrigins[item.id] ?? [];
+        const cleanedOptsForQuestion = Array.from(
+          new Set(item.options.map((opt) => opt.trim()).filter(Boolean))
+        );
+        const questionRenames: Record<string, string> = {};
+        for (let cIdx = 0; cIdx < item.options.length; cIdx++) {
+          const origin = origins[cIdx]?.trim();
+          const nextVal = item.options[cIdx]?.trim();
+          if (
+            origin &&
+            nextVal &&
+            origin !== nextVal &&
+            !cleanedOptsForQuestion.includes(origin)
+          ) {
+            questionRenames[origin] = nextVal;
+          }
+        }
+        if (Object.keys(questionRenames).length > 0) {
+          choiceRenames[qId] = questionRenames;
+        }
+      }
+    }
+
     setValidationError(null);
     setIsSaving(true);
 
     try {
-      const payload: Partial<SubEventDTO> = {
+      const payload: Partial<SubEventDTO> & {
+        choiceRenames?: Record<string, Record<string, string>>;
+      } = {
         title: title.trim(),
         description: isEditMode ? description.trim() : description.trim() || undefined,
         locationName: isEditMode ? locationName.trim() : locationName.trim() || undefined,
@@ -371,6 +456,9 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
         mealOptions: cleanedMeals,
         customQuestions: cleanedQuestions,
       };
+      if (Object.keys(choiceRenames).length > 0) {
+        payload.choiceRenames = choiceRenames;
+      }
 
       await onSave(payload, editingEvent?.id);
       onClose();
@@ -809,6 +897,8 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
         )}
       </div>
 
+      {existingEventsSection}
+
       <div className="flex justify-end gap-2 pt-3 border-t border-gray-100 dark:border-zinc-800">
         <Button type="button" variant="secondary" onClick={handleRequestClose} disabled={isSaving}>
           Cancel
@@ -828,7 +918,7 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
 interface SubEventEditorModalBodyProps {
   editingEvent: EditableSubEvent | null;
   onClose: () => void;
-  onSave: (_payload: Partial<SubEventDTO>, _editingId?: string) => Promise<unknown>;
+  onSave: (_payload: Partial<SubEventDTO> & { choiceRenames?: Record<string, Record<string, string>> }, _editingId?: string) => Promise<unknown>;
   existingSubEvents?: EditableSubEvent[];
   onSelectEdit?: (_subEvent: EditableSubEvent | null) => void;
   onRequestDelete?: (_subEvent: EditableSubEvent) => void;
@@ -861,87 +951,89 @@ const SubEventEditorModalBody: React.FC<SubEventEditorModalBodyProps> = ({
     onSelectEdit(target);
   };
 
+  const existingEventsSection =
+    Array.isArray(existingSubEvents) && existingSubEvents.length > 0 ? (
+      <div className="rounded-lg border border-gray-200 dark:border-zinc-700 bg-gray-50/70 dark:bg-zinc-800/50 p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+            Existing Sub-Events ({existingSubEvents.length})
+          </span>
+          {isEditMode && onSelectEdit && (
+            <button
+              type="button"
+              onClick={() => void handleSelectEdit(null)}
+              className="text-xs font-semibold text-primary hover:underline"
+            >
+              + Switch to Create New
+            </button>
+          )}
+        </div>
+        <ul className="divide-y divide-gray-200 dark:divide-zinc-700 max-h-40 overflow-y-auto">
+          {existingSubEvents.map((evt) => {
+            const scheduleText = formatSubEventSchedule(evt.startTime, evt.endTime);
+            const isSelected = editingEvent?.id === evt.id;
+            return (
+              <li
+                key={evt.id}
+                className={`py-2 px-1.5 flex items-center justify-between gap-2 text-sm rounded ${
+                  isSelected ? 'bg-red-50/70 dark:bg-red-950/30' : ''
+                }`}
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-semibold truncate text-gray-900 dark:text-white">
+                      {evt.title}
+                    </span>
+                    <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-gray-200 dark:bg-zinc-700 text-gray-700 dark:text-gray-300">
+                      {evt.isPrivate ? 'Private' : 'Public'}
+                    </span>
+                  </div>
+                  {scheduleText && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                      {scheduleText}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {onSelectEdit && (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      aria-label={`Edit sub-event ${evt.title}`}
+                      onClick={() => void handleSelectEdit(evt)}
+                    >
+                      Edit
+                    </Button>
+                  )}
+                  {onRequestDelete && (
+                    <Button
+                      type="button"
+                      variant="danger"
+                      size="sm"
+                      aria-label={`Delete sub-event ${evt.title}`}
+                      onClick={() => onRequestDelete(evt)}
+                    >
+                      Delete
+                    </Button>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    ) : null;
+
   return (
     <div className="space-y-5">
-      {Array.isArray(existingSubEvents) && existingSubEvents.length > 0 && (
-        <div className="rounded-lg border border-gray-200 dark:border-zinc-700 bg-gray-50/70 dark:bg-zinc-800/50 p-3 space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              Existing Sub-Events ({existingSubEvents.length})
-            </span>
-            {isEditMode && onSelectEdit && (
-              <button
-                type="button"
-                onClick={() => void handleSelectEdit(null)}
-                className="text-xs font-semibold text-primary hover:underline"
-              >
-                + Switch to Create New
-              </button>
-            )}
-          </div>
-          <ul className="divide-y divide-gray-200 dark:divide-zinc-700 max-h-40 overflow-y-auto">
-            {existingSubEvents.map((evt) => {
-              const scheduleText = formatSubEventSchedule(evt.startTime, evt.endTime);
-              const isSelected = editingEvent?.id === evt.id;
-              return (
-                <li
-                  key={evt.id}
-                  className={`py-2 px-1.5 flex items-center justify-between gap-2 text-sm rounded ${
-                    isSelected ? 'bg-red-50/70 dark:bg-red-950/30' : ''
-                  }`}
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-semibold truncate text-gray-900 dark:text-white">
-                        {evt.title}
-                      </span>
-                      <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-gray-200 dark:bg-zinc-700 text-gray-700 dark:text-gray-300">
-                        {evt.isPrivate ? 'Private' : 'Public'}
-                      </span>
-                    </div>
-                    {scheduleText && (
-                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                        {scheduleText}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {onSelectEdit && (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        aria-label={`Edit sub-event ${evt.title}`}
-                        onClick={() => void handleSelectEdit(evt)}
-                      >
-                        Edit
-                      </Button>
-                    )}
-                    {onRequestDelete && (
-                      <Button
-                        type="button"
-                        variant="danger"
-                        size="sm"
-                        aria-label={`Delete sub-event ${evt.title}`}
-                        onClick={() => onRequestDelete(evt)}
-                      >
-                        Delete
-                      </Button>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
-
       <SubEventEditorForm
         key={editingEvent?.id ?? 'create'}
         editingEvent={editingEvent}
         onClose={onClose}
         onSave={onSave}
         onDirtyChange={onDirtyChange}
+        existingEventsSection={existingEventsSection}
       />
     </div>
   );

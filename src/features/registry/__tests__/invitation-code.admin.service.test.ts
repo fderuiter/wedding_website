@@ -1013,5 +1013,88 @@ describe('InvitationCodeAdminService', () => {
         where: { id: { in: ['rsvp-sec'] } },
       });
     });
+
+    it('syncs SubEventRsvp.plusOneNames[0] and InvitationCode.extraFields meal/companion projections when updating guest or companion names', async () => {
+      const rsvpUpdateMock = jest.fn().mockResolvedValue({});
+      const inviteUpdateMock = jest.fn().mockImplementation(({ data }: any) =>
+        Promise.resolve({ id: 'inv-sync-1', code: 'SYNC01', ...data })
+      );
+      const txMock = {
+        ...mockPrismaClient,
+        invitationCode: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'inv-sync-1',
+            code: 'SYNC01',
+            guestName: 'Alex Rivera',
+            plusOneAllocations: 2,
+            plusOneFirstName: 'Jordan',
+            plusOneLastName: 'Old',
+            extraFields: {
+              attendanceStatus: 'attending',
+              plusOneCount: 2,
+              plusOneNames: ['Jordan Old', 'Casey Two'],
+              mealSummary: 'Alex Rivera: Herb Salmon; Jordan Old: Filet; Casey Two: Kids Pasta (kids)',
+            },
+          }),
+          update: inviteUpdateMock,
+        },
+        subEventRsvp: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              id: 'rsvp-1',
+              invitationCodeId: 'inv-sync-1',
+              subEventId: 'se-rec',
+              status: 'attending',
+              plusOneCount: 2,
+              dietaryNotes: '',
+              mealSelections: ['m-salmon', 'm-filet', 'm-kids'],
+              customAnswers: { 'q-shuttle': 'Yes' },
+              plusOneNames: ['Jordan Old', 'Casey Two'],
+              subEvent: {
+                id: 'se-rec',
+                title: 'Reception',
+                mealOptions: [
+                  { id: 'm-salmon', label: 'Herb Salmon', dietaryTags: [] },
+                  { id: 'm-filet', label: 'Filet', dietaryTags: [] },
+                  { id: 'm-kids', label: 'Kids Pasta', dietaryTags: ['kids'] },
+                ],
+                customQuestions: [
+                  { id: 'q-shuttle', prompt: 'Shuttle?', type: 'choice', required: false, options: ['Yes', 'No'] },
+                ],
+              },
+            },
+          ]),
+          update: rsvpUpdateMock,
+        },
+        snapshotVersion: { create: jest.fn().mockResolvedValue({}) },
+      };
+      mockPrismaClient.$transaction = jest.fn((cb: any) => cb(txMock));
+
+      await service.update('inv-sync-1', {
+        guestName: 'Alex Rivera-Smith',
+        plusOneFirstName: 'Taylor',
+        plusOneLastName: 'New',
+      });
+
+      expect(rsvpUpdateMock).toHaveBeenCalledWith({
+        where: { id: 'rsvp-1' },
+        data: {
+          plusOneNames: ['Taylor New', 'Casey Two'],
+        },
+      });
+      expect(inviteUpdateMock).toHaveBeenCalledWith({
+        where: { id: 'inv-sync-1' },
+        data: expect.objectContaining({
+          guestName: 'Alex Rivera-Smith',
+          plusOneFirstName: 'Taylor',
+          plusOneLastName: 'New',
+          extraFields: expect.objectContaining({
+            plusOneNames: ['Taylor New', 'Casey Two'],
+            mealSummary:
+              'Alex Rivera-Smith: Herb Salmon; Taylor New: Filet; Casey Two: Kids Pasta (kids)',
+          }),
+        }),
+      });
+    });
   });
 });

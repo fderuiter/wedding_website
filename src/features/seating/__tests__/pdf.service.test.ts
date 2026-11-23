@@ -394,5 +394,58 @@ describe('pdf.service - generateSeatingChartPdf', () => {
       expect(pageSrc).toContain('min-w-6 min-h-6');
       expect(pageSrc).toContain('aria-label={`Unassign ${guest.guestName}`}');
     });
+
+    it('renders companion names, entrée selections, [KIDS] badge, and custom answers into PDF roster rows', async () => {
+      const renderedTexts: string[] = [];
+      const originalText = PDFDocument.prototype.text;
+
+      jest.spyOn(PDFDocument.prototype, 'text').mockImplementation(function (
+        this: PDFKit.PDFDocument,
+        ...args: unknown[]
+      ) {
+        if (typeof args[0] === 'string') {
+          renderedTexts.push(args[0]);
+        }
+        return (originalText as (...a: unknown[]) => PDFKit.PDFDocument).apply(this, args);
+      });
+
+      const enrichedTable: SeatingTableDTO = {
+        id: 'tbl-meals',
+        name: 'Reception Table 1',
+        shape: 'round',
+        capacity: 4,
+        x: 50,
+        y: 50,
+        width: 120,
+        height: 120,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [
+          {
+            id: 'g-pdf-rich',
+            guestName: 'Elena Gilbert',
+            code: 'ELENA01',
+            seatNumber: 1,
+            dietaryNotes: 'No shellfish',
+            extraFields: {
+              attendanceStatus: 'attending',
+              plusOneNames: ['Damon Salvatore', 'Bonnie Bennett'],
+              dietaryTags: ['kids'],
+              mealSummary: 'Reception - Elena Gilbert: Herb Salmon; Bonnie Bennett: Kids Pasta (kids)',
+              customAnswersSummary: 'Reception - Shuttle?: Yes',
+            },
+          } as unknown as InvitationCodeDTO,
+        ],
+      };
+
+      const pdfBuffer = await generateSeatingChartPdf([enrichedTable], []);
+      expect(pdfBuffer.slice(0, 5).toString('ascii')).toBe('%PDF-');
+
+      const combinedText = renderedTexts.join('\n');
+      expect(combinedText).toContain('+1: Damon Salvatore, Bonnie Bennett');
+      expect(combinedText).toContain('[KIDS, DIET] No shellfish');
+      expect(combinedText).toContain('Meals: Reception - Elena Gilbert: Herb Salmon');
+      expect(combinedText).toContain('Responses: Reception - Shuttle?: Yes');
+    });
   });
 });

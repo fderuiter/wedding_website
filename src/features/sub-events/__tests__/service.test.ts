@@ -1533,5 +1533,179 @@ describe('SubEventService', () => {
       expect(audienceSummary.matchedCount).toBe(1);
       expect(audienceSummary.reachableCount).toBe(1);
     });
+
+    it('rejects blank companion names on attending meal events while allowing named companions', async () => {
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-meal-comp',
+        guestName: 'Alex Host',
+        plusOneAllocations: 2,
+      });
+
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        {
+          id: 'se-dinner',
+          title: 'Plated Dinner',
+          isPrivate: false,
+          accesses: [],
+          mealOptions: [
+            { id: 'm-1', label: 'Short Rib', dietaryTags: [] },
+            { id: 'm-2', label: 'Kids Pasta', dietaryTags: ['kids'] },
+          ],
+          customQuestions: [],
+        },
+      ]);
+
+      await expect(
+        service.submitSubEventRsvps('COMP2026', [
+          {
+            subEventId: 'se-dinner',
+            status: 'attending',
+            plusOneCount: 2,
+            dietaryNotes: '',
+            mealSelections: ['m-1', 'm-1', 'm-2'],
+            plusOneNames: ['Sam Partner', '   '],
+          },
+        ])
+      ).rejects.toThrow(ApiError);
+    });
+
+    it('excludes isSample and declined rows while tallying per-plate kids meals in getRsvpSummary and populates eventRsvps in getAccessMatrix', async () => {
+      mockPrisma.invitationCode.findMany.mockResolvedValue([
+        {
+          id: 'inv-real',
+          guestName: 'Parent Guest',
+          used: true,
+          isSample: false,
+          plusOneAllocations: 2,
+          plusOneFirstName: 'Child',
+          plusOneLastName: 'One',
+          dietaryNotes: '',
+          partyTags: [],
+          extraFields: { attendanceStatus: 'attending' },
+        },
+        {
+          id: 'inv-declined',
+          guestName: 'Declined Guest',
+          used: true,
+          isSample: false,
+          plusOneAllocations: 1,
+          plusOneFirstName: null,
+          plusOneLastName: null,
+          dietaryNotes: 'Kids meal, Vegan',
+          partyTags: ['kids'],
+          extraFields: { attendanceStatus: 'declined' },
+        },
+        {
+          id: 'inv-sample',
+          guestName: 'Sample Household',
+          used: true,
+          isSample: true,
+          plusOneAllocations: 2,
+          plusOneFirstName: 'Sample',
+          plusOneLastName: 'Kid',
+          dietaryNotes: 'Kids meal',
+          partyTags: ['kids'],
+          extraFields: { attendanceStatus: 'attending' },
+        },
+      ]);
+
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        {
+          id: 'se-rec',
+          title: 'Reception',
+          isPrivate: false,
+          startTime: null,
+          mealOptions: [
+            { id: 'm-adult', label: 'Filet', dietaryTags: [] },
+            { id: 'm-kids', label: 'Kids Chicken Tenders', dietaryTags: ['kids'] },
+          ],
+          customQuestions: [
+            { id: 'q-chair', prompt: 'High chair?', type: 'choice', required: false, options: ['Yes', 'No'] },
+          ],
+          accesses: [],
+          rsvps: [
+            {
+              invitationCodeId: 'inv-real',
+              status: 'attending',
+              plusOneCount: 2,
+              dietaryNotes: '',
+              mealSelections: ['m-adult', 'm-kids', 'm-kids'],
+              customAnswers: { 'q-chair': 'Yes' },
+              plusOneNames: ['Child One', 'Child Two'],
+            },
+            {
+              invitationCodeId: 'inv-declined',
+              status: 'declined',
+              plusOneCount: 0,
+              dietaryNotes: 'Kids meal',
+              mealSelections: ['m-kids'],
+              customAnswers: {},
+              plusOneNames: [],
+            },
+            {
+              invitationCodeId: 'inv-sample',
+              status: 'attending',
+              plusOneCount: 2,
+              dietaryNotes: 'Kids meal',
+              mealSelections: ['m-kids', 'm-kids', 'm-kids'],
+              customAnswers: {},
+              plusOneNames: ['Sample Kid 1', 'Sample Kid 2'],
+            },
+          ],
+        },
+      ]);
+
+      const summary = await service.getRsvpSummary();
+      expect(summary.global.totalInvitations).toBe(2);
+      expect(summary.global.attendingHouseholds).toBe(1);
+      expect(summary.global.attendingHeadcount).toBe(3);
+      expect(summary.global.dietary.kids).toBe(2);
+      expect(summary.subEvents[0].kidsCount).toBe(2);
+
+      // Verify getAccessMatrix includes eventRsvps per guest
+      mockPrisma.invitationCode.count.mockResolvedValue(1);
+      mockPrisma.invitationCode.findMany
+        .mockResolvedValueOnce([
+          {
+            id: 'inv-real',
+            code: 'REAL01',
+            guestName: 'Parent Guest',
+            householdName: 'Parent Family',
+            partyGroup: 'Family',
+            partyTags: [],
+            dietaryNotes: 'No peanuts',
+            plusOneFirstName: 'Child',
+            plusOneLastName: 'One',
+            extraFields: {},
+            subEventAccesses: [],
+            subEventRsvps: [
+              {
+                subEventId: 'se-rec',
+                status: 'attending',
+                plusOneCount: 2,
+                dietaryNotes: 'No peanuts',
+                mealSelections: ['m-adult', 'm-kids', 'm-kids'],
+                customAnswers: { 'q-chair': 'Yes' },
+                plusOneNames: ['Child One', 'Child Two'],
+              },
+            ],
+          },
+        ])
+        .mockResolvedValue([]);
+
+      const matrix = await service.getAccessMatrix({ page: 1, limit: 25 });
+      expect(matrix.invitationCodes[0].eventRsvps?.['se-rec']).toEqual({
+        status: 'attending',
+        plusOneCount: 2,
+        plusOneNames: ['Child One', 'Child Two'],
+        dietaryNotes: 'No peanuts',
+        meals: [
+          { attendee: 'Parent Guest', optionId: 'm-adult', label: 'Filet', dietaryTags: [] },
+          { attendee: 'Child One', optionId: 'm-kids', label: 'Kids Chicken Tenders', dietaryTags: ['kids'] },
+          { attendee: 'Child Two', optionId: 'm-kids', label: 'Kids Chicken Tenders', dietaryTags: ['kids'] },
+        ],
+        answers: [{ questionId: 'q-chair', prompt: 'High chair?', answer: 'Yes' }],
+      });
+    });
   });
 });
