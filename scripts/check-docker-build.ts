@@ -1578,11 +1578,12 @@ export function checkDockerBuild(
   const standaloneDir = path.join(nextDir, 'standalone');
   const hasNextDir = fs.existsSync(nextDir) && fs.statSync(nextDir).isDirectory();
   const hasStandaloneDir =
-    fs.existsSync(standaloneDir) && fs.statSync(standaloneDir).isDirectory();
+    hasNextDir && fs.existsSync(standaloneDir) && fs.statSync(standaloneDir).isDirectory();
   const hasProductionBuildMarker =
-    fs.existsSync(path.join(nextDir, 'BUILD_ID')) ||
-    fs.existsSync(path.join(nextDir, 'routes-manifest.json')) ||
-    hasStandaloneDir;
+    hasNextDir &&
+    (fs.existsSync(path.join(nextDir, 'BUILD_ID')) ||
+      fs.existsSync(path.join(nextDir, 'routes-manifest.json')) ||
+      hasStandaloneDir);
 
   if (requireStandalone && !hasNextDir) {
     violations.push({
@@ -1593,113 +1594,111 @@ export function checkDockerBuild(
       reason:
         ".next build output directory is missing while --require-standalone is enabled. Run 'npm run build' first.",
     });
-  } else if (requireStandalone || hasProductionBuildMarker) {
-    if (!hasStandaloneDir) {
+  } else if ((requireStandalone || hasProductionBuildMarker) && !hasStandaloneDir) {
+    violations.push({
+      filePath: '.next/standalone',
+      lineNumber: 1,
+      lineContent: '',
+      imageRef: '.next/standalone',
+      reason:
+        '.next directory exists but .next/standalone was not generated. Ensure Next.js build produces standalone output.',
+    });
+  } else if (hasStandaloneDir) {
+    const serverJs = path.join(standaloneDir, 'server.js');
+    if (!fs.existsSync(serverJs) || !fs.statSync(serverJs).isFile()) {
       violations.push({
-        filePath: '.next/standalone',
+        filePath: '.next/standalone/server.js',
         lineNumber: 1,
         lineContent: '',
-        imageRef: '.next/standalone',
+        imageRef: 'server.js',
+        reason: '.next/standalone/server.js is missing.',
+      });
+    }
+
+    const standaloneStaticDir = path.join(standaloneDir, '.next', 'static');
+    if (!fs.existsSync(standaloneStaticDir) || !fs.statSync(standaloneStaticDir).isDirectory()) {
+      violations.push({
+        filePath: '.next/standalone/.next/static',
+        lineNumber: 1,
+        lineContent: '',
+        imageRef: '.next/standalone/.next/static',
         reason:
-          '.next directory exists but .next/standalone was not generated. Ensure Next.js build produces standalone output.',
+          '.next/standalone/.next/static is missing. Copy .next/static into .next/standalone/.next/static after building.',
+      });
+    } else if (fs.readdirSync(standaloneStaticDir).length === 0) {
+      violations.push({
+        filePath: '.next/standalone/.next/static',
+        lineNumber: 1,
+        lineContent: '',
+        imageRef: '.next/standalone/.next/static',
+        reason: '.next/standalone/.next/static directory is empty.',
+      });
+    } else if (fs.existsSync(path.join(standaloneStaticDir, 'static'))) {
+      violations.push({
+        filePath: '.next/standalone/.next/static/static',
+        lineNumber: 1,
+        lineContent: '',
+        imageRef: 'static/static',
+        reason: '.next/standalone/.next/static/static nested copy detected.',
+      });
+    }
+
+    const standalonePublicDir = path.join(standaloneDir, 'public');
+    if (!fs.existsSync(standalonePublicDir) || !fs.statSync(standalonePublicDir).isDirectory()) {
+      violations.push({
+        filePath: '.next/standalone/public',
+        lineNumber: 1,
+        lineContent: '',
+        imageRef: '.next/standalone/public',
+        reason:
+          '.next/standalone/public is missing. Copy public into .next/standalone/public after building.',
+      });
+    } else if (fs.readdirSync(standalonePublicDir).length === 0) {
+      violations.push({
+        filePath: '.next/standalone/public',
+        lineNumber: 1,
+        lineContent: '',
+        imageRef: '.next/standalone/public',
+        reason: '.next/standalone/public directory is empty.',
       });
     } else {
-      const serverJs = path.join(standaloneDir, 'server.js');
-      if (!fs.existsSync(serverJs) || !fs.statSync(serverJs).isFile()) {
+      if (fs.existsSync(path.join(standalonePublicDir, 'public'))) {
         violations.push({
-          filePath: '.next/standalone/server.js',
+          filePath: '.next/standalone/public/public',
           lineNumber: 1,
           lineContent: '',
-          imageRef: 'server.js',
-          reason: '.next/standalone/server.js is missing.',
+          imageRef: 'public/public',
+          reason: '.next/standalone/public/public nested copy detected.',
         });
       }
-
-      const standaloneStaticDir = path.join(standaloneDir, '.next', 'static');
-      if (!fs.existsSync(standaloneStaticDir) || !fs.statSync(standaloneStaticDir).isDirectory()) {
+      if (fs.existsSync(path.join(standalonePublicDir, 'mockServiceWorker.js'))) {
         violations.push({
-          filePath: '.next/standalone/.next/static',
+          filePath: '.next/standalone/public/mockServiceWorker.js',
           lineNumber: 1,
           lineContent: '',
-          imageRef: '.next/standalone/.next/static',
+          imageRef: 'mockServiceWorker.js',
           reason:
-            '.next/standalone/.next/static is missing. Copy .next/static into .next/standalone/.next/static after building.',
-        });
-      } else if (fs.readdirSync(standaloneStaticDir).length === 0) {
-        violations.push({
-          filePath: '.next/standalone/.next/static',
-          lineNumber: 1,
-          lineContent: '',
-          imageRef: '.next/standalone/.next/static',
-          reason: '.next/standalone/.next/static directory is empty.',
-        });
-      } else if (fs.existsSync(path.join(standaloneStaticDir, 'static'))) {
-        violations.push({
-          filePath: '.next/standalone/.next/static/static',
-          lineNumber: 1,
-          lineContent: '',
-          imageRef: 'static/static',
-          reason: '.next/standalone/.next/static/static nested copy detected.',
+            '.next/standalone/public/mockServiceWorker.js must not be bundled in standalone output.',
         });
       }
-
-      const standalonePublicDir = path.join(standaloneDir, 'public');
-      if (!fs.existsSync(standalonePublicDir) || !fs.statSync(standalonePublicDir).isDirectory()) {
+    }
+    const forbiddenStandalonePaths = [
+      ['node_modules', 'pdfkit', 'js', 'pdfkit.standalone.js'],
+      ['node_modules', 'pdfkit', 'js', 'pdfkit.browser.js'],
+      ['node_modules', 'pdfkit', 'js', 'pdfkit.old.js'],
+      ['node_modules', 'fontkit', 'dist', 'browser.cjs'],
+    ];
+    for (const segments of forbiddenStandalonePaths) {
+      const candidatePath = path.join(standaloneDir, ...segments);
+      if (fs.existsSync(candidatePath)) {
+        const relStandalone = ['.next', 'standalone', ...segments].join('/');
         violations.push({
-          filePath: '.next/standalone/public',
+          filePath: relStandalone,
           lineNumber: 1,
           lineContent: '',
-          imageRef: '.next/standalone/public',
-          reason:
-            '.next/standalone/public is missing. Copy public into .next/standalone/public after building.',
+          imageRef: segments[segments.length - 1],
+          reason: `${relStandalone} browser/.old bundle must be excluded from standalone output.`,
         });
-      } else if (fs.readdirSync(standalonePublicDir).length === 0) {
-        violations.push({
-          filePath: '.next/standalone/public',
-          lineNumber: 1,
-          lineContent: '',
-          imageRef: '.next/standalone/public',
-          reason: '.next/standalone/public directory is empty.',
-        });
-      } else {
-        if (fs.existsSync(path.join(standalonePublicDir, 'public'))) {
-          violations.push({
-            filePath: '.next/standalone/public/public',
-            lineNumber: 1,
-            lineContent: '',
-            imageRef: 'public/public',
-            reason: '.next/standalone/public/public nested copy detected.',
-          });
-        }
-        if (fs.existsSync(path.join(standalonePublicDir, 'mockServiceWorker.js'))) {
-          violations.push({
-            filePath: '.next/standalone/public/mockServiceWorker.js',
-            lineNumber: 1,
-            lineContent: '',
-            imageRef: 'mockServiceWorker.js',
-            reason:
-              '.next/standalone/public/mockServiceWorker.js must not be bundled in standalone output.',
-          });
-        }
-      }
-      const forbiddenStandalonePaths = [
-        ['node_modules', 'pdfkit', 'js', 'pdfkit.standalone.js'],
-        ['node_modules', 'pdfkit', 'js', 'pdfkit.browser.js'],
-        ['node_modules', 'pdfkit', 'js', 'pdfkit.old.js'],
-        ['node_modules', 'fontkit', 'dist', 'browser.cjs'],
-      ];
-      for (const segments of forbiddenStandalonePaths) {
-        const candidatePath = path.join(standaloneDir, ...segments);
-        if (fs.existsSync(candidatePath)) {
-          const relStandalone = ['.next', 'standalone', ...segments].join('/');
-          violations.push({
-            filePath: relStandalone,
-            lineNumber: 1,
-            lineContent: '',
-            imageRef: segments[segments.length - 1],
-            reason: `${relStandalone} browser/.old bundle must be excluded from standalone output.`,
-          });
-        }
       }
     }
   }
@@ -1753,7 +1752,6 @@ function main(): void {
   }
 
   console.log('🔍 Checking standalone & container portability, digest pins, and APT cache rules...');
-
   const { violations } = checkDockerBuild(ROOT_DIR, { requireStandalone });
 
   if (violations.length > 0) {

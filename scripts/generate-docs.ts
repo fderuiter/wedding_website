@@ -760,7 +760,7 @@ function extractExportedHttpMethods(filePath: string, rootDir: string): string[]
   return HTTP_METHODS.filter((method) => values.has(method));
 }
 
-interface MiddlewareApiExclusions {
+export interface MiddlewareApiExclusions {
   exactAllMethods: Set<string>;
   exactByMethod: Map<string, Set<string>>;
   prefixes: string[];
@@ -838,7 +838,7 @@ function extractMiddlewareConditionExclusions(
   }
 }
 
-function getMiddlewarePublicApiExclusions(rootDir: string): MiddlewareApiExclusions {
+export function getMiddlewarePublicApiExclusions(rootDir: string): MiddlewareApiExclusions {
   const exclusions: MiddlewareApiExclusions = {
     exactAllMethods: new Set<string>(),
     exactByMethod: new Map<string, Set<string>>(),
@@ -867,7 +867,7 @@ function getMiddlewarePublicApiExclusions(rootDir: string): MiddlewareApiExclusi
   return exclusions;
 }
 
-function isMiddlewarePublicApiMethod(
+export function isMiddlewarePublicApiMethod(
   routePath: string,
   method: string,
   exclusions: MiddlewareApiExclusions,
