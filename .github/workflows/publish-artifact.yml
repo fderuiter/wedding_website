@@ -166,6 +166,7 @@ jobs:
           node-version-file: '.nvmrc'
 
       - name: Validate Commit SHA Input
+        id: meta
         env:
           INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
         run: |
@@ -173,6 +174,8 @@ jobs:
             echo "::error::Invalid commit_sha '${INPUT_COMMIT_SHA}'. Must be a 40-character hexadecimal commit SHA."
             exit 1
           fi
+          RESOLVED_SHA="${INPUT_COMMIT_SHA:-${GITHUB_SHA}}"
+          echo "revision=${RESOLVED_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -243,6 +246,10 @@ jobs:
           platforms: ${{ matrix.platform }}
           provenance: false
           sbom: false
+          labels: |
+            org.opencontainers.image.revision=${{ steps.meta.outputs.revision }}
+          annotations: |
+            manifest:org.opencontainers.image.revision=${{ steps.meta.outputs.revision }}
           outputs: type=oci,dest=/tmp/oci-${{ matrix.arch }}.tar
           cache-from: type=gha,scope=app-${{ matrix.arch }}
           cache-to: type=gha,scope=app-${{ matrix.arch }},mode=max
@@ -447,6 +454,7 @@ jobs:
 
           echo "image_repository=${IMAGE_REPO}" >> "$GITHUB_OUTPUT"
           echo "dockerhub_repository=${DOCKERHUB_REPO}" >> "$GITHUB_OUTPUT"
+          echo "revision=${RESOLVED_SHA}" >> "$GITHUB_OUTPUT"
           echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
           echo "primary_uri=${GHCR_PRIMARY}" >> "$GITHUB_OUTPUT"
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
@@ -529,6 +537,7 @@ jobs:
           IMAGE_REPOSITORY: ${{ steps.meta.outputs.image_repository }}
           DOCKERHUB_REPOSITORY: ${{ steps.meta.outputs.dockerhub_repository }}
           PRIMARY_URI: ${{ steps.meta.outputs.primary_uri }}
+          REVISION: ${{ steps.meta.outputs.revision }}
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           for required_arch in amd64 arm64; do
@@ -552,6 +561,11 @@ jobs:
           GHCR_TAG_ARGS=()
           DOCKERHUB_TAG_ARGS=()
           DOCKERHUB_PRIMARY_URI=""
+          ANNOTATION_ARGS=()
+
+          if [ -n "${REVISION:-}" ]; then
+            ANNOTATION_ARGS+=("--annotation" "index:org.opencontainers.image.revision=${REVISION}")
+          fi
 
           for tag_ref in "${ALL_TAGS[@]}"; do
             [ -z "$tag_ref" ] && continue
@@ -567,6 +581,7 @@ jobs:
 
           docker buildx imagetools create \
             "${GHCR_TAG_ARGS[@]}" \
+            "${ANNOTATION_ARGS[@]}" \
             "${IMAGE_REPOSITORY}@${AMD64_DIGEST}" \
             "${IMAGE_REPOSITORY}@${ARM64_DIGEST}"
 
@@ -588,6 +603,7 @@ jobs:
           if [ -n "$DOCKERHUB_REPOSITORY" ] && [ "${#DOCKERHUB_TAG_ARGS[@]}" -gt 0 ]; then
             docker buildx imagetools create \
               "${DOCKERHUB_TAG_ARGS[@]}" \
+              "${ANNOTATION_ARGS[@]}" \
               "${DOCKERHUB_REPOSITORY}@${AMD64_DIGEST}" \
               "${DOCKERHUB_REPOSITORY}@${ARM64_DIGEST}"
 

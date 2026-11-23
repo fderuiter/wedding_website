@@ -317,12 +317,18 @@ describe('verify-deployment-runbooks', () => {
         "if: !(inputs.dry_run && inputs.image_digest == '' && inputs.image_tag == 'latest')"
       );
     fs.writeFileSync(deployProviderPath, brokenWorkflow);
+    const expectedLine =
+      brokenWorkflow
+        .split(/\r?\n/)
+        .findIndex((line) =>
+          line.includes("if: !(inputs.dry_run && inputs.image_digest == '' && inputs.image_tag == 'latest')")
+        ) + 1;
 
     const errors = verifyDeploymentRunbooks(tempDir);
     expect(errors).toEqual(
       expect.arrayContaining([
         expect.stringContaining(
-          '.github/workflows/deploy-provider.yml:285: Invalid YAML 1.2 tag/warning (TAG_RESOLVE_FAILED)'
+          `.github/workflows/deploy-provider.yml:${expectedLine}: Invalid YAML 1.2 tag/warning (TAG_RESOLVE_FAILED)`
         ),
       ])
     );

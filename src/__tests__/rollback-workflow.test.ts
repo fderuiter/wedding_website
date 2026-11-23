@@ -281,11 +281,30 @@ describe('Rollback & Provider Deployment Workflows', () => {
       expect(deployProviderYml).toContain('previous_image_digest:');
       expect(deployProviderYml).toContain('--fail-with-body');
       expect(deployProviderYml).toContain(
-        '  deploy:\n    name: Deploy Release Artifact to Provider\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n      packages: read\n      attestations: read\n      id-token: write\n      deployments: read'
+        '  deploy:\n    name: Deploy Release Artifact to Provider\n    runs-on: ubuntu-latest\n    permissions:\n      actions: read\n      contents: read\n      packages: read\n      attestations: read\n      deployments: write\n      id-token: write'
       );
       expect(rollbackYml).toContain(
-        '  redeploy:\n    name: Redeploy Previous Validated Container Image\n    permissions:\n      contents: read\n      packages: read\n      attestations: read\n      id-token: write\n      deployments: read'
+        '  redeploy:\n    name: Redeploy Previous Validated Container Image\n    permissions:\n      actions: read\n      contents: read\n      packages: read\n      attestations: read\n      deployments: write\n      id-token: write'
       );
+
+      // Cloud Run service & region overrides forwarded across deploy.yml, deploy-provider.yml, and rollback.yml
+      expect(deployYml).toContain("cloud_run_service: ${{ inputs.cloud_run_service || '' }}");
+      expect(deployYml).toContain("cloud_run_region: ${{ inputs.cloud_run_region || '' }}");
+      expect(deployYml).toContain(
+        "cloud_run_service: ${{ inputs.cloud_run_service || needs.production-deploy-provider.outputs.cloud_run_service || '' }}"
+      );
+      expect(deployYml).toContain(
+        "cloud_run_region: ${{ inputs.cloud_run_region || needs.production-deploy-provider.outputs.cloud_run_region || '' }}"
+      );
+      expect(rollbackYml).toContain("cloud_run_service: ${{ inputs.cloud_run_service || '' }}");
+      expect(rollbackYml).toContain("cloud_run_region: ${{ inputs.cloud_run_region || '' }}");
+
+      // rollback.yml must never pause twice on production gates (verify job has no environment gate)
+      const rollbackDoc = parseDocument(rollbackYml, { version: '1.2', strict: true }).toJS() as {
+        jobs?: Record<string, { environment?: unknown; timeout_minutes?: number; 'timeout-minutes'?: number }>;
+      };
+      expect(rollbackDoc.jobs?.verify?.environment).toBeUndefined();
+      expect(rollbackDoc.jobs?.verify?.['timeout-minutes']).toBe(5);
     });
   });
 
@@ -336,7 +355,23 @@ fi
         expect(res.outputs.cloud_run_service).toBe('wedding-website');
         expect(res.outputs.cloud_run_region).toBe('us-central1');
 
-        // OIDC Workload Identity Federation (no GCP_SA_KEY) on staging defaults to isolated wedding-website-staging
+        // OIDC Workload Identity Federation (no GCP_SA_KEY) on staging with digest-only @sha256: revision populates both previous_image_digest and attested previous_image_tag
+        const attestedStagingSha = 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+        const mockGh = path.join(binDir, 'gh');
+        fs.writeFileSync(
+          mockGh,
+          `#!/usr/bin/env bash
+if [[ "$1" == "attestation" && "$2" == "verify" ]]; then
+  cat <<'JSON'
+[{"verificationResult":{"statement":{"predicate":{"buildDefinition":{"resolvedDependencies":[{"uri":"git+https://github.com/example/wedding_website@refs/heads/main","digest":{"gitCommit":"${attestedStagingSha}"}}]}}}}}]
+JSON
+  exit 0
+fi
+exit 1
+`,
+          { mode: 0o755 }
+        );
+
         fs.writeFileSync(gcloudLog, '');
         const oidcStagingRes = runBashStep(script, {
           PATH: `${binDir}:${process.env.PATH || ''}`,
@@ -354,20 +389,62 @@ fi
           GCP_SERVICE_ACCOUNT: 'deployer@oidc-project.iam.gserviceaccount.com',
           GCP_SA_KEY: '',
           GCP_PROJECT_ID: '',
-          GITHUB_TOKEN: '',
-          GITHUB_REPOSITORY: '',
+          GITHUB_TOKEN: 'ghs_mock_token',
+          GH_TOKEN: 'ghs_mock_token',
+          GITHUB_REPOSITORY: 'example/wedding_website',
+          REPO_OWNER: 'example',
+          SIGNER_WORKFLOW: 'example/wedding_website/.github/workflows/publish-artifact.yml',
         });
 
         expect(oidcStagingRes.status).toBe(0);
         expect(oidcStagingRes.outputs.previous_image_digest).toBe(
           'sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd'
         );
+        expect(oidcStagingRes.outputs.previous_image_tag).toBe(attestedStagingSha);
+        expect(oidcStagingRes.outputs.previous_tag_source).toBe('cloud-run-attestation');
         expect(oidcStagingRes.outputs.cloud_run_service).toBe('wedding-website-staging');
         expect(oidcStagingRes.outputs.cloud_run_region).toBe('europe-west1');
         const loggedCalls = fs.readFileSync(gcloudLog, 'utf8');
         expect(loggedCalls).toContain(
           'run services describe wedding-website-staging --region=europe-west1 --project=oidc-project'
         );
+
+        // Digest-only @sha256: Cloud Run JSON revision with commit-sha label also populates matching previous_image_digest and previous_image_tag when gh attestation is unavailable
+        fs.unlinkSync(mockGh);
+        const labeledSha = 'abababababababababababababababababababab';
+        const labeledDigest = 'sha256:efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef';
+        fs.writeFileSync(
+          mockGcloud,
+          `#!/usr/bin/env bash
+if [[ "$*" == *"services describe"* ]]; then
+  cat <<'JSON'
+{"status":{"traffic":[{"revisionName":"wedding-website-00012-lbl","percent":100}]}}
+JSON
+elif [[ "$*" == *"revisions describe wedding-website-00012-lbl"* ]]; then
+  cat <<'JSON'
+{"metadata":{"labels":{"commit-sha":"${labeledSha}"}},"spec":{"containers":[{"image":"ghcr.io/example/wedding_website@${labeledDigest}"}]}}
+JSON
+fi
+`,
+          { mode: 0o755 }
+        );
+        const labelFallbackRes = runBashStep(script, {
+          PATH: `${binDir}:${process.env.PATH || ''}`,
+          PROVIDER: 'google-cloud-run',
+          TARGET_ENV: 'production',
+          INCOMING_TAG: 'cccccccccccccccccccccccccccccccccccccccc',
+          INCOMING_DIGEST: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+          CURRENT_SHA: 'cccccccccccccccccccccccccccccccccccccccc',
+          DRY_RUN: 'false',
+          GCP_SA_KEY: '{"project_id":"demo-project"}',
+          GCP_PROJECT_ID: 'demo-project',
+          GITHUB_TOKEN: '',
+          GITHUB_REPOSITORY: '',
+        });
+        expect(labelFallbackRes.status).toBe(0);
+        expect(labelFallbackRes.outputs.previous_image_digest).toBe(labeledDigest);
+        expect(labelFallbackRes.outputs.previous_image_tag).toBe(labeledSha);
+        expect(labelFallbackRes.outputs.previous_tag_source).toBe('cloud-run-revision-label');
       } finally {
         fs.rmSync(binDir, { recursive: true, force: true });
       }
@@ -408,6 +485,285 @@ fi
         expect(res.outputs.previous_image_tag).toBe(parentSha);
         expect(res.outputs.previous_tag_source).toBe('git-parent-sha');
       } finally {
+        fs.rmSync(repoDir, { recursive: true, force: true });
+      }
+    });
+
+    it('ignores staging and dry_run workflow runs for generic-webhook rollbacks, tracks GitHub Deployments, and withstands 1-commit and 2-commit main advances', async () => {
+      const captureScript = extractStepRunScript(deployProviderYml, 'Capture Active Image Tag Before Rollout');
+      const recordScript = extractStepRunScript(deployProviderYml, 'Record Environment Deployment State');
+      const repoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webhook-advance-git-'));
+
+      execSync('git init -b main', { cwd: repoDir, stdio: 'ignore' });
+      execSync('git config user.name "Test"', { cwd: repoDir, stdio: 'ignore' });
+      execSync('git config user.email "test@example.com"', { cwd: repoDir, stdio: 'ignore' });
+
+      const mkCommit = (label: string) => {
+        fs.writeFileSync(path.join(repoDir, 'release.txt'), label);
+        execSync(`git add release.txt && git commit -m "${label}"`, { cwd: repoDir, stdio: 'ignore' });
+        return execSync('git rev-parse HEAD', { cwd: repoDir, encoding: 'utf8' }).trim();
+      };
+
+      const shaProdHealthy = mkCommit('c0-prod-healthy');
+      const shaTargetRelease = mkCommit('c1-target-release');
+      const shaAdvance1 = mkCommit('c2-staging-only-advance-1');
+      const shaAdvance2 = mkCommit('c3-dry-run-advance-2');
+      const prodHealthyDigest = 'sha256:1010101010101010101010101010101010101010101010101010101010101010';
+      const targetDigest = 'sha256:2020202020202020202020202020202020202020202020202020202020202020';
+
+      const recordedDeployments: Array<{
+        id: number;
+        sha: string;
+        environment: string;
+        payload: Record<string, unknown>;
+        statuses: Array<{ state: string }>;
+      }> = [];
+
+      const apiServer = http.createServer((req, res) => {
+        const url = new URL(req.url || '/', 'http://127.0.0.1');
+        let body = '';
+        req.on('data', (chunk) => {
+          body += chunk.toString();
+        });
+        req.on('end', () => {
+          res.setHeader('Content-Type', 'application/json');
+          if (req.method === 'POST' && url.pathname === '/repos/example/wedding_website/deployments') {
+            const parsed = JSON.parse(body) as {
+              ref: string;
+              environment: string;
+              payload: Record<string, unknown>;
+            };
+            const id = 500 + recordedDeployments.length + 1;
+            recordedDeployments.unshift({
+              id,
+              sha: parsed.ref,
+              environment: parsed.environment,
+              payload: parsed.payload,
+              statuses: [],
+            });
+            res.writeHead(201);
+            res.end(JSON.stringify({ id }));
+            return;
+          }
+          const statusPostMatch = url.pathname.match(/^\/repos\/example\/wedding_website\/deployments\/(\d+)\/statuses$/);
+          if (req.method === 'POST' && statusPostMatch) {
+            const depId = Number(statusPostMatch[1]);
+            const parsed = JSON.parse(body) as { state: string; auto_inactive?: boolean };
+            const target = recordedDeployments.find((d) => d.id === depId);
+            if (target) {
+              if (parsed.auto_inactive) {
+                for (const other of recordedDeployments) {
+                  if (other.id !== depId && other.environment === target.environment) {
+                    other.statuses.unshift({ state: 'inactive' });
+                  }
+                }
+              }
+              target.statuses.unshift({ state: parsed.state });
+            }
+            res.writeHead(201);
+            res.end(JSON.stringify({ state: parsed.state }));
+            return;
+          }
+          if (req.method === 'GET' && url.pathname === '/repos/example/wedding_website/deployments') {
+            const envFilter = url.searchParams.get('environment') || '';
+            const list = recordedDeployments.filter((d) => !envFilter || d.environment === envFilter);
+            res.writeHead(200);
+            res.end(JSON.stringify(list));
+            return;
+          }
+          if (req.method === 'GET' && statusPostMatch) {
+            const depId = Number(statusPostMatch[1]);
+            const target = recordedDeployments.find((d) => d.id === depId);
+            res.writeHead(200);
+            res.end(JSON.stringify(target?.statuses ?? []));
+            return;
+          }
+          if (req.method === 'GET' && url.pathname === '/repos/example/wedding_website/actions/workflows/deploy.yml/runs') {
+            res.writeHead(200);
+            res.end(
+              JSON.stringify({
+                workflow_runs: [
+                  { id: 903, head_sha: shaAdvance2 },
+                  { id: 902, head_sha: shaAdvance1 },
+                  { id: 901, head_sha: shaProdHealthy },
+                ],
+              })
+            );
+            return;
+          }
+          if (req.method === 'GET' && url.pathname === '/repos/example/wedding_website/actions/runs/903/jobs') {
+            res.writeHead(200);
+            res.end(
+              JSON.stringify({
+                jobs: [
+                  {
+                    name: 'Production Provider Deployment / Deploy Release Artifact to Provider',
+                    conclusion: 'success',
+                    steps: [
+                      { name: 'Verify Selected Provider Credentials', conclusion: 'skipped' },
+                      { name: 'Dry-run Provider Adapter Validation', conclusion: 'success' },
+                    ],
+                  },
+                  { name: 'Production Post-Deployment Health Verification', conclusion: 'success', steps: [] },
+                ],
+              })
+            );
+            return;
+          }
+          if (req.method === 'GET' && url.pathname === '/repos/example/wedding_website/actions/runs/902/jobs') {
+            res.writeHead(200);
+            res.end(
+              JSON.stringify({
+                jobs: [
+                  { name: 'Staging Provider Deployment', conclusion: 'success', steps: [] },
+                  { name: 'Staging Post-Deployment Health Verification', conclusion: 'success', steps: [] },
+                  { name: 'Production Provider Deployment', conclusion: 'skipped', steps: [] },
+                  { name: 'Production Post-Deployment Health Verification', conclusion: 'skipped', steps: [] },
+                ],
+              })
+            );
+            return;
+          }
+          if (req.method === 'GET' && url.pathname === '/repos/example/wedding_website/actions/runs/901/jobs') {
+            res.writeHead(200);
+            res.end(
+              JSON.stringify({
+                jobs: [
+                  {
+                    name: 'Production Provider Deployment / Deploy Release Artifact to Provider',
+                    conclusion: 'success',
+                    steps: [
+                      { name: 'Verify Selected Provider Credentials', conclusion: 'success' },
+                      { name: 'Dry-run Provider Adapter Validation', conclusion: 'skipped' },
+                    ],
+                  },
+                  { name: 'Production Post-Deployment Health Verification', conclusion: 'success', steps: [] },
+                ],
+              })
+            );
+            return;
+          }
+          res.writeHead(404);
+          res.end(JSON.stringify({ message: 'not found' }));
+        });
+      });
+
+      await new Promise<void>((resolve) => apiServer.listen(0, '127.0.0.1', () => resolve()));
+      const addr = apiServer.address();
+      const port = typeof addr === 'object' && addr ? addr.port : 0;
+      const apiBase = `http://127.0.0.1:${port}`;
+
+      try {
+        // 1. Before any GitHub Deployments exist, workflow-runs filter skips run 903 (dry_run) and run 902 (staging-only)
+        // under both 1-commit and 2-commit main advances, selecting run 901 (shaProdHealthy).
+        for (const advancedHeadSha of [shaAdvance1, shaAdvance2]) {
+          const filteredRunsRes = await runBashStepAsync(
+            captureScript,
+            {
+              PROVIDER: 'generic-webhook',
+              TARGET_ENV: 'production',
+              INCOMING_TAG: shaTargetRelease,
+              INCOMING_DIGEST: targetDigest,
+              INPUT_COMMIT_SHA: shaTargetRelease,
+              CURRENT_SHA: advancedHeadSha,
+              DRY_RUN: 'false',
+              GITHUB_TOKEN: 'ghs_test_token',
+              GITHUB_REPOSITORY: 'example/wedding_website',
+              GITHUB_API_URL: apiBase,
+            },
+            repoDir
+          );
+          expect(filteredRunsRes.status).toBe(0);
+          expect(filteredRunsRes.outputs.previous_image_tag).toBe(shaProdHealthy);
+          expect(filteredRunsRes.outputs.previous_tag_source).toBe('workflow-runs');
+        }
+
+        // 2. Even with GitHub API disabled, commit_sha^1 resolves shaProdHealthy across 1-commit and 2-commit main advances
+        for (const advancedHeadSha of [shaAdvance1, shaAdvance2]) {
+          const gitTargetParentRes = await runBashStepAsync(
+            captureScript,
+            {
+              PROVIDER: 'generic-webhook',
+              TARGET_ENV: 'production',
+              INCOMING_TAG: shaTargetRelease,
+              INCOMING_DIGEST: targetDigest,
+              INPUT_COMMIT_SHA: shaTargetRelease,
+              CURRENT_SHA: advancedHeadSha,
+              DRY_RUN: 'false',
+              GITHUB_TOKEN: '',
+              GITHUB_REPOSITORY: '',
+            },
+            repoDir
+          );
+          expect(gitTargetParentRes.status).toBe(0);
+          expect(gitTargetParentRes.outputs.previous_image_tag).toBe(shaProdHealthy);
+          expect(gitTargetParentRes.outputs.previous_tag_source).toBe('git-parent-sha');
+        }
+
+        // 3. Record Environment Deployment State writes production deployment state, and subsequent webhook rollout reads both tag & digest from GitHub Deployments
+        const recordProdRes = await runBashStepAsync(
+          recordScript,
+          {
+            GITHUB_TOKEN: 'ghs_test_token',
+            GITHUB_REPOSITORY: 'example/wedding_website',
+            GITHUB_API_URL: apiBase,
+            TARGET_ENV: 'production',
+            PROVIDER: 'generic-webhook',
+            IMAGE_URI: `ghcr.io/example/wedding_website@${prodHealthyDigest}`,
+            IMAGE_DIGEST: prodHealthyDigest,
+            IMAGE_TAG: shaProdHealthy,
+            INPUT_COMMIT_SHA: shaProdHealthy,
+            CURRENT_SHA: shaProdHealthy,
+            VAR_SERVICE_URL: 'https://wedding.example.com',
+            CLOUDRUN_URL: '',
+          },
+          repoDir
+        );
+        expect(recordProdRes.status).toBe(0);
+        expect(recordProdRes.outputs.deployment_id).toBe('501');
+
+        // Also record a staging deployment to ensure environment isolation in GitHub Deployments
+        await runBashStepAsync(
+          recordScript,
+          {
+            GITHUB_TOKEN: 'ghs_test_token',
+            GITHUB_REPOSITORY: 'example/wedding_website',
+            GITHUB_API_URL: apiBase,
+            TARGET_ENV: 'staging',
+            PROVIDER: 'generic-webhook',
+            IMAGE_URI: `ghcr.io/example/wedding_website@${targetDigest}`,
+            IMAGE_DIGEST: targetDigest,
+            IMAGE_TAG: shaAdvance1,
+            INPUT_COMMIT_SHA: shaAdvance1,
+            CURRENT_SHA: shaAdvance1,
+            VAR_SERVICE_URL: 'https://staging.wedding.example.com',
+            CLOUDRUN_URL: '',
+          },
+          repoDir
+        );
+
+        const deploymentsCaptureRes = await runBashStepAsync(
+          captureScript,
+          {
+            PROVIDER: 'generic-webhook',
+            TARGET_ENV: 'production',
+            INCOMING_TAG: shaTargetRelease,
+            INCOMING_DIGEST: targetDigest,
+            INPUT_COMMIT_SHA: shaTargetRelease,
+            CURRENT_SHA: shaAdvance2,
+            DRY_RUN: 'false',
+            GITHUB_TOKEN: 'ghs_test_token',
+            GITHUB_REPOSITORY: 'example/wedding_website',
+            GITHUB_API_URL: apiBase,
+          },
+          repoDir
+        );
+        expect(deploymentsCaptureRes.status).toBe(0);
+        expect(deploymentsCaptureRes.outputs.previous_image_tag).toBe(shaProdHealthy);
+        expect(deploymentsCaptureRes.outputs.previous_image_digest).toBe(prodHealthyDigest);
+        expect(deploymentsCaptureRes.outputs.previous_tag_source).toBe('github-deployments');
+      } finally {
+        await new Promise<void>((resolve) => apiServer.close(() => resolve()));
         fs.rmSync(repoDir, { recursive: true, force: true });
       }
     });
@@ -1281,7 +1637,58 @@ process.exit(1);
       expect(validRes.outputs.validation_status).toBe('passed');
       expect(validRes.outputs.effective_tag).toBe(validSha);
 
-      // Rejects tag matching pinned INPUT_COMMIT_SHA (target_sha) even when github.sha drifted ahead on main
+      // Digest-only rollback (previous_digest set with empty previous_tag) succeeds outside dry-run
+      const validDigestOnly = 'sha256:9999999999999999999999999999999999999999999999999999999999999999';
+      const digestOnlyRes = runBashStep(validateScript, {
+        TARGET_ENV: 'production',
+        ROLLBACK_ENV: 'production-rollback',
+        PREVIOUS_TAG: '',
+        PREVIOUS_DIGEST: validDigestOnly,
+        PROVIDER: 'google-cloud-run',
+        REASON: 'Digest-pinned rollback restoration',
+        DRY_RUN: 'false',
+        INPUT_COMMIT_SHA: failingSha,
+        CURRENT_SHA: validSha,
+      });
+      expect(digestOnlyRes.status).toBe(0);
+      expect(digestOnlyRes.outputs.validation_status).toBe('passed');
+      expect(digestOnlyRes.outputs.effective_tag).toBe('');
+      expect(digestOnlyRes.outputs.effective_digest).toBe(validDigestOnly);
+
+      // Compares previous_tag against commit_sha rather than github.sha when main has advanced or an older digest failed promotion
+      const advancedGithubSha = 'ffffffffffffffffffffffffffffffffffffffff';
+      const matchesFailingShaRes = runBashStep(validateScript, {
+        TARGET_ENV: 'production',
+        ROLLBACK_ENV: 'production-rollback',
+        PREVIOUS_TAG: failingSha,
+        PREVIOUS_DIGEST: '',
+        PROVIDER: 'generic-webhook',
+        REASON: 'Automated rollback after 2-commit advance',
+        DRY_RUN: 'false',
+        INPUT_COMMIT_SHA: failingSha,
+        CURRENT_SHA: advancedGithubSha,
+      });
+      expect(matchesFailingShaRes.status).toBe(1);
+      expect(matchesFailingShaRes.stdout + matchesFailingShaRes.stderr).toContain(
+        `matches the failing commit SHA '${failingSha}'`
+      );
+
+      // Restoring github.sha is permitted when commit_sha was an older promoted release that failed health checks
+      const restoreHeadAfterOlderFailRes = runBashStep(validateScript, {
+        TARGET_ENV: 'production',
+        ROLLBACK_ENV: 'production-rollback',
+        PREVIOUS_TAG: advancedGithubSha,
+        PREVIOUS_DIGEST: '',
+        PROVIDER: 'generic-webhook',
+        REASON: 'Restore serving HEAD release after older digest failed',
+        DRY_RUN: 'false',
+        INPUT_COMMIT_SHA: failingSha,
+        CURRENT_SHA: advancedGithubSha,
+      });
+      expect(restoreHeadAfterOlderFailRes.status).toBe(0);
+      expect(restoreHeadAfterOlderFailRes.outputs.effective_tag).toBe(advancedGithubSha);
+
+      // Rejects tag matching pinned INPUT_COMMIT_SHA (target_sha) case-insensitively even when github.sha drifted ahead on main
       const driftedMainSha = '9999999999999999999999999999999999999999';
       const targetShaSelfRollbackRes = runBashStep(validateScript, {
         TARGET_ENV: 'production',
