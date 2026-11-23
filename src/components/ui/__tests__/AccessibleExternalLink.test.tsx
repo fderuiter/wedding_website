@@ -36,41 +36,59 @@ describe('AccessibleExternalLink Component', () => {
     expect(srOnlySpan?.textContent?.trim()).toBe('(opens in a new tab)');
   });
 
-  it('combines custom aria-label with new-tab announcement', () => {
+  it('composes visible link text, srContext, and new-tab announcement in order and passes jest-axe', async () => {
     const { container } = render(
-      <AccessibleExternalLink
-        href="https://example.com"
-        aria-label="Read John's biography"
-      >
+      <AccessibleExternalLink href="https://example.com" srContext="for John">
         Bio
       </AccessibleExternalLink>
     );
 
     const link = screen.getByRole('link', {
-      name: "Read John's biography (opens in a new tab)",
+      name: 'Bio for John (opens in a new tab)',
     });
     expect(link).toBeInTheDocument();
-    expect(link).toHaveAttribute(
-      'aria-label',
-      "Read John's biography (opens in a new tab)"
+    expect(link).not.toHaveAttribute('aria-label');
+    expect(container.querySelector('.sr-only')?.textContent).toBe(
+      ' for John (opens in a new tab)'
     );
-    expect(container.querySelector('.sr-only')).toBeNull();
+    expect(
+      await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
+    ).toHaveNoViolations();
   });
 
-  it('does not duplicate announcement if aria-label already includes it', () => {
-    render(
+  it('supports icon-only custom aria-label and deduplicates existing new-tab announcement', async () => {
+    const { container, rerender } = render(
+      <AccessibleExternalLink
+        href="https://example.com"
+        aria-label="Read John's biography"
+        showIcon
+      />
+    );
+
+    let link = screen.getByRole('link', {
+      name: "Read John's biography (opens in a new tab)",
+    });
+    expect(link).toHaveAttribute('aria-label', "Read John's biography (opens in a new tab)");
+    expect(container.querySelector('.sr-only')).toBeNull();
+    expect(
+      await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
+    ).toHaveNoViolations();
+
+    rerender(
       <AccessibleExternalLink
         href="https://example.com"
         aria-label="Payment link (opens in a new tab)"
-      >
-        Pay
-      </AccessibleExternalLink>
+        showIcon
+      />
     );
 
-    const link = screen.getByRole('link', {
+    link = screen.getByRole('link', {
       name: 'Payment link (opens in a new tab)',
     });
     expect(link).toHaveAttribute('aria-label', 'Payment link (opens in a new tab)');
+    expect(
+      await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
+    ).toHaveNoViolations();
   });
 
   it('renders external icon hidden from screen readers when showIcon is true', () => {
@@ -120,14 +138,16 @@ describe('AccessibleExternalLink Component', () => {
         </AccessibleExternalLink>
         <AccessibleExternalLink
           href="https://example.org"
-          aria-label="Special Profile"
+          srContext="for Special Guest"
         >
           Profile
         </AccessibleExternalLink>
       </nav>
     );
 
-    const results = await axe(container);
+    const results = await axe(container, {
+      rules: { 'label-content-name-mismatch': { enabled: true } },
+    });
     expect(results).toHaveNoViolations();
   });
 
