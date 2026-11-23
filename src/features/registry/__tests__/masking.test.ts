@@ -73,4 +73,63 @@ describe('Registry Payload Masking and Sanitization', () => {
     expect(Array.isArray(sanitizedSingle)).toBe(false);
     expect(sanitizedSingle.purchaserName).toBe('John Doe');
   });
+
+  test('maskRegistryItem excludes CANCELLED and REFUNDED rows and strips PII, tracking, and internal fields', () => {
+    const mixedItem = {
+      id: 'item-lifecycle',
+      name: 'Stand Mixer',
+      price: 300,
+      purchased: false,
+      purchaserName: 'Reserved Guest',
+      contributors: [
+        {
+          id: 'c-reserved',
+          name: 'Reserved Guest',
+          email: 'reserved@example.com',
+          amount: 100,
+          status: 'RESERVED',
+          message: 'Private note',
+          trackingNumber: '1Z99999',
+          date: '2026-08-04T12:00:00.000Z',
+        },
+        {
+          id: 'c-confirmed',
+          name: 'Confirmed Guest',
+          email: 'confirmed@example.com',
+          amount: 100,
+          status: 'CONFIRMED',
+          stripeChargeId: 'ch_secret_123',
+          date: '2026-08-04T13:00:00.000Z',
+        },
+        {
+          id: 'c-cancelled',
+          name: 'Cancelled Guest',
+          email: 'cancelled@example.com',
+          amount: 100,
+          status: 'CANCELLED',
+          date: '2026-08-04T14:00:00.000Z',
+        },
+        {
+          id: 'c-refunded',
+          name: 'Refunded Guest',
+          email: 'refunded@example.com',
+          amount: 100,
+          status: 'REFUNDED',
+          refundedAmount: 100,
+          date: '2026-08-04T15:00:00.000Z',
+        },
+      ],
+    };
+
+    const masked = maskRegistryItem(mixedItem);
+    expect(masked.purchaserName).toBe('Anonymous');
+    expect(masked.contributors).toHaveLength(2);
+    for (const entry of masked.contributors) {
+      expect(entry).toEqual({
+        name: 'Anonymous',
+        amount: 'Anonymous',
+        date: 'Anonymous',
+      });
+    }
+  });
 });

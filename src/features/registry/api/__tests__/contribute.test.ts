@@ -2,6 +2,7 @@
 
 import { POST } from '../contribute';
 import { registryService } from '../../service';
+import { dispatchConfirmedContributionAlert } from '../../notifications';
 import { NextRequest } from 'next/server';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { getAppConfig } from '@/lib/config';
@@ -577,7 +578,14 @@ describe('POST /api/registry/contribute', () => {
 
       const response = await POST(request);
       expect(response.status).toBe(200);
-      expect(sendEmailSpy).toHaveBeenCalledTimes(2);
+      const body = await response.json();
+      expect(body.data.claimActions).toEqual({
+        confirmToken: expect.any(String),
+        cancelToken: expect.any(String),
+      });
+
+      // Couple alert is delayed while RESERVED; guest reservation email sends immediately with signed links
+      expect(sendEmailSpy).toHaveBeenCalledTimes(1);
 
       const guestPayload = sendEmailSpy.mock.calls.find(([p]) => p.to === 'jordan@example.com')?.[0];
       expect(guestPayload.body).toContain('@alex-and-taylor');
@@ -585,8 +593,23 @@ describe('POST /api/registry/contribute', () => {
       expect(guestPayload.body).toMatch(/finish sending your transfer externally/i);
       expect(guestPayload.body).toContain('No processing fee ($0.00)');
       expect(guestPayload.body).toContain('contrib-direct-1');
+      expect(guestPayload.body).toContain('https://couple.wedding.test/guest/claim?token=');
       expect(guestPayload.body).toContain('https://couple.wedding.test/registry');
 
+      // Confirming the gift dispatches the couple alert email
+      await dispatchConfirmedContributionAlert({
+        contributor: {
+          id: 'contrib-direct-1',
+          name: 'Jordan Transfer',
+          email: 'jordan@example.com',
+          amount: 75,
+          status: 'CONFIRMED',
+          message: 'Sent on Venmo!',
+        },
+        item: fundItem,
+      });
+
+      expect(sendEmailSpy).toHaveBeenCalledTimes(2);
       const couplePayload = sendEmailSpy.mock.calls.find(([p]) => p.to === 'couple@wedding.test')?.[0];
       expect(couplePayload.body).toContain('Direct Transfer (Venmo)');
     });
@@ -618,6 +641,7 @@ describe('POST /api/registry/contribute', () => {
             name: '<script>alert("name")</script>',
             email: 'safe@example.com',
             amount: 50,
+            status: 'RESERVED',
             message: 'Congrats! <svg onload=alert(\'xss\')>',
             date: '2026-11-20T15:00:00.000Z',
           },
@@ -637,6 +661,20 @@ describe('POST /api/registry/contribute', () => {
 
       const response = await POST(request);
       expect(response.status).toBe(200);
+      expect(sendEmailSpy).toHaveBeenCalledTimes(1);
+
+      await dispatchConfirmedContributionAlert({
+        contributor: {
+          id: 'contrib-xss-1',
+          name: '<script>alert("name")</script>',
+          email: 'safe@example.com',
+          amount: 50,
+          status: 'CONFIRMED',
+          message: 'Congrats! <svg onload=alert(\'xss\')>',
+        },
+        item: unsafeItem,
+      });
+
       expect(sendEmailSpy).toHaveBeenCalledTimes(2);
 
       for (const [payload] of sendEmailSpy.mock.calls) {

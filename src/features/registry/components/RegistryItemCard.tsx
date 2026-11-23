@@ -5,6 +5,7 @@ import type { Stripe, StripeElements } from '@stripe/stripe-js';
 import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
 import { useTheme } from '@/components/ThemeProvider';
 import { RegistryItem, RegistryShippingAddress, OrderTrackingDetails } from '../types';
+import { ContributorLifecycleBadge } from './ContributorLifecycleBadge';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
 import { MediaImage } from '@/components/MediaImage';
 import { Icon } from '@/components/ui/Icon';
@@ -54,7 +55,8 @@ interface RegistryItemCardProps {
     email?: string,
     paymentIntentId?: string,
     orderDetails?: OrderTrackingDetails
-  ) => Promise<void>;
+  ) => Promise<unknown>;
+  onItemUpdated?: (item: RegistryItem) => void;
   titleId?: string;
   cardCheckoutEnabled?: boolean;
   stripePublishableKey?: string | null;
@@ -153,6 +155,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   item,
   onClose,
   onContribute,
+  onItemUpdated,
   titleId,
   cardCheckoutEnabled,
   stripePublishableKey,
@@ -187,6 +190,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     trackingNumber,
 
     paymentTransactionId,
+    claimActions,
 
     fieldErrors,
     codeError,
@@ -218,6 +222,12 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   const [copiedReceiptKey, setCopiedReceiptKey] = useState<string | null>(null);
   const [copiedAddress, setCopiedAddress] = useState(false);
   const [isCardProcessing, setIsCardProcessing] = useState(false);
+  const [postClaimOverride, setPostClaimOverride] = useState<{
+    key: string;
+    status: 'CONFIRMED' | 'CANCELLED';
+  } | null>(null);
+  const [isClaimActionPending, setIsClaimActionPending] = useState(false);
+  const [claimActionError, setClaimActionError] = useState<string | null>(null);
   const receiptCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const addressCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -679,6 +689,57 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
 
   const activeReceiptKey = `${item.id}-${paymentTransactionId || 'recorded'}-${isSuccess ? 'ok' : 'idle'}`;
   const receiptCopied = copiedReceiptKey === activeReceiptKey;
+  const activeClaimKey = claimActions
+    ? `${claimActions.confirmToken}:${claimActions.cancelToken}`
+    : '';
+  const postClaimStatus: 'RESERVED' | 'CONFIRMED' | 'CANCELLED' =
+    postClaimOverride && postClaimOverride.key === activeClaimKey
+      ? postClaimOverride.status
+      : 'RESERVED';
+
+  const handlePostClaimAction = async (action: 'confirm' | 'cancel') => {
+    if (!claimActions || isClaimActionPending) return;
+    const token =
+      action === 'confirm' ? claimActions.confirmToken : claimActions.cancelToken;
+    if (!token) return;
+
+    setIsClaimActionPending(true);
+    setClaimActionError(null);
+
+    try {
+      const response = await apiClient.post<{
+        action: 'confirm' | 'cancel';
+        status: string;
+        changed: boolean;
+        item?: RegistryItem | null;
+      }>('/api/registry/claim', { token });
+
+      setPostClaimOverride({
+        key: activeClaimKey,
+        status: action === 'confirm' ? 'CONFIRMED' : 'CANCELLED',
+      });
+
+      if (response?.item) {
+        onItemUpdated?.(response.item);
+      }
+
+      toastContext?.addToast(
+        action === 'confirm'
+          ? 'Gift confirmed! The couple has been notified.'
+          : 'Reservation cancelled. This gift is available again.',
+        'success'
+      );
+    } catch (err: unknown) {
+      const messageText =
+        err instanceof Error && err.message
+          ? err.message
+          : 'Unable to update your reservation right now.';
+      setClaimActionError(messageText);
+      toastContext?.addToast(messageText, 'error');
+    } finally {
+      setIsClaimActionPending(false);
+    }
+  };
 
   const handleCopyReceipt = async () => {
     const trimmedGuestName = contributorName.trim() || 'Guest';
@@ -1100,7 +1161,16 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/60 text-green-600 dark:text-green-300 mb-3">
             <Icon name="Check" className="w-6 h-6" />
           </div>
-          {isPayableGroupGift && !paymentTransactionId && hasPaymentHandle ? (
+          {postClaimStatus === 'CANCELLED' ? (
+            <>
+              <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-1">
+                Reservation Released
+              </h3>
+              <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">
+                Your reservation for <span className="font-semibold">{item.name}</span> has been cancelled so other wedding guests can choose this gift.
+              </p>
+            </>
+          ) : isPayableGroupGift && !paymentTransactionId && hasPaymentHandle ? (
             <>
               <h3 className="text-xl font-bold text-green-700 dark:text-green-400 mb-1">
                 Direct Transfer Recorded!
@@ -1158,6 +1228,64 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                 </div>
               )}
             </>
+          )}
+
+          {claimActions && !paymentTransactionId && (
+            <div
+              data-testid="post-claim-lifecycle-controls"
+              className="mb-4 p-3.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-left space-y-2.5"
+            >
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span className="text-xs font-semibold text-gray-800 dark:text-gray-200">
+                  Gift Reservation Status
+                </span>
+                <ContributorLifecycleBadge
+                  status={postClaimStatus}
+                  amount={baseContributionAmount}
+                />
+              </div>
+              {postClaimStatus === 'RESERVED' && (
+                <>
+                  <p className="text-xs text-gray-700 dark:text-gray-300">
+                    Your claim holds this gift so no one else buys a duplicate. Confirm below once your payment or order is sent, or cancel if your plans change.
+                  </p>
+                  {claimActionError && (
+                    <p role="alert" className="text-xs font-medium text-rose-800 dark:text-rose-300">
+                      {claimActionError}
+                    </p>
+                  )}
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="primary"
+                      disabled={isClaimActionPending}
+                      onClick={() => void handlePostClaimAction('confirm')}
+                      data-testid="post-claim-confirm-button"
+                      className="w-full"
+                    >
+                      Confirm Gift Sent
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={isClaimActionPending}
+                      onClick={() => void handlePostClaimAction('cancel')}
+                      data-testid="post-claim-cancel-button"
+                      className="w-full"
+                    >
+                      Cancel Reservation
+                    </Button>
+                  </div>
+                </>
+              )}
+              {postClaimStatus === 'CONFIRMED' && (
+                <p className="text-xs font-medium text-emerald-800 dark:text-emerald-300">
+                  Payment completion confirmed — the couple has been notified of your gift!
+                </p>
+              )}
+            </div>
           )}
           <div className="flex flex-col sm:flex-row gap-2.5">
             <Button

@@ -1,7 +1,32 @@
-import { RegistryItemDTO } from './schemas';
+import { z } from 'zod';
+import { ContributorSchema, ContributorStatus, RegistryItemDTO } from './schemas';
 import { formatCurrency } from '@/utils/intl';
 
 export type RegistryItem = RegistryItemDTO;
+export type ContributorRecord = z.infer<typeof ContributorSchema>;
+
+export interface GuestClaimActions {
+  confirmToken: string;
+  cancelToken: string;
+  status?: ContributorStatus;
+}
+
+export interface ContributorLifecycleResult {
+  contributor: ContributorRecord;
+  item: RegistryItemDTO | null;
+  previousStatus: ContributorStatus;
+  changed: boolean;
+}
+
+export interface StripeLedgerReconciliationResult {
+  matched: boolean;
+  changed: boolean;
+  contributor: ContributorRecord | null;
+  item: RegistryItemDTO | null;
+  previousStatus: ContributorStatus | null;
+  previousRefundedAmount: number;
+  refundedAmount: number;
+}
 
 export interface ThankYouTemplateTokens {
   guestName?: string | null;
@@ -126,5 +151,29 @@ export interface IRegistryRepository {
     contributorId: string,
     kind: 'confirmation' | 'alert'
   ): Promise<boolean>;
+  confirmContribution?(
+    contributorId: string,
+    author?: string
+  ): Promise<ContributorLifecycleResult>;
+  cancelReservedContribution?(
+    contributorId: string,
+    author?: string
+  ): Promise<ContributorLifecycleResult>;
+  voidContribution?(
+    contributorId: string,
+    author?: string
+  ): Promise<ContributorLifecycleResult>;
+  getContributorWithItem?(
+    contributorId: string
+  ): Promise<{ contributor: ContributorRecord; item: RegistryItemDTO | null } | null>;
+  markContributorReminderSent?(
+    contributorId: string
+  ): Promise<ContributorRecord>;
+  reconcileStripeAdjustment?(params: {
+    stripeChargeId?: string | null;
+    stripePaymentIntentId?: string | null;
+    refundedCents: number;
+    forceFullReversal?: boolean;
+  }): Promise<StripeLedgerReconciliationResult>;
 }
 
