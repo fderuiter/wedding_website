@@ -1,8 +1,11 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import Dropzone from '../Dropzone';
 import { apiClient } from '@/lib/apiClient';
+
+expect.extend(toHaveNoViolations);
 
 jest.mock('@/lib/apiClient', () => ({
   apiClient: {
@@ -159,5 +162,26 @@ describe('Dropzone Component', () => {
     });
 
     expect(onUploadError).toHaveBeenCalledWith('Network error during upload');
+  });
+
+  it('exposes shared UploadAlert semantics and passes jest-axe in resting and error states', async () => {
+    const { container } = render(<Dropzone />);
+    expect(await axe(container)).toHaveNoViolations();
+
+    const dropzone = screen.getByRole('button', { name: /file upload dropzone/i });
+    const invalidFile = new File(['dummy content'], 'document.pdf', {
+      type: 'application/pdf',
+    });
+
+    fireEvent.drop(dropzone, {
+      dataTransfer: {
+        files: [invalidFile],
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+    });
+    expect(await axe(container)).toHaveNoViolations();
   });
 });

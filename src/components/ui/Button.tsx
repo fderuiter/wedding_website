@@ -3,7 +3,7 @@ import { cn } from '@/utils/cn';
 import { Icon } from './Icon';
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'outline';
+  variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'outline' | 'inverse';
   size?: 'sm' | 'md' | 'lg';
   pressed?: boolean;
 }
@@ -35,7 +35,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       (pressed === undefined && (ariaPressedProp === true || ariaPressedProp === 'true'));
 
     const baseStyles =
-      'inline-flex items-center justify-center text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:cursor-not-allowed';
+      'inline-flex items-center justify-center text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:forced-colors:outline focus-visible:forced-colors:outline-2 disabled:opacity-50 disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:cursor-not-allowed';
 
     const pressedStyles = isPressed
       ? 'ring-2 ring-offset-1 ring-current forced-colors:outline forced-colors:outline-2'
@@ -52,6 +52,8 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         'bg-[var(--btn-ghost-bg,transparent)] text-[var(--btn-ghost-text,var(--color-primary-text,inherit))] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))] focus-visible:ring-[var(--btn-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
       outline:
         'bg-[var(--btn-outline-bg,transparent)] text-[var(--btn-outline-text,var(--color-primary-text,inherit))] border border-[var(--btn-outline-border,var(--color-surface-border,#d1d5db))] hover:bg-[var(--btn-outline-hover-bg,rgba(0,0,0,0.05))] focus-visible:ring-[var(--btn-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
+      inverse:
+        'bg-[var(--toast-action-bg,#ffffff)] text-[var(--toast-action-text,#111827)] hover:bg-[var(--toast-action-hover-bg,#e5e7eb)] border border-transparent focus-visible:ring-[var(--toast-action-bg,#ffffff)] focus-visible:ring-offset-[var(--toast-action-text,#111827)] forced-colors:border forced-colors:border-[ButtonText]',
     };
 
     const sizes = {

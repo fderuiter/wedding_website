@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useId } from 'react';
 import { Icon } from '@/components/ui/Icon';
+import { UploadAlert } from '@/components/ui/UploadStatus';
 import { cn } from '@/utils/cn';
 import { apiClient } from '@/lib/apiClient';
 import {
@@ -152,6 +153,18 @@ const Dropzone = React.forwardRef<HTMLDivElement, DropzoneProps>(
 
     return (
       <div className="w-full">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={allowedExtensions.join(',')}
+          onChange={handleInputChange}
+          disabled={disabled || isUploading}
+          aria-label="Upload image file"
+          tabIndex={-1}
+          className="hidden"
+          data-testid="dropzone-file-input"
+        />
+
         <div
           ref={ref}
           role="button"
@@ -175,16 +188,6 @@ const Dropzone = React.forwardRef<HTMLDivElement, DropzoneProps>(
           )}
           {...props}
         >
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept={allowedExtensions.join(',')}
-            onChange={handleInputChange}
-            disabled={disabled || isUploading}
-            className="hidden"
-            data-testid="dropzone-file-input"
-          />
-
           <Icon
             name={isUploading ? 'Loader2' : 'UploadCloud'}
             className={cn(
@@ -203,9 +206,9 @@ const Dropzone = React.forwardRef<HTMLDivElement, DropzoneProps>(
         </div>
 
         {error && (
-          <p id={errorId} role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">
+          <UploadAlert id={errorId} className="mt-2 text-sm">
             {error}
-          </p>
+          </UploadAlert>
         )}
       </div>
     );

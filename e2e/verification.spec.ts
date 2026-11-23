@@ -69,6 +69,43 @@ test.describe('UI Verification', { tag: '@a11y' }, () => {
     expect(results.violations).toEqual([]);
   });
 
+  test('should pass axe accessibility scan on /photos across curated and guest tabs in light and dark modes', async ({
+    context,
+    page,
+  }) => {
+    await seedGuestAuthCookies(context);
+
+    await page.goto('/photos', { waitUntil: 'domcontentloaded' });
+    expect(new URL(page.url()).pathname).toBe('/photos');
+    await expect(page.getByTestId('photo-gallery-tabs')).toBeVisible();
+
+    const runScan = async (label: string) => {
+      const axeBuilder = new AxeBuilder({ page }).withTags(a11yConfig.runOnly.values);
+      if (a11yConfig.rules) {
+        axeBuilder.options({ rules: a11yConfig.rules });
+      }
+      const results = await axeBuilder.analyze();
+      recordRouteViolations(label, results.violations);
+      expect(results.violations).toEqual([]);
+    };
+
+    // Light mode: Curated Album + Guest Uploads
+    await runScan('/photos (curated, light)');
+    await page.getByTestId('tab-guest').click();
+    await expect(page.getByTestId('guest-photos-section')).toBeVisible();
+    await runScan('/photos (guest, light)');
+
+    // Dark mode: Guest Uploads + Curated Album
+    await page.evaluate(() => {
+      document.documentElement.classList.add('dark');
+      document.documentElement.classList.remove('light');
+    });
+    await runScan('/photos (guest, dark)');
+    await page.getByTestId('tab-curated').click();
+    await expect(page.getByTestId('curated-photos-section')).toBeVisible();
+    await runScan('/photos (curated, dark)');
+  });
+
   test('should pass axe accessibility scan on /admin/dashboard/thank-you-notes with zero violations', async ({ context, page }) => {
     await seedAdminAndGuestAuthCookies(context);
 
