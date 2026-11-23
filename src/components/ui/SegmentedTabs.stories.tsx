@@ -84,3 +84,25 @@ function DetachedPanelDemo() {
 export const CompactWithDetachedPanel: Story = {
   render: () => <DetachedPanelDemo />,
 };
+
+function PillCountBadgesDemo() {
+  const [category, setCategory] = useState<'curated' | 'guest'>('curated');
+  return (
+    <div className="p-4 max-w-2xl">
+      <SegmentedTabs
+        variant="pills"
+        aria-label="Photo gallery views"
+        value={category}
+        onChange={setCategory}
+        tabs={[
+          { value: 'curated', label: 'Curated Album', count: 16 },
+          { value: 'guest', label: 'Guest Uploads', count: 4 },
+        ]}
+      />
+    </div>
+  );
+}
+
+export const PillsWithCountBadges: Story = {
+  render: () => <PillCountBadgesDemo />,
+};

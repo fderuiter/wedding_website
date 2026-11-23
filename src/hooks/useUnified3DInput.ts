@@ -30,6 +30,20 @@ const EMPTY_ACCESSIBILITY_OPTIONS: Use3DInteractionOptions = {
   labels: {},
 };
 
+interface Unified3DPointerTarget {
+  setPointerCapture?: (pointerId: number) => void;
+  releasePointerCapture?: (pointerId: number) => void;
+}
+
+export interface Unified3DInputEvent {
+  clientX?: number;
+  clientY?: number;
+  pointerId?: number;
+  target?: unknown;
+  touches?: ArrayLike<{ clientX: number; clientY: number }>;
+  stopPropagation?: () => void;
+}
+
 export function useUnified3DInput(options: UseUnified3DInputOptions) {
   const reduceMotion = useReducedMotion();
   const [isDestroyed, setIsDestroyed] = useState(false);
@@ -49,7 +63,7 @@ export function useUnified3DInput(options: UseUnified3DInputOptions) {
 
   const cachedRectRef = useRef<{ width: number; height: number; left: number; top: number } | DOMRect | null>(null);
 
-  const getNormalizedCoords = (clientX: number, clientY: number) => {
+  const getNormalizedCoords = useCallback((clientX: number, clientY: number) => {
     let xNorm = 0;
     let yNorm = 0;
     
@@ -70,9 +84,9 @@ export function useUnified3DInput(options: UseUnified3DInputOptions) {
     }
     
     return { x: xNorm, y: yNorm };
-  };
+  }, [options]);
 
-  const handlePointerDown = useCallback((e: any) => {
+  const handlePointerDown = useCallback((e: Unified3DInputEvent) => {
     if (isDestroyed || reduceMotion) return;
     
     if (e.stopPropagation) e.stopPropagation();
@@ -81,13 +95,17 @@ export function useUnified3DInput(options: UseUnified3DInputOptions) {
       cachedRectRef.current = options.domRef.current.getBoundingClientRect();
     }
     
-    const target = e?.target as any;
+    const target =
+      typeof e?.target === 'object' && e.target !== null
+        ? (e.target as Unified3DPointerTarget)
+        : null;
     if (target?.setPointerCapture && e?.pointerId !== undefined) {
       try { target.setPointerCapture(e.pointerId); } catch {}
     }
 
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const touch = e.touches && e.touches.length > 0 ? e.touches[0] : undefined;
+    const clientX = touch ? touch.clientX : (e.clientX ?? 0);
+    const clientY = touch ? touch.clientY : (e.clientY ?? 0);
 
     dragState.current = {
       active: true,
@@ -103,12 +121,13 @@ export function useUnified3DInput(options: UseUnified3DInputOptions) {
     }
   }, [options, reduceMotion, isDestroyed]);
 
-  const handlePointerMove = useCallback((e: any) => {
+  const handlePointerMove = useCallback((e: Unified3DInputEvent) => {
     if (!dragState.current.active || isDestroyed || reduceMotion) return;
     if (e.stopPropagation) e.stopPropagation();
 
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const touch = e.touches && e.touches.length > 0 ? e.touches[0] : undefined;
+    const clientX = touch ? touch.clientX : (e.clientX ?? 0);
+    const clientY = touch ? touch.clientY : (e.clientY ?? 0);
 
     const now = performance.now();
     const dt = now - dragState.current.lastTime;
@@ -126,14 +145,17 @@ export function useUnified3DInput(options: UseUnified3DInputOptions) {
       const norm = getNormalizedCoords(clientX, clientY);
       options.onDragMove(norm, { vx: dragState.current.vx, vy: dragState.current.vy });
     }
-  }, [options, reduceMotion, isDestroyed]);
+  }, [options, reduceMotion, isDestroyed, getNormalizedCoords]);
 
-  const handlePointerUp = useCallback((e: any) => {
+  const handlePointerUp = useCallback((e: Unified3DInputEvent) => {
     cachedRectRef.current = null;
     if (!dragState.current.active) return;
     if (e.stopPropagation) e.stopPropagation();
     
-    const target = e?.target as any;
+    const target =
+      typeof e?.target === 'object' && e.target !== null
+        ? (e.target as Unified3DPointerTarget)
+        : null;
     if (target?.releasePointerCapture && e?.pointerId !== undefined) {
       try { target.releasePointerCapture(e.pointerId); } catch {}
     }
@@ -151,7 +173,7 @@ export function useUnified3DInput(options: UseUnified3DInputOptions) {
     }
   }, [options]);
 
-  const handlePointerLeave = useCallback((e: any) => {
+  const handlePointerLeave = useCallback((e: Unified3DInputEvent) => {
     cachedRectRef.current = null;
     if (dragState.current.active) {
       handlePointerUp(e);
@@ -198,7 +220,7 @@ export function useUnified3DInput(options: UseUnified3DInputOptions) {
 
   // Combine accessibility props with pointer events if both are needed on the same element
   // (like DOM elements in Framer Motion). But for R3F, they might be separated.
-  const getInteractiveProps = (originalProps: any = {}) =>
+  const getInteractiveProps = (originalProps: React.HTMLAttributes<HTMLElement> = {}) =>
     hasAccessibility ? a11y.getInteractiveProps(originalProps) : { ...originalProps };
 
   const a11yProps = hasAccessibility ? a11y.getInteractiveProps() : {};

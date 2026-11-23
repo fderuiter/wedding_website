@@ -1488,12 +1488,16 @@ export function generateApiRoutesSection(rootDir: string = ROOT_DIR): string {
 }
 
 // 3. Generate Environment Specs
-export function generateEnvSpecs() {
-  const pkgPath = path.join(ROOT_DIR, 'package.json');
+export function generateEnvSpecs(rootDir: string = ROOT_DIR) {
+  const pkgPath = path.join(rootDir, 'package.json');
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+  const nvmrcPath = path.join(rootDir, '.nvmrc');
+  const nvmrcMajor = fs.existsSync(nvmrcPath)
+    ? fs.readFileSync(nvmrcPath, 'utf8').trim().replace(/^v/i, '').split('.')[0]
+    : '';
 
-  // We specify Node 22 as per requirements
-  const nodeVersion = '22.x';
+  // Derived from .nvmrc / package.json engines.node (Node 22 LTS)
+  const nodeVersion = /^\d+$/.test(nvmrcMajor) ? `${nvmrcMajor}.x` : (pkg.engines?.node || '22.x');
 
   return `- **Node.js**: v${nodeVersion}
 - **Next.js**: ${pkg.dependencies.next}
@@ -2474,9 +2478,11 @@ if (isMain) {
   updateArchitectureMd();
   updateFeatureModulesMd();
   if (!process.argv.includes('--skip-openapi')) {
-    generateOpenApiSpec().catch((err) => {
-      console.error('Failed to generate OpenAPI specification:', err);
-      process.exit(1);
-    });
+    if (process.env.SKIP_OPENAPI_SYNC !== 'true') {
+      generateOpenApiSpec().catch((err) => {
+        console.error('Failed to generate OpenAPI specification:', err);
+        process.exit(1);
+      });
+    }
   }
 }

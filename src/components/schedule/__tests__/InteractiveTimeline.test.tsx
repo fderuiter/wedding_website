@@ -965,5 +965,103 @@ describe('InteractiveTimeline Component', () => {
         plusOneNames: ['John Doe'],
       });
     });
+
+    it('shares companion names across timeline cards, blocks blank companion names on meals, and keeps removed selections visible', async () => {
+      (global.fetch as jest.Mock).mockImplementation(async (url: string) => {
+        if (url === '/api/schedule') {
+          return {
+            ok: true,
+            json: async () => ({
+              success: true,
+              isGuest: true,
+              guestName: 'Jane Doe',
+              plusOneAllocations: 1,
+              savedPlusOneNames: [],
+              rsvpOpen: true,
+              timezone: 'UTC',
+              data: [
+                {
+                  id: 'se-welcome',
+                  title: 'Welcome Cocktails',
+                  description: 'Drinks',
+                  startTime: '2026-06-19T19:00:00Z',
+                  endTime: '2026-06-19T21:00:00Z',
+                  locationName: 'Terrace',
+                  isPrivate: false,
+                  isReadOnly: false,
+                  mealOptions: [],
+                  customQuestions: [],
+                  userRsvp: { status: 'pending', plusOneCount: 0, dietaryNotes: '' },
+                },
+                {
+                  id: 'se-dinner',
+                  title: 'Reception Dinner',
+                  description: 'Dinner',
+                  startTime: '2026-06-20T18:00:00Z',
+                  endTime: '2026-06-20T22:00:00Z',
+                  locationName: 'Ballroom',
+                  isPrivate: false,
+                  isReadOnly: false,
+                  mealOptions: [{ id: 'm-active', label: 'Herb Chicken', dietaryTags: [] }],
+                  customQuestions: [
+                    {
+                      id: 'q-bus',
+                      prompt: 'Bus route',
+                      type: 'choice',
+                      required: false,
+                      options: ['Downtown Route'],
+                    },
+                  ],
+                  userRsvp: {
+                    status: 'attending',
+                    plusOneCount: 1,
+                    dietaryNotes: '',
+                    mealSelections: ['m-removed-dish', 'm-active'],
+                    customAnswers: { 'q-bus': 'Legacy Hotel Route' },
+                    plusOneNames: [''],
+                  },
+                },
+              ],
+            }),
+          };
+        }
+        return { ok: false, json: async () => ({}) };
+      });
+
+      render(<InteractiveTimeline events={[]} timezone="UTC" emptyStateMessage="No events" />);
+
+      const welcomeCard = await screen.findByTestId('rsvp-card-se-welcome');
+      const dinnerCard = await screen.findByTestId('rsvp-card-se-dinner');
+
+      // Removed meal option and removed choice option remain visible as selected values
+      const primaryMealSelect = within(dinnerCard).getByLabelText(
+        'Entrée for Jane Doe *'
+      ) as HTMLSelectElement;
+      expect(primaryMealSelect.value).toBe('m-removed-dish');
+      expect(within(primaryMealSelect).getByText(/m-removed-dish/i)).toBeInTheDocument();
+
+      const busSelect = within(dinnerCard).getByLabelText('Bus route') as HTMLSelectElement;
+      expect(busSelect.value).toBe('Legacy Hotel Route');
+      expect(within(busSelect).getByText(/Legacy Hotel Route/i)).toBeInTheDocument();
+
+      // Saving meal event with blank companion name is blocked
+      fireEvent.change(primaryMealSelect, { target: { value: 'm-active' } });
+      fireEvent.click(within(dinnerCard).getByRole('button', { name: 'Save RSVP' }));
+      expect(await within(dinnerCard).findByRole('alert')).toHaveTextContent(/companion|plus-one/i);
+
+      // Typing companion name on Welcome Cocktails shares it into Reception Dinner
+      fireEvent.click(within(welcomeCard).getByRole('radio', { name: /^attending$/i }));
+      fireEvent.change(within(welcomeCard).getByLabelText(/plus-one count/i), {
+        target: { value: '1' },
+      });
+      fireEvent.change(within(welcomeCard).getByLabelText('Plus-One Full Name'), {
+        target: { value: 'Morgan Guest' },
+      });
+
+      const dinnerPlusOneInput = within(dinnerCard).getByLabelText(
+        'Plus-One Full Name'
+      ) as HTMLInputElement;
+      expect(dinnerPlusOneInput.value).toBe('Morgan Guest');
+    });
   });
 });
