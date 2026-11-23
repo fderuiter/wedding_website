@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { getAppConfig } from '@/lib/config';
 import { createAuditSnapshot, createBatchAuditSnapshots } from '@/lib/audit';
+import { executeInTransaction } from '@/lib/transaction';
 import { ApiError } from '@/utils/ApiError';
 import {
   evaluateRsvpCutoff,
@@ -2266,7 +2267,7 @@ export class SubEventService {
       }
     }
 
-    return this.client.$transaction(async (tx: any) => {
+    return executeInTransaction(this.client, async (tx: any) => {
       if (input.clearAll) {
         await tx.subEventRsvp.deleteMany({
           where: { invitationCodeId: invite.id },
@@ -2442,7 +2443,7 @@ export class SubEventService {
       }
     }
 
-    return this.client.$transaction(async (tx: any) => {
+    return executeInTransaction(this.client, async (tx: any) => {
       const updatedRecords: any[] = [];
 
       for (const invite of invites) {

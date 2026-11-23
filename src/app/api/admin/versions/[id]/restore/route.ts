@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { createAuditSnapshot } from '@/lib/audit';
 import { coordinateSchema, isSafeMediaOrPhotoUrl } from '@/utils/validation';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
@@ -588,14 +589,12 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
       ? stripAppConfigSecrets(rawSnapshotData)
       : rawSnapshotData;
 
-  await prisma.snapshotVersion.create({
-    data: {
-      entityType: version.entityType,
-      entityId: version.entityId,
-      data: rollbackSnapshotPayload,
-      author: 'Admin (Rollback)',
-    },
-  });
+  await createAuditSnapshot(
+    version.entityType,
+    version.entityId,
+    rollbackSnapshotPayload,
+    'Admin (Rollback)',
+  );
 
   return NextResponse.json({ success: true, restoredTo: id });
 });

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAppConfig, toPublicAppConfig, toAdminAppConfig, isMultisiteEnabled } from '@/lib/config';
 import { prisma } from '@/lib/prisma';
+import { createAuditSnapshot } from '@/lib/audit';
 import { revalidatePath } from 'next/cache';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
@@ -133,26 +134,12 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
 
   const parsedUpdatedConfig = AppConfigSchema.parse(updatedConfig);
 
-  await prisma.snapshotVersion.create({
-    data: {
-      entityType: 'AppConfig',
-      entityId: targetId,
-      data: toPublicAppConfig(parsedUpdatedConfig) as any,
-      author: 'Admin',
-    }
-  });
-  
-  const versions = await prisma.snapshotVersion.findMany({
-    where: { entityType: 'AppConfig', entityId: targetId },
-    orderBy: { createdAt: 'desc' },
-    select: { id: true },
-  });
-  if (versions.length > 50) {
-    const idsToDelete = versions.slice(50).map(v => v.id);
-    await prisma.snapshotVersion.deleteMany({
-      where: { id: { in: idsToDelete } }
-    });
-  }
+  await createAuditSnapshot(
+    'AppConfig',
+    targetId,
+    toPublicAppConfig(parsedUpdatedConfig),
+    'Admin'
+  );
 
   revalidatePath('/', 'layout');
 
@@ -202,14 +189,12 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
   const parsedCreatedConfig = AppConfigSchema.parse(createdConfig);
 
-  await prisma.snapshotVersion.create({
-    data: {
-      entityType: 'AppConfig',
-      entityId: newId,
-      data: toPublicAppConfig(parsedCreatedConfig) as any,
-      author: 'Admin',
-    }
-  });
+  await createAuditSnapshot(
+    'AppConfig',
+    newId,
+    toPublicAppConfig(parsedCreatedConfig),
+    'Admin'
+  );
 
   revalidatePath('/', 'layout');
 
