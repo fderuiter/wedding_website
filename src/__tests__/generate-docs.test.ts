@@ -157,7 +157,7 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       expect(getZodType(shape.features)).toBe('object[]');
 
       const entries = Object.entries(shape);
-      expect(entries).toHaveLength(98);
+      expect(entries).toHaveLength(99);
 
       for (const [key, value] of entries) {
         const type = getZodType(value);
@@ -192,7 +192,7 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
   });
 
   describe('Generated AppConfig and API Route Specifications', () => {
-    it('distinguishes 83 Prisma columns, 15 virtual DTO fields, 69 public fields, 25 admin-only fields, and 4 masked secrets', () => {
+    it('distinguishes 84 Prisma columns, 15 virtual DTO fields, 69 public fields, 26 admin-only fields, and 4 masked secrets', () => {
       const table = generateConfigTable();
       expect(table).not.toContain('Configuration field for');
 
@@ -200,7 +200,7 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
         .trim()
         .split('\n')
         .slice(2);
-      expect(rows).toHaveLength(98);
+      expect(rows).toHaveLength(99);
 
       const prismaRows = rows.filter((r) => r.includes('| `Prisma` |'));
       const virtualRows = rows.filter((r) => r.includes('| `Virtual DTO` |'));
@@ -208,10 +208,10 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       const adminOnlyRows = rows.filter((r) => r.includes('| `Admin-only` |'));
       const maskedSecretRows = rows.filter((r) => r.includes('| `Masked secret ('));
 
-      expect(prismaRows).toHaveLength(83);
+      expect(prismaRows).toHaveLength(84);
       expect(virtualRows).toHaveLength(15);
       expect(publicRows).toHaveLength(69);
-      expect(adminOnlyRows).toHaveLength(25);
+      expect(adminOnlyRows).toHaveLength(26);
       expect(maskedSecretRows).toHaveLength(4);
 
       expect(table).toContain('`Masked secret (hasSmtpPass)`');
@@ -220,14 +220,14 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       expect(table).toContain('`Masked secret (hasTwilioAuthToken)`');
     });
 
-    it('lists all 78 API route handlers and marks /api/media and /api/admin/invitation-codes/merge Admin-only, /api/registry/webhook/stripe stripeSignature, and /api/live and /api/uploads/[...path] Public', () => {
+    it('lists all 80 API route handlers and marks /api/media and /api/admin/invitation-codes/merge Admin-only, /api/registry/webhook/stripe stripeSignature, and /api/live and /api/uploads/[...path] Public', () => {
       const apiSection = generateApiRoutesSection();
-      expect(apiSection).toContain('Total API route handlers: **78**');
+      expect(apiSection).toContain('Total API route handlers: **80**');
 
       const handlerRows = apiSection
         .split('\n')
         .filter((line) => line.startsWith('| `/api/'));
-      expect(handlerRows).toHaveLength(78);
+      expect(handlerRows).toHaveLength(80);
 
       expect(apiSection).toContain('| `/api/live` | `src/app/api/live/route.ts` | `GET` | `Public` |');
       expect(apiSection).toContain('| `/api/registry/claim` | `src/app/api/registry/claim/route.ts` | `GET`, `POST` | `Public` |');

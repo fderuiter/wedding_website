@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
-import { thankYouService } from '@/features/registry';
+import { ApiError } from '@/utils/ApiError';
+import { formatZodError } from '@/utils/validation';
+import { CreateOfflineThankYouNoteSchema, thankYouService } from '@/features/registry';
 
 export const GET = withApiMiddleware(async (req: NextRequest) => {
   const { searchParams } = new URL(req.url);
@@ -22,4 +24,22 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
     metrics: result.metrics,
     pagination: result.pagination,
   });
+});
+
+export const POST = withApiMiddleware(async (req: NextRequest) => {
+  const body = await req.json();
+
+  const parseResult = CreateOfflineThankYouNoteSchema.safeParse(body);
+  if (!parseResult.success) {
+    throw new ApiError(400, `Validation Error: ${formatZodError(parseResult.error)}`);
+  }
+
+  const created = await thankYouService.createOfflineGift(parseResult.data, 'Admin');
+  return NextResponse.json(
+    {
+      success: true,
+      item: created,
+    },
+    { status: 201 }
+  );
 });

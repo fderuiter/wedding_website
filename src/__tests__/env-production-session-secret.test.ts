@@ -316,4 +316,79 @@ describe('Production Boot Guest Session Secret Validation', () => {
       expect(res.status).toBe(0);
     });
   });
+
+  describe('--env-file quote stripping and Cloudflare R2 validation', () => {
+    it('accepts matching outer double and single quotes on production secrets and URLs from docker run --env-file', () => {
+      const doubleQuoted = runEnvBoot({
+        NODE_ENV: 'production',
+        ADMIN_PASSWORD: `"${validAdminPassword}"`,
+        DATABASE_URL: `"${validDatabaseUrl}"`,
+        ALLOWED_HOSTS: '"wedding.example.com,localhost"',
+        GUEST_PASSCODE: `"${validGuestPasscode}"`,
+        GUEST_SESSION_SECRET: `"${valid32Secret}"`,
+      });
+      expect(doubleQuoted.status).toBe(0);
+
+      const singleQuoted = runEnvBoot({
+        NODE_ENV: 'production',
+        ADMIN_PASSWORD: `'${validAdminPassword}'`,
+        DATABASE_URL: `'${validDatabaseUrl}'`,
+        ALLOWED_HOSTS: "'wedding.example.com,localhost'",
+        GUEST_PASSCODE: `'${validGuestPasscode}'`,
+        GUEST_SESSION_SECRET: `'${valid32Secret}'`,
+      });
+      expect(singleQuoted.status).toBe(0);
+    });
+
+    it('rejects Cloudflare R2 S3_REGION=auto when S3_ENDPOINT is omitted', () => {
+      const res = runEnvBoot({
+        NODE_ENV: 'production',
+        ADMIN_PASSWORD: validAdminPassword,
+        DATABASE_URL: validDatabaseUrl,
+        GUEST_PASSCODE: validGuestPasscode,
+        GUEST_SESSION_SECRET: valid32Secret,
+        S3_BUCKET: 'wedding-assets',
+        S3_REGION: 'auto',
+        S3_ACCESS_KEY_ID: 'r2-access-key',
+        S3_SECRET_ACCESS_KEY: 'r2-secret-key',
+      });
+
+      expect(res.status).not.toBe(0);
+      expect(res.stderr).toContain('S3_ENDPOINT');
+    });
+
+    it('rejects private *.r2.cloudflarestorage.com endpoints without S3_PUBLIC_URL and succeeds when S3_PUBLIC_URL is set', () => {
+      const missingPublicUrl = runEnvBoot({
+        NODE_ENV: 'production',
+        ADMIN_PASSWORD: validAdminPassword,
+        DATABASE_URL: validDatabaseUrl,
+        GUEST_PASSCODE: validGuestPasscode,
+        GUEST_SESSION_SECRET: valid32Secret,
+        S3_BUCKET: 'wedding-assets',
+        S3_REGION: 'auto',
+        S3_ACCESS_KEY_ID: 'r2-access-key',
+        S3_SECRET_ACCESS_KEY: 'r2-secret-key',
+        S3_ENDPOINT: 'https://1234567890abcdef.r2.cloudflarestorage.com',
+      });
+
+      expect(missingPublicUrl.status).not.toBe(0);
+      expect(missingPublicUrl.stderr).toContain('S3_PUBLIC_URL');
+
+      const validR2 = runEnvBoot({
+        NODE_ENV: 'production',
+        ADMIN_PASSWORD: validAdminPassword,
+        DATABASE_URL: validDatabaseUrl,
+        GUEST_PASSCODE: validGuestPasscode,
+        GUEST_SESSION_SECRET: valid32Secret,
+        S3_BUCKET: 'wedding-assets',
+        S3_REGION: 'auto',
+        S3_ACCESS_KEY_ID: 'r2-access-key',
+        S3_SECRET_ACCESS_KEY: 'r2-secret-key',
+        S3_ENDPOINT: 'https://1234567890abcdef.r2.cloudflarestorage.com',
+        S3_PUBLIC_URL: 'https://assets.wedding.example.com',
+      });
+
+      expect(validR2.status).toBe(0);
+    });
+  });
 });

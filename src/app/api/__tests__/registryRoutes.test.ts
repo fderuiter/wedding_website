@@ -197,9 +197,19 @@ describe('Registry API routes', () => {
   });
 
   describe('GET /api/registry/items', () => {
-    it('returns paginated items without contributors for public guest requests', async () => {
+    it('returns paginated items without contributors and masks PII/payment handles for public guest requests', async () => {
       mockIsAdminRequest.mockResolvedValue(false);
-      const paginatedData = { items: [{ id: '1', name: 'Item', contributors: [] }], total: 1, page: 1, limit: 20, totalPages: 1 };
+      const rawItems = [
+        {
+          id: '1',
+          name: 'Honeymoon Fund',
+          purchaserName: 'Secret Buyer',
+          paymentHandle: '@secret-venmo',
+          paymentHandleType: 'Venmo',
+          contributors: [{ id: 'c1', name: 'Secret Buyer', email: 'secret@example.com', amount: 100, date: '2026-01-01' }],
+        },
+      ];
+      const paginatedData = { items: rawItems, total: 1, page: 1, limit: 20, totalPages: 1 };
       mockGetAllItems.mockResolvedValue(paginatedData);
       const res = await getItems();
       expect(res.status).toBe(200);
@@ -212,7 +222,12 @@ describe('Registry API routes', () => {
         includeContributors: false,
       });
       const json = await res.json();
-      expect(json.data).toEqual(paginatedData);
+      expect(json.data.items).toHaveLength(1);
+      expect(json.data.items[0].purchaserName).toBe('Anonymous');
+      expect(json.data.items[0].contributors).toEqual([
+        { name: 'Anonymous', amount: 'Anonymous', date: 'Anonymous' },
+      ]);
+      expect(json.data.items[0].contributors[0].email).toBeUndefined();
     });
 
     it('requests contributors and validates query parameters for administrative requests', async () => {
@@ -346,28 +361,51 @@ describe('Registry API routes', () => {
     const mockParams = Promise.resolve({ id: itemId });
 
     describe('GET', () => {
-      it('returns item when found for guest request', async () => {
+      it('returns masked item without PII or payment handles when found for guest request', async () => {
         mockIsAdminRequest.mockResolvedValue(false);
-        const item = { id: itemId, name: 'Lamp', contributors: [] };
+        const item = {
+          id: itemId,
+          name: 'Lamp',
+          purchaserName: 'Private Buyer',
+          paymentHandle: '@private-zelle',
+          paymentHandleType: 'Zelle',
+          contributors: [{ id: 'c1', name: 'Private Buyer', email: 'buyer@example.com', amount: 100, date: '2026-01-01' }],
+        };
         mockGetItemById.mockResolvedValue(item);
         const req = new Request(baseUrl);
         const res = await getItemByIdRoute(req as unknown as NextRequest, { params: mockParams });
         expect(res.status).toBe(200);
         expect(mockGetItemById).toHaveBeenCalledWith(itemId, { includeContributors: false });
         const json = await res.json();
-        expect(json.data).toEqual(item);
+        expect(json.data.id).toBe(itemId);
+        expect(json.data.name).toBe('Lamp');
+        expect(json.data.purchaserName).toBe('Anonymous');
+        expect(json.data.contributors).toEqual([
+          { name: 'Anonymous', amount: 'Anonymous', date: 'Anonymous' },
+        ]);
+        expect(json.data.contributors[0].email).toBeUndefined();
       });
 
-      it('returns item with contributors when found for admin request', async () => {
+      it('returns sanitized item with contributors (stripping contributor email) for admin request', async () => {
         mockIsAdminRequest.mockResolvedValue(true);
-        const item = { id: itemId, name: 'Lamp', contributors: [{ name: 'Jane', amount: 100, date: '2026-01-01' }] };
+        const item = {
+          id: itemId,
+          name: 'Lamp',
+          purchaserName: 'Jane',
+          paymentHandle: '@couple-zelle',
+          paymentHandleType: 'Zelle',
+          contributors: [{ name: 'Jane', email: 'jane@example.com', amount: 100, date: '2026-01-01' }],
+        };
         mockGetItemById.mockResolvedValue(item);
         const req = new Request(baseUrl);
         const res = await getItemByIdRoute(req as unknown as NextRequest, { params: mockParams });
         expect(res.status).toBe(200);
         expect(mockGetItemById).toHaveBeenCalledWith(itemId, { includeContributors: true });
         const json = await res.json();
-        expect(json.data).toEqual(item);
+        expect(json.data).toEqual({
+          ...item,
+          contributors: [{ name: 'Jane', amount: 100, date: '2026-01-01' }],
+        });
       });
 
       it('masks purchaserName as Anonymous for non-admin single-item requests while preserving empty values', async () => {
