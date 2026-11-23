@@ -50,10 +50,21 @@ function WeddingPartyDashboardContent({
         if (cancelled) return;
         const cfg = raw && typeof raw === 'object' && 'data' in raw && raw.data ? raw.data : raw;
         if (cfg && typeof cfg === 'object') {
-          setPartnerNames({
-            partner1Name: String((cfg as Record<string, unknown>).partner1Name || (cfg as Record<string, unknown>).brideName || ''),
-            partner2Name: String((cfg as Record<string, unknown>).partner2Name || (cfg as Record<string, unknown>).groomName || ''),
-          });
+          const nextP1 = String(
+            (cfg as Record<string, unknown>).partner1Name ||
+              (cfg as Record<string, unknown>).brideName ||
+              '',
+          );
+          const nextP2 = String(
+            (cfg as Record<string, unknown>).partner2Name ||
+              (cfg as Record<string, unknown>).groomName ||
+              '',
+          );
+          setPartnerNames((prev) =>
+            prev.partner1Name === nextP1 && prev.partner2Name === nextP2
+              ? prev
+              : { partner1Name: nextP1, partner2Name: nextP2 },
+          );
         }
       } catch {
         // Fallback to Partner 1 / Partner 2 labels if settings endpoint is unavailable

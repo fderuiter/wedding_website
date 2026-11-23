@@ -58,6 +58,13 @@ describe('WeddingPartyDashboardPage Reordering', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: { partner1Name: 'Maya', partner2Name: 'Liam' },
+      }),
+    } as Response);
     mockReorder.mockResolvedValue(undefined);
     mockUseAdminWeddingParty.mockReturnValue({
       data: mockMembers as any,
@@ -74,6 +81,10 @@ describe('WeddingPartyDashboardPage Reordering', () => {
     } as any);
   });
 
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('renders Move Up and Move Down buttons and handles reordering', async () => {
     render(<WeddingPartyDashboardPage />);
 
@@ -87,13 +98,30 @@ describe('WeddingPartyDashboardPage Reordering', () => {
     });
   });
 
-  it('disables Move Up on the first member and Move Down on the last member', () => {
+  it('disables Move Up on the first member and Move Down on the last member', async () => {
     render(<WeddingPartyDashboardPage />);
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith('/api/admin/settings');
+    });
 
     const aliceMoveUp = screen.getByRole('button', { name: /move up alice/i });
     expect(aliceMoveUp).toBeDisabled();
 
     const bobMoveDown = screen.getByRole('button', { name: /move down bob/i });
     expect(bobMoveDown).toBeDisabled();
+  });
+
+  it('passes configured partner names from /api/admin/settings into the member Side options', async () => {
+    render(<WeddingPartyDashboardPage />);
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith('/api/admin/settings');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /add new member/i }));
+
+    expect(await screen.findByRole('option', { name: "Maya's Side" })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: "Liam's Side" })).toBeInTheDocument();
   });
 });
