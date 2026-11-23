@@ -210,6 +210,7 @@ describe('verify-deployment-runbooks', () => {
     const brokenDeployment = fs
       .readFileSync(deploymentPath, 'utf8')
       .replace(/storybook\.yml/g, 'removed-workflow.yml')
+      .replace(/static-export-build/g, 'removed-demo-job')
       .replace(/build:export/g, 'legacy-export')
       .replace(
         '| `DOCKERHUB_TOKEN` |',
@@ -221,6 +222,7 @@ describe('verify-deployment-runbooks', () => {
     expect(errors).toEqual(
       expect.arrayContaining([
         expect.stringContaining('DEPLOYMENT.md: Missing GitHub Actions workflow reference "storybook.yml"'),
+        expect.stringContaining('DEPLOYMENT.md: Missing ci.yml job reference "static-export-build"'),
         expect.stringContaining('DEPLOYMENT.md: Missing static HTML showcase script reference "build:export"'),
         expect.stringContaining('Secret "ADMIN_PASSWORD" in Setup and Secrets table is not referenced via secrets.*'),
       ])
