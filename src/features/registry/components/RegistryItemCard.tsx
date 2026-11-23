@@ -4,7 +4,12 @@ import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-
 import type { Stripe, StripeElements } from '@stripe/stripe-js';
 import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
 import { useTheme } from '@/components/ThemeProvider';
-import { RegistryItem, RegistryShippingAddress, OrderTrackingDetails } from '../types';
+import {
+  RegistryItem,
+  RegistryShippingAddress,
+  OrderTrackingDetails,
+  RedirectReconciliationState,
+} from '../types';
 import { ContributorLifecycleBadge } from './ContributorLifecycleBadge';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
 import { MediaImage } from '@/components/MediaImage';
@@ -63,6 +68,7 @@ interface RegistryItemCardProps {
   defaultPaymentHandleType?: string | null;
   defaultPaymentHandle?: string | null;
   shippingAddress?: RegistryShippingAddress | null;
+  redirectReconciliation?: RedirectReconciliationState | null;
   isAdmin?: boolean;
 }
 
@@ -162,6 +168,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   defaultPaymentHandleType,
   defaultPaymentHandle,
   shippingAddress,
+  redirectReconciliation = null,
   isAdmin = false,
 }) => {
   const { resolvedTheme } = useTheme();
@@ -170,6 +177,23 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const directRadioRef = useRef<HTMLButtonElement | null>(null);
   const cardRadioRef = useRef<HTMLButtonElement | null>(null);
+
+  const activeRedirect =
+    redirectReconciliation &&
+    (!redirectReconciliation.itemId || redirectReconciliation.itemId === item.id)
+      ? redirectReconciliation
+      : null;
+
+  const initialRedirectName =
+    activeRedirect?.contributorName &&
+    (activeRedirect.status === 'succeeded' || activeRedirect.contributorName !== 'Anonymous Guest')
+      ? activeRedirect.contributorName
+      : '';
+  const initialRedirectAmount =
+    typeof activeRedirect?.amount === 'number' && activeRedirect.amount > 0
+      ? activeRedirect.amount
+      : '';
+  const initialRedirectCoverFee = Boolean(activeRedirect?.coverFee);
 
   const {
     isValidatingCode,
@@ -215,12 +239,19 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     handleClearCode,
     handleSubmit,
     handlePresetClick,
-  } = useRegistryContributionMachine({ item, onContribute });
+  } = useRegistryContributionMachine({
+    item,
+    onContribute,
+    initialContributorName: initialRedirectName,
+    initialAmount: initialRedirectAmount,
+    initialCoverFee: initialRedirectCoverFee,
+  });
 
   const { handleShare, copied } = useShareItem(item);
   const toastContext = useOptionalToast();
   const [copiedReceiptKey, setCopiedReceiptKey] = useState<string | null>(null);
   const [copiedAddress, setCopiedAddress] = useState(false);
+  const [copiedHandle, setCopiedHandle] = useState(false);
   const [isCardProcessing, setIsCardProcessing] = useState(false);
   const [postClaimOverride, setPostClaimOverride] = useState<{
     key: string;
@@ -230,6 +261,8 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   const [claimActionError, setClaimActionError] = useState<string | null>(null);
   const receiptCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const addressCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const appliedRedirectKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     return () => {
@@ -239,8 +272,50 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
       if (addressCopyTimerRef.current) {
         clearTimeout(addressCopyTimerRef.current);
       }
+      if (handleCopyTimerRef.current) {
+        clearTimeout(handleCopyTimerRef.current);
+      }
     };
   }, []);
+
+  useEffect(() => {
+    if (!activeRedirect) return;
+    const redirectKey = `${item.id}:${activeRedirect.paymentIntentId || ''}:${activeRedirect.status}:${activeRedirect.amount ?? ''}:${activeRedirect.coverFee ?? ''}:${activeRedirect.contributorName ?? ''}`;
+    if (appliedRedirectKeyRef.current === redirectKey) return;
+    appliedRedirectKeyRef.current = redirectKey;
+
+    if (typeof activeRedirect.amount === 'number' && activeRedirect.amount > 0) {
+      setAmount(activeRedirect.amount);
+    }
+    if (typeof activeRedirect.coverFee === 'boolean') {
+      setCoverFee(activeRedirect.coverFee);
+    }
+    if (
+      activeRedirect.contributorName &&
+      (activeRedirect.status === 'succeeded' ||
+        activeRedirect.contributorName !== 'Anonymous Guest')
+    ) {
+      setContributorName(activeRedirect.contributorName);
+    }
+
+    if (activeRedirect.status === 'succeeded') {
+      setPaymentTransactionId(activeRedirect.paymentIntentId || null);
+      setSubmissionError(null);
+      setPhase('success');
+    } else if (activeRedirect.status === 'failed') {
+      setSubmissionError(null);
+      setPhase('error');
+    }
+  }, [
+    activeRedirect,
+    item.id,
+    setAmount,
+    setContributorName,
+    setCoverFee,
+    setPaymentTransactionId,
+    setPhase,
+    setSubmissionError,
+  ]);
 
   const { requestedUnits, claimedUnits, remainingUnits } = getItemUnitCounts(item);
   const totalTargetAmount = getItemTotalTargetAmount(item);
@@ -274,9 +349,11 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   const selectedMode: 'direct' | 'card' =
     selectedModeOverride && selectedModeOverride.key === modeBaseKey
       ? selectedModeOverride.mode
-      : hasPaymentHandle
-        ? 'direct'
-        : 'card';
+      : activeRedirect && effectiveCardCheckoutEnabled
+        ? 'card'
+        : hasPaymentHandle
+          ? 'direct'
+          : 'card';
 
   const activePaymentMode: FundPaymentMode | null = useMemo(() => {
     if (!isPayableGroupGift) return null;
@@ -324,20 +401,27 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     ? typeof amount === 'number'
       ? amount
       : parseFloat(amount as string)
-    : requestedUnits > 1
-      ? Math.round(item.price * selectedUnits * 100) / 100
-      : item.price;
+    : typeof activeRedirect?.amount === 'number' && activeRedirect.amount > 0
+      ? activeRedirect.amount
+      : requestedUnits > 1
+        ? Math.round(item.price * selectedUnits * 100) / 100
+        : item.price;
   const baseContributionAmount =
     !isNaN(parsedContributionAmount) && parsedContributionAmount > 0 ? parsedContributionAmount : 0;
 
-  const processingFeeRate = isCardMode ? CARD_PROCESSING_FEE_RATE : 0;
-  const effectiveCoverFee = isCardMode ? coverFee : false;
+  const isCardTransactionContext = isCardMode || Boolean(paymentTransactionId);
+  const processingFeeRate = isCardTransactionContext ? CARD_PROCESSING_FEE_RATE : 0;
+  const effectiveCoverFee = isCardTransactionContext ? coverFee : false;
   const estimatedProcessingFee = Math.round(baseContributionAmount * processingFeeRate * 100) / 100;
   const netPayoutAmount = Math.max(
     0,
     Math.round((baseContributionAmount - estimatedProcessingFee) * 100) / 100
   );
-  const paymentUrl = getPaymentUrl(effectiveHandleType, effectiveHandleValue);
+  const paymentUrl = getPaymentUrl(
+    effectiveHandleType,
+    effectiveHandleValue,
+    baseContributionAmount > 0 ? baseContributionAmount : undefined
+  );
 
   const initialElementsAmount = item.isGroupGift
     ? Math.min(100, remainingAmount > 0 ? remainingAmount : item.price)
@@ -651,8 +735,8 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             },
             return_url:
               typeof window !== 'undefined'
-                ? `${window.location.origin}/registry`
-                : 'https://example.com/registry',
+                ? `${window.location.origin}/registry?item=${encodeURIComponent(item.id)}`
+                : `https://example.com/registry?item=${encodeURIComponent(item.id)}`,
           },
           redirect: 'if_required',
         });
@@ -878,6 +962,49 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     }
   };
 
+  const handleCopyPaymentHandle = async () => {
+    if (!effectiveHandleValue) return;
+    let copySucceeded = false;
+
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(effectiveHandleValue);
+        copySucceeded = true;
+      } catch {
+        // Fallback below
+      }
+    }
+
+    if (!copySucceeded && typeof document !== 'undefined') {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = effectiveHandleValue;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        copySucceeded = true;
+      } catch {
+        // Fallback failed
+      }
+    }
+
+    if (copySucceeded) {
+      setCopiedHandle(true);
+      if (handleCopyTimerRef.current) {
+        clearTimeout(handleCopyTimerRef.current);
+      }
+      handleCopyTimerRef.current = setTimeout(() => {
+        setCopiedHandle(false);
+      }, 2500);
+      toastContext?.addToast('Payment handle copied to clipboard!', 'success');
+    } else {
+      toastContext?.addToast('Failed to copy payment handle', 'error');
+    }
+  };
+
   const isClaimedReadOnly = (item.purchased || isFullyFunded) && !isSuccess;
   const showDirectTransferDetails =
     hasPaymentHandle && !isClaimedReadOnly && (!isPayableGroupGift || isDirectMode || item.isSample);
@@ -1048,7 +1175,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
               <span className="text-sm font-mono text-primary font-bold select-all">
                 {effectiveHandleValue}
               </span>
-              {paymentUrl && (
+              {paymentUrl ? (
                 <AccessibleExternalLink
                   href={paymentUrl}
                   className="inline-flex items-center gap-1 text-xs text-primary dark:text-primary hover:underline font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
@@ -1058,11 +1185,26 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                 >
                   <span>Open Link</span>
                 </AccessibleExternalLink>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  data-testid="copy-payment-handle-button"
+                  onClick={handleCopyPaymentHandle}
+                  srContext={`(${effectiveHandleType || 'payment'})`}
+                  className="inline-flex items-center gap-1 text-xs py-1 px-2 h-auto"
+                >
+                  <Icon name={copiedHandle ? 'Check' : 'Copy'} className="w-3.5 h-3.5" />
+                  <span>{copiedHandle ? 'Handle Copied!' : 'Copy Handle'}</span>
+                </Button>
               )}
             </div>
             {isDirectMode && !item.isSample && !isSuccess && !item.purchased && (
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5">
-                Send your gift using the handle or QR code, then record your contribution below so the couple can thank you.
+                {paymentUrl
+                  ? 'Send your gift using the handle or QR code, then record your contribution below so the couple can thank you.'
+                  : `Copy the handle above to send your gift in ${effectiveHandleType || 'your payment app'}, then record your contribution below so the couple can thank you.`}
               </p>
             )}
           </div>
@@ -1152,6 +1294,41 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
           <pre className="whitespace-pre-wrap font-sans text-xs text-gray-700 dark:text-gray-300 leading-relaxed m-0">
             {formattedShippingText}
           </pre>
+        </div>
+      )}
+
+      {activeRedirect &&
+        !isSuccess &&
+        (activeRedirect.status === 'reconciling' || activeRedirect.status === 'processing') && (
+        <div
+          role="status"
+          data-testid="redirect-processing-banner"
+          className="mb-4 p-3.5 rounded-lg bg-sky-50 dark:bg-sky-950/50 border border-sky-200 dark:border-sky-800 text-sky-900 dark:text-sky-100 text-sm"
+        >
+          <p className="font-semibold mb-0.5">
+            {activeRedirect.status === 'reconciling'
+              ? 'Verifying Payment Status...'
+              : 'Payment Processing'}
+          </p>
+          <p className="text-xs leading-relaxed">
+            {activeRedirect.status === 'reconciling'
+              ? 'Please wait a moment while we confirm your payment with Stripe.'
+              : 'Your payment is being processed by your bank. Your contribution will be recorded automatically once confirmed.'}
+          </p>
+        </div>
+      )}
+
+      {activeRedirect && !isSuccess && activeRedirect.status === 'failed' && (
+        <div
+          role="alert"
+          data-testid="redirect-retry-banner"
+          className="mb-4 p-3.5 rounded-lg bg-rose-50 dark:bg-rose-950/50 border border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-100 text-sm"
+        >
+          <p className="font-semibold mb-0.5">Payment Not Completed</p>
+          <p className="text-xs leading-relaxed">
+            {activeRedirect.failureMessage ||
+              'Your payment could not be completed. No charge was recorded — please review your card details below and try again, or choose another payment method.'}
+          </p>
         </div>
       )}
 
@@ -1381,7 +1558,11 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
               )}
             </div>
             {codeError && <FormMessage>{codeError}</FormMessage>}
-            {isCodeLocked && <p className="text-sm text-green-600 mt-1">Code verified! Name pre-filled.</p>}
+            {isCodeLocked && (
+              <p className="text-sm text-green-700 dark:text-green-400 mt-1">
+                Code verified! Name pre-filled.
+              </p>
+            )}
           </FormGroup>
           <FormGroup state={fieldErrors.name ? 'error' : 'default'} className="mb-3">
             <Label>

@@ -305,10 +305,13 @@ describe('Registry Ledger, Multi-Quantity Capacity, Shipping Security Perimeter 
       const sentPayload = sendEmailSpy.mock.calls[0][0];
       expect(sentPayload.to).toBe('couple@example.com');
       expect(sentPayload.body).toContain('Retailer Order #');
-      expect(sentPayload.body).toContain('ORD-&lt;script&gt;alert(1)&lt;/script&gt;');
       expect(sentPayload.body).not.toContain('<script>');
-      expect(sentPayload.body).toContain('UPS &amp; Co');
-      expect(sentPayload.body).toContain('1Z&quot;999');
+      expect(sentPayload.html).toContain('<table');
+      expect(sentPayload.html).toContain('Retailer Order #');
+      expect(sentPayload.html).toContain('ORD-&lt;script&gt;alert(1)&lt;/script&gt;');
+      expect(sentPayload.html).not.toContain('<script>');
+      expect(sentPayload.html).toContain('UPS &amp; Co');
+      expect(sentPayload.html).toContain('1Z&quot;999');
 
       sendEmailSpy.mockRestore();
     });

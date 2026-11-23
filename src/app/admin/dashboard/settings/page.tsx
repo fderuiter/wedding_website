@@ -708,9 +708,12 @@ export default function AdminSettingsPage() {
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
+    const target = e.target;
+    const { name, value } = target;
+    const nextValue =
+      target instanceof HTMLInputElement && target.type === 'checkbox' ? target.checked : value;
     setLocalConfig((prev) => {
-      const next: SettingsDraftConfig = { ...(prev ?? {}), [name]: value };
+      const next: SettingsDraftConfig = { ...(prev ?? {}), [name]: nextValue };
       if (name === 'partner1Name') {
         next.brideName = value;
       } else if (name === 'partner2Name') {
@@ -1582,20 +1585,20 @@ export default function AdminSettingsPage() {
                     <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">SMTP Credentials</h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       <FormGroup>
-                        <Label>SMTP Host</Label>
-                        <Input type="text" name="smtpHost" value={localConfig.smtpHost || ''} onChange={handleChange} placeholder="smtp.mailgun.org" />
+                        <Label htmlFor="smtpHost">SMTP Host</Label>
+                        <Input id="smtpHost" type="text" name="smtpHost" value={localConfig.smtpHost || ''} onChange={handleChange} placeholder="smtp.mailgun.org" />
                       </FormGroup>
                       <FormGroup>
-                        <Label>SMTP Port</Label>
-                        <Input type="number" name="smtpPort" value={localConfig.smtpPort || 587} onChange={handleChange} placeholder="587" />
+                        <Label htmlFor="smtpPort">SMTP Port</Label>
+                        <Input id="smtpPort" type="number" name="smtpPort" value={localConfig.smtpPort || 587} onChange={handleChange} placeholder="587" />
                       </FormGroup>
                       <FormGroup>
-                        <Label>From Email Address</Label>
-                        <Input type="email" name="smtpFrom" value={localConfig.smtpFrom || ''} onChange={handleChange} placeholder="wedding@example.com" />
+                        <Label htmlFor="smtpFrom">From Email Address</Label>
+                        <Input id="smtpFrom" type="email" name="smtpFrom" value={localConfig.smtpFrom || ''} onChange={handleChange} placeholder="wedding@example.com" />
                       </FormGroup>
                       <FormGroup>
-                        <Label>SMTP Username</Label>
-                        <Input type="text" name="smtpUser" value={localConfig.smtpUser || ''} onChange={handleChange} />
+                        <Label htmlFor="smtpUser">SMTP Username</Label>
+                        <Input id="smtpUser" type="text" name="smtpUser" value={localConfig.smtpUser || ''} onChange={handleChange} />
                       </FormGroup>
                       <FormGroup>
                         <Label htmlFor="smtpPass">
@@ -1615,6 +1618,20 @@ export default function AdminSettingsPage() {
                           onChange={handleChange}
                           placeholder={localConfig.hasSmtpPass ? 'Leave blank to keep saved password' : 'Enter SMTP password'}
                         />
+                      </FormGroup>
+                      <FormGroup className="flex flex-col justify-end">
+                        <label htmlFor="smtpSecure" className="inline-flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer py-2">
+                          <input
+                            id="smtpSecure"
+                            type="checkbox"
+                            name="smtpSecure"
+                            checked={Boolean(localConfig.smtpSecure)}
+                            onChange={handleChange}
+                            className="h-4 w-4 rounded border-gray-300 text-amber-700 focus:ring-amber-600"
+                          />
+                          <span>Use Implicit TLS / SSL (Port 465)</span>
+                        </label>
+                        <FormMessage>Uncheck to connect on port 587 and upgrade with STARTTLS.</FormMessage>
                       </FormGroup>
                     </div>
                   </div>

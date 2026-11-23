@@ -794,10 +794,15 @@ describe('POST /api/registry/contribute', () => {
         expect(payload.body).not.toContain('<script>');
         expect(payload.body).not.toContain('<img src=x');
         expect(payload.body).not.toContain('<svg onload=');
+        expect(payload.html).toContain('<table');
+        expect(payload.html).not.toContain('<script>');
+        expect(payload.html).not.toContain('<img src=x');
+        expect(payload.html).not.toContain('<svg onload=');
       }
       const couplePayload = sendEmailSpy.mock.calls.find(([p]) => p.to === 'couple@wedding.test')?.[0];
-      expect(couplePayload.body).toContain('&lt;script&gt;alert(&quot;name&quot;)&lt;/script&gt;');
-      expect(couplePayload.body).toContain('&lt;svg onload=alert(&#39;xss&#39;)&gt;');
+      expect(couplePayload.html).toContain('&lt;script&gt;alert(&quot;name&quot;)&lt;/script&gt;');
+      expect(couplePayload.html).toContain('&lt;svg onload=alert(&#39;xss&#39;)&gt;');
+      expect(couplePayload.html).toContain('Physical Gift Claim');
       expect(couplePayload.body).toContain('Physical Gift Claim');
     });
 
@@ -817,6 +822,8 @@ describe('POST /api/registry/contribute', () => {
           contactEmail: 'couple@wedding.test',
           baseUrl: 'https://couple.wedding.test',
         });
+
+        (prisma.contributor.updateMany as jest.Mock).mockClear();
 
         sendEmailSpy.mockResolvedValue({
           success: false,
@@ -840,6 +847,12 @@ describe('POST /api/registry/contribute', () => {
         expect(body.success).toBe(true);
         expect(body.data.id).toBe('item-123');
         expect(JSON.stringify(body)).not.toContain('john@example.com');
+
+        // Claimed timestamp MUST be rolled back to null when sendEmail fails so retries can succeed
+        expect(prisma.contributor.updateMany).toHaveBeenCalledWith({
+          where: { id: 'c-1' },
+          data: { confirmationEmailSentAt: null },
+        });
 
         expect(warnSpy).toHaveBeenCalled();
         const serializedWarnings = JSON.stringify(warnSpy.mock.calls);

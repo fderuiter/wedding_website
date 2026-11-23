@@ -12,7 +12,7 @@ interface RateLimitStore {
   earliestResetTime: number;
 }
 
-export type RateLimitBucket = 'general' | 'auth';
+export type RateLimitBucket = 'general' | 'auth' | 'lookup';
 
 export const MAX_RATE_LIMIT_KEYS = 10000;
 
@@ -22,6 +22,11 @@ const generalStore: RateLimitStore = {
 };
 
 const authStore: RateLimitStore = {
+  map: new Map<string, RateLimitInfo>(),
+  earliestResetTime: Infinity,
+};
+
+const lookupStore: RateLimitStore = {
   map: new Map<string, RateLimitInfo>(),
   earliestResetTime: Infinity,
 };
@@ -81,6 +86,7 @@ const KNOWN_STATIC_API_PATHS = new Set([
   '/api/registry/items',
   '/api/registry/items/batch',
   '/api/registry/payment-intent',
+  '/api/registry/reconcile',
   '/api/registry/scrape',
   '/api/registry/scrape/batch',
   '/api/registry/session',
@@ -109,9 +115,13 @@ function isAuthLockoutRoute(pathname: string, method: string = 'GET'): boolean {
     normalized === '/api/admin/login' ||
     normalized === '/api/guest/login' ||
     normalized === '/api/guest/lookup' ||
-    (normalized === '/api/admin/setup' && upperMethod === 'POST') ||
-    normalized === '/api/registry/validate-code'
+    (normalized === '/api/admin/setup' && upperMethod === 'POST')
   );
+}
+
+function isInviteLookupRoute(pathname: string): boolean {
+  const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, '') || '/' : pathname;
+  return normalized === '/api/registry/validate-code';
 }
 
 export function normalizeApiPathname(pathname: string): string {
@@ -261,8 +271,18 @@ export async function rateLimit(
 
   const method = req.method || 'GET';
   const resolvedBucket: RateLimitBucket =
-    bucket ?? (isAuthLockoutRoute(rawPathname, method) ? 'auth' : 'general');
-  const store = resolvedBucket === 'auth' ? authStore : generalStore;
+    bucket ??
+    (isAuthLockoutRoute(rawPathname, method)
+      ? 'auth'
+      : isInviteLookupRoute(rawPathname)
+        ? 'lookup'
+        : 'general');
+  const store =
+    resolvedBucket === 'auth'
+      ? authStore
+      : resolvedBucket === 'lookup'
+        ? lookupStore
+        : generalStore;
 
   const normalizedPathname = normalizeApiPathname(rawPathname);
   const key = keyPrefix ? `${keyPrefix}:${identifier}` : `${normalizedPathname}:${identifier}`;
@@ -306,6 +326,8 @@ export function resetRateLimitsForTesting() {
   generalStore.earliestResetTime = Infinity;
   authStore.map.clear();
   authStore.earliestResetTime = Infinity;
+  lookupStore.map.clear();
+  lookupStore.earliestResetTime = Infinity;
 }
 
 /**
@@ -334,4 +356,11 @@ export function getAuthRateLimitsCountForTesting(): number {
  */
 export function getAuthRateLimitsForTesting(): Map<string, RateLimitInfo> {
   return authStore.map;
+}
+
+/**
+ * @internal Get invitation lookup rate limits map for testing purposes only.
+ */
+export function getLookupRateLimitsForTesting(): Map<string, RateLimitInfo> {
+  return lookupStore.map;
 }

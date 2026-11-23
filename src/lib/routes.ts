@@ -51,6 +51,7 @@ const APP_ROUTES: AppRoute[] = [
   // API Feature Routes
   { path: '/api/registry/scrape', roles: ['admin'], exact: false, requiredModule: 'registry' },
   { path: '/api/registry/contribute', roles: ['public', 'admin'], exact: true, requiredModule: 'registry' },
+  { path: '/api/registry/reconcile', roles: ['public', 'admin'], exact: true, requiredModule: 'registry' },
   { path: '/api/registry/items', roles: ['admin'], methods: ['POST', 'PUT', 'DELETE'], exact: false, requiredModule: 'registry' },
   { path: '/api/registry', roles: ['public', 'admin'], exact: false, requiredModule: 'registry' },
   { path: '/api/weather', roles: ['public', 'admin'], exact: false, requiredModule: 'weather' },

@@ -125,6 +125,19 @@ class RegistryService {
     return false;
   }
 
+  async releaseContributorEmailSend(
+    contributorId: string,
+    kind: 'confirmation' | 'alert'
+  ): Promise<void> {
+    if (typeof this.repository.releaseContributorEmailSend === 'function') {
+      await this.repository.releaseContributorEmailSend(contributorId, kind);
+      return;
+    }
+    if (typeof registryRepository.releaseContributorEmailSend === 'function') {
+      await registryRepository.releaseContributorEmailSend(contributorId, kind);
+    }
+  }
+
   /**
    * Confirms a RESERVED contributor claim and returns the updated contributor and item.
    */

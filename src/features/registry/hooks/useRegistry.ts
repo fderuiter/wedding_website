@@ -5,7 +5,13 @@ import type { SetStateAction } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient, useMutation, useQuery } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/ToastProvider';
-import { RegistryItem, PaginatedRegistryItems, OrderTrackingDetails, GuestClaimActions } from '../types';
+import {
+  RegistryItem,
+  PaginatedRegistryItems,
+  OrderTrackingDetails,
+  GuestClaimActions,
+  RedirectReconciliationState,
+} from '../types';
 import { checkAdminClient } from '@/core/auth/auth.client';
 
 import { apiClient } from '@/lib/apiClient';
@@ -121,6 +127,8 @@ export function useRegistry() {
   const shippingAddress = isCapabilitiesLoading ? null : detectedShippingAddress;
   const [selectedItem, setSelectedItem] = useState<RegistryItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [redirectReconciliation, setRedirectReconciliation] =
+    useState<RedirectReconciliationState | null>(null);
   const [visibleItemsCount, setVisibleItemsCount] = useState(REGISTRY_INITIAL_VISIBLE_ITEMS);
   const [isAdmin, setIsAdmin] = useState(false);
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 1000]);
@@ -130,7 +138,17 @@ export function useRegistry() {
   const [sortOption, setSortOptionState] = useState<SortOption>('default');
   const [priceRangeUserSet, setPriceRangeUserSet] = useState(false);
   const attemptedDeepLinkIds = useRef<Set<string>>(new Set());
+  const reconciledPaymentIntentsRef = useRef<Set<string>>(new Set());
+  const reconciledItemRef = useRef<RegistryItem | null>(null);
+  const isMountedRef = useRef(true);
   const router = useRouter();
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -340,7 +358,20 @@ export function useRegistry() {
     return filteredItems.slice(0, visibleItemsCount);
   }, [filteredItems, visibleItemsCount]);
 
+  const syncItemInCache = useCallback((nextItem: RegistryItem) => {
+    if (!nextItem || !nextItem.id) return;
+    queryClient.setQueriesData<RegistryQueryData>(
+      { queryKey: ['registry-items'] },
+      (old) => mapRegistryQueryData(old, (item) => (item.id === nextItem.id ? nextItem : item))
+    );
+    setSelectedItem((prev) => (prev && prev.id === nextItem.id ? nextItem : prev));
+    queryClient.invalidateQueries({ queryKey: ['admin-registry'] });
+    queryClient.invalidateQueries({ queryKey: ['admin-registry-item', nextItem.id] });
+  }, [queryClient]);
+
   const handleCardClick = useCallback((item: RegistryItem) => {
+    reconciledItemRef.current = null;
+    setRedirectReconciliation(null);
     setSelectedItem(item);
     setIsModalOpen(true);
     if (typeof window !== 'undefined') {
@@ -354,6 +385,8 @@ export function useRegistry() {
   const handleCloseModal = useCallback(() => {
     setIsModalOpen(false);
     setSelectedItem(null);
+    reconciledItemRef.current = null;
+    setRedirectReconciliation(null);
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       if (params.has('item')) {
@@ -366,15 +399,151 @@ export function useRegistry() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const searchParams = new URLSearchParams(window.location.search);
+    const paymentIntentId = searchParams.get('payment_intent')?.trim() || '';
+    const clientSecret = searchParams.get('payment_intent_client_secret')?.trim() || '';
+    const redirectStatus = searchParams.get('redirect_status')?.trim() || '';
+    const itemParam = searchParams.get('item')?.trim() || '';
+
+    const hasStripeRedirectParams = Boolean(paymentIntentId || clientSecret || redirectStatus);
+    if (!hasStripeRedirectParams) {
+      return;
+    }
+
+    searchParams.delete('payment_intent');
+    searchParams.delete('payment_intent_client_secret');
+    searchParams.delete('redirect_status');
+    const cleanQuery = searchParams.toString();
+    const cleanUrl = cleanQuery
+      ? `${window.location.pathname}?${cleanQuery}`
+      : window.location.pathname;
+    window.history.replaceState({}, '', cleanUrl);
+
+    if (!paymentIntentId || !clientSecret) {
+      if (redirectStatus === 'failed' || redirectStatus === 'processing') {
+        queueMicrotask(() => {
+          if (!isMountedRef.current) return;
+          setRedirectReconciliation({
+            status: redirectStatus,
+            ...(paymentIntentId ? { paymentIntentId } : {}),
+            ...(itemParam ? { itemId: itemParam } : {}),
+            ...(redirectStatus === 'failed'
+              ? {
+                failureMessage:
+                  'Your payment could not be completed. Please review your payment details and try again.',
+              }
+              : {}),
+          });
+        });
+      }
+      return;
+    }
+
+    const dedupeKey = `${paymentIntentId}:${clientSecret}`;
+    if (reconciledPaymentIntentsRef.current.has(dedupeKey)) {
+      return;
+    }
+    reconciledPaymentIntentsRef.current.add(dedupeKey);
+
+    const reconcileRedirect = async () => {
+      await Promise.resolve();
+      if (!isMountedRef.current) return;
+
+      setRedirectReconciliation({
+        status: 'reconciling',
+        paymentIntentId,
+        ...(itemParam ? { itemId: itemParam } : {}),
+      });
+
+      try {
+        const response = await apiClient.post<{
+          status: 'succeeded' | 'processing' | 'failed';
+          recorded: boolean;
+          paymentIntentId: string;
+          itemId: string;
+          amount?: number;
+          coverFee?: boolean;
+          contributorName?: string;
+          failureMessage?: string;
+          item?: RegistryItem | null;
+        }>('/api/registry/reconcile', {
+          paymentIntentId,
+          clientSecret,
+          ...(itemParam ? { itemId: itemParam } : {}),
+        });
+
+        if (!isMountedRef.current || !response) return;
+
+        if (response.item && response.item.id) {
+          reconciledItemRef.current = response.item;
+          syncItemInCache(response.item);
+          setSelectedItem(response.item);
+          setIsModalOpen(true);
+          if (!itemParam && typeof window !== 'undefined') {
+            const nextParams = new URLSearchParams(window.location.search);
+            nextParams.set('item', response.item.id);
+            window.history.replaceState({}, '', `${window.location.pathname}?${nextParams.toString()}`);
+          }
+          void queryClient.invalidateQueries({ queryKey: ['admin-registry'] });
+          void queryClient.invalidateQueries({ queryKey: ['admin-registry-item', response.item.id] });
+        }
+
+        setRedirectReconciliation({
+          status: response.status,
+          paymentIntentId: response.paymentIntentId || paymentIntentId,
+          itemId: response.itemId || response.item?.id || itemParam || undefined,
+          ...(typeof response.amount === 'number' ? { amount: response.amount } : {}),
+          ...(typeof response.coverFee === 'boolean' ? { coverFee: response.coverFee } : {}),
+          ...(response.contributorName ? { contributorName: response.contributorName } : {}),
+          ...(response.failureMessage ? { failureMessage: response.failureMessage } : {}),
+        });
+      } catch {
+        if (!isMountedRef.current) return;
+        setRedirectReconciliation({
+          status: redirectStatus === 'processing' ? 'processing' : 'failed',
+          paymentIntentId,
+          ...(itemParam ? { itemId: itemParam } : {}),
+          ...(redirectStatus !== 'processing'
+            ? {
+              failureMessage:
+                'Your payment could not be verified automatically. Please check your card statement or try again below.',
+            }
+            : {}),
+        });
+      }
+    };
+
+    void reconcileRedirect();
+  }, [queryClient, syncItemInCache]);
+
+  useEffect(() => {
     if (typeof window === 'undefined' || isLoading) return;
 
     let cancelled = false;
 
     const resolveTargetItem = async (targetId: string) => {
+      const reconciledItem =
+        reconciledItemRef.current?.id === targetId ? reconciledItemRef.current : null;
       const match = items.find(i => i.id === targetId);
       if (match) {
         if (!cancelled) {
-          setSelectedItem(match);
+          const preferredItem =
+            reconciledItem &&
+            ((reconciledItem.purchased && !match.purchased) ||
+              (reconciledItem.amountContributed ?? 0) > (match.amountContributed ?? 0))
+              ? reconciledItem
+              : match;
+          setSelectedItem(preferredItem);
+          setIsModalOpen(true);
+        }
+        return;
+      }
+
+      if (reconciledItem) {
+        if (!cancelled) {
+          setSelectedItem(reconciledItem);
           setIsModalOpen(true);
         }
         return;
@@ -469,17 +638,6 @@ export function useRegistry() {
     });
   }, [contribute]);
 
-  const syncItemInCache = useCallback((nextItem: RegistryItem) => {
-    if (!nextItem || !nextItem.id) return;
-    queryClient.setQueriesData<RegistryQueryData>(
-      { queryKey: ['registry-items'] },
-      (old) => mapRegistryQueryData(old, (item) => (item.id === nextItem.id ? nextItem : item))
-    );
-    setSelectedItem((prev) => (prev && prev.id === nextItem.id ? nextItem : prev));
-    queryClient.invalidateQueries({ queryKey: ['admin-registry'] });
-    queryClient.invalidateQueries({ queryKey: ['admin-registry-item', nextItem.id] });
-  }, [queryClient]);
-
   const handleClearFilters = useCallback(() => {
     setCategoryFilter([]);
     setPriceRange([minPrice, maxPrice]);
@@ -498,6 +656,7 @@ export function useRegistry() {
     refetch,
     selectedItem,
     isModalOpen,
+    redirectReconciliation,
     setVisibleItemsCount,
     isAdmin,
     cardCheckoutEnabled,

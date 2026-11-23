@@ -197,11 +197,12 @@ describe('guestInviteSession', () => {
       delete process.env.STATIC_EXPORT;
     });
 
-    it('returns the session payload when an active non-sample InvitationCode exists', async () => {
+    it('returns the session payload with email hydrated from PostgreSQL without storing email in the cookie token', async () => {
       mockFindUnique.mockResolvedValue({
         id: 'inv-active-1',
         code: 'ACTIVE2026',
         guestName: 'Taylor Household',
+        email: 'taylor@example.com',
         isSample: false,
       });
 
@@ -209,6 +210,10 @@ describe('guestInviteSession', () => {
         code: 'ACTIVE2026',
         guestName: 'Taylor Household',
       });
+      const decodedCookiePayload = Buffer.from(token.split('.')[0], 'base64url').toString('utf8');
+      expect(decodedCookiePayload).not.toContain('email');
+      expect(decodedCookiePayload).not.toContain('taylor@example.com');
+
       const req = new NextRequest('http://localhost/api/photos', {
         headers: { cookie: `${GUEST_INVITE_COOKIE}=${token}` },
       });
@@ -218,6 +223,7 @@ describe('guestInviteSession', () => {
         expect.objectContaining({
           code: 'ACTIVE2026',
           guestName: 'Taylor Household',
+          email: 'taylor@example.com',
         })
       );
       expect(mockFindUnique).toHaveBeenCalledWith({

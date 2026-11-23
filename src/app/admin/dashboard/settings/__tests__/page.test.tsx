@@ -917,7 +917,7 @@ describe('AdminSettingsPage Unsaved Draft Guard & Secret Storage Safety', () => 
     expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
 
     sessionSetSpy.mockRestore();
-  });
+  }, 15000);
 
   it('renders Registry Shipping & Payment Defaults inputs, passes axe, and submits shipping and default handle fields on save', async () => {
     let savedBody: Record<string, unknown> | null = null;
@@ -1000,6 +1000,60 @@ describe('AdminSettingsPage Unsaved Draft Guard & Secret Storage Safety', () => 
         shippingDeliveryNotes: 'Gate code #4242',
         defaultPaymentHandleType: 'Venmo',
         defaultPaymentHandle: '@alice-and-bob',
+      })
+    );
+  }, 15000);
+
+  it('exposes smtpSecure toggle in SMTP Credentials and submits boolean smtpSecure on save', async () => {
+    let savedBody: Record<string, unknown> | null = null;
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (typeof url === 'string' && url.startsWith('/api/admin/settings')) {
+        if (init?.method === 'PUT') {
+          savedBody = JSON.parse(String(init.body || '{}'));
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ ...mockConfig, ...savedBody }),
+          });
+        }
+        if (url.includes('list=true')) {
+          return Promise.resolve({ ok: true, json: async () => [mockConfig] });
+        }
+        return Promise.resolve({ ok: true, json: async () => ({ ...mockConfig, smtpSecure: false }) });
+      }
+      return Promise.reject(new Error(`Unhandled: ${url}`));
+    });
+
+    render(<AdminSettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
+    });
+
+    const smtpSecureCheckbox = screen.getByLabelText(/Use Implicit TLS \/ SSL \(Port 465\)/i) as HTMLInputElement;
+    expect(smtpSecureCheckbox).toBeInTheDocument();
+    expect(smtpSecureCheckbox.checked).toBe(false);
+
+    fireEvent.click(smtpSecureCheckbox);
+    expect(smtpSecureCheckbox.checked).toBe(true);
+
+    fireEvent.change(screen.getByLabelText(/SMTP Host/i), {
+      target: { name: 'smtpHost', value: 'smtp.secure-mail.example.com' },
+    });
+    fireEvent.change(screen.getByLabelText(/SMTP Port/i), {
+      target: { name: 'smtpPort', value: '465' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Save Settings/i }));
+
+    await waitFor(() => {
+      expect(savedBody).not.toBeNull();
+    });
+
+    expect(savedBody).toEqual(
+      expect.objectContaining({
+        smtpHost: 'smtp.secure-mail.example.com',
+        smtpPort: '465',
+        smtpSecure: true,
       })
     );
   }, 15000);

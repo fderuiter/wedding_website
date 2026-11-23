@@ -14,6 +14,7 @@ const TestComponent = () => {
   const {
     invitationCode,
     guestName,
+    guestEmail,
     isVerified,
     isLoading,
     status,
@@ -34,11 +35,12 @@ const TestComponent = () => {
       <div data-testid="verified">{isVerified ? 'yes' : 'no'}</div>
       <div data-testid="code">{invitationCode}</div>
       <div data-testid="name">{guestName}</div>
+      <div data-testid="email">{guestEmail}</div>
       <div data-testid="status">{status}</div>
       <div data-testid="lastErrorCode">{lastErrorCode || 'none'}</div>
       <div data-testid="draftCode">{draftInvitationCode}</div>
       <div data-testid="modalOpen">{isRecoveryModalOpen ? 'open' : 'closed'}</div>
-      <button onClick={() => setSession({ invitationCode: 'TEST1234', guestName: 'Test Guest', isVerified: true })}>
+      <button onClick={() => setSession({ invitationCode: 'TEST1234', guestName: 'Test Guest', guestEmail: 'test@example.com', isVerified: true })}>
         Set Session
       </button>
       <button onClick={() => clearSession()}>Clear Session</button>
@@ -55,11 +57,12 @@ describe('GuestSessionContext', () => {
     jest.clearAllMocks();
   });
 
-  it('hydrates active session details from /api/registry/session on mount', async () => {
+  it('hydrates active session details including email from /api/registry/session on mount', async () => {
     (apiClient.get as jest.Mock).mockResolvedValue({
       isVerified: true,
       invitationCode: 'WEDDING2026',
       guestName: 'Jane Doe',
+      email: 'jane@example.com',
     });
 
     render(
@@ -73,6 +76,7 @@ describe('GuestSessionContext', () => {
       expect(screen.getByTestId('verified')).toHaveTextContent('yes');
       expect(screen.getByTestId('code')).toHaveTextContent('WEDDING2026');
       expect(screen.getByTestId('name')).toHaveTextContent('Jane Doe');
+      expect(screen.getByTestId('email')).toHaveTextContent('jane@example.com');
       expect(screen.getByTestId('status')).toHaveTextContent('authenticated');
     });
 
@@ -157,6 +161,7 @@ describe('GuestSessionContext', () => {
         valid: true,
         code: 'RECOVER123',
         guestName: 'Jane Restored',
+        email: 'restored@example.com',
       });
 
     render(
@@ -190,6 +195,7 @@ describe('GuestSessionContext', () => {
       expect(screen.getByTestId('verified')).toHaveTextContent('yes');
       expect(screen.getByTestId('code')).toHaveTextContent('RECOVER123');
       expect(screen.getByTestId('name')).toHaveTextContent('Jane Restored');
+      expect(screen.getByTestId('email')).toHaveTextContent('restored@example.com');
       expect(screen.getByTestId('modalOpen')).toHaveTextContent('closed');
     });
 

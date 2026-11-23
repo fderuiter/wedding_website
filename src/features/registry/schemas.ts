@@ -1169,3 +1169,15 @@ export interface InvitationSubEventRsvpSummaryDTO {
   customAnswers: Record<string, string>;
   updatedAt?: string;
 }
+
+export const ReconcilePaymentIntentSchema = z.object({
+  paymentIntentId: z
+    .string({ message: 'Missing or invalid paymentIntentId.' })
+    .trim()
+    .regex(/^pi_[a-zA-Z0-9_]+$/, 'Invalid Stripe PaymentIntent ID format.'),
+  clientSecret: z
+    .string({ message: 'Missing or invalid clientSecret.' })
+    .trim()
+    .min(1, 'Missing or invalid clientSecret.'),
+  itemId: z.string().trim().min(1).optional(),
+});

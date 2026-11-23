@@ -50,6 +50,7 @@ function RegistryPageContent() {
     refetch,
     selectedItem,
     isModalOpen,
+    redirectReconciliation,
     setVisibleItemsCount,
     isAdmin,
     cardCheckoutEnabled,
@@ -398,6 +399,7 @@ function RegistryPageContent() {
               defaultPaymentHandleType={defaultPaymentHandleType}
               defaultPaymentHandle={defaultPaymentHandle}
               shippingAddress={shippingAddress}
+              redirectReconciliation={redirectReconciliation}
               isAdmin={isAdmin}
             />
           )}

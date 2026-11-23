@@ -125,6 +125,7 @@ export function useRegistryContributionMachine({
   const {
     invitationCode: sessionCode,
     guestName: sessionGuestName,
+    guestEmail: sessionGuestEmail,
     isVerified: isSessionVerified,
     setSession,
     clearSession,
@@ -134,8 +135,11 @@ export function useRegistryContributionMachine({
 
   // Form fields
   const [contributorNameState, setContributorNameState] = useState(initialContributorName);
-  const [hasEditedContributorName, setHasEditedContributorName] = useState(false);
-  const [email, setEmailState] = useState(initialEmail);
+  const [hasEditedContributorName, setHasEditedContributorName] = useState(
+    Boolean(initialContributorName)
+  );
+  const [emailState, setEmailState] = useState(initialEmail);
+  const [hasEditedEmail, setHasEditedEmail] = useState(Boolean(initialEmail));
   const [amount, setAmountState] = useState<number | string>(initialAmount);
   const [selectedUnitsState, setSelectedUnitsState] = useState<number>(initialUnits);
   const [message, setMessageState] = useState(initialMessage);
@@ -170,6 +174,9 @@ export function useRegistryContributionMachine({
   const contributorName = hasEditedContributorName
     ? contributorNameState
     : contributorNameState || (isSessionSynced ? sessionGuestName || '' : '');
+  const email = hasEditedEmail
+    ? emailState
+    : emailState || (isSessionSynced ? sessionGuestEmail || '' : '');
   const codeError = isSessionSynced ? null : codeErrorState;
 
   // Clean up any pending validation request on unmount
@@ -196,6 +203,7 @@ export function useRegistryContributionMachine({
   }, []);
 
   const setEmail = useCallback((val: string) => {
+    setHasEditedEmail(true);
     setEmailState(val);
     setFieldErrors((prev) => {
       if (!prev.email) return prev;
@@ -321,15 +329,20 @@ export function useRegistryContributionMachine({
 
         if (data && data.valid) {
           const verifiedCode = data.code || code;
+          const resolvedEmail = typeof data.email === 'string' ? data.email.trim() : '';
           setInvitationCodeState(verifiedCode);
           if (data.guestName) {
             setContributorNameState(data.guestName);
+          }
+          if (!hasEditedEmail && resolvedEmail) {
+            setEmailState(resolvedEmail);
           }
           setDismissedSessionKey(null);
           setPhase('code_locked');
           setSession({
             invitationCode: verifiedCode,
             guestName: data.guestName || '',
+            guestEmail: resolvedEmail,
             isVerified: true,
           });
           return true;
@@ -352,10 +365,10 @@ export function useRegistryContributionMachine({
         }
       }
     },
-    [setSession]
+    [hasEditedEmail, setSession]
   );
 
-  // Action: Code change handler with automatic 8-character validation & immediate cancellation
+  // Action: Code change handler (manual verification via Verify button; cancels any in-flight request)
   const handleCodeChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement> | string) => {
       const val = (typeof e === 'string' ? e : e.target.value).toUpperCase();
@@ -380,13 +393,11 @@ export function useRegistryContributionMachine({
         return;
       }
 
-      if (val.length === 8) {
-        void verifyCode(val);
-      } else if (phase === 'validating_code') {
+      if (phase === 'validating_code') {
         setPhase('idle');
       }
     },
-    [currentSessionKey, sessionCode, phase, verifyCode]
+    [currentSessionKey, sessionCode, phase]
   );
 
   // Action: Manual verification
@@ -408,6 +419,8 @@ export function useRegistryContributionMachine({
     setInvitationCodeState('');
     setHasEditedContributorName(false);
     setContributorNameState('');
+    setHasEditedEmail(false);
+    setEmailState('');
     setCodeError(null);
     setFieldErrors({});
     setSubmissionError(null);

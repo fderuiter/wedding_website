@@ -134,6 +134,16 @@ export interface OrderTrackingDetails {
   trackingNumber?: string | null;
 }
 
+export interface RedirectReconciliationState {
+  status: 'reconciling' | 'succeeded' | 'processing' | 'failed';
+  paymentIntentId?: string;
+  itemId?: string;
+  amount?: number;
+  coverFee?: boolean;
+  contributorName?: string;
+  failureMessage?: string;
+}
+
 export interface IRegistryRepository {
   getAllItems(options?: GetItemsOptions): Promise<PaginatedRegistryItems>;
   getItemById(id: string, options?: { includeContributors?: boolean }): Promise<RegistryItemDTO | null>;
@@ -159,6 +169,10 @@ export interface IRegistryRepository {
     contributorId: string,
     kind: 'confirmation' | 'alert'
   ): Promise<boolean>;
+  releaseContributorEmailSend?(
+    contributorId: string,
+    kind: 'confirmation' | 'alert'
+  ): Promise<void>;
   confirmContribution?(
     contributorId: string,
     author?: string

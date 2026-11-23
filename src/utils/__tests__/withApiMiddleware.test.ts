@@ -319,24 +319,41 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
       expect(statusResAfterLockout.status).toBe(200);
     });
 
-    test('enforces strict 5 request limit on GET /api/registry/validate-code', async () => {
-      const handler = jest.fn().mockResolvedValue(
-        new Response(JSON.stringify({ error: 'Invalid invitation code.' }), {
-          status: 404,
-          headers: { 'content-type': 'application/json' },
-        })
-      );
+    test('isolates GET /api/registry/validate-code in dedicated 20-request lookup bucket separate from 5-attempt login lockout', async () => {
+      const handler = jest.fn().mockImplementation((req: NextRequest) => {
+        if (req.nextUrl.pathname === '/api/guest/login') {
+          return Promise.resolve(
+            new Response(JSON.stringify({ success: true }), {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            })
+          );
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: 'Invalid invitation code.' }), {
+            status: 404,
+            headers: { 'content-type': 'application/json' },
+          })
+        );
+      });
       const middleware = withApiMiddleware(handler);
 
-      for (let i = 0; i < 5; i++) {
-        const req = new NextRequest(`http://localhost/api/registry/validate-code?code=CODE000${i}`);
+      for (let i = 0; i < 20; i++) {
+        const req = new NextRequest(
+          `http://localhost/api/registry/validate-code?code=CODE${String(i).padStart(4, '0')}`
+        );
         const res = await middleware(req, {});
         expect(res.status).toBe(404);
       }
 
-      const req6 = new NextRequest('http://localhost/api/registry/validate-code?code=CODE0006');
-      const res6 = await middleware(req6, {});
-      expect(res6.status).toBe(429);
+      const req21 = new NextRequest('http://localhost/api/registry/validate-code?code=CODE0021');
+      const res21 = await middleware(req21, {});
+      expect(res21.status).toBe(429);
+
+      // Login lockout bucket remains untouched when lookup bucket is exhausted
+      const loginReq = new NextRequest('http://localhost/api/guest/login', { method: 'POST' });
+      const loginRes = await middleware(loginReq, {});
+      expect(loginRes.status).toBe(200);
     });
 
     test('exempts /api/health from rate limiting across more than 100 consecutive requests', async () => {

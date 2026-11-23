@@ -18,6 +18,7 @@ export {
   DryRunValidateBatchSchema,
   MergeInvitationCodesSchema,
   PaymentIntentRequestSchema,
+  ReconcilePaymentIntentSchema,
   BatchScrapeUrlsSchema,
   BatchCreateRegistryItemsSchema,
   translateSnapshotToActive,
@@ -104,6 +105,7 @@ export { POST as registryAddItemPOST } from './api/add-item';
 export { POST as registryBatchAddPOST } from './api/batch-add';
 export { POST as registryContributePOST } from './api/contribute';
 export { POST as registryPaymentIntentPOST } from './api/payment-intent';
+export { POST as registryReconcilePOST } from './api/reconcile';
 export { POST as registryWebhookPOST } from './api/webhook';
 export { GET as registryCapabilitiesGET } from './api/capabilities';
 export { GET as registryGetItemsGET } from './api/get-items';

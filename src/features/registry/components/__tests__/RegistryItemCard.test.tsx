@@ -549,10 +549,11 @@ describe('RegistryItemCard Component', () => {
       });
     });
 
-    it('successfully validates invitation code, auto-populates guest name, and allows editing name input', async () => {
+    it('fires zero validate-code requests on typing 8 characters until Verify is clicked, and prefills editable name and email', async () => {
       (apiClient.get as jest.Mock).mockResolvedValue({
         valid: true,
         guestName: 'Jane Smith',
+        email: 'jane@example.com',
         code: 'GOODCODE',
       });
 
@@ -563,9 +564,12 @@ describe('RegistryItemCard Component', () => {
       );
 
       const codeInput = screen.getByLabelText(/Invitation Code/i);
-      
-      // 'GOODCODE' is 8 characters, which triggers automatic validation on change
+
+      // Typing 8 characters must fire zero validate-code requests until Verify is clicked
       fireEvent.change(codeInput, { target: { value: 'GOODCODE' } });
+      expect(apiClient.get).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
 
       await waitFor(() => {
         expect(apiClient.get).toHaveBeenCalledWith(
@@ -576,9 +580,16 @@ describe('RegistryItemCard Component', () => {
       });
 
       const nameInput = screen.getByLabelText(/Your Name/i);
+      const emailInput = screen.getByLabelText(/Email Address/i);
       expect(nameInput).toHaveValue('Jane Smith');
+      expect(emailInput).toHaveValue('jane@example.com');
       expect(nameInput).not.toBeDisabled();
+      expect(emailInput).not.toBeDisabled();
       expect(codeInput).toBeDisabled();
+
+      // Prefilled email remains editable by the guest
+      fireEvent.change(emailInput, { target: { value: 'custom-receipt@example.com' } });
+      expect(emailInput).toHaveValue('custom-receipt@example.com');
     });
 
     it('shows error message if invitation code is invalid', async () => {
@@ -626,6 +637,9 @@ describe('RegistryItemCard Component', () => {
       fireEvent.change(codeInput, { target: { value: 'INFLIGHT' } });
 
       const submitButton = screen.getByRole('button', { name: 'Claim Gift' });
+      expect(submitButton).not.toBeDisabled();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
       expect(submitButton).toBeDisabled();
 
       resolveValidation!({ valid: true, guestName: 'In Flight Guest', code: 'INFLIGHT' });
@@ -1025,8 +1039,14 @@ describe('RegistryItemCard Component', () => {
       expect(screen.getByLabelText(/QR code to pay via PayPal/i)).toBeInTheDocument();
     });
 
-    it('renders QR code canvas and deep link for Zelle email handle', () => {
-      const zelleItem: RegistryItem = {
+    it('renders Copy Handle button for Zelle email and phone handles without mailto/tel links or QR codes', async () => {
+      const writeTextMock = jest.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: writeTextMock },
+        configurable: true,
+      });
+
+      const zelleEmailItem: RegistryItem = {
         ...mockGroupItem,
         id: 'zelle-qr-1',
         name: 'Furniture Fund',
@@ -1035,17 +1055,93 @@ describe('RegistryItemCard Component', () => {
         paymentHandle: 'couple@example.com',
       };
 
-      render(
+      const { rerender } = render(
         <Overlay isOpen={true} onClose={mockOnClose}>
-          <RegistryItemCard item={zelleItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+          <RegistryItemCard item={zelleEmailItem} onClose={mockOnClose} onContribute={mockOnContribute} />
         </Overlay>
       );
 
-      const link = screen.getByRole('link', {
-        name: 'Open Link for Zelle (opens in a new tab)',
+      const copyButton = screen.getByTestId('copy-payment-handle-button');
+      expect(copyButton).toHaveTextContent('Copy Handle');
+      expect(screen.queryByRole('link', { name: /Open Link for Zelle/i })).not.toBeInTheDocument();
+      expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
+      expect(document.querySelector('a[href^="tel:"]')).toBeNull();
+      expect(screen.queryByLabelText(/QR code to pay via Zelle/i)).not.toBeInTheDocument();
+      expect(screen.queryByText('Scan to Pay')).not.toBeInTheDocument();
+
+      fireEvent.click(copyButton);
+      await waitFor(() => {
+        expect(writeTextMock).toHaveBeenCalledWith('couple@example.com');
+        expect(copyButton).toHaveTextContent('Copied!');
       });
-      expect(link.getAttribute('href')).toContain('mailto:couple@example.com');
-      expect(screen.getByLabelText(/QR code to pay via Zelle/i)).toBeInTheDocument();
+
+      const zellePhoneItem: RegistryItem = {
+        ...zelleEmailItem,
+        id: 'zelle-qr-2',
+        paymentHandle: '(555) 123-4567',
+      };
+      rerender(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={zellePhoneItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      expect(screen.getByTestId('copy-payment-handle-button')).toBeInTheDocument();
+      expect(document.querySelector('a[href^="tel:"]')).toBeNull();
+      expect(screen.queryByText('Scan to Pay')).not.toBeInTheDocument();
+    });
+
+    it('includes positive entered contribution amounts in Venmo, PayPal, and Cash App links alongside QR codes', () => {
+      const venmoItem: RegistryItem = {
+        ...mockGroupItem,
+        id: 'venmo-amt-1',
+        name: 'Honeymoon Fund',
+        itemType: 'CASH_FUND',
+        paymentHandleType: 'Venmo',
+        paymentHandle: '@happy-couple',
+      };
+
+      const { rerender } = render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={venmoItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      fireEvent.change(screen.getByLabelText(/Contribution Amount/i), { target: { value: '50' } });
+      expect(
+        screen.getByRole('link', { name: /Open Link for Venmo/i })
+      ).toHaveAttribute('href', 'https://venmo.com/u/happy-couple?txn=pay&amount=50');
+      expect(screen.getByLabelText(/QR code to pay via Venmo/i)).toBeInTheDocument();
+
+      rerender(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard
+            item={{ ...venmoItem, id: 'paypal-amt-1', paymentHandleType: 'PayPal', paymentHandle: '@happycouple' }}
+            onClose={mockOnClose}
+            onContribute={mockOnContribute}
+          />
+        </Overlay>
+      );
+      fireEvent.change(screen.getByLabelText(/Contribution Amount/i), { target: { value: '50' } });
+      expect(
+        screen.getByRole('link', { name: /Open Link for PayPal/i })
+      ).toHaveAttribute('href', 'https://paypal.me/happycouple/50');
+      expect(screen.getByLabelText(/QR code to pay via PayPal/i)).toBeInTheDocument();
+
+      rerender(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard
+            item={{ ...venmoItem, id: 'cashapp-amt-1', paymentHandleType: 'Cash App', paymentHandle: '$happycouple' }}
+            onClose={mockOnClose}
+            onContribute={mockOnContribute}
+          />
+        </Overlay>
+      );
+      fireEvent.change(screen.getByLabelText(/Contribution Amount/i), { target: { value: '50' } });
+      expect(
+        screen.getByRole('link', { name: /Open Link for Cash App/i })
+      ).toHaveAttribute('href', 'https://cash.app/$happycouple/50');
+      expect(screen.getByLabelText(/QR code to pay via Cash App/i)).toBeInTheDocument();
     });
 
     it('does not render QR code or deep link when handle is not convertible to URL', () => {
@@ -1704,6 +1800,101 @@ describe('RegistryItemCard Component', () => {
       expect(await screen.findByText('Reservation Released')).toBeInTheDocument();
       expect(screen.getByText('Cancelled')).toBeInTheDocument();
       expect(mockOnItemUpdated).toHaveBeenCalledWith(reopenedItem);
+    });
+  });
+
+  describe('Stripe Redirect Reconciliation States', () => {
+    it('renders Contribution Confirmed! and Copy Receipt for succeeded redirect even when item is newly purchased: true', async () => {
+      const writeTextMock = jest.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: writeTextMock },
+        configurable: true,
+      });
+
+      const newlyFundedItem: RegistryItem = {
+        ...mockSingleItem,
+        id: 'item-funded-redirect',
+        purchased: true,
+        amountContributed: 100,
+        purchaserName: 'J*** D***',
+      };
+
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard
+            item={newlyFundedItem}
+            onClose={mockOnClose}
+            onContribute={mockOnContribute}
+            redirectReconciliation={{
+              status: 'succeeded',
+              paymentIntentId: 'pi_redirect_succeeded_999',
+              amount: 100,
+              coverFee: true,
+              contributorName: 'Jordan Donor',
+            }}
+          />
+        </Overlay>
+      );
+
+      expect(screen.getByText('Contribution Confirmed!')).toBeInTheDocument();
+      expect(screen.getByText('pi_redirect_succeeded_999')).toBeInTheDocument();
+      const copyReceiptBtn = screen.getByTestId('copy-receipt-button');
+      expect(copyReceiptBtn).toHaveTextContent('Copy Receipt');
+
+      fireEvent.click(copyReceiptBtn);
+      await waitFor(() => {
+        expect(writeTextMock).toHaveBeenCalledWith(
+          expect.stringContaining('Transaction Reference: pi_redirect_succeeded_999')
+        );
+      });
+    });
+
+    it('renders retry banner and prefilled checkout fields when redirect reconciliation failed, or processing state while pending', () => {
+      const fundItem: RegistryItem = {
+        ...mockGroupItem,
+        id: 'fund-redirect-retry',
+        itemType: 'CASH_FUND',
+        paymentHandleType: 'Venmo',
+        paymentHandle: '@happy-couple',
+      };
+
+      const { rerender } = render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard
+            item={fundItem}
+            onClose={mockOnClose}
+            onContribute={mockOnContribute}
+            redirectReconciliation={{
+              status: 'failed',
+              paymentIntentId: 'pi_redirect_failed_111',
+              amount: 75,
+              contributorName: ' Jordan Retry ',
+              failureMessage: 'Your payment could not be completed by your card issuer.',
+            }}
+          />
+        </Overlay>
+      );
+
+      const retryBanner = screen.getByTestId('redirect-retry-banner');
+      expect(retryBanner).toHaveTextContent('Payment Not Completed');
+      expect(retryBanner).toHaveTextContent('Your payment could not be completed by your card issuer.');
+      expect(screen.getByLabelText(/Contribution Amount/i)).toHaveValue(75);
+
+      rerender(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard
+            item={fundItem}
+            onClose={mockOnClose}
+            onContribute={mockOnContribute}
+            redirectReconciliation={{
+              status: 'processing',
+              paymentIntentId: 'pi_redirect_proc_222',
+            }}
+          />
+        </Overlay>
+      );
+
+      expect(screen.getByTestId('redirect-processing-banner')).toHaveTextContent('Payment Processing');
     });
   });
 });

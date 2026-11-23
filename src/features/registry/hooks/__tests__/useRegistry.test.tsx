@@ -507,6 +507,135 @@ describe('useRegistry', () => {
       expect(window.location.search).not.toContain('item=1');
       expect(result.current.isModalOpen).toBe(false);
     });
+
+    it('strips payment_intent_client_secret via history.replaceState, reconciles succeeded redirect on server, and opens modal even when newly purchased: true', async () => {
+      let reconcilePayload: Record<string, unknown> | null = null;
+      const newlyFundedItem: RegistryItem = {
+        ...mockItems[0],
+        purchased: true,
+        amountContributed: 100,
+        purchaserName: 'J*** D***',
+      };
+
+      server.use(
+        http.post('/api/registry/reconcile', async ({ request }) => {
+          reconcilePayload = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({
+            status: 'succeeded',
+            recorded: true,
+            paymentIntentId: 'pi_redirect_123',
+            itemId: '1',
+            amount: 100,
+            coverFee: true,
+            contributorName: 'Jordan Donor',
+            item: newlyFundedItem,
+          });
+        })
+      );
+
+      const replaceStateSpy = jest.spyOn(window.history, 'replaceState');
+      window.history.replaceState(
+        {},
+        '',
+        '/registry?item=1&payment_intent=pi_redirect_123&payment_intent_client_secret=pi_redirect_123_secret_sensitive&redirect_status=succeeded'
+      );
+      replaceStateSpy.mockClear();
+
+      const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+
+      // Sensitive secret is stripped from browser history immediately
+      expect(replaceStateSpy).toHaveBeenCalled();
+      expect(window.location.search).toBe('?item=1');
+      expect(window.location.search).not.toContain('payment_intent_client_secret');
+      expect(window.location.search).not.toContain('payment_intent=');
+      expect(window.location.search).not.toContain('redirect_status');
+
+      await waitFor(() => {
+        expect(result.current.redirectReconciliation?.status).toBe('succeeded');
+        expect(result.current.isModalOpen).toBe(true);
+        expect(result.current.selectedItem?.id).toBe('1');
+        expect(result.current.selectedItem?.purchased).toBe(true);
+      });
+
+      expect(reconcilePayload).toEqual({
+        paymentIntentId: 'pi_redirect_123',
+        clientSecret: 'pi_redirect_123_secret_sensitive',
+        itemId: '1',
+      });
+      expect(result.current.items.find((i) => i.id === '1')?.purchased).toBe(true);
+      replaceStateSpy.mockRestore();
+    });
+
+    it('surfaces failed redirect reconciliation state so guest can retry payment', async () => {
+      server.use(
+        http.post('/api/registry/reconcile', () =>
+          HttpResponse.json({
+            status: 'failed',
+            recorded: false,
+            paymentIntentId: 'pi_redirect_fail_456',
+            itemId: '3',
+            amount: 75,
+            coverFee: false,
+            contributorName: 'Jordan Retry',
+            failureMessage: 'Your payment was not completed. Please review your payment details and try again.',
+            item: mockItems[2],
+          })
+        )
+      );
+
+      window.history.replaceState(
+        {},
+        '',
+        '/registry?item=3&payment_intent=pi_redirect_fail_456&payment_intent_client_secret=pi_redirect_fail_456_secret_xyz&redirect_status=failed'
+      );
+
+      const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+
+      expect(window.location.search).toBe('?item=3');
+
+      await waitFor(() => {
+        expect(result.current.redirectReconciliation?.status).toBe('failed');
+        expect(result.current.isModalOpen).toBe(true);
+        expect(result.current.selectedItem?.id).toBe('3');
+      });
+
+      expect(result.current.redirectReconciliation?.failureMessage).toContain('Your payment was not completed');
+    });
+
+    it('surfaces processing redirect reconciliation state and cleans URL secrets', async () => {
+      server.use(
+        http.post('/api/registry/reconcile', () =>
+          HttpResponse.json({
+            status: 'processing',
+            recorded: false,
+            paymentIntentId: 'pi_redirect_proc_789',
+            itemId: '3',
+            amount: 75,
+            coverFee: false,
+            contributorName: 'Jordan Processing',
+            item: mockItems[2],
+          })
+        )
+      );
+
+      window.history.replaceState(
+        {},
+        '',
+        '/registry?payment_intent=pi_redirect_proc_789&payment_intent_client_secret=pi_redirect_proc_789_secret_xyz&redirect_status=processing'
+      );
+
+      const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+
+      expect(window.location.search).not.toContain('payment_intent_client_secret');
+
+      await waitFor(() => {
+        expect(result.current.redirectReconciliation?.status).toBe('processing');
+        expect(result.current.isModalOpen).toBe(true);
+        expect(result.current.selectedItem?.id).toBe('3');
+      });
+
+      expect(window.location.search).toBe('?item=3');
+    });
   });
 
   describe('bounded full-catalog fetch and client faceted filtering', () => {

@@ -7,6 +7,7 @@ import {
   getRateLimitsForTesting,
   getAuthRateLimitsCountForTesting,
   getAuthRateLimitsForTesting,
+  getLookupRateLimitsForTesting,
   MAX_RATE_LIMIT_KEYS,
 } from '../rateLimit';
 import { signAdminToken, ADMIN_COOKIE } from '@/core/auth/auth.server';
@@ -358,6 +359,13 @@ describe('rateLimit', () => {
       });
       const afterEvict = await rateLimit(postFloodLoginReq, 5, 15 * 60 * 1000);
       expect(afterEvict?.status).toBe(429);
+
+      // Dedicated lookup bucket is isolated from both general and auth lockout buckets
+      const validateReq = new NextRequest('http://localhost/api/registry/validate-code?code=TEST1234', {
+        headers: { 'x-forwarded-for': '203.0.113.77' },
+      });
+      expect(await rateLimit(validateReq, 20, 15 * 60 * 1000)).toBeNull();
+      expect(getLookupRateLimitsForTesting().has('/api/registry/validate-code:203.0.113.77')).toBe(true);
     });
   });
 
@@ -366,6 +374,7 @@ describe('rateLimit', () => {
       expect(normalizeApiPathname('/api/admin/login')).toBe('/api/admin/login');
       expect(normalizeApiPathname('/api/admin/setup/')).toBe('/api/admin/setup');
       expect(normalizeApiPathname('/api/registry/validate-code')).toBe('/api/registry/validate-code');
+      expect(normalizeApiPathname('/api/registry/reconcile')).toBe('/api/registry/reconcile');
       expect(normalizeApiPathname('/api/registry/items/batch')).toBe('/api/registry/items/batch');
       expect(normalizeApiPathname('/api/registry/items/item-123')).toBe('/api/registry/items/:id');
       expect(normalizeApiPathname('/api/media/export')).toBe('/api/media/export');

@@ -66,11 +66,28 @@ describe('paymentUrls utility', () => {
       expect(getPaymentUrl('PayPal', 'https://paypal.me/happycouple')).toBe('https://paypal.me/happycouple');
     });
 
-    it('formats Zelle payment URLs correctly', () => {
-      expect(getPaymentUrl('Zelle', 'couple@example.com')).toBe('mailto:couple@example.com?subject=Wedding%20Gift%20via%20Zelle');
-      expect(getPaymentUrl('Zelle', '(555) 123-4567')).toBe('tel:5551234567');
-      expect(getPaymentUrl('Zelle', 'https://www.zellepay.com')).toBe('https://www.zellepay.com');
-      expect(getPaymentUrl('Zelle', 'Zelle Account')).toBe('https://www.zellepay.com');
+    it('returns null for Zelle handles so UI renders copy-handle instead of mailto/tel/QR links', () => {
+      expect(getPaymentUrl('Zelle', 'couple@example.com')).toBeNull();
+      expect(getPaymentUrl('Zelle', '(555) 123-4567')).toBeNull();
+      expect(getPaymentUrl('Zelle', 'https://www.zellepay.com')).toBeNull();
+      expect(getPaymentUrl('Zelle', 'Zelle Account')).toBeNull();
+      expect(getPaymentUrl('zelle', 'couple@example.com', 100)).toBeNull();
+    });
+
+    it('appends positive entered amounts to Venmo, Cash App, and PayPal URLs while omitting non-positive amounts', () => {
+      expect(getPaymentUrl('Venmo', '@happy-couple', 50)).toBe('https://venmo.com/u/happy-couple?txn=pay&amount=50');
+      expect(getPaymentUrl('Venmo', '@happy-couple', 75.5)).toBe('https://venmo.com/u/happy-couple?txn=pay&amount=75.50');
+      expect(getPaymentUrl('Venmo', '@happy-couple', 0)).toBe('https://venmo.com/u/happy-couple');
+      expect(getPaymentUrl('Venmo', '@happy-couple', -25)).toBe('https://venmo.com/u/happy-couple');
+      expect(getPaymentUrl('Venmo', '@happy-couple', Number.NaN)).toBe('https://venmo.com/u/happy-couple');
+
+      expect(getPaymentUrl('Cash App', '$happycouple', 50)).toBe('https://cash.app/$happycouple/50');
+      expect(getPaymentUrl('Cash App', '$happycouple', 75.5)).toBe('https://cash.app/$happycouple/75.50');
+      expect(getPaymentUrl('Cash App', '$happycouple', 0)).toBe('https://cash.app/$happycouple');
+
+      expect(getPaymentUrl('PayPal', '@happycouple', 50)).toBe('https://paypal.me/happycouple/50');
+      expect(getPaymentUrl('PayPal', '@happycouple', 75.5)).toBe('https://paypal.me/happycouple/75.50');
+      expect(getPaymentUrl('PayPal', '@happycouple', 0)).toBe('https://paypal.me/happycouple');
     });
 
     it('handles Custom and unlisted handle types', () => {

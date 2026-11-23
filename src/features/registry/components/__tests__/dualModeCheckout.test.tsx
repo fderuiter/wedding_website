@@ -305,6 +305,13 @@ describe('Capability-Aware Dual-Mode Fund Checkout UI', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Submit Contribution' }));
 
     await waitFor(() => {
+      expect(mockConfirmPayment).toHaveBeenCalledWith(
+        expect.objectContaining({
+          confirmParams: expect.objectContaining({
+            return_url: expect.stringContaining('/registry?item=fund-hybrid-1'),
+          }),
+        })
+      );
       expect(eightArgContribute).toHaveBeenCalledWith(
         'fund-hybrid-1',
         'Riley Donor',

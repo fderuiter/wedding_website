@@ -1,3 +1,5 @@
+/** @jest-environment node */
+
 import { POST as sendRoute } from '../send/route';
 import { POST as previewRoute } from '../preview/route';
 import { GET as historyRoute } from '../history/route';
@@ -5,6 +7,7 @@ import { GET as detailRoute } from '../[id]/route';
 import { POST as retryRoute } from '../retry/route';
 import { POST as testConnRoute } from '../test-connection/route';
 import { POST as testSendRoute } from '../test-send/route';
+import net from 'node:net';
 import { NextRequest } from 'next/server';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { BroadcastService } from '@/features/broadcast';
@@ -313,20 +316,56 @@ describe('Broadcast API Routes', () => {
     expect(res.status).toBe(500);
   });
 
-  it('POST /api/admin/broadcast/test-connection returns connection result', async () => {
-    const req = new NextRequest('http://localhost/api/admin/broadcast/test-connection', {
+  it('POST /api/admin/broadcast/test-connection verifies live SMTP connection and reports unreachable hosts', async () => {
+    const server = net.createServer((socket) => {
+      socket.write('220 localhost ESMTP\r\n');
+      socket.on('data', (chunk) => {
+        const cmd = chunk.toString('utf8').toUpperCase();
+        if (cmd.startsWith('EHLO')) {
+          socket.write('250 localhost\r\n');
+        } else if (cmd.startsWith('QUIT')) {
+          socket.write('221 Bye\r\n');
+          socket.end();
+        }
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+    const { port } = server.address() as net.AddressInfo;
+
+    try {
+      const req = new NextRequest('http://localhost/api/admin/broadcast/test-connection', {
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'email',
+          provider: 'smtp',
+          smtpHost: '127.0.0.1',
+          smtpPort: port,
+          smtpSecure: false,
+        }),
+      });
+
+      const res = await testConnRoute(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.success).toBe(true);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+
+    const failReq = new NextRequest('http://localhost/api/admin/broadcast/test-connection', {
       method: 'POST',
       body: JSON.stringify({
         type: 'email',
         provider: 'smtp',
-        smtpHost: 'smtp.test.com',
+        smtpHost: '127.0.0.1',
+        smtpPort: port,
+        smtpSecure: false,
       }),
     });
-
-    const res = await testConnRoute(req);
-    expect(res.status).toBe(200);
-    const json = await res.json();
-    expect(json.success).toBe(true);
+    const failRes = await testConnRoute(failReq);
+    expect(failRes.status).toBe(200);
+    const failJson = await failRes.json();
+    expect(failJson.success).toBe(false);
   });
 
   it('POST /api/admin/broadcast/test-connection returns 400 for invalid schema', async () => {

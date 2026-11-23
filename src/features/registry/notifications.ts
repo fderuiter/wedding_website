@@ -215,6 +215,10 @@ async function resolveSavedContributor(
   return null;
 }
 
+function sanitizePlainTextValue(value: string): string {
+  return value.replace(/[<>]/g, '').replace(/\r\n/g, '\n').trim();
+}
+
 async function claimSendTimestamp(
   contributor: ContributorCandidate,
   kind: 'confirmation' | 'alert',
@@ -253,6 +257,50 @@ async function claimSendTimestamp(
   return false;
 }
 
+async function releaseSendTimestamp(
+  contributor: ContributorCandidate,
+  kind: 'confirmation' | 'alert',
+  repository: IRegistryRepository | undefined,
+  dbClient: any
+): Promise<void> {
+  const field = kind === 'confirmation' ? 'confirmationEmailSentAt' : 'alertEmailSentAt';
+  try {
+    if (contributor.id) {
+      if (repository && typeof repository.releaseContributorEmailSend === 'function') {
+        await repository.releaseContributorEmailSend(contributor.id, kind);
+        return;
+      }
+      if (typeof registryService?.releaseContributorEmailSend === 'function') {
+        await registryService.releaseContributorEmailSend(contributor.id, kind);
+        return;
+      }
+      if (typeof registryRepository?.releaseContributorEmailSend === 'function') {
+        await registryRepository.releaseContributorEmailSend(contributor.id, kind);
+        return;
+      }
+      if (typeof dbClient?.contributor?.updateMany === 'function') {
+        await dbClient.contributor.updateMany({
+          where: { id: contributor.id },
+          data: { [field]: null },
+        });
+        return;
+      }
+    }
+
+    if (
+      contributor.stripePaymentIntentId &&
+      typeof dbClient?.contributor?.updateMany === 'function'
+    ) {
+      await dbClient.contributor.updateMany({
+        where: { stripePaymentIntentId: contributor.stripePaymentIntentId },
+        data: { [field]: null },
+      });
+    }
+  } catch {
+    // Best-effort rollback so notification pipelines never throw
+  }
+}
+
 function buildGuestConfirmationEmail(options: {
   contributorName: string;
   itemName: string;
@@ -272,7 +320,7 @@ function buildGuestConfirmationEmail(options: {
   cancelActionUrl?: string;
   escapeHtmlEntities: (text: string) => string;
   sanitizeEmailSubject: (subject: string) => string;
-}): { subject: string; body: string } {
+}): { subject: string; body: string; html: string } {
   const {
     contributorName,
     itemName,
@@ -304,34 +352,59 @@ function buildGuestConfirmationEmail(options: {
         : `Gift Confirmation: ${itemName}`
   );
 
+  const plainGuestName = sanitizePlainTextValue(contributorName || 'Friend');
+  const plainItemName = sanitizePlainTextValue(itemName);
+  const plainDate = sanitizePlainTextValue(formattedDate);
+  const plainReferenceId = sanitizePlainTextValue(referenceId);
+  const plainRegistryUrl = sanitizePlainTextValue(registryUrl);
+  const plainBase = formatCurrency(baseAmount);
+  const plainTotal = formatCurrency(totalCharged);
+  const plainFee = formatCurrency(feeAmount);
+
   const safeGuestName = escapeHtmlEntities(contributorName || 'Friend');
   const safeItemName = escapeHtmlEntities(itemName);
   const safeDate = escapeHtmlEntities(formattedDate);
   const safeReferenceId = escapeHtmlEntities(referenceId);
   const safeRegistryUrl = escapeHtmlEntities(registryUrl);
 
-  const formattedBase = escapeHtmlEntities(formatCurrency(baseAmount));
-  const formattedTotal = escapeHtmlEntities(formatCurrency(totalCharged));
-  const formattedFee = escapeHtmlEntities(formatCurrency(feeAmount));
+  const formattedBase = escapeHtmlEntities(plainBase);
+  const formattedTotal = escapeHtmlEntities(plainTotal);
+  const formattedFee = escapeHtmlEntities(plainFee);
 
-  let feeCoverageText: string;
+  let feeCoverageTextHtml: string;
+  let feeCoverageTextPlain: string;
   if (stripePaymentIntentId && coverFee) {
-    feeCoverageText = `Covered by guest (+${formattedFee} processing fee; ${formattedTotal} total charged)`;
+    feeCoverageTextHtml = `Covered by guest (+${formattedFee} processing fee; ${formattedTotal} total charged)`;
+    feeCoverageTextPlain = `Covered by guest (+${plainFee} processing fee; ${plainTotal} total charged)`;
   } else if (stripePaymentIntentId) {
-    feeCoverageText = `Standard processing fee not added (${formattedBase} total charged)`;
+    feeCoverageTextHtml = `Standard processing fee not added (${formattedBase} total charged)`;
+    feeCoverageTextPlain = `Standard processing fee not added (${plainBase} total charged)`;
   } else {
-    feeCoverageText = 'No processing fee ($0.00)';
+    feeCoverageTextHtml = 'No processing fee ($0.00)';
+    feeCoverageTextPlain = 'No processing fee ($0.00)';
   }
 
   let transferReminderBlock = '';
+  let transferReminderPlain = '';
   if (isSelfReportedFundTransfer) {
+    const plainHandleLabel = sanitizePlainTextValue(paymentHandleType || 'Direct Transfer');
+    const plainHandle = sanitizePlainTextValue(paymentHandle || 'configured payment handle');
     const handleLabel = escapeHtmlEntities(paymentHandleType || 'Direct Transfer');
     const safeHandle = escapeHtmlEntities(paymentHandle || 'configured payment handle');
-    const externalUrl = getPaymentUrl(paymentHandleType || null, paymentHandle || null);
+    const externalUrl = getPaymentUrl(paymentHandleType || null, paymentHandle || null, baseAmount);
     const safeExternalUrl =
       externalUrl && (externalUrl.startsWith('https://') || externalUrl.startsWith('http://'))
         ? escapeHtmlEntities(externalUrl)
         : '';
+
+    transferReminderPlain = [
+      'Reminder: Please finish sending your transfer externally',
+      `No card was charged on this website. If you have not sent your funds yet, please send ${plainBase} via ${plainHandleLabel} to ${plainHandle}${
+        externalUrl && (externalUrl.startsWith('https://') || externalUrl.startsWith('http://'))
+          ? ` (${externalUrl})`
+          : ''
+      }.`,
+    ].join('\n');
 
     transferReminderBlock = `
       <div style="margin:16px 0;padding:14px 16px;background-color:#fffbeb;border:1px solid #f59e0b;border-radius:8px;color:#78350f;">
@@ -350,9 +423,15 @@ function buildGuestConfirmationEmail(options: {
   }
 
   let reservationActionsBlock = '';
+  let reservationActionsPlain = '';
   if (isReserved && confirmActionUrl && cancelActionUrl) {
     const safeConfirmUrl = escapeHtmlEntities(confirmActionUrl);
     const safeCancelUrl = escapeHtmlEntities(cancelActionUrl);
+    reservationActionsPlain = [
+      'Confirm or Cancel Your Reservation:',
+      `Confirm Gift Sent: ${sanitizePlainTextValue(confirmActionUrl)}`,
+      `Cancel Reservation: ${sanitizePlainTextValue(cancelActionUrl)}`,
+    ].join('\n');
     reservationActionsBlock = `
       <div style="margin:16px 0;padding:16px;background-color:#eff6ff;border:1px solid #93c5fd;border-radius:8px;color:#1e3a8a;">
         <p style="margin:0 0 8px 0;font-weight:700;">Confirm or Cancel Your Reservation</p>
@@ -371,7 +450,31 @@ function buildGuestConfirmationEmail(options: {
     `;
   }
 
-  const body = `
+  const introPlain = isSelfReportedFundTransfer
+    ? `We recorded your self-reported contribution toward ${plainItemName}.`
+    : isReserved
+      ? `We reserved your gift claim for ${plainItemName} while you complete your purchase.`
+      : `Your gift toward ${plainItemName} has been confirmed.`;
+
+  const body = [
+    `Thank you for your gift, ${plainGuestName}!`,
+    '',
+    introPlain,
+    transferReminderPlain ? `\n${transferReminderPlain}` : '',
+    reservationActionsPlain ? `\n${reservationActionsPlain}` : '',
+    '',
+    `Item: ${plainItemName}`,
+    `Gift Amount: ${plainBase}`,
+    `Fee Coverage: ${feeCoverageTextPlain}`,
+    `Date: ${plainDate}`,
+    `Reference ID: ${plainReferenceId}`,
+    '',
+    `Browse More on the Registry: ${plainRegistryUrl}`,
+  ]
+    .filter((section) => section !== '')
+    .join('\n');
+
+  const html = `
     <div style="font-family:system-ui,-apple-system,sans-serif;max-width:600px;margin:0 auto;color:#1f2937;line-height:1.5;">
       <h2 style="margin:0 0 12px 0;color:#111827;">Thank you for your gift, ${safeGuestName}!</h2>
       <p style="margin:0 0 16px 0;">
@@ -397,7 +500,7 @@ function buildGuestConfirmationEmail(options: {
           </tr>
           <tr>
             <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;">Fee Coverage</td>
-            <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;">${feeCoverageText}</td>
+            <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;">${feeCoverageTextHtml}</td>
           </tr>
           <tr>
             <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;">Date</td>
@@ -417,7 +520,7 @@ function buildGuestConfirmationEmail(options: {
     </div>
   `.trim();
 
-  return { subject, body };
+  return { subject, body, html };
 }
 
 function buildCoupleAlertEmail(options: {
@@ -434,7 +537,7 @@ function buildCoupleAlertEmail(options: {
   dashboardUrl: string;
   escapeHtmlEntities: (text: string) => string;
   sanitizeEmailSubject: (subject: string) => string;
-}): { subject: string; body: string } {
+}): { subject: string; body: string; html: string } {
   const {
     contributorName,
     itemName,
@@ -452,6 +555,25 @@ function buildCoupleAlertEmail(options: {
   } = options;
 
   const subject = sanitizeEmailSubject(`New Registry Gift: ${itemName} from ${contributorName}`);
+  const plainContributorName = sanitizePlainTextValue(contributorName || 'Anonymous Guest');
+  const plainItemName = sanitizePlainTextValue(itemName);
+  const plainPaymentType = sanitizePlainTextValue(paymentTypeLabel);
+  const plainNote =
+    guestMessage && guestMessage.trim()
+      ? sanitizePlainTextValue(guestMessage.trim())
+      : 'No personal note included.';
+  const plainDashboardUrl = sanitizePlainTextValue(dashboardUrl);
+  const plainOrderNumber =
+    retailerOrderNumber && retailerOrderNumber.trim()
+      ? sanitizePlainTextValue(retailerOrderNumber.trim())
+      : '';
+  const plainCarrier =
+    carrier && carrier.trim() ? sanitizePlainTextValue(carrier.trim()) : '';
+  const plainTrackingNumber =
+    trackingNumber && trackingNumber.trim()
+      ? sanitizePlainTextValue(trackingNumber.trim())
+      : '';
+
   const safeContributorName = escapeHtmlEntities(contributorName || 'Anonymous Guest');
   const safeItemName = escapeHtmlEntities(itemName);
   const safePaymentType = escapeHtmlEntities(paymentTypeLabel);
@@ -494,12 +616,35 @@ function buildCoupleAlertEmail(options: {
     .filter(Boolean)
     .join('\n          ');
 
+  const plainAmountSummary =
+    coverFee && feeAmount > 0
+      ? `${formatCurrency(baseAmount)} (+${formatCurrency(feeAmount)} processing fee covered)`
+      : formatCurrency(baseAmount);
+
   const amountSummary =
     coverFee && feeAmount > 0
       ? `${escapeHtmlEntities(formatCurrency(baseAmount))} (+${escapeHtmlEntities(formatCurrency(feeAmount))} processing fee covered)`
       : escapeHtmlEntities(formatCurrency(baseAmount));
 
-  const body = `
+  const body = [
+    'New Registry Contribution Recorded',
+    `${plainContributorName} recorded a gift on your wedding registry.`,
+    '',
+    `Contributor: ${plainContributorName}`,
+    `Item: ${plainItemName}`,
+    `Amount: ${plainAmountSummary}`,
+    `Payment Type: ${plainPaymentType}`,
+    plainOrderNumber ? `Retailer Order #: ${plainOrderNumber}` : '',
+    plainCarrier ? `Shipping Carrier: ${plainCarrier}` : '',
+    plainTrackingNumber ? `Tracking Number: ${plainTrackingNumber}` : '',
+    `Guest Note: ${plainNote}`,
+    '',
+    `View Gift in Dashboard: ${plainDashboardUrl}`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const html = `
     <div style="font-family:system-ui,-apple-system,sans-serif;max-width:600px;margin:0 auto;color:#1f2937;line-height:1.5;">
       <h2 style="margin:0 0 12px 0;color:#111827;">New Registry Contribution Recorded</h2>
       <p style="margin:0 0 16px 0;">
@@ -538,13 +683,14 @@ function buildCoupleAlertEmail(options: {
     </div>
   `.trim();
 
-  return { subject, body };
+  return { subject, body, html };
 }
 
 /**
  * Dispatches post-contribution guest confirmation and couple alert emails inline.
  * Uses atomic timestamp claims on Contributor to guarantee idempotency across
- * concurrent browser callbacks and Stripe webhooks, and never throws on errors.
+ * concurrent browser callbacks and Stripe webhooks, rolls back claims on send failure,
+ * and never throws on errors.
  */
 export async function dispatchContributionNotifications(
   params: DispatchContributionNotificationsParams
@@ -687,15 +833,16 @@ export async function dispatchContributionNotifications(
     if (hasValidGuestEmail) {
       emailBranches.push(
         (async () => {
+          let claimedGuestEmail = false;
           try {
-            const claimedGuestEmail = await claimSendTimestamp(
+            claimedGuestEmail = await claimSendTimestamp(
               savedContributor,
               'confirmation',
               repository,
               dbClient
             );
             if (claimedGuestEmail) {
-              const { subject, body } = buildGuestConfirmationEmail({
+              const { subject, body, html } = buildGuestConfirmationEmail({
                 contributorName,
                 itemName,
                 isPayableGroupGift,
@@ -719,8 +866,10 @@ export async function dispatchContributionNotifications(
                 to: guestEmailRaw,
                 subject,
                 body,
+                html,
               });
               if (!result.success) {
+                await releaseSendTimestamp(savedContributor, 'confirmation', repository, dbClient);
                 logger.warn('Failed to send registry guest confirmation email', {
                   itemId,
                   contributorId: savedContributor.id,
@@ -731,6 +880,9 @@ export async function dispatchContributionNotifications(
               }
             }
           } catch (guestErr: unknown) {
+            if (claimedGuestEmail) {
+              await releaseSendTimestamp(savedContributor, 'confirmation', repository, dbClient);
+            }
             logger.warn('Unexpected error sending registry guest confirmation email', {
               itemId,
               contributorId: savedContributor.id,
@@ -746,8 +898,9 @@ export async function dispatchContributionNotifications(
     if (hasValidCoupleEmail && !isReserved) {
       emailBranches.push(
         (async () => {
+          let claimedAlertEmail = false;
           try {
-            const claimedAlertEmail = await claimSendTimestamp(
+            claimedAlertEmail = await claimSendTimestamp(
               savedContributor,
               'alert',
               repository,
@@ -765,7 +918,7 @@ export async function dispatchContributionNotifications(
                 paymentTypeLabel = 'Group Gift Contribution';
               }
 
-              const { subject, body } = buildCoupleAlertEmail({
+              const { subject, body, html } = buildCoupleAlertEmail({
                 contributorName,
                 itemName,
                 baseAmount,
@@ -784,8 +937,10 @@ export async function dispatchContributionNotifications(
                 to: coupleEmailRaw,
                 subject,
                 body,
+                html,
               });
               if (!result.success) {
+                await releaseSendTimestamp(savedContributor, 'alert', repository, dbClient);
                 logger.warn('Failed to send registry couple alert email', {
                   itemId,
                   contributorId: savedContributor.id,
@@ -796,6 +951,9 @@ export async function dispatchContributionNotifications(
               }
             }
           } catch (alertErr: unknown) {
+            if (claimedAlertEmail) {
+              await releaseSendTimestamp(savedContributor, 'alert', repository, dbClient);
+            }
             logger.warn('Unexpected error sending registry couple alert email', {
               itemId,
               contributorId: savedContributor.id,
@@ -840,6 +998,9 @@ export async function dispatchConfirmedContributionAlert(params: {
 }): Promise<void> {
   const { contributor, item, requestUrl, repository } = params;
 
+  let claimedAlertEmail = false;
+  let dbClient: any;
+
   try {
     const activeConfig = params.config ?? (await getAppConfig());
     if (!isEmailProviderConfigured(activeConfig)) {
@@ -852,8 +1013,8 @@ export async function dispatchConfirmedContributionAlert(params: {
       return;
     }
 
-    const dbClient = (repository as any)?.client ?? prisma;
-    const claimedAlertEmail = await claimSendTimestamp(
+    dbClient = (repository as any)?.client ?? prisma;
+    claimedAlertEmail = await claimSendTimestamp(
       contributor,
       'alert',
       repository,
@@ -919,7 +1080,7 @@ export async function dispatchConfirmedContributionAlert(params: {
     } = await import('@/features/broadcast');
     const messagingProvider = new MultiChannelMessagingProvider(activeConfig);
 
-    const { subject, body } = buildCoupleAlertEmail({
+    const { subject, body, html } = buildCoupleAlertEmail({
       contributorName,
       itemName,
       baseAmount,
@@ -939,8 +1100,10 @@ export async function dispatchConfirmedContributionAlert(params: {
       to: coupleEmailRaw,
       subject,
       body,
+      html,
     });
     if (!result.success) {
+      await releaseSendTimestamp(contributor, 'alert', repository, dbClient);
       logger.warn('Failed to send confirmed contribution couple alert email', {
         itemId: item?.id,
         contributorId: contributor.id,
@@ -950,6 +1113,9 @@ export async function dispatchConfirmedContributionAlert(params: {
       });
     }
   } catch (err: unknown) {
+    if (claimedAlertEmail) {
+      await releaseSendTimestamp(contributor, 'alert', repository, dbClient);
+    }
     logger.warn('Unexpected error sending confirmed contribution couple alert email', {
       itemId: item?.id,
       contributorId: contributor.id,
@@ -1015,7 +1181,7 @@ export async function dispatchPoliteReminderNotification(params: {
     const paymentHandleType = effectiveHandle.paymentHandleType || '';
     const paymentDeepLink =
       isPayableGroupGift && paymentHandle && paymentHandleType
-        ? getPaymentUrl(paymentHandleType, paymentHandle)
+        ? getPaymentUrl(paymentHandleType, paymentHandle, baseAmount)
         : null;
 
     const [confirmToken, cancelToken] = await Promise.all([
@@ -1035,17 +1201,41 @@ export async function dispatchPoliteReminderNotification(params: {
     } = await import('@/features/broadcast');
     const messagingProvider = new MultiChannelMessagingProvider(activeConfig);
 
+    const plainName = sanitizePlainTextValue(contributorName);
+    const plainItemName = sanitizePlainTextValue(itemName);
+    const plainAmount = formatCurrency(baseAmount);
+    const plainHandle = sanitizePlainTextValue(paymentHandle);
+    const plainHandleType = sanitizePlainTextValue(paymentHandleType || 'Direct Transfer');
+    const plainVendorUrl = item?.vendorUrl ? sanitizePlainTextValue(item.vendorUrl) : '';
+
     const safeName = escapeHtmlEntities(contributorName);
     const safeItemName = escapeHtmlEntities(itemName);
-    const safeAmount = escapeHtmlEntities(formatCurrency(baseAmount));
+    const safeAmount = escapeHtmlEntities(plainAmount);
     const safeConfirmUrl = escapeHtmlEntities(confirmActionUrl);
     const safeCancelUrl = escapeHtmlEntities(cancelActionUrl);
     const safeHandle = escapeHtmlEntities(paymentHandle);
     const safeHandleType = escapeHtmlEntities(paymentHandleType || 'Direct Transfer');
-    const safePaymentDeepLink = paymentDeepLink ? escapeHtmlEntities(paymentDeepLink) : '';
-    const safeVendorUrl = item?.vendorUrl ? escapeHtmlEntities(item.vendorUrl) : '';
+    const safePaymentDeepLink =
+      paymentDeepLink &&
+      (paymentDeepLink.startsWith('https://') || paymentDeepLink.startsWith('http://'))
+        ? escapeHtmlEntities(paymentDeepLink)
+        : '';
+    const safeVendorUrl =
+      item?.vendorUrl &&
+      (item.vendorUrl.startsWith('https://') || item.vendorUrl.startsWith('http://'))
+        ? escapeHtmlEntities(item.vendorUrl)
+        : '';
 
     const subject = sanitizeEmailSubject(`Friendly Reminder: Your Wedding Gift Reservation (${itemName})`);
+
+    const paymentReminderPlain =
+      isPayableGroupGift && paymentHandle
+        ? `${plainHandleType}: ${plainHandle} (${plainAmount})${
+          paymentDeepLink ? ` — ${sanitizePlainTextValue(paymentDeepLink)}` : ''
+        }`
+        : plainVendorUrl
+          ? `Retailer listing: ${plainVendorUrl}`
+          : '';
 
     const paymentReminderHtml =
       isPayableGroupGift && paymentHandle
@@ -1069,7 +1259,19 @@ export async function dispatchPoliteReminderNotification(params: {
           `
           : '';
 
-    const body = `
+    const body = [
+      'Checking in on your gift reservation',
+      `Hi ${plainName}, thank you again for reserving ${plainItemName} (${plainAmount}) on our wedding registry!`,
+      'We wanted to check in politely so we can keep our gift list accurate for other guests.',
+      paymentReminderPlain,
+      'If you have already sent your transfer or completed your order, please confirm below. If your plans changed, you can release the reservation so another guest can choose it.',
+      `Confirm Gift Sent: ${sanitizePlainTextValue(confirmActionUrl)}`,
+      `Release Reservation: ${sanitizePlainTextValue(cancelActionUrl)}`,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+
+    const html = `
       <div style="font-family: Georgia, serif; color: #1e293b; max-width: 560px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
         <h2 style="margin: 0 0 12px; font-size: 22px; color: #0f172a;">Checking in on your gift reservation</h2>
         <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6; color: #334155;">
@@ -1095,6 +1297,7 @@ export async function dispatchPoliteReminderNotification(params: {
       to: guestEmailRaw,
       subject,
       body,
+      html,
     });
     if (!result.success) {
       logger.warn('Failed to send registry polite reminder email', {
@@ -1176,19 +1379,40 @@ export async function dispatchLedgerAdjustmentNotification(params: {
           : 'Partial Refund Processed';
 
     const subject = sanitizeEmailSubject(`Registry Ledger Update: ${eventHeadline} — ${itemName}`);
+    const plainContributor = sanitizePlainTextValue(contributorName);
+    const plainItemName = sanitizePlainTextValue(itemName);
+    const plainOriginal = formatCurrency(originalAmount);
+    const plainReversed = formatCurrency(clampedReversed);
+    const plainNet = formatCurrency(netAmount);
+    const plainItemTotal = formatCurrency(updatedItemTotal);
+    const plainAdminUrl = sanitizePlainTextValue(registryAdminUrl);
+
     const safeHeadline = escapeHtmlEntities(eventHeadline);
     const safeContributor = escapeHtmlEntities(contributorName);
     const safeItemName = escapeHtmlEntities(itemName);
-    const safeOriginal = escapeHtmlEntities(formatCurrency(originalAmount));
-    const safeReversed = escapeHtmlEntities(formatCurrency(clampedReversed));
-    const safeNet = escapeHtmlEntities(formatCurrency(netAmount));
-    const safeItemTotal = escapeHtmlEntities(formatCurrency(updatedItemTotal));
+    const safeOriginal = escapeHtmlEntities(plainOriginal);
+    const safeReversed = escapeHtmlEntities(plainReversed);
+    const safeNet = escapeHtmlEntities(plainNet);
+    const safeItemTotal = escapeHtmlEntities(plainItemTotal);
     const safeAdminUrl = escapeHtmlEntities(registryAdminUrl);
     const availabilityCopy = item?.purchased
       ? 'Remains fulfilled'
       : 'Reopened for guest contributions';
 
-    const body = `
+    const body = [
+      eventHeadline,
+      `Stripe reported a ledger adjustment for ${plainContributor} on ${plainItemName}.`,
+      '',
+      `Original Contribution: ${plainOriginal}`,
+      `Reversed / Refunded: -${plainReversed}`,
+      `Net Contributor Amount: ${plainNet}`,
+      `Updated Gift Funding Total: ${plainItemTotal}`,
+      `Gift Status: ${availabilityCopy}`,
+      '',
+      `Review Registry Ledger: ${plainAdminUrl}`,
+    ].join('\n');
+
+    const html = `
       <div style="font-family: Georgia, serif; color: #1e293b; max-width: 560px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
         <h2 style="margin: 0 0 12px; font-size: 22px; color: #0f172a;">${safeHeadline}</h2>
         <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6; color: #334155;">
@@ -1231,6 +1455,7 @@ export async function dispatchLedgerAdjustmentNotification(params: {
       to: coupleEmailRaw,
       subject,
       body,
+      html,
     });
     if (!result.success) {
       logger.warn('Failed to send registry ledger adjustment notification', {

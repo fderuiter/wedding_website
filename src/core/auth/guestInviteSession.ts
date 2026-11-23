@@ -21,7 +21,6 @@ import {
 
 export {
   GUEST_INVITE_COOKIE,
-  type GuestInviteSessionPayload,
   signGuestInviteSessionToken,
   verifyGuestInviteSessionToken,
 };
@@ -29,8 +28,13 @@ export {
 interface InvitationLookupRecord extends Record<string, unknown> {
   code?: string;
   guestName?: string;
+  email?: string | null;
   isSample?: boolean;
 }
+
+type ResolvedGuestInviteSession = GuestInviteSessionPayload & {
+  email?: string | null;
+};
 
 interface InvitationCodeLookupDelegate {
   findUnique?: (args: {
@@ -52,7 +56,7 @@ function isStaticExportBuild(): boolean {
 async function resolveActiveInvitationSession(
   payload: GuestInviteSessionPayload,
   req?: NextRequest
-): Promise<GuestInviteSessionPayload | null> {
+): Promise<ResolvedGuestInviteSession | null> {
   const normalizedCode = payload.code.trim().toUpperCase();
   if (!normalizedCode) {
     return null;
@@ -92,6 +96,13 @@ async function resolveActiveInvitationSession(
         ? invite.guestName
         : payload.guestName;
 
+    const normalizedEmail =
+      typeof invite.email === 'string'
+        ? invite.email.trim() || null
+        : invite.email === null
+          ? null
+          : undefined;
+
     setHydratedGuestInvitation(
       buildHydratedGuestInvitation(invite, normalizedCode, resolvedGuestName),
       req
@@ -101,6 +112,7 @@ async function resolveActiveInvitationSession(
       ...payload,
       code: payload.code,
       guestName: resolvedGuestName,
+      ...(normalizedEmail !== undefined ? { email: normalizedEmail } : {}),
     };
   } catch {
     return null;
@@ -113,7 +125,7 @@ function buildGuestSessionCacheKey(payload: GuestInviteSessionPayload): string {
 
 const getCachedServerSignedGuestInviteSession = cache(() => getSignedGuestInviteSession());
 
-async function resolveServerCookieGuestInviteSession(): Promise<GuestInviteSessionPayload | null> {
+async function resolveServerCookieGuestInviteSession(): Promise<ResolvedGuestInviteSession | null> {
   if (isStaticExportBuild()) {
     return null;
   }
@@ -133,7 +145,7 @@ async function resolveServerCookieGuestInviteSession(): Promise<GuestInviteSessi
  * Retrieve verified guest invitation session from NextRequest or cookieStore,
  * confirming that the session code still matches an active, non-sample InvitationCode record.
  */
-export async function getGuestInviteSession(req?: NextRequest): Promise<GuestInviteSessionPayload | null> {
+export async function getGuestInviteSession(req?: NextRequest): Promise<ResolvedGuestInviteSession | null> {
   if (isStaticExportBuild()) {
     return null;
   }

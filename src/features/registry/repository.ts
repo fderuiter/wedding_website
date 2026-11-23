@@ -522,6 +522,29 @@ class RegistryRepository implements IRegistryRepository {
     return Boolean(result && result.count === 1);
   }
 
+  /**
+   * Releases a previously claimed outbound email timestamp when provider delivery fails
+   * so subsequent retries or webhook deliveries can resend the notification.
+   */
+  async releaseContributorEmailSend(
+    contributorId: string,
+    kind: 'confirmation' | 'alert'
+  ): Promise<void> {
+    if (!contributorId || typeof this.client?.contributor?.updateMany !== 'function') {
+      return;
+    }
+
+    const field = kind === 'confirmation' ? 'confirmationEmailSentAt' : 'alertEmailSentAt';
+    await this.client.contributor.updateMany({
+      where: {
+        id: contributorId,
+      },
+      data: {
+        [field]: null,
+      },
+    });
+  }
+
   private normalizeStatus(rawStatus: unknown): ContributorStatus {
     const normalized = typeof rawStatus === 'string' ? rawStatus.trim().toUpperCase() : 'CONFIRMED';
     if (

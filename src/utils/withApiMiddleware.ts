@@ -26,9 +26,12 @@ function isAuthLockoutRoute(pathname: string, method: string): boolean {
     pathname === '/api/admin/login' ||
     pathname === '/api/guest/login' ||
     pathname === '/api/guest/lookup' ||
-    (pathname === '/api/admin/setup' && upperMethod === 'POST') ||
-    pathname === '/api/registry/validate-code'
+    (pathname === '/api/admin/setup' && upperMethod === 'POST')
   );
+}
+
+function isInviteLookupRoute(pathname: string): boolean {
+  return pathname === '/api/registry/validate-code';
 }
 
 function isInviteRevocationExcludedApiPath(normalizedPathname: string): boolean {
@@ -39,6 +42,7 @@ function isInviteRevocationExcludedApiPath(normalizedPathname: string): boolean 
     normalizedPathname === '/api/guest/address' ||
     normalizedPathname === '/api/guest/address/public' ||
     normalizedPathname === '/api/registry/claim' ||
+    normalizedPathname === '/api/registry/reconcile' ||
     normalizedPathname === '/api/registry/validate-code' ||
     normalizedPathname === '/api/registry/session' ||
     normalizedPathname === '/api/registry/webhook/stripe' ||
@@ -81,15 +85,17 @@ export function withApiMiddleware(
       const normalizedPathname = pathname.length > 1 ? pathname.replace(/\/+$/, '') || '/' : pathname;
       const isHealthPath = normalizedPathname === '/api/health' || normalizedPathname === '/api/live';
       const isLoginPath = isAuthLockoutRoute(normalizedPathname, method);
+      const isLookupPath = isInviteLookupRoute(normalizedPathname);
       
       const isAdminPath = isProtectedRoute(pathname, method);
 
       // 1. Rate Limiting
-      // Stricter limits for login/credential checks, general limits for everything else; probe endpoints (/api/health, /api/live) are exempt
+      // Stricter limits for login/credential checks, isolated lookup bucket for registry invite checks, general limits for everything else; probe endpoints (/api/health, /api/live) are exempt
       if (!isHealthPath) {
-        const limit = options?.limit ?? (isLoginPath ? 5 : 100);
-        const windowMs = options?.windowMs ?? (isLoginPath ? 15 * 60 * 1000 : 60 * 1000);
-        const bucket: RateLimitBucket = options?.bucket ?? (isLoginPath ? 'auth' : 'general');
+        const limit = options?.limit ?? (isLoginPath ? 5 : isLookupPath ? 20 : 100);
+        const windowMs = options?.windowMs ?? (isLoginPath || isLookupPath ? 15 * 60 * 1000 : 60 * 1000);
+        const bucket: RateLimitBucket =
+          options?.bucket ?? (isLoginPath ? 'auth' : isLookupPath ? 'lookup' : 'general');
         const rateLimitResponse = (req && req.headers && typeof req.headers.get === 'function')
           ? await rateLimit(req, limit, windowMs, options?.keyPrefix, bucket)
           : null;

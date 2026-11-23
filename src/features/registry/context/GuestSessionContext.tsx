@@ -10,6 +10,7 @@ export type GuestSessionStatus = 'authenticated' | 'unauthenticated' | 'expired'
 export interface GuestSessionState {
   invitationCode: string;
   guestName: string;
+  guestEmail?: string;
   isVerified: boolean;
   isLoading: boolean;
   status: GuestSessionStatus;
@@ -19,7 +20,12 @@ export interface GuestSessionState {
 }
 
 export interface GuestSessionContextType extends GuestSessionState {
-  setSession: (session: { invitationCode: string; guestName: string; isVerified?: boolean }) => void;
+  setSession: (session: {
+    invitationCode: string;
+    guestName: string;
+    guestEmail?: string | null;
+    isVerified?: boolean;
+  }) => void;
   clearSession: () => Promise<void>;
   refreshSession: () => Promise<void>;
   openRecoveryModal: () => void;
@@ -30,6 +36,7 @@ export interface GuestSessionContextType extends GuestSessionState {
 const defaultContextValue: GuestSessionContextType = {
   invitationCode: '',
   guestName: '',
+  guestEmail: '',
   isVerified: false,
   isLoading: false,
   status: 'unauthenticated',
@@ -52,6 +59,7 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [sessionState, setSessionState] = useState<GuestSessionState>({
     invitationCode: '',
     guestName: '',
+    guestEmail: '',
     isVerified: false,
     isLoading: true,
     status: 'unauthenticated',
@@ -74,10 +82,12 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
       if (data && (data.isVerified || data.invitationCode || data.code)) {
         const code = data.invitationCode || data.code || '';
         const name = data.guestName || '';
+        const email = typeof data.email === 'string' ? data.email : '';
         setSessionState(prev => ({
           ...prev,
           invitationCode: code,
           guestName: name,
+          guestEmail: email,
           isVerified: true,
           isLoading: false,
           status: 'authenticated',
@@ -93,12 +103,14 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
             Boolean(prev.invitationCode || prev.draftInvitationCode);
           const draftCode = prev.invitationCode || prev.draftInvitationCode || '';
           const currentName = prev.guestName || '';
+          const currentEmail = prev.guestEmail || '';
 
           if (wasAuth) {
             return {
               ...prev,
               invitationCode: draftCode,
               guestName: currentName,
+              guestEmail: currentEmail,
               isVerified: false,
               isLoading: false,
               status: 'expired',
@@ -111,6 +123,7 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
               ...prev,
               invitationCode: '',
               guestName: '',
+              guestEmail: '',
               isVerified: false,
               isLoading: false,
               status: 'unauthenticated',
@@ -130,12 +143,14 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
           Boolean(prev.invitationCode || prev.draftInvitationCode);
         const draftCode = prev.invitationCode || prev.draftInvitationCode || '';
         const currentName = prev.guestName || '';
+        const currentEmail = prev.guestEmail || '';
 
         if (wasAuth) {
           return {
             ...prev,
             invitationCode: draftCode,
             guestName: currentName,
+            guestEmail: currentEmail,
             isVerified: false,
             isLoading: false,
             status: 'expired',
@@ -148,6 +163,7 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
             ...prev,
             invitationCode: '',
             guestName: '',
+            guestEmail: '',
             isVerified: false,
             isLoading: false,
             status: 'error',
@@ -204,12 +220,21 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, [sessionState.status, toast, openRecoveryModal, refreshSession]);
 
   const setSession = useCallback(
-    (newSession: { invitationCode: string; guestName: string; isVerified?: boolean }) => {
+    (newSession: {
+      invitationCode: string;
+      guestName: string;
+      guestEmail?: string | null;
+      isVerified?: boolean;
+    }) => {
       const verified = newSession.isVerified ?? true;
       setSessionState(prev => ({
         ...prev,
         invitationCode: newSession.invitationCode,
         guestName: newSession.guestName,
+        guestEmail:
+          newSession.guestEmail !== undefined
+            ? newSession.guestEmail || ''
+            : prev.guestEmail || '',
         isVerified: verified,
         isLoading: false,
         status: verified ? 'authenticated' : 'unauthenticated',
@@ -230,6 +255,7 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
       setSessionState({
         invitationCode: '',
         guestName: '',
+        guestEmail: '',
         isVerified: false,
         isLoading: false,
         status: 'unauthenticated',
@@ -261,11 +287,14 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         );
         if (data && data.valid) {
           const verifiedCode = data.code || targetCode;
+          const resolvedEmail =
+            typeof data.email === 'string' ? data.email : undefined;
 
           setSessionState(prev => ({
             ...prev,
             invitationCode: verifiedCode,
             guestName: data.guestName || prev.guestName,
+            guestEmail: resolvedEmail !== undefined ? resolvedEmail : prev.guestEmail || '',
             isVerified: true,
             isLoading: false,
             status: 'authenticated',

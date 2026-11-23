@@ -66,6 +66,7 @@ describe('validate-code Route', () => {
       id: 'invite-123',
       code: 'USEDCODE',
       guestName: 'John Doe',
+      email: 'john@example.com',
       used: true,
     });
     const req = new Request('http://localhost/api/registry/validate-code?code=USEDCODE', {
@@ -79,6 +80,7 @@ describe('validate-code Route', () => {
       data: {
         valid: true,
         guestName: 'John Doe',
+        email: 'john@example.com',
         code: 'USEDCODE',
       }
     });
@@ -102,6 +104,7 @@ describe('validate-code Route', () => {
       data: {
         valid: true,
         guestName: 'Jane Smith',
+        email: null,
         code: 'GOODCODE',
       }
     });

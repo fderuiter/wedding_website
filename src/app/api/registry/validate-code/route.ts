@@ -29,6 +29,7 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     valid: true,
     guestName: invite.guestName,
     code: invite.code,
+    email: invite.email?.trim() || null,
   });
 
   response.cookies.set(GUEST_INVITE_COOKIE, token, {

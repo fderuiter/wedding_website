@@ -24965,6 +24965,375 @@
         }
       }
     },
+    "/api/registry/reconcile": {
+      "post": {
+        "tags": [
+          "Registry"
+        ],
+        "summary": "POST /api/registry/reconcile",
+        "description": "Endpoint for /api/registry/reconcile",
+        "security": [
+          {
+            "guestCookieAuth": []
+          },
+          {
+            "guestInviteCookieAuth": []
+          },
+          {
+            "adminCookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "paymentIntentId": {
+                    "type": "string",
+                    "pattern": "^pi_[a-zA-Z0-9_]+$"
+                  },
+                  "clientSecret": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "itemId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "paymentIntentId",
+                  "clientSecret"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "success",
+                        "data"
+                      ],
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string"
+                            },
+                            "recorded": {
+                              "type": "boolean",
+                              "enum": [
+                                true
+                              ]
+                            },
+                            "paymentIntentId": {
+                              "type": "string"
+                            },
+                            "itemId": {
+                              "type": "string"
+                            },
+                            "amount": {
+                              "type": "number"
+                            },
+                            "coverFee": {
+                              "type": "boolean"
+                            },
+                            "contributorName": {
+                              "type": "string"
+                            },
+                            "item": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "additionalProperties": true
+                                },
+                                {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                  }
+                                },
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "boolean"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "recorded",
+                            "paymentIntentId",
+                            "itemId",
+                            "amount",
+                            "coverFee",
+                            "contributorName",
+                            "item"
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "success",
+                        "data"
+                      ],
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string"
+                            },
+                            "recorded": {
+                              "type": "boolean",
+                              "enum": [
+                                false
+                              ]
+                            },
+                            "paymentIntentId": {
+                              "type": "string"
+                            },
+                            "itemId": {
+                              "type": "string"
+                            },
+                            "coverFee": {
+                              "type": "boolean"
+                            },
+                            "item": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "additionalProperties": true
+                                },
+                                {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                  }
+                                },
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "boolean"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "recorded",
+                            "paymentIntentId",
+                            "itemId",
+                            "coverFee",
+                            "item"
+                          ],
+                          "additionalProperties": true
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "success",
+                        "data"
+                      ],
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string"
+                            },
+                            "recorded": {
+                              "type": "boolean",
+                              "enum": [
+                                false
+                              ]
+                            },
+                            "paymentIntentId": {
+                              "type": "string"
+                            },
+                            "itemId": {
+                              "type": "string"
+                            },
+                            "coverFee": {
+                              "type": "boolean"
+                            },
+                            "failureMessage": {
+                              "type": "string"
+                            },
+                            "item": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "additionalProperties": true
+                                },
+                                {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                  }
+                                },
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "boolean"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "recorded",
+                            "paymentIntentId",
+                            "itemId",
+                            "coverFee",
+                            "failureMessage",
+                            "item"
+                          ],
+                          "additionalProperties": true
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/registry/scrape/batch": {
       "post": {
         "tags": [
@@ -25312,13 +25681,18 @@
                             "guestName": {
                               "type": "string",
                               "nullable": true
+                            },
+                            "email": {
+                              "type": "string",
+                              "nullable": true
                             }
                           },
                           "required": [
                             "isVerified",
                             "invitationCode",
                             "code",
-                            "guestName"
+                            "guestName",
+                            "email"
                           ]
                         }
                       }
@@ -25353,13 +25727,18 @@
                             },
                             "guestName": {
                               "type": "string"
+                            },
+                            "email": {
+                              "type": "string",
+                              "nullable": true
                             }
                           },
                           "required": [
                             "isVerified",
                             "invitationCode",
                             "code",
-                            "guestName"
+                            "guestName",
+                            "email"
                           ]
                         }
                       }
@@ -25456,13 +25835,18 @@
                         "guestName": {
                           "type": "string",
                           "nullable": true
+                        },
+                        "email": {
+                          "type": "string",
+                          "nullable": true
                         }
                       },
                       "required": [
                         "isVerified",
                         "invitationCode",
                         "code",
-                        "guestName"
+                        "guestName",
+                        "email"
                       ]
                     }
                   }
@@ -25552,12 +25936,17 @@
                         },
                         "code": {
                           "type": "string"
+                        },
+                        "email": {
+                          "type": "string",
+                          "nullable": true
                         }
                       },
                       "required": [
                         "valid",
                         "guestName",
-                        "code"
+                        "code",
+                        "email"
                       ]
                     }
                   }
