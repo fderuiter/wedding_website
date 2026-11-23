@@ -560,7 +560,7 @@ export default function InteractiveTimeline({
             </button>
           </div>
         ) : (
-          <EmptyState message={emptyStateMessage} />
+          <EmptyState message={emptyStateMessage} headingLevel="h3" />
         )}
       </section>
     );
@@ -732,6 +732,7 @@ export default function InteractiveTimeline({
             message={`No schedule events found for "${activeCategory}".`}
             onAction={() => setActiveCategory('All')}
             actionLabel="Clear filter"
+            headingLevel="h3"
           />
         ) : (
           <div className="relative border-l-2 border-primary/30 ml-4 sm:ml-8 pl-6 sm:pl-10 space-y-10">

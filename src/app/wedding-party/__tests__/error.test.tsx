@@ -27,7 +27,7 @@ describe('WeddingPartyError Boundary', () => {
     const alerts = screen.getAllByRole('alert');
     expect(alerts.some((el) => el.getAttribute('aria-live') === 'assertive')).toBe(true);
 
-    expect(screen.getByRole('heading', { level: 2, name: 'Wedding Party Error' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Wedding Party Error' })).toBeInTheDocument();
     expect(screen.getAllByText(/loading the wedding party profiles/i).length).toBeGreaterThanOrEqual(1);
 
     const retryBtn = screen.getByRole('button', { name: 'Try Again' });

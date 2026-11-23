@@ -34,7 +34,7 @@ describe('RouteErrorFallback Component', () => {
     expect(alert).toBeInTheDocument();
     expect(alert).toHaveAttribute('aria-live', 'assertive');
 
-    expect(screen.getByRole('heading', { level: 2, name: /something went wrong!/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: /something went wrong!/i })).toBeInTheDocument();
     expect(screen.getByText(/an unexpected error occurred while loading this page/i)).toBeInTheDocument();
 
     const retryButton = screen.getByRole('button', { name: /try again/i });
@@ -58,9 +58,22 @@ describe('RouteErrorFallback Component', () => {
       />
     );
 
-    expect(screen.getByRole('heading', { level: 2, name: 'Custom Header' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Custom Header' })).toBeInTheDocument();
     expect(screen.getByText('A custom error explanation.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Retry Action' })).toBeInTheDocument();
+  });
+
+  it('supports overriding semantic heading rank via headingLevel prop', () => {
+    render(
+      <RouteErrorFallback
+        error={new Error('Nested error')}
+        reset={jest.fn()}
+        title="Scoped Section Error"
+        headingLevel="h2"
+      />
+    );
+
+    expect(screen.getByRole('heading', { level: 2, name: 'Scoped Section Error' })).toBeInTheDocument();
   });
 
   it('renders secondary navigation link when href is supplied in secondaryAction', () => {

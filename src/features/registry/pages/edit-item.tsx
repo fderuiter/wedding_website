@@ -197,9 +197,10 @@ export default function EditRegistryItemPage() {
       onRetry={effectiveTargetId ? refetch : undefined}
       errorTitle="Unable to Load Registry Item"
       loadingMessage="Loading item data..."
+      headingLevel="h1"
     >
       {resolvedItemData && (
-        <AdminEditorContainer title="Edit Registry Item">
+        <AdminEditorContainer title="Edit Registry Item" headingLevel="h1">
           {submitError && (
             <div
               role="alert"

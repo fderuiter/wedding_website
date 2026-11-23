@@ -182,7 +182,6 @@ function RegistryPageContent() {
           initial={{ opacity: 0, y: -30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7 }}
-          tabIndex={0}
           aria-label="Wedding Registry"
         >
           Wedding Registry
