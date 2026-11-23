@@ -20,7 +20,6 @@ export {
   initialSeatingState,
   seatingReducer,
   syncTablesWithGuests,
-  useSeatingChartState,
   useSeatingState,
 } from './hooks/useSeatingState';
 export type {

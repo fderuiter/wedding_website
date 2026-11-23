@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { deriveAdminInputSchema } from '@/utils/validationPrimitives';
 import {
-  DIETARY_TAG_OPTIONS,
   MAX_RSVP_PLUS_ONE_COUNT,
   MealOptionSchema,
   CustomRsvpQuestionSchema,
@@ -10,22 +9,16 @@ import {
   normalizeMealSelections,
   normalizeCustomAnswers,
   normalizePlusOneNames,
-  type DietaryTagOption,
   type MealOptionDTO,
   type CustomRsvpQuestionDTO,
 } from '@/utils/rsvpPrompts';
 
 export {
-  DIETARY_TAG_OPTIONS,
-  MAX_RSVP_PLUS_ONE_COUNT,
-  MealOptionSchema,
-  CustomRsvpQuestionSchema,
   normalizeMealOptions,
   normalizeCustomQuestions,
   normalizeMealSelections,
   normalizeCustomAnswers,
   normalizePlusOneNames,
-  type DietaryTagOption,
   type MealOptionDTO,
   type CustomRsvpQuestionDTO,
 };
@@ -66,7 +59,7 @@ export const CustomRsvpQuestionsListSchema = z
     });
   });
 
-export const SubEventSchema = z.object({
+const SubEventSchema = z.object({
   id: z.string(),
   title: z.string().min(1, 'Title is required.'),
   description: z.string().optional().default(''),
@@ -118,8 +111,6 @@ export const UpdateSubEventAccessSchema = z.object({
   allowedSubEventIds: z.array(z.string()),
 });
 
-export type UpdateSubEventAccessDTO = z.infer<typeof UpdateSubEventAccessSchema>;
-
 export const BatchUpdateSubEventAccessSchema = z.object({
   invitationCodeIds: z.array(z.string()).optional(),
   partyTags: z.array(z.string()).optional(),
@@ -140,8 +131,6 @@ export const GetAccessMatrixQuerySchema = z.object({
   partyGroup: z.string().optional(),
   householdName: z.string().optional(),
 });
-
-export type GetAccessMatrixQueryDTO = z.infer<typeof GetAccessMatrixQuerySchema>;
 
 export interface AccessMatrixGuestEventRsvp {
   status: 'attending' | 'declined' | 'pending';
@@ -165,9 +154,7 @@ export const AdminInvitationRsvpsQuerySchema = z.object({
   invitationCodeId: z.string().trim().min(1, 'invitationCodeId is required.'),
 });
 
-export type AdminInvitationRsvpsQueryDTO = z.infer<typeof AdminInvitationRsvpsQuerySchema>;
-
-export const AdminSubEventRsvpOverrideItemSchema = z.object({
+const AdminSubEventRsvpOverrideItemSchema = z.object({
   subEventId: z.string().trim().min(1, 'subEventId is required.'),
   status: z.enum(['attending', 'declined', 'pending', 'clear']),
   plusOneCount: z
@@ -184,7 +171,7 @@ export const AdminSubEventRsvpOverrideItemSchema = z.object({
 
 export type AdminSubEventRsvpOverrideItemDTO = z.infer<typeof AdminSubEventRsvpOverrideItemSchema>;
 
-export const AdminSingleGuestRsvpOverrideSchema = z.object({
+const AdminSingleGuestRsvpOverrideSchema = z.object({
   invitationCodeId: z.string().trim().min(1, 'invitationCodeId is required.'),
   clearAll: z.boolean().optional(),
   overallAttendanceStatus: z.enum(['attending', 'declined', 'pending']).optional(),
@@ -195,7 +182,7 @@ export const AdminSingleGuestRsvpOverrideSchema = z.object({
 
 export type AdminSingleGuestRsvpOverrideDTO = z.infer<typeof AdminSingleGuestRsvpOverrideSchema>;
 
-export const AdminBatchAttendanceOverrideSchema = z.object({
+const AdminBatchAttendanceOverrideSchema = z.object({
   invitationCodeIds: z
     .array(z.string().trim().min(1, 'Invitation code ID cannot be empty.'))
     .min(1, 'At least one invitationCodeId is required.')
@@ -210,8 +197,6 @@ export const AdminUpdateInvitationRsvpsSchema = z.union([
   AdminSingleGuestRsvpOverrideSchema,
   AdminBatchAttendanceOverrideSchema,
 ]);
-
-export type AdminUpdateInvitationRsvpsDTO = z.infer<typeof AdminUpdateInvitationRsvpsSchema>;
 
 export interface RsvpMealOptionCount {
   optionId: string;
@@ -238,12 +223,12 @@ export interface RsvpDietaryBreakdown {
   kids: number;
 }
 
-export interface RsvpQuestionChoiceCount {
+interface RsvpQuestionChoiceCount {
   option: string;
   count: number;
 }
 
-export interface RsvpQuestionTextResponse {
+interface RsvpQuestionTextResponse {
   invitationCodeId: string;
   guestName: string;
   answer: string;

@@ -1848,12 +1848,14 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     new RegExp(expectedCiDynamicPostgresRegex.source, 'g'),
     ''
   );
-  const ciUsesVerifiedComposeDbImage =
-    expectedCiDynamicPostgresRegex.test(ciWorkflowRaw) &&
-    ciWorkflowRaw.includes('needs.verify.outputs.db_image');
+  const ciDelegatesPostgresImageToCompose =
+    (expectedCiDynamicPostgresRegex.test(ciWorkflowRaw) ||
+      (ciWorkflowRaw.includes('docker-compose.yml') &&
+        ciWorkflowRaw.includes('["services", "db", "image"]'))) &&
+    ciWorkflowRaw.includes('${{ needs.verify.outputs.db_image }}');
   if (
     (!ciWorkflowWithoutRegexGuard.includes(expectedPostgresImagePrefix) &&
-      !ciUsesVerifiedComposeDbImage) ||
+      !ciDelegatesPostgresImageToCompose) ||
     mismatchedPostgresImageRegex.test(ciWorkflowWithoutRegexGuard)
   ) {
     errors.push(

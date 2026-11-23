@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { createMediaAssociationSchema } from '@/features/media/schemas';
 import { deriveAdminInputSchema, safeUrlSchema } from '@/utils/validationPrimitives';
 
-export const WeddingPartySideSchema = z.enum(['BRIDE', 'GROOM', 'JOINT']);
+const WeddingPartySideSchema = z.enum(['BRIDE', 'GROOM', 'JOINT']);
 export type WeddingPartySide = z.infer<typeof WeddingPartySideSchema>;
 
 export const WeddingPartyMemberSchema = z.object({
