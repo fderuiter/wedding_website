@@ -61,7 +61,7 @@
     "check:action-pins": "npx tsx scripts/check-action-pins.ts",
     "check:identifiers": "npx tsx scripts/check-personal-identifiers.ts",
     "check:links": "npx tsx scripts/check-doc-links.ts",
-    "check:prisma": "npx tsx scripts/check-prisma-schema.ts",
+    "check:prisma": "tsx scripts/check-prisma-schema.ts",
     "check:standalone": "npx tsx scripts/check-docker-build.ts",
     "check:env-docs": "npx tsx scripts/verify-env-docs.ts",
     "check:runbooks": "npx tsx scripts/verify-deployment-runbooks.ts",
