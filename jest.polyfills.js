@@ -1,11 +1,7 @@
 // Polyfills for MSW and Web APIs in Jest environment
 import { TextDecoder, TextEncoder } from 'node:util';
 import { ReadableStream, TransformStream, WritableStream } from 'node:stream/web';
-import {
-  BroadcastChannel,
-  MessageChannel,
-  MessagePort,
-} from 'node:worker_threads';
+import { BroadcastChannel, MessagePort } from 'node:worker_threads';
 import { Blob, File } from 'node:buffer';
 
 const polyfills = {
@@ -15,7 +11,6 @@ const polyfills = {
   TransformStream,
   WritableStream,
   BroadcastChannel,
-  MessageChannel,
   MessagePort,
   Blob,
   File,

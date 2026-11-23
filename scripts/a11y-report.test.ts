@@ -88,7 +88,7 @@ describe('a11y-report', () => {
       expect(report).toContain('**Total Accessibility Violations:** 2');
     });
 
-    it('supports legacy flat array Playwright violations and missing input files', () => {
+    it('supports legacy flat array Playwright violations and marks missing suite artifacts as incomplete', () => {
       const resultsDir = path.join(tempDir, 'test-results');
       fs.mkdirSync(resultsDir, { recursive: true });
       fs.writeFileSync(
@@ -102,12 +102,35 @@ describe('a11y-report', () => {
         ])
       );
 
-      const { report, totalViolations } = generateReport({ cwd: tempDir });
+      const { report, totalViolations, incompleteSuites } = generateReport({ cwd: tempDir });
 
       expect(totalViolations).toBe(1);
-      expect(report).not.toContain('### Component Level (Jest)');
+      expect(incompleteSuites).toEqual(['jest']);
+      expect(report).toContain('### Component Level (Jest)');
+      expect(report).toContain(
+        '⚠️ Incomplete: Jest accessibility artifact (`test-results/jest-a11y-violations.json`) was not found.'
+      );
+      expect(report).toContain('### Page Level (Playwright)');
       expect(report).toContain('- **button-name**: Buttons must have discernible text (critical)');
+      expect(report).toContain('**Status:** Incomplete (jest results missing)');
       expect(report).toContain('**Total Accessibility Violations:** 1');
+    });
+
+    it('marks both component and page sections as incomplete when neither artifact exists', () => {
+      const { report, totalViolations, incompleteSuites } = generateReport({ cwd: tempDir });
+
+      expect(totalViolations).toBe(0);
+      expect(incompleteSuites).toEqual(['jest', 'playwright']);
+      expect(report).toContain('### Component Level (Jest)');
+      expect(report).toContain(
+        '⚠️ Incomplete: Jest accessibility artifact (`test-results/jest-a11y-violations.json`) was not found.'
+      );
+      expect(report).toContain('### Page Level (Playwright)');
+      expect(report).toContain(
+        '⚠️ Incomplete: Playwright accessibility artifact (`test-results/playwright-a11y-violations.json`) was not found.'
+      );
+      expect(report).toContain('**Status:** Incomplete (jest, playwright results missing)');
+      expect(report).toContain('**Total Accessibility Violations:** 0');
     });
   });
 
