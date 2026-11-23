@@ -1064,4 +1064,62 @@ describe('POST /api/admin/versions/[id]/restore', () => {
     expect(mockPrisma.broadcastMessage.upsert).toHaveBeenCalledTimes(1);
     expect(mockPrisma.broadcastRecipient.upsert).toHaveBeenCalledTimes(1);
   });
+
+  it('restores Contributor postal address and thankYouEmailSentAt fields from snapshots', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    (mockPrisma.registryItem.findUnique as jest.Mock).mockResolvedValueOnce({ id: 'item-1' });
+    (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValueOnce({ id: 'inv-1' });
+    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: 'v-contrib-addr',
+      entityType: 'Contributor',
+      entityId: 'contrib-addr-1',
+      data: {
+        name: 'Restored Donor',
+        email: 'donor@example.com',
+        addressLine1: '500 Market St',
+        addressLine2: 'Suite 200',
+        city: 'San Francisco',
+        state: 'CA',
+        zipCode: '94105',
+        country: 'USA',
+        amount: 200,
+        status: 'CONFIRMED',
+        thankYouStatus: 'Sent',
+        thankYouSentAt: '2026-06-22T12:00:00.000Z',
+        thankYouEmailSentAt: '2026-06-22T12:05:00.000Z',
+        thankYouNote: 'Thank you so much!',
+        date: '2026-06-20T12:00:00.000Z',
+        registryItemId: 'item-1',
+        invitationCodeId: 'inv-1',
+      },
+    });
+
+    const res = await restoreVersion(
+      new NextRequest('http://localhost/api/admin/versions/v-contrib-addr/restore', {
+        method: 'POST',
+      }),
+      { params: Promise.resolve({ id: 'v-contrib-addr' }) }
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockPrisma.contributor.upsert).toHaveBeenCalledWith({
+      where: { id: 'contrib-addr-1' },
+      update: expect.objectContaining({
+        addressLine1: '500 Market St',
+        addressLine2: 'Suite 200',
+        city: 'San Francisco',
+        state: 'CA',
+        zipCode: '94105',
+        country: 'USA',
+        thankYouEmailSentAt: new Date('2026-06-22T12:05:00.000Z'),
+        invitationCodeId: 'inv-1',
+      }),
+      create: expect.objectContaining({
+        id: 'contrib-addr-1',
+        addressLine1: '500 Market St',
+        city: 'San Francisco',
+        thankYouEmailSentAt: new Date('2026-06-22T12:05:00.000Z'),
+      }),
+    });
+  });
 });

@@ -557,13 +557,7 @@ describe('RegistryRepository', () => {
       expect(tx.invitationCode.findUnique).toHaveBeenCalledWith({
         where: { code: 'GOODCODE', isSample: false },
       });
-      expect(tx.invitationCode.update).toHaveBeenCalledWith({
-        where: { id: 'invite-good' },
-        data: {
-          used: true,
-          usedAt: expect.any(Date),
-        },
-      });
+      expect(tx.invitationCode.update).not.toHaveBeenCalled();
       expect(tx.registryItem.update).toHaveBeenCalledWith({
         where: { id: '1' },
         data: {
@@ -663,13 +657,7 @@ describe('RegistryRepository', () => {
       expect(tx.invitationCode.findUnique).toHaveBeenCalledWith({
         where: { code: 'USEDCODE', isSample: false },
       });
-      expect(tx.invitationCode.update).toHaveBeenCalledWith({
-        where: { id: 'invite-used' },
-        data: {
-          used: true,
-          usedAt: expect.any(Date),
-        },
-      });
+      expect(tx.invitationCode.update).not.toHaveBeenCalled();
       expect(tx.registryItem.update).toHaveBeenCalledWith({
         where: { id: '1' },
         data: {
@@ -1133,6 +1121,216 @@ describe('RegistryRepository', () => {
           data: expect.objectContaining({
             amountContributed: 0,
             purchased: false,
+          }),
+        })
+      );
+    });
+
+    it('keeps pending guest attendance status pending when claiming a gift with an invitation code', async () => {
+      const { getAttendanceStatus } = await import('../utils/invitation');
+      const inviteRow = {
+        id: 'invite-pending',
+        code: 'PENDINGCODE',
+        guestName: 'Alex Pending',
+        used: false,
+        subEventRsvps: [],
+      };
+      const tx = {
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
+          update: jest.fn().mockResolvedValue({ ...mockRegistryItem, amountContributed: 50 }),
+        },
+        invitationCode: {
+          findUnique: jest.fn().mockResolvedValue(inviteRow),
+          update: jest.fn(),
+        },
+        snapshotVersion: {
+          create: jest.fn(),
+          findMany: jest.fn(),
+          deleteMany: jest.fn(),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(tx));
+
+      await registryRepository.contributeToItem('1', {
+        name: 'Alex Pending',
+        amount: 50,
+        code: 'PENDINGCODE',
+      });
+
+      expect(tx.invitationCode.update).not.toHaveBeenCalled();
+      expect(getAttendanceStatus(inviteRow)).toBe('pending');
+    });
+
+    it('auto-links unique non-sample guest email when code is omitted and skips linking when multiple households share an email', async () => {
+      const uniqueInvite = {
+        id: 'invite-unique-email',
+        code: 'UNIQUEMAIL',
+        guestName: 'Unique Guest',
+        email: 'unique@example.com',
+        used: false,
+        addressLine1: null,
+        city: null,
+        state: null,
+        zipCode: null,
+      };
+
+      const txUnique = {
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
+          update: jest.fn().mockResolvedValue({ ...mockRegistryItem, amountContributed: 75 }),
+        },
+        invitationCode: {
+          findMany: jest.fn().mockResolvedValue([uniqueInvite]),
+          update: jest.fn().mockResolvedValue({
+            ...uniqueInvite,
+            addressLine1: '100 Pine St',
+            city: 'Denver',
+            state: 'CO',
+            zipCode: '80202',
+            country: 'USA',
+          }),
+        },
+        snapshotVersion: {
+          create: jest.fn(),
+          findMany: jest.fn(),
+          deleteMany: jest.fn(),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txUnique));
+
+      await registryRepository.contributeToItem('1', {
+        name: 'Unique Guest',
+        email: '  UNIQUE@example.com ',
+        amount: 75,
+        addressLine1: '100 Pine St',
+        city: 'Denver',
+        state: 'CO',
+        zipCode: '80202',
+        country: 'USA',
+      });
+
+      expect(txUnique.invitationCode.findMany).toHaveBeenCalledWith({
+        where: {
+          email: { equals: 'unique@example.com', mode: 'insensitive' },
+          isSample: false,
+        },
+        take: 2,
+      });
+      expect(txUnique.invitationCode.update).toHaveBeenCalledWith({
+        where: { id: 'invite-unique-email' },
+        data: {
+          addressLine1: '100 Pine St',
+          city: 'Denver',
+          state: 'CO',
+          zipCode: '80202',
+          country: 'USA',
+        },
+      });
+      expect(txUnique.registryItem.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            contributors: {
+              create: expect.objectContaining({
+                invitationCodeId: 'invite-unique-email',
+                addressLine1: '100 Pine St',
+                city: 'Denver',
+                state: 'CO',
+                zipCode: '80202',
+                country: 'USA',
+              }),
+            },
+          }),
+        })
+      );
+
+      // Duplicate email across two households -> do not auto-link
+      const txDuplicateEmail = {
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
+          update: jest.fn().mockResolvedValue({ ...mockRegistryItem, amountContributed: 40 }),
+        },
+        invitationCode: {
+          findMany: jest.fn().mockResolvedValue([
+            { id: 'inv-1', email: 'shared@example.com' },
+            { id: 'inv-2', email: 'shared@example.com' },
+          ]),
+          update: jest.fn(),
+        },
+        snapshotVersion: {
+          create: jest.fn(),
+          findMany: jest.fn(),
+          deleteMany: jest.fn(),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txDuplicateEmail));
+
+      await registryRepository.contributeToItem('1', {
+        name: 'Shared Household',
+        email: 'shared@example.com',
+        amount: 40,
+      });
+
+      expect(txDuplicateEmail.invitationCode.update).not.toHaveBeenCalled();
+      const duplicateCreateData = (txDuplicateEmail.registryItem.update as jest.Mock).mock.calls[0][0]
+        .data.contributors.create;
+      expect(duplicateCreateData.invitationCodeId).toBeUndefined();
+      expect(duplicateCreateData.email).toBe('shared@example.com');
+    });
+
+    it('never overwrites an existing household street address during contributor checkout backfill', async () => {
+      const existingAddressedInvite = {
+        id: 'invite-has-addr',
+        code: 'ADDRCODE',
+        guestName: 'Taylor Household',
+        used: false,
+        addressLine1: '500 Existing Blvd',
+        addressLine2: 'Suite 10',
+        city: 'Portland',
+        state: 'OR',
+        zipCode: '97201',
+        country: 'USA',
+      };
+      const tx = {
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
+          update: jest.fn().mockResolvedValue({ ...mockRegistryItem, amountContributed: 60 }),
+        },
+        invitationCode: {
+          findUnique: jest.fn().mockResolvedValue(existingAddressedInvite),
+          update: jest.fn(),
+        },
+        snapshotVersion: {
+          create: jest.fn(),
+          findMany: jest.fn(),
+          deleteMany: jest.fn(),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(tx));
+
+      await registryRepository.contributeToItem('1', {
+        name: 'Taylor Household',
+        amount: 60,
+        code: 'ADDRCODE',
+        addressLine1: '999 New St',
+        city: 'Seattle',
+        state: 'WA',
+        zipCode: '98101',
+      });
+
+      expect(tx.invitationCode.update).not.toHaveBeenCalled();
+      expect(tx.registryItem.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            contributors: {
+              create: expect.objectContaining({
+                invitationCodeId: 'invite-has-addr',
+                addressLine1: '999 New St',
+                city: 'Seattle',
+                state: 'WA',
+                zipCode: '98101',
+              }),
+            },
           }),
         })
       );

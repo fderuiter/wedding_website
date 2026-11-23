@@ -69,6 +69,12 @@ export const ContributorSchema = z.object({
   id: z.string().optional(),
   name: z.string(),
   email: z.string().nullable().optional(),
+  addressLine1: z.string().nullable().optional(),
+  addressLine2: z.string().nullable().optional(),
+  city: z.string().nullable().optional(),
+  state: z.string().nullable().optional(),
+  zipCode: z.string().nullable().optional(),
+  country: z.string().nullable().optional(),
   isPlusOne: z.boolean().optional().default(false),
   amount: z.coerce.number({ message: 'Contribution amount must be a positive number.' }).positive('Contribution amount must be a positive number.'),
   refundedAmount: z.coerce.number().min(0, 'Refunded amount cannot be negative.').optional().default(0),
@@ -79,6 +85,7 @@ export const ContributorSchema = z.object({
   date: z.union([z.string(), z.date()]).transform(d => new Date(d).toISOString()),
   thankYouStatus: z.string().optional().default('Unsent'),
   thankYouSentAt: z.union([z.string(), z.date()]).nullable().optional().transform(d => d ? new Date(d).toISOString() : null),
+  thankYouEmailSentAt: z.union([z.string(), z.date()]).transform(d => new Date(d).toISOString()).nullable().optional(),
   thankYouNote: z.string().nullable().optional(),
   stripePaymentIntentId: z.string().nullable().optional(),
   stripeChargeId: z.string().nullable().optional(),
@@ -100,6 +107,8 @@ export const ContributorSchema = z.object({
     id: z.string().optional(),
     code: z.string().optional(),
     guestName: z.string().optional(),
+    email: z.string().nullable().optional(),
+    householdName: z.string().nullable().optional(),
     addressLine1: z.string().nullable().optional(),
     addressLine2: z.string().nullable().optional(),
     city: z.string().nullable().optional(),
@@ -125,7 +134,26 @@ export const UpdateThankYouNoteSchema = z.object({
   thankYouStatus: z.enum(['Unsent', 'Sent', 'Not Needed']).optional(),
   thankYouSentAt: z.union([z.string(), z.date()]).nullable().optional(),
   thankYouNote: z.string().max(2000, 'Thank-you note must be under 2000 characters.').nullable().optional(),
+  invitationCodeId: z.string().trim().min(1, 'Invalid invitation code ID.').max(255).nullable().optional(),
+  addressLine1: nullableOptionalTrimmedField(ADDRESS_LINE_MAX_LENGTH, 'Address Line 1'),
+  addressLine2: nullableOptionalTrimmedField(ADDRESS_LINE_MAX_LENGTH, 'Address Line 2'),
+  city: nullableOptionalTrimmedField(CITY_MAX_LENGTH, 'City'),
+  state: nullableOptionalTrimmedField(STATE_MAX_LENGTH, 'State'),
+  zipCode: nullableOptionalTrimmedField(ZIP_CODE_MAX_LENGTH, 'Zip Code'),
+  country: nullableOptionalTrimmedField(COUNTRY_MAX_LENGTH, 'Country'),
+  syncAddressToGuest: z.boolean().optional(),
 });
+
+export type UpdateThankYouNoteDTO = z.infer<typeof UpdateThankYouNoteSchema>;
+
+export const SendThankYouEmailSchema = z.object({
+  mode: z.enum(['preview', 'test', 'send']),
+  subject: z.string().trim().max(200, 'Subject must be under 200 characters.').optional().or(z.literal('')),
+  body: z.string().trim().min(1, 'Message body is required.').max(5000, 'Message body must be under 5000 characters.'),
+  recipientEmail: optionalNullableEmailField,
+});
+
+export type SendThankYouEmailDTO = z.infer<typeof SendThankYouEmailSchema>;
 
 export const BatchUpdateThankYouNotesSchema = z.object({
   ids: z.array(z.string().min(1)).min(1, 'At least one contributor record is required.'),
@@ -147,6 +175,7 @@ export const ContributionSchema = z.object({
   retailerOrderNumber: optionalNullableTrimmedField(120, 'Retailer order number'),
   carrier: optionalNullableTrimmedField(100, 'Carrier'),
   trackingNumber: optionalNullableTrimmedField(120, 'Tracking number'),
+  ...optionalAddressFields,
 }, { message: 'Invalid request body.' }).superRefine((data, ctx) => {
   const resolvedName = data.name || data.purchaserName;
   if (!resolvedName || resolvedName.trim().length === 0 || resolvedName.trim().length > 100) {
@@ -172,6 +201,24 @@ export const ContributionSchema = z.object({
     ...(data.trackingNumber !== undefined
       ? { trackingNumber: normalizeOptional(data.trackingNumber) }
       : {}),
+    ...(data.addressLine1 !== undefined
+      ? { addressLine1: normalizeOptional(data.addressLine1) }
+      : {}),
+    ...(data.addressLine2 !== undefined
+      ? { addressLine2: normalizeOptional(data.addressLine2) }
+      : {}),
+    ...(data.city !== undefined
+      ? { city: normalizeOptional(data.city) }
+      : {}),
+    ...(data.state !== undefined
+      ? { state: normalizeOptional(data.state) }
+      : {}),
+    ...(data.zipCode !== undefined
+      ? { zipCode: normalizeOptional(data.zipCode) }
+      : {}),
+    ...(data.country !== undefined
+      ? { country: normalizeOptional(data.country) }
+      : {}),
   };
 });
 
@@ -185,6 +232,7 @@ export const PaymentIntentRequestSchema = z.object({
   email: optionalNullableEmailField,
   message: z.string().max(1000, 'Personal note must be under 1000 characters.').optional().nullable(),
   code: z.string().trim().optional(),
+  ...optionalAddressFields,
 });
 
 export type PaymentIntentRequestDTO = z.infer<typeof PaymentIntentRequestSchema>;

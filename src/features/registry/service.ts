@@ -98,6 +98,12 @@ class RegistryService {
       retailerOrderNumber?: string | null;
       carrier?: string | null;
       trackingNumber?: string | null;
+      addressLine1?: string | null;
+      addressLine2?: string | null;
+      city?: string | null;
+      state?: string | null;
+      zipCode?: string | null;
+      country?: string | null;
     }
   ) {
     if (!contribution || typeof contribution.amount !== 'number' || contribution.amount <= 0) {

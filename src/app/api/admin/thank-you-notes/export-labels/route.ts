@@ -8,6 +8,8 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
   const status = searchParams.get('status') || undefined;
   const search = searchParams.get('search') || undefined;
   const rawTemplate = searchParams.get('template') || 'avery_5160';
+  const rawSkipUnaddressed = searchParams.get('skipUnaddressed');
+  const skipUnaddressed = rawSkipUnaddressed === 'true' || rawSkipUnaddressed === '1';
 
   const template: LabelTemplate = rawTemplate === 'avery_5163' ? 'avery_5163' : 'avery_5160';
 
@@ -15,6 +17,7 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
     status,
     search,
     template,
+    ...(skipUnaddressed ? { skipUnaddressed: true } : {}),
   });
 
   const dateStr = new Date().toISOString().split('T')[0];

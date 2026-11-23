@@ -5,7 +5,13 @@ import type { SetStateAction } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient, useMutation, useQuery } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/ToastProvider';
-import { RegistryItem, PaginatedRegistryItems, OrderTrackingDetails, GuestClaimActions } from '../types';
+import {
+  RegistryItem,
+  PaginatedRegistryItems,
+  OrderTrackingDetails,
+  ContributorAddressDetails,
+  GuestClaimActions,
+} from '../types';
 import { checkAdminClient } from '@/core/auth/auth.client';
 
 import { apiClient } from '@/lib/apiClient';
@@ -38,6 +44,12 @@ interface ContributeVariables {
   retailerOrderNumber?: string;
   carrier?: string;
   trackingNumber?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  country?: string;
 }
 
 function applyOptimisticContribution(item: RegistryItem, variables: ContributeVariables): RegistryItem {
@@ -249,6 +261,12 @@ export function useRegistry() {
       retailerOrderNumber,
       carrier,
       trackingNumber,
+      addressLine1,
+      addressLine2,
+      city,
+      state,
+      zipCode,
+      country,
     }: ContributeVariables) => {
       return apiClient.post('/api/registry/contribute', {
         itemId,
@@ -262,6 +280,12 @@ export function useRegistry() {
         ...(retailerOrderNumber ? { retailerOrderNumber } : {}),
         ...(carrier ? { carrier } : {}),
         ...(trackingNumber ? { trackingNumber } : {}),
+        ...(addressLine1 ? { addressLine1 } : {}),
+        ...(addressLine2 ? { addressLine2 } : {}),
+        ...(city ? { city } : {}),
+        ...(state ? { state } : {}),
+        ...(zipCode ? { zipCode } : {}),
+        ...(country ? { country } : {}),
       });
     },
     onMutate: async (variables) => {
@@ -464,7 +488,8 @@ export function useRegistry() {
     coverFee?: boolean,
     email?: string,
     paymentIntentId?: string,
-    orderDetails?: OrderTrackingDetails
+    orderDetails?: OrderTrackingDetails,
+    addressDetails?: ContributorAddressDetails
   ) => {
     return new Promise<unknown>((resolve, reject) => {
       contribute(
@@ -480,6 +505,12 @@ export function useRegistry() {
           retailerOrderNumber: orderDetails?.retailerOrderNumber || undefined,
           carrier: orderDetails?.carrier || undefined,
           trackingNumber: orderDetails?.trackingNumber || undefined,
+          addressLine1: addressDetails?.addressLine1 || undefined,
+          addressLine2: addressDetails?.addressLine2 || undefined,
+          city: addressDetails?.city || undefined,
+          state: addressDetails?.state || undefined,
+          zipCode: addressDetails?.zipCode || undefined,
+          country: addressDetails?.country || undefined,
         },
         {
           onSuccess: (data) => {

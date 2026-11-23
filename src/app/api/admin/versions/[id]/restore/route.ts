@@ -310,6 +310,16 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
       amount: snapshotData.amount || 0,
       date: snapshotData.date ? new Date(snapshotData.date) : new Date(),
       registryItemId: resolvedRegistryItemId,
+      ...(snapshotData.addressLine1 !== undefined ? { addressLine1: snapshotData.addressLine1 } : {}),
+      ...(snapshotData.addressLine2 !== undefined ? { addressLine2: snapshotData.addressLine2 } : {}),
+      ...(snapshotData.city !== undefined ? { city: snapshotData.city } : {}),
+      ...(snapshotData.state !== undefined ? { state: snapshotData.state } : {}),
+      ...(snapshotData.zipCode !== undefined ? { zipCode: snapshotData.zipCode } : {}),
+      ...(snapshotData.country !== undefined ? { country: snapshotData.country } : {}),
+      ...(snapshotData.status !== undefined ? { status: snapshotData.status } : {}),
+      ...(snapshotData.refundedAmount !== undefined
+        ? { refundedAmount: Number(snapshotData.refundedAmount) }
+        : {}),
       ...(snapshotData.coverFee !== undefined ? { coverFee: Boolean(snapshotData.coverFee) } : {}),
       ...(snapshotData.feeAmount !== undefined ? { feeAmount: Number(snapshotData.feeAmount) } : {}),
       ...(snapshotData.message !== undefined ? { message: snapshotData.message } : {}),
@@ -319,7 +329,17 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
       ...(snapshotData.thankYouSentAt !== undefined
         ? { thankYouSentAt: parseOptionalDate(snapshotData.thankYouSentAt) }
         : {}),
+      ...(snapshotData.thankYouEmailSentAt !== undefined
+        ? { thankYouEmailSentAt: parseOptionalDate(snapshotData.thankYouEmailSentAt) }
+        : {}),
       ...(snapshotData.thankYouNote !== undefined ? { thankYouNote: snapshotData.thankYouNote } : {}),
+      ...(snapshotData.retailerOrderNumber !== undefined
+        ? { retailerOrderNumber: snapshotData.retailerOrderNumber }
+        : {}),
+      ...(snapshotData.carrier !== undefined ? { carrier: snapshotData.carrier } : {}),
+      ...(snapshotData.trackingNumber !== undefined
+        ? { trackingNumber: snapshotData.trackingNumber }
+        : {}),
       ...(snapshotData.stripePaymentIntentId !== undefined
         ? { stripePaymentIntentId: snapshotData.stripePaymentIntentId }
         : {}),

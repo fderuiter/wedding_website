@@ -521,4 +521,64 @@ describe('POST /api/registry/webhook/stripe', () => {
       sendEmailSpy.mockRestore();
     }
   });
+
+  it('recovers contributor postal address fields from payment_intent.succeeded metadata', async () => {
+    const mockPaymentIntent = {
+      id: 'pi_webhook_addr_777',
+      status: 'succeeded',
+      amount: 7500,
+      amount_received: 7500,
+      currency: 'usd',
+      latest_charge: 'ch_webhook_addr_777',
+      created: 1731763200,
+      metadata: {
+        itemId: 'item-cash-fund-1',
+        contributorName: 'Redirect Guest',
+        contributorEmail: 'redirect@example.com',
+        invitationCode: 'INV999',
+        coverFee: 'false',
+        baseAmount: '75.00',
+        addressLine1: '1600 Amphitheatre Pkwy',
+        addressLine2: 'Bldg 40',
+        city: 'Mountain View',
+        state: 'CA',
+        zipCode: '94043',
+        country: 'USA',
+      },
+    };
+
+    mockConstructEvent.mockReturnValueOnce({
+      type: 'payment_intent.succeeded',
+      data: { object: mockPaymentIntent },
+    });
+
+    (registryService.contributeToItem as jest.Mock).mockResolvedValueOnce({
+      id: 'item-cash-fund-1',
+      name: 'Cash Fund',
+      amountContributed: 75,
+    });
+
+    const response = await POST(
+      new NextRequest('http://localhost:3000/api/registry/webhook/stripe', {
+        method: 'POST',
+        headers: { 'stripe-signature': 't=12345,v1=validsig' },
+        body: JSON.stringify({ type: 'payment_intent.succeeded' }),
+      })
+    );
+    expect(response.status).toBe(200);
+    expect(registryService.contributeToItem).toHaveBeenCalledWith(
+      'item-cash-fund-1',
+      expect.objectContaining({
+        name: 'Redirect Guest',
+        email: 'redirect@example.com',
+        code: 'INV999',
+        addressLine1: '1600 Amphitheatre Pkwy',
+        addressLine2: 'Bldg 40',
+        city: 'Mountain View',
+        state: 'CA',
+        zipCode: '94043',
+        country: 'USA',
+      })
+    );
+  });
 });

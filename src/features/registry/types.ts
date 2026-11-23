@@ -126,6 +126,15 @@ export interface OrderTrackingDetails {
   trackingNumber?: string | null;
 }
 
+export interface ContributorAddressDetails {
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zipCode?: string | null;
+  country?: string | null;
+}
+
 export interface IRegistryRepository {
   getAllItems(options?: GetItemsOptions): Promise<PaginatedRegistryItems>;
   getItemById(id: string, options?: { includeContributors?: boolean }): Promise<RegistryItemDTO | null>;
@@ -146,6 +155,12 @@ export interface IRegistryRepository {
     retailerOrderNumber?: string | null;
     carrier?: string | null;
     trackingNumber?: string | null;
+    addressLine1?: string | null;
+    addressLine2?: string | null;
+    city?: string | null;
+    state?: string | null;
+    zipCode?: string | null;
+    country?: string | null;
   }): Promise<RegistryItemDTO>;
   claimContributorEmailSend?(
     contributorId: string,

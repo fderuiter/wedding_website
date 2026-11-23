@@ -373,5 +373,35 @@ describe('DatabaseBackupSchema Validation Tests', () => {
       ];
       expect(() => DatabaseBackupSchema.parse(negativeRefundBackup)).toThrow();
     });
+
+    test('validates contributor postal address and thankYouEmailSentAt fields in backups', () => {
+      const backup: any = getValidBackup();
+      backup.contributor = [
+        {
+          id: 'addressed-contrib-1',
+          name: 'Addressed Donor',
+          email: 'donor@example.com',
+          addressLine1: '742 Evergreen Terrace',
+          addressLine2: 'Apt 2',
+          city: 'Springfield',
+          state: 'IL',
+          zipCode: '62704',
+          country: 'USA',
+          thankYouStatus: 'Sent',
+          thankYouSentAt: new Date('2026-06-12T00:00:00.000Z'),
+          thankYouEmailSentAt: new Date('2026-06-12T00:00:00.000Z'),
+          amount: 120,
+          date: new Date('2026-06-10T00:00:00.000Z'),
+          createdAt: new Date('2026-06-10T00:00:00.000Z'),
+          updatedAt: new Date('2026-06-12T00:00:00.000Z'),
+          registryItemId: 'item-1',
+        },
+      ];
+
+      const parsed = DatabaseBackupSchema.parse(backup);
+      expect(parsed.contributor?.[0].addressLine1).toBe('742 Evergreen Terrace');
+      expect(parsed.contributor?.[0].city).toBe('Springfield');
+      expect(parsed.contributor?.[0].thankYouEmailSentAt).toBeInstanceOf(Date);
+    });
   });
 });

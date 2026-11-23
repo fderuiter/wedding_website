@@ -39,6 +39,12 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     retailerOrderNumber,
     carrier,
     trackingNumber,
+    addressLine1,
+    addressLine2,
+    city,
+    state,
+    zipCode,
+    country,
   } = parseResult.data;
 
   const targetItem = await registryService.getItemById(itemId);
@@ -127,6 +133,12 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     ...(retailerOrderNumber ? { retailerOrderNumber } : {}),
     ...(carrier ? { carrier } : {}),
     ...(trackingNumber ? { trackingNumber } : {}),
+    ...(addressLine1 ? { addressLine1 } : {}),
+    ...(addressLine2 ? { addressLine2 } : {}),
+    ...(city ? { city } : {}),
+    ...(state ? { state } : {}),
+    ...(zipCode ? { zipCode } : {}),
+    ...(country ? { country } : {}),
     ...(stripePaymentIntentId
       ? { stripePaymentIntentId, stripeChargeId, transactionTimestamp }
       : {}),
