@@ -1,8 +1,11 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import Dropzone from '../Dropzone';
 import { apiClient } from '@/lib/apiClient';
+
+expect.extend(toHaveNoViolations);
 
 jest.mock('@/lib/apiClient', () => ({
   apiClient: {
@@ -12,19 +15,24 @@ jest.mock('@/lib/apiClient', () => ({
 
 describe('Dropzone Component', () => {
   const mockPost = apiClient.post as jest.MockedFunction<typeof apiClient.post>;
+  const defaultPrompt = /Drag and drop an image file here, or click to browse/i;
 
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('renders default labels and hint text', () => {
-    render(<Dropzone />);
+  it('renders default labels and hint text linked via aria-labelledby and aria-describedby and passes jest-axe', async () => {
+    const { container } = render(<Dropzone />);
 
     expect(
       screen.getByText('Drag and drop an image file here, or click to browse')
     ).toBeInTheDocument();
     expect(screen.getByText('Supports JPG, PNG, and ICO files up to 5MB')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /file upload dropzone/i })).toBeInTheDocument();
+    const dropzone = screen.getByRole('button', { name: defaultPrompt });
+    expect(dropzone).toHaveAccessibleDescription('Supports JPG, PNG, and ICO files up to 5MB');
+    expect(
+      await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
+    ).toHaveNoViolations();
   });
 
   it('forwards ref and applies custom className', () => {
@@ -37,7 +45,7 @@ describe('Dropzone Component', () => {
 
   it('handles drag over, drag leave, and visual state updates', () => {
     render(<Dropzone />);
-    const dropzone = screen.getByRole('button', { name: /file upload dropzone/i });
+    const dropzone = screen.getByRole('button', { name: defaultPrompt });
 
     fireEvent.dragOver(dropzone);
     expect(dropzone).toHaveClass('border-rose-500');
@@ -48,9 +56,9 @@ describe('Dropzone Component', () => {
 
   it('shows inline error message when dropped file exceeds size limit (5MB)', async () => {
     const onUploadError = jest.fn();
-    render(<Dropzone onUploadError={onUploadError} />);
+    const { container } = render(<Dropzone onUploadError={onUploadError} />);
 
-    const dropzone = screen.getByRole('button', { name: /file upload dropzone/i });
+    const dropzone = screen.getByRole('button', { name: defaultPrompt });
     const largeFile = new File(['a'.repeat(6 * 1024 * 1024)], 'too-large.png', {
       type: 'image/png',
     });
@@ -65,6 +73,12 @@ describe('Dropzone Component', () => {
       expect(screen.getByRole('alert')).toHaveTextContent('File size exceeds 5MB limit');
     });
 
+    expect(dropzone).toHaveAccessibleDescription(
+      'Supports JPG, PNG, and ICO files up to 5MB File size exceeds 5MB limit'
+    );
+    expect(
+      await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
+    ).toHaveNoViolations();
     expect(onUploadError).toHaveBeenCalledWith('File size exceeds 5MB limit');
     expect(mockPost).not.toHaveBeenCalled();
   });
@@ -73,7 +87,7 @@ describe('Dropzone Component', () => {
     const onUploadError = jest.fn();
     render(<Dropzone onUploadError={onUploadError} />);
 
-    const dropzone = screen.getByRole('button', { name: /file upload dropzone/i });
+    const dropzone = screen.getByRole('button', { name: defaultPrompt });
     const invalidFile = new File(['dummy content'], 'document.pdf', {
       type: 'application/pdf',
     });
@@ -96,12 +110,18 @@ describe('Dropzone Component', () => {
     expect(mockPost).not.toHaveBeenCalled();
   });
 
-  it('uploads valid dropped image and triggers onUploadSuccess', async () => {
+  it('updates programmatic accessible name to Uploading image... during upload and triggers onUploadSuccess', async () => {
     const onUploadSuccess = jest.fn();
-    mockPost.mockResolvedValueOnce({ url: '/uploads/sample.png' });
+    let resolveUpload!: (value: { url: string }) => void;
+    mockPost.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveUpload = resolve;
+        })
+    );
 
-    render(<Dropzone onUploadSuccess={onUploadSuccess} />);
-    const dropzone = screen.getByRole('button', { name: /file upload dropzone/i });
+    const { container } = render(<Dropzone onUploadSuccess={onUploadSuccess} />);
+    const dropzone = screen.getByRole('button', { name: defaultPrompt });
     const validFile = new File(['valid content'], 'photo.png', { type: 'image/png' });
 
     fireEvent.drop(dropzone, {
@@ -111,19 +131,26 @@ describe('Dropzone Component', () => {
     });
 
     await waitFor(() => {
-      expect(mockPost).toHaveBeenCalledWith('/api/admin/upload', expect.any(FormData));
+      expect(screen.getByRole('button', { name: 'Uploading image...' })).toBeInTheDocument();
     });
+    expect(
+      await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
+    ).toHaveNoViolations();
+
+    resolveUpload({ url: '/uploads/sample.png' });
 
     await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith('/api/admin/upload', expect.any(FormData));
       expect(onUploadSuccess).toHaveBeenCalledWith('/uploads/sample.png', validFile);
     });
 
+    expect(screen.getByRole('button', { name: defaultPrompt })).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('triggers file selection dialog when clicked or Enter key pressed', async () => {
     render(<Dropzone />);
-    const dropzone = screen.getByRole('button', { name: /file upload dropzone/i });
+    const dropzone = screen.getByRole('button', { name: defaultPrompt });
     const input = screen.getByTestId('dropzone-file-input') as HTMLInputElement;
 
     const clickSpy = jest.spyOn(input, 'click').mockImplementation(() => {});
@@ -145,7 +172,7 @@ describe('Dropzone Component', () => {
     const onUploadError = jest.fn();
 
     render(<Dropzone onUploadError={onUploadError} />);
-    const dropzone = screen.getByRole('button', { name: /file upload dropzone/i });
+    const dropzone = screen.getByRole('button', { name: defaultPrompt });
     const validFile = new File(['valid content'], 'photo.jpg', { type: 'image/jpeg' });
 
     fireEvent.drop(dropzone, {
