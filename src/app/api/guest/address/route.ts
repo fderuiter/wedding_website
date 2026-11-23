@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { prisma } from '@/lib/prisma';
+import {
+  getHydratedGuestInvitation,
+  updateHydratedGuestInvitation,
+} from '@/lib/requestContext';
 import { GuestAddressUpdateSchema } from '@/features/registry';
 
 export const GET = withApiMiddleware(async (req: NextRequest) => {
@@ -13,9 +17,11 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
     );
   }
 
-  const record = await prisma.invitationCode.findUnique({
-    where: { code: session.code.toUpperCase(), isSample: false },
-  });
+  const record =
+    getHydratedGuestInvitation(session.code, req) ??
+    (await prisma.invitationCode.findUnique({
+      where: { code: session.code.toUpperCase(), isSample: false },
+    }));
 
   if (!record || record.isSample) {
     return NextResponse.json(
@@ -58,9 +64,11 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
     );
   }
 
-  const existing = await prisma.invitationCode.findUnique({
-    where: { code: session.code.toUpperCase(), isSample: false },
-  });
+  const existing =
+    getHydratedGuestInvitation(session.code, req) ??
+    (await prisma.invitationCode.findUnique({
+      where: { code: session.code.toUpperCase(), isSample: false },
+    }));
 
   if (!existing || existing.isSample) {
     return NextResponse.json(
@@ -82,6 +90,19 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
       country: country ?? null,
     },
   });
+
+  updateHydratedGuestInvitation(
+    session.code,
+    {
+      addressLine1: updated.addressLine1 ?? null,
+      addressLine2: updated.addressLine2 ?? null,
+      city: updated.city ?? null,
+      state: updated.state ?? null,
+      zipCode: updated.zipCode ?? null,
+      country: updated.country ?? null,
+    },
+    req
+  );
 
   return NextResponse.json({
     success: true,

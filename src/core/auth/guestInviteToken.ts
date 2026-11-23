@@ -49,7 +49,8 @@ export async function signGuestInviteSessionToken(
   const iat = payload.iat ?? Date.now();
   const exp = payload.exp ?? (iat + 7 * 24 * 60 * 60 * 1000); // 7 days
   const fullPayload: GuestInviteSessionPayload = {
-    ...payload,
+    code: payload.code,
+    guestName: payload.guestName,
     iat,
     exp,
   };
@@ -81,12 +82,36 @@ export async function verifyGuestInviteSessionToken(token: string): Promise<Gues
   }
 }
 
+const signedInviteRequestCache = new WeakMap<object, Promise<GuestInviteSessionPayload | null>>();
+
 /**
  * Reads and verifies the HMAC signature and expiration of the guest_invite_session cookie
  * without performing database lookups (Edge-compatible).
  */
 export async function getSignedGuestInviteSession(req?: NextRequest): Promise<GuestInviteSessionPayload | null> {
-  const cookieValue = await readRequestCookie(GUEST_INVITE_COOKIE, req, { suppressErrors: true });
+  if (req && typeof req === 'object') {
+    let cached = signedInviteRequestCache.get(req);
+    if (!cached) {
+      cached = (async () => {
+        const cookieValue = await readRequestCookie(GUEST_INVITE_COOKIE, req, { suppressErrors: true });
+        if (!cookieValue) return null;
+        return verifyGuestInviteSessionToken(cookieValue);
+      })().catch(() => {
+        signedInviteRequestCache.delete(req);
+        return null;
+      });
+      signedInviteRequestCache.set(req, cached);
+    }
+
+    const payload = await cached;
+    if (!payload) return null;
+    if (payload.exp && payload.exp < Date.now()) {
+      return null;
+    }
+    return payload;
+  }
+
+  const cookieValue = await readRequestCookie(GUEST_INVITE_COOKIE, undefined, { suppressErrors: true });
   if (!cookieValue) return null;
 
   return verifyGuestInviteSessionToken(cookieValue);
