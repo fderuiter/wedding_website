@@ -50,7 +50,7 @@ All sensitive values must be stored in **GCP Secret Manager** and attached to th
 | `DATABASE_URL` | Yes | Secret Manager | Connection string for Cloud SQL or external PostgreSQL (`datasource.url` in `prisma.config.ts`). |
 | `POSTGRES_URL_NON_POOLING` | No | Secret Manager | Shadow database URL (`datasource.shadowDatabaseUrl` in `prisma.config.ts` for `prisma migrate dev`); `prisma migrate deploy` reads `DATABASE_URL` and requires an explicit `DATABASE_URL` override to bypass PgBouncer. |
 | `ADMIN_PASSWORD` | Yes | Secret Manager | `scrypt:[saltBase64]:[keyBase64]` hash. |
-| `ALLOWED_HOSTS` | Yes | Cloud Run Env Var | Custom domain and Cloud Run default host (e.g. `wedding.mydomain.com,*.run.app`). |
+| `ALLOWED_HOSTS` | Yes | Cloud Run Env Var | Custom domain and Cloud Run default host (e.g. `wedding.mydomain.com,*.run.app`). Read-only (`GET` and `HEAD`) probes to `/api/live`, `/api/health`, and `/api/ready` enforce syntactic `Host` validation only, so internal Cloud Run pod-IP probes require no extra `ALLOWED_HOSTS` entries. |
 | `MULTISITE_ENABLED` | No | Cloud Run Env Var | Enable subdomain-based `AppConfig` branding/profile routing (`false`). Switches `AppConfig` rows only; `prisma/schema.prisma` shares the other 14 tables across subdomains without tenant row isolation. |
 | `RUN_MIGRATIONS` | No | Cloud Run Env Var | Automatically run database migrations on container startup (`false`). |
 | `TRUST_PROXY` | No | Cloud Run Env Var | Trust `X-Forwarded-For` / `X-Real-IP` from Cloud Run ingress (`true` or hop count; default `false`). |
@@ -377,22 +377,48 @@ gcloud run deploy wedding-website \
 Cloud Run separates startup readiness from ongoing process liveness so brief Cloud SQL blips do not restart warm instances.
 
 ### Cloud Run Probes Configuration
-Configure the startup probe on `wedding-website` to query `/api/health` (verifying PostgreSQL connectivity before serving traffic) and the liveness probe to query `/api/live` (process liveness decoupled from PostgreSQL) on port `3000`:
+Configure the liveness probe via `gcloud` using the composite `--liveness-probe` flag targeting `/api/live` on port `3000`:
 ```bash
 gcloud run services update wedding-website \
     --region=us-central1 \
-    --startup-probe-type=http \
-    --startup-probe-request-path=/api/health \
-    --startup-probe-port=3000 \
-    --startup-probe-initial-delay=5s \
-    --startup-probe-period=10s \
-    --liveness-probe-type=http \
-    --liveness-probe-request-path=/api/live \
-    --liveness-probe-port=3000 \
-    --liveness-probe-period=30s
+    --liveness-probe=httpGet.path=/api/live,httpGet.port=3000,periodSeconds=30
 ```
 
-The startup probe (and `.github/workflows/deploy.yml` / `.github/workflows/rollback.yml` rollout checks) verifies database query capability via `/api/health` before routing live user traffic to new instances, while `/api/live` returns HTTP 200 `{ "status": "alive", "timestamp": "..." }` without querying PostgreSQL so transient database blips do not trigger container restart loops.
+To configure both the HTTP `startupProbe` (`/api/health`, verifying PostgreSQL connectivity before serving traffic) and `livenessProbe` (`/api/live`, process liveness decoupled from PostgreSQL) together, export and apply a Knative `Service` manifest (`service.yaml`) with `gcloud run services replace`:
+```yaml
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: wedding-website
+spec:
+  template:
+    spec:
+      containers:
+        - image: ghcr.io/fderuiter/wedding_website@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          ports:
+            - containerPort: 3000
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/live
+              port: 3000
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+```
+
+```bash
+gcloud run services replace service.yaml --region=us-central1
+```
+
+Read-only (`GET` and `HEAD`) probe requests to `/api/live`, `/api/health`, and `/api/ready` enforce syntactic `Host` validation only in `src/middleware.ts`, so Cloud Run's internal pod/link-local `Host` headers (e.g., `169.254.1.1:3000`) succeed without adding internal probe IPs to `ALLOWED_HOSTS`. The startup probe (and `.github/workflows/deploy.yml` / `.github/workflows/rollback.yml` rollout checks) verifies database query capability via `/api/health` before routing live user traffic to new instances, while `/api/live` returns HTTP 200 `{ "status": "alive", "timestamp": "..." }` without querying PostgreSQL so transient database blips do not trigger container restart loops.
 
 ---
 
