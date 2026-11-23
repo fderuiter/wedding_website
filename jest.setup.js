@@ -96,9 +96,17 @@ moduleModule.createRequire = function (filename) {
     }
   }
 
-  // Determine the isolated test database URL from explicit override, dedicated test settings, or safe fallback
+  // Determine the isolated test database URL from explicit override, CI caller URL, dedicated test settings, or safe fallback
+  const envFileTestOverride = (process.env.TEST_DATABASE_URL || '').trim();
   const testDbUrl =
     preservedDbUrl ||
+    (envFileTestOverride &&
+    envFileTestOverride.toLowerCase() !== 'false' &&
+    envFileTestOverride !== '0' &&
+    envFileTestOverride.toLowerCase() !== 'true' &&
+    envFileTestOverride !== '1'
+      ? envFileTestOverride
+      : undefined) ||
     process.env.DATABASE_URL ||
     'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public';
 

@@ -1,3 +1,4 @@
+import { findSeededRegistryItemById } from '@/lib/sampleData/builder';
 import { isValidStripePublishableKey } from '@/lib/stripe.client';
 import type {
   DemoContributorRecord,
@@ -332,6 +333,12 @@ export async function handleRegistryRoutes(
       const snapshot = store.getSnapshot();
       const item = snapshot.registryItem.find((r) => r.id === itemId);
       if (!item) {
+        const seededFallback = findSeededRegistryItemById(itemId, {
+          includeContributors: snapshot.isAdminAuthenticated,
+        });
+        if (seededFallback) {
+          return wrapMiddlewareJson(seededFallback);
+        }
         return errorJson(404, 'Registry item not found');
       }
       return wrapMiddlewareJson(
@@ -344,8 +351,66 @@ export async function handleRegistryRoutes(
     if (method === 'PUT') {
       const body = await readJsonBody(request);
       const updated = store.mutate((draft) => {
-        const item = draft.registryItem.find((r) => r.id === itemId);
-        if (!item) return null;
+        let item = draft.registryItem.find((r) => r.id === itemId);
+        if (!item) {
+          const seeded = findSeededRegistryItemById(itemId, {
+            includeContributors: true,
+          });
+          if (!seeded) return null;
+          const nowIso = new Date().toISOString();
+          let seededImageId: string;
+          if (seeded.image) {
+            seededImageId = seeded.image.id;
+            if (!draft.media.some((m) => m.id === seeded.image!.id)) {
+              draft.media.unshift({
+                id: seeded.image.id,
+                url: seeded.image.url,
+                altText: seeded.image.altText ?? `${seeded.name} product photo`,
+                isDecorative: Boolean(seeded.image.isDecorative),
+                isSample: true,
+                createdAt: nowIso,
+                updatedAt: nowIso,
+              });
+            }
+          } else if (seeded.imageId) {
+            seededImageId = seeded.imageId;
+          } else {
+            seededImageId = generateDemoId('media-reg');
+            draft.media.unshift({
+              id: seededImageId,
+              url: createDemoSvgDataUrl(seeded.name, 'Registry', draft.activeArchetype),
+              altText: `${seeded.name} product photo`,
+              isDecorative: false,
+              isSample: Boolean(seeded.isSample),
+              createdAt: nowIso,
+              updatedAt: nowIso,
+            });
+          }
+          const createdFromSeed: DemoRegistryItemRecord = {
+            id: seeded.id,
+            name: seeded.name,
+            description: seeded.description ?? '',
+            price: seeded.price,
+            amountContributed: seeded.amountContributed ?? 0,
+            purchaserName: seeded.purchaserName ?? null,
+            vendorUrl: seeded.vendorUrl ?? null,
+            quantity: seeded.quantity ?? 1,
+            purchased: Boolean(seeded.purchased),
+            isGroupGift: Boolean(seeded.isGroupGift),
+            itemType: parseItemType(seeded.itemType),
+            paymentHandle: seeded.paymentHandle ?? null,
+            paymentHandleType: seeded.paymentHandleType ?? null,
+            isMostWanted: Boolean(seeded.isMostWanted),
+            isSample: Boolean(seeded.isSample),
+            category: seeded.category || 'Home',
+            displayOrder: seeded.displayOrder ?? draft.registryItem.length + 1,
+            imageId: seededImageId,
+            createdAt: nowIso,
+            updatedAt: nowIso,
+          };
+          draft.registryItem.push(createdFromSeed);
+          item = createdFromSeed;
+        }
         if (typeof body.name === 'string' && body.name.trim()) {
           item.name = body.name.trim();
         }

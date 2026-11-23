@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import type { AttractionDTO } from '@/features/attractions';
 import { AttractionEditorForm, AttractionCard } from '../AttractionEditor';
@@ -251,6 +251,62 @@ describe('AttractionEditorForm', () => {
 
     fireEvent.change(screen.getByLabelText('Longitude'), { target: { value: '' } });
     expect(handleChange).toHaveBeenCalledWith({ longitude: 0 });
+  });
+
+  it('populates attraction fields from address lookup and places coordinates inside optional disclosure', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: [
+          {
+            displayName: 'Palmer House Hilton, 17 E Monroe St, Chicago, IL 60603, USA',
+            name: 'Palmer House Hilton',
+            streetAddress: '17 E Monroe St',
+            city: 'Chicago',
+            state: 'IL',
+            zip: '60603',
+            country: 'USA',
+            latitude: 41.8807,
+            longitude: -87.6271,
+          },
+        ],
+      }),
+    }) as unknown as typeof fetch;
+
+    try {
+      const handleChange = jest.fn();
+      const { container } = render(
+        <AttractionEditorForm
+          values={{ name: '', category: 'hotel', latitude: 0, longitude: 0 }}
+          onChange={handleChange}
+          onSubmit={jest.fn()}
+          onCancel={jest.fn()}
+        />
+      );
+
+      const detailsDisclosure = container.querySelector('details');
+      expect(detailsDisclosure).toBeInTheDocument();
+      expect(detailsDisclosure).not.toHaveAttribute('open');
+
+      const combobox = screen.getByRole('combobox', { name: 'Search Address' });
+      fireEvent.change(combobox, { target: { value: 'Palmer House' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Lookup' }));
+
+      const listbox = await screen.findByRole('listbox');
+      const option = within(listbox).getByRole('option');
+      fireEvent.click(option);
+
+      expect(handleChange).toHaveBeenCalledWith({
+        latitude: 41.8807,
+        longitude: -87.6271,
+        name: 'Palmer House Hilton',
+        directions: '17 E Monroe St, Chicago, IL 60603',
+      });
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 });
 

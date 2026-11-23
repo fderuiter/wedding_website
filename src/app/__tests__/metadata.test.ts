@@ -1,4 +1,4 @@
-import { generateMetadata, generateViewport } from '../metadata';
+import { createPageMetadata, generateMetadata, generateViewport } from '../metadata';
 
 const mockHeaders = jest.fn().mockImplementation(() => {
   throw new Error('Headers not available');
@@ -89,6 +89,47 @@ describe('generateViewport', () => {
   it('populates themeColor from primary theme color config', async () => {
     const viewport = await generateViewport();
     expect(viewport.themeColor).toBe('#B91C1C');
+  });
+});
+
+describe('createPageMetadata', () => {
+  it('returns title-only metadata when optional fields are omitted', () => {
+    expect(createPageMetadata({ title: 'Gift Registry' })).toEqual({
+      title: 'Gift Registry',
+    });
+  });
+
+  it('includes description and canonical URL when provided', () => {
+    expect(
+      createPageMetadata({
+        title: 'About This Project',
+        description: 'Project architecture overview.',
+        canonical: '/project-info',
+      })
+    ).toEqual({
+      title: 'About This Project',
+      description: 'Project architecture overview.',
+      alternates: {
+        canonical: '/project-info',
+      },
+    });
+  });
+
+  it('adds robots noindex and nofollow directives when noIndex is true', () => {
+    expect(
+      createPageMetadata({
+        title: 'Admin Login',
+        description: 'Sign in to the admin panel.',
+        noIndex: true,
+      })
+    ).toEqual({
+      title: 'Admin Login',
+      description: 'Sign in to the admin panel.',
+      robots: {
+        index: false,
+        follow: false,
+      },
+    });
   });
 });
 

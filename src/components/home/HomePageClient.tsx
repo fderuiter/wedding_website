@@ -21,9 +21,17 @@ import InteractiveTimeline from '@/components/schedule/InteractiveTimeline';
 import FaqAccordion, { type FAQItemInput } from '@/components/faq/FaqAccordion';
 import ThingsToDoCard from '@/app/things-to-do/components/ThingsToDoCard';
 import { useGuestHelp } from '@/components/guest/GuestHelpModal';
+import { AccessibleExternalLink } from '@/components/ui/AccessibleExternalLink';
+import {
+  resolveDirectionsUrl,
+  formatVenueStreetAddress,
+  formatFullVenueLocation,
+  isNonPlaceholderVenueText,
+} from '@/utils/maps';
 
 import { isFeatureEnabled } from '@/lib/modules';
 import { useTheme } from '@/components/ThemeProvider';
+import { useOptionalDemo } from '@/components/demo/DemoContext';
 import { getPresetTokens, parseMotionEasing, parseDurationSec } from '@/lib/theme/presets';
 import { sanitizeUrl } from '@/utils/validation';
 import { MediaImage } from '@/components/MediaImage';
@@ -103,21 +111,51 @@ export default function HomePageClient({
   contentNodes?: ContentNodeDTO[];
   attractions?: AttractionDTO[];
 }) {
+  const demo = useOptionalDemo();
   const demoOverrides = useStaticDemoPageOverrides();
   const [draftConfig, setDraftConfig] = useState<Partial<PublicAppConfig> | null>(null);
   const [draftContentNodes, setDraftContentNodes] = useState<ContentNodeDTO[] | null>(null);
   const [draftAttractions, setDraftAttractions] = useState<AttractionDTO[] | null>(null);
 
-  const baseConfig = demoOverrides?.config ?? initialConfig;
+  const isDemoMode = Boolean(demo?.isDemoMode);
+  const demoConfigOverrides = demo?.configOverrides;
+  const demoLogisticsNodes = demo?.activeDataset.logisticsNodes;
+  const demoFaqs = demo?.activeDataset.faqs;
+
+  const baseConfig = useMemo<PublicAppConfig>(() => {
+    const seededConfig = demoOverrides?.config ?? initialConfig;
+    return isDemoMode && demoConfigOverrides
+      ? { ...seededConfig, ...demoConfigOverrides }
+      : seededConfig;
+  }, [demoConfigOverrides, demoOverrides?.config, initialConfig, isDemoMode]);
+
   const config = useMemo<PublicAppConfig>(
     () => (draftConfig ? { ...baseConfig, ...draftConfig } : baseConfig),
-    [baseConfig, draftConfig],
+    [baseConfig, draftConfig]
   );
-  const contentNodes =
-    draftContentNodes ?? demoOverrides?.contentNodes ?? initialContentNodes;
-  const attractions =
-    draftAttractions ?? demoOverrides?.attractions ?? initialAttractions;
 
+  const contentNodes = useMemo<ContentNodeDTO[]>(() => {
+    if (draftContentNodes) return draftContentNodes;
+    if (isDemoMode && demoLogisticsNodes && demoFaqs) {
+      const sourceNodes = demoOverrides?.contentNodes ?? initialContentNodes;
+      const scheduleNodes = sourceNodes.filter((n) => n.type === 'Schedule');
+      return [...scheduleNodes, ...demoLogisticsNodes, ...demoFaqs];
+    }
+    return demoOverrides?.contentNodes ?? initialContentNodes;
+  }, [
+    demoFaqs,
+    demoLogisticsNodes,
+    demoOverrides?.contentNodes,
+    draftContentNodes,
+    initialContentNodes,
+    isDemoMode,
+  ]);
+
+  const attractions =
+    draftAttractions ??
+    (isDemoMode && demo
+      ? demo.activeDataset.attractions
+      : (demoOverrides?.attractions ?? initialAttractions));
   const isAdminPreview = useSyncExternalStore(
     subscribePreviewNoop,
     getAdminPreviewClientSnapshot,
@@ -325,7 +363,14 @@ export default function HomePageClient({
                 }
               >
                 {hotelAttractions.map((hotel) => (
-                  <ThingsToDoCard key={hotel.id || hotel.name} attraction={hotel} />
+                  <ThingsToDoCard
+                    key={hotel.id || hotel.name}
+                    attraction={hotel}
+                    venueCoords={{
+                      latitude: config.latitude,
+                      longitude: config.longitude,
+                    }}
+                  />
                 ))}
               </div>
             ) : !accNode?.description ? (
@@ -334,15 +379,54 @@ export default function HomePageClient({
           </motion.section>
         );
       }
-      case 'venue':
+      case 'venue': {
+        const venueDisplayName = isNonPlaceholderVenueText(config.venueName)
+          ? config.venueName.trim()
+          : '';
+        const venueStreetLine = formatVenueStreetAddress(config);
+        const fullVenueLocation = formatFullVenueLocation(config);
+        const venueDirectionsUrl = resolveDirectionsUrl({
+          latitude: config.latitude,
+          longitude: config.longitude,
+          directions: fullVenueLocation,
+        });
+        const venueParagraphs = splitParagraphs(config.venueDescription);
+
         return (
           <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
             <h2 className="type-h2 text-primary">{feature.title || 'About Our Venue'}</h2>
-            {config.venueDescription.split('\n\n').map((paragraph, i) => (
+            {(venueDisplayName || venueStreetLine || venueDirectionsUrl) && (
+              <div
+                data-testid="venue-location-summary"
+                className="mx-auto max-w-xl rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 shadow-[var(--shadow-md)] space-y-3"
+                style={{ boxShadow: 'var(--shadow-md)' }}
+              >
+                {venueDisplayName && (
+                  <h3 className="type-h3 text-gray-900 dark:text-gray-100">{venueDisplayName}</h3>
+                )}
+                {venueStreetLine && (
+                  <p className="type-body text-gray-700 dark:text-gray-300">{venueStreetLine}</p>
+                )}
+                {venueDirectionsUrl && (
+                  <div className="pt-1">
+                    <AccessibleExternalLink
+                      href={venueDirectionsUrl}
+                      srContext={`to ${venueDisplayName || venueStreetLine || 'wedding venue'}`}
+                      className="btn-secondary inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 min-h-11 min-w-11 font-semibold"
+                    >
+                      <Icon name="MapPin" className="h-5 w-5" />
+                      Get Directions
+                    </AccessibleExternalLink>
+                  </div>
+                )}
+              </div>
+            )}
+            {venueParagraphs.map((paragraph, i) => (
               <p key={i} className="mx-auto max-w-xl type-body">{paragraph}</p>
             ))}
           </motion.section>
         );
+      }
       case 'travel': {
         const travelParagraphs = splitParagraphs(config.travelAdvice);
         const travelNodes = logisticsNodes.filter(n => !n.ceremonyTitle && !n.title?.includes('Accommodations'));
@@ -427,9 +511,6 @@ export default function HomePageClient({
 
   const weddingDateObj = new Date(config.weddingDate);
   const hasValidWeddingDate = !isNaN(weddingDateObj.getTime());
-  const calendarLocation = [cleanVenueName, cleanVenueCity, cleanVenueState]
-    .filter(Boolean)
-    .join(', ');
   const calendarEvent = formatScheduleEventToCalendarEvent(
     {
       title: config.heroTitle || defaultHeroTitle,
@@ -437,7 +518,7 @@ export default function HomePageClient({
       endTime: hasValidWeddingDate
         ? new Date(weddingDateObj.getTime() + 6 * 60 * 60 * 1000).toISOString()
         : undefined,
-      location: calendarLocation,
+      location: formatFullVenueLocation(config),
       description: config.heroSubtitle || defaultHeroSubtitle,
     },
     undefined,

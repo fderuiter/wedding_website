@@ -31,6 +31,8 @@ if (typeof window !== 'undefined' && window.navigator.userAgent.includes('Headle
 }
 
 import type { PublicAppConfig } from '@/lib/config';
+import { DemoProvider, useOptionalDemo } from '@/components/demo/DemoContext';
+import { DemoToolbar } from '@/components/demo/DemoToolbar';
 
 /**
  * @interface RootLayoutClientProps
@@ -42,6 +44,193 @@ interface RootLayoutClientProps {
   children: React.ReactNode;
   config: PublicAppConfig;
   faqs?: ContentNodeDTO[];
+  isStaticExport?: boolean;
+}
+
+function RootLayoutInner({
+  children,
+  config: baseConfig,
+  faqs: baseFaqs,
+  queryClient,
+}: Omit<RootLayoutClientProps, 'isStaticExport'> & { queryClient: QueryClient }) {
+  const demo = useOptionalDemo();
+  const isDemoMode = Boolean(demo?.isDemoMode);
+  const demoOverrides = useStaticDemoPageOverrides();
+  const { setPreviewConfig } = useTheme();
+  const [storageIsAdmin, setStorageIsAdmin] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
+  const headerRef = useRef<HTMLElement>(null);
+  const [mainPaddingTop, setMainPaddingTop] = useState(0);
+
+  useEffect(() => {
+    if (isDemoMode || !demoOverrides || typeof setPreviewConfig !== 'function') return;
+    if (typeof window !== 'undefined' && window !== window.parent) return;
+    setPreviewConfig({
+      themePreset: demoOverrides.config.themePreset as ThemePreset,
+      colorPrimary: demoOverrides.config.colorPrimary,
+      colorSecondary: demoOverrides.config.colorSecondary,
+    });
+  }, [
+    isDemoMode,
+    demoOverrides,
+    demoOverrides?.config.themePreset,
+    demoOverrides?.config.colorPrimary,
+    demoOverrides?.config.colorSecondary,
+    setPreviewConfig,
+  ]);
+
+  useEffect(() => {
+    if (isDemoMode) return;
+    const checkLoginStatus = () => {
+      const loggedIn = localStorage.getItem('isAdminLoggedIn') === 'true';
+      setStorageIsAdmin(loggedIn);
+    };
+
+    checkLoginStatus();
+    window.addEventListener('storage', checkLoginStatus);
+
+    return () => {
+      window.removeEventListener('storage', checkLoginStatus);
+    };
+  }, [isDemoMode]);
+
+  const isSetupPersona = isDemoMode
+    ? demo?.persona === 'setup'
+    : Boolean(demoOverrides?.isSetupMode);
+  const isAdmin = isDemoMode
+    ? demo?.persona === 'admin'
+    : demoOverrides
+      ? demoOverrides.isAdminAuthenticated
+      : storageIsAdmin;
+
+  const effectiveConfig = useMemo<PublicAppConfig>(() => {
+    if (isDemoMode && demo) {
+      return {
+        ...(demoOverrides?.config ?? baseConfig),
+        ...demo.configOverrides,
+      };
+    }
+    return demoOverrides?.config ?? baseConfig;
+  }, [baseConfig, demo, demoOverrides, isDemoMode]);
+
+  const effectiveFaqs = useMemo<ContentNodeDTO[] | undefined>(() => {
+    if (isDemoMode && demo) {
+      return demo.activeDataset.faqs;
+    }
+    return demoOverrides?.faqs ?? baseFaqs;
+  }, [baseFaqs, demo, demoOverrides, isDemoMode]);
+
+  useLayoutEffect(() => {
+    if (isSetupPersona || !headerRef.current) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      if (headerRef.current) {
+        setMainPaddingTop(headerRef.current.offsetHeight);
+      }
+    });
+
+    resizeObserver.observe(headerRef.current);
+
+    return () => resizeObserver.disconnect();
+  }, [pathname, isSetupPersona]);
+
+  const normalizedPathname =
+    pathname && pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+  const isHeartPage = normalizedPathname === '/heart';
+  const isSlideshowPage = normalizedPathname === '/photos/slideshow';
+  const isSetupPage =
+    normalizedPathname === '/admin/setup' || pathname?.startsWith('/admin/setup/');
+  const isStandalonePage = isHeartPage || isSlideshowPage || isSetupPage;
+  const isAdminDashboardPage =
+    normalizedPathname === '/admin/dashboard' ||
+    pathname?.startsWith('/admin/dashboard/') ||
+    isSetupPage;
+
+  const handleLogout = async () => {
+    if (isDemoMode && demo) {
+      demo.setPersona('guest');
+      return;
+    }
+    try {
+      await fetch('/api/admin/logout', { method: 'POST' });
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      localStorage.removeItem('isAdminLoggedIn');
+      setStorageIsAdmin(false);
+      router.push('/admin/login');
+    }
+  };
+
+  const helpConfig = useMemo<GuestHelpConfig>(() => {
+    if (!effectiveFaqs) return effectiveConfig;
+    const mappedFaqs: GuestHelpFaqItem[] = effectiveFaqs
+      .filter((n): n is Extract<ContentNodeDTO, { type: 'FAQ' }> => n.type === 'FAQ')
+      .map((n, index) => ({
+        id: n.id,
+        question: n.data.question || '',
+        answer: n.data.answer || '',
+        category: n.data.category,
+        isVisible: n.data.isVisible,
+        displayOrder:
+          typeof n.data.displayOrder === 'number' ? n.data.displayOrder : index,
+      }));
+    return {
+      ...effectiveConfig,
+      faqs: mappedFaqs,
+    };
+  }, [effectiveConfig, effectiveFaqs]);
+
+  const bottomToolbarClearance = isDemoMode
+    ? demo?.isToolbarCollapsed
+      ? 'pb-16'
+      : 'pb-28'
+    : '';
+
+  return (
+    <GuestHelpProvider config={helpConfig} pathname={pathname}>
+      <GlobalRadialGlow />
+      {isSetupPersona ? (
+        <div className={bottomToolbarClearance}>
+          <SetupWizard
+            key={`demo-setup-${demo?.resetCounter ?? 0}`}
+            onDemoComplete={() => router.push('/admin/dashboard')}
+          />
+        </div>
+      ) : (
+        <>
+          {!isStandalonePage && (
+            <Navbar
+              headerRef={headerRef}
+              isAdmin={isAdmin}
+              handleLogout={handleLogout}
+              config={effectiveConfig}
+              hasVisibleFaqs={effectiveFaqs ? effectiveFaqs.length > 0 : undefined}
+            />
+          )}
+          {isAdminDashboardPage ? (
+            <div
+              className={bottomToolbarClearance}
+              style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}
+            >
+              {children}
+            </div>
+          ) : (
+            <main
+              aria-label="Application Content"
+              id="main-content"
+              className={bottomToolbarClearance}
+              style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}
+            >
+              {children}
+            </main>
+          )}
+        </>
+      )}
+      {isDemoMode ? <DemoToolbar /> : <StaticDemoMount queryClient={queryClient} />}
+    </GuestHelpProvider>
+  );
 }
 
 /**
@@ -56,22 +245,12 @@ export default function RootLayoutClient({
   children,
   config,
   faqs,
+  isStaticExport = false,
 }: RootLayoutClientProps) {
-  ensureStaticDemoRuntime();
-  const demoOverrides = useStaticDemoPageOverrides();
-  const { setPreviewConfig } = useTheme();
-  const [isAdmin, setIsAdmin] = useState(false);
-  const router = useRouter();
-  const pathname = usePathname();
-  const headerRef = useRef<HTMLElement>(null);
-  const [mainPaddingTop, setMainPaddingTop] = useState(0);
+  if (isStaticExport || process.env.NODE_ENV === 'test') {
+    ensureStaticDemoRuntime();
+  }
   const { addToast } = useToast();
-
-  const effectiveConfig = demoOverrides?.config ?? config;
-  const effectiveFaqs = demoOverrides?.faqs ?? faqs;
-  const effectiveIsAdmin = demoOverrides
-    ? demoOverrides.isAdminAuthenticated
-    : isAdmin;
 
   const [queryClient] = useState(() => {
     const client: QueryClient = new QueryClient({
@@ -109,124 +288,13 @@ export default function RootLayoutClient({
     return client;
   });
 
-  useEffect(() => {
-    if (!demoOverrides || typeof setPreviewConfig !== 'function') return;
-    if (typeof window !== 'undefined' && window !== window.parent) return;
-    setPreviewConfig({
-      themePreset: demoOverrides.config.themePreset as ThemePreset,
-      colorPrimary: demoOverrides.config.colorPrimary,
-      colorSecondary: demoOverrides.config.colorSecondary,
-    });
-  }, [
-    demoOverrides,
-    demoOverrides?.config.themePreset,
-    demoOverrides?.config.colorPrimary,
-    demoOverrides?.config.colorSecondary,
-    setPreviewConfig,
-  ]);
-
-  useEffect(() => {
-    const checkLoginStatus = () => {
-      const loggedIn = localStorage.getItem('isAdminLoggedIn') === 'true';
-      setIsAdmin(loggedIn);
-    };
-
-    checkLoginStatus();
-    window.addEventListener('storage', checkLoginStatus);
-
-    return () => {
-      window.removeEventListener('storage', checkLoginStatus);
-    };
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!headerRef.current) return;
-
-    const resizeObserver = new ResizeObserver(() => {
-      if (headerRef.current) {
-        setMainPaddingTop(headerRef.current.offsetHeight);
-      }
-    });
-
-    resizeObserver.observe(headerRef.current);
-
-    return () => resizeObserver.disconnect();
-  }, [pathname]);
-
-  const isHeartPage = pathname === '/heart';
-  const isSlideshowPage = pathname === '/photos/slideshow';
-  const isSetupPage = pathname === '/admin/setup' || pathname?.startsWith('/admin/setup/');
-  const isStandalonePage = isHeartPage || isSlideshowPage || isSetupPage;
-  const isAdminDashboardPage =
-    pathname === '/admin/dashboard' ||
-    pathname?.startsWith('/admin/dashboard/') ||
-    isSetupPage;
-
-  const handleLogout = async () => {
-    try {
-      await fetch('/api/admin/logout', { method: 'POST' });
-    } catch (error) {
-      console.error('Logout error:', error);
-    } finally {
-      localStorage.removeItem('isAdminLoggedIn');
-      setIsAdmin(false);
-      router.push('/admin/login');
-    }
-  };
-
-  const helpConfig = useMemo<GuestHelpConfig>(() => {
-    if (!effectiveFaqs) return effectiveConfig;
-    const mappedFaqs: GuestHelpFaqItem[] = effectiveFaqs
-      .filter((n): n is Extract<ContentNodeDTO, { type: 'FAQ' }> => n.type === 'FAQ')
-      .map((n, index) => ({
-        id: n.id,
-        question: n.data.question || '',
-        answer: n.data.answer || '',
-        category: n.data.category,
-        isVisible: n.data.isVisible,
-        displayOrder:
-          typeof n.data.displayOrder === 'number' ? n.data.displayOrder : index,
-      }));
-    return {
-      ...effectiveConfig,
-      faqs: mappedFaqs,
-    };
-  }, [effectiveConfig, effectiveFaqs]);
-
-  if (demoOverrides?.isSetupMode) {
-    return (
-      <QueryClientProvider client={queryClient}>
-        <GlobalRadialGlow />
-        <SetupWizard />
-        <StaticDemoMount queryClient={queryClient} />
-      </QueryClientProvider>
-    );
-  }
-
   return (
     <QueryClientProvider client={queryClient}>
-      <GuestHelpProvider config={helpConfig} pathname={pathname}>
-        <GlobalRadialGlow />
-        {!isStandalonePage && (
-          <Navbar
-            headerRef={headerRef}
-            isAdmin={effectiveIsAdmin}
-            handleLogout={handleLogout}
-            config={effectiveConfig}
-            hasVisibleFaqs={effectiveFaqs ? effectiveFaqs.length > 0 : undefined}
-          />
-        )}
-        {isAdminDashboardPage ? (
-          <div style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}>
-            {children}
-          </div>
-        ) : (
-          <main aria-label="Application Content" id="main-content" style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}>
-            {children}
-          </main>
-        )}
-        <StaticDemoMount queryClient={queryClient} />
-      </GuestHelpProvider>
+      <DemoProvider enabled={isStaticExport}>
+        <RootLayoutInner config={config} faqs={faqs} queryClient={queryClient}>
+          {children}
+        </RootLayoutInner>
+      </DemoProvider>
     </QueryClientProvider>
   );
 }

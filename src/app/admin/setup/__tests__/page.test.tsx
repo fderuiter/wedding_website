@@ -66,8 +66,10 @@ describe('AdminSetupPage (/admin/setup)', () => {
       venueName: 'TBD',
       venueCity: 'Minneapolis',
       venueState: 'MN',
-      venueAddress: '',
+      venueAddress: '200 S 2nd St',
       venueZip: '55401',
+      latitude: 44.9799,
+      longitude: -93.2638,
       contactEmail: 'hosts@alexandsam.example.org',
       themePreset: 'romantic',
       colorPrimary: '#be123c',
@@ -88,13 +90,57 @@ describe('AdminSetupPage (/admin/setup)', () => {
         timezone: 'America/Chicago',
         baseUrl: 'https://alexandsam.example.org',
         venueName: '',
+        venueAddress: '200 S 2nd St',
         venueCity: 'Minneapolis',
         venueState: 'MN',
+        venueZip: '55401',
+        latitude: 44.9799,
+        longitude: -93.2638,
         contactEmail: 'hosts@alexandsam.example.org',
         themePreset: 'romantic',
         colorPrimary: '#be123c',
         colorSecondary: '#14532d',
       },
+    });
+  });
+
+  it('strips placeholder TBD and 00000 venue fields when hydrating initialSavedConfig', async () => {
+    (getAppConfig as jest.Mock).mockResolvedValue({
+      id: 'global',
+      partner1Name: 'Alex',
+      partner2Name: 'Sam',
+      brideName: 'Alex',
+      groomName: 'Sam',
+      baseUrl: 'https://alexandsam.example.org',
+      weddingDate: new Date('2027-06-20T16:00:00.000Z'),
+      timezone: 'America/Chicago',
+      venueName: 'TBD Venue',
+      venueAddress: 'TBD',
+      venueCity: 'TBD',
+      venueState: 'N/A',
+      venueZip: '00000',
+      latitude: 0,
+      longitude: 0,
+      contactEmail: '',
+      themePreset: 'classic',
+      colorPrimary: '#B91C1C',
+      colorSecondary: '#B45309',
+      setupCompleted: false,
+    });
+
+    const element = await AdminSetupPage();
+    render(element);
+
+    expect(mockSetupWizard).toHaveBeenCalledWith({
+      initialSavedConfig: expect.objectContaining({
+        venueName: '',
+        venueAddress: '',
+        venueCity: '',
+        venueState: '',
+        venueZip: '',
+        latitude: 0,
+        longitude: 0,
+      }),
     });
   });
 });

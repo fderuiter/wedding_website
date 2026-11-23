@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import WeddingPartyCard from './WeddingPartyCard';
 import type { WeddingPartyMemberDTO } from '@/features/wedding-party';
+import { useOptionalDemo } from '@/components/demo/DemoContext';
 import { cn } from '@/utils/cn';
 import { useStaticDemoPageOverrides } from '@/lib/staticDemo/runtime';
 
@@ -20,6 +21,7 @@ const TABS: { id: TabFilter; label: string }[] = [
 ];
 
 const WeddingPartyList: React.FC<WeddingPartyListProps> = ({ members: initialMembers }) => {
+  const demo = useOptionalDemo();
   const demoOverrides = useStaticDemoPageOverrides();
   const baseMembers = demoOverrides?.weddingParty ?? initialMembers;
   const [draftOverride, setDraftOverride] = useState<{
@@ -28,8 +30,9 @@ const WeddingPartyList: React.FC<WeddingPartyListProps> = ({ members: initialMem
   } | null>(null);
   const [activeTab, setActiveTab] = useState<TabFilter>('ALL');
 
-  const members =
-    draftOverride && draftOverride.base === initialMembers
+  const members = demo?.isDemoMode
+    ? demo.activeDataset.weddingParty
+    : draftOverride && draftOverride.base === initialMembers
       ? draftOverride.members
       : baseMembers;
 

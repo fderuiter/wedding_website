@@ -3,7 +3,13 @@ import { isAdminRequest } from '@/core/auth/auth.server';
 import { isGuestRequest } from '@/core/auth/guest.server';
 import { getGuestInviteSession, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
 import { getSignedGuestInviteSession } from '@/core/auth/guestInviteToken';
-import { rateLimit, type RateLimitBucket } from './rateLimit';
+import {
+  rateLimit,
+  checkAuthLockout,
+  recordAuthFailure,
+  type AuthLockoutInstance,
+  type RateLimitBucket,
+} from './rateLimit';
 import { ApiError } from './ApiError';
 import { isProtectedRoute } from '@/lib/routes';
 import { logger } from '@/lib/logger';
@@ -18,6 +24,7 @@ export interface ApiMiddlewareOptions {
   windowMs?: number;
   keyPrefix?: string;
   bucket?: RateLimitBucket;
+  authInstance?: AuthLockoutInstance;
 }
 
 function isAuthLockoutRoute(pathname: string, method: string): boolean {
@@ -29,6 +36,10 @@ function isAuthLockoutRoute(pathname: string, method: string): boolean {
     (pathname === '/api/admin/setup' && upperMethod === 'POST') ||
     pathname === '/api/registry/validate-code'
   );
+}
+
+function isAuthFailureStatus(status: number): boolean {
+  return status === 401 || status === 403 || status === 404;
 }
 
 function isInviteRevocationExcludedApiPath(normalizedPathname: string): boolean {
@@ -65,6 +76,13 @@ export function withApiMiddleware(
   options?: ApiMiddlewareOptions
 ) {
   const executeWithMiddleware = async (req?: NextRequest, context?: any): Promise<NextResponse> => {
+    let isHealthPath = false;
+    let shouldTrackAuthFailures = false;
+    let resolvedBucket: RateLimitBucket = 'general';
+    let authLimit = 5;
+    let authWindowMs = 15 * 60 * 1000;
+    let prechecksCompleted = false;
+
     try {
       let pathname = '/';
       let method = 'GET';
@@ -79,20 +97,52 @@ export function withApiMiddleware(
         method = req.method || 'GET';
       }
       const normalizedPathname = pathname.length > 1 ? pathname.replace(/\/+$/, '') || '/' : pathname;
-      const isHealthPath = normalizedPathname === '/api/health' || normalizedPathname === '/api/live';
+      isHealthPath = normalizedPathname === '/api/health' || normalizedPathname === '/api/live';
       const isLoginPath = isAuthLockoutRoute(normalizedPathname, method);
+      resolvedBucket = options?.bucket ?? (isLoginPath ? 'auth' : 'general');
+      authLimit = options?.limit ?? 5;
+      authWindowMs = options?.windowMs ?? 15 * 60 * 1000;
       
       const isAdminPath = isProtectedRoute(pathname, method);
 
       // 1. Rate Limiting
-      // Stricter limits for login/credential checks, general limits for everything else; probe endpoints (/api/health, /api/live) are exempt
+      // Check active AuthLockout state before handlers run, cap bursts at 100 req/min in generalStore,
+      // and record failed auth attempts (401/403/404); probe endpoints (/api/health, /api/live) are exempt.
       if (!isHealthPath) {
-        const limit = options?.limit ?? (isLoginPath ? 5 : 100);
-        const windowMs = options?.windowMs ?? (isLoginPath ? 15 * 60 * 1000 : 60 * 1000);
-        const bucket: RateLimitBucket = options?.bucket ?? (isLoginPath ? 'auth' : 'general');
-        const rateLimitResponse = (req && req.headers && typeof req.headers.get === 'function')
-          ? await rateLimit(req, limit, windowMs, options?.keyPrefix, bucket)
-          : null;
+        const hasReadableHeaders = Boolean(req && req.headers && typeof req.headers.get === 'function');
+        shouldTrackAuthFailures = resolvedBucket === 'auth' && hasReadableHeaders;
+        let rateLimitResponse: NextResponse | null = null;
+
+        if (hasReadableHeaders && req) {
+          if (resolvedBucket === 'auth') {
+            rateLimitResponse =
+              typeof checkAuthLockout === 'function'
+                ? await checkAuthLockout(
+                  req,
+                  authLimit,
+                  authWindowMs,
+                  options?.keyPrefix,
+                  options?.authInstance
+                )
+                : await rateLimit(req, authLimit, authWindowMs, options?.keyPrefix, 'auth', {
+                  increment: false,
+                });
+
+            if (!rateLimitResponse) {
+              rateLimitResponse = await rateLimit(
+                req,
+                100,
+                60 * 1000,
+                options?.keyPrefix,
+                'general'
+              );
+            }
+          } else {
+            const limit = options?.limit ?? 100;
+            const windowMs = options?.windowMs ?? 60 * 1000;
+            rateLimitResponse = await rateLimit(req, limit, windowMs, options?.keyPrefix, 'general');
+          }
+        }
         
         if (rateLimitResponse) {
           // If rate limit exceeded, standardise its error response
@@ -103,6 +153,8 @@ export function withApiMiddleware(
           );
         }
       }
+
+      prechecksCompleted = true;
 
       // 2. Admin & Active Guest Invite Verification
       if (isAdminPath) {
@@ -137,6 +189,17 @@ export function withApiMiddleware(
 
       // 3. Execute Handler
       const response = await handler(req as NextRequest, context);
+
+      if (
+        shouldTrackAuthFailures &&
+        !isHealthPath &&
+        prechecksCompleted &&
+        req &&
+        isAuthFailureStatus(response.status) &&
+        typeof recordAuthFailure === 'function'
+      ) {
+        await recordAuthFailure(req, authWindowMs, options?.keyPrefix, options?.authInstance);
+      }
       
       // Pass-through attachments (e.g. backup files)
       const contentType = response.headers?.get?.('content-type') || 'application/json';
@@ -230,6 +293,22 @@ export function withApiMiddleware(
       return finalResponse;
       
     } catch (error: any) {
+      const errorStatus = error instanceof ApiError ? error.statusCode : 500;
+      if (
+        shouldTrackAuthFailures &&
+        !isHealthPath &&
+        prechecksCompleted &&
+        req &&
+        isAuthFailureStatus(errorStatus) &&
+        typeof recordAuthFailure === 'function'
+      ) {
+        try {
+          await recordAuthFailure(req, authWindowMs, options?.keyPrefix, options?.authInstance);
+        } catch {
+          // Preserve original error response if lockout recording fails
+        }
+      }
+
       if (error instanceof ApiError && error.statusCode < 500) {
         return NextResponse.json(
           { 

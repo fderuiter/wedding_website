@@ -99,9 +99,9 @@ describe('docs/3D_TECHNICAL_GUIDE.md specification & portal verification', () =>
   });
 
   it('documents /heart route gating, dual-clipped Heart3D geometry, shard reconstruction, forces, FPS tiers, WebGLFallback, and <Html> focus handoff', () => {
-    // Updated PhysicsHeart bounds and no stale L26–L322 citation
+    // Updated PhysicsHeart bounds and no stale L26–L322 / L26–L328 citation
     expect(guideContent).toContain('L27-L335');
-    expect(guideContent).not.toMatch(/L26[-–—]L322/);
+    expect(guideContent).not.toMatch(/L26[-–—]L32[28]/);
 
     // Route gating in src/app/heart/page.tsx
     expect(guideContent).toContain('interactive3D');

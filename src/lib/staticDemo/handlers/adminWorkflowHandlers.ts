@@ -238,6 +238,12 @@ export async function handleAdminWorkflowRoutes(
         if (typeof body.venueZip === 'string') {
           config.venueZip = body.venueZip.trim();
         }
+        if (typeof body.latitude === 'number' && Number.isFinite(body.latitude)) {
+          config.latitude = body.latitude;
+        }
+        if (typeof body.longitude === 'number' && Number.isFinite(body.longitude)) {
+          config.longitude = body.longitude;
+        }
         if (typeof body.timezone === 'string' && body.timezone.trim()) {
           config.timezone = body.timezone.trim();
         }
@@ -274,6 +280,63 @@ export async function handleAdminWorkflowRoutes(
         setupCompleted: requestedSetupCompleted,
       });
     }
+  }
+
+  // --- Admin Venue & Attraction Geocoding ---
+  if (pathname === '/api/admin/geocode' && method === 'GET') {
+    const q = (searchParams.get('q') || '').trim();
+    if (q.length < 2) {
+      return errorJson(400, 'Search query is required.');
+    }
+    const rawLimit = Number(searchParams.get('limit') || '5');
+    const limit = Number.isFinite(rawLimit)
+      ? Math.min(10, Math.max(1, Math.trunc(rawLimit)))
+      : 5;
+    const snapshot = store.getSnapshot();
+    const archetype = snapshot.activeArchetype;
+    const region =
+      archetype === 'destination'
+        ? {
+          streetAddress: '450 Ocean Drive',
+          city: 'Miami Beach',
+          state: 'FL',
+          zip: '33139',
+          latitude: 25.7743,
+          longitude: -80.1304,
+        }
+        : archetype === 'romantic'
+          ? {
+            streetAddress: '1120 Silverado Trail',
+            city: 'Napa',
+            state: 'CA',
+            zip: '94558',
+            latitude: 38.2975,
+            longitude: -122.2869,
+          }
+          : {
+            streetAddress: '123 Oak Ave',
+            city: 'Chicago',
+            state: 'IL',
+            zip: '60601',
+            latitude: 41.8842,
+            longitude: -87.6324,
+          };
+
+    const candidates = [
+      {
+        displayName: `${q}, ${region.streetAddress}, ${region.city}, ${region.state} ${region.zip}, United States`,
+        name: q,
+        streetAddress: region.streetAddress,
+        city: region.city,
+        state: region.state,
+        zip: region.zip,
+        country: 'United States',
+        latitude: region.latitude,
+        longitude: region.longitude,
+      },
+    ].slice(0, limit);
+
+    return wrapMiddlewareJson(candidates);
   }
 
   // --- Onboarding Milestones ---

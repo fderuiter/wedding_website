@@ -111,6 +111,12 @@ function buildOpenApiRequestInit(
       init: { method },
     };
   }
+  if (resolvedPath === '/api/admin/geocode' && method === 'GET') {
+    return {
+      url: `${base}?q=${encodeURIComponent('Glasshouse Estate')}`,
+      init: { method },
+    };
+  }
 
   if (method === 'GET' || method === 'HEAD') {
     return { url: base, init: { method } };
@@ -918,5 +924,46 @@ describe('Static Demo Fetch Router & Versioned Store', () => {
     const afterStep5 = store.getSnapshot();
     expect(afterStep5.isSetupMode).toBe(false);
     expect(afterStep5.appConfig[0].setupCompleted).toBe(true);
+  });
+
+  it('serves GET /api/admin/geocode candidates by archetype and resolves cross-archetype seeded registry items (#1222, #1248)', async () => {
+    const store = createDemoStore({ storage: null, initialArchetype: 'destination' });
+    const router = createStaticDemoRouter({ store, mode: 'browser' });
+
+    const shortQuery = await router('http://localhost:3000/api/admin/geocode?q=a');
+    expect(shortQuery?.status).toBe(400);
+
+    const geocodeRes = await router(
+      'http://localhost:3000/api/admin/geocode?q=Coral%20Gables%20Villa&limit=5',
+    );
+    expect(geocodeRes?.status).toBe(200);
+    const geocodeJson = await geocodeRes!.json();
+    expect(geocodeJson.success).toBe(true);
+    expect(geocodeJson.data[0]).toMatchObject({
+      name: 'Coral Gables Villa',
+      city: 'Miami Beach',
+      state: 'FL',
+    });
+
+    // Cross-archetype seeded item ID from classic resolves cleanly even when active archetype is destination
+    const crossArchGet = await router(
+      'http://localhost:3000/api/registry/items/sample-registry-classic-1',
+    );
+    expect(crossArchGet?.status).toBe(200);
+    const crossArchJson = await crossArchGet!.json();
+    expect((crossArchJson.data ?? crossArchJson).id).toBe('sample-registry-classic-1');
+
+    const crossArchPut = await router(
+      'http://localhost:3000/api/registry/items/sample-registry-classic-1',
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Updated Stand Mixer', price: 425 }),
+      },
+    );
+    expect(crossArchPut?.status).toBe(200);
+    const updatedCross = await crossArchPut!.json();
+    expect((updatedCross.data ?? updatedCross).name).toBe('Updated Stand Mixer');
+    expect((updatedCross.data ?? updatedCross).price).toBe(425);
   });
 });

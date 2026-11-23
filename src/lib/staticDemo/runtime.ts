@@ -21,6 +21,7 @@ import type { StaticDemoSnapshot, StaticDemoStore } from './types';
 
 interface InstalledDemoState {
   store: StaticDemoStore;
+  routeRequest: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response | null>;
   uninstall: () => void;
 }
 
@@ -189,7 +190,7 @@ export function installStaticDemoFetchRouter(options?: {
     delete window.__STATIC_DEMO_INSTALLED__;
   };
 
-  window.__STATIC_DEMO_INSTALLED__ = { store, uninstall };
+  window.__STATIC_DEMO_INSTALLED__ = { store, routeRequest, uninstall };
   return store;
 }
 
@@ -321,8 +322,12 @@ export interface StaticDemoSavedSetupConfig {
   baseUrl?: string;
   contactEmail?: string;
   venueName?: string;
+  venueAddress?: string;
   venueCity?: string;
   venueState?: string;
+  venueZip?: string;
+  latitude?: number;
+  longitude?: number;
   timezone?: string;
   themePreset?: PublicAppConfig['themePreset'];
   colorPrimary?: string;
@@ -375,8 +380,16 @@ export function getStaticDemoSavedSetupConfig():
     baseUrl,
     contactEmail: (rawConfig.contactEmail || '').trim(),
     venueName: cleanVenue(rawConfig.venueName),
+    venueAddress: cleanVenue(rawConfig.venueAddress),
     venueCity: cleanVenue(rawConfig.venueCity),
     venueState: cleanVenue(rawConfig.venueState),
+    venueZip: cleanVenue(rawConfig.venueZip),
+    ...(typeof rawConfig.latitude === 'number' && Number.isFinite(rawConfig.latitude)
+      ? { latitude: rawConfig.latitude }
+      : {}),
+    ...(typeof rawConfig.longitude === 'number' && Number.isFinite(rawConfig.longitude)
+      ? { longitude: rawConfig.longitude }
+      : {}),
     timezone: rawConfig.timezone || 'America/Chicago',
     themePreset: publicCfg.themePreset as PublicAppConfig['themePreset'],
     colorPrimary: rawConfig.colorPrimary || undefined,

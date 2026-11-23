@@ -18,8 +18,11 @@ function copyRepoFixture(srcRoot: string, destRoot: string): void {
     'vercel.json',
     'src/env.ts',
     'src/lib/config.ts',
+    'src/lib/prisma.ts',
+    'src/lib/postgres-url.js',
     'src/lib/modules.ts',
     'src/middleware.ts',
+    'src/utils/withApiMiddleware.ts',
     'src/app/api/uploads/[...path]/route.ts',
     'src/app/api/admin/maintenance/export/route.ts',
     'scripts/preflight-env.ts',
@@ -207,6 +210,7 @@ describe('verify-deployment-runbooks', () => {
     const brokenDeployment = fs
       .readFileSync(deploymentPath, 'utf8')
       .replace(/storybook\.yml/g, 'removed-workflow.yml')
+      .replace(/static-export-build/g, 'removed-demo-job')
       .replace(/build:export/g, 'legacy-export')
       .replace(
         '| `DOCKERHUB_TOKEN` |',
@@ -218,6 +222,7 @@ describe('verify-deployment-runbooks', () => {
     expect(errors).toEqual(
       expect.arrayContaining([
         expect.stringContaining('DEPLOYMENT.md: Missing GitHub Actions workflow reference "storybook.yml"'),
+        expect.stringContaining('DEPLOYMENT.md: Missing ci.yml job reference "static-export-build"'),
         expect.stringContaining('DEPLOYMENT.md: Missing static HTML showcase script reference "build:export"'),
         expect.stringContaining('Secret "ADMIN_PASSWORD" in Setup and Secrets table is not referenced via secrets.*'),
       ])
@@ -458,6 +463,17 @@ describe('verify-deployment-runbooks', () => {
       fs.readFileSync(composePath, 'utf8').replace('postgres:15-alpine@', 'postgres:18-alpine@')
     );
 
+    const ciWorkflowPath = path.join(tempDir, '.github/workflows/ci.yml');
+    fs.writeFileSync(
+      ciWorkflowPath,
+      fs
+        .readFileSync(ciWorkflowPath, 'utf8')
+        .replace(
+          'image: ${{ needs.verify.outputs.db_image }}',
+          'image: postgres:18-alpine@sha256:e18480a22d6e48f4d816a6696769b1ec09ac73a824c5649e49c7d8b684913f3d'
+        )
+    );
+
     const storybookWorkflowPath = path.join(tempDir, '.github/workflows/storybook.yml');
     fs.writeFileSync(
       storybookWorkflowPath,
@@ -510,6 +526,9 @@ describe('verify-deployment-runbooks', () => {
           'docker-compose.yml: `db` service must pin `postgres:15-alpine@sha256:<64-hex>` to preserve `db_data` volume compatibility'
         ),
         expect.stringContaining(
+          '.github/workflows/ci.yml: PostgreSQL service containers must pin `postgres:15-alpine@sha256:<64-hex>` (or `${{ needs.verify.outputs.db_image }}`) matching docker-compose.yml'
+        ),
+        expect.stringContaining(
           ".github/workflows/storybook.yml (job \"build\"): `actions/setup-node` must set `node-version-file: '.nvmrc'`"
         ),
         expect.stringContaining(
@@ -530,6 +549,35 @@ describe('verify-deployment-runbooks', () => {
     );
   });
 
+  it('rejects gcloud run deploy commands missing TRUST_PROXY=2 and Compose manifests missing TRUST_PROXY: ${TRUST_PROXY:-1}', () => {
+    const gcpPath = path.join(tempDir, 'docs/deployment/gcp-cloud-run.md');
+    fs.writeFileSync(
+      gcpPath,
+      fs.readFileSync(gcpPath, 'utf8').replace(/[|,]TRUST_PROXY=2/g, '')
+    );
+
+    const composePath = path.join(tempDir, 'docker-compose.yml');
+    fs.writeFileSync(
+      composePath,
+      fs.readFileSync(composePath, 'utf8').replace('TRUST_PROXY: ${TRUST_PROXY:-1}', 'TRUST_PROXY: ${TRUST_PROXY:-false}')
+    );
+
+    const rolloutComposePath = path.join(tempDir, 'docker-compose.rollout.yml');
+    fs.writeFileSync(
+      rolloutComposePath,
+      fs.readFileSync(rolloutComposePath, 'utf8').replace('TRUST_PROXY: ${TRUST_PROXY:-1}', 'TRUST_PROXY: ${TRUST_PROXY:-false}')
+    );
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('docs/deployment/gcp-cloud-run.md: Manual `gcloud run deploy` command must set TRUST_PROXY=2'),
+        expect.stringContaining('docker-compose.yml: `app` service must set `TRUST_PROXY: ${TRUST_PROXY:-1}` by default'),
+        expect.stringContaining('docker-compose.rollout.yml: `app-standby` service must set `TRUST_PROXY: ${TRUST_PROXY:-1}` by default'),
+      ])
+    );
+  });
+
   it('rejects invalid Cloud Run probe flags, unescaped --set-env-vars commas, npx wedding-migrate jobs, Docker host node / ${DB_*} rollbacks, Render Release Command, Nixpacks omissions, and missing Section 4 S3_ENDPOINT keys', () => {
     const gcpPath = path.join(tempDir, 'docs/deployment/gcp-cloud-run.md');
     fs.writeFileSync(
@@ -542,8 +590,8 @@ describe('verify-deployment-runbooks', () => {
         )
         .replace('    --set-cloudsql-instances=YOUR_PROJECT_ID:us-central1:wedding-db \\\n', '')
         .replace(
-          '--set-env-vars="^|^NODE_ENV=production|ALLOWED_HOSTS=wedding.mydomain.com,*.run.app"',
-          '--set-env-vars="NODE_ENV=production,ALLOWED_HOSTS=wedding.mydomain.com,*.run.app"'
+          '--set-env-vars="^|^NODE_ENV=production|TRUST_PROXY=2|ALLOWED_HOSTS=wedding.mydomain.com,*.run.app"',
+          '--set-env-vars="NODE_ENV=production,TRUST_PROXY=2,ALLOWED_HOSTS=wedding.mydomain.com,*.run.app"'
         )
         .replace(
           '--liveness-probe=httpGet.path=/api/live,httpGet.port=3000,periodSeconds=30',
@@ -664,6 +712,73 @@ describe('verify-deployment-runbooks', () => {
         expect.stringContaining(
           'Dockerfile: Must write `update-notifier=false` to `/usr/local/etc/npmrc`'
         ),
+      ])
+    );
+  });
+
+  it('rejects stale PostgreSQL 14, Compose npx migration claims, /api/health liveness claims, /opt/prisma-cli under /app, missing 503 stripping, and missing 15s graceful shutdown docs', () => {
+    const runtimeContractPath = path.join(tempDir, 'docs/runtime-contract.md');
+    fs.writeFileSync(
+      runtimeContractPath,
+      fs
+        .readFileSync(runtimeContractPath, 'utf8')
+        .replace(/outside `\/app` at `\/opt\/prisma-cli`/g, 'packaged under `/app` at `/opt/prisma-cli`')
+        .replace(/\/app\/scripts\/generate-password-hash\.mjs/g, '/app/scripts')
+        .replace(/5000ms/g, '1000ms')
+        .replace(/strip(?:s|ping) `status`, `database`, and `timestamp`/g, 'returns full payload')
+        .replace(/\^10\.9\.0/g, '^9.0.0')
+    );
+
+    const deploymentPath = path.join(tempDir, 'DEPLOYMENT.md');
+    fs.writeFileSync(
+      deploymentPath,
+      fs
+        .readFileSync(deploymentPath, 'utf8')
+        .replace(/PostgreSQL 15(?:\+|\s+or\s+higher)/, 'PostgreSQL 14 or higher')
+        .replace(
+          'In local Docker Compose environments, a dedicated `migration` task service executes `./node_modules/.bin/prisma migrate deploy`',
+          'In Docker Compose (`docker-compose.yml`), a dedicated `migration` service executes `npx prisma migrate deploy`'
+        )
+        .replace(
+          '- **Container Liveness Probe (`GET /api/live`)**:',
+          '- **Container Liveness Probe**: Containers query `/api/health` for liveness.'
+        )
+        .replace(/--stop-timeout 15/g, '--stop-timeout 5')
+    );
+
+    const dockerMdPath = path.join(tempDir, 'docs/deployment/docker-vps.md');
+    fs.writeFileSync(
+      dockerMdPath,
+      fs
+        .readFileSync(dockerMdPath, 'utf8')
+        .replace(/--stop-timeout 15\s+\\\n\s+/g, '')
+        .replace(/stop_grace_period: 15s/g, 'stop_grace_period: 5s')
+    );
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          'docs/runtime-contract.md: Must document Node `^22.12.0` and `npm` `^10.9.0` (`devEngines` in `package.json`)'
+        ),
+        expect.stringContaining('docs/runtime-contract.md: Must state that Dockerfile installs `/opt/prisma-cli` outside `/app`'),
+        expect.stringContaining('docs/runtime-contract.md: Stale claim that `/opt/prisma-cli` is packaged under `/app`'),
+        expect.stringContaining(
+          'docs/runtime-contract.md: Must state that Dockerfile copies `/app/scripts/generate-password-hash.mjs`'
+        ),
+        expect.stringContaining(
+          'docs/runtime-contract.md: Must document that `withApiMiddleware` strips `status`, `database`, and `timestamp`'
+        ),
+        expect.stringContaining('docs/runtime-contract.md: Must document Prisma `globalThis` pool sharing'),
+        expect.stringContaining('DEPLOYMENT.md: References stale "PostgreSQL 14" instead of PostgreSQL 15+'),
+        expect.stringContaining(
+          'DEPLOYMENT.md: Stale claim that Docker Compose `migration` service runs `npx prisma migrate deploy` instead of `./node_modules/.bin/prisma migrate deploy`'
+        ),
+        expect.stringContaining(
+          'DEPLOYMENT.md: Health Checks & Liveness Probes section must direct container liveness checks to `/api/live` rather than `/api/health`'
+        ),
+        expect.stringContaining('DEPLOYMENT.md: Must document `stop_grace_period: 15s` and `--stop-timeout 15`'),
+        expect.stringContaining('docs/deployment/docker-vps.md: Must document `stop_grace_period: 15s` and `--stop-timeout 15`'),
       ])
     );
   });

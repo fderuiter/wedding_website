@@ -331,5 +331,32 @@ describe('calendar utils', () => {
       expect(missingStartResult.endTime).toBe('13:00');
       expect(missingStartResult.timeZone).toBe('America/Chicago');
     });
+
+    it('joins locationName and street location without duplicating overlapping values', () => {
+      const bothResult = formatScheduleEventToCalendarEvent(
+        {
+          id: 'ceremony-item',
+          title: 'Ceremony',
+          startTime: '2026-09-19T16:00:00.000Z',
+          locationName: 'Grace Cathedral',
+          location: '1100 California St, San Francisco, CA',
+        },
+        undefined,
+        'America/Los_Angeles'
+      );
+      expect(bothResult.location).toBe('Grace Cathedral, 1100 California St, San Francisco, CA');
+
+      const streetOnlyResult = formatScheduleEventToCalendarEvent(
+        {
+          id: 'afterparty-item',
+          title: 'Afterparty',
+          startTime: '2026-09-19T23:00:00.000Z',
+          location: '500 Market St, San Francisco, CA',
+        },
+        undefined,
+        'America/Los_Angeles'
+      );
+      expect(streetOnlyResult.location).toBe('500 Market St, San Francisco, CA');
+    });
   });
 });

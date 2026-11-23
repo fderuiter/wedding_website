@@ -92,6 +92,8 @@ const IGNORED_ROOT_DIRECTORIES = new Set([
   '.yarn',
   'coverage',
   '.next',
+  '.next-export',
+  '.api-backup-export',
   '.swc',
   '.turbo',
   'out',
@@ -439,10 +441,12 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     'scripts/a11y-report.mjs',
     'scripts/seed.ts',
     'scripts/verify-doc-sync.ts',
+    'scripts/build-export.mjs',
     'scripts/test-standalone.mjs',
     'scripts/test-container.mjs',
     'README.md',
     'docs/developer-setup.md',
+    'docs/runtime-contract.md',
     'docs/versioning.md',
     '.github/CONTRIBUTING.md',
     '.github/TESTING.md',
@@ -470,6 +474,7 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   const tsconfigBuildRaw = fs.readFileSync(path.join(repoRoot, 'tsconfig.build.json'), 'utf8');
   const composeRaw = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf8');
   const ciComposeRaw = fs.readFileSync(path.join(repoRoot, 'docker-compose.ci.yml'), 'utf8');
+  const buildExportRaw = fs.readFileSync(path.join(repoRoot, 'scripts/build-export.mjs'), 'utf8');
   const testStandaloneRaw = fs.readFileSync(path.join(repoRoot, 'scripts/test-standalone.mjs'), 'utf8');
   const testContainerRaw = fs.readFileSync(path.join(repoRoot, 'scripts/test-container.mjs'), 'utf8');
   const playwrightConfigRaw = fs.readFileSync(path.join(repoRoot, 'playwright.config.ts'), 'utf8');
@@ -490,6 +495,10 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   );
   const readmeRaw = fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf8');
   const devSetupRaw = fs.readFileSync(path.join(repoRoot, 'docs/developer-setup.md'), 'utf8');
+  const runtimeContractRaw = fs.readFileSync(
+    path.join(repoRoot, 'docs/runtime-contract.md'),
+    'utf8'
+  );
   const versioningRaw = fs.readFileSync(path.join(repoRoot, 'docs/versioning.md'), 'utf8');
   const contributingRaw = fs.readFileSync(path.join(repoRoot, '.github/CONTRIBUTING.md'), 'utf8');
   const testingRaw = fs.readFileSync(path.join(repoRoot, '.github/TESTING.md'), 'utf8');
@@ -608,6 +617,37 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
       errors.push(`${scriptLabel}: Must pass "--env-file .env.ci" with isolated "docker-compose.ci.yml" override manifest`);
     }
   }
+  for (const [scriptLabel, scriptRaw, expectedProject] of [
+    ['scripts/test-standalone.mjs', testStandaloneRaw, 'wedding-smoke-standalone'],
+    ['scripts/test-container.mjs', testContainerRaw, 'wedding-smoke-container'],
+  ] as const) {
+    if (!scriptRaw.includes("'-p'") || !scriptRaw.includes(expectedProject)) {
+      errors.push(
+        `${scriptLabel}: Must isolate Docker Compose project via "-p ${expectedProject}"`
+      );
+    }
+  }
+  if (/lsof\s+-ti:3000|kill\s+-9/.test(testContainerRaw)) {
+    errors.push(
+      'scripts/test-container.mjs: Must select a free loopback port instead of killing port 3000 processes'
+    );
+  }
+  if (
+    !buildExportRaw.includes('export-stage') ||
+    /renameSync\s*\(\s*apiDir\s*,\s*backupDir\s*\)/.test(buildExportRaw)
+  ) {
+    errors.push(
+      'scripts/build-export.mjs: Must stage static exports inside ".next/export-stage" instead of renaming src/app/api in place'
+    );
+  }
+  if (
+    !runtimeContractRaw.includes('.next/export-stage') ||
+    /moves\s+`src\/app\/api`\s+to\s+`\.api-backup-export`/i.test(runtimeContractRaw)
+  ) {
+    errors.push(
+      'docs/runtime-contract.md: Must document staged static exports inside ".next/export-stage" instead of moving src/app/api to .api-backup-export'
+    );
+  }
   if (!/NODE_ENV:\s*process\.env\.CI\s*\?\s*'production'\s*:\s*'development'/.test(playwrightConfigRaw)) {
     errors.push(
       'playwright.config.ts: Must set webServer.env.NODE_ENV to "development" locally and "production" in CI'
@@ -699,14 +739,24 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   if (pretestMjsRaw.includes('--legacy-peer-deps')) {
     errors.push('scripts/pretest.mjs: Must run "npm ci" without "--legacy-peer-deps" to match CI');
   }
-  if (
-    !pretestMjsRaw.includes('.package-lock.json') ||
-    !pretestMjsRaw.includes('TEST_DATABASE_URL') ||
-    !pretestMjsRaw.includes('node:net') ||
-    !pretestMjsRaw.includes('--stage-only')
-  ) {
+  if (pretestMjsRaw.includes('generate-portal.ts')) {
     errors.push(
-      'scripts/pretest.mjs: Must enforce CI-aware ".package-lock.json" alignment, "TEST_DATABASE_URL" preservation, TCP readiness probing ("node:net"), and "--stage-only" portal staging'
+      'scripts/pretest.mjs: Must not unconditionally run "scripts/generate-portal.ts" during test preflight'
+    );
+  }
+  if (pretestMjsRaw.includes('npm_lifecycle_event')) {
+    errors.push(
+      'scripts/pretest.mjs: Must not inspect "npm_lifecycle_event" or fall back to "npm run build"'
+    );
+  }
+  if (!pretestMjsRaw.includes('TEST_DATABASE_URL')) {
+    errors.push(
+      'scripts/pretest.mjs: Must honor explicit "TEST_DATABASE_URL" overrides before falling back to local Docker defaults'
+    );
+  }
+  if (!pretestMjsRaw.includes('.package-lock.json') || !pretestMjsRaw.includes('node:net')) {
+    errors.push(
+      'scripts/pretest.mjs: Must enforce CI-aware ".package-lock.json" alignment and TCP readiness probing ("node:net")'
     );
   }
   if (!jestSetupRaw.includes('TEST_DATABASE_URL') || !jestSetupRaw.includes('process.env.CI')) {
@@ -794,6 +844,16 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   const checkStaticSubscripts = parseCheckStaticSubscripts(checkStaticCmd);
   if (!checkStaticSubscripts.includes('check:setup-guides')) {
     errors.push('package.json: "check:static" must include "npm run check:setup-guides"');
+  }
+
+  const postinstallCmd = scripts['postinstall'] ?? '';
+  if (
+    !postinstallCmd.includes('scripts/pretest.mjs --record-install-state') &&
+    !postinstallCmd.includes('.package-lock-hash')
+  ) {
+    errors.push(
+      'package.json: "postinstall" must record lockfile state via "scripts/pretest.mjs --record-install-state" or ".package-lock-hash"'
+    );
   }
 
   const pretestCmd = scripts['pretest'] ?? '';
@@ -967,6 +1027,9 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     errors.push('scripts/check-quality.ts: Missing "check:setup-guides" step');
   } else if (docsBuildQualityIdx !== -1 && setupGuidesQualityIdx >= docsBuildQualityIdx) {
     errors.push('scripts/check-quality.ts: "check:setup-guides" must run before "npm run docs:build"');
+  }
+  if (!qualityCommands.includes('npm run test:cov')) {
+    errors.push('scripts/check-quality.ts: Must run "npm run test:cov" to enforce global coverage thresholds');
   }
 
   // 3. README.md & docs/developer-setup.md onboarding contract checks
@@ -1249,14 +1312,13 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
 
     for (const pretestToken of [
       'jest-a11y-violations.json',
-      'generate-portal.ts',
-      'npm_lifecycle_event',
       '.package-lock.json',
+      '.package-lock-hash',
       'TEST_DATABASE_URL',
-      '--stage-only',
+      'test:cov',
     ]) {
       if (!content.includes(pretestToken)) {
-        errors.push(`${docLabel}: Missing scripts/pretest.mjs step reference "${pretestToken}"`);
+        errors.push(`${docLabel}: Missing scripts/pretest.mjs or coverage workflow reference "${pretestToken}"`);
       }
     }
 
@@ -1264,11 +1326,22 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
       !content.includes('test-standalone.mjs') ||
       !content.includes('test-container.mjs') ||
       !content.includes('.env.ci') ||
-      !/docker compose(?:\s+(?:--env-file|-f)\s+\S+)*\s+down\s+-v/.test(content) ||
+      !content.includes('wedding-smoke-standalone') ||
+      !content.includes('wedding-smoke-container') ||
+      !/docker compose(?:\s+(?:-p|--env-file|-f)\s+\S+)*\s+down\s+-v/.test(content) ||
       !content.includes('npm run build')
     ) {
       errors.push(
-        `${docLabel}: Must warn that scripts/test-standalone.mjs requires "npm run build" and joins scripts/test-container.mjs (.env.ci) in running "docker compose down -v"`
+        `${docLabel}: Must document that scripts/test-standalone.mjs requires "npm run build" and joins scripts/test-container.mjs (.env.ci) in isolating Compose projects (-p wedding-smoke-standalone / -p wedding-smoke-container) before "docker compose ... down -v"`
+      );
+    }
+    if (
+      /(?:delet(?:es|ing)|wip(?:es|ing))\s+local\s+Docker\s+Compose\s+PostgreSQL\s+volumes\s*\(`db_data`\)/i.test(
+        content
+      )
+    ) {
+      errors.push(
+        `${docLabel}: Stale warning claiming smoke scripts delete/wipe local Docker Compose PostgreSQL volumes ("db_data")`
       );
     }
   }
@@ -1298,11 +1371,35 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     }
   }
 
+  const testingPretestSection = extractMarkdownSection(
+    testingRaw,
+    /^###\s+Pretest Lifecycle\b/,
+    /^##\s+/
+  );
+  if (
+    testingPretestSection.includes('npx tsx scripts/generate-portal.ts') ||
+    testingPretestSection.includes('npm_lifecycle_event')
+  ) {
+    errors.push(
+      '.github/TESTING.md: Pretest Lifecycle section must not claim scripts/pretest.mjs runs "npx tsx scripts/generate-portal.ts" or inspects "npm_lifecycle_event"'
+    );
+  }
+
   const agentsQualitySection = extractMarkdownSection(
     agentsRaw,
     /^###\s+Full Local Quality Gate\b/,
     /^###\s+/
   );
+  const agentsPretestLine =
+    agentsQualitySection.split(/\r?\n/).find((line) => line.includes('scripts/pretest.mjs')) ?? '';
+  if (
+    agentsPretestLine.includes('generate-portal.ts') ||
+    agentsPretestLine.includes('npm_lifecycle_event')
+  ) {
+    errors.push(
+      'AGENTS.md: Full Local Quality Gate pretest description must not claim scripts/pretest.mjs runs "generate-portal.ts" or inspects "npm_lifecycle_event"'
+    );
+  }
   let previousMatchPos = -1;
   for (const cmd of qualityCommands) {
     const token = qualityCommandSearchToken(cmd);

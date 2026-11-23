@@ -1,5 +1,13 @@
 import { act, render, screen, fireEvent } from '@testing-library/react';
 import { axe } from 'jest-axe';
+import { installDemoFetchInterceptor } from '@/lib/demo/demoApiHandler';
+import {
+  resetDemoState,
+  setDemoArchetype,
+  setDemoPersona,
+  setDemoRuntimeActive,
+  setDemoThemePreset,
+} from '@/lib/demo/demoStore';
 import { StaticDemoToolbar } from '../StaticDemoToolbar';
 import { createDemoStore } from '../store';
 import { installStaticDemoFetchRouter } from '../runtime';
@@ -72,5 +80,52 @@ describe('StaticDemoToolbar accessibility and interactive controls', () => {
       window.__STATIC_DEMO_INSTALLED__?.uninstall();
     }
     expect(window.__STATIC_DEMO_INSTALLED__).toBeUndefined();
+  });
+
+  it('bridges DemoStore mutations and delegates extended OpenAPI routes when both DemoApiHandler and staticDemo router are active', async () => {
+    const store = createDemoStore({ storage: null, initialArchetype: 'classic' });
+    installStaticDemoFetchRouter({ store });
+    resetDemoState();
+    setDemoRuntimeActive(true);
+    const uninstallDemoInterceptor = installDemoFetchInterceptor();
+
+    try {
+      setDemoArchetype('destination');
+      setDemoPersona('admin');
+      setDemoThemePreset('editorial');
+
+      expect(store.getSnapshot().activeArchetype).toBe('destination');
+      expect(store.getSnapshot().isAdminAuthenticated).toBe(true);
+      expect(store.getSnapshot().appConfig[0].themePreset).toBe('editorial');
+
+      // Extended OpenAPI routes delegate cleanly to staticDemo instead of 404/empty stubs
+      const scheduleRes = await window.fetch(`${window.location.origin}/api/schedule`);
+      expect(scheduleRes.status).toBe(200);
+      const scheduleJson = await scheduleRes.json();
+      expect(Array.isArray(scheduleJson.data ?? scheduleJson)).toBe(true);
+
+      const photosRes = await window.fetch(`${window.location.origin}/api/photos`);
+      expect(photosRes.status).toBe(200);
+
+      const subEventsRes = await window.fetch(`${window.location.origin}/api/admin/sub-events`);
+      expect(subEventsRes.status).toBe(200);
+      const subEventsJson = await subEventsRes.json();
+      expect((subEventsJson.data ?? subEventsJson).length).toBeGreaterThan(0);
+
+      // Cross-archetype seeded registry item resolves under DemoApiHandler too
+      const seededItemRes = await window.fetch(
+        `${window.location.origin}/api/registry/items/sample-registry-classic-1`,
+      );
+      expect(seededItemRes.status).toBe(200);
+
+      resetDemoState();
+      expect(store.getSnapshot().activeArchetype).toBe('classic');
+      expect(store.getSnapshot().isAdminAuthenticated).toBe(false);
+    } finally {
+      uninstallDemoInterceptor();
+      setDemoRuntimeActive(false);
+      resetDemoState();
+      window.__STATIC_DEMO_INSTALLED__?.uninstall();
+    }
   });
 });
