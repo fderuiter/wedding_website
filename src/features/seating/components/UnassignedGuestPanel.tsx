@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/forms';
 import { useOptionalToast } from '@/components/ui/ToastProvider';
 import {
   InvitationCodeDTO,
@@ -744,13 +745,14 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
         <label htmlFor="unassigned-search" className="sr-only">
           Search unassigned guests
         </label>
-        <input
+        <Input
           id="unassigned-search"
           type="text"
+          sizeVariant="compact"
           value={currentSearchQuery}
           onChange={(e) => handleSearchChange(e.target.value)}
           placeholder="Filter by guest name or code..."
-          className="w-full min-h-[32px] px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
+          className="!text-xs"
         />
       </div>
 

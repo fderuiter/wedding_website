@@ -32,6 +32,7 @@ export type {
 } from './hooks/useSeatingState';
 export { generateAveryCardsPdf, generateSeatingChartPdf } from './pdf.service';
 export {
+  computeScaledTableDimensions,
   computeSeatPosition,
   repackTableSeatNumbers,
   resolveDetailedSeatAssignments,
