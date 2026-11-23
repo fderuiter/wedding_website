@@ -65,6 +65,10 @@ jobs:
         with:
           ref: ${{ inputs.commit_sha }}
 
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: '.nvmrc'
+
       - name: Compute Image Tag & Targets
         id: meta
         env:
@@ -280,7 +284,7 @@ jobs:
         env:
           SKIP_IMAGE_BUILD: 'true'
           GHA_CACHE_SCOPE: app-${{ matrix.arch }}
-        run: node scripts/test-container.mjs
+        run: node scripts/test-container.mjs --container-migration
 
       - name: Log in to GHCR
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0

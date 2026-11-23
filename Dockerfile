@@ -21,9 +21,33 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked \
     node -e ' \
       const fs = require("fs"); \
       const lock = JSON.parse(fs.readFileSync("/tmp/package-lock.json", "utf8")); \
-      const prismaVersion = lock.packages?.["node_modules/prisma"]?.version || "7.10.1"; \
-      const configVersion = lock.packages?.["node_modules/@prisma/config"]?.version || prismaVersion; \
-      const effectVersion = lock.packages?.["node_modules/effect"]?.version || "3.22.5"; \
+      const pkgs = lock.packages || {}; \
+      const prismaVersion = pkgs["node_modules/prisma"]?.version; \
+      const configVersion = pkgs["node_modules/@prisma/config"]?.version; \
+      if (!prismaVersion || !configVersion) { \
+        throw new Error("Missing prisma or @prisma/config version in package-lock.json"); \
+      } \
+      const stubbed = new Set(["@prisma/studio-core", "@prisma/dev", "mysql2", "postgres"]); \
+      const pinnedOverrides = {}; \
+      const seenPaths = new Set(); \
+      const queue = [ \
+        { name: "prisma", prefix: "" }, \
+        { name: "@prisma/config", prefix: "" }, \
+        { name: "effect", prefix: "" } \
+      ]; \
+      while (queue.length > 0) { \
+        const item = queue.shift(); \
+        if (stubbed.has(item.name)) continue; \
+        let key = item.prefix ? item.prefix + "/node_modules/" + item.name : "node_modules/" + item.name; \
+        if (!pkgs[key]) key = "node_modules/" + item.name; \
+        const entry = pkgs[key]; \
+        if (!entry?.version || seenPaths.has(key)) continue; \
+        seenPaths.add(key); \
+        if (!pinnedOverrides[item.name]) pinnedOverrides[item.name] = entry.version; \
+        for (const dep of Object.keys(entry.dependencies || {})) { \
+          queue.push({ name: dep, prefix: key }); \
+        } \
+      } \
       fs.mkdirSync("/opt/prisma-cli/stubs/studio-core", { recursive: true }); \
       fs.writeFileSync("/opt/prisma-cli/stubs/studio-core/package.json", JSON.stringify({ \
         name: "@prisma/studio-core", \
@@ -60,17 +84,16 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked \
           "@prisma/config": configVersion, \
           "prisma": prismaVersion \
         }, \
-        overrides: { \
-          "effect": effectVersion, \
+        overrides: Object.assign({}, pinnedOverrides, { \
           "@prisma/studio-core": "file:/opt/prisma-cli/stubs/studio-core", \
           "@prisma/dev": "file:/opt/prisma-cli/stubs/prisma-dev", \
           "mysql2": "file:/opt/prisma-cli/stubs/empty", \
           "postgres": "file:/opt/prisma-cli/stubs/empty" \
-        } \
+        }) \
       }, null, 2)); \
       fs.unlinkSync("/tmp/package-lock.json"); \
     ' && \
-    npm install --install-links --omit=dev --no-audit --no-fund && \
+    npm install --save-exact --install-links --omit=dev --no-audit --no-fund && \
     /opt/prisma-cli/node_modules/.bin/prisma --version | grep -q "schema-engine-cli" && \
     rm -rf \
       /opt/prisma-cli/package-lock.json \

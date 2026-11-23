@@ -171,7 +171,9 @@ async function main() {
     console.log('✅ PostgreSQL container is ready!');
 
     const skipImageBuild = process.env.SKIP_IMAGE_BUILD === 'true';
-    const forceContainerMigration = process.argv.includes('--container-migration');
+    const isCi = process.env.CI === 'true' || process.env.GITHUB_ACTIONS === 'true';
+    const forceContainerMigration =
+      process.argv.includes('--container-migration') || skipImageBuild || isCi;
     const hostPrismaBin = path.join(
       rootDir,
       'node_modules',
