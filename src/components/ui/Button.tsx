@@ -6,6 +6,7 @@ export interface ButtonProps extends React.ComponentPropsWithRef<'button'> {
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'outline';
   size?: 'sm' | 'md' | 'lg';
   pressed?: boolean;
+  srContext?: string;
 }
 
 export function Button({
@@ -13,6 +14,7 @@ export function Button({
   variant = 'primary',
   size = 'md',
   pressed,
+  srContext,
   style,
   disabled,
   type,
@@ -100,6 +102,7 @@ export function Button({
         />
       )}
       {children}
+      {srContext ? <span className="sr-only">{` ${srContext}`}</span> : null}
     </button>
   );
 }
