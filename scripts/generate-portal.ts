@@ -537,12 +537,35 @@ export function watchPortalDocs(options: WatchPortalOptions = {}): { close: () =
   };
 }
 
+function stagePortalAssetsOnly(): void {
+  console.log(`--- Staging ${ARCHITECTURAL_DOCS.length} architectural specifications into docs-portal ---`);
+  const removedStale = cleanStagedPortalDocs(PORTAL_DIR);
+  if (removedStale > 0) {
+    console.log(`🧹 Cleaned ${removedStale} previously staged Markdown file(s).`);
+  }
+  let stagedCount = 0;
+  for (const doc of ARCHITECTURAL_DOCS) {
+    stagePortalDoc(doc, ROOT_DIR, PORTAL_DIR, false);
+    stagedCount++;
+  }
+  console.log(`✅ Successfully staged all ${stagedCount} architectural specifications into VitePress folders.`);
+  stageOpenApiAsset(ROOT_DIR, PORTAL_DIR, true);
+  console.log('\n✅ Portal staging complete!');
+}
+
 async function runCli(rawArgs: string[]): Promise<void> {
   const watchMode = rawArgs.includes('--watch');
   const serveMode = rawArgs.includes('--serve');
-  const vitepressArgs = rawArgs.filter(arg => arg !== '--watch' && arg !== '--serve');
+  const skipSync = rawArgs.includes('--skip-sync') || process.env.SKIP_DOC_SYNC === 'true';
+  const vitepressArgs = rawArgs.filter(
+    arg => arg !== '--watch' && arg !== '--serve' && arg !== '--skip-sync'
+  );
 
-  await generatePortal();
+  if (skipSync) {
+    stagePortalAssetsOnly();
+  } else {
+    await generatePortal();
+  }
 
   if (!watchMode && !serveMode) {
     return;

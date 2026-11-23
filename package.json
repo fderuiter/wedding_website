@@ -26,15 +26,14 @@
   ],
   "scripts": {
     "dev": "next dev --turbo",
-    "prebuild": "npx tsx scripts/generate-docs.ts",
-    "build": "npm run lint && npm run lint:migrations && npm run lint:unused && prisma generate && next build",
+    "build": "prisma generate && next build",
     "build:docker": "prisma generate && next build",
     "build:export": "node scripts/build-export.mjs",
     "postbuild": "[ -d .next/standalone ] && rm -rf .next/standalone/.next/static .next/standalone/public && cp -r .next/static .next/standalone/.next/static && cp -r public .next/standalone/public && rm -f .next/standalone/public/mockServiceWorker.js || true",
     "start": "node .next/standalone/server.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "lint:migrations": "tsx scripts/verify-migration-compatibility.ts",
+    "lint:migrations": "node --experimental-strip-types scripts/verify-migration-compatibility.ts",
     "lint:unused": "knip",
     "lint:unused:fix": "knip --fix --allow-remove-files",
     "type-check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.build.json && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tsconfig.e2e.json && tsc --noEmit -p tsconfig.scripts.json",
@@ -77,7 +76,7 @@
     "check:all": "npm run quality",
     "scaffold": "node scripts/scaffold-feature.mjs",
     "prepare": "node -e 'import(\"fs\").then(f => f.existsSync(\"./scripts/install-git-hooks.js\") && import(\"./scripts/install-git-hooks.js\"))'",
-    "postinstall": "prisma generate && npx tsx scripts/generate-docs.ts"
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1173.0",
