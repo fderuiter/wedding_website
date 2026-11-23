@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { env } from '@/env';
 import { deriveAdminSigningKey } from '@/utils/crypto';
+import { normalizeTenantSubdomain } from '@/utils/hostValidation';
+import {
+  resolveEdgeRequestSubdomain,
+  verifyEdgeTenantClaims,
+} from './tenantClaims';
 import {
   readRequestCookie,
   signCompactToken,
@@ -33,22 +38,23 @@ export function getAdminCookieOptions(maxAge: number = 60 * 60 * 8) {
  * @param maxAge - Optional maxAge override in seconds.
  * @returns The response instance.
  */
-export function setAdminAuthCookie(response: NextResponse, token: string, maxAge?: number): NextResponse {
+export function setAdminAuthCookie(
+  response: NextResponse,
+  token: string,
+  maxAge?: number
+): NextResponse {
   response.cookies.set(ADMIN_COOKIE, token, getAdminCookieOptions(maxAge));
   return response;
 }
 
-/**
- * Resolve the admin signing secret used for token HMAC operations.
- *
- * @returns The secret string used to sign and verify admin tokens
- */
 async function getSecret(): Promise<string> {
   return deriveAdminSigningKey(env.ADMIN_PASSWORD);
 }
 
-export interface AdminTokenPayload {
+interface AdminTokenPayload {
   isAdmin: boolean;
+  siteId?: string;
+  subdomain?: string | null;
   iat?: number;
   exp?: number;
   [key: string]: unknown;
@@ -56,23 +62,25 @@ export interface AdminTokenPayload {
 
 /**
  * Signs an admin payload and returns a compact token.
- *
- * @param payload - The admin token payload to sign.
- * @returns A signed token string in the format `base64url(payload).base64url(signature)`.
  */
 export async function signAdminToken(payload: AdminTokenPayload): Promise<string> {
   const secret = await getSecret();
   if (!secret) {
     throw new Error('Admin auth secret is not configured');
   }
-  return signCompactToken(payload, secret);
+
+  const normalizedPayload: AdminTokenPayload = {
+    ...payload,
+    ...('subdomain' in payload && payload.subdomain !== undefined
+      ? { subdomain: normalizeTenantSubdomain(payload.subdomain) }
+      : {}),
+  };
+
+  return signCompactToken(normalizedPayload, secret);
 }
 
 /**
  * Validate a base64url-signed admin token and return its decoded payload.
- *
- * @param token - Signed token in the form `base64url(payload).base64url(hmac)` 
- * @returns The parsed `AdminTokenPayload` if the token is valid, matches HMAC signature, and is not expired; `null` otherwise.
  */
 export async function verifyAdminToken(token: string): Promise<AdminTokenPayload | null> {
   if (!token || typeof token !== 'string') return null;
@@ -86,13 +94,11 @@ export async function verifyAdminToken(token: string): Promise<AdminTokenPayload
       return null;
     }
 
-    // Enforce expiration
     const now = Date.now();
     if (payload.exp && payload.exp < now) {
       return null;
     }
 
-    // Fallback for older tokens without 'exp', expire after 8 hours from 'iat'
     if (!payload.exp && payload.iat) {
       const defaultExp = payload.iat + 60 * 60 * 8 * 1000;
       if (defaultExp < now) {
@@ -108,19 +114,27 @@ export async function verifyAdminToken(token: string): Promise<AdminTokenPayload
 
 /**
  * Determine whether the current request/session represents an authenticated admin.
- *
- * @param req - Optional Next.js request object; provide this in API route contexts. Omit when running in Server Components.
- * @returns `true` if the request/session represents an authenticated admin, `false` otherwise.
+ * In Edge middleware (`NEXT_RUNTIME === 'edge'` or `edgeOnly: true`), verifies the
+ * stateless `subdomain` claim without database access; in Node API/SSR contexts,
+ * verifies both `siteId` and `subdomain` against `AppConfig` when `MULTISITE_ENABLED` is active.
  */
-export async function isAdminRequest(req?: NextRequest): Promise<boolean> {
-  const cookieValue = await readRequestCookie(ADMIN_COOKIE, req);
+export async function isAdminRequest(
+  req?: NextRequest,
+  options?: { edgeOnly?: boolean }
+): Promise<boolean> {
+  const cookieValue = await readRequestCookie(ADMIN_COOKIE, req, { suppressErrors: true });
   if (!cookieValue) return false;
 
   const payload = await verifyAdminToken(cookieValue);
-
   if (!payload || payload.isAdmin !== true) {
     return false;
   }
 
-  return true;
+  if (process.env.NEXT_RUNTIME !== 'edge' && !options?.edgeOnly) {
+    const { verifyNodeTenantClaims } = await import('./tenantClaims.node');
+    return verifyNodeTenantClaims(payload, req);
+  }
+
+  const requestSubdomain = await resolveEdgeRequestSubdomain(req);
+  return verifyEdgeTenantClaims(payload, requestSubdomain);
 }

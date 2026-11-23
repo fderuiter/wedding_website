@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { signGuestToken, GUEST_COOKIE } from '@/core/auth/guest.server';
 import { signGuestInviteSessionToken, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
+import { resolveTenantClaimsForSigning } from '@/core/auth/tenantClaims.node';
 import { prisma } from '@/lib/prisma';
 import { env } from '@/env';
 import { GuestLoginSchema } from '@/utils/validation';
@@ -49,9 +50,16 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
       (trimmedCode.length > 0 && trimmedCode !== passcode && safeComparePasscode(trimmedCode, expectedPasscode)));
 
   if (matchesSharedPasscode) {
+    const tenantClaims = await resolveTenantClaimsForSigning(req);
     const iat = Date.now();
     const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
-    const token = await signGuestToken({ guest: true, jti: crypto.randomUUID(), iat, exp });
+    const token = await signGuestToken({
+      guest: true,
+      jti: crypto.randomUUID(),
+      ...tenantClaims,
+      iat,
+      exp,
+    });
 
     const response = NextResponse.json({ success: true, sessionType: 'guest' });
     response.cookies.set(GUEST_COOKIE, token, {
@@ -93,11 +101,13 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
       });
     }
 
+    const tenantClaims = await resolveTenantClaimsForSigning(req);
     const iat = Date.now();
     const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
     const inviteToken = await signGuestInviteSessionToken({
       code: invite.code,
       guestName: invite.guestName,
+      ...tenantClaims,
       iat,
       exp,
     });

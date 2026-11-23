@@ -1,6 +1,6 @@
 /** @jest-environment node */
 
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { middleware, config as middlewareConfig } from '@/middleware';
 import { signAdminToken, ADMIN_COOKIE } from '@/core/auth/auth.server';
 import { signGuestToken, GUEST_COOKIE } from '@/core/auth/guest.server';
@@ -356,6 +356,108 @@ describe('Middleware Route Classification and Authorization Bypass', () => {
       const setCookie = logoutRes.headers.get('set-cookie') ?? '';
       expect(setCookie).toContain(`${ADMIN_COOKIE}=`);
       expect(setCookie).toMatch(/Max-Age=0/i);
+    });
+  });
+
+  describe('Explicit public asset prefix exclusions vs crafted image suffixes', () => {
+    it('allows /images/hero.jpg, /assets/logo.svg, /fonts/inter.woff2, /_next/static/chunk.js, /_next/image, /favicon.ico, and /robots.txt without cookies', async () => {
+      const matcherPattern = middlewareConfig.matcher.find((entry) => entry.startsWith('/((?!'));
+      expect(matcherPattern).toBeDefined();
+      const matcherRegex = new RegExp(`^${matcherPattern}$`);
+
+      for (const assetPath of [
+        '/images/hero.jpg',
+        '/assets/logo.svg',
+        '/fonts/inter.woff2',
+        '/_next/static/chunk.js',
+        '/_next/image',
+        '/favicon.ico',
+        '/robots.txt',
+      ]) {
+        expect(matcherRegex.test(assetPath)).toBe(false);
+        const req = new NextRequest(`http://localhost:3000${assetPath}`, {
+          headers: { host: 'localhost:3000' },
+        });
+        const res = await middleware(req);
+        expect(res.status).toBe(200);
+        expect(res.headers.get('location')).toBeNull();
+      }
+    });
+
+    it('requires authentication on /admin/dashboard/leak.png, /rsvp.png, and /api/admin/export.png', async () => {
+      const matcherPattern = middlewareConfig.matcher.find((entry) => entry.startsWith('/((?!'));
+      const matcherRegex = new RegExp(`^${matcherPattern}$`);
+      expect(matcherRegex.test('/admin/dashboard/leak.png')).toBe(true);
+      expect(matcherRegex.test('/rsvp.png')).toBe(true);
+
+      const adminLeakRes = await middleware(
+        new NextRequest('http://localhost:3000/admin/dashboard/leak.png', {
+          headers: { host: 'localhost:3000' },
+        })
+      );
+      expect(adminLeakRes.status).toBe(303);
+      expect(adminLeakRes.headers.get('location')).toBe('http://localhost:3000/admin/login');
+
+      const guestLeakRes = await middleware(
+        new NextRequest('http://localhost:3000/rsvp.png', {
+          headers: { host: 'localhost:3000' },
+        })
+      );
+      expect(guestLeakRes.status).toBe(303);
+      expect(guestLeakRes.headers.get('location')).toBe(
+        'http://localhost:3000/guest/login?callbackUrl=%2Frsvp.png'
+      );
+
+      const apiAdminLeakRes = await middleware(
+        new NextRequest('http://localhost:3000/api/admin/export.png', {
+          headers: { host: 'localhost:3000' },
+        })
+      );
+      expect(apiAdminLeakRes.status).toBe(401);
+    });
+
+    it('strips incoming client x-guest-* headers and stamps a valid HMAC signature on forwarded request headers', async () => {
+      (NextResponse.next as jest.Mock).mockClear();
+      const {
+        GUEST_CALLBACK_URL_HEADER,
+        GUEST_GATED_PAGE_HEADER,
+        GUEST_HEADER_SIGNATURE_HEADER,
+        verifyGuestInternalHeaders,
+      } = await import('@/core/auth/guestHeaderSignature');
+      const guestToken = await signGuestToken({
+        guest: true,
+        iat: Date.now(),
+        exp: Date.now() + 60_000,
+      });
+
+      const req = new NextRequest('http://localhost:3000/photos?view=grid', {
+        headers: {
+          host: 'localhost:3000',
+          cookie: `${GUEST_COOKIE}=${guestToken}`,
+          'x-guest-gated-page': '0',
+          'x-guest-callback-url': '/guest/login',
+          'x-guest-custom-spoof': 'forged',
+        },
+      });
+
+      const res = await middleware(req);
+      expect(res.status).toBe(200);
+
+      const nextInit = (NextResponse.next as jest.Mock).mock.calls.at(-1)?.[0] as
+        | { request?: { headers?: Headers } }
+        | undefined;
+      const forwardedHeaders = nextInit?.request?.headers;
+      expect(forwardedHeaders).toBeInstanceOf(Headers);
+      expect(forwardedHeaders?.get('x-guest-custom-spoof')).toBeNull();
+      expect(forwardedHeaders?.get(GUEST_GATED_PAGE_HEADER)).toBe('1');
+      expect(forwardedHeaders?.get(GUEST_CALLBACK_URL_HEADER)).toBe('/photos?view=grid');
+      expect(forwardedHeaders?.get(GUEST_HEADER_SIGNATURE_HEADER)).toMatch(/^[A-Za-z0-9_-]{43}$/);
+
+      await expect(verifyGuestInternalHeaders(forwardedHeaders!)).resolves.toEqual({
+        valid: true,
+        gatedPage: '1',
+        callbackUrl: '/photos?view=grid',
+      });
     });
   });
 });

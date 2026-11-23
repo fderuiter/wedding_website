@@ -756,8 +756,9 @@ describe('Single-Site vs Multi-Site Config Resolution', () => {
     expect(publicConfig.multisiteEnabled).toBe(false);
   });
 
-  it('prefers x-forwarded-host over host when MULTISITE_ENABLED=true and validates against ALLOWED_HOSTS', async () => {
+  it('ignores x-forwarded-host when TRUST_PROXY=false and evaluates trusted hops when TRUST_PROXY is enabled', async () => {
     const originalAllowedHosts = process.env.ALLOWED_HOSTS;
+    const originalTrustProxy = process.env.TRUST_PROXY;
     process.env.MULTISITE_ENABLED = 'true';
     process.env.ALLOWED_HOSTS = 'localhost,127.0.0.1,*.wedding.example,wedding.example';
 
@@ -766,18 +767,13 @@ describe('Single-Site vs Multi-Site Config Resolution', () => {
     };
 
     try {
-      // 1. Reverse proxy sets x-forwarded-host while internal host is 127.0.0.1:3000
-      globalWithStore.globalFallbackStore?.clear();
-      (headers as jest.Mock).mockResolvedValueOnce(
-        new Headers({
-          'x-forwarded-host': 'smiths.wedding.example, ingress.internal',
-          host: '127.0.0.1:3000',
-        })
-      );
       (prisma.appConfig.findFirst as jest.Mock).mockImplementation(
         async ({ where }: { where: { subdomain?: string } }) => {
           if (where.subdomain === 'smiths') {
             return { ...baseConfig, id: 'smiths-id', subdomain: 'smiths', partner1Name: 'Riley', brideName: 'Riley' };
+          }
+          if (where.subdomain === 'spoofed') {
+            return { ...baseConfig, id: 'spoofed-id', subdomain: 'spoofed', partner1Name: 'Spoofed', brideName: 'Spoofed' };
           }
           return null;
         }
@@ -789,11 +785,36 @@ describe('Single-Site vs Multi-Site Config Resolution', () => {
         brideName: 'Global',
       });
 
+      // 1. TRUST_PROXY=false ignores spoofed x-forwarded-host and uses Host header
+      process.env.TRUST_PROXY = 'false';
+      globalWithStore.globalFallbackStore?.clear();
+      (headers as jest.Mock).mockResolvedValueOnce(
+        new Headers({
+          'x-forwarded-host': 'spoofed.wedding.example',
+          host: 'smiths.wedding.example',
+        })
+      );
+      const untrustedProxyResolved = await getAppConfig();
+      expect(prisma.appConfig.findFirst).toHaveBeenCalledWith({ where: { subdomain: 'smiths' } });
+      expect(untrustedProxyResolved.partner1Name).toBe('Riley');
+
+      // 2. TRUST_PROXY=2 selects 2nd hop from right ('smiths.wedding.example') over client-prepended 'spoofed.wedding.example'
+      process.env.TRUST_PROXY = '2';
+      globalWithStore.globalFallbackStore?.clear();
+      (prisma.appConfig.findFirst as jest.Mock).mockClear();
+      (headers as jest.Mock).mockResolvedValueOnce(
+        new Headers({
+          'x-forwarded-host': 'spoofed.wedding.example, smiths.wedding.example, ingress.internal',
+          host: '127.0.0.1:3000',
+        })
+      );
+
       const forwardedResolved = await getAppConfig();
       expect(prisma.appConfig.findFirst).toHaveBeenCalledWith({ where: { subdomain: 'smiths' } });
       expect(forwardedResolved.partner1Name).toBe('Riley');
 
-      // 2. Spoofed x-forwarded-host rejected by isHostAllowed -> falls back to global profile
+      // 3. Trusted proxy hop rejected by ALLOWED_HOSTS -> falls back to global profile
+      process.env.TRUST_PROXY = '1';
       globalWithStore.globalFallbackStore?.clear();
       (prisma.appConfig.findFirst as jest.Mock).mockClear();
       (prisma.appConfig.findUnique as jest.Mock).mockClear();
@@ -810,6 +831,11 @@ describe('Single-Site vs Multi-Site Config Resolution', () => {
       expect(spoofedResolved.partner1Name).toBe('Global');
     } finally {
       process.env.ALLOWED_HOSTS = originalAllowedHosts;
+      if (originalTrustProxy === undefined) {
+        delete process.env.TRUST_PROXY;
+      } else {
+        process.env.TRUST_PROXY = originalTrustProxy;
+      }
       (headers as jest.Mock).mockImplementation(() => {
         throw new Error('headers() called outside request scope');
       });

@@ -2,6 +2,7 @@ import { AdminLoginSchema } from '@/utils/validation';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyPassword } from '@/utils/password';
 import { setAdminAuthCookie, signAdminToken } from '@/core/auth/auth.server';
+import { resolveTenantClaimsForSigning } from '@/core/auth/tenantClaims.node';
 import { env } from '@/env';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
@@ -30,16 +31,19 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   }
 
   let requiresSetup = false;
+  let resolvedConfig: { id?: string; subdomain?: string | null } | undefined;
   try {
     const config = await getAppConfig();
+    resolvedConfig = config;
     requiresSetup = !isSetupCompleted(config);
   } catch {
     requiresSetup = false;
   }
 
+  const tenantClaims = await resolveTenantClaimsForSigning(req, resolvedConfig);
   const iat = Date.now();
   const exp = iat + 60 * 60 * 8 * 1000;
-  const token = await signAdminToken({ isAdmin: true, iat, exp });
+  const token = await signAdminToken({ isAdmin: true, ...tenantClaims, iat, exp });
 
   const response = NextResponse.json({ success: true, requiresSetup });
   setAdminAuthCookie(response, token);

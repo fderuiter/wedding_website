@@ -232,6 +232,7 @@ export async function GET(request: Request) {
       fonts: fonts.length > 0 ? fonts : undefined,
       headers: {
         'Cache-Control': 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800',
+        'Vary': 'Host, X-Forwarded-Host',
       },
     }
   );

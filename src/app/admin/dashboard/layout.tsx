@@ -1,5 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
+import { enforceAdminPageSession } from '@/core/auth/adminPageGuard';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { AdminNav, AdminNavItem } from './AdminNav';
@@ -28,6 +29,8 @@ export default async function AdminDashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  await enforceAdminPageSession();
+
   let moduleConfig: unknown;
   try {
     const config = await getAppConfig();

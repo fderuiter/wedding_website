@@ -143,13 +143,14 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
         proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 ```
-*Note: Marking `127.0.0.1:3001` as `backup` routes all steady-state requests to primary `127.0.0.1:3000` and transparently retries on `127.0.0.1:3001` (`app-standby`) via `proxy_next_upstream` the instant `app` closes its socket during rollout. Setting `proxy_set_header X-Real-IP $remote_addr;` explicitly overwrites any client-supplied `X-Real-IP` header with the direct connecting IP address `$remote_addr`. Combined with `$proxy_add_x_forwarded_for`, this prevents rate limit evasion via forged proxy headers.*
+*Note: Marking `127.0.0.1:3001` as `backup` routes all steady-state requests to primary `127.0.0.1:3000` and transparently retries on `127.0.0.1:3001` (`app-standby`) via `proxy_next_upstream` the instant `app` closes its socket during rollout. Setting `proxy_set_header X-Forwarded-Host $host;` and `proxy_set_header X-Real-IP $remote_addr;` explicitly overwrites any client-supplied `X-Forwarded-Host` or `X-Real-IP` headers with the ingress host `$host` and direct connecting IP address `$remote_addr`. Combined with `$proxy_add_x_forwarded_for` and `TRUST_PROXY=1` (the `docker-compose.yml` default), the application evaluates only the trusted proxy hop for host validation, canonical origin resolution, and rate limiting while ignoring spoofed forwarded headers whenever `TRUST_PROXY=false`.*
 
 Obtain TLS certificate:
 ```bash

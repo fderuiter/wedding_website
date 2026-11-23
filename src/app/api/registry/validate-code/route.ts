@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { ApiError } from '@/utils/ApiError';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { signGuestInviteSessionToken, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
+import { resolveTenantClaimsForSigning } from '@/core/auth/tenantClaims.node';
 
 export const GET = withApiMiddleware(async (request: NextRequest) => {
   const { searchParams } = new URL(request.url);
@@ -32,9 +33,11 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     });
   }
 
+  const tenantClaims = await resolveTenantClaimsForSigning(request);
   const token = await signGuestInviteSessionToken({
     code: invite.code,
     guestName: invite.guestName,
+    ...tenantClaims,
   });
 
   const response = NextResponse.json({

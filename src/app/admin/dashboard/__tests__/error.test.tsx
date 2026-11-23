@@ -7,6 +7,11 @@ import { ToastProvider } from '@/components/ui/ToastProvider';
 jest.mock('next/navigation', () => ({
   usePathname: () => '/admin/dashboard',
   useRouter: () => ({ push: jest.fn() }),
+  redirect: jest.fn(),
+}));
+
+jest.mock('@/core/auth/auth.server', () => ({
+  isAdminRequest: jest.fn().mockResolvedValue(true),
 }));
 
 jest.mock('@/lib/config', () => ({

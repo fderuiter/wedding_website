@@ -45,6 +45,7 @@ describe('/api/og route', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('image/png');
     expect(res.headers.get('cache-control')).toContain('public');
+    expect(res.headers.get('vary')).toBe('Host, X-Forwarded-Host');
 
     const buffer = await res.arrayBuffer();
     expect(buffer.byteLength).toBeGreaterThan(0);
