@@ -113,9 +113,15 @@ npm run build-storybook
 - **Interactive Development:** Run `npm run storybook` to launch the local Storybook server on port `6006`.
 - **Pre-Commit Hook Scope:** `npm run build-storybook` is intentionally kept out of [`.githooks/pre-commit`](.githooks/pre-commit) so local commits stay fast, and `/storybook-static` remains ignored via [`.gitignore`](.gitignore).
 
-### Accessibility Quality Gate (`npm run test:a11y`)
+### Accessibility Quality Gate (`npm run test:a11y` & `npm run test:a11y:unit`)
 
-To run the complete WCAG accessibility quality gate locally (documented in [`.github/TESTING.md`](.github/TESTING.md)):
+For fast component-only `jest-axe` checks across the 40 `src/` accessibility suites without starting Docker (`--coverage=false`):
+
+```bash
+npm run test:a11y:unit
+```
+
+To run the complete WCAG 2.2 AA accessibility quality gate locally (documented in [`.github/TESTING.md`](.github/TESTING.md)):
 
 ```bash
 npm run test:a11y
@@ -131,10 +137,10 @@ CI=true npm run test:a11y
 This invokes `node scripts/a11y-report.mjs --run` ([`scripts/a11y-report.mjs`](scripts/a11y-report.mjs)), which:
 
 1. Clears stale `test-results/` data.
-2. Runs `npm test` (which invokes [`scripts/pretest.mjs`](scripts/pretest.mjs) to initialize `test-results/jest-a11y-violations.json` and records any component-level `jest-axe` violations via [`jest.setup.js`](jest.setup.js)).
+2. Runs the targeted `--unit` component pass (`npx jest --runInBand --coverage=false --runTestsByPath ...` across the 40 `src/` `jest-axe` suites), initializing `test-results/jest-a11y-violations.json` and recording any component-level `jest-axe` violations via [`jest.setup.js`](jest.setup.js).
 3. Reseeds `wedding_test` via `npx tsx scripts/seed.ts` ([`scripts/seed.ts`](scripts/seed.ts)) to restore valid `AppConfig` data wiped by Jest integration teardowns so [`src/app/layout.tsx`](src/app/layout.tsx) skips `<SetupWizard />`.
-4. Runs `npx playwright test` (which uses `test-results/playwright` as Playwright's `outputDir` in [`playwright.config.ts`](playwright.config.ts) so startup cleanup preserves JSON artifacts, and persists route-keyed `@axe-core/playwright` violations into `test-results/playwright-a11y-violations.json` via [`e2e/verification.spec.ts`](e2e/verification.spec.ts)).
-5. Always writes `test-results/a11y-summary.md` first, then exits non-zero if Jest failed, seeding failed, Playwright failed, or `totalViolations > 0`.
+4. Runs `npx playwright test --grep @a11y` in bundled Chromium against `http://localhost:3000` (which uses `test-results/playwright` as Playwright's `outputDir` in [`playwright.config.ts`](playwright.config.ts) so startup cleanup preserves JSON artifacts, and persists unfiltered route-keyed `@axe-core/playwright` violations into `test-results/playwright-a11y-violations.json` via [`e2e/verification.spec.ts`](e2e/verification.spec.ts)).
+5. Always writes `test-results/a11y-summary.md` first, then exits non-zero if the component pass failed, seeding failed, Playwright failed, or `totalViolations > 0`.
 
 To regenerate `test-results/a11y-summary.md` from existing JSON artifacts without re-running the test suites (as done in CI after downloading artifacts):
 
@@ -161,7 +167,7 @@ node scripts/a11y-report.mjs
 - **Targeted Unit Tests:** `npx jest <path/to/file.test.ts> --coverage=false` (use `npm test` to run [`scripts/pretest.mjs`](scripts/pretest.mjs) and the full suite with isolated `wedding_test` database setup and coverage thresholds in [`jest.config.mjs`](jest.config.mjs)).
 - **Production Next.js Build:** `npm run build`
 - **Standalone & Container Smoke Tests:** `npm run test:standalone` ([`scripts/test-standalone.mjs`](scripts/test-standalone.mjs), **requires running `npm run build` first**) and `npm run test:container` ([`scripts/test-container.mjs`](scripts/test-container.mjs), layering [`docker-compose.ci.yml`](docker-compose.ci.yml)). **Warning:** Both smoke test scripts run `docker compose down -v` (with `-f docker-compose.yml -f docker-compose.ci.yml`), which deletes local Docker Compose PostgreSQL volumes (`db_data`).
-- **End-to-End Browser Tests:** `npx playwright test` (automatically initializes and seeds `wedding_test` when `CI` and `TEST_CONTAINER` are unset; stop any running `npm run dev` on port `3000` first, or set `PLAYWRIGHT_REUSE_SERVER=true` only when the existing server targets `wedding_test` with aligned E2E secrets)
+- **End-to-End & Smoke Browser Tests:** `npm run test:e2e` (`npx playwright test`) and `npm run test:e2e:smoke` (`playwright test --grep @smoke`) against `http://localhost:3000` in bundled Chromium (automatically initializes and seeds `wedding_test` when `CI` and `TEST_CONTAINER` are unset; stop any running `npm run dev` on port `3000` first, or set `PLAYWRIGHT_REUSE_SERVER=true` only when the existing server targets `wedding_test` with aligned E2E secrets)
 
 ## 6. Repository Conventions & Guardrails
 

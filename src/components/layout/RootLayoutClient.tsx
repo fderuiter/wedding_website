@@ -105,6 +105,8 @@ export default function RootLayoutClient({
   const isHeartPage = pathname === '/heart';
   const isSlideshowPage = pathname === '/photos/slideshow';
   const isStandalonePage = isHeartPage || isSlideshowPage;
+  const isAdminDashboardPage =
+    pathname === '/admin/dashboard' || pathname?.startsWith('/admin/dashboard/');
 
   const handleLogout = async () => {
     try {
@@ -130,9 +132,15 @@ export default function RootLayoutClient({
             config={config}
           />
         )}
-        <main aria-label="Application Content" id="main-content" style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}>
-          {children}
-        </main>
+        {isAdminDashboardPage ? (
+          <div style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}>
+            {children}
+          </div>
+        ) : (
+          <main aria-label="Application Content" id="main-content" style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}>
+            {children}
+          </main>
+        )}
       </GuestHelpProvider>
     </QueryClientProvider>
   );

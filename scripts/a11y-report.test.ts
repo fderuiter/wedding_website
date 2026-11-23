@@ -3,7 +3,13 @@ import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
 import { toHaveNoViolations } from 'jest-axe';
-import { generateReport, runA11ySuite, main } from './a11y-report.mjs';
+import {
+  findJestAxeSuites,
+  generateReport,
+  runA11yUnit,
+  runA11ySuite,
+  main,
+} from './a11y-report.mjs';
 
 describe('a11y-report', () => {
   let tempDir: string;
@@ -151,8 +157,90 @@ describe('a11y-report', () => {
     });
   });
 
+  describe('findJestAxeSuites & runA11yUnit', () => {
+    it('discovers all 40 src/ jest-axe suites in the live repository', () => {
+      const suites = findJestAxeSuites(process.cwd());
+      expect(suites).toHaveLength(40);
+      expect(suites.every((p: string) => p.startsWith('src/') && p.endsWith('.test.tsx'))).toBe(
+        true
+      );
+    });
+
+    it('runs only discovered jest-axe files with --coverage=false and initializes jest-a11y-violations.json', () => {
+      const customSrc = path.join(tempDir, 'src', 'components', '__tests__');
+      fs.mkdirSync(customSrc, { recursive: true });
+      fs.writeFileSync(
+        path.join(customSrc, 'SampleButton.test.tsx'),
+        'import { axe } from \'jest-axe\';\ntest(\'a11y\', () => {});\n'
+      );
+      fs.writeFileSync(
+        path.join(customSrc, 'NonA11y.test.tsx'),
+        'test(\'plain\', () => {});\n'
+      );
+
+      const resultsDir = path.join(tempDir, 'test-results');
+      fs.mkdirSync(resultsDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(resultsDir, 'jest-a11y-violations.json'),
+        JSON.stringify([{ id: 'stale-violation' }])
+      );
+
+      const invoked: Array<{ cmd: string; args: string[] }> = [];
+      const exitCode = runA11yUnit({
+        cwd: tempDir,
+        runStep: (cmd: string, args: string[]) => {
+          invoked.push({ cmd, args });
+          return 0;
+        },
+      });
+
+      expect(exitCode).toBe(0);
+      expect(invoked).toEqual([
+        {
+          cmd: 'npx',
+          args: [
+            'jest',
+            '--runInBand',
+            '--coverage=false',
+            '--runTestsByPath',
+            'src/components/__tests__/SampleButton.test.tsx',
+          ],
+        },
+      ]);
+      const recorded = JSON.parse(
+        fs.readFileSync(path.join(resultsDir, 'jest-a11y-violations.json'), 'utf8')
+      );
+      expect(recorded).toEqual([]);
+    });
+
+    it('exits non-zero via main(--unit) when component violations are recorded', () => {
+      const mockExit = jest
+        .spyOn(process, 'exit')
+        .mockImplementation(((code?: string | number | null | undefined) => {
+          throw new Error(`process.exit:${code}`);
+        }) as never);
+
+      try {
+        expect(() => {
+          main(['--unit'], {
+            cwd: tempDir,
+            runStep: (_cmd: string, _args: string[], cwd: string) => {
+              fs.writeFileSync(
+                path.join(cwd, 'test-results', 'jest-a11y-violations.json'),
+                JSON.stringify([{ id: 'button-name', description: 'Missing text', impact: 'critical' }])
+              );
+              return 1;
+            },
+          });
+        }).toThrow('process.exit:1');
+      } finally {
+        mockExit.mockRestore();
+      }
+    });
+  });
+
   describe('runA11ySuite orchestrator', () => {
-    it('cleans stale test-results, runs Jest, reseeds wedding_test, runs Playwright, writes summary, and returns 0 when clean', () => {
+    it('cleans stale test-results, runs targeted jest-axe pass, reseeds wedding_test, runs @a11y Playwright, writes summary, and returns 0 when clean', () => {
       const staleDir = path.join(tempDir, 'test-results');
       fs.mkdirSync(staleDir, { recursive: true });
       fs.writeFileSync(path.join(staleDir, 'stale.txt'), 'stale');
@@ -171,15 +259,13 @@ describe('a11y-report', () => {
             cwd: string,
             envOverrides?: Record<string, string | undefined>
           ) => {
-            const fullCmd = `${cmd} ${args.join(' ')}`;
-            invoked.push(fullCmd);
+            const fullCmd = `${cmd} ${args.slice(0, 4).join(' ')}`;
+            invoked.push(cmd === 'npx' && args[0] === 'jest' ? fullCmd : `${cmd} ${args.join(' ')}`);
             const dir = path.join(cwd, 'test-results');
             fs.mkdirSync(dir, { recursive: true });
-            if (fullCmd === 'npm test') {
-              fs.writeFileSync(path.join(dir, 'jest-a11y-violations.json'), '[]');
-            } else if (fullCmd === 'npx tsx scripts/seed.ts') {
+            if (`${cmd} ${args.join(' ')}` === 'npx tsx scripts/seed.ts') {
               capturedSeedEnv = envOverrides;
-            } else if (fullCmd === 'npx playwright test') {
+            } else if (`${cmd} ${args.join(' ')}` === 'npx playwright test --grep @a11y') {
               fs.writeFileSync(
                 path.join(dir, 'playwright-a11y-violations.json'),
                 JSON.stringify({ '/': [] })
@@ -191,15 +277,16 @@ describe('a11y-report', () => {
 
         expect(exitCode).toBe(0);
         expect(invoked).toEqual([
-          'npm test',
+          'npx jest --runInBand --coverage=false --runTestsByPath',
           'npx tsx scripts/seed.ts',
-          'npx playwright test',
+          'npx playwright test --grep @a11y',
         ]);
         expect(capturedSeedEnv?.DATABASE_URL).toBe(
           'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public'
         );
         expect(capturedSeedEnv?.ADMIN_PASSWORD).toBeDefined();
         expect(fs.existsSync(path.join(staleDir, 'stale.txt'))).toBe(false);
+        expect(fs.existsSync(path.join(staleDir, 'jest-a11y-violations.json'))).toBe(true);
         expect(fs.existsSync(path.join(staleDir, 'a11y-summary.md'))).toBe(true);
       } finally {
         if (originalDbUrl === undefined) {
@@ -215,16 +302,20 @@ describe('a11y-report', () => {
       const exitCode = runA11ySuite({
         cwd: tempDir,
         runStep: (cmd: string, args: string[]) => {
-          invoked.push(`${cmd} ${args.join(' ')}`);
-          return cmd === 'npm' ? 2 : 0;
+          invoked.push(
+            cmd === 'npx' && args[0] === 'jest'
+              ? `${cmd} ${args.slice(0, 4).join(' ')}`
+              : `${cmd} ${args.join(' ')}`
+          );
+          return cmd === 'npx' && args[0] === 'jest' ? 2 : 0;
         },
       });
 
       expect(exitCode).toBe(2);
       expect(invoked).toEqual([
-        'npm test',
+        'npx jest --runInBand --coverage=false --runTestsByPath',
         'npx tsx scripts/seed.ts',
-        'npx playwright test',
+        'npx playwright test --grep @a11y',
       ]);
       expect(fs.existsSync(path.join(tempDir, 'test-results', 'a11y-summary.md'))).toBe(true);
     });
@@ -234,7 +325,10 @@ describe('a11y-report', () => {
       const exitCode = runA11ySuite({
         cwd: tempDir,
         runStep: (cmd: string, args: string[]) => {
-          const fullCmd = `${cmd} ${args.join(' ')}`;
+          const fullCmd =
+            cmd === 'npx' && args[0] === 'jest'
+              ? `${cmd} ${args.slice(0, 4).join(' ')}`
+              : `${cmd} ${args.join(' ')}`;
           invoked.push(fullCmd);
           return fullCmd === 'npx tsx scripts/seed.ts' ? 3 : 0;
         },
@@ -242,9 +336,9 @@ describe('a11y-report', () => {
 
       expect(exitCode).toBe(3);
       expect(invoked).toEqual([
-        'npm test',
+        'npx jest --runInBand --coverage=false --runTestsByPath',
         'npx tsx scripts/seed.ts',
-        'npx playwright test',
+        'npx playwright test --grep @a11y',
       ]);
       expect(fs.existsSync(path.join(tempDir, 'test-results', 'a11y-summary.md'))).toBe(true);
     });
@@ -254,17 +348,20 @@ describe('a11y-report', () => {
       const exitCode = runA11ySuite({
         cwd: tempDir,
         runStep: (cmd: string, args: string[]) => {
-          const fullCmd = `${cmd} ${args.join(' ')}`;
+          const fullCmd =
+            cmd === 'npx' && args[0] === 'jest'
+              ? `${cmd} ${args.slice(0, 4).join(' ')}`
+              : `${cmd} ${args.join(' ')}`;
           invoked.push(fullCmd);
-          return fullCmd === 'npx playwright test' ? 1 : 0;
+          return fullCmd === 'npx playwright test --grep @a11y' ? 1 : 0;
         },
       });
 
       expect(exitCode).toBe(1);
       expect(invoked).toEqual([
-        'npm test',
+        'npx jest --runInBand --coverage=false --runTestsByPath',
         'npx tsx scripts/seed.ts',
-        'npx playwright test',
+        'npx playwright test --grep @a11y',
       ]);
       expect(fs.existsSync(path.join(tempDir, 'test-results', 'a11y-summary.md'))).toBe(true);
     });
@@ -281,7 +378,7 @@ describe('a11y-report', () => {
           main(['--run'], {
             cwd: tempDir,
             runStep: (cmd: string, args: string[], cwd: string) => {
-              if (`${cmd} ${args.join(' ')}` === 'npx playwright test') {
+              if (`${cmd} ${args.join(' ')}` === 'npx playwright test --grep @a11y') {
                 const dir = path.join(cwd, 'test-results');
                 fs.mkdirSync(dir, { recursive: true });
                 fs.writeFileSync(
