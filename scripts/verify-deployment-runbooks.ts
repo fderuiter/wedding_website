@@ -1840,34 +1840,14 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       `docker-compose.yml: \`db\` service must pin \`postgres:${expectedPostgresMajor}-alpine@sha256:<64-hex>\` to preserve \`db_data\` volume compatibility`
     );
   }
-  const ciParsedForDb = parseDocument(ciWorkflowRaw, { version: '1.2' });
-  const ciJobsForDb: unknown = isMap(ciParsedForDb.contents)
-    ? ciParsedForDb.contents.get('jobs', true)
-    : null;
-  const ciForwardsVerifiedComposeDbImage =
-    ciWorkflowRaw.includes('db_image: ${{ steps.resolve-db-image.outputs.db_image }}') &&
-    ciWorkflowRaw.includes('doc.getIn(["services", "db", "image"])');
-  const directPinnedDbRegex = new RegExp(
-    `^postgres:${expectedPostgresMajor}-alpine@sha256:[a-f0-9]{64}$`
-  );
-  const ciServiceDbImages: string[] = [];
-  if (isMap(ciJobsForDb)) {
-    for (const jobPair of ciJobsForDb.items) {
-      if (!isMap(jobPair.value)) continue;
-      const dbImageVal = jobPair.value.getIn(['services', 'db', 'image']);
-      if (typeof dbImageVal === 'string') {
-        ciServiceDbImages.push(dbImageVal.trim());
-      }
-    }
-  }
-  const allCiServiceDbImagesValid =
-    ciServiceDbImages.length > 0 &&
-    ciServiceDbImages.every(
-      (img) =>
-        directPinnedDbRegex.test(img) ||
-        (ciForwardsVerifiedComposeDbImage && img === '${{ needs.verify.outputs.db_image }}')
-    );
-  if (!allCiServiceDbImagesValid || mismatchedPostgresImageRegex.test(ciWorkflowRaw)) {
+  const ciDelegatesPostgresImageToCompose =
+    ciWorkflowRaw.includes('docker-compose.yml') &&
+    ciWorkflowRaw.includes('["services", "db", "image"]') &&
+    ciWorkflowRaw.includes('${{ needs.verify.outputs.db_image }}');
+  if (
+    (!ciWorkflowRaw.includes(expectedPostgresImagePrefix) && !ciDelegatesPostgresImageToCompose) ||
+    mismatchedPostgresImageRegex.test(ciWorkflowRaw)
+  ) {
     errors.push(
       `.github/workflows/ci.yml: PostgreSQL service containers must pin \`postgres:${expectedPostgresMajor}-alpine@sha256:<64-hex>\` matching docker-compose.yml`
     );

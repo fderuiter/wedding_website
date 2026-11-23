@@ -1,6 +1,5 @@
 export {
   WeddingPartyMemberSchema,
-  WeddingPartySideSchema,
   WeddingPartyInputSchema,
   WeddingPartyUpdateInputSchema,
 } from './schemas';
