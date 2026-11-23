@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { spawnSync } from 'child_process';
+import child_process from 'child_process';
 import {
   parsePrismaMigrateStatus,
   parsePreflightCliArgs,
@@ -17,9 +17,16 @@ import {
   type PreflightCliArgs,
   type PreflightCheckOptions,
 } from './preflight-migration-summary';
+import {
+  extractPrismaCliCommand,
+  isPooledPostgresUrl,
+  isSamePostgresDatabase,
+  resolvePrismaDatasourceUrl,
+  resolvePrismaShadowDatabaseUrl,
+} from '../prisma.config';
 
-function execGit(cwd: string, args: string[]): void {
-  const res = spawnSync('git', args, {
+function execGit(cwd: string, args: string[]): string {
+  const res = child_process.spawnSync('git', args, {
     cwd,
     encoding: 'utf8',
     env: {
@@ -33,6 +40,7 @@ function execGit(cwd: string, args: string[]): void {
   if (res.status !== 0) {
     throw new Error(`git ${args.join(' ')} failed: ${res.stderr}`);
   }
+  return res.stdout.trim();
 }
 
 describe('Preflight Migration Summary & Schema Status Verification', () => {
@@ -83,6 +91,7 @@ To apply migrations in production run prisma migrate deploy.
       expect(result.isUpToDate).toBe(false);
       expect(result.hasError).toBe(false);
       expect(result.hasDrift).toBe(false);
+      expect(result.hasFatalError).toBe(false);
       expect(result.pendingMigrations).toEqual([
         '20261121000000_add_registry_shipping_and_order_tracking',
       ]);
@@ -141,11 +150,20 @@ The migration from the database are not found locally in prisma/migrations:
 `;
       const res = parsePrismaMigrateStatus(divergedOutput, { exitCode: 1 });
       expect(res.hasDrift).toBe(true);
+      expect(res.hasFatalError).toBe(true);
       expect(res.isUpToDate).toBe(false);
       expect(res.pendingMigrations).toEqual([]);
     });
 
-    it('flags P1001 connectivity errors, spawn errors, and unexpected exit codes', () => {
+    it('flags P3025, P1001 connectivity errors, spawn errors, and unexpected exit codes', () => {
+      const p3025Res = parsePrismaMigrateStatus(
+        'Error: P3025\nThe shadow database you provided appears to be the same as the main database.',
+        { exitCode: 1 }
+      );
+      expect(p3025Res.hasError).toBe(true);
+      expect(p3025Res.hasFatalError).toBe(true);
+      expect(p3025Res.errorMessage).toContain('P3025');
+
       const p1001Output = `
 Error: P1001: Can't reach database server at \`db.prod.internal:5432\`
 Please make sure your database server is running at \`postgresql://wedding_admin:TOP_SECRET_PW@db.prod.internal:5432/wedding\`.
@@ -197,6 +215,15 @@ Please make sure your database server is running at \`postgresql://wedding_admin
       const offlineEq = parsePreflightCliArgs(['--offline', '--base-ref=origin/main']);
       expect(offlineEq.baseRef).toBe('origin/main');
       expect(offlineEq.cliError).toBeUndefined();
+
+      const withHeadAlias = parsePreflightCliArgs(['--offline', '--base', 'abc1234', '--head', 'def5678']);
+      expect(withHeadAlias).toEqual({
+        requireDb: false,
+        offline: true,
+        baseRef: 'abc1234',
+        headRef: 'def5678',
+        cliError: undefined,
+      });
 
       const conflict = parsePreflightCliArgs(['--require-db', '--offline']);
       expect(conflict.cliError).toContain('Cannot specify both --require-db and --offline');
@@ -335,7 +362,7 @@ CREATE INDEX "Contributor_coverFee_idx" ON "Contributor"("coverFee");
       expect(content).toContain('Pre-Flight Schema Migration Status');
     });
 
-    it('fails runPreflightCheck on P1001, drift, failed migrations, and --require-db without DATABASE_URL', () => {
+    it('fails runPreflightCheck on P3025, P1001, drift, unmanaged schema, failed migrations, and --require-db without DATABASE_URL', () => {
       const summaryFile = path.join(tmpDir, 'failure_summary.md');
 
       const missingDbRes = runPreflightCheck({
@@ -348,6 +375,17 @@ CREATE INDEX "Contributor_coverFee_idx" ON "Contributor"("coverFee");
       expect(missingDbRes.success).toBe(false);
       expect(missingDbRes.summary).toContain('**Pre-Flight Gate:** `FAILED` ❌');
       expect(missingDbRes.summary).toContain('Missing mandatory DATABASE_URL');
+
+      const p3025Res = runPreflightCheck({
+        environment: 'production',
+        mockOutput:
+          'Error: P3025\nThe shadow database you provided appears to be the same as the main database.',
+        mockExitCode: 1,
+        migrationsDir: tmpDir,
+      });
+      expect(p3025Res.success).toBe(false);
+      expect(p3025Res.summary).toContain('**Pre-Flight Gate:** `FAILED` ❌');
+      expect(p3025Res.summary).toContain('P3025');
 
       const p1001Res = runPreflightCheck({
         environment: 'production',
@@ -381,6 +419,17 @@ CREATE INDEX "Contributor_coverFee_idx" ON "Contributor"("coverFee");
       expect(unmanagedRes.success).toBe(false);
       expect(unmanagedRes.summary).toContain('**Pre-Flight Gate:** `FAILED` ❌');
 
+      const failedBlockRes = runPreflightCheck({
+        environment: 'production',
+        mockOutput:
+          'Following migration have failed:\n20261122000000_failed_step\n\nRead more about how to resolve migration issues in a production database:',
+        mockExitCode: 1,
+        migrationsDir: tmpDir,
+      });
+      expect(failedBlockRes.success).toBe(false);
+      expect(failedBlockRes.summary).toContain('**Pre-Flight Gate:** `FAILED` ❌');
+      expect(failedBlockRes.summary).toContain('20261122000000_failed_step');
+
       const singlePendingDir = path.join(tmpDir, '20261121000000_single_pending');
       fs.mkdirSync(singlePendingDir, { recursive: true });
       fs.writeFileSync(
@@ -400,7 +449,80 @@ CREATE INDEX "Contributor_coverFee_idx" ON "Contributor"("coverFee");
       expect(singlePendingRes.summary).toContain('ALTER TABLE "Guest" ADD COLUMN "tableNote" TEXT');
     });
 
-    it('emits accurate git diff DDL in --offline mode without fabricating slice(-3) pending migrations and falls back when HEAD^1 is missing', () => {
+    it('strips POSTGRES_URL_NON_POOLING when spawning prisma migrate status, returns READY TO APPLY on clean exit 1, and fails closed on non-pending exit 1', () => {
+      const migrationDir = path.join(tmpDir, '20261122010000_add_guest_notes');
+      fs.mkdirSync(migrationDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(migrationDir, 'migration.sql'),
+        'ALTER TABLE "Guest" ADD COLUMN "notes" TEXT;'
+      );
+
+      const originalDbUrl = process.env.DATABASE_URL;
+      const originalShadowUrl = process.env.POSTGRES_URL_NON_POOLING;
+      process.env.DATABASE_URL = 'postgresql://wedding:secret@localhost:5432/wedding?schema=public';
+      process.env.POSTGRES_URL_NON_POOLING =
+        'postgresql://wedding:secret@localhost:5432/wedding?schema=public';
+
+      const spawnSpy = jest.spyOn(child_process, 'spawnSync');
+      try {
+        spawnSpy.mockReturnValueOnce({
+          pid: 1234,
+          output: ['', '', ''],
+          stdout: [
+            '1 migration found in prisma/migrations',
+            'Following migration have not yet been applied:',
+            '20261122010000_add_guest_notes',
+            '',
+            'To apply migrations in production run prisma migrate deploy.',
+          ].join('\n'),
+          stderr: '',
+          status: 1,
+          signal: null,
+        });
+
+        const pendingRes = runPreflightCheck({
+          environment: 'production',
+          migrationsDir: tmpDir,
+        });
+
+        expect(pendingRes.success).toBe(true);
+        expect(pendingRes.summary).toContain('**Pre-Flight Gate:** `READY TO APPLY` 🟡');
+        expect(pendingRes.summary).toContain('20261122010000_add_guest_notes');
+        const spawnedEnv = spawnSpy.mock.calls[0]?.[2]?.env;
+        expect(spawnedEnv?.POSTGRES_URL_NON_POOLING).toBeUndefined();
+
+        spawnSpy.mockReturnValueOnce({
+          pid: 1235,
+          output: ['', '', ''],
+          stdout: '',
+          stderr: 'unexpected network failure without prisma code',
+          status: 1,
+          signal: null,
+        });
+
+        const failedRes = runPreflightCheck({
+          environment: 'production',
+          migrationsDir: tmpDir,
+        });
+
+        expect(failedRes.success).toBe(false);
+        expect(failedRes.summary).toContain('**Pre-Flight Gate:** `FAILED` ❌');
+      } finally {
+        spawnSpy.mockRestore();
+        if (originalDbUrl === undefined) {
+          delete process.env.DATABASE_URL;
+        } else {
+          process.env.DATABASE_URL = originalDbUrl;
+        }
+        if (originalShadowUrl === undefined) {
+          delete process.env.POSTGRES_URL_NON_POOLING;
+        } else {
+          process.env.POSTGRES_URL_NON_POOLING = originalShadowUrl;
+        }
+      }
+    });
+
+    it('emits accurate git diff DDL in --offline or unset DATABASE_URL mode without fabricating slice(-3) pending migrations and falls back when HEAD^1 is missing', () => {
       const repoDir = path.join(tmpDir, 'git-repo');
       const migrationsDir = path.join(repoDir, 'prisma', 'migrations');
       fs.mkdirSync(migrationsDir, { recursive: true });
@@ -421,6 +543,7 @@ CREATE INDEX "Contributor_coverFee_idx" ON "Contributor"("coverFee");
       }
       execGit(repoDir, ['add', '.']);
       execGit(repoDir, ['commit', '-m', 'Initial baseline migrations']);
+      const baseSha = execGit(repoDir, ['rev-parse', 'HEAD']);
 
       // Single-commit repo has no HEAD^1: must fall back to zero diff items cleanly
       const missingParentRes = runPreflightCheck({
@@ -441,10 +564,11 @@ CREATE INDEX "Contributor_coverFee_idx" ON "Contributor"("coverFee");
       fs.writeFileSync(path.join(repoDir, 'README.md'), '# App update without schema changes\n');
       execGit(repoDir, ['add', 'README.md']);
       execGit(repoDir, ['commit', '-m', 'Code-only commit']);
+      const codeOnlySha = execGit(repoDir, ['rev-parse', 'HEAD']);
 
       const zeroDiffRes = runPreflightCheck({
         environment: 'production',
-        offline: true,
+        databaseUrl: '',
         cwd: repoDir,
         migrationsDir,
       });
@@ -466,6 +590,7 @@ CREATE INDEX "Contributor_coverFee_idx" ON "Contributor"("coverFee");
       );
       execGit(repoDir, ['add', '.']);
       execGit(repoDir, ['commit', '-m', 'Add registry shipping tracking migration']);
+      const ddlSha = execGit(repoDir, ['rev-parse', 'HEAD']);
 
       const diffCheck = getChangedMigrationsFromGitDiff({
         migrationsDir,
@@ -477,6 +602,22 @@ CREATE INDEX "Contributor_coverFee_idx" ON "Contributor"("coverFee");
         baseRef: 'HEAD^1',
         baseRefMissing: false,
       });
+
+      const rangeCheck = getChangedMigrationsFromGitDiff({
+        migrationsDir,
+        baseRef: baseSha,
+        headRef: codeOnlySha,
+        cwd: repoDir,
+      });
+      expect(rangeCheck.changedMigrations).toEqual([]);
+
+      const ddlRangeCheck = getChangedMigrationsFromGitDiff({
+        migrationsDir,
+        baseRef: baseSha,
+        headRef: ddlSha,
+        cwd: repoDir,
+      });
+      expect(ddlRangeCheck.changedMigrations).toEqual([newMigration]);
 
       const offlineDiffMeta: OfflineDiffMetadata = {
         baseRef: diffCheck.baseRef,
@@ -503,6 +644,97 @@ CREATE INDEX "Contributor_coverFee_idx" ON "Contributor"("coverFee");
       for (const historical of historicalNames) {
         expect(changedDiffRes.summary).not.toContain(historical);
       }
+    });
+  });
+
+  describe('prisma.config.ts shadow and non-pooling URL resolution', () => {
+    const directDb = 'postgresql://wedding:pass@db.example.com:5432/wedding_db?schema=public';
+    const shadowDb = 'postgresql://wedding:pass@db.example.com:5432/wedding_shadow?schema=public';
+    const pooledNeon =
+      'postgresql://wedding:pass@ep-cool-pooler.us-east-1.aws.neon.tech:5432/wedding_db?sslmode=require&pgbouncer=true';
+    const directNeon =
+      'postgresql://wedding:pass@ep-cool.us-east-1.aws.neon.tech:5432/wedding_db?sslmode=require';
+
+    it('extracts positional Prisma CLI subcommands ignoring flags and flag arguments', () => {
+      expect(
+        extractPrismaCliCommand([
+          'node',
+          'prisma',
+          '--config',
+          'prisma.config.ts',
+          'migrate',
+          'deploy',
+          '--schema=prisma/schema.prisma',
+        ])
+      ).toEqual(['migrate', 'deploy']);
+      expect(extractPrismaCliCommand(['node', 'prisma', 'migrate', 'dev', '-n', 'init'])).toEqual([
+        'migrate',
+        'dev',
+      ]);
+    });
+
+    it('detects pooled PostgreSQL URLs and matching database endpoints accurately', () => {
+      expect(isPooledPostgresUrl(pooledNeon)).toBe(true);
+      expect(
+        isPooledPostgresUrl('postgresql://wedding:pass@aws-0-us-east-1.pooler.supabase.com:6543/postgres')
+      ).toBe(true);
+      expect(isPooledPostgresUrl(directDb)).toBe(false);
+
+      expect(isSamePostgresDatabase(directDb, directDb)).toBe(true);
+      expect(
+        isSamePostgresDatabase(
+          'postgres://wedding:pass@db.example.com/wedding_db',
+          'postgresql://wedding:pass@db.example.com:5432/wedding_db?schema=public'
+        )
+      ).toBe(true);
+      expect(isSamePostgresDatabase(pooledNeon, directNeon)).toBe(true);
+      expect(isSamePostgresDatabase(directDb, shadowDb)).toBe(false);
+    });
+
+    it('resolves shadowDatabaseUrl to undefined outside migrate dev/reset or when matching DATABASE_URL', () => {
+      expect(
+        resolvePrismaShadowDatabaseUrl(shadowDb, directDb, ['node', 'prisma', 'migrate', 'deploy'])
+      ).toBeUndefined();
+      expect(
+        resolvePrismaShadowDatabaseUrl(shadowDb, directDb, ['node', 'prisma', 'migrate', 'status'])
+      ).toBeUndefined();
+      expect(
+        resolvePrismaShadowDatabaseUrl(shadowDb, directDb, ['node', 'prisma', 'generate'])
+      ).toBeUndefined();
+      expect(
+        resolvePrismaShadowDatabaseUrl(directDb, directDb, ['node', 'prisma', 'migrate', 'dev'])
+      ).toBeUndefined();
+      expect(
+        resolvePrismaShadowDatabaseUrl(directNeon, pooledNeon, ['node', 'prisma', 'migrate', 'dev'])
+      ).toBeUndefined();
+
+      expect(
+        resolvePrismaShadowDatabaseUrl(shadowDb, directDb, ['node', 'prisma', 'migrate', 'dev'])
+      ).toBe(shadowDb);
+      expect(
+        resolvePrismaShadowDatabaseUrl(shadowDb, directDb, ['node', 'prisma', 'migrate', 'reset'])
+      ).toBe(shadowDb);
+    });
+
+    it('prefers POSTGRES_URL_NON_POOLING for datasource.url when DATABASE_URL is pooled during migrate deploy, status, or resolve', () => {
+      for (const subcommand of ['deploy', 'status', 'resolve'] as const) {
+        expect(
+          resolvePrismaDatasourceUrl(pooledNeon, directNeon, [
+            'node',
+            'prisma',
+            'migrate',
+            subcommand,
+          ])
+        ).toBe(directNeon);
+      }
+
+      // Keeps primary DATABASE_URL when unpooled or outside deploy/status/resolve
+      expect(
+        resolvePrismaDatasourceUrl(directDb, shadowDb, ['node', 'prisma', 'migrate', 'deploy'])
+      ).toBe(directDb);
+      expect(
+        resolvePrismaDatasourceUrl(pooledNeon, directNeon, ['node', 'prisma', 'generate'])
+      ).toBe(pooledNeon);
     });
   });
 });

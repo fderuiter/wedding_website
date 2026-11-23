@@ -111,21 +111,24 @@ docker compose ps
 curl -fsS http://127.0.0.1:${PORT:-3000}/api/health -H "Host: localhost"
 ```
 
-To execute migrations manually on demand (or bypass an external PgBouncer pooler in `CONTAINER_DATABASE_URL` using a direct `POSTGRES_URL_NON_POOLING` URI from `prisma.config.ts`):
+To execute migrations manually on demand (or bypass an external PgBouncer pooler in `CONTAINER_DATABASE_URL` using a direct `POSTGRES_URL_NON_POOLING` URI while clearing `POSTGRES_URL_NON_POOLING` so Prisma 7 never sees matching primary and shadow database URLs):
 
 ```bash
 # Standard Compose one-shot migration
 docker compose run --rm migration
 
 # External PgBouncer override using direct PostgreSQL connection
-docker compose run --rm -e DATABASE_URL="$POSTGRES_URL_NON_POOLING" migration env -u POSTGRES_URL_NON_POOLING ./node_modules/.bin/prisma migrate deploy
+env -u POSTGRES_URL_NON_POOLING docker compose run --rm \
+  -e DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$CONTAINER_DATABASE_URL}" \
+  -e POSTGRES_URL_NON_POOLING="" \
+  migration
 ```
 
 #### Track B: Standalone Docker Container (`Dockerfile` & `docker-entrypoint.sh`)
 
 When running the image directly via `docker run` without Docker Compose's `migration` service:
 
-- **Runtime Entrypoint Flag (`RUN_MIGRATIONS=true`)**: Passing `-e RUN_MIGRATIONS=true` instructs [`docker-entrypoint.sh`](../docker-entrypoint.sh) to normalize `DATABASE_URL` and execute `./node_modules/.bin/prisma migrate deploy` (linked to `/opt/prisma-cli` in [`Dockerfile`](../Dockerfile)) automatically prior to `node server.js`.
+- **Runtime Entrypoint Flag (`RUN_MIGRATIONS=true`)**: Passing `-e RUN_MIGRATIONS=true` instructs [`docker-entrypoint.sh`](../docker-entrypoint.sh) to normalize `DATABASE_URL`, unset `POSTGRES_URL_NON_POOLING`, and execute `./node_modules/.bin/prisma migrate deploy` (linked to `/opt/prisma-cli` in [`Dockerfile`](../Dockerfile)) automatically prior to `node server.js`.
 - **Alternative One-Shot Container Migration**: For multi-replica rollouts, keep `RUN_MIGRATIONS=false` on web containers and run a one-shot migration container first (`docker run --rm --env-file .env wedding-website:latest ./node_modules/.bin/prisma migrate deploy`).
 - **Uploads Persistence & Read-Only Root**: Mount a persistent named volume or UID `1001`-writable host directory (`chown -R 1001:1001 /var/lib/wedding/uploads`) at `/app/public/uploads`, plus `tmpfs` mounts at `/tmp` and `/app/.next/cache:uid=1001,gid=1001,mode=0755`.
 

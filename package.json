@@ -181,6 +181,6 @@
     "webpack-dev-middleware": "^7.4.6"
   },
   "lint-staged": {
-    "*.{js,jsx,ts,tsx}": "eslint --fix"
+    "*.{js,jsx,ts,tsx,mjs,cjs}": "eslint --fix"
   }
 }
