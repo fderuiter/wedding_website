@@ -1331,6 +1331,12 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
         'docs/deployment/gcp-cloud-run.md: Manual `gcloud run deploy` command omits mandatory GUEST_SESSION_SECRET'
       );
     }
+
+    if (/\bgcloud\s+run\s+deploy\b/.test(line) && !/\bTRUST_PROXY=2\b/.test(line)) {
+      errors.push(
+        'docs/deployment/gcp-cloud-run.md: Manual `gcloud run deploy` command must set TRUST_PROXY=2 for two-hop Cloud Run ingress'
+      );
+    }
   }
 
   // Verify unescaped commas in gcloud --set-env-vars across all runbooks
@@ -1525,6 +1531,20 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     errors.push(
       'docker-compose.yml: `app` service must restrict default `ALLOWED_HOSTS` to `localhost,127.0.0.1,*.localhost`'
     );
+  }
+  if (composeContract.appEnvMap.get('TRUST_PROXY') !== '${TRUST_PROXY:-1}') {
+    errors.push(
+      'docker-compose.yml: `app` service must set `TRUST_PROXY: ${TRUST_PROXY:-1}` by default'
+    );
+  }
+  const rolloutComposePath = path.join(repoRoot, 'docker-compose.rollout.yml');
+  if (fs.existsSync(rolloutComposePath)) {
+    const rolloutComposeRaw = fs.readFileSync(rolloutComposePath, 'utf8');
+    if (!/^\s*TRUST_PROXY:\s*\$\{TRUST_PROXY:-1\}\s*(?:#.*)?$/m.test(rolloutComposeRaw)) {
+      errors.push(
+        'docker-compose.rollout.yml: `app-standby` service must set `TRUST_PROXY: ${TRUST_PROXY:-1}` by default'
+      );
+    }
   }
   for (const schemaKey of envSchemaKeys) {
     if (!composeContract.appEnvMap.has(schemaKey)) {
@@ -2171,15 +2191,35 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       `docker-compose.yml: \`db\` service must pin \`postgres:${expectedPostgresMajor}-alpine@sha256:<64-hex>\` to preserve \`db_data\` volume compatibility`
     );
   }
-  const ciDelegatesPostgresImageToCompose =
-    ciWorkflowRaw.includes('docker-compose.yml') &&
-    ciWorkflowRaw.includes('["services", "db", "image"]') &&
+  const ciDoc = parseDocument(ciWorkflowRaw, { version: '1.2' });
+  const ciResolvesComposeDbImage =
     ciWorkflowRaw.includes('steps.resolve-db-image.outputs.db_image') &&
-    ciWorkflowRaw.includes('${{ needs.verify.outputs.db_image }}');
-  if (
-    (!ciWorkflowRaw.includes(expectedPostgresImagePrefix) && !ciDelegatesPostgresImageToCompose) ||
-    mismatchedPostgresImageRegex.test(ciWorkflowRaw)
-  ) {
+    ciWorkflowRaw.includes('docker-compose.yml') &&
+    ciWorkflowRaw.includes('["services", "db", "image"]');
+  const ciDbServiceImages: string[] = [];
+  const ciJobsMap: unknown = isMap(ciDoc.contents) ? ciDoc.contents.get('jobs', true) : null;
+  if (isMap(ciJobsMap)) {
+    for (const jobPair of ciJobsMap.items) {
+      const jobMap: unknown = jobPair.value;
+      const servicesMap: unknown = isMap(jobMap) ? jobMap.get('services', true) : null;
+      const dbServiceMap: unknown = isMap(servicesMap) ? servicesMap.get('db', true) : null;
+      const dbImageNode: unknown = isMap(dbServiceMap) ? dbServiceMap.get('image', true) : null;
+      if (isScalar(dbImageNode) && typeof dbImageNode.value === 'string') {
+        ciDbServiceImages.push(dbImageNode.value.trim());
+      }
+    }
+  }
+  const exactPinnedPostgresRegex = new RegExp(
+    `^postgres:${expectedPostgresMajor}-alpine@sha256:[a-f0-9]{64}$`
+  );
+  const allCiDbImagesValid =
+    ciDbServiceImages.length > 0 &&
+    ciDbServiceImages.every(
+      (img) =>
+        exactPinnedPostgresRegex.test(img) ||
+        (img === '${{ needs.verify.outputs.db_image }}' && ciResolvesComposeDbImage)
+    );
+  if (!allCiDbImagesValid || mismatchedPostgresImageRegex.test(ciWorkflowRaw)) {
     errors.push(
       `.github/workflows/ci.yml: PostgreSQL service containers must pin \`postgres:${expectedPostgresMajor}-alpine@sha256:<64-hex>\` (or \`\${{ needs.verify.outputs.db_image }}\`) matching docker-compose.yml`
     );
@@ -2222,10 +2262,9 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   if (forbiddenHealthcheckHostOverride.test(dockerfileRaw)) {
     errors.push('Dockerfile: `HEALTHCHECK` on `/api/live` must not override `Host` header in `fetch()`');
   }
-  if (forbiddenHealthcheckHostOverride.test(composeRaw)) {
+  if (composeRaw && forbiddenHealthcheckHostOverride.test(composeRaw)) {
     errors.push('docker-compose.yml: `app` `healthcheck` on `/api/live` must not override `Host` header in `fetch()`');
   }
-  const rolloutComposePath = path.join(repoRoot, 'docker-compose.rollout.yml');
   if (
     fs.existsSync(rolloutComposePath) &&
     forbiddenHealthcheckHostOverride.test(fs.readFileSync(rolloutComposePath, 'utf8'))
@@ -2297,7 +2336,6 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   }
 
   // 4a. Verify ci.yml `verify` job npm scripts are documented in DEPLOYMENT.md (`verify` (`ci.yml`) overview)
-  const ciDoc = parseDocument(ciWorkflowRaw, { version: '1.2' });
   const storybookWorkflowRaw = fs.readFileSync(path.join(workflowsDir, 'storybook.yml'), 'utf8');
   const storybookDoc = parseDocument(storybookWorkflowRaw, { version: '1.2' });
 

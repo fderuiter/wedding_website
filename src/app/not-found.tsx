@@ -1,4 +1,12 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
+import { createPageMetadata } from '@/app/metadata';
+
+export const metadata: Metadata = createPageMetadata({
+  title: 'Page Not Found',
+  description: 'The requested page could not be found.',
+  noIndex: true,
+});
 
 export default function NotFound() {
   return (
