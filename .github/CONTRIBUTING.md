@@ -45,7 +45,7 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
      - `npm run check:runbooks` - Verify deployment runbooks match live workflows, Docker Compose, and Prisma 7 contracts.
      - `npm run check:setup-guides` - Verify setup, testing, and contributor guides match `.env.example`, `.env.test`, scripts, hooks, and `tsconfig.json`.
      - `npm run check:identifiers` - Guard against hardcoded personal/template identifiers in core runtime files.
-     - `npm run check:action-pins` - Validate strict YAML 1.2 syntax in `.github/workflows/` and ensure third-party GitHub Actions are pinned to 40-character commit SHAs.
+     - `npm run check:action-pins` - Validate strict YAML 1.2 syntax in `.github/workflows/` and ensure third-party GitHub Actions are pinned to 40-character commit SHAs with inline `# v...` version comments (pass `-- --verify-upstream` in CI to verify upstream commit existence).
      - `npm run check:links` - Validate relative documentation links across Markdown files.
      - `npm run check:spec-contracts` - Verify `/api/*` routes, HTTP methods, dynamic `ENTITY_KEY` slugs, and TypeScript symbols cited in architectural specifications match live codebase exports.
      - `npm run check:prisma` & `npm run lint:migrations` - Validate Prisma schema structure and migration compatibility.
