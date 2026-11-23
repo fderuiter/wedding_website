@@ -133,18 +133,16 @@ async function createCrawlerContext(
 }
 
 test.describe('Dynamic Route Crawler & Link Audit', () => {
+  test(
+    'Unauthenticated guest should be redirected to login screen on protected routes',
+    { tag: '@smoke' },
+    async ({ browser }) => {
+      test.setTimeout(120000);
+      const guestCookieValue = generateGuestCookieValue();
+      const baseURL = 'http://localhost:3000';
 
-  test('Unauthenticated guest should be redirected to login screen on protected routes', async ({ browser }) => {
-    test.setTimeout(120000);
-    const guestCookieValue = generateGuestCookieValue();
-    const baseURL = 'http://127.0.0.1:3000';
-
-    for (const route of PROTECTED_UI_ROUTES) {
-      console.log(`[Unauthenticated] Navigating to: ${route}`);
-      let attempt = 0;
-      let success = false;
-      while (attempt < 4 && !success) {
-        attempt++;
+      for (const route of PROTECTED_UI_ROUTES) {
+        console.log(`[Unauthenticated] Navigating to: ${route}`);
         const guestContext = await browser.newContext({ baseURL, reducedMotion: 'reduce' });
         try {
           await seedGuestAuthCookies(guestContext, {
@@ -157,51 +155,43 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
             await page.goto(route, { waitUntil: 'domcontentloaded', timeout: 30000 });
             const url = new URL(page.url());
             expect(url.pathname).toBe('/admin/login');
-            success = true;
-          } catch (gotoError: unknown) {
-            const msg = gotoError instanceof Error ? gotoError.message : String(gotoError);
-            if (
-              attempt < 4 &&
-              (msg.includes('net::ERR_ABORTED') ||
-               msg.includes('crashed') ||
-               msg.includes('closed') ||
-               msg.includes('Timeout') ||
-               msg.includes('timeout'))
-            ) {
-              console.log(`[Unauthenticated] Retrying ${route} (attempt ${attempt}) due to: ${msg.slice(0, 80)}`);
-            } else {
-              throw gotoError;
-            }
           } finally {
-            await page.close().catch(() => {});
+            await page.close();
           }
         } finally {
-          await guestContext.close().catch(() => {});
+          await guestContext.close();
         }
       }
     }
-  });
+  );
 
   for (const route of START_ROUTES) {
-    test(`Authenticated admin should successfully render route ${route} and verify internal links`, async ({ browser }) => {
-      test.setTimeout(90000);
-      const cookieValue = generateAdminCookieValue();
-      const guestCookieValue = generateGuestCookieValue();
-      const baseURL = 'http://127.0.0.1:3000';
+    const isSmokeRoute = route === '/' || route === '/admin/login';
+    test(
+      `Authenticated admin should successfully render route ${route} and verify internal links`,
+      isSmokeRoute ? { tag: '@smoke' } : {},
+      async ({ browser }) => {
+        test.setTimeout(90000);
+        const cookieValue = generateAdminCookieValue();
+        const guestCookieValue = generateGuestCookieValue();
+        const baseURL = 'http://localhost:3000';
 
-      let pageContext = await createCrawlerContext(browser, baseURL, cookieValue, guestCookieValue);
-      try {
-        const targetUrl = new URL(route, baseURL).toString();
-        console.log(`[Authenticated] Navigating to: ${targetUrl}`);
+        const pageContext = await createCrawlerContext(
+          browser,
+          baseURL,
+          cookieValue,
+          guestCookieValue
+        );
+        try {
+          const targetUrl = new URL(route, baseURL).toString();
+          console.log(`[Authenticated] Navigating to: ${targetUrl}`);
 
-        let attempt = 0;
-        let success = false;
-        while (attempt < 4 && !success) {
-          attempt++;
-          let page: any = null;
+          const page = await pageContext.newPage();
           try {
-            page = await pageContext.newPage();
-            const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            const response = await page.goto(targetUrl, {
+              waitUntil: 'domcontentloaded',
+              timeout: 30000,
+            });
             expect(response).not.toBeNull();
             expect(response!.status()).toBe(200);
 
@@ -215,8 +205,8 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
             expect(content).not.toContain('500 Error');
             expect(content).not.toContain('An unhandled error occurred');
 
-            const hrefs = await page.evaluate(() => 
-              Array.from(document.querySelectorAll('a')).map(a => a.getAttribute('href'))
+            const hrefs = await page.evaluate(() =>
+              Array.from(document.querySelectorAll('a')).map((a) => a.getAttribute('href'))
             );
             console.log(`Found ${hrefs.length} anchor elements on ${route}`);
 
@@ -278,38 +268,19 @@ test.describe('Dynamic Route Crawler & Link Audit', () => {
               );
 
               for (const { absoluteCheckUrl, status } of batchResults) {
-                expect(status, `Expected link (${absoluteCheckUrl}) to be valid but got status ${status}`).toBeLessThan(400);
+                expect(
+                  status,
+                  `Expected link (${absoluteCheckUrl}) to be valid but got status ${status}`
+                ).toBeLessThan(400);
               }
             }
-
-            success = true;
-          } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : String(err);
-            if (
-              attempt < 4 &&
-              (msg.includes('crashed') ||
-               msg.includes('closed') ||
-               msg.includes('net::ERR_ABORTED') ||
-               msg.includes('Timeout') ||
-               msg.includes('timeout'))
-            ) {
-              console.log(`[Authenticated] Retry attempt ${attempt} on ${route} due to: ${msg.slice(0, 80)}`);
-              if (page) await page.close().catch(() => {});
-              await pageContext.close().catch(() => {});
-              pageContext = await createCrawlerContext(browser, baseURL, cookieValue, guestCookieValue);
-            } else {
-              throw err;
-            }
           } finally {
-            if (page) {
-              await page.goto('about:blank').catch(() => {});
-              await page.close().catch(() => {});
-            }
+            await page.close();
           }
+        } finally {
+          await pageContext.close();
         }
-      } finally {
-        await pageContext.close().catch(() => {});
       }
-    });
+    );
   }
 });

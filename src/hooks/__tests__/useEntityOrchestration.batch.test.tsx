@@ -1,16 +1,23 @@
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
+import { ApiClient } from '@/lib/apiClient';
 import { useEntityOrchestration } from '../useEntityOrchestration';
 
-describe('useEntityOrchestration', () => {
+interface BatchTestItem {
+  id: string;
+  name: string;
+  status: string;
+}
+
+describe('useEntityOrchestration batch operations', () => {
   let queryClient: QueryClient;
   const mockApiClient = {
     get: jest.fn(),
     post: jest.fn(),
     put: jest.fn(),
     delete: jest.fn(),
-  };
+  } as unknown as jest.Mocked<ApiClient>;
 
   beforeEach(() => {
     queryClient = new QueryClient({
@@ -27,44 +34,51 @@ describe('useEntityOrchestration', () => {
   );
 
   it('fetches entity data and executes removeBatch and updateBatch with optimistic updates', async () => {
-    const initialData = [
+    const initialData: BatchTestItem[] = [
       { id: '1', name: 'Item 1', status: 'active' },
       { id: '2', name: 'Item 2', status: 'active' },
       { id: '3', name: 'Item 3', status: 'active' },
     ];
     let items = [...initialData];
     mockApiClient.get.mockImplementation(async () => items);
-    mockApiClient.post.mockImplementation(async (url, payload) => {
-      if (url.endsWith('/batch') && payload?.ids) {
-        const idSet = new Set(payload.ids);
-        items = items.map((i) => (idSet.has(i.id) ? { ...i, ...payload } : i));
-        return { success: true, count: payload.ids.length, updatedCount: payload.ids.length };
-      }
-      return { success: true };
-    });
-    mockApiClient.delete.mockImplementation(async (url, data) => {
-      if (url.endsWith('/batch') && data?.ids) {
-        const idSet = new Set(data.ids);
-        items = items.filter((i) => !idSet.has(i.id));
+    mockApiClient.post.mockImplementation(
+      async (url: string, payload?: { ids?: string[] } & Partial<BatchTestItem>) => {
+        if (url.endsWith('/batch') && payload?.ids) {
+          const idSet = new Set(payload.ids);
+          const { ids: _ids, ...updates } = payload;
+          items = items.map((i) => (idSet.has(i.id) ? { ...i, ...updates } : i));
+          return { success: true, count: payload.ids.length, updatedCount: payload.ids.length };
+        }
         return { success: true };
       }
-      const id = url.split('/').pop();
-      items = items.filter((i) => i.id !== id);
-      return { success: true };
-    });
-    mockApiClient.put.mockImplementation(async (url, payload) => {
-      const id = url.split('/').pop();
-      items = items.map((i) => (i.id === id ? { ...i, ...payload } : i));
-      return { success: true };
-    });
+    );
+    mockApiClient.delete.mockImplementation(
+      async (url: string, data?: { ids?: string[] }) => {
+        if (url.endsWith('/batch') && data?.ids) {
+          const idSet = new Set(data.ids);
+          items = items.filter((i) => !idSet.has(i.id));
+          return { success: true };
+        }
+        const id = url.split('/').pop();
+        items = items.filter((i) => i.id !== id);
+        return { success: true };
+      }
+    );
+    mockApiClient.put.mockImplementation(
+      async (url: string, payload?: Partial<BatchTestItem>) => {
+        const id = url.split('/').pop();
+        items = items.map((i) => (i.id === id ? { ...i, ...payload } : i));
+        return { success: true };
+      }
+    );
 
     const { result } = renderHook(
       () =>
-        useEntityOrchestration<{ id: string; name: string; status: string }>({
+        useEntityOrchestration<BatchTestItem>({
           queryKey: ['test-entity'],
           endpoint: '/api/test',
           entityName: 'test item',
-          apiClient: mockApiClient as any,
+          apiClient: mockApiClient,
         }),
       { wrapper }
     );
@@ -102,7 +116,7 @@ describe('useEntityOrchestration', () => {
   });
 
   it('rolls back optimistic updates when updateBatch fails', async () => {
-    const initialData = [
+    const initialData: BatchTestItem[] = [
       { id: '1', name: 'Item 1', status: 'active' },
       { id: '2', name: 'Item 2', status: 'active' },
     ];
@@ -111,11 +125,11 @@ describe('useEntityOrchestration', () => {
 
     const { result } = renderHook(
       () =>
-        useEntityOrchestration<{ id: string; name: string; status: string }>({
+        useEntityOrchestration<BatchTestItem>({
           queryKey: ['test-entity-error'],
           endpoint: '/api/test',
           entityName: 'test item',
-          apiClient: mockApiClient as any,
+          apiClient: mockApiClient,
         }),
       { wrapper }
     );

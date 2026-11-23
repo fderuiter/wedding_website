@@ -33,7 +33,6 @@
   "ignoreDependencies": [
     "tailwindcss",
     "lint-staged",
-    "@storybook/nextjs",
     "vitepress",
     "mermaid",
     "vitepress-plugin-mermaid",

@@ -19,6 +19,23 @@ function writeValidFixtureWorkspace(targetDir: string): void {
   const workflowsDir = path.join(targetDir, '.github', 'workflows');
   fs.mkdirSync(workflowsDir, { recursive: true });
 
+  fs.writeFileSync(path.join(targetDir, '.nvmrc'), '22\n');
+  fs.writeFileSync(
+    path.join(targetDir, 'package.json'),
+    `${JSON.stringify(
+      {
+        name: 'wedding-website-fixture',
+        private: true,
+        engines: {
+          node: '^22.12.0',
+          npm: '^10.9.0',
+        },
+      },
+      null,
+      2
+    )}\n`
+  );
+
   fs.writeFileSync(
     path.join(targetDir, 'Dockerfile'),
     [
@@ -401,6 +418,50 @@ describe('check-docker-build', () => {
         expect.objectContaining({
           filePath: 'docker-entrypoint.sh',
           imageRef: 'NPM_CONFIG_UPDATE_NOTIFIER=false',
+        }),
+      ])
+    );
+  });
+
+  it('rejects Node.js major version drift across Dockerfile, .nvmrc, and package.json', () => {
+    const dockerfilePath = path.join(tempDir, 'Dockerfile');
+    fs.writeFileSync(
+      dockerfilePath,
+      fs
+        .readFileSync(dockerfilePath, 'utf8')
+        .replace(`node:22-bookworm-slim@${NODE_DIGEST}`, `node:26-bookworm-slim@${NODE_DIGEST}`)
+    );
+
+    const pkgPath = path.join(tempDir, 'package.json');
+    fs.writeFileSync(
+      pkgPath,
+      `${JSON.stringify(
+        {
+          name: 'wedding-website-fixture',
+          private: true,
+          engines: {
+            node: '^20.11.0',
+            npm: '^10.9.0',
+          },
+        },
+        null,
+        2
+      )}\n`
+    );
+
+    const { violations } = checkDockerBuild(tempDir);
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          lineNumber: 2,
+          imageRef: 'node:26-bookworm-slim',
+          reason: expect.stringContaining('does not match expected "node:22-bookworm-slim" from .nvmrc'),
+        }),
+        expect.objectContaining({
+          filePath: 'package.json',
+          imageRef: 'engines.node',
+          reason: expect.stringContaining('does not match .nvmrc ("22")'),
         }),
       ])
     );

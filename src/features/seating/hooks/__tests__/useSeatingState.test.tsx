@@ -246,10 +246,10 @@ describe('useSeatingState & seatingReducer', () => {
           } as Response);
         }
 
-        if (urlStr.endsWith('/api/admin/invitation-codes') && (!init || !init.method || init.method === 'GET')) {
+        if (urlStr.includes('/api/admin/invitation-codes/catalog') && (!init || !init.method || init.method === 'GET')) {
           return Promise.resolve({
             ok: true,
-            json: () => Promise.resolve([mockGuest1, mockGuest2, mockGuest3]),
+            json: () => Promise.resolve({ items: [mockGuest1, mockGuest2, mockGuest3], total: 3, page: 1, limit: 1000, totalPages: 1 }),
           } as Response);
         }
 
@@ -285,6 +285,46 @@ describe('useSeatingState & seatingReducer', () => {
       expect(result.current.unassignedGuests).toHaveLength(3);
     });
 
+    it('unwraps withApiMiddleware { success: true, data: { items } } catalog response envelope', async () => {
+      fetchMock.mockImplementation((url: string | URL | Request) => {
+        const urlStr = url.toString();
+        if (urlStr.endsWith('/api/admin/seating-tables')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ success: true, data: [mockTable1, mockTable2] }),
+          } as Response);
+        }
+        if (urlStr.includes('/api/admin/invitation-codes/catalog')) {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                success: true,
+                data: {
+                  items: [mockGuest1, mockGuest2, mockGuest3],
+                  total: 3,
+                  page: 1,
+                  limit: 1000,
+                  totalPages: 1,
+                },
+              }),
+          } as Response);
+        }
+        return Promise.reject(new Error(`Unhandled mock: ${urlStr}`));
+      });
+
+      const { result } = renderHook(() => useSeatingState());
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(result.current.isLoading).toBe(false);
+      expect(result.current.tables).toHaveLength(2);
+      expect(result.current.allGuests).toHaveLength(3);
+      expect(result.current.unassignedGuests).toHaveLength(3);
+    });
+
     it('enforces table capacity validations prior to optimistic assignment dispatch', async () => {
       // Table 1 has capacity 2. Let's seat mockGuest1 and mockGuest2 first.
       fetchMock.mockImplementation((url: string | URL | Request) => {
@@ -295,7 +335,7 @@ describe('useSeatingState & seatingReducer', () => {
             json: () => Promise.resolve([mockTable1]),
           } as Response);
         }
-        if (urlStr.endsWith('/api/admin/invitation-codes')) {
+        if (urlStr.includes('/api/admin/invitation-codes/catalog')) {
           return Promise.resolve({
             ok: true,
             json: () =>
@@ -347,7 +387,7 @@ describe('useSeatingState & seatingReducer', () => {
             json: () => Promise.resolve([mockTable1]),
           } as Response);
         }
-        if (urlStr.endsWith('/api/admin/invitation-codes')) {
+        if (urlStr.includes('/api/admin/invitation-codes/catalog')) {
           return Promise.resolve({
             ok: true,
             json: () =>
@@ -388,7 +428,7 @@ describe('useSeatingState & seatingReducer', () => {
             json: () => Promise.resolve([mockTable1]),
           } as Response);
         }
-        if (urlStr.endsWith('/api/admin/invitation-codes')) {
+        if (urlStr.includes('/api/admin/invitation-codes/catalog')) {
           return Promise.resolve({
             ok: true,
             json: () =>
@@ -540,7 +580,7 @@ describe('useSeatingState & seatingReducer', () => {
             json: () => Promise.resolve([mockTable1, mockTable2]),
           } as Response);
         }
-        if (urlStr.endsWith('/api/admin/invitation-codes') && (!init || !init.method || init.method === 'GET')) {
+        if (urlStr.includes('/api/admin/invitation-codes/catalog') && (!init || !init.method || init.method === 'GET')) {
           return Promise.resolve({
             ok: true,
             json: () =>
@@ -718,7 +758,7 @@ describe('useSeatingState & seatingReducer', () => {
             json: () => Promise.resolve([mockTable1]),
           } as Response);
         }
-        if (urlStr.endsWith('/api/admin/invitation-codes')) {
+        if (urlStr.includes('/api/admin/invitation-codes/catalog')) {
           return Promise.resolve({
             ok: true,
             json: () =>
@@ -752,7 +792,7 @@ describe('useSeatingState & seatingReducer', () => {
             json: () => Promise.resolve([mockTable1, mockTable2]),
           } as Response);
         }
-        if (urlStr.endsWith('/api/admin/invitation-codes') && (!init || !init.method || init.method === 'GET')) {
+        if (urlStr.includes('/api/admin/invitation-codes/catalog') && (!init || !init.method || init.method === 'GET')) {
           return Promise.resolve({
             ok: true,
             json: () => Promise.resolve([mockGuest1, mockGuest2, mockGuest3]),
@@ -838,10 +878,10 @@ describe('useSeatingState & seatingReducer', () => {
       expect(result.current.canUndo).toBe(false);
     });
 
-    it('fetches all pages of invitations (>100 records) and tables (>50 records) without truncating at row 50', async () => {
-      const all135Guests: InvitationCodeDTO[] = Array.from({ length: 135 }, (_, idx) => ({
+    it('fetches all pages of invitations (>1000 catalog records) and tables (>50 records) without truncation', async () => {
+      const all1050Guests: InvitationCodeDTO[] = Array.from({ length: 1050 }, (_, idx) => ({
         id: `g-page-${idx + 1}`,
-        code: `CODE-P-${idx + 1}`,
+        code: `CODE-P-${String(idx + 1).padStart(4, '0')}`,
         guestName: `Guest ${idx + 1}`,
         tableId: null,
         seatNumber: null,
@@ -869,10 +909,10 @@ describe('useSeatingState & seatingReducer', () => {
 
       fetchMock.mockImplementation((url: string | URL | Request) => {
         const parsed = new URL(url.toString(), 'http://localhost:3000');
-        const skip = Number(parsed.searchParams.get('skip') || '0');
-        const limit = Number(parsed.searchParams.get('limit') || '50');
 
         if (parsed.pathname === '/api/admin/seating-tables') {
+          const skip = Number(parsed.searchParams.get('skip') || '0');
+          const limit = Number(parsed.searchParams.get('limit') || '50');
           const slice = all60Tables.slice(skip, skip + limit);
           return Promise.resolve({
             ok: true,
@@ -884,15 +924,28 @@ describe('useSeatingState & seatingReducer', () => {
           } as Response);
         }
 
-        if (parsed.pathname === '/api/admin/invitation-codes') {
-          const slice = all135Guests.slice(skip, skip + limit);
+        if (parsed.pathname === '/api/admin/invitation-codes/catalog') {
+          const page = Number(parsed.searchParams.get('page') || '1');
+          const limit = Number(parsed.searchParams.get('limit') || '1000');
+          const skip = (page - 1) * limit;
+          const slice = all1050Guests.slice(skip, skip + limit);
+          const totalPages = Math.ceil(all1050Guests.length / limit);
           return Promise.resolve({
             ok: true,
             headers: new Headers({
-              'X-Total-Count': String(all135Guests.length),
-              'X-Has-Next-Page': String(skip + slice.length < all135Guests.length),
+              'X-Total-Count': String(all1050Guests.length),
+              'X-Page': String(page),
+              'X-Limit': String(limit),
+              'X-Total-Pages': String(totalPages),
             }),
-            json: () => Promise.resolve(slice),
+            json: () =>
+              Promise.resolve({
+                items: slice,
+                total: all1050Guests.length,
+                page,
+                limit,
+                totalPages,
+              }),
           } as Response);
         }
 
@@ -908,8 +961,8 @@ describe('useSeatingState & seatingReducer', () => {
 
       expect(result.current.isLoading).toBe(false);
       expect(result.current.tables).toHaveLength(60);
-      expect(result.current.allGuests).toHaveLength(135);
-      expect(result.current.unassignedGuests).toHaveLength(135);
+      expect(result.current.allGuests).toHaveLength(1050);
+      expect(result.current.unassignedGuests).toHaveLength(1050);
     });
 
     it('blocks multi-chair plus-one overflow and rejects assigning guests to zero-capacity landmarks', async () => {
@@ -949,10 +1002,17 @@ describe('useSeatingState & seatingReducer', () => {
             json: () => Promise.resolve([mockTable1, landmarkDanceFloor]),
           } as Response);
         }
-        if (parsed.pathname === '/api/admin/invitation-codes') {
+        if (parsed.pathname === '/api/admin/invitation-codes/catalog') {
           return Promise.resolve({
             ok: true,
-            json: () => Promise.resolve([partyOfThree]),
+            json: () =>
+              Promise.resolve({
+                items: [partyOfThree],
+                total: 1,
+                page: 1,
+                limit: 1000,
+                totalPages: 1,
+              }),
           } as Response);
         }
         return Promise.reject(new Error(`Unhandled URL: ${url.toString()}`));

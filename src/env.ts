@@ -302,7 +302,8 @@ const isScriptRun = procArgv.some((arg: unknown) => typeof arg === 'string' && (
   arg.includes('seed') ||
   arg.includes('generate-') ||
   arg.includes('check-') ||
-  arg.includes('verify-')
+  arg.includes('verify-') ||
+  arg.includes('preflight-')
 ));
 
 const isStaticExport = process.env.STATIC_EXPORT === 'true' ||

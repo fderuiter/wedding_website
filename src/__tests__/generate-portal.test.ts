@@ -8,7 +8,10 @@ import {
   DocMapping,
   escapeVueMustache,
   generatePortal,
+  prependGeneratedPortalComment,
   rewriteMarkdownLinks,
+  stagePortalDoc,
+  watchPortalDocs,
 } from '../../scripts/generate-portal';
 
 describe('Portal Documentation Generator & Development Section', () => {
@@ -128,12 +131,67 @@ describe('Portal Documentation Generator & Development Section', () => {
     expect(fs.existsSync(stagedChangelog)).toBe(true);
 
     const contributingContent = fs.readFileSync(stagedContributing, 'utf8');
+    expect(contributingContent).toMatch(
+      /^<!-- AUTO-GENERATED FILE: Staged from \.github\/CONTRIBUTING\.md by scripts\/generate-portal\.ts\./
+    );
     expect(contributingContent).toContain('[AGENTS.md](/development/agents)');
     expect(contributingContent).toContain('[README.md](/development/readme#setup-installation)');
     expect(fs.readFileSync(stagedTesting, 'utf8')).toContain('[AGENTS.md](/development/agents)');
 
     const upgradingContent = fs.readFileSync(stagedUpgrading, 'utf8');
     expect(upgradingContent).toContain('[`CHANGELOG.md`](/guides/changelog)');
+  });
+
+  it('prepends generated-file comment header and re-stages edited Markdown files via watchPortalDocs', async () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'portal-watch-root-'));
+    const tmpPortal = fs.mkdtempSync(path.join(os.tmpdir(), 'portal-watch-dest-'));
+    const testDoc: DocMapping = {
+      src: 'docs/guide.md',
+      dest: 'guides/guide.md',
+      category: 'Guides',
+      title: 'Live Guide',
+    };
+
+    let watcherHandle: { close: () => void } | undefined;
+    try {
+      const srcAbs = path.join(tmpRoot, testDoc.src);
+      const destAbs = path.join(tmpPortal, testDoc.dest);
+      fs.mkdirSync(path.dirname(srcAbs), { recursive: true });
+      fs.writeFileSync(srcAbs, '# Initial Title\n\nInitial body.\n', 'utf8');
+
+      expect(stagePortalDoc(testDoc, tmpRoot, tmpPortal)).toBe(true);
+      const initialStaged = fs.readFileSync(destAbs, 'utf8');
+      expect(initialStaged).toBe(
+        prependGeneratedPortalComment('# Initial Title\n\nInitial body.\n', testDoc.src)
+      );
+
+      const restagedPromise = new Promise<DocMapping>((resolve) => {
+        watcherHandle = watchPortalDocs({
+          rootDir: tmpRoot,
+          portalDir: tmpPortal,
+          docs: [testDoc],
+          debounceMs: 25,
+          onStage: (doc) => resolve(doc),
+        });
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      fs.writeFileSync(srcAbs, '# Updated Live Title\n\nUpdated prose {{ expr }}.\n', 'utf8');
+
+      const restagedDoc = await restagedPromise;
+      expect(restagedDoc.src).toBe(testDoc.src);
+
+      const updatedStaged = fs.readFileSync(destAbs, 'utf8');
+      expect(updatedStaged).toContain(
+        '<!-- AUTO-GENERATED FILE: Staged from docs/guide.md by scripts/generate-portal.ts. Edit the source file instead. -->'
+      );
+      expect(updatedStaged).toContain('# Updated Live Title');
+      expect(updatedStaged).toContain('&#123;&#123; expr &#125;&#125;');
+    } finally {
+      watcherHandle?.close();
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+      fs.rmSync(tmpPortal, { recursive: true, force: true });
+    }
   });
 
   it('cleans orphaned staged Markdown files while preserving authored portal files', () => {

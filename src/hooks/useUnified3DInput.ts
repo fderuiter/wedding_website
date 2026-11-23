@@ -83,7 +83,7 @@ export function useUnified3DInput(options: UseUnified3DInputOptions) {
     
     const target = e?.target as any;
     if (target?.setPointerCapture && e?.pointerId !== undefined) {
-      try { target.setPointerCapture(e.pointerId); } catch(err) {}
+      try { target.setPointerCapture(e.pointerId); } catch {}
     }
 
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
@@ -135,7 +135,7 @@ export function useUnified3DInput(options: UseUnified3DInputOptions) {
     
     const target = e?.target as any;
     if (target?.releasePointerCapture && e?.pointerId !== undefined) {
-      try { target.releasePointerCapture(e.pointerId); } catch (err) {}
+      try { target.releasePointerCapture(e.pointerId); } catch {}
     }
 
     dragState.current.active = false;

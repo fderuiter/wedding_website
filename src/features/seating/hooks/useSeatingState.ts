@@ -135,8 +135,21 @@ export type SeatingAction =
 
 function extractArrayPayload<T>(json: unknown): T[] {
   if (Array.isArray(json)) return json as T[];
-  if (json && typeof json === 'object' && Array.isArray((json as { data?: unknown }).data)) {
-    return (json as { data: T[] }).data;
+  if (json && typeof json === 'object') {
+    const record = json as { items?: unknown; data?: unknown };
+    if (Array.isArray(record.items)) {
+      return record.items as T[];
+    }
+    if (
+      record.data &&
+      typeof record.data === 'object' &&
+      Array.isArray((record.data as { items?: unknown }).items)
+    ) {
+      return (record.data as { items: T[] }).items;
+    }
+    if (Array.isArray(record.data)) {
+      return record.data as T[];
+    }
   }
   return [];
 }
@@ -154,34 +167,62 @@ function dedupeById<T extends { id?: string }>(items: T[]): T[] {
   return result;
 }
 
-function detectRemainingPageCount(res: Response, firstBatchLength: number): {
+function extractNumericMeta(json: unknown, key: 'total' | 'totalPages' | 'limit'): number | null {
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
+  const direct = (json as Record<string, unknown>)[key];
+  if (typeof direct === 'number' && Number.isInteger(direct)) {
+    return direct;
+  }
+  const nestedData = (json as { data?: unknown }).data;
+  if (nestedData && typeof nestedData === 'object' && !Array.isArray(nestedData)) {
+    const nested = (nestedData as Record<string, unknown>)[key];
+    if (typeof nested === 'number' && Number.isInteger(nested)) {
+      return nested;
+    }
+  }
+  return null;
+}
+
+function detectRemainingPageCount(
+  res: Response,
+  json: unknown,
+  firstBatchLength: number
+): {
   needsPagination: boolean;
   totalCount: number | null;
 } {
-  if (!res.headers || typeof res.headers.get !== 'function') {
-    return { needsPagination: false, totalCount: null };
-  }
-  const rawTotal = res.headers.get('X-Total-Count');
-  if (rawTotal !== null) {
-    const parsedTotal = Number(rawTotal);
-    if (Number.isInteger(parsedTotal) && parsedTotal > firstBatchLength) {
-      return { needsPagination: true, totalCount: parsedTotal };
+  const hasHeaders = Boolean(res.headers && typeof res.headers.get === 'function');
+  const rawTotal = hasHeaders ? res.headers.get('X-Total-Count') : null;
+  const parsedHeaderTotal = rawTotal !== null ? Number(rawTotal) : NaN;
+  const bodyTotal = extractNumericMeta(json, 'total');
+  const resolvedTotal = Number.isInteger(parsedHeaderTotal) ? parsedHeaderTotal : bodyTotal;
+
+  if (resolvedTotal !== null) {
+    if (resolvedTotal > firstBatchLength) {
+      return { needsPagination: true, totalCount: resolvedTotal };
     }
-    if (
-      Number.isInteger(parsedTotal) &&
-      parsedTotal >= firstBatchLength &&
-      firstBatchLength > 0
-    ) {
-      return { needsPagination: false, totalCount: parsedTotal };
+    if (resolvedTotal >= firstBatchLength && firstBatchLength > 0) {
+      return { needsPagination: false, totalCount: resolvedTotal };
     }
-    if (parsedTotal === 0 && firstBatchLength === 0) {
+    if (resolvedTotal === 0 && firstBatchLength === 0) {
       return { needsPagination: false, totalCount: 0 };
     }
   }
-  const hasNext = res.headers.get('X-Has-Next-Page');
-  if (hasNext === 'true') {
+
+  if (hasHeaders && res.headers.get('X-Has-Next-Page') === 'true') {
     return { needsPagination: true, totalCount: null };
   }
+
+  const rawTotalPages = hasHeaders ? res.headers.get('X-Total-Pages') : null;
+  const parsedTotalPages = rawTotalPages !== null ? Number(rawTotalPages) : NaN;
+  const bodyTotalPages = extractNumericMeta(json, 'totalPages');
+  const resolvedTotalPages = Number.isInteger(parsedTotalPages)
+    ? parsedTotalPages
+    : bodyTotalPages;
+  if (resolvedTotalPages !== null && resolvedTotalPages > 1) {
+    return { needsPagination: true, totalCount: null };
+  }
+
   return { needsPagination: false, totalCount: null };
 }
 
@@ -244,6 +285,70 @@ async function fetchRemainingPages<T extends { id?: string }>(
     if (!stillHasNext || nextBatch.length < PAGE_LIMIT) {
       break;
     }
+  }
+  combined.push(...firstBatch);
+  return dedupeById(combined);
+}
+
+async function fetchRemainingCatalogPages<T extends { id?: string }>(
+  endpoint: string,
+  firstBatch: T[],
+  totalCount: number | null,
+  initialLimit: number
+): Promise<T[]> {
+  const pageLimit = Math.min(1000, Math.max(1, initialLimit));
+
+  // Re-fetch catalog pages ordered deterministically by unique `code` (`orderBy=code&orderDir=asc`)
+  if (totalCount !== null && totalCount > firstBatch.length) {
+    const totalPages = Math.ceil(totalCount / pageLimit);
+    const pages = Array.from({ length: totalPages }, (_, idx) => idx + 1);
+    const pageResponses = await Promise.all(
+      pages.map((page) =>
+        fetch(`${endpoint}?page=${page}&limit=${pageLimit}&orderBy=code&orderDir=asc`)
+      )
+    );
+    for (const r of pageResponses) {
+      if (!r.ok) {
+        throw new Error('Failed to load seating chart data.');
+      }
+    }
+    const pagePayloads = await Promise.all(pageResponses.map((r) => r.json()));
+    const combined: T[] = [];
+    for (const payload of pagePayloads) {
+      combined.push(...extractArrayPayload<T>(payload));
+    }
+    combined.push(...firstBatch);
+    return dedupeById(combined);
+  }
+
+  const combined: T[] = [];
+  let page = 1;
+  while (true) {
+    const nextRes = await fetch(
+      `${endpoint}?page=${page}&limit=${pageLimit}&orderBy=code&orderDir=asc`
+    );
+    if (!nextRes.ok) {
+      throw new Error('Failed to load seating chart data.');
+    }
+    const nextJson = await nextRes.json();
+    const nextBatch = extractArrayPayload<T>(nextJson);
+    if (nextBatch.length === 0) break;
+    combined.push(...nextBatch);
+    const bodyTotalPages = extractNumericMeta(nextJson, 'totalPages');
+    const headerTotalPages =
+      nextRes.headers && typeof nextRes.headers.get === 'function'
+        ? Number(nextRes.headers.get('X-Total-Pages'))
+        : NaN;
+    const resolvedTotalPages = Number.isInteger(headerTotalPages)
+      ? headerTotalPages
+      : bodyTotalPages;
+    if (
+      (resolvedTotalPages !== null && page >= resolvedTotalPages) ||
+      nextBatch.length < pageLimit
+    ) {
+      break;
+    }
+    page += 1;
   }
   combined.push(...firstBatch);
   return dedupeById(combined);
@@ -773,7 +878,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
     try {
       const [tablesRes, guestsRes] = await Promise.all([
         fetch('/api/admin/seating-tables'),
-        fetch('/api/admin/invitation-codes'),
+        fetch('/api/admin/invitation-codes/catalog?limit=1000'),
       ]);
 
       if (!tablesRes.ok || !guestsRes.ok) {
@@ -786,10 +891,18 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
       let rawTables = extractArrayPayload<SeatingTableDTO>(tablesData);
       let rawGuests = extractArrayPayload<InvitationCodeDTO>(guestsData);
 
-      const tablesPageInfo = detectRemainingPageCount(tablesRes, rawTables.length);
-      const guestsPageInfo = detectRemainingPageCount(guestsRes, rawGuests.length);
+      const tablesPageInfo = detectRemainingPageCount(tablesRes, tablesData, rawTables.length);
+      const guestsPageInfo = detectRemainingPageCount(guestsRes, guestsData, rawGuests.length);
 
       if (tablesPageInfo.needsPagination || guestsPageInfo.needsPagination) {
+        const rawCatalogLimitHeader =
+          guestsRes.headers && typeof guestsRes.headers.get === 'function'
+            ? Number(guestsRes.headers.get('X-Limit'))
+            : NaN;
+        const catalogLimit = Number.isInteger(rawCatalogLimitHeader) && rawCatalogLimitHeader > 0
+          ? rawCatalogLimitHeader
+          : extractNumericMeta(guestsData, 'limit') ?? (rawGuests.length || 1000);
+
         const [fullTables, fullGuests] = await Promise.all([
           tablesPageInfo.needsPagination
             ? fetchRemainingPages<SeatingTableDTO>(
@@ -799,10 +912,11 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
             )
             : Promise.resolve(rawTables),
           guestsPageInfo.needsPagination
-            ? fetchRemainingPages<InvitationCodeDTO>(
-              '/api/admin/invitation-codes',
+            ? fetchRemainingCatalogPages<InvitationCodeDTO>(
+              '/api/admin/invitation-codes/catalog',
               rawGuests,
-              guestsPageInfo.totalCount
+              guestsPageInfo.totalCount,
+              catalogLimit
             )
             : Promise.resolve(rawGuests),
         ]);

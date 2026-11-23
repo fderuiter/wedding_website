@@ -10,10 +10,12 @@ function decodePdfBuffer(buf: Buffer): string {
   return `${raw}\n${hexDecoded}`;
 }
 
-test('seating chart loads >100 invitations without truncation, renders inline plus-one chairs & zero-capacity landmarks, and exports caterer-safe CSVs/PDFs/Avery cards', async ({
+test('seating chart loads >100 invitations without truncation, renders inline plus-one chairs & zero-capacity landmarks, and exports caterer-safe CSVs/PDFs/Avery cards', {
+  tag: '@a11y',
+}, async ({
   context,
   page,
-}) => {
+}, testInfo) => {
   test.setTimeout(180000);
 
   await seedAdminAndGuestAuthCookies(context);
@@ -151,6 +153,7 @@ test('seating chart loads >100 invitations without truncation, renders inline pl
       waitUntil: 'domcontentloaded',
       timeout: 45000,
     });
+    expect(new URL(page.url()).pathname).toBe('/admin/dashboard/seating-chart');
     await expect(
       page.getByRole('heading', { name: 'Interactive Seating Chart & Reception Floorplan' })
     ).toBeVisible({ timeout: 25000 });
@@ -184,8 +187,9 @@ test('seating chart loads >100 invitations without truncation, renders inline pl
 
     // Screenshot 1: Floorplan with inline plus-one chairs (+1 badges), zero-capacity landmarks, and >100 guest pool
     await page.screenshot({
-      path: '/tmp/seating-floorplan-landmarks-plusones.png',
+      path: testInfo.outputPath('seating-floorplan-landmarks-plusones.png'),
       fullPage: true,
+      animations: 'disabled',
     });
 
     // 6. Select Orchard Reception table -> verify Selected Table Inspector shows plus-one seats & meal summary
@@ -197,8 +201,9 @@ test('seating chart loads >100 invitations without truncation, renders inline pl
 
     // Screenshot 2: Selected Table Inspector with inline plus-one seats, entrée counts, and caterer/Avery export links
     await page.screenshot({
-      path: '/tmp/seating-inspector-caterer-exports.png',
+      path: testInfo.outputPath('seating-inspector-caterer-exports.png'),
       fullPage: true,
+      animations: 'disabled',
     });
 
     // 7. Verify Browser Print DOM (PrintableFloorplan) & all CSV/PDF/Avery exports strip secret guest.code values
@@ -233,7 +238,7 @@ test('seating chart loads >100 invitations without truncation, renders inline pl
 
     // 8. Verify WCAG 2.2 AA contrast and target-size rules on the seating workspace
     const workspaceAxe = await new AxeBuilder({ page })
-      .include('main main')
+      .include('main')
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
       .analyze();
     const contrastAndTargetViolations = workspaceAxe.violations.filter(

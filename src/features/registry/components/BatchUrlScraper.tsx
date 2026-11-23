@@ -1,11 +1,11 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useFormPersist } from '@/hooks/useFormPersist';
 import { RegistryPreviewTable, PreviewRegistryItem } from './RegistryPreviewTable';
+import { useRegistryPreviewImport } from '../hooks/useRegistryPreviewImport';
 import { validateRegistryItemRow } from '../utils/csv';
 
 export interface BatchUrlScraperProps {
@@ -23,7 +23,6 @@ const INITIAL_BATCH_DRAFT: BatchUrlScraperDraft = {
 };
 
 export const BatchUrlScraper: React.FC<BatchUrlScraperProps> = ({ onSuccess }) => {
-  const router = useRouter();
   const { addToast } = useToast();
 
   const [draft, setDraft, clearPersistedState] = useFormPersist<BatchUrlScraperDraft>(
@@ -32,28 +31,39 @@ export const BatchUrlScraper: React.FC<BatchUrlScraperProps> = ({ onSuccess }) =
   );
   const { urlInput, items } = draft;
   const [isScraping, setIsScraping] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const setUrlInput = (nextUrlInput: string) => {
     setDraft((prev) => ({ ...prev, urlInput: nextUrlInput }));
   };
 
-  const setItems = (
-    updater: PreviewRegistryItem[] | ((_prev: PreviewRegistryItem[]) => PreviewRegistryItem[])
-  ) => {
-    setDraft((prev) => ({
-      ...prev,
-      items: typeof updater === 'function' ? updater(prev.items) : updater,
-    }));
+  const resetPersistedDraft = () => {
+    setDraft(INITIAL_BATCH_DRAFT);
+    clearPersistedState();
   };
+
+  const {
+    isSubmitting,
+    setItems,
+    handleUpdateItem,
+    handleRemoveItem,
+    handleRemoveInvalid,
+    handleImport,
+  } = useRegistryPreviewImport({
+    items,
+    setDraft,
+    onResetDraft: resetPersistedDraft,
+    onSuccess,
+    includePaymentHandles: false,
+    formatSuccessToast: (validCount) =>
+      `Successfully added ${validCount} items to your registry!`,
+  });
 
   const hasDraft = urlInput.trim().length > 0 || items.length > 0;
 
   const handleResetDraft = () => {
     setErrorMessage(null);
-    setDraft(INITIAL_BATCH_DRAFT);
-    clearPersistedState();
+    resetPersistedDraft();
   };
 
   // Extract non-empty lines as candidate URLs
@@ -152,61 +162,6 @@ export const BatchUrlScraper: React.FC<BatchUrlScraperProps> = ({ onSuccess }) =
       addToast(`Batch scraping failed: ${err?.message || 'Unknown error'}`, 'error');
     } finally {
       setIsScraping(false);
-    }
-  };
-
-  const handleUpdateItem = (id: string, updated: Partial<PreviewRegistryItem>) => {
-    setItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, ...updated } : item))
-    );
-  };
-
-  const handleRemoveItem = (id: string) => {
-    setItems((prev) => prev.filter((item) => item.id !== id));
-  };
-
-  const handleRemoveInvalid = () => {
-    setItems((prev) => prev.filter((item) => item.isValid));
-  };
-
-  const handleImport = async () => {
-    const validItems = items.filter((it) => it.isValid);
-    if (validItems.length === 0) {
-      addToast('No valid items to import.', 'error');
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      const payload = {
-        items: validItems.map((it) => ({
-          name: it.name,
-          price: it.price || 0,
-          quantity: it.quantity || 1,
-          category: it.category || 'Uncategorized',
-          description: it.description || '',
-          vendorUrl: it.vendorUrl || undefined,
-          imageUrl: it.imageUrl || '/images/placeholder.png',
-          imageAlt: it.imageAlt || undefined,
-          isGroupGift: it.isGroupGift,
-          isMostWanted: it.isMostWanted,
-        })),
-      };
-
-      await apiClient.post('/api/registry/items/batch', payload);
-
-      setDraft(INITIAL_BATCH_DRAFT);
-      clearPersistedState();
-      addToast(`Successfully added ${validItems.length} items to your registry!`, 'success');
-      if (onSuccess) {
-        onSuccess();
-      } else {
-        router.push('/admin/dashboard/registry');
-      }
-    } catch (err: any) {
-      addToast(`Failed to import items: ${err?.message || 'Unknown error'}`, 'error');
-    } finally {
-      setIsSubmitting(false);
     }
   };
 

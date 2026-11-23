@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { registryService } from '../service';
 import { RegistryItemBaseSchema } from '../schemas';
+import { mapCreateRegistryItemInput } from './mapCreateRegistryItemInput';
 import { createValidatedRoute } from '@/utils/createValidatedRoute';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
@@ -36,25 +37,9 @@ export const POST = createValidatedRoute({
     if (!isFeatureEnabled('registry', config.modules)) {
       throw new ApiError(404, "Feature 'registry' is disabled");
     }
-    const newItemData = body;
-
-    const newItem = await registryService.createItem({
-      itemType: newItemData.itemType,
-      paymentHandleType: newItemData.paymentHandleType,
-      paymentHandle: newItemData.paymentHandle,
-      name: newItemData.name,
-      description: newItemData.description || '',
-      category: newItemData.category || 'Uncategorized',
-      price: newItemData.price,
-      imageUrl: newItemData.imageUrl || '/images/placeholder.png',
-      imageAlt: newItemData.imageAlt, 
-      imageDecorative: newItemData.imageDecorative,
-      vendorUrl: newItemData.vendorUrl || null,
-      quantity: newItemData.quantity,
-      isGroupGift: newItemData.isGroupGift || false,
-      isMostWanted: newItemData.isMostWanted ?? false,
-      displayOrder: newItemData.displayOrder ?? 0,
-    });
+    const newItem = await registryService.createItem(
+      mapCreateRegistryItemInput(body)
+    );
 
     return NextResponse.json({ message: 'Item added successfully', item: newItem }, { status: 201 });
   }

@@ -5,6 +5,7 @@ import { extractPrismaMigrateCommands, verifyDeploymentRunbooks } from './verify
 
 function copyRepoFixture(srcRoot: string, destRoot: string): void {
   const filesToCopy = [
+    '.nvmrc',
     'package.json',
     'prisma.config.ts',
     'prisma/schema.prisma',
@@ -24,6 +25,7 @@ function copyRepoFixture(srcRoot: string, destRoot: string): void {
     'docs/deployment/gcp-cloud-run.md',
     'docs/deployment/docker-vps.md',
     'docs/deployment/railway-render.md',
+    '.github/dependabot.yml',
   ];
 
   for (const relPath of filesToCopy) {
@@ -343,6 +345,46 @@ describe('verify-deployment-runbooks', () => {
         expect.stringContaining('docker-compose.yml: `app` service environment must forward runtime variable "STRIPE_SECRET_KEY"'),
         expect.stringContaining('docker-compose.ci.yml: `app` service must isolate `E2E_TEST: ${E2E_TEST:-true}`'),
         expect.stringContaining('docs/deployment/docker-vps.md: Must not document invalid 4-byte placeholder hash'),
+      ])
+    );
+  });
+
+  it('rejects Node.js major version drift across Dockerfile, setup-node workflows, runtime docs, and dependabot.yml', () => {
+    const dockerfilePath = path.join(tempDir, 'Dockerfile');
+    fs.writeFileSync(
+      dockerfilePath,
+      fs.readFileSync(dockerfilePath, 'utf8').replace('node:22-bookworm-slim@', 'node:26-bookworm-slim@')
+    );
+
+    const storybookWorkflowPath = path.join(tempDir, '.github/workflows/storybook.yml');
+    fs.writeFileSync(
+      storybookWorkflowPath,
+      fs.readFileSync(storybookWorkflowPath, 'utf8').replace("node-version-file: '.nvmrc'", 'node-version: 22')
+    );
+
+    const runtimeContractPath = path.join(tempDir, 'docs/runtime-contract.md');
+    fs.writeFileSync(
+      runtimeContractPath,
+      fs.readFileSync(runtimeContractPath, 'utf8').replace('v22.x LTS', 'v26.x LTS')
+    );
+
+    const dependabotPath = path.join(tempDir, '.github/dependabot.yml');
+    fs.writeFileSync(
+      dependabotPath,
+      fs.readFileSync(dependabotPath, 'utf8').replace('@types/node', '@types/legacy-node')
+    );
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Dockerfile: Must pin `node:22-bookworm-slim@sha256:<64-hex>` matching .nvmrc'),
+        expect.stringContaining(
+          ".github/workflows/storybook.yml (job \"build\"): `actions/setup-node` must set `node-version-file: '.nvmrc'`"
+        ),
+        expect.stringContaining('docs/runtime-contract.md: Must specify Node.js v22.x LTS and `node:22-bookworm-slim`'),
+        expect.stringContaining(
+          '.github/dependabot.yml: Missing `version-update:semver-major` ignore rule for `@types/node` under `npm` ecosystem'
+        ),
       ])
     );
   });

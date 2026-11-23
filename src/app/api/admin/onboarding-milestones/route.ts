@@ -19,13 +19,33 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
   const config = await getAppConfig();
   const registryEnabled = isFeatureEnabled('registry', config?.modules);
 
-  const [guestCount, registryCount, seatingCount] = await Promise.all([
+  const [guestCount, registryCount, seatingCount, faqNodes] = await Promise.all([
     prisma.invitationCode.count({ where: { isSample: false } }),
     registryEnabled
       ? prisma.registryItem.count({ where: { isSample: false } })
       : Promise.resolve(0),
     prisma.seatingTable.count({ where: { isSample: false } }),
+    prisma.contentNode?.findMany
+      ? prisma.contentNode.findMany({
+        where: { type: 'FAQ' },
+        select: { data: true },
+      })
+      : Promise.resolve([]),
   ]);
+
+  const nonSampleVisibleFaqCount = Array.isArray(faqNodes)
+    ? faqNodes.filter((node) => {
+      const data =
+        node?.data && typeof node.data === 'object' && !Array.isArray(node.data)
+          ? (node.data as Record<string, unknown>)
+          : {};
+      if (data.isSample === true || data.isSample === 'true') return false;
+      if (data.isVisible === false || data.isVisible === 'false') return false;
+      const question = typeof data.question === 'string' ? data.question.trim() : '';
+      const answer = typeof data.answer === 'string' ? data.answer.trim() : '';
+      return Boolean(question && answer);
+    }).length
+    : 0;
 
   const partner1 = (config?.partner1Name || config?.brideName || '').trim();
   const partner2 = (config?.partner2Name || config?.groomName || '').trim();
@@ -35,6 +55,7 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
   const guestListCompleted = guestCount > 0;
   const registryCompleted = registryCount > 0;
   const seatingCompleted = seatingCount > 0;
+  const faqCompleted = nonSampleVisibleFaqCount > 0;
 
   const milestones = [
     {
@@ -72,6 +93,14 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
       completed: seatingCompleted,
       href: '/admin/dashboard/seating-chart',
       actionLabel: seatingCompleted ? 'Edit Seating Layout' : 'Create Seating Layout',
+    },
+    {
+      id: 'faq-setup',
+      title: 'Wedding Q&A (FAQs)',
+      description: 'Publish guest Q&A answers for attire, RSVP deadlines, travel, and accommodations.',
+      completed: faqCompleted,
+      href: '/admin/dashboard/content',
+      actionLabel: faqCompleted ? 'Manage Wedding Q&A' : 'Add Starter FAQs',
     },
   ];
 
