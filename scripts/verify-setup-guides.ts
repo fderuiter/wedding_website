@@ -112,14 +112,31 @@ function parseIssueTemplateFrontmatterName(markdown: string): string | null {
   return name;
 }
 
-function parsePreCommitScripts(preCommitContent: string): string[] {
+function parseHookScripts(hookContent: string): string[] {
   const scripts: string[] = [];
   const scriptRegex = /\{\s*name:\s*['"][^'"]+['"]\s*,\s*script:\s*['"]([^'"]+)['"]\s*\}/g;
   let match: RegExpExecArray | null;
-  while ((match = scriptRegex.exec(preCommitContent)) !== null) {
+  while ((match = scriptRegex.exec(hookContent)) !== null) {
     scripts.push(match[1]);
   }
   return scripts;
+}
+
+function findForbiddenHookCommands(hookContent: string): string[] {
+  const forbidden: string[] = [];
+  if (/\bgit\s+stash\b/.test(hookContent) || /['"]stash['"]/.test(hookContent)) {
+    forbidden.push('git stash');
+  }
+  if (/\bgit\s+reset\b/.test(hookContent) || /['"]reset['"]/.test(hookContent)) {
+    forbidden.push('git reset');
+  }
+  if (
+    /\bgit\s+checkout\s+--(?!\w)/.test(hookContent) ||
+    /['"]checkout['"]\s*,\s*['"]--['"]/.test(hookContent)
+  ) {
+    forbidden.push('git checkout -- .');
+  }
+  return forbidden;
 }
 
 function parseCheckStaticSubscripts(checkStaticCommand: string): string[] {
@@ -235,6 +252,8 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     'eslint.config.mjs',
     'playwright.config.ts',
     '.githooks/pre-commit',
+    '.githooks/pre-push',
+    'scripts/install-git-hooks.js',
     'scripts/check-quality.ts',
     'scripts/pretest.mjs',
     'scripts/a11y-report.mjs',
@@ -274,6 +293,11 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   const testContainerRaw = fs.readFileSync(path.join(repoRoot, 'scripts/test-container.mjs'), 'utf8');
   const playwrightConfigRaw = fs.readFileSync(path.join(repoRoot, 'playwright.config.ts'), 'utf8');
   const preCommitRaw = fs.readFileSync(path.join(repoRoot, '.githooks/pre-commit'), 'utf8');
+  const prePushRaw = fs.readFileSync(path.join(repoRoot, '.githooks/pre-push'), 'utf8');
+  const installHooksRaw = fs.readFileSync(
+    path.join(repoRoot, 'scripts/install-git-hooks.js'),
+    'utf8'
+  );
   const checkQualityRaw = fs.readFileSync(path.join(repoRoot, 'scripts/check-quality.ts'), 'utf8');
   const pretestMjsRaw = fs.readFileSync(path.join(repoRoot, 'scripts/pretest.mjs'), 'utf8');
   const a11yReportRaw = fs.readFileSync(path.join(repoRoot, 'scripts/a11y-report.mjs'), 'utf8');
@@ -563,14 +587,56 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   }
 
   // 2. Hook, check:static parity, E2E runner, & check-quality.ts registration checks
-  const preCommitScripts = parsePreCommitScripts(preCommitRaw);
-  if (!preCommitScripts.includes('check:setup-guides')) {
-    errors.push('.githooks/pre-commit: Must run "check:setup-guides"');
+  if (
+    !installHooksRaw.includes('pre-commit') ||
+    !installHooksRaw.includes('pre-push') ||
+    !installHooksRaw.includes('0o755')
+  ) {
+    errors.push(
+      'scripts/install-git-hooks.js: Must configure executable 0o755 permissions on both .githooks/pre-commit and .githooks/pre-push'
+    );
+  }
+
+  if (!/\blint-staged\b/.test(preCommitRaw)) {
+    errors.push('.githooks/pre-commit: Must run "npx lint-staged" on staged files');
+  }
+  for (const legacyHelper of ['hasUnstagedChanges', 'pushStash', 'popStash']) {
+    if (preCommitRaw.includes(legacyHelper)) {
+      errors.push(`.githooks/pre-commit: Must remove legacy stash helper "${legacyHelper}"`);
+    }
+  }
+  const preCommitScripts = parseHookScripts(preCommitRaw);
+  if (preCommitScripts.length > 0) {
+    errors.push(
+      '.githooks/pre-commit: Must run only "npx lint-staged" without sequential workspace checks'
+    );
+  }
+
+  for (const [hookLabel, hookRaw] of [
+    ['.githooks/pre-commit', preCommitRaw],
+    ['.githooks/pre-push', prePushRaw],
+  ] as const) {
+    for (const forbiddenCmd of findForbiddenHookCommands(hookRaw)) {
+      errors.push(
+        `${hookLabel}: Must not invoke destructive workspace command "${forbiddenCmd}"`
+      );
+    }
+  }
+
+  const prePushScripts = parseHookScripts(prePushRaw);
+  if (!prePushScripts.includes('type-check') && !prePushScripts.includes('typecheck')) {
+    errors.push('.githooks/pre-push: Must run "type-check"');
+  }
+  if (!prePushScripts.includes('lint:unused')) {
+    errors.push('.githooks/pre-push: Must run "lint:unused"');
+  }
+  if (!prePushScripts.includes('check:setup-guides')) {
+    errors.push('.githooks/pre-push: Must run "check:setup-guides"');
   }
   for (const staticSubscript of checkStaticSubscripts) {
-    if (!preCommitScripts.includes(staticSubscript)) {
+    if (!prePushScripts.includes(staticSubscript)) {
       errors.push(
-        `.githooks/pre-commit: Must enforce check:static sub-script "${staticSubscript}"`
+        `.githooks/pre-push: Must enforce check:static sub-script "${staticSubscript}"`
       );
     }
   }
@@ -578,6 +644,11 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     if (preCommitScripts.includes(heavyBuildScript)) {
       errors.push(
         `.githooks/pre-commit: Must exclude heavy build step "${heavyBuildScript}" so local commits stay fast`
+      );
+    }
+    if (prePushScripts.includes(heavyBuildScript)) {
+      errors.push(
+        `.githooks/pre-push: Must exclude heavy build step "${heavyBuildScript}" so local pushes stay fast`
       );
     }
   }
@@ -738,6 +809,7 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     'no-unused-imports',
     'npm run scaffold',
     '.githooks/pre-commit',
+    '.githooks/pre-push',
     'lint-staged',
     'src/utils/',
   ]) {
@@ -748,25 +820,52 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   const contributingCommitSection =
     contributingRaw.split('7. **Commit Your Changes:**')[1]?.split('8. **Push to Your Fork:**')[0] ??
     contributingRaw;
-  for (const hookScript of preCommitScripts) {
-    if (!contributingCommitSection.includes(hookScript)) {
+  if (
+    !contributingCommitSection.includes('.githooks/pre-commit') ||
+    !contributingCommitSection.includes('lint-staged')
+  ) {
+    errors.push(
+      '.github/CONTRIBUTING.md: Commit Your Changes section must document ".githooks/pre-commit" running "npx lint-staged"'
+    );
+  }
+  if (/\bgit\s+stash\b/i.test(contributingCommitSection)) {
+    errors.push(
+      '.github/CONTRIBUTING.md: Commit Your Changes section must not prescribe or document "git stash"'
+    );
+  }
+  if (/\bsequential\s+workspace\s+checks\b/i.test(contributingCommitSection)) {
+    errors.push(
+      '.github/CONTRIBUTING.md: Commit Your Changes section must not claim sequential workspace checks run during pre-commit'
+    );
+  }
+
+  const contributingPushSection =
+    contributingRaw.split('8. **Push to Your Fork:**')[1]?.split('9. **Open a Pull Request (PR):**')[0] ??
+    contributingRaw;
+  if (!contributingPushSection.includes('.githooks/pre-push')) {
+    errors.push(
+      '.github/CONTRIBUTING.md: Push to Your Fork section must document ".githooks/pre-push"'
+    );
+  }
+  for (const hookScript of prePushScripts) {
+    if (!contributingPushSection.includes(hookScript)) {
       errors.push(
-        `.github/CONTRIBUTING.md: Missing .githooks/pre-commit check script "${hookScript}" in Commit Your Changes section`
+        `.github/CONTRIBUTING.md: Missing .githooks/pre-push check script "${hookScript}" in Push to Your Fork section`
       );
     }
   }
-  const countMatch = contributingCommitSection.match(
+  const countMatch = contributingPushSection.match(
     /\bruns\s+([a-z0-9]+)\s+sequential\s+workspace\s+checks\b/i
   );
-  const expectedCountWord = NUMBER_WORDS[preCommitScripts.length];
-  const expectedCountNum = String(preCommitScripts.length);
+  const expectedCountWord = NUMBER_WORDS[prePushScripts.length];
+  const expectedCountNum = String(prePushScripts.length);
   if (
-    countMatch &&
-    countMatch[1].toLowerCase() !== expectedCountWord &&
-    countMatch[1] !== expectedCountNum
+    !countMatch ||
+    (countMatch[1].toLowerCase() !== expectedCountWord &&
+      countMatch[1] !== expectedCountNum)
   ) {
     errors.push(
-      `.github/CONTRIBUTING.md: Commit Your Changes claims "${countMatch[1]}" sequential workspace checks, expected "${expectedCountWord ?? expectedCountNum}" (${preCommitScripts.length})`
+      `.github/CONTRIBUTING.md: Push to Your Fork claims "${countMatch?.[1] ?? 'none'}" sequential workspace checks, expected "${expectedCountWord ?? expectedCountNum}" (${prePushScripts.length})`
     );
   }
 
@@ -828,6 +927,11 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     ['.github/TESTING.md', testingRaw],
     ['AGENTS.md', agentsRaw],
   ] as const) {
+    if (!content.includes('.githooks/pre-commit') || !content.includes('.githooks/pre-push')) {
+      errors.push(
+        `${docLabel}: Must reference both ".githooks/pre-commit" and ".githooks/pre-push"`
+      );
+    }
     if (envTestGuestPasscode && !content.includes(envTestGuestPasscode)) {
       errors.push(
         `${docLabel}: Must report .env.test GUEST_PASSCODE value "${envTestGuestPasscode}"`

@@ -390,7 +390,7 @@ Database migrations are run automatically using `npx prisma migrate deploy` in t
 
 ### Migration Backwards Compatibility Linter
 
-Automated linter checks (`npm run lint:migrations`) run during pre-commit hooks, local builds, PR CI workflows (`ci.yml`), migration executions (`db-migrate.yml`), releases (`deploy.yml`), and rollbacks (`rollback.yml`). The linter (`scripts/verify-migration-compatibility.ts`) tokenizes SQL migrations in `prisma/migrations/` into semicolon-delimited statements—including multi-line statements, comma-separated `ALTER TABLE` clauses, and inner SQL inside PL/pgSQL `DO $$ ... $$` blocks—and flags destructive or N-1 incompatible DDL operations:
+Automated linter checks (`npm run lint:migrations`) run during pre-push hooks, local builds, PR CI workflows (`ci.yml`), migration executions (`db-migrate.yml`), releases (`deploy.yml`), and rollbacks (`rollback.yml`). The linter (`scripts/verify-migration-compatibility.ts`) tokenizes SQL migrations in `prisma/migrations/` into semicolon-delimited statements—including multi-line statements, comma-separated `ALTER TABLE` clauses, and inner SQL inside PL/pgSQL `DO $$ ... $$` blocks—and flags destructive or N-1 incompatible DDL operations:
 
 - **Destructive DDL**: `DROP TABLE`, `DROP COLUMN`, `RENAME COLUMN`, `RENAME TO`, `DROP CONSTRAINT`, `DROP TYPE`, and `TRUNCATE`
 - **Breaking Column Constraints & Type Mutations**: `ADD COLUMN` with `NOT NULL` lacking `DEFAULT`, `SET NOT NULL`, and `SET DATA TYPE`
