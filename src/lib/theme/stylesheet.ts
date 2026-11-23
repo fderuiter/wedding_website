@@ -397,6 +397,7 @@ export function generateDynamicStyles(
     '--schedule-tag-bg',
     '--canvas-bg',
     '--floorplan-table-bg',
+    '--floorplan-seat-dimmed-bg',
     '--floorplan-status-overcapacity-bg',
   ]);
 
@@ -406,6 +407,7 @@ export function generateDynamicStyles(
     '--input-border',
     '--schedule-card-border',
     '--floorplan-table-border',
+    '--floorplan-seat-dimmed-border',
   ]);
 
   const darkForegroundRgb = hexToRgb('#F9FAFB');
@@ -484,6 +486,19 @@ export function generateDynamicStyles(
 
     targetTokens['--badge-inverse-bg'] = badgeInverseBgHex;
     targetTokens['--badge-inverse-text'] = optimizeContrast(rawBadgeTextHex, badgeInverseBgHex, 4.5);
+
+    const isDarkTarget = targetTokens === darkPresetTokens;
+    const dimmedBgFallback = isDarkTarget ? '#374151' : '#e5e7eb';
+    const dimmedTextFallback = isDarkTarget ? '#f3f4f6' : '#374151';
+    const dimmedBorderFallback = isDarkTarget ? '#6b7280' : '#9ca3af';
+
+    const dimmedBgHex = resolveHex(targetTokens['--floorplan-seat-dimmed-bg'], dimmedBgFallback);
+    const rawDimmedTextHex = resolveHex(targetTokens['--floorplan-seat-dimmed-text'], dimmedTextFallback);
+    const dimmedBorderHex = resolveHex(targetTokens['--floorplan-seat-dimmed-border'], dimmedBorderFallback);
+
+    targetTokens['--floorplan-seat-dimmed-bg'] = dimmedBgHex;
+    targetTokens['--floorplan-seat-dimmed-text'] = optimizeContrast(rawDimmedTextHex, dimmedBgHex, 4.5);
+    targetTokens['--floorplan-seat-dimmed-border'] = dimmedBorderHex;
   };
 
   calibrateInverseAndToastTokens(
@@ -717,6 +732,9 @@ ${lightPresetCssRules}
       --color-status-info-text: ${statusInfoTextLight};
       --color-status-not-needed-text: ${statusInfoTextLight};
       --floorplan-seat-assigned-text: ${seatAssignedTextLight};
+      --floorplan-seat-dimmed-bg: ${lightPresetTokens['--floorplan-seat-dimmed-bg']};
+      --floorplan-seat-dimmed-text: ${lightPresetTokens['--floorplan-seat-dimmed-text']};
+      --floorplan-seat-dimmed-border: ${lightPresetTokens['--floorplan-seat-dimmed-border']};
     }
 
     .dark {
