@@ -6,6 +6,7 @@ import unusedImports from 'eslint-plugin-unused-imports';
 import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 import noRestrictedUtilityImports from './eslint-rules/no-restricted-utility-imports.mjs';
+import noUncalibratedContrastUtilities from './eslint-rules/no-uncalibrated-contrast-utilities.mjs';
 import { FlatCompat } from '@eslint/eslintrc';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -244,11 +245,13 @@ const eslintConfig = [
       'local-rules': {
         rules: {
           'no-restricted-utility-imports': noRestrictedUtilityImports,
+          'no-uncalibrated-contrast-utilities': noUncalibratedContrastUtilities,
         },
       },
     },
     rules: {
       'local-rules/no-restricted-utility-imports': 'error',
+      'local-rules/no-uncalibrated-contrast-utilities': 'error',
       '@stylistic/quotes': ['error', 'single', { avoidEscape: true }],
       '@stylistic/indent': ['error', 2],
       '@stylistic/semi': ['error', 'always'],
@@ -313,6 +316,7 @@ const eslintConfig = [
     ],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
+      'local-rules/no-uncalibrated-contrast-utilities': 'off',
     },
   },
   {

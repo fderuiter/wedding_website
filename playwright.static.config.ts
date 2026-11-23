@@ -12,13 +12,10 @@ if (process.env.TEST_WORKER_INDEX === undefined) {
   fs.writeFileSync(staticViolationsPath, '{}\n', 'utf8');
 }
 
-function resolveChromiumLaunchOptions() {
+function resolveChromiumExecutablePath(): string | undefined {
   const explicitPath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?.trim();
   if (explicitPath) {
-    return {
-      executablePath: explicitPath,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    };
+    return explicitPath;
   }
 
   try {
@@ -30,16 +27,13 @@ function resolveChromiumLaunchOptions() {
   }
 
   if (fs.existsSync('/usr/bin/google-chrome')) {
-    return {
-      executablePath: '/usr/bin/google-chrome',
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    };
+    return '/usr/bin/google-chrome';
   }
 
   return undefined;
 }
 
-const chromiumLaunchOptions = resolveChromiumLaunchOptions();
+const resolvedExecutablePath = resolveChromiumExecutablePath();
 
 const staticPort = process.env.STATIC_DEMO_PORT || '4173';
 const staticBaseUrl = `http://localhost:${staticPort}`;
@@ -59,7 +53,14 @@ export default defineConfig({
       reducedMotion: 'reduce',
     },
     trace: 'on-first-retry',
-    ...(chromiumLaunchOptions ? { launchOptions: chromiumLaunchOptions } : {}),
+    launchOptions: {
+      ...(resolvedExecutablePath ? { executablePath: resolvedExecutablePath } : {}),
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-gpu',
+      ],
+    },
   },
   projects: [
     {

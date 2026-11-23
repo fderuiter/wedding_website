@@ -1,6 +1,7 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import { pipeline } from 'stream';
 import childProcess from 'child_process';
 import { fileURLToPath } from 'url';
 
@@ -73,7 +74,7 @@ function buildStaticBundle() {
 
 function resolveCandidateFile(requestPathname) {
   if (requestPathname === BASE_PREFIX) {
-    return { status: 200, filePath: path.join(DIST_DIR, 'index.html') };
+    return { status: 308, redirectTo: `${BASE_PREFIX}/`, filePath: null };
   }
   if (!requestPathname.startsWith(`${BASE_PREFIX}/`)) {
     return { status: 404, filePath: null };
@@ -87,19 +88,26 @@ function resolveCandidateFile(requestPathname) {
     return { status: 403, filePath: null };
   }
 
-  const candidates = [];
   if (!normalizedRel) {
-    candidates.push(path.join(DIST_DIR, 'index.html'));
+    const rootIndex = path.join(DIST_DIR, 'index.html');
+    if (fs.existsSync(rootIndex) && fs.statSync(rootIndex).isFile()) {
+      return { status: 200, filePath: rootIndex };
+    }
   } else {
-    candidates.push(resolvedBase);
+    if (fs.existsSync(resolvedBase) && fs.statSync(resolvedBase).isFile()) {
+      return { status: 200, filePath: resolvedBase };
+    }
     const trimmed = resolvedBase.replace(/[\\/]+$/, '');
-    candidates.push(`${trimmed}.html`);
-    candidates.push(path.join(trimmed, 'index.html'));
-  }
-
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
-      return { status: 200, filePath: candidate };
+    const htmlCandidate = `${trimmed}.html`;
+    if (fs.existsSync(htmlCandidate) && fs.statSync(htmlCandidate).isFile()) {
+      return { status: 200, filePath: htmlCandidate };
+    }
+    const dirIndexCandidate = path.join(trimmed, 'index.html');
+    if (fs.existsSync(dirIndexCandidate) && fs.statSync(dirIndexCandidate).isFile()) {
+      if (!requestPathname.endsWith('/')) {
+        return { status: 308, redirectTo: `${requestPathname}/`, filePath: null };
+      }
+      return { status: 200, filePath: dirIndexCandidate };
     }
   }
 
@@ -130,9 +138,20 @@ function main() {
     return;
   }
 
+  const memoryCache = new Map();
+
   const server = http.createServer((req, res) => {
     const reqUrl = new URL(req.url || '/', `http://localhost:${PORT}`);
-    const { status, filePath } = resolveCandidateFile(reqUrl.pathname);
+    const { status, filePath, redirectTo } = resolveCandidateFile(reqUrl.pathname);
+
+    if (redirectTo) {
+      res.writeHead(status, {
+        Location: `${redirectTo}${reqUrl.search}`,
+        'Cache-Control': 'no-cache',
+      });
+      res.end();
+      return;
+    }
 
     if (!filePath) {
       res.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -142,8 +161,36 @@ function main() {
 
     const ext = path.extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+
+    let cachedBuf = memoryCache.get(filePath);
+    if (!cachedBuf) {
+      const stat = fs.statSync(filePath);
+      if (stat.size <= 10 * 1024 * 1024) {
+        cachedBuf = fs.readFileSync(filePath);
+        memoryCache.set(filePath, cachedBuf);
+      } else {
+        if (req.method === 'HEAD') {
+          res.writeHead(status, {
+            'Content-Type': contentType,
+            'Content-Length': stat.size,
+            'Cache-Control': 'no-cache',
+          });
+          res.end();
+          return;
+        }
+        res.writeHead(status, {
+          'Content-Type': contentType,
+          'Content-Length': stat.size,
+          'Cache-Control': 'no-cache',
+        });
+        pipeline(fs.createReadStream(filePath), res, () => {});
+        return;
+      }
+    }
+
     res.writeHead(status, {
       'Content-Type': contentType,
+      'Content-Length': cachedBuf.length,
       'Cache-Control': 'no-cache',
     });
 
@@ -152,8 +199,11 @@ function main() {
       return;
     }
 
-    fs.createReadStream(filePath).pipe(res);
+    res.end(cachedBuf);
   });
+
+  server.keepAliveTimeout = 65000;
+  server.headersTimeout = 66000;
 
   server.listen(PORT, () => {
     console.log(`Static GitHub Pages server listening at http://localhost:${PORT}${BASE_PREFIX}/demo`);

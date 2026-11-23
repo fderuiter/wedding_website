@@ -7,6 +7,7 @@ type FormFeedbackState = 'error' | 'success' | 'warning' | 'default';
 type RegisteredControl = {
   key: string;
   customId?: string;
+  required?: boolean;
 };
 
 type FormItemContextValue = {
@@ -14,10 +15,13 @@ type FormItemContextValue = {
   controlId: string;
   controls: RegisteredControl[];
   state: FormFeedbackState;
+  required: boolean;
+  groupRequired: boolean;
+  busy: boolean;
   messageId: string;
   hasMessage: boolean;
   describedByIds: string[];
-  registerControl: (key: string, customId?: string) => void;
+  registerControl: (key: string, customId?: string, required?: boolean) => void;
   unregisterControl: (key: string) => void;
   registerMessage: (id: string, active: boolean) => void;
 };
@@ -26,6 +30,23 @@ const FormItemContext = createContext<FormItemContextValue | null>(null);
 
 const useIsomorphicLayoutEffect =
   typeof window !== 'undefined' ? React.useLayoutEffect : React.useEffect;
+
+const READONLY_CAPABLE_INPUT_TYPES = new Set([
+  'text',
+  'password',
+  'search',
+  'url',
+  'tel',
+  'email',
+  'number',
+  'date',
+  'month',
+  'week',
+  'time',
+  'datetime-local',
+]);
+
+const NAVIGATION_PASSTHROUGH_KEYS = new Set(['Tab', 'Escape']);
 
 function mergeAriaDescribedBy(
   contextIds: string[] | undefined,
@@ -52,27 +73,42 @@ function mergeAriaDescribedBy(
 export function FormGroup({
   className,
   state = 'default',
+  required: groupRequired = false,
+  busy = false,
   ref,
   ...props
-}: React.ComponentPropsWithRef<'div'> & { state?: FormFeedbackState }) {
+}: React.ComponentPropsWithRef<'div'> & {
+  state?: FormFeedbackState;
+  required?: boolean;
+  busy?: boolean;
+}) {
   const id = useId();
   const messageId = `${id}-message`;
 
   const [controls, setControls] = React.useState<RegisteredControl[]>([]);
   const [describedByIds, setDescribedByIds] = React.useState<string[]>([]);
 
-  const registerControl = React.useCallback((key: string, customId?: string) => {
-    setControls((prev) => {
-      const existingIdx = prev.findIndex((item) => item.key === key);
-      if (existingIdx >= 0) {
-        if (prev[existingIdx].customId === customId) return prev;
-        const next = [...prev];
-        next[existingIdx] = { key, customId };
-        return next;
-      }
-      return [...prev, { key, customId }];
-    });
-  }, []);
+  const registerControl = React.useCallback(
+    (key: string, customId?: string, controlRequired?: boolean) => {
+      setControls((prev) => {
+        const existingIdx = prev.findIndex((item) => item.key === key);
+        const normalizedRequired = Boolean(controlRequired);
+        if (existingIdx >= 0) {
+          if (
+            prev[existingIdx].customId === customId &&
+            Boolean(prev[existingIdx].required) === normalizedRequired
+          ) {
+            return prev;
+          }
+          const next = [...prev];
+          next[existingIdx] = { key, customId, required: normalizedRequired };
+          return next;
+        }
+        return [...prev, { key, customId, required: normalizedRequired }];
+      });
+    },
+    []
+  );
 
   const unregisterControl = React.useCallback((key: string) => {
     setControls((prev) => {
@@ -93,6 +129,7 @@ export function FormGroup({
   const primaryControl = controls[0];
   const controlId = primaryControl ? (primaryControl.customId || id) : id;
   const hasMessage = describedByIds.length > 0;
+  const isRequired = Boolean(groupRequired || controls.some((item) => item.required));
 
   return (
     <FormItemContext.Provider
@@ -101,6 +138,9 @@ export function FormGroup({
         controlId,
         controls,
         state,
+        required: isRequired,
+        groupRequired: Boolean(groupRequired),
+        busy: Boolean(busy),
         messageId,
         hasMessage,
         describedByIds,
@@ -125,12 +165,20 @@ const useFormItem = () => {
 function useFormControl({
   propId,
   propState,
+  propRequired,
+  propAriaRequired,
+  propBusy,
+  propAriaBusy,
   propAriaDescribedBy,
   propAriaInvalid,
   requireGroup,
 }: {
   propId?: string;
   propState?: FormFeedbackState;
+  propRequired?: boolean;
+  propAriaRequired?: React.AriaAttributes['aria-required'];
+  propBusy?: boolean;
+  propAriaBusy?: React.AriaAttributes['aria-busy'];
   propAriaDescribedBy?: string;
   propAriaInvalid?: React.AriaAttributes['aria-invalid'];
   requireGroup: boolean;
@@ -145,8 +193,8 @@ function useFormControl({
 
   useIsomorphicLayoutEffect(() => {
     if (!registerControl) return;
-    registerControl(controlKey, propId);
-  }, [controlKey, propId, registerControl]);
+    registerControl(controlKey, propId, Boolean(propRequired));
+  }, [controlKey, propId, propRequired, registerControl]);
 
   useIsomorphicLayoutEffect(() => {
     if (!unregisterControl) return;
@@ -162,6 +210,16 @@ function useFormControl({
 
   const id = propId || (context && isPrimary ? context.id : controlKey);
   const state: FormFeedbackState = propState || context?.state || 'default';
+  const isRequired = propRequired !== undefined ? propRequired : Boolean(context?.groupRequired);
+  const ariaRequired: React.AriaAttributes['aria-required'] =
+    propAriaRequired !== undefined
+      ? propAriaRequired
+      : isRequired
+        ? 'true'
+        : undefined;
+  const isBusy = propBusy !== undefined ? propBusy : Boolean(context?.busy);
+  const ariaBusy: React.AriaAttributes['aria-busy'] =
+    propAriaBusy !== undefined ? propAriaBusy : (isBusy ? true : undefined);
   const ariaDescribedBy = mergeAriaDescribedBy(context?.describedByIds, propAriaDescribedBy);
   const ariaInvalid: React.AriaAttributes['aria-invalid'] =
     propAriaInvalid !== undefined ? propAriaInvalid : (state === 'error' ? 'true' : 'false');
@@ -169,6 +227,10 @@ function useFormControl({
   return {
     id,
     state,
+    isRequired,
+    ariaRequired,
+    isBusy,
+    ariaBusy,
     ariaDescribedBy,
     ariaInvalid,
   };
@@ -177,31 +239,53 @@ function useFormControl({
 export function Label({
   className,
   htmlFor: propHtmlFor,
+  required: propRequired,
+  hideRequiredIndicator = false,
+  children,
   ref,
   ...props
-}: React.ComponentPropsWithRef<'label'>) {
-  const { controlId, state } = useFormItem();
+}: React.ComponentPropsWithRef<'label'> & {
+  required?: boolean;
+  hideRequiredIndicator?: boolean;
+}) {
+  const { controlId, state, required: contextRequired, groupRequired } = useFormItem();
+  const isRequired = propRequired !== undefined ? propRequired : contextRequired;
+  const showIndicator =
+    !hideRequiredIndicator &&
+    (propRequired !== undefined ? propRequired : groupRequired);
 
   return (
     <label
       ref={ref}
       {...props}
       htmlFor={propHtmlFor || controlId}
+      data-required={isRequired ? 'true' : undefined}
       className={cn(
         'block text-sm font-semibold leading-none',
         state === 'error' ? 'text-[var(--form-error-text,var(--color-error-text,#dc2626))]' :
-          state === 'success' ? 'text-[var(--form-success-text,#16a34a)]' :
-            state === 'warning' ? 'text-[var(--form-warning-text,#ca8a04)]' :
+          state === 'success' ? 'text-[var(--form-success-text,var(--color-status-success-text,#166534))]' :
+            state === 'warning' ? 'text-[var(--form-warning-text,var(--color-warning-text,#78350f))]' :
               'text-[var(--form-label-text,var(--color-primary-text,#111827))]',
         className
       )}
-    />
+    >
+      {children}
+      {showIndicator && (
+        <span
+          aria-hidden="true"
+          className="ml-0.5 text-[var(--form-error-text,var(--color-error-text,#dc2626))]"
+        >
+          *
+        </span>
+      )}
+    </label>
   );
 }
 
 export interface InputProps extends React.ComponentPropsWithRef<'input'> {
   state?: FormFeedbackState;
   sizeVariant?: 'default' | 'compact';
+  busy?: boolean;
 }
 
 export function Input({
@@ -210,19 +294,46 @@ export function Input({
   style,
   state: propState,
   sizeVariant = 'default',
+  busy: propBusy,
+  required: propRequired,
+  readOnly: propReadOnly,
+  disabled,
   id: propId,
+  onClick,
+  onChange,
+  onKeyDown,
+  'aria-required': propAriaRequired,
+  'aria-busy': propAriaBusy,
+  'aria-disabled': propAriaDisabled,
   'aria-describedby': propAriaDescribedBy,
   'aria-invalid': propAriaInvalid,
   ref,
   ...props
 }: InputProps) {
-  const { id, state, ariaDescribedBy, ariaInvalid } = useFormControl({
+  const {
+    id,
+    state,
+    isRequired,
+    ariaRequired,
+    isBusy,
+    ariaBusy,
+    ariaDescribedBy,
+    ariaInvalid,
+  } = useFormControl({
     propId,
     propState,
+    propRequired,
+    propAriaRequired,
+    propBusy,
+    propAriaBusy,
     propAriaDescribedBy,
     propAriaInvalid,
     requireGroup: false,
   });
+
+  const supportsReadOnly = READONLY_CAPABLE_INPUT_TYPES.has(type.toLowerCase());
+  const busyReadOnlyLock = isBusy && !disabled && supportsReadOnly;
+  const busyAriaLock = isBusy && !disabled && !supportsReadOnly;
 
   const sizeStyles = {
     default: 'h-10 px-3 py-2 text-sm',
@@ -230,10 +341,36 @@ export function Input({
   };
 
   const stateStyles = {
-    default: 'border-[var(--input-border,var(--color-surface-border,#d1d5db))] focus-visible:ring-[var(--input-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
-    error: 'border-[var(--input-error-border,var(--color-error-text,#ef4444))] focus-visible:ring-[var(--input-error-focus-ring,var(--color-error-text,#ef4444))]',
-    success: 'border-[var(--input-success-border,#22c55e)] focus-visible:ring-[var(--input-success-focus-ring,#22c55e)]',
-    warning: 'border-[var(--input-warning-border,#f59e0b)] focus-visible:ring-[var(--input-warning-focus-ring,#f59e0b)]',
+    default: 'border-[var(--input-border,var(--color-surface-border,#6b7280))] focus-visible:ring-[var(--input-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
+    error: 'border-[var(--input-error-border,var(--color-error-text,#dc2626))] focus-visible:ring-[var(--input-error-focus-ring,var(--color-error-text,#dc2626))]',
+    success: 'border-[var(--input-success-border,var(--color-status-success-text,#15803d))] focus-visible:ring-[var(--input-success-focus-ring,var(--color-status-success-text,#15803d))]',
+    warning: 'border-[var(--input-warning-border,var(--color-warning-text,#b45309))] focus-visible:ring-[var(--input-warning-focus-ring,var(--color-warning-text,#b45309))]',
+  };
+
+  const handleClick = (e: React.MouseEvent<HTMLInputElement>) => {
+    if (busyAriaLock) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    onClick?.(e);
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (busyAriaLock) {
+      e.preventDefault();
+      return;
+    }
+    onChange?.(e);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (busyAriaLock && !NAVIGATION_PASSTHROUGH_KEYS.has(e.key)) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    onKeyDown?.(e);
   };
 
   return (
@@ -241,17 +378,26 @@ export function Input({
       {...props}
       type={type}
       id={id}
+      disabled={disabled}
+      required={isRequired || undefined}
+      readOnly={propReadOnly || busyReadOnlyLock || undefined}
+      onClick={handleClick}
+      onChange={onChange || busyAriaLock ? handleChange : undefined}
+      onKeyDown={onKeyDown || busyAriaLock ? handleKeyDown : undefined}
       style={{
         borderRadius: 'var(--input-radius, 0.375rem)',
         ...style,
       }}
       className={cn(
-        'flex w-full border bg-[var(--input-bg,#ffffff)] text-[var(--form-label-text,var(--color-primary-text,#111827))] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+        'flex w-full border bg-[var(--input-bg,#ffffff)] text-[var(--form-label-text,var(--color-primary-text,#111827))] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 aria-busy:cursor-not-allowed aria-busy:opacity-60 aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
         sizeStyles[sizeVariant],
         stateStyles[state],
         className
       )}
       ref={ref}
+      aria-required={ariaRequired}
+      aria-busy={ariaBusy}
+      aria-disabled={propAriaDisabled ?? (busyAriaLock ? 'true' : undefined)}
       aria-invalid={ariaInvalid}
       aria-describedby={ariaDescribedBy}
     />
@@ -262,41 +408,70 @@ export function Textarea({
   className,
   style,
   state: propState,
+  busy: propBusy,
+  required: propRequired,
+  readOnly: propReadOnly,
+  disabled,
   id: propId,
+  'aria-required': propAriaRequired,
+  'aria-busy': propAriaBusy,
   'aria-describedby': propAriaDescribedBy,
   'aria-invalid': propAriaInvalid,
   ref,
   ...props
-}: React.ComponentPropsWithRef<'textarea'> & { state?: FormFeedbackState }) {
-  const { id, state, ariaDescribedBy, ariaInvalid } = useFormControl({
+}: React.ComponentPropsWithRef<'textarea'> & {
+  state?: FormFeedbackState;
+  busy?: boolean;
+}) {
+  const {
+    id,
+    state,
+    isRequired,
+    ariaRequired,
+    isBusy,
+    ariaBusy,
+    ariaDescribedBy,
+    ariaInvalid,
+  } = useFormControl({
     propId,
     propState,
+    propRequired,
+    propAriaRequired,
+    propBusy,
+    propAriaBusy,
     propAriaDescribedBy,
     propAriaInvalid,
     requireGroup: true,
   });
 
+  const busyReadOnlyLock = isBusy && !disabled;
+
   const stateStyles = {
-    default: 'border-[var(--input-border,var(--color-surface-border,#d1d5db))] focus-visible:ring-[var(--input-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
-    error: 'border-[var(--input-error-border,var(--color-error-text,#ef4444))] focus-visible:ring-[var(--input-error-focus-ring,var(--color-error-text,#ef4444))]',
-    success: 'border-[var(--input-success-border,#22c55e)] focus-visible:ring-[var(--input-success-focus-ring,#22c55e)]',
-    warning: 'border-[var(--input-warning-border,#f59e0b)] focus-visible:ring-[var(--input-warning-focus-ring,#f59e0b)]',
+    default: 'border-[var(--input-border,var(--color-surface-border,#6b7280))] focus-visible:ring-[var(--input-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
+    error: 'border-[var(--input-error-border,var(--color-error-text,#dc2626))] focus-visible:ring-[var(--input-error-focus-ring,var(--color-error-text,#dc2626))]',
+    success: 'border-[var(--input-success-border,var(--color-status-success-text,#15803d))] focus-visible:ring-[var(--input-success-focus-ring,var(--color-status-success-text,#15803d))]',
+    warning: 'border-[var(--input-warning-border,var(--color-warning-text,#b45309))] focus-visible:ring-[var(--input-warning-focus-ring,var(--color-warning-text,#b45309))]',
   };
 
   return (
     <textarea
       {...props}
       id={id}
+      disabled={disabled}
+      required={isRequired || undefined}
+      readOnly={propReadOnly || busyReadOnlyLock || undefined}
       style={{
         borderRadius: 'var(--input-radius, 0.375rem)',
         ...style,
       }}
       className={cn(
-        'flex min-h-[80px] w-full border bg-[var(--input-bg,#ffffff)] px-3 py-2 text-sm text-[var(--form-label-text,var(--color-primary-text,#111827))] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+        'flex min-h-[80px] w-full border bg-[var(--input-bg,#ffffff)] px-3 py-2 text-sm text-[var(--form-label-text,var(--color-primary-text,#111827))] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 aria-busy:cursor-not-allowed aria-busy:opacity-60',
         stateStyles[state],
         className
       )}
       ref={ref}
+      aria-required={ariaRequired}
+      aria-busy={ariaBusy}
       aria-invalid={ariaInvalid}
       aria-describedby={ariaDescribedBy}
     />
@@ -307,41 +482,112 @@ export function Select({
   className,
   style,
   state: propState,
+  busy: propBusy,
+  required: propRequired,
+  disabled,
   id: propId,
+  onClick,
+  onMouseDown,
+  onChange,
+  onKeyDown,
+  'aria-required': propAriaRequired,
+  'aria-busy': propAriaBusy,
+  'aria-disabled': propAriaDisabled,
   'aria-describedby': propAriaDescribedBy,
   'aria-invalid': propAriaInvalid,
   ref,
   ...props
-}: React.ComponentPropsWithRef<'select'> & { state?: FormFeedbackState }) {
-  const { id, state, ariaDescribedBy, ariaInvalid } = useFormControl({
+}: React.ComponentPropsWithRef<'select'> & {
+  state?: FormFeedbackState;
+  busy?: boolean;
+}) {
+  const {
+    id,
+    state,
+    isRequired,
+    ariaRequired,
+    isBusy,
+    ariaBusy,
+    ariaDescribedBy,
+    ariaInvalid,
+  } = useFormControl({
     propId,
     propState,
+    propRequired,
+    propAriaRequired,
+    propBusy,
+    propAriaBusy,
     propAriaDescribedBy,
     propAriaInvalid,
     requireGroup: true,
   });
 
+  const busyAriaLock = isBusy && !disabled;
+
   const stateStyles = {
-    default: 'border-[var(--input-border,var(--color-surface-border,#d1d5db))] focus-visible:ring-[var(--input-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
-    error: 'border-[var(--input-error-border,var(--color-error-text,#ef4444))] focus-visible:ring-[var(--input-error-focus-ring,var(--color-error-text,#ef4444))]',
-    success: 'border-[var(--input-success-border,#22c55e)] focus-visible:ring-[var(--input-success-focus-ring,#22c55e)]',
-    warning: 'border-[var(--input-warning-border,#f59e0b)] focus-visible:ring-[var(--input-warning-focus-ring,#f59e0b)]',
+    default: 'border-[var(--input-border,var(--color-surface-border,#6b7280))] focus-visible:ring-[var(--input-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
+    error: 'border-[var(--input-error-border,var(--color-error-text,#dc2626))] focus-visible:ring-[var(--input-error-focus-ring,var(--color-error-text,#dc2626))]',
+    success: 'border-[var(--input-success-border,var(--color-status-success-text,#15803d))] focus-visible:ring-[var(--input-success-focus-ring,var(--color-status-success-text,#15803d))]',
+    warning: 'border-[var(--input-warning-border,var(--color-warning-text,#b45309))] focus-visible:ring-[var(--input-warning-focus-ring,var(--color-warning-text,#b45309))]',
+  };
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLSelectElement>) => {
+    if (busyAriaLock) {
+      e.preventDefault();
+      return;
+    }
+    onMouseDown?.(e);
+  };
+
+  const handleClick = (e: React.MouseEvent<HTMLSelectElement>) => {
+    if (busyAriaLock) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    onClick?.(e);
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    if (busyAriaLock) {
+      e.preventDefault();
+      return;
+    }
+    onChange?.(e);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLSelectElement>) => {
+    if (busyAriaLock && !NAVIGATION_PASSTHROUGH_KEYS.has(e.key)) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    onKeyDown?.(e);
   };
 
   return (
     <select
       {...props}
       id={id}
+      disabled={disabled}
+      required={isRequired || undefined}
+      onMouseDown={onMouseDown || busyAriaLock ? handleMouseDown : undefined}
+      onClick={onClick || busyAriaLock ? handleClick : undefined}
+      onChange={onChange || busyAriaLock ? handleChange : undefined}
+      onKeyDown={onKeyDown || busyAriaLock ? handleKeyDown : undefined}
       style={{
         borderRadius: 'var(--input-radius, 0.375rem)',
         ...style,
       }}
       className={cn(
-        'flex h-10 w-full border bg-[var(--input-bg,#ffffff)] px-3 py-2 text-sm text-[var(--form-label-text,var(--color-primary-text,#111827))] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+        'flex h-10 w-full border bg-[var(--input-bg,#ffffff)] px-3 py-2 text-sm text-[var(--form-label-text,var(--color-primary-text,#111827))] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
         stateStyles[state],
         className
       )}
       ref={ref}
+      aria-required={ariaRequired}
+      aria-busy={ariaBusy}
+      aria-disabled={propAriaDisabled ?? (busyAriaLock ? 'true' : undefined)}
       aria-invalid={ariaInvalid}
       aria-describedby={ariaDescribedBy}
     />
@@ -352,25 +598,78 @@ export function Checkbox({
   className,
   style,
   state: propState,
+  busy: propBusy,
+  required: propRequired,
+  disabled,
   id: propId,
+  onClick,
+  onChange,
+  onKeyDown,
+  'aria-required': propAriaRequired,
+  'aria-busy': propAriaBusy,
+  'aria-disabled': propAriaDisabled,
   'aria-describedby': propAriaDescribedBy,
   'aria-invalid': propAriaInvalid,
   ref,
   ...props
-}: React.ComponentPropsWithRef<'input'> & { state?: FormFeedbackState }) {
-  const { id, state, ariaDescribedBy, ariaInvalid } = useFormControl({
+}: React.ComponentPropsWithRef<'input'> & {
+  state?: FormFeedbackState;
+  busy?: boolean;
+}) {
+  const {
+    id,
+    state,
+    isRequired,
+    ariaRequired,
+    isBusy,
+    ariaBusy,
+    ariaDescribedBy,
+    ariaInvalid,
+  } = useFormControl({
     propId,
     propState,
+    propRequired,
+    propAriaRequired,
+    propBusy,
+    propAriaBusy,
     propAriaDescribedBy,
     propAriaInvalid,
     requireGroup: true,
   });
 
+  const busyAriaLock = isBusy && !disabled;
+
   const stateStyles = {
-    default: 'border-[var(--input-border,var(--color-surface-border,#d1d5db))] text-[var(--color-primary,#B91C1C)] focus-visible:ring-[var(--input-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
-    error: 'border-[var(--input-error-border,var(--color-error-text,#ef4444))] text-[var(--form-error-text,var(--color-error-text,#ef4444))] focus-visible:ring-[var(--input-error-focus-ring,var(--color-error-text,#ef4444))]',
-    success: 'border-[var(--input-success-border,#22c55e)] text-[var(--form-success-text,#22c55e)] focus-visible:ring-[var(--input-success-focus-ring,#22c55e)]',
-    warning: 'border-[var(--input-warning-border,#f59e0b)] text-[var(--form-warning-text,#ca8a04)] focus-visible:ring-[var(--input-warning-focus-ring,#f59e0b)]',
+    default: 'border-[var(--input-border,var(--color-surface-border,#6b7280))] text-[var(--color-primary,#B91C1C)] focus-visible:ring-[var(--input-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
+    error: 'border-[var(--input-error-border,var(--color-error-text,#dc2626))] text-[var(--form-error-text,var(--color-error-text,#dc2626))] focus-visible:ring-[var(--input-error-focus-ring,var(--color-error-text,#dc2626))]',
+    success: 'border-[var(--input-success-border,var(--color-status-success-text,#15803d))] text-[var(--form-success-text,var(--color-status-success-text,#166534))] focus-visible:ring-[var(--input-success-focus-ring,var(--color-status-success-text,#15803d))]',
+    warning: 'border-[var(--input-warning-border,var(--color-warning-text,#b45309))] text-[var(--form-warning-text,var(--color-warning-text,#78350f))] focus-visible:ring-[var(--input-warning-focus-ring,var(--color-warning-text,#b45309))]',
+  };
+
+  const handleClick = (e: React.MouseEvent<HTMLInputElement>) => {
+    if (busyAriaLock) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    onClick?.(e);
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (busyAriaLock) {
+      e.preventDefault();
+      return;
+    }
+    onChange?.(e);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (busyAriaLock && !NAVIGATION_PASSTHROUGH_KEYS.has(e.key)) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    onKeyDown?.(e);
   };
 
   return (
@@ -378,16 +677,24 @@ export function Checkbox({
       {...props}
       type="checkbox"
       id={id}
+      disabled={disabled}
+      required={isRequired || undefined}
+      onClick={onClick || busyAriaLock ? handleClick : undefined}
+      onChange={onChange || busyAriaLock ? handleChange : undefined}
+      onKeyDown={onKeyDown || busyAriaLock ? handleKeyDown : undefined}
       style={{
         borderRadius: 'var(--input-radius, 0.25rem)',
         ...style,
       }}
       className={cn(
-        'h-4 w-4 border bg-[var(--input-bg,#ffffff)] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+        'h-4 w-4 border bg-[var(--input-bg,#ffffff)] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
         stateStyles[state],
         className
       )}
       ref={ref}
+      aria-required={ariaRequired}
+      aria-busy={ariaBusy}
+      aria-disabled={propAriaDisabled ?? (busyAriaLock ? 'true' : undefined)}
       aria-invalid={ariaInvalid}
       aria-describedby={ariaDescribedBy}
     />
@@ -421,15 +728,20 @@ export function FormMessage({
   }, [resolvedId, hasContent, registerMessage]);
 
   const stateStyles = {
-    default: 'text-[var(--form-message-text,var(--color-secondary-text,#6b7280))]',
+    default: 'text-[var(--form-message-text,var(--color-muted-text,#4b5563))]',
     error: 'text-[var(--form-error-text,var(--color-error-text,#dc2626))] font-medium',
-    success: 'text-[var(--form-success-text,#16a34a)] font-medium',
-    warning: 'text-[var(--form-warning-text,#ca8a04)] font-medium',
+    success: 'text-[var(--form-success-text,var(--color-status-success-text,#166534))] font-medium',
+    warning: 'text-[var(--form-warning-text,var(--color-warning-text,#78350f))] font-medium',
   };
 
-  const role = propRole ?? (state === 'error' ? 'alert' : 'status');
-  const ariaLive = propAriaLive ?? (state === 'error' ? 'assertive' : 'polite');
-  const ariaAtomic = propAriaAtomic ?? 'true';
+  const suppressLiveRole = propRole === 'none' || propAriaLive === 'off';
+  const role = suppressLiveRole
+    ? undefined
+    : (propRole ?? (state === 'error' ? 'alert' : 'status'));
+  const ariaLive = suppressLiveRole
+    ? undefined
+    : (propAriaLive ?? (state === 'error' ? 'assertive' : 'polite'));
+  const ariaAtomic = suppressLiveRole ? undefined : (propAriaAtomic ?? 'true');
 
   return (
     <p

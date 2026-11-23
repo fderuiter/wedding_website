@@ -346,4 +346,19 @@ describe('TableModal component', () => {
     fireEvent.change(screen.getByLabelText(/Seating Capacity/i), { target: { value: '4' } });
     expect(screen.getByTestId('capacity-warning')).toHaveTextContent(/Table has 6 seated guests/i);
   });
+
+  test('displays scaled-bounds-note when high capacity expands rendered table perimeter and hides it when user dimensions fit', () => {
+    render(<TableModal {...defaultProps} table={mockTable} />);
+
+    // Default capacity 8 on 120x120 round table fits without auto-expansion
+    expect(screen.queryByTestId('scaled-bounds-note')).not.toBeInTheDocument();
+
+    // Increasing capacity to 30 auto-expands rendered perimeter to keep >=24x24px seat targets
+    const capInput = screen.getByLabelText(/Seating Capacity/i);
+    fireEvent.change(capInput, { target: { value: '30' } });
+
+    const note = screen.getByTestId('scaled-bounds-note');
+    expect(note).toBeInTheDocument();
+    expect(note).toHaveTextContent(/Rendered floorplan & PDF bounds automatically expand to 309 × 309 px/i);
+  });
 });

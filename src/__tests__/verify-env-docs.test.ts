@@ -11,7 +11,7 @@ import {
   parseRuntimeContractTables,
   scanProcessEnvFromSource,
   validateConfigSiteOverrideParity,
-  validateEnvDocContent,
+  validateProviderRunbookScope,
   validateRuntimeContract,
   verifyEnvDocs,
   type EnvClassification,
@@ -277,7 +277,12 @@ describe('AST-Based Environment Documentation Validation Parser', () => {
       });
       expect(specs.get('S3_ENDPOINT')).toEqual({
         key: 'S3_ENDPOINT',
-        classification: 'optional',
+        classification: 'conditional',
+        defaultValue: null,
+      });
+      expect(specs.get('S3_PUBLIC_URL')).toEqual({
+        key: 'S3_PUBLIC_URL',
+        classification: 'conditional',
         defaultValue: null,
       });
       expect(specs.get('STRIPE_SECRET_KEY')).toEqual({
@@ -425,23 +430,25 @@ describe('AST-Based Environment Documentation Validation Parser', () => {
       );
     });
 
-    it('scopes provider deployment runbooks in docs/deployment/ to core src/env.ts keys and PORT', () => {
+    it('scopes provider deployment runbooks in docs/deployment/ to recognized operator keys, PORT, and HOSTNAME and forbids full matrix duplication', () => {
       const coreKeys = ['NODE_ENV', 'DATABASE_URL', 'ADMIN_PASSWORD', 'ALLOWED_HOSTS'];
       const validWithPort = [
-        '## 2. Required Environment Variables',
-        '| Variable | Required |',
+        'See [docs/runtime-contract.md](../runtime-contract.md) for the canonical matrix.',
+        '',
+        '## 2. Provider Secrets & Configuration',
+        '| Variable | Notes |',
         '|---|---|',
-        '| `NODE_ENV` | Yes |',
-        '| `DATABASE_URL` | Yes |',
-        '| `ADMIN_PASSWORD` | Yes |',
-        '| `ALLOWED_HOSTS` | No |',
-        '| `HOSTNAME` | No |',
-        '| `PORT` | No |',
+        '| `DATABASE_URL` | Primary connection string |',
+        '| `PORT` | Injected port |',
       ].join('\n');
-      expect(validateEnvDocContent('docs/deployment/docker-vps.md', validWithPort, coreKeys)).toEqual([]);
+      expect(
+        validateProviderRunbookScope('docs/deployment/docker-vps.md', validWithPort, coreKeys, coreKeys)
+      ).toEqual([]);
 
       const clutteredRunbook = `${validWithPort}\n| \`SITE_PARTNER1_NAME\` | No |`;
-      expect(validateEnvDocContent('docs/deployment/docker-vps.md', clutteredRunbook, coreKeys)).toEqual([
+      expect(
+        validateProviderRunbookScope('docs/deployment/docker-vps.md', clutteredRunbook, coreKeys, coreKeys)
+      ).toEqual([
         expect.stringContaining('Out-of-scope variable SITE_PARTNER1_NAME'),
       ]);
     });
@@ -464,15 +471,18 @@ describe('AST-Based Environment Documentation Validation Parser', () => {
            const envSchema = z.object({
              NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
              DATABASE_URL: z.string(),
+             ADMIN_PASSWORD: z.string(),
            });
            const isEdge = process.env.NEXT_RUNTIME === 'edge';
            void isEdge;`
         );
 
-        const baseGuide = [
-          '## Environment Variables Reference',
-          '- `NODE_ENV`: Mode.',
-          '- `DATABASE_URL`: DB.',
+        const scopedGuide = [
+          '# Deployment Guide',
+          'See [docs/runtime-contract.md](./runtime-contract.md) for the full environment variable matrix.',
+          '',
+          '## 2. Provider Secrets & Configuration',
+          '- `DATABASE_URL`: PostgreSQL connection URL.',
         ].join('\n');
 
         const validContract = [
@@ -481,17 +491,21 @@ describe('AST-Based Environment Documentation Validation Parser', () => {
           '| Variable | Default Value | Description |',
           '|---|---|---|',
           '| `DATABASE_URL` | *None* | DB |',
+          '| `ADMIN_PASSWORD` | *None* | Admin hash |',
           '### Optional Infrastructure & Feature Variables',
           '| Variable | Default Value | Description |',
           '|---|---|---|',
           '| `NODE_ENV` | `development` | Mode |',
         ].join('\n');
 
-        fs.writeFileSync(path.join(tempDir, 'DEPLOYMENT.md'), baseGuide);
-        fs.writeFileSync(path.join(tempDir, '.env.example'), 'NODE_ENV=development\nDATABASE_URL="postgres://localhost/db"\n');
+        fs.writeFileSync(path.join(tempDir, 'DEPLOYMENT.md'), scopedGuide);
+        fs.writeFileSync(
+          path.join(tempDir, '.env.example'),
+          'NODE_ENV=development\nDATABASE_URL="postgres://localhost/db"\nADMIN_PASSWORD="scrypt:salt:hash"\n'
+        );
         fs.writeFileSync(path.join(tempDir, 'docs/runtime-contract.md'), validContract);
-        for (const provider of ['docker-vps.md', 'gcp-cloud-run.md', 'vercel.md', 'railway-render.md']) {
-          fs.writeFileSync(path.join(tempDir, 'docs/deployment', provider), baseGuide);
+        for (const provider of ['README.md', 'docker-vps.md', 'gcp-cloud-run.md', 'vercel.md', 'railway-render.md']) {
+          fs.writeFileSync(path.join(tempDir, 'docs/deployment', provider), scopedGuide);
         }
 
         // Baseline valid workspace passes (NEXT_RUNTIME allowlisted)

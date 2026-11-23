@@ -4,6 +4,7 @@ import { ts } from 'ts-morph';
 import { fileURLToPath } from 'url';
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml';
 import { parsePostgresUrl, redactPostgresUrl } from '../src/lib/postgres-url.js';
+import { staticSteps } from './check-quality';
 import { getKeysFromSource } from './verify-env-docs';
 
 interface ExtractedMigrateCommand {
@@ -1028,6 +1029,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     'src/app/api/uploads/[...path]/route.ts',
     'src/app/api/admin/maintenance/export/route.ts',
     'scripts/preflight-env.ts',
+    'scripts/verify-migration-compatibility.ts',
     'ARCHITECTURE.md',
     'CHANGELOG.md',
     'DEPLOYMENT.md',
@@ -2461,12 +2463,22 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     if (!isMap(stepItem)) continue;
     const runNode: unknown = stepItem.get('run', true);
     if (!isScalar(runNode) || typeof runNode.value !== 'string') continue;
+    const skipsDocSync = /\bcheck:static\b[^\n]*--skip-doc-sync\b/.test(runNode.value);
     const npmRunRegex = /\bnpm\s+run\s+([a-zA-Z0-9:_-]+)\b/g;
     let scriptMatch: RegExpExecArray | null;
     while ((scriptMatch = npmRunRegex.exec(runNode.value)) !== null) {
       const scriptName = scriptMatch[1];
       if (scriptName !== 'prisma:generate' && !ciVerifyScripts.includes(scriptName)) {
         ciVerifyScripts.push(scriptName);
+      }
+      if (scriptName === 'check:static') {
+        for (const staticStep of staticSteps) {
+          if (!staticStep.script) continue;
+          if (skipsDocSync && staticStep.script === 'check:doc-sync') continue;
+          if (!ciVerifyScripts.includes(staticStep.script)) {
+            ciVerifyScripts.push(staticStep.script);
+          }
+        }
       }
     }
   }
@@ -2942,20 +2954,41 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   }
 
   const prismaSchemaRaw = fs.readFileSync(path.join(repoRoot, 'prisma/schema.prisma'), 'utf8');
-  const totalModels = (prismaSchemaRaw.match(/^model\s+[A-Za-z0-9_]+\s*\{/gm) ?? []).length;
-  const sharedTableCount = Math.max(0, totalModels - 1);
-  for (const relPath of runbookRelPaths) {
-    const content = runbookContents.get(relPath) ?? '';
-    if (!new RegExp(`\\b${sharedTableCount}\\s+tables\\b`).test(content) || !content.includes('AppConfig')) {
+  const prismaModels = Array.from(
+    prismaSchemaRaw.matchAll(/^model\s+([A-Za-z0-9_]+)\s*\{/gm),
+    (match) => match[1]
+  );
+  for (const modelName of prismaModels) {
+    if (!runtimeContractMd.includes(`\`${modelName}\``)) {
       errors.push(
-        `${relPath}: Must state that \`prisma/schema.prisma\` shares ${sharedTableCount} tables across subdomains (\`MULTISITE_ENABLED\` switches \`AppConfig\` rows only)`
+        `docs/runtime-contract.md: Missing persisted prisma/schema.prisma model \`${modelName}\` in canonical runtime entity summary`
+      );
+    }
+  }
+  if (
+    !runtimeContractMd.includes('MULTISITE_ENABLED') ||
+    !runtimeContractMd.includes('AppConfig') ||
+    !/all\s+other\s+persisted\s+models\s+in\s+`?prisma\/schema\.prisma`?\s+are\s+shared\s+across\s+subdomains/i.test(
+      runtimeContractMd
+    )
+  ) {
+    errors.push(
+      'docs/runtime-contract.md: Must document that `MULTISITE_ENABLED` switches `AppConfig` rows only while all other persisted models in `prisma/schema.prisma` are shared across subdomains'
+    );
+  }
+  for (const relPath of hostingGuides) {
+    const content = runbookContents.get(relPath) ?? '';
+    if (!content.includes('runtime-contract.md')) {
+      errors.push(
+        `${relPath}: Must cross-reference \`docs/runtime-contract.md\` for canonical environment variable and persisted entity contracts`
       );
     }
   }
 
-  // 7. Release Notes (CHANGELOG.md), Downstream Upgrade Guide (docs/upgrading.md), & Env Preflight CLI Contract
+  // 7. Release Notes (CHANGELOG.md), Downstream Upgrade & Versioning Guides (docs/upgrading.md, docs/versioning.md), & Env Preflight CLI Contract
   const changelogMd = fs.readFileSync(path.join(repoRoot, 'CHANGELOG.md'), 'utf8');
   const upgradingMd = fs.readFileSync(path.join(repoRoot, 'docs/upgrading.md'), 'utf8');
+  const versioningMd = fs.readFileSync(path.join(repoRoot, 'docs/versioning.md'), 'utf8');
   const dockerEntrypointRaw = fs.readFileSync(path.join(repoRoot, 'docker-entrypoint.sh'), 'utf8');
   const modulesTsRaw = fs.readFileSync(path.join(repoRoot, 'src/lib/modules.ts'), 'utf8');
   const exportRouteRaw = fs.readFileSync(
@@ -2966,6 +2999,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   for (const [docLabel, docContent] of [
     ['CHANGELOG.md', changelogMd],
     ['docs/upgrading.md', upgradingMd],
+    ['docs/versioning.md', versioningMd],
   ] as const) {
     if (docContent.includes('scrypt:c2FsdA==:aGFzaA==')) {
       errors.push(
@@ -2979,48 +3013,61 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
-  // Validate Prisma 7 CLI commands and PostgreSQL URIs inside docs/upgrading.md
-  for (const cmd of extractPrismaMigrateCommands('docs/upgrading.md', upgradingMd)) {
-    if (!VALID_MIGRATE_SUBCOMMANDS.has(cmd.subcommand)) {
-      errors.push(
-        `docs/upgrading.md: Invalid prisma migrate subcommand "${cmd.subcommand}" in \`${cmd.rawCommand}\` (Remediation: Use a valid Prisma ${prismaMajor} migrate subcommand)`
-      );
-      continue;
-    }
-    if (prismaMajor >= 7) {
-      for (const flag of cmd.flags) {
-        if (REMOVED_PRISMA_7_FLAGS.has(flag)) {
-          errors.push(
-            `docs/upgrading.md: Removed Prisma <7 flag "${flag}" used under Prisma ${prismaMajor}.x in \`${cmd.rawCommand}\` (Remediation: Replace removed Prisma 6 flags with Prisma 7 prisma.config.ts flags)`
-          );
-        } else {
-          const allowedFlags = VALID_PRISMA_7_SUBCOMMAND_FLAGS[cmd.subcommand];
-          if (allowedFlags && !allowedFlags.has(flag)) {
+  // Validate Prisma 7 CLI commands and PostgreSQL URIs inside docs/upgrading.md, docs/versioning.md, and ARCHITECTURE.md
+  for (const [guideRelPath, guideContent] of [
+    ['docs/upgrading.md', upgradingMd],
+    ['docs/versioning.md', versioningMd],
+    ['ARCHITECTURE.md', architectureMd],
+  ] as const) {
+    for (const cmd of extractPrismaMigrateCommands(guideRelPath, guideContent)) {
+      if (!VALID_MIGRATE_SUBCOMMANDS.has(cmd.subcommand)) {
+        errors.push(
+          `${guideRelPath}: Invalid prisma migrate subcommand "${cmd.subcommand}" in \`${cmd.rawCommand}\` (Remediation: Use a valid Prisma ${prismaMajor} migrate subcommand)`
+        );
+        continue;
+      }
+      if (prismaMajor >= 7) {
+        for (const flag of cmd.flags) {
+          if (REMOVED_PRISMA_7_FLAGS.has(flag)) {
             errors.push(
-              `docs/upgrading.md: Unsupported flag "${flag}" for "prisma migrate ${cmd.subcommand}" in \`${cmd.rawCommand}\``
+              `${guideRelPath}: Removed Prisma <7 flag "${flag}" used under Prisma ${prismaMajor}.x in \`${cmd.rawCommand}\` (Remediation: Replace removed Prisma 6 flags with Prisma 7 prisma.config.ts flags)`
             );
+          } else {
+            const allowedFlags = VALID_PRISMA_7_SUBCOMMAND_FLAGS[cmd.subcommand];
+            if (allowedFlags && !allowedFlags.has(flag)) {
+              errors.push(
+                `${guideRelPath}: Unsupported flag "${flag}" for "prisma migrate ${cmd.subcommand}" in \`${cmd.rawCommand}\``
+              );
+            }
           }
         }
-      }
-      if (
-        urlEnvKey &&
-        shadowUrlEnvKey &&
-        cmd.rawCommand.includes(`${urlEnvKey}=`) &&
-        cmd.rawCommand.includes(shadowUrlEnvKey) &&
-        !new RegExp(`(?:env\\s+-u\\s+${shadowUrlEnvKey}|unset\\s+${shadowUrlEnvKey})`).test(cmd.rawCommand)
-      ) {
-        errors.push(
-          `docs/upgrading.md: \`${cmd.rawCommand}\` overrides ${urlEnvKey} from ${shadowUrlEnvKey} without \`env -u ${shadowUrlEnvKey}\` (Remediation: Unset ${shadowUrlEnvKey} when overriding ${urlEnvKey} for Prisma 7 CLI)`
-        );
+        if (
+          urlEnvKey &&
+          shadowUrlEnvKey &&
+          cmd.rawCommand.includes(`${urlEnvKey}=`) &&
+          cmd.rawCommand.includes(shadowUrlEnvKey) &&
+          !new RegExp(`(?:env\\s+-u\\s+${shadowUrlEnvKey}|unset\\s+${shadowUrlEnvKey})`).test(cmd.rawCommand)
+        ) {
+          errors.push(
+            `${guideRelPath}: \`${cmd.rawCommand}\` overrides ${urlEnvKey} from ${shadowUrlEnvKey} without \`env -u ${shadowUrlEnvKey}\` (Remediation: Unset ${shadowUrlEnvKey} when overriding ${urlEnvKey} for Prisma 7 CLI)`
+          );
+        }
       }
     }
+
+    if (shadowUrlEnvKey && guideContent.includes(shadowUrlEnvKey) && !guideContent.includes('prisma.config.ts')) {
+      errors.push(
+        `${guideRelPath}: Documents ${shadowUrlEnvKey} without referencing prisma.config.ts datasource binding`
+      );
+    }
+
+    validateDocumentedPostgresUrlsInRunbook(
+      guideRelPath,
+      guideContent,
+      [urlEnvKey ?? 'DATABASE_URL', shadowUrlEnvKey ?? 'POSTGRES_URL_NON_POOLING'],
+      errors
+    );
   }
-  validateDocumentedPostgresUrlsInRunbook(
-    'docs/upgrading.md',
-    upgradingMd,
-    [urlEnvKey ?? 'DATABASE_URL', shadowUrlEnvKey ?? 'POSTGRES_URL_NON_POOLING'],
-    errors
-  );
 
   // Verify package.json registers preflight:env CLI script
   if (
@@ -3299,6 +3346,124 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
         );
       }
     }
+  }
+
+  // 8. Migration CLI Environment Separation, Expand-Migrate-Contract & lint:migrations Alignment
+  const migrateDeployScript = packageJson.scripts?.['migrate:deploy'] ?? '';
+  if (
+    !migrateDeployScript.includes('dotenv -c development') ||
+    !migrateDeployScript.includes('prisma migrate deploy')
+  ) {
+    errors.push(
+      'package.json: `"migrate:deploy"` script must wrap `dotenv -c development -- prisma migrate deploy` for local development environment loading (Remediation: Align package.json "migrate:deploy" with local dotenv -c development contract)'
+    );
+  }
+
+  const lintMigrationsScript = packageJson.scripts?.['lint:migrations'] ?? '';
+  if (!lintMigrationsScript.includes('scripts/verify-migration-compatibility.ts')) {
+    errors.push(
+      'package.json: `"lint:migrations"` script must invoke `scripts/verify-migration-compatibility.ts` (Remediation: Register "lint:migrations" pointing to scripts/verify-migration-compatibility.ts in package.json)'
+    );
+  }
+
+  const expectedUrlKey = urlEnvKey ?? 'DATABASE_URL';
+  const expectedShadowUrlKey = shadowUrlEnvKey ?? 'POSTGRES_URL_NON_POOLING';
+  const allMigrationContractDocs: Array<[string, string]> = [
+    ...Array.from(runbookContents.entries()),
+    ['docs/upgrading.md', upgradingMd],
+    ['docs/versioning.md', versioningMd],
+    ['ARCHITECTURE.md', architectureMd],
+  ];
+
+  for (const [docLabel, docContent] of allMigrationContractDocs) {
+    if (/\bDIRECT_URL\b/.test(docContent)) {
+      errors.push(
+        `${docLabel}: References unsupported "DIRECT_URL" environment variable instead of "${expectedUrlKey}" / "${expectedShadowUrlKey}" bound in prisma.config.ts (Remediation: Replace DIRECT_URL with ${expectedUrlKey} / ${expectedShadowUrlKey})`
+      );
+    }
+    if (docContent.includes('lint-migrations.ts')) {
+      errors.push(
+        `${docLabel}: References non-existent "scripts/lint-migrations.ts" instead of "scripts/verify-migration-compatibility.ts" wired to "npm run lint:migrations" in package.json (Remediation: Reference scripts/verify-migration-compatibility.ts)`
+      );
+    }
+  }
+
+  for (const [docLabel, docContent] of [
+    ['docs/upgrading.md', upgradingMd],
+    ['docs/versioning.md', versioningMd],
+    ['ARCHITECTURE.md', architectureMd],
+  ] as const) {
+    if (!docContent.includes('npm run migrate:deploy') || !docContent.includes('npx prisma migrate deploy')) {
+      errors.push(
+        `${docLabel}: Must document both local \`npm run migrate:deploy\` and production \`npx prisma migrate deploy\` (Remediation: Distinguish local npm run migrate:deploy from production npx prisma migrate deploy in ${docLabel})`
+      );
+    }
+    if (!docContent.includes('dotenv -c development') || !docContent.includes('.env.development')) {
+      errors.push(
+        `${docLabel}: Must clarify that \`npm run migrate:deploy\` wraps \`dotenv -c development\` and cascades local \`.env.development\` files (Remediation: Document dotenv -c development and .env.development behavior for npm run migrate:deploy in ${docLabel})`
+      );
+    }
+    if (/`npm run migrate:deploy`\s*\(`(?:npx\s+)?prisma migrate deploy`\)/.test(docContent)) {
+      errors.push(
+        `${docLabel}: Conflates local \`npm run migrate:deploy\` (\`dotenv -c development\`) as an unqualified alias for \`prisma migrate deploy\` (Remediation: Distinguish local npm run migrate:deploy from production npx prisma migrate deploy against ${expectedUrlKey} / ${expectedShadowUrlKey})`
+      );
+    }
+    if (!docContent.includes(expectedUrlKey) || !docContent.includes(expectedShadowUrlKey)) {
+      errors.push(
+        `${docLabel}: Must reference both \`${expectedUrlKey}\` and \`${expectedShadowUrlKey}\` when documenting production Prisma migrations via prisma.config.ts (Remediation: Document ${expectedUrlKey} and ${expectedShadowUrlKey} in ${docLabel})`
+      );
+    }
+  }
+
+  const upgradingTrackCSection = extractSectionSlice(upgradingMd, /^####\s+Track\s+C\b/, '### ');
+  const upgradingTrackCFencedLines = extractFencedLogicalLines(upgradingTrackCSection);
+  if (upgradingTrackCFencedLines.some((line) => /\bnpm\s+run\s+migrate:deploy\b/.test(line))) {
+    errors.push(
+      'docs/upgrading.md: Track C (Host Node.js Runtime) fenced production commands must not invoke `npm run migrate:deploy` (which loads local `.env.development*` files via `dotenv -c development`); use `dotenv -e .env -- npx prisma migrate deploy` or `npx prisma migrate deploy` against `DATABASE_URL` (Remediation: Update Track C in docs/upgrading.md)'
+    );
+  }
+  if (!upgradingTrackCFencedLines.some((line) => /\bnpx\s+prisma\s+migrate\s+deploy\b/.test(line))) {
+    errors.push(
+      'docs/upgrading.md: Track C (Host Node.js Runtime) fenced production commands must invoke `npx prisma migrate deploy` (Remediation: Update Track C in docs/upgrading.md)'
+    );
+  }
+
+  const deploymentRunbookMd = runbookContents.get('DEPLOYMENT.md') ?? '';
+  for (const [docLabel, docContent] of [
+    ['DEPLOYMENT.md', deploymentRunbookMd],
+    ['docs/versioning.md', versioningMd],
+    ['docs/upgrading.md', upgradingMd],
+    ['ARCHITECTURE.md', architectureMd],
+  ] as const) {
+    if (!docContent.includes('Expand-Migrate-Contract')) {
+      errors.push(
+        `${docLabel}: Missing three-phase "Expand-Migrate-Contract" database migration policy alignment (Remediation: Align ${docLabel} with DEPLOYMENT.md on Expand-Migrate-Contract)`
+      );
+    }
+    if (
+      !docContent.includes('npm run lint:migrations') ||
+      !docContent.includes('scripts/verify-migration-compatibility.ts') ||
+      !docContent.includes('allow-destructive:')
+    ) {
+      errors.push(
+        `${docLabel}: Missing migration compatibility linter contract (\`npm run lint:migrations\`, \`scripts/verify-migration-compatibility.ts\`, and \`-- allow-destructive: <reason>\`) (Remediation: Document npm run lint:migrations, scripts/verify-migration-compatibility.ts, and -- allow-destructive: <reason> in ${docLabel})`
+      );
+    }
+  }
+
+  if (/two-phase\s+release\s+process/i.test(versioningMd)) {
+    errors.push(
+      'docs/versioning.md: Contains stale "two-phase release process" database migration policy instead of three-phase "Expand-Migrate-Contract" (Remediation: Update Section 3 in docs/versioning.md to the three-phase Expand-Migrate-Contract policy)'
+    );
+  }
+  if (
+    !versioningMd.includes('Phase 1: Expand') ||
+    !versioningMd.includes('Phase 2: Migrate') ||
+    !versioningMd.includes('Phase 3: Contract')
+  ) {
+    errors.push(
+      'docs/versioning.md: Must explicitly define "Phase 1: Expand", "Phase 2: Migrate", and "Phase 3: Contract" aligned with DEPLOYMENT.md (Remediation: Document all three Expand-Migrate-Contract phases in docs/versioning.md)'
+    );
   }
 
   return errors;

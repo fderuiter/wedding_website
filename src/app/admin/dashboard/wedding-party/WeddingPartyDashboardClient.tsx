@@ -1,5 +1,5 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 import type { WeddingPartyMemberDTO } from '@/features/wedding-party';
 import { useAdminWeddingParty } from '@/hooks/admin/useAdminWeddingParty';
@@ -11,6 +11,7 @@ import { WeddingPartyEditorForm, WeddingPartyCard } from '@/components/admin/Wed
 import { Button } from '@/components/ui/Button';
 import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
 import { useToast } from '@/components/ui/ToastProvider';
+import { withBasePath } from '@/lib/basePath';
 
 interface WeddingPartyDashboardContentProps {
   members: WeddingPartyMemberDTO[];
@@ -35,6 +36,46 @@ function WeddingPartyDashboardContent({
   const [isEditing, setIsEditing] = useState(false);
   const [currentMember, setCurrentMember] = useState<Partial<WeddingPartyMemberDTO>>({});
   const [announcement, setAnnouncement] = useState<string>('');
+  const [partnerNames, setPartnerNames] = useState<{ partner1Name: string; partner2Name: string }>({
+    partner1Name: '',
+    partner2Name: '',
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadPartnerNames = async () => {
+      try {
+        const res = await fetch(withBasePath('/api/admin/settings'));
+        if (!res || !res.ok || typeof res.json !== 'function' || cancelled) return;
+        const raw = await res.json();
+        if (cancelled) return;
+        const cfg = raw && typeof raw === 'object' && 'data' in raw && raw.data ? raw.data : raw;
+        if (cfg && typeof cfg === 'object') {
+          const nextP1 = String(
+            (cfg as Record<string, unknown>).partner1Name ||
+              (cfg as Record<string, unknown>).brideName ||
+              '',
+          );
+          const nextP2 = String(
+            (cfg as Record<string, unknown>).partner2Name ||
+              (cfg as Record<string, unknown>).groomName ||
+              '',
+          );
+          setPartnerNames((prev) =>
+            prev.partner1Name === nextP1 && prev.partner2Name === nextP2
+              ? prev
+              : { partner1Name: nextP1, partner2Name: nextP2 },
+          );
+        }
+      } catch {
+        // Fallback to Partner 1 / Partner 2 labels if settings endpoint is unavailable
+      }
+    };
+    void loadPartnerNames();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleMove = async (index: number, direction: 'up' | 'down') => {
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
@@ -133,6 +174,8 @@ function WeddingPartyDashboardContent({
               onChange={(updated) => setCurrentMember((prev) => ({ ...prev, ...updated }))}
               onSubmit={handleSave}
               onCancel={() => setIsEditing(false)}
+              partner1Name={partnerNames.partner1Name}
+              partner2Name={partnerNames.partner2Name}
               submitLabel="Save"
             />
           </AdminEditorContainer>

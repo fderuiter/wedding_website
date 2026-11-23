@@ -1,12 +1,12 @@
 /* eslint-disable @next/next/no-img-element */
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
-import { useOptionalDemo } from '@/components/demo/DemoContext';
 import { withBasePath } from '@/lib/basePath';
+import { useOptionalDemo } from '@/components/demo/DemoContext';
 
 export interface SlideshowPhoto {
   id?: string;
@@ -48,6 +48,18 @@ export function ReceptionSlideshowClient({
   uploadUrl,
 }: ReceptionSlideshowClientProps) {
   const demo = useOptionalDemo();
+  const hasExpandedDemoToolbar = Boolean(demo?.isDemoMode && !demo.isToolbarCollapsed);
+  const hasCollapsedDemoToolbar = Boolean(demo?.isDemoMode && demo.isToolbarCollapsed);
+  const controlsBottomClass = hasExpandedDemoToolbar
+    ? 'bottom-20'
+    : hasCollapsedDemoToolbar
+      ? 'bottom-16'
+      : 'bottom-6';
+  const qrOverlayBottomClass = hasExpandedDemoToolbar
+    ? 'bottom-36'
+    : hasCollapsedDemoToolbar
+      ? 'bottom-32'
+      : 'bottom-24';
   const [photos, setPhotos] = useState<SlideshowPhoto[]>(() => normalizePhotos(initialPhotos));
   const [failedUrls, setFailedUrls] = useState<Set<string>>(() => new Set());
   const failedUrlsRef = useRef<Set<string>>(new Set());
@@ -98,15 +110,28 @@ export function ReceptionSlideshowClient({
     }
   }, [initialLatestTimestamp]);
 
-  // Derive resolved upload URL
+  const subscribeOriginNoop = useCallback(() => () => {}, []);
+  const clientOrigin = useSyncExternalStore(
+    subscribeOriginNoop,
+    () => (typeof window !== 'undefined' && window.location?.origin ? window.location.origin : ''),
+    () => ''
+  );
+
+  // Derive resolved upload URL (upgrading relative signed QR paths and basePath-prefixed fallbacks after hydration)
   const resolvedUploadUrl = useMemo(() => {
-    if (uploadUrl) return uploadUrl;
+    if (uploadUrl) {
+      if (uploadUrl.startsWith('/')) {
+        const prefixed = withBasePath(uploadUrl);
+        return clientOrigin ? `${clientOrigin}${prefixed}` : prefixed;
+      }
+      return uploadUrl;
+    }
     const photosPath = withBasePath('/photos?tab=guest');
-    if (typeof window !== 'undefined' && window.location?.origin) {
-      return `${window.location.origin}${photosPath}`;
+    if (clientOrigin) {
+      return `${clientOrigin}${photosPath}`;
     }
     return photosPath;
-  }, [uploadUrl]);
+  }, [uploadUrl, clientOrigin]);
 
   // Helper to determine whether an element is an interactive control in the slideshow
   const isInteractiveControl = useCallback((node: Node | null): boolean => {
@@ -506,14 +531,14 @@ export function ReceptionSlideshowClient({
             </svg>
             Gallery
           </Link>
-          <span className="text-xs uppercase tracking-wider font-semibold text-stone-300 drop-shadow-md">
+          <h1 className="text-xs uppercase tracking-wider font-semibold text-stone-300 drop-shadow-md">
             Live Reception Slideshow
-          </span>
+          </h1>
         </div>
 
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-xs font-medium text-stone-200">
           <span>{photos.length > 0 ? safeIndex + 1 : 0}</span>
-          <span className="text-stone-500">/</span>
+          <span className="text-stone-300">/</span>
           <span>{photos.length}</span>
         </div>
       </div>
@@ -569,18 +594,12 @@ export function ReceptionSlideshowClient({
       {showQrCode && (
         <section
           aria-label="Guest Photo Upload QR Code"
-          className={`fixed ${
-            demo?.isDemoMode
-              ? demo.isToolbarCollapsed
-                ? 'bottom-36'
-                : 'bottom-52 lg:bottom-48'
-              : 'bottom-24'
-          } right-6 z-40 max-w-xs md:max-w-sm rounded-2xl p-5 bg-stone-900/90 text-white shadow-2xl backdrop-blur-md border border-white/15 animate-fade-in`}
+          className={`fixed ${qrOverlayBottomClass} right-6 z-40 max-w-xs md:max-w-sm rounded-2xl p-5 bg-stone-900/90 text-white shadow-2xl backdrop-blur-md border border-white/15 animate-fade-in`}
           data-testid="slideshow-qr-overlay"
         >
           <div className="flex items-start justify-between gap-3 mb-3">
             <div>
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
                 <svg
                   className="w-5 h-5 text-amber-400"
                   fill="none"
@@ -597,7 +616,7 @@ export function ReceptionSlideshowClient({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
                 Upload Your Photos
-              </h3>
+              </h2>
               <p className="text-xs text-stone-300 mt-0.5">
                 Scan with your phone to display your photos on screen!
               </p>
@@ -605,7 +624,7 @@ export function ReceptionSlideshowClient({
             <button
               type="button"
               onClick={() => setShowQrCode(false)}
-              className="p-1 rounded-full text-stone-400 hover:text-white hover:bg-white/10 transition focus:outline-none focus:ring-2 focus:ring-white"
+              className="p-1 rounded-full text-stone-300 hover:text-white hover:bg-white/10 transition focus:outline-none focus:ring-2 focus:ring-white"
               aria-label="Dismiss QR code overlay"
               data-testid="slideshow-qr-close-btn"
             >
@@ -638,13 +657,7 @@ export function ReceptionSlideshowClient({
         ref={controlsRef}
         role="toolbar"
         aria-label="Slideshow Controls"
-        className={`group fixed ${
-          demo?.isDemoMode
-            ? demo.isToolbarCollapsed
-              ? 'bottom-16'
-              : 'bottom-32 lg:bottom-28'
-            : 'bottom-6'
-        } left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-3 rounded-full border text-white transition-all duration-500 focus-within:bg-stone-900/85 focus-within:backdrop-blur-md focus-within:border-white/15 focus-within:shadow-2xl ${
+        className={`group fixed ${controlsBottomClass} left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-3 rounded-full border text-white transition-all duration-500 focus-within:bg-stone-900/85 focus-within:backdrop-blur-md focus-within:border-white/15 focus-within:shadow-2xl ${
           shouldShowControls
             ? 'bg-stone-900/85 backdrop-blur-md border-white/15 shadow-2xl'
             : 'bg-transparent border-transparent shadow-none'

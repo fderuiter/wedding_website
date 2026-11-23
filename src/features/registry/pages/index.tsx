@@ -182,7 +182,6 @@ function RegistryPageContent() {
           initial={{ opacity: 0, y: -30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7 }}
-          tabIndex={0}
           aria-label="Wedding Registry"
         >
           Wedding Registry
@@ -199,7 +198,7 @@ function RegistryPageContent() {
             <div className="relative flex items-center w-full">
               <Icon
                 name="Search"
-                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-text pointer-events-none"
               />
               <Input
                 id="registry-search-input"
@@ -214,7 +213,7 @@ function RegistryPageContent() {
                 <button
                   type="button"
                   onClick={() => setSearchQuery?.('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary rounded p-0.5"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-text hover:text-gray-600 dark:hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary rounded p-0.5"
                   aria-label="Clear search query"
                 >
                   <Icon name="X" className="w-4 h-4" />
@@ -314,31 +313,28 @@ function RegistryPageContent() {
             actionLabel="Refresh Registry"
           />
         ) : visibleItems.length > 0 ? (
-          <>
-            <h2 className="sr-only">Registry Gifts</h2>
-            <motion.div
-              className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-10 max-w-7xl mx-auto"
-              variants={gridVariants}
-              initial="hidden"
-              animate="visible"
-              aria-live="polite"
-            >
-              {visibleItems.map((item) => (
-                <motion.div key={item.id} variants={cardVariants}>
-                  <RegistryCard
-                    item={item}
-                    onClick={handleCardClick}
-                    isAdmin={isAdmin}
-                    cardCheckoutEnabled={cardCheckoutEnabled}
-                    defaultPaymentHandleType={defaultPaymentHandleType}
-                    defaultPaymentHandle={defaultPaymentHandle}
-                    onEdit={handleEdit}
-                    onDelete={handleDelete}
-                  />
-                </motion.div>
-              ))}
-            </motion.div>
-          </>
+          <motion.div
+            className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-10 max-w-7xl mx-auto"
+            variants={gridVariants}
+            initial="hidden"
+            animate="visible"
+            aria-live="polite"
+          >
+            {visibleItems.map((item) => (
+              <motion.div key={item.id} variants={cardVariants}>
+                <RegistryCard
+                  item={item}
+                  onClick={handleCardClick}
+                  isAdmin={isAdmin}
+                  cardCheckoutEnabled={cardCheckoutEnabled}
+                  defaultPaymentHandleType={defaultPaymentHandleType}
+                  defaultPaymentHandle={defaultPaymentHandle}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                />
+              </motion.div>
+            ))}
+          </motion.div>
         ) : (
           <EmptyState
             message="No gifts match the current filters. Try adjusting your search!"

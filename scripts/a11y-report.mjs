@@ -28,6 +28,7 @@ function normalizePlaywrightViolations(rawData) {
 
 export function generateReport(options = {}) {
   const cwd = options.cwd || process.cwd();
+  const requireStaticDemo = Boolean(options.requireStaticDemo);
   let totalViolations = 0;
   const incompleteSuites = [];
   let report = '## Accessibility Health Summary\n\n';
@@ -75,28 +76,26 @@ export function generateReport(options = {}) {
   }
 
   const staticDemoFile = path.join(cwd, 'test-results', 'static-demo-a11y-violations.json');
-  const requireStaticDemo = Boolean(options.requireStaticDemo);
-  if (fs.existsSync(staticDemoFile) || requireStaticDemo) {
-    report += '### Static Demo Level (Playwright)\n';
-    if (fs.existsSync(staticDemoFile)) {
-      const parsedStatic = JSON.parse(fs.readFileSync(staticDemoFile, 'utf8'));
-      const staticViolations = normalizePlaywrightViolations(parsedStatic);
-      if (staticViolations.length === 0) {
-        report += '✅ No accessibility violations found in static demo pages.\n\n';
-      } else {
-        totalViolations += staticViolations.length;
-        report += `❌ Found ${staticViolations.length} violations in static demo pages.\n`;
-        staticViolations.forEach((v) => {
-          const routeLabel = v.route ? ` (\`${v.route}\`)` : '';
-          report += `- **${v.id}**${routeLabel}: ${v.description} (${v.impact})\n`;
-        });
-        report += '\n';
-      }
+  if (fs.existsSync(staticDemoFile)) {
+    report += '### Static Showcase Level (Playwright)\n';
+    const parsedStatic = JSON.parse(fs.readFileSync(staticDemoFile, 'utf8'));
+    const staticViolations = normalizePlaywrightViolations(parsedStatic);
+    if (staticViolations.length === 0) {
+      report += '✅ No accessibility violations found in static showcase routes.\n\n';
     } else {
-      incompleteSuites.push('static-demo');
-      report +=
-        '⚠️ Incomplete: Static demo accessibility artifact (`test-results/static-demo-a11y-violations.json`) was not found.\n\n';
+      totalViolations += staticViolations.length;
+      report += `❌ Found ${staticViolations.length} violations in static showcase routes.\n`;
+      staticViolations.forEach((v) => {
+        const routeLabel = v.route ? ` (\`${v.route}\`)` : '';
+        report += `- **${v.id}**${routeLabel}: ${v.description} (${v.impact})\n`;
+      });
+      report += '\n';
     }
+  } else if (requireStaticDemo) {
+    report += '### Static Showcase Level (Playwright)\n';
+    incompleteSuites.push('static-demo');
+    report +=
+      '⚠️ Incomplete: Static showcase accessibility artifact (`test-results/static-demo-a11y-violations.json`) was not found.\n\n';
   }
 
   if (incompleteSuites.length > 0) {
@@ -244,7 +243,7 @@ export function main(argv = process.argv.slice(2), options = {}) {
 
   const { totalViolations } = generateReport({
     ...options,
-    requireStaticDemo: Boolean(options.requireStaticDemo || argv.includes('--require-static-demo')),
+    requireStaticDemo: argv.includes('--require-static-demo') || Boolean(options.requireStaticDemo),
   });
   if (totalViolations > 0) {
     process.exit(1);

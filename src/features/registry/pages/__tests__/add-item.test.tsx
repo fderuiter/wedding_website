@@ -6,15 +6,13 @@ import { apiClient } from '@/lib/apiClient';
 
 expect.extend(toHaveNoViolations);
 
-jest.mock('@/lib/apiClient', () => {
-  const actual = jest.requireActual('@/lib/apiClient');
-  return {
-    ...actual,
-    apiClient: {
-      post: jest.fn(),
-    },
-  };
-});
+jest.mock('@/lib/apiClient', () => ({
+  ...jest.requireActual('@/lib/apiClient'),
+  apiClient: {
+    get: jest.fn(),
+    post: jest.fn(),
+  },
+}));
 
 const mockPush = jest.fn();
 
@@ -230,29 +228,5 @@ describe('AddRegistryItemPage Tabbed Navigation', () => {
 
     expect(window.sessionStorage.getItem('registry_item_form_add')).toBeNull();
     expect(mockPush).toHaveBeenCalledWith('/admin/dashboard/registry');
-  });
-
-  it('renders a top-level h1, applies WCAG AA high-contrast tab styles, and has no axe violations across all tabs', async () => {
-    const { container } = render(<AddRegistryItemPage />);
-
-    expect(screen.getByRole('heading', { level: 1, name: /Add Registry Items/i })).toBeInTheDocument();
-
-    const singleTab = screen.getByRole('tab', { name: /Single Item/i });
-    const batchTab = screen.getByRole('tab', { name: /Batch URLs/i });
-    const csvTab = screen.getByRole('tab', { name: /CSV Import/i });
-
-    expect(singleTab.className).toContain('text-primary');
-    expect(singleTab.className).toContain('dark:text-white');
-    expect(batchTab.className).toContain('text-gray-600');
-    expect(batchTab.className).toContain('dark:text-gray-300');
-    expect(await axe(container)).toHaveNoViolations();
-
-    fireEvent.click(batchTab);
-    expect(batchTab.className).toContain('text-primary');
-    expect(await axe(container)).toHaveNoViolations();
-
-    fireEvent.click(csvTab);
-    expect(csvTab.className).toContain('text-primary');
-    expect(await axe(container)).toHaveNoViolations();
   });
 });

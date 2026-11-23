@@ -56,9 +56,19 @@ describe('ErrorBoundary Component', () => {
     );
 
     expect(screen.getByRole('alert')).toBeInTheDocument();
-    expect(screen.getByText('Widget Error')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Widget Error' })).toBeInTheDocument();
     expect(screen.getByText('Failed to load feature widget.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+  });
+
+  it('supports custom headingLevel prop on localized fallback UI', () => {
+    render(
+      <ErrorBoundary title="Nested Widget Error" headingLevel="h3">
+        <ProblemChild shouldThrow={true} />
+      </ErrorBoundary>
+    );
+
+    expect(screen.getByRole('heading', { level: 3, name: 'Nested Widget Error' })).toBeInTheDocument();
   });
 
   it('calls onReset when retry button is clicked', () => {

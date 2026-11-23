@@ -91,22 +91,23 @@ export function stageExportWorkspace(targetRoot = rootDir) {
       },
     });
 
-    // .next/ is gitignored at the repository root, which causes Tailwind v4's
-    // @tailwindcss/oxide scanner to skip staged files under .next/export-stage/src.
-    // Point @source at the non-gitignored repository src/ directory as well.
+    // Ensure Tailwind v4 @tailwindcss/oxide scans non-ignored root src/ when staged under gitignored .next/export-stage
     const stagedGlobalsCssPath = path.join(stageDir, 'src', 'app', 'globals.css');
     if (fs.existsSync(stagedGlobalsCssPath)) {
+      const globalsCssRaw = fs.readFileSync(stagedGlobalsCssPath, 'utf8');
       const relativeRootSrc = path
         .relative(path.dirname(stagedGlobalsCssPath), srcDir)
         .split(path.sep)
         .join('/');
-      const globalsCss = fs.readFileSync(stagedGlobalsCssPath, 'utf8');
-      const updatedGlobalsCss = globalsCss.replace(
-        '@source "../**/*.{ts,tsx}";',
-        `@source "${relativeRootSrc}/**/*.{ts,tsx}";\n@source "../**/*.{ts,tsx}";`
-      );
-      if (updatedGlobalsCss !== globalsCss) {
-        fs.writeFileSync(stagedGlobalsCssPath, updatedGlobalsCss, 'utf8');
+      const sourceDirective = `@source "${relativeRootSrc}/**/*.{ts,tsx}";`;
+      if (!globalsCssRaw.includes(sourceDirective)) {
+        const updatedCss = globalsCssRaw.includes('@import "tailwindcss";')
+          ? globalsCssRaw.replace(
+            '@import "tailwindcss";',
+            `@import "tailwindcss";\n${sourceDirective}`
+          )
+          : `${sourceDirective}\n${globalsCssRaw}`;
+        fs.writeFileSync(stagedGlobalsCssPath, updatedCss, 'utf8');
       }
     }
   }

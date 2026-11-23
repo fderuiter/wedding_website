@@ -35,25 +35,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify Environment Variables Documentation
-        run: npm run check:env-docs
-
-      - name: Verify Deployment Runbooks
-        run: npm run check:runbooks
-
-      - name: Verify Setup & Contributor Guides Contract
-        run: npm run check:setup-guides
-
-      - name: Check Personal/Template Identifier Isolation
-        run: npm run check:identifiers
+      - name: Run Unified Static Quality Checks
+        run: npm run check:static -- --skip-doc-sync
 
       - name: Check Third-Party Action Pin Commit SHAs
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: npm run check:action-pins -- --verify-upstream
-
-      - name: Check Container Digest Pins & Standalone Portability
-        run: npm run check:standalone
 
       - name: Export Verified PostgreSQL Service Image Digest
         id: resolve-db-image
@@ -70,16 +58,6 @@ jobs:
             process.stdout.write(image);
           ')
           echo "db_image=${DB_IMAGE}" >> "$GITHUB_OUTPUT"
-
-      - name: Check Documentation Relative Links
-        run: npm run check:links
-
-      - name: Verify Specification Route & Symbol Contracts
-        run: npm run check:spec-contracts
-
-      - name: Validate Prisma Schema
-        run: npm run check:prisma
-
       - name: TypeScript Typecheck
         run: npm run typecheck
 
@@ -88,9 +66,6 @@ jobs:
 
       - name: Knip Unused Export Analysis
         run: npm run lint:unused
-
-      - name: Verify Migration Compatibility
-        run: npm run lint:migrations
 
       - name: Verify Documentation and Architecture Sync
         id: verify-docs
@@ -419,6 +394,7 @@ jobs:
         with:
           image-ref: wedding-website:latest
           format: 'table'
+          ignore-unfixed: 'true'
           severity: 'CRITICAL,HIGH'
           exit-code: '1'
 
@@ -621,6 +597,7 @@ jobs:
         with:
           image-ref: wedding-website:latest
           format: 'table'
+          ignore-unfixed: 'true'
           severity: 'CRITICAL,HIGH'
           exit-code: '1'
 

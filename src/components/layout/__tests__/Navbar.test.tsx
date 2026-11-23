@@ -442,18 +442,22 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
     });
   });
 
-  it('disambiguates banner and navigation landmarks when rendered inside an embedded studio preview', () => {
-    render(
+  it('uses theme background surface token on fixed header and disambiguates landmarks when rendered inside an embedded preview iframe', async () => {
+    const { container } = render(
       <Navbar
         isAdmin={false}
         handleLogout={jest.fn()}
         headerRef={headerRef}
         config={mockConfig}
-        isEmbeddedPreview
+        isEmbeddedPreview={true}
       />
     );
 
-    expect(screen.getByRole('banner', { name: 'Live Preview Header' })).toBeInTheDocument();
-    expect(screen.getByRole('navigation', { name: 'Live Preview Navigation' })).toBeInTheDocument();
+    const previewBanner = screen.getByRole('banner', { name: 'Live Preview Header' });
+    expect(previewBanner).toHaveClass('bg-[var(--color-background,#ffffff)]');
+    expect(
+      screen.getByRole('navigation', { name: 'Live Preview Navigation' })
+    ).toBeInTheDocument();
+    expect(await axe(container)).toHaveNoViolations();
   });
 });

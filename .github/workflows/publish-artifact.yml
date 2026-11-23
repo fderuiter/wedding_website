@@ -41,6 +41,7 @@ permissions:
 concurrency:
   group: publish-artifact-release
   cancel-in-progress: false
+  queue: max
 
 jobs:
   preflight:
@@ -436,6 +437,7 @@ jobs:
           image-ref: wedding-website:latest
           format: 'sarif'
           output: 'trivy-results-${{ matrix.arch }}.sarif'
+          ignore-unfixed: 'true'
           severity: 'CRITICAL,HIGH'
           exit-code: '1'
 

@@ -397,6 +397,7 @@ export function generateDynamicStyles(
     '--schedule-tag-bg',
     '--canvas-bg',
     '--floorplan-table-bg',
+    '--floorplan-seat-dimmed-bg',
     '--floorplan-status-overcapacity-bg',
   ]);
 
@@ -406,6 +407,7 @@ export function generateDynamicStyles(
     '--input-border',
     '--schedule-card-border',
     '--floorplan-table-border',
+    '--floorplan-seat-dimmed-border',
   ]);
 
   const darkForegroundRgb = hexToRgb('#F9FAFB');
@@ -484,6 +486,19 @@ export function generateDynamicStyles(
 
     targetTokens['--badge-inverse-bg'] = badgeInverseBgHex;
     targetTokens['--badge-inverse-text'] = optimizeContrast(rawBadgeTextHex, badgeInverseBgHex, 4.5);
+
+    const isDarkTarget = targetTokens === darkPresetTokens;
+    const dimmedBgFallback = isDarkTarget ? '#374151' : '#e5e7eb';
+    const dimmedTextFallback = isDarkTarget ? '#f3f4f6' : '#374151';
+    const dimmedBorderFallback = isDarkTarget ? '#6b7280' : '#9ca3af';
+
+    const dimmedBgHex = resolveHex(targetTokens['--floorplan-seat-dimmed-bg'], dimmedBgFallback);
+    const rawDimmedTextHex = resolveHex(targetTokens['--floorplan-seat-dimmed-text'], dimmedTextFallback);
+    const dimmedBorderHex = resolveHex(targetTokens['--floorplan-seat-dimmed-border'], dimmedBorderFallback);
+
+    targetTokens['--floorplan-seat-dimmed-bg'] = dimmedBgHex;
+    targetTokens['--floorplan-seat-dimmed-text'] = optimizeContrast(rawDimmedTextHex, dimmedBgHex, 4.5);
+    targetTokens['--floorplan-seat-dimmed-border'] = dimmedBorderHex;
   };
 
   calibrateInverseAndToastTokens(
@@ -554,18 +569,64 @@ export function generateDynamicStyles(
   const statusSuccessTextLight = optimizeContrast('#166534', '#F0FDF4', 4.5);
   const statusInfoTextLight = optimizeContrast('#1E40AF', '#EFF6FF', 4.5);
 
-  // #1D293D (Tailwind v4 slate-800) bounds #1F2937 and #1E2939 (Tailwind v4 gray-800) so all 800 card surfaces >= 4.5:1
   const darkCardSurfaceBg = resolveDarkSurfaceBg(
     resolveDarkSurfaceBg('#1D293D', darkPresetTokens['--card-bg']),
     darkPresetTokens['--schedule-card-bg']
   );
-  // #44403B (Tailwind v4 stone-700) bounds #374151 and #364153 (Tailwind v4 gray-700) so all 700 surfaces >= 4.5:1
-  const dark700SurfaceBg = resolveDarkSurfaceBg('#44403B', darkCardSurfaceBg);
+
+  const compositeOverlayOnDark = (baseBgHex: string, rawOverlay?: string): string => {
+    if (!rawOverlay) return baseBgHex;
+    const trimmed = rawOverlay.trim();
+    if (/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(trimmed)) {
+      return resolveDarkSurfaceBg(baseBgHex, trimmed);
+    }
+    const rgbaMatch = trimmed.match(
+      /^rgba\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(0|1|0?\.\d+)\s*\)$/i
+    );
+    if (rgbaMatch) {
+      const baseRgb = hexToRgb(baseBgHex);
+      const r = Math.min(255, Number(rgbaMatch[1]));
+      const g = Math.min(255, Number(rgbaMatch[2]));
+      const b = Math.min(255, Number(rgbaMatch[3]));
+      const a = Math.max(0, Math.min(1, Number(rgbaMatch[4])));
+      const blendedHex = rgbToHex(
+        r * a + baseRgb.r * (1 - a),
+        g * a + baseRgb.g * (1 - a),
+        b * a + baseRgb.b * (1 - a)
+      );
+      return resolveDarkSurfaceBg(baseBgHex, blendedHex);
+    }
+    return baseBgHex;
+  };
+
+  const darkGhostHoverBg = resolveDarkSurfaceBg(
+    compositeOverlayOnDark(darkCardSurfaceBg, darkPresetTokens['--btn-ghost-hover-bg']),
+    compositeOverlayOnDark(darkCardSurfaceBg, darkPresetTokens['--btn-outline-hover-bg'])
+  );
+
+  // #44403B (Tailwind v4 stone-700) bounds #374151, #364153, and ghost/outline dark hover overlays so all 700 surfaces >= 4.5:1
+  const dark700SurfaceBg = resolveDarkSurfaceBg(
+    resolveDarkSurfaceBg('#44403B', darkCardSurfaceBg),
+    darkGhostHoverBg
+  );
   const dark600SurfaceBg = resolveDarkSurfaceBg('#4B5563', dark700SurfaceBg);
 
   const baseDarkTokensCalibrated = calibrateDarkSurfaceTokens(safePrimary, safeSecondary, darkCardSurfaceBg);
   const dark700TokensCalibrated = calibrateDarkSurfaceTokens(safePrimary, safeSecondary, dark700SurfaceBg);
   const dark600TokensCalibrated = calibrateDarkSurfaceTokens(safePrimary, safeSecondary, dark600SurfaceBg);
+
+  // Translucent bg-white/* light containers composited over dark backdrops (#B3B3B3 for 70/75%, #CCCCCC for 80–95%)
+  const calibrateLightSurfaceTokens = (surfaceBgHex: string) => ({
+    primaryText: optimizeContrast(safePrimary, surfaceBgHex, 4.5),
+    secondaryText: optimizeContrast(safeSecondary, surfaceBgHex, 4.5),
+    errorText: optimizeContrast('#DC2626', surfaceBgHex, 4.5),
+    focusRing: optimizeContrast(safePrimary, surfaceBgHex, 3.0),
+    surfaceBorder: optimizeContrast('#6B7280', surfaceBgHex, 3.0),
+    mutedText: optimizeContrast('#4B5563', surfaceBgHex, 4.5),
+    warningText: optimizeContrast('#78350F', surfaceBgHex, 4.5),
+  });
+  const translucent80LightTokens = calibrateLightSurfaceTokens('#CCCCCC');
+  const translucent70LightTokens = calibrateLightSurfaceTokens('#B3B3B3');
 
   const seatAssignedTextLight = optimizeContrast('#ffffff', primaryTextLight, 4.5);
   const seatAssignedTextDark = optimizeContrast('#ffffff', primaryTextLight, 4.5);
@@ -602,6 +663,34 @@ export function generateDynamicStyles(
     '    .dark [class*=" dark:bg-red-900/"]',
     '    .dark [class^="dark:bg-red-950/"]',
     '    .dark [class*=" dark:bg-red-950/"]',
+    '    .dark [class^="bg-[var(--btn-ghost-hover-bg"]',
+    '    .dark [class*=" bg-[var(--btn-ghost-hover-bg"]',
+    '    .dark [class^="hover:bg-[var(--btn-ghost-hover-bg"]',
+    '    .dark [class*=" hover:bg-[var(--btn-ghost-hover-bg"]',
+    '    .dark [class^="hover:bg-[var(--btn-ghost-hover-bg"]:hover',
+    '    .dark [class*=" hover:bg-[var(--btn-ghost-hover-bg"]:hover',
+    '    .dark [class^="focus-visible:bg-[var(--btn-ghost-hover-bg"]',
+    '    .dark [class*=" focus-visible:bg-[var(--btn-ghost-hover-bg"]',
+    '    .dark [class^="focus-visible:bg-[var(--btn-ghost-hover-bg"]:focus-visible',
+    '    .dark [class*=" focus-visible:bg-[var(--btn-ghost-hover-bg"]:focus-visible',
+    '    .dark [class^="dark:bg-[var(--btn-ghost-hover-bg"]',
+    '    .dark [class*=" dark:bg-[var(--btn-ghost-hover-bg"]',
+    '    .dark [class^="dark:hover:bg-[var(--btn-ghost-hover-bg"]',
+    '    .dark [class*=" dark:hover:bg-[var(--btn-ghost-hover-bg"]',
+    '    .dark [class^="dark:hover:bg-[var(--btn-ghost-hover-bg"]:hover',
+    '    .dark [class*=" dark:hover:bg-[var(--btn-ghost-hover-bg"]:hover',
+    '    .dark [class^="bg-[var(--btn-outline-hover-bg"]',
+    '    .dark [class*=" bg-[var(--btn-outline-hover-bg"]',
+    '    .dark [class^="hover:bg-[var(--btn-outline-hover-bg"]',
+    '    .dark [class*=" hover:bg-[var(--btn-outline-hover-bg"]',
+    '    .dark [class^="hover:bg-[var(--btn-outline-hover-bg"]:hover',
+    '    .dark [class*=" hover:bg-[var(--btn-outline-hover-bg"]:hover',
+    '    .dark [class^="dark:bg-[var(--btn-outline-hover-bg"]',
+    '    .dark [class*=" dark:bg-[var(--btn-outline-hover-bg"]',
+    '    .dark [class^="dark:hover:bg-[var(--btn-outline-hover-bg"]',
+    '    .dark [class*=" dark:hover:bg-[var(--btn-outline-hover-bg"]',
+    '    .dark [class^="dark:hover:bg-[var(--btn-outline-hover-bg"]:hover',
+    '    .dark [class*=" dark:hover:bg-[var(--btn-outline-hover-bg"]:hover',
   ].join(',\n');
 
   const dark600ContainerSelectors = buildShadeSelectors(['600']).join(',\n');
@@ -643,6 +732,9 @@ ${lightPresetCssRules}
       --color-status-info-text: ${statusInfoTextLight};
       --color-status-not-needed-text: ${statusInfoTextLight};
       --floorplan-seat-assigned-text: ${seatAssignedTextLight};
+      --floorplan-seat-dimmed-bg: ${lightPresetTokens['--floorplan-seat-dimmed-bg']};
+      --floorplan-seat-dimmed-text: ${lightPresetTokens['--floorplan-seat-dimmed-text']};
+      --floorplan-seat-dimmed-border: ${lightPresetTokens['--floorplan-seat-dimmed-border']};
     }
 
     .dark {
@@ -700,6 +792,61 @@ ${darkPresetCssRules}
       --color-status-sent-text: ${statusSuccessTextLight};
       --color-status-info-text: ${statusInfoTextLight};
       --color-status-not-needed-text: ${statusInfoTextLight};
+      --color-foreground: #111827;
+      --foreground: #111827;
+    }
+
+    /* Translucent high-opacity light containers (bg-white/80..95) */
+    .bg-white\\/80,
+    .bg-white\\/85,
+    .bg-white\\/90,
+    .bg-white\\/95,
+    .hover\\:bg-white:hover {
+      --color-primary: ${primaryTextLight};
+      --color-secondary: ${secondaryTextLight};
+      --color-primary-text: ${translucent80LightTokens.primaryText};
+      --color-secondary-text: ${translucent80LightTokens.secondaryText};
+      --color-error-text: ${translucent80LightTokens.errorText};
+      --color-focus-ring: ${translucent80LightTokens.focusRing};
+      --color-surface-border: ${translucent80LightTokens.surfaceBorder};
+      --color-muted-text: ${translucent80LightTokens.mutedText};
+      --color-text-muted: ${translucent80LightTokens.mutedText};
+      --color-warning-bg: ${warningBgLight};
+      --color-warning-border: ${warningBorderLight};
+      --color-warning-text: ${translucent80LightTokens.warningText};
+      --color-status-warning-text: ${statusWarningTextLight};
+      --color-status-unsent-text: ${statusWarningTextLight};
+      --color-status-success-text: ${statusSuccessTextLight};
+      --color-status-sent-text: ${statusSuccessTextLight};
+      --color-status-info-text: ${statusInfoTextLight};
+      --color-status-not-needed-text: ${statusInfoTextLight};
+      --color-foreground: #111827;
+      --foreground: #111827;
+    }
+
+    /* Translucent medium-high light containers (bg-white/70..75) */
+    .bg-white\\/70,
+    .bg-white\\/75 {
+      --color-primary: ${primaryTextLight};
+      --color-secondary: ${secondaryTextLight};
+      --color-primary-text: ${translucent70LightTokens.primaryText};
+      --color-secondary-text: ${translucent70LightTokens.secondaryText};
+      --color-error-text: ${translucent70LightTokens.errorText};
+      --color-focus-ring: ${translucent70LightTokens.focusRing};
+      --color-surface-border: ${translucent70LightTokens.surfaceBorder};
+      --color-muted-text: ${translucent70LightTokens.mutedText};
+      --color-text-muted: ${translucent70LightTokens.mutedText};
+      --color-warning-bg: ${warningBgLight};
+      --color-warning-border: ${warningBorderLight};
+      --color-warning-text: ${translucent70LightTokens.warningText};
+      --color-status-warning-text: ${statusWarningTextLight};
+      --color-status-unsent-text: ${statusWarningTextLight};
+      --color-status-success-text: ${statusSuccessTextLight};
+      --color-status-sent-text: ${statusSuccessTextLight};
+      --color-status-info-text: ${statusInfoTextLight};
+      --color-status-not-needed-text: ${statusInfoTextLight};
+      --color-foreground: #111827;
+      --foreground: #111827;
     }
 
     /* Re-assert dark mode variables for base dark backgrounds (black / 800–950) */

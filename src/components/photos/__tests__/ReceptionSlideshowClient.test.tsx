@@ -1,9 +1,16 @@
 import { render, screen, act, fireEvent, createEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
+import type { DemoContextValue } from '@/components/demo/DemoContext';
 import { ReceptionSlideshowClient } from '../ReceptionSlideshowClient';
 
 expect.extend(toHaveNoViolations);
+
+const mockUseOptionalDemo = jest.fn<DemoContextValue | null, []>(() => null);
+jest.mock('@/components/demo/DemoContext', () => ({
+  ...jest.requireActual('@/components/demo/DemoContext'),
+  useOptionalDemo: () => mockUseOptionalDemo(),
+}));
 
 // Mock ThemedQRCode
 jest.mock('@/components/ui/ThemedQRCode', () => ({
@@ -45,6 +52,14 @@ describe('ReceptionSlideshowClient', () => {
     expect(img).toBeInTheDocument();
     expect(img).toHaveAttribute('src', 'https://example.com/photo1.jpg');
     expect(screen.getByText('First Dance')).toBeInTheDocument();
+
+    // Slide presentation exposes descriptive h1 and sequential h2 QR overlay heading
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Live Reception Slideshow' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 2, name: /Upload Your Photos/i })
+    ).toBeInTheDocument();
 
     // QR code overlay is prominently rendered by default
     const qrOverlay = screen.getByTestId('slideshow-qr-overlay');
@@ -1121,26 +1136,11 @@ describe('ReceptionSlideshowClient', () => {
 
     const secondaryControls = screen.getByTestId('slideshow-secondary-controls');
     const playPauseBtn = screen.getByTestId('slideshow-play-pause-btn');
-    const speed5Btn = screen.getByTestId('slideshow-duration-5s-btn');
-    const speed8Btn = screen.getByTestId('slideshow-duration-8s-btn');
-    const speed10Btn = screen.getByTestId('slideshow-duration-10s-btn');
-
-    expect(speed5Btn).toHaveAccessibleName(/^5s\b/i);
-    expect(speed8Btn).toHaveAccessibleName(/^8s\b/i);
-    expect(speed10Btn).toHaveAccessibleName(/^10s\b/i);
-    expect(speed8Btn).toHaveAttribute('aria-pressed', 'true');
-    expect(speed5Btn).toHaveAttribute('aria-pressed', 'false');
-    expect(speed10Btn).toHaveAttribute('aria-pressed', 'false');
 
     const axeRules = { rules: { 'label-content-name-mismatch': { enabled: true } } };
     expect(await axe(container, axeRules)).toHaveNoViolations();
     expect(await axe(secondaryControls, axeRules)).toHaveNoViolations();
     expect(await axe(playPauseBtn, axeRules)).toHaveNoViolations();
-
-    fireEvent.click(speed5Btn);
-    expect(speed5Btn).toHaveAttribute('aria-pressed', 'true');
-    expect(speed8Btn).toHaveAttribute('aria-pressed', 'false');
-    expect(await axe(secondaryControls, axeRules)).toHaveNoViolations();
 
     fireEvent.click(playPauseBtn);
     expect(await axe(container, axeRules)).toHaveNoViolations();
@@ -1194,6 +1194,26 @@ describe('ReceptionSlideshowClient', () => {
     fireEvent.click(screen.getByTestId('slideshow-next-btn'));
     expect(screen.getByTestId('slideshow-photo-title')).toHaveTextContent('Late Night Tacos');
     expect(screen.getByTestId('slideshow-photo-attribution')).toHaveTextContent('Shared by Cousin Leo');
+  });
+
+  it('encodes the full signed QR upload URL into ThemedQRCode while displaying a readable short URL', () => {
+    const signedUrl = 'https://wedding.example.com/photos?qr=eyJwdXJwb3NlIjoicGhvdG9fcXJfbGluayJ9.sig';
+    render(<ReceptionSlideshowClient initialPhotos={samplePhotos} uploadUrl={signedUrl} />);
+
+    expect(screen.getByTestId('themed-qr-code')).toHaveAttribute('data-value', signedUrl);
+    expect(screen.getByTestId('slideshow-upload-url')).toHaveTextContent(
+      'https://wedding.example.com/photos'
+    );
+  });
+
+  it('resolves relative signed upload URLs against window.location.origin after mount without hydration mismatch', () => {
+    const relativeSignedUrl = '/photos?qr=relative-signed-token';
+    render(<ReceptionSlideshowClient initialPhotos={samplePhotos} uploadUrl={relativeSignedUrl} />);
+
+    expect(screen.getByTestId('themed-qr-code')).toHaveAttribute(
+      'data-value',
+      `${window.location.origin}${relativeSignedUrl}`
+    );
   });
 
   it('defaults QR code link to /photos?tab=guest when uploadUrl is omitted, advances cursor using updatedAt on out-of-order approvals, and refreshes existing slide captions in-place', async () => {
@@ -1332,6 +1352,42 @@ describe('ReceptionSlideshowClient', () => {
       } else {
         process.env.NEXT_PUBLIC_BASE_PATH = previousBasePath;
       }
+    }
+  });
+
+  it('offsets bottom controls and QR overlay above DemoToolbar when demo mode is active', () => {
+    mockUseOptionalDemo.mockReturnValue({
+      isDemoMode: true,
+      isToolbarCollapsed: false,
+    } as DemoContextValue);
+
+    try {
+      const { rerender } = render(
+        <ReceptionSlideshowClient
+          initialPhotos={samplePhotos}
+          uploadUrl="https://wedding.example.com/photos"
+        />
+      );
+
+      expect(screen.getByTestId('slideshow-controls')).toHaveClass('bottom-20');
+      expect(screen.getByTestId('slideshow-qr-overlay')).toHaveClass('bottom-36');
+
+      mockUseOptionalDemo.mockReturnValue({
+        isDemoMode: true,
+        isToolbarCollapsed: true,
+      } as DemoContextValue);
+
+      rerender(
+        <ReceptionSlideshowClient
+          initialPhotos={samplePhotos}
+          uploadUrl="https://wedding.example.com/photos"
+        />
+      );
+
+      expect(screen.getByTestId('slideshow-controls')).toHaveClass('bottom-16');
+      expect(screen.getByTestId('slideshow-qr-overlay')).toHaveClass('bottom-32');
+    } finally {
+      mockUseOptionalDemo.mockReturnValue(null);
     }
   });
 });

@@ -1,10 +1,17 @@
 import { ARCHETYPE_PRESETS, type ArchetypeId } from '@/lib/sampleData/archetypes';
+import { findSeededRegistryItemById } from '@/lib/sampleData/builder';
 import { THEME_PRESET_KEYS, type ThemePreset } from '@/lib/theme/presets';
 import type { PublicAppConfig } from '@/lib/config';
 import {
-  substituteThankYouTemplateTokens,
-  type InvitationCodeDTO,
-  type RegistryItem,
+  cleanOptionalSetupText,
+  hasCustomStoryText,
+  hasNonPlaceholderVenueDetails,
+} from '@/lib/setupCopy';
+import { formatCurrency } from '@/utils/intl';
+import type {
+  InvitationCodeDTO,
+  RegistryItem,
+  ThankYouTemplateTokens,
 } from '@/features/registry';
 import type { SeatingTableDTO } from '@/features/seating';
 import type { WeddingPartyMemberDTO, WeddingPartySide } from '@/features/wedding-party';
@@ -29,8 +36,17 @@ import {
 } from './demoStore';
 
 const DEMO_LANDMARK_SHAPES = new Set<string>(['dance-floor', 'bar', 'dj', 'buffet', 'cake']);
+let demoAutoApproveGuestPhotos = false;
+let demoPhotoQrTokenVersion = 1;
+
 function isDemoLandmarkShape(shape?: string): boolean {
   return Boolean(shape && DEMO_LANDMARK_SHAPES.has(shape));
+}
+
+let demoIdSequence = 0;
+function nextDemoId(prefix: string): string {
+  demoIdSequence += 1;
+  return `${prefix}-${Date.now()}-${demoIdSequence}`;
 }
 
 function escapeDemoHtml(input: string): string {
@@ -40,6 +56,23 @@ function escapeDemoHtml(input: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function formatDemoThankYouText(
+  template: string,
+  tokens: ThankYouTemplateTokens
+): string {
+  const guestName = tokens.guestName?.trim() || 'Friend';
+  const giftName = tokens.giftName?.trim() || 'wedding gift';
+  const formattedAmount =
+    typeof tokens.amount === 'number'
+      ? formatCurrency(tokens.amount)
+      : tokens.amount?.trim() || '$0.00';
+
+  return template
+    .replace(/\{\{\s*guestName\s*\}\}/g, guestName)
+    .replace(/\{\{\s*giftName\s*\}\}/g, giftName)
+    .replace(/\{\{\s*amount\s*\}\}/g, formattedAmount);
 }
 
 function formatDemoEmailHtml(text: string): string {
@@ -110,7 +143,50 @@ function resolveApiPathname(input: RequestInfo | URL): URL | null {
   }
 }
 
-async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
+type StaticDemoRouteRequestFn = (
+  input: RequestInfo | URL,
+  init?: RequestInit
+) => Promise<Response | null>;
+
+function getStaticDemoRouteRequest(): StaticDemoRouteRequestFn | null {
+  if (typeof window === 'undefined') return null;
+  const installed = (
+    window as Window & {
+      __STATIC_DEMO_INSTALLED__?: { routeRequest?: StaticDemoRouteRequestFn };
+    }
+  ).__STATIC_DEMO_INSTALLED__;
+  return typeof installed?.routeRequest === 'function' ? installed.routeRequest : null;
+}
+
+async function delegateToStaticDemoRouter(
+  input: RequestInfo | URL | undefined,
+  init: RequestInit | undefined,
+  method: string,
+  path: string
+): Promise<Response | null> {
+  const staticRouteRequest = getStaticDemoRouteRequest();
+  if (!staticRouteRequest || !input) return null;
+  const delegated = await staticRouteRequest(input, init);
+  if (!delegated) return null;
+
+  if (path === '/api/guest/login' && method === 'POST' && delegated.ok) {
+    const body = await parseJsonBody(init);
+    const matched = typeof body.code === 'string' ? findDemoGuestByCode(body.code) : null;
+    if (matched) {
+      setDemoGuestSession({ invitationCode: matched.code, guestName: matched.guestName });
+    }
+  } else if (path === '/api/guest/logout' && method === 'POST') {
+    setDemoGuestSession(null);
+  }
+
+  return delegated;
+}
+
+async function handleDemoApi(
+  url: URL,
+  init?: RequestInit,
+  rawInput?: RequestInfo | URL
+): Promise<Response> {
   const method = (init?.method || 'GET').toUpperCase();
   const path = url.pathname;
 
@@ -148,11 +224,21 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
         body.weddingDate.includes('T') ? body.weddingDate : `${body.weddingDate}T16:00:00Z`
       );
     }
-    if (typeof body.venueName === 'string') overrides.venueName = body.venueName;
-    if (typeof body.venueAddress === 'string') overrides.venueAddress = body.venueAddress;
-    if (typeof body.venueCity === 'string') overrides.venueCity = body.venueCity;
-    if (typeof body.venueState === 'string') overrides.venueState = body.venueState;
-    if (typeof body.venueZip === 'string') overrides.venueZip = body.venueZip;
+    if (typeof body.venueName === 'string') {
+      overrides.venueName = cleanOptionalSetupText(body.venueName);
+    }
+    if (typeof body.venueAddress === 'string') {
+      overrides.venueAddress = cleanOptionalSetupText(body.venueAddress);
+    }
+    if (typeof body.venueCity === 'string') {
+      overrides.venueCity = cleanOptionalSetupText(body.venueCity);
+    }
+    if (typeof body.venueState === 'string') {
+      overrides.venueState = cleanOptionalSetupText(body.venueState);
+    }
+    if (typeof body.venueZip === 'string') {
+      overrides.venueZip = cleanOptionalSetupText(body.venueZip);
+    }
     if (typeof body.latitude === 'number' && Number.isFinite(body.latitude)) {
       overrides.latitude = body.latitude;
     }
@@ -161,6 +247,19 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
     }
     if (typeof body.timezone === 'string') overrides.timezone = body.timezone;
     if (typeof body.contactEmail === 'string') overrides.contactEmail = body.contactEmail;
+    if (typeof body.heroTitle === 'string') overrides.heroTitle = body.heroTitle;
+    if (typeof body.heroSubtitle === 'string') overrides.heroSubtitle = body.heroSubtitle;
+    if (typeof body.storyText === 'string') {
+      overrides.storyText = cleanOptionalSetupText(body.storyText);
+    }
+    if (typeof body.venueDescription === 'string') {
+      overrides.venueDescription = cleanOptionalSetupText(body.venueDescription);
+    }
+    if (typeof body.travelAdvice === 'string') {
+      overrides.travelAdvice = cleanOptionalSetupText(body.travelAdvice);
+    }
+    if (typeof body.seoTitle === 'string') overrides.seoTitle = body.seoTitle;
+    if (typeof body.seoDescription === 'string') overrides.seoDescription = body.seoDescription;
     if (
       typeof body.themePreset === 'string' &&
       THEME_PRESET_KEYS.includes(body.themePreset as ThemePreset)
@@ -293,7 +392,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
     }
     if (method === 'POST') {
       const body = await parseJsonBody(init);
-      const id = `demo-custom-item-${Date.now()}`;
+      const id = nextDemoId('demo-custom-item');
       const newItem: RegistryItem = {
         id,
         name: String(body.name || 'Custom Gift'),
@@ -333,7 +432,11 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
     const existing = currentItems.find((i) => i.id === itemId);
 
     if (method === 'GET') {
-      if (!existing) return jsonResponse({ error: 'Item not found' }, 404);
+      if (!existing) {
+        const seeded = findSeededRegistryItemById(itemId, { includeContributors: true });
+        if (seeded) return jsonResponse(seeded);
+        return jsonResponse({ error: 'Item not found' }, 404);
+      }
       return jsonResponse(existing);
     }
     if (method === 'DELETE') {
@@ -345,10 +448,12 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
       return jsonResponse(existing);
     }
     if (method === 'PUT' || method === 'PATCH') {
-      if (!existing) return jsonResponse({ error: 'Item not found' }, 404);
+      const target =
+        existing ?? findSeededRegistryItemById(itemId, { includeContributors: true });
+      if (!target) return jsonResponse({ error: 'Item not found' }, 404);
       const body = await parseJsonBody(init);
       const updated: RegistryItem = {
-        ...existing,
+        ...target,
         ...(typeof body.name === 'string' ? { name: body.name } : {}),
         ...(typeof body.description === 'string' ? { description: body.description } : {}),
         ...(typeof body.category === 'string' ? { category: body.category } : {}),
@@ -356,7 +461,9 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
       };
       mutateActiveDataset((current) => ({
         ...current,
-        registryItems: current.registryItems.map((i) => (i.id === itemId ? updated : i)),
+        registryItems: existing
+          ? current.registryItems.map((i) => (i.id === itemId ? updated : i))
+          : [updated, ...current.registryItems],
       }));
       return jsonResponse(updated);
     }
@@ -541,7 +648,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
           : 'round';
       const isLandmark = isDemoLandmarkShape(resolvedShape);
       const newTable: SeatingTableDTO = {
-        id: `demo-table-${Date.now()}`,
+        id: nextDemoId('demo-table'),
         name: String(body.name || (isLandmark ? 'Landmark' : 'New Table')),
         shape: resolvedShape,
         capacity: isLandmark ? 0 : typeof body.capacity === 'number' ? body.capacity : 8,
@@ -799,9 +906,10 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
     }
     if (method === 'POST') {
       const body = await parseJsonBody(init);
-      const code = String(body.code || `GUEST${Date.now().toString().slice(-4)}`).toUpperCase();
+      const seqSuffix = `${Date.now().toString().slice(-3)}${(++demoIdSequence) % 10}`;
+      const code = String(body.code || `GUEST${seqSuffix}`).toUpperCase();
       const newGuest: InvitationCodeDTO = {
-        id: `demo-guest-${Date.now()}`,
+        id: nextDemoId('demo-guest'),
         code,
         guestName: String(body.guestName || 'Invited Guest'),
         householdName: typeof body.householdName === 'string' ? body.householdName : '',
@@ -829,7 +937,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
         ? (body.items as Array<Record<string, unknown>>)
         : [];
     const created: InvitationCodeDTO[] = records.map((rec, idx) => ({
-      id: `demo-imported-${Date.now()}-${idx}`,
+      id: `${nextDemoId('demo-imported')}-${idx}`,
       code: String(rec.code || `IMPORT${100 + idx}`).toUpperCase(),
       guestName: String(rec.guestName || `Imported Guest ${idx + 1}`),
       householdName: typeof rec.householdName === 'string' ? rec.householdName : '',
@@ -872,7 +980,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
           ? body.side
           : 'JOINT';
       const member: WeddingPartyMemberDTO = {
-        id: `demo-party-${Date.now()}`,
+        id: nextDemoId('demo-party'),
         name: String(body.name || 'Party Member'),
         role: String(body.role || 'Attendant'),
         bio: String(body.bio || ''),
@@ -904,7 +1012,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
       const body = await parseJsonBody(init);
       const now = new Date();
       const attraction: AttractionDTO = {
-        id: `demo-attraction-${Date.now()}`,
+        id: nextDemoId('demo-attraction'),
         name: String(body.name || 'Local Spot'),
         description: String(body.description || ''),
         category: String(body.category || 'Activities'),
@@ -929,6 +1037,17 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
         attractions: [...current.attractions, attraction],
       }));
       return jsonResponse({ success: true, data: attraction }, 201);
+    }
+  }
+
+  if (
+    path.startsWith('/api/admin/sub-events') ||
+    path === '/api/admin/invitation-codes/rsvps' ||
+    path.startsWith('/api/admin/broadcast')
+  ) {
+    const delegated = await delegateToStaticDemoRouter(rawInput ?? url, init, method, path);
+    if (delegated) {
+      return delegated;
     }
   }
 
@@ -969,10 +1088,28 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
   if (path === '/api/admin/onboarding-milestones' && method === 'GET') {
     const state = getDemoState();
     const dataset = getActiveArchetypeDataset();
-    const venueName = (state.configOverrides.venueName || '').trim();
+    const effectiveConfig = state.configOverrides;
+    const partner1 = (effectiveConfig.partner1Name || effectiveConfig.brideName || '').trim();
+    const partner2 = (effectiveConfig.partner2Name || effectiveConfig.groomName || '').trim();
     const weddingDetailsCompleted =
-      Boolean(state.configOverrides.partner1Name && state.configOverrides.partner2Name) &&
-      Boolean(venueName && venueName.toUpperCase() !== 'TBD');
+      Boolean(partner1 && partner2) && hasNonPlaceholderVenueDetails(effectiveConfig);
+    const customStoryConfigured = hasCustomStoryText(effectiveConfig);
+    const hasPublicScheduleEvent = dataset.logisticsNodes.some((node) => {
+      const data =
+        node?.data && typeof node.data === 'object' && !Array.isArray(node.data)
+          ? (node.data as Record<string, unknown>)
+          : {};
+      if (data.isSample === true || data.isSample === 'true') return false;
+      if (data.isPrivate === true || data.isPrivate === 'true') return false;
+      return (
+        node.type === 'Schedule' ||
+        (typeof data.startTime === 'string' && data.startTime.trim().length > 0) ||
+        (node.type === 'Logistics' &&
+          typeof data.ceremonyTitle === 'string' &&
+          data.ceremonyTitle.trim().length > 0)
+      );
+    });
+    const storyAndScheduleCompleted = customStoryConfigured && hasPublicScheduleEvent;
     const guestListCompleted = dataset.guests.some((g) => !g.isSample);
     const registryCompleted = dataset.registryItems.some((i) => !i.isSample);
     const seatingCompleted = dataset.seatingTables.some((t) => !t.isSample);
@@ -986,6 +1123,18 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
         completed: weddingDetailsCompleted,
         href: '/admin/dashboard/settings',
         actionLabel: weddingDetailsCompleted ? 'Edit Wedding Details' : 'Configure Wedding Details',
+      },
+      {
+        id: 'story-and-schedule',
+        title: 'Story & Schedule',
+        description: 'Share your custom couple story and publish at least one public schedule event.',
+        completed: storyAndScheduleCompleted,
+        href: !customStoryConfigured ? '/admin/dashboard/settings' : '/admin/dashboard/sub-events',
+        actionLabel: storyAndScheduleCompleted
+          ? 'Edit Story & Schedule'
+          : !customStoryConfigured
+            ? 'Write Our Story'
+            : 'Add Schedule Event',
       },
       {
         id: 'guest-list',
@@ -1168,7 +1317,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
   if (path === '/api/admin/thank-you-notes' && method === 'POST') {
     const body = await parseJsonBody(init);
     const created = {
-      id: `demo-offline-gift-${Date.now()}`,
+      id: nextDemoId('demo-offline-gift'),
       name: String(body.name || 'Offline Contributor').trim(),
       email: typeof body.email === 'string' ? body.email : null,
       amount: Number(body.amount || 50),
@@ -1249,7 +1398,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
     const contactEmail = demoState.configOverrides.contactEmail || presetConfig.contactEmail;
 
     const rawBody = typeof body.body === 'string' ? body.body.trim() : '';
-    const renderedText = substituteThankYouTemplateTokens(rawBody, {
+    const renderedText = formatDemoThankYouText(rawBody, {
       guestName: foundContributor.name,
       giftName: foundItem?.name || 'Wedding Gift',
       amount: foundContributor.amount,
@@ -1476,6 +1625,33 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
     });
   }
 
+  if (path === '/api/admin/photos/qr') {
+    if (method === 'POST') {
+      const body = await parseJsonBody(init);
+      if (typeof body.autoApproveGuestPhotos === 'boolean') {
+        demoAutoApproveGuestPhotos = body.autoApproveGuestPhotos;
+      }
+      if (body.action === 'rotate') {
+        demoPhotoQrTokenVersion += 1;
+      }
+    }
+    if (method === 'GET' || method === 'POST') {
+      return jsonResponse({
+        success: true,
+        uploadUrl: `${url.origin}/photos?tab=guest&v=${demoPhotoQrTokenVersion}`,
+        tokenVersion: demoPhotoQrTokenVersion,
+        autoApproveGuestPhotos: demoAutoApproveGuestPhotos,
+      });
+    }
+  }
+
+  // Delegate extended OpenAPI routes (schedule, rsvp, photos, weather, media, content-nodes,
+  // versions, maintenance, exports, guest login/lookup) to the staticDemo router when installed
+  const delegatedExtended = await delegateToStaticDemoRouter(rawInput ?? url, init, method, path);
+  if (delegatedExtended) {
+    return delegatedExtended;
+  }
+
   // Safe fallback for read-only admin overview widgets on static export
   if (path.startsWith('/api/admin/') && method === 'GET') {
     const dataset = getActiveArchetypeDataset();
@@ -1513,7 +1689,7 @@ export function installDemoFetchInterceptor(): () => void {
           if (init?.signal?.aborted) {
             throw new DOMException('The operation was aborted.', 'AbortError');
           }
-          return handleDemoApi(apiUrl, init);
+          return handleDemoApi(apiUrl, init, input);
         }
       }
       return fallbackFetch(input, init);

@@ -214,7 +214,7 @@ function Dropzone({
         <Icon
           name={isBusy ? 'Loader2' : 'UploadCloud'}
           className={cn(
-            'h-10 w-10 mb-2 text-gray-400 dark:text-gray-500',
+            'h-10 w-10 mb-2 text-muted-text',
             isBusy && 'animate-spin text-rose-500'
           )}
         />
@@ -225,7 +225,7 @@ function Dropzone({
       </div>
 
       {hasHint && (
-        <p id={hintId} className="mt-2 text-center text-xs text-gray-600 dark:text-gray-400">
+        <p id={hintId} className="text-xs text-gray-600 dark:text-gray-400 mt-1.5 text-center">
           {hint}
         </p>
       )}

@@ -380,4 +380,20 @@ describe('ToastProvider', () => {
     expect(onUndo).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
+
+  test('deduplicates identical active error toasts so only one role="alert" mounts per error message', () => {
+    render(
+      <ToastProvider>
+        <TestComponent />
+      </ToastProvider>
+    );
+
+    const addErrorBtn = screen.getByText('Add Error');
+    fireEvent.click(addErrorBtn);
+    fireEvent.click(addErrorBtn);
+
+    const alerts = screen.getAllByRole('alert');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toHaveTextContent('Error notification');
+  });
 });

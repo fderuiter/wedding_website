@@ -133,40 +133,41 @@ describe('a11y-report', () => {
       expect(report).toContain('**Total Accessibility Violations:** 0');
     });
 
-    it('aggregates static demo Playwright violations and marks missing static-demo artifact incomplete when required', () => {
-      const missingResult = generateReport({ cwd: tempDir, requireStaticDemo: true });
-      expect(missingResult.incompleteSuites).toEqual(['jest', 'playwright', 'static-demo']);
-      expect(missingResult.report).toContain('### Static Demo Level (Playwright)');
-      expect(missingResult.report).toContain(
-        '⚠️ Incomplete: Static demo accessibility artifact (`test-results/static-demo-a11y-violations.json`) was not found.'
-      );
-
+    it('includes Static Showcase Level section when static-demo-a11y-violations.json is present or --require-static-demo is passed', () => {
       const resultsDir = path.join(tempDir, 'test-results');
       fs.mkdirSync(resultsDir, { recursive: true });
       fs.writeFileSync(path.join(resultsDir, 'jest-a11y-violations.json'), '[]');
       fs.writeFileSync(path.join(resultsDir, 'playwright-a11y-violations.json'), '{}');
+
+      const missingRequired = generateReport({ cwd: tempDir, requireStaticDemo: true });
+      expect(missingRequired.incompleteSuites).toEqual(['static-demo']);
+      expect(missingRequired.report).toContain('### Static Showcase Level (Playwright)');
+      expect(missingRequired.report).toContain(
+        '⚠️ Incomplete: Static showcase accessibility artifact (`test-results/static-demo-a11y-violations.json`) was not found.'
+      );
+
       fs.writeFileSync(
         path.join(resultsDir, 'static-demo-a11y-violations.json'),
         JSON.stringify({
-          '/registry/add-item': [
+          '/': [],
+          '/photos/slideshow': [
             {
-              id: 'color-contrast',
-              description: 'Elements must meet minimum color contrast ratio thresholds',
+              id: 'label-content-name-mismatch',
+              description: 'Elements must have their visible text as part of their accessible name',
               impact: 'serious',
             },
           ],
         })
       );
 
-      const { report, totalViolations, incompleteSuites } = generateReport({
-        cwd: tempDir,
-        requireStaticDemo: true,
-      });
-      expect(incompleteSuites).toEqual([]);
-      expect(totalViolations).toBe(1);
-      expect(report).toContain('❌ Found 1 violations in static demo pages.');
-      expect(report).toContain(
-        '- **color-contrast** (`/registry/add-item`): Elements must meet minimum color contrast ratio thresholds (serious)'
+      const withStaticViolations = generateReport({ cwd: tempDir, requireStaticDemo: true });
+      expect(withStaticViolations.incompleteSuites).toEqual([]);
+      expect(withStaticViolations.totalViolations).toBe(1);
+      expect(withStaticViolations.report).toContain(
+        '❌ Found 1 violations in static showcase routes.'
+      );
+      expect(withStaticViolations.report).toContain(
+        '- **label-content-name-mismatch** (`/photos/slideshow`): Elements must have their visible text as part of their accessible name (serious)'
       );
     });
   });
@@ -218,9 +219,9 @@ describe('a11y-report', () => {
   });
 
   describe('findJestAxeSuites & runA11yUnit', () => {
-    it('discovers all 58 src/ jest-axe suites in the live repository', () => {
+    it('discovers all 64 src/ jest-axe suites in the live repository', () => {
       const suites = findJestAxeSuites(process.cwd());
-      expect(suites).toHaveLength(58);
+      expect(suites).toHaveLength(64);
       expect(suites.every((p: string) => p.startsWith('src/') && p.endsWith('.test.tsx'))).toBe(
         true
       );

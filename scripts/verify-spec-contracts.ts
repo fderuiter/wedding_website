@@ -1753,8 +1753,8 @@ function extractSymbolCitationsFromLine(
   resolvedLineTargets.sort((a, b) => a.start - b.start);
 
   const roleNounSuffixRe =
-    /^(.*?)(\s+(?:handler|handlers|function|functions|helper|helpers|method|methods|schema|schemas|class|classes|type|types|interface|interfaces|constant|constants|service|services|hook|hooks))?(?:(?:\s*,)?\s+(?:in|from|at|inside|within|via|defined in|declared in|exported by|exported from|implemented in)\s+|\s*\(\s*(?:see\s+|in\s+|at\s+|via\s+)?|\s*,\s*)$/;
-  const symChainSepRe = /^\s*(?:,|\/|\band\b|\bor\b|&|->|→)\s*(?:handler\s*(?:->|→)\s*)?$/;
+    /^(.*?)(?:\*\*)?(\s+(?:handler|handlers|function|functions|helper|helpers|method|methods|schema|schemas|class|classes|type|types|interface|interfaces|constant|constants|service|services|hook|hooks))?(?:(?:\s*,)?\s+(?:in|from|at|inside|within|via|defined in|declared in|exported by|exported from|implemented in)\s+|\s*\(\s*(?:see\s+|in\s+|at\s+|via\s+)?|\s*,\s*)$/;
+  const symChainSepRe = /^(?:\*\*)?\s*(?:,|\/|\band\b|\bor\b|&|->|→)\s*(?:handler\s*(?:->|→)\s*)?(?:\*\*)?$/;
   const joinedTargetsBetweenRe =
     /^(?:\s*\(L\d+(?:-L?\d+)?\))?\s*(?:,|\/|\band\b|\bor\b|&)\s*(?:mapped in\s+|in\s+|at\s+)?$/i;
 

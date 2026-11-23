@@ -18,8 +18,16 @@ import {
 } from '@/components/guest/GuestHelpModal';
 import { GlobalRadialGlow } from '@/components/ui/GlobalRadialGlow';
 import { useToast } from '@/components/ui/ToastProvider';
+import { useTheme } from '@/components/ThemeProvider';
+import type { ThemePreset } from '@/lib/theme/presets';
 import { MotionConfig, MotionGlobalConfig } from 'framer-motion';
 import type { ContentNodeDTO } from '@/features/content';
+import SetupWizard from '@/components/setup/SetupWizard';
+import {
+  ensureStaticDemoRuntime,
+  useStaticDemoPageOverrides,
+  StaticDemoMount,
+} from '@/lib/staticDemo/runtime';
 import {
   invalidateOnboardingMilestones,
   invalidateSampleDataCaches,
@@ -28,14 +36,34 @@ import {
 if (
   typeof window !== 'undefined' &&
   (window.navigator.userAgent.includes('HeadlessChrome') ||
-    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)
+    window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)
 ) {
   MotionGlobalConfig.skipAnimations = true;
 }
 
+function detectEmbeddedPreview(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.self !== window.top;
+  } catch {
+    return true;
+  }
+}
+
+function subscribeEmbeddedPreview(onStoreChange: () => void) {
+  if (detectEmbeddedPreview()) {
+    const timer = window.setTimeout(onStoreChange, 0);
+    return () => window.clearTimeout(timer);
+  }
+  return () => {};
+}
+
+function getEmbeddedPreviewServerSnapshot(): boolean {
+  return false;
+}
+
 import type { PublicAppConfig } from '@/lib/config';
 import { withBasePath } from '@/lib/basePath';
-import SetupWizard from '@/components/setup/SetupWizard';
 import { DemoProvider, useOptionalDemo } from '@/components/demo/DemoContext';
 import { DemoToolbar } from '@/components/demo/DemoToolbar';
 
@@ -52,40 +80,43 @@ interface RootLayoutClientProps {
   isStaticExport?: boolean;
 }
 
-function subscribeEmbeddedIframeNoop(): () => void {
-  return () => {};
-}
-
-function getIsEmbeddedIframeSnapshot(): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    return window.self !== window.top;
-  } catch {
-    return true;
-  }
-}
-
-function getServerEmbeddedIframeSnapshot(): boolean {
-  return false;
-}
-
 function RootLayoutInner({
   children,
   config: baseConfig,
   faqs: baseFaqs,
-}: Omit<RootLayoutClientProps, 'isStaticExport'>) {
+  queryClient,
+}: Omit<RootLayoutClientProps, 'isStaticExport'> & { queryClient: QueryClient }) {
   const demo = useOptionalDemo();
   const isDemoMode = Boolean(demo?.isDemoMode);
-  const isEmbeddedIframe = useSyncExternalStore(
-    subscribeEmbeddedIframeNoop,
-    getIsEmbeddedIframeSnapshot,
-    getServerEmbeddedIframeSnapshot
-  );
+  const demoOverrides = useStaticDemoPageOverrides();
+  const { setPreviewConfig } = useTheme();
   const [storageIsAdmin, setStorageIsAdmin] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
   const headerRef = useRef<HTMLElement>(null);
   const [mainPaddingTop, setMainPaddingTop] = useState(64);
+  const isEmbeddedPreview = useSyncExternalStore(
+    subscribeEmbeddedPreview,
+    detectEmbeddedPreview,
+    getEmbeddedPreviewServerSnapshot
+  );
+
+  useEffect(() => {
+    if (isDemoMode || !demoOverrides || typeof setPreviewConfig !== 'function') return;
+    if (typeof window !== 'undefined' && window !== window.parent) return;
+    setPreviewConfig({
+      themePreset: demoOverrides.config.themePreset as ThemePreset,
+      colorPrimary: demoOverrides.config.colorPrimary,
+      colorSecondary: demoOverrides.config.colorSecondary,
+    });
+  }, [
+    isDemoMode,
+    demoOverrides,
+    demoOverrides?.config.themePreset,
+    demoOverrides?.config.colorPrimary,
+    demoOverrides?.config.colorSecondary,
+    setPreviewConfig,
+  ]);
 
   useEffect(() => {
     if (isDemoMode) return;
@@ -102,32 +133,40 @@ function RootLayoutInner({
     };
   }, [isDemoMode]);
 
-  const isSetupPersona = isDemoMode && demo?.persona === 'setup';
-  const isAdmin = isDemoMode ? demo?.persona === 'admin' : storageIsAdmin;
+  const isSetupPersona = isDemoMode
+    ? demo?.persona === 'setup'
+    : Boolean(demoOverrides?.isSetupMode);
+  const isAdmin = isDemoMode
+    ? demo?.persona === 'admin'
+    : demoOverrides
+      ? demoOverrides.isAdminAuthenticated
+      : storageIsAdmin;
 
   const effectiveConfig = useMemo<PublicAppConfig>(() => {
-    if (!isDemoMode || !demo) return baseConfig;
-    return {
-      ...baseConfig,
-      ...demo.configOverrides,
-    };
-  }, [baseConfig, demo, isDemoMode]);
+    if (isDemoMode && demo) {
+      return {
+        ...(demoOverrides?.config ?? baseConfig),
+        ...demo.configOverrides,
+      };
+    }
+    return demoOverrides?.config ?? baseConfig;
+  }, [baseConfig, demo, demoOverrides, isDemoMode]);
 
   const effectiveFaqs = useMemo<ContentNodeDTO[] | undefined>(() => {
-    if (!isDemoMode || !demo) return baseFaqs;
-    return demo.activeDataset.faqs;
-  }, [baseFaqs, demo, isDemoMode]);
+    if (isDemoMode && demo) {
+      return demo.activeDataset.faqs;
+    }
+    return demoOverrides?.faqs ?? baseFaqs;
+  }, [baseFaqs, demo, demoOverrides, isDemoMode]);
 
   useLayoutEffect(() => {
     if (isSetupPersona || !headerRef.current) return;
 
-    if (headerRef.current.offsetHeight > 0) {
-      setMainPaddingTop(headerRef.current.offsetHeight);
-    }
+    setMainPaddingTop(headerRef.current.offsetHeight || 64);
 
     const resizeObserver = new ResizeObserver(() => {
-      if (headerRef.current && headerRef.current.offsetHeight > 0) {
-        setMainPaddingTop(headerRef.current.offsetHeight);
+      if (headerRef.current) {
+        setMainPaddingTop(headerRef.current.offsetHeight || 64);
       }
     });
 
@@ -148,10 +187,12 @@ function RootLayoutInner({
     normalizedPathname === '/admin/dashboard' ||
     Boolean(normalizedPathname?.startsWith('/admin/dashboard/')) ||
     isSetupPage;
-  const hasOwnMainLandmark =
-    isAdminDashboardPage ||
+  const isGuestStandaloneLandmarkPage =
     normalizedPathname === '/guest/claim' ||
-    normalizedPathname === '/guest/collect';
+    Boolean(normalizedPathname?.startsWith('/guest/claim/')) ||
+    normalizedPathname === '/guest/collect' ||
+    Boolean(normalizedPathname?.startsWith('/guest/collect/'));
+  const hasOwnMainLandmark = isAdminDashboardPage || isGuestStandaloneLandmarkPage;
 
   const handleLogout = async () => {
     if (isDemoMode && demo) {
@@ -189,7 +230,7 @@ function RootLayoutInner({
   }, [effectiveConfig, effectiveFaqs]);
 
   const bottomToolbarClearance =
-    isDemoMode && !isEmbeddedIframe
+    isDemoMode && !isEmbeddedPreview
       ? demo?.isToolbarCollapsed
         ? 'pb-16'
         : 'pb-28'
@@ -214,7 +255,7 @@ function RootLayoutInner({
               handleLogout={handleLogout}
               config={effectiveConfig}
               hasVisibleFaqs={effectiveFaqs ? effectiveFaqs.length > 0 : undefined}
-              isEmbeddedPreview={isEmbeddedIframe}
+              isEmbeddedPreview={isEmbeddedPreview}
             />
           )}
           {hasOwnMainLandmark ? (
@@ -226,7 +267,7 @@ function RootLayoutInner({
             </div>
           ) : (
             <main
-              aria-label={isEmbeddedIframe ? 'Live Preview Content' : 'Application Content'}
+              aria-label={isEmbeddedPreview ? 'Live Preview Content' : 'Application Content'}
               id="main-content"
               className={bottomToolbarClearance}
               style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}
@@ -236,7 +277,8 @@ function RootLayoutInner({
           )}
         </>
       )}
-      {isDemoMode && !isEmbeddedIframe && <DemoToolbar />}
+      {!isEmbeddedPreview &&
+        (isDemoMode ? <DemoToolbar /> : <StaticDemoMount queryClient={queryClient} />)}
     </GuestHelpProvider>
   );
 }
@@ -255,7 +297,11 @@ export default function RootLayoutClient({
   faqs,
   isStaticExport = false,
 }: RootLayoutClientProps) {
+  if (isStaticExport || process.env.NODE_ENV === 'test') {
+    ensureStaticDemoRuntime();
+  }
   const { addToast } = useToast();
+
   const [queryClient] = useState(() => {
     const client: QueryClient = new QueryClient({
       mutationCache: new MutationCache({
@@ -296,7 +342,7 @@ export default function RootLayoutClient({
     <QueryClientProvider client={queryClient}>
       <MotionConfig reducedMotion="user">
         <DemoProvider enabled={isStaticExport}>
-          <RootLayoutInner config={config} faqs={faqs}>
+          <RootLayoutInner config={config} faqs={faqs} queryClient={queryClient}>
             {children}
           </RootLayoutInner>
         </DemoProvider>

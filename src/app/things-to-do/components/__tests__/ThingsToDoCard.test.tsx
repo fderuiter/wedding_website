@@ -33,11 +33,14 @@ const mockHotelAttraction: AttractionDTO = {
 
 describe('ThingsToDoCard', () => {
   it('renders the attraction details correctly', () => {
-    render(<ThingsToDoCard attraction={mockAttraction} />);
+    const { rerender } = render(<ThingsToDoCard attraction={mockAttraction} />);
 
-    expect(screen.getByText('Test Attraction')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Test Attraction' })).toBeInTheDocument();
     expect(screen.getByText('A great place to visit.')).toBeInTheDocument();
     expect(screen.getByAltText('Test Attraction')).toBeInTheDocument();
+
+    rerender(<ThingsToDoCard attraction={mockAttraction} headingLevel="h3" />);
+    expect(screen.getByRole('heading', { level: 3, name: 'Test Attraction' })).toBeInTheDocument();
   });
 
   it('has correct links for website and directions', () => {

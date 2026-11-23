@@ -96,10 +96,8 @@ A variety of verification scripts in [package.json](../package.json) support com
   npm run test:e2e
   # Fast smoke subset (@smoke):
   npm run test:e2e:smoke
-  # Database-free 32-route static GitHub Pages showcase audit:
-  npm run test:e2e:static
   ```
-  Executes browser-based end-to-end tests in bundled Chromium against `http://localhost:3000` backed by the isolated `wedding_test` database (honoring optional `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` overrides when set). `npm run test:e2e:smoke` (`playwright test --grep @smoke`) runs the targeted fast smoke specs ([e2e/guest-callback-url.spec.ts](../e2e/guest-callback-url.spec.ts), [e2e/meta.spec.ts](../e2e/meta.spec.ts), and [e2e/skip-link.spec.ts](../e2e/skip-link.spec.ts)) while excluding slow route crawlers in [e2e/crawler.spec.ts](../e2e/crawler.spec.ts) and route violation writers in [e2e/verification.spec.ts](../e2e/verification.spec.ts). `npm run test:e2e:static` (`playwright test --config=playwright.static.config.ts`) runs [e2e/static-demo.spec.ts](../e2e/static-demo.spec.ts) against the assembled VitePress + static Next.js showcase (`docs-portal/.vitepress/dist` + `demo/` served by [scripts/serve-static-demo.mjs](../scripts/serve-static-demo.mjs) at `http://localhost:4173/wedding_website/demo`) without PostgreSQL or Docker, verifying HTTP 200 status, subpath asset integrity, zero `pageerror` exceptions, and WCAG 2.2 AA compliance across all 32 exported showcase routes. In [.github/workflows/ci.yml](workflows/ci.yml), `static-demo-e2e` starts immediately after `verify` (gating `deploy-docs`), while `e2e-test` (`npx playwright test`) and `container-e2e-smoke` (`TEST_CONTAINER=true npm run test:e2e:smoke` against `wedding-website-container`) start immediately in parallel once `build` succeeds without waiting for `unit-test`.
+  Executes browser-based end-to-end tests in bundled Chromium against `http://localhost:3000` backed by the isolated `wedding_test` database (honoring optional `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` overrides when set). `npm run test:e2e:smoke` (`playwright test --grep @smoke`) runs the targeted fast smoke specs ([e2e/guest-callback-url.spec.ts](../e2e/guest-callback-url.spec.ts), [e2e/meta.spec.ts](../e2e/meta.spec.ts), and [e2e/skip-link.spec.ts](../e2e/skip-link.spec.ts)) while excluding slow route crawlers in [e2e/crawler.spec.ts](../e2e/crawler.spec.ts) and route violation writers in [e2e/verification.spec.ts](../e2e/verification.spec.ts). In [.github/workflows/ci.yml](workflows/ci.yml), `e2e-test` (`npx playwright test`) and `container-e2e-smoke` (`TEST_CONTAINER=true npm run test:e2e:smoke` against `wedding-website-container`) start immediately in parallel once `build` succeeds without waiting for `unit-test`.
   - **Automated `wedding_test` Bootstrap:** When `CI` and `TEST_CONTAINER` are unset, [playwright.config.ts](../playwright.config.ts) automatically starts the Docker Compose PostgreSQL `db` container (if Docker is running), synchronizes the schema (`npx prisma db push --accept-data-loss`), and seeds `AppConfig` (`npx tsx scripts/seed.ts`) in `wedding_test` before launching `npm run dev` on `http://localhost:3000` and probing `/api/ready`.
   - **Isolated Server Lifecycle & Explicit Reuse Opt-In:** [playwright.config.ts](../playwright.config.ts) disables `reuseExistingServer` by default so Playwright never silently reuses a running `npm run dev` process bound to `.env` (which targets the `wedding` development database and uses local `GUEST_SESSION_SECRET`, `GUEST_PASSCODE`, and `ADMIN_PASSWORD` values that cause `src/core/auth/guest.server.ts` to reject E2E cookies). Stop any running `npm run dev` on port `3000` before running `npm run test:e2e` (`npx playwright test`), or set `PLAYWRIGHT_REUSE_SERVER=true` (when `CI` is unset) only when the existing server explicitly targets `wedding_test` and shares aligned E2E session secrets.
   - **E2E Cookie Signing & Secret Alignment:** Playwright specs authenticate using shared helpers in [e2e/helpers/auth.ts](../e2e/helpers/auth.ts), which sign `guest_auth` cookies with `GUEST_SESSION_SECRET` and `admin_auth` cookies with a domain-separated HMAC key derived from the decoded 64-byte `ADMIN_PASSWORD` scrypt hash across both `http://127.0.0.1:3000` and `http://localhost:3000`.
@@ -108,13 +106,16 @@ A variety of verification scripts in [package.json](../package.json) support com
 
 - **Accessibility (A11y) Audits:**
   ```bash
-  # Fast component-only jest-axe checks (58 src/ suites, no Docker required):
+  # Fast component-only jest-axe checks (64 src/ suites, no Docker required):
   npm run test:a11y:unit
+
+  # Database-free static GitHub Pages showcase E2E & WCAG 2.2 AA audit (32 routes):
+  npm run test:e2e:static
 
   # Full component + @a11y Playwright WCAG 2.2 AA audit:
   npm run test:a11y
   ```
-  `npm run test:a11y:unit` runs [scripts/a11y-report.mjs](../scripts/a11y-report.mjs) (`--unit`), executing only the 58 `src/` `jest-axe` suites with `--coverage=false` and recording component violations to `test-results/jest-a11y-violations.json`. `npm run test:a11y` runs `scripts/a11y-report.mjs` (`--run`), which cleans `test-results/`, runs the targeted `--unit` component pass, reseeds `wedding_test` via `npx tsx scripts/seed.ts` ([scripts/seed.ts](../scripts/seed.ts)) to restore valid `AppConfig` data wiped by Jest integration teardowns (skipping `<SetupWizard />` in `src/app/layout.tsx`), runs `npx playwright test --grep @a11y`, and writes unfiltered WCAG 2.2 AA violations to `test-results/a11y-summary.md` (for production standalone mode, run `npm run build && CI=true npm run test:a11y`). In [.github/workflows/ci.yml](workflows/ci.yml), an isolated `a11y-report` job depends on `unit-test`, `e2e-test`, and `static-demo-e2e` (`if: '!cancelled()'`), downloads `jest-a11y-violations`, `playwright-a11y-violations`, and `static-demo-a11y-violations`, marks missing suite artifacts as incomplete in `test-results/a11y-summary.md`, and updates the `<!-- a11y-report -->` pull request comment and `$GITHUB_STEP_SUMMARY` even when violations exit non-zero.
+  `npm run test:a11y:unit` runs [scripts/a11y-report.mjs](../scripts/a11y-report.mjs) (`--unit`), executing only the 64 `src/` `jest-axe` suites with `--coverage=false` and recording component violations to `test-results/jest-a11y-violations.json`. `npm run test:e2e:static` runs [playwright.static.config.ts](../playwright.static.config.ts) ([e2e/static-demo.spec.ts](../e2e/static-demo.spec.ts)) against [scripts/serve-static-demo.mjs](../scripts/serve-static-demo.mjs) (`http://localhost:4173/wedding_website/demo`) without Docker or PostgreSQL, auditing all 32 exported routes and recording violations to `test-results/static-demo-a11y-violations.json`. `npm run test:a11y` runs `scripts/a11y-report.mjs` (`--run`), which cleans `test-results/`, runs the targeted `--unit` component pass, reseeds `wedding_test` via `npx tsx scripts/seed.ts` ([scripts/seed.ts](../scripts/seed.ts)) to restore valid `AppConfig` data wiped by Jest integration teardowns (skipping `<SetupWizard />` in `src/app/layout.tsx`), runs `npx playwright test --grep @a11y`, and writes unfiltered WCAG 2.2 AA violations to `test-results/a11y-summary.md` (for production standalone mode, run `npm run build && CI=true npm run test:a11y`). In [.github/workflows/ci.yml](workflows/ci.yml), an isolated `a11y-report` job depends on `unit-test`, `e2e-test`, and `static-demo-e2e` (`if: '!cancelled()'`), downloads `jest-a11y-violations`, `playwright-a11y-violations`, and `static-demo-a11y-violations` (`--require-static-demo`), marks missing suite artifacts as incomplete in `test-results/a11y-summary.md`, and updates the `<!-- a11y-report -->` pull request comment and `$GITHUB_STEP_SUMMARY` even when violations exit non-zero.
 
 - **Standalone Server Smoke Test:**
   ```bash
@@ -136,17 +137,7 @@ A variety of verification scripts in [package.json](../package.json) support com
   ```bash
   npm run check:static
   ```
-  Executes all ten static verification gates configured in `package.json`:
-  - `npm run check:env-docs`: Validates environment variable documentation alignment across `.env.example` and deployment guides.
-  - `npm run check:runbooks`: Validates deployment runbooks against workflows, Docker Compose, and Prisma 7 contracts.
-  - `npm run check:identifiers`: Scans for accidentally committed personal/template identifiers.
-  - `npm run check:action-pins`: Validates strict YAML 1.2 workflow syntax across `.github/workflows/` and ensures GitHub Actions workflow actions are pinned to full 40-character commit SHAs with inline `# v...` version comments (`npm run check:action-pins -- --verify-upstream` in CI verifies upstream commit existence).
-  - `npm run check:links`: Verifies that internal Markdown document links resolve cleanly without broken references.
-  - `npm run check:spec-contracts`: Verifies that `/api/*` routes, HTTP methods, dynamic admin `ENTITY_KEY` slugs, and TypeScript symbols cited in architectural Markdown specs match live source files.
-  - `npm run check:prisma`: Validates Prisma schema formatting and relations.
-  - `npm run lint:migrations`: Verifies database migration compatibility.
-  - `npm run check:doc-sync`: Verifies generated OpenAPI (`public/openapi.json`), architecture (`ARCHITECTURE.md`), and feature module (`FEATURE_MODULES.md`) documentation match current schemas.
-  - `npm run check:setup-guides`: Verifies setup, contributor, and testing guides stay aligned with `.env.example`, `.env.test`, `package.json`, `.githooks/pre-commit`, `.githooks/pre-push`, `scripts/check-quality.ts`, and `tsconfig.json`.
+  Executes the shared static verification list in [scripts/check-quality.ts](../scripts/check-quality.ts) (`--static`), matching the `verify` job in [.github/workflows/ci.yml](workflows/ci.yml). For local environment setup, Git hooks ([`.githooks/pre-commit`](../.githooks/pre-commit) and [`.githooks/pre-push`](../.githooks/pre-push)), and generated doc-sync rules, see the [Developer Setup Guide](../docs/developer-setup.md) and [Contribution Guidelines](CONTRIBUTING.md).
 
 - **PostgreSQL Migration Drift Verification (`Verify Prisma Migration Sync`):**
   ```bash
@@ -161,11 +152,12 @@ A variety of verification scripts in [package.json](../package.json) support com
   ```
   Compiles component stories (`src/**/*.stories.tsx`), Storybook configuration ([.storybook/main.ts](../.storybook/main.ts), [.storybook/preview.tsx](../.storybook/preview.tsx)), and MSW mock handlers ([src/mocks/handlers.ts](../src/mocks/handlers.ts)) via Webpack 5, matching the parallel `storybook-build` CI job in [.github/workflows/ci.yml](workflows/ci.yml) and manual [.github/workflows/storybook.yml](workflows/storybook.yml) workflow (both installing dependencies with `npm ci --ignore-scripts`). Use `npm run storybook` for interactive component development.
 
-- **Static HTML Showcase Build:**
+- **Static HTML Showcase Build & E2E Audit:**
   ```bash
   npm run build:export
+  npm run test:e2e:static
   ```
-  Compiles the database-free static HTML showcase (`output: 'export'`) inside `.next/export-stage` without `src/app/api` ([scripts/build-export.mjs](../scripts/build-export.mjs)), isolating export build caches in `.next-export/cache` ([next.config.ts](../next.config.ts)) while preserving `src/app/api` and `.next/standalone` in the repository root, matching the parallel `static-export-build` CI job in [.github/workflows/ci.yml](workflows/ci.yml).
+  `npm run build:export` compiles the database-free static HTML showcase (`output: 'export'`) inside `.next/export-stage` without `src/app/api` ([scripts/build-export.mjs](../scripts/build-export.mjs)), isolating export build caches in `.next-export/cache` ([next.config.ts](../next.config.ts)) while preserving `src/app/api` and `.next/standalone` in the repository root, matching the parallel `static-export-build` CI job in [.github/workflows/ci.yml](workflows/ci.yml). `npm run test:e2e:static` serves the assembled VitePress + `/demo` bundle under `/wedding_website` ([scripts/serve-static-demo.mjs](../scripts/serve-static-demo.mjs)) and verifies HTTP 200 responses, subpath asset resolution, zero `pageerror` exceptions, and zero WCAG 2.2 AA Axe violations across all 32 exported routes (`static-demo-e2e` in `ci.yml`, gating `deploy-docs`).
 
 - **Complete Quality Gate:**
   ```bash

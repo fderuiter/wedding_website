@@ -27,7 +27,7 @@ describe('ThingsToDoError Boundary', () => {
     const alerts = screen.getAllByRole('alert');
     expect(alerts.some((el) => el.getAttribute('aria-live') === 'assertive')).toBe(true);
 
-    expect(screen.getByRole('heading', { level: 2, name: 'Things to Do Error' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Things to Do Error' })).toBeInTheDocument();
     expect(screen.getAllByText(/loading local attractions and recommendations/i).length).toBeGreaterThanOrEqual(1);
 
     const retryBtn = screen.getByRole('button', { name: 'Try Again' });

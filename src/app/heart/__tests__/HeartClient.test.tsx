@@ -160,13 +160,9 @@ jest.mock('next/link', () => {
   const MockLink = ({
     children,
     href,
-    className,
-  }: {
-    children: React.ReactNode;
-    href: string;
-    className?: string;
-  }) => (
-    <a href={href} className={className}>
+    ...rest
+  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { children: React.ReactNode; href: string }) => (
+    <a href={href} {...rest}>
       {children}
     </a>
   );
@@ -236,6 +232,10 @@ describe('HeartClient Easter Egg Accessibility and Live Region', () => {
 
   it('renders initial live region with "Heart is whole." and does not render easter egg DOM node', () => {
     render(<HeartClient partner1Name="Abbi" partner2Name="Fred" />);
+
+    expect(
+      screen.getByRole('heading', { level: 1, name: /Interactive 3D Heart — Abbi & Fred/i })
+    ).toBeInTheDocument();
 
     const liveRegion = screen.getByRole('status');
     expect(liveRegion).toBeInTheDocument();
@@ -466,21 +466,33 @@ describe('HeartClient Easter Egg Accessibility and Live Region', () => {
     delete (window as Window & { WebGL2RenderingContext?: unknown }).WebGL2RenderingContext;
   });
 
-  it('renders accessible level-1 heading and explicit dark-mode-safe button contrast in both WebGL and fallback modes', () => {
+  it('renders calibrated inverse Button and Link overlay controls without raw bg-white/80 or nested button-inside-anchor markup in both WebGL and fallback views', () => {
     const { unmount } = render(<HeartClient partner1Name="Abbi" partner2Name="Fred" />);
-    expect(screen.getByRole('heading', { level: 1, name: 'Interactive Heart' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Reset heart' }).className).toContain('text-gray-900');
-    expect(screen.getByRole('link', { name: 'Back Home' }).className).toContain('text-gray-900');
+
+    const resetBtn = screen.getByRole('button', { name: 'Reset heart' });
+    const backHomeLink = screen.getByRole('link', { name: 'Back Home' });
+
+    expect(resetBtn).toHaveClass('bg-[var(--toast-action-bg,#ffffff)]');
+    expect(resetBtn).toHaveClass('text-[var(--toast-action-text,#111827)]');
+    expect(resetBtn).toHaveClass('focus-visible:ring-[var(--toast-action-bg,#ffffff)]');
+    expect(resetBtn).not.toHaveClass('bg-white/80');
+    expect(backHomeLink).toHaveClass('bg-[var(--toast-action-bg,#ffffff)]');
+    expect(backHomeLink).toHaveClass('text-[var(--toast-action-text,#111827)]');
+    expect(backHomeLink).toHaveClass('focus-visible:ring-[var(--toast-action-bg,#ffffff)]');
+    expect(backHomeLink).not.toHaveClass('bg-white/80');
+    expect(backHomeLink.querySelector('button')).toBeNull();
+
     unmount();
 
     (window as Window & { __mockWebGLSupport?: boolean }).__mockWebGLSupport = false;
-    try {
-      render(<HeartClient partner1Name="Abbi" partner2Name="Fred" />);
-      expect(screen.getByRole('heading', { level: 1, name: 'Interactive Heart' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Reset heart' }).className).toContain('text-gray-900');
-      expect(screen.getByRole('link', { name: 'Back Home' }).className).toContain('text-gray-900');
-    } finally {
-      delete (window as Window & { __mockWebGLSupport?: boolean }).__mockWebGLSupport;
-    }
+    render(<HeartClient partner1Name="Abbi" partner2Name="Fred" />);
+
+    expect(screen.getByTestId('webgl-fallback-container')).toBeInTheDocument();
+    const fallbackBackLink = screen.getByRole('link', { name: 'Back Home' });
+    expect(fallbackBackLink).toHaveClass('bg-[var(--toast-action-bg,#ffffff)]');
+    expect(fallbackBackLink).toHaveClass('text-[var(--toast-action-text,#111827)]');
+    expect(fallbackBackLink).toHaveClass('focus-visible:ring-[var(--toast-action-bg,#ffffff)]');
+    expect(fallbackBackLink).not.toHaveClass('bg-white/80');
+    expect(fallbackBackLink.querySelector('button')).toBeNull();
   });
 });

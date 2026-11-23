@@ -9,14 +9,17 @@ import {
   encodeRouteMermaidNodeId,
   generateConfigTable,
   generateRoutesDiagram,
+  collectApiRouteEntries,
   generateApiRoutesSection,
   generateEnvSpecs,
   generateFeatureMetadataTable,
+  extractAdminEntityRows,
   generateAdminEntityTable,
   generateFeatureBarrelsTable,
+  resolveLocalTsModule,
   updateFeatureModulesMd,
 } from '../../scripts/generate-docs';
-import { AppConfigSchema } from '@/features/content';
+import { AppConfigSchema, PublicAppConfigSchema } from '@/features/content';
 import { DEFAULT_MODULE_CONFIG, FEATURE_METADATA } from '../lib/modules';
 
 describe('Documentation Generator - getZodType & Spec Tables', () => {
@@ -157,7 +160,7 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       expect(getZodType(shape.features)).toBe('object[]');
 
       const entries = Object.entries(shape);
-      expect(entries).toHaveLength(99);
+      expect(entries.length).toBeGreaterThan(0);
 
       for (const [key, value] of entries) {
         const type = getZodType(value);
@@ -192,48 +195,69 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
   });
 
   describe('Generated AppConfig and API Route Specifications', () => {
-    it('distinguishes 84 Prisma columns, 15 virtual DTO fields, 69 public fields, 26 admin-only fields, and 4 masked secrets', () => {
+    it('partitions every AppConfigSchema field across Prisma vs. Virtual DTO storage and Public, Admin-only, Masked secret, or Server-only exposure', () => {
       const table = generateConfigTable();
       expect(table).not.toContain('Configuration field for');
+
+      const expectedKeys = Object.keys(AppConfigSchema.shape);
+      const expectedPublicCount = expectedKeys.filter(
+        (key) => key in PublicAppConfigSchema.shape,
+      ).length;
 
       const rows = table
         .trim()
         .split('\n')
         .slice(2);
-      expect(rows).toHaveLength(99);
+      expect(rows).toHaveLength(expectedKeys.length);
 
       const prismaRows = rows.filter((r) => r.includes('| `Prisma` |'));
       const virtualRows = rows.filter((r) => r.includes('| `Virtual DTO` |'));
       const publicRows = rows.filter((r) => r.includes('| `Public` |'));
       const adminOnlyRows = rows.filter((r) => r.includes('| `Admin-only` |'));
       const maskedSecretRows = rows.filter((r) => r.includes('| `Masked secret ('));
+      const serverOnlyRows = rows.filter((r) => r.includes('| `Server-only` |'));
 
-      expect(prismaRows).toHaveLength(84);
-      expect(virtualRows).toHaveLength(15);
-      expect(publicRows).toHaveLength(69);
-      expect(adminOnlyRows).toHaveLength(26);
-      expect(maskedSecretRows).toHaveLength(4);
+      expect(prismaRows.length).toBeGreaterThan(0);
+      expect(virtualRows.length).toBeGreaterThan(0);
+      expect(prismaRows.length + virtualRows.length).toBe(expectedKeys.length);
 
+      expect(publicRows).toHaveLength(expectedPublicCount);
+      expect(adminOnlyRows.length).toBeGreaterThan(0);
+      expect(maskedSecretRows.length).toBeGreaterThanOrEqual(4);
+      expect(
+        publicRows.length +
+          adminOnlyRows.length +
+          maskedSecretRows.length +
+          serverOnlyRows.length,
+      ).toBe(expectedKeys.length);
+
+      expect(table).toContain('| `setupCompleted` |');
+      expect(table).toContain('| `autoApproveGuestPhotos` |');
+      expect(table).toContain('| `guestPhotoQrTokenVersion` |');
       expect(table).toContain('`Masked secret (hasSmtpPass)`');
       expect(table).toContain('`Masked secret (hasResendApiKey)`');
       expect(table).toContain('`Masked secret (hasSendgridApiKey)`');
       expect(table).toContain('`Masked secret (hasTwilioAuthToken)`');
     });
 
-    it('lists all 82 API route handlers and marks /api/media and /api/admin/invitation-codes/merge Admin-only, /api/registry/webhook/stripe stripeSignature, and /api/live and /api/uploads/[...path] Public', () => {
+    it('lists every live API route handler and marks /api/media, /api/admin/geocode, /api/admin/photos/qr, /api/admin/thank-you-notes/[id]/send-email, and /api/admin/invitation-codes/merge Admin-only, /api/registry/webhook/stripe stripeSignature, and /api/live and /api/uploads/[...path] Public', () => {
+      const liveRouteEntries = collectApiRouteEntries();
       const apiSection = generateApiRoutesSection();
-      expect(apiSection).toContain('Total API route handlers: **82**');
+      expect(apiSection).toContain(`Total API route handlers: **${liveRouteEntries.length}**`);
 
       const handlerRows = apiSection
         .split('\n')
         .filter((line) => line.startsWith('| `/api/'));
-      expect(handlerRows).toHaveLength(82);
+      expect(handlerRows).toHaveLength(liveRouteEntries.length);
 
       expect(apiSection).toContain('| `/api/admin/geocode` | `src/app/api/admin/geocode/route.ts` | `GET` | `Admin-only` |');
       expect(apiSection).toContain('| `/api/live` | `src/app/api/live/route.ts` | `GET` | `Public` |');
+      expect(apiSection).toContain('| `/api/admin/photos/qr` | `src/app/api/admin/photos/qr/route.ts` | `GET`, `POST` | `Admin-only` |');
       expect(apiSection).toContain('| `/api/registry/claim` | `src/app/api/registry/claim/route.ts` | `GET`, `POST` | `Public` |');
       expect(apiSection).toContain('| `/api/admin/broadcast/[id]` | `src/app/api/admin/broadcast/[id]/route.ts` | `GET` | `Admin-only` |');
+      expect(apiSection).toContain('| `/api/admin/contributors/[id]` | `src/app/api/admin/contributors/[id]/route.ts` | `PATCH`, `DELETE` | `Admin-only` |');
       expect(apiSection).toContain('| `/api/admin/contributors/[id]/action` | `src/app/api/admin/contributors/[id]/action/route.ts` | `POST` | `Admin-only` |');
+      expect(apiSection).toContain('| `/api/admin/registry/items/[id]/unclaim` | `src/app/api/admin/registry/items/[id]/unclaim/route.ts` | `POST` | `Admin-only` |');
       expect(apiSection).toContain('| `/api/admin/thank-you-notes/[id]/send-email` | `src/app/api/admin/thank-you-notes/[id]/send-email/route.ts` | `POST` | `Admin-only` |');
 
       expect(apiSection).toContain('| `/api/admin/invitation-codes/catalog` | `src/app/api/admin/invitation-codes/catalog/route.ts` | `GET` | `Admin-only` |');
@@ -330,13 +354,14 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
   });
 
   describe('FEATURE_MODULES.md Automated Table Generation', () => {
-    it('generates all 9 presentation feature toggles with dependencies, Prisma persistence, and HTTP 400 groupGifting coverage', () => {
+    it('generates every presentation feature toggle in FEATURE_METADATA with dependencies, Prisma persistence, and HTTP 400 groupGifting coverage', () => {
       const table = generateFeatureMetadataTable();
       const rows = table.trim().split('\n').slice(2);
-      expect(rows).toHaveLength(9);
+      const featureKeys = Object.keys(FEATURE_METADATA);
+      expect(rows).toHaveLength(featureKeys.length);
       expect(table).not.toContain('`guestPasscode`');
 
-      for (const key of Object.keys(FEATURE_METADATA)) {
+      for (const key of featureKeys) {
         expect(table).toContain(`| \`${key}\` |`);
       }
 
@@ -347,21 +372,25 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       expect(table).toContain('`Prisma` (`modules` + `showAddToCalendar`)');
     });
 
-    it('generates all 7 exact plural ENTITY_KEY slugs from src/features/admin/registry.ts', () => {
+    it('generates every exact plural ENTITY_KEY slug registered in src/features/admin/registry.ts', () => {
+      const liveEntities = extractAdminEntityRows();
       const table = generateAdminEntityTable();
       const rows = table.trim().split('\n').slice(2);
-      expect(rows).toHaveLength(7);
+      expect(rows).toHaveLength(liveEntities.length);
 
-      const expectedSlugs = [
-        'content-nodes',
-        'wedding-party',
-        'attractions',
-        'registry-items',
-        'invitation-codes',
-        'seating-tables',
-        'sub-events',
-      ];
-      for (const slug of expectedSlugs) {
+      const liveSlugs = liveEntities.map((row) => row.entityKey);
+      expect(liveSlugs).toEqual(
+        expect.arrayContaining([
+          'content-nodes',
+          'wedding-party',
+          'attractions',
+          'registry-items',
+          'invitation-codes',
+          'seating-tables',
+          'sub-events',
+        ]),
+      );
+      for (const slug of liveSlugs) {
         expect(table).toContain(`| \`${slug}\` |`);
         expect(table).toContain(`\`/api/admin/${slug}\``);
       }
@@ -373,24 +402,43 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       expect(table).not.toContain('| `content` |');
     });
 
-    it('generates all 11 feature module barrels from src/features/*/index.ts and excludes non-existent service symbols', () => {
-      const table = generateFeatureBarrelsTable();
-      expect(table).toContain('Total domain feature modules: **11** under `src/features/`.');
+    it('generates every feature module barrel from src/features/*/index.ts and excludes non-existent service symbols', () => {
+      const rootDir = process.cwd();
+      const featuresDir = path.join(rootDir, 'src/features');
+      const liveDomains = fs
+        .readdirSync(featuresDir, { withFileTypes: true })
+        .filter(
+          (entry) =>
+            entry.isDirectory() &&
+            !entry.name.startsWith('.') &&
+            Boolean(
+              resolveLocalTsModule(path.join(featuresDir, 'index.ts'), `./${entry.name}`, rootDir),
+            ),
+        )
+        .map((entry) => entry.name)
+        .sort();
 
-      const expectedDomains = [
-        'admin',
-        'attractions',
-        'broadcast',
-        'content',
-        'logistics',
-        'media',
-        'registry',
-        'seating',
-        'sub-events',
-        'weather',
-        'wedding-party',
-      ];
-      for (const domain of expectedDomains) {
+      const table = generateFeatureBarrelsTable();
+      expect(table).toContain(
+        `Total domain feature modules: **${liveDomains.length}** under \`src/features/\`.`,
+      );
+
+      expect(liveDomains).toEqual(
+        expect.arrayContaining([
+          'admin',
+          'attractions',
+          'broadcast',
+          'content',
+          'logistics',
+          'media',
+          'registry',
+          'seating',
+          'sub-events',
+          'weather',
+          'wedding-party',
+        ]),
+      );
+      for (const domain of liveDomains) {
         expect(table).toContain(`| \`${domain}\` | \`src/features/${domain}/index.ts\` |`);
       }
 

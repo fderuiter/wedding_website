@@ -1016,32 +1016,6 @@ describe('ThankYouNotesPage', () => {
     expect(results).toHaveNoViolations();
   });
 
-  it('renders high-contrast error alert with no axe violations when contributor fetch fails', async () => {
-    (global.fetch as jest.Mock).mockImplementation((url: string) => {
-      if (url.includes('/api/admin/thank-you-notes')) {
-        return Promise.resolve({
-          ok: false,
-          status: 500,
-          json: async () => ({ error: 'Failed to load contributors' }),
-        });
-      }
-      return Promise.reject(new Error(`Unknown endpoint: ${url}`));
-    });
-
-    const { container } = render(
-      <ToastProvider>
-        <ThankYouNotesPage />
-      </ToastProvider>
-    );
-
-    const errorBanner = await screen.findByText(/Error: Failed to fetch thank-you notes\./i);
-    expect(errorBanner.className).toContain('text-red-700');
-    expect(errorBanner.className).toContain('dark:text-red-400');
-
-    const results = await axe(container);
-    expect(results).toHaveNoViolations();
-  });
-
   it('supports searching and linking/unlinking a guest household and editing contributor postal address with zero axe violations', async () => {
     (global.fetch as jest.Mock).mockImplementation((url: string, options?: RequestInit) => {
       if (url.includes('/api/admin/invitation-codes/catalog')) {
@@ -1252,5 +1226,29 @@ describe('ThankYouNotesPage', () => {
         })
       );
     });
+  });
+
+  it('renders accessible error alert with calibrated contrast and zero axe violations when loading fails', async () => {
+    (global.fetch as jest.Mock).mockImplementation((url: string) => {
+      if (url.includes('/api/admin/thank-you-notes')) {
+        return Promise.resolve({
+          ok: false,
+          status: 500,
+          json: () => Promise.resolve({ error: 'Database unavailable' }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    });
+
+    const { container } = render(
+      <ToastProvider>
+        <ThankYouNotesPage />
+      </ToastProvider>
+    );
+
+    const errorAlert = await screen.findByRole('alert');
+    expect(errorAlert).toHaveTextContent(/Failed to fetch thank-you notes/i);
+    expect(errorAlert).toHaveClass('text-red-700', 'dark:text-red-400');
+    expect(await axe(container)).toHaveNoViolations();
   });
 });

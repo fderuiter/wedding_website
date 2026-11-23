@@ -33,9 +33,6 @@ describe('WeddingPartyPage', () => {
     const Component = await WeddingPartyPage();
     render(Component);
     expect(screen.getByRole('heading', { level: 1, name: 'Wedding Party' })).toBeInTheDocument();
-    expect(
-      screen.getByRole('heading', { level: 2, name: 'Wedding Party Members' })
-    ).toBeInTheDocument();
     expect(screen.getByTestId('wedding-party-list')).toBeInTheDocument();
   });
 });

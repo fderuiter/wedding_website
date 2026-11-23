@@ -76,6 +76,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
   const ciWorkflow = readWorkflow('ci.yml');
   const publishWorkflow = readWorkflow('publish-artifact.yml');
   const deployWorkflow = readWorkflow('deploy.yml');
+  const deployStageWorkflow = readWorkflow('deploy-stage.yml');
   const deployProviderWorkflow = readWorkflow('deploy-provider.yml');
   const migrateWorkflow = readWorkflow('db-migrate.yml');
   const rollbackWorkflow = readWorkflow('rollback.yml');
@@ -114,24 +115,6 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(ciWorkflow).toContain('run: npm run check:action-pins -- --verify-upstream');
     expect(ciWorkflow).not.toContain('secrets.');
 
-    const staticDemoSection =
-      ciWorkflow.split(/\n  e2e-test:\n/)[0]?.split(/\n  static-demo-e2e:\n/)[1] ?? '';
-    expect(staticDemoSection).toContain('needs: verify');
-    expect(staticDemoSection).not.toContain('services:');
-    expect(staticDemoSection).toContain('run: npm run test:e2e:static');
-    expect(staticDemoSection).toContain('name: static-demo-a11y-violations');
-
-    const a11ySection =
-      ciWorkflow.split(/\n  deploy-docs:\n/)[0]?.split(/\n  a11y-report:\n/)[1] ?? '';
-    expect(a11ySection).toContain('needs: [unit-test, e2e-test, static-demo-e2e]');
-    expect(a11ySection).toContain('name: static-demo-a11y-violations');
-    expect(a11ySection).toContain('run: node scripts/a11y-report.mjs --require-static-demo');
-
-    const deployDocsSection = ciWorkflow.split(/\n  deploy-docs:\n/)[1] ?? '';
-    expect(deployDocsSection).toContain(
-      'needs: [verify, static-export-build, storybook-build, static-demo-e2e]'
-    );
-
     const trivyMatches =
       ciWorkflow.match(/aquasecurity\/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25/g) ?? [];
     expect(trivyMatches).toHaveLength(2);
@@ -141,8 +124,14 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     for (const section of [buildSection, arm64Section]) {
       expect(section).toContain('aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25');
       expect(section).toContain('image-ref: wedding-website:latest');
+      expect(section).toContain("ignore-unfixed: 'true'");
       expect(section).toContain("severity: 'CRITICAL,HIGH'");
       expect(section).toContain("exit-code: '1'");
+    }
+
+    for (const runtimePath of ['src/env.ts', 'src/lib/stripe.ts', 'src/lib/stripe.client.ts']) {
+      const source = fs.readFileSync(path.join(process.cwd(), runtimePath), 'utf8');
+      expect(source).not.toMatch(/(?:sk|rk)_(?:test|live)_[0-9a-zA-Z_]{10,}/);
     }
 
     // static-export-build runs in parallel after verify with read-only permissions and zero DB services
@@ -157,6 +146,22 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(staticExportJob).toContain('path: .next-export/cache');
     expect(staticExportJob).toContain('npm run build:export');
     expect(staticExportJob).toContain('name: demo-static');
+
+    // static-demo-e2e runs in parallel after verify without DB services and gates both a11y-report and deploy-docs
+    const staticDemoE2eMatch = ciWorkflow.match(
+      /  static-demo-e2e:\n([\s\S]*?)(?=\n  [a-z0-9-]+:|\s*$)/
+    );
+    expect(staticDemoE2eMatch).not.toBeNull();
+    const staticDemoE2eJob = staticDemoE2eMatch?.[1] ?? '';
+    expect(staticDemoE2eJob).toContain('needs: verify');
+    expect(staticDemoE2eJob).toMatch(/permissions:\n\s+contents: read/);
+    expect(staticDemoE2eJob).not.toContain('services:');
+    expect(staticDemoE2eJob).toContain('npm run test:e2e:static');
+    expect(staticDemoE2eJob).toContain('name: static-demo-a11y-violations');
+    expect(ciWorkflow).toMatch(
+      /  a11y-report:\n\s+needs: \[unit-test, e2e-test, static-demo-e2e\]\n/
+    );
+    expect(ciWorkflow).toContain('run: node scripts/a11y-report.mjs --require-static-demo');
 
     // e2e-test and container-e2e-smoke do not depend on static-export-build so static export checks never delay Playwright runs
     expect(ciWorkflow).toMatch(/  e2e-test:\n\s+needs: \[verify, build\]\n/);
@@ -178,10 +183,10 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     for (const [name, content] of [
       ['publish-artifact.yml', publishWorkflow],
       ['deploy.yml', deployWorkflow],
+      ['deploy-stage.yml', deployStageWorkflow],
       ['deploy-provider.yml', deployProviderWorkflow],
       ['db-migrate.yml', migrateWorkflow],
       ['rollback.yml', rollbackWorkflow],
-      ['db-migrate.yml', migrateWorkflow],
     ] as const) {
       const topPermissions = extractTopLevelSection(content, 'permissions');
       expect({ name, topPermissions }).toEqual({
@@ -221,21 +226,19 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       /publish-artifact:\n[\s\S]*?permissions:\n\s+contents: read\n\s+actions: read\n\s+packages: write\n\s+security-events: write\n\s+id-token: write\n\s+attestations: write/
     );
 
-    // actions: read and deployments: write in deploy.yml live strictly inside individual jobs (never top-level)
+    // actions: read and deployments: write in deploy.yml and deploy-stage.yml live strictly inside individual jobs (never top-level)
     const actionsReadMatches = deployWorkflow.match(/actions:\s*read/g) ?? [];
-    expect(actionsReadMatches).toHaveLength(6);
+    expect(actionsReadMatches).toHaveLength(4);
+    expect(deployStageWorkflow.match(/actions:\s*read/g) ?? []).toHaveLength(2);
     expect(deployWorkflow).toMatch(
       /ci-gate:[\s\S]*?permissions:\n\s+actions: read\n\s+contents: read\n\s+packages: read\n\s+attestations: read/
     );
-    for (const nonCiRunnerJob of [
-      'schema-compatibility',
-      'staging-verify-deployment',
-      'production-verify-deployment',
-    ]) {
-      const jobChunk = deployWorkflow.split(`  ${nonCiRunnerJob}:\n`)[1]?.split(/\n  [a-z-]+:\n/)[0] ?? '';
-      expect(jobChunk).not.toContain('actions: read');
-    }
-    expect(deployWorkflow.match(/deployments:\s*write/g) ?? []).toHaveLength(4);
+    const schemaJobChunk = deployWorkflow.split('  schema-compatibility:\n')[1]?.split(/\n  [a-z-]+:\n/)[0] ?? '';
+    expect(schemaJobChunk).not.toContain('actions: read');
+    const verifyJobChunk = deployStageWorkflow.split('  verify-deployment:\n')[1]?.split(/\n  [a-z-]+:\n/)[0] ?? '';
+    expect(verifyJobChunk).not.toContain('actions: read');
+    expect(deployWorkflow.match(/deployments:\s*write/g) ?? []).toHaveLength(2);
+    expect(deployStageWorkflow.match(/deployments:\s*write/g) ?? []).toHaveLength(2);
     expect(deployProviderWorkflow.match(/deployments:\s*write/g) ?? []).toHaveLength(1);
     expect(rollbackWorkflow.match(/deployments:\s*write/g) ?? []).toHaveLength(1);
     expect(deployProviderWorkflow).toMatch(
@@ -246,7 +249,15 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     const publishConcurrency = extractTopLevelSection(publishWorkflow, 'concurrency');
     expect(publishConcurrency).toContain('group: publish-artifact-release');
     expect(publishConcurrency).toContain('cancel-in-progress: false');
+    expect(publishConcurrency).toContain('queue: max');
     expect(publishConcurrency).not.toContain('github.ref');
+
+    // deploy.yml omits workflow-root concurrency while deploy-stage.yml scopes FIFO concurrency per environment
+    expect(extractTopLevelSection(deployWorkflow, 'concurrency')).toBe('');
+    const deployStageConcurrency = extractTopLevelSection(deployStageWorkflow, 'concurrency');
+    expect(deployStageConcurrency).toContain('group: deploy-env-${{ inputs.environment }}');
+    expect(deployStageConcurrency).toContain('cancel-in-progress: false');
+    expect(deployStageConcurrency).toContain('queue: max');
   });
 
   it('triggers deploy.yml via workflow_run on CI completion for main instead of push', () => {
@@ -274,12 +285,12 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       expect(deployWorkflow).toContain(check);
     }
 
-    // Staging and production jobs recognize successful workflow_run events alongside manual inputs
+    // Staging and production stage jobs recognize successful workflow_run events alongside manual inputs
     expect(deployWorkflow).toMatch(
-      /staging-database-migration:[\s\S]*?github\.event\.workflow_run\.conclusion == 'success'[\s\S]*?inputs\.environment == 'staging'/
+      /staging:[\s\S]*?github\.event\.workflow_run\.conclusion == 'success'[\s\S]*?inputs\.environment == 'staging'[\s\S]*?uses:\s*\.\/\.github\/workflows\/deploy-stage\.yml/
     );
     expect(deployWorkflow).toMatch(
-      /production-database-migration:[\s\S]*?github\.event\.workflow_run\.conclusion == 'success'[\s\S]*?inputs\.environment == 'production'/
+      /production:[\s\S]*?github\.event\.workflow_run\.conclusion == 'success'[\s\S]*?inputs\.environment == 'production'[\s\S]*?uses:\s*\.\/\.github\/workflows\/deploy-stage\.yml/
     );
   });
 
@@ -299,18 +310,24 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(deployWorkflow).toContain('commit_sha: ${{ needs.ci-gate.outputs.target_sha }}');
     expect(
       deployWorkflow.match(/commit_sha:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}/g) ?? []
-    ).toHaveLength(7);
+    ).toHaveLength(3);
     expect(deployWorkflow).toMatch(
-      /staging-deploy-provider:[\s\S]*?commit_sha:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}/
+      /staging:[\s\S]*?commit_sha:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}/
     );
     expect(deployWorkflow).toMatch(
-      /staging-rollback:[\s\S]*?needs:\s*\[ci-gate,\s*publish-artifact,\s*staging-deploy-provider,\s*staging-verify-deployment\][\s\S]*?commit_sha:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}/
+      /production:[\s\S]*?commit_sha:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}/
     );
-    expect(deployWorkflow).toMatch(
-      /production-deploy-provider:[\s\S]*?commit_sha:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}/
+    expect(
+      deployStageWorkflow.match(/commit_sha:\s*\$\{\{\s*inputs\.commit_sha\s*\}\}/g) ?? []
+    ).toHaveLength(3);
+    expect(deployStageWorkflow).toMatch(
+      /database-migration:[\s\S]*?commit_sha:\s*\$\{\{\s*inputs\.commit_sha\s*\}\}/
     );
-    expect(deployWorkflow).toMatch(
-      /production-rollback:[\s\S]*?needs:\s*\[ci-gate,\s*publish-artifact,\s*production-deploy-provider,\s*production-verify-deployment\][\s\S]*?commit_sha:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}/
+    expect(deployStageWorkflow).toMatch(
+      /deploy-provider:[\s\S]*?commit_sha:\s*\$\{\{\s*inputs\.commit_sha\s*\}\}/
+    );
+    expect(deployStageWorkflow).toMatch(
+      /rollback:[\s\S]*?needs:\s*\[deploy-provider,\s*verify-deployment\][\s\S]*?commit_sha:\s*\$\{\{\s*inputs\.commit_sha\s*\}\}/
     );
     expect(deployWorkflow).toContain('tag_name: ${{ needs.ci-gate.outputs.target_sha }}');
     expect(deployWorkflow).not.toContain('|| github.sha');
@@ -512,6 +529,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
   it('passes event fields and inputs via env variables with zero direct ${{ ... }} interpolation in run scripts', () => {
     for (const [name, content] of [
       ['deploy.yml', deployWorkflow],
+      ['deploy-stage.yml', deployStageWorkflow],
       ['publish-artifact.yml', publishWorkflow],
       ['db-migrate.yml', migrateWorkflow],
       ['deploy-provider.yml', deployProviderWorkflow],
@@ -765,6 +783,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(uploadArtifactIdx).toBeGreaterThan(compressIdx);
 
     expect(buildJobSection).toContain('image-ref: wedding-website:latest');
+    expect(buildJobSection).toContain("ignore-unfixed: 'true'");
     expect(buildJobSection).toContain("severity: 'CRITICAL,HIGH'");
     expect(buildJobSection).toContain("exit-code: '1'");
     expect(buildJobSection).toContain("category: 'trivy-${{ matrix.arch }}'");

@@ -41,7 +41,11 @@ export default async function WeddingPartyPage() {
         Wedding Party
       </h1>
       <h2 className="sr-only">Wedding Party Members</h2>
-      <WeddingPartyList members={members} />
+      <WeddingPartyList
+        members={members}
+        partner1Name={config.partner1Name || config.brideName || undefined}
+        partner2Name={config.partner2Name || config.groomName || undefined}
+      />
     </div>
   );
 }

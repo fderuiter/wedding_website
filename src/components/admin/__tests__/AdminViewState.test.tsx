@@ -49,7 +49,7 @@ describe('AdminViewState Component', () => {
     expect(screen.queryByText('Dashboard Child Content')).not.toBeInTheDocument();
     const liveRegion = screen.getByRole('status');
     expect(liveRegion).toHaveAttribute('aria-live', 'polite');
-    expect(screen.getByText('Loading...')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Loading...' })).toBeInTheDocument();
   });
 
   it('renders custom loading skeleton when provided', () => {
@@ -82,9 +82,31 @@ describe('AdminViewState Component', () => {
     expect(screen.queryByText('Dashboard Child Content')).not.toBeInTheDocument();
     const alert = screen.getByRole('alert');
     expect(alert).toHaveAttribute('aria-live', 'assertive');
+    expect(screen.getByRole('heading', { level: 1, name: 'Something went wrong' })).toBeInTheDocument();
     expect(screen.getByText('Error: Database connection failed')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /back to dashboard/i })).toBeInTheDocument();
+  });
+
+  it('supports overriding headingLevel for nested AdminViewState containers', () => {
+    const { rerender } = render(
+      <AdminViewState
+        isLoading={true}
+        loadingMessage="Loading section..."
+        headingLevel="h2"
+      />
+    );
+    expect(screen.getByRole('heading', { level: 2, name: 'Loading section...' })).toBeInTheDocument();
+
+    rerender(
+      <AdminViewState
+        isLoading={false}
+        error="Section failed"
+        errorTitle="Section Error"
+        headingLevel="h2"
+      />
+    );
+    expect(screen.getByRole('heading', { level: 2, name: 'Section Error' })).toBeInTheDocument();
   });
 
   it('disables retry button while retry action is executing', async () => {

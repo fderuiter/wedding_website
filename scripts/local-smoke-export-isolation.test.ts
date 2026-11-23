@@ -162,10 +162,7 @@ describe('local smoke isolation, staged static exports, and untracked next-env.d
       fs.writeFileSync(path.join(tempDir, 'public', 'uploads', 'guest-photo.jpg'), 'secret');
 
       fs.mkdirSync(path.join(tempDir, 'src', 'app', 'api', 'ready'), { recursive: true });
-      fs.writeFileSync(
-        path.join(tempDir, 'src', 'app', 'globals.css'),
-        '@import "tailwindcss";\n@source "../**/*.{ts,tsx}";\n'
-      );
+      fs.writeFileSync(path.join(tempDir, 'src', 'app', 'globals.css'), '@import "tailwindcss";\n');
       fs.writeFileSync(path.join(tempDir, 'src', 'app', 'page.tsx'), 'export default function Page() { return null; }');
       fs.writeFileSync(path.join(tempDir, 'src', 'app', 'api', 'ready', 'route.ts'), 'export function GET() {}');
 

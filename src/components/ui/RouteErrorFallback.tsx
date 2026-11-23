@@ -4,12 +4,14 @@ import { useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
+import { Heading, type HeadingLevel } from '@/components/ui/Layout';
 import { useToast } from '@/components/ui/ToastProvider';
 
 export interface RouteErrorFallbackProps {
   error: Error & { digest?: string };
   reset: () => void;
   title?: string;
+  headingLevel?: HeadingLevel;
   message?: string;
   resetLabel?: string;
   secondaryAction?: {
@@ -41,6 +43,7 @@ export function RouteErrorFallback({
   error,
   reset,
   title = 'Something went wrong!',
+  headingLevel = 'h1',
   message = 'An unexpected error occurred while loading this page. Please try reloading or clicking below to try again.',
   resetLabel = 'Try Again',
   secondaryAction,
@@ -73,9 +76,14 @@ export function RouteErrorFallback({
         </div>
 
         <div className="space-y-2">
-          <h2 className="text-2xl font-bold text-[var(--color-foreground)]">
+          <Heading
+            as={headingLevel}
+            variant="none"
+            unstyledColor
+            className="text-2xl font-bold text-[var(--color-foreground)]"
+          >
             {title}
-          </h2>
+          </Heading>
           <p className="text-sm text-[var(--color-foreground)] opacity-80 leading-relaxed max-w-md">
             {message}
           </p>

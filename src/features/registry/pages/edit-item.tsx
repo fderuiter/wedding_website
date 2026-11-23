@@ -191,36 +191,34 @@ export default function EditRegistryItemPage() {
       : itemError || (!itemLoading ? 'Item not found.' : null);
 
   return (
-    <>
-      {!resolvedItemData && <h1 className="sr-only">Edit Registry Item</h1>}
-      <AdminViewState
-        isLoading={isWaitingForApi}
-        error={loadError}
-        onRetry={effectiveTargetId ? refetch : undefined}
-        errorTitle="Unable to Load Registry Item"
-        loadingMessage="Loading item data..."
-      >
-        {resolvedItemData && (
-          <AdminEditorContainer title="Edit Registry Item" headingLevel="h1">
-            {submitError && (
-              <div
-                role="alert"
-                className="mb-4 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300"
-              >
-                Error: {submitError}
-              </div>
-            )}
-            <RegistryItemForm
-              mode="edit"
-              initialValues={resolvedItemData}
-              onSubmit={handleEdit}
-              onCancel={() => router.push('/admin/dashboard/registry')}
-              isSubmitting={isSubmitting}
-              submitLabel="Save Changes"
-            />
-          </AdminEditorContainer>
-        )}
-      </AdminViewState>
-    </>
+    <AdminViewState
+      isLoading={isWaitingForApi}
+      error={loadError}
+      onRetry={effectiveTargetId ? refetch : undefined}
+      errorTitle="Unable to Load Registry Item"
+      loadingMessage="Loading item data..."
+      headingLevel="h1"
+    >
+      {resolvedItemData && (
+        <AdminEditorContainer title="Edit Registry Item" headingLevel="h1">
+          {submitError && (
+            <div
+              role="alert"
+              className="mb-4 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300"
+            >
+              Error: {submitError}
+            </div>
+          )}
+          <RegistryItemForm
+            mode="edit"
+            initialValues={resolvedItemData}
+            onSubmit={handleEdit}
+            onCancel={() => router.push('/admin/dashboard/registry')}
+            isSubmitting={isSubmitting}
+            submitLabel="Save Changes"
+          />
+        </AdminEditorContainer>
+      )}
+    </AdminViewState>
   );
 }

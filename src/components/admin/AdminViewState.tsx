@@ -6,6 +6,7 @@ import { Icon } from '@/components/ui/Icon';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
+import { Heading, type HeadingLevel } from '@/components/ui/Layout';
 import { cn } from '@/utils/cn';
 import { withBasePath } from '@/lib/basePath';
 
@@ -39,6 +40,11 @@ export interface AdminViewStateProps {
    * Heading title for the error state. Defaults to 'Something went wrong'.
    */
   errorTitle?: string;
+  /**
+   * Semantic heading level rendered when AdminViewState displays an error or loading state.
+   * Defaults to 'h1' since AdminViewState wraps full admin views whose page h1 is inside children.
+   */
+  headingLevel?: HeadingLevel;
   /**
    * Explicit error message override. If not supplied, extracted from `error`.
    */
@@ -121,6 +127,7 @@ function useSafeRouter() {
 
 interface AdminErrorCardProps {
   title?: string;
+  headingLevel?: HeadingLevel;
   message: string;
   onRetry?: () => unknown;
   isRetrying: boolean;
@@ -132,6 +139,7 @@ interface AdminErrorCardProps {
 
 function AdminErrorCard({
   title = 'Something went wrong',
+  headingLevel = 'h1',
   message,
   onRetry,
   isRetrying,
@@ -167,11 +175,18 @@ function AdminErrorCard({
         className
       )}
     >
-      <div className="p-3 rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">
+      <div className="p-3 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400">
         <Icon name="AlertTriangle" className="w-8 h-8" />
       </div>
       <div>
-        <h2 className="text-xl font-bold mb-1 text-red-700 dark:text-red-400">{title}</h2>
+        <Heading
+          as={headingLevel}
+          variant="none"
+          unstyledColor
+          className="text-xl font-bold mb-1 text-red-600 dark:text-red-400"
+        >
+          {title}
+        </Heading>
         <p className="text-sm opacity-90 mb-4">{formattedMessage}</p>
       </div>
       <div className="flex flex-wrap items-center justify-center gap-3">
@@ -207,6 +222,7 @@ export function AdminViewState({
   loadingSkeleton,
   loadingMessage = 'Loading...',
   errorTitle,
+  headingLevel = 'h1',
   errorMessage,
   dashboardHref = '/admin/dashboard',
   dashboardLabel = 'Back to Dashboard',
@@ -233,6 +249,7 @@ export function AdminViewState({
     return (
       <AdminErrorCard
         title={errorTitle}
+        headingLevel={headingLevel}
         message={rawMessage}
         onRetry={onRetry ? handleRetry : undefined}
         isRetrying={activeRetrying}
@@ -247,7 +264,9 @@ export function AdminViewState({
   if (isLoading) {
     return (
       <div role="status" aria-live="polite" className={cn('w-full', className)}>
-        <span className="sr-only">{loadingMessage}</span>
+        <Heading as={headingLevel} variant="none" unstyledColor className="sr-only">
+          {loadingMessage}
+        </Heading>
         {loadingSkeleton || <DefaultAdminSkeleton />}
       </div>
     );
@@ -260,6 +279,7 @@ export function AdminViewState({
         fallback={(err, reset) => (
           <AdminErrorCard
             title={errorTitle}
+            headingLevel={headingLevel}
             message={extractErrorMessage(err) || 'An unhandled error occurred while rendering this view.'}
             onRetry={reset}
             isRetrying={activeRetrying}

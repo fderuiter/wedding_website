@@ -31,9 +31,6 @@ updates:
       - dependency-name: "@types/node"
         versions: [">= 23.0.0"]
         update-types: ["version-update:semver-major"]
-      - dependency-name: "typescript"
-        versions: [">= 6.0.0"]
-        update-types: ["version-update:semver-major"]
     groups:
       production-dependencies:
         dependency-type: "production"
