@@ -6,6 +6,7 @@ name: CI
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*' ]
   pull_request:
   release:
     types: [ published ]
@@ -660,7 +661,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  demo-export:
+  static-export-build:
     needs: verify
     runs-on: ubuntu-latest
     permissions:
@@ -710,16 +711,34 @@ jobs:
       - name: Cache Next.js static export build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: .next/cache
-          key: ${{ runner.os }}-demo-export-${{ steps.base-path.outputs.demo_base }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('next.config.ts', 'scripts/build-export.mjs', 'src/**/*.ts', 'src/**/*.tsx', 'src/**/*.css') }}
+          path: .next-export/cache
+          key: ${{ runner.os }}-next-export-${{ steps.base-path.outputs.demo_base }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('next.config.ts', 'postcss.config.mjs', 'tsconfig.json', 'tsconfig.build.json', 'scripts/build-export.mjs', 'public/**', 'src/**') }}
           restore-keys: |
-            ${{ runner.os }}-demo-export-${{ steps.base-path.outputs.demo_base }}-${{ hashFiles('package-lock.json') }}-
-      - name: Build static demo showcase
+            ${{ runner.os }}-next-export-${{ steps.base-path.outputs.demo_base }}-${{ hashFiles('package-lock.json') }}-
+      - name: Build static HTML showcase
         env:
           NEXT_PUBLIC_BASE_PATH: ${{ steps.base-path.outputs.demo_base }}
-        run: npm run build:export
-      - name: Verify static demo export output
-        run: test -f out/index.html
+        run: |
+          set -o pipefail
+          npm run build:export 2>&1 | tee static-export-build.log
+          if grep -Fq "[PageQueryError]" static-export-build.log; then
+            echo "Error: Static export emitted [PageQueryError] diagnostics during prerendering!"
+            rm -f static-export-build.log
+            exit 1
+          fi
+          rm -f static-export-build.log
+      - name: Verify exported HTML output
+        run: |
+          if [ ! -s "out/index.html" ]; then
+            echo "Error: Expected non-empty static HTML entrypoint 'out/index.html' was not generated!"
+            exit 1
+          fi
+          for route in photos things-to-do wedding-party registry; do
+            if [ ! -s "out/${route}.html" ] && [ ! -s "out/${route}/index.html" ]; then
+              echo "Error: Expected non-empty static HTML output for '/${route}' was not generated!"
+              exit 1
+            fi
+          done
       - name: Upload Static Demo Showcase Artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -971,7 +990,7 @@ jobs:
           fi
 
   deploy-docs:
-    needs: [verify, demo-export, storybook-build]
+    needs: [verify, static-export-build, storybook-build]
     if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || github.event_name == 'release'
     runs-on: ubuntu-latest
     permissions:
@@ -1004,7 +1023,7 @@ jobs:
       - name: Align demo base path with Pages configuration
         env:
           PAGES_BASE_PATH: ${{ steps.pages.outputs.base_path }}
-          BUILT_DEMO_BASE: ${{ needs.demo-export.outputs.demo_base_path }}
+          BUILT_DEMO_BASE: ${{ needs.static-export-build.outputs.demo_base_path }}
         run: |
           NORMALIZED_PAGES_BASE=$(printf '%s' "$PAGES_BASE_PATH" | sed 's:/*$::')
           EXPECTED_DEMO_BASE="${NORMALIZED_PAGES_BASE}/demo"

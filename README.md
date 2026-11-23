@@ -219,6 +219,7 @@ If you cloned or forked this template to host your own wedding website, you can 
 *   `.github`: GitHub Actions CI/CD workflows, contributor and testing guides, and issue/PR templates.
 *   `.storybook`: Storybook 8 configuration and preview decorators for isolated UI component development.
 *   `assets`: Source brand assets and bundled fonts used during builds and image generation.
+*   `docker`: Isolated Prisma CLI lockfile and offline package stubs for the production container image.
 *   `docs`: Developer onboarding, runtime contract, feature specifications, and deployment runbooks.
 *   `docs-portal`: VitePress documentation portal configuration, interactive OpenAPI explorer, and staged specs.
 *   `e2e`: End-to-end browser, smoke, and accessibility test suites (Playwright).

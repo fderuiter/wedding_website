@@ -45,10 +45,13 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await apiClient.post('/api/admin/login', { password });
+      const loginResult = await apiClient.post<{ success?: boolean; requiresSetup?: boolean }>(
+        '/api/admin/login',
+        { password }
+      );
       localStorage.setItem('isAdminLoggedIn', 'true');
       window.dispatchEvent(new Event('storage'));
-      router.push('/admin/dashboard');
+      router.push(loginResult?.requiresSetup === true ? '/admin/setup' : '/admin/dashboard');
     } catch (err: any) {
       if (err instanceof ApiError) {
         setError(err.message || 'Login failed.');
