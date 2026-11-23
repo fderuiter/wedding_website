@@ -369,8 +369,8 @@ describe('AST-Based Environment Documentation Validation Parser', () => {
         .replace(/blocklist(?:ed|s)?/gi, 'checked')
         .replace(/`partner1Name`, `brideName`/g, '`partner1Name`')
         .replace(/`partner2Name`, `groomName`/g, '`partner2Name`')
-        .replace(/empty strings \(`""`\)/g, 'invalid strings')
-        .replace(/!== undefined/g, 'present');
+        .replace(/trimmed via `readNonEmptySiteEnv`/g, 'evaluated directly')
+        .replace(/blank\/whitespace values are ignored/g, 'empty strings (`""`) fail');
 
       const contractErrors = validateRuntimeContract(
         regressedContract,
@@ -389,13 +389,13 @@ describe('AST-Based Environment Documentation Validation Parser', () => {
             'Target AppConfig field mismatch for SITE_PARTNER2_NAME in docs/runtime-contract.md: expected [partner2Name, groomName], missing [groomName]'
           ),
           expect.stringContaining(
-            'Missing empty-string validation warning for SITE_WEDDING_DATE in docs/runtime-contract.md'
+            'Outdated validation contract for SITE_WEDDING_DATE in docs/runtime-contract.md'
           ),
           expect.stringContaining(
-            'Missing empty-string validation warning for SITE_LATITUDE in docs/runtime-contract.md'
+            'Outdated validation contract for SITE_LATITUDE in docs/runtime-contract.md'
           ),
           expect.stringContaining(
-            'Missing empty-string validation warning for SITE_LONGITUDE in docs/runtime-contract.md'
+            'Outdated validation contract for SITE_LONGITUDE in docs/runtime-contract.md'
           ),
         ])
       );
@@ -413,13 +413,13 @@ describe('AST-Based Environment Documentation Validation Parser', () => {
             'docs/runtime-contract.md: SITE_PARTNER2_NAME must list synced `groomName` target field from src/lib/config.ts'
           ),
           expect.stringContaining(
-            'docs/runtime-contract.md: SITE_WEDDING_DATE checks `!== undefined` in src/lib/config.ts'
+            'docs/runtime-contract.md: SITE_WEDDING_DATE uses readNonEmptySiteEnv in src/lib/config.ts'
           ),
           expect.stringContaining(
-            'docs/runtime-contract.md: SITE_LATITUDE checks `!== undefined` in src/lib/config.ts'
+            'docs/runtime-contract.md: SITE_LATITUDE uses readNonEmptySiteEnv in src/lib/config.ts'
           ),
           expect.stringContaining(
-            'docs/runtime-contract.md: SITE_LONGITUDE checks `!== undefined` in src/lib/config.ts'
+            'docs/runtime-contract.md: SITE_LONGITUDE uses readNonEmptySiteEnv in src/lib/config.ts'
           ),
         ])
       );

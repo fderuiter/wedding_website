@@ -909,6 +909,9 @@ function verifyOpenApiProbeContracts(rootDir: string): string[] {
 
   const errors: string[] = [];
   let parsed: {
+    components?: {
+      schemas?: Record<string, Record<string, unknown>>;
+    };
     paths?: Record<
       string,
       {
@@ -933,7 +936,15 @@ function verifyOpenApiProbeContracts(rootDir: string): string[] {
   const getJsonSchema = (routePath: string, status: string): Record<string, unknown> | null => {
     const schema =
       parsed.paths?.[routePath]?.get?.responses?.[status]?.content?.['application/json']?.schema;
-    return schema && typeof schema === 'object' ? schema : null;
+    if (!schema || typeof schema !== 'object') {
+      return null;
+    }
+    if (typeof schema.$ref === 'string' && schema.$ref.startsWith('#/components/schemas/')) {
+      const schemaName = schema.$ref.slice('#/components/schemas/'.length);
+      const target = parsed.components?.schemas?.[schemaName];
+      return target && typeof target === 'object' ? target : null;
+    }
+    return schema;
   };
 
   // 1. /api/live GET 200

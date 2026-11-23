@@ -572,11 +572,13 @@ export function collectOperatorEnvKeys(cwd: string = process.cwd()): {
     }
   }
 
-  const composePath = path.join(cwd, 'docker-compose.yml');
-  if (fs.existsSync(composePath)) {
-    const composeContent = fs.readFileSync(composePath, 'utf-8');
-    for (const key of parseComposeEnvKeys(composeContent)) {
-      recordKey(key, 'docker-compose.yml');
+  for (const composeRelPath of ['docker-compose.yml', 'docker-compose.rollout.yml']) {
+    const composePath = path.join(cwd, composeRelPath);
+    if (fs.existsSync(composePath)) {
+      const composeContent = fs.readFileSync(composePath, 'utf-8');
+      for (const key of parseComposeEnvKeys(composeContent)) {
+        recordKey(key, composeRelPath);
+      }
     }
   }
 
@@ -1247,15 +1249,19 @@ export function validateRuntimeContract(
     }
   }
 
-  const strictDefinedSiteKeys = ['SITE_WEDDING_DATE', 'SITE_LATITUDE', 'SITE_LONGITUDE'] as const;
-  for (const siteKey of strictDefinedSiteKeys) {
+  const parsedSiteKeys = ['SITE_WEDDING_DATE', 'SITE_LATITUDE', 'SITE_LONGITUDE'] as const;
+  for (const siteKey of parsedSiteKeys) {
     if (!operatorSet.has(siteKey)) continue;
     const row = rowsByKey.get(siteKey);
     if (!row) continue;
     const desc = row.descriptionCell ?? '';
-    if (!/(?:empty string|""|!==\s*undefined)/i.test(desc) || !/\bfail/i.test(desc)) {
+    const documentsBlankIgnore =
+      /\b(?:blank|whitespace|readNonEmptySiteEnv|trim(?:med)?)\b/i.test(desc) &&
+      !/empty strings?\s*(?:\(`""`\))?\s*(?:or\s+[\w-]+\s+values\s+)?fail/i.test(desc);
+    const documentsMalformedFailure = /\bfail\b/i.test(desc);
+    if (!documentsBlankIgnore || !documentsMalformedFailure) {
       errors.push(
-        `Missing empty-string validation warning for ${siteKey} in ${docName}: must document that empty strings ("") are evaluated (!== undefined) and fail schema validation`
+        `Outdated validation contract for ${siteKey} in ${docName}: must document that blank/whitespace values are ignored via readNonEmptySiteEnv while non-empty malformed values fail schema validation`
       );
     }
   }
@@ -1277,7 +1283,7 @@ export function validateConfigSiteOverrideParity(
   }
 
   if (
-    /process\.env\.SITE_PARTNER1_NAME[\s\S]{0,240}overrides\.brideName\s*=/.test(configTsContent) &&
+    /SITE_PARTNER1_NAME[\s\S]{0,240}overrides\.brideName\s*=/.test(configTsContent) &&
     !/\bbrideName\b/.test(rowsByKey.get('SITE_PARTNER1_NAME')?.targetFieldCell ?? '')
   ) {
     errors.push(
@@ -1285,12 +1291,29 @@ export function validateConfigSiteOverrideParity(
     );
   }
   if (
-    /process\.env\.SITE_PARTNER2_NAME[\s\S]{0,240}overrides\.groomName\s*=/.test(configTsContent) &&
+    /SITE_PARTNER2_NAME[\s\S]{0,240}overrides\.groomName\s*=/.test(configTsContent) &&
     !/\bgroomName\b/.test(rowsByKey.get('SITE_PARTNER2_NAME')?.targetFieldCell ?? '')
   ) {
     errors.push(
       'docs/runtime-contract.md: SITE_PARTNER2_NAME must list synced `groomName` target field from src/lib/config.ts'
     );
+  }
+
+  const blankSafeOverrideRegex =
+    /readNonEmptySiteEnv\(\s*process\.env\.(SITE_(?:WEDDING_DATE|LATITUDE|LONGITUDE))\s*\)/g;
+  let blankMatch: RegExpExecArray | null;
+  while ((blankMatch = blankSafeOverrideRegex.exec(configTsContent)) !== null) {
+    const siteKey = blankMatch[1];
+    const row = rowsByKey.get(siteKey);
+    const desc = row?.descriptionCell ?? '';
+    const documentsBlankIgnore =
+      /\b(?:blank|whitespace|readNonEmptySiteEnv|trim(?:med)?)\b/i.test(desc) &&
+      !/empty strings?\s*(?:\(`""`\))?\s*(?:or\s+[\w-]+\s+values\s+)?fail/i.test(desc);
+    if (!row || !documentsBlankIgnore) {
+      errors.push(
+        `docs/runtime-contract.md: ${siteKey} uses readNonEmptySiteEnv in src/lib/config.ts and must document blank/whitespace ignoring without claiming empty strings fail validation`
+      );
+    }
   }
 
   const strictParseOverrideRegex =
@@ -1343,10 +1366,18 @@ export function verifyEnvDocs(cwd: string = process.cwd()): void {
 
   const dockerfilePath = path.join(cwd, 'Dockerfile');
   const composePath = path.join(cwd, 'docker-compose.yml');
+  const rolloutComposePath = path.join(cwd, 'docker-compose.rollout.yml');
   const composeContent = fs.existsSync(composePath) ? fs.readFileSync(composePath, 'utf-8') : undefined;
-  const envExampleKeys = composeContent
-    ? Array.from(new Set([...envSchemaKeys, ...parseComposeEnvKeys(composeContent)]))
-    : envSchemaKeys;
+  const rolloutComposeContent = fs.existsSync(rolloutComposePath)
+    ? fs.readFileSync(rolloutComposePath, 'utf-8')
+    : undefined;
+  const envExampleKeys = Array.from(
+    new Set([
+      ...envSchemaKeys,
+      ...(composeContent ? parseComposeEnvKeys(composeContent) : []),
+      ...(rolloutComposeContent ? parseComposeEnvKeys(rolloutComposeContent) : []),
+    ])
+  );
 
   if (fs.existsSync(dockerfilePath)) {
     const dockerfileContent = fs.readFileSync(dockerfilePath, 'utf-8');

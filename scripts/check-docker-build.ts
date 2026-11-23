@@ -632,11 +632,45 @@ function recordYamlDiagnostics(
   }
 }
 
+function collectComposeLocalBuildImages(composePath: string): Set<string> {
+  const localImages = new Set<string>();
+  if (!fs.existsSync(composePath)) {
+    return localImages;
+  }
+  const content = fs.readFileSync(composePath, 'utf8');
+  const doc = parseDocument(content, { version: '1.2', strict: true });
+  if (!isMap(doc.contents)) {
+    return localImages;
+  }
+  const servicesNode = doc.contents.get('services', true);
+  if (!isMap(servicesNode)) {
+    return localImages;
+  }
+  for (const svcPair of servicesNode.items) {
+    const svcMap = svcPair.value;
+    if (!isMap(svcMap)) {
+      continue;
+    }
+    const buildNode = svcMap.get('build', true);
+    const hasBuild =
+      buildNode !== undefined && (!isScalar(buildNode) || buildNode.value !== null);
+    if (!hasBuild) {
+      continue;
+    }
+    const imageNode = svcMap.get('image', true);
+    if (isScalar(imageNode) && typeof imageNode.value === 'string' && imageNode.value.trim()) {
+      localImages.add(imageNode.value.trim());
+    }
+  }
+  return localImages;
+}
+
 function checkDockerComposeFile(
   composePath: string,
   baseDir: string,
   violations: Violation[],
-  pinnedOccurrences: Map<string, PinnedImageOccurrence[]>
+  pinnedOccurrences: Map<string, PinnedImageOccurrence[]>,
+  sharedLocalBuildImages: ReadonlySet<string> = new Set()
 ): void {
   const relPath = path.relative(baseDir, composePath).replace(/\\/g, '/');
   const content = fs.readFileSync(composePath, 'utf8');
@@ -646,7 +680,20 @@ function checkDockerComposeFile(
 
   recordYamlDiagnostics(doc, relPath, lines, violations);
 
-  if (relPath === 'docker-compose.yml') {
+  lines.forEach((rawLine, idx) => {
+    const trimmed = rawLine.trim();
+    if (/^<<\s*:/.test(trimmed)) {
+      violations.push({
+        filePath: relPath,
+        lineNumber: idx + 1,
+        lineContent: trimmed,
+        imageRef: '<<',
+        reason: `${relPath} must not use YAML 1.1 "<<" merge keys; expand service mappings explicitly for strict YAML 1.2 compatibility.`,
+      });
+    }
+  });
+
+  if (relPath === 'docker-compose.yml' || relPath === 'docker-compose.rollout.yml') {
     lines.forEach((rawLine, idx) => {
       const trimmed = rawLine.trim();
       if (!trimmed || trimmed.startsWith('#')) {
@@ -659,7 +706,7 @@ function checkDockerComposeFile(
           lineContent: trimmed,
           imageRef: 'type=gha',
           reason:
-            'docker-compose.yml must remain provider-neutral and omit GitHub Actions BuildKit cache backends ("type=gha"); move CI cache_from overrides to docker-compose.ci.yml.',
+            `${relPath} must remain provider-neutral and omit GitHub Actions BuildKit cache backends ("type=gha"); move CI cache_from overrides to docker-compose.ci.yml.`,
         });
       }
       if (/\bGHA_CACHE_SCOPE\b/.test(trimmed)) {
@@ -669,7 +716,7 @@ function checkDockerComposeFile(
           lineContent: trimmed,
           imageRef: 'GHA_CACHE_SCOPE',
           reason:
-            'docker-compose.yml must omit "GHA_CACHE_SCOPE"; isolate CI cache scope configuration in docker-compose.ci.yml.',
+            `${relPath} must omit "GHA_CACHE_SCOPE"; isolate CI cache scope configuration in docker-compose.ci.yml.`,
         });
       }
     });
@@ -762,13 +809,28 @@ function checkDockerComposeFile(
     }
   }
 
+  const localBuildImages = new Set<string>(sharedLocalBuildImages);
+  for (const svcPair of servicesNode.items) {
+    const svcMap = svcPair.value;
+    if (!isMap(svcMap)) {
+      continue;
+    }
+    const buildNode = svcMap.get('build', true);
+    if (buildNode !== undefined && (!isScalar(buildNode) || buildNode.value !== null)) {
+      const imageNode = svcMap.get('image', true);
+      if (isScalar(imageNode) && typeof imageNode.value === 'string' && imageNode.value.trim()) {
+        localBuildImages.add(imageNode.value.trim());
+      }
+    }
+  }
+
   for (const svcPair of servicesNode.items) {
     const svcMap = svcPair.value;
     if (!isMap(svcMap)) {
       continue;
     }
 
-    // Skip local Compose services that build from source (e.g. migration and app)
+    // Skip local Compose services that build from source (e.g. app)
     const buildNode = svcMap.get('build', true);
     if (buildNode !== undefined && (!isScalar(buildNode) || buildNode.value !== null)) {
       continue;
@@ -776,6 +838,15 @@ function checkDockerComposeFile(
 
     const imageNode = svcMap.get('image', true);
     if (isScalar(imageNode) && typeof imageNode.value === 'string') {
+      const pullPolicyNode = svcMap.get('pull_policy', true);
+      const hasNeverPullPolicy =
+        isScalar(pullPolicyNode) &&
+        typeof pullPolicyNode.value === 'string' &&
+        pullPolicyNode.value.trim() === 'never';
+      if (hasNeverPullPolicy && localBuildImages.has(imageNode.value.trim())) {
+        continue;
+      }
+
       const offset = imageNode.range?.[0] ?? 0;
       const lineNumber = lineCounter.linePos(offset).line;
       const lineContent = (lines[lineNumber - 1] ?? '').trim();
@@ -1116,8 +1187,9 @@ export function checkDockerBuild(rootDir: string = ROOT_DIR): {
     }
   }
 
-  // 2. Check docker-compose.yml (and docker-compose.ci.yml if present)
+  // 2. Check docker-compose.yml (and docker-compose.ci.yml / docker-compose.rollout.yml if present)
   const composePath = path.join(rootDir, 'docker-compose.yml');
+  const sharedLocalBuildImages = collectComposeLocalBuildImages(composePath);
   if (!fs.existsSync(composePath)) {
     violations.push({
       filePath: 'docker-compose.yml',
@@ -1127,12 +1199,35 @@ export function checkDockerBuild(rootDir: string = ROOT_DIR): {
       reason: 'docker-compose.yml is missing from repository root.',
     });
   } else {
-    checkDockerComposeFile(composePath, rootDir, violations, pinnedOccurrences);
+    checkDockerComposeFile(
+      composePath,
+      rootDir,
+      violations,
+      pinnedOccurrences,
+      sharedLocalBuildImages
+    );
   }
 
   const ciComposePath = path.join(rootDir, 'docker-compose.ci.yml');
   if (fs.existsSync(ciComposePath)) {
-    checkDockerComposeFile(ciComposePath, rootDir, violations, pinnedOccurrences);
+    checkDockerComposeFile(
+      ciComposePath,
+      rootDir,
+      violations,
+      pinnedOccurrences,
+      sharedLocalBuildImages
+    );
+  }
+
+  const rolloutComposePath = path.join(rootDir, 'docker-compose.rollout.yml');
+  if (fs.existsSync(rolloutComposePath)) {
+    checkDockerComposeFile(
+      rolloutComposePath,
+      rootDir,
+      violations,
+      pinnedOccurrences,
+      sharedLocalBuildImages
+    );
   }
 
   // 3. Check .github/workflows/*.yml

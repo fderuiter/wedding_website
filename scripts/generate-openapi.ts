@@ -54,7 +54,7 @@ const IGNORED_PARSE_ARGUMENTS = new Set([
   'normalizedSetupConfig',
 ]);
 
-const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
+const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'] as const;
 const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 const EXPORT_MEDIA_SCHEMAS: Record<string, Record<string, string>> = {
@@ -63,6 +63,59 @@ const EXPORT_MEDIA_SCHEMAS: Record<string, Record<string, string>> = {
   'application/pdf': { type: 'string', format: 'binary' },
   'application/zip': { type: 'string', format: 'binary' },
   'image/png': { type: 'string', format: 'binary' },
+};
+
+const ERROR_STATUS_DESCRIPTIONS: Record<number, string> = {
+  400: 'Bad Request',
+  401: 'Unauthorized',
+  403: 'Forbidden',
+  404: 'Not Found',
+  409: 'Conflict',
+  413: 'Payload Too Large',
+  415: 'Unsupported Media Type',
+  422: 'Unprocessable Entity',
+  429: 'Too Many Requests',
+  500: 'Internal Server Error',
+  502: 'Bad Gateway',
+  503: 'Service Unavailable',
+};
+
+const API_ERROR_ENVELOPE_SCHEMA = {
+  type: 'object',
+  required: ['success', 'error'],
+  properties: {
+    success: {
+      type: 'boolean',
+      enum: [false],
+    },
+    error: {
+      type: 'string',
+    },
+    details: {
+      nullable: true,
+      anyOf: [
+        { type: 'object', additionalProperties: true },
+        { type: 'array', items: { type: 'object', additionalProperties: true } },
+        { type: 'string' },
+      ],
+    },
+    helpPrompt: {
+      type: 'string',
+    },
+    referenceId: {
+      type: 'string',
+    },
+  },
+};
+
+const RAW_JSON_ERROR_SCHEMA = {
+  type: 'object',
+  required: ['error'],
+  properties: {
+    error: {
+      type: 'string',
+    },
+  },
 };
 
 const OPENAPI_TAGS: Array<{ prefix: string; name: string; description: string }> = [
@@ -188,6 +241,52 @@ function extractAdminEntitySlugs(): string[] {
   }
 
   return slugs;
+}
+
+interface AdminEntitySchemaNames {
+  createSchemas: string[];
+  updateSchemas: string[];
+}
+
+function extractAdminEntitySchemaNames(): AdminEntitySchemaNames {
+  const registryPath = path.join(rootPath, 'src/features/admin/registry.ts');
+  const registryFile =
+    project.getSourceFile(registryPath) ?? project.addSourceFileAtPathIfExists(registryPath);
+  if (!registryFile) return { createSchemas: [], updateSchemas: [] };
+
+  const createSchemas: string[] = [];
+  const updateSchemas: string[] = [];
+
+  for (const computedProp of registryFile.getDescendantsOfKind(SyntaxKind.ComputedPropertyName)) {
+    const expr = computedProp.getExpression();
+    if (!Node.isPropertyAccessExpression(expr) || expr.getName() !== 'ENTITY_KEY') continue;
+
+    const propAssign = computedProp.getParent();
+    if (!propAssign || !Node.isPropertyAssignment(propAssign)) continue;
+    const init = propAssign.getInitializer();
+    if (!init || !Node.isObjectLiteralExpression(init)) continue;
+
+    const createProp = init.getProperty('createSchema');
+    if (createProp && Node.isPropertyAssignment(createProp)) {
+      const createInit = createProp.getInitializer();
+      if (createInit && Node.isIdentifier(createInit)) {
+        createSchemas.push(createInit.getText());
+      }
+    }
+
+    const updateProp = init.getProperty('updateSchema');
+    if (updateProp && Node.isPropertyAssignment(updateProp)) {
+      const updateInit = updateProp.getInitializer();
+      if (updateInit && Node.isIdentifier(updateInit)) {
+        updateSchemas.push(updateInit.getText());
+      }
+    }
+  }
+
+  return {
+    createSchemas: Array.from(new Set(createSchemas)),
+    updateSchemas: Array.from(new Set(updateSchemas)),
+  };
 }
 
 interface MiddlewareApiExclusions {
@@ -352,7 +451,10 @@ function collectDelegatedHelperRoots(
   return groups;
 }
 
-function extractSchemasFromScopedNodes(scopedNodes: Node[]): string[] {
+function extractSchemasFromScopedNodes(
+  scopedNodes: Node[],
+  entitySchemaNames: AdminEntitySchemaNames
+): string[] {
   const scopeRoot = scopedNodes[0];
   const calls = scopedNodes.filter((n): n is CallExpression => Node.isCallExpression(n));
 
@@ -413,19 +515,34 @@ function extractSchemasFromScopedNodes(scopedNodes: Node[]): string[] {
     results.push(unbranchedSchemas[unbranchedSchemas.length - 1]);
   }
 
+  if (results.length === 0) {
+    const usesEntityRegistry = calls.some((c) => c.getExpression().getText() === 'getEntityService');
+    if (usesEntityRegistry) {
+      const invokesCreate = calls.some((c) => /\.service\.create$/.test(c.getExpression().getText()));
+      const invokesUpdate = calls.some((c) => /\.service\.update$/.test(c.getExpression().getText()));
+      if (invokesCreate && entitySchemaNames.createSchemas.length > 0) {
+        return [...entitySchemaNames.createSchemas];
+      }
+      if (invokesUpdate && entitySchemaNames.updateSchemas.length > 0) {
+        return [...entitySchemaNames.updateSchemas];
+      }
+    }
+  }
+
   return Array.from(new Set(results));
 }
 
 function extractSchemaNames(
   directNodes: Node[],
-  delegatedGroups: DelegatedHelperGroup[]
+  delegatedGroups: DelegatedHelperGroup[],
+  entitySchemaNames: AdminEntitySchemaNames
 ): string[] {
-  const directMatches = extractSchemasFromScopedNodes(directNodes);
+  const directMatches = extractSchemasFromScopedNodes(directNodes, entitySchemaNames);
   const conditionalDelegatedMatches: string[] = [];
   const unconditionalDelegatedMatches: string[] = [];
 
   for (const group of delegatedGroups) {
-    const matches = extractSchemasFromScopedNodes(group.nodes);
+    const matches = extractSchemasFromScopedNodes(group.nodes, entitySchemaNames);
     if (matches.length === 0) continue;
     if (group.invokedConditionally) {
       conditionalDelegatedMatches.push(...matches);
@@ -489,6 +606,67 @@ function isObjectJsonSchema(node: any): boolean {
   return false;
 }
 
+function sanitizeOpenApi30Node(node: any): any {
+  if (!node || typeof node !== 'object') return node;
+  if (Array.isArray(node)) {
+    return node.map(sanitizeOpenApi30Node);
+  }
+
+  delete node.$schema;
+  delete node.propertyNames;
+
+  if (Object.prototype.hasOwnProperty.call(node, 'const')) {
+    const constVal = node.const;
+    delete node.const;
+    if (!node.enum) {
+      node.enum = [constVal];
+    }
+    if (!node.type && constVal !== null && constVal !== undefined) {
+      node.type = typeof constVal;
+    }
+  }
+
+  if (Array.isArray(node.type)) {
+    const types = node.type.filter((t: string) => t !== 'null');
+    if (node.type.includes('null')) {
+      node.nullable = true;
+    }
+    if (types.length === 1) {
+      node.type = types[0];
+    } else if (types.length > 1) {
+      delete node.type;
+      node.anyOf = types.map((t: string) => ({ type: t }));
+    } else {
+      node.type = 'string';
+    }
+  }
+
+  for (const [key, val] of Object.entries(node)) {
+    if (key === 'properties' && val && typeof val === 'object' && !Array.isArray(val)) {
+      for (const [propKey, propVal] of Object.entries<any>(val)) {
+        if (propVal && typeof propVal === 'object' && Object.keys(propVal).length === 0) {
+          (val as Record<string, any>)[propKey] = {
+            nullable: true,
+            anyOf: [
+              { type: 'object', additionalProperties: true },
+              { type: 'array', items: { type: 'object', additionalProperties: true } },
+              { type: 'string' },
+              { type: 'number' },
+              { type: 'boolean' },
+            ],
+          };
+        } else {
+          sanitizeOpenApi30Node(propVal);
+        }
+      }
+    } else {
+      sanitizeOpenApi30Node(val);
+    }
+  }
+
+  return node;
+}
+
 function toOpenApiSchema(schemaObj: any, isMultipart: boolean): any {
   const raw = typeof z.toJSONSchema === 'function'
     ? z.toJSONSchema(schemaObj, {
@@ -506,16 +684,19 @@ function toOpenApiSchema(schemaObj: any, isMultipart: boolean): any {
     : schemaObj;
 
   const cloned = JSON.parse(JSON.stringify(raw));
-  delete cloned.$schema;
+  sanitizeOpenApi30Node(cloned);
 
-  if (Array.isArray(cloned?.oneOf) && cloned.oneOf.length > 0 && cloned.oneOf.every(isObjectJsonSchema)) {
+  if (
+    (Array.isArray(cloned?.oneOf) && cloned.oneOf.length > 0 && cloned.oneOf.every(isObjectJsonSchema)) ||
+    (Array.isArray(cloned?.anyOf) && cloned.anyOf.length > 0 && cloned.anyOf.every(isObjectJsonSchema))
+  ) {
     cloned.type = 'object';
   }
 
   if (isMultipart && cloned && typeof cloned === 'object' && cloned.properties) {
     for (const [key, propVal] of Object.entries<any>(cloned.properties)) {
       if (propVal && typeof propVal === 'object') {
-        if (Object.keys(propVal).length === 0) {
+        if (Object.keys(propVal).length === 0 || (propVal.nullable && Array.isArray(propVal.anyOf) && propVal.anyOf.length === 5)) {
           cloned.properties[key] = { type: 'string', format: 'binary' };
         } else if (
           propVal.type === 'array' &&
@@ -603,18 +784,19 @@ function extractLocalStatusBranches(allNodes: Node[]): {
   return { statusBranchesByVar, equalityCondByVar };
 }
 
-function extractStatusesFromInitObject(
+function extractProbeStatusBranchesFromInitObject(
   initArg: Node | undefined,
-  statusBranchesByVar?: Map<string, ResolvedStatusBranch[]>
+  statusBranchesByVar: Map<string, ResolvedStatusBranch[]>
 ): ResolvedStatusBranch[] {
-  if (!initArg || !Node.isObjectLiteralExpression(initArg)) return [{ status: 200 }];
-  const statusProp = initArg.getProperty('status');
+  const initObj = resolveObjectLiteral(initArg);
+  if (!initObj || !Node.isObjectLiteralExpression(initObj)) return [{ status: 200 }];
+  const statusProp = initObj.getProperty('status');
   if (statusProp && Node.isPropertyAssignment(statusProp)) {
     const statusInit = statusProp.getInitializer();
     if (statusInit && Node.isNumericLiteral(statusInit)) {
       return [{ status: Number(statusInit.getLiteralValue()) }];
     }
-    if (statusInit && Node.isIdentifier(statusInit) && statusBranchesByVar) {
+    if (statusInit && Node.isIdentifier(statusInit)) {
       const resolved = statusBranchesByVar.get(statusInit.getText());
       if (resolved && resolved.length > 0) {
         return resolved;
@@ -745,158 +927,756 @@ function extractProbeObjectSchema(
   };
 }
 
-function applyApiMiddlewareResponseEnvelope(
-  rawSchema: Record<string, any>,
-  status: number
-): Record<string, any> {
-  if (status < 400) {
-    return {
-      type: 'object',
-      required: ['success', 'data'],
-      properties: {
-        success: {
-          type: 'boolean',
-          enum: [true],
-        },
-        data: rawSchema,
-      },
-    };
-  }
-
-  const errorProperties: Record<string, any> = {
-    success: {
-      type: 'boolean',
-      enum: [false],
-    },
-    error: {
-      type: 'string',
-    },
-  };
-
-  if (status >= 500) {
-    errorProperties.referenceId = {
-      type: 'string',
-      format: 'uuid',
-      description: 'Correlation UUID included when NODE_ENV=production masks 5xx error details',
-    };
-  }
-
-  return {
-    type: 'object',
-    required: ['success', 'error'],
-    additionalProperties: false,
-    properties: errorProperties,
-  };
+function resolveSymbolDeclarations(sym: any): Node[] {
+  if (!sym) return [];
+  const targetSym = sym.getAliasedSymbol?.() ?? sym;
+  return targetSym?.getDeclarations?.() ?? [];
 }
 
-function extractContentTypeFromInitObject(initArg: Node | undefined): string | null {
-  if (!initArg || !Node.isObjectLiteralExpression(initArg)) return null;
-  const headersProp = initArg.getProperty('headers');
-  if (!headersProp || !Node.isPropertyAssignment(headersProp)) return null;
-  const headersInit = headersProp.getInitializer();
-  if (!headersInit || !Node.isObjectLiteralExpression(headersInit)) return null;
-
-  for (const prop of headersInit.getProperties()) {
-    if (!Node.isPropertyAssignment(prop)) continue;
-    const rawName = prop.getName().replace(/^['"]|['"]$/g, '').toLowerCase();
-    if (rawName !== 'content-type') continue;
-    const valInit = prop.getInitializer();
-    if (valInit && (Node.isStringLiteral(valInit) || Node.isNoSubstitutionTemplateLiteral(valInit))) {
-      return valInit.getLiteralValue().split(';')[0].trim().toLowerCase();
-    }
-  }
-
-  return null;
-}
-
-function getStatusDescription(status: number): string {
-  if (status === 201) return 'Created';
-  if (status === 503) return 'Service Unavailable';
-  return 'Successful response';
-}
-
-function extractOperationResponses(allNodes: Node[], usesApiMiddleware = false): Record<string, any> {
-  const mediaTypesByStatus = new Map<number, string[]>();
-  const jsonSchemasByStatus = new Map<number, Record<string, any>>();
-  const { statusBranchesByVar, equalityCondByVar } = extractLocalStatusBranches(allNodes);
-
-  function recordStatus(status: number, mediaType?: string | null, jsonSchema?: Record<string, any> | null) {
-    const isDocumentedStatus = (status >= 200 && status < 300) || (status === 503 && Boolean(jsonSchema));
-    if (!isDocumentedStatus) return;
-    if (!mediaTypesByStatus.has(status)) {
-      mediaTypesByStatus.set(status, []);
-    }
-    if (mediaType && EXPORT_MEDIA_SCHEMAS[mediaType]) {
-      const existing = mediaTypesByStatus.get(status)!;
-      if (!existing.includes(mediaType)) {
-        existing.push(mediaType);
+function resolveObjectLiteral(node: Node | undefined, overrideSym?: any): Node | undefined {
+  if (!node && !overrideSym) return undefined;
+  if (node && Node.isObjectLiteralExpression(node)) return node;
+  const sym = overrideSym ?? (node && Node.isIdentifier(node) ? node.getSymbol() : undefined);
+  for (const decl of resolveSymbolDeclarations(sym)) {
+    if (Node.isVariableDeclaration(decl)) {
+      const init = decl.getInitializer();
+      if (init && Node.isObjectLiteralExpression(init)) {
+        return init;
       }
     }
-    if (jsonSchema && !jsonSchemasByStatus.has(status)) {
-      jsonSchemasByStatus.set(status, jsonSchema);
+  }
+  return undefined;
+}
+
+function extractNumericLiteralsFromSymbol(
+  sym: any,
+  allNodes: Node[],
+  visitedSyms: Set<any>
+): number[] {
+  const targetSym = sym?.getAliasedSymbol?.() ?? sym;
+  if (!targetSym || visitedSyms.has(targetSym)) return [];
+  visitedSyms.add(targetSym);
+
+  const nums: number[] = [];
+  for (const decl of resolveSymbolDeclarations(targetSym)) {
+    if (Node.isVariableDeclaration(decl)) {
+      nums.push(...extractNumericLiteralsFromExpr(decl.getInitializer(), allNodes, visitedSyms));
+    } else if (Node.isParameterDeclaration(decl)) {
+      const fnDecl = decl.getParent();
+      if (
+        fnDecl &&
+        (Node.isFunctionDeclaration(fnDecl) ||
+          Node.isArrowFunction(fnDecl) ||
+          Node.isFunctionExpression(fnDecl))
+      ) {
+        const params = fnDecl.getParameters();
+        const paramIdx = params.indexOf(decl);
+        let fnName: string | undefined;
+        if (Node.isFunctionDeclaration(fnDecl)) {
+          fnName = fnDecl.getName();
+        } else {
+          const parentVar = fnDecl.getParent();
+          if (parentVar && Node.isVariableDeclaration(parentVar)) {
+            fnName = parentVar.getName();
+          }
+        }
+        if (fnName && paramIdx >= 0) {
+          for (const candidate of allNodes) {
+            if (!Node.isCallExpression(candidate)) continue;
+            if (candidate.getExpression().getText() === fnName) {
+              const callArg = candidate.getArguments()[paramIdx];
+              nums.push(...extractNumericLiteralsFromExpr(callArg, allNodes, visitedSyms));
+            }
+          }
+        }
+      }
     }
+  }
+  return Array.from(new Set(nums));
+}
+
+function extractNumericLiteralsFromExpr(
+  expr: Node | undefined,
+  allNodes: Node[],
+  visitedSyms = new Set<any>()
+): number[] {
+  if (!expr) return [];
+  if (Node.isNumericLiteral(expr)) {
+    return [Number(expr.getLiteralValue())];
+  }
+  if (Node.isConditionalExpression(expr)) {
+    return [
+      ...extractNumericLiteralsFromExpr(expr.getWhenTrue(), allNodes, visitedSyms),
+      ...extractNumericLiteralsFromExpr(expr.getWhenFalse(), allNodes, visitedSyms),
+    ];
+  }
+  if (Node.isIdentifier(expr)) {
+    return extractNumericLiteralsFromSymbol(expr.getSymbol(), allNodes, visitedSyms);
+  }
+  return [];
+}
+
+function extractStatusesFromInitObject(initArg: Node | undefined, allNodes: Node[]): number[] {
+  const initObj = resolveObjectLiteral(initArg);
+  if (!initObj || !Node.isObjectLiteralExpression(initObj)) return [200];
+  const statusProp = initObj.getProperty('status');
+  if (!statusProp) return [200];
+
+  if (Node.isPropertyAssignment(statusProp)) {
+    const resolved = extractNumericLiteralsFromExpr(statusProp.getInitializer(), allNodes);
+    return resolved.length > 0 ? resolved : [200];
+  }
+
+  if (Node.isShorthandPropertyAssignment(statusProp)) {
+    const valSym = (statusProp as any).getValueSymbol?.() ?? statusProp.getSymbol();
+    const resolved = extractNumericLiteralsFromSymbol(valSym, allNodes, new Set());
+    return resolved.length > 0 ? resolved : [200];
+  }
+
+  return [200];
+}
+
+interface ExtractedHeadersInfo {
+  literalContentType: string | null;
+  hasDynamicContentType: boolean;
+  isAttachment: boolean;
+  responseHeaders: Record<string, { description: string; schema: Record<string, any> }>;
+}
+
+function collectPropertiesFromHeadersObject(
+  headersObj: Node | undefined,
+  info: ExtractedHeadersInfo,
+  visited = new Set<Node>(),
+  overrideSym?: any
+) {
+  const resolved = resolveObjectLiteral(headersObj, overrideSym);
+  if (!resolved || !Node.isObjectLiteralExpression(resolved) || visited.has(resolved)) return;
+  visited.add(resolved);
+
+  for (const prop of resolved.getProperties()) {
+    if (Node.isSpreadAssignment(prop)) {
+      collectPropertiesFromHeadersObject(prop.getExpression(), info, visited);
+      continue;
+    }
+    if (!Node.isPropertyAssignment(prop)) continue;
+    const headerKey = prop.getName().replace(/^['"]|['"]$/g, '');
+    const lowerName = headerKey.toLowerCase();
+    const valInit = prop.getInitializer();
+
+    if (lowerName === 'content-type') {
+      if (valInit && (Node.isStringLiteral(valInit) || Node.isNoSubstitutionTemplateLiteral(valInit))) {
+        info.literalContentType = valInit.getLiteralValue().split(';')[0].trim().toLowerCase();
+      } else if (valInit) {
+        info.hasDynamicContentType = true;
+      }
+      info.responseHeaders[headerKey] = {
+        description: info.hasDynamicContentType
+          ? 'Dynamic MIME type of the streamed asset'
+          : 'Response MIME content type',
+        schema: { type: 'string' },
+      };
+    } else if (lowerName === 'content-disposition') {
+      const text = valInit?.getText() ?? '';
+      if (/attachment/i.test(text)) {
+        info.isAttachment = true;
+      }
+      info.responseHeaders[headerKey] = {
+        description: 'Content disposition attachment header',
+        schema: { type: 'string' },
+      };
+    } else if (lowerName === 'content-length') {
+      info.responseHeaders[headerKey] = {
+        description: 'Size of the response payload in bytes',
+        schema: { type: 'integer', minimum: 0 },
+      };
+    } else if (lowerName === 'last-modified') {
+      info.responseHeaders[headerKey] = {
+        description: 'RFC 7231 last-modified timestamp',
+        schema: { type: 'string' },
+      };
+    } else if (lowerName === 'cache-control') {
+      info.responseHeaders[headerKey] = {
+        description: 'HTTP cache control directives',
+        schema: { type: 'string' },
+      };
+    } else if (lowerName === 'x-content-type-options') {
+      info.responseHeaders[headerKey] = {
+        description: 'MIME-sniffing protection header',
+        schema: { type: 'string' },
+      };
+    }
+  }
+}
+
+function extractHeadersInfoFromInitObject(initArg: Node | undefined): ExtractedHeadersInfo {
+  const info: ExtractedHeadersInfo = {
+    literalContentType: null,
+    hasDynamicContentType: false,
+    isAttachment: false,
+    responseHeaders: {},
+  };
+
+  const initObj = resolveObjectLiteral(initArg);
+  if (!initObj || !Node.isObjectLiteralExpression(initObj)) return info;
+  const headersProp = initObj.getProperty('headers');
+  if (!headersProp) return info;
+
+  if (Node.isPropertyAssignment(headersProp)) {
+    collectPropertiesFromHeadersObject(headersProp.getInitializer(), info);
+  } else if (Node.isShorthandPropertyAssignment(headersProp)) {
+    const valSym = (headersProp as any).getValueSymbol?.() ?? headersProp.getSymbol();
+    collectPropertiesFromHeadersObject(undefined, info, new Set(), valSym);
+  }
+
+  return info;
+}
+
+const GENERIC_JSON_VALUE_SCHEMA = {
+  nullable: true,
+  anyOf: [
+    { type: 'object', additionalProperties: true },
+    { type: 'array', items: { type: 'object', additionalProperties: true } },
+    { type: 'string' },
+    { type: 'number' },
+    { type: 'boolean' },
+  ],
+};
+
+function inferSchemaFromTsType(tsType: any, depth = 0, seen = new Set<any>()): Record<string, any> {
+  if (!tsType || depth > 2 || seen.has(tsType)) {
+    return { type: 'object', additionalProperties: true };
+  }
+
+  if (tsType.isAny() || tsType.isUnknown()) {
+    return { ...GENERIC_JSON_VALUE_SCHEMA };
+  }
+
+  if (tsType.isNull() || tsType.isUndefined()) {
+    return { type: 'string', nullable: true };
+  }
+
+  if (tsType.isBoolean() || tsType.isBooleanLiteral()) {
+    return { type: 'boolean' };
+  }
+
+  if (tsType.isNumber() || tsType.isNumberLiteral()) {
+    return { type: 'number' };
+  }
+
+  if (tsType.isString() || tsType.isStringLiteral()) {
+    return { type: 'string' };
+  }
+
+  const typeText = tsType.getText?.() ?? '';
+  if (typeText === 'Date' || typeText === 'globalThis.Date') {
+    return { type: 'string', format: 'date-time' };
+  }
+
+  if (tsType.isUnion()) {
+    const unionTypes = tsType.getUnionTypes();
+    const hasNull = unionTypes.some((t: any) => t.isNull() || t.isUndefined());
+    const nonNull = unionTypes.filter((t: any) => !t.isNull() && !t.isUndefined());
+
+    if (nonNull.length === 0) {
+      return { type: 'string', nullable: true };
+    }
+
+    if (nonNull.every((t: any) => t.isBoolean() || t.isBooleanLiteral())) {
+      return hasNull ? { type: 'boolean', nullable: true } : { type: 'boolean' };
+    }
+
+    if (nonNull.every((t: any) => t.isString() || t.isStringLiteral())) {
+      const literals = nonNull
+        .filter((t: any) => t.isStringLiteral())
+        .map((t: any) => t.getLiteralValue());
+      const base: Record<string, any> =
+        literals.length === nonNull.length && literals.length > 0
+          ? { type: 'string', enum: Array.from(new Set(literals)) }
+          : { type: 'string' };
+      if (hasNull) base.nullable = true;
+      return base;
+    }
+
+    if (nonNull.every((t: any) => t.isNumber() || t.isNumberLiteral())) {
+      return hasNull ? { type: 'number', nullable: true } : { type: 'number' };
+    }
+
+    if (nonNull.length === 1) {
+      const single = inferSchemaFromTsType(nonNull[0], depth, seen);
+      if (hasNull) single.nullable = true;
+      return single;
+    }
+
+    return hasNull
+      ? { ...GENERIC_JSON_VALUE_SCHEMA }
+      : { type: 'object', additionalProperties: true };
+  }
+
+  if (tsType.isArray()) {
+    const elemType = tsType.getArrayElementType();
+    const nextSeen = new Set(seen);
+    nextSeen.add(tsType);
+    const items = elemType
+      ? inferSchemaFromTsType(elemType, depth + 1, nextSeen)
+      : { type: 'object', additionalProperties: true };
+    return { type: 'array', items };
+  }
+
+  if (tsType.isObject()) {
+    const props = tsType.getProperties?.() ?? [];
+    if (props.length > 0 && props.length <= 40 && depth < 2) {
+      const nextSeen = new Set(seen);
+      nextSeen.add(tsType);
+      const properties: Record<string, any> = {};
+      const required: string[] = [];
+
+      for (const propSym of props) {
+        const name = propSym.getName();
+        if (name.startsWith('__')) continue;
+        const decls = propSym.getDeclarations?.() ?? [];
+        const firstDecl = decls[0];
+        if (firstDecl && (Node.isMethodSignature(firstDecl) || Node.isMethodDeclaration(firstDecl))) {
+          continue;
+        }
+        const propType = firstDecl ? propSym.getTypeAtLocation(firstDecl) : propSym.getDeclaredType?.();
+        if (propType?.getCallSignatures?.()?.length > 0) continue;
+
+        properties[name] = propType
+          ? inferSchemaFromTsType(propType, depth + 1, nextSeen)
+          : { ...GENERIC_JSON_VALUE_SCHEMA };
+
+        if (!propSym.isOptional?.()) {
+          required.push(name);
+        }
+      }
+
+      if (Object.keys(properties).length > 0) {
+        const objSchema: Record<string, any> = {
+          type: 'object',
+          properties,
+        };
+        if (required.length > 0) {
+          objSchema.required = required;
+        }
+        return objSchema;
+      }
+    }
+    return { type: 'object', additionalProperties: true };
+  }
+
+  return { ...GENERIC_JSON_VALUE_SCHEMA };
+}
+
+function inferSchemaFromExpression(
+  expr: Node | undefined
+): { schema: Record<string, any>; hasTopLevelSuccess: boolean } {
+  if (!expr) {
+    return {
+      schema: { type: 'object', additionalProperties: true },
+      hasTopLevelSuccess: false,
+    };
+  }
+
+  if (Node.isObjectLiteralExpression(expr)) {
+    const properties: Record<string, any> = {};
+    const required: string[] = [];
+    let hasTopLevelSuccess = false;
+    let hasSpread = false;
+
+    for (const prop of expr.getProperties()) {
+      if (Node.isPropertyAssignment(prop)) {
+        const name = prop.getName().replace(/^['"]|['"]$/g, '');
+        if (name === 'success') hasTopLevelSuccess = true;
+        const init = prop.getInitializer();
+        if (init) {
+          if (Node.isTrueLiteral(init)) {
+            properties[name] = { type: 'boolean', enum: [true] };
+          } else if (Node.isFalseLiteral(init)) {
+            properties[name] = { type: 'boolean', enum: [false] };
+          } else if (Node.isStringLiteral(init) || Node.isNoSubstitutionTemplateLiteral(init)) {
+            properties[name] = { type: 'string' };
+          } else if (Node.isNumericLiteral(init)) {
+            properties[name] = { type: 'number' };
+          } else if (Node.isObjectLiteralExpression(init) || Node.isArrayLiteralExpression(init)) {
+            properties[name] = inferSchemaFromExpression(init).schema;
+          } else {
+            properties[name] = inferSchemaFromTsType(init.getType(), 1);
+          }
+        } else {
+          properties[name] = { ...GENERIC_JSON_VALUE_SCHEMA };
+        }
+        required.push(name);
+      } else if (Node.isShorthandPropertyAssignment(prop)) {
+        const name = prop.getName();
+        if (name === 'success') hasTopLevelSuccess = true;
+        properties[name] = inferSchemaFromTsType(prop.getType(), 1);
+        required.push(name);
+      } else if (Node.isSpreadAssignment(prop)) {
+        hasSpread = true;
+        const spreadSchema = inferSchemaFromTsType(prop.getExpression().getType(), 1);
+        if (spreadSchema.properties && typeof spreadSchema.properties === 'object') {
+          for (const [k, v] of Object.entries(spreadSchema.properties)) {
+            if (!(k in properties)) {
+              properties[k] = v;
+            }
+          }
+          for (const reqKey of spreadSchema.required ?? []) {
+            if (!required.includes(reqKey)) {
+              required.push(reqKey);
+            }
+          }
+          if ('success' in spreadSchema.properties) {
+            hasTopLevelSuccess = true;
+          }
+        }
+      }
+    }
+
+    const schema: Record<string, any> = {
+      type: 'object',
+    };
+    if (Object.keys(properties).length > 0) {
+      schema.properties = properties;
+      if (required.length > 0) {
+        schema.required = Array.from(new Set(required));
+      }
+      if (hasSpread) {
+        schema.additionalProperties = true;
+      }
+    } else {
+      schema.additionalProperties = true;
+    }
+
+    return { schema, hasTopLevelSuccess };
+  }
+
+  if (Node.isArrayLiteralExpression(expr)) {
+    const elements = expr.getElements();
+    const itemSchema =
+      elements.length > 0
+        ? inferSchemaFromExpression(elements[0]).schema
+        : { type: 'object', additionalProperties: true };
+    return {
+      schema: { type: 'array', items: itemSchema },
+      hasTopLevelSuccess: false,
+    };
+  }
+
+  const tsSchema = inferSchemaFromTsType(expr.getType(), 0);
+  const hasTopLevelSuccess = Boolean(
+    tsSchema.type === 'object' && tsSchema.properties && 'success' in tsSchema.properties
+  );
+  return { schema: tsSchema, hasTopLevelSuccess };
+}
+
+function detectMiddlewareWrapped(directNodes: Node[], allNodes: Node[]): boolean {
+  for (const n of [...directNodes, ...allNodes]) {
+    if (!Node.isCallExpression(n)) continue;
+    const exprText = n.getExpression().getText();
+    if (exprText === 'withApiMiddleware' || exprText === 'createValidatedRoute') {
+      return true;
+    }
+  }
+  return false;
+}
+
+function mergeDistinctSchemas(schemas: Array<Record<string, any>>): Record<string, any> {
+  const unique: Array<Record<string, any>> = [];
+  const seen = new Set<string>();
+
+  for (const s of schemas) {
+    const sanitized = sanitizeOpenApi30Node(JSON.parse(JSON.stringify(s)));
+    const key = JSON.stringify(sanitized);
+    if (!seen.has(key)) {
+      seen.add(key);
+      unique.push(sanitized);
+    }
+  }
+
+  if (unique.length === 0) {
+    return { type: 'object', additionalProperties: true };
+  }
+  if (unique.length === 1) {
+    return unique[0];
+  }
+  return unique.every(isObjectJsonSchema)
+    ? { type: 'object', anyOf: unique }
+    : { anyOf: unique };
+}
+
+interface ExtractOperationResponsesOptions {
+  routePath: string;
+  method: string;
+  directNodes: Node[];
+  allNodes: Node[];
+  hasRequestBody: boolean;
+  hasQueryParams: boolean;
+  hasPathParams: boolean;
+  hasSecurity: boolean;
+}
+
+function extractOperationResponses(opts: ExtractOperationResponsesOptions): Record<string, any> {
+  const {
+    routePath,
+    method,
+    directNodes,
+    allNodes,
+    hasRequestBody,
+    hasQueryParams,
+    hasPathParams,
+    hasSecurity,
+  } = opts;
+
+  const usesMiddleware = detectMiddlewareWrapped(directNodes, allNodes);
+  const { statusBranchesByVar, equalityCondByVar } = extractLocalStatusBranches(allNodes);
+  const exportMediaByStatus = new Map<number, string[]>();
+  const jsonSchemasByStatus = new Map<number, Array<Record<string, any>>>();
+  const textErrorStatuses = new Set<number>();
+  const dynamicStreamHeadersByStatus = new Map<
+    number,
+    Record<string, { description: string; schema: Record<string, any> }>
+  >();
+  const jsonAttachmentHeadersByStatus = new Map<
+    number,
+    Record<string, { description: string; schema: Record<string, any> }>
+  >();
+  const explicitErrorStatuses = new Set<number>();
+
+  function recordExportMedia(status: number, mediaType: string) {
+    if (!exportMediaByStatus.has(status)) {
+      exportMediaByStatus.set(status, []);
+    }
+    const existing = exportMediaByStatus.get(status)!;
+    if (!existing.includes(mediaType)) {
+      existing.push(mediaType);
+    }
+  }
+
+  function recordJsonSchema(status: number, schema: Record<string, any>) {
+    if (!jsonSchemasByStatus.has(status)) {
+      jsonSchemasByStatus.set(status, []);
+    }
+    jsonSchemasByStatus.get(status)!.push(schema);
   }
 
   for (const n of allNodes) {
     if (Node.isCallExpression(n)) {
       const exprText = n.getExpression().getText();
       if (exprText === 'NextResponse.json' || exprText === 'Response.json') {
-        const [bodyArg, initArg] = n.getArguments();
-        const branches = extractStatusesFromInitObject(initArg, statusBranchesByVar);
-        for (const branch of branches) {
-          const rawProbeSchema = extractProbeObjectSchema(bodyArg, branch, equalityCondByVar);
-          const effectiveSchema =
-            rawProbeSchema && usesApiMiddleware
-              ? applyApiMiddlewareResponseEnvelope(rawProbeSchema, branch.status)
-              : rawProbeSchema;
-          recordStatus(branch.status, null, effectiveSchema);
+        const payloadArg = n.getArguments()[0];
+        const initArg = n.getArguments()[1];
+        const statuses = extractStatusesFromInitObject(initArg, allNodes);
+        const probeBranches = extractProbeStatusBranchesFromInitObject(initArg, statusBranchesByVar);
+
+        for (const status of statuses) {
+          const branch = probeBranches.find((b) => b.status === status) ?? { status };
+          const rawProbeSchema = extractProbeObjectSchema(payloadArg, branch, equalityCondByVar);
+
+          if (status >= 200 && status < 300) {
+            const { schema, hasTopLevelSuccess } = rawProbeSchema
+              ? {
+                schema: rawProbeSchema,
+                hasTopLevelSuccess: Boolean(
+                  rawProbeSchema.properties && 'success' in rawProbeSchema.properties
+                ),
+              }
+              : inferSchemaFromExpression(payloadArg);
+            if (usesMiddleware && !hasTopLevelSuccess) {
+              recordJsonSchema(status, {
+                type: 'object',
+                required: ['success', 'data'],
+                properties: {
+                  success: { type: 'boolean', enum: [true] },
+                  data: schema,
+                },
+              });
+            } else {
+              recordJsonSchema(status, schema);
+            }
+          } else if (status >= 400) {
+            explicitErrorStatuses.add(status);
+            if (!usesMiddleware) {
+              const schema = rawProbeSchema ?? inferSchemaFromExpression(payloadArg).schema;
+              recordJsonSchema(status, schema);
+            }
+          }
         }
       }
     } else if (Node.isNewExpression(n)) {
       const exprText = n.getExpression().getText();
-      if (exprText === 'ImageResponse') {
-        for (const branch of extractStatusesFromInitObject(n.getArguments()[1], statusBranchesByVar)) {
-          recordStatus(branch.status, 'image/png');
+      if (exprText === 'ApiError') {
+        const firstArg = n.getArguments()[0];
+        for (const errStatus of extractNumericLiteralsFromExpr(firstArg, allNodes)) {
+          if (errStatus >= 400) {
+            explicitErrorStatuses.add(errStatus);
+          }
+        }
+      } else if (exprText === 'ImageResponse') {
+        const statuses = extractStatusesFromInitObject(n.getArguments()[1], allNodes);
+        for (const status of statuses) {
+          if (status >= 200 && status < 300) {
+            recordExportMedia(status, 'image/png');
+          }
         }
       } else if (exprText === 'NextResponse' || exprText === 'Response') {
+        const bodyArg = n.getArguments()[0];
         const initArg = n.getArguments()[1];
-        const mediaType = extractContentTypeFromInitObject(initArg);
-        for (const branch of extractStatusesFromInitObject(initArg, statusBranchesByVar)) {
-          recordStatus(branch.status, mediaType);
+        const statuses = extractStatusesFromInitObject(initArg, allNodes);
+        const headerInfo = extractHeadersInfoFromInitObject(initArg);
+
+        for (const status of statuses) {
+          if (status >= 200 && status < 300) {
+            if (headerInfo.literalContentType && EXPORT_MEDIA_SCHEMAS[headerInfo.literalContentType]) {
+              recordExportMedia(status, headerInfo.literalContentType);
+            } else if (headerInfo.literalContentType === 'application/json' && headerInfo.isAttachment) {
+              jsonAttachmentHeadersByStatus.set(status, headerInfo.responseHeaders);
+              const backupSchema =
+                routePath === '/api/admin/maintenance/export' && ALL_SCHEMAS.DatabaseBackupSchema
+                  ? toOpenApiSchema(ALL_SCHEMAS.DatabaseBackupSchema, false)
+                  : { type: 'object', additionalProperties: true };
+              recordJsonSchema(status, backupSchema);
+            } else if (headerInfo.hasDynamicContentType) {
+              dynamicStreamHeadersByStatus.set(status, headerInfo.responseHeaders);
+            }
+          } else if (status >= 400) {
+            explicitErrorStatuses.add(status);
+            if (!usesMiddleware && bodyArg && !Node.isNullLiteral(bodyArg)) {
+              textErrorStatuses.add(status);
+            }
+          }
         }
       }
     }
   }
 
-  if (mediaTypesByStatus.size === 0) {
-    recordStatus(200);
+  const successStatuses = new Set<number>([
+    ...exportMediaByStatus.keys(),
+    ...[...jsonSchemasByStatus.keys()].filter((s) => s >= 200 && s < 300),
+    ...dynamicStreamHeadersByStatus.keys(),
+  ]);
+
+  if (successStatuses.size === 0) {
+    successStatuses.add(200);
+    if (usesMiddleware) {
+      recordJsonSchema(200, {
+        type: 'object',
+        required: ['success', 'data'],
+        properties: {
+          success: { type: 'boolean', enum: [true] },
+          data: { type: 'object', additionalProperties: true },
+        },
+      });
+    } else {
+      recordJsonSchema(200, { type: 'object', additionalProperties: true });
+    }
   }
 
   const responses: Record<string, any> = {};
-  const sortedStatuses = Array.from(mediaTypesByStatus.keys()).sort((a, b) => a - b);
+  const sortedSuccessStatuses = Array.from(successStatuses).sort((a, b) => a - b);
 
-  for (const status of sortedStatuses) {
-    const mediaTypes = mediaTypesByStatus.get(status) ?? [];
-    const jsonSchema = jsonSchemasByStatus.get(status);
+  for (const status of sortedSuccessStatuses) {
+    const exportMedia = exportMediaByStatus.get(status) ?? [];
+    const dynamicHeaders = dynamicStreamHeadersByStatus.get(status);
+    const attachmentHeaders = jsonAttachmentHeadersByStatus.get(status);
+    const jsonSchemas = jsonSchemasByStatus.get(status) ?? [];
+
     const responseObj: Record<string, any> = {
-      description: getStatusDescription(status),
+      description:
+        status === 201
+          ? 'Created'
+          : method === 'HEAD'
+            ? 'Asset metadata headers response (empty payload body)'
+            : attachmentHeaders
+              ? 'Streamed JSON attachment response'
+              : 'Successful response',
     };
 
-    if (mediaTypes.length > 0 || jsonSchema) {
+    if (dynamicHeaders && Object.keys(dynamicHeaders).length > 0) {
+      responseObj.headers = dynamicHeaders;
+    } else if (attachmentHeaders && Object.keys(attachmentHeaders).length > 0) {
+      responseObj.headers = attachmentHeaders;
+    }
+
+    if (exportMedia.length > 0) {
       responseObj.content = {};
-      for (const mt of mediaTypes) {
+      for (const mt of exportMedia) {
         responseObj.content[mt] = {
           schema: { ...EXPORT_MEDIA_SCHEMAS[mt] },
         };
       }
-      if (jsonSchema) {
-        responseObj.content['application/json'] = {
-          schema: jsonSchema,
-        };
-      }
+    } else if (dynamicHeaders) {
+      responseObj.content = {
+        'application/octet-stream': {
+          schema: {
+            type: 'string',
+            format: 'binary',
+          },
+        },
+      };
+    } else if (jsonSchemas.length > 0) {
+      responseObj.content = {
+        'application/json': {
+          schema: mergeDistinctSchemas(jsonSchemas),
+        },
+      };
     }
 
     responses[String(status)] = responseObj;
+  }
+
+  if (hasRequestBody || hasQueryParams) {
+    explicitErrorStatuses.add(400);
+  }
+  if (hasSecurity) {
+    explicitErrorStatuses.add(401);
+  }
+  if (hasPathParams) {
+    explicitErrorStatuses.add(404);
+  }
+  if (usesMiddleware) {
+    if (routePath !== '/api/health') {
+      explicitErrorStatuses.add(429);
+    }
+    explicitErrorStatuses.add(500);
+  } else if (explicitErrorStatuses.size === 0) {
+    explicitErrorStatuses.add(500);
+  }
+
+  const sortedErrorStatuses = Array.from(explicitErrorStatuses).sort((a, b) => a - b);
+  for (const errStatus of sortedErrorStatuses) {
+    const description = ERROR_STATUS_DESCRIPTIONS[errStatus] || 'Error response';
+    if (usesMiddleware) {
+      responses[String(errStatus)] = {
+        description,
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ApiErrorEnvelope' },
+          },
+        },
+      };
+    } else if (textErrorStatuses.has(errStatus)) {
+      responses[String(errStatus)] = {
+        description,
+        content: {
+          'text/plain': {
+            schema: { type: 'string' },
+          },
+        },
+      };
+    } else {
+      const customErrSchemas = jsonSchemasByStatus.get(errStatus) ?? [];
+      responses[String(errStatus)] = {
+        description,
+        content: {
+          'application/json': {
+            schema:
+              customErrSchemas.length > 0
+                ? mergeDistinctSchemas(customErrSchemas)
+                : { ...RAW_JSON_ERROR_SCHEMA },
+          },
+        },
+      };
+    }
   }
 
   return responses;
@@ -1076,6 +1856,7 @@ function resolveOperationSecurity(
 async function run() {
   const publicApiExclusions = getMiddlewarePublicApiExclusions();
   const entitySlugs = extractAdminEntitySlugs();
+  const entitySchemaNames = extractAdminEntitySchemaNames();
 
   const openapi: any = {
     openapi: '3.0.3',
@@ -1083,8 +1864,21 @@ async function run() {
       title: 'Universal API',
       version: '1.0.0',
     },
+    servers: [
+      {
+        url: 'http://localhost:3000',
+        description: 'Local development server',
+      },
+      {
+        url: '/',
+        description: 'Current deployment origin',
+      },
+    ],
     tags: OPENAPI_TAGS.map(({ name, description }) => ({ name, description })),
     components: {
+      schemas: {
+        ApiErrorEnvelope: API_ERROR_ENVELOPE_SCHEMA,
+      },
       securitySchemes: {
         adminCookieAuth: {
           type: 'apiKey',
@@ -1193,7 +1987,7 @@ async function run() {
           ...delegatedGroups.flatMap((group) => group.nodes),
         ];
 
-        const schemaNames = extractSchemaNames(directNodes, delegatedGroups);
+        const schemaNames = extractSchemaNames(directNodes, delegatedGroups, entitySchemaNames);
 
         const operation: any = {
           tags: [resolveOperationTag(routePath)],
@@ -1272,8 +2066,8 @@ async function run() {
                   toOpenApiSchema(ALL_SCHEMAS[name], acceptsFormData)
                 );
                 jsonSchema = branchSchemas.every(isObjectJsonSchema)
-                  ? { type: 'object', oneOf: branchSchemas }
-                  : { oneOf: branchSchemas };
+                  ? { type: 'object', anyOf: branchSchemas }
+                  : { anyOf: branchSchemas };
               }
 
               const mediaType = acceptsFormData ? 'multipart/form-data' : 'application/json';
@@ -1291,13 +2085,16 @@ async function run() {
           }
         }
 
-        const usesApiMiddleware =
-          decl.getText().includes('withApiMiddleware(') ||
-          allScopedNodes.some(
-            (n) => Node.isCallExpression(n) && n.getExpression().getText() === 'withApiMiddleware'
-          );
-
-        operation.responses = extractOperationResponses(allScopedNodes, usesApiMiddleware);
+        operation.responses = extractOperationResponses({
+          routePath: openapiPath,
+          method,
+          directNodes,
+          allNodes: allScopedNodes,
+          hasRequestBody: Boolean(operation.requestBody),
+          hasQueryParams: queryParams.length > 0,
+          hasPathParams: Boolean(pathParams && pathParams.length > 0),
+          hasSecurity: Boolean(operation.security && operation.security.length > 0),
+        });
 
         openapi.paths[openapiPath][method.toLowerCase()] = operation;
       }
