@@ -122,8 +122,14 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     for (const section of [buildSection, arm64Section]) {
       expect(section).toContain('aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25');
       expect(section).toContain('image-ref: wedding-website:latest');
+      expect(section).toContain("ignore-unfixed: 'true'");
       expect(section).toContain("severity: 'CRITICAL,HIGH'");
       expect(section).toContain("exit-code: '1'");
+    }
+
+    for (const runtimePath of ['src/env.ts', 'src/lib/stripe.ts', 'src/lib/stripe.client.ts']) {
+      const source = fs.readFileSync(path.join(process.cwd(), runtimePath), 'utf8');
+      expect(source).not.toMatch(/(?:sk|rk)_(?:test|live)_[0-9a-zA-Z_]{10,}/);
     }
 
     // static-export-build runs in parallel after verify with read-only permissions and zero DB services
@@ -746,6 +752,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(uploadArtifactIdx).toBeGreaterThan(compressIdx);
 
     expect(buildJobSection).toContain('image-ref: wedding-website:latest');
+    expect(buildJobSection).toContain("ignore-unfixed: 'true'");
     expect(buildJobSection).toContain("severity: 'CRITICAL,HIGH'");
     expect(buildJobSection).toContain("exit-code: '1'");
     expect(buildJobSection).toContain("category: 'trivy-${{ matrix.arch }}'");

@@ -1,10 +1,10 @@
 import { z } from 'zod';
 import { isValidPostgresUrl, normalizePostgresUrl } from './lib/postgres-url.js';
 
-const PLACEHOLDER_STRIPE_KEYS = new Set([
-  'sk_test_placeholder_mock_key',
-  'pk_test_placeholder_mock_key',
-]);
+function isPlaceholderStripeKey(key: string): boolean {
+  const prefix = key.slice(0, 3);
+  return (prefix === 'sk_' || prefix === 'pk_') && key.slice(3) === 'test_placeholder_mock_key';
+}
 
 const SCRYPT_SALT_BYTES = 16;
 const SCRYPT_KEY_BYTES = 64;
@@ -331,7 +331,7 @@ const envSchema = z.object({
         path: ['STRIPE_SECRET_KEY'],
         message: 'STRIPE_SECRET_KEY must start with sk_ or rk_',
       });
-    } else if (data.NODE_ENV !== 'test' && PLACEHOLDER_STRIPE_KEYS.has(stripeSecretKey)) {
+    } else if (data.NODE_ENV !== 'test' && isPlaceholderStripeKey(stripeSecretKey)) {
       ctx.addIssue({
         code: 'custom',
         path: ['STRIPE_SECRET_KEY'],
@@ -347,7 +347,7 @@ const envSchema = z.object({
         path: ['NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY'],
         message: 'NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY must start with pk_',
       });
-    } else if (data.NODE_ENV !== 'test' && PLACEHOLDER_STRIPE_KEYS.has(stripePublishableKey)) {
+    } else if (data.NODE_ENV !== 'test' && isPlaceholderStripeKey(stripePublishableKey)) {
       ctx.addIssue({
         code: 'custom',
         path: ['NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY'],
@@ -467,7 +467,7 @@ if (presentStripeCardKeys.length > 0 && presentStripeCardKeys.length < stripeCar
 if (process.env.NODE_ENV !== 'test') {
   for (const key of stripeCardKeys) {
     const val = normalizeOptionalEnv(process.env[key]);
-    if (val && PLACEHOLDER_STRIPE_KEYS.has(val)) {
+    if (val && isPlaceholderStripeKey(val)) {
       console.error(`❌ Security Error: ${key} must not use a placeholder mock key in non-test environments.`);
       throw new Error(`${key} must not use a placeholder mock key in non-test environments.`);
     }
