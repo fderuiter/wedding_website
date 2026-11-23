@@ -136,7 +136,7 @@ A variety of verification scripts in [package.json](../package.json) support com
   - `npm run check:prisma`: Validates Prisma schema formatting and relations.
   - `npm run lint:migrations`: Verifies database migration compatibility.
   - `npm run check:doc-sync`: Verifies generated OpenAPI (`public/openapi.json`), architecture (`ARCHITECTURE.md`), and feature module (`FEATURE_MODULES.md`) documentation match current schemas.
-  - `npm run check:setup-guides`: Verifies setup, contributor, and testing guides stay aligned with `.env.example`, `.env.test`, `package.json`, `.githooks/pre-commit`, `scripts/check-quality.ts`, and `tsconfig.json`.
+  - `npm run check:setup-guides`: Verifies setup, contributor, and testing guides stay aligned with `.env.example`, `.env.test`, `package.json`, `.githooks/pre-commit`, `.githooks/pre-push`, `scripts/check-quality.ts`, and `tsconfig.json`.
 
 - **Storybook Static Showcase Build:**
   ```bash

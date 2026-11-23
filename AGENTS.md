@@ -31,9 +31,9 @@ TypeScript verification is split across five project files so IDEs get complete 
 
 1. [`tsconfig.json`](tsconfig.json) — Unified root IDE and workspace config (`compilerOptions.types: ["node", "jest", "@testing-library/jest-dom", "jest-axe"]`). Includes app sources, tests, mocks, factories, CLI scripts, E2E specs, `.storybook/**/*`, and `docs-portal/.vitepress/**/*`, while excluding `node_modules`, `jest.setup.js`, `out`, `storybook-static`, `coverage`, `playwright-report`, `test-results`, `docs-portal/.vitepress/cache`, and `docs-portal/.vitepress/dist` so `tsserver` attaches every tracked TypeScript file cleanly.
 2. [`tsconfig.build.json`](tsconfig.build.json) — Isolated non-composite production Next.js build config referenced by `typescript.tsconfigPath` in [`next.config.ts`](next.config.ts) (`compilerOptions.types: ["node"]`, `incremental: false`). Excludes `node_modules`, `out`, `storybook-static`, `jest.setup.js`, `scripts`, `e2e`, `.storybook`, `docs-portal`, `playwright.config.ts`, `prisma.config.ts`, `src/mocks`, `src/testing`, `**/*.stories.ts`, `**/*.stories.tsx`, `**/__tests__/**/*`, `**/*.test.ts`, `**/*.test.tsx`, `**/*.spec.ts`, and `**/*.spec.tsx` so `npm run build` (`next build`) validates only production runtime code.
-3. [`tsconfig.test.json`](tsconfig.test.json) — Extends `tsconfig.json` with `types: ["node", "jest", "@testing-library/jest-dom", "jest-axe"]` and includes `src/**/__tests__/**/*`, `src/**/*.test.{ts,tsx}`, `scripts/**/*.test.ts`, `src/mocks/**/*.ts`, and `src/testing/**/*.ts`.
-4. [`tsconfig.e2e.json`](tsconfig.e2e.json) — Extends `tsconfig.json` with `types: ["node"]` and checks [`playwright.config.ts`](playwright.config.ts) and `e2e/**/*.ts`.
-5. [`tsconfig.scripts.json`](tsconfig.scripts.json) — Extends `tsconfig.json` with `types: ["node"]` and checks `scripts/**/*.ts` (excluding `scripts/**/*.test.ts`, without `.ts` import extensions as `allowImportingTsExtensions` is not enabled).
+3. [`tsconfig.test.json`](tsconfig.test.json) — Extends `tsconfig.json` with `incremental: true` (`tsBuildInfoFile: "./tsconfig.test.tsbuildinfo"`) and `types: ["node", "jest", "@testing-library/jest-dom", "jest-axe"]`, and includes `src/**/__tests__/**/*`, `src/**/*.test.{ts,tsx}`, `scripts/**/*.test.ts`, `src/mocks/**/*.ts`, and `src/testing/**/*.ts`.
+4. [`tsconfig.e2e.json`](tsconfig.e2e.json) — Extends `tsconfig.json` with `incremental: true` (`tsBuildInfoFile: "./tsconfig.e2e.tsbuildinfo"`) and `types: ["node"]`, and checks [`playwright.config.ts`](playwright.config.ts) and `e2e/**/*.ts`.
+5. [`tsconfig.scripts.json`](tsconfig.scripts.json) — Extends `tsconfig.json` with `incremental: true` (`tsBuildInfoFile: "./tsconfig.scripts.tsbuildinfo"`) and `types: ["node"]`, and checks `scripts/**/*.ts` (excluding `scripts/**/*.test.ts`, without `.ts` import extensions as `allowImportingTsExtensions` is not enabled).
 
 Run all five TypeScript projects locally with:
 
@@ -72,7 +72,7 @@ npx tsc --noEmit -p tsconfig.scripts.json
 
 ## 5. Local Verification & Pre-Push Quality Gates
 
-Before opening a pull request or pushing changes, ensure your branch passes the same checks enforced by [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+Before opening a pull request or pushing changes, ensure your branch passes the same checks enforced by [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Local Git hooks (installed via [`scripts/install-git-hooks.js`](scripts/install-git-hooks.js) on `npm ci`) split validation so [`.githooks/pre-commit`](.githooks/pre-commit) runs only `npx lint-staged` on staged files while [`.githooks/pre-push`](.githooks/pre-push) runs `npm run type-check`, `npm run lint:unused`, and all 10 `check:static` checks without destructive stashing or resets.
 
 ### Full Local Quality Gate
 
@@ -111,7 +111,7 @@ npm run build-storybook
 
 - **CI Parity:** Pull requests and pushes to `main` execute an isolated `storybook-build` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) in parallel with `unit-test` and `build`, backed by Webpack 5 filesystem caching (`node_modules/.cache/webpack` and `node_modules/.cache/storybook`).
 - **Interactive Development:** Run `npm run storybook` to launch the local Storybook server on port `6006`.
-- **Pre-Commit Hook Scope:** `npm run build-storybook` is intentionally kept out of [`.githooks/pre-commit`](.githooks/pre-commit) so local commits stay fast, and `/storybook-static` remains ignored via [`.gitignore`](.gitignore).
+- **Git Hook Scope:** `npm run build-storybook` is intentionally kept out of both [`.githooks/pre-commit`](.githooks/pre-commit) and [`.githooks/pre-push`](.githooks/pre-push) so local commits and pushes stay fast, and `/storybook-static` remains ignored via [`.gitignore`](.gitignore).
 
 ### Accessibility Quality Gate (`npm run test:a11y` & `npm run test:a11y:unit`)
 
@@ -158,8 +158,8 @@ node scripts/a11y-report.mjs
   - `npm run check:links` — Verify all relative Markdown links resolve to existing repository files ([`scripts/check-doc-links.ts`](scripts/check-doc-links.ts)).
   - `npm run check:spec-contracts` — Verify API routes, HTTP methods, dynamic `ENTITY_KEY` slugs, and cited TypeScript symbols in architectural Markdown specifications match live codebase exports ([`scripts/verify-spec-contracts.ts`](scripts/verify-spec-contracts.ts)).
   - `npm run check:prisma` & `npm run lint:migrations` — Validate Prisma schema and migration compatibility.
-  - `npm run check:doc-sync` — Verify [`public/openapi.json`](public/openapi.json), [`ARCHITECTURE.md`](ARCHITECTURE.md), and [`FEATURE_MODULES.md`](FEATURE_MODULES.md) match current schemas (`npx tsx scripts/generate-openapi.ts && npx tsx scripts/generate-docs.ts`).
-  - `npm run check:setup-guides` — Verify setup, contributor, and testing guides match `.env.example`, `.env.test`, scripts, hooks, and `tsconfig.json` ([`scripts/verify-setup-guides.ts`](scripts/verify-setup-guides.ts)).
+  - `npm run check:doc-sync` — Verify [`public/openapi.json`](public/openapi.json), [`ARCHITECTURE.md`](ARCHITECTURE.md), and [`FEATURE_MODULES.md`](FEATURE_MODULES.md) match current schemas (`npx tsx scripts/generate-openapi.ts && npx tsx scripts/generate-docs.ts --skip-openapi`).
+  - `npm run check:setup-guides` — Verify setup, contributor, and testing guides match `.env.example`, `.env.test`, scripts, [`.githooks/pre-commit`](.githooks/pre-commit), [`.githooks/pre-push`](.githooks/pre-push), and `tsconfig.json` ([`scripts/verify-setup-guides.ts`](scripts/verify-setup-guides.ts)).
 - **Typecheck & Linting:** `npm run typecheck && npm run lint && npm run lint:unused`
   - ESLint enforces single quotes, 2-space indentation, semicolons, and import boundaries. Do not disable ESLint rules in [`eslint.config.mjs`](eslint.config.mjs) or Axe rules in [`src/a11y-config.ts`](src/a11y-config.ts).
   - Knip ([`knip.json`](knip.json)) enforces strict unused file, export, and type analysis; export only symbols imported by entry files.

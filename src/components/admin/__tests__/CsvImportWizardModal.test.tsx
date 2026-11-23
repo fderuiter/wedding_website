@@ -1593,4 +1593,267 @@ describe('CsvImportWizardModal Component', () => {
       URL.revokeObjectURL = originalRevokeObjectURL;
     }
   }, 15000);
+
+  test('renders all 18 Step 2 column mapping selects in visual order with uniform dark-mode classes, empty-option labels, and SET_COLUMN_MAPPING updates', async () => {
+    window.sessionStorage.clear();
+
+    const expectedControls = [
+      {
+        id: 'map-guest-name',
+        label: 'Guest Name Column (Required)',
+        field: 'guestNameCol',
+        emptyOption: '-- Select Column --',
+        header: 'Col_01',
+        sampleValue: 'Clara Oswald',
+      },
+      {
+        id: 'map-guest-first-name',
+        label: 'Guest First Name Column (Optional)',
+        field: 'guestFirstNameCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_02',
+        sampleValue: 'Clara',
+      },
+      {
+        id: 'map-guest-last-name',
+        label: 'Guest Last Name Column (Optional)',
+        field: 'guestLastNameCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_03',
+        sampleValue: 'Oswald',
+      },
+      {
+        id: 'map-invitation-code',
+        label: 'Invitation Code Column (Optional)',
+        field: 'codeCol',
+        emptyOption: '-- Auto-Generate Blank Codes --',
+        header: 'Col_04',
+        sampleValue: 'CLARA100',
+      },
+      {
+        id: 'map-email',
+        label: 'Email Address Column (Optional)',
+        field: 'emailCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_05',
+        sampleValue: 'clara@example.com',
+      },
+      {
+        id: 'map-dietary-notes',
+        label: 'Dietary Notes / Allergies (Optional)',
+        field: 'dietaryNotesCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_06',
+        sampleValue: 'No Peanuts',
+      },
+      {
+        id: 'map-address-line1',
+        label: 'Address Line 1 Column (Optional)',
+        field: 'addressLine1Col',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_07',
+        sampleValue: '742 Evergreen Terrace',
+      },
+      {
+        id: 'map-address-line2',
+        label: 'Address Line 2 Column (Optional)',
+        field: 'addressLine2Col',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_08',
+        sampleValue: 'Apt 4B',
+      },
+      {
+        id: 'map-city',
+        label: 'City Column (Optional)',
+        field: 'cityCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_09',
+        sampleValue: 'Springfield',
+      },
+      {
+        id: 'map-state',
+        label: 'State / Province Column (Optional)',
+        field: 'stateCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_10',
+        sampleValue: 'IL',
+      },
+      {
+        id: 'map-zip-code',
+        label: 'ZIP / Postal Code Column (Optional)',
+        field: 'zipCodeCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_11',
+        sampleValue: '62704',
+      },
+      {
+        id: 'map-country',
+        label: 'Country Column (Optional)',
+        field: 'countryCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_12',
+        sampleValue: 'USA',
+      },
+      {
+        id: 'map-plus-ones',
+        label: 'Plus-One Allocations Column (Optional)',
+        field: 'plusOneCol',
+        emptyOption: '-- Default to 0 --',
+        header: 'Col_13',
+        sampleValue: '1',
+      },
+      {
+        id: 'map-plus-one-first-name',
+        label: 'Plus-One First Name Column (Optional)',
+        field: 'plusOneFirstNameCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_14',
+        sampleValue: 'Danny',
+      },
+      {
+        id: 'map-plus-one-last-name',
+        label: 'Plus-One Last Name Column (Optional)',
+        field: 'plusOneLastNameCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_15',
+        sampleValue: 'Pink',
+      },
+      {
+        id: 'map-household-name',
+        label: 'Household Name Column (Optional)',
+        field: 'householdNameCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_16',
+        sampleValue: 'Oswald Household',
+      },
+      {
+        id: 'map-party-group',
+        label: 'Party Side / Group Column (Optional)',
+        field: 'partyGroupCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_17',
+        sampleValue: 'Bride Side',
+      },
+      {
+        id: 'map-party-tags',
+        label: 'Party Tags Column (Optional)',
+        field: 'partyTagsCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_18',
+        sampleValue: 'VIP, Tardis',
+      },
+    ] as const;
+
+    const headers = [...expectedControls.map((c) => c.header), 'Custom_Note'];
+    const rowValues = [
+      ...expectedControls.map((c) => (c.sampleValue.includes(',') ? `"${c.sampleValue}"` : c.sampleValue)),
+      'Window Seat',
+    ];
+    const csvData = `${headers.join(',')}\n${rowValues.join(',')}`;
+    const file = Object.assign(new File([csvData], 'all-columns.csv', { type: 'text/csv' }), {
+      _content: csvData,
+    });
+
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        summary: {
+          total: 1,
+          validCount: 1,
+          invalidCount: 0,
+          duplicateCount: 0,
+          updatedCount: 0,
+          skippedCount: 0,
+          createdCount: 1,
+        },
+        rows: [
+          {
+            rowIndex: 1,
+            guestName: 'Clara Oswald',
+            code: 'CLARA100',
+            email: 'clara@example.com',
+            isValid: true,
+            errors: [],
+            warnings: [],
+          },
+        ],
+      }),
+    });
+
+    const { container } = render(
+      <ToastProvider>
+        <CsvImportWizardModal
+          isOpen={true}
+          onClose={mockOnClose}
+          onImportComplete={mockOnImportComplete}
+        />
+      </ToastProvider>
+    );
+
+    const fileInput = screen.getByLabelText(/Click to select CSV file/i) as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Guest Name Column (Required)')).toBeInTheDocument();
+    });
+
+    const renderedSelects = Array.from(document.body.querySelectorAll('select'));
+    expect(renderedSelects).toHaveLength(18);
+    expect(renderedSelects.map((el) => el.id)).toEqual(expectedControls.map((c) => c.id));
+
+    for (const control of expectedControls) {
+      const selectEl = screen.getByLabelText(control.label) as HTMLSelectElement;
+      expect(selectEl).toHaveAttribute('id', control.id);
+      expect(selectEl).toHaveClass('text-gray-900', 'dark:text-zinc-100');
+
+      const emptyOptionEl = selectEl.querySelector('option[value=""]');
+      expect(emptyOptionEl).not.toBeNull();
+      expect(emptyOptionEl).toHaveTextContent(control.emptyOption);
+
+      fireEvent.change(selectEl, { target: { value: '' } });
+      expect(selectEl).toHaveValue('');
+
+      fireEvent.change(selectEl, { target: { value: control.header } });
+      expect(selectEl).toHaveValue(control.header);
+    }
+
+    const savedDraftRaw = window.sessionStorage.getItem('csv_import_wizard_draft');
+    expect(savedDraftRaw).not.toBeNull();
+    const savedDraft = JSON.parse(savedDraftRaw!);
+    for (const control of expectedControls) {
+      expect(savedDraft[control.field]).toBe(control.header);
+    }
+
+    // Only unmapped Custom_Note remains in extra metadata checkboxes
+    expect(screen.getByLabelText('Custom_Note')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Col_01')).not.toBeInTheDocument();
+
+    const axeResults = await axe(container);
+    expect(axeResults).toHaveNoViolations();
+
+    // Confirm mapping into Step 3 and verify mapped row fields propagate
+    fireEvent.click(screen.getByText(/Continue to Review/i));
+
+    await waitFor(() => {
+      expect(screen.getByText('3. Review & Validate')).toBeInTheDocument();
+    });
+
+    expect(screen.getByLabelText('Guest Name for row 1')).toHaveValue('Clara Oswald');
+    expect(screen.getByLabelText('Invitation Code for row 1')).toHaveValue('CLARA100');
+    expect(screen.getByLabelText('Email for row 1')).toHaveValue('clara@example.com');
+    expect(screen.getByLabelText('Dietary Notes for row 1')).toHaveValue('No Peanuts');
+    expect(screen.getByLabelText('Address Line 1 for row 1')).toHaveValue('742 Evergreen Terrace');
+    expect(screen.getByLabelText('Address Line 2 for row 1')).toHaveValue('Apt 4B');
+    expect(screen.getByLabelText('City for row 1')).toHaveValue('Springfield');
+    expect(screen.getByLabelText('State for row 1')).toHaveValue('IL');
+    expect(screen.getByLabelText('ZIP Code for row 1')).toHaveValue('62704');
+    expect(screen.getByLabelText('Country for row 1')).toHaveValue('USA');
+    expect(screen.getByLabelText('Plus-One Allocation for row 1')).toHaveValue(1);
+    expect(screen.getByLabelText('Plus-One First Name for row 1')).toHaveValue('Danny');
+    expect(screen.getByLabelText('Plus-One Last Name for row 1')).toHaveValue('Pink');
+    expect(screen.getByLabelText('Household Name for row 1')).toHaveValue('Oswald Household');
+    expect(screen.getByLabelText('Party Group for row 1')).toHaveValue('Bride Side');
+    expect(screen.getByLabelText('Party Tags for row 1')).toHaveValue('VIP, Tardis');
+  });
 });
