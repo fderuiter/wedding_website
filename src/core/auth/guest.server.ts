@@ -47,13 +47,23 @@ export async function signGuestToken(payload: GuestTokenPayload): Promise<string
   return signCompactToken(payload, secret);
 }
 
-async function verifyGuestToken(token: string): Promise<GuestTokenPayload | null> {
+export async function verifyGuestToken(token: string): Promise<GuestTokenPayload | null> {
   if (!token || typeof token !== 'string') return null;
 
   try {
     const secret = await getSecret();
     if (!secret) return null;
-    return verifyCompactToken<GuestTokenPayload>(token, secret);
+    const payload = await verifyCompactToken<GuestTokenPayload>(token, secret);
+    if (!payload || payload.guest !== true) {
+      return null;
+    }
+
+    const now = Date.now();
+    if (payload.exp && payload.exp < now) {
+      return null;
+    }
+
+    return payload;
   } catch {
     return null;
   }
@@ -64,15 +74,5 @@ export async function isGuestRequest(req?: NextRequest): Promise<boolean> {
   if (!cookieValue) return false;
 
   const payload = await verifyGuestToken(cookieValue);
-
-  if (!payload || payload.guest !== true) {
-    return false;
-  }
-
-  const now = Date.now();
-  if (payload.exp && payload.exp < now) {
-    return false;
-  }
-
-  return true;
+  return Boolean(payload && payload.guest === true);
 }

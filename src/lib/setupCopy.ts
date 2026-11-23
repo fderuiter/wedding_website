@@ -2,7 +2,14 @@ import { formatDate } from '@/utils/intl';
 
 const PLACEHOLDER_VENUE_VALUES = new Set([
   'tbd',
+  'tba',
+  'n/a',
+  'na',
+  'none',
+  'pending',
   'tbd venue',
+  'unknown',
+  '00000',
   'venue description...',
   'travel advice...',
 ]);
