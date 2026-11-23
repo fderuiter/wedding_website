@@ -61,7 +61,7 @@ npx tsc --noEmit -p tsconfig.scripts.json
   - `admin_auth` tokens are signed and verified with a domain-separated HMAC key derived from the decoded 16-byte salt and 64-byte key of `ADMIN_PASSWORD` (`scrypt:[saltBase64]:[keyBase64]`) per [`src/core/auth/auth.server.ts`](src/core/auth/auth.server.ts).
 - **Aligned Local & Container Defaults**:
   - [`playwright.config.ts`](playwright.config.ts), [`.env.ci`](.env.ci), [`docker-compose.ci.yml`](docker-compose.ci.yml), [`.env.test`](.env.test), and [`e2e/helpers/auth.ts`](e2e/helpers/auth.ts) all default `GUEST_SESSION_SECRET` to `playwright-e2e-session-secret-32-chars-min` and align on the 64-byte E2E `ADMIN_PASSWORD` scrypt hash.
-  - For `GUEST_PASSCODE`, `playwright.config.ts`, `.env.ci`, `docker-compose.ci.yml`, and `e2e/helpers/auth.ts` default to `playwright-e2e-guest-passcode` (so `npx playwright test` and `TEST_CONTAINER=true npx playwright test` authenticate out of the box on clean checkouts when layering `--env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml`), whereas `.env.test` (loaded by [`scripts/pretest.mjs`](scripts/pretest.mjs) during Jest runs) sets `GUEST_PASSCODE="build-fallback-guest-passcode"`.
+  - For `GUEST_PASSCODE`, `playwright.config.ts`, `.env.ci`, `docker-compose.ci.yml`, and `e2e/helpers/auth.ts` default to `playwright-e2e-guest-passcode` (so `npx playwright test` and `TEST_CONTAINER=true npm run test:e2e:smoke` authenticate out of the box on clean checkouts when layering `--env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml`), whereas `.env.test` (loaded by [`scripts/pretest.mjs`](scripts/pretest.mjs) during Jest runs) sets `GUEST_PASSCODE="build-fallback-guest-passcode"`.
   - When overriding `GUEST_SESSION_SECRET`, `GUEST_PASSCODE`, or `ADMIN_PASSWORD` in shell or CI environments, pass identical values to both the Next.js server/container and the Playwright test process.
 - **Isolated Database Bootstrap & Explicit Server Reuse (`playwright.config.ts`)**:
   - When `CI` and `TEST_CONTAINER` are unset, [`playwright.config.ts`](playwright.config.ts) automatically starts PostgreSQL via `docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml up -d db` (when Docker is running), pushes the Prisma schema (`npx prisma db push --accept-data-loss`), and seeds `AppConfig` (`npx tsx scripts/seed.ts`) in the isolated `wedding_test` database before starting `npm run dev` and probing `/api/ready`.
@@ -99,7 +99,7 @@ npm run quality
 13. Verify Setup & Contributor Guides Contract (`npm run check:setup-guides` / [`scripts/verify-setup-guides.ts`](scripts/verify-setup-guides.ts))
 14. Build Static Documentation Portal (`npm run docs:build`)
 15. Build Static Storybook Showcase (`npm run build-storybook`) — prints remediation instructions and removes any partial `storybook-static` output on failure
-16. Unit & Integration Tests (`npm test`) — invokes [`scripts/pretest.mjs`](scripts/pretest.mjs) (verifies `node_modules/.package-lock-hash`, checks `npm_lifecycle_event` and falls back to `npm run build` if invoked outside a `*test*` lifecycle, resets `test-results/jest-a11y-violations.json`, starts `docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml up -d db` + polls `pg_isready`, isolates env vars from `.env.test` against `wedding_test`, runs `npx prisma db push --accept-data-loss` and `npm run prisma:generate`, and stages portal docs via `npx tsx scripts/generate-portal.ts`) before running `jest --runInBand`
+16. Unit & Integration Tests (`npm test`) — invokes [`scripts/pretest.mjs`](scripts/pretest.mjs) (verifies `node_modules/.package-lock-hash`, checks `npm_lifecycle_event` and falls back to `npm run build` if invoked outside a `*test*` lifecycle, resets `test-results/jest-a11y-violations.json`, starts `docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml up -d db` + polls `pg_isready`, isolates env vars from `.env.test` against `wedding_test`, runs `npx prisma migrate deploy` — automatically resetting the `public` schema on `wedding_test` if prior local `prisma db push` state triggers Prisma error `P3005` — and `npm run prisma:generate`, and stages portal docs via `npx tsx scripts/generate-portal.ts`) before running `jest --runInBand`
 
 ### Storybook Static Showcase Verification
 
@@ -115,7 +115,7 @@ npm run build-storybook
 
 ### Accessibility Quality Gate (`npm run test:a11y` & `npm run test:a11y:unit`)
 
-For fast component-only `jest-axe` checks across the 42 `src/` accessibility suites without starting Docker (`--coverage=false`):
+For fast component-only `jest-axe` checks across the 49 `src/` accessibility suites without starting Docker (`--coverage=false`):
 
 ```bash
 npm run test:a11y:unit
@@ -137,12 +137,12 @@ CI=true npm run test:a11y
 This invokes `node scripts/a11y-report.mjs --run` ([`scripts/a11y-report.mjs`](scripts/a11y-report.mjs)), which:
 
 1. Clears stale `test-results/` data.
-2. Runs the targeted `--unit` component pass (`npx jest --runInBand --coverage=false --runTestsByPath ...` across the 42 `src/` `jest-axe` suites), initializing `test-results/jest-a11y-violations.json` and recording any component-level `jest-axe` violations via [`jest.setup.js`](jest.setup.js).
+2. Runs the targeted `--unit` component pass (`npx jest --runInBand --coverage=false --runTestsByPath ...` across the 49 `src/` `jest-axe` suites), initializing `test-results/jest-a11y-violations.json` and recording any component-level `jest-axe` violations via [`jest.setup.js`](jest.setup.js).
 3. Reseeds `wedding_test` via `npx tsx scripts/seed.ts` ([`scripts/seed.ts`](scripts/seed.ts)) to restore valid `AppConfig` data wiped by Jest integration teardowns so [`src/app/layout.tsx`](src/app/layout.tsx) skips `<SetupWizard />`.
 4. Runs `npx playwright test --grep @a11y` in bundled Chromium against `http://localhost:3000` (which uses `test-results/playwright` as Playwright's `outputDir` in [`playwright.config.ts`](playwright.config.ts) so startup cleanup preserves JSON artifacts, and persists unfiltered route-keyed `@axe-core/playwright` violations into `test-results/playwright-a11y-violations.json` via [`e2e/verification.spec.ts`](e2e/verification.spec.ts)).
 5. Always writes `test-results/a11y-summary.md` first, then exits non-zero if the component pass failed, seeding failed, Playwright failed, or `totalViolations > 0`.
 
-To regenerate `test-results/a11y-summary.md` from existing JSON artifacts without re-running the test suites (as done in CI after downloading artifacts):
+To regenerate `test-results/a11y-summary.md` from existing JSON artifacts without re-running the test suites (matching the dedicated `a11y-report` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml), which depends on `unit-test` and `e2e-test` with `if: '!cancelled()'`, downloads `jest-a11y-violations` and `playwright-a11y-violations`, marks any missing suite artifact as incomplete in `test-results/a11y-summary.md`, and updates the `<!-- a11y-report -->` pull request comment and `$GITHUB_STEP_SUMMARY`):
 
 ```bash
 node scripts/a11y-report.mjs
@@ -160,6 +160,7 @@ node scripts/a11y-report.mjs
   - `npm run check:prisma` & `npm run lint:migrations` — Validate Prisma schema and migration compatibility.
   - `npm run check:doc-sync` — Verify [`public/openapi.json`](public/openapi.json), [`ARCHITECTURE.md`](ARCHITECTURE.md), and [`FEATURE_MODULES.md`](FEATURE_MODULES.md) match current schemas (`npx tsx scripts/generate-openapi.ts && npx tsx scripts/generate-docs.ts --skip-openapi`).
   - `npm run check:setup-guides` — Verify setup, contributor, and testing guides match `.env.example`, `.env.test`, scripts, [`.githooks/pre-commit`](.githooks/pre-commit), [`.githooks/pre-push`](.githooks/pre-push), and `tsconfig.json` ([`scripts/verify-setup-guides.ts`](scripts/verify-setup-guides.ts)).
+- **Prisma Migration Parity Diff (PostgreSQL):** `POSTGRES_URL_NON_POOLING="postgresql://wedding:wedding123@localhost:5432/wedding_shadow?schema=public" npx prisma migrate diff --from-migrations prisma/migrations --to-schema prisma/schema.prisma --exit-code` — Replays `prisma/migrations/` against an isolated `wedding_shadow` PostgreSQL database (configured via `shadowDatabaseUrl` in [`prisma.config.ts`](prisma.config.ts), matching the `Verify Prisma Migration Sync` step in [`.github/workflows/ci.yml`](.github/workflows/ci.yml)); if drift is detected (exit code `2`), generate and commit a forward-only migration with `npm run migrate:dev`.
 - **Typecheck & Linting:** `npm run typecheck && npm run lint && npm run lint:unused`
   - ESLint enforces single quotes, 2-space indentation, semicolons, and import boundaries. Do not disable ESLint rules in [`eslint.config.mjs`](eslint.config.mjs) or Axe rules in [`src/a11y-config.ts`](src/a11y-config.ts).
   - Knip ([`knip.json`](knip.json)) enforces strict unused file, export, and type analysis; export only symbols imported by entry files.
@@ -167,7 +168,7 @@ node scripts/a11y-report.mjs
 - **Targeted Unit Tests:** `npx jest <path/to/file.test.ts> --coverage=false` (use `npm test` to run [`scripts/pretest.mjs`](scripts/pretest.mjs) and the full suite with isolated `wedding_test` database setup and coverage thresholds in [`jest.config.mjs`](jest.config.mjs)).
 - **Production Next.js Build:** `npm run build`
 - **Standalone & Container Smoke Tests:** `npm run test:standalone` ([`scripts/test-standalone.mjs`](scripts/test-standalone.mjs), **requires running `npm run build` first**; skips isolated Compose database startup/teardown when `DATABASE_URL` is explicitly provided) and `npm run test:container` ([`scripts/test-container.mjs`](scripts/test-container.mjs), layering [`.env.ci`](.env.ci) and [`docker-compose.ci.yml`](docker-compose.ci.yml)). Both smoke scripts isolate Docker Compose stacks via `-p wedding-smoke-standalone` and `-p wedding-smoke-container` alongside free loopback ports (`PORT` / `DB_PORT`, overridable via `TEST_PORT` and `DB_PORT`) before running `docker compose -p <project> --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml down -v`, preserving default local `db_data` and `uploads_data` volumes as well as existing processes on port `3000`.
-- **End-to-End & Smoke Browser Tests:** `npm run test:e2e` (`npx playwright test`) and `npm run test:e2e:smoke` (`playwright test --grep @smoke`) against `http://localhost:3000` in bundled Chromium (automatically initializes and seeds `wedding_test` when `CI` and `TEST_CONTAINER` are unset; stop any running `npm run dev` on port `3000` first, or set `PLAYWRIGHT_REUSE_SERVER=true` only when the existing server targets `wedding_test` with aligned E2E secrets)
+- **End-to-End & Smoke Browser Tests:** `npm run test:e2e` (`npx playwright test`) and `npm run test:e2e:smoke` (`playwright test --grep @smoke`, targeting fast `@smoke` specs in [`e2e/guest-callback-url.spec.ts`](e2e/guest-callback-url.spec.ts), [`e2e/meta.spec.ts`](e2e/meta.spec.ts), and [`e2e/skip-link.spec.ts`](e2e/skip-link.spec.ts) while excluding slow route crawlers and violation-recording specs) against `http://localhost:3000` in bundled Chromium (in CI, `e2e-test` and `container-e2e-smoke` start in parallel right after `build`; locally, Playwright automatically initializes and seeds `wedding_test` when `CI` and `TEST_CONTAINER` are unset — stop any running `npm run dev` on port `3000` first, or set `PLAYWRIGHT_REUSE_SERVER=true` only when the existing server targets `wedding_test` with aligned E2E secrets)
 
 ## 6. Repository Conventions & Guardrails
 

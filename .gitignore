@@ -70,9 +70,10 @@ node_modules/@prisma/client
 .Jules/
 test-results/
 
-# TypeScript
+# TypeScript & ESLint caches
 tsconfig.tsbuildinfo
 *.tsbuildinfo
+.eslintcache
 
 # VitePress
 docs-portal/.vitepress/dist

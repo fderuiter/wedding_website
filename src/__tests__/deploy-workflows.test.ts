@@ -117,6 +117,25 @@ if (args[0] === 'attestation' && args[1] === 'verify') {
     console.error('Error: failed to verify attestation');
     process.exit(1);
   }
+  const sourceRefIdx = args.indexOf('--source-ref');
+  const requestedSourceRef = sourceRefIdx >= 0 ? args[sourceRefIdx + 1] : '';
+  if (process.env.MOCK_MAIN_REF_FAIL === 'true' && requestedSourceRef === 'refs/heads/main') {
+    console.error('Error: certificate sourceRepositoryRef mismatch for refs/heads/main');
+    process.exit(1);
+  }
+  if (args.includes('--format') && args.includes('json')) {
+    process.stdout.write(JSON.stringify([{
+      verificationResult: {
+        signature: {
+          certificate: {
+            sourceRepositoryDigest: process.env.MOCK_ATTESTATION_SHA || '0123456789abcdef0123456789abcdef01234567',
+            sourceRepositoryRef: process.env.MOCK_ATTESTATION_SOURCE_REF || 'refs/heads/main',
+          },
+        },
+      },
+    }]));
+    process.exit(0);
+  }
   process.stdout.write('Verification succeeded!\\n');
   process.exit(0);
 }
@@ -210,8 +229,10 @@ process.exit(1);
 
   it('passes workflow inputs and GH_TOKEN strictly via env blocks without ${{ ... }} inside deploy-provider.yml run scripts', () => {
     const stepNames = [
+      'Validate Commit SHA Input',
       'Resolve Artifact Image URI',
       'Verify Artifact Provenance Attestation',
+      'Resolve Standalone Promotion Commit & Main Ancestry',
       'Verify Selected Provider Credentials',
       'Capture Active Image Tag Before Rollout',
       'Deploy via Generic Webhook Adapter',
@@ -250,17 +271,50 @@ process.exit(1);
       GH_TOKEN: 'ghs_test_token',
       IMAGE_URI: expectedUri,
       IMAGE_DIGEST: VALID_DIGEST,
+      RAW_TAG: 'a1b2c3d4',
       REPO_OWNER: 'OwnerOrg',
       SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
     });
     expect(provRes.status).toBe(0);
     expect(fs.readFileSync(outputFile, 'utf8')).toContain('attestation_status=verified');
+    expect(fs.readFileSync(outputFile, 'utf8')).toContain('source_ref=refs/heads/main');
 
     const cliCalls = fs.readFileSync(callLogFile, 'utf8');
     expect(cliCalls).not.toContain('docker buildx imagetools inspect');
     expect(cliCalls).toContain(
-      `gh attestation verify oci://${expectedUri} --owner OwnerOrg --signer-workflow OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml [token=present]`
+      `gh attestation verify oci://${expectedUri} --owner OwnerOrg --signer-workflow OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml --source-ref refs/heads/main [token=present]`
     );
+
+    // v* release tag enforces --source-ref refs/tags/<tag>
+    fs.writeFileSync(outputFile, '');
+    fs.writeFileSync(callLogFile, '');
+    const tagProvRes = runBashStep(provenanceScript, {
+      GH_TOKEN: 'ghs_test_token',
+      IMAGE_URI: expectedUri,
+      IMAGE_DIGEST: VALID_DIGEST,
+      RAW_TAG: 'v1.4.2',
+      REPO_OWNER: 'OwnerOrg',
+      SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+    });
+    expect(tagProvRes.status).toBe(0);
+    expect(fs.readFileSync(outputFile, 'utf8')).toContain('source_ref=refs/tags/v1.4.2');
+    expect(fs.readFileSync(callLogFile, 'utf8')).toContain(
+      `gh attestation verify oci://${expectedUri} --owner OwnerOrg --signer-workflow OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml --source-ref refs/tags/v1.4.2 [token=present]`
+    );
+
+    // Unauthorized feature-branch source_ref fails closed before invoking gh attestation verify
+    fs.writeFileSync(callLogFile, '');
+    const badRefRes = runBashStep(provenanceScript, {
+      GH_TOKEN: 'ghs_test_token',
+      IMAGE_URI: expectedUri,
+      IMAGE_DIGEST: VALID_DIGEST,
+      INPUT_SOURCE_REF: 'refs/heads/feature-bypass',
+      REPO_OWNER: 'OwnerOrg',
+      SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+    });
+    expect(badRefRes.status).not.toBe(0);
+    expect(badRefRes.stdout + badRefRes.stderr).toContain('Unauthorized provenance source_ref');
+    expect(fs.readFileSync(callLogFile, 'utf8')).toBe('');
 
     const dryRunRes = runBashStep(dryRunScript, {
       IMAGE_URI: expectedUri,
@@ -377,8 +431,12 @@ process.exit(1);
     expect(cloudRunDoc).toContain('gh attestation verify');
     expect(deploymentDoc).toContain('vars.SERVICE_URL');
     expect(deploymentDoc).toContain('secrets.SERVICE_URL');
+    expect(deploymentDoc).toContain('commit_sha');
+    expect(deploymentDoc).toContain('deployments: read');
     expect(cloudRunDoc).toContain('vars.SERVICE_URL');
     expect(cloudRunDoc).toContain('secrets.SERVICE_URL');
+    expect(cloudRunDoc).toContain('commit_sha: ${{ needs.ci-gate.outputs.target_sha }}');
+    expect(cloudRunDoc).toContain('deployments: read');
   });
 
   it('resolves vars.SERVICE_URL, cloudrun url, and secrets.SERVICE_URL in order without exporting secret-only fallback to $GITHUB_OUTPUT', () => {
@@ -989,6 +1047,252 @@ process.exit(0);
         DATABASE_URL: validSocketUrl,
       });
       expect(okRes.status).toBe(0);
+    }
+  });
+
+  it('accepts image_tag in deploy.yml for tagged rollouts, resolves v* tag to origin/main commit SHA, skips rebuild, and runs db-migrate.yml before deploy-provider.yml', () => {
+    const deployDoc = parseDocument(deployYml, { version: '1.2', strict: true }).toJS() as {
+      on?: {
+        workflow_dispatch?: { inputs?: Record<string, unknown> };
+        workflow_call?: { inputs?: Record<string, unknown> };
+      };
+    };
+    expect(deployDoc.on?.workflow_dispatch?.inputs).toHaveProperty('image_tag');
+    expect(deployDoc.on?.workflow_call?.inputs).toHaveProperty('image_tag');
+
+    expect(deployYml).toContain("inputs.image_digest == '' &&\n        inputs.image_tag == ''");
+    const tagPassMatches = deployYml.match(
+      /image_tag: \$\{\{ inputs\.image_tag \|\| needs\.publish-artifact\.outputs\.image_tag \|\| needs\.ci-gate\.outputs\.target_sha \}\}/g
+    );
+    expect(tagPassMatches).toHaveLength(2);
+
+    const resolveTargetScript = extractStepRunScript(deployYml, 'Resolve Target Commit SHA');
+    expect(resolveTargetScript).not.toContain('${{');
+
+    const bareOrigin = path.join(tempDir, 'origin.git');
+    const workRepo = path.join(tempDir, 'work');
+    spawnSync('git', ['init', '--bare', bareOrigin], { stdio: 'pipe' });
+    spawnSync('git', ['init', '-b', 'main', workRepo], { stdio: 'pipe' });
+    spawnSync('git', ['-C', workRepo, 'config', 'user.email', 'ci@example.com'], { stdio: 'pipe' });
+    spawnSync('git', ['-C', workRepo, 'config', 'user.name', 'CI Bot'], { stdio: 'pipe' });
+    spawnSync('git', ['-C', workRepo, 'remote', 'add', 'origin', bareOrigin], { stdio: 'pipe' });
+
+    fs.writeFileSync(path.join(workRepo, 'app.txt'), 'release-1\n');
+    spawnSync('git', ['-C', workRepo, 'add', 'app.txt'], { stdio: 'pipe' });
+    spawnSync('git', ['-C', workRepo, 'commit', '-m', 'v0.1.0 commit'], { stdio: 'pipe' });
+    const taggedSha = spawnSync('git', ['-C', workRepo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+    spawnSync('git', ['-C', workRepo, 'tag', 'v0.1.0', taggedSha], { stdio: 'pipe' });
+    spawnSync('git', ['-C', workRepo, 'push', 'origin', 'main', '--tags'], { stdio: 'pipe' });
+
+    spawnSync('git', ['-C', workRepo, 'checkout', '-b', 'feature/unmerged'], { stdio: 'pipe' });
+    fs.writeFileSync(path.join(workRepo, 'app.txt'), 'unmerged\n');
+    spawnSync('git', ['-C', workRepo, 'add', 'app.txt'], { stdio: 'pipe' });
+    spawnSync('git', ['-C', workRepo, 'commit', '-m', 'unmerged'], { stdio: 'pipe' });
+    const unmergedSha = spawnSync('git', ['-C', workRepo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+    spawnSync('git', ['-C', workRepo, 'tag', 'v0.2.0-unmerged', unmergedSha], { stdio: 'pipe' });
+
+    // Valid v* tag on origin/main resolves to its 40-char commit SHA
+    fs.writeFileSync(outputFile, '');
+    const okTagRes = spawnSync('bash', ['-eo', 'pipefail', '-c', resolveTargetScript], {
+      cwd: workRepo,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GITHUB_OUTPUT: outputFile,
+        EVENT_NAME: 'workflow_dispatch',
+        WORKFLOW_RUN_HEAD_SHA: '',
+        CURRENT_SHA: taggedSha,
+        INPUT_IMAGE_TAG: 'v0.1.0',
+      },
+    });
+    expect(okTagRes.status).toBe(0);
+    expect(fs.readFileSync(outputFile, 'utf8')).toContain(`target_sha=${taggedSha}`);
+
+    // Unpinned latest tag rejected
+    const latestTagRes = spawnSync('bash', ['-eo', 'pipefail', '-c', resolveTargetScript], {
+      cwd: workRepo,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GITHUB_OUTPUT: outputFile,
+        EVENT_NAME: 'workflow_dispatch',
+        CURRENT_SHA: taggedSha,
+        INPUT_IMAGE_TAG: 'latest',
+      },
+    });
+    expect(latestTagRes.status).not.toBe(0);
+
+    // Unmerged tag rejected
+    const unmergedTagRes = spawnSync('bash', ['-eo', 'pipefail', '-c', resolveTargetScript], {
+      cwd: workRepo,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GITHUB_OUTPUT: outputFile,
+        EVENT_NAME: 'workflow_dispatch',
+        CURRENT_SHA: taggedSha,
+        INPUT_IMAGE_TAG: 'v0.2.0-unmerged',
+      },
+    });
+    expect(unmergedTagRes.status).not.toBe(0);
+    expect(unmergedTagRes.stdout + unmergedTagRes.stderr).toContain('is not an ancestor of origin/main');
+  });
+
+  it('blocks standalone live promotions in deploy-provider.yml that lack origin/main ancestry or bypass ci.yml or db-migrate.yml', async () => {
+    const standaloneTargetScript = extractStepRunScript(
+      deployProviderYml,
+      'Resolve Standalone Promotion Commit & Main Ancestry'
+    );
+
+    const deployProviderDoc = parseDocument(deployProviderYml, { version: '1.2', strict: true }).toJS() as {
+      on?: {
+        workflow_dispatch?: { inputs?: Record<string, unknown> };
+        workflow_call?: { inputs?: Record<string, unknown> };
+      };
+      jobs?: {
+        deploy?: {
+          steps?: Array<{ id?: string; name?: string; if?: string; env?: Record<string, string>; with?: { script?: string } }>;
+        };
+      };
+    };
+    expect(deployProviderDoc.on?.workflow_dispatch?.inputs).toHaveProperty('source_ref');
+    expect(deployProviderDoc.on?.workflow_call?.inputs).toHaveProperty('source_ref');
+
+    const steps = deployProviderDoc.jobs?.deploy?.steps ?? [];
+    const provenanceMeta = steps.find((s) => s.id === 'provenance');
+    expect(provenanceMeta?.env?.INPUT_SOURCE_REF).toBe('${{ inputs.source_ref }}');
+
+    const provenanceScript = extractStepRunScript(deployProviderYml, 'Verify Artifact Provenance Attestation');
+    fs.writeFileSync(outputFile, '');
+    const taggedDigestRes = runBashStep(provenanceScript, {
+      GH_TOKEN: 'ghs_test_token',
+      IMAGE_URI: `ghcr.io/ownerorg/wedding_website@${VALID_DIGEST}`,
+      IMAGE_DIGEST: VALID_DIGEST,
+      RAW_TAG: '',
+      INPUT_SOURCE_REF: '',
+      REPO_OWNER: 'OwnerOrg',
+      SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+      MOCK_MAIN_REF_FAIL: 'true',
+      MOCK_ATTESTATION_SOURCE_REF: 'refs/tags/v1.4.2',
+    });
+    expect(taggedDigestRes.status).toBe(0);
+    expect(fs.readFileSync(outputFile, 'utf8')).toContain('source_ref=refs/tags/v1.4.2');
+
+    // Unauthorized feature-branch sourceRepositoryRef in certificate is rejected fail-closed
+    fs.writeFileSync(outputFile, '');
+    const branchDigestRes = runBashStep(provenanceScript, {
+      GH_TOKEN: 'ghs_test_token',
+      IMAGE_URI: `ghcr.io/ownerorg/wedding_website@${VALID_DIGEST}`,
+      IMAGE_DIGEST: VALID_DIGEST,
+      RAW_TAG: '',
+      INPUT_SOURCE_REF: '',
+      REPO_OWNER: 'OwnerOrg',
+      SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+      MOCK_MAIN_REF_FAIL: 'true',
+      MOCK_ATTESTATION_SOURCE_REF: 'refs/heads/feature-bypass',
+    });
+    expect(branchDigestRes.status).not.toBe(0);
+
+    const gateStep = steps.find((s) => s.name === 'Verify Standalone CI & Database Migration Status');
+    expect(gateStep?.if).toBe("github.event_name == 'workflow_dispatch' && !inputs.dry_run");
+    expect(gateStep?.with?.script).toBeDefined();
+
+    const bareOrigin = path.join(tempDir, 'origin-provider.git');
+    const workRepo = path.join(tempDir, 'work-provider');
+    spawnSync('git', ['init', '--bare', bareOrigin], { stdio: 'pipe' });
+    spawnSync('git', ['init', '-b', 'main', workRepo], { stdio: 'pipe' });
+    spawnSync('git', ['-C', workRepo, 'config', 'user.email', 'ci@example.com'], { stdio: 'pipe' });
+    spawnSync('git', ['-C', workRepo, 'config', 'user.name', 'CI Bot'], { stdio: 'pipe' });
+    spawnSync('git', ['-C', workRepo, 'remote', 'add', 'origin', bareOrigin], { stdio: 'pipe' });
+
+    fs.writeFileSync(path.join(workRepo, 'app.txt'), 'main-commit\n');
+    spawnSync('git', ['-C', workRepo, 'add', 'app.txt'], { stdio: 'pipe' });
+    spawnSync('git', ['-C', workRepo, 'commit', '-m', 'main release'], { stdio: 'pipe' });
+    const mainSha = spawnSync('git', ['-C', workRepo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+    spawnSync('git', ['-C', workRepo, 'tag', 'v1.0.0', mainSha], { stdio: 'pipe' });
+    spawnSync('git', ['-C', workRepo, 'push', 'origin', 'main', '--tags'], { stdio: 'pipe' });
+
+    // Digest-only standalone dispatch extracts sourceRepositoryDigest via gh attestation verify --format json and validates ancestry
+    fs.writeFileSync(outputFile, '');
+    const digestOnlyRes = spawnSync('bash', ['-eo', 'pipefail', '-c', standaloneTargetScript], {
+      cwd: workRepo,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+        GITHUB_OUTPUT: outputFile,
+        GH_TOKEN: 'ghs_test_token',
+        IMAGE_URI: `ghcr.io/ownerorg/wedding_website@${VALID_DIGEST}`,
+        RAW_TAG: '',
+        EXPECTED_SOURCE_REF: 'refs/heads/main',
+        REPO_OWNER: 'OwnerOrg',
+        SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+        MOCK_ATTESTATION_SHA: mainSha,
+      },
+    });
+    expect(digestOnlyRes.status).toBe(0);
+    expect(fs.readFileSync(outputFile, 'utf8')).toContain(`target_sha=${mainSha}`);
+
+    const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
+      ...args: string[]
+    ) => (github: unknown, context: unknown, core: unknown) => Promise<void>;
+    const runStandaloneGate = new AsyncFunction('github', 'context', 'core', gateStep!.with!.script!);
+
+    const prevSha = process.env.TARGET_SHA;
+    const prevEnv = process.env.TARGET_ENV;
+    process.env.TARGET_SHA = mainSha;
+    process.env.TARGET_ENV = 'production';
+    try {
+      // 1. Fails closed when ci.yml was bypassed
+      const ciFailures: string[] = [];
+      await runStandaloneGate(
+        {
+          rest: { actions: { listWorkflowRuns: 'listWorkflowRuns' } },
+          paginate: async (_fn: unknown, opts: { workflow_id: string }) =>
+            opts.workflow_id === 'ci.yml'
+              ? []
+              : [{ id: 2, run_number: 8, conclusion: 'success', head_sha: mainSha }],
+        },
+        { repo: { owner: 'OwnerOrg', repo: 'Wedding_Website' } },
+        { setFailed: (msg: string) => ciFailures.push(msg), info: () => undefined }
+      );
+      expect(ciFailures).toHaveLength(1);
+      expect(ciFailures[0]).toContain('no completed successful ci.yml workflow run found');
+
+      // 2. Fails closed when ci.yml passed but db-migrate.yml was bypassed
+      const migrateFailures: string[] = [];
+      await runStandaloneGate(
+        {
+          rest: { actions: { listWorkflowRuns: 'listWorkflowRuns' } },
+          paginate: async (_fn: unknown, opts: { workflow_id: string }) =>
+            opts.workflow_id === 'ci.yml'
+              ? [{ id: 1, run_number: 7, conclusion: 'success', head_sha: mainSha }]
+              : [],
+        },
+        { repo: { owner: 'OwnerOrg', repo: 'Wedding_Website' } },
+        { setFailed: (msg: string) => migrateFailures.push(msg), info: () => undefined }
+      );
+      expect(migrateFailures).toHaveLength(1);
+      expect(migrateFailures[0]).toContain('no completed successful db-migrate.yml workflow run found');
+
+      // 3. Succeeds when both ci.yml and db-migrate.yml succeeded for targetSha
+      const bothFailures: string[] = [];
+      const bothInfos: string[] = [];
+      await runStandaloneGate(
+        {
+          rest: { actions: { listWorkflowRuns: 'listWorkflowRuns' } },
+          paginate: async () => [{ id: 10, run_number: 15, conclusion: 'success', head_sha: mainSha }],
+        },
+        { repo: { owner: 'OwnerOrg', repo: 'Wedding_Website' } },
+        { setFailed: (msg: string) => bothFailures.push(msg), info: (msg: string) => bothInfos.push(msg) }
+      );
+      expect(bothFailures).toHaveLength(0);
+      expect(bothInfos[0]).toContain('Verified CI run #15 and database migration run #15');
+    } finally {
+      if (prevSha === undefined) delete process.env.TARGET_SHA;
+      else process.env.TARGET_SHA = prevSha;
+      if (prevEnv === undefined) delete process.env.TARGET_ENV;
+      else process.env.TARGET_ENV = prevEnv;
     }
   });
 

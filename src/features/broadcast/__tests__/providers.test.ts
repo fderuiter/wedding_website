@@ -159,6 +159,78 @@ describe('MultiChannelMessagingProvider', () => {
       expect(sendgridPayload.content).toEqual([
         { type: 'text/html', value: expectedHtml },
       ]);
+      expect(fetchMock.mock.calls[0][1].signal).toBeDefined();
+      expect(fetchMock.mock.calls[1][1].signal).toBeDefined();
+    });
+
+    it('uses a 5,000 ms default AbortSignal.timeout for Resend and SendGrid and returns { success: false } on timeout', async () => {
+      const timeoutSpy = jest.spyOn(AbortSignal, 'timeout');
+      try {
+        const stalledFetch = jest.fn((_url: string, init?: RequestInit) => {
+          return new Promise<Response>((_resolve, reject) => {
+            const signal = init?.signal;
+            if (signal?.aborted) {
+              reject(signal.reason ?? new DOMException('Timed out', 'TimeoutError'));
+              return;
+            }
+            signal?.addEventListener(
+              'abort',
+              () => {
+                reject(signal.reason ?? new DOMException('Timed out', 'TimeoutError'));
+              },
+              { once: true }
+            );
+          });
+        });
+        global.fetch = stalledFetch as unknown as typeof fetch;
+
+        const defaultResend = new MultiChannelMessagingProvider({
+          emailProvider: 'resend',
+          resendApiKey: 're_test_default_timeout',
+        });
+        // Verify default 5,000 ms timeout argument when resolving immediately
+        global.fetch = jest.fn().mockResolvedValue({
+          ok: true,
+          text: async () => '',
+        }) as unknown as typeof fetch;
+        await defaultResend.sendEmail({
+          to: 'guest@example.com',
+          subject: 'Default Timeout Check',
+          body: 'Checking default timeout',
+        });
+        expect(timeoutSpy).toHaveBeenCalledWith(5_000);
+
+        // Verify stalled Resend & SendGrid connections abort cleanly at configured timeout
+        global.fetch = stalledFetch as unknown as typeof fetch;
+
+        const boundedResend = new MultiChannelMessagingProvider({
+          emailProvider: 'resend',
+          resendApiKey: 're_test_timeout',
+          emailTimeoutMs: 35,
+        });
+        const resendResult = await boundedResend.sendEmail({
+          to: 'guest@example.com',
+          subject: 'Timeout Test',
+          body: 'Stalled provider',
+        });
+        expect(resendResult.success).toBe(false);
+        expect(resendResult.error).toMatch(/Resend API request timed out after 35ms/i);
+
+        const boundedSendGrid = new MultiChannelMessagingProvider({
+          emailProvider: 'sendgrid',
+          sendgridApiKey: 'SG.test_timeout',
+          emailTimeoutMs: 35,
+        });
+        const sendgridResult = await boundedSendGrid.sendEmail({
+          to: 'guest@example.com',
+          subject: 'Timeout Test',
+          body: 'Stalled provider',
+        });
+        expect(sendgridResult.success).toBe(false);
+        expect(sendgridResult.error).toMatch(/SendGrid API request timed out after 35ms/i);
+      } finally {
+        timeoutSpy.mockRestore();
+      }
     });
   });
 });
