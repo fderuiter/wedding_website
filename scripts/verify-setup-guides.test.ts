@@ -8,19 +8,25 @@ function copyFixtureFiles(srcRoot: string, destRoot: string): void {
     '.nvmrc',
     '.npmrc',
     '.env.example',
+    '.env.ci',
     '.env.test',
     'prisma.config.ts',
     'package.json',
     'tsconfig.json',
     'tsconfig.build.json',
+    'tsconfig.test.json',
+    'tsconfig.e2e.json',
+    'tsconfig.scripts.json',
     'docker-compose.yml',
     'docker-compose.ci.yml',
+    '.github/workflows/ci.yml',
     'eslint.config.mjs',
     'playwright.config.ts',
     '.githooks/pre-commit',
     'scripts/check-quality.ts',
     'scripts/pretest.mjs',
     'scripts/a11y-report.mjs',
+    'scripts/playwright-global-setup.ts',
     'scripts/seed.ts',
     'scripts/verify-doc-sync.ts',
     'scripts/test-standalone.mjs',
@@ -192,7 +198,7 @@ describe('verify-setup-guides contract check', () => {
       fs
         .readFileSync(testingPath, 'utf8')
         .replace(/build-fallback-guest-passcode/g, 'playwright-e2e-guest-passcode')
-        .replace(/docker compose(?:\s+-f\s+\S+)*\s+down\s+-v/g, 'docker compose stop')
+        .replace(/docker compose(?:\s+(?:--env-file|-f)\s+\S+)*\s+down\s+-v/g, 'docker compose stop')
     );
 
     const agentsPath = path.join(tempDir, 'AGENTS.md');
@@ -203,8 +209,8 @@ describe('verify-setup-guides contract check', () => {
         .replace(/`jest\.setup\.js`, /g, '')
         .replace('`**/*.stories.tsx`, ', '')
         .replace(
-          '8. TypeScript Typecheck across all four project configs (`npm run typecheck`)\n9. ESLint Code Linting (`npm run lint`)\n10. Knip Unused Export Analysis (`npm run lint:unused`)\n11. Verify Migration Compatibility (`npm run lint:migrations`)',
-          '8. Verify Migration Compatibility (`npm run lint:migrations`)\n9. TypeScript Typecheck across all four project configs (`npm run typecheck`)\n10. ESLint Code Linting (`npm run lint`)\n11. Knip Unused Export Analysis (`npm run lint:unused`)'
+          '8. TypeScript Typecheck across all five project configs (`npm run typecheck`)\n9. ESLint Code Linting (`npm run lint`)\n10. Knip Unused Export Analysis (`npm run lint:unused`)\n11. Verify Migration Compatibility (`npm run lint:migrations`)',
+          '8. Verify Migration Compatibility (`npm run lint:migrations`)\n9. TypeScript Typecheck across all five project configs (`npm run typecheck`)\n10. ESLint Code Linting (`npm run lint`)\n11. Knip Unused Export Analysis (`npm run lint:unused`)'
         )
     );
 
@@ -308,7 +314,7 @@ describe('verify-setup-guides contract check', () => {
       expect.arrayContaining([
         expect.stringContaining('playwright.config.ts: Must disable automatic server reuse by default'),
         expect.stringContaining('scripts/seed.ts: appConfig.upsert must populate update fields'),
-        expect.stringContaining('scripts/a11y-report.mjs: runA11ySuite must reseed wedding_test via "scripts/seed.ts"'),
+        expect.stringContaining('scripts/a11y-report.mjs: runA11ySuite must start PostgreSQL via "--env-file .env.ci"'),
         expect.stringContaining('AGENTS.md: Accessibility Quality Gate must not prescribe running "db:seed" before "test:a11y"'),
         expect.stringContaining('.github/TESTING.md: Must document PLAYWRIGHT_REUSE_SERVER opt-in'),
       ])
@@ -383,6 +389,144 @@ describe('verify-setup-guides contract check', () => {
         'scripts/pretest.mjs: Must run "npm ci" without "--legacy-peer-deps" to match CI',
         'README.md: Installation section must prescribe "npm ci" rather than "npm install"',
         'docs/versioning.md: Must cite "node:22-bookworm-slim" (not stale alpine or mismatched Node.js major)',
+      ])
+    );
+  });
+
+  it('rejects missing DB_PASSWORD in .env.example, inline DB_PASSWORD compose prefixes, and host leakage in .env.ci or buildCiComposeEnv', () => {
+    const envExamplePath = path.join(tempDir, '.env.example');
+    fs.writeFileSync(
+      envExamplePath,
+      fs.readFileSync(envExamplePath, 'utf8').replace('DB_PASSWORD="wedding123"\n', '')
+    );
+
+    const devSetupPath = path.join(tempDir, 'docs/developer-setup.md');
+    fs.writeFileSync(
+      devSetupPath,
+      fs
+        .readFileSync(devSetupPath, 'utf8')
+        .replace('docker compose up -d db', 'DB_PASSWORD=wedding123 docker compose up -d db')
+    );
+
+    const envCiPath = path.join(tempDir, '.env.ci');
+    fs.writeFileSync(
+      envCiPath,
+      fs
+        .readFileSync(envCiPath, 'utf8')
+        .replace('@db:5432/wedding', '@localhost:5432/wedding')
+        .replace('NODE_ENV=production', 'NODE_ENV=development')
+    );
+
+    const testContainerPath = path.join(tempDir, 'scripts/test-container.mjs');
+    fs.writeFileSync(
+      testContainerPath,
+      fs
+        .readFileSync(testContainerPath, 'utf8')
+        .replace("NODE_ENV: 'production',", "NODE_ENV: process.env.NODE_ENV || 'production',")
+    );
+
+    const pretestPath = path.join(tempDir, 'scripts/pretest.mjs');
+    fs.writeFileSync(
+      pretestPath,
+      fs
+        .readFileSync(pretestPath, 'utf8')
+        .replace(/'--env-file',\s*'\.env\.ci',\s*/, '')
+    );
+
+    const ciWorkflowPath = path.join(tempDir, '.github/workflows/ci.yml');
+    fs.writeFileSync(
+      ciWorkflowPath,
+      fs
+        .readFileSync(ciWorkflowPath, 'utf8')
+        .replace(
+          'docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml up -d app',
+          'docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d app'
+        )
+    );
+
+    const errors = verifySetupGuides(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('.env.example: DB_PASSWORD ("") must default to "wedding123"'),
+        expect.stringContaining(
+          'docs/developer-setup.md: Must not require inline "DB_PASSWORD=... docker compose" overrides'
+        ),
+        '.env.ci: NODE_ENV must be set to "production" for container parity',
+        expect.stringContaining('.env.ci: DATABASE_URL'),
+        expect.stringContaining(
+          'scripts/test-container.mjs: buildCiComposeEnv must force NODE_ENV="production" and container DATABASE_URL (@db:5432)'
+        ),
+        'scripts/pretest.mjs: Must pass "--env-file .env.ci" before "-f docker-compose.yml -f docker-compose.ci.yml"',
+        expect.stringContaining(
+          '.github/workflows/ci.yml: Every docker compose invocation using docker-compose.ci.yml must pass "--env-file .env.ci'
+        ),
+      ])
+    );
+  });
+
+  it('rejects missing TEST_CONTAINER globalSetup, unbootstrapped wedding_test in a11y-report.mjs, hardcoded jest-axe counts, and tsconfig guide drift', () => {
+    const playwrightPath = path.join(tempDir, 'playwright.config.ts');
+    fs.writeFileSync(
+      playwrightPath,
+      fs
+        .readFileSync(playwrightPath, 'utf8')
+        .replace(
+          "globalSetup: process.env.TEST_CONTAINER ? './scripts/playwright-global-setup.ts' : undefined,",
+          ''
+        )
+    );
+
+    const a11yPath = path.join(tempDir, 'scripts/a11y-report.mjs');
+    fs.writeFileSync(
+      a11yPath,
+      fs
+        .readFileSync(a11yPath, 'utf8')
+        .replace("['prisma', 'db', 'push', '--accept-data-loss']", "['prisma', 'version']")
+    );
+
+    const testingPath = path.join(tempDir, '.github/TESTING.md');
+    fs.writeFileSync(
+      testingPath,
+      fs
+        .readFileSync(testingPath, 'utf8')
+        .replace(
+          'all `src/` `jest-axe` suites',
+          'all 42 `src/` `jest-axe` suites'
+        )
+        .replace(
+          'docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml up -d app',
+          'docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d app'
+        )
+    );
+
+    const agentsPath = path.join(tempDir, 'AGENTS.md');
+    fs.writeFileSync(
+      agentsPath,
+      fs
+        .readFileSync(agentsPath, 'utf8')
+        .replace(
+          'TypeScript Typecheck across all five project configs',
+          'TypeScript Typecheck across all four project configs'
+        )
+        .replace(
+          '[`tsconfig.build.json`](tsconfig.build.json) excludes `src/mocks`',
+          '[`tsconfig.json`](tsconfig.json) excludes `src/mocks`'
+        )
+    );
+
+    const errors = verifySetupGuides(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          'playwright.config.ts: Must configure globalSetup "./scripts/playwright-global-setup.ts" when TEST_CONTAINER is set'
+        ),
+        expect.stringContaining(
+          'scripts/a11y-report.mjs: runA11ySuite must start PostgreSQL via "--env-file .env.ci", push schema to wedding_test via "prisma db push"'
+        ),
+        '.github/TESTING.md: Must not hardcode numeric jest-axe suite counts that drift as suites are added',
+        '.github/TESTING.md: Must prescribe "docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml" without omitting "--env-file .env.ci"',
+        'AGENTS.md: Full Local Quality Gate claims "four" TypeScript project configs, expected "five" (5)',
+        'AGENTS.md: Must attribute src/mocks and .storybook build exclusions to tsconfig.build.json rather than tsconfig.json',
       ])
     );
   });

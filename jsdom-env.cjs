@@ -16,7 +16,14 @@ class CustomEnvironment extends JSDOMEnvironment {
     if (typeof CompressionStream !== 'undefined') this.global.CompressionStream = CompressionStream;
     if (typeof DecompressionStream !== 'undefined') this.global.DecompressionStream = DecompressionStream;
     const { MessageChannel, MessagePort } = require('node:worker_threads');
-    if (typeof this.global.MessageChannel === 'undefined') this.global.MessageChannel = MessageChannel;
+    this._messageChannels = [];
+    const trackedChannels = this._messageChannels;
+    this.global.MessageChannel = class TrackedMessageChannel extends MessageChannel {
+      constructor() {
+        super();
+        trackedChannels.push(this);
+      }
+    };
     if (typeof this.global.MessagePort === 'undefined') this.global.MessagePort = MessagePort;
     this.global.BroadcastChannel = globalThis.BroadcastChannel || class BroadcastChannel {
       constructor(name) { this.name = name; }
@@ -55,6 +62,21 @@ class CustomEnvironment extends JSDOMEnvironment {
     
     this.global.Headers = Headers;
     this.global.Response = Response;
+  }
+
+  async teardown() {
+    if (Array.isArray(this._messageChannels)) {
+      for (const channel of this._messageChannels) {
+        try {
+          channel.port1.close();
+          channel.port2.close();
+        } catch {
+          // Ignore already-closed ports during JSDOM teardown
+        }
+      }
+      this._messageChannels = [];
+    }
+    await super.teardown();
   }
 }
 

@@ -11,19 +11,31 @@ const rootDir = path.resolve(__dirname, '..');
 
 const PORT = process.env.TEST_PORT || '3000';
 const BASE_URL = `http://127.0.0.1:${PORT}`;
-const COMPOSE_ARGS = ['-f', 'docker-compose.yml', '-f', 'docker-compose.ci.yml'];
+const COMPOSE_ARGS = [
+  '--env-file',
+  '.env.ci',
+  '-f',
+  'docker-compose.yml',
+  '-f',
+  'docker-compose.ci.yml',
+];
 const CI_ADMIN_PASSWORD =
   'scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==';
 
 const DEFAULT_GHA_CACHE_SCOPE = process.arch === 'arm64' ? 'app-arm64' : 'app-amd64';
 
 function buildCiComposeEnv(extra = {}) {
+  const dbUser = process.env.DB_USER || 'wedding';
+  const dbPassword = process.env.DB_PASSWORD || 'wedding123';
+  const dbName = process.env.DB_NAME || 'wedding';
   return {
     ...process.env,
+    NODE_ENV: 'production',
     GHA_CACHE_SCOPE: process.env.GHA_CACHE_SCOPE || DEFAULT_GHA_CACHE_SCOPE,
-    DB_USER: process.env.DB_USER || 'wedding',
-    DB_PASSWORD: process.env.DB_PASSWORD || 'wedding123',
-    DB_NAME: process.env.DB_NAME || 'wedding',
+    DB_USER: dbUser,
+    DB_PASSWORD: dbPassword,
+    DB_NAME: dbName,
+    DATABASE_URL: `postgresql://${dbUser}:${dbPassword}@db:5432/${dbName}?schema=public`,
     ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || CI_ADMIN_PASSWORD,
     GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'playwright-e2e-guest-passcode',
     GUEST_SESSION_SECRET:

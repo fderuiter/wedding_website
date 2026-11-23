@@ -1,6 +1,6 @@
 # Isolated CI & Automated Container Test Overrides
 # Layer on top of docker-compose.yml for disposable smoke/E2E tests:
-#   docker compose -f docker-compose.yml -f docker-compose.ci.yml ...
+#   docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml ...
 
 services:
   db:

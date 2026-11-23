@@ -225,19 +225,25 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     '.nvmrc',
     '.npmrc',
     '.env.example',
+    '.env.ci',
     '.env.test',
     'prisma.config.ts',
     'package.json',
     'tsconfig.json',
     'tsconfig.build.json',
+    'tsconfig.test.json',
+    'tsconfig.e2e.json',
+    'tsconfig.scripts.json',
     'docker-compose.yml',
     'docker-compose.ci.yml',
+    '.github/workflows/ci.yml',
     'eslint.config.mjs',
     'playwright.config.ts',
     '.githooks/pre-commit',
     'scripts/check-quality.ts',
     'scripts/pretest.mjs',
     'scripts/a11y-report.mjs',
+    'scripts/playwright-global-setup.ts',
     'scripts/seed.ts',
     'scripts/verify-doc-sync.ts',
     'scripts/test-standalone.mjs',
@@ -263,6 +269,7 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   const nvmrcRaw = fs.readFileSync(path.join(repoRoot, '.nvmrc'), 'utf8');
   const npmrcRaw = fs.readFileSync(path.join(repoRoot, '.npmrc'), 'utf8');
   const envExampleRaw = fs.readFileSync(path.join(repoRoot, '.env.example'), 'utf8');
+  const envCiRaw = fs.readFileSync(path.join(repoRoot, '.env.ci'), 'utf8');
   const envTestRaw = fs.readFileSync(path.join(repoRoot, '.env.test'), 'utf8');
   const prismaConfigRaw = fs.readFileSync(path.join(repoRoot, 'prisma.config.ts'), 'utf8');
   const packageJsonRaw = fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8');
@@ -270,9 +277,14 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   const tsconfigBuildRaw = fs.readFileSync(path.join(repoRoot, 'tsconfig.build.json'), 'utf8');
   const composeRaw = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf8');
   const ciComposeRaw = fs.readFileSync(path.join(repoRoot, 'docker-compose.ci.yml'), 'utf8');
+  const ciWorkflowRaw = fs.readFileSync(path.join(repoRoot, '.github/workflows/ci.yml'), 'utf8');
   const testStandaloneRaw = fs.readFileSync(path.join(repoRoot, 'scripts/test-standalone.mjs'), 'utf8');
   const testContainerRaw = fs.readFileSync(path.join(repoRoot, 'scripts/test-container.mjs'), 'utf8');
   const playwrightConfigRaw = fs.readFileSync(path.join(repoRoot, 'playwright.config.ts'), 'utf8');
+  const playwrightGlobalSetupRaw = fs.readFileSync(
+    path.join(repoRoot, 'scripts/playwright-global-setup.ts'),
+    'utf8'
+  );
   const preCommitRaw = fs.readFileSync(path.join(repoRoot, '.githooks/pre-commit'), 'utf8');
   const checkQualityRaw = fs.readFileSync(path.join(repoRoot, 'scripts/check-quality.ts'), 'utf8');
   const pretestMjsRaw = fs.readFileSync(path.join(repoRoot, 'scripts/pretest.mjs'), 'utf8');
@@ -326,8 +338,20 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
       `.env.example: DATABASE_URL ("${envExampleDbUrl}") must default to "${expectedComposeDbPrefix}..." matching local setup guides and docker-compose.ci.yml`
     );
   }
+  const envExampleDbPassword = envExample.active.get('DB_PASSWORD') ?? '';
+  if (envExampleDbPassword !== composeDb.dbPassword) {
+    errors.push(
+      `.env.example: DB_PASSWORD ("${envExampleDbPassword}") must default to "${composeDb.dbPassword}" so "cp .env.example .env && docker compose config --services" succeeds without inline overrides`
+    );
+  }
 
-  // Validate hardened docker-compose.yml required-secret guards and isolated docker-compose.ci.yml overrides
+  // Validate hardened docker-compose.yml required-secret guards and isolated .env.ci / docker-compose.ci.yml overrides
+  const composeGuardVars = new Set<string>();
+  const composeGuardRegex = /\$\{([A-Z][A-Z0-9_]*):\?/g;
+  let guardMatch: RegExpExecArray | null;
+  while ((guardMatch = composeGuardRegex.exec(composeRaw)) !== null) {
+    composeGuardVars.add(guardMatch[1]);
+  }
   for (const requiredSecret of ['DB_PASSWORD', 'ADMIN_PASSWORD', 'GUEST_PASSCODE', 'GUEST_SESSION_SECRET']) {
     if (!new RegExp(`\\$\\{${requiredSecret}:\\?`).test(composeRaw)) {
       errors.push(
@@ -340,6 +364,65 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
       );
     }
   }
+
+  const envCi = parseEnvAssignments(envCiRaw);
+  for (const guardVar of composeGuardVars) {
+    const val = envCi.active.get(guardVar) ?? '';
+    if (!val) {
+      errors.push(
+        `.env.ci: Must actively set "${guardVar}" to satisfy \${${guardVar}:?...} in docker-compose.yml`
+      );
+    }
+  }
+  if (envCi.active.get('NODE_ENV') !== 'production') {
+    errors.push('.env.ci: NODE_ENV must be set to "production" for container parity');
+  }
+  if (
+    envCi.active.get('DB_USER') !== composeDb.dbUser ||
+    envCi.active.get('DB_PASSWORD') !== composeDb.dbPassword ||
+    envCi.active.get('DB_NAME') !== composeDb.dbName
+  ) {
+    errors.push(
+      `.env.ci: DB_USER, DB_PASSWORD, and DB_NAME must align with "${composeDb.dbUser}", "${composeDb.dbPassword}", and "${composeDb.dbName}"`
+    );
+  }
+  const expectedContainerDbPrefix = `postgresql://${composeDb.dbUser}:${composeDb.dbPassword}@db:5432/${composeDb.dbName}`;
+  const envCiDbUrl = envCi.active.get('DATABASE_URL') ?? '';
+  if (
+    !envCiDbUrl.startsWith(expectedContainerDbPrefix) ||
+    envCiDbUrl.includes('@localhost') ||
+    envCiDbUrl.includes('@127.0.0.1')
+  ) {
+    errors.push(
+      `.env.ci: DATABASE_URL ("${envCiDbUrl}") must target container network "${expectedContainerDbPrefix}..." rather than localhost`
+    );
+  }
+  const envCiAdminPassword = envCi.active.get('ADMIN_PASSWORD') ?? '';
+  const scryptMatch = envCiAdminPassword.match(/^scrypt:([A-Za-z0-9+/=]+):([A-Za-z0-9+/=]+)$/);
+  if (
+    !scryptMatch ||
+    Buffer.from(scryptMatch[1], 'base64').length !== 16 ||
+    Buffer.from(scryptMatch[2], 'base64').length !== 64
+  ) {
+    errors.push(
+      '.env.ci: ADMIN_PASSWORD must be a valid scrypt:[16-byte-salt-b64]:[64-byte-key-b64] hash'
+    );
+  }
+  const envCiGuestPasscode = envCi.active.get('GUEST_PASSCODE') ?? '';
+  const envCiSessionSecret = envCi.active.get('GUEST_SESSION_SECRET') ?? '';
+  if (
+    !envCiGuestPasscode ||
+    envCiSessionSecret.length < 32 ||
+    envCiSessionSecret === envCiGuestPasscode
+  ) {
+    errors.push(
+      '.env.ci: GUEST_SESSION_SECRET must be at least 32 characters long and distinct from GUEST_PASSCODE'
+    );
+  }
+  if (envCi.active.get('E2E_TEST') !== 'true') {
+    errors.push('.env.ci: E2E_TEST must be set to "true"');
+  }
+
   if (!composeRaw.includes('127.0.0.1:${DB_PORT:-5432}:5432')) {
     errors.push('docker-compose.yml: Must bind PostgreSQL strictly to 127.0.0.1:${DB_PORT:-5432}:5432');
   }
@@ -354,16 +437,56 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
       'docker-compose.ci.yml: Must isolate disposable CI database credentials and E2E_TEST: ${E2E_TEST:-true}'
     );
   }
+  const envFileComposeArgsPattern =
+    /\\?['"]--env-file\\?['"]\s*,\s*\\?['"]\.env\.ci\\?['"]\s*,\s*\\?['"]-f\\?['"]\s*,\s*\\?['"]docker-compose\.yml\\?['"]\s*,\s*\\?['"]-f\\?['"]\s*,\s*\\?['"]docker-compose\.ci\.yml\\?['"]/;
+  const bareComposeArgsPattern =
+    /\\?['"]compose\\?['"]\s*,\s*\\?['"]-f\\?['"]\s*,\s*\\?['"]docker-compose\.yml\\?['"]\s*,\s*\\?['"]-f\\?['"]\s*,\s*\\?['"]docker-compose\.ci\.yml\\?['"]/;
   for (const [scriptLabel, scriptRaw] of [
     ['scripts/test-standalone.mjs', testStandaloneRaw],
     ['scripts/test-container.mjs', testContainerRaw],
+    ['scripts/pretest.mjs', pretestMjsRaw],
+    ['playwright.config.ts', playwrightConfigRaw],
   ] as const) {
     if (!scriptRaw.includes('docker-compose.ci.yml')) {
       errors.push(`${scriptLabel}: Must invoke isolated "docker-compose.ci.yml" override manifest`);
     }
+    if (!envFileComposeArgsPattern.test(scriptRaw) || bareComposeArgsPattern.test(scriptRaw)) {
+      errors.push(
+        `${scriptLabel}: Must pass "--env-file .env.ci" before "-f docker-compose.yml -f docker-compose.ci.yml"`
+      );
+    }
+  }
+  const ciComposeLines = ciWorkflowRaw
+    .split(/\r?\n/)
+    .filter((line) => line.includes('docker compose') && line.includes('docker-compose.ci.yml'));
+  if (
+    ciComposeLines.length === 0 ||
+    ciComposeLines.some(
+      (line) =>
+        !line.includes(
+          'docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml'
+        )
+    )
+  ) {
+    errors.push(
+      '.github/workflows/ci.yml: Every docker compose invocation using docker-compose.ci.yml must pass "--env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml"'
+    );
+  }
+  const buildCiComposeEnvBody =
+    testContainerRaw.split('function buildCiComposeEnv')[1]?.split(/\nfunction\s+/)[0] ?? '';
+  if (
+    !/NODE_ENV:\s*['"]production['"]/.test(buildCiComposeEnvBody) ||
+    /process\.env\.NODE_ENV/.test(buildCiComposeEnvBody) ||
+    !/DATABASE_URL:\s*`postgresql:\/\/[^`]*@db:5432\//.test(buildCiComposeEnvBody) ||
+    /process\.env\.DATABASE_URL/.test(buildCiComposeEnvBody)
+  ) {
+    errors.push(
+      'scripts/test-container.mjs: buildCiComposeEnv must force NODE_ENV="production" and container DATABASE_URL (@db:5432) without inheriting host .env values'
+    );
   }
   for (const [label, rawText] of [
     ['.env.example', envExampleRaw],
+    ['.env.ci', envCiRaw],
     ['.env.test', envTestRaw],
     ['docker-compose.yml', composeRaw],
     ['docker-compose.ci.yml', ciComposeRaw],
@@ -604,20 +727,37 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   const hasCoverageFalseUnitPass =
     a11yReportRaw.includes('\'--coverage=false\'') &&
     a11yReportRaw.includes('\'--runTestsByPath\'');
+  const hasWeddingTestDefaultDb = /DEFAULT_TEST_DATABASE_URL\s*=\s*['"][^'"]*\/wedding_test\b/.test(
+    a11yReportRaw
+  );
   const a11yJestIdx = runA11ySuiteBody.indexOf('runA11yUnit(');
+  const a11yComposeIdx = runA11ySuiteBody.search(
+    /['"]compose['"]\s*,\s*['"]--env-file['"]\s*,\s*['"]\.env\.ci['"]\s*,\s*['"]-f['"]\s*,\s*['"]docker-compose\.yml['"]\s*,\s*['"]-f['"]\s*,\s*['"]docker-compose\.ci\.yml['"][\s\S]*?['"]db['"]/
+  );
+  const a11yDbPushIdx = runA11ySuiteBody.search(
+    /['"]prisma['"]\s*,\s*['"]db['"]\s*,\s*['"]push['"]/
+  );
   const a11ySeedIdx = runA11ySuiteBody.indexOf('scripts/seed.ts');
   const a11yPlaywrightIdx = runA11ySuiteBody.search(
     /['"]npx['"]\s*,\s*\[\s*['"]playwright['"]\s*,\s*['"]test['"]\s*,\s*['"]--grep['"]\s*,\s*['"]@a11y['"]\s*\]/
   );
   if (
     !hasCoverageFalseUnitPass ||
+    !hasWeddingTestDefaultDb ||
     a11yJestIdx === -1 ||
+    a11yComposeIdx === -1 ||
+    a11yDbPushIdx === -1 ||
     a11ySeedIdx === -1 ||
     a11yPlaywrightIdx === -1 ||
-    !(a11yJestIdx < a11ySeedIdx && a11ySeedIdx < a11yPlaywrightIdx)
+    !(
+      a11yJestIdx < a11yComposeIdx &&
+      a11yComposeIdx < a11yDbPushIdx &&
+      a11yDbPushIdx < a11ySeedIdx &&
+      a11ySeedIdx < a11yPlaywrightIdx
+    )
   ) {
     errors.push(
-      'scripts/a11y-report.mjs: runA11ySuite must reseed wedding_test via "scripts/seed.ts" after runA11yUnit and before "npx playwright test --grep @a11y"'
+      'scripts/a11y-report.mjs: runA11ySuite must start PostgreSQL via "--env-file .env.ci", push schema to wedding_test via "prisma db push", and reseed wedding_test via "scripts/seed.ts" after runA11yUnit and before "npx playwright test --grep @a11y"'
     );
   }
 
@@ -638,6 +778,19 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   ) {
     errors.push(
       'playwright.config.ts: Must initialize and seed wedding_test before npm run dev when CI and TEST_CONTAINER are unset while preserving CI standalone execution'
+    );
+  }
+  if (
+    !/globalSetup\s*:\s*process\.env\.TEST_CONTAINER\s*\?\s*['"]\.\/scripts\/playwright-global-setup\.ts['"]\s*:\s*undefined/.test(
+      playwrightConfigRaw
+    ) ||
+    !playwrightGlobalSetupRaw.includes('scripts/seed.ts') ||
+    !playwrightGlobalSetupRaw.includes('127.0.0.1') ||
+    !playwrightGlobalSetupRaw.includes('DB_PORT') ||
+    !playwrightGlobalSetupRaw.includes('DB_NAME')
+  ) {
+    errors.push(
+      'playwright.config.ts: Must configure globalSetup "./scripts/playwright-global-setup.ts" when TEST_CONTAINER is set to seed 127.0.0.1:${DB_PORT:-5432}/${DB_NAME:-wedding}'
     );
   }
 
@@ -674,6 +827,7 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     }
     for (const requiredVar of [
       'ADMIN_PASSWORD',
+      'DB_PASSWORD',
       'DATABASE_URL',
       'GUEST_PASSCODE',
       'GUEST_SESSION_SECRET',
@@ -682,6 +836,11 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
       if (!content.includes(requiredVar)) {
         errors.push(`${docLabel}: Missing required environment variable "${requiredVar}"`);
       }
+    }
+    if (/\bDB_PASSWORD\s*=\s*\S+\s+docker\s+compose\b/.test(content)) {
+      errors.push(
+        `${docLabel}: Must not require inline "DB_PASSWORD=... docker compose" overrides now that .env.example defines DB_PASSWORD`
+      );
     }
     if (!content.includes('scripts/generate-password-hash.mjs')) {
       errors.push(`${docLabel}: Must reference "scripts/generate-password-hash.mjs"`);
@@ -813,9 +972,13 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
       'AGENTS.md: Accessibility Quality Gate must not prescribe running "db:seed" before "test:a11y" (integration teardowns wipe AppConfig)'
     );
   }
-  if (!agentsA11ySection.includes('scripts/seed.ts') || !agentsA11ySection.includes('SetupWizard')) {
+  if (
+    !agentsA11ySection.includes('prisma db push') ||
+    !agentsA11ySection.includes('scripts/seed.ts') ||
+    !agentsA11ySection.includes('SetupWizard')
+  ) {
     errors.push(
-      'AGENTS.md: Accessibility Quality Gate must document post-Jest reseeding via "scripts/seed.ts" to skip SetupWizard'
+      'AGENTS.md: Accessibility Quality Gate must document wedding_test bootstrap via "prisma db push" and reseeding via "scripts/seed.ts" to skip SetupWizard'
     );
   }
 
@@ -864,25 +1027,64 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     if (
       !content.includes('test-standalone.mjs') ||
       !content.includes('test-container.mjs') ||
-      !/docker compose(?:\s+-f\s+\S+)*\s+down\s+-v/.test(content) ||
+      !/docker compose(?:\s+(?:--env-file|-f)\s+\S+)*\s+down\s+-v/.test(content) ||
       !content.includes('npm run build')
     ) {
       errors.push(
         `${docLabel}: Must warn that scripts/test-standalone.mjs requires "npm run build" and joins scripts/test-container.mjs in running "docker compose down -v"`
       );
     }
+    if (
+      !content.includes('--env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml') ||
+      /docker\s+compose\s+-f\s+docker-compose\.yml\s+-f\s+docker-compose\.ci\.yml/.test(content)
+    ) {
+      errors.push(
+        `${docLabel}: Must prescribe "docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml" without omitting "--env-file .env.ci"`
+      );
+    }
+    if (!content.includes('playwright-global-setup.ts')) {
+      errors.push(
+        `${docLabel}: Must document "scripts/playwright-global-setup.ts" for TEST_CONTAINER=true AppConfig seeding`
+      );
+    }
+    if (
+      /\b\d+\s+(?:discovered\s+)?`?src\/`?\s+(?:component\s+)?(?:`?jest-axe`?|accessibility)\s+suites\b/i.test(
+        content
+      ) ||
+      /\bacross\s+(?:all\s+)?\d+\s+[^.\n]*\bjest-axe\b/i.test(content)
+    ) {
+      errors.push(
+        `${docLabel}: Must not hardcode numeric jest-axe suite counts that drift as suites are added`
+      );
+    }
   }
 
-  // 6. AGENTS.md tsconfig.json & tsconfig.build.json exclude lists & check-quality.ts step order
+  // 6. AGENTS.md tsconfig.json & tsconfig.build.json exclude lists, project counts, & check-quality.ts step order
   const tsconfig = JSON.parse(tsconfigRaw) as { exclude?: string[] };
   const tsconfigExcludes = tsconfig.exclude ?? [];
   const tsconfigBuild = JSON.parse(tsconfigBuildRaw) as { exclude?: string[] };
   const tsconfigBuildExcludes = tsconfigBuild.exclude ?? [];
+  const typecheckCmd = scripts['typecheck'] ?? '';
+  const typecheckProjects: string[] = [];
+  const tscProjectRegex = /\btsc\b[^&|\n]*-p\s+(tsconfig[a-zA-Z0-9._-]*\.json)/g;
+  let tscProjMatch: RegExpExecArray | null;
+  while ((tscProjMatch = tscProjectRegex.exec(typecheckCmd)) !== null) {
+    if (!typecheckProjects.includes(tscProjMatch[1])) {
+      typecheckProjects.push(tscProjMatch[1]);
+    }
+  }
   const agentsTsSection = extractMarkdownSection(
     agentsRaw,
     /^##\s+3\.\s+TypeScript Configuration Split\b/,
     /^##\s+/
   );
+  for (const tsProj of typecheckProjects) {
+    if (!agentsTsSection.includes(tsProj)) {
+      errors.push(
+        `AGENTS.md: Missing TypeScript project "${tsProj}" in TypeScript Configuration Split section`
+      );
+    }
+  }
   for (const excludePattern of tsconfigExcludes) {
     if (!agentsTsSection.includes(`\`${excludePattern}\``)) {
       errors.push(
@@ -897,12 +1099,37 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
       );
     }
   }
+  if (
+    !tsconfigExcludes.includes('src/mocks') &&
+    /(?:\[`tsconfig\.json`\]\([^)]+\)|`?tsconfig\.json`?)\s+excludes\s+[^\n]*`?src\/mocks`?/i.test(
+      agentsRaw
+    )
+  ) {
+    errors.push(
+      'AGENTS.md: Must attribute src/mocks and .storybook build exclusions to tsconfig.build.json rather than tsconfig.json'
+    );
+  }
 
   const agentsQualitySection = extractMarkdownSection(
     agentsRaw,
     /^###\s+Full Local Quality Gate\b/,
     /^###\s+/
   );
+  const tsCountMatch = agentsQualitySection.match(
+    /\bTypeScript\s+Typecheck\s+across\s+all\s+([a-z0-9]+)\s+project\s+configs\b/i
+  );
+  const expectedTsCountWord = NUMBER_WORDS[typecheckProjects.length];
+  const expectedTsCountNum = String(typecheckProjects.length);
+  if (
+    typecheckProjects.length > 0 &&
+    tsCountMatch &&
+    tsCountMatch[1].toLowerCase() !== expectedTsCountWord &&
+    tsCountMatch[1] !== expectedTsCountNum
+  ) {
+    errors.push(
+      `AGENTS.md: Full Local Quality Gate claims "${tsCountMatch[1]}" TypeScript project configs, expected "${expectedTsCountWord ?? expectedTsCountNum}" (${typecheckProjects.length})`
+    );
+  }
   let previousMatchPos = -1;
   for (const cmd of qualityCommands) {
     const token = qualityCommandSearchToken(cmd);

@@ -165,19 +165,49 @@ export function runA11yUnit(options = {}) {
 export function runA11ySuite(options = {}) {
   const cwd = options.cwd || process.cwd();
   const runStep = options.runStep || defaultRunStep;
+  const dbEnv = {
+    DATABASE_URL: process.env.DATABASE_URL || DEFAULT_TEST_DATABASE_URL,
+    ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || DEFAULT_TEST_ADMIN_PASSWORD,
+  };
 
   fs.rmSync(path.join(cwd, 'test-results'), { recursive: true, force: true });
 
   const jestStatus = runA11yUnit({ cwd, runStep });
-  const seedStatus = runStep('npx', ['tsx', 'scripts/seed.ts'], cwd, {
-    DATABASE_URL: process.env.DATABASE_URL || DEFAULT_TEST_DATABASE_URL,
-    ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || DEFAULT_TEST_ADMIN_PASSWORD,
-  });
+  const composeStatus = runStep(
+    'docker',
+    [
+      'compose',
+      '--env-file',
+      '.env.ci',
+      '-f',
+      'docker-compose.yml',
+      '-f',
+      'docker-compose.ci.yml',
+      'up',
+      '-d',
+      '--wait',
+      'db',
+    ],
+    cwd
+  );
+  const dbPushStatus = runStep(
+    'npx',
+    ['prisma', 'db', 'push', '--accept-data-loss'],
+    cwd,
+    dbEnv
+  );
+  const seedStatus = runStep('npx', ['tsx', 'scripts/seed.ts'], cwd, dbEnv);
   const playwrightStatus = runStep('npx', ['playwright', 'test', '--grep', '@a11y'], cwd);
   const { totalViolations } = generateReport({ cwd });
 
   if (jestStatus !== 0) {
     return jestStatus;
+  }
+  if (composeStatus !== 0) {
+    return composeStatus;
+  }
+  if (dbPushStatus !== 0) {
+    return dbPushStatus;
   }
   if (seedStatus !== 0) {
     return seedStatus;

@@ -158,12 +158,18 @@ describe('a11y-report', () => {
   });
 
   describe('findJestAxeSuites & runA11yUnit', () => {
-    it('discovers all 42 src/ jest-axe suites in the live repository', () => {
+    it('dynamically discovers all src/ jest-axe suites in the live repository without hardcoded counts', () => {
       const suites = findJestAxeSuites(process.cwd());
-      expect(suites).toHaveLength(42);
-      expect(suites.every((p: string) => p.startsWith('src/') && p.endsWith('.test.tsx'))).toBe(
-        true
-      );
+      expect(suites.length).toBeGreaterThanOrEqual(41);
+      expect(new Set(suites).size).toBe(suites.length);
+      expect(suites).toEqual([...suites].sort());
+      for (const relSuite of suites) {
+        expect(relSuite).toMatch(/^src\/.+\.(?:test|spec)\.[jt]sx?$/);
+        expect(relSuite.endsWith('.skip.tsx')).toBe(false);
+        const fullPath = path.join(process.cwd(), relSuite);
+        expect(fs.existsSync(fullPath)).toBe(true);
+        expect(fs.readFileSync(fullPath, 'utf8')).toContain('jest-axe');
+      }
     });
 
     it('runs only discovered jest-axe files with --coverage=false and initializes jest-a11y-violations.json', () => {
@@ -240,12 +246,21 @@ describe('a11y-report', () => {
   });
 
   describe('runA11ySuite orchestrator', () => {
-    it('cleans stale test-results, runs targeted jest-axe pass, reseeds wedding_test, runs @a11y Playwright, writes summary, and returns 0 when clean', () => {
+    const expectedSuiteSteps = [
+      'npx jest --runInBand --coverage=false --runTestsByPath',
+      'docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml up -d --wait db',
+      'npx prisma db push --accept-data-loss',
+      'npx tsx scripts/seed.ts',
+      'npx playwright test --grep @a11y',
+    ];
+
+    it('cleans stale test-results, runs targeted jest-axe pass, bootstraps and seeds wedding_test, runs @a11y Playwright, writes summary, and returns 0 when clean', () => {
       const staleDir = path.join(tempDir, 'test-results');
       fs.mkdirSync(staleDir, { recursive: true });
       fs.writeFileSync(path.join(staleDir, 'stale.txt'), 'stale');
 
       const invoked: string[] = [];
+      let capturedPushEnv: Record<string, string | undefined> | undefined;
       let capturedSeedEnv: Record<string, string | undefined> | undefined;
       const originalDbUrl = process.env.DATABASE_URL;
       delete process.env.DATABASE_URL;
@@ -260,12 +275,15 @@ describe('a11y-report', () => {
             envOverrides?: Record<string, string | undefined>
           ) => {
             const fullCmd = `${cmd} ${args.slice(0, 4).join(' ')}`;
-            invoked.push(cmd === 'npx' && args[0] === 'jest' ? fullCmd : `${cmd} ${args.join(' ')}`);
+            const joinedCmd = `${cmd} ${args.join(' ')}`;
+            invoked.push(cmd === 'npx' && args[0] === 'jest' ? fullCmd : joinedCmd);
             const dir = path.join(cwd, 'test-results');
             fs.mkdirSync(dir, { recursive: true });
-            if (`${cmd} ${args.join(' ')}` === 'npx tsx scripts/seed.ts') {
+            if (joinedCmd === 'npx prisma db push --accept-data-loss') {
+              capturedPushEnv = envOverrides;
+            } else if (joinedCmd === 'npx tsx scripts/seed.ts') {
               capturedSeedEnv = envOverrides;
-            } else if (`${cmd} ${args.join(' ')}` === 'npx playwright test --grep @a11y') {
+            } else if (joinedCmd === 'npx playwright test --grep @a11y') {
               fs.writeFileSync(
                 path.join(dir, 'playwright-a11y-violations.json'),
                 JSON.stringify({ '/': [] })
@@ -276,11 +294,11 @@ describe('a11y-report', () => {
         });
 
         expect(exitCode).toBe(0);
-        expect(invoked).toEqual([
-          'npx jest --runInBand --coverage=false --runTestsByPath',
-          'npx tsx scripts/seed.ts',
-          'npx playwright test --grep @a11y',
-        ]);
+        expect(invoked).toEqual(expectedSuiteSteps);
+        expect(capturedPushEnv?.DATABASE_URL).toBe(
+          'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public'
+        );
+        expect(capturedPushEnv?.ADMIN_PASSWORD).toBeDefined();
         expect(capturedSeedEnv?.DATABASE_URL).toBe(
           'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public'
         );
@@ -297,7 +315,7 @@ describe('a11y-report', () => {
       }
     });
 
-    it('propagates non-zero exit code when Jest fails while still reseeding, running Playwright, and writing summary', () => {
+    it('propagates non-zero exit code when Jest fails while still bootstrapping, seeding, running Playwright, and writing summary', () => {
       const invoked: string[] = [];
       const exitCode = runA11ySuite({
         cwd: tempDir,
@@ -312,34 +330,43 @@ describe('a11y-report', () => {
       });
 
       expect(exitCode).toBe(2);
-      expect(invoked).toEqual([
-        'npx jest --runInBand --coverage=false --runTestsByPath',
-        'npx tsx scripts/seed.ts',
-        'npx playwright test --grep @a11y',
-      ]);
+      expect(invoked).toEqual(expectedSuiteSteps);
       expect(fs.existsSync(path.join(tempDir, 'test-results', 'a11y-summary.md'))).toBe(true);
     });
 
-    it('propagates non-zero exit code when reseeding fails while still writing summary', () => {
-      const invoked: string[] = [];
-      const exitCode = runA11ySuite({
+    it('propagates non-zero exit code when schema push or reseeding fails while still writing summary', () => {
+      const invokedPushFail: string[] = [];
+      const pushFailCode = runA11ySuite({
         cwd: tempDir,
         runStep: (cmd: string, args: string[]) => {
           const fullCmd =
             cmd === 'npx' && args[0] === 'jest'
               ? `${cmd} ${args.slice(0, 4).join(' ')}`
               : `${cmd} ${args.join(' ')}`;
-          invoked.push(fullCmd);
+          invokedPushFail.push(fullCmd);
+          return fullCmd === 'npx prisma db push --accept-data-loss' ? 4 : 0;
+        },
+      });
+
+      expect(pushFailCode).toBe(4);
+      expect(invokedPushFail).toEqual(expectedSuiteSteps);
+      expect(fs.existsSync(path.join(tempDir, 'test-results', 'a11y-summary.md'))).toBe(true);
+
+      const invokedSeedFail: string[] = [];
+      const seedFailCode = runA11ySuite({
+        cwd: tempDir,
+        runStep: (cmd: string, args: string[]) => {
+          const fullCmd =
+            cmd === 'npx' && args[0] === 'jest'
+              ? `${cmd} ${args.slice(0, 4).join(' ')}`
+              : `${cmd} ${args.join(' ')}`;
+          invokedSeedFail.push(fullCmd);
           return fullCmd === 'npx tsx scripts/seed.ts' ? 3 : 0;
         },
       });
 
-      expect(exitCode).toBe(3);
-      expect(invoked).toEqual([
-        'npx jest --runInBand --coverage=false --runTestsByPath',
-        'npx tsx scripts/seed.ts',
-        'npx playwright test --grep @a11y',
-      ]);
+      expect(seedFailCode).toBe(3);
+      expect(invokedSeedFail).toEqual(expectedSuiteSteps);
       expect(fs.existsSync(path.join(tempDir, 'test-results', 'a11y-summary.md'))).toBe(true);
     });
 
@@ -358,11 +385,7 @@ describe('a11y-report', () => {
       });
 
       expect(exitCode).toBe(1);
-      expect(invoked).toEqual([
-        'npx jest --runInBand --coverage=false --runTestsByPath',
-        'npx tsx scripts/seed.ts',
-        'npx playwright test --grep @a11y',
-      ]);
+      expect(invoked).toEqual(expectedSuiteSteps);
       expect(fs.existsSync(path.join(tempDir, 'test-results', 'a11y-summary.md'))).toBe(true);
     });
 

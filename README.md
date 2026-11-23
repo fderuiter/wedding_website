@@ -69,7 +69,7 @@ For detailed onboarding, local setup workflows, and testing runbooks, see the [D
 
 *   **Node.js & npm**: Node.js **v22.x LTS** (`^22.12.0`, pinned in [`.nvmrc`](./.nvmrc)) and **`npm@10.9.x`** (`^10.9.0`, enforced via [`.npmrc`](./.npmrc) and `devEngines` in [`package.json`](./package.json)).
 *   **Git**: For version control.
-*   **PostgreSQL Database**: Compatible with local PostgreSQL, the bundled Docker Compose `db` service (`DB_PASSWORD=wedding123 docker compose up -d db` after `cp .env.example .env`, binding `127.0.0.1:5432:5432` with user `wedding`, password `wedding123`, database `wedding` via [`docker-compose.yml`](./docker-compose.yml) and [`docker-compose.ci.yml`](./docker-compose.ci.yml)), or cloud providers (e.g. Neon, Supabase, Railway, RDS, Cloud SQL). See [DEPLOYMENT.md](./DEPLOYMENT.md) for the PostgreSQL Database Contract and operational guidance.
+*   **PostgreSQL Database**: Compatible with local PostgreSQL, the bundled Docker Compose `db` service (`docker compose up -d db` after `cp .env.example .env`, binding `127.0.0.1:5432:5432` with user `wedding`, password `wedding123`, database `wedding` via [`docker-compose.yml`](./docker-compose.yml)), or cloud providers (e.g. Neon, Supabase, Railway, RDS, Cloud SQL). See [DEPLOYMENT.md](./DEPLOYMENT.md) for the PostgreSQL Database Contract and operational guidance.
 
 ### Installation Steps
 
@@ -98,7 +98,8 @@ Optional integrations (`POSTGRES_URL_NON_POOLING`, `CRON_SECRET`, all six `S3_*`
 Configure the core local environment variables in `.env`:
 
 ```env
-# PostgreSQL connection (matches local `DB_PASSWORD=wedding123 docker compose up -d db` / docker-compose.ci.yml)
+# Local Docker Compose PostgreSQL password & connection (matches `docker compose up -d db`)
+DB_PASSWORD="wedding123"
 DATABASE_URL="postgresql://wedding:wedding123@localhost:5432/wedding?schema=public"
 
 # Admin login hash (16-byte salt + 64-byte scrypt key required by src/utils/password.ts — NOT plaintext)
@@ -119,7 +120,7 @@ GUEST_SESSION_SECRET="your-dedicated-guest-session-secret"
 
 1.  **Start PostgreSQL (if using Docker Compose) & Run Migrations:** Apply the database schema to your PostgreSQL database:
     ```bash
-    DB_PASSWORD=wedding123 docker compose up -d db
+    docker compose up -d db
     npm run migrate:dev
     ```
     `npm run migrate:dev` (`dotenv -c development -- prisma migrate dev`) loads `.env` automatically and creates all tables defined in `prisma/schema.prisma`.

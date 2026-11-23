@@ -735,7 +735,7 @@ jobs:
           E2E_TEST: "true"
         run: |
           lsof -ti:3000 | xargs kill -9 2>/dev/null || true
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d app
+          docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml up -d app
 
       - name: Wait for application container to be ready
         timeout-minutes: 2
@@ -756,6 +756,7 @@ jobs:
         timeout-minutes: 3
         env:
           TEST_CONTAINER: "true"
+          DB_PORT: "5433"
           ADMIN_PASSWORD: scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==
           GUEST_PASSCODE: playwright-e2e-guest-passcode
           GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
@@ -770,9 +771,9 @@ jobs:
           GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
         run: |
           echo "=== App Container Logs ==="
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs app || true
+          docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml logs app || true
           echo "=== DB Container Logs ==="
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs db || true
+          docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml logs db || true
 
       - name: Clean up containers
         if: always()
@@ -781,7 +782,7 @@ jobs:
           ADMIN_PASSWORD: scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==
           GUEST_PASSCODE: playwright-e2e-guest-passcode
           GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
-        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v || true
+        run: docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml down -v || true
 
   deploy-docs:
     needs: verify

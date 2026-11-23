@@ -6,7 +6,7 @@ const defaultE2EAdminPassword =
   'scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==';
 const localDbBootstrapScript = [
   'import cp from \'node:child_process\';',
-  'const composeArgs = [\'compose\', \'-f\', \'docker-compose.yml\', \'-f\', \'docker-compose.ci.yml\'];',
+  'const composeArgs = [\'compose\', \'--env-file\', \'.env.ci\', \'-f\', \'docker-compose.yml\', \'-f\', \'docker-compose.ci.yml\'];',
   'const composeEnv = { ...process.env, DB_PASSWORD: process.env.DB_PASSWORD || \'wedding123\' };',
   'if (cp.spawnSync(\'docker\', [\'info\'], { stdio: \'ignore\', shell: true }).status === 0) {',
   '  cp.spawnSync(\'docker\', [...composeArgs, \'up\', \'-d\', \'db\'], { stdio: \'inherit\', shell: true, env: composeEnv });',
@@ -28,6 +28,7 @@ export default defineConfig({
   testDir: './e2e',
   testMatch: '**/*.spec.ts',
   outputDir: 'test-results/playwright',
+  globalSetup: process.env.TEST_CONTAINER ? './scripts/playwright-global-setup.ts' : undefined,
   workers: 1,
   retries: process.env.CI ? 2 : 0,
   webServer: runWebServer ? {
