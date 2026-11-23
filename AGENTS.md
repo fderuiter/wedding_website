@@ -87,7 +87,7 @@ npm run quality
 1. Verify Environment Documentation (`npx tsx scripts/verify-env-docs.ts` / `check:env-docs`)
 2. Verify Deployment Runbooks (`npx tsx scripts/verify-deployment-runbooks.ts` / `check:runbooks`)
 3. Check Personal/Template Identifier Isolation (`npx tsx scripts/check-personal-identifiers.ts` / `check:identifiers`)
-4. Check Workflow YAML 1.2 Syntax & Third-Party Action Pin Commit SHAs (`npm run check:action-pins`)
+4. Check Workflow YAML 1.2 Syntax & Third-Party Action Pin Commit SHAs (`npm run check:action-pins` locally with `# v...` version comment checks; `npm run check:action-pins -- --verify-upstream` in CI)
 5. Check Documentation Relative Links (`npx tsx scripts/check-doc-links.ts` / `check:links`)
 6. Verify Specification Route & Symbol Contracts (`npm run check:spec-contracts` / [`scripts/verify-spec-contracts.ts`](scripts/verify-spec-contracts.ts))
 7. Validate Prisma Schema (`npx tsx scripts/check-prisma-schema.ts` / `check:prisma`)
@@ -154,7 +154,7 @@ node scripts/a11y-report.mjs
   - `npm run check:env-docs` — Ensure environment variables align with [`.env.example`](.env.example) and deployment docs ([`scripts/verify-env-docs.ts`](scripts/verify-env-docs.ts)).
   - `npm run check:runbooks` — Verify deployment runbooks match live workflows, Docker Compose, and Prisma 7 contracts ([`scripts/verify-deployment-runbooks.ts`](scripts/verify-deployment-runbooks.ts)).
   - `npm run check:identifiers` — Guard against prohibited personal/template identifiers in runtime code ([`scripts/check-personal-identifiers.ts`](scripts/check-personal-identifiers.ts)).
-  - `npm run check:action-pins` — Validate strict YAML 1.2 syntax across `.github/workflows/*.yml` and verify every external GitHub Action is pinned to a full 40-character commit SHA ([`scripts/check-action-pins.ts`](scripts/check-action-pins.ts)).
+  - `npm run check:action-pins` — Validate strict YAML 1.2 syntax across `.github/workflows/*.yml` and verify every external GitHub Action is pinned to a full 40-character commit SHA with an inline `# v...` version comment offline for pre-commit hooks; pass `-- --verify-upstream` (with `GITHUB_TOKEN`, as run in `.github/workflows/ci.yml`) to verify each pinned commit SHA exists upstream via the GitHub API ([`scripts/check-action-pins.ts`](scripts/check-action-pins.ts)).
   - `npm run check:links` — Verify all relative Markdown links resolve to existing repository files ([`scripts/check-doc-links.ts`](scripts/check-doc-links.ts)).
   - `npm run check:spec-contracts` — Verify API routes, HTTP methods, dynamic `ENTITY_KEY` slugs, and cited TypeScript symbols in architectural Markdown specifications match live codebase exports ([`scripts/verify-spec-contracts.ts`](scripts/verify-spec-contracts.ts)).
   - `npm run check:prisma` & `npm run lint:migrations` — Validate Prisma schema and migration compatibility.

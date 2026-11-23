@@ -48,7 +48,9 @@ jobs:
         run: npm run check:identifiers
 
       - name: Check Third-Party Action Pin Commit SHAs
-        run: npm run check:action-pins
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: npm run check:action-pins -- --verify-upstream
 
       - name: Check Container Digest Pins & Standalone Portability
         run: npm run check:standalone
