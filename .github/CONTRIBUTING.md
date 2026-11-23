@@ -51,15 +51,15 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
     git commit -m "fix: Correct spelling on registry item description"
     ```
 
-    Committing triggers [`.githooks/pre-commit`](../.githooks/pre-commit) (installed automatically by `npm ci`), which:
-    1. Runs `npx lint-staged` (`eslint --fix` on staged `*.{js,jsx,ts,tsx}` files).
-    2. Temporarily stashes unstaged changes (`git stash push --keep-index --include-untracked`) and runs lightweight workspace checks before restoring stashed edits: `npm run type-check`, `npm run lint:unused`, `npm run check:env-docs`, `npm run check:runbooks`, `npm run check:setup-guides`, `npm run check:identifiers`, `npm run check:action-pins`, `npm run check:links`, `npm run check:spec-contracts`, `npm run check:prisma`, `npm run lint:migrations`, and `npm run check:doc-sync` (heavy builds and `check:standalone` are deferred to `npm run check:static`, `npm run quality`, and CI so commits stay fast).
+    Committing triggers [`.githooks/pre-commit`](../.githooks/pre-commit) (installed automatically by `npm ci`), which runs `npx lint-staged` (`eslint --fix` on staged `*.{js,jsx,ts,tsx,mjs,cjs}` files) without stashing or resetting unstaged edits or untracked files.
 
 8. **Push to Your Fork:**
 
     ```bash
     git push origin fix/registry-typo
     ```
+
+    Pushing triggers [`.githooks/pre-push`](../.githooks/pre-push) (installed automatically by `npm ci`), which runs lightweight workspace checks without stashing or resetting local files: `npm run type-check`, `npm run lint:unused`, `npm run check:env-docs`, `npm run check:runbooks`, `npm run check:setup-guides`, `npm run check:identifiers`, `npm run check:action-pins`, `npm run check:links`, `npm run check:spec-contracts`, `npm run check:prisma`, `npm run lint:migrations`, and `npm run check:doc-sync`.
 
 9. **Open a Pull Request (PR):** Go back to the *original* `fderuiter/wedding_website` repository on GitHub. You should see a prompt to create a Pull Request from your new branch. Click it!
     * Give your PR a clear title and description.

@@ -105,13 +105,15 @@ These variables configure container port binding, static HTML export builds, Vit
 |---|---|---|---|
 | `PORT` | `3000` | Container / Standalone Server | HTTP listening port (`ENV PORT=3000` in `Dockerfile`; `127.0.0.1:${PORT:-3000}:3000` in `docker-compose.yml`). |
 | `HOSTNAME` | `0.0.0.0` | Container / Standalone Server | Network interface address bound by standalone `server.js` (`ENV HOSTNAME="0.0.0.0"` in `Dockerfile`; `HOSTNAME: "0.0.0.0"` in `docker-compose.yml`). |
+| `NEXT_PHASE` | *None* | Build (`src/env.ts`) | Next.js build phase identifier (`phase-production-build`) set automatically during `next build` so build-time schema checks allow template placeholders before runtime secret enforcement. |
 | `STATIC_EXPORT` | *None* | Build (`next.config.ts`, `scripts/build-export.mjs`, `src/`) | Switches Next.js to static HTML export (`output: 'export'`) and `STATIC_MOCK_CONFIG` data when set to `'true'` or `'1'`. |
 | `NEXT_PUBLIC_BASE_PATH` | *None* | Static Export Build (`next.config.ts`) | Optional URL subpath prefix (`basePath` and `assetPrefix`) applied when `STATIC_EXPORT` is enabled and value is not `'/'`. |
 | `VITEPRESS_BASE` | `/` | Docs Portal (`docs-portal/.vitepress/config.mts`) | Base URL path for building and serving the VitePress documentation portal. |
-| `E2E_TEST` | `false` (`docker-compose.yml`) | Runtime / Compose (`src/lib/config.ts`, `docker-compose.yml`) | Defaults to `false` in `docker-compose.yml` so `<SetupWizard />` onboarding runs on fresh deployments; set to `'true'` only in `docker-compose.ci.yml` and automated E2E harnesses to bypass initial setup. |
-| `DB_USER` | `wedding` | Docker Compose (`docker-compose.yml`) | PostgreSQL username interpolated into the `db` container (`POSTGRES_USER`) and fallback `migration`/`app` `DATABASE_URL`. |
-| `DB_PASSWORD` | *None* | Docker Compose (`docker-compose.yml`) | Mandatory PostgreSQL password (`${DB_PASSWORD:?...}`) interpolated into the `db` container (`POSTGRES_PASSWORD`) and fallback `migration`/`app` `DATABASE_URL` (CI smoke tests supply `wedding123` via `docker-compose.ci.yml`). |
-| `DB_NAME` | `wedding` | Docker Compose (`docker-compose.yml`) | PostgreSQL database name interpolated into the `db` container (`POSTGRES_DB`) and fallback `migration`/`app` `DATABASE_URL`. |
+| `E2E_TEST` | `false` (`docker-compose.yml`) | Runtime / Compose (`src/lib/config.ts`, `docker-compose.yml`) | Defaults to `false` in `docker-compose.yml` so `<SetupWizard />` onboarding runs on fresh deployments; set to `'true'` only in `.env.ci`, `docker-compose.ci.yml`, and automated E2E harnesses to bypass initial setup. |
+| `CONTAINER_DATABASE_URL` | *None* | Docker Compose (`docker-compose.yml`) | Explicit PostgreSQL connection URL override (`${CONTAINER_DATABASE_URL:-...}`) for `migration` and `app` containers (e.g., external managed PostgreSQL) so host `DATABASE_URL` (`@localhost:5432`) never leaks into container networking. |
+| `DB_USER` | `wedding` | Docker Compose (`docker-compose.yml`) | PostgreSQL username interpolated into the `db` container (`POSTGRES_USER`) and fallback `migration`/`app` `CONTAINER_DATABASE_URL` default. |
+| `DB_PASSWORD` | *None* | Docker Compose (`docker-compose.yml`) | Mandatory PostgreSQL password (`${DB_PASSWORD:?...}`) interpolated into the `db` container (`POSTGRES_PASSWORD`) and fallback `migration`/`app` `CONTAINER_DATABASE_URL` default (`.env.example` and `.env.ci` supply `wedding123` for local and CI runs). |
+| `DB_NAME` | `wedding` | Docker Compose (`docker-compose.yml`) | PostgreSQL database name interpolated into the `db` container (`POSTGRES_DB`) and fallback `migration`/`app` `CONTAINER_DATABASE_URL` default. |
 | `DB_PORT` | `5432` | Docker Compose (`docker-compose.yml`) | Loopback host TCP port published to container port `5432` for the `db` service (`127.0.0.1:${DB_PORT:-5432}:5432`). |
 
 ### Optional Site Configuration Overrides (`SITE_*`)

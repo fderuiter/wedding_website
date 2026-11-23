@@ -48,16 +48,16 @@ Database migrations run automatically during the pre-deployment phase before new
 ### Railway Migration Command
 In Railway **Settings > Deploy > Custom Build / Pre-deploy Command**:
 ```bash
-npx prisma migrate deploy
+DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING npx prisma migrate deploy
 ```
 
 ### Render Migration Command
 In Render **Web Service Settings > Release Command**:
 ```bash
-npx prisma migrate deploy
+DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING npx prisma migrate deploy
 ```
 
-*Note: `prisma.config.ts` binds `datasource.url` to `DATABASE_URL` and `datasource.shadowDatabaseUrl` to `POSTGRES_URL_NON_POOLING`. If `DATABASE_URL` points to an external PgBouncer transaction pooler, override `DATABASE_URL` explicitly and unset `POSTGRES_URL_NON_POOLING` for the migration subprocess (`DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING npx prisma migrate deploy`) so Prisma acquires migration advisory locks without triggering `P3025`.*
+*Note: `prisma.config.ts` binds `datasource.url` to `DATABASE_URL` and `datasource.shadowDatabaseUrl` to `POSTGRES_URL_NON_POOLING`. Supplying `DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING` routes `prisma migrate deploy` directly to the unpooled PostgreSQL endpoint when `POSTGRES_URL_NON_POOLING` is set (falling back to `DATABASE_URL` when unset) and unsets `POSTGRES_URL_NON_POOLING` for the migration subprocess so Prisma acquires migration advisory locks without triggering `P3025`.*
 
 ---
 

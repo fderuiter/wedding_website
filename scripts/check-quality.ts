@@ -15,7 +15,7 @@ export interface QualityRunOptions {
   stepsToRun?: Step[];
   staticOnly?: boolean;
   skipDocSync?: boolean;
-  execCommand?: (_command: string, _cwd: string) => void;
+  execCommand?: (command: string, cwd: string) => void;
 }
 
 export function cleanupPortalTempDirs(cwd: string = process.cwd()): void {
@@ -50,6 +50,8 @@ export const staticSteps: Step[] = [
     name: 'Verify Deployment Runbooks',
     script: 'check:runbooks',
     command: 'npx tsx scripts/verify-deployment-runbooks.ts',
+    remediation:
+      'Deployment runbook, upgrade guide, or release changelog contract drift detected.\nRun "npm run check:runbooks" locally and reconcile "DEPLOYMENT.md", "docs/deployment/*.md", "docs/runtime-contract.md", "docs/upgrading.md", and "CHANGELOG.md" with live migrations, "src/env.ts", "src/lib/modules.ts", "Dockerfile", and "docker-compose.yml".',
   },
   {
     name: 'Verify Setup & Contributor Guides Contract',

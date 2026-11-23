@@ -25,19 +25,19 @@ The primary goal of this project is to provide a personal, customizable, and cos
 ## Key Features
 
 *   **Invitation Codes & Multi-Event Responses (RSVPs):**
-    *   Household **invitation codes** (`InvitationCode`), CSV guest imports, cohort-scoped **sub-events** (`SubEvent`, `SubEventAccess`), and per-event **event responses** (`SubEventRsvp`) with meal choices, dietary notes, and plus-one rules.
+    *   Household **invitation codes** (`InvitationCode`), CSV guest imports, cohort-scoped **sub-events** (`SubEvent`, `SubEventAccess`), and per-event **event responses** (`SubEventRsvp`) with meal choices, dietary notes, plus-one rules, and venue-timezone RSVP deadline cutoffs.
 *   **Interactive Seating Charts:**
-    *   Drag-and-drop **seating charts** (`SeatingTable`) with table capacity tracking, household cohort grouping, and guest table lookup.
+    *   Drag-and-drop **seating charts** (`SeatingTable`) with table capacity tracking, household cohort grouping, printable floorplans, and guest table lookup.
 *   **Guest Photo Uploads & Moderation:**
-    *   Mobile-friendly guest photo gallery uploads (`Media`) backed by local disk or S3-compatible object storage with administrative **moderation** queues.
+    *   Mobile-friendly guest photo gallery uploads (`Media`) with worker-offloaded `HEIC`/`HEIF` transcoding, backed by local disk or S3/R2 object storage and administrative **moderation** queues.
 *   **Scheduled Broadcasts & Communications:**
-    *   Cohort-filtered announcements and scheduled email/SMS **broadcasts** (`BroadcastMessage`, `BroadcastRecipient`) processed via `/api/cron/broadcasts`.
-*   **Custom Gift Registry & Payments:**
-    *   Product URL metadata scraping, partial group gifting with live funding progress bars (`RegistryItem`, `Contributor`), direct peer-to-peer transfer links, and optional Stripe card checkout with webhook verification.
+    *   Cohort-filtered announcements and scheduled email/SMS **broadcasts** (`BroadcastMessage`, `BroadcastRecipient`) across Resend, SendGrid, and Twilio adapters processed via `/api/cron/broadcasts`.
+*   **Custom Gift Registry, Cash Funds & Payments:**
+    *   Physical gifts and dedicated cash/experience funds (`RegistryItem`, `Contributor`), single/batch product URL scraping and CSV imports, partial group gifting with live progress bars, peer-to-peer payment handles, and optional Stripe card checkout with webhook verification.
 *   **3D Interactive Experiences & Theme Studio:**
-    *   Interactive **React Three Fiber** and **Rapier** 3D scenes, **Framer Motion** transitions, "Add to Calendar" links, live weather forecasts, wedding party profiles (`WeddingPartyMember`), and local travel guides (`Attraction`).
+    *   Interactive **React Three Fiber** and **Rapier** 3D scenes, **Framer Motion** transitions, 9 runtime feature toggles, "Add to Calendar" links, live weather forecasts, wedding party profiles (`WeddingPartyMember`), and local travel guides (`Attraction`).
 *   **Full-Site Backups & Portable Administration:**
-    *   Password-protected `/admin/dashboard` with content version history (`ContentNode`, `SnapshotVersion`) and **15-model full-site backups** (JSON/ZIP export and restore across every persisted `prisma/schema.prisma` entity).
+    *   Password-protected `/admin/dashboard` across 14 admin workspaces with content version history (`ContentNode`, `SnapshotVersion`) and streaming `v2.0` **15-model full-site backups** (JSON/ZIP export and restore across every persisted `prisma/schema.prisma` entity).
 
 ## Tech Stack
 
@@ -64,7 +64,7 @@ cd wedding_website
 nvm use
 npm ci
 cp .env.example .env
-DB_PASSWORD=wedding123 docker compose up -d db
+docker compose up -d db
 npm run migrate:dev
 npm run dev
 ```
@@ -73,7 +73,7 @@ Generate a 64-byte scrypt hash for `ADMIN_PASSWORD` in `.env` with `node scripts
 
 *   **Local Setup, Environment Variables & First-Run Wizard:** [docs/developer-setup.md](./docs/developer-setup.md)
 *   **Unit, Accessibility, Container & Playwright E2E Testing:** [.github/TESTING.md](./.github/TESTING.md)
-*   **Feature Scaffolding, Linting & Pre-Commit Workflow:** [.github/CONTRIBUTING.md](./.github/CONTRIBUTING.md)
+*   **Feature Scaffolding, Linting & Git Hook Workflow:** [.github/CONTRIBUTING.md](./.github/CONTRIBUTING.md)
 *   **Canonical Environment Variable & Entity Reference:** [docs/runtime-contract.md](./docs/runtime-contract.md)
 *   **Production Hosting & CI/CD Deployment Recipes:** [DEPLOYMENT.md](./DEPLOYMENT.md)
 
@@ -86,20 +86,26 @@ If you cloned or forked this template to host your own wedding website, you can 
 
 ## Project Structure
 
+*   `.githooks`: Repository Git hooks (`pre-commit` staged linting and `pre-push` workspace verification gates).
+*   `.github`: GitHub Actions CI/CD workflows, contributor and testing guides, and issue/PR templates.
+*   `.storybook`: Storybook 10 configuration and preview decorators for isolated UI component development.
+*   `assets`: Source brand assets and bundled fonts used during builds and image generation.
+*   `docs`: Developer onboarding, runtime contract, feature specifications, and deployment runbooks.
+*   `docs-portal`: VitePress documentation portal configuration, interactive OpenAPI explorer, and staged specs.
+*   `e2e`: End-to-end browser, smoke, and accessibility test suites (Playwright).
+*   `eslint-rules`: Custom workspace ESLint rules enforcing utility import boundaries.
+*   `prisma`: Database schema definition and SQL migrations.
+*   `public`: Static assets and generated OpenAPI specification.
+*   `scripts`: CLI verification, documentation sync, portal generation, and database seeding scripts.
 *   `src/app`: Next.js App Router pages and Route Handlers.
 *   `src/components`: Shared React components (Layout, UI elements, 3D scenes, first-run `setup/` wizard).
 *   `src/core`: Framework infrastructure and authentication modules.
 *   `src/features`: Feature-specific logic (e.g., `src/features/registry` contains all registry-related components, hooks, and services).
 *   `src/hooks`: Shared React hooks.
-*   `src/lib`: Core library configurations (Prisma client, `AppConfig` loader).
+*   `src/lib`: Core library configurations (Prisma client, `AppConfig` loader, runtime module toggles).
 *   `src/mocks`: MSW mock handlers and server setup for Jest and Storybook.
 *   `src/testing`: Typed test fixture factories.
-*   `src/utils`: Stateless utility functions (validation, formatting, storage, password verification).
-*   `prisma`: Database schema definition and SQL migrations.
-*   `public`: Static assets and generated OpenAPI specification.
-*   `e2e`: End-to-end tests (Playwright).
-*   `scripts`: CLI verification, documentation sync, portal generation, and database seeding scripts.
-*   `docs`: Developer onboarding, runtime contract, and deployment runbooks.
+*   `src/utils`: Stateless utility functions (validation, formatting, storage, image worker processing, password verification).
 
 ## Contributing
 

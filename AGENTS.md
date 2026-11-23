@@ -31,9 +31,9 @@ TypeScript verification is split across five project files so IDEs get complete 
 
 1. [`tsconfig.json`](tsconfig.json) — Unified root IDE and workspace config (`compilerOptions.types: ["node", "jest", "@testing-library/jest-dom", "jest-axe"]`). Includes app sources, tests, mocks, factories, CLI scripts, E2E specs, `.storybook/**/*`, and `docs-portal/.vitepress/**/*`, while excluding `node_modules`, `jest.setup.js`, `out`, `storybook-static`, `coverage`, `playwright-report`, `test-results`, `docs-portal/.vitepress/cache`, and `docs-portal/.vitepress/dist` so `tsserver` attaches every tracked TypeScript file cleanly.
 2. [`tsconfig.build.json`](tsconfig.build.json) — Isolated non-composite production Next.js build config referenced by `typescript.tsconfigPath` in [`next.config.ts`](next.config.ts) (`compilerOptions.types: ["node"]`, `incremental: false`). Excludes `node_modules`, `out`, `storybook-static`, `jest.setup.js`, `scripts`, `e2e`, `.storybook`, `docs-portal`, `playwright.config.ts`, `prisma.config.ts`, `src/mocks`, `src/testing`, `**/*.stories.ts`, `**/*.stories.tsx`, `**/__tests__/**/*`, `**/*.test.ts`, `**/*.test.tsx`, `**/*.spec.ts`, and `**/*.spec.tsx` so `npm run build` (`next build`) validates only production runtime code.
-3. [`tsconfig.test.json`](tsconfig.test.json) — Extends `tsconfig.json` with `types: ["node", "jest", "@testing-library/jest-dom", "jest-axe"]` and includes `src/**/__tests__/**/*`, `src/**/*.test.{ts,tsx}`, `scripts/**/*.test.ts`, `src/mocks/**/*.ts`, and `src/testing/**/*.ts`.
-4. [`tsconfig.e2e.json`](tsconfig.e2e.json) — Extends `tsconfig.json` with `types: ["node"]` and checks [`playwright.config.ts`](playwright.config.ts) and `e2e/**/*.ts`.
-5. [`tsconfig.scripts.json`](tsconfig.scripts.json) — Extends `tsconfig.json` with `types: ["node"]` and checks `scripts/**/*.ts` (excluding `scripts/**/*.test.ts`, without `.ts` import extensions as `allowImportingTsExtensions` is not enabled).
+3. [`tsconfig.test.json`](tsconfig.test.json) — Extends `tsconfig.json` with `incremental: true` (`tsBuildInfoFile: "./tsconfig.test.tsbuildinfo"`) and `types: ["node", "jest", "@testing-library/jest-dom", "jest-axe"]`, and includes `src/**/__tests__/**/*`, `src/**/*.test.{ts,tsx}`, `scripts/**/*.test.ts`, `src/mocks/**/*.ts`, and `src/testing/**/*.ts`.
+4. [`tsconfig.e2e.json`](tsconfig.e2e.json) — Extends `tsconfig.json` with `incremental: true` (`tsBuildInfoFile: "./tsconfig.e2e.tsbuildinfo"`) and `types: ["node"]`, and checks [`playwright.config.ts`](playwright.config.ts) and `e2e/**/*.ts`.
+5. [`tsconfig.scripts.json`](tsconfig.scripts.json) — Extends `tsconfig.json` with `incremental: true` (`tsBuildInfoFile: "./tsconfig.scripts.tsbuildinfo"`) and `types: ["node"]`, and checks `scripts/**/*.ts` (excluding `scripts/**/*.test.ts`, without `.ts` import extensions as `allowImportingTsExtensions` is not enabled).
 
 Run all five TypeScript projects locally with:
 
@@ -65,8 +65,9 @@ npm run check:static
 npm run quality
 ```
 
+- **Split Local Git Hooks:** [`.githooks/pre-commit`](.githooks/pre-commit) runs only `npx lint-staged` on staged files without stashing or resetting workspace edits, while [`.githooks/pre-push`](.githooks/pre-push) runs `npm run type-check`, `npm run lint:unused`, and lightweight static checks prior to push (see [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md)).
 - **Targeted Iteration:** Run `npx jest <path/to/file.test.ts> --coverage=false` for fast unit/integration feedback, `npm run typecheck && npm run lint && npm run lint:unused` for static code health, and `npm run build-storybook` whenever modifying UI stories, `.storybook/*`, or [`src/mocks/handlers.ts`](src/mocks/handlers.ts).
-- **Authoritative Testing & Setup Runbooks:** Refer to [`.github/TESTING.md`](.github/TESTING.md) for `scripts/pretest.mjs` `wedding_test` database isolation, Playwright E2E execution (`npm run test:e2e`), WCAG 2.2 AA accessibility audits (`npm run test:a11y`), and standalone/container smoke tests (`npm run test:standalone`, `npm run test:container`), and to [`docs/developer-setup.md`](docs/developer-setup.md) for local `.env` and `SetupWizard` bootstrap.
+- **Authoritative Testing & Setup Runbooks:** Refer to [`.github/TESTING.md`](.github/TESTING.md) for `scripts/pretest.mjs` `wedding_test` database isolation, Playwright E2E execution (`npm run test:e2e`), WCAG 2.2 AA accessibility audits (`npm run test:a11y`), PostgreSQL migration drift checks, and standalone/container smoke tests (`npm run test:standalone`, `npm run test:container`), and to [`docs/developer-setup.md`](docs/developer-setup.md) for local `.env` and `SetupWizard` bootstrap.
 
 ## 5. Repository Conventions & Guardrails
 
