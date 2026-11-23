@@ -150,5 +150,64 @@ CREATE INDEX "Contributor_coverFee_idx" ON "Contributor"("coverFee");
       const content = fs.readFileSync(summaryFile, 'utf8');
       expect(content).toContain('Pre-Flight Schema Migration Status');
     });
+
+    it('reports static migration inventory instead of PENDING MIGRATIONS DETECTED when DATABASE_URL is unset', () => {
+      const migrationDirA = path.join(tmpDir, '20261121000000_first');
+      const migrationDirB = path.join(tmpDir, '20261122000000_second');
+      fs.mkdirSync(migrationDirA, { recursive: true });
+      fs.mkdirSync(migrationDirB, { recursive: true });
+      fs.writeFileSync(
+        path.join(migrationDirA, 'migration.sql'),
+        'ALTER TABLE "AppConfig" ADD COLUMN "shippingCity" TEXT NOT NULL DEFAULT \'\';'
+      );
+      fs.writeFileSync(
+        path.join(migrationDirB, 'migration.sql'),
+        'CREATE INDEX IF NOT EXISTS "Contributor_status_idx" ON "Contributor"("status");'
+      );
+
+      const summaryFile = path.join(tmpDir, 'offline_summary.md');
+      const origDbUrl = process.env.DATABASE_URL;
+      const origTargetEnv = process.env.TARGET_ENVIRONMENT;
+      const origNodeEnv = process.env.NODE_ENV;
+
+      try {
+        delete process.env.DATABASE_URL;
+        delete process.env.TARGET_ENVIRONMENT;
+        delete (process.env as Record<string, string | undefined>).NODE_ENV;
+
+        const res = runPreflightCheck({
+          migrationsDir: tmpDir,
+          stepSummaryFile: summaryFile,
+        });
+
+        expect(res.success).toBe(true);
+        expect(res.summary).toContain('**Target Environment:** `offline (static inventory)`');
+        expect(res.summary).toContain('**Pre-Flight Gate:** `STATIC INVENTORY`');
+        expect(res.summary).toContain('**Database Status:** `STATIC MIGRATION INVENTORY (NO DATABASE_URL)`');
+        expect(res.summary).toContain('2 total in prisma/migrations');
+        expect(res.summary).toContain('`20261122000000_second`');
+        expect(res.summary).not.toContain('PENDING MIGRATIONS DETECTED');
+        expect(res.summary).not.toContain('**Target Environment:** `production`');
+
+        const stepContent = fs.readFileSync(summaryFile, 'utf8');
+        expect(stepContent).toContain('STATIC MIGRATION INVENTORY (NO DATABASE_URL)');
+      } finally {
+        if (origDbUrl !== undefined) {
+          process.env.DATABASE_URL = origDbUrl;
+        } else {
+          delete process.env.DATABASE_URL;
+        }
+        if (origTargetEnv !== undefined) {
+          process.env.TARGET_ENVIRONMENT = origTargetEnv;
+        } else {
+          delete process.env.TARGET_ENVIRONMENT;
+        }
+        if (origNodeEnv !== undefined) {
+          (process.env as Record<string, string | undefined>).NODE_ENV = origNodeEnv;
+        } else {
+          delete (process.env as Record<string, string | undefined>).NODE_ENV;
+        }
+      }
+    });
   });
 });
