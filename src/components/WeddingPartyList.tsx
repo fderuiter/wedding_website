@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import WeddingPartyCard from './WeddingPartyCard';
 import type { WeddingPartyMemberDTO } from '@/features/wedding-party';
+import { useOptionalDemo } from '@/components/demo/DemoContext';
 import { cn } from '@/utils/cn';
 
 interface WeddingPartyListProps {
@@ -18,14 +19,16 @@ const WeddingPartyList: React.FC<WeddingPartyListProps> = ({
   partner1Name,
   partner2Name,
 }) => {
+  const demo = useOptionalDemo();
   const [draftOverride, setDraftOverride] = useState<{
     base: WeddingPartyMemberDTO[];
     members: WeddingPartyMemberDTO[];
   } | null>(null);
   const [activeTab, setActiveTab] = useState<TabFilter>('ALL');
 
-  const members =
-    draftOverride && draftOverride.base === initialMembers
+  const members = demo?.isDemoMode
+    ? demo.activeDataset.weddingParty
+    : draftOverride && draftOverride.base === initialMembers
       ? draftOverride.members
       : initialMembers;
 
@@ -48,8 +51,14 @@ const WeddingPartyList: React.FC<WeddingPartyListProps> = ({
     }
   }, [initialMembers]);
 
-  const p1 = partner1Name?.trim() || '';
-  const p2 = partner2Name?.trim() || '';
+  const effectivePartner1Name = demo?.isDemoMode
+    ? demo.configOverrides.partner1Name || partner1Name
+    : partner1Name;
+  const effectivePartner2Name = demo?.isDemoMode
+    ? demo.configOverrides.partner2Name || partner2Name
+    : partner2Name;
+  const p1 = effectivePartner1Name?.trim() || '';
+  const p2 = effectivePartner2Name?.trim() || '';
   const partner1SideLabel = p1 ? `${p1}'s Side` : "Partner 1's Side";
   const partner2SideLabel = p2 ? `${p2}'s Side` : "Partner 2's Side";
 

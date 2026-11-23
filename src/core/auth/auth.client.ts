@@ -1,4 +1,5 @@
 import { apiClient } from '@/features/admin';
+import { isDemoAdminSession, isDemoRuntimeActive } from '@/lib/demo/demoStore';
 
 /**
  * Checks the admin status by calling the `/api/admin/me` endpoint.
@@ -7,6 +8,9 @@ import { apiClient } from '@/features/admin';
  * @returns {Promise<boolean>} A promise that resolves to true if the user is an admin, false otherwise.
  */
 export async function checkAdminClient(): Promise<boolean> {
+  if (isDemoRuntimeActive()) {
+    return isDemoAdminSession();
+  }
   try {
     const data = await apiClient.get<{ isAdmin: boolean }>('/api/admin/me');
     return !!data.isAdmin;

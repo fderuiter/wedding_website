@@ -20,6 +20,7 @@ const EXPECTED_MODEL_DELEGATES = [
   'subEventRsvp',
   'broadcastMessage',
   'broadcastRecipient',
+  'authLockout',
 ] as const;
 
 describe('Global Jest Setup (jest.setup.js)', () => {
@@ -178,8 +179,8 @@ describe('Global Jest Setup (jest.setup.js)', () => {
   });
 
   describe('PrismaClient mock and integration test bypass', () => {
-    it('generates CRUD delegates for all 15 Prisma models, passes all 15 delegates into $transaction, and stubs raw queries', async () => {
-      expect(Object.keys(Prisma.ModelName)).toHaveLength(15);
+    it('generates CRUD delegates for all 16 Prisma models, passes all 16 delegates into $transaction, and stubs raw queries', async () => {
+      expect(Object.keys(Prisma.ModelName)).toHaveLength(EXPECTED_MODEL_DELEGATES.length);
 
       const client = new PrismaClient() as unknown as Record<string, Record<string, unknown>> & {
         $transaction: <T>(_fn: (_tx: Record<string, unknown>) => Promise<T>) => Promise<T>;

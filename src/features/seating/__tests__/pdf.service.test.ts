@@ -385,7 +385,7 @@ describe('pdf.service - generateSeatingChartPdf', () => {
         'utf8'
       );
       const pageSrc = fs.readFileSync(
-        path.resolve(__dirname, '../../../app/admin/dashboard/seating-chart/page.tsx'),
+        path.resolve(__dirname, '../../../app/admin/dashboard/seating-chart/SeatingChartClient.tsx'),
         'utf8'
       );
 

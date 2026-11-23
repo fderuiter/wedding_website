@@ -1,10 +1,10 @@
 import child_process from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  getAvailableDbPort,
   httpRequest as smokeHttpRequest,
   runCheckedCommand,
   runSmokeRouteProbes,
@@ -12,14 +12,14 @@ import {
   waitForServerReady,
 } from './smoke-runner.mjs';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const rootDir = path.resolve(__dirname, '..');
+const SCRIPT_DIR = typeof __dirname !== 'undefined'
+  ? __dirname
+  : path.dirname(fileURLToPath(import.meta.url));
+const rootDir = path.resolve(SCRIPT_DIR, '..');
 
-const PORT = process.env.TEST_PORT || '3001';
-const HOST_HEADER = `127.0.0.1:${PORT}`;
-const BASE_URL = `http://${HOST_HEADER}`;
-const COMPOSE_ARGS = [
+export const COMPOSE_ARGS = [
+  '-p',
+  'wedding-smoke-standalone',
   '--env-file',
   '.env.ci',
   '-f',
@@ -27,6 +27,65 @@ const COMPOSE_ARGS = [
   '-f',
   'docker-compose.ci.yml',
 ];
+
+export async function getAvailableLoopbackPort(overridePort, excludePorts = []) {
+  if (overridePort !== undefined && overridePort !== null && String(overridePort).trim() !== '') {
+    const parsed = Number.parseInt(String(overridePort).trim(), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 65535) {
+      throw new Error(`Invalid port override: ${overridePort}`);
+    }
+    return parsed;
+  }
+
+  const excluded = new Set(excludePorts.map((p) => Number(p)));
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const port = await new Promise((resolve, reject) => {
+      const server = net.createServer();
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', () => {
+        const addr = server.address();
+        const assignedPort = typeof addr === 'object' && addr ? addr.port : 0;
+        server.close((closeErr) => {
+          if (closeErr) {
+            reject(closeErr);
+            return;
+          }
+          resolve(assignedPort);
+        });
+      });
+    });
+    if (!excluded.has(port)) {
+      return port;
+    }
+  }
+  throw new Error('Failed to allocate a distinct loopback port.');
+}
+
+/**
+ * @param {Record<string, string | undefined>} [envInput]
+ * @param {Array<number | string>} [excludePorts]
+ */
+export async function resolveStandaloneDatabaseTarget(envInput = process.env, excludePorts = []) {
+  const explicitUrl = typeof envInput.DATABASE_URL === 'string' ? envInput.DATABASE_URL.trim() : '';
+  if (explicitUrl) {
+    return {
+      databaseUrl: explicitUrl,
+      dbPort: null,
+      useComposeDb: false,
+    };
+  }
+
+  const dbPort = await getAvailableLoopbackPort(envInput.DB_PORT, excludePorts);
+  const dbUser = envInput.DB_USER || 'wedding';
+  const dbPassword = envInput.DB_PASSWORD || 'wedding123';
+  const dbName = envInput.DB_NAME || 'wedding';
+
+  return {
+    databaseUrl: `postgresql://${dbUser}:${dbPassword}@127.0.0.1:${dbPort}/${dbName}`,
+    dbPort,
+    useComposeDb: true,
+  };
+}
 
 // Real 16x16 HEIC fixture (ISOBMFF ftyp=heic, HEVC primary frame)
 const VALID_HEIC_BUFFER = Buffer.from(
@@ -44,13 +103,6 @@ function createEphemeralScryptHash() {
     p: 1,
   });
   return `scrypt:${salt.toString('base64')}:${key.toString('base64')}`;
-}
-
-function httpRequest(urlPath, options = {}) {
-  return smokeHttpRequest(BASE_URL, urlPath, {
-    hostHeader: HOST_HEADER,
-    ...options,
-  });
 }
 
 function buildHeicMultipartPayload(boundary) {
@@ -112,6 +164,17 @@ async function main() {
     process.exit(1);
   }
 
+  const portNum = await getAvailableLoopbackPort(process.env.TEST_PORT);
+  const PORT = String(portNum);
+  const HOST_HEADER = `127.0.0.1:${PORT}`;
+  const BASE_URL = `http://${HOST_HEADER}`;
+  const httpRequest = (urlPath, options = {}) =>
+    smokeHttpRequest(BASE_URL, urlPath, {
+      hostHeader: HOST_HEADER,
+      ...options,
+    });
+
+  const dbTarget = await resolveStandaloneDatabaseTarget(process.env, [portNum]);
   const standaloneUploadsDir = path.join(standalonePublicDir, 'uploads');
   const uploadedStandaloneFiles = [];
 
@@ -123,13 +186,9 @@ async function main() {
     process.env.GUEST_SESSION_SECRET ||
     `standalone-session-secret-${crypto.randomBytes(24).toString('hex')}`;
 
-  const defaultDbPort = await getAvailableDbPort();
-  const configuredDbUrl =
-    process.env.DATABASE_URL ||
-    `postgresql://wedding:wedding123@localhost:${defaultDbPort}/wedding`;
-
+  const configuredDbUrl = dbTarget.databaseUrl;
   let targetDbHost = '127.0.0.1';
-  let targetDbPort = defaultDbPort;
+  let targetDbPort = dbTarget.dbPort ?? 5432;
   let dbUser = process.env.DB_USER || 'wedding';
   let dbName = process.env.DB_NAME || 'wedding';
 
@@ -139,7 +198,7 @@ async function main() {
       targetDbHost = parsedDb.hostname === 'localhost' ? '127.0.0.1' : parsedDb.hostname;
     }
     if (parsedDb.port) {
-      targetDbPort = parseInt(parsedDb.port, 10);
+      targetDbPort = Number.parseInt(parsedDb.port, 10);
     }
     if (parsedDb.username) {
       dbUser = decodeURIComponent(parsedDb.username);
@@ -154,6 +213,7 @@ async function main() {
 
   const composeEnv = {
     ...process.env,
+    PORT,
     DB_USER: dbUser,
     DB_PASSWORD: process.env.DB_PASSWORD || 'wedding123',
     DB_NAME: dbName,
@@ -181,6 +241,7 @@ async function main() {
     delete env[v];
   }
 
+  let managedComposeDb = false;
   let serverProcess = null;
   let serverLogs = '';
   let killed = false;
@@ -200,14 +261,17 @@ async function main() {
   try {
     // 4. Ensure clean PostgreSQL container is running over TCP and migrations succeed
     const dbUrl = env.DATABASE_URL || '';
-    if (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://')) {
-      console.log('Resetting and starting PostgreSQL container for standalone smoke test...');
+    if (dbTarget.useComposeDb) {
+      console.log(
+        `Resetting and starting isolated PostgreSQL container on 127.0.0.1:${targetDbPort} for standalone smoke test...`
+      );
       child_process.spawnSync('docker', ['compose', ...COMPOSE_ARGS, 'down', '-v'], {
         stdio: 'ignore',
         shell: process.platform === 'win32',
         cwd: rootDir,
         env: composeEnv,
       });
+      managedComposeDb = true;
 
       runCheckedCommand('docker', ['compose', ...COMPOSE_ARGS, 'up', '-d', 'db'], {
         cwd: rootDir,
@@ -225,8 +289,12 @@ async function main() {
         dbName,
         maxAttempts: 30,
       });
+    } else {
+      console.log('Using caller-supplied DATABASE_URL; skipping isolated database container startup.');
+    }
 
-      console.log('Applying Prisma migrations against clean PostgreSQL database...');
+    if (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://')) {
+      console.log('Applying Prisma migrations against PostgreSQL database...');
       const migrateEnv = {
         ...process.env,
         DATABASE_URL: env.DATABASE_URL,
@@ -304,7 +372,7 @@ async function main() {
       httpRequest('/api/guest/photos/upload', {
         method: 'POST',
         headers: {
-          'Cookie': guestCookie,
+          Cookie: guestCookie,
           'Content-Type': `multipart/form-data; boundary=${boundary}`,
           'Content-Length': String(multipartBody.length),
         },
@@ -319,28 +387,42 @@ async function main() {
     }
     const uploadJson = JSON.parse(uploadRes.body);
     const uploadedUrl = uploadJson?.data?.[0]?.url;
-    if (uploadJson.success !== true || typeof uploadedUrl !== 'string' || !/^\/uploads\/photos\/[a-f0-9]+\.jpg$/.test(uploadedUrl)) {
+    if (
+      uploadJson.success !== true ||
+      typeof uploadedUrl !== 'string' ||
+      !/^\/uploads\/photos\/[a-f0-9]+\.jpg$/.test(uploadedUrl)
+    ) {
       throw new Error(`Unexpected HEIC upload response payload: ${uploadRes.body}`);
     }
     uploadedStandaloneFiles.push(path.join(standalonePublicDir, uploadedUrl.replace(/^\/+/, '')));
 
     if (duringUploadLiveRes.statusCode !== 200) {
-      throw new Error(`Concurrent /api/live during HEIC upload returned status ${duringUploadLiveRes.statusCode}`);
+      throw new Error(
+        `Concurrent /api/live during HEIC upload returned status ${duringUploadLiveRes.statusCode}`
+      );
     }
     const postUploadLiveRes = await httpRequest('/api/live', { timeoutMs: 1000 });
     if (postUploadLiveRes.statusCode !== 200 || JSON.parse(postUploadLiveRes.body).status !== 'alive') {
-      throw new Error(`Post-upload /api/live check failed (${postUploadLiveRes.statusCode}): ${postUploadLiveRes.body}`);
+      throw new Error(
+        `Post-upload /api/live check failed (${postUploadLiveRes.statusCode}): ${postUploadLiveRes.body}`
+      );
     }
 
     // Allow stdout/stderr pipe flush before inspecting logs
     await new Promise((r) => setTimeout(r, 100));
     if (WORKER_ERROR_LOG_PATTERN.test(serverLogs)) {
-      throw new Error(`Standalone server logged worker or sanitization errors during HEIC upload:\n${serverLogs}`);
+      throw new Error(
+        `Standalone server logged worker or sanitization errors during HEIC upload:\n${serverLogs}`
+      );
     }
     if (!serverLogs.includes('Successfully transcoded and sanitized HEIC/HEIF image to image/jpeg')) {
-      throw new Error(`Expected standalone worker HEIC transcoding confirmation in logs, observed:\n${serverLogs}`);
+      throw new Error(
+        `Expected standalone worker HEIC transcoding confirmation in logs, observed:\n${serverLogs}`
+      );
     }
-    console.log(`✅ Standalone HEIC upload transcoded via worker (${uploadedUrl}), /api/live responsive, 0 worker errors`);
+    console.log(
+      `✅ Standalone HEIC upload transcoded via worker (${uploadedUrl}), /api/live responsive, 0 worker errors`
+    );
 
     console.log('=============================================');
     console.log('🎉 Standalone server smoke tests PASSED successfully!');
@@ -367,16 +449,24 @@ async function main() {
     } catch {
       // Ignore cleanup errors
     }
-    child_process.spawnSync('docker', ['compose', ...COMPOSE_ARGS, 'down', '-v'], {
-      stdio: 'ignore',
-      shell: process.platform === 'win32',
-      cwd: rootDir,
-      env: composeEnv,
-    });
+    if (managedComposeDb) {
+      child_process.spawnSync('docker', ['compose', ...COMPOSE_ARGS, 'down', '-v'], {
+        stdio: 'ignore',
+        shell: process.platform === 'win32',
+        cwd: rootDir,
+        env: composeEnv,
+      });
+    }
     setTimeout(() => {
       process.exit(passed ? 0 : 1);
     }, 300);
   }
 }
 
-main();
+const isDirectCall =
+  typeof process.argv[1] === 'string' &&
+  process.argv[1].endsWith('test-standalone.mjs');
+
+if (isDirectCall) {
+  main();
+}
