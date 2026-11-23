@@ -18,6 +18,9 @@ class CustomEnvironment extends JSDOMEnvironment {
     const { MessageChannel, MessagePort } = require('node:worker_threads');
     if (typeof this.global.MessageChannel === 'undefined') this.global.MessageChannel = MessageChannel;
     if (typeof this.global.MessagePort === 'undefined') this.global.MessagePort = MessagePort;
+    const { setImmediate, clearImmediate } = require('node:timers');
+    if (typeof this.global.setImmediate === 'undefined') this.global.setImmediate = setImmediate;
+    if (typeof this.global.clearImmediate === 'undefined') this.global.clearImmediate = clearImmediate;
     this.global.BroadcastChannel = globalThis.BroadcastChannel || class BroadcastChannel {
       constructor(name) { this.name = name; }
       postMessage() {}
