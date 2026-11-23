@@ -53,7 +53,7 @@ describe('GET /api/schedule/[id]/ics Route', () => {
     expect(icsContent).toContain('SUMMARY:Main Ceremony');
     expect(icsContent).toContain('DTSTART;TZID=America/New_York:20260620T110000');
     expect(icsContent).toContain('DTEND;TZID=America/New_York:20260620T120000');
-    expect(icsContent).toContain('LOCATION:Grace Church');
+    expect(icsContent).toContain('LOCATION:Grace Church\\, 123 Church St');
     expect(icsContent).toContain('Attire: Formal Black Tie Optional');
     expect(icsContent).toContain('END:VEVENT');
     expect(icsContent).toContain('END:VCALENDAR');
