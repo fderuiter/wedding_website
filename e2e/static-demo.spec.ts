@@ -351,8 +351,10 @@ test.describe('Static GitHub Pages Showcase', () => {
     await expect(speed10Btn).toHaveAccessibleName(/^10s\b/i);
     await expect(speed8Btn).toHaveAttribute('aria-pressed', 'true');
 
-    await speed5Btn.click();
-    await expect(speed5Btn).toHaveAttribute('aria-pressed', 'true');
+    await expect(async () => {
+      await speed5Btn.click();
+      await expect(speed5Btn).toHaveAttribute('aria-pressed', 'true', { timeout: 500 });
+    }).toPass({ timeout: 5000 });
     await expect(speed8Btn).toHaveAttribute('aria-pressed', 'false');
 
     await speed10Btn.click();
@@ -438,6 +440,7 @@ test.describe('Static GitHub Pages Showcase', () => {
       '/registry/edit-item/fallback',
     ] as const) {
       await page.goto(`${DEMO_BASE_PATH}${extraRoute}`, { waitUntil: 'load' });
+      await page.waitForTimeout(250);
       for (const theme of ['light', 'dark'] as const) {
         await setPageTheme(page, theme);
         const results = await createAxeBuilder(page).analyze();

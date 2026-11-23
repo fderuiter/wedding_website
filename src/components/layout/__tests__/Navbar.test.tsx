@@ -441,4 +441,19 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
   });
+
+  it('disambiguates banner and navigation landmarks when rendered inside an embedded studio preview', () => {
+    render(
+      <Navbar
+        isAdmin={false}
+        handleLogout={jest.fn()}
+        headerRef={headerRef}
+        config={mockConfig}
+        isEmbeddedPreview
+      />
+    );
+
+    expect(screen.getByRole('banner', { name: 'Live Preview Header' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Live Preview Navigation' })).toBeInTheDocument();
+  });
 });

@@ -6,11 +6,15 @@ import { apiClient } from '@/lib/apiClient';
 
 expect.extend(toHaveNoViolations);
 
-jest.mock('@/lib/apiClient', () => ({
-  apiClient: {
-    post: jest.fn(),
-  },
-}));
+jest.mock('@/lib/apiClient', () => {
+  const actual = jest.requireActual('@/lib/apiClient');
+  return {
+    ...actual,
+    apiClient: {
+      post: jest.fn(),
+    },
+  };
+});
 
 const mockPush = jest.fn();
 

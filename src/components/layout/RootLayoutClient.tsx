@@ -1,6 +1,13 @@
 'use client';
 
-import { useState, useEffect, useRef, useLayoutEffect, useMemo } from 'react';
+import {
+  useState,
+  useEffect,
+  useRef,
+  useLayoutEffect,
+  useMemo,
+  useSyncExternalStore,
+} from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { QueryClient, QueryClientProvider, MutationCache } from '@tanstack/react-query';
 import Navbar from './Navbar';
@@ -27,6 +34,7 @@ if (
 }
 
 import type { PublicAppConfig } from '@/lib/config';
+import { withBasePath } from '@/lib/basePath';
 import SetupWizard from '@/components/setup/SetupWizard';
 import { DemoProvider, useOptionalDemo } from '@/components/demo/DemoContext';
 import { DemoToolbar } from '@/components/demo/DemoToolbar';
@@ -44,6 +52,23 @@ interface RootLayoutClientProps {
   isStaticExport?: boolean;
 }
 
+function subscribeEmbeddedIframeNoop(): () => void {
+  return () => {};
+}
+
+function getIsEmbeddedIframeSnapshot(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.self !== window.top;
+  } catch {
+    return true;
+  }
+}
+
+function getServerEmbeddedIframeSnapshot(): boolean {
+  return false;
+}
+
 function RootLayoutInner({
   children,
   config: baseConfig,
@@ -51,11 +76,16 @@ function RootLayoutInner({
 }: Omit<RootLayoutClientProps, 'isStaticExport'>) {
   const demo = useOptionalDemo();
   const isDemoMode = Boolean(demo?.isDemoMode);
+  const isEmbeddedIframe = useSyncExternalStore(
+    subscribeEmbeddedIframeNoop,
+    getIsEmbeddedIframeSnapshot,
+    getServerEmbeddedIframeSnapshot
+  );
   const [storageIsAdmin, setStorageIsAdmin] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
   const headerRef = useRef<HTMLElement>(null);
-  const [mainPaddingTop, setMainPaddingTop] = useState(0);
+  const [mainPaddingTop, setMainPaddingTop] = useState(64);
 
   useEffect(() => {
     if (isDemoMode) return;
@@ -91,8 +121,12 @@ function RootLayoutInner({
   useLayoutEffect(() => {
     if (isSetupPersona || !headerRef.current) return;
 
+    if (headerRef.current.offsetHeight > 0) {
+      setMainPaddingTop(headerRef.current.offsetHeight);
+    }
+
     const resizeObserver = new ResizeObserver(() => {
-      if (headerRef.current) {
+      if (headerRef.current && headerRef.current.offsetHeight > 0) {
         setMainPaddingTop(headerRef.current.offsetHeight);
       }
     });
@@ -107,11 +141,12 @@ function RootLayoutInner({
   const isHeartPage = normalizedPathname === '/heart';
   const isSlideshowPage = normalizedPathname === '/photos/slideshow';
   const isSetupPage =
-    normalizedPathname === '/admin/setup' || pathname?.startsWith('/admin/setup/');
+    normalizedPathname === '/admin/setup' ||
+    Boolean(normalizedPathname?.startsWith('/admin/setup/'));
   const isStandalonePage = isHeartPage || isSlideshowPage || isSetupPage;
   const isAdminDashboardPage =
     normalizedPathname === '/admin/dashboard' ||
-    pathname?.startsWith('/admin/dashboard/') ||
+    Boolean(normalizedPathname?.startsWith('/admin/dashboard/')) ||
     isSetupPage;
   const hasOwnMainLandmark =
     isAdminDashboardPage ||
@@ -124,7 +159,7 @@ function RootLayoutInner({
       return;
     }
     try {
-      await fetch('/api/admin/logout', { method: 'POST' });
+      await fetch(withBasePath('/api/admin/logout'), { method: 'POST' });
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
@@ -153,11 +188,12 @@ function RootLayoutInner({
     };
   }, [effectiveConfig, effectiveFaqs]);
 
-  const bottomToolbarClearance = isDemoMode
-    ? demo?.isToolbarCollapsed
-      ? 'pb-16'
-      : 'pb-28'
-    : '';
+  const bottomToolbarClearance =
+    isDemoMode && !isEmbeddedIframe
+      ? demo?.isToolbarCollapsed
+        ? 'pb-16'
+        : 'pb-28'
+      : '';
 
   return (
     <GuestHelpProvider config={helpConfig} pathname={pathname}>
@@ -178,6 +214,7 @@ function RootLayoutInner({
               handleLogout={handleLogout}
               config={effectiveConfig}
               hasVisibleFaqs={effectiveFaqs ? effectiveFaqs.length > 0 : undefined}
+              isEmbeddedPreview={isEmbeddedIframe}
             />
           )}
           {hasOwnMainLandmark ? (
@@ -189,7 +226,7 @@ function RootLayoutInner({
             </div>
           ) : (
             <main
-              aria-label="Application Content"
+              aria-label={isEmbeddedIframe ? 'Live Preview Content' : 'Application Content'}
               id="main-content"
               className={bottomToolbarClearance}
               style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}
@@ -199,7 +236,7 @@ function RootLayoutInner({
           )}
         </>
       )}
-      {isDemoMode && <DemoToolbar />}
+      {isDemoMode && !isEmbeddedIframe && <DemoToolbar />}
     </GuestHelpProvider>
   );
 }

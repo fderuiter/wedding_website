@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { cn } from '@/utils/cn';
+import { withBasePath } from '@/lib/basePath';
 
 export interface AdminViewStateProps {
   /**
@@ -151,7 +152,7 @@ function AdminErrorCard({
       return;
     }
     if (typeof window !== 'undefined') {
-      window.location.href = dashboardHref;
+      window.location.href = withBasePath(dashboardHref);
     }
   };
 

@@ -41,6 +41,7 @@ interface NavbarProps {
   headerRef: React.RefObject<HTMLElement | null>;
   config: PublicAppConfig;
   hasVisibleFaqs?: boolean;
+  isEmbeddedPreview?: boolean;
 }
 
 interface NavLinkItem {
@@ -100,8 +101,11 @@ export default function Navbar({
   headerRef,
   config,
   hasVisibleFaqs,
+  isEmbeddedPreview = false,
 }: NavbarProps) {
   const pathname = usePathname();
+  const normalizedPathname =
+    pathname && pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
   const { hasProvider } = useGuestHelp();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isGuideMenuOpen, setIsGuideMenuOpen] = useState(false);
@@ -175,7 +179,7 @@ export default function Navbar({
   }, [config.features]);
 
   useEffect(() => {
-    if (pathname !== '/' || typeof window === 'undefined') return;
+    if (normalizedPathname !== '/' || typeof window === 'undefined') return;
 
     const sectionIds = features
       .filter((f): f is HomeFeatureSection & { id: string } => Boolean(f.visible && f.id && f.id !== 'hero'))
@@ -209,21 +213,21 @@ export default function Navbar({
     return () => {
       observer.disconnect();
     };
-  }, [pathname, features, setActiveHash]);
+  }, [normalizedPathname, features, setActiveHash]);
 
   const isLinkActive = (href: string) => {
     if (href.includes('#')) {
-      if (pathname !== '/') return false;
+      if (normalizedPathname !== '/') return false;
       const hashPart = href.substring(href.indexOf('#'));
       return activeHash === hashPart;
     }
-    if (pathname === '/') {
+    if (normalizedPathname === '/') {
       if (href === '/') {
         return !activeHash || activeHash === '#top' || activeHash === '#hero';
       }
       return false;
     }
-    return pathname === href;
+    return normalizedPathname === href;
   };
 
   const getLinkAriaCurrent = (href: string): 'location' | 'page' | undefined => {
@@ -277,8 +281,8 @@ export default function Navbar({
   const couplesNames = partner1 && partner2 ? `${partner1} & ${partner2}` : (partner1 || partner2);
   const brandLogoAlt = config.brandLogoAlt || (couplesNames ? `${couplesNames} Logo` : 'Brand Logo');
   const monogram = deriveBrandMonogram(config);
-  const disablePrefetch = pathname === '/guest/login';
-  const defaultHelpCategory = resolveHelpCategoryForPath(pathname);
+  const disablePrefetch = normalizedPathname === '/guest/login';
+  const defaultHelpCategory = resolveHelpCategoryForPath(normalizedPathname);
 
   const handleGuideTriggerKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -348,7 +352,8 @@ export default function Navbar({
     <>
       <header
         ref={headerRef}
-        className="fixed top-0 left-0 right-0 z-50 bg-transparent backdrop-filter backdrop-blur-lg border-b border-[var(--color-surface-border,rgba(0,0,0,0.1))]"
+        aria-label={isEmbeddedPreview ? 'Live Preview Header' : undefined}
+        className="fixed top-0 left-0 right-0 z-50 bg-[var(--color-background,#ffffff)] backdrop-filter backdrop-blur-lg border-b border-[var(--color-surface-border,rgba(0,0,0,0.1))]"
       >
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between min-h-16 py-1.5 gap-3">
@@ -370,7 +375,10 @@ export default function Navbar({
               </Link>
             </div>
             <div className="hidden md:block flex-1 min-w-0">
-              <nav aria-label="Global Navigation" className="ml-3 lg:ml-6 flex flex-wrap items-center gap-x-1 lg:gap-x-2 gap-y-1">
+              <nav
+                aria-label={isEmbeddedPreview ? 'Live Preview Navigation' : 'Global Navigation'}
+                className="ml-3 lg:ml-6 flex flex-wrap items-center gap-x-1 lg:gap-x-2 gap-y-1"
+              >
                 {primaryLinks.map(renderDesktopLink)}
 
                 {secondaryLinks.length > 0 && (
@@ -490,7 +498,10 @@ export default function Navbar({
             <Icon name="X" className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
-        <nav aria-label="Mobile Navigation" className="px-2 pt-1 pb-4 space-y-1 sm:px-3">
+        <nav
+          aria-label={isEmbeddedPreview ? 'Live Preview Mobile Navigation' : 'Mobile Navigation'}
+          className="px-2 pt-1 pb-4 space-y-1 sm:px-3"
+        >
           {mobileLinks.map((link) => {
             const active = isLinkActive(link.href);
             return (

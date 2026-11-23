@@ -6,6 +6,7 @@ import { QueryClientContext } from '@tanstack/react-query';
 import { OnboardingChecklist } from '@/components/admin/OnboardingChecklist';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { FeatureId, isFeatureEnabled } from '@/lib/modules';
+import { withBasePath } from '@/lib/basePath';
 import {
   ADMIN_ONBOARDING_MILESTONES_QUERY_KEY,
   ADMIN_SAMPLE_DATA_QUERY_KEY,
@@ -107,7 +108,7 @@ export default function AdminDashboardPage() {
 
     async function loadSettingsState() {
       try {
-        const res = await fetch('/api/admin/settings');
+        const res = await fetch(withBasePath('/api/admin/settings'));
         if (!res || !res.ok || typeof res.json !== 'function' || cancelled) return;
         const raw = await res.json();
         if (cancelled) return;

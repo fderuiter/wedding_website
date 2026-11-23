@@ -335,4 +335,44 @@ describe('POST /api/registry/payment-intent', () => {
     expect(mockPaymentIntentsUpdate).not.toHaveBeenCalled();
     expect(mockPaymentIntentsCreate).not.toHaveBeenCalled();
   });
+
+  it('stores contributor return address fields in PaymentIntent metadata within Stripe 50-key and 500-char limits', async () => {
+    const request = new NextRequest('http://localhost:3000/api/registry/payment-intent', {
+      method: 'POST',
+      body: JSON.stringify({
+        itemId: 'fund-101',
+        amount: 100,
+        coverFee: false,
+        name: 'Morgan Donor',
+        email: 'morgan@example.com',
+        message: 'A'.repeat(750),
+        addressLine1: '221B Baker Street',
+        addressLine2: 'Floor 2',
+        city: 'Boston',
+        state: 'MA',
+        zipCode: '02116',
+        country: 'USA',
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(200);
+
+    const createPayload = mockPaymentIntentsCreate.mock.calls[0][0];
+    const metadataKeys = Object.keys(createPayload.metadata);
+    expect(metadataKeys.length).toBeLessThanOrEqual(50);
+    for (const val of Object.values(createPayload.metadata)) {
+      expect(String(val).length).toBeLessThanOrEqual(500);
+    }
+    expect(createPayload.metadata).toEqual(
+      expect.objectContaining({
+        addressLine1: '221B Baker Street',
+        addressLine2: 'Floor 2',
+        city: 'Boston',
+        state: 'MA',
+        zipCode: '02116',
+        country: 'USA',
+      })
+    );
+  });
 });
