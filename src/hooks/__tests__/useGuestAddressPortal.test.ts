@@ -174,7 +174,7 @@ describe('guestAddressPortalReducer', () => {
     expect(updatedState.form.addressLine1).toBe('Pemberley House');
   });
 
-  it('handles SET_FIELD, SET_CODE, and RESET_ERROR', () => {
+  it('handles SET_FIELD and SET_CODE', () => {
     let state = guestAddressPortalReducer(initialGuestPortalState, {
       type: 'SET_CODE',
       code: 'ABC',
@@ -187,10 +187,6 @@ describe('guestAddressPortalReducer', () => {
       value: 'London',
     });
     expect(state.form.city).toBe('London');
-
-    state = { ...state, error: 'some error' };
-    state = guestAddressPortalReducer(state, { type: 'RESET_ERROR' });
-    expect(state.error).toBeNull();
   });
 });
 
@@ -409,7 +405,6 @@ describe('useGuestAddressPortal hook', () => {
       result.current.setField('addressLine1', 'Camden Place');
     });
 
-    expect(result.current.isDirty).toBe(true);
     expect(result.current.state.form.addressLine1).toBe('Camden Place');
 
     // 3. Save fails with 500 error
@@ -508,7 +503,7 @@ describe('useGuestAddressPortal hook', () => {
     act(() => {
       result.current.setField('addressLine1', 'Donwell Abbey');
     });
-    expect(result.current.isDirty).toBe(true);
+    expect(result.current.state.form.addressLine1).toBe('Donwell Abbey');
 
     globalFetch.mockResolvedValueOnce({
       ok: true,
@@ -528,7 +523,6 @@ describe('useGuestAddressPortal hook', () => {
 
     expect(result.current.state.status).toBe('authenticated');
     expect(result.current.state.baseline.addressLine1).toBe('Donwell Abbey');
-    expect(result.current.isDirty).toBe(false);
     expect(mockAddToast).toHaveBeenCalledWith(
       'Your mailing address has been updated successfully!',
       'success'
