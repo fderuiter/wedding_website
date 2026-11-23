@@ -46,6 +46,14 @@ describe('ReceptionSlideshowClient', () => {
     expect(img).toHaveAttribute('src', 'https://example.com/photo1.jpg');
     expect(screen.getByText('First Dance')).toBeInTheDocument();
 
+    // Slide presentation exposes descriptive h1 and sequential h2 QR overlay heading
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Live Reception Slideshow' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 2, name: /Upload Your Photos/i })
+    ).toBeInTheDocument();
+
     // QR code overlay is prominently rendered by default
     const qrOverlay = screen.getByTestId('slideshow-qr-overlay');
     expect(qrOverlay).toBeInTheDocument();

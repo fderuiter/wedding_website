@@ -45,6 +45,7 @@ export default function GuestAddressPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--color-background)] px-4 py-12">
+        <h1 className="sr-only">Guest RSVP &amp; Address Portal</h1>
         <div className="flex flex-col items-center gap-3" role="status" aria-live="polite">
           <Icon name="Loader2" className="animate-spin h-8 w-8 text-[var(--color-primary-text)] dark:text-red-300" />
           <p className="text-sm font-medium text-gray-600 dark:text-zinc-300">

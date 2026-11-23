@@ -2272,9 +2272,9 @@ export function CsvImportWizardModal({
             {/* Custom Extra Headers Section */}
             {availableCustomHeaders.length > 0 && (
               <div className="bg-gray-50 dark:bg-zinc-800/80 p-3 rounded-lg border border-gray-200 dark:border-zinc-700 space-y-2">
-                <h4 className="text-xs font-bold uppercase text-gray-600 dark:text-zinc-300">
+                <h3 className="text-xs font-bold uppercase text-gray-600 dark:text-zinc-300">
                   Custom / Extra Metadata Columns to Include:
-                </h4>
+                </h3>
                 <div className="flex flex-wrap gap-3 text-xs">
                   {availableCustomHeaders.map((header) => (
                     <label key={header} className="inline-flex items-center gap-1.5 cursor-pointer">
@@ -2318,7 +2318,7 @@ export function CsvImportWizardModal({
 
             {/* Preview snippet */}
             <div className="bg-gray-50 dark:bg-zinc-800 p-3 rounded-lg border border-gray-200 dark:border-zinc-700">
-              <h4 className="text-xs font-bold uppercase text-gray-500 mb-2">Sample Data Preview (First 3 rows)</h4>
+              <h3 className="text-xs font-bold uppercase text-gray-500 mb-2">Sample Data Preview (First 3 rows)</h3>
               <div className="space-y-1 text-xs">
                 {rawRows.slice(0, 3).map((r, i) => {
                   let previewName = '';

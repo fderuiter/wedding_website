@@ -48,7 +48,9 @@ describe('WeddingPartyCard', () => {
   it('renders standard details including name, role, biography and photo correctly', () => {
     render(<WeddingPartyCard member={mockMemberWithPhoto} />);
 
-    expect(screen.getByText('John Doe')).toBeInTheDocument();
+    const heading = screen.getByRole('heading', { level: 2, name: 'John Doe' });
+    expect(heading).toBeInTheDocument();
+    expect(heading).toHaveClass('type-h3');
     expect(screen.getByText('Best Man')).toBeInTheDocument();
     expect(
       screen.getByText('John has been the groom\'s best friend since high school. He loves sports and cooking.')
@@ -105,5 +107,12 @@ describe('WeddingPartyCard', () => {
     const { container } = render(<WeddingPartyCard member={mockMemberWithPhoto} />);
     const results = await axe(container);
     expect(results).toHaveNoViolations();
+  });
+
+  it('supports overriding semantic heading rank via headingLevel prop while preserving .type-h3 typography', () => {
+    render(<WeddingPartyCard member={mockMemberWithPhoto} headingLevel="h3" />);
+    const heading = screen.getByRole('heading', { level: 3, name: 'John Doe' });
+    expect(heading).toBeInTheDocument();
+    expect(heading).toHaveClass('type-h3');
   });
 });
