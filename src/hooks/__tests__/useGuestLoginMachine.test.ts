@@ -113,9 +113,22 @@ describe('Selectors and Helper Utilities', () => {
     expect(getSafeCallbackUrl(undefined)).toBe('/');
     expect(getSafeCallbackUrl('')).toBe('/');
     expect(getSafeCallbackUrl('/rsvp')).toBe('/rsvp');
+    expect(getSafeCallbackUrl('/rsvp?tab=dinner#details')).toBe('/rsvp?tab=dinner#details');
     expect(getSafeCallbackUrl('//malicious.com')).toBe('/');
+    expect(getSafeCallbackUrl('///evil.test')).toBe('/');
     expect(getSafeCallbackUrl('/\\malicious.com')).toBe('/');
+    expect(getSafeCallbackUrl('/\\evil.test')).toBe('/');
+    expect(getSafeCallbackUrl('/\t/evil.test')).toBe('/');
+    expect(getSafeCallbackUrl('/\n/evil.test')).toBe('/');
+    expect(getSafeCallbackUrl('/\r/evil.test')).toBe('/');
+    expect(getSafeCallbackUrl('/\u0000/evil.test')).toBe('/');
+    expect(getSafeCallbackUrl('/\u007F/evil.test')).toBe('/');
+    expect(getSafeCallbackUrl('/foo/..///evil.test')).toBe('/');
     expect(getSafeCallbackUrl('https://malicious.com')).toBe('/');
+    expect(getSafeCallbackUrl('/guest/login')).toBe('/');
+    expect(getSafeCallbackUrl('/guest/login?callbackUrl=%2Frsvp')).toBe('/');
+    expect(getSafeCallbackUrl('/guest/login#help')).toBe('/');
+    expect(getSafeCallbackUrl('/rsvp/../guest/login')).toBe('/');
   });
 
   it('strips code query parameters from callbackUrl while preserving other query parameters and hashes', () => {
@@ -377,5 +390,29 @@ describe('useGuestLoginMachine hook lifecycle and coordination', () => {
       '/guest/login?callbackUrl=%2Fguest%3Fcode%3DALICE2026'
     );
     expect(mockPush).toHaveBeenCalledWith('/guest');
+  });
+
+  it('falls back to / when auto-submitting code with control-character or /guest/login callbackUrl', async () => {
+    mockGetParam.mockImplementation((key: string) => {
+      if (key === 'code') return 'ALICE2026';
+      if (key === 'callbackUrl') return '/\t/127.0.0.1:4444/canary-target';
+      return null;
+    });
+
+    const fetchMock = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true }),
+    } as unknown as Response);
+    globalWithFetch.fetch = fetchMock;
+
+    const { result } = renderHook(() => useGuestLoginMachine());
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(result.current.isAuthenticated).toBe(true);
+    expect(mockPush).toHaveBeenCalledWith('/');
   });
 });

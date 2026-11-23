@@ -1155,4 +1155,155 @@ process.exit(0);
       expect(okRes.status).toBe(0);
     }
   });
+
+  it('enforces --require-db exit codes in db-migrate.yml status_check and --offline git diff in deploy.yml schema-compatibility', () => {
+    const dbMigrateDoc = parseDocument(dbMigrateYml, { version: '1.2', strict: true }).toJS() as {
+      jobs?: {
+        migrate?: {
+          steps?: Array<{ id?: string; if?: string }>;
+        };
+      };
+    };
+    const migrateSteps = dbMigrateDoc.jobs?.migrate?.steps ?? [];
+    const statusCheckStep = migrateSteps.find((s) => s.id === 'status_check');
+    expect(statusCheckStep?.if).toBe("steps.confirm_gate.outcome == 'success'");
+
+    const statusCheckScript = extractStepRunScript(
+      dbMigrateYml,
+      'Pre-flight schema migration check and summary'
+    );
+    const offlineSummaryScript = extractStepRunScript(
+      deployYml,
+      'Generate Pre-Flight Schema Migration & SQL DDL Summary'
+    );
+    expect(statusCheckScript).not.toContain('${{');
+    expect(statusCheckScript).toContain('--require-db');
+    expect(offlineSummaryScript).not.toContain('${{');
+    expect(offlineSummaryScript).toContain('--offline');
+
+    const realTsxBin = path.join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
+    const realPreflightScript = path.join(REPO_ROOT, 'scripts', 'preflight-migration-summary.ts');
+    const npxShim = path.join(binDir, 'npx');
+    fs.writeFileSync(
+      npxShim,
+      `#!/usr/bin/env node
+const { spawnSync } = require('child_process');
+const args = process.argv.slice(2);
+if (args[0] === 'tsx') {
+  const scriptArg = args[1] === 'scripts/preflight-migration-summary.ts'
+    ? ${JSON.stringify(realPreflightScript)}
+    : args[1];
+  const res = spawnSync(${JSON.stringify(realTsxBin)}, [scriptArg, ...args.slice(2)], {
+    stdio: 'inherit',
+    env: process.env,
+  });
+  process.exit(res.status ?? 1);
+}
+if (args[0] === 'prisma' && args[1] === 'migrate' && args[2] === 'status') {
+  if (process.env.MOCK_PRISMA_STDOUT) process.stdout.write(process.env.MOCK_PRISMA_STDOUT);
+  if (process.env.MOCK_PRISMA_STDERR) process.stderr.write(process.env.MOCK_PRISMA_STDERR);
+  process.exit(Number(process.env.MOCK_PRISMA_EXIT ?? '0'));
+}
+process.exit(1);
+`,
+      { mode: 0o755 }
+    );
+
+    const runWorkflowScriptInCwd = (cwd: string, script: string, envOverrides: Record<string, string>) =>
+      spawnSync('bash', ['-eo', 'pipefail', '-c', script], {
+        cwd,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+          GITHUB_OUTPUT: outputFile,
+          GITHUB_STEP_SUMMARY: summaryFile,
+          ...envOverrides,
+        },
+      });
+
+    // 1. Fails closed with redacted URL when prisma migrate status hits P1001
+    fs.writeFileSync(summaryFile, '');
+    const leakedSecret = 'PROD_DB_SECRET_98765';
+    const p1001Res = runWorkflowScriptInCwd(REPO_ROOT, statusCheckScript, {
+      DATABASE_URL: `postgresql://wedding:${leakedSecret}@db.prod.internal:5432/wedding`,
+      TARGET_ENVIRONMENT: 'production',
+      MOCK_PRISMA_EXIT: '1',
+      MOCK_PRISMA_STDERR: `Error: P1001: Can't reach database server at postgresql://wedding:${leakedSecret}@db.prod.internal:5432/wedding\n`,
+    });
+    expect(p1001Res.status).toBe(1);
+    const p1001Summary = fs.readFileSync(summaryFile, 'utf8');
+    expect(p1001Summary).toContain('**Pre-Flight Gate:** `FAILED` ❌');
+    expect(p1001Summary).toContain('P1001');
+    expect(p1001Summary).not.toContain(leakedSecret);
+    expect(p1001Summary).not.toContain('postgresql://');
+
+    // 2. Fails closed on schema drift / diverged migration history
+    fs.writeFileSync(summaryFile, '');
+    const driftRes = runWorkflowScriptInCwd(REPO_ROOT, statusCheckScript, {
+      DATABASE_URL: 'postgresql://wedding:pw@db.prod.internal:5432/wedding',
+      TARGET_ENVIRONMENT: 'production',
+      MOCK_PRISMA_EXIT: '1',
+      MOCK_PRISMA_STDERR:
+        'Your local migration history and the migrations table from your database are different:\nThe last common migration is: 20261120010000_add_appconfig_modules\n',
+    });
+    expect(driftRes.status).toBe(1);
+    expect(fs.readFileSync(summaryFile, 'utf8')).toContain('SCHEMA DRIFT / DIVERGED HISTORY');
+
+    // 3. Succeeds when Prisma 7 exits 1 with clean singular pending migration
+    fs.writeFileSync(summaryFile, '');
+    const singlePendingRes = runWorkflowScriptInCwd(REPO_ROOT, statusCheckScript, {
+      DATABASE_URL: 'postgresql://wedding:pw@db.prod.internal:5432/wedding',
+      TARGET_ENVIRONMENT: 'production',
+      MOCK_PRISMA_EXIT: '1',
+      MOCK_PRISMA_STDOUT:
+        'Following migration have not yet been applied:\n20261121000000_add_registry_shipping_and_order_tracking\n\nTo apply migrations in production run prisma migrate deploy.\n',
+    });
+    expect(singlePendingRes.status).toBe(0);
+    expect(fs.readFileSync(summaryFile, 'utf8')).toContain('**Pre-Flight Gate:** `READY TO APPLY` 🟡');
+
+    // 4. deploy.yml schema-compatibility --offline emits NOT QUERIED git diff without fabricating slice(-3)
+    const offlineRepo = path.join(tempDir, 'offline-repo');
+    const offlineMigrations = path.join(offlineRepo, 'prisma', 'migrations');
+    fs.mkdirSync(offlineMigrations, { recursive: true });
+    const gitEnv = {
+      ...process.env,
+      GIT_AUTHOR_NAME: 'CI Bot',
+      GIT_AUTHOR_EMAIL: 'ci@example.com',
+      GIT_COMMITTER_NAME: 'CI Bot',
+      GIT_COMMITTER_EMAIL: 'ci@example.com',
+    };
+    spawnSync('git', ['init'], { cwd: offlineRepo, env: gitEnv });
+    for (const oldMig of [
+      '20261118000000_old_one',
+      '20261119000000_old_two',
+      '20261120010000_old_three',
+      '20261120020000_old_four',
+    ]) {
+      const d = path.join(offlineMigrations, oldMig);
+      fs.mkdirSync(d, { recursive: true });
+      fs.writeFileSync(path.join(d, 'migration.sql'), `CREATE TABLE "${oldMig}" ("id" TEXT PRIMARY KEY);`);
+    }
+    spawnSync('git', ['add', '.'], { cwd: offlineRepo, env: gitEnv });
+    spawnSync('git', ['commit', '-m', 'Baseline'], { cwd: offlineRepo, env: gitEnv });
+
+    const newMig = '20261121000000_new_release_ddl';
+    const newDir = path.join(offlineMigrations, newMig);
+    fs.mkdirSync(newDir, { recursive: true });
+    fs.writeFileSync(path.join(newDir, 'migration.sql'), 'ALTER TABLE "Rsvp" ADD COLUMN "notes" TEXT;');
+    spawnSync('git', ['add', '.'], { cwd: offlineRepo, env: gitEnv });
+    spawnSync('git', ['commit', '-m', 'Add new release migration'], { cwd: offlineRepo, env: gitEnv });
+
+    fs.writeFileSync(summaryFile, '');
+    const offlineRes = runWorkflowScriptInCwd(offlineRepo, offlineSummaryScript, {
+      DATABASE_URL: '',
+    });
+    expect(offlineRes.status).toBe(0);
+    const offlineSummary = fs.readFileSync(summaryFile, 'utf8');
+    expect(offlineSummary).toContain('**Database Status:** `NOT QUERIED`');
+    expect(offlineSummary).toContain(`\`${newMig}\``);
+    expect(offlineSummary).toContain('ALTER TABLE "Rsvp" ADD COLUMN "notes" TEXT');
+    expect(offlineSummary).not.toContain('PENDING MIGRATIONS DETECTED');
+    expect(offlineSummary).not.toContain('20261120020000_old_four');
+  });
 });

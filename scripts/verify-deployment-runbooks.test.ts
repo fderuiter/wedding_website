@@ -322,6 +322,7 @@ describe('verify-deployment-runbooks', () => {
       fs
         .readFileSync(composePath, 'utf8')
         .replace('127.0.0.1:${DB_PORT:-5432}:5432', '${DB_PORT:-5432}:5432')
+        .replace(/\$\{CONTAINER_DATABASE_URL:-/g, '${DATABASE_URL:-')
         .replace('${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}', '${ADMIN_PASSWORD:-scrypt:c2FsdA==:aGFzaA==}')
         .replace('E2E_TEST: ${E2E_TEST:-false}', 'E2E_TEST: ${E2E_TEST:-true}')
         .replace('      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}\n', '')
@@ -345,6 +346,12 @@ describe('verify-deployment-runbooks', () => {
     expect(errors).toEqual(
       expect.arrayContaining([
         expect.stringContaining('docker-compose.yml: `db` service must bind PostgreSQL strictly to loopback'),
+        expect.stringContaining(
+          'docker-compose.yml: `migration` service must scope container `DATABASE_URL` overrides via `${CONTAINER_DATABASE_URL:-...}`'
+        ),
+        expect.stringContaining(
+          'docker-compose.yml: `app` service must scope container `DATABASE_URL` overrides via `${CONTAINER_DATABASE_URL:-...}`'
+        ),
         expect.stringContaining('docker-compose.yml: Must require explicit operator value via ${ADMIN_PASSWORD:?...}'),
         expect.stringContaining('docker-compose.yml: Must not contain invalid 4-byte placeholder hash'),
         expect.stringContaining('docker-compose.yml: `app` service must set `E2E_TEST: ${E2E_TEST:-false}`'),

@@ -6,8 +6,8 @@ const defaultE2EAdminPassword =
   'scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==';
 const localDbBootstrapScript = [
   'import cp from \'node:child_process\';',
-  'const composeArgs = [\'compose\', \'-f\', \'docker-compose.yml\', \'-f\', \'docker-compose.ci.yml\'];',
-  'const composeEnv = { ...process.env, DB_PASSWORD: process.env.DB_PASSWORD || \'wedding123\' };',
+  'const composeArgs = [\'compose\', \'--env-file\', \'.env.ci\', \'-f\', \'docker-compose.yml\', \'-f\', \'docker-compose.ci.yml\'];',
+  `const composeEnv = { ...process.env, DB_PASSWORD: process.env.DB_PASSWORD || 'wedding123', ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || '${defaultE2EAdminPassword}', GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'playwright-e2e-guest-passcode', GUEST_SESSION_SECRET: process.env.GUEST_SESSION_SECRET || 'playwright-e2e-session-secret-32-chars-min' };`,
   'if (cp.spawnSync(\'docker\', [\'info\'], { stdio: \'ignore\', shell: true }).status === 0) {',
   '  cp.spawnSync(\'docker\', [...composeArgs, \'up\', \'-d\', \'db\'], { stdio: \'inherit\', shell: true, env: composeEnv });',
   '  for (let i = 0; i < 30; i++) {',
@@ -38,7 +38,7 @@ export default defineConfig({
     env: {
       PORT: '3000',
       HOSTNAME: 'localhost',
-      NODE_ENV: 'production',
+      NODE_ENV: process.env.CI ? 'production' : 'development',
       NODE_OPTIONS: '--max-old-space-size=4096',
       DATABASE_URL: process.env.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public',
       POSTGRES_PRISMA_URL: process.env.POSTGRES_PRISMA_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public',
