@@ -1473,8 +1473,9 @@ process.exit(1);
   it('pins isolated prisma-cli dependencies to package-lock.json via npm ci in Dockerfile', () => {
     const dockerfile = fs.readFileSync(path.join(process.cwd(), 'Dockerfile'), 'utf8');
     const prismaStage = dockerfile.split('# Builder stage')[0] ?? '';
+    expect(prismaStage).toContain('docker/prisma-cli/package-lock.json');
     expect(prismaStage).toContain('/opt/prisma-cli/package-lock.json');
-    expect(prismaStage).toContain('npm ci --omit=dev --no-audit --no-fund');
+    expect(prismaStage).toMatch(/\bnpm ci\b[^\n]*--omit=dev --no-audit --no-fund/);
     expect(prismaStage).not.toContain('npm install');
   });
 
