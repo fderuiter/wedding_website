@@ -16,7 +16,7 @@ To ensure a smooth upgrade path for downstream adopters, the template adheres to
 - **Media Storage**: Upload custom images through the Admin Dashboard (persisted under `/app/public/uploads` via the `uploads_data` Docker volume or in S3/Cloudflare R2) or store static assets in `public/` using custom file names to avoid upstream merge conflicts.
 
 ### Deployment Isolation
-- **Environment Variables**: Server configuration, credentials, and deployment flags are injected strictly through environment variables (`DB_PASSWORD`, `DATABASE_URL`, `ADMIN_PASSWORD`, `GUEST_PASSCODE`, `GUEST_SESSION_SECRET`, `TRUST_PROXY`, `STRIPE_*`, `S3_*`, etc.).
+- **Environment Variables**: Server configuration, credentials, and deployment flags are injected strictly through environment variables (`DB_PASSWORD`, `DATABASE_URL`, `CONTAINER_DATABASE_URL`, `ADMIN_PASSWORD`, `GUEST_PASSCODE`, `GUEST_SESSION_SECRET`, `TRUST_PROXY`, `STRIPE_*`, `S3_*`, etc.).
 - **Containerization**: Deployments use hardened, provider-neutral container setups ([`Dockerfile`](../Dockerfile), [`docker-compose.yml`](../docker-compose.yml), [`docker-entrypoint.sh`](../docker-entrypoint.sh)) aligned with [`docs/deployment/docker-vps.md`](./deployment/docker-vps.md) or standard Node.js v22.x LTS host environments.
 
 ---
@@ -97,7 +97,7 @@ Choose the track matching your deployment topology (**Track A: Docker Compose**,
 [`docker-compose.yml`](../docker-compose.yml) orchestrates `db` (`postgres:15-alpine`), a one-shot `migration` service, and `app` (`wedding-website:latest`, built from [`Dockerfile`](../Dockerfile)):
 
 - **Persistent Volume Retention**: `db_data` (`/var/lib/postgresql/data`) and `uploads_data` (`/app/public/uploads`, UID/GID `1001`) are named Docker volumes that survive `docker compose up -d --build`. **Never run `docker compose down -v` during a production upgrade**, as `-v` deletes `db_data` and `uploads_data`.
-- **Decoupled One-Shot Migrations**: `migration` runs `./node_modules/.bin/prisma migrate deploy` (backed by the isolated `/opt/prisma-cli` stage in `Dockerfile`) with `read_only: true`, `cap_drop: [ALL]`, and `restart: "no"` after `db` reports `service_healthy`. `app` sets `RUN_MIGRATIONS=false` and `E2E_TEST=false` by default and waits for `migration` (`condition: service_completed_successfully`) before starting `node server.js` behind `/usr/bin/tini`.
+- **Decoupled One-Shot Migrations**: `migration` runs `./node_modules/.bin/prisma migrate deploy` (backed by the isolated `/opt/prisma-cli` stage in `Dockerfile`) with `read_only: true`, `cap_drop: [ALL]`, and `restart: "no"` after `db` reports `service_healthy`, scoping container PostgreSQL overrides via `${CONTAINER_DATABASE_URL:-...}` so host `@localhost:5432` `DATABASE_URL` values never leak into containers. `app` pins `NODE_ENV: production`, sets `RUN_MIGRATIONS=false` and `E2E_TEST=false` by default, and waits for `migration` (`condition: service_completed_successfully`) before starting `node server.js` behind `/usr/bin/tini`.
 
 ```bash
 # 1. Validate local .env against production & Docker Compose ":?" guards (see Step 7)
@@ -111,7 +111,7 @@ docker compose ps
 curl -fsS http://127.0.0.1:${PORT:-3000}/api/health -H "Host: localhost"
 ```
 
-To execute migrations manually on demand (or bypass an external PgBouncer pooler in `DATABASE_URL` using a direct `POSTGRES_URL_NON_POOLING` URI from `prisma.config.ts`):
+To execute migrations manually on demand (or bypass an external PgBouncer pooler in `CONTAINER_DATABASE_URL` using a direct `POSTGRES_URL_NON_POOLING` URI from `prisma.config.ts`):
 
 ```bash
 # Standard Compose one-shot migration
@@ -189,7 +189,7 @@ npx tsx scripts/preflight-env.ts --no-compose --env-file .env
 ```
 
 `scripts/preflight-env.ts` never prints raw secret values or password hashes and fails with a non-zero exit code when any of the following are detected:
-- **Missing Docker Compose `:?` Secret Guards**: `DB_PASSWORD`, `ADMIN_PASSWORD`, `GUEST_PASSCODE`, or `GUEST_SESSION_SECRET` unset/empty in `.env` (or containing unescaped `$` characters that Docker Compose would interpolate; escape literal `$` as `$$` or use single quotes).
+- **Missing or Default Docker Compose `:?` Secret Guards**: `DB_PASSWORD`, `ADMIN_PASSWORD`, `GUEST_PASSCODE`, or `GUEST_SESSION_SECRET` unset/empty in `.env`, `DB_PASSWORD` left at the disposable `.env.example` / `.env.ci` default, invalid `CONTAINER_DATABASE_URL` overrides, or values containing unescaped `$` characters that Docker Compose would interpolate (escape literal `$` as `$$` or use single quotes).
 - **Legacy or Placeholder `ADMIN_PASSWORD` Hashes**: Plaintext passwords, legacy non-64-byte scrypt hashes, `.env.example` dummy hashes, or E2E test hashes (generate a valid 16-byte salt / 64-byte scrypt key with `node scripts/generate-password-hash.mjs "your-strong-password"`).
 - **Blocked `GUEST_PASSCODE` or Weak `GUEST_SESSION_SECRET`**: Default `wedding2026` or placeholder guest passcodes, session secrets shorter than 32 characters (`openssl rand -hex 32`), or `GUEST_SESSION_SECRET` matching `GUEST_PASSCODE`.
 - **Unpaired or Placeholder Integration Keys**: `STRIPE_SECRET_KEY` set without `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` (or vice versa), invalid `sk_`/`rk_`/`pk_`/`whsec_` prefixes, incomplete `S3_*` credentials, or `E2E_TEST=true` left enabled in production.

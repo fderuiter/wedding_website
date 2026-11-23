@@ -48,7 +48,6 @@ jobs:
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
-      packages: write
       security-events: write
     strategy:
       fail-fast: false
@@ -65,79 +64,14 @@ jobs:
         with:
           ref: ${{ inputs.commit_sha }}
 
-      - name: Compute Image Tag & Targets
-        id: meta
+      - name: Validate Commit SHA Input
         env:
-          RAW_INPUT_TAG: ${{ inputs.tag_name }}
           INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           if [ -n "$INPUT_COMMIT_SHA" ] && [[ ! "$INPUT_COMMIT_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
             echo "::error::Invalid commit_sha '${INPUT_COMMIT_SHA}'. Must be a 40-character hexadecimal commit SHA."
             exit 1
           fi
-
-          RESOLVED_SHA="${INPUT_COMMIT_SHA:-${GITHUB_SHA}}"
-
-          if [ -n "$RAW_INPUT_TAG" ]; then
-            if [[ ! "$RAW_INPUT_TAG" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
-              echo "::error::Invalid image tag '${RAW_INPUT_TAG}'. Must only contain alphanumeric characters, underscores, periods, and hyphens."
-              exit 1
-            fi
-            TAG_NAME="$RAW_INPUT_TAG"
-          elif [[ "${GITHUB_REF}" == refs/tags/v* ]] && [ -n "${GITHUB_REF_NAME}" ]; then
-            if [[ ! "${GITHUB_REF_NAME}" =~ ^v[a-zA-Z0-9_.-]*$ ]]; then
-              echo "::error::Invalid release tag '${GITHUB_REF_NAME}'. Must start with 'v' and only contain alphanumeric characters, underscores, periods, and hyphens."
-              exit 1
-            fi
-            TAG_NAME="${GITHUB_REF_NAME}"
-          else
-            TAG_NAME="${RESOLVED_SHA}"
-          fi
-
-          PUBLISH_LATEST="false"
-          if [ -z "$RAW_INPUT_TAG" ]; then
-            if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
-              PUBLISH_LATEST="true"
-            elif [[ "${GITHUB_REF}" == refs/tags/v* ]] && [ -n "${GITHUB_REF_NAME}" ] && [[ "${GITHUB_REF_NAME}" != *-* ]]; then
-              PUBLISH_LATEST="true"
-            fi
-          fi
-
-          REPO_LOWER=$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
-          IMAGE_REPO="ghcr.io/${REPO_LOWER}"
-          REGISTRIES="${IMAGE_REPO}"
-          GHCR_PRIMARY="${IMAGE_REPO}:${TAG_NAME}"
-          TAGS="${GHCR_PRIMARY}"
-
-          if [ -n "${RESOLVED_SHA}" ] && [ "${TAG_NAME}" != "${RESOLVED_SHA}" ]; then
-            TAGS="${TAGS},${IMAGE_REPO}:${RESOLVED_SHA}"
-          fi
-
-          if [ "${PUBLISH_LATEST}" = "true" ]; then
-            TAGS="${TAGS},${IMAGE_REPO}:latest"
-          fi
-
-          DOCKERHUB_REPO=""
-          if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then
-            DOCKERHUB_REPO="${DOCKERHUB_USERNAME}/wedding-website"
-            REGISTRIES="${REGISTRIES},${DOCKERHUB_REPO}"
-            TAGS="${TAGS},${DOCKERHUB_REPO}:${TAG_NAME}"
-            if [ -n "${RESOLVED_SHA}" ] && [ "${TAG_NAME}" != "${RESOLVED_SHA}" ]; then
-              TAGS="${TAGS},${DOCKERHUB_REPO}:${RESOLVED_SHA}"
-            fi
-            if [ "${PUBLISH_LATEST}" = "true" ]; then
-              TAGS="${TAGS},${DOCKERHUB_REPO}:latest"
-            fi
-          fi
-
-          echo "image_repository=${IMAGE_REPO}" >> "$GITHUB_OUTPUT"
-          echo "dockerhub_repository=${DOCKERHUB_REPO}" >> "$GITHUB_OUTPUT"
-          echo "registries=${REGISTRIES}" >> "$GITHUB_OUTPUT"
-          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
-          echo "primary_uri=${GHCR_PRIMARY}" >> "$GITHUB_OUTPUT"
-          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -201,14 +135,14 @@ jobs:
               -f - "$CTX_DIR"
 
       - name: Build Native Container Image
+        id: build_image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           platforms: ${{ matrix.platform }}
-          load: true
-          tags: |
-            wedding-website:latest
-            ${{ steps.meta.outputs.primary_uri }}-${{ matrix.arch }}
+          provenance: false
+          sbom: false
+          outputs: type=oci,dest=/tmp/oci-${{ matrix.arch }}.tar
           cache-from: type=gha,scope=app-${{ matrix.arch }}
           cache-to: type=gha,scope=app-${{ matrix.arch }},mode=max
 
@@ -260,10 +194,21 @@ jobs:
             mv -f "$OUT_DIR/next/mounts.tar" "$MOUNT_CACHE_DIR/next/mounts.tar"
           fi
 
+      - name: Load OCI Archive into Local Docker Daemon
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          OCI_TAR="/tmp/oci-${ARCH}.tar"
+          if [ ! -f "$OCI_TAR" ]; then
+            echo "::error::Missing exported OCI archive '${OCI_TAR}'."
+            exit 1
+          fi
+          skopeo copy "oci-archive:${OCI_TAR}" "docker-daemon:wedding-website:latest"
+
       - name: Scan Native Container Image with Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ steps.meta.outputs.primary_uri }}-${{ matrix.arch }}
+          image-ref: wedding-website:latest
           format: 'sarif'
           output: 'trivy-results-${{ matrix.arch }}.sarif'
           severity: 'CRITICAL,HIGH'
@@ -282,46 +227,37 @@ jobs:
           GHA_CACHE_SCOPE: app-${{ matrix.arch }}
         run: node scripts/test-container.mjs
 
-      - name: Log in to GHCR
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Log in to Docker Hub (optional)
-        if: secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != ''
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Push Verified Architecture Digest
-        id: push_digest
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          platforms: ${{ matrix.platform }}
-          outputs: type=image,"name=${{ steps.meta.outputs.registries }}",push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=app-${{ matrix.arch }}
-
-      - name: Export Architecture Digest Metadata
+      - name: Compress Verified OCI Archive & Export Digest
         env:
           ARCH: ${{ matrix.arch }}
-          DIGEST: ${{ steps.push_digest.outputs.digest }}
+          BUILD_DIGEST: ${{ steps.build_image.outputs.digest }}
         run: |
-          if [[ ! "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
-            echo "::error::Invalid digest '${DIGEST}' emitted for architecture '${ARCH}'."
+          OCI_TAR="/tmp/oci-${ARCH}.tar"
+          if [ ! -f "$OCI_TAR" ]; then
+            echo "::error::Missing verified OCI archive '${OCI_TAR}'."
             exit 1
           fi
-          mkdir -p /tmp/digests
-          printf '%s\n' "$DIGEST" > "/tmp/digests/${ARCH}.digest"
+          ARCHIVE_DIGEST=$(skopeo inspect --format '{{.Digest}}' "oci-archive:${OCI_TAR}" | tr -d '[:space:]')
+          if [[ ! "$ARCHIVE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "::error::Invalid OCI manifest digest '${ARCHIVE_DIGEST}' inspected from '${OCI_TAR}'."
+            exit 1
+          fi
+          if [ -n "$BUILD_DIGEST" ] && [ "$BUILD_DIGEST" != "$ARCHIVE_DIGEST" ]; then
+            echo "::error::Buildx digest '${BUILD_DIGEST}' does not match inspected OCI archive digest '${ARCHIVE_DIGEST}'."
+            exit 1
+          fi
+          mkdir -p /tmp/oci-handoff
+          zstd -T0 -f "$OCI_TAR" -o "/tmp/oci-handoff/oci-${ARCH}.tar.zst"
+          printf '%s\n' "$ARCHIVE_DIGEST" > "/tmp/oci-handoff/${ARCH}.digest"
 
-      - name: Upload Architecture Digest Artifact
+      - name: Upload Verified OCI Archive Artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: digests-${{ matrix.arch }}
-          path: /tmp/digests/*.digest
+          name: oci-archive-${{ matrix.arch }}
+          path: |
+            /tmp/oci-handoff/oci-${{ matrix.arch }}.tar.zst
+            /tmp/oci-handoff/${{ matrix.arch }}.digest
+          compression-level: 0
           if-no-files-found: error
           retention-days: 1
 
@@ -332,7 +268,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-      security-events: write
       id-token: write
       attestations: write
     outputs:
@@ -415,12 +350,12 @@ jobs:
           echo "primary_uri=${GHCR_PRIMARY}" >> "$GITHUB_OUTPUT"
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
 
-      - name: Download Architecture Digests
+      - name: Download Verified OCI Archive Artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: digests-*
+          pattern: oci-archive-*
           merge-multiple: true
-          path: /tmp/digests
+          path: /tmp/oci-handoff
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -438,6 +373,54 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Verify and Push Architecture OCI Archives
+        env:
+          IMAGE_REPOSITORY: ${{ steps.meta.outputs.image_repository }}
+          DOCKERHUB_REPOSITORY: ${{ steps.meta.outputs.dockerhub_repository }}
+        run: |
+          mkdir -p /tmp/digests
+
+          for required_arch in amd64 arm64; do
+            DIGEST_FILE="/tmp/oci-handoff/${required_arch}.digest"
+            COMPRESSED_ARCHIVE="/tmp/oci-handoff/oci-${required_arch}.tar.zst"
+            DECOMPRESSED_ARCHIVE="/tmp/oci-handoff/oci-${required_arch}.tar"
+
+            if [ ! -f "$DIGEST_FILE" ] || [ ! -f "$COMPRESSED_ARCHIVE" ]; then
+              echo "::error::Missing OCI archive or digest artifact for architecture '${required_arch}'."
+              exit 1
+            fi
+
+            EXPECTED_DIGEST=$(tr -d '[:space:]' < "$DIGEST_FILE")
+            if [[ ! "$EXPECTED_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+              echo "::error::Invalid expected digest '${EXPECTED_DIGEST}' for architecture '${required_arch}'."
+              exit 1
+            fi
+
+            zstd -d -f "$COMPRESSED_ARCHIVE" -o "$DECOMPRESSED_ARCHIVE"
+            ACTUAL_DIGEST=$(skopeo inspect --format '{{.Digest}}' "oci-archive:${DECOMPRESSED_ARCHIVE}" | tr -d '[:space:]')
+            if [ "$ACTUAL_DIGEST" != "$EXPECTED_DIGEST" ]; then
+              echo "::error::OCI archive digest mismatch for '${required_arch}': expected '${EXPECTED_DIGEST}', inspected '${ACTUAL_DIGEST}'."
+              exit 1
+            fi
+
+            printf '%s\n' "$EXPECTED_DIGEST" > "/tmp/digests/${required_arch}.digest"
+          done
+
+          for required_arch in amd64 arm64; do
+            ARCH_DIGEST=$(tr -d '[:space:]' < "/tmp/digests/${required_arch}.digest")
+            DECOMPRESSED_ARCHIVE="/tmp/oci-handoff/oci-${required_arch}.tar"
+
+            skopeo copy --preserve-digests \
+              "oci-archive:${DECOMPRESSED_ARCHIVE}" \
+              "docker://${IMAGE_REPOSITORY}@${ARCH_DIGEST}"
+
+            if [ -n "$DOCKERHUB_REPOSITORY" ]; then
+              skopeo copy --preserve-digests \
+                "oci-archive:${DECOMPRESSED_ARCHIVE}" \
+                "docker://docker.io/${DOCKERHUB_REPOSITORY}@${ARCH_DIGEST}"
+            fi
+          done
 
       - name: Merge and Push Multi-Platform OCI Index
         id: merge
@@ -467,6 +450,7 @@ jobs:
           IFS=',' read -r -a ALL_TAGS <<< "$TAGS"
           GHCR_TAG_ARGS=()
           DOCKERHUB_TAG_ARGS=()
+          DOCKERHUB_PRIMARY_URI=""
 
           for tag_ref in "${ALL_TAGS[@]}"; do
             [ -z "$tag_ref" ] && continue
@@ -474,6 +458,9 @@ jobs:
               GHCR_TAG_ARGS+=("--tag" "$tag_ref")
             else
               DOCKERHUB_TAG_ARGS+=("--tag" "$tag_ref")
+              if [ -z "$DOCKERHUB_PRIMARY_URI" ]; then
+                DOCKERHUB_PRIMARY_URI="$tag_ref"
+              fi
             fi
           done
 
@@ -481,13 +468,6 @@ jobs:
             "${GHCR_TAG_ARGS[@]}" \
             "${IMAGE_REPOSITORY}@${AMD64_DIGEST}" \
             "${IMAGE_REPOSITORY}@${ARM64_DIGEST}"
-
-          if [ -n "$DOCKERHUB_REPOSITORY" ] && [ "${#DOCKERHUB_TAG_ARGS[@]}" -gt 0 ]; then
-            docker buildx imagetools create \
-              "${DOCKERHUB_TAG_ARGS[@]}" \
-              "${DOCKERHUB_REPOSITORY}@${AMD64_DIGEST}" \
-              "${DOCKERHUB_REPOSITORY}@${ARM64_DIGEST}"
-          fi
 
           INDEX_DIGEST=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$PRIMARY_URI")
           if [[ ! "$INDEX_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
@@ -503,14 +483,46 @@ jobs:
             fi
           done
 
+          DOCKERHUB_INDEX_DIGEST=""
+          if [ -n "$DOCKERHUB_REPOSITORY" ] && [ "${#DOCKERHUB_TAG_ARGS[@]}" -gt 0 ]; then
+            docker buildx imagetools create \
+              "${DOCKERHUB_TAG_ARGS[@]}" \
+              "${DOCKERHUB_REPOSITORY}@${AMD64_DIGEST}" \
+              "${DOCKERHUB_REPOSITORY}@${ARM64_DIGEST}"
+
+            DOCKERHUB_INDEX_DIGEST=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$DOCKERHUB_PRIMARY_URI")
+            if [[ ! "$DOCKERHUB_INDEX_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+              echo "::error::Failed to resolve valid sha256 multi-platform index digest for '${DOCKERHUB_PRIMARY_URI}' (got '${DOCKERHUB_INDEX_DIGEST}')."
+              exit 1
+            fi
+
+            DOCKERHUB_RAW_INDEX=$(docker buildx imagetools inspect --raw "$DOCKERHUB_PRIMARY_URI")
+            for expected_arch in amd64 arm64; do
+              if ! printf '%s' "$DOCKERHUB_RAW_INDEX" | jq -e --arg arch "$expected_arch" '.manifests[]? | select(.platform.os == "linux" and .platform.architecture == $arch)' >/dev/null; then
+                echo "::error::Published multi-platform index '${DOCKERHUB_PRIMARY_URI}' is missing linux/${expected_arch} manifest."
+                exit 1
+              fi
+            done
+          fi
+
           echo "digest=${INDEX_DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "dockerhub_digest=${DOCKERHUB_INDEX_DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Attest Build Provenance
-        uses: actions/attest-build-provenance@c0744595e72338575084a4bf85ed76e1eb521ddf # v2.2.3
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ${{ steps.meta.outputs.image_repository }}
           subject-digest: ${{ steps.merge.outputs.digest }}
           push-to-registry: true
+
+      - name: Attest Docker Hub Build Provenance (optional)
+        if: steps.meta.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: docker.io/${{ steps.meta.outputs.dockerhub_repository }}
+          subject-digest: ${{ steps.merge.outputs.dockerhub_digest }}
+          push-to-registry: true
+          create-storage-record: false
 
       - name: Summary
         env:

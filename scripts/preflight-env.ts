@@ -84,6 +84,10 @@ const BLOCKED_PROD_SESSION_SECRETS = new Set([
   'test-standalone-guest-session-secret-32chars',
 ]);
 
+const BLOCKED_PROD_DB_PASSWORDS = new Set([
+  'wedding123',
+]);
+
 const S3_REQUIRED_GROUP = [
   'S3_BUCKET',
   'S3_REGION',
@@ -325,8 +329,10 @@ export function validateOperatorEnv(
     });
   }
 
-  // 3. DATABASE_URL & POSTGRES_URL_NON_POOLING
+  // 3. DATABASE_URL, CONTAINER_DATABASE_URL, DB_PASSWORD, & POSTGRES_URL_NON_POOLING
   const databaseUrl = normalizeOptional(getVal('DATABASE_URL'));
+  const containerDatabaseUrl = normalizeOptional(getVal('CONTAINER_DATABASE_URL'));
+
   if (databaseUrl) {
     if (DUMMY_DATABASE_URLS.has(databaseUrl)) {
       issues.push({
@@ -343,29 +349,58 @@ export function validateOperatorEnv(
         remediation: 'Ensure DATABASE_URL starts with postgres:// or postgresql://, specifies a host (or ?host=/socket), includes a database name, and percent-encodes special password characters.',
       });
     }
-  } else if (target === 'compose') {
+  }
+
+  if (containerDatabaseUrl) {
+    if (DUMMY_DATABASE_URLS.has(containerDatabaseUrl)) {
+      issues.push({
+        key: 'CONTAINER_DATABASE_URL',
+        rule: 'blocked-dummy-database-url',
+        message: 'CONTAINER_DATABASE_URL must not use a build-time dummy placeholder URL.',
+        remediation: 'Configure CONTAINER_DATABASE_URL with your external PostgreSQL URI or comment it out to use the bundled Docker Compose db service.',
+      });
+    } else if (!isValidPostgresUrl(containerDatabaseUrl)) {
+      issues.push({
+        key: 'CONTAINER_DATABASE_URL',
+        rule: 'invalid-container-database-url',
+        message: 'CONTAINER_DATABASE_URL is not a valid PostgreSQL connection URI.',
+        remediation: 'Ensure CONTAINER_DATABASE_URL starts with postgres:// or postgresql://, specifies a reachable container/external host, includes a database name, and percent-encodes special password characters.',
+      });
+    }
+  }
+
+  if (target === 'compose') {
     const dbPassword = normalizeOptional(getVal('DB_PASSWORD'));
     if (dbPassword) {
-      const dbUser = normalizeOptional(getVal('DB_USER')) ?? 'wedding';
-      const dbName = normalizeOptional(getVal('DB_NAME')) ?? 'wedding';
-      const synthesizedComposeUrl = `postgres://${dbUser}:${dbPassword}@db:5432/${dbName}`;
-      if (!isValidPostgresUrl(synthesizedComposeUrl)) {
+      if (BLOCKED_PROD_DB_PASSWORDS.has(dbPassword)) {
         issues.push({
           key: 'DB_PASSWORD',
-          rule: 'invalid-compose-db-uri',
-          message: 'DB_USER / DB_PASSWORD / DB_NAME produces an invalid PostgreSQL URI when interpolated by docker-compose.yml.',
-          remediation: 'Use URL-safe alphanumeric/hex characters for DB_PASSWORD (e.g. `openssl rand -hex 24`) or percent-encode reserved URI delimiters.',
+          rule: 'blocked-db-password',
+          message: 'DB_PASSWORD must not use the disposable .env.example / .env.ci default password in production.',
+          remediation: 'Generate a strong random PostgreSQL password (e.g. `openssl rand -hex 24`) and set DB_PASSWORD in .env.',
         });
+      } else if (!containerDatabaseUrl) {
+        const dbUser = normalizeOptional(getVal('DB_USER')) ?? 'wedding';
+        const dbName = normalizeOptional(getVal('DB_NAME')) ?? 'wedding';
+        const synthesizedComposeUrl = `postgres://${dbUser}:${dbPassword}@db:5432/${dbName}`;
+        if (!isValidPostgresUrl(synthesizedComposeUrl)) {
+          issues.push({
+            key: 'DB_PASSWORD',
+            rule: 'invalid-compose-db-uri',
+            message: 'DB_USER / DB_PASSWORD / DB_NAME produces an invalid PostgreSQL URI when interpolated by docker-compose.yml.',
+            remediation: 'Use URL-safe alphanumeric/hex characters for DB_PASSWORD (e.g. `openssl rand -hex 24`) or percent-encode reserved URI delimiters.',
+          });
+        }
       }
-    } else if (!composeRequiredGuards.includes('DB_PASSWORD')) {
+    } else if (!containerDatabaseUrl && !databaseUrl && !composeRequiredGuards.includes('DB_PASSWORD')) {
       issues.push({
         key: 'DATABASE_URL',
         rule: 'missing-database-url',
-        message: 'Either DATABASE_URL or DB_PASSWORD is required for PostgreSQL connectivity.',
-        remediation: 'Set DATABASE_URL (external PostgreSQL) or DB_PASSWORD (co-located Docker Compose db service) in .env.',
+        message: 'Either CONTAINER_DATABASE_URL or DB_PASSWORD is required for Docker Compose PostgreSQL connectivity.',
+        remediation: 'Set DB_PASSWORD (co-located Docker Compose db service) or CONTAINER_DATABASE_URL (external PostgreSQL) in .env.',
       });
     }
-  } else {
+  } else if (!databaseUrl) {
     issues.push({
       key: 'DATABASE_URL',
       rule: 'missing-database-url',

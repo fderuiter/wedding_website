@@ -49,10 +49,12 @@ function mergeAriaDescribedBy(
   return tokens.length > 0 ? tokens.join(' ') : undefined;
 }
 
-export const FormGroup = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement> & { state?: FormFeedbackState }
->(({ className, state = 'default', ...props }, ref) => {
+export function FormGroup({
+  className,
+  state = 'default',
+  ref,
+  ...props
+}: React.ComponentPropsWithRef<'div'> & { state?: FormFeedbackState }) {
   const id = useId();
   const messageId = `${id}-message`;
 
@@ -110,8 +112,7 @@ export const FormGroup = React.forwardRef<
       <div ref={ref} className={cn('space-y-1', className)} {...props} />
     </FormItemContext.Provider>
   );
-});
-FormGroup.displayName = 'FormGroup';
+}
 
 const useFormItem = () => {
   const context = useContext(FormItemContext);
@@ -173,10 +174,12 @@ function useFormControl({
   };
 }
 
-export const Label = React.forwardRef<
-  HTMLLabelElement,
-  React.LabelHTMLAttributes<HTMLLabelElement>
->(({ className, htmlFor: propHtmlFor, ...props }, ref) => {
+export function Label({
+  className,
+  htmlFor: propHtmlFor,
+  ref,
+  ...props
+}: React.ComponentPropsWithRef<'label'>) {
   const { controlId, state } = useFormItem();
 
   return (
@@ -194,18 +197,14 @@ export const Label = React.forwardRef<
       )}
     />
   );
-});
-Label.displayName = 'Label';
+}
 
-export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+export interface InputProps extends React.ComponentPropsWithRef<'input'> {
   state?: FormFeedbackState;
   sizeVariant?: 'default' | 'compact';
 }
 
-export const Input = React.forwardRef<
-  HTMLInputElement,
-  InputProps
->(({
+export function Input({
   className,
   type = 'text',
   style,
@@ -214,8 +213,9 @@ export const Input = React.forwardRef<
   id: propId,
   'aria-describedby': propAriaDescribedBy,
   'aria-invalid': propAriaInvalid,
+  ref,
   ...props
-}, ref) => {
+}: InputProps) {
   const { id, state, ariaDescribedBy, ariaInvalid } = useFormControl({
     propId,
     propState,
@@ -256,21 +256,18 @@ export const Input = React.forwardRef<
       aria-describedby={ariaDescribedBy}
     />
   );
-});
-Input.displayName = 'Input';
+}
 
-export const Textarea = React.forwardRef<
-  HTMLTextAreaElement,
-  React.TextareaHTMLAttributes<HTMLTextAreaElement> & { state?: FormFeedbackState }
->(({
+export function Textarea({
   className,
   style,
   state: propState,
   id: propId,
   'aria-describedby': propAriaDescribedBy,
   'aria-invalid': propAriaInvalid,
+  ref,
   ...props
-}, ref) => {
+}: React.ComponentPropsWithRef<'textarea'> & { state?: FormFeedbackState }) {
   const { id, state, ariaDescribedBy, ariaInvalid } = useFormControl({
     propId,
     propState,
@@ -304,21 +301,18 @@ export const Textarea = React.forwardRef<
       aria-describedby={ariaDescribedBy}
     />
   );
-});
-Textarea.displayName = 'Textarea';
+}
 
-export const Select = React.forwardRef<
-  HTMLSelectElement,
-  React.SelectHTMLAttributes<HTMLSelectElement> & { state?: FormFeedbackState }
->(({
+export function Select({
   className,
   style,
   state: propState,
   id: propId,
   'aria-describedby': propAriaDescribedBy,
   'aria-invalid': propAriaInvalid,
+  ref,
   ...props
-}, ref) => {
+}: React.ComponentPropsWithRef<'select'> & { state?: FormFeedbackState }) {
   const { id, state, ariaDescribedBy, ariaInvalid } = useFormControl({
     propId,
     propState,
@@ -352,21 +346,18 @@ export const Select = React.forwardRef<
       aria-describedby={ariaDescribedBy}
     />
   );
-});
-Select.displayName = 'Select';
+}
 
-export const Checkbox = React.forwardRef<
-  HTMLInputElement,
-  React.InputHTMLAttributes<HTMLInputElement> & { state?: FormFeedbackState }
->(({
+export function Checkbox({
   className,
   style,
   state: propState,
   id: propId,
   'aria-describedby': propAriaDescribedBy,
   'aria-invalid': propAriaInvalid,
+  ref,
   ...props
-}, ref) => {
+}: React.ComponentPropsWithRef<'input'> & { state?: FormFeedbackState }) {
   const { id, state, ariaDescribedBy, ariaInvalid } = useFormControl({
     propId,
     propState,
@@ -401,21 +392,18 @@ export const Checkbox = React.forwardRef<
       aria-describedby={ariaDescribedBy}
     />
   );
-});
-Checkbox.displayName = 'Checkbox';
+}
 
-export const FormMessage = React.forwardRef<
-  HTMLParagraphElement,
-  React.HTMLAttributes<HTMLParagraphElement> & { children?: React.ReactNode }
->(({
+export function FormMessage({
   className,
   children,
   id: propId,
   role: propRole,
   'aria-live': propAriaLive,
   'aria-atomic': propAriaAtomic,
+  ref,
   ...props
-}, ref) => {
+}: React.ComponentPropsWithRef<'p'>) {
   const { state, registerMessage } = useFormItem();
   const messageUniqueId = React.useId();
   const resolvedId = propId || `${messageUniqueId}-message`;
@@ -461,5 +449,4 @@ export const FormMessage = React.forwardRef<
       {children}
     </p>
   );
-});
-FormMessage.displayName = 'FormMessage';
+}

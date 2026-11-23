@@ -154,7 +154,7 @@ describe('scripts/preflight-env.ts', () => {
     expect(cliRes.stderr).toContain('[E2E_TEST]');
   });
 
-  it('rejects repository .env.example out of the box because placeholder secrets and missing DB_PASSWORD are not production-ready', () => {
+  it('rejects repository .env.example and .env.ci out of the box because placeholder secrets and disposable DB_PASSWORD defaults are not production-ready', () => {
     const exampleCopy = path.join(tempDir, '.env');
     fs.copyFileSync(path.join(repoRoot, '.env.example'), exampleCopy);
 
@@ -164,6 +164,42 @@ describe('scripts/preflight-env.ts', () => {
     expect(cliRes.stderr).toContain('[ADMIN_PASSWORD]');
     expect(cliRes.stderr).toContain('[GUEST_PASSCODE]');
     expect(cliRes.stderr).toContain('[GUEST_SESSION_SECRET]');
+
+    const ciCopy = path.join(tempDir, '.env.ci.copy');
+    fs.copyFileSync(path.join(repoRoot, '.env.ci'), ciCopy);
+    const ciCliRes = runPreflightCli(['--env-file', ciCopy], tempDir);
+    expect(ciCliRes.exitCode).toBe(1);
+    expect(ciCliRes.stderr).toContain('[DB_PASSWORD]');
+    expect(ciCliRes.stderr).toContain('[ADMIN_PASSWORD]');
+    expect(ciCliRes.stderr).toContain('[GUEST_PASSCODE]');
+    expect(ciCliRes.stderr).toContain('[GUEST_SESSION_SECRET]');
+    expect(ciCliRes.stderr).toContain('[E2E_TEST]');
+  });
+
+  it('validates CONTAINER_DATABASE_URL overrides in compose mode without leaking credentials', () => {
+    const validHash = generateValidAdminScryptHash();
+    const canaryPw = 'CANARY_CONTAINER_DB_PW_556677';
+    const invalidEntries = parseDotenvContent([
+      'DB_PASSWORD=a9f3e71b24c80d6512ab98cd34ef56789012abcd3456ef78',
+      `CONTAINER_DATABASE_URL="mysql://wedding:${canaryPw}@external-db:3306/wedding"`,
+      `ADMIN_PASSWORD="${validHash}"`,
+      'GUEST_PASSCODE="autumn-orchard-celebration-2027"',
+      'GUEST_SESSION_SECRET="8f4a2e9c1d7b3a6f0e5c8d2a9b4f7e1c3d6a8b0e2f4c6d8a1b3e5f7a9c0d2e4f"',
+    ].join('\n'));
+
+    const invalidRes = validateOperatorEnv(invalidEntries, {
+      target: 'compose',
+      composeContent: liveComposeRaw,
+    });
+    expect(invalidRes.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: 'CONTAINER_DATABASE_URL',
+          rule: 'invalid-container-database-url',
+        }),
+      ])
+    );
+    expect(JSON.stringify(invalidRes.issues)).not.toContain(canaryPw);
   });
 
   it('never leaks raw secret values, password hashes, database credentials, or API keys in stdout, stderr, or issue objects', () => {
