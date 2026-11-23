@@ -89,6 +89,16 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
     return jsonResponse({ success: true });
   }
 
+  if (path === '/api/admin/setup' && method === 'GET') {
+    const isSetup = getDemoState().persona === 'setup';
+    return jsonResponse({
+      success: true,
+      initialized: true,
+      setupCompleted: !isSetup,
+      requiresSetup: isSetup,
+    });
+  }
+
   if (path === '/api/admin/setup' && method === 'POST') {
     const body = await parseJsonBody(init);
     if ('password' in body && Object.keys(body).length === 1) {
@@ -700,6 +710,314 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
 
   if (path.startsWith('/api/admin/broadcast/') && method === 'GET') {
     return jsonResponse({ error: 'Broadcast message not found in demo mode.' }, 404);
+  }
+
+  if (path === '/api/admin/onboarding-milestones' && method === 'GET') {
+    const state = getDemoState();
+    const dataset = getActiveArchetypeDataset();
+    const venueName = (state.configOverrides.venueName || '').trim();
+    const weddingDetailsCompleted =
+      Boolean(state.configOverrides.partner1Name && state.configOverrides.partner2Name) &&
+      Boolean(venueName && venueName.toUpperCase() !== 'TBD');
+    const guestListCompleted = dataset.guests.some((g) => !g.isSample);
+    const registryCompleted = dataset.registryItems.some((i) => !i.isSample);
+    const seatingCompleted = dataset.seatingTables.some((t) => !t.isSample);
+    const faqCompleted = dataset.faqs.some((n) => n.type === 'FAQ' && !n.data.isSample);
+    const milestones = [
+      {
+        id: 'wedding-details',
+        title: 'Wedding Details',
+        description:
+          'Verify partner names, wedding date, venue details, and your public website URL.',
+        completed: weddingDetailsCompleted,
+        href: '/admin/dashboard/settings',
+        actionLabel: weddingDetailsCompleted ? 'Edit Wedding Details' : 'Configure Wedding Details',
+      },
+      {
+        id: 'guest-list',
+        title: 'Guest List',
+        description: 'Import or add guest invitations so guests can RSVP.',
+        completed: guestListCompleted,
+        href: '/admin/dashboard/invitation-codes',
+        actionLabel: guestListCompleted ? 'Manage Guest List' : 'Add Guest List',
+      },
+      {
+        id: 'registry',
+        title: 'Gift Registry',
+        description: 'Add gifts or cash funds to your wedding registry.',
+        completed: registryCompleted,
+        href: '/registry/add-item',
+        actionLabel: registryCompleted ? 'Add More Gifts' : 'Add Registry Gifts',
+      },
+      {
+        id: 'seating-layout',
+        title: 'Seating Layout',
+        description: 'Create reception tables and organize your seating chart.',
+        completed: seatingCompleted,
+        href: '/admin/dashboard/seating-chart',
+        actionLabel: seatingCompleted ? 'Edit Seating Layout' : 'Create Seating Layout',
+      },
+      {
+        id: 'faq-setup',
+        title: 'Wedding Q&A (FAQs)',
+        description:
+          'Publish guest Q&A answers for attire, RSVP deadlines, travel, and accommodations.',
+        completed: faqCompleted,
+        href: '/admin/dashboard/content',
+        actionLabel: faqCompleted ? 'Manage Wedding Q&A' : 'Add Starter FAQs',
+      },
+    ];
+    const completedCount = milestones.filter((m) => m.completed).length;
+    return jsonResponse({
+      success: true,
+      data: {
+        completedCount,
+        pendingCount: milestones.length - completedCount,
+        totalCount: milestones.length,
+        allComplete: completedCount === milestones.length,
+        milestones,
+      },
+    });
+  }
+
+  if (
+    path.startsWith('/api/admin/registry/items/') &&
+    path.endsWith('/unclaim') &&
+    method === 'POST'
+  ) {
+    const itemId = decodeURIComponent(
+      path.slice('/api/admin/registry/items/'.length, -'/unclaim'.length)
+    );
+    let updatedItem: RegistryItem | null = null;
+    mutateActiveDataset((current) => ({
+      ...current,
+      registryItems: current.registryItems.map((item) => {
+        if (item.id !== itemId) return item;
+        updatedItem = {
+          ...item,
+          purchased: false,
+          purchaserName: null,
+          amountContributed: 0,
+          contributors: [],
+        };
+        return updatedItem;
+      }),
+    }));
+    if (!updatedItem) {
+      return jsonResponse({ error: 'Registry item not found.' }, 404);
+    }
+    return jsonResponse({ success: true, data: { item: updatedItem }, item: updatedItem });
+  }
+
+  if (path.startsWith('/api/admin/contributors/')) {
+    const rawRest = path.slice('/api/admin/contributors/'.length);
+    const isAction = rawRest.endsWith('/action');
+    const contributorId = decodeURIComponent(
+      isAction ? rawRest.slice(0, -'/action'.length) : rawRest
+    );
+    const body = await parseJsonBody(init);
+    let matchedContributor: RegistryItem['contributors'][number] | null = null;
+    let updatedParentItem: RegistryItem | null = null;
+    let deleted = false;
+
+    mutateActiveDataset((current) => ({
+      ...current,
+      registryItems: current.registryItems.map((item) => {
+        const idx = (item.contributors || []).findIndex((c) => c.id === contributorId);
+        if (idx === -1) return item;
+        const target = item.contributors[idx];
+
+        if (method === 'DELETE' && !isAction) {
+          deleted = true;
+          const nextContributors = item.contributors.filter((c) => c.id !== contributorId);
+          const nextTotal = nextContributors.reduce(
+            (sum, c) => (c.status === 'CANCELLED' ? sum : sum + c.amount),
+            0
+          );
+          updatedParentItem = {
+            ...item,
+            contributors: nextContributors,
+            amountContributed: nextTotal,
+            purchased: item.isGroupGift ? nextTotal >= item.price : nextContributors.length > 0,
+            purchaserName: nextContributors[0]?.name ?? null,
+          };
+          return updatedParentItem;
+        }
+
+        const nextStatus =
+          isAction && method === 'POST'
+            ? body.action === 'void'
+              ? 'CANCELLED'
+              : body.action === 'confirm'
+                ? 'CONFIRMED'
+                : target.status
+            : body.status === 'CONFIRMED' || body.status === 'RESERVED' || body.status === 'CANCELLED'
+              ? body.status
+              : target.status;
+
+        const nextContributor: RegistryItem['contributors'][number] = {
+          ...target,
+          ...(typeof body.name === 'string' && body.name.trim() ? { name: body.name.trim() } : {}),
+          ...(body.email === null || typeof body.email === 'string' ? { email: body.email } : {}),
+          ...(typeof body.amount === 'number' && body.amount > 0 ? { amount: body.amount } : {}),
+          ...(body.message === null || typeof body.message === 'string'
+            ? { message: body.message }
+            : {}),
+          status: nextStatus,
+        };
+        matchedContributor = nextContributor;
+        const nextContributors = item.contributors.map((c) =>
+          c.id === contributorId ? nextContributor : c
+        );
+        const nextTotal = nextContributors.reduce(
+          (sum, c) => (c.status === 'CANCELLED' ? sum : sum + c.amount),
+          0
+        );
+        updatedParentItem = {
+          ...item,
+          contributors: nextContributors,
+          amountContributed: nextTotal,
+          purchased: item.isGroupGift
+            ? nextTotal >= item.price
+            : nextContributors.some((c) => c.status !== 'CANCELLED'),
+        };
+        return updatedParentItem;
+      }),
+    }));
+
+    if (method === 'DELETE' && !isAction) {
+      if (!deleted) return jsonResponse({ error: 'Contributor not found.' }, 404);
+      return jsonResponse({
+        success: true,
+        deletedId: contributorId,
+        item: updatedParentItem,
+        data: { deletedId: contributorId, item: updatedParentItem },
+      });
+    }
+    if (!matchedContributor) {
+      return jsonResponse({ error: 'Contributor not found.' }, 404);
+    }
+    return jsonResponse({
+      success: true,
+      changed: true,
+      action: typeof body.action === 'string' ? body.action : 'confirm',
+      contributor: matchedContributor,
+      item: updatedParentItem,
+      data: {
+        changed: true,
+        contributor: matchedContributor,
+        item: updatedParentItem,
+      },
+    });
+  }
+
+  if (path === '/api/admin/thank-you-notes' && method === 'POST') {
+    const body = await parseJsonBody(init);
+    const created = {
+      id: `demo-offline-gift-${Date.now()}`,
+      name: String(body.name || 'Offline Contributor').trim(),
+      email: typeof body.email === 'string' ? body.email : null,
+      amount: Number(body.amount || 50),
+      refundedAmount: 0,
+      status: 'CONFIRMED' as const,
+      date: typeof body.date === 'string' ? body.date : new Date().toISOString(),
+      message: typeof body.message === 'string' ? body.message : null,
+      thankYouStatus:
+        body.thankYouStatus === 'Sent' || body.thankYouStatus === 'Not Needed'
+          ? body.thankYouStatus
+          : ('Unsent' as const),
+      thankYouNote: typeof body.thankYouNote === 'string' ? body.thankYouNote : null,
+      registryItemId: typeof body.registryItemId === 'string' ? body.registryItemId : null,
+      registryItem: null,
+    };
+    return jsonResponse({ success: true, item: created }, 201);
+  }
+
+  if (path === '/api/admin/thank-you-notes/batch' && method === 'POST') {
+    const body = await parseJsonBody(init);
+    const ids = Array.isArray(body.ids)
+      ? body.ids.filter((id): id is string => typeof id === 'string')
+      : [];
+    const nextStatus =
+      body.thankYouStatus === 'Sent' || body.thankYouStatus === 'Not Needed'
+        ? body.thankYouStatus
+        : 'Unsent';
+    if (ids.length > 0) {
+      const idSet = new Set(ids);
+      mutateActiveDataset((current) => ({
+        ...current,
+        registryItems: current.registryItems.map((item) => ({
+          ...item,
+          contributors: (item.contributors || []).map((c) =>
+            c.id && idSet.has(c.id) ? { ...c, thankYouStatus: nextStatus } : c
+          ),
+        })),
+      }));
+    }
+    return jsonResponse({ success: true, updatedCount: ids.length });
+  }
+
+  if (path.startsWith('/api/admin/thank-you-notes/') && (method === 'PATCH' || method === 'PUT')) {
+    const noteId = decodeURIComponent(path.slice('/api/admin/thank-you-notes/'.length));
+    const body = await parseJsonBody(init);
+    const nextStatus =
+      body.thankYouStatus === 'Sent' || body.thankYouStatus === 'Not Needed'
+        ? body.thankYouStatus
+        : 'Unsent';
+    mutateActiveDataset((current) => ({
+      ...current,
+      registryItems: current.registryItems.map((item) => ({
+        ...item,
+        contributors: (item.contributors || []).map((c) =>
+          c.id === noteId ? { ...c, thankYouStatus: nextStatus } : c
+        ),
+      })),
+    }));
+    return jsonResponse({ success: true, id: noteId, thankYouStatus: nextStatus });
+  }
+
+  if (path === '/api/admin/thank-you-notes' && method === 'GET') {
+    const dataset = getActiveArchetypeDataset();
+    const items = dataset.registryItems.flatMap((registryItem) =>
+      (registryItem.contributors || []).map((contributor) => ({
+        id: contributor.id,
+        name: contributor.name,
+        email: contributor.email ?? null,
+        message: contributor.message ?? null,
+        amount: contributor.amount,
+        refundedAmount: contributor.refundedAmount ?? 0,
+        status: contributor.status ?? 'CONFIRMED',
+        date: contributor.date || new Date().toISOString(),
+        thankYouStatus: contributor.thankYouStatus || 'Unsent',
+        registryItemId: registryItem.id,
+        registryItem: {
+          id: registryItem.id,
+          name: registryItem.name,
+          category: registryItem.category,
+        },
+      }))
+    );
+    const sent = items.filter((i) => i.thankYouStatus === 'Sent').length;
+    const notNeeded = items.filter((i) => i.thankYouStatus === 'Not Needed').length;
+    const unsent = items.length - sent - notNeeded;
+    const thanked = sent + notNeeded;
+    return jsonResponse({
+      items,
+      metrics: {
+        total: items.length,
+        sent,
+        unsent,
+        notNeeded,
+        thanked,
+        completionPercentage: items.length > 0 ? Math.round((thanked / items.length) * 100) : 0,
+      },
+      pagination: {
+        page: 1,
+        pageSize: Math.max(25, items.length),
+        totalItems: items.length,
+        totalPages: 1,
+      },
+    });
   }
 
   // Safe fallback for read-only admin overview widgets on static export

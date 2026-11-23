@@ -16,6 +16,12 @@ import { useOptionalToast } from '@/components/ui/ToastProvider';
 import { getServerExportTokens, type ThemePreset } from '@/lib/theme/presets';
 import type { ArchetypeId } from '@/lib/sampleData/archetypes';
 import type { PublicAppConfig } from '@/lib/config';
+import {
+  ADMIN_ONBOARDING_MILESTONES_QUERY_KEY,
+  ADMIN_SAMPLE_DATA_QUERY_KEY,
+  ADMIN_SEATING_QUERY_KEY,
+  invalidateSampleDataCaches,
+} from '@/lib/adminCacheSync';
 import { installDemoFetchInterceptor } from '@/lib/demo/demoApiHandler';
 import type { ArchetypeDataset } from '@/lib/demo/demoSeed';
 import {
@@ -137,9 +143,14 @@ function ActiveDemoProvider({ children }: { children: React.ReactNode }) {
         totalPages: 1,
       }
     );
+    void queryClient.invalidateQueries({ queryKey: ['admin-registry'] });
     void queryClient.invalidateQueries({ queryKey: ['admin-wedding-party'] });
     void queryClient.invalidateQueries({ queryKey: ['admin-attractions'] });
     void queryClient.invalidateQueries({ queryKey: ['admin-invitation-codes'] });
+    void queryClient.invalidateQueries({ queryKey: ADMIN_SEATING_QUERY_KEY });
+    void queryClient.invalidateQueries({ queryKey: ADMIN_ONBOARDING_MILESTONES_QUERY_KEY });
+    void queryClient.invalidateQueries({ queryKey: ADMIN_SAMPLE_DATA_QUERY_KEY });
+    void invalidateSampleDataCaches();
   }, [
     queryClient,
     storeState.archetype,

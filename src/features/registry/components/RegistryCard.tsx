@@ -69,7 +69,8 @@ const RegistryCard: React.FC<RegistryCardProps> = ({
     !item.isSample &&
     !effectiveHandle.paymentHandle &&
     cardCheckoutEnabled === false;
-  const isClickable = !isClaimed && !isAdmin;
+  const canContribute = !isClaimed && !isAdmin;
+  const isClickable = !isAdmin;
   const cardClasses = `border border-card-border rounded-[var(--radius-card)] overflow-hidden shadow-card transition relative bg-card text-foreground focus-visible:ring-4 focus-visible:ring-primary outline-none block w-full text-left ${isClaimed ? 'opacity-60' : ''} ${isClickable ? 'hover:shadow-[var(--shadow-lg)] hover:scale-105' : ''}`;
   const { handleShare, copied } = useShareItem(item);
 
@@ -220,7 +221,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({
             </Button>
           </div>
         )}
-        {isClickable && (
+        {canContribute && (
           <div className="absolute bottom-4 right-4 z-20">
             <Button
               variant="primary"
@@ -229,6 +230,18 @@ const RegistryCard: React.FC<RegistryCardProps> = ({
               aria-label={`Contribute to ${item.name}`}
             >
               Contribute
+            </Button>
+          </div>
+        )}
+        {isClaimed && !isAdmin && (
+          <div className="absolute bottom-4 right-4 z-20">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleContribute}
+              aria-label={`View details for ${item.name}`}
+            >
+              View Details
             </Button>
           </div>
         )}

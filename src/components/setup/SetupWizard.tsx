@@ -1,20 +1,28 @@
 'use client';
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useContext } from 'react';
 import { useRouter } from 'next/navigation';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {
+  QueryClient,
+  QueryClientContext,
+  QueryClientProvider,
+  useQueryClient,
+} from '@tanstack/react-query';
 
 import { FormGroup, Label, Input, FormMessage, Checkbox } from '@/components/ui/forms';
 import { AccessibleStep } from '@/components/ui/AccessibleStep';
 import { Container, Card, Heading } from '@/components/ui/Layout';
 import { Button } from '@/components/ui/Button';
 import { ToggleButtonGroup } from '@/components/ui/ToggleButtonGroup';
-import { ToastProvider } from '@/components/ui/ToastProvider';
+import { ToastContext, ToastProvider } from '@/components/ui/ToastProvider';
 import { useAdminWeddingParty } from '@/hooks/admin/useAdminWeddingParty';
 import { useAdminAttractions } from '@/hooks/admin/useAdminAttractions';
 import { useAdminInvitationCodes } from '@/hooks/admin/useAdminInvitationCodes';
 import {
+  SETUP_WIZARD_STORAGE_KEY,
   useSetupWizardMachine,
+  type SetupWizardPersistedState,
 } from '@/hooks/useSetupWizardMachine';
+import { invalidateSampleDataCaches } from '@/lib/adminCacheSync';
 import { WeddingPartyManagerModal } from './WeddingPartyManagerModal';
 import { AttractionsManagerModal } from './AttractionsManagerModal';
 import { CsvImportWizardModal } from '@/components/admin/CsvImportWizardModal';
@@ -100,10 +108,38 @@ function resolveStep2BackendErrorField(message: string): Step2ErrorField {
   return 'siteUrl';
 }
 
-function SetupWizardContent({ onDemoComplete }: { onDemoComplete?: () => void }) {
+export interface SetupWizardSavedConfig extends Partial<SetupWizardPersistedState> {
+  themePreset?: ThemePreset;
+  colorPrimary?: string;
+  colorSecondary?: string;
+}
+
+interface SetupWizardProps {
+  initialSavedConfig?: SetupWizardSavedConfig;
+  onDemoComplete?: () => void;
+}
+
+function SetupWizardContent({
+  initialSavedConfig,
+  onDemoComplete,
+  hasAppShell = false,
+}: SetupWizardProps & { hasAppShell?: boolean }) {
   const router = useSafeRouter();
+  const queryClient = useQueryClient();
   const demo = useOptionalDemo();
   const isDemoMode = Boolean(demo?.isDemoMode);
+  const normalizedInitialSavedConfig = initialSavedConfig
+    ? {
+      ...initialSavedConfig,
+      step:
+        initialSavedConfig.step ??
+        (initialSavedConfig.partner1Name &&
+        initialSavedConfig.partner2Name &&
+        initialSavedConfig.baseUrl
+          ? 3
+          : undefined),
+    }
+    : undefined;
   const {
     state,
     setStep,
@@ -115,7 +151,7 @@ function SetupWizardContent({ onDemoComplete }: { onDemoComplete?: () => void })
     startSubmit,
     loginSuccess,
     clearPersistedState,
-  } = useSetupWizardMachine();
+  } = useSetupWizardMachine(normalizedInitialSavedConfig);
 
   const {
     step,
@@ -185,19 +221,32 @@ function SetupWizardContent({ onDemoComplete }: { onDemoComplete?: () => void })
   const { data: partyMembers = [] } = useAdminWeddingParty({ enabled: isAuthenticated });
   const { data: attractions = [] } = useAdminAttractions({ enabled: isAuthenticated });
   const { data: invitationCodes = [], fetchAll: refetchInvitationCodes } = useAdminInvitationCodes({ enabled: isAuthenticated });
+  const nonSampleInvitationCodes = invitationCodes.filter((code) => !code.isSample);
+  const activeNonSampleGuestCount =
+    nonSampleInvitationCodes.length > 0 ? nonSampleInvitationCodes.length : importedGuestCount;
 
   const handleGuestImportComplete = async () => {
     const result = await refetchInvitationCodes();
-    const codes = (result && Array.isArray(result) ? result : invitationCodes) || [];
-    const count = codes.length;
-    updateDraft({ importedGuestCount: count });
+    const rawItems =
+      result && typeof result === 'object' && 'data' in result
+        ? (result as { data?: typeof invitationCodes }).data
+        : result;
+    const codes = Array.isArray(rawItems) ? rawItems : invitationCodes;
+    const nonSampleCount = codes.filter((code) => !code.isSample).length;
+    updateDraft({ importedGuestCount: nonSampleCount });
   };
 
   // Theme state
   const { setPreviewConfig } = useTheme();
-  const [themePreset, setThemePreset] = useState<ThemePreset>('classic');
-  const [colorPrimary, setColorPrimary] = useState('#4A5568');
-  const [colorSecondary, setColorSecondary] = useState('#2D3748');
+  const [themePreset, setThemePreset] = useState<ThemePreset>(
+    initialSavedConfig?.themePreset ?? 'classic'
+  );
+  const [colorPrimary, setColorPrimary] = useState(
+    initialSavedConfig?.colorPrimary ?? '#4A5568'
+  );
+  const [colorSecondary, setColorSecondary] = useState(
+    initialSavedConfig?.colorSecondary ?? '#2D3748'
+  );
   const [step2ErrorField, setStep2ErrorField] = useState<Step2ErrorField>('siteUrl');
   const partner1InputRef = useRef<HTMLInputElement>(null);
   const partner2InputRef = useRef<HTMLInputElement>(null);
@@ -345,9 +394,10 @@ function SetupWizardContent({ onDemoComplete }: { onDemoComplete?: () => void })
         partner2Name: trimmedPartner2,
         weddingDate: weddingDate ? new Date(`${weddingDate}T16:00:00Z`) : new Date('2026-10-18T16:00:00Z'),
         contactEmail: trimmedContactEmail,
-        venueName: venueName?.trim() || 'TBD',
-        venueCity: venueCity?.trim() || 'TBD',
-        venueState: venueState?.trim() || 'TBD',
+        venueName: venueName?.trim() || '',
+        venueCity: venueCity?.trim() || '',
+        venueState: venueState?.trim() || '',
+        heroTitle: `${trimmedPartner1} & ${trimmedPartner2}`,
         timezone: timezone || 'America/Chicago',
         themePreset,
         colorPrimary,
@@ -369,29 +419,37 @@ function SetupWizardContent({ onDemoComplete }: { onDemoComplete?: () => void })
           weddingDate,
           baseUrl: trimmedBaseUrl,
           contactEmail: trimmedContactEmail,
-          venueName: venueName?.trim() || 'TBD',
-          venueAddress: 'TBD',
-          venueCity: venueCity?.trim() || 'TBD',
-          venueState: venueState?.trim() || 'TBD',
-          venueZip: 'TBD',
+          venueName: venueName?.trim() || '',
+          venueAddress: '',
+          venueCity: venueCity?.trim() || '',
+          venueState: venueState?.trim() || '',
+          venueZip: '',
           timezone: timezone || 'America/Chicago',
           latitude: 0,
           longitude: 0,
-          storyText: 'Our story...',
-          venueDescription: 'Venue description...',
-          travelAdvice: 'Travel advice...',
-          heroTitle: 'We Tied the Knot!',
-          heroSubtitle: 'Thank you for celebrating with us!',
+          storyText: '',
+          venueDescription: '',
+          travelAdvice: '',
+          heroTitle: `${trimmedPartner1} & ${trimmedPartner2}`,
+          heroSubtitle: '',
           seoTitle: `${trimmedPartner1} & ${trimmedPartner2}'s Wedding`,
           seoDescription: `Join ${trimmedPartner1} and ${trimmedPartner2} for their wedding celebration.`,
           themePreset,
           colorPrimary,
           colorSecondary,
+          setupCompleted: false,
         }),
       });
       if (res.ok) {
         syncAdminLoginState();
         setStep(3);
+        if (typeof window !== 'undefined' && window.location.pathname !== '/admin/setup') {
+          try {
+            window.history.replaceState(window.history.state, '', '/admin/setup');
+          } catch {
+            // Ignore history replacement errors in restricted environments
+          }
+        }
       } else {
         const data = await res.json().catch(() => ({}));
         const errMsg =
@@ -414,6 +472,7 @@ function SetupWizardContent({ onDemoComplete }: { onDemoComplete?: () => void })
     e.preventDefault();
     if (isDemoMode && demo) {
       demo.applySampleSelection(sampleArchetype, selectedModules);
+      await invalidateSampleDataCaches(queryClient);
       setStep(4);
       return;
     }
@@ -435,9 +494,52 @@ function SetupWizardContent({ onDemoComplete }: { onDemoComplete?: () => void })
       } else {
         await fetch('/api/admin/sample-data', { method: 'DELETE' });
       }
+      await invalidateSampleDataCaches(queryClient);
       setStep(4);
     } catch (err: unknown) {
       setError(getSetupErrorMessage(err, 'Error configuring sample data.'));
+    }
+  };
+
+  const handleCompleteAndExit = async () => {
+    if (typeof window !== 'undefined') {
+      try {
+        window.sessionStorage.removeItem(SETUP_WIZARD_STORAGE_KEY);
+      } catch {
+        // Ignore storage errors in restricted browser environments
+      }
+    }
+    if (isDemoMode && demo) {
+      clearPersistedState();
+      demo.setSetupAuthenticated(false);
+      demo.setPersona('admin');
+      if (onDemoComplete) {
+        onDemoComplete();
+      } else if (hasAppShell && router?.push) {
+        router.push('/admin/dashboard');
+        router.refresh?.();
+      }
+      return;
+    }
+    syncAdminLoginState();
+    startSubmit();
+    try {
+      await fetch('/api/admin/setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ setupCompleted: true }),
+      });
+    } catch {
+      // Allow navigation to proceed even if network completion call fails
+    }
+    clearPersistedState();
+    if (hasAppShell && router?.push) {
+      router.push('/admin/dashboard');
+      router.refresh?.();
+    } else if (typeof window !== 'undefined') {
+      window.location.assign(
+        new URL('/admin/dashboard', window.location.origin).href
+      );
     }
   };
 
@@ -556,15 +658,15 @@ function SetupWizardContent({ onDemoComplete }: { onDemoComplete?: () => void })
               <div className="grid grid-cols-3 gap-4">
                 <FormGroup className="col-span-3 md:col-span-1">
                   <Label htmlFor="venueName">Venue Name</Label>
-                  <Input id="venueName" type="text" value={venueName} onChange={(e) => setVenueName(e.target.value)} placeholder="TBD" />
+                  <Input id="venueName" type="text" value={venueName} onChange={(e) => setVenueName(e.target.value)} placeholder="Optional" />
                 </FormGroup>
                 <FormGroup className="col-span-3 md:col-span-1">
                   <Label htmlFor="venueCity">City</Label>
-                  <Input id="venueCity" type="text" value={venueCity} onChange={(e) => setVenueCity(e.target.value)} placeholder="TBD" />
+                  <Input id="venueCity" type="text" value={venueCity} onChange={(e) => setVenueCity(e.target.value)} placeholder="Optional" />
                 </FormGroup>
                 <FormGroup className="col-span-3 md:col-span-1">
                   <Label htmlFor="venueState">State</Label>
-                  <Input id="venueState" type="text" value={venueState} onChange={(e) => setVenueState(e.target.value)} placeholder="TBD" />
+                  <Input id="venueState" type="text" value={venueState} onChange={(e) => setVenueState(e.target.value)} placeholder="Optional" />
                 </FormGroup>
               </div>
 
@@ -764,6 +866,18 @@ function SetupWizardContent({ onDemoComplete }: { onDemoComplete?: () => void })
                   Skip
                 </Button>
               </div>
+              <div className="pt-2 text-center">
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => {
+                    void handleCompleteAndExit();
+                  }}
+                  className="text-sm font-medium text-gray-600 dark:text-gray-300 underline hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded px-2 py-1"
+                >
+                  Skip to Admin Dashboard
+                </button>
+              </div>
             </form>
           </Card>
         </Container>
@@ -777,9 +891,9 @@ function SetupWizardContent({ onDemoComplete }: { onDemoComplete?: () => void })
               Import your guest list spreadsheet to issue invitation codes and manage RSVPs immediately, or skip to complete setup.
             </p>
 
-            {(importedGuestCount > 0 || invitationCodes.length > 0) ? (
+            {activeNonSampleGuestCount > 0 ? (
               <div className="mb-6 p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl text-emerald-800 dark:text-emerald-200 font-medium">
-                ✓ {importedGuestCount || invitationCodes.length} guest record(s) imported.
+                ✓ {activeNonSampleGuestCount} guest record(s) imported.
               </div>
             ) : (
               <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-600 dark:text-gray-300 text-sm">
@@ -791,6 +905,7 @@ function SetupWizardContent({ onDemoComplete }: { onDemoComplete?: () => void })
               <Button
                 type="button"
                 variant="secondary"
+                disabled={loading}
                 onClick={() => setStep(3)}
                 className="py-3 px-6"
               >
@@ -799,6 +914,7 @@ function SetupWizardContent({ onDemoComplete }: { onDemoComplete?: () => void })
               <Button
                 type="button"
                 variant="primary"
+                disabled={loading}
                 onClick={() => openModal('csv')}
                 className="flex-1 py-3"
               >
@@ -807,11 +923,24 @@ function SetupWizardContent({ onDemoComplete }: { onDemoComplete?: () => void })
               <Button
                 type="button"
                 variant="secondary"
+                disabled={loading}
                 onClick={() => setStep(5)}
                 className="py-3 px-6"
               >
                 Skip for Now
               </Button>
+            </div>
+            <div className="mt-4 text-center">
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => {
+                  void handleCompleteAndExit();
+                }}
+                className="text-sm font-medium text-gray-600 dark:text-gray-300 underline hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded px-2 py-1"
+              >
+                Skip to Admin Dashboard
+              </button>
             </div>
           </Card>
         </Container>
@@ -830,9 +959,9 @@ function SetupWizardContent({ onDemoComplete }: { onDemoComplete?: () => void })
                 Manage Attractions ({attractions.length} {attractions.length === 1 ? 'item' : 'items'})
               </Button>
             </div>
-            {(importedGuestCount > 0 || invitationCodes.length > 0) && (
+            {activeNonSampleGuestCount > 0 && (
               <p className="mt-4 text-sm font-medium text-emerald-700 dark:text-emerald-300">
-                Guest List: {importedGuestCount || invitationCodes.length} invitation code(s) active
+                Guest List: {activeNonSampleGuestCount} invitation code(s) active
               </p>
             )}
             <p className="mt-6 mb-4 text-sm text-gray-600 dark:text-gray-300">You can also manage content and clear sample data anytime from the Admin Dashboard.</p>
@@ -840,35 +969,34 @@ function SetupWizardContent({ onDemoComplete }: { onDemoComplete?: () => void })
               <Button
                 type="button"
                 variant="secondary"
+                disabled={loading}
                 onClick={() => setStep(4)}
                 className="py-3 px-6"
               >
                 Back
               </Button>
               <Button
+                disabled={loading}
                 onClick={() => {
-                  clearPersistedState();
-                  if (isDemoMode && demo) {
-                    demo.setSetupAuthenticated(false);
-                    demo.setPersona('admin');
-                    onDemoComplete?.();
-                    return;
-                  }
-                  syncAdminLoginState();
-                  if (router?.push) {
-                    router.push('/admin/dashboard');
-                    router.refresh?.();
-                  } else if (typeof window !== 'undefined') {
-                    window.location.assign(
-                      new URL('/admin/dashboard', window.location.origin).href
-                    );
-                  }
+                  void handleCompleteAndExit();
                 }}
                 variant="primary"
                 className="flex-1 py-3"
               >
                 Go to Admin Dashboard
               </Button>
+            </div>
+            <div className="mt-4 text-center">
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => {
+                  void handleCompleteAndExit();
+                }}
+                className="text-sm font-medium text-gray-600 dark:text-gray-300 underline hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded px-2 py-1"
+              >
+                Skip to Admin Dashboard
+              </button>
             </div>
           </Card>
         </Container>
@@ -898,16 +1026,29 @@ function SetupWizardContent({ onDemoComplete }: { onDemoComplete?: () => void })
   );
 }
 
-export default function SetupWizard({ onDemoComplete }: { onDemoComplete?: () => void } = {}) {
-  const [queryClient] = useState(() => new QueryClient());
+export default function SetupWizard({
+  initialSavedConfig,
+  onDemoComplete,
+}: SetupWizardProps = {}) {
+  const outerQueryClient = useContext(QueryClientContext);
+  const outerToast = useContext(ToastContext);
+  const [fallbackQueryClient] = useState(() => new QueryClient());
+  const activeQueryClient = outerQueryClient ?? fallbackQueryClient;
   const outerTheme = useTheme();
 
-  const wizardTree = (
-    <QueryClientProvider client={queryClient}>
-      <ToastProvider>
-        <SetupWizardContent onDemoComplete={onDemoComplete} />
-      </ToastProvider>
-    </QueryClientProvider>
+  const hasAppShell = Boolean(outerQueryClient && outerToast);
+  const content = (
+    <SetupWizardContent
+      initialSavedConfig={initialSavedConfig}
+      onDemoComplete={onDemoComplete}
+      hasAppShell={hasAppShell}
+    />
+  );
+  const withToast = outerToast ? content : <ToastProvider>{content}</ToastProvider>;
+  const wizardTree = outerQueryClient ? (
+    withToast
+  ) : (
+    <QueryClientProvider client={activeQueryClient}>{withToast}</QueryClientProvider>
   );
 
   if (outerTheme.hasThemeProvider) {

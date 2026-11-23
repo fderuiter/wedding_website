@@ -530,6 +530,100 @@ describe('verify-deployment-runbooks', () => {
     );
   });
 
+  it('rejects invalid Cloud Run probe flags, unescaped --set-env-vars commas, npx wedding-migrate jobs, Docker host node / ${DB_*} rollbacks, Render Release Command, Nixpacks omissions, and missing Section 4 S3_ENDPOINT keys', () => {
+    const gcpPath = path.join(tempDir, 'docs/deployment/gcp-cloud-run.md');
+    fs.writeFileSync(
+      gcpPath,
+      fs
+        .readFileSync(gcpPath, 'utf8')
+        .replace(
+          '--args="./node_modules/.bin/prisma,migrate,deploy"',
+          '--command="npx" \\\n    --args="prisma,migrate,deploy"'
+        )
+        .replace('    --set-cloudsql-instances=YOUR_PROJECT_ID:us-central1:wedding-db \\\n', '')
+        .replace(
+          '--set-env-vars="^|^NODE_ENV=production|ALLOWED_HOSTS=wedding.mydomain.com,*.run.app"',
+          '--set-env-vars="NODE_ENV=production,ALLOWED_HOSTS=wedding.mydomain.com,*.run.app"'
+        )
+        .replace(
+          '--liveness-probe=httpGet.path=/api/live,httpGet.port=3000,periodSeconds=30',
+          '--startup-probe-request-path=/api/health'
+        )
+    );
+
+    const dockerPath = path.join(tempDir, 'docs/deployment/docker-vps.md');
+    fs.writeFileSync(
+      dockerPath,
+      fs
+        .readFileSync(dockerPath, 'utf8')
+        .replace(
+          'DATABASE_URL=postgresql://wedding_user:secure_password@db_host:5432/wedding_db?schema=public&sslmode=prefer',
+          'DATABASE_URL="postgresql://wedding_user:secure_password@db_host:5432/wedding_db?schema=public&sslmode=prefer"'
+        )
+        .replace(
+          'ADMIN_HASH=$(docker run --rm wedding-website:latest node scripts/generate-password-hash.mjs "replace-with-strong-admin-password")',
+          'ADMIN_HASH=$(node scripts/generate-password-hash.mjs "replace-with-strong-admin-password")'
+        )
+        .replace(
+          '--env-file .env \\\n           -e E2E_TEST=false',
+          '--env-file .env \\\n           -e DATABASE_URL="postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}" \\\n           -e E2E_TEST=false'
+        )
+    );
+
+    const railwayPath = path.join(tempDir, 'docs/deployment/railway-render.md');
+    fs.writeFileSync(
+      railwayPath,
+      fs
+        .readFileSync(railwayPath, 'utf8')
+        .replace('Pre-Deploy Command', 'Release Command')
+        .replace('npm ci --include=dev && npm run build && npm run postbuild', 'npm run build')
+        .replace(/healthcheck\.railway\.app/g, 'removed-probe-host')
+    );
+
+    const vercelPath = path.join(tempDir, 'docs/deployment/vercel.md');
+    const vercelText = fs.readFileSync(vercelPath, 'utf8');
+    const sec4Start = vercelText.indexOf('## 4. Asset Storage');
+    const sec5Start = vercelText.indexOf('## 5. Custom Domain');
+    fs.writeFileSync(
+      vercelPath,
+      vercelText.slice(0, sec4Start) +
+        vercelText.slice(sec4Start, sec5Start).replace(/S3_ENDPOINT/g, 'REMOVED_S3_KEY') +
+        vercelText.slice(sec5Start)
+    );
+
+    const upgradingPath = path.join(tempDir, 'docs/upgrading.md');
+    fs.writeFileSync(
+      upgradingPath,
+      fs
+        .readFileSync(upgradingPath, 'utf8')
+        .replace(
+          '--env-file .env \\\n     -e E2E_TEST=false',
+          '--env-file .env \\\n     -e DATABASE_URL="postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}" \\\n     -e E2E_TEST=false'
+        )
+    );
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Invalid Cloud Run CLI flag "--startup-probe-request-path"'),
+        expect.stringContaining('Unescaped delimiter/comma in gcloud `--set-env-vars`'),
+        expect.stringContaining('must not override ENTRYPOINT with `--command`'),
+        expect.stringContaining(
+          'docs/deployment/gcp-cloud-run.md: Cloud Run migration job must pass `--args="./node_modules/.bin/prisma,migrate,deploy"` without `--command`'
+        ),
+        expect.stringContaining('`wedding-migrate` Cloud Run Job must attach Cloud SQL via `--set-cloudsql-instances`'),
+        expect.stringContaining('docs/deployment/docker-vps.md (Section 1): Must not wrap `.env` DATABASE_URL'),
+        expect.stringContaining('docs/deployment/docker-vps.md (Section 6): Must generate `ADMIN_HASH` inside Docker'),
+        expect.stringContaining('docs/deployment/docker-vps.md: Rollback `docker run` command must not expand unset host ${DB_*} variables'),
+        expect.stringContaining('docs/upgrading.md: Rollback `docker run` command must not expand unset host ${DB_*} variables'),
+        expect.stringContaining('References nonexistent Render "Release Command"'),
+        expect.stringContaining('Railway Nixpacks instructions must include `npm ci --include=dev` and `npm run postbuild`'),
+        expect.stringContaining('docs/deployment/railway-render.md: Must document `healthcheck.railway.app`'),
+        expect.stringContaining('docs/deployment/vercel.md (Section 4): Missing S3 configuration keys: S3_ENDPOINT'),
+      ])
+    );
+  });
+
   it('rejects --command="npx" on Cloud Run jobs, unguarded DATABASE_URL overrides on docker compose run, and missing /usr/local/etc/npmrc in Dockerfile', () => {
     const gcpPath = path.join(tempDir, 'docs/deployment/gcp-cloud-run.md');
     fs.writeFileSync(

@@ -1,6 +1,36 @@
 import { prisma } from '@/lib/prisma';
-import { ARCHETYPE_PRESETS } from '@/lib/sampleData/archetypes';
 import { WeddingPartyMemberSchema, WeddingPartyMemberDTO } from './schemas';
+
+const STATIC_MOCK_WEDDING_PARTY_MEMBERS_RAW = [
+  {
+    id: 'mock-party-maid-of-honor',
+    name: 'Jordan Rivera',
+    role: 'Maid of Honor',
+    bio: 'College roommate and lifelong travel companion.',
+    side: 'BRIDE' as const,
+    link: 'https://example.com/party/jordan',
+    order: 0,
+    isSample: false,
+    photoId: null,
+    photo: null,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+  },
+  {
+    id: 'mock-party-best-person',
+    name: 'Cameron Brooks',
+    role: 'Best Person',
+    bio: 'Childhood friend and weekend hiking partner.',
+    side: 'GROOM' as const,
+    link: 'https://example.com/party/cameron',
+    order: 1,
+    isSample: false,
+    photoId: null,
+    photo: null,
+    createdAt: new Date('2026-01-02T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-02T00:00:00.000Z'),
+  },
+];
 
 function isStaticExportBuild(): boolean {
   return (
@@ -10,30 +40,14 @@ function isStaticExportBuild(): boolean {
   );
 }
 
-const STATIC_SEED_DATE = new Date('2026-01-15T12:00:00.000Z');
-
 export class WeddingPartyRepository {
   constructor(public client: any = prisma) {}
 
   async getMembers(): Promise<WeddingPartyMemberDTO[]> {
     if (isStaticExportBuild()) {
-      return ARCHETYPE_PRESETS.classic.weddingParty.map((member, idx) =>
-        WeddingPartyMemberSchema.parse({
-          id: `static-party-${idx + 1}`,
-          name: member.name,
-          role: member.role,
-          bio: member.bio,
-          side: member.side,
-          link: null,
-          order: member.order,
-          isSample: true,
-          photoId: null,
-          photo: null,
-          createdAt: STATIC_SEED_DATE,
-          updatedAt: STATIC_SEED_DATE,
-        })
-      );
+      return STATIC_MOCK_WEDDING_PARTY_MEMBERS_RAW.map((m) => WeddingPartyMemberSchema.parse(m));
     }
+
     const members = await this.client.weddingPartyMember.findMany({
       orderBy: { order: 'asc' }, include: { photo: true }
     });

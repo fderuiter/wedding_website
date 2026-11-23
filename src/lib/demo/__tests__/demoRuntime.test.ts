@@ -554,6 +554,104 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
       expect((await (await window.fetch('/api/admin/invitation-codes/rsvps')).json()).data).toEqual([]);
       expect((await (await window.fetch('/api/admin/broadcast/history')).json()).data).toEqual([]);
       expect((await window.fetch('/api/admin/broadcast/missing-id')).status).toBe(404);
+      const setupStatusPayload = await (await window.fetch('/api/admin/setup')).json();
+      expect(setupStatusPayload.initialized).toBe(true);
+      expect(setupStatusPayload.setupCompleted).toBe(true);
+
+      const milestonesPayload = await (await window.fetch('/api/admin/onboarding-milestones')).json();
+      expect(milestonesPayload.data.milestones).toHaveLength(5);
+
+      // Contribute to a fund item so we can test contributor edit/action/delete & thank-you updates (#1242)
+      const fundTarget = getActiveArchetypeDataset().registryItems.find((i) => i.isGroupGift)!;
+      const contribForReconcile = await (
+        await window.fetch('/api/registry/contribute', {
+          method: 'POST',
+          body: JSON.stringify({
+            itemId: fundTarget.id,
+            purchaserName: 'Reconcile Guest',
+            amount: 75,
+            email: 'reconcile@example.com',
+            message: 'Congrats!',
+          }),
+        })
+      ).json();
+      const targetContributorId = contribForReconcile.contributors[contribForReconcile.contributors.length - 1].id;
+
+      expect(
+        (
+          await window.fetch(`/api/admin/contributors/${targetContributorId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ name: 'Updated Guest', amount: 85, status: 'CONFIRMED' }),
+          })
+        ).status
+      ).toBe(200);
+      expect(
+        (
+          await window.fetch(`/api/admin/contributors/${targetContributorId}/action`, {
+            method: 'POST',
+            body: JSON.stringify({ action: 'void' }),
+          })
+        ).status
+      ).toBe(200);
+      expect(
+        (
+          await window.fetch('/api/admin/contributors/missing-contributor', {
+            method: 'PATCH',
+            body: JSON.stringify({ name: 'Missing' }),
+          })
+        ).status
+      ).toBe(404);
+
+      expect(
+        (
+          await window.fetch('/api/admin/thank-you-notes', {
+            method: 'POST',
+            body: JSON.stringify({ name: 'Offline Aunt', amount: 120, thankYouStatus: 'Sent' }),
+          })
+        ).status
+      ).toBe(201);
+      expect(
+        (
+          await window.fetch(`/api/admin/thank-you-notes/${targetContributorId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ thankYouStatus: 'Sent' }),
+          })
+        ).status
+      ).toBe(200);
+      expect(
+        (
+          await window.fetch('/api/admin/thank-you-notes/batch', {
+            method: 'POST',
+            body: JSON.stringify({ ids: [targetContributorId], thankYouStatus: 'Not Needed' }),
+          })
+        ).status
+      ).toBe(200);
+
+      const thankYouPayload = await (await window.fetch('/api/admin/thank-you-notes')).json();
+      expect(Array.isArray(thankYouPayload.items)).toBe(true);
+      expect(thankYouPayload.metrics).toBeDefined();
+
+      expect(
+        (
+          await window.fetch(`/api/admin/contributors/${targetContributorId}`, {
+            method: 'DELETE',
+          })
+        ).status
+      ).toBe(200);
+      expect(
+        (await window.fetch('/api/admin/contributors/missing-contributor', { method: 'DELETE' }))
+          .status
+      ).toBe(404);
+
+      const claimableId = getActiveArchetypeDataset().registryItems[0].id;
+      const unclaimRes = await window.fetch(`/api/admin/registry/items/${claimableId}/unclaim`, {
+        method: 'POST',
+      });
+      expect(unclaimRes.status).toBe(200);
+      expect(
+        (await window.fetch('/api/admin/registry/items/missing-item/unclaim', { method: 'POST' }))
+          .status
+      ).toBe(404);
       expect((await window.fetch('/api/admin/overview-stats')).status).toBe(200);
       expect((await window.fetch('/api/unknown-endpoint', { method: 'POST', body: '["array-body"]' })).status).toBe(404);
 

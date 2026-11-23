@@ -357,7 +357,6 @@ export function useRegistry() {
   }, [filteredItems, visibleItemsCount]);
 
   const handleCardClick = useCallback((item: RegistryItem) => {
-    if (item.purchased) return;
     setSelectedItem(item);
     setIsModalOpen(true);
     if (typeof window !== 'undefined') {
