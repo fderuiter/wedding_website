@@ -161,6 +161,10 @@ jobs:
         with:
           ref: ${{ inputs.commit_sha }}
 
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: '.nvmrc'
+
       - name: Validate Commit SHA Input
         env:
           INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
@@ -322,7 +326,7 @@ jobs:
         env:
           SKIP_IMAGE_BUILD: 'true'
           GHA_CACHE_SCOPE: app-${{ matrix.arch }}
-        run: node scripts/test-container.mjs
+        run: node scripts/test-container.mjs --container-migration
 
       - name: Compress Verified OCI Archive & Export Digest
         env:

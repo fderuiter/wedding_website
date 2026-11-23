@@ -23,6 +23,7 @@ function copyRepoFixture(srcRoot: string, destRoot: string): void {
     'src/app/api/uploads/[...path]/route.ts',
     'src/app/api/admin/maintenance/export/route.ts',
     'scripts/preflight-env.ts',
+    'ARCHITECTURE.md',
     'CHANGELOG.md',
     'DEPLOYMENT.md',
     'docs/upgrading.md',
@@ -33,6 +34,7 @@ function copyRepoFixture(srcRoot: string, destRoot: string): void {
     'docs/deployment/gcp-cloud-run.md',
     'docs/deployment/docker-vps.md',
     'docs/deployment/railway-render.md',
+    'scripts/generate-docs.ts',
     '.github/dependabot.yml',
   ];
 
@@ -437,17 +439,46 @@ describe('verify-deployment-runbooks', () => {
     expect(JSON.stringify(errors)).not.toContain('STRONG_PASSWORD');
   });
 
-  it('rejects Node.js major version drift across Dockerfile, setup-node workflows, runtime docs, and dependabot.yml', () => {
+  it('rejects Node.js and PostgreSQL major version drift across Dockerfile, compose, workflows, generate-docs.ts, runtime/architecture docs, and dependabot.yml', () => {
     const dockerfilePath = path.join(tempDir, 'Dockerfile');
     fs.writeFileSync(
       dockerfilePath,
       fs.readFileSync(dockerfilePath, 'utf8').replace('node:22-bookworm-slim@', 'node:26-bookworm-slim@')
     );
 
+    const composePath = path.join(tempDir, 'docker-compose.yml');
+    fs.writeFileSync(
+      composePath,
+      fs.readFileSync(composePath, 'utf8').replace('postgres:15-alpine@', 'postgres:18-alpine@')
+    );
+
     const storybookWorkflowPath = path.join(tempDir, '.github/workflows/storybook.yml');
     fs.writeFileSync(
       storybookWorkflowPath,
       fs.readFileSync(storybookWorkflowPath, 'utf8').replace("node-version-file: '.nvmrc'", 'node-version: 22')
+    );
+
+    const publishWorkflowPath = path.join(tempDir, '.github/workflows/publish-artifact.yml');
+    fs.writeFileSync(
+      publishWorkflowPath,
+      fs
+        .readFileSync(publishWorkflowPath, 'utf8')
+        .replace(
+          / {6}- uses: actions\/setup-node@[^\n]+\n {8}with:\n {10}node-version-file: '\.nvmrc'\n\n/,
+          ''
+        )
+    );
+
+    const generateDocsPath = path.join(tempDir, 'scripts/generate-docs.ts');
+    fs.writeFileSync(
+      generateDocsPath,
+      fs.readFileSync(generateDocsPath, 'utf8').replace("'22.x'", "'26.x'")
+    );
+
+    const architecturePath = path.join(tempDir, 'ARCHITECTURE.md');
+    fs.writeFileSync(
+      architecturePath,
+      fs.readFileSync(architecturePath, 'utf8').replace('- **Node.js**: v22.x', '- **Node.js**: v26.x')
     );
 
     const runtimeContractPath = path.join(tempDir, 'docs/runtime-contract.md');
@@ -459,7 +490,10 @@ describe('verify-deployment-runbooks', () => {
     const dependabotPath = path.join(tempDir, '.github/dependabot.yml');
     fs.writeFileSync(
       dependabotPath,
-      fs.readFileSync(dependabotPath, 'utf8').replace('@types/node', '@types/legacy-node')
+      fs
+        .readFileSync(dependabotPath, 'utf8')
+        .replace('@types/node', '@types/legacy-node')
+        .replace('dependency-name: "postgres"', 'dependency-name: "legacy-postgres"')
     );
 
     const errors = verifyDeploymentRunbooks(tempDir);
@@ -467,9 +501,22 @@ describe('verify-deployment-runbooks', () => {
       expect.arrayContaining([
         expect.stringContaining('Dockerfile: Must pin `node:22-bookworm-slim@sha256:<64-hex>` matching .nvmrc'),
         expect.stringContaining(
+          'docker-compose.yml: `db` service must pin `postgres:15-alpine@sha256:<64-hex>` to preserve `db_data` volume compatibility'
+        ),
+        expect.stringContaining(
           ".github/workflows/storybook.yml (job \"build\"): `actions/setup-node` must set `node-version-file: '.nvmrc'`"
         ),
+        expect.stringContaining(
+          '.github/workflows/publish-artifact.yml (job "build"): Workflow job invokes node/npm/npx without `actions/setup-node` bound to `.nvmrc`'
+        ),
+        expect.stringContaining(
+          'scripts/generate-docs.ts: `generateEnvSpecs` must specify Node.js `22.x` matching .nvmrc'
+        ),
+        expect.stringContaining('ARCHITECTURE.md: Must specify `- **Node.js**: v22.x` matching .nvmrc'),
         expect.stringContaining('docs/runtime-contract.md: Must specify Node.js v22.x LTS and `node:22-bookworm-slim`'),
+        expect.stringContaining(
+          '.github/dependabot.yml: Missing `version-update:semver-major` ignore rule for `postgres` under `docker-compose` ecosystem'
+        ),
         expect.stringContaining(
           '.github/dependabot.yml: Missing `version-update:semver-major` ignore rule for `@types/node` under `npm` ecosystem'
         ),

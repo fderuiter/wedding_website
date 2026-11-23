@@ -256,6 +256,27 @@ describe('check-docker-build', () => {
     expect(violations[0].reason).toContain('docker-compose.yml:3');
   });
 
+  it('rejects mismatched external image tags (postgres:18-alpine vs postgres:15-alpine) across docker-compose.yml and workflows', () => {
+    const composePath = path.join(tempDir, 'docker-compose.yml');
+    fs.writeFileSync(
+      composePath,
+      fs
+        .readFileSync(composePath, 'utf8')
+        .replace(`postgres:15-alpine@${POSTGRES_DIGEST}`, `postgres:18-alpine@${ALT_DIGEST}`)
+    );
+
+    const { violations } = checkDockerBuild(tempDir);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toMatchObject({
+      filePath: '.github/workflows/ci.yml',
+      lineNumber: 9,
+      imageRef: `postgres:15-alpine@${POSTGRES_DIGEST}`,
+    });
+    expect(violations[0].reason).toContain('postgres:15-alpine');
+    expect(violations[0].reason).toContain('postgres:18-alpine');
+    expect(violations[0].reason).toContain('docker-compose.yml:3');
+  });
+
   it('enforces BuildKit APT cache rules and --no-install-recommends in Dockerfile', () => {
     fs.writeFileSync(
       path.join(tempDir, 'Dockerfile'),
