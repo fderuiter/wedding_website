@@ -10,13 +10,17 @@ function copyRepoFixture(srcRoot: string, destRoot: string): void {
     'prisma.config.ts',
     'prisma/schema.prisma',
     'Dockerfile',
+    'docker-entrypoint.sh',
     'docker-compose.yml',
     'docker-compose.ci.yml',
     'next.config.ts',
     'vercel.json',
     'src/env.ts',
     'src/lib/config.ts',
+    'src/lib/prisma.ts',
+    'src/lib/postgres-url.js',
     'src/middleware.ts',
+    'src/utils/withApiMiddleware.ts',
     'src/app/api/uploads/[...path]/route.ts',
     'DEPLOYMENT.md',
     'docs/runtime-contract.md',
@@ -449,6 +453,73 @@ describe('verify-deployment-runbooks', () => {
         expect.stringContaining(
           '.github/dependabot.yml: Missing `version-update:semver-major` ignore rule for `@types/node` under `npm` ecosystem'
         ),
+      ])
+    );
+  });
+
+  it('rejects stale PostgreSQL 14, Compose npx migration claims, /api/health liveness claims, /opt/prisma-cli under /app, missing 503 stripping, and missing 15s graceful shutdown docs', () => {
+    const runtimeContractPath = path.join(tempDir, 'docs/runtime-contract.md');
+    fs.writeFileSync(
+      runtimeContractPath,
+      fs
+        .readFileSync(runtimeContractPath, 'utf8')
+        .replace(/outside `\/app` at `\/opt\/prisma-cli`/g, 'packaged under `/app` at `/opt/prisma-cli`')
+        .replace(/\/app\/scripts\/generate-password-hash\.mjs/g, '/app/scripts')
+        .replace(/5000ms/g, '1000ms')
+        .replace(/strip(?:s|ping) `status`, `database`, and `timestamp`/g, 'returns full payload')
+        .replace(/\^10\.9\.0/g, '^9.0.0')
+    );
+
+    const deploymentPath = path.join(tempDir, 'DEPLOYMENT.md');
+    fs.writeFileSync(
+      deploymentPath,
+      fs
+        .readFileSync(deploymentPath, 'utf8')
+        .replace('PostgreSQL 15 or higher', 'PostgreSQL 14 or higher')
+        .replace(
+          'In local Docker Compose environments, a dedicated `migration` task service executes `./node_modules/.bin/prisma migrate deploy`',
+          'In Docker Compose (`docker-compose.yml`), a dedicated `migration` service executes `npx prisma migrate deploy`'
+        )
+        .replace(
+          '- **Container Liveness Probe (`GET /api/live`)**:',
+          '- **Container Liveness Probe**: Containers query `/api/health` for liveness.'
+        )
+        .replace(/--stop-timeout 15/g, '--stop-timeout 5')
+    );
+
+    const dockerMdPath = path.join(tempDir, 'docs/deployment/docker-vps.md');
+    fs.writeFileSync(
+      dockerMdPath,
+      fs
+        .readFileSync(dockerMdPath, 'utf8')
+        .replace(/--stop-timeout 15\s+\\\n\s+/g, '')
+        .replace(/stop_grace_period: 15s/g, 'stop_grace_period: 5s')
+    );
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          'docs/runtime-contract.md: Must document Node `^22.12.0` and `npm` `^10.9.0` (`devEngines` in `package.json`)'
+        ),
+        expect.stringContaining('docs/runtime-contract.md: Must state that Dockerfile installs `/opt/prisma-cli` outside `/app`'),
+        expect.stringContaining('docs/runtime-contract.md: Stale claim that `/opt/prisma-cli` is packaged under `/app`'),
+        expect.stringContaining(
+          'docs/runtime-contract.md: Must state that Dockerfile copies `/app/scripts/generate-password-hash.mjs`'
+        ),
+        expect.stringContaining(
+          'docs/runtime-contract.md: Must document that `withApiMiddleware` strips `status`, `database`, and `timestamp`'
+        ),
+        expect.stringContaining('docs/runtime-contract.md: Must document Prisma `globalThis` pool sharing'),
+        expect.stringContaining('DEPLOYMENT.md: References stale "PostgreSQL 14" instead of PostgreSQL 15+'),
+        expect.stringContaining(
+          'DEPLOYMENT.md: Stale claim that Docker Compose `migration` service runs `npx prisma migrate deploy` instead of `./node_modules/.bin/prisma migrate deploy`'
+        ),
+        expect.stringContaining(
+          'DEPLOYMENT.md: Health Checks & Liveness Probes section must direct container liveness checks to `/api/live` rather than `/api/health`'
+        ),
+        expect.stringContaining('DEPLOYMENT.md: Must document `stop_grace_period: 15s` and `--stop-timeout 15`'),
+        expect.stringContaining('docs/deployment/docker-vps.md: Must document `stop_grace_period: 15s` and `--stop-timeout 15`'),
       ])
     );
   });

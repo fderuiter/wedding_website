@@ -532,16 +532,261 @@ function toOpenApiSchema(schemaObj: any, isMultipart: boolean): any {
   return cloned;
 }
 
-function extractStatusFromInitObject(initArg: Node | undefined): number {
-  if (!initArg || !Node.isObjectLiteralExpression(initArg)) return 200;
+interface ResolvedStatusBranch {
+  status: number;
+  condVar?: string;
+  condTruth?: boolean;
+}
+
+function extractLocalStatusBranches(allNodes: Node[]): {
+  statusBranchesByVar: Map<string, ResolvedStatusBranch[]>;
+  equalityCondByVar: Map<string, { targetVar: string; trueValue: string; falseValue?: string }>;
+} {
+  const mutableStringFallbacks = new Map<string, string>();
+  const equalityCondByVar = new Map<
+    string,
+    { targetVar: string; trueValue: string; falseValue?: string }
+  >();
+  const statusBranchesByVar = new Map<string, ResolvedStatusBranch[]>();
+
+  for (const n of allNodes) {
+    if (!Node.isVariableDeclaration(n) || !Node.isIdentifier(n.getNameNode())) continue;
+    const varName = n.getName();
+    const init = n.getInitializer();
+    if (!init) continue;
+
+    if (Node.isStringLiteral(init) || Node.isNoSubstitutionTemplateLiteral(init)) {
+      mutableStringFallbacks.set(varName, init.getLiteralValue());
+    }
+  }
+
+  for (const n of allNodes) {
+    if (!Node.isVariableDeclaration(n) || !Node.isIdentifier(n.getNameNode())) continue;
+    const varName = n.getName();
+    const init = n.getInitializer();
+    if (!init) continue;
+
+    if (
+      Node.isBinaryExpression(init) &&
+      (init.getOperatorToken().getKind() === SyntaxKind.EqualsEqualsEqualsToken ||
+        init.getOperatorToken().getKind() === SyntaxKind.EqualsEqualsToken)
+    ) {
+      const left = init.getLeft();
+      const right = init.getRight();
+      if (
+        Node.isIdentifier(left) &&
+        (Node.isStringLiteral(right) || Node.isNoSubstitutionTemplateLiteral(right))
+      ) {
+        const targetVar = left.getText();
+        equalityCondByVar.set(varName, {
+          targetVar,
+          trueValue: right.getLiteralValue(),
+          falseValue: mutableStringFallbacks.get(targetVar),
+        });
+      }
+    } else if (Node.isNumericLiteral(init)) {
+      statusBranchesByVar.set(varName, [{ status: Number(init.getLiteralValue()) }]);
+    } else if (Node.isConditionalExpression(init)) {
+      const condExpr = init.getCondition();
+      const whenTrue = init.getWhenTrue();
+      const whenFalse = init.getWhenFalse();
+      if (Node.isNumericLiteral(whenTrue) && Node.isNumericLiteral(whenFalse)) {
+        const condVar = Node.isIdentifier(condExpr) ? condExpr.getText() : undefined;
+        statusBranchesByVar.set(varName, [
+          { status: Number(whenTrue.getLiteralValue()), condVar, condTruth: true },
+          { status: Number(whenFalse.getLiteralValue()), condVar, condTruth: false },
+        ]);
+      }
+    }
+  }
+
+  return { statusBranchesByVar, equalityCondByVar };
+}
+
+function extractStatusesFromInitObject(
+  initArg: Node | undefined,
+  statusBranchesByVar?: Map<string, ResolvedStatusBranch[]>
+): ResolvedStatusBranch[] {
+  if (!initArg || !Node.isObjectLiteralExpression(initArg)) return [{ status: 200 }];
   const statusProp = initArg.getProperty('status');
   if (statusProp && Node.isPropertyAssignment(statusProp)) {
     const statusInit = statusProp.getInitializer();
     if (statusInit && Node.isNumericLiteral(statusInit)) {
-      return Number(statusInit.getLiteralValue());
+      return [{ status: Number(statusInit.getLiteralValue()) }];
+    }
+    if (statusInit && Node.isIdentifier(statusInit) && statusBranchesByVar) {
+      const resolved = statusBranchesByVar.get(statusInit.getText());
+      if (resolved && resolved.length > 0) {
+        return resolved;
+      }
+    }
+    if (statusInit && Node.isConditionalExpression(statusInit)) {
+      const condExpr = statusInit.getCondition();
+      const whenTrue = statusInit.getWhenTrue();
+      const whenFalse = statusInit.getWhenFalse();
+      if (Node.isNumericLiteral(whenTrue) && Node.isNumericLiteral(whenFalse)) {
+        const condVar = Node.isIdentifier(condExpr) ? condExpr.getText() : undefined;
+        return [
+          { status: Number(whenTrue.getLiteralValue()), condVar, condTruth: true },
+          { status: Number(whenFalse.getLiteralValue()), condVar, condTruth: false },
+        ];
+      }
     }
   }
-  return 200;
+  return [{ status: 200 }];
+}
+
+function inferProbePropertySchema(
+  valueNode: Node,
+  propName: string,
+  branch: ResolvedStatusBranch,
+  equalityCondByVar: Map<string, { targetVar: string; trueValue: string; falseValue?: string }>
+): Record<string, any> | null {
+  if (Node.isStringLiteral(valueNode) || Node.isNoSubstitutionTemplateLiteral(valueNode)) {
+    return { type: 'string', enum: [valueNode.getLiteralValue()] };
+  }
+  if (valueNode.getKind() === SyntaxKind.TrueKeyword) {
+    return { type: 'boolean', enum: [true] };
+  }
+  if (valueNode.getKind() === SyntaxKind.FalseKeyword) {
+    return { type: 'boolean', enum: [false] };
+  }
+  if (Node.isNumericLiteral(valueNode)) {
+    return { type: 'number', enum: [Number(valueNode.getLiteralValue())] };
+  }
+  if (Node.isCallExpression(valueNode) && valueNode.getText().endsWith('.toISOString()')) {
+    return { type: 'string', format: 'date-time' };
+  }
+  if (Node.isConditionalExpression(valueNode)) {
+    const cond = valueNode.getCondition();
+    if (Node.isIdentifier(cond) && branch.condVar === cond.getText() && branch.condTruth !== undefined) {
+      const chosen = branch.condTruth ? valueNode.getWhenTrue() : valueNode.getWhenFalse();
+      return inferProbePropertySchema(chosen, propName, branch, equalityCondByVar);
+    }
+  }
+  if (Node.isIdentifier(valueNode)) {
+    const identName = valueNode.getText();
+    if (branch.condVar && branch.condTruth !== undefined) {
+      const eqInfo = equalityCondByVar.get(branch.condVar);
+      if (eqInfo && eqInfo.targetVar === identName) {
+        const resolvedVal = branch.condTruth ? eqInfo.trueValue : eqInfo.falseValue;
+        if (resolvedVal) {
+          return { type: 'string', enum: [resolvedVal] };
+        }
+      }
+    }
+    if (propName === 'error' || identName.toLowerCase().includes('error')) {
+      return { type: 'string' };
+    }
+  }
+  return null;
+}
+
+function extractProbeObjectSchema(
+  bodyArg: Node | undefined,
+  branch: ResolvedStatusBranch,
+  equalityCondByVar: Map<string, { targetVar: string; trueValue: string; falseValue?: string }>
+): Record<string, any> | null {
+  if (!bodyArg || !Node.isObjectLiteralExpression(bodyArg)) return null;
+
+  const hasStatusProp = Boolean(bodyArg.getProperty('status'));
+  const hasIsoTimestamp = bodyArg
+    .getProperties()
+    .some((p) => Node.isPropertyAssignment(p) && (p.getInitializer()?.getText() ?? '').endsWith('.toISOString()'));
+  if (!hasStatusProp || !hasIsoTimestamp) {
+    return null;
+  }
+
+  const properties: Record<string, any> = {};
+  const required: string[] = [];
+
+  for (const prop of bodyArg.getProperties()) {
+    if (Node.isPropertyAssignment(prop)) {
+      const propName = prop.getName().replace(/^['"]|['"]$/g, '');
+      const init = prop.getInitializer();
+      if (!init) return null;
+      const propSchema = inferProbePropertySchema(init, propName, branch, equalityCondByVar);
+      if (!propSchema) return null;
+      properties[propName] = propSchema;
+      required.push(propName);
+    } else if (Node.isSpreadAssignment(prop)) {
+      const expr = prop.getExpression();
+      const unwrapped = Node.isParenthesizedExpression(expr) ? expr.getExpression() : expr;
+      if (Node.isConditionalExpression(unwrapped)) {
+        const cond = unwrapped.getCondition();
+        if (Node.isIdentifier(cond) && branch.condVar === cond.getText() && branch.condTruth !== undefined) {
+          const chosen = branch.condTruth ? unwrapped.getWhenTrue() : unwrapped.getWhenFalse();
+          if (Node.isObjectLiteralExpression(chosen)) {
+            for (const subProp of chosen.getProperties()) {
+              if (!Node.isPropertyAssignment(subProp)) continue;
+              const subName = subProp.getName().replace(/^['"]|['"]$/g, '');
+              const subInit = subProp.getInitializer();
+              if (!subInit) continue;
+              const subSchema = inferProbePropertySchema(subInit, subName, branch, equalityCondByVar);
+              if (subSchema) {
+                properties[subName] = subSchema;
+                if (!required.includes(subName)) {
+                  required.push(subName);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (Object.keys(properties).length === 0) return null;
+
+  return {
+    type: 'object',
+    required,
+    properties,
+  };
+}
+
+function applyApiMiddlewareResponseEnvelope(
+  rawSchema: Record<string, any>,
+  status: number
+): Record<string, any> {
+  if (status < 400) {
+    return {
+      type: 'object',
+      required: ['success', 'data'],
+      properties: {
+        success: {
+          type: 'boolean',
+          enum: [true],
+        },
+        data: rawSchema,
+      },
+    };
+  }
+
+  const errorProperties: Record<string, any> = {
+    success: {
+      type: 'boolean',
+      enum: [false],
+    },
+    error: {
+      type: 'string',
+    },
+  };
+
+  if (status >= 500) {
+    errorProperties.referenceId = {
+      type: 'string',
+      format: 'uuid',
+      description: 'Correlation UUID included when NODE_ENV=production masks 5xx error details',
+    };
+  }
+
+  return {
+    type: 'object',
+    required: ['success', 'error'],
+    additionalProperties: false,
+    properties: errorProperties,
+  };
 }
 
 function extractContentTypeFromInitObject(initArg: Node | undefined): string | null {
@@ -564,11 +809,20 @@ function extractContentTypeFromInitObject(initArg: Node | undefined): string | n
   return null;
 }
 
-function extractOperationResponses(allNodes: Node[]): Record<string, any> {
-  const mediaTypesByStatus = new Map<number, string[]>();
+function getStatusDescription(status: number): string {
+  if (status === 201) return 'Created';
+  if (status === 503) return 'Service Unavailable';
+  return 'Successful response';
+}
 
-  function recordStatus(status: number, mediaType?: string | null) {
-    if (status < 200 || status >= 300) return;
+function extractOperationResponses(allNodes: Node[], usesApiMiddleware = false): Record<string, any> {
+  const mediaTypesByStatus = new Map<number, string[]>();
+  const jsonSchemasByStatus = new Map<number, Record<string, any>>();
+  const { statusBranchesByVar, equalityCondByVar } = extractLocalStatusBranches(allNodes);
+
+  function recordStatus(status: number, mediaType?: string | null, jsonSchema?: Record<string, any> | null) {
+    const isDocumentedStatus = (status >= 200 && status < 300) || (status === 503 && Boolean(jsonSchema));
+    if (!isDocumentedStatus) return;
     if (!mediaTypesByStatus.has(status)) {
       mediaTypesByStatus.set(status, []);
     }
@@ -578,25 +832,38 @@ function extractOperationResponses(allNodes: Node[]): Record<string, any> {
         existing.push(mediaType);
       }
     }
+    if (jsonSchema && !jsonSchemasByStatus.has(status)) {
+      jsonSchemasByStatus.set(status, jsonSchema);
+    }
   }
 
   for (const n of allNodes) {
     if (Node.isCallExpression(n)) {
       const exprText = n.getExpression().getText();
       if (exprText === 'NextResponse.json' || exprText === 'Response.json') {
-        const status = extractStatusFromInitObject(n.getArguments()[1]);
-        recordStatus(status);
+        const [bodyArg, initArg] = n.getArguments();
+        const branches = extractStatusesFromInitObject(initArg, statusBranchesByVar);
+        for (const branch of branches) {
+          const rawProbeSchema = extractProbeObjectSchema(bodyArg, branch, equalityCondByVar);
+          const effectiveSchema =
+            rawProbeSchema && usesApiMiddleware
+              ? applyApiMiddlewareResponseEnvelope(rawProbeSchema, branch.status)
+              : rawProbeSchema;
+          recordStatus(branch.status, null, effectiveSchema);
+        }
       }
     } else if (Node.isNewExpression(n)) {
       const exprText = n.getExpression().getText();
       if (exprText === 'ImageResponse') {
-        const status = extractStatusFromInitObject(n.getArguments()[1]);
-        recordStatus(status, 'image/png');
+        for (const branch of extractStatusesFromInitObject(n.getArguments()[1], statusBranchesByVar)) {
+          recordStatus(branch.status, 'image/png');
+        }
       } else if (exprText === 'NextResponse' || exprText === 'Response') {
         const initArg = n.getArguments()[1];
-        const status = extractStatusFromInitObject(initArg);
         const mediaType = extractContentTypeFromInitObject(initArg);
-        recordStatus(status, mediaType);
+        for (const branch of extractStatusesFromInitObject(initArg, statusBranchesByVar)) {
+          recordStatus(branch.status, mediaType);
+        }
       }
     }
   }
@@ -610,15 +877,21 @@ function extractOperationResponses(allNodes: Node[]): Record<string, any> {
 
   for (const status of sortedStatuses) {
     const mediaTypes = mediaTypesByStatus.get(status) ?? [];
+    const jsonSchema = jsonSchemasByStatus.get(status);
     const responseObj: Record<string, any> = {
-      description: status === 201 ? 'Created' : 'Successful response',
+      description: getStatusDescription(status),
     };
 
-    if (mediaTypes.length > 0) {
+    if (mediaTypes.length > 0 || jsonSchema) {
       responseObj.content = {};
       for (const mt of mediaTypes) {
         responseObj.content[mt] = {
           schema: { ...EXPORT_MEDIA_SCHEMAS[mt] },
+        };
+      }
+      if (jsonSchema) {
+        responseObj.content['application/json'] = {
+          schema: jsonSchema,
         };
       }
     }
@@ -1018,7 +1291,13 @@ async function run() {
           }
         }
 
-        operation.responses = extractOperationResponses(allScopedNodes);
+        const usesApiMiddleware =
+          decl.getText().includes('withApiMiddleware(') ||
+          allScopedNodes.some(
+            (n) => Node.isCallExpression(n) && n.getExpression().getText() === 'withApiMiddleware'
+          );
+
+        operation.responses = extractOperationResponses(allScopedNodes, usesApiMiddleware);
 
         openapi.paths[openapiPath][method.toLowerCase()] = operation;
       }

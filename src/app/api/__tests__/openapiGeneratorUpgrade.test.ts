@@ -167,6 +167,17 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
           );
         }
       }
+
+      for (const [status, resObj] of Object.entries(operation.responses)) {
+        for (const [mediaType, mediaObj] of Object.entries(resObj.content ?? {})) {
+          violations.push(
+            ...collectSchemaViolations(
+              mediaObj.schema,
+              `${method} ${routePath} response:${status}[${mediaType}]`
+            )
+          );
+        }
+      }
     }
 
     expect(violations).toEqual([]);
@@ -579,5 +590,83 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
         expect(declaredTags.has(tag)).toBe(true);
       }
     }
+  });
+
+  it('emits verified HTTP 200 and 503 application/json probe schemas for /api/live, /api/health, and /api/ready', () => {
+    const liveGet = openapi.paths['/api/live']?.get as OpenApiOperation;
+    expect(Object.keys(liveGet.responses)).toEqual(['200']);
+    expect(liveGet.responses['200']?.content?.['application/json']?.schema).toEqual({
+      type: 'object',
+      required: ['status', 'timestamp'],
+      properties: {
+        status: { type: 'string', enum: ['alive'] },
+        timestamp: { type: 'string', format: 'date-time' },
+      },
+    });
+
+    const healthGet = openapi.paths['/api/health']?.get as OpenApiOperation;
+    expect(Object.keys(healthGet.responses).sort()).toEqual(['200', '503']);
+    expect(healthGet.responses['200']?.content?.['application/json']?.schema).toEqual({
+      type: 'object',
+      required: ['success', 'data'],
+      properties: {
+        success: { type: 'boolean', enum: [true] },
+        data: {
+          type: 'object',
+          required: ['status', 'timestamp', 'database'],
+          properties: {
+            status: { type: 'string', enum: ['ok'] },
+            database: { type: 'string', enum: ['connected'] },
+            timestamp: { type: 'string', format: 'date-time' },
+          },
+        },
+      },
+    });
+
+    const health503Schema = healthGet.responses['503']?.content?.['application/json']?.schema as {
+      type?: string;
+      required?: string[];
+      additionalProperties?: boolean;
+      properties?: Record<string, unknown>;
+    };
+    expect(health503Schema).toEqual({
+      type: 'object',
+      required: ['success', 'error'],
+      additionalProperties: false,
+      properties: {
+        success: { type: 'boolean', enum: [false] },
+        error: { type: 'string' },
+        referenceId: {
+          type: 'string',
+          format: 'uuid',
+          description: 'Correlation UUID included when NODE_ENV=production masks 5xx error details',
+        },
+      },
+    });
+    expect(health503Schema.properties?.status).toBeUndefined();
+    expect(health503Schema.properties?.database).toBeUndefined();
+    expect(health503Schema.properties?.timestamp).toBeUndefined();
+
+    const readyGet = openapi.paths['/api/ready']?.get as OpenApiOperation;
+    expect(Object.keys(readyGet.responses).sort()).toEqual(['200', '503']);
+    expect(readyGet.responses['200']?.content?.['application/json']?.schema).toEqual({
+      type: 'object',
+      required: ['status', 'database', 'timestamp'],
+      properties: {
+        status: { type: 'string', enum: ['ready'] },
+        database: { type: 'string', enum: ['connected'] },
+        timestamp: { type: 'string', format: 'date-time' },
+      },
+    });
+    expect(readyGet.responses['503']?.content?.['application/json']?.schema).toEqual({
+      type: 'object',
+      required: ['status', 'database', 'error', 'timestamp'],
+      properties: {
+        status: { type: 'string', enum: ['unhealthy'] },
+        database: { type: 'string', enum: ['disconnected'] },
+        error: { type: 'string' },
+        timestamp: { type: 'string', format: 'date-time' },
+      },
+    });
   });
 });
