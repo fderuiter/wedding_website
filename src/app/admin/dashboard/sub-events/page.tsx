@@ -63,6 +63,29 @@ interface AccessMatrixSetters {
   setAccessMatrix: React.Dispatch<React.SetStateAction<Record<string, string[]>>>;
 }
 
+interface BatchSubEventAccessRequest {
+  subEventIds: string[];
+  action: 'grant' | 'revoke';
+  invitationCodeIds?: string[];
+  search?: string;
+  partyTags?: string[];
+  partyGroups?: string[];
+  householdName?: string[];
+}
+
+function getErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) {
+    return err.message;
+  }
+  if (typeof err === 'object' && err !== null && 'message' in err) {
+    const candidate = (err as { message?: unknown }).message;
+    if (typeof candidate === 'string' && candidate) {
+      return candidate;
+    }
+  }
+  return fallback;
+}
+
 async function requestAccessMatrix(query: AccessMatrixQuery): Promise<AccessMatrixSnapshot> {
   const params = new URLSearchParams();
   params.set('page', query.page.toString());
@@ -399,15 +422,15 @@ function SubEventsMatrixPageContent() {
       }
       addToast('Sub-event access updated.', 'success');
       void refreshRsvpSummary();
-    } catch (e: any) {
+    } catch (e: unknown) {
       setAccessMatrix(previousMatrix);
-      addToast(e.message || 'Failed to update access. Reverted changes.', 'error');
+      addToast(getErrorMessage(e, 'Failed to update access. Reverted changes.'), 'error');
     }
   };
 
   // Bulk Column Toggle (for all currently filtered guests)
   const handleColumnToggle = async (subEventId: string, action: 'grant' | 'revoke') => {
-    const body: any = {
+    const body: BatchSubEventAccessRequest = {
       subEventIds: [subEventId],
       action,
     };
@@ -439,8 +462,8 @@ function SubEventsMatrixPageContent() {
       } else {
         void fetchMatrix({ searchQuery });
       }
-    } catch (e: any) {
-      addToast(e.message || 'Batch update failed.', 'error');
+    } catch (e: unknown) {
+      addToast(getErrorMessage(e, 'Batch update failed.'), 'error');
     }
   };
 
@@ -477,9 +500,9 @@ function SubEventsMatrixPageContent() {
         throw new Error(errJson.error || 'Batch row update failed');
       }
       addToast(`Row permissions ${action === 'grant' ? 'granted' : 'revoked'}.`, 'success');
-    } catch (e: any) {
+    } catch (e: unknown) {
       setAccessMatrix(previousMatrix);
-      addToast(e.message || 'Failed to update row access. Reverted changes.', 'error');
+      addToast(getErrorMessage(e, 'Failed to update row access. Reverted changes.'), 'error');
     }
   };
 
@@ -519,9 +542,9 @@ function SubEventsMatrixPageContent() {
       }
 
       addToast(`Batch ${action} completed for ${selectedRowIds.length} selected guests.`, 'success');
-    } catch (e: any) {
+    } catch (e: unknown) {
       setAccessMatrix(previousMatrix);
-      addToast(e.message || 'Batch update failed. Reverted changes.', 'error');
+      addToast(getErrorMessage(e, 'Batch update failed. Reverted changes.'), 'error');
     }
   };
 
@@ -791,7 +814,7 @@ function SubEventsMatrixPageContent() {
           <div className="p-12 text-center text-gray-500 dark:text-gray-400">Loading sub-event access matrix...</div>
         ) : subEvents.length === 0 ? (
           <div className="p-12 text-center text-gray-500 dark:text-gray-400">
-            No sub-events created yet. Click "+ Create New Sub-Event" to get started.
+            No sub-events created yet. Click &quot;+ Create New Sub-Event&quot; to get started.
           </div>
         ) : totalRecords === 0 ? (
           <div className="p-12 text-center text-gray-500 dark:text-gray-400">

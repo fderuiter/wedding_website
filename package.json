@@ -140,6 +140,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/three": "0.187.0",
+    "@typescript-eslint/eslint-plugin": "^8.72.0",
     "babel-loader": "^10.1.1",
     "eslint": "^10.15.0",
     "eslint-config-next": "^16.4.6",
@@ -187,6 +188,6 @@
     "webpack-dev-middleware": "^7.4.6"
   },
   "lint-staged": {
-    "*.{js,jsx,ts,tsx,mjs,cjs}": "eslint --fix"
+    "*.{js,jsx,ts,tsx,mjs,cjs}": "eslint --fix --max-warnings=0"
   }
 }
