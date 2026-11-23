@@ -5,9 +5,6 @@ import { getAppConfig } from '@/lib/config';
 import { geocodeBestMatch } from '@/lib/geocoding';
 import { hasValidCoordinates, isNonPlaceholderVenueText } from '@/utils/maps';
 import { AttractionInputSchema, AttractionDTO } from './schemas';
-import { z } from 'zod';
-
-export type AttractionInput = z.infer<typeof AttractionInputSchema>;
 
 async function mapAttractionData(data: any, client?: any, author?: string): Promise<any> {
   const mapped = await handleMediaFields(data, 'imageId', 'imageUrl', 'imageAlt', 'imageDecorative', client, author);
