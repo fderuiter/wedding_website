@@ -434,9 +434,49 @@ export interface AdminAppConfig extends PublicAppConfig {
   hasTwilioAuthToken: boolean;
 }
 
+function redactHiddenFeatures<T>(features: T): T {
+  let candidate: unknown = features;
+  const wasString = typeof features === 'string';
+  if (wasString) {
+    try {
+      candidate = JSON.parse(features);
+    } catch {
+      return features;
+    }
+  }
+
+  if (!Array.isArray(candidate)) {
+    return features;
+  }
+
+  const redacted = candidate.map((entry) => {
+    if (entry && typeof entry === 'object' && (entry as { visible?: unknown }).visible === false) {
+      return {
+        ...(entry as Record<string, unknown>),
+        title: '',
+        content: '',
+        visible: false,
+      };
+    }
+    return entry;
+  });
+
+  return (wasString ? JSON.stringify(redacted) : redacted) as T;
+}
+
+function resolveRawFeatures(
+  rawFeatures: unknown,
+  fallback: PublicAppConfig['features']
+): PublicAppConfig['features'] {
+  const parsed = PublicAppConfigSchema.shape.features.safeParse(rawFeatures);
+  return parsed.success ? parsed.data : fallback;
+}
+
 /**
  * Produce a public-safe view of the application configuration by parsing
  * through the strict `PublicAppConfigSchema` allowlist plus `multisiteEnabled`.
+ * Hidden sections (`visible === false`) retain placeholder entries with cleared
+ * `title` and `content` so hidden copy is withheld without restoring defaults.
  *
  * @param config - The full `AppConfig` object or raw config payload
  * @returns The allowlisted public configuration payload
@@ -465,7 +505,10 @@ export function toPublicAppConfig<T extends AppConfigDTO | Record<string, any>>(
 
   const parsed = PublicAppConfigSchema.safeParse(picked);
   if (parsed.success) {
-    return parsed.data;
+    return {
+      ...parsed.data,
+      features: redactHiddenFeatures(parsed.data.features),
+    };
   }
 
   const partialSanitized: Record<string, unknown> = {
@@ -478,13 +521,50 @@ export function toPublicAppConfig<T extends AppConfigDTO | Record<string, any>>(
     const fieldSchema = PublicAppConfigSchema.shape[key];
     const fieldResult = fieldSchema.safeParse(picked[key]);
     if (fieldResult.success) {
-      partialSanitized[key] = fieldResult.data;
+      partialSanitized[key] = key === 'features' ? redactHiddenFeatures(fieldResult.data) : fieldResult.data;
     } else if (picked[key] !== undefined) {
-      partialSanitized[key] = picked[key];
+      partialSanitized[key] = key === 'features' ? redactHiddenFeatures(picked[key]) : picked[key];
     }
   }
 
   return partialSanitized as PublicAppConfig;
+}
+
+/**
+ * Produce a layout-safe configuration view for unauthenticated requests by
+ * clearing gated event details (`photoAlbumUrl`, venue location fields,
+ * `storyText`, `travelAdvice`, hero text, and `features`) while preserving
+ * branding, theme tokens, `modules`, `contactEmail`, `timezone`, and RSVP fields.
+ *
+ * @param config - The full `AppConfig` object or raw config payload
+ * @returns The redacted configuration payload safe for unauthenticated layouts
+ */
+export function toUnauthenticatedAppConfig<T extends AppConfigDTO | Record<string, any>>(
+  config: T,
+): PublicAppConfig {
+  if (!config || typeof config !== 'object') {
+    return config as PublicAppConfig;
+  }
+
+  const publicConfig = toPublicAppConfig(config);
+
+  return {
+    ...publicConfig,
+    photoAlbumUrl: '',
+    venueName: '',
+    venueAddress: '',
+    venueCity: '',
+    venueState: '',
+    venueZip: '',
+    latitude: 0,
+    longitude: 0,
+    venueDescription: '',
+    storyText: '',
+    travelAdvice: '',
+    heroTitle: '',
+    heroSubtitle: '',
+    features: [],
+  };
 }
 
 export { sanitizeAppConfigForBackup };
@@ -506,6 +586,7 @@ export function toAdminAppConfig<T extends AppConfigDTO | Record<string, any>>(
 
   return {
     ...publicConfig,
+    features: resolveRawFeatures(raw.features, publicConfig.features),
     rsvpOpen: typeof raw.rsvpOpen === 'boolean' ? raw.rsvpOpen : true,
     rsvpGracePeriodHours:
       typeof raw.rsvpGracePeriodHours === 'number'

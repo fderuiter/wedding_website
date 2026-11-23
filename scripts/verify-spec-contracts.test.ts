@@ -308,5 +308,15 @@ export function getStripeCapability() {
       'public/openapi.json: GET /api/health HTTP "503" schema must omit "database" (stripped by src/utils/withApiMiddleware.ts)',
       'public/openapi.json: GET /api/ready must document HTTP "503" unwrapped schema with status="unhealthy", database="disconnected", error, and timestamp',
     ]);
+
+    writeFixture(
+      tempDir,
+      'src/app/api/ready/route.ts',
+      'function buildSchemaUnavailableResponse() { return {}; }\nexport async function GET() { return buildSchemaUnavailableResponse(); }\n',
+    );
+    const schemaAwareResult = verifySpecContracts(tempDir);
+    expect(schemaAwareResult.errors).toContain(
+      'public/openapi.json: GET /api/ready must document HTTP "503" unwrapped schema with status="unhealthy", database enum ["connected", "disconnected"], error, and timestamp',
+    );
   });
 });

@@ -8,6 +8,7 @@ import {
   DocMapping,
   escapeVueMustache,
   generatePortal,
+  type GeneratePortalOptions,
   prependGeneratedPortalComment,
   prependPortalFrontmatterTitle,
   rewriteMarkdownLinks,
@@ -19,11 +20,53 @@ describe('Portal Documentation Generator & Development Section', () => {
   const rootDir = process.cwd();
 
   beforeAll(() => {
-    execSync('npx tsx scripts/generate-portal.ts', { cwd: rootDir, stdio: 'ignore' });
+    execSync('npx tsx scripts/generate-portal.ts --stage-only', { cwd: rootDir, stdio: 'ignore' });
   });
 
-  it('exposes generatePortal function', () => {
+  it('exposes generatePortal function and supports stageOnly without regenerating pre-built docs', async () => {
     expect(typeof generatePortal).toBe('function');
+
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'portal-stage-only-root-'));
+    const tmpPortal = fs.mkdtempSync(path.join(os.tmpdir(), 'portal-stage-only-dest-'));
+    try {
+      fs.writeFileSync(path.join(tmpRoot, 'ARCHITECTURE.md'), '# Prebuilt Architecture\n', 'utf8');
+      fs.writeFileSync(path.join(tmpRoot, 'FEATURE_MODULES.md'), '# Prebuilt Modules\n', 'utf8');
+      fs.mkdirSync(path.join(tmpRoot, 'public'), { recursive: true });
+      fs.writeFileSync(
+        path.join(tmpRoot, 'public/openapi.json'),
+        '{"openapi":"3.1.0"}\n',
+        'utf8'
+      );
+
+      const opts: GeneratePortalOptions = {
+        stageOnly: true,
+        rootDir: tmpRoot,
+        portalDir: tmpPortal,
+        docs: [
+          {
+            src: 'ARCHITECTURE.md',
+            dest: 'architecture/architecture.md',
+            category: 'Architecture',
+            title: 'System Architecture',
+          },
+        ],
+      };
+
+      await generatePortal(opts);
+
+      expect(fs.readFileSync(path.join(tmpRoot, 'ARCHITECTURE.md'), 'utf8')).toBe(
+        '# Prebuilt Architecture\n'
+      );
+      expect(
+        fs.readFileSync(path.join(tmpPortal, 'architecture/architecture.md'), 'utf8')
+      ).toContain('# Prebuilt Architecture');
+      expect(fs.readFileSync(path.join(tmpPortal, 'public/openapi.json'), 'utf8')).toBe(
+        '{"openapi":"3.1.0"}\n'
+      );
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+      fs.rmSync(tmpPortal, { recursive: true, force: true });
+    }
   });
 
   it('includes Development and Guides category documents including README.md, AGENTS.md, and CHANGELOG.md in ARCHITECTURAL_DOCS', () => {

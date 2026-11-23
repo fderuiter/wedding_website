@@ -819,7 +819,7 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
       required: ['status', 'database', 'error', 'timestamp'],
       properties: {
         status: { type: 'string', enum: ['unhealthy'] },
-        database: { type: 'string', enum: ['disconnected'] },
+        database: { type: 'string', enum: ['disconnected', 'connected'] },
         error: { type: 'string' },
         timestamp: { type: 'string', format: 'date-time' },
       },

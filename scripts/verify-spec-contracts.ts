@@ -1022,17 +1022,26 @@ function verifyOpenApiProbeContracts(rootDir: string): string[] {
 
   const ready503 = getJsonSchema('/api/ready', '503');
   const ready503Props = (ready503?.properties ?? {}) as Record<string, Record<string, unknown>>;
+  const readyRouteAbsPath = path.join(rootDir, 'src/app/api/ready/route.ts');
+  const readyChecksSchemaTables =
+    fs.existsSync(readyRouteAbsPath) &&
+    fs.readFileSync(readyRouteAbsPath, 'utf8').includes('buildSchemaUnavailableResponse');
+  const ready503DbEnum = Array.isArray(ready503Props.database?.enum)
+    ? ready503Props.database.enum
+    : [];
   if (
     !ready503 ||
     !Array.isArray(ready503Props.status?.enum) ||
     !ready503Props.status.enum.includes('unhealthy') ||
-    !Array.isArray(ready503Props.database?.enum) ||
-    !ready503Props.database.enum.includes('disconnected') ||
+    !ready503DbEnum.includes('disconnected') ||
+    (readyChecksSchemaTables && !ready503DbEnum.includes('connected')) ||
     ready503Props.error?.type !== 'string' ||
     ready503Props.timestamp?.type !== 'string'
   ) {
     errors.push(
-      'public/openapi.json: GET /api/ready must document HTTP "503" unwrapped schema with status="unhealthy", database="disconnected", error, and timestamp'
+      readyChecksSchemaTables
+        ? 'public/openapi.json: GET /api/ready must document HTTP "503" unwrapped schema with status="unhealthy", database enum ["connected", "disconnected"], error, and timestamp'
+        : 'public/openapi.json: GET /api/ready must document HTTP "503" unwrapped schema with status="unhealthy", database="disconnected", error, and timestamp'
     );
   }
 

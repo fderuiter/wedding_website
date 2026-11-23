@@ -1380,6 +1380,87 @@ function detectMiddlewareWrapped(directNodes: Node[], allNodes: Node[]): boolean
   return false;
 }
 
+function tryMergeCompatibleObjectEnumSchemas(
+  schemas: Array<Record<string, any>>
+): Record<string, any> | null {
+  if (schemas.length < 2) return null;
+
+  const isPlainEnumMergeableObject = (s: Record<string, any>): boolean =>
+    Boolean(
+      s &&
+        s.type === 'object' &&
+        !s.anyOf &&
+        !s.oneOf &&
+        !s.allOf &&
+        !s.$ref &&
+        s.additionalProperties === undefined &&
+        s.properties &&
+        typeof s.properties === 'object' &&
+        !Array.isArray(s.properties)
+    );
+
+  if (!schemas.every(isPlainEnumMergeableObject)) {
+    return null;
+  }
+
+  const base = schemas[0];
+  const basePropKeys = Object.keys(base.properties);
+  const baseReqSorted = JSON.stringify([...(base.required ?? [])].sort());
+
+  for (const candidate of schemas.slice(1)) {
+    if (JSON.stringify([...(candidate.required ?? [])].sort()) !== baseReqSorted) {
+      return null;
+    }
+    const candKeys = Object.keys(candidate.properties);
+    if (candKeys.length !== basePropKeys.length || !basePropKeys.every((k) => k in candidate.properties)) {
+      return null;
+    }
+  }
+
+  const mergedProperties: Record<string, any> = {};
+  for (const propKey of basePropKeys) {
+    const propVariants = schemas.map((s) => s.properties[propKey]);
+    const firstVariant = propVariants[0];
+    const firstJson = JSON.stringify(firstVariant);
+
+    if (propVariants.every((v) => JSON.stringify(v) === firstJson)) {
+      mergedProperties[propKey] = JSON.parse(firstJson);
+      continue;
+    }
+
+    const canMergeEnum = propVariants.every(
+      (v) =>
+        v &&
+        typeof v === 'object' &&
+        !Array.isArray(v) &&
+        typeof v.type === 'string' &&
+        v.type === firstVariant.type &&
+        v.format === firstVariant.format &&
+        v.nullable === firstVariant.nullable &&
+        Array.isArray(v.enum) &&
+        Object.keys(v).every((k) => ['type', 'enum', 'format', 'nullable', 'description'].includes(k))
+    );
+
+    if (!canMergeEnum) {
+      return null;
+    }
+
+    const combinedEnum = Array.from(new Set(propVariants.flatMap((v) => v.enum)));
+    const mergedProp: Record<string, any> = {
+      ...JSON.parse(firstJson),
+      enum: combinedEnum,
+    };
+    mergedProperties[propKey] = mergedProp;
+  }
+
+  const mergedObj: Record<string, any> = {
+    type: 'object',
+    ...(Array.isArray(base.required) ? { required: [...base.required] } : {}),
+    properties: mergedProperties,
+  };
+  return mergedObj;
+}
+
 function mergeDistinctSchemas(schemas: Array<Record<string, any>>): Record<string, any> {
   const unique: Array<Record<string, any>> = [];
   const seen = new Set<string>();
@@ -1398,6 +1479,10 @@ function mergeDistinctSchemas(schemas: Array<Record<string, any>>): Record<strin
   }
   if (unique.length === 1) {
     return unique[0];
+  }
+  const mergedObjectEnumSchema = tryMergeCompatibleObjectEnumSchemas(unique);
+  if (mergedObjectEnumSchema) {
+    return mergedObjectEnumSchema;
   }
   return unique.every(isObjectJsonSchema)
     ? { type: 'object', anyOf: unique }
