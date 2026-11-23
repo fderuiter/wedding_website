@@ -1,34 +1,6 @@
 import { validateAndResolveHost } from './ssrf';
 import { Agent, Dispatcher1Wrapper, type Dispatcher } from 'undici';
 
-type Dispatcher1WrapperStatic = typeof Dispatcher1Wrapper & {
-  wrapHandler(_handler: Dispatcher.DispatchHandler): Dispatcher.DispatchHandler;
-};
-
-type LegacyCompatibleDispatchOptions = Dispatcher.DispatchOptions & {
-  allowH2?: boolean;
-};
-
-/**
- * Undici v8 Agent subclass that wraps legacy v1 dispatch handlers (used by Node 22's
- * built-in `globalThis.fetch` / `undici@6`) via `Dispatcher1Wrapper.wrapHandler`.
- */
-class NodeCompatiblePinnedAgent extends Agent {
-  override dispatch(
-    options: LegacyCompatibleDispatchOptions,
-    handler: Dispatcher.DispatchHandler,
-  ): boolean {
-    const isV2Handler =
-      typeof (handler as { onRequestStart?: unknown })?.onRequestStart === 'function';
-    const normalizedOptions: LegacyCompatibleDispatchOptions =
-      isV2Handler || options.allowH2 === false ? options : { ...options, allowH2: false };
-    const wrappedHandler = isV2Handler
-      ? handler
-      : (Dispatcher1Wrapper as Dispatcher1WrapperStatic).wrapHandler(handler);
-    return super.dispatch(normalizedOptions, wrappedHandler);
-  }
-}
-
 /**
  * Creates an undici Agent that pins the socket connection to a specific resolved IP.
  * Standard HTTP headers (e.g. Host) and TLS SNI continue to use the original hostname.
@@ -134,5 +106,33 @@ export async function safeFetch(url: string, options: RequestInit = {}): Promise
       // Return the final successful non-redirect response
       return res;
     }
+  }
+}
+
+type Dispatcher1WrapperStatic = typeof Dispatcher1Wrapper & {
+  wrapHandler(_handler: Dispatcher.DispatchHandler): Dispatcher.DispatchHandler;
+};
+
+type LegacyCompatibleDispatchOptions = Dispatcher.DispatchOptions & {
+  allowH2?: boolean;
+};
+
+/**
+ * Undici v8 Agent subclass that wraps legacy v1 dispatch handlers (used by Node 22's
+ * built-in `globalThis.fetch` / `undici@6`) via `Dispatcher1Wrapper.wrapHandler`.
+ */
+class NodeCompatiblePinnedAgent extends Agent {
+  override dispatch(
+    options: LegacyCompatibleDispatchOptions,
+    handler: Dispatcher.DispatchHandler,
+  ): boolean {
+    const isV2Handler =
+      typeof (handler as { onRequestStart?: unknown })?.onRequestStart === 'function';
+    const normalizedOptions: LegacyCompatibleDispatchOptions =
+      isV2Handler || options.allowH2 === false ? options : { ...options, allowH2: false };
+    const wrappedHandler = isV2Handler
+      ? handler
+      : (Dispatcher1Wrapper as Dispatcher1WrapperStatic).wrapHandler(handler);
+    return super.dispatch(normalizedOptions, wrappedHandler);
   }
 }
