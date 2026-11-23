@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document defines the runtime contract for presentation feature toggles in [src/lib/modules.ts](src/lib/modules.ts#L25-L152), dynamic administrative entity routing in [src/features/admin/registry.ts](src/features/admin/registry.ts#L21-L29), and domain feature module barrels under [src/features/](src/features).
+This document defines the runtime contract for presentation feature toggles in [src/lib/modules.ts](src/lib/modules.ts#L25-L152), dynamic administrative entity routing in [src/features/admin/registry.ts](src/features/admin/registry.ts#L36-L83), and domain feature module barrels under [src/features/](src/features).
 
 Presentation feature toggles govern optional guest-facing experiences through six distinct mechanisms—each with explicit runtime boundaries:
 
@@ -80,7 +80,7 @@ export const ModuleConfigSchema = z.object({
   - `/things-to-do` (`attractions`)
   - `/photos` and `/photos/slideshow` (`gallery`)
   - `/heart` (`interactive3D`)
-- **Homepage (`/`) Conditional Widgets ([src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L218-L299) & [src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L380-L426))**:
+- **Homepage (`/`) Conditional Widgets ([src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L271-L348) & [src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L448-L494))**:
   - Renders the countdown widget only when `config.showCountdown && isFeatureEnabled('countdown', config.modules)`.
   - Renders the Add-to-Calendar button only when `config.showAddToCalendar && isFeatureEnabled('addToCalendar', config.modules)`.
   - Hides homepage hotel block cards and the `/things-to-do` local guide link when `attractions` is disabled, hides the homepage photo gallery link when `gallery` is disabled, and hides the 3D experience callout when `interactive3D` is disabled.
@@ -89,7 +89,7 @@ export const ModuleConfigSchema = z.object({
 
 ### Middleware & Guest Passcode Environment Gatekeeping
 
-- **Environment-Governed Login Gate (Not a Module Toggle)**: Site-wide guest passcode authentication is **not** part of `ModuleConfigSchema` or `FEATURE_METADATA`. Instead, [src/middleware.ts](src/middleware.ts#L91-L105) and `POST /api/guest/login` ([src/app/api/guest/login/route.ts](src/app/api/guest/login/route.ts)) enforce guest login protection strictly via environment configuration (`GUEST_PASSCODE` and `GUEST_SESSION_SECRET`) with zero database queries in Edge middleware. Site Settings (`/admin/dashboard/settings`) displays read-only guidance pointing administrators to those environment variables.
+- **Environment-Governed Login Gate (Not a Module Toggle)**: Site-wide guest passcode authentication is **not** part of `ModuleConfigSchema` or `FEATURE_METADATA`. Instead, [src/middleware.ts](src/middleware.ts#L118-L140) and `POST /api/guest/login` ([src/app/api/guest/login/route.ts](src/app/api/guest/login/route.ts)) enforce guest login protection strictly via environment configuration (`GUEST_PASSCODE` and `GUEST_SESSION_SECRET`) with zero database queries in Edge middleware. Site Settings (`/admin/dashboard/settings`) displays read-only guidance pointing administrators to those environment variables.
 
 ### API Route Handlers (`/api/registry/*`, Weather, Gallery, & Schedule)
 
@@ -110,7 +110,7 @@ export const ModuleConfigSchema = z.object({
   - `GET /api/registry/validate-code` (reused by `/guest/collect` address portal)
   - `POST /api/registry/webhook/stripe` (asynchronous settlement reconciliation for already-created PaymentIntents)
 - **Group Gifting Enforcement (HTTP 400 Bad Request, Not HTTP 404)**:
-  - When `registry` is enabled (`true`) and `groupGifting` is disabled (`false`), partial or group-gift contributions (`targetItem.isGroupGift || amount < targetItem.price`) throw `new ApiError(400, 'Group gifting is currently disabled.')` (**HTTP 400**) in both [src/features/registry/api/contribute.ts](src/features/registry/api/contribute.ts#L33-L37) and [src/features/registry/api/payment-intent.ts](src/features/registry/api/payment-intent.ts#L39-L43).
+  - When `registry` is enabled (`true`) and `groupGifting` is disabled (`false`), partial or group-gift contributions (`targetItem.isGroupGift || amount < targetItem.price`) throw `new ApiError(400, 'Group gifting is currently disabled.')` (**HTTP 400**) in both [src/features/registry/api/contribute.ts](src/features/registry/api/contribute.ts#L49-L53) and [src/features/registry/api/payment-intent.ts](src/features/registry/api/payment-intent.ts#L40-L44).
 - **Schedule ICS Export**:
   - `GET /api/schedule/[id]/ics` skips `isFeatureEnabled('addToCalendar')`.
 
@@ -120,7 +120,7 @@ export const ModuleConfigSchema = z.object({
 
 ### Dual-Mode Checkout (`Stripe` vs. Direct-Transfer / Claim-Only)
 
-Capability negotiation is exposed via `GET /api/registry/capabilities` ([src/features/registry/api/capabilities.ts](src/features/registry/api/capabilities.ts#L8-L20)) backed by `getStripeCapability()` (`isValidStripeSecretKey` and `isValidStripePublishableKey`) in [src/lib/stripe.ts](src/lib/stripe.ts#L16-L64):
+Capability negotiation is exposed via `GET /api/registry/capabilities` ([src/features/registry/api/capabilities.ts](src/features/registry/api/capabilities.ts#L8-L20)) backed by `getStripeCapability()` (`isValidStripeSecretKey` and `isValidStripePublishableKey`) in [src/lib/stripe.ts](src/lib/stripe.ts#L16-L50):
 
 - **Stripe Card Checkout Mode (`cardCheckoutEnabled: true`)**:
   - Enabled only when both `STRIPE_SECRET_KEY` (`sk_*` or `rk_*`) and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` (`pk_*`) are configured with non-placeholder keys.
@@ -134,9 +134,9 @@ Capability negotiation is exposed via `GET /api/registry/capabilities` ([src/fea
 Registry pagination constants are centralized in [src/utils/registryPagination.ts](src/utils/registryPagination.ts#L6-L9):
 
 - **`REGISTRY_DEFAULT_PAGE_LIMIT = 20`**: Default server page size when `limit` is omitted on `GET /api/registry/items`.
-- **`REGISTRY_MAX_CATALOG_LIMIT = 500`**: Hard upper bound enforced in `RegistryRepository.getAllItems` ([src/features/registry/repository.ts](src/features/registry/repository.ts#L25-L43)). The storefront hook `useRegistry` ([src/features/registry/hooks/useRegistry.ts](src/features/registry/hooks/useRegistry.ts#L107-L158)) fetches up to `500` items upfront (`GET /api/registry/items?page=1&limit=500`) to support instant client-side category, search, price, and availability filtering.
-- **Progressive Client Reveal (`12` + `8`)**: `useRegistry` initially renders `REGISTRY_INITIAL_VISIBLE_ITEMS = 12` cards and reveals `REGISTRY_LOAD_MORE_INCREMENT = 8` additional items per batch ([src/features/registry/hooks/useRegistry.ts](src/features/registry/hooks/useRegistry.ts#L339-L341)).
-- **Deep-Link Fallback**: When a guest opens `/registry?item=<id>` for an item beyond the initial 500-item catalog slice, `useRegistry` fetches `GET /api/registry/items/[id]` directly so the modal still opens cleanly ([src/features/registry/hooks/useRegistry.ts](src/features/registry/hooks/useRegistry.ts#L369-L420)).
+- **`REGISTRY_MAX_CATALOG_LIMIT = 500`**: Hard upper bound enforced in `RegistryRepository.getAllItems` ([src/features/registry/repository.ts](src/features/registry/repository.ts#L38-L55)). The storefront hook `useRegistry` ([src/features/registry/hooks/useRegistry.ts](src/features/registry/hooks/useRegistry.ts#L107-L167)) fetches up to `500` items upfront (`GET /api/registry/items?page=1&limit=500`) to support instant client-side category, search, price, and availability filtering.
+- **Progressive Client Reveal (`12` + `8`)**: Storefront state initializes with `REGISTRY_INITIAL_VISIBLE_ITEMS = 12` cards and `RegistryPage` (`handleLoadMore`) reveals `REGISTRY_LOAD_MORE_INCREMENT = 8` additional items per batch ([src/features/registry/pages/index.tsx](src/features/registry/pages/index.tsx#L19-L117)).
+- **Deep-Link Fallback**: When a guest opens `/registry?item=<id>` for an item beyond the initial 500-item catalog slice, `resolveTargetItem` in `useRegistry` ([src/features/registry/hooks/useRegistry.ts](src/features/registry/hooks/useRegistry.ts#L369-L420)) fetches `GET /api/registry/items/[id]` directly so the modal still opens cleanly.
 
 ---
 
@@ -144,7 +144,7 @@ Registry pagination constants are centralized in [src/utils/registryPagination.t
 
 Administrative CRUD operations for structured domain entities route dynamically through [src/app/api/admin/[entity]/route.ts](src/app/api/admin/[entity]/route.ts#L7-L142), `/api/admin/[entity]/[id]`, and `/api/admin/[entity]/batch`.
 
-- **Plural `ENTITY_KEY` Slugs**: Entity route parameters must match the exact `ENTITY_KEY` static properties registered in `getEntityService` ([src/features/admin/registry.ts](src/features/admin/registry.ts#L36-L72)). Unregistered singular slugs (such as `registry-item`, `seating-table`, `sub-event`, `invitation-code`, or `content`) resolve to `null` and return HTTP 404 (`'Entity not found'`).
+- **Plural `ENTITY_KEY` Slugs**: Entity route parameters must match the exact `ENTITY_KEY` static properties registered in `getEntityService` ([src/features/admin/registry.ts](src/features/admin/registry.ts#L36-L83)). Unregistered singular slugs (such as `registry-item`, `seating-table`, `sub-event`, `invitation-code`, or `content`) resolve to `null` and return HTTP 404 (`'Entity not found'`).
 - **No `isFeatureEnabled` Guard**: [src/app/api/admin/[entity]/route.ts](src/app/api/admin/[entity]/route.ts#L7-L11) checks `getEntityService(entity)` and admin session authorization (`Admin-only`), skipping `isFeatureEnabled()` so administrators can manage underlying data regardless of presentation toggle state.
 
 <!-- BEGIN AUTOGENERATED ADMIN_ENTITIES -->
