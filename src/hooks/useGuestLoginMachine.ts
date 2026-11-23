@@ -1,6 +1,6 @@
 'use client';
 
-import { useReducer, useEffect, useRef, useCallback, type FormEvent } from 'react';
+import { useReducer, useEffect, useRef, useCallback, type SubmitEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getSafeCallbackUrl } from '@/utils/safeCallbackUrl';
 
@@ -314,7 +314,7 @@ export function useGuestLoginMachine(options?: UseGuestLoginMachineOptions) {
   );
 
   const handleLogin = useCallback(
-    async (e?: FormEvent) => {
+    async (e?: SubmitEvent<HTMLFormElement>) => {
       if (e) e.preventDefault();
       await submitPasscode(stateRef.current.passcode);
     },

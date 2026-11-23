@@ -499,7 +499,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   ]);
 
   // Form submission handling direct transfer, physical claims, and embedded Stripe Elements confirmation
-  const handlePaymentSubmit = async (e: React.FormEvent) => {
+  const handlePaymentSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     if (!isPayableGroupGift) {
