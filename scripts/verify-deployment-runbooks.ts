@@ -2238,6 +2238,66 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       '.github/dependabot.yml: Missing `versions: [">= 23.0.0"]` ignore rule for `@types/node` under `npm` ecosystem'
     );
   }
+  if (!hasDependabotVersionIgnore('npm', 'typescript', '>= 6.1.0')) {
+    errors.push(
+      '.github/dependabot.yml: Missing `versions: [">= 6.1.0"]` ignore rule for `typescript` under `npm` ecosystem'
+    );
+  }
+
+  const typescriptRange = String(packageJson.devDependencies?.typescript ?? '').trim();
+  if (!/^[~^]?5\.9\.\d+$/.test(typescriptRange)) {
+    errors.push(
+      `package.json: \`devDependencies["typescript"]\` ("${typescriptRange}") must pin the TypeScript 5.9 release line (< 6.1.0)`
+    );
+  }
+
+  const hasMinorPatchOnlyGroup = (ecosystem: string, groupName: string): boolean => {
+    const updatesNode: unknown = isMap(dependabotDoc.contents)
+      ? dependabotDoc.contents.get('updates', true)
+      : null;
+    if (!isSeq(updatesNode)) {
+      return false;
+    }
+    for (const updateEntry of updatesNode.items) {
+      if (!isMap(updateEntry)) {
+        continue;
+      }
+      const ecoNode: unknown = updateEntry.get('package-ecosystem', true);
+      if (!isScalar(ecoNode) || String(ecoNode.value).trim() !== ecosystem) {
+        continue;
+      }
+      const groupsNode: unknown = updateEntry.get('groups', true);
+      if (!isMap(groupsNode)) {
+        continue;
+      }
+      const groupNode: unknown = groupsNode.get(groupName, true);
+      if (!isMap(groupNode)) {
+        continue;
+      }
+      const updateTypesNode: unknown = groupNode.get('update-types', true);
+      if (!isSeq(updateTypesNode) || updateTypesNode.items.length === 0) {
+        return false;
+      }
+      const normalizedTypes = updateTypesNode.items
+        .map((item) => (isScalar(item) ? String(item.value).trim() : ''))
+        .filter(Boolean);
+      const allowedTypes = new Set(['minor', 'patch']);
+      return (
+        normalizedTypes.length === 2 &&
+        normalizedTypes.includes('minor') &&
+        normalizedTypes.includes('patch') &&
+        normalizedTypes.every((typeName) => allowedTypes.has(typeName))
+      );
+    }
+    return false;
+  };
+  for (const groupName of ['production-dependencies', 'development-dependencies']) {
+    if (!hasMinorPatchOnlyGroup('npm', groupName)) {
+      errors.push(
+        `.github/dependabot.yml: Group \`${groupName}\` under \`npm\` ecosystem must restrict \`update-types\` to \`["minor", "patch"]\``
+      );
+    }
+  }
 
   // Verify PostgreSQL 15 parity across docker-compose.yml, .github/workflows/ci.yml, and runtime/deployment docs
   const expectedPostgresMajor = '15';
