@@ -6,6 +6,12 @@ import {
   REGISTRY_DEFAULT_PAGE_LIMIT,
   REGISTRY_MAX_CATALOG_LIMIT,
 } from '@/utils/registryPagination';
+import {
+  buildArchetypeSeedData,
+  findSeededContributorWithItem,
+  findSeededRegistryItemById,
+  isStaticExportBuild,
+} from '@/lib/sampleData/builder';
 import type {
   IRegistryRepository,
   GetItemsOptions,
@@ -53,6 +59,49 @@ class RegistryRepository implements IRegistryRepository {
     );
     const skip = (normalizedPage - 1) * normalizedLimit;
     const take = normalizedLimit;
+
+    if (isStaticExportBuild()) {
+      let seeded = buildArchetypeSeedData('classic').registryItems.map((item) =>
+        includeContributors ? item : { ...item, contributors: [] }
+      );
+
+      if (category && category.trim()) {
+        const targetCategory = category.trim();
+        seeded = seeded.filter((item) => item.category === targetCategory);
+      }
+      if (minPrice !== undefined) {
+        seeded = seeded.filter((item) => item.price >= minPrice);
+      }
+      if (maxPrice !== undefined) {
+        seeded = seeded.filter((item) => item.price <= maxPrice);
+      }
+
+      if (sortBy === 'price-asc') {
+        seeded.sort((a, b) => a.price - b.price);
+      } else if (sortBy === 'price-desc') {
+        seeded.sort((a, b) => b.price - a.price);
+      } else {
+        seeded.sort((a, b) => {
+          const priorityDiff = Number(Boolean(b.isMostWanted)) - Number(Boolean(a.isMostWanted));
+          if (priorityDiff !== 0) return priorityDiff;
+          return (a.displayOrder ?? 0) - (b.displayOrder ?? 0);
+        });
+      }
+
+      const total = seeded.length;
+      const items = seeded
+        .slice(skip, skip + take)
+        .map((entry) => RegistryItemSchema.parse(entry));
+      const totalPages = Math.ceil(total / normalizedLimit);
+
+      return {
+        items,
+        total,
+        page: normalizedPage,
+        limit: normalizedLimit,
+        totalPages,
+      };
+    }
 
     const where: any = {};
     if (category && category.trim()) {
@@ -122,6 +171,11 @@ class RegistryRepository implements IRegistryRepository {
    */
   async getItemById(id: string, options: { includeContributors?: boolean } = {}) {
     const { includeContributors = false } = options;
+    if (isStaticExportBuild()) {
+      const seededItem = findSeededRegistryItemById(id, { includeContributors });
+      return seededItem ? RegistryItemSchema.parse(seededItem) : null;
+    }
+
     const include: { image: boolean; contributors?: boolean } = { image: true };
     if (includeContributors) {
       include.contributors = true;
@@ -611,6 +665,15 @@ class RegistryRepository implements IRegistryRepository {
     contributorId: string
   ): Promise<{ contributor: ContributorRecord; item: RegistryItemDTO | null } | null> {
     if (!contributorId) return null;
+    if (isStaticExportBuild()) {
+      const found = findSeededContributorWithItem(contributorId);
+      if (!found) return null;
+      return {
+        contributor: ContributorSchema.parse(found.contributor),
+        item: found.item ? RegistryItemSchema.parse(found.item) : null,
+      };
+    }
+
     const contributor = await this.client.contributor.findUnique({
       where: { id: contributorId },
     });

@@ -6,6 +6,7 @@ import { ContentNodeSchema, PhotoNodeSchema, PhotoDataSchema, AppConfigSchema, C
 import { executeInTransaction } from '@/lib/transaction';
 import { createAuditSnapshot } from '@/lib/audit';
 import { isMultisiteEnabled } from '@/lib/config';
+import { buildArchetypeSeedData, isStaticExportBuild } from '@/lib/sampleData/builder';
 
 const StoredLegacyPhotoNodeSchema = PhotoNodeSchema.extend({
   data: PhotoDataSchema.extend({
@@ -51,6 +52,22 @@ export class ContentRepository implements IContentRepository {
 
     const skip = (page - 1) * limit;
     const take = limit;
+
+    if (isStaticExportBuild()) {
+      const seedPending = buildArchetypeSeedData('classic').pendingPhotos.map((n) =>
+        parseStoredPhotoNode(n)
+      );
+      const total = seedPending.length;
+      const photos = seedPending.slice(skip, skip + take);
+      const totalPages = total > 0 ? Math.ceil(total / limit) : 0;
+      return {
+        photos,
+        total,
+        page,
+        limit,
+        totalPages,
+      };
+    }
 
     const where: any = {
       type: 'Photo',
@@ -100,6 +117,11 @@ export class ContentRepository implements IContentRepository {
   }
 
   async getFeatures(configIdOrSubdomain: string = 'global') {
+    if (isStaticExportBuild()) {
+      const parsed = AppConfigSchema.parse(buildArchetypeSeedData('classic').config);
+      return parsed.features || [];
+    }
+
     const target = isMultisiteEnabled() ? configIdOrSubdomain : 'global';
     let config = await this.client.appConfig.findUnique({ where: { id: target } });
     if (!config && isMultisiteEnabled()) {
@@ -130,6 +152,28 @@ export class ContentRepository implements IContentRepository {
   }
 
   async getNodesByType(type: string, options?: GetNodesByTypeOptions): Promise<ContentNodeDTO[]> {
+    if (isStaticExportBuild()) {
+      let filtered = buildArchetypeSeedData('classic')
+        .allContentNodes.filter((node) => node.type === type)
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+      if (options?.since) {
+        const sinceDate = options.since instanceof Date ? options.since : new Date(options.since);
+        if (!isNaN(sinceDate.getTime())) {
+          filtered = filtered.filter((node) => node.createdAt.getTime() > sinceDate.getTime());
+        }
+      }
+
+      if (options?.limit !== undefined) {
+        const limit = Math.floor(Number(options.limit));
+        if (!isNaN(limit) && limit > 0) {
+          filtered = filtered.slice(0, limit > 100 ? 100 : limit);
+        }
+      }
+
+      return filtered.map((node) => parseStoredContentNode(node));
+    }
+
     const where: any = { type };
     if (options?.since) {
       const sinceDate = options.since instanceof Date ? options.since : new Date(options.since);
@@ -161,6 +205,22 @@ export class ContentRepository implements IContentRepository {
       if (!isNaN(limit) && limit > 0) {
         take = limit > 100 ? 100 : limit;
       }
+    }
+
+    if (isStaticExportBuild()) {
+      let photos = buildArchetypeSeedData('classic').publicPhotos.map((node) =>
+        parseStoredPhotoNode(node)
+      );
+      if (options?.since) {
+        const sinceDate = options.since instanceof Date ? options.since : new Date(options.since);
+        if (!isNaN(sinceDate.getTime())) {
+          photos = photos.filter((node) => node.createdAt.getTime() > sinceDate.getTime());
+        }
+      }
+      if (take !== undefined) {
+        photos = photos.slice(0, take);
+      }
+      return photos;
     }
 
     const andFilters: any[] = [
@@ -262,7 +322,16 @@ export class ContentRepository implements IContentRepository {
   }
 
   async getEntityBoundMediaIds(mediaIds: string[]): Promise<Set<string>> {
-    if (!mediaIds.length || !this.client.media?.findMany) {
+    if (!mediaIds.length) {
+      return new Set();
+    }
+
+    if (isStaticExportBuild()) {
+      const boundSet = new Set(buildArchetypeSeedData('classic').boundMediaIds);
+      return new Set(mediaIds.filter((id) => boundSet.has(id)));
+    }
+
+    if (!this.client.media?.findMany) {
       return new Set();
     }
 
@@ -296,6 +365,13 @@ export class ContentRepository implements IContentRepository {
   }
 
   async getNodeById(id: string): Promise<ContentNodeDTO | null> {
+    if (isStaticExportBuild()) {
+      const found = buildArchetypeSeedData('classic').allContentNodes.find(
+        (candidate) => candidate.id === id
+      );
+      return found ? parseStoredContentNode(found) : null;
+    }
+
     const node = await this.client.contentNode.findUnique({
       where: { id }
     });
