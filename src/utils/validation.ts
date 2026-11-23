@@ -250,6 +250,8 @@ export const MediaExportSchema = z.object({
   ids: z.union([z.array(z.string()), z.string()]).optional(),
   tag: z.string().optional(),
   category: z.string().optional(),
+  filename: z.string().optional(),
+  preflight: z.union([z.boolean(), z.string()]).optional(),
 });
 
 export const AdminSetupSchema = z.object({

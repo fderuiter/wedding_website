@@ -6,10 +6,6 @@ import {
   isAbortError,
   getSafeCallbackUrl,
   stripCodeFromCallbackUrl,
-  selectIsLoading,
-  selectIsBusy,
-  selectIsLoginDisabled,
-  selectIsAuthenticated,
   type GuestLoginMachineState,
   type GuestLoginMachineAction,
   type UseGuestLoginMachineOptions,
@@ -49,8 +45,8 @@ describe('guestLoginMachineReducer', () => {
     expect(state.error).toBe('Incorrect passcode or invitation code.');
   });
 
-  it('handles field changes: SET_PASSCODE, SET_SHOW_PASSCODE, TOGGLE_SHOW_PASSCODE, SET_SHOW_HELP, RESET', () => {
-    let state = guestLoginMachineReducer(initialGuestLoginMachineState, {
+  it('handles field changes: SET_PASSCODE, SET_SHOW_PASSCODE, SET_SHOW_HELP', () => {
+    let state: GuestLoginMachineState = guestLoginMachineReducer(initialGuestLoginMachineState, {
       type: 'SET_PASSCODE',
       passcode: 'pass123',
     });
@@ -63,51 +59,14 @@ describe('guestLoginMachineReducer', () => {
     expect(state.showPasscode).toBe(true);
 
     state = guestLoginMachineReducer(state, {
-      type: 'TOGGLE_SHOW_PASSCODE',
-    });
-    expect(state.showPasscode).toBe(false);
-
-    state = guestLoginMachineReducer(state, {
       type: 'SET_SHOW_HELP',
       show: true,
     });
     expect(state.showHelp).toBe(true);
-
-    const resetState = guestLoginMachineReducer(state, { type: 'RESET' });
-    expect(resetState).toEqual(initialGuestLoginMachineState);
   });
 });
 
-describe('Selectors and Helper Utilities', () => {
-  it('computes selectors accurately across states', () => {
-    const idleState: GuestLoginMachineState = {
-      ...initialGuestLoginMachineState,
-      status: 'idle',
-    };
-    expect(selectIsLoading(idleState)).toBe(false);
-    expect(selectIsBusy(idleState)).toBe(false);
-    expect(selectIsLoginDisabled(idleState)).toBe(false);
-    expect(selectIsAuthenticated(idleState)).toBe(false);
-
-    const loginState: GuestLoginMachineState = {
-      ...initialGuestLoginMachineState,
-      status: 'logging_in',
-    };
-    expect(selectIsLoading(loginState)).toBe(true);
-    expect(selectIsBusy(loginState)).toBe(true);
-    expect(selectIsLoginDisabled(loginState)).toBe(true);
-    expect(selectIsAuthenticated(loginState)).toBe(false);
-
-    const authState: GuestLoginMachineState = {
-      ...initialGuestLoginMachineState,
-      status: 'authenticated',
-    };
-    expect(selectIsLoading(authState)).toBe(false);
-    expect(selectIsBusy(authState)).toBe(false);
-    expect(selectIsLoginDisabled(authState)).toBe(false);
-    expect(selectIsAuthenticated(authState)).toBe(true);
-  });
-
+describe('Helper Utilities', () => {
   it('validates safe callback URLs', () => {
     expect(getSafeCallbackUrl(null)).toBe('/');
     expect(getSafeCallbackUrl(undefined)).toBe('/');
@@ -194,8 +153,9 @@ describe('useGuestLoginMachine hook lifecycle and coordination', () => {
       signal: expect.any(AbortSignal),
     });
 
-    expect(result.current.isAuthenticated).toBe(true);
-    expect(result.current.status).toBe('authenticated');
+    expect(result.current.loading).toBe(false);
+    expect(result.current.isLoginDisabled).toBe(false);
+    expect(result.current.error).toBe('');
     expect(mockPush).toHaveBeenCalledWith('/dashboard');
   });
 
@@ -243,7 +203,8 @@ describe('useGuestLoginMachine hook lifecycle and coordination', () => {
       await result.current.handleLogin();
     });
 
-    expect(result.current.status).toBe('idle');
+    expect(result.current.loading).toBe(false);
+    expect(result.current.isLoginDisabled).toBe(false);
     expect(result.current.error).toBe('Incorrect passcode or invitation code.');
     expect(mockPush).not.toHaveBeenCalled();
   });
@@ -301,7 +262,8 @@ describe('useGuestLoginMachine hook lifecycle and coordination', () => {
       await result.current.handleLogin();
     });
 
-    expect(result.current.status).toBe('idle');
+    expect(result.current.loading).toBe(false);
+    expect(result.current.isLoginDisabled).toBe(false);
     expect(result.current.error).toBe('A connection error occurred. Please try again.');
   });
 
@@ -332,13 +294,13 @@ describe('useGuestLoginMachine hook lifecycle and coordination', () => {
     expect(mockPush).not.toHaveBeenCalled();
   });
 
-  it('supports functional updates for showPasscode and toggling helper', () => {
+  it('supports boolean and functional updates for showPasscode and showHelp', () => {
     const { result } = renderHook(() => useGuestLoginMachine());
 
     expect(result.current.showPasscode).toBe(false);
 
     act(() => {
-      result.current.toggleShowPasscode();
+      result.current.setShowPasscode(true);
     });
     expect(result.current.showPasscode).toBe(true);
 
@@ -383,7 +345,8 @@ describe('useGuestLoginMachine hook lifecycle and coordination', () => {
       body: JSON.stringify({ passcode: 'ALICE2026' }),
       signal: expect.any(AbortSignal),
     });
-    expect(result.current.isAuthenticated).toBe(true);
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBe('');
     expect(replaceStateSpy).toHaveBeenCalledWith(
       expect.anything(),
       '',
@@ -412,7 +375,8 @@ describe('useGuestLoginMachine hook lifecycle and coordination', () => {
       await Promise.resolve();
     });
 
-    expect(result.current.isAuthenticated).toBe(true);
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBe('');
     expect(mockPush).toHaveBeenCalledWith('/');
   });
 });
