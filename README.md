@@ -33,7 +33,7 @@ The primary goal of this project is to provide a personal, customizable, and cos
 *   **Scheduled Broadcasts & Communications:**
     *   Cohort-filtered announcements, digital invitation cards, and scheduled email/SMS **broadcasts** (`BroadcastMessage`, `BroadcastRecipient`) across native SMTP, Resend, SendGrid, and Twilio adapters processed via `/api/cron/broadcasts`.
 *   **Custom Gift Registry, Cash Funds & Payments:**
-    *   Physical gifts and dedicated cash/experience funds (`RegistryItem`, `Contributor`), single/batch product URL scraping and CSV imports, partial group gifting with live progress bars, peer-to-peer payment handles, and optional Stripe card checkout with webhook verification.
+    *   Physical gifts and dedicated cash/experience funds (`RegistryItem`, `Contributor`), single/batch product URL scraping and CSV imports, partial group gifting with live progress bars, peer-to-peer payment handles, optional Stripe card checkout with webhook verification, and contributor address collection with thank-you email dispatch and printable mailing labels.
 *   **3D Interactive Experiences & Theme Studio:**
     *   Interactive **React Three Fiber** and **Rapier** 3D scenes, **Framer Motion** transitions, 9 runtime feature toggles, "Add to Calendar" links, live weather forecasts, wedding party profiles (`WeddingPartyMember`), and local travel guides (`Attraction`).
 *   **Full-Site Backups & Portable Administration:**

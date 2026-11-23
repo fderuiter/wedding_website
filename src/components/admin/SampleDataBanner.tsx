@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { QueryClientContext } from '@tanstack/react-query';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/ToastProvider';
+import { withBasePath } from '@/lib/basePath';
 import {
   ADMIN_SAMPLE_DATA_QUERY_KEY,
   invalidateSampleDataCaches,
@@ -24,7 +25,7 @@ export function SampleDataBanner() {
 
     async function loadStatus() {
       try {
-        const res = await fetch('/api/admin/sample-data');
+        const res = await fetch(withBasePath('/api/admin/sample-data'));
         if (!res || !res.ok || cancelled) return;
         const data = await res.json();
         if (cancelled) return;
@@ -72,7 +73,7 @@ export function SampleDataBanner() {
 
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/sample-data', {
+      const res = await fetch(withBasePath('/api/admin/sample-data'), {
         method: 'DELETE',
       });
       if (res.ok) {

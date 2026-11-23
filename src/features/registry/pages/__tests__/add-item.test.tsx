@@ -7,7 +7,9 @@ import { apiClient } from '@/lib/apiClient';
 expect.extend(toHaveNoViolations);
 
 jest.mock('@/lib/apiClient', () => ({
+  ...jest.requireActual('@/lib/apiClient'),
   apiClient: {
+    get: jest.fn(),
     post: jest.fn(),
   },
 }));

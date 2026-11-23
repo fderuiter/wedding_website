@@ -15,6 +15,7 @@ import type {
   AdminSubEventRsvpOverrideItemDTO,
 } from '@/features/sub-events';
 import { cn } from '@/utils/cn';
+import { withBasePath } from '@/lib/basePath';
 import {
   ADDRESS_LINE_MAX_LENGTH,
   CITY_MAX_LENGTH,
@@ -722,7 +723,11 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
     let cancelled = false;
     if (typeof fetch !== 'function') return;
 
-    void fetch(`/api/admin/invitation-codes/rsvps?invitationCodeId=${encodeURIComponent(guest.id)}`)
+    void fetch(
+      withBasePath(
+        `/api/admin/invitation-codes/rsvps?invitationCodeId=${encodeURIComponent(guest.id)}`
+      )
+    )
       .then(async (res) => {
         if (!res || !res.ok) return null;
         const json = await res.json().catch(() => null);
@@ -1000,7 +1005,7 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
       };
     }
 
-    const res = await fetch('/api/admin/invitation-codes/rsvps', {
+    const res = await fetch(withBasePath('/api/admin/invitation-codes/rsvps'), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(bodyPayload),

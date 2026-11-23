@@ -66,7 +66,7 @@ const RAW_ARCHETYPE_PRESETS: Record<ArchetypeId, z.input<typeof ArchetypePresetS
         itemType: 'PHYSICAL',
         isMostWanted: true,
         vendorUrl: 'https://example.com/registry/stand-mixer',
-        imageUrl: '/images/sunset-embrace.jpg',
+        imageUrl: '/images/sample-registry-mixer.jpg',
         imageAlt: 'Classic KitchenAid stand mixer showcase',
         contributors: [
           {
@@ -95,7 +95,7 @@ const RAW_ARCHETYPE_PRESETS: Record<ArchetypeId, z.input<typeof ArchetypePresetS
         itemType: 'PHYSICAL',
         isGroupGift: false,
         vendorUrl: 'https://example.com/registry/porcelain-dinnerware',
-        imageUrl: '/images/placeholder.png',
+        imageUrl: '/images/sample-registry-dinnerware.jpg',
         imageAlt: 'White porcelain 16-piece dinnerware set',
         contributors: [],
       },
@@ -110,7 +110,7 @@ const RAW_ARCHETYPE_PRESETS: Record<ArchetypeId, z.input<typeof ArchetypePresetS
         isGroupGift: true,
         isMostWanted: true,
         vendorUrl: 'https://example.com/registry/espresso-machine',
-        imageUrl: '/images/sunset-embrace.jpg',
+        imageUrl: '/images/sample-registry-espresso.jpg',
         imageAlt: 'Stainless steel espresso and cappuccino machine',
         contributors: [
           {
@@ -137,7 +137,7 @@ const RAW_ARCHETYPE_PRESETS: Record<ArchetypeId, z.input<typeof ArchetypePresetS
         isGroupGift: true,
         paymentHandleType: 'venmo',
         paymentHandle: 'https://example.com/pay/alex-taylor-honeymoon',
-        imageUrl: '/images/sunset-embrace.jpg',
+        imageUrl: '/images/sample-registry-honeymoon.jpg',
         imageAlt: 'Couple watching sunset on honeymoon getaway',
         contributors: [
           {
@@ -173,7 +173,7 @@ const RAW_ARCHETYPE_PRESETS: Record<ArchetypeId, z.input<typeof ArchetypePresetS
         price: 85.0,
         itemType: 'PHYSICAL',
         vendorUrl: 'https://example.com/registry/crystal-wine-glasses',
-        imageUrl: '/images/placeholder.png',
+        imageUrl: '/images/sample-registry-wine.jpg',
         imageAlt: 'Set of six hand-blown crystal wine glasses',
         contributors: [],
       },
@@ -747,7 +747,7 @@ const RAW_ARCHETYPE_PRESETS: Record<ArchetypeId, z.input<typeof ArchetypePresetS
         itemType: 'PHYSICAL',
         isMostWanted: true,
         vendorUrl: 'https://example.com/registry/spinner-luggage',
-        imageUrl: '/images/placeholder.png',
+        imageUrl: '/images/sample-registry-luggage.jpg',
         imageAlt: 'Three-piece hardside spinner luggage set',
         contributors: [
           {
@@ -777,7 +777,7 @@ const RAW_ARCHETYPE_PRESETS: Record<ArchetypeId, z.input<typeof ArchetypePresetS
         isGroupGift: true,
         paymentHandleType: 'zelle',
         paymentHandle: 'https://example.com/pay/maya-lucas-catamaran',
-        imageUrl: '/images/sunset-embrace.jpg',
+        imageUrl: '/images/sample-registry-sail.jpg',
         imageAlt: 'Catamaran sailing across golden sunset water',
         contributors: [
           {
@@ -805,7 +805,7 @@ const RAW_ARCHETYPE_PRESETS: Record<ArchetypeId, z.input<typeof ArchetypePresetS
         isMostWanted: true,
         paymentHandleType: 'zelle',
         paymentHandle: 'https://example.com/pay/maya-lucas-suite',
-        imageUrl: '/images/sunset-embrace.jpg',
+        imageUrl: '/images/sample-registry-resort.jpg',
         imageAlt: 'Tropical oceanfront villa terrace',
         contributors: [],
       },
@@ -818,7 +818,7 @@ const RAW_ARCHETYPE_PRESETS: Record<ArchetypeId, z.input<typeof ArchetypePresetS
         itemType: 'EXPERIENCE_FUND',
         paymentHandleType: 'zelle',
         paymentHandle: 'https://example.com/pay/maya-lucas-reef',
-        imageUrl: '/images/placeholder.png',
+        imageUrl: '/images/sample-registry-snorkeling.jpg',
         imageAlt: 'Tropical coral reef snorkeling excursion',
         contributors: [],
       },
@@ -1165,7 +1165,7 @@ const RAW_ARCHETYPE_PRESETS: Record<ArchetypeId, z.input<typeof ArchetypePresetS
         itemType: 'PHYSICAL',
         isMostWanted: true,
         vendorUrl: 'https://example.com/registry/oak-serving-board',
-        imageUrl: '/images/placeholder.png',
+        imageUrl: '/images/sample-registry-board.jpg',
         imageAlt: 'Handcrafted solid oak serving board',
         contributors: [
           {
@@ -1192,7 +1192,7 @@ const RAW_ARCHETYPE_PRESETS: Record<ArchetypeId, z.input<typeof ArchetypePresetS
         isGroupGift: true,
         paymentHandleType: 'paypal',
         paymentHandle: 'https://example.com/pay/clara-julian-vineyard',
-        imageUrl: '/images/sunset-embrace.jpg',
+        imageUrl: '/images/sample-registry-vineyard.jpg',
         imageAlt: 'Vineyard wine tasting table at sunset',
         contributors: [
           {
@@ -1219,7 +1219,7 @@ const RAW_ARCHETYPE_PRESETS: Record<ArchetypeId, z.input<typeof ArchetypePresetS
         isGroupGift: true,
         isMostWanted: true,
         vendorUrl: 'https://example.com/registry/teak-lounge-chairs',
-        imageUrl: '/images/sunset-embrace.jpg',
+        imageUrl: '/images/sample-registry-lounge.jpg',
         imageAlt: 'Pair of teak garden lounge chairs',
         contributors: [],
       },
@@ -1232,7 +1232,7 @@ const RAW_ARCHETYPE_PRESETS: Record<ArchetypeId, z.input<typeof ArchetypePresetS
         price: 160.0,
         itemType: 'PHYSICAL',
         vendorUrl: 'https://example.com/registry/ceramic-dinner-set',
-        imageUrl: '/images/placeholder.png',
+        imageUrl: '/images/sample-registry-ceramics.jpg',
         imageAlt: 'Handcrafted matte stoneware dish set',
         contributors: [],
       },

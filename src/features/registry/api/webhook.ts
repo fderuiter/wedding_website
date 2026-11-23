@@ -95,6 +95,12 @@ export async function POST(request: NextRequest) {
       const email = metadata.contributorEmail || null;
       const message = metadata.contributorMessage || null;
       const code = metadata.invitationCode || undefined;
+      const addressLine1 = metadata.addressLine1?.trim() || undefined;
+      const addressLine2 = metadata.addressLine2?.trim() || undefined;
+      const city = metadata.city?.trim() || undefined;
+      const state = metadata.state?.trim() || undefined;
+      const zipCode = metadata.zipCode?.trim() || undefined;
+      const country = metadata.country?.trim() || undefined;
       const stripePaymentIntentId = paymentIntent.id;
       const stripeChargeId =
         typeof paymentIntent.latest_charge === 'string'
@@ -119,6 +125,12 @@ export async function POST(request: NextRequest) {
           stripePaymentIntentId,
           stripeChargeId,
           transactionTimestamp,
+          ...(addressLine1 ? { addressLine1 } : {}),
+          ...(addressLine2 ? { addressLine2 } : {}),
+          ...(city ? { city } : {}),
+          ...(state ? { state } : {}),
+          ...(zipCode ? { zipCode } : {}),
+          ...(country ? { country } : {}),
         });
 
         const config = await configPromise;

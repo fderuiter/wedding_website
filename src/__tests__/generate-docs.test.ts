@@ -238,7 +238,7 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       expect(table).toContain('`Masked secret (hasTwilioAuthToken)`');
     });
 
-    it('lists every live API route handler and marks /api/media, /api/admin/geocode, and /api/admin/invitation-codes/merge Admin-only, /api/registry/webhook/stripe stripeSignature, and /api/live and /api/uploads/[...path] Public', () => {
+    it('lists every live API route handler and marks /api/media, /api/admin/geocode, /api/admin/thank-you-notes/[id]/send-email, and /api/admin/invitation-codes/merge Admin-only, /api/registry/webhook/stripe stripeSignature, and /api/live and /api/uploads/[...path] Public', () => {
       const liveRouteEntries = collectApiRouteEntries();
       const apiSection = generateApiRoutesSection();
       expect(apiSection).toContain(`Total API route handlers: **${liveRouteEntries.length}**`);
@@ -249,13 +249,13 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       expect(handlerRows).toHaveLength(liveRouteEntries.length);
 
       expect(apiSection).toContain('| `/api/admin/geocode` | `src/app/api/admin/geocode/route.ts` | `GET` | `Admin-only` |');
-
       expect(apiSection).toContain('| `/api/live` | `src/app/api/live/route.ts` | `GET` | `Public` |');
       expect(apiSection).toContain('| `/api/registry/claim` | `src/app/api/registry/claim/route.ts` | `GET`, `POST` | `Public` |');
       expect(apiSection).toContain('| `/api/admin/broadcast/[id]` | `src/app/api/admin/broadcast/[id]/route.ts` | `GET` | `Admin-only` |');
       expect(apiSection).toContain('| `/api/admin/contributors/[id]` | `src/app/api/admin/contributors/[id]/route.ts` | `PATCH`, `DELETE` | `Admin-only` |');
       expect(apiSection).toContain('| `/api/admin/contributors/[id]/action` | `src/app/api/admin/contributors/[id]/action/route.ts` | `POST` | `Admin-only` |');
       expect(apiSection).toContain('| `/api/admin/registry/items/[id]/unclaim` | `src/app/api/admin/registry/items/[id]/unclaim/route.ts` | `POST` | `Admin-only` |');
+      expect(apiSection).toContain('| `/api/admin/thank-you-notes/[id]/send-email` | `src/app/api/admin/thank-you-notes/[id]/send-email/route.ts` | `POST` | `Admin-only` |');
 
       expect(apiSection).toContain('| `/api/admin/invitation-codes/catalog` | `src/app/api/admin/invitation-codes/catalog/route.ts` | `GET` | `Admin-only` |');
       expect(apiSection).toContain('| `/api/admin/invitation-codes/rsvps` | `src/app/api/admin/invitation-codes/rsvps/route.ts` | `GET`, `PUT` | `Admin-only` |');

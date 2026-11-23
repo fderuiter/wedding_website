@@ -45,6 +45,7 @@ describe('docs/ASSET_STORAGE.md Contract & Portal Staging Suite', () => {
         docRelPath,
         'src/env.ts',
         'src/middleware.ts',
+        'src/lib/basePath.ts',
         'src/utils/storage.ts',
         'src/utils/pathContainment.ts',
         'src/utils/validationPrimitives.ts',

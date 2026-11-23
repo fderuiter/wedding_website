@@ -1288,4 +1288,35 @@ describe('ReceptionSlideshowClient', () => {
     expect(screen.getByTestId('slideshow-photo-title')).toHaveTextContent('Guest Photo');
     expect(screen.queryByTestId('slideshow-photo-attribution')).not.toBeInTheDocument();
   });
+
+  it('prefixes default /photos?tab=guest QR link and /api/photos polling with NEXT_PUBLIC_BASE_PATH', async () => {
+    const previousBasePath = process.env.NEXT_PUBLIC_BASE_PATH;
+    process.env.NEXT_PUBLIC_BASE_PATH = '/wedding_website/demo';
+
+    const mockFetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ photos: [] }),
+    });
+    global.fetch = mockFetch;
+
+    try {
+      render(<ReceptionSlideshowClient initialPhotos={samplePhotos} />);
+
+      expect(screen.getByTestId('themed-qr-code').getAttribute('data-value')).toMatch(
+        /\/wedding_website\/demo\/photos\?tab=guest$/
+      );
+
+      await act(async () => {
+        jest.advanceTimersByTime(30000);
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith('/wedding_website/demo/api/photos');
+    } finally {
+      if (previousBasePath === undefined) {
+        delete process.env.NEXT_PUBLIC_BASE_PATH;
+      } else {
+        process.env.NEXT_PUBLIC_BASE_PATH = previousBasePath;
+      }
+    }
+  });
 });

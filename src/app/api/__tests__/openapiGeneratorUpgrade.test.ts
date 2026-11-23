@@ -317,7 +317,7 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     return operations;
   }
 
-  it('discovers every live route file (.ts and .tsx) and HTTP operation including GET /api/live, GET /api/og, GET & HEAD /api/uploads/{path}, GET /api/admin/broadcast/{id}, GET /api/admin/geocode, and POST /api/admin/invitation-codes/merge', () => {
+  it('discovers every live route file (.ts and .tsx) and HTTP operation including GET /api/live, GET /api/og, GET & HEAD /api/uploads/{path}, GET /api/admin/broadcast/{id}, GET /api/admin/geocode, POST /api/admin/thank-you-notes/{id}/send-email, and POST /api/admin/invitation-codes/merge', () => {
     expect(openapi.openapi).toBe('3.0.3');
     expect(Array.isArray(openapi.servers)).toBe(true);
     expect((openapi.servers ?? []).length).toBeGreaterThanOrEqual(1);
@@ -341,6 +341,7 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     expect(openapi.paths['/api/admin/contributors/{id}']?.delete).toBeDefined();
     expect(openapi.paths['/api/admin/registry/items/{id}/unclaim']?.post).toBeDefined();
     expect(openapi.paths['/api/admin/invitation-codes/merge']?.post).toBeDefined();
+    expect(openapi.paths['/api/admin/thank-you-notes/{id}/send-email']?.post).toBeDefined();
 
     const ogRoute = openapi.paths['/api/og'];
     expect(ogRoute).toBeDefined();

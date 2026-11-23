@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { FormGroup, Label, Input, Textarea, Checkbox, Select } from '@/components/ui/forms';
 import { cn } from '@/utils/cn';
+import { withBasePath } from '@/lib/basePath';
 
 interface WeddingPartyEditorFormProps {
   values: Partial<WeddingPartyMemberDTO>;
@@ -223,7 +224,7 @@ export function WeddingPartyCard({
         {member.photo && (
         // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={member.photo.url || '/images/placeholder.png'}
+            src={withBasePath(member.photo.url || '/images/placeholder.png')}
             alt={member.photo.isDecorative ? '' : (member.photo.altText || member.name)}
             className="w-12 h-12 rounded-full object-cover bg-gray-100"
           />
