@@ -653,6 +653,49 @@ jobs:
       - name: Build static Storybook showcase
         run: npm run build-storybook
 
+  static-export-build:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Cache Next.js static export build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .next-export/cache
+          key: ${{ runner.os }}-next-export-${{ hashFiles('package-lock.json') }}-${{ hashFiles('next.config.ts', 'postcss.config.mjs', 'tsconfig.json', 'tsconfig.build.json', 'scripts/build-export.mjs', 'public/**', 'src/**') }}
+          restore-keys: |
+            ${{ runner.os }}-next-export-${{ hashFiles('package-lock.json') }}-
+      - name: Build static HTML showcase
+        run: |
+          set -o pipefail
+          npm run build:export 2>&1 | tee static-export-build.log
+          if grep -Fq "[PageQueryError]" static-export-build.log; then
+            echo "Error: Static export emitted [PageQueryError] diagnostics during prerendering!"
+            rm -f static-export-build.log
+            exit 1
+          fi
+          rm -f static-export-build.log
+      - name: Verify exported HTML output
+        run: |
+          if [ ! -s "out/index.html" ]; then
+            echo "Error: Expected non-empty static HTML entrypoint 'out/index.html' was not generated!"
+            exit 1
+          fi
+          for route in photos things-to-do wedding-party registry; do
+            if [ ! -s "out/${route}.html" ] && [ ! -s "out/${route}/index.html" ]; then
+              echo "Error: Expected non-empty static HTML output for '/${route}' was not generated!"
+              exit 1
+            fi
+          done
+
   e2e-test:
     needs: [verify, build]
     runs-on: ubuntu-latest
