@@ -5,7 +5,8 @@ import { Icon } from '@/components/ui/Icon';
 import { motion, Variants } from 'framer-motion';
 import { useTheme } from '@/components/ThemeProvider';
 import { Overlay } from '@/components/ui/Overlay';
-import { useGuestLoginMachine, getSafeCallbackUrl } from '@/hooks/useGuestLoginMachine';
+import { useGuestLoginMachine } from '@/hooks/useGuestLoginMachine';
+import { getSafeCallbackUrl } from '@/utils/safeCallbackUrl';
 
 const fadeUp: Variants = {
   hidden: { opacity: 0, y: 20 },

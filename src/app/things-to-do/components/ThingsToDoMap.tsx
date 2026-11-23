@@ -14,7 +14,6 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
 declare module 'react-leaflet' {
-  // eslint-disable-next-line unused-imports/no-unused-vars
   interface MapContainerProps {
     role?: string;
     'aria-label'?: string;

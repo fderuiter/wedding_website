@@ -44,6 +44,15 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
     it('resolves unions', () => {
       expect(getZodType(z.union([z.string(), z.number()]))).toBe('string | number');
     });
+
+    it('returns unknown for null, undefined, and non-schema inputs', () => {
+      expect(getZodType(null)).toBe('unknown');
+      expect(getZodType(undefined)).toBe('unknown');
+      expect(getZodType('string')).toBe('unknown');
+      expect(getZodType(42)).toBe('unknown');
+      expect(getZodType({})).toBe('unknown');
+      expect(getZodType({ _zod: {} })).toBe('unknown');
+    });
   });
 
   describe('Modifier unwrapping', () => {
@@ -63,6 +72,12 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       expect(getZodType(z.string().readonly())).toBe('string');
       expect(getZodType(z.string().catch('fallback'))).toBe('string');
       expect(getZodType(z.string().brand('MyBrand'))).toBe('string');
+    });
+
+    it('unwraps exactOptional and refine schemas to their underlying base types', () => {
+      expect(getZodType(z.string().exactOptional())).toBe('string');
+      expect(getZodType(z.string().refine((val) => val.length > 0))).toBe('string');
+      expect(getZodType(z.string().refine((val) => val.length > 0).exactOptional())).toBe('string');
     });
   });
 
@@ -107,6 +122,16 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       expect(getZodDescription(z.string().describe('Inner description').nullable().optional().default(''))).toBe('Inner description');
       expect(getZodDescription(z.string().transform((s) => s.trim()).pipe(z.string().describe('Piped description')).default(''))).toBe('Piped description');
       expect(getZodDescription(z.string().optional())).toBeUndefined();
+    });
+
+    it('reads descriptions through exactOptional and refine, and returns undefined for non-schema inputs', () => {
+      expect(getZodDescription(z.string().describe('Exact optional field').exactOptional())).toBe('Exact optional field');
+      expect(getZodDescription(z.string().describe('Refined field').refine((s) => s.length > 0))).toBe('Refined field');
+      expect(getZodDescription(z.string().meta({ description: 'Registry metadata description' }).optional())).toBe('Registry metadata description');
+      expect(getZodDescription(null)).toBeUndefined();
+      expect(getZodDescription(undefined)).toBeUndefined();
+      expect(getZodDescription('not-a-schema')).toBeUndefined();
+      expect(getZodDescription({})).toBeUndefined();
     });
   });
 

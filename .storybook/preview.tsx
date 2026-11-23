@@ -1,17 +1,10 @@
 import type { Preview } from '@storybook/react';
-import { initialize, mswLoader } from 'msw-storybook-addon';
+import { mswLoader } from 'msw-storybook-addon/csf3';
+import { setupWorker } from 'msw/browser';
 import '../src/app/globals.css';
 import { ThemeProvider } from '../src/components/ThemeProvider';
 import { ToastProvider } from '../src/components/ui/ToastProvider';
 import { defaultHandlers } from '../src/mocks/handlers';
-
-// Initialize MSW for browser Storybook sandbox
-initialize({
-  onUnhandledFrame: 'bypass',
-  serviceWorker: {
-    url: './mockServiceWorker.js',
-  },
-}, defaultHandlers);
 
 const preview: Preview = {
   parameters: {
@@ -25,7 +18,18 @@ const preview: Preview = {
       handlers: defaultHandlers,
     },
   },
-  loaders: [mswLoader],
+  loaders: [
+    mswLoader(async () => {
+      const worker = setupWorker(...defaultHandlers);
+      await worker.start({
+        onUnhandledFrame: 'bypass',
+        serviceWorker: {
+          url: './mockServiceWorker.js',
+        },
+      });
+      return worker;
+    }),
+  ],
   decorators: [
     (Story, context) => {
       const themeMode = (context.globals.themeMode as 'light' | 'dark' | 'system') || 'light';
@@ -46,13 +50,14 @@ const preview: Preview = {
       description: 'Global theme for components',
       defaultValue: 'light',
       toolbar: {
+        title: 'Theme Mode',
         icon: 'circlehollow',
         items: [
           { value: 'light', title: 'Light' },
           { value: 'dark', title: 'Dark' },
           { value: 'system', title: 'System' },
         ],
-        showName: true,
+        dynamicTitle: true,
       },
     },
   },

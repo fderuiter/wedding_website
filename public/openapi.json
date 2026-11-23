@@ -6130,42 +6130,52 @@
                           "maxLength": 100
                         },
                         "smtpHost": {
+                          "nullable": true,
                           "type": "string",
                           "maxLength": 255
                         },
                         "smtpPort": {
+                          "nullable": true,
                           "type": "integer",
                           "minimum": 1,
                           "maximum": 65535
                         },
                         "smtpUser": {
+                          "nullable": true,
                           "type": "string",
                           "maxLength": 255
                         },
                         "smtpFrom": {
+                          "nullable": true,
                           "type": "string",
                           "maxLength": 255
                         },
                         "smtpSecure": {
+                          "nullable": true,
                           "type": "boolean"
                         },
                         "resendFrom": {
+                          "nullable": true,
                           "type": "string",
                           "maxLength": 255
                         },
                         "sendgridFrom": {
+                          "nullable": true,
                           "type": "string",
                           "maxLength": 255
                         },
                         "smsProvider": {
+                          "nullable": true,
                           "type": "string",
                           "maxLength": 100
                         },
                         "twilioAccountSid": {
+                          "nullable": true,
                           "type": "string",
                           "maxLength": 255
                         },
                         "twilioFromNumber": {
+                          "nullable": true,
                           "type": "string",
                           "maxLength": 100
                         },
@@ -10510,6 +10520,22 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "filename",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "preflight",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -10562,6 +10588,19 @@
                   },
                   "category": {
                     "type": "string"
+                  },
+                  "filename": {
+                    "type": "string"
+                  },
+                  "preflight": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
                   }
                 }
               }
