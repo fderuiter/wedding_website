@@ -316,4 +316,36 @@ describe('EditRegistryItemPage', () => {
 
     window.history.pushState({}, '', '/');
   });
+
+  it('resolves seeded items from subpath and trailing-slash URLs when rendered via static fallback', async () => {
+    mockParamId = 'fallback';
+    window.history.pushState(
+      {},
+      '',
+      '/wedding_website/demo/registry/edit-item/sample-registry-romantic-1/'
+    );
+
+    (global.fetch as jest.Mock) = jest.fn(() =>
+      Promise.resolve({
+        ok: false,
+        status: 404,
+        json: () => Promise.resolve({ success: false, error: 'Static export 404' }),
+      })
+    ) as jest.Mock;
+
+    render(
+      <QueryClientProvider client={createQueryClient()}>
+        <ToastProvider>
+          <EditRegistryItemPage />
+        </ToastProvider>
+      </QueryClientProvider>
+    );
+
+    expect(await screen.findByLabelText(/item name/i)).toHaveValue(
+      'Handcrafted Oak Serving Board'
+    );
+    expect(screen.getByLabelText(/price/i)).toHaveValue(75);
+
+    window.history.pushState({}, '', '/');
+  });
 });

@@ -7,6 +7,14 @@ hero:
   tagline: "Interactive architectural specifications, multi-cloud deployment topologies, security threat models, and OpenAPI previews."
   actions:
     - theme: brand
+      text: Live Demo
+      link: /demo/
+      target: _self
+    - theme: alt
+      text: Storybook
+      link: /storybook/
+      target: _self
+    - theme: alt
       text: Explore Architecture
       link: /architecture/architecture
     - theme: alt
@@ -14,6 +22,14 @@ hero:
       link: /api/
 
 features:
+  - title: Live Demo
+    details: Database-free interactive static showcase covering guest RSVP flows, 3D physics scenes, gift registry, and admin modules.
+    link: /demo/
+    target: _self
+  - title: Storybook Showcase
+    details: Isolated interactive UI component catalog with MSW-backed previews, theme variants, and accessibility states.
+    link: /storybook/
+    target: _self
   - title: System Architecture
     details: Complete architectural blueprint covering the Next.js 16 App Router, Prisma ORM schema, and runtime contracts.
     link: /architecture/architecture
