@@ -15,9 +15,12 @@ const COMPOSE_ARGS = ['-f', 'docker-compose.yml', '-f', 'docker-compose.ci.yml']
 const CI_ADMIN_PASSWORD =
   'scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==';
 
+const DEFAULT_GHA_CACHE_SCOPE = process.arch === 'arm64' ? 'app-arm64' : 'app-amd64';
+
 function buildCiComposeEnv(extra = {}) {
   return {
     ...process.env,
+    GHA_CACHE_SCOPE: process.env.GHA_CACHE_SCOPE || DEFAULT_GHA_CACHE_SCOPE,
     DB_USER: process.env.DB_USER || 'wedding',
     DB_PASSWORD: process.env.DB_PASSWORD || 'wedding123',
     DB_NAME: process.env.DB_NAME || 'wedding',

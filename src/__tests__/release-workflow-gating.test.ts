@@ -319,6 +319,12 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(publishWorkflow).toContain('platform: linux/arm64');
     expect(publishWorkflow).toContain('cache-from: type=gha,scope=app-${{ matrix.arch }}');
     expect(publishWorkflow).toContain('cache-to: type=gha,scope=app-${{ matrix.arch }},mode=max');
+    expect(publishWorkflow).toContain('actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9');
+    expect(publishWorkflow).toContain('buildkit-deps-${{ matrix.arch }}-');
+    expect(publishWorkflow).toContain('buildkit-next-${{ matrix.arch }}-');
+    for (const mountTarget of ['/var/cache/apt', '/var/lib/apt', '/root/.npm', '/app/.next/cache']) {
+      expect(publishWorkflow).toContain(`target=${mountTarget}`);
+    }
 
     // Verify Trivy scan and native container smoke test execute before registry login and digest push in the build job
     const buildJobSection = publishWorkflow.split(/\n  publish:\n/)[0] ?? '';
@@ -348,23 +354,51 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(publishJobSection).toContain('image_digest: ${{ steps.merge.outputs.digest }}');
   });
 
-  it('aligns per-architecture BuildKit cache scopes, exports CI cache credentials, compresses CI image archives with zstd, and smoke-tests arm64 in CI', () => {
+  it('isolates GHA cache_from in docker-compose.ci.yml, persists BuildKit cache mounts, skips PR mode=max writes, deduplicates amd64 Next.js and Storybook builds, and smoke-tests arm64 in CI', () => {
     const composeContent = fs.readFileSync(path.join(process.cwd(), 'docker-compose.yml'), 'utf8');
-    expect(composeContent).toContain('type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64}');
-    expect(composeContent).not.toContain('type=gha,scope=app\n');
+    expect(composeContent).not.toContain('type=gha');
+    expect(composeContent).not.toContain('GHA_CACHE_SCOPE');
+
+    const ciComposeContent = fs.readFileSync(path.join(process.cwd(), 'docker-compose.ci.yml'), 'utf8');
+    expect(ciComposeContent.match(/type=gha,scope=\$\{GHA_CACHE_SCOPE:-app-amd64\}/g)).toHaveLength(2);
+    expect(ciComposeContent).not.toContain('cache_to');
+    expect(ciComposeContent).not.toContain('mode=max');
 
     expect(ciWorkflow).toContain('crazy-max/ghaction-github-runtime@');
     expect(ciWorkflow).toContain('GHA_CACHE_SCOPE: app-amd64');
     expect(ciWorkflow).toContain('runs-on: ubuntu-24.04-arm');
     expect(ciWorkflow).toContain('GHA_CACHE_SCOPE: app-arm64');
+    expect(ciWorkflow).toContain(
+      "cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,scope=app-amd64,mode=max' || '' }}"
+    );
+    expect(ciWorkflow).toContain(
+      "cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,scope=app-arm64,mode=max' || '' }}"
+    );
+    for (const mountTarget of ['/var/cache/apt', '/var/lib/apt', '/root/.npm', '/app/.next/cache']) {
+      expect(ciWorkflow).toContain(`target=${mountTarget}`);
+    }
+    expect(ciWorkflow).not.toContain('run: npm run build\n');
+    expect(ciWorkflow).toContain('docker create wedding-website:latest');
+    expect(ciWorkflow).toContain('docker cp "$CID:/app/." .next/standalone/');
     expect(ciWorkflow).not.toContain('docker tag wedding-website:latest wedding-website:latest');
     expect(ciWorkflow).toContain('wedding-website-image.tar.zst');
     expect(ciWorkflow).toContain('zstd -dc');
+
+    const storybookWorkflow = readWorkflow('storybook.yml');
+    const storybookOnSection = extractTopLevelSection(storybookWorkflow, 'on');
+    expect(storybookOnSection).toContain('workflow_dispatch:');
+    expect(storybookOnSection).not.toContain('push:');
+    expect(storybookOnSection).not.toMatch(/-\s*main\b/);
+    expect(storybookWorkflow).toContain('actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9');
+    expect(storybookWorkflow).toContain('actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9');
+    expect(storybookWorkflow).toContain('name: storybook-static');
+    expect(storybookWorkflow).toContain('path: storybook-static/');
 
     const testContainerScript = fs.readFileSync(
       path.join(process.cwd(), 'scripts', 'test-container.mjs'),
       'utf8'
     );
+    expect(testContainerScript).toContain("process.arch === 'arm64' ? 'app-arm64' : 'app-amd64'");
     expect(testContainerScript).toContain(
       "runCommand('docker', ['compose', ...COMPOSE_ARGS, 'run', '--rm', 'migration']"
     );

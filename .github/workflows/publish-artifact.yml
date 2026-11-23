@@ -142,6 +142,64 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
+      - name: Cache BuildKit APT and npm mounts
+        id: buildkit-deps-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /tmp/buildkit-mounts/deps
+          key: buildkit-deps-${{ matrix.arch }}-${{ hashFiles('Dockerfile', 'package-lock.json', '.npmrc') }}
+          restore-keys: |
+            buildkit-deps-${{ matrix.arch }}-
+
+      - name: Cache BuildKit Next.js mount
+        id: buildkit-next-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /tmp/buildkit-mounts/next
+          key: buildkit-next-${{ matrix.arch }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('next.config.ts', 'postcss.config.mjs', 'tsconfig.json', 'tsconfig.build.json', 'prisma/schema.prisma', 'src/**') }}
+          restore-keys: |
+            buildkit-next-${{ matrix.arch }}-${{ hashFiles('package-lock.json') }}-
+            buildkit-next-${{ matrix.arch }}-
+
+      - name: Hydrate BuildKit Cache Mounts
+        env:
+          TARGET_PLATFORM: ${{ matrix.platform }}
+          MOUNT_CACHE_DIR: /tmp/buildkit-mounts
+        run: |
+          BASE_IMAGE=$(awk '/^FROM / {print $2; exit}' Dockerfile)
+          CTX_DIR=$(mktemp -d)
+          trap 'rm -rf "$CTX_DIR"' EXIT
+          HAS_ARCHIVE=false
+          if [ -f "$MOUNT_CACHE_DIR/deps/mounts.tar" ]; then
+            cp "$MOUNT_CACHE_DIR/deps/mounts.tar" "$CTX_DIR/deps.tar"
+            HAS_ARCHIVE=true
+          fi
+          if [ -f "$MOUNT_CACHE_DIR/next/mounts.tar" ]; then
+            cp "$MOUNT_CACHE_DIR/next/mounts.tar" "$CTX_DIR/next.tar"
+            HAS_ARCHIVE=true
+          fi
+          if [ "$HAS_ARCHIVE" = "false" ]; then
+            echo "No persisted BuildKit cache mounts found; skipping hydration."
+            exit 0
+          fi
+          printf '%s\n' \
+            '# syntax=docker/dockerfile:1' \
+            "FROM ${BASE_IMAGE}" \
+            'ARG CACHEBUST=1' \
+            'RUN --mount=type=bind,target=/ctx \' \
+            '    --mount=type=cache,target=/var/cache/apt,sharing=locked \' \
+            '    --mount=type=cache,target=/var/lib/apt,sharing=locked \' \
+            '    --mount=type=cache,target=/root/.npm,sharing=locked \' \
+            '    --mount=type=cache,target=/app/.next/cache,sharing=locked \' \
+            '    echo "$CACHEBUST" >/dev/null && \' \
+            '    if [ -f /ctx/deps.tar ]; then tar -xf /ctx/deps.tar -C /; fi && \' \
+            '    if [ -f /ctx/next.tar ]; then tar -xf /ctx/next.tar -C /; fi' \
+            | docker buildx build \
+              --platform "$TARGET_PLATFORM" \
+              --build-arg "CACHEBUST=$(date +%s%N)" \
+              --output type=cacheonly \
+              -f - "$CTX_DIR"
+
       - name: Build Native Container Image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -153,6 +211,54 @@ jobs:
             ${{ steps.meta.outputs.primary_uri }}-${{ matrix.arch }}
           cache-from: type=gha,scope=app-${{ matrix.arch }}
           cache-to: type=gha,scope=app-${{ matrix.arch }},mode=max
+
+      - name: Persist BuildKit Cache Mounts
+        if: steps.buildkit-deps-cache.outputs.cache-hit != 'true' || steps.buildkit-next-cache.outputs.cache-hit != 'true'
+        env:
+          TARGET_PLATFORM: ${{ matrix.platform }}
+          MOUNT_CACHE_DIR: /tmp/buildkit-mounts
+          DEPS_CACHE_HIT: ${{ steps.buildkit-deps-cache.outputs.cache-hit }}
+          NEXT_CACHE_HIT: ${{ steps.buildkit-next-cache.outputs.cache-hit }}
+        run: |
+          BASE_IMAGE=$(awk '/^FROM / {print $2; exit}' Dockerfile)
+          EMPTY_DIR=$(mktemp -d)
+          OUT_DIR=$(mktemp -d)
+          trap 'rm -rf "$EMPTY_DIR" "$OUT_DIR"' EXIT
+          EXPORT_DEPS="false"
+          EXPORT_NEXT="false"
+          if [ "$DEPS_CACHE_HIT" != "true" ]; then EXPORT_DEPS="true"; fi
+          if [ "$NEXT_CACHE_HIT" != "true" ]; then EXPORT_NEXT="true"; fi
+          printf '%s\n' \
+            '# syntax=docker/dockerfile:1' \
+            "FROM ${BASE_IMAGE} AS exporter" \
+            'ARG CACHEBUST=1' \
+            'ARG EXPORT_DEPS=false' \
+            'ARG EXPORT_NEXT=false' \
+            'RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \' \
+            '    --mount=type=cache,target=/var/lib/apt,sharing=locked \' \
+            '    --mount=type=cache,target=/root/.npm,sharing=locked \' \
+            '    --mount=type=cache,target=/app/.next/cache,sharing=locked \' \
+            '    echo "$CACHEBUST" >/dev/null && \' \
+            '    mkdir -p /out /var/cache/apt /var/lib/apt /root/.npm /app/.next/cache && \' \
+            '    if [ "$EXPORT_DEPS" = "true" ]; then mkdir -p /out/deps && tar -cf /out/deps/mounts.tar -C / var/cache/apt var/lib/apt root/.npm; fi && \' \
+            '    if [ "$EXPORT_NEXT" = "true" ]; then mkdir -p /out/next && tar -cf /out/next/mounts.tar -C / app/.next/cache; fi' \
+            'FROM scratch' \
+            'COPY --from=exporter /out /' \
+            | docker buildx build \
+              --platform "$TARGET_PLATFORM" \
+              --build-arg "CACHEBUST=$(date +%s%N)" \
+              --build-arg "EXPORT_DEPS=${EXPORT_DEPS}" \
+              --build-arg "EXPORT_NEXT=${EXPORT_NEXT}" \
+              --output "type=local,dest=${OUT_DIR}" \
+              -f - "$EMPTY_DIR"
+          if [ -f "$OUT_DIR/deps/mounts.tar" ]; then
+            mkdir -p "$MOUNT_CACHE_DIR/deps"
+            mv -f "$OUT_DIR/deps/mounts.tar" "$MOUNT_CACHE_DIR/deps/mounts.tar"
+          fi
+          if [ -f "$OUT_DIR/next/mounts.tar" ]; then
+            mkdir -p "$MOUNT_CACHE_DIR/next"
+            mv -f "$OUT_DIR/next/mounts.tar" "$MOUNT_CACHE_DIR/next/mounts.tar"
+          fi
 
       - name: Scan Native Container Image with Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
