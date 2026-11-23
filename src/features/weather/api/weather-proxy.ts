@@ -1,5 +1,10 @@
 
 import { getAppConfig } from '@/lib/config';
+import { geocodeBestMatch } from '@/lib/geocoding';
+import { hasValidCoordinates } from '@/utils/maps';
+
+const TEMPERATE_DEFAULT_LAT = 40.7128;
+const TEMPERATE_DEFAULT_LON = -74.006;
 
 function getYYYYMMDD(date: Date, timezone: string): string {
   try {
@@ -85,11 +90,13 @@ const HIGH_LATITUDE_MATRIX: MonthlyClimateStats[] = [
 
 export function getLocalizedClimateFallback(
   latitude: number,
-  _longitude: number,
+  longitude: number,
   weddingDayStr: string,
   availableDateStr: string
 ) {
-  const safeLat = typeof latitude === 'number' && !isNaN(latitude) ? latitude : 40.7128;
+  const safeLat = hasValidCoordinates(latitude, longitude)
+    ? latitude
+    : TEMPERATE_DEFAULT_LAT;
   const absLat = Math.abs(safeLat);
 
   const monthMatch = weddingDayStr.match(/^\d{4}-(\d{2})-\d{2}$/);
@@ -144,8 +151,25 @@ export function getLocalizedClimateFallback(
 export async function getWeatherForecast() {
   const config = await getAppConfig();
   const WEDDING_DAY = getYYYYMMDD(config.weddingDate, config.timezone);
-  const LAT = typeof config.latitude === 'number' && !isNaN(config.latitude) ? config.latitude : 40.7128;
-  const LON = typeof config.longitude === 'number' && !isNaN(config.longitude) ? config.longitude : -74.006;
+
+  let LAT = TEMPERATE_DEFAULT_LAT;
+  let LON = TEMPERATE_DEFAULT_LON;
+
+  if (hasValidCoordinates(config.latitude, config.longitude)) {
+    LAT = config.latitude;
+    LON = config.longitude;
+  } else if (process.env.STATIC_EXPORT !== 'true') {
+    const geocoded = await geocodeBestMatch([
+      config.venueAddress,
+      config.venueCity,
+      config.venueState,
+      config.venueZip,
+    ]);
+    if (geocoded && hasValidCoordinates(geocoded.latitude, geocoded.longitude)) {
+      LAT = geocoded.latitude;
+      LON = geocoded.longitude;
+    }
+  }
 
   const todayStr = getYYYYMMDD(new Date(), config.timezone);
   const todayMs = Date.parse(`${todayStr}T00:00:00Z`);

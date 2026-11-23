@@ -23,6 +23,71 @@ const ISOLATED_PG_ENV_VARS = [
   'ADMIN_PASSWORD',
 ];
 
+function computeFileSha256(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return '';
+  }
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+function getPretestStatePath(rootDir = defaultRootDir) {
+  return path.join(rootDir, 'node_modules', '.cache', 'pretest-state.json');
+}
+
+function readPretestState(rootDir = defaultRootDir) {
+  const pretestStatePath = getPretestStatePath(rootDir);
+  if (!fs.existsSync(pretestStatePath)) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(pretestStatePath, 'utf8'));
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writePretestState(state, rootDir = defaultRootDir) {
+  try {
+    const pretestStatePath = getPretestStatePath(rootDir);
+    fs.mkdirSync(path.dirname(pretestStatePath), { recursive: true });
+    fs.writeFileSync(pretestStatePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+  } catch {
+    // Non-fatal cache write failure
+  }
+}
+
+function listCommittedMigrationNames(rootDir = defaultRootDir) {
+  const prismaMigrationsDir = path.join(rootDir, 'prisma', 'migrations');
+  if (!fs.existsSync(prismaMigrationsDir)) {
+    return [];
+  }
+  return fs
+    .readdirSync(prismaMigrationsDir, { withFileTypes: true })
+    .filter(
+      (entry) =>
+        entry.isDirectory() &&
+        fs.existsSync(path.join(prismaMigrationsDir, entry.name, 'migration.sql'))
+    )
+    .map((entry) => entry.name)
+    .sort();
+}
+
+function computeMigrationsAndSchemaHash(rootDir = defaultRootDir) {
+  const prismaSchemaPath = path.join(rootDir, 'prisma', 'schema.prisma');
+  if (!fs.existsSync(prismaSchemaPath)) {
+    return '';
+  }
+  const prismaMigrationsDir = path.join(rootDir, 'prisma', 'migrations');
+  const hash = crypto.createHash('sha256');
+  hash.update(fs.readFileSync(prismaSchemaPath));
+  for (const migrationName of listCommittedMigrationNames(rootDir)) {
+    hash.update(`\n--migration:${migrationName}--\n`);
+    hash.update(fs.readFileSync(path.join(prismaMigrationsDir, migrationName, 'migration.sql')));
+  }
+  return hash.digest('hex');
+}
+
 export function isCiEnv(env) {
   const targetEnv = env ?? process.env;
   const rawCi = String(targetEnv.CI ?? '').trim().toLowerCase();
@@ -49,8 +114,7 @@ export function shouldInstallDependencies(options = {}) {
     return false;
   }
 
-  const lockfileContent = fs.readFileSync(lockfilePath);
-  const currentHash = crypto.createHash('sha256').update(lockfileContent).digest('hex');
+  const currentHash = computeFileSha256(lockfilePath);
 
   let cachedHash = '';
   if (fs.existsSync(hashCachePath)) {
@@ -66,13 +130,24 @@ export function writeLockfileHash(rootDir = defaultRootDir) {
   const hashCachePath = path.join(hashCacheDir, '.package-lock-hash');
 
   if (fs.existsSync(lockfilePath)) {
-    const lockfileContent = fs.readFileSync(lockfilePath);
-    const currentHash = crypto.createHash('sha256').update(lockfileContent).digest('hex');
+    const currentHash = computeFileSha256(lockfilePath);
     fs.mkdirSync(hashCacheDir, { recursive: true });
     fs.writeFileSync(hashCachePath, currentHash, 'utf8');
     return currentHash;
   }
   return null;
+}
+
+export function recordInstallState(rootDir = defaultRootDir) {
+  writeLockfileHash(rootDir);
+
+  const schemaHash = computeFileSha256(path.join(rootDir, 'prisma', 'schema.prisma'));
+  const clientIndexPath = path.join(rootDir, 'node_modules', '.prisma', 'client', 'index.js');
+  if (schemaHash && fs.existsSync(clientIndexPath)) {
+    const state = readPretestState(rootDir);
+    state.prismaClientSchemaHash = schemaHash;
+    writePretestState(state, rootDir);
+  }
 }
 
 function applyEnvFileFallback(envPath, targetEnv) {
@@ -135,7 +210,19 @@ export function resolveTestEnvironment(options = {}) {
     }
   }
 
-  const testDbUrl = preservedDbUrl || env.DATABASE_URL || DEFAULT_TEST_DATABASE_URL;
+  const envFileTestOverride =
+    typeof env.TEST_DATABASE_URL === 'string' ? env.TEST_DATABASE_URL.trim() : '';
+  const resolvedOverride =
+    preservedDbUrl ||
+    (envFileTestOverride &&
+    envFileTestOverride.toLowerCase() !== 'false' &&
+    envFileTestOverride !== '0' &&
+    envFileTestOverride.toLowerCase() !== 'true' &&
+    envFileTestOverride !== '1'
+      ? envFileTestOverride
+      : undefined);
+
+  const testDbUrl = resolvedOverride || env.DATABASE_URL || DEFAULT_TEST_DATABASE_URL;
   env.DATABASE_URL = testDbUrl;
   return testDbUrl;
 }
@@ -213,6 +300,12 @@ export function shouldGeneratePrismaClient(options = {}) {
     return false;
   }
 
+  const state = readPretestState(rootDir);
+  const currentSchemaHash = computeFileSha256(schemaPath);
+  if (state.prismaClientSchemaHash && currentSchemaHash) {
+    return state.prismaClientSchemaHash !== currentSchemaHash;
+  }
+
   try {
     const clientMtime = fs.statSync(clientIndexPath).mtimeMs;
     const schemaMtime = fs.statSync(schemaPath).mtimeMs;
@@ -234,7 +327,7 @@ function runCommand(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd,
     stdio: 'inherit',
-    shell: true,
+    shell: process.platform === 'win32',
     ...spawnOptions,
   });
   if (result.status !== 0) {
@@ -247,15 +340,83 @@ function runCommand(command, args, options = {}) {
   return result;
 }
 
+function parseTargetSchemaName(connectionString) {
+  try {
+    const parsed = new URL(connectionString);
+    return parsed.searchParams.get('schema') || 'public';
+  } catch {
+    return 'public';
+  }
+}
+
+async function probeDatabaseState(connectionString, expectedMigrations) {
+  let client;
+  try {
+    const pgModule = await import('pg');
+    const Client = pgModule.default?.Client || pgModule.Client;
+    client = new Client({
+      connectionString,
+      connectionTimeoutMillis: 1500,
+    });
+    await client.connect();
+    const targetSchema = parseTargetSchemaName(connectionString);
+    const tablesRes = await client.query(
+      'SELECT table_name FROM information_schema.tables WHERE table_schema = $1 AND table_name IN ($2, $3)',
+      [targetSchema, 'AppConfig', '_prisma_migrations']
+    );
+    const tableNames = new Set((tablesRes?.rows || []).map((row) => row.table_name));
+    const hasAppConfigTable = tableNames.has('AppConfig');
+    let allMigrationsApplied = false;
+
+    if (
+      hasAppConfigTable &&
+      tableNames.has('_prisma_migrations') &&
+      /^[A-Za-z_][A-Za-z0-9_]*$/.test(targetSchema)
+    ) {
+      const escapedSchema = targetSchema.replace(/"/g, '""');
+      const migRes = await client.query(
+        `SELECT migration_name FROM "${escapedSchema}"."_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL`
+      );
+      const appliedSet = new Set((migRes?.rows || []).map((row) => row.migration_name));
+      allMigrationsApplied = expectedMigrations.every((name) => appliedSet.has(name));
+    }
+
+    return {
+      hasAppConfigTable,
+      allMigrationsApplied,
+    };
+  } catch {
+    return {
+      hasAppConfigTable: false,
+      allMigrationsApplied: false,
+    };
+  } finally {
+    if (client) {
+      try {
+        await client.end();
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+  }
+}
+
 export async function main(options = {}) {
   const rootDir = options.rootDir ?? defaultRootDir;
   const env = options.env ?? process.env;
+  const argv = options.argv ?? process.argv;
   const spawnSync = options.spawnSync ?? child_process.spawnSync;
   const probeTcp = options.probeTcp ?? probeTcpReadiness;
+  const probeDbState = options.probeDbState ?? probeDatabaseState;
   const ensureDatabase = options.ensureDatabase ?? ensureIsolatedTestDatabase;
   const resetSchema = options.resetSchema ?? resetDatabaseSchema;
   const exit = options.exit ?? process.exit;
   const sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+
+  if (argv.includes('--record-install-state')) {
+    recordInstallState(rootDir);
+    return;
+  }
 
   // 1. Verify dependency alignment
   let installedFreshDeps = false;
@@ -266,7 +427,7 @@ export async function main(options = {}) {
     const result = spawnSync('npm', ['ci'], {
       cwd: rootDir,
       stdio: ['ignore', 'pipe', 'pipe'],
-      shell: true,
+      shell: process.platform === 'win32',
       env,
     });
 
@@ -278,110 +439,128 @@ export async function main(options = {}) {
       return;
     }
 
-    writeLockfileHash(rootDir);
+    recordInstallState(rootDir);
     installedFreshDeps = true;
     console.log('Dependency installation completed successfully.');
   }
 
-  // 2. Selective Execution based on lifecycle event
-  const lifecycleEvent = env.npm_lifecycle_event || '';
-  const isUnitTest = lifecycleEvent.includes('test');
+  // 2. Always reset Jest accessibility violations before Jest executes
+  const testResultsDir = path.join(rootDir, 'test-results');
+  fs.mkdirSync(testResultsDir, { recursive: true });
+  fs.writeFileSync(path.join(testResultsDir, 'jest-a11y-violations.json'), '[]\n', 'utf8');
 
-  if (isUnitTest) {
-    console.log('Unit test phase detected. Skipping full build...');
+  // 3. Resolve isolated test environment while preserving explicit CI or TEST_DATABASE_URL overrides
+  const testDbUrl = resolveTestEnvironment({ rootDir, env });
+  const { host: dbHost, port: dbPort } = parseDatabaseEndpoint(testDbUrl);
+  const dbListenerActive = await probeTcp(dbHost, dbPort);
 
-    const testResultsDir = path.join(rootDir, 'test-results');
-    fs.mkdirSync(testResultsDir, { recursive: true });
-    fs.writeFileSync(path.join(testResultsDir, 'jest-a11y-violations.json'), '[]\n', 'utf8');
-
-    // Resolve isolated test environment while preserving explicit CI or TEST_DATABASE_URL overrides
-    const testDbUrl = resolveTestEnvironment({ rootDir, env });
-    const { host: dbHost, port: dbPort } = parseDatabaseEndpoint(testDbUrl);
-    const dbListenerActive = await probeTcp(dbHost, dbPort);
-
-    if (dbListenerActive) {
-      console.log(
-        `PostgreSQL listener already active at ${dbHost}:${dbPort}. Skipping Docker Compose database startup.`
-      );
-    } else if (isCiEnv(env)) {
-      console.log(
-        `CI environment detected without an active listener at ${dbHost}:${dbPort}. Skipping Docker Compose auto-start.`
-      );
-    } else {
-      // Check if Docker is available and running
-      let dockerRunning = false;
-      try {
-        const docInfo = spawnSync('docker', ['info'], { stdio: 'ignore', shell: true, env });
-        if (docInfo.status === 0) {
-          dockerRunning = true;
-        }
-      } catch {
-        // Docker command not found or not running
+  if (dbListenerActive) {
+    // Listener already active; skip Docker Compose database startup
+  } else if (isCiEnv(env)) {
+    console.log(
+      `CI environment detected without an active listener at ${dbHost}:${dbPort}. Skipping Docker Compose auto-start.`
+    );
+  } else {
+    let dockerRunning = false;
+    try {
+      const docInfo = spawnSync('docker', ['info'], {
+        stdio: 'ignore',
+        shell: process.platform === 'win32',
+        env,
+      });
+      if (docInfo.status === 0) {
+        dockerRunning = true;
       }
-
-      if (dockerRunning) {
-        console.log('Ensuring local PostgreSQL database container is running...');
-        const ciComposeArgs = [
-          'compose',
-          '--env-file',
-          '.env.ci',
-          '-f',
-          'docker-compose.yml',
-          '-f',
-          'docker-compose.ci.yml',
-        ];
-        const ciComposeEnv = {
-          ...env,
-          DB_USER: env.DB_USER || 'wedding',
-          DB_PASSWORD: env.DB_PASSWORD || 'wedding123',
-          DB_NAME: env.DB_NAME || 'wedding',
-          ADMIN_PASSWORD:
-            env.ADMIN_PASSWORD ||
-            'scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==',
-          GUEST_PASSCODE: env.GUEST_PASSCODE || 'build-fallback-guest-passcode',
-          GUEST_SESSION_SECRET:
-            env.GUEST_SESSION_SECRET || 'playwright-e2e-session-secret-32-chars-min',
-        };
-        const startResult = spawnSync('docker', [...ciComposeArgs, 'up', '-d', 'db'], {
-          cwd: rootDir,
-          stdio: 'inherit',
-          shell: true,
-          env: ciComposeEnv,
-        });
-
-        if (startResult.status !== 0) {
-          console.warn(
-            'Failed to start database container via docker compose. Proceeding assuming database is already running...'
-          );
-        } else {
-          console.log('Waiting for database to be ready...');
-          let ready = false;
-          for (let i = 0; i < 15; i++) {
-            try {
-              const check = spawnSync(
-                'docker',
-                [...ciComposeArgs, 'exec', '-T', 'db', 'pg_isready', '-U', 'wedding'],
-                { stdio: 'ignore', shell: true, cwd: rootDir, env: ciComposeEnv }
-              );
-              if (check.status === 0) {
-                ready = true;
-                console.log('Database is ready.');
-                break;
-              }
-            } catch {
-              // Ignored
-            }
-            await sleep(1000);
-          }
-          if (!ready) {
-            console.log('Database was not ready in time, proceeding anyway...');
-          }
-        }
-      } else {
-        console.log('Docker command not found or daemon not running. Skipping database container auto-start.');
-      }
+    } catch {
+      // Docker command not found or not running
     }
 
+    if (dockerRunning) {
+      console.log('Ensuring local PostgreSQL database container is running...');
+      const ciComposeArgs = [
+        'compose',
+        '--env-file',
+        '.env.ci',
+        '-f',
+        'docker-compose.yml',
+        '-f',
+        'docker-compose.ci.yml',
+      ];
+      const ciComposeEnv = {
+        ...env,
+        DB_USER: env.DB_USER || 'wedding',
+        DB_PASSWORD: env.DB_PASSWORD || 'wedding123',
+        DB_NAME: env.DB_NAME || 'wedding',
+        ADMIN_PASSWORD:
+          env.ADMIN_PASSWORD ||
+          'scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==',
+        GUEST_PASSCODE: env.GUEST_PASSCODE || 'build-fallback-guest-passcode',
+        GUEST_SESSION_SECRET:
+          env.GUEST_SESSION_SECRET || 'playwright-e2e-session-secret-32-chars-min',
+      };
+      const startResult = spawnSync('docker', [...ciComposeArgs, 'up', '-d', 'db'], {
+        cwd: rootDir,
+        stdio: 'inherit',
+        shell: process.platform === 'win32',
+        env: ciComposeEnv,
+      });
+
+      if (startResult.status !== 0) {
+        console.warn(
+          'Failed to start database container via docker compose. Proceeding assuming database is already running...'
+        );
+      } else {
+        console.log('Waiting for database to be ready...');
+        let ready = false;
+        for (let i = 0; i < 15; i++) {
+          try {
+            const check = spawnSync(
+              'docker',
+              [...ciComposeArgs, 'exec', '-T', 'db', 'pg_isready', '-U', 'wedding'],
+              {
+                stdio: 'ignore',
+                shell: process.platform === 'win32',
+                cwd: rootDir,
+                env: ciComposeEnv,
+              }
+            );
+            if (check.status === 0) {
+              ready = true;
+              console.log('Database is ready.');
+              break;
+            }
+          } catch {
+            // Ignored
+          }
+          await sleep(1000);
+        }
+        if (!ready) {
+          console.log('Database was not ready in time, proceeding anyway...');
+        }
+      }
+    } else {
+      console.log('Docker command not found or daemon not running. Skipping database container auto-start.');
+    }
+  }
+
+  // 4. Synchronize Prisma migrations only when invalidated or unapplied
+  const schemaHash = computeFileSha256(path.join(rootDir, 'prisma', 'schema.prisma'));
+  const migrationsHash = computeMigrationsAndSchemaHash(rootDir);
+  const expectedMigrations = listCommittedMigrationNames(rootDir);
+  const state = readPretestState(rootDir);
+
+  let isDbSchemaCached = false;
+  if (
+    dbListenerActive &&
+    Boolean(migrationsHash) &&
+    state.dbSync?.schemaHash === migrationsHash &&
+    state.dbSync?.testDbUrl === testDbUrl
+  ) {
+    const dbState = await probeDbState(testDbUrl, expectedMigrations);
+    isDbSchemaCached = Boolean(dbState?.hasAppConfigTable && dbState?.allMigrationsApplied);
+  }
+
+  if (!isDbSchemaCached) {
     let targetDbName = '';
     let targetSchema = 'public';
     try {
@@ -391,7 +570,10 @@ export async function main(options = {}) {
     } catch {
       // Keep defaults when URL cannot be parsed
     }
-    const isIsolatedTestDb = targetDbName === 'wedding_test' || targetDbName.endsWith('_test');
+    const isIsolatedTestDb =
+      targetDbName === 'wedding_test' ||
+      targetDbName.endsWith('_test') ||
+      targetDbName.startsWith('wedding_test_');
 
     await ensureDatabase(testDbUrl);
 
@@ -403,7 +585,7 @@ export async function main(options = {}) {
     const migrateResult = spawnSync('npx', ['prisma', 'migrate', 'deploy'], {
       cwd: rootDir,
       stdio: ['ignore', 'pipe', 'pipe'],
-      shell: true,
+      shell: process.platform === 'win32',
       env: migrateEnv,
     });
 
@@ -437,30 +619,22 @@ export async function main(options = {}) {
       }
     }
 
-    if (shouldGeneratePrismaClient({ rootDir, env, installedFreshDeps })) {
-      console.log('Generating Prisma Client...');
-      runCommand('npm', ['run', 'prisma:generate'], { cwd: rootDir, spawnSync, exit, env });
-    } else {
-      console.log('Prisma Client already aligned. Skipping duplicate prisma:generate.');
+    if (migrationsHash) {
+      state.dbSync = { schemaHash: migrationsHash, testDbUrl };
+      writePretestState(state, rootDir);
     }
+  }
 
-    console.log('Staging documentation portal...');
-    runCommand('npx', ['tsx', 'scripts/generate-portal.ts', '--stage-only'], {
-      cwd: rootDir,
-      spawnSync,
-      exit,
-      env,
-    });
-  } else {
-    console.log('Running full build...');
-    runCommand('npm', ['run', 'build'], { cwd: rootDir, spawnSync, exit, env });
+  // 5. Generate Prisma Client only when missing or invalidated
+  if (shouldGeneratePrismaClient({ rootDir, env, installedFreshDeps })) {
+    console.log('Generating Prisma Client...');
+    runCommand('npm', ['run', 'prisma:generate'], { cwd: rootDir, spawnSync, exit, env });
+    if (schemaHash) {
+      state.prismaClientSchemaHash = schemaHash;
+      writePretestState(state, rootDir);
+    }
   }
 }
-
-const isDirectCall =
-  typeof process.argv[1] === 'string' &&
-  (path.resolve(process.argv[1]) === path.resolve(SCRIPT_FILE) ||
-    process.argv[1].endsWith('pretest.mjs'));
 
 async function ensureIsolatedTestDatabase(testDbUrl) {
   let parsedTestUrl;
@@ -470,15 +644,19 @@ async function ensureIsolatedTestDatabase(testDbUrl) {
     return;
   }
   const targetDbName = decodeURIComponent(parsedTestUrl.pathname.replace(/^\//, ''));
-  const isIsolatedTestDb = targetDbName === 'wedding_test' || targetDbName.endsWith('_test');
+  const isIsolatedTestDb =
+    targetDbName === 'wedding_test' ||
+    targetDbName.endsWith('_test') ||
+    targetDbName.startsWith('wedding_test_');
 
   if (isIsolatedTestDb && /^[A-Za-z0-9_-]+$/.test(targetDbName)) {
     try {
-      const { default: pg } = await import('pg');
+      const pgModule = await import('pg');
+      const Client = pgModule.default?.Client || pgModule.Client;
       const adminUrl = new URL(testDbUrl);
       adminUrl.pathname = '/postgres';
       adminUrl.search = '';
-      const adminClient = new pg.Client({ connectionString: adminUrl.toString() });
+      const adminClient = new Client({ connectionString: adminUrl.toString() });
       await adminClient.connect();
       try {
         const existsResult = await adminClient.query(
@@ -499,8 +677,9 @@ async function ensureIsolatedTestDatabase(testDbUrl) {
 }
 
 async function resetDatabaseSchema(testDbUrl, targetSchema) {
-  const { default: pg } = await import('pg');
-  const resetClient = new pg.Client({ connectionString: testDbUrl });
+  const pgModule = await import('pg');
+  const Client = pgModule.default?.Client || pgModule.Client;
+  const resetClient = new Client({ connectionString: testDbUrl });
   await resetClient.connect();
   try {
     const escapedSchema = targetSchema.replace(/"/g, '""');
@@ -512,6 +691,11 @@ async function resetDatabaseSchema(testDbUrl, targetSchema) {
     await resetClient.end();
   }
 }
+
+const isDirectCall =
+  typeof process.argv[1] === 'string' &&
+  (path.resolve(process.argv[1]) === path.resolve(SCRIPT_FILE) ||
+    process.argv[1].endsWith('pretest.mjs'));
 
 if (isDirectCall) {
   main().catch((err) => {
