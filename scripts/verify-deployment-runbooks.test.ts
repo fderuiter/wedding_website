@@ -452,4 +452,69 @@ describe('verify-deployment-runbooks', () => {
       ])
     );
   });
+
+  it('rejects invalid Cloud Run --startup-probe-* / --liveness-probe-* flags and Host overrides in container healthchecks', () => {
+    const gcpPath = path.join(tempDir, 'docs/deployment/gcp-cloud-run.md');
+    fs.writeFileSync(
+      gcpPath,
+      fs
+        .readFileSync(gcpPath, 'utf8')
+        .replace(
+          '--liveness-probe=httpGet.path=/api/live,httpGet.port=3000,periodSeconds=30',
+          '--startup-probe-request-path=/api/health --liveness-probe-request-path=/api/live'
+        )
+    );
+
+    const runtimeContractPath = path.join(tempDir, 'docs/runtime-contract.md');
+    fs.writeFileSync(
+      runtimeContractPath,
+      `${fs.readFileSync(runtimeContractPath, 'utf8')}\nLegacy flag: \`--startup-probe-request-path=/api/health\`\n`
+    );
+
+    const dockerfilePath = path.join(tempDir, 'Dockerfile');
+    fs.writeFileSync(
+      dockerfilePath,
+      fs
+        .readFileSync(dockerfilePath, 'utf8')
+        .replace(
+          "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live')",
+          "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live',{headers:{Host:h}})"
+        )
+    );
+
+    const composePath = path.join(tempDir, 'docker-compose.yml');
+    fs.writeFileSync(
+      composePath,
+      fs
+        .readFileSync(composePath, 'utf8')
+        .replace(
+          "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live')",
+          "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live',{headers:{Host:h}})"
+        )
+    );
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          'docs/deployment/gcp-cloud-run.md: Invalid Cloud Run CLI flag "--startup-probe-request-path"'
+        ),
+        expect.stringContaining(
+          'docs/deployment/gcp-cloud-run.md: Invalid Cloud Run CLI flag "--liveness-probe-request-path"'
+        ),
+        expect.stringContaining(
+          'docs/deployment/gcp-cloud-run.md: Must document `--liveness-probe=httpGet.path=/api/live,httpGet.port=3000,periodSeconds=30`'
+        ),
+        expect.stringContaining(
+          'docs/runtime-contract.md: Invalid Cloud Run CLI flag "--startup-probe-request-path"'
+        ),
+        expect.stringContaining(
+          'Dockerfile: `HEALTHCHECK` on `/api/live` must not override `Host` header in `fetch()`'
+        ),
+        expect.stringContaining(
+          'docker-compose.yml: `app` `healthcheck` on `/api/live` must not override `Host` header in `fetch()`'
+        ),
+      ])
+    );
+  });
 });

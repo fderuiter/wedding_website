@@ -13,7 +13,12 @@ export async function GET() {
         database: 'connected',
         timestamp: new Date().toISOString(),
       },
-      { status: 200 }
+      {
+        status: 200,
+        headers: {
+          'Cache-Control': 'no-store',
+        },
+      }
     );
   } catch (error: any) {
     console.error('Readiness check failed:', error);
@@ -28,7 +33,12 @@ export async function GET() {
         error: errorMessage,
         timestamp: new Date().toISOString(),
       },
-      { status: 503 }
+      {
+        status: 503,
+        headers: {
+          'Cache-Control': 'no-store',
+        },
+      }
     );
   }
 }
