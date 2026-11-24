@@ -66,6 +66,7 @@ describe('GET /api/registry/validate-code', () => {
       id: 'inv-valid-1',
       code: 'VALID123',
       guestName: 'Alex & Sam',
+      email: 'alex.sam@example.com',
       isSample: false,
     });
 
@@ -76,6 +77,7 @@ describe('GET /api/registry/validate-code', () => {
       valid: true,
       guestName: 'Alex & Sam',
       code: 'VALID123',
+      email: 'alex.sam@example.com',
     });
     expect(res.cookies.get(GUEST_INVITE_COOKIE)?.value).toBeTruthy();
     expect(mockRecipientUpdateMany).toHaveBeenCalledWith({

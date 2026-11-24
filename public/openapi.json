@@ -6397,6 +6397,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "txn",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -23827,6 +23835,16 @@
             "adminCookieAuth": []
           }
         ],
+        "parameters": [
+          {
+            "name": "txn",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -25968,6 +25986,303 @@
         }
       }
     },
+    "/api/registry/payment-intent/reconcile": {
+      "post": {
+        "tags": [
+          "Registry"
+        ],
+        "summary": "POST /api/registry/payment-intent/reconcile",
+        "description": "Reconciles a redirected Stripe PaymentIntent on return to `/registry`.\nVerifies clientSecret ownership in constant time before exposing receipt details,\nvalidates Stripe settlement invariants, records the contribution idempotently,\nand triggers deduplicated guest/couple notifications.",
+        "security": [
+          {
+            "guestCookieAuth": []
+          },
+          {
+            "guestInviteCookieAuth": []
+          },
+          {
+            "adminCookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "txn",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "paymentIntentId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "clientSecret": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "itemId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "paymentIntentId",
+                  "clientSecret"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "success",
+                        "data"
+                      ],
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "reconciled": {
+                              "type": "boolean",
+                              "enum": [
+                                false
+                              ]
+                            },
+                            "status": {
+                              "type": "object",
+                              "additionalProperties": true
+                            },
+                            "itemId": {
+                              "type": "string"
+                            },
+                            "error": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "reconciled",
+                            "status",
+                            "itemId",
+                            "error"
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "success",
+                        "data"
+                      ],
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "reconciled": {
+                              "type": "boolean",
+                              "enum": [
+                                true
+                              ]
+                            },
+                            "status": {
+                              "type": "string"
+                            },
+                            "itemId": {
+                              "type": "string"
+                            },
+                            "item": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "additionalProperties": true
+                                },
+                                {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                  }
+                                },
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "boolean"
+                                }
+                              ]
+                            },
+                            "receipt": {
+                              "type": "object",
+                              "properties": {
+                                "itemId": {
+                                  "type": "string"
+                                },
+                                "paymentIntentId": {
+                                  "type": "string"
+                                },
+                                "contributorName": {
+                                  "type": "string"
+                                },
+                                "contributorEmail": {
+                                  "type": "string",
+                                  "nullable": true
+                                },
+                                "baseAmount": {
+                                  "type": "number"
+                                },
+                                "feeAmount": {
+                                  "type": "number"
+                                },
+                                "coverFee": {
+                                  "type": "boolean"
+                                },
+                                "totalChargeAmount": {
+                                  "type": "number"
+                                },
+                                "message": {
+                                  "type": "string",
+                                  "nullable": true
+                                },
+                                "contributedAt": {
+                                  "type": "string",
+                                  "nullable": true
+                                }
+                              },
+                              "required": [
+                                "itemId",
+                                "paymentIntentId",
+                                "contributorName",
+                                "contributorEmail",
+                                "baseAmount",
+                                "feeAmount",
+                                "coverFee",
+                                "totalChargeAmount",
+                                "message"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "reconciled",
+                            "status",
+                            "itemId",
+                            "item",
+                            "receipt"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/registry/payment-intent": {
       "post": {
         "tags": [
@@ -26607,13 +26922,18 @@
                             "guestName": {
                               "type": "string",
                               "nullable": true
+                            },
+                            "email": {
+                              "type": "string",
+                              "nullable": true
                             }
                           },
                           "required": [
                             "isVerified",
                             "invitationCode",
                             "code",
-                            "guestName"
+                            "guestName",
+                            "email"
                           ]
                         }
                       }
@@ -26648,13 +26968,18 @@
                             },
                             "guestName": {
                               "type": "string"
+                            },
+                            "email": {
+                              "type": "string",
+                              "nullable": true
                             }
                           },
                           "required": [
                             "isVerified",
                             "invitationCode",
                             "code",
-                            "guestName"
+                            "guestName",
+                            "email"
                           ]
                         }
                       }
@@ -26751,13 +27076,18 @@
                         "guestName": {
                           "type": "string",
                           "nullable": true
+                        },
+                        "email": {
+                          "type": "string",
+                          "nullable": true
                         }
                       },
                       "required": [
                         "isVerified",
                         "invitationCode",
                         "code",
-                        "guestName"
+                        "guestName",
+                        "email"
                       ]
                     }
                   }
@@ -26847,12 +27177,17 @@
                         },
                         "code": {
                           "type": "string"
+                        },
+                        "email": {
+                          "type": "string",
+                          "nullable": true
                         }
                       },
                       "required": [
                         "valid",
                         "guestName",
-                        "code"
+                        "code",
+                        "email"
                       ]
                     }
                   }
@@ -26913,6 +27248,16 @@
         "security": [
           {
             "stripeSignature": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "txn",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {

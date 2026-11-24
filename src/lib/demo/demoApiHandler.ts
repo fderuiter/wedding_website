@@ -729,6 +729,10 @@ async function handleDemoApi(
         404
       );
     }
+    const resolvedEmail =
+      typeof matched.email === 'string' && matched.email.trim().length > 0
+        ? matched.email.trim()
+        : null;
     setDemoGuestSession({
       invitationCode: matched.code,
       guestName: matched.guestName,
@@ -738,10 +742,12 @@ async function handleDemoApi(
       success: true,
       code: matched.code,
       guestName: matched.guestName,
+      email: resolvedEmail,
       data: {
         valid: true,
         code: matched.code,
         guestName: matched.guestName,
+        email: resolvedEmail,
       },
     });
   }
@@ -750,18 +756,29 @@ async function handleDemoApi(
     if (method === 'GET') {
       const session = getDemoState().guestSession;
       if (!session) {
-        return jsonResponse({ isVerified: false, invitationCode: '', guestName: '' });
+        return jsonResponse({
+          isVerified: false,
+          invitationCode: '',
+          guestName: '',
+          email: null,
+        });
       }
+      const matched = findDemoGuestByCode(session.invitationCode);
+      const resolvedEmail =
+        matched && typeof matched.email === 'string' && matched.email.trim().length > 0
+          ? matched.email.trim()
+          : null;
       return jsonResponse({
         isVerified: true,
         invitationCode: session.invitationCode,
         code: session.invitationCode,
         guestName: session.guestName,
+        email: resolvedEmail,
       });
     }
     if (method === 'DELETE') {
       setDemoGuestSession(null);
-      return jsonResponse({ success: true });
+      return jsonResponse({ success: true, email: null });
     }
   }
 

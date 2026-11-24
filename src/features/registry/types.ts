@@ -219,3 +219,25 @@ export interface IRegistryRepository {
   ): Promise<ContributorDeleteResult>;
 }
 
+export interface ReconciledContributionReceipt {
+  itemId: string;
+  paymentIntentId: string;
+  contributorName: string;
+  contributorEmail: string | null;
+  baseAmount: number;
+  feeAmount: number;
+  coverFee: boolean;
+  totalChargeAmount: number;
+  message: string | null;
+  contributedAt?: string | null;
+}
+
+export interface ReconcilePaymentIntentResponse {
+  reconciled: boolean;
+  status: string;
+  itemId: string;
+  item?: RegistryItem;
+  receipt?: ReconciledContributionReceipt;
+  error?: string;
+}
+
