@@ -1,5 +1,6 @@
 import { execFile } from 'child_process';
 import fs from 'fs';
+import net from 'net';
 import os from 'os';
 import path from 'path';
 
@@ -224,5 +225,55 @@ describe('docker-entrypoint.sh', () => {
         );
       },
     );
+  });
+
+  it('aborts before invoking prisma migrate deploy when ssl=true targets a plaintext PostgreSQL server without leaking credentials', (done) => {
+    const tempWorkDir = fs.mkdtempSync(path.join(os.tmpdir(), 'entrypoint-tls-gate-'));
+    const localBinDir = path.join(tempWorkDir, 'node_modules', '.bin');
+    fs.mkdirSync(localBinDir, { recursive: true });
+    const stubPrismaPath = path.join(localBinDir, 'prisma');
+    fs.writeFileSync(
+      stubPrismaPath,
+      '#!/bin/sh\necho "UNSAFE_PLAINTEXT_MIGRATE_INVOKED"\nexit 0\n',
+      { mode: 0o755 },
+    );
+
+    const plainServer = net.createServer((socket) => {
+      socket.once('data', () => {
+        socket.end(Buffer.from('N', 'ascii'));
+      });
+    });
+
+    plainServer.listen(0, '127.0.0.1', () => {
+      const { port } = plainServer.address() as net.AddressInfo;
+      const secret = 'ENTRYPOINT_TLS_SECRET_882';
+      const sslTrueUrl = `postgresql://wedding:${secret}@127.0.0.1:${port}/wedding?ssl=true`;
+
+      execFile(
+        ENTRYPOINT_PATH,
+        ['echo', 'booted'],
+        {
+          cwd: tempWorkDir,
+          env: {
+            ...process.env,
+            DATABASE_URL: sslTrueUrl,
+            RUN_MIGRATIONS: 'true',
+          },
+        },
+        (error, stdout, stderr) => {
+          fs.rmSync(tempWorkDir, { recursive: true, force: true });
+          plainServer.close(() => {
+            expect(error).not.toBeNull();
+            expect(error?.code).toBe(1);
+            const output = stdout + stderr;
+            expect(output).toContain('Pre-migration PostgreSQL TLS handshake check failed');
+            expect(output).not.toContain('UNSAFE_PLAINTEXT_MIGRATE_INVOKED');
+            expect(output).not.toContain('booted');
+            expect(output).not.toContain(secret);
+            done();
+          });
+        },
+      );
+    });
   });
 });

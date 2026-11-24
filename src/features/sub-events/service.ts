@@ -1,4 +1,6 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { qualifyPostgresTable } from '@/lib/postgres-url.js';
 import { getAppConfig } from '@/lib/config';
 import {
   computeSavedPlusOneNames,
@@ -1514,10 +1516,14 @@ export class SubEventService {
       const countPromise: Promise<number> = this.client.invitationCode.count
         ? this.client.invitationCode.count({ where })
         : this.client.invitationCode.findMany({ where }).then((rows: unknown[]) => rows.length);
-      const metadataPromise = this.client.$queryRaw`
+      const invitationCodeTable = Prisma.raw(qualifyPostgresTable('InvitationCode'));
+      const subEventAccessTable = Prisma.raw(qualifyPostgresTable('SubEventAccess'));
+      const subEventRsvpTable = Prisma.raw(qualifyPostgresTable('SubEventRsvp'));
+      const subEventTable = Prisma.raw(qualifyPostgresTable('SubEvent'));
+      const metadataPromise = this.client.$queryRaw(Prisma.sql`
         WITH code_filters AS MATERIALIZED (
           SELECT "partyGroup", "householdName", "partyTags"
-          FROM "InvitationCode"
+          FROM ${invitationCodeTable}
         ),
         distinct_groups AS (
           SELECT DISTINCT "partyGroup" AS val
@@ -1539,7 +1545,7 @@ export class SubEventService {
           SELECT
             sa."subEventId",
             ARRAY_AGG(sa."invitationCodeId" ORDER BY sa."id" ASC) AS "allowedInvitationCodeIds"
-          FROM "SubEventAccess" sa
+          FROM ${subEventAccessTable} sa
           GROUP BY sa."subEventId"
         ),
         sub_event_rsvps AS (
@@ -1557,7 +1563,7 @@ export class SubEventService {
               )
               ORDER BY sr."createdAt" ASC, sr."id" ASC
             ) AS "rsvps"
-          FROM "SubEventRsvp" sr
+          FROM ${subEventRsvpTable} sr
           GROUP BY sr."invitationCodeId"
         )
         SELECT
@@ -1586,7 +1592,7 @@ export class SubEventService {
                 )
                 ORDER BY s."startTime" ASC, s."id" ASC
               )
-              FROM "SubEvent" s
+              FROM ${subEventTable} s
               LEFT JOIN sub_event_grants seg ON seg."subEventId" = s."id"
             ),
             '[]'::json
@@ -1601,7 +1607,7 @@ export class SubEventService {
             ),
             '{}'::json
           ) AS "rsvpsByInvitationCodeId"
-      `;
+      `);
 
       const [resolvedTotal, resolvedCodes, metadataRows] = await Promise.all([
         countPromise,

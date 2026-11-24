@@ -1,7 +1,12 @@
 import fs from 'fs';
 import path from 'path';
 import child_process from 'child_process';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
+import {
+  isValidPostgresUrl,
+  parsePostgresUrl,
+  redactPostgresUrl,
+} from '../src/lib/postgres-url.js';
 
 export interface ParsedMigrateStatus {
   isUpToDate: boolean;
@@ -698,23 +703,66 @@ export function runPreflightCheck(options?: PreflightCheckOptions): { success: b
     return { success: false, summary: missingDbSummary };
   }
 
-  let rawOutput = options?.mockOutput;
+  let rawOutput: string;
   let exitCode: number | null | undefined = options?.mockExitCode;
   let spawnError: Error | null = options?.mockSpawnError ?? null;
 
-  if (rawOutput === undefined) {
-    console.log(`Running "npx prisma migrate status" for environment "${environment}"...`);
-    const childEnv: NodeJS.ProcessEnv = { ...process.env, DATABASE_URL: databaseUrl };
-    delete childEnv.POSTGRES_URL_NON_POOLING;
-    const result = child_process.spawnSync('npx', ['prisma', 'migrate', 'status'], {
-      cwd: workDir,
-      encoding: 'utf8',
-      shell: process.platform === 'win32',
-      env: childEnv,
-    });
-    rawOutput = `${result.stdout || ''}\n${result.stderr || ''}`;
-    exitCode = result.status;
-    spawnError = result.error ?? null;
+  if (options?.mockOutput !== undefined) {
+    rawOutput = options.mockOutput;
+  } else {
+    const resolvedDbUrl = databaseUrl?.trim() ?? '';
+    if (!isValidPostgresUrl(resolvedDbUrl)) {
+      rawOutput = `Error: Invalid PostgreSQL DATABASE_URL (${redactPostgresUrl(resolvedDbUrl)}).`;
+      exitCode = 1;
+    } else {
+      const parsedDbUrl = parsePostgresUrl(resolvedDbUrl);
+      let tlsFailureOutput: string | null = null;
+      if (parsedDbUrl.tlsMode !== 'disable') {
+        const helperModuleUrl = pathToFileURL(
+          path.resolve(path.dirname(currentFilePath), '../src/lib/postgres-url.js')
+        ).href;
+        try {
+          child_process.execFileSync(
+            process.execPath,
+            [
+              '--input-type=module',
+              '-e',
+              `const { verifyPostgresTlsHandshake } = await import(${JSON.stringify(helperModuleUrl)}); try { await verifyPostgresTlsHandshake(process.env.DATABASE_URL ?? ''); } catch (err) { console.error(err instanceof Error ? err.message : String(err)); process.exit(1); }`,
+            ],
+            {
+              cwd: workDir,
+              encoding: 'utf8',
+              env: { ...process.env, DATABASE_URL: resolvedDbUrl },
+            }
+          );
+        } catch (tlsErr: unknown) {
+          const errObj = tlsErr as { stderr?: string; stdout?: string; message?: string };
+          const detail =
+            `${errObj.stderr || ''}\n${errObj.stdout || ''}`.trim() ||
+            (errObj.message ?? 'TLS handshake failed');
+          const combinedErr = redactDatabaseUrls(detail);
+          tlsFailureOutput = `Error: Pre-flight PostgreSQL TLS handshake check failed: ${combinedErr}`;
+        }
+      }
+
+      if (tlsFailureOutput !== null) {
+        rawOutput = tlsFailureOutput;
+        exitCode = 1;
+      } else {
+        console.log(`Running "npx prisma migrate status" for environment "${environment}"...`);
+        const childEnv: NodeJS.ProcessEnv = { ...process.env, DATABASE_URL: resolvedDbUrl };
+        delete childEnv.POSTGRES_URL_NON_POOLING;
+        const result = child_process.spawnSync('npx', ['prisma', 'migrate', 'status'], {
+          cwd: workDir,
+          encoding: 'utf8',
+          shell: process.platform === 'win32',
+          env: childEnv,
+        });
+        rawOutput = `${result.stdout || ''}\n${result.stderr || ''}`;
+        exitCode = result.status;
+        spawnError = result.error ?? null;
+      }
+    }
   }
 
   const parsedStatus = parsePrismaMigrateStatus(rawOutput, { exitCode, spawnError });

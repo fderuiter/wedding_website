@@ -105,7 +105,8 @@ describe('High-Throughput Safe Backup Import & Audit Pruning Utilities', () => {
       const sqlArg = mockPrisma.$executeRaw.mock.calls[0][0];
       const normalizedSql = sqlArg.strings.join('?').replace(/\s+/g, ' ').trim();
 
-      expect(normalizedSql).toContain('DELETE FROM "SnapshotVersion"');
+      expect(normalizedSql).toContain('DELETE FROM "public"."SnapshotVersion"');
+      expect(normalizedSql).toContain('JOIN "public"."SnapshotVersion" AS s');
       expect(normalizedSql).toContain('USING');
       expect(normalizedSql).toContain('UNNEST');
       expect(normalizedSql).toContain(

@@ -14,6 +14,15 @@ const VALID_SSL_MODES = new Set([
 
 const VALID_SSL_FLAGS = new Set(['true', 'false', '1', '0', 'no-verify']);
 const VALID_BOOLEAN_FLAGS = new Set(['true', 'false', '1', '0']);
+const POSTGRES_IDENTIFIER_REGEX = /^[A-Za-z_][A-Za-z0-9_$]*$/;
+const MAX_POSTGRES_IDENTIFIER_BYTES = 63;
+const POOLER_HOST_REGEX =
+  /(?:^|[.-])(?:pooler|pgbouncer)(?:[.-]|$)|\.proxy-[a-z0-9-]+\.[a-z0-9-]+\.rds\.amazonaws\.com$/i;
+const POOLER_PORTS = new Set([6432, 6543]);
+const POSTGRES_SSL_REQUEST_PACKET = new Uint8Array([
+  0x00, 0x00, 0x00, 0x08, 0x04, 0xd2, 0x16, 0x2f,
+]);
+const identifierEncoder = new TextEncoder();
 
 export class PostgresUrlValidationError extends Error {
   /**
@@ -148,9 +157,72 @@ function parseIntegerQueryParam(searchParams, key, allowZero) {
 }
 
 /**
- * @param {string | null} candidate
- * @returns {boolean}
+ * Validates a PostgreSQL identifier (such as `?schema=` or table names) against
+ * unquoted identifier rules (1-63 UTF-8 bytes matching `/^[A-Za-z_][A-Za-z0-9_$]*$/`).
+ *
+ * @param {string} identifier
+ * @param {string} [label]
+ * @returns {string}
  */
+export function validatePostgresIdentifier(identifier, label = 'identifier') {
+  if (
+    typeof identifier !== 'string' ||
+    identifier.length === 0 ||
+    !POSTGRES_IDENTIFIER_REGEX.test(identifier) ||
+    identifierEncoder.encode(identifier).byteLength > MAX_POSTGRES_IDENTIFIER_BYTES
+  ) {
+    throw new PostgresUrlValidationError(
+      `PostgreSQL URL ${label} must be a valid PostgreSQL identifier (1-63 bytes matching /^[A-Za-z_][A-Za-z0-9_$]*$/).`
+    );
+  }
+  return identifier;
+}
+
+/**
+ * Validates a PostgreSQL identifier and returns it safely double-quoted (`"identifier"`).
+ *
+ * @param {string} identifier
+ * @param {string} [label]
+ * @returns {string}
+ */
+export function quotePostgresIdentifier(identifier, label = 'identifier') {
+  const validated = validatePostgresIdentifier(identifier, label);
+  return `"${validated.replace(/"/g, '""')}"`;
+}
+
+/**
+ * Resolves the validated PostgreSQL schema name from an explicit `rawUrl` or
+ * `process.env.DATABASE_URL` (defaulting to `'public'` when unset).
+ *
+ * @param {string} [rawUrl]
+ * @returns {string}
+ */
+export function resolvePostgresSchema(rawUrl) {
+  if (rawUrl !== undefined) {
+    return parsePostgresUrl(rawUrl).schema;
+  }
+  const envUrl =
+    typeof process !== 'undefined' && typeof process.env?.DATABASE_URL === 'string'
+      ? process.env.DATABASE_URL.trim()
+      : '';
+  if (!envUrl || !/^(postgres|postgresql):\/\//.test(envUrl)) {
+    return DEFAULT_POSTGRES_SCHEMA;
+  }
+  return parsePostgresUrl(envUrl).schema;
+}
+
+/**
+ * Returns a double-quoted `"schema"."table"` SQL identifier expression bound to
+ * the configured PostgreSQL schema.
+ *
+ * @param {string} tableName
+ * @param {string} [rawUrl]
+ * @returns {string}
+ */
+export function qualifyPostgresTable(tableName, rawUrl) {
+  const schema = resolvePostgresSchema(rawUrl);
+  return `${quotePostgresIdentifier(schema, 'query parameter "schema"')}.${quotePostgresIdentifier(tableName, 'table identifier')}`;
+}
 function isValidUnixSocketPath(candidate) {
   if (typeof candidate !== 'string' || candidate.length < 2) {
     return false;
@@ -368,12 +440,7 @@ export function parsePostgresUrl(rawUrl, options = {}) {
   let schema = DEFAULT_POSTGRES_SCHEMA;
   if (searchParams.has('schema')) {
     const rawSchema = searchParams.get('schema') ?? '';
-    if (rawSchema.length === 0 || rawSchema.trim() !== rawSchema || /[\x00-\x1f\x7f]/.test(rawSchema)) {
-      throw new PostgresUrlValidationError(
-        'PostgreSQL URL query parameter "schema" must be a non-empty identifier.'
-      );
-    }
-    schema = rawSchema;
+    schema = validatePostgresIdentifier(rawSchema, 'query parameter "schema"');
   }
 
   /** @type {'disable' | 'allow' | 'prefer' | 'require' | 'verify-ca' | 'verify-full' | 'no-verify' | undefined} */
@@ -532,5 +599,396 @@ export function isValidPostgresUrl(rawUrl, options = {}) {
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Detects whether a PostgreSQL connection URL targets a connection pooler
+ * (e.g. `?pgbouncer=true`, PgBouncer/Supabase/Neon pooler hostnames, RDS Proxy,
+ * or standard pooler ports 6432/6543) where startup `options` / advisory locks
+ * are unsupported.
+ *
+ * @param {string} [rawUrl]
+ * @returns {boolean}
+ */
+export function isPooledPostgresUrl(rawUrl) {
+  if (!rawUrl || !isValidPostgresUrl(rawUrl)) {
+    return false;
+  }
+  const parsed = parsePostgresUrl(rawUrl);
+  const qIdx = parsed.normalizedUrl.indexOf('?');
+  if (qIdx !== -1) {
+    const params = new URLSearchParams(parsed.normalizedUrl.slice(qIdx + 1));
+    const pgbouncer = (params.get('pgbouncer') ?? '').toLowerCase();
+    if (pgbouncer === 'true' || pgbouncer === '1') {
+      return true;
+    }
+  }
+  if (!parsed.isUnixSocket) {
+    if (POOLER_HOST_REGEX.test(parsed.host)) {
+      return true;
+    }
+    if (parsed.port !== undefined && POOLER_PORTS.has(parsed.port)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * @param {string} message
+ * @param {string} rawUrl
+ * @param {ReturnType<typeof parsePostgresUrl>} parsed
+ * @returns {string}
+ */
+function sanitizeProbeErrorMessage(message, rawUrl, parsed) {
+  const redacted = redactPostgresUrl(rawUrl);
+  let clean = message;
+  if (rawUrl) {
+    clean = clean.split(rawUrl).join(redacted);
+  }
+  if (parsed.normalizedUrl) {
+    clean = clean.split(parsed.normalizedUrl).join(redacted);
+  }
+  if (parsed.password) {
+    clean = clean.split(parsed.password).join('[REDACTED]');
+  }
+  if (parsed.sslpassword) {
+    clean = clean.split(parsed.sslpassword).join('[REDACTED]');
+  }
+  clean = clean.replace(/postgres(?:ql)?:\/\/[^\s"'`<>)\]]*/gi, (match) => redactPostgresUrl(match));
+  return clean;
+}
+
+/**
+ * Verifies the PostgreSQL `SSLRequest` negotiation and TLS certificate/hostname
+ * handshake using zero external dependencies (`node:net`, `node:tls`, `node:fs`)
+ * with identical libpq Table 32.1 rules as the runtime `pg.Pool`.
+ *
+ * @param {string} rawUrl
+ * @param {{ timeoutMs?: number }} [options]
+ * @returns {Promise<{ ok: true; tlsMode: 'disable' | 'allow' | 'prefer' | 'require' | 'no-verify' | 'verify-ca' | 'verify-full'; upgraded: boolean }>}
+ */
+export async function verifyPostgresTlsHandshake(rawUrl, options = {}) {
+  const parsed = parsePostgresUrl(rawUrl);
+  if (parsed.tlsMode === 'disable') {
+    return { ok: true, tlsMode: 'disable', upgraded: false };
+  }
+
+  const getBuiltin = /** @type {((id: string) => unknown) | undefined} */ (
+    Reflect.get(process, 'getBuiltinModule')
+  );
+  if (typeof getBuiltin !== 'function') {
+    throw new Error('Node.js runtime built-in modules are unavailable for PostgreSQL TLS probe.');
+  }
+
+  const netMod = /** @type {typeof import('node:net')} */ (getBuiltin('node:net'));
+  const tlsMod = /** @type {typeof import('node:tls')} */ (getBuiltin('node:tls'));
+  const fsMod = /** @type {typeof import('node:fs')} */ (getBuiltin('node:fs'));
+
+  /**
+   * @param {string} filePath
+   * @param {string} paramName
+   * @returns {string}
+   */
+  const readTlsFile = (filePath, paramName) => {
+    try {
+      return fsMod.readFileSync(filePath, 'utf8');
+    } catch {
+      throw new Error(`Failed to read PostgreSQL TLS file configured via "${paramName}".`);
+    }
+  };
+
+  const hasExplicitRootCert = Boolean(parsed.sslrootcert && parsed.sslrootcert !== 'system');
+  /** @type {import('node:tls').ConnectionOptions} */
+  const tlsConnectOptions = {};
+
+  if (hasExplicitRootCert && parsed.sslrootcert) {
+    tlsConnectOptions.ca = readTlsFile(parsed.sslrootcert, 'sslrootcert');
+  }
+  if (parsed.sslcert) {
+    tlsConnectOptions.cert = readTlsFile(parsed.sslcert, 'sslcert');
+  }
+  if (parsed.sslkey) {
+    tlsConnectOptions.key = readTlsFile(parsed.sslkey, 'sslkey');
+  }
+  if (parsed.sslpassword) {
+    tlsConnectOptions.passphrase = parsed.sslpassword;
+  }
+
+  if (!parsed.isUnixSocket) {
+    tlsConnectOptions.host = parsed.host;
+    if (netMod.isIP(parsed.host) === 0) {
+      tlsConnectOptions.servername = parsed.host;
+    }
+  }
+
+  if (
+    parsed.tlsMode === 'allow' ||
+    parsed.tlsMode === 'prefer' ||
+    parsed.tlsMode === 'no-verify'
+  ) {
+    tlsConnectOptions.rejectUnauthorized = false;
+  } else if (parsed.tlsMode === 'require') {
+    if (hasExplicitRootCert) {
+      tlsConnectOptions.rejectUnauthorized = true;
+      tlsConnectOptions.checkServerIdentity = () => undefined;
+    } else {
+      tlsConnectOptions.rejectUnauthorized = false;
+    }
+  } else if (parsed.tlsMode === 'verify-ca') {
+    tlsConnectOptions.rejectUnauthorized = true;
+    tlsConnectOptions.checkServerIdentity = () => undefined;
+  } else {
+    // verify-full (including sslrootcert=system)
+    tlsConnectOptions.rejectUnauthorized = true;
+  }
+
+  const timeoutMs =
+    options.timeoutMs ?? parsed.connectionTimeoutMillis ?? DEFAULT_POSTGRES_CONNECTION_TIMEOUT_MS;
+  const redactedTarget = redactPostgresUrl(rawUrl);
+
+  const resolvedUnixSocketFile =
+    parsed.isUnixSocket && parsed.socketPath
+      ? parsed.socketPath.includes('.s.PGSQL.')
+        ? parsed.socketPath
+        : `${parsed.socketPath.replace(/\/+$/, '')}/.s.PGSQL.${parsed.port}`
+      : null;
+
+  /**
+   * Executes a raw TCP/Unix socket dial outside test-time `@mswjs/interceptors`
+   * HTTP socket emulation when present so binary PostgreSQL wire probes always
+   * perform real OS socket and OpenSSL handshakes.
+   *
+   * @template T
+   * @param {() => T} fn
+   * @returns {T}
+   */
+  const runNativeSocketConnect = (fn) => {
+    const mswInternalCtx = /** @type {{ run?: <R>(_cb: () => R) => R } | undefined} */ (
+      Reflect.get(globalThis, '__MSW_INTERNAL_CONNECTION_CONTEXT')
+    );
+    if (mswInternalCtx && typeof mswInternalCtx.run === 'function') {
+      return mswInternalCtx.run(fn);
+    }
+    return fn();
+  };
+
+  /**
+   * Opens a plain TCP/Unix socket to verify plaintext fallback reachability.
+   * @param {number} budgetMs
+   * @returns {Promise<void>}
+   */
+  const verifyPlainTcpFallback = (budgetMs) =>
+    new Promise((resolve, reject) => {
+      const fallbackSocket = new netMod.Socket();
+      let done = false;
+      const timer = setTimeout(() => {
+        if (done) return;
+        done = true;
+        fallbackSocket.destroy();
+        reject(new Error(`PostgreSQL connection timed out after ${timeoutMs}ms (${redactedTarget}).`));
+      }, Math.max(50, budgetMs));
+      timer.unref?.();
+
+      fallbackSocket.once('connect', () => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        fallbackSocket.destroy();
+        resolve();
+      });
+
+      fallbackSocket.once('error', (err) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        fallbackSocket.destroy();
+        reject(err);
+      });
+
+      runNativeSocketConnect(() => {
+        if (resolvedUnixSocketFile) {
+          fallbackSocket.connect(resolvedUnixSocketFile);
+        } else {
+          fallbackSocket.connect(parsed.port, parsed.host);
+        }
+      });
+    });
+
+  const startedAt = Date.now();
+
+  try {
+    return await new Promise((resolve, reject) => {
+      const socket = new netMod.Socket();
+      /** @type {import('node:tls').TLSSocket | null} */
+      let tlsSocket = null;
+      let settled = false;
+      let tcpConnected = false;
+      let responseHandled = false;
+
+      const finishResolve = (/** @type {boolean} */ upgraded) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (tlsSocket && !tlsSocket.destroyed) {
+          tlsSocket.destroy();
+        }
+        if (!socket.destroyed) {
+          socket.destroy();
+        }
+        resolve({ ok: true, tlsMode: parsed.tlsMode, upgraded });
+      };
+
+      const finishReject = (/** @type {unknown} */ err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (tlsSocket && !tlsSocket.destroyed) {
+          tlsSocket.destroy();
+        }
+        if (!socket.destroyed) {
+          socket.destroy();
+        }
+        const rawMsg = err instanceof Error ? err.message : String(err);
+        reject(new Error(sanitizeProbeErrorMessage(rawMsg, rawUrl, parsed)));
+      };
+
+      const handleNonSslFallbackOrReject = () => {
+        if (settled) return;
+        if (parsed.tlsMode === 'allow' || parsed.tlsMode === 'prefer') {
+          if (!socket.destroyed) {
+            socket.destroy();
+          }
+          const remainingMs = timeoutMs - (Date.now() - startedAt);
+          verifyPlainTcpFallback(remainingMs).then(
+            () => finishResolve(false),
+            (fallbackErr) => finishReject(fallbackErr)
+          );
+          return;
+        }
+        finishReject(
+          new Error(
+            `PostgreSQL server does not support SSL connections (tlsMode=${parsed.tlsMode}, target=${redactedTarget}).`
+          )
+        );
+      };
+
+      const timer = setTimeout(() => {
+        finishReject(
+          new Error(`PostgreSQL TLS handshake timed out after ${timeoutMs}ms (${redactedTarget}).`)
+        );
+      }, timeoutMs);
+      timer.unref?.();
+
+      socket.setNoDelay(true);
+
+      const onRawError = (/** @type {NodeJS.ErrnoException} */ err) => {
+        if (!tcpConnected) {
+          finishReject(err);
+          return;
+        }
+        if (!responseHandled) {
+          responseHandled = true;
+          handleNonSslFallbackOrReject();
+          return;
+        }
+        finishReject(err);
+      };
+
+      const onRawClose = () => {
+        if (settled || responseHandled) {
+          return;
+        }
+        if (tcpConnected) {
+          responseHandled = true;
+          handleNonSslFallbackOrReject();
+          return;
+        }
+        finishReject(
+          new Error(`PostgreSQL connection closed before handshake completed (${redactedTarget}).`)
+        );
+      };
+
+      socket.on('error', onRawError);
+      socket.on('close', onRawClose);
+
+      socket.once('connect', () => {
+        tcpConnected = true;
+        socket.write(POSTGRES_SSL_REQUEST_PACKET);
+      });
+
+      socket.once('data', (chunk) => {
+        if (settled || responseHandled) {
+          return;
+        }
+        responseHandled = true;
+        const firstByte = chunk[0];
+
+        if (firstByte !== 0x53) {
+          // 'N' (0x4e) or non-'S' response to SSLRequest
+          handleNonSslFallbackOrReject();
+          return;
+        }
+
+        socket.removeListener('error', onRawError);
+        socket.removeListener('close', onRawClose);
+
+        try {
+          tlsSocket = runNativeSocketConnect(() =>
+            tlsMod.connect({
+              ...tlsConnectOptions,
+              socket,
+            })
+          );
+        } catch (tlsInitErr) {
+          finishReject(tlsInitErr);
+          return;
+        }
+
+        tlsSocket.once('secureConnect', () => {
+          if (tlsConnectOptions.rejectUnauthorized !== false && tlsSocket && !tlsSocket.authorized) {
+            finishReject(
+              tlsSocket.authorizationError ||
+                new Error(`PostgreSQL TLS certificate verification failed (${redactedTarget}).`)
+            );
+            return;
+          }
+          finishResolve(true);
+        });
+
+        tlsSocket.once('error', (tlsErr) => {
+          if (parsed.tlsMode === 'allow' || parsed.tlsMode === 'prefer') {
+            tlsSocket?.destroy();
+            const remainingMs = timeoutMs - (Date.now() - startedAt);
+            verifyPlainTcpFallback(remainingMs).then(
+              () => finishResolve(false),
+              (fallbackErr) => finishReject(fallbackErr)
+            );
+            return;
+          }
+          finishReject(tlsErr);
+        });
+
+        tlsSocket.once('close', () => {
+          if (!settled) {
+            finishReject(
+              new Error(`PostgreSQL TLS handshake closed unexpectedly (${redactedTarget}).`)
+            );
+          }
+        });
+      });
+
+      runNativeSocketConnect(() => {
+        if (resolvedUnixSocketFile) {
+          socket.connect(resolvedUnixSocketFile);
+        } else {
+          socket.connect(parsed.port, parsed.host);
+        }
+      });
+    });
+  } catch (err) {
+    const rawMsg = err instanceof Error ? err.message : String(err);
+    throw new Error(sanitizeProbeErrorMessage(rawMsg, rawUrl, parsed));
   }
 }

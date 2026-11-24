@@ -1,14 +1,14 @@
 import { defineConfig } from '@prisma/config';
 import {
+  isPooledPostgresUrl,
   isValidPostgresUrl,
   normalizePostgresUrl,
   parsePostgresUrl,
 } from './src/lib/postgres-url.js';
 
+export { isPooledPostgresUrl };
+
 const DUMMY_DATABASE_URL = 'postgresql://dummy:dummy@localhost:5432/dummy';
-const POOLER_HOST_REGEX =
-  /(?:^|[.-])(?:pooler|pgbouncer)(?:[.-]|$)|\.proxy-[a-z0-9-]+\.[a-z0-9-]+\.rds\.amazonaws\.com$/i;
-const POOLER_PORTS = new Set([6432, 6543]);
 const VALUE_TAKING_PRISMA_FLAGS = new Set([
   '--schema',
   '--config',
@@ -32,6 +32,79 @@ function safeNormalizePostgresUrl(rawUrl?: string): string | undefined {
   return isValidPostgresUrl(trimmed) ? normalizePostgresUrl(trimmed) : trimmed;
 }
 
+/**
+ * Rewrites `ssl=` boolean/no-verify flags and libpq `sslmode` values that Prisma CLI's
+ * `quaint` engine would otherwise discard or downgrade to `sslmode=prefer`:
+ * - `ssl=true` / `ssl=1` -> `sslmode=require` (strips `ssl`)
+ * - `ssl=false` / `ssl=0` -> `sslmode=disable` (strips `ssl`)
+ * - `ssl=no-verify` / `sslmode=no-verify` -> `sslmode=require&sslaccept=accept_invalid_certs`
+ * - `sslmode=allow` -> `sslmode=prefer`
+ * - `sslmode=verify-ca` -> `sslmode=require` (CA chain verified by pre-migration Node TLS gate)
+ * - `sslmode=verify-full` / `sslrootcert=system` -> `sslmode=require&sslaccept=strict`
+ *   (maps explicit custom `sslrootcert` path to `sslcert` when `sslcert` is unset)
+ */
+export function rewritePostgresUrlForPrismaCli(rawUrl: string): string {
+  if (!isValidPostgresUrl(rawUrl)) {
+    return rawUrl;
+  }
+  const parsed = parsePostgresUrl(rawUrl);
+  const needsTlsRewrite =
+    parsed.sslFlag !== undefined ||
+    parsed.sslrootcert === 'system' ||
+    parsed.sslmode === 'allow' ||
+    parsed.sslmode === 'no-verify' ||
+    parsed.sslmode === 'verify-ca' ||
+    parsed.sslmode === 'verify-full';
+
+  if (!needsTlsRewrite) {
+    return parsed.normalizedUrl;
+  }
+
+  const qIdx = parsed.normalizedUrl.indexOf('?');
+  const baseUrl = qIdx === -1 ? parsed.normalizedUrl : parsed.normalizedUrl.slice(0, qIdx);
+  const params = new URLSearchParams(
+    qIdx === -1 ? '' : parsed.normalizedUrl.slice(qIdx + 1)
+  );
+
+  params.delete('ssl');
+
+  switch (parsed.tlsMode) {
+    case 'disable':
+      params.set('sslmode', 'disable');
+      params.delete('sslaccept');
+      break;
+    case 'allow':
+    case 'prefer':
+      params.set('sslmode', 'prefer');
+      params.delete('sslaccept');
+      break;
+    case 'no-verify':
+      params.set('sslmode', 'require');
+      params.set('sslaccept', 'accept_invalid_certs');
+      break;
+    case 'require':
+      params.set('sslmode', 'require');
+      params.delete('sslrootcert');
+      break;
+    case 'verify-ca':
+      params.set('sslmode', 'require');
+      params.delete('sslrootcert');
+      params.delete('sslaccept');
+      break;
+    case 'verify-full':
+      params.set('sslmode', 'require');
+      params.set('sslaccept', 'strict');
+      if (parsed.sslrootcert && parsed.sslrootcert !== 'system' && !parsed.sslcert) {
+        params.set('sslcert', parsed.sslrootcert);
+      }
+      params.delete('sslrootcert');
+      break;
+  }
+
+  const queryStr = params.toString();
+  return queryStr ? `${baseUrl}?${queryStr}` : baseUrl;
+}
+
 export function extractPrismaCliCommand(argv: readonly string[] = process.argv): string[] {
   const args = argv.slice(2);
   const positional: string[] = [];
@@ -52,30 +125,6 @@ export function extractPrismaCliCommand(argv: readonly string[] = process.argv):
     positional.push(token);
   }
   return positional;
-}
-
-export function isPooledPostgresUrl(rawUrl?: string): boolean {
-  if (!rawUrl || !isValidPostgresUrl(rawUrl)) {
-    return false;
-  }
-  const parsed = parsePostgresUrl(rawUrl);
-  const qIdx = parsed.normalizedUrl.indexOf('?');
-  if (qIdx !== -1) {
-    const params = new URLSearchParams(parsed.normalizedUrl.slice(qIdx + 1));
-    const pgbouncer = (params.get('pgbouncer') ?? '').toLowerCase();
-    if (pgbouncer === 'true' || pgbouncer === '1') {
-      return true;
-    }
-  }
-  if (!parsed.isUnixSocket) {
-    if (POOLER_HOST_REGEX.test(parsed.host)) {
-      return true;
-    }
-    if (parsed.port !== undefined && POOLER_PORTS.has(parsed.port)) {
-      return true;
-    }
-  }
-  return false;
 }
 
 export function isSamePostgresDatabase(urlA?: string, urlB?: string): boolean {
@@ -124,10 +173,10 @@ export function resolvePrismaDatasourceUrl(
     normalizedNonPoolingUrl &&
     isValidPostgresUrl(normalizedNonPoolingUrl)
   ) {
-    return normalizedNonPoolingUrl;
+    return rewritePostgresUrlForPrismaCli(normalizedNonPoolingUrl);
   }
 
-  return normalizedDbUrl ?? DUMMY_DATABASE_URL;
+  return normalizedDbUrl ? rewritePostgresUrlForPrismaCli(normalizedDbUrl) : DUMMY_DATABASE_URL;
 }
 
 export function resolvePrismaShadowDatabaseUrl(
@@ -152,7 +201,7 @@ export function resolvePrismaShadowDatabaseUrl(
     return undefined;
   }
 
-  return normalizedShadowUrl;
+  return rewritePostgresUrlForPrismaCli(normalizedShadowUrl);
 }
 
 if (process.env.DATABASE_URL && isValidPostgresUrl(process.env.DATABASE_URL)) {

@@ -331,5 +331,40 @@ describe('Health and Readiness Endpoints', () => {
       expect(statuses.slice(100)).toEqual([429, 429, 429, 429, 429]);
       expect(mockQueryRaw).toHaveBeenCalledTimes(2);
     });
+
+    it('scopes information_schema.tables and _prisma_migrations to custom ?schema= from DATABASE_URL', async () => {
+      const prevDbUrl = process.env.DATABASE_URL;
+      process.env.DATABASE_URL =
+        'postgresql://wedding:pass@localhost:5432/wedding?schema=custom_tenant&sslmode=prefer';
+      try {
+        mockQueryRaw
+          .mockResolvedValueOnce([...coreTableRows, { table_name: '_prisma_migrations' }])
+          .mockResolvedValueOnce([
+            {
+              migration_name: '20250419032914_init',
+              finished_at: '2026-11-22T00:00:00.000Z',
+              rolled_back_at: null,
+            },
+          ]);
+
+        const res = await readyRoute();
+        expect(res.status).toBe(200);
+        expect(mockQueryRaw).toHaveBeenCalledTimes(2);
+
+        const tablesSqlArg = mockQueryRaw.mock.calls[0][0];
+        expect(tablesSqlArg.sql).toContain('WHERE table_schema =');
+        expect(tablesSqlArg.sql).not.toContain('current_schema()');
+        expect(tablesSqlArg.values).toEqual(['custom_tenant']);
+
+        const migrationsSqlArg = mockQueryRaw.mock.calls[1][0];
+        expect(migrationsSqlArg.sql).toContain('FROM "custom_tenant"."_prisma_migrations"');
+      } finally {
+        if (prevDbUrl === undefined) {
+          delete process.env.DATABASE_URL;
+        } else {
+          process.env.DATABASE_URL = prevDbUrl;
+        }
+      }
+    });
   });
 });

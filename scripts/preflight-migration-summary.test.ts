@@ -1,4 +1,5 @@
 import fs from 'fs';
+import { Worker } from 'worker_threads';
 import path from 'path';
 import os from 'os';
 import child_process from 'child_process';
@@ -23,6 +24,7 @@ import {
   isSamePostgresDatabase,
   resolvePrismaDatasourceUrl,
   resolvePrismaShadowDatabaseUrl,
+  rewritePostgresUrlForPrismaCli,
 } from '../prisma.config';
 
 function execGit(cwd: string, args: string[]): string {
@@ -800,6 +802,107 @@ CREATE INDEX "Contributor_coverFee_idx" ON "Contributor"("coverFee");
       expect(
         resolvePrismaDatasourceUrl(pooledNeon, directNeon, ['node', 'prisma', 'generate'])
       ).toBe(pooledNeon);
+    });
+
+    it('rewrites ssl= boolean/no-verify flags and strict sslmode modes for Prisma CLI compatibility', () => {
+      expect(
+        rewritePostgresUrlForPrismaCli('postgresql://u:p@db.example.com:5432/wedding?ssl=true')
+      ).toBe('postgresql://u:p@db.example.com:5432/wedding?sslmode=require');
+
+      expect(
+        rewritePostgresUrlForPrismaCli(
+          'postgresql://u:p@db.example.com:5432/wedding?schema=custom_tenant&ssl=1'
+        )
+      ).toBe('postgresql://u:p@db.example.com:5432/wedding?schema=custom_tenant&sslmode=require');
+
+      expect(
+        rewritePostgresUrlForPrismaCli('postgresql://u:p@db.example.com:5432/wedding?ssl=false')
+      ).toBe('postgresql://u:p@db.example.com:5432/wedding?sslmode=disable');
+
+      expect(
+        rewritePostgresUrlForPrismaCli('postgresql://u:p@db.example.com:5432/wedding?ssl=no-verify')
+      ).toBe(
+        'postgresql://u:p@db.example.com:5432/wedding?sslmode=require&sslaccept=accept_invalid_certs'
+      );
+
+      expect(
+        rewritePostgresUrlForPrismaCli('postgresql://u:p@db.example.com:5432/wedding?sslmode=allow')
+      ).toBe('postgresql://u:p@db.example.com:5432/wedding?sslmode=prefer');
+
+      expect(
+        rewritePostgresUrlForPrismaCli(
+          'postgresql://u:p@db.example.com:5432/wedding?sslmode=verify-ca&sslrootcert=/etc/ssl/ca.pem'
+        )
+      ).toBe('postgresql://u:p@db.example.com:5432/wedding?sslmode=require');
+
+      expect(
+        rewritePostgresUrlForPrismaCli(
+          'postgresql://u:p@db.example.com:5432/wedding?sslmode=verify-full'
+        )
+      ).toBe('postgresql://u:p@db.example.com:5432/wedding?sslmode=require&sslaccept=strict');
+
+      expect(
+        rewritePostgresUrlForPrismaCli(
+          'postgresql://u:p@db.example.com:5432/wedding?sslmode=verify-full&sslrootcert=/etc/ssl/ca.pem'
+        )
+      ).toBe(
+        'postgresql://u:p@db.example.com:5432/wedding?sslmode=require&sslaccept=strict&sslcert=%2Fetc%2Fssl%2Fca.pem'
+      );
+
+      expect(
+        resolvePrismaDatasourceUrl(
+          'postgresql://u:p@db.example.com:5432/wedding?ssl=true&schema=custom_tenant',
+          undefined,
+          ['node', 'prisma', 'migrate', 'deploy']
+        )
+      ).toBe('postgresql://u:p@db.example.com:5432/wedding?schema=custom_tenant&sslmode=require');
+    });
+
+    it('fails runPreflightCheck before invoking prisma migrate status when ssl=true hits a plaintext server', async () => {
+      const serverWorker = new Worker(
+        `
+          const net = require('node:net');
+          const { parentPort } = require('node:worker_threads');
+          const server = net.createServer((socket) => {
+            socket.once('data', () => {
+              socket.end(Buffer.from('N', 'ascii'));
+            });
+          });
+          server.listen(0, '127.0.0.1', () => {
+            parentPort.postMessage({ port: server.address().port });
+          });
+          parentPort.once('message', () => {
+            server.close(() => process.exit(0));
+          });
+        `,
+        { eval: true }
+      );
+
+      const { port } = await new Promise<{ port: number }>((resolve, reject) => {
+        serverWorker.once('message', (msg: { port: number }) => resolve(msg));
+        serverWorker.once('error', reject);
+      });
+      const secret = 'PREFLIGHT_SSL_TRUE_SECRET_445';
+      const spawnSpy = jest.spyOn(child_process, 'spawnSync');
+
+      try {
+        const result = runPreflightCheck({
+          environment: 'production',
+          requireDb: true,
+          databaseUrl: `postgresql://wedding:${secret}@127.0.0.1:${port}/wedding?ssl=true`,
+        });
+
+        expect(result.success).toBe(false);
+        expect(result.summary).toContain('**Pre-Flight Gate:** `FAILED` ❌');
+        expect(result.summary).toContain('Pre-flight PostgreSQL TLS handshake check failed');
+        expect(result.summary).toContain('does not support SSL connections');
+        expect(result.summary).not.toContain(secret);
+        expect(spawnSpy).not.toHaveBeenCalled();
+      } finally {
+        spawnSpy.mockRestore();
+        serverWorker.postMessage('close');
+        await serverWorker.terminate();
+      }
     });
   });
 });

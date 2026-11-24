@@ -100,8 +100,32 @@ if ! NORMALIZED_DATABASE_URL="$(
 fi
 export DATABASE_URL="$NORMALIZED_DATABASE_URL"
 
+verify_postgres_tls_handshake() {
+  if [ -z "$POSTGRES_URL_HELPER" ]; then
+    return 0
+  fi
+  local tls_err
+  if ! tls_err="$(
+    node --input-type=module -e '
+      import { pathToFileURL } from "node:url";
+      const helperPath = process.argv[1];
+      const { verifyPostgresTlsHandshake } = await import(pathToFileURL(helperPath).href);
+      try {
+        await verifyPostgresTlsHandshake(process.env.DATABASE_URL ?? "");
+      } catch (err) {
+        console.error(err instanceof Error ? err.message : String(err));
+        process.exit(1);
+      }
+    ' "$POSTGRES_URL_HELPER" 2>&1 >/dev/null
+  )"; then
+    echo "ERROR: Pre-migration PostgreSQL TLS handshake check failed: ${tls_err}" >&2
+    exit 1
+  fi
+}
+
 if [ "$RUN_MIGRATIONS" = "true" ] || [ "$RUN_MIGRATIONS" = "1" ]; then
   echo "Running database migrations (RUN_MIGRATIONS=true)..."
+  verify_postgres_tls_handshake
   if [ -x "./node_modules/.bin/prisma" ]; then
     env -u POSTGRES_URL_NON_POOLING ./node_modules/.bin/prisma migrate deploy
   elif command -v prisma >/dev/null 2>&1; then
@@ -116,6 +140,9 @@ fi
 
 if [[ "${1:-}" == *"prisma"* ]] && [ "${2:-}" = "migrate" ]; then
   unset POSTGRES_URL_NON_POOLING
+  if [ "${3:-}" != "diff" ]; then
+    verify_postgres_tls_handshake
+  fi
 fi
 
 echo "Starting application..."
