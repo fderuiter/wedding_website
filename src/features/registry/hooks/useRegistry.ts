@@ -26,6 +26,8 @@ import {
 } from '@/utils/registryPagination';
 import { useRegistryCapabilities } from './useRegistryCapabilities';
 import { getItemTotalTargetAmount } from '../lib/registryStatusUtils';
+import { isDemoRuntimeFlagActive } from '@/lib/demo/runtimeFlag';
+import { buildRegistryEditItemHref } from '@/lib/sampleData/builder';
 
 export type SortOption = 'default' | 'price-asc' | 'price-desc' | 'most-wanted';
 
@@ -459,8 +461,9 @@ export function useRegistry() {
   }, [items, isLoading]);
 
   const handleEdit = useCallback((id: string) => {
-    router.push(`/registry/edit-item/${id}`);
-  }, [router]);
+    const useFallback = Boolean(demo?.isDemoMode) || isDemoRuntimeFlagActive();
+    router.push(buildRegistryEditItemHref(id, useFallback));
+  }, [demo?.isDemoMode, router]);
 
   const handleDelete = useCallback(async (id: string) => {
     if (await confirm('Are you sure you want to delete this item?')) {

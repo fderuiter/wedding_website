@@ -30,8 +30,18 @@ export default function MaintenanceHubPage() {
   const [file, setFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const handleExport = () => {
-    exportData();
+  const handleExport = async () => {
+    try {
+      await exportData();
+      addToast('Database backup exported successfully.', 'success');
+    } catch (err: unknown) {
+      addToast(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Failed to export database backup.',
+        'error'
+      );
+    }
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {

@@ -40,6 +40,7 @@ import type { RsvpSummaryResponse, SubEventDTO } from '@/features/sub-events';
 import { computeMergedInvitationPreview } from '@/utils/invitationValidation';
 import { INVITATION_DEFAULT_PAGE_SIZE } from '@/utils/invitationPagination';
 import { withBasePath } from '@/lib/basePath';
+import { downloadExportBlob } from '@/utils/exportDownload';
 
 const EMPTY_SUB_EVENT_IDS: string[] = [];
 const RSVP_SUMMARY_QUERY_KEY = ['admin-rsvp-summary'] as const;
@@ -1120,22 +1121,30 @@ export default function InvitationCodesDashboardPage() {
     }
   };
 
-  const handleExportSelectedCsv = () => {
+  const handleExportSelectedCsv = async () => {
     if (selectedIds.length === 0) {
       addToast('No invitation codes selected for export.', 'info');
       return;
     }
 
+    const count = selectedIds.length;
     const params = new URLSearchParams();
     params.set('ids', selectedIds.join(','));
 
-    const link = document.createElement('a');
-    link.href = withBasePath(`/api/admin/invitation-codes/export?${params.toString()}`);
-    link.setAttribute('download', '');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    addToast(`Exported ${selectedIds.length} selected invitation code(s) to CSV.`, 'success');
+    try {
+      await downloadExportBlob(
+        `/api/admin/invitation-codes/export?${params.toString()}`,
+        'guest-invitations.csv'
+      );
+      addToast(`Exported ${count} selected invitation code(s) to CSV.`, 'success');
+    } catch (err: unknown) {
+      addToast(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Failed to export selected invitation codes.',
+        'error'
+      );
+    }
   };
 
   const handlePrintSelectedLabels = () => {
@@ -1346,7 +1355,7 @@ export default function InvitationCodesDashboardPage() {
     [filteredCodes]
   );
 
-  const handleExportCsv = () => {
+  const handleExportCsv = async () => {
     const params = new URLSearchParams();
     if (searchQuery.trim()) params.set('search', searchQuery.trim());
     if (statusFilter && statusFilter !== 'all') params.set('status', statusFilter);
@@ -1359,13 +1368,17 @@ export default function InvitationCodesDashboardPage() {
     const queryString = params.toString();
     const exportUrl = `/api/admin/invitation-codes/export${queryString ? `?${queryString}` : ''}`;
 
-    const link = document.createElement('a');
-    link.href = withBasePath(exportUrl);
-    link.setAttribute('download', '');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    addToast('Invitation codes exported successfully.', 'success');
+    try {
+      await downloadExportBlob(exportUrl, 'guest-invitations.csv');
+      addToast('Invitation codes exported successfully.', 'success');
+    } catch (err: unknown) {
+      addToast(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Failed to export invitation codes.',
+        'error'
+      );
+    }
   };
 
   const handleCopyShareableLink = () => {

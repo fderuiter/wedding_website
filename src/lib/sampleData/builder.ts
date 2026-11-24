@@ -1021,15 +1021,27 @@ export function getRegistryEditStaticParams(): Array<{ id: string }> {
   };
 
   for (const archetypeId of ArchetypeIdSchema.options) {
-    for (const item of ARCHETYPE_PRESETS[archetypeId].registryItems) {
+    ARCHETYPE_PRESETS[archetypeId].registryItems.forEach((item, idx) => {
       addId(item.id);
-    }
+      addId(`demo-${archetypeId}-item-${idx + 1}`);
+    });
   }
 
   addId(REGISTRY_EDIT_FALLBACK_ID);
   addId('1');
 
   return result;
+}
+
+export function buildRegistryEditItemHref(
+  id: string,
+  useFallbackQuery = false
+): string {
+  const trimmed = id.trim();
+  if (useFallbackQuery) {
+    return `/registry/edit-item/${REGISTRY_EDIT_FALLBACK_ID}?id=${encodeURIComponent(trimmed)}`;
+  }
+  return `/registry/edit-item/${encodeURIComponent(trimmed)}`;
 }
 
 export function findSeededRegistryItemById(
@@ -1049,6 +1061,22 @@ export function findSeededRegistryItemById(
     return includeContributors
       ? firstClassic
       : { ...firstClassic, contributors: [] };
+  }
+
+  const demoMatch = /^demo-(classic|destination|romantic)-item-(\d+)$/.exec(trimmed);
+  if (demoMatch) {
+    const archetypeId = demoMatch[1] as ArchetypeId;
+    const idx = Number.parseInt(demoMatch[2], 10) - 1;
+    if (idx >= 0) {
+      const seed = buildArchetypeSeedData(archetypeId);
+      const base = seed.registryItems[idx];
+      if (base) {
+        return {
+          ...(includeContributors ? base : { ...base, contributors: [] }),
+          id: trimmed,
+        };
+      }
+    }
   }
 
   for (const archetypeId of ArchetypeIdSchema.options) {

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import MaintenanceHubPage from '../page';
 import { useAdminMaintenance } from '@/hooks/admin/useAdminMaintenance';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -255,5 +255,29 @@ describe('MaintenanceHubPage Pre-flight Validation & Progress Tracking', () => {
     expect(screen.getByText('Broadcasts:').nextSibling).toHaveTextContent('4');
     expect(screen.getByText('Broadcast Recipients:').nextSibling).toHaveTextContent('42');
     expect(screen.getByText('Snapshots:').nextSibling).toHaveTextContent('19');
+  });
+
+  test('shows success toast on Export All Data and error toast when export fails', async () => {
+    mockExportData
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('Backup export unavailable'));
+
+    render(<MaintenanceHubPage />);
+    const exportBtn = screen.getByRole('button', { name: /Export All Data/i });
+
+    fireEvent.click(exportBtn);
+    await waitFor(() => {
+      expect(mockExportData).toHaveBeenCalledTimes(1);
+      expect(mockAddToast).toHaveBeenCalledWith(
+        'Database backup exported successfully.',
+        'success'
+      );
+    });
+
+    fireEvent.click(exportBtn);
+    await waitFor(() => {
+      expect(mockExportData).toHaveBeenCalledTimes(2);
+      expect(mockAddToast).toHaveBeenCalledWith('Backup export unavailable', 'error');
+    });
   });
 });
