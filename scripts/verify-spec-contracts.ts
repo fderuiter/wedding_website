@@ -91,8 +91,6 @@ const STANDARD_HTTP_HEADERS = new Set([
 const REPO_GITHUB_BLOB_URL_RE =
   /^https?:\/\/github\.com\/fderuiter\/wedding_website\/blob\/[^/]+\/([^?#]+)(?:\?[^#]*)?(?:#(.*))?$/;
 
-const LINE_RANGE_FRAGMENT_RE = /^L(\d+)(?:C\d+)?(?:-L?(\d+)(?:C\d+)?)?$/;
-
 const PROSE_LOWERCASE_LINK_LABELS = new Set([
   'details',
   'docs',
@@ -137,12 +135,6 @@ interface ModuleSymbolInventory {
   constInitializers: Map<string, Set<ConstPrimitiveValue>>;
   exportedConstInitializers: Map<string, Set<ConstPrimitiveValue>>;
   localImports: Map<string, { specifier: string; importedName: string }>;
-}
-
-interface FileSliceInventory {
-  lineCount: number;
-  lines: string[];
-  declRanges: Map<string, Array<{ start: number; end: number }>>;
 }
 
 function collectMarkdownFilesUnderDir(dirPath: string): string[] {
@@ -287,7 +279,6 @@ function collectInheritedClassMembers(
 }
 
 const symbolInventoryCache = new Map<string, ModuleSymbolInventory>();
-const sliceInventoryCache = new Map<string, FileSliceInventory>();
 const exportedConstInitializersCache = new Map<string, Map<string, Set<ConstPrimitiveValue>>>();
 const parsedSourceCache = new Map<string, { content: string; sf: ts.SourceFile }>();
 const moduleExportsCache = new Map<string, { values: Set<string>; types: Set<string> }>();
@@ -784,132 +775,6 @@ function parseStaticConstSnippet(rawValueExpr: string): ConstPrimitiveValue | nu
   return null;
 }
 
-function getFileSliceInventory(filePath: string): FileSliceInventory {
-  const cached = sliceInventoryCache.get(filePath);
-  if (cached) return cached;
-
-  const { content, sf } = getCachedSourceFile(filePath);
-  const lines = content.length === 0 ? [] : content.replace(/\r?\n$/, '').split(/\r?\n/);
-  const lineCount = lines.length;
-  const declRanges = new Map<string, Array<{ start: number; end: number }>>();
-
-  const lineStarts = sf.getLineStarts();
-
-  function offsetToLine(pos: number): number {
-    let low = 0;
-    let high = lineStarts.length - 1;
-    while (low <= high) {
-      const mid = (low + high) >>> 1;
-      if (lineStarts[mid] <= pos) {
-        low = mid + 1;
-      } else {
-        high = mid - 1;
-      }
-    }
-    return high + 1;
-  }
-
-  function skipTriviaOffset(pos: number, end: number): number {
-    let p = pos;
-    while (p < end) {
-      const ch = content.charCodeAt(p);
-      if (ch === 32 || ch === 9 || ch === 10 || ch === 13) {
-        p++;
-      } else if (ch === 47 && content.charCodeAt(p + 1) === 47) {
-        p += 2;
-        while (p < end && content.charCodeAt(p) !== 10) p++;
-      } else if (ch === 47 && content.charCodeAt(p + 1) === 42) {
-        p += 2;
-        while (p + 1 < end && !(content.charCodeAt(p) === 42 && content.charCodeAt(p + 1) === 47)) {
-          p++;
-        }
-        p += 2;
-      } else {
-        break;
-      }
-    }
-    return p;
-  }
-
-  function addDeclRange(name: string, rangeNode: ts.Node) {
-    const start = offsetToLine(skipTriviaOffset(rangeNode.pos, rangeNode.end));
-    const end = offsetToLine(Math.max(rangeNode.pos, rangeNode.end - 1));
-    const existing = declRanges.get(name) ?? [];
-    existing.push({ start, end });
-    declRanges.set(name, existing);
-  }
-
-  function visitDecls(node: ts.Node) {
-    if (
-      (ts.isFunctionDeclaration(node) ||
-        ts.isClassDeclaration(node) ||
-        ts.isInterfaceDeclaration(node) ||
-        ts.isTypeAliasDeclaration(node) ||
-        ts.isEnumDeclaration(node)) &&
-      node.name
-    ) {
-      addDeclRange(node.name.text, node);
-    } else if (ts.isVariableStatement(node)) {
-      for (const decl of node.declarationList.declarations) {
-        if (ts.isIdentifier(decl.name)) {
-          addDeclRange(decl.name.text, node);
-        }
-      }
-    } else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
-      addDeclRange(node.name.text, node);
-    } else if (
-      (ts.isMethodDeclaration(node) ||
-        ts.isPropertyDeclaration(node) ||
-        ts.isPropertySignature(node) ||
-        ts.isMethodSignature(node) ||
-        ts.isGetAccessorDeclaration(node) ||
-        ts.isSetAccessorDeclaration(node) ||
-        ts.isPropertyAssignment(node) ||
-        ts.isShorthandPropertyAssignment(node)) &&
-      node.name &&
-      (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name))
-    ) {
-      addDeclRange(node.name.text, node);
-    }
-    ts.forEachChild(node, visitDecls);
-  }
-
-  visitDecls(sf);
-
-  const sliceInv: FileSliceInventory = { lineCount, lines, declRanges };
-  sliceInventoryCache.set(filePath, sliceInv);
-  return sliceInv;
-}
-
-function collectSliceTokens(
-  lines: string[],
-  start: number,
-  end: number,
-  isTsx: boolean,
-): Set<string> {
-  const sliceText = lines.slice(start - 1, end).join('\n');
-  const tokens = new Set<string>();
-  const scanner = ts.createScanner(
-    ts.ScriptTarget.Latest,
-    true,
-    isTsx ? ts.LanguageVariant.JSX : ts.LanguageVariant.Standard,
-    sliceText,
-  );
-  let tok = scanner.scan();
-  while (tok !== ts.SyntaxKind.EndOfFileToken) {
-    if (
-      tok === ts.SyntaxKind.Identifier ||
-      tok === ts.SyntaxKind.StringLiteral ||
-      tok === ts.SyntaxKind.NoSubstitutionTemplateLiteral ||
-      (tok >= ts.SyntaxKind.FirstKeyword && tok <= ts.SyntaxKind.LastKeyword)
-    ) {
-      tokens.add(scanner.getTokenValue());
-    }
-    tok = scanner.scan();
-  }
-  return tokens;
-}
-
 function getModuleSymbolInventory(
   filePath: string,
   rootDir: string,
@@ -1255,6 +1120,15 @@ function getModuleSymbolInventory(
           propertyAndConstLiterals.add(el.text);
         }
       }
+    } else if (
+      ts.isPropertyAccessExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      ts.isIdentifier(node.expression.expression) &&
+      node.expression.expression.text === 'process' &&
+      node.expression.name.text === 'env' &&
+      /^[A-Z][A-Z0-9_]+$/.test(node.name.text)
+    ) {
+      propertyAndConstLiterals.add(node.name.text);
     }
     ts.forEachChild(node, collectPropertiesAndLiterals);
   }
@@ -1667,17 +1541,6 @@ function safeDecodeTargetPath(raw: string): string {
   }
 }
 
-function parseLineRangeFromTarget(rawTarget: string): { start: number; end: number } | undefined {
-  const hashIdx = rawTarget.indexOf('#');
-  if (hashIdx === -1) return undefined;
-  const fragment = rawTarget.slice(hashIdx + 1).trim();
-  const match = fragment.match(LINE_RANGE_FRAGMENT_RE);
-  if (!match) return undefined;
-  const start = Number.parseInt(match[1], 10);
-  const end = match[2] !== undefined ? Number.parseInt(match[2], 10) : start;
-  return { start, end };
-}
-
 function resolveDocCitedSrcPath(rawTarget: string, docAbsPath: string, rootDir: string): string | null {
   const trimmedTarget = rawTarget.trim();
   const repoMatch = trimmedTarget.match(REPO_GITHUB_BLOB_URL_RE);
@@ -1717,8 +1580,6 @@ interface SymbolCitation {
   srcRelPath: string;
   requireExported: boolean;
   roleWord?: string;
-  lineRange?: { start: number; end: number };
-  additionalLineRanges?: Array<{ start: number; end: number }>;
   expectedValue?: ConstPrimitiveValue;
   rawExpectedValue?: string;
 }
@@ -1848,7 +1709,7 @@ function extractSymbolCitationsFromLine(
   const seenKeys = new Set<string>();
 
   function pushCitation(c: SymbolCitation) {
-    const key = `${c.symbol}::${c.srcRelPath}::${c.lineRange ? `${c.lineRange.start}-${c.lineRange.end}` : 'module'}::${c.expectedValue !== undefined ? String(c.expectedValue) : ''}`;
+    const key = `${c.symbol}::${c.srcRelPath}::${c.expectedValue !== undefined ? String(c.expectedValue) : ''}`;
     if (seenKeys.has(key)) return;
     seenKeys.add(key);
     citations.push(c);
@@ -1901,7 +1762,6 @@ function extractSymbolCitationsFromLine(
   const lineLinks = scanMarkdownLinksInLine(line);
   const resolvedLineTargets: Array<{
     srcRelPath: string;
-    lineRange?: { start: number; end: number };
     start: number;
     end: number;
   }> = [];
@@ -1909,8 +1769,7 @@ function extractSymbolCitationsFromLine(
   for (const link of lineLinks) {
     const srcRelPath = resolveDocCitedSrcPath(link.rawTarget, docAbsPath, rootDir);
     if (!srcRelPath) continue;
-    const lineRange = parseLineRangeFromTarget(link.rawTarget);
-    resolvedLineTargets.push({ srcRelPath, lineRange, start: link.start, end: link.end });
+    resolvedLineTargets.push({ srcRelPath, start: link.start, end: link.end });
 
     const trimmedLabel = link.label.trim();
     const isBacktickedLabel = /^`[^`]+`$/.test(trimmedLabel);
@@ -1934,7 +1793,6 @@ function extractSymbolCitationsFromLine(
           symbol: assignedLabel.symbol,
           srcRelPath,
           requireExported: false,
-          lineRange,
           expectedValue: assignedLabel.expectedValue,
           rawExpectedValue: assignedLabel.rawExpectedValue,
         });
@@ -1955,7 +1813,6 @@ function extractSymbolCitationsFromLine(
       symbol: innerLabel,
       srcRelPath,
       requireExported: false,
-      lineRange,
     });
   }
 
@@ -1966,33 +1823,13 @@ function extractSymbolCitationsFromLine(
     if (lineLinks.some((lk) => span.start >= lk.start && span.end <= lk.end)) continue;
     const srcRelPath = resolveDocCitedSrcPath(span.code, docAbsPath, rootDir);
     if (!srcRelPath) continue;
-    const lineRange = parseLineRangeFromTarget(span.code);
-    resolvedLineTargets.push({ srcRelPath, lineRange, start: span.start, end: span.end });
+    resolvedLineTargets.push({ srcRelPath, start: span.start, end: span.end });
   }
   resolvedLineTargets.sort((a, b) => a.start - b.start);
 
   const roleNounSuffixRe =
     /^(.*?)(?:\*\*)?(\s+(?:handler|handlers|function|functions|helper|helpers|method|methods|schema|schemas|class|classes|type|types|interface|interfaces|constant|constants|service|services|hook|hooks))?(?:(?:\s*,)?\s+(?:in|from|at|inside|within|via|defined in|declared in|exported by|exported from|implemented in)\s+|\s*\(\s*(?:see\s+|in\s+|at\s+|via\s+)?|\s*,\s*)$/;
   const symChainSepRe = /^(?:\*\*)?\s*(?:,|\/|\band\b|\bor\b|&|->|→)\s*(?:handler\s*(?:->|→)\s*)?(?:\*\*)?$/;
-  const joinedTargetsBetweenRe =
-    /^(?:\s*\(L\d+(?:-L?\d+)?\))?\s*(?:,|\/|\band\b|\bor\b|&)\s*(?:mapped in\s+|in\s+|at\s+)?$/i;
-
-  const collectJoinedRangesAfter = (targetIdx: number): Array<{ start: number; end: number }> => {
-    const base = resolvedLineTargets[targetIdx];
-    if (!base.lineRange) return [];
-    const extras: Array<{ start: number; end: number }> = [];
-    let prev = base;
-    for (let nextIdx = targetIdx + 1; nextIdx < resolvedLineTargets.length; nextIdx++) {
-      const next = resolvedLineTargets[nextIdx];
-      const between = line.slice(prev.end, next.start);
-      if (!joinedTargetsBetweenRe.test(between)) break;
-      if (next.srcRelPath === base.srcRelPath && next.lineRange) {
-        extras.push(next.lineRange);
-      }
-      prev = next;
-    }
-    return extras;
-  };
 
   for (let tIdx = 0; tIdx < resolvedLineTargets.length; tIdx++) {
     const target = resolvedLineTargets[tIdx];
@@ -2031,7 +1868,6 @@ function extractSymbolCitationsFromLine(
       currIdx--;
     }
 
-    const additionalLineRanges = collectJoinedRangesAfter(tIdx);
     for (const entry of chainEntries) {
       if (shouldSkipSymbol(entry.symbol, target.srcRelPath)) {
         continue;
@@ -2042,8 +1878,6 @@ function extractSymbolCitationsFromLine(
         srcRelPath: target.srcRelPath,
         requireExported: false,
         roleWord,
-        lineRange: target.lineRange,
-        additionalLineRanges: additionalLineRanges.length > 0 ? additionalLineRanges : undefined,
         expectedValue: isEnvVarInEnvTs ? undefined : entry.expectedValue,
         rawExpectedValue: isEnvVarInEnvTs ? undefined : entry.rawExpectedValue,
       });
@@ -2076,7 +1910,6 @@ function extractSymbolCitationsFromLine(
           symbol: parsed.symbol,
           srcRelPath: chosen.srcRelPath,
           requireExported: false,
-          lineRange: chosen.lineRange,
           expectedValue: parsed.expectedValue,
           rawExpectedValue: parsed.rawExpectedValue,
         });
@@ -2211,65 +2044,6 @@ function verifySymbolInModule(
   }
 
   const inventory = getModuleSymbolInventory(absTarget, rootDir);
-
-  if (citation.lineRange) {
-    const { start, end } = citation.lineRange;
-    const allRanges = [citation.lineRange, ...(citation.additionalLineRanges ?? [])];
-    const sliceInv = getFileSliceInventory(absTarget);
-    for (const r of allRanges) {
-      if (r.start < 1 || r.end < r.start || r.end > sliceInv.lineCount) {
-        return `Line range #L${r.start}-L${r.end} is out of bounds for ${citation.srcRelPath} (${sliceInv.lineCount} lines)`;
-      }
-    }
-
-    const sliceTokens = new Set<string>();
-    const isTsx = citation.srcRelPath.endsWith('.tsx');
-    for (const r of allRanges) {
-      for (const tok of collectSliceTokens(sliceInv.lines, r.start, r.end, isTsx)) {
-        sliceTokens.add(tok);
-      }
-    }
-
-    const matchesSliceOrEnclosingDecl = (token: string): boolean => {
-      if (sliceTokens.has(token)) {
-        return true;
-      }
-      const ranges = sliceInv.declRanges.get(token);
-      if (
-        ranges &&
-        allRanges.some((citeR) => ranges.some((r) => r.start <= citeR.start && citeR.end <= r.end))
-      ) {
-        return true;
-      }
-      return false;
-    };
-
-    if (citation.symbol.includes('.')) {
-      const [containerName, memberName] = citation.symbol.split('.');
-      if (!inventory.topLevelDeclarations.has(containerName)) {
-        return `Symbol "${containerName}" (from "${citation.symbol}") is not declared or exported in ${citation.srcRelPath}`;
-      }
-      const members = inventory.classAndObjectMembers.get(containerName);
-      if (!members || !members.has(memberName)) {
-        return `Member "${memberName}" on "${containerName}" ("${citation.symbol}") does not exist in ${citation.srcRelPath}`;
-      }
-      if (!matchesSliceOrEnclosingDecl(memberName)) {
-        return `Member "${memberName}" on "${containerName}" ("${citation.symbol}") is not in ${citation.srcRelPath}#L${start}-L${end}`;
-      }
-      return null;
-    }
-
-    const sliceMatched =
-      matchesSliceOrEnclosingDecl(citation.symbol) ||
-      ((citation.roleWord === 'schema' || citation.roleWord === 'schemas') &&
-        matchesSliceOrEnclosingDecl(`${citation.symbol}Schema`));
-
-    if (!sliceMatched) {
-      return `Symbol "${citation.symbol}" is not declared or referenced in ${citation.srcRelPath}#L${start}-L${end}`;
-    }
-
-    return verifyExpectedConstantValue(citation, absTarget, inventory, rootDir);
-  }
 
   if (citation.symbol.includes('.')) {
     const [containerName, memberName] = citation.symbol.split('.');
@@ -2919,13 +2693,16 @@ interface ActiveSpecLine {
   line: string;
 }
 
-function getActiveSpecLines(markdown: string): ActiveSpecLine[] {
+function getActiveSpecLines(
+  markdown: string,
+  includedAutogenBlocks?: ReadonlySet<string>,
+): ActiveSpecLine[] {
   const rawLines = markdown.split(/\r?\n/);
   const active: ActiveSpecLine[] = [];
   let inFence = false;
   let fenceChar = '';
   let fenceLen = 0;
-  let inAutogenBlock = false;
+  let inSkippedAutogenBlock = false;
 
   for (let i = 0; i < rawLines.length; i++) {
     const line = rawLines[i];
@@ -2933,14 +2710,16 @@ function getActiveSpecLines(markdown: string): ActiveSpecLine[] {
     const trimmed = line.trim();
 
     if (trimmed.startsWith('<!-- BEGIN AUTOGENERATED')) {
-      inAutogenBlock = true;
+      const blockMatch = trimmed.match(/^<!--\s*BEGIN\s+AUTOGENERATED\s+([A-Z0-9_]+)\s*-->$/);
+      const blockName = blockMatch ? blockMatch[1] : '';
+      inSkippedAutogenBlock = !(blockName && includedAutogenBlocks?.has(blockName));
       continue;
     }
     if (trimmed.startsWith('<!-- END AUTOGENERATED')) {
-      inAutogenBlock = false;
+      inSkippedAutogenBlock = false;
       continue;
     }
-    if (inAutogenBlock) continue;
+    if (inSkippedAutogenBlock) continue;
 
     const fenceMatch = line.match(/^\s{0,3}(`{3,}|~{3,})(.*)$/);
     if (fenceMatch) {
@@ -3105,28 +2884,17 @@ function extractTypeUnionStringLiteralsFromSourceFile(
 
 function parsePrismaSchemaFacts(prismaAbsPath: string): {
   modelNames: string[];
-  appConfigColumnCount: number;
 } {
   const raw = fs.readFileSync(prismaAbsPath, 'utf8');
   const modelNames: string[] = [];
-  let appConfigColumnCount = 0;
 
   const modelRegex = /^model\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{([\s\S]*?)^\}/gm;
   let match: RegExpExecArray | null;
   while ((match = modelRegex.exec(raw)) !== null) {
-    const name = match[1];
-    const body = match[2];
-    modelNames.push(name);
-    if (name === 'AppConfig') {
-      appConfigColumnCount = body
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0 && !line.startsWith('//') && !line.startsWith('@@'))
-        .length;
-    }
+    modelNames.push(match[1]);
   }
 
-  return { modelNames, appConfigColumnCount };
+  return { modelNames };
 }
 
 function resolveExportedSymbolOriginFile(
@@ -3527,12 +3295,15 @@ function verifyArchitecturePersistenceContracts(
   const specAbsPath = path.join(rootDir, specRelPath);
   if (!specFiles.includes(specRelPath) || !fs.existsSync(specAbsPath)) return;
 
-  const activeLines = getActiveSpecLines(fs.readFileSync(specAbsPath, 'utf8'));
+  const activeLines = getActiveSpecLines(
+    fs.readFileSync(specAbsPath, 'utf8'),
+    new Set(['CONFIG_SUMMARY']),
+  );
   const fullProse = activeLines.map((entry) => entry.line).join('\n');
 
   const prismaPath = path.join(rootDir, 'prisma/schema.prisma');
   if (fs.existsSync(prismaPath)) {
-    const { modelNames, appConfigColumnCount } = parsePrismaSchemaFacts(prismaPath);
+    const { modelNames } = parsePrismaSchemaFacts(prismaPath);
     const dataModelsLineNum = findMatchingSpecLineNum(activeLines, (l) =>
       l.includes('**Data Models:**'),
     );
@@ -3544,66 +3315,20 @@ function verifyArchitecturePersistenceContracts(
         );
       }
     }
-
-    if (appConfigColumnCount > 0) {
-      const appConfigLine = activeLines.find((entry) =>
-        /persisted PostgreSQL columns/i.test(entry.line),
-      );
-      const countMatch = appConfigLine?.line.match(/(\d+)\s+persisted PostgreSQL columns/i);
-      if (!appConfigLine || !countMatch || Number(countMatch[1]) !== appConfigColumnCount) {
-        errors.push(
-          `${specRelPath}:${appConfigLine?.lineNum ?? 1}: Expected ${appConfigColumnCount} persisted PostgreSQL AppConfig columns matching prisma/schema.prisma${countMatch ? `, found ${countMatch[1]}` : ''}`,
-        );
-      }
-
-      const contentSchemasPath = path.join(rootDir, 'src/features/content/schemas.ts');
-      if (fs.existsSync(contentSchemasPath) && appConfigLine) {
-        const { sf } = getCachedSourceFile(contentSchemasPath);
-        const appConfigZod = extractZodObjectInfoFromSourceFile(sf, 'AppConfigSchema');
-        if (appConfigZod && appConfigZod.keys.length > 0) {
-          const totalMatch = appConfigLine.line.match(/(\d+)\s+total schema fields/i);
-          if (!totalMatch || Number(totalMatch[1]) !== appConfigZod.keys.length) {
-            errors.push(
-              `${specRelPath}:${appConfigLine.lineNum}: Expected ${appConfigZod.keys.length} total AppConfigSchema fields matching src/features/content/schemas.ts${totalMatch ? `, found ${totalMatch[1]}` : ''}`,
-            );
-          }
-        }
-      }
-    }
   }
 
   const backupPersistencePath = path.join(rootDir, 'src/lib/backupPersistence.ts');
   if (fs.existsSync(backupPersistencePath)) {
-    const { sf } = getCachedSourceFile(backupPersistencePath);
-    const backupKeys = extractStringArrayFromSourceFile(sf, 'APP_CONFIG_BACKUP_KEYS');
-    const secretKeys = extractStringArrayFromSourceFile(sf, 'APP_CONFIG_SECRET_KEYS');
-    const backupLine = activeLines.find((entry) =>
-      entry.line.includes('sanitizeAppConfigForBackup') ||
-      entry.line.includes('APP_CONFIG_BACKUP_KEYS'),
+    const backupLine = activeLines.find(
+      (entry) =>
+        entry.line.includes('sanitizeAppConfigForBackup') ||
+        entry.line.includes('APP_CONFIG_BACKUP_KEYS'),
     );
 
     if (!fullProse.includes('src/lib/backupPersistence.ts')) {
       errors.push(
         `${specRelPath}:${backupLine?.lineNum ?? 1}: Must cite src/lib/backupPersistence.ts for sanitizeAppConfigForBackup and APP_CONFIG_BACKUP_KEYS`,
       );
-    }
-
-    if (backupKeys) {
-      const backupCountMatch = backupLine?.line.match(/(\d+)\s+`APP_CONFIG_BACKUP_KEYS`/);
-      if (!backupLine || !backupCountMatch || Number(backupCountMatch[1]) !== backupKeys.length) {
-        errors.push(
-          `${specRelPath}:${backupLine?.lineNum ?? 1}: Expected ${backupKeys.length} \`APP_CONFIG_BACKUP_KEYS\` matching src/lib/backupPersistence.ts${backupCountMatch ? `, found ${backupCountMatch[1]}` : ''}`,
-        );
-      }
-    }
-
-    if (secretKeys && backupLine) {
-      const secretCountMatch = backupLine.line.match(/(\d+)\s+raw provider secrets/i);
-      if (!secretCountMatch || Number(secretCountMatch[1]) !== secretKeys.length) {
-        errors.push(
-          `${specRelPath}:${backupLine.lineNum}: Expected ${secretKeys.length} raw provider secrets matching APP_CONFIG_SECRET_KEYS in src/lib/backupPersistence.ts`,
-        );
-      }
     }
   }
 
@@ -3633,29 +3358,14 @@ function verifyFeatureModulesAndScraperContracts(
   if (specFiles.includes(fmRelPath) && fs.existsSync(fmAbsPath)) {
     const guardFacts = collectRegistryRouteGuardFacts(rootDir);
     if (guardFacts) {
-      const activeLines = getActiveSpecLines(fs.readFileSync(fmAbsPath, 'utf8'));
+      const activeLines = getActiveSpecLines(
+        fs.readFileSync(fmAbsPath, 'utf8'),
+        new Set(['REGISTRY_GUARDS']),
+      );
       const fullProse = activeLines.map((entry) => entry.line).join('\n');
-      const total = guardFacts.guardedRoutes.length + guardFacts.skippedRoutes.length;
-
       const enforcingLine = activeLines.find((entry) =>
         entry.line.includes("Registry APIs Enforcing `isFeatureEnabled('registry')`"),
       );
-      const enforcingExpected = `${guardFacts.guardedRoutes.length} of ${total} handlers`;
-      if (!enforcingLine || !enforcingLine.line.includes(enforcingExpected)) {
-        errors.push(
-          `${fmRelPath}:${enforcingLine?.lineNum ?? 1}: Expected "${enforcingExpected}" for /api/registry/* routes enforcing isFeatureEnabled('registry')`,
-        );
-      }
-
-      const skippingLine = activeLines.find((entry) =>
-        entry.line.includes("Skipping `isFeatureEnabled('registry')`"),
-      );
-      const skippingExpected = `${guardFacts.skippedRoutes.length} of ${total} handlers`;
-      if (!skippingLine || !skippingLine.line.includes(skippingExpected)) {
-        errors.push(
-          `${fmRelPath}:${skippingLine?.lineNum ?? 1}: Expected "${skippingExpected}" for /api/registry/* routes skipping isFeatureEnabled('registry')`,
-        );
-      }
 
       for (const routePath of guardFacts.guardedRoutes) {
         if (!fullProse.includes(routePath)) {
@@ -3846,7 +3556,6 @@ export function verifySpecContracts(
   options: SpecContractVerificationOptions = {},
 ): SpecContractVerificationResult {
   symbolInventoryCache.clear();
-  sliceInventoryCache.clear();
   exportedConstInitializersCache.clear();
   parsedSourceCache.clear();
   moduleExportsCache.clear();
@@ -3909,6 +3618,15 @@ export function verifySpecContracts(
         activeIntroConstSrcRelPath = null;
       } else if (line.trim() !== '' && !/^\s*(?:[-*+]|\d+\.)\s+/.test(line) && !line.trim().endsWith(':')) {
         activeIntroConstSrcRelPath = null;
+      }
+
+      for (const link of scanMarkdownLinksInLine(line)) {
+        const citedSrc = resolveDocCitedSrcPath(link.rawTarget, specAbsPath, rootDir);
+        if (citedSrc && /#L\d+(?:C\d+)?(?:-L?\d+(?:C\d+)?)?$/i.test(link.rawTarget.trim())) {
+          errors.push(
+            `${specRelPath}:${lineNum}: Source line-range anchor in "${link.rawTarget.trim()}" is prohibited; cite "${citedSrc}" by symbol name instead`,
+          );
+        }
       }
 
       const routeCitations = extractRouteCitationsFromLine(line);

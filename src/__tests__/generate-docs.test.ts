@@ -7,12 +7,14 @@ import {
   getZodDescription,
   escapeMarkdownTableCell,
   encodeRouteMermaidNodeId,
+  generateConfigSummarySection,
   generateConfigTable,
   generateRoutesDiagram,
   collectApiRouteEntries,
   generateApiRoutesSection,
   generateEnvSpecs,
   generateFeatureMetadataTable,
+  generateRegistryGuardsSection,
   extractAdminEntityRows,
   generateAdminEntityTable,
   generateFeatureBarrelsTable,
@@ -532,6 +534,27 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
       }
+    });
+
+    it('generates dynamic AppConfig summary and /api/registry/* guard counts without #L source line anchors', () => {
+      const configSummary = generateConfigSummarySection();
+      expect(configSummary).toContain('persisted PostgreSQL columns in [prisma/schema.prisma]');
+      expect(configSummary).toContain('virtual DTO fields for');
+      expect(configSummary).toContain('`APP_CONFIG_BACKUP_KEYS`');
+      expect(configSummary).toContain('`APP_CONFIG_SECRET_KEYS`');
+      expect(configSummary).toContain('`schemaVersion: "2.0"`');
+      expect(configSummary).not.toMatch(/#L\d+/);
+
+      const registryGuards = generateRegistryGuardsSection();
+      expect(registryGuards).toContain(
+        "Registry APIs Enforcing `isFeatureEnabled('registry')` (HTTP 404 — 8 of 12 handlers)",
+      );
+      expect(registryGuards).toContain(
+        "Skipping `isFeatureEnabled('registry')` (4 of 12 handlers)",
+      );
+      expect(registryGuards).toContain('`POST /api/registry/scrape`');
+      expect(registryGuards).toContain('`POST /api/registry/webhook/stripe`');
+      expect(registryGuards).not.toMatch(/#L\d+/);
     });
   });
 });

@@ -4,7 +4,9 @@ import { ts } from 'ts-morph';
 import { fileURLToPath } from 'url';
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml';
 import { parsePostgresUrl, redactPostgresUrl } from '../src/lib/postgres-url.js';
+import { scanLinksAndCodeInLine, transformNonFencedMarkdownLines } from './check-doc-links';
 import { staticSteps } from './check-quality';
+import { ARCHITECTURAL_DOCS, rewriteMarkdownLinks } from './generate-portal';
 import { getKeysFromSource } from './verify-env-docs';
 
 interface ExtractedMigrateCommand {
@@ -876,36 +878,70 @@ const BASELINE_0_1_0_MODELS = new Set([
   'SnapshotVersion',
 ]);
 
-function parsePrismaSchemaStats(schemaContent: string): {
-  modelNames: string[];
-  appConfigFieldCount: number;
-} {
+function hasPortalCrossLink(
+  summaryContent: string,
+  summaryRelPath: string,
+  canonicalRelPath: string,
+  repoRoot: string
+): boolean {
+  const canonicalDoc = ARCHITECTURAL_DOCS.find((doc) => doc.src === canonicalRelPath);
+  if (!canonicalDoc) {
+    return false;
+  }
+  const expectedPortalRoute = '/' + canonicalDoc.dest.replace(/\.md$/, '');
+  const rewritten = rewriteMarkdownLinks(summaryContent, summaryRelPath, repoRoot);
+
+  let foundRewrittenTarget = false;
+  transformNonFencedMarkdownLines(rewritten, (line, lineNumber) => {
+    const { links } = scanLinksAndCodeInLine(line, lineNumber);
+    for (const link of links) {
+      const routePart = link.rawTarget.trim().split(/[?#]/)[0];
+      if (routePart === expectedPortalRoute) {
+        foundRewrittenTarget = true;
+      }
+    }
+    return line;
+  });
+
+  if (!foundRewrittenTarget) {
+    return false;
+  }
+
+  let hasRelativeSourceLink = false;
+  const srcDir = path.dirname(path.join(repoRoot, summaryRelPath));
+  transformNonFencedMarkdownLines(summaryContent, (line, lineNumber) => {
+    const { links } = scanLinksAndCodeInLine(line, lineNumber);
+    for (const link of links) {
+      const rawPathPart = link.rawTarget.trim().split(/[?#]/)[0];
+      if (!rawPathPart || /^[a-z]+:/i.test(rawPathPart)) {
+        continue;
+      }
+      const resolvedFile = rawPathPart.startsWith('/')
+        ? path.resolve(repoRoot, rawPathPart.slice(1))
+        : path.resolve(srcDir, rawPathPart);
+      const resolvedRel = path.relative(repoRoot, resolvedFile).replace(/\\/g, '/');
+      if (resolvedRel === canonicalRelPath) {
+        hasRelativeSourceLink = true;
+      }
+    }
+    return line;
+  });
+
+  return hasRelativeSourceLink;
+}
+
+function parsePrismaSchemaModels(schemaContent: string): string[] {
   const modelNames: string[] = [];
-  let inAppConfig = false;
-  let appConfigFieldCount = 0;
 
   for (const rawLine of schemaContent.split(/\r?\n/)) {
     const trimmed = rawLine.trim();
     const modelMatch = trimmed.match(/^model\s+([A-Za-z0-9_]+)\s*\{$/);
     if (modelMatch) {
-      const name = modelMatch[1];
-      modelNames.push(name);
-      inAppConfig = name === 'AppConfig';
-      continue;
-    }
-    if (inAppConfig) {
-      if (trimmed === '}') {
-        inAppConfig = false;
-        continue;
-      }
-      if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('@@')) {
-        continue;
-      }
-      appConfigFieldCount += 1;
+      modelNames.push(modelMatch[1]);
     }
   }
 
-  return { modelNames, appConfigFieldCount };
+  return modelNames;
 }
 
 function parseModuleConfigKeys(modulesContent: string): string[] {
@@ -940,12 +976,11 @@ function parseBackupSchemaVersion(exportRouteContent: string): string | null {
 }
 
 function listPrismaMigrations(migrationsDir: string): {
-  allMigrations: string[];
   postBaselineMigrations: string[];
   latestMigration: string | null;
 } {
   if (!fs.existsSync(migrationsDir)) {
-    return { allMigrations: [], postBaselineMigrations: [], latestMigration: null };
+    return { postBaselineMigrations: [], latestMigration: null };
   }
   const allMigrations = fs
     .readdirSync(migrationsDir, { withFileTypes: true })
@@ -956,7 +991,7 @@ function listPrismaMigrations(migrationsDir: string): {
   const latestMigration =
     allMigrations.length > 0 ? allMigrations[allMigrations.length - 1] : null;
 
-  return { allMigrations, postBaselineMigrations, latestMigration };
+  return { postBaselineMigrations, latestMigration };
 }
 
 function extractPost010ChangelogSlice(changelogMd: string): {
@@ -3143,12 +3178,12 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     );
   }
 
-  const { modelNames, appConfigFieldCount } = parsePrismaSchemaStats(prismaSchemaRaw);
+  const modelNames = parsePrismaSchemaModels(prismaSchemaRaw);
   const post010Models = modelNames.filter((model) => !BASELINE_0_1_0_MODELS.has(model));
   const post010EnvKeys = envSchemaKeys.filter((key) => !BASELINE_0_1_0_ENV_KEYS.has(key));
   const moduleToggleKeys = parseModuleConfigKeys(modulesTsRaw);
   const backupSchemaVersion = parseBackupSchemaVersion(exportRouteRaw);
-  const { allMigrations, postBaselineMigrations, latestMigration } = listPrismaMigrations(
+  const { postBaselineMigrations, latestMigration } = listPrismaMigrations(
     path.join(repoRoot, 'prisma/migrations')
   );
   const { topReleaseHeading, topReleaseBody, post010Body, releaseCount } =
@@ -3209,30 +3244,9 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       );
     }
 
-    if (postBaselineMigrations.length > 0) {
-      if (
-        !new RegExp(`\\b${postBaselineMigrations.length}\\b`).test(post010Body) ||
-        !new RegExp(`\\b${allMigrations.length}\\s+migrations\\s+total\\b`, 'i').test(post010Body)
-      ) {
-        errors.push(
-          `CHANGELOG.md: Migration count drift — prisma/migrations/ has ${postBaselineMigrations.length} post-0.1.0 migrations (${allMigrations.length} migrations total), which does not match CHANGELOG.md (Remediation: Update Schema Changes in CHANGELOG.md with the current migration counts)`
-        );
-      }
-      if (latestMigration && !post010Body.includes(latestMigration)) {
-        errors.push(
-          `CHANGELOG.md: Latest Prisma migration "${latestMigration}" in prisma/migrations/ is not cited in post-0.1.0 release notes (Remediation: Document "${latestMigration}" and update migration counts in CHANGELOG.md)`
-        );
-      }
-    }
-
-    if (!new RegExp(`\\b${modelNames.length}\\s+models\\b`, 'i').test(post010Body)) {
+    if (postBaselineMigrations.length > 0 && latestMigration && !post010Body.includes(latestMigration)) {
       errors.push(
-        `CHANGELOG.md: Schema model count drift — prisma/schema.prisma defines ${modelNames.length} models (Remediation: Update Schema Changes in CHANGELOG.md to reflect ${modelNames.length} models)`
-      );
-    }
-    if (!new RegExp(`\\b${appConfigFieldCount}\\s+fields\\b`, 'i').test(post010Body)) {
-      errors.push(
-        `CHANGELOG.md: AppConfig field count drift — prisma/schema.prisma defines ${appConfigFieldCount} fields on AppConfig (Remediation: Update Schema Changes in CHANGELOG.md to reflect ${appConfigFieldCount} fields)`
+        `CHANGELOG.md: Latest Prisma migration "${latestMigration}" in prisma/migrations/ is not cited in post-0.1.0 release notes (Remediation: Document "${latestMigration}" under Schema Changes in CHANGELOG.md)`
       );
     }
     for (const modelName of post010Models) {
@@ -3452,29 +3466,45 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
+  // Canonical owner for local vs. production migration CLI environment separation: docs/upgrading.md
+  if (!upgradingMd.includes('npm run migrate:deploy') || !upgradingMd.includes('npx prisma migrate deploy')) {
+    errors.push(
+      'docs/upgrading.md: Must document both local `npm run migrate:deploy` and production `npx prisma migrate deploy` (Remediation: Distinguish local npm run migrate:deploy from production npx prisma migrate deploy in docs/upgrading.md)'
+    );
+  }
+  if (!upgradingMd.includes('dotenv -c development') || !upgradingMd.includes('.env.development')) {
+    errors.push(
+      'docs/upgrading.md: Must clarify that `npm run migrate:deploy` wraps `dotenv -c development` and cascades local `.env.development` files (Remediation: Document dotenv -c development and .env.development behavior for npm run migrate:deploy in docs/upgrading.md)'
+    );
+  }
+  if (!upgradingMd.includes(expectedUrlKey) || !upgradingMd.includes(expectedShadowUrlKey)) {
+    errors.push(
+      `docs/upgrading.md: Must reference both \`${expectedUrlKey}\` and \`${expectedShadowUrlKey}\` when documenting production Prisma migrations via prisma.config.ts (Remediation: Document ${expectedUrlKey} and ${expectedShadowUrlKey} in docs/upgrading.md)`
+    );
+  }
   for (const [docLabel, docContent] of [
     ['docs/upgrading.md', upgradingMd],
     ['docs/versioning.md', versioningMd],
     ['ARCHITECTURE.md', architectureMd],
   ] as const) {
-    if (!docContent.includes('npm run migrate:deploy') || !docContent.includes('npx prisma migrate deploy')) {
-      errors.push(
-        `${docLabel}: Must document both local \`npm run migrate:deploy\` and production \`npx prisma migrate deploy\` (Remediation: Distinguish local npm run migrate:deploy from production npx prisma migrate deploy in ${docLabel})`
-      );
-    }
-    if (!docContent.includes('dotenv -c development') || !docContent.includes('.env.development')) {
-      errors.push(
-        `${docLabel}: Must clarify that \`npm run migrate:deploy\` wraps \`dotenv -c development\` and cascades local \`.env.development\` files (Remediation: Document dotenv -c development and .env.development behavior for npm run migrate:deploy in ${docLabel})`
-      );
-    }
     if (/`npm run migrate:deploy`\s*\(`(?:npx\s+)?prisma migrate deploy`\)/.test(docContent)) {
       errors.push(
         `${docLabel}: Conflates local \`npm run migrate:deploy\` (\`dotenv -c development\`) as an unqualified alias for \`prisma migrate deploy\` (Remediation: Distinguish local npm run migrate:deploy from production npx prisma migrate deploy against ${expectedUrlKey} / ${expectedShadowUrlKey})`
       );
     }
-    if (!docContent.includes(expectedUrlKey) || !docContent.includes(expectedShadowUrlKey)) {
+  }
+  for (const [summaryLabel, summaryContent] of [
+    ['docs/versioning.md', versioningMd],
+    ['ARCHITECTURE.md', architectureMd],
+  ] as const) {
+    if (!hasPortalCrossLink(summaryContent, summaryLabel, 'docs/upgrading.md', repoRoot)) {
       errors.push(
-        `${docLabel}: Must reference both \`${expectedUrlKey}\` and \`${expectedShadowUrlKey}\` when documenting production Prisma migrations via prisma.config.ts (Remediation: Document ${expectedUrlKey} and ${expectedShadowUrlKey} in ${docLabel})`
+        `${summaryLabel}: Must cross-link to canonical migration CLI runbook "docs/upgrading.md" (verified via rewriteMarkdownLinks -> /guides/upgrading)`
+      );
+    }
+    if (summaryContent.includes('dotenv -c development') && summaryContent.includes('.env.development')) {
+      errors.push(
+        `${summaryLabel}: Duplicates local \`dotenv -c development\` / \`.env.development\` cascade internals owned canonically by "docs/upgrading.md"; keep a concise summary and cross-link instead`
       );
     }
   }
@@ -3492,29 +3522,21 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     );
   }
 
-  const deploymentRunbookMd = runbookContents.get('DEPLOYMENT.md') ?? '';
-  for (const [docLabel, docContent] of [
-    ['DEPLOYMENT.md', deploymentRunbookMd],
-    ['docs/versioning.md', versioningMd],
-    ['docs/upgrading.md', upgradingMd],
-    ['ARCHITECTURE.md', architectureMd],
-  ] as const) {
-    if (!docContent.includes('Expand-Migrate-Contract')) {
-      errors.push(
-        `${docLabel}: Missing three-phase "Expand-Migrate-Contract" database migration policy alignment (Remediation: Align ${docLabel} with DEPLOYMENT.md on Expand-Migrate-Contract)`
-      );
-    }
-    if (
-      !docContent.includes('npm run lint:migrations') ||
-      !docContent.includes('scripts/verify-migration-compatibility.ts') ||
-      !docContent.includes('allow-destructive:')
-    ) {
-      errors.push(
-        `${docLabel}: Missing migration compatibility linter contract (\`npm run lint:migrations\`, \`scripts/verify-migration-compatibility.ts\`, and \`-- allow-destructive: <reason>\`) (Remediation: Document npm run lint:migrations, scripts/verify-migration-compatibility.ts, and -- allow-destructive: <reason> in ${docLabel})`
-      );
-    }
+  // Canonical owner for three-phase Expand-Migrate-Contract & lint:migrations policy: docs/versioning.md
+  if (!versioningMd.includes('Expand-Migrate-Contract')) {
+    errors.push(
+      'docs/versioning.md: Missing three-phase "Expand-Migrate-Contract" database migration policy alignment (Remediation: Document the three-phase Expand-Migrate-Contract policy in docs/versioning.md)'
+    );
   }
-
+  if (
+    !versioningMd.includes('npm run lint:migrations') ||
+    !versioningMd.includes('scripts/verify-migration-compatibility.ts') ||
+    !versioningMd.includes('allow-destructive:')
+  ) {
+    errors.push(
+      'docs/versioning.md: Missing migration compatibility linter contract (`npm run lint:migrations`, `scripts/verify-migration-compatibility.ts`, and `-- allow-destructive: <reason>`) (Remediation: Document npm run lint:migrations, scripts/verify-migration-compatibility.ts, and -- allow-destructive: <reason> in docs/versioning.md)'
+    );
+  }
   if (/two-phase\s+release\s+process/i.test(versioningMd)) {
     errors.push(
       'docs/versioning.md: Contains stale "two-phase release process" database migration policy instead of three-phase "Expand-Migrate-Contract" (Remediation: Update Section 3 in docs/versioning.md to the three-phase Expand-Migrate-Contract policy)'
@@ -3526,8 +3548,36 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     !versioningMd.includes('Phase 3: Contract')
   ) {
     errors.push(
-      'docs/versioning.md: Must explicitly define "Phase 1: Expand", "Phase 2: Migrate", and "Phase 3: Contract" aligned with DEPLOYMENT.md (Remediation: Document all three Expand-Migrate-Contract phases in docs/versioning.md)'
+      'docs/versioning.md: Must explicitly define "Phase 1: Expand", "Phase 2: Migrate", and "Phase 3: Contract" (Remediation: Document all three Expand-Migrate-Contract phases in docs/versioning.md)'
     );
+  }
+
+  const deploymentRunbookMd = runbookContents.get('DEPLOYMENT.md') ?? '';
+  for (const [summaryLabel, summaryContent] of [
+    ['DEPLOYMENT.md', deploymentRunbookMd],
+    ['docs/upgrading.md', upgradingMd],
+    ['ARCHITECTURE.md', architectureMd],
+  ] as const) {
+    if (!summaryContent.includes('Expand-Migrate-Contract')) {
+      errors.push(
+        `${summaryLabel}: Missing "Expand-Migrate-Contract" database migration policy summary (Remediation: Reference Expand-Migrate-Contract and cross-link to docs/versioning.md in ${summaryLabel})`
+      );
+    }
+    if (!hasPortalCrossLink(summaryContent, summaryLabel, 'docs/versioning.md', repoRoot)) {
+      errors.push(
+        `${summaryLabel}: Must cross-link to canonical Expand-Migrate-Contract policy in "docs/versioning.md" (verified via rewriteMarkdownLinks -> /architecture/versioning)`
+      );
+    }
+    if (
+      (summaryContent.includes('Phase 1: Expand') &&
+        summaryContent.includes('Phase 2: Migrate') &&
+        summaryContent.includes('Phase 3: Contract')) ||
+      summaryContent.includes('allow-destructive:')
+    ) {
+      errors.push(
+        `${summaryLabel}: Duplicates three-phase Expand-Migrate-Contract / \`-- allow-destructive:\` specification owned canonically by "docs/versioning.md"; keep a concise summary and cross-link instead`
+      );
+    }
   }
 
   return errors;

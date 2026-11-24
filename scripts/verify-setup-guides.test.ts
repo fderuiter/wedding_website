@@ -187,13 +187,15 @@ describe('verify-setup-guides contract check', () => {
     );
   });
 
-  it('rejects stale issue template names, /app/src/utils/ container paths, non-strict lint claims, and missing pre-push scripts in CONTRIBUTING.md', () => {
+  it('rejects stale issue template names, /app/src/utils/ container paths, non-strict lint claims, and missing shared pre-push profile reference in CONTRIBUTING.md', () => {
     const contributingPath = path.join(tempDir, '.github/CONTRIBUTING.md');
     const driftedContributing = fs
       .readFileSync(contributingPath, 'utf8')
       .replace(/Documentation Improvement/g, 'Docs Improvement')
       .replace('`src/utils/`', '`/app/src/utils/`')
-      .replace(/check:action-pins/g, 'check:legacy')
+      .replace(/check:pre-push/g, 'legacy-push-list')
+      .replace(/\.\.\/scripts\/check-quality\.ts/g, '../scripts/legacy-hook.ts')
+      .replace(/scripts\/check-quality\.ts/g, 'scripts/legacy-hook.ts')
       .concat('\nRun npm run lint (though it is not super strict right now).\n');
     fs.writeFileSync(contributingPath, driftedContributing);
 
@@ -204,7 +206,9 @@ describe('verify-setup-guides contract check', () => {
         expect.stringContaining('Contains stale issue template name "Docs Improvement"'),
         expect.stringContaining('Must use repository-relative "src/utils/"'),
         expect.stringContaining('Must not describe npm run lint as non-strict'),
-        expect.stringContaining('Missing .githooks/pre-push check script "check:action-pins"'),
+        expect.stringContaining(
+          'Push to Your Fork section must reference shared pre-push profile ("npm run check:pre-push" / "scripts/check-quality.ts")'
+        ),
       ])
     );
   });
@@ -272,15 +276,27 @@ describe('verify-setup-guides contract check', () => {
         .replace('    "test:e2e:smoke": "playwright test --grep @smoke",\n', '')
     );
 
+    const checkQualityPath = path.join(tempDir, 'scripts/check-quality.ts');
+    fs.writeFileSync(
+      checkQualityPath,
+      fs
+        .readFileSync(checkQualityPath, 'utf8')
+        .replace(
+          "command: 'npm run check:standalone -- --static-only',",
+          "command: 'npm run check:standalone',"
+        )
+        .replace(
+          "{ name: 'Knip Unused Export Analysis', script: 'lint:unused', command: 'npm run lint:unused' },",
+          "{ name: 'Portal Build', script: 'docs:build', command: 'npm run docs:build' },"
+        )
+    );
+
     const prePushPath = path.join(tempDir, '.githooks/pre-push');
     fs.writeFileSync(
       prePushPath,
       fs
         .readFileSync(prePushPath, 'utf8')
-        .replace(
-          "  { name: 'Deployment runbooks verification check', script: 'check:runbooks' },\n",
-          "  { name: 'Standalone check', script: 'check:standalone' },\n"
-        )
+        .replace(/check:pre-push/g, 'lint')
     );
 
     const verifyDocSyncPath = path.join(tempDir, 'scripts/verify-doc-sync.ts');
@@ -297,8 +313,10 @@ describe('verify-setup-guides contract check', () => {
         expect.stringContaining('Jest script "test:cov" requires lifecycle hook "pretest:cov"'),
         expect.stringContaining('Missing "pretest:cov" pretest hook for "test:cov"'),
         expect.stringContaining('package.json: "test:e2e:smoke" must invoke "playwright test --grep @smoke"'),
-        '.githooks/pre-push: Must enforce lightweight static check "check:runbooks"',
-        '.githooks/pre-push: Must exclude heavy build step "check:standalone" so local pushes stay fast',
+        'scripts/check-quality.ts: prePushSteps must invoke "check:standalone" with "--static-only" so pre-push runs without a prior .next build',
+        'scripts/check-quality.ts: prePushSteps must include "lint:unused"',
+        'scripts/check-quality.ts: prePushSteps must exclude heavy step "docs:build"',
+        '.githooks/pre-push: Must delegate to shared quality profile via "npm run check:pre-push" or "scripts/check-quality.ts --pre-push"',
         '.github/CONTRIBUTING.md: "npm run check:doc-sync" documentation is missing DEFAULT_DOC_FILES entry "GENERATED_SCHEMAS.md"',
       ])
     );
@@ -661,6 +679,14 @@ describe('verify-setup-guides contract check', () => {
         .replace(/src\/lib\/demo\/demoApiHandler\.ts/g, 'src/lib/demo/legacyMock.ts')
     );
 
+    const readmePath = path.join(tempDir, 'README.md');
+    fs.writeFileSync(
+      readmePath,
+      fs
+        .readFileSync(readmePath, 'utf8')
+        .replace(/\(\.\/docs\/developer-setup\.md\)/g, '(./docs/missing-setup.md)')
+    );
+
     const errors = verifySetupGuides(tempDir);
     expect(errors).toEqual(
       expect.arrayContaining([
@@ -674,6 +700,7 @@ describe('verify-setup-guides contract check', () => {
         'src/app/project-info/ProjectInfoClient.tsx: Must link CONTRIBUTING.md to ".github/CONTRIBUTING.md"',
         '.github/CONTRIBUTING.md: "Run All Quality Checks" (npm run quality) summary must include "npm run build:export"',
         'docs/developer-setup.md: Missing interactive demo runtime module documentation for "src/lib/demo/demoApiHandler.ts"',
+        'README.md: Must cross-link to canonical demo setup guide "docs/developer-setup.md" (verified via rewriteMarkdownLinks -> /development/developer-setup)',
       ])
     );
   });

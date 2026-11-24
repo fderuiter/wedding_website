@@ -116,7 +116,7 @@ export function getStripeCapability() {
         '# Valid Spec',
         '- Weather endpoint: `GET /api/weather` and wildcard `/api/*`.',
         '- Dynamic admin route: `GET /api/admin/registry-items` via `RegistryAdminService` in `src/features/registry/index.ts`.',
-        '- Capability helper: `getStripeCapability` in [src/lib/stripe.ts](src/lib/stripe.ts#L1-L3) using `useMemo` hooks in [src/lib/stripe.ts](src/lib/stripe.ts#L1-L3).',
+        '- Capability helper: `getStripeCapability` in [src/lib/stripe.ts](src/lib/stripe.ts) returning `performanceTier` in [src/lib/stripe.ts](src/lib/stripe.ts).',
         '- Validation schemas: `ScrapeUrlSchema` ([src/utils/validation.ts](src/utils/validation.ts)) and `BatchScrapeUrlsSchema` ([src/features/registry/schemas.ts](src/features/registry/schemas.ts)).',
         '- Repository method: `RegistryRepository.getAllItems` ([src/features/registry/repository.ts](src/features/registry/repository.ts)).',
         '- Perimeter check: validates `X-Forwarded-Host` / `Host` in `src/middleware.ts` and `TRUST_PROXY` in `src/env.ts`.',
@@ -497,15 +497,16 @@ export function isProtectedRoute() { return false; }
     );
   });
 
-  it('rejects local/imported AST tokens on bare module citations while allowing scoped #L slice checks', () => {
+  it('rejects local/imported AST tokens and #L source line anchors while staying resilient to source line shifts', () => {
     writeFixture(
       tempDir,
       'src/lib/localHookSample.ts',
       [
         "import { useMemo } from 'react';",
+        'function internalHelper() { return true; }',
         'export function computeCapability() {',
         "  const localMemoValue = useMemo(() => 'high', []);",
-        '  return Boolean(localMemoValue);',
+        '  return Boolean(localMemoValue) && internalHelper();',
         '}',
       ].join('\n'),
     );
@@ -514,20 +515,31 @@ export function isProtectedRoute() { return false; }
       'docs/SCOPED_SYMBOLS.md',
       [
         '# Scoped Symbols',
-        '- Valid slice local hook: `useMemo` in [src/lib/localHookSample.ts](../src/lib/localHookSample.ts#L1-L4) and `localMemoValue` in [src/lib/localHookSample.ts](../src/lib/localHookSample.ts#L3-L4).',
-        '- Valid paired slices: Reads `computeCapability()` synchronously via `useMemo` ([`src/lib/localHookSample.ts`](../src/lib/localHookSample.ts#L2-L2) (L2-L2) and [`src/lib/localHookSample.ts`](../src/lib/localHookSample.ts#L3-L4) (L3-L4)).',
+        '- Valid AST declarations: `computeCapability()` and `internalHelper` in [src/lib/localHookSample.ts](../src/lib/localHookSample.ts).',
         '- Bare module local hook rejected: `useMemo` in [src/lib/localHookSample.ts](../src/lib/localHookSample.ts).',
         '- Bare module local variable rejected: `localMemoValue` in [src/lib/localHookSample.ts](../src/lib/localHookSample.ts).',
-        '- Out-of-slice token rejected: `useMemo` in [src/lib/localHookSample.ts](../src/lib/localHookSample.ts#L4-L5).',
+        '- Source line anchor rejected: `computeCapability` in [src/lib/localHookSample.ts](../src/lib/localHookSample.ts#L3-L6).',
       ].join('\n'),
     );
 
     const result = verifySpecContracts(tempDir, { specFiles: ['docs/SCOPED_SYMBOLS.md'] });
     expect(result.errors).toEqual([
-      'docs/SCOPED_SYMBOLS.md:4: Symbol "useMemo" is not declared or exported in src/lib/localHookSample.ts',
-      'docs/SCOPED_SYMBOLS.md:5: Symbol "localMemoValue" is not declared or exported in src/lib/localHookSample.ts',
-      'docs/SCOPED_SYMBOLS.md:6: Symbol "useMemo" is not declared or referenced in src/lib/localHookSample.ts#L4-L5',
+      'docs/SCOPED_SYMBOLS.md:3: Symbol "useMemo" is not declared or exported in src/lib/localHookSample.ts',
+      'docs/SCOPED_SYMBOLS.md:4: Symbol "localMemoValue" is not declared or exported in src/lib/localHookSample.ts',
+      'docs/SCOPED_SYMBOLS.md:5: Source line-range anchor in "../src/lib/localHookSample.ts#L3-L6" is prohibited; cite "src/lib/localHookSample.ts" by symbol name instead',
     ]);
+
+    // Prepending 40 blank/comment lines to the source file causes zero failures on valid AST symbol citations
+    const shiftedSource = `${Array.from({ length: 40 }, (_, idx) => `// shift line ${idx + 1}`).join('\n')}\n${fs.readFileSync(path.join(tempDir, 'src/lib/localHookSample.ts'), 'utf8')}`;
+    writeFixture(tempDir, 'src/lib/localHookSample.ts', shiftedSource);
+    writeFixture(
+      tempDir,
+      'docs/SHIFTED_SYMBOLS.md',
+      '# Shifted Symbols\n- `computeCapability()` and `internalHelper` in [src/lib/localHookSample.ts](../src/lib/localHookSample.ts).\n',
+    );
+    expect(verifySpecContracts(tempDir, { specFiles: ['docs/SHIFTED_SYMBOLS.md'] }).errors).toEqual(
+      [],
+    );
   });
 
   it('extracts [Symbol](src/...) and [`Symbol`](src/...) link labels and rejects missing symbols', () => {
@@ -542,7 +554,7 @@ export function isProtectedRoute() { return false; }
       [
         '# Link Labels',
         '- Valid component link: [SetupWizard](src/components/SetupWizard.tsx).',
-        '- Valid backticked member link: [`RegistryRepository.getAllItems`](src/features/registry/repository.ts#L1-L5).',
+        '- Valid backticked member link: [`RegistryRepository.getAllItems`](src/features/registry/repository.ts).',
         '- Valid prose label ignored: [implementation](src/lib/stripe.ts) and [src/lib/stripe.ts](src/lib/stripe.ts).',
         '- Broken component link: [MissingWizard](src/components/SetupWizard.tsx).',
         '- Broken backticked link: [`missingHelper`](src/lib/stripe.ts).',
@@ -583,9 +595,9 @@ export function isProtectedRoute() { return false; }
       [
         '# Theme Context Contract',
         '- Valid complete exposes-only claim: `ThemeContextType` in [src/components/ThemeProvider.tsx](../src/components/ThemeProvider.tsx) exposes only `ThemeContextType.setThemeMode` and `ThemeContextType.setPreviewConfig`, with zero physics setters.',
-        '- Valid multiline signature slice: `ThemeContextType.setPreviewConfig` in [src/components/ThemeProvider.tsx](../src/components/ThemeProvider.tsx#L8-L10).',
+        '- Valid multiline member declaration: `ThemeContextType.setPreviewConfig` in [src/components/ThemeProvider.tsx](../src/components/ThemeProvider.tsx).',
         '- Incomplete bare setter claim: `ThemeContextType` in [src/components/ThemeProvider.tsx](../src/components/ThemeProvider.tsx) exposes only `setThemeMode` and zero physics setters.',
-        '- Incomplete dotted setter claim: `ThemeContextType` in [src/components/ThemeProvider.tsx](../src/components/ThemeProvider.tsx#L6-L11) exposes only `ThemeContextType.setThemeMode`.',
+        '- Incomplete dotted setter claim: `ThemeContextType` in [src/components/ThemeProvider.tsx](../src/components/ThemeProvider.tsx) exposes only `ThemeContextType.setThemeMode`.',
         '- Missing type-alias member: `ThemeContextType.setPhysicsImpulse` in [src/components/ThemeProvider.tsx](../src/components/ThemeProvider.tsx).',
       ].join('\n'),
     );
@@ -642,11 +654,11 @@ export function isProtectedRoute() { return false; }
       'FEATURE_MODULES.md',
       [
         '# Constants Spec',
-        'Registry pagination constants are centralized in [src/utils/registryPagination.ts](src/utils/registryPagination.ts#L1-L4):',
+        'Registry pagination constants are centralized in [src/utils/registryPagination.ts](src/utils/registryPagination.ts):',
         '- **`REGISTRY_DEFAULT_PAGE_LIMIT = 20`**: Default page limit.',
-        '- **Progressive Reveal**: Uses `REGISTRY_INITIAL_VISIBLE_ITEMS = 12` and `REGISTRY_LOAD_MORE_INCREMENT = 8` ([src/features/registry/pages/index.tsx](src/features/registry/pages/index.tsx#L1-L4)).',
+        '- **Progressive Reveal**: Uses `REGISTRY_INITIAL_VISIBLE_ITEMS = 12` and `REGISTRY_LOAD_MORE_INCREMENT = 8` ([src/features/registry/pages/index.tsx](src/features/registry/pages/index.tsx)).',
         '- **Misattributed Increment**: Reveals `REGISTRY_LOAD_MORE_INCREMENT = 8` ([src/features/registry/hooks/useRegistry.ts](src/features/registry/hooks/useRegistry.ts)).',
-        '- **Stale Broadcast Chunk**: Chunks of `RECIPIENT_CHUNK_SIZE = 500` ([src/features/broadcast/service.ts](src/features/broadcast/service.ts#L1)).',
+        '- **Stale Broadcast Chunk**: Chunks of `RECIPIENT_CHUNK_SIZE = 500` ([src/features/broadcast/service.ts](src/features/broadcast/service.ts)).',
       ].join('\n'),
     );
 
@@ -947,11 +959,8 @@ export function isProtectedRoute() { return false; }
     expect(result.errors).toEqual(
       expect.arrayContaining([
         expect.stringContaining('ARCHITECTURE.md:2: Prisma model "AuthLockout"'),
-        expect.stringContaining('ARCHITECTURE.md:4: Expected 3 persisted PostgreSQL AppConfig columns'),
         expect.stringContaining('ARCHITECTURE.md:5: Must cite src/lib/backupPersistence.ts'),
-        expect.stringContaining('ARCHITECTURE.md:5: Expected 2 `APP_CONFIG_BACKUP_KEYS`'),
         expect.stringContaining('ARCHITECTURE.md:6: Expected `schemaVersion: "2.0"`'),
-        expect.stringContaining('FEATURE_MODULES.md:2: Expected "1 of 2 handlers"'),
         expect.stringContaining('FEATURE_MODULES.md:2: Guarded registry route "/api/registry/claim" is missing'),
         expect.stringContaining('SCRAPER.md:2: Scraper host check in src/features/registry/api/scrape.ts matches `amazon.com` and `*.amazon.com` only, not `amazon.*`'),
         expect.stringContaining('SECURITY.md:2: Must not describe `smtp` as an inert or no-op stub'),
@@ -960,5 +969,21 @@ export function isProtectedRoute() { return false; }
         expect.stringContaining('SECURITY.md:1: Must reference `src/utils/pathContainment.ts`'),
       ]),
     );
+  });
+
+  it('verifies all seven repository Markdown specifications contain zero #Lstart-Lend source anchors', () => {
+    const sevenSpecs = [
+      'ARCHITECTURE.md',
+      'FEATURE_MODULES.md',
+      'SCRAPER.md',
+      'SECURITY.md',
+      'docs/BROADCASTS.md',
+      'docs/runtime-contract.md',
+      'docs/THREAT_MODEL.md',
+    ];
+    for (const rel of sevenSpecs) {
+      const raw = fs.readFileSync(path.join(process.cwd(), rel), 'utf8');
+      expect(raw).not.toMatch(/#L\d+/);
+    }
   });
 });

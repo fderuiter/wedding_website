@@ -4,9 +4,13 @@ import path from 'path';
 
 describe('CLI Scaffolding Tool - Base Class Inheritance Alignment', () => {
   const featureName = 'scaffold-test-feature';
+  const rootDir = path.join(__dirname, '..', '..');
   const featureDir = path.join(__dirname, '..', 'features', featureName);
+  const featureModulesDocPath = path.join(rootDir, 'FEATURE_MODULES.md');
+  let originalFeatureModulesMd = '';
 
   beforeAll(() => {
+    originalFeatureModulesMd = fs.readFileSync(featureModulesDocPath, 'utf8');
     // Clean up if it somehow already exists
     if (fs.existsSync(featureDir)) {
       fs.rmSync(featureDir, { recursive: true, force: true });
@@ -14,9 +18,12 @@ describe('CLI Scaffolding Tool - Base Class Inheritance Alignment', () => {
   });
 
   afterAll(() => {
-    // Clean up after the test runs
+    // Clean up after the test runs and restore FEATURE_MODULES.md
     if (fs.existsSync(featureDir)) {
       fs.rmSync(featureDir, { recursive: true, force: true });
+    }
+    if (originalFeatureModulesMd) {
+      fs.writeFileSync(featureModulesDocPath, originalFeatureModulesMd, 'utf8');
     }
   });
 
@@ -87,5 +94,16 @@ describe('CLI Scaffolding Tool - Base Class Inheritance Alignment', () => {
     expect(indexContent).toContain("export { ScaffoldTestFeatureRepository } from './repository';");
     expect(indexContent).toContain("export type { ScaffoldTestFeature } from './types';");
     expect(indexContent).toContain("export { ScaffoldTestFeatureService } from './service';");
+
+    // Verify starter barrel test file is generated for Knip compliance
+    const starterTestPath = path.join(featureDir, '__tests__', `${featureName}.test.ts`);
+    expect(fs.existsSync(starterTestPath)).toBe(true);
+    expect(fs.readFileSync(starterTestPath, 'utf8')).toContain(`@/features/${featureName}`);
+
+    // Verify FEATURE_MODULES.md was automatically synchronized with the new feature barrel
+    const updatedFeatureModulesMd = fs.readFileSync(featureModulesDocPath, 'utf8');
+    expect(updatedFeatureModulesMd).toContain(
+      `| \`${featureName}\` | \`src/features/${featureName}/index.ts\` |`
+    );
   });
 });

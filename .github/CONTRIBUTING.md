@@ -59,7 +59,7 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
     git push origin fix/registry-typo
     ```
 
-    Pushing triggers [`.githooks/pre-push`](../.githooks/pre-push) (installed automatically by `npm ci`), which runs lightweight workspace checks without stashing or resetting local files: `npm run type-check`, `npm run lint:unused`, `npm run check:env-docs`, `npm run check:runbooks`, `npm run check:setup-guides`, `npm run check:identifiers`, `npm run check:action-pins`, `npm run check:links`, `npm run check:spec-contracts`, `npm run check:prisma`, `npm run lint:migrations`, and `npm run check:doc-sync`.
+    Pushing triggers [`.githooks/pre-push`](../.githooks/pre-push) (installed automatically by `npm ci`), which delegates to the shared `npm run check:pre-push` profile in [`scripts/check-quality.ts`](../scripts/check-quality.ts) (`--pre-push`: static contract and container checks via `check:standalone -- --static-only`, `typecheck`, `lint`, `lint:unused`, and `check:audit`) without stashing or resetting local files.
 
 9. **Open a Pull Request (PR):** Go back to the *original* `fderuiter/wedding_website` repository on GitHub. You should see a prompt to create a Pull Request from your new branch. Click it!
     * Give your PR a clear title and description.

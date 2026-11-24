@@ -72,6 +72,7 @@
     "check:setup-guides": "npx tsx scripts/verify-setup-guides.ts",
     "check:spec-contracts": "npx tsx scripts/verify-spec-contracts.ts",
     "check:static": "npx tsx scripts/check-quality.ts --static",
+    "check:pre-push": "npx tsx scripts/check-quality.ts --pre-push",
     "check:quality": "npx tsx scripts/check-quality.ts",
     "check:audit": "npm audit --audit-level=moderate && npm --prefix docker/prisma-cli audit --audit-level=moderate",
     "docs:dev": "npx tsx scripts/generate-portal.ts --watch --serve",

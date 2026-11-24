@@ -14,6 +14,7 @@ export interface QualityRunOptions {
   cwd?: string;
   stepsToRun?: Step[];
   staticOnly?: boolean;
+  prePush?: boolean;
   skipDocSync?: boolean;
   execCommand?: (command: string, cwd: string) => void;
 }
@@ -117,11 +118,32 @@ export const staticSteps: Step[] = [
   },
 ];
 
+export const prePushSteps: Step[] = [
+  ...staticSteps.map((step) =>
+    step.script === 'check:standalone'
+      ? {
+        ...step,
+        command: 'npm run check:standalone -- --static-only',
+      }
+      : step
+  ),
+  { name: 'TypeScript Typecheck', script: 'typecheck', command: 'npm run typecheck' },
+  { name: 'ESLint Code Linting', script: 'lint', command: 'npm run lint' },
+  { name: 'Knip Unused Export Analysis', script: 'lint:unused', command: 'npm run lint:unused' },
+  {
+    name: 'Security Dependency Audit',
+    script: 'check:audit',
+    command: 'npm run check:audit',
+    remediation:
+      'Moderate, high, or critical npm security advisories were detected in package-lock.json or docker/prisma-cli/package-lock.json.\nRun "npm run check:audit" locally (and inspect "npm audit --json" and "npm --prefix docker/prisma-cli audit --json") to upgrade or apply scoped range overrides for affected packages.',
+  },
+];
+
 export const steps: Step[] = [
   ...staticSteps,
-  { name: 'TypeScript Typecheck', command: 'npm run typecheck' },
-  { name: 'ESLint Code Linting', command: 'npm run lint' },
-  { name: 'Knip Unused Export Analysis', command: 'npm run lint:unused' },
+  { name: 'TypeScript Typecheck', script: 'typecheck', command: 'npm run typecheck' },
+  { name: 'ESLint Code Linting', script: 'lint', command: 'npm run lint' },
+  { name: 'Knip Unused Export Analysis', script: 'lint:unused', command: 'npm run lint:unused' },
   {
     name: 'Security Dependency Audit',
     script: 'check:audit',
@@ -150,7 +172,9 @@ export const steps: Step[] = [
 ];
 
 export function resolveQualitySteps(options: QualityRunOptions = {}): Step[] {
-  const baseSteps = options.stepsToRun || (options.staticOnly ? staticSteps : steps);
+  const baseSteps =
+    options.stepsToRun ||
+    (options.staticOnly ? staticSteps : options.prePush ? prePushSteps : steps);
   if (!options.skipDocSync) {
     return baseSteps;
   }
@@ -168,7 +192,11 @@ export function main(options: QualityRunOptions = {}): void {
       execSync(command, { cwd: workDir, stdio: 'inherit' });
     });
 
-  const suiteLabel = options.staticOnly ? 'static verification' : 'local quality';
+  const suiteLabel = options.staticOnly
+    ? 'static verification'
+    : options.prePush
+      ? 'pre-push quality'
+      : 'local quality';
   console.log(`🚀 Running all ${suiteLabel} checks...\n`);
 
   let passed = 0;
@@ -221,6 +249,7 @@ if (isDirectCall) {
   const cliArgs = process.argv.slice(2);
   main({
     staticOnly: cliArgs.includes('--static'),
+    prePush: cliArgs.includes('--pre-push'),
     skipDocSync: cliArgs.includes('--skip-doc-sync'),
   });
 }

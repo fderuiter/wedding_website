@@ -4,6 +4,7 @@ import path from 'path';
 import {
   cleanupStaticExportOutDir,
   main,
+  prePushSteps,
   resolveQualitySteps,
   staticSteps,
   steps,
@@ -203,5 +204,28 @@ describe('check-quality', () => {
       'npm audit --audit-level=moderate && npm --prefix docker/prisma-cli audit --audit-level=moderate'
     );
     expect(ciWorkflow.match(/run: npm run check:audit/g)?.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('defines prePushSteps aligned with CI verify checks using --static-only for check:standalone and excluding heavy builds', () => {
+    const repoRoot = process.cwd();
+    const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>;
+    };
+    const prePushHook = fs.readFileSync(path.join(repoRoot, '.githooks', 'pre-push'), 'utf8');
+
+    expect(pkg.scripts['check:pre-push']).toBe('npx tsx scripts/check-quality.ts --pre-push');
+    expect(prePushHook).toContain('check:pre-push');
+    expect(resolveQualitySteps({ prePush: true })).toEqual(prePushSteps);
+
+    const standaloneStep = prePushSteps.find((s) => s.script === 'check:standalone');
+    expect(standaloneStep?.command).toBe('npm run check:standalone -- --static-only');
+
+    expect(prePushSteps.map((s) => s.script ?? s.command)).toEqual(
+      expect.arrayContaining(['typecheck', 'lint', 'lint:unused', 'check:audit', 'check:doc-sync'])
+    );
+
+    for (const heavyCmd of ['npm run docs:build', 'npm run build-storybook', 'npm run build:export', 'npm run test:cov']) {
+      expect(prePushSteps.some((s) => s.command === heavyCmd)).toBe(false);
+    }
   });
 });

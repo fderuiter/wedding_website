@@ -405,14 +405,7 @@ Automated linter checks (`npm run lint:migrations`) run during pre-push hooks, l
 - **Destructive DDL**: `DROP TABLE`, `DROP COLUMN`, `RENAME COLUMN`, `RENAME TO`, `DROP CONSTRAINT`, `DROP TYPE`, and `TRUNCATE`
 - **Breaking Column Constraints & Type Mutations**: `ADD COLUMN` with `NOT NULL` lacking `DEFAULT`, `SET NOT NULL`, and `SET DATA TYPE`
 
-If a breaking change is intentionally required (e.g., during a contract cleanup phase after code removal), annotate that specific statement with `-- allow-destructive: <reason>` including a mandatory non-empty `<reason>`:
-
-```sql
--- allow-destructive: Contract phase dropping deprecated legacy_column after code migration
-ALTER TABLE "User" DROP COLUMN "legacy_column";
-```
-
-Each `-- allow-destructive: <reason>` directive scopes strictly to the single statement that immediately follows or contains it (or an outer `DO` block / individual inner statement inside a `DO` block) and resets after that statement. Annotations missing `<reason>` text, or appearing inside block comments (`/* ... */`) or string literals, are ignored.
+If an intentional breaking cleanup is required in a dedicated contract release after code removal, see [`docs/versioning.md`](./docs/versioning.md) for the statement-scoped annotation contract enforced by `scripts/verify-migration-compatibility.ts`.
 
 ### Backup & Restore Guidelines
 Before applying schema migrations to production, always perform a database snapshot or logical backup:
@@ -433,21 +426,10 @@ Before applying schema migrations to production, always perform a database snaps
   3. Mark failed migration states resolved if needed using `npx prisma migrate resolve --rolled-back [migration_name]`.
 
 ### Zero-Downtime Schema Expansion Guidance (Expand-Migrate-Contract)
-To maintain zero database downtime and support continuous delivery, all database mutations must strictly adhere to the three-phase **Expand-Migrate-Contract** pattern across releases:
+To maintain zero database downtime and preserve `N-1` rollback compatibility across releases, all database mutations follow the three-phase **Expand-Migrate-Contract** policy enforced in CI, migration, and deployment workflows via `npm run lint:migrations` (`ci.yml`, `db-migrate.yml`, `deploy.yml`):
 
-1. **Phase 1: Expand**
-   - **Permitted Changes**: Add new tables, nullable columns (`NULL`), or optional fields, or drop `NOT NULL` constraints (`DROP NOT NULL`). Non-null columns (`NOT NULL`) on existing tables are permitted **ONLY** when accompanied by an explicit `DEFAULT` value (e.g., `ALTER TABLE "User" ADD COLUMN "role" TEXT NOT NULL DEFAULT 'GUEST';`).
-   - **Prohibitions**: Never drop tables (`DROP TABLE`), drop columns (`DROP COLUMN`), drop constraints (`DROP CONSTRAINT`), drop types (`DROP TYPE`), truncate tables (`TRUNCATE`), rename tables (`RENAME TO`) or columns (`RENAME COLUMN`), alter column types (`SET DATA TYPE`), tighten nullability (`SET NOT NULL`), or add `NOT NULL` columns without default values.
-   - **Automated Pre-Deployment Verification**: Preflight CI/CD linting (`npm run lint:migrations` executing `scripts/verify-migration-compatibility.ts`) inspects every SQL migration in `prisma/migrations/`. Any non-backwards-compatible statement immediately blocks the pipeline in PR checks (`ci.yml`), migration executions (`db-migrate.yml`), and deployment pipelines (`deploy.yml`).
-
-2. **Phase 2: Migrate**
-   - **Dual-Reading & Dual-Writing**: Deploy application code that reads from both the old and new schema fields and writes to both (or writes to the new field while gracefully falling back to the old).
-   - **N-1 Safe Deployment**: Older application container versions (N-1) can run alongside or be restored against the newly expanded schema without experiencing runtime crashes or SQL constraint violations.
-   - **Data Backfill**: Execute asynchronous data backfill scripts (`npm run db:seed` or targeted data migration scripts) to populate historic rows with appropriate new data representations.
-
-3. **Phase 3: Contract**
-   - **Multi-Release Coordination**: Only after all running application instances have migrated to the new schema and no active container version queries the obsolete columns or tables, deploy a subsequent release that safely removes the deprecated structures.
-   - **Explicit Statement-Scoped Bypass Annotation**: Breaking DDL operations (`DROP TABLE`, `DROP COLUMN`, `RENAME COLUMN`, `RENAME TO`, `DROP CONSTRAINT`, `DROP TYPE`, `TRUNCATE`, `SET NOT NULL`, `SET DATA TYPE`, and `ADD COLUMN ... NOT NULL` without `DEFAULT`) in this phase require an explicit statement-scoped `-- allow-destructive: <reason>` annotation with a non-empty `<reason>` above or on each breaking statement to pass the migration compatibility linter.
+- **Additive Releases by Default**: Minor and patch deployments keep `prisma/migrations/` strictly additive (new tables, nullable columns, `DROP NOT NULL`, or `NOT NULL` columns accompanied by an explicit `DEFAULT`) while dual-reading/dual-writing and backfilling data before any legacy structure is retired.
+- **Canonical Phase & Linter Policy**: See [`docs/versioning.md`](./docs/versioning.md) for the authoritative three-phase **Expand-Migrate-Contract** rules, deprecation windows, and destructive SQL annotation requirements.
 
 ### N-1 Application Container Compatibility Requirements
 Continuous deployment and automated rollback architectures depend on **N-1 compatibility**:
