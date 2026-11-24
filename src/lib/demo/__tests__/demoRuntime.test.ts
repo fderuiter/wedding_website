@@ -598,12 +598,16 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
         ).status
       ).toBe(201);
 
-      expect((await (await window.fetch('/api/admin/sub-events/rsvp-summary')).json()).data).toBeNull();
-      expect((await (await window.fetch('/api/admin/sub-events/access')).json()).data.subEvents).toEqual([]);
+      const rsvpSummaryPayload = await (await window.fetch('/api/admin/sub-events/rsvp-summary')).json();
+      expect(rsvpSummaryPayload.data.global.totalInvitations).toBeGreaterThan(0);
+      expect(rsvpSummaryPayload.data.subEvents.length).toBeGreaterThan(0);
+      const subEventAccessPayload = await (await window.fetch('/api/admin/sub-events/access')).json();
+      expect(subEventAccessPayload.data.subEvents.length).toBeGreaterThan(0);
+      expect(subEventAccessPayload.data.invitationCodes.length).toBeGreaterThan(0);
       expect((await window.fetch('/api/admin/sub-events/access/batch', { method: 'POST' })).status).toBe(200);
-      expect((await (await window.fetch('/api/admin/sub-events')).json()).data).toEqual([]);
-      expect((await (await window.fetch('/api/admin/invitation-codes/rsvps')).json()).data).toEqual([]);
-      expect((await (await window.fetch('/api/admin/broadcast/history')).json()).data).toEqual([]);
+      expect((await (await window.fetch('/api/admin/sub-events')).json()).data.length).toBeGreaterThan(0);
+      expect((await (await window.fetch('/api/admin/invitation-codes/rsvps')).json()).data.length).toBeGreaterThan(0);
+      expect((await (await window.fetch('/api/admin/broadcast/history')).json()).data.length).toBeGreaterThan(0);
       expect((await window.fetch('/api/admin/broadcast/missing-id')).status).toBe(404);
       const setupStatusPayload = await (await window.fetch('/api/admin/setup')).json();
       expect(setupStatusPayload.initialized).toBe(true);
@@ -807,7 +811,8 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
         (await window.fetch('/api/admin/registry/items/missing-item/unclaim', { method: 'POST' }))
           .status
       ).toBe(404);
-      expect((await window.fetch('/api/admin/overview-stats')).status).toBe(200);
+      // Untyped admin fallback removed: unimplemented admin endpoints return 404 instead of generic stub
+      expect((await window.fetch('/api/admin/overview-stats')).status).toBe(404);
       expect((await window.fetch('/api/unknown-endpoint', { method: 'POST', body: '["array-body"]' })).status).toBe(404);
 
       // Public address collection postal validation, tag isolation, and promotion to invited
@@ -898,6 +903,242 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
       uninstallSecond();
       uninstallFirst();
       window.fetch = originalFetch;
+    }
+  });
+
+  it('serves weather, guest schedule/RSVP, FormData photo uploads (<=512KB vs >512KB), features array, household merge, broadcast, backup import, and snapshot restore', async () => {
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    const createdBlobs: string[] = [];
+    const revokedBlobs: string[] = [];
+    URL.createObjectURL = jest.fn(() => {
+      const nextUrl = `blob:demo-test-${createdBlobs.length + 1}`;
+      createdBlobs.push(nextUrl);
+      return nextUrl;
+    });
+    URL.revokeObjectURL = jest.fn((url: string) => {
+      revokedBlobs.push(url);
+    });
+
+    const uninstall = installDemoFetchInterceptor();
+    try {
+      // 1. Deterministic 7-day weather forecast across archetypes
+      const weatherClassic = await (await window.fetch('/api/weather')).json();
+      expect(weatherClassic.venue.city).toBe('Minneapolis');
+      expect(weatherClassic.daily.time).toHaveLength(7);
+      expect(typeof weatherClassic.daily.temperature_2m_max[0]).toBe('number');
+
+      setDemoArchetype('destination');
+      const weatherDestination = await (await window.fetch('/api/weather')).json();
+      expect(weatherDestination.venue.city).toBe('Key Biscayne');
+      expect(weatherDestination.daily.time).toHaveLength(7);
+      setDemoArchetype('classic');
+
+      // 2. Features array (SiteManager contract: data is Feature[] directly) & Settings object
+      const featuresPayload = await (await window.fetch('/api/admin/features')).json();
+      expect(featuresPayload.success).toBe(true);
+      expect(Array.isArray(featuresPayload.data)).toBe(true);
+      expect(featuresPayload.data.some((f: { id: string }) => f.id === 'story')).toBe(true);
+
+      const updateFeaturesRes = await (
+        await window.fetch('/api/admin/features', {
+          method: 'PUT',
+          body: JSON.stringify({
+            features: [{ id: 'story', type: 'story', title: 'Our Story', visible: false }],
+          }),
+        })
+      ).json();
+      expect(
+        updateFeaturesRes.data.find((f: { id: string }) => f.id === 'story')?.visible
+      ).toBe(false);
+
+      const settingsPayload = await (await window.fetch('/api/admin/settings')).json();
+      expect(settingsPayload.success).toBe(true);
+      expect(settingsPayload.data.partner1Name).toBe('Alex Morgan');
+
+      const contentNodesPayload = await (await window.fetch('/api/admin/content-nodes')).json();
+      expect(Array.isArray(contentNodesPayload.data)).toBe(true);
+      expect(contentNodesPayload.data.length).toBeGreaterThan(0);
+
+      // 3. Guest login (passcode), lookup, schedule, and RSVP persistence
+      const sampleGuest = getActiveArchetypeDataset().guests[0];
+      const loginRes = await window.fetch('/api/guest/login', {
+        method: 'POST',
+        body: JSON.stringify({ passcode: sampleGuest.code }),
+      });
+      expect(loginRes.status).toBe(200);
+
+      const lookupRes = await (
+        await window.fetch('/api/guest/lookup', {
+          method: 'POST',
+          body: JSON.stringify({ query: sampleGuest.guestName }),
+        })
+      ).json();
+      expect(lookupRes.found).toBe(true);
+      expect(lookupRes.code).toBe(sampleGuest.code);
+
+      const scheduleRes = await (await window.fetch('/api/schedule')).json();
+      expect(scheduleRes.data.length).toBeGreaterThan(0);
+      const firstSubEventId = scheduleRes.data[0].id as string;
+
+      const rsvpRes = await window.fetch('/api/rsvp', {
+        method: 'POST',
+        body: JSON.stringify({
+          rsvps: [
+            {
+              subEventId: firstSubEventId,
+              status: 'attending',
+              plusOneCount: 0,
+              dietaryNotes: 'Dairy-free',
+            },
+          ],
+        }),
+      });
+      expect(rsvpRes.status).toBe(200);
+
+      // 4. FormData photo uploads: <=512KB persists base64 data URI; >512KB uses session blob URL + tiny storage placeholder
+      const smallBytes = new Uint8Array(1024).fill(65);
+      const smallFile = new File([smallBytes], 'small-memory.png', { type: 'image/png' });
+      const smallForm = new FormData();
+      smallForm.append('file', smallFile);
+      smallForm.append('uploaderName', 'Guest Photographer');
+      smallForm.append('caption', 'Cocktail Hour');
+
+      const smallUploadRes = await (
+        await window.fetch('/api/guest/photos/upload', {
+          method: 'POST',
+          body: smallForm,
+        })
+      ).json();
+      expect(smallUploadRes.photo.url).toMatch(/^data:image\/png;base64,/);
+
+      const beforeLargeLength = (
+        window.localStorage.getItem('wedding_showcase_demo_v1') || ''
+      ).length;
+      const largeBytes = new Uint8Array(600 * 1024).fill(66);
+      const largeFile = new File([largeBytes], 'large-portrait.jpg', { type: 'image/jpeg' });
+      const largeForm = new FormData();
+      largeForm.append('file', largeFile);
+      largeForm.append('category', 'gallery');
+
+      const largeUploadRes = await (
+        await window.fetch('/api/admin/media', {
+          method: 'POST',
+          body: largeForm,
+        })
+      ).json();
+      expect(largeUploadRes.data.url).toMatch(/^blob:demo-test-/);
+
+      const storedRaw = window.localStorage.getItem('wedding_showcase_demo_v1') || '';
+      expect(storedRaw).not.toContain('blob:demo-test-');
+      expect(storedRaw.length - beforeLargeLength).toBeLessThan(120 * 1024);
+
+      // Admin photo moderation updates public GET /api/photos
+      const pendingModeration = await (
+        await window.fetch('/api/admin/photos/moderation?status=PENDING')
+      ).json();
+      expect(pendingModeration.photos.length).toBeGreaterThan(0);
+      const pendingPhotoId = pendingModeration.photos[0].id as string;
+
+      expect(
+        (
+          await window.fetch(`/api/admin/photos/${pendingPhotoId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ status: 'APPROVED' }),
+          })
+        ).status
+      ).toBe(200);
+
+      const publicPhotos = await (await window.fetch('/api/photos')).json();
+      expect(publicPhotos.photos.some((p: { id: string }) => p.id === pendingPhotoId)).toBe(true);
+
+      // 5. Offline gift persistence across storage reload
+      const offlineRes = await window.fetch('/api/admin/thank-you-notes', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: 'Uncle Arthur',
+          itemTitle: 'Espresso Set',
+          amount: 240,
+          thankYouStatus: 'Pending',
+        }),
+      });
+      expect(offlineRes.status).toBe(201);
+      hydrateDemoStateFromStorage();
+      const persistedThankYous = await (await window.fetch('/api/admin/thank-you-notes')).json();
+      expect(
+        persistedThankYous.items.some((item: { name: string }) => item.name === 'Uncle Arthur')
+      ).toBe(true);
+
+      // 6. Household merge, broadcast preview/send, backup export/import, and snapshot restore
+      const mergeCandidates = getActiveArchetypeDataset().guests;
+      const primaryGuest = mergeCandidates[0];
+      const duplicateGuest = mergeCandidates[1];
+      const mergeRes = await (
+        await window.fetch('/api/admin/invitation-codes/merge', {
+          method: 'POST',
+          body: JSON.stringify({
+            primaryId: primaryGuest.id,
+            secondaryIds: [duplicateGuest.id],
+          }),
+        })
+      ).json();
+      expect(mergeRes.success).toBe(true);
+      expect(
+        getActiveArchetypeDataset().guests.some((g) => g.id === duplicateGuest.id)
+      ).toBe(false);
+
+      const broadcastPreview = await (
+        await window.fetch('/api/admin/broadcast/preview', {
+          method: 'POST',
+          body: JSON.stringify({
+            subject: 'Shuttle Update',
+            body: 'Hello {{guestName}}, shuttles depart at 4:15 PM!',
+            audience: 'ALL',
+          }),
+        })
+      ).json();
+      expect(broadcastPreview.data.recipientCount).toBeGreaterThan(0);
+
+      const broadcastSend = await (
+        await window.fetch('/api/admin/broadcast', {
+          method: 'POST',
+          body: JSON.stringify({
+            subject: 'Shuttle Update',
+            body: 'Hello {{guestName}}, shuttles depart at 4:15 PM!',
+            audience: 'ALL',
+          }),
+        })
+      ).json();
+      expect(broadcastSend.success).toBe(true);
+
+      const exportedBackup = await (await window.fetch('/api/admin/maintenance/export')).json();
+      expect(exportedBackup.version).toBe('2.0');
+      expect(Array.isArray(exportedBackup.appConfig)).toBe(true);
+
+      const importRes = await (
+        await window.fetch('/api/admin/maintenance/import', {
+          method: 'POST',
+          body: JSON.stringify(exportedBackup),
+        })
+      ).json();
+      expect(importRes.success).toBe(true);
+
+      const versionsList = await (await window.fetch('/api/admin/versions')).json();
+      expect(versionsList.items.length).toBeGreaterThan(0);
+      const restoreTargetId = versionsList.items[0].id as string;
+      const restoreRes = await (
+        await window.fetch(`/api/admin/versions/${restoreTargetId}/restore`, {
+          method: 'POST',
+        })
+      ).json();
+      expect(restoreRes.success).toBe(true);
+
+      resetDemoState();
+      expect(revokedBlobs.length).toBeGreaterThan(0);
+    } finally {
+      uninstall();
+      URL.createObjectURL = originalCreateObjectURL;
+      URL.revokeObjectURL = originalRevokeObjectURL;
     }
   });
 });

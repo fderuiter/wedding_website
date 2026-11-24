@@ -1,5 +1,5 @@
 import { apiClient } from '@/features/admin';
-import { isDemoAdminSession, isDemoRuntimeActive } from '@/lib/demo/demoStore';
+import { isDemoBridgeActive, isDemoBridgeAdminSession } from '@/lib/demo/demoBridge';
 
 /**
  * Checks the admin status by calling the `/api/admin/me` endpoint.
@@ -8,8 +8,8 @@ import { isDemoAdminSession, isDemoRuntimeActive } from '@/lib/demo/demoStore';
  * @returns {Promise<boolean>} A promise that resolves to true if the user is an admin, false otherwise.
  */
 export async function checkAdminClient(): Promise<boolean> {
-  if (isDemoRuntimeActive()) {
-    return isDemoAdminSession();
+  if (isDemoBridgeActive()) {
+    return isDemoBridgeAdminSession();
   }
   try {
     const data = await apiClient.get<{ isAdmin: boolean }>('/api/admin/me');

@@ -1,3 +1,4 @@
+import { useLayoutEffect, useState } from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
@@ -299,5 +300,48 @@ describe('DemoToolbar & DemoProvider', () => {
     const darkResults = await axe(container);
     expect(darkResults).toHaveNoViolations();
     document.documentElement.classList.remove('dark');
+  });
+
+  it('intercepts child useLayoutEffect fetch calls synchronously on cold start before parent effects commit', async () => {
+    const originalFetch = window.fetch;
+    const networkFallback = jest.fn(async () => new Response('network-leak', { status: 500 }));
+    window.fetch = networkFallback as typeof window.fetch;
+
+    function ColdStartChild() {
+      const [city, setCity] = useState('loading');
+      useLayoutEffect(() => {
+        void window
+          .fetch('/api/weather')
+          .then((res) => res.json())
+          .then((payload: { venue?: { city?: string } }) => {
+            setCity(payload.venue?.city || 'missing');
+          });
+      }, []);
+      return <div data-testid="cold-start-weather">{city}</div>;
+    }
+
+    try {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      render(
+        <QueryClientProvider client={queryClient}>
+          <ThemeProvider>
+            <ToastProvider>
+              <RootLayoutClient isStaticExport={true} config={baseConfig}>
+                <ColdStartChild />
+              </RootLayoutClient>
+            </ToastProvider>
+          </ThemeProvider>
+        </QueryClientProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('cold-start-weather')).toHaveTextContent('Minneapolis');
+      });
+      expect(networkFallback).not.toHaveBeenCalled();
+    } finally {
+      window.fetch = originalFetch;
+    }
   });
 });

@@ -1,0 +1,282 @@
+'use client';
+
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useSyncExternalStore,
+} from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { usePathname, useRouter } from 'next/navigation';
+import { useTheme } from '@/components/ThemeProvider';
+import { useOptionalToast } from '@/components/ui/ToastProvider';
+import { getServerExportTokens, type ThemePreset } from '@/lib/theme/presets';
+import type { ArchetypeId } from '@/lib/sampleData/archetypes';
+import type { PublicAppConfig } from '@/lib/config';
+import {
+  ADMIN_ONBOARDING_MILESTONES_QUERY_KEY,
+  ADMIN_SAMPLE_DATA_QUERY_KEY,
+  ADMIN_SEATING_QUERY_KEY,
+  invalidateSampleDataCaches,
+} from '@/lib/adminCacheSync';
+import {
+  consumePrimedDemoFetchInterceptor,
+  installDemoFetchInterceptor,
+  primeDemoRuntimeForMount,
+} from '@/lib/demo/demoApiHandler';
+import {
+  applyDemoSampleSelection,
+  findDemoGuestByCode,
+  getActiveArchetypeDataset,
+  getDemoState,
+  hydrateDemoStateFromStorage,
+  resetDemoState,
+  setDemoArchetype,
+  setDemoGuestSession,
+  setDemoPersona,
+  setDemoRuntimeActive,
+  setDemoSetupAuthenticated,
+  setDemoThemePreset,
+  setDemoToolbarCollapsed,
+  subscribeDemoState,
+  updateDemoConfigOverrides,
+  type DemoPersona,
+  type DemoStoreState,
+} from '@/lib/demo/demoStore';
+import { DemoContextInstance, type DemoContextValue } from './DemoContext';
+
+const useIsomorphicLayoutEffect =
+  typeof window !== 'undefined' ? useLayoutEffect : useEffect;
+
+const SERVER_SNAPSHOT: DemoStoreState = getDemoState();
+function getServerDemoSnapshot(): DemoStoreState {
+  return SERVER_SNAPSHOT;
+}
+
+export function ActiveDemoProvider({ children }: { children: React.ReactNode }) {
+  // Synchronously hydrate localStorage and install window.fetch interceptor BEFORE
+  // any child component renders or runs useLayoutEffect / useEffect on cold start.
+  if (typeof window !== 'undefined') {
+    primeDemoRuntimeForMount();
+  }
+
+  const queryClient = useQueryClient();
+  const router = useRouter();
+  const pathname = usePathname();
+  const { setPreviewConfig } = useTheme();
+  const toast = useOptionalToast();
+
+  useIsomorphicLayoutEffect(() => {
+    hydrateDemoStateFromStorage();
+    setDemoRuntimeActive(true);
+    const uninstallFetch =
+      consumePrimedDemoFetchInterceptor() ?? installDemoFetchInterceptor();
+    return () => {
+      uninstallFetch();
+      setDemoRuntimeActive(false);
+    };
+  }, []);
+
+  const storeState = useSyncExternalStore(
+    subscribeDemoState,
+    getDemoState,
+    getServerDemoSnapshot
+  );
+
+  // Sync active themePreset and color overrides into ThemeProvider live stylesheet
+  useEffect(() => {
+    if (typeof setPreviewConfig !== 'function') return;
+    const exportTokens = getServerExportTokens(storeState.themePreset);
+    setPreviewConfig({
+      themePreset: storeState.themePreset,
+      colorPrimary: storeState.configOverrides.colorPrimary || exportTokens.colorPrimary,
+      colorSecondary: storeState.configOverrides.colorSecondary || exportTokens.colorSecondary,
+      fontHeading: exportTokens.fontHeading,
+      fontBody: exportTokens.fontBody,
+    });
+  }, [
+    setPreviewConfig,
+    storeState.themePreset,
+    storeState.configOverrides.colorPrimary,
+    storeState.configOverrides.colorSecondary,
+    storeState.resetCounter,
+  ]);
+
+  // Refresh cached queries whenever active archetype, modules, or resetCounter changes
+  useEffect(() => {
+    const dataset = getActiveArchetypeDataset();
+    queryClient.setQueriesData(
+      { queryKey: ['registry-items'] },
+      {
+        items: dataset.registryItems,
+        total: dataset.registryItems.length,
+        page: 1,
+        limit: Math.max(100, dataset.registryItems.length),
+        totalPages: 1,
+      }
+    );
+    void queryClient.invalidateQueries({ queryKey: ['admin-registry'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin-wedding-party'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin-attractions'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin-invitation-codes'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin-features'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin-settings'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin-profiles-list'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin-broadcast-history'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin-broadcast-detail'] });
+    void queryClient.invalidateQueries({ queryKey: ['schedule'] });
+    void queryClient.invalidateQueries({ queryKey: ['photos'] });
+    void queryClient.invalidateQueries({ queryKey: ['sub-events'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin-sub-events'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin-content'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin-media'] });
+    void queryClient.invalidateQueries({ queryKey: ['thank-you-notes'] });
+    void queryClient.invalidateQueries({ queryKey: ADMIN_SEATING_QUERY_KEY });
+    void queryClient.invalidateQueries({ queryKey: ADMIN_ONBOARDING_MILESTONES_QUERY_KEY });
+    void queryClient.invalidateQueries({ queryKey: ADMIN_SAMPLE_DATA_QUERY_KEY });
+    void invalidateSampleDataCaches();
+  }, [
+    queryClient,
+    storeState.archetype,
+    storeState.activeModules,
+    storeState.resetCounter,
+  ]);
+
+  const handleSetPersona = useCallback(
+    (nextPersona: DemoPersona) => {
+      setDemoPersona(nextPersona);
+      if (nextPersona === 'guest' && pathname?.startsWith('/admin')) {
+        router.push('/');
+      }
+    },
+    [pathname, router]
+  );
+
+  const handleSetArchetype = useCallback((nextArchetype: ArchetypeId) => {
+    setDemoArchetype(nextArchetype);
+  }, []);
+
+  const handleSetThemePreset = useCallback((nextPreset: ThemePreset) => {
+    setDemoThemePreset(nextPreset);
+  }, []);
+
+  const handleSetToolbarCollapsed = useCallback((collapsed: boolean) => {
+    setDemoToolbarCollapsed(collapsed);
+  }, []);
+
+  const handleSetSetupAuthenticated = useCallback((authenticated: boolean) => {
+    setDemoSetupAuthenticated(authenticated);
+  }, []);
+
+  const handleUpdateConfigOverrides = useCallback((overrides: Partial<PublicAppConfig>) => {
+    updateDemoConfigOverrides(overrides);
+  }, []);
+
+  const handleApplySampleSelection = useCallback(
+    (nextArchetype: ArchetypeId, modules: string[]) => {
+      applyDemoSampleSelection(nextArchetype, modules);
+    },
+    []
+  );
+
+  const handleValidateInviteCode = useCallback((rawCode: string) => {
+    const matched = findDemoGuestByCode(rawCode);
+    if (!matched) return null;
+    setDemoGuestSession({
+      invitationCode: matched.code,
+      guestName: matched.guestName,
+    });
+    return {
+      valid: true,
+      code: matched.code,
+      guestName: matched.guestName,
+    };
+  }, []);
+
+  const handleResetDemo = useCallback(() => {
+    resetDemoState();
+    const freshDataset = getActiveArchetypeDataset();
+    queryClient.setQueriesData(
+      { queryKey: ['registry-items'] },
+      {
+        items: freshDataset.registryItems,
+        total: freshDataset.registryItems.length,
+        page: 1,
+        limit: Math.max(100, freshDataset.registryItems.length),
+        totalPages: 1,
+      }
+    );
+    if (typeof setPreviewConfig === 'function') {
+      const classicTokens = getServerExportTokens('classic');
+      setPreviewConfig({
+        themePreset: 'classic',
+        colorPrimary: classicTokens.colorPrimary,
+        colorSecondary: classicTokens.colorSecondary,
+        fontHeading: classicTokens.fontHeading,
+        fontBody: classicTokens.fontBody,
+      });
+    }
+    if (pathname?.startsWith('/admin')) {
+      router.push('/');
+    }
+    toast?.addToast(
+      'Demo reset to default Invited Guest role, Classic Celebration archetype, and Classic theme.',
+      'info'
+    );
+  }, [pathname, queryClient, router, setPreviewConfig, toast]);
+
+  const activeDataset = useMemo(() => {
+    return getActiveArchetypeDataset(storeState);
+  }, [storeState]);
+
+  const contextValue = useMemo<DemoContextValue>(
+    () => ({
+      isDemoMode: true,
+      persona: storeState.persona,
+      archetype: storeState.archetype,
+      themePreset: storeState.themePreset,
+      isToolbarCollapsed: storeState.isToolbarCollapsed,
+      setupAuthenticated: storeState.setupAuthenticated,
+      configOverrides: storeState.configOverrides,
+      activeModules: storeState.activeModules,
+      activeDataset,
+      resetCounter: storeState.resetCounter,
+      setPersona: handleSetPersona,
+      setArchetype: handleSetArchetype,
+      setThemePreset: handleSetThemePreset,
+      setToolbarCollapsed: handleSetToolbarCollapsed,
+      setSetupAuthenticated: handleSetSetupAuthenticated,
+      updateConfigOverrides: handleUpdateConfigOverrides,
+      applySampleSelection: handleApplySampleSelection,
+      validateInviteCode: handleValidateInviteCode,
+      resetDemo: handleResetDemo,
+    }),
+    [
+      storeState.persona,
+      storeState.archetype,
+      storeState.themePreset,
+      storeState.isToolbarCollapsed,
+      storeState.setupAuthenticated,
+      storeState.configOverrides,
+      storeState.activeModules,
+      storeState.resetCounter,
+      activeDataset,
+      handleSetPersona,
+      handleSetArchetype,
+      handleSetThemePreset,
+      handleSetToolbarCollapsed,
+      handleSetSetupAuthenticated,
+      handleUpdateConfigOverrides,
+      handleApplySampleSelection,
+      handleValidateInviteCode,
+      handleResetDemo,
+    ]
+  );
+
+  return (
+    <DemoContextInstance.Provider value={contextValue}>
+      {children}
+    </DemoContextInstance.Provider>
+  );
+}
