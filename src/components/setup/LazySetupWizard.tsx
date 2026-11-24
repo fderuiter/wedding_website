@@ -8,9 +8,7 @@ interface LazySetupWizardProps {
   onDemoComplete?: () => void;
 }
 
-const DynamicSetupWizard = dynamic(() => import('./SetupWizard'), {
-  loading: () => null,
-});
+const DynamicSetupWizard = dynamic(() => import('./SetupWizard'));
 
 export default function SetupWizard(props: LazySetupWizardProps) {
   return <DynamicSetupWizard {...props} />;

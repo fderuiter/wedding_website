@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { isValidPostgresUrl } from '../src/lib/postgres-url.js';
 
 export type PreflightTarget = 'compose' | 'standalone' | 'host';
+export type PreflightMode = 'development' | 'production';
 
 export interface ParsedDotenvEntry {
   key: string;
@@ -22,12 +23,14 @@ export interface PreflightIssue {
 
 export interface PreflightValidationOptions {
   target?: PreflightTarget;
+  mode?: PreflightMode;
   composeContent?: string;
 }
 
 export interface PreflightResult {
   ok: boolean;
   target: PreflightTarget;
+  mode: PreflightMode;
   envFilePath: string;
   checkedKeysCount: number;
   composeRequiredGuards: string[];
@@ -278,10 +281,21 @@ function normalizeOptional(val: string | undefined): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function getDotenvCascadeFiles(mode: PreflightMode): string[] {
+  return [`.env.${mode}.local`, '.env.local', `.env.${mode}`, '.env'];
+}
+
+function resolveInitialPreflightMode(explicitMode?: PreflightMode): PreflightMode {
+  if (explicitMode === 'production' || process.env.NODE_ENV?.trim() === 'production') {
+    return 'production';
+  }
+  return explicitMode ?? 'development';
+}
+
 export function validateOperatorEnv(
   entries: Map<string, ParsedDotenvEntry>,
   options: PreflightValidationOptions = {}
-): { issues: PreflightIssue[]; composeRequiredGuards: string[] } {
+): { issues: PreflightIssue[]; composeRequiredGuards: string[]; mode: PreflightMode } {
   const target: PreflightTarget = options.target ?? 'compose';
   const composeRequiredGuards =
     target === 'compose' && options.composeContent
@@ -290,6 +304,12 @@ export function validateOperatorEnv(
   const issues: PreflightIssue[] = [];
 
   const getVal = (key: string): string | undefined => resolveEffectiveValue(entries.get(key), target);
+
+  const nodeEnv = normalizeOptional(getVal('NODE_ENV'));
+  const effectiveMode: PreflightMode =
+    resolveInitialPreflightMode(options.mode) === 'production' || nodeEnv === 'production'
+      ? 'production'
+      : 'development';
 
   // 1. Docker Compose mandatory `:?` secret guards & unescaped `$` interpolation checks
   if (target === 'compose') {
@@ -318,7 +338,6 @@ export function validateOperatorEnv(
   }
 
   // 2. NODE_ENV & E2E_TEST checks
-  const nodeEnv = normalizeOptional(getVal('NODE_ENV'));
   if (nodeEnv && !['development', 'test', 'production'].includes(nodeEnv)) {
     issues.push({
       key: 'NODE_ENV',
@@ -329,7 +348,7 @@ export function validateOperatorEnv(
   }
 
   const e2eTest = normalizeOptional(getVal('E2E_TEST'))?.toLowerCase();
-  if (e2eTest === 'true' || e2eTest === '1') {
+  if (effectiveMode === 'production' && (e2eTest === 'true' || e2eTest === '1')) {
     issues.push({
       key: 'E2E_TEST',
       rule: 'production-e2e-disabled',
@@ -338,7 +357,7 @@ export function validateOperatorEnv(
     });
   }
 
-  // 3. DATABASE_URL, CONTAINER_DATABASE_URL, DB_PASSWORD, & POSTGRES_URL_NON_POOLING
+  // 3. DATABASE_URL, CONTAINER_DATABASE_URL, DB_PASSWORD, POSTGRES_URL_NON_POOLING, & CONTAINER_POSTGRES_URL_NON_POOLING
   const databaseUrl = normalizeOptional(getVal('DATABASE_URL'));
   const containerDatabaseUrl = normalizeOptional(getVal('CONTAINER_DATABASE_URL'));
 
@@ -381,7 +400,7 @@ export function validateOperatorEnv(
   if (target === 'compose') {
     const dbPassword = normalizeOptional(getVal('DB_PASSWORD'));
     if (dbPassword) {
-      if (BLOCKED_PROD_DB_PASSWORDS.has(dbPassword)) {
+      if (effectiveMode === 'production' && BLOCKED_PROD_DB_PASSWORDS.has(dbPassword)) {
         issues.push({
           key: 'DB_PASSWORD',
           rule: 'blocked-db-password',
@@ -437,13 +456,32 @@ export function validateOperatorEnv(
     }
   }
 
+  const containerNonPoolingUrl = normalizeOptional(getVal('CONTAINER_POSTGRES_URL_NON_POOLING'));
+  if (containerNonPoolingUrl) {
+    if (DUMMY_DATABASE_URLS.has(containerNonPoolingUrl)) {
+      issues.push({
+        key: 'CONTAINER_POSTGRES_URL_NON_POOLING',
+        rule: 'blocked-dummy-shadow-url',
+        message: 'CONTAINER_POSTGRES_URL_NON_POOLING must not use a build-time dummy shadow URL.',
+        remediation: 'Configure CONTAINER_POSTGRES_URL_NON_POOLING with your external direct PostgreSQL URI or comment it out when using the bundled Docker Compose db service.',
+      });
+    } else if (!isValidPostgresUrl(containerNonPoolingUrl)) {
+      issues.push({
+        key: 'CONTAINER_POSTGRES_URL_NON_POOLING',
+        rule: 'invalid-container-non-pooling-url',
+        message: 'CONTAINER_POSTGRES_URL_NON_POOLING must be a valid PostgreSQL connection URI when set.',
+        remediation: 'Provide a valid direct PostgreSQL URI reachable from containers or comment out CONTAINER_POSTGRES_URL_NON_POOLING in .env.',
+      });
+    }
+  }
+
   // 4. ADMIN_PASSWORD (64-byte scrypt format & blocked production hashes)
   const adminPassword = getVal('ADMIN_PASSWORD')?.trim() ?? '';
   if (!adminPassword) {
     issues.push({
       key: 'ADMIN_PASSWORD',
       rule: 'missing-admin-password',
-      message: 'ADMIN_PASSWORD is required in production.',
+      message: 'ADMIN_PASSWORD is required.',
       remediation: 'Generate a 16-byte salt / 64-byte scrypt hash via: node scripts/generate-password-hash.mjs "<your-strong-password>"',
     });
   } else if (!isValidProductionScryptHash(adminPassword)) {
@@ -453,7 +491,7 @@ export function validateOperatorEnv(
       message: 'ADMIN_PASSWORD must be in scrypt:[16-byte saltBase64]:[64-byte keyBase64] format (plaintext passwords and legacy non-64-byte scrypt hashes are rejected).',
       remediation: 'Regenerate ADMIN_PASSWORD with: node scripts/generate-password-hash.mjs "<your-strong-password>"',
     });
-  } else if (BLOCKED_PROD_ADMIN_HASHES.has(adminPassword)) {
+  } else if (effectiveMode === 'production' && BLOCKED_PROD_ADMIN_HASHES.has(adminPassword)) {
     issues.push({
       key: 'ADMIN_PASSWORD',
       rule: 'blocked-admin-hash',
@@ -462,17 +500,19 @@ export function validateOperatorEnv(
     });
   }
 
-  // 5. GUEST_PASSCODE (non-empty & non-default/placeholder)
+  // 5. GUEST_PASSCODE (non-empty & non-default/placeholder in production)
   const rawGuestPasscode = getVal('GUEST_PASSCODE') ?? '';
   const trimmedGuestPasscode = rawGuestPasscode.trim();
   if (!trimmedGuestPasscode) {
-    issues.push({
-      key: 'GUEST_PASSCODE',
-      rule: 'missing-guest-passcode',
-      message: 'GUEST_PASSCODE is required in production.',
-      remediation: 'Set GUEST_PASSCODE to a unique celebration passcode chosen for your guests.',
-    });
-  } else if (BLOCKED_PROD_GUEST_PASSCODES.has(trimmedGuestPasscode)) {
+    if (effectiveMode === 'production') {
+      issues.push({
+        key: 'GUEST_PASSCODE',
+        rule: 'missing-guest-passcode',
+        message: 'GUEST_PASSCODE is required in production.',
+        remediation: 'Set GUEST_PASSCODE to a unique celebration passcode chosen for your guests.',
+      });
+    }
+  } else if (effectiveMode === 'production' && BLOCKED_PROD_GUEST_PASSCODES.has(trimmedGuestPasscode)) {
     issues.push({
       key: 'GUEST_PASSCODE',
       rule: 'blocked-guest-passcode',
@@ -481,23 +521,25 @@ export function validateOperatorEnv(
     });
   }
 
-  // 6. GUEST_SESSION_SECRET (non-empty, non-blocked, >= 32 chars, distinct from GUEST_PASSCODE)
+  // 6. GUEST_SESSION_SECRET (non-empty, non-blocked, >= 32 chars in production, distinct from GUEST_PASSCODE)
   const guestSessionSecret = getVal('GUEST_SESSION_SECRET') ?? '';
   if (!guestSessionSecret) {
-    issues.push({
-      key: 'GUEST_SESSION_SECRET',
-      rule: 'missing-guest-session-secret',
-      message: 'GUEST_SESSION_SECRET is required in production.',
-      remediation: 'Generate a dedicated 32+ character signing secret via: openssl rand -hex 32',
-    });
-  } else if (BLOCKED_PROD_SESSION_SECRETS.has(guestSessionSecret)) {
+    if (effectiveMode === 'production') {
+      issues.push({
+        key: 'GUEST_SESSION_SECRET',
+        rule: 'missing-guest-session-secret',
+        message: 'GUEST_SESSION_SECRET is required in production.',
+        remediation: 'Generate a dedicated 32+ character signing secret via: openssl rand -hex 32',
+      });
+    }
+  } else if (effectiveMode === 'production' && BLOCKED_PROD_SESSION_SECRETS.has(guestSessionSecret)) {
     issues.push({
       key: 'GUEST_SESSION_SECRET',
       rule: 'blocked-guest-session-secret',
       message: 'GUEST_SESSION_SECRET must not use the default, example placeholder, or E2E fallback secret in production.',
       remediation: 'Generate a dedicated 32+ character signing secret via: openssl rand -hex 32',
     });
-  } else if (guestSessionSecret.length < 32) {
+  } else if (effectiveMode === 'production' && guestSessionSecret.length < 32) {
     issues.push({
       key: 'GUEST_SESSION_SECRET',
       rule: 'short-guest-session-secret',
@@ -665,7 +707,7 @@ export function validateOperatorEnv(
     });
   }
 
-  return { issues, composeRequiredGuards };
+  return { issues, composeRequiredGuards, mode: effectiveMode };
 }
 
 export function runEnvPreflightFile(options: {
@@ -673,35 +715,79 @@ export function runEnvPreflightFile(options: {
   envFile?: string;
   composeFile?: string;
   target?: PreflightTarget;
+  mode?: PreflightMode;
 }): PreflightResult {
   const cwd = options.cwd ?? process.cwd();
   const target: PreflightTarget = options.target ?? 'compose';
-  const envRelOrAbs = options.envFile ?? '.env';
-  const envFilePath = path.isAbsolute(envRelOrAbs) ? envRelOrAbs : path.resolve(cwd, envRelOrAbs);
-  const displayEnvPath = path.isAbsolute(envRelOrAbs)
-    ? envRelOrAbs
-    : envRelOrAbs.replace(/\\/g, '/');
+  const initialMode: PreflightMode = resolveInitialPreflightMode(options.mode);
 
-  if (!fs.existsSync(envFilePath)) {
-    return {
-      ok: false,
-      target,
-      envFilePath: displayEnvPath,
-      checkedKeysCount: 0,
-      composeRequiredGuards: [],
-      issues: [
-        {
-          key: 'ENV_FILE',
-          rule: 'missing-env-file',
-          message: `Target environment file not found at "${displayEnvPath}".`,
-          remediation: 'Copy .env.example to .env (`cp .env.example .env`), populate production secrets, or pass `--env-file <path>`.',
-        },
-      ],
-    };
+  let entries: Map<string, ParsedDotenvEntry>;
+  let displayEnvPath: string;
+
+  if (options.envFile !== undefined) {
+    const envRelOrAbs = options.envFile;
+    const envFilePath = path.isAbsolute(envRelOrAbs) ? envRelOrAbs : path.resolve(cwd, envRelOrAbs);
+    displayEnvPath = path.isAbsolute(envRelOrAbs)
+      ? envRelOrAbs
+      : envRelOrAbs.replace(/\\/g, '/');
+
+    if (!fs.existsSync(envFilePath)) {
+      return {
+        ok: false,
+        target,
+        mode: initialMode,
+        envFilePath: displayEnvPath,
+        checkedKeysCount: 0,
+        composeRequiredGuards: [],
+        issues: [
+          {
+            key: 'ENV_FILE',
+            rule: 'missing-env-file',
+            message: `Target environment file not found at "${displayEnvPath}".`,
+            remediation:
+              'Copy .env.example to .env or .env.local (`cp .env.example .env`), or pass `--env-file <path>`.',
+          },
+        ],
+      };
+    }
+
+    const envContent = fs.readFileSync(envFilePath, 'utf8');
+    entries = parseDotenvContent(envContent);
+  } else {
+    const cascadeRelFiles = getDotenvCascadeFiles(initialMode);
+    const existingRelFiles = cascadeRelFiles.filter((relFile) =>
+      fs.existsSync(path.resolve(cwd, relFile))
+    );
+
+    if (existingRelFiles.length === 0) {
+      return {
+        ok: false,
+        target,
+        mode: initialMode,
+        envFilePath: cascadeRelFiles.join(', '),
+        checkedKeysCount: 0,
+        composeRequiredGuards: [],
+        issues: [
+          {
+            key: 'ENV_FILE',
+            rule: 'missing-env-file',
+            message: `No environment file found in "${cwd}" (checked ${cascadeRelFiles.join(', ')}).`,
+            remediation:
+              'Copy .env.example to .env or .env.local (`cp .env.example .env`), or pass `--env-file <path>`.',
+          },
+        ],
+      };
+    }
+
+    displayEnvPath = existingRelFiles.join(', ');
+    entries = new Map<string, ParsedDotenvEntry>();
+    for (const relFile of [...existingRelFiles].reverse()) {
+      const content = fs.readFileSync(path.resolve(cwd, relFile), 'utf8');
+      for (const [key, entry] of parseDotenvContent(content)) {
+        entries.set(key, entry);
+      }
+    }
   }
-
-  const envContent = fs.readFileSync(envFilePath, 'utf8');
-  const entries = parseDotenvContent(envContent);
 
   let composeContent: string | undefined;
   if (target === 'compose') {
@@ -713,6 +799,7 @@ export function runEnvPreflightFile(options: {
       return {
         ok: false,
         target,
+        mode: initialMode,
         envFilePath: displayEnvPath,
         checkedKeysCount: entries.size,
         composeRequiredGuards: [],
@@ -729,14 +816,16 @@ export function runEnvPreflightFile(options: {
     composeContent = fs.readFileSync(composePath, 'utf8');
   }
 
-  const { issues, composeRequiredGuards } = validateOperatorEnv(entries, {
+  const { issues, composeRequiredGuards, mode: effectiveMode } = validateOperatorEnv(entries, {
     target,
+    mode: initialMode,
     composeContent,
   });
 
   return {
     ok: issues.length === 0,
     target,
+    mode: effectiveMode,
     envFilePath: displayEnvPath,
     checkedKeysCount: entries.size,
     composeRequiredGuards,
@@ -748,14 +837,15 @@ function formatUsageText(): string {
   return [
     'Usage: npx tsx scripts/preflight-env.ts [options] [env-file]',
     '',
-    'Read-only preflight validator for local operator .env files against production',
-    'secret rules (src/env.ts) and Docker Compose ":?" guards (docker-compose.yml).',
-    'Raw secret values and password hashes are never printed to stdout or stderr.',
+    'Read-only preflight validator for local and operator .env files against',
+    'runtime environment rules (src/env.ts) and Docker Compose ":?" guards (docker-compose.yml).',
+    'Raw secret values, connection URLs, and password hashes are never printed to stdout or stderr.',
     '',
     'Options:',
-    '  -f, --env-file <path>      Path to .env file to validate (default: .env)',
+    '  -f, --env-file <path>      Path to .env file to validate (default: dotenv cascade .env.<mode>.local, .env.local, .env.<mode>, .env)',
     '  --compose-file <path>      Path to docker-compose.yml (default: docker-compose.yml)',
     '  --target <mode>            Deployment target: compose | standalone | host (default: compose)',
+    '  --mode <mode>              Validation mode: development | production (default: development, or production when NODE_ENV=production)',
     '  --no-compose               Skip docker-compose.yml ":?" secret guard checks (alias for --target host)',
     '  -h, --help                 Show this help message',
   ].join('\n');
@@ -767,11 +857,13 @@ export function formatPreflightReport(result: PreflightResult): string {
       result.target === 'compose'
         ? ` and ${result.composeRequiredGuards.length} Docker Compose ":?" guard(s) (${result.composeRequiredGuards.join(', ')})`
         : '';
-    return `✅ Environment preflight passed for "${result.envFilePath}" [target=${result.target}]: ${result.checkedKeysCount} variable(s) verified against production secret rules${composeNote}.`;
+    const rulesLabel =
+      result.mode === 'production' ? 'production secret rules' : 'development env rules';
+    return `✅ Environment preflight passed for "${result.envFilePath}" [target=${result.target}] [mode=${result.mode}]: ${result.checkedKeysCount} variable(s) verified against ${rulesLabel}${composeNote}.`;
   }
 
   const lines: string[] = [
-    `❌ Environment preflight failed for "${result.envFilePath}" [target=${result.target}] (${result.issues.length} issue(s) found; secret values redacted):`,
+    `❌ Environment preflight failed for "${result.envFilePath}" [target=${result.target}] [mode=${result.mode}] (${result.issues.length} issue(s) found; secret values redacted):`,
     '',
   ];
 
@@ -790,6 +882,7 @@ export function runPreflightCli(
   let envFile: string | undefined;
   let composeFile: string | undefined;
   let target: PreflightTarget = 'compose';
+  let mode: PreflightMode | undefined;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -859,6 +952,31 @@ export function runPreflightCli(
       target = val;
       continue;
     }
+    if (arg === '--mode') {
+      const next = argv[i + 1];
+      if (next !== 'development' && next !== 'production') {
+        return {
+          exitCode: 1,
+          stdout: '',
+          stderr: '❌ Invalid --mode value. Expected "development" or "production".\n',
+        };
+      }
+      mode = next;
+      i++;
+      continue;
+    }
+    if (arg.startsWith('--mode=')) {
+      const val = arg.slice('--mode='.length);
+      if (val !== 'development' && val !== 'production') {
+        return {
+          exitCode: 1,
+          stdout: '',
+          stderr: '❌ Invalid --mode value. Expected "development" or "production".\n',
+        };
+      }
+      mode = val;
+      continue;
+    }
     if (arg.startsWith('-')) {
       return {
         exitCode: 1,
@@ -876,6 +994,7 @@ export function runPreflightCli(
     envFile,
     composeFile,
     target,
+    mode,
   });
   const report = `${formatPreflightReport(result)}\n`;
 

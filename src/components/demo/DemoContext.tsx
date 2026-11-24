@@ -36,12 +36,7 @@ export interface DemoContextValue {
 
 export const DemoContext = createContext<DemoContextValue | null>(null);
 
-const DynamicActiveDemoProvider = dynamic(
-  () => import('./ActiveDemoProvider'),
-  {
-    loading: () => null,
-  }
-);
+const DynamicActiveDemoProvider = dynamic(() => import('./ActiveDemoProvider'));
 
 interface DemoProviderProps {
   enabled: boolean;

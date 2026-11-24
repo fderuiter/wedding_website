@@ -207,7 +207,7 @@ export const CsvRegistryImport: React.FC<CsvRegistryImportProps> = ({ onSuccess 
               <span className="font-semibold text-stone-800 dark:text-stone-200">{fileName}</span>
             ) : (
               <>
-                <span className="text-amber-600 dark:text-amber-400 font-semibold underline">
+                <span className="text-secondary-text font-semibold underline">
                   Click to upload
                 </span>{' '}
                 or drag and drop your CSV file here

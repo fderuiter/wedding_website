@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { AccessibleExternalLink } from '@/components/ui/AccessibleExternalLink';
 import { Icon } from '@/components/ui/Icon';
+import { StickyBar } from '@/components/ui/useStickyOffset';
 import { getPortalBaseUrl, resolveShowcasePath } from '@/lib/basePath';
 import { ARCHETYPE_PRESETS, type ArchetypeId } from '@/lib/sampleData/archetypes';
 import { THEME_PRESET_KEYS, type ThemePreset } from '@/lib/theme/presets';
@@ -66,7 +67,10 @@ export function DemoToolbar() {
   };
 
   return (
-    <aside
+    <StickyBar
+      as="aside"
+      edge="bottom"
+      scope="document"
       aria-label="Interactive Demo Controls"
       data-testid="demo-toolbar"
       className="fixed bottom-0 inset-x-0 z-40 border-t border-slate-300 dark:border-slate-700 bg-white/95 dark:bg-slate-900/95 text-slate-900 dark:text-slate-100 shadow-2xl backdrop-blur-md print:hidden"
@@ -264,6 +268,6 @@ export function DemoToolbar() {
           </div>
         )}
       </div>
-    </aside>
+    </StickyBar>
   );
 }

@@ -74,6 +74,11 @@ describe('scripts/generate-docs AST analysis', () => {
     const ogRoute = byPath.get('/api/og');
     expect(ogRoute?.usesApiMiddleware).toBe(true);
 
+    const guestSessionRoute = byPath.get('/api/guest/session');
+    expect(guestSessionRoute?.usesApiMiddleware).toBe(true);
+    expect(guestSessionRoute?.accessTier).toBe('`Public`');
+    expect(unwrappedPaths).not.toContain('/api/guest/session');
+
     const mediaExport = byPath.get('/api/media/export');
     expect(mediaExport?.usesApiMiddleware).toBe(true);
 

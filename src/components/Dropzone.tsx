@@ -188,45 +188,50 @@ function Dropzone({
         data-testid="dropzone-file-input"
       />
 
-      <div
-        ref={ref}
-        role="button"
-        tabIndex={disabled ? -1 : 0}
-        aria-disabled={disabled || isBusy}
-        aria-labelledby={promptId}
-        aria-describedby={describedBy}
-        onClick={handleClick}
-        onKeyDown={handleKeyDown}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        className={cn(
-          'relative flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-xl transition-colors cursor-pointer text-center select-none focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2',
-          isDragActive
-            ? 'border-rose-500 bg-rose-50/50 dark:bg-rose-950/20'
-            : 'border-gray-300 dark:border-gray-700 hover:border-rose-400 dark:hover:border-rose-500 bg-gray-50/50 dark:bg-gray-800/50',
-          (disabled || isBusy) && 'opacity-60 cursor-not-allowed pointer-events-none',
-          activeError && 'border-red-500 dark:border-red-500 bg-red-50/30 dark:bg-red-950/20',
-          className
-        )}
-        {...props}
-      >
-        <Icon
-          name={isBusy ? 'Loader2' : 'UploadCloud'}
+      <div className="relative">
+        <div
+          ref={ref}
+          role="button"
+          tabIndex={disabled ? -1 : 0}
+          aria-disabled={disabled || isBusy}
+          aria-labelledby={promptId}
+          aria-describedby={describedBy}
+          onClick={handleClick}
+          onKeyDown={handleKeyDown}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
           className={cn(
-            'h-10 w-10 mb-2 text-muted-text',
-            isBusy && 'animate-spin text-rose-500'
+            'relative flex flex-col items-center justify-center px-6 pt-6 border-2 border-dashed rounded-xl transition-colors cursor-pointer text-center select-none focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2',
+            hasHint ? 'pb-20 sm:pb-16' : 'pb-6',
+            isDragActive
+              ? 'border-rose-500 bg-rose-50/50 dark:bg-rose-950/20'
+              : 'border-gray-300 dark:border-gray-700 hover:border-rose-400 dark:hover:border-rose-500 bg-gray-50/50 dark:bg-gray-800/50',
+            (disabled || isBusy) && 'opacity-60 cursor-not-allowed pointer-events-none',
+            activeError && 'border-red-500 dark:border-red-500 bg-red-50/30 dark:bg-red-950/20',
+            className
           )}
-        />
+          {...props}
+        >
+          <Icon
+            name={isBusy ? 'Loader2' : 'UploadCloud'}
+            className={cn(
+              'h-10 w-10 mb-2 text-muted-text',
+              isBusy && 'animate-spin text-rose-500'
+            )}
+          />
 
-        <p id={promptId} className="text-sm font-medium text-gray-700 dark:text-gray-200">
-          {isBusy ? busyLabel : label}
-        </p>
+          <p id={promptId} className="text-sm font-medium text-gray-700 dark:text-gray-200">
+            {isBusy ? busyLabel : label}
+          </p>
+        </div>
 
         {hasHint && (
-          <p id={hintId} className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            {hint}
-          </p>
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center px-6 pb-5 text-center select-none">
+            <p id={hintId} className="text-xs text-gray-500 dark:text-gray-400">
+              {hint}
+            </p>
+          </div>
         )}
       </div>
 

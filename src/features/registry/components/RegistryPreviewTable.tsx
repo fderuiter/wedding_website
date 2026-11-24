@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
+import { AccessibleExternalLink } from '@/components/ui/AccessibleExternalLink';
+import { Button } from '@/components/ui/Button';
 import { validateRegistryItemRow, parseRegistryPrice } from '../utils/csv';
 import { withBasePath } from '@/lib/basePath';
 
@@ -106,15 +108,21 @@ export const RegistryPreviewTable: React.FC<RegistryPreviewTableProps> = ({
             </button>
           )}
 
-          <button
+          <Button
             type="button"
+            variant="secondary"
             onClick={onImport}
             disabled={validCount === 0 || isSubmitting}
-            className="flex-1 sm:flex-initial inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-md shadow-sm transition-colors"
+            className="flex-1 sm:flex-initial shadow-sm"
           >
             {isSubmitting ? (
               <span className="flex items-center gap-2">
-                <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                <svg
+                  aria-hidden="true"
+                  className="animate-spin h-4 w-4 text-current"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                 </svg>
@@ -123,7 +131,7 @@ export const RegistryPreviewTable: React.FC<RegistryPreviewTableProps> = ({
             ) : (
               `${submitLabel} (${validCount})`
             )}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -287,14 +295,12 @@ export const RegistryPreviewTable: React.FC<RegistryPreviewTableProps> = ({
                         )}
                         {item.vendorUrl && (
                           <div>
-                            <a
+                            <AccessibleExternalLink
                               href={item.vendorUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs text-amber-600 hover:text-amber-700 dark:text-amber-400 underline truncate max-w-xs inline-block"
+                              className="text-xs text-secondary-text underline hover:decoration-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-secondary,#B45309))] focus-visible:ring-offset-1 focus-visible:forced-colors:outline focus-visible:forced-colors:outline-2 rounded-xs truncate max-w-xs inline-block"
                             >
                               {item.vendorUrl}
-                            </a>
+                            </AccessibleExternalLink>
                           </div>
                         )}
                         <div className="flex items-center gap-2 pt-0.5">

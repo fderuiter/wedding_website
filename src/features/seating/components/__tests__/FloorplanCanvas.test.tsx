@@ -393,32 +393,57 @@ describe('FloorplanCanvas component', () => {
       expect(onUpdateTablePosition).toHaveBeenCalledWith('table-1', 100, 50);
     });
 
-    it('clamps table position within canvas boundaries when moving via Arrow keys', () => {
+    it('clamps table position within seat-safe canvas boundaries (36px for guest tables, 0px for landmarks) when moving via Arrow keys', () => {
       const edgeTable: SeatingTableDTO = {
         id: 'table-edge',
         name: 'Edge Table',
         shape: 'rectangular',
         capacity: 2,
-        x: 5,
-        y: 5,
+        x: 40,
+        y: 40,
         width: 120,
         height: 120,
         rotation: 0,
         isSample: false,
       };
+      const edgeLandmark: SeatingTableDTO = {
+        id: 'landmark-edge',
+        name: 'Edge Bar',
+        shape: 'bar',
+        capacity: 0,
+        x: 5,
+        y: 5,
+        width: 160,
+        height: 80,
+        rotation: 0,
+        isSample: false,
+      };
 
       const onUpdateTablePosition = jest.fn();
-      render(<FloorplanCanvas {...defaultProps} tables={[edgeTable]} onUpdateTablePosition={onUpdateTablePosition} />);
+      render(
+        <FloorplanCanvas
+          {...defaultProps}
+          tables={[edgeTable, edgeLandmark]}
+          onUpdateTablePosition={onUpdateTablePosition}
+        />
+      );
 
       const tableElement = screen.getByLabelText(/Edge Table/i);
 
-      // Moving left by 10px from x=5 should clamp to 0
+      // Moving left by 10px from x=40 should clamp guest table to seat-safe 36px
       fireEvent.keyDown(tableElement, { key: 'ArrowLeft' });
-      expect(onUpdateTablePosition).toHaveBeenCalledWith('table-edge', 0, 5);
+      expect(onUpdateTablePosition).toHaveBeenCalledWith('table-edge', 36, 40);
 
-      // Moving up by 10px from y=5 should clamp to 0
+      // Moving up by 10px from y=40 should clamp guest table to seat-safe 36px
       fireEvent.keyDown(tableElement, { key: 'ArrowUp' });
-      expect(onUpdateTablePosition).toHaveBeenCalledWith('table-edge', 5, 0);
+      expect(onUpdateTablePosition).toHaveBeenCalledWith('table-edge', 40, 36);
+
+      // Landmark clamps to 0px
+      const landmarkElement = screen.getByLabelText(/Edge Bar, landmark Bar/i);
+      fireEvent.keyDown(landmarkElement, { key: 'ArrowLeft' });
+      expect(onUpdateTablePosition).toHaveBeenCalledWith('landmark-edge', 0, 5);
+      fireEvent.keyDown(landmarkElement, { key: 'ArrowUp' });
+      expect(onUpdateTablePosition).toHaveBeenCalledWith('landmark-edge', 5, 0);
     });
 
     it('renders seat elements with correct tabIndex, role, and aria-labels', () => {
@@ -608,6 +633,106 @@ describe('FloorplanCanvas component', () => {
       // 350 + 45 = 395 -> normalized to 35
       fireEvent.keyDown(headTable, { key: 'r' });
       expect(onUpdateTableRotation).toHaveBeenCalledWith('table-1', 35);
+    });
+
+    it('flips rotation-handle to -bottom-[76px] with flex-col-reverse near top and rotated borders, avoids toolbar overlap, and rotates smoothly without angle jumps', () => {
+      const onUpdateTableRotation = jest.fn();
+      const onUpdateTablePosition = jest.fn();
+      const topEdgeTable: SeatingTableDTO = {
+        id: 'tbl-top-edge',
+        name: 'Top Edge Table',
+        shape: 'round',
+        capacity: 8,
+        x: 0, // legacy saved at 0 -> renders clamped at 36 without mutating DB
+        y: 0,
+        width: 120,
+        height: 120,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [],
+      };
+
+      const { container, rerender } = render(
+        <FloorplanCanvas
+          {...defaultProps}
+          tables={[topEdgeTable]}
+          selectedTableId="tbl-top-edge"
+          onUpdateTableRotation={onUpdateTableRotation}
+          onUpdateTablePosition={onUpdateTablePosition}
+        />
+      );
+
+      const canvasElement = container.firstElementChild as HTMLElement;
+      jest.spyOn(canvasElement, 'getBoundingClientRect').mockReturnValue({
+        left: 0,
+        top: 0,
+        right: 800,
+        bottom: 650,
+        width: 800,
+        height: 650,
+        x: 0,
+        y: 0,
+        toJSON: () => {},
+      });
+
+      // Legacy table saved at (0, 0) renders at seat-safe (36px, 36px) without mutating DB
+      const tableNode = screen.getByRole('button', { name: /^Top Edge Table, shape/i });
+      expect(tableNode.style.left).toBe('36px');
+      expect(tableNode.style.top).toBe('36px');
+      expect(onUpdateTablePosition).not.toHaveBeenCalled();
+
+      // Plain click selection on legacy table does not mutate DB
+      fireEvent.mouseDown(tableNode, { button: 0, clientX: 80, clientY: 80 });
+      fireEvent.mouseUp(tableNode, { clientX: 80, clientY: 80 });
+      fireEvent.click(tableNode, { clientX: 80, clientY: 80 });
+      expect(onUpdateTablePosition).not.toHaveBeenCalled();
+
+      // Top pole (36 + 60 - 122 = -26) crosses top border -> flips to -bottom-[76px] with flex-col-reverse
+      const rotationHandle = screen.getByTestId('rotation-handle');
+      expect(rotationHandle.className).toContain('-bottom-[76px]');
+      expect(rotationHandle.className).toContain('flex-col-reverse');
+      expect(rotationHandle.className).not.toContain('-top-[76px]');
+
+      // Floating toolbar also flips below table AND clears the flipped rotation-handle (toolbarLocalY >= cy + 150 = 210 > handle knob center 182)
+      const toolbar = screen.getByTestId('rotation-controls');
+      expect(parseFloat(toolbar.style.top)).toBeGreaterThanOrEqual(210);
+
+      // Dragging flipped handle directly below center (center = 96, 96; pointer at 96, 218 -> 0 deg; move slightly left to 3 o'clock/9 o'clock):
+      // At 9 o'clock (dx = -60, dy = 0 -> clientX = 36, clientY = 96), flipped bottom pole at 9 o'clock means table rotation = 90 deg (no 180 deg jump!)
+      const handleBtn = screen.getByRole('button', { name: /Rotate handle for Top Edge Table/i });
+      fireEvent.mouseDown(handleBtn, { button: 0, clientX: 96, clientY: 218 });
+      fireEvent.mouseMove(canvasElement, { clientX: 96, clientY: 219 });
+      expect(tableNode.style.transform).toBe('rotate(0deg)');
+      fireEvent.mouseMove(canvasElement, { clientX: 36, clientY: 96 });
+      expect(tableNode.style.transform).toBe('rotate(90deg)');
+      fireEvent.mouseUp(canvasElement);
+      expect(onUpdateTableRotation).toHaveBeenCalledWith('tbl-top-edge', 90);
+
+      // Rotated 270 deg near left border (x=36, y=220) -> top pole points left (-26 < 0) and flips away from left border
+      rerender(
+        <FloorplanCanvas
+          {...defaultProps}
+          tables={[{ ...topEdgeTable, x: 36, y: 220, rotation: 270 }]}
+          selectedTableId="tbl-top-edge"
+          onUpdateTableRotation={onUpdateTableRotation}
+          onUpdateTablePosition={onUpdateTablePosition}
+        />
+      );
+      expect(screen.getByTestId('rotation-handle').className).toContain('-bottom-[76px]');
+      expect(screen.getByTestId('rotation-handle').className).toContain('flex-col-reverse');
+
+      // Rotated 90 deg near right border (x=680, y=220 on 800px stage) -> top pole points right (862 > 800) and flips away from right border
+      rerender(
+        <FloorplanCanvas
+          {...defaultProps}
+          tables={[{ ...topEdgeTable, x: 680, y: 220, rotation: 90 }]}
+          selectedTableId="tbl-top-edge"
+          onUpdateTableRotation={onUpdateTableRotation}
+          onUpdateTablePosition={onUpdateTablePosition}
+        />
+      );
+      expect(screen.getByTestId('rotation-handle').className).toContain('-bottom-[76px]');
+      expect(screen.getByTestId('rotation-handle').className).toContain('flex-col-reverse');
     });
   });
 

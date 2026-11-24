@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 
 export const DEFAULT_DOC_FILES = [
   'public/openapi.json',
@@ -9,7 +9,7 @@ export const DEFAULT_DOC_FILES = [
 export interface DocSyncOptions {
   cwd?: string;
   files?: string[];
-  generateDocs?: () => void;
+  generateDocs?: () => void | string[];
   skipGeneration?: boolean;
 }
 
@@ -17,6 +17,21 @@ export interface DocSyncResult {
   success: boolean;
   driftedFiles: string[];
   error?: string;
+}
+
+const DRIFT_LINE_REGEX = /^Drift detected in (.+)$/gm;
+
+function extractReportedDriftFiles(output: string): string[] {
+  const reported: string[] = [];
+  let match: RegExpExecArray | null;
+  DRIFT_LINE_REGEX.lastIndex = 0;
+  while ((match = DRIFT_LINE_REGEX.exec(output)) !== null) {
+    const file = match[1].trim();
+    if (file && !reported.includes(file)) {
+      reported.push(file);
+    }
+  }
+  return reported;
 }
 
 /**
@@ -67,45 +82,110 @@ export function checkDocDrift(
 }
 
 /**
- * Executes the OpenAPI schema generation and architectural documentation generation scripts.
+ * Executes the OpenAPI schema and architectural documentation generators in read-only --check mode,
+ * returning any drifted documentation paths without modifying files on disk.
  */
-export function runDocGeneration(cwd: string = process.cwd()): void {
-  execSync('npx tsx scripts/generate-openapi.ts', {
-    cwd,
-    stdio: 'inherit',
-  });
-  execSync('npx tsx scripts/generate-docs.ts --skip-openapi', {
-    cwd,
-    stdio: 'inherit',
-  });
+export function runDocGeneration(
+  cwd: string = process.cwd(),
+  files: string[] = DEFAULT_DOC_FILES
+): string[] {
+  const driftedSet = new Set<string>();
+  const checkCommands: Array<{ args: string[]; label: string }> = [
+    {
+      args: ['tsx', 'scripts/generate-openapi.ts', '--check'],
+      label: 'scripts/generate-openapi.ts --check',
+    },
+    {
+      args: ['tsx', 'scripts/generate-docs.ts', '--skip-openapi', '--check'],
+      label: 'scripts/generate-docs.ts --skip-openapi --check',
+    },
+  ];
+
+  for (const cmd of checkCommands) {
+    const res = spawnSync('npx', cmd.args, {
+      cwd,
+      encoding: 'utf8',
+      shell: process.platform === 'win32',
+    });
+
+    if (res.stdout?.trim()) {
+      console.log(res.stdout.trim());
+    }
+
+    if (res.error) {
+      throw res.error;
+    }
+
+    if (res.status !== 0) {
+      const combined = `${res.stdout ?? ''}\n${res.stderr ?? ''}`;
+      const reported = extractReportedDriftFiles(combined);
+      if (reported.length > 0) {
+        for (const drifted of reported) {
+          driftedSet.add(drifted);
+        }
+      } else {
+        const detail = (res.stderr || res.stdout || `${cmd.label} exited with code ${res.status}`).trim();
+        throw new Error(detail);
+      }
+    }
+  }
+
+  const allowedFiles = new Set(files);
+  const orderedDrifted: string[] = [];
+  for (const file of files) {
+    if (driftedSet.has(file)) {
+      orderedDrifted.push(file);
+    }
+  }
+  for (const file of driftedSet) {
+    if (allowedFiles.has(file) && !orderedDrifted.includes(file)) {
+      orderedDrifted.push(file);
+    }
+  }
+  return orderedDrifted;
 }
 
 /**
- * Runs documentation generation and verifies whether generated docs have drifted from git.
+ * Verifies whether generated documentation matches files on disk without mutating tracked files.
  */
 export function verifyDocSync(options: DocSyncOptions = {}): DocSyncResult {
   const cwd = options.cwd || process.cwd();
   const files = options.files || DEFAULT_DOC_FILES;
 
-  if (!options.skipGeneration) {
+  if (options.skipGeneration) {
     try {
-      if (options.generateDocs) {
-        options.generateDocs();
-      } else {
-        runDocGeneration(cwd);
-      }
+      const driftedFiles = checkDocDrift(files, cwd);
+      return {
+        success: driftedFiles.length === 0,
+        driftedFiles,
+      };
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       return {
         success: false,
         driftedFiles: [],
-        error: `Documentation generation failed: ${errorMsg}`,
+        error: `Drift inspection failed: ${errorMsg}`,
       };
     }
   }
 
   try {
-    const driftedFiles = checkDocDrift(files, cwd);
+    if (options.generateDocs) {
+      const customResult = options.generateDocs();
+      if (Array.isArray(customResult)) {
+        return {
+          success: customResult.length === 0,
+          driftedFiles: customResult,
+        };
+      }
+      const driftedFiles = checkDocDrift(files, cwd);
+      return {
+        success: driftedFiles.length === 0,
+        driftedFiles,
+      };
+    }
+
+    const driftedFiles = runDocGeneration(cwd, files);
     return {
       success: driftedFiles.length === 0,
       driftedFiles,
@@ -115,7 +195,7 @@ export function verifyDocSync(options: DocSyncOptions = {}): DocSyncResult {
     return {
       success: false,
       driftedFiles: [],
-      error: `Drift inspection failed: ${errorMsg}`,
+      error: `Documentation generation failed: ${errorMsg}`,
     };
   }
 }
@@ -137,8 +217,7 @@ ACTIONABLE REMEDIATION:
 --------------------------------------------------------------------------------
 The documentation generation scripts failed to execute properly.
 Check route schemas and error logs above, fix any syntax or schema issues, and retry:
-  npx tsx scripts/generate-openapi.ts
-  npx tsx scripts/generate-docs.ts
+  npm run docs:sync
 ================================================================================
 `);
     process.exit(1);
@@ -157,8 +236,7 @@ ACTIONABLE REMEDIATION:
 The documentation is out of sync with recent codebase changes.
 Run the following commands locally and commit the generated files:
 
-  npx tsx scripts/generate-openapi.ts
-  npx tsx scripts/generate-docs.ts
+  npm run docs:sync
   git add ${result.driftedFiles.join(' ')}
   git commit -m "docs: sync documentation with codebase"
 ================================================================================
