@@ -5,6 +5,10 @@
 import { ContentRepository } from '../repository';
 import { ContentService } from '../service';
 import { ContentNodeAdminService } from '../admin.service';
+import { BaseRepository } from '@/core/infrastructure/repository';
+import { BaseService } from '@/core/infrastructure/service';
+import { WeddingPartyAdminService } from '@/features/wedding-party';
+import { RegistryItemAdminService, translateSnapshotToActive } from '@/features/registry';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 
@@ -243,6 +247,308 @@ describe('Content Domain Database Integration', () => {
       where: { entityType: 'ContentNode', author: 'ReorderTester' },
     });
     expect(snapshots).toHaveLength(2);
+  });
+
+  function createTracedPrisma() {
+    const tracedPool = new Pool({ connectionString });
+    const wireQueries: string[] = [];
+    let poolCheckouts = 0;
+    const wrappedClients = new WeakSet<object>();
+
+    tracedPool.on('acquire', (pgClient: any) => {
+      poolCheckouts++;
+      if (pgClient && !wrappedClients.has(pgClient)) {
+        wrappedClients.add(pgClient);
+        const origQuery = pgClient.query.bind(pgClient);
+        pgClient.query = ((...qArgs: unknown[]) => {
+          const text =
+            typeof qArgs[0] === 'string'
+              ? qArgs[0]
+              : (qArgs[0] as { text?: string } | undefined)?.text ?? '';
+          wireQueries.push(text);
+          return origQuery(...qArgs);
+        }) as typeof pgClient.query;
+      }
+    });
+
+    const tracedPrisma = new PrismaClient({ adapter: new PrismaPg(tracedPool) });
+    return {
+      tracedPool,
+      tracedPrisma,
+      wireQueries,
+      resetMetrics: () => {
+        wireQueries.length = 0;
+        poolCheckouts = 0;
+      },
+      getPoolCheckouts: () => poolCheckouts,
+    };
+  }
+
+  test('ContentNodeAdminService.reorder batches updates into 1 SQL UPDATE, skips missing IDs, deduplicates IDs, rolls back on error, and supports mock fallback', async () => {
+    const { tracedPool, tracedPrisma, wireQueries, resetMetrics, getPoolCheckouts } =
+      createTracedPrisma();
+
+    try {
+      await tracedPrisma.contentNode.createMany({
+        data: Array.from({ length: 10 }, (_, idx) => ({
+          id: `faq-batch-${idx}`,
+          type: 'FAQ',
+          tags: ['Homepage', 'FAQ'],
+          data: {
+            question: `Question ${idx}`,
+            answer: `Answer ${idx}`,
+            displayOrder: idx,
+            isVisible: true,
+          },
+        })),
+      });
+
+      resetMetrics();
+
+      const adminService = new ContentNodeAdminService(tracedPrisma);
+      const reversedIds = Array.from({ length: 10 }, (_, idx) => `faq-batch-${9 - idx}`);
+      // Include a missing ID (skipped) and a trailing duplicate of faq-batch-9
+      await adminService.reorder(
+        ['missing-faq-id', ...reversedIds, 'faq-batch-9'],
+        'BatchFaqAuthor'
+      );
+
+      const updateQueries = wireQueries.filter((q) => /^\s*UPDATE\b/i.test(q));
+      expect(updateQueries).toHaveLength(1);
+      expect(getPoolCheckouts()).toBe(1);
+
+      const firstMoved = await tracedPrisma.contentNode.findUnique({
+        where: { id: 'faq-batch-8' },
+      });
+      const duplicatedMoved = await tracedPrisma.contentNode.findUnique({
+        where: { id: 'faq-batch-9' },
+      });
+      expect((firstMoved.data as Record<string, unknown>).displayOrder).toBe(1);
+      expect((firstMoved.data as Record<string, unknown>).question).toBe('Question 8');
+      // Duplicate faq-batch-9 received last sequential index (10)
+      expect((duplicatedMoved.data as Record<string, unknown>).displayOrder).toBe(10);
+
+      const snapshots = await tracedPrisma.snapshotVersion.findMany({
+        where: { entityType: 'ContentNode', author: 'BatchFaqAuthor' },
+      });
+      expect(snapshots).toHaveLength(10);
+      expect(snapshots[0].data).toEqual(
+        expect.objectContaining({
+          type: 'FAQ',
+          tags: ['Homepage', 'FAQ'],
+          data: expect.objectContaining({ isVisible: true }),
+        })
+      );
+
+      // Verify atomic rollback if snapshot write fails after $executeRaw
+      const failingPrisma = new Proxy(tracedPrisma, {
+        get(target, prop, receiver) {
+          if (prop === '$transaction') {
+            return (cb: (tx: any) => Promise<unknown>) =>
+              target.$transaction(async (tx: any) => {
+                const wrappedTx = new Proxy(tx, {
+                  get(txTarget, txProp, txReceiver) {
+                    if (txProp === 'snapshotVersion') {
+                      return {
+                        ...txTarget.snapshotVersion,
+                        createMany: () => Promise.reject(new Error('Simulated snapshot failure')),
+                      };
+                    }
+                    return Reflect.get(txTarget, txProp, txReceiver);
+                  },
+                });
+                return cb(wrappedTx);
+              });
+          }
+          return Reflect.get(target, prop, receiver);
+        },
+      });
+
+      const failingService = new ContentNodeAdminService(failingPrisma);
+      await expect(
+        failingService.reorder(['faq-batch-0', 'faq-batch-8'], 'RollbackAuthor')
+      ).rejects.toThrow('Simulated snapshot failure');
+
+      const afterRollback = await tracedPrisma.contentNode.findUnique({
+        where: { id: 'faq-batch-8' },
+      });
+      expect((afterRollback.data as Record<string, unknown>).displayOrder).toBe(1);
+      const rollbackSnapshots = await tracedPrisma.snapshotVersion.findMany({
+        where: { entityType: 'ContentNode', author: 'RollbackAuthor' },
+      });
+      expect(rollbackSnapshots).toHaveLength(0);
+
+      // Verify mock fallback when $executeRaw is absent
+      const mockUpdate = jest.fn(async ({ where, data }: any) => ({
+        id: where.id,
+        type: 'FAQ',
+        tags: ['FAQ'],
+        data: data.data,
+      }));
+      const mockSnapshotCreateMany = jest.fn().mockResolvedValue({ count: 2 });
+      const mockFallbackTx = {
+        contentNode: {
+          findMany: jest.fn().mockResolvedValue([
+            { id: 'm-faq-1', type: 'FAQ', tags: ['FAQ'], data: { question: 'Q1', displayOrder: 0 } },
+            { id: 'm-faq-2', type: 'FAQ', tags: ['FAQ'], data: { question: 'Q2', displayOrder: 1 } },
+          ]),
+          update: mockUpdate,
+        },
+        snapshotVersion: {
+          createMany: mockSnapshotCreateMany,
+        },
+      };
+      const mockFallbackClient = {
+        $transaction: jest.fn((cb: any) => cb(mockFallbackTx)),
+      };
+      const fallbackService = new ContentNodeAdminService(mockFallbackClient);
+      await fallbackService.reorder(['m-faq-2', 'm-faq-1'], 'FallbackAuthor');
+      expect(mockUpdate).toHaveBeenCalledTimes(2);
+      expect(mockSnapshotCreateMany).toHaveBeenCalledTimes(1);
+    } finally {
+      await tracedPrisma.$disconnect();
+      await tracedPool.end();
+    }
+  });
+
+  test('BaseService, WeddingPartyAdminService, and RegistryItemAdminService each execute 1 UPDATE on 1 pg.Pool connection with full snapshots and rollbacks', async () => {
+    const { tracedPool, tracedPrisma, wireQueries, resetMetrics, getPoolCheckouts } =
+      createTracedPrisma();
+
+    try {
+      const media = await tracedPrisma.media.create({
+        data: { url: '/uploads/reorder-test.jpg', altText: 'Reorder Test Media' },
+      });
+
+      await tracedPrisma.weddingPartyMember.createMany({
+        data: [
+          {
+            id: 'wp-1',
+            name: 'Member One',
+            role: 'Maid of Honor',
+            bio: 'Bio One',
+            side: 'BRIDE',
+            photoId: media.id,
+            order: 0,
+          },
+          {
+            id: 'wp-2',
+            name: 'Member Two',
+            role: 'Best Man',
+            bio: 'Bio Two',
+            side: 'GROOM',
+            photoId: media.id,
+            order: 1,
+          },
+          {
+            id: 'wp-3',
+            name: 'Member Three',
+            role: 'Bridesmaid',
+            bio: 'Bio Three',
+            side: 'JOINT',
+            photoId: media.id,
+            order: 2,
+          },
+        ],
+      });
+
+      // 1. BaseService.reorder -> 1 UPDATE statement, 1 pool checkout, rollback on missing ID
+      const basePartyService = new BaseService(
+        new BaseRepository('weddingPartyMember', tracedPrisma),
+        'WeddingPartyMember'
+      );
+      resetMetrics();
+      await basePartyService.reorder(['wp-3', 'wp-1', 'wp-2']);
+      expect(wireQueries.filter((q) => /^\s*UPDATE\b/i.test(q))).toHaveLength(1);
+      expect(getPoolCheckouts()).toBe(1);
+
+      await expect(basePartyService.reorder(['wp-1', 'missing-wp'])).rejects.toThrow(
+        /Record to update not found/
+      );
+      const wpAfterFailedBaseReorder = await tracedPrisma.weddingPartyMember.findMany({
+        orderBy: { order: 'asc' },
+      });
+      expect(wpAfterFailedBaseReorder.map((m: any) => m.id)).toEqual(['wp-3', 'wp-1', 'wp-2']);
+
+      // 2. WeddingPartyAdminService.reorder -> 1 UPDATE statement, 1 pool checkout, full SnapshotVersion fields
+      const weddingPartyAdmin = new WeddingPartyAdminService(tracedPrisma);
+      resetMetrics();
+      await weddingPartyAdmin.reorder(['wp-2', 'wp-3', 'wp-1'], 'PartyOrderAuthor');
+      expect(wireQueries.filter((q) => /^\s*UPDATE\b/i.test(q))).toHaveLength(1);
+      expect(getPoolCheckouts()).toBe(1);
+
+      const wpSnapshots = await tracedPrisma.snapshotVersion.findMany({
+        where: { entityType: 'WeddingPartyMember', author: 'PartyOrderAuthor' },
+      });
+      expect(wpSnapshots).toHaveLength(3);
+      const wp2Snap = wpSnapshots.find((s: any) => s.entityId === 'wp-2');
+      expect(wp2Snap?.data).toEqual(
+        expect.objectContaining({
+          id: 'wp-2',
+          name: 'Member Two',
+          role: 'Best Man',
+          bio: 'Bio Two',
+          side: 'GROOM',
+          photoId: media.id,
+          order: 0,
+        })
+      );
+
+      // 3. RegistryItemAdminService.reorder -> 1 UPDATE statement, 1 pool checkout, full SnapshotVersion fields
+      await tracedPrisma.registryItem.createMany({
+        data: [
+          {
+            id: 'reg-1',
+            name: 'Coffee Grinder',
+            description: 'Burr grinder',
+            category: 'Kitchen',
+            price: 180,
+            imageId: media.id,
+            displayOrder: 0,
+          },
+          {
+            id: 'reg-2',
+            name: 'Linen Sheets',
+            description: 'Queen set',
+            category: 'Bedroom',
+            price: 240,
+            imageId: media.id,
+            displayOrder: 1,
+          },
+        ],
+      });
+
+      const registryAdmin = new RegistryItemAdminService(tracedPrisma);
+      resetMetrics();
+      await registryAdmin.reorder(['reg-2', 'reg-1'], 'RegistryOrderAuthor');
+      expect(wireQueries.filter((q) => /^\s*UPDATE\b/i.test(q))).toHaveLength(1);
+      expect(getPoolCheckouts()).toBe(1);
+
+      const reorderedReg = await tracedPrisma.registryItem.findMany({
+        orderBy: { displayOrder: 'asc' },
+      });
+      expect(reorderedReg.map((r: any) => r.id)).toEqual(['reg-2', 'reg-1']);
+
+      const regSnapshots = await tracedPrisma.snapshotVersion.findMany({
+        where: { entityType: 'RegistryItem', author: 'RegistryOrderAuthor' },
+      });
+      expect(regSnapshots).toHaveLength(2);
+      const reg2Snap = regSnapshots.find((s: any) => s.entityId === 'reg-2');
+      const translated = translateSnapshotToActive(reg2Snap?.data);
+      expect(translated).toEqual(
+        expect.objectContaining({
+          name: 'Linen Sheets',
+          description: 'Queen set',
+          category: 'Bedroom',
+          price: 240,
+          imageId: media.id,
+          displayOrder: 0,
+        })
+      );
+    } finally {
+      await tracedPrisma.$disconnect();
+      await tracedPool.end();
+    }
   });
 
   test('getPublicPhotos filters approved visible photos in PostgreSQL, applies limit and since to eligible rows, and accepts legacy URLs', async () => {

@@ -307,6 +307,90 @@ describe('WeddingPartyAdminService - Atomic Transactions & Auditing', () => {
         'Ordered IDs array cannot be empty'
       );
     });
+
+    it('uses one parameterized $executeRaw UPDATE FROM VALUES query and captures full snapshots when $executeRaw exists', async () => {
+      const mockExecuteRaw = jest.fn().mockResolvedValue(2);
+      const mockFindMany = jest.fn().mockResolvedValue([
+        {
+          id: 'member-1',
+          name: 'Alice',
+          role: 'Maid of Honor',
+          bio: 'Sister of the bride',
+          photoId: 'media-1',
+          link: null,
+          order: 1,
+          side: 'BRIDE',
+          isSample: false,
+        },
+        {
+          id: 'member-2',
+          name: 'Bob',
+          role: 'Best Man',
+          bio: 'Brother of the groom',
+          photoId: 'media-2',
+          link: 'https://example.com',
+          order: 0,
+          side: 'GROOM',
+          isSample: false,
+        },
+      ]);
+      const mockUpdate = jest.fn();
+      const rawTx: any = {
+        weddingPartyMember: {
+          findMany: mockFindMany,
+          update: mockUpdate,
+        },
+        $executeRaw: mockExecuteRaw,
+      };
+      const rawClient = {
+        $transaction: jest.fn((cb: any) => cb(rawTx)),
+      };
+      const rawService = new WeddingPartyAdminService(rawClient);
+
+      await rawService.reorder(['member-2', 'member-1'], 'Planner');
+
+      expect(mockFindMany).toHaveBeenCalledWith({
+        where: { id: { in: ['member-2', 'member-1'] } },
+      });
+      expect(mockExecuteRaw).toHaveBeenCalledTimes(1);
+      expect(mockUpdate).not.toHaveBeenCalled();
+
+      const sqlArg = mockExecuteRaw.mock.calls[0][0];
+      const normalizedSql = sqlArg.strings.join('?').replace(/\s+/g, ' ').trim();
+      expect(normalizedSql).toContain('UPDATE "public"."WeddingPartyMember" AS t');
+      expect(normalizedSql).toContain('SET "order" = v."order", "updatedAt" = NOW()');
+      expect(sqlArg.values).toEqual(['member-2', 0, 'member-1', 1]);
+
+      expect(createBatchAuditSnapshots).toHaveBeenCalledWith(
+        'WeddingPartyMember',
+        [
+          {
+            id: 'member-2',
+            name: 'Bob',
+            role: 'Best Man',
+            bio: 'Brother of the groom',
+            photoId: 'media-2',
+            link: 'https://example.com',
+            order: 0,
+            side: 'GROOM',
+            isSample: false,
+          },
+          {
+            id: 'member-1',
+            name: 'Alice',
+            role: 'Maid of Honor',
+            bio: 'Sister of the bride',
+            photoId: 'media-1',
+            link: null,
+            order: 1,
+            side: 'BRIDE',
+            isSample: false,
+          },
+        ],
+        'Planner',
+        rawTx
+      );
+    });
   });
 
   describe('findMany orderBy compatibility', () => {

@@ -34,8 +34,14 @@ export class RegistryItemAdminService extends BaseService<RegistryItemDTO> {
     include: { image: true, contributors: true },
   };
 
-  constructor() {
-    super(new BaseRepository<RegistryItemDTO>('registryItem'), 'RegistryItem', RegistryItemInputSchema);
+  constructor(dbClient?: any) {
+    super(
+      dbClient
+        ? new BaseRepository<RegistryItemDTO>('registryItem', dbClient)
+        : new BaseRepository<RegistryItemDTO>('registryItem'),
+      'RegistryItem',
+      RegistryItemInputSchema
+    );
   }
 
   protected async preSave(
@@ -105,16 +111,36 @@ export class RegistryItemAdminService extends BaseService<RegistryItemDTO> {
     }
 
     await this.repo.transaction(async (txRepo) => {
-      const existingRecords = await txRepo.model.findMany({
-        where: { id: { in: orderedIds } },
-        select: { id: true },
-      });
+      const hasRawExecutor = typeof txRepo.client?.$executeRaw === 'function';
+      const existingRecords = await txRepo.model.findMany(
+        hasRawExecutor
+          ? { where: { id: { in: orderedIds } } }
+          : { where: { id: { in: orderedIds } }, select: { id: true } }
+      );
 
-      const existingSet = new Set(existingRecords.map((r: { id: string }) => r.id));
-      const missingIds = orderedIds.filter((id) => !existingSet.has(id));
+      const existingById = new Map<string, any>(
+        existingRecords.map((r: { id: string }) => [r.id, r])
+      );
+      const missingIds = orderedIds.filter((id) => !existingById.has(id));
 
       if (missingIds.length > 0) {
         throw new Error(`Invalid registry item ID(s): ${missingIds.join(', ')}`);
+      }
+
+      if (hasRawExecutor) {
+        await txRepo.reorder(orderedIds, 'displayOrder');
+        const updatedRecords = orderedIds.map((id, index) => ({
+          ...existingById.get(id),
+          displayOrder: index,
+        }));
+
+        await createBatchAuditSnapshots(
+          this.entityType,
+          updatedRecords,
+          author,
+          txRepo.client
+        );
+        return;
       }
 
       const updatedRecords = await Promise.all(

@@ -12,8 +12,14 @@ export class WeddingPartyAdminService extends BaseService<any> {
     include: { photo: true }
   };
     
-  constructor() {
-    super(new BaseRepository('weddingPartyMember'), 'WeddingPartyMember', WeddingPartyInputSchema);
+  constructor(dbClient?: any) {
+    super(
+      dbClient
+        ? new BaseRepository('weddingPartyMember', dbClient)
+        : new BaseRepository('weddingPartyMember'),
+      'WeddingPartyMember',
+      WeddingPartyInputSchema
+    );
   }
 
   protected async preSave(data: any, client?: any, author?: string): Promise<any> {
@@ -26,16 +32,41 @@ export class WeddingPartyAdminService extends BaseService<any> {
     }
 
     await this.repo.transaction(async (txRepo) => {
-      const existingRecords = await txRepo.model.findMany({
-        where: { id: { in: orderedIds } },
-        select: { id: true }
-      });
+      const hasRawExecutor = typeof txRepo.client?.$executeRaw === 'function';
+      const existingRecords = await txRepo.model.findMany(
+        hasRawExecutor
+          ? { where: { id: { in: orderedIds } } }
+          : { where: { id: { in: orderedIds } }, select: { id: true } }
+      );
 
-      const existingSet = new Set(existingRecords.map((r: any) => r.id));
-      const missingIds = orderedIds.filter((id) => !existingSet.has(id));
+      const existingById = new Map<string, any>(
+        existingRecords.map((r: any) => [r.id, r])
+      );
+      const missingIds = orderedIds.filter((id) => !existingById.has(id));
 
       if (missingIds.length > 0) {
         throw new Error(`Invalid member ID(s): ${missingIds.join(', ')}`);
+      }
+
+      if (hasRawExecutor) {
+        await txRepo.reorder(orderedIds);
+
+        const lastIndexById = new Map<string, number>();
+        orderedIds.forEach((id, index) => {
+          lastIndexById.set(id, index);
+        });
+        const updatedRecords = Array.from(lastIndexById.entries()).map(([id, order]) => ({
+          ...existingById.get(id),
+          order,
+        }));
+
+        await createBatchAuditSnapshots(
+          this.entityType,
+          updatedRecords,
+          author,
+          txRepo.client
+        );
+        return;
       }
 
       const updatedRecords = await txRepo.reorder(orderedIds);

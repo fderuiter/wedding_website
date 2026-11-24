@@ -1,5 +1,7 @@
+import { Prisma } from '@prisma/client';
 import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
+import { qualifyPostgresTable } from '@/lib/postgres-url.js';
 import { ContentNodeInputSchema } from './schemas';
 
 export class ContentNodeAdminService extends BaseService<any> {
@@ -26,7 +28,7 @@ export class ContentNodeAdminService extends BaseService<any> {
         existingRecords.map((record: any) => [record.id, record])
       );
 
-      const updatedRecords: any[] = [];
+      const plannedById = new Map<string, { record: any; nextData: Record<string, unknown> }>();
       let nextOrder = 0;
 
       for (const id of orderedIds) {
@@ -38,14 +40,55 @@ export class ContentNodeAdminService extends BaseService<any> {
             ? (current.data as Record<string, unknown>)
             : {};
 
-        const updated = await txRepo.update(id, {
-          data: {
+        plannedById.set(id, {
+          record: current,
+          nextData: {
             ...baseData,
             displayOrder: nextOrder,
           },
         });
-        updatedRecords.push(updated);
         nextOrder++;
+      }
+
+      if (plannedById.size === 0) {
+        return;
+      }
+
+      const plannedEntries = Array.from(plannedById.entries());
+
+      if (typeof txRepo.client?.$executeRaw === 'function') {
+        const rows = plannedEntries.map(
+          ([id, { nextData }]) => Prisma.sql`(${id}::text, ${JSON.stringify(nextData)}::jsonb)`
+        );
+        const values = Prisma.join(rows, ', ');
+        const contentNodeTable = Prisma.raw(qualifyPostgresTable('ContentNode'));
+
+        const bulkUpdateQuery = Prisma.sql`
+          UPDATE ${contentNodeTable} AS t
+          SET
+            "data" = v."data",
+            "updatedAt" = NOW()
+          FROM (VALUES ${values}) AS v("id", "data")
+          WHERE t."id" = v."id"
+        `;
+
+        await txRepo.client.$executeRaw(bulkUpdateQuery);
+
+        const updatedRecords = plannedEntries.map(([, { record, nextData }]) => ({
+          ...record,
+          data: nextData,
+        }));
+
+        await this.createBatchSnapshots(updatedRecords, author, txRepo.client);
+        return;
+      }
+
+      const updatedRecords: any[] = [];
+      for (const [id, { nextData }] of plannedEntries) {
+        const updated = await txRepo.update(id, {
+          data: nextData,
+        });
+        updatedRecords.push(updated);
       }
 
       if (updatedRecords.length > 0) {
