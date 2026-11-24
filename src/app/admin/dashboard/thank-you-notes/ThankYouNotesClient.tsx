@@ -1783,7 +1783,7 @@ export default function ThankYouNotesPage() {
                               size="sm"
                               variant="outline"
                               onClick={() => openEmailComposer(item)}
-                              aria-label={`Compose thank-you email for ${item.name}`}
+                              srContext={`for ${item.name}`}
                             >
                               Send Email
                             </Button>

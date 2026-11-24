@@ -42,6 +42,9 @@ describe('CsvRegistryImport', () => {
     });
 
     const dropZone = screen.getByRole('button', { name: csvPromptRegex });
+    const idleHint = screen.getByText(/Supports columns: Name, Price, Category/i);
+    expect(dropZone.contains(idleHint)).toBe(false);
+    expect(dropZone).toHaveAccessibleDescription(/Supports columns: Name, Price, Category/i);
     expect(
       await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
     ).toHaveNoViolations();
@@ -94,6 +97,7 @@ Wine Glasses Set,45.00,Dining,2,https://example.com/glasses`;
       });
 
       expect(screen.getByRole('button', { name: 'Parsing CSV file...' })).toBeInTheDocument();
+      expect(screen.queryByText(/Supports columns: Name, Price, Category/i)).not.toBeInTheDocument();
       expect(
         await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
       ).toHaveNoViolations();
@@ -103,7 +107,11 @@ Wine Glasses Set,45.00,Dining,2,https://example.com/glasses`;
       expect(await screen.findByText('Cast Iron Skillet')).toBeInTheDocument();
       expect(screen.getByText('Wine Glasses Set')).toBeInTheDocument();
       expect(screen.getByText('2 Ready to Import')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'gifts.csv' })).toBeInTheDocument();
+      const selectedDropZone = screen.getByRole('button', { name: 'gifts.csv' });
+      expect(selectedDropZone).toBeInTheDocument();
+      const replaceHint = screen.getByText(/Click or drag to replace file/i);
+      expect(selectedDropZone.contains(replaceHint)).toBe(false);
+      expect(selectedDropZone).toHaveAccessibleDescription(/Click or drag to replace file/i);
       expect(
         await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
       ).toHaveNoViolations();
