@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { AccessibleExternalLink } from '@/components/ui/AccessibleExternalLink';
 import { Icon } from '@/components/ui/Icon';
-import { resolveShowcasePath } from '@/lib/basePath';
+import { getPortalBaseUrl, resolveShowcasePath } from '@/lib/basePath';
 import { ARCHETYPE_PRESETS, type ArchetypeId } from '@/lib/sampleData/archetypes';
 import { THEME_PRESET_KEYS, type ThemePreset } from '@/lib/theme/presets';
 import type { DemoPersona } from '@/lib/demo/demoStore';
@@ -123,6 +123,16 @@ export function DemoToolbar() {
           </div>
 
           <div className="flex items-center gap-2">
+            <a
+              href={getPortalBaseUrl()}
+              data-testid="demo-portal-link"
+              data-static-demo-bypass="true"
+              className="inline-flex items-center gap-1.5 min-h-[32px] min-w-[32px] px-3 py-1 rounded-md text-xs font-semibold border border-slate-300 dark:border-slate-600 bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 dark:focus-visible:ring-slate-100"
+            >
+              <Icon name="Globe" className="w-3.5 h-3.5" />
+              <span>Docs Portal</span>
+            </a>
+
             <button
               type="button"
               data-testid="demo-reset-button"

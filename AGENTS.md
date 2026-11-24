@@ -62,7 +62,7 @@ Invoke the unified quality workflow in [`scripts/check-quality.ts`](scripts/chec
 # Fast static, contract, doc-sync, and container digest checks (matches CI verify job):
 npm run check:static
 
-# Full pre-push verification (static checks, typecheck, lint, Knip, docs:build, build-storybook, build:export, and Jest coverage):
+# Full pre-push verification (static checks, typecheck, lint, Knip, check:audit, docs:build, build-storybook, build:export, and Jest coverage):
 npm run quality
 ```
 

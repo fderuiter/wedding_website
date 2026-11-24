@@ -10,7 +10,7 @@ import {
 
 import { FormGroup, Label, Input, FormMessage, Checkbox } from '@/components/ui/forms';
 import { AccessibleStep } from '@/components/ui/AccessibleStep';
-import { Container, Card, Heading } from '@/components/ui/Layout';
+import { Container, Card, Heading, MainLandmark } from '@/components/ui/Layout';
 import { Button } from '@/components/ui/Button';
 import { ToggleButtonGroup } from '@/components/ui/ToggleButtonGroup';
 import { ToastContext, ToastProvider } from '@/components/ui/ToastProvider';
@@ -687,7 +687,7 @@ function SetupWizardContent({
   };
 
   return (
-    <main id="main-content" tabIndex={-1} className="min-h-screen py-12 flex flex-col justify-center items-center">
+    <MainLandmark className="min-h-screen py-12 flex flex-col justify-center items-center">
       <h1 className="sr-only">Wedding Website Setup Wizard</h1>
       <AccessibleStep isActive={step === 1}>
         <Container>
@@ -1380,7 +1380,7 @@ function SetupWizardContent({
           />
         </>
       )}
-    </main>
+    </MainLandmark>
   );
 }
 

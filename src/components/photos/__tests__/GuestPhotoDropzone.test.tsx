@@ -80,7 +80,6 @@ describe('GuestPhotoDropzone', () => {
           {
             id: 'media-999',
             nodeId: 'node-999',
-            url: '/uploads/photos/photo1.png',
             altText: 'My Ceremony Photo',
             status: 'PENDING',
             isVisible: false,

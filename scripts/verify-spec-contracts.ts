@@ -130,6 +130,7 @@ interface ModuleSymbolInventory {
   exportsTypes: Set<string>;
   topLevelDeclarations: Set<string>;
   classAndObjectMembers: Map<string, Set<string>>;
+  typeCallableMembers: Map<string, Set<string>>;
   allClassMemberNames: Set<string>;
   propertyAndConstLiterals: Set<string>;
   exportedConstLiterals: Map<string, string>;
@@ -859,9 +860,12 @@ function getFileSliceInventory(filePath: string): FileSliceInventory {
     } else if (
       (ts.isMethodDeclaration(node) ||
         ts.isPropertyDeclaration(node) ||
+        ts.isPropertySignature(node) ||
+        ts.isMethodSignature(node) ||
         ts.isGetAccessorDeclaration(node) ||
         ts.isSetAccessorDeclaration(node) ||
-        ts.isPropertyAssignment(node)) &&
+        ts.isPropertyAssignment(node) ||
+        ts.isShorthandPropertyAssignment(node)) &&
       node.name &&
       (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name))
     ) {
@@ -917,6 +921,7 @@ function getModuleSymbolInventory(
   const { values: exportsValues, types: exportsTypes } = collectCachedModuleExports(filePath, rootDir);
   const topLevelDeclarations = new Set<string>([...exportsValues, ...exportsTypes]);
   const classAndObjectMembers = new Map<string, Set<string>>();
+  const typeCallableMembers = new Map<string, Set<string>>();
   const allClassMemberNames = new Set<string>();
   const propertyAndConstLiterals = new Set<string>();
   const exportedConstLiterals = new Map<string, string>();
@@ -930,6 +935,7 @@ function getModuleSymbolInventory(
       exportsTypes,
       topLevelDeclarations,
       classAndObjectMembers,
+      typeCallableMembers,
       allClassMemberNames,
       propertyAndConstLiterals,
       exportedConstLiterals,
@@ -940,6 +946,24 @@ function getModuleSymbolInventory(
   }
 
   const sf = getCachedSourceFile(filePath).sf;
+  const localTypeDecls = new Map<string, ts.InterfaceDeclaration | ts.TypeAliasDeclaration>();
+  for (const stmt of sf.statements) {
+    if (
+      ts.isImportDeclaration(stmt) &&
+      ts.isStringLiteral(stmt.moduleSpecifier) &&
+      stmt.importClause?.namedBindings &&
+      ts.isNamedImports(stmt.importClause.namedBindings)
+    ) {
+      for (const el of stmt.importClause.namedBindings.elements) {
+        localImports.set(el.name.text, {
+          specifier: stmt.moduleSpecifier.text,
+          importedName: el.propertyName ? el.propertyName.text : el.name.text,
+        });
+      }
+    } else if (ts.isInterfaceDeclaration(stmt) || ts.isTypeAliasDeclaration(stmt)) {
+      localTypeDecls.set(stmt.name.text, stmt);
+    }
+  }
 
   function recordConstValue(
     map: Map<string, Set<ConstPrimitiveValue>>,
@@ -955,6 +979,190 @@ function getModuleSymbolInventory(
     const set = classAndObjectMembers.get(container) ?? new Set<string>();
     set.add(memberName);
     classAndObjectMembers.set(container, set);
+  }
+
+  function ensureTypeCallableSet(container: string): Set<string> {
+    let set = typeCallableMembers.get(container);
+    if (!set) {
+      set = new Set<string>();
+      typeCallableMembers.set(container, set);
+    }
+    return set;
+  }
+
+  function recordTypeCallableMember(container: string, memberName: string) {
+    ensureTypeCallableSet(container).add(memberName);
+  }
+
+  function isCallableTypeNode(
+    typeNode: ts.TypeNode | undefined,
+    seenTypeRefs: Set<string> = new Set(),
+  ): boolean {
+    if (!typeNode) return false;
+    if (ts.isFunctionTypeNode(typeNode) || ts.isConstructorTypeNode(typeNode)) {
+      return true;
+    }
+    if (ts.isParenthesizedTypeNode(typeNode)) {
+      return isCallableTypeNode(typeNode.type, seenTypeRefs);
+    }
+    if (ts.isUnionTypeNode(typeNode) || ts.isIntersectionTypeNode(typeNode)) {
+      return typeNode.types.some((branch) => isCallableTypeNode(branch, seenTypeRefs));
+    }
+    if (ts.isTypeLiteralNode(typeNode)) {
+      return typeNode.members.some(
+        (m) => ts.isCallSignatureDeclaration(m) || ts.isConstructSignatureDeclaration(m),
+      );
+    }
+    if (ts.isTypeReferenceNode(typeNode)) {
+      const refName = ts.isIdentifier(typeNode.typeName)
+        ? typeNode.typeName.text
+        : ts.isQualifiedName(typeNode.typeName)
+          ? typeNode.typeName.right.text
+          : null;
+      if (
+        refName === 'Function' ||
+        refName === 'CallableFunction' ||
+        refName === 'VoidFunction' ||
+        refName === 'Dispatch'
+      ) {
+        return true;
+      }
+      if (refName && ts.isIdentifier(typeNode.typeName) && !seenTypeRefs.has(refName)) {
+        const localDecl = localTypeDecls.get(refName);
+        if (localDecl) {
+          const nextSeen = new Set(seenTypeRefs);
+          nextSeen.add(refName);
+          if (ts.isTypeAliasDeclaration(localDecl)) {
+            return isCallableTypeNode(localDecl.type, nextSeen);
+          }
+          return localDecl.members.some(
+            (m) => ts.isCallSignatureDeclaration(m) || ts.isConstructSignatureDeclaration(m),
+          );
+        }
+      }
+    }
+    return false;
+  }
+
+  function collectTypeElementSignatures(
+    containerName: string,
+    members: readonly ts.TypeElement[],
+  ) {
+    ensureTypeCallableSet(containerName);
+    for (const member of members) {
+      if (
+        (ts.isPropertySignature(member) || ts.isMethodSignature(member)) &&
+        member.name &&
+        (ts.isIdentifier(member.name) || ts.isStringLiteral(member.name))
+      ) {
+        const memberName = member.name.text;
+        recordMember(containerName, memberName);
+        if (ts.isMethodSignature(member) || isCallableTypeNode(member.type)) {
+          recordTypeCallableMember(containerName, memberName);
+        }
+      }
+    }
+  }
+
+  function mergeReferencedTypeMembers(
+    containerName: string,
+    refName: string,
+    seenTypes: Set<string>,
+  ) {
+    if (seenTypes.has(refName)) return;
+    const localDecl = localTypeDecls.get(refName);
+    if (localDecl) {
+      const nextSeen = new Set(seenTypes);
+      nextSeen.add(refName);
+      if (ts.isTypeAliasDeclaration(localDecl)) {
+        collectMembersFromTypeNode(containerName, localDecl.type, nextSeen);
+      } else {
+        collectInterfaceMembers(containerName, localDecl, nextSeen);
+      }
+      return;
+    }
+    const imp = localImports.get(refName);
+    if (imp) {
+      const targetPath = resolveLocalTsModule(filePath, imp.specifier, rootDir);
+      if (targetPath && !visited.has(`${targetPath}::typeref::${imp.importedName}`)) {
+        const nextVisited = new Set(visited);
+        nextVisited.add(`${targetPath}::typeref::${imp.importedName}`);
+        const subInv = getModuleSymbolInventory(targetPath, rootDir, nextVisited);
+        const subMembers = subInv.classAndObjectMembers.get(imp.importedName);
+        if (subMembers) {
+          for (const m of subMembers) {
+            recordMember(containerName, m);
+          }
+        }
+        const subCallables = subInv.typeCallableMembers.get(imp.importedName);
+        if (subCallables) {
+          ensureTypeCallableSet(containerName);
+          for (const m of subCallables) {
+            recordTypeCallableMember(containerName, m);
+          }
+        }
+      }
+    }
+  }
+
+  function collectInterfaceMembers(
+    containerName: string,
+    iface: ts.InterfaceDeclaration,
+    seenTypes: Set<string>,
+  ) {
+    collectTypeElementSignatures(containerName, iface.members);
+    if (iface.heritageClauses) {
+      for (const clause of iface.heritageClauses) {
+        if (clause.token !== ts.SyntaxKind.ExtendsKeyword) continue;
+        for (const expr of clause.types) {
+          if (ts.isIdentifier(expr.expression)) {
+            const baseName = expr.expression.text;
+            if (
+              (baseName === 'Readonly' ||
+                baseName === 'Partial' ||
+                baseName === 'Required' ||
+                baseName === 'NonNullable') &&
+              expr.typeArguments &&
+              expr.typeArguments.length === 1
+            ) {
+              collectMembersFromTypeNode(containerName, expr.typeArguments[0], seenTypes);
+            } else {
+              mergeReferencedTypeMembers(containerName, baseName, seenTypes);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  function collectMembersFromTypeNode(
+    containerName: string,
+    typeNode: ts.TypeNode,
+    seenTypes: Set<string>,
+  ) {
+    if (ts.isParenthesizedTypeNode(typeNode)) {
+      collectMembersFromTypeNode(containerName, typeNode.type, seenTypes);
+    } else if (ts.isTypeLiteralNode(typeNode)) {
+      collectTypeElementSignatures(containerName, typeNode.members);
+    } else if (ts.isIntersectionTypeNode(typeNode)) {
+      for (const branch of typeNode.types) {
+        collectMembersFromTypeNode(containerName, branch, seenTypes);
+      }
+    } else if (ts.isTypeReferenceNode(typeNode) && ts.isIdentifier(typeNode.typeName)) {
+      const refName = typeNode.typeName.text;
+      if (
+        (refName === 'Readonly' ||
+          refName === 'Partial' ||
+          refName === 'Required' ||
+          refName === 'NonNullable') &&
+        typeNode.typeArguments &&
+        typeNode.typeArguments.length === 1
+      ) {
+        collectMembersFromTypeNode(containerName, typeNode.typeArguments[0], seenTypes);
+      } else {
+        mergeReferencedTypeMembers(containerName, refName, seenTypes);
+      }
+    }
   }
 
   function mergeReExportedSymbol(
@@ -987,6 +1195,14 @@ function getModuleSymbolInventory(
       for (const m of members) {
         recordMember(exportedName, m);
         allClassMemberNames.add(m);
+      }
+    }
+
+    const callables = subInv.typeCallableMembers.get(importedName);
+    if (callables) {
+      ensureTypeCallableSet(exportedName);
+      for (const m of callables) {
+        recordTypeCallableMember(exportedName, m);
       }
     }
   }
@@ -1132,6 +1348,14 @@ function getModuleSymbolInventory(
               }
             }
           }
+          for (const [container, callables] of subInv.typeCallableMembers.entries()) {
+            if (subInv.exportsValues.has(container) || subInv.exportsTypes.has(container)) {
+              ensureTypeCallableSet(container);
+              for (const m of callables) {
+                recordTypeCallableMember(container, m);
+              }
+            }
+          }
         }
       } else if (stmt.exportClause && ts.isNamedExports(stmt.exportClause)) {
         for (const el of stmt.exportClause.elements) {
@@ -1171,17 +1395,11 @@ function getModuleSymbolInventory(
     } else if (ts.isInterfaceDeclaration(stmt)) {
       const ifaceName = stmt.name.text;
       topLevelDeclarations.add(ifaceName);
-      for (const member of stmt.members) {
-        if (
-          (ts.isPropertySignature(member) || ts.isMethodSignature(member)) &&
-          member.name &&
-          (ts.isIdentifier(member.name) || ts.isStringLiteral(member.name))
-        ) {
-          recordMember(ifaceName, member.name.text);
-        }
-      }
+      collectInterfaceMembers(ifaceName, stmt, new Set([ifaceName]));
     } else if (ts.isTypeAliasDeclaration(stmt)) {
-      topLevelDeclarations.add(stmt.name.text);
+      const aliasName = stmt.name.text;
+      topLevelDeclarations.add(aliasName);
+      collectMembersFromTypeNode(aliasName, stmt.type, new Set([aliasName]));
     } else if (ts.isEnumDeclaration(stmt)) {
       const enumName = stmt.name.text;
       topLevelDeclarations.add(enumName);
@@ -1198,6 +1416,7 @@ function getModuleSymbolInventory(
     exportsTypes,
     topLevelDeclarations,
     classAndObjectMembers,
+    typeCallableMembers,
     allClassMemberNames,
     propertyAndConstLiterals,
     exportedConstLiterals,
@@ -1875,6 +2094,64 @@ function extractSymbolCitationsFromLine(
     }
   }
 
+  // Bind dotted `Container.member` code spans when `Container` is already cited on this line
+  // and resolves to a declaration with indexed members (type alias, interface, class, enum, or object literal).
+  const citedContainers = new Map<string, SymbolCitation>();
+  for (const existing of citations) {
+    const baseContainer = existing.symbol.includes('.')
+      ? existing.symbol.split('.')[0]
+      : existing.symbol;
+    if (!citedContainers.has(baseContainer)) {
+      citedContainers.set(baseContainer, existing);
+    }
+  }
+  if (citedContainers.size > 0) {
+    const ignoredDottedSuffixes = new Set([
+      'ts',
+      'tsx',
+      'js',
+      'jsx',
+      'mjs',
+      'cjs',
+      'json',
+      'md',
+      'css',
+      'scss',
+      'html',
+      'yml',
+      'yaml',
+      'sh',
+      'sql',
+      'test',
+      'spec',
+      'stories',
+      'prototype',
+    ]);
+    for (const span of lineCodeSpans) {
+      const inner = span.code.trim();
+      const dottedMatch = inner.match(
+        /^([A-Za-z_$][A-Za-z0-9_$]*)\.([A-Za-z_$][A-Za-z0-9_$]*)(?:\(\))?$/,
+      );
+      if (!dottedMatch) continue;
+      const containerName = dottedMatch[1];
+      const memberName = dottedMatch[2];
+      if (ignoredDottedSuffixes.has(memberName.toLowerCase())) continue;
+      const fullSymbol = `${containerName}.${memberName}`;
+      if (citations.some((c) => c.symbol === fullSymbol)) continue;
+      const baseCitation = citedContainers.get(containerName);
+      if (!baseCitation) continue;
+      const absTarget = path.join(rootDir, baseCitation.srcRelPath);
+      if (!fs.existsSync(absTarget)) continue;
+      const inventory = getModuleSymbolInventory(absTarget, rootDir);
+      if (!inventory.classAndObjectMembers.has(containerName)) continue;
+      pushCitation({
+        symbol: fullSymbol,
+        srcRelPath: baseCitation.srcRelPath,
+        requireExported: false,
+      });
+    }
+  }
+
   return citations;
 }
 
@@ -2027,6 +2304,105 @@ function verifySymbolInModule(
   }
 
   return `Symbol "${citation.symbol}" is not declared or exported in ${citation.srcRelPath}`;
+}
+
+function escapeRegExpLiteral(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function verifyExclusiveCallableClaimsOnLine(
+  line: string,
+  symbolCitations: SymbolCitation[],
+  rootDir: string,
+): string[] {
+  if (symbolCitations.length === 0) return [];
+
+  const spans = extractInlineCodeSpans(line);
+  let masked = '';
+  let cursor = 0;
+  for (const span of spans) {
+    masked += line.slice(cursor, span.start) + ' '.repeat(span.end - span.start);
+    cursor = span.end;
+  }
+  masked += line.slice(cursor);
+  masked = masked.replace(/\]\([^)]*\)/g, (m) => ' '.repeat(m.length));
+
+  const exposeMatch = /\b(?:exposes\s+only|only\s+exposes)\b/i.exec(masked);
+  if (!exposeMatch) return [];
+
+  const exposeIdx = exposeMatch.index;
+  const afterExpose = line.slice(exposeIdx + exposeMatch[0].length);
+
+  const candidates = new Map<
+    string,
+    { containerName: string; srcRelPath: string; callableMembers: Set<string> }
+  >();
+  for (const citation of symbolCitations) {
+    const containerName = citation.symbol.includes('.')
+      ? citation.symbol.split('.')[0]
+      : citation.symbol;
+    const key = `${containerName}::${citation.srcRelPath}`;
+    if (candidates.has(key)) continue;
+    const absTarget = path.join(rootDir, citation.srcRelPath);
+    if (!fs.existsSync(absTarget)) continue;
+    const inventory = getModuleSymbolInventory(absTarget, rootDir);
+    const callableMembers = inventory.typeCallableMembers.get(containerName);
+    if (!callableMembers || callableMembers.size === 0) continue;
+    candidates.set(key, {
+      containerName,
+      srcRelPath: citation.srcRelPath,
+      callableMembers,
+    });
+  }
+
+  if (candidates.size === 0) return [];
+
+  const prefixBeforeExpose = line.slice(0, exposeIdx);
+  const allCandidates = Array.from(candidates.values());
+  const priorCandidates = allCandidates.filter((cand) =>
+    new RegExp(`\\b${escapeRegExpLiteral(cand.containerName)}\\b`).test(prefixBeforeExpose),
+  );
+  const activeCandidates = priorCandidates.length > 0 ? priorCandidates : allCandidates;
+
+  const afterSymbolEntries = extractBacktickedSymbolEntries(afterExpose);
+  const afterLinks = scanMarkdownLinksInLine(afterExpose);
+
+  const claimErrors: string[] = [];
+  for (const cand of activeCandidates) {
+    const claimedMembers = new Set<string>();
+    for (const entry of afterSymbolEntries) {
+      if (entry.symbol.startsWith(`${cand.containerName}.`)) {
+        claimedMembers.add(entry.symbol.slice(cand.containerName.length + 1));
+      } else if (!entry.symbol.includes('.')) {
+        claimedMembers.add(entry.symbol);
+      }
+    }
+    for (const link of afterLinks) {
+      let label = link.label.trim();
+      if (/^`[^`]+`$/.test(label)) {
+        label = label.slice(1, -1).trim();
+      }
+      if (label.endsWith('()')) {
+        label = label.slice(0, -2);
+      }
+      if (label.startsWith(`${cand.containerName}.`)) {
+        claimedMembers.add(label.slice(cand.containerName.length + 1));
+      } else if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(label)) {
+        claimedMembers.add(label);
+      }
+    }
+
+    const missingCallables = Array.from(cand.callableMembers).filter(
+      (member) => !claimedMembers.has(member),
+    );
+    if (missingCallables.length > 0) {
+      claimErrors.push(
+        `Type "${cand.containerName}" in ${cand.srcRelPath} declares callable member(s) ${missingCallables.map((m) => `"${m}"`).join(', ')} omitted from "exposes only" claim`,
+      );
+    }
+  }
+
+  return claimErrors;
 }
 
 interface UnprotectedRouteSpec {
@@ -2538,6 +2914,933 @@ function verifyOpenApiProbeContracts(rootDir: string): string[] {
   return errors;
 }
 
+interface ActiveSpecLine {
+  lineNum: number;
+  line: string;
+}
+
+function getActiveSpecLines(markdown: string): ActiveSpecLine[] {
+  const rawLines = markdown.split(/\r?\n/);
+  const active: ActiveSpecLine[] = [];
+  let inFence = false;
+  let fenceChar = '';
+  let fenceLen = 0;
+  let inAutogenBlock = false;
+
+  for (let i = 0; i < rawLines.length; i++) {
+    const line = rawLines[i];
+    const lineNum = i + 1;
+    const trimmed = line.trim();
+
+    if (trimmed.startsWith('<!-- BEGIN AUTOGENERATED')) {
+      inAutogenBlock = true;
+      continue;
+    }
+    if (trimmed.startsWith('<!-- END AUTOGENERATED')) {
+      inAutogenBlock = false;
+      continue;
+    }
+    if (inAutogenBlock) continue;
+
+    const fenceMatch = line.match(/^\s{0,3}(`{3,}|~{3,})(.*)$/);
+    if (fenceMatch) {
+      const marker = fenceMatch[1];
+      const trailing = fenceMatch[2];
+      if (!inFence) {
+        inFence = true;
+        fenceChar = marker[0];
+        fenceLen = marker.length;
+        continue;
+      } else if (
+        marker[0] === fenceChar &&
+        marker.length >= fenceLen &&
+        trailing.trim() === ''
+      ) {
+        inFence = false;
+        fenceChar = '';
+        fenceLen = 0;
+        continue;
+      }
+    }
+
+    if (inFence) continue;
+    if (trimmed.startsWith('<!--') && trimmed.endsWith('-->')) continue;
+    active.push({ lineNum, line });
+  }
+
+  return active;
+}
+
+function findMatchingSpecLineNum(
+  lines: ActiveSpecLine[],
+  predicate: (line: string) => boolean,
+  fallbackLineNum = 1,
+): number {
+  const hit = lines.find((entry) => predicate(entry.line));
+  return hit ? hit.lineNum : fallbackLineNum;
+}
+
+function unwrapTsExpression(node: ts.Expression): ts.Expression {
+  let current = node;
+  while (
+    ts.isAsExpression(current) ||
+    ts.isSatisfiesExpression(current) ||
+    ts.isParenthesizedExpression(current)
+  ) {
+    current = current.expression;
+  }
+  return current;
+}
+
+function extractZodObjectInfoFromSourceFile(
+  sf: ts.SourceFile,
+  varName: string,
+): { keys: string[]; isStrict: boolean; lineNum: number } | null {
+  for (const stmt of sf.statements) {
+    if (!ts.isVariableStatement(stmt)) continue;
+    for (const decl of stmt.declarationList.declarations) {
+      if (!ts.isIdentifier(decl.name) || decl.name.text !== varName || !decl.initializer) {
+        continue;
+      }
+      const lineNum = sf.getLineAndCharacterOfPosition(decl.getStart(sf)).line + 1;
+      let expr: ts.Expression = unwrapTsExpression(decl.initializer);
+      let isStrict = false;
+
+      while (ts.isCallExpression(expr)) {
+        if (ts.isPropertyAccessExpression(expr.expression)) {
+          const methodName = expr.expression.name.text;
+          const receiver = unwrapTsExpression(expr.expression.expression);
+          if (ts.isIdentifier(receiver) && receiver.text === 'z') {
+            if (methodName === 'strictObject') {
+              isStrict = true;
+            }
+            if (
+              (methodName === 'object' || methodName === 'strictObject') &&
+              expr.arguments.length >= 1 &&
+              ts.isObjectLiteralExpression(expr.arguments[0])
+            ) {
+              const keys: string[] = [];
+              for (const prop of expr.arguments[0].properties) {
+                if (
+                  (ts.isPropertyAssignment(prop) || ts.isShorthandPropertyAssignment(prop)) &&
+                  prop.name
+                ) {
+                  if (ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name)) {
+                    keys.push(prop.name.text);
+                  }
+                }
+              }
+              return { keys, isStrict, lineNum };
+            }
+            break;
+          }
+          if (methodName === 'strict') {
+            isStrict = true;
+          }
+          expr = receiver;
+          continue;
+        }
+        break;
+      }
+    }
+  }
+  return null;
+}
+
+function extractStringArrayFromSourceFile(sf: ts.SourceFile, varName: string): string[] | null {
+  for (const stmt of sf.statements) {
+    if (!ts.isVariableStatement(stmt)) continue;
+    for (const decl of stmt.declarationList.declarations) {
+      if (!ts.isIdentifier(decl.name) || decl.name.text !== varName || !decl.initializer) {
+        continue;
+      }
+      const init = unwrapTsExpression(decl.initializer);
+      if (!ts.isArrayLiteralExpression(init)) continue;
+      const values: string[] = [];
+      for (const el of init.elements) {
+        const unwrapped = unwrapTsExpression(el);
+        if (ts.isStringLiteralLike(unwrapped)) {
+          values.push(unwrapped.text);
+        }
+      }
+      return values;
+    }
+  }
+  return null;
+}
+
+function extractConstStringValueFromSourceFile(sf: ts.SourceFile, varName: string): string | null {
+  for (const stmt of sf.statements) {
+    if (!ts.isVariableStatement(stmt)) continue;
+    for (const decl of stmt.declarationList.declarations) {
+      if (!ts.isIdentifier(decl.name) || decl.name.text !== varName || !decl.initializer) {
+        continue;
+      }
+      const val = evaluateStaticExpression(decl.initializer);
+      if (typeof val === 'string') return val;
+    }
+  }
+  return null;
+}
+
+function extractTypeUnionStringLiteralsFromSourceFile(
+  sf: ts.SourceFile,
+  typeName: string,
+): string[] | null {
+  for (const stmt of sf.statements) {
+    if (ts.isTypeAliasDeclaration(stmt) && stmt.name.text === typeName) {
+      if (ts.isUnionTypeNode(stmt.type)) {
+        const literals: string[] = [];
+        for (const member of stmt.type.types) {
+          if (ts.isLiteralTypeNode(member) && ts.isStringLiteral(member.literal)) {
+            literals.push(member.literal.text);
+          }
+        }
+        return literals;
+      }
+    }
+  }
+  return null;
+}
+
+function parsePrismaSchemaFacts(prismaAbsPath: string): {
+  modelNames: string[];
+  appConfigColumnCount: number;
+} {
+  const raw = fs.readFileSync(prismaAbsPath, 'utf8');
+  const modelNames: string[] = [];
+  let appConfigColumnCount = 0;
+
+  const modelRegex = /^model\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{([\s\S]*?)^\}/gm;
+  let match: RegExpExecArray | null;
+  while ((match = modelRegex.exec(raw)) !== null) {
+    const name = match[1];
+    const body = match[2];
+    modelNames.push(name);
+    if (name === 'AppConfig') {
+      appConfigColumnCount = body
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0 && !line.startsWith('//') && !line.startsWith('@@'))
+        .length;
+    }
+  }
+
+  return { modelNames, appConfigColumnCount };
+}
+
+function resolveExportedSymbolOriginFile(
+  filePath: string,
+  symbolName: string,
+  rootDir: string,
+  visited = new Set<string>(),
+): string {
+  const visitKey = `${filePath}::${symbolName}`;
+  if (visited.has(visitKey)) return filePath;
+  visited.add(visitKey);
+
+  const { sf } = getCachedSourceFile(filePath);
+  const localImports = new Map<string, { specifier: string; importedName: string }>();
+
+  for (const stmt of sf.statements) {
+    if (
+      ts.isImportDeclaration(stmt) &&
+      stmt.importClause?.namedBindings &&
+      ts.isNamedImports(stmt.importClause.namedBindings) &&
+      ts.isStringLiteral(stmt.moduleSpecifier)
+    ) {
+      for (const el of stmt.importClause.namedBindings.elements) {
+        localImports.set(el.name.text, {
+          specifier: stmt.moduleSpecifier.text,
+          importedName: el.propertyName ? el.propertyName.text : el.name.text,
+        });
+      }
+    }
+  }
+
+  for (const stmt of sf.statements) {
+    if (!ts.isExportDeclaration(stmt)) continue;
+    const specifier =
+      stmt.moduleSpecifier && ts.isStringLiteral(stmt.moduleSpecifier)
+        ? stmt.moduleSpecifier.text
+        : null;
+
+    if (stmt.exportClause && ts.isNamedExports(stmt.exportClause)) {
+      for (const el of stmt.exportClause.elements) {
+        if (el.name.text !== symbolName) continue;
+        const targetSymbol = el.propertyName ? el.propertyName.text : el.name.text;
+        if (specifier) {
+          const targetFile = resolveLocalTsModule(filePath, specifier, rootDir);
+          if (targetFile) {
+            return resolveExportedSymbolOriginFile(targetFile, targetSymbol, rootDir, visited);
+          }
+        } else {
+          const imp = localImports.get(targetSymbol);
+          if (imp) {
+            const targetFile = resolveLocalTsModule(filePath, imp.specifier, rootDir);
+            if (targetFile) {
+              return resolveExportedSymbolOriginFile(
+                targetFile,
+                imp.importedName,
+                rootDir,
+                visited,
+              );
+            }
+          }
+        }
+      }
+    } else if (!stmt.exportClause && specifier) {
+      const targetFile = resolveLocalTsModule(filePath, specifier, rootDir);
+      if (targetFile) {
+        const candidate = resolveExportedSymbolOriginFile(targetFile, symbolName, rootDir, visited);
+        if (candidate !== targetFile) {
+          return candidate;
+        }
+        const { sf: targetSf } = getCachedSourceFile(targetFile);
+        for (const tStmt of targetSf.statements) {
+          if (ts.isFunctionDeclaration(tStmt) && tStmt.name?.text === symbolName) {
+            return targetFile;
+          }
+          if (ts.isVariableStatement(tStmt)) {
+            for (const d of tStmt.declarationList.declarations) {
+              if (ts.isIdentifier(d.name) && d.name.text === symbolName) {
+                return targetFile;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return filePath;
+}
+
+function sourceFileChecksRegistryFeature(filePath: string): boolean {
+  const { sf } = getCachedSourceFile(filePath);
+  let found = false;
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'isFeatureEnabled' &&
+      node.arguments.length >= 1 &&
+      ts.isStringLiteralLike(node.arguments[0]) &&
+      node.arguments[0].text === 'registry'
+    ) {
+      found = true;
+    }
+    if (!found) {
+      ts.forEachChild(node, visit);
+    }
+  };
+  visit(sf);
+  return found;
+}
+
+function collectRegistryRouteGuardFacts(rootDir: string): {
+  guardedRoutes: string[];
+  skippedRoutes: string[];
+} | null {
+  const registryApiDir = path.join(rootDir, 'src/app/api/registry');
+  if (!fs.existsSync(registryApiDir)) return null;
+
+  const guardedRoutes: string[] = [];
+  const skippedRoutes: string[] = [];
+
+  function walk(currentDir: string) {
+    const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === '__tests__') continue;
+        walk(fullPath);
+      } else if (entry.isFile() && /^route\.tsx?$/.test(entry.name)) {
+        const relFromApi = path
+          .relative(path.join(rootDir, 'src/app/api'), path.dirname(fullPath))
+          .split(path.sep)
+          .join('/');
+        const routePath = `/api/${relFromApi}`;
+
+        let checksRegistryFeature = sourceFileChecksRegistryFeature(fullPath);
+        if (!checksRegistryFeature) {
+          for (const method of HTTP_METHODS_SET) {
+            const originFile = resolveExportedSymbolOriginFile(fullPath, method, rootDir);
+            if (originFile !== fullPath && sourceFileChecksRegistryFeature(originFile)) {
+              checksRegistryFeature = true;
+              break;
+            }
+          }
+        }
+
+        if (checksRegistryFeature) {
+          guardedRoutes.push(routePath);
+        } else {
+          skippedRoutes.push(routePath);
+        }
+      }
+    }
+  }
+
+  walk(registryApiDir);
+  guardedRoutes.sort();
+  skippedRoutes.sort();
+  if (guardedRoutes.length + skippedRoutes.length === 0) return null;
+  return { guardedRoutes, skippedRoutes };
+}
+
+function verifyBroadcastSpecContracts(
+  rootDir: string,
+  specFiles: string[],
+  errors: string[],
+): void {
+  const specRelPath = 'docs/BROADCASTS.md';
+  const specAbsPath = path.join(rootDir, specRelPath);
+  if (!specFiles.includes(specRelPath) || !fs.existsSync(specAbsPath)) return;
+
+  const activeLines = getActiveSpecLines(fs.readFileSync(specAbsPath, 'utf8'));
+  const fullProse = activeLines.map((entry) => entry.line).join('\n');
+
+  const schemasPath = path.join(rootDir, 'src/features/broadcast/schemas.ts');
+  if (fs.existsSync(schemasPath)) {
+    const { sf } = getCachedSourceFile(schemasPath);
+    const sendSchema = extractZodObjectInfoFromSourceFile(sf, 'SendBroadcastSchema');
+    const testSendSchema = extractZodObjectInfoFromSourceFile(sf, 'SendTestBroadcastSchema');
+    const filtersSchema = extractZodObjectInfoFromSourceFile(sf, 'BroadcastTargetFiltersSchema');
+
+    if (sendSchema) {
+      if (!sendSchema.isStrict) {
+        errors.push(
+          `src/features/broadcast/schemas.ts:${sendSchema.lineNum}: SendBroadcastSchema must enforce .strict() so deprecated scheduling keys such as scheduledAt fail validation`,
+        );
+      }
+      if (sendSchema.keys.includes('scheduledFor') && !/`scheduledFor`/.test(fullProse)) {
+        const lineNum = findMatchingSpecLineNum(activeLines, (l) =>
+          l.includes('/api/admin/broadcast/send'),
+        );
+        errors.push(
+          `${specRelPath}:${lineNum}: Must document \`scheduledFor\` from SendBroadcastSchema`,
+        );
+      }
+    }
+
+    for (const entry of activeLines) {
+      if (/`scheduledAt`/.test(entry.line) && !/reject|unrecognized|legacy|deprecated/i.test(entry.line)) {
+        errors.push(
+          `${specRelPath}:${entry.lineNum}: Deprecated \`scheduledAt\` key must not be documented as an active broadcast scheduling field (use \`scheduledFor\`)`,
+        );
+      }
+      if (/`(?:testEmail|testPhone)`/.test(entry.line)) {
+        errors.push(
+          `${specRelPath}:${entry.lineNum}: SendTestBroadcastSchema uses \`destination\`, not \`testEmail\` or \`testPhone\``,
+        );
+      }
+    }
+
+    if (testSendSchema && testSendSchema.keys.includes('destination')) {
+      const testSendLine = activeLines.find((entry) =>
+        entry.line.includes('/api/admin/broadcast/test-send'),
+      );
+      if (!testSendLine || !/`destination`/.test(testSendLine.line)) {
+        errors.push(
+          `${specRelPath}:${testSendLine?.lineNum ?? 1}: /api/admin/broadcast/test-send must document \`destination\` from SendTestBroadcastSchema`,
+        );
+      }
+    }
+
+    if (filtersSchema) {
+      const filterIntroIdx = activeLines.findIndex((entry) =>
+        entry.line.includes('BroadcastTargetFiltersSchema'),
+      );
+      const fallbackLine = filterIntroIdx >= 0 ? activeLines[filterIntroIdx].lineNum : 1;
+      for (const filterKey of filtersSchema.keys) {
+        const escaped = filterKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        if (!new RegExp(`\`${escaped}\``).test(fullProse)) {
+          errors.push(
+            `${specRelPath}:${fallbackLine}: Missing BroadcastTargetFiltersSchema key \`${filterKey}\` from src/features/broadcast/schemas.ts`,
+          );
+        }
+      }
+
+      const staleFilterKeys = [
+        'includeAddressCollection',
+        'subEventIds',
+        'rsvpStatuses',
+        'tableIds',
+        'hasAddress',
+        'selectedGuestIds',
+        'excludedGuestIds',
+      ];
+      const allowedSet = new Set(filtersSchema.keys);
+      for (const entry of activeLines) {
+        for (const staleKey of staleFilterKeys) {
+          if (!allowedSet.has(staleKey) && entry.line.includes(staleKey)) {
+            errors.push(
+              `${specRelPath}:${entry.lineNum}: Stale broadcast filter key "${staleKey}" is not in BroadcastTargetFiltersSchema`,
+            );
+          }
+        }
+        if (/targetFilters\.(tags|search)\b/.test(entry.line)) {
+          errors.push(
+            `${specRelPath}:${entry.lineNum}: Stale targetFilters property reference (expected BroadcastTargetFiltersSchema keys such as \`partyTags\` or \`searchQuery\`)`,
+          );
+        }
+      }
+    }
+  }
+
+  const templatePath = path.join(rootDir, 'src/features/broadcast/template.ts');
+  if (fs.existsSync(templatePath)) {
+    const { content: templateContent, sf: templateSf } = getCachedSourceFile(templatePath);
+    const placeholders = extractStringArrayFromSourceFile(
+      templateSf,
+      'AVAILABLE_TEMPLATE_PLACEHOLDERS',
+    );
+    if (placeholders && placeholders.length > 0) {
+      const placeholderLineNum = findMatchingSpecLineNum(activeLines, (l) =>
+        l.includes('AVAILABLE_TEMPLATE_PLACEHOLDERS'),
+      );
+      for (const token of placeholders) {
+        if (!fullProse.includes(`\`${token}\``)) {
+          errors.push(
+            `${specRelPath}:${placeholderLineNum}: Missing template placeholder \`${token}\` from AVAILABLE_TEMPLATE_PLACEHOLDERS`,
+          );
+        }
+      }
+      const allowedPlaceholders = new Set([...placeholders, '{{code}}']);
+      for (const entry of activeLines) {
+        const matches = entry.line.matchAll(/`(\{\{[A-Za-z0-9_]+\}\})`/g);
+        for (const m of matches) {
+          if (!allowedPlaceholders.has(m[1])) {
+            errors.push(
+              `${specRelPath}:${entry.lineNum}: Documented placeholder \`${m[1]}\` is not in AVAILABLE_TEMPLATE_PLACEHOLDERS (${placeholders.join(', ')})`,
+            );
+          }
+        }
+      }
+    }
+
+    const stripsSubjectAngles = templateContent.includes('replace(/[\\r\\n<>]/g');
+    if (stripsSubjectAngles) {
+      const subjectLine = activeLines.find((entry) =>
+        entry.line.includes('sanitizeEmailSubject'),
+      );
+      if (!subjectLine || !subjectLine.line.includes('[\\r\\n<>]')) {
+        errors.push(
+          `${specRelPath}:${subjectLine?.lineNum ?? 1}: sanitizeEmailSubject documentation must cite \`[\\r\\n<>]\` character stripping`,
+        );
+      }
+      if (subjectLine && /with spaces|trims whitespace/i.test(subjectLine.line)) {
+        errors.push(
+          `${specRelPath}:${subjectLine.lineNum}: sanitizeEmailSubject strips characters via replace(/[\\r\\n<>]/g, '') rather than replacing with spaces or trimming`,
+        );
+      }
+    }
+
+    const defaultsEscapeFalse = templateContent.includes('Boolean(options?.escapeHtml)');
+    if (defaultsEscapeFalse) {
+      for (const entry of activeLines) {
+        if (/escapeHtml:\s*true[^\n]*default/i.test(entry.line)) {
+          errors.push(
+            `${specRelPath}:${entry.lineNum}: renderBroadcastTemplate defaults \`escapeHtml\` to \`false\`, not \`true\``,
+          );
+        }
+      }
+      if (!/escapeHtml:\s*false[^\n]*default|defaults?\s+`?escapeHtml`?\s+to\s+`?false`?/i.test(fullProse)) {
+        const escapeLineNum = findMatchingSpecLineNum(activeLines, (l) =>
+          l.includes('renderBroadcastTemplate'),
+        );
+        errors.push(
+          `${specRelPath}:${escapeLineNum}: Must document that renderBroadcastTemplate defaults \`escapeHtml\` to \`false\``,
+        );
+      }
+    }
+  }
+
+  const servicePath = path.join(rootDir, 'src/features/broadcast/service.ts');
+  if (fs.existsSync(servicePath)) {
+    const { content: serviceContent, sf: serviceSf } = getCachedSourceFile(servicePath);
+    const finalStatuses = extractTypeUnionStringLiteralsFromSourceFile(
+      serviceSf,
+      'FinalBroadcastStatus',
+    );
+    if (finalStatuses && finalStatuses.includes('PARTIALLY_SENT')) {
+      if (!/`PARTIALLY_SENT`/.test(fullProse)) {
+        const dispatchLineNum = findMatchingSpecLineNum(activeLines, (l) =>
+          l.includes('executeDispatch'),
+        );
+        errors.push(
+          `${specRelPath}:${dispatchLineNum}: Must document \`PARTIALLY_SENT\` from FinalBroadcastStatus in src/features/broadcast/service.ts`,
+        );
+      }
+      for (const entry of activeLines) {
+        if (/`PARTIAL`/.test(entry.line)) {
+          errors.push(
+            `${specRelPath}:${entry.lineNum}: Invalid broadcast status \`PARTIAL\` (FinalBroadcastStatus uses \`PARTIALLY_SENT\`)`,
+          );
+        }
+        if (/`errorMessage`/.test(entry.line)) {
+          errors.push(
+            `${specRelPath}:${entry.lineNum}: BroadcastRecipient records failures in \`error\`, not \`errorMessage\``,
+          );
+        }
+      }
+    }
+
+    const baseUrlFnMatch = serviceContent.match(
+      /function\s+resolveBroadcastBaseUrl[\s\S]*?\n\}/,
+    );
+    if (baseUrlFnMatch && !baseUrlFnMatch[0].includes('NEXT_PUBLIC_SITE_URL')) {
+      const baseUrlLine = activeLines.find((entry) =>
+        entry.line.includes('resolveBroadcastBaseUrl'),
+      );
+      if (
+        !baseUrlLine ||
+        !baseUrlLine.line.includes('AppConfig.baseUrl') ||
+        !baseUrlLine.line.includes('requestOrigin') ||
+        !baseUrlLine.line.includes('http://localhost:3000')
+      ) {
+        errors.push(
+          `${specRelPath}:${baseUrlLine?.lineNum ?? 1}: resolveBroadcastBaseUrl must document precedence AppConfig.baseUrl -> requestOrigin -> http://localhost:3000`,
+        );
+      }
+      for (const entry of activeLines) {
+        if (
+          entry.line.includes('NEXT_PUBLIC_SITE_URL') &&
+          !/not\s+(?:consulted|used|read)|ignores?\s+`?NEXT_PUBLIC_SITE_URL/i.test(entry.line)
+        ) {
+          errors.push(
+            `${specRelPath}:${entry.lineNum}: resolveBroadcastBaseUrl does not read NEXT_PUBLIC_SITE_URL`,
+          );
+        }
+      }
+    }
+  }
+}
+
+function verifyArchitecturePersistenceContracts(
+  rootDir: string,
+  specFiles: string[],
+  errors: string[],
+): void {
+  const specRelPath = 'ARCHITECTURE.md';
+  const specAbsPath = path.join(rootDir, specRelPath);
+  if (!specFiles.includes(specRelPath) || !fs.existsSync(specAbsPath)) return;
+
+  const activeLines = getActiveSpecLines(fs.readFileSync(specAbsPath, 'utf8'));
+  const fullProse = activeLines.map((entry) => entry.line).join('\n');
+
+  const prismaPath = path.join(rootDir, 'prisma/schema.prisma');
+  if (fs.existsSync(prismaPath)) {
+    const { modelNames, appConfigColumnCount } = parsePrismaSchemaFacts(prismaPath);
+    const dataModelsLineNum = findMatchingSpecLineNum(activeLines, (l) =>
+      l.includes('**Data Models:**'),
+    );
+    for (const modelName of modelNames) {
+      const modelPattern = new RegExp(`\\*\\*\`${modelName}\`\\s*:\\*\\*|\\*\\*\`${modelName}\`\\*\\*`);
+      if (!modelPattern.test(fullProse)) {
+        errors.push(
+          `${specRelPath}:${dataModelsLineNum}: Prisma model "${modelName}" in prisma/schema.prisma (${modelNames.length} models total) is missing from ARCHITECTURE.md Data Models`,
+        );
+      }
+    }
+
+    if (appConfigColumnCount > 0) {
+      const appConfigLine = activeLines.find((entry) =>
+        /persisted PostgreSQL columns/i.test(entry.line),
+      );
+      const countMatch = appConfigLine?.line.match(/(\d+)\s+persisted PostgreSQL columns/i);
+      if (!appConfigLine || !countMatch || Number(countMatch[1]) !== appConfigColumnCount) {
+        errors.push(
+          `${specRelPath}:${appConfigLine?.lineNum ?? 1}: Expected ${appConfigColumnCount} persisted PostgreSQL AppConfig columns matching prisma/schema.prisma${countMatch ? `, found ${countMatch[1]}` : ''}`,
+        );
+      }
+
+      const contentSchemasPath = path.join(rootDir, 'src/features/content/schemas.ts');
+      if (fs.existsSync(contentSchemasPath) && appConfigLine) {
+        const { sf } = getCachedSourceFile(contentSchemasPath);
+        const appConfigZod = extractZodObjectInfoFromSourceFile(sf, 'AppConfigSchema');
+        if (appConfigZod && appConfigZod.keys.length > 0) {
+          const totalMatch = appConfigLine.line.match(/(\d+)\s+total schema fields/i);
+          if (!totalMatch || Number(totalMatch[1]) !== appConfigZod.keys.length) {
+            errors.push(
+              `${specRelPath}:${appConfigLine.lineNum}: Expected ${appConfigZod.keys.length} total AppConfigSchema fields matching src/features/content/schemas.ts${totalMatch ? `, found ${totalMatch[1]}` : ''}`,
+            );
+          }
+        }
+      }
+    }
+  }
+
+  const backupPersistencePath = path.join(rootDir, 'src/lib/backupPersistence.ts');
+  if (fs.existsSync(backupPersistencePath)) {
+    const { sf } = getCachedSourceFile(backupPersistencePath);
+    const backupKeys = extractStringArrayFromSourceFile(sf, 'APP_CONFIG_BACKUP_KEYS');
+    const secretKeys = extractStringArrayFromSourceFile(sf, 'APP_CONFIG_SECRET_KEYS');
+    const backupLine = activeLines.find((entry) =>
+      entry.line.includes('sanitizeAppConfigForBackup') ||
+      entry.line.includes('APP_CONFIG_BACKUP_KEYS'),
+    );
+
+    if (!fullProse.includes('src/lib/backupPersistence.ts')) {
+      errors.push(
+        `${specRelPath}:${backupLine?.lineNum ?? 1}: Must cite src/lib/backupPersistence.ts for sanitizeAppConfigForBackup and APP_CONFIG_BACKUP_KEYS`,
+      );
+    }
+
+    if (backupKeys) {
+      const backupCountMatch = backupLine?.line.match(/(\d+)\s+`APP_CONFIG_BACKUP_KEYS`/);
+      if (!backupLine || !backupCountMatch || Number(backupCountMatch[1]) !== backupKeys.length) {
+        errors.push(
+          `${specRelPath}:${backupLine?.lineNum ?? 1}: Expected ${backupKeys.length} \`APP_CONFIG_BACKUP_KEYS\` matching src/lib/backupPersistence.ts${backupCountMatch ? `, found ${backupCountMatch[1]}` : ''}`,
+        );
+      }
+    }
+
+    if (secretKeys && backupLine) {
+      const secretCountMatch = backupLine.line.match(/(\d+)\s+raw provider secrets/i);
+      if (!secretCountMatch || Number(secretCountMatch[1]) !== secretKeys.length) {
+        errors.push(
+          `${specRelPath}:${backupLine.lineNum}: Expected ${secretKeys.length} raw provider secrets matching APP_CONFIG_SECRET_KEYS in src/lib/backupPersistence.ts`,
+        );
+      }
+    }
+  }
+
+  const exportRoutePath = path.join(rootDir, 'src/app/api/admin/maintenance/export/route.ts');
+  if (fs.existsSync(exportRoutePath)) {
+    const { sf } = getCachedSourceFile(exportRoutePath);
+    const schemaVersion = extractConstStringValueFromSourceFile(sf, 'BACKUP_SCHEMA_VERSION');
+    if (schemaVersion) {
+      const versionLine = activeLines.find((entry) => entry.line.includes('schemaVersion'));
+      const expectedToken = `schemaVersion: "${schemaVersion}"`;
+      if (!versionLine || !versionLine.line.includes(expectedToken)) {
+        errors.push(
+          `${specRelPath}:${versionLine?.lineNum ?? 1}: Expected \`${expectedToken}\` matching BACKUP_SCHEMA_VERSION in src/app/api/admin/maintenance/export/route.ts`,
+        );
+      }
+    }
+  }
+}
+
+function verifyFeatureModulesAndScraperContracts(
+  rootDir: string,
+  specFiles: string[],
+  errors: string[],
+): void {
+  const fmRelPath = 'FEATURE_MODULES.md';
+  const fmAbsPath = path.join(rootDir, fmRelPath);
+  if (specFiles.includes(fmRelPath) && fs.existsSync(fmAbsPath)) {
+    const guardFacts = collectRegistryRouteGuardFacts(rootDir);
+    if (guardFacts) {
+      const activeLines = getActiveSpecLines(fs.readFileSync(fmAbsPath, 'utf8'));
+      const fullProse = activeLines.map((entry) => entry.line).join('\n');
+      const total = guardFacts.guardedRoutes.length + guardFacts.skippedRoutes.length;
+
+      const enforcingLine = activeLines.find((entry) =>
+        entry.line.includes("Registry APIs Enforcing `isFeatureEnabled('registry')`"),
+      );
+      const enforcingExpected = `${guardFacts.guardedRoutes.length} of ${total} handlers`;
+      if (!enforcingLine || !enforcingLine.line.includes(enforcingExpected)) {
+        errors.push(
+          `${fmRelPath}:${enforcingLine?.lineNum ?? 1}: Expected "${enforcingExpected}" for /api/registry/* routes enforcing isFeatureEnabled('registry')`,
+        );
+      }
+
+      const skippingLine = activeLines.find((entry) =>
+        entry.line.includes("Skipping `isFeatureEnabled('registry')`"),
+      );
+      const skippingExpected = `${guardFacts.skippedRoutes.length} of ${total} handlers`;
+      if (!skippingLine || !skippingLine.line.includes(skippingExpected)) {
+        errors.push(
+          `${fmRelPath}:${skippingLine?.lineNum ?? 1}: Expected "${skippingExpected}" for /api/registry/* routes skipping isFeatureEnabled('registry')`,
+        );
+      }
+
+      for (const routePath of guardFacts.guardedRoutes) {
+        if (!fullProse.includes(routePath)) {
+          errors.push(
+            `${fmRelPath}:${enforcingLine?.lineNum ?? 1}: Guarded registry route "${routePath}" is missing from FEATURE_MODULES.md`,
+          );
+        }
+      }
+    }
+  }
+
+  const scraperRelPath = 'SCRAPER.md';
+  const scraperAbsPath = path.join(rootDir, scraperRelPath);
+  const scrapeSrcPath = path.join(rootDir, 'src/features/registry/api/scrape.ts');
+  if (
+    specFiles.includes(scraperRelPath) &&
+    fs.existsSync(scraperAbsPath) &&
+    fs.existsSync(scrapeSrcPath)
+  ) {
+    const { content: scrapeContent } = getCachedSourceFile(scrapeSrcPath);
+    const activeLines = getActiveSpecLines(fs.readFileSync(scraperAbsPath, 'utf8'));
+    const fullProse = activeLines.map((entry) => entry.line).join('\n');
+    if (
+      scrapeContent.includes("hostname === 'amazon.com'") &&
+      scrapeContent.includes("hostname.endsWith('.amazon.com')")
+    ) {
+      for (const entry of activeLines) {
+        if (entry.line.includes('amazon.*')) {
+          errors.push(
+            `${scraperRelPath}:${entry.lineNum}: Scraper host check in src/features/registry/api/scrape.ts matches \`amazon.com\` and \`*.amazon.com\` only, not \`amazon.*\``,
+          );
+        }
+      }
+      if (!fullProse.includes('`amazon.com`') || !fullProse.includes('`*.amazon.com`')) {
+        const amazonLineNum = findMatchingSpecLineNum(activeLines, (l) =>
+          l.toLowerCase().includes('amazon'),
+        );
+        errors.push(
+          `${scraperRelPath}:${amazonLineNum}: SCRAPER.md must document \`amazon.com\` and \`*.amazon.com\` matching src/features/registry/api/scrape.ts`,
+        );
+      }
+    }
+  }
+}
+
+function extractPublicAddressRouteSecurityFacts(publicAddrRoutePath: string): {
+  rateLimit: { maxRequests: number; windowMinutes: number } | null;
+  honeypotFields: string[];
+} {
+  let rateLimit: { maxRequests: number; windowMinutes: number } | null = null;
+  const honeypotFields: string[] = [];
+  const { sf } = getCachedSourceFile(publicAddrRoutePath);
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'rateLimit' &&
+      node.arguments.length >= 3
+    ) {
+      const maxReq = evaluateStaticExpression(node.arguments[1]);
+      const winMs = evaluateStaticExpression(node.arguments[2]);
+      if (typeof maxReq === 'number' && typeof winMs === 'number') {
+        rateLimit = {
+          maxRequests: maxReq,
+          windowMinutes: Math.round(winMs / 60000),
+        };
+      }
+    }
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === 'honeypotVal' &&
+      node.initializer
+    ) {
+      const collectProps = (n: ts.Node) => {
+        if (
+          ts.isPropertyAccessExpression(n) &&
+          ts.isIdentifier(n.expression) &&
+          n.expression.text === 'body'
+        ) {
+          honeypotFields.push(n.name.text);
+        }
+        ts.forEachChild(n, collectProps);
+      };
+      collectProps(node.initializer);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return { rateLimit, honeypotFields };
+}
+
+function verifySecurityAndThreatModelContracts(
+  rootDir: string,
+  specFiles: string[],
+  errors: string[],
+): void {
+  const providersPath = path.join(rootDir, 'src/features/broadcast/providers/index.ts');
+  const publicAddrRoutePath = path.join(rootDir, 'src/app/api/guest/address/public/route.ts');
+  const pathContainmentPath = path.join(rootDir, 'src/utils/pathContainment.ts');
+
+  const hasLiveSmtp =
+    fs.existsSync(providersPath) &&
+    fs.readFileSync(providersPath, 'utf8').includes('function sendSmtpEmail');
+
+  const publicAddrFacts = fs.existsSync(publicAddrRoutePath)
+    ? extractPublicAddressRouteSecurityFacts(publicAddrRoutePath)
+    : { rateLimit: null, honeypotFields: [] };
+  const publicAddressRateLimit = publicAddrFacts.rateLimit;
+  const honeypotFields = publicAddrFacts.honeypotFields;
+
+  const hasPathContainment = fs.existsSync(pathContainmentPath);
+
+  for (const specRelPath of ['SECURITY.md', 'docs/THREAT_MODEL.md']) {
+    const specAbsPath = path.join(rootDir, specRelPath);
+    if (!specFiles.includes(specRelPath) || !fs.existsSync(specAbsPath)) continue;
+
+    const activeLines = getActiveSpecLines(fs.readFileSync(specAbsPath, 'utf8'));
+    const fullProse = activeLines.map((entry) => entry.line).join('\n');
+
+    if (hasLiveSmtp) {
+      for (const entry of activeLines) {
+        if (
+          entry.line.includes('smtp') &&
+          /\b(?:no-op|noop|inert)\b|safe\s+no-op\s+stubs?/i.test(entry.line)
+        ) {
+          errors.push(
+            `${specRelPath}:${entry.lineNum}: Must not describe \`smtp\` as an inert or no-op stub (sendSmtpEmail attempts live SMTP delivery; only \`none\` simulates delivery)`,
+          );
+        }
+      }
+      const smtpLine = activeLines.find(
+        (entry) => entry.line.includes('sendSmtpEmail') || entry.line.includes('"smtp"'),
+      );
+      if (!smtpLine || !fullProse.includes('"none"')) {
+        errors.push(
+          `${specRelPath}:${smtpLine?.lineNum ?? 1}: Must document live \`smtp\` delivery behavior versus \`"none"\` simulation mode`,
+        );
+      }
+    }
+
+    if (publicAddressRateLimit) {
+      const addrLine = activeLines.find(
+        (entry) =>
+          entry.line.includes('/api/guest/address/public') &&
+          (entry.line.includes('requests') || entry.line.includes('honeypot')),
+      );
+      const expectedRatePattern = new RegExp(
+        `\`?${publicAddressRateLimit.maxRequests}\`?\\s+requests\\s+per\\s+\`?${publicAddressRateLimit.windowMinutes}\`?\\s+minutes`,
+        'i',
+      );
+      if (!addrLine || !expectedRatePattern.test(addrLine.line)) {
+        const fallbackLine = findMatchingSpecLineNum(activeLines, (l) =>
+          l.includes('/api/guest/address/public'),
+        );
+        errors.push(
+          `${specRelPath}:${addrLine?.lineNum ?? fallbackLine}: Must document \`/api/guest/address/public\` rate limit of ${publicAddressRateLimit.maxRequests} requests per ${publicAddressRateLimit.windowMinutes} minutes`,
+        );
+      }
+      if (!addrLine || !/honeypot/i.test(addrLine.line)) {
+        const fallbackLine = findMatchingSpecLineNum(activeLines, (l) =>
+          l.includes('/api/guest/address/public'),
+        );
+        errors.push(
+          `${specRelPath}:${addrLine?.lineNum ?? fallbackLine}: Must document honeypot validation on \`/api/guest/address/public\``,
+        );
+      } else {
+        for (const hpKey of honeypotFields) {
+          if (!addrLine.line.includes(`\`${hpKey}\``)) {
+            errors.push(
+              `${specRelPath}:${addrLine.lineNum}: Missing honeypot field \`${hpKey}\` documented for \`/api/guest/address/public\``,
+            );
+          }
+        }
+      }
+    }
+
+    if (hasPathContainment && !fullProse.includes('src/utils/pathContainment.ts')) {
+      errors.push(
+        `${specRelPath}:1: Must reference \`src/utils/pathContainment.ts\` for upload and media export path containment`,
+      );
+    }
+  }
+}
+
 export function verifySpecContracts(
   rootDir: string = ROOT_DIR,
   options: SpecContractVerificationOptions = {},
@@ -2646,6 +3949,9 @@ export function verifySpecContracts(
           errors.push(`${specRelPath}:${lineNum}: ${symError}`);
         }
       }
+      for (const claimError of verifyExclusiveCallableClaimsOnLine(line, symbolCitations, rootDir)) {
+        errors.push(`${specRelPath}:${lineNum}: ${claimError}`);
+      }
 
       if (line.trim().endsWith(':') && !/^\s{2,}(?:[-*+]|\d+\.)\s+/.test(line)) {
         const introPaths = new Set<string>();
@@ -2665,6 +3971,10 @@ export function verifySpecContracts(
   }
 
   verifyArchitectureAndMiddlewareContracts(rootDir, apiEntries, specFiles, errors);
+  verifyBroadcastSpecContracts(rootDir, specFiles, errors);
+  verifyArchitecturePersistenceContracts(rootDir, specFiles, errors);
+  verifyFeatureModulesAndScraperContracts(rootDir, specFiles, errors);
+  verifySecurityAndThreatModelContracts(rootDir, specFiles, errors);
 
   return {
     errors,

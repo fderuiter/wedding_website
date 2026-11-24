@@ -1,3 +1,5 @@
+/** @jest-environment node */
+
 import { MediaRepository } from '../repository';
 
 describe('MediaRepository.getAllMedia', () => {
@@ -109,5 +111,88 @@ describe('MediaRepository.getAllMedia', () => {
     expect(result.page).toBe(1);
     expect(result.limit).toBe(20);
     expect(result.totalPages).toBe(1);
+  });
+});
+
+describe('MediaRepository.deleteMedia storage cleanup', () => {
+  it('deletes underlying storage object after DB transaction commits and skips storage delete when transaction fails', async () => {
+    const events: string[] = [];
+    const { LocalStorageProvider, resetStorageProvider } = await import('@/utils/storage');
+    resetStorageProvider();
+    const deleteSpy = jest
+      .spyOn(LocalStorageProvider.prototype, 'delete')
+      .mockImplementation(async () => {
+        events.push('storage.delete');
+      });
+
+    const now = new Date();
+    const txClient = {
+      contentNode: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'photo-node-1',
+            type: 'Photo',
+            tags: ['gallery'],
+            data: { mediaId: 'media-1', url: '/uploads/photos/cleanup.jpg' },
+          },
+        ]),
+        delete: jest.fn(async () => {
+          events.push('tx.contentNode.delete');
+        }),
+      },
+      media: {
+        delete: jest.fn(async () => {
+          events.push('tx.media.delete');
+          return {
+            id: 'media-1',
+            url: '/uploads/photos/cleanup.jpg',
+            altText: 'Cleanup Photo',
+            isDecorative: false,
+            isSample: false,
+            createdAt: now,
+            updatedAt: now,
+          };
+        }),
+      },
+      snapshotVersion: {
+        create: jest.fn(async () => {
+          events.push('tx.snapshot.create');
+        }),
+      },
+    };
+
+    const mockClient = {
+      $transaction: jest.fn(async (fn: (_tx: typeof txClient) => Promise<unknown>) => {
+        events.push('tx.begin');
+        const res = await fn(txClient);
+        events.push('tx.commit');
+        return res;
+      }),
+    };
+
+    try {
+      const repo = new MediaRepository(mockClient);
+      const deleted = await repo.deleteMedia('media-1', 'Admin');
+
+      expect(deleted.id).toBe('media-1');
+      expect(deleteSpy).toHaveBeenCalledTimes(1);
+      expect(deleteSpy).toHaveBeenCalledWith('/uploads/photos/cleanup.jpg');
+      expect(events.indexOf('tx.commit')).toBeGreaterThan(-1);
+      expect(events.indexOf('storage.delete')).toBeGreaterThan(events.indexOf('tx.commit'));
+
+      // Verify rollback does NOT invoke storage.delete
+      deleteSpy.mockClear();
+      const failingClient = {
+        $transaction: jest.fn(async () => {
+          throw new Error('DB deadlock rollback');
+        }),
+      };
+      const failingRepo = new MediaRepository(failingClient);
+      await expect(failingRepo.deleteMedia('media-1', 'Admin')).rejects.toThrow('DB deadlock rollback');
+      expect(deleteSpy).not.toHaveBeenCalled();
+    } finally {
+      deleteSpy.mockRestore();
+      resetStorageProvider();
+    }
   });
 });

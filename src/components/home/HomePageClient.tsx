@@ -654,32 +654,6 @@ export default function HomePageClient({
           </section>
 
           {features.map((feature, index) => renderSection(feature, index + 3))}
-
-          <footer className="flex flex-col items-center gap-4 px-4 pb-10 text-sm text-gray-600 dark:text-gray-400">
-            <p>
-              © {new Date().getFullYear()} {partner1Display} &amp; {partner2Display}
-              {cleanVenue.venueState ? ` • Designed with ❤️ in ${cleanVenue.venueState}` : ''}
-            </p>
-            <p>We look forward to celebrating with you!</p>
-            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
-              <Link href="/project-info" className="text-gray-600 hover:text-black dark:text-gray-300 dark:hover:text-white hover:underline focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-gray-900 rounded">About this site</Link>
-              <span aria-hidden="true" className="text-muted-text">•</span>
-              <Link
-                href="/admin/login"
-                className="text-gray-600 hover:text-black dark:text-gray-300 dark:hover:text-white hover:underline focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-gray-900 rounded"
-              >
-                Admin Login
-              </Link>
-            </div>
-            {isFeatureEnabled('interactive3D', config.modules) && (
-              <Link
-                href="/heart"
-                className="inline-block rounded-full bg-secondary bg-gradient-to-r from-secondary to-primary px-10 py-4 font-medium text-white visited:text-white shadow-lg transition hover:scale-105 hover:shadow-xl"
-              >
-                Play with the Heart
-              </Link>
-            )}
-          </footer>
         </div>
         <BackToTop />
       </div>

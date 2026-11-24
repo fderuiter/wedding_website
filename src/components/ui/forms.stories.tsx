@@ -141,3 +141,39 @@ export const BusyReadOnlyLock: Story = {
     </div>
   ),
 };
+
+export const CompositeGroupAndFieldset: Story = {
+  render: () => (
+    <div className="max-w-md space-y-6">
+      <FormGroup group>
+        <Label>Price Range: $50.00 – $250.00</Label>
+        <div className="flex items-center gap-2 pt-1">
+          <input
+            type="range"
+            min={0}
+            max={500}
+            defaultValue={50}
+            aria-label="Minimum price"
+            aria-valuetext="$50.00"
+          />
+          <input
+            type="range"
+            min={0}
+            max={500}
+            defaultValue={250}
+            aria-label="Maximum price"
+            aria-valuetext="$250.00"
+          />
+        </div>
+      </FormGroup>
+
+      <FormGroup as="fieldset">
+        <Label>Card &amp; Digital Wallet Details</Label>
+        <div className="rounded border p-3 text-sm mt-1">
+          Embedded Payment Widget Placeholder
+        </div>
+        <FormMessage>Grouped via native fieldset + legend without dangling htmlFor.</FormMessage>
+      </FormGroup>
+    </div>
+  ),
+};
