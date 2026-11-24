@@ -196,11 +196,26 @@ async function waitForStaticRouteSettled(page: Page, theme: ColorTheme) {
     .first()
     .waitFor({ state: 'attached', timeout: 10_000 })
     .catch(() => {});
-  await page.evaluate((expectedTheme) => {
+  await page
+    .waitForFunction(
+      () =>
+        Array.from(document.querySelectorAll('link[rel="stylesheet"]')).every((link) =>
+          Boolean((link as HTMLLinkElement).sheet)
+        ),
+      { timeout: 10_000 }
+    )
+    .catch(() => {});
+  await page.evaluate(async (expectedTheme) => {
     document.documentElement.classList.toggle('dark', expectedTheme === 'dark');
     document.documentElement.classList.toggle('light', expectedTheme === 'light');
+    if (document.fonts?.ready) {
+      await document.fonts.ready;
+    }
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
   }, theme);
-  await page.waitForTimeout(150);
+  await page.waitForTimeout(100);
 }
 
 async function runWcagAudit(page: Page): Promise<AxeViolation[]> {
