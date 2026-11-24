@@ -233,9 +233,9 @@ describe('a11y-report', () => {
   });
 
   describe('findJestAxeSuites & runA11yUnit', () => {
-    it('discovers all 64 src/ jest-axe suites in the live repository', () => {
+    it('discovers all 67 src/ jest-axe suites in the live repository', () => {
       const suites = findJestAxeSuites(process.cwd());
-      expect(suites).toHaveLength(64);
+      expect(suites).toHaveLength(67);
       expect(suites.every((p: string) => p.startsWith('src/') && p.endsWith('.test.tsx'))).toBe(
         true
       );

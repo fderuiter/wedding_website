@@ -3,6 +3,7 @@ import { MediaDTO, MediaSchema } from './schemas';
 import { executeInTransaction } from '@/lib/transaction';
 import { createAuditSnapshot } from '@/lib/audit';
 import { buildArchetypeSeedData, isStaticExportBuild } from '@/lib/sampleData/builder';
+import { logger } from '@/lib/logger';
 
 export interface MediaPaginationOptions {
   page?: number;
@@ -97,6 +98,47 @@ function isNodePublishedToGallery(nodeData: Record<string, any> | null | undefin
     return false;
   }
   return nodeData.isVisible !== false;
+}
+
+function isManagedStorageAssetUrl(rawUrl: string | null | undefined): boolean {
+  if (!rawUrl || typeof rawUrl !== 'string') {
+    return false;
+  }
+  const trimmed = rawUrl.trim();
+  if (!trimmed || trimmed.startsWith('data:')) {
+    return false;
+  }
+  if (trimmed.startsWith('/uploads/') || trimmed.startsWith('uploads/')) {
+    return true;
+  }
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.pathname.startsWith('/uploads/')) {
+        return true;
+      }
+      const s3PublicUrl = process.env.S3_PUBLIC_URL?.trim().replace(/\/$/, '');
+      if (s3PublicUrl && (trimmed === s3PublicUrl || trimmed.startsWith(`${s3PublicUrl}/`))) {
+        return true;
+      }
+      const s3Bucket = process.env.S3_BUCKET?.trim();
+      if (s3Bucket) {
+        if (
+          parsed.hostname.toLowerCase().startsWith(`${s3Bucket.toLowerCase()}.`) ||
+          parsed.pathname.startsWith(`/${s3Bucket}/`)
+        ) {
+          return true;
+        }
+      }
+      const s3Endpoint = process.env.S3_ENDPOINT?.trim().replace(/\/$/, '');
+      if (s3Endpoint && trimmed.startsWith(`${s3Endpoint}/`)) {
+        return true;
+      }
+    } catch {
+      return false;
+    }
+  }
+  return false;
 }
 
 export class MediaRepository {
@@ -405,7 +447,7 @@ export class MediaRepository {
   }
 
   async deleteMedia(id: string, author: string = 'System') {
-    return executeInTransaction(this.client, async (tx) => {
+    const deletedMedia = await executeInTransaction(this.client, async (tx) => {
       if (tx.contentNode?.findMany) {
         const linkedNodes = await tx.contentNode.findMany({
           where: {
@@ -432,6 +474,21 @@ export class MediaRepository {
       await createAuditSnapshot('Media', id, { deleted: true, ...media }, author, tx);
       return MediaSchema.parse(media);
     });
+
+    if (isManagedStorageAssetUrl(deletedMedia.url)) {
+      try {
+        const { getStorageProvider } = await import('@/utils/storage');
+        await getStorageProvider().delete(deletedMedia.url);
+      } catch (err) {
+        logger.warn('[MediaRepository.deleteMedia] Storage cleanup failed after DB commit', {
+          mediaId: id,
+          url: deletedMedia.url,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    return deletedMedia;
   }
 }
 

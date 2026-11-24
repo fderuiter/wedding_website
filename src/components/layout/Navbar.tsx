@@ -41,6 +41,7 @@ interface NavbarProps {
   headerRef: React.RefObject<HTMLElement | null>;
   config: PublicAppConfig;
   hasVisibleFaqs?: boolean;
+  isPreview?: boolean;
 }
 
 interface NavLinkItem {
@@ -100,6 +101,7 @@ export default function Navbar({
   headerRef,
   config,
   hasVisibleFaqs,
+  isPreview = false,
 }: NavbarProps) {
   const pathname = usePathname();
   const normalizedPathname =
@@ -346,129 +348,218 @@ export default function Navbar({
     );
   };
 
-  const navbarContent = (
+  const desktopNavChildren = (
     <>
-      <header
-        ref={headerRef}
-        className="fixed top-0 left-0 right-0 z-50 bg-transparent backdrop-filter backdrop-blur-lg border-b border-[var(--color-surface-border,rgba(0,0,0,0.1))]"
-      >
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between min-h-16 py-1.5 gap-3">
-            <div className="flex-shrink-0 flex items-center min-h-12">
-              <Link
-                href="/"
-                prefetch={disablePrefetch ? false : undefined}
-                className="flex items-center min-h-[24px] min-w-[24px] text-2xl font-bold text-[var(--color-primary-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2 rounded"
+      {primaryLinks.map(renderDesktopLink)}
+
+      {secondaryLinks.length > 0 && (
+        <div className="relative inline-block text-left">
+          <button
+            ref={guideTriggerRef}
+            id={guideTriggerId}
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded={isGuideMenuOpen}
+            aria-controls="desktop-guide-menu"
+            onClick={() => setIsGuideMenuOpen((prev) => !prev)}
+            onKeyDown={handleGuideTriggerKeyDown}
+            className={`inline-flex items-center gap-1 px-2.5 lg:px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2 ${
+              isSecondaryActive || isGuideMenuOpen
+                ? 'text-[var(--btn-primary-text,var(--color-primary-text,#ffffff))] bg-[var(--btn-primary-bg,var(--color-primary))]'
+                : 'text-[var(--color-primary-text)] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))]'
+            }`}
+          >
+            <span>Event Guide</span>
+            <Icon
+              name="ChevronDown"
+              className={`h-4 w-4 transition-transform ${isGuideMenuOpen ? 'rotate-180' : ''}`}
+              aria-hidden="true"
+            />
+          </button>
+
+          {isGuideMenuOpen && (
+            <div
+              id="desktop-guide-menu"
+              ref={guideOverlayRef}
+              className="origin-top-left absolute left-0 mt-2 w-64 max-h-[calc(100dvh-5rem)] overflow-y-auto rounded-lg shadow-xl bg-[var(--card-bg,#ffffff)] border border-[var(--color-surface-border,#e5e7eb)] text-[var(--color-primary-text)] p-1.5 z-50"
+            >
+              <div
+                role="menu"
+                aria-orientation="vertical"
+                aria-labelledby={guideTriggerId}
+                className="space-y-0.5"
               >
-                {brandLogoUrl ? (
-                  <MediaImage
-                    src={brandLogoUrl}
-                    alt={brandLogoAlt}
-                    className="h-10 max-h-12 w-auto object-contain"
+                {sectionLinks.map(renderDropdownMenuItem)}
+                {sectionLinks.length > 0 && guidePageLinks.length > 0 && (
+                  <div
+                    role="separator"
+                    className="my-1 border-t border-[var(--color-surface-border,#e5e7eb)]"
                   />
-                ) : (
-                  <span className="min-h-[24px] min-w-[24px] inline-flex items-center justify-center">{monogram}</span>
                 )}
-              </Link>
+                {guidePageLinks.map(renderDropdownMenuItem)}
+              </div>
             </div>
-            <div className="hidden md:block flex-1 min-w-0">
-              <nav aria-label="Global Navigation" className="ml-3 lg:ml-6 flex flex-wrap items-center gap-x-1 lg:gap-x-2 gap-y-1">
-                {primaryLinks.map(renderDesktopLink)}
+          )}
+        </div>
+      )}
 
-                {secondaryLinks.length > 0 && (
-                  <div className="relative inline-block text-left">
-                    <button
-                      ref={guideTriggerRef}
-                      id={guideTriggerId}
-                      type="button"
-                      aria-haspopup="menu"
-                      aria-expanded={isGuideMenuOpen}
-                      aria-controls="desktop-guide-menu"
-                      onClick={() => setIsGuideMenuOpen((prev) => !prev)}
-                      onKeyDown={handleGuideTriggerKeyDown}
-                      className={`inline-flex items-center gap-1 px-2.5 lg:px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2 ${
-                        isSecondaryActive || isGuideMenuOpen
-                          ? 'text-[var(--btn-primary-text,var(--color-primary-text,#ffffff))] bg-[var(--btn-primary-bg,var(--color-primary))]'
-                          : 'text-[var(--color-primary-text)] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))]'
-                      }`}
-                    >
-                      <span>Event Guide</span>
-                      <Icon
-                        name="ChevronDown"
-                        className={`h-4 w-4 transition-transform ${isGuideMenuOpen ? 'rotate-180' : ''}`}
-                        aria-hidden="true"
-                      />
-                    </button>
+      {adminLinks.map(renderDesktopLink)}
+    </>
+  );
 
-                    {isGuideMenuOpen && (
-                      <div
-                        id="desktop-guide-menu"
-                        ref={guideOverlayRef}
-                        className="origin-top-left absolute left-0 mt-2 w-64 max-h-[calc(100dvh-5rem)] overflow-y-auto rounded-lg shadow-xl bg-[var(--card-bg,#ffffff)] border border-[var(--color-surface-border,#e5e7eb)] text-[var(--color-primary-text)] p-1.5 z-50"
-                      >
-                        <div
-                          role="menu"
-                          aria-orientation="vertical"
-                          aria-labelledby={guideTriggerId}
-                          className="space-y-0.5"
-                        >
-                          {sectionLinks.map(renderDropdownMenuItem)}
-                          {sectionLinks.length > 0 && guidePageLinks.length > 0 && (
-                            <div
-                              role="separator"
-                              className="my-1 border-t border-[var(--color-surface-border,#e5e7eb)]"
-                            />
-                          )}
-                          {guidePageLinks.map(renderDropdownMenuItem)}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {adminLinks.map(renderDesktopLink)}
-              </nav>
-            </div>
-            <div className="hidden md:flex md:items-center md:gap-3 flex-shrink-0">
-              <GuestHelpTrigger
-                variant="navbar"
-                label="Help"
-                defaultCategory={defaultHelpCategory}
-                config={config}
+  const headerInnerContent = (
+    <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="flex items-center justify-between min-h-16 py-1.5 gap-3">
+        <div className="flex-shrink-0 flex items-center min-h-12">
+          <Link
+            href="/"
+            prefetch={disablePrefetch ? false : undefined}
+            className="flex items-center min-h-[24px] min-w-[24px] text-2xl font-bold text-[var(--color-primary-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2 rounded"
+          >
+            {brandLogoUrl ? (
+              <MediaImage
+                src={brandLogoUrl}
+                alt={brandLogoAlt}
+                className="h-10 max-h-12 w-auto object-contain"
               />
-              <ThemeSelector />
-              {isAdmin && (
-                <div className="flex items-center">
-                  <span className="text-sm font-medium text-[var(--color-primary-text)]">Admin Mode</span>
-                  <button
-                    onClick={handleLogout}
-                    className="ml-4 bg-[var(--btn-primary-bg,var(--color-primary))] hover:bg-[var(--btn-primary-hover-bg,var(--color-primary))] text-[var(--btn-primary-text,var(--color-primary-text,#ffffff))] text-xs py-1 px-3 min-h-[24px] min-w-[24px] inline-flex items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2"
-                  >
-                    Logout
-                  </button>
-                </div>
-              )}
+            ) : (
+              <span className="min-h-[24px] min-w-[24px] inline-flex items-center justify-center">{monogram}</span>
+            )}
+          </Link>
+        </div>
+        <div className="hidden md:block flex-1 min-w-0">
+          {isPreview ? (
+            <div className="ml-3 lg:ml-6 flex flex-wrap items-center gap-x-1 lg:gap-x-2 gap-y-1">
+              {desktopNavChildren}
             </div>
-            <div className="-mr-2 flex md:hidden">
+          ) : (
+            <nav aria-label="Global Navigation" className="ml-3 lg:ml-6 flex flex-wrap items-center gap-x-1 lg:gap-x-2 gap-y-1">
+              {desktopNavChildren}
+            </nav>
+          )}
+        </div>
+        <div className="hidden md:flex md:items-center md:gap-3 flex-shrink-0">
+          <GuestHelpTrigger
+            variant="navbar"
+            label="Help"
+            defaultCategory={defaultHelpCategory}
+            config={config}
+          />
+          <ThemeSelector />
+          {isAdmin && (
+            <div className="flex items-center">
+              <span className="text-sm font-medium text-[var(--color-primary-text)]">Admin Mode</span>
               <button
-                ref={mobileMenuTriggerRef}
-                onClick={() => setIsMenuOpen((prev) => !prev)}
-                type="button"
-                aria-expanded={isMenuOpen}
-                aria-controls="mobile-menu"
-                className="inline-flex items-center justify-center p-2 rounded-md text-[var(--color-primary-text)] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))]"
+                onClick={handleLogout}
+                className="ml-4 bg-[var(--btn-primary-bg,var(--color-primary))] hover:bg-[var(--btn-primary-hover-bg,var(--color-primary))] text-[var(--btn-primary-text,var(--color-primary-text,#ffffff))] text-xs py-1 px-3 min-h-[24px] min-w-[24px] inline-flex items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2"
               >
-                <span className="sr-only">{isMenuOpen ? 'Close main menu' : 'Open main menu'}</span>
-                {isMenuOpen ? (
-                  <Icon name="X" className="h-6 w-6" aria-hidden="true" />
-                ) : (
-                  <Icon name="Menu" className="h-6 w-6" aria-hidden="true" />
-                )}
+                Logout
               </button>
             </div>
+          )}
+        </div>
+        <div className="-mr-2 flex md:hidden">
+          <button
+            ref={mobileMenuTriggerRef}
+            onClick={() => setIsMenuOpen((prev) => !prev)}
+            type="button"
+            aria-expanded={isMenuOpen}
+            aria-controls="mobile-menu"
+            className="inline-flex items-center justify-center p-2 rounded-md text-[var(--color-primary-text)] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))]"
+          >
+            <span className="sr-only">{isMenuOpen ? 'Close main menu' : 'Open main menu'}</span>
+            {isMenuOpen ? (
+              <Icon name="X" className="h-6 w-6" aria-hidden="true" />
+            ) : (
+              <Icon name="Menu" className="h-6 w-6" aria-hidden="true" />
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const mobileNavChildren = (
+    <>
+      {mobileLinks.map((link) => {
+        const active = isLinkActive(link.href);
+        return (
+          <Link
+            key={link.href}
+            href={link.href}
+            prefetch={disablePrefetch ? false : undefined}
+            onClick={() => {
+              if (link.href.includes('#')) {
+                setActiveHash(link.href.substring(link.href.indexOf('#')));
+              }
+              setIsMenuOpen(false);
+            }}
+            aria-current={getLinkAriaCurrent(link.href)}
+            className={`block px-3 py-2 rounded-md text-base font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2 ${
+              active
+                ? 'text-[var(--btn-primary-text,var(--color-primary-text,#ffffff))] bg-[var(--btn-primary-bg,var(--color-primary))]'
+                : 'text-[var(--color-primary-text)] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))]'
+            }`}
+          >
+            {link.label}
+          </Link>
+        );
+      })}
+      <GuestHelpTrigger
+        variant="mobileNav"
+        label="Help"
+        defaultCategory={defaultHelpCategory}
+        config={config}
+        onTrigger={() => setIsMenuOpen(false)}
+      />
+      <div className="pt-3 pb-2 px-3 border-t border-[var(--color-surface-border,#e5e7eb)] flex justify-between items-center">
+        <span className="text-sm font-medium text-[var(--color-primary-text)]">Theme</span>
+        <ThemeSelector />
+      </div>
+      {isAdmin && (
+        <div className="pt-4 pb-3 border-t border-[var(--color-surface-border,#e5e7eb)]">
+          <div className="flex items-center px-5">
+            <div className="ml-3">
+              <div className="text-base font-medium leading-none text-[var(--color-primary-text)]">Admin Mode</div>
+            </div>
+          </div>
+          <div className="mt-3 px-2 space-y-1">
+            <button
+              onClick={() => {
+                handleLogout();
+                setIsMenuOpen(false);
+              }}
+              className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-[var(--color-primary-text)] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2"
+            >
+              Logout
+            </button>
           </div>
         </div>
-      </header>
+      )}
+    </>
+  );
+
+  const headerClassName =
+    'fixed top-0 left-0 right-0 z-50 bg-transparent backdrop-filter backdrop-blur-lg border-b border-[var(--color-surface-border,rgba(0,0,0,0.1))]';
+
+  const navbarContent = (
+    <>
+      {isPreview ? (
+        <div
+          ref={headerRef as React.RefObject<HTMLDivElement | null>}
+          className={headerClassName}
+        >
+          {headerInnerContent}
+        </div>
+      ) : (
+        <header
+          ref={headerRef}
+          aria-label="Site header"
+          className={headerClassName}
+        >
+          {headerInnerContent}
+        </header>
+      )}
 
       <Overlay
         isOpen={isMenuOpen}
@@ -492,63 +583,15 @@ export default function Navbar({
             <Icon name="X" className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
-        <nav aria-label="Mobile Navigation" className="px-2 pt-1 pb-4 space-y-1 sm:px-3">
-          {mobileLinks.map((link) => {
-            const active = isLinkActive(link.href);
-            return (
-              <Link
-                key={link.href}
-                href={link.href}
-                prefetch={disablePrefetch ? false : undefined}
-                onClick={() => {
-                  if (link.href.includes('#')) {
-                    setActiveHash(link.href.substring(link.href.indexOf('#')));
-                  }
-                  setIsMenuOpen(false);
-                }}
-                aria-current={getLinkAriaCurrent(link.href)}
-                className={`block px-3 py-2 rounded-md text-base font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2 ${
-                  active
-                    ? 'text-[var(--btn-primary-text,var(--color-primary-text,#ffffff))] bg-[var(--btn-primary-bg,var(--color-primary))]'
-                    : 'text-[var(--color-primary-text)] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))]'
-                }`}
-              >
-                {link.label}
-              </Link>
-            );
-          })}
-          <GuestHelpTrigger
-            variant="mobileNav"
-            label="Help"
-            defaultCategory={defaultHelpCategory}
-            config={config}
-            onTrigger={() => setIsMenuOpen(false)}
-          />
-          <div className="pt-3 pb-2 px-3 border-t border-[var(--color-surface-border,#e5e7eb)] flex justify-between items-center">
-            <span className="text-sm font-medium text-[var(--color-primary-text)]">Theme</span>
-            <ThemeSelector />
+        {isPreview ? (
+          <div className="px-2 pt-1 pb-4 space-y-1 sm:px-3">
+            {mobileNavChildren}
           </div>
-          {isAdmin && (
-            <div className="pt-4 pb-3 border-t border-[var(--color-surface-border,#e5e7eb)]">
-              <div className="flex items-center px-5">
-                <div className="ml-3">
-                  <div className="text-base font-medium leading-none text-[var(--color-primary-text)]">Admin Mode</div>
-                </div>
-              </div>
-              <div className="mt-3 px-2 space-y-1">
-                <button
-                  onClick={() => {
-                    handleLogout();
-                    setIsMenuOpen(false);
-                  }}
-                  className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-[var(--color-primary-text)] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2"
-                >
-                  Logout
-                </button>
-              </div>
-            </div>
-          )}
-        </nav>
+        ) : (
+          <nav aria-label="Mobile Navigation" className="px-2 pt-1 pb-4 space-y-1 sm:px-3">
+            {mobileNavChildren}
+          </nav>
+        )}
       </Overlay>
     </>
   );

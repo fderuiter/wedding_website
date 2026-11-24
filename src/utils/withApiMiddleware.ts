@@ -14,10 +14,12 @@ import {
 } from '@/core/auth/photoUploadToken';
 import {
   rateLimit,
+  acquireAuthIpLock,
   checkAuthLockout,
   recordAuthFailure,
   type AuthLockoutInstance,
   type RateLimitBucket,
+  type RateLimitScope,
 } from './rateLimit';
 import { ApiError } from './ApiError';
 import { isProtectedRoute } from '@/lib/routes';
@@ -33,9 +35,13 @@ export interface ApiMiddlewareOptions {
   windowMs?: number;
   keyPrefix?: string;
   bucket?: RateLimitBucket;
+  scope?: RateLimitScope;
+  ipLimit?: number;
   isHealthProbe?: boolean;
   authInstance?: AuthLockoutInstance;
 }
+
+const DEFAULT_MAX_AUTH_QUEUE_PER_IP = 10;
 
 function isAuthLockoutRoute(pathname: string, method: string): boolean {
   const upperMethod = method.toUpperCase();
@@ -93,6 +99,8 @@ export function withApiMiddleware(
     let authWindowMs = 15 * 60 * 1000;
     let prechecksCompleted = false;
 
+    let releaseAuthIpLock: (() => void) | null = null;
+
     try {
       let pathname = '/';
       let method = 'GET';
@@ -119,7 +127,8 @@ export function withApiMiddleware(
       const isAdminPath = isProtectedRoute(pathname, method);
 
       // 1. Rate Limiting
-      // Check active AuthLockout state before handlers run, cap bursts at 100 req/min in generalStore,
+      // Serialize concurrent auth attempts per client IP with bounded waiter shedding,
+      // check active AuthLockout state before handlers run, cap bursts at 100 req/min in generalStore,
       // and record failed auth attempts (401/403/404); probe endpoints (/api/health, /api/live) are exempt.
       if (!isHealthPath) {
         const hasReadableHeaders = Boolean(req && req.headers && typeof req.headers.get === 'function');
@@ -128,6 +137,17 @@ export function withApiMiddleware(
 
         if (hasReadableHeaders && req) {
           if (resolvedBucket === 'auth') {
+            if (typeof acquireAuthIpLock === 'function') {
+              const maxQueued = Math.min(25, Math.max(DEFAULT_MAX_AUTH_QUEUE_PER_IP, authLimit));
+              releaseAuthIpLock = await acquireAuthIpLock(req, maxQueued);
+              if (!releaseAuthIpLock) {
+                return NextResponse.json(
+                  { success: false, error: 'Too many requests, please try again later.' },
+                  { status: 429 }
+                );
+              }
+            }
+
             rateLimitResponse =
               typeof checkAuthLockout === 'function'
                 ? await checkAuthLockout(
@@ -147,13 +167,17 @@ export function withApiMiddleware(
                 100,
                 60 * 1000,
                 options?.keyPrefix,
-                'general'
+                'general',
+                { scope: 'ip' }
               );
             }
           } else {
             const limit = options?.limit ?? 100;
             const windowMs = options?.windowMs ?? 60 * 1000;
-            rateLimitResponse = await rateLimit(req, limit, windowMs, options?.keyPrefix, 'general');
+            rateLimitResponse = await rateLimit(req, limit, windowMs, options?.keyPrefix, 'general', {
+              ...(options?.scope ? { scope: options.scope } : {}),
+              ...(options?.ipLimit !== undefined ? { ipLimit: options.ipLimit } : {}),
+            });
           }
         }
         
@@ -230,7 +254,13 @@ export function withApiMiddleware(
         isAuthFailureStatus(response.status) &&
         typeof recordAuthFailure === 'function'
       ) {
-        await recordAuthFailure(req, authWindowMs, options?.keyPrefix, options?.authInstance);
+        await recordAuthFailure(
+          req,
+          authWindowMs,
+          options?.keyPrefix,
+          options?.authInstance,
+          authLimit
+        );
       }
       
       // Pass-through attachments (e.g. backup files)
@@ -357,7 +387,13 @@ export function withApiMiddleware(
         typeof recordAuthFailure === 'function'
       ) {
         try {
-          await recordAuthFailure(req, authWindowMs, options?.keyPrefix, options?.authInstance);
+          await recordAuthFailure(
+            req,
+            authWindowMs,
+            options?.keyPrefix,
+            options?.authInstance,
+            authLimit
+          );
         } catch {
           // Preserve original error response if lockout recording fails
         }
@@ -420,6 +456,10 @@ export function withApiMiddleware(
         { success: false, error: errorMessage },
         { status: 500 }
       );
+    } finally {
+      if (releaseAuthIpLock) {
+        releaseAuthIpLock();
+      }
     }
   };
 

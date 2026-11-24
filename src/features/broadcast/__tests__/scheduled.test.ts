@@ -74,6 +74,30 @@ describe('Scheduled Broadcast Dispatch Suite', () => {
       const result = SendBroadcastSchema.safeParse(payload);
       expect(result.success).toBe(false);
     });
+
+    it('rejects payloads passing deprecated scheduledAt instead of scheduledFor', () => {
+      const futureDate = new Date(Date.now() + 86400000).toISOString();
+      const payload = {
+        channel: 'EMAIL',
+        subject: 'Future Broadcast',
+        body: 'Do not dispatch immediately',
+        scheduledAt: futureDate,
+      };
+
+      const result = SendBroadcastSchema.safeParse(payload);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(
+          result.error.issues.some(
+            (issue) =>
+              issue.code === 'unrecognized_keys' &&
+              'keys' in issue &&
+              Array.isArray(issue.keys) &&
+              issue.keys.includes('scheduledAt'),
+          ),
+        ).toBe(true);
+      }
+    });
   });
 
   describe('BroadcastService.sendBroadcast', () => {

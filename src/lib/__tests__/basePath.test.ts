@@ -3,6 +3,7 @@ import path from 'path';
 import {
   normalizeBasePath,
   getBasePath,
+  getPortalBaseUrl,
   withBasePath,
   stripBasePath,
 } from '../basePath';
@@ -121,6 +122,17 @@ describe('basePath helper utilities', () => {
       );
     });
   });
+
+  describe('getPortalBaseUrl', () => {
+    it('resolves parent VitePress portal root URL across subpath and root deployments', () => {
+      delete process.env.NEXT_PUBLIC_BASE_PATH;
+      expect(getPortalBaseUrl()).toBe('/');
+      expect(getPortalBaseUrl('/demo')).toBe('/');
+      expect(getPortalBaseUrl('/wedding_website/demo')).toBe('/wedding_website/');
+      expect(getPortalBaseUrl('/wedding_website/demo/')).toBe('/wedding_website/');
+      expect(getPortalBaseUrl('/custom-prefix')).toBe('/custom-prefix/');
+    });
+  });
 });
 
 describe('Sample & Default Local Public Asset Integrity', () => {
@@ -145,6 +157,12 @@ describe('Sample & Default Local Public Asset Integrity', () => {
     for (const preset of Object.values(ARCHETYPE_PRESETS)) {
       for (const item of preset.registryItems) {
         collectIfLocal(item.imageUrl);
+      }
+      for (const member of preset.weddingParty) {
+        collectIfLocal(member.imageUrl);
+      }
+      for (const photo of preset.photos) {
+        collectIfLocal(photo.url);
       }
     }
 
