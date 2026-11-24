@@ -9,7 +9,7 @@ const require = createRequire(import.meta.url);
 
 const config: StorybookConfig = {
   stories: ['../src/**/*.stories.@(js|jsx|mjs|ts|tsx)'],
-  addons: [],
+  addons: ['@storybook/addon-docs'],
   framework: {
     name: '@storybook/react-webpack5',
     options: {
@@ -18,7 +18,12 @@ const config: StorybookConfig = {
       },
     },
   },
-  staticDirs: ['../public'],
+  staticDirs: [
+    { from: '../public/fonts', to: '/fonts' },
+    { from: '../public/images', to: '/images' },
+    { from: '../public/assets', to: '/assets' },
+    { from: '../public/mockServiceWorker.js', to: '/mockServiceWorker.js' },
+  ],
   env: (existingEnv) => ({
     ...existingEnv,
     ...(process.env.NEXT_PUBLIC_BASE_PATH
@@ -49,7 +54,7 @@ const config: StorybookConfig = {
               presets: [
                 [require.resolve('@babel/preset-env'), { targets: { browsers: 'defaults' } }],
                 [require.resolve('@babel/preset-react'), { runtime: 'automatic' }],
-                require.resolve('@babel/preset-typescript'),
+                [require.resolve('@babel/preset-typescript'), { onlyRemoveTypeImports: false }],
               ],
             },
           },

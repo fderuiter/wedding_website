@@ -8,7 +8,7 @@ import {
   getLocalizedClimateFallback,
   TEMPERATE_DEFAULT_LAT,
   TEMPERATE_DEFAULT_LON,
-} from '../climateFallback';
+} from '@/utils/climateFallback';
 
 type NextFetchRequestInit = RequestInit & {
   next?: {
