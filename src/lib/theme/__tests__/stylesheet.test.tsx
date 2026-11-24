@@ -625,4 +625,29 @@ describe('Isomorphic Theme Stylesheet Generation', () => {
       document.documentElement.className = prevHtmlClass;
     }
   });
+
+  it('calibrates --btn-success-* and status tokens to >= 4.5:1 across presets and custom low-contrast overrides', () => {
+    for (const preset of ['classic', 'modern', 'romantic', 'minimal', 'editorial']) {
+      const css = generateDynamicStyles('#B91C1C', '#B45309', preset, {
+        '--btn-success-bg': '#059669',
+        '--btn-success-hover-bg': '#10b981',
+      });
+
+      const bgMatches = [...css.matchAll(/--btn-success-bg:\s*(#[0-9a-fA-F]{6});/g)];
+      const hoverMatches = [...css.matchAll(/--btn-success-hover-bg:\s*(#[0-9a-fA-F]{6});/g)];
+      const textMatches = [...css.matchAll(/--btn-success-text:\s*(#[0-9a-fA-F]{6});/g)];
+
+      expect(bgMatches.length).toBeGreaterThanOrEqual(2);
+      expect(hoverMatches.length).toBeGreaterThanOrEqual(2);
+      expect(textMatches.length).toBeGreaterThanOrEqual(2);
+
+      for (let i = 0; i < bgMatches.length; i += 1) {
+        const bgHex = bgMatches[i][1];
+        const hoverHex = hoverMatches[i][1];
+        const textHex = textMatches[i][1];
+        expect(getContrastRatio(hexToRgb(textHex), hexToRgb(bgHex))).toBeGreaterThanOrEqual(4.5);
+        expect(getContrastRatio(hexToRgb(textHex), hexToRgb(hoverHex))).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
 });

@@ -3,6 +3,10 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '@/lib/apiClient';
 import { useOptionalToast } from '@/components/ui/ToastProvider';
+import {
+  notifyGuestSessionChanged,
+  subscribeGuestSessionChanged,
+} from '@/utils/guestSessionEvents';
 import { SessionRecoveryModal } from '../components/SessionRecoveryModal';
 
 export type GuestSessionStatus = 'authenticated' | 'unauthenticated' | 'expired' | 'error';
@@ -48,6 +52,16 @@ export const GuestSessionContext = createContext<GuestSessionContextType>(defaul
 
 export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const toast = useOptionalToast();
+  const isInternalSessionEmitRef = useRef(false);
+
+  const emitSessionChanged = useCallback(() => {
+    isInternalSessionEmitRef.current = true;
+    try {
+      notifyGuestSessionChanged();
+    } finally {
+      isInternalSessionEmitRef.current = false;
+    }
+  }, []);
 
   const [sessionState, setSessionState] = useState<GuestSessionState>({
     invitationCode: '',
@@ -164,6 +178,54 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
     refreshSession();
   }, [refreshSession]);
 
+  useEffect(() => {
+    return subscribeGuestSessionChanged(() => {
+      if (isInternalSessionEmitRef.current) return;
+      void (async () => {
+        try {
+          const data = await apiClient.get('/api/registry/session');
+          if (data && (data.isVerified || data.invitationCode || data.code)) {
+            const code = data.invitationCode || data.code || '';
+            const name = data.guestName || '';
+            setSessionState(prev => ({
+              ...prev,
+              invitationCode: code,
+              guestName: name,
+              isVerified: true,
+              isLoading: false,
+              status: 'authenticated',
+              lastErrorCode: null,
+              draftInvitationCode: code || prev.draftInvitationCode,
+              isRecoveryModalOpen: false,
+            }));
+          } else {
+            setSessionState({
+              invitationCode: '',
+              guestName: '',
+              isVerified: false,
+              isLoading: false,
+              status: 'unauthenticated',
+              lastErrorCode: null,
+              draftInvitationCode: '',
+              isRecoveryModalOpen: false,
+            });
+          }
+        } catch {
+          setSessionState({
+            invitationCode: '',
+            guestName: '',
+            isVerified: false,
+            isLoading: false,
+            status: 'unauthenticated',
+            lastErrorCode: null,
+            draftInvitationCode: '',
+            isRecoveryModalOpen: false,
+          });
+        }
+      })();
+    });
+  }, []);
+
   const prevStatusRef = useRef<GuestSessionStatus>(sessionState.status);
   useEffect(() => {
     const prevStatus = prevStatusRef.current;
@@ -217,8 +279,9 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         lastErrorCode: null,
         isRecoveryModalOpen: false,
       }));
+      emitSessionChanged();
     },
-    []
+    [emitSessionChanged]
   );
 
   const clearSession = useCallback(async () => {
@@ -237,8 +300,9 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         draftInvitationCode: '',
         isRecoveryModalOpen: false,
       });
+      emitSessionChanged();
     }
-  }, []);
+  }, [emitSessionChanged]);
 
   const recoverSession = useCallback(
     async (codeToVerify?: string): Promise<boolean> => {
@@ -278,6 +342,7 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
             toast.addToast('Session restored successfully!', 'success');
           }
 
+          emitSessionChanged();
           return true;
         } else {
           setSessionState(prev => ({ ...prev, lastErrorCode: 'INVALID_CODE' }));
@@ -291,7 +356,7 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         return false;
       }
     },
-    [toast, sessionState.draftInvitationCode, sessionState.invitationCode]
+    [emitSessionChanged, toast, sessionState.draftInvitationCode, sessionState.invitationCode]
   );
 
   return (

@@ -9,6 +9,7 @@ import type {
 } from '@/features/registry';
 import type { SeatingTableDTO } from '@/features/seating';
 import { CARD_PROCESSING_FEE_RATE } from '@/lib/stripe.client';
+import { notifyGuestSessionChanged } from '@/utils/guestSessionEvents';
 import { normalizePartyTags } from '@/utils/invitationValidation';
 import { buildArchetypeDataset, type ArchetypeDataset } from './demoSeed';
 
@@ -29,6 +30,15 @@ interface DemoClaimTokenRecord {
   action: 'confirm' | 'cancel';
 }
 
+interface DemoRsvpOverrideRecord {
+  status: 'attending' | 'declined' | 'pending';
+  plusOneCount: number;
+  dietaryNotes: string;
+  mealSelections: string[];
+  customAnswers: Record<string, string>;
+  plusOneNames: string[];
+}
+
 export interface DemoStoreState {
   persona: DemoPersona;
   archetype: ArchetypeId;
@@ -39,6 +49,7 @@ export interface DemoStoreState {
   activeModules: string[];
   datasets: Record<ArchetypeId, ArchetypeDataset>;
   guestSession: DemoGuestSession | null;
+  rsvpOverrides: Record<string, DemoRsvpOverrideRecord>;
   claimTokens: Record<string, DemoClaimTokenRecord>;
   resetCounter: number;
 }
@@ -77,6 +88,7 @@ function createInitialDemoState(resetCounter = 0): DemoStoreState {
     activeModules: [...ALL_DEMO_MODULES],
     datasets: createDefaultDatasets(),
     guestSession: null,
+    rsvpOverrides: {},
     claimTokens: {},
     resetCounter,
   };
@@ -194,7 +206,7 @@ function syncStaticDemoGuestSession(session: DemoGuestSession | null): void {
       ? {
         code: session.invitationCode,
         guestName: session.guestName,
-        sessionType: 'guest',
+        sessionType: 'invite',
       }
       : null;
   });
@@ -333,6 +345,10 @@ export function hydrateDemoStateFromStorage(): void {
         typeof parsed.guestSession.guestName === 'string'
           ? parsed.guestSession
           : null,
+      rsvpOverrides:
+        parsed.rsvpOverrides && typeof parsed.rsvpOverrides === 'object'
+          ? parsed.rsvpOverrides
+          : {},
       claimTokens:
         parsed.claimTokens && typeof parsed.claimTokens === 'object' ? parsed.claimTokens : {},
       resetCounter: state.resetCounter,
@@ -382,9 +398,14 @@ export function subscribeDemoState(listener: () => void): () => void {
 }
 
 function updateState(updater: (prev: DemoStoreState) => DemoStoreState): void {
+  const prevGuestCode = state.guestSession?.invitationCode ?? null;
   state = updater(state);
+  const nextGuestCode = state.guestSession?.invitationCode ?? null;
   persistDemoState();
   emitChange();
+  if (runtimeActive && prevGuestCode !== nextGuestCode) {
+    notifyGuestSessionChanged();
+  }
 }
 
 export function setDemoPersona(persona: DemoPersona): void {
@@ -526,6 +547,7 @@ export function purgeDemoSampleData(): void {
 }
 
 export function resetDemoState(): void {
+  const hadGuestSession = Boolean(state.guestSession);
   const nextResetCounter = state.resetCounter + 1;
   state = createInitialDemoState(nextResetCounter);
   hasHydratedFromStorage = true;
@@ -545,6 +567,9 @@ export function resetDemoState(): void {
     syncStaticDemoPersona('guest', false);
   }
   emitChange();
+  if (runtimeActive && hadGuestSession) {
+    notifyGuestSessionChanged();
+  }
 }
 
 export function getActiveArchetypeDataset(
@@ -585,7 +610,7 @@ export function findDemoGuestByCode(rawCode: string): InvitationCodeDTO | null {
 
   const presetGuests = ARCHETYPE_PRESETS[state.archetype]?.guests ?? [];
   const presetMatch = presetGuests.find((g) => g.code.toUpperCase() === normalized);
-  if (!presetMatch) return null;
+  if (!presetMatch || isDemoAddressCollectionOnly(presetMatch.partyTags)) return null;
 
   return {
     id: `demo-${state.archetype}-preset-${normalized}`,
@@ -606,6 +631,25 @@ export function setDemoGuestSession(session: DemoGuestSession | null): void {
     guestSession: session,
   }));
   syncStaticDemoGuestSession(session);
+}
+
+export function upsertDemoSubEventRsvp(
+  code: string,
+  subEventId: string,
+  rsvp: DemoRsvpOverrideRecord
+): void {
+  const normalizedCode = code.trim().toUpperCase();
+  if (!normalizedCode || !subEventId) return;
+  updateState((prev) => {
+    const key = `${prev.archetype}:${normalizedCode}:${subEventId}`;
+    return {
+      ...prev,
+      rsvpOverrides: {
+        ...prev.rsvpOverrides,
+        [key]: rsvp,
+      },
+    };
+  });
 }
 
 export function updateDemoGuestAddress(

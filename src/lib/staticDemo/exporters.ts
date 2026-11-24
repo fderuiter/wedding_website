@@ -52,24 +52,35 @@ export function buildInvitationCodesCsv(
       'Zip',
       'Country',
     ],
-    invitations.map((inv) => [
-      inv.code,
-      inv.guestName,
-      inv.email ?? '',
-      inv.householdName ?? '',
-      inv.partyGroup ?? '',
-      (inv.partyTags ?? []).join('; '),
-      inv.plusOneAllocations ?? 0,
-      inv.dietaryNotes ?? '',
-      inv.tableId ? (tableById.get(inv.tableId) ?? '') : '',
-      inv.seatNumber ?? '',
-      inv.used ? 'Yes' : 'No',
-      inv.addressLine1 ?? '',
-      inv.city ?? '',
-      inv.state ?? '',
-      inv.zipCode ?? '',
-      inv.country ?? '',
-    ]),
+    invitations.map((inv) => {
+      const extraRecord =
+        inv.extraFields && typeof inv.extraFields === 'object' ? inv.extraFields : null;
+      const isDeclined =
+        typeof extraRecord?.attendanceStatus === 'string' &&
+        extraRecord.attendanceStatus.trim().toLowerCase() === 'declined';
+      const confirmedPlusOnes =
+        extraRecord && typeof extraRecord.plusOneCount === 'number'
+          ? extraRecord.plusOneCount
+          : null;
+      return [
+        inv.code,
+        inv.guestName,
+        inv.email ?? '',
+        inv.householdName ?? '',
+        inv.partyGroup ?? '',
+        (inv.partyTags ?? []).join('; '),
+        isDeclined ? 0 : (confirmedPlusOnes ?? inv.plusOneAllocations ?? 0),
+        inv.dietaryNotes ?? '',
+        inv.tableId ? (tableById.get(inv.tableId) ?? '') : '',
+        inv.seatNumber ?? '',
+        inv.used ? 'Yes' : 'No',
+        inv.addressLine1 ?? '',
+        inv.city ?? '',
+        inv.state ?? '',
+        inv.zipCode ?? '',
+        inv.country ?? '',
+      ];
+    }),
   );
 }
 

@@ -476,8 +476,34 @@ describe('Portal Documentation Generator & Development Section', () => {
         // Public & guest routes succeed; admin routes reject with 401 while in guest persona
         const publicItemsRes = await sandbox.executeFetch('/api/registry/items');
         expect(publicItemsRes.status).toBe(200);
+        const guestSessionRes = await sandbox.executeFetch('/api/guest/session');
+        expect(guestSessionRes.status).toBe(200);
+        expect(await guestSessionRes.json()).toMatchObject({
+          status: 'invitation',
+          isVerified: true,
+          invitationCode: 'SMITH2026',
+        });
+        const sharedPasscodeRes = await sandbox.executeFetch(
+          '/api/registry/validate-code?code=WEDDING2026'
+        );
+        expect(sharedPasscodeRes.status).toBe(200);
+        expect(await sharedPasscodeRes.json()).toMatchObject({
+          valid: false,
+          reason: 'shared_passcode',
+        });
         const guestAddrRes = await sandbox.executeFetch('/api/guest/address');
         expect(guestAddrRes.status).toBe(200);
+        const switchHouseholdRes = await sandbox.executeFetch('/api/guest/session', {
+          method: 'DELETE',
+        });
+        expect(switchHouseholdRes.status).toBe(200);
+        expect(await switchHouseholdRes.json()).toMatchObject({
+          status: 'none',
+          isVerified: false,
+          invitationCode: null,
+        });
+        expect(sandbox.getSnapshot().guestSession).toBeNull();
+        sandbox.setPersona('guest');
         const blockedAdminRes = await sandbox.executeFetch('/api/admin/seating-tables');
         expect(blockedAdminRes.status).toBe(401);
 

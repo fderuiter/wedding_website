@@ -12,6 +12,7 @@ import { apiClient } from '@/lib/apiClient';
 import { findDemoGuestByCode, isDemoRuntimeActive } from '@/lib/demo/demoStore';
 import { useGuestSession } from '../context/GuestSessionContext';
 import { formatCurrency } from '@/utils/intl';
+import { notifyGuestSessionChanged } from '@/utils/guestSessionEvents';
 import { getItemRemainingAmount, getItemUnitCounts } from '../lib/registryStatusUtils';
 import { REGISTRY_CAPABILITIES_REFRESH_EVENT } from './useRegistryCapabilities';
 
@@ -22,6 +23,7 @@ function notifyCapabilitiesRefresh() {
   if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
     window.dispatchEvent(new CustomEvent(REGISTRY_CAPABILITIES_REFRESH_EVENT));
   }
+  notifyGuestSessionChanged();
 }
 
 export type ContributionPhase =
@@ -494,7 +496,11 @@ export function useRegistryContributionMachine({
           return true;
         } else {
           setPhase('idle');
-          setCodeError('Invalid invitation code.');
+          const guidanceMessage =
+            typeof data?.error === 'string' && data.error.trim()
+              ? data.error.trim()
+              : 'Invalid invitation code.';
+          setCodeError(guidanceMessage);
           setCodeFailureCount((count) => count + 1);
           return false;
         }

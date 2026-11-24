@@ -593,7 +593,7 @@ describe('SeatingChartAdminPage Dialog integration', () => {
     const inspectorControls = screen.getByTestId('inspector-position-controls');
     expect(within(inspectorControls).getByTestId('inspector-coordinates')).toHaveTextContent('X: 100, Y: 100');
 
-    // Single-pointer directional nudges from Inspector summary bar
+    // Single-pointer directional nudges from Inspector summary bar (clamped at seat-safe 36px near border)
     fireEvent.click(within(inspectorControls).getByRole('button', { name: 'Nudge Table 1 - Head Table right' }));
     expect(mockUpdateTablePosition).toHaveBeenCalledWith('table-1', 120, 100);
     fireEvent.click(within(inspectorControls).getByRole('button', { name: 'Nudge Table 1 - Head Table down' }));
@@ -607,5 +607,66 @@ describe('SeatingChartAdminPage Dialog integration', () => {
 
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(placeBtn).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  test('clamps inspector directional nudges to rotated seat-safe minimum bounds for guest tables and 0px for landmarks', () => {
+    const borderGuestTable = {
+      ...mockTable,
+      id: 'table-border',
+      name: 'Border Guest Table',
+      x: 42,
+      y: 42,
+      width: 120,
+      height: 120,
+      rotation: 0,
+    };
+    const borderLandmark = {
+      id: 'lm-border',
+      name: 'Border Stage',
+      shape: 'dj' as const,
+      capacity: 0,
+      x: 8,
+      y: 8,
+      width: 140,
+      height: 80,
+      rotation: 0,
+      invitationCodes: [],
+    };
+
+    (useSeatingState as jest.Mock).mockReturnValue({
+      tables: [borderGuestTable, borderLandmark],
+      allGuests: [],
+      unassignedGuests: [],
+      isLoading: false,
+      errorMsg: null,
+      canUndo: false,
+      undoLabel: null,
+      assignGuestToTable: mockAssignGuestToTable,
+      assignGuestsToTable: jest.fn(),
+      unassignGuest: mockUnassignGuest,
+      clearTableSeats: jest.fn(),
+      undoLastBatchAction: jest.fn(),
+      applyAutoAssignResult: mockApplyAutoAssignResult,
+      saveTable: mockSaveTable,
+      deleteTable: mockDeleteTable,
+      updateTablePosition: mockUpdateTablePosition,
+      updateTableRotation: mockUpdateTableRotation,
+    });
+
+    render(<SeatingChartAdminPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Border Guest Table, shape round/i }));
+    const guestControls = screen.getByTestId('inspector-position-controls');
+    fireEvent.click(within(guestControls).getByRole('button', { name: 'Nudge Border Guest Table left' }));
+    expect(mockUpdateTablePosition).toHaveBeenCalledWith('table-border', 36, 42);
+    fireEvent.click(within(guestControls).getByRole('button', { name: 'Nudge Border Guest Table up' }));
+    expect(mockUpdateTablePosition).toHaveBeenCalledWith('table-border', 42, 36);
+
+    fireEvent.click(screen.getByRole('button', { name: /Border Stage, landmark DJ Booth/i }));
+    const landmarkControls = screen.getByTestId('inspector-position-controls');
+    fireEvent.click(within(landmarkControls).getByRole('button', { name: 'Nudge Border Stage left' }));
+    expect(mockUpdateTablePosition).toHaveBeenCalledWith('lm-border', 0, 8);
+    fireEvent.click(within(landmarkControls).getByRole('button', { name: 'Nudge Border Stage up' }));
+    expect(mockUpdateTablePosition).toHaveBeenCalledWith('lm-border', 8, 0);
   });
 });

@@ -1621,7 +1621,7 @@ export default function ThankYouNotesPage() {
                         </div>
                         {(item.stripeChargeId || item.stripePaymentIntentId) && (
                           <div
-                            className="mt-0.5 text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-medium truncate max-w-[120px]"
+                            className="mt-0.5 text-[10px] font-mono text-status-success-text font-medium truncate max-w-[120px]"
                             title={`Stripe Ref: ${item.stripeChargeId || item.stripePaymentIntentId}`}
                           >
                             Ref: {item.stripeChargeId || item.stripePaymentIntentId}
@@ -1678,7 +1678,7 @@ export default function ThankYouNotesPage() {
                           <div className="space-y-1">
                             {item.message && (
                               <div className="text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 p-1.5 rounded border border-amber-200 dark:border-amber-800">
-                                <span className="font-semibold block text-[10px] uppercase text-amber-600 dark:text-amber-400">Guest Message:</span>
+                                <span className="font-semibold block text-[10px] uppercase text-status-warning-text">Guest Message:</span>
                                 <p className="italic">{item.message}</p>
                               </div>
                             )}
@@ -1708,7 +1708,7 @@ export default function ThankYouNotesPage() {
                           <div className="text-xs text-gray-700 dark:text-gray-300 space-y-1 max-w-xs">
                             {item.message && (
                               <div className="text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 p-1.5 rounded border border-amber-200 dark:border-amber-800">
-                                <span className="font-semibold block text-[10px] uppercase text-amber-600 dark:text-amber-400">Guest Message:</span>
+                                <span className="font-semibold block text-[10px] uppercase text-status-warning-text">Guest Message:</span>
                                 <p className="italic whitespace-pre-wrap">{item.message}</p>
                               </div>
                             )}
@@ -1783,7 +1783,7 @@ export default function ThankYouNotesPage() {
                               size="sm"
                               variant="outline"
                               onClick={() => openEmailComposer(item)}
-                              aria-label={`Compose thank-you email for ${item.name}`}
+                              srContext={`for ${item.name}`}
                             >
                               Send Email
                             </Button>

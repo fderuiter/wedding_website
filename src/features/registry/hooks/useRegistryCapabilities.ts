@@ -5,6 +5,7 @@ import { apiClient } from '@/lib/apiClient';
 import { isValidStripePublishableKey, type StripeCapability } from '@/lib/stripe.client';
 import { useOptionalDemo } from '@/components/demo/DemoContext';
 import { DEMO_SHIPPING_ADDRESS } from '@/lib/demo/demoSeed';
+import { subscribeGuestSessionChanged } from '@/utils/guestSessionEvents';
 import { useGuestSession } from '../context/GuestSessionContext';
 import type { RegistryShippingAddress } from '../types';
 
@@ -72,8 +73,10 @@ export function useRegistryCapabilities(
       setRefreshRevision((prev) => prev + 1);
     };
     window.addEventListener(REGISTRY_CAPABILITIES_REFRESH_EVENT, handleRefresh);
+    const unsubscribeGuestSession = subscribeGuestSessionChanged(handleRefresh);
     return () => {
       window.removeEventListener(REGISTRY_CAPABILITIES_REFRESH_EVENT, handleRefresh);
+      unsubscribeGuestSession();
     };
   }, []);
 

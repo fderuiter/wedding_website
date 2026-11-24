@@ -245,6 +245,33 @@ describe('useRegistryContributionMachine Hook', () => {
       expect(result.current.contributorName).toBe('');
     });
 
+    it('surfaces shared_passcode guidance message when validate-code returns reason=shared_passcode', async () => {
+      (apiClient.get as jest.Mock).mockResolvedValue({
+        valid: false,
+        reason: 'shared_passcode',
+        error:
+          'That is the shared website passcode. Please enter the personal household invitation code printed on your invitation.',
+      });
+
+      const { result } = renderHook(() =>
+        useRegistryContributionMachine({
+          item: mockSingleItem,
+          onContribute: mockOnContribute,
+        })
+      );
+
+      act(() => {
+        result.current.handleCodeChange('WEDDING8');
+      });
+
+      await waitFor(() => {
+        expect(result.current.isValidatingCode).toBe(false);
+        expect(result.current.codeError).toMatch(/shared website passcode/i);
+      });
+
+      expect(result.current.isCodeLocked).toBe(false);
+    });
+
     it('handles manual verification via handleVerifyCode', async () => {
       (apiClient.get as jest.Mock).mockResolvedValue({
         valid: true,

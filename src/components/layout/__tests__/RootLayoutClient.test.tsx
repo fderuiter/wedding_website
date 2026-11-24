@@ -12,11 +12,19 @@ jest.mock('next/navigation', () => ({
 }));
 
 jest.mock('../Navbar', () => {
-  return function MockNavbar({ isPreview }: { isPreview?: boolean }) {
+  return function MockNavbar({
+    isPreview,
+    headerRef,
+  }: {
+    isPreview?: boolean;
+    headerRef?: React.Ref<HTMLElement>;
+  }) {
     return isPreview ? (
-      <div data-testid="navbar-preview">Navbar Preview</div>
+      <div ref={headerRef as React.Ref<HTMLDivElement>} data-testid="navbar-preview">
+        Navbar Preview
+      </div>
     ) : (
-      <header aria-label="Site header" data-testid="navbar">
+      <header ref={headerRef} aria-label="Site header" data-testid="navbar">
         Navbar
       </header>
     );
@@ -233,5 +241,92 @@ describe('RootLayoutClient Standalone Presentation Suppression & Landmark Delega
     expect(previewRegion).toHaveTextContent('Evelyn & Frank');
     expect(previewRegion).not.toHaveTextContent('Ignored');
     expect(previewRegion).not.toHaveTextContent('Designed with');
+  });
+
+  it('syncs measured Navbar height into --header-h and scopes inline isPreview renders locally', () => {
+    let resizeCallbacks: ResizeObserverCallback[] = [];
+    const originalResizeObserver = global.ResizeObserver;
+    global.ResizeObserver = jest.fn().mockImplementation((cb: ResizeObserverCallback) => {
+      resizeCallbacks.push(cb);
+      return {
+        observe: jest.fn(),
+        unobserve: jest.fn(),
+        disconnect: jest.fn(),
+      };
+    });
+
+    try {
+      mockPathname = '/';
+      window.history.replaceState({}, '', '/');
+      document.documentElement.removeAttribute('style');
+
+      const { unmount } = render(
+        <RootLayoutClient config={mockConfig}>
+          <div>Host content</div>
+        </RootLayoutClient>
+      );
+
+      const hostHeader = screen.getByTestId('navbar');
+      Object.defineProperty(hostHeader, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => ({
+          x: 0,
+          y: 0,
+          top: 0,
+          left: 0,
+          right: 768,
+          bottom: 225,
+          width: 768,
+          height: 225,
+          toJSON: () => ({}),
+        }),
+      });
+
+      act(() => {
+        resizeCallbacks.forEach((cb) => cb([], {} as ResizeObserver));
+      });
+
+      expect(document.documentElement.style.getPropertyValue('--header-h')).toBe('225px');
+
+      // Render an inline preview alongside the host layout and verify it keeps local --header-h without clobbering 225px
+      const inlinePreview = render(
+        <RootLayoutClient config={mockConfig} isPreview>
+          <div>Inline preview content</div>
+        </RootLayoutClient>
+      );
+
+      const previewHeader = screen.getByTestId('navbar-preview');
+      Object.defineProperty(previewHeader, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => ({
+          x: 0,
+          y: 0,
+          top: 0,
+          left: 0,
+          right: 375,
+          bottom: 65,
+          width: 375,
+          height: 65,
+          toJSON: () => ({}),
+        }),
+      });
+
+      act(() => {
+        resizeCallbacks.forEach((cb) => cb([], {} as ResizeObserver));
+      });
+
+      const previewRegion = screen.getByRole('region', { name: 'Live Preview' });
+      expect(previewRegion).toHaveAttribute('data-scroll-region', '');
+      expect(previewRegion.style.getPropertyValue('--header-h')).toBe('65px');
+      expect(document.documentElement.style.getPropertyValue('--header-h')).toBe('225px');
+
+      inlinePreview.unmount();
+      unmount();
+      expect(document.documentElement.style.getPropertyValue('--header-h')).toBe('');
+    } finally {
+      resizeCallbacks = [];
+      document.documentElement.removeAttribute('style');
+      global.ResizeObserver = originalResizeObserver;
+    }
   });
 });

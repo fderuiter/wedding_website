@@ -63,6 +63,7 @@ function isInviteRevocationExcludedApiPath(normalizedPathname: string): boolean 
     normalizedPathname === '/api/cron' ||
     normalizedPathname.startsWith('/api/cron/') ||
     normalizedPathname === '/api/guest/login' ||
+    normalizedPathname === '/api/guest/session' ||
     normalizedPathname === '/api/guest/address' ||
     normalizedPathname === '/api/guest/address/public' ||
     normalizedPathname === '/api/registry/claim' ||

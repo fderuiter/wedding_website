@@ -28,8 +28,6 @@
   ],
   "github-actions": false,
   "ignoreDependencies": [
-    "@electric-sql/pglite",
-    "@electric-sql/pglite-socket",
     "lint-staged",
     "mermaid",
     "vitepress-plugin-mermaid",
