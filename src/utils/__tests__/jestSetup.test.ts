@@ -312,4 +312,139 @@ describe('Global Jest Setup (jest.setup.js)', () => {
       );
     });
   });
+
+  describe('Three-project Jest isolation, SerialTestRunner, and JSDOM teardown cleanup', () => {
+    it('executes unit-node suites in native node without booting JSDOM or DOM globals', () => {
+      expect(typeof window).toBe('undefined');
+      expect(typeof document).toBe('undefined');
+      expect(typeof (globalThis as Record<string, unknown>).ResizeObserver).toBe('undefined');
+      expect(typeof (globalThis as Record<string, unknown>).HTMLCanvasElement).toBe('undefined');
+      expect(
+        typeof (expect(null) as unknown as Record<string, unknown>).toBeInTheDocument
+      ).toBe('undefined');
+    });
+
+    it('exposes isSerial = true on jest-serial-runner.cjs and partitions jest.config.mjs into unit-node, unit-jsdom, and db-serial', async () => {
+      const rootRequire = moduleModule.createRequire(path.join(process.cwd(), 'package.json'));
+      const SerialTestRunner = rootRequire('./jest-serial-runner.cjs') as new (
+        _globalConfig: Record<string, unknown>,
+        _context: Record<string, unknown>
+      ) => { isSerial?: boolean };
+      const runnerInstance = new SerialTestRunner({ maxWorkers: 2 }, {});
+      expect(runnerInstance.isSerial).toBe(true);
+
+      const { execFileSync } = moduleModule.createRequire(
+        path.join(process.cwd(), 'package.json')
+      )('node:child_process') as typeof import('node:child_process');
+      const rawStdout = execFileSync(
+        process.execPath,
+        [
+          '--input-type=module',
+          '-e',
+          'const cfg = await (await import("./jest.config.mjs")).default; process.stdout.write("\\n__JEST_CFG__:" + JSON.stringify(cfg));',
+        ],
+        { cwd: process.cwd(), encoding: 'utf8' }
+      );
+      const rawConfigJson = rawStdout.split('__JEST_CFG__:')[1] ?? '{}';
+      const resolvedJestConfig = JSON.parse(rawConfigJson) as {
+        workerIdleMemoryLimit?: string;
+        projects?: Array<{
+          displayName?: string | { name?: string };
+          runner?: string;
+          testEnvironment?: string;
+          testMatch?: string[];
+          testPathIgnorePatterns?: string[];
+        }>;
+      };
+      expect(resolvedJestConfig.workerIdleMemoryLimit).toBe('1024MB');
+      const projects = resolvedJestConfig.projects ?? [];
+      expect(Array.isArray(projects)).toBe(true);
+      const projectNames = projects.map((proj) =>
+        typeof proj.displayName === 'string' ? proj.displayName : proj.displayName?.name
+      );
+      expect(projectNames).toEqual(['unit-node', 'unit-jsdom', 'db-serial']);
+
+      const nodeProject = projects.find((proj) => proj.displayName === 'unit-node');
+      const jsdomProject = projects.find((proj) => proj.displayName === 'unit-jsdom');
+      const dbProject = projects.find((proj) => proj.displayName === 'db-serial');
+      expect(dbProject?.runner).toBe('<rootDir>/jest-serial-runner.cjs');
+      expect(dbProject?.testEnvironment).toBe('node');
+      expect(jsdomProject?.testEnvironment).toBe('<rootDir>/jsdom-env.cjs');
+      expect(jsdomProject?.testMatch).toEqual(
+        expect.arrayContaining([
+          '<rootDir>/src/__tests__/generate-portal.test.ts',
+          '<rootDir>/src/utils/__tests__/exportDownload.test.ts',
+        ])
+      );
+      expect(
+        (nodeProject?.testPathIgnorePatterns ?? []).some((pattern) =>
+          new RegExp(pattern.replace('<rootDir>', '/app')).test(
+            '/app/src/utils/__tests__/exportDownload.test.ts'
+          )
+        )
+      ).toBe(true);
+    });
+
+    it('clears active timeout, interval, and immediate handles during jsdom-env.cjs teardown', async () => {
+      const rootRequire = moduleModule.createRequire(path.join(process.cwd(), 'package.json'));
+      const CustomEnvironment = rootRequire('./jsdom-env.cjs') as new (
+        _config: {
+          globalConfig: Record<string, unknown>;
+          projectConfig: {
+            globals: Record<string, unknown>;
+            testEnvironmentOptions: Record<string, unknown>;
+            fakeTimers: Record<string, unknown>;
+          };
+        },
+        _context: { console: Console; docblockPragmas: Record<string, unknown>; testPath: string }
+      ) => {
+        global: typeof globalThis;
+        _activeTimeouts: Set<{ hasRef: () => boolean }>;
+        _activeIntervals: Set<{ hasRef: () => boolean }>;
+        _activeImmediates: Set<unknown>;
+        setup: () => Promise<void>;
+        teardown: () => Promise<void>;
+      };
+
+      const envInstance = new CustomEnvironment(
+        {
+          globalConfig: {},
+          projectConfig: {
+            globals: {},
+            testEnvironmentOptions: { url: 'http://localhost/' },
+            fakeTimers: {},
+          },
+        },
+        {
+          console,
+          docblockPragmas: {},
+          testPath: path.join(process.cwd(), 'src/components/__tests__/teardown.test.tsx'),
+        }
+      );
+
+      await envInstance.setup();
+      let leakedFired = false;
+      const pendingTimeout = envInstance.global.setTimeout(() => {
+        leakedFired = true;
+      }, 60_000);
+      const pendingInterval = envInstance.global.setInterval(() => {
+        leakedFired = true;
+      }, 60_000);
+      const pendingImmediate = envInstance.global.setImmediate(() => {
+        leakedFired = true;
+      });
+
+      expect(envInstance._activeTimeouts.has(pendingTimeout)).toBe(true);
+      expect(envInstance._activeIntervals.has(pendingInterval)).toBe(true);
+      expect(envInstance._activeImmediates.has(pendingImmediate)).toBe(true);
+
+      await envInstance.teardown();
+
+      expect(envInstance._activeTimeouts.size).toBe(0);
+      expect(envInstance._activeIntervals.size).toBe(0);
+      expect(envInstance._activeImmediates.size).toBe(0);
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      expect(leakedFired).toBe(false);
+    });
+  });
 });

@@ -599,9 +599,14 @@ export async function main(options = {}) {
     console.log('Dependency installation completed successfully.');
   }
 
-  // 2. Always reset Jest accessibility violations before Jest executes
+  // 2. Always reset Jest accessibility violations and stale worker shards before Jest executes
   const testResultsDir = path.join(rootDir, 'test-results');
   fs.mkdirSync(testResultsDir, { recursive: true });
+  for (const entry of fs.readdirSync(testResultsDir)) {
+    if (entry.startsWith('.jest-a11y-violations.shard-')) {
+      fs.rmSync(path.join(testResultsDir, entry), { force: true });
+    }
+  }
   fs.writeFileSync(path.join(testResultsDir, 'jest-a11y-violations.json'), '[]\n', 'utf8');
 
   // 3. Resolve isolated test environment while preserving explicit CI or TEST_DATABASE_URL overrides
