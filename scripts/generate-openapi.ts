@@ -1227,6 +1227,11 @@ function collectPropertiesFromHeadersObject(
         description: 'HTTP cache control directives',
         schema: { type: 'string' },
       };
+    } else if (lowerName === 'vary') {
+      info.responseHeaders[headerKey] = {
+        description: 'Cache key variance header names',
+        schema: { type: 'string' },
+      };
     } else if (lowerName === 'x-content-type-options') {
       info.responseHeaders[headerKey] = {
         description: 'MIME-sniffing protection header',

@@ -386,15 +386,27 @@ async function main() {
       throw new Error(`HEIC photo upload returned status ${uploadRes.statusCode}: ${uploadRes.body}`);
     }
     const uploadJson = JSON.parse(uploadRes.body);
-    const uploadedUrl = uploadJson?.data?.[0]?.url;
+    const uploadedItem = uploadJson?.data?.[0];
     if (
       uploadJson.success !== true ||
-      typeof uploadedUrl !== 'string' ||
-      !/^\/uploads\/photos\/[a-f0-9]+\.jpg$/.test(uploadedUrl)
+      !uploadedItem ||
+      typeof uploadedItem.id !== 'string' ||
+      typeof uploadedItem.nodeId !== 'string' ||
+      uploadedItem.status !== 'PENDING' ||
+      uploadedItem.isVisible !== false ||
+      'url' in uploadedItem
     ) {
       throw new Error(`Unexpected HEIC upload response payload: ${uploadRes.body}`);
     }
-    uploadedStandaloneFiles.push(path.join(standalonePublicDir, uploadedUrl.replace(/^\/+/, '')));
+
+    const unauthPhotoProbe = await httpRequest('/uploads/photos/nonexistent-probe.jpg', {
+      timeoutMs: 3000,
+    });
+    if (unauthPhotoProbe.statusCode !== 401) {
+      throw new Error(
+        `Expected unauthenticated /uploads/photos/* probe to return 401, got ${unauthPhotoProbe.statusCode}`
+      );
+    }
 
     if (duringUploadLiveRes.statusCode !== 200) {
       throw new Error(
@@ -421,7 +433,7 @@ async function main() {
       );
     }
     console.log(
-      `✅ Standalone HEIC upload transcoded via worker (${uploadedUrl}), /api/live responsive, 0 worker errors`
+      `✅ Standalone HEIC upload transcoded via worker (nodeId=${uploadedItem.nodeId}, url withheld while PENDING), /uploads/photos/* gated 401, /api/live responsive, 0 worker errors`
     );
 
     console.log('=============================================');

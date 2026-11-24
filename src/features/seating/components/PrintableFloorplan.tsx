@@ -49,7 +49,8 @@ export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorp
   );
 
   return (
-    <main
+    <div
+      role="region"
       className="hidden print:block print:p-6 font-sans"
       aria-labelledby="printable-roster-title"
       style={{
@@ -310,6 +311,6 @@ export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorp
           </div>
         </section>
       )}
-    </main>
+    </div>
   );
 }

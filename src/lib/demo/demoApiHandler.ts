@@ -18,6 +18,7 @@ import type {
 import type { SeatingTableDTO } from '@/features/seating';
 import type { WeddingPartyMemberDTO, WeddingPartySide } from '@/features/wedding-party';
 import type { AttractionDTO } from '@/features/attractions';
+import { stripBasePath, withBasePath } from '@/lib/basePath';
 import {
   ADDRESS_LINE_MAX_LENGTH,
   CITY_MAX_LENGTH,
@@ -207,21 +208,8 @@ function resolveApiPathname(input: RequestInfo | URL): URL | null {
   try {
     const url = new URL(rawUrl, window.location.origin);
     if (url.origin !== window.location.origin) return null;
-    const rawBasePath = (
-      typeof process !== 'undefined' && process.env ? process.env.NEXT_PUBLIC_BASE_PATH || '' : ''
-    )
-      .trim()
-      .replace(/\/+$/, '');
-    const basePath =
-      rawBasePath && rawBasePath !== '/'
-        ? rawBasePath.startsWith('/')
-          ? rawBasePath
-          : `/${rawBasePath}`
-        : '';
-    let path = url.pathname;
-    if (basePath && (path === basePath || path.startsWith(`${basePath}/`))) {
-      path = path.slice(basePath.length) || '/';
-    } else if (!path.startsWith('/api/')) {
+    let path = stripBasePath(url.pathname);
+    if (!path.startsWith('/api/')) {
       const apiIdx = path.indexOf('/api/');
       if (apiIdx > 0) {
         path = path.slice(apiIdx);
@@ -1961,6 +1949,13 @@ async function handleDemoApi(
     });
   }
 
+  // Delegate extended OpenAPI routes (schedule, rsvp, photos, weather, media, content-nodes,
+  // versions, maintenance, exports, guest login/lookup) to the staticDemo router when installed
+  const delegatedExtended = await delegateToStaticDemoRouter(rawInput ?? url, init, method, path);
+  if (delegatedExtended) {
+    return delegatedExtended;
+  }
+
   if (path === '/api/admin/photos/qr') {
     if (method === 'POST') {
       const body = await parseJsonBody(init);
@@ -1974,18 +1969,344 @@ async function handleDemoApi(
     if (method === 'GET' || method === 'POST') {
       return jsonResponse({
         success: true,
-        uploadUrl: `${url.origin}/photos?tab=guest&v=${demoPhotoQrTokenVersion}`,
+        uploadUrl: `${url.origin}${withBasePath('/photos')}?tab=guest&v=${demoPhotoQrTokenVersion}`,
         tokenVersion: demoPhotoQrTokenVersion,
         autoApproveGuestPhotos: demoAutoApproveGuestPhotos,
       });
     }
   }
 
-  // Delegate extended OpenAPI routes (schedule, rsvp, photos, weather, media, content-nodes,
-  // versions, maintenance, exports, guest login/lookup) to the staticDemo router when installed
-  const delegatedExtended = await delegateToStaticDemoRouter(rawInput ?? url, init, method, path);
-  if (delegatedExtended) {
-    return delegatedExtended;
+  // Health & readiness probes (standalone DemoProvider fallback)
+  if (
+    (path === '/api/health' || path === '/api/live' || path === '/api/ready') &&
+    method === 'GET'
+  ) {
+    return jsonResponse({ status: 'ok', ready: true, mode: 'static-demo' });
+  }
+
+  // Guest weather forecast
+  if (path === '/api/weather' && method === 'GET') {
+    const state = getDemoState();
+    const preset = ARCHETYPE_PRESETS[state.archetype] ?? ARCHETYPE_PRESETS.classic;
+    return jsonResponse({
+      success: true,
+      data: {
+        location: `${preset.siteConfig.venueCity}, ${preset.siteConfig.venueState}`,
+        isHistoricalEstimate: true,
+        current: {
+          temperature: 72,
+          condition: 'Partly Sunny',
+          humidity: 54,
+          windSpeed: 8,
+        },
+        daily: [
+          { date: '2026-10-17', high: 73, low: 58, condition: 'Sunny', precipitationChance: 10 },
+          { date: '2026-10-18', high: 74, low: 59, condition: 'Clear', precipitationChance: 5 },
+          {
+            date: '2026-10-19',
+            high: 71,
+            low: 56,
+            condition: 'Partly Cloudy',
+            precipitationChance: 15,
+          },
+        ],
+      },
+    });
+  }
+
+  // Public & moderated photos + media library (#1232 cursor-compatible)
+  if (path === '/api/photos' && method === 'GET') {
+    const state = getDemoState();
+    const preset = ARCHETYPE_PRESETS[state.archetype] ?? ARCHETYPE_PRESETS.classic;
+    const photoTimestampIso = '2026-01-15T12:00:00.000Z';
+    const sinceParam = url.searchParams.get('since');
+    const sinceMs = sinceParam ? new Date(sinceParam).getTime() : NaN;
+    const allPhotos = preset.photos.map((photo, idx) => ({
+      id: `demo-photo-${state.archetype}-${idx + 1}`,
+      url: photo.url,
+      title: photo.caption,
+      caption: photo.caption,
+      altText: photo.altText,
+      isGuestUpload: false,
+      createdAt: photoTimestampIso,
+      updatedAt: photoTimestampIso,
+    }));
+    const photos =
+      !Number.isNaN(sinceMs) && sinceMs >= new Date(photoTimestampIso).getTime() ? [] : allPhotos;
+    return jsonResponse({ success: true, photos, data: photos });
+  }
+
+  if (
+    (path === '/api/photos/upload' ||
+      path === '/api/guest/photos/upload' ||
+      path === '/api/admin/upload') &&
+    method === 'POST'
+  ) {
+    return jsonResponse({
+      success: true,
+      url: '/images/sunset-embrace.jpg',
+      data: { id: nextDemoId('demo-upload'), url: '/images/sunset-embrace.jpg' },
+    });
+  }
+
+  if (path === '/api/media' || path.startsWith('/api/media/')) {
+    const state = getDemoState();
+    const preset = ARCHETYPE_PRESETS[state.archetype] ?? ARCHETYPE_PRESETS.classic;
+    const mediaList = preset.photos.map((photo, idx) => ({
+      id: `demo-media-${state.archetype}-${idx + 1}`,
+      url: photo.url,
+      altText: photo.altText,
+      isDecorative: false,
+      isSample: true,
+      mimeType: 'image/jpeg',
+      createdAt: '2026-01-15T12:00:00.000Z',
+      updatedAt: '2026-01-15T12:00:00.000Z',
+    }));
+    if (method === 'GET') {
+      return jsonResponse({
+        success: true,
+        data: mediaList,
+        total: mediaList.length,
+        page: 1,
+        totalPages: 1,
+      });
+    }
+    if (method === 'DELETE') {
+      return jsonResponse({ success: true, data: { deleted: true } });
+    }
+    const body = await parseJsonBody(init);
+    return jsonResponse({
+      success: true,
+      data: {
+        id: nextDemoId('demo-media'),
+        url: typeof body.url === 'string' ? body.url : '/images/sunset-embrace.jpg',
+        altText: typeof body.altText === 'string' ? body.altText : 'Uploaded demo photo',
+        isDecorative: Boolean(body.isDecorative),
+        isSample: false,
+      },
+    });
+  }
+
+  if (path === '/api/admin/photos/moderation' || path === '/api/admin/photos/moderation/batch') {
+    if (method === 'GET') {
+      return jsonResponse({
+        success: true,
+        pendingCount: 0,
+        count: 0,
+        photos: [],
+        data: [],
+        pagination: { page: 1, limit: 50, total: 0, totalPages: 1 },
+      });
+    }
+    return jsonResponse({ success: true, updatedCount: 1, data: { updatedCount: 1 } });
+  }
+
+  // Guest login & RSVP submission
+  if (path === '/api/guest/login' && method === 'POST') {
+    const body = await parseJsonBody(init);
+    const code = typeof body.code === 'string' ? body.code.trim() : '';
+    const matched = code
+      ? findDemoGuestByCode(code)
+      : getActiveArchetypeDataset().guests.find((g) => !isDemoAddressCollectionOnly(g.partyTags));
+    if (matched) {
+      setDemoGuestSession({ invitationCode: matched.code, guestName: matched.guestName });
+    }
+    return jsonResponse({
+      success: true,
+      authenticated: true,
+      data: { authenticated: true, guestName: matched?.guestName ?? 'Invited Guest' },
+    });
+  }
+
+  if (path === '/api/rsvp' && method === 'POST') {
+    const body = await parseJsonBody(init);
+    return jsonResponse({ success: true, data: { submitted: true, ...body } });
+  }
+
+  // Admin Settings (/admin/dashboard/settings)
+  if (path === '/api/admin/settings') {
+    const state = getDemoState();
+    const preset = ARCHETYPE_PRESETS[state.archetype] ?? ARCHETYPE_PRESETS.classic;
+    const rawWeddingDate = state.configOverrides.weddingDate ?? preset.siteConfig.weddingDate;
+    const weddingDateIso =
+      rawWeddingDate instanceof Date
+        ? rawWeddingDate.toISOString()
+        : typeof rawWeddingDate === 'string'
+          ? rawWeddingDate
+          : '2026-10-18T16:00:00.000Z';
+
+    const mergedProfile = {
+      id: 'global',
+      subdomain: 'global',
+      partner1Name: state.configOverrides.partner1Name ?? preset.siteConfig.partner1Name,
+      partner2Name: state.configOverrides.partner2Name ?? preset.siteConfig.partner2Name,
+      brideName: state.configOverrides.partner1Name ?? preset.siteConfig.partner1Name,
+      groomName: state.configOverrides.partner2Name ?? preset.siteConfig.partner2Name,
+      weddingDate: weddingDateIso,
+      venueName: state.configOverrides.venueName ?? preset.siteConfig.venueName,
+      venueAddress: state.configOverrides.venueAddress ?? preset.siteConfig.venueAddress,
+      venueCity: state.configOverrides.venueCity ?? preset.siteConfig.venueCity,
+      venueState: state.configOverrides.venueState ?? preset.siteConfig.venueState,
+      venueZip: state.configOverrides.venueZip ?? preset.siteConfig.venueZip,
+      timezone: state.configOverrides.timezone ?? preset.siteConfig.timezone,
+      themePreset: state.themePreset,
+      colorPrimary: state.configOverrides.colorPrimary ?? preset.siteConfig.colorPrimary,
+      colorSecondary: state.configOverrides.colorSecondary ?? preset.siteConfig.colorSecondary,
+      heroImageUrl: preset.siteConfig.heroImageUrl,
+      ogImageUrl: preset.siteConfig.ogImageUrl,
+      baseUrl: state.configOverrides.baseUrl || 'https://alexandtaylor2026.wedding',
+      contactEmail: state.configOverrides.contactEmail || 'hello@alexandtaylor2026.wedding',
+      rsvpOpen: true,
+      isRsvpOpen: true,
+      multisiteEnabled: false,
+      emailProvider: 'none',
+      smsProvider: 'none',
+      hasSmtpPass: false,
+      hasResendApiKey: false,
+      hasSendgridApiKey: false,
+      hasTwilioAuthToken: false,
+    };
+
+    if (method === 'GET') {
+      if (url.searchParams.get('list') === 'true') {
+        return jsonResponse({ success: true, data: [mergedProfile] });
+      }
+      return jsonResponse({ success: true, data: mergedProfile });
+    }
+    const body = await parseJsonBody(init);
+    updateDemoConfigOverrides(body as Partial<PublicAppConfig>);
+    return jsonResponse({ success: true, data: { ...mergedProfile, ...body } });
+  }
+
+  // Admin Site Manager features (/admin/dashboard/site-manager)
+  if (path === '/api/admin/features') {
+    const defaultSections = [
+      { id: 'story', type: 'story', title: 'Our Story', visible: true },
+      { id: 'details', type: 'details', title: 'Wedding Day Details', visible: true },
+      { id: 'accommodations', type: 'accommodations', title: 'Accommodations', visible: true },
+      { id: 'venue', type: 'venue', title: 'About Our Venue', visible: true },
+      { id: 'travel', type: 'travel', title: 'Travel & Things to Do', visible: true },
+      { id: 'faq', type: 'faq', title: 'Questions You Probably Have', visible: true },
+    ];
+    if (method === 'GET') {
+      return jsonResponse({ success: true, data: defaultSections });
+    }
+    const body = await parseJsonBody(init);
+    const updated = Array.isArray(body.features) ? body.features : defaultSections;
+    return jsonResponse({ success: true, data: updated });
+  }
+
+  // Admin Content Nodes (/admin/dashboard/content)
+  if (path === '/api/admin/content-nodes' || path.startsWith('/api/admin/content-nodes/')) {
+    const dataset = getActiveArchetypeDataset();
+    if (method === 'GET') {
+      return jsonResponse({
+        success: true,
+        data: [...dataset.faqs, ...dataset.logisticsNodes],
+      });
+    }
+    if (method === 'DELETE') {
+      const nodeId = decodeURIComponent(path.slice('/api/admin/content-nodes/'.length));
+      mutateActiveDataset((curr) => ({
+        ...curr,
+        faqs: curr.faqs.filter((n) => n.id !== nodeId),
+        logisticsNodes: curr.logisticsNodes.filter((n) => n.id !== nodeId),
+      }));
+      return jsonResponse({ success: true, data: { deleted: true } });
+    }
+    const body = await parseJsonBody(init);
+    return jsonResponse({
+      success: true,
+      data: {
+        id: nextDemoId('demo-node'),
+        type: typeof body.type === 'string' ? body.type : 'FAQ',
+        slug: typeof body.slug === 'string' ? body.slug : nextDemoId('demo-faq'),
+        tags: Array.isArray(body.tags) ? body.tags : [],
+        data: body.data && typeof body.data === 'object' ? body.data : {},
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  }
+
+  // Admin Version History (/admin/dashboard/history)
+  if (path === '/api/admin/versions' || path.startsWith('/api/admin/versions/')) {
+    if (method === 'POST') {
+      return jsonResponse({ success: true, data: { restored: true } });
+    }
+    const items = [
+      {
+        id: 'demo-version-1',
+        entityType: 'AppConfig',
+        entityId: 'global',
+        author: 'Couple Admin',
+        createdAt: '2026-01-15T12:00:00.000Z',
+        snapshot: { themePreset: getDemoState().themePreset },
+      },
+    ];
+    return jsonResponse({
+      success: true,
+      data: {
+        items,
+        pagination: { page: 1, limit: 50, total: items.length, totalPages: 1 },
+      },
+    });
+  }
+
+  // Admin Broadcast actions (/admin/dashboard/invitation-codes & history)
+  if (
+    (path === '/api/admin/broadcast/preview' ||
+      path === '/api/admin/broadcast/send' ||
+      path === '/api/admin/broadcast/test-send' ||
+      path === '/api/admin/broadcast/test-connection' ||
+      path === '/api/admin/broadcast/retry') &&
+    method === 'POST'
+  ) {
+    const dataset = getActiveArchetypeDataset();
+    const eligibleGuests = dataset.guests.filter((g) => !isDemoAddressCollectionOnly(g.partyTags));
+    return jsonResponse({
+      success: true,
+      data: {
+        recipientCount: eligibleGuests.length,
+        matchedCount: eligibleGuests.length,
+        sentCount: eligibleGuests.length,
+        failedCount: 0,
+        subject: 'Wedding Update Preview',
+        htmlBody: '<p>We look forward to celebrating together!</p>',
+        textBody: 'We look forward to celebrating together!',
+      },
+    });
+  }
+
+  if (path.startsWith('/api/admin/broadcast/schedule/') && method === 'DELETE') {
+    return jsonResponse({ success: true, data: { cancelled: true } });
+  }
+
+  // Admin Maintenance & Seating Exports (/admin/dashboard/maintenance & seating-chart)
+  if (path === '/api/admin/maintenance/export' && method === 'GET') {
+    return jsonResponse({
+      schemaVersion: '1.0',
+      exportedAt: new Date().toISOString(),
+      archetype: getDemoState().archetype,
+    });
+  }
+
+  if (path === '/api/admin/maintenance/import' && method === 'POST') {
+    return jsonResponse({ success: true, data: { imported: true } });
+  }
+
+  if (path === '/api/admin/seating/export' && method === 'GET') {
+    const format = url.searchParams.get('format') || 'csv';
+    if (format === 'pdf' || format === 'place-cards' || format === 'escort-cards') {
+      return new Response('%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n', {
+        status: 200,
+        headers: { 'Content-Type': 'application/pdf' },
+      });
+    }
+    return new Response('Table,Seat,Guest\nTable 1,1,Sample Guest\n', {
+      status: 200,
+      headers: { 'Content-Type': 'text/csv; charset=utf-8' },
+    });
   }
 
   // Safe fallback for read-only admin overview widgets on static export

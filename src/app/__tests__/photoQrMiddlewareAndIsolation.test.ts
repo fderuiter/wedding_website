@@ -157,6 +157,14 @@ describe('Middleware QR Token Exchange, Scope Isolation, and Token Rotation', ()
           method: 'POST',
           headers: { host: 'localhost:3000', cookie: cookieHeader },
         }),
+        new NextRequest('http://localhost:3000/uploads/photos/approved.jpg', {
+          method: 'GET',
+          headers: { host: 'localhost:3000', cookie: cookieHeader },
+        }),
+        new NextRequest('http://localhost:3000/api/uploads/photos/approved.jpg', {
+          method: 'HEAD',
+          headers: { host: 'localhost:3000', cookie: cookieHeader },
+        }),
       ];
 
       for (const req of allowedRequests) {

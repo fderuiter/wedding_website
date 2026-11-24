@@ -206,12 +206,13 @@ describe('GuestAddressCollectPage (/guest/collect)', () => {
     expect(screen.getByLabelText(/Full Name/i)).toHaveValue('');
   });
 
-  test('renders container and card with semantic theme utility classes', async () => {
+  test('renders container and card with semantic theme utility classes and without nested main', async () => {
     const { container } = render(<GuestAddressCollectPage />);
 
-    const mainElement = container.querySelector('main');
-    expect(mainElement).toHaveClass('bg-container');
-    expect(mainElement?.className).not.toContain('bg-gray-50');
+    expect(container.querySelector('main')).toBeNull();
+    const rootContainer = container.firstElementChild as HTMLElement;
+    expect(rootContainer).toHaveClass('bg-container');
+    expect(rootContainer.className).not.toContain('bg-gray-50');
 
     const cardElement = screen.getByText('Mailing Address Form').closest('div.rounded-2xl');
     expect(cardElement).toHaveClass('bg-card');

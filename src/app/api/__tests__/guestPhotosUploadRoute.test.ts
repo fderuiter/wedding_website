@@ -289,14 +289,20 @@ describe('POST /api/guest/photos/upload', () => {
       const json = await res.json();
       expect(json.success).toBe(true);
       expect(Array.isArray(json.data)).toBe(true);
-      expect(json.data[0].url).toMatch(/^\/uploads\//);
+      expect(json.data[0].url).toBeUndefined();
+      expect('url' in json.data[0]).toBe(false);
       expect(json.data[0].id).toBe('media-123');
 
       expect(json.data[0].status).toBe('PENDING');
       expect(json.data[0].isVisible).toBe(false);
 
       expect(mockWriteFile).toHaveBeenCalledTimes(1);
-      expect(mediaRepository.createMedia).toHaveBeenCalledTimes(1);
+      expect(mediaRepository.createMedia).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: expect.stringMatching(/^\/uploads\/photos\/.*\.png$/),
+        }),
+        'Guest'
+      );
       expect(contentRepository.createNode).toHaveBeenCalledWith(
         expect.objectContaining({
           type: 'Photo',
@@ -475,7 +481,8 @@ describe('POST /api/guest/photos/upload', () => {
       expect(res.status).toBe(201);
       const json = await res.json();
       expect(json.success).toBe(true);
-      expect(json.data[0].url).toMatch(/^\/uploads\/photos\/.*\.jpg$/);
+      expect(json.data[0].url).toBeUndefined();
+      expect('url' in json.data[0]).toBe(false);
       expect(json.data[0].title).toBe('Sparkler exit!');
       expect(json.data[0].uploaderName).toBe('Aunt Clara');
       expect(json.data[0].caption).toBe('Sparkler exit!');
@@ -566,6 +573,21 @@ describe('POST /api/guest/photos/upload', () => {
         }),
         'The Rivera Family'
       );
+    });
+
+    it('includes live url on response items when autoApproveGuestPhotos is enabled', async () => {
+      mockGetAppConfig.mockResolvedValueOnce({
+        modules: ['gallery'],
+        autoApproveGuestPhotos: true,
+      });
+
+      const req = makeRequest({});
+      const res = await POST(req);
+      expect(res.status).toBe(201);
+      const json = await res.json();
+      expect(json.data[0].status).toBe('APPROVED');
+      expect(json.data[0].isVisible).toBe(true);
+      expect(json.data[0].url).toMatch(/^\/uploads\/photos\/.*\.png$/);
     });
   });
 });

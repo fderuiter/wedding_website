@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ModuleConfigSchema } from '@/lib/modules';
+import { MAX_PASSWORD_LENGTH } from './password';
 import {
   ACCEPTED_IMAGE_TYPES,
   ALLOWED_EXTENSIONS,
@@ -41,11 +42,11 @@ export {
 };
 
 export const AdminLoginSchema = z.object({
-  password: z.string({ message: 'Password is required' }).min(1, 'Password cannot be empty')
+  password: z.string({ message: 'Password is required' }).min(1, 'Password cannot be empty').max(MAX_PASSWORD_LENGTH, `Password must be at most ${MAX_PASSWORD_LENGTH} characters`),
 });
 
 export const GuestLoginSchema = z.object({
-  passcode: z.string({ message: 'Passcode is required' }).min(1, 'Passcode cannot be empty')
+  passcode: z.string({ message: 'Passcode is required' }).min(1, 'Passcode cannot be empty').max(MAX_PASSWORD_LENGTH, `Passcode must be at most ${MAX_PASSWORD_LENGTH} characters`),
 });
 
 /**
@@ -245,7 +246,7 @@ export const MediaExportSchema = z.object({
 });
 
 export const AdminSetupSchema = z.object({
-  password: z.string().optional(),
+  password: z.string().max(MAX_PASSWORD_LENGTH, `Password must be at most ${MAX_PASSWORD_LENGTH} characters`).optional(),
   sampleArchetype: z.enum(['classic', 'destination', 'romantic']).optional(),
   sampleModules: z.array(z.string()).optional(),
   partner1Name: z.string().optional(),
@@ -303,7 +304,7 @@ export const AdminSetupSchema = z.object({
       type: 'object',
       required: ['password'],
       properties: {
-        password: { type: 'string', minLength: 1 },
+        password: { type: 'string', minLength: 1, maxLength: MAX_PASSWORD_LENGTH },
       },
     },
     {

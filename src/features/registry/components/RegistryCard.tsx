@@ -76,7 +76,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({
     cardCheckoutEnabled === false;
   const canContribute = !isClaimed && !isAdmin;
   const isClickable = !isAdmin;
-  const cardClasses = `border border-card-border rounded-[var(--radius-card)] overflow-hidden shadow-card transition relative bg-card text-foreground focus-visible:ring-4 focus-visible:ring-primary outline-none block w-full text-left ${isClaimed ? 'opacity-60' : ''} ${isClickable ? 'hover:shadow-[var(--shadow-lg)] hover:scale-105' : ''}`;
+  const cardClasses = `border border-card-border rounded-[var(--radius-card)] overflow-hidden shadow-card transition relative bg-card text-foreground focus-visible:ring-4 focus-visible:ring-primary outline-none block w-full text-left ${isClickable ? 'hover:shadow-[var(--shadow-lg)] hover:scale-105' : ''}`;
   const { handleShare, copied } = useShareItem(item);
 
   const { requestedUnits, remainingUnits } = getItemUnitCounts(item);
@@ -102,19 +102,14 @@ const RegistryCard: React.FC<RegistryCardProps> = ({
 
   const innerContent = (
     <>
-      {/* Visual overlay for claimed/fully funded - Adjusted colors */}
-      {isClaimed && (
-        <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-10 pointer-events-none rounded-[var(--radius-card)]">
-          <span className="bg-primary bg-gradient-to-r from-primary to-secondary text-white text-base font-bold px-4 py-2 rounded-full shadow-[var(--shadow-lg)]">
-            {status === 'fullyFunded' ? 'Fully Funded' : 'Claimed'}
-          </span>
-        </div>
-      )}
       {/* Display a placeholder if image path is invalid or missing */}
-      <div className="relative w-full aspect-square overflow-hidden bg-card border-b border-card-border rounded-t-[var(--radius-card)]">
+      <div
+        data-testid="registry-card-media"
+        className="relative w-full aspect-square overflow-hidden bg-card border-b border-card-border rounded-t-[var(--radius-card)]"
+      >
         {item.isMostWanted && (
           <span
-            className="absolute top-3 left-3 z-30 inline-flex items-center gap-1.5 bg-amber-400 text-slate-950 text-xs font-bold px-3 py-1 rounded-full shadow-[var(--shadow-sm)] backdrop-blur-sm"
+            className="absolute top-3 left-3 z-30 inline-flex items-center gap-1.5 bg-amber-400 text-slate-950 text-xs font-bold px-3 py-1 rounded-full shadow-[var(--shadow-sm)]"
             data-testid="most-wanted-badge"
           >
             <Icon name="Star" className="w-3.5 h-3.5 fill-current" />
@@ -129,22 +124,39 @@ const RegistryCard: React.FC<RegistryCardProps> = ({
             Sample
           </span>
         )}
-        {/* Blurred Background Layer via CSS */}
         <div
-          className="absolute inset-0 bg-cover bg-center opacity-50 scale-125 blur-2xl"
-          style={{ backgroundImage: `url("${withBasePath(item.image?.url || '/images/placeholder.png')}")` }}
-          aria-hidden="true"
-        />
-        {/* Main Image Layer */}
-        <MediaImage
-          media={item.image}
-          className="object-contain relative z-10 w-full h-full"
-          loading="lazy"
-        />
+          data-testid="registry-card-image-layer"
+          className={`relative w-full h-full ${isClaimed ? 'opacity-60' : ''}`}
+        >
+          {/* Blurred Background Layer via CSS */}
+          <div
+            className="absolute inset-0 bg-cover bg-center opacity-50 scale-125 blur-2xl"
+            style={{ backgroundImage: `url("${withBasePath(item.image?.url || '/images/placeholder.png')}")` }}
+            aria-hidden="true"
+          />
+          {/* Main Image Layer */}
+          <MediaImage
+            media={item.image}
+            fallbackAlt={item.name}
+            className="object-contain relative z-10 w-full h-full"
+            loading="lazy"
+          />
+        </div>
+        {/* Visual overlay for claimed/fully funded isolated strictly to the photo layer */}
+        {isClaimed && (
+          <div
+            data-testid="registry-card-claimed-overlay"
+            className="absolute inset-0 bg-black/40 flex items-center justify-center z-20 pointer-events-none"
+          >
+            <span className="bg-primary text-[var(--btn-primary-text,#ffffff)] text-base font-bold px-4 py-2 rounded-full shadow-[var(--shadow-lg)]">
+              {status === 'fullyFunded' ? 'Fully Funded' : 'Claimed'}
+            </span>
+          </div>
+        )}
         <Button
           variant="ghost"
           size="sm"
-          className="absolute top-3 right-3 z-30 p-2 rounded-full bg-card/80 hover:bg-card text-foreground shadow-[var(--shadow-sm)] backdrop-blur-sm focus-visible:ring-2 focus-visible:ring-primary"
+          className="absolute top-3 right-3 z-30 p-2 rounded-full bg-card hover:bg-card text-foreground border border-card-border shadow-[var(--shadow-sm)] focus-visible:ring-2 focus-visible:ring-primary"
           onClick={handleShare}
           aria-label={`Share ${item.name}`}
           title={`Share ${item.name}`}
@@ -200,7 +212,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({
           </div>
         )}
         {isClaimed && (
-          <p className="text-base text-green-700 font-semibold mt-1">
+          <p className="text-base text-[var(--form-success-text,#15803d)] font-semibold mt-1">
             {status === 'fullyFunded' ? 'Fully Funded!' : 'Claimed!'}
           </p>
         )}
