@@ -9,6 +9,7 @@ import { useAdminSubEvents } from '@/hooks/admin/useAdminSubEvents';
 import { FormGroup, Label, Input, Select } from '@/components/ui/forms';
 import { Button } from '@/components/ui/Button';
 import { Dialog, useDirtyConfirmClose } from '@/components/ui/Dialog';
+import { StickyBar } from '@/components/ui/useStickyOffset';
 import { ToggleButtonGroup } from '@/components/ui/ToggleButtonGroup';
 import { SegmentedTabs, SegmentedTabPanel } from '@/components/ui/SegmentedTabs';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -1907,7 +1908,9 @@ export default function InvitationCodesDashboardPage() {
         </SegmentedTabPanel>
 
         {selectedIds.length > 0 && (
-          <div
+          <StickyBar
+            edge="bottom"
+            scope="document"
             role="region"
             aria-label="Batch actions toolbar"
             className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-3xl bg-gray-900 text-white dark:bg-gray-800 dark:text-white p-4 rounded-2xl shadow-2xl border border-gray-700 flex flex-wrap items-center justify-between gap-3 text-sm animate-fade-in"
@@ -1974,7 +1977,7 @@ export default function InvitationCodesDashboardPage() {
                 Deselect All
               </Button>
             </div>
-          </div>
+          </StickyBar>
         )}
 
         <Dialog

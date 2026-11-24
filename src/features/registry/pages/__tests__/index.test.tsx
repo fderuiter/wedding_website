@@ -323,7 +323,7 @@ describe('RegistryPage Dialog integration', () => {
     }
   });
 
-  test('positions sticky filter bar below fixed Navbar (top-16) and exposes inline Clear Filters button when filters or sort are active', () => {
+  test('positions sticky filter bar below fixed Navbar (var(--header-h)) and exposes inline Clear Filters button when filters or sort are active', () => {
     const mockClearFilters = jest.fn();
     const baseState = {
       items: [mockItem],
@@ -364,8 +364,9 @@ describe('RegistryPage Dialog integration', () => {
     const { rerender } = render(<RegistryPage />);
 
     const filterNav = screen.getByRole('navigation', { name: 'Registry Filters' });
-    expect(filterNav).toHaveClass('sticky', 'top-16');
-    expect(filterNav).not.toHaveClass('top-0');
+    expect(filterNav).toHaveClass('sticky', 'top-[var(--header-h)]');
+    expect(filterNav).toHaveStyle({ top: 'var(--header-h)' });
+    expect(filterNav).not.toHaveClass('top-0', 'top-16');
     expect(screen.queryByTestId('inline-clear-filters-button')).not.toBeInTheDocument();
 
     (useRegistry as jest.Mock).mockReturnValue({

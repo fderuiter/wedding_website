@@ -4,6 +4,7 @@ import React, { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { Button } from '@/components/ui/Button';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useAdminMaintenance, ImportStage } from '@/hooks/admin/useAdminMaintenance';
 import { formatBackupDiagnosticPath } from '@/utils/adminLabels';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -226,9 +227,14 @@ export default function MaintenanceHubPage() {
                 <div className="p-5 bg-emerald-50/80 dark:bg-emerald-950/30 rounded-xl border border-emerald-300 dark:border-emerald-800 space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-200 dark:border-emerald-800/80 pb-3">
                     <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-xs">
+                      <StatusBadge
+                        tone="success"
+                        variant="solid"
+                        size="xs"
+                        className="w-6 h-6 p-0 justify-center rounded-full font-bold text-xs"
+                      >
                         ✓
-                      </span>
+                      </StatusBadge>
                       <h3 className="font-bold text-emerald-900 dark:text-emerald-100 text-base">
                         Pre-flight Inspection Passed
                       </h3>
@@ -469,19 +475,35 @@ export default function MaintenanceHubPage() {
 
                       return (
                         <div key={s.key} className="flex items-center gap-3">
-                          <span
-                            className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                              isPast
-                                ? 'bg-emerald-600 text-white'
-                                : isCurrent
+                          {isPast ? (
+                            <StatusBadge
+                              tone="success"
+                              variant="solid"
+                              size="xs"
+                              className="w-5 h-5 p-0 justify-center rounded-full text-[10px] font-bold"
+                            >
+                              ✓
+                            </StatusBadge>
+                          ) : isFailed ? (
+                            <StatusBadge
+                              tone="danger"
+                              variant="solid"
+                              size="xs"
+                              className="w-5 h-5 p-0 justify-center rounded-full text-[10px] font-bold"
+                            >
+                              ✕
+                            </StatusBadge>
+                          ) : (
+                            <span
+                              className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                                isCurrent
                                   ? 'bg-primary text-white animate-pulse'
-                                  : isFailed
-                                    ? 'bg-red-600 text-white'
-                                    : 'bg-gray-200 dark:bg-gray-700 text-muted-text'
-                            }`}
-                          >
-                            {isPast ? '✓' : isFailed ? '✕' : idx + 1}
-                          </span>
+                                  : 'bg-gray-200 dark:bg-gray-700 text-muted-text'
+                              }`}
+                            >
+                              {idx + 1}
+                            </span>
+                          )}
                           <span
                             className={`font-semibold ${
                               isPast

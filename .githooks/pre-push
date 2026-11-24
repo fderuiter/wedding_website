@@ -1,9 +1,23 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'child_process';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+
+const ZERO_OID_REGEX = /^0+$/;
+const LOCKFILE_PATHS = ['package-lock.json', 'docker/prisma-cli/package-lock.json'];
+const LOCAL_GIT_ENV_VARS = [
+  'GIT_DIR',
+  'GIT_WORK_TREE',
+  'GIT_INDEX_FILE',
+  'GIT_COMMON_DIR',
+  'GIT_PREFIX',
+];
 
 const checks = [
   { name: 'TypeScript type check', script: 'type-check' },
+  { name: 'ESLint code linting', script: 'lint' },
   { name: 'Knip dead-code analysis', script: 'lint:unused' },
   { name: 'Environment variables documentation check', script: 'check:env-docs' },
   { name: 'Deployment runbooks verification check', script: 'check:runbooks' },
@@ -17,13 +31,333 @@ const checks = [
   { name: 'Documentation synchronization check', script: 'check:doc-sync' },
 ];
 
-for (const check of checks) {
-  console.log(`Running ${check.name}...`);
-  const result = spawnSync('npm', ['run', check.script], { stdio: 'inherit', shell: true });
+const lockfileAuditCheck = { name: 'Security dependency audit', script: 'check:audit' };
 
-  if (result.status !== 0) {
-    console.error(`\n❌ Pre-push check failed: ${check.name} failed.`);
-    process.exit(result.status ?? 1);
+function runGit(args, cwd) {
+  return spawnSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
+function resolveCommitSha(cwd, rev) {
+  const res = runGit(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`], cwd);
+  return res.status === 0 ? res.stdout.trim() : null;
+}
+
+function parsePrePushStdin(repoRoot) {
+  if (process.stdin.isTTY) {
+    const headSha = resolveCommitSha(repoRoot, 'HEAD');
+    if (!headSha) {
+      return [];
+    }
+    return [
+      {
+        localRef: 'HEAD',
+        localSha: headSha,
+        remoteRef: 'HEAD',
+        remoteSha: '0'.repeat(40),
+      },
+    ];
+  }
+
+  let rawStdin = '';
+  try {
+    rawStdin = fs.readFileSync(0, 'utf8');
+  } catch {
+    return [];
+  }
+
+  const updates = [];
+  for (const rawLine of rawStdin.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+    const parts = line.split(/\s+/);
+    if (parts.length < 4) {
+      continue;
+    }
+    const [localRef, localSha, remoteRef, remoteSha] = parts;
+    if (localRef === '(delete)' || ZERO_OID_REGEX.test(localSha) || localSha === remoteSha) {
+      continue;
+    }
+    updates.push({ localRef, localSha, remoteRef, remoteSha });
+  }
+  return updates;
+}
+
+function trackedFilesMatchCommit(repoRoot, commitSha) {
+  const statusRes = runGit(['status', '--porcelain', '--untracked-files=no'], repoRoot);
+  if (statusRes.status !== 0 || statusRes.stdout.trim() !== '') {
+    return false;
+  }
+  const workingDiff = runGit(['diff', '--quiet', commitSha, '--'], repoRoot);
+  if (workingDiff.status !== 0) {
+    return false;
+  }
+  const stagedDiff = runGit(['diff', '--cached', '--quiet', commitSha, '--'], repoRoot);
+  return stagedDiff.status === 0;
+}
+
+function hasRefsUnder(repoRoot, prefix) {
+  const res = runGit(['for-each-ref', '--count=1', '--format=%(refname)', prefix], repoRoot);
+  return res.status === 0 && res.stdout.trim().length > 0;
+}
+
+function isAncestor(repoRoot, ancestorSha, descendantSha) {
+  return runGit(['merge-base', '--is-ancestor', ancestorSha, descendantSha], repoRoot).status === 0;
+}
+
+function pushedCommitsTouchLockfiles(repoRoot, remoteName, commitSha, remoteShas) {
+  for (const remoteSha of remoteShas) {
+    if (!ZERO_OID_REGEX.test(remoteSha) && resolveCommitSha(repoRoot, remoteSha)) {
+      const diffRes = runGit(
+        ['diff', '--name-only', remoteSha, commitSha, '--', ...LOCKFILE_PATHS],
+        repoRoot
+      );
+      if (diffRes.status === 0 && diffRes.stdout.trim() !== '') {
+        return true;
+      }
+      if (isAncestor(repoRoot, remoteSha, commitSha)) {
+        const logRes = runGit(
+          ['log', '--format=', '--name-only', `${remoteSha}..${commitSha}`, '--', ...LOCKFILE_PATHS],
+          repoRoot
+        );
+        if (logRes.status === 0 && logRes.stdout.trim() !== '') {
+          return true;
+        }
+      }
+      continue;
+    }
+
+    if (remoteName && hasRefsUnder(repoRoot, `refs/remotes/${remoteName}`)) {
+      const remoteLogRes = runGit(
+        [
+          'log',
+          '--format=',
+          '--name-only',
+          commitSha,
+          '--not',
+          `--remotes=${remoteName}`,
+          '--',
+          ...LOCKFILE_PATHS,
+        ],
+        repoRoot
+      );
+      if (remoteLogRes.status === 0 && remoteLogRes.stdout.trim() !== '') {
+        return true;
+      }
+      continue;
+    }
+
+    if (hasRefsUnder(repoRoot, 'refs/remotes')) {
+      const anyRemoteLogRes = runGit(
+        ['log', '--format=', '--name-only', commitSha, '--not', '--remotes', '--', ...LOCKFILE_PATHS],
+        repoRoot
+      );
+      if (anyRemoteLogRes.status === 0 && anyRemoteLogRes.stdout.trim() !== '') {
+        return true;
+      }
+      continue;
+    }
+
+    const parentSha = resolveCommitSha(repoRoot, `${commitSha}^`);
+    if (parentSha) {
+      const parentDiffRes = runGit(
+        ['diff', '--name-only', parentSha, commitSha, '--', ...LOCKFILE_PATHS],
+        repoRoot
+      );
+      if (parentDiffRes.status === 0 && parentDiffRes.stdout.trim() !== '') {
+        return true;
+      }
+    } else {
+      const rootShowRes = runGit(
+        ['show', '--format=', '--name-only', commitSha, '--', ...LOCKFILE_PATHS],
+        repoRoot
+      );
+      if (rootShowRes.status === 0 && rootShowRes.stdout.trim() !== '') {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function hydrateWorktreeCaches(repoRoot, worktreeDir) {
+  const srcNodeModules = path.join(repoRoot, 'node_modules');
+  const destNodeModules = path.join(worktreeDir, 'node_modules');
+  if (fs.existsSync(srcNodeModules) && !fs.existsSync(destNodeModules)) {
+    fs.symlinkSync(
+      srcNodeModules,
+      destNodeModules,
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
+  }
+
+  for (const entry of fs.readdirSync(repoRoot)) {
+    if (entry !== '.eslintcache' && !entry.endsWith('.tsbuildinfo')) {
+      continue;
+    }
+    const srcCache = path.join(repoRoot, entry);
+    const destCache = path.join(worktreeDir, entry);
+    try {
+      if (fs.statSync(srcCache).isFile()) {
+        fs.copyFileSync(srcCache, destCache);
+      }
+    } catch {
+      // Ignore concurrent cache rotation during copy
+    }
+  }
+}
+
+function buildIsolatedWorktreeEnv() {
+  const childEnv = { ...process.env };
+  for (const key of LOCAL_GIT_ENV_VARS) {
+    delete childEnv[key];
+  }
+  return childEnv;
+}
+
+function executeChecks(targetDir, childEnv, includeLockfileAudit) {
+  const orderedChecks = includeLockfileAudit
+    ? [...checks.slice(0, 3), lockfileAuditCheck, ...checks.slice(3)]
+    : checks;
+
+  for (const check of orderedChecks) {
+    console.log(`Running ${check.name}...`);
+    const result = spawnSync('npm', ['run', check.script], {
+      cwd: targetDir,
+      env: childEnv,
+      stdio: 'inherit',
+      shell: true,
+    });
+
+    if (result.status !== 0) {
+      console.error(`\n❌ Pre-push check failed: ${check.name} failed.`);
+      return result.status ?? 1;
+    }
+  }
+
+  return 0;
+}
+
+const topLevelRes = runGit(['rev-parse', '--show-toplevel'], process.cwd());
+if (topLevelRes.status !== 0 || !topLevelRes.stdout.trim()) {
+  console.error('❌ Pre-push check failed: Unable to determine Git repository root.');
+  process.exit(1);
+}
+const repoRoot = topLevelRes.stdout.trim();
+const remoteName = process.argv[2] ?? '';
+
+const rawUpdates = parsePrePushStdin(repoRoot);
+if (rawUpdates.length === 0) {
+  console.log('✅ No new commit refs to verify; skipping pre-push checks.');
+  process.exit(0);
+}
+
+const commitUpdates = new Map();
+for (const update of rawUpdates) {
+  const commitSha = resolveCommitSha(repoRoot, update.localSha);
+  if (!commitSha) {
+    continue;
+  }
+  if (!commitUpdates.has(commitSha)) {
+    commitUpdates.set(commitSha, []);
+  }
+  commitUpdates.get(commitSha).push(update.remoteSha);
+}
+
+if (commitUpdates.size === 0) {
+  console.log('✅ No commit refs to verify; skipping pre-push checks.');
+  process.exit(0);
+}
+
+const activeWorktrees = new Map();
+
+function cleanupWorktree(worktreeDir) {
+  const tempBaseDir = activeWorktrees.get(worktreeDir);
+  if (!tempBaseDir) {
+    return;
+  }
+  activeWorktrees.delete(worktreeDir);
+  runGit(['worktree', 'remove', '--force', worktreeDir], repoRoot);
+  try {
+    fs.rmSync(tempBaseDir, { recursive: true, force: true });
+  } catch {
+    // Ignore best-effort directory removal errors
+  }
+  runGit(['worktree', 'prune'], repoRoot);
+}
+
+function cleanupAllWorktrees() {
+  for (const worktreeDir of Array.from(activeWorktrees.keys())) {
+    cleanupWorktree(worktreeDir);
+  }
+}
+
+process.on('exit', cleanupAllWorktrees);
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  process.on(sig, () => {
+    cleanupAllWorktrees();
+    process.exit(1);
+  });
+}
+
+const headSha = resolveCommitSha(repoRoot, 'HEAD');
+const uniqueCommitShas = Array.from(commitUpdates.keys());
+const canRunInPlace =
+  uniqueCommitShas.length === 1 &&
+  headSha === uniqueCommitShas[0] &&
+  trackedFilesMatchCommit(repoRoot, uniqueCommitShas[0]);
+
+if (canRunInPlace) {
+  const commitSha = uniqueCommitShas[0];
+  const includeAudit = pushedCommitsTouchLockfiles(
+    repoRoot,
+    remoteName,
+    commitSha,
+    commitUpdates.get(commitSha)
+  );
+  const status = executeChecks(repoRoot, process.env, includeAudit);
+  if (status !== 0) {
+    process.exit(status);
+  }
+} else {
+  const worktreeEnv = buildIsolatedWorktreeEnv();
+  for (const commitSha of uniqueCommitShas) {
+    const includeAudit = pushedCommitsTouchLockfiles(
+      repoRoot,
+      remoteName,
+      commitSha,
+      commitUpdates.get(commitSha)
+    );
+    const tempBaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wedding-pre-push-'));
+    const worktreeDir = path.join(tempBaseDir, 'worktree');
+    activeWorktrees.set(worktreeDir, tempBaseDir);
+
+    let status = 0;
+    try {
+      console.log(`Verifying pushed commit ${commitSha.slice(0, 12)} in ephemeral Git worktree...`);
+      const addRes = runGit(['worktree', 'add', '--detach', worktreeDir, commitSha], repoRoot);
+      if (addRes.status !== 0) {
+        console.error(
+          `\n❌ Pre-push check failed: Unable to create ephemeral worktree for ${commitSha}:\n${addRes.stderr || addRes.stdout}`
+        );
+        status = addRes.status ?? 1;
+      } else {
+        hydrateWorktreeCaches(repoRoot, worktreeDir);
+        status = executeChecks(worktreeDir, worktreeEnv, includeAudit);
+      }
+    } finally {
+      cleanupWorktree(worktreeDir);
+    }
+
+    if (status !== 0) {
+      process.exit(status);
+    }
   }
 }
 

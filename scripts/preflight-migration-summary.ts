@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import child_process from 'child_process';
 import { fileURLToPath } from 'url';
+import { isValidPostgresUrl, normalizePostgresUrl } from '../src/lib/postgres-url.js';
 
 export interface ParsedMigrateStatus {
   isUpToDate: boolean;
@@ -704,8 +705,26 @@ export function runPreflightCheck(options?: PreflightCheckOptions): { success: b
 
   if (rawOutput === undefined) {
     console.log(`Running "npx prisma migrate status" for environment "${environment}"...`);
-    const childEnv: NodeJS.ProcessEnv = { ...process.env, DATABASE_URL: databaseUrl };
-    delete childEnv.POSTGRES_URL_NON_POOLING;
+    const normalizedPrimaryUrl =
+      databaseUrl && isValidPostgresUrl(databaseUrl.trim())
+        ? normalizePostgresUrl(databaseUrl.trim())
+        : databaseUrl;
+    const rawNonPooling = process.env.POSTGRES_URL_NON_POOLING?.trim();
+    const unquotedNonPooling =
+      rawNonPooling &&
+      rawNonPooling.length >= 2 &&
+      ((rawNonPooling.startsWith('"') && rawNonPooling.endsWith('"')) ||
+        (rawNonPooling.startsWith('\'') && rawNonPooling.endsWith('\'')))
+        ? rawNonPooling.slice(1, -1).trim()
+        : rawNonPooling;
+    const childEnv: NodeJS.ProcessEnv = { ...process.env, DATABASE_URL: normalizedPrimaryUrl };
+    if (unquotedNonPooling) {
+      childEnv.POSTGRES_URL_NON_POOLING = isValidPostgresUrl(unquotedNonPooling)
+        ? normalizePostgresUrl(unquotedNonPooling)
+        : unquotedNonPooling;
+    } else {
+      delete childEnv.POSTGRES_URL_NON_POOLING;
+    }
     const result = child_process.spawnSync('npx', ['prisma', 'migrate', 'status'], {
       cwd: workDir,
       encoding: 'utf8',

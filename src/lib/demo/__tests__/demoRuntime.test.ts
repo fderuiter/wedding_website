@@ -879,6 +879,91 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
           .status
       ).toBe(404);
       expect((await window.fetch('/api/admin/overview-stats')).status).toBe(200);
+
+      // Guest portal session, personalized schedule, and interactive RSVP submission
+      const initialGuestSession = await (await window.fetch('/api/guest/session')).json();
+      expect(initialGuestSession).toEqual(
+        expect.objectContaining({ status: 'none', isVerified: false, invitationCode: null })
+      );
+      const publicSchedule = await (await window.fetch('/api/schedule')).json();
+      expect(publicSchedule.isGuest).toBe(false);
+      expect(Array.isArray(publicSchedule.data)).toBe(true);
+      expect(publicSchedule.data.length).toBeGreaterThan(0);
+      expect(
+        (
+          await window.fetch('/api/rsvp', {
+            method: 'POST',
+            body: JSON.stringify({ subEventId: publicSchedule.data[0].id, status: 'attending' }),
+          })
+        ).status
+      ).toBe(401);
+
+      await window.fetch('/api/registry/validate-code?code=SMITH2026');
+      const unlockedGuestSession = await (await window.fetch('/api/guest/session')).json();
+      expect(unlockedGuestSession).toEqual(
+        expect.objectContaining({
+          status: 'invitation',
+          isVerified: true,
+          invitationCode: 'SMITH2026',
+          code: 'SMITH2026',
+        })
+      );
+      const guestSchedule = await (await window.fetch('/api/schedule')).json();
+      expect(guestSchedule.isGuest).toBe(true);
+      const targetSubEventId = guestSchedule.data[0].id as string;
+      expect(
+        (
+          await window.fetch('/api/rsvp', {
+            method: 'POST',
+            body: JSON.stringify({ subEventId: targetSubEventId, status: 'pending' }),
+          })
+        ).status
+      ).toBe(400);
+      const rsvpSaveRes = await window.fetch('/api/rsvp', {
+        method: 'POST',
+        body: JSON.stringify({
+          subEventId: targetSubEventId,
+          status: 'attending',
+          plusOneCount: 1,
+          dietaryNotes: 'No shellfish',
+          plusOneNames: ['Alex Smith'],
+        }),
+      });
+      expect(rsvpSaveRes.status).toBe(200);
+      const refreshedSchedule = await (await window.fetch('/api/schedule')).json();
+      const savedEvent = refreshedSchedule.data.find(
+        (evt: { id: string }) => evt.id === targetSubEventId
+      );
+      expect(savedEvent.userRsvp).toEqual(
+        expect.objectContaining({
+          status: 'attending',
+          plusOneCount: 1,
+          dietaryNotes: 'No shellfish',
+        })
+      );
+      const rsvpClearDietaryRes = await window.fetch('/api/rsvp', {
+        method: 'POST',
+        body: JSON.stringify({
+          subEventId: targetSubEventId,
+          status: 'attending',
+          plusOneCount: 1,
+          dietaryNotes: '',
+          clearDietaryNotes: true,
+        }),
+      });
+      expect(rsvpClearDietaryRes.status).toBe(200);
+      const scheduleAfterClear = await (await window.fetch('/api/schedule')).json();
+      const clearedNoteEvent = scheduleAfterClear.data.find(
+        (evt: { id: string }) => evt.id === targetSubEventId
+      );
+      expect(clearedNoteEvent.userRsvp.dietaryNotes).toBe('');
+      const clearedGuestSession = await (
+        await window.fetch('/api/guest/session', { method: 'DELETE' })
+      ).json();
+      expect(clearedGuestSession).toEqual(
+        expect.objectContaining({ status: 'none', isVerified: false })
+      );
+
       expect((await window.fetch('/api/ready')).status).toBe(200);
       expect(
         Array.isArray((await (await window.fetch('/api/weather')).json()).data.daily.temperature_2m_max)
@@ -1004,6 +1089,24 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
       expect(inviteCsvRes.headers.get('Content-Type')).toContain('text/csv');
       expect(await inviteCsvRes.text()).toContain('SMITH2026');
 
+      await window.fetch('/api/registry/validate-code?code=SMITH2026');
+      await window.fetch('/api/rsvp', {
+        method: 'POST',
+        body: JSON.stringify({
+          subEventId: 'sample-subevent-classic-ceremony',
+          status: 'declined',
+          plusOneCount: 2,
+          dietaryNotes: 'Gluten-free',
+        }),
+      });
+      const redeemedCsvRes = await window.fetch(
+        '/api/admin/invitation-codes/export?status=redeemed'
+      );
+      const redeemedCsvLines = (await redeemedCsvRes.text()).split(/\r?\n/);
+      const smithRedeemedRow = redeemedCsvLines.find((line) => line.startsWith('SMITH2026,'))!;
+      expect(smithRedeemedRow).toContain(',0,Gluten-free,');
+      await window.fetch('/api/guest/session', { method: 'DELETE' });
+
       await window.fetch('/api/admin/thank-you-notes', {
         method: 'POST',
         body: JSON.stringify({
@@ -1083,6 +1186,12 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
         (await window.fetch(`/api/registry/validate-code?code=${encodeURIComponent(collectedCode)}`))
           .status
       ).toBe(404);
+      setDemoGuestSession({ invitationCode: collectedCode, guestName: 'Morgan Address Only' });
+      const unpromotedDemoSession = await (await window.fetch('/api/guest/session')).json();
+      expect(unpromotedDemoSession).toEqual(
+        expect.objectContaining({ status: 'none', isVerified: false, invitationCode: null })
+      );
+      setDemoGuestSession(null);
       const milestonesBeforePromote = await (
         await window.fetch('/api/admin/onboarding-milestones')
       ).json();

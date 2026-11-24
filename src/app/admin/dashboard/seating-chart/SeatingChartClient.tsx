@@ -12,6 +12,7 @@ import {
   resolveSeatAssignments,
   ADDRESS_COLLECTION_TAG,
   computeTableMealCounts,
+  computeTableMinBounds,
   getDietaryBadges,
   getGuestAttendanceStatus,
   getGuestCompanionNames,
@@ -69,8 +70,17 @@ function SeatingChartAdminContent() {
   const isPlacementMode = Boolean(selectedTableId && placementTableId === selectedTableId);
 
   const nudgeSelectedTableBy = (table: SeatingTableDTO, dx: number, dy: number) => {
-    const nextX = Math.max(0, Math.round(table.x + dx));
-    const nextY = Math.max(0, Math.round(table.y + dy));
+    const { minX, minY } = computeTableMinBounds({
+      shape: table.shape,
+      capacity: table.capacity,
+      width: table.width,
+      height: table.height,
+      rotation: table.rotation,
+    });
+    const baseX = Math.max(minX, table.x);
+    const baseY = Math.max(minY, table.y);
+    const nextX = Math.max(minX, Math.round(baseX + dx));
+    const nextY = Math.max(minY, Math.round(baseY + dy));
     handleUpdateTablePosition(table.id, nextX, nextY);
     setInspectorAnnouncement(`${table.name} moved to X ${nextX}, Y ${nextY}.`);
   };
@@ -544,6 +554,13 @@ function SeatingChartAdminContent() {
             {/* Selected Table Inspector Bar */}
             {selectedTable && (() => {
               const selectedIsLandmark = isLandmarkTable(selectedTable);
+              const selectedMinBounds = computeTableMinBounds({
+                shape: selectedTable.shape,
+                capacity: selectedTable.capacity,
+                width: selectedTable.width,
+                height: selectedTable.height,
+                rotation: selectedTable.rotation,
+              });
               const selectedMealSummary = selectedIsLandmark
                 ? null
                 : computeTableMealCounts(selectedTable.invitationCodes);
@@ -755,7 +772,7 @@ function SeatingChartAdminContent() {
                         data-testid="inspector-coordinates"
                         className="px-1.5 font-mono text-[11px] font-semibold text-gray-700 dark:text-gray-200"
                       >
-                        X: {Math.round(selectedTable.x)}, Y: {Math.round(selectedTable.y)}
+                        X: {Math.round(Math.max(selectedMinBounds.minX, selectedTable.x))}, Y: {Math.round(Math.max(selectedMinBounds.minY, selectedTable.y))}
                       </span>
                       <Button
                         type="button"
