@@ -754,6 +754,56 @@ describe('Custom PostgreSQL schema & TLS migration/runtime parity integration', 
         });
         await pruneSnapshotsBulk([{ entityType: 'RegistryItem', entityId: groupFund.id }]);
 
+        // Raw SQL #13-15: ContentRepository.approvePhotosBatch, ContentRepository.rejectPhotosBatch & MediaRepository.deleteMediaBatch
+        const { ContentRepository } = await import('@/features/content');
+        const { MediaRepository } = await import('@/features/media');
+        const customContentRepo = new ContentRepository(prisma);
+        const customMediaRepo = new MediaRepository(prisma);
+
+        const [customMedia1, customMedia2] = await Promise.all([
+          prisma.media.create({
+            data: { url: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', altText: 'Custom Tenant Photo 1' },
+          }),
+          prisma.media.create({
+            data: { url: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', altText: 'Custom Tenant Photo 2' },
+          }),
+        ]);
+        await prisma.contentNode.createMany({
+          data: [
+            {
+              id: 'custom-photo-1',
+              type: 'Photo',
+              tags: ['gallery', 'guest-upload'],
+              data: { url: customMedia1.url, mediaId: customMedia1.id, status: 'PENDING', isVisible: false },
+            },
+            {
+              id: 'custom-photo-2',
+              type: 'Photo',
+              tags: ['gallery', 'guest-upload'],
+              data: { url: customMedia2.url, mediaId: customMedia2.id, status: 'PENDING', isVisible: false },
+            },
+          ],
+        });
+
+        const approvedCustom = await customContentRepo.approvePhotosBatch(
+          ['custom-photo-1', 'custom-photo-2'],
+          'CustomTenantAdmin'
+        );
+        expect(approvedCustom).toHaveLength(2);
+
+        const rejectedCustomIds = await customContentRepo.rejectPhotosBatch(
+          ['custom-photo-1'],
+          'CustomTenantAdmin'
+        );
+        expect(rejectedCustomIds).toEqual(['custom-photo-1']);
+
+        const deletedCustomMedia = await customMediaRepo.deleteMediaBatch(
+          [customMedia2.id],
+          'CustomTenantAdmin'
+        );
+        expect(deletedCustomMedia).toHaveLength(1);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
         // Zero 42P01 (undefined_table) or other wire-level SQL errors occurred
         expect(recordedQueryErrors).toEqual([]);
       } finally {

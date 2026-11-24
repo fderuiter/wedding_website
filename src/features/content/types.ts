@@ -28,6 +28,8 @@ export interface IContentRepository {
   updateNode?(id: string, data: { tags?: string[]; data?: any }, author?: string): Promise<ContentNodeDTO>;
   deleteNode?(id: string, author?: string): Promise<void>;
   getPendingPhotos?(options?: PendingPhotosOptions): Promise<PaginatedPendingPhotosResult>;
-  getEntityBoundMediaIds?(mediaIds: string[]): Promise<Set<string>>;
+  getEntityBoundMediaIds?(mediaIds: string[], client?: unknown): Promise<Set<string>>;
+  approvePhotosBatch?(ids: string[], author?: string): Promise<ContentNodeDTO[]>;
+  rejectPhotosBatch?(ids: string[], author?: string): Promise<string[]>;
 }
 
