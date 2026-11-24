@@ -24,6 +24,12 @@ const config: StorybookConfig = {
     { from: '../public/assets', to: '/assets' },
     { from: '../public/mockServiceWorker.js', to: '/mockServiceWorker.js' },
   ],
+  env: (existingEnv) => ({
+    ...existingEnv,
+    ...(process.env.NEXT_PUBLIC_BASE_PATH
+      ? { NEXT_PUBLIC_BASE_PATH: process.env.NEXT_PUBLIC_BASE_PATH }
+      : {}),
+  }),
   webpackFinal: async (webpackConfig) => {
     webpackConfig.resolve = webpackConfig.resolve || {};
     webpackConfig.resolve.alias = {

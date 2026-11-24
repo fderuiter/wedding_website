@@ -534,8 +534,6 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
         'GET /api/ready',
         'GET /api/registry/claim',
         'GET /api/registry/validate-code',
-        'GET /api/uploads/{path}',
-        'HEAD /api/uploads/{path}',
         'POST /api/admin/login',
         'POST /api/admin/logout',
         'POST /api/admin/setup',
@@ -556,6 +554,16 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
       { guestInviteCookieAuth: [] },
     ]);
     expect((openapi.paths['/api/photos/upload']?.post as OpenApiOperation).security).toEqual([
+      { guestCookieAuth: [] },
+      { guestInviteCookieAuth: [] },
+      { adminCookieAuth: [] },
+    ]);
+    expect((openapi.paths['/api/uploads/{path}']?.get as OpenApiOperation).security).toEqual([
+      { guestCookieAuth: [] },
+      { guestInviteCookieAuth: [] },
+      { adminCookieAuth: [] },
+    ]);
+    expect((openapi.paths['/api/uploads/{path}']?.head as OpenApiOperation).security).toEqual([
       { guestCookieAuth: [] },
       { guestInviteCookieAuth: [] },
       { adminCookieAuth: [] },
@@ -1072,6 +1080,7 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
             'Content-Length',
             'Last-Modified',
             'Cache-Control',
+            'Vary',
             'X-Content-Type-Options',
           ])
         );

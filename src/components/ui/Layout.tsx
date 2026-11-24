@@ -85,3 +85,72 @@ export function Heading({
     />
   );
 }
+
+export interface MainLandmarkProps extends React.ComponentPropsWithRef<'main'> {
+  suppressLandmark?: boolean;
+}
+
+export function MainLandmark({
+  id = 'main-content',
+  tabIndex = -1,
+  suppressLandmark = false,
+  className,
+  ref,
+  ...props
+}: MainLandmarkProps) {
+  if (suppressLandmark) {
+    return (
+      <div
+        ref={ref as React.Ref<HTMLDivElement>}
+        id={id}
+        tabIndex={tabIndex}
+        className={cn('focus:outline-none', className)}
+        {...(props as React.ComponentPropsWithoutRef<'div'>)}
+      />
+    );
+  }
+
+  return (
+    <main
+      ref={ref}
+      id={id}
+      tabIndex={tabIndex}
+      className={cn('focus:outline-none', className)}
+      {...props}
+    />
+  );
+}
+
+export interface SiteFooterProps extends React.ComponentPropsWithRef<'footer'> {
+  suppressLandmark?: boolean;
+}
+
+export function SiteFooter({
+  suppressLandmark = false,
+  className,
+  ref,
+  ...props
+}: SiteFooterProps) {
+  const mergedClassName = cn(
+    'relative z-10 bg-[var(--color-background)] flex flex-col items-center gap-4 px-4 pb-10 text-sm text-gray-600 dark:text-gray-400',
+    className
+  );
+
+  if (suppressLandmark) {
+    return (
+      <div
+        ref={ref as React.Ref<HTMLDivElement>}
+        className={mergedClassName}
+        {...(props as React.ComponentPropsWithoutRef<'div'>)}
+      />
+    );
+  }
+
+  return (
+    <footer
+      ref={ref}
+      className={mergedClassName}
+      {...props}
+    />
+  );
+}
