@@ -27416,7 +27416,18 @@
           "Uploads"
         ],
         "summary": "GET /api/uploads/[...path]",
-        "description": "Streams locally stored uploaded files dynamically at /uploads/* in standalone server mode.",
+        "description": "Streams authorized local or S3-backed uploaded files dynamically at /uploads/*.",
+        "security": [
+          {
+            "guestCookieAuth": []
+          },
+          {
+            "guestInviteCookieAuth": []
+          },
+          {
+            "adminCookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "path",
@@ -27433,6 +27444,12 @@
             "headers": {
               "X-Content-Type-Options": {
                 "description": "MIME-sniffing protection header",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Cache key variance header names",
                 "schema": {
                   "type": "string"
                 }
@@ -27474,6 +27491,24 @@
           },
           "400": {
             "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -27533,7 +27568,18 @@
           "Uploads"
         ],
         "summary": "HEAD /api/uploads/[...path]",
-        "description": "Returns upload metadata headers without body payload for /uploads/* requests.",
+        "description": "Returns upload metadata headers without body payload for authorized /uploads/* requests.",
+        "security": [
+          {
+            "guestCookieAuth": []
+          },
+          {
+            "guestInviteCookieAuth": []
+          },
+          {
+            "adminCookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "path",
@@ -27550,6 +27596,12 @@
             "headers": {
               "X-Content-Type-Options": {
                 "description": "MIME-sniffing protection header",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Cache key variance header names",
                 "schema": {
                   "type": "string"
                 }
@@ -27591,6 +27643,24 @@
           },
           "400": {
             "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
