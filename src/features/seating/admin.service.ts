@@ -84,7 +84,7 @@ function extractNormalizedPartyTags(guest: Record<string, unknown>): string[] {
       tags.push(normalized);
     }
   }
-  return tags.sort();
+  return tags;
 }
 
 export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
@@ -1058,37 +1058,54 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
         orderBy: [{ householdName: 'asc' }, { guestName: 'asc' }],
       });
 
-      const unassignedGuests = (rawUnassignedGuests || []).filter((guest: any) => {
+      interface CachedGuestPartyMetadata {
+        partySize: number;
+        partyGroup: string | null;
+        partyGroups: string[];
+        partyTags: string[];
+      }
+
+      const metadataByGuest = new Map<any, CachedGuestPartyMetadata>();
+      const partySizeById = new Map<string, number>();
+      const unassignedGuests: any[] = [];
+      let totalPoolHeadcount = 0;
+
+      for (const guest of rawUnassignedGuests || []) {
         if (!isGuestEligibleForSeating(guest)) {
-          return false;
+          continue;
         }
         if (!includePending && getGuestAttendanceStatus(guest) !== 'attending') {
-          return false;
+          continue;
         }
-        if (filterGroup && extractNormalizedPartyGroup(guest) !== filterGroup) {
-          return false;
+        const partyGroup = extractNormalizedPartyGroup(guest);
+        if (filterGroup && partyGroup !== filterGroup) {
+          continue;
         }
-        if (filterTags) {
-          const gTags = extractNormalizedPartyTags(guest);
-          if (!gTags.some((t) => filterTags.has(t))) {
-            return false;
-          }
+        const partyTags = extractNormalizedPartyTags(guest);
+        if (filterTags && !partyTags.some((t) => filterTags.has(t))) {
+          continue;
         }
-        return true;
-      });
 
-      if (!unassignedGuests || unassignedGuests.length === 0) {
+        const partySize = getGuestPartySize(guest);
+        unassignedGuests.push(guest);
+        metadataByGuest.set(guest, {
+          partySize,
+          partyGroup,
+          partyGroups: partyGroup ? [partyGroup] : [],
+          partyTags,
+        });
+        if (guest.id) {
+          partySizeById.set(guest.id, partySize);
+        }
+        totalPoolHeadcount += partySize;
+      }
+
+      if (unassignedGuests.length === 0) {
         return {
           assignedCount: 0,
           unassignedCount: 0,
           assignedGuests: [],
         };
-      }
-
-      // Precompute party headcount per InvitationCode in O(G)
-      const partySizeById = new Map<string, number>();
-      for (const guest of unassignedGuests) {
-        partySizeById.set(guest.id, getGuestPartySize(guest));
       }
 
       // Initialize seating table tracking state (skipping zero-capacity landmarks)
@@ -1134,6 +1151,8 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
           };
         });
 
+      tableStates.sort((a, b) => a.name.localeCompare(b.name));
+
       interface HouseholdUnit {
         key: string;
         isNamedHousehold: boolean;
@@ -1150,7 +1169,7 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
       let soloCounter = 0;
 
       for (const guest of unassignedGuests) {
-        const guestHeadcount = partySizeById.get(guest.id) || 1;
+        const guestHeadcount = metadataByGuest.get(guest)?.partySize || 1;
         const household =
           guest.householdName && typeof guest.householdName === 'string'
             ? guest.householdName.trim()
@@ -1184,9 +1203,11 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
           const tagSet = new Set<string>();
 
           for (const g of bucket.members) {
-            const pg = extractNormalizedPartyGroup(g);
+            const meta = metadataByGuest.get(g);
+            const pg = meta ? meta.partyGroup : extractNormalizedPartyGroup(g);
             if (pg) groupSet.add(pg);
-            for (const tag of extractNormalizedPartyTags(g)) {
+            const gTags = meta ? meta.partyTags : extractNormalizedPartyTags(g);
+            for (const tag of gTags) {
               tagSet.add(tag);
             }
           }
@@ -1217,8 +1238,8 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
 
       const computeAffinityScore = (
         table: TableState,
-        groups: string[],
-        tags: string[]
+        groups: readonly string[],
+        tags: readonly string[]
       ): number => {
         let score = 0;
         for (const g of groups) {
@@ -1230,14 +1251,51 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
         return score;
       };
 
+      const selectBestTable = (
+        requiredChairs: number,
+        groups: readonly string[],
+        tags: readonly string[],
+        preferLargerRemainingCapacity: boolean = false
+      ): TableState | null => {
+        const hasAffinityCriteria = groups.length > 0 || tags.length > 0;
+        let bestTable: TableState | null = null;
+        let bestAffinity = -1;
+
+        for (const table of tableStates) {
+          if (table.remainingCapacity < requiredChairs) {
+            continue;
+          }
+
+          const affinity = hasAffinityCriteria
+            ? computeAffinityScore(table, groups, tags)
+            : 0;
+
+          if (
+            bestTable === null ||
+            affinity > bestAffinity ||
+            (affinity === bestAffinity &&
+              (preferLargerRemainingCapacity
+                ? table.remainingCapacity > bestTable.remainingCapacity
+                : table.remainingCapacity < bestTable.remainingCapacity))
+          ) {
+            bestTable = table;
+            bestAffinity = affinity;
+          }
+        }
+
+        return bestTable;
+      };
+
       const seatGuestAtTable = (guest: any, chosenTable: TableState) => {
-        const requiredChairs = partySizeById.get(guest.id) || getGuestPartySize(guest);
+        const meta = metadataByGuest.get(guest);
+        const requiredChairs = meta ? meta.partySize : getGuestPartySize(guest);
         const allocation = chosenTable.allocatePartySeats(requiredChairs);
         chosenTable.remainingCapacity -= requiredChairs;
 
-        const pg = extractNormalizedPartyGroup(guest);
+        const pg = meta ? meta.partyGroup : extractNormalizedPartyGroup(guest);
         if (pg) chosenTable.groups.add(pg);
-        for (const tag of extractNormalizedPartyTags(guest)) {
+        const gTags = meta ? meta.partyTags : extractNormalizedPartyTags(guest);
+        for (const tag of gTags) {
           chosenTable.tags.add(tag);
         }
 
@@ -1277,23 +1335,9 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
         if (clusterUnits.length > 1) {
           const allGroups = Array.from(new Set(clusterUnits.flatMap((u) => u.groups)));
           const allTags = Array.from(new Set(clusterUnits.flatMap((u) => u.tags)));
-          const eligibleClusterTables = tableStates.filter(
-            (t) => t.remainingCapacity >= clusterTotalChairs
-          );
+          const chosenTable = selectBestTable(clusterTotalChairs, allGroups, allTags, false);
 
-          if (eligibleClusterTables.length > 0) {
-            eligibleClusterTables.sort((a, b) => {
-              const affDiff =
-                computeAffinityScore(b, allGroups, allTags) -
-                computeAffinityScore(a, allGroups, allTags);
-              if (affDiff !== 0) return affDiff;
-              const diffA = a.remainingCapacity - clusterTotalChairs;
-              const diffB = b.remainingCapacity - clusterTotalChairs;
-              if (diffA !== diffB) return diffA - diffB;
-              return a.name.localeCompare(b.name);
-            });
-
-            const chosenTable = eligibleClusterTables[0];
+          if (chosenTable) {
             for (const unit of clusterUnits) {
               for (const guest of unit.guests) {
                 seatGuestAtTable(guest, chosenTable);
@@ -1321,23 +1365,9 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
 
       // Phase 1: Intact Household Placement (Affinity-Aware Best-Fit Decreasing)
       for (const unit of remainingUnits) {
-        const eligibleTables = tableStates.filter(
-          (t) => t.remainingCapacity >= unit.totalChairs
-        );
+        const chosenTable = selectBestTable(unit.totalChairs, unit.groups, unit.tags, false);
 
-        if (eligibleTables.length > 0) {
-          eligibleTables.sort((a, b) => {
-            const affDiff =
-              computeAffinityScore(b, unit.groups, unit.tags) -
-              computeAffinityScore(a, unit.groups, unit.tags);
-            if (affDiff !== 0) return affDiff;
-            const diffA = a.remainingCapacity - unit.totalChairs;
-            const diffB = b.remainingCapacity - unit.totalChairs;
-            if (diffA !== diffB) return diffA - diffB;
-            return a.name.localeCompare(b.name);
-          });
-
-          const chosenTable = eligibleTables[0];
+        if (chosenTable) {
           for (const guest of unit.guests) {
             seatGuestAtTable(guest, chosenTable);
           }
@@ -1355,30 +1385,22 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
           }
 
           for (const guest of unit.guests) {
-            const requiredChairs = partySizeById.get(guest.id) || getGuestPartySize(guest);
-            const gGroup = extractNormalizedPartyGroup(guest);
-            const gGroups = gGroup ? [gGroup] : [];
-            const gTags = extractNormalizedPartyTags(guest);
+            const meta = metadataByGuest.get(guest);
+            const requiredChairs = meta ? meta.partySize : getGuestPartySize(guest);
+            const gGroups = meta
+              ? meta.partyGroups
+              : (() => {
+                const pg = extractNormalizedPartyGroup(guest);
+                return pg ? [pg] : [];
+              })();
+            const gTags = meta ? meta.partyTags : extractNormalizedPartyTags(guest);
 
-            const availableTables = tableStates.filter(
-              (t) => t.remainingCapacity >= requiredChairs
-            );
-            if (availableTables.length === 0) {
+            const chosenTable = selectBestTable(requiredChairs, gGroups, gTags, true);
+            if (!chosenTable) {
               continue;
             }
 
-            availableTables.sort((a, b) => {
-              const affDiff =
-                computeAffinityScore(b, gGroups, gTags) -
-                computeAffinityScore(a, gGroups, gTags);
-              if (affDiff !== 0) return affDiff;
-              if (b.remainingCapacity !== a.remainingCapacity) {
-                return b.remainingCapacity - a.remainingCapacity;
-              }
-              return a.name.localeCompare(b.name);
-            });
-
-            seatGuestAtTable(guest, availableTables[0]);
+            seatGuestAtTable(guest, chosenTable);
           }
         }
       }
@@ -1393,7 +1415,6 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
         author
       );
 
-      const totalPoolHeadcount = getGuestsHeadcount(unassignedGuests);
       const assignedCount = updatedGuests.reduce(
         (sum: number, g: any) => sum + (partySizeById.get(g.id) || getGuestPartySize(g)),
         0
