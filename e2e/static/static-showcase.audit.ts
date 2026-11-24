@@ -196,9 +196,26 @@ async function waitForStaticRouteSettled(page: Page, theme: ColorTheme) {
     .first()
     .waitFor({ state: 'attached', timeout: 10_000 })
     .catch(() => {});
-  await page.evaluate((expectedTheme) => {
+  await page
+    .waitForFunction(
+      () => {
+        const stylesheetsLoaded = Array.from(
+          document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')
+        ).every((link) => link.sheet !== null);
+        const demoHydrated = document.documentElement.dataset.staticDemo === 'true';
+        const suspenseSettled = document.querySelector('[data-suspense-fallback="true"]') === null;
+        return stylesheetsLoaded && demoHydrated && suspenseSettled;
+      },
+      undefined,
+      { timeout: 15_000 }
+    )
+    .catch(() => {});
+  await page.evaluate(async (expectedTheme) => {
     document.documentElement.classList.toggle('dark', expectedTheme === 'dark');
     document.documentElement.classList.toggle('light', expectedTheme === 'light');
+    if (document.fonts?.ready) {
+      await document.fonts.ready;
+    }
   }, theme);
   await page.waitForTimeout(150);
 }
@@ -275,19 +292,20 @@ test.describe('Standalone Static Showcase Runtime & WCAG 2.2 AA Audit @a11y-stat
         return route.abort();
       });
 
-      const page = await context.newPage();
-      await page.goto(`${origin}/__health`, { waitUntil: 'commit' });
+      const seedPage = await context.newPage();
+      await seedPage.goto(`${origin}/__health`, { waitUntil: 'commit' });
 
       try {
         for (const routePath of routes) {
           const scanKey = `[${theme}] ${basePath}${routePath}`;
           const seed = buildDemoSeedForRoute(routePath);
-          await applyDeterministicThemeAndSeed(page, theme, seed);
+          await applyDeterministicThemeAndSeed(seedPage, theme, seed);
 
           const failedResponses: string[] = [];
           const pageErrors: string[] = [];
           blockedExternalUrls.length = 0;
 
+          const routePage = await context.newPage();
           const onResponse = (resp: { url: () => string; status: () => number }) => {
             if (resp.url().startsWith(origin) && resp.status() >= 400) {
               failedResponses.push(`${resp.status()} ${resp.url().slice(origin.length)}`);
@@ -297,13 +315,13 @@ test.describe('Standalone Static Showcase Runtime & WCAG 2.2 AA Audit @a11y-stat
             pageErrors.push(err.message);
           };
 
-          page.on('response', onResponse);
-          page.on('pageerror', onPageError);
+          routePage.on('response', onResponse);
+          routePage.on('pageerror', onPageError);
 
           try {
             const targetUrl = `${origin}${basePath}${routePath === '/' ? '/' : `${routePath}/`}`;
-            const docResponse = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
-            await waitForStaticRouteSettled(page, theme);
+            const docResponse = await routePage.goto(targetUrl, { waitUntil: 'load' });
+            await waitForStaticRouteSettled(routePage, theme);
 
             const status = docResponse?.status() ?? 0;
             if (status !== 200) {
@@ -331,27 +349,29 @@ test.describe('Standalone Static Showcase Runtime & WCAG 2.2 AA Audit @a11y-stat
             }
 
             if (routePath === '/weather') {
-              await expect(page.getByText(/Seasonal Climate Averages/i)).toBeVisible();
-              await expect(page.getByTestId('temperature')).toBeVisible();
+              await expect(routePage.getByText(/Seasonal Climate Averages/i)).toBeVisible();
+              await expect(routePage.getByTestId('temperature')).toBeVisible();
             } else if (routePath === '/admin/dashboard/invitation-codes') {
               await expect(
-                page.getByRole('heading', { name: /Pre-Authorized Guest Invitation Codes/i })
+                routePage.getByRole('heading', { name: /Pre-Authorized Guest Invitation Codes/i })
               ).toBeVisible();
-              await expect(page.locator('code', { hasText: 'SMITH2026' })).toBeVisible();
+              await expect(routePage.locator('code', { hasText: 'SMITH2026' })).toBeVisible();
             }
 
-            const violations = await runWcagAudit(page);
+            const violations = await runWcagAudit(routePage);
             shardViolations[scanKey] = violations;
             if (violations.length > 0) {
               contrastOrA11yFailures.push(formatViolationSummary(scanKey, violations));
             }
             completedScans += 1;
           } finally {
-            page.off('response', onResponse);
-            page.off('pageerror', onPageError);
+            routePage.off('response', onResponse);
+            routePage.off('pageerror', onPageError);
+            await routePage.close();
           }
         }
       } finally {
+        await seedPage.close().catch(() => {});
         writeShardAndMergeReport(theme, shardViolations);
         await context.close();
       }
@@ -434,7 +454,7 @@ test.describe('Standalone Static Showcase Runtime & WCAG 2.2 AA Audit @a11y-stat
           }
         );
 
-        await errorPage.goto(`${origin}${basePath}/weather/`, { waitUntil: 'domcontentloaded' });
+        await errorPage.goto(`${origin}${basePath}/weather/`, { waitUntil: 'load' });
         await waitForStaticRouteSettled(errorPage, theme);
         await expect(
           errorPage.getByText('Failed to load forecast. Please try again later.')
@@ -456,7 +476,7 @@ test.describe('Standalone Static Showcase Runtime & WCAG 2.2 AA Audit @a11y-stat
           buildDemoSeedForRoute('/admin/dashboard/invitation-codes')
         );
         await page.goto(`${origin}${basePath}/admin/dashboard/invitation-codes/`, {
-          waitUntil: 'domcontentloaded',
+          waitUntil: 'load',
         });
         await waitForStaticRouteSettled(page, theme);
 

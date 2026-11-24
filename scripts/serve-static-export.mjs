@@ -69,7 +69,7 @@ export function createStaticExportServer(options = {}) {
     options.basePath ?? process.env.NEXT_PUBLIC_BASE_PATH ?? '/wedding_website/demo'
   );
 
-  return http.createServer((req, res) => {
+  const server = http.createServer((req, res) => {
     const method = (req.method || 'GET').toUpperCase();
     const requestUrl = new URL(req.url || '/', 'http://127.0.0.1');
     let pathname = '/';
@@ -121,10 +121,20 @@ export function createStaticExportServer(options = {}) {
       return;
     }
 
+    let fileSize = 0;
+    try {
+      fileSize = fs.statSync(resolvedFile).size;
+    } catch {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end(method === 'HEAD' ? undefined : `Not Found: ${pathname}`);
+      return;
+    }
+
     const ext = path.extname(resolvedFile).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
     res.writeHead(200, {
       'Content-Type': contentType,
+      'Content-Length': String(fileSize),
       'Cache-Control': 'no-cache',
     });
 
@@ -133,8 +143,22 @@ export function createStaticExportServer(options = {}) {
       return;
     }
 
-    fs.createReadStream(resolvedFile).pipe(res);
+    const stream = fs.createReadStream(resolvedFile);
+    res.on('close', () => {
+      stream.destroy();
+    });
+    stream.on('error', () => {
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+      }
+      res.end();
+    });
+    stream.pipe(res);
   });
+
+  server.keepAliveTimeout = 65_000;
+  server.headersTimeout = 66_000;
+  return server;
 }
 
 function startCliServer() {

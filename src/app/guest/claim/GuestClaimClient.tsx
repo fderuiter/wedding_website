@@ -282,9 +282,14 @@ export default function GuestClaimPage() {
     <Suspense
       fallback={
         <Container className="max-w-none p-6">
-          <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-            Loading gift verification...
-          </p>
+          <div data-suspense-fallback="true" className="space-y-2">
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 dark:text-white tracking-tight">
+              Loading Gift Reservation...
+            </h1>
+            <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Loading gift verification...
+            </p>
+          </div>
         </Container>
       }
     >
