@@ -39,7 +39,7 @@ To distinguish officially verified deployment targets from community-maintained 
 *   [**Google Cloud Run Deployment Guide**](./gcp-cloud-run.md): Fully managed serverless container target deploying immutable `ghcr.io` OCI digests to isolated Cloud Run services (`wedding-website-staging` and `wedding-website`, configurable via `CLOUD_RUN_SERVICE` / `CLOUD_RUN_REGION`) using Workload Identity Federation OIDC (or `GCP_SA_KEY` fallback), GCP Secret Manager, and Cloud SQL.
 *   [**Vercel Deployment Guide**](./vercel.md): Serverless Node.js deployment target with serverless PostgreSQL connection pooling.
 *   [**Railway & Render PaaS Guide**](./railway-render.md): Low-friction PaaS deployment targets with integrated database provisioning.
-*   [**GitHub Pages Workflow**](../../.github/workflows/ci.yml): Automated workflow compiling the VitePress documentation portal (`/`), interactive static demo (`/demo/` via `static-export-build`), and Storybook component showcase (`/storybook/` via `storybook-build`) in parallel CI jobs and publishing a unified bundle via `deploy-docs`.
+*   [**GitHub Pages Workflow**](../../.github/workflows/ci.yml): Automated workflow compiling the VitePress documentation portal (`/` via `verify`), interactive static demo (`/demo/` via `static-export-build`), and Storybook component showcase (`/storybook/` via `storybook-build`) in parallel CI jobs, verifying the merged bundle via `pages-verify` (`npm run pages:verify`), and publishing the pre-verified `pages-bundle` artifact via `deploy-docs`.
 
 ---
 
@@ -53,7 +53,7 @@ To publish the unified documentation portal (`/`), interactive static demo (`/de
    - Both default repository subpaths (`/<repo>/`, `/<repo>/demo/`, `/<repo>/storybook/`) and custom domains (`/`, `/demo/`, `/storybook/`) are detected automatically via `actions/configure-pages` and `NEXT_PUBLIC_BASE_PATH`.
 2. **Environment Configuration**:
    - Verify that the `github-pages` deployment environment is created or permitted under repository **Settings** > **Environments**.
-   - Review or configure deployment branch rules and protection gates if needed (by default, `deploy-docs` runs on pushes to `main` and published releases after `verify`, `static-export-build`, and `storybook-build` succeed, verifying `index.html`, `demo/index.html`, `storybook/index.html`, and `.nojekyll` before upload).
+   - Review or configure deployment branch rules and protection gates if needed (by default, `deploy-docs` runs strictly on pushes to `main` inside a serialized `github-pages` FIFO concurrency queue (`queue: max`) after `verify`, `static-export-build`, `storybook-build`, and `pages-verify` succeed, verifying `origin/main` `HEAD` freshness, reusing the verified `pages-bundle` artifact when base paths match, and verifying `index.html`, `demo/index.html`, `storybook/index.html`, and `.nojekyll` before upload).
 3. **Workflow Permissions**:
    - The `.github/workflows/ci.yml` workflow explicitly requires `contents: read`, `pages: write`, and `id-token: write` for the `deploy-docs` job.
    - Ensure repository settings under **Settings** > **Actions** > **General** > **Workflow permissions** permit workflows to read and write tokens.

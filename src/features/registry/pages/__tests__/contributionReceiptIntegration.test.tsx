@@ -155,7 +155,12 @@ describe('RegistryPage end-to-end contribution receipt and cache sync integratio
 
     server.use(
       http.get('/api/registry/session', () => {
-        return HttpResponse.json({ isVerified: false, invitationCode: null, guestName: null });
+        return HttpResponse.json({
+          isVerified: false,
+          invitationCode: null,
+          guestName: null,
+          email: null,
+        });
       }),
       http.get('/api/registry/items', () => {
         return HttpResponse.json(paginatedResponse);
@@ -419,5 +424,101 @@ describe('RegistryPage end-to-end contribution receipt and cache sync integratio
     const newDialog = await screen.findByRole('dialog', { name: 'Tokyo Honeymoon Fund' });
     expect(within(newDialog).queryByText('Contribution Confirmed!')).not.toBeInTheDocument();
     expect(within(newDialog).getByRole('button', { name: 'Submit Contribution' })).toBeInTheDocument();
+  });
+
+  test('reconciles succeeded Stripe redirect without sessionStorage, scrubs redirect query params immediately while preserving ?item=, and opens receipt view', async () => {
+    window.sessionStorage.clear();
+    window.history.replaceState(
+      {},
+      '',
+      '/registry?item=fund-honeymoon&payment_intent=pi_redirect_ok&payment_intent_client_secret=pi_redirect_ok_secret_xyz&redirect_status=succeeded'
+    );
+
+    let capturedReconcileBody: Record<string, unknown> | null = null;
+    server.use(
+      http.post('/api/registry/payment-intent/reconcile', async ({ request }) => {
+        capturedReconcileBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({
+          reconciled: true,
+          status: 'succeeded',
+          itemId: 'fund-honeymoon',
+          item: {
+            ...cashFundItem,
+            amountContributed: 200,
+            purchased: true,
+          },
+          receipt: {
+            itemId: 'fund-honeymoon',
+            paymentIntentId: 'pi_redirect_ok',
+            contributorName: 'Redirect Guest',
+            contributorEmail: 'redirect@example.com',
+            baseAmount: 50,
+            feeAmount: 1.25,
+            coverFee: true,
+            totalChargeAmount: 51.25,
+            message: 'Safe travels!',
+          },
+        });
+      })
+    );
+
+    renderWithProviders(queryClient);
+
+    // Redirect params are scrubbed immediately while preserving ?item=fund-honeymoon
+    await waitFor(() => {
+      expect(window.location.search).toBe('?item=fund-honeymoon');
+    });
+    expect(window.location.search).not.toContain('payment_intent');
+    expect(window.location.search).not.toContain('payment_intent_client_secret');
+    expect(window.location.search).not.toContain('redirect_status');
+
+    const dialog = await screen.findByRole('dialog', { name: 'Tokyo Honeymoon Fund' });
+    await waitFor(() => {
+      expect(within(dialog).getByTestId('contribution-success-confirmation')).toBeInTheDocument();
+    });
+
+    expect(capturedReconcileBody).toEqual({
+      paymentIntentId: 'pi_redirect_ok',
+      clientSecret: 'pi_redirect_ok_secret_xyz',
+      itemId: 'fund-honeymoon',
+    });
+    expect(within(dialog).getByText('Contribution Confirmed!')).toBeInTheDocument();
+    expect(within(dialog).getByText('Redirect Guest')).toBeInTheDocument();
+    expect(within(dialog).getByText('$51.25')).toBeInTheDocument();
+    expect(within(dialog).getByText('pi_redirect_ok')).toBeInTheDocument();
+
+    const fundCard = screen
+      .getAllByRole('heading', { level: 2, name: 'Tokyo Honeymoon Fund' })
+      .map((heading) => heading.closest('article'))
+      .find((el): el is HTMLElement => el !== null)!;
+    expect(within(fundCard).getByText('Fully Funded')).toBeInTheDocument();
+  });
+
+  test('reopens target gift modal with clean URL and recovery banner on failed or canceled Stripe redirects without recording a contribution', async () => {
+    let contributeCallCount = 0;
+    server.use(
+      http.post('/api/registry/contribute', () => {
+        contributeCallCount += 1;
+        return HttpResponse.json(cashFundItem);
+      })
+    );
+
+    window.history.replaceState(
+      {},
+      '',
+      '/registry?item=fund-honeymoon&payment_intent=pi_redirect_failed&payment_intent_client_secret=pi_redirect_failed_secret_xyz&redirect_status=failed'
+    );
+
+    renderWithProviders(queryClient);
+
+    await waitFor(() => {
+      expect(window.location.search).toBe('?item=fund-honeymoon');
+    });
+
+    const dialog = await screen.findByRole('dialog', { name: 'Tokyo Honeymoon Fund' });
+    const recoveryBanner = await within(dialog).findByTestId('redirect-recovery-banner');
+    expect(recoveryBanner).toHaveTextContent(/could not be completed.*No contribution was recorded/i);
+    expect(within(dialog).queryByText('Contribution Confirmed!')).not.toBeInTheDocument();
+    expect(contributeCallCount).toBe(0);
   });
 });

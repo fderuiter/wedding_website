@@ -66,6 +66,7 @@ describe('GET /api/registry/validate-code', () => {
       id: 'inv-valid-1',
       code: 'VALID123',
       guestName: 'Alex & Sam',
+      email: 'alex.sam@example.com',
       isSample: false,
     });
 
@@ -76,6 +77,7 @@ describe('GET /api/registry/validate-code', () => {
       valid: true,
       guestName: 'Alex & Sam',
       code: 'VALID123',
+      email: 'alex.sam@example.com',
     });
     expect(res.cookies.get(GUEST_INVITE_COOKIE)?.value).toBeTruthy();
     expect(mockRecipientUpdateMany).toHaveBeenCalledWith({
@@ -104,6 +106,33 @@ describe('GET /api/registry/validate-code', () => {
     const body = await res6.json();
     expect(body.success).toBe(false);
     expect(body.error).toMatch(/too many requests/i);
+  });
+
+  test('returns 200 with shared_passcode guidance and no invite cookie when code matches GUEST_PASSCODE', async () => {
+    const prevPasscode = process.env.GUEST_PASSCODE;
+    process.env.GUEST_PASSCODE = 'WEDDING2026';
+    try {
+      mockFindUnique.mockResolvedValueOnce(null);
+      const res = await GET(
+        new NextRequest('http://localhost/api/registry/validate-code?code=wedding2026')
+      );
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.success).toBe(true);
+      expect(body.data).toMatchObject({
+        valid: false,
+        reason: 'shared_passcode',
+      });
+      expect(body.data.error).toMatch(/shared website passcode/i);
+      expect(res.cookies.get(GUEST_INVITE_COOKIE)?.value).toBeUndefined();
+      expect(mockFindUnique).toHaveBeenCalledWith({ where: { code: 'WEDDING2026' } });
+    } finally {
+      if (prevPasscode === undefined) {
+        delete process.env.GUEST_PASSCODE;
+      } else {
+        process.env.GUEST_PASSCODE = prevPasscode;
+      }
+    }
   });
 
   test('repeated checks for one code reuse incoming cookie and share one canonical household rate-limit bucket', async () => {

@@ -553,6 +553,7 @@ fi
     it('ignores staging and dry_run workflow runs for generic-webhook rollbacks, tracks GitHub Deployments, and withstands 1-commit and 2-commit main advances', async () => {
       const captureScript = extractStepRunScript(deployProviderYml, 'Capture Active Image Tag Before Rollout');
       const recordScript = extractStepRunScript(deployProviderYml, 'Record Environment Deployment State');
+      const finalizeScript = extractStepRunScript(deployProviderYml, 'Finalize Environment Deployment Status');
       const repoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webhook-advance-git-'));
 
       execSync('git init -b main', { cwd: repoDir, stdio: 'ignore' });
@@ -658,14 +659,18 @@ fi
               JSON.stringify({
                 jobs: [
                   {
-                    name: 'Production Provider Deployment / Deploy Release Artifact to Provider',
+                    name: 'Production Deployment Stage / Provider Deployment (production) / Deploy Release Artifact to Provider',
                     conclusion: 'success',
                     steps: [
                       { name: 'Verify Selected Provider Credentials', conclusion: 'skipped' },
                       { name: 'Dry-run Provider Adapter Validation', conclusion: 'success' },
                     ],
                   },
-                  { name: 'Production Post-Deployment Health Verification', conclusion: 'success', steps: [] },
+                  {
+                    name: 'Production Deployment Stage / Post-Deployment Health Verification (production)',
+                    conclusion: 'success',
+                    steps: [],
+                  },
                 ],
               })
             );
@@ -676,10 +681,26 @@ fi
             res.end(
               JSON.stringify({
                 jobs: [
-                  { name: 'Staging Provider Deployment', conclusion: 'success', steps: [] },
-                  { name: 'Staging Post-Deployment Health Verification', conclusion: 'success', steps: [] },
-                  { name: 'Production Provider Deployment', conclusion: 'skipped', steps: [] },
-                  { name: 'Production Post-Deployment Health Verification', conclusion: 'skipped', steps: [] },
+                  {
+                    name: 'Staging Deployment Stage / Provider Deployment (staging) / Deploy Release Artifact to Provider',
+                    conclusion: 'success',
+                    steps: [],
+                  },
+                  {
+                    name: 'Staging Deployment Stage / Post-Deployment Health Verification (staging)',
+                    conclusion: 'success',
+                    steps: [],
+                  },
+                  {
+                    name: 'Production Deployment Stage / Provider Deployment (production)',
+                    conclusion: 'skipped',
+                    steps: [],
+                  },
+                  {
+                    name: 'Production Deployment Stage / Post-Deployment Health Verification (production)',
+                    conclusion: 'skipped',
+                    steps: [],
+                  },
                 ],
               })
             );
@@ -691,14 +712,18 @@ fi
               JSON.stringify({
                 jobs: [
                   {
-                    name: 'Production Provider Deployment / Deploy Release Artifact to Provider',
+                    name: 'Production Deployment Stage / Provider Deployment (production) / Deploy Release Artifact to Provider',
                     conclusion: 'success',
                     steps: [
                       { name: 'Verify Selected Provider Credentials', conclusion: 'success' },
                       { name: 'Dry-run Provider Adapter Validation', conclusion: 'skipped' },
                     ],
                   },
-                  { name: 'Production Post-Deployment Health Verification', conclusion: 'success', steps: [] },
+                  {
+                    name: 'Production Deployment Stage / Post-Deployment Health Verification (production)',
+                    conclusion: 'success',
+                    steps: [],
+                  },
                 ],
               })
             );
@@ -761,7 +786,7 @@ fi
           expect(gitTargetParentRes.outputs.previous_tag_source).toBe('git-parent-sha');
         }
 
-        // 3. Record Environment Deployment State writes production deployment state, and subsequent webhook rollout reads both tag & digest from GitHub Deployments
+        // 3. Record Environment Deployment State creates deployment in_progress first, and Finalize Environment Deployment Status transitions healthy deployments to success (and failed probes to failure)
         const recordProdRes = await runBashStepAsync(
           recordScript,
           {
@@ -773,6 +798,7 @@ fi
             IMAGE_URI: `ghcr.io/example/wedding_website@${prodHealthyDigest}`,
             IMAGE_DIGEST: prodHealthyDigest,
             IMAGE_TAG: shaProdHealthy,
+            SOURCE_REVISION: shaProdHealthy,
             INPUT_COMMIT_SHA: shaProdHealthy,
             CURRENT_SHA: shaProdHealthy,
             VAR_SERVICE_URL: 'https://wedding.example.com',
@@ -782,9 +808,66 @@ fi
         );
         expect(recordProdRes.status).toBe(0);
         expect(recordProdRes.outputs.deployment_id).toBe('501');
+        expect(recordedDeployments[0]?.statuses[0]?.state).toBe('in_progress');
+
+        const finalizeProdRes = await runBashStepAsync(
+          finalizeScript,
+          {
+            GITHUB_TOKEN: 'ghs_test_token',
+            GITHUB_REPOSITORY: 'example/wedding_website',
+            GITHUB_API_URL: apiBase,
+            TARGET_ENV: 'production',
+            DEPLOYMENT_ID: '501',
+            HEALTH_OUTCOME: 'success',
+            HEALTH_STATUS: 'healthy',
+            VAR_SERVICE_URL: 'https://wedding.example.com',
+            CLOUDRUN_URL: '',
+          },
+          repoDir
+        );
+        expect(finalizeProdRes.status).toBe(0);
+        expect(recordedDeployments[0]?.statuses[0]?.state).toBe('success');
+
+        // Record a newer broken production deployment whose /api/health probe failed -> state 'failure' must be skipped by captureScript
+        const brokenDigest = 'sha256:3030303030303030303030303030303030303030303030303030303030303030';
+        const recordBrokenProdRes = await runBashStepAsync(
+          recordScript,
+          {
+            GITHUB_TOKEN: 'ghs_test_token',
+            GITHUB_REPOSITORY: 'example/wedding_website',
+            GITHUB_API_URL: apiBase,
+            TARGET_ENV: 'production',
+            PROVIDER: 'generic-webhook',
+            IMAGE_URI: `ghcr.io/example/wedding_website@${brokenDigest}`,
+            IMAGE_DIGEST: brokenDigest,
+            IMAGE_TAG: shaAdvance2,
+            SOURCE_REVISION: shaAdvance2,
+            INPUT_COMMIT_SHA: shaAdvance2,
+            CURRENT_SHA: shaAdvance2,
+            VAR_SERVICE_URL: 'https://wedding.example.com',
+            CLOUDRUN_URL: '',
+          },
+          repoDir
+        );
+        expect(recordBrokenProdRes.outputs.deployment_id).toBe('502');
+        await runBashStepAsync(
+          finalizeScript,
+          {
+            GITHUB_TOKEN: 'ghs_test_token',
+            GITHUB_REPOSITORY: 'example/wedding_website',
+            GITHUB_API_URL: apiBase,
+            TARGET_ENV: 'production',
+            DEPLOYMENT_ID: '502',
+            HEALTH_OUTCOME: 'failure',
+            HEALTH_STATUS: 'unhealthy',
+            VAR_SERVICE_URL: 'https://wedding.example.com',
+            CLOUDRUN_URL: '',
+          },
+          repoDir
+        );
 
         // Also record a staging deployment to ensure environment isolation in GitHub Deployments
-        await runBashStepAsync(
+        const recordStagingRes = await runBashStepAsync(
           recordScript,
           {
             GITHUB_TOKEN: 'ghs_test_token',
@@ -795,8 +878,24 @@ fi
             IMAGE_URI: `ghcr.io/example/wedding_website@${targetDigest}`,
             IMAGE_DIGEST: targetDigest,
             IMAGE_TAG: shaAdvance1,
+            SOURCE_REVISION: shaAdvance1,
             INPUT_COMMIT_SHA: shaAdvance1,
             CURRENT_SHA: shaAdvance1,
+            VAR_SERVICE_URL: 'https://staging.wedding.example.com',
+            CLOUDRUN_URL: '',
+          },
+          repoDir
+        );
+        await runBashStepAsync(
+          finalizeScript,
+          {
+            GITHUB_TOKEN: 'ghs_test_token',
+            GITHUB_REPOSITORY: 'example/wedding_website',
+            GITHUB_API_URL: apiBase,
+            TARGET_ENV: 'staging',
+            DEPLOYMENT_ID: recordStagingRes.outputs.deployment_id,
+            HEALTH_OUTCOME: 'success',
+            HEALTH_STATUS: 'healthy',
             VAR_SERVICE_URL: 'https://staging.wedding.example.com',
             CLOUDRUN_URL: '',
           },
@@ -2368,6 +2467,446 @@ exit 1
         );
       } finally {
         await new Promise<void>((resolve) => apiServer.close(() => resolve()));
+        fs.rmSync(binDir, { recursive: true, force: true });
+      }
+    });
+
+    it('preserves attested source_revision across rollback.yml so a retry rollback against the same failing commit exits 0, and passes verify when SERVICE_URL is set only in secrets.SERVICE_URL', async () => {
+      const validateScript = extractStepRunScript(rollbackYml, 'Log Rollback Request Details');
+      const verifyHistoryScript = extractStepRunScript(rollbackYml, 'Verify Rollback Digest Deployment History');
+      const rollbackHealthScript = extractStepRunScript(rollbackYml, 'Poll Restored Service Health');
+      const recordDeployScript = extractStepRunScript(deployProviderYml, 'Record Environment Deployment State');
+      const finalizeDeployScript = extractStepRunScript(deployProviderYml, 'Finalize Environment Deployment Status');
+
+      const healthyPriorSha = '1111111111111111111111111111111111111111';
+      const failingSha = '2222222222222222222222222222222222222222';
+      const healthyDigest = 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
+      const deployments: Array<{
+        id: number;
+        sha: string;
+        environment: string;
+        payload: Record<string, unknown>;
+        statuses: Array<{ state: string }>;
+      }> = [
+        {
+          id: 1001,
+          sha: healthyPriorSha,
+          environment: 'production',
+          payload: {
+            commit_sha: healthyPriorSha,
+            image_tag: healthyPriorSha,
+            image_digest: healthyDigest,
+            dry_run: false,
+          },
+          statuses: [{ state: 'inactive' }, { state: 'success' }],
+        },
+        {
+          id: 1002,
+          sha: failingSha,
+          environment: 'production',
+          payload: {
+            commit_sha: failingSha,
+            image_tag: failingSha,
+            image_digest: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            dry_run: false,
+          },
+          statuses: [{ state: 'failure' }, { state: 'in_progress' }],
+        },
+      ];
+
+      const apiServer = http.createServer((req, res) => {
+        const url = new URL(req.url || '/', 'http://127.0.0.1');
+        let body = '';
+        req.on('data', (c) => {
+          body += c.toString();
+        });
+        req.on('end', () => {
+          res.setHeader('Content-Type', 'application/json');
+          if (req.method === 'GET' && url.pathname === '/repos/example/wedding_website/deployments') {
+            res.writeHead(200);
+            res.end(JSON.stringify(deployments));
+            return;
+          }
+          const statusMatch = url.pathname.match(/^\/repos\/example\/wedding_website\/deployments\/(\d+)\/statuses$/);
+          if (req.method === 'GET' && statusMatch) {
+            const dep = deployments.find((d) => d.id === Number(statusMatch[1]));
+            res.writeHead(200);
+            res.end(JSON.stringify(dep?.statuses ?? []));
+            return;
+          }
+          if (req.method === 'POST' && url.pathname === '/repos/example/wedding_website/deployments') {
+            const parsed = JSON.parse(body) as {
+              ref: string;
+              environment: string;
+              payload: Record<string, unknown>;
+            };
+            const id = 1000 + deployments.length + 1;
+            deployments.unshift({
+              id,
+              sha: parsed.ref,
+              environment: parsed.environment,
+              payload: parsed.payload,
+              statuses: [],
+            });
+            res.writeHead(201);
+            res.end(JSON.stringify({ id }));
+            return;
+          }
+          if (req.method === 'POST' && statusMatch) {
+            const id = Number(statusMatch[1]);
+            const parsed = JSON.parse(body) as { state: string; auto_inactive?: boolean };
+            const target = deployments.find((d) => d.id === id);
+            if (target) {
+              if (parsed.auto_inactive) {
+                for (const other of deployments) {
+                  if (other.id !== id && other.environment === target.environment) {
+                    other.statuses.unshift({ state: 'inactive' });
+                  }
+                }
+              }
+              target.statuses.unshift({ state: parsed.state });
+            }
+            res.writeHead(201);
+            res.end(JSON.stringify({ state: parsed.state }));
+            return;
+          }
+          res.writeHead(404);
+          res.end('{}');
+        });
+      });
+
+      await new Promise<void>((resolve) => apiServer.listen(0, '127.0.0.1', () => resolve()));
+      const addr = apiServer.address();
+      const port = typeof addr === 'object' && addr ? addr.port : 0;
+      const apiBase = `http://127.0.0.1:${port}`;
+
+      try {
+        // First rollback redeploy omits commit_sha and stamps SOURCE_REVISION = healthyPriorSha
+        const firstRedeployRecord = await runBashStepAsync(recordDeployScript, {
+          GITHUB_TOKEN: 'ghs_test_token',
+          GITHUB_REPOSITORY: 'example/wedding_website',
+          GITHUB_API_URL: apiBase,
+          TARGET_ENV: 'production',
+          PROVIDER: 'google-cloud-run',
+          IMAGE_URI: `ghcr.io/example/wedding_website@${healthyDigest}`,
+          IMAGE_DIGEST: healthyDigest,
+          IMAGE_TAG: healthyPriorSha,
+          SOURCE_REVISION: healthyPriorSha,
+          INPUT_COMMIT_SHA: '',
+          CURRENT_SHA: failingSha,
+          VAR_SERVICE_URL: '',
+          CLOUDRUN_URL: '',
+        });
+        expect(firstRedeployRecord.status).toBe(0);
+        expect(deployments[0]?.sha).toBe(healthyPriorSha);
+        expect(deployments[0]?.payload.commit_sha).toBe(healthyPriorSha);
+
+        await runBashStepAsync(finalizeDeployScript, {
+          GITHUB_TOKEN: 'ghs_test_token',
+          GITHUB_REPOSITORY: 'example/wedding_website',
+          GITHUB_API_URL: apiBase,
+          TARGET_ENV: 'production',
+          DEPLOYMENT_ID: firstRedeployRecord.outputs.deployment_id,
+          HEALTH_OUTCOME: 'success',
+          HEALTH_STATUS: 'healthy',
+          VAR_SERVICE_URL: '',
+          CLOUDRUN_URL: '',
+        });
+
+        // rollback.yml verify job succeeds when SERVICE_URL is set ONLY in environment secrets.SERVICE_URL
+        // (so VAR_SERVICE_URL, ENV_SERVICE_URL in un-scoped verify, and redacted PROVIDER_SERVICE_URL are all empty)
+        const secretOnlyVerifyRes = runBashStep(rollbackHealthScript, {
+          VAR_SERVICE_URL: '',
+          ENV_SERVICE_URL: '',
+          PROVIDER_SERVICE_URL: '',
+          PROVIDER_HEALTH_STATUS: 'healthy',
+          PROVIDER_HTTP_STATUS: '200',
+          IS_DRY_RUN: 'false',
+          TARGET_ENV: 'production',
+          RESTORED_TAG: healthyPriorSha,
+        });
+        expect(secretOnlyVerifyRes.status).toBe(0);
+        expect(secretOnlyVerifyRes.outputs.health_status).toBe('healthy');
+        expect(secretOnlyVerifyRes.outputs.http_status).toBe('200');
+        expect(secretOnlyVerifyRes.outputs.service_url).toBe('');
+
+        // Retry rollback against the same failingSha exits 0 because restored deployment 1003 carries healthyPriorSha
+        const retryValidate = runBashStep(validateScript, {
+          TARGET_ENV: 'production',
+          ROLLBACK_ENV: '',
+          PREVIOUS_TAG: '',
+          PREVIOUS_DIGEST: healthyDigest,
+          PROVIDER: 'google-cloud-run',
+          REASON: 'Retry rollback during incident',
+          DRY_RUN: 'false',
+          INPUT_COMMIT_SHA: failingSha,
+          CURRENT_SHA: failingSha,
+        });
+        expect(retryValidate.status).toBe(0);
+
+        const retryVerifyHistory = await runBashStepAsync(verifyHistoryScript, {
+          GH_TOKEN: 'ghs_test_token',
+          GITHUB_ACTOR_LOGIN: 'ci-bot',
+          GITHUB_REPOSITORY: 'example/wedding_website',
+          GITHUB_API_URL: apiBase,
+          REPO_OWNER: 'example',
+          SIGNER_WORKFLOW: 'example/wedding_website/.github/workflows/publish-artifact.yml',
+          TARGET_ENV: 'production',
+          EFFECTIVE_DIGEST: healthyDigest,
+          EFFECTIVE_TAG: '',
+          INPUT_COMMIT_SHA: failingSha,
+          CURRENT_SHA: failingSha,
+        });
+        expect(retryVerifyHistory.status).toBe(0);
+        expect(retryVerifyHistory.outputs.verified_deployment_id).toBe('1003');
+      } finally {
+        await new Promise<void>((resolve) => apiServer.close(() => resolve()));
+      }
+    });
+
+    it('runs Execute Inline Fallback Rollback inside deploy-provider.yml without a second production gate when rollback_environment is empty', async () => {
+      const inlineRollbackScript = extractStepRunScript(deployProviderYml, 'Execute Inline Fallback Rollback');
+      const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'inline-rollback-bin-'));
+      const gcloudLog = path.join(binDir, 'gcloud.log');
+      fs.writeFileSync(gcloudLog, '');
+
+      const healthyPriorSha = '1111111111111111111111111111111111111111';
+      const failingSha = '2222222222222222222222222222222222222222';
+      const healthyDigest = 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      const failingDigest = 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+      fs.writeFileSync(
+        path.join(binDir, 'gcloud'),
+        `#!/usr/bin/env bash
+printf '%s\\n' "$*" >> ${JSON.stringify(gcloudLog)}
+if [[ "$*" == *"auth list"* ]]; then
+  echo "deployer@oidc-project.iam.gserviceaccount.com"
+  exit 0
+fi
+if [[ "$*" == *"run deploy"* ]]; then
+  echo '{"status":{"url":""}}'
+  exit 0
+fi
+exit 0
+`,
+        { mode: 0o755 }
+      );
+
+      fs.writeFileSync(
+        path.join(binDir, 'gh'),
+        `#!/usr/bin/env bash
+if [[ "$1" == "attestation" && "$2" == "verify" ]]; then
+  cat <<'JSON'
+[{"verificationResult":{"signature":{"certificate":{"sourceRepositoryDigest":"${healthyPriorSha}","sourceRepositoryRef":"refs/heads/main"}}}}]
+JSON
+  exit 0
+fi
+exit 1
+`,
+        { mode: 0o755 }
+      );
+
+      const deployments: Array<{
+        id: number;
+        sha: string;
+        environment: string;
+        payload: Record<string, unknown>;
+        statuses: Array<{ state: string; auto_inactive?: boolean }>;
+      }> = [
+        {
+          id: 2002,
+          sha: failingSha,
+          environment: 'production',
+          payload: {
+            commit_sha: failingSha,
+            image_tag: failingSha,
+            image_digest: failingDigest,
+            dry_run: false,
+          },
+          statuses: [{ state: 'failure' }, { state: 'in_progress' }],
+        },
+        {
+          id: 2001,
+          sha: healthyPriorSha,
+          environment: 'production',
+          payload: {
+            commit_sha: healthyPriorSha,
+            image_tag: healthyPriorSha,
+            image_digest: healthyDigest,
+            dry_run: false,
+          },
+          statuses: [{ state: 'success' }, { state: 'in_progress' }],
+        },
+      ];
+
+      const server = http.createServer((req, res) => {
+        const url = new URL(req.url || '/', 'http://127.0.0.1');
+        if (url.pathname === '/api/health') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, data: { status: 'ok', database: 'connected' } }));
+          return;
+        }
+        if (url.pathname === '/api/ready') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ready', database: 'connected' }));
+          return;
+        }
+        let body = '';
+        req.on('data', (c) => {
+          body += c.toString();
+        });
+        req.on('end', () => {
+          res.setHeader('Content-Type', 'application/json');
+          if (req.method === 'GET' && url.pathname === '/repos/example/wedding_website/deployments') {
+            res.writeHead(200);
+            res.end(JSON.stringify(deployments));
+            return;
+          }
+          const statusMatch = url.pathname.match(/^\/repos\/example\/wedding_website\/deployments\/(\d+)\/statuses$/);
+          if (req.method === 'GET' && statusMatch) {
+            const dep = deployments.find((d) => d.id === Number(statusMatch[1]));
+            res.writeHead(200);
+            res.end(JSON.stringify(dep?.statuses ?? []));
+            return;
+          }
+          if (req.method === 'GET' && url.pathname === '/repos/example/wedding_website/actions/workflows/ci.yml/runs') {
+            res.writeHead(200);
+            res.end(
+              JSON.stringify({
+                workflow_runs: [
+                  {
+                    id: 77,
+                    status: 'completed',
+                    conclusion: 'success',
+                    head_sha: healthyPriorSha,
+                    head_repository: { full_name: 'example/wedding_website' },
+                  },
+                ],
+              })
+            );
+            return;
+          }
+          if (req.method === 'POST' && url.pathname === '/repos/example/wedding_website/deployments') {
+            const parsed = JSON.parse(body) as {
+              ref: string;
+              environment: string;
+              payload: Record<string, unknown>;
+            };
+            const id = 2000 + deployments.length + 1;
+            deployments.unshift({
+              id,
+              sha: parsed.ref,
+              environment: parsed.environment,
+              payload: parsed.payload,
+              statuses: [],
+            });
+            res.writeHead(201);
+            res.end(JSON.stringify({ id }));
+            return;
+          }
+          if (req.method === 'POST' && statusMatch) {
+            const id = Number(statusMatch[1]);
+            const parsed = JSON.parse(body) as { state: string; auto_inactive?: boolean };
+            const dep = deployments.find((d) => d.id === id);
+            dep?.statuses.unshift(parsed);
+            res.writeHead(201);
+            res.end(JSON.stringify(parsed));
+            return;
+          }
+          res.writeHead(404);
+          res.end('{}');
+        });
+      });
+
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+      const addr = server.address();
+      const port = typeof addr === 'object' && addr ? addr.port : 0;
+      const baseUrl = `http://127.0.0.1:${port}`;
+
+      try {
+        // 1. Rejects rollback target when prior deployment only has 'failure' status
+        const rejectedBrokenRes = await runBashStepAsync(
+          inlineRollbackScript,
+          {
+            PATH: `${binDir}:${process.env.PATH || ''}`,
+            GH_TOKEN: 'ghs_test_token',
+            GITHUB_TOKEN: 'ghs_test_token',
+            GITHUB_REPOSITORY: 'example/wedding_website',
+            GITHUB_API_URL: baseUrl,
+            REPO_OWNER: 'example',
+            SIGNER_WORKFLOW: 'example/wedding_website/.github/workflows/publish-artifact.yml',
+            TARGET_ENV: 'production',
+            PROVIDER: 'google-cloud-run',
+            FAILING_SOURCE_REVISION: '9999999999999999999999999999999999999999',
+            INPUT_COMMIT_SHA: '9999999999999999999999999999999999999999',
+            CURRENT_SHA: '9999999999999999999999999999999999999999',
+            FAILING_IMAGE_DIGEST: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+            PREVIOUS_TAG_OVERRIDE: '',
+            CAPTURED_PREVIOUS_TAG: failingSha,
+            CAPTURED_PREVIOUS_DIGEST: failingDigest,
+            GCP_PROJECT_ID: 'oidc-project',
+            VAR_SERVICE_URL: '',
+            CLOUDRUN_URL: '',
+            SECRET_SERVICE_URL: baseUrl,
+          },
+          ROOT_DIR
+        );
+        expect(rejectedBrokenRes.status).toBe(1);
+        expect(rejectedBrokenRes.outputs.inline_rollback_completed).toBe('false');
+        expect(rejectedBrokenRes.stdout + rejectedBrokenRes.stderr).toContain(
+          'has no prior successful GitHub Deployment'
+        );
+
+        // 2. Restores healthyPriorSha using unlocked production credentials & secrets.SERVICE_URL, records deployment, sets inline_rollback_completed=true, and exits 1
+        const restoredRes = await runBashStepAsync(
+          inlineRollbackScript,
+          {
+            PATH: `${binDir}:${process.env.PATH || ''}`,
+            GH_TOKEN: 'ghs_test_token',
+            GITHUB_TOKEN: 'ghs_test_token',
+            GITHUB_REPOSITORY: 'example/wedding_website',
+            GITHUB_API_URL: baseUrl,
+            REPO_OWNER: 'example',
+            SIGNER_WORKFLOW: 'example/wedding_website/.github/workflows/publish-artifact.yml',
+            TARGET_ENV: 'production',
+            PROVIDER: 'google-cloud-run',
+            FAILING_SOURCE_REVISION: failingSha,
+            INPUT_COMMIT_SHA: failingSha,
+            CURRENT_SHA: failingSha,
+            FAILING_IMAGE_DIGEST: failingDigest,
+            PREVIOUS_TAG_OVERRIDE: '',
+            CAPTURED_PREVIOUS_TAG: healthyPriorSha,
+            CAPTURED_PREVIOUS_DIGEST: healthyDigest,
+            CLOUD_RUN_SERVICE: 'wedding-website',
+            CLOUD_RUN_REGION: 'us-central1',
+            GCP_PROJECT_ID: 'oidc-project',
+            VAR_SERVICE_URL: '',
+            CLOUDRUN_URL: '',
+            SECRET_SERVICE_URL: baseUrl,
+          },
+          ROOT_DIR
+        );
+        expect(restoredRes.status).toBe(1);
+        expect(restoredRes.outputs.inline_rollback_completed).toBe('true');
+        expect(restoredRes.outputs.restored_source_revision).toBe(healthyPriorSha);
+        expect(restoredRes.summary).toContain('Inline Fallback Rollback Succeeded (production)');
+        expect(restoredRes.summary).toContain('[configured via secrets.SERVICE_URL]');
+        expect(restoredRes.summary).not.toContain(baseUrl);
+
+        const gcloudCalls = fs.readFileSync(gcloudLog, 'utf8');
+        expect(gcloudCalls).toContain(
+          `run deploy wedding-website --image=ghcr.io/example/wedding_website@${healthyDigest} --region=us-central1 --update-labels=commit-sha=${healthyPriorSha}`
+        );
+        expect(deployments[0]?.sha).toBe(healthyPriorSha);
+        expect(deployments[0]?.payload.commit_sha).toBe(healthyPriorSha);
+        expect(deployments[0]?.statuses[0]).toEqual({
+          state: 'success',
+          auto_inactive: true,
+          environment: 'production',
+        });
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
         fs.rmSync(binDir, { recursive: true, force: true });
       }
     });

@@ -31,7 +31,11 @@ if [ -n "${DATABASE_URL+x}" ]; then
 fi
 if [ -n "${POSTGRES_URL_NON_POOLING+x}" ]; then
   POSTGRES_URL_NON_POOLING="$(strip_outer_quotes "$POSTGRES_URL_NON_POOLING")"
-  export POSTGRES_URL_NON_POOLING
+  if [ -z "$POSTGRES_URL_NON_POOLING" ]; then
+    unset POSTGRES_URL_NON_POOLING
+  else
+    export POSTGRES_URL_NON_POOLING
+  fi
 fi
 
 # The GitHub action checks for secrets during deployment,
@@ -55,10 +59,12 @@ for candidate in "$ENTRYPOINT_DIR/src/lib/postgres-url.js" "/app/src/lib/postgre
   fi
 done
 
-if ! NORMALIZED_DATABASE_URL="$(
-  node --input-type=module -e '
+normalize_pg_url_env() {
+  local env_name="$1"
+  PG_URL_ENV_NAME="$env_name" node --input-type=module -e '
     import { pathToFileURL } from "node:url";
-    const raw = process.env.DATABASE_URL ?? "";
+    const envName = process.env.PG_URL_ENV_NAME ?? "DATABASE_URL";
+    const raw = process.env[envName] ?? "";
     const helperPath = process.argv[1] ?? "";
     if (helperPath) {
       const { normalizePostgresUrl } = await import(pathToFileURL(helperPath).href);
@@ -94,28 +100,38 @@ if ! NORMALIZED_DATABASE_URL="$(
       process.stdout.write(normalized);
     }
   ' "$POSTGRES_URL_HELPER" 2>/dev/null
-)"; then
+}
+
+if ! NORMALIZED_DATABASE_URL="$(normalize_pg_url_env DATABASE_URL)"; then
   echo "ERROR: Invalid format for DATABASE_URL. Must be a valid PostgreSQL URI with an explicit host or ?host=/... Unix socket path."
   exit 1
 fi
 export DATABASE_URL="$NORMALIZED_DATABASE_URL"
 
+if [ -n "${POSTGRES_URL_NON_POOLING:-}" ]; then
+  if [[ ! "$POSTGRES_URL_NON_POOLING" =~ ^postgres(ql)?:// ]]; then
+    echo "ERROR: Invalid format for POSTGRES_URL_NON_POOLING. Must start with postgres:// or postgresql://"
+    exit 1
+  fi
+  if ! NORMALIZED_NON_POOLING_URL="$(normalize_pg_url_env POSTGRES_URL_NON_POOLING)"; then
+    echo "ERROR: Invalid format for POSTGRES_URL_NON_POOLING. Must be a valid PostgreSQL URI with an explicit host or ?host=/... Unix socket path."
+    exit 1
+  fi
+  export POSTGRES_URL_NON_POOLING="$NORMALIZED_NON_POOLING_URL"
+fi
+
 if [ "$RUN_MIGRATIONS" = "true" ] || [ "$RUN_MIGRATIONS" = "1" ]; then
   echo "Running database migrations (RUN_MIGRATIONS=true)..."
   if [ -x "./node_modules/.bin/prisma" ]; then
-    env -u POSTGRES_URL_NON_POOLING ./node_modules/.bin/prisma migrate deploy
+    ./node_modules/.bin/prisma migrate deploy
   elif command -v prisma >/dev/null 2>&1; then
-    env -u POSTGRES_URL_NON_POOLING prisma migrate deploy
+    prisma migrate deploy
   else
     echo "ERROR: Local Prisma CLI binary not found at ./node_modules/.bin/prisma."
     exit 1
   fi
 else
   echo "Skipping automatic container database migration (decoupled to explicit CI/CD migration step)."
-fi
-
-if [[ "${1:-}" == *"prisma"* ]] && [ "${2:-}" = "migrate" ]; then
-  unset POSTGRES_URL_NON_POOLING
 fi
 
 echo "Starting application..."

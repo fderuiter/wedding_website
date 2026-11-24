@@ -564,9 +564,9 @@ describe('RegistryItemCard Component', () => {
       );
 
       const codeInput = screen.getByLabelText(/Invitation Code/i);
-      
-      // 'GOODCODE' is 8 characters, which triggers automatic validation on change
       fireEvent.change(codeInput, { target: { value: 'GOODCODE' } });
+      expect(apiClient.get).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
 
       await waitFor(() => {
         expect(apiClient.get).toHaveBeenCalledWith(
@@ -625,6 +625,7 @@ describe('RegistryItemCard Component', () => {
 
       const codeInput = screen.getByLabelText(/Invitation Code/i);
       fireEvent.change(codeInput, { target: { value: 'INFLIGHT' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
 
       const submitButton = screen.getByRole('button', { name: 'Claim Gift' });
       expect(submitButton).toBeDisabled();
@@ -1026,27 +1027,156 @@ describe('RegistryItemCard Component', () => {
       expect(screen.getByLabelText(/QR code to pay via PayPal/i)).toBeInTheDocument();
     });
 
-    it('renders QR code canvas and deep link for Zelle email handle', () => {
-      const zelleItem: RegistryItem = {
+    it('renders Copy Handle button and bank instructions without mailto:, tel:, or QR code for Zelle email and phone handles', async () => {
+      const writeTextMock = jest.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: writeTextMock },
+        configurable: true,
+      });
+
+      const zelleEmailItem: RegistryItem = {
         ...mockGroupItem,
-        id: 'zelle-qr-1',
+        id: 'zelle-email-1',
         name: 'Furniture Fund',
         itemType: 'CASH_FUND',
         paymentHandleType: 'Zelle',
         paymentHandle: 'couple@example.com',
       };
 
-      render(
+      const { rerender } = render(
         <Overlay isOpen={true} onClose={mockOnClose}>
-          <RegistryItemCard item={zelleItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+          <RegistryItemCard item={zelleEmailItem} onClose={mockOnClose} onContribute={mockOnContribute} />
         </Overlay>
       );
 
-      const link = screen.getByRole('link', {
-        name: 'Open Link for Zelle (opens in a new tab)',
+      expect(screen.queryByRole('link', { name: /Open Link/i })).not.toBeInTheDocument();
+      expect(screen.queryByLabelText(/QR code to pay via Zelle/i)).not.toBeInTheDocument();
+      expect(screen.queryByText('Scan to Pay')).not.toBeInTheDocument();
+      for (const anchor of screen.queryAllByRole('link')) {
+        const href = anchor.getAttribute('href') || '';
+        expect(href).not.toMatch(/^(mailto:|tel:)/i);
+      }
+      expect(screen.getByTestId('zelle-bank-instructions')).toHaveTextContent(/bank's app|banking app/i);
+
+      const copyBtn = screen.getByTestId('copy-payment-handle-button');
+      fireEvent.click(copyBtn);
+      await waitFor(() => {
+        expect(writeTextMock).toHaveBeenCalledWith('couple@example.com');
       });
-      expect(link.getAttribute('href')).toContain('mailto:couple@example.com');
-      expect(screen.getByLabelText(/QR code to pay via Zelle/i)).toBeInTheDocument();
+
+      const zellePhoneItem: RegistryItem = {
+        ...zelleEmailItem,
+        id: 'zelle-phone-1',
+        paymentHandle: '(555) 867-5309',
+      };
+      rerender(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={zellePhoneItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      expect(screen.queryByRole('link', { name: /Open Link/i })).not.toBeInTheDocument();
+      expect(screen.queryByLabelText(/QR code to pay via Zelle/i)).not.toBeInTheDocument();
+      for (const anchor of screen.queryAllByRole('link')) {
+        const href = anchor.getAttribute('href') || '';
+        expect(href).not.toMatch(/^(mailto:|tel:)/i);
+      }
+      expect(screen.getByTestId('copy-payment-handle-button')).toBeInTheDocument();
+    });
+
+    it('appends positive contribution amounts to Venmo, Cash App, and PayPal links when entered', () => {
+      const venmoItem: RegistryItem = {
+        ...mockGroupItem,
+        id: 'venmo-amt-1',
+        itemType: 'CASH_FUND',
+        paymentHandleType: 'Venmo',
+        paymentHandle: '@happycouple',
+      };
+
+      const { rerender } = render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={venmoItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      fireEvent.change(screen.getByLabelText(/Contribution Amount/i), { target: { value: '50' } });
+      expect(
+        screen.getByRole('link', { name: 'Open Link for Venmo (opens in a new tab)' })
+      ).toHaveAttribute('href', 'https://venmo.com/u/happycouple?txn=pay&amount=50.00');
+
+      rerender(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard
+            item={{ ...venmoItem, id: 'cashapp-amt-1', paymentHandleType: 'Cash App', paymentHandle: '$happycouple' }}
+            onClose={mockOnClose}
+            onContribute={mockOnContribute}
+          />
+        </Overlay>
+      );
+      fireEvent.change(screen.getByLabelText(/Contribution Amount/i), { target: { value: '75.5' } });
+      expect(
+        screen.getByRole('link', { name: 'Open Link for Cash App (opens in a new tab)' })
+      ).toHaveAttribute('href', 'https://cash.app/$happycouple/75.50');
+
+      rerender(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard
+            item={{ ...venmoItem, id: 'paypal-amt-1', paymentHandleType: 'PayPal', paymentHandle: '@happycouple' }}
+            onClose={mockOnClose}
+            onContribute={mockOnContribute}
+          />
+        </Overlay>
+      );
+      fireEvent.change(screen.getByLabelText(/Contribution Amount/i), { target: { value: '125' } });
+      expect(
+        screen.getByRole('link', { name: 'Open Link for PayPal (opens in a new tab)' })
+      ).toHaveAttribute('href', 'https://paypal.me/happycouple/125.00');
+    });
+
+    it('fires zero network requests across 6+ edits of an 8-character code until Verify, Enter, or submit and allows editing pre-filled email', async () => {
+      (apiClient.get as jest.Mock).mockResolvedValue({
+        valid: true,
+        guestName: 'Jane Smith',
+        email: 'jane.invite@example.com',
+        code: 'ABCDEF17',
+      });
+
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      const codeInput = screen.getByLabelText(/Invitation Code/i);
+      for (const candidate of [
+        'ABCDEF11',
+        'ABCDEF12',
+        'ABCDEF13',
+        'ABCDEF14',
+        'ABCDEF15',
+        'ABCDEF16',
+        'ABCDEF17',
+      ]) {
+        fireEvent.change(codeInput, { target: { value: candidate } });
+      }
+
+      expect(apiClient.get).toHaveBeenCalledTimes(0);
+
+      fireEvent.keyDown(codeInput, { key: 'Enter' });
+
+      await waitFor(() => {
+        expect(apiClient.get).toHaveBeenCalledTimes(1);
+        expect(screen.getByText('Code verified! Name pre-filled.')).toBeInTheDocument();
+      });
+
+      const emailInput = screen.getByLabelText(/Email Address \(Optional\)/i);
+      expect(emailInput).toHaveValue('jane.invite@example.com');
+
+      fireEvent.change(emailInput, { target: { value: 'custom@example.com' } });
+      expect(emailInput).toHaveValue('custom@example.com');
+
+      fireEvent.change(emailInput, { target: { value: '' } });
+      expect(emailInput).toHaveValue('');
     });
 
     it('does not render QR code or deep link when handle is not convertible to URL', () => {
@@ -1831,9 +1961,10 @@ describe('RegistryItemCard Component', () => {
       expect(hiddenAsterisk).toHaveTextContent('*');
     }
 
-    // 8-character auto-verification retains focus on codeInput via readOnly + aria-busy
+    // Explicit Enter verification retains focus on codeInput via readOnly + aria-busy
     codeInput.focus();
     fireEvent.change(codeInput, { target: { value: 'WRONG888' } });
+    fireEvent.keyDown(codeInput, { key: 'Enter' });
 
     expect(codeInput).not.toBeDisabled();
     expect(codeInput).toHaveAttribute('readonly');
@@ -1972,6 +2103,7 @@ describe('RegistryItemCard Component', () => {
       expect(document.activeElement).toBe(codeInput);
 
       fireEvent.change(codeInput, { target: { value: 'FOCUS123' } });
+      fireEvent.keyDown(codeInput, { key: 'Enter' });
 
       // While verification is in flight, input stays focused, read-only, and aria-busy (never disabled)
       await waitFor(() => {

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { AdminViewState } from '@/components/admin/AdminViewState';
 import { PhotoUploadQRModal } from '@/components/admin/PhotoUploadQRModal';
 import { Button } from '@/components/ui/Button';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 import { FormGroup, Label, Input, Checkbox } from '@/components/ui/forms';
 import { apiClient } from '@/lib/apiClient';
 import type { MediaDTO } from '@/features/media';
@@ -460,12 +461,11 @@ function MediaDashboardContent({
 
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
-                    variant="primary"
+                    variant="success"
                     size="sm"
                     disabled={selectedPendingIds.length === 0}
                     onClick={() => handleBatchApprove()}
                     data-testid="batch-approve-btn"
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
                   >
                     Approve Selected ({selectedPendingIds.length})
                   </Button>
@@ -591,11 +591,11 @@ function MediaDashboardContent({
 
                       <div className="flex items-center gap-2 pt-3 border-t border-stone-100 dark:border-stone-900">
                         <Button
-                          variant="primary"
+                          variant="success"
                           size="sm"
                           data-testid={`approve-photo-${photo.id}`}
                           onClick={() => handleApprove(photo.id)}
-                          className="flex-1 flex items-center justify-center gap-1 text-xs py-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+                          className="flex-1 flex items-center justify-center gap-1 text-xs py-2"
                           aria-label={`Approve photo ${title}`}
                         >
                           <Icon name="Check" className="w-3.5 h-3.5" />
@@ -745,12 +745,15 @@ function MediaDashboardContent({
                   <div className="relative h-32 w-full mb-4">
                     <MediaImage media={m} fallbackUrl="/images/placeholder.png" fallbackAlt="Unlabelled media asset" className="object-cover w-full h-full rounded" />
                     {m.publishToGallery && (
-                      <span
+                      <StatusBadge
+                        tone="success"
+                        variant="solid"
+                        size="xs"
                         data-testid={`gallery-published-badge-${m.id}`}
-                        className="absolute top-2 right-2 px-2 py-0.5 text-[10px] font-bold uppercase rounded bg-emerald-600 text-white shadow"
+                        className="absolute top-2 right-2 font-bold uppercase shadow"
                       >
                         In Gallery
-                      </span>
+                      </StatusBadge>
                     )}
                   </div>
                   <div className="text-sm truncate mb-1" title={m.url}>{m.url}</div>

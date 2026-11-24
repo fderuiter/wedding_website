@@ -30,75 +30,243 @@ export function sanitizePaymentHandle(
   return cleaned.trim();
 }
 
+export type PaymentDescriptorKind = 'deep_link' | 'manual_zelle' | 'manual_handle' | 'none';
+
+export interface PaymentDescriptor {
+  kind: PaymentDescriptorKind;
+  providerLabel: string;
+  rawHandle: string;
+  sanitizedHandle: string;
+  copyValue: string | null;
+  url: string | null;
+  supportsQrCode: boolean;
+  instructions: string | null;
+}
+
+function formatPositivePaymentAmount(amount?: number | null): string | null {
+  if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
+    return null;
+  }
+  return amount.toFixed(2);
+}
+
+function appendAmountToP2PUrl(
+  rawUrl: string,
+  typeLower: string,
+  formattedAmount: string | null
+): string {
+  if (!formattedAmount) {
+    return rawUrl;
+  }
+
+  try {
+    const parsed = new URL(rawUrl);
+    const hostLower = parsed.hostname.toLowerCase();
+
+    if (typeLower === 'venmo' || hostLower === 'venmo.com' || hostLower.endsWith('.venmo.com')) {
+      if (!parsed.searchParams.has('txn')) {
+        parsed.searchParams.set('txn', 'pay');
+      }
+      parsed.searchParams.set('amount', formattedAmount);
+      return parsed.toString();
+    }
+
+    if (
+      typeLower === 'cash app' ||
+      typeLower === 'cashapp' ||
+      hostLower === 'cash.app' ||
+      hostLower.endsWith('.cash.app')
+    ) {
+      const segments = parsed.pathname.split('/').filter(Boolean);
+      if (segments.length === 1) {
+        parsed.pathname = `/${segments[0]}/${formattedAmount}`;
+      }
+      return parsed.toString();
+    }
+
+    if (
+      typeLower === 'paypal' ||
+      hostLower === 'paypal.me' ||
+      hostLower.endsWith('.paypal.me')
+    ) {
+      const segments = parsed.pathname.split('/').filter(Boolean);
+      if (segments.length === 1) {
+        parsed.pathname = `/${segments[0]}/${formattedAmount}`;
+      }
+      return parsed.toString();
+    }
+  } catch {
+    return rawUrl;
+  }
+
+  return rawUrl;
+}
+
 /**
- * Generates a payment URL or deep link based on the payment service type and handle.
+ * Resolves a structured descriptor distinguishing deep-linkable P2P handles
+ * (Venmo, Cash App, PayPal, HTTP(S) custom links) from manual Zelle transfer handles.
+ */
+export function getPaymentDescriptor(
+  handleType?: string | null,
+  handle?: string | null,
+  amount?: number | null
+): PaymentDescriptor {
+  const providerLabel = handleType?.trim() || 'Direct Transfer';
+  if (!handle || !handle.trim()) {
+    return {
+      kind: 'none',
+      providerLabel,
+      rawHandle: '',
+      sanitizedHandle: '',
+      copyValue: null,
+      url: null,
+      supportsQrCode: false,
+      instructions: null,
+    };
+  }
+
+  const rawHandle = handle.trim();
+  if (/^(javascript|data|vbscript):/i.test(rawHandle)) {
+    return {
+      kind: 'none',
+      providerLabel,
+      rawHandle,
+      sanitizedHandle: '',
+      copyValue: null,
+      url: null,
+      supportsQrCode: false,
+      instructions: null,
+    };
+  }
+
+  const typeLower = (handleType || '').trim().toLowerCase();
+  const formattedAmount = formatPositivePaymentAmount(amount);
+
+  if (/^https?:\/\//i.test(rawHandle)) {
+    const urlWithAmount = appendAmountToP2PUrl(rawHandle, typeLower, formattedAmount);
+    return {
+      kind: 'deep_link',
+      providerLabel,
+      rawHandle,
+      sanitizedHandle: rawHandle,
+      copyValue: rawHandle,
+      url: urlWithAmount,
+      supportsQrCode: true,
+      instructions: null,
+    };
+  }
+
+  const cleanedHandle = sanitizePaymentHandle(handleType, handle);
+  if (!cleanedHandle) {
+    return {
+      kind: 'none',
+      providerLabel,
+      rawHandle,
+      sanitizedHandle: '',
+      copyValue: null,
+      url: null,
+      supportsQrCode: false,
+      instructions: null,
+    };
+  }
+
+  if (typeLower === 'venmo') {
+    const baseUrl = `https://venmo.com/u/${cleanedHandle}`;
+    return {
+      kind: 'deep_link',
+      providerLabel: handleType?.trim() || 'Venmo',
+      rawHandle,
+      sanitizedHandle: cleanedHandle,
+      copyValue: rawHandle,
+      url: appendAmountToP2PUrl(baseUrl, typeLower, formattedAmount),
+      supportsQrCode: true,
+      instructions: null,
+    };
+  }
+
+  if (typeLower === 'cash app' || typeLower === 'cashapp') {
+    const baseUrl = `https://cash.app/$${cleanedHandle}`;
+    return {
+      kind: 'deep_link',
+      providerLabel: handleType?.trim() || 'Cash App',
+      rawHandle,
+      sanitizedHandle: cleanedHandle,
+      copyValue: rawHandle,
+      url: appendAmountToP2PUrl(baseUrl, typeLower, formattedAmount),
+      supportsQrCode: true,
+      instructions: null,
+    };
+  }
+
+  if (typeLower === 'paypal') {
+    const baseUrl = `https://paypal.me/${cleanedHandle}`;
+    return {
+      kind: 'deep_link',
+      providerLabel: handleType?.trim() || 'PayPal',
+      rawHandle,
+      sanitizedHandle: cleanedHandle,
+      copyValue: rawHandle,
+      url: appendAmountToP2PUrl(baseUrl, typeLower, formattedAmount),
+      supportsQrCode: true,
+      instructions: null,
+    };
+  }
+
+  if (typeLower === 'zelle') {
+    return {
+      kind: 'manual_zelle',
+      providerLabel: handleType?.trim() || 'Zelle',
+      rawHandle,
+      sanitizedHandle: cleanedHandle,
+      copyValue: cleanedHandle,
+      url: null,
+      supportsQrCode: false,
+      instructions:
+        "Open your bank's app or Zelle, copy this recipient handle, send your gift, and submit the form below to record your contribution.",
+    };
+  }
+
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanedHandle)) {
+    return {
+      kind: 'deep_link',
+      providerLabel,
+      rawHandle,
+      sanitizedHandle: cleanedHandle,
+      copyValue: cleanedHandle,
+      url: `mailto:${cleanedHandle}?subject=${encodeURIComponent('Wedding Gift')}`,
+      supportsQrCode: false,
+      instructions: null,
+    };
+  }
+
+  return {
+    kind: 'manual_handle',
+    providerLabel,
+    rawHandle,
+    sanitizedHandle: cleanedHandle,
+    copyValue: rawHandle,
+    url: null,
+    supportsQrCode: false,
+    instructions: null,
+  };
+}
+
+/**
+ * Generates a payment URL or deep link based on the payment service type, handle, and optional positive amount.
  *
  * Supported handle types:
- * - Venmo: https://venmo.com/u/<username>
- * - Cash App: https://cash.app/$<cashtag>
- * - PayPal: https://paypal.me/<handle>
- * - Zelle: mailto:<email>?subject=... if email, tel:<phone> if phone, or web URL
+ * - Venmo: https://venmo.com/u/<username> (with ?txn=pay&amount=<amount> when positive amount supplied)
+ * - Cash App: https://cash.app/$<cashtag> (with /<amount> when positive amount supplied)
+ * - PayPal: https://paypal.me/<handle> (with /<amount> when positive amount supplied)
+ * - Zelle: returns valid explicit HTTP(S) URL if provided, or null for manual email/phone bank handles
  * - Custom / Other: returns valid HTTP(S) URL or mailto link if applicable, else null
  */
 export function getPaymentUrl(
   handleType?: string | null,
-  handle?: string | null
+  handle?: string | null,
+  amount?: number | null
 ): string | null {
-  if (!handle || !handle.trim()) {
-    return null;
-  }
-
-  const rawHandle = handle.trim();
-
-  // Prevent dangerous protocol execution (XSS protection)
-  if (/^(javascript|data|vbscript):/i.test(rawHandle)) {
-    return null;
-  }
-
-  // If the handle is already a full safe HTTP/HTTPS URL, return as-is
-  if (/^https?:\/\//i.test(rawHandle)) {
-    return rawHandle;
-  }
-
-  const typeLower = (handleType || '').trim().toLowerCase();
-  const cleanedHandle = sanitizePaymentHandle(handleType, handle);
-
-  if (!cleanedHandle) {
-    return null;
-  }
-
-  if (typeLower === 'venmo') {
-    return `https://venmo.com/u/${cleanedHandle}`;
-  }
-
-  if (typeLower === 'cash app' || typeLower === 'cashapp') {
-    return `https://cash.app/$${cleanedHandle}`;
-  }
-
-  if (typeLower === 'paypal') {
-    return `https://paypal.me/${cleanedHandle}`;
-  }
-
-  if (typeLower === 'zelle') {
-    // If it's an email address
-    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanedHandle)) {
-      return `mailto:${cleanedHandle}?subject=${encodeURIComponent('Wedding Gift via Zelle')}`;
-    }
-    // If it's a phone number (e.g. 10+ digits with optional formatting)
-    const digitsOnly = cleanedHandle.replace(/\D/g, '');
-    if (digitsOnly.length >= 10) {
-      return `tel:${digitsOnly}`;
-    }
-    // Default fallback web link for Zelle
-    return 'https://www.zellepay.com';
-  }
-
-  // For custom or unspecified handle types
-  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanedHandle)) {
-    return `mailto:${cleanedHandle}?subject=${encodeURIComponent('Wedding Gift')}`;
-  }
-
-  return null;
+  return getPaymentDescriptor(handleType, handle, amount).url;
 }
 
 export interface EffectivePaymentHandle {

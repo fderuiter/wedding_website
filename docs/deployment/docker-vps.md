@@ -16,17 +16,18 @@ The generic Docker/VPS deployment path serves as the **canonical portable baseli
 ### Provisioning
 You can run PostgreSQL either alongside the application via Docker Compose or connect to an external managed database (such as AWS RDS, DigitalOcean Managed Database, Neon, or Supabase).
 
-*   **Docker Compose Co-location**: Uses the official `postgres:15-alpine` image (`db` service) with persistent volume mounting (`db_data:/var/lib/postgresql/data`), loopback host port binding (`127.0.0.1:${DB_PORT:-5432}:5432`), and a `pg_isready` healthcheck. `migration`, `app` (`docker-compose.yml`), and `app-standby` (`docker-compose.rollout.yml`) construct container `DATABASE_URL` automatically from `DB_USER`, mandatory `DB_PASSWORD`, and `DB_NAME` via `${CONTAINER_DATABASE_URL:-postgres://${DB_USER:-wedding}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-wedding}}` whenever an explicit `CONTAINER_DATABASE_URL` is not provided in `.env` (preventing host `@localhost:5432` `DATABASE_URL` settings from leaking into containers).
-*   **External PostgreSQL**: Ensure PostgreSQL v15+ is running and accessible over port `5432` with SSL/TLS enabled if remote. Set `CONTAINER_DATABASE_URL` directly in `.env` when orchestrating with `docker-compose.yml` (`migration`, `app`, and `app-standby` honor explicit `CONTAINER_DATABASE_URL` overrides automatically), or pass `DATABASE_URL` directly when running standalone `docker run`.
+*   **Docker Compose Co-location**: Uses the official `postgres:15-alpine` image (`db` service) with persistent volume mounting (`db_data:/var/lib/postgresql/data`), loopback host port binding (`127.0.0.1:${DB_PORT:-5432}:5432`), and a `pg_isready` healthcheck. `migration`, `app` (`docker-compose.yml`), and `app-standby` (`docker-compose.rollout.yml`) construct container `DATABASE_URL` identically from `DB_USER`, mandatory `DB_PASSWORD`, and `DB_NAME` via `${CONTAINER_DATABASE_URL:-postgres://${DB_USER:-wedding}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-wedding}}` and scope container `POSTGRES_URL_NON_POOLING` via `${CONTAINER_POSTGRES_URL_NON_POOLING:-}` whenever explicit container overrides are not provided in `.env` (preventing host `@localhost:5432` `DATABASE_URL` and `POSTGRES_URL_NON_POOLING` settings from leaking into containers).
+*   **External PostgreSQL**: Ensure PostgreSQL v15+ is running and accessible over port `5432` with SSL/TLS enabled if remote. Set `CONTAINER_DATABASE_URL` (and optional `CONTAINER_POSTGRES_URL_NON_POOLING` when `CONTAINER_DATABASE_URL` connects via PgBouncer) directly in `.env` when orchestrating with `docker-compose.yml` (`migration`, `app`, and `app-standby` honor both container overrides automatically), or pass `DATABASE_URL` (and optional `POSTGRES_URL_NON_POOLING`) directly when running standalone `docker run`.
 
 ### Connection String Format
-Configure `DATABASE_URL` as an unquoted standard PostgreSQL URI (`datasource.url` in `prisma.config.ts`, used by both the Next.js runtime and `npx prisma migrate deploy`; leave values unquoted in `.env` so standalone `docker run --env-file .env` does not inject literal quote characters):
+Configure `DATABASE_URL` as an unquoted standard PostgreSQL URI (`datasource.url` via `resolvePrismaDatasourceUrl` in `prisma.config.ts`, used by both the Next.js runtime and Prisma CLI; leave values unquoted in `.env` so standalone `docker run --env-file .env` does not inject literal quote characters):
 ```env
 DATABASE_URL=postgresql://wedding_user:secure_password@db_host:5432/wedding_db?schema=public&sslmode=prefer
 ```
-In `prisma.config.ts`, `POSTGRES_URL_NON_POOLING` is bound to `datasource.shadowDatabaseUrl` (used by `prisma migrate dev`), whereas `npx prisma migrate deploy` always reads `DATABASE_URL`. If `DATABASE_URL` connects through a transaction-mode pooler such as PgBouncer, pass an explicit `DATABASE_URL` override pointing to a direct PostgreSQL URL when running `prisma migrate deploy`:
+When `DATABASE_URL` (or `CONTAINER_DATABASE_URL` under Docker Compose) connects through a transaction-mode pooler such as PgBouncer, configure a direct unpooled URI targeting the same database and schema in `POSTGRES_URL_NON_POOLING` (for standalone `docker run`) or `CONTAINER_POSTGRES_URL_NON_POOLING` (for Docker Compose) so `resolvePrismaDatasourceUrl` in `prisma.config.ts` promotes the direct endpoint during `prisma migrate deploy` while keeping `shadowDatabaseUrl` `undefined`:
 ```env
 POSTGRES_URL_NON_POOLING=postgresql://wedding_user:secure_password@db_host:5432/wedding_db?schema=public&sslmode=require
+CONTAINER_POSTGRES_URL_NON_POOLING=postgresql://wedding_user:secure_password@db_host:5432/wedding_db?schema=public&sslmode=require
 ```
 
 ---
@@ -39,7 +40,7 @@ For the complete environment variable matrix, defaults, and persisted entity rul
 `docker-compose.yml` substitutes environment variables directly from `.env` without hardcoding production fallback secrets:
 *   **Mandatory Operator Secrets (`:?` required)**: `DB_PASSWORD`, `ADMIN_PASSWORD` (`scrypt:[16-byte saltBase64]:[64-byte keyBase64]` generated via `node scripts/generate-password-hash.mjs "password"`), `GUEST_PASSCODE`, and `GUEST_SESSION_SECRET` (32+ characters, distinct from `GUEST_PASSCODE`) have no default values in `docker-compose.yml`. Running `docker compose config` or `docker compose up -d` without setting them fails immediately. In addition, `src/env.ts` rejects non-64-byte scrypt hashes and repository placeholder/E2E fallback secrets in `NODE_ENV=production`.
 *   **Compose Network, Proxy & Database Interpolation**: `DB_USER` (`wedding`), `DB_NAME` (`wedding`), and `DB_PORT` (`127.0.0.1:${DB_PORT:-5432}:5432`) configure the `db` container and fallback `DATABASE_URL`; `PORT` (`127.0.0.1:${PORT:-3000}:3000`), `STANDBY_PORT` (`127.0.0.1:${STANDBY_PORT:-3001}:3000` in `docker-compose.rollout.yml`), and `HOSTNAME` (`0.0.0.0`) configure loopback host port publishing and container network binding; `ALLOWED_HOSTS` and `TRUST_PROXY=1` (`${TRUST_PROXY:-1}` default in `docker-compose.yml` and `docker-compose.rollout.yml`, or `2` behind an upstream CDN/load balancer plus host proxy) configure reverse-proxy host validation and client IP forwarding behind Caddy or Nginx.
-*   **Scoped Container Runtime, Full 21-Variable Forwarding & 32-Variable `SITE_*` Overrides**: `app` (in `docker-compose.yml`) and `app-standby` (in `docker-compose.rollout.yml`) pin `NODE_ENV: production` so host development overrides never leak into production containers, forward all 21 runtime keys from `src/env.ts` (including optional `S3_*`, `STRIPE_*`, `CRON_SECRET`, `RUN_MIGRATIONS`, and `POSTGRES_URL_NON_POOLING` — see the [Application Runtime Contract](../runtime-contract.md)) plus all 32 optional Layer 1 `SITE_*` overrides (`${SITE_*:-}`), and scope container `DATABASE_URL` across `migration`, `app`, and `app-standby` via `${CONTAINER_DATABASE_URL:-...}` without requiring a manual `docker-compose.override.yml` file (automated CI smoke tests layer `--env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml` separately).
+*   **Scoped Container Runtime, Full 21-Variable Forwarding & 32-Variable `SITE_*` Overrides**: `app` (in `docker-compose.yml`) and `app-standby` (in `docker-compose.rollout.yml`) pin `NODE_ENV: production` so host development overrides never leak into production containers, forward all 21 runtime keys from `src/env.ts` (including optional `S3_*`, `STRIPE_*`, `CRON_SECRET`, `RUN_MIGRATIONS`, and `POSTGRES_URL_NON_POOLING` — see the [Application Runtime Contract](../runtime-contract.md)) plus all 32 optional Layer 1 `SITE_*` overrides (`${SITE_*:-}`), and scope container `DATABASE_URL` (`${CONTAINER_DATABASE_URL:-...}`) and `POSTGRES_URL_NON_POOLING` (`${CONTAINER_POSTGRES_URL_NON_POOLING:-}`) identically across `migration`, `app`, and `app-standby` without requiring a manual `docker-compose.override.yml` file (automated CI smoke tests layer `--env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml` separately).
 *   **Trimmed & Blank-Safe `SITE_*` Overrides**: `src/lib/config.ts` (`getEnvConfigOverrides`) trims leading/trailing whitespace on all 32 `SITE_*` keys and treats empty or whitespace-only values as unset before Zod validation and `isSiteInitialized` checks, while still rejecting non-empty malformed overrides (such as invalid coordinates, dates, or hex colors) at startup. Optional `SITE_*` keys (plus `STANDBY_PORT=3001` for `./scripts/rollout-vps.sh`) can be set directly in `.env`:
     ```env
     # Optional standby loopback port for ./scripts/rollout-vps.sh (defaults to 3001)
@@ -64,23 +65,23 @@ For the complete environment variable matrix, defaults, and persisted entity rul
 ### Primary Path: Dedicated `migration` Service in `docker-compose.yml`
 `docker-compose.yml` decouples schema migrations from application container boot:
 1. `db` starts `postgres:15-alpine` bound to `127.0.0.1:${DB_PORT:-5432}:5432` and waits until its `pg_isready` healthcheck reports `service_healthy`.
-2. `migration` runs `./node_modules/.bin/prisma migrate deploy` offline (`restart: "no"`, `read_only: true`, `cap_drop: [ALL]`, `tmpfs: [/tmp]`) against `DATABASE_URL` (`${CONTAINER_DATABASE_URL:-${POSTGRES_URL_NON_POOLING:-postgres://${DB_USER:-wedding}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-wedding}}}`) without forwarding `POSTGRES_URL_NON_POOLING`.
+2. `migration` runs `./node_modules/.bin/prisma migrate deploy` offline (`restart: "no"`, `read_only: true`, `cap_drop: [ALL]`, `tmpfs: [/tmp]`) against `DATABASE_URL` (`${CONTAINER_DATABASE_URL:-postgres://${DB_USER:-wedding}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-wedding}}`) and optional `POSTGRES_URL_NON_POOLING` (`${CONTAINER_POSTGRES_URL_NON_POOLING:-}`).
 3. `app` defaults `RUN_MIGRATIONS` to `false` (`${RUN_MIGRATIONS:-false}`), sets `NODE_ENV: production`, and waits on `migration` (`condition: service_completed_successfully`) before executing `node server.js` behind `/usr/bin/tini`.
 
-To run migrations on demand via Docker Compose:
+To run migrations on demand via Docker Compose (when `CONTAINER_DATABASE_URL` uses an external PgBouncer pooler, setting `CONTAINER_POSTGRES_URL_NON_POOLING` in `.env` allows `migration` to route through `prisma.config.ts` without extra flags):
 ```bash
 docker compose run --rm migration
 ```
-If overriding `CONTAINER_DATABASE_URL` to use an external PgBouncer pooler, pass an explicit non-pooled `DATABASE_URL` override to `migration` while unsetting and clearing `POSTGRES_URL_NON_POOLING` so Prisma 7 never sees matching primary and shadow database URLs (`P3025`):
+If passing an ad-hoc direct `DATABASE_URL` override on the CLI instead of setting `CONTAINER_POSTGRES_URL_NON_POOLING`, unset and clear `POSTGRES_URL_NON_POOLING` so Prisma 7 never sees matching primary and shadow database URLs (`P3025`):
 ```bash
 env -u POSTGRES_URL_NON_POOLING docker compose run --rm \
-  -e DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$CONTAINER_DATABASE_URL}" \
+  -e DATABASE_URL="${CONTAINER_POSTGRES_URL_NON_POOLING:-$CONTAINER_DATABASE_URL}" \
   -e POSTGRES_URL_NON_POOLING="" \
   migration
 ```
 
 ### Standalone Container Path (`docker-entrypoint.sh`)
-When running the image directly via `docker run` without Docker Compose's `migration` service, set `RUN_MIGRATIONS=true` or `RUN_MIGRATIONS=1` so `docker-entrypoint.sh` validates `DATABASE_URL`, unsets `POSTGRES_URL_NON_POOLING`, and executes `./node_modules/.bin/prisma migrate deploy` (symlinked to `/usr/local/bin/prisma` and backed by `/opt/prisma-cli`, with npm update checks disabled) prior to `node server.js`.
+When running the image directly via `docker run` without Docker Compose's `migration` service, set `RUN_MIGRATIONS=true` or `RUN_MIGRATIONS=1` so `docker-entrypoint.sh` validates `DATABASE_URL`, normalizes and preserves non-empty `POSTGRES_URL_NON_POOLING` (unsetting blank values), and executes `./node_modules/.bin/prisma migrate deploy` (symlinked to `/usr/local/bin/prisma` and backed by `/opt/prisma-cli`, with npm update checks disabled) prior to `node server.js`.
 
 ---
 
@@ -194,7 +195,7 @@ docker compose up -d
 ```
 
 ### Zero-Downtime Deployment Update (`scripts/rollout-vps.sh`)
-Use `./scripts/rollout-vps.sh` (layered with `docker-compose.rollout.yml`) so updates compile the image once, apply pending Prisma migrations, warm `app-standby` on `127.0.0.1:${STANDBY_PORT:-3001}:3000`, verify `/api/live`, `/api/health`, and `/api/ready` probes, recreate primary `app` on `127.0.0.1:${PORT:-3000}:3000` without dropping requests behind Caddy or Nginx, and retire `app-standby`:
+Use `./scripts/rollout-vps.sh` (layered with `docker-compose.rollout.yml`) so updates snapshot any existing `wedding-website:latest` image as `wedding-website:previous`, compile the image once via `app`, apply pending Prisma migrations, warm `app-standby` on `127.0.0.1:${STANDBY_PORT:-3001}:3000`, verify Host-free loopback `/api/live`, `/api/health`, and `/api/ready` probes, recreate primary `app` on `127.0.0.1:${PORT:-3000}:3000` without dropping requests behind Caddy or Nginx (preserving `app-standby` and attempting automatic primary rollback onto `wedding-website:previous` if primary cutover fails), and retire `app-standby`:
 ```bash
 git pull origin main
 ./scripts/rollout-vps.sh

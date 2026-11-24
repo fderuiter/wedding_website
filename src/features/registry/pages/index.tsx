@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/Button';
 import { FormGroup, Checkbox, Label, Input, Select } from '@/components/ui/forms';
 import { Icon } from '@/components/ui/Icon';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
+import { useStickyOffset } from '@/components/ui/useStickyOffset';
 import {
   REGISTRY_INITIAL_VISIBLE_ITEMS,
   REGISTRY_LOAD_MORE_INCREMENT,
@@ -50,6 +51,8 @@ function RegistryPageContent() {
     refetch,
     selectedItem,
     isModalOpen,
+    reconciledReceipt,
+    redirectRecoveryError,
     setVisibleItemsCount,
     isAdmin,
     cardCheckoutEnabled,
@@ -89,6 +92,10 @@ function RegistryPageContent() {
   const counterRef = useRef<HTMLParagraphElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const wasButtonFocused = useRef(false);
+  const filterNavRef = useStickyOffset<HTMLElement>({
+    edge: 'top',
+    scope: 'document',
+  });
 
   useEffect(() => {
     return () => {
@@ -193,7 +200,9 @@ function RegistryPageContent() {
           Wedding Registry
         </motion.h1>
         <nav
-          className="sticky top-16 z-30 bg-white/90 dark:bg-gray-800/90 backdrop-blur border-b border-primary dark:border-gray-700 max-w-4xl mx-auto px-2 sm:px-6 mb-10 flex flex-col gap-4 py-4 rounded-xl shadow-md"
+          ref={filterNavRef}
+          style={{ top: 'var(--header-h)' }}
+          className="sticky top-[var(--header-h)] z-30 bg-white/90 dark:bg-gray-800/90 backdrop-blur border-b border-primary dark:border-gray-700 max-w-4xl mx-auto px-2 sm:px-6 mb-10 flex flex-col gap-4 py-4 rounded-xl shadow-md"
           aria-label="Registry Filters"
           role="navigation"
         >
@@ -404,6 +413,8 @@ function RegistryPageContent() {
               defaultPaymentHandle={defaultPaymentHandle}
               shippingAddress={shippingAddress}
               isAdmin={isAdmin}
+              reconciledReceipt={reconciledReceipt}
+              redirectRecoveryError={redirectRecoveryError}
             />
           )}
         </Dialog>

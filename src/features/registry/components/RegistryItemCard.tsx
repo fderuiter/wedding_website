@@ -9,6 +9,7 @@ import {
   RegistryShippingAddress,
   OrderTrackingDetails,
   ContributorAddressDetails,
+  ReconciledContributionReceipt,
 } from '../types';
 import { ContributorLifecycleBadge } from './ContributorLifecycleBadge';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
@@ -22,7 +23,7 @@ import { useOptionalToast } from '@/components/ui/ToastProvider';
 import { useShareItem } from '../hooks/useShareItem';
 import { useRegistryContributionMachine } from '../hooks/useRegistryContributionMachine';
 import {
-  getPaymentUrl,
+  getPaymentDescriptor,
   resolveEffectivePaymentHandle,
   formatRegistryShippingAddress,
 } from '../utils/paymentUrls';
@@ -77,6 +78,8 @@ interface RegistryItemCardProps {
   defaultPaymentHandle?: string | null;
   shippingAddress?: RegistryShippingAddress | null;
   isAdmin?: boolean;
+  reconciledReceipt?: ReconciledContributionReceipt | null;
+  redirectRecoveryError?: string | null;
 }
 
 interface StripeControllerHandle {
@@ -182,6 +185,8 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   defaultPaymentHandle,
   shippingAddress,
   isAdmin = false,
+  reconciledReceipt = null,
+  redirectRecoveryError = null,
 }) => {
   const { resolvedTheme } = useTheme();
   const demo = useOptionalDemo();
@@ -248,6 +253,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     setSubmissionError,
 
     validateContribution,
+    ensureCodeVerifiedForSubmit,
     handleCodeChange,
     handleVerifyCode,
     handleClearCode,
@@ -259,6 +265,8 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   const toastContext = useOptionalToast();
   const [copiedReceiptKey, setCopiedReceiptKey] = useState<string | null>(null);
   const [copiedAddress, setCopiedAddress] = useState(false);
+  const [copiedHandle, setCopiedHandle] = useState(false);
+  const [dismissedRecoveryMessage, setDismissedRecoveryMessage] = useState<string | null>(null);
   const [isReturnAddressOpen, setIsReturnAddressOpen] = useState(false);
   const [isCardProcessing, setIsCardProcessing] = useState(false);
   const [postClaimOverride, setPostClaimOverride] = useState<{
@@ -270,6 +278,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   const [modalStatusMessage, setModalStatusMessage] = useState('');
   const receiptCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const addressCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const verifyCodeButtonRef = useRef<HTMLButtonElement | null>(null);
   const clearCodeButtonRef = useRef<HTMLButtonElement | null>(null);
   const codeRowFocusedRef = useRef(false);
@@ -296,8 +305,19 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
       if (addressCopyTimerRef.current) {
         clearTimeout(addressCopyTimerRef.current);
       }
+      if (handleCopyTimerRef.current) {
+        clearTimeout(handleCopyTimerRef.current);
+      }
     };
   }, []);
+
+  const activeReconciledReceipt =
+    reconciledReceipt && reconciledReceipt.itemId === item.id ? reconciledReceipt : null;
+  const isConfirmedSuccess = isSuccess || Boolean(activeReconciledReceipt);
+  const activeRedirectRecoveryError =
+    redirectRecoveryError && dismissedRecoveryMessage !== redirectRecoveryError
+      ? redirectRecoveryError
+      : null;
 
   const { requestedUnits, claimedUnits, remainingUnits } = getItemUnitCounts(item);
   const totalTargetAmount = getItemTotalTargetAmount(item);
@@ -381,6 +401,9 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   const handleSelectMode = (mode: 'claim' | 'direct' | 'card') => {
     setSelectedModeOverride({ key: modeBaseKey, mode });
     setSubmissionError(null);
+    if (redirectRecoveryError) {
+      setDismissedRecoveryMessage(redirectRecoveryError);
+    }
     if (mode !== 'card') {
       setCoverFee(false);
       if (syncTimerRef.current) {
@@ -409,7 +432,12 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     0,
     Math.round((baseContributionAmount - estimatedProcessingFee) * 100) / 100
   );
-  const paymentUrl = getPaymentUrl(effectiveHandleType, effectiveHandleValue);
+  const paymentDescriptor = useMemo(
+    () => getPaymentDescriptor(effectiveHandleType, effectiveHandleValue, baseContributionAmount),
+    [effectiveHandleType, effectiveHandleValue, baseContributionAmount]
+  );
+  const paymentUrl = paymentDescriptor.url;
+  const isManualZelle = paymentDescriptor.kind === 'manual_zelle';
 
   const initialElementsAmount = item.isGroupGift
     ? Math.min(100, remainingAmount > 0 ? remainingAmount : item.price)
@@ -436,11 +464,25 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   );
 
   const stripePromise = useMemo(() => {
-    if (isDemoMode || !isCardMode || isSampleLocked || (item.purchased && !isSubmitting)) {
+    if (
+      isDemoMode ||
+      !isCardMode ||
+      isSampleLocked ||
+      isConfirmedSuccess ||
+      (item.purchased && !isSubmitting)
+    ) {
       return null;
     }
     return getStripePromise(stripePublishableKey);
-  }, [isDemoMode, isCardMode, isSampleLocked, item.purchased, isSubmitting, stripePublishableKey]);
+  }, [
+    isDemoMode,
+    isCardMode,
+    isSampleLocked,
+    isConfirmedSuccess,
+    item.purchased,
+    isSubmitting,
+    stripePublishableKey,
+  ]);
 
   // Reset synced PaymentIntent ref and state when item.id changes or Card Checkout mode exits
   const prevItemIdRef = useRef(item.id);
@@ -454,7 +496,16 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
 
   // Sync PaymentIntent pricing dynamically only when Card Checkout mode is active
   useEffect(() => {
-    if (isDemoMode || !isCardMode || isSampleLocked || item.purchased || isSubmitting || isSuccess) return;
+    if (
+      isDemoMode ||
+      !isCardMode ||
+      isSampleLocked ||
+      item.purchased ||
+      isSubmitting ||
+      isConfirmedSuccess
+    ) {
+      return;
+    }
     const baseAmountCents = Math.round(baseContributionAmount * 100);
     const remainingAmountCents = Math.round(remainingAmount * 100);
     if (baseContributionAmount <= 0 || baseAmountCents > remainingAmountCents) return;
@@ -574,7 +625,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     item.purchased,
     remainingAmount,
     isSubmitting,
-    isSuccess,
+    isConfirmedSuccess,
     isCardMode,
     baseContributionAmount,
     effectiveCoverFee,
@@ -583,6 +634,9 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   // Form submission handling direct transfer, physical claims, simulated demo card checkout, and embedded Stripe Elements confirmation
   const handlePaymentSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (redirectRecoveryError) {
+      setDismissedRecoveryMessage(redirectRecoveryError);
+    }
 
     if (isClaimMode) {
       await handleSubmit(e, undefined, { coverFeeOverride: false });
@@ -598,8 +652,22 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
       return;
     }
 
-    // Card Checkout mode: validate fields before processing
-    if (!validateContribution()) {
+    // Card Checkout mode: verify any unverified invitation code first, then validate fields
+    const trimmedCardCode = invitationCode.trim().toUpperCase();
+    const verifiedIdentity =
+      trimmedCardCode && !isCodeLocked
+        ? await ensureCodeVerifiedForSubmit()
+        : {
+          ok: true,
+          code: trimmedCardCode,
+          contributorName,
+          email,
+        };
+    if (!verifiedIdentity.ok) {
+      return;
+    }
+
+    if (!validateContribution(verifiedIdentity)) {
       return;
     }
 
@@ -620,7 +688,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
       try {
         const cleanSuffix = item.id.replace(/[^a-zA-Z0-9]/g, '').slice(-8) || 'gift';
         const demoIntentId = `pi_demo_${cleanSuffix}_${Date.now().toString(36)}`;
-        await handleSubmit(e, demoIntentId);
+        await handleSubmit(e, demoIntentId, { identityOverride: verifiedIdentity });
         setPaymentTransactionId(demoIntentId);
       } catch (err: unknown) {
         setPhase('error');
@@ -651,10 +719,10 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
       const hasRealSyncedIntent = Boolean(currentSynced && !currentSynced.isMock);
 
       const baseAmountCents = Math.round(baseContributionAmount * 100);
-      const normalizedName = contributorName.trim();
-      const normalizedEmail = email.trim();
+      const normalizedName = verifiedIdentity.contributorName.trim();
+      const normalizedEmail = verifiedIdentity.email.trim();
       const normalizedMessage = message;
-      const normalizedCode = invitationCode.trim();
+      const normalizedCode = verifiedIdentity.code.trim();
       const normalizedAddressLine1 = addressLine1.trim();
       const normalizedAddressLine2 = addressLine2.trim();
       const normalizedCity = city.trim();
@@ -704,10 +772,10 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                 clientSecret: syncClientSecret,
               }
               : {}),
-            name: contributorName,
-            email,
+            name: verifiedIdentity.contributorName,
+            email: verifiedIdentity.email,
             message,
-            code: invitationCode,
+            code: verifiedIdentity.code,
             ...(normalizedAddressLine1 ? { addressLine1: normalizedAddressLine1 } : {}),
             ...(normalizedAddressLine2 ? { addressLine2: normalizedAddressLine2 } : {}),
             ...(normalizedCity ? { city: normalizedCity } : {}),
@@ -780,20 +848,21 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
           return;
         }
 
+        const returnPath = `/registry?item=${encodeURIComponent(item.id)}`;
         const confirmResult = await stripe.confirmPayment({
           elements,
           clientSecret: secret as string,
           confirmParams: {
             payment_method_data: {
               billing_details: {
-                name: contributorName,
-                email: email.trim() || undefined,
+                name: verifiedIdentity.contributorName,
+                email: normalizedEmail || undefined,
               },
             },
             return_url:
               typeof window !== 'undefined'
-                ? `${window.location.origin}${withBasePath('/registry')}`
-                : 'https://example.com/registry',
+                ? `${window.location.origin}${withBasePath(returnPath)}`
+                : `https://example.com${returnPath}`,
           },
           redirect: 'if_required',
         });
@@ -813,7 +882,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
       }
 
       // 3. Record contribution in repository with verified Stripe PaymentIntent ID
-      await handleSubmit(e, intentId || undefined);
+      await handleSubmit(e, intentId || undefined, { identityOverride: verifiedIdentity });
       if (intentId) {
         setPaymentTransactionId(intentId);
       }
@@ -835,7 +904,26 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     }
   };
 
-  const activeReceiptKey = `${item.id}-${paymentTransactionId || 'recorded'}-${isSuccess ? 'ok' : 'idle'}`;
+  const receiptContributorName =
+    activeReconciledReceipt?.contributorName || contributorName || 'Guest';
+  const receiptBaseAmount = activeReconciledReceipt
+    ? activeReconciledReceipt.baseAmount
+    : baseContributionAmount;
+  const receiptCoverFee = activeReconciledReceipt
+    ? activeReconciledReceipt.coverFee
+    : effectiveCoverFee;
+  const receiptFeeAmount = activeReconciledReceipt
+    ? activeReconciledReceipt.feeAmount
+    : estimatedProcessingFee;
+  const receiptTotalCharged = activeReconciledReceipt
+    ? activeReconciledReceipt.totalChargeAmount
+    : receiptCoverFee
+      ? Math.round((receiptBaseAmount + receiptFeeAmount) * 100) / 100
+      : receiptBaseAmount;
+  const receiptTransactionId =
+    activeReconciledReceipt?.paymentIntentId ?? paymentTransactionId;
+
+  const activeReceiptKey = `${item.id}-${receiptTransactionId || 'recorded'}-${isConfirmedSuccess ? 'ok' : 'idle'}`;
   const receiptCopied = copiedReceiptKey === activeReceiptKey;
   const activeClaimKey = claimActions
     ? `${claimActions.confirmToken}:${claimActions.cancelToken}`
@@ -891,13 +979,11 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   };
 
   const handleCopyReceipt = async () => {
-    const trimmedGuestName = contributorName.trim() || 'Guest';
-    const totalPaid = effectiveCoverFee
-      ? Math.round((baseContributionAmount + estimatedProcessingFee) * 100) / 100
-      : baseContributionAmount;
+    const trimmedGuestName = receiptContributorName.trim() || 'Guest';
+    const totalPaid = receiptTotalCharged;
 
     let paymentMethodLine = 'Physical Gift Claim';
-    if (paymentTransactionId) {
+    if (receiptTransactionId) {
       paymentMethodLine = isDemoMode ? 'Simulated Card Checkout (Demo)' : 'Card Checkout';
     } else if ((isDemoMode ? isDirectMode : isPayableGroupGift) && hasPaymentHandle) {
       paymentMethodLine = effectiveHandleType
@@ -907,22 +993,26 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
       paymentMethodLine = 'Group Gift Contribution';
     }
 
-    const feeCoverageLine = paymentTransactionId
-      ? effectiveCoverFee
-        ? `Covered (+${formatCurrency(estimatedProcessingFee)} fee; ${formatCurrency(totalPaid)} total charged)`
-        : `Not added (${formatCurrency(baseContributionAmount)} total charged)`
+    const feeCoverageLine = receiptTransactionId
+      ? receiptCoverFee
+        ? `Covered (+${formatCurrency(receiptFeeAmount)} fee; ${formatCurrency(totalPaid)} total charged)`
+        : `Not added (${formatCurrency(receiptBaseAmount)} total charged)`
       : 'No processing fee ($0.00)';
 
     const lines = [
       `Registry Receipt - ${item.name}`,
       `Contributor: ${trimmedGuestName}`,
-      `Gift Amount: ${formatCurrency(baseContributionAmount)}`,
+      `Gift Amount: ${formatCurrency(receiptBaseAmount)}`,
       `Fee Coverage: ${feeCoverageLine}`,
       `Payment Method: ${paymentMethodLine}`,
-      `Date: ${formatDate(new Date())}`,
+      `Date: ${
+        activeReconciledReceipt?.contributedAt
+          ? formatDate(activeReconciledReceipt.contributedAt)
+          : formatDate(new Date())
+      }`,
     ];
-    if (paymentTransactionId) {
-      lines.push(`Transaction Reference: ${paymentTransactionId}`);
+    if (receiptTransactionId) {
+      lines.push(`Transaction Reference: ${receiptTransactionId}`);
     }
 
     const receiptText = lines.join('\n');
@@ -1024,7 +1114,55 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     }
   };
 
-  const isClaimedReadOnly = (item.purchased || isFullyFunded) && !isSuccess;
+  const handleCopyPaymentHandle = async () => {
+    const handleToCopy = (paymentDescriptor.copyValue || effectiveHandleValue || '').trim();
+    if (!handleToCopy) return;
+    let copySucceeded = false;
+
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(handleToCopy);
+        copySucceeded = true;
+      } catch {
+        // Fallback below
+      }
+    }
+
+    if (!copySucceeded && typeof document !== 'undefined') {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = handleToCopy;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        copySucceeded = true;
+      } catch {
+        // Fallback failed
+      }
+    }
+
+    if (copySucceeded) {
+      setCopiedHandle(true);
+      if (handleCopyTimerRef.current) {
+        clearTimeout(handleCopyTimerRef.current);
+      }
+      handleCopyTimerRef.current = setTimeout(() => {
+        setCopiedHandle(false);
+      }, 2500);
+      setModalStatusMessage(
+        `${effectiveHandleType || 'Payment'} handle ${handleToCopy} copied to clipboard.`
+      );
+      toastContext?.addToast('Payment handle copied to clipboard!', 'success');
+    } else {
+      setModalStatusMessage('Unable to copy payment handle to clipboard.');
+      toastContext?.addToast('Failed to copy payment handle', 'error');
+    }
+  };
+
+  const isClaimedReadOnly = (item.purchased || isFullyFunded) && !isConfirmedSuccess;
   const showDirectTransferDetails =
     hasPaymentHandle &&
     !isClaimedReadOnly &&
@@ -1086,7 +1224,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
         )}
       </div>
 
-      {isDualMode && !isSampleLocked && !isSuccess && (!item.purchased || isBusy) && (
+      {isDualMode && !isSampleLocked && !isConfirmedSuccess && (!item.purchased || isBusy) && (
         <div className="mb-3 mt-2">
           <p
             id={`payment-mode-label-${item.id}`}
@@ -1244,29 +1382,58 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
               Send directly via {effectiveHandleType || 'Payment App'}:
             </p>
-            <div className="flex flex-wrap items-center gap-2 mt-0.5">
+            <div className="flex flex-wrap items-center gap-2 mt-1">
               <span className="text-sm font-mono text-primary font-bold select-all">
                 {effectiveHandleValue}
               </span>
-              {paymentUrl && (
-                <AccessibleExternalLink
-                  href={paymentUrl}
-                  className="inline-flex items-center gap-1 text-xs text-primary dark:text-primary hover:underline font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
-                  srContext={`for ${effectiveHandleType || 'Payment App'}`}
-                  showIcon
-                  iconClassName="w-3.5 h-3.5"
+              {isManualZelle ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  data-testid="copy-payment-handle-button"
+                  onClick={() => void handleCopyPaymentHandle()}
+                  className="inline-flex items-center gap-1.5 text-xs"
                 >
-                  <span>Open Link</span>
-                </AccessibleExternalLink>
+                  <Icon name={copiedHandle ? 'Check' : 'Copy'} className="w-3.5 h-3.5" />
+                  {copiedHandle ? 'Handle Copied!' : 'Copy Handle'}
+                </Button>
+              ) : (
+                paymentUrl && (
+                  <AccessibleExternalLink
+                    href={paymentUrl}
+                    className="inline-flex items-center gap-1 text-xs text-primary dark:text-primary hover:underline font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
+                    srContext={`for ${effectiveHandleType || 'Payment App'}`}
+                    showIcon
+                    iconClassName="w-3.5 h-3.5"
+                  >
+                    <span>Open Link</span>
+                  </AccessibleExternalLink>
+                )
               )}
             </div>
-            {isDirectMode && !isSampleLocked && !isSuccess && !item.purchased && (
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5">
-                Send your gift using the handle or QR code, then record your contribution below so the couple can thank you.
+            {isManualZelle ? (
+              <p
+                data-testid="zelle-bank-instructions"
+                className="text-xs text-gray-600 dark:text-gray-300 mt-1.5"
+              >
+                {paymentDescriptor.instructions}
+                {isDirectMode && !isSampleLocked && !isConfirmedSuccess && !item.purchased
+                  ? ' Then record your contribution below so the couple can thank you.'
+                  : ''}
               </p>
+            ) : (
+              isDirectMode &&
+              !isSampleLocked &&
+              !isConfirmedSuccess &&
+              !item.purchased && (
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5">
+                  Send your gift using the handle or QR code, then record your contribution below so the couple can thank you.
+                </p>
+              )
             )}
           </div>
-          {paymentUrl && (
+          {paymentDescriptor.supportsQrCode && paymentUrl && (
             <div
               className="flex flex-col items-center p-2 rounded border shrink-0 self-center sm:self-auto"
               style={{
@@ -1360,7 +1527,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
           <span className="font-bold block mb-1">Demo / Sample Registry Item</span>
           Sample items demonstrate registry formatting and layout. Real payments and guest contributions are disabled on sample items.
         </div>
-      ) : isSuccess ? (
+      ) : isConfirmedSuccess ? (
         /* Confirmation screen distinguishing confirmed card charges from self-reported direct transfers */
         <div
           data-testid="contribution-success-confirmation"
@@ -1378,26 +1545,28 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                 Your reservation for <span className="font-semibold">{item.name}</span> has been cancelled so other wedding guests can choose this gift.
               </p>
             </div>
-          ) : (isDemoMode ? isDirectMode : isPayableGroupGift) && !paymentTransactionId && hasPaymentHandle ? (
+          ) : (isDemoMode ? isDirectMode : isPayableGroupGift) && !receiptTransactionId && hasPaymentHandle ? (
             <>
               <div role="status" aria-live="polite">
                 <h3 className="text-xl font-bold text-[var(--form-success-text,#15803d)] mb-1">
                   Direct Transfer Recorded!
                 </h3>
                 <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">
-                  Thank you, <span className="font-semibold">{contributorName}</span>! Your self-reported direct transfer of{' '}
-                  <span className="font-semibold">{formatCurrency(baseContributionAmount)}</span> (0% fee) has been recorded for the couple.
+                  Thank you, <span className="font-semibold">{receiptContributorName}</span>! Your self-reported direct transfer of{' '}
+                  <span className="font-semibold">{formatCurrency(receiptBaseAmount)}</span> (0% fee) has been recorded for the couple.
                 </p>
               </div>
               <div className="p-3 bg-amber-50 dark:bg-amber-950/40 rounded border border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 mb-4 text-left">
                 <p className="font-semibold mb-1">
-                  Reminder: Complete your transfer in {effectiveHandleType || 'your payment app'}
+                  Reminder: Complete your transfer in {isManualZelle ? 'your banking or Zelle app' : effectiveHandleType || 'your payment app'}
                 </p>
                 <p>
                   No card was charged on this website. If you have not sent your transfer yet, send{' '}
-                  <span className="font-semibold">{formatCurrency(baseContributionAmount)}</span> directly to{' '}
+                  <span className="font-semibold">{formatCurrency(receiptBaseAmount)}</span> directly to{' '}
                   <span className="font-mono font-bold select-all">{effectiveHandleValue}</span>
-                  {paymentUrl ? (
+                  {isManualZelle ? (
+                    ' via Zelle in your banking app'
+                  ) : paymentUrl ? (
                     <>
                       {' '}
                       (
@@ -1421,28 +1590,24 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                   Contribution Confirmed!
                 </h3>
                 <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">
-                  Thank you, <span className="font-semibold">{contributorName}</span>! Your{' '}
-                  {paymentTransactionId ? 'card payment' : 'gift'} of{' '}
+                  Thank you, <span className="font-semibold">{receiptContributorName}</span>! Your{' '}
+                  {receiptTransactionId ? 'card payment' : 'gift'} of{' '}
                   <span className="font-semibold">
-                    {formatCurrency(
-                      effectiveCoverFee
-                        ? baseContributionAmount + estimatedProcessingFee
-                        : baseContributionAmount
-                    )}
+                    {formatCurrency(receiptTotalCharged)}
                   </span>{' '}
-                  has been {paymentTransactionId ? 'securely processed' : 'recorded'}.
+                  has been {receiptTransactionId ? 'securely processed' : 'recorded'}.
                 </p>
               </div>
-              {paymentTransactionId && (
+              {receiptTransactionId && (
                 <div className="p-3 bg-gray-50 dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-700 text-xs font-mono text-gray-600 dark:text-gray-400 mb-4 select-all">
                   <span>Transaction Reference: </span>
-                  <span className="font-bold text-primary">{paymentTransactionId}</span>
+                  <span className="font-bold text-primary">{receiptTransactionId}</span>
                 </div>
               )}
             </>
           )}
 
-          {claimActions && !paymentTransactionId && (
+          {claimActions && !receiptTransactionId && (
             <div
               data-testid="post-claim-lifecycle-controls"
               className="mb-4 p-3.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-left space-y-2.5"
@@ -1552,6 +1717,15 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
           <h3 className="font-semibold text-lg mb-3 text-primary">
             {item.isGroupGift ? 'Contribute to this Gift' : 'Claim This Gift'}
           </h3>
+          {activeRedirectRecoveryError && !submissionError && (
+            <div
+              role="alert"
+              data-testid="redirect-recovery-banner"
+              className="mb-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-100 text-sm"
+            >
+              {activeRedirectRecoveryError}
+            </div>
+          )}
           <FormGroup
             state={codeError ? 'error' : isCodeLocked ? 'success' : 'default'}
             busy={isBusy || isValidatingCode}
@@ -1565,6 +1739,14 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                 placeholder="ABCDEF12"
                 value={invitationCode}
                 onChange={handleCodeChange}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !isCodeLocked) {
+                    e.preventDefault();
+                    if (!isValidatingCode && !isSubmitting && invitationCode.trim()) {
+                      void handleVerifyCode();
+                    }
+                  }
+                }}
                 onFocus={() => {
                   codeRowFocusedRef.current = true;
                 }}

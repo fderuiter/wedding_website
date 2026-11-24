@@ -26,6 +26,8 @@ function copyRepoFixture(srcRoot: string, destRoot: string): void {
     'src/app/api/uploads/[...path]/route.ts',
     'src/app/api/admin/maintenance/export/route.ts',
     'scripts/preflight-env.ts',
+    'scripts/test-container.mjs',
+    'scripts/rollout-vps.sh',
     'scripts/verify-migration-compatibility.ts',
     'ARCHITECTURE.md',
     'CHANGELOG.md',
@@ -1267,6 +1269,41 @@ describe('verify-deployment-runbooks', () => {
         ),
         expect.stringContaining(
           '.github/dependabot.yml: Group `development-dependencies` under `npm` ecosystem must restrict `update-types` to `["minor", "patch"]`'
+        ),
+      ])
+    );
+  });
+
+  it('rejects forbidden fetch/curl Host header overrides, resolve_probe_host, and missing rollback tags or rollout phases in scripts/rollout-vps.sh', () => {
+    const rolloutScriptPath = path.join(tempDir, 'scripts/rollout-vps.sh');
+    const brokenRolloutScript = fs
+      .readFileSync(rolloutScriptPath, 'utf8')
+      .replace(
+        'curl -fsS --max-time 3 -o /dev/null "${url}" 2>/dev/null',
+        'resolve_probe_host && curl -fsS --max-time 3 -H "Host: ${PROBE_HOST}" -o /dev/null "${url}" 2>/dev/null'
+      )
+      .replace(
+        'fetch(process.argv[1],{signal:AbortSignal.timeout(3000)})',
+        'fetch(process.argv[1],{headers:{Host:process.argv[2]},signal:AbortSignal.timeout(3000)})'
+      )
+      .replace('docker tag wedding-website:latest wedding-website:previous\n', '')
+      .replace('ROLLOUT_PHASE="cutover"\n', '');
+    fs.writeFileSync(rolloutScriptPath, brokenRolloutScript);
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          'scripts/rollout-vps.sh: Loopback probes must not override forbidden `Host` header in `fetch()`'
+        ),
+        expect.stringContaining(
+          'scripts/rollout-vps.sh: Loopback probes must omit `resolve_probe_host` and `Host` header overrides'
+        ),
+        expect.stringContaining(
+          'scripts/rollout-vps.sh: Must snapshot `wedding-website:latest` as `wedding-website:previous` before `docker compose ... build app`'
+        ),
+        expect.stringContaining(
+          'scripts/rollout-vps.sh: Exit trap must track `pre-cutover`, `cutover`, and `completed` rollout phases'
         ),
       ])
     );

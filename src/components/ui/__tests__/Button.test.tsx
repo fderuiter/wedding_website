@@ -140,5 +140,31 @@ describe('Button', () => {
     expect(button).toHaveClass('forced-colors:border');
     expect(await axe(container)).toHaveNoViolations();
   });
+
+  test('supports calibrated success and secondary variants with forced-colors outlines and passes jest-axe', async () => {
+    const { container, getByRole, rerender } = render(
+      <Button variant="success" data-testid="approve-btn">
+        Approve
+      </Button>
+    );
+    let button = getByRole('button', { name: 'Approve' });
+
+    expect(button).toHaveAttribute('data-testid', 'approve-btn');
+    expect(button).toHaveClass('bg-[var(--btn-success-bg,#15803d)]');
+    expect(button).toHaveClass('text-[var(--btn-success-text,#ffffff)]');
+    expect(button).toHaveClass('hover:bg-[var(--btn-success-hover-bg,#166534)]');
+    expect(button).toHaveClass('border-[var(--btn-success-border,transparent)]');
+    expect(button).toHaveClass('forced-colors:border');
+    expect(button).toHaveClass('forced-colors:border-[ButtonText]');
+    expect(await axe(container)).toHaveNoViolations();
+
+    rerender(<Button variant="secondary">Import Items</Button>);
+    button = getByRole('button', { name: 'Import Items' });
+    expect(button).toHaveClass('bg-[var(--btn-secondary-bg,var(--color-secondary,#B45309))]');
+    expect(button).toHaveClass('text-[var(--btn-secondary-text,#ffffff)]');
+    expect(button).toHaveClass('forced-colors:border');
+    expect(button).toHaveClass('forced-colors:border-[ButtonText]');
+    expect(await axe(container)).toHaveNoViolations();
+  });
 });
 

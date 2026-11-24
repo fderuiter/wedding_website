@@ -371,19 +371,26 @@ function buildGuestConfirmationEmail(options: {
   if (isSelfReportedFundTransfer) {
     const handleLabel = escapeHtmlEntities(paymentHandleType || 'Direct Transfer');
     const safeHandle = escapeHtmlEntities(paymentHandle || 'configured payment handle');
-    const externalUrl = getPaymentUrl(paymentHandleType || null, paymentHandle || null);
+    const externalUrl = getPaymentUrl(
+      paymentHandleType || null,
+      paymentHandle || null,
+      baseAmount
+    );
     const safeExternalUrl =
       externalUrl && (externalUrl.startsWith('https://') || externalUrl.startsWith('http://'))
         ? escapeHtmlEntities(externalUrl)
         : '';
+    const isManualZelle = (paymentHandleType || '').trim().toLowerCase() === 'zelle' && !safeExternalUrl;
 
     transferReminderBlock = `
       <div style="margin:16px 0;padding:14px 16px;background-color:#fffbeb;border:1px solid #f59e0b;border-radius:8px;color:#78350f;">
         <p style="margin:0 0 8px 0;font-weight:700;">Reminder: Please finish sending your transfer externally</p>
         <p style="margin:0;">
-          No card was charged on this website. If you have not sent your funds yet, please send
-          <strong>${formattedBase}</strong> via <strong>${handleLabel}</strong> to
-          <code>${safeHandle}</code>${
+          No card was charged on this website. If you have not sent your funds yet, please ${
+            isManualZelle
+              ? `open your bank&#39;s app or <strong>${handleLabel}</strong> and send <strong>${formattedBase}</strong> to <code>${safeHandle}</code>`
+              : `send <strong>${formattedBase}</strong> via <strong>${handleLabel}</strong> to <code>${safeHandle}</code>`
+          }${
             safeExternalUrl
               ? ` (<a href="${safeExternalUrl}" style="color:#b45309;font-weight:600;">Open ${handleLabel}</a>)`
               : ''
@@ -764,6 +771,8 @@ export async function dispatchContributionNotifications(
                 to: guestEmailRaw,
                 subject,
                 body,
+                isHtml: true,
+                format: 'html',
               });
               if (!result.success) {
                 await releaseSendTimestamp(savedContributor, 'confirmation', repository, dbClient);
@@ -834,6 +843,8 @@ export async function dispatchContributionNotifications(
                 to: coupleEmailRaw,
                 subject,
                 body,
+                isHtml: true,
+                format: 'html',
               });
               if (!result.success) {
                 await releaseSendTimestamp(savedContributor, 'alert', repository, dbClient);
@@ -995,6 +1006,8 @@ export async function dispatchConfirmedContributionAlert(params: {
       to: coupleEmailRaw,
       subject,
       body,
+      isHtml: true,
+      format: 'html',
     });
     if (!result.success) {
       await releaseSendTimestamp(contributor, 'alert', repository, dbClient);
@@ -1075,7 +1088,7 @@ export async function dispatchPoliteReminderNotification(params: {
     const paymentHandleType = effectiveHandle.paymentHandleType || '';
     const paymentDeepLink =
       isPayableGroupGift && paymentHandle && paymentHandleType
-        ? getPaymentUrl(paymentHandleType, paymentHandle)
+        ? getPaymentUrl(paymentHandleType, paymentHandle, baseAmount)
         : null;
 
     const [confirmToken, cancelToken] = await Promise.all([
@@ -1155,6 +1168,8 @@ export async function dispatchPoliteReminderNotification(params: {
       to: guestEmailRaw,
       subject,
       body,
+      isHtml: true,
+      format: 'html',
     });
     if (!result.success) {
       logger.warn('Failed to send registry polite reminder email', {
@@ -1291,6 +1306,8 @@ export async function dispatchLedgerAdjustmentNotification(params: {
       to: coupleEmailRaw,
       subject,
       body,
+      isHtml: true,
+      format: 'html',
     });
     if (!result.success) {
       logger.warn('Failed to send registry ledger adjustment notification', {

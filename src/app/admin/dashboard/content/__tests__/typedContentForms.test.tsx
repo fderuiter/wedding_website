@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { ToastProvider } from '@/components/ui/ToastProvider';
+import { ThemeProvider } from '@/components/ThemeProvider';
 import { ContentNodeSchema, ContentService } from '@/features/content';
 import type { ContentNodeDTO, IContentRepository } from '@/features/content';
 // eslint-disable-next-line no-restricted-imports
@@ -280,6 +281,33 @@ describe('Content Hub Typed Forms, URL Import & Readable Previews', () => {
     ]);
     const afterHiding = await contentSvc.getPublicPhotos();
     expect(afterHiding).toHaveLength(0);
+  });
+
+  it('converts Schedule datetime-local fields using AppConfig venue timezone', async () => {
+    render(
+      <ThemeProvider config={{ timezone: 'America/Los_Angeles' } as any}>
+        <ToastProvider>
+          <ContentDashboardPage />
+        </ToastProvider>
+      </ThemeProvider>
+    );
+
+    // Edit existing Schedule item: 2026-09-18T18:00:00.000Z -> 2026-09-18T11:00 PDT
+    fireEvent.click(screen.getByRole('button', { name: 'Edit content: Schedule' }));
+    const startInput = screen.getByLabelText(/start time/i) as HTMLInputElement;
+    expect(startInput.value).toBe('2026-09-18T11:00');
+
+    // Update to 16:00 PDT -> 2026-09-18T23:00:00.000Z
+    fireEvent.change(startInput, { target: { value: '2026-09-18T16:00' } });
+    fireEvent.change(screen.getByLabelText(/end time/i), { target: { value: '2026-09-18T18:00' } });
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => {
+      expect(mockUpdate).toHaveBeenCalledTimes(1);
+    });
+    const updatedPayload = mockUpdate.mock.calls[0][1];
+    expect(updatedPayload.data.startTime).toBe('2026-09-18T23:00:00.000Z');
+    expect(updatedPayload.data.endTime).toBe('2026-09-19T01:00:00.000Z');
   });
 
   it('edits and clears Photo caption and uploaderName without retaining stale extraData keys, and sets Schedule preview iframe to /?preview=true#schedule', async () => {

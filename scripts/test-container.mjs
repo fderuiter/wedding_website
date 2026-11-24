@@ -59,6 +59,7 @@ export function buildCiComposeEnv(extra = {}) {
       process.env.GUEST_SESSION_SECRET || 'playwright-e2e-session-secret-32-chars-min',
     E2E_TEST: process.env.E2E_TEST || 'true',
     POSTGRES_URL_NON_POOLING: '',
+    CONTAINER_POSTGRES_URL_NON_POOLING: '',
     ...extra,
   };
 }

@@ -488,6 +488,7 @@ function parseDockerComposeContract(composeContent: string): {
   dbPorts: string[];
   migrationCommand: string | null;
   migrationDatabaseUrl: string | null;
+  migrationEnvMap: Map<string, string>;
   migrationReadOnly: boolean;
   migrationCapDropAll: boolean;
   migrationNoNewPrivileges: boolean;
@@ -511,6 +512,7 @@ function parseDockerComposeContract(composeContent: string): {
   const services: string[] = [];
   const topLevelVolumes: string[] = [];
   const dbPorts: string[] = [];
+  const migrationEnvMap = new Map<string, string>();
   const appEnvMap = new Map<string, string>();
   const migrationTmpfs: string[] = [];
   const appTmpfs: string[] = [];
@@ -619,11 +621,18 @@ function parseDockerComposeContract(composeContent: string): {
           migrationReadOnly = true;
         }
       } else if (inMigrationEnv) {
-        const dbUrlMatch = line.match(
-          /^\s*(?:-\s*)?DATABASE_URL\s*(?::|=)\s*(?:["']([^"']*)["']|(.+?))\s*(?:#.*)?$/
-        );
-        if (dbUrlMatch) {
-          migrationDatabaseUrl = (dbUrlMatch[1] ?? dbUrlMatch[2] ?? '').trim();
+        if (!line.trim().startsWith('#')) {
+          const kvMatch = line.match(
+            /^\s*(?:-\s*)?([A-Z0-9_]+)\s*(?::|=)\s*(?:["']([^"']*)["']|(.+?))\s*(?:#.*)?$/
+          );
+          if (kvMatch) {
+            const envKey = kvMatch[1];
+            const envVal = (kvMatch[2] ?? kvMatch[3] ?? '').trim();
+            migrationEnvMap.set(envKey, envVal);
+            if (envKey === 'DATABASE_URL') {
+              migrationDatabaseUrl = envVal;
+            }
+          }
         }
       } else if (inMigrationCapDrop) {
         if (/^\s*-\s*["']?ALL["']?\s*(?:#.*)?$/.test(line)) {
@@ -723,6 +732,7 @@ function parseDockerComposeContract(composeContent: string): {
     dbPorts,
     migrationCommand,
     migrationDatabaseUrl,
+    migrationEnvMap,
     migrationReadOnly,
     migrationCapDropAll,
     migrationNoNewPrivileges,
@@ -1490,6 +1500,19 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       'docker-compose.yml: `migration` service must scope container `DATABASE_URL` overrides via `${CONTAINER_DATABASE_URL:-...}`'
     );
   }
+  if (composeContract.migrationDatabaseUrl?.includes('POSTGRES_URL_NON_POOLING')) {
+    errors.push(
+      'docker-compose.yml: `migration` service `DATABASE_URL` must not interpolate host `POSTGRES_URL_NON_POOLING` (prevents `@localhost` shadow URL leaks into containers)'
+    );
+  }
+  if (
+    composeContract.migrationEnvMap.get('POSTGRES_URL_NON_POOLING') !==
+    '${CONTAINER_POSTGRES_URL_NON_POOLING:-}'
+  ) {
+    errors.push(
+      'docker-compose.yml: `migration` service must scope `POSTGRES_URL_NON_POOLING` via `${CONTAINER_POSTGRES_URL_NON_POOLING:-}`'
+    );
+  }
   if (composeContract.migrationCommand !== './node_modules/.bin/prisma migrate deploy') {
     errors.push(
       'docker-compose.yml: `migration` service must execute `./node_modules/.bin/prisma migrate deploy` offline without `npx`'
@@ -1526,6 +1549,14 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       'docker-compose.yml: `app` service must scope container `DATABASE_URL` overrides via `${CONTAINER_DATABASE_URL:-...}`'
     );
   }
+  if (
+    composeContract.appEnvMap.get('POSTGRES_URL_NON_POOLING') !==
+    '${CONTAINER_POSTGRES_URL_NON_POOLING:-}'
+  ) {
+    errors.push(
+      'docker-compose.yml: `app` service must scope `POSTGRES_URL_NON_POOLING` via `${CONTAINER_POSTGRES_URL_NON_POOLING:-}`'
+    );
+  }
   if (composeContract.appEnvMap.get('E2E_TEST') !== '${E2E_TEST:-false}') {
     errors.push('docker-compose.yml: `app` service must set `E2E_TEST: ${E2E_TEST:-false}` by default');
   }
@@ -1545,6 +1576,15 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     if (!/^\s*TRUST_PROXY:\s*\$\{TRUST_PROXY:-1\}\s*(?:#.*)?$/m.test(rolloutComposeRaw)) {
       errors.push(
         'docker-compose.rollout.yml: `app-standby` service must set `TRUST_PROXY: ${TRUST_PROXY:-1}` by default'
+      );
+    }
+    if (
+      !/^\s*POSTGRES_URL_NON_POOLING:\s*\$\{CONTAINER_POSTGRES_URL_NON_POOLING:-\}\s*(?:#.*)?$/m.test(
+        rolloutComposeRaw
+      )
+    ) {
+      errors.push(
+        'docker-compose.rollout.yml: `app-standby` service must scope `POSTGRES_URL_NON_POOLING` via `${CONTAINER_POSTGRES_URL_NON_POOLING:-}`'
       );
     }
   }
@@ -1572,9 +1612,20 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       'docker-compose.ci.yml: `app` service must provide a valid 16-byte-salt / 64-byte-key scrypt fallback in `ADMIN_PASSWORD`'
     );
   }
-  if (!ciWorkflowRaw.includes('-f docker-compose.yml -f docker-compose.ci.yml')) {
+  const testContainerScriptPath = path.join(repoRoot, 'scripts/test-container.mjs');
+  const testContainerScriptRaw = fs.existsSync(testContainerScriptPath)
+    ? fs.readFileSync(testContainerScriptPath, 'utf8')
+    : '';
+  const ciInvokesIsolatedCompose =
+    ciWorkflowRaw.includes('-f docker-compose.yml -f docker-compose.ci.yml') ||
+    ((/\btest:container\b/.test(ciWorkflowRaw) ||
+      ciWorkflowRaw.includes('scripts/test-container.mjs')) &&
+      (!testContainerScriptRaw ||
+        (testContainerScriptRaw.includes("'docker-compose.yml'") &&
+          testContainerScriptRaw.includes("'docker-compose.ci.yml'"))));
+  if (!ciInvokesIsolatedCompose) {
     errors.push(
-      '.github/workflows/ci.yml: Container jobs must explicitly pass `-f docker-compose.yml -f docker-compose.ci.yml`'
+      '.github/workflows/ci.yml: Container jobs must invoke `scripts/test-container.mjs` (`npm run test:container`) or explicitly pass `-f docker-compose.yml -f docker-compose.ci.yml`'
     );
   }
 
@@ -1594,7 +1645,14 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   }
 
   if (!composeContract.appHasEnvFile) {
-    for (const envVar of ['DB_USER', 'DB_PASSWORD', 'DB_NAME', 'DB_PORT', 'CONTAINER_DATABASE_URL']) {
+    for (const envVar of [
+      'DB_USER',
+      'DB_PASSWORD',
+      'DB_NAME',
+      'DB_PORT',
+      'CONTAINER_DATABASE_URL',
+      'CONTAINER_POSTGRES_URL_NON_POOLING',
+    ]) {
       if (composeContract.interpolatedVars.includes(envVar) && !dockerMd.includes(envVar)) {
         errors.push(
           `docs/deployment/docker-vps.md: Missing Compose-interpolated variable "${envVar}" from docker-compose.yml`
@@ -2450,6 +2508,43 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   if (forbiddenHealthcheckHostOverride.test(dockerMd)) {
     errors.push('docs/deployment/docker-vps.md: Documented `healthcheck` on `/api/live` must not override `Host` header in `fetch()`');
   }
+  const rolloutScriptPath = path.join(repoRoot, 'scripts/rollout-vps.sh');
+  if (!fs.existsSync(rolloutScriptPath)) {
+    errors.push('scripts/rollout-vps.sh: Missing VPS zero-downtime standby rollout script');
+  } else {
+    const rolloutScriptRaw = fs.readFileSync(rolloutScriptPath, 'utf8');
+    if (/fetch\([^\r\n]*headers\s*:\s*\{[^\r\n]*\bHost\b/i.test(rolloutScriptRaw)) {
+      errors.push(
+        'scripts/rollout-vps.sh: Loopback probes must not override forbidden `Host` header in `fetch()`'
+      );
+    }
+    if (
+      /\bcurl\b[^\r\n]*(?:-H|--header)\s+["']?Host:/i.test(rolloutScriptRaw) ||
+      /\bresolve_probe_host\b/.test(rolloutScriptRaw)
+    ) {
+      errors.push(
+        'scripts/rollout-vps.sh: Loopback probes must omit `resolve_probe_host` and `Host` header overrides'
+      );
+    }
+    const previousTagIdx = rolloutScriptRaw.indexOf(
+      'docker tag wedding-website:latest wedding-website:previous'
+    );
+    const buildAppIdx = rolloutScriptRaw.indexOf('build app');
+    if (previousTagIdx === -1 || buildAppIdx === -1 || previousTagIdx > buildAppIdx) {
+      errors.push(
+        'scripts/rollout-vps.sh: Must snapshot `wedding-website:latest` as `wedding-website:previous` before `docker compose ... build app`'
+      );
+    }
+    if (
+      !rolloutScriptRaw.includes('ROLLOUT_PHASE="pre-cutover"') ||
+      !rolloutScriptRaw.includes('ROLLOUT_PHASE="cutover"') ||
+      !rolloutScriptRaw.includes('ROLLOUT_PHASE="completed"')
+    ) {
+      errors.push(
+        'scripts/rollout-vps.sh: Exit trap must track `pre-cutover`, `cutover`, and `completed` rollout phases'
+      );
+    }
+  }
 
   // Verify middleware probe syntax validation & webhook/uploads exclusions preserve ALLOWED_HOSTS check
   const middlewareRaw = fs.readFileSync(path.join(repoRoot, 'src/middleware.ts'), 'utf8');
@@ -2503,7 +2598,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
-  for (const requiredCiJob of ['static-export-build', 'storybook-build', 'deploy-docs']) {
+  for (const requiredCiJob of ['static-export-build', 'storybook-build', 'pages-verify', 'deploy-docs']) {
     if (ciJobIds.includes(requiredCiJob) && !deploymentMd.includes(requiredCiJob)) {
       errors.push(`DEPLOYMENT.md: Missing ci.yml job reference "${requiredCiJob}"`);
     }
@@ -2528,6 +2623,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     const runNode: unknown = stepItem.get('run', true);
     if (!isScalar(runNode) || typeof runNode.value !== 'string') continue;
     const skipsDocSync = /\bcheck:static\b[^\n]*--skip-doc-sync\b/.test(runNode.value);
+    const skipsActionPins = /\bcheck:static\b[^\n]*--skip-action-pins\b/.test(runNode.value);
     const npmRunRegex = /\bnpm\s+run\s+([a-zA-Z0-9:_-]+)\b/g;
     let scriptMatch: RegExpExecArray | null;
     while ((scriptMatch = npmRunRegex.exec(runNode.value)) !== null) {
@@ -2539,6 +2635,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
         for (const staticStep of staticSteps) {
           if (!staticStep.script) continue;
           if (skipsDocSync && staticStep.script === 'check:doc-sync') continue;
+          if (skipsActionPins && staticStep.script === 'check:action-pins') continue;
           if (!ciVerifyScripts.includes(staticStep.script)) {
             ciVerifyScripts.push(staticStep.script);
           }
@@ -2919,10 +3016,12 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
-  // 5. Rollout (`deploy-stage.yml`) & Rollback (`rollback.yml`) dual `/api/health` + `/api/ready` probe contracts & `publish-artifact.yml` `v*` tag checks
+  // 5. Rollout (`deploy-provider.yml`, `deploy-stage.yml`) & Rollback (`rollback.yml`) dual `/api/health` + `/api/ready` probe contracts & `publish-artifact.yml` `v*` tag checks
+  const deployProviderWorkflowRaw = fs.readFileSync(path.join(workflowsDir, 'deploy-provider.yml'), 'utf8');
   const deployStageWorkflowRaw = fs.readFileSync(path.join(workflowsDir, 'deploy-stage.yml'), 'utf8');
   const rollbackWorkflowRaw = fs.readFileSync(path.join(workflowsDir, 'rollback.yml'), 'utf8');
   for (const [workflowRelPath, workflowRaw] of [
+    ['.github/workflows/deploy-provider.yml', deployProviderWorkflowRaw],
     ['.github/workflows/deploy-stage.yml', deployStageWorkflowRaw],
     ['.github/workflows/rollback.yml', rollbackWorkflowRaw],
   ] as const) {
