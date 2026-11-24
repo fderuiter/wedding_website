@@ -111,17 +111,22 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       'storybook-build:',
       'static-export-build:',
       'e2e-test:',
-      'container-e2e-smoke:',
       'a11y-report:',
+      'pages-verify:',
       'deploy-docs:',
     ]) {
       expect(ciWorkflow).toContain(`  ${jobId}`);
     }
+    expect(ciWorkflow).not.toContain('  container-e2e-smoke:');
+    expect(ciWorkflow).not.toContain('wedding-website-container');
 
     const verifyJobBlock = ciWorkflow.split(/\n  doc-drift-comment:\n/)[0]?.split(/\n  verify:\n/)[1] ?? '';
     expect(verifyJobBlock).toMatch(/permissions:\n\s+contents: read\n/);
     expect(verifyJobBlock).not.toContain('pull-requests: write');
     expect(verifyJobBlock).not.toContain('issues: write');
+    expect(verifyJobBlock).toContain('run: npm run check:static -- --skip-doc-sync --skip-action-pins');
+    expect(verifyJobBlock).toContain('run: npm run check:action-pins -- --verify-upstream');
+    expect(verifyJobBlock).toContain('name: docs-portal-static');
 
     const docDriftCommentBlock =
       ciWorkflow.split(/\n  unit-test:\n/)[0]?.split(/\n  doc-drift-comment:\n/)[1] ?? '';
@@ -131,7 +136,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(docDriftCommentBlock).not.toContain('actions/checkout');
     expect(docDriftCommentBlock).not.toContain('npm ci');
     expect(ciWorkflow).toMatch(
-      /deploy-docs:\n\s+needs:\s*\[verify, static-export-build, storybook-build\]\n\s+if:\s*github\.ref == 'refs\/heads\/main' && github\.event_name == 'push'\n\s+runs-on:\s*ubuntu-latest\n\s+concurrency:\n\s+group:\s*github-pages\n\s+cancel-in-progress:\s*false\n\s+queue:\s*max/
+      /deploy-docs:\n\s+needs:\s*\[verify, static-export-build, storybook-build, pages-verify\]\n\s+if:\s*github\.ref == 'refs\/heads\/main' && github\.event_name == 'push'\n\s+runs-on:\s*ubuntu-latest\n\s+concurrency:\n\s+group:\s*github-pages\n\s+cancel-in-progress:\s*false\n\s+queue:\s*max/
     );
     expect(ciWorkflow).not.toContain("github.event_name == 'release'");
     const deployDocsSection = ciWorkflow.split(/\n  deploy-docs:\n/)[1] ?? '';
@@ -184,14 +189,32 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     );
 
     const a11yReportSection =
-      ciWorkflow.split(/\n  deploy-docs:\n/)[0]?.split(/\n  a11y-report:\n/)[1] ?? '';
+      ciWorkflow.split(/\n  pages-verify:\n/)[0]?.split(/\n  a11y-report:\n/)[1] ?? '';
     expect(a11yReportSection).toContain('needs: [unit-test, e2e-test, static-export-build]');
     expect(a11yReportSection).toContain('name: static-a11y-violations');
     expect(a11yReportSection).toContain('node scripts/a11y-report.mjs --include-static');
 
-    // e2e-test and container-e2e-smoke do not depend on static-export-build so static export checks never delay Playwright runs
+    const pagesVerifySection =
+      ciWorkflow.split(/\n  deploy-docs:\n/)[0]?.split(/\n  pages-verify:\n/)[1] ?? '';
+    expect(pagesVerifySection).toContain('needs: [verify, static-export-build, storybook-build]');
+    expect(pagesVerifySection).toContain('run: npm ci --ignore-scripts');
+    expect(pagesVerifySection).toContain('name: docs-portal-static');
+    expect(pagesVerifySection).toContain('name: demo-static');
+    expect(pagesVerifySection).toContain('name: storybook-static');
+    expect(pagesVerifySection).toContain('run: npm run pages:verify');
+    expect(pagesVerifySection).toContain('name: pages-bundle');
+
+    expect(deployDocsSection).toContain(
+      "if: steps.freshness.outputs.is_latest == 'true' && steps.base-check.outputs.reuse_bundle == 'true'"
+    );
+    expect(deployDocsSection).toContain('name: pages-bundle');
+    expect(deployDocsSection).toContain(
+      "if: steps.freshness.outputs.is_latest == 'true' && steps.base-check.outputs.reuse_bundle != 'true'"
+    );
+    expect(deployDocsSection).toContain("SKIP_DOC_SYNC: 'true'");
+
+    // e2e-test does not depend on static-export-build so static export checks never delay Playwright runs
     expect(ciWorkflow).toMatch(/  e2e-test:\n\s+needs: \[verify, build\]\n/);
-    expect(ciWorkflow).toMatch(/  container-e2e-smoke:\n\s+needs: build\n/);
   });
 
   it('removes standalone main branch push trigger from publish-artifact.yml while retaining v* tags, workflow_dispatch, and workflow_call', () => {
@@ -889,7 +912,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(composeContent).not.toContain('GHA_CACHE_SCOPE');
 
     const ciComposeContent = fs.readFileSync(path.join(process.cwd(), 'docker-compose.ci.yml'), 'utf8');
-    expect(ciComposeContent.match(/type=gha,scope=\$\{GHA_CACHE_SCOPE:-app-amd64\}/g)).toHaveLength(2);
+    expect(ciComposeContent.match(/type=gha,scope=\$\{GHA_CACHE_SCOPE:-app-amd64\}/g)).toHaveLength(1);
     expect(ciComposeContent).not.toContain('cache_to');
     expect(ciComposeContent).not.toContain('mode=max');
 
@@ -915,8 +938,8 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(ciWorkflow).toContain('docker create wedding-website:latest');
     expect(ciWorkflow).toContain('docker cp "$CID:/app/." .next/standalone/');
     expect(ciWorkflow).not.toContain('docker tag wedding-website:latest wedding-website:latest');
-    expect(ciWorkflow).toContain('wedding-website-image.tar.zst');
-    expect(ciWorkflow).toContain('zstd -dc');
+    expect(ciWorkflow).not.toContain('wedding-website-image.tar.zst');
+    expect(ciWorkflow).not.toContain('wedding-website-container');
 
     const storybookWorkflow = readWorkflow('storybook.yml');
     const storybookOnSection = extractTopLevelSection(storybookWorkflow, 'on');
@@ -1585,13 +1608,13 @@ process.exit(1);
     expect(prismaStage).not.toContain('npm install');
   });
 
-  it('decouples npm lifecycle hooks, shares verified PostgreSQL digest, validates build:export after standalone archival, and scopes container E2E to smoke tests', () => {
+  it('decouples npm lifecycle hooks, shares verified PostgreSQL digest, deduplicates build checks, restores Prisma in e2e-test, and gates Pages via pages-verify', () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8')) as {
       scripts?: Record<string, string>;
     };
     expect(pkg.scripts?.prebuild).toBeUndefined();
     expect(pkg.scripts?.postinstall).toBe(
-      'next typegen && prisma generate && node scripts/pretest.mjs --record-install-state'
+      '([ "$SKIP_NEXT_TYPEGEN" = "true" ] || [ "$STATIC_EXPORT" = "true" ] || next typegen) && prisma generate && node scripts/pretest.mjs --record-install-state || node -e "process.exit(process.env.npm_config_package_lock_only === \'true\' ? 0 : 1)"'
     );
     expect(pkg.scripts?.postinstall).not.toContain('generate-docs');
     expect(pkg.scripts?.build).toBe('prisma generate && next build');
@@ -1601,36 +1624,49 @@ process.exit(1);
     expect(verifySection).toContain('db_image: ${{ steps.resolve-db-image.outputs.db_image }}');
     expect(verifySection).toContain('npx tsx scripts/generate-docs.ts --skip-openapi');
     expect(verifySection).toContain("SKIP_DOC_SYNC: 'true'");
+    expect(verifySection).toContain('name: docs-portal-static');
 
     const unitTestSection = (ciWorkflow.split(/\n  unit-test:\n/)[1] ?? '').split(/\n  build:\n/)[0] ?? '';
     expect(unitTestSection).toContain('image: ${{ needs.verify.outputs.db_image }}');
 
     const buildSection = (ciWorkflow.split(/\n  build:\n/)[1] ?? '').split(/\n  container-arm64:\n/)[0] ?? '';
-    const checkStandaloneIdx = buildSection.indexOf('run: npm run check:standalone -- --require-standalone');
+    expect(buildSection).toContain("SKIP_NEXT_TYPEGEN: 'true'");
+    expect(buildSection).not.toContain('npm run check:audit');
+    expect(buildSection).not.toContain('npm run build:export');
+    expect(buildSection).not.toContain('wedding-website-container');
+    const checkStandaloneIdx = buildSection.indexOf('run: npm run check:standalone -- --standalone-only');
     const testStandaloneIdx = buildSection.indexOf('run: npm run test:standalone');
+    const testContainerIdx = buildSection.indexOf('run: npm run test:container -- --container-migration');
     const uploadNextArtifactIdx = buildSection.indexOf('name: next-build-artifact');
-    const buildExportIdx = buildSection.indexOf('npm run build:export');
     expect(checkStandaloneIdx).toBeGreaterThan(-1);
     expect(testStandaloneIdx).toBeGreaterThan(checkStandaloneIdx);
-    expect(uploadNextArtifactIdx).toBeGreaterThan(testStandaloneIdx);
-    expect(buildExportIdx).toBeGreaterThan(uploadNextArtifactIdx);
-    expect(buildSection.slice(buildExportIdx)).toContain('rm -rf out');
+    expect(testContainerIdx).toBeGreaterThan(testStandaloneIdx);
+    expect(uploadNextArtifactIdx).toBeGreaterThan(testContainerIdx);
+    expect(buildSection.slice(uploadNextArtifactIdx)).toContain('node_modules/.prisma');
+    expect(buildSection.slice(uploadNextArtifactIdx)).toContain('node_modules/@prisma');
 
-    const storybookCiSection = (ciWorkflow.split(/\n  storybook-build:\n/)[1] ?? '').split(/\n  e2e-test:\n/)[0] ?? '';
+    const storybookCiSection =
+      (ciWorkflow.split(/\n  storybook-build:\n/)[1] ?? '').split(/\n  static-export-build:\n/)[0] ?? '';
     expect(storybookCiSection).toContain('run: npm ci --ignore-scripts');
 
     const storybookWorkflow = readWorkflow('storybook.yml');
     expect(storybookWorkflow).toContain('run: npm ci --ignore-scripts');
 
-    const e2eSection = (ciWorkflow.split(/\n  e2e-test:\n/)[1] ?? '').split(/\n  container-e2e-smoke:\n/)[0] ?? '';
+    const e2eSection = (ciWorkflow.split(/\n  e2e-test:\n/)[1] ?? '').split(/\n  a11y-report:\n/)[0] ?? '';
     expect(e2eSection).toContain('needs: [verify, build]');
+    expect(e2eSection).toContain('run: npm ci --ignore-scripts');
+    expect(e2eSection).toContain('name: next-build-artifact');
+    expect(e2eSection).toContain('test -d node_modules/.prisma/client');
+    expect(e2eSection).toContain('test -d node_modules/@prisma/client');
     expect(e2eSection).toContain('image: ${{ needs.verify.outputs.db_image }}');
     expect(e2eSection).toContain('run: npx playwright test');
 
-    const containerSmokeSection = (ciWorkflow.split(/\n  container-e2e-smoke:\n/)[1] ?? '').split(/\n  a11y-report:\n/)[0] ?? '';
-    expect(containerSmokeSection).toContain('needs: build');
-    expect(containerSmokeSection).toContain('TEST_CONTAINER: "true"');
-    expect(containerSmokeSection).toContain('run: npm run test:e2e:smoke');
+    const playwrightConfigRaw = fs.readFileSync(path.join(process.cwd(), 'playwright.config.ts'), 'utf8');
+    expect(playwrightConfigRaw).toMatch(
+      /process\.argv\.some\(\(arg\)\s*=>\s*arg\.includes\('pages-showcase\.spec\.ts'\)\s*\)/
+    );
+    expect(playwrightConfigRaw).toContain("['**/pages-showcase.spec.ts']");
+    expect(pkg.scripts?.['pages:verify']).toContain('e2e/pages-showcase.spec.ts');
   });
 
   it('validates BuildKit tar cache archive members and synthesizes multi-platform SPDX 2.3 index SBOMs in publish-artifact.yml', () => {
