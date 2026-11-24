@@ -77,3 +77,43 @@ export declare function isValidPostgresUrl(
   _rawUrl: string,
   _options?: ParsePostgresUrlOptions
 ): boolean;
+
+export declare function validatePostgresIdentifier(
+  _identifier: string,
+  _label?: string
+): string;
+
+export declare function quotePostgresIdentifier(
+  _identifier: string,
+  _label?: string
+): string;
+
+export declare function resolvePostgresSchema(_rawUrl?: string): string;
+
+export declare function qualifyPostgresTable(
+  _tableName: string,
+  _rawUrl?: string
+): string;
+
+export declare function isPooledPostgresUrl(_rawUrl?: string): boolean;
+
+export declare function resolveDirectMigrationPostgresUrl(
+  _databaseUrl?: string,
+  _nonPoolingUrl?: string
+): string;
+
+export interface VerifyPostgresTlsHandshakeOptions {
+  timeoutMs?: number;
+}
+
+export interface VerifyPostgresTlsHandshakeResult {
+  ok: true;
+  tlsMode: PostgresTlsMode;
+  upgraded: boolean;
+}
+
+export declare function verifyPostgresTlsHandshake(
+  _rawUrl: string,
+  _options?: VerifyPostgresTlsHandshakeOptions
+): Promise<VerifyPostgresTlsHandshakeResult>;
+

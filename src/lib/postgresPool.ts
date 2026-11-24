@@ -3,7 +3,9 @@ import net from 'node:net';
 import type { ConnectionOptions, TLSSocket } from 'node:tls';
 import pg, { type ClientBase, type ClientConfig, type PoolConfig } from 'pg';
 import {
+  isPooledPostgresUrl,
   parsePostgresUrl,
+  quotePostgresIdentifier,
   type ParsedPostgresUrl,
 } from './postgres-url.js';
 
@@ -56,7 +58,9 @@ function loadCertificateFile(filePath: string, paramName: string): string {
 
 /**
  * Resolves Node `tls.ConnectionOptions | boolean` matching PostgreSQL libpq Table 32.1:
- * - `disable` / `allow`: returns `false` for initial connection (with `allow` able to upgrade).
+ * - `disable`: returns `false` (plaintext only).
+ * - `allow`: returns `{ rejectUnauthorized: false, ... }` for TLS upgrade fallback after
+ *   attempting a plaintext startup first via `createAllowTlsClientConstructor`.
  * - `prefer`: tries TLS `{ rejectUnauthorized: false, ... }` first and falls back to plaintext
  *   when the server does not support SSL (`'N'`) or fails SSL negotiation.
  * - `no-verify`: encrypts traffic without CA or hostname verification (`rejectUnauthorized: false`).
@@ -93,11 +97,7 @@ export function resolvePostgresTlsOptions(
     certOptions.passphrase = sslpassword;
   }
 
-  if (tlsMode === 'allow') {
-    return false;
-  }
-
-  if (tlsMode === 'prefer' || tlsMode === 'no-verify') {
+  if (tlsMode === 'allow' || tlsMode === 'prefer' || tlsMode === 'no-verify') {
     return {
       ...certOptions,
       rejectUnauthorized: false,
@@ -328,6 +328,248 @@ function createPreferTlsClientConstructor(
 }
 
 /**
+ * Builds a `pg.Client` constructor for `sslmode=allow` per PostgreSQL libpq Table 32.1:
+ * attempts a plaintext startup first without sending `SSLRequest`, and automatically
+ * upgrades to TLS (`SSLRequest` -> `'S'` -> `TLSSocket`) if the server rejects
+ * unencrypted connections prior to `ReadyForQuery`.
+ */
+function createAllowTlsClientConstructor(
+  tlsOptions: ConnectionOptions
+): (new (_config?: ClientConfig) => ClientBase) | undefined {
+  const PgModule = pg as unknown as {
+    Client?: new (_config?: ClientConfig & { connection?: unknown }) => ClientBase & {
+      ssl?: boolean | ConnectionOptions;
+      connectionParameters?: {
+        ssl?: boolean | ConnectionOptions;
+        sslnegotiation?: 'postgres' | 'direct';
+        client_encoding?: BufferEncoding;
+      };
+    };
+    Connection?: InternalPgConnectionConstructor;
+  };
+
+  const BaseClient = PgModule.Client;
+  const BaseConnection = PgModule.Connection;
+
+  if (typeof BaseClient !== 'function' || typeof BaseConnection !== 'function') {
+    return undefined;
+  }
+
+  class AllowPostgresConnection extends BaseConnection {
+    private readonly onTlsUpgrade: () => void;
+    private tcpConnected = false;
+    private authPromptReceived = false;
+    private readyForQueryReceived = false;
+    private tlsFallbackTriggered = false;
+    private triggerTlsUpgrade: (() => void) | null = null;
+
+    constructor(
+      config: InternalPgConnectionConfig,
+      onTlsUpgrade: () => void
+    ) {
+      super(config);
+      this.onTlsUpgrade = onTlsUpgrade;
+    }
+
+    override emit(event: string, ...args: unknown[]): boolean {
+      if (event === 'readyForQuery') {
+        this.readyForQueryReceived = true;
+      } else if (
+        event === 'authenticationCleartextPassword' ||
+        event === 'authenticationMD5Password' ||
+        event === 'authenticationSASL'
+      ) {
+        this.authPromptReceived = true;
+      } else if (
+        event === 'errorMessage' &&
+        !this.readyForQueryReceived &&
+        !this.tlsFallbackTriggered &&
+        this.tcpConnected &&
+        !this._ending &&
+        this.triggerTlsUpgrade
+      ) {
+        const msg = args[0] as { code?: string } | undefined;
+        // If plaintext was accepted (auth prompt sent) and password itself failed (28P01),
+        // surface the credential error directly rather than retrying over TLS.
+        if (!(this.authPromptReceived && msg?.code === '28P01')) {
+          this.triggerTlsUpgrade();
+          return true;
+        }
+      }
+      return super.emit(event, ...args);
+    }
+
+    override connect(portOrPath: number | string, host?: string): void {
+      if (this.ssl || typeof this.upgradeToSSL !== 'function') {
+        super.connect(portOrPath, host);
+        return;
+      }
+
+      this._connecting = true;
+      const plainSocket = this.stream as net.Socket;
+      plainSocket.setNoDelay(true);
+
+      const reportRuntimeStreamError = (error: NodeJS.ErrnoException) => {
+        if (this._ending && (error.code === 'ECONNRESET' || error.code === 'EPIPE')) {
+          return;
+        }
+        super.emit('error', error);
+      };
+
+      const upgradeToTlsConnection = () => {
+        if (this.tlsFallbackTriggered || this.readyForQueryReceived || this._ending) {
+          return;
+        }
+        this.tlsFallbackTriggered = true;
+
+        plainSocket.removeAllListeners();
+        plainSocket.on('error', () => {});
+        plainSocket.destroy();
+
+        this.ssl = tlsOptions;
+        this.onTlsUpgrade();
+
+        const tlsRawSocket = new net.Socket();
+        tlsRawSocket.setNoDelay(true);
+        this.stream = tlsRawSocket;
+
+        let tlsTcpConnected = false;
+        let sslUpgraded = false;
+
+        const onTlsRawError = (err: NodeJS.ErrnoException) => {
+          reportRuntimeStreamError(err);
+        };
+
+        const onTlsRawClose = () => {
+          if (!sslUpgraded) {
+            if (tlsTcpConnected && !this._ending) {
+              super.emit('error', new Error('Connection terminated unexpectedly during SSL upgrade'));
+            }
+            super.emit('end');
+          }
+        };
+
+        tlsRawSocket.on('error', onTlsRawError);
+        tlsRawSocket.on('close', onTlsRawClose);
+
+        tlsRawSocket.once('connect', () => {
+          tlsTcpConnected = true;
+          if (this._keepAlive) {
+            tlsRawSocket.setKeepAlive(true, this._keepAliveInitialDelayMillis ?? 0);
+          }
+          if (this.sslNegotiation === 'direct') {
+            sslUpgraded = true;
+            tlsRawSocket.removeListener('error', onTlsRawError);
+            tlsRawSocket.removeListener('close', onTlsRawClose);
+            super.upgradeToSSL(host, reportRuntimeStreamError);
+            this.stream.on('close', () => {
+              super.emit('end');
+            });
+            return;
+          }
+          this.requestSsl();
+        });
+
+        if (this.sslNegotiation !== 'direct') {
+          tlsRawSocket.once('data', (buffer: Buffer) => {
+            const responseCode = buffer.toString('utf8');
+            if (responseCode !== 'S') {
+              tlsRawSocket.end();
+              super.emit(
+                'error',
+                new Error(
+                  responseCode === 'N'
+                    ? 'The server does not support SSL connections'
+                    : 'There was an error establishing an SSL connection'
+                )
+              );
+              return;
+            }
+            sslUpgraded = true;
+            tlsRawSocket.removeListener('error', onTlsRawError);
+            tlsRawSocket.removeListener('close', onTlsRawClose);
+            super.upgradeToSSL(host, reportRuntimeStreamError);
+            this.stream.on('close', () => {
+              super.emit('end');
+            });
+          });
+        }
+
+        connectRawSocket(tlsRawSocket, portOrPath, host);
+      };
+
+      this.triggerTlsUpgrade = upgradeToTlsConnection;
+
+      plainSocket.on('error', (err: NodeJS.ErrnoException) => {
+        if (!this.tcpConnected) {
+          reportRuntimeStreamError(err);
+          return;
+        }
+        if (!this.readyForQueryReceived && !this.tlsFallbackTriggered && !this._ending) {
+          upgradeToTlsConnection();
+          return;
+        }
+        reportRuntimeStreamError(err);
+      });
+
+      plainSocket.on('close', () => {
+        if (this.tlsFallbackTriggered) {
+          return;
+        }
+        if (this.tcpConnected && !this.readyForQueryReceived && !this._ending) {
+          upgradeToTlsConnection();
+          return;
+        }
+        super.emit('end');
+      });
+
+      plainSocket.once('connect', () => {
+        this.tcpConnected = true;
+        if (this._keepAlive) {
+          plainSocket.setKeepAlive(true, this._keepAliveInitialDelayMillis ?? 0);
+        }
+        super.emit('connect');
+      });
+
+      this.attachListeners(plainSocket);
+      connectRawSocket(plainSocket, portOrPath, host);
+    }
+  }
+
+  class AllowTlsClient extends BaseClient {
+    constructor(config: ClientConfig = {}) {
+      const holder: { client?: AllowTlsClient } = {};
+      const connection = new AllowPostgresConnection(
+        {
+          ssl: false,
+          sslNegotiation: config.sslnegotiation ?? 'postgres',
+          keepAlive: config.keepAlive ?? false,
+          keepAliveInitialDelayMillis: config.keepAliveInitialDelayMillis ?? 0,
+          encoding: config.client_encoding ?? 'utf8',
+        },
+        () => {
+          if (holder.client) {
+            holder.client.ssl = tlsOptions;
+            if (holder.client.connectionParameters) {
+              holder.client.connectionParameters.ssl = tlsOptions;
+            }
+          }
+        }
+      );
+      super({
+        ...config,
+        password: config.password,
+        ssl: false,
+        connection,
+      });
+      holder.client = this;
+    }
+  }
+
+  return AllowTlsClient as unknown as new (_config?: ClientConfig) => ClientBase;
+}
+
+/**
  * Builds the runtime `pg.PoolConfig` and `PrismaPg` adapter options from a raw
  * `DATABASE_URL`, avoiding `connectionString` re-parsing in `pg` so resolved
  * TLS rules, Unix socket paths, schema selection, and pool/timeout caps are preserved.
@@ -335,6 +577,8 @@ function createPreferTlsClientConstructor(
 export function buildPostgresRuntimeConfig(rawUrl: string): PostgresRuntimeConfig {
   const parsed = parsePostgresUrl(rawUrl);
   const ssl = resolvePostgresTlsOptions(parsed);
+  const isPooled = isPooledPostgresUrl(rawUrl);
+  const searchPathFlag = `-c search_path=${quotePostgresIdentifier(parsed.schema, 'query parameter "schema"')}`;
 
   const poolConfig: PoolConfig = {
     host: parsed.host,
@@ -342,7 +586,7 @@ export function buildPostgresRuntimeConfig(rawUrl: string): PostgresRuntimeConfi
     database: parsed.database,
     max: parsed.max,
     connectionTimeoutMillis: parsed.connectionTimeoutMillis,
-    ssl,
+    ssl: parsed.tlsMode === 'allow' ? false : ssl,
   };
 
   if (parsed.user !== undefined) {
@@ -363,7 +607,15 @@ export function buildPostgresRuntimeConfig(rawUrl: string): PostgresRuntimeConfi
   if (parsed.applicationName !== undefined) {
     poolConfig.application_name = parsed.applicationName;
   }
-  if (parsed.options !== undefined) {
+  if (!isPooled) {
+    if (parsed.options !== undefined) {
+      poolConfig.options = /\bsearch_path\b/i.test(parsed.options)
+        ? parsed.options
+        : `${parsed.options} ${searchPathFlag}`;
+    } else {
+      poolConfig.options = searchPathFlag;
+    }
+  } else if (parsed.options !== undefined) {
     poolConfig.options = parsed.options;
   }
 
@@ -371,6 +623,11 @@ export function buildPostgresRuntimeConfig(rawUrl: string): PostgresRuntimeConfi
     const PreferClient = createPreferTlsClientConstructor(ssl);
     if (PreferClient) {
       poolConfig.Client = PreferClient as unknown as PoolConfig['Client'];
+    }
+  } else if (parsed.tlsMode === 'allow' && ssl !== false) {
+    const AllowClient = createAllowTlsClientConstructor(ssl);
+    if (AllowClient) {
+      poolConfig.Client = AllowClient as unknown as PoolConfig['Client'];
     }
   }
 

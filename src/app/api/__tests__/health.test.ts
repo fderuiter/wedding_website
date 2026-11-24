@@ -124,6 +124,37 @@ describe('Health and Readiness Endpoints', () => {
       expect(mockQueryRaw).toHaveBeenCalledTimes(1);
     });
 
+    it('scopes information_schema.tables and _prisma_migrations to custom ?schema= from DATABASE_URL', async () => {
+      const originalDbUrl = process.env.DATABASE_URL;
+      process.env.DATABASE_URL =
+        'postgresql://wedding:wedding123@localhost:5432/wedding?schema=custom_tenant';
+      try {
+        mockQueryRaw
+          .mockResolvedValueOnce([...coreTableRows, { table_name: '_prisma_migrations' }])
+          .mockResolvedValueOnce(appliedMigrationRows);
+
+        const res = await readyRoute();
+        expect(res.status).toBe(200);
+        expect(mockQueryRaw).toHaveBeenCalledTimes(2);
+
+        const tablesSqlArg = mockQueryRaw.mock.calls[0]?.[0] as {
+          sql?: string;
+          values?: unknown[];
+        };
+        expect(tablesSqlArg.values).toEqual(['custom_tenant']);
+        expect(tablesSqlArg.sql).not.toContain('current_schema()');
+
+        const migrationsSqlArg = mockQueryRaw.mock.calls[1]?.[0] as { sql?: string };
+        expect(migrationsSqlArg.sql).toContain('FROM "custom_tenant"."_prisma_migrations"');
+      } finally {
+        if (originalDbUrl === undefined) {
+          delete process.env.DATABASE_URL;
+        } else {
+          process.env.DATABASE_URL = originalDbUrl;
+        }
+      }
+    });
+
     it('returns 200 OK when a previously failed migration was rolled back and subsequent migrations succeeded', async () => {
       mockQueryRaw
         .mockResolvedValueOnce([...coreTableRows, { table_name: '_prisma_migrations' }])

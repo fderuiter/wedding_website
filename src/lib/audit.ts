@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { qualifyPostgresTable } from '@/lib/postgres-url.js';
 import { env } from '@/env';
 import { Prisma } from '@prisma/client';
 import { logger } from '@/lib/logger';
@@ -139,9 +140,10 @@ export async function pruneSnapshotsBulk(entities: { entityType: string; entityI
     if (typeof rawExecutor === 'function') {
       const entityTypes = uniqueEntityPairs.map((pair) => pair.entityType);
       const entityIds = uniqueEntityPairs.map((pair) => pair.entityId);
+      const snapshotVersionTable = Prisma.raw(qualifyPostgresTable('SnapshotVersion'));
 
       await prisma.$executeRaw(Prisma.sql`
-        DELETE FROM "SnapshotVersion" AS sv
+        DELETE FROM ${snapshotVersionTable} AS sv
         USING (
           SELECT ranked."id"
           FROM (
@@ -152,7 +154,7 @@ export async function pruneSnapshotsBulk(entities: { entityType: string; entityI
                 ORDER BY "createdAt" DESC, "id" DESC
               ) AS rn
             FROM UNNEST(${entityTypes}::text[], ${entityIds}::text[]) AS target(entity_type, entity_id)
-            JOIN "SnapshotVersion" AS s
+            JOIN ${snapshotVersionTable} AS s
               ON s."entityType" = target.entity_type
              AND s."entityId" = target.entity_id
           ) AS ranked
