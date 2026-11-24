@@ -1,6 +1,9 @@
-import { LogisticsRepository } from '../repository';
-import { LogisticsService } from '../service';
-import type { ContentNodeDTO } from '@/features/content';
+import { NextRequest } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { runWithRequestContext } from '@/lib/requestContext';
+import { LogisticsRepository, logisticsRepository } from '../repository';
+import { LogisticsService, logisticsService } from '../service';
+import { ContentNodeSchema, type ContentNodeDTO } from '@/features/content';
 
 describe('LogisticsRepository Chronological Sorting', () => {
   let repo: LogisticsRepository;
@@ -433,5 +436,250 @@ describe('LogisticsRepository Chronological Sorting', () => {
         process.env.STATIC_EXPORT = prevStaticExport;
       }
     }
+  });
+
+  it('skips public SubEvent queries and parses when includePublicSubEvents is false', async () => {
+    const mockContentFindMany = jest.fn().mockResolvedValue([
+      {
+        id: 'log-1',
+        type: 'Logistics',
+        tags: ['Homepage', 'Logistics'],
+        data: {
+          title: 'Airport Shuttle',
+          description: 'Hourly departures',
+        },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+      {
+        id: 'sched-fallback-1',
+        type: 'Schedule',
+        tags: ['Homepage', 'Schedule'],
+        data: {
+          title: 'Fallback Welcome Toast',
+          startTime: '2026-06-19T18:00:00.000Z',
+        },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ]);
+    const mockSubEventFindMany = jest.fn().mockResolvedValue([
+      {
+        id: 'se-public-ignored',
+        title: 'Public Ceremony',
+        startTime: new Date('2026-06-20T15:00:00.000Z'),
+        isPrivate: false,
+      },
+    ]);
+
+    const customRepo = new LogisticsRepository({
+      contentNode: { findMany: mockContentFindMany },
+      subEvent: { findMany: mockSubEventFindMany },
+    });
+    const customService = new LogisticsService(customRepo);
+    const parseSpy = jest.spyOn(ContentNodeSchema, 'parse');
+
+    try {
+      const nodes = await customService.getHomepageLogistics({ includePublicSubEvents: false });
+
+      expect(mockSubEventFindMany).not.toHaveBeenCalled();
+      expect(parseSpy).toHaveBeenCalledTimes(2);
+      expect(nodes.map((n) => n.id)).toEqual(['sched-fallback-1', 'log-1']);
+      expect((nodes[0].data as any).isReadOnly).toBe(true);
+    } finally {
+      parseSpy.mockRestore();
+    }
+  });
+
+  it('shares in-flight homepage ContentNode parses with getVisibleFaqs within RequestContextStore when client === prisma', async () => {
+    const rawRows = [
+      {
+        id: 'faq-shared-2',
+        type: 'FAQ',
+        tags: ['Homepage', 'FAQ'],
+        data: {
+          question: 'When should we arrive?',
+          answer: '30 minutes early.',
+          displayOrder: 2,
+          isVisible: true,
+        },
+        createdAt: new Date('2026-01-02T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-02T00:00:00.000Z'),
+      },
+      {
+        id: 'faq-shared-1',
+        type: 'FAQ',
+        tags: ['FAQ'],
+        data: {
+          question: 'Is parking free?',
+          answer: 'Yes, complimentary valet.',
+          displayOrder: 1,
+          isVisible: true,
+        },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+      {
+        id: 'faq-hidden-shared',
+        type: 'FAQ',
+        tags: ['Homepage', 'FAQ'],
+        data: {
+          question: 'Draft FAQ',
+          answer: 'Hidden',
+          displayOrder: 0,
+          isVisible: false,
+        },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+      {
+        id: 'logistics-shared-1',
+        type: 'Logistics',
+        tags: ['Homepage', 'Logistics'],
+        data: {
+          title: 'Hotel Shuttle',
+          description: 'Departs at 3:15 PM',
+        },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ];
+
+    const contentFindManyMock = prisma.contentNode.findMany as jest.Mock;
+    const subEventFindManyMock = prisma.subEvent.findMany as jest.Mock;
+    contentFindManyMock.mockClear();
+    subEventFindManyMock.mockClear();
+    contentFindManyMock.mockResolvedValue(rawRows);
+    subEventFindManyMock.mockResolvedValue([]);
+
+    const parseSpy = jest.spyOn(ContentNodeSchema, 'parse');
+
+    try {
+      const req = new NextRequest('http://localhost/');
+      const [homepageNodes, visibleFaqs] = await runWithRequestContext(req, () =>
+        Promise.all([
+          logisticsService.getHomepageLogistics({ includePublicSubEvents: false }),
+          logisticsService.getVisibleFaqs(),
+        ])
+      );
+
+      expect(contentFindManyMock).toHaveBeenCalledTimes(1);
+      expect(subEventFindManyMock).not.toHaveBeenCalled();
+      expect(parseSpy).toHaveBeenCalledTimes(rawRows.length);
+      expect(visibleFaqs.map((n) => n.id)).toEqual(['faq-shared-1', 'faq-shared-2']);
+      expect(homepageNodes.map((n) => n.id)).toEqual([
+        'logistics-shared-1',
+        'faq-shared-1',
+        'faq-shared-2',
+      ]);
+    } finally {
+      parseSpy.mockRestore();
+    }
+  });
+
+  it('avoids re-querying or re-parsing FAQ rows when getVisibleFaqs starts before getHomepageLogistics in the same request', async () => {
+    const faqRows = [
+      {
+        id: 'faq-first-1',
+        type: 'FAQ',
+        tags: ['Homepage', 'FAQ'],
+        data: {
+          question: 'Dress code?',
+          answer: 'Black tie optional.',
+          displayOrder: 1,
+          isVisible: true,
+        },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ];
+    const nonFaqRows = [
+      {
+        id: 'log-second-1',
+        type: 'Logistics',
+        tags: ['Homepage', 'Logistics'],
+        data: {
+          title: 'Valet Gate',
+          description: 'North entrance',
+        },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ];
+
+    const contentFindManyMock = prisma.contentNode.findMany as jest.Mock;
+    contentFindManyMock.mockClear();
+    contentFindManyMock
+      .mockResolvedValueOnce(faqRows)
+      .mockResolvedValueOnce(nonFaqRows);
+
+    const parseSpy = jest.spyOn(ContentNodeSchema, 'parse');
+
+    try {
+      const req = new NextRequest('http://localhost/');
+      await runWithRequestContext(req, async () => {
+        const faqsPromise = logisticsRepository.getVisibleFaqs();
+        const homepageNodesPromise = logisticsRepository.getLogisticsNodes({
+          includePublicSubEvents: false,
+        });
+        const [faqs, homepageNodes] = await Promise.all([faqsPromise, homepageNodesPromise]);
+
+        expect(faqs.map((n) => n.id)).toEqual(['faq-first-1']);
+        expect(homepageNodes.map((n) => n.id)).toEqual(['log-second-1', 'faq-first-1']);
+      });
+
+      expect(contentFindManyMock).toHaveBeenCalledTimes(2);
+      expect(contentFindManyMock).toHaveBeenNthCalledWith(1, {
+        where: { type: 'FAQ' },
+      });
+      expect(contentFindManyMock).toHaveBeenNthCalledWith(2, {
+        where: {
+          type: { not: 'FAQ' },
+          OR: [
+            { tags: { has: 'Homepage' } },
+            { tags: { has: 'Schedule' } },
+            { tags: { has: 'schedule' } },
+            { type: 'Logistics' },
+            { type: 'Schedule' },
+          ],
+        },
+      });
+      expect(parseSpy).toHaveBeenCalledTimes(faqRows.length + nonFaqRows.length);
+    } finally {
+      parseSpy.mockRestore();
+    }
+  });
+
+  it('evicts rejected ContentNode promises from RequestContextStore so subsequent calls recover', async () => {
+    const contentFindManyMock = prisma.contentNode.findMany as jest.Mock;
+    contentFindManyMock.mockClear();
+    contentFindManyMock
+      .mockRejectedValueOnce(new Error('Transient connection reset'))
+      .mockResolvedValueOnce([
+        {
+          id: 'faq-recovered',
+          type: 'FAQ',
+          tags: ['FAQ'],
+          data: {
+            question: 'Recovered FAQ',
+            answer: 'Loaded on retry',
+            isVisible: true,
+          },
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      ]);
+
+    const req = new NextRequest('http://localhost/registry');
+    await runWithRequestContext(req, async () => {
+      await expect(logisticsRepository.getVisibleFaqs()).rejects.toThrow(
+        'Transient connection reset'
+      );
+
+      const recovered = await logisticsRepository.getVisibleFaqs();
+      expect(recovered.map((n) => n.id)).toEqual(['faq-recovered']);
+    });
+
+    expect(contentFindManyMock).toHaveBeenCalledTimes(2);
   });
 });

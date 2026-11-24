@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
-import type { ILogisticsRepository } from './types';
+import { getOrLoadRequestData, peekRequestData } from '@/lib/requestContext';
+import type { GetLogisticsNodesOptions, ILogisticsRepository } from './types';
 import {
   ContentNodeSchema,
   compareFaqNodesByOrder,
@@ -8,6 +9,9 @@ import {
   type ContentNodeDTO,
 } from '@/features/content';
 import { buildArchetypeSeedData, isStaticExportBuild } from '@/lib/sampleData/builder';
+
+const HOMEPAGE_CONTENT_NODES_CACHE_KEY = 'logistics:homepageContentNodes';
+const VISIBLE_FAQS_CACHE_KEY = 'logistics:visibleFaqs';
 
 function buildStaticLogisticsNodes(): ContentNodeDTO[] {
   const seed = buildArchetypeSeedData('classic');
@@ -21,13 +25,9 @@ function buildStaticLogisticsNodes(): ContentNodeDTO[] {
 export class LogisticsRepository implements ILogisticsRepository {
   constructor(public client: any = prisma) {}
 
-  async getLogisticsNodes(): Promise<ContentNodeDTO[]> {
-    if (isStaticExportBuild()) {
-      return this.sortNodesChronologically(buildStaticLogisticsNodes());
-    }
-
-    const [nodes, publicSubEvents] = await Promise.all([
-      this.client.contentNode.findMany({
+  private queryAndParseHomepageContentNodes(): Promise<ContentNodeDTO[]> {
+    return this.client.contentNode
+      .findMany({
         where: {
           OR: [
             { tags: { has: 'Homepage' } },
@@ -35,25 +35,75 @@ export class LogisticsRepository implements ILogisticsRepository {
             { tags: { has: 'schedule' } },
             { type: 'FAQ' },
             { type: 'Logistics' },
-            { type: 'Schedule' }
-          ]
-        }
-      }),
-      this.client.subEvent?.findMany
+            { type: 'Schedule' },
+          ],
+        },
+      })
+      .then((nodes: any[]) =>
+        nodes
+          .map((n: any) => ContentNodeSchema.parse(n))
+          .filter((n: ContentNodeDTO) => {
+            if (isPrivateContentNode(n)) return false;
+            if (n.type === 'FAQ' && !isFaqNodeVisible(n)) return false;
+            return true;
+          })
+      );
+  }
+
+  private loadParsedHomepageContentNodes(): Promise<ContentNodeDTO[]> {
+    if (this.client !== prisma) {
+      return this.queryAndParseHomepageContentNodes();
+    }
+
+    return getOrLoadRequestData(HOMEPAGE_CONTENT_NODES_CACHE_KEY, async () => {
+      const inFlightFaqs = peekRequestData<Extract<ContentNodeDTO, { type: 'FAQ' }>[]>(
+        VISIBLE_FAQS_CACHE_KEY
+      );
+      if (inFlightFaqs) {
+        const [rawNonFaqNodes, visibleFaqs] = await Promise.all([
+          this.client.contentNode.findMany({
+            where: {
+              type: { not: 'FAQ' },
+              OR: [
+                { tags: { has: 'Homepage' } },
+                { tags: { has: 'Schedule' } },
+                { tags: { has: 'schedule' } },
+                { type: 'Logistics' },
+                { type: 'Schedule' },
+              ],
+            },
+          }),
+          inFlightFaqs,
+        ]);
+
+        const parsedNonFaq: ContentNodeDTO[] = rawNonFaqNodes
+          .filter((n: any) => n?.type !== 'FAQ')
+          .map((n: any) => ContentNodeSchema.parse(n))
+          .filter((n: ContentNodeDTO) => !isPrivateContentNode(n));
+
+        return [...parsedNonFaq, ...visibleFaqs];
+      }
+
+      return this.queryAndParseHomepageContentNodes();
+    });
+  }
+
+  async getLogisticsNodes(options?: GetLogisticsNodesOptions): Promise<ContentNodeDTO[]> {
+    if (isStaticExportBuild()) {
+      return this.sortNodesChronologically(buildStaticLogisticsNodes());
+    }
+
+    const includePublicSubEvents = options?.includePublicSubEvents ?? true;
+
+    const [parsed, publicSubEvents] = await Promise.all([
+      this.loadParsedHomepageContentNodes(),
+      includePublicSubEvents && this.client.subEvent?.findMany
         ? this.client.subEvent.findMany({
           where: { isPrivate: false },
           orderBy: { startTime: 'asc' },
         })
         : Promise.resolve([]),
     ]);
-
-    const parsed: ContentNodeDTO[] = nodes
-      .map((n: any) => ContentNodeSchema.parse(n))
-      .filter((n: ContentNodeDTO) => {
-        if (isPrivateContentNode(n)) return false;
-        if (n.type === 'FAQ' && !isFaqNodeVisible(n)) return false;
-        return true;
-      });
 
     if (Array.isArray(publicSubEvents) && publicSubEvents.length > 0) {
       const nonScheduleNodes = parsed.filter((n: ContentNodeDTO) => {
@@ -136,17 +186,40 @@ export class LogisticsRepository implements ILogisticsRepository {
       return [];
     }
 
-    const rawNodes = await this.client.contentNode.findMany({
-      where: { type: 'FAQ' },
-    });
+    const queryAndParseVisibleFaqs = async (): Promise<Extract<ContentNodeDTO, { type: 'FAQ' }>[]> => {
+      const rawNodes = await this.client.contentNode.findMany({
+        where: { type: 'FAQ' },
+      });
 
-    return rawNodes
-      .map((n: any) => ContentNodeSchema.parse(n))
-      .filter(
-        (n: ContentNodeDTO): n is Extract<ContentNodeDTO, { type: 'FAQ' }> =>
-          n.type === 'FAQ' && isFaqNodeVisible(n)
-      )
-      .sort(compareFaqNodesByOrder);
+      return rawNodes
+        .map((n: any) => ContentNodeSchema.parse(n))
+        .filter(
+          (n: ContentNodeDTO): n is Extract<ContentNodeDTO, { type: 'FAQ' }> =>
+            n.type === 'FAQ' && isFaqNodeVisible(n)
+        )
+        .sort(compareFaqNodesByOrder);
+    };
+
+    if (this.client !== prisma) {
+      return queryAndParseVisibleFaqs();
+    }
+
+    return getOrLoadRequestData(VISIBLE_FAQS_CACHE_KEY, async () => {
+      const inFlightHomepageNodes = peekRequestData<ContentNodeDTO[]>(
+        HOMEPAGE_CONTENT_NODES_CACHE_KEY
+      );
+      if (inFlightHomepageNodes) {
+        const nodes = await inFlightHomepageNodes;
+        return nodes
+          .filter(
+            (n: ContentNodeDTO): n is Extract<ContentNodeDTO, { type: 'FAQ' }> =>
+              n.type === 'FAQ' && isFaqNodeVisible(n)
+          )
+          .sort(compareFaqNodesByOrder);
+      }
+
+      return queryAndParseVisibleFaqs();
+    });
   }
 
   public sortNodesChronologically(nodes: ContentNodeDTO[]): ContentNodeDTO[] {

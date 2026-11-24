@@ -551,7 +551,12 @@ export class SubEventService {
    * Unauthenticated visitors receive only public sub-events.
    * Authenticated guests receive public sub-events plus private sub-events assigned to their invitation code.
    */
-  async getScheduleForGuest(code?: string | null): Promise<ScheduleEventWithRsvp[]> {
+  async getScheduleForGuest(
+    code?: string | null,
+    options?: { includeContentNodeFallback?: boolean }
+  ): Promise<ScheduleEventWithRsvp[]> {
+    const includeContentNodeFallback = options?.includeContentNodeFallback ?? true;
+
     if (isStaticExportBuild()) {
       const seed = buildArchetypeSeedData('classic');
       const normalizedCode = code && typeof code === 'string' ? code.trim().toUpperCase() : '';
@@ -669,6 +674,10 @@ export class SubEventService {
 
     // If no records exist in SubEvent table yet, fallback to ContentNode schedule items
     if (subEvents.length === 0) {
+      if (!includeContentNodeFallback) {
+        return [];
+      }
+
       const nodes = await this.client.contentNode.findMany({
         where: {
           OR: [
