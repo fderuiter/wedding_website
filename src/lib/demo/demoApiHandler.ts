@@ -31,6 +31,11 @@ import {
   normalizePlusOneNames,
 } from '@/utils/rsvpPrompts';
 import {
+  computeLiveForecastAvailableDate,
+  formatForecastDateInTimezone,
+  getLocalizedClimateFallback,
+} from '@/utils/climateFallback';
+import {
   ADDRESS_LINE_MAX_LENGTH,
   CITY_MAX_LENGTH,
   COUNTRY_MAX_LENGTH,
@@ -2206,7 +2211,47 @@ async function handleDemoApi(
     });
   }
 
-  // Delegate extended OpenAPI routes (schedule, rsvp, photos, weather, media, content-nodes,
+  // Guest weather forecast (localized seasonal climate fallback with venue/override support)
+  if (path === '/api/weather' && method === 'GET') {
+    const state = getDemoState();
+    const preset = ARCHETYPE_PRESETS[state.archetype] ?? ARCHETYPE_PRESETS.classic;
+    const overrides = state.configOverrides;
+    const latitude =
+      typeof overrides.latitude === 'number' && Number.isFinite(overrides.latitude)
+        ? overrides.latitude
+        : preset.siteConfig.latitude;
+    const longitude =
+      typeof overrides.longitude === 'number' && Number.isFinite(overrides.longitude)
+        ? overrides.longitude
+        : preset.siteConfig.longitude;
+    const timezone =
+      (typeof overrides.timezone === 'string' && overrides.timezone.trim()) ||
+      preset.siteConfig.timezone ||
+      'UTC';
+    const rawWeddingDate =
+      overrides.weddingDate instanceof Date && !Number.isNaN(overrides.weddingDate.getTime())
+        ? overrides.weddingDate
+        : new Date(preset.siteConfig.weddingDate);
+    const weddingDate = Number.isNaN(rawWeddingDate.getTime())
+      ? new Date('2026-09-19T16:00:00.000Z')
+      : rawWeddingDate;
+    const weddingDayStr = formatForecastDateInTimezone(weddingDate, timezone);
+    const availableDateStr = computeLiveForecastAvailableDate(weddingDayStr, timezone);
+    const forecast = getLocalizedClimateFallback(
+      latitude,
+      longitude,
+      weddingDayStr,
+      availableDateStr
+    );
+
+    return jsonResponse({
+      success: true,
+      data: forecast,
+      ...forecast,
+    });
+  }
+
+  // Delegate extended OpenAPI routes (schedule, rsvp, photos, media, content-nodes,
   // versions, maintenance, exports, guest login/lookup) to the staticDemo router when installed
   const delegatedExtended = await delegateToStaticDemoRouter(rawInput ?? url, init, method, path);
   if (delegatedExtended) {
@@ -2239,36 +2284,6 @@ async function handleDemoApi(
     method === 'GET'
   ) {
     return jsonResponse({ status: 'ok', ready: true, mode: 'static-demo' });
-  }
-
-  // Guest weather forecast
-  if (path === '/api/weather' && method === 'GET') {
-    const state = getDemoState();
-    const preset = ARCHETYPE_PRESETS[state.archetype] ?? ARCHETYPE_PRESETS.classic;
-    return jsonResponse({
-      success: true,
-      data: {
-        location: `${preset.siteConfig.venueCity}, ${preset.siteConfig.venueState}`,
-        isHistoricalEstimate: true,
-        current: {
-          temperature: 72,
-          condition: 'Partly Sunny',
-          humidity: 54,
-          windSpeed: 8,
-        },
-        daily: [
-          { date: '2026-10-17', high: 73, low: 58, condition: 'Sunny', precipitationChance: 10 },
-          { date: '2026-10-18', high: 74, low: 59, condition: 'Clear', precipitationChance: 5 },
-          {
-            date: '2026-10-19',
-            high: 71,
-            low: 56,
-            condition: 'Partly Cloudy',
-            precipitationChance: 15,
-          },
-        ],
-      },
-    });
   }
 
   // Public & moderated photos + media library (#1232 cursor-compatible)

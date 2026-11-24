@@ -78,7 +78,7 @@ const ProjectInfo = () => {
 
         {isDemoMode && (
           <nav
-            aria-label="Showcase navigation"
+            aria-label="Project showcase navigation"
             data-testid="project-info-showcase-links"
             className="mt-8 p-4 rounded-2xl border border-slate-300 dark:border-slate-700 bg-slate-50/90 dark:bg-slate-900/80 flex flex-wrap items-center justify-center gap-3"
           >

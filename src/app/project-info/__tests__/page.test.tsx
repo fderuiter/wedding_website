@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { ToastProvider } from '@/components/ui/ToastProvider';
 import { DemoProvider } from '@/components/demo/DemoContext';
+import { DemoToolbar } from '@/components/demo/DemoToolbar';
 import { resetDemoState } from '@/lib/demo/demoStore';
 import ProjectInfo from '../page';
 
@@ -31,7 +32,7 @@ beforeAll(() => {
   ).IntersectionObserver = MockIntersectionObserver;
 });
 
-function renderWithDemo(enabled: boolean) {
+function renderWithDemo(enabled: boolean, withToolbar = false) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -40,7 +41,10 @@ function renderWithDemo(enabled: boolean) {
       <ThemeProvider>
         <ToastProvider>
           <DemoProvider enabled={enabled}>
-            <ProjectInfo />
+            {withToolbar && <DemoToolbar />}
+            <main>
+              <ProjectInfo />
+            </main>
           </DemoProvider>
         </ToastProvider>
       </ThemeProvider>
@@ -148,7 +152,7 @@ describe('ProjectInfo Page', () => {
   });
 
   it('has zero axe accessibility violations in light and dark modes', async () => {
-    const { container } = renderWithDemo(true);
+    const { container } = renderWithDemo(true, true);
     const lightResults = await axe(container);
     expect(lightResults).toHaveNoViolations();
 

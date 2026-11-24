@@ -931,7 +931,9 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
       );
 
       expect((await window.fetch('/api/ready')).status).toBe(200);
-      expect((await (await window.fetch('/api/weather')).json()).data.current.temperature).toBe(72);
+      expect(
+        Array.isArray((await (await window.fetch('/api/weather')).json()).data.daily.temperature_2m_max)
+      ).toBe(true);
       const photosInitial = await (await window.fetch('/api/photos')).json();
       expect(Array.isArray(photosInitial.photos)).toBe(true);
       expect(photosInitial.photos.length).toBeGreaterThan(0);
@@ -1057,6 +1059,63 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
     } finally {
       uninstallSecond();
       uninstallFirst();
+      window.fetch = originalFetch;
+    }
+  });
+
+  it('serves localized seasonal climate forecast from /api/weather in demo mode without external calls', async () => {
+    const originalFetch = window.fetch;
+    const fallbackFetch = jest.fn(async () => new Response('unexpected', { status: 500 }));
+    window.fetch = fallbackFetch as unknown as typeof window.fetch;
+
+    setDemoRuntimeActive(true);
+    const uninstall = installDemoFetchInterceptor();
+
+    try {
+      // Classic preset (Minneapolis, September -> warm temperate)
+      const classicRes = await window.fetch('/api/weather');
+      expect(classicRes.status).toBe(200);
+      const classicForecast = await classicRes.json();
+      expect(classicForecast.isLiveForecast).toBe(false);
+      expect(classicForecast.liveForecastAvailableDate).toBe('2026-09-02');
+      expect(classicForecast.daily.time).toEqual(['2026-09-19']);
+      expect(classicForecast.daily.temperature_2m_max[0]).toBe(82);
+
+      // Destination preset (Amalfi Coast October -> mild Mediterranean autumn)
+      setDemoArchetype('destination');
+      const destRes = await window.fetch('/api/weather');
+      expect(destRes.status).toBe(200);
+      const destForecast = await destRes.json();
+      expect(destForecast.isLiveForecast).toBe(false);
+      expect(destForecast.daily.temperature_2m_max[0]).toBe(62);
+
+      // Tropical venue override (Maui July -> warm tropical band)
+      updateDemoConfigOverrides({
+        latitude: 20.7984,
+        longitude: -156.3319,
+        weddingDate: new Date('2026-07-18T18:00:00.000Z'),
+        timezone: 'Pacific/Honolulu',
+      });
+      const tropicalRes = await window.fetch('/api/weather');
+      expect(tropicalRes.status).toBe(200);
+      const tropicalForecast = await tropicalRes.json();
+      expect(tropicalForecast.daily.temperature_2m_max[0]).toBeGreaterThanOrEqual(85);
+
+      // Custom venue override (high latitude winter)
+      updateDemoConfigOverrides({
+        latitude: 64.1466,
+        longitude: -21.9426,
+        weddingDate: new Date('2026-12-12T16:00:00.000Z'),
+        timezone: 'UTC',
+      });
+      const customRes = await window.fetch('/api/weather');
+      expect(customRes.status).toBe(200);
+      const customForecast = await customRes.json();
+      expect(customForecast.daily.time).toEqual(['2026-12-12']);
+      expect(customForecast.daily.temperature_2m_max[0]).toBeLessThanOrEqual(32);
+      expect(fallbackFetch).not.toHaveBeenCalled();
+    } finally {
+      uninstall();
       window.fetch = originalFetch;
     }
   });

@@ -149,6 +149,23 @@ describe('RootLayoutClient Standalone Presentation Suppression & Landmark Delega
     expect(screen.getByRole('link', { name: /couple@example\.com/i })).toBeInTheDocument();
   });
 
+  it('provides a single focusable MainLandmark around Container child pages on /guest/claim and /guest/collect', () => {
+    for (const guestRoute of ['/guest/claim', '/guest/collect']) {
+      mockPathname = guestRoute;
+      const { unmount } = render(
+        <RootLayoutClient config={mockConfig}>
+          <div>Guest container content</div>
+        </RootLayoutClient>
+      );
+
+      const mains = screen.getAllByRole('main');
+      expect(mains).toHaveLength(1);
+      expect(mains[0]).toHaveAttribute('id', 'main-content');
+      expect(mains[0]).toHaveAttribute('tabindex', '-1');
+      unmount();
+    }
+  });
+
   it('retains MainLandmark on /photos/slideshow when gallery module is disabled so fallback content stays inside main', () => {
     mockPathname = '/photos/slideshow';
     render(
