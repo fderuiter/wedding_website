@@ -470,6 +470,13 @@ async function main() {
       composeEnv
     );
 
+    const unauthDrainProbe = await request('/guest/login', 5000);
+    if (unauthDrainProbe.statusCode !== 200 || unauthDrainProbe.body.includes(drainTitleMarker)) {
+      throw new Error(
+        `Expected unauthenticated /guest/login SSR response to redact AppConfig seoTitle (status=${unauthDrainProbe.statusCode}).`
+      );
+    }
+
     const lockProc = child_process.spawn(
       'docker',
       [
@@ -524,8 +531,13 @@ async function main() {
       );
       await lockReadyPromise;
 
-      // Issue in-flight SSR request that blocks on "AppConfig" inside getAppConfig()
-      const inflightPromise = request('/guest/login', 15000);
+      // Issue authenticated in-flight SSR request that blocks on "AppConfig" inside getAppConfig()
+      const inflightPromise = httpRequest('/guest/login', {
+        headers: {
+          Cookie: guestCookie,
+        },
+        timeoutMs: 15000,
+      });
 
       let queryBlockedInDb = false;
       for (let i = 0; i < 50; i++) {
