@@ -872,7 +872,7 @@ function SubEventsMatrixPageContent() {
 
                         {scheduleLabel && (
                           <span
-                            className="text-[11px] font-normal text-gray-500 dark:text-gray-400"
+                            className="text-[11px] font-normal text-gray-700 dark:text-gray-200"
                             data-testid={`sub-event-schedule-${evt.id}`}
                           >
                             {scheduleLabel}
@@ -929,14 +929,14 @@ function SubEventsMatrixPageContent() {
                             type="button"
                             aria-label={`Delete sub-event ${evt.title}`}
                             onClick={() => setDeletingSubEvent(evt)}
-                            className="text-red-600 dark:text-red-400 hover:underline font-medium"
+                            className="text-red-800 dark:text-red-200 hover:underline font-medium"
                           >
                             Delete
                           </button>
                         </div>
 
                         {evt.isPrivate ? (
-                          <div className="flex items-center gap-2 text-xs font-normal text-gray-500 dark:text-gray-400 mt-0.5">
+                          <div className="flex items-center gap-2 text-xs font-normal text-gray-700 dark:text-gray-200 mt-0.5">
                             <span>Bulk:</span>
                             <button
                               type="button"
@@ -949,7 +949,7 @@ function SubEventsMatrixPageContent() {
                             <span>|</span>
                             <button
                               type="button"
-                              className="text-red-600 dark:text-red-400 hover:underline font-semibold"
+                              className="text-red-800 dark:text-red-200 hover:underline font-semibold"
                               onClick={() => handleColumnToggle(evt.id, 'revoke')}
                               title={`Revoke ${evt.title} access from all ${totalRecords} matching guests`}
                             >

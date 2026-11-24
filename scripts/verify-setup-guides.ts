@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import ts from 'typescript';
 
 const COMMENTED_OPTIONAL_ENV_KEYS = [
   'POSTGRES_URL_NON_POOLING',
@@ -432,6 +433,12 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     '.github/TESTING.md',
     'AGENTS.md',
     '.github/ISSUE_TEMPLATE/documentation.md',
+    'DEPLOYMENT.md',
+    'docs-portal/.vitepress/config.mts',
+    'docs-portal/index.md',
+    'src/lib/basePath.ts',
+    'src/components/demo/DemoToolbar.tsx',
+    'src/app/project-info/ProjectInfoClient.tsx',
   ];
 
   for (const relPath of requiredFiles) {
@@ -485,6 +492,21 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   const agentsRaw = fs.readFileSync(path.join(repoRoot, 'AGENTS.md'), 'utf8');
   const docIssueTemplateRaw = fs.readFileSync(
     path.join(repoRoot, '.github/ISSUE_TEMPLATE/documentation.md'),
+    'utf8'
+  );
+  const deploymentRaw = fs.readFileSync(path.join(repoRoot, 'DEPLOYMENT.md'), 'utf8');
+  const vitepressConfigRaw = fs.readFileSync(
+    path.join(repoRoot, 'docs-portal/.vitepress/config.mts'),
+    'utf8'
+  );
+  const portalIndexRaw = fs.readFileSync(path.join(repoRoot, 'docs-portal/index.md'), 'utf8');
+  const basePathRaw = fs.readFileSync(path.join(repoRoot, 'src/lib/basePath.ts'), 'utf8');
+  const demoToolbarRaw = fs.readFileSync(
+    path.join(repoRoot, 'src/components/demo/DemoToolbar.tsx'),
+    'utf8'
+  );
+  const projectInfoRaw = fs.readFileSync(
+    path.join(repoRoot, 'src/app/project-info/ProjectInfoClient.tsx'),
     'utf8'
   );
 
@@ -1408,7 +1430,383 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     }
   }
 
+  // 8. Showcase navigation, /project-info accuracy, build:export quality summary, & demo runtime guide checks
+  verifyShowcasePortalLinks(vitepressConfigRaw, portalIndexRaw, errors);
+  verifyShowcaseReturnLinksAndProjectInfo(
+    basePathRaw,
+    demoToolbarRaw,
+    projectInfoRaw,
+    pkg,
+    deploymentRaw,
+    errors
+  );
+  verifyContributingQualityAndDemoGuides(
+    checkQualityRaw,
+    contributingRaw,
+    readmeRaw,
+    devSetupRaw,
+    agentsRaw,
+    errors
+  );
+
   return errors;
+}
+
+const REQUIRED_SHOWCASE_ROUTES = ['/', '/api/', '/storybook/'] as const;
+
+const REQUIRED_DEMO_RUNTIME_GUIDE_MODULES = [
+  'src/components/layout/RootLayoutClient.tsx',
+  'src/lib/demo/demoStore.ts',
+  'src/lib/demo/demoApiHandler.ts',
+  'src/lib/sampleData/builder.ts',
+  'src/features/registry/components/SimulatedCardCheckout.tsx',
+  'src/app/admin/setup/page.tsx',
+] as const;
+
+function getObjectLiteralStringProps(obj: ts.ObjectLiteralExpression): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const prop of obj.properties) {
+    if (!ts.isPropertyAssignment(prop)) continue;
+    let key: string | null = null;
+    if (
+      ts.isIdentifier(prop.name) ||
+      ts.isStringLiteral(prop.name) ||
+      ts.isNoSubstitutionTemplateLiteral(prop.name)
+    ) {
+      key = prop.name.text;
+    }
+    if (!key) continue;
+    if (
+      ts.isStringLiteral(prop.initializer) ||
+      ts.isNoSubstitutionTemplateLiteral(prop.initializer)
+    ) {
+      map.set(key, prop.initializer.text);
+    }
+  }
+  return map;
+}
+
+function verifyShowcasePortalLinks(
+  vitepressConfigRaw: string,
+  portalIndexRaw: string,
+  errors: string[]
+): void {
+  if (
+    !vitepressConfigRaw.includes('ignoreDeadLinks') ||
+    !/\\\/demo/.test(vitepressConfigRaw) ||
+    !/\\\/storybook/.test(vitepressConfigRaw)
+  ) {
+    errors.push(
+      'docs-portal/.vitepress/config.mts: Must preserve ignoreDeadLinks rules for /demo and /storybook'
+    );
+  }
+
+  const configSf = ts.createSourceFile(
+    'docs-portal/.vitepress/config.mts',
+    vitepressConfigRaw,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS
+  );
+
+  const navItems: Array<Map<string, string>> = [];
+  function visitConfig(node: ts.Node): void {
+    if (
+      ts.isPropertyAssignment(node) &&
+      ((ts.isIdentifier(node.name) && node.name.text === 'nav') ||
+        (ts.isStringLiteral(node.name) && node.name.text === 'nav')) &&
+      ts.isArrayLiteralExpression(node.initializer)
+    ) {
+      for (const el of node.initializer.elements) {
+        if (ts.isObjectLiteralExpression(el)) {
+          navItems.push(getObjectLiteralStringProps(el));
+        }
+      }
+    }
+    ts.forEachChild(node, visitConfig);
+  }
+  visitConfig(configSf);
+
+  const demoNav = navItems.find((item) => item.get('link') === '/demo/');
+  if (!demoNav || demoNav.get('target') !== '_self') {
+    errors.push(
+      'docs-portal/.vitepress/config.mts: Nav link "/demo/" must retain target: \'_self\''
+    );
+  }
+
+  const storybookNav = navItems.find((item) => item.get('link') === '/storybook/');
+  if (
+    !storybookNav ||
+    storybookNav.get('target') !== '_blank' ||
+    !/\bnoopener\b/.test(storybookNav.get('rel') ?? '') ||
+    !/\bnoreferrer\b/.test(storybookNav.get('rel') ?? '')
+  ) {
+    errors.push(
+      'docs-portal/.vitepress/config.mts: Nav link "/storybook/" must open in a new tab with target: \'_blank\' and rel: \'noopener noreferrer\''
+    );
+  }
+
+  const storybookBlocks = portalIndexRaw.match(
+    /-\s+(?:theme|title):[\s\S]*?link:\s*\/storybook\/[\s\S]*?(?=\n\s*-\s+(?:theme|title):|\nfeatures:|\n---)/g
+  );
+  if (!storybookBlocks || storybookBlocks.length < 2) {
+    errors.push(
+      'docs-portal/index.md: Must define "/storybook/" hero action and feature card entries'
+    );
+  } else {
+    for (const block of storybookBlocks) {
+      if (
+        !/\btarget:\s*['"]?_blank['"]?\b/.test(block) ||
+        !/\brel:\s*['"]?noopener\s+noreferrer['"]?\b/.test(block)
+      ) {
+        errors.push(
+          'docs-portal/index.md: Every "/storybook/" action and feature card must set target: _blank and rel: noopener noreferrer'
+        );
+        break;
+      }
+    }
+  }
+
+  const demoBlocks = portalIndexRaw.match(
+    /-\s+(?:theme|title):[\s\S]*?link:\s*\/demo\/[\s\S]*?(?=\n\s*-\s+(?:theme|title):|\nfeatures:|\n---)/g
+  );
+  if (!demoBlocks || demoBlocks.some((b) => !/\btarget:\s*['"]?_self['"]?\b/.test(b))) {
+    errors.push('docs-portal/index.md: "/demo/" links must retain target: _self');
+  }
+}
+
+function collectResolvedShowcaseRoutes(sf: ts.SourceFile): Set<string> {
+  const routes = new Set<string>();
+  function visit(node: ts.Node): void {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'resolveShowcasePath' &&
+      node.arguments.length >= 1
+    ) {
+      const firstArg = node.arguments[0];
+      if (ts.isStringLiteral(firstArg) || ts.isNoSubstitutionTemplateLiteral(firstArg)) {
+        routes.add(firstArg.text);
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sf);
+  return routes;
+}
+
+function isInsideCollapsedGuard(node: ts.Node): boolean {
+  let current: ts.Node | undefined = node.parent;
+  while (current) {
+    if (
+      ts.isBinaryExpression(current) &&
+      current.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken &&
+      ts.isPrefixUnaryExpression(current.left) &&
+      current.left.operator === ts.SyntaxKind.ExclamationToken &&
+      ts.isIdentifier(current.left.operand) &&
+      current.left.operand.text === 'isToolbarCollapsed' &&
+      node.pos >= current.right.pos &&
+      node.end <= current.right.end
+    ) {
+      return true;
+    }
+    current = current.parent;
+  }
+  return false;
+}
+
+function verifyShowcaseReturnLinksAndProjectInfo(
+  basePathRaw: string,
+  demoToolbarRaw: string,
+  projectInfoRaw: string,
+  pkg: {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  },
+  deploymentRaw: string,
+  errors: string[]
+): void {
+  if (
+    !/export\s+function\s+resolveShowcasePath\b/.test(basePathRaw) ||
+    !basePathRaw.includes('NEXT_PUBLIC_BASE_PATH')
+  ) {
+    errors.push(
+      'src/lib/basePath.ts: Must export resolveShowcasePath deriving sibling showcase URLs from NEXT_PUBLIC_BASE_PATH'
+    );
+  }
+
+  const toolbarSf = ts.createSourceFile(
+    'src/components/demo/DemoToolbar.tsx',
+    demoToolbarRaw,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX
+  );
+  if (!/if\s*\(\s*!demo\?\.isDemoMode\s*\)\s*\{\s*return\s+null;/.test(demoToolbarRaw)) {
+    errors.push(
+      'src/components/demo/DemoToolbar.tsx: Must gate toolbar rendering on demo?.isDemoMode'
+    );
+  }
+
+  const toolbarRoutes = collectResolvedShowcaseRoutes(toolbarSf);
+  for (const route of REQUIRED_SHOWCASE_ROUTES) {
+    if (!toolbarRoutes.has(route)) {
+      errors.push(
+        `src/components/demo/DemoToolbar.tsx: Must resolve subpath-safe showcase route "${route}" via resolveShowcasePath`
+      );
+    }
+  }
+
+  const persistentTestIds = new Set<string>();
+  function visitToolbarJsx(node: ts.Node): void {
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+      let testId: string | null = null;
+      let hasBypass = false;
+      for (const attr of node.attributes.properties) {
+        if (!ts.isJsxAttribute(attr) || !attr.initializer || !ts.isStringLiteral(attr.initializer)) {
+          continue;
+        }
+        const attrName = attr.name.getText(toolbarSf);
+        if (attrName === 'data-testid') {
+          testId = attr.initializer.text;
+        }
+        if (attrName === 'data-static-demo-bypass' && attr.initializer.text === 'true') {
+          hasBypass = true;
+        }
+      }
+      if (
+        testId &&
+        ['demo-link-docs', 'demo-link-api', 'demo-link-storybook'].includes(testId) &&
+        hasBypass &&
+        !isInsideCollapsedGuard(node)
+      ) {
+        persistentTestIds.add(testId);
+      }
+    }
+    ts.forEachChild(node, visitToolbarJsx);
+  }
+  visitToolbarJsx(toolbarSf);
+
+  for (const requiredTestId of ['demo-link-docs', 'demo-link-api', 'demo-link-storybook']) {
+    if (!persistentTestIds.has(requiredTestId)) {
+      errors.push(
+        `src/components/demo/DemoToolbar.tsx: Showcase link "${requiredTestId}" must render in both expanded and collapsed states with data-static-demo-bypass="true"`
+      );
+    }
+  }
+
+  // Verify ProjectInfoClient.tsx claims & demo-only showcase links
+  const allInstalledPackages = new Set([
+    ...Object.keys(pkg.dependencies ?? {}),
+    ...Object.keys(pkg.devDependencies ?? {}),
+  ]);
+  if (!allInstalledPackages.has('fuse.js') && /\bfuse\.js\b/i.test(projectInfoRaw)) {
+    errors.push(
+      'src/app/project-info/ProjectInfoClient.tsx: Must not claim unshipped "Fuse.js" library absent from package.json'
+    );
+  }
+  if (/\bnetlify\b/i.test(projectInfoRaw)) {
+    errors.push(
+      'src/app/project-info/ProjectInfoClient.tsx: Must not claim unsupported "Netlify" hosting absent from DEPLOYMENT.md Support Tier Matrix'
+    );
+  }
+  const supportMatrixSection = extractMarkdownSection(
+    deploymentRaw,
+    /^##\s+Support Tier Matrix\b/,
+    /^##\s+/
+  );
+  for (const supportedHost of [
+    'Docker / VPS',
+    'Google Cloud Run',
+    'Vercel',
+    'Railway & Render',
+  ]) {
+    if (supportMatrixSection.includes(supportedHost)) {
+      const normalizedProjectInfo = projectInfoRaw.replace(/&amp;/g, '&');
+      if (!normalizedProjectInfo.includes(supportedHost)) {
+        errors.push(
+          `src/app/project-info/ProjectInfoClient.tsx: Must list supported hosting target "${supportedHost}" from DEPLOYMENT.md Support Tier Matrix`
+        );
+      }
+    }
+  }
+  if (/\bnpm\s+install\b/.test(projectInfoRaw) || !/\bnpm\s+ci\b/.test(projectInfoRaw)) {
+    errors.push(
+      'src/app/project-info/ProjectInfoClient.tsx: Must prescribe "npm ci" rather than "npm install"'
+    );
+  }
+  if (!projectInfoRaw.includes('.github/CONTRIBUTING.md')) {
+    errors.push(
+      'src/app/project-info/ProjectInfoClient.tsx: Must link CONTRIBUTING.md to ".github/CONTRIBUTING.md"'
+    );
+  }
+
+  const projectInfoSf = ts.createSourceFile(
+    'src/app/project-info/ProjectInfoClient.tsx',
+    projectInfoRaw,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX
+  );
+  const projectInfoRoutes = collectResolvedShowcaseRoutes(projectInfoSf);
+  for (const route of REQUIRED_SHOWCASE_ROUTES) {
+    if (!projectInfoRoutes.has(route)) {
+      errors.push(
+        `src/app/project-info/ProjectInfoClient.tsx: Must resolve subpath-safe showcase route "${route}" via resolveShowcasePath`
+      );
+    }
+  }
+  if (
+    !projectInfoRaw.includes('useOptionalDemo') ||
+    !/isDemoMode\s*&&/.test(projectInfoRaw)
+  ) {
+    errors.push(
+      'src/app/project-info/ProjectInfoClient.tsx: Must gate showcase navigation links on useOptionalDemo()?.isDemoMode'
+    );
+  }
+}
+
+function verifyContributingQualityAndDemoGuides(
+  checkQualityRaw: string,
+  contributingRaw: string,
+  readmeRaw: string,
+  devSetupRaw: string,
+  agentsRaw: string,
+  errors: string[]
+): void {
+  if (checkQualityRaw.includes('npm run build:export')) {
+    const qualitySectionMatch = contributingRaw.match(
+      /-\s+\*\*Run All Quality Checks:\*\*[\s\S]*?(?=\n\s*-\s+\*\*Targeted Quality)/
+    );
+    const qualitySummary = qualitySectionMatch ? qualitySectionMatch[0] : '';
+    if (!qualitySummary.includes('npm run build:export')) {
+      errors.push(
+        '.github/CONTRIBUTING.md: "Run All Quality Checks" (npm run quality) summary must include "npm run build:export"'
+      );
+    }
+  }
+
+  for (const [docLabel, docText] of [
+    ['README.md', readmeRaw],
+    ['docs/developer-setup.md', devSetupRaw],
+    ['AGENTS.md', agentsRaw],
+  ] as const) {
+    if (!docText.includes('npm run build:export')) {
+      errors.push(`${docLabel}: Must document static showcase export command "npm run build:export"`);
+    }
+    if (!docText.includes('wedding_showcase_demo_v1')) {
+      errors.push(
+        `${docLabel}: Must document persistent demo storage key "wedding_showcase_demo_v1"`
+      );
+    }
+    for (const demoModulePath of REQUIRED_DEMO_RUNTIME_GUIDE_MODULES) {
+      if (!docText.includes(demoModulePath)) {
+        errors.push(
+          `${docLabel}: Missing interactive demo runtime module documentation for "${demoModulePath}"`
+        );
+      }
+    }
+  }
 }
 
 function main(): void {

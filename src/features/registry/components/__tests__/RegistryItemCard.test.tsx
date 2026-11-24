@@ -1,7 +1,8 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import { Overlay } from '@/components/ui/Overlay';
+import { Dialog } from '@/components/ui/Dialog';
 
 expect.extend(toHaveNoViolations);
 import { ThemeProvider } from '@/components/ThemeProvider';
@@ -1966,6 +1967,163 @@ describe('RegistryItemCard Component', () => {
     resolveSubmit!();
     await waitFor(() => {
       expect(pendingContribute).toHaveBeenCalled();
+    });
+  });
+
+  describe('WCAG 2.2 Registry Modal Accessibility', () => {
+    it('passes item.name as fallbackAlt to MediaImage when media altText is empty', () => {
+      const itemWithoutAlt: RegistryItem = {
+        ...mockSingleItem,
+        name: 'Handcrafted Ceramic Pitcher',
+        image: createMockMedia({
+          id: 'img-empty-alt',
+          url: '/images/IMG_1024.jpg',
+          altText: '',
+          isDecorative: false,
+        }),
+      };
+
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard
+            item={itemWithoutAlt}
+            onClose={mockOnClose}
+            onContribute={mockOnContribute}
+          />
+        </Overlay>
+      );
+
+      expect(screen.getByRole('img', { name: 'Handcrafted Ceramic Pitcher' })).toBeInTheDocument();
+    });
+
+    it('renders StripeCardPaymentSection as a named composite group without a dangling htmlFor attribute', async () => {
+      const cardFundItem: RegistryItem = {
+        ...mockGroupItem,
+        itemType: 'CASH_FUND',
+      };
+
+      const { container } = render(
+        <ThemeProvider initialThemeMode="dark">
+          <Overlay isOpen={true} onClose={mockOnClose}>
+            <RegistryItemCard
+              item={cardFundItem}
+              cardCheckoutEnabled={true}
+              stripePublishableKey="pk_test_51MockValidPublishableKey1234567890"
+              onClose={mockOnClose}
+              onContribute={mockOnContribute}
+            />
+          </Overlay>
+        </ThemeProvider>
+      );
+
+      const paymentGroup = await screen.findByRole('group', {
+        name: /Card & Digital Wallet Details/i,
+      });
+      expect(paymentGroup).toBeInTheDocument();
+      expect(within(paymentGroup).getByTestId('stripe-payment-element')).toBeInTheDocument();
+
+      // Verify zero dangling htmlFor attributes across the entire form
+      const allLabelsWithFor = Array.from(container.querySelectorAll('label[for]'));
+      for (const label of allLabelsWithFor) {
+        const targetId = label.getAttribute('for');
+        expect(targetId).toBeTruthy();
+        expect(container.querySelector(`[id="${targetId}"]`)).not.toBeNull();
+      }
+
+      expect(await axe(container)).toHaveNoViolations();
+    });
+
+    it('keeps invitation code Input focused with readOnly and aria-busy during auto-verification, moves focus to Clear on lock, and announces via FormMessage', async () => {
+      let resolveValidation!: (val: { valid: boolean; code: string; guestName: string }) => void;
+      (apiClient.get as jest.Mock).mockImplementation((url: string) => {
+        if (url.includes('/api/registry/validate-code')) {
+          return new Promise((resolve) => {
+            resolveValidation = resolve;
+          });
+        }
+        return Promise.resolve({ authenticated: false });
+      });
+
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard
+            item={mockSingleItem}
+            onClose={mockOnClose}
+            onContribute={mockOnContribute}
+          />
+        </Overlay>
+      );
+
+      const codeInput = screen.getByLabelText(/Invitation Code/i);
+      codeInput.focus();
+      expect(document.activeElement).toBe(codeInput);
+
+      fireEvent.change(codeInput, { target: { value: 'FOCUS123' } });
+
+      // While verification is in flight, input stays focused, read-only, and aria-busy (never disabled)
+      await waitFor(() => {
+        expect(codeInput).toHaveAttribute('aria-busy', 'true');
+      });
+      expect(codeInput).toHaveAttribute('readonly');
+      expect(codeInput).not.toBeDisabled();
+      expect(document.activeElement).toBe(codeInput);
+
+      // Complete verification: input locks, focus moves deterministically to Clear button, FormMessage announces politely
+      resolveValidation({ valid: true, code: 'FOCUS123', guestName: 'Casey Guest' });
+
+      const verifiedNotice = await screen.findByText('Code verified! Name pre-filled.');
+      expect(verifiedNotice).toHaveAttribute('role', 'status');
+      expect(verifiedNotice).toHaveAttribute('aria-live', 'polite');
+
+      const clearBtn = screen.getByRole('button', { name: 'Clear' });
+      expect(document.activeElement).toBe(clearBtn);
+
+      // Clicking Clear unlocks and restores focus to the code input
+      fireEvent.click(clearBtn);
+      await waitFor(() => {
+        expect(codeInput).not.toBeDisabled();
+      });
+      expect(document.activeElement).toBe(codeInput);
+    });
+
+    it('announces contribution confirmation and receipt copy politely inside the modal dialog subtree', async () => {
+      Object.assign(navigator, {
+        clipboard: {
+          writeText: jest.fn().mockResolvedValue(undefined),
+        },
+      });
+
+      render(
+        <ToastProvider>
+          <Dialog isOpen={true} onClose={mockOnClose} aria-labelledby="registry-item-title-item-1">
+            <RegistryItemCard
+              item={mockSingleItem}
+              titleId="registry-item-title-item-1"
+              onClose={mockOnClose}
+              onContribute={jest.fn().mockResolvedValue(undefined)}
+            />
+          </Dialog>
+        </ToastProvider>
+      );
+
+      const dialog = screen.getByRole('dialog', { name: 'Single Item' });
+      await unlockClaimWithInviteCode('INVITE26', 'Taylor Guest');
+      fireEvent.change(within(dialog).getByLabelText(/Your Name/i), {
+        target: { value: 'Taylor Guest' },
+      });
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Claim Gift' }));
+
+      const confirmation = await within(dialog).findByTestId('contribution-success-confirmation');
+      const statusRegions = within(confirmation).getAllByRole('status');
+      expect(statusRegions[0]).toHaveAttribute('aria-live', 'polite');
+      expect(statusRegions[0]).toHaveTextContent(/Contribution Confirmed!/i);
+
+      fireEvent.click(within(dialog).getByTestId('copy-receipt-button'));
+      await waitFor(() => {
+        expect(within(dialog).getByTestId('registry-modal-status')).toHaveTextContent(
+          'Receipt copied to clipboard for Single Item.'
+        );
+      });
     });
   });
 });

@@ -68,10 +68,10 @@ describe('Print Token Theme Preset Integration', () => {
       <PrintableFloorplan tables={tables as any} unassignedGuests={unassigned as any} />
     );
 
-    const mainElement = container.querySelector('main');
-    expect(mainElement).toBeInTheDocument();
-    expect(mainElement?.getAttribute('style')).toContain('var(--print-bg)');
-    expect(mainElement?.getAttribute('style')).not.toContain('#ffffff');
+    const regionElement = container.querySelector('[role="region"]');
+    expect(regionElement).toBeInTheDocument();
+    expect(regionElement?.getAttribute('style')).toContain('var(--print-bg)');
+    expect(regionElement?.getAttribute('style')).not.toContain('#ffffff');
 
     const headings = container.querySelectorAll('h2');
     headings.forEach((h2) => {

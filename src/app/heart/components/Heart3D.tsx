@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import * as THREE from 'three';
 import { Text } from '@react-three/drei';
 import { useTheme } from '../../../components/ThemeProvider';
-import { HEART_FONT_URL } from '../constants';
+import { resolveHeartFontUrl } from '../constants';
 
 export function Heart3D({
   scale,
@@ -25,6 +25,7 @@ export function Heart3D({
 }) {
   const p1 = partner1Name || brideName || '';
   const p2 = partner2Name || groomName || '';
+  const fontUrl = resolveHeartFontUrl();
   const { themeOutline, metalness = 1, roughness = 0.2, envMapIntensity = 1.2, extrusion } = useTheme();
 
   const depth = extrusion?.depth ?? 1.3;
@@ -84,7 +85,7 @@ export function Heart3D({
       {(!shardSide || shardSide === 'right') && <mesh geometry={geom} material={silver} />}
       {(!shardSide || shardSide === 'left') && (
         <Text
-          font={HEART_FONT_URL}
+          font={fontUrl}
           position={[-1, 0.1, 0.71]}
           fontSize={0.35}
           anchorX="center"
@@ -97,7 +98,7 @@ export function Heart3D({
       )}
       {(!shardSide || shardSide === 'right') && (
         <Text
-          font={HEART_FONT_URL}
+          font={fontUrl}
           position={[1, 0.1, 0.71]}
           fontSize={0.35}
           anchorX="center"

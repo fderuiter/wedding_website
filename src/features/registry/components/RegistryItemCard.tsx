@@ -131,7 +131,7 @@ const StripeCardPaymentSection: React.FC<{
   }, [stripe, elements, controllerRef]);
 
   return (
-    <FormGroup className="mb-4">
+    <FormGroup group className="mb-4">
       <Label className="block mb-1.5 font-medium text-sm text-gray-800 dark:text-gray-200">
         Card &amp; Digital Wallet Details
       </Label>
@@ -340,8 +340,26 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   } | null>(null);
   const [isClaimActionPending, setIsClaimActionPending] = useState(false);
   const [claimActionError, setClaimActionError] = useState<string | null>(null);
+  const [modalStatusMessage, setModalStatusMessage] = useState('');
   const receiptCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const addressCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const verifyCodeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const clearCodeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const codeRowFocusedRef = useRef(false);
+  const wasCodeLockedRef = useRef(isCodeLocked);
+  const wasClearedByUserRef = useRef(false);
+
+  useEffect(() => {
+    const previouslyLocked = wasCodeLockedRef.current;
+    wasCodeLockedRef.current = isCodeLocked;
+
+    if (!previouslyLocked && isCodeLocked && codeRowFocusedRef.current) {
+      clearCodeButtonRef.current?.focus();
+    } else if (previouslyLocked && !isCodeLocked && wasClearedByUserRef.current) {
+      wasClearedByUserRef.current = false;
+      invitationCodeInputRef.current?.focus();
+    }
+  }, [isCodeLocked, invitationCodeInputRef]);
 
   useEffect(() => {
     return () => {
@@ -860,18 +878,19 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
         onItemUpdated?.(response.item);
       }
 
-      toastContext?.addToast(
+      const statusNotice =
         action === 'confirm'
           ? 'Gift confirmed! The couple has been notified.'
-          : 'Reservation cancelled. This gift is available again.',
-        'success'
-      );
+          : 'Reservation cancelled. This gift is available again.';
+      setModalStatusMessage(statusNotice);
+      toastContext?.addToast(statusNotice, 'success');
     } catch (err: unknown) {
       const messageText =
         err instanceof Error && err.message
           ? err.message
           : 'Unable to update your reservation right now.';
       setClaimActionError(messageText);
+      setModalStatusMessage(messageText);
       toastContext?.addToast(messageText, 'error');
     } finally {
       setIsClaimActionPending(false);
@@ -949,8 +968,10 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
       receiptCopyTimerRef.current = setTimeout(() => {
         setCopiedReceiptKey(null);
       }, 2500);
+      setModalStatusMessage(`Receipt copied to clipboard for ${item.name}.`);
       toastContext?.addToast('Receipt details copied to clipboard!', 'success');
     } else {
+      setModalStatusMessage('Unable to copy receipt details to clipboard.');
       toastContext?.addToast('Failed to copy receipt details', 'error');
     }
   };
@@ -1016,8 +1037,10 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
       addressCopyTimerRef.current = setTimeout(() => {
         setCopiedAddress(false);
       }, 2500);
+      setModalStatusMessage('Couple shipping address copied to clipboard.');
       toastContext?.addToast('Shipping address copied to clipboard!', 'success');
     } else {
+      setModalStatusMessage('Unable to copy shipping address to clipboard.');
       toastContext?.addToast('Failed to copy shipping address', 'error');
     }
   };
@@ -1035,6 +1058,15 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
       className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-xl w-full p-6 relative max-h-[90vh] overflow-y-auto text-gray-800 dark:text-gray-100"
       onClick={(e) => e.stopPropagation()}
     >
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+        data-testid="registry-modal-status"
+      >
+        {modalStatusMessage}
+      </div>
       <Button
         variant="ghost"
         size="sm"
@@ -1047,6 +1079,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
       <div className="relative w-full h-64 mb-4">
         <MediaImage
           media={item.image}
+          fallbackAlt={item.name}
           className="object-cover rounded bg-gray-100 w-full h-full absolute inset-0"
         />
       </div>
@@ -1354,27 +1387,29 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
           data-testid="contribution-success-confirmation"
           className="mt-5 pt-4 border-t border-green-500 text-center"
         >
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/60 text-green-600 dark:text-green-300 mb-3">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/60 text-[var(--form-success-text,#15803d)] mb-3">
             <Icon name="Check" className="w-6 h-6" />
           </div>
           {postClaimStatus === 'CANCELLED' ? (
-            <>
+            <div role="status" aria-live="polite">
               <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-1">
                 Reservation Released
               </h3>
               <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">
                 Your reservation for <span className="font-semibold">{item.name}</span> has been cancelled so other wedding guests can choose this gift.
               </p>
-            </>
+            </div>
           ) : (isDemoMode ? isDirectMode : isPayableGroupGift) && !paymentTransactionId && hasPaymentHandle ? (
             <>
-              <h3 className="text-xl font-bold text-green-700 dark:text-green-400 mb-1">
-                Direct Transfer Recorded!
-              </h3>
-              <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">
-                Thank you, <span className="font-semibold">{contributorName}</span>! Your self-reported direct transfer of{' '}
-                <span className="font-semibold">{formatCurrency(baseContributionAmount)}</span> (0% fee) has been recorded for the couple.
-              </p>
+              <div role="status" aria-live="polite">
+                <h3 className="text-xl font-bold text-[var(--form-success-text,#15803d)] mb-1">
+                  Direct Transfer Recorded!
+                </h3>
+                <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">
+                  Thank you, <span className="font-semibold">{contributorName}</span>! Your self-reported direct transfer of{' '}
+                  <span className="font-semibold">{formatCurrency(baseContributionAmount)}</span> (0% fee) has been recorded for the couple.
+                </p>
+              </div>
               <div className="p-3 bg-amber-50 dark:bg-amber-950/40 rounded border border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 mb-4 text-left">
                 <p className="font-semibold mb-1">
                   Reminder: Complete your transfer in {effectiveHandleType || 'your payment app'}
@@ -1402,21 +1437,23 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             </>
           ) : (
             <>
-              <h3 className="text-xl font-bold text-green-700 dark:text-green-400 mb-1">
-                Contribution Confirmed!
-              </h3>
-              <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">
-                Thank you, <span className="font-semibold">{contributorName}</span>! Your{' '}
-                {paymentTransactionId ? 'card payment' : 'gift'} of{' '}
-                <span className="font-semibold">
-                  {formatCurrency(
-                    effectiveCoverFee
-                      ? baseContributionAmount + estimatedProcessingFee
-                      : baseContributionAmount
-                  )}
-                </span>{' '}
-                has been {paymentTransactionId ? 'securely processed' : 'recorded'}.
-              </p>
+              <div role="status" aria-live="polite">
+                <h3 className="text-xl font-bold text-[var(--form-success-text,#15803d)] mb-1">
+                  Contribution Confirmed!
+                </h3>
+                <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">
+                  Thank you, <span className="font-semibold">{contributorName}</span>! Your{' '}
+                  {paymentTransactionId ? 'card payment' : 'gift'} of{' '}
+                  <span className="font-semibold">
+                    {formatCurrency(
+                      effectiveCoverFee
+                        ? baseContributionAmount + estimatedProcessingFee
+                        : baseContributionAmount
+                    )}
+                  </span>{' '}
+                  has been {paymentTransactionId ? 'securely processed' : 'recorded'}.
+                </p>
+              </div>
               {paymentTransactionId && (
                 <div className="p-3 bg-gray-50 dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-700 text-xs font-mono text-gray-600 dark:text-gray-400 mb-4 select-all">
                   <span>Transaction Reference: </span>
@@ -1538,7 +1575,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
           </h3>
           <FormGroup
             required={requiresCodeVerification}
-            state={codeError ? 'error' : 'default'}
+            state={codeError ? 'error' : isCodeLocked ? 'success' : 'default'}
             busy={isBusy || isValidatingCode}
             className="mb-3"
           >
@@ -1553,14 +1590,39 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                 required={requiresCodeVerification}
                 value={invitationCode}
                 onChange={handleCodeChange}
+                onFocus={() => {
+                  codeRowFocusedRef.current = true;
+                }}
+                onBlur={(e) => {
+                  if (
+                    !isValidatingCode &&
+                    e.relatedTarget !== null &&
+                    e.relatedTarget !== verifyCodeButtonRef.current
+                  ) {
+                    codeRowFocusedRef.current = false;
+                  }
+                }}
                 busy={isBusy || isValidatingCode}
                 disabled={isCodeLocked}
               />
               {!isCodeLocked && (
                 <Button
+                  ref={verifyCodeButtonRef}
                   type="button"
                   variant="secondary"
                   disabled={isSubmitting || isValidatingCode || !invitationCode}
+                  onFocus={() => {
+                    codeRowFocusedRef.current = true;
+                  }}
+                  onBlur={(e) => {
+                    if (
+                      !isValidatingCode &&
+                      e.relatedTarget !== null &&
+                      e.relatedTarget !== invitationCodeInputRef.current
+                    ) {
+                      codeRowFocusedRef.current = false;
+                    }
+                  }}
                   onClick={handleVerifyCode}
                 >
                   {isValidatingCode ? 'Verifying...' : 'Verify'}
@@ -1568,29 +1630,26 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
               )}
               {isCodeLocked && (
                 <Button
+                  ref={clearCodeButtonRef}
                   type="button"
-                  variant="ghost"
-                  className="text-red-700 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
+                  variant="outline"
                   disabled={isSubmitting}
-                  onClick={handleClearCode}
+                  onClick={() => {
+                    wasClearedByUserRef.current = true;
+                    void handleClearCode();
+                  }}
                 >
                   Clear
                 </Button>
               )}
             </div>
-            {codeError && <FormMessage>{codeError}</FormMessage>}
+            <FormMessage className={isCodeLocked && !codeError ? 'text-sm' : undefined}>
+              {codeError || (isCodeLocked ? 'Code verified! Name pre-filled.' : null)}
+            </FormMessage>
             {requiresCodeVerification && !isCodeLocked && !codeError && (
-              <p
-                data-testid="invite-code-required-hint"
-                className="text-xs text-gray-600 dark:text-gray-400 mt-1"
-              >
+              <FormMessage role="none" data-testid="invite-code-required-hint">
                 Verify the 8-character code from your invitation to claim this gift.
-              </p>
-            )}
-            {isCodeLocked && (
-              <p className="text-sm text-green-700 dark:text-green-400 mt-1">
-                Code verified! Name pre-filled.
-              </p>
+              </FormMessage>
             )}
           </FormGroup>
           <FormGroup

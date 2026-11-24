@@ -123,6 +123,13 @@ export const steps: Step[] = [
   { name: 'ESLint Code Linting', command: 'npm run lint' },
   { name: 'Knip Unused Export Analysis', command: 'npm run lint:unused' },
   {
+    name: 'Security Dependency Audit',
+    script: 'check:audit',
+    command: 'npm run check:audit',
+    remediation:
+      'Moderate, high, or critical npm security advisories were detected in package-lock.json or docker/prisma-cli/package-lock.json.\nRun "npm run check:audit" locally (and inspect "npm audit --json" and "npm --prefix docker/prisma-cli audit --json") to upgrade or apply scoped range overrides for affected packages.',
+  },
+  {
     name: 'Build Static Documentation Portal',
     command: 'npm run docs:build',
     remediation:

@@ -105,8 +105,12 @@ describe('RegistryCard', () => {
     render(<RegistryCard item={purchasedItem} onClick={() => {}} />);
 
     expect(screen.getByText('Claimed!')).toBeInTheDocument();
-    // Check for opacity class indicating it's claimed
-    expect(screen.getByText('Test Item').closest('article[class*="opacity-60"]')).toBeInTheDocument();
+    // Dimming is isolated strictly to the photo layer so text and badges retain >= 4.5:1 contrast
+    expect(screen.getByTestId('registry-card')).not.toHaveClass('opacity-60');
+    expect(screen.getByTestId('registry-card-image-layer')).toHaveClass('opacity-60');
+    expect(screen.getByTestId('registry-card-media')).toContainElement(
+      screen.getByTestId('registry-card-claimed-overlay')
+    );
   });
 
   it('renders group gift details when applicable', () => {
@@ -155,8 +159,12 @@ describe('RegistryCard', () => {
     render(<RegistryCard item={fundedGroupGift} onClick={() => {}} />);
 
     expect(screen.getByText('Fully Funded!')).toBeInTheDocument();
-    // Check for opacity class indicating it's claimed/funded
-    expect(screen.getByText('Test Item').closest('article[class*="opacity-60"]')).toBeInTheDocument();
+    // Dimming is isolated strictly to the photo layer so text and badges retain >= 4.5:1 contrast
+    expect(screen.getByTestId('registry-card')).not.toHaveClass('opacity-60');
+    expect(screen.getByTestId('registry-card-image-layer')).toHaveClass('opacity-60');
+    expect(screen.getByTestId('registry-card-media')).toContainElement(
+      screen.getByTestId('registry-card-claimed-overlay')
+    );
   });
 
   it('renders admin buttons when isAdmin is true', () => {
@@ -425,6 +433,26 @@ describe('RegistryCard', () => {
       expect(cashFundBadge.className).toContain('text-badge-text');
       expect(cashFundBadge.className).toContain('border-card-border');
     });
+  });
+
+  it('passes item.name as fallbackAlt to MediaImage when media altText is missing', async () => {
+    const itemWithoutAlt: RegistryItem = {
+      ...mockItem,
+      name: 'Artisan Ceramic Vase',
+      image: createMockMedia({
+        id: 'img-no-alt',
+        url: '/images/IMG_9482.jpg',
+        altText: '',
+        isDecorative: false,
+      }),
+    };
+    const { container } = render(<RegistryCard item={itemWithoutAlt} onClick={() => {}} />);
+    const img = screen.getByRole('img', { name: 'Artisan Ceramic Vase' });
+    expect(img).toHaveAttribute('alt', 'Artisan Ceramic Vase');
+    expect(img.getAttribute('alt')).not.toContain('IMG_9482');
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 });
 

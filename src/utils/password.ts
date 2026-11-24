@@ -8,8 +8,14 @@ const SCRYPT_PARAMS = {
   maxmem: 32 * 1024 * 1024,
 };
 
+export const MAX_PASSWORD_LENGTH = 256;
+
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  if (!hash.startsWith('scrypt:')) {
+  if (typeof password !== 'string' || password.length === 0 || password.length > MAX_PASSWORD_LENGTH) {
+    return false;
+  }
+
+  if (!hash || typeof hash !== 'string' || !hash.startsWith('scrypt:')) {
     return false;
   }
   

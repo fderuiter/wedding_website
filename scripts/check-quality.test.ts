@@ -140,6 +140,18 @@ describe('check-quality', () => {
     expect(ciWorkflow).toContain('node_modules/.cache/storybook');
     expect(ciWorkflow).toContain('run: npm run build-storybook');
     expect(storybookMain).toContain('fsCache: true');
+    expect(storybookMain).toContain("'@storybook/addon-docs'");
+    expect(storybookMain).toContain('onlyRemoveTypeImports: false');
+    expect(storybookMain).toContain('NEXT_PUBLIC_BASE_PATH');
+    expect(storybookMain).toContain('../public/fonts');
+    expect(storybookMain).toContain('../public/mockServiceWorker.js');
+    expect(storybookMain).not.toContain("staticDirs: ['../public']");
+
+    const workerScript = fs.readFileSync(path.join(repoRoot, 'public', 'mockServiceWorker.js'), 'utf8');
+    const installedMswPkg = JSON.parse(
+      fs.readFileSync(path.join(repoRoot, 'node_modules', 'msw', 'package.json'), 'utf8'),
+    ) as { version: string };
+    expect(workerScript).toContain(`const PACKAGE_VERSION = '${installedMswPkg.version}'`);
 
     expect(ciWorkflow).toContain('  static-export-build:\n    needs: verify');
     expect(ciWorkflow).toContain('path: .next-export/cache');
@@ -168,5 +180,28 @@ describe('check-quality', () => {
     expect(pkg.scripts['check:static']).toBe('npx tsx scripts/check-quality.ts --static');
     expect(ciWorkflow).toContain('run: npm run check:static -- --skip-doc-sync');
     expect(ciWorkflow).toContain('run: npm run check:standalone -- --require-standalone');
+  });
+
+  it('includes check:audit in full quality steps before docs:build while keeping staticSteps offline', () => {
+    const repoRoot = process.cwd();
+    const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>;
+    };
+    const ciWorkflow = fs.readFileSync(path.join(repoRoot, '.github', 'workflows', 'ci.yml'), 'utf8');
+
+    expect(staticSteps.some((s) => s.script === 'check:audit' || s.command === 'npm run check:audit')).toBe(
+      false
+    );
+
+    const auditIdx = steps.findIndex((s) => s.script === 'check:audit' && s.command === 'npm run check:audit');
+    const docsIdx = steps.findIndex((s) => s.command === 'npm run docs:build');
+    expect(auditIdx).toBeGreaterThanOrEqual(staticSteps.length);
+    expect(auditIdx).toBeLessThan(docsIdx);
+    expect(steps[auditIdx].remediation).toContain('npm run check:audit');
+
+    expect(pkg.scripts['check:audit']).toBe(
+      'npm audit --audit-level=moderate && npm --prefix docker/prisma-cli audit --audit-level=moderate'
+    );
+    expect(ciWorkflow.match(/run: npm run check:audit/g)?.length).toBeGreaterThanOrEqual(2);
   });
 });

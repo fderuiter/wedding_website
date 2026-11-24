@@ -158,6 +158,7 @@ describe('POST /api/guest/photos/upload (Scoped Auth, Sanitization, & Auto-Appro
         isVisible: false,
       })
     );
+    expect('url' in json.data[0]).toBe(false);
   });
 
   it('records status APPROVED, isVisible true, and revalidates gallery/slideshow when autoApproveGuestPhotos is enabled', async () => {
@@ -197,6 +198,7 @@ describe('POST /api/guest/photos/upload (Scoped Auth, Sanitization, & Auto-Appro
     expect(mockRevalidatePath).toHaveBeenCalledWith('/photos/slideshow');
     expect(json.data[0]).toEqual(
       expect.objectContaining({
+        url: '/uploads/photos/sanitized.jpg',
         status: 'APPROVED',
         isVisible: true,
       })

@@ -15,6 +15,13 @@ import {
   stagePortalDoc,
   watchPortalDocs,
 } from '../../scripts/generate-portal';
+import {
+  createApiExplorerSandbox,
+  DEMO_SHOWCASE_STORAGE_KEY,
+  evaluateExternalTargetOrigin,
+  normalizeTargetServerUrl,
+  STATIC_DEMO_STORAGE_KEY,
+} from '../../docs-portal/.vitepress/theme/apiExplorerSandbox';
 
 describe('Portal Documentation Generator & Development Section', () => {
   const rootDir = process.cwd();
@@ -130,7 +137,9 @@ describe('Portal Documentation Generator & Development Section', () => {
 
     expect(configContent).toContain('base: normalizeBasePath(process.env.VITEPRESS_BASE)');
     expect(configContent).toContain("{ text: 'Live Demo', link: '/demo/', target: '_self' }");
-    expect(configContent).toContain("{ text: 'Storybook', link: '/storybook/', target: '_self' }");
+    expect(configContent).toContain(
+      "{ text: 'Storybook', link: '/storybook/', target: '_blank', rel: 'noopener noreferrer' }"
+    );
     expect(configContent).toContain("{ text: 'Development', link: '/development/developer-setup' }");
     expect(configContent).toContain('ignoreDeadLinks: [/^\\/demo(?:\\/|$)/, /^\\/storybook(?:\\/|$)/]');
     expect(configContent).toContain("env: 'dotenv'");
@@ -158,9 +167,13 @@ describe('Portal Documentation Generator & Development Section', () => {
 
     expect(indexContent).toContain('title: Developer Onboarding');
     expect(indexContent).toContain('link: /development/developer-setup');
-    expect(indexContent).toContain('link: /demo/');
-    expect(indexContent).toContain('link: /storybook/');
-    expect(indexContent).toContain('target: _self');
+    expect(indexContent).toMatch(/link:\s*\/demo\/\s*\n\s*target:\s*_self/);
+    expect(indexContent).toMatch(
+      /text:\s*Storybook\s*\n\s*link:\s*\/storybook\/\s*\n\s*target:\s*_blank\s*\n\s*rel:\s*noopener noreferrer/
+    );
+    expect(indexContent).toMatch(
+      /title:\s*Storybook Showcase[\s\S]*?link:\s*\/storybook\/\s*\n\s*target:\s*_blank\s*\n\s*rel:\s*noopener noreferrer/
+    );
   });
 
   it('verifies staged documents exist and route AGENTS.md, README.md, and CHANGELOG.md internally', () => {
@@ -372,26 +385,164 @@ describe('Portal Documentation Generator & Development Section', () => {
     });
   });
 
-  describe('API Explorer dark-mode accessibility and static server gating', () => {
-    it('replaces CSS invert filters with explicit WCAG AA dark-mode Swagger UI rules in custom.css', () => {
+  describe('API Explorer dark-mode accessibility and zero-backend browser sandbox', () => {
+    function relativeLuminance(hex: string): number {
+      const normalized = hex.replace('#', '');
+      const r = parseInt(normalized.slice(0, 2), 16) / 255;
+      const g = parseInt(normalized.slice(2, 4), 16) / 255;
+      const b = parseInt(normalized.slice(4, 6), 16) / 255;
+      const toLinear = (c: number) =>
+        c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+      return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+    }
+
+    function contrastRatio(fgHex: string, bgHex: string): number {
+      const l1 = relativeLuminance(fgHex);
+      const l2 = relativeLuminance(bgHex);
+      const lighter = Math.max(l1, l2);
+      const darker = Math.min(l1, l2);
+      return (lighter + 0.05) / (darker + 0.05);
+    }
+
+    function extractRuleColors(css: string, selector: string): { bg: string; fg: string } {
+      const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const match = css.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`));
+      if (!match) {
+        throw new Error(`Missing CSS selector: ${selector}`);
+      }
+      const block = match[1];
+      const bgMatch = block.match(/background-color:\s*(#[0-9a-fA-F]{6})/);
+      const fgMatch = block.match(/(?:^|;|\s)color:\s*(#[0-9a-fA-F]{6})/);
+      if (!bgMatch || !fgMatch) {
+        throw new Error(`Missing explicit hex colors on selector: ${selector}`);
+      }
+      return { bg: bgMatch[1], fg: fgMatch[1] };
+    }
+
+    it('styles all dark-mode HTTP method badges and execute button at >= 4.5:1 WCAG 2.2 AA contrast without invert filters', () => {
       const customCssPath = path.join(rootDir, 'docs-portal/.vitepress/theme/custom.css');
       const css = fs.readFileSync(customCssPath, 'utf8');
 
       expect(css).not.toMatch(/invert\s*\(/i);
       expect(css).toContain('.dark #swagger-ui-container .swagger-ui .model-box');
       expect(css).toContain('.dark #swagger-ui-container .swagger-ui .prop-type');
+
+      const selectors = [
+        '.dark #swagger-ui-container .swagger-ui .opblock.opblock-get .opblock-summary-method',
+        '.dark #swagger-ui-container .swagger-ui .opblock.opblock-post .opblock-summary-method',
+        '.dark #swagger-ui-container .swagger-ui .opblock.opblock-put .opblock-summary-method',
+        '.dark #swagger-ui-container .swagger-ui .opblock.opblock-delete .opblock-summary-method',
+        '.dark #swagger-ui-container .swagger-ui .opblock.opblock-patch .opblock-summary-method',
+        '.dark #swagger-ui-container .swagger-ui .opblock.opblock-head .opblock-summary-method',
+        '.dark #swagger-ui-container .swagger-ui .opblock.opblock-options .opblock-summary-method',
+        '.dark #swagger-ui-container .swagger-ui .opblock.opblock-deprecated .opblock-summary-method',
+        '.dark #swagger-ui-container .swagger-ui .btn.execute',
+        '.dark #swagger-ui-container .swagger-ui .btn.cancel',
+      ];
+
+      for (const selector of selectors) {
+        const { fg, bg } = extractRuleColors(css, selector);
+        expect(contrastRatio(fg, bg)).toBeGreaterThanOrEqual(4.5);
+      }
     });
 
-    it('gates interactive Try it out requests in ApiExplorer.vue until a valid target server URL is configured', () => {
+    it('defaults ApiExplorer.vue to the browser sandbox with persona switching while retaining external server URL mode and cross-origin guidance', () => {
       const explorerPath = path.join(
         rootDir,
         'docs-portal/.vitepress/theme/components/ApiExplorer.vue'
       );
       const vue = fs.readFileSync(explorerPath, 'utf8');
 
-      expect(vue).toContain('supportedSubmitMethods: isLiveEnabled ? SUBMIT_METHODS : []');
-      expect(vue).toContain('servers: []');
+      expect(vue).toContain("ref<ExplorerMode>('sandbox')");
+      expect(vue).toContain("description: 'In-browser demo sandbox (zero backend)'");
       expect(vue).toContain("description: 'Configured target deployment'");
+      expect(vue).toContain('supportedSubmitMethods: isSubmitEnabled ? SUBMIT_METHODS : []');
+      expect(vue).toContain('SameSite=Lax');
+      expect(vue).toContain('OPTIONS');
+    });
+
+    it('executes public, guest, admin, and setup flows in the browser sandbox, syncs localStorage state with the showcase demo, and validates external URLs', async () => {
+      window.localStorage.clear();
+      delete window.__STATIC_DEMO_INSTALLED__;
+
+      const sandbox = createApiExplorerSandbox();
+      try {
+        // Default guest persona seeds sample household session and synchronizes both storage keys
+        const initial = sandbox.getSnapshot();
+        expect(initial.persona).toBe('guest');
+        expect(initial.guestSession?.invitationCode).toBe('SMITH2026');
+        expect(window.localStorage.getItem(DEMO_SHOWCASE_STORAGE_KEY)).toBeTruthy();
+
+        // Public & guest routes succeed; admin routes reject with 401 while in guest persona
+        const publicItemsRes = await sandbox.executeFetch('/api/registry/items');
+        expect(publicItemsRes.status).toBe(200);
+        const guestAddrRes = await sandbox.executeFetch('/api/guest/address');
+        expect(guestAddrRes.status).toBe(200);
+        const blockedAdminRes = await sandbox.executeFetch('/api/admin/seating-tables');
+        expect(blockedAdminRes.status).toBe(401);
+
+        // Extended staticDemo public route (/api/health) also works through the bridge
+        const healthRes = await sandbox.executeFetch('/api/health');
+        expect(healthRes.status).toBe(200);
+        expect(window.localStorage.getItem(STATIC_DEMO_STORAGE_KEY)).toBeTruthy();
+
+        // Switching to admin unlocks /api/admin/* operations and mutates persisted sample state
+        const adminSnap = sandbox.setPersona('admin');
+        expect(adminSnap.isAdminSession).toBe(true);
+        const adminTablesRes = await sandbox.executeFetch('/api/admin/seating-tables');
+        expect(adminTablesRes.status).toBe(200);
+        const createItemRes = await sandbox.executeFetch('/api/registry/items', {
+          method: 'POST',
+          body: JSON.stringify({ name: 'Sandbox Gift', price: 95 }),
+        });
+        expect(createItemRes.status).toBe(201);
+
+        // Switching to setup requires password before unlocking setup mutations
+        const setupSnap = sandbox.setPersona('setup');
+        expect(setupSnap.persona).toBe('setup');
+        expect(setupSnap.isAdminSession).toBe(false);
+        const setupGet = await (await sandbox.executeFetch('/api/admin/setup')).json();
+        expect(setupGet.requiresSetup).toBe(true);
+        expect((await sandbox.executeFetch('/api/admin/setup', { method: 'POST', body: '{}' })).status).toBe(401);
+        expect(
+          (
+            await sandbox.executeFetch('/api/admin/setup', {
+              method: 'POST',
+              body: JSON.stringify({ password: 'demo-password' }),
+            })
+          ).status
+        ).toBe(200);
+        expect(sandbox.getSnapshot().isAdminSession).toBe(true);
+
+        // Reset restores clean guest persona, default household session, and removes custom items
+        const resetSnap = sandbox.resetState();
+        expect(resetSnap.persona).toBe('guest');
+        expect(resetSnap.guestSession?.invitationCode).toBe('SMITH2026');
+        const afterResetItems = await (await sandbox.executeFetch('/api/registry/items')).json();
+        expect(
+          afterResetItems.items.some((item: { name: string }) => item.name === 'Sandbox Gift')
+        ).toBe(false);
+
+        // External URL validation & cross-origin assessment
+        expect(normalizeTargetServerUrl('').ok).toBe(false);
+        expect(normalizeTargetServerUrl('ftp://example.com').ok).toBe(false);
+        expect(normalizeTargetServerUrl('http://localhost:3000/')).toEqual({
+          ok: true,
+          url: 'http://localhost:3000',
+        });
+        expect(
+          evaluateExternalTargetOrigin('http://localhost:3000', 'https://fderuiter.github.io')
+            .isCrossOrigin
+        ).toBe(true);
+        expect(
+          evaluateExternalTargetOrigin('http://localhost:3000', 'http://localhost:3000')
+            .isCrossOrigin
+        ).toBe(false);
+      } finally {
+        sandbox.destroy();
+        delete window.__STATIC_DEMO_INSTALLED__;
+        window.localStorage.clear();
+      }
     });
   });
 });

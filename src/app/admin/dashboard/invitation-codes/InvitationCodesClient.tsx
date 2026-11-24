@@ -224,8 +224,8 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
           </div>
         )}
         <div className="flex flex-wrap items-center gap-2">
-          <div className="text-sm font-semibold text-secondary uppercase tracking-wider">
-            Code: <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono text-red-700 dark:text-red-200">{item.code}</code>
+          <div className="text-sm font-semibold text-amber-800 dark:text-amber-200 uppercase tracking-wider">
+            Code: <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono text-red-800 dark:text-red-200">{item.code}</code>
           </div>
           <Button
             size="sm"
@@ -265,21 +265,21 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
               Incomplete: {[item.addressLine1, item.addressLine2, item.city, item.state, item.zipCode, item.country].filter(Boolean).join(', ')}
             </span>
           ) : (
-            <span className="text-muted-text italic">No address provided</span>
+            <span className="text-gray-700 dark:text-gray-300 italic">No address provided</span>
           )}
         </div>
 
-        <div className="text-xs text-muted-text flex flex-wrap gap-x-4 pt-1">
-          <span>Status: <span className={item.used ? 'text-red-700 dark:text-red-300 font-semibold' : 'text-green-700 dark:text-green-400 font-semibold'}>{item.used ? 'Redeemed/Used' : 'Active/Unused'}</span></span>
+        <div className="text-xs text-gray-700 dark:text-gray-300 flex flex-wrap gap-x-4 pt-1">
+          <span>Status: <span className={item.used ? 'text-red-800 dark:text-red-200 font-semibold' : 'text-emerald-800 dark:text-emerald-200 font-semibold'}>{item.used ? 'Redeemed/Used' : 'Active/Unused'}</span></span>
           <span>
             RSVP:{' '}
             <span
               className={
                 attendanceStatus === 'attending'
-                  ? 'text-green-700 dark:text-green-400 font-semibold'
+                  ? 'text-emerald-800 dark:text-emerald-200 font-semibold'
                   : attendanceStatus === 'declined'
-                    ? 'text-red-700 dark:text-red-300 font-semibold'
-                    : 'text-amber-700 dark:text-amber-400 font-semibold'
+                    ? 'text-red-800 dark:text-red-200 font-semibold'
+                    : 'text-amber-800 dark:text-amber-200 font-semibold'
               }
             >
               {attendanceStatus.charAt(0).toUpperCase() + attendanceStatus.slice(1)}
@@ -349,9 +349,9 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
           </span>
           <div className="flex flex-wrap gap-2">
             {subEvents.length === 0 ? (
-              <span className="text-xs text-muted-text italic">No sub-events created yet</span>
+              <span className="text-xs text-gray-700 dark:text-gray-300 italic">No sub-events created yet</span>
             ) : privateSubEvents.length === 0 ? (
-              <span className="text-xs text-muted-text italic">
+              <span className="text-xs text-gray-700 dark:text-gray-300 italic">
                 No private sub-events configured. Public sub-events are accessible to all invited guests.
               </span>
             ) : (
@@ -1454,7 +1454,7 @@ export default function InvitationCodesDashboardPage() {
               <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
                 <span>🍽️</span> Catering & Dietary Summary
               </h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
+              <p className="text-xs text-gray-700 dark:text-gray-300">
                 Overview of attending & pending guest headcounts, meal selections, and dietary restrictions (declined excluded)
               </p>
             </div>
@@ -1476,34 +1476,34 @@ export default function InvitationCodesDashboardPage() {
 
           <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3 text-center">
             <div className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
-              <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Gluten-Free</div>
+              <div className="text-xs font-medium text-gray-700 dark:text-gray-200">Gluten-Free</div>
               <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.glutenFree}</div>
             </div>
             <div className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
-              <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Vegetarian</div>
+              <div className="text-xs font-medium text-gray-700 dark:text-gray-200">Vegetarian</div>
               <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.vegetarian}</div>
             </div>
             <div className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
-              <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Vegan</div>
+              <div className="text-xs font-medium text-gray-700 dark:text-gray-200">Vegan</div>
               <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.vegan}</div>
             </div>
             <div className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
-              <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Dairy-Free</div>
+              <div className="text-xs font-medium text-gray-700 dark:text-gray-200">Dairy-Free</div>
               <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.dairyFree}</div>
             </div>
             <div className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
-              <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Nut / Allergy</div>
+              <div className="text-xs font-medium text-gray-700 dark:text-gray-200">Nut / Allergy</div>
               <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.nutFree}</div>
             </div>
             <div
               className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700"
               data-testid="catering-kids-tile"
             >
-              <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Kids</div>
+              <div className="text-xs font-medium text-gray-700 dark:text-gray-200">Kids</div>
               <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.kids}</div>
             </div>
             <div className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
-              <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Other</div>
+              <div className="text-xs font-medium text-gray-700 dark:text-gray-200">Other</div>
               <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.other}</div>
             </div>
           </div>
@@ -1645,7 +1645,7 @@ export default function InvitationCodesDashboardPage() {
             <div className="flex items-center gap-2 flex-wrap bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-200 dark:border-gray-700">
               <span
                 id="party-tags-filter-label"
-                className="text-xs font-semibold text-muted-text uppercase tracking-wider"
+                className="text-xs font-semibold text-gray-700 dark:text-gray-200 uppercase tracking-wider"
               >
                 Party Tags:
               </span>
@@ -1686,7 +1686,7 @@ export default function InvitationCodesDashboardPage() {
           <div className="flex flex-col lg:flex-row gap-4 justify-between items-start lg:items-center bg-gray-50 dark:bg-gray-800/50 p-3 rounded-xl border border-gray-200 dark:border-gray-700">
             {/* Redemption Status Tab Group */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
-              <span className="text-xs font-semibold text-muted-text uppercase tracking-wider">Redemption:</span>
+              <span className="text-xs font-semibold text-gray-700 dark:text-gray-200 uppercase tracking-wider">Redemption:</span>
               <SegmentedTabs
                 idPrefix="redemption-status"
                 panelId="invitation-codes-results-panel"
@@ -1710,7 +1710,7 @@ export default function InvitationCodesDashboardPage() {
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
               <span
                 id="address-filter-label"
-                className="text-xs font-semibold text-muted-text uppercase tracking-wider"
+                className="text-xs font-semibold text-gray-700 dark:text-gray-200 uppercase tracking-wider"
               >
                 Address:
               </span>
@@ -1735,7 +1735,7 @@ export default function InvitationCodesDashboardPage() {
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
               <span
                 id="attendance-filter-label"
-                className="text-xs font-semibold text-muted-text uppercase tracking-wider"
+                className="text-xs font-semibold text-gray-700 dark:text-gray-200 uppercase tracking-wider"
               >
                 Attendance:
               </span>
@@ -1801,9 +1801,9 @@ export default function InvitationCodesDashboardPage() {
                 onDelete={handleDelete}
               />
             ))}
-            {codes.length === 0 && <p className="text-gray-500 dark:text-gray-400">No invitation codes found.</p>}
+            {codes.length === 0 && <p className="text-gray-700 dark:text-gray-200">No invitation codes found.</p>}
             {codes.length > 0 && filteredCodes.length === 0 && (
-              <p className="text-gray-500 dark:text-gray-400">No invitation codes match your search or filter criteria.</p>
+              <p className="text-gray-700 dark:text-gray-200">No invitation codes match your search or filter criteria.</p>
             )}
           </div>
 

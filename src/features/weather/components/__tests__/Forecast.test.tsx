@@ -52,9 +52,23 @@ describe('Forecast Component', () => {
     render(<Forecast />);
 
     await waitFor(() => {
-      expect(screen.getByText('Failed to load forecast. Please try again later.')).toBeInTheDocument();
+      const errorMessage = screen.getByText('Failed to load forecast. Please try again later.');
+      expect(errorMessage).toBeInTheDocument();
+      expect(errorMessage.className).toContain('text-red-800');
+      expect(errorMessage.className).toContain('dark:text-red-200');
+      expect(errorMessage.className).not.toContain('text-red-500');
       expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
     });
+
+    const alertRegion = screen.getByRole('alert');
+    expect(await axe(alertRegion)).toHaveNoViolations();
+
+    document.documentElement.classList.add('dark');
+    try {
+      expect(await axe(alertRegion)).toHaveNoViolations();
+    } finally {
+      document.documentElement.classList.remove('dark');
+    }
 
     consoleSpy.mockRestore();
   });

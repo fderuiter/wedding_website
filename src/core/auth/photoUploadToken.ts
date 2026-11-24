@@ -225,6 +225,13 @@ export function isPhotoScopedApiRoute(normalizedPath: string, method?: string): 
     return true;
   }
   if (
+    (normalizedPath === '/api/uploads/photos' ||
+      normalizedPath.startsWith('/api/uploads/photos/')) &&
+    (upperMethod === 'GET' || upperMethod === 'HEAD')
+  ) {
+    return true;
+  }
+  if (
     (normalizedPath === '/api/guest/photos/upload' || normalizedPath === '/api/photos/upload') &&
     upperMethod === 'POST'
   ) {
@@ -237,5 +244,13 @@ export function isPhotoScopedApiRoute(normalizedPath: string, method?: string): 
  * Checks whether a normalized path + HTTP method is accessible to photo-scoped sessions.
  */
 export function isPhotoScopedRoute(normalizedPath: string, method?: string): boolean {
-  return isPhotoScopedPagePath(normalizedPath) || isPhotoScopedApiRoute(normalizedPath, method);
+  const upperMethod = (method || 'GET').toUpperCase();
+  const isPhotoUploadAssetRead =
+    (normalizedPath === '/uploads/photos' || normalizedPath.startsWith('/uploads/photos/')) &&
+    (upperMethod === 'GET' || upperMethod === 'HEAD');
+  return (
+    isPhotoScopedPagePath(normalizedPath) ||
+    isPhotoScopedApiRoute(normalizedPath, method) ||
+    isPhotoUploadAssetRead
+  );
 }
