@@ -222,6 +222,40 @@ const SYNCED_RSVP_EXTRA_KEYS = [
   'eventRsvps',
 ] as const;
 
+const normalizedSubEventPromptCache = new WeakMap<
+  object,
+  {
+    optMap: Map<string, MealOptionDTO>;
+    qMap: Map<string, CustomRsvpQuestionDTO>;
+  }
+>();
+
+function getCachedSubEventPromptMaps(subEvent: unknown): {
+  optMap: Map<string, MealOptionDTO>;
+  qMap: Map<string, CustomRsvpQuestionDTO>;
+} {
+  if (subEvent && typeof subEvent === 'object') {
+    const cached = normalizedSubEventPromptCache.get(subEvent);
+    if (cached) {
+      return cached;
+    }
+    const rawEvent = subEvent as { mealOptions?: unknown; customQuestions?: unknown };
+    const evtMealOpts = normalizeMealOptions(rawEvent.mealOptions);
+    const evtQuestions = normalizeCustomQuestions(rawEvent.customQuestions);
+    const computed = {
+      optMap: new Map(evtMealOpts.map((o) => [o.id, o])),
+      qMap: new Map(evtQuestions.map((q) => [q.id, q])),
+    };
+    normalizedSubEventPromptCache.set(subEvent, computed);
+    return computed;
+  }
+
+  return {
+    optMap: new Map(),
+    qMap: new Map(),
+  };
+}
+
 export interface AccessMatrixQueryParams {
   page?: number;
   limit?: number;
@@ -2722,29 +2756,41 @@ export class SubEventService {
   }
 
   /**
-   * Recomputes and updates InvitationCode fields + extraFields from remaining SubEventRsvp rows
-   * inside an active Prisma transaction, and writes a SnapshotVersion audit record.
+   * Computes projected InvitationCode scalar fields and extraFields from an invitation's
+   * remaining SubEventRsvp rows without issuing database queries.
    */
-  private async syncInvitationCodeFromDbRsvps(
-    tx: any,
+  private computeInvitationCodeProjection(
     invite: any,
+    dbRsvps: any[],
     options: {
       clearedAll?: boolean;
       overallAttendanceStatus?: 'attending' | 'declined' | 'pending';
       directPlusOneCount?: number;
       directPlusOneNames?: string[];
-      author: string;
-      skipIndividualAudit?: boolean;
-    }
-  ) {
-    const now = new Date();
-    const dbRsvps = await tx.subEventRsvp.findMany({
-      where: { invitationCodeId: invite.id },
-      include: { subEvent: true },
-      orderBy: { createdAt: 'asc' },
-    });
-
+    },
+    now: Date
+  ): {
+    id: string;
+    invite: any;
+    prismaData: Record<string, any>;
+    used: boolean;
+    usedAt: Date | null;
+    plusOneAllocations: number | null;
+    plusOneFirstName: string | null;
+    plusOneLastName: string | null;
+    dietaryNotes: string | null;
+    extraFields: Record<string, unknown>;
+  } {
     const existingExtra = parseExtraFieldsObject(invite.extraFields);
+    const existingUsedAt =
+      invite.usedAt instanceof Date && !Number.isNaN(invite.usedAt.getTime())
+        ? invite.usedAt
+        : typeof invite.usedAt === 'string' && invite.usedAt.trim()
+          ? (() => {
+            const parsed = new Date(invite.usedAt);
+            return Number.isNaN(parsed.getTime()) ? null : parsed;
+          })()
+          : null;
 
     if (!Array.isArray(dbRsvps) || dbRsvps.length === 0) {
       const cleanedExtra: Record<string, unknown> = { ...existingExtra };
@@ -2753,20 +2799,25 @@ export class SubEventService {
       }
 
       if (options.clearedAll || !options.overallAttendanceStatus) {
-        const updated = await tx.invitationCode.update({
-          where: { id: invite.id },
-          data: {
-            used: false,
-            usedAt: null,
-            plusOneFirstName: null,
-            plusOneLastName: null,
-            extraFields: cleanedExtra,
-          },
-        });
-        if (!options.skipIndividualAudit) {
-          await createAuditSnapshot('InvitationCode', updated.id, updated, options.author, tx);
-        }
-        return updated;
+        const prismaData = {
+          used: false,
+          usedAt: null,
+          plusOneFirstName: null,
+          plusOneLastName: null,
+          extraFields: cleanedExtra,
+        };
+        return {
+          id: invite.id,
+          invite,
+          prismaData,
+          used: false,
+          usedAt: null,
+          plusOneAllocations: invite.plusOneAllocations ?? null,
+          plusOneFirstName: null,
+          plusOneLastName: null,
+          dietaryNotes: invite.dietaryNotes ?? null,
+          extraFields: cleanedExtra,
+        };
       }
 
       const directStatus = options.overallAttendanceStatus;
@@ -2788,26 +2839,34 @@ export class SubEventService {
       }
 
       const isResponded = directStatus === 'attending' || directStatus === 'declined';
-      const updated = await tx.invitationCode.update({
-        where: { id: invite.id },
-        data: {
-          used: isResponded,
-          usedAt: isResponded ? (invite.usedAt ?? now) : null,
-          plusOneAllocations: Math.max(invite.plusOneAllocations ?? 0, directPlusOnes),
-          plusOneFirstName: nextFirst,
-          plusOneLastName: nextLast,
-          extraFields: {
-            ...cleanedExtra,
-            attendanceStatus: directStatus,
-            plusOneCount: directPlusOnes,
-            plusOneNames: directNames,
-          },
-        },
-      });
-      if (!options.skipIndividualAudit) {
-        await createAuditSnapshot('InvitationCode', updated.id, updated, options.author, tx);
-      }
-      return updated;
+      const nextUsedAt = isResponded ? (existingUsedAt ?? now) : null;
+      const nextPlusOneAllocations = Math.max(invite.plusOneAllocations ?? 0, directPlusOnes);
+      const nextExtraFields: Record<string, unknown> = {
+        ...cleanedExtra,
+        attendanceStatus: directStatus,
+        plusOneCount: directPlusOnes,
+        plusOneNames: directNames,
+      };
+      const prismaData = {
+        used: isResponded,
+        usedAt: nextUsedAt,
+        plusOneAllocations: nextPlusOneAllocations,
+        plusOneFirstName: nextFirst,
+        plusOneLastName: nextLast,
+        extraFields: nextExtraFields,
+      };
+      return {
+        id: invite.id,
+        invite,
+        prismaData,
+        used: isResponded,
+        usedAt: nextUsedAt,
+        plusOneAllocations: nextPlusOneAllocations,
+        plusOneFirstName: nextFirst,
+        plusOneLastName: nextLast,
+        dietaryNotes: invite.dietaryNotes ?? null,
+        extraFields: nextExtraFields,
+      };
     }
 
     const hasAttending = dbRsvps.some((r: any) => r.status === 'attending');
@@ -2906,14 +2965,19 @@ export class SubEventService {
 
       if (r.status !== 'attending') continue;
 
-      const evtMealOpts = normalizeMealOptions(r.subEvent?.mealOptions);
-      const evtQuestions = normalizeCustomQuestions(r.subEvent?.customQuestions);
       const rMeals = normalizeMealSelections(r.mealSelections);
-      const rNames = normalizePlusOneNames(r.plusOneNames);
       const rAnswers = normalizeCustomAnswers(r.customAnswers);
+      const hasMeals = rMeals.some(Boolean);
+      const answerEntries = Object.entries(rAnswers);
 
-      if (rMeals.some(Boolean)) {
-        const optMap = new Map(evtMealOpts.map((o) => [o.id, o]));
+      if (!hasMeals && answerEntries.length === 0) {
+        continue;
+      }
+
+      const { optMap, qMap } = getCachedSubEventPromptMaps(r.subEvent);
+      const rNames = hasMeals ? normalizePlusOneNames(r.plusOneNames) : [];
+
+      if (hasMeals) {
         const resolvedSelections: Array<{
           attendee: string;
           optionId: string;
@@ -2948,15 +3012,14 @@ export class SubEventService {
         }
       }
 
-      if (Object.keys(rAnswers).length > 0) {
-        const qMap = new Map(evtQuestions.map((q) => [q.id, q]));
+      if (answerEntries.length > 0) {
         const resolvedAnswers: Array<{
           questionId: string;
           prompt: string;
           answer: string;
         }> = [];
 
-        for (const [qId, ans] of Object.entries(rAnswers)) {
+        for (const [qId, ans] of answerEntries) {
           if (!ans) continue;
           const q = qMap.get(qId);
           resolvedAnswers.push({
@@ -3003,28 +3066,153 @@ export class SubEventService {
       delete cleanedExtra[key];
     }
 
+    const nextUsedAt = hasResponded ? (existingUsedAt ?? now) : null;
+    const nextPlusOneAllocations = Math.max(invite.plusOneAllocations ?? 0, maxAttendingPlusOnes);
+    const nextExtraFields: Record<string, unknown> = {
+      ...cleanedExtra,
+      attendanceStatus,
+      plusOneCount: maxAttendingPlusOnes,
+      plusOneNames: syncedPlusOneNames,
+      dietaryTags: Array.from(dietaryTagSet),
+      mealSelections: structuredMeals,
+      mealSummary,
+      customAnswers: structuredAnswers,
+      customAnswersSummary,
+      eventRsvps,
+    };
+    const prismaData = {
+      used: hasResponded,
+      usedAt: nextUsedAt,
+      plusOneAllocations: nextPlusOneAllocations,
+      plusOneFirstName: nextFirstName,
+      plusOneLastName: nextLastName,
+      dietaryNotes: nextDietaryNotes,
+      extraFields: nextExtraFields,
+    };
+
+    return {
+      id: invite.id,
+      invite,
+      prismaData,
+      used: hasResponded,
+      usedAt: nextUsedAt,
+      plusOneAllocations: nextPlusOneAllocations,
+      plusOneFirstName: nextFirstName,
+      plusOneLastName: nextLastName,
+      dietaryNotes: nextDietaryNotes,
+      extraFields: nextExtraFields,
+    };
+  }
+
+  /**
+   * Applies computed InvitationCode RSVP projections via a single-statement parameterized
+   * VALUES update on PostgreSQL, falling back to per-record Prisma updates on mocked clients.
+   */
+  private async applyBulkInvitationCodeProjections(
+    tx: any,
+    planned: Array<ReturnType<SubEventService['computeInvitationCodeProjection']>>,
+    now: Date
+  ): Promise<any[]> {
+    if (planned.length === 0) {
+      return [];
+    }
+
+    if (typeof tx?.$executeRaw === 'function') {
+      const invitationCodeTable = Prisma.raw(qualifyPostgresTable('InvitationCode'));
+      const updatedAtIso = now.toISOString();
+      const maxRowsPerStatement = 5000;
+
+      for (let offset = 0; offset < planned.length; offset += maxRowsPerStatement) {
+        const chunk = planned.slice(offset, offset + maxRowsPerStatement);
+        const rows = chunk.map((u) => {
+          const usedAtIso = u.usedAt ? u.usedAt.toISOString() : null;
+          const extraFieldsJson = JSON.stringify(u.extraFields ?? {});
+          return Prisma.sql`(
+            ${u.id}::text,
+            ${u.used}::boolean,
+            ${usedAtIso}::text,
+            ${u.plusOneAllocations}::integer,
+            ${u.plusOneFirstName}::text,
+            ${u.plusOneLastName}::text,
+            ${u.dietaryNotes}::text,
+            ${extraFieldsJson}::jsonb
+          )`;
+        });
+        const values = Prisma.join(rows, ', ');
+
+        await tx.$executeRaw(Prisma.sql`
+          UPDATE ${invitationCodeTable} AS t
+          SET
+            "used" = v."used",
+            "usedAt" = CASE
+              WHEN v."usedAtIso" IS NULL THEN NULL
+              ELSE (v."usedAtIso"::timestamptz AT TIME ZONE 'UTC')
+            END,
+            "plusOneAllocations" = v."plusOneAllocations",
+            "plusOneFirstName" = v."plusOneFirstName",
+            "plusOneLastName" = v."plusOneLastName",
+            "dietaryNotes" = v."dietaryNotes",
+            "extraFields" = v."extraFields",
+            "updatedAt" = (${updatedAtIso}::timestamptz AT TIME ZONE 'UTC')
+          FROM (VALUES ${values}) AS v(
+            "id",
+            "used",
+            "usedAtIso",
+            "plusOneAllocations",
+            "plusOneFirstName",
+            "plusOneLastName",
+            "dietaryNotes",
+            "extraFields"
+          )
+          WHERE t."id" = v."id"
+        `);
+      }
+
+      return planned.map((u) => ({
+        ...u.invite,
+        ...u.prismaData,
+        updatedAt: now,
+      }));
+    }
+
+    const updatedRecords: any[] = [];
+    for (const u of planned) {
+      const updated = await tx.invitationCode.update({
+        where: { id: u.id },
+        data: u.prismaData,
+      });
+      updatedRecords.push(updated);
+    }
+    return updatedRecords;
+  }
+
+  /**
+   * Recomputes and updates InvitationCode fields + extraFields from remaining SubEventRsvp rows
+   * inside an active Prisma transaction, and writes a SnapshotVersion audit record.
+   */
+  private async syncInvitationCodeFromDbRsvps(
+    tx: any,
+    invite: any,
+    options: {
+      clearedAll?: boolean;
+      overallAttendanceStatus?: 'attending' | 'declined' | 'pending';
+      directPlusOneCount?: number;
+      directPlusOneNames?: string[];
+      author: string;
+      skipIndividualAudit?: boolean;
+    }
+  ) {
+    const now = new Date();
+    const dbRsvps = await tx.subEventRsvp.findMany({
+      where: { invitationCodeId: invite.id },
+      include: { subEvent: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const projection = this.computeInvitationCodeProjection(invite, dbRsvps, options, now);
     const updated = await tx.invitationCode.update({
       where: { id: invite.id },
-      data: {
-        used: hasResponded,
-        usedAt: hasResponded ? (invite.usedAt ?? now) : null,
-        plusOneAllocations: Math.max(invite.plusOneAllocations ?? 0, maxAttendingPlusOnes),
-        plusOneFirstName: nextFirstName,
-        plusOneLastName: nextLastName,
-        dietaryNotes: nextDietaryNotes,
-        extraFields: {
-          ...cleanedExtra,
-          attendanceStatus,
-          plusOneCount: maxAttendingPlusOnes,
-          plusOneNames: syncedPlusOneNames,
-          dietaryTags: Array.from(dietaryTagSet),
-          mealSelections: structuredMeals,
-          mealSummary,
-          customAnswers: structuredAnswers,
-          customAnswersSummary,
-          eventRsvps,
-        },
-      },
+      data: projection.prismaData,
     });
 
     if (!options.skipIndividualAudit) {
@@ -3041,11 +3229,16 @@ export class SubEventService {
    */
   async resyncInvitationCodesByIds(invitationCodeIds: string[], author: string = 'Admin') {
     const uniqueIds = Array.from(new Set(invitationCodeIds.filter(Boolean)));
+    const hasRawProjectionSupport =
+      typeof this.client?.$executeRaw === 'function' &&
+      typeof this.client?.$queryRaw === 'function';
+
     if (
       uniqueIds.length === 0 ||
       typeof this.client?.invitationCode?.findMany !== 'function' ||
-      typeof this.client?.invitationCode?.update !== 'function' ||
-      typeof this.client?.subEventRsvp?.findMany !== 'function'
+      (!hasRawProjectionSupport &&
+        (typeof this.client?.invitationCode?.update !== 'function' ||
+          typeof this.client?.subEventRsvp?.findMany !== 'function'))
     ) {
       return [];
     }
@@ -3057,15 +3250,92 @@ export class SubEventService {
       return [];
     }
 
-    const updatedRecords: any[] = [];
-    for (const invite of invites) {
-      const updated = await this.syncInvitationCodeFromDbRsvps(this.client, invite, {
-        clearedAll: false,
-        author,
-        skipIndividualAudit: true,
+    const rsvpsByInviteId = new Map<string, any[]>();
+
+    if (hasRawProjectionSupport) {
+      const subEventRsvpTable = Prisma.raw(qualifyPostgresTable('SubEventRsvp'));
+      const subEventTable = Prisma.raw(qualifyPostgresTable('SubEvent'));
+      const joinedRows = await this.client.$queryRaw(Prisma.sql`
+        SELECT
+          r."id",
+          r."subEventId",
+          r."invitationCodeId",
+          r."status",
+          r."plusOneCount",
+          r."dietaryNotes",
+          r."mealSelections",
+          r."customAnswers",
+          r."plusOneNames",
+          r."createdAt",
+          s."title" AS "subEventTitle",
+          s."mealOptions" AS "subEventMealOptions",
+          s."customQuestions" AS "subEventCustomQuestions"
+        FROM ${subEventRsvpTable} r
+        LEFT JOIN ${subEventTable} s ON s."id" = r."subEventId"
+        WHERE r."invitationCodeId" = ANY(${uniqueIds}::text[])
+        ORDER BY r."createdAt" ASC, r."id" ASC
+      `);
+
+      const subEventRefById = new Map<string, Record<string, unknown>>();
+      for (const row of Array.isArray(joinedRows) ? joinedRows : []) {
+        let subEventRef = subEventRefById.get(row.subEventId);
+        if (!subEventRef) {
+          subEventRef = {
+            id: row.subEventId,
+            title: row.subEventTitle,
+            mealOptions: row.subEventMealOptions,
+            customQuestions: row.subEventCustomQuestions,
+          };
+          subEventRefById.set(row.subEventId, subEventRef);
+        }
+        const list = rsvpsByInviteId.get(row.invitationCodeId) ?? [];
+        list.push({
+          id: row.id,
+          subEventId: row.subEventId,
+          invitationCodeId: row.invitationCodeId,
+          status: row.status,
+          plusOneCount: row.plusOneCount,
+          dietaryNotes: row.dietaryNotes,
+          mealSelections: row.mealSelections,
+          customAnswers: row.customAnswers,
+          plusOneNames: row.plusOneNames,
+          createdAt: row.createdAt,
+          subEvent: subEventRef,
+        });
+        rsvpsByInviteId.set(row.invitationCodeId, list);
+      }
+    } else {
+      const allRsvps = await this.client.subEventRsvp.findMany({
+        where: { invitationCodeId: { in: uniqueIds } },
+        include: { subEvent: true },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       });
-      updatedRecords.push(updated);
+
+      for (const rsvp of Array.isArray(allRsvps) ? allRsvps : []) {
+        const invId =
+          rsvp.invitationCodeId ?? (uniqueIds.length === 1 ? uniqueIds[0] : undefined);
+        if (!invId) continue;
+        const list = rsvpsByInviteId.get(invId) ?? [];
+        list.push(rsvp);
+        rsvpsByInviteId.set(invId, list);
+      }
     }
+
+    const now = new Date();
+    const planned = invites.map((invite: any) =>
+      this.computeInvitationCodeProjection(
+        invite,
+        rsvpsByInviteId.get(invite.id) ?? [],
+        { clearedAll: false },
+        now
+      )
+    );
+
+    const updatedRecords = await this.applyBulkInvitationCodeProjections(
+      this.client,
+      planned,
+      now
+    );
 
     if (updatedRecords.length > 0) {
       if (typeof this.client?.snapshotVersion?.createMany === 'function') {
@@ -3314,109 +3584,283 @@ export class SubEventService {
       },
     });
 
+    const orderedSubEvents: any[] = Array.isArray(subEvents) ? subEvents : [];
+    const subEventMap = new Map<string, any>(orderedSubEvents.map((se: any) => [se.id, se]));
+    const accessSetByEventId = new Map<string, Set<string>>();
+    for (const se of orderedSubEvents) {
+      const granted = new Set<string>();
+      for (const acc of Array.isArray(se.accesses) ? se.accesses : []) {
+        if (typeof acc?.invitationCodeId === 'string') {
+          granted.add(acc.invitationCodeId);
+        }
+      }
+      accessSetByEventId.set(se.id, granted);
+    }
+
     const requestedEventIds = input.subEventIds ? new Set(input.subEventIds) : null;
     if (requestedEventIds) {
-      const existingEventIds = new Set((subEvents || []).map((se: any) => se.id));
       for (const reqId of requestedEventIds) {
-        if (!existingEventIds.has(reqId)) {
+        if (!subEventMap.has(reqId)) {
           throw new ApiError(404, `Sub-event with ID ${reqId} not found.`);
         }
       }
     }
 
     return executeInTransaction(this.client, async (tx: any) => {
-      const updatedRecords: any[] = [];
+      const now = new Date();
+      const inviteIds = invites.map((inv: any) => inv.id);
+      let updatedRecords: any[];
 
-      for (const invite of invites) {
-        if (input.status === 'clear' && !requestedEventIds) {
+      if (input.status === 'clear' && !requestedEventIds) {
+        if (typeof tx.subEventRsvp?.deleteMany === 'function') {
           await tx.subEventRsvp.deleteMany({
-            where: { invitationCodeId: invite.id },
+            where: { invitationCodeId: { in: inviteIds } },
           });
-          const updated = await this.syncInvitationCodeFromDbRsvps(tx, invite, {
-            clearedAll: true,
-            author,
-            skipIndividualAudit: true,
-          });
-          updatedRecords.push(updated);
-          continue;
         }
 
-        const targetEvents = (subEvents || []).filter((se: any) => {
-          if (requestedEventIds) {
-            return requestedEventIds.has(se.id);
-          }
-          if (!se.isPrivate) return true;
-          return (se.accesses || []).some((a: any) => a.invitationCodeId === invite.id);
-        });
-
+        const planned = invites.map((invite: any) =>
+          this.computeInvitationCodeProjection(invite, [], { clearedAll: true }, now)
+        );
+        updatedRecords = await this.applyBulkInvitationCodeProjections(tx, planned, now);
+      } else {
         if (input.status === 'clear') {
-          if (targetEvents.length > 0) {
+          const targetEventIds = orderedSubEvents
+            .filter((se: any) => requestedEventIds!.has(se.id))
+            .map((se: any) => se.id);
+          if (targetEventIds.length > 0 && typeof tx.subEventRsvp?.deleteMany === 'function') {
             await tx.subEventRsvp.deleteMany({
               where: {
-                invitationCodeId: invite.id,
-                subEventId: { in: targetEvents.map((e: any) => e.id) },
+                invitationCodeId: { in: inviteIds },
+                subEventId: { in: targetEventIds },
               },
             });
           }
         } else {
-          for (const se of targetEvents) {
-            if (
-              se.isPrivate &&
-              !(se.accesses || []).some((a: any) => a.invitationCodeId === invite.id) &&
-              input.status !== 'pending'
-            ) {
-              await tx.subEventAccess.upsert({
-                where: {
-                  subEventId_invitationCodeId: {
-                    subEventId: se.id,
-                    invitationCodeId: invite.id,
-                  },
-                },
-                create: {
-                  subEventId: se.id,
-                  invitationCodeId: invite.id,
-                },
-                update: {},
-              });
-            }
+          const accessGrants: Array<{ subEventId: string; invitationCodeId: string }> = [];
+          const rsvpTargets: Array<{
+            subEventId: string;
+            invitationCodeId: string;
+            createdAtIso: string;
+          }> = [];
+          const createdAtIsoByOffset = orderedSubEvents.map((_, idx) =>
+            new Date(now.getTime() + idx).toISOString()
+          );
 
-            await tx.subEventRsvp.upsert({
-              where: {
-                subEventId_invitationCodeId: {
+          for (const invite of invites) {
+            const targetEvents = orderedSubEvents.filter((se: any) => {
+              if (requestedEventIds) {
+                return requestedEventIds.has(se.id);
+              }
+              if (!se.isPrivate) return true;
+              return Boolean(accessSetByEventId.get(se.id)?.has(invite.id));
+            });
+
+            targetEvents.forEach((se: any, eventIdx: number) => {
+              if (
+                se.isPrivate &&
+                !accessSetByEventId.get(se.id)?.has(invite.id) &&
+                input.status !== 'pending'
+              ) {
+                accessGrants.push({
                   subEventId: se.id,
                   invitationCodeId: invite.id,
-                },
-              },
-              create: {
+                });
+              }
+
+              rsvpTargets.push({
                 subEventId: se.id,
                 invitationCodeId: invite.id,
-                status: input.status,
-                plusOneCount: 0,
-                plusOneNames: [],
-                mealSelections: [],
-                customAnswers: {},
-                dietaryNotes: '',
-              },
-              update: {
-                status: input.status,
-                ...(input.status === 'declined'
-                  ? { plusOneCount: 0, plusOneNames: [], mealSelections: [], customAnswers: {} }
-                  : {}),
-              },
+                createdAtIso: createdAtIsoByOffset[eventIdx] ?? now.toISOString(),
+              });
             });
+          }
+
+          if (accessGrants.length > 0) {
+            if (typeof tx.subEventAccess?.createMany === 'function') {
+              const maxAccessChunk = 15000;
+              for (let offset = 0; offset < accessGrants.length; offset += maxAccessChunk) {
+                await tx.subEventAccess.createMany({
+                  data: accessGrants.slice(offset, offset + maxAccessChunk),
+                  skipDuplicates: true,
+                });
+              }
+            } else if (typeof tx.subEventAccess?.upsert === 'function') {
+              for (const grant of accessGrants) {
+                await tx.subEventAccess.upsert({
+                  where: {
+                    subEventId_invitationCodeId: {
+                      subEventId: grant.subEventId,
+                      invitationCodeId: grant.invitationCodeId,
+                    },
+                  },
+                  create: grant,
+                  update: {},
+                });
+              }
+            }
+          }
+
+          if (rsvpTargets.length > 0) {
+            if (typeof tx.$executeRaw === 'function') {
+              const subEventRsvpTable = Prisma.raw(qualifyPostgresTable('SubEventRsvp'));
+              const pairSubEventIds = rsvpTargets.map((t) => t.subEventId);
+              const pairInviteIds = rsvpTargets.map((t) => t.invitationCodeId);
+              const pairCreatedAtIsos = rsvpTargets.map((t) => t.createdAtIso);
+              const updatedAtIso = now.toISOString();
+
+              const onConflictUpdateSql =
+                input.status === 'declined'
+                  ? Prisma.sql`
+                      "status" = EXCLUDED."status",
+                      "plusOneCount" = 0,
+                      "plusOneNames" = '[]'::jsonb,
+                      "mealSelections" = '[]'::jsonb,
+                      "customAnswers" = '{}'::jsonb,
+                      "updatedAt" = EXCLUDED."updatedAt"
+                    `
+                  : Prisma.sql`
+                      "status" = EXCLUDED."status",
+                      "updatedAt" = EXCLUDED."updatedAt"
+                    `;
+
+              await tx.$executeRaw(Prisma.sql`
+                INSERT INTO ${subEventRsvpTable} (
+                  "id",
+                  "subEventId",
+                  "invitationCodeId",
+                  "status",
+                  "plusOneCount",
+                  "dietaryNotes",
+                  "mealSelections",
+                  "customAnswers",
+                  "plusOneNames",
+                  "createdAt",
+                  "updatedAt"
+                )
+                SELECT
+                  gen_random_uuid()::text,
+                  u."subEventId",
+                  u."invitationCodeId",
+                  ${input.status}::text,
+                  0,
+                  '',
+                  '[]'::jsonb,
+                  '{}'::jsonb,
+                  '[]'::jsonb,
+                  (u."createdAtIso"::timestamptz AT TIME ZONE 'UTC'),
+                  (${updatedAtIso}::timestamptz AT TIME ZONE 'UTC')
+                FROM UNNEST(
+                  ${pairSubEventIds}::text[],
+                  ${pairInviteIds}::text[],
+                  ${pairCreatedAtIsos}::text[]
+                ) AS u("subEventId", "invitationCodeId", "createdAtIso")
+                ON CONFLICT ("subEventId", "invitationCodeId") DO UPDATE SET
+                  ${onConflictUpdateSql}
+              `);
+            } else if (typeof tx.subEventRsvp?.upsert === 'function') {
+              for (const target of rsvpTargets) {
+                await tx.subEventRsvp.upsert({
+                  where: {
+                    subEventId_invitationCodeId: {
+                      subEventId: target.subEventId,
+                      invitationCodeId: target.invitationCodeId,
+                    },
+                  },
+                  create: {
+                    subEventId: target.subEventId,
+                    invitationCodeId: target.invitationCodeId,
+                    status: input.status,
+                    plusOneCount: 0,
+                    plusOneNames: [],
+                    mealSelections: [],
+                    customAnswers: {},
+                    dietaryNotes: '',
+                  },
+                  update: {
+                    status: input.status,
+                    ...(input.status === 'declined'
+                      ? { plusOneCount: 0, plusOneNames: [], mealSelections: [], customAnswers: {} }
+                      : {}),
+                  },
+                });
+              }
+            }
           }
         }
 
-        const updated = await this.syncInvitationCodeFromDbRsvps(tx, invite, {
-          clearedAll: false,
-          overallAttendanceStatus: input.status === 'clear' ? undefined : input.status,
-          author,
-          skipIndividualAudit: true,
-        });
-        updatedRecords.push(updated);
+        const rsvpsByInviteId = new Map<string, any[]>();
+        if (typeof tx.$queryRaw === 'function') {
+          const subEventRsvpTable = Prisma.raw(qualifyPostgresTable('SubEventRsvp'));
+          const rawRsvps = await tx.$queryRaw(Prisma.sql`
+            SELECT
+              "subEventId",
+              "invitationCodeId",
+              "status",
+              "plusOneCount",
+              "dietaryNotes",
+              "mealSelections",
+              "customAnswers",
+              "plusOneNames"
+            FROM ${subEventRsvpTable}
+            WHERE "invitationCodeId" = ANY(${inviteIds}::text[])
+            ORDER BY "createdAt" ASC, "id" ASC
+          `);
+          for (const rsvp of Array.isArray(rawRsvps) ? rawRsvps : []) {
+            const list = rsvpsByInviteId.get(rsvp.invitationCodeId) ?? [];
+            list.push({
+              subEventId: rsvp.subEventId,
+              invitationCodeId: rsvp.invitationCodeId,
+              status: rsvp.status,
+              plusOneCount: rsvp.plusOneCount,
+              dietaryNotes: rsvp.dietaryNotes,
+              mealSelections: rsvp.mealSelections,
+              customAnswers: rsvp.customAnswers,
+              plusOneNames: rsvp.plusOneNames,
+              subEvent: subEventMap.get(rsvp.subEventId),
+            });
+            rsvpsByInviteId.set(rsvp.invitationCodeId, list);
+          }
+        } else if (typeof tx.subEventRsvp?.findMany === 'function') {
+          const allRsvps = await tx.subEventRsvp.findMany({
+            where: { invitationCodeId: { in: inviteIds } },
+            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          });
+          for (const rsvp of Array.isArray(allRsvps) ? allRsvps : []) {
+            const invId =
+              rsvp.invitationCodeId ?? (inviteIds.length === 1 ? inviteIds[0] : undefined);
+            if (!invId) continue;
+            const list = rsvpsByInviteId.get(invId) ?? [];
+            list.push({
+              ...rsvp,
+              subEvent: rsvp.subEvent ?? subEventMap.get(rsvp.subEventId),
+            });
+            rsvpsByInviteId.set(invId, list);
+          }
+        }
+
+        const planned = invites.map((invite: any) =>
+          this.computeInvitationCodeProjection(
+            invite,
+            rsvpsByInviteId.get(invite.id) ?? [],
+            {
+              clearedAll: false,
+              overallAttendanceStatus: input.status === 'clear' ? undefined : input.status,
+            },
+            now
+          )
+        );
+        updatedRecords = await this.applyBulkInvitationCodeProjections(tx, planned, now);
       }
 
-      await createBatchAuditSnapshots('InvitationCode', updatedRecords, author, tx);
+      if (updatedRecords.length > 0) {
+        if (typeof tx?.snapshotVersion?.createMany === 'function') {
+          await createBatchAuditSnapshots('InvitationCode', updatedRecords, author, tx);
+        } else if (typeof tx?.snapshotVersion?.create === 'function') {
+          for (const rec of updatedRecords) {
+            await createAuditSnapshot('InvitationCode', rec.id, rec, author, tx);
+          }
+        }
+      }
 
       return {
         updatedCount: updatedRecords.length,

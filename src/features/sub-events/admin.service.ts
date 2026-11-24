@@ -1,8 +1,11 @@
+import { Prisma } from '@prisma/client';
 import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
+import { qualifyPostgresTable } from '@/lib/postgres-url.js';
 import { isEndTimeBeforeStartTime } from '@/utils/dateTime';
 import {
   SubEventDTO,
+  MealOptionDTO,
   CustomRsvpQuestionDTO,
   MealOptionsListSchema,
   CustomRsvpQuestionsListSchema,
@@ -11,6 +14,60 @@ import {
   normalizeCustomAnswers,
 } from './schemas';
 import { SubEventService } from './service';
+
+interface SubEventTxClient {
+  $executeRaw?: (query: Prisma.Sql) => Promise<number>;
+  $queryRaw?: <T = unknown>(query: Prisma.Sql) => Promise<T>;
+  subEventRsvp?: {
+    findMany?: (args: Record<string, unknown>) => Promise<Array<{
+      id: string;
+      invitationCodeId?: string;
+      customAnswers?: unknown;
+    }>>;
+    update?: (args: Record<string, unknown>) => Promise<unknown>;
+    deleteMany?: (args: Record<string, unknown>) => Promise<{ count: number }>;
+  };
+}
+
+function areMealOptionsEqual(previous: MealOptionDTO[], next: MealOptionDTO[]): boolean {
+  if (previous.length !== next.length) return false;
+  for (let idx = 0; idx < previous.length; idx++) {
+    const prevOpt = previous[idx];
+    const nextOpt = next[idx];
+    if (
+      prevOpt.id !== nextOpt.id ||
+      prevOpt.label !== nextOpt.label ||
+      (prevOpt.description ?? '') !== (nextOpt.description ?? '') ||
+      prevOpt.dietaryTags.length !== nextOpt.dietaryTags.length ||
+      prevOpt.dietaryTags.some((tag, tagIdx) => tag !== nextOpt.dietaryTags[tagIdx])
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function areCustomQuestionsEqual(
+  previous: CustomRsvpQuestionDTO[],
+  next: CustomRsvpQuestionDTO[]
+): boolean {
+  if (previous.length !== next.length) return false;
+  for (let idx = 0; idx < previous.length; idx++) {
+    const prevQ = previous[idx];
+    const nextQ = next[idx];
+    if (
+      prevQ.id !== nextQ.id ||
+      prevQ.prompt !== nextQ.prompt ||
+      prevQ.type !== nextQ.type ||
+      Boolean(prevQ.required) !== Boolean(nextQ.required) ||
+      prevQ.options.length !== nextQ.options.length ||
+      prevQ.options.some((opt, optIdx) => opt !== nextQ.options[optIdx])
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
 
 function extractChoiceRenameMap(
   rawChoiceRenames: unknown,
@@ -175,6 +232,8 @@ export class SubEventAdminService extends BaseService<SubEventDTO> {
       const needsExisting =
         (data.startTime === undefined && data.endTime !== undefined) ||
         (data.startTime !== undefined && data.endTime === undefined) ||
+        data.title !== undefined ||
+        data.mealOptions !== undefined ||
         data.customQuestions !== undefined ||
         data.choiceRenames !== undefined;
 
@@ -199,6 +258,11 @@ export class SubEventAdminService extends BaseService<SubEventDTO> {
       this.validateFields(validationInput, true);
       const processedData = await this.preSave(data);
 
+      const previousMealOptions = existing ? normalizeMealOptions(existing.mealOptions) : [];
+      const nextMealOptions =
+        processedData.mealOptions !== undefined
+          ? (processedData.mealOptions as MealOptionDTO[])
+          : previousMealOptions;
       const previousQuestions = existing ? normalizeCustomQuestions(existing.customQuestions) : [];
       const nextQuestions =
         processedData.customQuestions !== undefined
@@ -210,56 +274,166 @@ export class SubEventAdminService extends BaseService<SubEventDTO> {
         nextQuestions
       );
 
+      const shouldSyncProjections = existing
+        ? (processedData.title !== undefined && processedData.title !== existing.title) ||
+          (processedData.mealOptions !== undefined &&
+            !areMealOptionsEqual(previousMealOptions, nextMealOptions)) ||
+          (processedData.customQuestions !== undefined &&
+            !areCustomQuestionsEqual(previousQuestions, nextQuestions)) ||
+          choiceRenameMap.size > 0
+        : processedData.title !== undefined ||
+          processedData.mealOptions !== undefined ||
+          processedData.customQuestions !== undefined ||
+          choiceRenameMap.size > 0;
+
       const record = await txRepo.update(id, processedData);
       await this.createSnapshot(record.id, record, author, txRepo.client);
 
-      const shouldSyncProjections =
-        data.title !== undefined ||
-        data.mealOptions !== undefined ||
-        data.customQuestions !== undefined ||
-        choiceRenameMap.size > 0;
+      const txClient = txRepo.client as SubEventTxClient | undefined;
+      const hasRawMutationSupport =
+        typeof txClient?.$executeRaw === 'function' &&
+        typeof txClient?.$queryRaw === 'function';
 
-      if (shouldSyncProjections && typeof txRepo.client?.subEventRsvp?.findMany === 'function') {
-        const eventRsvps = await txRepo.client.subEventRsvp.findMany({
-          where: { subEventId: id },
-        });
+      if (
+        shouldSyncProjections &&
+        (hasRawMutationSupport || typeof txClient?.subEventRsvp?.findMany === 'function')
+      ) {
+        let affectedInviteIds: string[] = [];
 
-        if (Array.isArray(eventRsvps) && eventRsvps.length > 0) {
-          if (choiceRenameMap.size > 0 && typeof txRepo.client?.subEventRsvp?.update === 'function') {
-            for (const rsvp of eventRsvps) {
-              const currentAnswers = normalizeCustomAnswers(rsvp.customAnswers);
-              let answersMutated = false;
-              const nextAnswers: Record<string, string> = { ...currentAnswers };
+        if (hasRawMutationSupport && txClient?.$queryRaw) {
+          const subEventRsvpTable = Prisma.raw(qualifyPostgresTable('SubEventRsvp'));
+          const renameQuestionIds: string[] = [];
+          const renameOldChoices: string[] = [];
+          const renameNewChoices: string[] = [];
 
-              for (const [qId, qRenames] of choiceRenameMap.entries()) {
-                const existingAnswer = nextAnswers[qId];
-                if (existingAnswer && qRenames.has(existingAnswer)) {
-                  nextAnswers[qId] = qRenames.get(existingAnswer)!;
-                  answersMutated = true;
-                }
-              }
-
-              if (answersMutated) {
-                await txRepo.client.subEventRsvp.update({
-                  where: { id: rsvp.id },
-                  data: { customAnswers: nextAnswers },
-                });
-              }
+          for (const [qId, qRenames] of choiceRenameMap.entries()) {
+            for (const [oldChoice, newChoice] of qRenames.entries()) {
+              renameQuestionIds.push(qId);
+              renameOldChoices.push(oldChoice);
+              renameNewChoices.push(newChoice);
             }
           }
 
-          const affectedInviteIds = Array.from(
-            new Set(
-              eventRsvps
-                .map((r: { invitationCodeId?: string }) => r.invitationCodeId)
-                .filter((val): val is string => typeof val === 'string' && Boolean(val))
-            )
-          );
-
-          if (affectedInviteIds.length > 0) {
-            const syncService = new SubEventService(txRepo.client);
-            await syncService.resyncInvitationCodesByIds(affectedInviteIds, author);
+          if (renameQuestionIds.length > 0) {
+            const nowIso = new Date().toISOString();
+            const rows = await txClient.$queryRaw<Array<{ invitationCodeId: string | null }>>(
+              Prisma.sql`
+                WITH rename_rules AS (
+                  SELECT *
+                  FROM UNNEST(
+                    ${renameQuestionIds}::text[],
+                    ${renameOldChoices}::text[],
+                    ${renameNewChoices}::text[]
+                  ) AS r("questionId", "oldChoice", "newChoice")
+                ),
+                event_rsvps AS (
+                  SELECT "id", "invitationCodeId", "customAnswers"
+                  FROM ${subEventRsvpTable}
+                  WHERE "subEventId" = ${id}
+                ),
+                recomputed AS (
+                  SELECT
+                    er."id",
+                    jsonb_object_agg(
+                      kv.trimmed_key,
+                      COALESCE(rr."newChoice", kv.trimmed_val)
+                    ) AS "nextAnswers",
+                    BOOL_OR(rr."newChoice" IS NOT NULL) AS "mutated"
+                  FROM event_rsvps er
+                  CROSS JOIN LATERAL (
+                    SELECT
+                      regexp_replace(e.key, '^[[:space:]]+|[[:space:]]+$', '', 'g') AS trimmed_key,
+                      regexp_replace(e.value #>> '{}', '^[[:space:]]+|[[:space:]]+$', '', 'g') AS trimmed_val
+                    FROM jsonb_each(
+                      CASE
+                        WHEN jsonb_typeof(er."customAnswers") = 'object' THEN er."customAnswers"
+                        ELSE '{}'::jsonb
+                      END
+                    ) AS e(key, value)
+                    WHERE jsonb_typeof(e.value) = 'string'
+                      AND regexp_replace(e.key, '^[[:space:]]+|[[:space:]]+$', '', 'g') <> ''
+                      AND regexp_replace(e.value #>> '{}', '^[[:space:]]+|[[:space:]]+$', '', 'g') <> ''
+                  ) AS kv
+                  LEFT JOIN rename_rules rr
+                    ON rr."questionId" = kv.trimmed_key
+                   AND rr."oldChoice" = kv.trimmed_val
+                  GROUP BY er."id"
+                ),
+                applied AS (
+                  UPDATE ${subEventRsvpTable} AS sr
+                  SET
+                    "customAnswers" = rec."nextAnswers",
+                    "updatedAt" = (${nowIso}::timestamptz AT TIME ZONE 'UTC')
+                  FROM recomputed rec
+                  WHERE sr."id" = rec."id"
+                    AND rec."mutated" = TRUE
+                  RETURNING sr."id"
+                )
+                SELECT DISTINCT er."invitationCodeId"
+                FROM event_rsvps er
+                WHERE er."invitationCodeId" IS NOT NULL
+                  AND er."invitationCodeId" <> ''
+              `
+            );
+            affectedInviteIds = (Array.isArray(rows) ? rows : [])
+              .map((r) => r.invitationCodeId)
+              .filter((val): val is string => typeof val === 'string' && Boolean(val));
+          } else {
+            const rows = await txClient.$queryRaw<Array<{ invitationCodeId: string | null }>>(
+              Prisma.sql`
+                SELECT DISTINCT "invitationCodeId"
+                FROM ${subEventRsvpTable}
+                WHERE "subEventId" = ${id}
+                  AND "invitationCodeId" IS NOT NULL
+                  AND "invitationCodeId" <> ''
+              `
+            );
+            affectedInviteIds = (Array.isArray(rows) ? rows : [])
+              .map((r) => r.invitationCodeId)
+              .filter((val): val is string => typeof val === 'string' && Boolean(val));
           }
+        } else if (typeof txClient?.subEventRsvp?.findMany === 'function') {
+          const eventRsvps = await txClient.subEventRsvp.findMany({
+            where: { subEventId: id },
+          });
+
+          if (Array.isArray(eventRsvps) && eventRsvps.length > 0) {
+            if (choiceRenameMap.size > 0 && typeof txClient.subEventRsvp.update === 'function') {
+              for (const rsvp of eventRsvps) {
+                const currentAnswers = normalizeCustomAnswers(rsvp.customAnswers);
+                let answersMutated = false;
+                const nextAnswers: Record<string, string> = { ...currentAnswers };
+
+                for (const [qId, qRenames] of choiceRenameMap.entries()) {
+                  const existingAnswer = nextAnswers[qId];
+                  if (existingAnswer && qRenames.has(existingAnswer)) {
+                    nextAnswers[qId] = qRenames.get(existingAnswer)!;
+                    answersMutated = true;
+                  }
+                }
+
+                if (answersMutated) {
+                  await txClient.subEventRsvp.update({
+                    where: { id: rsvp.id },
+                    data: { customAnswers: nextAnswers },
+                  });
+                }
+              }
+            }
+
+            affectedInviteIds = Array.from(
+              new Set(
+                eventRsvps
+                  .map((r: { invitationCodeId?: string }) => r.invitationCodeId)
+                  .filter((val): val is string => typeof val === 'string' && Boolean(val))
+              )
+            );
+          }
+        }
+
+        if (affectedInviteIds.length > 0) {
+          const syncService = new SubEventService(txRepo.client);
+          await syncService.resyncInvitationCodesByIds(affectedInviteIds, author);
         }
       }
 

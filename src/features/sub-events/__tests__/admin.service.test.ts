@@ -386,5 +386,81 @@ describe('SubEventAdminService', () => {
         })
       );
     });
+
+    it('skips SubEventRsvp queries and InvitationCode resyncs when title, mealOptions, and customQuestions match existing configuration', async () => {
+      mockPrismaClient.subEvent.findUnique.mockResolvedValue({
+        id: 'se-1',
+        title: 'Evening Reception',
+        description: 'Old description',
+        locationName: 'Old Hall',
+        location: '100 Main St',
+        category: 'Reception',
+        startTime: new Date('2026-09-18T18:00:00.000Z'),
+        endTime: new Date('2026-09-18T22:00:00.000Z'),
+        isPrivate: false,
+        mealOptions: [
+          {
+            id: 'm-salmon',
+            label: 'Citrus Salmon',
+            description: 'Lemon butter',
+            dietaryTags: ['dairy-free', 'gluten-free'],
+          },
+        ],
+        customQuestions: [
+          {
+            id: 'q-shuttle',
+            prompt: 'Shuttle pickup?',
+            type: 'choice',
+            required: true,
+            options: ['Hotel Lobby 4pm', 'Self-drive'],
+          },
+        ],
+      });
+      mockPrismaClient.subEvent.update.mockImplementation(({ where, data }: any) =>
+        Promise.resolve({ id: where.id, ...data })
+      );
+      mockPrismaClient.subEventRsvp = {
+        findMany: jest.fn(),
+        update: jest.fn(),
+      };
+      mockPrismaClient.invitationCode = {
+        findMany: jest.fn(),
+        update: jest.fn(),
+      };
+
+      await service.update('se-1', {
+        title: '  Evening Reception  ',
+        description: 'Updated parking instructions',
+        locationName: 'Grand Ballroom',
+        location: '200 Ocean Ave',
+        category: 'Dinner',
+        startTime: '2026-09-18T18:30:00.000Z',
+        endTime: '2026-09-18T23:00:00.000Z',
+        isPrivate: true,
+        mealOptions: [
+          {
+            id: 'm-salmon',
+            label: '  Citrus Salmon  ',
+            description: '  Lemon butter  ',
+            dietaryTags: ['Dairy-Free', 'Gluten-Free'],
+          },
+        ],
+        customQuestions: [
+          {
+            id: 'q-shuttle',
+            prompt: '  Shuttle pickup?  ',
+            type: 'choice',
+            required: true,
+            options: ['  Hotel Lobby 4pm  ', 'Self-drive'],
+          },
+        ],
+      });
+
+      expect(mockPrismaClient.subEvent.update).toHaveBeenCalledTimes(1);
+      expect(mockPrismaClient.subEventRsvp.findMany).not.toHaveBeenCalled();
+      expect(mockPrismaClient.subEventRsvp.update).not.toHaveBeenCalled();
+      expect(mockPrismaClient.invitationCode.findMany).not.toHaveBeenCalled();
+      expect(mockPrismaClient.invitationCode.update).not.toHaveBeenCalled();
+    });
   });
 });
