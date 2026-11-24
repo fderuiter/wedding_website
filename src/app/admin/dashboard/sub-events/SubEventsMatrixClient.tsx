@@ -3,7 +3,9 @@
 import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
 import { QueryClient, QueryClientProvider, QueryClientContext } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/ToastProvider';
+import { useTheme } from '@/components/ThemeProvider';
 import { Button } from '@/components/ui/Button';
+import { StickyBar } from '@/components/ui/useStickyOffset';
 import { Table } from '@/components/ui/Table';
 import { useAdminSubEvents } from '@/hooks/admin/useAdminSubEvents';
 import {
@@ -228,6 +230,8 @@ const SEARCH_DEBOUNCE_MS = 250;
 
 function SubEventsMatrixPageContent() {
   const { addToast } = useToast();
+  const { timezone } = useTheme();
+  const effectiveTimezone = timezone || undefined;
   const {
     create: createSubEvent,
     update: updateSubEvent,
@@ -850,7 +854,11 @@ function SubEventsMatrixPageContent() {
 
                 {/* Sub-Events Column Headers */}
                 {subEvents.map((evt) => {
-                  const scheduleLabel = formatSubEventSchedule(evt.startTime, evt.endTime);
+                  const scheduleLabel = formatSubEventSchedule(
+                    evt.startTime,
+                    evt.endTime,
+                    effectiveTimezone
+                  );
                   const eventSummary = rsvpSummaryByEvent[evt.id];
                   return (
                     <th key={evt.id} scope="col" className="p-3 font-semibold text-gray-900 dark:text-white min-w-[220px] border-l border-gray-200 dark:border-gray-700 align-top">
@@ -1194,7 +1202,11 @@ function SubEventsMatrixPageContent() {
 
       {/* Floating Multi-Guest Action Bar */}
       {selectedRowIds.length > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-2xl bg-gray-900 text-white dark:bg-gray-800 p-4 rounded-2xl shadow-2xl border border-gray-700 flex flex-wrap items-center justify-between gap-3 animate-fade-in">
+        <StickyBar
+          edge="bottom"
+          scope="document"
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-2xl bg-gray-900 text-white dark:bg-gray-800 p-4 rounded-2xl shadow-2xl border border-gray-700 flex flex-wrap items-center justify-between gap-3 animate-fade-in"
+        >
           <div className="flex items-center gap-2">
             <span className="font-bold px-2.5 py-1 bg-primary text-white rounded-lg text-xs tracking-wide uppercase">
               {selectedRowIds.length} Guests Selected
@@ -1212,7 +1224,7 @@ function SubEventsMatrixPageContent() {
               Clear Selection
             </Button>
           </div>
-        </div>
+        </StickyBar>
       )}
 
       <SubEventEditorModal
@@ -1223,6 +1235,7 @@ function SubEventsMatrixPageContent() {
         }}
         editingEvent={editingSubEvent}
         onSave={handleSaveSubEvent}
+        timezone={effectiveTimezone}
         existingSubEvents={subEvents}
         onSelectEdit={(evt) => setEditingSubEvent(evt)}
         onRequestDelete={(evt) => setDeletingSubEvent(evt)}

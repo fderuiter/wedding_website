@@ -67,6 +67,12 @@ describe('local smoke isolation, staged static exports, and untracked next-env.d
       );
       expect(containerScriptRaw).not.toMatch(/lsof\s+-ti:3000/);
       expect(containerScriptRaw).not.toMatch(/kill\s+-9/);
+      expect(containerScriptRaw).toContain(
+        'Expected unauthenticated /guest/login SSR response to redact AppConfig seoTitle'
+      );
+      expect(containerScriptRaw).toMatch(
+        /const inflightPromise = httpRequest\('\/guest\/login',\s*\{\s*headers:\s*\{\s*Cookie:\s*guestCookie,?\s*\}/
+      );
     });
 
     it('allocates distinct free loopback ports and honors valid overrides', async () => {
@@ -341,7 +347,7 @@ describe('local smoke isolation, staged static exports, and untracked next-env.d
         )
       ).toBe(true);
       expect(pkg.scripts.postinstall).toBe(
-        '([ "$SKIP_NEXT_TYPEGEN" = "true" ] || [ "$STATIC_EXPORT" = "true" ] || next typegen) && prisma generate && node scripts/pretest.mjs --record-install-state'
+        '([ "$SKIP_NEXT_TYPEGEN" = "true" ] || [ "$STATIC_EXPORT" = "true" ] || next typegen) && prisma generate && node scripts/pretest.mjs --record-install-state || node -e "process.exit(process.env.npm_config_package_lock_only === \'true\' ? 0 : 1)"'
       );
 
       const knip = JSON.parse(fs.readFileSync(path.join(repoRoot, 'knip.json'), 'utf8')) as {

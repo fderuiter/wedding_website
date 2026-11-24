@@ -53,6 +53,21 @@ describe('GuestAddressPage live region deduplication with ToastProvider', () => 
   it('triggers exactly one assertive role="alert" announcement when mailing address save fails with 500', async () => {
     globalFetch.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes('/api/guest/session')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: {
+              status: 'invitation',
+              isVerified: true,
+              code: 'BARTON26',
+              guestName: 'Marianne Dashwood',
+            },
+          }),
+        };
+      }
       if (url.includes('/api/guest/address') && (!init?.method || init.method === 'GET')) {
         return {
           ok: true,
@@ -118,6 +133,21 @@ describe('GuestAddressPage live region deduplication with ToastProvider', () => 
   it('triggers exactly one assertive role="alert" announcement when mailing address save fails with 401 session expiry', async () => {
     globalFetch.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes('/api/guest/session')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: {
+              status: 'invitation',
+              isVerified: true,
+              code: 'BARTON26',
+              guestName: 'Marianne Dashwood',
+            },
+          }),
+        };
+      }
       if (url.includes('/api/guest/address') && (!init?.method || init.method === 'GET')) {
         return {
           ok: true,

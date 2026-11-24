@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { seedAdminAndGuestAuthCookies, seedGuestAuthCookies } from './helpers/auth';
+import { inspectFocusedControlOcclusion } from './helpers/focusOcclusion';
 
 const ADMIN_DASHBOARD_ROUTES = [
   '/admin/dashboard',
@@ -25,6 +26,13 @@ async function activateSkipLinkAndAssertMainFocused(page: Page) {
   await page.keyboard.press('Tab');
   await expect(skipLink).toBeFocused();
   await expect(skipLink).toBeVisible();
+
+  const skipZIndex = await skipLink.evaluate((el) => getComputedStyle(el).zIndex);
+  expect(skipZIndex).toBe('100');
+
+  const skipOcclusion = await inspectFocusedControlOcclusion(page);
+  expect(skipOcclusion).not.toBeNull();
+  expect(skipOcclusion?.occludedPoints).toBe(0);
 
   await page.keyboard.press('Enter');
 

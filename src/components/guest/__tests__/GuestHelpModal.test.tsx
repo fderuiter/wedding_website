@@ -241,7 +241,9 @@ describe('GuestHelpModal component & WAI-ARIA compliance', () => {
     );
 
     expect(screen.getByText(/RSVP deadline & updating responses/i)).toBeInTheDocument();
-    expect(screen.getByText(/August 15, 2026 \(midnight in America\/Chicago\)/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/August 15, 2026 \(midnight in Central Time \(CT\)\)/i)
+    ).toBeInTheDocument();
     expect(await axe(container)).toHaveNoViolations();
 
     rerender(
