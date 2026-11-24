@@ -12,35 +12,75 @@ import {
   isAddressComplete,
 } from '@/features/registry';
 
-function extractPhoneNumber(extraFields: unknown): string {
-  if (!extraFields) return '';
+function parseExtraFieldsRecord(extraFields: unknown): Record<string, unknown> | null {
+  if (!extraFields) return null;
 
   let parsed: unknown = extraFields;
   if (typeof extraFields === 'string') {
     try {
       parsed = JSON.parse(extraFields);
     } catch {
-      return '';
+      return null;
     }
   }
 
   if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-    const record = parsed as Record<string, unknown>;
-    const candidate = [
-      record.phone,
-      record.mobile,
-      record.phoneNumber,
-      record['Phone Number'],
-    ].find(
-      (val) => (typeof val === 'string' && val.trim().length > 0) || typeof val === 'number'
-    );
-    if (typeof candidate === 'string') {
-      return candidate.trim().replace(/^'(?=[+\d(])/, '').trim();
-    }
-    if (typeof candidate === 'number') return String(candidate);
+    return parsed as Record<string, unknown>;
   }
 
+  return null;
+}
+
+function extractPhoneNumber(extraFields: unknown): string {
+  const record = parseExtraFieldsRecord(extraFields);
+  if (!record) return '';
+
+  const candidate = [
+    record.phone,
+    record.mobile,
+    record.phoneNumber,
+    record['Phone Number'],
+  ].find(
+    (val) => (typeof val === 'string' && val.trim().length > 0) || typeof val === 'number'
+  );
+  if (typeof candidate === 'string') {
+    return candidate.trim().replace(/^'(?=[+\d(])/, '').trim();
+  }
+  if (typeof candidate === 'number') return String(candidate);
+
   return '';
+}
+
+function resolveExportPlusOneCount(item: {
+  used?: boolean | null;
+  plusOneAllocations?: number | null;
+  extraFields?: unknown;
+}): number {
+  const attendanceStatus = getAttendanceStatus(item as any);
+  if (attendanceStatus === 'declined') {
+    return 0;
+  }
+
+  const record = parseExtraFieldsRecord(item.extraFields);
+  const hasResponded = Boolean(item.used) || attendanceStatus === 'attending';
+
+  if (record && record.plusOneCount !== undefined && record.plusOneCount !== null) {
+    const numericCount =
+      typeof record.plusOneCount === 'number'
+        ? record.plusOneCount
+        : typeof record.plusOneCount === 'string' && record.plusOneCount.trim() !== ''
+          ? Number(record.plusOneCount)
+          : Number.NaN;
+    if (Number.isFinite(numericCount)) {
+      return Math.max(0, Math.trunc(numericCount));
+    }
+  }
+
+  if (hasResponded && record && Array.isArray(record.plusOneNames)) {
+    return record.plusOneNames.filter((n) => typeof n === 'string' && n.trim().length > 0).length;
+  }
+
+  return item.plusOneAllocations ?? 0;
 }
 
 const HEADERS = [
@@ -208,7 +248,7 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
       'ZIP Code': item.zipCode || '',
       'Country': item.country || '',
       'Dietary Notes': item.dietaryNotes || '',
-      'Plus Ones': item.plusOneAllocations ?? 0,
+      'Plus Ones': resolveExportPlusOneCount(item),
       'Status': item.used ? 'Redeemed' : 'Unused',
       'Attendance': formatAttendanceLabel(item as any),
       'Meal Selections': formatGuestMealSelections(item),

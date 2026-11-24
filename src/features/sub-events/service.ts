@@ -381,6 +381,8 @@ export class SubEventService {
       const rsvp = matchedGuest
         ? found.rsvps.find((entry) => entry.invitationCodeId === matchedGuest.id) ?? null
         : null;
+      const seedDietaryNotes =
+        typeof matchedGuest?.dietaryNotes === 'string' ? matchedGuest.dietaryNotes.trim() : '';
 
       return {
         id: found.id,
@@ -405,22 +407,33 @@ export class SubEventService {
             customAnswers: normalizeCustomAnswers(rsvp.customAnswers),
             plusOneNames: normalizePlusOneNames(rsvp.plusOneNames),
           }
-          : null,
+          : seedDietaryNotes
+            ? {
+              status: 'pending',
+              plusOneCount: 0,
+              dietaryNotes: seedDietaryNotes,
+            }
+            : null,
       };
     }
 
     let invitationCodeId: string | null = null;
+    let inviteDietaryNotes = '';
     if (code && typeof code === 'string' && code.trim()) {
       const hydrated = this.getHydratedInvitation(code);
       if (hydrated && hydrated.id) {
-        invitationCodeId = hydrated.id;
+        if (!hasAddressCollectionTag(hydrated.partyTags)) {
+          invitationCodeId = hydrated.id;
+          inviteDietaryNotes = typeof hydrated.dietaryNotes === 'string' ? hydrated.dietaryNotes.trim() : '';
+        }
       } else {
         const invite = await this.client.invitationCode.findUnique({
           where: { code: code.trim().toUpperCase(), isSample: false },
-          select: { id: true },
+          select: { id: true, dietaryNotes: true, partyTags: true },
         });
-        if (invite && !invite.isSample) {
+        if (invite && !invite.isSample && !hasAddressCollectionTag(invite.partyTags)) {
           invitationCodeId = invite.id;
+          inviteDietaryNotes = typeof invite.dietaryNotes === 'string' ? invite.dietaryNotes.trim() : '';
         }
       }
     }
@@ -521,7 +534,13 @@ export class SubEventService {
             ? { plusOneNames: normalizePlusOneNames(rsvp.plusOneNames) }
             : {}),
         }
-        : null,
+        : invitationCodeId && inviteDietaryNotes
+          ? {
+            status: 'pending',
+            plusOneCount: 0,
+            dietaryNotes: inviteDietaryNotes,
+          }
+          : null,
     };
   }
 
@@ -537,6 +556,9 @@ export class SubEventService {
       const matchedGuest = normalizedCode
         ? seed.guests.find((g) => g.code.toUpperCase() === normalizedCode)
         : undefined;
+
+      const seedDietaryNotes =
+        typeof matchedGuest?.dietaryNotes === 'string' ? matchedGuest.dietaryNotes.trim() : '';
 
       return seed.subEvents
         .filter((evt) => {
@@ -572,24 +594,35 @@ export class SubEventService {
                 customAnswers: normalizeCustomAnswers(rsvp.customAnswers),
                 plusOneNames: normalizePlusOneNames(rsvp.plusOneNames),
               }
-              : null,
+              : seedDietaryNotes
+                ? {
+                  status: 'pending',
+                  plusOneCount: 0,
+                  dietaryNotes: seedDietaryNotes,
+                }
+                : null,
           };
         });
     }
 
     let invitationCodeId: string | null = null;
+    let inviteDietaryNotes = '';
 
     if (code && typeof code === 'string' && code.trim()) {
       const hydrated = this.getHydratedInvitation(code);
       if (hydrated && hydrated.id) {
-        invitationCodeId = hydrated.id;
+        if (!hasAddressCollectionTag(hydrated.partyTags)) {
+          invitationCodeId = hydrated.id;
+          inviteDietaryNotes = typeof hydrated.dietaryNotes === 'string' ? hydrated.dietaryNotes.trim() : '';
+        }
       } else {
         const invite = await this.client.invitationCode.findUnique({
           where: { code: code.trim().toUpperCase(), isSample: false },
-          select: { id: true },
+          select: { id: true, dietaryNotes: true, partyTags: true },
         });
-        if (invite && !invite.isSample) {
+        if (invite && !invite.isSample && !hasAddressCollectionTag(invite.partyTags)) {
           invitationCodeId = invite.id;
+          inviteDietaryNotes = typeof invite.dietaryNotes === 'string' ? invite.dietaryNotes.trim() : '';
         }
       }
     }
@@ -702,7 +735,13 @@ export class SubEventService {
               ? { plusOneNames: normalizePlusOneNames(rsvp.plusOneNames) }
               : {}),
           }
-          : null,
+          : invitationCodeId && inviteDietaryNotes
+            ? {
+              status: 'pending',
+              plusOneCount: 0,
+              dietaryNotes: inviteDietaryNotes,
+            }
+            : null,
       };
     });
   }
@@ -726,14 +765,15 @@ export class SubEventService {
           id: hydrated.id,
           guestName: hydrated.guestName,
           plusOneAllocations: hydrated.plusOneAllocations,
+          partyTags: hydrated.partyTags,
           isSample: false,
         }
         : await this.client.invitationCode.findUnique({
           where: { code: code.trim().toUpperCase(), isSample: false },
-          select: { id: true, guestName: true, plusOneAllocations: true },
+          select: { id: true, guestName: true, plusOneAllocations: true, partyTags: true },
         });
 
-    if (!invite || invite.isSample) {
+    if (!invite || invite.isSample || hasAddressCollectionTag(invite.partyTags)) {
       throw new ApiError(401, 'Invalid invitation session.');
     }
 
@@ -787,9 +827,10 @@ export class SubEventService {
 
     interface NormalizedRsvpWrite {
       subEventId: string;
-      status: 'attending' | 'declined' | 'pending';
+      status: 'attending' | 'declined';
       plusOneCount: number;
       dietaryNotes: string;
+      clearDietaryNotes: boolean;
       mealSelections: string[];
       customAnswers: Record<string, string>;
       plusOneNames: string[];
@@ -800,6 +841,10 @@ export class SubEventService {
 
     // Validate event existence, read-only status, private permissions, plus-one limits, meal options, and custom questions
     for (const sub of submissions) {
+      if ((sub.status as string) !== 'attending' && (sub.status as string) !== 'declined') {
+        throw new ApiError(400, 'Please select Attending or Declined before saving.');
+      }
+
       if (fallbackNodeIds.has(sub.subEventId)) {
         throw new ApiError(400, 'RSVPs cannot be submitted for read-only schedule items.');
       }
@@ -835,6 +880,7 @@ export class SubEventService {
           status: 'declined',
           plusOneCount: 0,
           dietaryNotes: sub.dietaryNotes || '',
+          clearDietaryNotes: Boolean(sub.clearDietaryNotes),
           mealSelections: [],
           customAnswers: {},
           plusOneNames: [],
@@ -935,6 +981,7 @@ export class SubEventService {
         status: sub.status,
         plusOneCount: requestedPlusOnes,
         dietaryNotes: sub.dietaryNotes || '',
+        clearDietaryNotes: Boolean(sub.clearDietaryNotes),
         mealSelections: normalizedMeals,
         customAnswers: cleanedAnswers,
         plusOneNames: normalizedPlusOneNames,
@@ -946,6 +993,23 @@ export class SubEventService {
 
     // Execute all upsert operations and InvitationCode sync within a single Prisma transaction
     const results = await this.client.$transaction(async (tx: any) => {
+      const priorRsvpRows =
+        typeof tx.subEventRsvp?.findMany === 'function'
+          ? await tx.subEventRsvp.findMany({
+            where: { invitationCodeId: invite.id },
+            include: { subEvent: true },
+            orderBy: { createdAt: 'asc' },
+          })
+          : [];
+      const priorByEvent = new Map<string, any>();
+      if (Array.isArray(priorRsvpRows)) {
+        for (const row of priorRsvpRows) {
+          if (row && row.subEventId) {
+            priorByEvent.set(row.subEventId, row);
+          }
+        }
+      }
+
       const upserted = await Promise.all(
         normalizedSubmissions.map((item) =>
           tx.subEventRsvp.upsert({
@@ -1002,23 +1066,7 @@ export class SubEventService {
               })
               : null;
 
-        const dbRsvps =
-          typeof tx.subEventRsvp?.findMany === 'function'
-            ? await tx.subEventRsvp.findMany({
-              where: { invitationCodeId: invite.id },
-              include: { subEvent: true },
-              orderBy: { createdAt: 'asc' },
-            })
-            : [];
-
-        const mergedByEvent = new Map<string, any>();
-        if (Array.isArray(dbRsvps)) {
-          for (const row of dbRsvps) {
-            if (row && row.subEventId) {
-              mergedByEvent.set(row.subEventId, row);
-            }
-          }
-        }
+        const mergedByEvent = new Map<string, any>(priorByEvent);
         for (const item of normalizedSubmissions) {
           const prevRow = mergedByEvent.get(item.subEventId);
           mergedByEvent.set(item.subEventId, {
@@ -1102,7 +1150,25 @@ export class SubEventService {
             activeNotesList.push(note);
           }
         }
-        const nextDietaryNotes = activeNotesList.length > 0 ? activeNotesList.join('; ') : null;
+        const intentionallyClearedNotes = normalizedSubmissions.some((item) => {
+          if (item.status === 'declined') return false;
+          if (item.dietaryNotes.trim().length > 0) return false;
+          if (item.clearDietaryNotes) return true;
+          const prev = priorByEvent.get(item.subEventId);
+          return Boolean(prev && typeof prev.dietaryNotes === 'string' && prev.dietaryNotes.trim().length > 0);
+        });
+
+        const existingInviteNotes =
+          typeof existingInvite?.dietaryNotes === 'string' && existingInvite.dietaryNotes.trim().length > 0
+            ? existingInvite.dietaryNotes.trim()
+            : null;
+
+        const nextDietaryNotes =
+          activeNotesList.length > 0
+            ? activeNotesList.join('; ')
+            : intentionallyClearedNotes
+              ? null
+              : existingInviteNotes;
 
         const dietaryTagSet = new Set<string>();
         const structuredMeals: Array<{
