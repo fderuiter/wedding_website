@@ -4,6 +4,7 @@ import {
   buildArchetypeSeedData,
   findSeededRegistryItemById,
 } from '@/lib/sampleData/builder';
+import { buildSimplePdfBytes } from '@/lib/staticDemo/exporters';
 import { THEME_PRESET_KEYS, type ThemePreset } from '@/lib/theme/presets';
 import type { PublicAppConfig } from '@/lib/config';
 import {
@@ -11,8 +12,10 @@ import {
   hasCustomStoryText,
   hasNonPlaceholderVenueDetails,
 } from '@/lib/setupCopy';
+import { createIcsFile, formatScheduleEventToCalendarEvent } from '@/utils/calendar';
 import { resolveModuleConfig } from '@/lib/modules';
 import type {
+  ContributorRecord,
   InvitationCodeDTO,
   RegistryItem,
   ThankYouTemplateTokens,
@@ -55,6 +58,7 @@ import {
   isDemoAdminSession,
   isDemoRuntimeActive,
   mutateActiveDataset,
+  previewDemoClaimToken,
   processDemoClaimToken,
   purgeDemoSampleData,
   recordDemoContribution,
@@ -193,6 +197,158 @@ function jsonResponse(
       ...extraHeaders,
     },
   });
+}
+
+function binaryDemoResponse(
+  body: Uint8Array | string,
+  contentType: string,
+  filename: string
+): Response {
+  return new Response(body instanceof Uint8Array ? (body as unknown as BodyInit) : body, {
+    status: 200,
+    headers: {
+      'Content-Type': contentType,
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Cache-Control': 'no-store',
+    },
+  });
+}
+
+function escapeDemoCsvCell(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  const str = String(value);
+  const formulaSafe = /^[=+\-@\t\r]/.test(str) ? `'${str}` : str;
+  if (/[",\r\n]/.test(formulaSafe)) {
+    return `"${formulaSafe.replace(/"/g, '""')}"`;
+  }
+  return formulaSafe;
+}
+
+function buildDemoCsv(headers: string[], rows: Array<Array<unknown>>): string {
+  return [
+    headers.map(escapeDemoCsvCell).join(','),
+    ...rows.map((row) => row.map(escapeDemoCsvCell).join(',')),
+  ].join('\r\n');
+}
+
+function resolveDemoRegistryItemTarget(
+  currentItems: RegistryItem[],
+  rawItemId: string
+): { item: RegistryItem; matchedActiveId: string | null } | null {
+  const trimmed = rawItemId.trim();
+  if (!trimmed) return null;
+
+  const exact = currentItems.find((i) => i.id === trimmed);
+  if (exact) {
+    return { item: exact, matchedActiveId: exact.id };
+  }
+
+  if (trimmed === '1' && currentItems.length > 0) {
+    return { item: currentItems[0], matchedActiveId: currentItems[0].id };
+  }
+
+  const sampleMatch = /^sample-registry-(classic|destination|romantic)-(\d+)$/.exec(trimmed);
+  if (sampleMatch) {
+    const mappedId = `demo-${sampleMatch[1]}-item-${sampleMatch[2]}`;
+    const mapped = currentItems.find((i) => i.id === mappedId);
+    if (mapped) {
+      return { item: mapped, matchedActiveId: mapped.id };
+    }
+  }
+
+  const seeded = findSeededRegistryItemById(trimmed, { includeContributors: true });
+  if (seeded) {
+    return { item: seeded, matchedActiveId: null };
+  }
+
+  return null;
+}
+
+function applyDemoRegistryItemPatch(
+  target: RegistryItem,
+  body: Record<string, unknown>,
+  overrideId?: string
+): RegistryItem {
+  const nextId = overrideId ?? target.id;
+  const nextItemType =
+    body.itemType === 'PHYSICAL' ||
+    body.itemType === 'CASH_FUND' ||
+    body.itemType === 'EXPERIENCE_FUND'
+      ? body.itemType
+      : (target.itemType ?? 'PHYSICAL');
+  const nextImageUrl =
+    typeof body.imageUrl === 'string'
+      ? body.imageUrl.trim()
+      : undefined;
+  const nextImageAlt =
+    typeof body.imageAlt === 'string'
+      ? body.imageAlt
+      : undefined;
+  const nextImageDecorative =
+    typeof body.imageDecorative === 'boolean'
+      ? body.imageDecorative
+      : undefined;
+
+  let nextImage = target.image;
+  let nextImageId = target.imageId;
+  if (nextImageUrl !== undefined) {
+    if (!nextImageUrl) {
+      nextImage = null;
+      nextImageId = null;
+    } else {
+      const resolvedImgId = target.image?.id || `${nextId}-img`;
+      nextImageId = resolvedImgId;
+      nextImage = {
+        id: resolvedImgId,
+        url: nextImageUrl,
+        altText: nextImageAlt ?? target.image?.altText ?? target.name,
+        isDecorative: nextImageDecorative ?? target.image?.isDecorative ?? false,
+        isSample: target.image?.isSample ?? false,
+      };
+    }
+  } else if (nextImage && (nextImageAlt !== undefined || nextImageDecorative !== undefined)) {
+    nextImage = {
+      ...nextImage,
+      ...(nextImageAlt !== undefined ? { altText: nextImageAlt } : {}),
+      ...(nextImageDecorative !== undefined ? { isDecorative: nextImageDecorative } : {}),
+    };
+  }
+
+  return {
+    ...target,
+    id: nextId,
+    ...(typeof body.name === 'string' ? { name: body.name } : {}),
+    ...(body.description === null
+      ? { description: undefined }
+      : typeof body.description === 'string'
+        ? { description: body.description }
+        : {}),
+    ...(typeof body.category === 'string' ? { category: body.category } : {}),
+    ...(typeof body.price === 'number' && Number.isFinite(body.price)
+      ? { price: body.price }
+      : {}),
+    ...(typeof body.quantity === 'number' && Number.isFinite(body.quantity)
+      ? { quantity: Math.max(1, Math.round(body.quantity)) }
+      : {}),
+    itemType: nextItemType,
+    ...(typeof body.isGroupGift === 'boolean' ? { isGroupGift: body.isGroupGift } : {}),
+    ...(typeof body.isMostWanted === 'boolean' ? { isMostWanted: body.isMostWanted } : {}),
+    ...(typeof body.displayOrder === 'number' && Number.isFinite(body.displayOrder)
+      ? { displayOrder: body.displayOrder }
+      : {}),
+    ...(body.vendorUrl === null || typeof body.vendorUrl === 'string'
+      ? { vendorUrl: body.vendorUrl || null }
+      : {}),
+    ...(body.paymentHandleType === null || typeof body.paymentHandleType === 'string'
+      ? { paymentHandleType: body.paymentHandleType || null }
+      : {}),
+    ...(body.paymentHandle === null || typeof body.paymentHandle === 'string'
+      ? { paymentHandle: body.paymentHandle || null }
+      : {}),
+    ...(typeof body.purchased === 'boolean' ? { purchased: body.purchased } : {}),
+    imageId: nextImageId,
+    image: nextImage,
+  };
 }
 
 async function parseJsonBody(init?: RequestInit): Promise<Record<string, unknown>> {
@@ -599,7 +755,7 @@ async function handleDemoApi(
     if (method === 'POST') {
       const body = await parseJsonBody(init);
       const id = nextDemoId('demo-custom-item');
-      const newItem: RegistryItem = {
+      const baseNewItem: RegistryItem = {
         id,
         name: String(body.name || 'Custom Gift'),
         description: String(body.description || ''),
@@ -614,8 +770,14 @@ async function handleDemoApi(
         isMostWanted: Boolean(body.isMostWanted),
         displayOrder: Number(body.displayOrder || 0),
         vendorUrl: typeof body.vendorUrl === 'string' ? body.vendorUrl : null,
-        paymentHandleType: 'Venmo',
-        paymentHandle: '@alex-and-taylor',
+        paymentHandleType:
+          typeof body.paymentHandleType === 'string' && body.paymentHandleType
+            ? body.paymentHandleType
+            : 'Venmo',
+        paymentHandle:
+          typeof body.paymentHandle === 'string' && body.paymentHandle
+            ? body.paymentHandle
+            : '@alex-and-taylor',
         purchased: false,
         purchaserName: null,
         amountContributed: 0,
@@ -624,6 +786,7 @@ async function handleDemoApi(
         image: null,
         contributors: [],
       };
+      const newItem = applyDemoRegistryItemPatch(baseNewItem, body, id);
       mutateActiveDataset((current) => ({
         ...current,
         registryItems: [newItem, ...current.registryItems],
@@ -632,43 +795,60 @@ async function handleDemoApi(
     }
   }
 
-  if (path.startsWith('/api/registry/items/')) {
-    const itemId = decodeURIComponent(path.slice('/api/registry/items/'.length));
+  if (path === '/api/admin/registry-items' && method === 'PUT') {
+    const body = await parseJsonBody(init);
+    if (body.action === 'reorder' && Array.isArray(body.orderedIds)) {
+      const orderedIds = body.orderedIds.filter((id): id is string => typeof id === 'string');
+      mutateActiveDataset((current) => {
+        const byId = new Map(current.registryItems.map((item) => [item.id, item]));
+        const reordered: RegistryItem[] = [];
+        for (const id of orderedIds) {
+          const matched = byId.get(id);
+          if (matched) {
+            reordered.push({ ...matched, displayOrder: reordered.length });
+            byId.delete(id);
+          }
+        }
+        for (const remaining of byId.values()) {
+          reordered.push({ ...remaining, displayOrder: reordered.length });
+        }
+        return { ...current, registryItems: reordered };
+      });
+      return jsonResponse({ success: true });
+    }
+  }
+
+  if (path.startsWith('/api/registry/items/') || path.startsWith('/api/admin/registry-items/')) {
+    const prefix = path.startsWith('/api/admin/registry-items/')
+      ? '/api/admin/registry-items/'
+      : '/api/registry/items/';
+    const itemId = decodeURIComponent(path.slice(prefix.length));
     const currentItems = getActiveArchetypeDataset().registryItems;
-    const existing = currentItems.find((i) => i.id === itemId);
+    const resolved = resolveDemoRegistryItemTarget(currentItems, itemId);
 
     if (method === 'GET') {
-      if (!existing) {
-        const seeded = findSeededRegistryItemById(itemId, { includeContributors: true });
-        if (seeded) return jsonResponse(seeded);
+      if (!resolved) {
         return jsonResponse({ error: 'Item not found' }, 404);
       }
-      return jsonResponse(existing);
+      return jsonResponse(resolved.item);
     }
     if (method === 'DELETE') {
-      if (!existing) return jsonResponse({ error: 'Item not found' }, 404);
+      if (!resolved?.matchedActiveId) return jsonResponse({ error: 'Item not found' }, 404);
       mutateActiveDataset((current) => ({
         ...current,
-        registryItems: current.registryItems.filter((i) => i.id !== itemId),
+        registryItems: current.registryItems.filter((i) => i.id !== resolved.matchedActiveId),
       }));
-      return jsonResponse(existing);
+      return jsonResponse(resolved.item);
     }
     if (method === 'PUT' || method === 'PATCH') {
-      const target =
-        existing ?? findSeededRegistryItemById(itemId, { includeContributors: true });
-      if (!target) return jsonResponse({ error: 'Item not found' }, 404);
+      if (!resolved) return jsonResponse({ error: 'Item not found' }, 404);
       const body = await parseJsonBody(init);
-      const updated: RegistryItem = {
-        ...target,
-        ...(typeof body.name === 'string' ? { name: body.name } : {}),
-        ...(typeof body.description === 'string' ? { description: body.description } : {}),
-        ...(typeof body.category === 'string' ? { category: body.category } : {}),
-        ...(typeof body.price === 'number' ? { price: body.price } : {}),
-      };
+      const persistedId = resolved.matchedActiveId ?? itemId;
+      const updated = applyDemoRegistryItemPatch(resolved.item, body, persistedId);
       mutateActiveDataset((current) => ({
         ...current,
-        registryItems: existing
-          ? current.registryItems.map((i) => (i.id === itemId ? updated : i))
+        registryItems: resolved.matchedActiveId
+          ? current.registryItems.map((i) => (i.id === resolved.matchedActiveId ? updated : i))
           : [updated, ...current.registryItems],
       }));
       return jsonResponse(updated);
@@ -714,18 +894,29 @@ async function handleDemoApi(
   }
 
   if (path === '/api/registry/claim') {
-    const token =
-      method === 'GET'
-        ? url.searchParams.get('token') || ''
-        : String((await parseJsonBody(init)).token || '');
-    if (!token) {
-      return jsonResponse({ error: 'Missing claim token.' }, 400);
+    if (method === 'GET') {
+      const token = (url.searchParams.get('token') || '').trim();
+      if (!token) {
+        return jsonResponse({ error: 'Missing claim token.' }, 400);
+      }
+      const preview = previewDemoClaimToken(token);
+      if (!preview) {
+        return jsonResponse({ error: 'Invalid or expired reservation token.' }, 404);
+      }
+      return jsonResponse(preview);
     }
-    const result = processDemoClaimToken(token);
-    if (!result) {
-      return jsonResponse({ error: 'Invalid or expired reservation token.' }, 404);
+    if (method === 'POST') {
+      const body = await parseJsonBody(init);
+      const token = String(body.token || '').trim();
+      if (!token) {
+        return jsonResponse({ error: 'Missing claim token.' }, 400);
+      }
+      const result = processDemoClaimToken(token);
+      if (!result) {
+        return jsonResponse({ error: 'Invalid or expired reservation token.' }, 404);
+      }
+      return jsonResponse(result);
     }
-    return jsonResponse(result);
   }
 
   if (path === '/api/registry/payment-intent' && method === 'POST') {
@@ -750,7 +941,9 @@ async function handleDemoApi(
       return jsonResponse({ error: 'Missing or invalid paymentIntentId.' }, 400);
     }
     const items = getActiveArchetypeDataset().registryItems;
-    const target = itemId ? items.find((r) => r.id === itemId) : items[0];
+    const target = itemId
+      ? resolveDemoRegistryItemTarget(items, itemId)?.item
+      : items[0];
     if (!target) {
       return jsonResponse({ error: 'Item not found' }, 404);
     }
@@ -1473,9 +1666,336 @@ async function handleDemoApi(
     });
   }
 
+  if (path === '/api/admin/seating/export' && method === 'GET') {
+    const dataset = getActiveArchetypeDataset();
+    const format = (url.searchParams.get('format') || 'csv').toLowerCase();
+    const guestTables = dataset.seatingTables.filter(
+      (t) => !isDemoLandmarkShape(t.shape) && t.capacity > 0
+    );
+    const dateStamp = new Date().toISOString().slice(0, 10);
+
+    if (format === 'pdf') {
+      const lines = guestTables.flatMap((t) => {
+        const seated = dataset.guests.filter((g) => g.tableId === t.id);
+        return [
+          `${t.name} (${seated.length}/${t.capacity} seated):`,
+          ...seated.map((g) => {
+            const po =
+              Array.isArray(g.plusOneSeatNumbers) && g.plusOneSeatNumbers.length > 0
+                ? ` (+1 seats: ${g.plusOneSeatNumbers.join(', ')})`
+                : '';
+            return `  Seat ${g.seatNumber ?? '-'}: ${g.guestName}${po}`;
+          }),
+        ];
+      });
+      const pdf = buildSimplePdfBytes('Reception Seating Chart', lines);
+      return binaryDemoResponse(pdf, 'application/pdf', 'seating-chart.pdf');
+    }
+
+    if (format === 'place-cards' || format === 'escort-cards') {
+      const cardTitle =
+        format === 'place-cards' ? 'Reception Place Cards' : 'Reception Escort Cards';
+      const filename =
+        format === 'place-cards' ? 'seating-place-cards.pdf' : 'seating-escort-cards.pdf';
+      const lines = guestTables.flatMap((t) => {
+        const seated = dataset.guests.filter((g) => g.tableId === t.id);
+        return seated.flatMap((g) => {
+          const baseLine = `${g.guestName} - ${t.name}, Seat ${g.seatNumber ?? '-'}`;
+          const companionSeats = Array.isArray(g.plusOneSeatNumbers)
+            ? g.plusOneSeatNumbers
+            : [];
+          const companionName =
+            [g.plusOneFirstName, g.plusOneLastName].filter(Boolean).join(' ') ||
+            `${g.guestName} Guest`;
+          return [
+            baseLine,
+            ...companionSeats.map((s) => `${companionName} - ${t.name}, Seat ${s}`),
+          ];
+        });
+      });
+      const pdf = buildSimplePdfBytes(cardTitle, lines);
+      return binaryDemoResponse(pdf, 'application/pdf', filename);
+    }
+
+    if (format === 'meals' || format === 'meal-counts') {
+      const headers = [
+        'Table Name',
+        'Table Shape',
+        'Capacity',
+        'Seated Guests',
+        'Entree Counts',
+        'Dietary Counts',
+      ];
+      const rows: Array<Array<unknown>> = [];
+      let totalCapacity = 0;
+      let totalSeated = 0;
+      const globalDietary = new Map<string, number>();
+
+      for (const table of guestTables) {
+        totalCapacity += table.capacity;
+        const seated = dataset.guests.filter((g) => g.tableId === table.id);
+        const headcount = seated.reduce(
+          (sum, g) => sum + 1 + Math.max(0, g.plusOneAllocations ?? 0),
+          0
+        );
+        totalSeated += seated.length === 0 ? 0 : headcount;
+        const tableDietary = new Map<string, number>();
+        for (const g of seated) {
+          const notes = (g.dietaryNotes ?? '').trim();
+          if (notes) {
+            for (const token of notes.split(/[,;]/).map((s) => s.trim()).filter(Boolean)) {
+              tableDietary.set(token, (tableDietary.get(token) ?? 0) + 1);
+              globalDietary.set(token, (globalDietary.get(token) ?? 0) + 1);
+            }
+          }
+        }
+        const dietarySummary =
+          Array.from(tableDietary.entries())
+            .map(([k, v]) => `${k}: ${v}`)
+            .join('; ') || 'None';
+        rows.push([
+          table.name,
+          table.shape,
+          String(table.capacity),
+          String(seated.length === 0 ? 0 : headcount),
+          seated.length === 0 ? 'None specified' : `Unspecified: ${headcount}`,
+          seated.length === 0 ? 'None' : dietarySummary,
+        ]);
+      }
+
+      if (guestTables.length > 0) {
+        const totalDietary =
+          Array.from(globalDietary.entries())
+            .map(([k, v]) => `${k}: ${v}`)
+            .join('; ') || 'None';
+        rows.push([
+          'TOTAL',
+          '',
+          String(totalCapacity),
+          String(totalSeated),
+          totalSeated === 0 ? 'None specified' : `Unspecified: ${totalSeated}`,
+          totalDietary,
+        ]);
+      }
+
+      return binaryDemoResponse(
+        buildDemoCsv(headers, rows),
+        'text/csv; charset=utf-8',
+        `seating-meal-counts-${dateStamp}.csv`
+      );
+    }
+
+    const headers = [
+      'Table Name',
+      'Table Shape',
+      'Capacity',
+      'Seat Number',
+      'Guest Name',
+      'Dietary Notes',
+      'Plus-One Name',
+      'Plus-One Seats',
+      'Attendance',
+      'Meal Selections',
+      'Table Meal Counts',
+      'Custom Answers',
+    ];
+    const rows: Array<Array<unknown>> = [];
+    for (const table of guestTables) {
+      const seated = dataset.guests
+        .filter((g) => g.tableId === table.id)
+        .sort((a, b) => (a.seatNumber ?? 999) - (b.seatNumber ?? 999));
+      if (seated.length === 0) {
+        rows.push([
+          table.name,
+          table.shape,
+          String(table.capacity),
+          '',
+          '(Unassigned Table)',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+        ]);
+        continue;
+      }
+      for (const g of seated) {
+        const plusOneName = [g.plusOneFirstName, g.plusOneLastName]
+          .filter(Boolean)
+          .join(' ');
+        const plusOneSeats = Array.isArray(g.plusOneSeatNumbers)
+          ? [...g.plusOneSeatNumbers].sort((a, b) => a - b).join(', ')
+          : '';
+        rows.push([
+          table.name,
+          table.shape,
+          String(table.capacity),
+          g.seatNumber ?? '',
+          g.guestName,
+          g.dietaryNotes ?? '',
+          plusOneName,
+          plusOneSeats,
+          g.used ? 'Attending' : 'Pending',
+          '',
+          '',
+          '',
+        ]);
+      }
+    }
+    for (const g of dataset.guests.filter((inv) => !inv.tableId && !isDemoAddressCollectionOnly(inv.partyTags))) {
+      const plusOneName = [g.plusOneFirstName, g.plusOneLastName]
+        .filter(Boolean)
+        .join(' ');
+      rows.push([
+        'Unassigned',
+        '',
+        '',
+        '',
+        g.guestName,
+        g.dietaryNotes ?? '',
+        plusOneName,
+        '',
+        g.used ? 'Attending' : 'Pending',
+        '',
+        '',
+        '',
+      ]);
+    }
+    return binaryDemoResponse(
+      buildDemoCsv(headers, rows),
+      'text/csv; charset=utf-8',
+      `seating-roster-${dateStamp}.csv`
+    );
+  }
+
+  if (path === '/api/admin/invitation-codes/export' && method === 'GET') {
+    const demoState = getDemoState();
+    const dataset = getActiveArchetypeDataset();
+    const tableById = new Map(dataset.seatingTables.map((t) => [t.id, t.name]));
+    const idsParam = (url.searchParams.get('ids') || '').trim();
+    const idSet = idsParam
+      ? new Set(
+        idsParam
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      )
+      : null;
+    const search = (url.searchParams.get('search') || url.searchParams.get('q') || '')
+      .trim()
+      .toLowerCase();
+    const statusFilter = (url.searchParams.get('status') || '').trim().toLowerCase();
+    const partyGroupFilter = (url.searchParams.get('partyGroup') || '').trim();
+    const partyTagsFilter = (url.searchParams.get('partyTags') || '').trim().toLowerCase();
+
+    const getGuestRsvpOverrides = (code: string) => {
+      const prefix = `${demoState.archetype}:${code.toUpperCase()}:`;
+      return Object.entries(demoState.rsvpOverrides)
+        .filter(([key]) => key.startsWith(prefix))
+        .map(([, val]) => val);
+    };
+
+    const filtered = dataset.guests.filter((inv) => {
+      if (idSet && !idSet.has(inv.id)) return false;
+      if (search) {
+        const matches =
+          inv.guestName.toLowerCase().includes(search) ||
+          (inv.householdName || '').toLowerCase().includes(search) ||
+          inv.code.toLowerCase().includes(search) ||
+          (inv.email || '').toLowerCase().includes(search) ||
+          (inv.city || '').toLowerCase().includes(search);
+        if (!matches) return false;
+      }
+      const hasRsvpOverride = getGuestRsvpOverrides(inv.code).length > 0;
+      const isUsed = Boolean(inv.used || hasRsvpOverride);
+      if ((statusFilter === 'used' || statusFilter === 'redeemed') && !isUsed) return false;
+      if (statusFilter === 'unused' && isUsed) return false;
+      if (partyGroupFilter && partyGroupFilter !== 'all' && inv.partyGroup !== partyGroupFilter) {
+        return false;
+      }
+      if (
+        partyTagsFilter &&
+        !(inv.partyTags || []).some((t) => t.toLowerCase() === partyTagsFilter)
+      ) {
+        return false;
+      }
+      return true;
+    });
+
+    const csv = buildDemoCsv(
+      [
+        'Code',
+        'Guest Name',
+        'Email',
+        'Household',
+        'Party Group',
+        'Party Tags',
+        'Plus Ones',
+        'Dietary Notes',
+        'Table',
+        'Seat',
+        'Used',
+        'Address Line 1',
+        'City',
+        'State',
+        'Zip',
+        'Country',
+      ],
+      filtered.map((inv) => {
+        const overrides = getGuestRsvpOverrides(inv.code);
+        const hasOverrides = overrides.length > 0;
+        const attendingOverrides = overrides.filter((o) => o.status === 'attending');
+        const allOverridesDeclined =
+          hasOverrides && overrides.every((o) => o.status === 'declined');
+        const extraRecord =
+          inv.extraFields && typeof inv.extraFields === 'object'
+            ? (inv.extraFields as Record<string, unknown>)
+            : null;
+        const isExtraDeclined =
+          typeof extraRecord?.attendanceStatus === 'string' &&
+          extraRecord.attendanceStatus.trim().toLowerCase() === 'declined';
+        const isDeclined = allOverridesDeclined || (!hasOverrides && isExtraDeclined);
+        const confirmedPlusOnes =
+          attendingOverrides.length > 0
+            ? Math.max(...attendingOverrides.map((o) => o.plusOneCount))
+            : extraRecord && typeof extraRecord.plusOneCount === 'number'
+              ? extraRecord.plusOneCount
+              : null;
+        const resolvedDietary = hasOverrides
+          ? overrides[overrides.length - 1].dietaryNotes
+          : (inv.dietaryNotes ?? '');
+        const isUsed = Boolean(inv.used || hasOverrides);
+
+        return [
+          inv.code,
+          inv.guestName,
+          inv.email ?? '',
+          inv.householdName ?? '',
+          inv.partyGroup ?? '',
+          (inv.partyTags ?? []).join('; '),
+          isDeclined ? 0 : (confirmedPlusOnes ?? inv.plusOneAllocations ?? 0),
+          resolvedDietary,
+          inv.tableId ? (tableById.get(inv.tableId) ?? '') : '',
+          inv.seatNumber ?? '',
+          isUsed ? 'Yes' : 'No',
+          inv.addressLine1 ?? '',
+          inv.city ?? '',
+          inv.state ?? '',
+          inv.zipCode ?? '',
+          inv.country ?? '',
+        ];
+      })
+    );
+    return binaryDemoResponse(csv, 'text/csv; charset=utf-8', 'guest-invitations.csv');
+  }
+
   if (path === '/api/admin/invitation-codes/catalog' || path === '/api/admin/invitation-codes') {
     if (method === 'GET') {
-      const search = (url.searchParams.get('search') || '').trim().toLowerCase();
+      const search = (url.searchParams.get('search') || url.searchParams.get('q') || '')
+        .trim()
+        .toLowerCase();
       const limitParam = Number(url.searchParams.get('limit') || '0');
       let guests = getActiveArchetypeDataset().guests;
       if (search) {
@@ -1969,24 +2489,162 @@ async function handleDemoApi(
 
   if (path === '/api/admin/thank-you-notes' && method === 'POST') {
     const body = await parseJsonBody(init);
-    const created = {
+    const nowIso = new Date().toISOString();
+    const thankYouStatus =
+      body.thankYouStatus === 'Sent' || body.thankYouStatus === 'Not Needed'
+        ? body.thankYouStatus
+        : 'Unsent';
+    const created: ContributorRecord = {
       id: nextDemoId('demo-offline-gift'),
       name: String(body.name || 'Offline Contributor').trim(),
       email: typeof body.email === 'string' ? body.email : null,
+      addressLine1: typeof body.addressLine1 === 'string' ? body.addressLine1 : null,
+      addressLine2: typeof body.addressLine2 === 'string' ? body.addressLine2 : null,
+      city: typeof body.city === 'string' ? body.city : null,
+      state: typeof body.state === 'string' ? body.state : null,
+      zipCode: typeof body.zipCode === 'string' ? body.zipCode : null,
+      country: typeof body.country === 'string' ? body.country : null,
+      isPlusOne: false,
       amount: Number(body.amount || 50),
       refundedAmount: 0,
-      status: 'CONFIRMED' as const,
-      date: typeof body.date === 'string' ? body.date : new Date().toISOString(),
+      status: 'CONFIRMED',
+      coverFee: false,
+      feeAmount: 0,
+      date: typeof body.date === 'string' ? body.date : nowIso,
       message: typeof body.message === 'string' ? body.message : null,
-      thankYouStatus:
-        body.thankYouStatus === 'Sent' || body.thankYouStatus === 'Not Needed'
-          ? body.thankYouStatus
-          : ('Unsent' as const),
+      thankYouStatus,
+      thankYouSentAt: thankYouStatus === 'Sent' ? nowIso : null,
       thankYouNote: typeof body.thankYouNote === 'string' ? body.thankYouNote : null,
+      transactionTimestamp: null,
       registryItemId: typeof body.registryItemId === 'string' ? body.registryItemId : null,
-      registryItem: null,
+      invitationCodeId: typeof body.invitationCodeId === 'string' ? body.invitationCodeId : null,
     };
-    return jsonResponse({ success: true, item: created }, 201);
+    mutateActiveDataset((current) => ({
+      ...current,
+      offlineContributors: [...(current.offlineContributors || []), created],
+    }));
+    return jsonResponse({ success: true, item: { ...created, registryItem: null } }, 201);
+  }
+
+  if (path === '/api/admin/thank-you-notes/export' && method === 'GET') {
+    const dataset = getActiveArchetypeDataset();
+    const itemById = new Map(dataset.registryItems.map((i) => [i.id, i.name]));
+    const inviteById = new Map(dataset.guests.map((g) => [g.id, g]));
+    const statusParam = (url.searchParams.get('status') || '').trim();
+    const searchParam = (url.searchParams.get('search') || '').trim().toLowerCase();
+
+    const allContributors: Array<{ c: ContributorRecord; giftName: string }> = [
+      ...dataset.registryItems.flatMap((item) =>
+        (item.contributors || []).map((c) => ({ c, giftName: item.name }))
+      ),
+      ...(dataset.offlineContributors || []).map((c) => ({
+        c,
+        giftName: c.registryItemId ? (itemById.get(c.registryItemId) ?? 'Wedding Gift') : 'Wedding Gift',
+      })),
+    ];
+
+    const filtered = allContributors.filter(({ c, giftName }) => {
+      const tyStatus = c.thankYouStatus || 'Unsent';
+      if (statusParam && statusParam !== 'All' && tyStatus !== statusParam) return false;
+      if (searchParam) {
+        const inv = c.invitationCodeId ? inviteById.get(c.invitationCodeId) : undefined;
+        const matches =
+          c.name.toLowerCase().includes(searchParam) ||
+          (c.email || '').toLowerCase().includes(searchParam) ||
+          giftName.toLowerCase().includes(searchParam) ||
+          (inv?.householdName || '').toLowerCase().includes(searchParam);
+        if (!matches) return false;
+      }
+      return true;
+    });
+
+    const csv = buildDemoCsv(
+      [
+        'Contributor Name',
+        'Email',
+        'Gift Item',
+        'Amount',
+        'Contribution Status',
+        'Thank-You Status',
+        'Sent At',
+        'Note',
+        'Mailing Address',
+      ],
+      filtered.map(({ c, giftName }) => {
+        const inv = c.invitationCodeId ? inviteById.get(c.invitationCodeId) : undefined;
+        const hasOwnAddress = Boolean(c.addressLine1 && c.addressLine1.trim());
+        const address = hasOwnAddress
+          ? [c.addressLine1, c.city, c.state, c.zipCode].filter(Boolean).join(', ')
+          : inv
+            ? [inv.addressLine1, inv.city, inv.state, inv.zipCode].filter(Boolean).join(', ')
+            : '';
+        return [
+          c.name,
+          c.email ?? '',
+          giftName,
+          c.amount.toFixed(2),
+          c.status ?? 'CONFIRMED',
+          c.thankYouStatus || 'Unsent',
+          c.thankYouSentAt ?? '',
+          c.thankYouNote ?? '',
+          address,
+        ];
+      })
+    );
+    return binaryDemoResponse(csv, 'text/csv; charset=utf-8', 'thank-you-notes.csv');
+  }
+
+  if (
+    path === '/api/admin/thank-you-notes/export-labels' &&
+    (method === 'GET' || method === 'POST')
+  ) {
+    const body = method === 'POST' ? await parseJsonBody(init) : {};
+    const template =
+      url.searchParams.get('template') === 'avery_5163' || body.template === 'avery_5163'
+        ? 'avery_5163'
+        : 'avery_5160';
+    const skipUnaddressed =
+      url.searchParams.get('skipUnaddressed') === 'true' ||
+      url.searchParams.get('skipUnaddressed') === '1' ||
+      body.skipUnaddressed === true;
+    const statusParam = (url.searchParams.get('status') || '').trim();
+    const searchParam = (url.searchParams.get('search') || '').trim().toLowerCase();
+
+    const dataset = getActiveArchetypeDataset();
+    const inviteById = new Map(dataset.guests.map((g) => [g.id, g]));
+    const allContributors: ContributorRecord[] = [
+      ...dataset.registryItems.flatMap((item) => item.contributors || []),
+      ...(dataset.offlineContributors || []),
+    ];
+
+    const lines: string[] = [];
+    for (const c of allContributors) {
+      const tyStatus = c.thankYouStatus || 'Unsent';
+      if (statusParam && statusParam !== 'All' && tyStatus !== statusParam) continue;
+      const inv = c.invitationCodeId ? inviteById.get(c.invitationCodeId) : undefined;
+      if (searchParam) {
+        const matches =
+          c.name.toLowerCase().includes(searchParam) ||
+          (c.email || '').toLowerCase().includes(searchParam) ||
+          (inv?.householdName || '').toLowerCase().includes(searchParam);
+        if (!matches) continue;
+      }
+      const hasOwnAddress = Boolean(c.addressLine1 && c.addressLine1.trim());
+      const resolvedParts = hasOwnAddress
+        ? [c.addressLine1, c.addressLine2, c.city, c.state, c.zipCode].filter(Boolean)
+        : inv && inv.addressLine1 && inv.addressLine1.trim()
+          ? [inv.addressLine1, inv.addressLine2, inv.city, inv.state, inv.zipCode].filter(Boolean)
+          : [];
+      if (resolvedParts.length === 0 && skipUnaddressed) continue;
+      const addr = resolvedParts.length > 0 ? resolvedParts.join(', ') : 'Address pending';
+      lines.push(`${c.name} - ${addr}`);
+    }
+    const title =
+      template === 'avery_5163'
+        ? 'Thank-You Shipping Labels (Avery 5163)'
+        : 'Thank-You Mailing Labels (Avery 5160)';
+    const pdf = buildSimplePdfBytes(title, lines);
+    return binaryDemoResponse(pdf, 'application/pdf', `thank-you-labels-${template}.pdf`);
   }
 
   if (path === '/api/admin/thank-you-notes/batch' && method === 'POST') {
@@ -2011,6 +2669,9 @@ async function handleDemoApi(
             c.id && idSet.has(c.id) ? { ...c, thankYouStatus: nextStatus } : c
           ),
         })),
+        offlineContributors: (current.offlineContributors || []).map((c) =>
+          c.id && idSet.has(c.id) ? { ...c, thankYouStatus: nextStatus } : c
+        ),
       }));
     }
     return jsonResponse({ success: true, updatedCount: ids.length });
@@ -2190,6 +2851,62 @@ async function handleDemoApi(
           return nextContrib;
         }),
       }));
+      const nextOffline = (current.offlineContributors || []).map((c) => {
+        if (c.id !== noteId) return c;
+        const nextStatus =
+          body.thankYouStatus === 'Sent' ||
+          body.thankYouStatus === 'Not Needed' ||
+          body.thankYouStatus === 'Unsent'
+            ? body.thankYouStatus
+            : (c.thankYouStatus ?? 'Unsent');
+        const resolvedInviteId =
+          body.invitationCodeId === null
+            ? null
+            : typeof body.invitationCodeId === 'string'
+              ? body.invitationCodeId
+              : (c.invitationCodeId ?? null);
+        targetInviteId = resolvedInviteId;
+        const nextContrib = {
+          ...c,
+          thankYouStatus: nextStatus,
+          ...(body.thankYouNote === null || typeof body.thankYouNote === 'string'
+            ? { thankYouNote: body.thankYouNote }
+            : {}),
+          ...(body.thankYouSentAt === null || typeof body.thankYouSentAt === 'string'
+            ? { thankYouSentAt: body.thankYouSentAt }
+            : {}),
+          invitationCodeId: resolvedInviteId,
+          ...(body.addressLine1 === null || typeof body.addressLine1 === 'string'
+            ? { addressLine1: body.addressLine1 || null }
+            : {}),
+          ...(body.addressLine2 === null || typeof body.addressLine2 === 'string'
+            ? { addressLine2: body.addressLine2 || null }
+            : {}),
+          ...(body.city === null || typeof body.city === 'string'
+            ? { city: body.city || null }
+            : {}),
+          ...(body.state === null || typeof body.state === 'string'
+            ? { state: body.state || null }
+            : {}),
+          ...(body.zipCode === null || typeof body.zipCode === 'string'
+            ? { zipCode: body.zipCode || null }
+            : {}),
+          ...(body.country === null || typeof body.country === 'string'
+            ? { country: body.country || null }
+            : {}),
+        };
+        if (body.syncAddressToGuest && resolvedInviteId) {
+          syncedAddress = {
+            addressLine1: nextContrib.addressLine1 || '',
+            addressLine2: nextContrib.addressLine2 || '',
+            city: nextContrib.city || '',
+            state: nextContrib.state || '',
+            zipCode: nextContrib.zipCode || '',
+            country: nextContrib.country || '',
+          };
+        }
+        return nextContrib;
+      });
       const nextGuests =
         syncedAddress && targetInviteId
           ? current.guests.map((g) => (g.id === targetInviteId ? { ...g, ...syncedAddress } : g))
@@ -2197,6 +2914,7 @@ async function handleDemoApi(
       return {
         ...current,
         registryItems: nextRegistryItems,
+        offlineContributors: nextOffline,
         guests: nextGuests,
       };
     });
@@ -2206,55 +2924,67 @@ async function handleDemoApi(
   if (path === '/api/admin/thank-you-notes' && method === 'GET') {
     const dataset = getActiveArchetypeDataset();
     const guestById = new Map(dataset.guests.map((g) => [g.id, g]));
-    const items = dataset.registryItems.flatMap((registryItem) =>
-      (registryItem.contributors || []).map((contributor) => {
-        const linked = contributor.invitationCodeId
-          ? guestById.get(contributor.invitationCodeId) ?? null
-          : null;
-        return {
-          id: contributor.id,
-          name: contributor.name,
-          email: contributor.email ?? null,
-          addressLine1: contributor.addressLine1 ?? null,
-          addressLine2: contributor.addressLine2 ?? null,
-          city: contributor.city ?? null,
-          state: contributor.state ?? null,
-          zipCode: contributor.zipCode ?? null,
-          country: contributor.country ?? null,
-          message: contributor.message ?? null,
-          amount: contributor.amount,
-          refundedAmount: contributor.refundedAmount ?? 0,
-          status: contributor.status ?? 'CONFIRMED',
-          date: contributor.date || new Date().toISOString(),
-          thankYouStatus: contributor.thankYouStatus || 'Unsent',
-          thankYouSentAt: contributor.thankYouSentAt ?? null,
-          thankYouEmailSentAt: contributor.thankYouEmailSentAt ?? null,
-          thankYouNote: contributor.thankYouNote ?? null,
-          invitationCodeId: contributor.invitationCodeId ?? null,
-          invitationCode: linked
-            ? {
-              id: linked.id,
-              code: linked.code,
-              guestName: linked.guestName,
-              email: linked.email ?? null,
-              householdName: linked.householdName ?? null,
-              addressLine1: linked.addressLine1 ?? null,
-              addressLine2: linked.addressLine2 ?? null,
-              city: linked.city ?? null,
-              state: linked.state ?? null,
-              zipCode: linked.zipCode ?? null,
-              country: linked.country ?? null,
-            }
-            : null,
-          registryItemId: registryItem.id,
-          registryItem: {
+    const regItemById = new Map(dataset.registryItems.map((r) => [r.id, r]));
+    const mapContributorToDto = (
+      contributor: ContributorRecord,
+      registryItem: RegistryItem | null
+    ) => {
+      const linked = contributor.invitationCodeId
+        ? guestById.get(contributor.invitationCodeId) ?? null
+        : null;
+      return {
+        id: contributor.id,
+        name: contributor.name,
+        email: contributor.email ?? null,
+        addressLine1: contributor.addressLine1 ?? null,
+        addressLine2: contributor.addressLine2 ?? null,
+        city: contributor.city ?? null,
+        state: contributor.state ?? null,
+        zipCode: contributor.zipCode ?? null,
+        country: contributor.country ?? null,
+        message: contributor.message ?? null,
+        amount: contributor.amount,
+        refundedAmount: contributor.refundedAmount ?? 0,
+        status: contributor.status ?? 'CONFIRMED',
+        date: contributor.date || new Date().toISOString(),
+        thankYouStatus: contributor.thankYouStatus || 'Unsent',
+        thankYouSentAt: contributor.thankYouSentAt ?? null,
+        thankYouEmailSentAt: contributor.thankYouEmailSentAt ?? null,
+        thankYouNote: contributor.thankYouNote ?? null,
+        invitationCodeId: contributor.invitationCodeId ?? null,
+        invitationCode: linked
+          ? {
+            id: linked.id,
+            code: linked.code,
+            guestName: linked.guestName,
+            email: linked.email ?? null,
+            householdName: linked.householdName ?? null,
+            addressLine1: linked.addressLine1 ?? null,
+            addressLine2: linked.addressLine2 ?? null,
+            city: linked.city ?? null,
+            state: linked.state ?? null,
+            zipCode: linked.zipCode ?? null,
+            country: linked.country ?? null,
+          }
+          : null,
+        registryItemId: registryItem?.id ?? contributor.registryItemId ?? null,
+        registryItem: registryItem
+          ? {
             id: registryItem.id,
             name: registryItem.name,
             category: registryItem.category,
-          },
-        };
-      })
-    );
+          }
+          : null,
+      };
+    };
+    const items = [
+      ...dataset.registryItems.flatMap((registryItem) =>
+        (registryItem.contributors || []).map((c) => mapContributorToDto(c, registryItem))
+      ),
+      ...(dataset.offlineContributors || []).map((c) =>
+        mapContributorToDto(c, c.registryItemId ? (regItemById.get(c.registryItemId) ?? null) : null)
+      ),
+    ];
     const sent = items.filter((i) => i.thankYouStatus === 'Sent').length;
     const notNeeded = items.filter((i) => i.thankYouStatus === 'Not Needed').length;
     const unsent = items.length - sent - notNeeded;
@@ -2276,6 +3006,312 @@ async function handleDemoApi(
         totalPages: 1,
       },
     });
+  }
+
+  if (path === '/api/admin/maintenance/export' && method === 'GET') {
+    const demoState = getDemoState();
+    const dataset = getActiveArchetypeDataset();
+    const presetConfig = ARCHETYPE_PRESETS[demoState.archetype].siteConfig;
+    const nowIso = new Date().toISOString();
+    const dateStamp = nowIso.slice(0, 10);
+    const weddingDateVal = demoState.configOverrides.weddingDate;
+    const weddingDateIso =
+      weddingDateVal instanceof Date && !Number.isNaN(weddingDateVal.getTime())
+        ? weddingDateVal.toISOString()
+        : presetConfig.weddingDate;
+
+    const placeholderMediaId = 'demo-placeholder-media';
+    const mediaMap = new Map<
+      string,
+      {
+        id: string;
+        url: string;
+        altText: string | null;
+        isDecorative: boolean;
+        isSample: boolean;
+        createdAt: string;
+        updatedAt: string;
+      }
+    >();
+    mediaMap.set(placeholderMediaId, {
+      id: placeholderMediaId,
+      url: '/images/placeholder.png',
+      altText: 'Registry gift placeholder',
+      isDecorative: false,
+      isSample: true,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    });
+
+    const registryItemRows = dataset.registryItems.map((item, idx) => {
+      const resolvedImageId = item.imageId || placeholderMediaId;
+      if (!mediaMap.has(resolvedImageId)) {
+        const rawUrl = item.image?.url || '/images/placeholder.png';
+        const safeUrl =
+          rawUrl.startsWith('/') || rawUrl.startsWith('https://')
+            ? rawUrl
+            : '/images/placeholder.png';
+        mediaMap.set(resolvedImageId, {
+          id: resolvedImageId,
+          url: safeUrl,
+          altText: item.image?.altText ?? item.name,
+          isDecorative: Boolean(item.image?.isDecorative),
+          isSample: Boolean(item.isSample),
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        });
+      }
+      return {
+        id: item.id,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        name: item.name,
+        description: item.description ?? '',
+        category: item.category || 'Home',
+        price: item.price,
+        imageId: resolvedImageId,
+        quantity: Math.max(1, item.quantity ?? 1),
+        itemType: item.itemType ?? 'PHYSICAL',
+        paymentHandleType: item.paymentHandleType ?? null,
+        paymentHandle: item.paymentHandle ?? null,
+        vendorUrl: item.vendorUrl ?? null,
+        isGroupGift: Boolean(item.isGroupGift),
+        isMostWanted: Boolean(item.isMostWanted),
+        displayOrder: item.displayOrder ?? idx,
+        purchased: Boolean(item.purchased),
+        isSample: Boolean(item.isSample),
+        purchaserName: item.purchaserName ?? null,
+        amountContributed: item.amountContributed ?? 0,
+      };
+    });
+
+    const contributorRows = [
+      ...dataset.registryItems.flatMap((item) =>
+        (item.contributors || []).map((c) => ({
+          id: c.id || nextDemoId('demo-contrib'),
+          createdAt: c.date || nowIso,
+          updatedAt: c.date || nowIso,
+          name: c.name,
+          email: c.email || null,
+          addressLine1: c.addressLine1 ?? null,
+          addressLine2: c.addressLine2 ?? null,
+          city: c.city ?? null,
+          state: c.state ?? null,
+          zipCode: c.zipCode ?? null,
+          country: c.country ?? null,
+          amount: c.amount,
+          refundedAmount: c.refundedAmount ?? 0,
+          status: c.status ?? 'CONFIRMED',
+          date: c.date || nowIso,
+          message: c.message ?? null,
+          thankYouStatus: c.thankYouStatus || 'Unsent',
+          thankYouSentAt: c.thankYouSentAt ?? null,
+          thankYouEmailSentAt: c.thankYouEmailSentAt ?? null,
+          thankYouNote: c.thankYouNote ?? null,
+          registryItemId: item.id,
+          invitationCodeId: c.invitationCodeId ?? null,
+        }))
+      ),
+      ...(dataset.offlineContributors || []).map((c) => ({
+        id: c.id || nextDemoId('demo-offline'),
+        createdAt: c.date || nowIso,
+        updatedAt: c.date || nowIso,
+        name: c.name,
+        email: c.email || null,
+        addressLine1: c.addressLine1 ?? null,
+        addressLine2: c.addressLine2 ?? null,
+        city: c.city ?? null,
+        state: c.state ?? null,
+        zipCode: c.zipCode ?? null,
+        country: c.country ?? null,
+        amount: c.amount,
+        refundedAmount: c.refundedAmount ?? 0,
+        status: c.status ?? 'CONFIRMED',
+        date: c.date || nowIso,
+        message: c.message ?? null,
+        thankYouStatus: c.thankYouStatus || 'Unsent',
+        thankYouSentAt: c.thankYouSentAt ?? null,
+        thankYouEmailSentAt: c.thankYouEmailSentAt ?? null,
+        thankYouNote: c.thankYouNote ?? null,
+        registryItemId: c.registryItemId ?? null,
+        invitationCodeId: c.invitationCodeId ?? null,
+      })),
+    ];
+
+    const seedSubEvents = buildArchetypeSeedData(demoState.archetype).subEvents;
+    const backupPayload = {
+      version: '2.0',
+      schemaVersion: '2.0',
+      exportedAt: nowIso,
+      appConfig: [
+        {
+          id: 'default',
+          createdAt: nowIso,
+          updatedAt: nowIso,
+          partner1Name: demoState.configOverrides.partner1Name || presetConfig.partner1Name,
+          partner2Name: demoState.configOverrides.partner2Name || presetConfig.partner2Name,
+          weddingDate: weddingDateIso,
+          venueName: demoState.configOverrides.venueName || presetConfig.venueName,
+          venueAddress: demoState.configOverrides.venueAddress || presetConfig.venueAddress,
+          venueCity: demoState.configOverrides.venueCity || presetConfig.venueCity,
+          venueState: demoState.configOverrides.venueState || presetConfig.venueState,
+          venueZip: demoState.configOverrides.venueZip || presetConfig.venueZip,
+          timezone: demoState.configOverrides.timezone || presetConfig.timezone,
+          themePreset: demoState.themePreset,
+          setupCompleted: true,
+        },
+      ],
+      media: Array.from(mediaMap.values()),
+      registryItem: registryItemRows,
+      contributor: contributorRows,
+      seatingTable: dataset.seatingTables.map(({ invitationCodes: _ic, ...rest }) => ({
+        ...rest,
+        createdAt: rest.createdAt || nowIso,
+        updatedAt: rest.updatedAt || nowIso,
+      })),
+      invitationCode: dataset.guests.map((g) => ({
+        id: g.id,
+        code: g.code,
+        guestName: g.guestName,
+        email: g.email || null,
+        addressLine1: g.addressLine1 ?? null,
+        addressLine2: g.addressLine2 ?? null,
+        city: g.city ?? null,
+        state: g.state ?? null,
+        zipCode: g.zipCode ?? null,
+        country: g.country ?? null,
+        dietaryNotes: g.dietaryNotes ?? null,
+        plusOneAllocations: g.plusOneAllocations ?? 0,
+        plusOneFirstName: g.plusOneFirstName ?? null,
+        plusOneLastName: g.plusOneLastName ?? null,
+        householdName: g.householdName ?? null,
+        partyGroup: g.partyGroup ?? null,
+        partyTags: g.partyTags ?? [],
+        used: Boolean(g.used),
+        usedAt: g.usedAt || null,
+        tableId: g.tableId ?? null,
+        seatNumber: g.seatNumber ?? null,
+        isSample: Boolean(g.isSample),
+        createdAt: g.createdAt || nowIso,
+        updatedAt: g.updatedAt || nowIso,
+      })),
+      weddingPartyMember: dataset.weddingParty.map(({ photo: _photo, ...m }) => ({
+        ...m,
+        createdAt: m.createdAt instanceof Date ? m.createdAt.toISOString() : String(m.createdAt || nowIso),
+        updatedAt: m.updatedAt instanceof Date ? m.updatedAt.toISOString() : String(m.updatedAt || nowIso),
+      })),
+      attraction: dataset.attractions.map(({ image: _img, ...a }) => ({
+        ...a,
+        createdAt: a.createdAt instanceof Date ? a.createdAt.toISOString() : String(a.createdAt || nowIso),
+        updatedAt: a.updatedAt instanceof Date ? a.updatedAt.toISOString() : String(a.updatedAt || nowIso),
+      })),
+      contentNode: [...dataset.faqs, ...dataset.logisticsNodes].map((n) => ({
+        id: n.id,
+        type: n.type,
+        tags: n.tags,
+        data: n.data as Record<string, unknown>,
+        createdAt: n.createdAt instanceof Date ? n.createdAt.toISOString() : String(n.createdAt || nowIso),
+        updatedAt: n.updatedAt instanceof Date ? n.updatedAt.toISOString() : String(n.updatedAt || nowIso),
+      })),
+      subEvent: seedSubEvents.map((ev) => ({
+        id: ev.id,
+        title: ev.title,
+        description: ev.description ?? null,
+        startTime: ev.startTime instanceof Date ? ev.startTime.toISOString() : (ev.startTime ?? null),
+        endTime: ev.endTime instanceof Date ? ev.endTime.toISOString() : (ev.endTime ?? null),
+        locationName: ev.locationName ?? null,
+        location: ev.location ?? null,
+        category: ev.category ?? null,
+        isPrivate: Boolean(ev.isPrivate),
+        mealOptions: ev.mealOptions ?? [],
+        customQuestions: ev.customQuestions ?? [],
+        createdAt: ev.createdAt instanceof Date ? ev.createdAt.toISOString() : nowIso,
+        updatedAt: ev.updatedAt instanceof Date ? ev.updatedAt.toISOString() : nowIso,
+      })),
+      subEventAccess: [],
+      subEventRsvp: [],
+      broadcastMessage: [],
+      broadcastRecipient: [],
+      snapshotVersion: [],
+    };
+    return binaryDemoResponse(
+      JSON.stringify(backupPayload, null, 2),
+      'application/json; charset=utf-8',
+      `wedding-backup-${dateStamp}.json`
+    );
+  }
+
+  if (path === '/api/admin/maintenance/import' && method === 'POST') {
+    const body = await parseJsonBody(init);
+    if (Array.isArray(body.appConfig) && body.appConfig[0] && typeof body.appConfig[0] === 'object') {
+      const cfg = body.appConfig[0] as Record<string, unknown>;
+      updateDemoConfigOverrides({
+        ...(typeof cfg.partner1Name === 'string' ? { partner1Name: cfg.partner1Name } : {}),
+        ...(typeof cfg.partner2Name === 'string' ? { partner2Name: cfg.partner2Name } : {}),
+        ...(typeof cfg.venueName === 'string' ? { venueName: cfg.venueName } : {}),
+        ...(typeof cfg.timezone === 'string' ? { timezone: cfg.timezone } : {}),
+      });
+    }
+    return jsonResponse({
+      success: true,
+      restored: true,
+      data: { imported: true, restored: true },
+    });
+  }
+
+  const icsMatch = path.match(/^\/api\/schedule\/([^/]+)\/ics$/);
+  if (icsMatch && method === 'GET') {
+    const delegatedIcs = await delegateToStaticDemoRouter(rawInput ?? url, init, method, path);
+    if (delegatedIcs && delegatedIcs.ok) {
+      return delegatedIcs;
+    }
+    const eventId = decodeURIComponent(icsMatch[1]).trim();
+    const demoState = getDemoState();
+    const seed = buildArchetypeSeedData(demoState.archetype);
+    const timezone = resolveValidTimezone(
+      demoState.configOverrides.timezone ||
+        seed.config.timezone ||
+        ARCHETYPE_PRESETS[demoState.archetype].siteConfig.timezone
+    );
+    const matchedSubEvent = seed.subEvents.find((ev) => ev.id === eventId);
+    if (!matchedSubEvent) {
+      return jsonResponse({ error: 'Schedule event not found' }, 404);
+    }
+    const calendarEvent = formatScheduleEventToCalendarEvent(
+      {
+        id: matchedSubEvent.id,
+        title: matchedSubEvent.title,
+        startTime:
+          matchedSubEvent.startTime instanceof Date
+            ? matchedSubEvent.startTime.toISOString()
+            : (matchedSubEvent.startTime || undefined),
+        endTime:
+          matchedSubEvent.endTime instanceof Date
+            ? matchedSubEvent.endTime.toISOString()
+            : (matchedSubEvent.endTime || undefined),
+        locationName: matchedSubEvent.locationName || undefined,
+        location: matchedSubEvent.location || undefined,
+        attireRules: matchedSubEvent.attireRules || undefined,
+        description: matchedSubEvent.description || undefined,
+      },
+      undefined,
+      timezone
+    );
+    const icsContent =
+      createIcsFile(calendarEvent) ||
+      [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//Wedding Showcase//EN',
+        'BEGIN:VEVENT',
+        `UID:${matchedSubEvent.id}@wedding.showcase`,
+        `SUMMARY:${matchedSubEvent.title}`,
+        'END:VEVENT',
+        'END:VCALENDAR',
+      ].join('\r\n');
+    const cleanTitle =
+      (matchedSubEvent.title || 'event').replace(/["\r\n\t]/g, '').trim() || 'event';
+    return binaryDemoResponse(icsContent, 'text/calendar; charset=utf-8', `${cleanTitle}.ics`);
   }
 
   // Guest weather forecast (localized seasonal climate fallback with venue/override support)
@@ -2319,7 +3355,7 @@ async function handleDemoApi(
   }
 
   // Delegate extended OpenAPI routes (schedule, rsvp, photos, media, content-nodes,
-  // versions, maintenance, exports, guest login/lookup) to the staticDemo router when installed
+  // versions, guest login/lookup) to the staticDemo router when installed
   const delegatedExtended = await delegateToStaticDemoRouter(rawInput ?? url, init, method, path);
   if (delegatedExtended) {
     return delegatedExtended;
@@ -2619,33 +3655,6 @@ async function handleDemoApi(
 
   if (path.startsWith('/api/admin/broadcast/schedule/') && method === 'DELETE') {
     return jsonResponse({ success: true, data: { cancelled: true } });
-  }
-
-  // Admin Maintenance & Seating Exports (/admin/dashboard/maintenance & seating-chart)
-  if (path === '/api/admin/maintenance/export' && method === 'GET') {
-    return jsonResponse({
-      schemaVersion: '1.0',
-      exportedAt: new Date().toISOString(),
-      archetype: getDemoState().archetype,
-    });
-  }
-
-  if (path === '/api/admin/maintenance/import' && method === 'POST') {
-    return jsonResponse({ success: true, data: { imported: true } });
-  }
-
-  if (path === '/api/admin/seating/export' && method === 'GET') {
-    const format = url.searchParams.get('format') || 'csv';
-    if (format === 'pdf' || format === 'place-cards' || format === 'escort-cards') {
-      return new Response('%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n', {
-        status: 200,
-        headers: { 'Content-Type': 'application/pdf' },
-      });
-    }
-    return new Response('Table,Seat,Guest\nTable 1,1,Sample Guest\n', {
-      status: 200,
-      headers: { 'Content-Type': 'text/csv; charset=utf-8' },
-    });
   }
 
   // Safe fallback for read-only admin overview widgets on static export

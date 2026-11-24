@@ -168,11 +168,17 @@ export default function EditRegistryItemPage() {
     setSubmitError(null);
     try {
       await update(effectiveTargetId, values);
-      await Promise.all([
+      const invalidations = [
         queryClient.invalidateQueries({ queryKey: ['admin-registry-item', effectiveTargetId] }),
         queryClient.invalidateQueries({ queryKey: ['admin-registry'] }),
         queryClient.invalidateQueries({ queryKey: ['registry-items'] }),
-      ]);
+      ];
+      if (resolvedItemData?.id && resolvedItemData.id !== effectiveTargetId) {
+        invalidations.push(
+          queryClient.invalidateQueries({ queryKey: ['admin-registry-item', resolvedItemData.id] })
+        );
+      }
+      await Promise.all(invalidations);
       addToast('Item updated successfully!', 'success');
       router.push('/admin/dashboard/registry');
     } catch (err) {

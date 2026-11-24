@@ -1,5 +1,6 @@
 import { ARCHETYPE_PRESETS, type ArchetypeId } from '@/lib/sampleData/archetypes';
 import type {
+  ContributorRecord,
   InvitationCodeDTO,
   RegistryItem,
   RegistryShippingAddress,
@@ -11,6 +12,7 @@ import type { ContentNodeDTO } from '@/features/content';
 
 export interface ArchetypeDataset {
   registryItems: RegistryItem[];
+  offlineContributors?: ContributorRecord[];
   guests: InvitationCodeDTO[];
   seatingTables: SeatingTableDTO[];
   weddingParty: WeddingPartyMemberDTO[];

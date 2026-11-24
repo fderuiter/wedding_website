@@ -276,4 +276,28 @@ describe('useAdminMaintenance Hook Unit Tests', () => {
     expect(postedPayload.appConfig[0].modules).toEqual(DEFAULT_MODULE_CONFIG);
     expect(mockInvalidateQueries).toHaveBeenCalled();
   });
+
+  test('exportData downloads JSON backup via fetch-backed blob without window.open', async () => {
+    const clickSpy = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify(getValidBackupData()), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Disposition': 'attachment; filename="wedding-backup-2026-10-16.json"',
+        },
+      })
+    );
+
+    const { result } = renderHook(() => useAdminMaintenance());
+    await act(async () => {
+      await result.current.exportData();
+    });
+
+    expect(fetchSpy).toHaveBeenCalledWith('/api/admin/maintenance/export');
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+
+    fetchSpy.mockRestore();
+    clickSpy.mockRestore();
+  });
 });
