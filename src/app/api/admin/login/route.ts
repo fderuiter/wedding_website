@@ -1,8 +1,17 @@
 import { AdminLoginSchema } from '@/utils/validation';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyPassword } from '@/utils/password';
-import { setAdminAuthCookie, signAdminToken } from '@/core/auth/auth.server';
-import { resolveTenantClaimsForSigning } from '@/core/auth/tenantClaims.node';
+import {
+  ADMIN_COOKIE,
+  setAdminAuthCookie,
+  signAdminToken,
+  verifyAdminToken,
+} from '@/core/auth/auth.server';
+import {
+  resolveTenantClaimsForSigning,
+  verifyNodeTenantClaims,
+} from '@/core/auth/tenantClaims.node';
+import { readRequestCookie } from '@/core/auth/tokenCookieHelpers';
 import { env } from '@/env';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
@@ -40,10 +49,27 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     requiresSetup = false;
   }
 
-  const tenantClaims = await resolveTenantClaimsForSigning(req, resolvedConfig);
-  const iat = Date.now();
-  const exp = iat + 60 * 60 * 8 * 1000;
-  const token = await signAdminToken({ isAdmin: true, ...tenantClaims, iat, exp });
+  let token: string | null = null;
+  if (typeof readRequestCookie === 'function' && typeof verifyAdminToken === 'function') {
+    const existingToken = await readRequestCookie(ADMIN_COOKIE, req, { suppressErrors: true });
+    if (existingToken) {
+      const existingPayload = await verifyAdminToken(existingToken);
+      if (
+        existingPayload &&
+        existingPayload.isAdmin === true &&
+        (await verifyNodeTenantClaims(existingPayload, req))
+      ) {
+        token = existingToken;
+      }
+    }
+  }
+
+  if (!token) {
+    const tenantClaims = await resolveTenantClaimsForSigning(req, resolvedConfig);
+    const iat = Date.now();
+    const exp = iat + 60 * 60 * 8 * 1000;
+    token = await signAdminToken({ isAdmin: true, ...tenantClaims, iat, exp });
+  }
 
   const response = NextResponse.json({ success: true, requiresSetup });
   setAdminAuthCookie(response, token);

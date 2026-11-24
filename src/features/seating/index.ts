@@ -34,6 +34,7 @@ export { generateAveryCardsPdf, generateSeatingChartPdf } from './pdf.service';
 export {
   computeScaledTableDimensions,
   computeSeatPosition,
+  computeTableMinBounds,
   repackTableSeatNumbers,
   resolveDetailedSeatAssignments,
   resolveSeatAssignments,

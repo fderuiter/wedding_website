@@ -26,6 +26,7 @@ function copyRepoFixture(srcRoot: string, destRoot: string): void {
     'src/app/api/uploads/[...path]/route.ts',
     'src/app/api/admin/maintenance/export/route.ts',
     'scripts/preflight-env.ts',
+    'scripts/rollout-vps.sh',
     'scripts/verify-migration-compatibility.ts',
     'ARCHITECTURE.md',
     'CHANGELOG.md',
@@ -1217,6 +1218,82 @@ describe('verify-deployment-runbooks', () => {
         ),
         expect.stringContaining(
           'docs/upgrading.md: Missing migration compatibility linter contract (`npm run lint:migrations`, `scripts/verify-migration-compatibility.ts`, and `-- allow-destructive: <reason>`)'
+        ),
+      ])
+    );
+  });
+
+  it('rejects TypeScript major version drift and unrestricted npm Dependabot groups', () => {
+    const pkgPath = path.join(tempDir, 'package.json');
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as {
+      devDependencies?: Record<string, string>;
+    };
+    if (pkg.devDependencies) {
+      pkg.devDependencies.typescript = '^7.0.2';
+    }
+    fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
+
+    const dependabotPath = path.join(tempDir, '.github/dependabot.yml');
+    fs.writeFileSync(
+      dependabotPath,
+      fs
+        .readFileSync(dependabotPath, 'utf8')
+        .replace(
+          /\s*- dependency-name: "typescript"\n\s*versions: \[">= 6\.1\.0"\](?:\n\s*update-types: \["version-update:semver-major"\])?/g,
+          ''
+        )
+        .replace(/\s*update-types:\n\s*- "minor"\n\s*- "patch"/g, '')
+    );
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          'package.json: `devDependencies["typescript"]` ("^7.0.2") must pin the TypeScript 5.9 release line (< 6.1.0)'
+        ),
+        expect.stringContaining(
+          '.github/dependabot.yml: Missing `versions: [">= 6.1.0"]` ignore rule for `typescript` under `npm` ecosystem'
+        ),
+        expect.stringContaining(
+          '.github/dependabot.yml: Group `production-dependencies` under `npm` ecosystem must restrict `update-types` to `["minor", "patch"]`'
+        ),
+        expect.stringContaining(
+          '.github/dependabot.yml: Group `development-dependencies` under `npm` ecosystem must restrict `update-types` to `["minor", "patch"]`'
+        ),
+      ])
+    );
+  });
+
+  it('rejects forbidden fetch/curl Host header overrides, resolve_probe_host, and missing rollback tags or rollout phases in scripts/rollout-vps.sh', () => {
+    const rolloutScriptPath = path.join(tempDir, 'scripts/rollout-vps.sh');
+    const brokenRolloutScript = fs
+      .readFileSync(rolloutScriptPath, 'utf8')
+      .replace(
+        'curl -fsS --max-time 3 -o /dev/null "${url}" 2>/dev/null',
+        'resolve_probe_host && curl -fsS --max-time 3 -H "Host: ${PROBE_HOST}" -o /dev/null "${url}" 2>/dev/null'
+      )
+      .replace(
+        'fetch(process.argv[1],{signal:AbortSignal.timeout(3000)})',
+        'fetch(process.argv[1],{headers:{Host:process.argv[2]},signal:AbortSignal.timeout(3000)})'
+      )
+      .replace('docker tag wedding-website:latest wedding-website:previous\n', '')
+      .replace('ROLLOUT_PHASE="cutover"\n', '');
+    fs.writeFileSync(rolloutScriptPath, brokenRolloutScript);
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          'scripts/rollout-vps.sh: Loopback probes must not override forbidden `Host` header in `fetch()`'
+        ),
+        expect.stringContaining(
+          'scripts/rollout-vps.sh: Loopback probes must omit `resolve_probe_host` and `Host` header overrides'
+        ),
+        expect.stringContaining(
+          'scripts/rollout-vps.sh: Must snapshot `wedding-website:latest` as `wedding-website:previous` before `docker compose ... build app`'
+        ),
+        expect.stringContaining(
+          'scripts/rollout-vps.sh: Exit trap must track `pre-cutover`, `cutover`, and `completed` rollout phases'
         ),
       ])
     );

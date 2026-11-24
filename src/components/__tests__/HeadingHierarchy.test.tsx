@@ -51,10 +51,13 @@ const mockGuestPortalState = {
     code: '',
     guestName: '',
     error: null,
+    codeGuidance: null as string | null,
     status: 'idle' as const,
+    sessionType: 'none' as 'none' | 'passcode' | 'invitation',
   },
   handleValidateCode: jest.fn(),
   handleSaveAddress: jest.fn(),
+  handleSwitchHousehold: jest.fn(),
   handleRetry: jest.fn(),
   setField: jest.fn(),
   setCode: jest.fn(),
@@ -163,6 +166,10 @@ describe('Standardized Heading Hierarchy & Standalone Fallbacks', () => {
   });
 
   it('exposes a descriptive sr-only h1 in GuestAddressPage while authentication is loading', async () => {
+    mockGuestPortalState.isLoading = true;
+    mockGuestPortalState.isAuthenticated = false;
+    mockGuestPortalState.state.sessionType = 'none';
+
     const { container } = render(
       <ToastProvider>
         <main>
@@ -175,5 +182,45 @@ describe('Standardized Heading Hierarchy & Standalone Fallbacks', () => {
       screen.getByRole('heading', { level: 1, name: 'Guest RSVP & Address Portal' })
     ).toBeInTheDocument();
     expect(await axe(container, headingAxeOptions)).toHaveNoViolations();
+  });
+
+  it('maintains sequential h1 -> h2 -> h3 heading order in GuestAddressPage passcode visitor view', async () => {
+    const previousFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        success: true,
+        isGuest: false,
+        rsvpOpen: true,
+        data: [],
+      }),
+    });
+    mockGuestPortalState.isLoading = false;
+    mockGuestPortalState.isAuthenticated = false;
+    mockGuestPortalState.state.sessionType = 'passcode';
+
+    try {
+      const { container } = render(
+        <ToastProvider>
+          <main>
+            <GuestAddressPage />
+          </main>
+        </ToastProvider>
+      );
+
+      expect(
+        screen.getByRole('heading', { level: 1, name: 'Guest RSVP & Address Portal' })
+      ).toBeInTheDocument();
+      expect(
+        await screen.findByRole('heading', { level: 2, name: 'Public Wedding Schedule' })
+      ).toBeInTheDocument();
+      expect((await screen.findAllByRole('heading', { level: 3 })).length).toBeGreaterThan(0);
+      expect(await axe(container, headingAxeOptions)).toHaveNoViolations();
+    } finally {
+      global.fetch = previousFetch;
+      mockGuestPortalState.isLoading = true;
+      mockGuestPortalState.state.sessionType = 'none';
+    }
   });
 });

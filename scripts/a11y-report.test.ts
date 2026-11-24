@@ -7,6 +7,7 @@ import {
   findJestAxeSuites,
   generateReport,
   runA11yUnit,
+  runA11yStatic,
   runA11ySuite,
   main,
 } from './a11y-report.mjs';
@@ -132,6 +133,57 @@ describe('a11y-report', () => {
       expect(report).toContain('**Status:** Incomplete (jest, playwright results missing)');
       expect(report).toContain('**Total Accessibility Violations:** 0');
     });
+
+    it('includes Static Showcase section with route/theme scan counts and violation details when static-a11y-violations.json is present or --include-static is used', () => {
+      const resultsDir = path.join(tempDir, 'test-results');
+      fs.mkdirSync(resultsDir, { recursive: true });
+      fs.writeFileSync(path.join(resultsDir, 'jest-a11y-violations.json'), '[]');
+      fs.writeFileSync(path.join(resultsDir, 'playwright-a11y-violations.json'), '{}');
+      fs.writeFileSync(
+        path.join(resultsDir, 'static-a11y-violations.json'),
+        JSON.stringify({
+          '[light] /wedding_website/demo/': [],
+          '[dark] /wedding_website/demo/': [],
+          '[light] /wedding_website/demo/weather': [],
+          '[dark] /wedding_website/demo/weather': [],
+        })
+      );
+
+      const cleanResult = generateReport({ cwd: tempDir, requireStatic: true });
+      expect(cleanResult.totalViolations).toBe(0);
+      expect(cleanResult.incompleteSuites).toEqual([]);
+      expect(cleanResult.report).toContain('### Static Showcase (Playwright Light & Dark)');
+      expect(cleanResult.report).toContain(
+        '✅ No accessibility violations found across 4 static showcase route/theme scans.'
+      );
+
+      fs.writeFileSync(
+        path.join(resultsDir, 'static-a11y-violations.json'),
+        JSON.stringify({
+          '[dark] /wedding_website/demo/admin/dashboard/invitation-codes': [
+            {
+              id: 'color-contrast',
+              description: 'Elements must meet minimum color contrast ratio thresholds',
+              impact: 'serious',
+            },
+          ],
+        })
+      );
+
+      const violationResult = generateReport({ cwd: tempDir, requireStatic: true });
+      expect(violationResult.totalViolations).toBe(1);
+      expect(violationResult.report).toContain('❌ Found 1 violations in static showcase.');
+      expect(violationResult.report).toContain(
+        '- **color-contrast** (`[dark] /wedding_website/demo/admin/dashboard/invitation-codes`): Elements must meet minimum color contrast ratio thresholds (serious)'
+      );
+
+      fs.rmSync(path.join(resultsDir, 'static-a11y-violations.json'));
+      const missingStaticResult = generateReport({ cwd: tempDir, requireStatic: true });
+      expect(missingStaticResult.incompleteSuites).toEqual(['static-showcase']);
+      expect(missingStaticResult.report).toContain(
+        '**Status:** Incomplete (static-showcase results missing)'
+      );
+    });
   });
 
   describe('standalone CLI exit codes', () => {
@@ -181,9 +233,9 @@ describe('a11y-report', () => {
   });
 
   describe('findJestAxeSuites & runA11yUnit', () => {
-    it('discovers all 64 src/ jest-axe suites in the live repository', () => {
+    it('discovers all 69 src/ jest-axe suites in the live repository', () => {
       const suites = findJestAxeSuites(process.cwd());
-      expect(suites).toHaveLength(64);
+      expect(suites).toHaveLength(69);
       expect(suites.every((p: string) => p.startsWith('src/') && p.endsWith('.test.tsx'))).toBe(
         true
       );
@@ -472,6 +524,57 @@ describe('a11y-report', () => {
       const recorded = JSON.parse(fs.readFileSync(customReportFile, 'utf8'));
       expect(recorded).toHaveLength(1);
       expect(recorded[0].id).toBe('button-name');
+    });
+  });
+
+  describe('runA11yStatic', () => {
+    it('builds static export when out/index.html is missing, runs playwright.static.config.ts, and writes standalone summary', () => {
+      const invoked: Array<{ cmd: string; args: string[]; env?: Record<string, string | undefined> }> = [];
+      const exitCode = runA11yStatic({
+        cwd: tempDir,
+        basePath: '/wedding_website/demo',
+        runStep: (
+          cmd: string,
+          args: string[],
+          cwd: string,
+          envOverrides?: Record<string, string | undefined>
+        ) => {
+          invoked.push({ cmd, args, env: envOverrides });
+          if (cmd === 'npm' && args[1] === 'build:export') {
+            fs.mkdirSync(path.join(cwd, 'out'), { recursive: true });
+            fs.writeFileSync(path.join(cwd, 'out', 'index.html'), '<!doctype html>');
+          } else if (cmd === 'npx' && args[0] === 'playwright') {
+            const dir = path.join(cwd, 'test-results');
+            fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(
+              path.join(dir, 'static-a11y-violations.json'),
+              JSON.stringify({
+                '[light] /wedding_website/demo/': [],
+                '[dark] /wedding_website/demo/': [],
+              })
+            );
+          }
+          return 0;
+        },
+      });
+
+      expect(exitCode).toBe(0);
+      expect(invoked).toEqual([
+        {
+          cmd: 'npm',
+          args: ['run', 'build:export'],
+          env: { NEXT_PUBLIC_BASE_PATH: '/wedding_website/demo' },
+        },
+        {
+          cmd: 'npx',
+          args: ['playwright', 'test', '-c', 'playwright.static.config.ts'],
+          env: { NEXT_PUBLIC_BASE_PATH: '/wedding_website/demo' },
+        },
+      ]);
+      const summary = fs.readFileSync(path.join(tempDir, 'test-results', 'a11y-summary.md'), 'utf8');
+      expect(summary).toContain('### Static Showcase (Playwright Light & Dark)');
+      expect(summary).not.toContain('**Status:** Incomplete');
+      expect(summary).toContain('**Total Accessibility Violations:** 0');
     });
   });
 });

@@ -1,7 +1,8 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "incremental": false,
+    "incremental": true,
+    "tsBuildInfoFile": "./tsconfig.build.tsbuildinfo",
     "types": [
       "node"
     ]
@@ -25,6 +26,7 @@
     ".storybook",
     "docs-portal",
     "playwright.config.ts",
+    "playwright.static.config.ts",
     "prisma.config.ts",
     "src/mocks",
     "src/testing",

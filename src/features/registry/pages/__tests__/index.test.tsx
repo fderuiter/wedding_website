@@ -323,7 +323,7 @@ describe('RegistryPage Dialog integration', () => {
     }
   });
 
-  test('positions sticky filter bar below fixed Navbar (top-16) and exposes inline Clear Filters button when filters or sort are active', () => {
+  test('positions sticky filter bar below fixed Navbar (var(--header-h)) and exposes inline Clear Filters button when filters or sort are active', () => {
     const mockClearFilters = jest.fn();
     const baseState = {
       items: [mockItem],
@@ -364,8 +364,9 @@ describe('RegistryPage Dialog integration', () => {
     const { rerender } = render(<RegistryPage />);
 
     const filterNav = screen.getByRole('navigation', { name: 'Registry Filters' });
-    expect(filterNav).toHaveClass('sticky', 'top-16');
-    expect(filterNav).not.toHaveClass('top-0');
+    expect(filterNav).toHaveClass('sticky', 'top-[var(--header-h)]');
+    expect(filterNav).toHaveStyle({ top: 'var(--header-h)' });
+    expect(filterNav).not.toHaveClass('top-0', 'top-16');
     expect(screen.queryByTestId('inline-clear-filters-button')).not.toBeInTheDocument();
 
     (useRegistry as jest.Mock).mockReturnValue({
@@ -378,5 +379,82 @@ describe('RegistryPage Dialog integration', () => {
     expect(inlineClearBtn).toHaveTextContent('Clear Filters');
     fireEvent.click(inlineClearBtn);
     expect(mockClearFilters).toHaveBeenCalledTimes(1);
+  });
+
+  test('omits tabindex on h1, removes aria-live from gift grid, keeps initial empty state silent, and announces filtered zero-result state politely', () => {
+    const baseState = {
+      items: [],
+      isLoading: false,
+      error: null,
+      refetch: jest.fn(),
+      selectedItem: null,
+      isModalOpen: false,
+      visibleItemsCount: 12,
+      setVisibleItemsCount: jest.fn(),
+      isAdmin: false,
+      filteredItems: [],
+      visibleItems: [],
+      categories: ['Kitchen'],
+      minPrice: 0,
+      maxPrice: 500,
+      categoryFilter: [],
+      setCategoryFilter: jest.fn(),
+      priceRange: [0, 500] as [number, number],
+      setPriceRange: jest.fn(),
+      showGroupGiftsOnly: false,
+      setShowGroupGiftsOnly: jest.fn(),
+      showAvailableOnly: false,
+      setShowAvailableOnly: jest.fn(),
+      searchQuery: '',
+      setSearchQuery: jest.fn(),
+      sortOption: 'default' as const,
+      setSortOption: jest.fn(),
+      handleClearFilters: jest.fn(),
+      handleCardClick: jest.fn(),
+      handleCloseModal: mockHandleCloseModal,
+      handleEdit: jest.fn(),
+      handleDelete: jest.fn(),
+      handleContribute: mockHandleContribute,
+    };
+
+    // 1. Initial empty registry: no status announcement on mount
+    (useRegistry as jest.Mock).mockReturnValue(baseState);
+    const { container, rerender } = render(<RegistryPage />);
+
+    const h1 = screen.getByRole('heading', { level: 1, name: 'Wedding Registry' });
+    expect(h1).not.toHaveAttribute('tabindex');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+
+    // 2. Populated grid: gift card grid itself must NOT be an aria-live region
+    (useRegistry as jest.Mock).mockReturnValue({
+      ...baseState,
+      items: [mockItem],
+      filteredItems: [mockItem],
+      visibleItems: [mockItem],
+    });
+    rerender(<RegistryPage />);
+
+    const card = screen.getByTestId('registry-card');
+    expect(card.closest('[aria-live]')).toBeNull();
+    expect(container.querySelector('.sr-only[aria-live="polite"]')).toHaveTextContent(
+      'Showing 1 of 1 gifts'
+    );
+
+    // 3. Zero-result filter state: announces politely via EmptyState role="status" and live counter
+    (useRegistry as jest.Mock).mockReturnValue({
+      ...baseState,
+      items: [mockItem],
+      filteredItems: [],
+      visibleItems: [],
+      searchQuery: 'nonexistent',
+    });
+    rerender(<RegistryPage />);
+
+    const emptyStatus = screen.getByRole('status');
+    expect(emptyStatus).toHaveAttribute('aria-live', 'polite');
+    expect(emptyStatus).toHaveTextContent('No gifts match the current filters.');
+    expect(container.querySelector('.sr-only[aria-live="polite"]')).toHaveTextContent(
+      'Showing 0 of 0 gifts'
+    );
   });
 });

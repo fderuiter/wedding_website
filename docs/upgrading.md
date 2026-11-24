@@ -90,18 +90,18 @@ git commit -m "merge: sync upstream updates"
 
 ### Step 6: Execute Runtime-Specific Upgrade & Database Migrations
 
-Choose the track matching your deployment topology (**Track A: Docker Compose**, **Track B: Standalone Docker**, or **Track C: Host Node.js**). Before restarting production containers or services, run **Step 7** (`npm run preflight:env`) to verify your `.env` secrets.
+Choose the track matching your deployment topology (**Track A: Docker Compose**, **Track B: Standalone Docker**, or **Track C: Host Node.js**). Before restarting production containers or services, run **Step 7** (`npm run preflight:env -- --mode production`) to verify your `.env` secrets.
 
 #### Track A: Docker Compose (`docker-compose.yml` — Recommended Container Baseline)
 
 [`docker-compose.yml`](../docker-compose.yml) orchestrates `db` (`postgres:15-alpine`), a one-shot `migration` service, and `app` (`wedding-website:latest`, built from [`Dockerfile`](../Dockerfile)):
 
 - **Persistent Volume Retention**: `db_data` (`/var/lib/postgresql/data`) and `uploads_data` (`/app/public/uploads`, UID/GID `1001`) are named Docker volumes that survive `docker compose up -d --build`. **Never run `docker compose down -v` during a production upgrade**, as `-v` deletes `db_data` and `uploads_data`.
-- **Decoupled One-Shot Migrations**: `migration` runs `./node_modules/.bin/prisma migrate deploy` (backed by the isolated `/opt/prisma-cli` stage in `Dockerfile`) with `read_only: true`, `cap_drop: [ALL]`, and `restart: "no"` after `db` reports `service_healthy`, scoping container PostgreSQL overrides via `${CONTAINER_DATABASE_URL:-...}` so host `@localhost:5432` `DATABASE_URL` values never leak into containers. `app` pins `NODE_ENV: production`, sets `RUN_MIGRATIONS=false` and `E2E_TEST=false` by default, and waits for `migration` (`condition: service_completed_successfully`) before starting `node server.js` behind `/usr/bin/tini`.
+- **Decoupled One-Shot Migrations**: `migration` runs `./node_modules/.bin/prisma migrate deploy` (backed by the isolated `/opt/prisma-cli` stage in `Dockerfile`) with `read_only: true`, `cap_drop: [ALL]`, and `restart: "no"` after `db` reports `service_healthy`, scoping container PostgreSQL overrides via `${CONTAINER_DATABASE_URL:-...}` and `${CONTAINER_POSTGRES_URL_NON_POOLING:-}` so host `@localhost:5432` `DATABASE_URL` and `POSTGRES_URL_NON_POOLING` values never leak into containers. `app` pins `NODE_ENV: production`, sets `RUN_MIGRATIONS=false` and `E2E_TEST=false` by default, and waits for `migration` (`condition: service_completed_successfully`) before starting `node server.js` behind `/usr/bin/tini`.
 
 ```bash
 # 1. Validate local .env against production & Docker Compose ":?" guards (see Step 7)
-npx tsx scripts/preflight-env.ts --env-file .env
+npx tsx scripts/preflight-env.ts --mode production --env-file .env
 
 # 2. Rebuild image, run one-shot migration service, and recreate app while preserving db_data & uploads_data
 docker compose up -d --build
@@ -111,15 +111,15 @@ docker compose ps
 curl -fsS http://127.0.0.1:${PORT:-3000}/api/health -H "Host: localhost"
 ```
 
-To execute migrations manually on demand (or bypass an external PgBouncer pooler in `CONTAINER_DATABASE_URL` using a direct `POSTGRES_URL_NON_POOLING` URI while clearing `POSTGRES_URL_NON_POOLING` so Prisma 7 never sees matching primary and shadow database URLs):
+To execute migrations manually on demand (if `CONTAINER_DATABASE_URL` uses an external PgBouncer pooler, configure a direct `CONTAINER_POSTGRES_URL_NON_POOLING` URI in `.env` so `migration` routes directly through `prisma.config.ts`, or pass an ad-hoc override on the CLI while clearing `POSTGRES_URL_NON_POOLING` so Prisma 7 never sees matching primary and shadow database URLs):
 
 ```bash
-# Standard Compose one-shot migration
+# Standard Compose one-shot migration (honors CONTAINER_DATABASE_URL and CONTAINER_POSTGRES_URL_NON_POOLING)
 docker compose run --rm migration
 
-# External PgBouncer override using direct PostgreSQL connection
+# Ad-hoc external PgBouncer CLI override using direct PostgreSQL connection
 env -u POSTGRES_URL_NON_POOLING docker compose run --rm \
-  -e DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$CONTAINER_DATABASE_URL}" \
+  -e DATABASE_URL="${CONTAINER_POSTGRES_URL_NON_POOLING:-$CONTAINER_DATABASE_URL}" \
   -e POSTGRES_URL_NON_POOLING="" \
   migration
 ```
@@ -128,13 +128,13 @@ env -u POSTGRES_URL_NON_POOLING docker compose run --rm \
 
 When running the image directly via `docker run` without Docker Compose's `migration` service:
 
-- **Runtime Entrypoint Flag (`RUN_MIGRATIONS=true`)**: Passing `-e RUN_MIGRATIONS=true` instructs [`docker-entrypoint.sh`](../docker-entrypoint.sh) to normalize `DATABASE_URL`, unset `POSTGRES_URL_NON_POOLING`, and execute `./node_modules/.bin/prisma migrate deploy` (linked to `/opt/prisma-cli` in [`Dockerfile`](../Dockerfile)) automatically prior to `node server.js`.
+- **Runtime Entrypoint Flag (`RUN_MIGRATIONS=true`)**: Passing `-e RUN_MIGRATIONS=true` instructs [`docker-entrypoint.sh`](../docker-entrypoint.sh) to normalize `DATABASE_URL`, normalize and preserve non-empty `POSTGRES_URL_NON_POOLING` (unsetting blank values), and execute `./node_modules/.bin/prisma migrate deploy` (linked to `/opt/prisma-cli` in [`Dockerfile`](../Dockerfile)) automatically prior to `node server.js`.
 - **Alternative One-Shot Container Migration**: For multi-replica rollouts, keep `RUN_MIGRATIONS=false` on web containers and run a one-shot migration container first (`docker run --rm --env-file .env wedding-website:latest ./node_modules/.bin/prisma migrate deploy`).
 - **Uploads Persistence & Read-Only Root**: Mount a persistent named volume or UID `1001`-writable host directory (`chown -R 1001:1001 /var/lib/wedding/uploads`) at `/app/public/uploads`, plus `tmpfs` mounts at `/tmp` and `/app/.next/cache:uid=1001,gid=1001,mode=0755`.
 
 ```bash
-# 1. Validate standalone .env secrets (skipping Compose-only DB_PASSWORD guard if using DATABASE_URL)
-npx tsx scripts/preflight-env.ts --no-compose --env-file .env
+# 1. Validate standalone .env secrets in production mode (skipping Compose-only DB_PASSWORD guard if using DATABASE_URL)
+npx tsx scripts/preflight-env.ts --mode production --no-compose --env-file .env
 
 # 2. Build updated image after tagging wedding-website:previous in Step 2
 docker build -t wedding-website:latest .
@@ -163,8 +163,8 @@ For bare-metal or VM deployments running Node.js directly without Docker:
 # 1. Install deterministic lockfile dependencies
 npm ci
 
-# 2. Validate local .env secrets before migrating/restarting
-npm run preflight:env -- --no-compose --env-file .env
+# 2. Validate local .env secrets in production mode before migrating/restarting
+npm run preflight:env -- --mode production --no-compose --env-file .env
 
 # 3. Apply pending forward-only Prisma migrations against production .env and regenerate Prisma Client
 dotenv -e .env -- npx prisma migrate deploy
@@ -179,20 +179,20 @@ npm start
 
 ### Step 7: Verify Local `.env` Secrets & Configuration Preflight
 
-Run the read-only environment preflight CLI ([`scripts/preflight-env.ts`](../scripts/preflight-env.ts)) against your local `.env` file before starting or restarting services:
+Run the read-only environment preflight CLI ([`scripts/preflight-env.ts`](../scripts/preflight-env.ts)) against your local `.env` file before starting or restarting services (`--mode production` or `NODE_ENV=production` enforces all production secret blocklists, whereas default `development` mode cascades `.env.development.local`, `.env.local`, `.env.development`, and `.env` for local contributor setups):
 
 ```bash
-# Docker Compose deployments (checks src/env.ts production rules + docker-compose.yml ":?" guards)
-npm run preflight:env
+# Docker Compose production deployments (checks src/env.ts production rules + docker-compose.yml ":?" guards)
+npm run preflight:env -- --mode production
 # Equivalent explicit invocation:
-npx tsx scripts/preflight-env.ts --env-file .env
+npx tsx scripts/preflight-env.ts --mode production --env-file .env
 
-# Standalone Docker or Host Node.js deployments (checks src/env.ts production rules + DATABASE_URL)
-npx tsx scripts/preflight-env.ts --no-compose --env-file .env
+# Standalone Docker or Host Node.js production deployments (checks src/env.ts production rules + DATABASE_URL)
+npx tsx scripts/preflight-env.ts --mode production --no-compose --env-file .env
 ```
 
-`scripts/preflight-env.ts` never prints raw secret values or password hashes and fails with a non-zero exit code when any of the following are detected:
-- **Missing or Default Docker Compose `:?` Secret Guards**: `DB_PASSWORD`, `ADMIN_PASSWORD`, `GUEST_PASSCODE`, or `GUEST_SESSION_SECRET` unset/empty in `.env`, `DB_PASSWORD` left at the disposable `.env.example` / `.env.ci` default, invalid `CONTAINER_DATABASE_URL` overrides, or values containing unescaped `$` characters that Docker Compose would interpolate (escape literal `$` as `$$` or use single quotes).
+`scripts/preflight-env.ts` never prints raw secret values, connection URLs, or password hashes and fails with a non-zero exit code in `--mode production` (or when `NODE_ENV=production` is set) when any of the following are detected:
+- **Missing or Default Docker Compose `:?` Secret Guards**: `DB_PASSWORD`, `ADMIN_PASSWORD`, `GUEST_PASSCODE`, or `GUEST_SESSION_SECRET` unset/empty in `.env`, `DB_PASSWORD` left at the disposable `.env.example` / `.env.ci` default, invalid `CONTAINER_DATABASE_URL` or `CONTAINER_POSTGRES_URL_NON_POOLING` overrides, or values containing unescaped `$` characters that Docker Compose would interpolate (escape literal `$` as `$$` or use single quotes).
 - **Legacy or Placeholder `ADMIN_PASSWORD` Hashes**: Plaintext passwords, legacy non-64-byte scrypt hashes, `.env.example` dummy hashes, or E2E test hashes (generate a valid 16-byte salt / 64-byte scrypt key with `node scripts/generate-password-hash.mjs "your-strong-password"`).
 - **Blocked `GUEST_PASSCODE` or Weak `GUEST_SESSION_SECRET`**: Default `wedding2026` or placeholder guest passcodes, session secrets shorter than 32 characters (`openssl rand -hex 32`), or `GUEST_SESSION_SECRET` matching `GUEST_PASSCODE`.
 - **Unpaired or Placeholder Integration Keys**: `STRIPE_SECRET_KEY` set without `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` (or vice versa), invalid `sk_`/`rk_`/`pk_`/`whsec_` prefixes, incomplete `S3_*` credentials, Cloudflare R2 `S3_REGION=auto` without `S3_ENDPOINT` or private `*.r2.cloudflarestorage.com` endpoints without `S3_PUBLIC_URL`, or `E2E_TEST=true` left enabled in production.
@@ -282,6 +282,6 @@ Use this checklist for every upstream upgrade:
 - [ ] Fetched latest upstream commits (`git fetch upstream --tags`).
 - [ ] Reviewed [`CHANGELOG.md`](../CHANGELOG.md) for `Adopter Action Required: Yes`, breaking changes, and new `.env` or `:?` secret guards.
 - [ ] Merged upstream branch (`git merge upstream/main`) and resolved any merge conflicts.
-- [ ] Validated local `.env` secrets via `npm run preflight:env` (`npx tsx scripts/preflight-env.ts --env-file .env`).
+- [ ] Validated local `.env` secrets via `npm run preflight:env -- --mode production` (`npx tsx scripts/preflight-env.ts --mode production --env-file .env`).
 - [ ] Applied forward-only migrations and rebuilt (`docker compose up -d --build` preserving `db_data` & `uploads_data`, standalone `docker run` with `RUN_MIGRATIONS=true`, production host `npm ci && dotenv -e .env -- npx prisma migrate deploy && npm run build` against `DATABASE_URL` / `POSTGRES_URL_NON_POOLING`, or local fork `npm run migrate:deploy` via `dotenv -c development`).
 - [ ] Verified `/api/live` and `/api/health` readiness probes (and local `npm test` if running a modified fork).

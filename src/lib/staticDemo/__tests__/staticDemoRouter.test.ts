@@ -569,6 +569,23 @@ describe('Static Demo Fetch Router & Versioned Store', () => {
     );
     expect(unpromotedValidateRes?.status).toBe(404);
 
+    // Even if a stale invite session references an unpromoted address-collection code, GET /api/guest/session rejects and clears it
+    store.mutate((draft) => {
+      draft.guestSession = {
+        code: newCode,
+        guestName: 'Avery Chen',
+        sessionType: 'invite',
+      };
+    });
+    const staleCollectSessionRes = await router('http://localhost:3000/api/guest/session');
+    expect(staleCollectSessionRes?.status).toBe(200);
+    const staleCollectSessionJson = await staleCollectSessionRes!.json();
+    expect(staleCollectSessionJson.data).toMatchObject({
+      status: 'none',
+      isVerified: false,
+      invitationCode: null,
+    });
+
     const unpromotedLookupRes = await router(
       'http://localhost:3000/api/guest/lookup',
       {
@@ -623,6 +640,16 @@ describe('Static Demo Fetch Router & Versioned Store', () => {
     const summaryJson = await summaryRes!.json();
     expect(summaryJson.data.global.attendingHouseholds).toBe(initialAttending + 1);
     expect(summaryJson.data.global.dietary.vegan).toBeGreaterThanOrEqual(1);
+    for (const subSummary of summaryJson.data.subEvents) {
+      expect(Array.isArray(subSummary.mealCounts)).toBe(true);
+      expect(typeof subSummary.attendingCount).toBe('number');
+      expect(typeof subSummary.declinedCount).toBe('number');
+      expect(typeof subSummary.pendingCount).toBe('number');
+    }
+
+    const accessRes = await router('http://localhost:3000/api/admin/sub-events/access');
+    const accessJson = await accessRes!.json();
+    expect(Array.isArray(accessJson.data.invitationCodes[0]?.allowedSubEventIds)).toBe(true);
 
     // 2. Registry contribution -> magic-link confirm -> thank-you ledger -> admin void recalculation
     const targetItem = store.getSnapshot().registryItem[0]!;
@@ -995,6 +1022,21 @@ describe('Static Demo Fetch Router & Versioned Store', () => {
     const afterStep5 = store.getSnapshot();
     expect(afterStep5.isSetupMode).toBe(false);
     expect(afterStep5.appConfig[0].setupCompleted).toBe(true);
+    expect(afterStep5.appConfig[0].heroTitle).toBe('Taylor & Jordan');
+    expect(afterStep5.appConfig[0].storyText).toContain('Taylor and Jordan');
+
+    const milestonesRes = await router(
+      'http://localhost:3000/api/admin/onboarding-milestones',
+    );
+    expect(milestonesRes?.status).toBe(200);
+    const milestonesJson = await milestonesRes!.json();
+    const milestonesData = milestonesJson.data ?? milestonesJson;
+    expect(milestonesData.milestones).toHaveLength(6);
+    expect(
+      milestonesData.milestones.some(
+        (m: { id: string }) => m.id === 'story-and-schedule',
+      ),
+    ).toBe(true);
   });
 
   it('serves GET /api/admin/geocode candidates by archetype and resolves cross-archetype seeded registry items (#1222, #1248)', async () => {
@@ -1203,5 +1245,103 @@ describe('Static Demo Fetch Router & Versioned Store', () => {
     );
     expect(labelsRes?.status).toBe(200);
     expect(labelsRes?.headers.get('content-type')).toBe('application/pdf');
+  });
+
+  it('harmonizes guest sessions, shared-passcode guidance, explicit RSVPs, dietary notes, and confirmed CSV plus-ones (#1243)', async () => {
+    const store = createDemoStore({ storage: null, initialArchetype: 'classic' });
+    const router = createStaticDemoRouter({ store, mode: 'browser' });
+
+    // Initial guest session is none
+    const initialSessionRes = await router('http://localhost:3000/api/guest/session');
+    expect((await initialSessionRes!.json()).data).toMatchObject({
+      status: 'none',
+      isVerified: false,
+      hasPasscodeSession: false,
+    });
+
+    // Shared passcode login sets status: 'passcode' and validate-code returns shared_passcode guidance
+    await router('http://localhost:3000/api/guest/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ passcode: 'WEDDING2026' }),
+    });
+    const passcodeSessionRes = await router('http://localhost:3000/api/guest/session');
+    expect((await passcodeSessionRes!.json()).data).toMatchObject({
+      status: 'passcode',
+      isVerified: false,
+      hasPasscodeSession: true,
+    });
+
+    const passcodeValidateRes = await router(
+      'http://localhost:3000/api/registry/validate-code?code=WEDDING2026',
+    );
+    expect(passcodeValidateRes?.status).toBe(200);
+    expect((await passcodeValidateRes!.json()).data).toMatchObject({
+      valid: false,
+      reason: 'shared_passcode',
+    });
+
+    // Household login upgrades session to status: 'invitation' and pre-populates dietaryNotes on unresponded events
+    const targetInvite = store.getSnapshot().invitationCode[0]!;
+    store.mutate((draft) => {
+      const inv = draft.invitationCode.find((i) => i.id === targetInvite.id)!;
+      inv.dietaryNotes = 'Shellfish allergy';
+      inv.plusOneAllocations = 2;
+      draft.subEventRsvp = draft.subEventRsvp.filter(
+        (r) => r.invitationCodeId !== inv.id,
+      );
+    });
+
+    await router(
+      `http://localhost:3000/api/registry/validate-code?code=${encodeURIComponent(targetInvite.code)}`,
+    );
+    const inviteSessionRes = await router('http://localhost:3000/api/guest/session');
+    expect((await inviteSessionRes!.json()).data).toMatchObject({
+      status: 'invitation',
+      isVerified: true,
+      code: targetInvite.code,
+    });
+
+    const scheduleRes = await router('http://localhost:3000/api/schedule');
+    const scheduleJson = await scheduleRes!.json();
+    expect(scheduleJson.data[0].userRsvp.dietaryNotes).toBe('Shellfish allergy');
+
+    // Rejects pending status on POST /api/rsvp
+    const pendingRes = await router('http://localhost:3000/api/rsvp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        rsvps: [{ subEventId: scheduleJson.data[0].id, status: 'pending' }],
+      }),
+    });
+    expect(pendingRes?.status).toBe(400);
+
+    // Preserves pre-recorded dietaryNotes when omitted and exports confirmed plusOneCount (0 on declined)
+    const declineRes = await router('http://localhost:3000/api/rsvp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        rsvps: [{ subEventId: scheduleJson.data[0].id, status: 'declined', plusOneCount: 2 }],
+      }),
+    });
+    expect(declineRes?.status).toBe(200);
+    expect(
+      store.getSnapshot().invitationCode.find((i) => i.id === targetInvite.id)
+        ?.dietaryNotes,
+    ).toBe('Shellfish allergy');
+
+    const csvRes = await router('http://localhost:3000/api/admin/invitation-codes/export');
+    const csvLines = (await csvRes!.text()).split(/\r?\n/);
+    const targetRow = csvLines.find((line) => line.startsWith(`${targetInvite.code},`))!;
+    expect(targetRow).toContain(',0,Shellfish allergy,');
+
+    // DELETE /api/guest/session clears household session
+    const clearRes = await router('http://localhost:3000/api/guest/session', {
+      method: 'DELETE',
+    });
+    expect((await clearRes!.json()).data).toMatchObject({
+      status: 'none',
+      isVerified: false,
+    });
   });
 });

@@ -10,8 +10,10 @@ import {
 } from '@/features/registry';
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
-  // 1. IP Rate Limiting (10 requests per 15 minutes)
-  const rateLimitResponse = await rateLimit(req, 10, 15 * 60 * 1000, 'public_address_collect');
+  // 1. IP Rate Limiting (10 requests per 15 minutes strictly by client IP)
+  const rateLimitResponse = await rateLimit(req, 10, 15 * 60 * 1000, 'public_address_collect', 'general', {
+    scope: 'ip',
+  });
   if (rateLimitResponse) {
     return rateLimitResponse;
   }
@@ -145,4 +147,4 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     },
     { status: 200 }
   );
-});
+}, { scope: 'ip' });

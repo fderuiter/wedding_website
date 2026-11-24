@@ -7,6 +7,7 @@ import { POST as postAdminLogin } from '@/app/api/admin/login/route';
 import { GET as getPhotoQr } from '@/app/api/admin/photos/qr/route';
 import { POST as postAdminSetup } from '@/app/api/admin/setup/route';
 import { POST as postGuestLogin } from '@/app/api/guest/login/route';
+import { GET as getGuestSession } from '@/app/api/guest/session/route';
 import { GET as getValidateCode } from '@/app/api/registry/validate-code/route';
 import { generateMetadata } from '@/app/metadata';
 import {
@@ -555,6 +556,214 @@ describe('Multisite Cookie Claims, Forged Header Defenses & Metadata Host Trust'
       expect((await middleware(singleSiteReq)).status).toBe(200);
       await expect(isAdminRequest(singleSiteReq)).resolves.toBe(true);
     });
+
+    it('reuses valid same-tenant cookies on re-login, mints fresh tenant-stamped cookies across tenants, and clears cross-tenant cookies on GET /api/guest/session', async () => {
+      const aliceAdminToken = await signAdminToken({
+        isAdmin: true,
+        siteId: 'site-alice',
+        subdomain: 'alice',
+        iat: Date.now() - 10_000,
+        exp: Date.now() + 60_000,
+      });
+      const aliceGuestToken = await signGuestToken({
+        guest: true,
+        jti: 'alice-jti-preserve',
+        siteId: 'site-alice',
+        subdomain: 'alice',
+        iat: Date.now() - 10_000,
+        exp: Date.now() + 60_000,
+      });
+      const aliceInviteToken = await signGuestInviteSessionToken({
+        code: 'SHARED01',
+        guestName: 'Jordan Guest',
+        siteId: 'site-alice',
+        subdomain: 'alice',
+        iat: Date.now() - 10_000,
+        exp: Date.now() + 60_000,
+      });
+
+      // Same-tenant re-login on alice.wedding.example preserves existing cookies
+      const sameTenantAdminRes = await postAdminLogin(
+        new NextRequest('http://alice.wedding.example/api/admin/login', {
+          method: 'POST',
+          headers: {
+            host: 'alice.wedding.example',
+            'content-type': 'application/json',
+            cookie: `${ADMIN_COOKIE}=${aliceAdminToken}`,
+          },
+          body: JSON.stringify({ password: 'secret' }),
+        })
+      );
+      expect(extractSetCookieToken(sameTenantAdminRes.headers.get('set-cookie'), ADMIN_COOKIE)).toBe(
+        aliceAdminToken
+      );
+
+      const sameTenantGuestRes = await postGuestLogin(
+        new NextRequest('http://alice.wedding.example/api/guest/login', {
+          method: 'POST',
+          headers: {
+            host: 'alice.wedding.example',
+            'content-type': 'application/json',
+            cookie: `${GUEST_COOKIE}=${aliceGuestToken}`,
+          },
+          body: JSON.stringify({ passcode: 'shared-guest-passcode-123' }),
+        })
+      );
+      expect(extractSetCookieToken(sameTenantGuestRes.headers.get('set-cookie'), GUEST_COOKIE)).toBe(
+        aliceGuestToken
+      );
+
+      (prisma.invitationCode.findUnique as jest.Mock).mockResolvedValue({
+        id: 'inv-shared',
+        code: 'SHARED01',
+        guestName: 'Jordan Guest',
+        isSample: false,
+      });
+      (prisma.invitationCode.findFirst as jest.Mock).mockResolvedValue({
+        id: 'inv-shared',
+        code: 'SHARED01',
+        guestName: 'Jordan Guest',
+        isSample: false,
+      });
+
+      const sameTenantValidateRes = await getValidateCode(
+        new NextRequest('http://alice.wedding.example/api/registry/validate-code?code=SHARED01', {
+          headers: {
+            host: 'alice.wedding.example',
+            cookie: `${GUEST_INVITE_COOKIE}=${aliceInviteToken}`,
+          },
+        })
+      );
+      expect(
+        extractSetCookieToken(sameTenantValidateRes.headers.get('set-cookie'), GUEST_INVITE_COOKIE)
+      ).toBe(aliceInviteToken);
+
+      // GET /api/guest/session accepts Alice cookies on Alice tenant and rejects/clears on Bob tenant
+      const aliceSessionRes = await getGuestSession(
+        new NextRequest('http://alice.wedding.example/api/guest/session', {
+          headers: {
+            host: 'alice.wedding.example',
+            cookie: `${GUEST_INVITE_COOKIE}=${aliceInviteToken}; ${GUEST_COOKIE}=${aliceGuestToken}`,
+          },
+        })
+      );
+      expect(await aliceSessionRes.json()).toMatchObject({
+        success: true,
+        data: {
+          status: 'invitation',
+          isVerified: true,
+          code: 'SHARED01',
+          hasPasscodeSession: true,
+        },
+      });
+
+      const bobSessionWithAliceCookiesRes = await getGuestSession(
+        new NextRequest('http://bob.wedding.example/api/guest/session', {
+          headers: {
+            host: 'bob.wedding.example',
+            cookie: `${GUEST_INVITE_COOKIE}=${aliceInviteToken}; ${GUEST_COOKIE}=${aliceGuestToken}`,
+          },
+        })
+      );
+      expect(await bobSessionWithAliceCookiesRes.json()).toMatchObject({
+        success: true,
+        data: {
+          status: 'none',
+          isVerified: false,
+          code: null,
+          hasPasscodeSession: false,
+        },
+      });
+      expect(bobSessionWithAliceCookiesRes.headers.get('set-cookie')).toContain(
+        `${GUEST_INVITE_COOKIE}=;`
+      );
+
+      // Cross-tenant login on bob.wedding.example replaces Alice's cookies with fresh Bob tokens
+      const crossTenantAdminRes = await postAdminLogin(
+        new NextRequest('http://bob.wedding.example/api/admin/login', {
+          method: 'POST',
+          headers: {
+            host: 'bob.wedding.example',
+            'content-type': 'application/json',
+            cookie: `${ADMIN_COOKIE}=${aliceAdminToken}`,
+          },
+          body: JSON.stringify({ password: 'secret' }),
+        })
+      );
+      const mintedBobAdminToken = extractSetCookieToken(
+        crossTenantAdminRes.headers.get('set-cookie'),
+        ADMIN_COOKIE
+      );
+      expect(mintedBobAdminToken).not.toBe(aliceAdminToken);
+      await expect(verifyAdminToken(mintedBobAdminToken)).resolves.toMatchObject({
+        isAdmin: true,
+        siteId: 'site-bob',
+        subdomain: 'bob',
+      });
+
+      const crossTenantGuestRes = await postGuestLogin(
+        new NextRequest('http://bob.wedding.example/api/guest/login', {
+          method: 'POST',
+          headers: {
+            host: 'bob.wedding.example',
+            'content-type': 'application/json',
+            cookie: `${GUEST_COOKIE}=${aliceGuestToken}`,
+          },
+          body: JSON.stringify({ passcode: 'shared-guest-passcode-123' }),
+        })
+      );
+      const mintedBobGuestToken = extractSetCookieToken(
+        crossTenantGuestRes.headers.get('set-cookie'),
+        GUEST_COOKIE
+      );
+      expect(mintedBobGuestToken).not.toBe(aliceGuestToken);
+      await expect(verifyGuestToken(mintedBobGuestToken)).resolves.toMatchObject({
+        guest: true,
+        siteId: 'site-bob',
+        subdomain: 'bob',
+      });
+
+      const crossTenantInviteLoginRes = await postGuestLogin(
+        new NextRequest('http://bob.wedding.example/api/guest/login', {
+          method: 'POST',
+          headers: {
+            host: 'bob.wedding.example',
+            'content-type': 'application/json',
+            cookie: `${GUEST_INVITE_COOKIE}=${aliceInviteToken}`,
+          },
+          body: JSON.stringify({ passcode: 'SHARED01' }),
+        })
+      );
+      const mintedBobInviteToken = extractSetCookieToken(
+        crossTenantInviteLoginRes.headers.get('set-cookie'),
+        GUEST_INVITE_COOKIE
+      );
+      expect(mintedBobInviteToken).not.toBe(aliceInviteToken);
+      await expect(verifyGuestInviteSessionToken(mintedBobInviteToken)).resolves.toMatchObject({
+        code: 'SHARED01',
+        siteId: 'site-bob',
+        subdomain: 'bob',
+      });
+
+      const crossTenantValidateRes = await getValidateCode(
+        new NextRequest('http://bob.wedding.example/api/registry/validate-code?code=SHARED01', {
+          headers: {
+            host: 'bob.wedding.example',
+            cookie: `${GUEST_INVITE_COOKIE}=${aliceInviteToken}`,
+          },
+        })
+      );
+      const mintedBobValidateToken = extractSetCookieToken(
+        crossTenantValidateRes.headers.get('set-cookie'),
+        GUEST_INVITE_COOKIE
+      );
+      expect(mintedBobValidateToken).not.toBe(aliceInviteToken);
+      await expect(verifyGuestInviteSessionToken(mintedBobValidateToken)).resolves.toMatchObject({
+        code: 'SHARED01',
+        siteId: 'site-bob',
+        subdomain: 'bob',
+      });
+    });
   });
 
   describe('enforceActiveGuestPageSession forged x-guest-* header defenses', () => {
@@ -601,7 +810,7 @@ describe('Multisite Cookie Claims, Forged Header Defenses & Metadata Host Trust'
       process.env.MULTISITE_ENABLED = 'false';
 
       process.env.TRUST_PROXY = 'false';
-      mockHeaders.mockResolvedValueOnce(
+      mockHeaders.mockResolvedValue(
         new Headers({
           host: 'localhost:3000',
           'x-forwarded-host': 'alice.wedding.example',
@@ -612,7 +821,7 @@ describe('Multisite Cookie Claims, Forged Header Defenses & Metadata Host Trust'
       expect(localMeta.metadataBase?.toString()).toBe('http://localhost:3000/');
 
       process.env.TRUST_PROXY = '1';
-      mockHeaders.mockResolvedValueOnce(
+      mockHeaders.mockResolvedValue(
         new Headers({
           host: '127.0.0.1:3000',
           'x-forwarded-host': 'spoofed.evil.org, alice.wedding.example',

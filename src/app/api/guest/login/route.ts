@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { signGuestToken, GUEST_COOKIE } from '@/core/auth/guest.server';
-import { signGuestInviteSessionToken, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
-import { resolveTenantClaimsForSigning } from '@/core/auth/tenantClaims.node';
+import { signGuestToken, verifyGuestToken, GUEST_COOKIE } from '@/core/auth/guest.server';
+import {
+  signGuestInviteSessionToken,
+  verifyGuestInviteSessionToken,
+  GUEST_INVITE_COOKIE,
+} from '@/core/auth/guestInviteSession';
+import {
+  resolveTenantClaimsForSigning,
+  verifyNodeTenantClaims,
+} from '@/core/auth/tenantClaims.node';
+import { readRequestCookie } from '@/core/auth/tokenCookieHelpers';
 import { hasAddressCollectionTag } from '@/features/registry';
 import { prisma } from '@/lib/prisma';
 import { env } from '@/env';
@@ -51,16 +59,33 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
       (trimmedCode.length > 0 && trimmedCode !== passcode && safeComparePasscode(trimmedCode, expectedPasscode)));
 
   if (matchesSharedPasscode) {
-    const tenantClaims = await resolveTenantClaimsForSigning(req);
-    const iat = Date.now();
-    const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
-    const token = await signGuestToken({
-      guest: true,
-      jti: crypto.randomUUID(),
-      ...tenantClaims,
-      iat,
-      exp,
-    });
+    let token: string | null = null;
+    if (typeof readRequestCookie === 'function' && typeof verifyGuestToken === 'function') {
+      const existingToken = await readRequestCookie(GUEST_COOKIE, req, { suppressErrors: true });
+      if (existingToken) {
+        const existingPayload = await verifyGuestToken(existingToken);
+        if (
+          existingPayload &&
+          existingPayload.guest === true &&
+          (await verifyNodeTenantClaims(existingPayload, req))
+        ) {
+          token = existingToken;
+        }
+      }
+    }
+
+    if (!token) {
+      const tenantClaims = await resolveTenantClaimsForSigning(req);
+      const iat = Date.now();
+      const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
+      token = await signGuestToken({
+        guest: true,
+        jti: crypto.randomUUID(),
+        ...tenantClaims,
+        iat,
+        exp,
+      });
+    }
 
     const response = NextResponse.json({ success: true, sessionType: 'guest' });
     response.cookies.set(GUEST_COOKIE, token, {
@@ -108,16 +133,39 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
       });
     }
 
-    const tenantClaims = await resolveTenantClaimsForSigning(req);
-    const iat = Date.now();
-    const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
-    const inviteToken = await signGuestInviteSessionToken({
-      code: invite.code,
-      guestName: invite.guestName,
-      ...tenantClaims,
-      iat,
-      exp,
-    });
+    let inviteToken: string | null = null;
+    if (
+      typeof readRequestCookie === 'function' &&
+      typeof verifyGuestInviteSessionToken === 'function'
+    ) {
+      const existingInviteCookie = await readRequestCookie(GUEST_INVITE_COOKIE, req, {
+        suppressErrors: true,
+      });
+      if (existingInviteCookie) {
+        const existingInvitePayload = await verifyGuestInviteSessionToken(existingInviteCookie);
+        if (
+          existingInvitePayload &&
+          existingInvitePayload.code.trim().toUpperCase() === invite.code.trim().toUpperCase() &&
+          existingInvitePayload.guestName === invite.guestName &&
+          (await verifyNodeTenantClaims(existingInvitePayload, req))
+        ) {
+          inviteToken = existingInviteCookie;
+        }
+      }
+    }
+
+    if (!inviteToken) {
+      const tenantClaims = await resolveTenantClaimsForSigning(req);
+      const iat = Date.now();
+      const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
+      inviteToken = await signGuestInviteSessionToken({
+        code: invite.code,
+        guestName: invite.guestName,
+        ...tenantClaims,
+        iat,
+        exp,
+      });
+    }
 
     const response = NextResponse.json({
       success: true,

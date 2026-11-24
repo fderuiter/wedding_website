@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { THEME_PRESETS, THEME_PRESET_KEYS, getPresetTokens } from '../presets';
 import { generateDynamicStyles } from '@/lib/theme/stylesheet';
@@ -68,10 +68,12 @@ describe('Print Token Theme Preset Integration', () => {
       <PrintableFloorplan tables={tables as any} unassignedGuests={unassigned as any} />
     );
 
-    const mainElement = container.querySelector('main');
-    expect(mainElement).toBeInTheDocument();
-    expect(mainElement?.getAttribute('style')).toContain('var(--print-bg)');
-    expect(mainElement?.getAttribute('style')).not.toContain('#ffffff');
+    const rosterRegion = screen.getByRole('region', {
+      name: 'Reception Seating Roster & Floorplan',
+    });
+    expect(rosterRegion).toBeInTheDocument();
+    expect(rosterRegion.getAttribute('style')).toContain('var(--print-bg)');
+    expect(rosterRegion.getAttribute('style')).not.toContain('#ffffff');
 
     const headings = container.querySelectorAll('h2');
     headings.forEach((h2) => {

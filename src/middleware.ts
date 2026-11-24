@@ -170,6 +170,17 @@ export async function middleware(request: NextRequest) {
   }
 
   const isApiRoute = normalizedPath === '/api' || normalizedPath.startsWith('/api/');
+  const isUploadsRoute = normalizedPath === '/uploads' || normalizedPath.startsWith('/uploads/');
+  const isPhotoUploadAssetRoute =
+    normalizedPath === '/uploads/photos' ||
+    normalizedPath.startsWith('/uploads/photos/') ||
+    normalizedPath === '/api/uploads/photos' ||
+    normalizedPath.startsWith('/api/uploads/photos/');
+  const isNonPhotoUploadAssetRoute =
+    !isPhotoUploadAssetRoute &&
+    (isUploadsRoute ||
+      normalizedPath === '/api/uploads' ||
+      normalizedPath.startsWith('/api/uploads/'));
 
   const isExcluded =
     normalizedPath === '/guest' ||
@@ -177,15 +188,13 @@ export async function middleware(request: NextRequest) {
     normalizedPath === '/guest/collect' ||
     normalizedPath === '/guest/claim' ||
     normalizedPath === '/api/guest/login' ||
+    normalizedPath === '/api/guest/session' ||
     normalizedPath === '/api/guest/address' ||
     normalizedPath === '/api/guest/address/public' ||
     normalizedPath === '/api/registry/claim' ||
     normalizedPath === '/api/registry/validate-code' ||
     (normalizedPath === '/api/registry/webhook/stripe' && method === 'POST') ||
-    normalizedPath === '/api/uploads' ||
-    normalizedPath.startsWith('/api/uploads/') ||
-    normalizedPath === '/uploads' ||
-    normalizedPath.startsWith('/uploads/') ||
+    isNonPhotoUploadAssetRoute ||
     normalizedPath === '/admin/login' ||
     normalizedPath === '/api/admin/login' ||
     (normalizedPath === '/api/admin/logout' && method === 'POST') ||
@@ -234,6 +243,16 @@ export async function middleware(request: NextRequest) {
       Boolean(await getSignedPhotoUploadSession(request));
 
     if (!isGuest && !isAdmin && !hasPhotoAccess) {
+      if (isPhotoUploadAssetRoute) {
+        const authHeaders = {
+          'X-Content-Type-Options': 'nosniff',
+          Vary: 'Cookie',
+        };
+        if (method === 'HEAD') {
+          return new NextResponse(null, { status: 401, headers: authHeaders });
+        }
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: authHeaders });
+      }
       if (normalizedPath.startsWith('/api/')) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
@@ -283,7 +302,8 @@ export async function middleware(request: NextRequest) {
   }
   stripClientGuestHeaders(requestHeaders);
 
-  const gatedPageValue: '0' | '1' = !isExcluded && !isApiRoute && !isProtected ? '1' : '0';
+  const gatedPageValue: '0' | '1' =
+    !isExcluded && !isApiRoute && !isUploadsRoute && !isProtected ? '1' : '0';
   const callbackUrlValue = pathname + request.nextUrl.search;
   requestHeaders.set(GUEST_GATED_PAGE_HEADER, gatedPageValue);
   requestHeaders.set(GUEST_CALLBACK_URL_HEADER, callbackUrlValue);

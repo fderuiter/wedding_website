@@ -351,13 +351,23 @@ async function main() {
       );
     }
     const uploadJson = JSON.parse(uploadRes.body);
-    const uploadedUrl = uploadJson?.data?.[0]?.url;
+    const uploadedItem = uploadJson?.data?.[0];
     if (
       uploadJson.success !== true ||
-      typeof uploadedUrl !== 'string' ||
-      !/^\/uploads\/photos\/[a-f0-9]+\.jpg$/.test(uploadedUrl)
+      !uploadedItem ||
+      typeof uploadedItem.id !== 'string' ||
+      typeof uploadedItem.nodeId !== 'string' ||
+      uploadedItem.status !== 'PENDING' ||
+      uploadedItem.isVisible !== false ||
+      'url' in uploadedItem
     ) {
       throw new Error(`Unexpected container HEIC upload response payload: ${uploadRes.body}`);
+    }
+    const unauthPhotoProbe = await request('/uploads/photos/nonexistent-probe.jpg', 3000);
+    if (unauthPhotoProbe.statusCode !== 401) {
+      throw new Error(
+        `Expected unauthenticated container /uploads/photos/* probe to return 401, got ${unauthPhotoProbe.statusCode}`
+      );
     }
     if (duringUploadLiveRes.statusCode !== 200) {
       throw new Error(
@@ -392,7 +402,7 @@ async function main() {
       );
     }
     console.log(
-      `✅ Container HEIC upload transcoded via worker (${uploadedUrl}), /api/live responsive, 0 worker errors`
+      `✅ Container HEIC upload transcoded via worker (nodeId=${uploadedItem.nodeId}, url withheld while PENDING), /uploads/photos/* gated 401, /api/live responsive, 0 worker errors`
     );
 
     // 9. Verify shared globalThis pool across concurrent API and SSR traffic (<= 10 PostgreSQL connections)
@@ -460,6 +470,13 @@ async function main() {
       composeEnv
     );
 
+    const unauthDrainProbe = await request('/guest/login', 5000);
+    if (unauthDrainProbe.statusCode !== 200 || unauthDrainProbe.body.includes(drainTitleMarker)) {
+      throw new Error(
+        `Expected unauthenticated /guest/login SSR response to redact AppConfig seoTitle (status=${unauthDrainProbe.statusCode}).`
+      );
+    }
+
     const lockProc = child_process.spawn(
       'docker',
       [
@@ -514,8 +531,13 @@ async function main() {
       );
       await lockReadyPromise;
 
-      // Issue in-flight SSR request that blocks on "AppConfig" inside getAppConfig()
-      const inflightPromise = request('/guest/login', 15000);
+      // Issue authenticated in-flight SSR request that blocks on "AppConfig" inside getAppConfig()
+      const inflightPromise = httpRequest('/guest/login', {
+        headers: {
+          Cookie: guestCookie,
+        },
+        timeoutMs: 15000,
+      });
 
       let queryBlockedInDb = false;
       for (let i = 0; i < 50; i++) {

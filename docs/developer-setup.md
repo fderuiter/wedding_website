@@ -8,7 +8,7 @@ This guide provides step-by-step instructions for configuring a local developmen
 
 Before installing the application, verify that your machine meets the minimum system requirements:
 
-- **Node.js & npm**: Node.js **v22.x LTS** (`>=22.22.1 <23.0.0`, pinned in [`.nvmrc`](../.nvmrc)) and **`npm@10.9.x`** (`^10.9.0`, enforced via [`.npmrc`](../.npmrc) and `devEngines` in [`package.json`](../package.json)). Verify your installed versions with `node -v` and `npm -v` (or run `nvm use`).
+- **Node.js & npm**: Node.js **v22.x LTS** (`>=22.22.1 <23.0.0`, pinned in [`.nvmrc`](../.nvmrc)) and **`npm@10.9.x`** (`^10.9.0`, pinned via `packageManager` for Corepack and enforced via [`.npmrc`](../.npmrc) and `devEngines` in [`package.json`](../package.json) and [`docker/prisma-cli/package.json`](../docker/prisma-cli/package.json)). Run `nvm use` and `corepack enable`, then verify your active versions with `node -v` and `corepack npm -v` (`npm -v`).
 - **Git**: Modern Git for version control and branch management (`git --version`).
 - **PostgreSQL Database**: A running PostgreSQL instance (v15+ recommended). You can run PostgreSQL locally, via Docker, or use cloud-hosted instances (e.g. Neon, Supabase, Railway, AWS RDS, GCP Cloud SQL). Refer to the [PostgreSQL Database Contract in DEPLOYMENT.md](../DEPLOYMENT.md) and [Application Runtime Contract](./runtime-contract.md) for operational expectations.
 - **Docker & Docker Compose** *(Optional)*: Recommended for automated test database containerization and container smoke tests.
@@ -17,12 +17,13 @@ Before installing the application, verify that your machine meets the minimum sy
 
 ## 2. Cloning the Repository & Installing Dependencies
 
-1. **Clone the repository and select Node.js 22 LTS:**
+1. **Clone the repository, select Node.js 22 LTS, and activate Corepack:**
 
    ```bash
    git clone https://github.com/fderuiter/wedding_website.git
    cd wedding_website
    nvm use
+   corepack enable
    ```
 
 2. **Install project dependencies from the lockfile:**
@@ -31,7 +32,7 @@ Before installing the application, verify that your machine meets the minimum sy
    npm ci
    ```
 
-   The `postinstall` lifecycle hook automatically runs `prisma generate` to compile the Prisma Client and records `node_modules/.package-lock-hash` so the first test run skips redundant dependency installation.
+   The `postinstall` lifecycle hook automatically runs `next typegen`, `prisma generate` to compile the Prisma Client, and `node scripts/pretest.mjs --record-install-state` to prune unreachable WASM optional packages on non-`wasm32` hosts and record `node_modules/.package-lock-hash` so the first test run skips redundant dependency installation.
 
 ---
 
@@ -46,6 +47,8 @@ The platform relies on environment variables for database connections, administr
    ```bash
    cp .env.example .env
    ```
+
+   You can verify your local configuration at any time with `npm run preflight:env`, which cascades `.env.development.local`, `.env.local`, `.env.development`, and `.env` in `development` mode (pass `--mode production` before production deployments to enforce production secret blocklists).
 
 2. **Configure Required & Core Variables:**
 
@@ -85,7 +88,7 @@ The platform relies on environment variables for database connections, administr
    - `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT`, `S3_PUBLIC_URL`: S3/R2 object storage settings. Keep all six commented out locally so [`src/utils/storage.ts`](../src/utils/storage.ts) uses `LocalStorageProvider`.
    - `CRON_SECRET`: Optional bearer secret for scheduled broadcast cron endpoints.
    - `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`: Optional Stripe card checkout credentials (leave commented out for direct transfer registry funds).
-   - `DB_USER`, `DB_NAME`, `DB_PORT`, `CONTAINER_DATABASE_URL`: Optional Docker Compose PostgreSQL and external container database overrides (`NODE_ENV` is also commented out so host processes default to `development` while Next.js builds use `production`).
+   - `DB_USER`, `DB_NAME`, `DB_PORT`, `CONTAINER_DATABASE_URL`, `CONTAINER_POSTGRES_URL_NON_POOLING`: Optional Docker Compose PostgreSQL and external container database overrides (`NODE_ENV` is also commented out so host processes default to `development` while Next.js builds use `production`, and `CONTAINER_POSTGRES_URL_NON_POOLING` prevents host `POSTGRES_URL_NON_POOLING` shadow URLs from leaking into Compose services).
    - `HISTORY_VERSION_LIMIT`: Maximum number of historical versions retained for content audits (defaults to `50`).
 
 ---
@@ -140,6 +143,16 @@ If you start `npm run dev` with an **unseeded** database, navigating to `http://
 3. **Step 3 — Sample Data Selection:** Choose a starter archetype preset and populate optional sample data modules (`registry`, `guests`, `seating`, `weddingParty`, `attractions`), or skip to start blank.
 4. **Step 4 — Guest List Import:** Import a guest list CSV spreadsheet (`CsvImportWizardModal`) to issue invitation codes right away, or skip for later.
 5. **Step 5 — Complete Setup:** Optionally manage wedding party members (`WeddingPartyManagerModal`) and local attractions (`AttractionsManagerModal`), then open `/admin/dashboard`. Once `AppConfig` is initialized, `/api/admin/setup` is sealed against unauthenticated replay attacks (`403 Forbidden`), and unauthenticated `/` requests redirect to `/guest/login`.
+
+### Database-Free Static Showcase Preview (`npm run build:export`)
+
+To compile and inspect the database-free GitHub Pages showcase locally without PostgreSQL:
+
+```bash
+npm run build:export
+```
+
+`npm run build:export` ([`scripts/build-export.mjs`](../scripts/build-export.mjs)) exports static HTML into `out/` (supporting optional `NEXT_PUBLIC_BASE_PATH` subpath prefixes via `resolveShowcasePath` in [`src/lib/basePath.ts`](../src/lib/basePath.ts)). In static export mode, `RootLayoutClient` ([`src/components/layout/RootLayoutClient.tsx`](../src/components/layout/RootLayoutClient.tsx)) enables `DemoProvider` ([`src/components/demo/DemoContext.tsx`](../src/components/demo/DemoContext.tsx)) and `DemoToolbar` ([`src/components/demo/DemoToolbar.tsx`](../src/components/demo/DemoToolbar.tsx)), hydrating `wedding_showcase_demo_v1` `localStorage` state via `hydrateDemoStateFromStorage` in [`src/lib/demo/demoStore.ts`](../src/lib/demo/demoStore.ts) from deterministic archetype datasets built by `buildArchetypeSeedData` in [`src/lib/sampleData/builder.ts`](../src/lib/sampleData/builder.ts), intercepting `/api/*` and `/api/admin/*` mutations via `installDemoFetchInterceptor` in [`src/lib/demo/demoApiHandler.ts`](../src/lib/demo/demoApiHandler.ts), simulating non-charging card contributions via `SimulatedCardCheckout` (`SIMULATED_TEST_CARDS`) in [`src/features/registry/components/SimulatedCardCheckout.tsx`](../src/features/registry/components/SimulatedCardCheckout.tsx), and rendering `<SetupWizard />` on `/admin/setup` via `AdminSetupPage` in [`src/app/admin/setup/page.tsx`](../src/app/admin/setup/page.tsx). *(Remove `out/` after local inspection so `npm run check:identifiers` and Git status stay clean.)*
 
 ---
 

@@ -25,7 +25,7 @@ import {
   signAdminToken,
 } from '@/core/auth/auth.server';
 import { resolveTenantClaimsForSigning } from '@/core/auth/tenantClaims.node';
-import { verifyPassword } from '@/utils/password';
+import { MAX_PASSWORD_LENGTH, verifyPassword } from '@/utils/password';
 import { env } from '@/env';
 
 import { generateSampleData } from '@/lib/sampleData/generator';
@@ -37,9 +37,7 @@ import {
 import { geocodeBestMatch } from '@/lib/geocoding';
 import { hasValidCoordinates } from '@/utils/maps';
 
-type SetupRequestPayload = z.infer<typeof AdminSetupSchema> & {
-  modules?: unknown;
-};
+type SetupRequestPayload = z.infer<typeof AdminSetupSchema>;
 
 const RESERVED_PARTNER_PLACEHOLDERS = new Set(['partner 1', 'partner 2']);
 
@@ -120,6 +118,12 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
         !rawPassword
           ? 'Admin password is required for setup.'
           : 'Invalid admin password.',
+      );
+    }
+    if (rawPassword.length > MAX_PASSWORD_LENGTH) {
+      throw new ApiError(
+        400,
+        `Validation Error: Password must be at most ${MAX_PASSWORD_LENGTH} characters`,
       );
     }
     const adminPassword = env.ADMIN_PASSWORD;

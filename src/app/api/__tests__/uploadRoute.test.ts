@@ -369,7 +369,7 @@ describe('POST /api/admin/upload', () => {
       resetStorageProvider();
     });
 
-    it('routes uploads to S3 storage and returns a public URL when configured', async () => {
+    it('routes uploads to S3 storage and returns a gated /uploads/* URL when configured', async () => {
       const mockSend = jest.spyOn(S3Client.prototype, 'send').mockImplementation(async () => ({}));
 
       const req = makeRequest({});
@@ -377,7 +377,7 @@ describe('POST /api/admin/upload', () => {
 
       expect(res.status).toBe(200);
       const json = await res.json();
-      expect(json.data.url).toMatch(/^https:\/\/cdn\.wedding-assets\.com\/uploads\/[a-f0-9]{16}\.png$/);
+      expect(json.data.url).toMatch(/^\/uploads\/[a-f0-9]{16}\.png$/);
 
       expect(mockSend).toHaveBeenCalledTimes(1);
       mockSend.mockRestore();

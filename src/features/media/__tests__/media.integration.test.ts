@@ -354,4 +354,36 @@ describe('Media Repository & Rollback Database Integration', () => {
     expect((publicPhotos[0].data as any).caption).toBe('Polished Toast Caption');
     expect((publicPhotos[0].data as any).uploaderName).toBeUndefined();
   });
+
+  test('deleteMedia removes the Media row, linked Photo ContentNode, and the underlying local file on disk', async () => {
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    const filename = `__integration_cleanup_${process.pid}_${Date.now()}.jpg`;
+    const uploadsPhotosDir = path.join(process.cwd(), 'public', 'uploads', 'photos');
+    await fs.mkdir(uploadsPhotosDir, { recursive: true });
+    const filePath = path.join(uploadsPhotosDir, filename);
+    await fs.writeFile(filePath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+
+    try {
+      const created = await realRepository.createMedia(
+        {
+          url: `/uploads/photos/${filename}`,
+          altText: 'Ephemeral Guest Photo',
+          isDecorative: false,
+          publishToGallery: true,
+        },
+        'Admin'
+      );
+
+      expect(await realContentService.getPublicPhotos()).toHaveLength(1);
+
+      await realRepository.deleteMedia(created.id, 'Admin');
+
+      expect(await realPrisma.media.findUnique({ where: { id: created.id } })).toBeNull();
+      expect(await realContentService.getPublicPhotos()).toHaveLength(0);
+      await expect(fs.access(filePath)).rejects.toThrow();
+    } finally {
+      await fs.rm(filePath, { force: true });
+    }
+  });
 });

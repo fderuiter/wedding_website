@@ -1,5 +1,5 @@
 import {
-  ThemePreset,
+  type ThemePreset,
   getPresetTokens,
   isThemePreset,
   DEFAULT_THEME_PRESET,
@@ -181,7 +181,8 @@ export function optimizeContrast(baseHex: string, bgHex: string, minRatio: numbe
   const safeBgHex = typeof bgHex === 'string' ? bgHex : '';
   const cacheKey = `${baseHex.toLowerCase()}:${safeBgHex.toLowerCase()}:${minRatio}`;
   if (contrastCache.has(cacheKey)) {
-    return contrastCache.get(cacheKey)!;
+    const cached = contrastCache.get(cacheKey)!;
+    return cached.toLowerCase() === baseHex.toLowerCase() ? baseHex : cached;
   }
 
   let computedHex = baseHex;
@@ -247,6 +248,17 @@ function resolveDarkSurfaceBg(minDarkBgHex: string, candidateBgHex?: string | nu
     return candidateBgHex;
   }
   return minDarkBgHex;
+}
+
+function resolveLightSurfaceBg(fallbackBgHex: string, candidateBgHex?: string | null): string {
+  if (!candidateBgHex || !hexColorRegex.test(candidateBgHex)) {
+    return fallbackBgHex;
+  }
+  const candLum = getLuminance(hexToRgb(candidateBgHex));
+  if (candLum >= 0.5) {
+    return candidateBgHex;
+  }
+  return fallbackBgHex;
 }
 
 interface DarkSurfaceTokenSet {
@@ -499,6 +511,36 @@ export function generateDynamicStyles(
     targetTokens['--floorplan-seat-dimmed-bg'] = dimmedBgHex;
     targetTokens['--floorplan-seat-dimmed-text'] = optimizeContrast(rawDimmedTextHex, dimmedBgHex, 4.5);
     targetTokens['--floorplan-seat-dimmed-border'] = dimmedBorderHex;
+
+    const rawSuccessBgHex = resolveHex(targetTokens['--btn-success-bg'], '#15803d');
+    const rawSuccessHoverBgHex = resolveHex(targetTokens['--btn-success-hover-bg'], '#166534');
+    const rawSuccessTextHex = resolveHex(targetTokens['--btn-success-text'], '#ffffff');
+    const isLightSuccessLabel = getLuminance(hexToRgb(rawSuccessTextHex)) > 0.5;
+
+    let calibratedSuccessBgHex = rawSuccessBgHex;
+    let calibratedSuccessHoverBgHex = rawSuccessHoverBgHex;
+    let calibratedSuccessTextHex = rawSuccessTextHex;
+
+    if (isLightSuccessLabel) {
+      calibratedSuccessBgHex = optimizeContrast(rawSuccessBgHex, rawSuccessTextHex, 4.5);
+      calibratedSuccessHoverBgHex = optimizeContrast(rawSuccessHoverBgHex, rawSuccessTextHex, 4.5);
+      calibratedSuccessTextHex = optimizeContrast(
+        optimizeContrast(rawSuccessTextHex, calibratedSuccessBgHex, 4.5),
+        calibratedSuccessHoverBgHex,
+        4.5
+      );
+    } else {
+      calibratedSuccessTextHex = optimizeContrast(
+        optimizeContrast(rawSuccessTextHex, calibratedSuccessBgHex, 4.5),
+        calibratedSuccessHoverBgHex,
+        4.5
+      );
+    }
+
+    targetTokens['--btn-success-bg'] = calibratedSuccessBgHex;
+    targetTokens['--btn-success-hover-bg'] = calibratedSuccessHoverBgHex;
+    targetTokens['--btn-success-text'] = calibratedSuccessTextHex;
+    targetTokens['--btn-success-border'] = targetTokens['--btn-success-border'] || 'transparent';
   };
 
   calibrateInverseAndToastTokens(
@@ -509,6 +551,29 @@ export function generateDynamicStyles(
     darkPresetTokens,
     '--badge-inverse-text' in darkCustomTokenOverrides
   );
+
+  const lightCardBg = resolveLightSurfaceBg('#ffffff', lightPresetTokens['--card-bg']);
+  const lightInputBg = resolveLightSurfaceBg(lightCardBg, lightPresetTokens['--input-bg']);
+  const lightTextSurfaceMap: Record<string, string> = {
+    '--form-label-text': lightInputBg,
+    '--form-message-text': lightCardBg,
+    '--form-error-text': lightCardBg,
+    '--form-success-text': lightCardBg,
+    '--form-warning-text': lightCardBg,
+    '--dialog-desc-color': resolveLightSurfaceBg('#ffffff', lightPresetTokens['--dialog-bg']),
+    '--schedule-filter-text': resolveLightSurfaceBg('#f3f4f6', lightPresetTokens['--schedule-filter-bg']),
+    '--schedule-tag-text': resolveLightSurfaceBg('#f3f4f6', lightPresetTokens['--schedule-tag-bg']),
+  };
+
+  for (const [textKey, surfaceBg] of Object.entries(lightTextSurfaceMap)) {
+    const rawVal = lightPresetTokens[textKey];
+    if (!rawVal) continue;
+    const parsedText = parseColorRgb(rawVal);
+    if (parsedText) {
+      const rawHex = rgbToHex(parsedText.r, parsedText.g, parsedText.b);
+      lightPresetTokens[textKey] = optimizeContrast(rawHex, surfaceBg, 4.5);
+    }
+  }
 
   const darkCardAndInputBg = resolveDarkSurfaceBg(
     resolveDarkSurfaceBg('#18181b', darkPresetTokens['--card-bg']),
@@ -541,6 +606,14 @@ export function generateDynamicStyles(
         if (typeof baseFallback === 'string') {
           darkPresetTokens[textKey] = baseFallback;
         }
+      }
+    } else {
+      const rawVal = darkPresetTokens[textKey];
+      if (!rawVal) continue;
+      const parsedText = parseColorRgb(rawVal);
+      if (parsedText) {
+        const rawHex = rgbToHex(parsedText.r, parsedText.g, parsedText.b);
+        darkPresetTokens[textKey] = optimizeContrast(rawHex, surfaceBg, 4.5);
       }
     }
   }

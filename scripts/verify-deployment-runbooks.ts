@@ -488,6 +488,7 @@ function parseDockerComposeContract(composeContent: string): {
   dbPorts: string[];
   migrationCommand: string | null;
   migrationDatabaseUrl: string | null;
+  migrationEnvMap: Map<string, string>;
   migrationReadOnly: boolean;
   migrationCapDropAll: boolean;
   migrationNoNewPrivileges: boolean;
@@ -511,6 +512,7 @@ function parseDockerComposeContract(composeContent: string): {
   const services: string[] = [];
   const topLevelVolumes: string[] = [];
   const dbPorts: string[] = [];
+  const migrationEnvMap = new Map<string, string>();
   const appEnvMap = new Map<string, string>();
   const migrationTmpfs: string[] = [];
   const appTmpfs: string[] = [];
@@ -619,11 +621,18 @@ function parseDockerComposeContract(composeContent: string): {
           migrationReadOnly = true;
         }
       } else if (inMigrationEnv) {
-        const dbUrlMatch = line.match(
-          /^\s*(?:-\s*)?DATABASE_URL\s*(?::|=)\s*(?:["']([^"']*)["']|(.+?))\s*(?:#.*)?$/
-        );
-        if (dbUrlMatch) {
-          migrationDatabaseUrl = (dbUrlMatch[1] ?? dbUrlMatch[2] ?? '').trim();
+        if (!line.trim().startsWith('#')) {
+          const kvMatch = line.match(
+            /^\s*(?:-\s*)?([A-Z0-9_]+)\s*(?::|=)\s*(?:["']([^"']*)["']|(.+?))\s*(?:#.*)?$/
+          );
+          if (kvMatch) {
+            const envKey = kvMatch[1];
+            const envVal = (kvMatch[2] ?? kvMatch[3] ?? '').trim();
+            migrationEnvMap.set(envKey, envVal);
+            if (envKey === 'DATABASE_URL') {
+              migrationDatabaseUrl = envVal;
+            }
+          }
         }
       } else if (inMigrationCapDrop) {
         if (/^\s*-\s*["']?ALL["']?\s*(?:#.*)?$/.test(line)) {
@@ -723,6 +732,7 @@ function parseDockerComposeContract(composeContent: string): {
     dbPorts,
     migrationCommand,
     migrationDatabaseUrl,
+    migrationEnvMap,
     migrationReadOnly,
     migrationCapDropAll,
     migrationNoNewPrivileges,
@@ -1490,6 +1500,19 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       'docker-compose.yml: `migration` service must scope container `DATABASE_URL` overrides via `${CONTAINER_DATABASE_URL:-...}`'
     );
   }
+  if (composeContract.migrationDatabaseUrl?.includes('POSTGRES_URL_NON_POOLING')) {
+    errors.push(
+      'docker-compose.yml: `migration` service `DATABASE_URL` must not interpolate host `POSTGRES_URL_NON_POOLING` (prevents `@localhost` shadow URL leaks into containers)'
+    );
+  }
+  if (
+    composeContract.migrationEnvMap.get('POSTGRES_URL_NON_POOLING') !==
+    '${CONTAINER_POSTGRES_URL_NON_POOLING:-}'
+  ) {
+    errors.push(
+      'docker-compose.yml: `migration` service must scope `POSTGRES_URL_NON_POOLING` via `${CONTAINER_POSTGRES_URL_NON_POOLING:-}`'
+    );
+  }
   if (composeContract.migrationCommand !== './node_modules/.bin/prisma migrate deploy') {
     errors.push(
       'docker-compose.yml: `migration` service must execute `./node_modules/.bin/prisma migrate deploy` offline without `npx`'
@@ -1526,6 +1549,14 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       'docker-compose.yml: `app` service must scope container `DATABASE_URL` overrides via `${CONTAINER_DATABASE_URL:-...}`'
     );
   }
+  if (
+    composeContract.appEnvMap.get('POSTGRES_URL_NON_POOLING') !==
+    '${CONTAINER_POSTGRES_URL_NON_POOLING:-}'
+  ) {
+    errors.push(
+      'docker-compose.yml: `app` service must scope `POSTGRES_URL_NON_POOLING` via `${CONTAINER_POSTGRES_URL_NON_POOLING:-}`'
+    );
+  }
   if (composeContract.appEnvMap.get('E2E_TEST') !== '${E2E_TEST:-false}') {
     errors.push('docker-compose.yml: `app` service must set `E2E_TEST: ${E2E_TEST:-false}` by default');
   }
@@ -1545,6 +1576,15 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     if (!/^\s*TRUST_PROXY:\s*\$\{TRUST_PROXY:-1\}\s*(?:#.*)?$/m.test(rolloutComposeRaw)) {
       errors.push(
         'docker-compose.rollout.yml: `app-standby` service must set `TRUST_PROXY: ${TRUST_PROXY:-1}` by default'
+      );
+    }
+    if (
+      !/^\s*POSTGRES_URL_NON_POOLING:\s*\$\{CONTAINER_POSTGRES_URL_NON_POOLING:-\}\s*(?:#.*)?$/m.test(
+        rolloutComposeRaw
+      )
+    ) {
+      errors.push(
+        'docker-compose.rollout.yml: `app-standby` service must scope `POSTGRES_URL_NON_POOLING` via `${CONTAINER_POSTGRES_URL_NON_POOLING:-}`'
       );
     }
   }
@@ -1594,7 +1634,14 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   }
 
   if (!composeContract.appHasEnvFile) {
-    for (const envVar of ['DB_USER', 'DB_PASSWORD', 'DB_NAME', 'DB_PORT', 'CONTAINER_DATABASE_URL']) {
+    for (const envVar of [
+      'DB_USER',
+      'DB_PASSWORD',
+      'DB_NAME',
+      'DB_PORT',
+      'CONTAINER_DATABASE_URL',
+      'CONTAINER_POSTGRES_URL_NON_POOLING',
+    ]) {
       if (composeContract.interpolatedVars.includes(envVar) && !dockerMd.includes(envVar)) {
         errors.push(
           `docs/deployment/docker-vps.md: Missing Compose-interpolated variable "${envVar}" from docker-compose.yml`
@@ -2238,6 +2285,70 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       '.github/dependabot.yml: Missing `versions: [">= 23.0.0"]` ignore rule for `@types/node` under `npm` ecosystem'
     );
   }
+  if (!hasDependabotVersionIgnore('npm', 'typescript', '>= 6.1.0')) {
+    errors.push(
+      '.github/dependabot.yml: Missing `versions: [">= 6.1.0"]` ignore rule for `typescript` under `npm` ecosystem'
+    );
+  }
+
+  const typescriptRange = String(packageJson.devDependencies?.typescript ?? '').trim();
+  if (!/^[~^]?5\.9\.\d+$/.test(typescriptRange)) {
+    errors.push(
+      `package.json: \`devDependencies["typescript"]\` ("${typescriptRange}") must pin the TypeScript 5.9 release line (< 6.1.0)`
+    );
+  }
+
+  const hasMinorPatchOnlyGroup = (ecosystem: string, groupName: string): boolean => {
+    const updatesNode: unknown = isMap(dependabotDoc.contents)
+      ? dependabotDoc.contents.get('updates', true)
+      : null;
+    if (!isSeq(updatesNode)) {
+      return false;
+    }
+    let matchedAtLeastOneGroup = false;
+    for (const updateEntry of updatesNode.items) {
+      if (!isMap(updateEntry)) {
+        continue;
+      }
+      const ecoNode: unknown = updateEntry.get('package-ecosystem', true);
+      if (!isScalar(ecoNode) || String(ecoNode.value).trim() !== ecosystem) {
+        continue;
+      }
+      const groupsNode: unknown = updateEntry.get('groups', true);
+      if (!isMap(groupsNode)) {
+        continue;
+      }
+      const groupNode: unknown = groupsNode.get(groupName, true);
+      if (!isMap(groupNode)) {
+        continue;
+      }
+      matchedAtLeastOneGroup = true;
+      const updateTypesNode: unknown = groupNode.get('update-types', true);
+      if (!isSeq(updateTypesNode) || updateTypesNode.items.length === 0) {
+        return false;
+      }
+      const normalizedTypes = updateTypesNode.items
+        .map((item) => (isScalar(item) ? String(item.value).trim() : ''))
+        .filter(Boolean);
+      const allowedTypes = new Set(['minor', 'patch']);
+      const isValid =
+        normalizedTypes.length === 2 &&
+        normalizedTypes.includes('minor') &&
+        normalizedTypes.includes('patch') &&
+        normalizedTypes.every((typeName) => allowedTypes.has(typeName));
+      if (!isValid) {
+        return false;
+      }
+    }
+    return matchedAtLeastOneGroup;
+  };
+  for (const groupName of ['production-dependencies', 'development-dependencies']) {
+    if (!hasMinorPatchOnlyGroup('npm', groupName)) {
+      errors.push(
+        `.github/dependabot.yml: Group \`${groupName}\` under \`npm\` ecosystem must restrict \`update-types\` to \`["minor", "patch"]\``
+      );
+    }
+  }
 
   // Verify PostgreSQL 15 parity across docker-compose.yml, .github/workflows/ci.yml, and runtime/deployment docs
   const expectedPostgresMajor = '15';
@@ -2385,6 +2496,43 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   }
   if (forbiddenHealthcheckHostOverride.test(dockerMd)) {
     errors.push('docs/deployment/docker-vps.md: Documented `healthcheck` on `/api/live` must not override `Host` header in `fetch()`');
+  }
+  const rolloutScriptPath = path.join(repoRoot, 'scripts/rollout-vps.sh');
+  if (!fs.existsSync(rolloutScriptPath)) {
+    errors.push('scripts/rollout-vps.sh: Missing VPS zero-downtime standby rollout script');
+  } else {
+    const rolloutScriptRaw = fs.readFileSync(rolloutScriptPath, 'utf8');
+    if (/fetch\([^\r\n]*headers\s*:\s*\{[^\r\n]*\bHost\b/i.test(rolloutScriptRaw)) {
+      errors.push(
+        'scripts/rollout-vps.sh: Loopback probes must not override forbidden `Host` header in `fetch()`'
+      );
+    }
+    if (
+      /\bcurl\b[^\r\n]*(?:-H|--header)\s+["']?Host:/i.test(rolloutScriptRaw) ||
+      /\bresolve_probe_host\b/.test(rolloutScriptRaw)
+    ) {
+      errors.push(
+        'scripts/rollout-vps.sh: Loopback probes must omit `resolve_probe_host` and `Host` header overrides'
+      );
+    }
+    const previousTagIdx = rolloutScriptRaw.indexOf(
+      'docker tag wedding-website:latest wedding-website:previous'
+    );
+    const buildAppIdx = rolloutScriptRaw.indexOf('build app');
+    if (previousTagIdx === -1 || buildAppIdx === -1 || previousTagIdx > buildAppIdx) {
+      errors.push(
+        'scripts/rollout-vps.sh: Must snapshot `wedding-website:latest` as `wedding-website:previous` before `docker compose ... build app`'
+      );
+    }
+    if (
+      !rolloutScriptRaw.includes('ROLLOUT_PHASE="pre-cutover"') ||
+      !rolloutScriptRaw.includes('ROLLOUT_PHASE="cutover"') ||
+      !rolloutScriptRaw.includes('ROLLOUT_PHASE="completed"')
+    ) {
+      errors.push(
+        'scripts/rollout-vps.sh: Exit trap must track `pre-cutover`, `cutover`, and `completed` rollout phases'
+      );
+    }
   }
 
   // Verify middleware probe syntax validation & webhook/uploads exclusions preserve ALLOWED_HOSTS check

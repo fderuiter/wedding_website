@@ -105,6 +105,19 @@ export function isSamePostgresDatabase(urlA?: string, urlB?: string): boolean {
   );
 }
 
+function hasSameDatabaseAndSchema(urlA: string, urlB: string): boolean {
+  if (!isValidPostgresUrl(urlA) || !isValidPostgresUrl(urlB)) {
+    return false;
+  }
+  const parsedA = parsePostgresUrl(urlA);
+  const parsedB = parsePostgresUrl(urlB);
+  return (
+    Boolean(parsedA.database) &&
+    parsedA.database === parsedB.database &&
+    (parsedA.schema ?? 'public') === (parsedB.schema ?? 'public')
+  );
+}
+
 export function resolvePrismaDatasourceUrl(
   databaseUrl: string | undefined,
   nonPoolingUrl: string | undefined,
@@ -120,9 +133,12 @@ export function resolvePrismaDatasourceUrl(
   if (
     isDirectMigrateCommand &&
     normalizedDbUrl &&
+    isValidPostgresUrl(normalizedDbUrl) &&
     isPooledPostgresUrl(normalizedDbUrl) &&
     normalizedNonPoolingUrl &&
-    isValidPostgresUrl(normalizedNonPoolingUrl)
+    isValidPostgresUrl(normalizedNonPoolingUrl) &&
+    !isPooledPostgresUrl(normalizedNonPoolingUrl) &&
+    hasSameDatabaseAndSchema(normalizedDbUrl, normalizedNonPoolingUrl)
   ) {
     return normalizedNonPoolingUrl;
   }
@@ -149,6 +165,16 @@ export function resolvePrismaShadowDatabaseUrl(
   }
 
   if (isSamePostgresDatabase(normalizedShadowUrl, databaseUrl)) {
+    return undefined;
+  }
+
+  const normalizedDbUrl = safeNormalizePostgresUrl(databaseUrl);
+  if (
+    normalizedDbUrl &&
+    isPooledPostgresUrl(normalizedDbUrl) &&
+    !isPooledPostgresUrl(normalizedShadowUrl) &&
+    hasSameDatabaseAndSchema(normalizedDbUrl, normalizedShadowUrl)
+  ) {
     return undefined;
   }
 

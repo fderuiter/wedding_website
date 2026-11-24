@@ -2,7 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import {
-  ThemePreset,
+  type ThemePreset,
   THEME_PRESETS,
   getPresetTokens,
   DEFAULT_THEME_PRESET,
@@ -50,6 +50,7 @@ export type ThemeLighting = {
 };
 
 type ThemeContextType = {
+  timezone: string;
   contactEmail: string;
   contactPhone: string;
   themePrimary: string;
@@ -84,6 +85,7 @@ type ThemeContextType = {
 };
 
 const ThemeContext = createContext<ThemeContextType>({
+  timezone: '',
   contactEmail: '',
   contactPhone: '',
   themePrimary: '#B91C1C',
@@ -202,6 +204,7 @@ function applyResolvedTheme(resolved: ResolvedTheme) {
 type ThemeProviderProps = {
   children: React.ReactNode;
   config?: {
+    timezone?: string | null;
     contactEmail?: string | null;
     contactPhone?: string | null;
     twilioFromNumber?: string | null;
@@ -233,6 +236,7 @@ type ThemeProviderProps = {
 
 function normalizeThemeConfig(propConfig?: ThemeProviderProps['config']) {
   return {
+    timezone: typeof propConfig?.timezone === 'string' ? propConfig.timezone.trim() : '',
     contactEmail: propConfig?.contactEmail || '',
     contactPhone: propConfig?.contactPhone || propConfig?.twilioFromNumber || '',
     colorPrimary: sanitizeColor(propConfig?.colorPrimary, '#B91C1C'),
@@ -569,6 +573,7 @@ export function ThemeProvider({
   }, [activePresetTokens]);
 
   const contextValue: ThemeContextType = {
+    timezone: config.timezone || '',
     contactEmail: config.contactEmail || '',
     contactPhone: config.contactPhone || '',
     ...theme,

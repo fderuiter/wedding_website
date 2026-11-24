@@ -890,45 +890,66 @@ function checkDockerComposeFile(
     }
   }
 
+  for (const forbiddenBuildService of ['migration', 'app-standby']) {
+    const svcNode = servicesNode.get(forbiddenBuildService, true);
+    const buildNode = isMap(svcNode) ? svcNode.get('build', true) : undefined;
+    const hasBuild =
+      buildNode !== undefined && (!isScalar(buildNode) || buildNode.value !== null);
+    if (hasBuild) {
+      const offset =
+        isMap(buildNode) || isSeq(buildNode) || isScalar(buildNode)
+          ? (buildNode.range?.[0] ?? 0)
+          : 0;
+      const lineNumber = lineCounter.linePos(offset).line;
+      violations.push({
+        filePath: relPath,
+        lineNumber,
+        lineContent: (lines[lineNumber - 1] ?? '').trim(),
+        imageRef: `${forbiddenBuildService}.build`,
+        reason: `${relPath} service "${forbiddenBuildService}" must not configure "build"; keep "app" as the sole image build owner and reuse wedding-website:latest via pull_policy: never.`,
+      });
+    }
+  }
+
   if (relPath === 'docker-compose.ci.yml') {
-    for (const requiredService of ['migration', 'app']) {
-      const svcNode = servicesNode.get(requiredService, true);
-      const buildNode = isMap(svcNode) ? svcNode.get('build', true) : undefined;
-      const cacheFromNode = isMap(buildNode) ? buildNode.get('cache_from', true) : undefined;
-      const hasValidGhaCacheFrom =
-        isSeq(cacheFromNode) &&
-        cacheFromNode.items.some(
-          (item) =>
-            isScalar(item) &&
-            typeof item.value === 'string' &&
-            item.value.includes('type=gha') &&
-            item.value.includes('${GHA_CACHE_SCOPE:-app-amd64}')
-        );
+    const appSvcNode = servicesNode.get('app', true);
+    const buildNode = isMap(appSvcNode) ? appSvcNode.get('build', true) : undefined;
+    const cacheFromNode = isMap(buildNode) ? buildNode.get('cache_from', true) : undefined;
+    const hasValidGhaCacheFrom =
+      isSeq(cacheFromNode) &&
+      cacheFromNode.items.some(
+        (item) =>
+          isScalar(item) &&
+          typeof item.value === 'string' &&
+          item.value.includes('type=gha') &&
+          item.value.includes('${GHA_CACHE_SCOPE:-app-amd64}')
+      );
 
-      if (!hasValidGhaCacheFrom) {
-        violations.push({
-          filePath: relPath,
-          lineNumber: 1,
-          lineContent: '',
-          imageRef: `${requiredService}.build.cache_from`,
-          reason: `docker-compose.ci.yml service "${requiredService}" must configure build.cache_from with "type=gha,scope=\${GHA_CACHE_SCOPE:-app-amd64}".`,
-        });
-      }
+    if (!hasValidGhaCacheFrom) {
+      violations.push({
+        filePath: relPath,
+        lineNumber: 1,
+        lineContent: '',
+        imageRef: 'app.build.cache_from',
+        reason:
+          'docker-compose.ci.yml service "app" must configure build.cache_from with "type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64}".',
+      });
+    }
 
-      const cacheToNode = isMap(buildNode) ? buildNode.get('cache_to', true) : undefined;
-      if (cacheToNode !== undefined) {
-        const offset = isMap(cacheToNode) || isSeq(cacheToNode) || isScalar(cacheToNode)
+    const cacheToNode = isMap(buildNode) ? buildNode.get('cache_to', true) : undefined;
+    if (cacheToNode !== undefined) {
+      const offset =
+        isMap(cacheToNode) || isSeq(cacheToNode) || isScalar(cacheToNode)
           ? (cacheToNode.range?.[0] ?? 0)
           : 0;
-        const lineNumber = lineCounter.linePos(offset).line;
-        violations.push({
-          filePath: relPath,
-          lineNumber,
-          lineContent: (lines[lineNumber - 1] ?? '').trim(),
-          imageRef: `${requiredService}.build.cache_to`,
-          reason: `docker-compose.ci.yml service "${requiredService}" must not configure build.cache_to.`,
-        });
-      }
+      const lineNumber = lineCounter.linePos(offset).line;
+      violations.push({
+        filePath: relPath,
+        lineNumber,
+        lineContent: (lines[lineNumber - 1] ?? '').trim(),
+        imageRef: 'app.build.cache_to',
+        reason: 'docker-compose.ci.yml service "app" must not configure build.cache_to.',
+      });
     }
   }
 
@@ -1703,43 +1724,504 @@ export function checkDockerBuild(
     }
   }
 
-  // 8. Verify isolated Prisma CLI lockfile version parity with root package-lock.json (prisma, @prisma/config, effect)
+  // 8. Verify isolated Prisma CLI lockfile version parity and offline peerDependencies ranges across both lockfiles
   const rootLockPath = path.join(rootDir, 'package-lock.json');
   const cliLockPath = path.join(rootDir, 'docker', 'prisma-cli', 'package-lock.json');
-  if (fs.existsSync(rootLockPath) && fs.existsSync(cliLockPath)) {
+  const cliPkgJsonPath = path.join(rootDir, 'docker', 'prisma-cli', 'package.json');
+
+  const parseJsonManifest = (
+    absPath: string
+  ): {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+    optionalDependencies?: Record<string, string>;
+    overrides?: Record<string, unknown>;
+  } => {
+    if (!fs.existsSync(absPath)) {
+      return {};
+    }
     try {
-      const rootLock = JSON.parse(fs.readFileSync(rootLockPath, 'utf8')) as {
-        packages?: Record<string, { version?: string }>;
+      return JSON.parse(fs.readFileSync(absPath, 'utf8')) as {
+        dependencies?: Record<string, string>;
+        devDependencies?: Record<string, string>;
+        optionalDependencies?: Record<string, string>;
+        overrides?: Record<string, unknown>;
       };
-      const cliLock = JSON.parse(fs.readFileSync(cliLockPath, 'utf8')) as {
-        packages?: Record<string, { version?: string }>;
-      };
-      for (const pkgKey of ['node_modules/prisma', 'node_modules/@prisma/config', 'node_modules/effect']) {
-        const rootVersion = rootLock.packages?.[pkgKey]?.version;
-        const cliVersion = cliLock.packages?.[pkgKey]?.version;
-        if (rootVersion && cliVersion !== rootVersion) {
-          const pkgName = pkgKey.replace(/^node_modules\//, '');
-          violations.push({
-            filePath: 'docker/prisma-cli/package-lock.json',
-            lineNumber: 1,
-            lineContent: '',
-            imageRef: pkgName,
-            reason: `docker/prisma-cli/package-lock.json pins "${pkgName}" to "${cliVersion ?? 'missing'}", which does not match "${rootVersion}" in package-lock.json.`,
-          });
-        }
-      }
+    } catch {
+      return {};
+    }
+  };
+
+  let parsedRootLock: ParsedLockfile | null = null;
+  let parsedCliLock: ParsedLockfile | null = null;
+
+  if (fs.existsSync(rootLockPath)) {
+    try {
+      parsedRootLock = JSON.parse(fs.readFileSync(rootLockPath, 'utf8')) as ParsedLockfile;
+      const rootManifest = parseJsonManifest(packageJsonPath);
+      validateLockfilePeerDependencies(
+        'package-lock.json',
+        parsedRootLock,
+        rootManifest.overrides,
+        violations
+      );
+    } catch (err) {
+      violations.push({
+        filePath: 'package-lock.json',
+        lineNumber: 1,
+        lineContent: '',
+        imageRef: 'package-lock.json',
+        reason: `Failed to parse package-lock.json: ${(err as Error).message}`,
+      });
+    }
+  }
+
+  if (fs.existsSync(cliLockPath)) {
+    try {
+      parsedCliLock = JSON.parse(fs.readFileSync(cliLockPath, 'utf8')) as ParsedLockfile;
+      const cliManifest = parseJsonManifest(cliPkgJsonPath);
+      validateLockfilePeerDependencies(
+        'docker/prisma-cli/package-lock.json',
+        parsedCliLock,
+        cliManifest.overrides,
+        violations
+      );
     } catch (err) {
       violations.push({
         filePath: 'docker/prisma-cli/package-lock.json',
         lineNumber: 1,
         lineContent: '',
         imageRef: 'package-lock.json',
-        reason: `Failed to parse package-lock.json or docker/prisma-cli/package-lock.json: ${(err as Error).message}`,
+        reason: `Failed to parse docker/prisma-cli/package-lock.json: ${(err as Error).message}`,
       });
     }
   }
 
+  if (parsedRootLock && parsedCliLock) {
+    for (const pkgKey of ['node_modules/prisma', 'node_modules/@prisma/config', 'node_modules/effect']) {
+      const rootVersion = parsedRootLock.packages?.[pkgKey]?.version;
+      const cliVersion = parsedCliLock.packages?.[pkgKey]?.version;
+      if (rootVersion && cliVersion !== rootVersion) {
+        const pkgName = pkgKey.replace(/^node_modules\//, '');
+        violations.push({
+          filePath: 'docker/prisma-cli/package-lock.json',
+          lineNumber: 1,
+          lineContent: '',
+          imageRef: pkgName,
+          reason: `docker/prisma-cli/package-lock.json pins "${pkgName}" to "${cliVersion ?? 'missing'}", which does not match "${rootVersion}" in package-lock.json.`,
+        });
+      }
+    }
+  }
+
   return { violations };
+}
+
+interface ParsedSemver {
+  major: number;
+  minor: number;
+  patch: number;
+  prerelease: string[];
+}
+
+interface LockfilePackageNode {
+  version?: string;
+  resolved?: string;
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+  peerDependenciesMeta?: Record<string, { optional?: boolean }>;
+}
+
+interface ParsedLockfile {
+  packages?: Record<string, LockfilePackageNode>;
+}
+
+function parseSemver(raw: string): ParsedSemver | null {
+  const cleaned = raw.trim().replace(/^[=v]+/i, '');
+  const match = cleaned.match(/^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/);
+  if (!match) {
+    return null;
+  }
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+    prerelease: match[4] ? match[4].split('.') : [],
+  };
+}
+
+function compareSemver(a: ParsedSemver, b: ParsedSemver): number {
+  if (a.major !== b.major) return a.major < b.major ? -1 : 1;
+  if (a.minor !== b.minor) return a.minor < b.minor ? -1 : 1;
+  if (a.patch !== b.patch) return a.patch < b.patch ? -1 : 1;
+
+  const aPre = a.prerelease;
+  const bPre = b.prerelease;
+  if (aPre.length === 0 && bPre.length === 0) return 0;
+  if (aPre.length === 0) return 1;
+  if (bPre.length === 0) return -1;
+
+  const len = Math.max(aPre.length, bPre.length);
+  for (let i = 0; i < len; i++) {
+    if (i >= aPre.length) return -1;
+    if (i >= bPre.length) return 1;
+    const idA = aPre[i];
+    const idB = bPre[i];
+    if (idA === idB) continue;
+    const numA = /^\d+$/.test(idA);
+    const numB = /^\d+$/.test(idB);
+    if (numA && numB) {
+      const diff = Number(idA) - Number(idB);
+      if (diff !== 0) return diff < 0 ? -1 : 1;
+    } else if (numA) {
+      return -1;
+    } else if (numB) {
+      return 1;
+    } else {
+      return idA < idB ? -1 : 1;
+    }
+  }
+  return 0;
+}
+
+function parsePartialSemverParts(rawBody: string): {
+  major: number | null;
+  minor: number | null;
+  patch: number | null;
+  prerelease: string[];
+} | null {
+  const cleaned = rawBody.trim().replace(/^v/i, '');
+  if (!cleaned || cleaned === '*' || cleaned.toLowerCase() === 'x') {
+    return { major: null, minor: null, patch: null, prerelease: [] };
+  }
+  const match = cleaned.match(
+    /^(\d+|x|X|\*)(?:\.(\d+|x|X|\*)(?:\.(\d+|x|X|\*)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?)?)?$/
+  );
+  if (!match) {
+    return null;
+  }
+  const toNum = (seg: string | undefined): number | null => {
+    if (!seg || seg === '*' || seg.toLowerCase() === 'x') return null;
+    return Number(seg);
+  };
+  const major = toNum(match[1]);
+  const minor = major === null ? null : toNum(match[2]);
+  const patch = minor === null ? null : toNum(match[3]);
+  return {
+    major,
+    minor,
+    patch,
+    prerelease: patch !== null && match[4] ? match[4].split('.') : [],
+  };
+}
+
+function evaluateSingleComparator(version: ParsedSemver, token: string): boolean {
+  if (!token || token === '*' || token.toLowerCase() === 'x') {
+    return true;
+  }
+  const opMatch = token.match(/^(>=|<=|>|<|=|\^|~)?(.*)$/);
+  if (!opMatch) {
+    return false;
+  }
+  const op = opMatch[1] ?? '';
+  const parts = parsePartialSemverParts(opMatch[2]);
+  if (!parts) {
+    return false;
+  }
+  if (parts.major === null) {
+    return true;
+  }
+
+  const zeroPre = ['0'];
+  const lowerBound = (maj: number, min: number, pat: number, pre: string[] = []): ParsedSemver => ({
+    major: maj,
+    minor: min,
+    patch: pat,
+    prerelease: pre,
+  });
+
+  if (op === '' || op === '=') {
+    if (parts.minor === null) {
+      return (
+        compareSemver(version, lowerBound(parts.major, 0, 0)) >= 0 &&
+        compareSemver(version, lowerBound(parts.major + 1, 0, 0, zeroPre)) < 0
+      );
+    }
+    if (parts.patch === null) {
+      return (
+        compareSemver(version, lowerBound(parts.major, parts.minor, 0)) >= 0 &&
+        compareSemver(version, lowerBound(parts.major, parts.minor + 1, 0, zeroPre)) < 0
+      );
+    }
+    return compareSemver(version, lowerBound(parts.major, parts.minor, parts.patch, parts.prerelease)) === 0;
+  }
+
+  if (op === '^') {
+    if (parts.minor === null) {
+      return (
+        compareSemver(version, lowerBound(parts.major, 0, 0)) >= 0 &&
+        compareSemver(version, lowerBound(parts.major + 1, 0, 0, zeroPre)) < 0
+      );
+    }
+    if (parts.patch === null) {
+      const upper =
+        parts.major === 0
+          ? lowerBound(0, parts.minor + 1, 0, zeroPre)
+          : lowerBound(parts.major + 1, 0, 0, zeroPre);
+      return compareSemver(version, lowerBound(parts.major, parts.minor, 0)) >= 0 && compareSemver(version, upper) < 0;
+    }
+    const lower = lowerBound(parts.major, parts.minor, parts.patch, parts.prerelease);
+    const upper =
+      parts.major > 0
+        ? lowerBound(parts.major + 1, 0, 0, zeroPre)
+        : parts.minor > 0
+          ? lowerBound(0, parts.minor + 1, 0, zeroPre)
+          : lowerBound(0, 0, parts.patch + 1, zeroPre);
+    return compareSemver(version, lower) >= 0 && compareSemver(version, upper) < 0;
+  }
+
+  if (op === '~') {
+    if (parts.minor === null) {
+      return (
+        compareSemver(version, lowerBound(parts.major, 0, 0)) >= 0 &&
+        compareSemver(version, lowerBound(parts.major + 1, 0, 0, zeroPre)) < 0
+      );
+    }
+    const lower = lowerBound(parts.major, parts.minor, parts.patch ?? 0, parts.prerelease);
+    const upper = lowerBound(parts.major, parts.minor + 1, 0, zeroPre);
+    return compareSemver(version, lower) >= 0 && compareSemver(version, upper) < 0;
+  }
+
+  if (op === '>=') {
+    const target = lowerBound(parts.major, parts.minor ?? 0, parts.patch ?? 0, parts.prerelease);
+    return compareSemver(version, target) >= 0;
+  }
+
+  if (op === '>') {
+    if (parts.minor === null) {
+      return compareSemver(version, lowerBound(parts.major + 1, 0, 0)) >= 0;
+    }
+    if (parts.patch === null) {
+      return compareSemver(version, lowerBound(parts.major, parts.minor + 1, 0)) >= 0;
+    }
+    return compareSemver(version, lowerBound(parts.major, parts.minor, parts.patch, parts.prerelease)) > 0;
+  }
+
+  if (op === '<=') {
+    if (parts.minor === null) {
+      return compareSemver(version, lowerBound(parts.major + 1, 0, 0, zeroPre)) < 0;
+    }
+    if (parts.patch === null) {
+      return compareSemver(version, lowerBound(parts.major, parts.minor + 1, 0, zeroPre)) < 0;
+    }
+    return compareSemver(version, lowerBound(parts.major, parts.minor, parts.patch, parts.prerelease)) <= 0;
+  }
+
+  if (op === '<') {
+    if (parts.minor === null) {
+      return compareSemver(version, lowerBound(parts.major, 0, 0, zeroPre)) < 0;
+    }
+    if (parts.patch === null) {
+      return compareSemver(version, lowerBound(parts.major, parts.minor, 0, zeroPre)) < 0;
+    }
+    return compareSemver(version, lowerBound(parts.major, parts.minor, parts.patch, parts.prerelease)) < 0;
+  }
+
+  return false;
+}
+
+function expandHyphenRanges(branch: string): string {
+  return branch.replace(/(\S+)\s+-\s+(\S+)/g, (_full, lowRaw: string, highRaw: string) => {
+    const lowParts = parsePartialSemverParts(lowRaw);
+    const highParts = parsePartialSemverParts(highRaw);
+    const lowSuffix = lowParts && lowParts.prerelease.length > 0 ? `-${lowParts.prerelease.join('.')}` : '';
+    const lowToken =
+      lowParts && lowParts.major !== null
+        ? `>=${lowParts.major}.${lowParts.minor ?? 0}.${lowParts.patch ?? 0}${lowSuffix}`
+        : `>=${lowRaw}`;
+    let highToken = `<=${highRaw}`;
+    if (highParts) {
+      if (highParts.major === null) {
+        highToken = '*';
+      } else if (highParts.minor === null) {
+        highToken = `<${highParts.major + 1}.0.0`;
+      } else if (highParts.patch === null) {
+        highToken = `<${highParts.major}.${highParts.minor + 1}.0`;
+      }
+    }
+    return `${lowToken} ${highToken}`;
+  });
+}
+
+function satisfiesSemverRange(versionStr: string, rangeStr: string): boolean {
+  const version = parseSemver(versionStr);
+  if (!version) {
+    return false;
+  }
+  const rawRange = rangeStr.trim();
+  if (!rawRange || rawRange === '*') {
+    return true;
+  }
+  const branches = rawRange.split('||');
+  return branches.some((rawBranch) => {
+    const withHyphens = expandHyphenRanges(rawBranch.trim());
+    const normalized = withHyphens.replace(/(>=|<=|>|<|=|\^|~)\s+/g, '$1').trim();
+    if (!normalized) {
+      return true;
+    }
+    const tokens = normalized.split(/\s+/);
+    return tokens.every((token) => evaluateSingleComparator(version, token));
+  });
+}
+
+function extractPackageNameFromLockPath(pkgPath: string): string {
+  const marker = 'node_modules/';
+  const lastIdx = pkgPath.lastIndexOf(marker);
+  return lastIdx === -1 ? pkgPath : pkgPath.slice(lastIdx + marker.length);
+}
+
+function resolvePeerInLockfile(
+  packages: Record<string, LockfilePackageNode>,
+  fromPkgPath: string,
+  peerName: string
+): { path: string; node: LockfilePackageNode } | null {
+  let cursor = fromPkgPath;
+  while (true) {
+    const candidatePath = `${cursor ? `${cursor}/` : ''}node_modules/${peerName}`;
+    const candidateNode = packages[candidatePath];
+    if (candidateNode) {
+      return { path: candidatePath, node: candidateNode };
+    }
+    const parentMarkerIdx = cursor.lastIndexOf('/node_modules/');
+    if (parentMarkerIdx !== -1) {
+      cursor = cursor.slice(0, parentMarkerIdx);
+    } else if (cursor.startsWith('node_modules/')) {
+      cursor = '';
+    } else {
+      break;
+    }
+  }
+  return null;
+}
+
+function matchesOverrideSelectorKey(
+  overrideKey: string,
+  targetName: string,
+  targetVersion: string | undefined
+): boolean {
+  if (overrideKey === targetName) {
+    return true;
+  }
+  if (!overrideKey.startsWith(`${targetName}@`)) {
+    return false;
+  }
+  if (!targetVersion) {
+    return true;
+  }
+  const selectorRange = overrideKey.slice(targetName.length + 1).trim();
+  return satisfiesSemverRange(targetVersion, selectorRange);
+}
+
+function isPeerOverriddenInManifest(
+  overrides: Record<string, unknown> | undefined,
+  pkgName: string,
+  pkgVersion: string | undefined,
+  peerName: string,
+  resolvedPeerVersion: string
+): boolean {
+  if (!overrides) {
+    return false;
+  }
+  for (const [key, val] of Object.entries(overrides)) {
+    if (typeof val === 'string' && matchesOverrideSelectorKey(key, peerName, resolvedPeerVersion)) {
+      return true;
+    }
+    if (
+      val &&
+      typeof val === 'object' &&
+      !Array.isArray(val) &&
+      matchesOverrideSelectorKey(key, pkgName, pkgVersion)
+    ) {
+      const nested = val as Record<string, unknown>;
+      for (const nestedKey of Object.keys(nested)) {
+        if (matchesOverrideSelectorKey(nestedKey, peerName, resolvedPeerVersion)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+function validateLockfilePeerDependencies(
+  lockRelPath: string,
+  lockData: ParsedLockfile,
+  manifestOverrides: Record<string, unknown> | undefined,
+  violations: Violation[]
+): void {
+  const packages = lockData.packages;
+  if (!packages) {
+    return;
+  }
+
+  for (const [pkgPath, pkgNode] of Object.entries(packages)) {
+    if (!pkgPath || !pkgNode.peerDependencies || pkgNode.resolved?.startsWith('file:')) {
+      continue;
+    }
+    const pkgName = extractPackageNameFromLockPath(pkgPath);
+
+    for (const [peerName, peerRange] of Object.entries(pkgNode.peerDependencies)) {
+      const isOptional = pkgNode.peerDependenciesMeta?.[peerName]?.optional === true;
+      const resolved = resolvePeerInLockfile(packages, pkgPath, peerName);
+
+      if (!resolved || !resolved.node.version) {
+        if (
+          isOptional ||
+          isPeerOverriddenInManifest(manifestOverrides, pkgName, pkgNode.version, peerName, '')
+        ) {
+          continue;
+        }
+        violations.push({
+          filePath: lockRelPath,
+          lineNumber: 1,
+          lineContent: '',
+          imageRef: `${pkgName} -> ${peerName}`,
+          reason: `${lockRelPath} package "${pkgPath}" (${pkgNode.version ?? 'unknown'}) requires non-optional peerDependency "${peerName}@${peerRange}", which is missing from the lockfile graph.`,
+        });
+        continue;
+      }
+
+      if (resolved.node.resolved?.startsWith('file:')) {
+        continue;
+      }
+
+      if (satisfiesSemverRange(resolved.node.version, peerRange)) {
+        continue;
+      }
+
+      if (
+        isPeerOverriddenInManifest(
+          manifestOverrides,
+          pkgName,
+          pkgNode.version,
+          peerName,
+          resolved.node.version
+        )
+      ) {
+        continue;
+      }
+
+      violations.push({
+        filePath: lockRelPath,
+        lineNumber: 1,
+        lineContent: '',
+        imageRef: `${pkgName} -> ${peerName}`,
+        reason: `${lockRelPath} package "${pkgPath}" (${pkgNode.version ?? 'unknown'}) requires peerDependency "${peerName}@${peerRange}", which conflicts with resolved "${resolved.path}@${resolved.node.version}".`,
+      });
+    }
+  }
 }
 
 function main(): void {

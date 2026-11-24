@@ -1,4 +1,11 @@
 import { buildArchetypeDataset, DEMO_SHIPPING_ADDRESS } from '../demoSeed';
+import { createDemoStore } from '@/lib/staticDemo/store';
+import {
+  getBasePath,
+  getPortalBaseUrl,
+  stripBasePath,
+  withBasePath,
+} from '@/lib/basePath';
 import {
   applyDemoSampleSelection,
   findDemoGuestByCode,
@@ -23,7 +30,11 @@ import {
   updateDemoConfigOverrides,
   updateDemoGuestAddress,
 } from '../demoStore';
-import { installDemoFetchInterceptor } from '../demoApiHandler';
+import { dispatchDemoApiRequest, installDemoFetchInterceptor } from '../demoApiHandler';
+import {
+  dispatchDemoApiRequest as noopDispatchDemoApiRequest,
+  installDemoFetchInterceptor as noopInstallDemoFetchInterceptor,
+} from '../demoApiHandler.noop';
 
 describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
   beforeEach(() => {
@@ -99,6 +110,32 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
     expect(active.weddingParty).toEqual([]);
     expect(active.attractions).toEqual([]);
     expect(active.faqs).toEqual([]);
+
+    // Re-hydrating when staticDemo store already has matching activeArchetype preserves its snapshot
+    const prevInstalled = window.__STATIC_DEMO_INSTALLED__;
+    try {
+      const matchingStore = createDemoStore({ storage: null, initialArchetype: 'destination' });
+      const matchingSwitchSpy = jest.spyOn(matchingStore, 'switchArchetype');
+      window.__STATIC_DEMO_INSTALLED__ = {
+        store: matchingStore,
+        routeRequest: jest.fn(),
+        uninstall: jest.fn(),
+      };
+      hydrateDemoStateFromStorage();
+      expect(matchingSwitchSpy).not.toHaveBeenCalled();
+
+      const differentStore = createDemoStore({ storage: null, initialArchetype: 'classic' });
+      const differentSwitchSpy = jest.spyOn(differentStore, 'switchArchetype');
+      window.__STATIC_DEMO_INSTALLED__ = {
+        store: differentStore,
+        routeRequest: jest.fn(),
+        uninstall: jest.fn(),
+      };
+      hydrateDemoStateFromStorage();
+      expect(differentSwitchSpy).toHaveBeenCalledWith('destination');
+    } finally {
+      window.__STATIC_DEMO_INSTALLED__ = prevInstalled;
+    }
 
     unsubscribe();
   });
@@ -808,6 +845,125 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
           .status
       ).toBe(404);
       expect((await window.fetch('/api/admin/overview-stats')).status).toBe(200);
+
+      // Guest portal session, personalized schedule, and interactive RSVP submission
+      const initialGuestSession = await (await window.fetch('/api/guest/session')).json();
+      expect(initialGuestSession).toEqual(
+        expect.objectContaining({ status: 'none', isVerified: false, invitationCode: null })
+      );
+      const publicSchedule = await (await window.fetch('/api/schedule')).json();
+      expect(publicSchedule.isGuest).toBe(false);
+      expect(Array.isArray(publicSchedule.data)).toBe(true);
+      expect(publicSchedule.data.length).toBeGreaterThan(0);
+      expect(
+        (
+          await window.fetch('/api/rsvp', {
+            method: 'POST',
+            body: JSON.stringify({ subEventId: publicSchedule.data[0].id, status: 'attending' }),
+          })
+        ).status
+      ).toBe(401);
+
+      await window.fetch('/api/registry/validate-code?code=SMITH2026');
+      const unlockedGuestSession = await (await window.fetch('/api/guest/session')).json();
+      expect(unlockedGuestSession).toEqual(
+        expect.objectContaining({
+          status: 'invitation',
+          isVerified: true,
+          invitationCode: 'SMITH2026',
+          code: 'SMITH2026',
+        })
+      );
+      const guestSchedule = await (await window.fetch('/api/schedule')).json();
+      expect(guestSchedule.isGuest).toBe(true);
+      const targetSubEventId = guestSchedule.data[0].id as string;
+      expect(
+        (
+          await window.fetch('/api/rsvp', {
+            method: 'POST',
+            body: JSON.stringify({ subEventId: targetSubEventId, status: 'pending' }),
+          })
+        ).status
+      ).toBe(400);
+      const rsvpSaveRes = await window.fetch('/api/rsvp', {
+        method: 'POST',
+        body: JSON.stringify({
+          subEventId: targetSubEventId,
+          status: 'attending',
+          plusOneCount: 1,
+          dietaryNotes: 'No shellfish',
+          plusOneNames: ['Alex Smith'],
+        }),
+      });
+      expect(rsvpSaveRes.status).toBe(200);
+      const refreshedSchedule = await (await window.fetch('/api/schedule')).json();
+      const savedEvent = refreshedSchedule.data.find(
+        (evt: { id: string }) => evt.id === targetSubEventId
+      );
+      expect(savedEvent.userRsvp).toEqual(
+        expect.objectContaining({
+          status: 'attending',
+          plusOneCount: 1,
+          dietaryNotes: 'No shellfish',
+        })
+      );
+      const rsvpClearDietaryRes = await window.fetch('/api/rsvp', {
+        method: 'POST',
+        body: JSON.stringify({
+          subEventId: targetSubEventId,
+          status: 'attending',
+          plusOneCount: 1,
+          dietaryNotes: '',
+          clearDietaryNotes: true,
+        }),
+      });
+      expect(rsvpClearDietaryRes.status).toBe(200);
+      const scheduleAfterClear = await (await window.fetch('/api/schedule')).json();
+      const clearedNoteEvent = scheduleAfterClear.data.find(
+        (evt: { id: string }) => evt.id === targetSubEventId
+      );
+      expect(clearedNoteEvent.userRsvp.dietaryNotes).toBe('');
+      const clearedGuestSession = await (
+        await window.fetch('/api/guest/session', { method: 'DELETE' })
+      ).json();
+      expect(clearedGuestSession).toEqual(
+        expect.objectContaining({ status: 'none', isVerified: false })
+      );
+
+      expect((await window.fetch('/api/ready')).status).toBe(200);
+      expect(
+        Array.isArray((await (await window.fetch('/api/weather')).json()).data.daily.temperature_2m_max)
+      ).toBe(true);
+      const photosInitial = await (await window.fetch('/api/photos')).json();
+      expect(Array.isArray(photosInitial.photos)).toBe(true);
+      expect(photosInitial.photos.length).toBeGreaterThan(0);
+      const photosSince = await (
+        await window.fetch('/api/photos?since=2026-02-01T00%3A00%3A00.000Z')
+      ).json();
+      expect(photosSince.photos).toEqual([]);
+      expect(Array.isArray((await (await window.fetch('/api/media')).json()).data)).toBe(true);
+      const moderationPayload = await (
+        await window.fetch('/api/admin/photos/moderation')
+      ).json();
+      expect(moderationPayload.photos).toEqual([]);
+      expect(moderationPayload.data).toEqual([]);
+      const publicAddrRes = await window.fetch('/api/guest/address/public', {
+        method: 'POST',
+        body: JSON.stringify({
+          guestName: 'Public Collect Guest',
+          addressLine1: '100 Michigan Ave',
+          city: 'Chicago',
+          state: 'IL',
+          zipCode: '60601',
+        }),
+      });
+      expect(publicAddrRes.status).toBe(200);
+      expect(Array.isArray((await (await window.fetch('/api/admin/features')).json()).data)).toBe(true);
+      expect(Array.isArray((await (await window.fetch('/api/admin/settings?list=true')).json()).data)).toBe(true);
+      expect((await (await window.fetch('/api/admin/settings')).json()).data.id).toBe('global');
+      expect(Array.isArray((await (await window.fetch('/api/admin/content-nodes')).json()).data)).toBe(true);
+      expect(Array.isArray((await (await window.fetch('/api/admin/versions')).json()).data.items)).toBe(true);
+      expect((await window.fetch('/api/admin/seating/export?format=pdf')).headers.get('Content-Type')).toBe('application/pdf');
       expect((await window.fetch('/api/unknown-endpoint', { method: 'POST', body: '["array-body"]' })).status).toBe(404);
 
       // Public address collection postal validation, tag isolation, and promotion to invited
@@ -857,6 +1013,12 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
         (await window.fetch(`/api/registry/validate-code?code=${encodeURIComponent(collectedCode)}`))
           .status
       ).toBe(404);
+      setDemoGuestSession({ invitationCode: collectedCode, guestName: 'Morgan Address Only' });
+      const unpromotedDemoSession = await (await window.fetch('/api/guest/session')).json();
+      expect(unpromotedDemoSession).toEqual(
+        expect.objectContaining({ status: 'none', isVerified: false, invitationCode: null })
+      );
+      setDemoGuestSession(null);
       const milestonesBeforePromote = await (
         await window.fetch('/api/admin/onboarding-milestones')
       ).json();
@@ -899,5 +1061,123 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
       uninstallFirst();
       window.fetch = originalFetch;
     }
+  });
+
+  it('serves localized seasonal climate forecast from /api/weather in demo mode without external calls', async () => {
+    const originalFetch = window.fetch;
+    const fallbackFetch = jest.fn(async () => new Response('unexpected', { status: 500 }));
+    window.fetch = fallbackFetch as unknown as typeof window.fetch;
+
+    setDemoRuntimeActive(true);
+    const uninstall = installDemoFetchInterceptor();
+
+    try {
+      // Classic preset (Minneapolis, September -> warm temperate)
+      const classicRes = await window.fetch('/api/weather');
+      expect(classicRes.status).toBe(200);
+      const classicForecast = await classicRes.json();
+      expect(classicForecast.isLiveForecast).toBe(false);
+      expect(classicForecast.liveForecastAvailableDate).toBe('2026-09-02');
+      expect(classicForecast.daily.time).toEqual(['2026-09-19']);
+      expect(classicForecast.daily.temperature_2m_max[0]).toBe(82);
+
+      // Destination preset (Amalfi Coast October -> mild Mediterranean autumn)
+      setDemoArchetype('destination');
+      const destRes = await window.fetch('/api/weather');
+      expect(destRes.status).toBe(200);
+      const destForecast = await destRes.json();
+      expect(destForecast.isLiveForecast).toBe(false);
+      expect(destForecast.daily.temperature_2m_max[0]).toBe(62);
+
+      // Tropical venue override (Maui July -> warm tropical band)
+      updateDemoConfigOverrides({
+        latitude: 20.7984,
+        longitude: -156.3319,
+        weddingDate: new Date('2026-07-18T18:00:00.000Z'),
+        timezone: 'Pacific/Honolulu',
+      });
+      const tropicalRes = await window.fetch('/api/weather');
+      expect(tropicalRes.status).toBe(200);
+      const tropicalForecast = await tropicalRes.json();
+      expect(tropicalForecast.daily.temperature_2m_max[0]).toBeGreaterThanOrEqual(85);
+
+      // Custom venue override (high latitude winter)
+      updateDemoConfigOverrides({
+        latitude: 64.1466,
+        longitude: -21.9426,
+        weddingDate: new Date('2026-12-12T16:00:00.000Z'),
+        timezone: 'UTC',
+      });
+      const customRes = await window.fetch('/api/weather');
+      expect(customRes.status).toBe(200);
+      const customForecast = await customRes.json();
+      expect(customForecast.daily.time).toEqual(['2026-12-12']);
+      expect(customForecast.daily.temperature_2m_max[0]).toBeLessThanOrEqual(32);
+      expect(fallbackFetch).not.toHaveBeenCalled();
+    } finally {
+      uninstall();
+      window.fetch = originalFetch;
+    }
+  });
+
+  it('dispatches demo API requests directly without patching window.fetch and provides safe noop stubs for standalone builds', async () => {
+    expect(await noopDispatchDemoApiRequest('/api/admin/me')).toBeNull();
+    const noopUninstall = noopInstallDemoFetchInterceptor();
+    expect(() => noopUninstall()).not.toThrow();
+
+    setDemoPersona('setup');
+    const emptySetupCheck = await dispatchDemoApiRequest('/api/admin/setup', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    expect(emptySetupCheck?.status).toBe(200);
+    expect(await emptySetupCheck?.json()).toMatchObject({
+      success: true,
+      requiresSetup: true,
+      setupCompleted: false,
+    });
+
+    const modulesRes = await dispatchDemoApiRequest('/api/admin/setup', {
+      method: 'POST',
+      body: JSON.stringify({
+        partner1Name: 'Avery',
+        partner2Name: 'Jordan',
+        modules: { weather: false, interactive3D: false },
+      }),
+    });
+    expect(modulesRes?.status).toBe(200);
+    expect(getDemoState().configOverrides.modules?.weather).toBe(false);
+    expect(getDemoState().configOverrides.modules?.interactive3D).toBe(false);
+
+    const completeRes = await dispatchDemoApiRequest('/api/admin/setup', {
+      method: 'POST',
+      body: JSON.stringify({ setupCompleted: true }),
+    });
+    expect(completeRes?.status).toBe(200);
+    expect(getDemoState().persona).toBe('admin');
+
+    // Subpath /api/* normalization works without patching global fetch
+    const subpathRes = await dispatchDemoApiRequest('/wedding_website/api/admin/me');
+    expect(subpathRes?.status).toBe(200);
+    expect(await subpathRes?.json()).toEqual({ isAdmin: true });
+  });
+
+  it('normalizes subpath URLs idempotently via basePath helpers', () => {
+    expect(getBasePath('')).toBe('');
+    expect(getBasePath('/wedding_website/demo/')).toBe('/wedding_website/demo');
+    expect(withBasePath('/images/placeholder.png', '/wedding_website/demo')).toBe(
+      '/wedding_website/demo/images/placeholder.png'
+    );
+    expect(
+      withBasePath('/wedding_website/demo/images/placeholder.png', '/wedding_website/demo')
+    ).toBe('/wedding_website/demo/images/placeholder.png');
+    expect(withBasePath('https://example.com/photo.jpg', '/wedding_website/demo')).toBe(
+      'https://example.com/photo.jpg'
+    );
+    expect(stripBasePath('/wedding_website/demo/api/weather', '/wedding_website/demo')).toBe(
+      '/api/weather'
+    );
+    expect(getPortalBaseUrl('/wedding_website/demo')).toBe('/wedding_website/');
+    expect(getPortalBaseUrl('/demo')).toBe('/');
   });
 });

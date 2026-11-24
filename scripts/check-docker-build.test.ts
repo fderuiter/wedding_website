@@ -112,8 +112,7 @@ function writeValidFixtureWorkspace(targetDir: string): void {
       `    image: postgres:15-alpine@${POSTGRES_DIGEST}`,
       '  migration:',
       '    image: wedding-website:latest',
-      '    build:',
-      '      context: .',
+      '    pull_policy: never',
       '  app:',
       '    image: wedding-website:latest',
       '    init: true',
@@ -129,9 +128,8 @@ function writeValidFixtureWorkspace(targetDir: string): void {
     [
       'services:',
       '  migration:',
-      '    build:',
-      '      cache_from:',
-      '        - type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64}',
+      '    environment:',
+      '      DATABASE_URL: postgres://wedding:wedding123@db:5432/wedding',
       '  app:',
       '    build:',
       '      cache_from:',
@@ -618,7 +616,7 @@ describe('check-docker-build', () => {
     );
   });
 
-  it('enforces Dockerfile exclusion in .dockerignore and GHA cache isolation in docker-compose.ci.yml', () => {
+  it('enforces Dockerfile exclusion in .dockerignore, single-owner Compose build rules, and GHA cache isolation in docker-compose.ci.yml', () => {
     fs.writeFileSync(
       path.join(tempDir, '.dockerignore'),
       ['node_modules', '.next', 'docker-entrypoint.sh', ''].join('\n')
@@ -630,8 +628,15 @@ describe('check-docker-build', () => {
         'services:',
         '  db:',
         `    image: postgres:15-alpine@${POSTGRES_DIGEST}`,
+        '  migration:',
+        '    image: wedding-website:latest',
+        '    pull_policy: never',
+        '    build:',
+        '      context: .',
         '  app:',
         '    image: wedding-website:latest',
+        '    init: true',
+        '    stop_grace_period: 15s',
         '    build:',
         '      context: .',
         '      cache_from:',
@@ -645,14 +650,28 @@ describe('check-docker-build', () => {
       [
         'services:',
         '  migration:',
+        '    build:',
+        '      cache_from:',
+        '        - type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64}',
         '    environment:',
         '      DATABASE_URL: postgres://wedding:wedding123@db:5432/wedding',
         '  app:',
         '    build:',
-        '      cache_from:',
-        '        - type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64}',
         '      cache_to:',
         '        - type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64},mode=max',
+        '',
+      ].join('\n')
+    );
+
+    fs.writeFileSync(
+      path.join(tempDir, 'docker-compose.rollout.yml'),
+      [
+        'services:',
+        '  app-standby:',
+        '    image: wedding-website:latest',
+        '    pull_policy: never',
+        '    build:',
+        '      context: .',
         '',
       ].join('\n')
     );
@@ -673,15 +692,51 @@ describe('check-docker-build', () => {
           imageRef: 'type=gha',
         }),
         expect.objectContaining({
+          filePath: 'docker-compose.yml',
+          imageRef: 'migration.build',
+        }),
+        expect.objectContaining({
           filePath: 'docker-compose.ci.yml',
-          imageRef: 'migration.build.cache_from',
+          imageRef: 'migration.build',
+        }),
+        expect.objectContaining({
+          filePath: 'docker-compose.ci.yml',
+          imageRef: 'app.build.cache_from',
         }),
         expect.objectContaining({
           filePath: 'docker-compose.ci.yml',
           imageRef: 'app.build.cache_to',
         }),
+        expect.objectContaining({
+          filePath: 'docker-compose.rollout.yml',
+          imageRef: 'app-standby.build',
+        }),
       ])
     );
+
+    const bakePrint = spawnSync(
+      'docker',
+      [
+        'compose',
+        '--env-file',
+        '.env.ci',
+        '-f',
+        'docker-compose.yml',
+        '-f',
+        'docker-compose.ci.yml',
+        'build',
+        '--print',
+      ],
+      { cwd: REPO_ROOT, encoding: 'utf8' }
+    );
+    if (bakePrint.status === 0 && bakePrint.stdout.trim()) {
+      const parsedBake = JSON.parse(bakePrint.stdout) as {
+        group?: { default?: { targets?: string[] } };
+        target?: Record<string, unknown>;
+      };
+      expect(parsedBake.group?.default?.targets).toEqual(['app']);
+      expect(Object.keys(parsedBake.target ?? {})).toEqual(['app']);
+    }
   });
 
   it('ignores dev-only .next/ directories by default and enforces .next/standalone when requireStandalone is true', () => {
@@ -1036,6 +1091,217 @@ describe('check-docker-build', () => {
         filePath: 'docker/prisma-cli/package-lock.json',
         imageRef: 'effect',
         reason: expect.stringContaining('does not match "3.22.5" in package-lock.json'),
+      }),
+    ]);
+  });
+
+  it('validates peerDependencies ranges offline across package-lock.json and docker/prisma-cli/package-lock.json while honoring optional peers and overrides', () => {
+    const pkgPath = path.join(tempDir, 'package.json');
+    const basePkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as Record<string, unknown>;
+    fs.writeFileSync(
+      pkgPath,
+      `${JSON.stringify(
+        {
+          ...basePkg,
+          devDependencies: {
+            '@typescript-eslint/eslint-plugin': '^8.72.0',
+            'eslint-plugin-react': '^7.37.5',
+            eslint: '^10.15.0',
+            typescript: '^7.0.2',
+          },
+          overrides: {
+            'eslint-plugin-react': {
+              eslint: '$eslint',
+            },
+          },
+        },
+        null,
+        2
+      )}\n`
+    );
+
+    fs.writeFileSync(
+      path.join(tempDir, 'package-lock.json'),
+      JSON.stringify(
+        {
+          lockfileVersion: 3,
+          packages: {
+            '': {
+              devDependencies: {
+                '@typescript-eslint/eslint-plugin': '^8.72.0',
+                'eslint-plugin-react': '^7.37.5',
+                eslint: '^10.15.0',
+                typescript: '^7.0.2',
+              },
+            },
+            'node_modules/@typescript-eslint/eslint-plugin': {
+              version: '8.74.0',
+              peerDependencies: {
+                eslint: '^8.57.0 || ^9.0.0 || ^10.0.0',
+                typescript: '>=4.8.4 <6.1.0',
+              },
+            },
+            'node_modules/eslint-plugin-react': {
+              version: '7.37.5',
+              peerDependencies: {
+                eslint: '^3 || ^4 || ^5 || ^6 || ^7 || ^8 || ^9.7',
+              },
+            },
+            'node_modules/eslint': {
+              version: '10.15.0',
+            },
+            'node_modules/typescript': {
+              version: '7.0.2',
+            },
+            'node_modules/prisma': { version: '7.10.1' },
+            'node_modules/@prisma/config': { version: '7.10.1' },
+            'node_modules/effect': { version: '3.22.5' },
+          },
+        },
+        null,
+        2
+      )
+    );
+
+    const cliDir = path.join(tempDir, 'docker', 'prisma-cli');
+    fs.mkdirSync(cliDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(cliDir, 'package.json'),
+      JSON.stringify(
+        {
+          name: 'prisma-cli-isolated',
+          private: true,
+          dependencies: {
+            '@prisma/config': '7.10.1',
+            prisma: '7.10.1',
+          },
+        },
+        null,
+        2
+      )
+    );
+    fs.writeFileSync(
+      path.join(cliDir, 'package-lock.json'),
+      JSON.stringify(
+        {
+          lockfileVersion: 3,
+          packages: {
+            '': {
+              dependencies: {
+                '@prisma/config': '7.10.1',
+                prisma: '7.10.1',
+              },
+            },
+            'node_modules/prisma': {
+              version: '7.10.1',
+              peerDependencies: {
+                'better-sqlite3': '>=9.0.0',
+                'required-driver': '^2.0.0',
+              },
+              peerDependenciesMeta: {
+                'better-sqlite3': { optional: true },
+              },
+            },
+            'node_modules/@prisma/config': { version: '7.10.1' },
+            'node_modules/effect': { version: '3.22.5' },
+          },
+        },
+        null,
+        2
+      )
+    );
+
+    const { violations } = checkDockerBuild(tempDir);
+    expect(violations).toEqual([
+      expect.objectContaining({
+        filePath: 'package-lock.json',
+        imageRef: '@typescript-eslint/eslint-plugin -> typescript',
+        reason: expect.stringContaining('conflicts with resolved "node_modules/typescript@7.0.2"'),
+      }),
+      expect.objectContaining({
+        filePath: 'docker/prisma-cli/package-lock.json',
+        imageRef: 'prisma -> required-driver',
+        reason: expect.stringContaining('requires non-optional peerDependency "required-driver@^2.0.0"'),
+      }),
+    ]);
+  });
+
+  it('flags non-overridden transitive peerDependencies conflicts against root packages while honoring scoped overrides', () => {
+    const pkgPath = path.join(tempDir, 'package.json');
+    const basePkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as Record<string, unknown>;
+    fs.writeFileSync(
+      pkgPath,
+      `${JSON.stringify(
+        {
+          ...basePkg,
+          devDependencies: {
+            '@babel/core': '^8.0.0',
+            eslint: '^10.15.0',
+            'eslint-config-next': '^16.4.6',
+          },
+          overrides: {
+            'eslint-plugin-import': {
+              eslint: '$eslint',
+            },
+          },
+        },
+        null,
+        2
+      )}\n`
+    );
+
+    fs.writeFileSync(
+      path.join(tempDir, 'package-lock.json'),
+      JSON.stringify(
+        {
+          lockfileVersion: 3,
+          packages: {
+            '': {
+              devDependencies: {
+                '@babel/core': '^8.0.0',
+                eslint: '^10.15.0',
+                'eslint-config-next': '^16.4.6',
+              },
+            },
+            'node_modules/@babel/core': { version: '8.1.3' },
+            'node_modules/eslint': { version: '10.15.0' },
+            'node_modules/eslint-config-next': {
+              version: '16.4.6',
+              peerDependencies: { eslint: '>=9.0.0' },
+            },
+            'node_modules/eslint-config-next/node_modules/eslint-plugin-import': {
+              version: '2.32.0',
+              peerDependencies: { eslint: '^2 || ^3 || ^4 || ^5 || ^6 || ^7.2.0 || ^8 || ^9' },
+            },
+            'node_modules/eslint-config-next/node_modules/eslint-plugin-jsx-a11y': {
+              version: '6.10.2',
+              peerDependencies: { eslint: '^3 || ^4 || ^5 || ^6 || ^7 || ^8 || ^9' },
+            },
+            'node_modules/babel-preset-current-node-syntax/node_modules/@babel/plugin-syntax-bigint': {
+              version: '7.8.3',
+              peerDependencies: { '@babel/core': '^7.0.0-0' },
+            },
+            'node_modules/prisma': { version: '7.10.1' },
+            'node_modules/@prisma/config': { version: '7.10.1' },
+            'node_modules/effect': { version: '3.22.5' },
+          },
+        },
+        null,
+        2
+      )
+    );
+
+    const { violations } = checkDockerBuild(tempDir);
+    expect(violations).toEqual([
+      expect.objectContaining({
+        filePath: 'package-lock.json',
+        imageRef: 'eslint-plugin-jsx-a11y -> eslint',
+        reason: expect.stringContaining('conflicts with resolved "node_modules/eslint@10.15.0"'),
+      }),
+      expect.objectContaining({
+        filePath: 'package-lock.json',
+        imageRef: '@babel/plugin-syntax-bigint -> @babel/core',
+        reason: expect.stringContaining('conflicts with resolved "node_modules/@babel/core@8.1.3"'),
       }),
     ]);
   });

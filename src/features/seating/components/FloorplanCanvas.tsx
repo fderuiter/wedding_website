@@ -4,9 +4,9 @@ import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { EnsureToastProvider, useToast } from '@/components/ui/ToastProvider';
-import { SeatingTableDTO } from '../schemas';
+import type { SeatingTableDTO } from '../schemas';
 import {
-  InvitationCodeDTO,
+  type InvitationCodeDTO,
   formatGuestCustomAnswers,
   formatGuestMealSelections,
   formatGuestPlusOneNames,
@@ -15,6 +15,7 @@ import { Heading, type HeadingLevel } from '@/components/ui/Layout';
 import {
   computeScaledTableDimensions,
   computeSeatPosition,
+  computeTableMinBounds,
   resolveDetailedSeatAssignments,
 } from '../seatLayout';
 import {
@@ -32,6 +33,41 @@ const DEFAULT_STAGE_HEIGHT = 650;
 const STAGE_PADDING = 48;
 const NUDGE_STEP_PX = 20;
 const NUDGE_FAST_STEP_PX = 50;
+const ROTATION_HANDLE_POLE_OFFSET_PX = 62;
+const ROTATION_HANDLE_KNOB_CLEARANCE_PX = 16;
+
+function shouldFlipRotationHandle(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  rotation: number,
+  stageBounds: { width: number; height: number }
+): boolean {
+  const cx = width / 2;
+  const cy = height / 2;
+  const rad = (rotation * Math.PI) / 180;
+  const poleDistance = cy + ROTATION_HANDLE_POLE_OFFSET_PX;
+  const dx = poleDistance * Math.sin(rad);
+  const dy = -poleDistance * Math.cos(rad);
+
+  const topPoleX = x + cx + dx;
+  const topPoleY = y + cy + dy;
+  const bottomPoleX = x + cx - dx;
+  const bottomPoleY = y + cy - dy;
+
+  const topPoleCrossesStage =
+    topPoleX - ROTATION_HANDLE_KNOB_CLEARANCE_PX < 0 ||
+    topPoleY - ROTATION_HANDLE_KNOB_CLEARANCE_PX < 0 ||
+    topPoleX + ROTATION_HANDLE_KNOB_CLEARANCE_PX > stageBounds.width ||
+    topPoleY + ROTATION_HANDLE_KNOB_CLEARANCE_PX > stageBounds.height;
+
+  const bottomPoleClearsNegativeAxes =
+    bottomPoleX - ROTATION_HANDLE_KNOB_CLEARANCE_PX >= 0 &&
+    bottomPoleY - ROTATION_HANDLE_KNOB_CLEARANCE_PX >= 0;
+
+  return topPoleCrossesStage && bottomPoleClearsNegativeAxes;
+}
 
 interface ActiveDropTarget {
   type: 'table' | 'seat';
@@ -48,6 +84,8 @@ type ActivePointerGesture =
     startY: number;
     previewX: number;
     previewY: number;
+    minX: number;
+    minY: number;
     offsetX: number;
     offsetY: number;
     width: number;
@@ -64,6 +102,7 @@ type ActivePointerGesture =
     tableName: string;
     startRotation: number;
     previewRotation: number;
+    handleFlipped: boolean;
     x: number;
     y: number;
     width: number;
@@ -144,6 +183,10 @@ function FloorplanCanvasContent({
   const [liveAnnouncement, setLiveAnnouncement] = useState('');
   const [activeDropTarget, setActiveDropTarget] = useState<ActiveDropTarget | null>(null);
   const [internalPlacementTableId, setInternalPlacementTableId] = useState<string | null>(null);
+  const [measuredViewportBounds, setMeasuredViewportBounds] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
 
   const isPlacementMode =
     Boolean(selectedTableId) &&
@@ -174,17 +217,60 @@ function FloorplanCanvasContent({
     []
   );
 
+  const getTableMinBounds = useCallback(
+    (table: SeatingTableDTO, rotationOverride?: number) =>
+      computeTableMinBounds({
+        shape: table.shape,
+        capacity: table.capacity,
+        width: table.width,
+        height: table.height,
+        rotation: rotationOverride ?? table.rotation ?? 0,
+      }),
+    []
+  );
+
   // Compute scrollable inner stage dimensions so off-screen and high-capacity tables remain reachable
   const stageDimensions = useMemo(() => {
     let maxRight = DEFAULT_STAGE_WIDTH;
     let maxBottom = DEFAULT_STAGE_HEIGHT;
     for (const t of tables) {
       const { width: w, height: h } = getTableScaledBounds(t);
-      maxRight = Math.max(maxRight, t.x + w + STAGE_PADDING);
-      maxBottom = Math.max(maxBottom, t.y + h + STAGE_PADDING);
+      const { minX, minY } = getTableMinBounds(t);
+      maxRight = Math.max(maxRight, Math.max(minX, t.x) + w + STAGE_PADDING);
+      maxBottom = Math.max(maxBottom, Math.max(minY, t.y) + h + STAGE_PADDING);
     }
     return { width: maxRight, height: maxBottom };
-  }, [getTableScaledBounds, tables]);
+  }, [getTableMinBounds, getTableScaledBounds, tables]);
+
+  useEffect(() => {
+    const canvasEl = canvasRef.current;
+    if (!canvasEl) return;
+
+    const measure = () => {
+      const rect = canvasEl.getBoundingClientRect();
+      const nextWidth = Math.max(rect.width || 0, canvasEl.clientWidth || 0);
+      const nextHeight = Math.max(rect.height || 0, canvasEl.clientHeight || 0);
+      setMeasuredViewportBounds((prev) =>
+        prev && prev.width === nextWidth && prev.height === nextHeight
+          ? prev
+          : { width: nextWidth, height: nextHeight }
+      );
+    };
+
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(canvasEl);
+    return () => observer.disconnect();
+  }, [tables.length]);
+
+  const renderStageBounds = useMemo(
+    () => ({
+      width: Math.max(stageDimensions.width, measuredViewportBounds?.width ?? 0),
+      height: Math.max(stageDimensions.height, measuredViewportBounds?.height ?? 0),
+    }),
+    [measuredViewportBounds, stageDimensions]
+  );
 
   const getEffectiveStageBounds = useCallback(() => {
     let stageWidth = stageDimensions.width;
@@ -319,18 +405,21 @@ function FloorplanCanvasContent({
   const nudgeTableBy = useCallback(
     (table: SeatingTableDTO, dx: number, dy: number) => {
       const { width: tableWidth, height: tableHeight } = getTableScaledBounds(table);
+      const { minX, minY } = getTableMinBounds(table);
       const { width: canvasWidth, height: canvasHeight } = getEffectiveStageBounds();
 
-      const maxX = Math.max(0, canvasWidth - tableWidth);
-      const maxY = Math.max(0, canvasHeight - tableHeight);
+      const baseX = Math.max(minX, table.x);
+      const baseY = Math.max(minY, table.y);
+      const maxX = Math.max(minX, canvasWidth - tableWidth);
+      const maxY = Math.max(minY, canvasHeight - tableHeight);
 
-      const newX = Math.round(Math.max(0, Math.min(maxX, table.x + dx)));
-      const newY = Math.round(Math.max(0, Math.min(maxY, table.y + dy)));
+      const newX = Math.round(Math.max(minX, Math.min(maxX, baseX + dx)));
+      const newY = Math.round(Math.max(minY, Math.min(maxY, baseY + dy)));
 
       onUpdateTablePosition(table.id, newX, newY);
       setLiveAnnouncement(`${table.name} moved to X ${newX}, Y ${newY}`);
     },
-    [getEffectiveStageBounds, getTableScaledBounds, onUpdateTablePosition]
+    [getEffectiveStageBounds, getTableMinBounds, getTableScaledBounds, onUpdateTablePosition]
   );
 
   useEffect(() => {
@@ -411,7 +500,8 @@ function FloorplanCanvasContent({
       const dx = stagePoint.x - centerX;
       const dy = stagePoint.y - centerY;
 
-      const deg = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
+      const angleOffset = gesture.handleFlipped ? -90 : 90;
+      const deg = Math.atan2(dy, dx) * (180 / Math.PI) + angleOffset;
       let normalized = Math.round(((deg % 360) + 360) % 360);
       if (normalized === 360) normalized = 0;
 
@@ -430,11 +520,11 @@ function FloorplanCanvasContent({
     }
 
     const { width: canvasWidth, height: canvasHeight } = getEffectiveStageBounds();
-    const maxX = Math.max(0, canvasWidth - gesture.width);
-    const maxY = Math.max(0, canvasHeight - gesture.height);
+    const maxX = Math.max(gesture.minX, canvasWidth - gesture.width);
+    const maxY = Math.max(gesture.minY, canvasHeight - gesture.height);
 
-    const newX = Math.round(Math.max(0, Math.min(maxX, stagePoint.x - gesture.offsetX)));
-    const newY = Math.round(Math.max(0, Math.min(maxY, stagePoint.y - gesture.offsetY)));
+    const newX = Math.round(Math.max(gesture.minX, Math.min(maxX, stagePoint.x - gesture.offsetX)));
+    const newY = Math.round(Math.max(gesture.minY, Math.min(maxY, stagePoint.y - gesture.offsetY)));
 
     if (newX === gesture.previewX && newY === gesture.previewY && gesture.hasMoved) {
       return;
@@ -506,7 +596,10 @@ function FloorplanCanvasContent({
       return;
     }
 
-    if (gesture.previewX !== gesture.startX || gesture.previewY !== gesture.startY) {
+    if (
+      gesture.hasMoved &&
+      (gesture.previewX !== gesture.startX || gesture.previewY !== gesture.startY)
+    ) {
       callbacksRef.current.onUpdateTablePosition(gesture.tableId, gesture.previewX, gesture.previewY);
       setLiveAnnouncement(`${gesture.tableName} moved to X ${gesture.previewX}, Y ${gesture.previewY}`);
     }
@@ -594,14 +687,27 @@ function FloorplanCanvasContent({
 
     const startRotation = table.rotation || 0;
     const { width: scaledW, height: scaledH } = getTableScaledBounds(table, startRotation);
+    const { minX, minY } = getTableMinBounds(table, startRotation);
+    const clampedX = Math.max(minX, table.x);
+    const clampedY = Math.max(minY, table.y);
+    const stageBounds = getEffectiveStageBounds();
+    const handleFlipped = shouldFlipRotationHandle(
+      clampedX,
+      clampedY,
+      scaledW,
+      scaledH,
+      startRotation,
+      stageBounds
+    );
     const nextGesture: ActivePointerGesture = {
       mode: 'rotate',
       tableId: table.id,
       tableName: table.name,
       startRotation,
       previewRotation: startRotation,
-      x: table.x,
-      y: table.y,
+      handleFlipped,
+      x: clampedX,
+      y: clampedY,
       width: scaledW,
       height: scaledH,
       pointerStartX: clientX,
@@ -624,23 +730,29 @@ function FloorplanCanvasContent({
   ) => {
     onSelectTable(table.id);
 
+    const { width: scaledW, height: scaledH } = getTableScaledBounds(table);
+    const { minX, minY } = getTableMinBounds(table);
+    const clampedX = Math.max(minX, table.x);
+    const clampedY = Math.max(minY, table.y);
+
     let offsetX = 0;
     let offsetY = 0;
     if (canvasRef.current) {
       const stagePoint = clientToStagePoint(clientX, clientY);
-      offsetX = stagePoint.x - table.x;
-      offsetY = stagePoint.y - table.y;
+      offsetX = stagePoint.x - clampedX;
+      offsetY = stagePoint.y - clampedY;
     }
 
-    const { width: scaledW, height: scaledH } = getTableScaledBounds(table);
     const nextGesture: ActivePointerGesture = {
       mode: 'drag',
       tableId: table.id,
       tableName: table.name,
       startX: table.x,
       startY: table.y,
-      previewX: table.x,
-      previewY: table.y,
+      previewX: clampedX,
+      previewY: clampedY,
+      minX,
+      minY,
       offsetX,
       offsetY,
       width: scaledW,
@@ -1212,11 +1324,12 @@ function FloorplanCanvasContent({
           if (targetTable) {
             const stagePoint = clientToStagePoint(e.clientX, e.clientY);
             const { width: scaledW, height: scaledH } = getTableScaledBounds(targetTable);
+            const { minX, minY } = getTableMinBounds(targetTable);
             const { width: canvasWidth, height: canvasHeight } = getEffectiveStageBounds();
-            const maxX = Math.max(0, canvasWidth - scaledW);
-            const maxY = Math.max(0, canvasHeight - scaledH);
-            const newX = Math.round(Math.max(0, Math.min(maxX, stagePoint.x - scaledW / 2)));
-            const newY = Math.round(Math.max(0, Math.min(maxY, stagePoint.y - scaledH / 2)));
+            const maxX = Math.max(minX, canvasWidth - scaledW);
+            const maxY = Math.max(minY, canvasHeight - scaledH);
+            const newX = Math.round(Math.max(minX, Math.min(maxX, stagePoint.x - scaledW / 2)));
+            const newY = Math.round(Math.max(minY, Math.min(maxY, stagePoint.y - scaledH / 2)));
             onUpdateTablePosition(targetTable.id, newX, newY);
             setLiveAnnouncement(`${targetTable.name} moved to X ${newX}, Y ${newY}`);
             return;
@@ -1293,24 +1406,45 @@ function FloorplanCanvasContent({
           const isDraggingThisTable = activeGesture?.mode === 'drag' && activeGesture.tableId === table.id;
           const isRotatingThisTable = activeGesture?.mode === 'rotate' && activeGesture.tableId === table.id;
           const isGestureActiveOnTable = isDraggingThisTable || isRotatingThisTable;
-          const renderedX = isDraggingThisTable ? activeGesture.previewX : table.x;
-          const renderedY = isDraggingThisTable ? activeGesture.previewY : table.y;
           const renderedRotation = isRotatingThisTable ? activeGesture.previewRotation : (table.rotation || 0);
           const { width: scaledW, height: scaledH } = getTableScaledBounds(table, renderedRotation);
+          const { minX, minY } = getTableMinBounds(table, renderedRotation);
+          const renderedX = isDraggingThisTable ? activeGesture.previewX : Math.max(minX, table.x);
+          const renderedY = isDraggingThisTable ? activeGesture.previewY : Math.max(minY, table.y);
           const isCircularSurface = table.shape === 'round' || table.shape === 'cake';
 
           const cx = scaledW / 2;
           const cy = scaledH / 2;
           const rad = (renderedRotation * Math.PI) / 180;
+          const handleFlipped = isRotatingThisTable
+            ? activeGesture.handleFlipped
+            : shouldFlipRotationHandle(
+              renderedX,
+              renderedY,
+              scaledW,
+              scaledH,
+              renderedRotation,
+              renderStageBounds
+            );
           const rotatedHalfExtentY =
             Math.abs(cx * Math.sin(rad)) + Math.abs(cy * Math.cos(rad)) + (isLandmark ? 8 : 34);
-          const handleScreenExtentAbove = (cy + 62) * Math.cos(rad) + 16;
-          const handleScreenExtentBelow = -(cy + 62) * Math.cos(rad) + 16;
+          const handlePoleLocalY = handleFlipped
+            ? cy + ROTATION_HANDLE_POLE_OFFSET_PX
+            : -(cy + ROTATION_HANDLE_POLE_OFFSET_PX);
+          const handleScreenDeltaY = handlePoleLocalY * Math.cos(rad);
+          const handleScreenExtentAbove = -handleScreenDeltaY + ROTATION_HANDLE_KNOB_CLEARANCE_PX;
+          const handleScreenExtentBelow = handleScreenDeltaY + ROTATION_HANDLE_KNOB_CLEARANCE_PX;
           const clearanceAboveCenter = Math.max(rotatedHalfExtentY, handleScreenExtentAbove) + 21;
           const clearanceBelowCenter = Math.max(rotatedHalfExtentY, handleScreenExtentBelow) + 21;
           const placeToolbarBelow = renderedY + cy - clearanceAboveCenter < 14;
           const screenOffsetY = placeToolbarBelow ? clearanceBelowCenter : -clearanceAboveCenter;
-          const screenOffsetX = Math.max(0, 165 - (renderedX + cx));
+          const minToolbarCenterX = 165;
+          const maxToolbarCenterX = Math.max(minToolbarCenterX, renderStageBounds.width - 165);
+          const clampedToolbarCenterX = Math.min(
+            maxToolbarCenterX,
+            Math.max(minToolbarCenterX, renderedX + cx)
+          );
+          const screenOffsetX = clampedToolbarCenterX - (renderedX + cx);
           const toolbarLocalX =
             cx + screenOffsetX * Math.cos(rad) + screenOffsetY * Math.sin(rad);
           const toolbarLocalY =
@@ -1627,10 +1761,13 @@ function FloorplanCanvasContent({
                       </Button>
                     </div>
 
-                    {/* Floating Handle Stem and Knob (positioned clear of top-center seats across all rotation angles) */}
+                    {/* Floating Handle Stem and Knob (positioned clear of seats and flipped inside stage borders) */}
                     <div
                       data-testid="rotation-handle"
-                      className="absolute pointer-events-auto -top-[76px] left-1/2 -translate-x-1/2 flex flex-col items-center cursor-grab active:cursor-grabbing touch-none z-40"
+                      data-handle-flipped={handleFlipped ? 'true' : undefined}
+                      className={`absolute pointer-events-auto ${
+                        handleFlipped ? '-bottom-[76px] flex-col-reverse' : '-top-[76px] flex-col'
+                      } left-1/2 -translate-x-1/2 flex items-center cursor-grab active:cursor-grabbing touch-none z-40`}
                       onPointerDown={(e) => handleRotationPointerDown(e, table)}
                       onPointerMove={handleCanvasPointerMove}
                       onPointerUp={handleCanvasPointerUp}

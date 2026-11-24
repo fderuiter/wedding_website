@@ -1,8 +1,9 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "Universal API",
-    "version": "1.0.0"
+    "title": "Wedding Website & Custom Registry API",
+    "version": "0.1.0",
+    "description": "OpenAPI 3.0.3 contract for the self-hostable Wedding Website & Custom Registry platform."
   },
   "servers": [
     {
@@ -5981,7 +5982,8 @@
                 "required": [
                   "channel",
                   "body"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -7050,7 +7052,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -9556,7 +9558,7 @@
           {
             "name": "invitationCodeId",
             "in": "query",
-            "required": false,
+            "required": true,
             "schema": {
               "type": "string",
               "minLength": 1
@@ -10368,7 +10370,8 @@
                 "properties": {
                   "password": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "maxLength": 256
                   }
                 },
                 "required": [
@@ -15510,7 +15513,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -16270,7 +16273,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -17814,14 +17817,15 @@
         "summary": "POST /api/admin/setup",
         "description": "Endpoint for /api/admin/setup",
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
                 "properties": {
                   "password": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 256
                   },
                   "sampleArchetype": {
                     "type": "string",
@@ -18005,12 +18009,53 @@
                   "setupCompleted": {
                     "type": "boolean"
                   },
+                  "modules": {
+                    "type": "object",
+                    "properties": {
+                      "registry": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "groupGifting": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "weather": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "weddingParty": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "attractions": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "gallery": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "countdown": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "addToCalendar": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "interactive3D": {
+                        "default": true,
+                        "type": "boolean"
+                      }
+                    }
+                  },
                   "subdomain": {
                     "nullable": true,
                     "type": "string"
                   }
                 },
-                "description": "First-run site setup and authenticated configuration payload. Requires either password (validated against ADMIN_PASSWORD_HASH or ADMIN_PASSWORD during step-1 setup authentication), setupCompleted (for authenticated wizard completion), or full site initialization fields (non-placeholder baseUrl plus partner1Name & partner2Name or legacy brideName & groomName; unauthenticated first-run requests must also include password).",
+                "description": "First-run site setup, feature module toggles, and authenticated configuration or status check payload. Authenticated callers with an admin_auth session cookie may omit the request body for step-1 status checks or send setupCompleted for wizard completion; unauthenticated callers must provide password (validated against ADMIN_PASSWORD_HASH or ADMIN_PASSWORD), or submit full site initialization fields with optional modules toggles (non-placeholder baseUrl plus partner1Name & partner2Name or legacy brideName & groomName).",
                 "anyOf": [
                   {
                     "type": "object",
@@ -18020,7 +18065,8 @@
                     "properties": {
                       "password": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "maxLength": 256
                       }
                     }
                   },
@@ -21430,7 +21476,8 @@
                 "properties": {
                   "passcode": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "maxLength": 256
                   }
                 },
                 "required": [
@@ -21822,6 +21869,311 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/guest/session": {
+      "get": {
+        "tags": [
+          "Guest"
+        ],
+        "summary": "GET /api/guest/session",
+        "description": "Endpoint for /api/guest/session",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "success",
+                        "data"
+                      ],
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "none",
+                                "passcode",
+                                "invitation"
+                              ]
+                            },
+                            "isVerified": {
+                              "type": "boolean",
+                              "enum": [
+                                false
+                              ]
+                            },
+                            "invitationCode": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "code": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "guestName": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "hasPasscodeSession": {
+                              "type": "boolean",
+                              "enum": [
+                                false
+                              ]
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "isVerified",
+                            "invitationCode",
+                            "code",
+                            "guestName",
+                            "hasPasscodeSession"
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "success",
+                        "data"
+                      ],
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "none",
+                                "passcode",
+                                "invitation"
+                              ]
+                            },
+                            "isVerified": {
+                              "type": "boolean",
+                              "enum": [
+                                true
+                              ]
+                            },
+                            "invitationCode": {
+                              "type": "string"
+                            },
+                            "code": {
+                              "type": "string"
+                            },
+                            "guestName": {
+                              "type": "string"
+                            },
+                            "hasPasscodeSession": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "isVerified",
+                            "invitationCode",
+                            "code",
+                            "guestName",
+                            "hasPasscodeSession"
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "success",
+                        "data"
+                      ],
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "none",
+                                "passcode"
+                              ]
+                            },
+                            "isVerified": {
+                              "type": "boolean",
+                              "enum": [
+                                false
+                              ]
+                            },
+                            "invitationCode": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "code": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "guestName": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "hasPasscodeSession": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "isVerified",
+                            "invitationCode",
+                            "code",
+                            "guestName",
+                            "hasPasscodeSession"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Guest"
+        ],
+        "summary": "DELETE /api/guest/session",
+        "description": "Endpoint for /api/guest/session",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "none",
+                            "passcode"
+                          ]
+                        },
+                        "isVerified": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "invitationCode": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "code": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "guestName": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "hasPasscodeSession": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "isVerified",
+                        "invitationCode",
+                        "code",
+                        "guestName",
+                        "hasPasscodeSession"
+                      ]
+                    }
+                  }
                 }
               }
             }
@@ -22996,15 +23348,27 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "required": [
-                    "error"
-                  ],
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
                 }
               }
             }
@@ -23451,7 +23815,7 @@
           {
             "name": "token",
             "in": "query",
-            "required": false,
+            "required": true,
             "schema": {
               "type": "string",
               "minLength": 1
@@ -26750,7 +27114,7 @@
           {
             "name": "code",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
             }
@@ -26763,40 +27127,82 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": [
-                    "success",
-                    "data"
-                  ],
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "enum": [
-                        true
-                      ]
-                    },
-                    "data": {
+                  "anyOf": [
+                    {
                       "type": "object",
+                      "required": [
+                        "success",
+                        "data"
+                      ],
                       "properties": {
-                        "valid": {
+                        "success": {
                           "type": "boolean",
                           "enum": [
                             true
                           ]
                         },
-                        "guestName": {
-                          "type": "string"
-                        },
-                        "code": {
-                          "type": "string"
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "valid": {
+                              "type": "boolean",
+                              "enum": [
+                                false
+                              ]
+                            },
+                            "reason": {
+                              "type": "string"
+                            },
+                            "error": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "valid",
+                            "reason",
+                            "error"
+                          ]
                         }
-                      },
+                      }
+                    },
+                    {
+                      "type": "object",
                       "required": [
-                        "valid",
-                        "guestName",
-                        "code"
-                      ]
+                        "success",
+                        "data"
+                      ],
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "valid": {
+                              "type": "boolean",
+                              "enum": [
+                                true
+                              ]
+                            },
+                            "guestName": {
+                              "type": "string"
+                            },
+                            "code": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "valid",
+                            "guestName",
+                            "code"
+                          ]
+                        }
+                      }
                     }
-                  }
+                  ]
                 }
               }
             }
@@ -26991,8 +27397,7 @@
                               "type": "string",
                               "enum": [
                                 "attending",
-                                "declined",
-                                "pending"
+                                "declined"
                               ]
                             },
                             "plusOneCount": {
@@ -27004,6 +27409,9 @@
                             "dietaryNotes": {
                               "default": "",
                               "type": "string"
+                            },
+                            "clearDietaryNotes": {
+                              "type": "boolean"
                             },
                             "mealSelections": {
                               "maxItems": 21,
@@ -27051,8 +27459,7 @@
                         "type": "string",
                         "enum": [
                           "attending",
-                          "declined",
-                          "pending"
+                          "declined"
                         ]
                       },
                       "plusOneCount": {
@@ -27064,6 +27471,9 @@
                       "dietaryNotes": {
                         "default": "",
                         "type": "string"
+                      },
+                      "clearDietaryNotes": {
+                        "type": "boolean"
                       },
                       "mealSelections": {
                         "maxItems": 21,
@@ -27412,7 +27822,18 @@
           "Uploads"
         ],
         "summary": "GET /api/uploads/[...path]",
-        "description": "Streams locally stored uploaded files dynamically at /uploads/* in standalone server mode.",
+        "description": "Streams authorized local or S3-backed uploaded files dynamically at /uploads/*.",
+        "security": [
+          {
+            "guestCookieAuth": []
+          },
+          {
+            "guestInviteCookieAuth": []
+          },
+          {
+            "adminCookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "path",
@@ -27429,6 +27850,12 @@
             "headers": {
               "X-Content-Type-Options": {
                 "description": "MIME-sniffing protection header",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Cache key variance header names",
                 "schema": {
                   "type": "string"
                 }
@@ -27470,6 +27897,24 @@
           },
           "400": {
             "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -27529,7 +27974,18 @@
           "Uploads"
         ],
         "summary": "HEAD /api/uploads/[...path]",
-        "description": "Returns upload metadata headers without body payload for /uploads/* requests.",
+        "description": "Returns upload metadata headers without body payload for authorized /uploads/* requests.",
+        "security": [
+          {
+            "guestCookieAuth": []
+          },
+          {
+            "guestInviteCookieAuth": []
+          },
+          {
+            "adminCookieAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "path",
@@ -27546,6 +28002,12 @@
             "headers": {
               "X-Content-Type-Options": {
                 "description": "MIME-sniffing protection header",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Vary": {
+                "description": "Cache key variance header names",
                 "schema": {
                   "type": "string"
                 }
@@ -27587,6 +28049,24 @@
           },
           "400": {
             "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {

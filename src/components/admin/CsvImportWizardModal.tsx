@@ -14,8 +14,8 @@ import {
   generateFailedRowsCsv,
   parsePlusOneNameCell,
   MAX_CSV_FILE_SIZE,
-  ParsedCsvRow,
-  ColumnMappingOptions,
+  type ParsedCsvRow,
+  type ColumnMappingOptions,
   type EditableCsvRow,
   type FailedCsvExportRow,
 } from '@/utils/csv';
@@ -789,7 +789,7 @@ const EditableTableRow = React.memo(function EditableTableRow({
         {row.warnings && row.warnings.map((warn, wi) => (
           <span
             key={wi}
-            className="block text-[10px] font-medium text-amber-600 dark:text-amber-400"
+            className="block text-[10px] font-medium text-status-warning-text"
           >
             ⚠ {warn}
           </span>
@@ -2336,7 +2336,7 @@ export function CsvImportWizardModal({
                         <strong>Name:</strong> {previewName || <em className="text-red-400">&lt;empty&gt;</em>}
                       </span>
                       <span>
-                        <strong>Code:</strong> {codeCol && r[codeCol] ? r[codeCol] : <em className="text-amber-500">&lt;auto-generate&gt;</em>}
+                        <strong>Code:</strong> {codeCol && r[codeCol] ? r[codeCol] : <em className="text-status-warning-text">&lt;auto-generate&gt;</em>}
                       </span>
                       {emailCol && (
                         <span>

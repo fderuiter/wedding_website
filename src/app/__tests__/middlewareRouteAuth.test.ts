@@ -36,11 +36,55 @@ describe('Middleware Route Classification and Authorization Bypass', () => {
       expect(res.headers.get('location')).toBeNull();
     });
 
-    it('allows unauthenticated GET /uploads/* and /api/uploads/* without session cookies and matches /uploads/:path* in matcher', async () => {
+    it('gates unauthenticated GET and HEAD on /uploads/photos/* and /api/uploads/photos/* with HTTP 401 while delegating non-photo /uploads/* to the route handler', async () => {
       expect(middlewareConfig.matcher).toContain('/uploads/:path*');
 
-      for (const uploadPath of ['/uploads/photo.png', '/uploads/nested/hero.webp', '/uploads/favicon.ico', '/api/uploads/photo.png']) {
-        const req = new NextRequest(`http://localhost:3000${uploadPath}`, {
+      for (const photoUploadPath of [
+        '/uploads/photos/guest-1.jpg',
+        '/uploads/photos/nested/guest-2.webp',
+        '/api/uploads/photos/guest-1.jpg',
+      ]) {
+        const getRes = await middleware(
+          new NextRequest(`http://localhost:3000${photoUploadPath}`, {
+            method: 'GET',
+            headers: { host: 'localhost:3000' },
+          })
+        );
+        expect(getRes.status).toBe(401);
+        expect(getRes.headers.get('X-Content-Type-Options')).toBe('nosniff');
+        expect(getRes.headers.get('Vary')).toBe('Cookie');
+        expect(await getRes.json()).toEqual({ error: 'Unauthorized' });
+
+        const headRes = await middleware(
+          new NextRequest(`http://localhost:3000${photoUploadPath}`, {
+            method: 'HEAD',
+            headers: { host: 'localhost:3000' },
+          })
+        );
+        expect(headRes.status).toBe(401);
+        expect(headRes.headers.get('X-Content-Type-Options')).toBe('nosniff');
+        expect(headRes.headers.get('Vary')).toBe('Cookie');
+        expect((await headRes.arrayBuffer()).byteLength).toBe(0);
+      }
+
+      const guestToken = await signGuestToken({ guest: true, exp: Date.now() + 1000 * 60 * 60 });
+      const authedPhotoRes = await middleware(
+        new NextRequest('http://localhost:3000/uploads/photos/guest-1.jpg', {
+          headers: {
+            host: 'localhost:3000',
+            cookie: `${GUEST_COOKIE}=${guestToken}`,
+          },
+        })
+      );
+      expect(authedPhotoRes.status).toBe(200);
+
+      for (const nonPhotoUploadPath of [
+        '/uploads/og-banner.png',
+        '/uploads/nested/hero.webp',
+        '/uploads/favicon.ico',
+        '/api/uploads/og-banner.png',
+      ]) {
+        const req = new NextRequest(`http://localhost:3000${nonPhotoUploadPath}`, {
           headers: { host: 'localhost:3000' },
         });
         const res = await middleware(req);

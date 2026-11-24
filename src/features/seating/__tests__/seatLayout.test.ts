@@ -1,6 +1,7 @@
 import {
   computeScaledTableDimensions,
   computeSeatPosition,
+  computeTableMinBounds,
   repackTableSeatNumbers,
   resolveDetailedSeatAssignments,
   resolveSeatAssignments,
@@ -321,6 +322,92 @@ describe('seatLayout shared seating geometry and seat resolution', () => {
           }
         }
       }
+    });
+  });
+
+  describe('computeTableMinBounds (rotated seat and landmark stage clearance)', () => {
+    it('enforces 36px minimums for unrotated guest tables and 0px minimums for unrotated landmarks', () => {
+      expect(
+        computeTableMinBounds({
+          shape: 'round',
+          capacity: 8,
+          width: 120,
+          height: 120,
+          rotation: 0,
+        })
+      ).toEqual({ minX: 36, minY: 36 });
+
+      expect(
+        computeTableMinBounds({
+          shape: 'rectangular',
+          capacity: 8,
+          width: 220,
+          height: 110,
+          rotation: 0,
+        })
+      ).toEqual({ minX: 36, minY: 36 });
+
+      expect(
+        computeTableMinBounds({
+          shape: 'head',
+          capacity: 4,
+          width: 240,
+          height: 85,
+          rotation: 0,
+        })
+      ).toEqual({ minX: 36, minY: 36 });
+
+      expect(
+        computeTableMinBounds({
+          shape: 'dance-floor',
+          capacity: 0,
+          width: 200,
+          height: 200,
+          rotation: 0,
+        })
+      ).toEqual({ minX: 0, minY: 0 });
+    });
+
+    it('expands minimum bounds for rotated rectangular guest tables and landmarks so seats and surfaces never clip past 0', () => {
+      // 220x110 rectangular table rotated 90 deg: cx=110, cy=55; left seats at dx=-126 rotate to top (-126 - 18 = -144 from cy=55 -> minY = 89)
+      const rotatedRectBounds = computeTableMinBounds({
+        shape: 'rectangular',
+        capacity: 8,
+        width: 220,
+        height: 110,
+        rotation: 90,
+      });
+      expect(rotatedRectBounds).toEqual({ minX: 36, minY: 89 });
+
+      // Verify every rotated seat center stays >= 18px inside stage when placed at (minX, minY)
+      const rad = (90 * Math.PI) / 180;
+      for (let s = 1; s <= 8; s++) {
+        const local = computeSeatPosition({
+          shape: 'rectangular',
+          seatNumber: s,
+          capacity: 8,
+          width: 220,
+          height: 110,
+          offset: 16,
+        });
+        const dx = local.x - 110;
+        const dy = local.y - 55;
+        const stageX = rotatedRectBounds.minX + 110 + dx * Math.cos(rad) - dy * Math.sin(rad);
+        const stageY = rotatedRectBounds.minY + 55 + dx * Math.sin(rad) + dy * Math.cos(rad);
+        expect(stageX).toBeGreaterThanOrEqual(18);
+        expect(stageY).toBeGreaterThanOrEqual(18);
+      }
+
+      // Rotated 200x80 bar landmark at 90 deg: cy=40, rotated half-height=100 -> minY = 60, minX = 0
+      expect(
+        computeTableMinBounds({
+          shape: 'bar',
+          capacity: 0,
+          width: 200,
+          height: 80,
+          rotation: 90,
+        })
+      ).toEqual({ minX: 0, minY: 60 });
     });
   });
 });

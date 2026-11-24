@@ -69,9 +69,11 @@ describe('AdminDashboardError Boundary', () => {
     expect(screen.queryByRole('heading', { name: 'Admin Control Panel' })).not.toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Admin Navigation' })).toBeInTheDocument();
 
-    // Main section renders the localized error boundary as the single page h1
-    const mainElement = screen.getByRole('main');
+    // Main section renders the localized error boundary inside MainLandmark as the single page h1
+    const mainElement = screen.getByRole('main', { name: 'Admin Dashboard Content' });
     expect(mainElement).toBeInTheDocument();
+    expect(mainElement).toHaveAttribute('id', 'main-content');
+    expect(mainElement).toHaveAttribute('tabindex', '-1');
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(screen.getByRole('heading', { level: 1, name: 'Admin Dashboard Error' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Try Again' })).toBeInTheDocument();

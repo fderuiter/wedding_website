@@ -23,7 +23,9 @@ updates:
         update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "npm"
-    directory: "/"
+    directories:
+      - "/"
+      - "/docker/prisma-cli"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
@@ -31,9 +33,51 @@ updates:
       - dependency-name: "@types/node"
         versions: [">= 23.0.0"]
         update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript"
+        versions: [">= 6.1.0"]
+        update-types: ["version-update:semver-major"]
     groups:
+      prisma:
+        patterns:
+          - "prisma"
+          - "@prisma/*"
+          - "effect"
+          - "@electric-sql/pglite*"
+        update-types:
+          - "minor"
+          - "patch"
+      next:
+        patterns:
+          - "next"
+          - "@next/*"
+          - "eslint-config-next"
+        update-types:
+          - "minor"
+          - "patch"
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
+        update-types:
+          - "minor"
+          - "patch"
+      pg:
+        patterns:
+          - "pg"
+          - "@types/pg"
+        update-types:
+          - "minor"
+          - "patch"
       production-dependencies:
         dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
       development-dependencies:
         dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
 

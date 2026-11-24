@@ -50,7 +50,8 @@ services:
     tmpfs:
       - /tmp
     environment:
-      DATABASE_URL: ${CONTAINER_DATABASE_URL:-${POSTGRES_URL_NON_POOLING:-postgres://${DB_USER:-wedding}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-wedding}}}
+      DATABASE_URL: ${CONTAINER_DATABASE_URL:-postgres://${DB_USER:-wedding}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-wedding}}
+      POSTGRES_URL_NON_POOLING: ${CONTAINER_POSTGRES_URL_NON_POOLING:-}
     depends_on:
       db:
         condition: service_healthy
@@ -83,7 +84,7 @@ services:
       HOSTNAME: "0.0.0.0"
       NODE_ENV: production
       DATABASE_URL: ${CONTAINER_DATABASE_URL:-postgres://${DB_USER:-wedding}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-wedding}}
-      POSTGRES_URL_NON_POOLING: ${POSTGRES_URL_NON_POOLING:-}
+      POSTGRES_URL_NON_POOLING: ${CONTAINER_POSTGRES_URL_NON_POOLING:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,*.localhost}
       MULTISITE_ENABLED: ${MULTISITE_ENABLED:-false}

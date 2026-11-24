@@ -67,6 +67,7 @@ const nextConfig: NextConfig = {
       ? {
         resolveAlias: {
           '@/lib/staticDemo/runtime': './src/lib/staticDemo/runtime.noop.ts',
+          '@/lib/demo/demoApiHandler': './src/lib/demo/demoApiHandler.noop.ts',
         },
       }
       : {}),
