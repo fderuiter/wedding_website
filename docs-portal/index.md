@@ -13,7 +13,8 @@ hero:
     - theme: alt
       text: Storybook
       link: /storybook/
-      target: _self
+      target: _blank
+      rel: noopener noreferrer
     - theme: alt
       text: Explore Architecture
       link: /architecture/architecture
@@ -29,7 +30,8 @@ features:
   - title: Storybook Showcase
     details: Isolated interactive UI component catalog with MSW-backed previews, theme variants, and accessibility states.
     link: /storybook/
-    target: _self
+    target: _blank
+    rel: noopener noreferrer
   - title: System Architecture
     details: Complete architectural blueprint covering the Next.js 16 App Router, Prisma ORM schema, and runtime contracts.
     link: /architecture/architecture

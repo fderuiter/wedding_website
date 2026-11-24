@@ -32,7 +32,7 @@ export default withMermaid(
     themeConfig: {
       nav: [
         { text: 'Live Demo', link: '/demo/', target: '_self' },
-        { text: 'Storybook', link: '/storybook/', target: '_self' },
+        { text: 'Storybook', link: '/storybook/', target: '_blank', rel: 'noopener noreferrer' },
         { text: 'Architecture', link: '/architecture/architecture' },
         { text: 'Deployment', link: '/deployment/deployment' },
         { text: 'Development', link: '/development/developer-setup' },

@@ -137,7 +137,9 @@ describe('Portal Documentation Generator & Development Section', () => {
 
     expect(configContent).toContain('base: normalizeBasePath(process.env.VITEPRESS_BASE)');
     expect(configContent).toContain("{ text: 'Live Demo', link: '/demo/', target: '_self' }");
-    expect(configContent).toContain("{ text: 'Storybook', link: '/storybook/', target: '_self' }");
+    expect(configContent).toContain(
+      "{ text: 'Storybook', link: '/storybook/', target: '_blank', rel: 'noopener noreferrer' }"
+    );
     expect(configContent).toContain("{ text: 'Development', link: '/development/developer-setup' }");
     expect(configContent).toContain('ignoreDeadLinks: [/^\\/demo(?:\\/|$)/, /^\\/storybook(?:\\/|$)/]');
     expect(configContent).toContain("env: 'dotenv'");
@@ -165,9 +167,13 @@ describe('Portal Documentation Generator & Development Section', () => {
 
     expect(indexContent).toContain('title: Developer Onboarding');
     expect(indexContent).toContain('link: /development/developer-setup');
-    expect(indexContent).toContain('link: /demo/');
-    expect(indexContent).toContain('link: /storybook/');
-    expect(indexContent).toContain('target: _self');
+    expect(indexContent).toMatch(/link:\s*\/demo\/\s*\n\s*target:\s*_self/);
+    expect(indexContent).toMatch(
+      /text:\s*Storybook\s*\n\s*link:\s*\/storybook\/\s*\n\s*target:\s*_blank\s*\n\s*rel:\s*noopener noreferrer/
+    );
+    expect(indexContent).toMatch(
+      /title:\s*Storybook Showcase[\s\S]*?link:\s*\/storybook\/\s*\n\s*target:\s*_blank\s*\n\s*rel:\s*noopener noreferrer/
+    );
   });
 
   it('verifies staged documents exist and route AGENTS.md, README.md, and CHANGELOG.md internally', () => {
