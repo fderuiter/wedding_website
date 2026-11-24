@@ -2450,6 +2450,43 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   if (forbiddenHealthcheckHostOverride.test(dockerMd)) {
     errors.push('docs/deployment/docker-vps.md: Documented `healthcheck` on `/api/live` must not override `Host` header in `fetch()`');
   }
+  const rolloutScriptPath = path.join(repoRoot, 'scripts/rollout-vps.sh');
+  if (!fs.existsSync(rolloutScriptPath)) {
+    errors.push('scripts/rollout-vps.sh: Missing VPS zero-downtime standby rollout script');
+  } else {
+    const rolloutScriptRaw = fs.readFileSync(rolloutScriptPath, 'utf8');
+    if (/fetch\([^\r\n]*headers\s*:\s*\{[^\r\n]*\bHost\b/i.test(rolloutScriptRaw)) {
+      errors.push(
+        'scripts/rollout-vps.sh: Loopback probes must not override forbidden `Host` header in `fetch()`'
+      );
+    }
+    if (
+      /\bcurl\b[^\r\n]*(?:-H|--header)\s+["']?Host:/i.test(rolloutScriptRaw) ||
+      /\bresolve_probe_host\b/.test(rolloutScriptRaw)
+    ) {
+      errors.push(
+        'scripts/rollout-vps.sh: Loopback probes must omit `resolve_probe_host` and `Host` header overrides'
+      );
+    }
+    const previousTagIdx = rolloutScriptRaw.indexOf(
+      'docker tag wedding-website:latest wedding-website:previous'
+    );
+    const buildAppIdx = rolloutScriptRaw.indexOf('build app');
+    if (previousTagIdx === -1 || buildAppIdx === -1 || previousTagIdx > buildAppIdx) {
+      errors.push(
+        'scripts/rollout-vps.sh: Must snapshot `wedding-website:latest` as `wedding-website:previous` before `docker compose ... build app`'
+      );
+    }
+    if (
+      !rolloutScriptRaw.includes('ROLLOUT_PHASE="pre-cutover"') ||
+      !rolloutScriptRaw.includes('ROLLOUT_PHASE="cutover"') ||
+      !rolloutScriptRaw.includes('ROLLOUT_PHASE="completed"')
+    ) {
+      errors.push(
+        'scripts/rollout-vps.sh: Exit trap must track `pre-cutover`, `cutover`, and `completed` rollout phases'
+      );
+    }
+  }
 
   // Verify middleware probe syntax validation & webhook/uploads exclusions preserve ALLOWED_HOSTS check
   const middlewareRaw = fs.readFileSync(path.join(repoRoot, 'src/middleware.ts'), 'utf8');

@@ -194,7 +194,7 @@ docker compose up -d
 ```
 
 ### Zero-Downtime Deployment Update (`scripts/rollout-vps.sh`)
-Use `./scripts/rollout-vps.sh` (layered with `docker-compose.rollout.yml`) so updates compile the image once, apply pending Prisma migrations, warm `app-standby` on `127.0.0.1:${STANDBY_PORT:-3001}:3000`, verify `/api/live` and `/api/ready` probes, recreate primary `app` on `127.0.0.1:${PORT:-3000}:3000` without dropping requests behind Caddy or Nginx, and retire `app-standby`:
+Use `./scripts/rollout-vps.sh` (layered with `docker-compose.rollout.yml`) so updates snapshot any existing `wedding-website:latest` image as `wedding-website:previous`, compile the image once via `app`, apply pending Prisma migrations, warm `app-standby` on `127.0.0.1:${STANDBY_PORT:-3001}:3000`, verify Host-free loopback `/api/live` and `/api/ready` probes, recreate primary `app` on `127.0.0.1:${PORT:-3000}:3000` without dropping requests behind Caddy or Nginx (preserving `app-standby` and attempting automatic primary rollback onto `wedding-website:previous` if primary cutover fails), and retire `app-standby`:
 ```bash
 git pull origin main
 ./scripts/rollout-vps.sh

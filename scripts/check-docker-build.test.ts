@@ -112,8 +112,7 @@ function writeValidFixtureWorkspace(targetDir: string): void {
       `    image: postgres:15-alpine@${POSTGRES_DIGEST}`,
       '  migration:',
       '    image: wedding-website:latest',
-      '    build:',
-      '      context: .',
+      '    pull_policy: never',
       '  app:',
       '    image: wedding-website:latest',
       '    init: true',
@@ -129,9 +128,8 @@ function writeValidFixtureWorkspace(targetDir: string): void {
     [
       'services:',
       '  migration:',
-      '    build:',
-      '      cache_from:',
-      '        - type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64}',
+      '    environment:',
+      '      DATABASE_URL: postgres://wedding:wedding123@db:5432/wedding',
       '  app:',
       '    build:',
       '      cache_from:',
@@ -618,7 +616,7 @@ describe('check-docker-build', () => {
     );
   });
 
-  it('enforces Dockerfile exclusion in .dockerignore and GHA cache isolation in docker-compose.ci.yml', () => {
+  it('enforces Dockerfile exclusion in .dockerignore, single-owner Compose build rules, and GHA cache isolation in docker-compose.ci.yml', () => {
     fs.writeFileSync(
       path.join(tempDir, '.dockerignore'),
       ['node_modules', '.next', 'docker-entrypoint.sh', ''].join('\n')
@@ -630,8 +628,15 @@ describe('check-docker-build', () => {
         'services:',
         '  db:',
         `    image: postgres:15-alpine@${POSTGRES_DIGEST}`,
+        '  migration:',
+        '    image: wedding-website:latest',
+        '    pull_policy: never',
+        '    build:',
+        '      context: .',
         '  app:',
         '    image: wedding-website:latest',
+        '    init: true',
+        '    stop_grace_period: 15s',
         '    build:',
         '      context: .',
         '      cache_from:',
@@ -645,14 +650,28 @@ describe('check-docker-build', () => {
       [
         'services:',
         '  migration:',
+        '    build:',
+        '      cache_from:',
+        '        - type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64}',
         '    environment:',
         '      DATABASE_URL: postgres://wedding:wedding123@db:5432/wedding',
         '  app:',
         '    build:',
-        '      cache_from:',
-        '        - type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64}',
         '      cache_to:',
         '        - type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64},mode=max',
+        '',
+      ].join('\n')
+    );
+
+    fs.writeFileSync(
+      path.join(tempDir, 'docker-compose.rollout.yml'),
+      [
+        'services:',
+        '  app-standby:',
+        '    image: wedding-website:latest',
+        '    pull_policy: never',
+        '    build:',
+        '      context: .',
         '',
       ].join('\n')
     );
@@ -673,15 +692,51 @@ describe('check-docker-build', () => {
           imageRef: 'type=gha',
         }),
         expect.objectContaining({
+          filePath: 'docker-compose.yml',
+          imageRef: 'migration.build',
+        }),
+        expect.objectContaining({
           filePath: 'docker-compose.ci.yml',
-          imageRef: 'migration.build.cache_from',
+          imageRef: 'migration.build',
+        }),
+        expect.objectContaining({
+          filePath: 'docker-compose.ci.yml',
+          imageRef: 'app.build.cache_from',
         }),
         expect.objectContaining({
           filePath: 'docker-compose.ci.yml',
           imageRef: 'app.build.cache_to',
         }),
+        expect.objectContaining({
+          filePath: 'docker-compose.rollout.yml',
+          imageRef: 'app-standby.build',
+        }),
       ])
     );
+
+    const bakePrint = spawnSync(
+      'docker',
+      [
+        'compose',
+        '--env-file',
+        '.env.ci',
+        '-f',
+        'docker-compose.yml',
+        '-f',
+        'docker-compose.ci.yml',
+        'build',
+        '--print',
+      ],
+      { cwd: REPO_ROOT, encoding: 'utf8' }
+    );
+    if (bakePrint.status === 0 && bakePrint.stdout.trim()) {
+      const parsedBake = JSON.parse(bakePrint.stdout) as {
+        group?: { default?: { targets?: string[] } };
+        target?: Record<string, unknown>;
+      };
+      expect(parsedBake.group?.default?.targets).toEqual(['app']);
+      expect(Object.keys(parsedBake.target ?? {})).toEqual(['app']);
+    }
   });
 
   it('ignores dev-only .next/ directories by default and enforces .next/standalone when requireStandalone is true', () => {
