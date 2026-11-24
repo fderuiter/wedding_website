@@ -2,7 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import {
-  ThemePreset,
+  type ThemePreset,
   THEME_PRESETS,
   getPresetTokens,
   DEFAULT_THEME_PRESET,

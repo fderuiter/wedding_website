@@ -12,6 +12,7 @@ export const GET = withApiMiddleware(async () => {
   }
   const data = await getWeatherForecast();
   const response = NextResponse.json(data);
-  response.headers.set('Cache-Control', 'public, max-age=1800, s-maxage=3600, stale-while-revalidate=86400');
+  response.headers.set('Cache-Control', 'private, max-age=1800');
+  response.headers.set('Vary', 'Cookie');
   return response;
 });

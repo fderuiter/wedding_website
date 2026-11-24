@@ -43,6 +43,8 @@ describe('/api/guest/session Route', () => {
     const body = await res.json();
 
     expect(res.status).toBe(200);
+    expect(res.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(res.headers.get('Vary')).toBe('Cookie');
     expect(body.success).toBe(true);
     expect(body.data).toEqual({
       status: 'invitation',
@@ -115,6 +117,8 @@ describe('/api/guest/session Route', () => {
     const body = await res.json();
 
     expect(res.status).toBe(200);
+    expect(res.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(res.headers.get('Vary')).toBe('Cookie');
     expect(body.success).toBe(true);
     expect(body.data).toEqual({
       status: 'passcode',

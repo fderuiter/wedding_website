@@ -6,6 +6,7 @@ jest.mock('@/lib/prisma', () => ({
   },
 }));
 
+import { NextRequest } from 'next/server';
 import { GET as healthRoute } from '@/app/api/health/route';
 import { GET as liveRoute } from '@/app/api/live/route';
 import { GET as readyRoute } from '@/app/api/ready/route';
@@ -253,6 +254,82 @@ describe('Health and Readiness Endpoints', () => {
       expect(json.status).toBe('unhealthy');
       expect(json.database).toBe('disconnected');
       expect(json.error).toBe('Database connection failed');
+    });
+
+    it('shares one single-flight check and memoizes healthy results within a 5-second window running at most two SQL queries', async () => {
+      mockQueryRaw
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              setTimeout(
+                () => resolve([...coreTableRows, { table_name: '_prisma_migrations' }]),
+                20
+              );
+            })
+        )
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              setTimeout(
+                () =>
+                  resolve([
+                    {
+                      migration_name: '20250419032914_init',
+                      finished_at: '2026-11-22T00:00:00.000Z',
+                      rolled_back_at: null,
+                    },
+                  ]),
+                20
+              );
+            })
+        );
+
+      const concurrentResponses = await Promise.all(
+        Array.from({ length: 20 }, () =>
+          readyRoute(new NextRequest('http://localhost:3000/api/ready'))
+        )
+      );
+
+      for (const res of concurrentResponses) {
+        expect(res.status).toBe(200);
+        expect(res.headers.get('Cache-Control')).toBe('no-store');
+        const body = await res.json();
+        expect(body.status).toBe('ready');
+      }
+
+      // Subsequent call inside the 5-second healthy window should also reuse the memoized result
+      const followUpRes = await readyRoute(new NextRequest('http://localhost:3000/api/ready'));
+      expect(followUpRes.status).toBe(200);
+      expect(followUpRes.headers.get('Cache-Control')).toBe('no-store');
+      expect(mockQueryRaw).toHaveBeenCalledTimes(2);
+    });
+
+    it('returns HTTP 429 after 100 rapid unauthenticated requests within the burst window', async () => {
+      mockQueryRaw
+        .mockResolvedValueOnce([...coreTableRows, { table_name: '_prisma_migrations' }])
+        .mockResolvedValueOnce([
+          {
+            migration_name: '20250419032914_init',
+            finished_at: '2026-11-22T00:00:00.000Z',
+            rolled_back_at: null,
+          },
+        ]);
+
+      const statuses: number[] = [];
+      for (let i = 0; i < 105; i += 1) {
+        const req = new NextRequest('http://localhost:3000/api/ready', {
+          headers: {
+            'x-forwarded-for': '198.51.100.77',
+          },
+        });
+        const res = await readyRoute(req);
+        statuses.push(res.status);
+        expect(res.headers.get('Cache-Control')).toBe('no-store');
+      }
+
+      expect(statuses.slice(0, 100).every((s) => s === 200)).toBe(true);
+      expect(statuses.slice(100)).toEqual([429, 429, 429, 429, 429]);
+      expect(mockQueryRaw).toHaveBeenCalledTimes(2);
     });
   });
 });

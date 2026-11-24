@@ -1,8 +1,9 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "Universal API",
-    "version": "1.0.0"
+    "title": "Wedding Website & Custom Registry API",
+    "version": "0.1.0",
+    "description": "OpenAPI 3.0.3 contract for the self-hostable Wedding Website & Custom Registry platform."
   },
   "servers": [
     {
@@ -7051,7 +7052,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -9557,7 +9558,7 @@
           {
             "name": "invitationCodeId",
             "in": "query",
-            "required": false,
+            "required": true,
             "schema": {
               "type": "string",
               "minLength": 1
@@ -15512,7 +15513,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -16272,7 +16273,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -17816,7 +17817,7 @@
         "summary": "POST /api/admin/setup",
         "description": "Endpoint for /api/admin/setup",
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -18008,12 +18009,53 @@
                   "setupCompleted": {
                     "type": "boolean"
                   },
+                  "modules": {
+                    "type": "object",
+                    "properties": {
+                      "registry": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "groupGifting": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "weather": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "weddingParty": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "attractions": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "gallery": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "countdown": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "addToCalendar": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "interactive3D": {
+                        "default": true,
+                        "type": "boolean"
+                      }
+                    }
+                  },
                   "subdomain": {
                     "nullable": true,
                     "type": "string"
                   }
                 },
-                "description": "First-run site setup and authenticated configuration payload. Requires either password (validated against ADMIN_PASSWORD_HASH or ADMIN_PASSWORD during step-1 setup authentication), setupCompleted (for authenticated wizard completion), or full site initialization fields (non-placeholder baseUrl plus partner1Name & partner2Name or legacy brideName & groomName; unauthenticated first-run requests must also include password).",
+                "description": "First-run site setup, feature module toggles, and authenticated configuration or status check payload. Authenticated callers with an admin_auth session cookie may omit the request body for step-1 status checks or send setupCompleted for wizard completion; unauthenticated callers must provide password (validated against ADMIN_PASSWORD_HASH or ADMIN_PASSWORD), or submit full site initialization fields with optional modules toggles (non-placeholder baseUrl plus partner1Name & partner2Name or legacy brideName & groomName).",
                 "anyOf": [
                   {
                     "type": "object",
@@ -23306,15 +23348,27 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "required": [
-                    "error"
-                  ],
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
                 }
               }
             }
@@ -23761,7 +23815,7 @@
           {
             "name": "token",
             "in": "query",
-            "required": false,
+            "required": true,
             "schema": {
               "type": "string",
               "minLength": 1

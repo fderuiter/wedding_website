@@ -1,5 +1,5 @@
 import {
-  ThemePreset,
+  type ThemePreset,
   getPresetTokens,
   isThemePreset,
   DEFAULT_THEME_PRESET,
