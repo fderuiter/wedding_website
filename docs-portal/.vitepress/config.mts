@@ -1,5 +1,8 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitepress';
 import { withMermaid } from 'vitepress-plugin-mermaid';
+
+const srcDir = fileURLToPath(new URL('../../src', import.meta.url));
 
 export function normalizeBasePath(rawBase?: string): string {
   const normalized = (rawBase ?? '').trim().replace(/\/+/g, '/').replace(/^\/+|\/+$/g, '');
@@ -129,6 +132,19 @@ export default withMermaid(
       theme: 'default'
     },
     vite: {
+      resolve: {
+        alias: {
+          '@': srcDir
+        }
+      },
+      define: {
+        'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production'),
+        'process.env.STATIC_EXPORT': JSON.stringify('true'),
+        'process.env.NEXT_PUBLIC_BASE_PATH': JSON.stringify(''),
+        'process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY': JSON.stringify(''),
+        'process.env.STRIPE_SECRET_KEY': JSON.stringify(''),
+        'process.env.npm_lifecycle_event': JSON.stringify('docs:build')
+      },
       optimizeDeps: {
         include: ['mermaid']
       }

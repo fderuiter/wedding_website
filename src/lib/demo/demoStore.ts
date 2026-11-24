@@ -240,6 +240,13 @@ function syncStaticDemoConfigOverrides(overrides: Partial<PublicAppConfig>): voi
     if (typeof overrides.colorSecondary === 'string' && overrides.colorSecondary.trim()) {
       cfg.colorSecondary = overrides.colorSecondary.trim();
     }
+    if (overrides.modules && typeof overrides.modules === 'object') {
+      const existingModules =
+        cfg.modules && typeof cfg.modules === 'object'
+          ? (cfg.modules as Record<string, unknown>)
+          : {};
+      cfg.modules = { ...existingModules, ...overrides.modules };
+    }
   });
 }
 

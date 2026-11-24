@@ -543,12 +543,57 @@ function extractSchemaNames(
   return [];
 }
 
+function isJsonParseGracefullyFallible(jsonCall: CallExpression): boolean {
+  const parent = jsonCall.getParent();
+  if (
+    parent &&
+    Node.isPropertyAccessExpression(parent) &&
+    parent.getExpression() === jsonCall &&
+    parent.getName() === 'catch'
+  ) {
+    const catchCall = parent.getParent();
+    if (catchCall && Node.isCallExpression(catchCall) && catchCall.getExpression() === parent) {
+      const handler = catchCall.getArguments()[0];
+      if (handler && handler.getDescendantsOfKind(SyntaxKind.ThrowStatement).length === 0) {
+        return true;
+      }
+    }
+  }
+
+  let ancestor: Node | undefined = jsonCall.getParent();
+  while (ancestor) {
+    if (Node.isTryStatement(ancestor)) {
+      const tryBlock = ancestor.getTryBlock();
+      const catchClause = ancestor.getCatchClause();
+      if (
+        catchClause &&
+        jsonCall.getPos() >= tryBlock.getPos() &&
+        jsonCall.getEnd() <= tryBlock.getEnd()
+      ) {
+        const catchBlock = catchClause.getBlock();
+        const hasThrow = catchBlock.getDescendantsOfKind(SyntaxKind.ThrowStatement).length > 0;
+        const hasReturn = catchBlock.getDescendantsOfKind(SyntaxKind.ReturnStatement).length > 0;
+        if (!hasThrow && !hasReturn) {
+          return true;
+        }
+      }
+    }
+    ancestor = ancestor.getParent();
+  }
+
+  return false;
+}
+
 function detectBodyCapabilities(allNodes: Node[]): {
   acceptsBody: boolean;
   acceptsFormData: boolean;
+  allowsMissingJsonBody: boolean;
 } {
   let acceptsBody = false;
   let acceptsFormData = false;
+  let usesValidatedRoute = false;
+  let usesRawTextBody = false;
+  const jsonCalls: CallExpression[] = [];
 
   for (const n of allNodes) {
     if (!Node.isCallExpression(n)) continue;
@@ -556,19 +601,30 @@ function detectBodyCapabilities(allNodes: Node[]): {
 
     if (exprText === 'createValidatedRoute') {
       acceptsBody = true;
+      usesValidatedRoute = true;
     } else if (
       /^(?:request|req)(?:\.clone\(\))?\.json$/.test(exprText) ||
-      /^\(request as any\)\.json$/.test(exprText) ||
-      /^(?:request|req)\.text$/.test(exprText)
+      /^\(request as any\)\.json$/.test(exprText)
     ) {
       acceptsBody = true;
+      jsonCalls.push(n);
+    } else if (/^(?:request|req)\.text$/.test(exprText)) {
+      acceptsBody = true;
+      usesRawTextBody = true;
     } else if (/^(?:request|req)\.formData$/.test(exprText)) {
       acceptsBody = true;
       acceptsFormData = true;
     }
   }
 
-  return { acceptsBody, acceptsFormData };
+  const allowsMissingJsonBody =
+    !acceptsFormData &&
+    !usesValidatedRoute &&
+    !usesRawTextBody &&
+    jsonCalls.length > 0 &&
+    jsonCalls.every(isJsonParseGracefullyFallible);
+
+  return { acceptsBody, acceptsFormData, allowsMissingJsonBody };
 }
 
 function isObjectJsonSchema(node: any): boolean {
@@ -1929,6 +1985,7 @@ function extractQueryParameters(allNodes: Node[]): Array<{
   if (paramNames.length === 0) return [];
 
   let zodQueryProps: Record<string, any> = {};
+  const zodRequiredQueryParams = new Set<string>();
   for (const n of allNodes) {
     if (!Node.isCallExpression(n)) continue;
     const exprText = n.getExpression().getText();
@@ -1938,6 +1995,13 @@ function extractQueryParameters(allNodes: Node[]): Array<{
         const converted = toOpenApiSchema(ALL_SCHEMAS[schemaName], false);
         if (converted?.properties) {
           zodQueryProps = { ...zodQueryProps, ...converted.properties };
+        }
+        if (Array.isArray(converted?.required)) {
+          for (const reqField of converted.required) {
+            if (typeof reqField === 'string') {
+              zodRequiredQueryParams.add(reqField);
+            }
+          }
         }
       }
     }
@@ -1981,7 +2045,8 @@ function extractQueryParameters(allNodes: Node[]): Array<{
       paramSchema = { type: 'number' };
     }
 
-    const isRequired = Boolean(linkedVar && requiredVars.has(linkedVar));
+    const isRequired =
+      zodRequiredQueryParams.has(name) || Boolean(linkedVar && requiredVars.has(linkedVar));
 
     return {
       name,
@@ -2062,11 +2127,23 @@ async function run() {
   const entitySlugs = extractAdminEntitySlugs();
   const entitySchemaNames = extractAdminEntitySchemaNames();
 
+  const packageJson = JSON.parse(
+    fs.readFileSync(path.join(rootPath, 'package.json'), 'utf8')
+  ) as { version?: string };
+  const readmeHeadingMatch = fs
+    .readFileSync(path.join(rootPath, 'README.md'), 'utf8')
+    .match(/^#\s+(.+)$/m);
+  const productTitle = readmeHeadingMatch?.[1]?.trim()
+    ? `${readmeHeadingMatch[1].trim()} API`
+    : 'Wedding Website & Custom Registry API';
+
   const openapi: any = {
     openapi: '3.0.3',
     info: {
-      title: 'Universal API',
-      version: '1.0.0',
+      title: productTitle,
+      version: packageJson.version || '0.1.0',
+      description:
+        'OpenAPI 3.0.3 contract for the self-hostable Wedding Website & Custom Registry platform.',
     },
     servers: [
       {
@@ -2243,7 +2320,8 @@ async function run() {
         }
 
         if (BODY_METHODS.has(method)) {
-          const { acceptsBody, acceptsFormData } = detectBodyCapabilities(allScopedNodes);
+          const { acceptsBody, acceptsFormData, allowsMissingJsonBody } =
+            detectBodyCapabilities(allScopedNodes);
 
           if (acceptsBody) {
             if (schemaNames.length === 0) {
@@ -2274,9 +2352,18 @@ async function run() {
                   : { anyOf: branchSchemas };
               }
 
+              const schemaAcceptsEmptyObject =
+                !acceptsFormData &&
+                schemaNames.every(
+                  (name) =>
+                    typeof ALL_SCHEMAS[name]?.safeParse === 'function' &&
+                    ALL_SCHEMAS[name].safeParse({}).success === true
+                );
+              const isRequestBodyOptional = allowsMissingJsonBody && schemaAcceptsEmptyObject;
+
               const mediaType = acceptsFormData ? 'multipart/form-data' : 'application/json';
               operation.requestBody = {
-                required: true,
+                required: !isRequestBodyOptional,
                 content: {
                   [mediaType]: {
                     schema: jsonSchema,

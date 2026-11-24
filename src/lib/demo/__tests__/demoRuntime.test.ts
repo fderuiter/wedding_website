@@ -23,7 +23,11 @@ import {
   updateDemoConfigOverrides,
   updateDemoGuestAddress,
 } from '../demoStore';
-import { installDemoFetchInterceptor } from '../demoApiHandler';
+import { dispatchDemoApiRequest, installDemoFetchInterceptor } from '../demoApiHandler';
+import {
+  dispatchDemoApiRequest as noopDispatchDemoApiRequest,
+  installDemoFetchInterceptor as noopInstallDemoFetchInterceptor,
+} from '../demoApiHandler.noop';
 
 describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
   beforeEach(() => {
@@ -899,5 +903,47 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
       uninstallFirst();
       window.fetch = originalFetch;
     }
+  });
+
+  it('dispatches demo API requests directly without patching window.fetch and provides safe noop stubs for standalone builds', async () => {
+    expect(await noopDispatchDemoApiRequest('/api/admin/me')).toBeNull();
+    const noopUninstall = noopInstallDemoFetchInterceptor();
+    expect(() => noopUninstall()).not.toThrow();
+
+    setDemoPersona('setup');
+    const emptySetupCheck = await dispatchDemoApiRequest('/api/admin/setup', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    expect(emptySetupCheck?.status).toBe(200);
+    expect(await emptySetupCheck?.json()).toMatchObject({
+      success: true,
+      requiresSetup: true,
+      setupCompleted: false,
+    });
+
+    const modulesRes = await dispatchDemoApiRequest('/api/admin/setup', {
+      method: 'POST',
+      body: JSON.stringify({
+        partner1Name: 'Avery',
+        partner2Name: 'Jordan',
+        modules: { weather: false, interactive3D: false },
+      }),
+    });
+    expect(modulesRes?.status).toBe(200);
+    expect(getDemoState().configOverrides.modules?.weather).toBe(false);
+    expect(getDemoState().configOverrides.modules?.interactive3D).toBe(false);
+
+    const completeRes = await dispatchDemoApiRequest('/api/admin/setup', {
+      method: 'POST',
+      body: JSON.stringify({ setupCompleted: true }),
+    });
+    expect(completeRes?.status).toBe(200);
+    expect(getDemoState().persona).toBe('admin');
+
+    // Subpath /api/* normalization works without patching global fetch
+    const subpathRes = await dispatchDemoApiRequest('/wedding_website/api/admin/me');
+    expect(subpathRes?.status).toBe(200);
+    expect(await subpathRes?.json()).toEqual({ isAdmin: true });
   });
 });
