@@ -36,6 +36,7 @@ describe('POST /api/admin/seating/auto-assign', () => {
 
     const req = new NextRequest('http://localhost/api/admin/seating/auto-assign', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ author: 'WeddingPlanner' }),
     });
 
@@ -81,6 +82,7 @@ describe('POST /api/admin/seating/auto-assign', () => {
 
     const req = new NextRequest('http://localhost/api/admin/seating/auto-assign', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ includePending: false }),
     });
 

@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { parseJsonRequestBody } from '@/utils/contentType';
 import { pruneSnapshotsBulk } from '@/lib/audit';
 import { logger } from '@/lib/logger';
 import {
@@ -37,7 +38,7 @@ function serializeDatesForJson(value: unknown): Prisma.InputJsonValue {
 }
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
-  const rawData = await request.json();
+  const rawData = await parseJsonRequestBody(request);
   ImportBackupSchema.parse(rawData);
   const revivedData = reviveDates(rawData);
 

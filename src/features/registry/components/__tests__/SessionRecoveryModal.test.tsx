@@ -10,6 +10,7 @@ expect.extend(toHaveNoViolations);
 jest.mock('@/lib/apiClient', () => ({
   apiClient: {
     get: jest.fn(),
+    post: jest.fn(),
     delete: jest.fn(),
   },
 }));
@@ -34,13 +35,12 @@ describe('SessionRecoveryModal', () => {
   });
 
   it('allows user to enter invitation code and submit recovery', async () => {
-    (apiClient.get as jest.Mock)
-      .mockResolvedValueOnce({ isVerified: false })
-      .mockResolvedValueOnce({
-        valid: true,
-        code: 'NEWCODE1',
-        guestName: 'Jane Restored',
-      });
+    (apiClient.get as jest.Mock).mockResolvedValueOnce({ isVerified: false });
+    (apiClient.post as jest.Mock).mockResolvedValueOnce({
+      valid: true,
+      code: 'NEWCODE1',
+      guestName: 'Jane Restored',
+    });
 
     const handleSuccess = jest.fn();
 
@@ -57,17 +57,18 @@ describe('SessionRecoveryModal', () => {
     fireEvent.click(submitBtn);
 
     await waitFor(() => {
-      expect(apiClient.get).toHaveBeenCalledWith('/api/registry/validate-code?code=NEWCODE1');
+      expect(apiClient.post).toHaveBeenCalledWith('/api/registry/validate-code', {
+        code: 'NEWCODE1',
+      });
       expect(handleSuccess).toHaveBeenCalled();
     });
   });
 
   it('displays error message when invitation code validation fails', async () => {
-    (apiClient.get as jest.Mock)
-      .mockResolvedValueOnce({ isVerified: false })
-      .mockResolvedValueOnce({
-        valid: false,
-      });
+    (apiClient.get as jest.Mock).mockResolvedValueOnce({ isVerified: false });
+    (apiClient.post as jest.Mock).mockResolvedValueOnce({
+      valid: false,
+    });
 
     render(
       <GuestSessionProvider>
@@ -88,14 +89,13 @@ describe('SessionRecoveryModal', () => {
 
   it('exposes required and aria-required="true", hides the visual asterisk with aria-hidden="true", retains focus during async verification, and passes jest-axe', async () => {
     let resolveVerify: ((value: { valid: boolean }) => void) | null = null;
-    (apiClient.get as jest.Mock)
-      .mockResolvedValueOnce({ isVerified: false })
-      .mockImplementationOnce(
-        () =>
-          new Promise<{ valid: boolean }>((resolve) => {
-            resolveVerify = resolve;
-          })
-      );
+    (apiClient.get as jest.Mock).mockResolvedValueOnce({ isVerified: false });
+    (apiClient.post as jest.Mock).mockImplementationOnce(
+      () =>
+        new Promise<{ valid: boolean }>((resolve) => {
+          resolveVerify = resolve;
+        })
+    );
 
     const { container } = render(
       <GuestSessionProvider>

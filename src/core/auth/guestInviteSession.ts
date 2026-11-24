@@ -15,14 +15,15 @@ import { verifyGuestInternalHeaders } from './guestHeaderSignature';
 import {
   GUEST_INVITE_COOKIE,
   type GuestInviteSessionPayload,
+  clearGuestInviteSessionCookie,
   getSignedGuestInviteSession,
+  setGuestInviteSessionCookie,
   signGuestInviteSessionToken,
   verifyGuestInviteSessionToken,
 } from './guestInviteToken';
 import {
   GUEST_PHOTO_COOKIE,
   type PhotoUploadSessionPayload,
-  getSignedPhotoUploadSession,
   isPhotoScopedPagePath,
   verifyPhotoUploadSessionToken,
 } from './photoUploadToken';
@@ -31,11 +32,13 @@ import {
   verifyEdgeTenantClaims,
 } from './tenantClaims';
 import { verifyNodeTenantClaims } from './tenantClaims.node';
-import { readRequestCookie } from './tokenCookieHelpers';
+import { readRequestCookieCandidates } from './tokenCookieHelpers';
 
 export {
   GUEST_INVITE_COOKIE,
   type GuestInviteSessionPayload,
+  clearGuestInviteSessionCookie,
+  setGuestInviteSessionCookie,
   signGuestInviteSessionToken,
   verifyGuestInviteSessionToken,
 };
@@ -154,31 +157,29 @@ const getCachedVerifiedPhotoUploadSession = cache((cookieValue: string) =>
 );
 
 async function resolveServerSignedPhotoUploadSession(): Promise<PhotoUploadSessionPayload | null> {
-  const cookieValue = await readRequestCookie(GUEST_PHOTO_COOKIE, undefined, {
+  const candidates = await readRequestCookieCandidates(GUEST_PHOTO_COOKIE, undefined, {
     suppressErrors: true,
   });
-  if (!cookieValue) {
-    return null;
+  for (const cookieValue of candidates) {
+    const payload = await getCachedVerifiedPhotoUploadSession(cookieValue);
+    if (payload && payload.exp >= Date.now()) {
+      return payload;
+    }
   }
-  const payload = await getCachedVerifiedPhotoUploadSession(cookieValue);
-  if (!payload || payload.exp < Date.now()) {
-    return null;
-  }
-  return payload;
+  return null;
 }
 
 const getCachedServerRawVerifiedInviteToken = cache(async () => {
-  const cookieValue = await readRequestCookie(GUEST_INVITE_COOKIE, undefined, {
+  const candidates = await readRequestCookieCandidates(GUEST_INVITE_COOKIE, undefined, {
     suppressErrors: true,
   });
-  if (!cookieValue) {
-    return null;
+  for (const cookieValue of candidates) {
+    const payload = await getCachedVerifiedInviteToken(cookieValue);
+    if (payload && (!payload.exp || payload.exp >= Date.now())) {
+      return payload;
+    }
   }
-  const payload = await getCachedVerifiedInviteToken(cookieValue);
-  if (!payload || (payload.exp && payload.exp < Date.now())) {
-    return null;
-  }
-  return payload;
+  return null;
 });
 
 async function resolveServerCookieGuestInviteSession(): Promise<GuestInviteSessionPayload | null> {
@@ -186,24 +187,41 @@ async function resolveServerCookieGuestInviteSession(): Promise<GuestInviteSessi
     return null;
   }
 
-  const signedPayload = await getCachedServerRawVerifiedInviteToken();
-  if (!signedPayload) {
+  const candidates = await readRequestCookieCandidates(GUEST_INVITE_COOKIE, undefined, {
+    suppressErrors: true,
+  });
+  if (candidates.length === 0) {
     return null;
   }
 
-  const requestSubdomain = await resolveEdgeRequestSubdomain();
-  if (!verifyEdgeTenantClaims(signedPayload, requestSubdomain)) {
-    return null;
+  let resolvedSubdomain: string | null | undefined;
+  for (const cookieValue of candidates) {
+    const signedPayload = await getCachedVerifiedInviteToken(cookieValue);
+    if (!signedPayload || (signedPayload.exp && signedPayload.exp < Date.now())) {
+      continue;
+    }
+
+    if (resolvedSubdomain === undefined) {
+      resolvedSubdomain = await resolveEdgeRequestSubdomain();
+    }
+    if (!verifyEdgeTenantClaims(signedPayload, resolvedSubdomain)) {
+      continue;
+    }
+
+    if (!(await verifyNodeTenantClaims(signedPayload))) {
+      continue;
+    }
+
+    const cacheKey = buildGuestSessionCacheKey(signedPayload);
+    const active = await getOrLoadGuestSession(undefined, cacheKey, () =>
+      resolveActiveInvitationSession(signedPayload)
+    );
+    if (active) {
+      return active;
+    }
   }
 
-  if (!(await verifyNodeTenantClaims(signedPayload))) {
-    return null;
-  }
-
-  const cacheKey = buildGuestSessionCacheKey(signedPayload);
-  return getOrLoadGuestSession(undefined, cacheKey, () =>
-    resolveActiveInvitationSession(signedPayload)
-  );
+  return null;
 }
 
 /**
@@ -222,19 +240,56 @@ export async function getGuestInviteSession(
     return resolveServerCookieGuestInviteSession();
   }
 
-  const signedPayload = await getSignedGuestInviteSession(req);
-  if (!signedPayload) {
+  const candidates = await readRequestCookieCandidates(GUEST_INVITE_COOKIE, req, {
+    suppressErrors: true,
+  });
+  if (candidates.length === 0) {
     return null;
   }
 
-  if (!(await verifyNodeTenantClaims(signedPayload, req))) {
-    return null;
+  const firstSigned =
+    candidates.length === 1 ? await getSignedGuestInviteSession(req) : null;
+  if (candidates.length === 1) {
+    if (!firstSigned) {
+      return null;
+    }
+    if (!(await verifyNodeTenantClaims(firstSigned, req))) {
+      return null;
+    }
+    const cacheKey = buildGuestSessionCacheKey(firstSigned);
+    return getOrLoadGuestSession(req, cacheKey, () =>
+      resolveActiveInvitationSession(firstSigned, req)
+    );
   }
 
-  const cacheKey = buildGuestSessionCacheKey(signedPayload);
-  return getOrLoadGuestSession(req, cacheKey, () =>
-    resolveActiveInvitationSession(signedPayload, req)
-  );
+  let resolvedSubdomain: string | null | undefined;
+  for (const cookieValue of candidates) {
+    const signedPayload = await verifyGuestInviteSessionToken(cookieValue);
+    if (!signedPayload || (signedPayload.exp && signedPayload.exp < Date.now())) {
+      continue;
+    }
+
+    if (resolvedSubdomain === undefined) {
+      resolvedSubdomain = await resolveEdgeRequestSubdomain(req);
+    }
+    if (!verifyEdgeTenantClaims(signedPayload, resolvedSubdomain)) {
+      continue;
+    }
+
+    if (!(await verifyNodeTenantClaims(signedPayload, req))) {
+      continue;
+    }
+
+    const cacheKey = buildGuestSessionCacheKey(signedPayload);
+    const active = await getOrLoadGuestSession(req, cacheKey, () =>
+      resolveActiveInvitationSession(signedPayload, req)
+    );
+    if (active) {
+      return active;
+    }
+  }
+
+  return null;
 }
 
 export function buildGuestLoginRedirectTarget(callbackPath: string | null): string {
@@ -318,33 +373,45 @@ export async function getActivePhotoUploadSession(
     return null;
   }
 
-  const signedPayload = req
-    ? await getSignedPhotoUploadSession(req)
-    : await resolveServerSignedPhotoUploadSession();
-  if (!signedPayload) {
+  const candidates = await readRequestCookieCandidates(GUEST_PHOTO_COOKIE, req, {
+    suppressErrors: true,
+  });
+  if (candidates.length === 0) {
     return null;
   }
 
-  if (!req) {
-    const requestSubdomain = await resolveEdgeRequestSubdomain();
-    if (!verifyEdgeTenantClaims(signedPayload, requestSubdomain)) {
-      return null;
+  let resolvedSubdomain: string | null | undefined;
+  for (const cookieValue of candidates) {
+    const signedPayload = req
+      ? await verifyPhotoUploadSessionToken(cookieValue)
+      : await getCachedVerifiedPhotoUploadSession(cookieValue);
+    if (!signedPayload || signedPayload.exp < Date.now()) {
+      continue;
     }
+
+    if (resolvedSubdomain === undefined) {
+      resolvedSubdomain = await resolveEdgeRequestSubdomain(req);
+    }
+    if (!verifyEdgeTenantClaims(signedPayload, resolvedSubdomain)) {
+      continue;
+    }
+
+    if (!(await verifyNodeTenantClaims(signedPayload, req))) {
+      continue;
+    }
+
+    const activeVersion = await resolveActivePhotoTokenVersion(
+      expectedVersion,
+      signedPayload.siteId
+    );
+    if (signedPayload.v !== activeVersion) {
+      continue;
+    }
+
+    return signedPayload;
   }
 
-  if (!(await verifyNodeTenantClaims(signedPayload, req))) {
-    return null;
-  }
-
-  const activeVersion = await resolveActivePhotoTokenVersion(
-    expectedVersion,
-    signedPayload.siteId
-  );
-  if (signedPayload.v !== activeVersion) {
-    return null;
-  }
-
-  return signedPayload;
+  return null;
 }
 
 /**

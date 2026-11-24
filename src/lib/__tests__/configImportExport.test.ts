@@ -227,6 +227,7 @@ describe('Configuration Import/Export & Upgrade Safety', () => {
 
     const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(validBackupPayload),
     });
 

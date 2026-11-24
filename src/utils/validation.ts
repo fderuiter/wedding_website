@@ -49,6 +49,14 @@ export const GuestLoginSchema = z.object({
   passcode: z.string({ message: 'Passcode is required' }).min(1, 'Passcode cannot be empty').max(MAX_PASSWORD_LENGTH, `Passcode must be at most ${MAX_PASSWORD_LENGTH} characters`),
 });
 
+export const ValidateInvitationCodeSchema = z.object({
+  code: z
+    .string({ message: 'Code is required.' })
+    .trim()
+    .min(1, 'Code is required.')
+    .max(MAX_PASSWORD_LENGTH, `Code must be at most ${MAX_PASSWORD_LENGTH} characters.`),
+});
+
 /**
  * Schema for guest self-service invitation lookup.
  * Note: Lookup route requires exact case-insensitive matching; partial substring queries are rejected with 404.

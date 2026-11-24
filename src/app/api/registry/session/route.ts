@@ -1,6 +1,10 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
-import { getGuestInviteSession, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
+import {
+  clearGuestInviteSessionCookie,
+  getGuestInviteSession,
+  GUEST_INVITE_COOKIE,
+} from '@/core/auth/guestInviteSession';
 import { readRequestCookie } from '@/core/auth/tokenCookieHelpers';
 
 export const GET = withApiMiddleware(async (request: NextRequest) => {
@@ -19,13 +23,7 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     });
 
     if (existingCookie) {
-      response.cookies.set(GUEST_INVITE_COOKIE, '', {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 0,
-      });
+      clearGuestInviteSessionCookie(response, request);
     }
 
     return response;
@@ -40,7 +38,7 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
   });
 });
 
-export const DELETE = withApiMiddleware(async () => {
+export const DELETE = withApiMiddleware(async (request: NextRequest) => {
   const response = NextResponse.json({
     isVerified: false,
     invitationCode: null,
@@ -49,13 +47,7 @@ export const DELETE = withApiMiddleware(async () => {
     email: null,
   });
 
-  response.cookies.set(GUEST_INVITE_COOKIE, '', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 0,
-  });
+  clearGuestInviteSessionCookie(response, request);
 
   return response;
 });

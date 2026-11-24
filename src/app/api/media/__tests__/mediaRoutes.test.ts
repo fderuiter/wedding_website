@@ -136,6 +136,7 @@ describe('Media API Routes Integration Tests', () => {
       
       const req = new NextRequest('http://localhost/api/media', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: 'https://example.com/valid.jpg' }),
       });
       const res = await POST(req);
@@ -149,6 +150,7 @@ describe('Media API Routes Integration Tests', () => {
     test('rejects creation if URL is missing or malformed', async () => {
       const req = new NextRequest('http://localhost/api/media', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: 'not-a-valid-url', altText: 'Test' }),
       });
       const res = await POST(req);
@@ -167,6 +169,7 @@ describe('Media API Routes Integration Tests', () => {
 
       const req = new NextRequest('http://localhost/api/media', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       const res = await POST(req);
@@ -194,6 +197,7 @@ describe('Media API Routes Integration Tests', () => {
 
       const req = new NextRequest('http://localhost/api/media', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       const res = await POST(req);
@@ -205,6 +209,7 @@ describe('Media API Routes Integration Tests', () => {
     test('rejects unsafe path traversal in relative upload URLs', async () => {
       const req = new NextRequest('http://localhost/api/media', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: '/uploads/../etc/passwd', altText: 'Traversal' }),
       });
       const res = await POST(req);
@@ -219,6 +224,7 @@ describe('Media API Routes Integration Tests', () => {
 
       const req = new NextRequest('http://localhost/api/media/m1', {
         method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ altText: 'New Alt' }),
       });
       const res = await PUT(req, { params: Promise.resolve({ id: 'm1' }) });
@@ -233,6 +239,7 @@ describe('Media API Routes Integration Tests', () => {
 
       const req = new NextRequest('http://localhost/api/media/m1', {
         method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       const res = await PUT(req, { params: Promise.resolve({ id: 'm1' }) });
@@ -246,6 +253,7 @@ describe('Media API Routes Integration Tests', () => {
     test('rejects updates that violate schemas', async () => {
       const req = new NextRequest('http://localhost/api/media/m1', {
         method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: 'not-a-valid-url' }),
       });
       const res = await PUT(req, { params: Promise.resolve({ id: 'm1' }) });

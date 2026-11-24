@@ -3,18 +3,21 @@ import { NextResponse, NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { env } from '@/env';
 import { ApiError } from '@/utils/ApiError';
+import { assertJsonContentType } from '@/utils/contentType';
 import { MAX_PASSWORD_LENGTH } from '@/utils/password';
+import { ValidateInvitationCodeSchema } from '@/utils/validation';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import {
+  GUEST_INVITE_COOKIE,
+  setGuestInviteSessionCookie,
   signGuestInviteSessionToken,
   verifyGuestInviteSessionToken,
-  GUEST_INVITE_COOKIE,
 } from '@/core/auth/guestInviteSession';
 import {
   resolveTenantClaimsForSigning,
   verifyNodeTenantClaims,
 } from '@/core/auth/tenantClaims.node';
-import { readRequestCookie } from '@/core/auth/tokenCookieHelpers';
+import { findVerifiedRequestCookie } from '@/core/auth/tokenCookieHelpers';
 import { hasAddressCollectionTag } from '@/features/registry';
 
 function safeComparePasscode(a: string, b: string): boolean {
@@ -30,9 +33,20 @@ function safeComparePasscode(a: string, b: string): boolean {
   return bytesEqual && bufA.length === bufB.length;
 }
 
-export const GET = withApiMiddleware(async (request: NextRequest) => {
-  const { searchParams } = new URL(request.url);
-  const rawCode = searchParams.get('code')?.trim() || '';
+type InvitationLookupResult =
+  | {
+    kind: 'invite';
+    invite: NonNullable<Awaited<ReturnType<typeof prisma.invitationCode.findUnique>>>;
+  }
+  | {
+    kind: 'shared_passcode';
+    error: string;
+  };
+
+async function findActiveInvitationCode(
+  rawCodeInput: string | undefined | null
+): Promise<InvitationLookupResult> {
+  const rawCode = rawCodeInput?.trim() || '';
   const code = rawCode.toUpperCase();
 
   if (!code) {
@@ -58,16 +72,70 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
       (safeComparePasscode(rawCode, expectedPasscode) ||
         safeComparePasscode(code, expectedPasscode.toUpperCase()))
     ) {
-      return NextResponse.json({
-        valid: false,
-        reason: 'shared_passcode',
+      return {
+        kind: 'shared_passcode',
         error:
           'That is the shared website passcode. Please enter the personal household invitation code printed on your invitation.',
-      });
+      };
     }
 
     throw new ApiError(404, 'Invalid invitation code.');
   }
+
+  return { kind: 'invite', invite };
+}
+
+export const GET = withApiMiddleware(async (request: NextRequest) => {
+  const { searchParams } = new URL(request.url);
+  const lookup = await findActiveInvitationCode(searchParams.get('code'));
+
+  if (lookup.kind === 'shared_passcode') {
+    return NextResponse.json({
+      valid: false,
+      reason: 'shared_passcode',
+      error: lookup.error,
+    });
+  }
+
+  const { invite } = lookup;
+  const resolvedEmail =
+    typeof invite.email === 'string' && invite.email.trim().length > 0
+      ? invite.email.trim()
+      : null;
+
+  return NextResponse.json({
+    valid: true,
+    guestName: invite.guestName,
+    code: invite.code,
+    email: resolvedEmail,
+  });
+});
+
+export const POST = withApiMiddleware(async (request: NextRequest) => {
+  assertJsonContentType(request);
+
+  let rawBody: unknown;
+  try {
+    rawBody = await request.json();
+  } catch {
+    throw new ApiError(400, 'Invalid JSON body.');
+  }
+
+  const parsed = ValidateInvitationCodeSchema.safeParse(rawBody);
+  if (!parsed.success) {
+    throw new ApiError(400, parsed.error.issues[0]?.message || 'Code is required.');
+  }
+
+  const lookup = await findActiveInvitationCode(parsed.data.code);
+  if (lookup.kind === 'shared_passcode') {
+    return NextResponse.json({
+      valid: false,
+      reason: 'shared_passcode',
+      error: lookup.error,
+    });
+  }
+
+  const { invite } = lookup;
 
   if (invite.id && typeof prisma.broadcastRecipient?.updateMany === 'function') {
     await prisma.broadcastRecipient.updateMany({
@@ -83,22 +151,28 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
 
   let token: string | null = null;
   if (
-    typeof readRequestCookie === 'function' &&
+    typeof findVerifiedRequestCookie === 'function' &&
     typeof verifyGuestInviteSessionToken === 'function'
   ) {
-    const existingToken = await readRequestCookie(GUEST_INVITE_COOKIE, request, {
-      suppressErrors: true,
-    });
-    if (existingToken) {
-      const existingPayload = await verifyGuestInviteSessionToken(existingToken);
-      if (
-        existingPayload &&
-        existingPayload.code.trim().toUpperCase() === invite.code.trim().toUpperCase() &&
-        existingPayload.guestName === invite.guestName &&
-        (await verifyNodeTenantClaims(existingPayload, request))
-      ) {
-        token = existingToken;
-      }
+    const verifiedExisting = await findVerifiedRequestCookie(
+      GUEST_INVITE_COOKIE,
+      request,
+      async (candidate) => {
+        const existingPayload = await verifyGuestInviteSessionToken(candidate);
+        if (
+          existingPayload &&
+          existingPayload.code.trim().toUpperCase() === invite.code.trim().toUpperCase() &&
+          existingPayload.guestName === invite.guestName &&
+          (await verifyNodeTenantClaims(existingPayload, request))
+        ) {
+          return existingPayload;
+        }
+        return null;
+      },
+      { suppressErrors: true }
+    );
+    if (verifiedExisting) {
+      token = verifiedExisting.token;
     }
   }
 
@@ -123,13 +197,6 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     email: resolvedEmail,
   });
 
-  response.cookies.set(GUEST_INVITE_COOKIE, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 7 * 24 * 60 * 60,
-  });
-
+  setGuestInviteSessionCookie(response, token, request);
   return response;
 });

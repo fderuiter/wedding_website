@@ -1,18 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { signGuestToken, verifyGuestToken, GUEST_COOKIE } from '@/core/auth/guest.server';
 import {
+  GUEST_COOKIE,
+  setGuestAuthCookie,
+  signGuestToken,
+  verifyGuestToken,
+} from '@/core/auth/guest.server';
+import {
+  GUEST_INVITE_COOKIE,
+  setGuestInviteSessionCookie,
   signGuestInviteSessionToken,
   verifyGuestInviteSessionToken,
-  GUEST_INVITE_COOKIE,
 } from '@/core/auth/guestInviteSession';
 import {
   resolveTenantClaimsForSigning,
   verifyNodeTenantClaims,
 } from '@/core/auth/tenantClaims.node';
-import { readRequestCookie } from '@/core/auth/tokenCookieHelpers';
+import { findVerifiedRequestCookie } from '@/core/auth/tokenCookieHelpers';
 import { hasAddressCollectionTag } from '@/features/registry';
 import { prisma } from '@/lib/prisma';
 import { env } from '@/env';
+import { assertJsonContentType } from '@/utils/contentType';
 import { GuestLoginSchema } from '@/utils/validation';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import crypto from 'node:crypto';
@@ -25,6 +32,8 @@ function safeComparePasscode(a: string, b: string): boolean {
 }
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
+  assertJsonContentType(req);
+
   let body: unknown;
   try {
     body = await req.json();
@@ -60,17 +69,25 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
   if (matchesSharedPasscode) {
     let token: string | null = null;
-    if (typeof readRequestCookie === 'function' && typeof verifyGuestToken === 'function') {
-      const existingToken = await readRequestCookie(GUEST_COOKIE, req, { suppressErrors: true });
-      if (existingToken) {
-        const existingPayload = await verifyGuestToken(existingToken);
-        if (
-          existingPayload &&
-          existingPayload.guest === true &&
-          (await verifyNodeTenantClaims(existingPayload, req))
-        ) {
-          token = existingToken;
-        }
+    if (typeof findVerifiedRequestCookie === 'function' && typeof verifyGuestToken === 'function') {
+      const verifiedExisting = await findVerifiedRequestCookie(
+        GUEST_COOKIE,
+        req,
+        async (candidate) => {
+          const payload = await verifyGuestToken(candidate);
+          if (
+            payload &&
+            payload.guest === true &&
+            (await verifyNodeTenantClaims(payload, req))
+          ) {
+            return payload;
+          }
+          return null;
+        },
+        { suppressErrors: true }
+      );
+      if (verifiedExisting) {
+        token = verifiedExisting.token;
       }
     }
 
@@ -88,13 +105,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     }
 
     const response = NextResponse.json({ success: true, sessionType: 'guest' });
-    response.cookies.set(GUEST_COOKIE, token, {
-      httpOnly: true,
-      secure: env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 7 * 24 * 60 * 60, // 7 days
-    });
+    setGuestAuthCookie(response, token, req);
     return response;
   }
 
@@ -135,22 +146,28 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
     let inviteToken: string | null = null;
     if (
-      typeof readRequestCookie === 'function' &&
+      typeof findVerifiedRequestCookie === 'function' &&
       typeof verifyGuestInviteSessionToken === 'function'
     ) {
-      const existingInviteCookie = await readRequestCookie(GUEST_INVITE_COOKIE, req, {
-        suppressErrors: true,
-      });
-      if (existingInviteCookie) {
-        const existingInvitePayload = await verifyGuestInviteSessionToken(existingInviteCookie);
-        if (
-          existingInvitePayload &&
-          existingInvitePayload.code.trim().toUpperCase() === invite.code.trim().toUpperCase() &&
-          existingInvitePayload.guestName === invite.guestName &&
-          (await verifyNodeTenantClaims(existingInvitePayload, req))
-        ) {
-          inviteToken = existingInviteCookie;
-        }
+      const verifiedExistingInvite = await findVerifiedRequestCookie(
+        GUEST_INVITE_COOKIE,
+        req,
+        async (candidate) => {
+          const existingInvitePayload = await verifyGuestInviteSessionToken(candidate);
+          if (
+            existingInvitePayload &&
+            existingInvitePayload.code.trim().toUpperCase() === invite.code.trim().toUpperCase() &&
+            existingInvitePayload.guestName === invite.guestName &&
+            (await verifyNodeTenantClaims(existingInvitePayload, req))
+          ) {
+            return existingInvitePayload;
+          }
+          return null;
+        },
+        { suppressErrors: true }
+      );
+      if (verifiedExistingInvite) {
+        inviteToken = verifiedExistingInvite.token;
       }
     }
 
@@ -172,13 +189,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
       sessionType: 'invitation',
       guestName: invite.guestName,
     });
-    response.cookies.set(GUEST_INVITE_COOKIE, inviteToken, {
-      httpOnly: true,
-      secure: env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 7 * 24 * 60 * 60, // 7 days
-    });
+    setGuestInviteSessionCookie(response, inviteToken, req);
     return response;
   }
 

@@ -560,6 +560,20 @@ function extractSchemaNames(
 }
 
 function isJsonParseGracefullyFallible(jsonCall: CallExpression): boolean {
+  if (jsonCall.getExpression().getText() === 'parseJsonRequestBody') {
+    const optionsArg = jsonCall.getArguments()[1];
+    if (optionsArg && Node.isObjectLiteralExpression(optionsArg)) {
+      const allowEmptyProp = optionsArg.getProperty('allowEmpty');
+      if (
+        allowEmptyProp &&
+        Node.isPropertyAssignment(allowEmptyProp) &&
+        allowEmptyProp.getInitializer()?.getText() === 'true'
+      ) {
+        return true;
+      }
+    }
+  }
+
   const parent = jsonCall.getParent();
   if (
     parent &&
@@ -619,6 +633,7 @@ function detectBodyCapabilities(allNodes: Node[]): {
       acceptsBody = true;
       usesValidatedRoute = true;
     } else if (
+      exprText === 'parseJsonRequestBody' ||
       /^(?:request|req)(?:\.clone\(\))?\.json$/.test(exprText) ||
       /^\(request as any\)\.json$/.test(exprText)
     ) {

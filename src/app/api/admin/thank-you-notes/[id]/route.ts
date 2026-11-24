@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { parseJsonRequestBody } from '@/utils/contentType';
 import { UpdateThankYouNoteSchema, thankYouService } from '@/features/registry';
 import { formatZodError } from '@/utils/validation';
 
 export const PATCH = withApiMiddleware(async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {
   const { id } = await context.params;
-  const body = await req.json();
+  const body = await parseJsonRequestBody(req);
 
   const parseResult = UpdateThankYouNoteSchema.safeParse(body);
   if (!parseResult.success) {

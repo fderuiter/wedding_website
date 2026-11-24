@@ -6,6 +6,7 @@ import { apiClient } from '@/lib/apiClient';
 jest.mock('@/lib/apiClient', () => ({
   apiClient: {
     get: jest.fn(),
+    post: jest.fn(),
     delete: jest.fn(),
   },
 }));
@@ -152,12 +153,12 @@ describe('GuestSessionContext', () => {
       })
       .mockResolvedValueOnce({
         isVerified: false,
-      })
-      .mockResolvedValueOnce({
-        valid: true,
-        code: 'RECOVER123',
-        guestName: 'Jane Restored',
       });
+    (apiClient.post as jest.Mock).mockResolvedValueOnce({
+      valid: true,
+      code: 'RECOVER123',
+      guestName: 'Jane Restored',
+    });
 
     render(
       <ToastProvider>
@@ -193,7 +194,9 @@ describe('GuestSessionContext', () => {
       expect(screen.getByTestId('modalOpen')).toHaveTextContent('closed');
     });
 
-    expect(apiClient.get).toHaveBeenCalledWith('/api/registry/validate-code?code=RECOVER123');
+    expect(apiClient.post).toHaveBeenCalledWith('/api/registry/validate-code', {
+      code: 'RECOVER123',
+    });
   });
 
   it('safely degrades when rendered outside ToastProvider', async () => {

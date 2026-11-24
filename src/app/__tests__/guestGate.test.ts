@@ -295,6 +295,7 @@ describe('Edge-enforced Guest Passcode Gate', () => {
     it('returns 400 if passcode is missing', async () => {
       const req = new NextRequest('http://localhost/api/guest/login', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       });
       const res = await guestLoginPost(req);
@@ -307,6 +308,7 @@ describe('Edge-enforced Guest Passcode Gate', () => {
     it('returns 401 for incorrect passcode', async () => {
       const req = new NextRequest('http://localhost/api/guest/login', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ passcode: 'wrong_code' }),
       });
       const res = await guestLoginPost(req);
@@ -320,6 +322,7 @@ describe('Edge-enforced Guest Passcode Gate', () => {
     it('returns 200 and sets cookie for correct passcode', async () => {
       const req = new NextRequest('http://localhost/api/guest/login', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ passcode: env.GUEST_PASSCODE }),
       });
       const res = await guestLoginPost(req);
@@ -350,6 +353,7 @@ describe('Edge-enforced Guest Passcode Gate', () => {
       try {
         const req = new NextRequest('http://localhost/api/guest/login', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ passcode: '  love2026  ' }),
         });
         const res = await guestLoginPost(req);
@@ -395,6 +399,7 @@ describe('Edge-enforced Guest Passcode Gate', () => {
       try {
         const req = new NextRequest('http://localhost/api/guest/login', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ passcode: 'SMITH2026' }),
         });
         const res = await guestLoginPost(req);
@@ -445,6 +450,7 @@ describe('Edge-enforced Guest Passcode Gate', () => {
         delete process.env.GUEST_PASSCODE;
         const req = new NextRequest('http://localhost/api/guest/login', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ passcode: 'wedding2026' }),
         });
         const res = await guestLoginPost(req);
@@ -458,6 +464,7 @@ describe('Edge-enforced Guest Passcode Gate', () => {
         process.env.GUEST_PASSCODE = '   ';
         const req = new NextRequest('http://localhost/api/guest/login', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ passcode: 'wedding2026' }),
         });
         const res = await guestLoginPost(req);
@@ -471,6 +478,7 @@ describe('Edge-enforced Guest Passcode Gate', () => {
         process.env.GUEST_PASSCODE = 'wedding2026';
         const req = new NextRequest('http://localhost/api/guest/login', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ passcode: 'wedding2026' }),
         });
         const res = await guestLoginPost(req);
@@ -484,6 +492,7 @@ describe('Edge-enforced Guest Passcode Gate', () => {
         process.env.GUEST_PASSCODE = 'unique-prod-passcode-2026';
         const req = new NextRequest('http://localhost/api/guest/login', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ passcode: 'unique-prod-passcode-2026' }),
         });
         const res = await guestLoginPost(req);

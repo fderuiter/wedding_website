@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware, type ApiMiddlewareOptions } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { parseJsonRequestBody } from '@/utils/contentType';
 import { formatZodError } from '@/utils/validation';
 import { resolveRequestOrigin } from '@/utils/hostValidation';
 
@@ -22,7 +23,7 @@ export function createAdminBroadcastRoute<TData, TResult>({
   middlewareOptions,
 }: AdminBroadcastRouteConfig<TData, TResult>) {
   return withApiMiddleware(async (req: NextRequest) => {
-    const body = await req.json();
+    const body = await parseJsonRequestBody(req);
     const parseResult = parse(body);
 
     if (!parseResult.success) {

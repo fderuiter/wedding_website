@@ -483,8 +483,18 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
       expect((await window.fetch('/api/guest/address')).status).toBe(401);
       expect((await (await window.fetch('/api/registry/session')).json()).isVerified).toBe(false);
 
-      const validCodeRes = await (
+      const readOnlyCodeRes = await (
         await window.fetch('/api/registry/validate-code?code=SMITH2026')
+      ).json();
+      expect(readOnlyCodeRes.valid).toBe(true);
+      expect((await (await window.fetch('/api/registry/session')).json()).isVerified).toBe(false);
+
+      const validCodeRes = await (
+        await window.fetch('/api/registry/validate-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: 'SMITH2026' }),
+        })
       ).json();
       expect(validCodeRes.valid).toBe(true);
       expect((await (await window.fetch('/api/registry/session')).json()).isVerified).toBe(true);
@@ -902,7 +912,17 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
         ).status
       ).toBe(401);
 
-      await window.fetch('/api/registry/validate-code?code=SMITH2026');
+      const previewCodeRes = await window.fetch('/api/registry/validate-code?code=SMITH2026');
+      expect(previewCodeRes.status).toBe(200);
+      expect(await (await window.fetch('/api/guest/session')).json()).toEqual(
+        expect.objectContaining({ status: 'none', isVerified: false })
+      );
+
+      await window.fetch('/api/registry/validate-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: 'SMITH2026' }),
+      });
       const unlockedGuestSession = await (await window.fetch('/api/guest/session')).json();
       expect(unlockedGuestSession).toEqual(
         expect.objectContaining({
@@ -1093,7 +1113,11 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
       expect(inviteCsvRes.headers.get('Content-Type')).toContain('text/csv');
       expect(await inviteCsvRes.text()).toContain('SMITH2026');
 
-      await window.fetch('/api/registry/validate-code?code=SMITH2026');
+      await window.fetch('/api/registry/validate-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: 'SMITH2026' }),
+      });
       await window.fetch('/api/rsvp', {
         method: 'POST',
         body: JSON.stringify({

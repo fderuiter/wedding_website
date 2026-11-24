@@ -59,6 +59,7 @@ describe('Registry API routes', () => {
       mockIsAdminRequest.mockResolvedValue(false);
       const req = new Request('http://localhost/api/registry/items', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(validItem),
       });
       const res = await addItem(req as unknown as NextRequest);
@@ -73,6 +74,7 @@ describe('Registry API routes', () => {
       mockCreateItem.mockResolvedValue(created);
       const req = new Request('http://localhost/api/registry/items', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(validItem),
       });
       const res = await addItem(req as unknown as NextRequest);
@@ -86,6 +88,7 @@ describe('Registry API routes', () => {
       mockIsAdminRequest.mockResolvedValue(true);
       const req = new Request('http://localhost/api/registry/items', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ price: -1 }),
       });
       const res = await addItem(req as unknown as NextRequest);
@@ -99,6 +102,7 @@ describe('Registry API routes', () => {
       mockCreateItem.mockRejectedValue(new Error('DB down'));
       const req = new Request('http://localhost/api/registry/items', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(validItem),
       });
       const res = await addItem(req as unknown as NextRequest);
@@ -119,6 +123,7 @@ describe('Registry API routes', () => {
       mockContributeToItem.mockResolvedValue({ id: '1', amountContributed: 25 });
       const req = new Request('http://localhost/api/registry/contribute', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(validContribution),
       });
       const res = await contribute(req as unknown as NextRequest);
@@ -137,6 +142,7 @@ describe('Registry API routes', () => {
       };
       const req = new Request('http://localhost/api/registry/contribute', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(contributionWithMessage),
       });
       const res = await contribute(req as unknown as NextRequest);
@@ -152,6 +158,7 @@ describe('Registry API routes', () => {
       const longMessage = 'a'.repeat(1001);
       const req = new Request('http://localhost/api/registry/contribute', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...validContribution, message: longMessage }),
       });
       const res = await contribute(req as unknown as NextRequest);
@@ -163,6 +170,7 @@ describe('Registry API routes', () => {
     it('returns 400 for invalid data', async () => {
       const req = new Request('http://localhost/api/registry/contribute', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: '', amount: -5 }),
       });
       const res = await contribute(req as unknown as NextRequest);
@@ -175,6 +183,7 @@ describe('Registry API routes', () => {
       mockContributeToItem.mockRejectedValue(new Error('Item not found'));
       const req = new Request('http://localhost/api/registry/contribute', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(validContribution),
       });
       const res = await contribute(req as unknown as NextRequest);
@@ -187,6 +196,7 @@ describe('Registry API routes', () => {
       mockContributeToItem.mockRejectedValue(new Error('DB error'));
       const req = new Request('http://localhost/api/registry/contribute', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(validContribution),
       });
       const res = await contribute(req as unknown as NextRequest);
@@ -492,6 +502,7 @@ describe('Registry API routes', () => {
         mockIsAdminRequest.mockResolvedValue(false);
         const req = new Request(baseUrl, {
           method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: 'Lamp', price: 10, quantity: 1 }),
         });
         const res = await updateItemRoute(req as unknown as NextRequest, { params: mockParams });
@@ -502,6 +513,7 @@ describe('Registry API routes', () => {
         mockIsAdminRequest.mockResolvedValue(true);
         const req = new Request(baseUrl, {
           method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: 'Lamp' }),
         });
         const res = await updateItemRoute(req as unknown as NextRequest, { params: mockParams });
@@ -518,6 +530,7 @@ describe('Registry API routes', () => {
         mockUpdateItem.mockResolvedValue(updated);
         const req = new Request(baseUrl, {
           method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: 'Lamp', price: 20, quantity: 2, category: 'Home' }),
         });
         const res = await updateItemRoute(req as unknown as NextRequest, { params: mockParams });
@@ -561,6 +574,7 @@ describe('Registry API routes', () => {
       const putRes = await updateItemRoute(
         new Request(baseUrl, {
           method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: 'Lamp', price: 20, quantity: 1 }),
         }) as unknown as NextRequest,
         { params: mockParams }

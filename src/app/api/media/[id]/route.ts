@@ -7,6 +7,7 @@ import { isAdminRequest } from '@/core/auth/auth.server';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { ApiError } from '@/utils/ApiError';
+import { parseJsonRequestBody } from '@/utils/contentType';
 
 export const PUT = withApiMiddleware(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   if (!(await isAdminRequest(request))) {
@@ -17,7 +18,7 @@ export const PUT = withApiMiddleware(async (request: NextRequest, { params }: { 
     throw new ApiError(404, "Feature 'gallery' is disabled");
   }
   const { id } = await params;
-  const body = await request.json();
+  const body = await parseJsonRequestBody(request);
   
   const parsed = MediaUpdateSchema.safeParse(body);
   

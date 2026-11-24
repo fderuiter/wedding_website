@@ -155,6 +155,7 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
 
       const req = new NextRequest('http://localhost:3000/api/registry/payment-intent', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: 'fund-dual-1',
           amount: 100,
@@ -178,6 +179,7 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
 
       const req = new NextRequest('http://localhost:3000/api/registry/payment-intent', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: 'fund-dual-1',
           amount: 100,
@@ -212,6 +214,7 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
     it('records self-reported direct transfer with 0% fee (coverFee=false) without requiring paymentIntentId', async () => {
       const req = new NextRequest('http://localhost:3000/api/registry/contribute', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: 'fund-dual-1',
           name: 'Sam Direct',
@@ -252,6 +255,7 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
 
       const req = new NextRequest('http://localhost:3000/api/registry/contribute', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: 'fund-dual-1',
           name: 'Casey Card',
@@ -280,6 +284,7 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
 
       const req = new NextRequest('http://localhost:3000/api/registry/contribute', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: 'fund-unconfigured-1',
           name: 'Blocked Guest',
@@ -462,6 +467,7 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
       const missingSecretRes = await createPaymentIntent(
         new NextRequest('http://localhost:3000/api/registry/payment-intent', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             itemId: 'fund-dual-1',
             amount: 25,
@@ -476,6 +482,7 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
       const wrongSecretRes = await createPaymentIntent(
         new NextRequest('http://localhost:3000/api/registry/payment-intent', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             itemId: 'fund-dual-1',
             amount: 25,
@@ -495,6 +502,7 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
       const wrongItemRes = await createPaymentIntent(
         new NextRequest('http://localhost:3000/api/registry/payment-intent', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             itemId: 'fund-different-2',
             amount: 25,
@@ -519,6 +527,7 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
       const validUpdateRes = await createPaymentIntent(
         new NextRequest('http://localhost:3000/api/registry/payment-intent', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             itemId: 'fund-dual-1',
             amount: 25,

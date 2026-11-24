@@ -10,6 +10,7 @@ import { resolveTenantClaimsForSigning } from '@/core/auth/tenantClaims.node';
 import { AdminPhotoQrUpdateSchema } from '@/features/content';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { parseJsonRequestBody } from '@/utils/contentType';
 import { formatZodError } from '@/utils/validation';
 import {
   isHostAllowed,
@@ -66,12 +67,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     throw new ApiError(404, "Feature 'gallery' is disabled");
   }
 
-  let rawBody: unknown;
-  try {
-    rawBody = await req.json();
-  } catch {
-    throw new ApiError(400, 'Invalid JSON payload');
-  }
+  const rawBody = await parseJsonRequestBody(req);
 
   const parsed = AdminPhotoQrUpdateSchema.safeParse(rawBody);
   if (!parsed.success) {

@@ -144,6 +144,8 @@ function buildOpenApiRequestInit(
 
   if (resolvedPath === '/api/guest/login') {
     body = { code: firstInvite?.code ?? 'SMITH2026' };
+  } else if (resolvedPath === '/api/registry/validate-code') {
+    body = { code: firstInvite?.code ?? 'DEMO2026' };
   } else if (resolvedPath === '/api/guest/lookup') {
     body = { query: firstInvite?.guestName ?? 'Alex' };
   } else if (resolvedPath === '/api/guest/address/public') {
@@ -1292,9 +1294,22 @@ describe('Static Demo Fetch Router & Versioned Store', () => {
       );
     });
 
-    await router(
+    const previewRes = await router(
       `http://localhost:3000/api/registry/validate-code?code=${encodeURIComponent(targetInvite.code)}`,
     );
+    expect(previewRes?.status).toBe(200);
+    expect(
+      (await (await router('http://localhost:3000/api/guest/session'))!.json()).data,
+    ).toMatchObject({
+      status: 'passcode',
+      isVerified: false,
+    });
+
+    await router('http://localhost:3000/api/registry/validate-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: targetInvite.code }),
+    });
     const inviteSessionRes = await router('http://localhost:3000/api/guest/session');
     expect((await inviteSessionRes!.json()).data).toMatchObject({
       status: 'invitation',

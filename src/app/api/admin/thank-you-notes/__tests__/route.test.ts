@@ -92,9 +92,13 @@ jest.mock('next/server', () => {
       nextUrl: urlObj,
       headers: {
         get: (key: string) => {
-          if (key === 'cookie' && init?.headers) return init.headers.cookie;
+          if (!init?.headers) return null;
+          const lower = key.toLowerCase();
+          for (const [k, v] of Object.entries(init.headers)) {
+            if (k.toLowerCase() === lower) return String(v);
+          }
           return null;
-        }
+        },
       },
       cookies: {
         get: jest.fn((key) => requestCookies.get(key)),
@@ -235,6 +239,7 @@ describe('Thank-You Notes API Routes', () => {
 
       const req = new NextRequest('http://localhost:3000/api/admin/thank-you-notes/c1', {
         method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           thankYouStatus: 'Sent',
           thankYouNote: 'Thank you for the gift!',
@@ -250,6 +255,7 @@ describe('Thank-You Notes API Routes', () => {
     it('returns 400 when invalid status is provided', async () => {
       const req = new NextRequest('http://localhost:3000/api/admin/thank-you-notes/c1', {
         method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           thankYouStatus: 'INVALID_STATUS',
         }),
@@ -271,6 +277,7 @@ describe('Thank-You Notes API Routes', () => {
 
       const req = new NextRequest('http://localhost:3000/api/admin/thank-you-notes/c1', {
         method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           invitationCodeId: 'inv-household-1',
         }),
@@ -288,6 +295,7 @@ describe('Thank-You Notes API Routes', () => {
 
       const unlinkReq = new NextRequest('http://localhost:3000/api/admin/thank-you-notes/c1', {
         method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           invitationCodeId: '',
         }),
@@ -319,6 +327,7 @@ describe('Thank-You Notes API Routes', () => {
 
       const req = new NextRequest('http://localhost:3000/api/admin/thank-you-notes/c1', {
         method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           invitationCodeId: 'inv-1',
           addressLine1: '123 Maple St',
@@ -359,6 +368,7 @@ describe('Thank-You Notes API Routes', () => {
 
       const req = new NextRequest('http://localhost:3000/api/admin/thank-you-notes', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: 'Aunt Clara',
           amount: 150,
@@ -383,6 +393,7 @@ describe('Thank-You Notes API Routes', () => {
     it('returns 400 when offline gift amount or name is invalid', async () => {
       const req = new NextRequest('http://localhost:3000/api/admin/thank-you-notes', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: '',
           amount: -10,
@@ -403,6 +414,7 @@ describe('Thank-You Notes API Routes', () => {
 
       const req = new NextRequest('http://localhost:3000/api/admin/thank-you-notes/batch', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ids: ['c1', 'c2'],
           status: 'Sent',
@@ -419,6 +431,7 @@ describe('Thank-You Notes API Routes', () => {
     it('returns 400 when ids array is empty', async () => {
       const req = new NextRequest('http://localhost:3000/api/admin/thank-you-notes/batch', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ids: [],
           status: 'Sent',
@@ -522,6 +535,7 @@ describe('Thank-You Notes API Routes', () => {
         'http://localhost:3000/api/admin/thank-you-notes/c1/send-email',
         {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             mode: 'send',
             subject: 'Thank you!',
@@ -553,6 +567,7 @@ describe('Thank-You Notes API Routes', () => {
         'http://localhost:3000/api/admin/thank-you-notes/c1/send-email',
         {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             mode: 'send',
             body: '   ',

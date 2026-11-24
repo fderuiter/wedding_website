@@ -3,6 +3,11 @@ import { registryService } from '../service';
 import { ContributionSchema } from '../schemas';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import {
+  assertJsonContentType,
+  getRequestMediaType,
+  isJsonMediaType,
+} from '@/utils/contentType';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { maskRegistryItem, sanitizeRegistryItem } from '../lib/masking';
 import { getAppConfig } from '@/lib/config';
@@ -19,8 +24,9 @@ function settle<T>(operation: () => Promise<T> | T): Promise<PromiseSettledResul
 }
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
+  const hasJsonContentType = isJsonMediaType(getRequestMediaType(request));
   const configSettledPromise = settle(() => getAppConfig());
-  const bodySettledPromise = settle(() => request.json());
+  const bodySettledPromise = hasJsonContentType ? settle(() => request.json()) : null;
   const isAdminSettledPromise = settle(() => isAdminRequest(request));
 
   const configSettled = await configSettledPromise;
@@ -33,9 +39,11 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     throw new ApiError(404, "Feature 'registry' is disabled");
   }
 
-  const bodySettled = await bodySettledPromise;
+  assertJsonContentType(request);
+
+  const bodySettled = await bodySettledPromise!;
   if (bodySettled.status === 'rejected') {
-    throw bodySettled.reason;
+    throw new ApiError(400, 'Invalid JSON payload');
   }
   const data = bodySettled.value;
   const parseResult = ContributionSchema.safeParse(data);

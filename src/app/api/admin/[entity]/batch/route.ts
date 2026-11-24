@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getEntityService } from '@/features/admin';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { assertJsonContentType } from '@/utils/contentType';
 import {
   AdminEntityBatchUpdateSchema,
   AdminEntityBatchDeleteSchema,
@@ -15,6 +16,8 @@ export async function handleBatchUpdate(
   const { entity } = await context.params;
   const serviceData = await getEntityService(entity);
   if (!serviceData) throw new ApiError(404, 'Entity not found');
+
+  assertJsonContentType(request);
 
   let body: any;
   try {

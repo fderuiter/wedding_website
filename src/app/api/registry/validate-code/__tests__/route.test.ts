@@ -2,7 +2,7 @@
 
 import crypto from 'node:crypto';
 import { NextRequest } from 'next/server';
-import { GET } from '../route';
+import { GET, POST } from '../route';
 import { POST as guestLoginPost } from '@/app/api/guest/login/route';
 import { POST as adminLoginPost } from '@/app/api/admin/login/route';
 import { prisma } from '@/lib/prisma';
@@ -23,7 +23,7 @@ jest.mock('@/lib/prisma', () => ({
   },
 }));
 
-describe('GET /api/registry/validate-code', () => {
+describe('/api/registry/validate-code', () => {
   const mockFindUnique = prisma.invitationCode.findUnique as jest.Mock;
   const mockRecipientUpdateMany = prisma.broadcastRecipient.updateMany as jest.Mock;
 
@@ -32,13 +32,13 @@ describe('GET /api/registry/validate-code', () => {
     resetRateLimitsForTesting();
   });
 
-  test('returns 400 when code query parameter is missing', async () => {
+  test('GET returns 400 when code query parameter is missing', async () => {
     const req = new NextRequest('http://localhost/api/registry/validate-code');
     const res = await GET(req);
     expect(res.status).toBe(400);
   });
 
-  test('returns 404 when invitation code does not exist or is sample data', async () => {
+  test('GET returns 404 when invitation code does not exist or is sample data', async () => {
     mockFindUnique.mockResolvedValueOnce(null);
     const missingRes = await GET(new NextRequest('http://localhost/api/registry/validate-code?code=NOPE1234'));
     expect(missingRes.status).toBe(404);
@@ -61,7 +61,7 @@ describe('GET /api/registry/validate-code', () => {
     expect(mockRecipientUpdateMany).not.toHaveBeenCalled();
   });
 
-  test('issues guest_invite_session cookie and transitions SENT BroadcastRecipient rows to VIEWED on valid non-sample invitation code', async () => {
+  test('GET is strictly read-only: validates active code without issuing cookies or mutating BroadcastRecipient', async () => {
     mockFindUnique.mockResolvedValueOnce({
       id: 'inv-valid-1',
       code: 'VALID123',
@@ -79,6 +79,34 @@ describe('GET /api/registry/validate-code', () => {
       code: 'VALID123',
       email: 'alex.sam@example.com',
     });
+    expect(res.cookies.get(GUEST_INVITE_COOKIE)).toBeUndefined();
+    expect(res.headers.get('set-cookie')).toBeNull();
+    expect(mockRecipientUpdateMany).not.toHaveBeenCalled();
+  });
+
+  test('POST issues guest_invite_session cookie and transitions SENT BroadcastRecipient rows to VIEWED on valid non-sample invitation code', async () => {
+    mockFindUnique.mockResolvedValueOnce({
+      id: 'inv-valid-1',
+      code: 'VALID123',
+      guestName: 'Alex & Sam',
+      isSample: false,
+    });
+
+    const res = await POST(
+      new NextRequest('http://localhost/api/registry/validate-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: 'valid123' }),
+      })
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data).toEqual({
+      valid: true,
+      guestName: 'Alex & Sam',
+      code: 'VALID123',
+      email: null,
+    });
     expect(res.cookies.get(GUEST_INVITE_COOKIE)?.value).toBeTruthy();
     expect(mockRecipientUpdateMany).toHaveBeenCalledWith({
       where: {
@@ -91,12 +119,43 @@ describe('GET /api/registry/validate-code', () => {
     });
   });
 
-  test('enforces 5-attempt lockout per 15 minutes and returns 429 on 6th attempt', async () => {
+  test('POST rejects cross-site Fetch Metadata with 403 and non-JSON Content-Type with 415', async () => {
+    const crossSiteRes = await POST(
+      new NextRequest('http://localhost/api/registry/validate-code', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Sec-Fetch-Site': 'cross-site',
+        },
+        body: JSON.stringify({ code: 'VALID123' }),
+      })
+    );
+    expect(crossSiteRes.status).toBe(403);
+    expect(mockFindUnique).not.toHaveBeenCalled();
+
+    const textPlainRes = await POST(
+      new NextRequest('http://localhost/api/registry/validate-code', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain',
+        },
+        body: '{"code":"VALID123"}',
+      })
+    );
+    expect(textPlainRes.status).toBe(415);
+    expect(mockFindUnique).not.toHaveBeenCalled();
+  });
+
+  test('enforces 5-attempt lockout per 15 minutes and returns 429 on 6th attempt across GET and POST', async () => {
     mockFindUnique.mockResolvedValue(null);
 
     for (let i = 1; i <= 5; i++) {
-      const req = new NextRequest(`http://localhost/api/registry/validate-code?code=MARK000${i}`);
-      const res = await GET(req);
+      const req = new NextRequest('http://localhost/api/registry/validate-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: `MARK000${i}` }),
+      });
+      const res = await POST(req);
       expect(res.status).toBe(404);
     }
 
@@ -108,23 +167,42 @@ describe('GET /api/registry/validate-code', () => {
     expect(body.error).toMatch(/too many requests/i);
   });
 
-  test('returns 200 with shared_passcode guidance and no invite cookie when code matches GUEST_PASSCODE', async () => {
+  test('returns 200 with shared_passcode guidance and no invite cookie when code matches GUEST_PASSCODE on GET and POST', async () => {
     const prevPasscode = process.env.GUEST_PASSCODE;
     process.env.GUEST_PASSCODE = 'WEDDING2026';
     try {
       mockFindUnique.mockResolvedValueOnce(null);
-      const res = await GET(
+      const getRes = await GET(
         new NextRequest('http://localhost/api/registry/validate-code?code=wedding2026')
       );
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.success).toBe(true);
-      expect(body.data).toMatchObject({
+      expect(getRes.status).toBe(200);
+      const getBody = await getRes.json();
+      expect(getBody.success).toBe(true);
+      expect(getBody.data).toMatchObject({
         valid: false,
         reason: 'shared_passcode',
       });
-      expect(body.data.error).toMatch(/shared website passcode/i);
-      expect(res.cookies.get(GUEST_INVITE_COOKIE)?.value).toBeUndefined();
+      expect(getBody.data.error).toMatch(/shared website passcode/i);
+      expect(getRes.cookies.get(GUEST_INVITE_COOKIE)?.value).toBeUndefined();
+
+      mockFindUnique.mockResolvedValueOnce(null);
+      const postRes = await POST(
+        new NextRequest('http://localhost/api/registry/validate-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: 'wedding2026' }),
+        })
+      );
+      expect(postRes.status).toBe(200);
+      const postBody = await postRes.json();
+      expect(postBody.success).toBe(true);
+      expect(postBody.data).toMatchObject({
+        valid: false,
+        reason: 'shared_passcode',
+      });
+      expect(postBody.data.error).toMatch(/shared website passcode/i);
+      expect(postRes.cookies.get(GUEST_INVITE_COOKIE)?.value).toBeUndefined();
+      expect(mockRecipientUpdateMany).not.toHaveBeenCalled();
       expect(mockFindUnique).toHaveBeenCalledWith({ where: { code: 'WEDDING2026' } });
     } finally {
       if (prevPasscode === undefined) {
@@ -135,7 +213,7 @@ describe('GET /api/registry/validate-code', () => {
     }
   });
 
-  test('repeated checks for one code reuse incoming cookie and share one canonical household rate-limit bucket', async () => {
+  test('repeated POST checks for one code reuse incoming cookie and share one canonical household rate-limit bucket', async () => {
     mockFindUnique.mockResolvedValue({
       id: 'inv-household-1',
       code: 'HOUSEHOLD1',
@@ -143,8 +221,12 @@ describe('GET /api/registry/validate-code', () => {
       isSample: false,
     });
 
-    const firstRes = await GET(
-      new NextRequest('http://localhost/api/registry/validate-code?code=household1')
+    const firstRes = await POST(
+      new NextRequest('http://localhost/api/registry/validate-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: 'household1' }),
+      })
     );
     expect(firstRes.status).toBe(200);
     const firstToken = firstRes.cookies.get(GUEST_INVITE_COOKIE)?.value;
@@ -153,17 +235,26 @@ describe('GET /api/registry/validate-code', () => {
     await new Promise((resolve) => setTimeout(resolve, 5));
 
     // Re-checking with valid incoming cookie reuses the exact same token instead of minting a new one
-    const reusedRes = await GET(
-      new NextRequest('http://localhost/api/registry/validate-code?code=HOUSEHOLD1', {
-        headers: { cookie: `${GUEST_INVITE_COOKIE}=${firstToken}` },
+    const reusedRes = await POST(
+      new NextRequest('http://localhost/api/registry/validate-code', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: `${GUEST_INVITE_COOKIE}=${firstToken}`,
+        },
+        body: JSON.stringify({ code: 'HOUSEHOLD1' }),
       })
     );
     expect(reusedRes.status).toBe(200);
     expect(reusedRes.cookies.get(GUEST_INVITE_COOKIE)?.value).toBe(firstToken);
 
     // Even when a caller omits the cookie to obtain a second distinct token, both share one household bucket
-    const uncookieSecondRes = await GET(
-      new NextRequest('http://localhost/api/registry/validate-code?code=HOUSEHOLD1')
+    const uncookieSecondRes = await POST(
+      new NextRequest('http://localhost/api/registry/validate-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: 'HOUSEHOLD1' }),
+      })
     );
     const secondToken = uncookieSecondRes.cookies.get(GUEST_INVITE_COOKIE)?.value;
     expect(secondToken).toBeTruthy();
@@ -191,6 +282,7 @@ describe('GET /api/registry/validate-code', () => {
       const oversizedAdminRes = await adminLoginPost(
         new NextRequest('http://localhost/api/admin/login', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ password: 'a'.repeat(257) }),
         })
       );
@@ -199,6 +291,7 @@ describe('GET /api/registry/validate-code', () => {
       const oversizedGuestRes = await guestLoginPost(
         new NextRequest('http://localhost/api/guest/login', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ passcode: 'p'.repeat(257) }),
         })
       );
@@ -208,12 +301,22 @@ describe('GET /api/registry/validate-code', () => {
         new NextRequest(`http://localhost/api/registry/validate-code?code=${'C'.repeat(257)}`)
       );
       expect(oversizedCodeRes.status).toBe(400);
+
+      const oversizedPostCodeRes = await POST(
+        new NextRequest('http://localhost/api/registry/validate-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: 'C'.repeat(257) }),
+        })
+      );
+      expect(oversizedPostCodeRes.status).toBe(400);
       expect(scryptSpy).not.toHaveBeenCalled();
 
       // 2. Guest shared-passcode login reuses valid incoming guest_auth cookie (preserving jti)
       const guestRes1 = await guestLoginPost(
         new NextRequest('http://localhost/api/guest/login', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ passcode: env.GUEST_PASSCODE }),
         })
       );
@@ -224,7 +327,10 @@ describe('GET /api/registry/validate-code', () => {
       const guestRes2 = await guestLoginPost(
         new NextRequest('http://localhost/api/guest/login', {
           method: 'POST',
-          headers: { cookie: `${GUEST_COOKIE}=${guestToken1}` },
+          headers: {
+            'Content-Type': 'application/json',
+            cookie: `${GUEST_COOKIE}=${guestToken1}`,
+          },
           body: JSON.stringify({ passcode: env.GUEST_PASSCODE }),
         })
       );
@@ -241,6 +347,7 @@ describe('GET /api/registry/validate-code', () => {
       const inviteLoginRes1 = await guestLoginPost(
         new NextRequest('http://localhost/api/guest/login', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ passcode: 'invreuse1' }),
         })
       );
@@ -253,7 +360,10 @@ describe('GET /api/registry/validate-code', () => {
       const inviteLoginRes2 = await guestLoginPost(
         new NextRequest('http://localhost/api/guest/login', {
           method: 'POST',
-          headers: { cookie: `${GUEST_INVITE_COOKIE}=${inviteLoginToken1}` },
+          headers: {
+            'Content-Type': 'application/json',
+            cookie: `${GUEST_INVITE_COOKIE}=${inviteLoginToken1}`,
+          },
           body: JSON.stringify({ passcode: 'INVREUSE1' }),
         })
       );
@@ -264,6 +374,7 @@ describe('GET /api/registry/validate-code', () => {
       const adminRes1 = await adminLoginPost(
         new NextRequest('http://localhost/api/admin/login', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ password: 'secret' }),
         })
       );
@@ -276,7 +387,10 @@ describe('GET /api/registry/validate-code', () => {
       const adminRes2 = await adminLoginPost(
         new NextRequest('http://localhost/api/admin/login', {
           method: 'POST',
-          headers: { cookie: `${ADMIN_COOKIE}=${adminToken1}` },
+          headers: {
+            'Content-Type': 'application/json',
+            cookie: `${ADMIN_COOKIE}=${adminToken1}`,
+          },
           body: JSON.stringify({ password: 'secret' }),
         })
       );

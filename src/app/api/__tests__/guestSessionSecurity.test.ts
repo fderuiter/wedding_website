@@ -284,6 +284,7 @@ describe('Guest Session Security Integration', () => {
       const req = new NextRequest('http://localhost:3000/api/guest/address', {
         method: 'PUT',
         headers: {
+          'Content-Type': 'application/json',
           cookie: `${GUEST_INVITE_COOKIE}=${legitimateToken}`,
         },
         body: JSON.stringify({
@@ -311,6 +312,7 @@ describe('Guest Session Security Integration', () => {
       const req = new NextRequest('http://localhost:3000/api/guest/address', {
         method: 'PUT',
         headers: {
+          'Content-Type': 'application/json',
           cookie: `${GUEST_INVITE_COOKIE}=${forgedToken}`,
         },
         body: JSON.stringify({
@@ -338,6 +340,7 @@ describe('Guest Session Security Integration', () => {
       const req = new NextRequest('http://localhost:3000/api/guest/address', {
         method: 'PUT',
         headers: {
+          'Content-Type': 'application/json',
           cookie: `${GUEST_INVITE_COOKIE}=${forgedToken}`,
         },
         body: JSON.stringify({
@@ -387,6 +390,7 @@ describe('Guest Session Security Integration', () => {
       const req = new NextRequest('http://localhost:3000/api/rsvp', {
         method: 'POST',
         headers: {
+          'Content-Type': 'application/json',
           cookie: `${GUEST_INVITE_COOKIE}=${legitimateToken}`,
         },
         body: JSON.stringify({
@@ -413,6 +417,7 @@ describe('Guest Session Security Integration', () => {
       const req = new NextRequest('http://localhost:3000/api/rsvp', {
         method: 'POST',
         headers: {
+          'Content-Type': 'application/json',
           cookie: `${GUEST_INVITE_COOKIE}=${forgedToken}`,
         },
         body: JSON.stringify({
@@ -438,6 +443,7 @@ describe('Guest Session Security Integration', () => {
       const req = new NextRequest('http://localhost:3000/api/rsvp', {
         method: 'POST',
         headers: {
+          'Content-Type': 'application/json',
           cookie: `${GUEST_INVITE_COOKIE}=${forgedToken}`,
         },
         body: JSON.stringify({

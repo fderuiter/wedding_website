@@ -6,18 +6,26 @@ import { getGuestInviteSession, GUEST_INVITE_COOKIE } from '@/core/auth/guestInv
 import { isGuestRequest } from '@/core/auth/guest.server';
 import { readRequestCookie } from '@/core/auth/tokenCookieHelpers';
 
-jest.mock('@/core/auth/guestInviteSession', () => ({
-  GUEST_INVITE_COOKIE: 'guest_invite_session',
-  getGuestInviteSession: jest.fn(),
-}));
+jest.mock('@/core/auth/guestInviteSession', () => {
+  const actualInviteToken = jest.requireActual('@/core/auth/guestInviteToken');
+  return {
+    GUEST_INVITE_COOKIE: 'guest_invite_session',
+    clearGuestInviteSessionCookie: actualInviteToken.clearGuestInviteSessionCookie,
+    getGuestInviteSession: jest.fn(),
+  };
+});
 
 jest.mock('@/core/auth/guest.server', () => ({
   isGuestRequest: jest.fn(),
 }));
 
-jest.mock('@/core/auth/tokenCookieHelpers', () => ({
-  readRequestCookie: jest.fn(),
-}));
+jest.mock('@/core/auth/tokenCookieHelpers', () => {
+  const actual = jest.requireActual('@/core/auth/tokenCookieHelpers');
+  return {
+    ...actual,
+    readRequestCookie: jest.fn(),
+  };
+});
 
 describe('/api/guest/session Route', () => {
   const mockGetGuestInviteSession = getGuestInviteSession as jest.MockedFunction<
@@ -130,5 +138,47 @@ describe('/api/guest/session Route', () => {
     });
     expect(res.cookies.get(GUEST_INVITE_COOKIE)?.value).toBe('');
     expect(res.cookies.get('guest_auth')).toBeUndefined();
+  });
+
+  it('clears __Host-guest_invite_session over HTTPS in production and blocks cross-site DELETE with 403', async () => {
+    const prevNodeEnv = process.env.NODE_ENV;
+    (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+    try {
+      mockIsGuestRequest.mockResolvedValue(true);
+
+      const crossSiteRes = await DELETE(
+        new NextRequest('https://wedding.example/api/guest/session', {
+          method: 'DELETE',
+          headers: {
+            host: 'wedding.example',
+            'x-forwarded-proto': 'https',
+            'sec-fetch-site': 'cross-site',
+          },
+        }),
+        {}
+      );
+      expect(crossSiteRes.status).toBe(403);
+
+      const sameOriginRes = await DELETE(
+        new NextRequest('https://wedding.example/api/guest/session', {
+          method: 'DELETE',
+          headers: {
+            host: 'wedding.example',
+            origin: 'https://wedding.example',
+            'x-forwarded-proto': 'https',
+            'sec-fetch-site': 'same-origin',
+            cookie:
+              '__Host-guest_auth=valid-passcode-jwt; __Host-guest_invite_session=active-invite-token; guest_invite_session=legacy-token',
+          },
+        }),
+        {}
+      );
+      expect(sameOriginRes.status).toBe(200);
+      expect(sameOriginRes.cookies.get('__Host-guest_invite_session')?.value).toBe('');
+      expect(sameOriginRes.cookies.get(GUEST_INVITE_COOKIE)?.value).toBe('');
+      expect(sameOriginRes.cookies.get('__Host-guest_auth')).toBeUndefined();
+    } finally {
+      (process.env as Record<string, string | undefined>).NODE_ENV = prevNodeEnv;
+    }
   });
 });

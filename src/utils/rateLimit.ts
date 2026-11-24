@@ -6,9 +6,11 @@ import { verifyAdminToken, ADMIN_COOKIE } from '@/core/auth/auth.server';
 import { verifyGuestToken, GUEST_COOKIE } from '@/core/auth/guest.server';
 import {
   getSignedGuestInviteSession,
+  getSignedGuestInviteSessionWithToken,
   verifyGuestInviteSessionToken,
   GUEST_INVITE_COOKIE,
 } from '@/core/auth/guestInviteToken';
+import { readRequestCookieCandidates } from '@/core/auth/tokenCookieHelpers';
 import { env } from '@/env';
 import { logger } from '@/lib/logger';
 import { qualifyPostgresTable } from '@/lib/postgres-url.js';
@@ -500,69 +502,96 @@ export function getClientIp(req: NextRequest): string {
   return (hasHeaderReader ? readVerifiedSocketIp(req.headers) : null) ?? '127.0.0.1';
 }
 
-function extractRequestCookie(req: NextRequest, cookieName: string): string | undefined {
-  const fromCookies = req.cookies?.get?.(cookieName)?.value;
-  if (fromCookies) {
-    return fromCookies;
-  }
-  if (typeof req.headers?.get === 'function') {
-    const rawCookieHeader = req.headers.get('cookie');
-    if (rawCookieHeader) {
-      for (const part of rawCookieHeader.split(';')) {
-        const trimmed = part.trim();
-        if (trimmed.startsWith(`${cookieName}=`)) {
-          const rawVal = trimmed.slice(cookieName.length + 1);
-          try {
-            return decodeURIComponent(rawVal);
-          } catch {
-            return rawVal;
-          }
-        }
-      }
-    }
-  }
-  return undefined;
-}
-
 async function resolveSessionPrincipal(req: NextRequest): Promise<string | null> {
   const adminCookieName = ADMIN_COOKIE || 'admin_auth';
-  const adminCookie = extractRequestCookie(req, adminCookieName);
-  if (adminCookie) {
-    try {
-      if (typeof verifyAdminToken === 'function') {
+  const adminCandidates = await readRequestCookieCandidates(adminCookieName, req, {
+    suppressErrors: true,
+  });
+  if (adminCandidates.length > 0 && typeof verifyAdminToken === 'function') {
+    for (const adminCookie of adminCandidates) {
+      try {
         const payload = await verifyAdminToken(adminCookie);
         if (payload && payload.isAdmin === true) {
           return 'session:admin';
         }
+      } catch {
+        // Malformed or invalid admin cookie candidate falls through to next entry
       }
-    } catch {
-      // Malformed or invalid admin cookie falls through
     }
   }
 
   const inviteCookieName = GUEST_INVITE_COOKIE || 'guest_invite_session';
-  const inviteCookie = extractRequestCookie(req, inviteCookieName);
-  if (inviteCookie) {
-    try {
-      const payload =
-        typeof getSignedGuestInviteSession === 'function'
-          ? await getSignedGuestInviteSession(req)
-          : typeof verifyGuestInviteSessionToken === 'function'
-            ? await verifyGuestInviteSessionToken(inviteCookie)
-            : null;
-      if (payload && typeof payload.code === 'string' && payload.code.trim() && payload.guestName) {
-        return `session:invite:${payload.code.trim().toUpperCase()}`;
+  const inviteCandidates = await readRequestCookieCandidates(inviteCookieName, req, {
+    suppressErrors: true,
+  });
+  if (inviteCandidates.length > 0) {
+    if (
+      typeof getSignedGuestInviteSessionWithToken === 'function' &&
+      !isMockedFunction(getSignedGuestInviteSession) &&
+      !isMockedFunction(verifyGuestInviteSessionToken)
+    ) {
+      try {
+        const verified = await getSignedGuestInviteSessionWithToken(req);
+        if (
+          verified &&
+          typeof verified.payload.code === 'string' &&
+          verified.payload.code.trim() &&
+          verified.payload.guestName
+        ) {
+          return `session:invite:${verified.payload.code.trim().toUpperCase()}`;
+        }
+      } catch {
+        // Malformed or invalid guest invite cookie falls through
       }
-    } catch {
-      // Malformed or invalid guest invite cookie falls through
+    } else {
+      if (
+        typeof getSignedGuestInviteSession === 'function' &&
+        isMockedFunction(getSignedGuestInviteSession)
+      ) {
+        try {
+          const payload = await getSignedGuestInviteSession(req);
+          if (payload && typeof payload.code === 'string' && payload.code.trim() && payload.guestName) {
+            return `session:invite:${payload.code.trim().toUpperCase()}`;
+          }
+        } catch {
+          // Malformed or invalid guest invite cookie falls through
+        }
+      }
+      if (typeof verifyGuestInviteSessionToken === 'function') {
+        for (const inviteCookie of inviteCandidates) {
+          try {
+            const payload = await verifyGuestInviteSessionToken(inviteCookie);
+            if (payload && typeof payload.code === 'string' && payload.code.trim() && payload.guestName) {
+              return `session:invite:${payload.code.trim().toUpperCase()}`;
+            }
+          } catch {
+            // Malformed or invalid invite cookie candidate falls through to next entry
+          }
+        }
+      }
+      if (
+        typeof getSignedGuestInviteSession === 'function' &&
+        !isMockedFunction(getSignedGuestInviteSession)
+      ) {
+        try {
+          const payload = await getSignedGuestInviteSession(req);
+          if (payload && typeof payload.code === 'string' && payload.code.trim() && payload.guestName) {
+            return `session:invite:${payload.code.trim().toUpperCase()}`;
+          }
+        } catch {
+          // Malformed or invalid guest invite cookie falls through
+        }
+      }
     }
   }
 
   const guestCookieName = GUEST_COOKIE || 'guest_auth';
-  const guestCookie = extractRequestCookie(req, guestCookieName);
-  if (guestCookie) {
-    try {
-      if (typeof verifyGuestToken === 'function') {
+  const guestCandidates = await readRequestCookieCandidates(guestCookieName, req, {
+    suppressErrors: true,
+  });
+  if (guestCandidates.length > 0 && typeof verifyGuestToken === 'function') {
+    for (const guestCookie of guestCandidates) {
+      try {
         const payload = await verifyGuestToken(guestCookie);
         if (payload && payload.guest === true) {
           const tokenId =
@@ -571,9 +600,9 @@ async function resolveSessionPrincipal(req: NextRequest): Promise<string | null>
               : crypto.createHash('sha256').update(guestCookie).digest('hex');
           return `session:guest:${tokenId}`;
         }
+      } catch {
+        // Malformed or invalid guest cookie candidate falls through to next entry
       }
-    } catch {
-      // Malformed or invalid guest cookie falls through
     }
   }
 

@@ -111,10 +111,10 @@ export const ModuleConfigSchema = z.object({
 - **Shared Auth, Scraping, & Webhook Routes Under `/api/registry/*` Skipping `isFeatureEnabled('registry')` (4 of 13 handlers)**:
   - `POST /api/registry/scrape` (reused by Admin Content Hub photo metadata import)
   - `GET /api/registry/session` and `DELETE /api/registry/session` (global guest invitation session hydration)
-  - `GET /api/registry/validate-code` (reused by `/guest/collect` address portal)
+  - `GET /api/registry/validate-code` and `POST /api/registry/validate-code` (reused by `/guest/collect` address portal)
   - `POST /api/registry/webhook/stripe` (asynchronous settlement reconciliation for already-created PaymentIntents)
 - **Group Gifting Enforcement (HTTP 400 Bad Request, Not HTTP 404)**:
-  - When `registry` is enabled (`true`) and `groupGifting` is disabled (`false`), partial or group-gift contributions (`targetItem.isGroupGift || amount < targetItem.price`) throw `new ApiError(400, 'Group gifting is currently disabled.')` (**HTTP 400**) in both [src/features/registry/api/contribute.ts](src/features/registry/api/contribute.ts#L102-L106) and [src/features/registry/api/payment-intent.ts](src/features/registry/api/payment-intent.ts#L63-L67).
+  - When `registry` is enabled (`true`) and `groupGifting` is disabled (`false`), partial or group-gift contributions (`targetItem.isGroupGift || amount < targetItem.price`) throw `new ApiError(400, 'Group gifting is currently disabled.')` (**HTTP 400**) in both [src/features/registry/api/contribute.ts](src/features/registry/api/contribute.ts#L110-L114) and [src/features/registry/api/payment-intent.ts](src/features/registry/api/payment-intent.ts#L115-L119).
 - **Schedule ICS Export & Read-Only `ContentNode` Coexistence**:
   - `GET /api/schedule/[id]/ics` skips `isFeatureEnabled('addToCalendar')`.
   - `SubEventService` ([src/features/sub-events/service.ts](src/features/sub-events/service.ts#L375-L408)) resolves structured `SubEvent` rows first and falls back to `Schedule` or `Logistics` `ContentNode` records marked `isReadOnly: true` (enforcing `isPrivateContentNode` access rules and rejecting RSVP submissions on read-only fallback items with HTTP `400`).

@@ -33,6 +33,7 @@ describe('High-Risk Admin Routes Explicit Authorization Tests', () => {
     test('POST /api/admin/maintenance/import rejects unauthenticated request', async () => {
       const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ appConfig: [], registryItem: [] }),
       });
       const res = await importMaintenance(req);
@@ -50,6 +51,7 @@ describe('High-Risk Admin Routes Explicit Authorization Tests', () => {
     test('POST /api/admin/settings rejects unauthenticated request', async () => {
       const req = new NextRequest('http://localhost/api/admin/settings', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ brideName: 'Jane', groomName: 'John' }),
       });
       const res = await updateSettings(req);
@@ -59,6 +61,7 @@ describe('High-Risk Admin Routes Explicit Authorization Tests', () => {
     test('PUT /api/admin/features rejects unauthenticated request', async () => {
       const req = new NextRequest('http://localhost/api/admin/features', {
         method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ features: [] }),
       });
       const res = await updateFeatures(req);
@@ -80,6 +83,7 @@ describe('High-Risk Admin Routes Explicit Authorization Tests', () => {
 
       const postReq = new NextRequest('http://localhost/api/admin/content-nodes', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'FAQ', tags: [], data: {} }),
       });
       const postRes = await createEntity(postReq, { params: Promise.resolve({ entity: 'content-nodes' }) });
@@ -102,6 +106,7 @@ describe('High-Risk Admin Routes Explicit Authorization Tests', () => {
     test('POST /api/registry/scrape rejects unauthenticated request', async () => {
       const req = new NextRequest('http://localhost/api/registry/scrape', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: 'https://example.com/item' }),
       });
       const res = await scrapeUrl(req);
@@ -113,6 +118,7 @@ describe('High-Risk Admin Routes Explicit Authorization Tests', () => {
     test('guest login applies strict rate limiting (5 attempts max)', async () => {
       const makeReq = () => new NextRequest('http://localhost/api/guest/login', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ passcode: 'wrong-passcode' }),
       });
 
@@ -131,6 +137,7 @@ describe('High-Risk Admin Routes Explicit Authorization Tests', () => {
     test('guest login succeeds with correct passcode', async () => {
       const req = new NextRequest('http://localhost/api/guest/login', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ passcode: 'secret-guest-code' }),
       });
       const res = await guestLogin(req);

@@ -80,6 +80,7 @@ describe('POST /api/registry/payment-intent/reconcile', () => {
     const res = await POST(
       new NextRequest('http://localhost:3000/api/registry/payment-intent/reconcile', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           paymentIntentId: 'pi_reconcile_100',
           clientSecret: 'pi_reconcile_100_secret_wrong',
@@ -112,6 +113,7 @@ describe('POST /api/registry/payment-intent/reconcile', () => {
     const res = await POST(
       new NextRequest('http://localhost:3000/api/registry/payment-intent/reconcile', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           paymentIntentId: 'pi_reconcile_101',
           clientSecret: 'pi_reconcile_101_secret_valid',
@@ -143,6 +145,7 @@ describe('POST /api/registry/payment-intent/reconcile', () => {
     const res = await POST(
       new NextRequest('http://localhost:3000/api/registry/payment-intent/reconcile', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           paymentIntentId: 'pi_reconcile_failed',
           clientSecret: 'pi_reconcile_failed_secret_valid',
@@ -184,6 +187,7 @@ describe('POST /api/registry/payment-intent/reconcile', () => {
     const res = await POST(
       new NextRequest('http://localhost:3000/api/registry/payment-intent/reconcile', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           paymentIntentId: 'pi_reconcile_tampered',
           clientSecret: 'pi_reconcile_tampered_secret_valid',
@@ -250,6 +254,7 @@ describe('POST /api/registry/payment-intent/reconcile', () => {
       POST(
         new NextRequest('http://localhost:3000/api/registry/payment-intent/reconcile', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             paymentIntentId: 'pi_reconcile_ok',
             clientSecret: 'pi_reconcile_ok_secret_valid',
@@ -303,5 +308,36 @@ describe('POST /api/registry/payment-intent/reconcile', () => {
         }),
       })
     );
+  });
+
+  it('rejects non-JSON Content-Type with 415 and cross-site Fetch Metadata with 403', async () => {
+    const nonJsonRes = await POST(
+      new NextRequest('http://localhost:3000/api/registry/payment-intent/reconcile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          paymentIntentId: 'pi_reconcile_ok',
+          clientSecret: 'pi_reconcile_ok_secret_valid',
+        }),
+      })
+    );
+    expect(nonJsonRes.status).toBe(415);
+    expect(mockPaymentIntentsRetrieve).not.toHaveBeenCalled();
+
+    const crossSiteRes = await POST(
+      new NextRequest('http://localhost:3000/api/registry/payment-intent/reconcile', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Sec-Fetch-Site': 'cross-site',
+        },
+        body: JSON.stringify({
+          paymentIntentId: 'pi_reconcile_ok',
+          clientSecret: 'pi_reconcile_ok_secret_valid',
+        }),
+      })
+    );
+    expect(crossSiteRes.status).toBe(403);
+    expect(mockPaymentIntentsRetrieve).not.toHaveBeenCalled();
   });
 });

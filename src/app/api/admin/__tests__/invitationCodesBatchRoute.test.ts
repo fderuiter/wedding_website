@@ -40,6 +40,7 @@ describe('POST /api/admin/invitation-codes/batch', () => {
     mockIsAdminRequest.mockResolvedValue(false);
     const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         records: [{ guestName: 'John Doe', code: 'JOHN100' }],
       }),
@@ -52,6 +53,7 @@ describe('POST /api/admin/invitation-codes/batch', () => {
   test('returns 400 for malformed JSON body', async () => {
     const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: 'invalid-json',
     });
 
@@ -64,6 +66,7 @@ describe('POST /api/admin/invitation-codes/batch', () => {
   test('returns 400 for invalid body schema', async () => {
     const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         records: [],
       }),
@@ -103,6 +106,7 @@ describe('POST /api/admin/invitation-codes/batch', () => {
 
     const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
 
@@ -124,6 +128,7 @@ describe('POST /api/admin/invitation-codes/batch', () => {
 
     const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         records: [{ guestName: 'Alice', code: 'ALICE100' }],
         collisionStrategy: 'reject',
@@ -231,6 +236,7 @@ describe('Batch Update on /api/admin/invitation-codes/batch (POST, PUT, PATCH)',
 
     const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ids: [...ids, 'code-1', '  code-2  '],
         tags: ['  VIP  ', '', 'VIP'],
@@ -261,6 +267,7 @@ describe('Batch Update on /api/admin/invitation-codes/batch (POST, PUT, PATCH)',
     for (const action of ['add', 'remove'] as const) {
       const badReq = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ids: ['code-1'],
           tags: ['   ', ''],
@@ -279,6 +286,7 @@ describe('Batch Update on /api/admin/invitation-codes/batch (POST, PUT, PATCH)',
     ]);
     const replaceReq = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ids: ['code-1'],
         tags: [],
@@ -299,6 +307,7 @@ describe('Batch Update on /api/admin/invitation-codes/batch (POST, PUT, PATCH)',
     const ids = Array.from({ length: 5001 }, (_, i) => `code-${i}`);
     const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ids,
         tags: ['VIP'],
@@ -323,6 +332,7 @@ describe('Batch Update on /api/admin/invitation-codes/batch (POST, PUT, PATCH)',
     const payload = { ids: ['code-1', 'code-2'], used: true };
     const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
 
@@ -349,6 +359,7 @@ describe('Batch Update on /api/admin/invitation-codes/batch (POST, PUT, PATCH)',
     const payload = { ids: ['code-1'], used: true };
     const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
     const cloneSpy = jest.fn(() => ({
@@ -371,6 +382,7 @@ describe('Batch Update on /api/admin/invitation-codes/batch (POST, PUT, PATCH)',
   test('forwards mixed POST payloads lacking records to batch update handler', async () => {
     const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ used: true }),
     });
 
@@ -389,6 +401,7 @@ describe('Batch Update on /api/admin/invitation-codes/batch (POST, PUT, PATCH)',
     const payload = { ids: ['code-1'], used: false };
     const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
       method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
 
@@ -410,6 +423,7 @@ describe('Batch Update on /api/admin/invitation-codes/batch (POST, PUT, PATCH)',
     const payload = { ids: ['code-1'], payload: { used: true } };
     const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
       method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
 
@@ -427,6 +441,7 @@ describe('Batch Update on /api/admin/invitation-codes/batch (POST, PUT, PATCH)',
   test('returns 400 when ids array is empty', async () => {
     const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: [], used: true }),
     });
 
@@ -441,6 +456,7 @@ describe('Batch Update on /api/admin/invitation-codes/batch (POST, PUT, PATCH)',
     const ids = Array.from({ length: 101 }, (_, i) => `id-${i}`);
     const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids, used: true }),
     });
 
@@ -460,6 +476,7 @@ describe('Batch Update on /api/admin/invitation-codes/batch (POST, PUT, PATCH)',
 
       const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
         method,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: ['invalid-id'], used: true }),
       });
 

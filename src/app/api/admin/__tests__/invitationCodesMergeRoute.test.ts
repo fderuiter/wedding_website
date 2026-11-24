@@ -34,6 +34,7 @@ describe('POST /api/admin/invitation-codes/merge', () => {
     mockIsAdminRequest.mockResolvedValue(false);
     const req = new NextRequest('http://localhost/api/admin/invitation-codes/merge', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ primaryId: 'inv-1', secondaryIds: ['inv-2'] }),
     });
 
@@ -44,6 +45,7 @@ describe('POST /api/admin/invitation-codes/merge', () => {
   test('returns 400 for malformed JSON body', async () => {
     const req = new NextRequest('http://localhost/api/admin/invitation-codes/merge', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: '{bad-json',
     });
 
@@ -56,6 +58,7 @@ describe('POST /api/admin/invitation-codes/merge', () => {
   test('returns 400 when secondaryIds is empty or only contains primaryId', async () => {
     const emptyReq = new NextRequest('http://localhost/api/admin/invitation-codes/merge', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ primaryId: 'inv-1', secondaryIds: [] }),
     });
     const emptyRes = await POST(emptyReq);
@@ -63,6 +66,7 @@ describe('POST /api/admin/invitation-codes/merge', () => {
 
     const selfReq = new NextRequest('http://localhost/api/admin/invitation-codes/merge', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ primaryId: 'inv-1', secondaryIds: ['inv-1'] }),
     });
     const selfRes = await POST(selfReq);
@@ -78,6 +82,7 @@ describe('POST /api/admin/invitation-codes/merge', () => {
 
     const req = new NextRequest('http://localhost/api/admin/invitation-codes/merge', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ primaryId: 'inv-1', secondaryIds: ['inv-missing'] }),
     });
 
@@ -111,6 +116,7 @@ describe('POST /api/admin/invitation-codes/merge', () => {
 
     const req = new NextRequest('http://localhost/api/admin/invitation-codes/merge', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ primaryId: 'inv-1', secondaryIds: ['inv-2', 'inv-3'] }),
     });
 

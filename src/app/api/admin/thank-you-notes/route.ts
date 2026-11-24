@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { parseJsonRequestBody } from '@/utils/contentType';
 import { formatZodError } from '@/utils/validation';
 import { CreateOfflineThankYouNoteSchema, thankYouService } from '@/features/registry';
 
@@ -27,7 +28,7 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
 });
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
-  const body = await req.json();
+  const body = await parseJsonRequestBody(req);
 
   const parseResult = CreateOfflineThankYouNoteSchema.safeParse(body);
   if (!parseResult.success) {

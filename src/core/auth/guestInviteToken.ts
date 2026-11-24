@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { normalizeTenantSubdomain } from '@/utils/hostValidation';
 import { resolveGuestSigningSecret } from './guestHeaderSignature';
 import {
@@ -6,12 +6,33 @@ import {
   verifyEdgeTenantClaims,
 } from './tenantClaims';
 import {
-  readRequestCookie,
+  clearSessionCookie,
+  getSessionCookieOptions,
+  readRequestCookieCandidates,
+  resolveSessionCookieName,
   signCompactToken,
   verifyCompactToken,
 } from './tokenCookieHelpers';
 
 export const GUEST_INVITE_COOKIE = 'guest_invite_session';
+
+export function setGuestInviteSessionCookie(
+  response: NextResponse,
+  token: string,
+  req?: NextRequest | Request,
+  maxAge: number = 7 * 24 * 60 * 60
+): NextResponse {
+  const cookieName = resolveSessionCookieName(GUEST_INVITE_COOKIE, req);
+  response.cookies.set(cookieName, token, getSessionCookieOptions(maxAge, req));
+  return response;
+}
+
+export function clearGuestInviteSessionCookie(
+  response: NextResponse,
+  req?: NextRequest | Request
+): NextResponse {
+  return clearSessionCookie(response, GUEST_INVITE_COOKIE, req);
+}
 
 export interface GuestInviteSessionPayload {
   code: string;
@@ -80,16 +101,10 @@ const requestSignedSessionCache = new WeakMap<
   Map<string, Promise<GuestInviteSessionPayload | null>>
 >();
 
-/**
- * Reads and verifies the HMAC signature and expiration of the `guest_invite_session`
- * cookie with per-request WeakMap deduplication, prior to tenant claim filtering.
- */
-export async function getRawSignedGuestInviteSession(
+async function verifyCachedInviteCookieCandidate(
+  cookieValue: string,
   req?: NextRequest
 ): Promise<GuestInviteSessionPayload | null> {
-  const cookieValue = await readRequestCookie(GUEST_INVITE_COOKIE, req, { suppressErrors: true });
-  if (!cookieValue) return null;
-
   if (req && typeof req === 'object') {
     let byCookie = requestSignedSessionCache.get(req);
     let cached = byCookie?.get(cookieValue);
@@ -105,31 +120,93 @@ export async function getRawSignedGuestInviteSession(
       byCookie.set(cookieValue, cached);
     }
 
-    const payload = await cached;
-    if (!payload) return null;
-    if (payload.exp && payload.exp < Date.now()) {
+    try {
+      const payload = await cached;
+      return payload && (!payload.exp || payload.exp >= Date.now()) ? payload : null;
+    } catch {
       return null;
     }
-    return payload;
   }
 
   return verifyGuestInviteSessionToken(cookieValue);
 }
 
 /**
+ * Reads and verifies the HMAC signature and expiration of the `guest_invite_session`
+ * cookie with per-request WeakMap deduplication, prior to tenant claim filtering.
+ * Prefers `__Host-` cookies and checks every matching `Cookie` entry.
+ */
+export async function getRawSignedGuestInviteSessionWithToken(
+  req?: NextRequest
+): Promise<{ token: string; payload: GuestInviteSessionPayload } | null> {
+  const candidates = await readRequestCookieCandidates(GUEST_INVITE_COOKIE, req, {
+    suppressErrors: true,
+  });
+  if (candidates.length === 0) return null;
+
+  for (const cookieValue of candidates) {
+    const payload = await verifyCachedInviteCookieCandidate(cookieValue, req);
+    if (payload) {
+      return { token: cookieValue, payload };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Reads and verifies the HMAC signature and expiration of the `guest_invite_session`
+ * cookie prior to tenant claim filtering.
+ */
+export async function getRawSignedGuestInviteSession(
+  req?: NextRequest
+): Promise<GuestInviteSessionPayload | null> {
+  const verified = await getRawSignedGuestInviteSessionWithToken(req);
+  return verified ? verified.payload : null;
+}
+
+/**
+ * Reads and verifies the HMAC signature, expiration, and Edge tenant claims of the
+ * `guest_invite_session` cookie, returning both the matched cookie token string and its
+ * verified payload while caching per `NextRequest` instance. Prefers `__Host-` cookies
+ * and checks every matching `Cookie` entry.
+ */
+export async function getSignedGuestInviteSessionWithToken(
+  req?: NextRequest
+): Promise<{ token: string; payload: GuestInviteSessionPayload } | null> {
+  const candidates = await readRequestCookieCandidates(GUEST_INVITE_COOKIE, req, {
+    suppressErrors: true,
+  });
+  if (candidates.length === 0) return null;
+
+  let resolvedSubdomain: string | null | undefined;
+  for (const cookieValue of candidates) {
+    const payload = await verifyCachedInviteCookieCandidate(cookieValue, req);
+    if (!payload) {
+      continue;
+    }
+
+    if (resolvedSubdomain === undefined) {
+      resolvedSubdomain = await resolveEdgeRequestSubdomain(req);
+    }
+    if (!verifyEdgeTenantClaims(payload, resolvedSubdomain)) {
+      continue;
+    }
+
+    return { token: cookieValue, payload };
+  }
+
+  return null;
+}
+
+/**
  * Reads and verifies the HMAC signature, expiration, and Edge tenant claims of the
  * `guest_invite_session` cookie without performing database lookups (Edge-compatible).
+ * Prefers `__Host-` cookies and checks every matching `Cookie` entry until verification succeeds.
  */
 export async function getSignedGuestInviteSession(
   req?: NextRequest
 ): Promise<GuestInviteSessionPayload | null> {
-  const payload = await getRawSignedGuestInviteSession(req);
-  if (!payload) return null;
-
-  const requestSubdomain = await resolveEdgeRequestSubdomain(req);
-  if (!verifyEdgeTenantClaims(payload, requestSubdomain)) {
-    return null;
-  }
-
-  return payload;
+  const verified = await getSignedGuestInviteSessionWithToken(req);
+  return verified ? verified.payload : null;
 }

@@ -81,11 +81,17 @@ describe('GuestAddressPage (/guest)', () => {
     render(<GuestAddressPage />);
 
     await waitFor(() => {
-      const calledUrls = globalFetch.mock.calls.map((call) => {
+      const hasPostValidateCall = globalFetch.mock.calls.some((call) => {
         const arg = call[0];
-        return typeof arg === 'string' ? arg : arg?.url || '';
+        const init = call[1] as RequestInit | undefined;
+        const url = typeof arg === 'string' ? arg : arg?.url || '';
+        return (
+          url.includes('/api/registry/validate-code') &&
+          init?.method === 'POST' &&
+          String(init?.body || '').includes('AUTOPREAUTH26')
+        );
       });
-      expect(calledUrls.some((url) => url.includes('/api/registry/validate-code?code=AUTOPREAUTH26'))).toBe(true);
+      expect(hasPostValidateCall).toBe(true);
       expect(mockAddToast).toHaveBeenCalledWith('Welcome Marianne Dashwood!', 'success');
     });
 
@@ -154,6 +160,7 @@ describe('GuestAddressPage (/guest)', () => {
     globalFetch.mockImplementation(async (input: any, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input?.url || '';
       const signal = (init?.signal || input?.signal) as AbortSignal;
+      const rawBody = typeof init?.body === 'string' ? init.body : '';
 
       if ((url.includes('/api/guest/session') || url.includes('/api/guest/address')) && !signals.fast) {
         // Initial session check: unauthenticated
@@ -163,11 +170,11 @@ describe('GuestAddressPage (/guest)', () => {
           json: async () => ({ success: false, error: 'Unauthorized' }),
         };
       }
-      if (url.includes('validate-code?code=SLOWCODE')) {
+      if (url.includes('/api/registry/validate-code') && rawBody.includes('SLOWCODE')) {
         signals.slow = signal;
         return new Promise(() => {});
       }
-      if (url.includes('validate-code?code=FASTCODE')) {
+      if (url.includes('/api/registry/validate-code') && rawBody.includes('FASTCODE')) {
         signals.fast = signal;
         return {
           ok: true,
@@ -363,9 +370,14 @@ describe('GuestAddressPage (/guest)', () => {
   it('renders both personalized RSVP controls (public + authorized private SubEvents) and mailing address form when visiting /guest?code=<valid_code>', async () => {
     window.history.pushState({}, '', '/guest?code=UNIFIED26');
 
-    globalFetch.mockImplementation(async (input: any) => {
+    globalFetch.mockImplementation(async (input: any, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input?.url || '';
-      if (url.includes('/api/registry/validate-code?code=UNIFIED26')) {
+      const rawBody = typeof init?.body === 'string' ? init.body : '';
+      if (
+        url.includes('/api/registry/validate-code') &&
+        init?.method === 'POST' &&
+        rawBody.includes('UNIFIED26')
+      ) {
         return {
           ok: true,
           status: 200,
@@ -685,7 +697,7 @@ describe('GuestAddressPage (/guest)', () => {
 
   it('renders public schedule on /guest without calling /api/guest/address when session status is passcode, and shows guidance when shared passcode is entered', async () => {
     const calledUrls: string[] = [];
-    globalFetch.mockImplementation(async (input: any) => {
+    globalFetch.mockImplementation(async (input: any, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input?.url || '';
       calledUrls.push(url);
 
@@ -733,19 +745,23 @@ describe('GuestAddressPage (/guest)', () => {
           }),
         };
       }
-      if (url.includes('/api/registry/validate-code?code=WEDDING2026')) {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({
-            success: true,
-            data: {
-              valid: false,
-              reason: 'shared_passcode',
-              error: 'That is the shared website passcode. Please enter your unique household invitation code.',
-            },
-          }),
-        };
+      if (url.includes('/api/registry/validate-code') && init?.method === 'POST') {
+        const parsedBody =
+          typeof init.body === 'string' && init.body ? JSON.parse(init.body) : {};
+        if (parsedBody.code === 'WEDDING2026') {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              success: true,
+              data: {
+                valid: false,
+                reason: 'shared_passcode',
+                error: 'That is the shared website passcode. Please enter your unique household invitation code.',
+              },
+            }),
+          };
+        }
       }
       return { ok: false, status: 404, json: async () => ({}) };
     });

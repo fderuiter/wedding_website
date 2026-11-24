@@ -551,7 +551,7 @@ describe('RegistryItemCard Component', () => {
     });
 
     it('successfully validates invitation code, auto-populates guest name, and allows editing name input', async () => {
-      (apiClient.get as jest.Mock).mockResolvedValue({
+      (apiClient.post as jest.Mock).mockResolvedValue({
         valid: true,
         guestName: 'Jane Smith',
         code: 'GOODCODE',
@@ -569,8 +569,9 @@ describe('RegistryItemCard Component', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
 
       await waitFor(() => {
-        expect(apiClient.get).toHaveBeenCalledWith(
-          '/api/registry/validate-code?code=GOODCODE',
+        expect(apiClient.post).toHaveBeenCalledWith(
+          '/api/registry/validate-code',
+          { code: 'GOODCODE' },
           expect.objectContaining({ signal: expect.any(Object) })
         );
         expect(screen.getByText('Code verified! Name pre-filled.')).toBeInTheDocument();
@@ -583,7 +584,7 @@ describe('RegistryItemCard Component', () => {
     });
 
     it('shows error message if invitation code is invalid', async () => {
-      (apiClient.get as jest.Mock).mockRejectedValue(new Error('Invalid invitation code.'));
+      (apiClient.post as jest.Mock).mockRejectedValue(new Error('Invalid invitation code.'));
 
       render(
         <Overlay isOpen={true} onClose={mockOnClose}>
@@ -598,8 +599,9 @@ describe('RegistryItemCard Component', () => {
       fireEvent.click(verifyButton);
 
       await waitFor(() => {
-        expect(apiClient.get).toHaveBeenCalledWith(
-          '/api/registry/validate-code?code=BADCODE',
+        expect(apiClient.post).toHaveBeenCalledWith(
+          '/api/registry/validate-code',
+          { code: 'BADCODE' },
           expect.objectContaining({ signal: expect.any(Object) })
         );
         expect(screen.getByText('Invalid invitation code.')).toBeInTheDocument();
@@ -615,7 +617,7 @@ describe('RegistryItemCard Component', () => {
       const validationPromise = new Promise((resolve) => {
         resolveValidation = resolve;
       });
-      (apiClient.get as jest.Mock).mockReturnValue(validationPromise);
+      (apiClient.post as jest.Mock).mockReturnValue(validationPromise);
 
       render(
         <Overlay isOpen={true} onClose={mockOnClose}>
@@ -1134,7 +1136,7 @@ describe('RegistryItemCard Component', () => {
     });
 
     it('fires zero network requests across 6+ edits of an 8-character code until Verify, Enter, or submit and allows editing pre-filled email', async () => {
-      (apiClient.get as jest.Mock).mockResolvedValue({
+      (apiClient.post as jest.Mock).mockResolvedValue({
         valid: true,
         guestName: 'Jane Smith',
         email: 'jane.invite@example.com',
@@ -1161,11 +1163,17 @@ describe('RegistryItemCard Component', () => {
       }
 
       expect(apiClient.get).toHaveBeenCalledTimes(0);
+      expect(apiClient.post).toHaveBeenCalledTimes(0);
 
       fireEvent.keyDown(codeInput, { key: 'Enter' });
 
       await waitFor(() => {
-        expect(apiClient.get).toHaveBeenCalledTimes(1);
+        expect(apiClient.post).toHaveBeenCalledTimes(1);
+        expect(apiClient.post).toHaveBeenCalledWith(
+          '/api/registry/validate-code',
+          { code: 'ABCDEF17' },
+          expect.objectContaining({ signal: expect.any(AbortSignal) })
+        );
         expect(screen.getByText('Code verified! Name pre-filled.')).toBeInTheDocument();
       });
 
@@ -1905,13 +1913,14 @@ describe('RegistryItemCard Component', () => {
 
   it('exposes name/email autoComplete tokens, required + aria-required="true" with aria-hidden asterisks, and retains focus across 8-char auto-verification and async submission', async () => {
     let resolveValidate: ((val: { valid: boolean }) => void) | null = null;
-    (apiClient.get as jest.Mock).mockImplementation((url: string) => {
+    (apiClient.get as jest.Mock).mockResolvedValue({ isVerified: false });
+    (apiClient.post as jest.Mock).mockImplementation((url: string) => {
       if (url.includes('/api/registry/validate-code')) {
         return new Promise((resolve) => {
           resolveValidate = resolve;
         });
       }
-      return Promise.resolve({ isVerified: false });
+      return Promise.resolve({ valid: false });
     });
 
     let resolveSubmit: (() => void) | null = null;
@@ -2079,13 +2088,14 @@ describe('RegistryItemCard Component', () => {
 
     it('keeps invitation code Input focused with readOnly and aria-busy during auto-verification, moves focus to Clear on lock, and announces via FormMessage', async () => {
       let resolveValidation!: (val: { valid: boolean; code: string; guestName: string }) => void;
-      (apiClient.get as jest.Mock).mockImplementation((url: string) => {
+      (apiClient.get as jest.Mock).mockResolvedValue({ authenticated: false });
+      (apiClient.post as jest.Mock).mockImplementation((url: string) => {
         if (url.includes('/api/registry/validate-code')) {
           return new Promise((resolve) => {
             resolveValidation = resolve;
           });
         }
-        return Promise.resolve({ authenticated: false });
+        return Promise.resolve({ valid: false });
       });
 
       render(

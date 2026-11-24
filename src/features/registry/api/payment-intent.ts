@@ -4,6 +4,7 @@ import { PaymentIntentRequestSchema } from '../schemas';
 import { hasAddressCollectionTag } from '../utils/invitation';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { parseJsonRequestBody } from '@/utils/contentType';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { prisma } from '@/lib/prisma';
@@ -73,7 +74,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     throw new ApiError(404, "Feature 'registry' is disabled");
   }
 
-  const data = await request.json();
+  const data = await parseJsonRequestBody(request);
   const parseResult = PaymentIntentRequestSchema.safeParse(data);
 
   if (!parseResult.success) {

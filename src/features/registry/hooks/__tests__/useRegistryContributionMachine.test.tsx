@@ -200,7 +200,7 @@ describe('useRegistryContributionMachine Hook', () => {
 
   describe('Explicit Code Verification & Zero Auto-Check on Edit', () => {
     it('triggers zero network requests across 6+ edits of an 8-character code and verifies explicitly on Verify or submit', async () => {
-      (apiClient.get as jest.Mock).mockResolvedValue({
+      (apiClient.post as jest.Mock).mockResolvedValue({
         valid: true,
         guestName: 'Jane Smith',
         email: 'jane.smith@example.com',
@@ -230,6 +230,7 @@ describe('useRegistryContributionMachine Hook', () => {
       }
 
       expect(apiClient.get).not.toHaveBeenCalled();
+      expect(apiClient.post).not.toHaveBeenCalled();
       expect(result.current.isValidatingCode).toBe(false);
       expect(result.current.isCodeLocked).toBe(false);
 
@@ -249,15 +250,16 @@ describe('useRegistryContributionMachine Hook', () => {
       expect(result.current.contributorName).toBe('Jane Smith');
       expect(result.current.email).toBe('jane.smith@example.com');
       expect(result.current.codeError).toBeNull();
-      expect(apiClient.get).toHaveBeenCalledTimes(1);
-      expect(apiClient.get).toHaveBeenCalledWith(
-        '/api/registry/validate-code?code=VALDCODE',
+      expect(apiClient.post).toHaveBeenCalledTimes(1);
+      expect(apiClient.post).toHaveBeenCalledWith(
+        '/api/registry/validate-code',
+        { code: 'VALDCODE' },
         expect.objectContaining({ signal: expect.any(Object) })
       );
     });
 
     it('sets code error when explicit verification returns valid=false and blocks unverified submit', async () => {
-      (apiClient.get as jest.Mock).mockResolvedValue({ valid: false });
+      (apiClient.post as jest.Mock).mockResolvedValue({ valid: false });
 
       const { result } = renderHook(() =>
         useRegistryContributionMachine({
@@ -271,6 +273,7 @@ describe('useRegistryContributionMachine Hook', () => {
         result.current.handleCodeChange('INVALID8');
       });
       expect(apiClient.get).not.toHaveBeenCalled();
+      expect(apiClient.post).not.toHaveBeenCalled();
 
       await act(async () => {
         await result.current.handleSubmit();
@@ -283,7 +286,7 @@ describe('useRegistryContributionMachine Hook', () => {
     });
 
     it('handles manual verification via handleVerifyCode', async () => {
-      (apiClient.get as jest.Mock).mockResolvedValue({
+      (apiClient.post as jest.Mock).mockResolvedValue({
         valid: true,
         guestName: 'Manual Guest',
         code: 'MANUAL1',
@@ -332,7 +335,7 @@ describe('useRegistryContributionMachine Hook', () => {
     it('aborts obsolete in-flight validation requests immediately when guest types new characters', async () => {
       const capturedSignals: AbortSignal[] = [];
 
-      (apiClient.get as jest.Mock).mockImplementation((_url, options) => {
+      (apiClient.post as jest.Mock).mockImplementation((_url, _body, options) => {
         if (options?.signal) {
           capturedSignals.push(options.signal);
         }
@@ -384,7 +387,7 @@ describe('useRegistryContributionMachine Hook', () => {
         lateResolver = resolve;
       });
 
-      (apiClient.get as jest.Mock).mockReturnValueOnce(latePromise);
+      (apiClient.post as jest.Mock).mockReturnValueOnce(latePromise);
 
       const { result } = renderHook(() =>
         useRegistryContributionMachine({
@@ -551,7 +554,7 @@ describe('useRegistryContributionMachine Hook', () => {
   describe('Submission Lifecycle & Race Prevention (Requirement 2 & Criterion 3)', () => {
     it('prevents submission while code validation is actively in flight', async () => {
       let pendingValidationResolve: (val: any) => void;
-      (apiClient.get as jest.Mock).mockReturnValue(
+      (apiClient.post as jest.Mock).mockReturnValue(
         new Promise((resolve) => {
           pendingValidationResolve = resolve;
         })
@@ -648,7 +651,7 @@ describe('useRegistryContributionMachine Hook', () => {
     });
 
     it('keeps focus on invitationCodeInputRef when explicit code verification fails', async () => {
-      (apiClient.get as jest.Mock).mockResolvedValueOnce({ valid: false });
+      (apiClient.post as jest.Mock).mockResolvedValueOnce({ valid: false });
 
       const codeEl = document.createElement('input');
       document.body.appendChild(codeEl);

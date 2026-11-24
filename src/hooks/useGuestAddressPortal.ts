@@ -3,6 +3,7 @@
 import { useReducer, useEffect, useRef, useCallback, type SubmitEvent } from 'react';
 import { focusFirstInvalidControl } from '@/components/ui/forms';
 import { useToast } from '@/components/ui/ToastProvider';
+import { apiClient, ApiError } from '@/lib/apiClient';
 import { withBasePath } from '@/lib/basePath';
 import {
   notifyGuestSessionChanged,
@@ -551,17 +552,25 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
       dispatch({ type: 'VALIDATE_START', code: trimmedCode });
 
       try {
-        const res = await fetch(
-          withBasePath(`/api/registry/validate-code?code=${encodeURIComponent(trimmedCode)}`),
-          { signal }
-        );
-        if (signal.aborted) return;
-
-        const data = await res.json().catch(() => null);
+        const data = await apiClient.post<{
+          valid?: boolean;
+          success?: boolean;
+          reason?: string;
+          guestName?: string | null;
+          code?: string;
+          error?: string;
+          data?: {
+            valid?: boolean;
+            reason?: string;
+            guestName?: string | null;
+            code?: string;
+            error?: string;
+          };
+        }>('/api/registry/validate-code', { code: trimmedCode }, { signal });
         if (signal.aborted) return;
 
         const payload = data?.data ?? data;
-        if (res.ok && payload?.valid === false && payload?.reason === 'shared_passcode') {
+        if (payload?.valid === false && payload?.reason === 'shared_passcode') {
           const guidanceMsg =
             payload.error ||
             'That is the shared website passcode. Please enter the personal household invitation code printed on your invitation.';
@@ -571,16 +580,13 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
         }
 
         const isExplicitInvalid = payload?.valid === false;
-        const isOk = res.ok && !isExplicitInvalid && Boolean(data?.success || payload?.valid);
+        const isOk = !isExplicitInvalid && Boolean(data?.success || payload?.valid);
 
         if (!isOk) {
-          const isAuth = isAuthError(res.status) || res.status === 404 || res.status === 400;
           const errMsg =
             payload?.error ||
             data?.error ||
-            (isAuth
-              ? 'Invalid or expired invitation code.'
-              : 'Failed to connect to guest portal. Please try again.');
+            'Invalid or expired invitation code.';
 
           if (isAutoMount) {
             const fallback = await inspectSessionAndHydrate(signal);
@@ -600,9 +606,9 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
           dispatch({
             type: 'VALIDATE_FAILURE',
             error: errMsg,
-            isAuthError: isAuth,
+            isAuthError: true,
           });
-          if (!isAutoMount && isAuth) {
+          if (!isAutoMount) {
             requestCodeInputFocus();
           }
           return;
@@ -644,7 +650,27 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
       } catch (err: unknown) {
         if (isAbortError(err) || signal.aborted) return;
 
-        const errorMsg = err instanceof Error ? err.message : 'Error validating code.';
+        let isAuth = false;
+        let errorMsg = err instanceof Error ? err.message : 'Error validating code.';
+
+        if (err instanceof ApiError) {
+          isAuth =
+            isAuthError(err.statusCode) || err.statusCode === 404 || err.statusCode === 400;
+          const payloadError =
+            err.data && typeof err.data === 'object' && 'error' in err.data && typeof (err.data as { error?: unknown }).error === 'string'
+              ? (err.data as { error: string }).error
+              : '';
+          const hasSpecificMessage =
+            Boolean(payloadError) ||
+            (Boolean(err.message) && err.message !== 'API Error' && err.message !== 'Error');
+          errorMsg =
+            payloadError ||
+            (hasSpecificMessage
+              ? err.message
+              : isAuth
+                ? 'Invalid or expired invitation code.'
+                : 'Failed to connect to guest portal. Please try again.');
+        }
 
         if (isAutoMount) {
           const fallback = await inspectSessionAndHydrate(signal);
@@ -664,8 +690,11 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
         dispatch({
           type: 'VALIDATE_FAILURE',
           error: errorMsg,
-          isAuthError: false,
+          isAuthError: isAuth,
         });
+        if (!isAutoMount && isAuth) {
+          requestCodeInputFocus();
+        }
       } finally {
         if (!signal.aborted && !isAutoMount) {
           activeValidationCodeRef.current = null;

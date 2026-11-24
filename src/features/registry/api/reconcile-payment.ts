@@ -15,6 +15,7 @@ import {
   validatePaymentIntentInvariants,
 } from '@/lib/stripe';
 import { timingSafeEqualJS } from '@/utils/crypto';
+import { parseJsonRequestBody } from '@/utils/contentType';
 
 /**
  * Reconciles a redirected Stripe PaymentIntent on return to `/registry`.
@@ -23,9 +24,9 @@ import { timingSafeEqualJS } from '@/utils/crypto';
  * and triggers deduplicated guest/couple notifications.
  */
 export const POST = withApiMiddleware(async (request: NextRequest) => {
-  const [config, data, isAdmin] = await Promise.all([
+  const data = await parseJsonRequestBody(request);
+  const [config, isAdmin] = await Promise.all([
     getAppConfig(),
-    request.json(),
     isAdminRequest(request),
   ]);
 

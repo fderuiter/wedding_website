@@ -3,6 +3,7 @@ import { contentService } from '@/features/content';
 import { PhotoModerationSchema } from '@/features/content';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { parseJsonRequestBody } from '@/utils/contentType';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 
@@ -13,7 +14,7 @@ export const PATCH = withApiMiddleware(async (request: NextRequest, { params }: 
   }
 
   const { id } = await params;
-  const body = await request.json();
+  const body = await parseJsonRequestBody(request);
   const parsed = PhotoModerationSchema.safeParse(body);
   if (!parsed.success) {
     throw new ApiError(400, parsed.error.issues[0]?.message || 'Invalid moderation payload');
