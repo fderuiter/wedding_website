@@ -10,6 +10,7 @@ import {
   type ParsedDotenvEntry,
   parseDotenvContent,
   type PreflightIssue,
+  type PreflightMode,
   type PreflightResult,
   type PreflightTarget,
   type PreflightValidationOptions,
@@ -121,7 +122,7 @@ describe('scripts/preflight-env.ts', () => {
     expect(noComposeCli.exitCode).toBe(0);
   });
 
-  it('exits non-zero for .env.example defaults, legacy 32-byte/4-byte scrypt hashes, short session secrets, unpaired Stripe keys, incomplete S3 keys, and missing :? guards', () => {
+  it('exits non-zero in --mode production for .env.example defaults, legacy 32-byte/4-byte scrypt hashes, short session secrets, unpaired Stripe keys, incomplete S3 keys, and missing :? guards', () => {
     const legacy32ByteKey = Buffer.alloc(32, 7).toString('base64');
     const valid16ByteSalt = Buffer.alloc(16, 3).toString('base64');
     const legacy32ByteScrypt = `scrypt:${valid16ByteSalt}:${legacy32ByteKey}`;
@@ -142,9 +143,10 @@ describe('scripts/preflight-env.ts', () => {
       'utf8'
     );
 
-    const cliRes = runPreflightCli(['--env-file', envPath], tempDir);
+    const cliRes = runPreflightCli(['--mode', 'production', '--env-file', envPath], tempDir);
     expect(cliRes.exitCode).toBe(1);
     expect(cliRes.stdout).toBe('');
+    expect(cliRes.stderr).toContain('[mode=production]');
     expect(cliRes.stderr).toContain('[DB_PASSWORD]');
     expect(cliRes.stderr).toContain('[ADMIN_PASSWORD]');
     expect(cliRes.stderr).toContain('[GUEST_PASSCODE]');
@@ -154,11 +156,27 @@ describe('scripts/preflight-env.ts', () => {
     expect(cliRes.stderr).toContain('[E2E_TEST]');
   });
 
-  it('rejects repository .env.example and .env.ci out of the box because placeholder secrets and disposable DB_PASSWORD defaults are not production-ready', () => {
+  it('passes fresh .env.example and .env.local copies in development mode while rejecting placeholder secrets in --mode production or NODE_ENV=production', () => {
+    const exampleAsLocal = path.join(tempDir, '.env.local');
+    fs.copyFileSync(path.join(repoRoot, '.env.example'), exampleAsLocal);
+
+    // 1. Default development mode discovers .env.local via cascade and passes
+    const devLocalRes = runPreflightCli([], tempDir);
+    expect(devLocalRes.exitCode).toBe(0);
+    expect(devLocalRes.stdout).toContain('".env.local"');
+    expect(devLocalRes.stdout).toContain('[mode=development]');
+
+    // 2. Fresh .env.example copy at .env passes in explicit --mode=development
+    fs.unlinkSync(exampleAsLocal);
     const exampleCopy = path.join(tempDir, '.env');
     fs.copyFileSync(path.join(repoRoot, '.env.example'), exampleCopy);
+    const devModeExplicit: PreflightMode = 'development';
+    const devExampleRes = runPreflightCli([`--mode=${devModeExplicit}`], tempDir);
+    expect(devExampleRes.exitCode).toBe(0);
+    expect(devExampleRes.stdout).toContain('[mode=development]');
 
-    const cliRes = runPreflightCli(['--env-file', exampleCopy], tempDir);
+    // 3. Rejects .env.example and .env.ci in --mode production
+    const cliRes = runPreflightCli(['--mode', 'production', '--env-file', exampleCopy], tempDir);
     expect(cliRes.exitCode).toBe(1);
     expect(cliRes.stderr).toContain('[DB_PASSWORD]');
     expect(cliRes.stderr).toContain('[ADMIN_PASSWORD]');
@@ -167,21 +185,82 @@ describe('scripts/preflight-env.ts', () => {
 
     const ciCopy = path.join(tempDir, '.env.ci.copy');
     fs.copyFileSync(path.join(repoRoot, '.env.ci'), ciCopy);
-    const ciCliRes = runPreflightCli(['--env-file', ciCopy], tempDir);
+    const ciCliRes = runPreflightCli(['--mode=production', '--env-file', ciCopy], tempDir);
     expect(ciCliRes.exitCode).toBe(1);
     expect(ciCliRes.stderr).toContain('[DB_PASSWORD]');
     expect(ciCliRes.stderr).toContain('[ADMIN_PASSWORD]');
     expect(ciCliRes.stderr).toContain('[GUEST_PASSCODE]');
     expect(ciCliRes.stderr).toContain('[GUEST_SESSION_SECRET]');
     expect(ciCliRes.stderr).toContain('[E2E_TEST]');
+
+    // 4. Enforces production secret blocklists when NODE_ENV=production is set in process.env or .env
+    const mutableEnv = process.env as Record<string, string | undefined>;
+    const originalNodeEnv = mutableEnv.NODE_ENV;
+    try {
+      mutableEnv.NODE_ENV = 'production';
+      const envVarProdRes = runPreflightCli(['--env-file', exampleCopy], tempDir);
+      expect(envVarProdRes.exitCode).toBe(1);
+      expect(envVarProdRes.stderr).toContain('[mode=production]');
+      expect(envVarProdRes.stderr).toContain('[ADMIN_PASSWORD]');
+    } finally {
+      if (originalNodeEnv === undefined) {
+        delete mutableEnv.NODE_ENV;
+      } else {
+        mutableEnv.NODE_ENV = originalNodeEnv;
+      }
+    }
+
+    fs.appendFileSync(exampleCopy, '\nNODE_ENV=production\n', 'utf8');
+    const fileProdRes = runPreflightCli(['--env-file', exampleCopy], tempDir);
+    expect(fileProdRes.exitCode).toBe(1);
+    expect(fileProdRes.stderr).toContain('[mode=production]');
+    expect(fileProdRes.stderr).toContain('[GUEST_PASSCODE]');
   });
 
-  it('validates CONTAINER_DATABASE_URL overrides in compose mode without leaking credentials', () => {
+  it('cascades .env.development.local > .env.local > .env.development > .env like dotenv -c development', () => {
+    const validHash = generateValidAdminScryptHash();
+    // Base .env has broken scrypt format and missing DB_PASSWORD
+    fs.writeFileSync(
+      path.join(tempDir, '.env'),
+      [
+        'ADMIN_PASSWORD="plaintext-broken-in-base-env"',
+        'GUEST_PASSCODE="wedding2026"',
+        'GUEST_SESSION_SECRET="short-dev-secret"',
+      ].join('\n'),
+      'utf8'
+    );
+    // .env.development supplies DB_PASSWORD
+    fs.writeFileSync(path.join(tempDir, '.env.development'), 'DB_PASSWORD="dev-password-1"\n', 'utf8');
+    // .env.local overrides ADMIN_PASSWORD with valid scrypt hash, plus an invalid STRIPE_SECRET_KEY
+    fs.writeFileSync(
+      path.join(tempDir, '.env.local'),
+      [`ADMIN_PASSWORD="${validHash}"`, 'STRIPE_SECRET_KEY="bad_prefix_in_env_local"'].join('\n'),
+      'utf8'
+    );
+    // .env.development.local wins with paired valid Stripe test keys
+    fs.writeFileSync(
+      path.join(tempDir, '.env.development.local'),
+      [
+        'STRIPE_SECRET_KEY="sk_test_real_looking_dev_key"',
+        'NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY="pk_test_real_looking_dev_key"',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const cascadeRes = runEnvPreflightFile({ cwd: tempDir });
+    expect(cascadeRes.ok).toBe(true);
+    expect(cascadeRes.mode).toBe('development');
+    expect(cascadeRes.envFilePath).toBe('.env.development.local, .env.local, .env.development, .env');
+  });
+
+  it('validates CONTAINER_DATABASE_URL and CONTAINER_POSTGRES_URL_NON_POOLING overrides in compose mode without leaking credentials', () => {
     const validHash = generateValidAdminScryptHash();
     const canaryPw = 'CANARY_CONTAINER_DB_PW_556677';
+    const canaryDirectPw = 'CANARY_CONTAINER_DIRECT_PW_889900';
     const invalidEntries = parseDotenvContent([
       'DB_PASSWORD=a9f3e71b24c80d6512ab98cd34ef56789012abcd3456ef78',
       `CONTAINER_DATABASE_URL="mysql://wedding:${canaryPw}@external-db:3306/wedding"`,
+      `CONTAINER_POSTGRES_URL_NON_POOLING="http://wedding:${canaryDirectPw}@external-db:5432/wedding"`,
       `ADMIN_PASSWORD="${validHash}"`,
       'GUEST_PASSCODE="autumn-orchard-celebration-2027"',
       'GUEST_SESSION_SECRET="8f4a2e9c1d7b3a6f0e5c8d2a9b4f7e1c3d6a8b0e2f4c6d8a1b3e5f7a9c0d2e4f"',
@@ -197,9 +276,14 @@ describe('scripts/preflight-env.ts', () => {
           key: 'CONTAINER_DATABASE_URL',
           rule: 'invalid-container-database-url',
         }),
+        expect.objectContaining({
+          key: 'CONTAINER_POSTGRES_URL_NON_POOLING',
+          rule: 'invalid-container-non-pooling-url',
+        }),
       ])
     );
     expect(JSON.stringify(invalidRes.issues)).not.toContain(canaryPw);
+    expect(JSON.stringify(invalidRes.issues)).not.toContain(canaryDirectPw);
   });
 
   it('never leaks raw secret values, password hashes, database credentials, or API keys in stdout, stderr, or issue objects', () => {

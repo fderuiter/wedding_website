@@ -3,6 +3,7 @@ import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { createPageMetadata } from '@/app/metadata';
 import SetupWizard, { type SetupWizardSavedConfig } from '@/components/setup/SetupWizard';
+import { enforceAdminPageSession, isStaticExportBuild } from '@/core/auth/adminPageGuard';
 import { getAppConfig, isSiteInitialized, isSetupCompleted } from '@/lib/config';
 import { isNonPlaceholderVenueText } from '@/utils/maps';
 
@@ -17,15 +18,11 @@ export const metadata: Metadata = createPageMetadata({
  * across browser reloads and reopened tabs until Step 5 marks setupCompleted true.
  */
 export default async function AdminSetupPage() {
-  const isStaticExport =
-    process.env.STATIC_EXPORT === 'true' ||
-    process.env.STATIC_EXPORT === '1' ||
-    process.env.npm_lifecycle_event === 'build:export';
-
-  if (isStaticExport) {
+  if (isStaticExportBuild()) {
     return <SetupWizard />;
   }
 
+  await enforceAdminPageSession();
   await headers();
 
   const config = await getAppConfig();

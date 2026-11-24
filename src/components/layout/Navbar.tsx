@@ -25,6 +25,11 @@ import {
   useGuestHelp,
 } from '@/components/guest/GuestHelpModal';
 import { deriveBrandMonogram } from '@/features/content';
+import {
+  notifyGuestSessionChanged,
+  subscribeGuestSessionChanged,
+} from '@/utils/guestSessionEvents';
+import { withBasePath } from '@/lib/basePath';
 import { MediaImage } from '@/components/MediaImage';
 
 /**
@@ -109,6 +114,9 @@ export default function Navbar({
   const { hasProvider } = useGuestHelp();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isGuideMenuOpen, setIsGuideMenuOpen] = useState(false);
+  const [hasInviteSession, setHasInviteSession] = useState(false);
+  const [isSwitchingHousehold, setIsSwitchingHousehold] = useState(false);
+  const hasInviteSessionRef = useRef(false);
   const [trackedPathname, setTrackedPathname] = useState(pathname);
   const guideTriggerRef = useRef<HTMLButtonElement>(null);
   const mobileMenuTriggerRef = useRef<HTMLButtonElement>(null);
@@ -136,6 +144,67 @@ export default function Navbar({
   const setActiveHash = useCallback((hash: string) => {
     setManualHashOverride({ base: getHashSnapshot(), hash });
   }, []);
+
+  const applyInviteSessionFlag = useCallback((nextValue: boolean) => {
+    if (hasInviteSessionRef.current === nextValue) return;
+    hasInviteSessionRef.current = nextValue;
+    setHasInviteSession(nextValue);
+  }, []);
+
+  const refreshGuestSession = useCallback(
+    async (signal?: AbortSignal) => {
+      if (isAdmin || isPreview || typeof fetch !== 'function') {
+        applyInviteSessionFlag(false);
+        return;
+      }
+      try {
+        const res = await fetch(
+          withBasePath('/api/guest/session'),
+          signal ? { signal } : undefined
+        );
+        if (signal?.aborted || !res || !res.ok || typeof res.json !== 'function') return;
+        const json = await res.json().catch(() => null);
+        if (signal?.aborted) return;
+        const payload = json?.data ?? json;
+        if (payload && typeof payload === 'object' && 'status' in payload) {
+          applyInviteSessionFlag(payload.status === 'invitation');
+        }
+      } catch {
+        // Ignore transient or mocked-out fetch errors in global navigation
+      }
+    },
+    [applyInviteSessionFlag, isAdmin, isPreview]
+  );
+
+  useEffect(() => {
+    if (isAdmin || isPreview || normalizedPathname?.startsWith('/admin')) return;
+    const controller = new AbortController();
+    void refreshGuestSession(controller.signal);
+    const unsubscribe = subscribeGuestSessionChanged(() => {
+      void refreshGuestSession();
+    });
+    return () => {
+      controller.abort();
+      unsubscribe();
+    };
+  }, [isAdmin, isPreview, normalizedPathname, refreshGuestSession]);
+
+  const handleSwitchHousehold = useCallback(async () => {
+    if (isSwitchingHousehold) return;
+    setIsSwitchingHousehold(true);
+    try {
+      if (typeof fetch === 'function') {
+        await fetch(withBasePath('/api/guest/session'), { method: 'DELETE' });
+      }
+    } catch {
+      // Proceed to clear client session state even on network failure
+    } finally {
+      applyInviteSessionFlag(false);
+      setIsSwitchingHousehold(false);
+      setIsMenuOpen(false);
+      notifyGuestSessionChanged();
+    }
+  }, [applyInviteSessionFlag, isSwitchingHousehold]);
 
   const handleCloseGuideMenu = useCallback(() => {
     setIsGuideMenuOpen(false);
@@ -439,6 +508,17 @@ export default function Navbar({
           )}
         </div>
         <div className="hidden md:flex md:items-center md:gap-3 flex-shrink-0">
+          {!isAdmin && !isPreview && hasInviteSession && (
+            <button
+              type="button"
+              onClick={() => void handleSwitchHousehold()}
+              disabled={isSwitchingHousehold}
+              data-testid="navbar-switch-household-button"
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 min-h-[32px] min-w-[32px] rounded-md text-xs font-semibold border border-[var(--color-surface-border,rgba(0,0,0,0.15))] text-[var(--color-primary-text)] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2"
+            >
+              <span>{isSwitchingHousehold ? 'Switching...' : 'Switch Household'}</span>
+            </button>
+          )}
           <GuestHelpTrigger
             variant="navbar"
             label="Help"
@@ -512,6 +592,17 @@ export default function Navbar({
         config={config}
         onTrigger={() => setIsMenuOpen(false)}
       />
+      {!isAdmin && !isPreview && hasInviteSession && (
+        <button
+          type="button"
+          onClick={() => void handleSwitchHousehold()}
+          disabled={isSwitchingHousehold}
+          data-testid="mobile-navbar-switch-household-button"
+          className="flex w-full items-center gap-2 text-left px-3 py-2 rounded-md text-base font-medium text-[var(--color-primary-text)] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2"
+        >
+          <span>{isSwitchingHousehold ? 'Switching...' : 'Switch Household'}</span>
+        </button>
+      )}
       <div className="pt-3 pb-2 px-3 border-t border-[var(--color-surface-border,#e5e7eb)] flex justify-between items-center">
         <span className="text-sm font-medium text-[var(--color-primary-text)]">Theme</span>
         <ThemeSelector />

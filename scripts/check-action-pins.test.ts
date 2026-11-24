@@ -372,4 +372,151 @@ describe('check-action-pins', () => {
     expect(reasons.some((r) => r.includes('omit prefix "restore-keys"'))).toBe(true);
     expect(reasons.some((r) => r.includes('--no-same-owner --no-same-permissions'))).toBe(true);
   });
+
+  it('rejects non-cancelling concurrency blocks without queue: max and actions/deploy-pages jobs without github-pages FIFO concurrency', () => {
+    const validCheckoutSha = '3d3c42e5aac5ba805825da76410c181273ba90b1';
+    const validDeployPagesSha = '368f82528645a54fb793d4d04e342629a3f51346';
+
+    fs.writeFileSync(
+      path.join(workflowsDir, 'missing-queues.yml'),
+      [
+        'name: Missing Queue Policies',
+        'on:',
+        '  push:',
+        '    branches: [ main ]',
+        'permissions:',
+        '  contents: read',
+        'concurrency:',
+        '  group: ${{ github.workflow }}-${{ github.ref }}',
+        "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+        'jobs:',
+        '  scalar-lock:',
+        '    runs-on: ubuntu-latest',
+        '    concurrency: custom-job-lock',
+        '    steps:',
+        '      - run: echo "scalar"',
+        '  deploy-docs:',
+        '    runs-on: ubuntu-latest',
+        '    concurrency:',
+        '      group: wrong-pages-group',
+        '      cancel-in-progress: false',
+        '    steps:',
+        `      - uses: actions/checkout@${validCheckoutSha} # v7.0.1`,
+        '        with:',
+        '          persist-credentials: false',
+        `      - uses: actions/deploy-pages@${validDeployPagesSha} # v5.0.1`,
+        '',
+      ].join('\n')
+    );
+
+    const { violations } = checkActionPins(workflowsDir);
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filePath: '.github/workflows/missing-queues.yml',
+          actionRef: 'concurrency',
+          reason: expect.stringContaining('Non-cancelling concurrency block must set "queue: max"'),
+        }),
+        expect.objectContaining({
+          filePath: '.github/workflows/missing-queues.yml',
+          actionRef: 'jobs.scalar-lock.concurrency',
+          reason: expect.stringContaining(
+            'Non-cancelling jobs.scalar-lock.concurrency block must set "queue: max"'
+          ),
+        }),
+        expect.objectContaining({
+          filePath: '.github/workflows/missing-queues.yml',
+          actionRef: 'jobs.deploy-docs.concurrency',
+          reason: expect.stringContaining(
+            'Non-cancelling jobs.deploy-docs.concurrency block must set "queue: max"'
+          ),
+        }),
+        expect.objectContaining({
+          filePath: '.github/workflows/missing-queues.yml',
+          actionRef: `actions/deploy-pages@${validDeployPagesSha}`,
+          reason: expect.stringContaining(
+            'Job "deploy-docs" uses actions/deploy-pages without "github-pages" FIFO concurrency'
+          ),
+        }),
+      ])
+    );
+
+    fs.writeFileSync(
+      path.join(workflowsDir, 'cancelling-pages.yml'),
+      [
+        'name: Cancelling Pages Job',
+        'on:',
+        '  pull_request:',
+        'permissions:',
+        '  contents: read',
+        'concurrency:',
+        '  group: pr-${{ github.ref }}',
+        '  cancel-in-progress: true',
+        'jobs:',
+        '  deploy-docs:',
+        '    runs-on: ubuntu-latest',
+        '    concurrency:',
+        '      group: github-pages',
+        '      cancel-in-progress: true',
+        '    steps:',
+        `      - uses: actions/deploy-pages@${validDeployPagesSha} # v5.0.1`,
+        '',
+      ].join('\n')
+    );
+
+    const cancellingRes = checkActionPins(workflowsDir);
+    const cancellingFileViolations = cancellingRes.violations.filter(
+      (v) => v.filePath === '.github/workflows/cancelling-pages.yml'
+    );
+    // Top-level cancel-in-progress: true does not require queue: max, while actions/deploy-pages still rejects cancel-in-progress: true
+    expect(cancellingFileViolations).toHaveLength(1);
+    expect(cancellingFileViolations[0]).toMatchObject({
+      actionRef: `actions/deploy-pages@${validDeployPagesSha}`,
+      reason: expect.stringContaining(
+        'Job "deploy-docs" uses actions/deploy-pages without "github-pages" FIFO concurrency'
+      ),
+    });
+
+    fs.rmSync(path.join(workflowsDir, 'missing-queues.yml'));
+    fs.rmSync(path.join(workflowsDir, 'cancelling-pages.yml'));
+    fs.writeFileSync(
+      path.join(workflowsDir, 'compliant-queues.yml'),
+      [
+        'name: Compliant Queue & Pages Workflow',
+        'on:',
+        '  push:',
+        '    branches: [ main ]',
+        '  pull_request:',
+        'permissions:',
+        '  contents: read',
+        'concurrency:',
+        '  group: ${{ github.workflow }}-${{ github.ref }}',
+        "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+        '  queue: max',
+        'jobs:',
+        '  pr-lint:',
+        '    runs-on: ubuntu-latest',
+        '    concurrency:',
+        '      group: pr-lint-${{ github.ref }}',
+        '      cancel-in-progress: true',
+        '    steps:',
+        '      - run: echo "ok"',
+        '  deploy-docs:',
+        '    if: github.ref == \'refs/heads/main\' && github.event_name == \'push\'',
+        '    runs-on: ubuntu-latest',
+        '    concurrency:',
+        '      group: github-pages',
+        '      cancel-in-progress: false',
+        '      queue: max',
+        '    steps:',
+        `      - uses: actions/checkout@${validCheckoutSha} # v7.0.1`,
+        '        with:',
+        '          persist-credentials: false',
+        `      - uses: actions/deploy-pages@${validDeployPagesSha} # v5.0.1`,
+        '',
+      ].join('\n')
+    );
+
+    expect(checkActionPins(workflowsDir).violations).toEqual([]);
+  });
 });

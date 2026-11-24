@@ -2,7 +2,11 @@ import type { Metadata, Viewport } from 'next';
 import { getAppConfig, toUnauthenticatedAppConfig } from '@/lib/config';
 import { stripBasePath, withBasePath } from '@/lib/basePath';
 import { getLocalImageDimensions } from '@/utils/image-metadata';
-import { getValidatedCanonicalUrl } from '@/utils/hostValidation';
+import {
+  getValidatedCanonicalUrl,
+  resolveRequestHost,
+  resolveRequestProtocol,
+} from '@/utils/hostValidation';
 import { deriveBrandMonogram } from '@/features/content';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { isGuestRequest } from '@/core/auth/guest.server';
@@ -66,8 +70,8 @@ export async function generateMetadata(): Promise<Metadata> {
   try {
     const { headers } = await import('next/headers');
     const headersList = await headers();
-    const host = headersList.get('host');
-    const proto = headersList.get('x-forwarded-proto');
+    const host = resolveRequestHost(headersList);
+    const proto = resolveRequestProtocol(headersList);
     if (host) {
       siteUrl = getValidatedCanonicalUrl(host, proto, siteUrl);
     }

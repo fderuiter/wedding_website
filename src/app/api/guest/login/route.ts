@@ -5,6 +5,10 @@ import {
   verifyGuestInviteSessionToken,
   GUEST_INVITE_COOKIE,
 } from '@/core/auth/guestInviteSession';
+import {
+  resolveTenantClaimsForSigning,
+  verifyNodeTenantClaims,
+} from '@/core/auth/tenantClaims.node';
 import { readRequestCookie } from '@/core/auth/tokenCookieHelpers';
 import { hasAddressCollectionTag } from '@/features/registry';
 import { prisma } from '@/lib/prisma';
@@ -60,16 +64,27 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
       const existingToken = await readRequestCookie(GUEST_COOKIE, req, { suppressErrors: true });
       if (existingToken) {
         const existingPayload = await verifyGuestToken(existingToken);
-        if (existingPayload && existingPayload.guest === true) {
+        if (
+          existingPayload &&
+          existingPayload.guest === true &&
+          (await verifyNodeTenantClaims(existingPayload, req))
+        ) {
           token = existingToken;
         }
       }
     }
 
     if (!token) {
+      const tenantClaims = await resolveTenantClaimsForSigning(req);
       const iat = Date.now();
       const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
-      token = await signGuestToken({ guest: true, jti: crypto.randomUUID(), iat, exp });
+      token = await signGuestToken({
+        guest: true,
+        jti: crypto.randomUUID(),
+        ...tenantClaims,
+        iat,
+        exp,
+      });
     }
 
     const response = NextResponse.json({ success: true, sessionType: 'guest' });
@@ -131,7 +146,8 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
         if (
           existingInvitePayload &&
           existingInvitePayload.code.trim().toUpperCase() === invite.code.trim().toUpperCase() &&
-          existingInvitePayload.guestName === invite.guestName
+          existingInvitePayload.guestName === invite.guestName &&
+          (await verifyNodeTenantClaims(existingInvitePayload, req))
         ) {
           inviteToken = existingInviteCookie;
         }
@@ -139,11 +155,13 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     }
 
     if (!inviteToken) {
+      const tenantClaims = await resolveTenantClaimsForSigning(req);
       const iat = Date.now();
       const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
       inviteToken = await signGuestInviteSessionToken({
         code: invite.code,
         guestName: invite.guestName,
+        ...tenantClaims,
         iat,
         exp,
       });

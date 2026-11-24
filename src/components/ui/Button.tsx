@@ -3,7 +3,7 @@ import { cn } from '@/utils/cn';
 import { Icon } from './Icon';
 
 export interface ButtonProps extends React.ComponentPropsWithRef<'button'> {
-  variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'outline' | 'inverse';
+  variant?: 'primary' | 'secondary' | 'success' | 'danger' | 'ghost' | 'outline' | 'inverse';
   size?: 'sm' | 'md' | 'lg';
   pressed?: boolean;
   srContext?: string;
@@ -20,11 +20,13 @@ const BUTTON_BASE_STYLES =
 
 const BUTTON_VARIANTS: Record<NonNullable<ButtonProps['variant']>, string> = {
   primary:
-    'bg-[var(--btn-primary-bg,var(--color-primary,#B91C1C))] text-[var(--btn-primary-text,#ffffff)] hover:bg-[var(--btn-primary-hover-bg,var(--color-primary,#B91C1C))] border border-[var(--btn-primary-border,transparent)] focus-visible:ring-[var(--btn-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
+    'bg-[var(--btn-primary-bg,var(--color-primary,#B91C1C))] text-[var(--btn-primary-text,#ffffff)] hover:bg-[var(--btn-primary-hover-bg,var(--color-primary,#B91C1C))] border border-[var(--btn-primary-border,transparent)] focus-visible:ring-[var(--btn-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))] forced-colors:border forced-colors:border-[ButtonText]',
   secondary:
-    'bg-[var(--btn-secondary-bg,var(--color-secondary,#B45309))] text-[var(--btn-secondary-text,#ffffff)] hover:bg-[var(--btn-secondary-hover-bg,var(--color-secondary,#B45309))] border border-[var(--btn-secondary-border,transparent)] focus-visible:ring-[var(--btn-focus-ring,var(--color-focus-ring,var(--color-secondary,#B45309)))]',
+    'bg-[var(--btn-secondary-bg,var(--color-secondary,#B45309))] text-[var(--btn-secondary-text,#ffffff)] hover:bg-[var(--btn-secondary-hover-bg,var(--color-secondary,#B45309))] border border-[var(--btn-secondary-border,transparent)] focus-visible:ring-[var(--btn-focus-ring,var(--color-focus-ring,var(--color-secondary,#B45309)))] forced-colors:border forced-colors:border-[ButtonText]',
+  success:
+    'bg-[var(--btn-success-bg,#15803d)] text-[var(--btn-success-text,#ffffff)] hover:bg-[var(--btn-success-hover-bg,#166534)] border border-[var(--btn-success-border,transparent)] focus-visible:ring-[var(--btn-focus-ring,var(--color-focus-ring,#15803d))] forced-colors:border forced-colors:border-[ButtonText]',
   danger:
-    'bg-[var(--btn-danger-bg,#b91c1c)] text-[var(--btn-danger-text,#ffffff)] hover:bg-[var(--btn-danger-hover-bg,#991b1b)] focus-visible:ring-[var(--btn-focus-ring,var(--color-error-text,#b91c1c))]',
+    'bg-[var(--btn-danger-bg,#b91c1c)] text-[var(--btn-danger-text,#ffffff)] hover:bg-[var(--btn-danger-hover-bg,#991b1b)] border border-transparent focus-visible:ring-[var(--btn-focus-ring,var(--color-error-text,#b91c1c))] forced-colors:border forced-colors:border-[ButtonText]',
   ghost:
     'bg-[var(--btn-ghost-bg,transparent)] text-[var(--btn-ghost-text,var(--color-primary-text,inherit))] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))] focus-visible:ring-[var(--btn-focus-ring,var(--color-focus-ring,var(--color-primary,#B91C1C)))]',
   outline:

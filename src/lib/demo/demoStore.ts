@@ -9,8 +9,10 @@ import type {
 } from '@/features/registry';
 import type { SeatingTableDTO } from '@/features/seating';
 import { CARD_PROCESSING_FEE_RATE } from '@/lib/stripe.client';
+import { notifyGuestSessionChanged } from '@/utils/guestSessionEvents';
 import { normalizePartyTags } from '@/utils/invitationValidation';
 import { buildArchetypeDataset, type ArchetypeDataset } from './demoSeed';
+import { setDemoRuntimeFlag } from './runtimeFlag';
 
 function isDemoAddressCollectionOnly(partyTags: unknown): boolean {
   return normalizePartyTags(partyTags).includes('address-collection');
@@ -29,6 +31,15 @@ interface DemoClaimTokenRecord {
   action: 'confirm' | 'cancel';
 }
 
+interface DemoRsvpOverrideRecord {
+  status: 'attending' | 'declined' | 'pending';
+  plusOneCount: number;
+  dietaryNotes: string;
+  mealSelections: string[];
+  customAnswers: Record<string, string>;
+  plusOneNames: string[];
+}
+
 export interface DemoStoreState {
   persona: DemoPersona;
   archetype: ArchetypeId;
@@ -39,6 +50,7 @@ export interface DemoStoreState {
   activeModules: string[];
   datasets: Record<ArchetypeId, ArchetypeDataset>;
   guestSession: DemoGuestSession | null;
+  rsvpOverrides: Record<string, DemoRsvpOverrideRecord>;
   claimTokens: Record<string, DemoClaimTokenRecord>;
   resetCounter: number;
 }
@@ -77,6 +89,7 @@ function createInitialDemoState(resetCounter = 0): DemoStoreState {
     activeModules: [...ALL_DEMO_MODULES],
     datasets: createDefaultDatasets(),
     guestSession: null,
+    rsvpOverrides: {},
     claimTokens: {},
     resetCounter,
   };
@@ -194,7 +207,7 @@ function syncStaticDemoGuestSession(session: DemoGuestSession | null): void {
       ? {
         code: session.invitationCode,
         guestName: session.guestName,
-        sessionType: 'guest',
+        sessionType: 'invite',
       }
       : null;
   });
@@ -333,6 +346,10 @@ export function hydrateDemoStateFromStorage(): void {
         typeof parsed.guestSession.guestName === 'string'
           ? parsed.guestSession
           : null,
+      rsvpOverrides:
+        parsed.rsvpOverrides && typeof parsed.rsvpOverrides === 'object'
+          ? parsed.rsvpOverrides
+          : {},
       claimTokens:
         parsed.claimTokens && typeof parsed.claimTokens === 'object' ? parsed.claimTokens : {},
       resetCounter: state.resetCounter,
@@ -355,6 +372,7 @@ export function hydrateDemoStateFromStorage(): void {
 
 export function setDemoRuntimeActive(active: boolean): void {
   runtimeActive = active;
+  setDemoRuntimeFlag(active);
   if (active && !hasHydratedFromStorage && typeof window !== 'undefined') {
     hydrateDemoStateFromStorage();
   }
@@ -382,9 +400,14 @@ export function subscribeDemoState(listener: () => void): () => void {
 }
 
 function updateState(updater: (prev: DemoStoreState) => DemoStoreState): void {
+  const prevGuestCode = state.guestSession?.invitationCode ?? null;
   state = updater(state);
+  const nextGuestCode = state.guestSession?.invitationCode ?? null;
   persistDemoState();
   emitChange();
+  if (runtimeActive && prevGuestCode !== nextGuestCode) {
+    notifyGuestSessionChanged();
+  }
 }
 
 export function setDemoPersona(persona: DemoPersona): void {
@@ -526,6 +549,7 @@ export function purgeDemoSampleData(): void {
 }
 
 export function resetDemoState(): void {
+  const hadGuestSession = Boolean(state.guestSession);
   const nextResetCounter = state.resetCounter + 1;
   state = createInitialDemoState(nextResetCounter);
   hasHydratedFromStorage = true;
@@ -545,6 +569,9 @@ export function resetDemoState(): void {
     syncStaticDemoPersona('guest', false);
   }
   emitChange();
+  if (runtimeActive && hadGuestSession) {
+    notifyGuestSessionChanged();
+  }
 }
 
 export function getActiveArchetypeDataset(
@@ -556,6 +583,7 @@ export function getActiveArchetypeDataset(
     registryItems: activeSet.has('registry')
       ? current.registryItems
       : current.registryItems.filter((i) => !i.isSample),
+    offlineContributors: current.offlineContributors ?? [],
     guests: activeSet.has('guests')
       ? current.guests
       : current.guests.filter((g) => !g.isSample),
@@ -585,7 +613,7 @@ export function findDemoGuestByCode(rawCode: string): InvitationCodeDTO | null {
 
   const presetGuests = ARCHETYPE_PRESETS[state.archetype]?.guests ?? [];
   const presetMatch = presetGuests.find((g) => g.code.toUpperCase() === normalized);
-  if (!presetMatch) return null;
+  if (!presetMatch || isDemoAddressCollectionOnly(presetMatch.partyTags)) return null;
 
   return {
     id: `demo-${state.archetype}-preset-${normalized}`,
@@ -606,6 +634,25 @@ export function setDemoGuestSession(session: DemoGuestSession | null): void {
     guestSession: session,
   }));
   syncStaticDemoGuestSession(session);
+}
+
+export function upsertDemoSubEventRsvp(
+  code: string,
+  subEventId: string,
+  rsvp: DemoRsvpOverrideRecord
+): void {
+  const normalizedCode = code.trim().toUpperCase();
+  if (!normalizedCode || !subEventId) return;
+  updateState((prev) => {
+    const key = `${prev.archetype}:${normalizedCode}:${subEventId}`;
+    return {
+      ...prev,
+      rsvpOverrides: {
+        ...prev.rsvpOverrides,
+        [key]: rsvp,
+      },
+    };
+  });
 }
 
 export function updateDemoGuestAddress(
@@ -828,13 +875,90 @@ export function recordDemoContribution(
   return resultItem;
 }
 
+export interface DemoClaimPreview {
+  action: 'confirm' | 'cancel';
+  status: 'RESERVED' | 'CONFIRMED' | 'CANCELLED' | 'REFUNDED';
+  amount: number;
+  itemId: string;
+  itemName: string;
+  itemType: 'PHYSICAL' | 'CASH_FUND' | 'EXPERIENCE_FUND';
+  isGroupGift: boolean;
+  vendorUrl: string | null;
+  paymentHandle: string | null;
+  paymentHandleType: string | null;
+}
+
+function resolveDemoClaimRecord(token: string): DemoClaimTokenRecord | null {
+  const trimmed = token.trim();
+  if (!trimmed) return null;
+
+  const direct = state.claimTokens[trimmed];
+  if (direct) return direct;
+
+  const patternMatch =
+    /^demo_(confirm|cancel)_(.+)$/.exec(trimmed) ??
+    /^demo-claim:(confirm|cancel):(.+)$/.exec(trimmed);
+  if (!patternMatch) return null;
+
+  const action = patternMatch[1] as 'confirm' | 'cancel';
+  const contributorId = patternMatch[2];
+  const current = state.datasets[state.archetype];
+  for (const item of current.registryItems) {
+    if ((item.contributors || []).some((c) => c.id === contributorId)) {
+      return {
+        itemId: item.id,
+        contributorId,
+        action,
+      };
+    }
+  }
+  return null;
+}
+
+export function previewDemoClaimToken(token: string): DemoClaimPreview | null {
+  const record = resolveDemoClaimRecord(token);
+  if (!record) return null;
+
+  const current = state.datasets[state.archetype];
+  const item = current.registryItems.find((i) => i.id === record.itemId);
+  if (!item) return null;
+
+  const contributor = (item.contributors || []).find((c) => c.id === record.contributorId);
+  if (!contributor) return null;
+
+  const status: DemoClaimPreview['status'] =
+    contributor.status === 'CONFIRMED' ||
+    contributor.status === 'CANCELLED' ||
+    contributor.status === 'REFUNDED'
+      ? contributor.status
+      : 'RESERVED';
+
+  const itemType: DemoClaimPreview['itemType'] =
+    item.itemType === 'CASH_FUND' || item.itemType === 'EXPERIENCE_FUND'
+      ? item.itemType
+      : 'PHYSICAL';
+
+  return {
+    action: record.action,
+    status,
+    amount: contributor.amount,
+    itemId: item.id,
+    itemName: item.name,
+    itemType,
+    isGroupGift: Boolean(item.isGroupGift),
+    vendorUrl: item.vendorUrl ?? null,
+    paymentHandle: item.paymentHandle || '@alex-and-taylor',
+    paymentHandleType: item.paymentHandleType || 'Venmo',
+  };
+}
+
 export function processDemoClaimToken(token: string): {
   action: 'confirm' | 'cancel';
   status: 'CONFIRMED' | 'CANCELLED';
   changed: boolean;
   item: RegistryItem | null;
 } | null {
-  const record = state.claimTokens[token];
+  const record = resolveDemoClaimRecord(token);
   if (!record) return null;
 
   let updatedItem: RegistryItem | null = null;

@@ -21,6 +21,116 @@ const EXPLICIT_DARK_FG_TEXT_RE = new RegExp(
   `^!?text-(?:black|${NEUTRAL_FAMILIES}-(?:700|800|900|950)|primary(?:-text)?|secondary(?:-text)?|muted-text|\\[var\\(--(?:toast-action-text|color-primary-text|color-foreground|form-label-text))`
 );
 
+const STATUS_FAMILIES = '(?:emerald|amber)';
+const UNCALIBRATED_STATUS_TEXT_600_RE = new RegExp(
+  `^!?(?:(?:hover|focus|active):)*text-${STATUS_FAMILIES}-600(?:\\/\\d+)?$`
+);
+const UNCALIBRATED_STATUS_TEXT_400_500_RE = new RegExp(
+  `^!?(?:(?:hover|focus|active):)*text-${STATUS_FAMILIES}-(?:400|500)(?:\\/\\d+)?$`
+);
+const UNCALIBRATED_DARK_STATUS_TEXT_RE = new RegExp(
+  `^!?dark:(?:(?:hover|focus|active):)*text-${STATUS_FAMILIES}-(?:500|600)(?:\\/\\d+)?$`
+);
+const UNCALIBRATED_STATUS_LIGHT_BG_RE = new RegExp(
+  `^!?(?:(?:hover|focus|active):)*bg-${STATUS_FAMILIES}-(?:400|500|600)(?:\\/\\d+)?$`
+);
+const UNCALIBRATED_STATUS_DARK_BG_RE = new RegExp(
+  `^!?dark:(?:(?:hover|focus|active):)*bg-${STATUS_FAMILIES}-(?:400|500|600)(?:\\/\\d+)?$`
+);
+const WHITE_TEXT_LIGHT_RE = /^!?(?:(?:hover|focus|active):)*text-white(?:\/\d+)?$/;
+const WHITE_TEXT_DARK_RE = /^!?dark:(?:(?:hover|focus|active):)*text-white(?:\/\d+)?$/;
+const DARK_MODE_DARK_FG_TEXT_RE = new RegExp(
+  `^!?dark:text-(?:black|${NEUTRAL_FAMILIES}-(?:800|900|950))`
+);
+const EXPLICIT_DARK_SURFACE_BG_RE = new RegExp(
+  `^!?bg-(?:black|${NEUTRAL_FAMILIES}-(?:800|900|950))(?:\\/(?:8\\d|9\\d|100))?$`
+);
+const LARGE_SCALE_REGULAR_RE = /^!?text-(?:2xl|3xl|4xl|5xl|6xl|7xl|8xl|9xl)$/;
+const LARGE_SCALE_BOLD_SIZE_RE = /^!?text-xl$/;
+const BOLD_FONT_WEIGHT_RE = /^!?font-(?:bold|extrabold|black)$/;
+
+const SVG_TAG_NAMES = new Set([
+  'svg',
+  'path',
+  'circle',
+  'rect',
+  'polygon',
+  'polyline',
+  'line',
+  'g',
+]);
+
+function getJsxTagName(nameNode) {
+  if (!nameNode) return null;
+  if (nameNode.type === 'JSXIdentifier') {
+    return nameNode.name;
+  }
+  if (nameNode.type === 'JSXMemberExpression' && nameNode.property?.type === 'JSXIdentifier') {
+    return nameNode.property.name;
+  }
+  return null;
+}
+
+function isAriaHiddenTrue(openingElement) {
+  if (!openingElement || !Array.isArray(openingElement.attributes)) return false;
+  return openingElement.attributes.some((attr) => {
+    if (attr.type !== 'JSXAttribute' || attr.name?.type !== 'JSXIdentifier') return false;
+    if (attr.name.name !== 'aria-hidden') return false;
+    if (attr.value === null) return true;
+    if (attr.value.type === 'Literal') {
+      return attr.value.value === 'true' || attr.value.value === true;
+    }
+    if (
+      attr.value.type === 'JSXExpressionContainer' &&
+      attr.value.expression?.type === 'Literal'
+    ) {
+      return attr.value.expression.value === true || attr.value.expression.value === 'true';
+    }
+    return false;
+  });
+}
+
+function isCheckboxOrRadioInput(openingElement) {
+  if (!openingElement || getJsxTagName(openingElement.name) !== 'input') return false;
+  return openingElement.attributes.some((attr) => {
+    if (attr.type !== 'JSXAttribute' || attr.name?.type !== 'JSXIdentifier') return false;
+    if (attr.name.name !== 'type') return false;
+    if (attr.value?.type === 'Literal') {
+      return attr.value.value === 'checkbox' || attr.value.value === 'radio';
+    }
+    if (
+      attr.value?.type === 'JSXExpressionContainer' &&
+      attr.value.expression?.type === 'Literal'
+    ) {
+      return (
+        attr.value.expression.value === 'checkbox' || attr.value.expression.value === 'radio'
+      );
+    }
+    return false;
+  });
+}
+
+function isExemptStatusTextContext(jsxAttrNode) {
+  if (!jsxAttrNode || jsxAttrNode.type !== 'JSXAttribute') return false;
+  const attrName = jsxAttrNode.name?.type === 'JSXIdentifier' ? jsxAttrNode.name.name : '';
+  if (/iconClassName$/i.test(attrName)) {
+    return true;
+  }
+  const openingEl = jsxAttrNode.parent;
+  if (!openingEl || openingEl.type !== 'JSXOpeningElement') return false;
+  const tagName = getJsxTagName(openingEl.name);
+  if (tagName && (SVG_TAG_NAMES.has(tagName) || tagName === 'Icon' || tagName.endsWith('Icon'))) {
+    return true;
+  }
+  if (isAriaHiddenTrue(openingEl)) {
+    return true;
+  }
+  if (isCheckboxOrRadioInput(openingEl)) {
+    return true;
+  }
+  return false;
+}
+
 const CLASS_HELPER_CALLEES = new Set(['cn', 'clsx', 'twMerge', 'twJoin', 'cva']);
 const MAX_COMBINATIONS = 16;
 
@@ -61,7 +171,7 @@ const noUncalibratedContrastUtilitiesRule = {
     type: 'problem',
     docs: {
       description:
-        'disallow uncalibrated 400/500 neutral text utilities and unpaired translucent bg-white/* light surfaces',
+        'disallow uncalibrated 400/500 neutral text utilities, uncalibrated status text/fill utilities, and unpaired translucent bg-white/* light surfaces',
       category: 'Accessibility',
       recommended: true,
     },
@@ -71,6 +181,10 @@ const noUncalibratedContrastUtilitiesRule = {
         'Uncalibrated neutral text utility "{{ utility }}" violates WCAG 1.4.3 contrast minimums. Use semantic "text-muted-text" (or pair with a calibrated dark/surface token) instead.',
       unpairedTranslucentLightBg:
         'Translucent light background "{{ utility }}" is missing a "dark:bg-*" override or explicit dark foreground text utility (WCAG F24). Use shared Button/surface primitives or pair an explicit foreground color.',
+      uncalibratedStatusText:
+        'Uncalibrated status text utility "{{ utility }}" violates WCAG 1.4.3 4.5:1 normal-text contrast minimums. Use calibrated semantic tokens ("text-status-success-text", "text-status-warning-text", "text-warning-text", "text-secondary-text") instead.',
+      uncalibratedStatusFill:
+        'Uncalibrated status background "{{ utility }}" paired with "text-white" violates WCAG 1.4.3 / F24 contrast minimums. Use calibrated Button ("variant=\\"success\\"" / "variant=\\"secondary\\"") or StatusBadge primitives, or pair an explicit dark foreground.',
     },
   },
   create(context) {
@@ -196,14 +310,24 @@ const noUncalibratedContrastUtilitiesRule = {
       });
     }
 
-    function validateTokenSet(entries) {
+    function validateTokenSet(entries, options = {}) {
       if (!entries || entries.length === 0) return;
 
+      const { exemptStatusText = false } = options;
       const tokens = entries.map((entry) => entry.token);
       const hasDarkTextCompanion = tokens.some((t) => CALIBRATED_DARK_TEXT_COMPANION_RE.test(t));
       const hasElevatedDarkBg = tokens.some((t) => ELEVATED_DARK_BG_RE.test(t));
       const hasDarkBgCompanion = tokens.some((t) => DARK_BG_COMPANION_RE.test(t));
       const hasExplicitDarkFg = tokens.some((t) => EXPLICIT_DARK_FG_TEXT_RE.test(t));
+
+      const hasLargeScaleText =
+        tokens.some((t) => LARGE_SCALE_REGULAR_RE.test(t)) ||
+        (tokens.some((t) => LARGE_SCALE_BOLD_SIZE_RE.test(t)) &&
+          tokens.some((t) => BOLD_FONT_WEIGHT_RE.test(t)));
+      const hasExplicitDarkSurfaceBg = tokens.some((t) => EXPLICIT_DARK_SURFACE_BG_RE.test(t));
+      const hasWhiteTextLight = tokens.some((t) => WHITE_TEXT_LIGHT_RE.test(t));
+      const hasWhiteTextDark = tokens.some((t) => WHITE_TEXT_DARK_RE.test(t));
+      const hasDarkModeDarkFg = tokens.some((t) => DARK_MODE_DARK_FG_TEXT_RE.test(t));
 
       for (const { token, node } of entries) {
         if (UNCALIBRATED_LIGHT_400_RE.test(token) || UNCALIBRATED_DARK_500_RE.test(token)) {
@@ -218,6 +342,40 @@ const noUncalibratedContrastUtilitiesRule = {
 
         if (TRANSLUCENT_WHITE_BG_RE.test(token) && !hasDarkBgCompanion && !hasExplicitDarkFg) {
           reportOnce(node, 'unpairedTranslucentLightBg', token);
+          continue;
+        }
+
+        if (UNCALIBRATED_STATUS_LIGHT_BG_RE.test(token) && hasWhiteTextLight) {
+          reportOnce(node, 'uncalibratedStatusFill', token);
+          continue;
+        }
+
+        if (
+          UNCALIBRATED_STATUS_DARK_BG_RE.test(token) &&
+          (hasWhiteTextDark || (hasWhiteTextLight && !hasDarkModeDarkFg))
+        ) {
+          reportOnce(node, 'uncalibratedStatusFill', token);
+          continue;
+        }
+
+        if (!exemptStatusText) {
+          if (UNCALIBRATED_DARK_STATUS_TEXT_RE.test(token)) {
+            reportOnce(node, 'uncalibratedStatusText', token);
+            continue;
+          }
+
+          if (
+            UNCALIBRATED_STATUS_TEXT_600_RE.test(token) &&
+            !hasLargeScaleText &&
+            !hasExplicitDarkSurfaceBg
+          ) {
+            reportOnce(node, 'uncalibratedStatusText', token);
+            continue;
+          }
+
+          if (UNCALIBRATED_STATUS_TEXT_400_500_RE.test(token) && !hasExplicitDarkSurfaceBg) {
+            reportOnce(node, 'uncalibratedStatusText', token);
+          }
         }
       }
     }
@@ -230,9 +388,10 @@ const noUncalibratedContrastUtilitiesRule = {
         if (!node.value) return;
 
         markSubtreeVisited(node.value);
+        const exemptStatusText = isExemptStatusTextContext(node);
         const tokenSets = expandExpressionTokenSets(node.value);
         for (const set of tokenSets) {
-          validateTokenSet(set);
+          validateTokenSet(set, { exemptStatusText });
         }
       },
       Literal(node) {

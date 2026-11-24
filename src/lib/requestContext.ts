@@ -271,6 +271,11 @@ export function updateHydratedGuestInvitation(
   store.invitationsByCode.set(normalizedCode, merged);
 }
 
+export function getActiveContextRequest(): NextRequest | undefined {
+  const activeStore = requestAsyncLocalStorage.getStore();
+  return activeStore?.request as NextRequest | undefined;
+}
+
 export function getOrLoadRequestAppConfig<T>(
   cacheKey: string,
   loader: () => Promise<T>

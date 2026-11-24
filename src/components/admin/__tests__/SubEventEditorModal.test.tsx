@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { axe } from 'jest-axe';
 import { ToastProvider } from '@/components/ui/ToastProvider';
+import { ThemeProvider } from '@/components/ThemeProvider';
 import {
   SubEventEditorModal,
   SubEventDeleteConfirmModal,
@@ -264,6 +265,43 @@ describe('SubEventEditorModal & SubEventDeleteConfirmModal', () => {
       options: [],
     });
   }, 15000);
+
+  it('hydrates and saves datetime-local inputs in AppConfig venue timezone regardless of browser timezone', async () => {
+    const onSave = jest.fn().mockResolvedValue({});
+    render(
+      <ThemeProvider config={{ timezone: 'America/Los_Angeles' } as any}>
+        <ToastProvider>
+          <SubEventEditorModal
+            isOpen={true}
+            onClose={jest.fn()}
+            editingEvent={{
+              id: 'se-tz',
+              title: 'Sunset Ceremony',
+              // 2026-08-15T23:00:00.000Z is 16:00 PDT in America/Los_Angeles
+              startTime: '2026-08-15T23:00:00.000Z',
+              endTime: '2026-08-16T00:00:00.000Z',
+              isPrivate: false,
+            }}
+            onSave={onSave}
+          />
+        </ToastProvider>
+      </ThemeProvider>
+    );
+
+    const startInput = screen.getByLabelText(/Start Time/i) as HTMLInputElement;
+    expect(startInput.value).toBe('2026-08-15T16:00');
+
+    // Change to 17:30 PDT -> 2026-08-16T00:30:00.000Z
+    fireEvent.change(startInput, { target: { value: '2026-08-15T17:30' } });
+    fireEvent.change(screen.getByLabelText(/End Time/i), { target: { value: '2026-08-15T19:00' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledTimes(1);
+    });
+    expect(onSave.mock.calls[0][0].startTime).toBe('2026-08-16T00:30:00.000Z');
+    expect(onSave.mock.calls[0][0].endTime).toBe('2026-08-16T02:00:00.000Z');
+  });
 
   it('emits choiceRenames in edit mode when renaming existing multiple-choice options', async () => {
     const onSave = jest.fn().mockResolvedValue({});

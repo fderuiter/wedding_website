@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
+import { isAdminRequest } from '@/core/auth/auth.server';
 import { getAppConfig } from '@/lib/config';
 import { DEFAULT_MODULE_CONFIG } from '@/lib/modules';
 import RegistryRoutePage from '../page';
@@ -11,6 +12,15 @@ jest.mock('next/navigation', () => ({
   notFound: jest.fn(() => {
     throw new Error('NEXT_NOT_FOUND');
   }),
+  redirect: jest.fn((url: string) => {
+    const error = new Error('NEXT_REDIRECT') as Error & { digest?: string };
+    error.digest = `NEXT_REDIRECT;replace;${url};307;`;
+    throw error;
+  }),
+}));
+
+jest.mock('@/core/auth/auth.server', () => ({
+  isAdminRequest: jest.fn().mockResolvedValue(true),
 }));
 
 jest.mock('@/lib/config', () => ({
@@ -24,11 +34,14 @@ jest.mock('@/features/registry', () => ({
 }));
 
 const mockNotFound = notFound as unknown as jest.Mock;
+const mockRedirect = redirect as unknown as jest.Mock;
+const mockIsAdminRequest = isAdminRequest as jest.Mock;
 const mockGetAppConfig = getAppConfig as jest.Mock;
 
 describe('Registry UI Page Module Guards', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockIsAdminRequest.mockResolvedValue(true);
   });
 
   it('calls notFound() on /registry, /registry/add-item, and /registry/edit-item/[id] when registry is disabled', async () => {
@@ -58,5 +71,50 @@ describe('Registry UI Page Module Guards', () => {
     const editView = await RegistryEditItemRoutePage();
     render(editView);
     expect(screen.getByTestId('edit-item-page')).toBeInTheDocument();
+  });
+
+  it('redirects unauthenticated callers on /registry/add-item and /registry/edit-item/[id] to /admin/login with HTTP 303', async () => {
+    mockIsAdminRequest.mockResolvedValue(false);
+    mockGetAppConfig.mockResolvedValue({
+      modules: { ...DEFAULT_MODULE_CONFIG, registry: true },
+    });
+
+    for (const renderPage of [RegistryAddItemRoutePage, RegistryEditItemRoutePage]) {
+      mockRedirect.mockClear();
+      let caughtError: (Error & { digest?: string }) | null = null;
+      try {
+        await renderPage();
+      } catch (err) {
+        caughtError = err as Error & { digest?: string };
+      }
+      expect(mockRedirect).toHaveBeenCalledWith('/admin/login');
+      expect(caughtError?.digest).toBe('NEXT_REDIRECT;replace;/admin/login;303;');
+    }
+  });
+
+  it('keeps /registry/add-item and /registry/edit-item/[id] SSR guards inert during STATIC_EXPORT builds', async () => {
+    const prevStaticExport = process.env.STATIC_EXPORT;
+    process.env.STATIC_EXPORT = 'true';
+    mockIsAdminRequest.mockResolvedValue(false);
+    mockGetAppConfig.mockResolvedValue({
+      modules: { ...DEFAULT_MODULE_CONFIG, registry: true },
+    });
+
+    try {
+      const addView = await RegistryAddItemRoutePage();
+      render(addView);
+      expect(screen.getByTestId('add-item-page')).toBeInTheDocument();
+
+      const editView = await RegistryEditItemRoutePage();
+      render(editView);
+      expect(screen.getByTestId('edit-item-page')).toBeInTheDocument();
+      expect(mockRedirect).not.toHaveBeenCalled();
+    } finally {
+      if (prevStaticExport === undefined) {
+        delete process.env.STATIC_EXPORT;
+      } else {
+        process.env.STATIC_EXPORT = prevStaticExport;
+      }
+    }
   });
 });

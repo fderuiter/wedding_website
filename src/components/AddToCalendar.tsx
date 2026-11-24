@@ -4,7 +4,8 @@ import React, { useState, useRef, useId } from 'react';
 import { createGoogleCalendarLink, createYahooCalendarLink, createOutlookCalendarLink, createIcsFile, type CalendarEvent } from '@/utils/calendar';
 import { useOverlay } from '@/hooks/useOverlay';
 import { useMenuNavigation } from '@/hooks/useMenuNavigation';
-import { withBasePath } from '@/lib/basePath';
+import { useOptionalToast } from '@/components/ui/ToastProvider';
+import { downloadExportBlob } from '@/utils/exportDownload';
 
 /**
  * @interface AddToCalendarProps
@@ -37,6 +38,7 @@ export interface AddToCalendarProps {
 export default function AddToCalendar({ event, className, downloadUrl, eventId }: AddToCalendarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const toast = useOptionalToast();
   const instanceId = useId().replace(/:/g, '');
   const triggerId = `add-to-calendar-trigger-${instanceId}`;
   const menuId = `add-to-calendar-menu-${instanceId}`;
@@ -79,12 +81,18 @@ export default function AddToCalendar({ event, className, downloadUrl, eventId }
     } else {
       const directDownloadUrl = downloadUrl || (eventId ? `/api/schedule/${eventId}/ics` : (event.id ? `/api/schedule/${event.id}/ics` : undefined));
       if (directDownloadUrl) {
-        const link = document.createElement('a');
-        link.href = withBasePath(directDownloadUrl);
-        link.download = `${event.name}.ics`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        void downloadExportBlob(directDownloadUrl, `${event.name}.ics`)
+          .then(() => {
+            toast?.addToast('Calendar invite (.ics) downloaded.', 'success');
+          })
+          .catch((err: unknown) => {
+            toast?.addToast(
+              err instanceof Error && err.message
+                ? err.message
+                : 'Failed to download calendar invite.',
+              'error'
+            );
+          });
       } else {
         const icsFile = createIcsFile(event);
         const blob = new Blob([icsFile], { type: 'text/calendar' });
@@ -96,6 +104,7 @@ export default function AddToCalendar({ event, className, downloadUrl, eventId }
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(objectUrl);
+        toast?.addToast('Calendar invite (.ics) downloaded.', 'success');
       }
     }
     setIsOpen(false);

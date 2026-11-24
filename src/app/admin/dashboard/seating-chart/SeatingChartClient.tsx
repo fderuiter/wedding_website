@@ -12,6 +12,7 @@ import {
   resolveSeatAssignments,
   ADDRESS_COLLECTION_TAG,
   computeTableMealCounts,
+  computeTableMinBounds,
   getDietaryBadges,
   getGuestAttendanceStatus,
   getGuestCompanionNames,
@@ -34,9 +35,10 @@ import {
   formatGuestPlusOneNames,
 } from '@/features/registry';
 import { withBasePath } from '@/lib/basePath';
+import { downloadExportBlob } from '@/utils/exportDownload';
 
 function SeatingChartAdminContent() {
-  const { confirm } = useToast();
+  const { confirm, addToast } = useToast();
   const {
     tables,
     allGuests,
@@ -68,8 +70,17 @@ function SeatingChartAdminContent() {
   const isPlacementMode = Boolean(selectedTableId && placementTableId === selectedTableId);
 
   const nudgeSelectedTableBy = (table: SeatingTableDTO, dx: number, dy: number) => {
-    const nextX = Math.max(0, Math.round(table.x + dx));
-    const nextY = Math.max(0, Math.round(table.y + dy));
+    const { minX, minY } = computeTableMinBounds({
+      shape: table.shape,
+      capacity: table.capacity,
+      width: table.width,
+      height: table.height,
+      rotation: table.rotation,
+    });
+    const baseX = Math.max(minX, table.x);
+    const baseY = Math.max(minY, table.y);
+    const nextX = Math.max(minX, Math.round(baseX + dx));
+    const nextY = Math.max(minY, Math.round(baseY + dy));
     handleUpdateTablePosition(table.id, nextX, nextY);
     setInspectorAnnouncement(`${table.name} moved to X ${nextX}, Y ${nextY}.`);
   };
@@ -260,6 +271,19 @@ function SeatingChartAdminContent() {
             <a
               href={withBasePath('/api/admin/seating/export?format=pdf')}
               download="seating-chart.pdf"
+              onClick={(e) => {
+                e.preventDefault();
+                void downloadExportBlob('/api/admin/seating/export?format=pdf', 'seating-chart.pdf')
+                  .then(() => addToast('Visual seating chart PDF exported successfully.', 'success'))
+                  .catch((err: unknown) =>
+                    addToast(
+                      err instanceof Error && err.message
+                        ? err.message
+                        : 'Failed to export visual seating chart PDF.',
+                      'error'
+                    )
+                  );
+              }}
               className="px-3.5 py-2 text-xs font-semibold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-xs flex items-center gap-1.5"
             >
               <svg className="w-4 h-4 text-rose-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -271,6 +295,19 @@ function SeatingChartAdminContent() {
             <a
               href={withBasePath('/api/admin/seating/export')}
               download
+              onClick={(e) => {
+                e.preventDefault();
+                void downloadExportBlob('/api/admin/seating/export', 'seating-roster.csv')
+                  .then(() => addToast('Seating roster CSV exported successfully.', 'success'))
+                  .catch((err: unknown) =>
+                    addToast(
+                      err instanceof Error && err.message
+                        ? err.message
+                        : 'Failed to export seating roster CSV.',
+                      'error'
+                    )
+                  );
+              }}
               className="px-3.5 py-2 text-xs font-semibold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-xs flex items-center gap-1.5"
             >
               <svg className="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -282,6 +319,19 @@ function SeatingChartAdminContent() {
             <a
               href={withBasePath('/api/admin/seating/export?format=meals')}
               download
+              onClick={(e) => {
+                e.preventDefault();
+                void downloadExportBlob('/api/admin/seating/export?format=meals', 'seating-meal-counts.csv')
+                  .then(() => addToast('Meal counts CSV exported successfully.', 'success'))
+                  .catch((err: unknown) =>
+                    addToast(
+                      err instanceof Error && err.message
+                        ? err.message
+                        : 'Failed to export meal counts CSV.',
+                      'error'
+                    )
+                  );
+              }}
               className="px-3.5 py-2 text-xs font-semibold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-xs flex items-center gap-1.5"
             >
               <svg className="w-4 h-4 text-teal-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -293,6 +343,22 @@ function SeatingChartAdminContent() {
             <a
               href={withBasePath('/api/admin/seating/export?format=place-cards')}
               download="seating-place-cards.pdf"
+              onClick={(e) => {
+                e.preventDefault();
+                void downloadExportBlob(
+                  '/api/admin/seating/export?format=place-cards',
+                  'seating-place-cards.pdf'
+                )
+                  .then(() => addToast('Place cards PDF exported successfully.', 'success'))
+                  .catch((err: unknown) =>
+                    addToast(
+                      err instanceof Error && err.message
+                        ? err.message
+                        : 'Failed to export place cards PDF.',
+                      'error'
+                    )
+                  );
+              }}
               className="px-3.5 py-2 text-xs font-semibold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-xs flex items-center gap-1.5"
             >
               <svg className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -304,6 +370,22 @@ function SeatingChartAdminContent() {
             <a
               href={withBasePath('/api/admin/seating/export?format=escort-cards')}
               download="seating-escort-cards.pdf"
+              onClick={(e) => {
+                e.preventDefault();
+                void downloadExportBlob(
+                  '/api/admin/seating/export?format=escort-cards',
+                  'seating-escort-cards.pdf'
+                )
+                  .then(() => addToast('Escort cards PDF exported successfully.', 'success'))
+                  .catch((err: unknown) =>
+                    addToast(
+                      err instanceof Error && err.message
+                        ? err.message
+                        : 'Failed to export escort cards PDF.',
+                      'error'
+                    )
+                  );
+              }}
               className="px-3.5 py-2 text-xs font-semibold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-xs flex items-center gap-1.5"
             >
               <svg className="w-4 h-4 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -472,6 +554,13 @@ function SeatingChartAdminContent() {
             {/* Selected Table Inspector Bar */}
             {selectedTable && (() => {
               const selectedIsLandmark = isLandmarkTable(selectedTable);
+              const selectedMinBounds = computeTableMinBounds({
+                shape: selectedTable.shape,
+                capacity: selectedTable.capacity,
+                width: selectedTable.width,
+                height: selectedTable.height,
+                rotation: selectedTable.rotation,
+              });
               const selectedMealSummary = selectedIsLandmark
                 ? null
                 : computeTableMealCounts(selectedTable.invitationCodes);
@@ -683,7 +772,7 @@ function SeatingChartAdminContent() {
                         data-testid="inspector-coordinates"
                         className="px-1.5 font-mono text-[11px] font-semibold text-gray-700 dark:text-gray-200"
                       >
-                        X: {Math.round(selectedTable.x)}, Y: {Math.round(selectedTable.y)}
+                        X: {Math.round(Math.max(selectedMinBounds.minX, selectedTable.x))}, Y: {Math.round(Math.max(selectedMinBounds.minY, selectedTable.y))}
                       </span>
                       <Button
                         type="button"

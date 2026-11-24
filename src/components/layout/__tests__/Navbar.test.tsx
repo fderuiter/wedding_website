@@ -442,6 +442,135 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
     });
   });
 
+  it('displays Switch Household action when /api/guest/session reports invitation status and calls DELETE on click', async () => {
+    const originalFetch = global.fetch;
+    let deleted = false;
+    global.fetch = jest.fn().mockImplementation(async (input: any, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input?.url || '';
+      if (url.includes('/api/guest/session') && init?.method === 'DELETE') {
+        deleted = true;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: { status: 'passcode', isVerified: false, hasPasscodeSession: true },
+          }),
+        };
+      }
+      if (url.includes('/api/guest/session')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: deleted
+              ? { status: 'passcode', isVerified: false, hasPasscodeSession: true }
+              : {
+                status: 'invitation',
+                isVerified: true,
+                code: 'DARCY26',
+                guestName: 'Fitzwilliam Darcy',
+                hasPasscodeSession: true,
+              },
+          }),
+        };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    }) as any;
+
+    try {
+      render(
+        <Navbar
+          isAdmin={false}
+          handleLogout={jest.fn()}
+          headerRef={headerRef}
+          config={mockConfig}
+        />
+      );
+
+      const switchBtn = await screen.findByTestId('navbar-switch-household-button');
+      expect(switchBtn).toHaveTextContent('Switch Household');
+
+      fireEvent.click(switchBtn);
+
+      await waitFor(() => {
+        expect(deleted).toBe(true);
+        expect(screen.queryByTestId('navbar-switch-household-button')).not.toBeInTheDocument();
+      });
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('prefixes /api/guest/session GET and DELETE requests with NEXT_PUBLIC_BASE_PATH when configured', async () => {
+    const originalFetch = global.fetch;
+    const previousBasePath = process.env.NEXT_PUBLIC_BASE_PATH;
+    process.env.NEXT_PUBLIC_BASE_PATH = '/wedding_website/demo';
+    const requestedUrls: Array<{ url: string; method: string }> = [];
+
+    global.fetch = jest.fn().mockImplementation(async (input: unknown, init?: RequestInit) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input && typeof input === 'object' && 'url' in input && typeof input.url === 'string'
+            ? input.url
+            : '';
+      const method = init?.method || 'GET';
+      requestedUrls.push({ url, method });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          data:
+            method === 'DELETE'
+              ? { status: 'passcode', isVerified: false, hasPasscodeSession: true }
+              : {
+                status: 'invitation',
+                isVerified: true,
+                code: 'DARCY26',
+                guestName: 'Fitzwilliam Darcy',
+                hasPasscodeSession: true,
+              },
+        }),
+      };
+    }) as unknown as typeof fetch;
+
+    try {
+      render(
+        <Navbar
+          isAdmin={false}
+          handleLogout={jest.fn()}
+          headerRef={headerRef}
+          config={mockConfig}
+        />
+      );
+
+      const switchBtn = await screen.findByTestId('navbar-switch-household-button');
+      expect(requestedUrls[0]).toEqual({
+        url: '/wedding_website/demo/api/guest/session',
+        method: 'GET',
+      });
+
+      fireEvent.click(switchBtn);
+
+      await waitFor(() => {
+        expect(requestedUrls).toContainEqual({
+          url: '/wedding_website/demo/api/guest/session',
+          method: 'DELETE',
+        });
+      });
+    } finally {
+      global.fetch = originalFetch;
+      if (previousBasePath === undefined) {
+        delete process.env.NEXT_PUBLIC_BASE_PATH;
+      } else {
+        process.env.NEXT_PUBLIC_BASE_PATH = previousBasePath;
+      }
+    }
+  });
+
   it('labels header landmark with aria-label="Site header" per ARIA14 and suppresses header/nav landmarks in preview mode', () => {
     const { rerender } = render(
       <Navbar

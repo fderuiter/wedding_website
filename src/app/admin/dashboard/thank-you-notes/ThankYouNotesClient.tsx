@@ -18,6 +18,7 @@ import {
 import { useOverlay } from '@/hooks/useOverlay';
 import { useMenuNavigation } from '@/hooks/useMenuNavigation';
 import { withBasePath } from '@/lib/basePath';
+import { downloadExportBlob } from '@/utils/exportDownload';
 
 interface ThankYouContributorItem {
   id: string;
@@ -386,7 +387,7 @@ export default function ThankYouNotesPage() {
 
   const { handleMenuKeyDown } = useMenuNavigation(overlayRef);
 
-  const handleExportCsv = () => {
+  const handleExportCsv = async () => {
     const params = new URLSearchParams();
     if (statusFilter !== 'All') {
       params.set('status', statusFilter);
@@ -397,15 +398,20 @@ export default function ThankYouNotesPage() {
     const query = params.toString();
     const url = query ? `/api/admin/thank-you-notes/export?${query}` : '/api/admin/thank-you-notes/export';
 
-    const link = document.createElement('a');
-    link.href = withBasePath(url);
-    link.setAttribute('download', '');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+      await downloadExportBlob(url, 'thank-you-notes.csv');
+      addToast('Thank-you notes exported to CSV.', 'success');
+    } catch (err: unknown) {
+      addToast(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Failed to export thank-you notes CSV.',
+        'error'
+      );
+    }
   };
 
-  const handleExportLabels = (template: 'avery_5160' | 'avery_5163') => {
+  const handleExportLabels = async (template: 'avery_5160' | 'avery_5163') => {
     setIsLabelDropdownOpen(false);
     exportTriggerRef.current?.focus();
     const params = new URLSearchParams();
@@ -422,12 +428,17 @@ export default function ThankYouNotesPage() {
     const query = params.toString();
     const url = `/api/admin/thank-you-notes/export-labels?${query}`;
 
-    const link = document.createElement('a');
-    link.href = withBasePath(url);
-    link.setAttribute('download', '');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+      await downloadExportBlob(url, `thank-you-labels-${template}.pdf`);
+      addToast('Mailing labels PDF exported successfully.', 'success');
+    } catch (err: unknown) {
+      addToast(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Failed to export mailing labels PDF.',
+        'error'
+      );
+    }
   };
 
   const fetchData = useCallback(async () => {
@@ -567,7 +578,7 @@ export default function ThankYouNotesPage() {
     setIsSearchingHouseholds(true);
     try {
       const params = new URLSearchParams({ search: trimmed, limit: '8' });
-      const res = await fetch(`/api/admin/invitation-codes/catalog?${params.toString()}`);
+      const res = await fetch(withBasePath(`/api/admin/invitation-codes/catalog?${params.toString()}`));
       if (!res.ok) {
         throw new Error('Failed to search guest households.');
       }
@@ -1621,7 +1632,7 @@ export default function ThankYouNotesPage() {
                         </div>
                         {(item.stripeChargeId || item.stripePaymentIntentId) && (
                           <div
-                            className="mt-0.5 text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-medium truncate max-w-[120px]"
+                            className="mt-0.5 text-[10px] font-mono text-status-success-text font-medium truncate max-w-[120px]"
                             title={`Stripe Ref: ${item.stripeChargeId || item.stripePaymentIntentId}`}
                           >
                             Ref: {item.stripeChargeId || item.stripePaymentIntentId}
@@ -1678,7 +1689,7 @@ export default function ThankYouNotesPage() {
                           <div className="space-y-1">
                             {item.message && (
                               <div className="text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 p-1.5 rounded border border-amber-200 dark:border-amber-800">
-                                <span className="font-semibold block text-[10px] uppercase text-amber-600 dark:text-amber-400">Guest Message:</span>
+                                <span className="font-semibold block text-[10px] uppercase text-status-warning-text">Guest Message:</span>
                                 <p className="italic">{item.message}</p>
                               </div>
                             )}
@@ -1708,7 +1719,7 @@ export default function ThankYouNotesPage() {
                           <div className="text-xs text-gray-700 dark:text-gray-300 space-y-1 max-w-xs">
                             {item.message && (
                               <div className="text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 p-1.5 rounded border border-amber-200 dark:border-amber-800">
-                                <span className="font-semibold block text-[10px] uppercase text-amber-600 dark:text-amber-400">Guest Message:</span>
+                                <span className="font-semibold block text-[10px] uppercase text-status-warning-text">Guest Message:</span>
                                 <p className="italic whitespace-pre-wrap">{item.message}</p>
                               </div>
                             )}
@@ -1783,7 +1794,7 @@ export default function ThankYouNotesPage() {
                               size="sm"
                               variant="outline"
                               onClick={() => openEmailComposer(item)}
-                              aria-label={`Compose thank-you email for ${item.name}`}
+                              srContext={`for ${item.name}`}
                             >
                               Send Email
                             </Button>

@@ -9,6 +9,7 @@ import { useAdminSubEvents } from '@/hooks/admin/useAdminSubEvents';
 import { FormGroup, Label, Input, Select } from '@/components/ui/forms';
 import { Button } from '@/components/ui/Button';
 import { Dialog, useDirtyConfirmClose } from '@/components/ui/Dialog';
+import { StickyBar } from '@/components/ui/useStickyOffset';
 import { ToggleButtonGroup } from '@/components/ui/ToggleButtonGroup';
 import { SegmentedTabs, SegmentedTabPanel } from '@/components/ui/SegmentedTabs';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -40,6 +41,7 @@ import type { RsvpSummaryResponse, SubEventDTO } from '@/features/sub-events';
 import { computeMergedInvitationPreview } from '@/utils/invitationValidation';
 import { INVITATION_DEFAULT_PAGE_SIZE } from '@/utils/invitationPagination';
 import { withBasePath } from '@/lib/basePath';
+import { downloadExportBlob } from '@/utils/exportDownload';
 
 const EMPTY_SUB_EVENT_IDS: string[] = [];
 const RSVP_SUMMARY_QUERY_KEY = ['admin-rsvp-summary'] as const;
@@ -1120,22 +1122,30 @@ export default function InvitationCodesDashboardPage() {
     }
   };
 
-  const handleExportSelectedCsv = () => {
+  const handleExportSelectedCsv = async () => {
     if (selectedIds.length === 0) {
       addToast('No invitation codes selected for export.', 'info');
       return;
     }
 
+    const count = selectedIds.length;
     const params = new URLSearchParams();
     params.set('ids', selectedIds.join(','));
 
-    const link = document.createElement('a');
-    link.href = withBasePath(`/api/admin/invitation-codes/export?${params.toString()}`);
-    link.setAttribute('download', '');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    addToast(`Exported ${selectedIds.length} selected invitation code(s) to CSV.`, 'success');
+    try {
+      await downloadExportBlob(
+        `/api/admin/invitation-codes/export?${params.toString()}`,
+        'guest-invitations.csv'
+      );
+      addToast(`Exported ${count} selected invitation code(s) to CSV.`, 'success');
+    } catch (err: unknown) {
+      addToast(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Failed to export selected invitation codes.',
+        'error'
+      );
+    }
   };
 
   const handlePrintSelectedLabels = () => {
@@ -1346,7 +1356,7 @@ export default function InvitationCodesDashboardPage() {
     [filteredCodes]
   );
 
-  const handleExportCsv = () => {
+  const handleExportCsv = async () => {
     const params = new URLSearchParams();
     if (searchQuery.trim()) params.set('search', searchQuery.trim());
     if (statusFilter && statusFilter !== 'all') params.set('status', statusFilter);
@@ -1359,13 +1369,17 @@ export default function InvitationCodesDashboardPage() {
     const queryString = params.toString();
     const exportUrl = `/api/admin/invitation-codes/export${queryString ? `?${queryString}` : ''}`;
 
-    const link = document.createElement('a');
-    link.href = withBasePath(exportUrl);
-    link.setAttribute('download', '');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    addToast('Invitation codes exported successfully.', 'success');
+    try {
+      await downloadExportBlob(exportUrl, 'guest-invitations.csv');
+      addToast('Invitation codes exported successfully.', 'success');
+    } catch (err: unknown) {
+      addToast(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Failed to export invitation codes.',
+        'error'
+      );
+    }
   };
 
   const handleCopyShareableLink = () => {
@@ -1894,7 +1908,9 @@ export default function InvitationCodesDashboardPage() {
         </SegmentedTabPanel>
 
         {selectedIds.length > 0 && (
-          <div
+          <StickyBar
+            edge="bottom"
+            scope="document"
             role="region"
             aria-label="Batch actions toolbar"
             className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-3xl bg-gray-900 text-white dark:bg-gray-800 dark:text-white p-4 rounded-2xl shadow-2xl border border-gray-700 flex flex-wrap items-center justify-between gap-3 text-sm animate-fade-in"
@@ -1961,7 +1977,7 @@ export default function InvitationCodesDashboardPage() {
                 Deselect All
               </Button>
             </div>
-          </div>
+          </StickyBar>
         )}
 
         <Dialog

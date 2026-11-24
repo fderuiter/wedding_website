@@ -192,9 +192,23 @@ async function applyDeterministicThemeAndSeed(
 
 async function waitForStaticRouteSettled(page: Page, theme: ColorTheme) {
   await page
-    .locator('main, [role="main"], h1')
+    .locator('main, [role="main"]')
     .first()
     .waitFor({ state: 'attached', timeout: 10_000 })
+    .catch(() => {});
+  await page
+    .locator('h1, [role="heading"][aria-level="1"]')
+    .first()
+    .waitFor({ state: 'attached', timeout: 10_000 })
+    .catch(() => {});
+  await page
+    .waitForFunction(
+      () =>
+        Array.from(document.querySelectorAll('link[rel="stylesheet"]')).every((link) =>
+          Boolean((link as HTMLLinkElement).sheet)
+        ),
+      { timeout: 10_000 }
+    )
     .catch(() => {});
   await page.evaluate((expectedTheme) => {
     document.documentElement.classList.toggle('dark', expectedTheme === 'dark');

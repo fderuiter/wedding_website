@@ -4,8 +4,13 @@ import { useReducer, useEffect, useRef, useCallback, type SubmitEvent } from 're
 import { focusFirstInvalidControl } from '@/components/ui/forms';
 import { useToast } from '@/components/ui/ToastProvider';
 import { withBasePath } from '@/lib/basePath';
+import {
+  notifyGuestSessionChanged,
+  subscribeGuestSessionChanged,
+} from '@/utils/guestSessionEvents';
 
 type GuestPortalStatus = 'idle' | 'validating' | 'authenticated' | 'saving' | 'error';
+export type GuestSessionType = 'invitation' | 'passcode' | 'none';
 
 export interface AddressFormData {
   addressLine1: string;
@@ -19,25 +24,39 @@ export interface AddressFormData {
 export interface GuestAddressPortalState {
   status: GuestPortalStatus;
   sessionActive: boolean;
+  sessionType: GuestSessionType;
+  hasPasscodeSession: boolean;
   isInitialLoading: boolean;
   code: string;
   guestName: string;
   form: AddressFormData;
   baseline: AddressFormData;
   error: string | null;
+  codeGuidance: string | null;
 }
 
 export type GuestAddressPortalAction =
   | { type: 'INIT_START' }
-  | { type: 'INIT_UNAUTHENTICATED' }
+  | {
+    type: 'INIT_UNAUTHENTICATED';
+    sessionType?: GuestSessionType;
+    hasPasscodeSession?: boolean;
+  }
   | { type: 'VALIDATE_START'; code?: string }
   | {
     type: 'VALIDATE_SUCCESS';
     guestName: string;
     code: string;
     address?: Partial<AddressFormData>;
+    hasPasscodeSession?: boolean;
   }
+  | { type: 'VALIDATE_SHARED_PASSCODE'; guidance: string }
   | { type: 'VALIDATE_FAILURE'; error: string; isAuthError: boolean }
+  | {
+    type: 'SWITCH_HOUSEHOLD';
+    sessionType: GuestSessionType;
+    hasPasscodeSession: boolean;
+  }
   | { type: 'SAVE_START' }
   | { type: 'SAVE_SUCCESS'; address: AddressFormData }
   | { type: 'SAVE_FAILURE'; error: string; isAuthError: boolean }
@@ -56,12 +75,15 @@ export const initialAddressData: AddressFormData = {
 export const initialGuestPortalState: GuestAddressPortalState = {
   status: 'validating',
   sessionActive: false,
+  sessionType: 'none',
+  hasPasscodeSession: false,
   isInitialLoading: true,
   code: '',
   guestName: '',
   form: { ...initialAddressData },
   baseline: { ...initialAddressData },
   error: null,
+  codeGuidance: null,
 };
 
 export function isAuthError(status?: number): boolean {
@@ -85,16 +107,31 @@ export function guestAddressPortalReducer(
         status: 'validating',
         isInitialLoading: true,
         error: null,
+        codeGuidance: null,
       };
 
-    case 'INIT_UNAUTHENTICATED':
+    case 'INIT_UNAUTHENTICATED': {
+      const nextSessionType =
+        action.sessionType ?? (action.hasPasscodeSession ? 'passcode' : 'none');
       return {
         ...state,
         status: 'idle',
         sessionActive: false,
+        sessionType: nextSessionType,
+        hasPasscodeSession: action.hasPasscodeSession ?? nextSessionType === 'passcode',
         isInitialLoading: false,
+        ...(state.sessionActive
+          ? {
+            code: '',
+            guestName: '',
+            form: { ...initialAddressData },
+            baseline: { ...initialAddressData },
+          }
+          : {}),
         error: null,
+        codeGuidance: null,
       };
+    }
 
     case 'VALIDATE_START':
       return {
@@ -102,6 +139,7 @@ export function guestAddressPortalReducer(
         status: 'validating',
         code: action.code !== undefined ? action.code : state.code,
         error: null,
+        codeGuidance: null,
       };
 
     case 'VALIDATE_SUCCESS': {
@@ -117,14 +155,28 @@ export function guestAddressPortalReducer(
         ...state,
         status: 'authenticated',
         sessionActive: true,
+        sessionType: 'invitation',
+        hasPasscodeSession: action.hasPasscodeSession ?? state.hasPasscodeSession,
         isInitialLoading: false,
         guestName: action.guestName,
         code: action.code,
         form: nextAddress,
         baseline: nextAddress,
         error: null,
+        codeGuidance: null,
       };
     }
+
+    case 'VALIDATE_SHARED_PASSCODE':
+      return {
+        ...state,
+        status: 'idle',
+        sessionActive: false,
+        sessionType: state.hasPasscodeSession ? 'passcode' : 'none',
+        isInitialLoading: false,
+        error: null,
+        codeGuidance: action.guidance,
+      };
 
     case 'VALIDATE_FAILURE': {
       if (action.isAuthError) {
@@ -132,8 +184,10 @@ export function guestAddressPortalReducer(
           ...state,
           status: 'idle',
           sessionActive: false,
+          sessionType: state.hasPasscodeSession ? 'passcode' : 'none',
           isInitialLoading: false,
           error: action.error,
+          codeGuidance: null,
         };
       }
       return {
@@ -141,8 +195,25 @@ export function guestAddressPortalReducer(
         status: 'error',
         isInitialLoading: false,
         error: action.error,
+        codeGuidance: null,
       };
     }
+
+    case 'SWITCH_HOUSEHOLD':
+      return {
+        ...state,
+        status: 'idle',
+        sessionActive: false,
+        sessionType: action.sessionType,
+        hasPasscodeSession: action.hasPasscodeSession,
+        isInitialLoading: false,
+        code: '',
+        guestName: '',
+        form: { ...initialAddressData },
+        baseline: { ...initialAddressData },
+        error: null,
+        codeGuidance: null,
+      };
 
     case 'SAVE_START':
       return {
@@ -166,6 +237,7 @@ export function guestAddressPortalReducer(
           ...state,
           status: 'idle',
           sessionActive: false,
+          sessionType: state.hasPasscodeSession ? 'passcode' : 'none',
           error: action.error,
         };
       }
@@ -193,6 +265,7 @@ export function guestAddressPortalReducer(
         ...state,
         code: action.code,
         error: null,
+        codeGuidance: null,
       };
 
     default:
@@ -260,6 +333,7 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
   const activeValidationCodeRef = useRef<string | null>(null);
   const isSavingRef = useRef(false);
   const pendingCodeFocusRef = useRef(false);
+  const isInternalSessionEmitRef = useRef(false);
 
   const focusCodeInputNow = useCallback((): boolean => {
     if (typeof document === 'undefined') return false;
@@ -285,11 +359,21 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
     }
   }, [focusCodeInputNow, state]);
 
+  const emitSessionChanged = useCallback(() => {
+    isInternalSessionEmitRef.current = true;
+    try {
+      notifyGuestSessionChanged();
+    } finally {
+      isInternalSessionEmitRef.current = false;
+    }
+  }, []);
+
   const cancelInFlightValidation = useCallback(() => {
     if (validationAbortControllerRef.current) {
       validationAbortControllerRef.current.abort();
       validationAbortControllerRef.current = null;
     }
+    activeValidationCodeRef.current = null;
   }, []);
 
   const fetchAddressData = useCallback(
@@ -322,38 +406,128 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
     []
   );
 
+  const inspectSessionAndHydrate = useCallback(
+    async (
+      signal: AbortSignal
+    ): Promise<
+      | { kind: 'authenticated'; guestName: string; code: string; address: Partial<AddressFormData>; hasPasscodeSession: boolean }
+      | { kind: 'unauthenticated'; sessionType: GuestSessionType; hasPasscodeSession: boolean }
+      | { kind: 'error'; error: string }
+      | { kind: 'aborted' }
+    > => {
+      try {
+        const res = await fetch(withBasePath('/api/guest/session'), { signal });
+        if (signal.aborted) return { kind: 'aborted' };
+
+        if (isAuthError(res.status)) {
+          return { kind: 'unauthenticated', sessionType: 'none', hasPasscodeSession: false };
+        }
+
+        const json = await res.json().catch(() => null);
+        if (signal.aborted) return { kind: 'aborted' };
+
+        if (!res.ok || (json && json.success === false)) {
+          return {
+            kind: 'error',
+            error: json?.error || 'Failed to connect to guest portal.',
+          };
+        }
+
+        const payload = json?.data ?? json;
+        if (payload && typeof payload === 'object' && 'status' in payload) {
+          const hasPasscodeSession = Boolean(
+            payload.hasPasscodeSession || payload.status === 'passcode'
+          );
+          if (payload.status === 'invitation') {
+            const addrResult = await fetchAddressData(signal);
+            if (signal.aborted) return { kind: 'aborted' };
+            if (addrResult.success && addrResult.data) {
+              return {
+                kind: 'authenticated',
+                guestName: addrResult.data.guestName || payload.guestName || '',
+                code: addrResult.data.code || payload.invitationCode || payload.code || '',
+                address: addrResult.data,
+                hasPasscodeSession,
+              };
+            }
+            if (addrResult.isAuth) {
+              return {
+                kind: 'unauthenticated',
+                sessionType: hasPasscodeSession ? 'passcode' : 'none',
+                hasPasscodeSession,
+              };
+            }
+            return {
+              kind: 'error',
+              error: addrResult.error || 'Failed to connect to guest portal.',
+            };
+          }
+
+          return {
+            kind: 'unauthenticated',
+            sessionType: payload.status === 'passcode' ? 'passcode' : 'none',
+            hasPasscodeSession,
+          };
+        }
+
+        // Backward-compatible fallback when positional unit test mocks return address payload directly
+        if (
+          payload &&
+          typeof payload === 'object' &&
+          ('addressLine1' in payload || 'guestName' in payload || 'code' in payload)
+        ) {
+          return {
+            kind: 'authenticated',
+            guestName: payload.guestName || '',
+            code: payload.code || '',
+            address: payload as Partial<AddressFormData>,
+            hasPasscodeSession: false,
+          };
+        }
+
+        return { kind: 'unauthenticated', sessionType: 'none', hasPasscodeSession: false };
+      } catch (err: unknown) {
+        if (isAbortError(err) || signal.aborted) {
+          return { kind: 'aborted' };
+        }
+        return {
+          kind: 'error',
+          error: err instanceof Error ? err.message : 'Network error',
+        };
+      }
+    },
+    [fetchAddressData]
+  );
+
   const checkInitialSession = useCallback(
     async (signal: AbortSignal) => {
       dispatch({ type: 'INIT_START' });
-      const result = await fetchAddressData(signal);
-      if (signal.aborted) return;
+      const result = await inspectSessionAndHydrate(signal);
+      if (result.kind === 'aborted' || signal.aborted) return;
 
-      if (result.success && result.data) {
+      if (result.kind === 'authenticated') {
         dispatch({
           type: 'VALIDATE_SUCCESS',
-          guestName: result.data.guestName || '',
-          code: result.data.code || '',
-          address: {
-            addressLine1: result.data.addressLine1 || '',
-            addressLine2: result.data.addressLine2 || '',
-            city: result.data.city || '',
-            state: result.data.state || '',
-            zipCode: result.data.zipCode || '',
-            country: result.data.country || '',
-          },
+          guestName: result.guestName,
+          code: result.code,
+          address: result.address,
+          hasPasscodeSession: result.hasPasscodeSession,
         });
-      } else if (result.isAuth) {
-        dispatch({ type: 'INIT_UNAUTHENTICATED' });
+      } else if (result.kind === 'unauthenticated') {
+        dispatch({
+          type: 'INIT_UNAUTHENTICATED',
+          sessionType: result.sessionType,
+          hasPasscodeSession: result.hasPasscodeSession,
+        });
       } else {
-        // Transient network error or 5xx on initial load
         dispatch({
           type: 'VALIDATE_FAILURE',
-          error: result.error || 'Failed to connect to guest portal.',
+          error: result.error,
           isAuthError: false,
         });
       }
     },
-    [dispatch, fetchAddressData]
+    [dispatch, inspectSessionAndHydrate]
   );
 
   const validateCode = useCallback(
@@ -386,26 +560,38 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
         const data = await res.json().catch(() => null);
         if (signal.aborted) return;
 
-        const isOk = res.ok && (data?.success || data?.valid);
+        const payload = data?.data ?? data;
+        if (res.ok && payload?.valid === false && payload?.reason === 'shared_passcode') {
+          const guidanceMsg =
+            payload.error ||
+            'That is the shared website passcode. Please enter the personal household invitation code printed on your invitation.';
+          dispatch({ type: 'VALIDATE_SHARED_PASSCODE', guidance: guidanceMsg });
+          addToast(guidanceMsg, 'info');
+          return;
+        }
+
+        const isExplicitInvalid = payload?.valid === false;
+        const isOk = res.ok && !isExplicitInvalid && Boolean(data?.success || payload?.valid);
 
         if (!isOk) {
           const isAuth = isAuthError(res.status) || res.status === 404 || res.status === 400;
           const errMsg =
+            payload?.error ||
             data?.error ||
             (isAuth
               ? 'Invalid or expired invitation code.'
               : 'Failed to connect to guest portal. Please try again.');
 
           if (isAutoMount) {
-            // Check existing session as fallback on auto-mount invalid code
-            const addrFallback = await fetchAddressData(signal);
-            if (signal.aborted) return;
-            if (addrFallback.success && addrFallback.data) {
+            const fallback = await inspectSessionAndHydrate(signal);
+            if (fallback.kind === 'aborted' || signal.aborted) return;
+            if (fallback.kind === 'authenticated') {
               dispatch({
                 type: 'VALIDATE_SUCCESS',
-                guestName: addrFallback.data.guestName || '',
-                code: addrFallback.data.code || '',
-                address: addrFallback.data,
+                guestName: fallback.guestName,
+                code: fallback.code,
+                address: fallback.address,
+                hasPasscodeSession: fallback.hasPasscodeSession,
               });
               return;
             }
@@ -436,7 +622,7 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
         const addrResult = await fetchAddressData(signal);
         if (signal.aborted) return;
 
-        const guest = addrResult.data?.guestName || data?.data?.guestName || data?.guestName || '';
+        const guest = addrResult.data?.guestName || payload?.guestName || data?.guestName || '';
         if (addrResult.success && addrResult.data) {
           dispatch({
             type: 'VALIDATE_SUCCESS',
@@ -453,6 +639,7 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
           });
         }
 
+        emitSessionChanged();
         addToast(`Welcome ${guest}!`, 'success');
       } catch (err: unknown) {
         if (isAbortError(err) || signal.aborted) return;
@@ -460,14 +647,15 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
         const errorMsg = err instanceof Error ? err.message : 'Error validating code.';
 
         if (isAutoMount) {
-          const addrFallback = await fetchAddressData(signal);
-          if (signal.aborted) return;
-          if (addrFallback.success && addrFallback.data) {
+          const fallback = await inspectSessionAndHydrate(signal);
+          if (fallback.kind === 'aborted' || signal.aborted) return;
+          if (fallback.kind === 'authenticated') {
             dispatch({
               type: 'VALIDATE_SUCCESS',
-              guestName: addrFallback.data.guestName || '',
-              code: addrFallback.data.code || '',
-              address: addrFallback.data,
+              guestName: fallback.guestName,
+              code: fallback.code,
+              address: fallback.address,
+              hasPasscodeSession: fallback.hasPasscodeSession,
             });
             return;
           }
@@ -484,7 +672,14 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
         }
       }
     },
-    [addToast, dispatch, fetchAddressData, requestCodeInputFocus]
+    [
+      addToast,
+      dispatch,
+      emitSessionChanged,
+      fetchAddressData,
+      inspectSessionAndHydrate,
+      requestCodeInputFocus,
+    ]
   );
 
   // Mount effect to check session or auto-validate URL code
@@ -641,6 +836,46 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
     dispatch({ type: 'SET_CODE', code });
   }, [dispatch]);
 
+  useEffect(() => {
+    return subscribeGuestSessionChanged(() => {
+      if (isInternalSessionEmitRef.current) return;
+      cancelInFlightValidation();
+      const controller = new AbortController();
+      validationAbortControllerRef.current = controller;
+      void checkInitialSession(controller.signal);
+    });
+  }, [cancelInFlightValidation, checkInitialSession]);
+
+  const handleSwitchHousehold = useCallback(async () => {
+    cancelInFlightValidation();
+    let nextHasPasscode = stateRef.current.hasPasscodeSession;
+    let nextSessionType: GuestSessionType = nextHasPasscode ? 'passcode' : 'none';
+
+    try {
+      const res = await fetch(withBasePath('/api/guest/session'), { method: 'DELETE' });
+      const json = await res.json().catch(() => null);
+      const payload = json?.data ?? json;
+      if (typeof payload?.hasPasscodeSession === 'boolean') {
+        nextHasPasscode = payload.hasPasscodeSession;
+      }
+      if (payload?.status === 'passcode' || nextHasPasscode) {
+        nextSessionType = 'passcode';
+      } else {
+        nextSessionType = 'none';
+      }
+    } catch {
+      // Clear local portal state even if network request fails
+    }
+
+    dispatch({
+      type: 'SWITCH_HOUSEHOLD',
+      sessionType: nextSessionType,
+      hasPasscodeSession: nextHasPasscode,
+    });
+    emitSessionChanged();
+    addToast('Switched out of household invitation. Enter another invitation code anytime.', 'info');
+  }, [addToast, cancelInFlightValidation, dispatch, emitSessionChanged]);
+
   const handleRetry = useCallback(async () => {
     if (
       isSavingRef.current ||
@@ -666,6 +901,7 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
     state,
     handleValidateCode,
     handleSaveAddress,
+    handleSwitchHousehold,
     handleRetry,
     setField,
     setCode,

@@ -10,6 +10,7 @@ import type { RegistryItem } from '@/features/registry';
 import { checkAdminClient as mockCheckAdminClient } from '@/core/auth/auth.client';
 import { createMockMedia } from '@/testing/factories/mediaFactory';
 import { createMockContributor, createMockRegistryItem } from '@/testing/factories/registryFactory';
+import { setDemoRuntimeFlag } from '@/lib/demo/runtimeFlag';
 
 let capturedDragEndHandlers: Array<(_result: DropResult) => void> = [];
 
@@ -1028,5 +1029,33 @@ describe('AdminRegistryPage', () => {
 
     const results = await axe(container);
     expect(results).toHaveNoViolations();
+  });
+
+  it('routes Edit button to /registry/edit-item/fallback?id=<id> when demo runtime is active', async () => {
+    setDemoRuntimeFlag(true);
+    try {
+      const customDemoItem = createMockRegistryItem({
+        ...mockItem,
+        id: 'demo-custom-item-42',
+        name: 'Custom Demo Vase',
+      });
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => [customDemoItem],
+      });
+
+      const { unmount } = renderWithProviders(<AdminRegistryPage />);
+      const editButtons = await screen.findAllByRole('button', {
+        name: 'Edit registry item: Custom Demo Vase',
+      });
+      fireEvent.click(editButtons[0]);
+
+      expect(mockPush).toHaveBeenCalledWith(
+        '/registry/edit-item/fallback?id=demo-custom-item-42'
+      );
+      unmount();
+    } finally {
+      setDemoRuntimeFlag(false);
+    }
   });
 });

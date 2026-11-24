@@ -15,6 +15,7 @@ import {
   isDemoAdminSession,
   isDemoRuntimeActive,
   mutateActiveDataset,
+  previewDemoClaimToken,
   processDemoClaimToken,
   purgeDemoSampleData,
   recordDemoContribution,
@@ -35,6 +36,7 @@ import {
   dispatchDemoApiRequest as noopDispatchDemoApiRequest,
   installDemoFetchInterceptor as noopInstallDemoFetchInterceptor,
 } from '../demoApiHandler.noop';
+import { DatabaseBackupSchema, formatZodIssues, reviveDates } from '@/utils/backupValidation';
 
 describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
   beforeEach(() => {
@@ -426,10 +428,37 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
 
       expect((await window.fetch('/api/registry/claim')).status).toBe(400);
       expect((await window.fetch('/api/registry/claim?token=bad')).status).toBe(404);
+      const claimPreviewDirect = previewDemoClaimToken(contribRes.claimActions.confirmToken);
+      expect(claimPreviewDirect).toMatchObject({
+        status: 'RESERVED',
+        action: 'confirm',
+        itemName: 'Pro Espresso Grinder',
+        amount: 250,
+      });
       const claimGetRes = await (
         await window.fetch(`/api/registry/claim?token=${contribRes.claimActions.confirmToken}`)
       ).json();
-      expect(claimGetRes.status).toBe('CONFIRMED');
+      expect(claimGetRes.status).toBe('RESERVED');
+      expect(claimGetRes.action).toBe('confirm');
+      expect(claimGetRes.itemName).toBe('Pro Espresso Grinder');
+      expect(claimGetRes.amount).toBe(250);
+      const itemStillReserved = await (
+        await window.fetch(`/api/registry/items/${createdItem.id}`)
+      ).json();
+      expect(itemStillReserved.contributors[0].status).toBe('RESERVED');
+
+      const claimConfirmRes = await (
+        await window.fetch('/api/registry/claim', {
+          method: 'POST',
+          body: JSON.stringify({ token: contribRes.claimActions.confirmToken }),
+        })
+      ).json();
+      expect(claimConfirmRes.status).toBe('CONFIRMED');
+      const itemAfterConfirm = await (
+        await window.fetch(`/api/registry/items/${createdItem.id}`)
+      ).json();
+      expect(itemAfterConfirm.contributors[0].status).toBe('CONFIRMED');
+
       const claimCancelRes = await (
         await window.fetch('/api/registry/claim', {
           method: 'POST',
@@ -437,6 +466,11 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
         })
       ).json();
       expect(claimCancelRes.status).toBe('CANCELLED');
+      const itemAfterCancel = await (
+        await window.fetch(`/api/registry/items/${createdItem.id}`)
+      ).json();
+      expect(itemAfterCancel.purchased).toBe(false);
+      expect(itemAfterCancel.amountContributed).toBe(0);
 
       expect((await window.fetch(`/api/registry/items/${createdItem.id}`, { method: 'DELETE' })).status).toBe(200);
 
@@ -845,6 +879,91 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
           .status
       ).toBe(404);
       expect((await window.fetch('/api/admin/overview-stats')).status).toBe(200);
+
+      // Guest portal session, personalized schedule, and interactive RSVP submission
+      const initialGuestSession = await (await window.fetch('/api/guest/session')).json();
+      expect(initialGuestSession).toEqual(
+        expect.objectContaining({ status: 'none', isVerified: false, invitationCode: null })
+      );
+      const publicSchedule = await (await window.fetch('/api/schedule')).json();
+      expect(publicSchedule.isGuest).toBe(false);
+      expect(Array.isArray(publicSchedule.data)).toBe(true);
+      expect(publicSchedule.data.length).toBeGreaterThan(0);
+      expect(
+        (
+          await window.fetch('/api/rsvp', {
+            method: 'POST',
+            body: JSON.stringify({ subEventId: publicSchedule.data[0].id, status: 'attending' }),
+          })
+        ).status
+      ).toBe(401);
+
+      await window.fetch('/api/registry/validate-code?code=SMITH2026');
+      const unlockedGuestSession = await (await window.fetch('/api/guest/session')).json();
+      expect(unlockedGuestSession).toEqual(
+        expect.objectContaining({
+          status: 'invitation',
+          isVerified: true,
+          invitationCode: 'SMITH2026',
+          code: 'SMITH2026',
+        })
+      );
+      const guestSchedule = await (await window.fetch('/api/schedule')).json();
+      expect(guestSchedule.isGuest).toBe(true);
+      const targetSubEventId = guestSchedule.data[0].id as string;
+      expect(
+        (
+          await window.fetch('/api/rsvp', {
+            method: 'POST',
+            body: JSON.stringify({ subEventId: targetSubEventId, status: 'pending' }),
+          })
+        ).status
+      ).toBe(400);
+      const rsvpSaveRes = await window.fetch('/api/rsvp', {
+        method: 'POST',
+        body: JSON.stringify({
+          subEventId: targetSubEventId,
+          status: 'attending',
+          plusOneCount: 1,
+          dietaryNotes: 'No shellfish',
+          plusOneNames: ['Alex Smith'],
+        }),
+      });
+      expect(rsvpSaveRes.status).toBe(200);
+      const refreshedSchedule = await (await window.fetch('/api/schedule')).json();
+      const savedEvent = refreshedSchedule.data.find(
+        (evt: { id: string }) => evt.id === targetSubEventId
+      );
+      expect(savedEvent.userRsvp).toEqual(
+        expect.objectContaining({
+          status: 'attending',
+          plusOneCount: 1,
+          dietaryNotes: 'No shellfish',
+        })
+      );
+      const rsvpClearDietaryRes = await window.fetch('/api/rsvp', {
+        method: 'POST',
+        body: JSON.stringify({
+          subEventId: targetSubEventId,
+          status: 'attending',
+          plusOneCount: 1,
+          dietaryNotes: '',
+          clearDietaryNotes: true,
+        }),
+      });
+      expect(rsvpClearDietaryRes.status).toBe(200);
+      const scheduleAfterClear = await (await window.fetch('/api/schedule')).json();
+      const clearedNoteEvent = scheduleAfterClear.data.find(
+        (evt: { id: string }) => evt.id === targetSubEventId
+      );
+      expect(clearedNoteEvent.userRsvp.dietaryNotes).toBe('');
+      const clearedGuestSession = await (
+        await window.fetch('/api/guest/session', { method: 'DELETE' })
+      ).json();
+      expect(clearedGuestSession).toEqual(
+        expect.objectContaining({ status: 'none', isVerified: false })
+      );
+
       expect((await window.fetch('/api/ready')).status).toBe(200);
       expect(
         Array.isArray((await (await window.fetch('/api/weather')).json()).data.daily.temperature_2m_max)
@@ -880,6 +999,145 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
       expect(Array.isArray((await (await window.fetch('/api/admin/versions')).json()).data.items)).toBe(true);
       expect((await window.fetch('/api/admin/seating/export?format=pdf')).headers.get('Content-Type')).toBe('application/pdf');
       expect((await window.fetch('/api/unknown-endpoint', { method: 'POST', body: '["array-body"]' })).status).toBe(404);
+
+      // Registry item alias resolution & full field persistence across /api/registry/items* and /api/admin/registry-items*
+      resetDemoState();
+      setDemoRuntimeActive(true);
+      const aliasGetOne = await (await window.fetch('/api/registry/items/1')).json();
+      expect(aliasGetOne.id).toBe('demo-classic-item-1');
+      const aliasGetSample = await (
+        await window.fetch('/api/registry/items/sample-registry-classic-1')
+      ).json();
+      expect(aliasGetSample.id).toBe('demo-classic-item-1');
+
+      const updatedViaAdminAlias = await (
+        await window.fetch('/api/admin/registry-items/sample-registry-classic-1', {
+          method: 'PUT',
+          body: JSON.stringify({
+            name: 'Heirloom Stand Mixer',
+            description: 'Updated description for demo showcase',
+            category: 'Baking',
+            price: 399.5,
+            quantity: 2,
+            itemType: 'PHYSICAL',
+            isGroupGift: true,
+            isMostWanted: false,
+            displayOrder: 4,
+            vendorUrl: 'https://example.com/gifts/heirloom-mixer',
+            paymentHandleType: 'PayPal',
+            paymentHandle: '@couple-paypal',
+            imageUrl: 'https://example.com/images/mixer.png',
+            imageAlt: 'Updated mixer alt text',
+            imageDecorative: false,
+          }),
+        })
+      ).json();
+      expect(updatedViaAdminAlias).toMatchObject({
+        id: 'demo-classic-item-1',
+        name: 'Heirloom Stand Mixer',
+        description: 'Updated description for demo showcase',
+        category: 'Baking',
+        price: 399.5,
+        quantity: 2,
+        isGroupGift: true,
+        isMostWanted: false,
+        displayOrder: 4,
+        vendorUrl: 'https://example.com/gifts/heirloom-mixer',
+        paymentHandleType: 'PayPal',
+        paymentHandle: '@couple-paypal',
+      });
+      expect(updatedViaAdminAlias.image?.url).toBe('https://example.com/images/mixer.png');
+      expect(updatedViaAdminAlias.image?.altText).toBe('Updated mixer alt text');
+
+      const reorderRes = await window.fetch('/api/admin/registry-items', {
+        method: 'PUT',
+        body: JSON.stringify({
+          action: 'reorder',
+          orderedIds: ['demo-classic-item-2', 'demo-classic-item-1'],
+        }),
+      });
+      expect(reorderRes.status).toBe(200);
+
+      // Catalog household search supports both ?q= and ?search=
+      const qCatalog = await (
+        await window.fetch('/api/admin/invitation-codes/catalog?q=Smith')
+      ).json();
+      expect(qCatalog.data.items.length).toBeGreaterThan(0);
+
+      // Browser-safe binary exports: ICS, Seating CSV/PDF/Meals/PlaceCards/EscortCards, Invitations CSV, Thank-You CSV + Avery PDFs, Maintenance JSON backup
+      const icsRes = await window.fetch('/api/schedule/sample-subevent-classic-ceremony/ics');
+      expect(icsRes.status).toBe(200);
+      expect(icsRes.headers.get('Content-Type')).toContain('text/calendar');
+      expect(await icsRes.text()).toContain('BEGIN:VCALENDAR');
+
+      for (const format of ['csv', 'meals'] as const) {
+        const seatCsvRes = await window.fetch(`/api/admin/seating/export?format=${format}`);
+        expect(seatCsvRes.status).toBe(200);
+        expect(seatCsvRes.headers.get('Content-Type')).toContain('text/csv');
+        expect((await seatCsvRes.text()).length).toBeGreaterThan(10);
+      }
+      for (const format of ['pdf', 'place-cards', 'escort-cards'] as const) {
+        const seatPdfRes = await window.fetch(`/api/admin/seating/export?format=${format}`);
+        expect(seatPdfRes.status).toBe(200);
+        expect(seatPdfRes.headers.get('Content-Type')).toContain('application/pdf');
+        const seatPdfBytes = new Uint8Array(await seatPdfRes.arrayBuffer());
+        expect(new TextDecoder().decode(seatPdfBytes.slice(0, 8))).toContain('%PDF-1.4');
+      }
+
+      const inviteCsvRes = await window.fetch('/api/admin/invitation-codes/export');
+      expect(inviteCsvRes.status).toBe(200);
+      expect(inviteCsvRes.headers.get('Content-Type')).toContain('text/csv');
+      expect(await inviteCsvRes.text()).toContain('SMITH2026');
+
+      await window.fetch('/api/registry/validate-code?code=SMITH2026');
+      await window.fetch('/api/rsvp', {
+        method: 'POST',
+        body: JSON.stringify({
+          subEventId: 'sample-subevent-classic-ceremony',
+          status: 'declined',
+          plusOneCount: 2,
+          dietaryNotes: 'Gluten-free',
+        }),
+      });
+      const redeemedCsvRes = await window.fetch(
+        '/api/admin/invitation-codes/export?status=redeemed'
+      );
+      const redeemedCsvLines = (await redeemedCsvRes.text()).split(/\r?\n/);
+      const smithRedeemedRow = redeemedCsvLines.find((line) => line.startsWith('SMITH2026,'))!;
+      expect(smithRedeemedRow).toContain(',0,Gluten-free,');
+      await window.fetch('/api/guest/session', { method: 'DELETE' });
+
+      await window.fetch('/api/admin/thank-you-notes', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: 'Aunt Clara',
+          amount: 120,
+          addressLine1: '500 Maple Ave',
+          city: 'Chicago',
+          state: 'IL',
+          zipCode: '60611',
+        }),
+      });
+      const tyCsvRes = await window.fetch('/api/admin/thank-you-notes/export');
+      expect(tyCsvRes.status).toBe(200);
+      expect(await tyCsvRes.text()).toContain('Aunt Clara');
+
+      for (const template of ['avery_5160', 'avery_5163'] as const) {
+        const labelsRes = await window.fetch(
+          `/api/admin/thank-you-notes/export-labels?template=${template}`
+        );
+        expect(labelsRes.status).toBe(200);
+        expect(labelsRes.headers.get('Content-Type')).toContain('application/pdf');
+        const labelBytes = new Uint8Array(await labelsRes.arrayBuffer());
+        expect(new TextDecoder().decode(labelBytes.slice(0, 8))).toContain('%PDF-1.4');
+      }
+
+      const maintExportRes = await window.fetch('/api/admin/maintenance/export');
+      expect(maintExportRes.status).toBe(200);
+      expect(maintExportRes.headers.get('Content-Type')).toContain('application/json');
+      const maintBackupJson = await maintExportRes.json();
+      const parsedBackup = DatabaseBackupSchema.safeParse(reviveDates(maintBackupJson));
+      expect(parsedBackup.success ? [] : formatZodIssues(parsedBackup.error)).toEqual([]);
 
       // Public address collection postal validation, tag isolation, and promotion to invited
       resetDemoState();
@@ -928,6 +1186,12 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
         (await window.fetch(`/api/registry/validate-code?code=${encodeURIComponent(collectedCode)}`))
           .status
       ).toBe(404);
+      setDemoGuestSession({ invitationCode: collectedCode, guestName: 'Morgan Address Only' });
+      const unpromotedDemoSession = await (await window.fetch('/api/guest/session')).json();
+      expect(unpromotedDemoSession).toEqual(
+        expect.objectContaining({ status: 'none', isVerified: false, invitationCode: null })
+      );
+      setDemoGuestSession(null);
       const milestonesBeforePromote = await (
         await window.fetch('/api/admin/onboarding-milestones')
       ).json();
@@ -1065,10 +1329,58 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
     expect(completeRes?.status).toBe(200);
     expect(getDemoState().persona).toBe('admin');
 
-    // Subpath /api/* normalization works without patching global fetch
+    // Subpath /api/* normalization, alias lookup, read-only claim preview, and binary exports work via dispatchDemoApiRequest
     const subpathRes = await dispatchDemoApiRequest('/wedding_website/api/admin/me');
     expect(subpathRes?.status).toBe(200);
     expect(await subpathRes?.json()).toEqual({ isAdmin: true });
+
+    const aliasRes = await dispatchDemoApiRequest(
+      '/wedding_website/api/registry/items/sample-registry-classic-1'
+    );
+    expect(aliasRes?.status).toBe(200);
+    expect((await aliasRes?.json()).id).toBe('demo-classic-item-1');
+
+    const reconcileAliasRes = await dispatchDemoApiRequest(
+      '/wedding_website/api/registry/payment-intent/reconcile',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          paymentIntentId: 'pi_demo_1',
+          clientSecret: 'pi_demo_1_secret_demo',
+          itemId: 'sample-registry-classic-1',
+        }),
+      }
+    );
+    expect(reconcileAliasRes?.status).toBe(200);
+    expect(await reconcileAliasRes?.json()).toMatchObject({
+      reconciled: true,
+      status: 'succeeded',
+      itemId: 'demo-classic-item-1',
+    });
+
+    const physicalItem = getActiveArchetypeDataset().registryItems.find((i) => !i.isGroupGift)!;
+    const reservedContrib = recordDemoContribution({
+      itemId: physicalItem.id,
+      purchaserName: 'Sandbox Guest',
+      amount: physicalItem.price,
+    });
+    expect(reservedContrib?.claimActions?.confirmToken).toBeDefined();
+    const claimPreviewRes = await dispatchDemoApiRequest(
+      `/wedding_website/api/registry/claim?token=${encodeURIComponent(reservedContrib!.claimActions!.confirmToken)}`
+    );
+    expect(claimPreviewRes?.status).toBe(200);
+    expect(await claimPreviewRes?.json()).toMatchObject({
+      action: 'confirm',
+      status: 'RESERVED',
+      itemId: physicalItem.id,
+    });
+
+    const icsExportRes = await dispatchDemoApiRequest(
+      '/wedding_website/api/schedule/sample-subevent-classic-ceremony/ics'
+    );
+    expect(icsExportRes?.status).toBe(200);
+    expect(icsExportRes?.headers.get('Content-Type')).toContain('text/calendar');
+    expect(await icsExportRes?.text()).toContain('BEGIN:VCALENDAR');
   });
 
   it('normalizes subpath URLs idempotently via basePath helpers', () => {

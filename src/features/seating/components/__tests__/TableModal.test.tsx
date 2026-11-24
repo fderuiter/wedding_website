@@ -108,8 +108,8 @@ describe('TableModal component', () => {
       width: 120,
       height: 120,
       rotation: 0,
-      x: 0,
-      y: 0,
+      x: 36,
+      y: 36,
     });
     expect(defaultProps.onClose).toHaveBeenCalled();
   });
@@ -285,6 +285,8 @@ describe('TableModal component', () => {
         capacity: 0,
         width: 200,
         height: 200,
+        x: 0,
+        y: 0,
       })
     );
   });

@@ -904,5 +904,48 @@ describe('GET & POST /api/media/export Integration Tests', () => {
       const nullOriginRes = await POST(nullOriginReq);
       expect(nullOriginRes.status).toBe(403);
     });
+
+    it('ignores spoofed X-Forwarded-Host and X-Forwarded-Proto headers when TRUST_PROXY=false on media export', async () => {
+      const prevTrustProxy = process.env.TRUST_PROXY;
+      process.env.TRUST_PROXY = 'false';
+
+      mockPrisma.media.findMany.mockResolvedValue([
+        { id: 'm1', url: '/uploads/m1.jpg', altText: 'One' },
+      ]);
+      mockPrisma.contentNode.findMany.mockResolvedValue([]);
+
+      try {
+        const spoofedPostReq = new NextRequest('http://localhost/api/media/export', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            host: 'localhost',
+            'x-forwarded-host': 'evil.example',
+            'x-forwarded-proto': 'https',
+            Origin: 'https://evil.example',
+          },
+          body: 'ids=m1&filename=selected-media.zip',
+        });
+        const spoofedPostRes = await POST(spoofedPostReq);
+        expect(spoofedPostRes.status).toBe(403);
+
+        const legitimateGetReq = new NextRequest('http://localhost/api/media/export?ids=m1', {
+          headers: {
+            host: 'localhost',
+            'x-forwarded-host': 'evil.example',
+            'x-forwarded-proto': 'https',
+          },
+        });
+        const legitimateGetRes = await GET(legitimateGetReq);
+        expect(legitimateGetRes.status).toBe(200);
+        await readStream(legitimateGetRes);
+      } finally {
+        if (prevTrustProxy === undefined) {
+          delete process.env.TRUST_PROXY;
+        } else {
+          process.env.TRUST_PROXY = prevTrustProxy;
+        }
+      }
+    });
   });
 });
