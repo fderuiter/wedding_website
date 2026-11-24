@@ -351,8 +351,11 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(deployProviderWorkflow).toContain('fetch-depth: 2');
     expect(deployProviderWorkflow).toContain('CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}');
     expect(rollbackWorkflow).toContain('ref: ${{ inputs.commit_sha }}');
+    expect(rollbackWorkflow).toContain('INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}');
     expect(rollbackWorkflow).toContain('CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}');
-    expect(rollbackWorkflow).toContain("commit_sha: ${{ inputs.commit_sha || '' }}");
+    const redeployChunk = rollbackWorkflow.split('  redeploy:\n')[1]?.split('\n  verify:\n')[0] ?? '';
+    expect(redeployChunk).toContain('uses: ./.github/workflows/deploy-provider.yml');
+    expect(redeployChunk).not.toContain('commit_sha:');
   });
 
   it('polls active ci.yml runs in publish-artifact.yml and blocks builds and provenance signing when CI has not passed', async () => {

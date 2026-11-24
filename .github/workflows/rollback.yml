@@ -503,7 +503,6 @@ jobs:
     with:
       environment: ${{ inputs.target_environment || 'production' }}
       rollback_environment: ${{ inputs.rollback_environment || '' }}
-      commit_sha: ${{ inputs.commit_sha || '' }}
       image_digest: ${{ needs.preflight.outputs.effective_digest || '' }}
       image_tag: ${{ needs.preflight.outputs.effective_tag }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
@@ -529,6 +528,8 @@ jobs:
           VAR_SERVICE_URL: ${{ vars.SERVICE_URL }}
           ENV_SERVICE_URL: ${{ secrets.SERVICE_URL }}
           PROVIDER_SERVICE_URL: ${{ needs.redeploy.outputs.service_url }}
+          PROVIDER_HEALTH_STATUS: ${{ needs.redeploy.outputs.health_status }}
+          PROVIDER_HTTP_STATUS: ${{ needs.redeploy.outputs.http_status }}
           IS_DRY_RUN: ${{ (inputs.dry_run && needs.redeploy.outputs.is_dry_run == 'true') && 'true' || 'false' }}
           TARGET_ENV: ${{ inputs.target_environment || 'production' }}
           RESTORED_TAG: ${{ needs.preflight.outputs.effective_tag || needs.preflight.outputs.effective_digest }}
@@ -557,6 +558,22 @@ jobs:
           OUTPUT_SERVICE_URL="$TARGET_URL"
           if [ "$USED_SECRET_FALLBACK" = "true" ]; then
             OUTPUT_SERVICE_URL=""
+          fi
+
+          if [ "${PROVIDER_HEALTH_STATUS:-}" = "healthy" ]; then
+            EFFECTIVE_HTTP="${PROVIDER_HTTP_STATUS:-200}"
+            echo "✅ Consumed verified provider /api/health outcome from deploy-provider.yml (HTTP ${EFFECTIVE_HTTP}) for '${TARGET_ENV}'."
+            echo "service_url=${OUTPUT_SERVICE_URL}" >> "$GITHUB_OUTPUT"
+            echo "http_status=${EFFECTIVE_HTTP}" >> "$GITHUB_OUTPUT"
+            echo "health_status=healthy" >> "$GITHUB_OUTPUT"
+            exit 0
+          elif [ "${PROVIDER_HEALTH_STATUS:-}" = "unhealthy" ]; then
+            EFFECTIVE_HTTP="${PROVIDER_HTTP_STATUS:-unreachable}"
+            echo "::error::Provider health verification reported unhealthy for '${TARGET_ENV}' (HTTP ${EFFECTIVE_HTTP})."
+            echo "service_url=${OUTPUT_SERVICE_URL}" >> "$GITHUB_OUTPUT"
+            echo "http_status=${EFFECTIVE_HTTP}" >> "$GITHUB_OUTPUT"
+            echo "health_status=unhealthy" >> "$GITHUB_OUTPUT"
+            exit 1
           fi
 
           if [ -z "$TARGET_URL" ] || [[ ! "$TARGET_URL" =~ ^https?://[^[:space:]]+ ]]; then
