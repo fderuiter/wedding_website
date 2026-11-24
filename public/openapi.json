@@ -10368,7 +10368,8 @@
                 "properties": {
                   "password": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "maxLength": 256
                   }
                 },
                 "required": [
@@ -17821,7 +17822,8 @@
                 "type": "object",
                 "properties": {
                   "password": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 256
                   },
                   "sampleArchetype": {
                     "type": "string",
@@ -18020,7 +18022,8 @@
                     "properties": {
                       "password": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "maxLength": 256
                       }
                     }
                   },
@@ -21430,7 +21433,8 @@
                 "properties": {
                   "passcode": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "maxLength": 256
                   }
                 },
                 "required": [
