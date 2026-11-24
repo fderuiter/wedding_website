@@ -2258,5 +2258,83 @@ describe('SubEventService', () => {
         message: 'Invalid invitation session.',
       });
     });
+
+    it('falls back cleanly to createMany, subEventRsvp.upsert, and invitationCode.update in adminBatchUpdateAttendance when $executeRaw is absent', async () => {
+      mockPrisma.invitationCode.findMany.mockResolvedValue([
+        {
+          id: 'inv-1',
+          code: 'G001',
+          guestName: 'Guest One',
+          used: false,
+          usedAt: null,
+          plusOneAllocations: 0,
+          dietaryNotes: 'No nuts',
+          extraFields: { seatNote: 'Front row' },
+        },
+        {
+          id: 'inv-2',
+          code: 'G002',
+          guestName: 'Guest Two',
+          used: false,
+          usedAt: null,
+          plusOneAllocations: 1,
+          dietaryNotes: null,
+          extraFields: {},
+        },
+      ]);
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        {
+          id: 'se-priv',
+          title: 'Private Dinner',
+          isPrivate: true,
+          accesses: [{ invitationCodeId: 'inv-1' }],
+          mealOptions: [],
+          customQuestions: [],
+        },
+      ]);
+      mockPrisma.subEventAccess.createMany.mockResolvedValue({ count: 1 });
+      mockPrisma.subEventRsvp.upsert.mockResolvedValue({});
+      mockPrisma.subEventRsvp.findMany.mockResolvedValue([
+        {
+          id: 'r-1',
+          subEventId: 'se-priv',
+          invitationCodeId: 'inv-1',
+          status: 'attending',
+          plusOneCount: 0,
+          plusOneNames: [],
+          mealSelections: [],
+          customAnswers: {},
+          dietaryNotes: '',
+        },
+        {
+          id: 'r-2',
+          subEventId: 'se-priv',
+          invitationCodeId: 'inv-2',
+          status: 'attending',
+          plusOneCount: 0,
+          plusOneNames: [],
+          mealSelections: [],
+          customAnswers: {},
+          dietaryNotes: '',
+        },
+      ]);
+      mockPrisma.invitationCode.update.mockImplementation(({ where, data }: any) =>
+        Promise.resolve({ id: where.id, ...data })
+      );
+
+      const result = await service.adminBatchUpdateAttendance({
+        invitationCodeIds: ['inv-1', 'inv-2'],
+        status: 'attending',
+        subEventIds: ['se-priv'],
+      });
+
+      expect(mockPrisma.subEventAccess.createMany).toHaveBeenCalledWith({
+        data: [{ subEventId: 'se-priv', invitationCodeId: 'inv-2' }],
+        skipDuplicates: true,
+      });
+      expect(mockPrisma.subEventRsvp.upsert).toHaveBeenCalledTimes(2);
+      expect(mockPrisma.invitationCode.update).toHaveBeenCalledTimes(2);
+      expect(result.updatedCount).toBe(2);
+    });
   });
 });
