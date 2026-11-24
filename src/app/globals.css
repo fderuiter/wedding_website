@@ -318,7 +318,7 @@ html:focus-within {
 .skip-link:focus,
 a.skip-link:focus {
   left: 0;
-  z-index: 50;
+  z-index: 100;
   color: #111827 !important;
   background: white !important;
   padding: .5rem .75rem;
@@ -410,7 +410,7 @@ a.skip-link, .skip-link {
 }
 a.skip-link:focus, .skip-link:focus, a.skip-link:focus-visible, .skip-link:focus-visible {
   left: 0 !important;
-  z-index: 50 !important;
+  z-index: 100 !important;
   color: #111827 !important;
   background-color: #ffffff !important;
   padding: .5rem .75rem !important;

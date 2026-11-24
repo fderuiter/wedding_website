@@ -4,6 +4,7 @@ import React, { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
+import { Container } from '@/components/ui/Layout';
 import { AccessibleExternalLink } from '@/components/ui/AccessibleExternalLink';
 import { apiClient } from '@/lib/apiClient';
 import { formatCurrency } from '@/utils/intl';
@@ -115,9 +116,9 @@ function GuestClaimContent() {
       : null;
 
   return (
-    <main className="min-h-screen bg-[var(--color-background,#f8fafc)] text-[var(--color-foreground,#0f172a)] py-16 px-4 flex items-center justify-center">
+    <Container className="max-w-none bg-[var(--color-background,#f8fafc)] text-[var(--color-foreground,#0f172a)] py-16 px-4">
       <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-xl p-6 sm:p-8 space-y-6">
-        <header className="space-y-2 text-center">
+        <div className="space-y-2 text-center">
           <p className="text-xs font-bold uppercase tracking-widest text-gray-600 dark:text-gray-300">
             Wedding Registry Verification
           </p>
@@ -134,7 +135,7 @@ function GuestClaimContent() {
                     ? 'Confirm Your Wedding Gift'
                     : 'Release Gift Reservation'}
           </h1>
-        </header>
+        </div>
 
         {isLoading ? (
           <div role="status" className="py-8 text-center text-sm text-gray-700 dark:text-gray-300">
@@ -272,7 +273,7 @@ function GuestClaimContent() {
           </Link>
         </div>
       </div>
-    </main>
+    </Container>
   );
 }
 
@@ -280,11 +281,11 @@ export default function GuestClaimPage() {
   return (
     <Suspense
       fallback={
-        <main className="min-h-screen flex items-center justify-center p-6">
+        <Container className="max-w-none p-6">
           <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
             Loading gift verification...
           </p>
-        </main>
+        </Container>
       }
     >
       <GuestClaimContent />
