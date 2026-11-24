@@ -1,11 +1,13 @@
 import { NextResponse, NextRequest } from 'next/server';
 import Stripe from 'stripe';
 import { registryService } from '../service';
+import { dispatchLedgerAdjustmentNotification } from '../notifications';
 import {
-  dispatchContributionNotifications,
-  dispatchLedgerAdjustmentNotification,
-} from '../notifications';
-import { getStripeInstance, validatePaymentIntentInvariants } from '@/lib/stripe';
+  mapStripeMetadataToContributor,
+  runContributionNotifications,
+  validateSettlementPaymentIntent,
+} from './stripeSettlementHelpers';
+import { getStripeInstance } from '@/lib/stripe';
 import { getAppConfig } from '@/lib/config';
 import { logger } from '@/lib/logger';
 import { StripeWebhookEventSchema } from '@/utils/validation';
@@ -44,71 +46,26 @@ export async function POST(request: NextRequest) {
   const parsedEvent = StripeWebhookEventSchema.safeParse(event);
   if (parsedEvent.success && event.type === 'payment_intent.succeeded') {
     const paymentIntent = event.data.object as Stripe.PaymentIntent;
-    const metadata = paymentIntent.metadata || {};
-    const itemId = metadata.itemId;
+    const itemId = paymentIntent.metadata?.itemId;
 
     if (itemId) {
-      const rawMetaCoverFee = metadata.coverFee;
-      if (
-        rawMetaCoverFee !== undefined &&
-        rawMetaCoverFee !== '' &&
-        rawMetaCoverFee !== 'true' &&
-        rawMetaCoverFee !== 'false'
-      ) {
-        return new NextResponse('Invalid PaymentIntent coverFee metadata', { status: 400 });
-      }
-      const coverFee = rawMetaCoverFee === 'true';
-
-      let baseAmount: number;
-      if (metadata.baseAmount !== undefined && metadata.baseAmount !== '') {
-        const parsedBaseAmount = Number(metadata.baseAmount);
-        if (!Number.isFinite(parsedBaseAmount) || parsedBaseAmount <= 0) {
-          return new NextResponse('Invalid PaymentIntent baseAmount metadata', { status: 400 });
-        }
-        baseAmount = parsedBaseAmount;
-      } else if (!coverFee && typeof paymentIntent.amount === 'number' && paymentIntent.amount > 0) {
-        baseAmount = paymentIntent.amount / 100;
-      } else {
-        return new NextResponse('Missing PaymentIntent baseAmount metadata', { status: 400 });
-      }
-
-      const invariantCheck = validatePaymentIntentInvariants(
-        {
-          ...paymentIntent,
-          status: paymentIntent.status ?? 'succeeded',
-        },
+      const settlementResult = validateSettlementPaymentIntent(
+        paymentIntent,
         {
           itemId,
-          baseAmount,
-          coverFee,
-        }
+          defaultSucceededStatus: true,
+          errorMode: 'plain-text',
+          invariantErrorPrefix: 'Webhook PaymentIntent validation failed: ',
+        },
+        400
       );
+      if (!settlementResult.ok) return settlementResult.response;
 
-      if (!invariantCheck.valid) {
-        return new NextResponse(
-          `Webhook PaymentIntent validation failed: ${invariantCheck.error}`,
-          { status: 400 }
-        );
-      }
-
-      const name = metadata.contributorName || 'Anonymous Guest';
-      const email = metadata.contributorEmail || null;
-      const message = metadata.contributorMessage || null;
-      const code = metadata.invitationCode || undefined;
-      const addressLine1 = metadata.addressLine1?.trim() || undefined;
-      const addressLine2 = metadata.addressLine2?.trim() || undefined;
-      const city = metadata.city?.trim() || undefined;
-      const state = metadata.state?.trim() || undefined;
-      const zipCode = metadata.zipCode?.trim() || undefined;
-      const country = metadata.country?.trim() || undefined;
-      const stripePaymentIntentId = paymentIntent.id;
-      const stripeChargeId =
-        typeof paymentIntent.latest_charge === 'string'
-          ? paymentIntent.latest_charge
-          : (paymentIntent.latest_charge as any)?.id || null;
-      const transactionTimestamp = paymentIntent.created
-        ? new Date(paymentIntent.created * 1000)
-        : new Date();
+      const { settlement } = settlementResult;
+      const { name, email, message, code, addressFields } = mapStripeMetadataToContributor(
+        paymentIntent.metadata,
+        { trimIdentity: false }
+      );
 
       try {
         const configPromise = Promise.resolve()
@@ -118,43 +75,41 @@ export async function POST(request: NextRequest) {
         const updatedItem = await registryService.contributeToItem(itemId, {
           name,
           email,
-          amount: baseAmount,
+          amount: settlement.baseAmount,
           code,
           message,
-          coverFee,
-          stripePaymentIntentId,
-          stripeChargeId,
-          transactionTimestamp,
-          ...(addressLine1 ? { addressLine1 } : {}),
-          ...(addressLine2 ? { addressLine2 } : {}),
-          ...(city ? { city } : {}),
-          ...(state ? { state } : {}),
-          ...(zipCode ? { zipCode } : {}),
-          ...(country ? { country } : {}),
+          coverFee: settlement.coverFee,
+          stripePaymentIntentId: settlement.stripePaymentIntentId,
+          stripeChargeId: settlement.stripeChargeId,
+          transactionTimestamp: settlement.transactionTimestamp,
+          ...addressFields,
         });
 
         const config = await configPromise;
 
-        await dispatchContributionNotifications({
-          itemId,
-          updatedItem,
-          contribution: {
-            name,
-            email,
-            amount: baseAmount,
-            message,
-            coverFee,
-            stripePaymentIntentId,
-            transactionTimestamp,
+        await runContributionNotifications(
+          {
+            itemId,
+            updatedItem,
+            contribution: {
+              name,
+              email,
+              amount: settlement.baseAmount,
+              message,
+              coverFee: settlement.coverFee,
+              stripePaymentIntentId: settlement.stripePaymentIntentId,
+              transactionTimestamp: settlement.transactionTimestamp,
+            },
+            config,
+            requestUrl: request.url,
           },
-          config,
-          requestUrl: request.url,
-        });
-      } catch (err: any) {
+          { mode: 'inline' }
+        );
+      } catch (err: unknown) {
         // Log error without PII and return 200 to Stripe if already processed or handled gracefully
         logger.error('Error processing webhook payment_intent.succeeded', {
           itemId,
-          stripePaymentIntentId,
+          stripePaymentIntentId: settlement.stripePaymentIntentId,
           reason: err instanceof Error ? err.message : 'Unknown error',
         });
       }
