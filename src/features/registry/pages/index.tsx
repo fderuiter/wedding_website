@@ -51,6 +51,8 @@ function RegistryPageContent() {
     refetch,
     selectedItem,
     isModalOpen,
+    reconciledReceipt,
+    redirectRecoveryError,
     setVisibleItemsCount,
     isAdmin,
     cardCheckoutEnabled,
@@ -411,6 +413,8 @@ function RegistryPageContent() {
               defaultPaymentHandle={defaultPaymentHandle}
               shippingAddress={shippingAddress}
               isAdmin={isAdmin}
+              reconciledReceipt={reconciledReceipt}
+              redirectRecoveryError={redirectRecoveryError}
             />
           )}
         </Dialog>

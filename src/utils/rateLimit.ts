@@ -129,6 +129,7 @@ const KNOWN_STATIC_API_PATHS = new Set([
   '/api/registry/items',
   '/api/registry/items/batch',
   '/api/registry/payment-intent',
+  '/api/registry/payment-intent/reconcile',
   '/api/registry/scrape',
   '/api/registry/scrape/batch',
   '/api/registry/session',

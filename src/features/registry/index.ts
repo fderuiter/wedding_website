@@ -19,6 +19,7 @@ export {
   DryRunValidateBatchSchema,
   MergeInvitationCodesSchema,
   PaymentIntentRequestSchema,
+  ReconcilePaymentIntentSchema,
   BatchScrapeUrlsSchema,
   BatchCreateRegistryItemsSchema,
   translateSnapshotToActive,
@@ -54,6 +55,8 @@ export type {
   ContributorRecord,
   ContributorLifecycleResult,
   StripeLedgerReconciliationResult,
+  ReconciledContributionReceipt,
+  ReconcilePaymentIntentResponse,
 } from './types';
 export {
   THANK_YOU_TEMPLATES,
@@ -74,6 +77,7 @@ export type {
   UpdateThankYouNoteDTO,
   SendThankYouEmailDTO,
   PaymentIntentRequestDTO,
+  ReconcilePaymentIntentDTO,
   PublicAddressCollectDTO,
   ItemType,
   BatchScrapeUrlsDTO,
@@ -115,6 +119,7 @@ export { POST as registryAddItemPOST } from './api/add-item';
 export { POST as registryBatchAddPOST } from './api/batch-add';
 export { POST as registryContributePOST } from './api/contribute';
 export { POST as registryPaymentIntentPOST } from './api/payment-intent';
+export { POST as registryReconcilePaymentPOST } from './api/reconcile-payment';
 export { POST as registryWebhookPOST } from './api/webhook';
 export { GET as registryCapabilitiesGET } from './api/capabilities';
 export { GET as registryGetItemsGET } from './api/get-items';
@@ -158,7 +163,15 @@ export type {
   ParsedRegistryItemRow,
   RegistryCsvParseResult,
 } from './utils/csv';
-export { getPaymentUrl, sanitizePaymentHandle } from './utils/paymentUrls';
+export {
+  getPaymentUrl,
+  getPaymentDescriptor,
+  sanitizePaymentHandle,
+} from './utils/paymentUrls';
+export type {
+  PaymentDescriptor,
+  PaymentDescriptorKind,
+} from './utils/paymentUrls';
 export { useRegistryContributionMachine } from './hooks/useRegistryContributionMachine';
 export type {
   ContributionPhase,

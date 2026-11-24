@@ -112,7 +112,7 @@ function GuestClaimContent() {
   const isConfirmFlow = preview?.action !== 'cancel';
   const paymentDeepLink =
     preview?.paymentHandle && preview?.paymentHandleType
-      ? getPaymentUrl(preview.paymentHandleType, preview.paymentHandle)
+      ? getPaymentUrl(preview.paymentHandleType, preview.paymentHandle, preview.amount)
       : null;
 
   return (

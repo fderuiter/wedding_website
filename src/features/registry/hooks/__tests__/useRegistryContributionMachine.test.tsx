@@ -1,4 +1,4 @@
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
 import React from 'react';
 import { useRegistryContributionMachine } from '../useRegistryContributionMachine';
 import { RegistryItem } from '../../types';
@@ -104,6 +104,7 @@ describe('useRegistryContributionMachine Hook', () => {
       const mockSessionValue: GuestSessionContextType = {
         invitationCode: 'SESSION123',
         guestName: 'Verified Guest',
+        email: 'verified.session@example.com',
         isVerified: true,
         isLoading: false,
         status: 'authenticated',
@@ -136,7 +137,14 @@ describe('useRegistryContributionMachine Hook', () => {
       expect(result.current.isCodeLocked).toBe(true);
       expect(result.current.invitationCode).toBe('SESSION123');
       expect(result.current.contributorName).toBe('Verified Guest');
+      expect(result.current.email).toBe('verified.session@example.com');
       expect(result.current.codeError).toBeNull();
+
+      // Guest can edit or clear pre-filled email without session overwrite
+      act(() => {
+        result.current.setEmail('');
+      });
+      expect(result.current.email).toBe('');
     });
 
     it('clears session context and resets form values when handleClearCode is called', async () => {
@@ -144,6 +152,7 @@ describe('useRegistryContributionMachine Hook', () => {
       const mockSessionValue: GuestSessionContextType = {
         invitationCode: 'SESSION123',
         guestName: 'Verified Guest',
+        email: 'verified.session@example.com',
         isVerified: true,
         isLoading: false,
         status: 'authenticated',
@@ -183,16 +192,18 @@ describe('useRegistryContributionMachine Hook', () => {
       expect(result.current.isCodeLocked).toBe(false);
       expect(result.current.invitationCode).toBe('');
       expect(result.current.contributorName).toBe('');
+      expect(result.current.email).toBe('');
       expect(result.current.codeError).toBeNull();
       expect(result.current.fieldErrors).toEqual({});
     });
   });
 
-  describe('Automatic & Manual Verification (Requirements 2, 4, 6)', () => {
-    it('triggers automatic verification when input reaches 8 characters and locks code on success', async () => {
+  describe('Explicit Code Verification & Zero Auto-Check on Edit', () => {
+    it('triggers zero network requests across 6+ edits of an 8-character code and verifies explicitly on Verify or submit', async () => {
       (apiClient.get as jest.Mock).mockResolvedValue({
         valid: true,
         guestName: 'Jane Smith',
+        email: 'jane.smith@example.com',
         code: 'VALDCODE',
       });
 
@@ -203,46 +214,72 @@ describe('useRegistryContributionMachine Hook', () => {
         })
       );
 
+      const eightCharEdits = [
+        'ABCDEF11',
+        'ABCDEF12',
+        'ABCDEF13',
+        'ABCDEF14',
+        'ABCDEF15',
+        'ABCDEF16',
+        'VALDCODE',
+      ];
+      for (const draft of eightCharEdits) {
+        act(() => {
+          result.current.handleCodeChange(draft);
+        });
+      }
+
+      expect(apiClient.get).not.toHaveBeenCalled();
+      expect(result.current.isValidatingCode).toBe(false);
+      expect(result.current.isCodeLocked).toBe(false);
+
+      let verifyPromise!: Promise<boolean>;
       act(() => {
-        result.current.handleCodeChange('VALDCODE');
+        verifyPromise = result.current.handleVerifyCode();
       });
 
       expect(result.current.isValidatingCode).toBe(true);
       expect(result.current.isSubmitDisabled).toBe(true);
 
-      await waitFor(() => {
-        expect(result.current.isCodeLocked).toBe(true);
+      await act(async () => {
+        await verifyPromise;
       });
 
+      expect(result.current.isCodeLocked).toBe(true);
       expect(result.current.contributorName).toBe('Jane Smith');
+      expect(result.current.email).toBe('jane.smith@example.com');
       expect(result.current.codeError).toBeNull();
+      expect(apiClient.get).toHaveBeenCalledTimes(1);
       expect(apiClient.get).toHaveBeenCalledWith(
         '/api/registry/validate-code?code=VALDCODE',
         expect.objectContaining({ signal: expect.any(Object) })
       );
     });
 
-    it('sets code error when code verification returns valid=false', async () => {
+    it('sets code error when explicit verification returns valid=false and blocks unverified submit', async () => {
       (apiClient.get as jest.Mock).mockResolvedValue({ valid: false });
 
       const { result } = renderHook(() =>
         useRegistryContributionMachine({
           item: mockSingleItem,
           onContribute: mockOnContribute,
+          initialContributorName: 'Typed Guest',
         })
       );
 
       act(() => {
         result.current.handleCodeChange('INVALID8');
       });
+      expect(apiClient.get).not.toHaveBeenCalled();
 
-      await waitFor(() => {
-        expect(result.current.isValidatingCode).toBe(false);
-        expect(result.current.codeError).toBe('Invalid invitation code.');
+      await act(async () => {
+        await result.current.handleSubmit();
       });
 
+      expect(result.current.isValidatingCode).toBe(false);
+      expect(result.current.codeError).toBe('Invalid invitation code.');
       expect(result.current.isCodeLocked).toBe(false);
-      expect(result.current.contributorName).toBe('');
+      expect(mockOnContribute).not.toHaveBeenCalled();
     });
 
     it('handles manual verification via handleVerifyCode', async () => {
@@ -314,21 +351,29 @@ describe('useRegistryContributionMachine Hook', () => {
         })
       );
 
-      // 1. Guest types first 8-character code
+      // 1. Guest enters first code and starts explicit verification
       act(() => {
         result.current.handleCodeChange('CODE1111');
+      });
+      act(() => {
+        void result.current.handleVerifyCode();
       });
 
       expect(capturedSignals).toHaveLength(1);
       expect(capturedSignals[0].aborted).toBe(false);
 
-      // 2. Guest rapidly edits and types new character before first request completes
+      // 2. Guest edits code before first request completes -> aborts in-flight verification without auto-firing
       act(() => {
         result.current.handleCodeChange('CODE2222');
       });
 
-      // The first request's signal MUST be aborted immediately
       expect(capturedSignals[0].aborted).toBe(true);
+      expect(capturedSignals).toHaveLength(1);
+
+      // 3. Explicit verification on updated code starts a fresh signal
+      act(() => {
+        void result.current.handleVerifyCode();
+      });
       expect(capturedSignals).toHaveLength(2);
       expect(capturedSignals[1].aborted).toBe(false);
     });
@@ -348,9 +393,12 @@ describe('useRegistryContributionMachine Hook', () => {
         })
       );
 
-      // First validation starts
+      // First explicit validation starts
       act(() => {
         result.current.handleCodeChange('STALECD1');
+      });
+      act(() => {
+        void result.current.handleVerifyCode();
       });
 
       expect(result.current.isValidatingCode).toBe(true);
@@ -517,9 +565,12 @@ describe('useRegistryContributionMachine Hook', () => {
         })
       );
 
-      // Trigger validation
+      // Trigger explicit validation
       act(() => {
         result.current.handleCodeChange('INFLIGHT');
+      });
+      act(() => {
+        void result.current.handleVerifyCode();
       });
 
       expect(result.current.isValidatingCode).toBe(true);
@@ -596,7 +647,7 @@ describe('useRegistryContributionMachine Hook', () => {
       expect(result.current.isSubmitting).toBe(false);
     });
 
-    it('keeps focus on invitationCodeInputRef when 8-character auto-verification fails', async () => {
+    it('keeps focus on invitationCodeInputRef when explicit code verification fails', async () => {
       (apiClient.get as jest.Mock).mockResolvedValueOnce({ valid: false });
 
       const codeEl = document.createElement('input');
@@ -611,8 +662,11 @@ describe('useRegistryContributionMachine Hook', () => {
         );
         result.current.invitationCodeInputRef.current = codeEl;
 
-        await act(async () => {
+        act(() => {
           result.current.handleCodeChange('BADCODE8');
+        });
+        await act(async () => {
+          await result.current.handleVerifyCode();
         });
 
         expect(result.current.isValidatingCode).toBe(false);

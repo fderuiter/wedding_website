@@ -104,10 +104,16 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     });
   }
 
+  const resolvedEmail =
+    typeof invite.email === 'string' && invite.email.trim().length > 0
+      ? invite.email.trim()
+      : null;
+
   const response = NextResponse.json({
     valid: true,
     guestName: invite.guestName,
     code: invite.code,
+    email: resolvedEmail,
   });
 
   response.cookies.set(GUEST_INVITE_COOKIE, token, {
