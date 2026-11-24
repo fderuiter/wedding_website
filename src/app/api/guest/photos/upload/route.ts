@@ -14,6 +14,21 @@ import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 const BATCH_SANITIZE_CONCURRENCY = 4;
 const BATCH_PERSIST_CONCURRENCY = 4;
 
+interface GuestPhotoUploadResponseItem {
+  id: string;
+  url?: string;
+  altText: string | null;
+  title: string;
+  uploaderName?: string;
+  caption?: string;
+  originalFilename?: string;
+  createdAt?: string | Date;
+  nodeId: string;
+  status: 'APPROVED' | 'PENDING';
+  isVisible: boolean;
+  message: string;
+}
+
 async function mapWithConcurrency<T, R>(
   items: readonly T[],
   concurrency: number,
@@ -108,7 +123,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   );
 
   const storage = getStorageProvider();
-  const uploadedPhotos = await mapWithConcurrency(
+  const uploadedPhotos: GuestPhotoUploadResponseItem[] = await mapWithConcurrency(
     sanitizedBatch,
     BATCH_PERSIST_CONCURRENCY,
     async ({ originalFilename, sanitizedFile }) => {
@@ -141,7 +156,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
       return {
         id: media.id,
-        url: storageResult.url,
+        ...(autoApprove ? { url: storageResult.url } : {}),
         altText: media.altText,
         title: publicTitle,
         ...(uploaderName ? { uploaderName } : {}),

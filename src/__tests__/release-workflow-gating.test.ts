@@ -158,7 +158,18 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(staticExportJob).not.toContain('services:');
     expect(staticExportJob).toContain('path: .next-export/cache');
     expect(staticExportJob).toContain('npm run build:export');
+    expect(staticExportJob).toContain('npm run test:e2e:static');
+    expect(staticExportJob).toContain('name: static-a11y-violations');
     expect(staticExportJob).toContain('name: demo-static');
+    expect(staticExportJob.indexOf('npm run test:e2e:static')).toBeLessThan(
+      staticExportJob.indexOf('name: demo-static')
+    );
+
+    const a11yReportSection =
+      ciWorkflow.split(/\n  deploy-docs:\n/)[0]?.split(/\n  a11y-report:\n/)[1] ?? '';
+    expect(a11yReportSection).toContain('needs: [unit-test, e2e-test, static-export-build]');
+    expect(a11yReportSection).toContain('name: static-a11y-violations');
+    expect(a11yReportSection).toContain('node scripts/a11y-report.mjs --include-static');
 
     // e2e-test and container-e2e-smoke do not depend on static-export-build so static export checks never delay Playwright runs
     expect(ciWorkflow).toMatch(/  e2e-test:\n\s+needs: \[verify, build\]\n/);

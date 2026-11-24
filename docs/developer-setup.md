@@ -141,6 +141,16 @@ If you start `npm run dev` with an **unseeded** database, navigating to `http://
 4. **Step 4 — Guest List Import:** Import a guest list CSV spreadsheet (`CsvImportWizardModal`) to issue invitation codes right away, or skip for later.
 5. **Step 5 — Complete Setup:** Optionally manage wedding party members (`WeddingPartyManagerModal`) and local attractions (`AttractionsManagerModal`), then open `/admin/dashboard`. Once `AppConfig` is initialized, `/api/admin/setup` is sealed against unauthenticated replay attacks (`403 Forbidden`), and unauthenticated `/` requests redirect to `/guest/login`.
 
+### Database-Free Static Showcase Preview (`npm run build:export`)
+
+To compile and inspect the database-free GitHub Pages showcase locally without PostgreSQL:
+
+```bash
+npm run build:export
+```
+
+`npm run build:export` ([`scripts/build-export.mjs`](../scripts/build-export.mjs)) exports static HTML into `out/` (supporting optional `NEXT_PUBLIC_BASE_PATH` subpath prefixes via `resolveShowcasePath` in [`src/lib/basePath.ts`](../src/lib/basePath.ts)). In static export mode, `RootLayoutClient` ([`src/components/layout/RootLayoutClient.tsx`](../src/components/layout/RootLayoutClient.tsx)) enables `DemoProvider` ([`src/components/demo/DemoContext.tsx`](../src/components/demo/DemoContext.tsx)) and `DemoToolbar` ([`src/components/demo/DemoToolbar.tsx`](../src/components/demo/DemoToolbar.tsx)), hydrating `wedding_showcase_demo_v1` `localStorage` state via `hydrateDemoStateFromStorage` in [`src/lib/demo/demoStore.ts`](../src/lib/demo/demoStore.ts) from deterministic archetype datasets built by `buildArchetypeSeedData` in [`src/lib/sampleData/builder.ts`](../src/lib/sampleData/builder.ts), intercepting `/api/*` and `/api/admin/*` mutations via `installDemoFetchInterceptor` in [`src/lib/demo/demoApiHandler.ts`](../src/lib/demo/demoApiHandler.ts), simulating non-charging card contributions via `SimulatedCardCheckout` (`SIMULATED_TEST_CARDS`) in [`src/features/registry/components/SimulatedCardCheckout.tsx`](../src/features/registry/components/SimulatedCardCheckout.tsx), and rendering `<SetupWizard />` on `/admin/setup` via `AdminSetupPage` in [`src/app/admin/setup/page.tsx`](../src/app/admin/setup/page.tsx). *(Remove `out/` after local inspection so `npm run check:identifiers` and Git status stay clean.)*
+
 ---
 
 ## 6. Verification & Next Steps

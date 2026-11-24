@@ -115,6 +115,24 @@ describe('Broadcast API Routes', () => {
     expect(res.status).toBe(400);
   });
 
+  it('POST /api/admin/broadcast/send returns 400 when legacy scheduledAt key is supplied', async () => {
+    (BroadcastService.sendBroadcast as jest.Mock).mockClear();
+    const req = new NextRequest('http://localhost/api/admin/broadcast/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        channel: 'EMAIL',
+        subject: 'Scheduled Announcement',
+        body: 'Save the date!',
+        scheduledAt: new Date(Date.now() + 3600_000).toISOString(),
+      }),
+    });
+
+    const res = await sendRoute(req);
+    expect(res.status).toBe(400);
+    expect(BroadcastService.sendBroadcast).not.toHaveBeenCalled();
+  });
+
   it('POST /api/admin/broadcast/send returns 500 when service fails', async () => {
     (BroadcastService.sendBroadcast as jest.Mock).mockRejectedValueOnce(new Error('Send error'));
     const req = new NextRequest('http://localhost/api/admin/broadcast/send', {

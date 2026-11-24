@@ -158,6 +158,17 @@ export async function middleware(request: NextRequest) {
   }
 
   const isApiRoute = normalizedPath === '/api' || normalizedPath.startsWith('/api/');
+  const isUploadsRoute = normalizedPath === '/uploads' || normalizedPath.startsWith('/uploads/');
+  const isPhotoUploadAssetRoute =
+    normalizedPath === '/uploads/photos' ||
+    normalizedPath.startsWith('/uploads/photos/') ||
+    normalizedPath === '/api/uploads/photos' ||
+    normalizedPath.startsWith('/api/uploads/photos/');
+  const isNonPhotoUploadAssetRoute =
+    !isPhotoUploadAssetRoute &&
+    (isUploadsRoute ||
+      normalizedPath === '/api/uploads' ||
+      normalizedPath.startsWith('/api/uploads/'));
 
   const isExcluded = 
     normalizedPath === '/guest' ||
@@ -170,10 +181,7 @@ export async function middleware(request: NextRequest) {
     normalizedPath === '/api/registry/claim' ||
     normalizedPath === '/api/registry/validate-code' ||
     (normalizedPath === '/api/registry/webhook/stripe' && method === 'POST') ||
-    normalizedPath === '/api/uploads' ||
-    normalizedPath.startsWith('/api/uploads/') ||
-    normalizedPath === '/uploads' ||
-    normalizedPath.startsWith('/uploads/') ||
+    isNonPhotoUploadAssetRoute ||
     normalizedPath === '/admin/login' ||
     normalizedPath === '/api/admin/login' ||
     (normalizedPath === '/api/admin/logout' && method === 'POST') ||
@@ -186,7 +194,7 @@ export async function middleware(request: NextRequest) {
     normalizedPath === '/robots.txt' ||
     normalizedPath === '/favicon.ico' ||
     normalizedPath.startsWith('/_next/') ||
-    (!isApiRoute && /\.(svg|png|jpg|jpeg|gif|webp)$/i.test(normalizedPath));
+    (!isApiRoute && !isUploadsRoute && /\.(svg|png|jpg|jpeg|gif|webp)$/i.test(normalizedPath));
 
   const isProtected = isProtectedRoute(normalizedPath, method);
   if (isProtected) {
@@ -212,6 +220,16 @@ export async function middleware(request: NextRequest) {
       Boolean(await getSignedPhotoUploadSession(request));
 
     if (!isGuest && !isAdmin && !hasPhotoAccess) {
+      if (isPhotoUploadAssetRoute) {
+        const authHeaders = {
+          'X-Content-Type-Options': 'nosniff',
+          Vary: 'Cookie',
+        };
+        if (method === 'HEAD') {
+          return new NextResponse(null, { status: 401, headers: authHeaders });
+        }
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: authHeaders });
+      }
       if (normalizedPath.startsWith('/api/')) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
@@ -258,7 +276,10 @@ export async function middleware(request: NextRequest) {
       }
     });
   }
-  requestHeaders.set('x-guest-gated-page', !isExcluded && !isApiRoute && !isProtected ? '1' : '0');
+  requestHeaders.set(
+    'x-guest-gated-page',
+    !isExcluded && !isApiRoute && !isUploadsRoute && !isProtected ? '1' : '0'
+  );
   requestHeaders.set('x-guest-callback-url', pathname + request.nextUrl.search);
 
   return NextResponse.next({

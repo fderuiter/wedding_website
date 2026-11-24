@@ -571,4 +571,41 @@ test('Busy mode sets readOnly and aria-busy on text inputs without dropping focu
   expect(await axe(container)).toHaveNoViolations();
 });
 
+test('FormGroup group mode names composite widgets via role="group" + aria-labelledby without dangling htmlFor', async () => {
+  const { container } = render(
+    <FormGroup group>
+      <Label>Card &amp; Digital Wallet Details</Label>
+      <div data-testid="embedded-widget">Embedded Payment Element</div>
+      <FormMessage>Encrypted via TLS</FormMessage>
+    </FormGroup>
+  );
+
+  const group = screen.getByRole('group', { name: 'Card & Digital Wallet Details' });
+  expect(group).toBeInTheDocument();
+
+  const labelEl = container.querySelector('label');
+  expect(labelEl).not.toBeNull();
+  expect(labelEl).not.toHaveAttribute('for');
+  expect(group).toHaveAttribute('aria-labelledby', labelEl?.id);
+  expect(await axe(container)).toHaveNoViolations();
+});
+
+test('FormGroup as="fieldset" renders semantic fieldset and legend without htmlFor', async () => {
+  const { container } = render(
+    <FormGroup as="fieldset">
+      <Label>Price Range</Label>
+      <input type="range" min={0} max={100} defaultValue={20} aria-label="Minimum price" />
+      <input type="range" min={0} max={100} defaultValue={80} aria-label="Maximum price" />
+    </FormGroup>
+  );
+
+  const fieldset = screen.getByRole('group', { name: 'Price Range' });
+  expect(fieldset.tagName).toBe('FIELDSET');
+  const legend = container.querySelector('legend');
+  expect(legend).not.toBeNull();
+  expect(legend).toHaveTextContent('Price Range');
+  expect(container.querySelector('label[for]')).toBeNull();
+  expect(await axe(container)).toHaveNoViolations();
+});
+
 

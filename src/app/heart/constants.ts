@@ -1,13 +1,51 @@
 const HEART_FONT_PATH = '/fonts/noto-sans-latin-400-normal.woff';
 
-export function resolveHeartFontUrl(
-  rawBasePath: string | undefined = process.env.NEXT_PUBLIC_BASE_PATH,
-): string {
+function normalizeShowcaseBasePath(rawBasePath?: string | null): string {
   const trimmed = rawBasePath?.trim();
-  const normalizedBasePath = trimmed
-    ? (trimmed.startsWith('/') ? trimmed : `/${trimmed}`).replace(/\/+$/, '')
-    : '';
-  return `${normalizedBasePath}${HEART_FONT_PATH}`;
+  if (!trimmed || trimmed === '/') {
+    return '';
+  }
+  return (trimmed.startsWith('/') ? trimmed : `/${trimmed}`).replace(/\/+$/, '');
+}
+
+function inferShowcaseBasePathFromPathname(pathname?: string | null): string {
+  if (!pathname) {
+    return '';
+  }
+  const cleanPathname = pathname.split(/[?#]/)[0] ?? '';
+  if (cleanPathname.endsWith('/iframe.html')) {
+    return normalizeShowcaseBasePath(cleanPathname.slice(0, -'/iframe.html'.length));
+  }
+  const showcaseMatch = cleanPathname.match(/^(.*?\/(?:storybook|demo))(?=\/|$)/);
+  if (showcaseMatch?.[1]) {
+    return normalizeShowcaseBasePath(showcaseMatch[1]);
+  }
+  return '';
+}
+
+export function resolveHeartFontUrl(
+  rawBasePath?: string,
+  runtimePathname?: string,
+): string {
+  const explicitOrEnvBasePath =
+    rawBasePath !== undefined ? rawBasePath : process.env.NEXT_PUBLIC_BASE_PATH;
+  const configuredBasePath = normalizeShowcaseBasePath(explicitOrEnvBasePath);
+  if (configuredBasePath) {
+    return `${configuredBasePath}${HEART_FONT_PATH}`;
+  }
+
+  if (rawBasePath !== undefined && runtimePathname === undefined) {
+    return HEART_FONT_PATH;
+  }
+
+  const effectivePathname =
+    runtimePathname !== undefined
+      ? runtimePathname
+      : typeof window !== 'undefined'
+        ? window.location?.pathname
+        : undefined;
+  const inferredBasePath = inferShowcaseBasePathFromPathname(effectivePathname);
+  return `${inferredBasePath}${HEART_FONT_PATH}`;
 }
 
 export const HEART_FONT_URL = resolveHeartFontUrl();

@@ -8,7 +8,7 @@ export const a11yConfig = {
     'target-size': { enabled: true },
   },
   runOnly: {
-    type: 'tag',
+    type: 'tag' as const,
     values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice']
   }
 };

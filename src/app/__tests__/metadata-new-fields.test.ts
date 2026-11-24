@@ -1,9 +1,25 @@
 import { generateMetadata } from '../metadata';
 import { getAppConfig } from '@/lib/config';
+import { isGuestRequest } from '@/core/auth/guest.server';
 
+jest.mock('@/lib/config', () => {
+  const actual = jest.requireActual('@/lib/config');
+  return {
+    ...actual,
+    getAppConfig: jest.fn(),
+  };
+});
 
-jest.mock('@/lib/config', () => ({
-  getAppConfig: jest.fn(),
+jest.mock('@/core/auth/auth.server', () => ({
+  isAdminRequest: jest.fn().mockResolvedValue(false),
+}));
+
+jest.mock('@/core/auth/guest.server', () => ({
+  isGuestRequest: jest.fn().mockResolvedValue(true),
+}));
+
+jest.mock('@/core/auth/guestInviteSession', () => ({
+  getGuestInviteSession: jest.fn().mockResolvedValue(null),
 }));
 
 jest.mock('@/utils/image-metadata', () => ({
@@ -11,6 +27,7 @@ jest.mock('@/utils/image-metadata', () => ({
 }));
 
 const mockGetAppConfig = getAppConfig as jest.MockedFunction<typeof getAppConfig>;
+const mockIsGuestRequest = isGuestRequest as jest.MockedFunction<typeof isGuestRequest>;
 
 import { getLocalImageDimensions } from '@/utils/image-metadata';
 const mockGetLocalImageDimensions = getLocalImageDimensions as jest.Mock;
@@ -32,6 +49,7 @@ const baseConfig = {
 describe('generateMetadata - new SEO fields', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockIsGuestRequest.mockResolvedValue(true);
   });
 
   describe('faviconUrl from config', () => {
@@ -280,6 +298,27 @@ describe('generateMetadata - new SEO fields', () => {
       expect((metadata.twitter as any)?.images).toEqual([
         'https://cdn.example.com/og.jpg',
       ]);
+    });
+
+    it('redacts custom SEO fields, keywords, and ogImageUrl when unauthenticated', async () => {
+      mockIsGuestRequest.mockResolvedValueOnce(false);
+      mockGetAppConfig.mockResolvedValue({
+        ...baseConfig,
+        seoTitle: 'Alice & Bob Private Celebration',
+        seoDescription: 'Ceremony at Grand Hall in Springfield',
+        ogImageUrl: 'https://cdn.example.com/private-couple.jpg',
+      } as any);
+
+      const metadata = await generateMetadata();
+
+      expect(metadata.title).toEqual({
+        default: 'Wedding Website',
+        template: '%s | Wedding Website',
+      });
+      expect(metadata.description).toBe('Welcome to our wedding website.');
+      expect(metadata.keywords).toEqual([]);
+      expect(metadata.robots).toEqual({ index: false, follow: false });
+      expect((metadata.twitter as any)?.images).toEqual(['https://example.com/api/og']);
     });
   });
 });

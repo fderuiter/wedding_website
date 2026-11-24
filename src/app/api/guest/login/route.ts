@@ -1,9 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { setGuestAuthCookie, signGuestToken } from '@/core/auth/guest.server';
 import {
+  GUEST_COOKIE,
+  setGuestAuthCookie,
+  signGuestToken,
+  verifyGuestToken,
+} from '@/core/auth/guest.server';
+import {
+  GUEST_INVITE_COOKIE,
   setGuestInviteSessionCookie,
   signGuestInviteSessionToken,
+  verifyGuestInviteSessionToken,
 } from '@/core/auth/guestInviteSession';
+import { findVerifiedRequestCookie } from '@/core/auth/tokenCookieHelpers';
 import { hasAddressCollectionTag } from '@/features/registry';
 import { prisma } from '@/lib/prisma';
 import { env } from '@/env';
@@ -56,9 +64,27 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
       (trimmedCode.length > 0 && trimmedCode !== passcode && safeComparePasscode(trimmedCode, expectedPasscode)));
 
   if (matchesSharedPasscode) {
-    const iat = Date.now();
-    const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
-    const token = await signGuestToken({ guest: true, jti: crypto.randomUUID(), iat, exp });
+    let token: string | null = null;
+    if (typeof findVerifiedRequestCookie === 'function' && typeof verifyGuestToken === 'function') {
+      const verifiedExisting = await findVerifiedRequestCookie(
+        GUEST_COOKIE,
+        req,
+        async (candidate) => {
+          const payload = await verifyGuestToken(candidate);
+          return payload && payload.guest === true ? payload : null;
+        },
+        { suppressErrors: true }
+      );
+      if (verifiedExisting) {
+        token = verifiedExisting.token;
+      }
+    }
+
+    if (!token) {
+      const iat = Date.now();
+      const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
+      token = await signGuestToken({ guest: true, jti: crypto.randomUUID(), iat, exp });
+    }
 
     const response = NextResponse.json({ success: true, sessionType: 'guest' });
     setGuestAuthCookie(response, token, req);
@@ -100,14 +126,42 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
       });
     }
 
-    const iat = Date.now();
-    const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
-    const inviteToken = await signGuestInviteSessionToken({
-      code: invite.code,
-      guestName: invite.guestName,
-      iat,
-      exp,
-    });
+    let inviteToken: string | null = null;
+    if (
+      typeof findVerifiedRequestCookie === 'function' &&
+      typeof verifyGuestInviteSessionToken === 'function'
+    ) {
+      const verifiedExistingInvite = await findVerifiedRequestCookie(
+        GUEST_INVITE_COOKIE,
+        req,
+        async (candidate) => {
+          const existingInvitePayload = await verifyGuestInviteSessionToken(candidate);
+          if (
+            existingInvitePayload &&
+            existingInvitePayload.code.trim().toUpperCase() === invite.code.trim().toUpperCase() &&
+            existingInvitePayload.guestName === invite.guestName
+          ) {
+            return existingInvitePayload;
+          }
+          return null;
+        },
+        { suppressErrors: true }
+      );
+      if (verifiedExistingInvite) {
+        inviteToken = verifiedExistingInvite.token;
+      }
+    }
+
+    if (!inviteToken) {
+      const iat = Date.now();
+      const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
+      inviteToken = await signGuestInviteSessionToken({
+        code: invite.code,
+        guestName: invite.guestName,
+        iat,
+        exp,
+      });
+    }
 
     const response = NextResponse.json({
       success: true,

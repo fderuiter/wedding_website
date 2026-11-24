@@ -1061,6 +1061,10 @@ describe('Request-Level Configuration Memoization (React cache)', () => {
         partner2Name: 'Morgan',
         brideName: 'Taylor',
         groomName: 'Morgan',
+        weddingDate: new Date('2026-10-10T16:00:00.000Z'),
+        seoTitle: 'Taylor & Morgan Wedding',
+        seoDescription: 'Join us in Asheville',
+        seoKeywords: 'Taylor, Morgan, Asheville wedding',
         brandMonogram: 'T & M',
         brandLogoUrl: '/uploads/logo.png',
         brandLogoAlt: 'Couple monogram',
@@ -1124,6 +1128,14 @@ describe('Request-Level Configuration Memoization (React cache)', () => {
       const unauth = toUnauthenticatedAppConfig(richConfig);
 
       // Gated fields are cleared
+      expect(unauth.partner1Name).toBe('');
+      expect(unauth.partner2Name).toBe('');
+      expect(unauth.brideName).toBe('');
+      expect(unauth.groomName).toBe('');
+      expect(unauth.weddingDate).toBe('');
+      expect(unauth.seoTitle).toBe('');
+      expect(unauth.seoDescription).toBe('');
+      expect(unauth.seoKeywords).toBe('');
       expect(unauth.photoAlbumUrl).toBe('');
       expect(unauth.venueName).toBe('');
       expect(unauth.venueAddress).toBe('');
@@ -1139,11 +1151,7 @@ describe('Request-Level Configuration Memoization (React cache)', () => {
       expect(unauth.heroSubtitle).toBe('');
       expect(unauth.features).toEqual([]);
 
-      // Branding, theme, modules, contactEmail, timezone, and RSVP fields are preserved
-      expect(unauth.partner1Name).toBe('Taylor');
-      expect(unauth.partner2Name).toBe('Morgan');
-      expect(unauth.brideName).toBe('Taylor');
-      expect(unauth.groomName).toBe('Morgan');
+      // Branding tokens, theme, modules, contactEmail, timezone, and RSVP fields are preserved
       expect(unauth.brandMonogram).toBe('T & M');
       expect(unauth.brandLogoUrl).toBe('/uploads/logo.png');
       expect(unauth.brandLogoAlt).toBe('Couple monogram');

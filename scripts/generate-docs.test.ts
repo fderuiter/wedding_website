@@ -61,7 +61,6 @@ describe('scripts/generate-docs AST analysis', () => {
     expect(unwrappedPaths).toEqual(
       expect.arrayContaining([
         '/api/live',
-        '/api/og',
         '/api/ready',
         '/api/registry/webhook/stripe',
         '/api/uploads/[...path]',
@@ -70,6 +69,10 @@ describe('scripts/generate-docs AST analysis', () => {
     expect(unwrappedPaths).not.toContain('/api/guest/address');
     expect(unwrappedPaths).not.toContain('/api/rsvp');
     expect(unwrappedPaths).not.toContain('/api/media/export');
+    expect(unwrappedPaths).not.toContain('/api/og');
+
+    const ogRoute = byPath.get('/api/og');
+    expect(ogRoute?.usesApiMiddleware).toBe(true);
 
     const mediaExport = byPath.get('/api/media/export');
     expect(mediaExport?.usesApiMiddleware).toBe(true);

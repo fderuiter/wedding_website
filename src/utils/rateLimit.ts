@@ -19,32 +19,51 @@ import { normalizeSocketIp, readVerifiedSocketIp } from '@/lib/socket-ip-boundar
 interface RateLimitInfo {
   count: number;
   resetTime: number;
+  limit?: number;
 }
 
 interface RateLimitStore {
   map: Map<string, RateLimitInfo>;
+  unblockedKeys: Set<string>;
   earliestResetTime: number;
 }
 
+export type RateLimitScope = 'session' | 'ip';
+
 interface RateLimitBehaviorOptions {
   increment?: boolean;
+  scope?: RateLimitScope;
+  ipLimit?: number;
 }
 
 export type RateLimitBucket = 'general' | 'auth';
 
 export const MAX_RATE_LIMIT_KEYS = 10000;
+const DEFAULT_AUTH_LOCKOUT_LIMIT = 5;
+const GENERAL_IP_CEILING_MULTIPLIER = 5;
+const MIN_GENERAL_IP_CEILING = 20;
+const MAX_AUTH_WAITERS_PER_IP = 10;
 const AUTH_LOCKOUT_QUERY_TIMEOUT_MS = 1000;
 const DB_PRUNE_INTERVAL_MS = 60 * 1000;
 
 const generalStore: RateLimitStore = {
   map: new Map<string, RateLimitInfo>(),
+  unblockedKeys: new Set<string>(),
   earliestResetTime: Infinity,
 };
 
 const authStore: RateLimitStore = {
   map: new Map<string, RateLimitInfo>(),
+  unblockedKeys: new Set<string>(),
   earliestResetTime: Infinity,
 };
+
+interface AuthIpLockState {
+  active: boolean;
+  waiters: Array<() => void>;
+}
+
+const authIpLocks = new Map<string, AuthIpLockState>();
 
 let hasWarnedUntrustedProxyHeaders = false;
 let testPoolOverride: Pool | null | undefined = undefined;
@@ -101,6 +120,7 @@ const KNOWN_STATIC_API_PATHS = new Set([
   '/api/live',
   '/api/media',
   '/api/media/export',
+  '/api/og',
   '/api/photos',
   '/api/photos/upload',
   '/api/ready',
@@ -140,6 +160,32 @@ function isAuthLockoutRoute(pathname: string, method: string = 'GET'): boolean {
     normalized === '/api/guest/lookup' ||
     (normalized === '/api/admin/setup' && upperMethod === 'POST') ||
     normalized === '/api/registry/validate-code'
+  );
+}
+
+function isIpScopedGeneralRoute(
+  pathname: string,
+  method: string = 'GET',
+  keyPrefix?: string
+): boolean {
+  if (isAuthLockoutRoute(pathname, method)) {
+    return true;
+  }
+  if (
+    keyPrefix === 'public_address_collect' ||
+    keyPrefix === 'registry-claim-preview' ||
+    keyPrefix === 'registry-claim-mutate'
+  ) {
+    return true;
+  }
+  const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, '') || '/' : pathname;
+  const upperMethod = method.toUpperCase();
+  return (
+    normalized === '/api/guest/address/public' ||
+    normalized === '/api/registry/claim' ||
+    (normalized === '/api/admin/setup' && upperMethod === 'GET') ||
+    normalized === '/api/registry/webhook/stripe' ||
+    normalized === '/api/ready'
   );
 }
 
@@ -211,12 +257,54 @@ export function normalizeApiPathname(pathname: string): string {
   return firstSubSegment === ':id' ? '/api/:id' : `/api/${firstSubSegment}/:id`;
 }
 
+function isActivelyBlockedEntry(info: RateLimitInfo, now: number): boolean {
+  return info.resetTime >= now && info.limit !== undefined && info.count >= info.limit;
+}
+
+function deleteStoreEntry(store: RateLimitStore, key: string): void {
+  store.map.delete(key);
+  store.unblockedKeys.delete(key);
+}
+
+function touchStoreEntry(
+  store: RateLimitStore,
+  key: string,
+  info: RateLimitInfo,
+  now: number
+): void {
+  store.map.delete(key);
+  store.map.set(key, info);
+  store.unblockedKeys.delete(key);
+  if (!isActivelyBlockedEntry(info, now)) {
+    store.unblockedKeys.add(key);
+  }
+  if (info.resetTime < store.earliestResetTime) {
+    store.earliestResetTime = info.resetTime;
+  }
+}
+
+function getActiveStoreEntry(
+  store: RateLimitStore,
+  key: string,
+  now: number
+): RateLimitInfo | undefined {
+  const existing = store.map.get(key);
+  if (!existing) {
+    return undefined;
+  }
+  if (existing.resetTime < now) {
+    deleteStoreEntry(store, key);
+    return undefined;
+  }
+  return existing;
+}
+
 function pruneExpiredEntries(store: RateLimitStore, now: number): void {
   if (now < store.earliestResetTime) return;
   let newEarliest = Infinity;
   for (const [k, v] of store.map.entries()) {
     if (v.resetTime < now) {
-      store.map.delete(k);
+      deleteStoreEntry(store, k);
     } else if (v.resetTime < newEarliest) {
       newEarliest = v.resetTime;
     }
@@ -226,11 +314,32 @@ function pruneExpiredEntries(store: RateLimitStore, now: number): void {
 
 function ensureStoreCapacityForKey(store: RateLimitStore, key: string, now: number): void {
   pruneExpiredEntries(store, now);
-  if (!store.map.has(key)) {
-    while (store.map.size >= MAX_RATE_LIMIT_KEYS) {
+  if (store.map.has(key)) {
+    return;
+  }
+  while (store.map.size >= MAX_RATE_LIMIT_KEYS) {
+    let evicted = false;
+    while (store.unblockedKeys.size > 0) {
+      const oldestUnblockedKey = store.unblockedKeys.values().next().value;
+      if (oldestUnblockedKey === undefined) {
+        break;
+      }
+      store.unblockedKeys.delete(oldestUnblockedKey);
+      const candidate = store.map.get(oldestUnblockedKey);
+      if (!candidate) {
+        continue;
+      }
+      if (isActivelyBlockedEntry(candidate, now)) {
+        continue;
+      }
+      store.map.delete(oldestUnblockedKey);
+      evicted = true;
+      break;
+    }
+    if (!evicted) {
       const oldestKey = store.map.keys().next().value;
       if (oldestKey !== undefined) {
-        store.map.delete(oldestKey);
+        deleteStoreEntry(store, oldestKey);
       } else {
         break;
       }
@@ -240,30 +349,40 @@ function ensureStoreCapacityForKey(store: RateLimitStore, key: string, now: numb
 
 function syncStoreEntry(store: RateLimitStore, key: string, info: RateLimitInfo, now: number): void {
   ensureStoreCapacityForKey(store, key, now);
-  store.map.set(key, info);
-  if (info.resetTime < store.earliestResetTime) {
-    store.earliestResetTime = info.resetTime;
-  }
+  touchStoreEntry(store, key, info, now);
 }
 
-function incrementStoreEntry(store: RateLimitStore, key: string, windowMs: number, now: number): RateLimitInfo {
-  const existing = store.map.get(key);
-  if (!existing || existing.resetTime < now) {
-    const nextInfo: RateLimitInfo = { count: 1, resetTime: now + windowMs };
+function incrementStoreEntry(
+  store: RateLimitStore,
+  key: string,
+  windowMs: number,
+  now: number,
+  limit: number = DEFAULT_AUTH_LOCKOUT_LIMIT
+): RateLimitInfo {
+  const existing = getActiveStoreEntry(store, key, now);
+  if (!existing) {
+    const nextInfo: RateLimitInfo = { count: 1, resetTime: now + windowMs, limit };
     syncStoreEntry(store, key, nextInfo, now);
     return nextInfo;
   }
   existing.count += 1;
+  if (existing.limit === undefined || limit < existing.limit) {
+    existing.limit = limit;
+  }
+  touchStoreEntry(store, key, existing, now);
   return existing;
 }
 
-function isStoreEntryLockedOut(store: RateLimitStore, key: string, limit: number, now: number): boolean {
-  const existing = store.map.get(key);
+function isStoreEntryLockedOut(
+  store: RateLimitStore,
+  key: string,
+  limit: number,
+  now: number
+): boolean {
+  const existing = getActiveStoreEntry(store, key, now);
   if (!existing) return false;
-  if (existing.resetTime < now) {
-    store.map.delete(key);
-    return false;
-  }
+  existing.limit = limit;
+  touchStoreEntry(store, key, existing, now);
   return existing.count >= limit;
 }
 
@@ -380,7 +499,7 @@ export function getClientIp(req: NextRequest): string {
   return (hasHeaderReader ? readVerifiedSocketIp(req.headers) : null) ?? '127.0.0.1';
 }
 
-async function getSessionOrIp(req: NextRequest): Promise<string> {
+async function resolveSessionPrincipal(req: NextRequest): Promise<string | null> {
   const adminCookieName = ADMIN_COOKIE || 'admin_auth';
   const adminCandidates = await readRequestCookieCandidates(adminCookieName, req, {
     suppressErrors: true,
@@ -390,7 +509,7 @@ async function getSessionOrIp(req: NextRequest): Promise<string> {
       try {
         const payload = await verifyAdminToken(adminCookie);
         if (payload && payload.isAdmin === true) {
-          return `session:admin:${adminCookie}`;
+          return 'session:admin';
         }
       } catch {
         // Malformed or invalid admin cookie candidate falls through to next entry
@@ -410,18 +529,26 @@ async function getSessionOrIp(req: NextRequest): Promise<string> {
     ) {
       try {
         const verified = await getSignedGuestInviteSessionWithToken(req);
-        if (verified && verified.payload.code && verified.payload.guestName) {
-          return `session:invite:${verified.token}`;
+        if (
+          verified &&
+          typeof verified.payload.code === 'string' &&
+          verified.payload.code.trim() &&
+          verified.payload.guestName
+        ) {
+          return `session:invite:${verified.payload.code.trim().toUpperCase()}`;
         }
       } catch {
         // Malformed or invalid guest invite cookie falls through
       }
     } else {
-      if (typeof getSignedGuestInviteSession === 'function' && isMockedFunction(getSignedGuestInviteSession)) {
+      if (
+        typeof getSignedGuestInviteSession === 'function' &&
+        isMockedFunction(getSignedGuestInviteSession)
+      ) {
         try {
           const payload = await getSignedGuestInviteSession(req);
-          if (payload && payload.code && payload.guestName) {
-            return `session:invite:${inviteCandidates[0]}`;
+          if (payload && typeof payload.code === 'string' && payload.code.trim() && payload.guestName) {
+            return `session:invite:${payload.code.trim().toUpperCase()}`;
           }
         } catch {
           // Malformed or invalid guest invite cookie falls through
@@ -431,19 +558,22 @@ async function getSessionOrIp(req: NextRequest): Promise<string> {
         for (const inviteCookie of inviteCandidates) {
           try {
             const payload = await verifyGuestInviteSessionToken(inviteCookie);
-            if (payload && payload.code && payload.guestName) {
-              return `session:invite:${inviteCookie}`;
+            if (payload && typeof payload.code === 'string' && payload.code.trim() && payload.guestName) {
+              return `session:invite:${payload.code.trim().toUpperCase()}`;
             }
           } catch {
             // Malformed or invalid invite cookie candidate falls through to next entry
           }
         }
       }
-      if (typeof getSignedGuestInviteSession === 'function' && !isMockedFunction(getSignedGuestInviteSession)) {
+      if (
+        typeof getSignedGuestInviteSession === 'function' &&
+        !isMockedFunction(getSignedGuestInviteSession)
+      ) {
         try {
           const payload = await getSignedGuestInviteSession(req);
-          if (payload && payload.code && payload.guestName) {
-            return `session:invite:${inviteCandidates[0]}`;
+          if (payload && typeof payload.code === 'string' && payload.code.trim() && payload.guestName) {
+            return `session:invite:${payload.code.trim().toUpperCase()}`;
           }
         } catch {
           // Malformed or invalid guest invite cookie falls through
@@ -461,7 +591,11 @@ async function getSessionOrIp(req: NextRequest): Promise<string> {
       try {
         const payload = await verifyGuestToken(guestCookie);
         if (payload && payload.guest === true) {
-          return `session:guest:${guestCookie}`;
+          const tokenId =
+            typeof payload.jti === 'string' && payload.jti.trim().length > 0
+              ? payload.jti.trim()
+              : crypto.createHash('sha256').update(guestCookie).digest('hex');
+          return `session:guest:${tokenId}`;
         }
       } catch {
         // Malformed or invalid guest cookie candidate falls through to next entry
@@ -469,7 +603,7 @@ async function getSessionOrIp(req: NextRequest): Promise<string> {
     }
   }
 
-  return getClientIp(req);
+  return null;
 }
 
 function extractRawPathname(req: NextRequest): string {
@@ -577,7 +711,8 @@ export interface AuthLockoutInstance {
   recordFailure: (
     _req: NextRequest,
     _windowMs: number,
-    _keyPrefix?: string
+    _keyPrefix?: string,
+    _limit?: number
   ) => Promise<void>;
   getLocalStoreSize: () => number;
 }
@@ -589,6 +724,7 @@ export function createAuthLockoutInstance(options?: {
 }): AuthLockoutInstance {
   const localStore: RateLimitStore = options?.store ?? {
     map: new Map<string, RateLimitInfo>(),
+    unblockedKeys: new Set<string>(),
     earliestResetTime: Infinity,
   };
   const queryTimeoutMs = options?.queryTimeoutMs ?? AUTH_LOCKOUT_QUERY_TIMEOUT_MS;
@@ -620,7 +756,7 @@ export function createAuthLockoutInstance(options?: {
         if (dbResult.rows.length > 0) {
           const dbCount = Number(dbResult.rows[0].count);
           const dbResetTime = Number(dbResult.rows[0].resetTimeMs);
-          syncStoreEntry(localStore, rawKey, { count: dbCount, resetTime: dbResetTime }, now);
+          syncStoreEntry(localStore, rawKey, { count: dbCount, resetTime: dbResetTime, limit }, now);
           if (dbCount >= limit) {
             return NextResponse.json(
               { error: 'Too many requests, please try again later.' },
@@ -645,13 +781,15 @@ export function createAuthLockoutInstance(options?: {
   const recordFailure = async (
     req: NextRequest,
     windowMs: number,
-    keyPrefix?: string
+    keyPrefix?: string,
+    limit: number = DEFAULT_AUTH_LOCKOUT_LIMIT
   ): Promise<void> => {
     const clientIp = getClientIp(req);
     const rawPathname = extractRawPathname(req);
     const rawKey = buildRateLimitKey(rawPathname, clientIp, keyPrefix);
     const now = Date.now();
     const resetTime = now + windowMs;
+    const effectiveLimit = localStore.map.get(rawKey)?.limit ?? limit;
     const pool = resolveActivePgPool(options?.pool);
 
     if (pool) {
@@ -686,13 +824,18 @@ export function createAuthLockoutInstance(options?: {
       if (dbResult !== null && dbResult.rows.length > 0) {
         const dbCount = Number(dbResult.rows[0].count);
         const dbResetTime = Number(dbResult.rows[0].resetTimeMs);
-        syncStoreEntry(localStore, rawKey, { count: dbCount, resetTime: dbResetTime }, now);
+        syncStoreEntry(
+          localStore,
+          rawKey,
+          { count: dbCount, resetTime: dbResetTime, limit: effectiveLimit },
+          now
+        );
         return;
       }
       // PostgreSQL query timed out or errored: fall back to local in-memory store
     }
 
-    incrementStoreEntry(localStore, rawKey, windowMs, now);
+    incrementStoreEntry(localStore, rawKey, windowMs, now, effectiveLimit);
   };
 
   return {
@@ -704,9 +847,68 @@ export function createAuthLockoutInstance(options?: {
 
 const defaultAuthLockoutInstance = createAuthLockoutInstance({ store: authStore });
 
+export async function acquireAuthIpLock(
+  req: NextRequest,
+  maxQueued: number = MAX_AUTH_WAITERS_PER_IP
+): Promise<(() => void) | null> {
+  const ipKey = getClientIp(req);
+  let state = authIpLocks.get(ipKey);
+
+  if (!state) {
+    if (authIpLocks.size >= MAX_RATE_LIMIT_KEYS) {
+      return null;
+    }
+    state = { active: true, waiters: [] };
+    authIpLocks.set(ipKey, state);
+    const createdState = state;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const current = authIpLocks.get(ipKey);
+      if (!current || current !== createdState) return;
+      const next = current.waiters.shift();
+      if (next) {
+        next();
+      } else {
+        current.active = false;
+        authIpLocks.delete(ipKey);
+      }
+    };
+  }
+
+  if (!state.active) {
+    state.active = true;
+  } else {
+    if (state.waiters.length >= maxQueued) {
+      return null;
+    }
+    const pendingState = state;
+    await new Promise<void>((resolve) => {
+      pendingState.waiters.push(resolve);
+    });
+  }
+
+  const acquiredState = state;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const current = authIpLocks.get(ipKey);
+    if (!current || current !== acquiredState) return;
+    const next = current.waiters.shift();
+    if (next) {
+      next();
+    } else {
+      current.active = false;
+      authIpLocks.delete(ipKey);
+    }
+  };
+}
+
 export async function checkAuthLockout(
   req: NextRequest,
-  limit: number = 5,
+  limit: number = DEFAULT_AUTH_LOCKOUT_LIMIT,
   windowMs: number = 15 * 60 * 1000,
   keyPrefix?: string,
   instance: AuthLockoutInstance = defaultAuthLockoutInstance
@@ -718,19 +920,20 @@ export async function recordAuthFailure(
   req: NextRequest,
   windowMs: number = 15 * 60 * 1000,
   keyPrefix?: string,
-  instance: AuthLockoutInstance = defaultAuthLockoutInstance
+  instance: AuthLockoutInstance = defaultAuthLockoutInstance,
+  limit: number = DEFAULT_AUTH_LOCKOUT_LIMIT
 ): Promise<void> {
-  return instance.recordFailure(req, windowMs, keyPrefix);
+  return instance.recordFailure(req, windowMs, keyPrefix, limit);
 }
 
 export async function recordFailedAuthAttempt(
   req: NextRequest,
-  _limit: number = 5,
+  limit: number = DEFAULT_AUTH_LOCKOUT_LIMIT,
   windowMs: number = 15 * 60 * 1000,
   keyPrefix?: string,
   instance: AuthLockoutInstance = defaultAuthLockoutInstance
 ): Promise<void> {
-  return instance.recordFailure(req, windowMs, keyPrefix);
+  return instance.recordFailure(req, windowMs, keyPrefix, limit);
 }
 
 export async function rateLimit(
@@ -754,32 +957,95 @@ export async function rateLimit(
       return blocked;
     }
     if (shouldIncrement) {
-      await recordAuthFailure(req, windowMs, keyPrefix);
+      await recordAuthFailure(req, windowMs, keyPrefix, undefined, limit);
     }
     return null;
   }
 
-  const identifier = isLockoutEndpoint ? getClientIp(req) : await getSessionOrIp(req);
-  const key = buildRateLimitKey(rawPathname, identifier, keyPrefix);
+  const forceIpScope =
+    behavior?.scope === 'ip' || isIpScopedGeneralRoute(rawPathname, method, keyPrefix);
+  const clientIp = getClientIp(req);
+  const sessionPrincipal = forceIpScope ? null : await resolveSessionPrincipal(req);
   const now = Date.now();
-  const info = generalStore.map.get(key);
+  pruneExpiredEntries(generalStore, now);
 
-  if (!info || info.resetTime < now) {
-    pruneExpiredEntries(generalStore, now);
-    if (!shouldIncrement) {
+  if (!sessionPrincipal) {
+    const ipKey = buildRateLimitKey(rawPathname, clientIp, keyPrefix);
+    const info = getActiveStoreEntry(generalStore, ipKey, now);
+
+    if (!info) {
+      if (!shouldIncrement) {
+        return null;
+      }
+      syncStoreEntry(generalStore, ipKey, { count: 1, resetTime: now + windowMs, limit }, now);
       return null;
     }
-    syncStoreEntry(generalStore, key, { count: 1, resetTime: now + windowMs }, now);
+
+    info.limit = limit;
+    if (info.count >= limit) {
+      touchStoreEntry(generalStore, ipKey, info, now);
+      return NextResponse.json({ error: 'Too many requests, please try again later.' }, { status: 429 });
+    }
+
+    if (shouldIncrement) {
+      info.count += 1;
+    }
+    touchStoreEntry(generalStore, ipKey, info, now);
     return null;
   }
 
-  if (info.count >= limit) {
-    return NextResponse.json({ error: 'Too many requests, please try again later.' }, { status: 429 });
+  const ipLimit =
+    behavior?.ipLimit ?? Math.max(limit * GENERAL_IP_CEILING_MULTIPLIER, MIN_GENERAL_IP_CEILING);
+  const sessionKey = buildRateLimitKey(rawPathname, sessionPrincipal, keyPrefix);
+  const ipCeilingKey = buildRateLimitKey(rawPathname, `ip-ceiling:${clientIp}`, keyPrefix);
+
+  const ipInfo = getActiveStoreEntry(generalStore, ipCeilingKey, now);
+  if (ipInfo) {
+    ipInfo.limit = ipLimit;
+    if (ipInfo.count >= ipLimit) {
+      touchStoreEntry(generalStore, ipCeilingKey, ipInfo, now);
+      return NextResponse.json({ error: 'Too many requests, please try again later.' }, { status: 429 });
+    }
   }
 
-  if (shouldIncrement) {
-    info.count += 1;
+  const sessionInfo = getActiveStoreEntry(generalStore, sessionKey, now);
+  if (sessionInfo) {
+    sessionInfo.limit = limit;
+    if (sessionInfo.count >= limit) {
+      touchStoreEntry(generalStore, sessionKey, sessionInfo, now);
+      return NextResponse.json({ error: 'Too many requests, please try again later.' }, { status: 429 });
+    }
   }
+
+  if (!shouldIncrement) {
+    if (ipInfo) {
+      touchStoreEntry(generalStore, ipCeilingKey, ipInfo, now);
+    }
+    if (sessionInfo) {
+      touchStoreEntry(generalStore, sessionKey, sessionInfo, now);
+    }
+    return null;
+  }
+
+  if (sessionInfo) {
+    sessionInfo.count += 1;
+    touchStoreEntry(generalStore, sessionKey, sessionInfo, now);
+  } else {
+    syncStoreEntry(generalStore, sessionKey, { count: 1, resetTime: now + windowMs, limit }, now);
+  }
+
+  if (ipInfo) {
+    ipInfo.count += 1;
+    touchStoreEntry(generalStore, ipCeilingKey, ipInfo, now);
+  } else {
+    syncStoreEntry(
+      generalStore,
+      ipCeilingKey,
+      { count: 1, resetTime: now + windowMs, limit: ipLimit },
+      now
+    );
+  }
+
   return null;
 }
 
@@ -795,9 +1061,19 @@ export function setAuthLockoutPoolForTesting(pool: Pool | null | undefined): voi
  */
 export function resetRateLimitsForTesting(): void {
   generalStore.map.clear();
+  generalStore.unblockedKeys.clear();
   generalStore.earliestResetTime = Infinity;
   authStore.map.clear();
+  authStore.unblockedKeys.clear();
   authStore.earliestResetTime = Infinity;
+  for (const state of authIpLocks.values()) {
+    while (state.waiters.length > 0) {
+      const waiter = state.waiters.shift();
+      waiter?.();
+    }
+    state.active = false;
+  }
+  authIpLocks.clear();
   hasWarnedUntrustedProxyHeaders = false;
   lastDbPruneAt = 0;
 

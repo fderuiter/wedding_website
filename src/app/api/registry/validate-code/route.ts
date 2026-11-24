@@ -2,18 +2,26 @@ import { NextResponse, NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { ApiError } from '@/utils/ApiError';
 import { assertJsonContentType } from '@/utils/contentType';
+import { MAX_PASSWORD_LENGTH } from '@/utils/password';
 import { ValidateInvitationCodeSchema } from '@/utils/validation';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import {
+  GUEST_INVITE_COOKIE,
   setGuestInviteSessionCookie,
   signGuestInviteSessionToken,
+  verifyGuestInviteSessionToken,
 } from '@/core/auth/guestInviteSession';
+import { findVerifiedRequestCookie } from '@/core/auth/tokenCookieHelpers';
 import { hasAddressCollectionTag } from '@/features/registry';
 
 async function findActiveInvitationCode(rawCode: string | undefined | null) {
   const code = rawCode?.trim().toUpperCase();
   if (!code) {
     throw new ApiError(400, 'Code is required.');
+  }
+
+  if (code.length > MAX_PASSWORD_LENGTH) {
+    throw new ApiError(400, `Code must be at most ${MAX_PASSWORD_LENGTH} characters.`);
   }
 
   const invite = await prisma.invitationCode.findUnique({
@@ -67,10 +75,38 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     });
   }
 
-  const token = await signGuestInviteSessionToken({
-    code: invite.code,
-    guestName: invite.guestName,
-  });
+  let token: string | null = null;
+  if (
+    typeof findVerifiedRequestCookie === 'function' &&
+    typeof verifyGuestInviteSessionToken === 'function'
+  ) {
+    const verifiedExisting = await findVerifiedRequestCookie(
+      GUEST_INVITE_COOKIE,
+      request,
+      async (candidate) => {
+        const existingPayload = await verifyGuestInviteSessionToken(candidate);
+        if (
+          existingPayload &&
+          existingPayload.code.trim().toUpperCase() === invite.code.trim().toUpperCase() &&
+          existingPayload.guestName === invite.guestName
+        ) {
+          return existingPayload;
+        }
+        return null;
+      },
+      { suppressErrors: true }
+    );
+    if (verifiedExisting) {
+      token = verifiedExisting.token;
+    }
+  }
+
+  if (!token) {
+    token = await signGuestInviteSessionToken({
+      code: invite.code,
+      guestName: invite.guestName,
+    });
+  }
 
   const response = NextResponse.json({
     valid: true,

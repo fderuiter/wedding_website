@@ -1,7 +1,13 @@
 import { AdminLoginSchema } from '@/utils/validation';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyPassword } from '@/utils/password';
-import { setAdminAuthCookie, signAdminToken } from '@/core/auth/auth.server';
+import {
+  ADMIN_COOKIE,
+  setAdminAuthCookie,
+  signAdminToken,
+  verifyAdminToken,
+} from '@/core/auth/auth.server';
+import { findVerifiedRequestCookie } from '@/core/auth/tokenCookieHelpers';
 import { env } from '@/env';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
@@ -38,9 +44,27 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     requiresSetup = false;
   }
 
-  const iat = Date.now();
-  const exp = iat + 60 * 60 * 8 * 1000;
-  const token = await signAdminToken({ isAdmin: true, iat, exp });
+  let token: string | null = null;
+  if (typeof findVerifiedRequestCookie === 'function' && typeof verifyAdminToken === 'function') {
+    const verifiedExisting = await findVerifiedRequestCookie(
+      ADMIN_COOKIE,
+      req,
+      async (candidate) => {
+        const existingPayload = await verifyAdminToken(candidate);
+        return existingPayload && existingPayload.isAdmin === true ? existingPayload : null;
+      },
+      { suppressErrors: true }
+    );
+    if (verifiedExisting) {
+      token = verifiedExisting.token;
+    }
+  }
+
+  if (!token) {
+    const iat = Date.now();
+    const exp = iat + 60 * 60 * 8 * 1000;
+    token = await signAdminToken({ isAdmin: true, iat, exp });
+  }
 
   const response = NextResponse.json({ success: true, requiresSetup });
   setAdminAuthCookie(response, token, undefined, req);

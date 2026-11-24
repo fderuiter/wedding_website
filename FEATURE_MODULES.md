@@ -6,9 +6,9 @@ This document defines the runtime contract for presentation feature toggles in [
 
 Presentation feature toggles govern optional guest-facing experiences through six distinct mechanisms—each with explicit runtime boundaries:
 
-1. **Navigation Visibility**: [getNavLinks](src/lib/routes.ts#L69-L82) and [AdminDashboardLayout](src/app/admin/dashboard/layout.tsx#L37-L40) filter out navigation links whose `requiredModule` is disabled. Note that [isProtectedRoute](src/lib/routes.ts#L84-L118) evaluates `roles` only and does **not** enforce `requiredModule`.
+1. **Navigation Visibility**: [getNavLinks](src/lib/routes.ts#L69-L82) and [AdminDashboardLayout](src/app/admin/dashboard/layout.tsx#L40-L43) filter out navigation links whose `requiredModule` is disabled. Note that [isProtectedRoute](src/lib/routes.ts#L84-L118) evaluates `roles` only and does **not** enforce `requiredModule`.
 2. **Selective Route & Render Protection**: Only routes and components that explicitly call `isFeatureEnabled()` enforce toggle state (see [Route & Endpoint Enforcement Coverage](#route--endpoint-enforcement-coverage) below). Unchecked UI routes, unchecked API handlers, and dynamic admin entity routes remain reachable even when a toggle is `false`.
-3. **Persistence Model (`Prisma` `modules` JSON Column)**: The `AppConfig` model in [prisma/schema.prisma](prisma/schema.prisma#L11-L84) persists all 9 module flags in `modules Json @default("{}")` alongside `showCountdown` and `showAddToCalendar`, preserving module state across page refreshes, backup exports/imports, and snapshot version rollbacks.
+3. **Persistence Model (`Prisma` `modules` JSON Column)**: The `AppConfig` model in [prisma/schema.prisma](prisma/schema.prisma#L11-L98) persists all 9 module flags in `modules Json @default("{}")` alongside `showCountdown` and `showAddToCalendar`, preserving module state across page refreshes, backup exports/imports, and snapshot version rollbacks.
 4. **Feature Dependencies**: `groupGifting` depends on `registry`; [resolveModuleConfig](src/lib/modules.ts#L119-L141) normalizes `groupGifting` to `false` whenever `registry` is `false` without throwing validation errors.
 5. **Registry Checkout & Catalog Bounds**: Registry contributions operate in dual-mode checkout (Stripe PaymentIntents when configured, or direct-transfer / claim-only fallback) and enforce a `500`-item catalog query ceiling with progressive client-side pagination.
 6. **Core Domain Independence**: Core authentication, middleware session checks, database repositories, audit logging, and domain barrels under [src/features/](src/features) operate independently of presentation toggles.
@@ -80,7 +80,7 @@ export const ModuleConfigSchema = z.object({
   - `/things-to-do` (`attractions`)
   - `/photos` and `/photos/slideshow` (`gallery`)
   - `/heart` (`interactive3D`)
-- **Homepage (`/`) Conditional Widgets & Schedule Fallback ([src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L344-L535) & [src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L632-L681))**:
+- **Homepage (`/`) Conditional Widgets & Schedule Fallback ([src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L344-L535), [src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L632-L652), & [src/components/home/HomeFooterContent.tsx](src/components/home/HomeFooterContent.tsx))**:
   - Renders the countdown widget only when `config.showCountdown && isFeatureEnabled('countdown', config.modules)`.
   - Renders the Add-to-Calendar button only when `config.showAddToCalendar && isFeatureEnabled('addToCalendar', config.modules)`.
   - In the `details` section ([src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L344-L399)), renders `InteractiveTimeline` when structured `Schedule` or `startTime` entries exist in `contentNodes`, and falls back to `Logistics` ceremony/reception summary cards (`ceremonyTitle`, `receptionTitle`) when no structured timeline entries are present.
@@ -98,15 +98,16 @@ export const ModuleConfigSchema = z.object({
 - **Weather & Gallery APIs Enforcing `isFeatureEnabled` (HTTP 404)**:
   - `GET /api/weather` checks `weather`.
   - `GET /api/photos`, `POST /api/photos/upload`, `POST /api/guest/photos/upload`, `GET/POST /api/media`, `PUT/DELETE /api/media/[id]`, `GET/POST /api/media/export`, `PATCH /api/admin/photos/[id]`, `GET/PATCH /api/admin/photos/moderation`, `POST /api/admin/photos/moderation/batch`, and `GET/POST /api/admin/photos/qr` check `gallery`.
-- **Registry APIs Enforcing `isFeatureEnabled('registry')` (HTTP 404 — 7 of 11 handlers)**:
+- **Registry APIs Enforcing `isFeatureEnabled('registry')` (HTTP 404 — 8 of 12 handlers)**:
   - `GET /api/registry/items` and `POST /api/registry/items`
   - `GET /api/registry/items/[id]`, `PUT /api/registry/items/[id]`, and `DELETE /api/registry/items/[id]`
   - `POST /api/registry/items/batch`
   - `GET /api/registry/capabilities`
+  - `GET /api/registry/claim` and `POST /api/registry/claim`
   - `POST /api/registry/contribute`
   - `POST /api/registry/payment-intent`
   - `POST /api/registry/scrape/batch`
-- **Shared Auth, Scraping, & Webhook Routes Under `/api/registry/*` Skipping `isFeatureEnabled('registry')` (4 of 11 handlers)**:
+- **Shared Auth, Scraping, & Webhook Routes Under `/api/registry/*` Skipping `isFeatureEnabled('registry')` (4 of 12 handlers)**:
   - `POST /api/registry/scrape` (reused by Admin Content Hub photo metadata import)
   - `GET /api/registry/session` and `DELETE /api/registry/session` (global guest invitation session hydration)
   - `GET /api/registry/validate-code` (reused by `/guest/collect` address portal)
