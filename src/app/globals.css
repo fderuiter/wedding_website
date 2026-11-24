@@ -121,6 +121,10 @@
   --dialog-desc-color: #4B5563;
 
   --btn-outline-border: #6b7280;
+  --btn-success-bg: #15803d;
+  --btn-success-text: #ffffff;
+  --btn-success-hover-bg: #166534;
+  --btn-success-border: transparent;
   --input-bg: #ffffff;
   --input-border: #6b7280;
   --input-focus-ring: #b91c1c;
@@ -218,6 +222,10 @@
   --dialog-desc-color: #9CA3AF;
 
   --btn-outline-border: #9ca3af;
+  --btn-success-bg: #15803d;
+  --btn-success-text: #ffffff;
+  --btn-success-hover-bg: #166534;
+  --btn-success-border: transparent;
   --input-bg: #1f2937;
   --input-border: #9ca3af;
   --input-focus-ring: #f9fafb;

@@ -95,4 +95,64 @@ describe('local-rules/no-uncalibrated-contrast-utilities', () => {
       expect(msg.severity).toBe(2);
     }
   });
+
+  it('reports uncalibrated status text utilities and text-white status fills (WCAG 1.4.3 / F24)', () => {
+    const invalidStatusCode = `
+      import { cn } from '@/utils/cn';
+
+      export function InvalidStatusSamples({ isPast }: { isPast: boolean }) {
+        return (
+          <div>
+            <button className="bg-emerald-600 hover:bg-emerald-700 text-white">Approve</button>
+            <button className="bg-amber-600 dark:hover:bg-amber-600 text-white">Import</button>
+            <span className="text-emerald-600 dark:text-emerald-400 text-xs">Stripe Ref</span>
+            <span className="text-amber-600 dark:text-amber-400 text-xs">Warning</span>
+            <em className="text-amber-500">&lt;auto-generate&gt;</em>
+            <span className={cn('w-5 h-5', isPast ? 'bg-emerald-600 text-white' : 'text-muted-text')}>
+              ✓
+            </span>
+          </div>
+        );
+      }
+    `;
+
+    const messages = linter.verify(invalidStatusCode, ruleConfig, {
+      filename: 'src/components/InvalidStatus.tsx',
+    });
+    const messageIds = messages.map((m) => m.messageId);
+
+    expect(messageIds.filter((id) => id === 'uncalibratedStatusFill').length).toBeGreaterThanOrEqual(3);
+    expect(messageIds.filter((id) => id === 'uncalibratedStatusText').length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('exempts calibrated status tokens, dark-foreground pills, G145 large text, decorative icons, and checkboxes', () => {
+    const validExemptionsCode = `
+      import { Icon } from '@/components/ui/Icon';
+
+      export function ValidStatusExemptions() {
+        return (
+          <div>
+            <span className="text-status-success-text text-xs">All RSVPs up to date</span>
+            <span className="text-status-warning-text text-xs">Guest Message:</span>
+            <p className="text-warning-text text-xs">Capacity warning</p>
+            <a href="https://example.com" className="text-secondary-text underline text-xs">Vendor</a>
+            <span className="bg-amber-500 text-stone-900 text-[10px] font-bold">Pending</span>
+            <div className="bg-emerald-100 text-emerald-600 text-3xl font-bold">✓</div>
+            <div className="text-2xl font-black text-amber-600">4</div>
+            <div className="text-xl font-bold text-emerald-600">12</div>
+            <Icon name="Check" className="w-5 h-5 text-emerald-500" />
+            <svg className="w-4 h-4 text-amber-600" viewBox="0 0 24 24" />
+            <span aria-hidden="true" className="text-amber-500">★</span>
+            <input type="checkbox" className="rounded text-amber-600 focus:ring-amber-500" />
+            <div role="progressbar" className="h-full bg-emerald-600" />
+          </div>
+        );
+      }
+    `;
+
+    const messages = linter.verify(validExemptionsCode, ruleConfig, {
+      filename: 'src/components/ValidStatusExemptions.tsx',
+    });
+    expect(messages).toEqual([]);
+  });
 });
