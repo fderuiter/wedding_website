@@ -6,11 +6,16 @@ import { getAppConfig } from '@/lib/config';
 import { sanitizeAppConfigForBackup } from '@/lib/backupPersistence';
 import { DEFAULT_MODULE_CONFIG, isFeatureEnabled } from '@/lib/modules';
 import { buildSignedPhotoUploadUrl } from '@/core/auth/photoUploadToken';
+import { resolveTenantClaimsForSigning } from '@/core/auth/tenantClaims.node';
 import { AdminPhotoQrUpdateSchema } from '@/features/content';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { formatZodError } from '@/utils/validation';
-import { isHostAllowed } from '@/utils/hostValidation';
+import {
+  isHostAllowed,
+  resolveRequestHost,
+  resolveRequestProtocol,
+} from '@/utils/hostValidation';
 
 function resolveRequestOrigin(req: NextRequest, configuredBaseUrl: string | undefined): string {
   const cleanConfigured = configuredBaseUrl?.trim().replace(/\/+$/, '') || '';
@@ -19,16 +24,11 @@ function resolveRequestOrigin(req: NextRequest, configuredBaseUrl: string | unde
   }
 
   try {
-    const forwardedHost = req.headers?.get?.('x-forwarded-host')?.split(',')[0]?.trim();
-    const hostHeader = forwardedHost || req.headers?.get?.('host')?.trim();
     const parsedUrl = new URL(req.url);
-    const candidateHost = hostHeader || parsedUrl.host;
+    const candidateHost = resolveRequestHost(req.headers, parsedUrl.host);
     if (candidateHost && isHostAllowed(candidateHost)) {
-      const forwardedProto = req.headers?.get?.('x-forwarded-proto')?.split(',')[0]?.trim();
       const protocol =
-        forwardedProto === 'https' || forwardedProto === 'http'
-          ? forwardedProto
-          : parsedUrl.protocol.replace(/:$/, '') || 'http';
+        resolveRequestProtocol(req.headers, parsedUrl.protocol) ?? 'http';
       return `${protocol}://${candidateHost}`;
     }
   } catch {
@@ -49,7 +49,8 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
     typeof config.guestPhotoQrTokenVersion === 'number' && config.guestPhotoQrTokenVersion >= 1
       ? config.guestPhotoQrTokenVersion
       : 1;
-  const { uploadUrl } = await buildSignedPhotoUploadUrl(origin, tokenVersion);
+  const tenantClaims = await resolveTenantClaimsForSigning(req, config);
+  const { uploadUrl } = await buildSignedPhotoUploadUrl(origin, tokenVersion, tenantClaims);
 
   return NextResponse.json({
     success: true,
@@ -88,14 +89,16 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
       ? autoApproveGuestPhotos
       : Boolean(config.autoApproveGuestPhotos);
 
+  const targetConfigId = config.id || 'global';
   const updatedRow = await prisma.appConfig.upsert({
-    where: { id: 'global' },
+    where: { id: targetConfigId },
     update: {
       ...(shouldRotate ? { guestPhotoQrTokenVersion: { increment: 1 } } : {}),
       ...(typeof autoApproveGuestPhotos === 'boolean' ? { autoApproveGuestPhotos } : {}),
     },
     create: {
-      id: 'global',
+      id: targetConfigId,
+      ...(config.subdomain ? { subdomain: config.subdomain } : {}),
       partner1Name: config.partner1Name || '',
       partner2Name: config.partner2Name || '',
       brideName: config.brideName || '',
@@ -160,7 +163,11 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
         ? currentVersion + 1
         : currentVersion;
   const origin = resolveRequestOrigin(req, updatedRow.baseUrl ?? config.baseUrl);
-  const { uploadUrl } = await buildSignedPhotoUploadUrl(origin, resolvedVersion);
+  const tenantClaims = await resolveTenantClaimsForSigning(req, {
+    id: updatedRow.id || targetConfigId,
+    subdomain: updatedRow.subdomain ?? config.subdomain,
+  });
+  const { uploadUrl } = await buildSignedPhotoUploadUrl(origin, resolvedVersion, tenantClaims);
 
   return NextResponse.json({
     success: true,

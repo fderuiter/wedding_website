@@ -7,13 +7,24 @@ import RootLayoutClient from '@/components/layout/RootLayoutClient';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { ToastProvider } from '@/components/ui/ToastProvider';
 import { a11yConfig } from '@/a11y-config';
+import { isAdminRequest } from '@/core/auth/auth.server';
 import { getAppConfig, type PublicAppConfig } from '@/lib/config';
 
 let mockPathname = '/admin/dashboard';
+const mockRedirect = jest.fn((url: string) => {
+  const error = new Error('NEXT_REDIRECT') as Error & { digest?: string };
+  error.digest = `NEXT_REDIRECT;replace;${url};307;`;
+  throw error;
+});
 
 jest.mock('next/navigation', () => ({
   usePathname: () => mockPathname,
   useRouter: () => ({ push: jest.fn() }),
+  redirect: (url: string) => mockRedirect(url),
+}));
+
+jest.mock('@/core/auth/auth.server', () => ({
+  isAdminRequest: jest.fn().mockResolvedValue(true),
 }));
 
 jest.mock('@/lib/config', () => ({
@@ -22,11 +33,14 @@ jest.mock('@/lib/config', () => ({
   }),
 }));
 
+const mockIsAdminRequest = isAdminRequest as jest.MockedFunction<typeof isAdminRequest>;
 const mockGetAppConfig = getAppConfig as jest.MockedFunction<typeof getAppConfig>;
 
 describe('AdminDashboardLayout and AdminNav', () => {
   beforeEach(() => {
+    jest.clearAllMocks();
     mockPathname = '/admin/dashboard';
+    mockIsAdminRequest.mockResolvedValue(true);
     mockGetAppConfig.mockResolvedValue({
       modules: {},
     } as unknown as Awaited<ReturnType<typeof getAppConfig>>);
@@ -117,6 +131,41 @@ describe('AdminDashboardLayout and AdminNav', () => {
     expect(within(navElement).getByRole('link', { name: 'Invitation Codes' })).toBeInTheDocument();
     expect(within(navElement).queryByRole('link', { name: 'Registry' })).not.toBeInTheDocument();
     expect(within(navElement).queryByRole('link', { name: 'Thank-You Notes' })).not.toBeInTheDocument();
+  });
+
+  it('redirects unauthenticated callers to /admin/login with HTTP 303 without Edge middleware', async () => {
+    mockIsAdminRequest.mockResolvedValueOnce(false);
+
+    let caughtError: (Error & { digest?: string }) | null = null;
+    try {
+      await AdminDashboardLayout({ children: <div>Secret</div> });
+    } catch (err) {
+      caughtError = err as Error & { digest?: string };
+    }
+
+    expect(mockRedirect).toHaveBeenCalledWith('/admin/login');
+    expect(caughtError?.digest).toBe('NEXT_REDIRECT;replace;/admin/login;303;');
+  });
+
+  it('keeps SSR admin guard inert during STATIC_EXPORT builds', async () => {
+    const prevStaticExport = process.env.STATIC_EXPORT;
+    process.env.STATIC_EXPORT = 'true';
+    mockIsAdminRequest.mockResolvedValue(false);
+
+    try {
+      const layoutElement = await AdminDashboardLayout({
+        children: <div>Static Demo Content</div>,
+      });
+      render(<ToastProvider>{layoutElement}</ToastProvider>);
+      expect(screen.getByRole('main')).toHaveTextContent('Static Demo Content');
+      expect(mockRedirect).not.toHaveBeenCalled();
+    } finally {
+      if (prevStaticExport === undefined) {
+        delete process.env.STATIC_EXPORT;
+      } else {
+        process.env.STATIC_EXPORT = prevStaticExport;
+      }
+    }
   });
 
   it('composes with RootLayoutClient to expose one top-level main#main-content after Navbar, AdminNav, and SampleDataBanner with zero axe violations', async () => {

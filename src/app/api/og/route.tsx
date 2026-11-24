@@ -269,7 +269,7 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
       fonts: fonts.length > 0 ? fonts : undefined,
       headers: {
         'Cache-Control': isAuthenticated ? 'private, max-age=3600' : 'private, no-cache',
-        Vary: 'Cookie',
+        Vary: 'Cookie, Host, X-Forwarded-Host',
       },
     }
   );

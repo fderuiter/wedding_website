@@ -74,9 +74,9 @@ These variables provide convenience defaults for local `development` and `test` 
 | `NODE_ENV` | `development` | Runtime mode (`production`, `development`, `test`). Automatically set to `production` in `Dockerfile` runner environments. |
 | `ALLOWED_HOSTS` | `localhost,127.0.0.1,*.localhost` | Comma-separated list of whitelisted host domains or wildcard patterns validated against `X-Forwarded-Host` / `Host` in `src/middleware.ts`. Defaults to loopback hosts; production deployments serving custom domains must explicitly include their public hostnames (e.g., `localhost,127.0.0.1,wedding.example,*.wedding.example`). |
 | `POSTGRES_URL_NON_POOLING` | *None* | Direct non-pooled connection string read by `prisma.config.ts` (`resolvePrismaDatasourceUrl` promotes it when `DATABASE_URL` uses PgBouncer for the same database and schema, and `resolvePrismaShadowDatabaseUrl` binds it during `prisma migrate dev`/`reset`/`diff` when targeting a separate shadow database). |
-| `MULTISITE_ENABLED` | `false` | Enable subdomain-based `AppConfig` branding/profile routing (`src/lib/config.ts` resolves `X-Forwarded-Host` before `Host`). Switches `AppConfig` rows only; all other persisted models in `prisma/schema.prisma` are shared across subdomains without tenant row isolation. |
+| `MULTISITE_ENABLED` | `false` | Enable subdomain-based `AppConfig` branding/profile routing (`src/lib/config.ts` resolves host via `TRUST_PROXY`-gated `resolveRequestSubdomain`) and tenant claim enforcement (`siteId` and `subdomain`) across `admin_auth`, `guest_auth`, `guest_invite_session`, and `guest_photo_session` cookies. Switches `AppConfig` rows only; all other persisted models in `prisma/schema.prisma` are shared across subdomains without tenant row isolation. |
 | `RUN_MIGRATIONS` | `false` | Automatically run database schema migrations (`./node_modules/.bin/prisma migrate deploy`) during container startup in `docker-entrypoint.sh` when set to `true` or `1` (both `docker-entrypoint.sh` and `src/env.ts` accept `RUN_MIGRATIONS=true` and `RUN_MIGRATIONS=1`). |
-| `TRUST_PROXY` | `false` | Opt-in boolean (`true`/`false`) or non-negative integer hop count enabling `X-Forwarded-For` and `X-Real-IP` parsing for rate limiting behind trusted reverse proxies. |
+| `TRUST_PROXY` | `false` | Opt-in boolean (`true`/`false`) or non-negative integer hop count enabling trusted hop selection on `X-Forwarded-Host`, `X-Forwarded-Proto`, `X-Forwarded-For`, and `X-Real-IP` behind reverse proxies. |
 | `HISTORY_VERSION_LIMIT` | `50` | Maximum version history entries retained per content item (integer >= 1). |
 | `CRON_SECRET` | *None* | Bearer authorization secret for triggering scheduled background endpoints (`/api/cron/*`). |
 
@@ -175,14 +175,15 @@ These variables configure container port binding, static HTML export builds, Vit
 
 The application expects to be deployed behind an HTTP reverse proxy, load balancer, or cloud ingress controller (e.g., NGINX, Cloudflare, Google Cloud Run Ingress, AWS ALB).
 
-- **Host Header Forwarding**:
-  - Proxies must pass the original requested host via the `Host` or `X-Forwarded-Host` header.
-  - Both `src/middleware.ts` and `getSubdomainFromHeaders()` in `src/lib/config.ts` inspect `X-Forwarded-Host` (first host if comma-separated) before `Host` and validate the resolved host against `ALLOWED_HOSTS`. Requests with invalid or unapproved host headers are rejected with `HTTP 400 Bad Request`.
+- **Host Header Forwarding (`TRUST_PROXY`)**:
+  - Direct deployments (`TRUST_PROXY=false`, the default) ignore `X-Forwarded-Host` and evaluate only the `Host` header against `ALLOWED_HOSTS`.
+  - Reverse proxies (e.g., Nginx with `proxy_set_header Host $host;` and `proxy_set_header X-Forwarded-Host $host;`) must pair forwarded headers with `TRUST_PROXY=1` (or `TRUST_PROXY=2` behind two-hop load balancers). When `TRUST_PROXY` is enabled, `resolveRequestHost` (`src/utils/hostValidation.ts`) selects the configured right-to-left hop from `X-Forwarded-Host` before falling back to `Host`, and `src/middleware.ts`, `src/lib/config.ts`, `src/app/metadata.ts`, and export/broadcast origin helpers validate the resolved host against `ALLOWED_HOSTS` (rejecting invalid or unapproved hosts at the perimeter with `HTTP 400 Bad Request`).
 - **Perimeter Session Exclusions**:
+  - Public static exclusions in `src/middleware.ts` are limited to explicit asset prefixes (`/images/`, `/assets/`, `/fonts/`, `/_next/static/`, `/_next/image/`, `/favicon.ico`, and `/robots.txt`).
   - Non-probe perimeter-exempt paths (`/api/registry/webhook/stripe`, `/api/cron/*`, and `/uploads/*`) enforce full `ALLOWED_HOSTS` validation (`isHostAllowed`) in `src/middleware.ts` before bypassing guest/admin session cookies in favor of route-specific controls (`stripe-signature` verification via `STRIPE_WEBHOOK_SECRET`, `Authorization: Bearer <CRON_SECRET>`, or path-contained `nosniff` media streaming).
   - Stateless read-only (`GET` and `HEAD`) probe requests to `/api/live`, `/api/health`, and `/api/ready` enforce syntactic `Host` validation (`isHostSyntaxValid` in `src/utils/hostValidation.ts`) only, rejecting empty, whitespace, comma-separated, CRLF, or invalid-port headers while permitting platform probe hosts (e.g., `healthcheck.railway.app`, Cloud Run internal pod/kubelet IPs, and `127.0.0.1:3000`). Non-read-only methods (such as `POST`) on probe paths still enforce full `ALLOWED_HOSTS` validation.
-- **Protocol Header Forwarding**:
-  - Proxies should forward `X-Forwarded-Proto` (`https` or `http`) to enable accurate canonical URL generation.
+- **Protocol Header Forwarding (`TRUST_PROXY`)**:
+  - Proxies should forward `X-Forwarded-Proto` (`https` or `http`); `resolveRequestProtocol` honors `X-Forwarded-Proto` only when `TRUST_PROXY` is enabled and ignores spoofed forwarded protocol headers when `TRUST_PROXY=false`.
 - **Client IP Header Forwarding (`TRUST_PROXY`)**:
   - By default (`TRUST_PROXY=false`), the rate limiter ignores `X-Forwarded-For` and `X-Real-IP` headers so direct callers cannot spoof IP headers to bypass lockouts. Set `TRUST_PROXY=1` behind single-hop reverse proxies (Caddy, Nginx, Vercel, Railway, Render) or `TRUST_PROXY=2` behind two-hop load balancers such as Google Cloud Run (`<client-ip>, <lb-ip>`).
 

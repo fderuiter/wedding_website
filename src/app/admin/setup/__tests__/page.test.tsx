@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { redirect } from 'next/navigation';
+import { isAdminRequest } from '@/core/auth/auth.server';
 import { getAppConfig } from '@/lib/config';
 
 jest.mock('next/headers', () => ({
@@ -8,9 +9,15 @@ jest.mock('next/headers', () => ({
 }));
 
 jest.mock('next/navigation', () => ({
-  redirect: jest.fn(() => {
-    throw new Error('NEXT_REDIRECT');
+  redirect: jest.fn((url: string) => {
+    const error = new Error('NEXT_REDIRECT') as Error & { digest?: string };
+    error.digest = `NEXT_REDIRECT;replace;${url};307;`;
+    throw error;
   }),
+}));
+
+jest.mock('@/core/auth/auth.server', () => ({
+  isAdminRequest: jest.fn().mockResolvedValue(true),
 }));
 
 jest.mock('@/lib/config', () => {
@@ -35,6 +42,41 @@ import AdminSetupPage from '../page';
 describe('AdminSetupPage (/admin/setup)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (isAdminRequest as jest.Mock).mockResolvedValue(true);
+  });
+
+  it('redirects unauthenticated callers to /admin/login with HTTP 303 without Edge middleware', async () => {
+    (isAdminRequest as jest.Mock).mockResolvedValueOnce(false);
+
+    let caughtError: (Error & { digest?: string }) | null = null;
+    try {
+      await AdminSetupPage();
+    } catch (err) {
+      caughtError = err as Error & { digest?: string };
+    }
+
+    expect(redirect).toHaveBeenCalledWith('/admin/login');
+    expect(caughtError?.digest).toBe('NEXT_REDIRECT;replace;/admin/login;303;');
+    expect(getAppConfig).not.toHaveBeenCalled();
+  });
+
+  it('mounts SetupWizard without auth redirect during STATIC_EXPORT builds', async () => {
+    const prevStaticExport = process.env.STATIC_EXPORT;
+    process.env.STATIC_EXPORT = 'true';
+    (isAdminRequest as jest.Mock).mockResolvedValue(false);
+
+    try {
+      const element = await AdminSetupPage();
+      render(element);
+      expect(screen.getByTestId('setup-wizard-mock')).toBeInTheDocument();
+      expect(redirect).not.toHaveBeenCalled();
+    } finally {
+      if (prevStaticExport === undefined) {
+        delete process.env.STATIC_EXPORT;
+      } else {
+        process.env.STATIC_EXPORT = prevStaticExport;
+      }
+    }
   });
 
   it('redirects to /admin/dashboard when setupCompleted is true on an initialized site', async () => {

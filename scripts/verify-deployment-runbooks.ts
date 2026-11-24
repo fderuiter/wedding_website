@@ -3108,10 +3108,26 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
-  const forwardedIdx = configTsRaw.indexOf("'x-forwarded-host'");
-  const hostIdx = configTsRaw.indexOf("headersList.get('host')");
-  if (forwardedIdx === -1 || hostIdx === -1 || forwardedIdx > hostIdx) {
-    errors.push("src/lib/config.ts: `getSubdomainFromHeaders` must check `'x-forwarded-host'` before `'host'`");
+  const delegatesToSharedHostHelper = configTsRaw.includes('resolveRequestSubdomain(');
+  const hostValidationPath = path.join(repoRoot, 'src/utils/hostValidation.ts');
+  const hostSourceToCheck =
+    delegatesToSharedHostHelper && fs.existsSync(hostValidationPath)
+      ? fs.readFileSync(hostValidationPath, 'utf8')
+      : configTsRaw;
+  const checkingSharedHostHelper =
+    delegatesToSharedHostHelper && fs.existsSync(hostValidationPath);
+  const forwardedIdx = hostSourceToCheck.indexOf("'x-forwarded-host'");
+  const hostIdx = checkingSharedHostHelper
+    ? hostSourceToCheck.indexOf(".get('host')")
+    : hostSourceToCheck.indexOf("headersList.get('host')");
+  if (
+    !delegatesToSharedHostHelper || checkingSharedHostHelper
+      ? forwardedIdx === -1 || hostIdx === -1 || forwardedIdx > hostIdx
+      : false
+  ) {
+    errors.push(
+      "src/lib/config.ts: `getSubdomainFromHeaders` (or `resolveRequestHost` in `src/utils/hostValidation.ts`) must check `'x-forwarded-host'` before `'host'`"
+    );
   }
 
   const prismaSchemaRaw = fs.readFileSync(path.join(repoRoot, 'prisma/schema.prisma'), 'utf8');

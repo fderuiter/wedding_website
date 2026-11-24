@@ -3,6 +3,12 @@ import RootLayout from '../layout';
 import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { GUEST_INVITE_COOKIE, signGuestInviteSessionToken } from '@/core/auth/guestInviteSession';
+import {
+  GUEST_CALLBACK_URL_HEADER,
+  GUEST_GATED_PAGE_HEADER,
+  GUEST_HEADER_SIGNATURE_HEADER,
+  signGuestInternalHeaders,
+} from '@/core/auth/guestHeaderSignature';
 import { GUEST_COOKIE, signGuestToken } from '@/core/auth/guest.server';
 import { ADMIN_COOKIE, signAdminToken } from '@/core/auth/auth.server';
 import { prisma } from '@/lib/prisma';
@@ -331,10 +337,12 @@ describe('RootLayout Server Component Cookie Hydration', () => {
       mockCookies.mockResolvedValue({
         get: (name: string) => (name === GUEST_INVITE_COOKIE ? { value: revokedToken } : undefined),
       });
+      const validPhotosSig = await signGuestInternalHeaders('1', '/photos');
       mockHeaders.mockResolvedValue({
         get: (name: string) => {
-          if (name === 'x-guest-gated-page') return '1';
-          if (name === 'x-guest-callback-url') return '/photos';
+          if (name === GUEST_GATED_PAGE_HEADER) return '1';
+          if (name === GUEST_CALLBACK_URL_HEADER) return '/photos';
+          if (name === GUEST_HEADER_SIGNATURE_HEADER) return validPhotosSig;
           return null;
         },
       });
@@ -387,10 +395,12 @@ describe('RootLayout Server Component Cookie Hydration', () => {
       mockCookies.mockResolvedValue({
         get: (name: string) => (name === GUEST_INVITE_COOKIE ? { value: revokedToken } : undefined),
       });
+      const validExcludedSig = await signGuestInternalHeaders('0', '/guest/login');
       mockHeaders.mockResolvedValue({
         get: (name: string) => {
-          if (name === 'x-guest-gated-page') return '0';
-          if (name === 'x-guest-callback-url') return '/guest/login';
+          if (name === GUEST_GATED_PAGE_HEADER) return '0';
+          if (name === GUEST_CALLBACK_URL_HEADER) return '/guest/login';
+          if (name === GUEST_HEADER_SIGNATURE_HEADER) return validExcludedSig;
           return null;
         },
       });
@@ -398,6 +408,38 @@ describe('RootLayout Server Component Cookie Hydration', () => {
       const jsx = await RootLayout({ children: <div>Login Form</div> });
       expect(jsx.type).toBe('html');
       expect(mockRedirect).not.toHaveBeenCalled();
+    });
+
+    it('queries InvitationCode and redirects with 303 to /guest/login when caller forges unsigned x-guest-gated-page: 0 or x-guest-callback-url', async () => {
+      mockFindUnique.mockResolvedValue(null);
+      const revokedToken = await signGuestInviteSessionToken({
+        code: 'REVOKEME1',
+        guestName: 'Former Guest',
+      });
+
+      mockCookies.mockResolvedValue({
+        get: (name: string) => (name === GUEST_INVITE_COOKIE ? { value: revokedToken } : undefined),
+      });
+      mockHeaders.mockResolvedValue({
+        get: (name: string) => {
+          if (name === GUEST_GATED_PAGE_HEADER) return '0';
+          if (name === GUEST_CALLBACK_URL_HEADER) return '/guest/login';
+          return null;
+        },
+      });
+
+      let caughtError: (Error & { digest?: string }) | null = null;
+      try {
+        await RootLayout({ children: <div>Protected Content</div> });
+      } catch (err) {
+        caughtError = err as Error & { digest?: string };
+      }
+
+      expect(mockFindUnique).toHaveBeenCalledWith({
+        where: { code: 'REVOKEME1', isSample: false },
+      });
+      expect(mockRedirect).toHaveBeenCalledWith('/guest/login');
+      expect(caughtError?.digest).toBe('NEXT_REDIRECT;replace;/guest/login;303;');
     });
   });
 
@@ -512,10 +554,12 @@ describe('RootLayout Server Component Cookie Hydration', () => {
       ]);
       const configMod = await import('@/lib/config');
       (configMod.getAppConfig as jest.Mock).mockResolvedValue(fullRawConfig);
+      const validLoginHeaderSig = await signGuestInternalHeaders('0', '/guest/login');
       mockHeaders.mockResolvedValue({
         get: (name: string) => {
-          if (name === 'x-guest-gated-page') return '0';
-          if (name === 'x-guest-callback-url') return '/guest/login';
+          if (name === GUEST_GATED_PAGE_HEADER) return '0';
+          if (name === GUEST_CALLBACK_URL_HEADER) return '/guest/login';
+          if (name === GUEST_HEADER_SIGNATURE_HEADER) return validLoginHeaderSig;
           return null;
         },
       });

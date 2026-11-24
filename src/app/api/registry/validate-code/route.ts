@@ -10,6 +10,10 @@ import {
   verifyGuestInviteSessionToken,
   GUEST_INVITE_COOKIE,
 } from '@/core/auth/guestInviteSession';
+import {
+  resolveTenantClaimsForSigning,
+  verifyNodeTenantClaims,
+} from '@/core/auth/tenantClaims.node';
 import { readRequestCookie } from '@/core/auth/tokenCookieHelpers';
 import { hasAddressCollectionTag } from '@/features/registry';
 
@@ -90,7 +94,8 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
       if (
         existingPayload &&
         existingPayload.code.trim().toUpperCase() === invite.code.trim().toUpperCase() &&
-        existingPayload.guestName === invite.guestName
+        existingPayload.guestName === invite.guestName &&
+        (await verifyNodeTenantClaims(existingPayload, request))
       ) {
         token = existingToken;
       }
@@ -98,9 +103,11 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
   }
 
   if (!token) {
+    const tenantClaims = await resolveTenantClaimsForSigning(request);
     token = await signGuestInviteSessionToken({
       code: invite.code,
       guestName: invite.guestName,
+      ...tenantClaims,
     });
   }
 

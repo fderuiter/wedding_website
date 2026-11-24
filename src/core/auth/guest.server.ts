@@ -1,5 +1,10 @@
 import { NextRequest } from 'next/server';
-import { env } from '@/env';
+import { normalizeTenantSubdomain } from '@/utils/hostValidation';
+import { resolveGuestSigningSecret } from './guestHeaderSignature';
+import {
+  resolveEdgeRequestSubdomain,
+  verifyEdgeTenantClaims,
+} from './tenantClaims';
 import {
   readRequestCookie,
   signCompactToken,
@@ -8,34 +13,11 @@ import {
 
 export const GUEST_COOKIE = 'guest_auth';
 
-async function getSecret(): Promise<string> {
-  const isProduction = (process.env.NODE_ENV || env.NODE_ENV) === 'production';
-  const fallback = isProduction ? '' : 'default-guest-session-secret';
-  const secret = isProduction
-    ? (process.env.GUEST_SESSION_SECRET || fallback)
-    : (env.GUEST_SESSION_SECRET || process.env.GUEST_SESSION_SECRET || fallback);
-  const passcode = isProduction
-    ? (process.env.GUEST_PASSCODE || 'wedding2026')
-    : (env.GUEST_PASSCODE || process.env.GUEST_PASSCODE || 'wedding2026');
-
-  if (isProduction) {
-    if (!secret || secret === 'default-guest-session-secret') {
-      throw new Error('GUEST_SESSION_SECRET must be configured with a distinct secret in production');
-    }
-    if (secret.length < 32) {
-      throw new Error('GUEST_SESSION_SECRET must be at least 32 characters long in production');
-    }
-  }
-
-  if (secret === passcode) {
-    throw new Error('GUEST_SESSION_SECRET must not use the value of GUEST_PASSCODE');
-  }
-  return secret;
-}
-
 interface GuestTokenPayload {
   guest: boolean;
   jti?: string;
+  siteId?: string;
+  subdomain?: string | null;
   iat?: number;
   exp?: number;
 }
@@ -48,13 +30,16 @@ function createPerLoginTokenId(): string {
 }
 
 export async function signGuestToken(payload: GuestTokenPayload): Promise<string> {
-  const secret = await getSecret();
+  const secret = resolveGuestSigningSecret();
   if (!secret) {
     throw new Error('Guest auth secret is not configured');
   }
   const normalizedPayload: GuestTokenPayload = {
     ...payload,
     jti: payload.jti ?? createPerLoginTokenId(),
+    ...('subdomain' in payload && payload.subdomain !== undefined
+      ? { subdomain: normalizeTenantSubdomain(payload.subdomain) }
+      : {}),
   };
   return signCompactToken(normalizedPayload, secret);
 }
@@ -63,7 +48,7 @@ export async function verifyGuestToken(token: string): Promise<GuestTokenPayload
   if (!token || typeof token !== 'string') return null;
 
   try {
-    const secret = await getSecret();
+    const secret = resolveGuestSigningSecret();
     if (!secret) return null;
     const payload = await verifyCompactToken<GuestTokenPayload>(token, secret);
     if (!payload || payload.guest !== true) {
@@ -81,10 +66,23 @@ export async function verifyGuestToken(token: string): Promise<GuestTokenPayload
   }
 }
 
-export async function isGuestRequest(req?: NextRequest): Promise<boolean> {
-  const cookieValue = await readRequestCookie(GUEST_COOKIE, req);
+export async function isGuestRequest(
+  req?: NextRequest,
+  options?: { edgeOnly?: boolean }
+): Promise<boolean> {
+  const cookieValue = await readRequestCookie(GUEST_COOKIE, req, { suppressErrors: true });
   if (!cookieValue) return false;
 
   const payload = await verifyGuestToken(cookieValue);
-  return Boolean(payload && payload.guest === true);
+  if (!payload || payload.guest !== true) {
+    return false;
+  }
+
+  if (process.env.NEXT_RUNTIME !== 'edge' && !options?.edgeOnly) {
+    const { verifyNodeTenantClaims } = await import('./tenantClaims.node');
+    return verifyNodeTenantClaims(payload, req);
+  }
+
+  const requestSubdomain = await resolveEdgeRequestSubdomain(req);
+  return verifyEdgeTenantClaims(payload, requestSubdomain);
 }
