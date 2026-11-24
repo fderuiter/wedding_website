@@ -198,10 +198,15 @@ async function waitForStaticRouteSettled(page: Page, theme: ColorTheme) {
     .catch(() => {});
   await page
     .waitForFunction(
-      () =>
-        Array.from(document.querySelectorAll('link[rel="stylesheet"]')).every((link) =>
-          Boolean((link as HTMLLinkElement).sheet)
-        ),
+      () => {
+        if (document.readyState !== 'complete') return false;
+        const linksLoaded = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).every(
+          (link) => Boolean((link as HTMLLinkElement).sheet)
+        );
+        if (!linksLoaded) return false;
+        const heroNav = document.querySelector('nav[aria-label="Primary navigation"]');
+        return !heroNav || window.getComputedStyle(heroNav).opacity === '1';
+      },
       { timeout: 10_000 }
     )
     .catch(() => {});
@@ -219,10 +224,11 @@ async function waitForStaticRouteSettled(page: Page, theme: ColorTheme) {
 }
 
 async function runWcagAudit(page: Page): Promise<AxeViolation[]> {
-  const builder = new AxeBuilder({ page })
-    .exclude('iframe')
-    .withTags([...a11yConfig.runOnly.values]);
-  builder.options({
+  const builder = new AxeBuilder({ page }).exclude('iframe').options({
+    runOnly: {
+      type: a11yConfig.runOnly.type,
+      values: [...a11yConfig.runOnly.values],
+    },
     rules: {
       ...(a11yConfig.rules ?? {}),
       'label-content-name-mismatch': { enabled: true },
@@ -328,7 +334,7 @@ test.describe('Standalone Static Showcase Runtime & WCAG 2.2 AA Audit @a11y-stat
 
           try {
             const targetUrl = `${origin}${basePath}${routePath === '/' ? '/' : `${routePath}/`}`;
-            const docResponse = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+            const docResponse = await page.goto(targetUrl, { waitUntil: 'load' });
             await waitForStaticRouteSettled(page, theme);
 
             const status = docResponse?.status() ?? 0;
@@ -481,7 +487,7 @@ test.describe('Standalone Static Showcase Runtime & WCAG 2.2 AA Audit @a11y-stat
           }
         );
 
-        await errorPage.goto(`${origin}${basePath}/weather/`, { waitUntil: 'domcontentloaded' });
+        await errorPage.goto(`${origin}${basePath}/weather/`, { waitUntil: 'load' });
         await waitForStaticRouteSettled(errorPage, theme);
         await expect(
           errorPage.getByText('Failed to load forecast. Please try again later.')
@@ -503,7 +509,7 @@ test.describe('Standalone Static Showcase Runtime & WCAG 2.2 AA Audit @a11y-stat
           buildDemoSeedForRoute('/admin/dashboard/invitation-codes')
         );
         await page.goto(`${origin}${basePath}/admin/dashboard/invitation-codes/`, {
-          waitUntil: 'domcontentloaded',
+          waitUntil: 'load',
         });
         await waitForStaticRouteSettled(page, theme);
 
@@ -528,7 +534,7 @@ test.describe('Standalone Static Showcase Runtime & WCAG 2.2 AA Audit @a11y-stat
           buildDemoSeedForRoute('/photos/slideshow')
         );
         await page.goto(`${origin}${basePath}/photos/slideshow/`, {
-          waitUntil: 'domcontentloaded',
+          waitUntil: 'load',
         });
         await waitForStaticRouteSettled(page, theme);
 
@@ -560,7 +566,7 @@ test.describe('Standalone Static Showcase Runtime & WCAG 2.2 AA Audit @a11y-stat
           buildDemoSeedForRoute('/registry/add-item')
         );
         await page.goto(`${origin}${basePath}/registry/add-item/`, {
-          waitUntil: 'domcontentloaded',
+          waitUntil: 'load',
         });
         await waitForStaticRouteSettled(page, theme);
 
