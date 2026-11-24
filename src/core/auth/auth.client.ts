@@ -1,5 +1,8 @@
 import { apiClient } from '@/features/admin';
-import { isDemoAdminSession, isDemoRuntimeActive } from '@/lib/demo/demoStore';
+import {
+  isDemoAdminSession,
+  isDemoRuntimeActive,
+} from '@/lib/demo/demoRuntimeBridge';
 
 /**
  * Checks the admin status by calling the `/api/admin/me` endpoint.

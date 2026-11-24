@@ -18,8 +18,12 @@ import {
   type ArchetypeId,
 } from './archetypes';
 import { ArchetypeIdSchema } from './schemas';
+import {
+  REGISTRY_EDIT_FALLBACK_ID,
+  buildRegistryEditItemHref,
+} from './registryEditHref';
 
-export const REGISTRY_EDIT_FALLBACK_ID = 'fallback';
+export { REGISTRY_EDIT_FALLBACK_ID, buildRegistryEditItemHref };
 export const SAMPLE_SUBEVENT_ID_PREFIX = 'sample-subevent-';
 
 const BASE_SEED_TIMESTAMP_MS = Date.parse('2026-01-15T12:00:00.000Z');
@@ -1031,17 +1035,6 @@ export function getRegistryEditStaticParams(): Array<{ id: string }> {
   addId('1');
 
   return result;
-}
-
-export function buildRegistryEditItemHref(
-  id: string,
-  useFallbackQuery = false
-): string {
-  const trimmed = id.trim();
-  if (useFallbackQuery) {
-    return `/registry/edit-item/${REGISTRY_EDIT_FALLBACK_ID}?id=${encodeURIComponent(trimmed)}`;
-  }
-  return `/registry/edit-item/${encodeURIComponent(trimmed)}`;
 }
 
 export function findSeededRegistryItemById(
