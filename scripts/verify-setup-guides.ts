@@ -687,6 +687,7 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
       packageManager?: { name?: string; version?: string; onFail?: string };
     };
     devDependencies?: Record<string, string>;
+    'lint-staged'?: Record<string, string>;
   };
 
   // Validate Node.js 22 LTS & npm@10.9.x toolchain parity across .nvmrc, .npmrc, package.json, pretest.mjs, and setup/versioning docs
@@ -919,6 +920,26 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   if (!/\blint-staged\b/.test(preCommitRaw)) {
     errors.push('.githooks/pre-commit: Must run "npx lint-staged" on staged files');
   }
+  const lintStagedCmd = pkg['lint-staged']?.['*.{js,jsx,ts,tsx,mjs,cjs}'] ?? '';
+  if (
+    !lintStagedCmd.includes('--cache') ||
+    !lintStagedCmd.includes('.eslintcache') ||
+    !lintStagedCmd.includes('--no-warn-ignored') ||
+    !lintStagedCmd.includes('--fix') ||
+    !lintStagedCmd.includes('--max-warnings=0')
+  ) {
+    errors.push(
+      'package.json: "lint-staged" must pass "--cache --cache-location .eslintcache --no-warn-ignored --fix --max-warnings=0"'
+    );
+  }
+  if (
+    !scripts['docs:sync']?.includes('scripts/generate-openapi.ts') ||
+    !scripts['docs:sync']?.includes('scripts/generate-docs.ts')
+  ) {
+    errors.push(
+      'package.json: "docs:sync" must invoke "scripts/generate-openapi.ts" and "scripts/generate-docs.ts"'
+    );
+  }
   for (const legacyHelper of ['hasUnstagedChanges', 'pushStash', 'popStash']) {
     if (preCommitRaw.includes(legacyHelper)) {
       errors.push(`.githooks/pre-commit: Must remove legacy stash helper "${legacyHelper}"`);
@@ -946,11 +967,30 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   if (!prePushScripts.includes('type-check') && !prePushScripts.includes('typecheck')) {
     errors.push('.githooks/pre-push: Must run "type-check"');
   }
+  if (!prePushScripts.includes('lint')) {
+    errors.push('.githooks/pre-push: Must run "lint"');
+  }
   if (!prePushScripts.includes('lint:unused')) {
     errors.push('.githooks/pre-push: Must run "lint:unused"');
   }
+  if (!prePushScripts.includes('check:audit')) {
+    errors.push('.githooks/pre-push: Must run "check:audit" when lockfiles change');
+  }
   if (!prePushScripts.includes('check:setup-guides')) {
     errors.push('.githooks/pre-push: Must run "check:setup-guides"');
+  }
+  if (!/\bworktree\b/.test(prePushRaw)) {
+    errors.push(
+      '.githooks/pre-push: Must verify dirty pushes inside an ephemeral detached git worktree'
+    );
+  }
+  if (
+    !prePushRaw.includes('package-lock.json') ||
+    !prePushRaw.includes('docker/prisma-cli/package-lock.json')
+  ) {
+    errors.push(
+      '.githooks/pre-push: Must guard "check:audit" against both "package-lock.json" and "docker/prisma-cli/package-lock.json"'
+    );
   }
   for (const staticSubscript of staticStepScripts) {
     if (staticSubscript === 'check:standalone') {
@@ -1246,6 +1286,11 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
       '.github/CONTRIBUTING.md: Push to Your Fork section must document ".githooks/pre-push"'
     );
   }
+  if (!contributingPushSection.includes('worktree')) {
+    errors.push(
+      '.github/CONTRIBUTING.md: Push to Your Fork section must document ephemeral "git worktree" verification'
+    );
+  }
   for (const hookScript of prePushScripts) {
     if (!contributingPushSection.includes(hookScript)) {
       errors.push(
@@ -1259,6 +1304,11 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     errors.push('scripts/verify-doc-sync.ts: DEFAULT_DOC_FILES must not be empty');
   }
   const contributingDocSyncLines = extractDocSyncBulletLines(contributingRaw);
+  if (!contributingDocSyncLines.includes('docs:sync')) {
+    errors.push(
+      '.github/CONTRIBUTING.md: "npm run check:doc-sync" documentation must also reference "npm run docs:sync"'
+    );
+  }
   for (const docFile of defaultDocFiles) {
     if (!contributingDocSyncLines.includes(docFile)) {
       errors.push(
@@ -1369,13 +1419,32 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   // 6. AGENTS.md concise workflow & TypeScript configuration split checks
   const tsconfig = JSON.parse(tsconfigRaw) as { exclude?: string[] };
   const tsconfigExcludes = tsconfig.exclude ?? [];
-  const tsconfigBuild = JSON.parse(tsconfigBuildRaw) as { exclude?: string[] };
+  const tsconfigBuild = JSON.parse(tsconfigBuildRaw) as {
+    compilerOptions?: { incremental?: boolean; tsBuildInfoFile?: string };
+    exclude?: string[];
+  };
   const tsconfigBuildExcludes = tsconfigBuild.exclude ?? [];
+  if (
+    tsconfigBuild.compilerOptions?.incremental !== true ||
+    tsconfigBuild.compilerOptions?.tsBuildInfoFile !== './tsconfig.build.tsbuildinfo'
+  ) {
+    errors.push(
+      'tsconfig.build.json: Must enable "incremental": true with "tsBuildInfoFile": "./tsconfig.build.tsbuildinfo"'
+    );
+  }
   const agentsTsSection = extractMarkdownSection(
     agentsRaw,
     /^##\s+3\.\s+TypeScript Configuration Split\b/,
     /^##\s+/
   );
+  if (
+    !agentsTsSection.includes('tsconfig.build.tsbuildinfo') ||
+    agentsTsSection.includes('incremental: false')
+  ) {
+    errors.push(
+      'AGENTS.md: TypeScript Configuration Split section must document incremental tsconfig.build.json ("./tsconfig.build.tsbuildinfo")'
+    );
+  }
   for (const excludePattern of tsconfigExcludes) {
     if (!agentsTsSection.includes(`\`${excludePattern}\``)) {
       errors.push(

@@ -70,6 +70,7 @@
     "check:env-docs": "npx tsx scripts/verify-env-docs.ts",
     "check:runbooks": "npx tsx scripts/verify-deployment-runbooks.ts",
     "check:doc-sync": "npx tsx scripts/verify-doc-sync.ts",
+    "docs:sync": "npx tsx scripts/generate-openapi.ts && npx tsx scripts/generate-docs.ts --skip-openapi",
     "check:setup-guides": "npx tsx scripts/verify-setup-guides.ts",
     "check:spec-contracts": "npx tsx scripts/verify-spec-contracts.ts",
     "check:static": "npx tsx scripts/check-quality.ts --static",
@@ -248,6 +249,6 @@
     "webpack-dev-middleware": "^7.4.6"
   },
   "lint-staged": {
-    "*.{js,jsx,ts,tsx,mjs,cjs}": "eslint --fix --max-warnings=0"
+    "*.{js,jsx,ts,tsx,mjs,cjs}": "eslint --cache --cache-location .eslintcache --no-warn-ignored --fix --max-warnings=0"
   }
 }
