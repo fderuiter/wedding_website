@@ -90,4 +90,18 @@ describe('RootLayoutClient Standalone Presentation Suppression', () => {
     expect(screen.getByRole('dialog', { name: /Guest Help & Support/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /couple@example\.com/i })).toBeInTheDocument();
   });
+
+  it('omits outer <main> wrapper on /guest/claim and /guest/collect where child pages provide #main-content', () => {
+    for (const selfMainRoute of ['/guest/claim', '/guest/collect']) {
+      mockPathname = selfMainRoute;
+      const { unmount } = render(
+        <RootLayoutClient config={mockConfig}>
+          <main id="main-content">Self-managed main landmark</main>
+        </RootLayoutClient>
+      );
+
+      expect(screen.getAllByRole('main')).toHaveLength(1);
+      unmount();
+    }
+  });
 });

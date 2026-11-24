@@ -775,6 +775,31 @@ jobs:
               exit 1
             fi
           done
+      - name: Cache Playwright Chromium browser
+        id: playwright-chromium-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-chromium-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
+      - name: Install Playwright Chromium Browser
+        if: steps.playwright-chromium-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - name: Install Playwright Chromium OS Dependencies
+        if: steps.playwright-chromium-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      - name: Audit static HTML showcase runtime and WCAG 2.2 AA accessibility
+        env:
+          NEXT_PUBLIC_BASE_PATH: ${{ steps.base-path.outputs.demo_base }}
+        run: npm run test:e2e:static
+      - name: Upload Static Showcase A11y Violations
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: static-a11y-violations
+          path: test-results/static-a11y-violations.json
+          if-no-files-found: warn
       - name: Upload Static Demo Showcase Artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -956,7 +981,7 @@ jobs:
         run: docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml down -v || true
 
   a11y-report:
-    needs: [unit-test, e2e-test]
+    needs: [unit-test, e2e-test, static-export-build]
     if: '!cancelled()'
     runs-on: ubuntu-latest
     permissions:
@@ -982,8 +1007,14 @@ jobs:
         with:
           name: playwright-a11y-violations
           path: test-results
+      - name: Download Static Showcase A11y Violations
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: static-a11y-violations
+          path: test-results
       - name: Generate A11y Report
-        run: node scripts/a11y-report.mjs
+        run: node scripts/a11y-report.mjs --include-static
       - name: Post A11y Report to PR
         if: "!cancelled() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository"
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -1074,6 +1105,8 @@ jobs:
           if [ "$BUILT_DEMO_BASE" != "$EXPECTED_DEMO_BASE" ]; then
             echo "Rebuilding static demo for Pages base path: ${EXPECTED_DEMO_BASE}"
             NEXT_PUBLIC_BASE_PATH="$EXPECTED_DEMO_BASE" npm run build:export
+            npx playwright install --with-deps chromium
+            NEXT_PUBLIC_BASE_PATH="$EXPECTED_DEMO_BASE" npm run test:e2e:static
             rm -rf docs-portal/.vitepress/dist/demo
             mkdir -p docs-portal/.vitepress/dist/demo
             cp -R out/. docs-portal/.vitepress/dist/demo/

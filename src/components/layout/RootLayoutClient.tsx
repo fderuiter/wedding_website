@@ -26,7 +26,13 @@ import {
   invalidateSampleDataCaches,
 } from '@/lib/adminCacheSync';
 
-if (typeof window !== 'undefined' && window.navigator.userAgent.includes('HeadlessChrome')) {
+if (
+  typeof window !== 'undefined' &&
+  (window.navigator.userAgent.includes('HeadlessChrome') ||
+    window.navigator.webdriver === true ||
+    (typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches))
+) {
   MotionGlobalConfig.skipAnimations = true;
 }
 
@@ -148,6 +154,10 @@ function RootLayoutInner({
     normalizedPathname === '/admin/dashboard' ||
     Boolean(normalizedPathname?.startsWith('/admin/dashboard/')) ||
     isSetupPage;
+  const hasOwnMainLandmark =
+    isAdminDashboardPage ||
+    normalizedPathname === '/guest/claim' ||
+    normalizedPathname === '/guest/collect';
 
   const handleLogout = async () => {
     if (isDemoMode && demo) {
@@ -211,7 +221,7 @@ function RootLayoutInner({
               hasVisibleFaqs={effectiveFaqs ? effectiveFaqs.length > 0 : undefined}
             />
           )}
-          {isAdminDashboardPage ? (
+          {hasOwnMainLandmark ? (
             <div
               className={bottomToolbarClearance}
               style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}

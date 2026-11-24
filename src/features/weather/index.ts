@@ -1,2 +1,7 @@
 export { default as Forecast } from './components/Forecast';
-export * from './api/weather-proxy';
+export { getWeatherForecast } from './api/weather-proxy';
+export {
+  computeLiveForecastAvailableDate,
+  formatForecastDateInTimezone,
+  getLocalizedClimateFallback,
+} from './climateFallback';

@@ -18,6 +18,11 @@ import type { SeatingTableDTO } from '@/features/seating';
 import type { WeddingPartyMemberDTO, WeddingPartySide } from '@/features/wedding-party';
 import type { AttractionDTO } from '@/features/attractions';
 import {
+  computeLiveForecastAvailableDate,
+  formatForecastDateInTimezone,
+  getLocalizedClimateFallback,
+} from '@/features/weather';
+import {
   ADDRESS_LINE_MAX_LENGTH,
   CITY_MAX_LENGTH,
   COUNTRY_MAX_LENGTH,
@@ -1938,6 +1943,37 @@ async function handleDemoApi(
         autoApproveGuestPhotos: demoAutoApproveGuestPhotos,
       });
     }
+  }
+
+  if (path === '/api/weather' && method === 'GET') {
+    const state = getDemoState();
+    const preset = ARCHETYPE_PRESETS[state.archetype] ?? ARCHETYPE_PRESETS.classic;
+    const overrides = state.configOverrides;
+    const latitude =
+      typeof overrides.latitude === 'number' && Number.isFinite(overrides.latitude)
+        ? overrides.latitude
+        : preset.siteConfig.latitude;
+    const longitude =
+      typeof overrides.longitude === 'number' && Number.isFinite(overrides.longitude)
+        ? overrides.longitude
+        : preset.siteConfig.longitude;
+    const timezone =
+      (typeof overrides.timezone === 'string' && overrides.timezone.trim()) ||
+      preset.siteConfig.timezone ||
+      'UTC';
+    const rawWeddingDate =
+      overrides.weddingDate instanceof Date && !Number.isNaN(overrides.weddingDate.getTime())
+        ? overrides.weddingDate
+        : new Date(preset.siteConfig.weddingDate);
+    const weddingDate = Number.isNaN(rawWeddingDate.getTime())
+      ? new Date('2026-09-19T16:00:00.000Z')
+      : rawWeddingDate;
+    const weddingDayStr = formatForecastDateInTimezone(weddingDate, timezone);
+    const availableDateStr = computeLiveForecastAvailableDate(weddingDayStr, timezone);
+
+    return jsonResponse(
+      getLocalizedClimateFallback(latitude, longitude, weddingDayStr, availableDateStr)
+    );
   }
 
   // Delegate extended OpenAPI routes (schedule, rsvp, photos, weather, media, content-nodes,
