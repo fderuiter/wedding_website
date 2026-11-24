@@ -1,9 +1,12 @@
 import type { Metadata, Viewport } from 'next';
-import { getAppConfig } from '@/lib/config';
+import { getAppConfig, toUnauthenticatedAppConfig } from '@/lib/config';
 import { stripBasePath, withBasePath } from '@/lib/basePath';
 import { getLocalImageDimensions } from '@/utils/image-metadata';
 import { getValidatedCanonicalUrl } from '@/utils/hostValidation';
 import { deriveBrandMonogram } from '@/features/content';
+import { isAdminRequest } from '@/core/auth/auth.server';
+import { isGuestRequest } from '@/core/auth/guest.server';
+import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 
 function interpolateKeywords(templateStr: string, config: any): string[] {
   if (!templateStr) return [];
@@ -25,15 +28,36 @@ export async function generateViewport(): Promise<Viewport> {
 }
 
 export async function generateMetadata(): Promise<Metadata> {
-  const config = await getAppConfig();
-  
+  const rawConfig = await getAppConfig();
+
+  const isStaticExport =
+    process.env.STATIC_EXPORT === 'true' ||
+    process.env.STATIC_EXPORT === '1' ||
+    process.env.npm_lifecycle_event === 'build:export';
+
+  let isAuthenticated = isStaticExport;
+  if (!isStaticExport) {
+    try {
+      isAuthenticated =
+        (await isAdminRequest()) ||
+        (await isGuestRequest()) ||
+        Boolean(await getGuestInviteSession());
+    } catch {
+      isAuthenticated = false;
+    }
+  }
+
+  const config = isAuthenticated ? rawConfig : toUnauthenticatedAppConfig(rawConfig);
+
   const partner1 = config.partner1Name || config.brideName || '';
   const partner2 = config.partner2Name || config.groomName || '';
   const couplesNames = partner1 && partner2 ? `${partner1} & ${partner2}` : '';
   const monogram = deriveBrandMonogram(config);
-  const brandIdentity = config.brandMonogram || couplesNames || monogram;
+  const brandIdentity = isAuthenticated
+    ? config.brandMonogram || couplesNames || monogram
+    : config.brandMonogram?.trim() || 'Wedding Website';
 
-  const rawOgImageUrl = config.ogImageUrl || '/api/og';
+  const rawOgImageUrl = isAuthenticated ? config.ogImageUrl || '/api/og' : '/api/og';
   const ogImageUrl = rawOgImageUrl === '/images/placeholder.png' ? '/api/og' : rawOgImageUrl;
   const faviconUrl = config.faviconUrl || '/assets/favicon.png';
   const seoKeywords = config.seoKeywords || '';
@@ -83,14 +107,17 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 
   const dynamicKeywords = interpolateKeywords(seoKeywords, config);
-  const dims = await getLocalImageDimensions(unprefixedOgImageUrl);
+  const dims = isAuthenticated ? await getLocalImageDimensions(unprefixedOgImageUrl) : null;
   const ogImageObj = {
     url: siteConfig.ogImage,
     width: dims?.width || 1200,
     height: dims?.height || 630,
-    alt: config.brandLogoAlt || (partner1 && partner2
-      ? `A photo for ${partner1} and ${partner2}'s wedding.`
-      : 'Wedding website cover photo.'),
+    alt: isAuthenticated
+      ? config.brandLogoAlt ||
+        (partner1 && partner2
+          ? `A photo for ${partner1} and ${partner2}'s wedding.`
+          : 'Wedding website cover photo.')
+      : 'Wedding website cover photo.',
   };
 
   return {
@@ -103,6 +130,14 @@ export async function generateMetadata(): Promise<Metadata> {
     authors: [{ name: brandIdentity, url: config.baseUrl }],
     creator: brandIdentity,
     publisher: brandIdentity,
+    ...(!isAuthenticated
+      ? {
+        robots: {
+          index: false,
+          follow: false,
+        },
+      }
+      : {}),
     icons: {
       icon: siteConfig.favicon,
       shortcut: siteConfig.favicon,

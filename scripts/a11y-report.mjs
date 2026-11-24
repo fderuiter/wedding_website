@@ -28,50 +28,87 @@ function normalizePlaywrightViolations(rawData) {
 
 export function generateReport(options = {}) {
   const cwd = options.cwd || process.cwd();
+  const onlyStatic = Boolean(options.onlyStatic);
+  const requireStatic = Boolean(options.requireStatic || onlyStatic);
   let totalViolations = 0;
   const incompleteSuites = [];
   let report = '## Accessibility Health Summary\n\n';
 
   const jestFile = path.join(cwd, 'test-results', 'jest-a11y-violations.json');
-  report += '### Component Level (Jest)\n';
-  if (fs.existsSync(jestFile)) {
-    const jestViolations = JSON.parse(fs.readFileSync(jestFile, 'utf8'));
-    if (jestViolations.length === 0) {
-      report += '✅ No accessibility violations found in components.\n\n';
+  if (!onlyStatic || fs.existsSync(jestFile)) {
+    report += '### Component Level (Jest)\n';
+    if (fs.existsSync(jestFile)) {
+      const jestViolations = JSON.parse(fs.readFileSync(jestFile, 'utf8'));
+      if (jestViolations.length === 0) {
+        report += '✅ No accessibility violations found in components.\n\n';
+      } else {
+        totalViolations += jestViolations.length;
+        report += `❌ Found ${jestViolations.length} violations in components.\n`;
+        jestViolations.forEach((v) => {
+          report += `- **${v.id}**: ${v.description} (${v.impact})\n`;
+        });
+        report += '\n';
+      }
     } else {
-      totalViolations += jestViolations.length;
-      report += `❌ Found ${jestViolations.length} violations in components.\n`;
-      jestViolations.forEach((v) => {
-        report += `- **${v.id}**: ${v.description} (${v.impact})\n`;
-      });
-      report += '\n';
+      incompleteSuites.push('jest');
+      report +=
+        '⚠️ Incomplete: Jest accessibility artifact (`test-results/jest-a11y-violations.json`) was not found.\n\n';
     }
-  } else {
-    incompleteSuites.push('jest');
-    report +=
-      '⚠️ Incomplete: Jest accessibility artifact (`test-results/jest-a11y-violations.json`) was not found.\n\n';
   }
 
   const pwFile = path.join(cwd, 'test-results', 'playwright-a11y-violations.json');
-  report += '### Page Level (Playwright)\n';
-  if (fs.existsSync(pwFile)) {
-    const parsedPw = JSON.parse(fs.readFileSync(pwFile, 'utf8'));
-    const pwViolations = normalizePlaywrightViolations(parsedPw);
-    if (pwViolations.length === 0) {
-      report += '✅ No accessibility violations found in pages.\n\n';
+  if (!onlyStatic || fs.existsSync(pwFile)) {
+    report += '### Page Level (Playwright)\n';
+    if (fs.existsSync(pwFile)) {
+      const parsedPw = JSON.parse(fs.readFileSync(pwFile, 'utf8'));
+      const pwViolations = normalizePlaywrightViolations(parsedPw);
+      if (pwViolations.length === 0) {
+        report += '✅ No accessibility violations found in pages.\n\n';
+      } else {
+        totalViolations += pwViolations.length;
+        report += `❌ Found ${pwViolations.length} violations in pages.\n`;
+        pwViolations.forEach((v) => {
+          const routeLabel = v.route ? ` (\`${v.route}\`)` : '';
+          report += `- **${v.id}**${routeLabel}: ${v.description} (${v.impact})\n`;
+        });
+        report += '\n';
+      }
     } else {
-      totalViolations += pwViolations.length;
-      report += `❌ Found ${pwViolations.length} violations in pages.\n`;
-      pwViolations.forEach((v) => {
-        const routeLabel = v.route ? ` (\`${v.route}\`)` : '';
-        report += `- **${v.id}**${routeLabel}: ${v.description} (${v.impact})\n`;
-      });
-      report += '\n';
+      incompleteSuites.push('playwright');
+      report +=
+        '⚠️ Incomplete: Playwright accessibility artifact (`test-results/playwright-a11y-violations.json`) was not found.\n\n';
     }
-  } else {
-    incompleteSuites.push('playwright');
-    report +=
-      '⚠️ Incomplete: Playwright accessibility artifact (`test-results/playwright-a11y-violations.json`) was not found.\n\n';
+  }
+
+  const staticFile = path.join(cwd, 'test-results', 'static-a11y-violations.json');
+  if (fs.existsSync(staticFile) || requireStatic) {
+    report += '### Static Showcase (Playwright Light & Dark)\n';
+    if (fs.existsSync(staticFile)) {
+      const parsedStatic = JSON.parse(fs.readFileSync(staticFile, 'utf8'));
+      const scanCount =
+        parsedStatic && typeof parsedStatic === 'object' && !Array.isArray(parsedStatic)
+          ? Object.keys(parsedStatic).length
+          : 0;
+      const staticViolations = normalizePlaywrightViolations(parsedStatic);
+      if (staticViolations.length === 0) {
+        report +=
+          scanCount > 0
+            ? `✅ No accessibility violations found across ${scanCount} static showcase route/theme scans.\n\n`
+            : '✅ No accessibility violations found in static showcase.\n\n';
+      } else {
+        totalViolations += staticViolations.length;
+        report += `❌ Found ${staticViolations.length} violations in static showcase.\n`;
+        staticViolations.forEach((v) => {
+          const routeLabel = v.route ? ` (\`${v.route}\`)` : '';
+          report += `- **${v.id}**${routeLabel}: ${v.description} (${v.impact})\n`;
+        });
+        report += '\n';
+      }
+    } else {
+      incompleteSuites.push('static-showcase');
+      report +=
+        '⚠️ Incomplete: Static showcase accessibility artifact (`test-results/static-a11y-violations.json`) was not found.\n\n';
+    }
   }
 
   if (incompleteSuites.length > 0) {
@@ -175,6 +212,62 @@ export function runA11yUnit(options = {}) {
   return 0;
 }
 
+export function runA11yStatic(options = {}) {
+  const cwd = options.cwd || process.cwd();
+  const runStep = options.runStep || defaultRunStep;
+  const basePath =
+    options.basePath || process.env.NEXT_PUBLIC_BASE_PATH || '/wedding_website/demo';
+
+  const outIndex = path.join(cwd, 'out', 'index.html');
+  if (!fs.existsSync(outIndex) || options.forceBuildExport) {
+    const buildStatus = runStep('npm', ['run', 'build:export'], cwd, {
+      NEXT_PUBLIC_BASE_PATH: basePath,
+    });
+    if (buildStatus !== 0) {
+      return buildStatus;
+    }
+  }
+
+  const resultsDir = path.join(cwd, 'test-results');
+  fs.mkdirSync(resultsDir, { recursive: true });
+  const staticFile = path.join(resultsDir, 'static-a11y-violations.json');
+  fs.rmSync(staticFile, { force: true });
+  for (const entry of fs.readdirSync(resultsDir)) {
+    if (entry.startsWith('.static-a11y-shard-')) {
+      fs.rmSync(path.join(resultsDir, entry), { force: true });
+    }
+  }
+
+  const playwrightStatus = runStep(
+    'npx',
+    ['playwright', 'test', '-c', 'playwright.static.config.ts'],
+    cwd,
+    {
+      NEXT_PUBLIC_BASE_PATH: basePath,
+    }
+  );
+  if (fs.existsSync(resultsDir)) {
+    for (const entry of fs.readdirSync(resultsDir)) {
+      if (entry.startsWith('.static-a11y-shard-')) {
+        fs.rmSync(path.join(resultsDir, entry), { force: true });
+      }
+    }
+  }
+  const { totalViolations } = generateReport({
+    cwd,
+    onlyStatic: true,
+    requireStatic: true,
+  });
+
+  if (playwrightStatus !== 0) {
+    return playwrightStatus;
+  }
+  if (totalViolations > 0) {
+    return 1;
+  }
+  return 0;
+}
+
 export function runA11ySuite(options = {}) {
   const cwd = options.cwd || process.cwd();
   const runStep = options.runStep || defaultRunStep;
@@ -211,13 +304,22 @@ export function main(argv = process.argv.slice(2), options = {}) {
     return;
   }
 
+  if (argv.includes('--static')) {
+    const exitCode = runA11yStatic(options);
+    process.exit(exitCode);
+    return;
+  }
+
   if (argv.includes('--run')) {
     const exitCode = runA11ySuite(options);
     process.exit(exitCode);
     return;
   }
 
-  const { totalViolations } = generateReport(options);
+  const reportOptions = argv.includes('--include-static')
+    ? { ...options, requireStatic: true }
+    : options;
+  const { totalViolations } = generateReport(reportOptions);
   if (totalViolations > 0) {
     process.exit(1);
     return;

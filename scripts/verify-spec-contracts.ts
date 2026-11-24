@@ -2631,6 +2631,115 @@ function verifyArchitectureAndMiddlewareContracts(
       }
     }
   }
+
+  verifyDemoRuntimeSpecContracts(rootDir, specFiles, errors);
+}
+
+const DEMO_RUNTIME_SOURCE_MODULES = [
+  'src/components/layout/RootLayoutClient.tsx',
+  'src/components/demo/DemoContext.tsx',
+  'src/components/demo/DemoToolbar.tsx',
+  'src/lib/demo/demoStore.ts',
+  'src/lib/demo/demoApiHandler.ts',
+  'src/lib/sampleData/builder.ts',
+  'src/features/registry/components/SimulatedCardCheckout.tsx',
+  'src/app/admin/setup/page.tsx',
+] as const;
+
+const DEMO_RUNTIME_SPEC_DOCS = [
+  'ARCHITECTURE.md',
+  'docs/runtime-contract.md',
+  'DEPLOYMENT.md',
+] as const;
+
+function extractDemoStorageKeyFromStore(rootDir: string): string | null {
+  const storePath = path.join(rootDir, 'src/lib/demo/demoStore.ts');
+  if (!fs.existsSync(storePath)) {
+    return null;
+  }
+  const sourceText = fs.readFileSync(storePath, 'utf8');
+  const sf = ts.createSourceFile(
+    storePath,
+    sourceText,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+
+  let storageKey: string | null = null;
+  function visit(node: ts.Node): void {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === 'DEMO_STORAGE_KEY' &&
+      node.initializer &&
+      (ts.isStringLiteral(node.initializer) ||
+        ts.isNoSubstitutionTemplateLiteral(node.initializer))
+    ) {
+      storageKey = node.initializer.text;
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sf);
+  return storageKey;
+}
+
+function verifyDemoRuntimeSpecContracts(
+  rootDir: string,
+  specFiles: string[],
+  errors: string[],
+): void {
+  const presentDemoModules = DEMO_RUNTIME_SOURCE_MODULES.filter((relPath) =>
+    fs.existsSync(path.join(rootDir, relPath)),
+  );
+  if (presentDemoModules.length === 0) {
+    return;
+  }
+
+  const demoStorageKey = extractDemoStorageKeyFromStore(rootDir);
+  const pkgPath = path.join(rootDir, 'package.json');
+  let hasBuildExportScript = false;
+  if (fs.existsSync(pkgPath)) {
+    try {
+      const parsedPkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as {
+        scripts?: Record<string, string>;
+      };
+      hasBuildExportScript = Boolean(parsedPkg.scripts?.['build:export']);
+    } catch {
+      hasBuildExportScript = false;
+    }
+  }
+
+  for (const specRel of DEMO_RUNTIME_SPEC_DOCS) {
+    if (!specFiles.includes(specRel)) {
+      continue;
+    }
+    const specAbs = path.join(rootDir, specRel);
+    if (!fs.existsSync(specAbs)) {
+      continue;
+    }
+    const prose = stripFencesAndHtmlComments(fs.readFileSync(specAbs, 'utf8'));
+
+    for (const moduleRel of presentDemoModules) {
+      if (!prose.includes(moduleRel)) {
+        errors.push(
+          `${specRel}: Interactive demo runtime module "${moduleRel}" is not documented in ${specRel}`,
+        );
+      }
+    }
+
+    if (demoStorageKey && !prose.includes(demoStorageKey)) {
+      errors.push(
+        `${specRel}: Demo storage key "${demoStorageKey}" from src/lib/demo/demoStore.ts is not documented in ${specRel}`,
+      );
+    }
+
+    if (hasBuildExportScript && !prose.includes('build:export')) {
+      errors.push(
+        `${specRel}: Static showcase export script "build:export" from package.json is not documented in ${specRel}`,
+      );
+    }
+  }
 }
 
 function verifyOpenApiProbeContracts(rootDir: string): string[] {

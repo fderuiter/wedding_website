@@ -13,7 +13,7 @@ import { useTheme } from '@/components/ThemeProvider';
 import { Button, BUTTON_DEFAULT_STYLE, getButtonClassName } from '@/components/ui/Button';
 import { useOverlay } from '@/hooks/useOverlay';
 import { useUnified3DInput } from '../../hooks/useUnified3DInput';
-import { HEART_FONT_URL } from './constants';
+import { resolveHeartFontUrl } from './constants';
 import { Sparkles } from './components/Sparkles';
 import { Heart3D } from './components/Heart3D';
 import { ScreenBounds } from './components/ScreenBounds';
@@ -321,7 +321,7 @@ function PhysicsHeart({
 
       {showEasterEgg && (
         <Text
-          font={HEART_FONT_URL}
+          font={resolveHeartFontUrl()}
           position={[0, 0, 5]}
           fontSize={1.5}
           anchorX="center"

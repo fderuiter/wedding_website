@@ -103,9 +103,6 @@ export default async function RootLayout({
 }>) {
   const config = await getAppConfig();
   const isUninitialized = !isSiteInitialized(config);
-  const visibleFaqs = isUninitialized
-    ? []
-    : await withPageQuery(() => logisticsService.getVisibleFaqs(), []);
 
   const isStaticExport = process.env.STATIC_EXPORT === 'true' ||
                          process.env.STATIC_EXPORT === '1' ||
@@ -136,6 +133,11 @@ export default async function RootLayout({
       // Ignore if cookies are unavailable
     }
   }
+
+  const visibleFaqs =
+    isUninitialized || !isAuthenticated
+      ? []
+      : await withPageQuery(() => logisticsService.getVisibleFaqs(), []);
 
   const layoutConfig = isAuthenticated
     ? toPublicAppConfig(config)

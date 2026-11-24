@@ -6,6 +6,13 @@ import { GUEST_INVITE_COOKIE, signGuestInviteSessionToken } from '@/core/auth/gu
 import { GUEST_COOKIE, signGuestToken } from '@/core/auth/guest.server';
 import { ADMIN_COOKIE, signAdminToken } from '@/core/auth/auth.server';
 import { prisma } from '@/lib/prisma';
+import { logisticsService } from '@/features/logistics';
+
+jest.mock('@/features/logistics', () => ({
+  logisticsService: {
+    getVisibleFaqs: jest.fn(),
+  },
+}));
 
 jest.mock('next/headers', () => ({
   cookies: jest.fn(),
@@ -34,12 +41,18 @@ jest.mock('@/components/layout/RootLayoutClient', () => {
   return function MockRootLayoutClient({
     children,
     config,
+    faqs,
   }: {
     children: React.ReactNode;
     config?: unknown;
+    faqs?: unknown;
   }) {
     return (
-      <div data-testid="root-layout-client" data-config={JSON.stringify(config)}>
+      <div
+        data-testid="root-layout-client"
+        data-config={JSON.stringify(config)}
+        data-faqs={JSON.stringify(faqs)}
+      >
         {children}
       </div>
     );
@@ -462,12 +475,41 @@ describe('RootLayout Server Component Cookie Hydration', () => {
       return themeProviderEl!.props.config;
     }
 
+    function extractRootLayoutClientProps(jsx: Awaited<ReturnType<typeof RootLayout>>) {
+      const themeProviderEl = React.Children.toArray(
+        (jsx.props.children[1] as React.ReactElement<{ children?: React.ReactNode }>).props.children
+      ).find(
+        (child): child is React.ReactElement<{ children?: React.ReactNode; hasServerStylesheet?: boolean }> =>
+          React.isValidElement(child) &&
+          (child.props as { hasServerStylesheet?: boolean }).hasServerStylesheet === true
+      );
+      expect(themeProviderEl).toBeDefined();
+      const toastProviderEl = themeProviderEl!.props.children as React.ReactElement<{
+        children?: React.ReactNode;
+      }>;
+      const clientEl = toastProviderEl.props.children as React.ReactElement<{
+        config: Record<string, any>;
+        faqs: unknown[];
+      }>;
+      return clientEl.props;
+    }
+
     beforeEach(async () => {
       originalInvitationCode = prismaWithInvite.invitationCode;
       mockFindUnique = jest.fn();
       prismaWithInvite.invitationCode = {
         findUnique: mockFindUnique,
       };
+      (logisticsService.getVisibleFaqs as jest.Mock).mockResolvedValue([
+        {
+          id: 'faq-1',
+          question: 'Where is shuttle pickup?',
+          answer: 'Private hotel lobby at 3:30 PM.',
+          category: 'Logistics',
+          displayOrder: 0,
+          isVisible: true,
+        },
+      ]);
       const configMod = await import('@/lib/config');
       (configMod.getAppConfig as jest.Mock).mockResolvedValue(fullRawConfig);
       mockHeaders.mockResolvedValue({
@@ -501,9 +543,20 @@ describe('RootLayout Server Component Cookie Hydration', () => {
       expect(passedConfig.heroTitle).toBe('');
       expect(passedConfig.heroSubtitle).toBe('');
       expect(passedConfig.features).toEqual([]);
-      expect(passedConfig.partner1Name).toBe('Alice');
+      expect(passedConfig.partner1Name).toBe('');
+      expect(passedConfig.partner2Name).toBe('');
+      expect(passedConfig.brideName).toBe('');
+      expect(passedConfig.groomName).toBe('');
+      expect(passedConfig.weddingDate).toBe('');
+      expect(passedConfig.seoTitle).toBe('');
+      expect(passedConfig.seoDescription).toBe('');
+      expect(passedConfig.seoKeywords).toBe('');
       expect(passedConfig.contactEmail).toBe('hosts@wedding.example');
       expect(passedConfig.colorPrimary).toBe('#991B1B');
+
+      expect(logisticsService.getVisibleFaqs).not.toHaveBeenCalled();
+      const clientProps = extractRootLayoutClientProps(jsx);
+      expect(clientProps.faqs).toEqual([]);
     });
 
     it('withholds gated config on /guest/login when caller holds a revoked or sample guest_invite_session cookie', async () => {
@@ -540,6 +593,8 @@ describe('RootLayout Server Component Cookie Hydration', () => {
       expect(sampleConfig.photoAlbumUrl).toBe('');
       expect(sampleConfig.venueAddress).toBe('');
       expect(sampleConfig.features).toEqual([]);
+      expect(logisticsService.getVisibleFaqs).not.toHaveBeenCalled();
+      expect(extractRootLayoutClientProps(sampleJsx).faqs).toEqual([]);
     });
 
     it('passes toPublicAppConfig (with hidden sections still redacted) when authenticated via active guest_invite_session, guest_auth, or admin_auth', async () => {
@@ -613,6 +668,8 @@ describe('RootLayout Server Component Cookie Hydration', () => {
       const adminConfig = extractThemeProviderConfig(adminJsx);
       expect(adminConfig.venueAddress).toBe('99 Secret Garden Way');
       expect(adminConfig.photoAlbumUrl).toBe('https://photos.example.invalid/album-secret');
+      expect(logisticsService.getVisibleFaqs).toHaveBeenCalledTimes(3);
+      expect(extractRootLayoutClientProps(adminJsx).faqs).toHaveLength(1);
     });
   });
 });

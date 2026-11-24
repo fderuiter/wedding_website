@@ -124,17 +124,29 @@ function renderDemoShell(isStaticExport = true, extraChild?: React.ReactNode) {
 }
 
 describe('DemoToolbar & DemoProvider', () => {
+  const originalBasePath = process.env.NEXT_PUBLIC_BASE_PATH;
+
   beforeEach(() => {
     mockPathname = '/';
     mockPush.mockReset();
     window.localStorage.clear();
     resetDemoState();
+    delete process.env.NEXT_PUBLIC_BASE_PATH;
+  });
+
+  afterEach(() => {
+    if (originalBasePath === undefined) {
+      delete process.env.NEXT_PUBLIC_BASE_PATH;
+    } else {
+      process.env.NEXT_PUBLIC_BASE_PATH = originalBasePath;
+    }
   });
 
   it('does not render DemoToolbar or activate demo runtime when isStaticExport is false (standalone server mode)', async () => {
     renderDemoShell(false);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.queryByTestId('demo-toolbar')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('demo-showcase-links')).not.toBeInTheDocument();
     expect(screen.getByTestId('probe-persona')).toHaveTextContent('none');
     expect(isDemoRuntimeActive()).toBe(false);
   });
@@ -162,6 +174,42 @@ describe('DemoToolbar & DemoProvider', () => {
     } finally {
       window.fetch = originalFetch;
     }
+  });
+
+  it('renders subpath-safe showcase links to /, /api/, and /storybook/ in both expanded and collapsed toolbar states', async () => {
+    process.env.NEXT_PUBLIC_BASE_PATH = '/wedding_website/demo';
+    const { unmount } = renderDemoShell(true);
+
+    const assertShowcaseLinks = (expectedPrefix: string) => {
+      const docsLink = screen.getByTestId('demo-link-docs');
+      const apiLink = screen.getByTestId('demo-link-api');
+      const storybookLink = screen.getByTestId('demo-link-storybook');
+
+      expect(docsLink).toHaveAttribute('href', `${expectedPrefix}/`);
+      expect(docsLink).toHaveAttribute('data-static-demo-bypass', 'true');
+      expect(apiLink).toHaveAttribute('href', `${expectedPrefix}/api/`);
+      expect(apiLink).toHaveAttribute('data-static-demo-bypass', 'true');
+      expect(storybookLink).toHaveAttribute('href', `${expectedPrefix}/storybook/`);
+      expect(storybookLink).toHaveAttribute('data-static-demo-bypass', 'true');
+      expect(storybookLink).toHaveAttribute('target', '_blank');
+      expect(storybookLink).toHaveAttribute('rel', 'noopener noreferrer');
+    };
+
+    // Expanded state on repository subpath
+    const toggleBtn = await screen.findByTestId('demo-toolbar-toggle');
+    expect(toggleBtn).toHaveAttribute('aria-expanded', 'true');
+    assertShowcaseLinks('/wedding_website');
+
+    // Collapsed state on repository subpath
+    fireEvent.click(toggleBtn);
+    expect(toggleBtn).toHaveAttribute('aria-expanded', 'false');
+    assertShowcaseLinks('/wedding_website');
+
+    unmount();
+    delete process.env.NEXT_PUBLIC_BASE_PATH;
+    renderDemoShell(true);
+    await screen.findByTestId('demo-toolbar-toggle');
+    assertShowcaseLinks('');
   });
 
   it('renders DemoToolbar with Invited Guest active by default and persists visitor selections across remounts', async () => {
