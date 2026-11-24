@@ -2,6 +2,23 @@
   "name": "prisma-cli-isolated",
   "version": "1.0.0",
   "private": true,
+  "packageManager": "npm@10.9.11+sha512.3da90f8750d59cdb9ac567a167d74341cbc1026a49abb9271e20d62864b14f9f15d757035426732e1d8dfa98cc51a4f668a6e3cdfa5b82d73c31731e80dec88c",
+  "engines": {
+    "node": ">=22.22.1 <23.0.0",
+    "npm": "^10.9.0"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": ">=22.22.1 <23.0.0",
+      "onFail": "error"
+    },
+    "packageManager": {
+      "name": "npm",
+      "version": "^10.9.0",
+      "onFail": "error"
+    }
+  },
   "dependencies": {
     "@prisma/config": "7.10.1",
     "prisma": "7.10.1"

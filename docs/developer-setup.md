@@ -8,7 +8,7 @@ This guide provides step-by-step instructions for configuring a local developmen
 
 Before installing the application, verify that your machine meets the minimum system requirements:
 
-- **Node.js & npm**: Node.js **v22.x LTS** (`>=22.22.1 <23.0.0`, pinned in [`.nvmrc`](../.nvmrc)) and **`npm@10.9.x`** (`^10.9.0`, enforced via [`.npmrc`](../.npmrc) and `devEngines` in [`package.json`](../package.json)). Verify your installed versions with `node -v` and `npm -v` (or run `nvm use`).
+- **Node.js & npm**: Node.js **v22.x LTS** (`>=22.22.1 <23.0.0`, pinned in [`.nvmrc`](../.nvmrc)) and **`npm@10.9.x`** (`^10.9.0`, pinned via `packageManager` for Corepack and enforced via [`.npmrc`](../.npmrc) and `devEngines` in [`package.json`](../package.json) and [`docker/prisma-cli/package.json`](../docker/prisma-cli/package.json)). Run `nvm use` and `corepack enable`, then verify your active versions with `node -v` and `corepack npm -v` (`npm -v`).
 - **Git**: Modern Git for version control and branch management (`git --version`).
 - **PostgreSQL Database**: A running PostgreSQL instance (v15+ recommended). You can run PostgreSQL locally, via Docker, or use cloud-hosted instances (e.g. Neon, Supabase, Railway, AWS RDS, GCP Cloud SQL). Refer to the [PostgreSQL Database Contract in DEPLOYMENT.md](../DEPLOYMENT.md) and [Application Runtime Contract](./runtime-contract.md) for operational expectations.
 - **Docker & Docker Compose** *(Optional)*: Recommended for automated test database containerization and container smoke tests.
@@ -17,12 +17,13 @@ Before installing the application, verify that your machine meets the minimum sy
 
 ## 2. Cloning the Repository & Installing Dependencies
 
-1. **Clone the repository and select Node.js 22 LTS:**
+1. **Clone the repository, select Node.js 22 LTS, and activate Corepack:**
 
    ```bash
    git clone https://github.com/fderuiter/wedding_website.git
    cd wedding_website
    nvm use
+   corepack enable
    ```
 
 2. **Install project dependencies from the lockfile:**
@@ -31,7 +32,7 @@ Before installing the application, verify that your machine meets the minimum sy
    npm ci
    ```
 
-   The `postinstall` lifecycle hook automatically runs `prisma generate` to compile the Prisma Client and records `node_modules/.package-lock-hash` so the first test run skips redundant dependency installation.
+   The `postinstall` lifecycle hook automatically runs `next typegen`, `prisma generate` to compile the Prisma Client, and `node scripts/pretest.mjs --record-install-state` to prune unreachable WASM optional packages on non-`wasm32` hosts and record `node_modules/.package-lock-hash` so the first test run skips redundant dependency installation.
 
 ---
 

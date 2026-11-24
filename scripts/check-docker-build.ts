@@ -1742,11 +1742,6 @@ export function checkDockerBuild(
         'package-lock.json',
         parsedRootLock,
         rootManifest.overrides,
-        {
-          ...(rootManifest.dependencies ?? {}),
-          ...(rootManifest.devDependencies ?? {}),
-          ...(rootManifest.optionalDependencies ?? {}),
-        },
         violations
       );
     } catch (err) {
@@ -1768,11 +1763,6 @@ export function checkDockerBuild(
         'docker/prisma-cli/package-lock.json',
         parsedCliLock,
         cliManifest.overrides,
-        {
-          ...(cliManifest.dependencies ?? {}),
-          ...(cliManifest.devDependencies ?? {}),
-          ...(cliManifest.optionalDependencies ?? {}),
-        },
         violations
       );
     } catch (err) {
@@ -2148,28 +2138,18 @@ function validateLockfilePeerDependencies(
   lockRelPath: string,
   lockData: ParsedLockfile,
   manifestOverrides: Record<string, unknown> | undefined,
-  manifestRootDeps: Record<string, string>,
   violations: Violation[]
 ): void {
   const packages = lockData.packages;
   if (!packages) {
     return;
   }
-  const rootLockNode = packages[''] ?? {};
-  const rootDeps: Record<string, string> = {
-    ...manifestRootDeps,
-    ...(rootLockNode.dependencies ?? {}),
-    ...(rootLockNode.devDependencies ?? {}),
-    ...(rootLockNode.optionalDependencies ?? {}),
-  };
 
   for (const [pkgPath, pkgNode] of Object.entries(packages)) {
     if (!pkgPath || !pkgNode.peerDependencies || pkgNode.resolved?.startsWith('file:')) {
       continue;
     }
     const pkgName = extractPackageNameFromLockPath(pkgPath);
-    const isTopLevelNode = !pkgPath.slice('node_modules/'.length).includes('node_modules/');
-    const isDirectRootDep = isTopLevelNode && Object.prototype.hasOwnProperty.call(rootDeps, pkgName);
 
     for (const [peerName, peerRange] of Object.entries(pkgNode.peerDependencies)) {
       const isOptional = pkgNode.peerDependenciesMeta?.[peerName]?.optional === true;
@@ -2209,10 +2189,6 @@ function validateLockfilePeerDependencies(
           resolved.node.version
         )
       ) {
-        continue;
-      }
-
-      if (!isDirectRootDep && Object.prototype.hasOwnProperty.call(rootDeps, peerName)) {
         continue;
       }
 
