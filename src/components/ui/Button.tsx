@@ -7,6 +7,7 @@ export interface ButtonProps extends React.ComponentPropsWithRef<'button'> {
   size?: 'sm' | 'md' | 'lg';
   pressed?: boolean;
   srContext?: string;
+  busy?: boolean;
 }
 
 export const BUTTON_DEFAULT_STYLE: React.CSSProperties = {
@@ -15,7 +16,7 @@ export const BUTTON_DEFAULT_STYLE: React.CSSProperties = {
 };
 
 const BUTTON_BASE_STYLES =
-  'inline-flex items-center justify-center text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:forced-colors:outline focus-visible:forced-colors:outline-2 disabled:opacity-50 disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:cursor-not-allowed';
+  'inline-flex items-center justify-center text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:forced-colors:outline focus-visible:forced-colors:outline-2 disabled:opacity-50 disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:cursor-not-allowed aria-busy:cursor-wait';
 
 const BUTTON_VARIANTS: Record<NonNullable<ButtonProps['variant']>, string> = {
   primary:
@@ -61,19 +62,23 @@ export function Button({
   size = 'md',
   pressed,
   srContext,
+  busy,
   style,
   disabled,
   type,
   onClick,
   onKeyDown,
   children,
+  'aria-busy': ariaBusyProp,
   'aria-disabled': ariaDisabledProp,
   'aria-pressed': ariaPressedProp,
   ref,
   ...props
 }: ButtonProps) {
   const isAriaDisabled = ariaDisabledProp === true || ariaDisabledProp === 'true';
-  const isDisabled = Boolean(disabled) || isAriaDisabled;
+  const isBusy = Boolean(busy);
+  const isDisabled = Boolean(disabled) || isAriaDisabled || isBusy;
+  const resolvedAriaBusy = busy !== undefined ? (busy ? true : undefined) : ariaBusyProp;
   const resolvedAriaPressed = pressed !== undefined ? pressed : ariaPressedProp;
   const isPressed =
     pressed === true ||
@@ -102,6 +107,7 @@ export function Button({
       ref={ref}
       type={type}
       disabled={disabled}
+      aria-busy={resolvedAriaBusy}
       aria-disabled={isDisabled ? true : undefined}
       aria-pressed={resolvedAriaPressed}
       style={{

@@ -1,6 +1,7 @@
 'use client';
 
 import { useReducer, useEffect, useRef, useCallback, type SubmitEvent } from 'react';
+import { focusFirstInvalidControl } from '@/components/ui/forms';
 import { useToast } from '@/components/ui/ToastProvider';
 import { withBasePath } from '@/lib/basePath';
 
@@ -256,6 +257,33 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
   }, []);
 
   const validationAbortControllerRef = useRef<AbortController | null>(null);
+  const activeValidationCodeRef = useRef<string | null>(null);
+  const isSavingRef = useRef(false);
+  const pendingCodeFocusRef = useRef(false);
+
+  const focusCodeInputNow = useCallback((): boolean => {
+    if (typeof document === 'undefined') return false;
+    const codeInput = document.getElementById('guest-invitation-code');
+    if (codeInput instanceof HTMLElement) {
+      codeInput.focus();
+      return true;
+    }
+    return Boolean(focusFirstInvalidControl(document));
+  }, []);
+
+  const requestCodeInputFocus = useCallback(() => {
+    pendingCodeFocusRef.current = true;
+    if (focusCodeInputNow()) {
+      pendingCodeFocusRef.current = false;
+    }
+  }, [focusCodeInputNow]);
+
+  useEffect(() => {
+    if (!pendingCodeFocusRef.current) return;
+    if (focusCodeInputNow()) {
+      pendingCodeFocusRef.current = false;
+    }
+  }, [focusCodeInputNow, state]);
 
   const cancelInFlightValidation = useCallback(() => {
     if (validationAbortControllerRef.current) {
@@ -337,9 +365,15 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
           error: 'Please enter your invitation code.',
           isAuthError: true,
         });
+        if (!isAutoMount) {
+          requestCodeInputFocus();
+        }
         return;
       }
 
+      if (!isAutoMount) {
+        activeValidationCodeRef.current = trimmedCode;
+      }
       dispatch({ type: 'VALIDATE_START', code: trimmedCode });
 
       try {
@@ -382,6 +416,9 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
             error: errMsg,
             isAuthError: isAuth,
           });
+          if (!isAutoMount && isAuth) {
+            requestCodeInputFocus();
+          }
           return;
         }
 
@@ -441,9 +478,13 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
           error: errorMsg,
           isAuthError: false,
         });
+      } finally {
+        if (!signal.aborted && !isAutoMount) {
+          activeValidationCodeRef.current = null;
+        }
       }
     },
-    [addToast, dispatch, fetchAddressData]
+    [addToast, dispatch, fetchAddressData, requestCodeInputFocus]
   );
 
   // Mount effect to check session or auto-validate URL code
@@ -478,13 +519,28 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
         e.preventDefault();
       }
 
+      if (stateRef.current.status === 'saving' || isSavingRef.current) {
+        return;
+      }
+
       const currentCode = stateRef.current.code;
-      if (!currentCode.trim()) {
+      const normalizedCode = currentCode.trim().toUpperCase();
+      if (
+        stateRef.current.status === 'validating' &&
+        !stateRef.current.isInitialLoading &&
+        activeValidationCodeRef.current !== null &&
+        normalizedCode === activeValidationCodeRef.current
+      ) {
+        return;
+      }
+
+      if (!normalizedCode) {
         dispatch({
           type: 'VALIDATE_FAILURE',
           error: 'Please enter your invitation code.',
           isAuthError: true,
         });
+        requestCodeInputFocus();
         return;
       }
 
@@ -494,7 +550,7 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
 
       await validateCode(currentCode, controller.signal, false);
     },
-    [cancelInFlightValidation, dispatch, validateCode]
+    [cancelInFlightValidation, dispatch, requestCodeInputFocus, validateCode]
   );
 
   const handleSaveAddress = useCallback(
@@ -503,6 +559,15 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
         e.preventDefault();
       }
 
+      if (
+        isSavingRef.current ||
+        stateRef.current.status === 'saving' ||
+        stateRef.current.status === 'validating'
+      ) {
+        return;
+      }
+
+      isSavingRef.current = true;
       dispatch({ type: 'SAVE_START' });
 
       try {
@@ -519,6 +584,7 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
             isAuthError: true,
           });
           addToast('Session expired. Please enter your invitation code.', 'error');
+          requestCodeInputFocus();
           return;
         }
 
@@ -560,9 +626,11 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
           isAuthError: false,
         });
         addToast(errorMsg, 'error');
+      } finally {
+        isSavingRef.current = false;
       }
     },
-    [addToast, dispatch]
+    [addToast, dispatch, requestCodeInputFocus]
   );
 
   const setField = useCallback((field: keyof AddressFormData, value: string) => {
@@ -574,13 +642,21 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
   }, [dispatch]);
 
   const handleRetry = useCallback(async () => {
+    if (
+      isSavingRef.current ||
+      stateRef.current.status === 'saving' ||
+      (stateRef.current.status === 'validating' && !stateRef.current.isInitialLoading)
+    ) {
+      return;
+    }
+
     cancelInFlightValidation();
     const controller = new AbortController();
     validationAbortControllerRef.current = controller;
 
     const currentCode = stateRef.current.code.trim();
     if (currentCode) {
-      await validateCode(currentCode, controller.signal, true);
+      await validateCode(currentCode, controller.signal, false);
     } else {
       await checkInitialSession(controller.signal);
     }

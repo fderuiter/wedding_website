@@ -95,7 +95,7 @@ export default function GuestAddressPage() {
                   variant="outline"
                   size="sm"
                   onClick={handleRetry}
-                  disabled={isValidating}
+                  busy={isValidating}
                 >
                   Retry
                 </Button>
@@ -134,7 +134,7 @@ export default function GuestAddressPage() {
               )}
             </FormGroup>
 
-            <Button type="submit" className="w-full" disabled={isValidating} aria-busy={isValidating}>
+            <Button type="submit" className="w-full" busy={isValidating}>
               {isValidating ? 'Verifying Code...' : 'Access Guest Portal'}
             </Button>
           </form>
@@ -323,7 +323,7 @@ export default function GuestAddressPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => handleSaveAddress()}
-                disabled={isSaving}
+                busy={isSaving}
               >
                 Retry Save
               </Button>
@@ -420,7 +420,7 @@ export default function GuestAddressPage() {
             </div>
 
             <div className="pt-4 flex items-center justify-end gap-3">
-              <Button type="submit" disabled={isSaving} aria-busy={isSaving}>
+              <Button type="submit" busy={isSaving}>
                 {isSaving ? 'Saving...' : 'Save Mailing Address'}
               </Button>
             </div>

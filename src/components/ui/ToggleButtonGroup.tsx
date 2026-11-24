@@ -9,6 +9,7 @@ export interface ToggleButtonOption<T extends string = string> {
   label: React.ReactNode;
   description?: React.ReactNode;
   disabled?: boolean;
+  busy?: boolean;
   'aria-label'?: string;
   className?: string;
   activeClassName?: string;
@@ -27,6 +28,7 @@ type BaseToggleButtonGroupProps<T extends string = string> = Omit<
     options: ToggleButtonOption<T>[];
     buttonClassName?: string;
     activateOnFocus?: boolean;
+    busy?: boolean;
   };
 
 type SingleToggleButtonGroupProps<T extends string = string> = BaseToggleButtonGroupProps<T> & {
@@ -56,7 +58,7 @@ function findNextEnabledIndex<T extends string>(
   if (count === 0) return -1;
   for (let offset = 1; offset <= count; offset++) {
     const candidate = (startIndex + step * offset + count) % count;
-    if (!options[candidate]?.disabled) {
+    if (!options[candidate]?.disabled && !options[candidate]?.busy) {
       return candidate;
     }
   }
@@ -64,12 +66,12 @@ function findNextEnabledIndex<T extends string>(
 }
 
 function findFirstEnabledIndex<T extends string>(options: ToggleButtonOption<T>[]): number {
-  return options.findIndex((opt) => !opt.disabled);
+  return options.findIndex((opt) => !opt.disabled && !opt.busy);
 }
 
 function findLastEnabledIndex<T extends string>(options: ToggleButtonOption<T>[]): number {
   for (let i = options.length - 1; i >= 0; i--) {
-    if (!options[i]?.disabled) return i;
+    if (!options[i]?.disabled && !options[i]?.busy) return i;
   }
   return -1;
 }
@@ -84,12 +86,16 @@ export function ToggleButtonGroup<T extends string = string>(props: ToggleButton
     className,
     buttonClassName,
     activateOnFocus,
+    busy = false,
+    'aria-busy': ariaBusyProp,
+    'aria-disabled': ariaDisabledProp,
     'aria-label': ariaLabel,
     'aria-labelledby': ariaLabelledBy,
     ref,
     ...rest
   } = props;
 
+  const isGroupBusy = Boolean(busy) || ariaBusyProp === true || ariaBusyProp === 'true';
   const buttonRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [focusedValue, setFocusedValue] = useState<T | null>(null);
 
@@ -107,23 +113,27 @@ export function ToggleButtonGroup<T extends string = string>(props: ToggleButton
     focusedValue !== null
       ? options.findIndex((opt) => !opt.disabled && opt.value === focusedValue)
       : -1;
-  const firstEnabledIndex = findFirstEnabledIndex(options);
+  const firstFocusableIndex = options.findIndex((opt) => !opt.disabled);
 
   const rovingIndex =
     mode === 'radiogroup'
       ? firstSelectedIndex >= 0
         ? firstSelectedIndex
-        : firstEnabledIndex
+        : firstFocusableIndex
       : focusedOptionIndex >= 0
         ? focusedOptionIndex
         : firstSelectedIndex >= 0
           ? firstSelectedIndex
-          : firstEnabledIndex;
+          : firstFocusableIndex;
 
   const shouldActivateOnFocus = activateOnFocus ?? mode === 'radiogroup';
 
-  const triggerSelect = (opt: ToggleButtonOption<T>) => {
-    if (opt.disabled) return;
+  const triggerSelect = (opt: ToggleButtonOption<T>, e?: React.MouseEvent<HTMLButtonElement>) => {
+    if (opt.disabled || isGroupBusy || opt.busy) {
+      e?.preventDefault();
+      e?.stopPropagation();
+      return;
+    }
     setFocusedValue(opt.value);
     if (multiple) {
       const current = value as T[];
@@ -137,6 +147,26 @@ export function ToggleButtonGroup<T extends string = string>(props: ToggleButton
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, currentIndex: number) => {
+    const currentOpt = options[currentIndex];
+    const isCurrentLocked = Boolean(isGroupBusy || currentOpt?.disabled || currentOpt?.busy);
+
+    if (isCurrentLocked) {
+      if (
+        e.key === 'Enter' ||
+        e.key === ' ' ||
+        e.key === 'ArrowRight' ||
+        e.key === 'ArrowDown' ||
+        e.key === 'ArrowLeft' ||
+        e.key === 'ArrowUp' ||
+        e.key === 'Home' ||
+        e.key === 'End'
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      return;
+    }
+
     let targetIndex = -1;
 
     switch (e.key) {
@@ -165,7 +195,7 @@ export function ToggleButtonGroup<T extends string = string>(props: ToggleButton
     if (targetIndex < 0) return;
 
     const targetOption = options[targetIndex];
-    if (!targetOption || targetOption.disabled) return;
+    if (!targetOption || targetOption.disabled || targetOption.busy) return;
 
     setFocusedValue(targetOption.value);
     buttonRefs.current[targetIndex]?.focus();
@@ -184,6 +214,8 @@ export function ToggleButtonGroup<T extends string = string>(props: ToggleButton
       role={mode}
       aria-label={ariaLabel}
       aria-labelledby={ariaLabelledBy}
+      aria-busy={busy ? true : ariaBusyProp}
+      aria-disabled={busy ? true : ariaDisabledProp}
       className={cn(defaultContainerStyles, className)}
       {...rest}
     >
@@ -191,6 +223,8 @@ export function ToggleButtonGroup<T extends string = string>(props: ToggleButton
         const isSelected = isOptionSelected(opt.value);
         const isRovingStop = index === rovingIndex;
         const isCardOption = opt.description !== undefined;
+        const isOptionBusy = Boolean(isGroupBusy || opt.busy) && !opt.disabled;
+        const isOptionAriaDisabled = Boolean(opt.disabled || isOptionBusy);
 
         const defaultActiveStyles = isCardOption
           ? 'border-2 border-primary bg-primary/10 ring-2 ring-primary font-semibold'
@@ -215,16 +249,18 @@ export function ToggleButtonGroup<T extends string = string>(props: ToggleButton
             aria-checked={mode === 'radiogroup' ? isSelected : undefined}
             aria-pressed={mode === 'group' ? isSelected : undefined}
             aria-label={opt['aria-label']}
+            aria-busy={isOptionBusy ? true : undefined}
+            aria-disabled={isOptionAriaDisabled ? true : undefined}
             disabled={opt.disabled}
             tabIndex={opt.disabled ? -1 : isRovingStop ? 0 : -1}
             onFocus={() => setFocusedValue(opt.value)}
-            onClick={() => triggerSelect(opt)}
+            onClick={(e) => triggerSelect(opt, e)}
             onKeyDown={(e) => handleKeyDown(e, index)}
             className={cn(
               isCardOption
                 ? 'p-4 rounded-xl text-left transition-all'
                 : 'inline-flex items-center justify-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md transition-all',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 disabled:cursor-not-allowed',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:cursor-not-allowed aria-busy:cursor-wait',
               isSelected
                 ? opt.activeClassName ?? defaultActiveStyles
                 : opt.inactiveClassName ?? defaultInactiveStyles,

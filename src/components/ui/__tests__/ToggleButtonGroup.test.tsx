@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import {
@@ -207,5 +207,70 @@ describe('ToggleButtonGroup', () => {
     const classicRadio = screen.getByRole('radio', { name: /Classic/i });
     expect(classicRadio).toHaveClass('border-primary');
     expect(classicRadio.querySelector('svg[aria-hidden="true"]')).toBeInTheDocument();
+  });
+
+  it('busy prop sets aria-disabled="true" and aria-busy="true", preserves focus and roving tabIndex, blocks pointer/Enter/Space/roving keys, and passes jest-axe', async () => {
+    const onChange = jest.fn();
+
+    const { container, rerender } = render(
+      <div>
+        <span id="busy-rsvp-label">Your RSVP</span>
+        <ToggleButtonGroup
+          mode="radiogroup"
+          aria-labelledby="busy-rsvp-label"
+          value="attending"
+          onChange={onChange}
+          busy={false}
+          options={rsvpOptions}
+        />
+      </div>
+    );
+
+    const group = screen.getByRole('radiogroup', { name: 'Your RSVP' });
+    const attending = screen.getByRole('radio', { name: 'Attending' });
+    const declined = screen.getByRole('radio', { name: 'Declined' });
+    const pending = screen.getByRole('radio', { name: 'Pending' });
+
+    act(() => {
+      attending.focus();
+    });
+    expect(document.activeElement).toBe(attending);
+
+    rerender(
+      <div>
+        <span id="busy-rsvp-label">Your RSVP</span>
+        <ToggleButtonGroup
+          mode="radiogroup"
+          aria-labelledby="busy-rsvp-label"
+          value="attending"
+          onChange={onChange}
+          busy
+          options={rsvpOptions}
+        />
+      </div>
+    );
+
+    expect(document.activeElement).toBe(attending);
+    expect(group).toHaveAttribute('aria-busy', 'true');
+    expect(group).toHaveAttribute('aria-disabled', 'true');
+    expect(attending).not.toBeDisabled();
+    expect(attending).toHaveAttribute('tabIndex', '0');
+    expect(attending).toHaveAttribute('aria-busy', 'true');
+    expect(attending).toHaveAttribute('aria-disabled', 'true');
+
+    fireEvent.click(declined);
+    fireEvent.keyDown(attending, { key: 'Enter' });
+    fireEvent.keyDown(attending, { key: ' ' });
+    fireEvent.keyDown(attending, { key: 'ArrowRight' });
+    fireEvent.keyDown(attending, { key: 'ArrowDown' });
+    fireEvent.keyDown(attending, { key: 'Home' });
+    fireEvent.keyDown(attending, { key: 'End' });
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(attending);
+    expect(declined).toHaveAttribute('tabIndex', '-1');
+    expect(pending).toHaveAttribute('tabIndex', '-1');
+
+    expect(await axe(container)).toHaveNoViolations();
   });
 });

@@ -36,6 +36,7 @@ export interface SubEventRsvpItemState {
   isSubmitting: boolean;
   message: string | null;
   error: string | null;
+  fieldErrors: Record<string, string>;
 }
 
 interface EventPromptMeta {
@@ -82,50 +83,77 @@ function getPlusOneValidationError(
   return null;
 }
 
-function getEventPromptValidationError(
+interface EventValidationResult {
+  summaryError: string | null;
+  fieldErrors: Record<string, string>;
+}
+
+function validateEventRsvp(
   current: SubEventRsvpData,
   effectivePlusOneCount: number,
+  maxPlusOnes?: number | null,
   meta?: EventPromptMeta
-): string | null {
-  if (current.status !== 'attending' || !meta) {
-    return null;
+): EventValidationResult {
+  const fieldErrors: Record<string, string> = {};
+  let summaryError: string | null = null;
+
+  const plusOneError = getPlusOneValidationError(effectivePlusOneCount, maxPlusOnes);
+  if (plusOneError) {
+    fieldErrors.plusOneCount = plusOneError;
+    summaryError = plusOneError;
   }
 
-  if (meta.mealOptions.length > 0) {
-    const validMealIds = new Set(meta.mealOptions.map((m) => m.id));
-    const expectedPartySize = 1 + effectivePlusOneCount;
-    for (let idx = 0; idx < expectedPartySize; idx++) {
-      const selectedId = (current.mealSelections[idx] ?? '').trim();
-      if (!selectedId || !validMealIds.has(selectedId)) {
-        if (expectedPartySize === 1) {
-          return 'Please select an entrée option before saving.';
+  if (current.status === 'attending' && meta) {
+    if (meta.mealOptions.length > 0) {
+      const validMealIds = new Set(meta.mealOptions.map((m) => m.id));
+      const expectedPartySize = 1 + effectivePlusOneCount;
+      for (let idx = 0; idx < expectedPartySize; idx++) {
+        const selectedId = (current.mealSelections[idx] ?? '').trim();
+        if (!selectedId || !validMealIds.has(selectedId)) {
+          fieldErrors[`mealSelections.${idx}`] = 'Please select an entrée option.';
+          if (!summaryError) {
+            summaryError =
+              expectedPartySize === 1
+                ? 'Please select an entrée option before saving.'
+                : `Please select an entrée option for all ${expectedPartySize} attending guests.`;
+          }
         }
-        return `Please select an entrée option for all ${expectedPartySize} attending guests.`;
+      }
+
+      for (let pIdx = 0; pIdx < effectivePlusOneCount; pIdx++) {
+        if (!(current.plusOneNames[pIdx] ?? '').trim()) {
+          fieldErrors[`plusOneNames.${pIdx}`] = 'Please enter the full name for this plus-one guest.';
+          if (!summaryError) {
+            summaryError =
+              effectivePlusOneCount === 1
+                ? 'Please enter the full name for your attending plus-one guest.'
+                : `Please enter full names for all ${effectivePlusOneCount} attending plus-one guests.`;
+          }
+        }
       }
     }
 
-    for (let pIdx = 0; pIdx < effectivePlusOneCount; pIdx++) {
-      if (!(current.plusOneNames[pIdx] ?? '').trim()) {
-        return effectivePlusOneCount === 1
-          ? 'Please enter the full name for your attending plus-one guest.'
-          : `Please enter full names for all ${effectivePlusOneCount} attending plus-one guests.`;
+    if (meta.customQuestions.length > 0) {
+      for (const question of meta.customQuestions) {
+        const answer = (current.customAnswers[question.id] ?? '').trim();
+        if (question.required && !answer) {
+          const qErr = `Please answer required question: "${question.prompt}".`;
+          fieldErrors[`customAnswers.${question.id}`] = qErr;
+          if (!summaryError) {
+            summaryError = qErr;
+          }
+        } else if (answer && question.type === 'choice' && !question.options.includes(answer)) {
+          const qErr = `Please choose a valid option for "${question.prompt}".`;
+          fieldErrors[`customAnswers.${question.id}`] = qErr;
+          if (!summaryError) {
+            summaryError = qErr;
+          }
+        }
       }
     }
   }
 
-  if (meta.customQuestions.length > 0) {
-    for (const question of meta.customQuestions) {
-      const answer = (current.customAnswers[question.id] ?? '').trim();
-      if (question.required && !answer) {
-        return `Please answer required question: "${question.prompt}".`;
-      }
-      if (answer && question.type === 'choice' && !question.options.includes(answer)) {
-        return `Please choose a valid option for "${question.prompt}".`;
-      }
-    }
-  }
-
-  return null;
+  return { summaryError, fieldErrors };
 }
 
 function cloneRsvpData(data: SubEventRsvpData): SubEventRsvpData {
@@ -317,6 +345,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
           isSubmitting: false,
           message: null,
           error: null,
+          fieldErrors: {},
         };
       });
     }
@@ -327,6 +356,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
   const [batchError, setBatchError] = useState<string | null>(null);
   const [batchSuccessMessage, setBatchSuccessMessage] = useState<string | null>(null);
   const [liveMessage, setLiveMessage] = useState<string | null>(null);
+  const inFlightSubmittingRef = useRef(false);
 
   // Keep options in a ref to avoid recreating callbacks
   const optionsRef = useRef(options);
@@ -387,6 +417,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
               isSubmitting: false,
               message: null,
               error: null,
+              fieldErrors: {},
             };
           } else {
             // If existing item is dirty, preserve user's pending edits but update baseline
@@ -409,6 +440,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
                 isSubmitting: false,
                 message: null,
                 error: null,
+                fieldErrors: {},
               };
             }
           }
@@ -434,6 +466,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
           isSubmitting: false,
           message: null,
           error: null,
+          fieldErrors: {},
         };
 
         const prevSharedSnapshot = [...sharedPlusOneNamesRef.current];
@@ -515,6 +548,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
             // Clear stale status banners whenever the user modifies event details
             message: null,
             error: null,
+            fieldErrors: {},
           },
         };
 
@@ -557,6 +591,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
                 state: otherDirty ? 'dirty' : 'idle',
                 message: null,
                 error: null,
+                fieldErrors: {},
               };
             }
           }
@@ -580,6 +615,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
           isSubmitting: false,
           message: null,
           error: null,
+          fieldErrors: {},
         }
       );
     },
@@ -599,15 +635,22 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
 
   const submitSingle = useCallback(
     async (subEventId: string): Promise<boolean> => {
+      if (inFlightSubmittingRef.current || isAnySubmitting) {
+        return false;
+      }
+
       const item = eventsMap[subEventId];
       if (!item) return false;
 
       const effectivePlusOneCount =
         item.current.status === 'declined' ? 0 : item.current.plusOneCount;
       const meta = eventMetaRef.current[subEventId];
-      const validationError =
-        getPlusOneValidationError(effectivePlusOneCount, optionsRef.current?.maxPlusOnes) ||
-        getEventPromptValidationError(item.current, effectivePlusOneCount, meta);
+      const { summaryError: validationError, fieldErrors } = validateEventRsvp(
+        item.current,
+        effectivePlusOneCount,
+        optionsRef.current?.maxPlusOnes,
+        meta
+      );
       if (validationError) {
         const err = new Error(validationError);
         setEventsMap((prev) => ({
@@ -618,12 +661,15 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
             isSubmitting: false,
             message: validationError,
             error: validationError,
+            fieldErrors,
           },
         }));
-        setLiveMessage(`Failed to save RSVP: ${validationError}`);
+        setLiveMessage(null);
         optionsRef.current?.onError?.(err);
         return false;
       }
+
+      inFlightSubmittingRef.current = true;
 
       // Update state to submitting
       setEventsMap((prev) => ({
@@ -634,6 +680,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
           isSubmitting: true,
           message: null,
           error: null,
+          fieldErrors: {},
         },
       }));
 
@@ -680,6 +727,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
             isSubmitting: false,
             message: 'RSVP submitted successfully!',
             error: null,
+            fieldErrors: {},
           },
         }));
 
@@ -698,22 +746,27 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
             isSubmitting: false,
             message: errorMessage,
             error: errorMessage,
+            fieldErrors: {},
           },
         }));
-        setLiveMessage(
-          isRsvpClosedError ? errorMessage : `Failed to save RSVP: ${errorMessage}`
-        );
+        setLiveMessage(isRsvpClosedError ? errorMessage : null);
         if (isRsvpClosedError) {
           optionsRef.current?.onRsvpClosed?.(errorMessage);
         }
         optionsRef.current?.onError?.(err);
         return false;
+      } finally {
+        inFlightSubmittingRef.current = false;
       }
     },
-    [eventsMap, apiEndpoint]
+    [eventsMap, apiEndpoint, isAnySubmitting]
   );
 
   const submitBatch = useCallback(async (): Promise<boolean> => {
+    if (inFlightSubmittingRef.current || isAnySubmitting) {
+      return false;
+    }
+
     const dirtyItems = dirtyEventIds
       .map((id) => eventsMap[id])
       .filter((item): item is SubEventRsvpItemState => Boolean(item && item.isDirty));
@@ -728,22 +781,30 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
         const effectiveCount =
           item.current.status === 'declined' ? 0 : item.current.plusOneCount;
         const meta = eventMetaRef.current[item.id];
+        const { summaryError, fieldErrors } = validateEventRsvp(
+          item.current,
+          effectiveCount,
+          configuredMax,
+          meta
+        );
         return {
           id: item.id,
-          error:
-            getPlusOneValidationError(effectiveCount, configuredMax) ||
-            getEventPromptValidationError(item.current, effectiveCount, meta),
+          error: summaryError,
+          fieldErrors,
         };
       })
-      .filter((entry): entry is { id: string; error: string } => Boolean(entry.error));
+      .filter(
+        (entry): entry is { id: string; error: string; fieldErrors: Record<string, string> } =>
+          Boolean(entry.error)
+      );
 
     if (invalidItems.length > 0) {
       const firstError = invalidItems[0].error;
       setBatchError(firstError);
-      setLiveMessage(`Failed to save RSVPs: ${firstError}`);
+      setLiveMessage(null);
       setEventsMap((prev) => {
         const next = { ...prev };
-        invalidItems.forEach(({ id, error }) => {
+        invalidItems.forEach(({ id, error, fieldErrors }) => {
           if (next[id]) {
             next[id] = {
               ...next[id],
@@ -751,6 +812,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
               isSubmitting: false,
               message: error,
               error,
+              fieldErrors,
             };
           }
         });
@@ -760,6 +822,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
       return false;
     }
 
+    inFlightSubmittingRef.current = true;
     setIsBatchSubmitting(true);
     setBatchError(null);
     setBatchSuccessMessage(null);
@@ -774,6 +837,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
           isSubmitting: true,
           message: null,
           error: null,
+          fieldErrors: {},
         };
       });
       return next;
@@ -829,6 +893,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
             isSubmitting: false,
             message: 'RSVP submitted successfully!',
             error: null,
+            fieldErrors: {},
           };
         });
         return next;
@@ -845,11 +910,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
       const isRsvpClosedError =
         err?.status === 403 && !/^Forbidden:\s*You do not have access/i.test(errorMessage);
       setBatchError(errorMessage);
-      setLiveMessage(
-        isRsvpClosedError
-          ? errorMessage
-          : `Failed to save RSVPs: ${errorMessage}. Please try again.`
-      );
+      setLiveMessage(isRsvpClosedError ? errorMessage : null);
 
       setEventsMap((prev) => {
         const next = { ...prev };
@@ -860,6 +921,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
             isSubmitting: false,
             message: errorMessage,
             error: errorMessage,
+            fieldErrors: {},
           };
         });
         return next;
@@ -871,9 +933,10 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
       optionsRef.current?.onError?.(err);
       return false;
     } finally {
+      inFlightSubmittingRef.current = false;
       setIsBatchSubmitting(false);
     }
-  }, [dirtyEventIds, eventsMap, apiEndpoint]);
+  }, [dirtyEventIds, eventsMap, apiEndpoint, isAnySubmitting]);
 
   return {
     getRsvpState,
