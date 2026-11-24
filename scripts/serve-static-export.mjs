@@ -80,7 +80,7 @@ export function createStaticExportServer(options = {}) {
     return cached;
   }
 
-  return http.createServer((req, res) => {
+  const server = http.createServer((req, res) => {
     const method = (req.method || 'GET').toUpperCase();
     const requestUrl = new URL(req.url || '/', 'http://127.0.0.1');
     let pathname = '/';
@@ -123,7 +123,7 @@ export function createStaticExportServer(options = {}) {
         res.writeHead(404, {
           'Content-Type': 'text/html; charset=utf-8',
           'Content-Length': notFoundBuf.byteLength,
-          'Cache-Control': 'no-cache',
+          'Cache-Control': 'no-store',
         });
         res.end(method === 'HEAD' ? undefined : notFoundBuf);
         return;
@@ -140,11 +140,18 @@ export function createStaticExportServer(options = {}) {
     res.writeHead(200, {
       'Content-Type': contentType,
       'Content-Length': bodyBuffer.byteLength,
-      'Cache-Control': 'no-cache',
+      'Cache-Control': 'no-store',
     });
 
     res.end(method === 'HEAD' ? undefined : bodyBuffer);
   });
+
+  // Prevent Node's default 5s keepAliveTimeout from closing idle sockets mid-Axe scan
+  // right as Chromium dispatches the next route navigation over a pooled connection.
+  server.keepAliveTimeout = 65_000;
+  server.headersTimeout = 66_000;
+
+  return server;
 }
 
 function startCliServer() {

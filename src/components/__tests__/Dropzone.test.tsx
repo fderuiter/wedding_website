@@ -27,8 +27,10 @@ describe('Dropzone Component', () => {
     expect(
       screen.getByText('Drag and drop an image file here, or click to browse')
     ).toBeInTheDocument();
-    expect(screen.getByText('Supports JPG, PNG, and ICO files up to 5MB')).toBeInTheDocument();
+    const hintElement = screen.getByText('Supports JPG, PNG, and ICO files up to 5MB');
+    expect(hintElement).toBeInTheDocument();
     const dropzone = screen.getByRole('button', { name: defaultPrompt });
+    expect(dropzone.contains(hintElement)).toBe(false);
     expect(dropzone).toHaveAccessibleDescription('Supports JPG, PNG, and ICO files up to 5MB');
     expect(
       await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })

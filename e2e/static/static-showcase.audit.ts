@@ -239,15 +239,19 @@ async function navigateAndSettleStaticRoute(
   theme: ColorTheme,
   onBeforeRetry?: () => void
 ) {
-  let docResponse = await page.goto(targetUrl, {
-    waitUntil: 'load',
-    timeout: 30_000,
-  });
+  let docResponse: Awaited<ReturnType<Page['goto']>> = null;
   try {
+    docResponse = await page.goto(targetUrl, {
+      waitUntil: 'load',
+      timeout: 30_000,
+    });
     await waitForStaticRouteSettled(page, theme);
   } catch {
     onBeforeRetry?.();
-    docResponse = await page.reload({ waitUntil: 'load', timeout: 30_000 });
+    docResponse = await page.goto(targetUrl, {
+      waitUntil: 'load',
+      timeout: 30_000,
+    });
     await waitForStaticRouteSettled(page, theme);
   }
   return docResponse;
@@ -321,11 +325,17 @@ test.describe('Standalone Static Showcase Runtime & WCAG 2.2 AA Audit @a11y-stat
         return route.abort();
       });
 
-      const page = await context.newPage();
-      await page.goto(`${origin}/__health`, { waitUntil: 'commit' });
+      const createPrimedPage = async () => {
+        const nextPage = await context.newPage();
+        await nextPage.goto(`${origin}/__health`, { waitUntil: 'commit' });
+        return nextPage;
+      };
+
+      let page = await createPrimedPage();
 
       try {
-        for (const routePath of routes) {
+        for (let idx = 0; idx < routes.length; idx += 1) {
+          const routePath = routes[idx];
           const scanKey = `[${theme}] ${basePath}${routePath}`;
           const seed = buildDemoSeedForRoute(routePath);
           await applyDeterministicThemeAndSeed(page, theme, seed);
@@ -354,17 +364,31 @@ test.describe('Standalone Static Showcase Runtime & WCAG 2.2 AA Audit @a11y-stat
           page.on('response', onResponse);
           page.on('pageerror', onPageError);
 
+          let shouldRecyclePage = routePath === '/heart' || (idx + 1) % 8 === 0;
           try {
             const targetUrl = `${origin}${basePath}${routePath === '/' ? '/' : `${routePath}/`}`;
-            const docResponse = await navigateAndSettleStaticRoute(
+            const clearAttemptDiagnostics = () => {
+              failedResponses.length = 0;
+              pageErrors.length = 0;
+              blockedExternalUrls.length = 0;
+            };
+            let docResponse = await navigateAndSettleStaticRoute(
               page,
               targetUrl,
               theme,
-              () => {
-                failedResponses.length = 0;
-                pageErrors.length = 0;
-              }
+              clearAttemptDiagnostics
             );
+            if (pageErrors.some((msg) => msg.includes('Failed to load chunk'))) {
+              clearAttemptDiagnostics();
+              await page.goto('about:blank').catch(() => {});
+              await page.waitForTimeout(100);
+              docResponse = await navigateAndSettleStaticRoute(
+                page,
+                targetUrl,
+                theme,
+                clearAttemptDiagnostics
+              );
+            }
 
             const status = docResponse?.status() ?? 0;
             if (status !== 200) {
@@ -421,17 +445,10 @@ test.describe('Standalone Static Showcase Runtime & WCAG 2.2 AA Audit @a11y-stat
                 .first()
                 .getAttribute('src');
               expect(previewSrc).toContain('preview=true');
+              shouldRecyclePage = true;
             }
 
             const violations = await runWcagAudit(page);
-            if (hasLivePreviewIframe) {
-              await page.evaluate(() => {
-                document.querySelectorAll('iframe[title="Live Preview"]').forEach((el) => {
-                  el.setAttribute('src', 'about:blank');
-                  el.remove();
-                });
-              });
-            }
             shardViolations[scanKey] = violations;
             if (violations.length > 0) {
               contrastOrA11yFailures.push(formatViolationSummary(scanKey, violations));
@@ -441,6 +458,11 @@ test.describe('Standalone Static Showcase Runtime & WCAG 2.2 AA Audit @a11y-stat
             page.off('request', onRequest);
             page.off('response', onResponse);
             page.off('pageerror', onPageError);
+          }
+
+          if (idx < routes.length - 1 && shouldRecyclePage) {
+            await page.close();
+            page = await createPrimedPage();
           }
         }
       } finally {

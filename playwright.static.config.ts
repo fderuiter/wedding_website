@@ -53,7 +53,7 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   workers: 2,
-  timeout: 240_000,
+  timeout: 300_000,
   reporter: process.env.CI ? 'github' : 'list',
   use: {
     baseURL: origin,
@@ -65,6 +65,7 @@ export default defineConfig({
         '--disable-setuid-sandbox',
         '--disable-gpu',
         '--disable-dev-shm-usage',
+        '--disk-cache-size=1',
       ],
     },
   },
