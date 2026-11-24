@@ -114,46 +114,20 @@ jest.mock('next/server', () => {
   };
 });
 
-jest.mock('@/features/registry', () => {
-  const {
-    CreateOfflineThankYouNoteSchema,
-    UpdateThankYouNoteSchema,
-    BatchUpdateThankYouNotesSchema,
-    SendThankYouEmailSchema,
-  } = jest.requireActual('@/features/registry');
-  return {
-    CreateOfflineThankYouNoteSchema,
-    UpdateThankYouNoteSchema,
-    BatchUpdateThankYouNotesSchema,
-    SendThankYouEmailSchema,
-    thankYouService: {
-      getThankYouNotes: jest.fn(),
-      createOfflineGift: jest.fn(),
-      updateThankYouNote: jest.fn(),
-      batchUpdateThankYouNotes: jest.fn(),
-      exportThankYouNotesCsv: jest.fn(),
-      exportThankYouNotesPdf: jest.fn(),
-      sendThankYouEmail: jest.fn(),
-    },
-  };
-});
-
-jest.mock('@/features/registry/thank-you.service', () => ({
-  thankYouService: {
-    getThankYouNotes: jest.fn(),
-    createOfflineGift: jest.fn(),
-    updateThankYouNote: jest.fn(),
-    batchUpdateThankYouNotes: jest.fn(),
-    exportThankYouNotesCsv: jest.fn(),
-    exportThankYouNotesPdf: jest.fn(),
-    sendThankYouEmail: jest.fn(),
-  },
-}));
-
 jest.mock('@/core/auth/auth.server', () => ({
   isAdminRequest: jest.fn().mockResolvedValue(true),
   checkAdminAuth: jest.fn().mockResolvedValue(true),
 }));
+
+const thankYouSpies = [
+  jest.spyOn(thankYouService, 'getThankYouNotes'),
+  jest.spyOn(thankYouService, 'createOfflineGift'),
+  jest.spyOn(thankYouService, 'updateThankYouNote'),
+  jest.spyOn(thankYouService, 'batchUpdateThankYouNotes'),
+  jest.spyOn(thankYouService, 'exportThankYouNotesCsv'),
+  jest.spyOn(thankYouService, 'exportThankYouNotesPdf'),
+  jest.spyOn(thankYouService, 'sendThankYouEmail'),
+];
 
 function createMockStream(content: string | Uint8Array): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
@@ -169,6 +143,11 @@ function createMockStream(content: string | Uint8Array): ReadableStream<Uint8Arr
 describe('Thank-You Notes API Routes', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    thankYouSpies.forEach((spy) => spy.mockReset());
+  });
+
+  afterAll(() => {
+    thankYouSpies.forEach((spy) => spy.mockRestore());
   });
 
   describe('GET /api/admin/thank-you-notes', () => {

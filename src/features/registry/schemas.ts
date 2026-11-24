@@ -449,10 +449,6 @@ export const PaymentIntentRequestSchema = z.object({
   ...optionalAddressFields,
 });
 
-export type PaymentIntentRequestDTO = z.infer<
-  typeof PaymentIntentRequestSchema
->;
-
 export const ReconcilePaymentIntentSchema = z.object({
   paymentIntentId: z
     .string({ message: 'Missing or invalid paymentIntentId.' })
@@ -465,16 +461,11 @@ export const ReconcilePaymentIntentSchema = z.object({
   itemId: z.string().trim().min(1).optional(),
 });
 
-export type ReconcilePaymentIntentDTO = z.infer<
-  typeof ReconcilePaymentIntentSchema
->;
-
 export const ItemTypeEnum = z.enum([
   'PHYSICAL',
   'CASH_FUND',
   'EXPERIENCE_FUND',
 ]);
-export type ItemType = z.infer<typeof ItemTypeEnum>;
 
 export const RegistryItemBaseSchema = z
   .object(
@@ -1000,10 +991,6 @@ export const BatchImportInvitationCodesSchema = z.object({
   collisionStrategy: z.enum(INVITATION_COLLISION_STRATEGIES).default('skip'),
 });
 
-export type BatchImportInvitationCodesDTO = z.infer<
-  typeof BatchImportInvitationCodesSchema
->;
-
 export const DryRunValidateBatchSchema = z.object({
   records: z
     .array(BatchImportInvitationCodeItemSchema)
@@ -1050,8 +1037,6 @@ export const GuestAddressUpdateSchema = z.object({
   code: z.string().trim().optional(),
   ...optionalAddressFields,
 });
-
-export type GuestAddressUpdateDTO = z.infer<typeof GuestAddressUpdateSchema>;
 
 const phonePattern = /^\+?[\d\s().\/-]{7,30}$/;
 const disallowedPublicTextPattern = /[<>]|\p{Cc}/u;
@@ -1161,18 +1146,12 @@ export const BatchScrapeUrlsSchema = z.object({
     .max(20, 'Maximum of 20 URLs allowed per batch.'),
 });
 
-export type BatchScrapeUrlsDTO = z.infer<typeof BatchScrapeUrlsSchema>;
-
 export const BatchCreateRegistryItemsSchema = z.object({
   items: z
     .array(RegistryItemBaseSchema)
     .min(1, 'At least one item is required.')
     .max(100, 'Maximum of 100 items per batch.'),
 });
-
-export type BatchCreateRegistryItemsDTO = z.infer<
-  typeof BatchCreateRegistryItemsSchema
->;
 
 export const MergeInvitationCodesSchema = z
   .object({
@@ -1253,10 +1232,6 @@ export const InvitationCatalogQuerySchema = z.object({
     .default('createdAt'),
   orderDir: z.enum(['asc', 'desc']).default('desc'),
 });
-
-export type InvitationCatalogQueryDTO = z.infer<
-  typeof InvitationCatalogQuerySchema
->;
 
 export interface InvitationSubEventRsvpSummaryDTO {
   id: string;

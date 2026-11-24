@@ -7,7 +7,8 @@ import { Dialog } from '@/components/ui/Dialog';
 expect.extend(toHaveNoViolations);
 import { ThemeProvider } from '@/components/ThemeProvider';
 import RegistryItemCard from '../RegistryItemCard'; // Adjust the import path as necessary
-import { RegistryItem, GuestSessionProvider } from '@/features/registry';
+import { RegistryItem } from '@/features/registry';
+import { GuestSessionProvider } from '../../context/GuestSessionContext';
 import { apiClient } from '@/lib/apiClient';
 import { ToastProvider } from '@/components/ui/ToastProvider';
 import { createMockMedia } from '@/testing/factories/mediaFactory';

@@ -1,5 +1,6 @@
 import { GET } from '@/app/api/weather/route';
-import { getWeatherForecast, getLocalizedClimateFallback } from '@/features/weather';
+import { getWeatherForecast } from '@/features/weather';
+import { getLocalizedClimateFallback } from '@/utils/climateFallback';
 import { server } from '@/mocks/server';
 import { http, HttpResponse } from 'msw';
 import { getAppConfig, APP_DEFAULTS } from '@/lib/config';

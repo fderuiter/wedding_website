@@ -1,9 +1,9 @@
 import { env } from '@/env';
 import { signCompactToken, verifyCompactToken } from '@/core/auth/tokenCookieHelpers';
 
-export type ContributorActionScope = 'confirm' | 'cancel';
+type ContributorActionScope = 'confirm' | 'cancel';
 
-export interface ContributorActionTokenPayload {
+interface ContributorActionTokenPayload {
   contributorId: string;
   action: ContributorActionScope;
   iat: number;

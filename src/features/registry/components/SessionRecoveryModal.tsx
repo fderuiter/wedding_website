@@ -7,7 +7,7 @@ import { FormGroup, Label, Input, FormMessage } from '@/components/ui/forms';
 import { Icon } from '@/components/ui/Icon';
 import { useGuestSession } from '../context/GuestSessionContext';
 
-export interface SessionRecoveryModalProps {
+interface SessionRecoveryModalProps {
   isOpen?: boolean;
   onClose?: () => void;
   onSuccess?: () => void;

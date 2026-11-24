@@ -6,9 +6,9 @@ import { useOptionalToast } from '@/components/ui/ToastProvider';
 import { notifyGuestSessionChanged } from '@/utils/guestSessionEvents';
 import { SessionRecoveryModal } from '../components/SessionRecoveryModal';
 
-export type GuestSessionStatus = 'authenticated' | 'unauthenticated' | 'expired' | 'error';
+type GuestSessionStatus = 'authenticated' | 'unauthenticated' | 'expired' | 'error';
 
-export interface GuestSessionState {
+interface GuestSessionState {
   invitationCode: string;
   guestName: string;
   email?: string | null;

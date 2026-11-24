@@ -12,7 +12,7 @@ import {
   MAX_REGISTRY_CSV_FILE_SIZE,
 } from '../utils/csv';
 
-export interface CsvRegistryImportProps {
+interface CsvRegistryImportProps {
   onSuccess?: () => void;
 }
 

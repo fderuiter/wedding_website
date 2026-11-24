@@ -17,7 +17,7 @@ import { useGuestSession } from '../context/GuestSessionContext';
 import { formatCurrency } from '@/utils/intl';
 import { getItemRemainingAmount, getItemUnitCounts } from '../lib/registryStatusUtils';
 
-export type ContributionPhase =
+type ContributionPhase =
   | 'idle'
   | 'validating_code'
   | 'code_locked'
@@ -25,7 +25,7 @@ export type ContributionPhase =
   | 'success'
   | 'error';
 
-export interface ContributionFieldErrors {
+interface ContributionFieldErrors {
   name?: string;
   email?: string;
   amount?: string;
@@ -42,7 +42,7 @@ export interface ContributionFieldErrors {
   country?: string;
 }
 
-export interface UseRegistryContributionMachineOptions {
+interface UseRegistryContributionMachineOptions {
   item: RegistryItem;
   onContribute: (
     itemId: string,
@@ -81,7 +81,7 @@ interface VerifiedSubmissionIdentity {
   email: string;
 }
 
-export interface UseRegistryContributionMachineReturn {
+interface UseRegistryContributionMachineReturn {
   // Deterministic flags
   isValidatingCode: boolean;
   isCodeLocked: boolean;

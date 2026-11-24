@@ -32,14 +32,14 @@ function useOptionalToast() {
   }
 }
 
-export interface GuestSeatSnapshot {
+interface GuestSeatSnapshot {
   invitationCodeId: string;
   tableId: string | null;
   seatNumber: number | null;
   plusOneSeatNumbers?: number[];
 }
 
-export interface SeatingUndoSnapshot {
+interface SeatingUndoSnapshot {
   label: string;
   assignments: GuestSeatSnapshot[];
 }
@@ -52,7 +52,7 @@ export interface SeatingState {
   undoStack?: SeatingUndoSnapshot[];
 }
 
-export type SeatingAction =
+type SeatingAction =
   | { type: 'INIT_DATA'; payload: { tables: SeatingTableDTO[]; guests: InvitationCodeDTO[] } }
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: string | null }
@@ -459,7 +459,7 @@ function pruneUndoStackForTable(
 /**
  * Synchronizes tables' nested invitationCodes with guest assignments in a single pass O(G + T).
  */
-export function syncTablesWithGuests(
+function syncTablesWithGuests(
   tablesList: SeatingTableDTO[],
   guestsList: InvitationCodeDTO[]
 ): SeatingTableDTO[] {

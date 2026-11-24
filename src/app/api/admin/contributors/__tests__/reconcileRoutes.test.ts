@@ -4,28 +4,6 @@ jest.mock('@/core/auth/auth.server', () => ({
   isAdminRequest: jest.fn(),
 }));
 
-jest.mock('@/features/registry', () => {
-  const {
-    AdminUnclaimRegistryItemSchema,
-    AdminUpdateContributorSchema,
-    AdminDeleteContributorSchema,
-    sanitizeRegistryItem,
-    substituteThankYouTemplateTokens,
-  } = jest.requireActual('@/features/registry');
-  return {
-    AdminUnclaimRegistryItemSchema,
-    AdminUpdateContributorSchema,
-    AdminDeleteContributorSchema,
-    sanitizeRegistryItem,
-    substituteThankYouTemplateTokens,
-    registryService: {
-      unclaimItem: jest.fn(),
-      updateContributor: jest.fn(),
-      deleteContributor: jest.fn(),
-    },
-  };
-});
-
 import type { NextRequest } from 'next/server';
 import { POST as unclaimPOST } from '@/app/api/admin/registry/items/[id]/unclaim/route';
 import { PATCH as contributorPATCH, DELETE as contributorDELETE } from '../[id]/route';
@@ -34,14 +12,23 @@ import { registryService } from '@/features/registry';
 import { ApiError } from '@/utils/ApiError';
 
 const mockIsAdminRequest = isAdminRequest as jest.Mock;
-const mockUnclaimItem = registryService.unclaimItem as jest.Mock;
-const mockUpdateContributor = registryService.updateContributor as jest.Mock;
-const mockDeleteContributor = registryService.deleteContributor as jest.Mock;
+const mockUnclaimItem: jest.SpyInstance = jest.spyOn(registryService, 'unclaimItem');
+const mockUpdateContributor: jest.SpyInstance = jest.spyOn(registryService, 'updateContributor');
+const mockDeleteContributor: jest.SpyInstance = jest.spyOn(registryService, 'deleteContributor');
 
 describe('Admin Registry Claim & Contributor Reconciliation API Routes', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsAdminRequest.mockResolvedValue(true);
+    mockUnclaimItem.mockReset();
+    mockUpdateContributor.mockReset();
+    mockDeleteContributor.mockReset();
+  });
+
+  afterAll(() => {
+    mockUnclaimItem.mockRestore();
+    mockUpdateContributor.mockRestore();
+    mockDeleteContributor.mockRestore();
   });
 
   describe('POST /api/admin/registry/items/[id]/unclaim', () => {

@@ -189,7 +189,7 @@ export function computeScaledTableDimensions({
   };
 }
 
-export interface ResolvedSeatOccupant {
+interface ResolvedSeatOccupant {
   seatNumber: number;
   guest: InvitationCodeDTO;
   attendeeName: string;
@@ -203,8 +203,6 @@ export interface ResolvedSeatOccupant {
   mealChoice: string | null;
   dietaryBadges: DietaryBadgeInfo[];
 }
-
-export type ResolvedSeatEntry = ResolvedSeatOccupant;
 
 function findContiguousBlock(
   occupied: Set<number>,

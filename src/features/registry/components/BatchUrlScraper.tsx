@@ -9,7 +9,7 @@ import { RegistryPreviewTable, PreviewRegistryItem } from './RegistryPreviewTabl
 import { useRegistryPreviewImport } from '../hooks/useRegistryPreviewImport';
 import { validateRegistryItemRow } from '../utils/csv';
 
-export interface BatchUrlScraperProps {
+interface BatchUrlScraperProps {
   onSuccess?: () => void;
 }
 
