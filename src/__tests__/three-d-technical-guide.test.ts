@@ -186,6 +186,7 @@ describe('docs/3D_TECHNICAL_GUIDE.md specification & portal verification', () =>
         'src/app/heart/page.tsx',
         'src/app/heart/HeartClient.tsx',
         'src/app/heart/constants.ts',
+        'src/app/heart/components/HeartScene.tsx',
         'src/app/heart/components/Heart3D.tsx',
         'src/app/heart/components/ScreenBounds.tsx',
         'src/app/heart/components/Sparkles.tsx',
@@ -246,6 +247,9 @@ describe('docs/3D_TECHNICAL_GUIDE.md specification & portal verification', () =>
 
     expect(staged).toContain(
       '(https://github.com/fderuiter/wedding_website/blob/main/src/app/heart/HeartClient.tsx)',
+    );
+    expect(staged).toContain(
+      '(https://github.com/fderuiter/wedding_website/blob/main/src/app/heart/components/HeartScene.tsx)',
     );
     expect(staged).toContain(
       '(https://github.com/fderuiter/wedding_website/blob/main/src/components/ThemeProvider.tsx)',

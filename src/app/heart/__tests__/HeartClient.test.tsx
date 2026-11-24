@@ -1,9 +1,48 @@
 import fs from 'fs';
+import { createRequire } from 'module';
 import path from 'path';
 import React from 'react';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, fireEvent } from '@testing-library/react';
+import HeartScene from '../components/HeartScene';
 import HeartClient, { isWebGLAvailable } from '../HeartClient';
 import { HEART_FONT_URL, resolveHeartFontUrl } from '../constants';
+
+type DynamicCaptureState = {
+  loader?: () => Promise<unknown>;
+  options?: { ssr?: boolean; loading?: () => React.ReactNode };
+  deferLoad: boolean;
+  mountCount: number;
+};
+
+function getMockDynamicState(): DynamicCaptureState {
+  const g = globalThis as typeof globalThis & { __heartDynamicTestState?: DynamicCaptureState };
+  if (!g.__heartDynamicTestState) {
+    g.__heartDynamicTestState = { deferLoad: false, mountCount: 0 };
+  }
+  return g.__heartDynamicTestState;
+}
+
+jest.mock('next/dynamic', () => {
+  return {
+    __esModule: true,
+    default: (
+      loader: () => Promise<unknown>,
+      options?: { ssr?: boolean; loading?: () => React.ReactNode },
+    ) => {
+      const state = getMockDynamicState();
+      state.loader = loader;
+      state.options = options;
+      return function MockDynamic(props: React.ComponentProps<typeof HeartScene>) {
+        const current = getMockDynamicState();
+        current.mountCount += 1;
+        if (current.deferLoad) {
+          return <>{options?.loading ? options.loading() : null}</>;
+        }
+        return <HeartScene {...props} />;
+      };
+    },
+  };
+});
 
 const mockCreateRigidBodyApi = () => ({
   setBodyType: jest.fn(),
@@ -221,6 +260,8 @@ describe('HeartClient Easter Egg Accessibility and Live Region', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     canvasRenderCount = 0;
+    getMockDynamicState().mountCount = 0;
+    getMockDynamicState().deferLoad = false;
     pendingPhysicsPromise = null;
     delete (window as Window & { __mockWebGLSupport?: boolean }).__mockWebGLSupport;
     delete (window as Window & { WebGL2RenderingContext?: unknown }).WebGL2RenderingContext;
@@ -480,6 +521,7 @@ describe('HeartClient Easter Egg Accessibility and Live Region', () => {
 
     render(<HeartClient partner1Name="Abbi" partner2Name="Fred" />);
 
+    expect(getMockDynamicState().mountCount).toBe(0);
     expect(canvasRenderCount).toBe(0);
     expect(screen.queryByTestId('canvas')).not.toBeInTheDocument();
     expect(screen.getByTestId('webgl-fallback-container')).toBeInTheDocument();
@@ -530,5 +572,100 @@ describe('HeartClient Easter Egg Accessibility and Live Region', () => {
     expect(fallbackBackLink).toHaveClass('focus-visible:ring-[var(--toast-action-bg,#ffffff)]');
     expect(fallbackBackLink).not.toHaveClass('bg-white/80');
     expect(fallbackBackLink.querySelector('button')).toBeNull();
+  });
+
+  it('loads HeartScene dynamically with ssr: false, removes heart-loading-overlay after onReady, and keeps sceneReady across Reset clicks', async () => {
+    const dynamicState = getMockDynamicState();
+    expect(dynamicState.options?.ssr).toBe(false);
+    expect(dynamicState.options?.loading?.()).toBeNull();
+    const loadedModule = (await dynamicState.loader?.()) as { default?: unknown } | undefined;
+    expect(loadedModule?.default).toBe(HeartScene);
+
+    dynamicState.deferLoad = true;
+    let resolvePhysics!: () => void;
+    pendingPhysicsPromise = new Promise<void>((resolve) => {
+      resolvePhysics = () => {
+        pendingPhysicsPromise = null;
+        resolve();
+      };
+    });
+
+    const { rerender } = render(<HeartClient partner1Name="Abbi" partner2Name="Fred" />);
+
+    // While HeartScene chunk is still downloading, Canvas is unmounted and Loading… overlay shows without role="status"
+    expect(screen.getByTestId('heart-loading-overlay')).toHaveTextContent('Loading…');
+    expect(screen.getByTestId('heart-loading-overlay')).not.toHaveAttribute('role');
+    expect(screen.queryByTestId('canvas')).not.toBeInTheDocument();
+    expect(canvasRenderCount).toBe(0);
+    expect(screen.queryAllByRole('status')).toHaveLength(0);
+
+    // Once HeartScene chunk arrives, Suspense still holds heart-loading-overlay until Physics + SceneReadyNotifier complete
+    dynamicState.deferLoad = false;
+    await act(async () => {
+      rerender(<HeartClient partner1Name="Abbi" partner2Name="Fred" />);
+    });
+
+    expect(screen.getByTestId('canvas')).toBeInTheDocument();
+    expect(screen.getByTestId('heart-loading-overlay')).toBeInTheDocument();
+
+    await act(async () => {
+      resolvePhysics();
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByTestId('heart-loading-overlay')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+
+    // Clicking Reset remounts Physics without re-displaying heart-loading-overlay
+    fireEvent.click(screen.getByRole('button', { name: 'Reset heart' }));
+    expect(screen.queryByTestId('heart-loading-overlay')).not.toBeInTheDocument();
+  });
+
+  it('keeps HeartClient.tsx free of static 3D imports and shares one hoisted @dimforge/rapier3d-compat 0.19.2 binary', () => {
+    const rootDir = process.cwd();
+    const heartClientSource = fs.readFileSync(
+      path.join(rootDir, 'src/app/heart/HeartClient.tsx'),
+      'utf8',
+    );
+
+    expect(heartClientSource).toContain("import dynamic from 'next/dynamic'");
+    expect(heartClientSource).toMatch(/ssr:\s*false/);
+
+    const staticRuntimeImportSpecifiers = Array.from(
+      heartClientSource.matchAll(/^\s*import\s+(?!type\b)[\s\S]*?\sfrom\s+['"]([^'"]+)['"]/gm),
+      (match) => match[1],
+    );
+
+    for (const specifier of staticRuntimeImportSpecifiers) {
+      expect(specifier).not.toBe('three');
+      expect(specifier).not.toMatch(/^@react-three\//);
+      expect(specifier).not.toBe('@dimforge/rapier3d-compat');
+      expect(specifier).not.toContain('Heart3D');
+      expect(specifier).not.toContain('Sparkles');
+      expect(specifier).not.toContain('ScreenBounds');
+      expect(specifier).not.toContain('useHeartPhysics');
+      expect(specifier).not.toContain('useUnified3DInput');
+      expect(specifier).not.toContain('HeartScene');
+    }
+
+    const packageJson = JSON.parse(
+      fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'),
+    ) as { dependencies: Record<string, string> };
+    expect(packageJson.dependencies['@dimforge/rapier3d-compat']).toBe('0.19.2');
+
+    const packageLock = JSON.parse(
+      fs.readFileSync(path.join(rootDir, 'package-lock.json'), 'utf8'),
+    ) as { packages: Record<string, { version?: string }> };
+    expect(packageLock.packages['node_modules/@dimforge/rapier3d-compat']?.version).toBe('0.19.2');
+    expect(
+      packageLock.packages['node_modules/@react-three/rapier/node_modules/@dimforge/rapier3d-compat'],
+    ).toBeUndefined();
+
+    const rootRequire = createRequire(path.join(rootDir, 'package.json'));
+    const rapierPkgPath = rootRequire.resolve('@react-three/rapier/package.json');
+    const rapierRequire = createRequire(rapierPkgPath);
+    expect(rootRequire.resolve('@dimforge/rapier3d-compat')).toBe(
+      rapierRequire.resolve('@dimforge/rapier3d-compat'),
+    );
   });
 });
