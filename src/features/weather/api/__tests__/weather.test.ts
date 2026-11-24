@@ -57,9 +57,9 @@ describe('Weather API Route', () => {
     const response = await GET();
 
     expect(response.status).toBe(200);
-    expect(response.headers.get('Cache-Control')).toBe(
-      'public, max-age=1800, s-maxage=3600, stale-while-revalidate=86400'
-    );
+    expect(response.headers.get('Cache-Control')).toBe('private, max-age=1800');
+    expect(response.headers.get('Cache-Control')).not.toContain('s-maxage');
+    expect(response.headers.get('Vary')).toBe('Cookie');
     const body = await response.json();
     expect(body.data.isLiveForecast).toBe(true);
     expect(body.data.daily).toEqual(mockWeatherData.daily);
@@ -99,9 +99,8 @@ describe('Weather API Route', () => {
     const response = await GET();
 
     expect(response.status).toBe(200);
-    expect(response.headers.get('Cache-Control')).toBe(
-      'public, max-age=1800, s-maxage=3600, stale-while-revalidate=86400'
-    );
+    expect(response.headers.get('Cache-Control')).toBe('private, max-age=1800');
+    expect(response.headers.get('Vary')).toBe('Cookie');
     const body = await response.json();
     expect(requestedUrl).toContain('latitude=40.7128');
     expect(requestedUrl).toContain('longitude=-74.006');
@@ -171,9 +170,8 @@ describe('Weather API Route', () => {
     const response = await GET();
 
     expect(response.status).toBe(200);
-    expect(response.headers.get('Cache-Control')).toBe(
-      'public, max-age=1800, s-maxage=3600, stale-while-revalidate=86400'
-    );
+    expect(response.headers.get('Cache-Control')).toBe('private, max-age=1800');
+    expect(response.headers.get('Vary')).toBe('Cookie');
     const body = await response.json();
     expect(body.data.isLiveForecast).toBe(true);
     expect(body.data.daily).toEqual(mockWeatherData.daily);
@@ -200,9 +198,8 @@ describe('Weather API Route', () => {
     const response = await GET();
 
     expect(response.status).toBe(200);
-    expect(response.headers.get('Cache-Control')).toBe(
-      'public, max-age=1800, s-maxage=3600, stale-while-revalidate=86400'
-    );
+    expect(response.headers.get('Cache-Control')).toBe('private, max-age=1800');
+    expect(response.headers.get('Vary')).toBe('Cookie');
     const body = await response.json();
     expect(body.data.isLiveForecast).toBe(false);
     expect(body.data.daily).toBeDefined();
@@ -229,9 +226,8 @@ describe('Weather API Route', () => {
     const response = await GET();
 
     expect(response.status).toBe(200);
-    expect(response.headers.get('Cache-Control')).toBe(
-      'public, max-age=1800, s-maxage=3600, stale-while-revalidate=86400'
-    );
+    expect(response.headers.get('Cache-Control')).toBe('private, max-age=1800');
+    expect(response.headers.get('Vary')).toBe('Cookie');
     const body = await response.json();
     expect(body.data.isLiveForecast).toBe(false);
     expect(body.data.daily).toBeDefined();
