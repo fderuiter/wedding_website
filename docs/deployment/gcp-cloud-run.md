@@ -264,7 +264,7 @@ gcloud run jobs create wedding-migrate \
 gcloud run jobs execute wedding-migrate --region=us-central1 --wait
 ```
 
-*Note: Omitting `--command` preserves the container `ENTRYPOINT` (`/usr/bin/tini -s -- docker-entrypoint.sh`), which validates `DATABASE_URL`, unsets `POSTGRES_URL_NON_POOLING`, and invokes `./node_modules/.bin/prisma migrate deploy` (`/usr/local/bin/prisma`) offline without `npx` or npm registry traffic. Attach `--set-cloudsql-instances` when connecting via Cloud SQL Auth Proxy Unix sockets (omit if using an external TCP PostgreSQL host), and bind `DATABASE_URL` in the Cloud Run Job to a direct, non-pooling PostgreSQL secret (`DATABASE_URL_DIRECT` or `DATABASE_URL` if already unpooled) as an explicit `DATABASE_URL` override to bypass PgBouncer.*
+*Note: Omitting `--command` preserves the container `ENTRYPOINT` (`/usr/bin/tini -s -- docker-entrypoint.sh`), which validates `DATABASE_URL`, normalizes and preserves non-empty `POSTGRES_URL_NON_POOLING` (unsetting blank values), and invokes `./node_modules/.bin/prisma migrate deploy` (`/usr/local/bin/prisma`) offline without `npx` or npm registry traffic. Attach `--set-cloudsql-instances` when connecting via Cloud SQL Auth Proxy Unix sockets (omit if using an external TCP PostgreSQL host), and bind `DATABASE_URL` in the Cloud Run Job to a direct, non-pooling PostgreSQL secret (`DATABASE_URL_DIRECT` or `DATABASE_URL` if already unpooled) as an explicit `DATABASE_URL` override to bypass PgBouncer.*
 
 ---
 

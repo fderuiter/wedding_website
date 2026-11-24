@@ -5,6 +5,8 @@ import ts from 'typescript';
 
 const COMMENTED_OPTIONAL_ENV_KEYS = [
   'POSTGRES_URL_NON_POOLING',
+  'CONTAINER_DATABASE_URL',
+  'CONTAINER_POSTGRES_URL_NON_POOLING',
   'CRON_SECRET',
   'S3_BUCKET',
   'S3_REGION',
@@ -585,10 +587,15 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   }
   if (
     (composeRaw.match(/DATABASE_URL:\s*\$\{CONTAINER_DATABASE_URL:-/g) ?? []).length < 2 ||
-    /DATABASE_URL:\s*\$\{DATABASE_URL:-/.test(composeRaw)
+    /DATABASE_URL:\s*\$\{DATABASE_URL:-/.test(composeRaw) ||
+    (
+      composeRaw.match(
+        /POSTGRES_URL_NON_POOLING:\s*\$\{CONTAINER_POSTGRES_URL_NON_POOLING:-\}/g
+      ) ?? []
+    ).length < 2
   ) {
     errors.push(
-      'docker-compose.yml: Must scope migration and app DATABASE_URL overrides via ${CONTAINER_DATABASE_URL:-...} so host DATABASE_URL never leaks into containers'
+      'docker-compose.yml: Must scope migration and app DATABASE_URL and POSTGRES_URL_NON_POOLING overrides via ${CONTAINER_DATABASE_URL:-...} and ${CONTAINER_POSTGRES_URL_NON_POOLING:-} so host @localhost URLs never leak into containers'
     );
   }
   if (!/^\s*NODE_ENV:\s*production\s*$/m.test(composeRaw)) {
@@ -603,10 +610,15 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   if (
     !/POSTGRES_PASSWORD:\s*\$\{DB_PASSWORD:-wedding123\}/.test(ciComposeRaw) ||
     !/E2E_TEST:\s*\$\{E2E_TEST:-true\}/.test(ciComposeRaw) ||
-    (ciComposeRaw.match(/DATABASE_URL:\s*\$\{CONTAINER_DATABASE_URL:-/g) ?? []).length < 2
+    (ciComposeRaw.match(/DATABASE_URL:\s*\$\{CONTAINER_DATABASE_URL:-/g) ?? []).length < 2 ||
+    (
+      ciComposeRaw.match(
+        /POSTGRES_URL_NON_POOLING:\s*\$\{CONTAINER_POSTGRES_URL_NON_POOLING:-\}/g
+      ) ?? []
+    ).length < 2
   ) {
     errors.push(
-      'docker-compose.ci.yml: Must isolate disposable CI database credentials, ${CONTAINER_DATABASE_URL:-...} overrides, and E2E_TEST: ${E2E_TEST:-true}'
+      'docker-compose.ci.yml: Must isolate disposable CI database credentials, ${CONTAINER_DATABASE_URL:-...} and ${CONTAINER_POSTGRES_URL_NON_POOLING:-} overrides, and E2E_TEST: ${E2E_TEST:-true}'
     );
   }
   for (const [scriptLabel, scriptRaw] of [
