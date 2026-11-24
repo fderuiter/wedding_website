@@ -168,7 +168,7 @@ export async function GET(req?: NextRequest | Request) {
       READY_BURST_WINDOW_MS,
       '/api/ready',
       'general',
-      { ipOnly: true }
+      { scope: 'ip' }
     );
     if (rateLimitResponse) {
       rateLimitResponse.headers.set('Cache-Control', 'no-store');

@@ -4,6 +4,9 @@ import { POST } from '../route';
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { resetRateLimitsForTesting } from '@/utils/rateLimit';
+import { GUEST_COOKIE, signGuestToken } from '@/core/auth/guest.server';
+import { GUEST_INVITE_COOKIE, signGuestInviteSessionToken } from '@/core/auth/guestInviteSession';
+import { createVerifiedSocketIpHeaders } from '@/lib/socket-ip-boundary.js';
 
 jest.mock('@/lib/prisma', () => ({
   prisma: {
@@ -698,6 +701,80 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
           }),
         })
       );
+    });
+  });
+
+  describe('Strict IP Rate Limiting Against Cookie Rotation', () => {
+    test('returns HTTP 429 on request 11 from one IP even when rotating fresh guest_auth and guest_invite_session cookies', async () => {
+      (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue(null);
+      (mockPrisma.invitationCode.create as jest.Mock).mockImplementation(async ({ data }) => ({
+        id: `addr-${data.code}`,
+        ...data,
+      }));
+
+      const fixedIpHeaders = createVerifiedSocketIpHeaders('198.51.100.88');
+      const now = Date.now();
+      const exp = now + 60 * 60 * 1000;
+
+      for (let i = 1; i <= 10; i++) {
+        const rotatedCookie =
+          i % 2 === 0
+            ? `${GUEST_COOKIE}=${await signGuestToken({
+              guest: true,
+              jti: `rotated-jti-${i}`,
+              iat: now + i,
+              exp,
+            })}`
+            : `${GUEST_INVITE_COOKIE}=${await signGuestInviteSessionToken({
+              code: `ROTATE${i}`,
+              guestName: `Guest ${i}`,
+              iat: now + i,
+              exp,
+            })}`;
+
+        const req = new NextRequest('http://localhost/api/guest/address/public', {
+          method: 'POST',
+          headers: {
+            ...fixedIpHeaders,
+            cookie: rotatedCookie,
+          },
+          body: JSON.stringify({
+            guestName: `Prospect ${i}`,
+            email: `prospect${i}@example.com`,
+            ...basePostalFields,
+            addressLine1: `${i} Elm St`,
+          }),
+        });
+
+        const res = await POST(req);
+        expect(res.status).toBe(200);
+      }
+
+      const eleventhCookie = `${GUEST_COOKIE}=${await signGuestToken({
+        guest: true,
+        jti: 'rotated-jti-11',
+        iat: now + 11,
+        exp,
+      })}`;
+      const eleventhReq = new NextRequest('http://localhost/api/guest/address/public', {
+        method: 'POST',
+        headers: {
+          ...fixedIpHeaders,
+          cookie: eleventhCookie,
+        },
+        body: JSON.stringify({
+          guestName: 'Prospect 11',
+          email: 'prospect11@example.com',
+          ...basePostalFields,
+          addressLine1: '11 Elm St',
+        }),
+      });
+
+      const eleventhRes = await POST(eleventhReq);
+      expect(eleventhRes.status).toBe(429);
+      const eleventhBody = await eleventhRes.json();
+      expect(eleventhBody.success).toBe(false);
+      expect(mockPrisma.invitationCode.create).toHaveBeenCalledTimes(10);
     });
   });
 });
