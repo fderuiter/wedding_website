@@ -1080,6 +1080,128 @@ describe('MultiChannelMessagingProvider', () => {
       expect(fetchMock.mock.calls[1][1].signal).toBeDefined();
     });
 
+    it('sends unescaped <div>, <table>, and <a> HTML with generated plain-text parts in explicit HTML mode across Resend, SendGrid, and SMTP while escaping <script> and <div> in plain-text broadcasts', async () => {
+      const fetchMock = jest.fn().mockResolvedValue({
+        ok: true,
+        text: async () => '',
+      });
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      const smtpServer = await startTestSmtpServer({
+        implicitTls: true,
+      });
+      allowLoopbackTestTarget(smtpServer.port);
+
+      try {
+        const htmlEmailBody =
+          '<div><h2>Gift Confirmed</h2><table><tr><td>Amount</td><td>$50.00</td></tr></table><p><a href="https://wedding.example/registry">Browse Registry</a></p></div>';
+
+        const resendProvider = new MultiChannelMessagingProvider({
+          emailProvider: 'resend',
+          resendApiKey: 're_html_test',
+          resendFrom: 'hosts@wedding.example',
+        });
+        const sendgridProvider = new MultiChannelMessagingProvider({
+          emailProvider: 'sendgrid',
+          sendgridApiKey: 'SG.html_test',
+          sendgridFrom: 'hosts@wedding.example',
+        });
+        const smtpProvider = new MultiChannelMessagingProvider({
+          emailProvider: 'smtp',
+          smtpHost: '127.0.0.1',
+          smtpPort: smtpServer.port,
+          smtpSecure: true,
+          smtpFrom: 'hosts@wedding.example',
+          smtpRejectUnauthorized: false,
+        });
+
+        // 1. Explicit HTML mode across Resend, SendGrid, and SMTP
+        expect(
+          await resendProvider.sendEmail({
+            to: 'guest@example.com',
+            subject: 'HTML Notification',
+            body: htmlEmailBody,
+            isHtml: true,
+            format: 'html',
+          })
+        ).toEqual({ success: true });
+        const resendHtmlPayload = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(resendHtmlPayload.html).toBe(htmlEmailBody);
+        expect(resendHtmlPayload.html).not.toContain('&lt;div&gt;');
+        expect(resendHtmlPayload.text).toContain('Gift Confirmed');
+        expect(resendHtmlPayload.text).toContain('Browse Registry (https://wedding.example/registry)');
+        expect(resendHtmlPayload.text).not.toContain('<table>');
+
+        expect(
+          await sendgridProvider.sendEmail({
+            to: 'guest@example.com',
+            subject: 'HTML Notification',
+            body: htmlEmailBody,
+            format: 'html',
+          })
+        ).toEqual({ success: true });
+        const sendgridHtmlPayload = JSON.parse(fetchMock.mock.calls[1][1].body);
+        expect(sendgridHtmlPayload.content).toEqual([
+          {
+            type: 'text/plain',
+            value: expect.stringContaining('Browse Registry (https://wedding.example/registry)'),
+          },
+          { type: 'text/html', value: htmlEmailBody },
+        ]);
+
+        expect(
+          await smtpProvider.sendEmail({
+            to: 'guest@example.com',
+            subject: 'HTML Notification',
+            body: htmlEmailBody,
+            isHtml: true,
+          })
+        ).toEqual({ success: true });
+        const smtpHtmlMime = smtpServer.receivedMessages[0];
+        expect(smtpHtmlMime).toContain(htmlEmailBody);
+        expect(smtpHtmlMime).not.toContain('&lt;table&gt;');
+        expect(smtpHtmlMime).toContain('Browse Registry (https://wedding.example/registry)');
+
+        // 2. Plain-text broadcast escapes <script> and <div> entities across all 3 providers
+        const untrustedBroadcast =
+          'Welcome!\n\n<div>Venue Gate</div> <script>alert("xss")</script>';
+
+        await resendProvider.sendEmail({
+          to: 'guest@example.com',
+          subject: 'Plain Broadcast',
+          body: untrustedBroadcast,
+        });
+        const resendPlainPayload = JSON.parse(fetchMock.mock.calls[2][1].body);
+        expect(resendPlainPayload.html).toContain('&lt;div&gt;Venue Gate&lt;/div&gt;');
+        expect(resendPlainPayload.html).toContain('&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;');
+        expect(resendPlainPayload.html).not.toContain('<script>');
+
+        await sendgridProvider.sendEmail({
+          to: 'guest@example.com',
+          subject: 'Plain Broadcast',
+          body: untrustedBroadcast,
+        });
+        const sendgridPlainPayload = JSON.parse(fetchMock.mock.calls[3][1].body);
+        expect(sendgridPlainPayload.content[0].value).toContain('&lt;div&gt;Venue Gate&lt;/div&gt;');
+        expect(sendgridPlainPayload.content[0].value).toContain(
+          '&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;'
+        );
+
+        await smtpProvider.sendEmail({
+          to: 'guest@example.com',
+          subject: 'Plain Broadcast',
+          body: untrustedBroadcast,
+        });
+        const smtpPlainMime = smtpServer.receivedMessages[1];
+        const htmlSection = smtpPlainMime.split('Content-Type: text/html; charset="utf-8"')[1] || '';
+        expect(htmlSection).toContain('&lt;div&gt;Venue Gate&lt;/div&gt;');
+        expect(htmlSection).toContain('&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;');
+        expect(htmlSection).not.toContain('<script>');
+      } finally {
+        await smtpServer.close();
+      }
+    });
+
     it('uses a 5,000 ms default AbortSignal.timeout for Resend and SendGrid and returns { success: false } on timeout', async () => {
       const timeoutSpy = jest.spyOn(AbortSignal, 'timeout');
       try {

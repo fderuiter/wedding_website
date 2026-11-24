@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '@/lib/apiClient';
 import { useOptionalToast } from '@/components/ui/ToastProvider';
+import { notifyGuestSessionChanged } from '@/utils/guestSessionEvents';
 import { SessionRecoveryModal } from '../components/SessionRecoveryModal';
 
 export type GuestSessionStatus = 'authenticated' | 'unauthenticated' | 'expired' | 'error';
@@ -10,6 +11,7 @@ export type GuestSessionStatus = 'authenticated' | 'unauthenticated' | 'expired'
 export interface GuestSessionState {
   invitationCode: string;
   guestName: string;
+  email?: string | null;
   isVerified: boolean;
   isLoading: boolean;
   status: GuestSessionStatus;
@@ -19,7 +21,12 @@ export interface GuestSessionState {
 }
 
 export interface GuestSessionContextType extends GuestSessionState {
-  setSession: (session: { invitationCode: string; guestName: string; isVerified?: boolean }) => void;
+  setSession: (session: {
+    invitationCode: string;
+    guestName: string;
+    email?: string | null;
+    isVerified?: boolean;
+  }) => void;
   clearSession: () => Promise<void>;
   refreshSession: () => Promise<void>;
   openRecoveryModal: () => void;
@@ -30,6 +37,7 @@ export interface GuestSessionContextType extends GuestSessionState {
 const defaultContextValue: GuestSessionContextType = {
   invitationCode: '',
   guestName: '',
+  email: null,
   isVerified: false,
   isLoading: false,
   status: 'unauthenticated',
@@ -52,6 +60,7 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [sessionState, setSessionState] = useState<GuestSessionState>({
     invitationCode: '',
     guestName: '',
+    email: null,
     isVerified: false,
     isLoading: true,
     status: 'unauthenticated',
@@ -74,10 +83,15 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
       if (data && (data.isVerified || data.invitationCode || data.code)) {
         const code = data.invitationCode || data.code || '';
         const name = data.guestName || '';
+        const sessionEmail =
+          typeof data.email === 'string' && data.email.trim().length > 0
+            ? data.email.trim()
+            : null;
         setSessionState(prev => ({
           ...prev,
           invitationCode: code,
           guestName: name,
+          email: sessionEmail,
           isVerified: true,
           isLoading: false,
           status: 'authenticated',
@@ -111,6 +125,7 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
               ...prev,
               invitationCode: '',
               guestName: '',
+              email: null,
               isVerified: false,
               isLoading: false,
               status: 'unauthenticated',
@@ -148,6 +163,7 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
             ...prev,
             invitationCode: '',
             guestName: '',
+            email: null,
             isVerified: false,
             isLoading: false,
             status: 'error',
@@ -204,12 +220,23 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, [sessionState.status, toast, openRecoveryModal, refreshSession]);
 
   const setSession = useCallback(
-    (newSession: { invitationCode: string; guestName: string; isVerified?: boolean }) => {
+    (newSession: {
+      invitationCode: string;
+      guestName: string;
+      email?: string | null;
+      isVerified?: boolean;
+    }) => {
       const verified = newSession.isVerified ?? true;
       setSessionState(prev => ({
         ...prev,
         invitationCode: newSession.invitationCode,
         guestName: newSession.guestName,
+        email:
+          newSession.email !== undefined
+            ? typeof newSession.email === 'string' && newSession.email.trim().length > 0
+              ? newSession.email.trim()
+              : null
+            : prev.email ?? null,
         isVerified: verified,
         isLoading: false,
         status: verified ? 'authenticated' : 'unauthenticated',
@@ -217,6 +244,7 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         lastErrorCode: null,
         isRecoveryModalOpen: false,
       }));
+      notifyGuestSessionChanged();
     },
     []
   );
@@ -230,6 +258,7 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
       setSessionState({
         invitationCode: '',
         guestName: '',
+        email: null,
         isVerified: false,
         isLoading: false,
         status: 'unauthenticated',
@@ -237,6 +266,7 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         draftInvitationCode: '',
         isRecoveryModalOpen: false,
       });
+      notifyGuestSessionChanged();
     }
   }, []);
 
@@ -261,11 +291,16 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         );
         if (data && data.valid) {
           const verifiedCode = data.code || targetCode;
+          const verifiedEmail =
+            typeof data.email === 'string' && data.email.trim().length > 0
+              ? data.email.trim()
+              : null;
 
           setSessionState(prev => ({
             ...prev,
             invitationCode: verifiedCode,
             guestName: data.guestName || prev.guestName,
+            email: verifiedEmail ?? prev.email ?? null,
             isVerified: true,
             isLoading: false,
             status: 'authenticated',
@@ -277,6 +312,7 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
           if (toast) {
             toast.addToast('Session restored successfully!', 'success');
           }
+          notifyGuestSessionChanged();
 
           return true;
         } else {

@@ -1612,9 +1612,20 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       'docker-compose.ci.yml: `app` service must provide a valid 16-byte-salt / 64-byte-key scrypt fallback in `ADMIN_PASSWORD`'
     );
   }
-  if (!ciWorkflowRaw.includes('-f docker-compose.yml -f docker-compose.ci.yml')) {
+  const testContainerScriptPath = path.join(repoRoot, 'scripts/test-container.mjs');
+  const testContainerScriptRaw = fs.existsSync(testContainerScriptPath)
+    ? fs.readFileSync(testContainerScriptPath, 'utf8')
+    : '';
+  const ciInvokesIsolatedCompose =
+    ciWorkflowRaw.includes('-f docker-compose.yml -f docker-compose.ci.yml') ||
+    ((/\btest:container\b/.test(ciWorkflowRaw) ||
+      ciWorkflowRaw.includes('scripts/test-container.mjs')) &&
+      (!testContainerScriptRaw ||
+        (testContainerScriptRaw.includes("'docker-compose.yml'") &&
+          testContainerScriptRaw.includes("'docker-compose.ci.yml'"))));
+  if (!ciInvokesIsolatedCompose) {
     errors.push(
-      '.github/workflows/ci.yml: Container jobs must explicitly pass `-f docker-compose.yml -f docker-compose.ci.yml`'
+      '.github/workflows/ci.yml: Container jobs must invoke `scripts/test-container.mjs` (`npm run test:container`) or explicitly pass `-f docker-compose.yml -f docker-compose.ci.yml`'
     );
   }
 
@@ -2587,7 +2598,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
-  for (const requiredCiJob of ['static-export-build', 'storybook-build', 'deploy-docs']) {
+  for (const requiredCiJob of ['static-export-build', 'storybook-build', 'pages-verify', 'deploy-docs']) {
     if (ciJobIds.includes(requiredCiJob) && !deploymentMd.includes(requiredCiJob)) {
       errors.push(`DEPLOYMENT.md: Missing ci.yml job reference "${requiredCiJob}"`);
     }
@@ -2612,6 +2623,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     const runNode: unknown = stepItem.get('run', true);
     if (!isScalar(runNode) || typeof runNode.value !== 'string') continue;
     const skipsDocSync = /\bcheck:static\b[^\n]*--skip-doc-sync\b/.test(runNode.value);
+    const skipsActionPins = /\bcheck:static\b[^\n]*--skip-action-pins\b/.test(runNode.value);
     const npmRunRegex = /\bnpm\s+run\s+([a-zA-Z0-9:_-]+)\b/g;
     let scriptMatch: RegExpExecArray | null;
     while ((scriptMatch = npmRunRegex.exec(runNode.value)) !== null) {
@@ -2623,6 +2635,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
         for (const staticStep of staticSteps) {
           if (!staticStep.script) continue;
           if (skipsDocSync && staticStep.script === 'check:doc-sync') continue;
+          if (skipsActionPins && staticStep.script === 'check:action-pins') continue;
           if (!ciVerifyScripts.includes(staticStep.script)) {
             ciVerifyScripts.push(staticStep.script);
           }

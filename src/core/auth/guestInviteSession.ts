@@ -43,6 +43,7 @@ export {
 interface InvitationLookupRecord extends Record<string, unknown> {
   code?: string;
   guestName?: string;
+  email?: string | null;
   isSample?: boolean;
   partyTags?: unknown;
 }
@@ -120,6 +121,10 @@ async function resolveActiveInvitationSession(
       typeof invite.guestName === 'string' && invite.guestName.trim()
         ? invite.guestName
         : payload.guestName;
+    const resolvedEmail =
+      typeof invite.email === 'string' && invite.email.trim()
+        ? invite.email.trim()
+        : null;
 
     setHydratedGuestInvitation(
       buildHydratedGuestInvitation(invite, normalizedCode, resolvedGuestName),
@@ -130,6 +135,7 @@ async function resolveActiveInvitationSession(
       ...payload,
       code: payload.code,
       guestName: resolvedGuestName,
+      email: resolvedEmail,
     };
   } catch {
     return null;
