@@ -60,5 +60,6 @@ export {
   isLandmarkTable,
   isLandmarkTableShape,
   isOneSidedTableShape,
+  summarizeAttendeeMeals,
 } from './utils/seatingHelpers';
 export type { DietaryBadgeInfo, PartyMemberAttendeeInfo, TableMealSummary } from './utils/seatingHelpers';

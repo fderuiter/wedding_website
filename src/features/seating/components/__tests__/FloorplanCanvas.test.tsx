@@ -1,9 +1,30 @@
+import { Profiler } from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import { FloorplanCanvas } from '../FloorplanCanvas';
+import * as seatLayout from '../../seatLayout';
 import { SeatingTableDTO } from '../../schemas';
+import * as registry from '@/features/registry';
 import { InvitationCodeDTO } from '@/features/registry';
+
+jest.mock('../../seatLayout', () => {
+  const actual = jest.requireActual('../../seatLayout');
+  return {
+    ...actual,
+    resolveDetailedSeatAssignments: jest.fn(actual.resolveDetailedSeatAssignments),
+    computeSeatPosition: jest.fn(actual.computeSeatPosition),
+    computeScaledTableDimensions: jest.fn(actual.computeScaledTableDimensions),
+  };
+});
+
+jest.mock('@/features/registry', () => {
+  const actual = jest.requireActual('@/features/registry');
+  return {
+    ...actual,
+    matchDietaryCategory: jest.fn(actual.matchDietaryCategory),
+  };
+});
 
 expect.extend(toHaveNoViolations);
 
@@ -1784,6 +1805,211 @@ describe('FloorplanCanvas component', () => {
       expect(
         screen.getByRole('heading', { level: 3, name: 'No Tables Created Yet' })
       ).toBeInTheDocument();
+    });
+  });
+
+  describe('Per-table memoization and geometry bounds during 50-table gestures', () => {
+    const buildFiftyTables = (): SeatingTableDTO[] =>
+      Array.from({ length: 50 }, (_, index) => {
+        const tableNumber = index + 1;
+        const tableId = `table-${tableNumber}`;
+        return {
+          id: tableId,
+          name: `Table ${tableNumber}`,
+          shape: index % 2 === 0 ? 'round' : 'rectangular',
+          capacity: 8,
+          x: 80 + (index % 10) * 180,
+          y: 80 + Math.floor(index / 10) * 180,
+          width: 120,
+          height: 120,
+          rotation: 0,
+          isSample: false,
+          invitationCodes: [
+            {
+              id: `guest-${tableNumber}-a`,
+              code: `CODE-${tableNumber}-A`,
+              guestName: `Guest ${tableNumber}A`,
+              tableId,
+              seatNumber: 1,
+              used: true,
+              isSample: false,
+              plusOneAllocations: 0,
+              partyTags: [],
+              dietaryNotes: 'Vegan',
+              extraFields: { attending: true },
+            } as InvitationCodeDTO,
+            {
+              id: `guest-${tableNumber}-b`,
+              code: `CODE-${tableNumber}-B`,
+              guestName: `Guest ${tableNumber}B`,
+              tableId,
+              seatNumber: 2,
+              used: true,
+              isSample: false,
+              plusOneAllocations: 0,
+              partyTags: [],
+              dietaryNotes: 'Gluten-Free',
+              extraFields: { attending: true },
+            } as InvitationCodeDTO,
+          ],
+        };
+      });
+
+    it('executes resolveDetailedSeatAssignments and matchDietaryCategory 0 times across all 50 tables during pointer drag and rotation frames', () => {
+      const fiftyTables = buildFiftyTables();
+      const onUpdateTablePosition = jest.fn();
+      const onUpdateTableRotation = jest.fn();
+      let commitCount = 0;
+
+      const { container } = render(
+        <Profiler
+          id="floorplan-50"
+          onRender={() => {
+            commitCount += 1;
+          }}
+        >
+          <FloorplanCanvas
+            {...defaultProps}
+            tables={fiftyTables}
+            selectedTableId="table-1"
+            onUpdateTablePosition={onUpdateTablePosition}
+            onUpdateTableRotation={onUpdateTableRotation}
+          />
+        </Profiler>
+      );
+
+      const canvasElement = container.firstElementChild as HTMLElement;
+      jest.spyOn(canvasElement, 'getBoundingClientRect').mockReturnValue({
+        left: 0,
+        top: 0,
+        right: 2200,
+        bottom: 1400,
+        width: 2200,
+        height: 1400,
+        x: 0,
+        y: 0,
+        toJSON: () => {},
+      });
+
+      const resolveSeatsSpy = seatLayout.resolveDetailedSeatAssignments as jest.Mock;
+      const matchDietarySpy = registry.matchDietaryCategory as jest.Mock;
+      const computeSeatPosSpy = seatLayout.computeSeatPosition as jest.Mock;
+
+      expect(resolveSeatsSpy).toHaveBeenCalledTimes(50);
+      expect(matchDietarySpy.mock.calls.length).toBeGreaterThan(0);
+
+      resolveSeatsSpy.mockClear();
+      matchDietarySpy.mockClear();
+      computeSeatPosSpy.mockClear();
+      commitCount = 0;
+
+      const activeTable = screen.getByRole('button', { name: /^Table 1, shape/i });
+      const staticTable = screen.getByRole('button', { name: /^Table 50, shape/i });
+      const staticLeftBefore = staticTable.style.left;
+      const staticTopBefore = staticTable.style.top;
+
+      fireEvent.mouseDown(activeTable, { button: 0, clientX: 100, clientY: 100 });
+      for (let frame = 1; frame <= 20; frame++) {
+        fireEvent.mouseMove(canvasElement, {
+          clientX: 100 + frame * 4,
+          clientY: 100 + frame * 3,
+        });
+      }
+      expect(activeTable.style.left).toBe('160px');
+      expect(activeTable.style.top).toBe('140px');
+      expect(staticTable.style.left).toBe(staticLeftBefore);
+      expect(staticTable.style.top).toBe(staticTopBefore);
+      expect(commitCount).toBeGreaterThanOrEqual(20);
+
+      // Zero seat-assignment, dietary-badge, or chair-position recalculations during drag frames
+      expect(resolveSeatsSpy).toHaveBeenCalledTimes(0);
+      expect(matchDietarySpy).toHaveBeenCalledTimes(0);
+      expect(computeSeatPosSpy).toHaveBeenCalledTimes(0);
+
+      fireEvent.mouseUp(canvasElement);
+      expect(onUpdateTablePosition).toHaveBeenCalledWith('table-1', 160, 140);
+
+      // Now verify rotation frames on Table 1 (round table: center at 80+60=140, 80+60=140)
+      resolveSeatsSpy.mockClear();
+      matchDietarySpy.mockClear();
+      computeSeatPosSpy.mockClear();
+
+      const rotateHandle = screen.getByRole('button', { name: /Rotate handle for Table 1/i });
+      fireEvent.mouseDown(rotateHandle, { button: 0, clientX: 140, clientY: 60 });
+      for (let step = 1; step <= 12; step++) {
+        const angleRad = ((step * 15 - 90) * Math.PI) / 180;
+        fireEvent.mouseMove(canvasElement, {
+          clientX: 140 + Math.cos(angleRad) * 80,
+          clientY: 140 + Math.sin(angleRad) * 80,
+        });
+      }
+      expect(resolveSeatsSpy).toHaveBeenCalledTimes(0);
+      expect(matchDietarySpy).toHaveBeenCalledTimes(0);
+      // Static 49 tables execute 0 chair recalculations; Table 1 only recomputes chair layout on axis-alignment flips + minBounds
+      expect(computeSeatPosSpy.mock.calls.length).toBeLessThanOrEqual(12 * 8 + 4 * 8);
+
+      fireEvent.mouseUp(canvasElement);
+      expect(onUpdateTableRotation).toHaveBeenCalledTimes(1);
+    });
+
+    it('recomputes rectangular/square scaled bounds synchronously during rotation drag when renderedRotation % 90 === 0 flips', () => {
+      const squareTwoPerSide: SeatingTableDTO = {
+        id: 'tbl-axis-flip',
+        name: 'Axis Flip Table',
+        shape: 'square',
+        capacity: 8,
+        x: 200,
+        y: 200,
+        width: 100,
+        height: 100,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [],
+      };
+
+      const { container } = render(
+        <FloorplanCanvas
+          {...defaultProps}
+          tables={[squareTwoPerSide]}
+          selectedTableId="tbl-axis-flip"
+        />
+      );
+
+      const canvasElement = container.firstElementChild as HTMLElement;
+      jest.spyOn(canvasElement, 'getBoundingClientRect').mockReturnValue({
+        left: 0,
+        top: 0,
+        right: 800,
+        bottom: 650,
+        width: 800,
+        height: 650,
+        x: 0,
+        y: 0,
+        toJSON: () => {},
+      });
+
+      const tableNode = screen.getByRole('button', { name: /^Axis Flip Table, shape square/i });
+      // At 0° (axis-aligned), 100px >= 33 * 3 = 99px, so width/height stay 100px
+      expect(tableNode.style.width).toBe('100px');
+      expect(tableNode.style.height).toBe('100px');
+
+      const handleBtn = screen.getByRole('button', { name: /Rotate handle for Axis Flip Table/i });
+      fireEvent.mouseDown(handleBtn, { button: 0, clientX: 250, clientY: 140 });
+
+      // Drag handle to 45° diagonal (center is 250, 250 -> dx=60, dy=-60 -> clientX=310, clientY=190)
+      fireEvent.mouseMove(canvasElement, { clientX: 310, clientY: 190 });
+      expect(tableNode.style.transform).toBe('rotate(45deg)');
+      // Off-axis diagonal clearance scales 2-seat square edges to 36 * 3 = 108px
+      expect(tableNode.style.width).toBe('108px');
+      expect(tableNode.style.height).toBe('108px');
+
+      // Drag handle to 90° axis-aligned (gesture center stays anchored at 250, 250 -> clientX=340, clientY=250)
+      fireEvent.mouseMove(canvasElement, { clientX: 340, clientY: 250 });
+      expect(tableNode.style.transform).toBe('rotate(90deg)');
+      expect(tableNode.style.width).toBe('100px');
+      expect(tableNode.style.height).toBe('100px');
+
+      fireEvent.mouseUp(canvasElement);
     });
   });
 });

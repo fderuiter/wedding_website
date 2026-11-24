@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { memo, useState, useMemo, useCallback, useRef, useLayoutEffect } from 'react';
 import {
   SeatingTableDTO,
   FloorplanCanvas,
@@ -11,7 +11,6 @@ import {
   resolveDetailedSeatAssignments,
   resolveSeatAssignments,
   ADDRESS_COLLECTION_TAG,
-  computeTableMealCounts,
   computeTableMinBounds,
   getDietaryBadges,
   getGuestAttendanceStatus,
@@ -22,6 +21,7 @@ import {
   getSeatingShapeLabel,
   isGuestEligibleForSeating,
   isLandmarkTable,
+  summarizeAttendeeMeals,
 } from '@/features/seating';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
@@ -36,6 +36,409 @@ import {
 } from '@/features/registry';
 import { withBasePath } from '@/lib/basePath';
 import { downloadExportBlob } from '@/utils/exportDownload';
+
+interface SelectedTableInspectorProps {
+  table: SeatingTableDTO;
+  isPlacementMode: boolean;
+  onTogglePlacementMode: (tableId: string) => void;
+  onNudgeTable: (table: SeatingTableDTO, dx: number, dy: number) => void;
+  onUpdateTableRotation: (tableId: string, rotation: number) => void;
+  onUnassignGuest: (guestId: string) => void;
+  onClearTableSeats: (tableId: string) => void;
+  onEditTable: (table: SeatingTableDTO) => void;
+  onRequestDeleteTable: (table: SeatingTableDTO) => void;
+}
+
+const SelectedTableInspector = memo(function SelectedTableInspector({
+  table,
+  isPlacementMode,
+  onTogglePlacementMode,
+  onNudgeTable,
+  onUpdateTableRotation,
+  onUnassignGuest,
+  onClearTableSeats,
+  onEditTable,
+  onRequestDeleteTable,
+}: SelectedTableInspectorProps) {
+  const isLandmark = isLandmarkTable({ shape: table.shape, capacity: table.capacity });
+
+  const detailedSeats = useMemo(() => {
+    if (!table.invitationCodes || isLandmark) return [];
+    return Array.from(
+      resolveDetailedSeatAssignments(table.invitationCodes, table.capacity).values()
+    ).sort((a, b) => a.seatNumber - b.seatNumber);
+  }, [isLandmark, table.invitationCodes, table.capacity]);
+
+  const seatedHeadcount = useMemo(
+    () => (!isLandmark ? getGuestsHeadcount(table.invitationCodes || []) : 0),
+    [isLandmark, table.invitationCodes]
+  );
+
+  const mealSummary = useMemo(() => {
+    if (isLandmark) return null;
+    const eligibleEntries = detailedSeats.filter((entry) =>
+      isGuestEligibleForSeating(entry.guest)
+    );
+    return summarizeAttendeeMeals(eligibleEntries);
+  }, [isLandmark, detailedSeats]);
+
+  const guestChips = useMemo(() => {
+    if (isLandmark || !table.invitationCodes || table.invitationCodes.length === 0) {
+      return [];
+    }
+    const seatsByGuestId = new Map<string, number[]>();
+    const plusOneSeatsByGuestId = new Map<
+      string,
+      Array<{ seatNumber: number; attendeeName: string }>
+    >();
+    for (const entry of detailedSeats) {
+      if (!entry.guest.id) continue;
+      const list = seatsByGuestId.get(entry.guest.id);
+      if (list) {
+        list.push(entry.seatNumber);
+      } else {
+        seatsByGuestId.set(entry.guest.id, [entry.seatNumber]);
+      }
+      if (entry.isPlusOne) {
+        const poList = plusOneSeatsByGuestId.get(entry.guest.id) ?? [];
+        poList.push({ seatNumber: entry.seatNumber, attendeeName: entry.attendeeName });
+        plusOneSeatsByGuestId.set(entry.guest.id, poList);
+      }
+    }
+
+    return table.invitationCodes.map((guest) => {
+      const isDeclined = getGuestAttendanceStatus(guest) === 'declined';
+      const dietaryBadges = getDietaryBadges(
+        guest.dietaryNotes,
+        guest.extraFields,
+        guest.partyTags
+      );
+      const companionNames = formatGuestPlusOneNames(guest);
+      const mealSelections = formatGuestMealSelections(guest);
+      const customAnswers = formatGuestCustomAnswers(guest);
+      const visibleTags = (guest.partyTags || []).filter(
+        (tag) => tag.trim().toLowerCase() !== ADDRESS_COLLECTION_TAG
+      );
+      const resolvedSeats = seatsByGuestId.get(guest.id) || [];
+      const companions = !isDeclined ? getGuestCompanionNames(guest) : [];
+      const seatPrefix =
+        resolvedSeats.length > 1
+          ? `Seats ${resolvedSeats.join(', ')}`
+          : `Seat ${resolvedSeats[0] || guest.seatNumber || '?'}`;
+      const plusOneSeats = plusOneSeatsByGuestId.get(guest.id) || [];
+
+      return {
+        guest,
+        isDeclined,
+        dietaryBadges,
+        companionNames,
+        mealSelections,
+        customAnswers,
+        visibleTags,
+        companions,
+        seatPrefix,
+        plusOneSeats,
+      };
+    });
+  }, [isLandmark, table.invitationCodes, detailedSeats]);
+
+  const minBounds = useMemo(
+    () =>
+      computeTableMinBounds({
+        shape: table.shape,
+        capacity: table.capacity,
+        width: table.width,
+        height: table.height,
+        rotation: table.rotation,
+      }),
+    [table.shape, table.capacity, table.width, table.height, table.rotation]
+  );
+
+  return (
+    <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+      <div>
+        <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2 flex-wrap">
+          {table.name}
+          <span className="text-xs font-normal text-gray-600 dark:text-gray-300">
+            {isLandmark
+              ? `(Landmark · ${getSeatingShapeLabel(table.shape)}, 0 seats)`
+              : `(${table.shape}, ${table.capacity} capacity, ${seatedHeadcount} seated)`}
+          </span>
+        </h2>
+        {!isLandmark && seatedHeadcount > 0 && mealSummary && (
+          <p
+            data-testid="inspector-meal-summary"
+            className="mt-1 text-[11px] font-medium text-gray-700 dark:text-gray-300"
+          >
+            Entrées: {mealSummary.formattedMeals}
+          </p>
+        )}
+        {isLandmark ? (
+          <p className="text-xs text-gray-600 dark:text-gray-300 italic">
+            Room landmark fixture — drag or rotate to position on floorplan.
+          </p>
+        ) : guestChips.length > 0 ? (
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {guestChips.map((chip) => {
+              const {
+                guest,
+                isDeclined,
+                dietaryBadges,
+                companionNames,
+                mealSelections,
+                customAnswers,
+                visibleTags,
+                companions,
+                seatPrefix,
+                plusOneSeats,
+              } = chip;
+
+              return (
+                <span
+                  key={guest.id}
+                  data-testid={isDeclined ? 'inspector-declined-guest-chip' : 'inspector-guest-chip'}
+                  className={`inline-flex items-center flex-wrap gap-1 text-[11px] px-2 py-0.5 rounded ${
+                    isDeclined
+                      ? 'bg-red-50 dark:bg-red-950/60 border border-red-300 dark:border-red-700 text-red-900 dark:text-red-100'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
+                  }`}
+                >
+                  <span>
+                    {seatPrefix}: {guest.guestName}
+                    {companions.length > 0 ? ` (+${companions.length}: ${companions.join(', ')})` : ''}
+                  </span>
+                  {companionNames && (
+                    <span
+                      data-testid="inspector-companion-names"
+                      className="text-[9px] px-1.5 py-0.5 rounded bg-slate-200/80 dark:bg-slate-600/80 text-slate-800 dark:text-slate-100 font-medium"
+                    >
+                      +1: {companionNames}
+                    </span>
+                  )}
+                  {plusOneSeats.map((po) => (
+                    <span
+                      key={`${guest.id}-po-${po.seatNumber}`}
+                      data-testid="inspector-plus-one-seat"
+                      className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-900 dark:bg-indigo-950/80 dark:text-indigo-200 font-semibold"
+                    >
+                      Seat {po.seatNumber}: {po.attendeeName} (+1)
+                    </span>
+                  ))}
+                  {isDeclined && (
+                    <span
+                      data-testid="seated-declined-badge"
+                      className="text-[9px] px-1.5 py-0.5 rounded bg-red-200 text-red-900 dark:bg-red-900 dark:text-red-100 font-bold"
+                    >
+                      RSVP Declined
+                    </span>
+                  )}
+                  {guest.householdName && (
+                    <span className="text-[9px] text-purple-800 dark:text-purple-200 font-semibold ml-0.5">
+                      (🏠 {guest.householdName})
+                    </span>
+                  )}
+                  {mealSelections && (
+                    <span
+                      data-testid="inspector-meal-selections"
+                      className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 dark:bg-indigo-950/70 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-800 font-medium"
+                    >
+                      🍽️ {mealSelections}
+                    </span>
+                  )}
+                  {dietaryBadges.map((badge) => (
+                    <span
+                      key={badge.category}
+                      data-testid="inspector-dietary-badge"
+                      title={guest.dietaryNotes ? `${badge.label}: ${guest.dietaryNotes}` : badge.label}
+                      className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 font-semibold"
+                    >
+                      🍽️ {badge.shortLabel}
+                    </span>
+                  ))}
+                  {customAnswers && (
+                    <span
+                      data-testid="inspector-custom-answers"
+                      className="text-[9px] px-1.5 py-0.5 rounded bg-sky-50 text-sky-800 dark:bg-sky-950/70 dark:text-sky-200 border border-sky-200 dark:border-sky-800 font-medium"
+                    >
+                      💬 {customAnswers}
+                    </span>
+                  )}
+                  {visibleTags.length > 0 && (
+                    <span className="text-[9px] text-blue-800 dark:text-blue-200 ml-0.5">
+                      [{visibleTags.join(', ')}]
+                    </span>
+                  )}
+                  {isDeclined ? (
+                    <button
+                      type="button"
+                      onClick={() => onUnassignGuest(guest.id)}
+                      className="min-h-[24px] px-2 py-0.5 ml-1 text-[10px] font-semibold bg-red-700 hover:bg-red-800 text-white rounded transition-colors"
+                      aria-label={`Release seat for declined guest ${guest.guestName}`}
+                    >
+                      Release Seat
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => onUnassignGuest(guest.id)}
+                      className="min-w-6 min-h-6 inline-flex items-center justify-center text-gray-700 hover:text-red-700 dark:text-gray-200 dark:hover:text-red-300 font-bold ml-0.5 rounded"
+                      title="Unassign guest"
+                      aria-label={`Unassign ${guest.guestName}`}
+                    >
+                      ×
+                    </button>
+                  )}
+                </span>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-xs text-gray-600 dark:text-gray-300 italic">No guests assigned to this table yet.</p>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div
+          role="group"
+          aria-label={`Position controls for ${table.name}`}
+          data-testid="inspector-position-controls"
+          className="flex flex-wrap items-center gap-1 bg-gray-100 dark:bg-gray-700/60 p-1 rounded-lg border border-gray-200 dark:border-gray-600"
+        >
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => onNudgeTable(table, -20, 0)}
+            aria-label={`Nudge ${table.name} left`}
+            title="Nudge left (20px)"
+            className="!h-7 !w-7 min-w-[28px] min-h-[28px] !p-0 text-gray-800 dark:text-gray-100 hover:bg-white dark:hover:bg-gray-600"
+          >
+            <Icon name="ArrowLeft" size={14} />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => onNudgeTable(table, 0, -20)}
+            aria-label={`Nudge ${table.name} up`}
+            title="Nudge up (20px)"
+            className="!h-7 !w-7 min-w-[28px] min-h-[28px] !p-0 text-gray-800 dark:text-gray-100 hover:bg-white dark:hover:bg-gray-600"
+          >
+            <Icon name="ArrowUp" size={14} />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => onNudgeTable(table, 0, 20)}
+            aria-label={`Nudge ${table.name} down`}
+            title="Nudge down (20px)"
+            className="!h-7 !w-7 min-w-[28px] min-h-[28px] !p-0 text-gray-800 dark:text-gray-100 hover:bg-white dark:hover:bg-gray-600"
+          >
+            <Icon name="ArrowDown" size={14} />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => onNudgeTable(table, 20, 0)}
+            aria-label={`Nudge ${table.name} right`}
+            title="Nudge right (20px)"
+            className="!h-7 !w-7 min-w-[28px] min-h-[28px] !p-0 text-gray-800 dark:text-gray-100 hover:bg-white dark:hover:bg-gray-600"
+          >
+            <Icon name="ArrowRight" size={14} />
+          </Button>
+          <span
+            data-testid="inspector-coordinates"
+            className="px-1.5 font-mono text-[11px] font-semibold text-gray-700 dark:text-gray-200"
+          >
+            X: {Math.round(Math.max(minBounds.minX, table.x))}, Y: {Math.round(Math.max(minBounds.minY, table.y))}
+          </span>
+          <Button
+            type="button"
+            variant={isPlacementMode ? 'primary' : 'outline'}
+            size="sm"
+            pressed={isPlacementMode}
+            srContext={`for ${table.name}`}
+            onClick={() => onTogglePlacementMode(table.id)}
+            title="Toggle click-to-place mode on floorplan"
+            className="!h-7 min-h-[28px] !px-2.5 !py-0.5 !text-[11px]"
+          >
+            Place Table
+          </Button>
+        </div>
+        <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700/60 p-1 rounded-lg border border-gray-200 dark:border-gray-600">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              const current = table.rotation || 0;
+              const next = (current - 45 + 360) % 360;
+              onUpdateTableRotation(table.id, next);
+            }}
+            srContext={`for ${table.name}`}
+            className="!h-7 min-w-[32px] min-h-[28px] !px-2 !py-0.5 !text-xs font-semibold text-gray-800 dark:text-gray-100 hover:bg-white dark:hover:bg-gray-600"
+            title="Rotate -45°"
+          >
+            -45°
+          </Button>
+          <span className="px-1.5 font-mono text-xs font-bold text-primary">
+            {table.rotation || 0}°
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              const current = table.rotation || 0;
+              const next = (current + 45) % 360;
+              onUpdateTableRotation(table.id, next);
+            }}
+            srContext={`for ${table.name}`}
+            className="!h-7 min-w-[32px] min-h-[28px] !px-2 !py-0.5 !text-xs font-semibold text-gray-800 dark:text-gray-100 hover:bg-white dark:hover:bg-gray-600"
+            title="Rotate +45°"
+          >
+            +45°
+          </Button>
+        </div>
+        {!isLandmark && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            data-testid="clear-table-seats-button"
+            onClick={() => onClearTableSeats(table.id)}
+            disabled={(table.invitationCodes?.length || 0) === 0}
+            className="!h-8 min-h-[30px] !px-3 !py-1.5 !text-xs font-medium !bg-amber-50 !text-amber-900 dark:!bg-amber-950/50 dark:!text-amber-200 hover:!bg-amber-100 !border-amber-300 dark:!border-amber-700"
+          >
+            Clear Seats
+          </Button>
+        )}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => onEditTable(table)}
+          className="!h-8 min-h-[30px] !px-3 !py-1.5 !text-xs font-medium"
+        >
+          Edit Properties
+        </Button>
+        <Button
+          type="button"
+          variant="danger"
+          size="sm"
+          onClick={() => {
+            onRequestDeleteTable(table);
+          }}
+          className="!h-8 min-h-[30px] !px-3 !py-1.5 !text-xs font-medium"
+        >
+          Delete Table
+        </Button>
+      </div>
+    </div>
+  );
+});
 
 function SeatingChartAdminContent() {
   const { confirm, addToast } = useToast();
@@ -67,23 +470,31 @@ function SeatingChartAdminContent() {
   const [assignSeatTarget, setAssignSeatTarget] = useState<{ tableId: string; seatNumber: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
+  const selectedTableIdRef = useRef(selectedTableId);
+  useLayoutEffect(() => {
+    selectedTableIdRef.current = selectedTableId;
+  }, [selectedTableId]);
+
   const isPlacementMode = Boolean(selectedTableId && placementTableId === selectedTableId);
 
-  const nudgeSelectedTableBy = (table: SeatingTableDTO, dx: number, dy: number) => {
-    const { minX, minY } = computeTableMinBounds({
-      shape: table.shape,
-      capacity: table.capacity,
-      width: table.width,
-      height: table.height,
-      rotation: table.rotation,
-    });
-    const baseX = Math.max(minX, table.x);
-    const baseY = Math.max(minY, table.y);
-    const nextX = Math.max(minX, Math.round(baseX + dx));
-    const nextY = Math.max(minY, Math.round(baseY + dy));
-    handleUpdateTablePosition(table.id, nextX, nextY);
-    setInspectorAnnouncement(`${table.name} moved to X ${nextX}, Y ${nextY}.`);
-  };
+  const nudgeSelectedTableBy = useCallback(
+    (table: SeatingTableDTO, dx: number, dy: number) => {
+      const { minX, minY } = computeTableMinBounds({
+        shape: table.shape,
+        capacity: table.capacity,
+        width: table.width,
+        height: table.height,
+        rotation: table.rotation,
+      });
+      const baseX = Math.max(minX, table.x);
+      const baseY = Math.max(minY, table.y);
+      const nextX = Math.max(minX, Math.round(baseX + dx));
+      const nextY = Math.max(minY, Math.round(baseY + dy));
+      handleUpdateTablePosition(table.id, nextX, nextY);
+      setInspectorAnnouncement(`${table.name} moved to X ${nextX}, Y ${nextY}.`);
+    },
+    [handleUpdateTablePosition]
+  );
 
   // Compute search matching stats with memoization (excluding unseated ineligible records)
   const normalizedQuery = searchQuery.trim().toLowerCase();
@@ -133,12 +544,18 @@ function SeatingChartAdminContent() {
   const declinedSeatedGuests = useMemo(() => {
     const flagged: Array<{ guest: InvitationCodeDTO; tableId: string; tableName: string; resolvedSeat?: number }> = [];
     for (const table of tables) {
-      const seatMap = resolveSeatAssignments(table.invitationCodes, table.capacity);
+      const codes = table.invitationCodes;
+      if (!codes || codes.length === 0) continue;
+
+      const hasDeclined = codes.some((guest) => getGuestAttendanceStatus(guest) === 'declined');
+      if (!hasDeclined) continue;
+
+      const seatMap = resolveSeatAssignments(codes, table.capacity);
       const guestSeatLookup = new Map<string, number>();
       seatMap.forEach((g, seatNum) => {
         if (g.id) guestSeatLookup.set(g.id, seatNum);
       });
-      for (const guest of table.invitationCodes || []) {
+      for (const guest of codes) {
         if (getGuestAttendanceStatus(guest) === 'declined') {
           flagged.push({
             guest,
@@ -152,77 +569,69 @@ function SeatingChartAdminContent() {
     return flagged;
   }, [tables]);
 
-  // Table CRUD handlers
-  const handleCreateTable = () => {
+  // Table CRUD & FloorplanCanvas handlers (memoized to preserve FloorplanCanvas React.memo)
+  const handleCreateTable = useCallback(() => {
     setEditingTable(null);
     setIsTableModalOpen(true);
-  };
+  }, []);
 
-  const handleEditTable = (table: SeatingTableDTO) => {
+  const handleEditTable = useCallback((table: SeatingTableDTO) => {
     setEditingTable(table);
     setIsTableModalOpen(true);
-  };
+  }, []);
 
-  const handleSaveTable = async (tableData: Partial<SeatingTableDTO>) => {
-    await saveTable(tableData);
-  };
+  const handleSaveTable = useCallback(
+    async (tableData: Partial<SeatingTableDTO>) => {
+      await saveTable(tableData);
+    },
+    [saveTable]
+  );
 
-  const handleDeleteTableConfirmed = async (tableId: string) => {
-    setSelectedTableId(null);
-    await deleteTable(tableId);
-  };
+  const handleDeleteTableConfirmed = useCallback(
+    async (tableId: string) => {
+      setSelectedTableId(null);
+      await deleteTable(tableId);
+    },
+    [deleteTable]
+  );
 
-  const handleRequestDeleteTable = async (table: SeatingTableDTO) => {
-    const seatedGuests = table.invitationCodes || [];
-    if (seatedGuests.length > 0) {
-      const seatedHeadcount = getGuestsHeadcount(seatedGuests);
-      const confirmed = await confirm(
-        `Are you sure you want to delete "${table.name}"? ${seatedHeadcount} seated guest${seatedHeadcount === 1 ? '' : 's'} will become unassigned.`
-      );
-      if (!confirmed) {
-        return;
+  const handleOpenSeatAssignModal = useCallback((tableId: string, seatNumber: number) => {
+    setAssignSeatTarget({ tableId, seatNumber });
+  }, []);
+
+  const handlePlacementModeChange = useCallback((active: boolean) => {
+    setPlacementTableId(active ? selectedTableIdRef.current : null);
+  }, []);
+
+  const handleTogglePlacementTable = useCallback((tableId: string) => {
+    setPlacementTableId((prev) => (prev === tableId ? null : tableId));
+  }, []);
+
+  const handleRequestDeleteTable = useCallback(
+    async (table: SeatingTableDTO) => {
+      const seatedGuests = table.invitationCodes || [];
+      if (seatedGuests.length > 0) {
+        const seatedHeadcount = getGuestsHeadcount(seatedGuests);
+        const confirmed = await confirm(
+          `Are you sure you want to delete "${table.name}"? ${seatedHeadcount} seated guest${seatedHeadcount === 1 ? '' : 's'} will become unassigned.`
+        );
+        if (!confirmed) {
+          return;
+        }
       }
-    }
-    await handleDeleteTableConfirmed(table.id);
-  };
+      await handleDeleteTableConfirmed(table.id);
+    },
+    [confirm, handleDeleteTableConfirmed]
+  );
+
+  const handleRequestDeleteTableSync = useCallback(
+    (table: SeatingTableDTO) => {
+      void handleRequestDeleteTable(table);
+    },
+    [handleRequestDeleteTable]
+  );
 
   const selectedTable = tables.find((t) => t.id === selectedTableId) || null;
-  const selectedTableSeatedHeadcount = useMemo(
-    () =>
-      selectedTable && !isLandmarkTable(selectedTable)
-        ? getGuestsHeadcount(selectedTable.invitationCodes || [])
-        : 0,
-    [selectedTable]
-  );
-  const selectedTableDetailedSeats = useMemo(() => {
-    if (!selectedTable?.invitationCodes || isLandmarkTable(selectedTable)) return [];
-    return Array.from(
-      resolveDetailedSeatAssignments(selectedTable.invitationCodes, selectedTable.capacity).values()
-    ).sort((a, b) => a.seatNumber - b.seatNumber);
-  }, [selectedTable]);
-
-  const selectedTableDetails = useMemo(() => {
-    const seatsByGuestId = new Map<string, number[]>();
-    const plusOneSeatsByGuestId = new Map<
-      string,
-      Array<{ seatNumber: number; attendeeName: string }>
-    >();
-    for (const entry of selectedTableDetailedSeats) {
-      if (!entry.guest.id) continue;
-      const list = seatsByGuestId.get(entry.guest.id);
-      if (list) {
-        list.push(entry.seatNumber);
-      } else {
-        seatsByGuestId.set(entry.guest.id, [entry.seatNumber]);
-      }
-      if (entry.isPlusOne) {
-        const poList = plusOneSeatsByGuestId.get(entry.guest.id) ?? [];
-        poList.push({ seatNumber: entry.seatNumber, attendeeName: entry.attendeeName });
-        plusOneSeatsByGuestId.set(entry.guest.id, poList);
-      }
-    }
-    return { seatsByGuestId, plusOneSeatsByGuestId };
-  }, [selectedTableDetailedSeats]);
 
   return (
     <div className="space-y-6">
@@ -543,324 +952,26 @@ function SeatingChartAdminContent() {
               onDropGuestsOnTable={handleAssignGuestsToTable}
               onUnassignGuest={handleUnassignGuest}
               searchQuery={searchQuery}
-              onOpenSeatAssignModal={(tableId, seatNumber) => setAssignSeatTarget({ tableId, seatNumber })}
+              onOpenSeatAssignModal={handleOpenSeatAssignModal}
               onAddTable={handleCreateTable}
               placementMode={isPlacementMode}
-              onPlacementModeChange={(active) =>
-                setPlacementTableId(active ? selectedTableId : null)
-              }
+              onPlacementModeChange={handlePlacementModeChange}
             />
 
             {/* Selected Table Inspector Bar */}
-            {selectedTable && (() => {
-              const selectedIsLandmark = isLandmarkTable(selectedTable);
-              const selectedMinBounds = computeTableMinBounds({
-                shape: selectedTable.shape,
-                capacity: selectedTable.capacity,
-                width: selectedTable.width,
-                height: selectedTable.height,
-                rotation: selectedTable.rotation,
-              });
-              const selectedMealSummary = selectedIsLandmark
-                ? null
-                : computeTableMealCounts(selectedTable.invitationCodes);
-
-              return (
-                <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                  <div>
-                    <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2 flex-wrap">
-                      {selectedTable.name}
-                      <span className="text-xs font-normal text-gray-600 dark:text-gray-300">
-                        {selectedIsLandmark
-                          ? `(Landmark · ${getSeatingShapeLabel(selectedTable.shape)}, 0 seats)`
-                          : `(${selectedTable.shape}, ${selectedTable.capacity} capacity, ${selectedTableSeatedHeadcount} seated)`}
-                      </span>
-                    </h2>
-                    {!selectedIsLandmark && selectedTableSeatedHeadcount > 0 && selectedMealSummary && (
-                      <p
-                        data-testid="inspector-meal-summary"
-                        className="mt-1 text-[11px] font-medium text-gray-700 dark:text-gray-300"
-                      >
-                        Entrées: {selectedMealSummary.formattedMeals}
-                      </p>
-                    )}
-                    {selectedIsLandmark ? (
-                      <p className="text-xs text-gray-600 dark:text-gray-300 italic">
-                        Room landmark fixture — drag or rotate to position on floorplan.
-                      </p>
-                    ) : selectedTable.invitationCodes && selectedTable.invitationCodes.length > 0 ? (
-                      <div className="mt-1.5 flex flex-wrap gap-1.5">
-                        {selectedTable.invitationCodes.map((guest) => {
-                          const isDeclined = getGuestAttendanceStatus(guest) === 'declined';
-                          const dietaryBadges = getDietaryBadges(
-                            guest.dietaryNotes,
-                            guest.extraFields,
-                            guest.partyTags
-                          );
-                          const companionNames = formatGuestPlusOneNames(guest);
-                          const mealSelections = formatGuestMealSelections(guest);
-                          const customAnswers = formatGuestCustomAnswers(guest);
-                          const visibleTags = (guest.partyTags || []).filter(
-                            (tag) => tag.trim().toLowerCase() !== ADDRESS_COLLECTION_TAG
-                          );
-                          const resolvedSeats =
-                            selectedTableDetails.seatsByGuestId.get(guest.id) || [];
-                          const companions = !isDeclined ? getGuestCompanionNames(guest) : [];
-                          const seatPrefix =
-                            resolvedSeats.length > 1
-                              ? `Seats ${resolvedSeats.join(', ')}`
-                              : `Seat ${resolvedSeats[0] || guest.seatNumber || '?'}`;
-                          const plusOneSeats =
-                            selectedTableDetails.plusOneSeatsByGuestId.get(guest.id) || [];
-
-                          return (
-                            <span
-                              key={guest.id}
-                              data-testid={isDeclined ? 'inspector-declined-guest-chip' : 'inspector-guest-chip'}
-                              className={`inline-flex items-center flex-wrap gap-1 text-[11px] px-2 py-0.5 rounded ${
-                                isDeclined
-                                  ? 'bg-red-50 dark:bg-red-950/60 border border-red-300 dark:border-red-700 text-red-900 dark:text-red-100'
-                                  : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
-                              }`}
-                            >
-                              <span>
-                                {seatPrefix}: {guest.guestName}
-                                {companions.length > 0 ? ` (+${companions.length}: ${companions.join(', ')})` : ''}
-                              </span>
-                              {companionNames && (
-                                <span
-                                  data-testid="inspector-companion-names"
-                                  className="text-[9px] px-1.5 py-0.5 rounded bg-slate-200/80 dark:bg-slate-600/80 text-slate-800 dark:text-slate-100 font-medium"
-                                >
-                                  +1: {companionNames}
-                                </span>
-                              )}
-                              {plusOneSeats.map((po) => (
-                                <span
-                                  key={`${guest.id}-po-${po.seatNumber}`}
-                                  data-testid="inspector-plus-one-seat"
-                                  className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-900 dark:bg-indigo-950/80 dark:text-indigo-200 font-semibold"
-                                >
-                                  Seat {po.seatNumber}: {po.attendeeName} (+1)
-                                </span>
-                              ))}
-                              {isDeclined && (
-                                <span
-                                  data-testid="seated-declined-badge"
-                                  className="text-[9px] px-1.5 py-0.5 rounded bg-red-200 text-red-900 dark:bg-red-900 dark:text-red-100 font-bold"
-                                >
-                                  RSVP Declined
-                                </span>
-                              )}
-                              {guest.householdName && (
-                                <span className="text-[9px] text-purple-800 dark:text-purple-200 font-semibold ml-0.5">
-                                  (🏠 {guest.householdName})
-                                </span>
-                              )}
-                              {mealSelections && (
-                                <span
-                                  data-testid="inspector-meal-selections"
-                                  className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 dark:bg-indigo-950/70 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-800 font-medium"
-                                >
-                                  🍽️ {mealSelections}
-                                </span>
-                              )}
-                              {dietaryBadges.map((badge) => (
-                                <span
-                                  key={badge.category}
-                                  data-testid="inspector-dietary-badge"
-                                  title={guest.dietaryNotes ? `${badge.label}: ${guest.dietaryNotes}` : badge.label}
-                                  className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 font-semibold"
-                                >
-                                  🍽️ {badge.shortLabel}
-                                </span>
-                              ))}
-                              {customAnswers && (
-                                <span
-                                  data-testid="inspector-custom-answers"
-                                  className="text-[9px] px-1.5 py-0.5 rounded bg-sky-50 text-sky-800 dark:bg-sky-950/70 dark:text-sky-200 border border-sky-200 dark:border-sky-800 font-medium"
-                                >
-                                  💬 {customAnswers}
-                                </span>
-                              )}
-                              {visibleTags.length > 0 && (
-                                <span className="text-[9px] text-blue-800 dark:text-blue-200 ml-0.5">
-                                  [{visibleTags.join(', ')}]
-                                </span>
-                              )}
-                              {isDeclined ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleUnassignGuest(guest.id)}
-                                  className="min-h-[24px] px-2 py-0.5 ml-1 text-[10px] font-semibold bg-red-700 hover:bg-red-800 text-white rounded transition-colors"
-                                  aria-label={`Release seat for declined guest ${guest.guestName}`}
-                                >
-                                  Release Seat
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => handleUnassignGuest(guest.id)}
-                                  className="min-w-6 min-h-6 inline-flex items-center justify-center text-gray-700 hover:text-red-700 dark:text-gray-200 dark:hover:text-red-300 font-bold ml-0.5 rounded"
-                                  title="Unassign guest"
-                                  aria-label={`Unassign ${guest.guestName}`}
-                                >
-                                  ×
-                                </button>
-                              )}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-gray-600 dark:text-gray-300 italic">No guests assigned to this table yet.</p>
-                    )}
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div
-                      role="group"
-                      aria-label={`Position controls for ${selectedTable.name}`}
-                      data-testid="inspector-position-controls"
-                      className="flex flex-wrap items-center gap-1 bg-gray-100 dark:bg-gray-700/60 p-1 rounded-lg border border-gray-200 dark:border-gray-600"
-                    >
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => nudgeSelectedTableBy(selectedTable, -20, 0)}
-                        aria-label={`Nudge ${selectedTable.name} left`}
-                        title="Nudge left (20px)"
-                        className="!h-7 !w-7 min-w-[28px] min-h-[28px] !p-0 text-gray-800 dark:text-gray-100 hover:bg-white dark:hover:bg-gray-600"
-                      >
-                        <Icon name="ArrowLeft" size={14} />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => nudgeSelectedTableBy(selectedTable, 0, -20)}
-                        aria-label={`Nudge ${selectedTable.name} up`}
-                        title="Nudge up (20px)"
-                        className="!h-7 !w-7 min-w-[28px] min-h-[28px] !p-0 text-gray-800 dark:text-gray-100 hover:bg-white dark:hover:bg-gray-600"
-                      >
-                        <Icon name="ArrowUp" size={14} />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => nudgeSelectedTableBy(selectedTable, 0, 20)}
-                        aria-label={`Nudge ${selectedTable.name} down`}
-                        title="Nudge down (20px)"
-                        className="!h-7 !w-7 min-w-[28px] min-h-[28px] !p-0 text-gray-800 dark:text-gray-100 hover:bg-white dark:hover:bg-gray-600"
-                      >
-                        <Icon name="ArrowDown" size={14} />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => nudgeSelectedTableBy(selectedTable, 20, 0)}
-                        aria-label={`Nudge ${selectedTable.name} right`}
-                        title="Nudge right (20px)"
-                        className="!h-7 !w-7 min-w-[28px] min-h-[28px] !p-0 text-gray-800 dark:text-gray-100 hover:bg-white dark:hover:bg-gray-600"
-                      >
-                        <Icon name="ArrowRight" size={14} />
-                      </Button>
-                      <span
-                        data-testid="inspector-coordinates"
-                        className="px-1.5 font-mono text-[11px] font-semibold text-gray-700 dark:text-gray-200"
-                      >
-                        X: {Math.round(Math.max(selectedMinBounds.minX, selectedTable.x))}, Y: {Math.round(Math.max(selectedMinBounds.minY, selectedTable.y))}
-                      </span>
-                      <Button
-                        type="button"
-                        variant={isPlacementMode ? 'primary' : 'outline'}
-                        size="sm"
-                        pressed={isPlacementMode}
-                        srContext={`for ${selectedTable.name}`}
-                        onClick={() =>
-                          setPlacementTableId(isPlacementMode ? null : selectedTable.id)
-                        }
-                        title="Toggle click-to-place mode on floorplan"
-                        className="!h-7 min-h-[28px] !px-2.5 !py-0.5 !text-[11px]"
-                      >
-                        Place Table
-                      </Button>
-                    </div>
-                    <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700/60 p-1 rounded-lg border border-gray-200 dark:border-gray-600">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          const current = selectedTable.rotation || 0;
-                          const next = (current - 45 + 360) % 360;
-                          handleUpdateTableRotation(selectedTable.id, next);
-                        }}
-                        srContext={`for ${selectedTable.name}`}
-                        className="!h-7 min-w-[32px] min-h-[28px] !px-2 !py-0.5 !text-xs font-semibold text-gray-800 dark:text-gray-100 hover:bg-white dark:hover:bg-gray-600"
-                        title="Rotate -45°"
-                      >
-                        -45°
-                      </Button>
-                      <span className="px-1.5 font-mono text-xs font-bold text-primary">
-                        {selectedTable.rotation || 0}°
-                      </span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          const current = selectedTable.rotation || 0;
-                          const next = (current + 45) % 360;
-                          handleUpdateTableRotation(selectedTable.id, next);
-                        }}
-                        srContext={`for ${selectedTable.name}`}
-                        className="!h-7 min-w-[32px] min-h-[28px] !px-2 !py-0.5 !text-xs font-semibold text-gray-800 dark:text-gray-100 hover:bg-white dark:hover:bg-gray-600"
-                        title="Rotate +45°"
-                      >
-                        +45°
-                      </Button>
-                    </div>
-                    {!selectedIsLandmark && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        data-testid="clear-table-seats-button"
-                        onClick={() => handleClearTableSeats(selectedTable.id)}
-                        disabled={(selectedTable.invitationCodes?.length || 0) === 0}
-                        className="!h-8 min-h-[30px] !px-3 !py-1.5 !text-xs font-medium !bg-amber-50 !text-amber-900 dark:!bg-amber-950/50 dark:!text-amber-200 hover:!bg-amber-100 !border-amber-300 dark:!border-amber-700"
-                      >
-                        Clear Seats
-                      </Button>
-                    )}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleEditTable(selectedTable)}
-                      className="!h-8 min-h-[30px] !px-3 !py-1.5 !text-xs font-medium"
-                    >
-                      Edit Properties
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="danger"
-                      size="sm"
-                      onClick={() => {
-                        void handleRequestDeleteTable(selectedTable);
-                      }}
-                      className="!h-8 min-h-[30px] !px-3 !py-1.5 !text-xs font-medium"
-                    >
-                      Delete Table
-                    </Button>
-                  </div>
-                </div>
-              );
-            })()}
+            {selectedTable && (
+              <SelectedTableInspector
+                table={selectedTable}
+                isPlacementMode={isPlacementMode}
+                onTogglePlacementMode={handleTogglePlacementTable}
+                onNudgeTable={nudgeSelectedTableBy}
+                onUpdateTableRotation={handleUpdateTableRotation}
+                onUnassignGuest={handleUnassignGuest}
+                onClearTableSeats={handleClearTableSeats}
+                onEditTable={handleEditTable}
+                onRequestDeleteTable={handleRequestDeleteTableSync}
+              />
+            )}
           </div>
         </div>
       </div>

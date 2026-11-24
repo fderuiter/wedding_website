@@ -2,7 +2,6 @@ import type { InvitationCodeDTO } from '@/features/registry';
 import {
   formatCompanionSeatLabel,
   getDietaryBadges,
-  getGuestsHeadcount,
   getInvitationPartyMembers,
   isLandmarkTableShape,
   isOneSidedTableShape,
@@ -304,8 +303,6 @@ export function resolveDetailedSeatAssignments(
   }
 
   const safeCapacity = Math.max(1, Math.floor(Number(capacity) || 1));
-  const totalHeadcount = getGuestsHeadcount(guests);
-  const maxBound = Math.max(safeCapacity, totalHeadcount);
   const occupied = new Set<number>();
 
   interface PlacedPrimaryEntry {
@@ -321,10 +318,12 @@ export function resolveDetailedSeatAssignments(
 
   const placedExplicit: PlacedPrimaryEntry[] = [];
   const unplacedParties: UnplacedPartyEntry[] = [];
+  let totalHeadcount = 0;
 
-  // Pass 1a: Claim valid explicit primary seats within 1..safeCapacity
+  // Pass 1a: Resolve each party once and claim valid explicit primary seats within 1..safeCapacity
   for (const guest of guests) {
     const members = resolvePartyMembersWithFallback(guest);
+    totalHeadcount += members.length;
     const explicitSeat = guest.seatNumber;
     if (
       typeof explicitSeat === 'number' &&
@@ -343,6 +342,8 @@ export function resolveDetailedSeatAssignments(
       unplacedParties.push({ guest, members });
     }
   }
+
+  const maxBound = Math.max(safeCapacity, totalHeadcount);
 
   // Pass 1b: Allocate companion chairs for Pass 1a parties (honoring explicit plusOneSeatNumbers, else contiguous)
   for (const entry of placedExplicit) {
