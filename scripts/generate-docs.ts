@@ -167,8 +167,8 @@ export function getZodDescription(schema: unknown): string | undefined {
   return undefined;
 }
 
-function getPrismaAppConfigColumns(): Set<string> {
-  const prismaSchemaPath = path.join(ROOT_DIR, 'prisma/schema.prisma');
+function getPrismaAppConfigColumns(rootDir: string = ROOT_DIR): Set<string> {
+  const prismaSchemaPath = path.join(rootDir, 'prisma/schema.prisma');
   const prismaSource = fs.readFileSync(prismaSchemaPath, 'utf8');
   const modelMatch = prismaSource.match(/model\s+AppConfig\s*\{([\s\S]*?)\n\}/);
   if (!modelMatch) {
@@ -190,11 +190,84 @@ function getPrismaAppConfigColumns(): Set<string> {
   return columns;
 }
 
-function getAdminDtoExposureMetadata(): {
+function getPrismaModelNames(rootDir: string = ROOT_DIR): string[] {
+  const prismaSchemaPath = path.join(rootDir, 'prisma/schema.prisma');
+  const prismaSource = fs.readFileSync(prismaSchemaPath, 'utf8');
+  const models: string[] = [];
+  const modelRegex = /^model\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{/gm;
+  let match: RegExpExecArray | null;
+  while ((match = modelRegex.exec(prismaSource)) !== null) {
+    models.push(match[1]);
+  }
+  return models;
+}
+
+function extractStringArrayConst(filePath: string, constName: string): string[] {
+  const sourceText = fs.readFileSync(filePath, 'utf8');
+  const sf = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true);
+  const items: string[] = [];
+
+  function unwrap(expr: ts.Expression): ts.Expression {
+    let cur = expr;
+    while (
+      ts.isAsExpression(cur) ||
+      ts.isSatisfiesExpression(cur) ||
+      ts.isParenthesizedExpression(cur)
+    ) {
+      cur = cur.expression;
+    }
+    return cur;
+  }
+
+  function visit(node: ts.Node) {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === constName &&
+      node.initializer
+    ) {
+      const init = unwrap(node.initializer);
+      if (ts.isArrayLiteralExpression(init)) {
+        for (const el of init.elements) {
+          const inner = unwrap(el);
+          if (ts.isStringLiteralLike(inner)) {
+            items.push(inner.text);
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sf);
+  return items;
+}
+
+function extractStringConstValue(filePath: string, constName: string): string | null {
+  const sourceText = fs.readFileSync(filePath, 'utf8');
+  const sf = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true);
+  let found: string | null = null;
+
+  function visit(node: ts.Node) {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === constName &&
+      node.initializer &&
+      ts.isStringLiteralLike(node.initializer)
+    ) {
+      found = node.initializer.text;
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sf);
+  return found;
+}
+
+function getAdminDtoExposureMetadata(rootDir: string = ROOT_DIR): {
   adminOnlyKeys: Set<string>;
   maskedSecrets: Map<string, string>;
 } {
-  const configPath = path.join(ROOT_DIR, 'src/lib/config.ts');
+  const configPath = path.join(rootDir, 'src/lib/config.ts');
   const sourceText = fs.readFileSync(configPath, 'utf8');
   const sourceFile = ts.createSourceFile(configPath, sourceText, ts.ScriptTarget.Latest, true);
 
@@ -225,6 +298,56 @@ function getAdminDtoExposureMetadata(): {
 
   visit(sourceFile);
   return { adminOnlyKeys, maskedSecrets };
+}
+
+export function generateConfigSummarySection(
+  rootDir: string = ROOT_DIR,
+  schemaShape: Record<string, unknown> = AppConfigSchema.shape,
+  publicShape: Record<string, unknown> = PublicAppConfigSchema.shape,
+): string {
+  const prismaColumns = getPrismaAppConfigColumns(rootDir);
+  const allSchemaKeys = Object.keys(schemaShape);
+  const persistedCount = prismaColumns.size;
+  const totalCount = allSchemaKeys.length;
+  const virtualCount = allSchemaKeys.filter((key) => !prismaColumns.has(key)).length;
+  const publicCount = Object.keys(publicShape).length;
+
+  const backupPersistencePath = path.join(rootDir, 'src/lib/backupPersistence.ts');
+  const backupKeys = extractStringArrayConst(backupPersistencePath, 'APP_CONFIG_BACKUP_KEYS');
+  const secretKeys = extractStringArrayConst(backupPersistencePath, 'APP_CONFIG_SECRET_KEYS');
+
+  const { adminOnlyKeys, maskedSecrets } = getAdminDtoExposureMetadata(rootDir);
+  const providerAndBatchingKeys = Array.from(adminOnlyKeys).filter((key) =>
+    /^(?:emailProvider|smtp|resend|sendgrid|smsProvider|twilio|broadcastBatch)/.test(key),
+  );
+  const presenceFlags = secretKeys
+    .map((key) => maskedSecrets.get(key))
+    .filter((flag): flag is string => Boolean(flag));
+
+  const exportRoutePath = path.join(rootDir, 'src/app/api/admin/maintenance/export/route.ts');
+  const backupSchemaVersion =
+    (fs.existsSync(exportRoutePath)
+      ? extractStringConstValue(exportRoutePath, 'BACKUP_SCHEMA_VERSION')
+      : null) ?? '2.0';
+
+  const domainModelCount = getPrismaModelNames(rootDir).filter(
+    (name) => name !== 'AuthLockout',
+  ).length;
+
+  const secretKeyList = secretKeys.map((k) => `\`${k}\``).join(', ');
+  const providerKeyList = providerAndBatchingKeys.map((k) => `\`${k}\``).join(', ');
+  const presenceFlagList = presenceFlags.map((k) => `\`${k}\``).join(', ');
+
+  return [
+    `Every configurable value has one authoritative home. Ordinary site customization requires zero source code edits. At runtime boundaries (especially in production), configuration payloads are validated against Zod schemas (\`AppConfigSchema\` in [src/features/content/schemas.ts](src/features/content/schemas.ts), covering ${persistedCount} persisted PostgreSQL columns in [prisma/schema.prisma](prisma/schema.prisma)—including \`modules\` piped through \`ModuleConfigSchema\`—and ${virtualCount} virtual DTO fields for ${totalCount} total schema fields), ensuring immediate, clear failure if misconfigured.`,
+    '',
+    'DTO sanitization in [src/lib/config.ts](src/lib/config.ts) and [src/lib/backupPersistence.ts](src/lib/backupPersistence.ts) enforces three explicit visibility boundaries:',
+    `- **Public DTO (\`PublicAppConfigSchema\` in [src/features/content/schemas.ts](src/features/content/schemas.ts) / \`toPublicAppConfig\` in [src/lib/config.ts](src/lib/config.ts)):** Applies a strict ${publicCount}-field allowlist for public SSR/client consumption, stripping all email/SMS delivery, secret, moderation/QR token, and RSVP grace-period fields while injecting runtime \`multisiteEnabled\` and \`isRsvpOpen\`.`,
+    `- **Backup Export Sanitizer (\`sanitizeAppConfigForBackup\`, [src/lib/backupPersistence.ts](src/lib/backupPersistence.ts)):** Iterates over the ${backupKeys.length} \`APP_CONFIG_BACKUP_KEYS\` ([src/lib/backupPersistence.ts](src/lib/backupPersistence.ts), with \`sanitizeAppConfigForBackup\` re-exported by [src/lib/config.ts](src/lib/config.ts)) to retain all persisted non-secret PostgreSQL \`AppConfig\` columns (including \`modules\`, \`rsvpOpen\`, \`rsvpGracePeriodHours\`, and non-secret broadcast provider settings) while stripping the ${secretKeys.length} raw provider secrets (\`APP_CONFIG_SECRET_KEYS\`: ${secretKeyList}).`,
+    `- **Admin DTO (\`AdminAppConfig\` / \`toAdminAppConfig\`, [src/lib/config.ts](src/lib/config.ts)):** Extends \`toPublicAppConfig\` for authenticated admin settings endpoints (\`/api/admin/settings\`) with \`autoApproveGuestPhotos\`, \`rsvpOpen\`, \`rsvpGracePeriodHours\`, shipping/payment defaults, and the ${providerAndBatchingKeys.length} non-secret email/SMS provider and batching fields (${providerKeyList}), while omitting the ${secretKeys.length} raw provider secrets (${secretKeyList}) in favor of boolean presence flags (${presenceFlagList}).`,
+    '',
+    `Import and export formats ([src/app/api/admin/maintenance/export/route.ts](src/app/api/admin/maintenance/export/route.ts)) include versioning metadata (\`schemaVersion: "${backupSchemaVersion}"\`) across the ${domainModelCount} exported domain models (excluding ephemeral \`AuthLockout\` lockout rows) to guarantee upgrade safety.`,
+  ].join('\n');
 }
 
 export function escapeMarkdownTableCell(value: string): string {
@@ -1525,13 +1648,18 @@ export function updateArchitectureMd(
   const envRegex = /<!-- BEGIN AUTOGENERATED ENV -->[\s\S]*?<!-- END AUTOGENERATED ENV -->/;
   const routesRegex = /<!-- BEGIN AUTOGENERATED ROUTES -->[\s\S]*?<!-- END AUTOGENERATED ROUTES -->/;
   const apiRoutesRegex = /<!-- BEGIN AUTOGENERATED API_ROUTES -->[\s\S]*?<!-- END AUTOGENERATED API_ROUTES -->/;
+  const configSummaryRegex =
+    /<!-- BEGIN AUTOGENERATED CONFIG_SUMMARY -->[\s\S]*?<!-- END AUTOGENERATED CONFIG_SUMMARY -->/;
   const configRegex = /<!-- BEGIN AUTOGENERATED CONFIG -->[\s\S]*?<!-- END AUTOGENERATED CONFIG -->/;
+
+  const requiresConfigSummary = fs.existsSync(path.join(rootDir, 'src/lib/backupPersistence.ts'));
 
   if (
     options.check &&
     (!envRegex.test(content) ||
       !routesRegex.test(content) ||
       !apiRoutesRegex.test(content) ||
+      (requiresConfigSummary && !configSummaryRegex.test(content)) ||
       !configRegex.test(content))
   ) {
     console.error('Drift detected in ARCHITECTURE.md');
@@ -1546,6 +1674,14 @@ export function updateArchitectureMd(
 
   // Replace API Routes Inventory
   content = content.replace(apiRoutesRegex, `<!-- BEGIN AUTOGENERATED API_ROUTES -->\n${generateApiRoutesSection(rootDir)}\n<!-- END AUTOGENERATED API_ROUTES -->`);
+
+  // Replace Config Summary
+  if (configSummaryRegex.test(content)) {
+    content = content.replace(
+      configSummaryRegex,
+      `<!-- BEGIN AUTOGENERATED CONFIG_SUMMARY -->\n${generateConfigSummarySection(rootDir)}\n<!-- END AUTOGENERATED CONFIG_SUMMARY -->`,
+    );
+  }
 
   // Replace Config
   content = content.replace(configRegex, `<!-- BEGIN AUTOGENERATED CONFIG -->\n${generateConfigTable()}\n<!-- END AUTOGENERATED CONFIG -->`);
@@ -2463,6 +2599,52 @@ export function generateFeatureBarrelsTable(rootDir: string = ROOT_DIR): string 
   return markdown;
 }
 
+const REGISTRY_SKIP_ROUTE_NOTES: Record<string, string> = {
+  '/api/registry/scrape': 'reused by Admin Content Hub photo metadata import',
+  '/api/registry/session': 'global guest invitation session hydration',
+  '/api/registry/validate-code': 'reused by `/guest/collect` address portal',
+  '/api/registry/webhook/stripe':
+    'asynchronous settlement reconciliation for already-created PaymentIntents',
+};
+
+function formatRouteMethodList(methods: string[], routePath: string): string {
+  const formatted = methods.map((m) => `\`${m} ${routePath}\``);
+  if (formatted.length === 0) return `\`${routePath}\``;
+  if (formatted.length === 1) return formatted[0];
+  if (formatted.length === 2) return `${formatted[0]} and ${formatted[1]}`;
+  return `${formatted.slice(0, -1).join(', ')}, and ${formatted[formatted.length - 1]}`;
+}
+
+export function generateRegistryGuardsSection(rootDir: string = ROOT_DIR): string {
+  const registryEntries = collectApiRouteEntries(rootDir).filter(
+    (entry) => entry.group === 'registry',
+  );
+  const guardedEntries = registryEntries.filter((entry) =>
+    entry.methods.some((m) =>
+      (entry.featureChecksByMethod[m] ?? []).some((chk) => chk.featureId === 'registry'),
+    ),
+  );
+  const skippedEntries = registryEntries.filter(
+    (entry) =>
+      !entry.methods.some((m) =>
+        (entry.featureChecksByMethod[m] ?? []).some((chk) => chk.featureId === 'registry'),
+      ),
+  );
+  const total = registryEntries.length;
+
+  const lines: string[] = [
+    `- **Registry APIs Enforcing \`isFeatureEnabled('registry')\` (HTTP 404 — ${guardedEntries.length} of ${total} handlers)**:`,
+    ...guardedEntries.map((entry) => `  - ${formatRouteMethodList(entry.methods, entry.routePath)}`),
+    `- **Shared Auth, Scraping, & Webhook Routes Under \`/api/registry/*\` Skipping \`isFeatureEnabled('registry')\` (${skippedEntries.length} of ${total} handlers)**:`,
+    ...skippedEntries.map((entry) => {
+      const note = REGISTRY_SKIP_ROUTE_NOTES[entry.routePath];
+      return `  - ${formatRouteMethodList(entry.methods, entry.routePath)}${note ? ` (${note})` : ''}`;
+    }),
+  ];
+
+  return lines.join('\n');
+}
+
 export function updateFeatureModulesMd(
   rootDir: string = ROOT_DIR,
   options: { check?: boolean } = {},
@@ -2480,18 +2662,27 @@ export function updateFeatureModulesMd(
 
   const metadataRegex =
     /<!-- BEGIN AUTOGENERATED FEATURE_METADATA -->[\s\S]*?<!-- END AUTOGENERATED FEATURE_METADATA -->/;
+  const registryGuardsRegex =
+    /<!-- BEGIN AUTOGENERATED REGISTRY_GUARDS -->[\s\S]*?<!-- END AUTOGENERATED REGISTRY_GUARDS -->/;
   const entitiesRegex =
     /<!-- BEGIN AUTOGENERATED ADMIN_ENTITIES -->[\s\S]*?<!-- END AUTOGENERATED ADMIN_ENTITIES -->/;
   const barrelsRegex =
     /<!-- BEGIN AUTOGENERATED FEATURE_BARRELS -->[\s\S]*?<!-- END AUTOGENERATED FEATURE_BARRELS -->/;
 
-  if (!metadataRegex.test(content) || !entitiesRegex.test(content) || !barrelsRegex.test(content)) {
+  const requiresRegistryGuards = fs.existsSync(path.join(rootDir, 'src/app/api/registry'));
+
+  if (
+    !metadataRegex.test(content) ||
+    !entitiesRegex.test(content) ||
+    !barrelsRegex.test(content) ||
+    (requiresRegistryGuards && !registryGuardsRegex.test(content))
+  ) {
     if (options.check) {
       console.error('Drift detected in FEATURE_MODULES.md');
       return false;
     }
     throw new Error(
-      'FEATURE_MODULES.md is missing one or more required AUTOGENERATED HTML marker blocks (FEATURE_METADATA, ADMIN_ENTITIES, FEATURE_BARRELS).',
+      'FEATURE_MODULES.md is missing one or more required AUTOGENERATED HTML marker blocks (FEATURE_METADATA, REGISTRY_GUARDS, ADMIN_ENTITIES, FEATURE_BARRELS).',
     );
   }
 
@@ -2499,6 +2690,12 @@ export function updateFeatureModulesMd(
     metadataRegex,
     `<!-- BEGIN AUTOGENERATED FEATURE_METADATA -->\n${generateFeatureMetadataTable(FEATURE_METADATA, DEFAULT_MODULE_CONFIG, rootDir)}\n<!-- END AUTOGENERATED FEATURE_METADATA -->`,
   );
+  if (registryGuardsRegex.test(content)) {
+    content = content.replace(
+      registryGuardsRegex,
+      `<!-- BEGIN AUTOGENERATED REGISTRY_GUARDS -->\n${generateRegistryGuardsSection(rootDir)}\n<!-- END AUTOGENERATED REGISTRY_GUARDS -->`,
+    );
+  }
   content = content.replace(
     entitiesRegex,
     `<!-- BEGIN AUTOGENERATED ADMIN_ENTITIES -->\n${generateAdminEntityTable(rootDir)}\n<!-- END AUTOGENERATED ADMIN_ENTITIES -->`,

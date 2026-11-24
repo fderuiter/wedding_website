@@ -76,7 +76,7 @@ Generate a 64-byte scrypt hash for `ADMIN_PASSWORD` in `.env` with `node scripts
 *   **Feature Scaffolding, Linting & Git Hook Workflow:** [.github/CONTRIBUTING.md](./.github/CONTRIBUTING.md)
 *   **Canonical Environment Variable & Entity Reference:** [docs/runtime-contract.md](./docs/runtime-contract.md)
 *   **Production Hosting & CI/CD Deployment Recipes:** [DEPLOYMENT.md](./DEPLOYMENT.md)
-*   **Static HTML Showcase Export (`npm run build:export`):** Compiles a database-free interactive showcase (`out/`) with `STATIC_EXPORT=true` and optional `NEXT_PUBLIC_BASE_PATH` subpath routing.
+*   **Static HTML Showcase Export (`npm run build:export`):** Compiles a database-free interactive showcase (`out/`) with `STATIC_EXPORT=true` and optional `NEXT_PUBLIC_BASE_PATH` subpath routing (see [docs/developer-setup.md](./docs/developer-setup.md) for the interactive demo runtime architecture).
 
 ## Upgrading & Upstream Maintenance
 
@@ -99,12 +99,12 @@ If you cloned or forked this template to host your own wedding website, you can 
 *   `prisma`: Database schema definition and SQL migrations.
 *   `public`: Static assets and generated OpenAPI specification.
 *   `scripts`: CLI verification, documentation sync, portal generation, static export (`scripts/build-export.mjs`), and database seeding scripts.
-*   `src/app`: Next.js App Router pages and Route Handlers, including the static-export-aware setup preview in `AdminSetupPage` ([`src/app/admin/setup/page.tsx`](./src/app/admin/setup/page.tsx)).
-*   `src/components`: Shared React components, including `RootLayoutClient` ([`src/components/layout/RootLayoutClient.tsx`](./src/components/layout/RootLayoutClient.tsx)), interactive showcase controls (`DemoProvider` in [`src/components/demo/DemoContext.tsx`](./src/components/demo/DemoContext.tsx) and `DemoToolbar` in [`src/components/demo/DemoToolbar.tsx`](./src/components/demo/DemoToolbar.tsx)), UI primitives, 3D scenes, and the first-run `setup/` wizard.
+*   `src/app`: Next.js App Router pages, layouts, metadata builders, and Route Handlers.
+*   `src/components`: Shared React components, layout shells, interactive showcase controls, UI primitives, 3D scenes, and the first-run `setup/` wizard.
 *   `src/core`: Framework infrastructure and authentication modules.
-*   `src/features`: Feature-specific logic (e.g., `src/features/registry`, including non-charging showcase checkout via `SimulatedCardCheckout` and `SIMULATED_TEST_CARDS` in [`src/features/registry/components/SimulatedCardCheckout.tsx`](./src/features/registry/components/SimulatedCardCheckout.tsx)).
+*   `src/features`: Domain-isolated feature modules (`broadcast`, `content`, `logistics`, `media`, `registry`, `seating`, `sub-events`, `weather`).
 *   `src/hooks`: Shared React hooks.
-*   `src/lib`: Core library configurations (Prisma client, `AppConfig` loader, runtime module toggles, subpath helpers in [`src/lib/basePath.ts`](./src/lib/basePath.ts), deterministic archetype datasets via `buildArchetypeSeedData` in [`src/lib/sampleData/builder.ts`](./src/lib/sampleData/builder.ts), `wedding_showcase_demo_v1` browser state via `hydrateDemoStateFromStorage` in [`src/lib/demo/demoStore.ts`](./src/lib/demo/demoStore.ts), and client `/api/*` simulation via `installDemoFetchInterceptor` in [`src/lib/demo/demoApiHandler.ts`](./src/lib/demo/demoApiHandler.ts)).
+*   `src/lib`: Core library configurations (Prisma client, `AppConfig` loader, runtime module toggles, subpath helpers, sample archetype builders, and interactive demo state — see [docs/developer-setup.md](./docs/developer-setup.md)).
 *   `src/mocks`: MSW mock handlers and server setup for Jest and Storybook.
 *   `src/testing`: Typed test fixture factories.
 *   `src/utils`: Stateless utility functions (validation, formatting, storage, image worker processing, password verification).

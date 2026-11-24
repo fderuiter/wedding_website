@@ -2,6 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import ts from 'typescript';
+import { scanLinksAndCodeInLine, transformNonFencedMarkdownLines } from './check-doc-links';
+import { ARCHITECTURAL_DOCS, rewriteMarkdownLinks } from './generate-portal';
 
 const COMMENTED_OPTIONAL_ENV_KEYS = [
   'POSTGRES_URL_NON_POOLING',
@@ -297,7 +299,8 @@ function parseIssueTemplateFrontmatterName(markdown: string): string | null {
 
 function parseHookScripts(hookContent: string): string[] {
   const scripts: string[] = [];
-  const scriptRegex = /\{\s*name:\s*['"][^'"]+['"]\s*,\s*script:\s*['"]([^'"]+)['"]\s*\}/g;
+  const scriptRegex =
+    /\{\s*name:\s*['"][^'"]+['"]\s*,\s*script:\s*['"]([^'"]+)['"](?:\s*,[^}]*)?\s*\}/g;
   let match: RegExpExecArray | null;
   while ((match = scriptRegex.exec(hookContent)) !== null) {
     scripts.push(match[1]);
@@ -374,6 +377,101 @@ function parseQualityStepCommands(checkQualityContent: string): string[] {
     commands.push(match[1]);
   }
   return commands;
+}
+
+function parsePrePushStepDetails(checkQualityContent: string): {
+  defined: boolean;
+  includesStaticSpread: boolean;
+  standaloneUsesStaticOnly: boolean;
+  explicitScripts: string[];
+  rawBlock: string;
+} {
+  const prePushMatch = checkQualityContent.match(
+    /export\s+const\s+prePushSteps\s*(?::[^=]*)?=\s*\[([\s\S]*?)\n\];/
+  );
+  if (!prePushMatch) {
+    return {
+      defined: false,
+      includesStaticSpread: false,
+      standaloneUsesStaticOnly: false,
+      explicitScripts: [],
+      rawBlock: '',
+    };
+  }
+  const rawBlock = prePushMatch[1];
+  const includesStaticSpread = /\.\.\.staticSteps\b/.test(rawBlock);
+  const standaloneUsesStaticOnly =
+    /check:standalone[\s\S]*?--static-only/.test(rawBlock) &&
+    !/command:\s*['"]npm\s+run\s+check:standalone['"]/.test(rawBlock);
+  const scripts = new Set<string>();
+  const scriptPropRegex = /\bscript:\s*['"]([a-zA-Z0-9:_-]+)['"]/g;
+  let match: RegExpExecArray | null;
+  while ((match = scriptPropRegex.exec(rawBlock)) !== null) {
+    scripts.add(match[1]);
+  }
+  const cmdRegex = /command:\s*['"]npm\s+run\s+([a-zA-Z0-9:_-]+)(?:\s|--|['"])/g;
+  while ((match = cmdRegex.exec(rawBlock)) !== null) {
+    scripts.add(match[1]);
+  }
+  return {
+    defined: true,
+    includesStaticSpread,
+    standaloneUsesStaticOnly,
+    explicitScripts: Array.from(scripts),
+    rawBlock,
+  };
+}
+
+function hasPortalCrossLink(
+  summaryContent: string,
+  summaryRelPath: string,
+  canonicalRelPath: string,
+  repoRoot: string
+): boolean {
+  const canonicalDoc = ARCHITECTURAL_DOCS.find((doc) => doc.src === canonicalRelPath);
+  if (!canonicalDoc) {
+    return false;
+  }
+  const expectedPortalRoute = '/' + canonicalDoc.dest.replace(/\.md$/, '');
+  const rewritten = rewriteMarkdownLinks(summaryContent, summaryRelPath, repoRoot);
+
+  let foundRewrittenTarget = false;
+  transformNonFencedMarkdownLines(rewritten, (line, lineNumber) => {
+    const { links } = scanLinksAndCodeInLine(line, lineNumber);
+    for (const link of links) {
+      const routePart = link.rawTarget.trim().split(/[?#]/)[0];
+      if (routePart === expectedPortalRoute) {
+        foundRewrittenTarget = true;
+      }
+    }
+    return line;
+  });
+
+  if (!foundRewrittenTarget) {
+    return false;
+  }
+
+  let hasRelativeSourceLink = false;
+  const srcDir = path.dirname(path.join(repoRoot, summaryRelPath));
+  transformNonFencedMarkdownLines(summaryContent, (line, lineNumber) => {
+    const { links } = scanLinksAndCodeInLine(line, lineNumber);
+    for (const link of links) {
+      const rawPathPart = link.rawTarget.trim().split(/[?#]/)[0];
+      if (!rawPathPart || /^[a-z]+:/i.test(rawPathPart)) {
+        continue;
+      }
+      const resolvedFile = rawPathPart.startsWith('/')
+        ? path.resolve(repoRoot, rawPathPart.slice(1))
+        : path.resolve(srcDir, rawPathPart);
+      const resolvedRel = path.relative(repoRoot, resolvedFile).replace(/\\/g, '/');
+      if (resolvedRel === canonicalRelPath) {
+        hasRelativeSourceLink = true;
+      }
+    }
+    return line;
+  });
+
+  return hasRelativeSourceLink;
 }
 
 function parseDockerComposeDbDefaults(
@@ -872,6 +970,58 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     errors.push('scripts/check-quality.ts: staticSteps must include "npm run check:standalone"');
   }
 
+  const checkPrePushCmd = scripts['check:pre-push'] ?? '';
+  if (
+    !checkPrePushCmd.includes('scripts/check-quality.ts') ||
+    !checkPrePushCmd.includes('--pre-push')
+  ) {
+    errors.push(
+      'package.json: "check:pre-push" must delegate to "scripts/check-quality.ts --pre-push" so .githooks/pre-push shares the unified quality profile'
+    );
+  }
+  const prePushStepDetails = parsePrePushStepDetails(checkQualityRaw);
+  if (!prePushStepDetails.defined || !checkQualityRaw.includes('\'--pre-push\'')) {
+    errors.push(
+      'scripts/check-quality.ts: Must export "prePushSteps" and support "--pre-push" CLI flag'
+    );
+  } else {
+    if (!prePushStepDetails.standaloneUsesStaticOnly) {
+      errors.push(
+        'scripts/check-quality.ts: prePushSteps must invoke "check:standalone" with "--static-only" so pre-push runs without a prior .next build'
+      );
+    }
+    const coveredPrePushScripts = new Set<string>([
+      ...(prePushStepDetails.includesStaticSpread ? staticStepScripts : []),
+      ...prePushStepDetails.explicitScripts,
+    ]);
+    for (const requiredPrePushScript of [
+      ...staticStepScripts,
+      'typecheck',
+      'lint',
+      'lint:unused',
+      'check:audit',
+    ]) {
+      if (!coveredPrePushScripts.has(requiredPrePushScript)) {
+        errors.push(
+          `scripts/check-quality.ts: prePushSteps must include "${requiredPrePushScript}"`
+        );
+      }
+    }
+    for (const heavyScript of [
+      'docs:build',
+      'build-storybook',
+      'build:export',
+      'build',
+      'test:cov',
+    ]) {
+      if (prePushStepDetails.explicitScripts.includes(heavyScript)) {
+        errors.push(
+          `scripts/check-quality.ts: prePushSteps must exclude heavy step "${heavyScript}"`
+        );
+      }
+    }
+  }
+
   const postinstallCmd = scripts['postinstall'] ?? '';
   if (
     !postinstallCmd.includes('scripts/pretest.mjs --record-install-state') &&
@@ -976,6 +1126,19 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   }
 
   const prePushScripts = parseHookScripts(prePushRaw);
+  for (const heavyCommitScript of [
+    'check:standalone',
+    'docs:build',
+    'build-storybook',
+    'build:export',
+    'build',
+  ]) {
+    if (preCommitScripts.includes(heavyCommitScript)) {
+      errors.push(
+        `.githooks/pre-commit: Must exclude heavy build step "${heavyCommitScript}" so local commits stay fast`
+      );
+    }
+  }
   if (!prePushScripts.includes('type-check') && !prePushScripts.includes('typecheck')) {
     errors.push('.githooks/pre-push: Must run "type-check"');
   }
@@ -1005,24 +1168,22 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     );
   }
   for (const staticSubscript of staticStepScripts) {
-    if (staticSubscript === 'check:standalone') {
-      continue;
-    }
     if (!prePushScripts.includes(staticSubscript)) {
-      errors.push(
-        `.githooks/pre-push: Must enforce lightweight static check "${staticSubscript}"`
-      );
+      errors.push(`.githooks/pre-push: Must run "${staticSubscript}"`);
     }
   }
-  for (const heavyBuildScript of ['check:standalone', 'docs:build', 'build-storybook', 'build']) {
-    if (preCommitScripts.includes(heavyBuildScript)) {
+  if (!/script:\s*['"]check:standalone['"][^}]*--static-only/.test(prePushRaw)) {
+    errors.push(
+      '.githooks/pre-push: Must invoke "check:standalone" with "--static-only" so pre-push runs without a prior .next build'
+    );
+  }
+  for (const heavyPushScript of ['docs:build', 'build-storybook', 'build:export', 'build']) {
+    if (
+      prePushScripts.includes(heavyPushScript) ||
+      new RegExp(`['"]${heavyPushScript}['"]`).test(prePushRaw)
+    ) {
       errors.push(
-        `.githooks/pre-commit: Must exclude heavy build step "${heavyBuildScript}" so local commits stay fast`
-      );
-    }
-    if (prePushScripts.includes(heavyBuildScript)) {
-      errors.push(
-        `.githooks/pre-push: Must exclude heavy build step "${heavyBuildScript}" so local pushes stay fast`
+        `.githooks/pre-push: Must exclude heavy build step "${heavyPushScript}" so local pushes stay fast`
       );
     }
   }
@@ -1303,12 +1464,13 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
       '.github/CONTRIBUTING.md: Push to Your Fork section must document ephemeral "git worktree" verification'
     );
   }
-  for (const hookScript of prePushScripts) {
-    if (!contributingPushSection.includes(hookScript)) {
-      errors.push(
-        `.github/CONTRIBUTING.md: Missing .githooks/pre-push check script "${hookScript}" in Push to Your Fork section`
-      );
-    }
+  if (
+    !contributingPushSection.includes('check:pre-push') &&
+    !contributingPushSection.includes('scripts/check-quality.ts')
+  ) {
+    errors.push(
+      '.github/CONTRIBUTING.md: Push to Your Fork section must reference shared pre-push profile ("npm run check:pre-push" / "scripts/check-quality.ts")'
+    );
   }
 
   const defaultDocFiles = parseDefaultDocFiles(verifyDocSyncRaw);
@@ -1533,6 +1695,7 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     errors
   );
   verifyContributingQualityAndDemoGuides(
+    repoRoot,
     checkQualityRaw,
     contributingRaw,
     readmeRaw,
@@ -1859,6 +2022,7 @@ function verifyShowcaseReturnLinksAndProjectInfo(
 }
 
 function verifyContributingQualityAndDemoGuides(
+  repoRoot: string,
   checkQualityRaw: string,
   contributingRaw: string,
   readmeRaw: string,
@@ -1878,25 +2042,41 @@ function verifyContributingQualityAndDemoGuides(
     }
   }
 
+  // Canonical owner for interactive demo setup & runtime guide modules: docs/developer-setup.md
+  if (!devSetupRaw.includes('npm run build:export')) {
+    errors.push('docs/developer-setup.md: Must document static showcase export command "npm run build:export"');
+  }
+  if (!devSetupRaw.includes('wedding_showcase_demo_v1')) {
+    errors.push(
+      'docs/developer-setup.md: Must document persistent demo storage key "wedding_showcase_demo_v1"'
+    );
+  }
+  for (const demoModulePath of REQUIRED_DEMO_RUNTIME_GUIDE_MODULES) {
+    if (!devSetupRaw.includes(demoModulePath)) {
+      errors.push(
+        `docs/developer-setup.md: Missing interactive demo runtime module documentation for "${demoModulePath}"`
+      );
+    }
+  }
+
+  // Summary guides (README.md, AGENTS.md) must cite build:export and cross-link to docs/developer-setup.md
+  // via rewriteMarkdownLinks without duplicating the full 6-module demo runtime inventory.
   for (const [docLabel, docText] of [
     ['README.md', readmeRaw],
-    ['docs/developer-setup.md', devSetupRaw],
     ['AGENTS.md', agentsRaw],
   ] as const) {
     if (!docText.includes('npm run build:export')) {
       errors.push(`${docLabel}: Must document static showcase export command "npm run build:export"`);
     }
-    if (!docText.includes('wedding_showcase_demo_v1')) {
+    if (!hasPortalCrossLink(docText, docLabel, 'docs/developer-setup.md', repoRoot)) {
       errors.push(
-        `${docLabel}: Must document persistent demo storage key "wedding_showcase_demo_v1"`
+        `${docLabel}: Must cross-link to canonical demo setup guide "docs/developer-setup.md" (verified via rewriteMarkdownLinks -> /development/developer-setup)`
       );
     }
-    for (const demoModulePath of REQUIRED_DEMO_RUNTIME_GUIDE_MODULES) {
-      if (!docText.includes(demoModulePath)) {
-        errors.push(
-          `${docLabel}: Missing interactive demo runtime module documentation for "${demoModulePath}"`
-        );
-      }
+    if (REQUIRED_DEMO_RUNTIME_GUIDE_MODULES.every((modPath) => docText.includes(modPath))) {
+      errors.push(
+        `${docLabel}: Duplicates full interactive demo runtime module inventory owned canonically by "docs/developer-setup.md"; keep a concise summary and cross-link instead`
+      );
     }
   }
 }

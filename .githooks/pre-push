@@ -15,6 +15,7 @@ const LOCAL_GIT_ENV_VARS = [
   'GIT_PREFIX',
 ];
 
+// Aligned with shared pre-push profile: npm run check:pre-push (scripts/check-quality.ts --pre-push)
 const checks = [
   { name: 'TypeScript type check', script: 'type-check' },
   { name: 'ESLint code linting', script: 'lint' },
@@ -24,6 +25,11 @@ const checks = [
   { name: 'Setup and contributor guides contract check', script: 'check:setup-guides' },
   { name: 'Personal/Template identifier isolation check', script: 'check:identifiers' },
   { name: 'Third-party action pin commit SHAs check', script: 'check:action-pins' },
+  {
+    name: 'Standalone and container portability static check',
+    script: 'check:standalone',
+    args: ['--', '--static-only'],
+  },
   { name: 'Documentation relative links check', script: 'check:links' },
   { name: 'Specification route and symbol contracts check', script: 'check:spec-contracts' },
   { name: 'Prisma schema validation', script: 'check:prisma' },
@@ -228,7 +234,7 @@ function executeChecks(targetDir, childEnv, includeLockfileAudit) {
 
   for (const check of orderedChecks) {
     console.log(`Running ${check.name}...`);
-    const result = spawnSync('npm', ['run', check.script], {
+    const result = spawnSync('npm', ['run', check.script, ...(check.args ?? [])], {
       cwd: targetDir,
       env: childEnv,
       stdio: 'inherit',

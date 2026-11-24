@@ -491,10 +491,12 @@ for (const file of process.argv.slice(2)) {
   });
 
   describe('.githooks/pre-push', () => {
-    it('registers type-check, lint, lint:unused, check:audit, and all 10 check:static scripts without destructive git commands', () => {
+    it('registers type-check, lint, lint:unused, check:audit, and all 11 check:static scripts without destructive git commands', () => {
       const hookContent = fs.readFileSync(PRE_PUSH_PATH, 'utf-8');
       expect(hookContent).toContain("{ name: 'ESLint code linting', script: 'lint' }");
       expect(hookContent).toContain("{ name: 'Security dependency audit', script: 'check:audit' }");
+      expect(hookContent).toContain("script: 'check:standalone'");
+      expect(hookContent).toContain("'--static-only'");
       expect(hookContent).toContain("{ name: 'Documentation synchronization check', script: 'check:doc-sync' }");
       expect(hookContent).toContain('worktree');
       expect(hookContent).not.toMatch(/\bgit\s+stash\b|['"]stash['"]/);
@@ -502,7 +504,7 @@ for (const file of process.argv.slice(2)) {
       expect(hookContent).not.toMatch(/\bgit\s+checkout\b|['"]checkout['"]/);
     });
 
-    it('passes in place when HEAD and tracked files match the pushed commit, executing all thirteen standard checks in order', () => {
+    it('passes in place when HEAD and tracked files match the pushed commit, executing all fourteen standard checks in order', () => {
       const result = runHook(PRE_PUSH_PATH);
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('Running Documentation synchronization check...');
@@ -519,6 +521,7 @@ for (const file of process.argv.slice(2)) {
         'npm:check:setup-guides',
         'npm:check:identifiers',
         'npm:check:action-pins',
+        'npm:check:standalone',
         'npm:check:links',
         'npm:check:spec-contracts',
         'npm:check:prisma',

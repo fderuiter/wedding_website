@@ -1626,6 +1626,43 @@ describe('check-docker-build', () => {
       );
     });
 
+    it('skips .next/standalone inspection when staticOnly (--static-only) is enabled while keeping static checks active', () => {
+      fs.mkdirSync(path.join(tempDir, '.next'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, '.next', 'BUILD_ID'), 'partial-build\n');
+
+      // Without staticOnly, BUILD_ID without .next/standalone fails
+      expect(checkDockerBuild(tempDir).violations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            filePath: '.next/standalone',
+          }),
+        ])
+      );
+
+      // With staticOnly, .next/standalone inspection is skipped
+      expect(checkDockerBuild(tempDir, { staticOnly: true }).violations).toEqual([]);
+
+      const cliResult = spawnSync(
+        process.execPath,
+        [TSX_CLI_PATH, CHECK_SCRIPT_PATH, '--static-only'],
+        {
+          cwd: process.cwd(),
+          encoding: 'utf8',
+        }
+      );
+      expect(cliResult.status).toBe(0);
+
+      const conflictResult = spawnSync(
+        process.execPath,
+        [TSX_CLI_PATH, CHECK_SCRIPT_PATH, '--require-standalone', '--static-only'],
+        {
+          cwd: process.cwd(),
+          encoding: 'utf8',
+        }
+      );
+      expect(conflictResult.status).toBe(1);
+    });
+
     it('validates only .next/standalone portability under --standalone-only without re-running static Dockerfile or Compose checks', () => {
       const standaloneOnlyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'standalone-only-test-'));
       try {
