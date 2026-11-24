@@ -707,7 +707,7 @@ export default function InteractiveTimeline({
                   {rsvpManager.dirtyCount} {rsvpManager.dirtyCount === 1 ? 'event has' : 'events have'} unsaved changes
                 </span>
               ) : (
-                <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                <span className="text-sm font-semibold text-status-success-text">
                   {rsvpManager.batchSuccessMessage || 'All RSVPs up to date'}
                 </span>
               )}
@@ -1400,7 +1400,7 @@ export default function InteractiveTimeline({
                             </button>
 
                             {itemState.message && !itemState.error && (
-                              <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                              <span className="text-xs font-medium text-status-success-text">
                                 {itemState.message}
                               </span>
                             )}

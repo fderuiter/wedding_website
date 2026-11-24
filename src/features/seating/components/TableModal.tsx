@@ -335,11 +335,11 @@ function TableModalForm({
             </p>
           )}
           {!isLandmark && table && capacity < currentSeatedCount ? (
-            <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400 font-medium" data-testid="capacity-warning">
+            <p className="mt-1 text-[11px] text-warning-text font-medium" data-testid="capacity-warning">
               Warning: Table has {currentSeatedCount} seated guest{currentSeatedCount === 1 ? '' : 's'}. Lowering capacity below {currentSeatedCount} exceeds current occupancy.
             </p>
           ) : table && seatsAboveNewCapacity.length > 0 ? (
-            <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400 font-medium" data-testid="capacity-warning">
+            <p className="mt-1 text-[11px] text-warning-text font-medium" data-testid="capacity-warning">
               Warning: Lowering capacity to {capacity} will repack {seatsAboveNewCapacity.map((s) => `Seat ${s}`).join(', ')} into seats 1–{capacity}.
             </p>
           ) : null}

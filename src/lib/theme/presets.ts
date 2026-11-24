@@ -52,6 +52,10 @@ export interface ComponentTokens {
   '--btn-secondary-text': string;
   '--btn-secondary-hover-bg': string;
   '--btn-secondary-border': string;
+  '--btn-success-bg': string;
+  '--btn-success-text': string;
+  '--btn-success-hover-bg': string;
+  '--btn-success-border': string;
   '--btn-outline-bg': string;
   '--btn-outline-text': string;
   '--btn-outline-border': string;
@@ -357,6 +361,10 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--btn-danger-bg': '#b91c1c',
     '--btn-danger-text': '#ffffff',
     '--btn-danger-hover-bg': '#991b1b',
+    '--btn-success-bg': '#15803d',
+    '--btn-success-text': '#ffffff',
+    '--btn-success-hover-bg': '#166534',
+    '--btn-success-border': 'transparent',
     '--btn-focus-ring': 'var(--color-primary, #B91C1C)',
     '--dialog-bg': '#ffffff',
     '--dialog-border-radius': '0.5rem',
@@ -652,6 +660,10 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--btn-danger-bg': '#dc2626',
     '--btn-danger-text': '#ffffff',
     '--btn-danger-hover-bg': '#b91c1c',
+    '--btn-success-bg': '#047857',
+    '--btn-success-text': '#ffffff',
+    '--btn-success-hover-bg': '#065f46',
+    '--btn-success-border': 'transparent',
     '--btn-focus-ring': 'var(--color-primary, #B91C1C)',
     '--dialog-bg': '#ffffff',
     '--dialog-border-radius': '0.75rem',
@@ -935,7 +947,7 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--btn-primary-border': 'transparent',
     '--btn-secondary-bg': 'var(--color-secondary, #B45309)',
     '--btn-secondary-text': '#ffffff',
-    '--btn-secondary-hover-bg': 'color-mix(in srgb, var(--color-secondary, #B45309) 88%, #ffffff)',
+    '--btn-secondary-hover-bg': '#92400e',
     '--btn-secondary-border': 'transparent',
     '--btn-outline-bg': 'transparent',
     '--btn-outline-text': 'var(--color-primary, #B91C1C)',
@@ -947,6 +959,10 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--btn-danger-bg': '#e11d48',
     '--btn-danger-text': '#ffffff',
     '--btn-danger-hover-bg': '#be123c',
+    '--btn-success-bg': '#047857',
+    '--btn-success-text': '#ffffff',
+    '--btn-success-hover-bg': '#065f46',
+    '--btn-success-border': 'transparent',
     '--btn-focus-ring': 'var(--color-primary, #B91C1C)',
     '--dialog-bg': '#fffafb',
     '--dialog-border-radius': '1.25rem',
@@ -1243,6 +1259,10 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--btn-danger-bg': '#991b1b',
     '--btn-danger-text': '#ffffff',
     '--btn-danger-hover-bg': '#7f1d1d',
+    '--btn-success-bg': '#15803d',
+    '--btn-success-text': '#ffffff',
+    '--btn-success-hover-bg': '#166534',
+    '--btn-success-border': 'transparent',
     '--btn-focus-ring': 'var(--color-primary, #B91C1C)',
     '--dialog-bg': '#ffffff',
     '--dialog-border-radius': '0px',
@@ -1541,6 +1561,10 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--btn-danger-bg': '#b91c1c',
     '--btn-danger-text': '#ffffff',
     '--btn-danger-hover-bg': '#991b1b',
+    '--btn-success-bg': '#15803d',
+    '--btn-success-text': '#ffffff',
+    '--btn-success-hover-bg': '#166534',
+    '--btn-success-border': '#000000',
     '--btn-focus-ring': '#000000',
     '--dialog-bg': '#fcfbf9',
     '--dialog-border-radius': '0.125rem',
@@ -1738,6 +1762,7 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--heading-color': '#ffffff',
       '--btn-primary-border': '#ffffff',
       '--btn-secondary-border': '#ffffff',
+      '--btn-success-border': '#ffffff',
       '--btn-outline-bg': '#1c1917',
       '--btn-outline-text': '#ffffff',
       '--btn-outline-border': '#ffffff',
