@@ -8,6 +8,7 @@ import {
   hasCustomStoryText,
   hasNonPlaceholderVenueDetails,
 } from '@/lib/setupCopy';
+import { resolveModuleConfig } from '@/lib/modules';
 import { formatCurrency } from '@/utils/intl';
 import type {
   InvitationCodeDTO,
@@ -208,6 +209,12 @@ function resolveApiPathname(input: RequestInfo | URL): URL | null {
     const url = new URL(rawUrl, window.location.origin);
     if (url.origin !== window.location.origin) return null;
     let path = stripBasePath(url.pathname);
+    if (!path.startsWith('/api/')) {
+      const apiIdx = path.indexOf('/api/');
+      if (apiIdx > 0) {
+        path = path.slice(apiIdx);
+      }
+    }
     if (!path.startsWith('/api/')) return null;
     if (path.length > 1 && path.endsWith('/')) {
       path = path.replace(/\/+$/, '');
@@ -363,9 +370,33 @@ async function handleDemoApi(
 
   if (path === '/api/admin/setup' && method === 'POST') {
     const body = await parseJsonBody(init);
-    if ('password' in body && Object.keys(body).length === 1) {
+    const bodyKeys = Object.keys(body);
+    if (bodyKeys.length === 0) {
+      const isSetup = getDemoState().persona === 'setup' && !getDemoState().setupAuthenticated;
+      return jsonResponse({
+        success: true,
+        initialized: true,
+        setupCompleted: !isSetup,
+        requiresSetup: isSetup,
+      });
+    }
+    if ('password' in body && bodyKeys.length === 1) {
       setDemoSetupAuthenticated(true);
       return jsonResponse({ success: true });
+    }
+    if ('setupCompleted' in body && typeof body.setupCompleted === 'boolean' && bodyKeys.length === 1) {
+      if (body.setupCompleted) {
+        setDemoSetupAuthenticated(true);
+        if (getDemoState().persona === 'setup') {
+          setDemoPersona('admin');
+        }
+      }
+      return jsonResponse({
+        success: true,
+        initialized: true,
+        setupCompleted: body.setupCompleted,
+        requiresSetup: !body.setupCompleted,
+      });
     }
     const overrides: Partial<PublicAppConfig> = {};
     if (typeof body.partner1Name === 'string') overrides.partner1Name = body.partner1Name;
@@ -419,9 +450,16 @@ async function handleDemoApi(
     }
     if (typeof body.colorPrimary === 'string') overrides.colorPrimary = body.colorPrimary;
     if (typeof body.colorSecondary === 'string') overrides.colorSecondary = body.colorSecondary;
+    if (body.modules && typeof body.modules === 'object' && !Array.isArray(body.modules)) {
+      const currentModules = getDemoState().configOverrides.modules;
+      overrides.modules = resolveModuleConfig({
+        ...(currentModules ?? {}),
+        ...(body.modules as Record<string, unknown>),
+      });
+    }
     updateDemoConfigOverrides(overrides);
     setDemoSetupAuthenticated(true);
-    return jsonResponse({ success: true });
+    return jsonResponse({ success: true, modules: overrides.modules });
   }
 
   if (path === '/api/admin/geocode' && method === 'GET') {
@@ -2286,6 +2324,19 @@ async function handleDemoApi(
   }
 
   return jsonResponse({ error: `Demo endpoint not implemented: ${method} ${path}` }, 404);
+}
+
+export async function dispatchDemoApiRequest(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<Response | null> {
+  if (!isDemoRuntimeActive()) return null;
+  const apiUrl = resolveApiPathname(input);
+  if (!apiUrl) return null;
+  if (init?.signal?.aborted) {
+    throw new DOMException('The operation was aborted.', 'AbortError');
+  }
+  return handleDemoApi(apiUrl, init, input);
 }
 
 let activeInterceptCount = 0;

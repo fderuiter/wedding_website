@@ -36,9 +36,7 @@ import {
 import { geocodeBestMatch } from '@/lib/geocoding';
 import { hasValidCoordinates } from '@/utils/maps';
 
-type SetupRequestPayload = z.infer<typeof AdminSetupSchema> & {
-  modules?: unknown;
-};
+type SetupRequestPayload = z.infer<typeof AdminSetupSchema>;
 
 const RESERVED_PARTNER_PLACEHOLDERS = new Set(['partner 1', 'partner 2']);
 
