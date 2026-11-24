@@ -441,4 +441,35 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
   });
+
+  it('labels header landmark with aria-label="Site header" per ARIA14 and suppresses header/nav landmarks in preview mode', () => {
+    const { rerender } = render(
+      <Navbar
+        isAdmin={false}
+        handleLogout={jest.fn()}
+        headerRef={headerRef}
+        config={mockConfig}
+      />
+    );
+
+    const banner = screen.getByRole('banner', { name: 'Site header' });
+    expect(banner).toBeInTheDocument();
+    expect(headerRef.current).toBe(banner);
+    expect(screen.getByRole('navigation', { name: 'Global Navigation' })).toBeInTheDocument();
+
+    rerender(
+      <Navbar
+        isAdmin={false}
+        handleLogout={jest.fn()}
+        headerRef={headerRef}
+        config={mockConfig}
+        isPreview
+      />
+    );
+
+    expect(screen.queryByRole('banner')).not.toBeInTheDocument();
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
+    expect(headerRef.current).toBeInstanceOf(HTMLDivElement);
+    expect(screen.getByText('A & B')).toBeInTheDocument();
+  });
 });

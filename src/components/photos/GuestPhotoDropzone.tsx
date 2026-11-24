@@ -21,7 +21,7 @@ const MAX_CONCURRENT_UPLOADS = 2;
 
 export interface UploadedPhoto {
   id: string;
-  url: string;
+  url?: string;
   title?: string;
   altText?: string | null;
   uploaderName?: string;
@@ -182,7 +182,7 @@ export function GuestPhotoDropzone({
 
       if (onUploadSuccess && json.data) {
         const isApprovedUpload = (photo: UploadedPhoto | null | undefined): photo is UploadedPhoto =>
-          Boolean(photo && photo.status === 'APPROVED' && photo.isVisible !== false);
+          Boolean(photo && photo.status === 'APPROVED' && photo.isVisible !== false && photo.url);
         const mapApprovedPhoto = (photo: UploadedPhoto): UploadedPhoto => ({
           id: photo.nodeId || photo.id,
           url: photo.url,

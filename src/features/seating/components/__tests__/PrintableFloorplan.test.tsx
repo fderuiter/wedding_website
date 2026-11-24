@@ -92,20 +92,25 @@ describe('PrintableFloorplan component', () => {
     expect(badgeElement.style.borderColor).toBe('var(--print-border)');
   });
 
-  it('renders main, section, and article landmarks with correct ARIA labelling', () => {
+  it('renders named region, section, and article landmarks with correct ARIA labelling and zero nested main', () => {
     const { container } = render(
       <PrintableFloorplan tables={mockTables} unassignedGuests={mockUnassignedGuests} />
     );
 
-    // Main landmark
-    const mainLandmark = screen.getByRole('main');
-    expect(mainLandmark).toHaveAttribute('aria-labelledby', 'printable-roster-title');
+    expect(screen.queryByRole('main')).not.toBeInTheDocument();
+
+    // Outer printable roster region landmark
+    const rosterRegion = screen.getByRole('region', {
+      name: 'Reception Seating Roster & Floorplan',
+    });
+    expect(rosterRegion).toHaveAttribute('aria-labelledby', 'printable-roster-title');
+    expect(rosterRegion).toHaveClass('hidden', 'print:block', 'print:p-6', 'font-sans');
     const mainTitle = container.querySelector('#printable-roster-title');
     expect(mainTitle).toHaveTextContent('Reception Seating Roster & Floorplan');
 
-    // Section landmarks
+    // Region landmarks (outer roster + tables section + unassigned guests section)
     const regionLandmarks = screen.getAllByRole('region');
-    expect(regionLandmarks).toHaveLength(2);
+    expect(regionLandmarks).toHaveLength(3);
 
     const tablesSection = screen.getByRole('region', { name: 'Seating Table Assignments' });
     expect(tablesSection).toHaveAttribute('aria-labelledby', 'tables-section-heading');

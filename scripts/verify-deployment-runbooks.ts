@@ -2258,6 +2258,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     if (!isSeq(updatesNode)) {
       return false;
     }
+    let matchedAtLeastOneGroup = false;
     for (const updateEntry of updatesNode.items) {
       if (!isMap(updateEntry)) {
         continue;
@@ -2274,6 +2275,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       if (!isMap(groupNode)) {
         continue;
       }
+      matchedAtLeastOneGroup = true;
       const updateTypesNode: unknown = groupNode.get('update-types', true);
       if (!isSeq(updateTypesNode) || updateTypesNode.items.length === 0) {
         return false;
@@ -2282,14 +2284,16 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
         .map((item) => (isScalar(item) ? String(item.value).trim() : ''))
         .filter(Boolean);
       const allowedTypes = new Set(['minor', 'patch']);
-      return (
+      const isValid =
         normalizedTypes.length === 2 &&
         normalizedTypes.includes('minor') &&
         normalizedTypes.includes('patch') &&
-        normalizedTypes.every((typeName) => allowedTypes.has(typeName))
-      );
+        normalizedTypes.every((typeName) => allowedTypes.has(typeName));
+      if (!isValid) {
+        return false;
+      }
     }
-    return false;
+    return matchedAtLeastOneGroup;
   };
   for (const groupName of ['production-dependencies', 'development-dependencies']) {
     if (!hasMinorPatchOnlyGroup('npm', groupName)) {

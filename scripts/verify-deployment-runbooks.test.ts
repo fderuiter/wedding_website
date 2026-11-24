@@ -1237,7 +1237,10 @@ describe('verify-deployment-runbooks', () => {
       dependabotPath,
       fs
         .readFileSync(dependabotPath, 'utf8')
-        .replace(/\s*- dependency-name: "typescript"\n\s*versions: \[">= 6\.1\.0"\]/g, '')
+        .replace(
+          /\s*- dependency-name: "typescript"\n\s*versions: \[">= 6\.1\.0"\](?:\n\s*update-types: \["version-update:semver-major"\])?/g,
+          ''
+        )
         .replace(/\s*update-types:\n\s*- "minor"\n\s*- "patch"/g, '')
     );
 

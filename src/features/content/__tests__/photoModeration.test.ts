@@ -1,3 +1,5 @@
+/** @jest-environment node */
+
 import { ContentService } from '../service';
 import { IContentRepository } from '../types';
 
@@ -301,6 +303,52 @@ describe('Photo Moderation Service & Visibility Rules', () => {
       expect(mockRepo.deleteNode).toHaveBeenCalledWith('photo-2', 'AdminUser');
       expect(result.deleted).toBe(true);
       expect(result.status).toBe('REJECTED');
+    });
+
+    it('avoids duplicate getStorageProvider().delete calls when mediaRepository.deleteMedia already cleaned up storage', async () => {
+      const mediaFeature = await import('@/features/media');
+      const { LocalStorageProvider, resetStorageProvider } = await import('@/utils/storage');
+      resetStorageProvider();
+      const deleteMediaSpy = jest
+        .spyOn(mediaFeature.mediaRepository, 'deleteMedia')
+        .mockResolvedValueOnce({
+          id: 'media-dedup-1',
+          url: '/uploads/photos/dedup.jpg',
+          altText: 'Dedup',
+          isDecorative: false,
+          isSample: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      const directStorageDelete = jest
+        .spyOn(LocalStorageProvider.prototype, 'delete')
+        .mockResolvedValue(undefined);
+
+      try {
+        mockRepo.getNodeById!.mockResolvedValueOnce({
+          id: 'photo-dedup-1',
+          type: 'Photo' as const,
+          tags: ['gallery', 'guest-upload'],
+          data: {
+            url: '/uploads/photos/dedup.jpg',
+            mediaId: 'media-dedup-1',
+            status: 'PENDING',
+            isVisible: false,
+          },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+        mockRepo.deleteNode!.mockResolvedValueOnce(undefined);
+
+        const result = await service.moderatePhoto('photo-dedup-1', 'reject', 'AdminUser');
+        expect(result.deleted).toBe(true);
+        expect(deleteMediaSpy).toHaveBeenCalledWith('media-dedup-1', 'AdminUser');
+        expect(directStorageDelete).not.toHaveBeenCalled();
+      } finally {
+        deleteMediaSpy.mockRestore();
+        directStorageDelete.mockRestore();
+        resetStorageProvider();
+      }
     });
 
     it('deletes the database row without unlinking out-of-root files when rejecting a legacy out-of-root Photo node', async () => {
