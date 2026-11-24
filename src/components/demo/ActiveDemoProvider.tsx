@@ -20,7 +20,11 @@ import {
   ADMIN_SEATING_QUERY_KEY,
   invalidateSampleDataCaches,
 } from '@/lib/adminCacheSync';
-import { installDemoFetchInterceptor } from '@/lib/demo/demoApiHandler';
+import {
+  consumePrimedDemoFetchInterceptor,
+  installDemoFetchInterceptor,
+  primeDemoRuntimeForMount,
+} from '@/lib/demo/demoApiHandler';
 import { DEMO_SHIPPING_ADDRESS } from '@/lib/demo/demoSeed';
 import {
   applyDemoSampleSelection,
@@ -65,10 +69,15 @@ export default function ActiveDemoProvider({
   const { setPreviewConfig } = useTheme();
   const toast = useOptionalToast();
 
+  if (typeof window !== 'undefined') {
+    primeDemoRuntimeForMount();
+  }
+
   useIsomorphicLayoutEffect(() => {
     hydrateDemoStateFromStorage();
     setDemoRuntimeActive(true);
-    const uninstallFetch = installDemoFetchInterceptor();
+    const uninstallFetch =
+      consumePrimedDemoFetchInterceptor() ?? installDemoFetchInterceptor();
     if (typeof document !== 'undefined') {
       document.documentElement.dataset.staticDemo = 'true';
     }
@@ -131,6 +140,11 @@ export default function ActiveDemoProvider({
     void queryClient.invalidateQueries({ queryKey: ['admin-sub-events'] });
     void queryClient.invalidateQueries({ queryKey: ['admin-content'] });
     void queryClient.invalidateQueries({ queryKey: ['admin-media'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin-features'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin-settings'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin-profiles-list'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin-broadcast-history'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin-broadcast-detail'] });
     void queryClient.invalidateQueries({ queryKey: ['thank-you-notes'] });
     void queryClient.invalidateQueries({ queryKey: ADMIN_SEATING_QUERY_KEY });
     void queryClient.invalidateQueries({

@@ -928,7 +928,7 @@ function SubEventsMatrixPageContent() {
                               setEditingSubEvent(evt);
                               setIsModalOpen(true);
                             }}
-                            className="text-gray-600 dark:text-gray-300 hover:text-primary dark:hover:text-red-300 hover:underline font-medium"
+                            className="inline-flex items-center justify-center min-h-[24px] min-w-[24px] px-1 text-gray-600 dark:text-gray-300 hover:text-primary dark:hover:text-red-300 hover:underline font-medium"
                           >
                             Edit
                           </button>
@@ -937,7 +937,7 @@ function SubEventsMatrixPageContent() {
                             type="button"
                             aria-label={`Delete sub-event ${evt.title}`}
                             onClick={() => setDeletingSubEvent(evt)}
-                            className="text-red-800 dark:text-red-200 hover:underline font-medium"
+                            className="inline-flex items-center justify-center min-h-[24px] min-w-[24px] px-1 text-red-800 dark:text-red-200 hover:underline font-medium"
                           >
                             Delete
                           </button>
@@ -948,7 +948,7 @@ function SubEventsMatrixPageContent() {
                             <span>Bulk:</span>
                             <button
                               type="button"
-                              className="text-primary hover:underline font-semibold"
+                              className="inline-flex items-center justify-center min-h-[24px] min-w-[24px] px-1 text-primary hover:underline font-semibold"
                               onClick={() => handleColumnToggle(evt.id, 'grant')}
                               title={`Grant ${evt.title} access to all ${totalRecords} matching guests`}
                             >
@@ -957,7 +957,7 @@ function SubEventsMatrixPageContent() {
                             <span>|</span>
                             <button
                               type="button"
-                              className="text-red-800 dark:text-red-200 hover:underline font-semibold"
+                              className="inline-flex items-center justify-center min-h-[24px] min-w-[24px] px-1 text-red-800 dark:text-red-200 hover:underline font-semibold"
                               onClick={() => handleColumnToggle(evt.id, 'revoke')}
                               title={`Revoke ${evt.title} access from all ${totalRecords} matching guests`}
                             >
@@ -1050,7 +1050,7 @@ function SubEventsMatrixPageContent() {
                             <span>Row:</span>
                             <button
                               type="button"
-                              className="text-primary hover:underline font-semibold"
+                              className="inline-flex items-center justify-center min-h-[24px] min-w-[24px] px-1 text-primary hover:underline font-semibold"
                               onClick={() => handleRowToggle(code.id, 'grant')}
                             >
                               Grant All
@@ -1058,7 +1058,7 @@ function SubEventsMatrixPageContent() {
                             <span>|</span>
                             <button
                               type="button"
-                              className="text-red-600 dark:text-red-400 hover:underline font-semibold"
+                              className="inline-flex items-center justify-center min-h-[24px] min-w-[24px] px-1 text-red-600 dark:text-red-400 hover:underline font-semibold"
                               onClick={() => handleRowToggle(code.id, 'revoke')}
                             >
                               Revoke All

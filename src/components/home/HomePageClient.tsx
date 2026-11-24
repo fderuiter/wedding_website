@@ -118,6 +118,8 @@ export default function HomePageClient({
   const isDemoMode = Boolean(demo?.isDemoMode);
   const demoConfigOverrides = demo?.configOverrides;
   const demoLogisticsNodes = demo?.activeDataset.logisticsNodes;
+  const demoScheduleNodes = demo?.activeDataset.scheduleNodes;
+  const demoCustomNodes = demo?.activeDataset.customNodes;
   const demoFaqs = demo?.activeDataset.faqs;
 
   const baseConfig = useMemo<PublicAppConfig>(() => {
@@ -135,14 +137,25 @@ export default function HomePageClient({
   const contentNodes = useMemo<ContentNodeDTO[]>(() => {
     if (draftContentNodes) return draftContentNodes;
     if (isDemoMode && demoLogisticsNodes && demoFaqs) {
-      const sourceNodes = demoOverrides?.contentNodes ?? initialContentNodes;
-      const scheduleNodes = sourceNodes.filter((n) => n.type === 'Schedule');
-      return [...scheduleNodes, ...demoLogisticsNodes, ...demoFaqs];
+      const scheduleNodes =
+        demoScheduleNodes && demoScheduleNodes.length > 0
+          ? demoScheduleNodes
+          : (demoOverrides?.contentNodes ?? initialContentNodes).filter(
+            (n) => n.type === 'Schedule'
+          );
+      return [
+        ...scheduleNodes,
+        ...demoLogisticsNodes,
+        ...demoFaqs,
+        ...(demoCustomNodes ?? []),
+      ];
     }
     return demoOverrides?.contentNodes ?? initialContentNodes;
   }, [
+    demoCustomNodes,
     demoFaqs,
     demoLogisticsNodes,
+    demoScheduleNodes,
     demoOverrides?.contentNodes,
     draftContentNodes,
     initialContentNodes,

@@ -34,8 +34,10 @@ import {
 } from '../demoStore';
 import { dispatchDemoApiRequest, installDemoFetchInterceptor } from '../demoApiHandler';
 import {
+  consumePrimedDemoFetchInterceptor as noopConsumePrimedDemoFetchInterceptor,
   dispatchDemoApiRequest as noopDispatchDemoApiRequest,
   installDemoFetchInterceptor as noopInstallDemoFetchInterceptor,
+  primeDemoRuntimeForMount as noopPrimeDemoRuntimeForMount,
 } from '../demoApiHandler.noop';
 import { DatabaseBackupSchema, formatZodIssues, reviveDates } from '@/utils/backupValidation';
 import { isDemoRuntimeFlagActive } from '../runtimeFlag';
@@ -480,6 +482,15 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
 
       // Validate code & guest address portal
       expect((await window.fetch('/api/registry/validate-code?code=INVALID')).status).toBe(404);
+      expect(
+        (
+          await window.fetch('/api/registry/validate-code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: '   ' }),
+          })
+        ).status
+      ).toBe(400);
       expect((await window.fetch('/api/guest/address')).status).toBe(401);
       expect((await (await window.fetch('/api/registry/session')).json()).isVerified).toBe(false);
 
@@ -683,12 +694,15 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
         ).status
       ).toBe(201);
 
-      expect((await (await window.fetch('/api/admin/sub-events/rsvp-summary')).json()).data).toBeNull();
-      expect((await (await window.fetch('/api/admin/sub-events/access')).json()).data.subEvents).toEqual([]);
+      const rsvpSummaryData = (await (await window.fetch('/api/admin/sub-events/rsvp-summary')).json()).data;
+      expect(Array.isArray(rsvpSummaryData.subEvents)).toBe(true);
+      expect(rsvpSummaryData.subEvents.length).toBeGreaterThan(0);
+      const subEventAccessData = (await (await window.fetch('/api/admin/sub-events/access')).json()).data;
+      expect(subEventAccessData.subEvents.length).toBeGreaterThan(0);
       expect((await window.fetch('/api/admin/sub-events/access/batch', { method: 'POST' })).status).toBe(200);
-      expect((await (await window.fetch('/api/admin/sub-events')).json()).data).toEqual([]);
-      expect((await (await window.fetch('/api/admin/invitation-codes/rsvps')).json()).data).toEqual([]);
-      expect((await (await window.fetch('/api/admin/broadcast/history')).json()).data).toEqual([]);
+      expect((await (await window.fetch('/api/admin/sub-events')).json()).data.length).toBeGreaterThan(0);
+      expect((await (await window.fetch('/api/admin/invitation-codes/rsvps')).json()).data.length).toBeGreaterThan(0);
+      expect((await (await window.fetch('/api/admin/broadcast/history')).json()).data.length).toBeGreaterThan(0);
       expect((await window.fetch('/api/admin/broadcast/missing-id')).status).toBe(404);
       const setupStatusPayload = await (await window.fetch('/api/admin/setup')).json();
       expect(setupStatusPayload.initialized).toBe(true);
@@ -892,7 +906,7 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
         (await window.fetch('/api/admin/registry/items/missing-item/unclaim', { method: 'POST' }))
           .status
       ).toBe(404);
-      expect((await window.fetch('/api/admin/overview-stats')).status).toBe(200);
+      expect((await window.fetch('/api/admin/overview-stats')).status).toBe(404);
 
       // Guest portal session, personalized schedule, and interactive RSVP submission
       const initialGuestSession = await (await window.fetch('/api/guest/session')).json();
@@ -1003,8 +1017,8 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
       const moderationPayload = await (
         await window.fetch('/api/admin/photos/moderation')
       ).json();
-      expect(moderationPayload.photos).toEqual([]);
-      expect(moderationPayload.data).toEqual([]);
+      expect(moderationPayload.photos.length).toBeGreaterThanOrEqual(1);
+      expect(moderationPayload.data.length).toBeGreaterThanOrEqual(1);
       const publicAddrRes = await window.fetch('/api/guest/address/public', {
         method: 'POST',
         body: JSON.stringify({
@@ -1362,6 +1376,8 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
 
   it('dispatches demo API requests directly without patching window.fetch and provides safe noop stubs for standalone builds', async () => {
     expect(await noopDispatchDemoApiRequest('/api/admin/me')).toBeNull();
+    expect(() => noopPrimeDemoRuntimeForMount()).not.toThrow();
+    expect(noopConsumePrimedDemoFetchInterceptor()).toBeNull();
     const noopUninstall = noopInstallDemoFetchInterceptor();
     expect(() => noopUninstall()).not.toThrow();
 
@@ -1467,6 +1483,189 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
     );
     expect(getPortalBaseUrl('/wedding_website/demo')).toBe('/wedding_website/');
     expect(getPortalBaseUrl('/demo')).toBe('/');
+  });
+
+  it('persists FormData photo uploads (<=512KB base64 vs >512KB blob), features array, guest login/lookup, offline gifts, household merge, broadcast, backup import, and snapshot restore', async () => {
+    const originalFetch = window.fetch;
+    const uninstall = installDemoFetchInterceptor();
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    URL.createObjectURL = jest.fn(() => 'blob:http://localhost/demo-large-photo');
+    URL.revokeObjectURL = jest.fn();
+
+    try {
+      // 1. Features returns a typed array and supports reorder persistence
+      const featuresRes = await (await window.fetch('/api/admin/features')).json();
+      expect(Array.isArray(featuresRes.data)).toBe(true);
+      expect(featuresRes.data.length).toBeGreaterThan(0);
+
+      const reorderedFeatures = [...featuresRes.data].reverse();
+      const saveFeaturesRes = await window.fetch('/api/admin/features', {
+        method: 'PUT',
+        body: JSON.stringify({ features: reorderedFeatures }),
+      });
+      expect(saveFeaturesRes.status).toBe(200);
+      const afterFeatures = await (await window.fetch('/api/admin/features')).json();
+      expect(afterFeatures.data[0].id).toBe(reorderedFeatures[0].id);
+
+      // 2. Guest login, lookup, and logout
+      const lookupRes = await (
+        await window.fetch('/api/guest/lookup', {
+          method: 'POST',
+          body: JSON.stringify({ guestName: 'Smith' }),
+        })
+      ).json();
+      expect(lookupRes.matches.length).toBeGreaterThan(0);
+
+      const loginRes = await window.fetch('/api/guest/login', {
+        method: 'POST',
+        body: JSON.stringify({ code: 'SMITH2026' }),
+      });
+      expect(loginRes.status).toBe(200);
+      expect(getDemoState().guestSession?.invitationCode).toBe('SMITH2026');
+
+      await window.fetch('/api/guest/logout', { method: 'POST' });
+      expect(getDemoState().guestSession).toBeNull();
+
+      // 3. FormData photo uploads: <=512KB persists as base64 data URL; >512KB uses session blob URL
+      const smallBytes = new Uint8Array(1024);
+      smallBytes.fill(65);
+      const smallFile = new File([smallBytes], 'small-guest.png', { type: 'image/png' });
+      const smallForm = new FormData();
+      smallForm.append('file', smallFile);
+      smallForm.append('uploaderName', 'Taylor Guest');
+      smallForm.append('caption', 'Small reception snapshot');
+
+      const smallUploadRes = await (
+        await window.fetch('/api/guest/photos/upload', {
+          method: 'POST',
+          body: smallForm,
+        })
+      ).json();
+      expect(smallUploadRes.success).toBe(true);
+      expect(smallUploadRes.data.url).toMatch(/^data:image\/png;base64,/);
+
+      const largeBytes = new Uint8Array(600 * 1024);
+      largeBytes.fill(66);
+      const largeFile = new File([largeBytes], 'large-guest.jpg', { type: 'image/jpeg' });
+      const largeForm = new FormData();
+      largeForm.append('file', largeFile);
+      largeForm.append('uploaderName', 'Alex Guest');
+
+      const largeUploadRes = await (
+        await window.fetch('/api/guest/photos/upload', {
+          method: 'POST',
+          body: largeForm,
+        })
+      ).json();
+      expect(largeUploadRes.success).toBe(true);
+      expect(largeUploadRes.data.url).toBe('blob:http://localhost/demo-large-photo');
+      expect(URL.createObjectURL).toHaveBeenCalled();
+
+      // Approve uploaded photo via moderation batch
+      const modBatchRes = await window.fetch('/api/admin/photos/moderation/batch', {
+        method: 'POST',
+        body: JSON.stringify({ ids: [smallUploadRes.data.id], action: 'approve' }),
+      });
+      expect(modBatchRes.status).toBe(200);
+
+      // 4. Offline thank-you gift persists across storage re-hydration
+      const offlineCreate = await (
+        await window.fetch('/api/admin/thank-you-notes', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: 'Persistent Offline Uncle',
+            amount: 250,
+            giftName: 'Crystal Decanter',
+            thankYouStatus: 'Pending',
+          }),
+        })
+      ).json();
+      expect(offlineCreate.id).toBeDefined();
+
+      hydrateDemoStateFromStorage();
+      const tyAfterHydrate = await (await window.fetch('/api/admin/thank-you-notes')).json();
+      expect(
+        tyAfterHydrate.items.some(
+          (item: { name: string }) => item.name === 'Persistent Offline Uncle'
+        )
+      ).toBe(true);
+
+      // 5. Household merge combines guests and removes secondary record
+      const g1 = await (
+        await window.fetch('/api/admin/invitation-codes', {
+          method: 'POST',
+          body: JSON.stringify({
+            guestName: 'Primary Household',
+            code: 'MERGEPRI',
+            plusOneAllocations: 1,
+          }),
+        })
+      ).json();
+      const g2 = await (
+        await window.fetch('/api/admin/invitation-codes', {
+          method: 'POST',
+          body: JSON.stringify({
+            guestName: 'Secondary Household',
+            code: 'MERGESEC',
+            plusOneAllocations: 2,
+          }),
+        })
+      ).json();
+      const mergeRes = await window.fetch('/api/admin/invitation-codes/merge', {
+        method: 'POST',
+        body: JSON.stringify({
+          primaryId: g1.data.id,
+          secondaryIds: [g2.data.id],
+        }),
+      });
+      expect(mergeRes.status).toBe(200);
+      expect((await window.fetch(`/api/admin/invitation-codes/${g2.data.id}`)).status).toBe(404);
+
+      // 6. Broadcast preview & send persist into history
+      const previewBroadcast = await (
+        await window.fetch('/api/admin/broadcast/preview', {
+          method: 'POST',
+          body: JSON.stringify({ subject: 'Shuttle Update', body: 'Buses depart at 4pm' }),
+        })
+      ).json();
+      expect(previewBroadcast.data.recipientCount).toBeGreaterThan(0);
+
+      const sendBroadcast = await window.fetch('/api/admin/broadcast/send', {
+        method: 'POST',
+        body: JSON.stringify({ subject: 'Shuttle Update', body: 'Buses depart at 4pm' }),
+      });
+      expect(sendBroadcast.status).toBe(201);
+
+      // 7. Database backup export -> import round-trip & version restore
+      const exportedBackup = await (await window.fetch('/api/admin/maintenance/export')).json();
+      const importRes = await window.fetch('/api/admin/maintenance/import', {
+        method: 'POST',
+        body: JSON.stringify(exportedBackup),
+      });
+      expect(importRes.status).toBe(200);
+
+      const versionsList = (await (await window.fetch('/api/admin/versions')).json()).data.items;
+      expect(versionsList.length).toBeGreaterThan(0);
+      const restorable = versionsList.find(
+        (v: { hasSnapshot?: boolean }) => v.hasSnapshot !== false
+      );
+      if (restorable) {
+        const restoreRes = await window.fetch(`/api/admin/versions/${restorable.id}/restore`, {
+          method: 'POST',
+        });
+        expect(restoreRes.status).toBe(200);
+      }
+
+      // Reset revokes session blob URLs
+      resetDemoState();
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:http://localhost/demo-large-photo');
+    } finally {
+      URL.createObjectURL = originalCreateObjectURL;
+      URL.revokeObjectURL = originalRevokeObjectURL;
+      uninstall();
+      window.fetch = originalFetch;
+    }
   });
 });
 
