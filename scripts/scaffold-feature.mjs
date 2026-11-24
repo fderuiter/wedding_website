@@ -19,7 +19,10 @@ if (!/^[a-z0-9-]+$/.test(featureName)) {
 
 const pascalCase = featureName.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join('');
 const camelCase = featureName.split('-').map((word, index) => index === 0 ? word : word.charAt(0).toUpperCase() + word.slice(1)).join('');
-const featureDir = path.join(__dirname, '..', 'src', 'features', featureName);
+const scaffoldRootDir = process.env.SCAFFOLD_ROOT_DIR
+  ? path.resolve(process.env.SCAFFOLD_ROOT_DIR)
+  : path.join(__dirname, '..');
+const featureDir = path.join(scaffoldRootDir, 'src', 'features', featureName);
 
 if (fs.existsSync(featureDir)) {
   console.error(`Feature ${featureName} already exists`);

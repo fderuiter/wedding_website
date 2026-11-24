@@ -1,17 +1,20 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { execSync } from 'child_process';
 
 describe('OpenAPI JSDoc Deprecation Parser', () => {
-  const tempRouteDir = path.resolve(process.cwd(), 'src/app/api/admin/temp-deprecated-route');
-  const tempRouteFile = path.join(tempRouteDir, 'route.ts');
-  const openapiPath = path.resolve(process.cwd(), 'public/openapi.json');
+  let tempWorkspace: string;
+  let openapiPath: string;
 
   beforeAll(() => {
-    // Ensure parent directory exists
-    if (!fs.existsSync(tempRouteDir)) {
-      fs.mkdirSync(tempRouteDir, { recursive: true });
-    }
+    tempWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'openapi-deprecation-'));
+    const tempAppDir = path.join(tempWorkspace, 'src', 'app');
+    const tempRouteDir = path.join(tempAppDir, 'api', 'admin', 'temp-deprecated-route');
+    const tempRouteFile = path.join(tempRouteDir, 'route.ts');
+    openapiPath = path.join(tempWorkspace, 'openapi.json');
+
+    fs.mkdirSync(tempRouteDir, { recursive: true });
 
     // Write a temporary route with deprecation tags
     const content = `import { NextResponse } from 'next/server';
@@ -34,21 +37,21 @@ export const DELETE = withApiMiddleware(async () => {
 `;
     fs.writeFileSync(tempRouteFile, content, 'utf8');
 
-    // Run openapi schema generation
-    execSync('npx tsx scripts/generate-openapi.ts', { stdio: 'inherit' });
+    // Run openapi schema generation into isolated temp output
+    execSync('npx tsx scripts/generate-openapi.ts', {
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        OPENAPI_EXTRA_APP_DIR: tempAppDir,
+        OPENAPI_OUTPUT_PATH: openapiPath,
+      },
+    });
   });
 
   afterAll(() => {
-    // Clean up temporary route
-    if (fs.existsSync(tempRouteFile)) {
-      fs.unlinkSync(tempRouteFile);
+    if (tempWorkspace && fs.existsSync(tempWorkspace)) {
+      fs.rmSync(tempWorkspace, { recursive: true, force: true });
     }
-    if (fs.existsSync(tempRouteDir)) {
-      fs.rmdirSync(tempRouteDir);
-    }
-
-    // Restore openapi.json to clean state
-    execSync('npx tsx scripts/generate-openapi.ts', { stdio: 'inherit' });
   });
 
   it('correctly marks the GET route as deprecated and appends the migration reason', () => {

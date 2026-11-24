@@ -1,3 +1,4 @@
+import type { Pool } from 'pg';
 import { buildArchetypeDataset, DEMO_SHIPPING_ADDRESS } from '../demoSeed';
 import { createDemoStore } from '@/lib/staticDemo/store';
 import {
@@ -1088,5 +1089,241 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
     );
     expect(getPortalBaseUrl('/wedding_website/demo')).toBe('/wedding_website/');
     expect(getPortalBaseUrl('/demo')).toBe('/');
+  });
+});
+
+describe('jsdom-env.cjs Node timer handles, pg.Pool allowExitOnIdle, and unref() semantics', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  it('returns Node timer handles supporting .unref(), .ref(), and hasRef() === false across real and fake timer transitions', () => {
+    const realHandle = setTimeout(() => {}, 10_000);
+    try {
+      expect(typeof realHandle.unref).toBe('function');
+      expect(typeof realHandle.ref).toBe('function');
+      expect(typeof realHandle.hasRef).toBe('function');
+      expect(realHandle.hasRef()).toBe(true);
+      expect(realHandle.unref()).toBe(realHandle);
+      expect(realHandle.hasRef()).toBe(false);
+      realHandle.ref();
+      expect(realHandle.hasRef()).toBe(true);
+      realHandle.unref();
+      expect(realHandle.hasRef()).toBe(false);
+    } finally {
+      clearTimeout(realHandle);
+    }
+
+    const intervalHandle = setInterval(() => {}, 10_000);
+    try {
+      expect(intervalHandle.unref()).toBe(intervalHandle);
+      expect(intervalHandle.hasRef()).toBe(false);
+    } finally {
+      clearInterval(intervalHandle);
+    }
+
+    jest.useFakeTimers();
+    const fakeFired: string[] = [];
+    const fakeHandle = setTimeout(() => {
+      fakeFired.push('fired');
+    }, 250);
+    expect(typeof fakeHandle.unref).toBe('function');
+    fakeHandle.unref();
+    expect(fakeHandle.hasRef()).toBe(false);
+    jest.advanceTimersByTime(250);
+    expect(fakeFired).toEqual(['fired']);
+
+    jest.useRealTimers();
+    const restoredHandle = setTimeout(() => {}, 10_000);
+    try {
+      restoredHandle.unref();
+      expect(restoredHandle.hasRef()).toBe(false);
+    } finally {
+      clearTimeout(restoredHandle);
+    }
+  });
+
+  it('executes pg.Pool with allowExitOnIdle: true in jsdom-env.cjs without TypeError', async () => {
+    const net = await import('node:net');
+    const { Pool } = await import('pg');
+
+    // Minimal loopback server that speaks PostgreSQL Startup -> AuthenticationOk -> ReadyForQuery -> Terminate
+    const server = net.createServer((socket) => {
+      let startupHandled = false;
+      socket.on('data', () => {
+        if (!startupHandled) {
+          startupHandled = true;
+          // AuthenticationOk ('R', len=8, status=0) + ReadyForQuery ('Z', len=5, 'I')
+          const authOk = Buffer.from([0x52, 0, 0, 0, 8, 0, 0, 0, 0]);
+          const ready = Buffer.from([0x5a, 0, 0, 0, 5, 0x49]);
+          socket.write(Buffer.concat([authOk, ready]));
+        } else {
+          socket.end();
+        }
+      });
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+    const address = server.address();
+    const port = typeof address === 'object' && address ? address.port : 5432;
+
+    const pool = new Pool({
+      host: '127.0.0.1',
+      port,
+      user: 'wedding',
+      database: 'wedding_test',
+      ssl: false,
+      idleTimeoutMillis: 50,
+      allowExitOnIdle: true,
+    });
+
+    try {
+      const client = await pool.connect();
+      client.release();
+    } finally {
+      await pool.end();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it('reports hasRef() === false on timers created by rateLimit queryPoolWithTimeout and prisma shutdown safety timers under jsdom-env.cjs', async () => {
+    const { NextRequest } = await import('next/server');
+    const { createAuthLockoutInstance } = await import('@/utils/rateLimit');
+
+    const capturedRateLimitTimers: Array<ReturnType<typeof setTimeout>> = [];
+    const realSetTimeout = globalThis.setTimeout;
+    const timeoutSpy = jest
+      .spyOn(globalThis, 'setTimeout')
+      .mockImplementation(((cb: (..._args: unknown[]) => void, ms?: number, ...args: unknown[]) => {
+        const handle = realSetTimeout(cb, ms, ...args);
+        capturedRateLimitTimers.push(handle);
+        return handle;
+      }) as typeof setTimeout);
+
+    let resolveQuery!: (_value: { rows: never[] }) => void;
+    const mockPool = {
+      query: jest.fn(
+        () =>
+          new Promise<{ rows: never[] }>((resolve) => {
+            resolveQuery = resolve;
+          })
+      ),
+      ending: false,
+      ended: false,
+    } as unknown as Pool;
+
+    const lockout = createAuthLockoutInstance({
+      pool: mockPool,
+      queryTimeoutMs: 5000,
+    });
+    const req = new NextRequest('http://localhost/api/admin/login', { method: 'POST' });
+    const pendingCheck = lockout.checkLockout(req, 5, 60_000);
+
+    expect(capturedRateLimitTimers.length).toBeGreaterThan(0);
+    const rateLimitTimer = capturedRateLimitTimers[capturedRateLimitTimers.length - 1];
+    expect(rateLimitTimer.hasRef()).toBe(false);
+
+    resolveQuery({ rows: [] });
+    await pendingCheck;
+    timeoutSpy.mockRestore();
+
+    // Verify both safetyTimer branches in src/lib/prisma.ts (L119-L123 and L149-L153) under jsdom-env.cjs
+    const originalExit = process.exit;
+    const globalState = globalThis as unknown as Record<string, unknown>;
+    const savedPrismaState = {
+      prisma: globalState.prisma,
+      pgPool: globalState.pgPool,
+      prismaShutdownRegistered: globalState.prismaShutdownRegistered,
+      prismaShutdownPromise: globalState.prismaShutdownPromise,
+    };
+
+    for (const hasFrameworkListener of [true, false]) {
+      const capturedSafetyTimers: Array<ReturnType<typeof setTimeout>> = [];
+      const registeredSignals = new Map<string, () => void>();
+
+      delete globalState.prisma;
+      delete globalState.pgPool;
+      delete globalState.prismaShutdownRegistered;
+      delete globalState.prismaShutdownPromise;
+
+      process.exit = jest.fn(() => undefined as never) as unknown as typeof process.exit;
+      const onceSpy = jest.spyOn(process, 'once').mockImplementation(((
+        event: string | symbol,
+        listener: (..._args: unknown[]) => void
+      ) => {
+        registeredSignals.set(String(event), () => listener(event));
+        return process;
+      }) as typeof process.once);
+      const listenerCountSpy = jest
+        .spyOn(process, 'listenerCount')
+        .mockImplementation((event: string | symbol) =>
+          hasFrameworkListener && event === 'SIGTERM' ? 1 : 0
+        );
+      const safetySpy = jest
+        .spyOn(globalThis, 'setTimeout')
+        .mockImplementation(((
+          cb: (..._args: unknown[]) => void,
+          ms?: number,
+          ...args: unknown[]
+        ) => {
+          const handle = realSetTimeout(cb, ms, ...args);
+          capturedSafetyTimers.push(handle);
+          return handle;
+        }) as typeof setTimeout);
+
+      try {
+        await jest.isolateModulesAsync(async () => {
+          jest.doMock('pg', () => ({
+            Pool: jest.fn().mockImplementation(() => ({
+              end: jest.fn().mockResolvedValue(undefined),
+              ending: false,
+              ended: false,
+            })),
+          }));
+          jest.doMock('@prisma/adapter-pg', () => ({
+            PrismaPg: jest.fn().mockImplementation(() => ({})),
+          }));
+          jest.doMock('@prisma/client', () => ({
+            PrismaClient: jest.fn().mockImplementation(() => ({
+              $disconnect: jest.fn().mockResolvedValue(undefined),
+            })),
+          }));
+          jest.doMock('@/env', () => ({
+            env: {
+              DATABASE_URL: 'postgresql://wedding:wedding123@localhost:5432/wedding_test',
+              NODE_ENV: 'production',
+            },
+          }));
+
+          await import('@/lib/prisma');
+        });
+
+        registeredSignals.get('SIGTERM')!();
+        if (hasFrameworkListener) {
+          process.exit(143);
+        }
+
+        expect(capturedSafetyTimers.length).toBeGreaterThan(0);
+        const safetyTimer = capturedSafetyTimers[capturedSafetyTimers.length - 1];
+        expect(safetyTimer.hasRef()).toBe(false);
+
+        await (globalState.prismaShutdownPromise as Promise<void>);
+      } finally {
+        safetySpy.mockRestore();
+        listenerCountSpy.mockRestore();
+        onceSpy.mockRestore();
+        process.exit = originalExit;
+        jest.dontMock('pg');
+        jest.dontMock('@prisma/adapter-pg');
+        jest.dontMock('@prisma/client');
+        jest.dontMock('@/env');
+      }
+    }
+
+    globalState.prisma = savedPrismaState.prisma;
+    globalState.pgPool = savedPrismaState.pgPool;
+    globalState.prismaShutdownRegistered = savedPrismaState.prismaShutdownRegistered;
+    globalState.prismaShutdownPromise = savedPrismaState.prismaShutdownPromise;
   });
 });

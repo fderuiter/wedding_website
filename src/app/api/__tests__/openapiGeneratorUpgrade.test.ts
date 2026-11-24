@@ -2,6 +2,7 @@
  * @jest-environment node
  */
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { execSync } from 'child_process';
 import { z } from 'zod';
@@ -287,12 +288,27 @@ function countNullableProperties(node: unknown): number {
 }
 
 describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
-  const openapiPath = path.resolve(process.cwd(), 'public/openapi.json');
+  let tempDir: string;
+  let openapiPath: string;
   let openapi: OpenApiDocument;
 
   beforeAll(() => {
-    execSync('npx tsx scripts/generate-openapi.ts', { stdio: 'inherit' });
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openapi-upgrade-'));
+    openapiPath = path.join(tempDir, 'openapi.json');
+    execSync('npx tsx scripts/generate-openapi.ts', {
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        OPENAPI_OUTPUT_PATH: openapiPath,
+      },
+    });
     openapi = JSON.parse(fs.readFileSync(openapiPath, 'utf8')) as OpenApiDocument;
+  });
+
+  afterAll(() => {
+    if (tempDir && fs.existsSync(tempDir)) {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   function getAllOperations(): Array<{

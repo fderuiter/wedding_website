@@ -4,9 +4,9 @@ This document outlines the testing strategy, test architecture, and quality assu
 
 ## Tech Stack
 
-- **Unit & Integration Framework:** [Jest](https://jestjs.io/)
+- **Unit & Integration Framework:** [Jest](https://jestjs.io/) partitioned into parallel `unit-node`, parallel `unit-jsdom`, and serial `db-serial` projects in [jest.config.mjs](../jest.config.mjs).
 - **Component Testing Utilities:** [React Testing Library](https://testing-library.com/docs/react-testing-library/intro/)
-- **Environment:** [JSDOM](https://github.com/jsdom/jsdom) to simulate browser environments for component tests.
+- **Environment:** Native `node` environment for pure TypeScript and PostgreSQL suites, and custom [JSDOM](https://github.com/jsdom/jsdom) ([jsdom-env.cjs](../jsdom-env.cjs) with `node:timers` handles and [jest.setup.jsdom.js](../jest.setup.jsdom.js)) for component, hook, demo, and portal browser suites.
 - **End-to-End Testing:** [Playwright](https://playwright.dev/) for headless browser automation.
 - **Language:** TypeScript, with tests written in `.test.ts` and `.test.tsx` files.
 - **Database & ORM:** [Prisma](https://www.prisma.io/) with automated PostgreSQL container isolation via Docker Compose.
@@ -15,13 +15,14 @@ This document outlines the testing strategy, test architecture, and quality assu
 
 ### Running Unit & Integration Tests
 
-Run the unit and integration test suite without coverage instrumentation for fast local iteration:
+Run the unit and integration test suite across parallel `unit-node` and `unit-jsdom` workers plus the serial `db-serial` PostgreSQL runner without coverage instrumentation for fast local iteration:
 
 ```bash
 npm test
 
-# Run a single targeted test file:
+# Run a single targeted test file (or customize parallel worker count with --maxWorkers):
 npm test -- src/utils/__tests__/ApiError.test.ts
+npm test -- --maxWorkers=2 src/utils/__tests__/ApiError.test.ts
 ```
 
 Run Jest in interactive watch mode during active development (without coverage overhead or global threshold failures):
@@ -44,7 +45,7 @@ npm run test:cov:html
 Before Jest executes, npm automatically triggers the `pretest`, `pretest:watch`, and `pretest:cov` lifecycle hooks in [package.json](../package.json), invoking [scripts/pretest.mjs](../scripts/pretest.mjs). Preflight steps combine CI-aware dependency/database preservation with local caching so warm targeted runs stay fast:
 
 1. **CI-Aware Dependency Alignment & Strict `npm ci`:** Treats `node_modules` as aligned when `CI=true` with an existing `node_modules/.package-lock.json` or when `node_modules/.package-lock-hash` (initialized during `npm ci` via `postinstall` running `node scripts/pretest.mjs --record-install-state`) matches the SHA-256 digest of `package-lock.json`. When local dependencies are missing or lockfile drift is detected, it runs strict `npm ci` (enforcing peer dependency checks) and records `node_modules/.package-lock-hash`.
-2. **Accessibility Violation Reset:** Resets `test-results/jest-a11y-violations.json` to `[]` before every Jest run so component-level `jest-axe` assertions report only current violations.
+2. **Accessibility Violation Reset & Worker Shard Aggregation:** Resets `test-results/jest-a11y-violations.json` to `[]` and clears stale `.jest-a11y-violations.shard-*.json` files before every Jest run; during parallel `unit-jsdom` execution, [jest.setup.jsdom.js](../jest.setup.jsdom.js) and [jest-a11y-reporter.cjs](../jest-a11y-reporter.cjs) write per-worker shard files and aggregate them atomically into `test-results/jest-a11y-violations.json` so component-level `jest-axe` assertions report only current violations without cross-worker write races.
 3. **Test Environment Isolation, `CI=true` Preservation & `TEST_DATABASE_URL` Override:** Both `scripts/pretest.mjs` and [jest.setup.js](../jest.setup.js) honor explicit `TEST_DATABASE_URL` overrides (when targeting a custom PostgreSQL instance) or preserve the caller's `DATABASE_URL` when `CI=true`, while still loading test defaults from [`.env.test`](../.env.test) (`GUEST_PASSCODE="build-fallback-guest-passcode"`, `GUEST_SESSION_SECRET="playwright-e2e-session-secret-32-chars-min"`). Locally (when neither `CI=true` nor `TEST_DATABASE_URL` is set), they clear parent shell database and admin variables (`DATABASE_URL`, `POSTGRES_URL_NON_POOLING`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGHOST`, `PGPORT`, `PGDATASOURCE`, `ADMIN_PASSWORD`) and target the isolated `wedding_test` database (`postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public`) so test runs never modify local development data.
 4. **TCP Readiness Probing & Conditional PostgreSQL Container Startup:** Probes TCP readiness on the host and port parsed from `DATABASE_URL` (`node:net`) before invoking Docker Compose. When a PostgreSQL listener already accepts connections (such as GitHub Actions `services.db` or an active local database) or when `CI=true`, `docker compose up -d db` is skipped. Locally, when the target port is offline and Docker (`docker info`) is running, it starts the container via `docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml up -d db` and polls `pg_isready -U wedding` until ready; if Docker is unavailable, it logs a notice and falls back gracefully.
 5. **Cached Migration Synchronization & Conditional Prisma Client Generation:** Ensures isolated test databases (`wedding_test`) exist and tracks `prisma/schema.prisma`, `prisma/migrations/`, and target database URL state in `node_modules/.cache/pretest-state.json`, skipping repeated `npx prisma migrate deploy` (which automatically resets unbaselined `prisma db push` schemas on Prisma error `P3005` and retries once) and `npm run prisma:generate` executions when committed migrations and `node_modules/.prisma/client` are already up to date (including skipping duplicate generation after `postinstall` in CI). Documentation portal staging is intentionally omitted from preflight and handled directly by dedicated portal suites ([`src/__tests__/generate-portal.test.ts`](../src/__tests__/generate-portal.test.ts)) and `npm run docs:build`.
@@ -89,7 +90,7 @@ A variety of verification scripts in [package.json](../package.json) support com
   npm test
   npm run test:cov
   ```
-  `npm test` runs cached preflight automation followed by `jest --runInBand` without coverage instrumentation, while `npm run test:cov` runs `jest --coverage --maxWorkers=1` to generate `coverage/lcov.info` and enforce global coverage thresholds.
+  `npm test` runs cached preflight automation followed by `NODE_OPTIONS=--max-old-space-size=4096 jest` without coverage instrumentation (executing `unit-node` and `unit-jsdom` in parallel with `workerIdleMemoryLimit: '1024MB'` and `db-serial` sequentially via [jest-serial-runner.cjs](../jest-serial-runner.cjs)), while `npm run test:cov` runs `NODE_OPTIONS=--max-old-space-size=4096 jest --coverage` in a single pass to generate `coverage/lcov.info`, aggregate `test-results/jest-a11y-violations.json`, and enforce global coverage thresholds (`80%` lines, `68%` branches).
 
 - **Playwright End-to-End & Smoke Tests:**
   ```bash
