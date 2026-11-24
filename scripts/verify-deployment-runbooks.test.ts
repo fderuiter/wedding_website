@@ -257,6 +257,12 @@ describe('verify-deployment-runbooks', () => {
         .replace("jq -r '.data.status // empty'", "jq -r '.status // empty'")
     );
     fs.writeFileSync(
+      path.join(tempDir, '.github/workflows/deploy-stage.yml'),
+      fs
+        .readFileSync(path.join(tempDir, '.github/workflows/deploy-stage.yml'), 'utf8')
+        .replace('READY_ENDPOINT="${TARGET_URL}/api/ready"', 'READY_ENDPOINT=""')
+    );
+    fs.writeFileSync(
       path.join(tempDir, '.github/workflows/publish-artifact.yml'),
       fs
         .readFileSync(path.join(tempDir, '.github/workflows/publish-artifact.yml'), 'utf8')
@@ -272,6 +278,9 @@ describe('verify-deployment-runbooks', () => {
         expect.stringContaining('docker-compose.yml: `app` service must mount `uploads_data:/app/public/uploads`'),
         expect.stringContaining('src/middleware.ts: Must exclude `/api/registry/webhook/stripe`'),
         expect.stringContaining('.github/workflows/rollback.yml: Unwrapped `.status` or `.database` jq query detected'),
+        expect.stringContaining(
+          '.github/workflows/deploy-stage.yml: Post-deployment/rollback probe must poll both `/api/health` and `/api/ready`'
+        ),
         expect.stringContaining('.github/workflows/publish-artifact.yml: Must publish `GITHUB_REF_NAME`'),
         expect.stringContaining('vercel.json: Must configure a valid 5-field cron schedule for `/api/cron/broadcasts`'),
       ])

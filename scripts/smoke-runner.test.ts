@@ -1,12 +1,16 @@
 /**
  * @jest-environment node
  */
+import child_process from 'node:child_process';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import {
+  createComposePsqlDriver,
   httpRequest,
   runCheckedCommand,
+  runSigtermDrainProbe,
   runSmokeRouteProbes,
+  waitForChildProcessExit,
   waitForServerReady,
 } from './smoke-runner.mjs';
 
@@ -193,6 +197,172 @@ describe('scripts/smoke-runner.mjs', () => {
           label: 'zero-table-validate',
         })
       ).rejects.toThrow(/validate-code.*returned 500/);
+    });
+  });
+
+  describe('shared SIGTERM drain and redaction probes', () => {
+    it('waitForChildProcessExit resolves exit code 143 for a SIGTERM-draining child process', async () => {
+      const child = child_process.spawn(
+        process.execPath,
+        [
+          '-e',
+          "process.on('SIGTERM', () => setTimeout(() => process.exit(143), 25)); process.stdout.write('READY\\n'); setInterval(() => {}, 1000);",
+        ],
+        { stdio: ['ignore', 'pipe', 'ignore'] }
+      );
+      const exitPromise = waitForChildProcessExit(child, 5000);
+      child.stdout.once('data', () => {
+        child.kill('SIGTERM');
+      });
+      const outcome = await exitPromise;
+      expect(outcome.exitCode).toBe(143);
+      expect(typeof createComposePsqlDriver).toBe('function');
+    });
+
+    it('verifies unauthenticated /guest/login redaction, passes guest_auth on SIGTERM drain, delivers HTTP 200 marker, and enforces exit code 143', async () => {
+      const marker = 'Unit SIGTERM Drain Verified';
+      let lockHeld = false;
+      let releaseDeferred: (() => void) | null = null;
+      let stopTriggered = false;
+      let leakUnauthenticatedTitle = false;
+      let simulatedExitCode = 143;
+      const observedLoginCookies: string[] = [];
+
+      const drainServer = http.createServer(async (req, res) => {
+        const url = new URL(req.url || '/', 'http://127.0.0.1');
+        if (url.pathname === '/guest/login') {
+          const cookie = req.headers.cookie || '';
+          observedLoginCookies.push(cookie);
+          if (lockHeld) {
+            await new Promise<void>((resolve) => {
+              releaseDeferred = resolve;
+            });
+          }
+          const isAuthenticated = cookie.includes('guest_auth=signed-smoke-token');
+          const renderedTitle =
+            isAuthenticated || leakUnauthenticatedTitle
+              ? `Guest Sign-In | ${marker}`
+              : 'Guest Sign-In | Wedding Website';
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end(`<!doctype html><html><head><title>${renderedTitle}</title></head><body>ok</body></html>`);
+          return;
+        }
+        res.writeHead(404);
+        res.end();
+      });
+
+      await new Promise<void>((resolve) => {
+        drainServer.listen(0, '127.0.0.1', () => resolve());
+      });
+      const address = drainServer.address() as AddressInfo;
+      const drainHost = `127.0.0.1:${address.port}`;
+      const drainBaseUrl = `http://${drainHost}`;
+
+      const mockDbDriver = {
+        dbName: 'wedding',
+        queryDb(sql: string) {
+          if (sql.includes('pg_stat_activity')) {
+            return lockHeld && observedLoginCookies.length >= 2 ? '1' : '0';
+          }
+          return '';
+        },
+        async acquireExclusiveLock() {
+          lockHeld = true;
+          return {
+            async release() {
+              lockHeld = false;
+              releaseDeferred?.();
+              releaseDeferred = null;
+            },
+            async cleanup() {
+              lockHeld = false;
+              releaseDeferred?.();
+              releaseDeferred = null;
+            },
+          };
+        },
+        getDbLogs() {
+          return 'LOG:  database system is ready to accept connections';
+        },
+      };
+
+      try {
+        await runSigtermDrainProbe({
+          baseUrl: drainBaseUrl,
+          hostHeader: drainHost,
+          guestCookie: 'guest_auth=signed-smoke-token',
+          drainTitleMarker: marker,
+          holdMs: 25,
+          lockPollAttempts: 20,
+          lockPollIntervalMs: 10,
+          dbDriver: mockDbDriver,
+          label: 'unit-drain',
+          async triggerStop() {
+            stopTriggered = true;
+          },
+          async isRunningDuringDrain() {
+            return stopTriggered && lockHeld;
+          },
+          async waitForExitCode() {
+            return simulatedExitCode;
+          },
+        });
+
+        expect(stopTriggered).toBe(true);
+        expect(observedLoginCookies).toEqual(['', 'guest_auth=signed-smoke-token']);
+
+        // Rejects if unauthenticated /guest/login leaks seoTitle
+        leakUnauthenticatedTitle = true;
+        await expect(
+          runSigtermDrainProbe({
+            baseUrl: drainBaseUrl,
+            hostHeader: drainHost,
+            guestCookie: 'guest_auth=signed-smoke-token',
+            drainTitleMarker: marker,
+            holdMs: 10,
+            dbDriver: mockDbDriver,
+            label: 'unit-leak',
+            async triggerStop() {},
+            async isRunningDuringDrain() {
+              return true;
+            },
+            async waitForExitCode() {
+              return 143;
+            },
+          })
+        ).rejects.toThrow(/did not render 'Guest Sign-In \| Wedding Website'|leaked unredacted seoTitle/);
+
+        // Rejects if server exits with non-143 status code
+        leakUnauthenticatedTitle = false;
+        simulatedExitCode = 1;
+        observedLoginCookies.length = 0;
+        await expect(
+          runSigtermDrainProbe({
+            baseUrl: drainBaseUrl,
+            hostHeader: drainHost,
+            guestCookie: 'guest_auth=signed-smoke-token',
+            drainTitleMarker: marker,
+            holdMs: 10,
+            lockPollAttempts: 20,
+            lockPollIntervalMs: 10,
+            dbDriver: mockDbDriver,
+            label: 'unit-bad-exit',
+            async triggerStop() {
+              stopTriggered = true;
+            },
+            async isRunningDuringDrain() {
+              return true;
+            },
+            async waitForExitCode() {
+              return simulatedExitCode;
+            },
+          })
+        ).rejects.toThrow(/Expected exit code 143 after SIGTERM drain, got 1/);
+      } finally {
+        await new Promise<void>((resolve) => {
+          drainServer.close(() => resolve());
+        });
+      }
     });
   });
 });

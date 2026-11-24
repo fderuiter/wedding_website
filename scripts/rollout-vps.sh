@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Zero-downtime VPS standby loopback rollout script
 # Builds wedding-website:latest once via `app`, runs `migration`, warms
-# `app-standby` on 127.0.0.1:${STANDBY_PORT:-3001}:3000, verifies `/api/live`
-# and `/api/ready`, recreates `app` on 127.0.0.1:${PORT:-3000}:3000 while host
+# `app-standby` on 127.0.0.1:${STANDBY_PORT:-3001}:3000, verifies `/api/live`,
+# `/api/health`, and `/api/ready`, recreates `app` on 127.0.0.1:${PORT:-3000}:3000 while host
 # reverse proxies fail over seamlessly, verifies `app` readiness, and retires
 # `app-standby`.
 
@@ -120,7 +120,7 @@ print_manual_recovery_commands() {
     echo "      docker compose ${base_args_display} logs --tail=50 app"
     echo "   2. Restore primary 'app' onto a known-good image:"
     echo "      docker tag wedding-website:previous wedding-website:latest && docker compose ${base_args_display} up -d --no-deps --no-build --force-recreate app"
-    echo "   3. Once primary 'app' passes http://127.0.0.1:${PORT}/api/live and /api/ready, retire 'app-standby':"
+    echo "   3. Once primary 'app' passes http://127.0.0.1:${PORT}/api/live, /api/health, and /api/ready, retire 'app-standby':"
     echo "      docker compose ${rollout_args_display} stop app-standby && docker compose ${rollout_args_display} rm -f app-standby"
   } >&2
 }
@@ -134,6 +134,39 @@ probe_http_ok() {
   fi
 }
 
+probe_health_ok() {
+  local url="$1"
+  if command -v curl >/dev/null 2>&1; then
+    local body=""
+    body="$(curl -fsS --max-time 3 "${url}" 2>/dev/null)" || return 1
+    if command -v jq >/dev/null 2>&1; then
+      printf '%s' "${body}" | jq -e 'type == "object" and (if has("success") then (.success == true and (.data | type) == "object" and .data.status == "ok" and .data.database == "connected") else ((.status) == "ok" and (.database) == "connected") end)' >/dev/null 2>&1
+    else
+      printf '%s' "${body}" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' &&
+        printf '%s' "${body}" | grep -Eq '"database"[[:space:]]*:[[:space:]]*"connected"' &&
+        ! printf '%s' "${body}" | grep -Eq '"success"[[:space:]]*:[[:space:]]*false'
+    fi
+  else
+    node -e "fetch(process.argv[1],{signal:AbortSignal.timeout(3000)}).then(async(r)=>{if(!r.ok)process.exit(1);const j=await r.json();const ok=j&&typeof j==='object'&&('success' in j?j.success===true&&j.data&&j.data.status==='ok'&&j.data.database==='connected':j.status==='ok'&&j.database==='connected');process.exit(ok?0:1);}).catch(()=>process.exit(1))" "${url}"
+  fi
+}
+
+probe_ready_ok() {
+  local url="$1"
+  if command -v curl >/dev/null 2>&1; then
+    local body=""
+    body="$(curl -fsS --max-time 3 "${url}" 2>/dev/null)" || return 1
+    if command -v jq >/dev/null 2>&1; then
+      printf '%s' "${body}" | jq -e 'type == "object" and (.status) == "ready" and (.database) == "connected"' >/dev/null 2>&1
+    else
+      printf '%s' "${body}" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ready"' &&
+        printf '%s' "${body}" | grep -Eq '"database"[[:space:]]*:[[:space:]]*"connected"'
+    fi
+  else
+    node -e "fetch(process.argv[1],{signal:AbortSignal.timeout(3000)}).then(async(r)=>{if(!r.ok)process.exit(1);const j=await r.json();process.exit(j&&j.status==='ready'&&j.database==='connected'?0:1);}).catch(()=>process.exit(1))" "${url}"
+  fi
+}
+
 wait_for_service_probes() {
   local label="$1"
   local service_name="$2"
@@ -143,6 +176,7 @@ wait_for_service_probes() {
   local compose_args=("$@")
 
   local live_url="http://127.0.0.1:${target_port}/api/live"
+  local health_url="http://127.0.0.1:${target_port}/api/health"
   local ready_url="http://127.0.0.1:${target_port}/api/ready"
   local deadline=$((SECONDS + timeout_sec))
 
@@ -160,14 +194,16 @@ wait_for_service_probes() {
       fi
     fi
 
-    if probe_http_ok "${live_url}" && probe_http_ok "${ready_url}"; then
-      echo "✅ ${label} passed /api/live and /api/ready probes on 127.0.0.1:${target_port}."
+    if probe_http_ok "${live_url}" &&
+      probe_health_ok "${health_url}" &&
+      probe_ready_ok "${ready_url}"; then
+      echo "✅ ${label} passed /api/live, /api/health, and /api/ready probes on 127.0.0.1:${target_port}."
       return 0
     fi
     sleep "${ROLLOUT_POLL_INTERVAL}"
   done
 
-  echo "❌ Timed out after ${timeout_sec}s waiting for ${label} probes (${live_url}, ${ready_url})." >&2
+  echo "❌ Timed out after ${timeout_sec}s waiting for ${label} probes (${live_url}, ${health_url}, ${ready_url})." >&2
   docker compose "${compose_args[@]}" logs --tail=50 "${service_name}" >&2 || true
   return 1
 }

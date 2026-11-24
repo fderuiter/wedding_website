@@ -1694,17 +1694,18 @@ jobs:
             echo "::error::Missing or invalid SERVICE_URL for '${EFFECTIVE_ENV}' health verification. Configure vars.SERVICE_URL (recommended) or legacy secrets.SERVICE_URL with a valid http:// or https:// URL in the '${EFFECTIVE_ENV}' GitHub Environment."
             echo "health_status=unhealthy" >> "$GITHUB_OUTPUT"
             echo "http_status=invalid-url" >> "$GITHUB_OUTPUT"
-            echo "### 🔴 Provider Health Verification Failed (${EFFECTIVE_ENV})" >> "$GITHUB_STEP_SUMMARY"
+            echo "### 🔴 Provider Health & Readiness Verification Failed (${EFFECTIVE_ENV})" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Environment:** \`${EFFECTIVE_ENV}\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Target Service URL:** \`${DISPLAY_URL}\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Health Endpoint:** \`/api/health\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Probe Endpoints:** \`/api/health\`, \`/api/ready\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- **HTTP Status:** \`invalid-url\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Verification Outcome:** \`UNHEALTHY\`" >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
 
           HEALTH_ENDPOINT="${TARGET_URL}/api/health"
-          echo "Polling ${DISPLAY_URL}/api/health for environment '${EFFECTIVE_ENV}' (dry_run=${IS_DRY_RUN:-false})..."
+          READY_ENDPOINT="${TARGET_URL}/api/ready"
+          echo "Polling ${DISPLAY_URL}/api/health and ${DISPLAY_URL}/api/ready for environment '${EFFECTIVE_ENV}' (dry_run=${IS_DRY_RUN:-false})..."
 
           MAX_TIMEOUT=120
           START_TIME=$(date +%s)
@@ -1738,9 +1739,26 @@ jobs:
               fi
 
               if [ "$STATUS_VAL" = "ok" ] && [ "$DB_STATUS" = "connected" ]; then
-                echo "✅ Provider health check probe succeeded! HTTP ${HTTP_STATUS}, status: ${STATUS_VAL}, database: ${DB_STATUS}"
-                SUCCESS="true"
-                break
+                READY_HTTP_RESPONSE=$(curl -s -S --connect-timeout 5 --max-time 10 -w "\nHTTP_STATUS_CODE:%{http_code}" "${READY_ENDPOINT}" || true)
+                READY_HTTP_STATUS=$(printf '%s\n' "$READY_HTTP_RESPONSE" | grep "HTTP_STATUS_CODE:" | tail -n 1 | cut -d':' -f2 || true)
+                READY_RESPONSE_BODY=$(printf '%s\n' "$READY_HTTP_RESPONSE" | sed '/HTTP_STATUS_CODE:/d')
+                READY_IS_OBJECT=$(printf '%s' "$READY_RESPONSE_BODY" | jq -r 'if type == "object" then "true" else "false" end' 2>/dev/null || true)
+                READY_STATUS_VAL=""
+                READY_DB_STATUS=""
+                if [ "$READY_IS_OBJECT" = "true" ]; then
+                  READY_STATUS_VAL=$(printf '%s' "$READY_RESPONSE_BODY" | jq -r '(.status) // empty' 2>/dev/null || true)
+                  READY_DB_STATUS=$(printf '%s' "$READY_RESPONSE_BODY" | jq -r '(.database) // empty' 2>/dev/null || true)
+                fi
+
+                if [ "$READY_HTTP_STATUS" = "200" ] && [ "$READY_STATUS_VAL" = "ready" ] && [ "$READY_DB_STATUS" = "connected" ]; then
+                  echo "✅ Provider health and readiness probes succeeded! /api/health (${STATUS_VAL}/${DB_STATUS}), /api/ready (${READY_STATUS_VAL}/${READY_DB_STATUS})"
+                  SUCCESS="true"
+                  break
+                else
+                  HTTP_STATUS="${READY_HTTP_STATUS:-unreachable}"
+                  RESPONSE_BODY="$READY_RESPONSE_BODY"
+                  echo "⚠️ Provider readiness probe (/api/ready) failed (HTTP '${READY_HTTP_STATUS:-unreachable}', status: '${READY_STATUS_VAL}', database: '${READY_DB_STATUS}'). Retrying in ${DELAY}s..."
+                fi
               else
                 echo "⚠️ Endpoint returned 200 but payload unhealthy (status: '${STATUS_VAL}', database: '${DB_STATUS}'). Retrying in ${DELAY}s..."
               fi
@@ -1769,13 +1787,13 @@ jobs:
             echo "http_status=${HTTP_STATUS:-200}" >> "$GITHUB_OUTPUT"
             exit 0
           else
-            echo "::error::Provider health check failed for '${EFFECTIVE_ENV}' (last HTTP status: ${HTTP_STATUS:-unreachable})."
+            echo "::error::Provider health and readiness check failed for '${EFFECTIVE_ENV}' (last HTTP status: ${HTTP_STATUS:-unreachable})."
             echo "health_status=unhealthy" >> "$GITHUB_OUTPUT"
             echo "http_status=${HTTP_STATUS:-unreachable}" >> "$GITHUB_OUTPUT"
-            echo "### 🔴 Provider Health Verification Failed (${EFFECTIVE_ENV})" >> "$GITHUB_STEP_SUMMARY"
+            echo "### 🔴 Provider Health & Readiness Verification Failed (${EFFECTIVE_ENV})" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Environment:** \`${EFFECTIVE_ENV}\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Target Service URL:** \`${DISPLAY_URL}\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Health Endpoint:** \`/api/health\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Probe Endpoints:** \`/api/health\`, \`/api/ready\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- **HTTP Status:** \`${HTTP_STATUS:-unreachable}\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Verification Outcome:** \`UNHEALTHY\`" >> "$GITHUB_STEP_SUMMARY"
             exit 1
@@ -2262,6 +2280,7 @@ jobs:
           fi
 
           HEALTH_ENDPOINT="${TARGET_URL}/api/health"
+          READY_ENDPOINT="${TARGET_URL}/api/ready"
           MAX_TIMEOUT=55
           START_TIME=$(date +%s)
           DELAY=2
@@ -2289,8 +2308,22 @@ jobs:
                 DB_STATUS=$(printf '%s' "$RESPONSE_BODY" | jq -r '(.database) // empty' 2>/dev/null || true)
               fi
               if [ "$STATUS_VAL" = "ok" ] && [ "$DB_STATUS" = "connected" ]; then
-                RESTORED_HEALTHY="true"
-                break
+                READY_HTTP_RESPONSE=$(curl -s -S --connect-timeout 5 --max-time 10 -w "\nHTTP_STATUS_CODE:%{http_code}" "${READY_ENDPOINT}" || true)
+                READY_HTTP_STATUS=$(printf '%s\n' "$READY_HTTP_RESPONSE" | grep "HTTP_STATUS_CODE:" | tail -n 1 | cut -d':' -f2 || true)
+                READY_RESPONSE_BODY=$(printf '%s\n' "$READY_HTTP_RESPONSE" | sed '/HTTP_STATUS_CODE:/d')
+                READY_IS_OBJECT=$(printf '%s' "$READY_RESPONSE_BODY" | jq -r 'if type == "object" then "true" else "false" end' 2>/dev/null || true)
+                READY_STATUS_VAL=""
+                READY_DB_STATUS=""
+                if [ "$READY_IS_OBJECT" = "true" ]; then
+                  READY_STATUS_VAL=$(printf '%s' "$READY_RESPONSE_BODY" | jq -r '(.status) // empty' 2>/dev/null || true)
+                  READY_DB_STATUS=$(printf '%s' "$READY_RESPONSE_BODY" | jq -r '(.database) // empty' 2>/dev/null || true)
+                fi
+                if [ "$READY_HTTP_STATUS" = "200" ] && [ "$READY_STATUS_VAL" = "ready" ] && [ "$READY_DB_STATUS" = "connected" ]; then
+                  RESTORED_HEALTHY="true"
+                  break
+                else
+                  RESTORED_HTTP="${READY_HTTP_STATUS:-unreachable}"
+                fi
               fi
             fi
             sleep $DELAY
@@ -2311,7 +2344,7 @@ jobs:
                 "${API_BASE}/repos/${GITHUB_REPOSITORY}/deployments/${RESTORED_DEP_ID}/statuses" \
                 -d "$FAIL_BODY" >/dev/null 2>&1 || true
             fi
-            echo "::error::Inline fallback rollback failed: restored container failed /api/health (HTTP ${RESTORED_HTTP:-unreachable})."
+            echo "::error::Inline fallback rollback failed: restored container failed /api/health or /api/ready (HTTP ${RESTORED_HTTP:-unreachable})."
             fail_inline_rollback
           fi
 
@@ -2340,8 +2373,8 @@ jobs:
           echo "- **Restored Artifact URI:** \`${RESTORED_IMAGE_URI}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Restored Source Revision:** \`${RESTORED_SOURCE_REVISION}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Target Service URL:** \`${DISPLAY_URL}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Restored Health Probe:** \`HEALTHY (HTTP ${RESTORED_HTTP})\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "::error::Forward '${EFFECTIVE_ENV}' rollout failed /api/health; prior healthy image '${RESTORED_IMAGE_URI}' (${RESTORED_SOURCE_REVISION}) was automatically restored."
+          echo "- **Restored Health & Readiness Probes:** \`HEALTHY (HTTP ${RESTORED_HTTP})\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "::error::Forward '${EFFECTIVE_ENV}' rollout failed /api/health or /api/ready; prior healthy image '${RESTORED_IMAGE_URI}' (${RESTORED_SOURCE_REVISION}) was automatically restored."
           exit 1
 
       - name: Resolve Service URL Output
