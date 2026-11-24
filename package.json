@@ -126,6 +126,7 @@
     "@babel/preset-typescript": "^8.0.7",
     "@eslint/eslintrc": "^3.3.7",
     "@playwright/test": "^1.65.1",
+    "@storybook/addon-docs": "^10.6.8",
     "@storybook/react": "^10.6.8",
     "@storybook/react-webpack5": "^10.6.8",
     "@stylistic/eslint-plugin": "^6.0.1",
