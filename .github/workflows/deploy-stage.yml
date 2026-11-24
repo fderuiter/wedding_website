@@ -57,6 +57,8 @@ on:
     secrets:
       DATABASE_URL:
         required: false
+      POSTGRES_URL_NON_POOLING:
+        required: false
       GCP_SA_KEY:
         required: false
       GCP_PROJECT_ID:

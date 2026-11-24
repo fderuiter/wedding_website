@@ -165,7 +165,7 @@ To protect production database integrity and application availability, the deplo
      - `GCP_WORKLOAD_IDENTITY_PROVIDER`: Primary keyless OIDC Workload Identity Provider resource name (`projects/<project-number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>`).
      - `GCP_SERVICE_ACCOUNT`: Service account email impersonated via Workload Identity Federation (`<sa-name>@<project-id>.iam.gserviceaccount.com`).
   5. **Environment Secrets**:
-     - `DATABASE_URL`: Connection string for the isolated staging PostgreSQL instance (e.g., `postgresql://wedding:staging_pass@staging-db.internal:5432/wedding_staging`).
+     - `DATABASE_URL`: Connection string for the isolated staging PostgreSQL instance (e.g., `postgresql://wedding:staging_pass@staging-db.internal:5432/wedding_staging`), plus optional `POSTGRES_URL_NON_POOLING` when `DATABASE_URL` connects through a PgBouncer pooler.
      - Provider secrets (`GCP_SA_KEY` fallback when Workload Identity Federation variables are unset, optional `GCP_PROJECT_ID`, or `DEPLOY_WEBHOOK_URL` + `DEPLOY_WEBHOOK_SECRET` for webhook/Docker host adapters). Because `staging` has no required reviewers, automated staging rollbacks can resolve variables and secrets directly from `staging` (or an optional `STAGING_ROLLBACK_ENVIRONMENT`).
 
 #### 2. Production Environment (`production`)
@@ -185,7 +185,7 @@ To protect production database integrity and application availability, the deplo
      - `GCP_WORKLOAD_IDENTITY_PROVIDER`: Primary keyless OIDC Workload Identity Provider resource name for production deployments.
      - `GCP_SERVICE_ACCOUNT`: Production service account email impersonated via Workload Identity Federation.
   6. **Environment Secrets** (workflow-consumed credentials only):
-     - `DATABASE_URL`: Direct (non-pooled) connection string for the isolated production PostgreSQL instance used by `db-migrate.yml` (e.g., `postgresql://wedding:prod_pass@prod-db.internal:5432/wedding_prod`).
+     - `DATABASE_URL`: Connection string for the isolated production PostgreSQL instance used by `db-migrate.yml` (e.g., `postgresql://wedding:prod_pass@prod-db.internal:5432/wedding_prod`), plus optional `POSTGRES_URL_NON_POOLING` direct connection secret when `DATABASE_URL` uses a PgBouncer pooler.
      - Provider secrets (`GCP_SA_KEY` fallback when OIDC variables are unset, optional `GCP_PROJECT_ID`, or `DEPLOY_WEBHOOK_URL` + `DEPLOY_WEBHOOK_SECRET` for signed webhook/Docker host deployments).
      - *Note*: Application runtime secrets (`ADMIN_PASSWORD`, `GUEST_PASSCODE`, `GUEST_SESSION_SECRET`, `S3_*`, `STRIPE_*`) are not read by GitHub Actions workflows and must be configured in your target hosting platform's secret store (such as GCP Secret Manager, Vercel Environment Variables, or VPS `.env`).
 
@@ -263,13 +263,13 @@ To protect production database integrity and application availability, the deplo
 ### 3. Database Migration (`db-migrate.yml`)
 - **Triggers**: Reusable `workflow_call` from `deploy-stage.yml` (`confirm` defaults to `true`, `caller_holds_lock: true`), or standalone manual `workflow_dispatch` with target environment (`production`, `staging`, `development`) and explicit confirmation (`confirm` defaults to `false`).
 - **Concurrency**: Acquires `deploy-env-${{ inputs.environment || 'production' }}` (`cancel-in-progress: false`, `queue: max`) on standalone runs (`caller_holds_lock: false`), or scopes to `caller-db-migrate-<environment>-${{ github.run_id }}-${{ github.run_attempt }}` when `caller_holds_lock: true` so nested stage runs avoid nested lock contention against `deploy-stage.yml`.
-- **Secrets required**: `DATABASE_URL` (direct/unpooled connection string).
+- **Secrets required**: `DATABASE_URL` (plus optional `POSTGRES_URL_NON_POOLING` direct connection URL when `DATABASE_URL` uses PgBouncer).
 - **Actions**:
   - Declares `environment: ${{ inputs.environment || 'production' }}` on the `migrate` job, enforcing GitHub Environment Protection Rules and pausing for human reviewer sign-off **before** exposing `production` secrets.
   - Verifies `inputs.confirm == true` first (`Verify Manual Migration Confirmation`) and halts immediately with a non-zero exit code before repository checkout or `npx prisma migrate deploy` when manual dispatches leave `confirm: false`.
-  - After environment unlock and confirmation, runs `npm run lint:migrations` and validates `DATABASE_URL` format.
-  - Queries the live target `DATABASE_URL` via `npx prisma migrate status` (`npx tsx scripts/preflight-migration-summary.ts --require-db`) after the `confirm` gate to emit pending migration SQL DDL summaries and fail closed with redacted diagnostics on connectivity errors, schema drift, or failed migrations in `$GITHUB_STEP_SUMMARY`.
-  - Executes `npx prisma migrate deploy` against `DATABASE_URL` with `PGOPTIONS="-c lock_timeout=5000ms -c statement_timeout=30000ms"`.
+  - After environment unlock and confirmation, runs `npm run lint:migrations` and validates `DATABASE_URL` (and non-empty `POSTGRES_URL_NON_POOLING`) format.
+  - Queries the live target database via `npx prisma migrate status` (`npx tsx scripts/preflight-migration-summary.ts --require-db`, preserving normalized `POSTGRES_URL_NON_POOLING` for `prisma.config.ts`) after the `confirm` gate to emit pending migration SQL DDL summaries and fail closed with redacted diagnostics on connectivity errors, schema drift, or failed migrations in `$GITHUB_STEP_SUMMARY`.
+  - Executes `npx prisma migrate deploy` against `DATABASE_URL` (and optional `POSTGRES_URL_NON_POOLING` via `prisma.config.ts`) with `PGOPTIONS="-c lock_timeout=5000ms -c statement_timeout=30000ms"`.
   - Emits diagnostic error signaling and resolution guidance if migration fails.
 
 ### 4. Provider Deployment Adapter (`deploy-provider.yml`)
@@ -374,8 +374,9 @@ Database migrations are run automatically using `npx prisma migrate deploy` in t
   - **Example (Cloud Host with SSL)**: `postgresql://user:pass@ep-example.us-east-1.aws.neon.tech/wedding?sslmode=require`
   - **Example (Cloud SQL / Unix Domain Socket)**: `postgresql://wedding_user:STRONG_PASSWORD@localhost/wedding_db?host=/cloudsql/YOUR_PROJECT_ID:us-central1:wedding-db` *(specify `@localhost` in the authority segment for Prisma CLI compatibility; legacy empty-host `@/` socket URIs with a valid `?host=/...` path are normalized to `@localhost` automatically)*
   - **URI Schema, Pool & Timeout Flags**: Runtime `pg.Pool` and `@prisma/adapter-pg` honor `?schema=` (default `public`), `?connection_limit=` (default `max=5`, keeping three instances safely below `db-f1-micro`'s `max_connections=25`), `?connect_timeout=` / `?pool_timeout=` in seconds (default `10s` / `10000ms` to tolerate serverless cold wakes), `?socket_timeout=` in seconds (default client `query_timeout=10000ms` on `pg.Pool` so hung PostgreSQL queries never block `/api/health` indefinitely), and `?statement_timeout=` in milliseconds.
-- **`POSTGRES_URL_NON_POOLING`** (Optional — `datasource.shadowDatabaseUrl` in `prisma.config.ts`): Direct, unpooled connection string used by Prisma for shadow database creation during local `prisma migrate dev`. It is **not** read automatically by `prisma migrate deploy`, though operators can store a direct PostgreSQL URL in `POSTGRES_URL_NON_POOLING` and pass it via an explicit `DATABASE_URL` override when running `prisma migrate deploy`.
-  - **Example**: `postgresql://user:pass@ep-example-direct.us-east-1.aws.neon.tech/wedding_shadow?sslmode=require`
+- **`POSTGRES_URL_NON_POOLING`** (Optional — inspected by `resolvePrismaDatasourceUrl` and `resolvePrismaShadowDatabaseUrl` in `prisma.config.ts`): Direct, unpooled connection string. When `DATABASE_URL` uses a PgBouncer pooler (`isPooledPostgresUrl`) and `POSTGRES_URL_NON_POOLING` is an unpooled PostgreSQL URL targeting the same database and schema, `resolvePrismaDatasourceUrl` in `prisma.config.ts` promotes `POSTGRES_URL_NON_POOLING` as `datasource.url` for `prisma migrate deploy`, `status`, and `resolve` while keeping `datasource.shadowDatabaseUrl` `undefined` outside `dev`, `reset`, and `diff` (preventing Prisma `P3025` collisions); during local `prisma migrate dev`, a distinct `wedding_shadow` URL in `POSTGRES_URL_NON_POOLING` is bound to `datasource.shadowDatabaseUrl`.
+  - **Example (Direct Migration Endpoint)**: `postgresql://user:pass@ep-example-direct.us-east-1.aws.neon.tech/wedding?sslmode=require`
+  - **Example (Dedicated Dev Shadow DB)**: `postgresql://user:pass@ep-example-direct.us-east-1.aws.neon.tech/wedding_shadow?sslmode=require`
 
 ### SSL/TLS Configuration Behavior
 - **libpq-Compatible Resolution**: Runtime `src/lib/prisma.ts` resolves `sslmode` and `ssl` query parameters according to standard PostgreSQL `libpq` semantics rather than aliasing `prefer`/`require` to `verify-full`.
@@ -392,7 +393,7 @@ Database migrations are run automatically using `npx prisma migrate deploy` in t
   - Uses connection pooling managed by `pg.Pool` with `@prisma/adapter-pg` to minimize connection overhead during serverless / containerized scaling.
 - **Prisma Migrations (`npx prisma migrate deploy` / `dev`)**:
   - **Requirement**: Schema migration commands require **advisory locks** and session-level state that transaction-mode connection poolers (like PgBouncer in transaction mode) do not support.
-  - Because `prisma.config.ts` binds `datasource.url` to `DATABASE_URL` and `datasource.shadowDatabaseUrl` to `POSTGRES_URL_NON_POOLING`, `npx prisma migrate deploy` always reads `DATABASE_URL` and rejects identical `url` and `shadowDatabaseUrl` values (`P3025`). When runtime `DATABASE_URL` points to PgBouncer, pass an explicit `DATABASE_URL` override while unsetting `POSTGRES_URL_NON_POOLING` for the migration subprocess (`DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING npx prisma migrate deploy`, or a direct `DATABASE_URL` secret in `db-migrate.yml`).
+  - When `DATABASE_URL` points to a PgBouncer pooler (`isPooledPostgresUrl`) and `POSTGRES_URL_NON_POOLING` (or `CONTAINER_POSTGRES_URL_NON_POOLING` in Docker Compose) provides an unpooled URL targeting the same database and schema, `resolvePrismaDatasourceUrl` in `prisma.config.ts` promotes `POSTGRES_URL_NON_POOLING` as `datasource.url` while `resolvePrismaShadowDatabaseUrl` returns `undefined` outside `dev`, `reset`, and `diff` so Prisma 7 never triggers `P3025`. Operators overriding `DATABASE_URL` manually on the CLI should still unset `POSTGRES_URL_NON_POOLING` (`DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING npx prisma migrate deploy`).
 
 ### Prisma Migration Lifecycle
 1. **Local Development**:
@@ -524,7 +525,8 @@ Configure the following workflow-consumed secrets in GitHub Settings (**Settings
 
 | Secret | Description | Required By |
 |---|---|---|
-| `DATABASE_URL` | Direct (non-pooled) production/staging PostgreSQL connection string | `db-migrate.yml` |
+| `DATABASE_URL` | Production/staging PostgreSQL connection string (direct or pooled when paired with `POSTGRES_URL_NON_POOLING`) | `db-migrate.yml` |
+| `POSTGRES_URL_NON_POOLING` | Optional direct (non-pooled) PostgreSQL connection string promoted by `prisma.config.ts` when `DATABASE_URL` uses PgBouncer | `db-migrate.yml` |
 | `GCP_SA_KEY` | Google Cloud Service Account JSON Key (legacy static fallback when Workload Identity Federation variables are not set for `provider: google-cloud-run`) | `deploy-provider.yml`, `rollback.yml` |
 | `GCP_PROJECT_ID` | Google Cloud Project ID (optional override when `provider: google-cloud-run`) | `deploy-provider.yml`, `rollback.yml` |
 | `DEPLOY_WEBHOOK_URL` | Deployment Webhook URL (required when `provider: generic-webhook` or `docker-host`) | `deploy-provider.yml`, `rollback.yml` |

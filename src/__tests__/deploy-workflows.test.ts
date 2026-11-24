@@ -1772,9 +1772,20 @@ process.exit(0);
       const okRes = runBashStep(verifySecretScript, {
         TARGET_ENV: 'production',
         DATABASE_URL: validSocketUrl,
+        POSTGRES_URL_NON_POOLING: validSocketUrl,
       });
       expect(okRes.status).toBe(0);
     }
+
+    const badNonPoolingRes = runBashStep(verifySecretScript, {
+      TARGET_ENV: 'production',
+      DATABASE_URL: 'postgresql://wedding_user:STRONG_PASSWORD@localhost:5432/wedding_db',
+      POSTGRES_URL_NON_POOLING: `postgresql://wedding:${secretToken}@/wedding_db`,
+    });
+    expect(badNonPoolingRes.status).toBe(1);
+    const badNonPoolingOut = badNonPoolingRes.stdout + badNonPoolingRes.stderr;
+    expect(badNonPoolingOut).toContain('Invalid format for POSTGRES_URL_NON_POOLING');
+    expect(badNonPoolingOut).not.toContain(secretToken);
   });
 
   it('accepts image_tag in deploy.yml for tagged rollouts, resolves v* tag to origin/main commit SHA, skips rebuild, and runs db-migrate.yml before deploy-provider.yml', () => {

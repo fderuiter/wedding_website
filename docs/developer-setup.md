@@ -48,6 +48,8 @@ The platform relies on environment variables for database connections, administr
    cp .env.example .env
    ```
 
+   You can verify your local configuration at any time with `npm run preflight:env`, which cascades `.env.development.local`, `.env.local`, `.env.development`, and `.env` in `development` mode (pass `--mode production` before production deployments to enforce production secret blocklists).
+
 2. **Configure Required & Core Variables:**
 
    Open `.env` in your editor and review or customize the core runtime variables. By default, `DATABASE_URL` matches the local PostgreSQL container (`POSTGRES_USER=wedding`, `POSTGRES_PASSWORD=wedding123`, `POSTGRES_DB=wedding` bound on `127.0.0.1:5432` in [`docker-compose.yml`](../docker-compose.yml) / [`docker-compose.ci.yml`](../docker-compose.ci.yml)):
@@ -86,7 +88,7 @@ The platform relies on environment variables for database connections, administr
    - `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT`, `S3_PUBLIC_URL`: S3/R2 object storage settings. Keep all six commented out locally so [`src/utils/storage.ts`](../src/utils/storage.ts) uses `LocalStorageProvider`.
    - `CRON_SECRET`: Optional bearer secret for scheduled broadcast cron endpoints.
    - `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`: Optional Stripe card checkout credentials (leave commented out for direct transfer registry funds).
-   - `DB_USER`, `DB_NAME`, `DB_PORT`, `CONTAINER_DATABASE_URL`: Optional Docker Compose PostgreSQL and external container database overrides (`NODE_ENV` is also commented out so host processes default to `development` while Next.js builds use `production`).
+   - `DB_USER`, `DB_NAME`, `DB_PORT`, `CONTAINER_DATABASE_URL`, `CONTAINER_POSTGRES_URL_NON_POOLING`: Optional Docker Compose PostgreSQL and external container database overrides (`NODE_ENV` is also commented out so host processes default to `development` while Next.js builds use `production`, and `CONTAINER_POSTGRES_URL_NON_POOLING` prevents host `POSTGRES_URL_NON_POOLING` shadow URLs from leaking into Compose services).
    - `HISTORY_VERSION_LIMIT`: Maximum number of historical versions retained for content audits (defaults to `50`).
 
 ---
