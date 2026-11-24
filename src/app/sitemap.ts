@@ -1,6 +1,10 @@
 import { MetadataRoute } from 'next';
 import { getAppConfig } from '@/lib/config';
-import { getValidatedCanonicalUrl } from '@/utils/hostValidation';
+import {
+  getValidatedCanonicalUrl,
+  resolveRequestHost,
+  resolveRequestProtocol,
+} from '@/utils/hostValidation';
 
 type ChangeFrequency = 'always' | 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'never';
 
@@ -39,8 +43,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       try {
         const { headers } = await import('next/headers');
         const headersList = await headers();
-        const host = headersList.get('host');
-        const proto = headersList.get('x-forwarded-proto');
+        const host = resolveRequestHost(headersList);
+        const proto = resolveRequestProtocol(headersList);
         if (host) {
           siteUrl = getValidatedCanonicalUrl(host, proto, siteUrl);
         }
