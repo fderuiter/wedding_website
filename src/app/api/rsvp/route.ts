@@ -3,6 +3,7 @@ import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { subEventService } from '@/features/sub-events';
 import { ApiError } from '@/utils/ApiError';
+import { parseJsonRequestBody } from '@/utils/contentType';
 import { SubEventRsvpBatchSubmissionSchema, SubEventRsvpSubmissionItemSchema } from '@/features/sub-events';
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
@@ -20,7 +21,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     throw new ApiError(403, rsvpStatus.closedMessage);
   }
 
-  const body = await request.json();
+  const body = await parseJsonRequestBody<Record<string, unknown>>(request);
 
   let submissions = [];
 

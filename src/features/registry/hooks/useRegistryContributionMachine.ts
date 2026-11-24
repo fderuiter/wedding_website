@@ -509,14 +509,17 @@ export function useRegistryContributionMachine({
       setSubmissionError(null);
 
       try {
-        const data = await apiClient.get<{
+        const data = await apiClient.post<{
           valid?: boolean;
           code?: string;
           guestName?: string;
           email?: string | null;
-        }>(`/api/registry/validate-code?code=${encodeURIComponent(code)}`, {
-          signal: controller.signal,
-        });
+          error?: string;
+        }>(
+          '/api/registry/validate-code',
+          { code },
+          { signal: controller.signal }
+        );
 
         if (controller.signal.aborted) {
           return { valid: false };
@@ -553,7 +556,11 @@ export function useRegistryContributionMachine({
         } else {
           lockedCodeRef.current = null;
           setPhase('idle');
-          setCodeError('Invalid invitation code.');
+          setCodeError(
+            typeof data?.error === 'string' && data.error.trim()
+              ? data.error
+              : 'Invalid invitation code.'
+          );
           setCodeFailureCount((count) => count + 1);
           return { valid: false };
         }

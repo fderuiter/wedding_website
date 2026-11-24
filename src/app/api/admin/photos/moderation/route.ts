@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { contentService, QueuePhotoModerationSchema } from '@/features/content';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { parseJsonRequestBody } from '@/utils/contentType';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { handleBatchPhotoModeration } from './batchHandler';
@@ -48,7 +49,7 @@ export const PATCH = withApiMiddleware(async (request: NextRequest) => {
     throw new ApiError(404, "Feature 'gallery' is disabled");
   }
 
-  const body = await request.json();
+  const body = await parseJsonRequestBody<Record<string, any>>(request);
 
   const isBatchPayload = Boolean(
     body &&

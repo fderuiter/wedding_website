@@ -87,6 +87,7 @@ describe('API Route Behavior for Disabled Feature Modules', () => {
 
       const req = new NextRequest('http://localhost:3000/api/registry/contribute', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: 'test-item-id',
           name: 'Jane Doe',

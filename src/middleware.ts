@@ -23,6 +23,10 @@ import {
   resolveEdgeRequestSubdomain,
   verifyEdgeTenantClaims,
 } from '@/core/auth/tenantClaims';
+import {
+  getSessionCookieOptions,
+  resolveSessionCookieName,
+} from '@/core/auth/tokenCookieHelpers';
 import { env } from '@/env';
 import { isProtectedRoute } from '@/lib/routes';
 import { timingSafeEqualJS } from '@/utils/crypto';
@@ -30,28 +34,28 @@ import {
   isHostAllowed,
   isHostSyntaxValid,
   resolveRequestHost,
+  validateMutatingRequestOrigin,
 } from '@/utils/hostValidation';
 import { getSafeCallbackUrl } from '@/utils/safeCallbackUrl';
 
-function setPhotoSessionCookieOnResponse(response: NextResponse, sessionToken: string): void {
-  const isProd = process.env.NODE_ENV === 'production';
+function setPhotoSessionCookieOnResponse(
+  response: NextResponse,
+  sessionToken: string,
+  req: NextRequest
+): void {
+  const cookieName = resolveSessionCookieName(GUEST_PHOTO_COOKIE, req);
+  const options = getSessionCookieOptions(GUEST_PHOTO_SESSION_MAX_AGE_SECONDS, req);
   if (response.cookies && typeof response.cookies.set === 'function') {
-    response.cookies.set(GUEST_PHOTO_COOKIE, sessionToken, {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: GUEST_PHOTO_SESSION_MAX_AGE_SECONDS,
-    });
+    response.cookies.set(cookieName, sessionToken, options);
     return;
   }
   const cookieParts = [
-    `${GUEST_PHOTO_COOKIE}=${sessionToken}`,
+    `${cookieName}=${sessionToken}`,
     'Path=/',
     `Max-Age=${GUEST_PHOTO_SESSION_MAX_AGE_SECONDS}`,
     'HttpOnly',
     'SameSite=Lax',
-    ...(isProd ? ['Secure'] : []),
+    ...(options.secure ? ['Secure'] : []),
   ];
   response.headers.append('set-cookie', cookieParts.join('; '));
 }
@@ -121,6 +125,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  const originViolation = validateMutatingRequestOrigin(request);
+  if (originViolation) {
+    return NextResponse.json(
+      { success: false, error: originViolation },
+      { status: 403 }
+    );
+  }
+
   // Exchange signed QR photo upload links for an HttpOnly photo-scoped cookie and strip the token via 303 redirect
   if (
     normalizedPath === '/photos' &&
@@ -149,7 +161,7 @@ export async function middleware(request: NextRequest) {
           : {}),
       });
       const redirectResponse = NextResponse.redirect(cleanTargetUrl, { status: 303 });
-      setPhotoSessionCookieOnResponse(redirectResponse, sessionToken);
+      setPhotoSessionCookieOnResponse(redirectResponse, sessionToken, request);
       return redirectResponse;
     }
 

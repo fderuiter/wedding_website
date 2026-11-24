@@ -29,6 +29,7 @@ describe('POST /api/admin/seating/assign', () => {
 
     const req = new NextRequest('http://localhost/api/admin/seating/assign', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         invitationCodeId: 'guest-1',
         tableId: 'table-1',
@@ -55,6 +56,7 @@ describe('POST /api/admin/seating/assign', () => {
 
     const req = new NextRequest('http://localhost/api/admin/seating/assign', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         invitationCodeId: 'guest-9',
         tableId: 'table-1',
@@ -72,6 +74,7 @@ describe('POST /api/admin/seating/assign', () => {
   it('should return 400 Bad Request on invalid payload', async () => {
     const req = new NextRequest('http://localhost/api/admin/seating/assign', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         invitationCodeId: '',
         tableId: 'table-1',
@@ -97,6 +100,7 @@ describe('POST /api/admin/seating/assign', () => {
 
     const req = new NextRequest('http://localhost/api/admin/seating/assign', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         invitationCodeIds: ['guest-1', 'guest-2'],
         tableId: 'table-1',
@@ -127,6 +131,7 @@ describe('POST /api/admin/seating/assign', () => {
 
     const req = new NextRequest('http://localhost/api/admin/seating/assign', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         assignments: [
           { invitationCodeId: 'guest-1', tableId: 'table-1', seatNumber: 1 },

@@ -7,7 +7,7 @@ import {
   verifyEdgeTenantClaims,
 } from './tenantClaims';
 import {
-  readRequestCookie,
+  readRequestCookieCandidates,
   signCompactToken,
   verifyCompactToken,
 } from './tokenCookieHelpers';
@@ -185,18 +185,10 @@ const requestSignedPhotoSessionCache = new WeakMap<
   Map<string, Promise<PhotoUploadSessionPayload | null>>
 >();
 
-/**
- * Reads and verifies the HMAC signature and expiration of the `guest_photo_session`
- * cookie with per-request WeakMap deduplication, prior to tenant claim filtering.
- */
-export async function getRawSignedPhotoUploadSession(
+async function verifyCachedPhotoCookieCandidate(
+  cookieValue: string,
   req?: NextRequest
 ): Promise<PhotoUploadSessionPayload | null> {
-  const cookieValue = await readRequestCookie(GUEST_PHOTO_COOKIE, req, { suppressErrors: true });
-  if (!cookieValue) {
-    return null;
-  }
-
   if (req && typeof req === 'object') {
     let byCookie = requestSignedPhotoSessionCache.get(req);
     let cached = byCookie?.get(cookieValue);
@@ -212,37 +204,73 @@ export async function getRawSignedPhotoUploadSession(
       byCookie.set(cookieValue, cached);
     }
 
-    const payload = await cached;
-    if (!payload) {
+    try {
+      const payload = await cached;
+      return payload && payload.exp >= Date.now() ? payload : null;
+    } catch {
       return null;
     }
-    if (payload.exp < Date.now()) {
-      return null;
-    }
-    return payload;
   }
 
   return verifyPhotoUploadSessionToken(cookieValue);
 }
 
 /**
+ * Reads and verifies the HMAC signature and expiration of the `guest_photo_session`
+ * cookie with per-request WeakMap deduplication, prior to tenant claim filtering.
+ */
+export async function getRawSignedPhotoUploadSession(
+  req?: NextRequest
+): Promise<PhotoUploadSessionPayload | null> {
+  const candidates = await readRequestCookieCandidates(GUEST_PHOTO_COOKIE, req, {
+    suppressErrors: true,
+  });
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  for (const cookieValue of candidates) {
+    const payload = await verifyCachedPhotoCookieCandidate(cookieValue, req);
+    if (payload) {
+      return payload;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Reads and verifies the HMAC signature, expiration, and Edge tenant claims of the
- * `guest_photo_session` cookie (Edge-compatible).
+ * `guest_photo_session` cookie (Edge-compatible), evaluating every matching candidate.
  */
 export async function getSignedPhotoUploadSession(
   req?: NextRequest
 ): Promise<PhotoUploadSessionPayload | null> {
-  const payload = await getRawSignedPhotoUploadSession(req);
-  if (!payload) {
+  const candidates = await readRequestCookieCandidates(GUEST_PHOTO_COOKIE, req, {
+    suppressErrors: true,
+  });
+  if (candidates.length === 0) {
     return null;
   }
 
-  const requestSubdomain = await resolveEdgeRequestSubdomain(req);
-  if (!verifyEdgeTenantClaims(payload, requestSubdomain)) {
-    return null;
+  let resolvedSubdomain: string | null | undefined;
+  for (const cookieValue of candidates) {
+    const payload = await verifyCachedPhotoCookieCandidate(cookieValue, req);
+    if (!payload) {
+      continue;
+    }
+
+    if (resolvedSubdomain === undefined) {
+      resolvedSubdomain = await resolveEdgeRequestSubdomain(req);
+    }
+    if (!verifyEdgeTenantClaims(payload, resolvedSubdomain)) {
+      continue;
+    }
+
+    return payload;
   }
 
-  return payload;
+  return null;
 }
 
 /**

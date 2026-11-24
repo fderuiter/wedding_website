@@ -3,6 +3,7 @@ import { NextResponse, NextRequest } from 'next/server';
 import { contentService } from '@/features/content';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { parseJsonRequestBody } from '@/utils/contentType';
 
 export const GET = withApiMiddleware(async () => {
   const features = await contentService.getFeatures();
@@ -10,7 +11,7 @@ export const GET = withApiMiddleware(async () => {
 });
 
 export const PUT = withApiMiddleware(async (request: NextRequest) => {
-  const body = await request.json();
+  const body = await parseJsonRequestBody<Record<string, unknown>>(request);
   const parseResult = UpdateFeaturesSchema.safeParse(body);
   if (!parseResult.success) {
     throw new ApiError(400, `Validation Error: ${formatZodError(parseResult.error)}`);
@@ -20,6 +21,6 @@ export const PUT = withApiMiddleware(async (request: NextRequest) => {
     throw new ApiError(400, 'Features required');
   }
 
-  await contentService.updateFeatures(body.features);
+  await contentService.updateFeatures(parseResult.data.features);
   return NextResponse.json({ success: true });
 });

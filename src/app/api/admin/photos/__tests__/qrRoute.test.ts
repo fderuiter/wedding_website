@@ -181,4 +181,16 @@ describe('/api/admin/photos/qr Route', () => {
     const res = await postPhotoQr(req);
     expect(res.status).toBe(400);
   });
+
+  it('returns 415 when POST Content-Type is not application/json', async () => {
+    const req = new NextRequest('http://localhost:3000/api/admin/photos/qr', {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain' },
+      body: JSON.stringify({ action: 'rotate' }),
+    });
+
+    const res = await postPhotoQr(req);
+    expect(res.status).toBe(415);
+    expect(mockUpsertAppConfig).not.toHaveBeenCalled();
+  });
 });

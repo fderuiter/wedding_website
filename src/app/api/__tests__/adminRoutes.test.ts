@@ -17,6 +17,7 @@ describe('Admin API routes', () => {
   test('login succeeds with correct password', async () => {
     const req = new NextRequest('http://localhost/api/admin/login', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password: 'secret' }),
     });
     const res = await login(req);
@@ -30,6 +31,7 @@ describe('Admin API routes', () => {
   test('login fails with invalid password', async () => {
     const req = new NextRequest('http://localhost/api/admin/login', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password: 'wrong' }),
     });
     const res = await login(req);
@@ -42,6 +44,7 @@ describe('Admin API routes', () => {
     delete process.env.ADMIN_PASSWORD;
     const req = new NextRequest('http://localhost/api/admin/login', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password: 'anything' }),
     });
     const res = await login(req);
@@ -53,6 +56,7 @@ describe('Admin API routes', () => {
   test('login is rate limited after 5 failed attempts', async () => {
     const makeReq = () => new NextRequest('http://localhost/api/admin/login', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password: 'wrong' }),
     });
 

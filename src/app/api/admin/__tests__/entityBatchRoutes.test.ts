@@ -35,6 +35,7 @@ describe('Dedicated Admin [entity]/batch Route', () => {
       mockIsAdminRequest.mockResolvedValue(false);
       const req = new NextRequest('http://localhost/api/admin/attractions/batch', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: ['1'], isVisible: false }),
       });
 
@@ -46,6 +47,7 @@ describe('Dedicated Admin [entity]/batch Route', () => {
       mockGetEntityService.mockResolvedValue(null);
       const req = new NextRequest('http://localhost/api/admin/unknown-entity/batch', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: ['1'], isVisible: false }),
       });
 
@@ -67,6 +69,7 @@ describe('Dedicated Admin [entity]/batch Route', () => {
       const payload = { ids: ['1', '2'], isVisible: false };
       const req = new NextRequest('http://localhost/api/admin/attractions/batch', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
@@ -89,6 +92,7 @@ describe('Dedicated Admin [entity]/batch Route', () => {
       const payload = { ids: ['1'], payload: { name: 'Updated' } };
       const req = new NextRequest('http://localhost/api/admin/wedding-party/batch', {
         method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
@@ -104,6 +108,7 @@ describe('Dedicated Admin [entity]/batch Route', () => {
       const payload = { ids: ['1'], status: 'archived' };
       const req = new NextRequest('http://localhost/api/admin/content-nodes/batch', {
         method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
@@ -115,6 +120,7 @@ describe('Dedicated Admin [entity]/batch Route', () => {
     test('returns 400 when ids array is empty', async () => {
       const req = new NextRequest('http://localhost/api/admin/attractions/batch', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: [], isVisible: false }),
       });
 
@@ -129,6 +135,7 @@ describe('Dedicated Admin [entity]/batch Route', () => {
       const ids = Array.from({ length: 101 }, (_, i) => `item-${i}`);
       const req = new NextRequest('http://localhost/api/admin/attractions/batch', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids, isVisible: false }),
       });
 
@@ -141,6 +148,7 @@ describe('Dedicated Admin [entity]/batch Route', () => {
     test('returns 400 for malformed JSON body', async () => {
       const req = new NextRequest('http://localhost/api/admin/attractions/batch', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: 'invalid-json',
       });
 
@@ -157,6 +165,7 @@ describe('Dedicated Admin [entity]/batch Route', () => {
 
       const req = new NextRequest('http://localhost/api/admin/attractions/batch', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: ['1'], name: '' }),
       });
 

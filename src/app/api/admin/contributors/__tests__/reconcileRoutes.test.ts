@@ -65,6 +65,7 @@ describe('Admin Registry Claim & Contributor Reconciliation API Routes', () => {
       );
       const req = new Request('http://localhost/api/admin/registry/items/item-1/unclaim', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       });
       const res = await unclaimPOST(req as unknown as NextRequest, {
@@ -95,6 +96,7 @@ describe('Admin Registry Claim & Contributor Reconciliation API Routes', () => {
 
       const req = new Request('http://localhost/api/admin/registry/items/item-1/unclaim', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ confirmVerifiedPayment: true }),
       });
       const res = await unclaimPOST(req as unknown as NextRequest, {
@@ -115,6 +117,7 @@ describe('Admin Registry Claim & Contributor Reconciliation API Routes', () => {
     it('returns 400 when PATCH payload has no editable fields', async () => {
       const req = new Request('http://localhost/api/admin/contributors/c-1', {
         method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       });
       const res = await contributorPATCH(req as unknown as NextRequest, {
@@ -145,6 +148,7 @@ describe('Admin Registry Claim & Contributor Reconciliation API Routes', () => {
 
       const req = new Request('http://localhost/api/admin/contributors/c-1', {
         method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: 'Updated Guest', amount: 75, confirmVerifiedPayment: true }),
       });
       const res = await contributorPATCH(req as unknown as NextRequest, {

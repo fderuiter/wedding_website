@@ -4,6 +4,7 @@ import { parse } from 'node-html-parser';
 import { safeFetch } from '@/utils/safeFetch';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { parseJsonRequestBody } from '@/utils/contentType';
 import { logger } from '@/lib/logger';
 
 export interface ScrapedProductData {
@@ -304,7 +305,7 @@ export async function scrapeProductUrl(
 }
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
-  const body = await request.json();
+  const body = await parseJsonRequestBody(request);
   const parseResult = ScrapeUrlSchema.safeParse(body);
 
   if (!parseResult.success) {

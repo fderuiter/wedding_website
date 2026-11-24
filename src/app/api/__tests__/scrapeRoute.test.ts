@@ -28,6 +28,7 @@ describe('POST /api/registry/scrape', () => {
 
     const req = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: 'https://example.com/product' }),
     });
 
@@ -57,6 +58,7 @@ describe('POST /api/registry/scrape', () => {
 
     const req = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: 'https://example.com/product' }),
     });
 
@@ -78,6 +80,7 @@ describe('POST /api/registry/scrape', () => {
     mockIsAdminRequest.mockResolvedValue(true);
     const req = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: '' }),
     });
 
@@ -97,6 +100,7 @@ describe('POST /api/registry/scrape', () => {
 
     const req = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: 'https://example.com/broken' }),
     });
 
@@ -115,6 +119,7 @@ describe('POST /api/registry/scrape', () => {
 
     const req = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: 'https://example.com/error' }),
     });
 
@@ -131,6 +136,7 @@ describe('POST /api/registry/scrape', () => {
 
     const req = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: 'http://127.0.0.1/sensitive-data' }),
     });
 
@@ -153,6 +159,7 @@ describe('POST /api/registry/scrape', () => {
 
     const req = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: 'https://example.com/start' }),
     });
 

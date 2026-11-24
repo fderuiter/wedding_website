@@ -8,7 +8,10 @@ import { GET as getPhotoQr } from '@/app/api/admin/photos/qr/route';
 import { POST as postAdminSetup } from '@/app/api/admin/setup/route';
 import { POST as postGuestLogin } from '@/app/api/guest/login/route';
 import { GET as getGuestSession } from '@/app/api/guest/session/route';
-import { GET as getValidateCode } from '@/app/api/registry/validate-code/route';
+import {
+  GET as getValidateCode,
+  POST as postValidateCode,
+} from '@/app/api/registry/validate-code/route';
 import { generateMetadata } from '@/app/metadata';
 import {
   ADMIN_COOKIE,
@@ -252,20 +255,43 @@ describe('Multisite Cookie Claims, Forged Header Defenses & Metadata Host Trust'
         subdomain: 'alice',
       });
 
-      // 3. GET /api/registry/validate-code -> guest_invite_session
-      (prisma.invitationCode.findUnique as jest.Mock).mockResolvedValueOnce({
-        id: 'inv-2',
-        code: 'REGINV01',
-        guestName: 'Morgan Guest',
-        isSample: false,
-      });
+      // 3. GET /api/registry/validate-code is read-only; POST mints guest_invite_session
+      (prisma.invitationCode.findUnique as jest.Mock)
+        .mockResolvedValueOnce({
+          id: 'inv-2',
+          code: 'REGINV01',
+          guestName: 'Morgan Guest',
+          isSample: false,
+        })
+        .mockResolvedValueOnce({
+          id: 'inv-2',
+          code: 'REGINV01',
+          guestName: 'Morgan Guest',
+          isSample: false,
+        });
+      const previewValidateRes = await getValidateCode(
+        new NextRequest(
+          'http://alice.wedding.example/api/registry/validate-code?code=REGINV01',
+          {
+            headers: { host: 'alice.wedding.example' },
+          }
+        )
+      );
+      expect(previewValidateRes.status).toBe(200);
+      expect(previewValidateRes.headers.get('set-cookie')).toBeNull();
+
       const validateCodeReq = new NextRequest(
-        'http://alice.wedding.example/api/registry/validate-code?code=REGINV01',
+        'http://alice.wedding.example/api/registry/validate-code',
         {
-          headers: { host: 'alice.wedding.example' },
+          method: 'POST',
+          headers: {
+            host: 'alice.wedding.example',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({ code: 'REGINV01' }),
         }
       );
-      const validateCodeRes = await getValidateCode(validateCodeReq);
+      const validateCodeRes = await postValidateCode(validateCodeReq);
       expect(validateCodeRes.status).toBe(200);
       const validateToken = extractSetCookieToken(
         validateCodeRes.headers.get('set-cookie'),
@@ -626,12 +652,15 @@ describe('Multisite Cookie Claims, Forged Header Defenses & Metadata Host Trust'
         isSample: false,
       });
 
-      const sameTenantValidateRes = await getValidateCode(
-        new NextRequest('http://alice.wedding.example/api/registry/validate-code?code=SHARED01', {
+      const sameTenantValidateRes = await postValidateCode(
+        new NextRequest('http://alice.wedding.example/api/registry/validate-code', {
+          method: 'POST',
           headers: {
             host: 'alice.wedding.example',
+            'content-type': 'application/json',
             cookie: `${GUEST_INVITE_COOKIE}=${aliceInviteToken}`,
           },
+          body: JSON.stringify({ code: 'SHARED01' }),
         })
       );
       expect(
@@ -745,12 +774,15 @@ describe('Multisite Cookie Claims, Forged Header Defenses & Metadata Host Trust'
         subdomain: 'bob',
       });
 
-      const crossTenantValidateRes = await getValidateCode(
-        new NextRequest('http://bob.wedding.example/api/registry/validate-code?code=SHARED01', {
+      const crossTenantValidateRes = await postValidateCode(
+        new NextRequest('http://bob.wedding.example/api/registry/validate-code', {
+          method: 'POST',
           headers: {
             host: 'bob.wedding.example',
+            'content-type': 'application/json',
             cookie: `${GUEST_INVITE_COOKIE}=${aliceInviteToken}`,
           },
+          body: JSON.stringify({ code: 'SHARED01' }),
         })
       );
       const mintedBobValidateToken = extractSetCookieToken(

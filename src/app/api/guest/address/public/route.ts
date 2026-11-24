@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
+import { parseJsonRequestBody } from '@/utils/contentType';
 import { rateLimit } from '@/utils/rateLimit';
 import { prisma } from '@/lib/prisma';
 import {
@@ -8,6 +9,13 @@ import {
   PublicAddressCollectDTO,
   generateRandomCode,
 } from '@/features/registry';
+
+function toPlainObject(value: unknown): Record<string, unknown> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return { ...(value as Record<string, unknown>) };
+  }
+  return {};
+}
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
   // 1. IP Rate Limiting (10 requests per 15 minutes strictly by client IP)
@@ -18,7 +26,8 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     return rateLimitResponse;
   }
 
-  const body = await req.json().catch(() => ({}));
+  const rawBody = await parseJsonRequestBody<Record<string, unknown>>(req, { allowEmpty: true });
+  const body = toPlainObject(rawBody);
 
   // Map convenient aliases if present
   if (!body.guestName && typeof body.name === 'string') {

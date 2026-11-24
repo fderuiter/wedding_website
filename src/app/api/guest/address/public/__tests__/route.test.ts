@@ -55,6 +55,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
 
     const req = new NextRequest('http://localhost/api/guest/address/public', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
 
@@ -124,6 +125,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
 
     const req = new NextRequest('http://localhost/api/guest/address/public', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
 
@@ -202,6 +204,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
 
     const req = new NextRequest('http://localhost/api/guest/address/public', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
 
@@ -258,6 +261,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
 
     const req = new NextRequest('http://localhost/api/guest/address/public', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
 
@@ -297,6 +301,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
 
     const req = new NextRequest('http://localhost/api/guest/address/public', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
 
@@ -319,6 +324,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
 
     const req = new NextRequest('http://localhost/api/guest/address/public', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
 
@@ -341,6 +347,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
     async (fieldName, postalOverride, expectedMessage) => {
       const req = new NextRequest('http://localhost/api/guest/address/public', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           guestName: 'Postal Check Guest',
           ...postalOverride,
@@ -366,6 +373,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
 
     const req = new NextRequest('http://localhost/api/guest/address/public', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
 
@@ -386,6 +394,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
 
     const req = new NextRequest('http://localhost/api/guest/address/public', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
 
@@ -413,7 +422,9 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
     for (let i = 0; i < 10; i++) {
       const req = new NextRequest('http://localhost/api/guest/address/public', {
         method: 'POST',
-        headers: { 'x-forwarded-for': '192.168.1.50' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-forwarded-for': '192.168.1.50' },
         body: JSON.stringify(payload),
       });
       const res = await POST(req);
@@ -423,7 +434,9 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
     // 11th request should trigger 429 Too Many Requests
     const req11 = new NextRequest('http://localhost/api/guest/address/public', {
       method: 'POST',
-      headers: { 'x-forwarded-for': '192.168.1.50' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-forwarded-for': '192.168.1.50' },
       body: JSON.stringify(payload),
     });
 
@@ -449,6 +462,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
 
       const req = new NextRequest('http://localhost/api/guest/address/public', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
@@ -484,6 +498,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
 
       const req = new NextRequest('http://localhost/api/guest/address/public', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
@@ -512,6 +527,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
 
       const req = new NextRequest('http://localhost/api/guest/address/public', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
@@ -541,6 +557,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
 
       const req = new NextRequest('http://localhost/api/guest/address/public', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
@@ -579,6 +596,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
 
       const req = new NextRequest('http://localhost/api/guest/address/public', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
@@ -610,6 +628,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
 
       const req = new NextRequest('http://localhost/api/guest/address/public', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
@@ -631,6 +650,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
 
       const req = new NextRequest('http://localhost/api/guest/address/public', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
@@ -654,6 +674,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
 
       const req1 = new NextRequest('http://localhost/api/guest/address/public', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(htmlPayload),
       });
       const res1 = await POST(req1);
@@ -661,6 +682,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
 
       const req2 = new NextRequest('http://localhost/api/guest/address/public', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           guestName: 'Valid Guest',
           householdName: 'Household\nInjected',
@@ -682,6 +704,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
 
       const req = new NextRequest('http://localhost/api/guest/address/public', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           guestName: "Élodie O'Connor-St. Clair",
           householdName: "O'Connor & Müller-Søren.",
@@ -735,6 +758,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
         const req = new NextRequest('http://localhost/api/guest/address/public', {
           method: 'POST',
           headers: {
+            'Content-Type': 'application/json',
             ...fixedIpHeaders,
             cookie: rotatedCookie,
           },
@@ -759,6 +783,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
       const eleventhReq = new NextRequest('http://localhost/api/guest/address/public', {
         method: 'POST',
         headers: {
+          'Content-Type': 'application/json',
           ...fixedIpHeaders,
           cookie: eleventhCookie,
         },

@@ -346,6 +346,7 @@ describe('Registry Ledger, Multi-Quantity Capacity, Shipping Security Perimeter 
       const unconfiguredRes = await contributePOST(
         new NextRequest('http://localhost:3000/api/registry/contribute', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             itemId: 'phys-group-1',
             name: 'Guest',
@@ -366,6 +367,7 @@ describe('Registry Ledger, Multi-Quantity Capacity, Shipping Security Perimeter 
       const fallbackRes = await contributePOST(
         new NextRequest('http://localhost:3000/api/registry/contribute', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             itemId: 'phys-group-1',
             name: 'Guest',
@@ -420,6 +422,7 @@ describe('Registry Ledger, Multi-Quantity Capacity, Shipping Security Perimeter 
       const badMultipleRes = await paymentIntentPOST(
         new NextRequest('http://localhost:3000/api/registry/payment-intent', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             itemId: 'multi-qty-pi-1',
             amount: 75,
@@ -433,6 +436,7 @@ describe('Registry Ledger, Multi-Quantity Capacity, Shipping Security Perimeter 
       const overRemainingRes = await paymentIntentPOST(
         new NextRequest('http://localhost:3000/api/registry/payment-intent', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             itemId: 'multi-qty-pi-1',
             amount: 200,
@@ -450,6 +454,7 @@ describe('Registry Ledger, Multi-Quantity Capacity, Shipping Security Perimeter 
       const validUnitsRes = await paymentIntentPOST(
         new NextRequest('http://localhost:3000/api/registry/payment-intent', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             itemId: 'multi-qty-pi-1',
             amount: 100,

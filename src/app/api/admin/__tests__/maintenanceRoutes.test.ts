@@ -83,9 +83,13 @@ jest.mock('next/server', () => {
       url: input,
       headers: {
         get: (key: string) => {
-          if (key === 'cookie' && init?.headers) return init.headers.cookie;
+          if (!init?.headers) return null;
+          const lower = key.toLowerCase();
+          for (const [k, v] of Object.entries(init.headers)) {
+            if (k.toLowerCase() === lower) return String(v);
+          }
           return null;
-        }
+        },
       },
       cookies: {
         get: jest.fn((key) => requestCookies.get(key)),
@@ -351,6 +355,7 @@ describe('Maintenance API Routes Integration Tests', () => {
       mockIsAdminRequest.mockResolvedValue(false);
       const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       });
       const res = await POST(req);
@@ -365,6 +370,7 @@ describe('Maintenance API Routes Integration Tests', () => {
 
       const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(invalidBackup),
       });
       const res = await POST(req);
@@ -471,6 +477,7 @@ describe('Maintenance API Routes Integration Tests', () => {
 
       const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(validBackup),
       });
       const res = await POST(req);
@@ -696,6 +703,7 @@ describe('Maintenance API Routes Integration Tests', () => {
 
       const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(validBackup),
       });
       const res = await POST(req);
@@ -732,6 +740,7 @@ describe('Maintenance API Routes Integration Tests', () => {
 
         const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(backupWithBadPhoto),
         });
         const res = await POST(req);
@@ -785,6 +794,7 @@ describe('Maintenance API Routes Integration Tests', () => {
 
       const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(validBackup),
       });
       const res = await POST(req);
@@ -861,6 +871,7 @@ describe('Maintenance API Routes Integration Tests', () => {
 
       const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(backupWithAllTypes),
       });
       const res = await POST(req);
@@ -972,6 +983,7 @@ describe('Maintenance API Routes Integration Tests', () => {
 
       const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(legacyBackup),
       });
       const res = await POST(req);
@@ -1045,6 +1057,7 @@ describe('Maintenance API Routes Integration Tests', () => {
 
       const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(emptyBackup),
       });
       const res = await POST(req);
@@ -1084,6 +1097,7 @@ describe('Maintenance API Routes Integration Tests', () => {
 
       const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(invalidBackup),
       });
       const res = await POST(req);
@@ -1119,6 +1133,7 @@ describe('Maintenance API Routes Integration Tests', () => {
 
       const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(invalidBackup),
       });
       const res = await POST(req);
@@ -1156,6 +1171,7 @@ describe('Maintenance API Routes Integration Tests', () => {
 
       const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(invalidBackup),
       });
       const res = await POST(req);
@@ -1194,6 +1210,7 @@ describe('Maintenance API Routes Integration Tests', () => {
 
       const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(invalidBackup),
       });
       const res = await POST(req);

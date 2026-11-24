@@ -56,6 +56,7 @@ describe('Dynamic Administration Entity API Routes', () => {
         mockIsAdminRequest.mockResolvedValue(false);
         const req = new NextRequest('http://localhost/api/admin/attractions', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: 'Central Park' }),
         });
         
@@ -67,6 +68,7 @@ describe('Dynamic Administration Entity API Routes', () => {
         mockIsAdminRequest.mockResolvedValue(false);
         const req = new NextRequest('http://localhost/api/admin/attractions', {
           method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'reorder', orderedIds: ['1', '2'] }),
         });
         
@@ -123,6 +125,7 @@ describe('Dynamic Administration Entity API Routes', () => {
         mockGetEntityService.mockResolvedValue(null);
         const req = new NextRequest('http://localhost/api/admin/unknown-entity', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({}),
         });
 
@@ -137,6 +140,7 @@ describe('Dynamic Administration Entity API Routes', () => {
 
         const req = new NextRequest('http://localhost/api/admin/wedding-party', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
 
@@ -152,6 +156,7 @@ describe('Dynamic Administration Entity API Routes', () => {
 
         const req = new NextRequest('http://localhost/api/admin/attractions', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ invalidField: true }),
         });
 
@@ -167,6 +172,7 @@ describe('Dynamic Administration Entity API Routes', () => {
 
         const req = new NextRequest('http://localhost/api/admin/attractions', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({}),
         });
 
@@ -182,6 +188,7 @@ describe('Dynamic Administration Entity API Routes', () => {
         mockGetEntityService.mockResolvedValue(null);
         const req = new NextRequest('http://localhost/api/admin/unknown-entity', {
           method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'reorder', orderedIds: ['1'] }),
         });
 
@@ -194,6 +201,7 @@ describe('Dynamic Administration Entity API Routes', () => {
 
         const req = new NextRequest('http://localhost/api/admin/attractions', {
           method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'reorder', orderedIds: ['item3', 'item1', 'item2'] }),
         });
 
@@ -207,6 +215,7 @@ describe('Dynamic Administration Entity API Routes', () => {
       test('returns 400 for invalid action in PUT payload', async () => {
         const req = new NextRequest('http://localhost/api/admin/attractions', {
           method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'invalid-action' }),
         });
 
@@ -219,6 +228,7 @@ describe('Dynamic Administration Entity API Routes', () => {
       test('returns 400 for invalid reorder payload structure', async () => {
         const req = new NextRequest('http://localhost/api/admin/attractions', {
           method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'reorder', orderedIds: 'not-an-array' }),
         });
 
@@ -233,6 +243,7 @@ describe('Dynamic Administration Entity API Routes', () => {
 
         const req = new NextRequest('http://localhost/api/admin/wedding-party', {
           method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'reorder', orderedIds: ['valid-id', 'missing-id'] }),
         });
 
@@ -259,6 +270,7 @@ describe('Dynamic Administration Entity API Routes', () => {
         mockIsAdminRequest.mockResolvedValue(false);
         const req = new NextRequest('http://localhost/api/admin/attractions/123', {
           method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: 'Updated' }),
         });
         
@@ -314,6 +326,7 @@ describe('Dynamic Administration Entity API Routes', () => {
         mockGetEntityService.mockResolvedValue(null);
         const req = new NextRequest('http://localhost/api/admin/unknown/123', {
           method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({}),
         });
 
@@ -328,6 +341,7 @@ describe('Dynamic Administration Entity API Routes', () => {
 
         const req = new NextRequest('http://localhost/api/admin/attractions/123', {
           method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(updatePayload),
         });
 
@@ -343,6 +357,7 @@ describe('Dynamic Administration Entity API Routes', () => {
 
         const req = new NextRequest('http://localhost/api/admin/attractions/123', {
           method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ latitude: 'invalid' }),
         });
 
@@ -357,6 +372,7 @@ describe('Dynamic Administration Entity API Routes', () => {
 
         const req = new NextRequest('http://localhost/api/admin/attractions/123', {
           method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({}),
         });
 

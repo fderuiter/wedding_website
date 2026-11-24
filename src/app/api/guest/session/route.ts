@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
-import { getGuestInviteSession, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
+import {
+  clearGuestInviteSessionCookie,
+  getGuestInviteSession,
+  GUEST_INVITE_COOKIE,
+} from '@/core/auth/guestInviteSession';
 import { isGuestRequest } from '@/core/auth/guest.server';
 import { readRequestCookie } from '@/core/auth/tokenCookieHelpers';
 
@@ -71,13 +75,7 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
   );
 
   if (existingInviteCookie) {
-    response.cookies.set(GUEST_INVITE_COOKIE, '', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 0,
-    });
+    clearGuestInviteSessionCookie(response, request);
   }
 
   return response;
@@ -99,13 +97,7 @@ export const DELETE = withApiMiddleware(async (request: NextRequest) => {
     { headers: PRIVATE_SESSION_HEADERS }
   );
 
-  response.cookies.set(GUEST_INVITE_COOKIE, '', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 0,
-  });
+  clearGuestInviteSessionCookie(response, request);
 
   return response;
 });

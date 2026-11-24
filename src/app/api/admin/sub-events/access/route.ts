@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { subEventService } from '@/features/sub-events';
 import { ApiError } from '@/utils/ApiError';
+import { parseJsonRequestBody } from '@/utils/contentType';
 import { UpdateSubEventAccessSchema, GetAccessMatrixQuerySchema } from '@/features/sub-events';
 
 export const GET = withApiMiddleware(async (request: NextRequest) => {
@@ -24,7 +25,7 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
 });
 
 export const PUT = withApiMiddleware(async (request: NextRequest) => {
-  const body = await request.json();
+  const body = await parseJsonRequestBody(request);
   const parseResult = UpdateSubEventAccessSchema.safeParse(body);
   if (!parseResult.success) {
     throw new ApiError(400, 'Invalid request body: ' + parseResult.error.issues.map(i => i.message).join(', '));

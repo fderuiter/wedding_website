@@ -3,9 +3,10 @@ import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { SeatingTableAdminService } from '@/features/seating';
 import { AssignSeatSchema } from '@/features/seating';
 import { ApiError } from '@/utils/ApiError';
+import { parseJsonRequestBody } from '@/utils/contentType';
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
-  const body = await request.json();
+  const body = await parseJsonRequestBody(request);
   const parsed = AssignSeatSchema.safeParse(body);
   if (!parsed.success) {
     throw new ApiError(400, 'Invalid payload: ' + parsed.error.issues.map(i => i.message).join(', '));

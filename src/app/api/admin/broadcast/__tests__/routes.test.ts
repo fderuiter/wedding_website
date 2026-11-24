@@ -87,6 +87,7 @@ describe('Broadcast API Routes', () => {
   it('POST /api/admin/broadcast/send returns broadcast result', async () => {
     const req = new NextRequest('http://localhost/api/admin/broadcast/send', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         channel: 'EMAIL',
         subject: 'Test Subject',
@@ -103,6 +104,7 @@ describe('Broadcast API Routes', () => {
   it('POST /api/admin/broadcast/send returns 400 for invalid schema', async () => {
     const req = new NextRequest('http://localhost/api/admin/broadcast/send', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         channel: 'EMAIL',
         body: '',
@@ -117,6 +119,7 @@ describe('Broadcast API Routes', () => {
     (BroadcastService.sendBroadcast as jest.Mock).mockClear();
     const req = new NextRequest('http://localhost/api/admin/broadcast/send', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         channel: 'EMAIL',
         subject: 'Scheduled Announcement',
@@ -134,6 +137,7 @@ describe('Broadcast API Routes', () => {
     (BroadcastService.sendBroadcast as jest.Mock).mockRejectedValueOnce(new Error('Send error'));
     const req = new NextRequest('http://localhost/api/admin/broadcast/send', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         channel: 'EMAIL',
         body: 'Test',
@@ -148,6 +152,7 @@ describe('Broadcast API Routes', () => {
     (BroadcastService.sendBroadcast as jest.Mock).mockRejectedValueOnce({});
     const req = new NextRequest('http://localhost/api/admin/broadcast/send', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         channel: 'EMAIL',
         body: 'Test',
@@ -161,6 +166,7 @@ describe('Broadcast API Routes', () => {
   it('POST /api/admin/broadcast/preview returns preview object', async () => {
     const req = new NextRequest('http://localhost/api/admin/broadcast/preview', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         channel: 'EMAIL',
         subject: 'Test Subject',
@@ -177,6 +183,7 @@ describe('Broadcast API Routes', () => {
   it('POST /api/admin/broadcast/preview returns 400 for empty body', async () => {
     const req = new NextRequest('http://localhost/api/admin/broadcast/preview', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         channel: 'EMAIL',
         body: '',
@@ -191,6 +198,7 @@ describe('Broadcast API Routes', () => {
     (BroadcastService.renderPreview as jest.Mock).mockRejectedValueOnce(new Error('Preview error'));
     const req = new NextRequest('http://localhost/api/admin/broadcast/preview', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         channel: 'EMAIL',
         body: 'Test',
@@ -205,6 +213,7 @@ describe('Broadcast API Routes', () => {
     (BroadcastService.renderPreview as jest.Mock).mockRejectedValueOnce({});
     const req = new NextRequest('http://localhost/api/admin/broadcast/preview', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         channel: 'EMAIL',
         body: 'Test',
@@ -315,6 +324,7 @@ describe('Broadcast API Routes', () => {
   it('POST /api/admin/broadcast/retry retries failed recipients', async () => {
     const req = new NextRequest('http://localhost/api/admin/broadcast/retry', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         broadcastId: 'b1',
       }),
@@ -329,6 +339,7 @@ describe('Broadcast API Routes', () => {
   it('POST /api/admin/broadcast/retry returns 400 when broadcastId missing', async () => {
     const req = new NextRequest('http://localhost/api/admin/broadcast/retry', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         broadcastId: '',
       }),
@@ -342,6 +353,7 @@ describe('Broadcast API Routes', () => {
     (BroadcastService.retryFailedRecipients as jest.Mock).mockRejectedValueOnce(new Error('Retry error'));
     const req = new NextRequest('http://localhost/api/admin/broadcast/retry', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         broadcastId: 'b1',
       }),
@@ -355,6 +367,7 @@ describe('Broadcast API Routes', () => {
     (BroadcastService.retryFailedRecipients as jest.Mock).mockRejectedValueOnce({});
     const req = new NextRequest('http://localhost/api/admin/broadcast/retry', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         broadcastId: 'b1',
       }),
@@ -388,6 +401,7 @@ describe('Broadcast API Routes', () => {
     try {
       const req = new NextRequest('http://localhost/api/admin/broadcast/test-connection', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: 'email',
           provider: 'smtp',
@@ -407,6 +421,7 @@ describe('Broadcast API Routes', () => {
 
     const failReq = new NextRequest('http://localhost/api/admin/broadcast/test-connection', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: 'email',
         provider: 'smtp',
@@ -422,6 +437,7 @@ describe('Broadcast API Routes', () => {
     mockIsAllowedSmtpPort.mockImplementation(actualValidationPrimitives.isAllowedSmtpPort);
     const badPortReq = new NextRequest('http://localhost/api/admin/broadcast/test-connection', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: 'email',
         provider: 'smtp',
@@ -436,6 +452,7 @@ describe('Broadcast API Routes', () => {
   it('POST /api/admin/broadcast/test-connection returns 400 for invalid schema', async () => {
     const req = new NextRequest('http://localhost/api/admin/broadcast/test-connection', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: 'invalid-type',
       }),
@@ -453,7 +470,9 @@ describe('Broadcast API Routes', () => {
     it('returns test broadcast result for valid email payload', async () => {
       const req = new NextRequest('http://localhost/api/admin/broadcast/test-send', {
         method: 'POST',
-        headers: { 'x-forwarded-for': '10.0.0.1' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-forwarded-for': '10.0.0.1' },
         body: JSON.stringify({
           channel: 'EMAIL',
           subject: 'Sample Subject',
@@ -480,7 +499,9 @@ describe('Broadcast API Routes', () => {
     it('returns 400 for empty body', async () => {
       const req = new NextRequest('http://localhost/api/admin/broadcast/test-send', {
         method: 'POST',
-        headers: { 'x-forwarded-for': '10.0.0.2' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-forwarded-for': '10.0.0.2' },
         body: JSON.stringify({
           channel: 'EMAIL',
           body: '',
@@ -494,7 +515,9 @@ describe('Broadcast API Routes', () => {
     it('returns 400 for invalid email destination', async () => {
       const req = new NextRequest('http://localhost/api/admin/broadcast/test-send', {
         method: 'POST',
-        headers: { 'x-forwarded-for': '10.0.0.3' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-forwarded-for': '10.0.0.3' },
         body: JSON.stringify({
           channel: 'EMAIL',
           body: 'Hello',
@@ -509,7 +532,9 @@ describe('Broadcast API Routes', () => {
     it('returns 400 for non-E.164 phone destination on SMS', async () => {
       const req = new NextRequest('http://localhost/api/admin/broadcast/test-send', {
         method: 'POST',
-        headers: { 'x-forwarded-for': '10.0.0.4' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-forwarded-for': '10.0.0.4' },
         body: JSON.stringify({
           channel: 'SMS',
           body: 'Hello',
@@ -528,7 +553,9 @@ describe('Broadcast API Routes', () => {
 
       const req = new NextRequest('http://localhost/api/admin/broadcast/test-send', {
         method: 'POST',
-        headers: { 'x-forwarded-for': '10.0.0.5' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-forwarded-for': '10.0.0.5' },
         body: JSON.stringify({
           channel: 'EMAIL',
           body: 'Hello',
@@ -547,6 +574,7 @@ describe('Broadcast API Routes', () => {
         const req = new NextRequest('http://localhost/api/admin/broadcast/test-send', {
           method: 'POST',
           headers: {
+            'Content-Type': 'application/json',
             'x-forwarded-for': '10.0.0.6',
             cookie: 'admin_auth=test-admin-session-token',
           },
@@ -563,6 +591,7 @@ describe('Broadcast API Routes', () => {
       const req6 = new NextRequest('http://localhost/api/admin/broadcast/test-send', {
         method: 'POST',
         headers: {
+          'Content-Type': 'application/json',
           'x-forwarded-for': '10.0.0.6',
           cookie: 'admin_auth=test-admin-session-token',
         },

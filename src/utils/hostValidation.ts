@@ -387,3 +387,170 @@ export function resolveRequestOrigin(req: OriginAwareRequest): string {
       : undefined;
   return getValidatedCanonicalUrl(hostHeader, protoHeader, safeLocalFallback).replace(/\/+$/, '');
 }
+
+const MUTATING_HTTP_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+function isMutatingMethod(method?: string | null): boolean {
+  if (!method) return false;
+  return MUTATING_HTTP_METHODS.has(method.trim().toUpperCase());
+}
+
+/**
+ * Exempts machine-authenticated endpoints (`POST /api/registry/webhook/stripe` using Stripe
+ * webhook HMAC signatures and `/api/cron/*` using `CRON_SECRET` Bearer tokens) from browser
+ * Fetch Metadata and Origin/Referer checks.
+ */
+function isOriginCheckExemptApiPath(
+  pathname: string,
+  method?: string | null
+): boolean {
+  const normalizedPath =
+    pathname.length > 1 ? pathname.replace(/\/+$/, '') || '/' : pathname || '/';
+  if (normalizedPath === '/api/cron' || normalizedPath.startsWith('/api/cron/')) {
+    return true;
+  }
+  const upperMethod = (method || 'GET').trim().toUpperCase();
+  if (normalizedPath === '/api/registry/webhook/stripe' && upperMethod === 'POST') {
+    return true;
+  }
+  return false;
+}
+
+export interface MutationOriginCheckRequest {
+  method?: string;
+  url?: string;
+  headers: {
+    get(_name: string): string | null;
+  };
+  nextUrl?: {
+    pathname?: string;
+    hostname: string;
+    host?: string;
+    origin: string;
+    protocol?: string;
+  };
+}
+
+function normalizeOriginUrl(rawUrl: string): string {
+  if (!rawUrl) return '';
+  try {
+    return new URL(rawUrl).origin.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+function resolveStrictExpectedOrigin(req: MutationOriginCheckRequest): string {
+  let parsedReqUrl: URL | null = null;
+  if (!req.nextUrl && typeof req.url === 'string' && req.url) {
+    try {
+      parsedReqUrl = new URL(req.url, 'http://localhost');
+    } catch {
+      parsedReqUrl = null;
+    }
+  }
+
+  const forwardedHost = resolveTrustedForwardedValue(req.headers.get('x-forwarded-host'));
+  const rawHost = req.headers.get('host')?.trim();
+  const fallbackUrlHost = req.nextUrl?.host || parsedReqUrl?.host || req.nextUrl?.hostname || '';
+  const effectiveHost = forwardedHost || rawHost || fallbackUrlHost;
+
+  const forwardedProto = resolveTrustedForwardedValue(
+    req.headers.get('x-forwarded-proto')
+  )?.toLowerCase();
+  const rawUrlProto = (req.nextUrl?.protocol || parsedReqUrl?.protocol || '')
+    .replace(/:$/, '')
+    .toLowerCase();
+
+  let effectiveProto: string | undefined;
+  if (forwardedProto === 'https' || forwardedProto === 'http') {
+    effectiveProto = forwardedProto;
+  } else if (rawUrlProto === 'https') {
+    effectiveProto = 'https';
+  } else if (rawUrlProto === 'http') {
+    const parsedHost = parseHostHeader(effectiveHost);
+    const hostname = parsedHost?.hostname ?? '';
+    const isLocal =
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname.endsWith('.localhost');
+    const isProduction = (process.env.NODE_ENV || env.NODE_ENV) === 'production';
+    effectiveProto = isLocal || !isProduction ? 'http' : 'https';
+  }
+
+  const fallbackHostname = req.nextUrl?.hostname || parsedReqUrl?.hostname || '';
+  const fallbackOrigin = req.nextUrl?.origin || parsedReqUrl?.origin || '';
+  const safeLocalFallback =
+    !forwardedHost &&
+    !rawHost &&
+    (fallbackHostname === 'localhost' || fallbackHostname === '127.0.0.1')
+      ? fallbackOrigin
+      : '';
+
+  const canonical = getValidatedCanonicalUrl(effectiveHost, effectiveProto, safeLocalFallback);
+  return normalizeOriginUrl(canonical);
+}
+
+/**
+ * Validates Fetch Metadata (`Sec-Fetch-Site`) and `Origin` / `Referer` headers on mutating
+ * HTTP requests (`POST`, `PUT`, `PATCH`, `DELETE`).
+ *
+ * @returns An error message string if the request must be rejected with HTTP 403, or `null` if permitted.
+ */
+export function validateMutatingRequestOrigin(
+  req: MutationOriginCheckRequest | null | undefined
+): string | null {
+  if (!req || typeof req.headers?.get !== 'function') {
+    return null;
+  }
+
+  const method = (req.method || 'GET').trim().toUpperCase();
+  if (!isMutatingMethod(method)) {
+    return null;
+  }
+
+  let pathname = req.nextUrl?.pathname || '';
+  if (!pathname && typeof req.url === 'string' && req.url) {
+    try {
+      pathname = new URL(req.url, 'http://localhost').pathname;
+    } catch {
+      pathname = '/';
+    }
+  }
+
+  if (isOriginCheckExemptApiPath(pathname || '/', method)) {
+    return null;
+  }
+
+  const secFetchSite = req.headers.get('sec-fetch-site')?.trim().toLowerCase();
+  if (secFetchSite && secFetchSite !== 'same-origin' && secFetchSite !== 'none') {
+    return 'Cross-origin request blocked by Fetch Metadata policy.';
+  }
+
+  const originHeader = req.headers.get('origin')?.trim() || '';
+  const refererHeader = req.headers.get('referer')?.trim() || '';
+  if (!originHeader && !refererHeader) {
+    return null;
+  }
+
+  const expectedOrigin = resolveStrictExpectedOrigin(req);
+  if (!expectedOrigin) {
+    return 'Cross-origin request blocked.';
+  }
+
+  if (originHeader) {
+    const parsedOrigin = normalizeOriginUrl(originHeader);
+    if (!parsedOrigin || parsedOrigin !== expectedOrigin) {
+      return 'Cross-origin request blocked.';
+    }
+  }
+
+  if (refererHeader) {
+    const parsedRefererOrigin = normalizeOriginUrl(refererHeader);
+    if (!parsedRefererOrigin || parsedRefererOrigin !== expectedOrigin) {
+      return 'Cross-origin request blocked.';
+    }
+  }
+
+  return null;
+}

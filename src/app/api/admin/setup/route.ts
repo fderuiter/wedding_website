@@ -12,6 +12,7 @@ import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { parseJsonRequestBody } from '@/utils/contentType';
 import {
   AppConfigSchema,
   UpdateAppConfigSchema,
@@ -94,12 +95,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   const initialized = isSiteInitialized(config);
   const isAdmin = await isAdminRequest(req);
 
-  let rawBody: unknown = {};
-  try {
-    rawBody = await req.json();
-  } catch {
-    // Body can be empty if only headers/cookies sent
-  }
+  const rawBody: unknown = await parseJsonRequestBody(req, { allowEmpty: true });
 
   // Replay protection: if already initialized and not authenticated as admin, reject
   if (initialized && !isAdmin) {
@@ -185,7 +181,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
         setupCompleted: body.setupCompleted,
         requiresSetup: !body.setupCompleted,
       });
-      setAdminAuthCookie(response, token);
+      setAdminAuthCookie(response, token, undefined, req);
       return response;
     }
 
@@ -201,7 +197,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
       setupCompleted: completed,
       requiresSetup: !initialized || !completed,
     });
-    setAdminAuthCookie(response, token);
+    setAdminAuthCookie(response, token, undefined, req);
     return response;
   }
 
@@ -415,6 +411,6 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     ...toPublicAppConfig(parsedUpdatedConfig),
     setupCompleted: parsedUpdatedConfig.setupCompleted !== false,
   });
-  setAdminAuthCookie(response, token);
+  setAdminAuthCookie(response, token, undefined, req);
   return response;
 });

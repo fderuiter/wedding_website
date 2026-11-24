@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { normalizeTenantSubdomain } from '@/utils/hostValidation';
 import { resolveGuestSigningSecret } from './guestHeaderSignature';
 import {
@@ -6,13 +6,25 @@ import {
   verifyEdgeTenantClaims,
 } from './tenantClaims';
 import {
-  readRequestCookie,
+  findVerifiedRequestCookie,
+  getSessionCookieOptions,
+  resolveSessionCookieName,
   signCompactToken,
   verifyCompactToken,
 } from './tokenCookieHelpers';
 
 export const GUEST_COOKIE = 'guest_auth';
 
+export function setGuestAuthCookie(
+  response: NextResponse,
+  token: string,
+  req?: NextRequest | Request,
+  maxAge: number = 7 * 24 * 60 * 60
+): NextResponse {
+  const cookieName = resolveSessionCookieName(GUEST_COOKIE, req);
+  response.cookies.set(cookieName, token, getSessionCookieOptions(maxAge, req));
+  return response;
+}
 interface GuestTokenPayload {
   guest: boolean;
   jti?: string;
@@ -70,19 +82,25 @@ export async function isGuestRequest(
   req?: NextRequest,
   options?: { edgeOnly?: boolean }
 ): Promise<boolean> {
-  const cookieValue = await readRequestCookie(GUEST_COOKIE, req, { suppressErrors: true });
-  if (!cookieValue) return false;
+  const verified = await findVerifiedRequestCookie(
+    GUEST_COOKIE,
+    req,
+    async (token) => {
+      const payload = await verifyGuestToken(token);
+      if (!payload || payload.guest !== true) {
+        return null;
+      }
 
-  const payload = await verifyGuestToken(cookieValue);
-  if (!payload || payload.guest !== true) {
-    return false;
-  }
+      if (process.env.NEXT_RUNTIME !== 'edge' && !options?.edgeOnly) {
+        const { verifyNodeTenantClaims } = await import('./tenantClaims.node');
+        return (await verifyNodeTenantClaims(payload, req)) ? payload : null;
+      }
 
-  if (process.env.NEXT_RUNTIME !== 'edge' && !options?.edgeOnly) {
-    const { verifyNodeTenantClaims } = await import('./tenantClaims.node');
-    return verifyNodeTenantClaims(payload, req);
-  }
+      const requestSubdomain = await resolveEdgeRequestSubdomain(req);
+      return verifyEdgeTenantClaims(payload, requestSubdomain) ? payload : null;
+    },
+    { suppressErrors: true }
+  );
 
-  const requestSubdomain = await resolveEdgeRequestSubdomain(req);
-  return verifyEdgeTenantClaims(payload, requestSubdomain);
+  return Boolean(verified);
 }

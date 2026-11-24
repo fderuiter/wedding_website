@@ -11,14 +11,15 @@ import {
   resolveTenantClaimsForSigning,
   verifyNodeTenantClaims,
 } from '@/core/auth/tenantClaims.node';
-import { readRequestCookie } from '@/core/auth/tokenCookieHelpers';
+import { findVerifiedRequestCookie } from '@/core/auth/tokenCookieHelpers';
 import { env } from '@/env';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { parseJsonRequestBody } from '@/utils/contentType';
 import { getAppConfig, isSetupCompleted } from '@/lib/config';
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
-  const body = await req.json();
+  const body = await parseJsonRequestBody(req);
   const parseResult = AdminLoginSchema.safeParse(body);
   
   if (!parseResult.success) {
@@ -50,17 +51,25 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   }
 
   let token: string | null = null;
-  if (typeof readRequestCookie === 'function' && typeof verifyAdminToken === 'function') {
-    const existingToken = await readRequestCookie(ADMIN_COOKIE, req, { suppressErrors: true });
-    if (existingToken) {
-      const existingPayload = await verifyAdminToken(existingToken);
-      if (
-        existingPayload &&
-        existingPayload.isAdmin === true &&
-        (await verifyNodeTenantClaims(existingPayload, req))
-      ) {
-        token = existingToken;
-      }
+  if (typeof findVerifiedRequestCookie === 'function' && typeof verifyAdminToken === 'function') {
+    const verifiedExisting = await findVerifiedRequestCookie(
+      ADMIN_COOKIE,
+      req,
+      async (candidate) => {
+        const existingPayload = await verifyAdminToken(candidate);
+        if (
+          existingPayload &&
+          existingPayload.isAdmin === true &&
+          (await verifyNodeTenantClaims(existingPayload, req))
+        ) {
+          return existingPayload;
+        }
+        return null;
+      },
+      { suppressErrors: true }
+    );
+    if (verifiedExisting) {
+      token = verifiedExisting.token;
     }
   }
 
@@ -72,6 +81,6 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   }
 
   const response = NextResponse.json({ success: true, requiresSetup });
-  setAdminAuthCookie(response, token);
+  setAdminAuthCookie(response, token, undefined, req);
   return response;
 });

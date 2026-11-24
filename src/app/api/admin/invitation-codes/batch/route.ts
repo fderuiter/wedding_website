@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { assertJsonContentType } from '@/utils/contentType';
 import {
   BatchImportInvitationCodesSchema,
   BatchDeleteInvitationCodesSchema,
@@ -27,6 +28,8 @@ function handleBatchUpdate(req: NextRequest) {
 }
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
+  assertJsonContentType(req);
+
   let body: any;
   try {
     body = typeof req.clone === 'function' ? await req.clone().json() : await req.json();

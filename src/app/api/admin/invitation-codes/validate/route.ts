@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { parseJsonRequestBody } from '@/utils/contentType';
 import {
   DryRunValidateBatchSchema,
   DryRunValidateBatchDTO,
@@ -22,7 +23,7 @@ const DryRunEnvelopeFallbackSchema = z.object({
 });
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
-  const body = await req.json();
+  const body = await parseJsonRequestBody(req);
   const parseResult = DryRunValidateBatchSchema.safeParse(body);
 
   let records: BatchInvitationCodeRecord[];

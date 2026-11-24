@@ -48,6 +48,7 @@ describe('POST /api/registry/scrape/batch', () => {
 
     const request = new Request('http://localhost/api/registry/scrape/batch', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ urls: ['https://example.com/product1'] }),
     });
 
@@ -60,6 +61,7 @@ describe('POST /api/registry/scrape/batch', () => {
 
     const request = new Request('http://localhost/api/registry/scrape/batch', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ urls: ['https://example.com/product1'] }),
     });
 
@@ -71,6 +73,7 @@ describe('POST /api/registry/scrape/batch', () => {
     const urls = Array.from({ length: 21 }, (_, i) => `https://example.com/item-${i}`);
     const request = new Request('http://localhost/api/registry/scrape/batch', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ urls }),
     });
 
@@ -83,6 +86,7 @@ describe('POST /api/registry/scrape/batch', () => {
   it('rejects empty URL array with 400', async () => {
     const request = new Request('http://localhost/api/registry/scrape/batch', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ urls: [] }),
     });
 
@@ -108,6 +112,7 @@ describe('POST /api/registry/scrape/batch', () => {
 
     const request = new Request('http://localhost/api/registry/scrape/batch', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         urls: [
           'https://retailer.example.com/p1',
@@ -148,6 +153,7 @@ describe('POST /api/registry/scrape/batch', () => {
 
     const request = new Request('http://localhost/api/registry/scrape/batch', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         urls: [
           'https://retailer.example.com/valid-item',
@@ -182,6 +188,7 @@ describe('POST /api/registry/scrape/batch', () => {
   it('blocks private IP addresses with SSRF protection', async () => {
     const request = new Request('http://localhost/api/registry/scrape/batch', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         urls: ['http://localhost/admin/secrets'],
       }),

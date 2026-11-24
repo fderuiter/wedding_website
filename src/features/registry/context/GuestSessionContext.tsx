@@ -286,9 +286,9 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
 
       try {
-        const data = await apiClient.get(
-          `/api/registry/validate-code?code=${encodeURIComponent(targetCode)}`
-        );
+        const data = await apiClient.post('/api/registry/validate-code', {
+          code: targetCode,
+        });
         if (data && data.valid) {
           const verifiedCode = data.code || targetCode;
           const verifiedEmail =
@@ -316,7 +316,13 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
           return true;
         } else {
-          setSessionState(prev => ({ ...prev, lastErrorCode: 'INVALID_CODE' }));
+          setSessionState(prev => ({
+            ...prev,
+            lastErrorCode:
+              data?.reason === 'shared_passcode' && typeof data?.error === 'string' && data.error.trim()
+                ? data.error
+                : 'INVALID_CODE',
+          }));
           return false;
         }
       } catch (err: unknown) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { assertJsonContentType } from '@/utils/contentType';
 import {
   subEventService,
   AdminInvitationRsvpsQuerySchema,
@@ -27,6 +28,8 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
 });
 
 export const PUT = withApiMiddleware(async (request: NextRequest) => {
+  assertJsonContentType(request);
+
   let body: unknown;
   try {
     body = await request.json();

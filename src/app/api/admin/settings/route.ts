@@ -10,6 +10,7 @@ import { createAuditSnapshot } from '@/lib/audit';
 import { revalidatePath } from 'next/cache';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { parseJsonRequestBody } from '@/utils/contentType';
 import {
   AppConfigSchema,
   CreateAppConfigProfileSchema,
@@ -141,7 +142,7 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
     );
   }
   const targetId = isMultisiteEnabled() ? requestedId : 'global';
-  const data = await req.json();
+  const data = await parseJsonRequestBody<Record<string, any>>(req);
 
   const parseResult = UpdateAppConfigSchema.safeParse(data);
 
@@ -274,7 +275,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     );
   }
 
-  const data = await req.json();
+  const data = await parseJsonRequestBody<Record<string, any>>(req);
 
   const parseResult = CreateAppConfigProfileSchema.safeParse(data);
 

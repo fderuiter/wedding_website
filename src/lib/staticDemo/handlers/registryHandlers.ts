@@ -779,8 +779,12 @@ export async function handleRegistryRoutes(
     });
   }
 
-  if (pathname === '/api/registry/validate-code' && method === 'GET') {
-    const code = searchParams.get('code')?.trim().toUpperCase();
+  if (pathname === '/api/registry/validate-code' && (method === 'GET' || method === 'POST')) {
+    const rawCode =
+      method === 'GET'
+        ? searchParams.get('code')
+        : String((await readJsonBody(request)).code ?? '');
+    const code = rawCode?.trim().toUpperCase();
     if (!code) {
       return errorJson(400, 'Code is required.');
     }
@@ -808,20 +812,22 @@ export async function handleRegistryRoutes(
       }
       return errorJson(404, 'Invalid invitation code.');
     }
-    store.mutate((draft) => {
-      const nowIso = new Date().toISOString();
-      draft.guestSession = {
-        code: invite.code,
-        guestName: invite.guestName,
-        sessionType: 'invite',
-      };
-      for (const rec of draft.broadcastRecipient) {
-        if (rec.invitationCodeId === invite.id && rec.status === 'SENT') {
-          rec.status = 'VIEWED';
-          rec.updatedAt = nowIso;
+    if (method === 'POST') {
+      store.mutate((draft) => {
+        const nowIso = new Date().toISOString();
+        draft.guestSession = {
+          code: invite.code,
+          guestName: invite.guestName,
+          sessionType: 'invite',
+        };
+        for (const rec of draft.broadcastRecipient) {
+          if (rec.invitationCodeId === invite.id && rec.status === 'SENT') {
+            rec.status = 'VIEWED';
+            rec.updatedAt = nowIso;
+          }
         }
-      }
-    });
+      });
+    }
     const resolvedEmail =
       typeof invite.email === 'string' && invite.email.trim().length > 0
         ? invite.email.trim()

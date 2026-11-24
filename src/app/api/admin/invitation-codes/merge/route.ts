@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { assertJsonContentType } from '@/utils/contentType';
 import {
   MergeInvitationCodesSchema,
   type MergeInvitationCodesDTO,
@@ -9,6 +10,8 @@ import {
 import { formatZodError } from '@/utils/validation';
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
+  assertJsonContentType(req);
+
   let body: unknown;
   try {
     body = await req.json();

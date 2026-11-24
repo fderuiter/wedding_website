@@ -119,6 +119,7 @@ describe('POST /api/registry/contribute', () => {
 
     const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         itemId: 'item-123',
         name: 'John Wellwisher',
@@ -191,6 +192,7 @@ describe('POST /api/registry/contribute', () => {
 
     const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         itemId: 'item-123',
         name: 'John Wellwisher',
@@ -221,6 +223,7 @@ describe('POST /api/registry/contribute', () => {
   it('accepts contribution when email is omitted/blank', async () => {
     const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         itemId: 'item-123',
         name: 'Anonymous Friend',
@@ -244,6 +247,7 @@ describe('POST /api/registry/contribute', () => {
   it('rejects contribution with invalid email format', async () => {
     const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         itemId: 'item-123',
         name: 'John Wellwisher',
@@ -267,6 +271,7 @@ describe('POST /api/registry/contribute', () => {
 
     const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         itemId: 'item-123',
         name: 'Test Contributor',
@@ -300,6 +305,7 @@ describe('POST /api/registry/contribute', () => {
 
       const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: 'item-123',
           name: 'Verified Guest',
@@ -338,6 +344,7 @@ describe('POST /api/registry/contribute', () => {
 
       const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: 'item-123',
           name: 'Declined Guest',
@@ -358,6 +365,7 @@ describe('POST /api/registry/contribute', () => {
 
       const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: 'item-123',
           name: 'Error Guest',
@@ -397,6 +405,7 @@ describe('POST /api/registry/contribute', () => {
 
       const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: 'fund-card-only-5000',
           name: 'Tampered Contributor',
@@ -427,6 +436,7 @@ describe('POST /api/registry/contribute', () => {
 
       const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: 'item-123',
           name: 'Wrong Currency Guest',
@@ -460,6 +470,7 @@ describe('POST /api/registry/contribute', () => {
       const underpaidRes = await POST(
         new NextRequest('http://localhost:3000/api/registry/contribute', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             itemId: 'item-123',
             name: 'Underpaid Guest',
@@ -488,6 +499,7 @@ describe('POST /api/registry/contribute', () => {
       const partialRes = await POST(
         new NextRequest('http://localhost:3000/api/registry/contribute', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             itemId: 'item-123',
             name: 'Partial Capture Guest',
@@ -516,6 +528,7 @@ describe('POST /api/registry/contribute', () => {
       const coverMismatchRes = await POST(
         new NextRequest('http://localhost:3000/api/registry/contribute', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             itemId: 'item-123',
             name: 'Cover Mismatch Guest',
@@ -604,6 +617,7 @@ describe('POST /api/registry/contribute', () => {
 
       const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: 'fund-honeymoon',
           name: 'Clara Guest',
@@ -679,6 +693,7 @@ describe('POST /api/registry/contribute', () => {
 
       const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: 'fund-venmo-1',
           name: 'Jordan Transfer',
@@ -762,6 +777,7 @@ describe('POST /api/registry/contribute', () => {
 
       const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: 'item-xss',
           name: '<script>alert("name")</script>',
@@ -825,6 +841,7 @@ describe('POST /api/registry/contribute', () => {
 
         const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             itemId: 'item-123',
             name: 'John Wellwisher',
@@ -927,6 +944,7 @@ describe('POST /api/registry/contribute', () => {
 
       const req1 = new NextRequest('http://localhost:3000/api/registry/contribute', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: 'item-123',
           name: 'Retry Guest',
@@ -944,6 +962,7 @@ describe('POST /api/registry/contribute', () => {
       sendEmailSpy.mockResolvedValue({ success: true });
       const req2 = new NextRequest('http://localhost:3000/api/registry/contribute', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: 'item-123',
           name: 'Retry Guest',
@@ -1033,6 +1052,7 @@ describe('POST /api/registry/contribute', () => {
 
       const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: 'fund-deferred-1',
           name: 'Fast Modal Guest',
@@ -1112,6 +1132,7 @@ describe('POST /api/registry/contribute', () => {
 
       const req = new NextRequest('http://localhost:3000/api/registry/contribute', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: 'item-123',
           name: 'Parallel Guest',
@@ -1145,6 +1166,7 @@ describe('POST /api/registry/contribute', () => {
       });
       const badJsonReq = new NextRequest('http://localhost:3000/api/registry/contribute', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: '{invalid-json',
       });
       const disabledRes = await POST(badJsonReq);
@@ -1163,6 +1185,7 @@ describe('POST /api/registry/contribute', () => {
       const sampleWithPiRes = await POST(
         new NextRequest('http://localhost:3000/api/registry/contribute', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             itemId: 'item-123',
             name: 'Sample Tester',
@@ -1189,6 +1212,7 @@ describe('POST /api/registry/contribute', () => {
       const groupDisabledRes = await POST(
         new NextRequest('http://localhost:3000/api/registry/contribute', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             itemId: 'item-123',
             name: 'Group Disabled Tester',
@@ -1225,6 +1249,7 @@ describe('POST /api/registry/contribute', () => {
 
     const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         itemId: 'item-123',
         name: 'Alex Giver',

@@ -32,6 +32,7 @@ describe('POST /api/admin/invitation-codes/validate', () => {
     mockIsAdminRequest.mockResolvedValue(false);
     const req = new NextRequest('http://localhost/api/admin/invitation-codes/validate', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         records: [{ guestName: 'John Doe', code: 'JOHN100' }],
       }),
@@ -44,6 +45,7 @@ describe('POST /api/admin/invitation-codes/validate', () => {
   test('returns 400 for invalid body schema (empty records)', async () => {
     const req = new NextRequest('http://localhost/api/admin/invitation-codes/validate', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         records: [],
       }),
@@ -105,6 +107,7 @@ describe('POST /api/admin/invitation-codes/validate', () => {
 
     const req = new NextRequest('http://localhost/api/admin/invitation-codes/validate', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
 
@@ -160,6 +163,7 @@ describe('POST /api/admin/invitation-codes/validate', () => {
 
     const req = new NextRequest('http://localhost/api/admin/invitation-codes/validate', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         records: [
           { guestName: 'Jane Doe', email: 'jane@example.com' },

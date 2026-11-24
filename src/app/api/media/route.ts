@@ -6,6 +6,7 @@ import { MediaCreateSchema } from '@/features/media';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { ApiError } from '@/utils/ApiError';
+import { parseJsonRequestBody } from '@/utils/contentType';
 import { isAdminRequest } from '@/core/auth/auth.server';
 
 export const GET = withApiMiddleware(async (request: NextRequest) => {
@@ -35,7 +36,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   if (!isFeatureEnabled('gallery', config.modules)) {
     throw new ApiError(404, "Feature 'gallery' is disabled");
   }
-  const body = await request.json();
+  const body = await parseJsonRequestBody(request);
   const parsed = MediaCreateSchema.safeParse(body);
   
   if (!parsed.success) {
