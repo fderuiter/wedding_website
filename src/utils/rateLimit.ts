@@ -11,6 +11,7 @@ import {
 } from '@/core/auth/guestInviteToken';
 import { env } from '@/env';
 import { logger } from '@/lib/logger';
+import { qualifyPostgresTable } from '@/lib/postgres-url.js';
 import * as prismaModule from '@/lib/prisma';
 import { normalizeSocketIp, readVerifiedSocketIp } from '@/lib/socket-ip-boundary.js';
 
@@ -715,11 +716,12 @@ export function createAuthLockoutInstance(options?: {
     const pool = resolveActivePgPool(options?.pool);
 
     if (pool) {
+      const authLockoutTable = qualifyPostgresTable('AuthLockout');
       const keyHash = hashAuthLockoutKey(rawKey);
       const dbResult = await queryPoolWithTimeout<AuthLockoutRow>(
         pool,
         `SELECT "count", (EXTRACT(EPOCH FROM "resetAt") * 1000)::double precision AS "resetTimeMs"
-         FROM "AuthLockout"
+         FROM ${authLockoutTable}
          WHERE "keyHash" = $1 AND "resetAt" > to_timestamp($2 / 1000.0)`,
         [keyHash, now],
         queryTimeoutMs
@@ -766,17 +768,18 @@ export function createAuthLockoutInstance(options?: {
     const pool = resolveActivePgPool(options?.pool);
 
     if (pool) {
+      const authLockoutTable = qualifyPostgresTable('AuthLockout');
       if (now - lastDbPruneAt >= DB_PRUNE_INTERVAL_MS) {
         lastDbPruneAt = now;
         void Promise.resolve(
-          pool.query('DELETE FROM "AuthLockout" WHERE "resetAt" <= to_timestamp($1 / 1000.0)', [now])
+          pool.query(`DELETE FROM ${authLockoutTable} WHERE "resetAt" <= to_timestamp($1 / 1000.0)`, [now])
         ).catch(() => undefined);
       }
 
       const keyHash = hashAuthLockoutKey(rawKey);
       const dbResult = await queryPoolWithTimeout<AuthLockoutRow>(
         pool,
-        `INSERT INTO "AuthLockout" ("keyHash", "count", "resetAt", "createdAt", "updatedAt")
+        `INSERT INTO ${authLockoutTable} AS "AuthLockout" ("keyHash", "count", "resetAt", "createdAt", "updatedAt")
          VALUES ($1, 1, to_timestamp($3 / 1000.0), to_timestamp($2 / 1000.0), to_timestamp($2 / 1000.0))
          ON CONFLICT ("keyHash") DO UPDATE
          SET
@@ -1055,7 +1058,8 @@ export function resetRateLimitsForTesting(): void {
     const previous = pendingResetPromise ?? Promise.resolve();
     const clearPromise = previous
       .then(async () => {
-        await Promise.resolve(activePool.query('DELETE FROM "AuthLockout"')).catch(() => undefined);
+        const authLockoutTable = qualifyPostgresTable('AuthLockout');
+        await Promise.resolve(activePool.query(`DELETE FROM ${authLockoutTable}`)).catch(() => undefined);
       })
       .finally(() => {
         if (pendingResetPromise === clearPromise) {

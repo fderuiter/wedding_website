@@ -285,7 +285,7 @@ describe('InvitationCodeAdminService', () => {
       expect(mockPrismaClient.$executeRaw).toHaveBeenCalledTimes(1);
 
       const rawQuery = mockPrismaClient.$executeRaw.mock.calls[0][0];
-      expect(rawQuery.sql).toContain('UPDATE "InvitationCode" AS t');
+      expect(rawQuery.sql).toContain('UPDATE "public"."InvitationCode" AS t');
       expect(rawQuery.sql).toContain('WHERE t."id" = v."id"');
       expect(rawQuery.values).toContain('1');
       expect(rawQuery.values).toContain('Updated Name');
@@ -361,7 +361,7 @@ describe('InvitationCodeAdminService', () => {
       expect(mockPrismaClient.$executeRaw).toHaveBeenCalledTimes(1);
 
       const rawQuery = mockPrismaClient.$executeRaw.mock.calls[0][0];
-      expect(rawQuery.sql).toContain('UPDATE "InvitationCode" AS t');
+      expect(rawQuery.sql).toContain('UPDATE "public"."InvitationCode" AS t');
       expect(rawQuery.values).toContain('id-1');
       expect(rawQuery.values).toContain('id-60');
       expect(rawQuery.values).toContain('Guest 1 Updated');
@@ -724,7 +724,7 @@ describe('InvitationCodeAdminService', () => {
 
       const sqlArg = mockPrismaClient.$executeRaw.mock.calls[0][0];
       const sqlText = Array.isArray(sqlArg?.strings) ? sqlArg.strings.join('?') : String(sqlArg);
-      expect(sqlText).toContain('UPDATE "InvitationCode" AS t');
+      expect(sqlText).toContain('UPDATE "public"."InvitationCode" AS t');
       expect(sqlText).toContain('FROM (VALUES');
 
       expect(mockPrismaClient.snapshotVersion.createMany).toHaveBeenCalledTimes(1);

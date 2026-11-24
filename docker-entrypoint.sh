@@ -120,8 +120,44 @@ if [ -n "${POSTGRES_URL_NON_POOLING:-}" ]; then
   export POSTGRES_URL_NON_POOLING="$NORMALIZED_NON_POOLING_URL"
 fi
 
+verify_postgres_tls_handshake() {
+  if [ -z "$POSTGRES_URL_HELPER" ]; then
+    return 0
+  fi
+  local migrate_subcommand="${1:-deploy}"
+  local tls_err
+  if ! tls_err="$(
+    node --input-type=module -e '
+      import { pathToFileURL } from "node:url";
+      const helperPath = process.argv[1];
+      const subcommand = process.argv[2] || "deploy";
+      const { resolveDirectMigrationPostgresUrl, verifyPostgresTlsHandshake } = await import(
+        pathToFileURL(helperPath).href
+      );
+      const isDirectMigrate =
+        subcommand === "deploy" || subcommand === "status" || subcommand === "resolve";
+      const targetUrl = isDirectMigrate
+        ? resolveDirectMigrationPostgresUrl(
+            process.env.DATABASE_URL ?? "",
+            process.env.POSTGRES_URL_NON_POOLING
+          )
+        : (process.env.DATABASE_URL ?? "");
+      try {
+        await verifyPostgresTlsHandshake(targetUrl);
+      } catch (err) {
+        console.error(err instanceof Error ? err.message : String(err));
+        process.exit(1);
+      }
+    ' "$POSTGRES_URL_HELPER" "$migrate_subcommand" 2>&1 >/dev/null
+  )"; then
+    echo "ERROR: Pre-migration PostgreSQL TLS handshake check failed: ${tls_err}" >&2
+    exit 1
+  fi
+}
+
 if [ "$RUN_MIGRATIONS" = "true" ] || [ "$RUN_MIGRATIONS" = "1" ]; then
   echo "Running database migrations (RUN_MIGRATIONS=true)..."
+  verify_postgres_tls_handshake "deploy"
   if [ -x "./node_modules/.bin/prisma" ]; then
     ./node_modules/.bin/prisma migrate deploy
   elif command -v prisma >/dev/null 2>&1; then
@@ -132,6 +168,10 @@ if [ "$RUN_MIGRATIONS" = "true" ] || [ "$RUN_MIGRATIONS" = "1" ]; then
   fi
 else
   echo "Skipping automatic container database migration (decoupled to explicit CI/CD migration step)."
+fi
+
+if [[ "${1:-}" == *"prisma"* ]] && [ "${2:-}" = "migrate" ] && [ "${3:-}" != "diff" ]; then
+  verify_postgres_tls_handshake "${3:-deploy}"
 fi
 
 echo "Starting application..."

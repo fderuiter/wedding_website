@@ -1,5 +1,6 @@
 import { execFile } from 'child_process';
 import fs from 'fs';
+import net from 'net';
 import os from 'os';
 import path from 'path';
 
@@ -222,6 +223,128 @@ describe('docker-entrypoint.sh', () => {
             done();
           },
         );
+      },
+    );
+  });
+
+  it('aborts before invoking prisma migrate deploy when ssl=true targets a plaintext PostgreSQL server without leaking credentials', (done) => {
+    const tempWorkDir = fs.mkdtempSync(path.join(os.tmpdir(), 'entrypoint-tls-gate-'));
+    const localBinDir = path.join(tempWorkDir, 'node_modules', '.bin');
+    fs.mkdirSync(localBinDir, { recursive: true });
+    const stubPrismaPath = path.join(localBinDir, 'prisma');
+    fs.writeFileSync(
+      stubPrismaPath,
+      '#!/bin/sh\necho "UNSAFE_PLAINTEXT_MIGRATE_INVOKED"\nexit 0\n',
+      { mode: 0o755 },
+    );
+
+    const plainServer = net.createServer((socket) => {
+      socket.once('data', () => {
+        socket.end(Buffer.from('N', 'ascii'));
+      });
+    });
+
+    plainServer.listen(0, '127.0.0.1', () => {
+      const { port } = plainServer.address() as net.AddressInfo;
+      const secret = 'ENTRYPOINT_TLS_SECRET_882';
+      const sslTrueUrl = `postgresql://wedding:${secret}@127.0.0.1:${port}/wedding?ssl=true`;
+
+      execFile(
+        ENTRYPOINT_PATH,
+        ['echo', 'booted'],
+        {
+          cwd: tempWorkDir,
+          env: {
+            ...process.env,
+            DATABASE_URL: sslTrueUrl,
+            RUN_MIGRATIONS: 'true',
+          },
+        },
+        (error, stdout, stderr) => {
+          fs.rmSync(tempWorkDir, { recursive: true, force: true });
+          plainServer.close(() => {
+            expect(error).not.toBeNull();
+            expect(error?.code).toBe(1);
+            const output = stdout + stderr;
+            expect(output).toContain('Pre-migration PostgreSQL TLS handshake check failed');
+            expect(output).not.toContain('UNSAFE_PLAINTEXT_MIGRATE_INVOKED');
+            expect(output).not.toContain('booted');
+            expect(output).not.toContain(secret);
+            done();
+          });
+        },
+      );
+    });
+  });
+
+  it('preserves normalized POSTGRES_URL_NON_POOLING for prisma migrate deploy and gates TLS on the promoted direct endpoint', (done) => {
+    const tempWorkDir = fs.mkdtempSync(path.join(os.tmpdir(), 'entrypoint-non-pooling-tls-'));
+    const localBinDir = path.join(tempWorkDir, 'node_modules', '.bin');
+    fs.mkdirSync(localBinDir, { recursive: true });
+    const stubPrismaPath = path.join(localBinDir, 'prisma');
+    fs.writeFileSync(
+      stubPrismaPath,
+      '#!/bin/sh\necho "PRISMA_NON_POOLING=$POSTGRES_URL_NON_POOLING"\nexit 0\n',
+      { mode: 0o755 },
+    );
+
+    const pooledUrl = 'postgresql://wedding:secret@pooler.internal:6543/wedding?pgbouncer=true&schema=public';
+    const quotedSocketDirectUrl =
+      '"postgresql://wedding:secret@/wedding?host=/cloudsql/proj:us-central1:db&schema=public"';
+
+    execFile(
+      ENTRYPOINT_PATH,
+      [stubPrismaPath, 'migrate', 'deploy'],
+      {
+        cwd: tempWorkDir,
+        env: {
+          ...process.env,
+          DATABASE_URL: pooledUrl,
+          POSTGRES_URL_NON_POOLING: quotedSocketDirectUrl,
+        },
+      },
+      (preserveErr, preserveStdout, preserveStderr) => {
+        expect(preserveErr).toBeNull();
+        expect(preserveStdout + preserveStderr).toContain(
+          'PRISMA_NON_POOLING=postgresql://wedding:secret@localhost/wedding?host=/cloudsql/proj:us-central1:db&schema=public',
+        );
+
+        const plainServer = net.createServer((socket) => {
+          socket.once('data', () => {
+            socket.end(Buffer.from('N', 'ascii'));
+          });
+        });
+
+        plainServer.listen(0, '127.0.0.1', () => {
+          const { port } = plainServer.address() as net.AddressInfo;
+          const secret = 'PROMOTED_NON_POOLING_SECRET_991';
+          const directSslTrueUrl = `postgresql://wedding:${secret}@127.0.0.1:${port}/wedding?ssl=true&schema=public`;
+
+          execFile(
+            ENTRYPOINT_PATH,
+            [stubPrismaPath, 'migrate', 'deploy'],
+            {
+              cwd: tempWorkDir,
+              env: {
+                ...process.env,
+                DATABASE_URL: pooledUrl,
+                POSTGRES_URL_NON_POOLING: directSslTrueUrl,
+              },
+            },
+            (tlsErr, tlsStdout, tlsStderr) => {
+              fs.rmSync(tempWorkDir, { recursive: true, force: true });
+              plainServer.close(() => {
+                expect(tlsErr).not.toBeNull();
+                expect(tlsErr?.code).toBe(1);
+                const output = tlsStdout + tlsStderr;
+                expect(output).toContain('Pre-migration PostgreSQL TLS handshake check failed');
+                expect(output).not.toContain('PRISMA_NON_POOLING=');
+                expect(output).not.toContain(secret);
+                done();
+              });
+            },
+          );
+        });
       },
     );
   });
