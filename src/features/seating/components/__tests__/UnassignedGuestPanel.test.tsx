@@ -487,6 +487,7 @@ describe('UnassignedGuestPanel quick-assign modal component', () => {
 
       const guestCard = screen.getByText('Jane Doe').closest('[role="listitem"]') as HTMLElement;
       expect(guestCard).toHaveAttribute('draggable', 'true');
+      expect(guestCard.className).toContain('touch-none');
 
       fireEvent.pointerDown(guestCard, { button: 0, pointerId: 3, pointerType: 'touch', clientX: 50, clientY: 80 });
       expect(screen.queryByTestId('guest-drag-chip')).not.toBeInTheDocument();
@@ -555,6 +556,7 @@ describe('UnassignedGuestPanel quick-assign modal component', () => {
       );
 
       const householdHeader = screen.getByTestId('unassigned-household-badge').closest('[draggable="true"]') as HTMLElement;
+      expect(householdHeader.className).toContain('touch-none');
 
       // 1. Drop 2-guest household onto Table 1 (only 1 open seat) -> rejected with toast error
       document.elementFromPoint = jest.fn().mockReturnValue(table1Target);
@@ -578,11 +580,31 @@ describe('UnassignedGuestPanel quick-assign modal component', () => {
 
       // 3. Individual household member card can also be pointer-dragged solo
       const memberCard = screen.getByText('Eleanor Vance').closest('[role="listitem"]') as HTMLElement;
+      expect(memberCard.className).toContain('touch-none');
       fireEvent.pointerDown(memberCard, { button: 0, pointerId: 12, pointerType: 'touch', clientX: 45, clientY: 95 });
       fireEvent.pointerMove(memberCard, { pointerId: 12, pointerType: 'touch', clientX: 260, clientY: 200 });
       fireEvent.pointerUp(memberCard, { pointerId: 12, pointerType: 'touch', clientX: 260, clientY: 200 });
 
       expect(onAssignGuestToTable).toHaveBeenCalledWith('hh-1', 'table-2');
+
+      // 4. Seat Household and Assign buttons inside touch-none cards ignore pointer drag start and open modals
+      const seatHouseholdBtn = screen.getByRole('button', { name: /^Seat Household/i });
+      fireEvent.pointerDown(seatHouseholdBtn, { button: 0, pointerId: 13, pointerType: 'touch', clientX: 90, clientY: 60 });
+      fireEvent.pointerMove(seatHouseholdBtn, { pointerId: 13, pointerType: 'touch', clientX: 140, clientY: 100 });
+      expect(screen.queryByTestId('guest-drag-chip')).not.toBeInTheDocument();
+      fireEvent.click(seatHouseholdBtn);
+      expect(screen.getByRole('dialog', { name: /Seat Vance Family Household/i })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      });
+
+      const memberAssignBtn = screen.getByRole('button', { name: /Assign Eleanor Vance to table/i });
+      fireEvent.pointerDown(memberAssignBtn, { button: 0, pointerId: 14, pointerType: 'touch', clientX: 95, clientY: 95 });
+      fireEvent.pointerMove(memberAssignBtn, { pointerId: 14, pointerType: 'touch', clientX: 150, clientY: 130 });
+      expect(screen.queryByTestId('guest-drag-chip')).not.toBeInTheDocument();
+      fireEvent.click(memberAssignBtn);
+      expect(screen.getByRole('dialog', { name: /Assign Eleanor Vance/i })).toBeInTheDocument();
 
       table1Target.remove();
       table2Target.remove();

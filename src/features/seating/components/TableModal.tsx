@@ -6,7 +6,11 @@ import { Dialog, useDirtyConfirmClose } from '@/components/ui/Dialog';
 import { Input } from '@/components/ui/forms';
 import { useToast } from '@/components/ui/ToastProvider';
 import { SeatingTableDTO } from '../schemas';
-import { computeScaledTableDimensions, resolveDetailedSeatAssignments } from '../seatLayout';
+import {
+  computeScaledTableDimensions,
+  computeTableMinBounds,
+  resolveDetailedSeatAssignments,
+} from '../seatLayout';
 import {
   getDefaultShapeDimensions,
   getGuestsHeadcount,
@@ -37,15 +41,26 @@ interface TableFormSnapshot {
 function createInitialTableSnapshot(table: SeatingTableDTO | null): TableFormSnapshot {
   const initialShape = ((table?.shape as TableShapeValue) || 'round');
   const defaultCap = isLandmarkTableShape(initialShape) ? 0 : 8;
+  const resolvedCapacity = table ? table.capacity : defaultCap;
+  const resolvedWidth = table?.width || 120;
+  const resolvedHeight = table?.height || 120;
+  const resolvedRotation = table?.rotation || 0;
+  const { minX, minY } = computeTableMinBounds({
+    shape: initialShape,
+    capacity: resolvedCapacity,
+    width: resolvedWidth,
+    height: resolvedHeight,
+    rotation: resolvedRotation,
+  });
   return {
     name: table?.name ?? '',
     shape: initialShape,
-    capacity: table ? table.capacity : defaultCap,
-    width: table?.width || 120,
-    height: table?.height || 120,
-    rotation: table?.rotation || 0,
-    x: table?.x || 0,
-    y: table?.y || 0,
+    capacity: resolvedCapacity,
+    width: resolvedWidth,
+    height: resolvedHeight,
+    rotation: resolvedRotation,
+    x: table ? Math.max(minX, table.x) : minX,
+    y: table ? Math.max(minY, table.y) : minY,
   };
 }
 
@@ -114,6 +129,17 @@ function TableModalForm({
       }),
     [shape, isLandmark, capacity, width, height, rotation]
   );
+  const minBounds = useMemo(
+    () =>
+      computeTableMinBounds({
+        shape,
+        capacity: isLandmark ? 0 : capacity,
+        width,
+        height,
+        rotation,
+      }),
+    [shape, isLandmark, capacity, width, height, rotation]
+  );
   const isPerimeterAutoScaled =
     !isLandmark && (scaledBounds.width > width || scaledBounds.height > height);
   const currentSeatedCount = useMemo(
@@ -167,10 +193,24 @@ function TableModalForm({
       nextCapacity = defaults.defaultCapacity;
     }
 
+    const nextMinBounds = computeTableMinBounds({
+      shape: val,
+      capacity: nextIsLandmark ? 0 : nextCapacity,
+      width: nextWidth,
+      height: nextHeight,
+      rotation,
+    });
+    const nextX =
+      !table && x === minBounds.minX ? nextMinBounds.minX : Math.max(nextMinBounds.minX, x);
+    const nextY =
+      !table && y === minBounds.minY ? nextMinBounds.minY : Math.max(nextMinBounds.minY, y);
+
     setShape(val);
     setCapacity(nextCapacity);
     setWidth(nextWidth);
     setHeight(nextHeight);
+    setX(nextX);
+    setY(nextY);
 
     const nextSnapshot: TableFormSnapshot = {
       ...currentSnapshot,
@@ -178,6 +218,8 @@ function TableModalForm({
       capacity: nextCapacity,
       width: nextWidth,
       height: nextHeight,
+      x: nextX,
+      y: nextY,
     };
     onDirtyChange(isTableFormDirty(nextSnapshot, initialSnapshot));
   };
@@ -211,8 +253,8 @@ function TableModalForm({
       width,
       height,
       rotation,
-      x,
-      y,
+      x: Math.max(minBounds.minX, x),
+      y: Math.max(minBounds.minY, y),
     });
     onClose();
   };
@@ -384,11 +426,12 @@ function TableModalForm({
             id="table-x"
             type="number"
             sizeVariant="compact"
-            min={0}
+            min={minBounds.minX}
             max={2000}
-            value={x}
+            value={Math.max(minBounds.minX, x)}
             onChange={(e) => {
-              const val = parseInt(e.target.value) || 0;
+              const parsed = parseInt(e.target.value, 10);
+              const val = Number.isNaN(parsed) ? minBounds.minX : parsed;
               setX(val);
               updateSnapshotField('x', val);
             }}
@@ -403,11 +446,12 @@ function TableModalForm({
             id="table-y"
             type="number"
             sizeVariant="compact"
-            min={0}
+            min={minBounds.minY}
             max={2000}
-            value={y}
+            value={Math.max(minBounds.minY, y)}
             onChange={(e) => {
-              const val = parseInt(e.target.value) || 0;
+              const parsed = parseInt(e.target.value, 10);
+              const val = Number.isNaN(parsed) ? minBounds.minY : parsed;
               setY(val);
               updateSnapshotField('y', val);
             }}
