@@ -77,41 +77,72 @@ describe('Portal Documentation Generator & Development Section', () => {
   });
 
   it('includes Development and Guides category documents including README.md, AGENTS.md, and CHANGELOG.md in ARCHITECTURAL_DOCS', () => {
+    const configContent = fs.readFileSync(
+      path.join(rootDir, 'docs-portal/.vitepress/config.mts'),
+      'utf8'
+    );
+
     const devDocs = ARCHITECTURAL_DOCS.filter(doc => doc.category === 'Development');
-    expect(devDocs).toHaveLength(5);
+    expect(devDocs.length).toBeGreaterThan(0);
+    for (const doc of devDocs) {
+      expect(doc.dest.startsWith('development/')).toBe(true);
+      expect(doc.dest.endsWith('.md')).toBe(true);
+      expect(configContent).toContain(`link: '/${doc.dest.replace(/\.md$/, '')}'`);
+    }
 
-    const readmeDoc = devDocs.find(d => d.src === 'README.md');
-    expect(readmeDoc).toBeDefined();
-    expect(readmeDoc?.dest).toBe('development/readme.md');
-    expect(readmeDoc?.title).toBe('Project Overview');
-
-    const setupDoc = devDocs.find(d => d.src === 'docs/developer-setup.md');
-    expect(setupDoc).toBeDefined();
-    expect(setupDoc?.dest).toBe('development/developer-setup.md');
-    expect(setupDoc?.title).toBe('Local Environment Setup');
-
-    const testingDoc = devDocs.find(d => d.src === '.github/TESTING.md');
-    expect(testingDoc).toBeDefined();
-    expect(testingDoc?.dest).toBe('development/testing.md');
-    expect(testingDoc?.title).toBe('Testing Strategy');
-
-    const contributingDoc = devDocs.find(d => d.src === '.github/CONTRIBUTING.md');
-    expect(contributingDoc).toBeDefined();
-    expect(contributingDoc?.dest).toBe('development/contributing.md');
-    expect(contributingDoc?.title).toBe('Contribution Guidelines');
-
-    const agentsDoc = devDocs.find(d => d.src === 'AGENTS.md');
-    expect(agentsDoc).toBeDefined();
-    expect(agentsDoc?.dest).toBe('development/agents.md');
-    expect(agentsDoc?.title).toBe('Agent & Contributor Guidelines');
+    expect(devDocs).toEqual(
+      expect.arrayContaining([
+        {
+          src: 'README.md',
+          dest: 'development/readme.md',
+          category: 'Development',
+          title: 'Project Overview',
+        },
+        {
+          src: 'docs/developer-setup.md',
+          dest: 'development/developer-setup.md',
+          category: 'Development',
+          title: 'Local Environment Setup',
+        },
+        {
+          src: '.github/TESTING.md',
+          dest: 'development/testing.md',
+          category: 'Development',
+          title: 'Testing Strategy',
+        },
+        {
+          src: '.github/CONTRIBUTING.md',
+          dest: 'development/contributing.md',
+          category: 'Development',
+          title: 'Contribution Guidelines',
+        },
+        {
+          src: 'AGENTS.md',
+          dest: 'development/agents.md',
+          category: 'Development',
+          title: 'Agent & Contributor Guidelines',
+        },
+      ])
+    );
 
     const guideDocs = ARCHITECTURAL_DOCS.filter(doc => doc.category === 'Guides');
-    expect(guideDocs).toHaveLength(3);
+    expect(guideDocs.length).toBeGreaterThan(0);
+    for (const doc of guideDocs) {
+      expect(doc.dest.startsWith('guides/')).toBe(true);
+      expect(doc.dest.endsWith('.md')).toBe(true);
+      expect(configContent).toContain(`link: '/${doc.dest.replace(/\.md$/, '')}'`);
+    }
 
-    const changelogDoc = guideDocs.find(d => d.src === 'CHANGELOG.md');
-    expect(changelogDoc).toBeDefined();
-    expect(changelogDoc?.dest).toBe('guides/changelog.md');
-    expect(changelogDoc?.title).toBe('Changelog');
+    expect(guideDocs).toEqual(
+      expect.arrayContaining([
+        {
+          src: 'CHANGELOG.md',
+          dest: 'guides/changelog.md',
+          category: 'Guides',
+          title: 'Changelog',
+        },
+      ])
+    );
   });
 
   it('ensures all source files in ARCHITECTURAL_DOCS exist in repository', () => {

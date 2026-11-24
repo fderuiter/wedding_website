@@ -245,9 +245,28 @@ describe('a11y-report', () => {
   });
 
   describe('findJestAxeSuites & runA11yUnit', () => {
-    it('discovers all 69 src/ jest-axe suites in the live repository', () => {
+    it('dynamically discovers every src/ .test.tsx suite importing jest-axe in sorted order', () => {
+      const collectExpectedJestAxeSuites = (dir: string): string[] => {
+        const found: string[] = [];
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          const fullPath = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            found.push(...collectExpectedJestAxeSuites(fullPath));
+          } else if (entry.isFile() && entry.name.endsWith('.test.tsx')) {
+            const content = fs.readFileSync(fullPath, 'utf8');
+            if (/from\s+['"]jest-axe['"]|require\(\s*['"]jest-axe['"]\s*\)/.test(content)) {
+              found.push(path.relative(process.cwd(), fullPath).replace(/\\/g, '/'));
+            }
+          }
+        }
+        return found.sort();
+      };
+
+      const expectedSuites = collectExpectedJestAxeSuites(path.join(process.cwd(), 'src'));
       const suites = findJestAxeSuites(process.cwd());
-      expect(suites).toHaveLength(69);
+
+      expect(expectedSuites.length).toBeGreaterThan(0);
+      expect(suites).toEqual(expectedSuites);
       expect(suites.every((p: string) => p.startsWith('src/') && p.endsWith('.test.tsx'))).toBe(
         true
       );

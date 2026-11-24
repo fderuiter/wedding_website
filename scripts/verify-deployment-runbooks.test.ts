@@ -561,19 +561,28 @@ describe('verify-deployment-runbooks', () => {
     );
   });
 
-  it('requires updating docs/runtime-contract.md (plus release/upgrade notes) without touching provider hosting runbooks when a new Prisma model is added', () => {
+  it('requires updating docs/runtime-contract.md (plus release/upgrade model names) without count drift or touching provider hosting runbooks when Prisma schema fields or models are added', () => {
     const schemaPath = path.join(tempDir, 'prisma/schema.prisma');
-    fs.appendFileSync(schemaPath, '\nmodel GuestSurveyResponse {\n  id String @id @default(cuid())\n}\n');
+    fs.writeFileSync(
+      schemaPath,
+      fs
+        .readFileSync(schemaPath, 'utf8')
+        .replace(
+          'model AppConfig {\n',
+          'model AppConfig {\n  ceremonyLivestreamUrl String? @default("")\n'
+        )
+        .concat('\nmodel GuestSurveyResponse {\n  id String @id @default(cuid())\n}\n')
+    );
 
     const missingErrors = verifyDeploymentRunbooks(tempDir);
     expect(missingErrors).toEqual(
       expect.arrayContaining([
         'docs/runtime-contract.md: Missing persisted prisma/schema.prisma model `GuestSurveyResponse` in canonical runtime entity summary',
-        expect.stringContaining('CHANGELOG.md: Schema model count drift'),
         expect.stringContaining('CHANGELOG.md: Post-0.1.0 Prisma model "GuestSurveyResponse"'),
         expect.stringContaining('docs/upgrading.md: Prisma model "GuestSurveyResponse"'),
       ])
     );
+    expect(missingErrors.some((err) => err.includes('count drift'))).toBe(false);
     expect(missingErrors.some((err) => err.startsWith('DEPLOYMENT.md:') || err.startsWith('docs/deployment/'))).toBe(
       false
     );
@@ -591,7 +600,6 @@ describe('verify-deployment-runbooks', () => {
       changelogPath,
       fs
         .readFileSync(changelogPath, 'utf8')
-        .replace(/\b16 models\b/g, '17 models')
         .replace('`AuthLockout`', '`AuthLockout`, `GuestSurveyResponse`')
     );
 
@@ -1055,7 +1063,6 @@ describe('verify-deployment-runbooks', () => {
     const errors = verifyDeploymentRunbooks(tempDir);
     expect(errors).toEqual(
       expect.arrayContaining([
-        expect.stringContaining('CHANGELOG.md: Migration count drift'),
         expect.stringContaining('20261215000000_add_shuttle_manifest'),
         expect.stringContaining('Added runtime environment variable "SHUTTLE_API_KEY" in src/env.ts is missing'),
         expect.stringContaining('CHANGELOG.md: Docker Compose mandatory `:?` secret guard "SHUTTLE_API_KEY"'),
@@ -1065,6 +1072,7 @@ describe('verify-deployment-runbooks', () => {
         expect.stringContaining('Remediation:'),
       ])
     );
+    expect(errors.some((err) => err.includes('Migration count drift'))).toBe(false);
   });
 
   it('rejects Adopter Action Required: No, ModuleConfigSchema / BACKUP_SCHEMA_VERSION drift, and missing preflight/rollback steps in docs/upgrading.md', () => {
@@ -1123,7 +1131,7 @@ describe('verify-deployment-runbooks', () => {
     );
   });
 
-  it('rejects conflating local npm run migrate:deploy (dotenv -c development) with production npx prisma migrate deploy or referencing DIRECT_URL', () => {
+  it('rejects conflating local npm run migrate:deploy with production npx prisma migrate deploy, referencing DIRECT_URL, or breaking canonical docs/upgrading.md cross-links', () => {
     const upgradingPath = path.join(tempDir, 'docs/upgrading.md');
     fs.writeFileSync(
       upgradingPath,
@@ -1149,7 +1157,7 @@ describe('verify-deployment-runbooks', () => {
       architecturePath,
       fs
         .readFileSync(architecturePath, 'utf8')
-        .replace(/\.env\.development/g, '.env.local')
+        .replace(/\(\.\/docs\/upgrading\.md\)/g, '(./docs/missing-upgrading.md)')
     );
 
     const errors = verifyDeploymentRunbooks(tempDir);
@@ -1171,13 +1179,13 @@ describe('verify-deployment-runbooks', () => {
           'docs/versioning.md: References unsupported "DIRECT_URL" environment variable instead of "DATABASE_URL" / "POSTGRES_URL_NON_POOLING"'
         ),
         expect.stringContaining(
-          'ARCHITECTURE.md: Must clarify that `npm run migrate:deploy` wraps `dotenv -c development` and cascades local `.env.development` files'
+          'ARCHITECTURE.md: Must cross-link to canonical migration CLI runbook "docs/upgrading.md" (verified via rewriteMarkdownLinks -> /guides/upgrading)'
         ),
       ])
     );
   });
 
-  it('rejects stale two-phase database breaking-change policy, missing Expand-Migrate-Contract alignment, or drifted lint:migrations references', () => {
+  it('rejects stale two-phase database breaking-change policy, missing Expand-Migrate-Contract cross-links, or duplicated canonical phase specs in summary guides', () => {
     const versioningPath = path.join(tempDir, 'docs/versioning.md');
     fs.writeFileSync(
       versioningPath,
@@ -1194,15 +1202,13 @@ describe('verify-deployment-runbooks', () => {
       fs
         .readFileSync(architecturePath, 'utf8')
         .replace(/Expand-Migrate-Contract/g, 'Forward-Only Schema')
-        .replace(/allow-destructive:/g, 'skip-linter:')
+        .replace(/\(\.\/docs\/versioning\.md\)/g, '(./docs/missing-versioning.md)')
     );
 
     const upgradingPath = path.join(tempDir, 'docs/upgrading.md');
     fs.writeFileSync(
       upgradingPath,
-      fs
-        .readFileSync(upgradingPath, 'utf8')
-        .replace(/npm run lint:migrations/g, 'npm run check:prisma')
+      `${fs.readFileSync(upgradingPath, 'utf8')}\nUse -- allow-destructive: cleanup for Phase 3 drops.\n`
     );
 
     const errors = verifyDeploymentRunbooks(tempDir);
@@ -1221,13 +1227,13 @@ describe('verify-deployment-runbooks', () => {
           'docs/versioning.md: References non-existent "scripts/lint-migrations.ts" instead of "scripts/verify-migration-compatibility.ts"'
         ),
         expect.stringContaining(
-          'ARCHITECTURE.md: Missing three-phase "Expand-Migrate-Contract" database migration policy alignment'
+          'ARCHITECTURE.md: Missing "Expand-Migrate-Contract" database migration policy summary'
         ),
         expect.stringContaining(
-          'ARCHITECTURE.md: Missing migration compatibility linter contract (`npm run lint:migrations`, `scripts/verify-migration-compatibility.ts`, and `-- allow-destructive: <reason>`)'
+          'ARCHITECTURE.md: Must cross-link to canonical Expand-Migrate-Contract policy in "docs/versioning.md" (verified via rewriteMarkdownLinks -> /architecture/versioning)'
         ),
         expect.stringContaining(
-          'docs/upgrading.md: Missing migration compatibility linter contract (`npm run lint:migrations`, `scripts/verify-migration-compatibility.ts`, and `-- allow-destructive: <reason>`)'
+          'docs/upgrading.md: Duplicates three-phase Expand-Migrate-Contract / `-- allow-destructive:` specification owned canonically by "docs/versioning.md"'
         ),
       ])
     );

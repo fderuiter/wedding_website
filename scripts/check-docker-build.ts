@@ -1207,6 +1207,7 @@ function checkWorkflowImages(
 
 export interface CheckDockerBuildOptions {
   requireStandalone?: boolean;
+  staticOnly?: boolean;
   standaloneOnly?: boolean;
 }
 
@@ -1506,9 +1507,19 @@ export function checkDockerBuild(
 ): {
   violations: Violation[];
 } {
-  const { standaloneOnly = false } = options;
+  const { staticOnly = false, standaloneOnly = false } = options;
   const requireStandalone = Boolean(options.requireStandalone || standaloneOnly);
   const violations: Violation[] = [];
+  if (requireStandalone && staticOnly) {
+    violations.push({
+      filePath: 'scripts/check-docker-build.ts',
+      lineNumber: 1,
+      lineContent: '--require-standalone --static-only',
+      imageRef: '--static-only',
+      reason: '--require-standalone/--standalone-only and --static-only are mutually exclusive.',
+    });
+    return { violations };
+  }
   if (standaloneOnly) {
     validateStandaloneOutput(rootDir, true, violations);
     return { violations };
@@ -1890,8 +1901,10 @@ export function checkDockerBuild(
     });
   }
 
-  // 7. Check standalone build artifacts (.next/standalone) when present from a production build or required (--require-standalone)
-  validateStandaloneOutput(rootDir, requireStandalone, violations);
+  // 7. Check standalone build artifacts (.next/standalone) when present from a production build or required (--require-standalone), unless --static-only is enabled
+  if (!staticOnly) {
+    validateStandaloneOutput(rootDir, requireStandalone, violations);
+  }
 
   // 8. Verify isolated Prisma CLI lockfile version parity and offline peerDependencies ranges across both lockfiles
   const rootLockPath = path.join(rootDir, 'package-lock.json');
@@ -2397,20 +2410,34 @@ function main(): void {
   const args = process.argv.slice(2);
   const standaloneOnly = args.includes('--standalone-only');
   const requireStandalone = args.includes('--require-standalone') || standaloneOnly;
+  const staticOnly = args.includes('--static-only');
   const unknownFlags = args.filter(
-    (arg) => arg !== '--require-standalone' && arg !== '--standalone-only'
+    (arg) =>
+      arg !== '--require-standalone' && arg !== '--static-only' && arg !== '--standalone-only'
   );
   if (unknownFlags.length > 0) {
     console.error(`❌ Unknown option(s) passed to check-docker-build.ts: ${unknownFlags.join(', ')}`);
+    process.exit(1);
+  }
+  if (requireStandalone && staticOnly) {
+    console.error(
+      '❌ Cannot pass both --require-standalone/--standalone-only and --static-only to check-docker-build.ts.'
+    );
     process.exit(1);
   }
 
   console.log(
     standaloneOnly
       ? '🔍 Checking .next/standalone output portability (--standalone-only)...'
-      : '🔍 Checking standalone & container portability, digest pins, and APT cache rules...'
+      : staticOnly
+        ? '🔍 Checking static container portability, digest pins, and APT cache rules (--static-only)...'
+        : '🔍 Checking standalone & container portability, digest pins, and APT cache rules...'
   );
-  const { violations } = checkDockerBuild(ROOT_DIR, { requireStandalone, standaloneOnly });
+  const { violations } = checkDockerBuild(ROOT_DIR, {
+    requireStandalone,
+    staticOnly,
+    standaloneOnly,
+  });
 
   if (violations.length > 0) {
     console.error(`\n❌ Found ${violations.length} standalone or container configuration violation(s):\n`);
