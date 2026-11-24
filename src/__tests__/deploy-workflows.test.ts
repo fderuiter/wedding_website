@@ -11,6 +11,8 @@ const DEPLOY_YML_PATH = path.join(WORKFLOWS_DIR, 'deploy.yml');
 const DEPLOY_STAGE_YML_PATH = path.join(WORKFLOWS_DIR, 'deploy-stage.yml');
 const DEPLOY_PROVIDER_YML_PATH = path.join(WORKFLOWS_DIR, 'deploy-provider.yml');
 const DB_MIGRATE_YML_PATH = path.join(WORKFLOWS_DIR, 'db-migrate.yml');
+const CI_YML_PATH = path.join(WORKFLOWS_DIR, 'ci.yml');
+const STORYBOOK_YML_PATH = path.join(WORKFLOWS_DIR, 'storybook.yml');
 const DEPLOYMENT_DOC_PATH = path.join(REPO_ROOT, 'DEPLOYMENT.md');
 const CLOUD_RUN_DOC_PATH = path.join(REPO_ROOT, 'docs', 'deployment', 'gcp-cloud-run.md');
 
@@ -61,6 +63,8 @@ describe('Release & Provider Deployment Workflow Digest Pinning and Provenance C
   const deployStageYml = fs.readFileSync(DEPLOY_STAGE_YML_PATH, 'utf8');
   const deployProviderYml = fs.readFileSync(DEPLOY_PROVIDER_YML_PATH, 'utf8');
   const dbMigrateYml = fs.readFileSync(DB_MIGRATE_YML_PATH, 'utf8');
+  const ciYml = fs.readFileSync(CI_YML_PATH, 'utf8');
+  const storybookYml = fs.readFileSync(STORYBOOK_YML_PATH, 'utf8');
 
   let tempDir: string;
   let binDir: string;
@@ -410,6 +414,113 @@ process.exit(1);
         expect(groupExpr).not.toContain(forbiddenCtx);
       }
     }
+
+    // 4. ci.yml and storybook.yml enforce queue: max FIFO concurrency and deploy-docs locks github-pages
+    const ciDoc = parseDocument(ciYml, { version: '1.2', strict: true }).toJS() as {
+      concurrency?: { group?: string; 'cancel-in-progress'?: boolean | string; queue?: string };
+      jobs?: Record<
+        string,
+        {
+          if?: string;
+          concurrency?: { group?: string; 'cancel-in-progress'?: boolean | string; queue?: string };
+        }
+      >;
+    };
+    const storybookDoc = parseDocument(storybookYml, { version: '1.2', strict: true }).toJS() as WorkflowShape;
+
+    expect(ciDoc.concurrency).toEqual({
+      group: '${{ github.workflow }}-${{ github.ref }}',
+      'cancel-in-progress': "${{ github.event_name == 'pull_request' }}",
+      queue: 'max',
+    });
+    expect(storybookDoc.concurrency).toEqual({
+      group: 'storybook',
+      'cancel-in-progress': false,
+      queue: 'max',
+    });
+    expect(ciDoc.jobs?.['deploy-docs']?.if).toBe(
+      "github.ref == 'refs/heads/main' && github.event_name == 'push'"
+    );
+    expect(ciDoc.jobs?.['deploy-docs']?.concurrency).toEqual({
+      group: 'github-pages',
+      'cancel-in-progress': false,
+      queue: 'max',
+    });
+  });
+
+  it('verifies origin/main HEAD freshness in ci.yml deploy-docs and skips stale commits cleanly', () => {
+    const freshnessScript = extractStepRunScript(ciYml, 'Verify Main Branch Tip Freshness');
+    expect(freshnessScript).not.toContain('${{');
+
+    const bareOriginDir = path.join(tempDir, 'origin.git');
+    const workRepoDir = path.join(tempDir, 'work');
+    fs.mkdirSync(bareOriginDir, { recursive: true });
+    execFileSync('git', ['init', '--bare', '--initial-branch=main'], { cwd: bareOriginDir });
+    execFileSync('git', ['clone', bareOriginDir, workRepoDir]);
+    execFileSync('git', ['config', 'user.email', 'ci@example.com'], { cwd: workRepoDir });
+    execFileSync('git', ['config', 'user.name', 'CI Bot'], { cwd: workRepoDir });
+
+    fs.writeFileSync(path.join(workRepoDir, 'doc.txt'), 'v1\n');
+    execFileSync('git', ['add', 'doc.txt'], { cwd: workRepoDir });
+    execFileSync('git', ['commit', '-m', 'first commit'], { cwd: workRepoDir });
+    const firstSha = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: workRepoDir,
+      encoding: 'utf8',
+    }).trim();
+    execFileSync('git', ['push', 'origin', 'HEAD:refs/heads/main'], { cwd: workRepoDir });
+
+    // 1. Tip commit matches origin/main HEAD -> is_latest=true
+    fs.writeFileSync(outputFile, '');
+    const latestRes = runBashStep(
+      freshnessScript,
+      {
+        GITHUB_TOKEN: '',
+        CURRENT_SHA: firstSha,
+      },
+      workRepoDir
+    );
+    expect(latestRes.status).toBe(0);
+    expect(fs.readFileSync(outputFile, 'utf8')).toContain(`main_head_sha=${firstSha}`);
+    expect(fs.readFileSync(outputFile, 'utf8')).toContain('is_latest=true');
+
+    // 2. Newer commit pushed to origin/main -> stale commit skips Pages with exit 0 and is_latest=false
+    fs.writeFileSync(path.join(workRepoDir, 'doc.txt'), 'v2\n');
+    execFileSync('git', ['add', 'doc.txt'], { cwd: workRepoDir });
+    execFileSync('git', ['commit', '-m', 'second commit'], { cwd: workRepoDir });
+    const secondSha = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: workRepoDir,
+      encoding: 'utf8',
+    }).trim();
+    execFileSync('git', ['push', 'origin', 'HEAD:refs/heads/main'], { cwd: workRepoDir });
+    execFileSync('git', ['checkout', '--detach', firstSha], { cwd: workRepoDir, stdio: 'ignore' });
+
+    fs.writeFileSync(outputFile, '');
+    const staleRes = runBashStep(
+      freshnessScript,
+      {
+        GITHUB_TOKEN: '',
+        CURRENT_SHA: firstSha,
+      },
+      workRepoDir
+    );
+    expect(staleRes.status).toBe(0);
+    expect(staleRes.stdout + staleRes.stderr).toContain('Skipping GitHub Pages deployment for stale commit');
+    expect(fs.readFileSync(outputFile, 'utf8')).toContain(`main_head_sha=${secondSha}`);
+    expect(fs.readFileSync(outputFile, 'utf8')).toContain('is_latest=false');
+
+    // 3. Missing origin remote fails closed with exit 1
+    execFileSync('git', ['remote', 'remove', 'origin'], { cwd: workRepoDir });
+    fs.writeFileSync(outputFile, '');
+    const missingOriginRes = runBashStep(
+      freshnessScript,
+      {
+        GITHUB_TOKEN: '',
+        CURRENT_SHA: secondSha,
+      },
+      workRepoDir
+    );
+    expect(missingOriginRes.status).toBe(1);
+    expect(missingOriginRes.stdout + missingOriginRes.stderr).toContain("Missing git remote 'origin'");
   });
 
   it('propagates image_digest in deploy.yml and removes latest defaults in deploy-provider.yml', () => {

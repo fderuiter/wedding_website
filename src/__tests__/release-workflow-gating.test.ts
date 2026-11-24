@@ -81,13 +81,26 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
   const migrateWorkflow = readWorkflow('db-migrate.yml');
   const rollbackWorkflow = readWorkflow('rollback.yml');
 
-  it('triggers ci.yml on main pushes, v* tags, pull requests, and releases with upstream action-pin verification while keeping deploy-docs restricted to main pushes and releases', () => {
+  it('triggers ci.yml once on main pushes, v* tags, and pull requests with FIFO queueing while restricting deploy-docs to serialized main tip pushes', () => {
     expect(ciWorkflow).toContain('name: CI');
     const onSection = extractTopLevelSection(ciWorkflow, 'on');
     expect(onSection).toContain('push:');
     expect(onSection).toContain('branches: [ main ]');
     expect(onSection).toContain("tags: [ 'v*' ]");
     expect(onSection).toContain('pull_request:');
+    expect(onSection).not.toContain('release:');
+    expect(onSection).not.toContain('published');
+
+    const ciConcurrency = extractTopLevelSection(ciWorkflow, 'concurrency');
+    expect(ciConcurrency).toContain('group: ${{ github.workflow }}-${{ github.ref }}');
+    expect(ciConcurrency).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}");
+    expect(ciConcurrency).toContain('queue: max');
+
+    const storybookWorkflow = readWorkflow('storybook.yml');
+    const storybookConcurrency = extractTopLevelSection(storybookWorkflow, 'concurrency');
+    expect(storybookConcurrency).toContain('group: storybook');
+    expect(storybookConcurrency).toContain('cancel-in-progress: false');
+    expect(storybookConcurrency).toContain('queue: max');
 
     for (const jobId of [
       'verify:',
@@ -118,8 +131,13 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(docDriftCommentBlock).not.toContain('actions/checkout');
     expect(docDriftCommentBlock).not.toContain('npm ci');
     expect(ciWorkflow).toMatch(
-      /deploy-docs:\n\s+needs:\s*\[verify, static-export-build, storybook-build\]\n\s+if:\s*\(github\.ref == 'refs\/heads\/main' && github\.event_name == 'push'\) \|\| github\.event_name == 'release'/
+      /deploy-docs:\n\s+needs:\s*\[verify, static-export-build, storybook-build\]\n\s+if:\s*github\.ref == 'refs\/heads\/main' && github\.event_name == 'push'\n\s+runs-on:\s*ubuntu-latest\n\s+concurrency:\n\s+group:\s*github-pages\n\s+cancel-in-progress:\s*false\n\s+queue:\s*max/
     );
+    expect(ciWorkflow).not.toContain("github.event_name == 'release'");
+    const deployDocsSection = ciWorkflow.split(/\n  deploy-docs:\n/)[1] ?? '';
+    expect(deployDocsSection).toContain('- name: Verify Main Branch Tip Freshness');
+    expect(deployDocsSection).toContain('fetch --depth=1 --no-tags origin +refs/heads/main:refs/remotes/origin/main');
+    expect(deployDocsSection).toContain("if: steps.freshness.outputs.is_latest == 'true'");
     expect(ciWorkflow).toContain('docs-portal/.vitepress/dist/index.html');
     expect(ciWorkflow).toContain('docs-portal/.vitepress/dist/demo/index.html');
     expect(ciWorkflow).toContain('docs-portal/.vitepress/dist/storybook/index.html');
