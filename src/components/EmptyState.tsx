@@ -15,6 +15,7 @@ interface EmptyStateProps {
   onAction?: () => void;
   actionLabel?: string;
   headingLevel?: HeadingLevel;
+  role?: 'status';
 }
 
 /**
@@ -29,9 +30,14 @@ const EmptyState: React.FC<EmptyStateProps> = ({
   onAction,
   actionLabel,
   headingLevel = 'h2',
+  role,
 }) => {
   return (
-    <div className="text-center p-10 col-span-full flex flex-col items-center">
+    <div
+      role={role}
+      aria-live={role === 'status' ? 'polite' : undefined}
+      className="text-center p-10 col-span-full flex flex-col items-center"
+    >
       <Icon name="SearchX" className="mx-auto h-12 w-12 text-muted-text" />
       <Heading
         as={headingLevel}
@@ -41,7 +47,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({
       >
         No items found
       </Heading>
-      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 mb-4">{message}</p>
+      <p className="mt-1 text-sm text-gray-600 dark:text-gray-300 mb-4">{message}</p>
       {onAction && actionLabel && (
         <button
           onClick={onAction}

@@ -556,6 +556,50 @@ export function isProtectedRoute() { return false; }
     ]);
   });
 
+  it('indexes type-alias members across literal, parenthesized, and intersection types and rejects omitted setters on "exposes only" lines', () => {
+    writeFixture(
+      tempDir,
+      'src/components/ThemeProvider.tsx',
+      [
+        "export type ThemeMode = 'light' | 'dark' | 'system';",
+        'type BaseThemeContext = ({',
+        '  themeMode: ThemeMode;',
+        '  setThemeMode: (mode: ThemeMode) => void;',
+        '});',
+        'type ThemeContextType = BaseThemeContext & {',
+        '  glowFilter: string;',
+        '  setPreviewConfig?: (',
+        '    _preview: Record<string, unknown> | null,',
+        '  ) => void;',
+        '};',
+        'export function ThemeProvider() {',
+        '  return null;',
+        '}',
+      ].join('\n'),
+    );
+    writeFixture(
+      tempDir,
+      'docs/THEME_CONTEXT_CONTRACT.md',
+      [
+        '# Theme Context Contract',
+        '- Valid complete exposes-only claim: `ThemeContextType` in [src/components/ThemeProvider.tsx](../src/components/ThemeProvider.tsx) exposes only `ThemeContextType.setThemeMode` and `ThemeContextType.setPreviewConfig`, with zero physics setters.',
+        '- Valid multiline signature slice: `ThemeContextType.setPreviewConfig` in [src/components/ThemeProvider.tsx](../src/components/ThemeProvider.tsx#L8-L10).',
+        '- Incomplete bare setter claim: `ThemeContextType` in [src/components/ThemeProvider.tsx](../src/components/ThemeProvider.tsx) exposes only `setThemeMode` and zero physics setters.',
+        '- Incomplete dotted setter claim: `ThemeContextType` in [src/components/ThemeProvider.tsx](../src/components/ThemeProvider.tsx#L6-L11) exposes only `ThemeContextType.setThemeMode`.',
+        '- Missing type-alias member: `ThemeContextType.setPhysicsImpulse` in [src/components/ThemeProvider.tsx](../src/components/ThemeProvider.tsx).',
+      ].join('\n'),
+    );
+
+    const result = verifySpecContracts(tempDir, {
+      specFiles: ['docs/THEME_CONTEXT_CONTRACT.md'],
+    });
+    expect(result.errors).toEqual([
+      'docs/THEME_CONTEXT_CONTRACT.md:4: Type "ThemeContextType" in src/components/ThemeProvider.tsx declares callable member(s) "setPreviewConfig" omitted from "exposes only" claim',
+      'docs/THEME_CONTEXT_CONTRACT.md:5: Type "ThemeContextType" in src/components/ThemeProvider.tsx declares callable member(s) "setPreviewConfig" omitted from "exposes only" claim',
+      'docs/THEME_CONTEXT_CONTRACT.md:6: Member "setPhysicsImpulse" on "ThemeContextType" ("ThemeContextType.setPhysicsImpulse") does not exist in src/components/ThemeProvider.tsx',
+    ]);
+  });
+
   it('verifies assigned constant code spans (`CONST = value`) across direct, imported, and drifted module citations', () => {
     writeFixture(
       tempDir,
@@ -611,5 +655,224 @@ export function isProtectedRoute() { return false; }
       'FEATURE_MODULES.md:5: Symbol "REGISTRY_LOAD_MORE_INCREMENT" is not declared or exported in src/features/registry/hooks/useRegistry.ts',
       'FEATURE_MODULES.md:6: Constant "RECIPIENT_CHUNK_SIZE" in src/features/broadcast/service.ts has value 250, expected 500',
     ]);
+  });
+
+  it('reports broadcast schema, placeholder, status literal, escaping, subject stripping, and baseUrl drift with exact line numbers', () => {
+    writeFixture(
+      tempDir,
+      'src/features/broadcast/schemas.ts',
+      [
+        "import { z } from 'zod';",
+        'const BroadcastTargetFiltersSchema = z.object({',
+        '  partyTags: z.array(z.string()).optional(),',
+        '  selectedIds: z.array(z.string()).optional(),',
+        '});',
+        'export const SendBroadcastSchema = z.object({',
+        "  channel: z.enum(['EMAIL', 'SMS']),",
+        '  body: z.string(),',
+        '  scheduledFor: z.string().optional(),',
+        '});',
+        'export const SendTestBroadcastSchema = z.object({',
+        "  channel: z.enum(['EMAIL', 'SMS']),",
+        '  body: z.string(),',
+        '  destination: z.string().optional(),',
+        '});',
+      ].join('\n'),
+    );
+    writeFixture(
+      tempDir,
+      'src/features/broadcast/template.ts',
+      [
+        "export function sanitizeEmailSubject(subject: string) { return subject.replace(/[\\r\\n<>]/g, ''); }",
+        'export function renderBroadcastTemplate(tpl: string, _ctx: unknown, options?: { escapeHtml?: boolean }) {',
+        '  const shouldEscape = Boolean(options?.escapeHtml);',
+        '  return shouldEscape ? tpl : tpl;',
+        '}',
+        'export const AVAILABLE_TEMPLATE_PLACEHOLDERS = [',
+        "  '{{guestName}}',",
+        "  '{{invitationCode}}',",
+        '] as const;',
+      ].join('\n'),
+    );
+    writeFixture(
+      tempDir,
+      'src/features/broadcast/service.ts',
+      [
+        'function resolveBroadcastBaseUrl(configBaseUrl?: string, requestOrigin?: string) {',
+        "  return { baseUrl: configBaseUrl || requestOrigin || 'http://localhost:3000' };",
+        '}',
+        "type FinalBroadcastStatus = 'SENT' | 'PARTIALLY_SENT' | 'FAILED';",
+        'export class BroadcastService { status: FinalBroadcastStatus = "SENT"; url = resolveBroadcastBaseUrl; }',
+      ].join('\n'),
+    );
+    writeFixture(
+      tempDir,
+      'src/app/api/admin/broadcast/send/route.ts',
+      'export async function POST() { return Response.json({}); }\n',
+    );
+    writeFixture(
+      tempDir,
+      'src/app/api/admin/broadcast/test-send/route.ts',
+      'export async function POST() { return Response.json({}); }\n',
+    );
+
+    writeFixture(
+      tempDir,
+      'docs/BROADCASTS.md',
+      [
+        '# Guest Broadcasts',
+        '- `/api/admin/broadcast/test-send` sends to `testEmail` or `testPhone`.',
+        '- `/api/admin/broadcast/send` schedules via `scheduledAt`.',
+        '- `BroadcastTargetFiltersSchema` supports `partyTags` and `includeAddressCollection`.',
+        '- `executeDispatch` marks messages `PARTIAL` and writes `errorMessage`.',
+        '- `AVAILABLE_TEMPLATE_PLACEHOLDERS`: `{{guestName}}` and `{{partner1Name}}` via `resolveBroadcastBaseUrl` (`NEXT_PUBLIC_SITE_URL`).',
+        '- `renderBroadcastTemplate` (`escapeHtml: true`, default).',
+        '- `sanitizeEmailSubject` replaces newlines with spaces and trims whitespace.',
+      ].join('\n'),
+    );
+
+    const result = verifySpecContracts(tempDir, { specFiles: ['docs/BROADCASTS.md'] });
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('src/features/broadcast/schemas.ts:6: SendBroadcastSchema must enforce .strict()'),
+        expect.stringContaining('docs/BROADCASTS.md:2: SendTestBroadcastSchema uses `destination`'),
+        expect.stringContaining('docs/BROADCASTS.md:3: Deprecated `scheduledAt` key'),
+        expect.stringContaining('docs/BROADCASTS.md:4: Missing BroadcastTargetFiltersSchema key `selectedIds`'),
+        expect.stringContaining('docs/BROADCASTS.md:4: Stale broadcast filter key "includeAddressCollection"'),
+        expect.stringContaining('docs/BROADCASTS.md:5: Invalid broadcast status `PARTIAL`'),
+        expect.stringContaining('docs/BROADCASTS.md:5: BroadcastRecipient records failures in `error`'),
+        expect.stringContaining('docs/BROADCASTS.md:6: Missing template placeholder `{{invitationCode}}`'),
+        expect.stringContaining('docs/BROADCASTS.md:6: Documented placeholder `{{partner1Name}}`'),
+        expect.stringContaining('docs/BROADCASTS.md:6: resolveBroadcastBaseUrl does not read NEXT_PUBLIC_SITE_URL'),
+        expect.stringContaining('docs/BROADCASTS.md:7: renderBroadcastTemplate defaults `escapeHtml` to `false`'),
+        expect.stringContaining('docs/BROADCASTS.md:8: sanitizeEmailSubject documentation must cite `[\\r\\n<>]`'),
+      ]),
+    );
+  });
+
+  it('reports Prisma model, AppConfig/backupPersistence count, schemaVersion, registry guard, scraper domain, and security control drift', () => {
+    writeFixture(
+      tempDir,
+      'prisma/schema.prisma',
+      [
+        'model AppConfig {',
+        '  id String @id',
+        '  smtpPass String @default("")',
+        '  modules Json @default("{}")',
+        '}',
+        'model AuthLockout {',
+        '  keyHash String @id',
+        '}',
+      ].join('\n'),
+    );
+    writeFixture(
+      tempDir,
+      'src/lib/backupPersistence.ts',
+      [
+        "export const APP_CONFIG_SECRET_KEYS = ['smtpPass'] as const;",
+        "export const APP_CONFIG_BACKUP_KEYS = ['id', 'modules'] as const;",
+        'export function sanitizeAppConfigForBackup() { return {}; }',
+      ].join('\n'),
+    );
+    writeFixture(
+      tempDir,
+      'src/app/api/admin/maintenance/export/route.ts',
+      "const BACKUP_SCHEMA_VERSION = '2.0';\nexport async function GET() { return Response.json({ version: BACKUP_SCHEMA_VERSION }); }\n",
+    );
+    writeFixture(
+      tempDir,
+      'ARCHITECTURE.md',
+      [
+        '# Architecture',
+        '- **Data Models:**',
+        '  - **`AppConfig`:** Settings.',
+        'Covering 2 persisted PostgreSQL columns in prisma/schema.prisma.',
+        '- **Backup Export Sanitizer (`sanitizeAppConfigForBackup`):** Retains 1 `APP_CONFIG_BACKUP_KEYS` while stripping the 1 raw provider secrets.',
+        'Import and export formats include (`schemaVersion: "1.0"`).',
+      ].join('\n'),
+    );
+
+    writeFixture(
+      tempDir,
+      'src/app/api/registry/claim/route.ts',
+      "import { isFeatureEnabled } from '@/lib/modules';\nexport async function POST() { return isFeatureEnabled('registry'); }\n",
+    );
+    writeFixture(
+      tempDir,
+      'src/app/api/registry/scrape/route.ts',
+      'export async function POST() { return Response.json({}); }\n',
+    );
+    writeFixture(
+      tempDir,
+      'FEATURE_MODULES.md',
+      [
+        '# Feature Modules',
+        "- **Registry APIs Enforcing `isFeatureEnabled('registry')` (HTTP 404 — 0 of 2 handlers)**:",
+        "- **Shared Routes Skipping `isFeatureEnabled('registry')` (2 of 2 handlers)**:",
+        '  - `POST /api/registry/scrape`',
+      ].join('\n'),
+    );
+
+    writeFixture(
+      tempDir,
+      'src/features/registry/api/scrape.ts',
+      "const isAmazonDomain = hostname === 'amazon.com' || hostname.endsWith('.amazon.com');\nexport { isAmazonDomain };\n",
+    );
+    writeFixture(
+      tempDir,
+      'SCRAPER.md',
+      ['# Scraper', '- Selector `#productTitle` on `amazon.*`.'].join('\n'),
+    );
+
+    writeFixture(
+      tempDir,
+      'src/features/broadcast/providers/index.ts',
+      'async function sendSmtpEmail() { return { success: true }; }\nexport { sendSmtpEmail };\n',
+    );
+    writeFixture(
+      tempDir,
+      'src/app/api/guest/address/public/route.ts',
+      [
+        'export async function POST(req: Request, body: Record<string, string>) {',
+        "  await rateLimit(req, 10, 15 * 60 * 1000, 'public_address_collect');",
+        '  const honeypotVal = body.website || body.honeypot;',
+        '  return Response.json({ honeypotVal });',
+        '}',
+      ].join('\n'),
+    );
+    writeFixture(
+      tempDir,
+      'src/utils/pathContainment.ts',
+      'export class PathContainmentError extends Error {}\n',
+    );
+    writeFixture(
+      tempDir,
+      'SECURITY.md',
+      [
+        '# Security',
+        '- Default `smtp` / `none` providers operate as safe no-op stubs.',
+        '- Public form `/api/guest/address/public` allows 50 requests per 15 minutes.',
+      ].join('\n'),
+    );
+
+    const result = verifySpecContracts(tempDir, {
+      specFiles: ['ARCHITECTURE.md', 'FEATURE_MODULES.md', 'SCRAPER.md', 'SECURITY.md'],
+    });
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('ARCHITECTURE.md:2: Prisma model "AuthLockout"'),
+        expect.stringContaining('ARCHITECTURE.md:4: Expected 3 persisted PostgreSQL AppConfig columns'),
+        expect.stringContaining('ARCHITECTURE.md:5: Must cite src/lib/backupPersistence.ts'),
+        expect.stringContaining('ARCHITECTURE.md:5: Expected 2 `APP_CONFIG_BACKUP_KEYS`'),
+        expect.stringContaining('ARCHITECTURE.md:6: Expected `schemaVersion: "2.0"`'),
+        expect.stringContaining('FEATURE_MODULES.md:2: Expected "1 of 2 handlers"'),
+        expect.stringContaining('FEATURE_MODULES.md:2: Guarded registry route "/api/registry/claim" is missing'),
+        expect.stringContaining('SCRAPER.md:2: Scraper host check in src/features/registry/api/scrape.ts matches `amazon.com` and `*.amazon.com` only, not `amazon.*`'),
+        expect.stringContaining('SECURITY.md:2: Must not describe `smtp` as an inert or no-op stub'),
+        expect.stringContaining('SECURITY.md:3: Must document `/api/guest/address/public` rate limit of 10 requests per 15 minutes'),
+        expect.stringContaining('SECURITY.md:3: Must document honeypot validation on `/api/guest/address/public`'),
+        expect.stringContaining('SECURITY.md:1: Must reference `src/utils/pathContainment.ts`'),
+      ]),
+    );
   });
 });

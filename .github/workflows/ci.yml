@@ -38,6 +38,9 @@ jobs:
       - name: Run Unified Static Quality Checks
         run: npm run check:static -- --skip-doc-sync
 
+      - name: Security Dependency Audit
+        run: npm run check:audit
+
       - name: Check Third-Party Action Pin Commit SHAs
         env:
           GITHUB_TOKEN: ${{ github.token }}

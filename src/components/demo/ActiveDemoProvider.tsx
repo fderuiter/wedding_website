@@ -69,9 +69,15 @@ export default function ActiveDemoProvider({
     hydrateDemoStateFromStorage();
     setDemoRuntimeActive(true);
     const uninstallFetch = installDemoFetchInterceptor();
+    if (typeof document !== 'undefined') {
+      document.documentElement.dataset.staticDemo = 'true';
+    }
     return () => {
       uninstallFetch();
       setDemoRuntimeActive(false);
+      if (typeof document !== 'undefined') {
+        delete document.documentElement.dataset.staticDemo;
+      }
     };
   }, []);
 

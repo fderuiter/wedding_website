@@ -1,5 +1,6 @@
 /** @jest-environment node */
 
+import crypto from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { GET, POST } from '../setup/route';
 import { signAdminToken } from '@/core/auth/auth.server';
@@ -1058,6 +1059,40 @@ describe('Setup API Route (/api/admin/setup)', () => {
           }),
         })
       );
+    });
+
+    test('rejects 257-character password on uninitialized and initialized setup routes before crypto.scrypt executes', async () => {
+      const scryptSpy = jest.spyOn(crypto, 'scrypt');
+      try {
+        (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
+        const uninitReq = new NextRequest('http://localhost/api/admin/setup', {
+          method: 'POST',
+          body: JSON.stringify({
+            password: 'a'.repeat(257),
+          }),
+        });
+        const uninitRes = await POST(uninitReq);
+        expect(uninitRes.status).toBe(400);
+        expect(scryptSpy).not.toHaveBeenCalled();
+
+        (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(initializedConfig);
+        const adminToken = await signAdminToken({ isAdmin: true, iat: Date.now() });
+        const initReq = new NextRequest('http://localhost/api/admin/setup', {
+          method: 'POST',
+          headers: {
+            cookie: `admin_auth=${adminToken}`,
+          },
+          body: JSON.stringify({
+            password: 'a'.repeat(257),
+            setupCompleted: true,
+          }),
+        });
+        const initRes = await POST(initReq);
+        expect(initRes.status).toBe(400);
+        expect(scryptSpy).not.toHaveBeenCalled();
+      } finally {
+        scryptSpy.mockRestore();
+      }
     });
   });
 });

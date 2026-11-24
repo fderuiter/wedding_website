@@ -337,11 +337,18 @@ export class BroadcastService {
    * Resolves target invitation code records based on filter criteria.
    */
   static async resolveTargetGuests(filters?: BroadcastTargetFilters) {
+    const excludeSampleGuests =
+      process.env.STATIC_EXPORT !== 'true' && process.env.STATIC_EXPORT !== '1';
+
     if (!filters) {
       const allRecords = await prisma.invitationCode.findMany();
-      return Array.isArray(allRecords)
-        ? filterTargetGuestsInMemory(allRecords)
+      if (!Array.isArray(allRecords)) {
+        return allRecords;
+      }
+      const eligibleRecords = excludeSampleGuests
+        ? allRecords.filter((record) => record?.isSample !== true)
         : allRecords;
+      return filterTargetGuestsInMemory(eligibleRecords);
     }
 
     const where: any = {};
@@ -439,7 +446,11 @@ export class BroadcastService {
       return records;
     }
 
-    return filterTargetGuestsInMemory(records, filters, {
+    const eligibleRecords = excludeSampleGuests
+      ? records.filter((record) => record?.isSample !== true)
+      : records;
+
+    return filterTargetGuestsInMemory(eligibleRecords, filters, {
       applyDbPredicates: false,
       isPublicSubEvent,
     });

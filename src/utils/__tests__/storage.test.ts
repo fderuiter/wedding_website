@@ -6,7 +6,13 @@ import {
   resetStorageProvider,
   StorageUploadInputObject,
 } from '../storage';
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  PutObjectCommand,
+  DeleteObjectCommand,
+  HeadObjectCommand,
+  GetObjectCommand,
+} from '@aws-sdk/client-s3';
 import { writeFile, unlink, stat } from 'fs/promises';
 import path from 'path';
 
@@ -226,41 +232,41 @@ describe('Hybrid Storage Provider', () => {
       mockSend.mockRestore();
     });
 
-    it('initializes with correct AWS S3 endpoint, virtual-hosted style, and public URL when S3_ENDPOINT and S3_PUBLIC_URL are absent', async () => {
+    it('initializes with correct AWS S3 endpoint, virtual-hosted style, and /uploads/* URL routing when S3_ENDPOINT and S3_PUBLIC_URL are absent', async () => {
       const provider = getStorageProvider();
       await provider.delete('uploads/test.png');
 
       const cmd = mockSend.mock.calls[0][0] as DeleteObjectCommand;
       expect(cmd.input.Bucket).toBe('test-bucket');
-      expect(provider.getPublicUrl('uploads/test.png')).toBe(
-        'https://test-bucket.s3.us-west-2.amazonaws.com/uploads/test.png'
-      );
+      expect(provider.getPublicUrl('uploads/test.png')).toBe('/uploads/test.png');
       expect(capturedForcePathStyle).toBe(false);
     });
 
-    it('initializes with custom R2 endpoint, forcePathStyle enabled, and endpoint-based public URL fallback', async () => {
+    it('initializes with custom R2 endpoint, forcePathStyle enabled, and /uploads/* URL routing', async () => {
       process.env.S3_ENDPOINT = 'https://custom.r2.endpoint/';
 
       const provider = getStorageProvider();
-      await provider.delete('uploads/test.png');
+      await provider.delete('https://custom.r2.endpoint/test-bucket/uploads/test.png');
 
       const cmd = mockSend.mock.calls[0][0] as DeleteObjectCommand;
       expect(cmd.input.Bucket).toBe('test-bucket');
+      expect(cmd.input.Key).toBe('uploads/test.png');
       expect(capturedForcePathStyle).toBe(true);
-      expect(provider.getPublicUrl('uploads/test.png')).toBe('https://custom.r2.endpoint/test-bucket/uploads/test.png');
+      expect(provider.getPublicUrl('uploads/test.png')).toBe('/uploads/test.png');
     });
 
-    it('initializes with custom endpoint, forcePathStyle enabled, and S3_PUBLIC_URL override when both are provided', async () => {
+    it('initializes with custom endpoint, forcePathStyle enabled, S3_PUBLIC_URL legacy delete extraction, and /uploads/* URL routing', async () => {
       process.env.S3_ENDPOINT = 'https://custom.r2.endpoint';
       process.env.S3_PUBLIC_URL = 'https://pub-domain.com/';
 
       const provider = getStorageProvider();
-      await provider.delete('uploads/test.png');
+      await provider.delete('https://pub-domain.com/uploads/test.png');
 
       const cmd = mockSend.mock.calls[0][0] as DeleteObjectCommand;
       expect(cmd.input.Bucket).toBe('test-bucket');
+      expect(cmd.input.Key).toBe('uploads/test.png');
       expect(capturedForcePathStyle).toBe(true);
-      expect(provider.getPublicUrl('uploads/test.png')).toBe('https://pub-domain.com/uploads/test.png');
+      expect(provider.getPublicUrl('uploads/test.png')).toBe('/uploads/test.png');
     });
   });
 
@@ -272,7 +278,7 @@ describe('Hybrid Storage Provider', () => {
       process.env.S3_SECRET_ACCESS_KEY = 'secret-456';
     });
 
-    it('uploads file and returns StorageObject', async () => {
+    it('uploads file normalized under uploads/* and returns /uploads/* StorageObject URL', async () => {
       const provider = getStorageProvider();
       const mockSend = jest.spyOn(S3Client.prototype, 'send').mockResolvedValue({} as never);
 
@@ -285,8 +291,8 @@ describe('Hybrid Storage Provider', () => {
 
       const result = await provider.upload(file, { folder: 'avatars', metadata: { userId: '123' } });
 
-      expect(result.key).toMatch(/^avatars\/[a-f0-9]{16}\.png$/);
-      expect(result.url).toBe(`https://test-bucket.s3.us-east-1.amazonaws.com/${result.key}`);
+      expect(result.key).toMatch(/^uploads\/avatars\/[a-f0-9]{16}\.png$/);
+      expect(result.url).toBe(`/${result.key}`);
       expect(result.metadata).toEqual({ userId: '123' });
 
       expect(mockSend).toHaveBeenCalledTimes(1);
@@ -326,13 +332,73 @@ describe('Hybrid Storage Provider', () => {
 
       expect(meta).toEqual({
         key: 'uploads/banner.jpg',
-        url: 'https://test-bucket.s3.us-east-1.amazonaws.com/uploads/banner.jpg',
+        url: '/uploads/banner.jpg',
         size: 4096,
         mimeType: 'image/jpeg',
         metadata: { owner: 'admin' },
         etag: '"etag-123"',
         updatedAt: new Date('2026-05-01'),
       });
+
+      mockSend.mockRestore();
+    });
+
+    it('streams S3 objects via openReadStream (GET & HEAD) and returns null on missing objects', async () => {
+      const provider = getStorageProvider();
+      const payloadBytes = new Uint8Array([1, 2, 3, 4]);
+      const mockSend = jest
+        .spyOn(S3Client.prototype, 'send')
+        .mockImplementationOnce(async (cmd) => {
+          expect(cmd).toBeInstanceOf(GetObjectCommand);
+          return {
+            ContentLength: payloadBytes.byteLength,
+            ContentType: 'image/jpeg',
+            LastModified: new Date('2026-06-01T12:00:00Z'),
+            Body: {
+              transformToWebStream: () =>
+                new ReadableStream<Uint8Array>({
+                  start(controller) {
+                    controller.enqueue(payloadBytes);
+                    controller.close();
+                  },
+                }),
+            },
+          } as never;
+        })
+        .mockImplementationOnce(async (cmd) => {
+          expect(cmd).toBeInstanceOf(HeadObjectCommand);
+          return {
+            ContentLength: payloadBytes.byteLength,
+            ContentType: 'image/jpeg',
+            LastModified: new Date('2026-06-01T12:00:00Z'),
+          } as never;
+        })
+        .mockRejectedValueOnce(Object.assign(new Error('NoSuchKey'), { name: 'NoSuchKey' }) as never);
+
+      const streamed = await provider.openReadStream('/uploads/photos/s3-item.jpg');
+      expect(streamed).not.toBeNull();
+      expect(streamed?.mimeType).toBe('image/jpeg');
+      expect(streamed?.size).toBe(4);
+      const chunks: Uint8Array[] = [];
+      const reader = streamed!.stream!.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) chunks.push(value);
+      }
+      expect(Buffer.concat(chunks)).toEqual(Buffer.from(payloadBytes));
+
+      const headMeta = await provider.openReadStream('uploads/photos/s3-item.jpg', {
+        headOnly: true,
+      });
+      expect(headMeta?.stream).toBeUndefined();
+      expect(headMeta?.size).toBe(4);
+
+      const missing = await provider.openReadStream('uploads/photos/missing.jpg');
+      expect(missing).toBeNull();
+
+      await expect(provider.openReadStream('/../secret.txt')).rejects.toThrow();
+      await expect(provider.openReadStream('images/static.jpg')).rejects.toThrow();
 
       mockSend.mockRestore();
     });
@@ -375,9 +441,7 @@ describe('Hybrid Storage Provider', () => {
       process.env.S3_BUCKET = '"quoted-bucket"';
       process.env.S3_PUBLIC_URL = '"https://assets.wedding.example.com/"';
       const provider = getStorageProvider();
-      expect(provider.getPublicUrl('uploads/photo.jpg')).toBe(
-        'https://assets.wedding.example.com/uploads/photo.jpg'
-      );
+      expect(provider.getPublicUrl('uploads/photo.jpg')).toBe('/uploads/photo.jpg');
       expect(await provider.validateConfig()).toEqual({ valid: true });
 
       delete process.env.S3_PUBLIC_URL;

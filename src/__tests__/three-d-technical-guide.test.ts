@@ -68,6 +68,11 @@ describe('docs/3D_TECHNICAL_GUIDE.md specification & portal verification', () =>
     }
 
     expect(guideContent).toContain('createContext');
+    expect(guideContent).toContain('ThemeContextType.setThemeMode');
+    expect(guideContent).toContain('ThemeContextType.setPreviewConfig');
+    expect(guideContent).toContain('setPreviewConfig');
+    expect(guideContent).toContain('src/components/demo/DemoContext.tsx');
+    expect(guideContent).toContain('src/components/setup/SetupWizard.tsx');
     expect(guideContent).toContain('zero physics');
     expect(guideContent).toContain('useMemo');
     expect(guideContent).toContain('AppConfig.themeTokens');
@@ -175,6 +180,9 @@ describe('docs/3D_TECHNICAL_GUIDE.md specification & portal verification', () =>
         'src/middleware.ts',
         'src/lib/theme/presets.ts',
         'src/components/ThemeProvider.tsx',
+        'src/components/demo/ActiveDemoProvider.tsx',
+        'src/components/demo/DemoContext.tsx',
+        'src/components/setup/SetupWizard.tsx',
         'src/app/heart/page.tsx',
         'src/app/heart/HeartClient.tsx',
         'src/app/heart/constants.ts',
@@ -215,6 +223,18 @@ describe('docs/3D_TECHNICAL_GUIDE.md specification & portal verification', () =>
       const shiftedContractResult = verifySpecContracts(tmpRoot, { specFiles: [guideRelPath] });
       expect(shiftedContractResult.errors).toEqual([]);
       expect(shiftedContractResult.checkedSymbols).toBe(contractResult.checkedSymbols);
+
+      const tmpGuidePath = path.join(tmpRoot, guideRelPath);
+      const incompleteGuide = guideContent.replace(
+        ' and `ThemeContextType.setPreviewConfig` (for in-process whole-config draft preview overrides),',
+        '',
+      );
+      expect(incompleteGuide).not.toBe(guideContent);
+      fs.writeFileSync(tmpGuidePath, incompleteGuide, 'utf8');
+      const incompleteResult = verifySpecContracts(tmpRoot, { specFiles: [guideRelPath] });
+      expect(incompleteResult.errors).toEqual([
+        expect.stringContaining('declares callable member(s) "setPreviewConfig" omitted from "exposes only" claim'),
+      ]);
     } finally {
       fs.rmSync(tmpRoot, { recursive: true, force: true });
     }
@@ -229,6 +249,12 @@ describe('docs/3D_TECHNICAL_GUIDE.md specification & portal verification', () =>
     );
     expect(staged).toContain(
       '(https://github.com/fderuiter/wedding_website/blob/main/src/components/ThemeProvider.tsx)',
+    );
+    expect(staged).toContain(
+      '(https://github.com/fderuiter/wedding_website/blob/main/src/components/demo/DemoContext.tsx)',
+    );
+    expect(staged).toContain(
+      '(https://github.com/fderuiter/wedding_website/blob/main/src/components/setup/SetupWizard.tsx)',
     );
     expect(staged).toContain(
       '(https://github.com/fderuiter/wedding_website/blob/main/src/components/ui/Interactive3DCard.tsx)',

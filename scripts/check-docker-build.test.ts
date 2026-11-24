@@ -1039,6 +1039,137 @@ describe('check-docker-build', () => {
       }),
     ]);
   });
+
+  it('validates peerDependencies ranges offline across package-lock.json and docker/prisma-cli/package-lock.json while honoring optional peers and overrides', () => {
+    const pkgPath = path.join(tempDir, 'package.json');
+    const basePkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as Record<string, unknown>;
+    fs.writeFileSync(
+      pkgPath,
+      `${JSON.stringify(
+        {
+          ...basePkg,
+          devDependencies: {
+            '@typescript-eslint/eslint-plugin': '^8.72.0',
+            'eslint-plugin-react': '^7.37.5',
+            eslint: '^10.15.0',
+            typescript: '^7.0.2',
+          },
+          overrides: {
+            'eslint-plugin-react': {
+              eslint: '$eslint',
+            },
+          },
+        },
+        null,
+        2
+      )}\n`
+    );
+
+    fs.writeFileSync(
+      path.join(tempDir, 'package-lock.json'),
+      JSON.stringify(
+        {
+          lockfileVersion: 3,
+          packages: {
+            '': {
+              devDependencies: {
+                '@typescript-eslint/eslint-plugin': '^8.72.0',
+                'eslint-plugin-react': '^7.37.5',
+                eslint: '^10.15.0',
+                typescript: '^7.0.2',
+              },
+            },
+            'node_modules/@typescript-eslint/eslint-plugin': {
+              version: '8.74.0',
+              peerDependencies: {
+                eslint: '^8.57.0 || ^9.0.0 || ^10.0.0',
+                typescript: '>=4.8.4 <6.1.0',
+              },
+            },
+            'node_modules/eslint-plugin-react': {
+              version: '7.37.5',
+              peerDependencies: {
+                eslint: '^3 || ^4 || ^5 || ^6 || ^7 || ^8 || ^9.7',
+              },
+            },
+            'node_modules/eslint': {
+              version: '10.15.0',
+            },
+            'node_modules/typescript': {
+              version: '7.0.2',
+            },
+            'node_modules/prisma': { version: '7.10.1' },
+            'node_modules/@prisma/config': { version: '7.10.1' },
+            'node_modules/effect': { version: '3.22.5' },
+          },
+        },
+        null,
+        2
+      )
+    );
+
+    const cliDir = path.join(tempDir, 'docker', 'prisma-cli');
+    fs.mkdirSync(cliDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(cliDir, 'package.json'),
+      JSON.stringify(
+        {
+          name: 'prisma-cli-isolated',
+          private: true,
+          dependencies: {
+            '@prisma/config': '7.10.1',
+            prisma: '7.10.1',
+          },
+        },
+        null,
+        2
+      )
+    );
+    fs.writeFileSync(
+      path.join(cliDir, 'package-lock.json'),
+      JSON.stringify(
+        {
+          lockfileVersion: 3,
+          packages: {
+            '': {
+              dependencies: {
+                '@prisma/config': '7.10.1',
+                prisma: '7.10.1',
+              },
+            },
+            'node_modules/prisma': {
+              version: '7.10.1',
+              peerDependencies: {
+                'better-sqlite3': '>=9.0.0',
+                'required-driver': '^2.0.0',
+              },
+              peerDependenciesMeta: {
+                'better-sqlite3': { optional: true },
+              },
+            },
+            'node_modules/@prisma/config': { version: '7.10.1' },
+            'node_modules/effect': { version: '3.22.5' },
+          },
+        },
+        null,
+        2
+      )
+    );
+
+    const { violations } = checkDockerBuild(tempDir);
+    expect(violations).toEqual([
+      expect.objectContaining({
+        filePath: 'package-lock.json',
+        imageRef: '@typescript-eslint/eslint-plugin -> typescript',
+        reason: expect.stringContaining('conflicts with resolved "node_modules/typescript@7.0.2"'),
+      }),
+      expect.objectContaining({
+        filePath: 'docker/prisma-cli/package-lock.json',
+        imageRef: 'prisma -> required-driver',
+        reason: expect.stringContaining('requires non-optional peerDependency "required-driver@^2.0.0"'),
+      }),
+    ]);
+  });
   it('allows pull_policy: never services sharing a local build image across docker-compose.yml and docker-compose.rollout.yml', () => {
     fs.writeFileSync(
       path.join(tempDir, 'docker-compose.yml'),
