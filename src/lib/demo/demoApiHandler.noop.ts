@@ -8,3 +8,9 @@ export function dispatchDemoApiRequest(
 export function installDemoFetchInterceptor(): () => void {
   return () => {};
 }
+
+export function primeDemoRuntimeForMount(): void {}
+
+export function consumePrimedDemoFetchInterceptor(): (() => void) | null {
+  return null;
+}

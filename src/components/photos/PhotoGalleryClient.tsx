@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { SegmentedTabs } from '@/components/ui/SegmentedTabs';
 import { useOptionalToast } from '@/components/ui/ToastProvider';
 import { triggerNativeExportDownload } from '@/utils/exportDownload';
+import { useOptionalDemo } from '@/components/demo/DemoContext';
 import { useStaticDemoPageOverrides } from '@/lib/staticDemo/runtime';
 
 export type PhotoCategory = 'curated' | 'guest';
@@ -137,18 +138,44 @@ export function PhotoGalleryClient({
   defaultUploaderName,
 }: PhotoGalleryClientProps) {
   const toast = useOptionalToast();
+  const demo = useOptionalDemo();
   const demoOverrides = useStaticDemoPageOverrides();
-  const isAdmin = demoOverrides ? demoOverrides.isAdminAuthenticated : initialIsAdmin;
+  const isDemoMode = Boolean(demo?.isDemoMode);
+  const isAdmin = isDemoMode
+    ? demo?.persona === 'admin'
+    : demoOverrides
+      ? demoOverrides.isAdminAuthenticated
+      : initialIsAdmin;
+  const [hasDraftOverride, setHasDraftOverride] = useState(false);
   const [localPhotos, setPhotos] = useState<NormalizedPhotoItem[]>(() =>
     normalizeInitialPhotos(initialPhotos),
   );
 
   const photos = useMemo<NormalizedPhotoItem[]>(() => {
+    if (hasDraftOverride) {
+      return localPhotos;
+    }
+    if (isDemoMode && demo) {
+      return normalizeInitialPhotos(
+        demo.activeDataset.photos
+          .filter((p) => p.status === 'APPROVED' && p.isVisible !== false)
+          .map((p) => ({
+            id: p.id,
+            mediaId: p.mediaId,
+            url: p.url,
+            title: p.title,
+            ...(p.caption ? { caption: p.caption } : {}),
+            ...(p.uploaderName ? { uploaderName: p.uploaderName } : {}),
+            isGuestUpload: p.isGuestUpload,
+            category: p.category,
+          })),
+      );
+    }
     if (!demoOverrides) {
       return localPhotos;
     }
     return normalizeInitialPhotos(demoOverrides.galleryPhotos);
-  }, [demoOverrides, localPhotos]);
+  }, [demo, demoOverrides, hasDraftOverride, isDemoMode, localPhotos]);
 
   const [activeTab, setActiveTab] = useState<PhotoCategory>(() => {
     if (typeof window !== 'undefined' && window.location?.search) {
@@ -201,6 +228,7 @@ export function PhotoGalleryClient({
         Array.isArray(event.data.draftData)
       ) {
         const nextPhotos = mapDraftContentNodesToPhotos(event.data.draftData);
+        setHasDraftOverride(true);
         setPhotos(nextPhotos);
         setActiveTab((prevTab) => {
           const hasCurated = nextPhotos.some((p) => p.category === 'curated');

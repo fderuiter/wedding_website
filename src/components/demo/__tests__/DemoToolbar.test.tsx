@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
@@ -104,6 +104,31 @@ function ChildMountFetchProbe() {
   return <div data-testid="child-mount-caps">{cardEnabled}</div>;
 }
 
+function ColdStartWeatherChild() {
+  const [forecastCount, setForecastCount] = useState<string>('pending');
+
+  useLayoutEffect(() => {
+    let active = true;
+    void fetch('/api/weather')
+      .then((res) => res.json())
+      .then((payload: { daily?: { time?: string[] } }) => {
+        if (active) {
+          setForecastCount(String(payload.daily?.time?.length ?? 0));
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setForecastCount('error');
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  return <div data-testid="cold-start-weather-days">{forecastCount}</div>;
+}
+
 function renderDemoShell(isStaticExport = true, extraChild?: React.ReactNode) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -171,6 +196,28 @@ describe('DemoToolbar & DemoProvider', () => {
         expect(screen.getByTestId('child-mount-caps')).toHaveTextContent('true');
       });
       expect(uninterceptedCapabilitiesCalls).toHaveLength(0);
+    } finally {
+      window.fetch = originalFetch;
+    }
+  });
+
+  it('intercepts child useLayoutEffect /api/weather requests synchronously on cold start before ActiveDemoProvider effects run', async () => {
+    const originalFetch = window.fetch;
+    const leakedNetworkCalls: string[] = [];
+    window.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      leakedNetworkCalls.push(String(input));
+      return new Response(JSON.stringify({ error: 'network leaked' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as unknown as typeof window.fetch;
+
+    try {
+      renderDemoShell(true, <ColdStartWeatherChild />);
+      await waitFor(() => {
+        expect(screen.getByTestId('cold-start-weather-days')).toHaveTextContent('1');
+      });
+      expect(leakedNetworkCalls).toHaveLength(0);
     } finally {
       window.fetch = originalFetch;
     }
