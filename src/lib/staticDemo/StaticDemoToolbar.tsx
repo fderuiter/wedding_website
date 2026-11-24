@@ -2,6 +2,7 @@
 
 import React, { useState, useSyncExternalStore } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
+import { StickyBar } from '@/components/ui/useStickyOffset';
 import { ARCHETYPE_PRESETS, type ArchetypeId } from '@/lib/sampleData/archetypes';
 import type { StaticDemoStore } from './types';
 
@@ -73,7 +74,10 @@ export function StaticDemoToolbar({
   const sampleInviteCode = snapshot.invitationCode[0]?.code ?? 'DEMO2026';
 
   return (
-    <aside
+    <StickyBar
+      as="aside"
+      edge="bottom"
+      scope="document"
       aria-label="Interactive Demo Controls"
       data-testid="static-demo-toolbar"
       className="fixed bottom-4 left-4 z-50 max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-700 bg-slate-900/95 px-3.5 py-2.5 text-xs text-white shadow-2xl backdrop-blur print:hidden"
@@ -170,6 +174,6 @@ export function StaticDemoToolbar({
           )}
         </div>
       )}
-    </aside>
+    </StickyBar>
   );
 }

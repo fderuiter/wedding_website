@@ -57,6 +57,7 @@ export interface DialogProps {
   'aria-describedby'?: string;
   className?: string;
   contentClassName?: string;
+  scrollRegion?: boolean;
   style?: React.CSSProperties;
   isDirty?: boolean;
   confirmDiscardMessage?: string;
@@ -75,6 +76,7 @@ function DialogInner({
   'aria-describedby': ariaDescribedby,
   className,
   contentClassName,
+  scrollRegion = true,
   style,
   isDirty = false,
   confirmDiscardMessage = DEFAULT_CONFIRM_DISCARD_MESSAGE,
@@ -139,7 +141,12 @@ function DialogInner({
             {description}
           </div>
         )}
-        <div className={contentClassName ?? 'px-6 py-4'}>{children}</div>
+        <div
+          data-scroll-region={scrollRegion ? '' : undefined}
+          className={contentClassName ?? 'px-6 py-4'}
+        >
+          {children}
+        </div>
       </div>
     </Overlay>
   );
