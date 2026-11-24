@@ -714,6 +714,205 @@ describe('SeatingTableAdminService', () => {
       const oliviaAssigned = result.assignedGuests.find((g) => g.id === 'g-c2')!;
       expect(oliviaAssigned.seatNumber).toBe(3);
     });
+
+    it('breaks cluster and Phase 1 ties by affinity descending, remainingCapacity ascending, and localeCompare ascending', async () => {
+      // Tables intentionally returned out of localeCompare order (including non-ASCII accented name)
+      mockTxSeatingTableFindMany.mockResolvedValueOnce([
+        {
+          id: 'tbl-zulu',
+          name: 'Table Zulu',
+          capacity: 6,
+          invitationCodes: [
+            { id: 'occ-z', guestName: 'Seated Tag Match', seatNumber: 1, partyTags: ['alumni'] },
+          ],
+        },
+        {
+          id: 'tbl-etoile',
+          name: 'Table Étoile',
+          capacity: 4,
+          invitationCodes: [],
+        },
+        {
+          id: 'tbl-alpha',
+          name: 'Table Alpha',
+          capacity: 4,
+          invitationCodes: [],
+        },
+        {
+          id: 'tbl-loose',
+          name: 'Table Aaron',
+          capacity: 6,
+          invitationCodes: [],
+        },
+      ]);
+
+      mockTxInvitationCodeFindMany.mockResolvedValueOnce([
+        // Multi-unit cluster (2 solo invitations = 2 chairs) matching 'alumni' tag (+100 affinity) on tbl-zulu (remainingCapacity 5)
+        // Even though tbl-alpha/tbl-etoile have tighter remainingCapacity (4), higher affinity wins.
+        { id: 'c1', guestName: 'Cluster 1', householdName: null, partyTags: ['Alumni'], tableId: null },
+        { id: 'c2', guestName: 'Cluster 2', householdName: null, partyTags: [' alumni '], tableId: null },
+        // Phase 1 intact household of 3 chairs with no group/tag affinity (score 0 across all tables):
+        // Remaining capacities after cluster: tbl-zulu=3, tbl-etoile=4, tbl-alpha=4, tbl-loose=6 -> tightest fit is tbl-zulu (remainingCapacity 3).
+        { id: 'h1', guestName: 'Tight 1', householdName: 'TightFit', tableId: null },
+        { id: 'h2', guestName: 'Tight 2', householdName: 'TightFit', tableId: null },
+        { id: 'h3', guestName: 'Tight 3', householdName: 'TightFit', tableId: null },
+        // Phase 1 solo guest (1 chair) with no affinity:
+        // Remaining capacities: tbl-etoile=4, tbl-alpha=4, tbl-loose=6 -> tie on remainingCapacity=4 broken by localeCompare ('Table Alpha' < 'Table Étoile').
+        { id: 's1', guestName: 'Locale Tie Guest', householdName: null, tableId: null },
+      ]);
+
+      mockTxExecuteRaw.mockResolvedValueOnce(6);
+
+      const result = await service.autoAssignSeats('Admin');
+
+      expect(result.assignedCount).toBe(6);
+      expect(result.unassignedCount).toBe(0);
+
+      const byId = new Map(result.assignedGuests.map((g) => [g.id, g.tableId]));
+      expect(byId.get('c1')).toBe('tbl-zulu');
+      expect(byId.get('c2')).toBe('tbl-zulu');
+      expect(byId.get('h1')).toBe('tbl-zulu');
+      expect(byId.get('h2')).toBe('tbl-zulu');
+      expect(byId.get('h3')).toBe('tbl-zulu');
+      expect(byId.get('s1')).toBe('tbl-alpha');
+    });
+
+    it('breaks Phase 2 split-guest ties by affinity descending, remainingCapacity descending, and localeCompare ascending', async () => {
+      // Multi-invitation household of 5 cannot fit intact on any table (max remainingCapacity is 3)
+      mockTxSeatingTableFindMany.mockResolvedValueOnce([
+        { id: 'tbl-zeta', name: 'Table Zeta', capacity: 3, invitationCodes: [] },
+        { id: 'tbl-beta', name: 'Table Beta', capacity: 3, invitationCodes: [] },
+        { id: 'tbl-alpha-small', name: 'Table Alpha', capacity: 2, invitationCodes: [] },
+      ]);
+
+      mockTxInvitationCodeFindMany.mockResolvedValueOnce([
+        { id: 'sp-1', guestName: 'Split 1', householdName: 'OversizedHousehold', tableId: null },
+        { id: 'sp-2', guestName: 'Split 2', householdName: 'OversizedHousehold', tableId: null },
+        { id: 'sp-3', guestName: 'Split 3', householdName: 'OversizedHousehold', tableId: null },
+        { id: 'sp-4', guestName: 'Split 4', householdName: 'OversizedHousehold', tableId: null },
+        { id: 'sp-5', guestName: 'Split 5', householdName: 'OversizedHousehold', tableId: null },
+      ]);
+
+      mockTxExecuteRaw.mockResolvedValueOnce(5);
+
+      const result = await service.autoAssignSeats('Admin', { keepHouseholdsIntact: false });
+
+      expect(result.assignedCount).toBe(5);
+      expect(result.unassignedCount).toBe(0);
+
+      const byId = new Map(result.assignedGuests.map((g) => [g.id, g.tableId]));
+      // sp-1: remaining capacities are Zeta=3, Beta=3, Alpha=2 -> max capacity=3 tie -> localeCompare picks Table Beta (leaves Beta=2)
+      expect(byId.get('sp-1')).toBe('tbl-beta');
+      // sp-2: remaining capacities are Zeta=3, Beta=2, Alpha=2 -> max capacity=3 picks Table Zeta (leaves Zeta=2)
+      expect(byId.get('sp-2')).toBe('tbl-zeta');
+      // sp-3: remaining capacities are Zeta=2, Beta=2, Alpha=2 -> tie at 2 -> localeCompare picks Table Alpha (leaves Alpha=1)
+      expect(byId.get('sp-3')).toBe('tbl-alpha-small');
+      // sp-4: remaining capacities are Zeta=2, Beta=2, Alpha=1 -> tie at 2 -> localeCompare picks Table Beta (leaves Beta=1)
+      expect(byId.get('sp-4')).toBe('tbl-beta');
+      // sp-5: remaining capacities are Zeta=2, Beta=1, Alpha=1 -> max capacity=2 picks Table Zeta (leaves Zeta=1)
+      expect(byId.get('sp-5')).toBe('tbl-zeta');
+    });
+
+    it('preserves stable initial order for duplicate table names across Phase 1 and Phase 2 ties', async () => {
+      // Phase 1 duplicate-name tie: two identical-name tables with equal capacity and affinity
+      mockTxSeatingTableFindMany.mockResolvedValueOnce([
+        { id: 'dup-first', name: 'Garden Table', capacity: 2, invitationCodes: [] },
+        { id: 'dup-second', name: 'Garden Table', capacity: 2, invitationCodes: [] },
+      ]);
+      mockTxInvitationCodeFindMany.mockResolvedValueOnce([
+        { id: 'p1-guest', guestName: 'Solo Guest', householdName: null, tableId: null },
+      ]);
+      mockTxExecuteRaw.mockResolvedValueOnce(1);
+
+      const phase1Result = await service.autoAssignSeats('Admin');
+      expect(phase1Result.assignedGuests[0].tableId).toBe('dup-first');
+
+      // Phase 2 duplicate-name tie: 3-member household splits across two duplicate-name 2-seat tables
+      mockTxSeatingTableFindMany.mockResolvedValueOnce([
+        { id: 'dup-split-first', name: 'Garden Table', capacity: 2, invitationCodes: [] },
+        { id: 'dup-split-second', name: 'Garden Table', capacity: 2, invitationCodes: [] },
+      ]);
+      mockTxInvitationCodeFindMany.mockResolvedValueOnce([
+        { id: 'd1', guestName: 'Member 1', householdName: 'DupSplitFamily', tableId: null },
+        { id: 'd2', guestName: 'Member 2', householdName: 'DupSplitFamily', tableId: null },
+        { id: 'd3', guestName: 'Member 3', householdName: 'DupSplitFamily', tableId: null },
+      ]);
+      mockTxExecuteRaw.mockResolvedValueOnce(3);
+
+      const phase2Result = await service.autoAssignSeats('Admin');
+      const splitById = new Map(phase2Result.assignedGuests.map((g) => [g.id, g.tableId]));
+      // d1 sees tie (cap 2 vs cap 2) -> strict '>' keeps dup-split-first (leaving 1)
+      expect(splitById.get('d1')).toBe('dup-split-first');
+      // d2 sees cap 1 vs cap 2 -> picks dup-split-second (leaving 1)
+      expect(splitById.get('d2')).toBe('dup-split-second');
+      // d3 sees tie (cap 1 vs cap 1) -> strict '>' keeps dup-split-first
+      expect(splitById.get('d3')).toBe('dup-split-first');
+    });
+
+    it('filters by partyTags and partyGroup options while deduplicating normalized guest tags for affinity scoring', async () => {
+      mockTxSeatingTableFindMany.mockResolvedValueOnce([
+        {
+          id: 'tbl-single-tag',
+          name: 'Table B',
+          capacity: 4,
+          invitationCodes: [
+            { id: 'occ-1', guestName: 'VIP Seated', seatNumber: 1, partyTags: ['vip'] },
+          ],
+        },
+        {
+          id: 'tbl-two-tags',
+          name: 'Table A',
+          capacity: 4,
+          invitationCodes: [
+            { id: 'occ-2', guestName: 'Dual Tag Seated', seatNumber: 1, partyTags: ['bridal-party', 'college'] },
+          ],
+        },
+      ]);
+
+      mockTxInvitationCodeFindMany.mockResolvedValueOnce([
+        // Matches filter partyGroup 'bride side' and partyTags ('vip' / 'bridal-party');
+        // Repeated 'VIP' tags must deduplicate to +100 (not +300) so tbl-two-tags (+200 for bridal-party + college) wins!
+        {
+          id: 'g-match',
+          guestName: 'Matched Guest',
+          householdName: null,
+          partyGroup: ' Bride Side ',
+          partyTags: ['VIP', ' vip ', 'vip', 'Bridal-Party', 'College'],
+          tableId: null,
+        },
+        // Wrong partyGroup -> filtered out
+        {
+          id: 'g-wrong-group',
+          guestName: 'Wrong Group',
+          householdName: null,
+          partyGroup: 'Groom Side',
+          partyTags: ['vip'],
+          tableId: null,
+        },
+        // Non-matching partyTags -> filtered out
+        {
+          id: 'g-wrong-tags',
+          guestName: 'Wrong Tags',
+          householdName: null,
+          partyGroup: 'Bride Side',
+          partyTags: ['work-friends'],
+          tableId: null,
+        },
+      ]);
+
+      mockTxExecuteRaw.mockResolvedValueOnce(1);
+
+      const result = await service.autoAssignSeats('Admin', {
+        partyGroup: 'bride side',
+        partyTags: [' VIP ', 'bridal-party'],
+      });
+
+      expect(result.assignedCount).toBe(1);
+      expect(result.unassignedCount).toBe(0);
+      expect(result.assignedGuests).toHaveLength(1);
+      expect(result.assignedGuests[0].id).toBe('g-match');
+      expect(result.assignedGuests[0].tableId).toBe('tbl-two-tags');
+    });
   });
 
   describe('assignSeatsBatch & restoreSeatAssignments', () => {
