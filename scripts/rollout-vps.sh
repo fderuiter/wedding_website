@@ -62,8 +62,8 @@ resolve_setting() {
 
 PORT="$(resolve_setting PORT 3000)"
 STANDBY_PORT="$(resolve_setting STANDBY_PORT 3001)"
-ALLOWED_HOSTS_RESOLVED="$(resolve_setting ALLOWED_HOSTS 'localhost,127.0.0.1,*.localhost')"
 ROLLOUT_WAIT_SECONDS="${ROLLOUT_WAIT_SECONDS:-60}"
+ROLLOUT_POLL_INTERVAL="${ROLLOUT_POLL_INTERVAL:-0.5}"
 DB_WAIT_SECONDS="${DB_WAIT_SECONDS:-60}"
 STANDBY_DRAIN_SECONDS="${STANDBY_DRAIN_SECONDS:-6}"
 
@@ -77,24 +77,6 @@ if [ "${PORT}" = "${STANDBY_PORT}" ]; then
   exit 1
 fi
 
-resolve_probe_host() {
-  local raw_hosts="$1"
-  local IFS=','
-  read -ra entries <<< "${raw_hosts}"
-  for entry in "${entries[@]}"; do
-    local trimmed="${entry#"${entry%%[![:space:]]*}"}"
-    trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
-    trimmed="${trimmed#\*.}"
-    if [ -n "${trimmed}" ]; then
-      printf '%s' "${trimmed}"
-      return 0
-    fi
-  done
-  printf 'localhost'
-}
-
-PROBE_HOST="$(resolve_probe_host "${ALLOWED_HOSTS_RESOLVED}")"
-
 BASE_COMPOSE_ARGS=(-f docker-compose.yml)
 if [ -n "${COMPOSE_EXTRA_FILES:-}" ]; then
   IFS=':' read -ra extra_files <<< "${COMPOSE_EXTRA_FILES}"
@@ -107,6 +89,8 @@ fi
 ROLLOUT_COMPOSE_ARGS=("${BASE_COMPOSE_ARGS[@]}" -f docker-compose.rollout.yml)
 
 STANDBY_ACTIVE=false
+HAS_PREVIOUS_IMAGE=false
+ROLLOUT_PHASE="pre-cutover"
 
 retire_standby() {
   if [ "${STANDBY_ACTIVE}" = "true" ]; then
@@ -117,22 +101,36 @@ retire_standby() {
   fi
 }
 
-on_exit() {
-  local exit_code=$?
-  if [ "${STANDBY_ACTIVE}" = "true" ]; then
-    retire_standby
+restore_previous_image_tag() {
+  if [ "${HAS_PREVIOUS_IMAGE}" = "true" ] && docker image inspect wedding-website:previous >/dev/null 2>&1; then
+    echo "⏪ Restoring wedding-website:previous to wedding-website:latest..." >&2
+    docker tag wedding-website:previous wedding-website:latest
+    return $?
   fi
-  exit "${exit_code}"
+  return 1
 }
-trap on_exit EXIT INT TERM
+
+print_manual_recovery_commands() {
+  local base_args_display="${BASE_COMPOSE_ARGS[*]}"
+  local rollout_args_display="${ROLLOUT_COMPOSE_ARGS[*]}"
+  {
+    echo "⚠️  Keeping healthy standby container (app-standby) running on 127.0.0.1:${STANDBY_PORT} to continue serving failover traffic."
+    echo "🛠️  Manual recovery commands:"
+    echo "   1. Inspect primary failure logs:"
+    echo "      docker compose ${base_args_display} logs --tail=50 app"
+    echo "   2. Restore primary 'app' onto a known-good image:"
+    echo "      docker tag wedding-website:previous wedding-website:latest && docker compose ${base_args_display} up -d --no-deps --no-build --force-recreate app"
+    echo "   3. Once primary 'app' passes http://127.0.0.1:${PORT}/api/live and /api/ready, retire 'app-standby':"
+    echo "      docker compose ${rollout_args_display} stop app-standby && docker compose ${rollout_args_display} rm -f app-standby"
+  } >&2
+}
 
 probe_http_ok() {
   local url="$1"
-  local host_header="$2"
   if command -v curl >/dev/null 2>&1; then
-    curl -fsS --max-time 3 -H "Host: ${host_header}" -o /dev/null "${url}" 2>/dev/null
+    curl -fsS --max-time 3 -o /dev/null "${url}" 2>/dev/null
   else
-    node -e "fetch(process.argv[1],{headers:{Host:process.argv[2]},signal:AbortSignal.timeout(3000)}).then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" "${url}" "${host_header}"
+    node -e "fetch(process.argv[1],{signal:AbortSignal.timeout(3000)}).then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" "${url}"
   fi
 }
 
@@ -148,7 +146,7 @@ wait_for_service_probes() {
   local ready_url="http://127.0.0.1:${target_port}/api/ready"
   local deadline=$((SECONDS + timeout_sec))
 
-  echo "⏳ Waiting for ${label} on 127.0.0.1:${target_port} (Host: ${PROBE_HOST})..."
+  echo "⏳ Waiting for ${label} on 127.0.0.1:${target_port}..."
   while [ "${SECONDS}" -lt "${deadline}" ]; do
     local cid=""
     cid="$(docker compose "${compose_args[@]}" ps -q "${service_name}" 2>/dev/null || true)"
@@ -162,17 +160,94 @@ wait_for_service_probes() {
       fi
     fi
 
-    if probe_http_ok "${live_url}" "${PROBE_HOST}" && probe_http_ok "${ready_url}" "${PROBE_HOST}"; then
+    if probe_http_ok "${live_url}" && probe_http_ok "${ready_url}"; then
       echo "✅ ${label} passed /api/live and /api/ready probes on 127.0.0.1:${target_port}."
       return 0
     fi
-    sleep 0.5
+    sleep "${ROLLOUT_POLL_INTERVAL}"
   done
 
   echo "❌ Timed out after ${timeout_sec}s waiting for ${label} probes (${live_url}, ${ready_url})." >&2
   docker compose "${compose_args[@]}" logs --tail=50 "${service_name}" >&2 || true
   return 1
 }
+
+ACTIVE_SLEEP_PID=""
+
+interruptible_sleep() {
+  local duration="$1"
+  sleep "${duration}" </dev/null >/dev/null 2>&1 &
+  ACTIVE_SLEEP_PID=$!
+  if wait "${ACTIVE_SLEEP_PID}" 2>/dev/null; then
+    ACTIVE_SLEEP_PID=""
+    return 0
+  fi
+  kill "${ACTIVE_SLEEP_PID}" 2>/dev/null || true
+  wait "${ACTIVE_SLEEP_PID}" 2>/dev/null || true
+  ACTIVE_SLEEP_PID=""
+  return 1
+}
+
+on_exit() {
+  local exit_code=$?
+  trap - EXIT
+  trap '' INT TERM
+  set +e
+  if [ -n "${ACTIVE_SLEEP_PID:-}" ]; then
+    kill "${ACTIVE_SLEEP_PID}" 2>/dev/null || true
+    wait "${ACTIVE_SLEEP_PID}" 2>/dev/null || true
+    ACTIVE_SLEEP_PID=""
+  fi
+
+  if [ "${exit_code}" -eq 0 ]; then
+    if [ "${STANDBY_ACTIVE}" = "true" ]; then
+      retire_standby
+    fi
+    exit 0
+  fi
+
+  case "${ROLLOUT_PHASE}" in
+    pre-cutover)
+      if [ "${STANDBY_ACTIVE}" = "true" ]; then
+        echo "⚠️  Rollout aborted before primary cutover; retiring standby slot and leaving primary 'app' running..." >&2
+        retire_standby
+      fi
+      restore_previous_image_tag || true
+      ;;
+    cutover)
+      echo "🚨 Primary cutover failed while standby slot 'app-standby' is serving traffic on 127.0.0.1:${STANDBY_PORT}." >&2
+      if [ "${HAS_PREVIOUS_IMAGE}" = "true" ] && docker image inspect wedding-website:previous >/dev/null 2>&1; then
+        echo "🔄 Attempting automatic primary rollback onto wedding-website:previous before retiring standby..." >&2
+        if docker tag wedding-website:previous wedding-website:latest &&
+          docker compose "${ROLLOUT_COMPOSE_ARGS[@]}" up -d --no-deps --no-build --force-recreate app &&
+          wait_for_service_probes "rolled-back primary service (app)" "app" "${PORT}" "${ROLLOUT_WAIT_SECONDS}" "${ROLLOUT_COMPOSE_ARGS[@]}"; then
+          if [ "${STANDBY_DRAIN_SECONDS}" -gt 0 ] 2>/dev/null; then
+            echo "⏳ Waiting ${STANDBY_DRAIN_SECONDS}s for reverse proxy failback to rolled-back primary 127.0.0.1:${PORT}..." >&2
+            sleep "${STANDBY_DRAIN_SECONDS}"
+          fi
+          retire_standby
+          echo "✅ Automatic primary rollback to wedding-website:previous succeeded on 127.0.0.1:${PORT}; 'app-standby' retired." >&2
+        else
+          echo "❌ Automatic primary rollback onto wedding-website:previous failed." >&2
+          print_manual_recovery_commands
+        fi
+      else
+        echo "⚠️  Rollback tag wedding-website:previous is unavailable; skipping automatic primary rollback." >&2
+        print_manual_recovery_commands
+      fi
+      ;;
+    completed)
+      if [ "${STANDBY_ACTIVE}" = "true" ]; then
+        retire_standby
+      fi
+      ;;
+  esac
+
+  exit "${exit_code}"
+}
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap on_exit EXIT
 
 wait_for_db_healthy() {
   local deadline=$((SECONDS + DB_WAIT_SECONDS))
@@ -203,12 +278,20 @@ echo "🚀 Starting zero-downtime standby loopback rollout (primary=127.0.0.1:${
 # 1. Ensure PostgreSQL is running and healthy
 wait_for_db_healthy
 
-# 2. Build wedding-website:latest once via sole build owner `app`
+# 2. Snapshot rollback tag and build wedding-website:latest once via sole build owner `app`
 if [ "${SKIP_IMAGE_BUILD:-false}" != "true" ]; then
+  if docker image inspect wedding-website:latest >/dev/null 2>&1; then
+    echo "🏷️  Tagging existing wedding-website:latest as wedding-website:previous for rollback..."
+    docker tag wedding-website:latest wedding-website:previous
+    HAS_PREVIOUS_IMAGE=true
+  fi
   echo "🔨 Building wedding-website:latest once via service 'app'..."
   docker compose "${BASE_COMPOSE_ARGS[@]}" build app
 else
   echo "⏭️  Skipping image build (SKIP_IMAGE_BUILD=true)."
+  if docker image inspect wedding-website:previous >/dev/null 2>&1; then
+    HAS_PREVIOUS_IMAGE=true
+  fi
 fi
 
 # 3. Apply pending Prisma schema migrations offline before starting updated containers
@@ -224,17 +307,19 @@ docker compose "${ROLLOUT_COMPOSE_ARGS[@]}" up -d --no-deps --no-build --force-r
 wait_for_service_probes "standby slot (app-standby)" "app-standby" "${STANDBY_PORT}" "${ROLLOUT_WAIT_SECONDS}" "${ROLLOUT_COMPOSE_ARGS[@]}"
 
 # 6. Recreate primary `app` container while reverse proxy fails over to standby
+ROLLOUT_PHASE="cutover"
 echo "🔄 Updating primary service 'app' on 127.0.0.1:${PORT}:3000..."
 docker compose "${ROLLOUT_COMPOSE_ARGS[@]}" up -d --no-deps --no-build --force-recreate app
 
 # 7. Verify primary `app` liveness and readiness before retiring standby
 wait_for_service_probes "primary service (app)" "app" "${PORT}" "${ROLLOUT_WAIT_SECONDS}" "${ROLLOUT_COMPOSE_ARGS[@]}"
+ROLLOUT_PHASE="completed"
 
 # Allow host reverse proxy fail_timeout / fail_duration window to expire and
 # drain active connections back to primary `127.0.0.1:${PORT}` before stopping standby
 if [ "${STANDBY_DRAIN_SECONDS}" -gt 0 ] 2>/dev/null; then
   echo "⏳ Waiting ${STANDBY_DRAIN_SECONDS}s for reverse proxy failback to primary 127.0.0.1:${PORT}..."
-  sleep "${STANDBY_DRAIN_SECONDS}"
+  interruptible_sleep "${STANDBY_DRAIN_SECONDS}"
 fi
 
 # 8. Stop and remove standby slot
