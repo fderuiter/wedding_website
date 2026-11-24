@@ -39,6 +39,13 @@ import {
   installDemoFetchInterceptor as noopInstallDemoFetchInterceptor,
   primeDemoRuntimeForMount as noopPrimeDemoRuntimeForMount,
 } from '../demoApiHandler.noop';
+import * as noopDemoContext from '@/components/demo/DemoContext.noop';
+import * as noopDemoToolbar from '@/components/demo/DemoToolbar.noop';
+import * as noopDemoSetupSlot from '@/components/demo/DemoSetupSlot.noop';
+import * as noopDemoSeed from '../demoSeed.noop';
+import * as noopDemoStore from '../demoStore.noop';
+import { createElement } from 'react';
+import { render, screen } from '@testing-library/react';
 import { DatabaseBackupSchema, formatZodIssues, reviveDates } from '@/utils/backupValidation';
 import { isDemoRuntimeFlagActive } from '../runtimeFlag';
 import { buildRegistryEditItemHref as buildRegistryEditItemHrefDirect } from '@/lib/sampleData/registryEditHref';
@@ -1902,5 +1909,164 @@ describe('jsdom-env.cjs Node timer handles, pg.Pool allowExitOnIdle, and unref()
     globalState.pgPool = savedPrismaState.pgPool;
     globalState.prismaShutdownRegistered = savedPrismaState.prismaShutdownRegistered;
     globalState.prismaShutdownPromise = savedPrismaState.prismaShutdownPromise;
+  });
+
+  it('matches runtime export signatures across all standalone .noop.ts demo stubs and returns inert values', async () => {
+    const _contextParity: typeof import('@/components/demo/DemoContext') = noopDemoContext;
+    const _toolbarParity: typeof import('@/components/demo/DemoToolbar') = noopDemoToolbar;
+    const _setupSlotParity: typeof import('@/components/demo/DemoSetupSlot') = noopDemoSetupSlot;
+    const _seedParity: typeof import('../demoSeed') = noopDemoSeed;
+    const _storeParity: typeof import('../demoStore') = noopDemoStore;
+
+    expect(_contextParity.useOptionalDemo()).toBeNull();
+    expect(_toolbarParity.DemoToolbar()).toBeNull();
+    expect(
+      _setupSlotParity.DemoSetupSlot({
+        className: 'pb-28',
+        resetCounter: 1,
+        onDemoComplete: () => {},
+      })
+    ).toBeNull();
+
+    const { unmount } = render(
+      createElement(_contextParity.DemoProvider, {
+        enabled: true,
+        children: createElement('span', { 'data-testid': 'noop-provider-child' }, 'Standalone Child'),
+      })
+    );
+    expect(screen.getByTestId('noop-provider-child')).toHaveTextContent('Standalone Child');
+    unmount();
+
+    expect(_seedParity.DEMO_SHIPPING_ADDRESS.recipientName).toBe('');
+    expect(_seedParity.createSampleItemSvgDataUrl('Mixer', 'Kitchen')).toBe('');
+    const emptySeed = _seedParity.buildArchetypeDataset('classic');
+    expect(emptySeed.registryItems).toEqual([]);
+    expect(emptySeed.guests).toEqual([]);
+    expect(emptySeed.modules.registry).toBe(false);
+
+    const uploaded = await _storeParity.encodeDemoUploadedFile(new Blob(['img'], { type: 'image/png' }));
+    expect(uploaded).toEqual({
+      url: '',
+      persistentUrl: '',
+      isSessionBlob: false,
+      sizeBytes: 0,
+      mimeType: 'image/jpeg',
+    });
+
+    expect(() => _storeParity.hydrateDemoStateFromStorage()).not.toThrow();
+    expect(() => _storeParity.setDemoRuntimeActive(true)).not.toThrow();
+    expect(_storeParity.isDemoRuntimeActive()).toBe(false);
+    expect(_storeParity.isDemoAdminSession()).toBe(false);
+
+    const noopState = _storeParity.getDemoState();
+    expect(noopState.persona).toBe('guest');
+    expect(noopState.datasets.classic.registryItems).toEqual([]);
+    expect(_storeParity.getDemoState()).toBe(noopState);
+
+    const unsub = _storeParity.subscribeDemoState(() => {});
+    expect(() => unsub()).not.toThrow();
+
+    expect(() => _storeParity.setDemoPersona('admin')).not.toThrow();
+    expect(() => _storeParity.setDemoArchetype('destination')).not.toThrow();
+    expect(() => _storeParity.setDemoThemePreset('modern')).not.toThrow();
+    expect(() => _storeParity.setDemoToolbarCollapsed(true)).not.toThrow();
+    expect(() => _storeParity.setDemoSetupAuthenticated(true)).not.toThrow();
+    expect(() => _storeParity.updateDemoConfigOverrides({ partner1Name: 'A' })).not.toThrow();
+    expect(() => _storeParity.applyDemoSampleSelection('romantic', ['registry'])).not.toThrow();
+    expect(() => _storeParity.purgeDemoSampleData()).not.toThrow();
+    expect(() => _storeParity.resetDemoState()).not.toThrow();
+
+    expect(_storeParity.getActiveArchetypeDataset().registryItems).toEqual([]);
+    expect(_storeParity.findDemoGuestByCode('SMITH2026')).toBeNull();
+    expect(() => _storeParity.setDemoGuestSession(null)).not.toThrow();
+    expect(_storeParity.updateDemoGuestAddress('SMITH2026', { city: 'Chicago' })).toBeNull();
+    expect(_storeParity.resolveDemoRegistryItemIdAlias([], '1')).toBeNull();
+    expect(
+      _storeParity.recordDemoContribution({
+        itemId: '1',
+        purchaserName: 'Guest',
+        amount: 50,
+      })
+    ).toBeNull();
+    expect(_storeParity.previewDemoClaimToken('tok')).toBeNull();
+    expect(_storeParity.processDemoClaimToken('tok')).toBeNull();
+    expect(() => _storeParity.mutateActiveDataset((curr) => curr)).not.toThrow();
+    expect(_storeParity.getEffectiveDemoSettings()).toEqual({});
+    expect(_storeParity.getDemoContentNodes(emptySeed)).toEqual([]);
+
+    expect(_storeParity.recordDemoAuditVersion('AppConfig', 'global', 'UPDATE', 'Changed')).toMatchObject({
+      entityType: 'AppConfig',
+      entityId: 'global',
+      action: 'UPDATE',
+      summary: 'Changed',
+      createdBy: 'Admin',
+    });
+    expect(
+      _storeParity.recordDemoAuditVersion({
+        entityType: 'RegistryItem',
+        entityId: 'item-1',
+        action: 'CREATE',
+        summary: 'Added item',
+        data: { price: 100 },
+        createdBy: 'Couple',
+      })
+    ).toMatchObject({
+      entityType: 'RegistryItem',
+      entityId: 'item-1',
+      action: 'CREATE',
+      summary: 'Added item',
+      createdBy: 'Couple',
+      data: { price: 100 },
+    });
+    expect(_storeParity.restoreDemoAuditVersion('v1')).toBeNull();
+    expect(_storeParity.buildDemoDatabaseBackup()).toEqual({});
+    expect(_storeParity.importDemoDatabaseBackup({})).toEqual({ importedCounts: {} });
+  });
+
+  it('defers dataset construction in demoStore and DemoContext at module load and when DemoProvider has enabled=false', async () => {
+    let buildCalls = 0;
+
+    await jest.isolateModulesAsync(async () => {
+      const actualSeed = jest.requireActual<typeof import('../demoSeed')>('../demoSeed');
+      jest.doMock('../demoSeed', () => ({
+        ...actualSeed,
+        buildArchetypeDataset: jest.fn((...args: Parameters<typeof actualSeed.buildArchetypeDataset>) => {
+          buildCalls += 1;
+          return actualSeed.buildArchetypeDataset(...args);
+        }),
+      }));
+      jest.doMock('@/lib/demo/demoSeed', () => ({
+        ...actualSeed,
+        buildArchetypeDataset: jest.fn((...args: Parameters<typeof actualSeed.buildArchetypeDataset>) => {
+          buildCalls += 1;
+          return actualSeed.buildArchetypeDataset(...args);
+        }),
+      }));
+
+      const isolatedStore = await import('../demoStore');
+      const isolatedContext = await import('@/components/demo/DemoContext');
+
+      // Importing demoStore and DemoContext builds zero archetype datasets
+      expect(buildCalls).toBe(0);
+
+      // Rendering DemoProvider with enabled={false} builds zero archetype datasets
+      const { unmount } = render(
+        createElement(isolatedContext.DemoProvider, {
+          enabled: false,
+          children: createElement('div', { 'data-testid': 'disabled-demo-child' }, 'Live Site'),
+        })
+      );
+      expect(screen.getByTestId('disabled-demo-child')).toHaveTextContent('Live Site');
+      expect(buildCalls).toBe(0);
+      unmount();
+
+      // Reading an active archetype dataset builds only that single archetype on demand
+      const active = isolatedStore.getActiveArchetypeDataset();
+      expect(active.registryItems.length).toBeGreaterThan(0);
+      expect(buildCalls).toBe(1);
+    });
+
+    jest.dontMock('../demoSeed');
+    jest.dontMock('@/lib/demo/demoSeed');
   });
 });

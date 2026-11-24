@@ -45,7 +45,7 @@ import {
   type DemoPersona,
   type DemoStoreState,
 } from '@/lib/demo/demoStore';
-import { DemoContext, type DemoContextValue } from './DemoContext';
+import type { DemoContextValue } from './DemoContext';
 
 const useIsomorphicLayoutEffect =
   typeof window !== 'undefined' ? useLayoutEffect : useEffect;
@@ -59,8 +59,10 @@ function getServerDemoSnapshot(): DemoStoreState {
 }
 
 export default function ActiveDemoProvider({
+  context: Context,
   children,
 }: {
+  context: React.Context<DemoContextValue | null>;
   children: React.ReactNode;
 }) {
   const queryClient = useQueryClient();
@@ -295,6 +297,6 @@ export default function ActiveDemoProvider({
   );
 
   return (
-    <DemoContext.Provider value={contextValue}>{children}</DemoContext.Provider>
+    <Context.Provider value={contextValue}>{children}</Context.Provider>
   );
 }

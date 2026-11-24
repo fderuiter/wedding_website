@@ -68,6 +68,11 @@ const nextConfig: NextConfig = {
         resolveAlias: {
           '@/lib/staticDemo/runtime': './src/lib/staticDemo/runtime.noop.ts',
           '@/lib/demo/demoApiHandler': './src/lib/demo/demoApiHandler.noop.ts',
+          '@/components/demo/DemoContext': './src/components/demo/DemoContext.noop.ts',
+          '@/components/demo/DemoToolbar': './src/components/demo/DemoToolbar.noop.ts',
+          '@/components/demo/DemoSetupSlot': './src/components/demo/DemoSetupSlot.noop.ts',
+          '@/lib/demo/demoStore': './src/lib/demo/demoStore.noop.ts',
+          '@/lib/demo/demoSeed': './src/lib/demo/demoSeed.noop.ts',
         },
       }
       : {}),
