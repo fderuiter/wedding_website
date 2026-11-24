@@ -552,5 +552,34 @@ describe('Admin Photo Moderation Routes', () => {
       expect(json.succeededCount).toBe(2);
       expect(mockContentService.moderatePhotosBatch).toHaveBeenCalledWith(['p1', 'p2'], 'approve', 'Admin');
     });
+
+    it('returns 200 with ordered per-item results and accurate counts on mixed valid and missing IDs', async () => {
+      const mixedBatchResult = {
+        total: 3,
+        succeededCount: 2,
+        failedCount: 1,
+        results: [
+          { id: 'p-valid-1', success: true, action: 'reject', data: { id: 'p-valid-1', deleted: true, status: 'REJECTED' } },
+          { id: 'p-missing', success: false, action: 'reject', error: 'Photo node with ID p-missing not found' },
+          { id: 'p-valid-2', success: true, action: 'reject', data: { id: 'p-valid-2', deleted: true, status: 'REJECTED' } },
+        ],
+      };
+      (mockContentService.moderatePhotosBatch as jest.Mock).mockResolvedValueOnce(mixedBatchResult);
+
+      const req = new NextRequest('http://localhost:3000/api/admin/photos/moderation/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: ['p-valid-1', 'p-missing', 'p-valid-2'], action: 'reject' }),
+      });
+      const res = await postBatchModeration(req);
+      const json = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(json.success).toBe(true);
+      expect(json.total).toBe(3);
+      expect(json.succeededCount).toBe(2);
+      expect(json.failedCount).toBe(1);
+      expect(json.results).toEqual(mixedBatchResult.results);
+    });
   });
 });

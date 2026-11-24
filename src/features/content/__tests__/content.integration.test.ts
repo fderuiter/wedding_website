@@ -440,4 +440,344 @@ describe('Content Domain Database Integration', () => {
     const bounded = await contentSvc.getPublicPhotos({ limit: 2 });
     expect(bounded.map((n) => n.id)).toEqual(['photo-published-entity', 'photo-older-curated']);
   });
+
+  test('moderatePhotosBatch executes 1 transaction, 0 pool waiters, < 10 SQL statements, bulk audit snapshots, and 1 prune query across 100-photo approve and reject batches on a 5-connection pg.Pool', async () => {
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    const { prisma: singletonPrisma } = await import('@/lib/prisma');
+    const globalRef = globalThis as { prisma?: unknown };
+    const prevGlobalPrisma = globalRef.prisma;
+
+    const cappedPool = new Pool({ connectionString, max: 5 });
+    const wireQueries: string[] = [];
+    let maxPoolWaiters = 0;
+
+    const wrapClientQuery = (client: { query?: (...args: any[]) => any; __wireWrapped?: boolean }) => {
+      if (!client || typeof client.query !== 'function' || client.__wireWrapped) return;
+      client.__wireWrapped = true;
+      const origQuery = client.query.bind(client);
+      client.query = (...args: any[]) => {
+        if (cappedPool.waitingCount > maxPoolWaiters) {
+          maxPoolWaiters = cappedPool.waitingCount;
+        }
+        const first = args[0];
+        const sqlText =
+          typeof first === 'string'
+            ? first
+            : first && typeof first === 'object' && typeof first.text === 'string'
+              ? first.text
+              : '';
+        if (sqlText) {
+          wireQueries.push(sqlText.trim());
+        }
+        return origQuery(...args);
+      };
+    };
+
+    cappedPool.on('connect', (client) => {
+      wrapClientQuery(client as any);
+    });
+    cappedPool.on('acquire', () => {
+      if (cappedPool.waitingCount > maxPoolWaiters) {
+        maxPoolWaiters = cappedPool.waitingCount;
+      }
+    });
+
+    const cappedPrisma = new PrismaClient({ adapter: new PrismaPg(cappedPool) });
+    const cappedContentRepo = new ContentRepository(cappedPrisma);
+    const cappedContentSvc = new ContentService(cappedContentRepo);
+
+    // Route pruneSnapshotsBulk raw queries through cappedPrisma so post-commit pruning is captured on wireQueries
+    const origExecuteRaw = singletonPrisma.$executeRaw?.bind(singletonPrisma);
+    (singletonPrisma as any).$executeRaw = cappedPrisma.$executeRaw.bind(cappedPrisma);
+    globalRef.prisma = cappedPrisma;
+
+    const uploadsPhotosDir = path.join(process.cwd(), 'public', 'uploads', 'photos');
+    await fs.mkdir(uploadsPhotosDir, { recursive: true });
+    const createdFiles: string[] = [];
+
+    try {
+      // Seed 100 pending guest photos + 100 Media rows + files on disk (with some shared URLs to verify deduplication)
+      const batchSize = 100;
+      const mediaData = [];
+      const nodeData = [];
+      for (let i = 0; i < batchSize; i++) {
+        const fileIdx = i < 95 ? i : 95; // last 5 share one blob URL
+        const filename = `__wire_bench_${process.pid}_${fileIdx}.jpg`;
+        const absPath = path.join(uploadsPhotosDir, filename);
+        if (i <= 95) {
+          await fs.writeFile(absPath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+          createdFiles.push(absPath);
+        }
+        const mediaId = `bench-media-${i}`;
+        const photoId = `bench-photo-${i}`;
+        const url = `/uploads/photos/${filename}`;
+        mediaData.push({
+          id: mediaId,
+          url,
+          altText: `Guest Upload ${i}`,
+          isDecorative: false,
+        });
+        nodeData.push({
+          id: photoId,
+          type: 'Photo',
+          tags: ['gallery', 'guest-upload'],
+          data: {
+            url,
+            title: `Guest Upload ${i}`,
+            altText: `Guest Upload ${i}`,
+            mediaId,
+            status: 'PENDING',
+            isVisible: false,
+          },
+        });
+      }
+
+      await realPrisma.media.createMany({ data: mediaData });
+      await realPrisma.contentNode.createMany({ data: nodeData });
+
+      const allPhotoIds = nodeData.map((n) => n.id);
+
+      // Warm up active pool connection so cold TCP handshake is not counted as a contention waiter
+      await cappedPrisma.$queryRaw`SELECT 1`;
+
+      // 1. Measure 100-photo Batch Approve
+      wireQueries.length = 0;
+      maxPoolWaiters = 0;
+
+      const approveRes = await cappedContentSvc.moderatePhotosBatch(
+        allPhotoIds,
+        'approve',
+        'WireBenchAdmin'
+      );
+      // Flush microtasks for post-commit pruneSnapshotsBulk
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const approveBegins = wireQueries.filter((q) => /^BEGIN\b/i.test(q));
+      const approvePrunes = wireQueries.filter(
+        (q) => /DELETE\s+FROM/i.test(q) && /SnapshotVersion/i.test(q)
+      );
+
+      expect(approveRes.total).toBe(100);
+      expect(approveRes.succeededCount).toBe(100);
+      expect(approveRes.failedCount).toBe(0);
+      expect(approveRes.results.map((r) => r.id)).toEqual(allPhotoIds);
+      expect(approveBegins).toHaveLength(1);
+      expect(maxPoolWaiters).toBe(0);
+      expect(wireQueries.length).toBeLessThan(10);
+      expect(approvePrunes).toHaveLength(1);
+
+      const approveSnapshots = await realPrisma.snapshotVersion.count({
+        where: { entityType: 'ContentNode', author: 'WireBenchAdmin' },
+      });
+      expect(approveSnapshots).toBe(100);
+      expect(await cappedContentSvc.getPublicPhotos({ limit: 100 })).toHaveLength(100);
+
+      // 2. Measure 100-photo Batch Reject
+      wireQueries.length = 0;
+      maxPoolWaiters = 0;
+
+      const rejectRes = await cappedContentSvc.moderatePhotosBatch(
+        allPhotoIds,
+        'reject',
+        'WireBenchRejectAdmin'
+      );
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const rejectBegins = wireQueries.filter((q) => /^BEGIN\b/i.test(q));
+      const rejectPrunes = wireQueries.filter(
+        (q) => /DELETE\s+FROM/i.test(q) && /SnapshotVersion/i.test(q)
+      );
+
+      expect(rejectRes.total).toBe(100);
+      expect(rejectRes.succeededCount).toBe(100);
+      expect(rejectRes.failedCount).toBe(0);
+      expect(rejectRes.results.map((r) => r.id)).toEqual(allPhotoIds);
+      expect(rejectBegins).toHaveLength(1);
+      expect(maxPoolWaiters).toBe(0);
+      expect(wireQueries.length).toBeLessThan(10);
+      expect(rejectPrunes).toHaveLength(1);
+
+      expect(await realPrisma.contentNode.count({ where: { id: { in: allPhotoIds } } })).toBe(0);
+      expect(
+        await realPrisma.media.count({ where: { id: { in: mediaData.map((m) => m.id) } } })
+      ).toBe(0);
+
+      const deletedNodeSnapshots = await realPrisma.snapshotVersion.count({
+        where: { entityType: 'ContentNode', author: 'WireBenchRejectAdmin' },
+      });
+      const deletedMediaSnapshots = await realPrisma.snapshotVersion.count({
+        where: { entityType: 'Media', author: 'WireBenchRejectAdmin' },
+      });
+      expect(deletedNodeSnapshots).toBe(100);
+      expect(deletedMediaSnapshots).toBe(100);
+
+      // Verify all 96 distinct local storage files were unlinked after commit
+      for (const filePath of createdFiles) {
+        await expect(fs.access(filePath)).rejects.toThrow();
+      }
+    } finally {
+      if (origExecuteRaw) {
+        (singletonPrisma as any).$executeRaw = origExecuteRaw;
+      }
+      globalRef.prisma = prevGlobalPrisma;
+      for (const filePath of createdFiles) {
+        await fs.rm(filePath, { force: true });
+      }
+      await cappedPrisma.$disconnect();
+      await cappedPool.end();
+    }
+  });
+
+  test('batch and single rejections preserve entity-bound media, out-of-root files, and input order while skipping redundant deleteNode transactions', async () => {
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    const uploadsPhotosDir = path.join(process.cwd(), 'public', 'uploads', 'photos');
+    await fs.mkdir(uploadsPhotosDir, { recursive: true });
+
+    const boundFile = path.join(uploadsPhotosDir, `__bound_keep_${process.pid}.jpg`);
+    const guestFile = path.join(uploadsPhotosDir, `__guest_remove_${process.pid}.jpg`);
+    const singleFile = path.join(uploadsPhotosDir, `__single_remove_${process.pid}.jpg`);
+    const canaryName = `__batch_canary_${process.pid}.txt`;
+    const canaryPath = path.resolve(process.cwd(), canaryName);
+
+    await Promise.all([
+      fs.writeFile(boundFile, Buffer.from([0xff, 0xd8, 0xff, 0xd9])),
+      fs.writeFile(guestFile, Buffer.from([0xff, 0xd8, 0xff, 0xd9])),
+      fs.writeFile(singleFile, Buffer.from([0xff, 0xd8, 0xff, 0xd9])),
+      fs.writeFile(canaryPath, 'KEEP_OUTSIDE_PUBLIC\n', 'utf8'),
+    ]);
+
+    try {
+      const [registryMedia, guestMedia, singleMedia] = await Promise.all([
+        realPrisma.media.create({
+          data: {
+            id: 'it-media-bound',
+            url: `/uploads/photos/__bound_keep_${process.pid}.jpg`,
+            altText: 'Registry Stand Mixer',
+          },
+        }),
+        realPrisma.media.create({
+          data: {
+            id: 'it-media-guest',
+            url: `/uploads/photos/__guest_remove_${process.pid}.jpg`,
+            altText: 'Guest Dance Photo',
+          },
+        }),
+        realPrisma.media.create({
+          data: {
+            id: 'it-media-single',
+            url: `/uploads/photos/__single_remove_${process.pid}.jpg`,
+            altText: 'Single Guest Photo',
+          },
+        }),
+      ]);
+
+      await realPrisma.registryItem.create({
+        data: {
+          name: 'Stand Mixer',
+          description: 'bound to registry',
+          category: 'Kitchen',
+          price: 300,
+          imageId: registryMedia.id,
+        },
+      });
+
+      await realPrisma.contentNode.createMany({
+        data: [
+          {
+            id: 'it-photo-bound',
+            type: 'Photo',
+            tags: ['gallery'],
+            data: {
+              url: registryMedia.url,
+              mediaId: registryMedia.id,
+              status: 'PENDING',
+              isVisible: false,
+            },
+          },
+          {
+            id: 'it-photo-guest',
+            type: 'Photo',
+            tags: ['gallery', 'guest-upload'],
+            data: {
+              url: guestMedia.url,
+              mediaId: guestMedia.id,
+              status: 'PENDING',
+              isVisible: false,
+            },
+          },
+          {
+            id: 'it-photo-canary',
+            type: 'Photo',
+            tags: ['gallery'],
+            data: {
+              url: `/../${canaryName}`,
+              status: 'PENDING',
+              isVisible: false,
+            },
+          },
+          {
+            id: 'it-photo-single',
+            type: 'Photo',
+            tags: ['gallery', 'guest-upload'],
+            data: {
+              url: singleMedia.url,
+              mediaId: singleMedia.id,
+              status: 'PENDING',
+              isVisible: false,
+            },
+          },
+        ],
+      });
+
+      const deleteNodeSpy = jest.spyOn(contentRepo, 'deleteNode');
+
+      // 1. Single-photo rejection skips redundant ContentRepository.deleteNode after deleteMedia already removed the Photo node
+      const singleRes = await contentSvc.moderatePhoto('it-photo-single', 'reject', 'AdminSingle');
+      expect(singleRes).toEqual({ id: 'it-photo-single', deleted: true, status: 'REJECTED' });
+      expect(deleteNodeSpy).not.toHaveBeenCalled();
+      expect(await realPrisma.contentNode.findUnique({ where: { id: 'it-photo-single' } })).toBeNull();
+      expect(await realPrisma.media.findUnique({ where: { id: singleMedia.id } })).toBeNull();
+      await expect(fs.access(singleFile)).rejects.toThrow();
+
+      // 2. Mixed batch rejection preserves input order, keeps entity-bound media + canary file intact, and removes guest photo/media
+      const batchRes = await contentSvc.moderatePhotosBatch(
+        ['it-photo-canary', 'missing-photo-id', 'it-photo-bound', 'it-photo-guest'],
+        'reject',
+        'AdminMixedBatch'
+      );
+
+      expect(deleteNodeSpy).not.toHaveBeenCalled();
+      expect(batchRes.total).toBe(4);
+      expect(batchRes.succeededCount).toBe(3);
+      expect(batchRes.failedCount).toBe(1);
+      expect(batchRes.results.map((r) => ({ id: r.id, success: r.success }))).toEqual([
+        { id: 'it-photo-canary', success: true },
+        { id: 'missing-photo-id', success: false },
+        { id: 'it-photo-bound', success: true },
+        { id: 'it-photo-guest', success: true },
+      ]);
+
+      // Entity-bound Media row and its file remain intact while its Photo node was removed
+      expect(await realPrisma.media.findUnique({ where: { id: registryMedia.id } })).not.toBeNull();
+      await expect(fs.access(boundFile)).resolves.toBeUndefined();
+
+      // Unreferenced guest Media row and its file were removed
+      expect(await realPrisma.media.findUnique({ where: { id: guestMedia.id } })).toBeNull();
+      await expect(fs.access(guestFile)).rejects.toThrow();
+
+      // Out-of-root canary file outside public/uploads was NOT unlinked
+      expect(await fs.readFile(canaryPath, 'utf8')).toBe('KEEP_OUTSIDE_PUBLIC\n');
+
+      deleteNodeSpy.mockRestore();
+    } finally {
+      await Promise.all([
+        fs.rm(boundFile, { force: true }),
+        fs.rm(guestFile, { force: true }),
+        fs.rm(singleFile, { force: true }),
+        fs.rm(canaryPath, { force: true }),
+      ]);
+    }
+  });
 });

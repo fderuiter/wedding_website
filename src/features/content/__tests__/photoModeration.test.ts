@@ -4,9 +4,16 @@ import { ContentService } from '../service';
 import { IContentRepository } from '../types';
 
 describe('Photo Moderation Service & Visibility Rules', () => {
-  let mockRepo: jest.Mocked<Omit<Required<IContentRepository>, 'getPendingPhotos' | 'getPublicPhotos'>> & {
+  let mockRepo: jest.Mocked<
+    Omit<
+      Required<IContentRepository>,
+      'getPendingPhotos' | 'getPublicPhotos' | 'approvePhotosBatch' | 'rejectPhotosBatch'
+    >
+  > & {
     getPendingPhotos?: jest.Mock;
     getPublicPhotos?: jest.Mock;
+    approvePhotosBatch?: jest.Mock;
+    rejectPhotosBatch?: jest.Mock;
   };
   let service: ContentService;
 
@@ -344,6 +351,88 @@ describe('Photo Moderation Service & Visibility Rules', () => {
         expect(result.deleted).toBe(true);
         expect(deleteMediaSpy).toHaveBeenCalledWith('media-dedup-1', 'AdminUser');
         expect(directStorageDelete).not.toHaveBeenCalled();
+        expect(mockRepo.deleteNode).not.toHaveBeenCalled();
+      } finally {
+        deleteMediaSpy.mockRestore();
+        directStorageDelete.mockRestore();
+        resetStorageProvider();
+      }
+    });
+
+    it('still calls deleteNode when deleteMedia succeeded without removing the target photo node', async () => {
+      const mediaFeature = await import('@/features/media');
+      const mediaResult = {
+        id: 'media-unlinked-1',
+        url: '/uploads/photos/unlinked.jpg',
+        altText: 'Unlinked',
+        isDecorative: false,
+        isSample: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      Object.defineProperty(mediaResult, 'deletedNodeIds', {
+        value: ['other-photo-node'],
+        enumerable: false,
+      });
+      const deleteMediaSpy = jest
+        .spyOn(mediaFeature.mediaRepository, 'deleteMedia')
+        .mockResolvedValueOnce(mediaResult);
+
+      try {
+        mockRepo.getNodeById!.mockResolvedValueOnce({
+          id: 'photo-still-present',
+          type: 'Photo' as const,
+          tags: ['gallery', 'guest-upload'],
+          data: {
+            url: '/uploads/photos/unlinked.jpg',
+            mediaId: 'media-unlinked-1',
+            status: 'PENDING',
+            isVisible: false,
+          },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+        mockRepo.deleteNode!.mockResolvedValueOnce(undefined);
+
+        const result = await service.moderatePhoto('photo-still-present', 'reject', 'AdminUser');
+        expect(result.deleted).toBe(true);
+        expect(mockRepo.deleteNode).toHaveBeenCalledWith('photo-still-present', 'AdminUser');
+      } finally {
+        deleteMediaSpy.mockRestore();
+      }
+    });
+
+    it('preserves entity-bound media and storage blobs when rejecting a photo linked to a registry or party record', async () => {
+      const mediaFeature = await import('@/features/media');
+      const { LocalStorageProvider, resetStorageProvider } = await import('@/utils/storage');
+      resetStorageProvider();
+      const deleteMediaSpy = jest.spyOn(mediaFeature.mediaRepository, 'deleteMedia');
+      const directStorageDelete = jest
+        .spyOn(LocalStorageProvider.prototype, 'delete')
+        .mockResolvedValue(undefined);
+
+      try {
+        mockRepo.getEntityBoundMediaIds.mockResolvedValueOnce(new Set(['media-bound-1']));
+        mockRepo.getNodeById!.mockResolvedValueOnce({
+          id: 'photo-bound-reject',
+          type: 'Photo' as const,
+          tags: ['gallery'],
+          data: {
+            url: '/uploads/photos/registry-item.jpg',
+            mediaId: 'media-bound-1',
+            status: 'PENDING',
+            isVisible: false,
+          },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+        mockRepo.deleteNode!.mockResolvedValueOnce(undefined);
+
+        const result = await service.moderatePhoto('photo-bound-reject', 'reject', 'AdminUser');
+        expect(result.deleted).toBe(true);
+        expect(deleteMediaSpy).not.toHaveBeenCalled();
+        expect(directStorageDelete).not.toHaveBeenCalled();
+        expect(mockRepo.deleteNode).toHaveBeenCalledWith('photo-bound-reject', 'AdminUser');
       } finally {
         deleteMediaSpy.mockRestore();
         directStorageDelete.mockRestore();
@@ -487,6 +576,96 @@ describe('Photo Moderation Service & Visibility Rules', () => {
       await expect(service.moderatePhotosBatch(over100Ids, 'approve')).rejects.toThrow(
         'Batch request cannot exceed 100 items'
       );
+    });
+
+    it('delegates batch approval to repo.approvePhotosBatch and preserves input order for mixed valid and missing IDs', async () => {
+      const now = new Date();
+      const approvedP2 = {
+        id: 'p2',
+        type: 'Photo' as const,
+        tags: ['gallery', 'guest-upload'],
+        data: { url: '/uploads/photos/p2.jpg', status: 'APPROVED' as const, isVisible: true },
+        createdAt: now,
+        updatedAt: now,
+      };
+      const approvedP1 = {
+        id: 'p1',
+        type: 'Photo' as const,
+        tags: ['gallery', 'guest-upload'],
+        data: { url: '/uploads/photos/p1.jpg', status: 'APPROVED' as const, isVisible: true },
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      mockRepo.approvePhotosBatch = jest.fn().mockResolvedValueOnce([approvedP1, approvedP2]);
+
+      const res = await service.moderatePhotosBatch(
+        ['p2', 'missing-id', 'p1'],
+        'approve',
+        'CoupleAdmin'
+      );
+
+      expect(mockRepo.approvePhotosBatch).toHaveBeenCalledTimes(1);
+      expect(mockRepo.approvePhotosBatch).toHaveBeenCalledWith(
+        ['p2', 'missing-id', 'p1'],
+        'CoupleAdmin'
+      );
+      expect(mockRepo.getNodeById).not.toHaveBeenCalled();
+      expect(mockRepo.updateNode).not.toHaveBeenCalled();
+      expect(res.total).toBe(3);
+      expect(res.succeededCount).toBe(2);
+      expect(res.failedCount).toBe(1);
+      expect(res.results).toEqual([
+        { id: 'p2', success: true, action: 'approve', data: approvedP2 },
+        {
+          id: 'missing-id',
+          success: false,
+          action: 'approve',
+          error: 'Photo node with ID missing-id not found',
+        },
+        { id: 'p1', success: true, action: 'approve', data: approvedP1 },
+      ]);
+    });
+
+    it('delegates batch rejection to repo.rejectPhotosBatch without calling deleteNode per item and preserves input order', async () => {
+      mockRepo.rejectPhotosBatch = jest.fn().mockResolvedValueOnce(['p1', 'p3']);
+
+      const res = await service.moderatePhotosBatch(
+        ['p3', 'ghost-photo', 'p1'],
+        'reject',
+        'CoupleAdmin'
+      );
+
+      expect(mockRepo.rejectPhotosBatch).toHaveBeenCalledTimes(1);
+      expect(mockRepo.rejectPhotosBatch).toHaveBeenCalledWith(
+        ['p3', 'ghost-photo', 'p1'],
+        'CoupleAdmin'
+      );
+      expect(mockRepo.getNodeById).not.toHaveBeenCalled();
+      expect(mockRepo.deleteNode).not.toHaveBeenCalled();
+      expect(res.total).toBe(3);
+      expect(res.succeededCount).toBe(2);
+      expect(res.failedCount).toBe(1);
+      expect(res.results).toEqual([
+        {
+          id: 'p3',
+          success: true,
+          action: 'reject',
+          data: { id: 'p3', deleted: true, status: 'REJECTED' },
+        },
+        {
+          id: 'ghost-photo',
+          success: false,
+          action: 'reject',
+          error: 'Photo node with ID ghost-photo not found',
+        },
+        {
+          id: 'p1',
+          success: true,
+          action: 'reject',
+          data: { id: 'p1', deleted: true, status: 'REJECTED' },
+        },
+      ]);
     });
   });
 });

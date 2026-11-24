@@ -29,5 +29,7 @@ export interface IContentRepository {
   deleteNode?(id: string, author?: string): Promise<void>;
   getPendingPhotos?(options?: PendingPhotosOptions): Promise<PaginatedPendingPhotosResult>;
   getEntityBoundMediaIds?(mediaIds: string[]): Promise<Set<string>>;
+  approvePhotosBatch?(ids: string[], author?: string): Promise<ContentNodeDTO[]>;
+  rejectPhotosBatch?(ids: string[], author?: string): Promise<string[]>;
 }
 

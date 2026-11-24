@@ -196,3 +196,128 @@ describe('MediaRepository.deleteMedia storage cleanup', () => {
     }
   });
 });
+
+describe('MediaRepository.deleteMediaBatch post-commit bounded storage cleanup', () => {
+  it('commits batch deletion in one transaction, deduplicates shared URLs, caps concurrent storage deletes at 8 workers, and tolerates storage errors', async () => {
+    const events: string[] = [];
+    let inFlight = 0;
+    let maxInFlight = 0;
+
+    const { LocalStorageProvider, resetStorageProvider } = await import('@/utils/storage');
+    const { logger } = await import('@/lib/logger');
+    resetStorageProvider();
+
+    const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+    const deleteSpy = jest
+      .spyOn(LocalStorageProvider.prototype, 'delete')
+      .mockImplementation(async (url: string) => {
+        events.push(`storage.delete:${url}`);
+        inFlight += 1;
+        if (inFlight > maxInFlight) {
+          maxInFlight = inFlight;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        inFlight -= 1;
+        if (url === '/uploads/photos/fail-unlink.jpg') {
+          throw new Error('Simulated S3 transient 503');
+        }
+      });
+
+    const now = new Date();
+    const mediaRows = Array.from({ length: 22 }, (_, i) => {
+      const url =
+        i < 3
+          ? '/uploads/photos/shared-asset.jpg'
+          : i === 3
+            ? '/uploads/photos/fail-unlink.jpg'
+            : i === 4
+              ? '/../outside-root-canary.txt'
+              : `/uploads/photos/batch-${i}.jpg`;
+      return {
+        id: `media-batch-${i}`,
+        url,
+        altText: `Photo ${i}`,
+        isDecorative: false,
+        isSample: false,
+        createdAt: now,
+        updatedAt: now,
+      };
+    });
+
+    const txClient = {
+      contentNode: {
+        findMany: jest.fn().mockResolvedValue([]),
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      media: {
+        findMany: jest.fn().mockResolvedValue(mediaRows),
+        deleteMany: jest.fn(async () => {
+          events.push('tx.media.deleteMany');
+          return { count: mediaRows.length };
+        }),
+      },
+      snapshotVersion: {
+        createMany: jest.fn(async () => {
+          events.push('tx.snapshot.createMany');
+          return { count: mediaRows.length };
+        }),
+      },
+    };
+
+    const mockClient = {
+      $transaction: jest.fn(async (fn: (_tx: typeof txClient) => Promise<unknown>) => {
+        events.push('tx.begin');
+        const res = await fn(txClient);
+        events.push('tx.commit');
+        return res;
+      }),
+    };
+
+    try {
+      const repo = new MediaRepository(mockClient);
+      const deleted = await repo.deleteMediaBatch(
+        mediaRows.map((m) => m.id),
+        'AdminBatch'
+      );
+
+      expect(mockClient.$transaction).toHaveBeenCalledTimes(1);
+      expect(deleted).toHaveLength(22);
+
+      // 3 items share '/uploads/photos/shared-asset.jpg' (1 call), 1 fails gracefully (1 call),
+      // 1 is out-of-root '/../outside-root-canary.txt' (0 calls), and 17 are distinct '/uploads/photos/batch-*.jpg' = 19 calls
+      expect(deleteSpy).toHaveBeenCalledTimes(19);
+      expect(deleteSpy).not.toHaveBeenCalledWith('/../outside-root-canary.txt');
+      expect(maxInFlight).toBeLessThanOrEqual(8);
+      expect(maxInFlight).toBeGreaterThan(1);
+
+      const commitIdx = events.indexOf('tx.commit');
+      const firstStorageIdx = events.findIndex((entry) => entry.startsWith('storage.delete:'));
+      expect(commitIdx).toBeGreaterThan(-1);
+      expect(firstStorageIdx).toBeGreaterThan(commitIdx);
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[MediaRepository.deleteMediaBatch] Storage cleanup failed after DB commit',
+        expect.objectContaining({
+          url: '/uploads/photos/fail-unlink.jpg',
+          error: 'Simulated S3 transient 503',
+        })
+      );
+
+      // Verify DB transaction failure aborts before any storage delete runs
+      deleteSpy.mockClear();
+      const rollbackClient = {
+        $transaction: jest.fn(async () => {
+          throw new Error('Serialization failure');
+        }),
+      };
+      const rollbackRepo = new MediaRepository(rollbackClient);
+      await expect(
+        rollbackRepo.deleteMediaBatch(['media-batch-0', 'media-batch-1'], 'AdminBatch')
+      ).rejects.toThrow('Serialization failure');
+      expect(deleteSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+      deleteSpy.mockRestore();
+      resetStorageProvider();
+    }
+  });
+});

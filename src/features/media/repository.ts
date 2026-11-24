@@ -1,7 +1,9 @@
 import { prisma } from '@/lib/prisma';
+import { Prisma } from '@prisma/client';
+import { qualifyPostgresTable } from '@/lib/postgres-url.js';
 import { MediaDTO, MediaSchema } from './schemas';
 import { executeInTransaction } from '@/lib/transaction';
-import { createAuditSnapshot } from '@/lib/audit';
+import { createAuditSnapshot, createBatchAuditSnapshots } from '@/lib/audit';
 import { buildArchetypeSeedData, isStaticExportBuild } from '@/lib/sampleData/builder';
 import { logger } from '@/lib/logger';
 
@@ -139,6 +141,84 @@ function isManagedStorageAssetUrl(rawUrl: string | null | undefined): boolean {
     }
   }
   return false;
+}
+
+const STORAGE_DELETE_CONCURRENCY = 8;
+
+interface DeleteMediaBatchOptions {
+  tx?: any;
+  skipLinkedNodeCleanup?: boolean;
+  skipStorageCleanup?: boolean;
+}
+
+function normalizeRawRecordDates<T extends Record<string, any>>(record: T): T {
+  if (!record || typeof record !== 'object') {
+    return record;
+  }
+  return {
+    ...record,
+    ...(record.createdAt !== undefined && !(record.createdAt instanceof Date)
+      ? { createdAt: new Date(record.createdAt) }
+      : {}),
+    ...(record.updatedAt !== undefined && !(record.updatedAt instanceof Date)
+      ? { updatedAt: new Date(record.updatedAt) }
+      : {}),
+  };
+}
+
+export async function unlinkManagedStorageUrls(
+  urls: Iterable<string | null | undefined>,
+  logContext: string = 'MediaRepository.deleteMediaBatch'
+): Promise<void> {
+  const uniqueUrls: string[] = [];
+  const seen = new Set<string>();
+  for (const rawUrl of urls) {
+    if (typeof rawUrl !== 'string') {
+      continue;
+    }
+    const trimmed = rawUrl.trim();
+    if (!trimmed || seen.has(trimmed) || !isManagedStorageAssetUrl(trimmed)) {
+      continue;
+    }
+    seen.add(trimmed);
+    uniqueUrls.push(trimmed);
+  }
+
+  if (uniqueUrls.length === 0) {
+    return;
+  }
+
+  let storageProvider: Awaited<ReturnType<typeof import('@/utils/storage')['getStorageProvider']>>;
+  try {
+    const { getStorageProvider } = await import('@/utils/storage');
+    storageProvider = getStorageProvider();
+  } catch (err) {
+    logger.warn(`[${logContext}] Storage provider initialization failed after DB commit`, {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return;
+  }
+
+  const workerCount = Math.min(STORAGE_DELETE_CONCURRENCY, uniqueUrls.length);
+  let cursor = 0;
+
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (cursor < uniqueUrls.length) {
+      const index = cursor;
+      cursor += 1;
+      const url = uniqueUrls[index]!;
+      try {
+        await storageProvider.delete(url);
+      } catch (err) {
+        logger.warn(`[${logContext}] Storage cleanup failed after DB commit`, {
+          url,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  });
+
+  await Promise.all(workers);
 }
 
 export class MediaRepository {
@@ -447,6 +527,7 @@ export class MediaRepository {
   }
 
   async deleteMedia(id: string, author: string = 'System') {
+    const deletedNodeIds: string[] = [];
     const deletedMedia = await executeInTransaction(this.client, async (tx) => {
       if (tx.contentNode?.findMany) {
         const linkedNodes = await tx.contentNode.findMany({
@@ -460,6 +541,7 @@ export class MediaRepository {
         });
         for (const node of linkedNodes) {
           await tx.contentNode.delete({ where: { id: node.id } });
+          deletedNodeIds.push(node.id);
           await createAuditSnapshot(
             'ContentNode:Photo',
             node.id,
@@ -472,7 +554,12 @@ export class MediaRepository {
 
       const media = await tx.media.delete({ where: { id } });
       await createAuditSnapshot('Media', id, { deleted: true, ...media }, author, tx);
-      return MediaSchema.parse(media);
+      const parsedMedia = MediaSchema.parse(media);
+      Object.defineProperty(parsedMedia, 'deletedNodeIds', {
+        value: deletedNodeIds,
+        enumerable: false,
+      });
+      return parsedMedia;
     });
 
     if (isManagedStorageAssetUrl(deletedMedia.url)) {
@@ -486,6 +573,150 @@ export class MediaRepository {
           error: err instanceof Error ? err.message : String(err),
         });
       }
+    }
+
+    return deletedMedia;
+  }
+
+  async deleteMediaBatch(
+    ids: string[],
+    author: string = 'System',
+    options: DeleteMediaBatchOptions = {}
+  ): Promise<MediaDTO[]> {
+    const uniqueIds = Array.from(
+      new Set((ids || []).filter((id): id is string => typeof id === 'string' && id.length > 0))
+    );
+    if (uniqueIds.length === 0) {
+      return [];
+    }
+
+    const runInTx = async (tx: any): Promise<MediaDTO[]> => {
+      if (!options.skipLinkedNodeCleanup) {
+        let deletedLinkedNodes: any[] = [];
+        if (typeof tx.$queryRaw === 'function') {
+          const contentNodeTable = Prisma.raw(qualifyPostgresTable('ContentNode'));
+          const rawNodes = await tx.$queryRaw(Prisma.sql`
+            DELETE FROM ${contentNodeTable}
+            WHERE "type" = 'Photo'
+              AND ("data"->>'mediaId') = ANY(${uniqueIds}::text[])
+            RETURNING "id", "type", "tags", "data", "createdAt", "updatedAt"
+          `);
+          deletedLinkedNodes = Array.isArray(rawNodes)
+            ? rawNodes.map((node) => normalizeRawRecordDates(node))
+            : [];
+        } else if (typeof tx.contentNode?.findMany === 'function') {
+          const linkedNodes = await tx.contentNode.findMany({
+            where: {
+              type: 'Photo',
+              OR: uniqueIds.map((mediaId) => ({
+                data: {
+                  path: ['mediaId'],
+                  equals: mediaId,
+                },
+              })),
+            },
+          });
+          if (Array.isArray(linkedNodes) && linkedNodes.length > 0) {
+            const linkedIds = linkedNodes.map((node: { id: string }) => node.id);
+            if (typeof tx.contentNode.deleteMany === 'function') {
+              await tx.contentNode.deleteMany({
+                where: { id: { in: linkedIds } },
+              });
+            } else if (typeof tx.contentNode.delete === 'function') {
+              for (const linkedId of linkedIds) {
+                await tx.contentNode.delete({ where: { id: linkedId } });
+              }
+            }
+            deletedLinkedNodes = linkedNodes;
+          }
+        }
+
+        if (deletedLinkedNodes.length > 0) {
+          await createBatchAuditSnapshots(
+            'ContentNode:Photo',
+            deletedLinkedNodes.map((node) => ({ deleted: true, ...node })),
+            author,
+            tx
+          );
+        }
+      }
+
+      let rawDeletedMedia: any[] = [];
+      if (typeof tx.$queryRaw === 'function') {
+        const mediaTable = Prisma.raw(qualifyPostgresTable('Media'));
+        const weddingPartyMemberTable = Prisma.raw(qualifyPostgresTable('WeddingPartyMember'));
+        const attractionTable = Prisma.raw(qualifyPostgresTable('Attraction'));
+        const registryItemTable = Prisma.raw(qualifyPostgresTable('RegistryItem'));
+        const contentNodeTable = Prisma.raw(qualifyPostgresTable('ContentNode'));
+
+        const rows = await tx.$queryRaw(Prisma.sql`
+          DELETE FROM ${mediaTable} AS m
+          WHERE m."id" = ANY(${uniqueIds}::text[])
+            AND NOT EXISTS (
+              SELECT 1 FROM ${weddingPartyMemberTable} AS wpm WHERE wpm."photoId" = m."id"
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM ${attractionTable} AS a WHERE a."imageId" = m."id"
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM ${registryItemTable} AS ri WHERE ri."imageId" = m."id"
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM ${contentNodeTable} AS cn
+              WHERE cn."type" = 'Photo' AND (cn."data"->>'mediaId') = m."id"
+            )
+          RETURNING m."id", m."url", m."altText", m."isDecorative", m."isSample", m."createdAt", m."updatedAt"
+        `);
+        rawDeletedMedia = Array.isArray(rows)
+          ? rows.map((row) => normalizeRawRecordDates(row))
+          : [];
+      } else if (typeof tx.media?.findMany === 'function') {
+        const candidateMedia = await tx.media.findMany({
+          where: {
+            id: { in: uniqueIds },
+            weddingPartyMembers: { none: {} },
+            attractions: { none: {} },
+            registryItems: { none: {} },
+          },
+        });
+        if (Array.isArray(candidateMedia) && candidateMedia.length > 0) {
+          const deletableIds = candidateMedia.map((m: { id: string }) => m.id);
+          if (typeof tx.media.deleteMany === 'function') {
+            await tx.media.deleteMany({
+              where: { id: { in: deletableIds } },
+            });
+          } else if (typeof tx.media.delete === 'function') {
+            for (const mediaId of deletableIds) {
+              await tx.media.delete({ where: { id: mediaId } });
+            }
+          }
+          rawDeletedMedia = candidateMedia;
+        }
+      }
+
+      const parsedDeletedMedia = rawDeletedMedia.map((media) => MediaSchema.parse(media));
+      if (parsedDeletedMedia.length > 0) {
+        await createBatchAuditSnapshots(
+          'Media',
+          parsedDeletedMedia.map((media) => ({ deleted: true, ...media })),
+          author,
+          tx
+        );
+      }
+
+      return parsedDeletedMedia;
+    };
+
+    if (options.tx) {
+      return await runInTx(options.tx);
+    }
+
+    const deletedMedia = await executeInTransaction(this.client, runInTx);
+    if (!options.skipStorageCleanup && deletedMedia.length > 0) {
+      await unlinkManagedStorageUrls(
+        deletedMedia.map((media) => media.url),
+        'MediaRepository.deleteMediaBatch'
+      );
     }
 
     return deletedMedia;

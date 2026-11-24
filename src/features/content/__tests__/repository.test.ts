@@ -383,3 +383,142 @@ describe('ContentRepository.getPublicPhotos', () => {
   });
 });
 
+describe('ContentRepository.approvePhotosBatch & rejectPhotosBatch', () => {
+  it('returns empty array immediately when given empty IDs without starting a transaction', async () => {
+    const mockClient = {
+      $transaction: jest.fn(),
+    };
+    const repo = new ContentRepository(mockClient);
+
+    await expect(repo.approvePhotosBatch([])).resolves.toEqual([]);
+    await expect(repo.rejectPhotosBatch([])).resolves.toEqual([]);
+    expect(mockClient.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('approves photo nodes via fallback findMany + update when $queryRaw is absent and records bulk audit snapshots', async () => {
+    const now = new Date('2026-06-20T18:00:00.000Z');
+    const txClient = {
+      contentNode: {
+        findMany: jest.fn().mockResolvedValueOnce([
+          {
+            id: 'p1',
+            type: 'Photo',
+            tags: ['gallery', 'guest-upload'],
+            data: { url: '/uploads/photos/p1.jpg', status: 'PENDING', isVisible: false, caption: 'Toast' },
+            createdAt: now,
+            updatedAt: now,
+          },
+        ]),
+        update: jest.fn().mockImplementation(async ({ where, data }: any) => ({
+          id: where.id,
+          type: 'Photo',
+          tags: ['gallery', 'guest-upload'],
+          data: data.data,
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
+        })),
+      },
+      snapshotVersion: {
+        createMany: jest.fn().mockResolvedValueOnce({ count: 1 }),
+      },
+    };
+    const mockClient = {
+      $transaction: jest.fn(async (fn: (_tx: typeof txClient) => Promise<unknown>) => fn(txClient)),
+    };
+
+    const repo = new ContentRepository(mockClient);
+    const updated = await repo.approvePhotosBatch(['p1', 'p1', 'missing'], 'AdminTest');
+
+    expect(mockClient.$transaction).toHaveBeenCalledTimes(1);
+    expect(txClient.contentNode.findMany).toHaveBeenCalledWith({
+      where: { id: { in: ['p1', 'missing'] }, type: 'Photo' },
+    });
+    expect(txClient.snapshotVersion.createMany).toHaveBeenCalledTimes(1);
+    expect(updated).toHaveLength(1);
+    expect(updated[0]).toEqual(
+      expect.objectContaining({
+        id: 'p1',
+        data: expect.objectContaining({
+          status: 'APPROVED',
+          isVisible: true,
+          caption: 'Toast',
+        }),
+      })
+    );
+  });
+
+  it('rejects photo nodes via fallback findMany + deleteMany, skips entity-bound media, and unlinks fallback URLs after commit', async () => {
+    const events: string[] = [];
+    const { LocalStorageProvider, resetStorageProvider } = await import('@/utils/storage');
+    resetStorageProvider();
+    const deleteSpy = jest
+      .spyOn(LocalStorageProvider.prototype, 'delete')
+      .mockImplementation(async (url: string) => {
+        events.push(`unlink:${url}`);
+      });
+
+    const now = new Date('2026-06-20T18:00:00.000Z');
+    const txClient = {
+      contentNode: {
+        findMany: jest.fn().mockResolvedValueOnce([
+          {
+            id: 'p-bound',
+            type: 'Photo',
+            tags: ['gallery'],
+            data: { url: '/uploads/photos/bound.jpg', mediaId: 'm-bound', status: 'PENDING', isVisible: false },
+            createdAt: now,
+            updatedAt: now,
+          },
+          {
+            id: 'p-standalone',
+            type: 'Photo',
+            tags: ['gallery', 'guest-upload'],
+            data: { url: '/uploads/photos/standalone.jpg', status: 'PENDING', isVisible: false },
+            createdAt: now,
+            updatedAt: now,
+          },
+        ]),
+        deleteMany: jest.fn(async () => {
+          events.push('tx.contentNode.deleteMany');
+          return { count: 2 };
+        }),
+      },
+      media: {
+        findMany: jest.fn().mockResolvedValueOnce([{ id: 'm-bound' }]),
+        deleteMany: jest.fn(),
+      },
+      snapshotVersion: {
+        createMany: jest.fn(async () => {
+          events.push('tx.snapshot.createMany');
+          return { count: 2 };
+        }),
+      },
+    };
+    const mockClient = {
+      $transaction: jest.fn(async (fn: (_tx: typeof txClient) => Promise<unknown>) => {
+        events.push('tx.begin');
+        const res = await fn(txClient);
+        events.push('tx.commit');
+        return res;
+      }),
+    };
+
+    try {
+      const repo = new ContentRepository(mockClient);
+      const deletedIds = await repo.rejectPhotosBatch(['p-bound', 'p-standalone'], 'AdminReject');
+
+      expect(mockClient.$transaction).toHaveBeenCalledTimes(1);
+      expect(deletedIds).toEqual(['p-bound', 'p-standalone']);
+      expect(txClient.media.deleteMany).not.toHaveBeenCalled();
+      expect(deleteSpy).toHaveBeenCalledTimes(1);
+      expect(deleteSpy).toHaveBeenCalledWith('/uploads/photos/standalone.jpg');
+      expect(events.indexOf('unlink:/uploads/photos/standalone.jpg')).toBeGreaterThan(
+        events.indexOf('tx.commit')
+      );
+    } finally {
+      deleteSpy.mockRestore();
+      resetStorageProvider();
+    }
+  });
+});
+
