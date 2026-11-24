@@ -36,7 +36,13 @@ import {
 } from '@/lib/adminCacheSync';
 import { isFeatureEnabled } from '@/lib/modules';
 
-if (typeof window !== 'undefined' && window.navigator.userAgent.includes('HeadlessChrome')) {
+if (
+  typeof window !== 'undefined' &&
+  (window.navigator.userAgent.includes('HeadlessChrome') ||
+    window.navigator.webdriver === true ||
+    (typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches))
+) {
   MotionGlobalConfig.skipAnimations = true;
 }
 
