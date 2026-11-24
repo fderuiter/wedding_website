@@ -319,7 +319,7 @@ describe('local smoke isolation, staged static exports, and untracked next-env.d
       expect(tsconfig.exclude).toContain('.next/export-stage');
     });
 
-    it('keeps next-env.d.ts untracked in Git while running next typegen in typecheck, type-check, and postinstall', () => {
+    it('keeps next-env.d.ts untracked in Git while conditionally running next typegen in typecheck, type-check, and postinstall', () => {
       const trackedCheck = spawnSync('git', ['ls-files', 'next-env.d.ts'], {
         cwd: repoRoot,
         encoding: 'utf8',
@@ -330,9 +330,19 @@ describe('local smoke isolation, staged static exports, and untracked next-env.d
       const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as {
         scripts: Record<string, string>;
       };
-      expect(pkg.scripts.typecheck.startsWith('next typegen && ')).toBe(true);
-      expect(pkg.scripts['type-check'].startsWith('next typegen && ')).toBe(true);
-      expect(pkg.scripts.postinstall.startsWith('next typegen && ')).toBe(true);
+      expect(
+        pkg.scripts.typecheck.startsWith(
+          '([ -f next-env.d.ts ] && [ -f .next/types/routes.d.ts ] || next typegen) && '
+        )
+      ).toBe(true);
+      expect(
+        pkg.scripts['type-check'].startsWith(
+          '([ -f next-env.d.ts ] && [ -f .next/types/routes.d.ts ] || next typegen) && '
+        )
+      ).toBe(true);
+      expect(pkg.scripts.postinstall).toBe(
+        '([ "$SKIP_NEXT_TYPEGEN" = "true" ] || [ "$STATIC_EXPORT" = "true" ] || next typegen) && prisma generate && node scripts/pretest.mjs --record-install-state'
+      );
 
       const knip = JSON.parse(fs.readFileSync(path.join(repoRoot, 'knip.json'), 'utf8')) as {
         entry?: string[];

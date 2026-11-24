@@ -1408,5 +1408,48 @@ describe('check-docker-build', () => {
         ])
       );
     });
+
+    it('validates only .next/standalone portability under --standalone-only without re-running static Dockerfile or Compose checks', () => {
+      const standaloneOnlyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'standalone-only-test-'));
+      try {
+        // Fails when .next/standalone is missing even with no Dockerfile/Compose files
+        const missingRes = checkDockerBuild(standaloneOnlyDir, { standaloneOnly: true });
+        expect(missingRes.violations).toEqual([
+          expect.objectContaining({
+            filePath: '.next',
+            imageRef: '.next',
+          }),
+        ]);
+
+        writeValidStandaloneBundle(standaloneOnlyDir);
+        const validRes = checkDockerBuild(standaloneOnlyDir, { standaloneOnly: true });
+        expect(validRes.violations).toEqual([]);
+
+        const cliPass = spawnSync(
+          process.execPath,
+          [TSX_CLI_PATH, CHECK_SCRIPT_PATH, '--standalone-only'],
+          {
+            cwd: standaloneOnlyDir,
+            encoding: 'utf8',
+          }
+        );
+        expect(cliPass.status).toBe(0);
+        expect(cliPass.stdout).toContain('--standalone-only');
+        expect(cliPass.stdout).toContain('passed');
+
+        fs.rmSync(path.join(standaloneOnlyDir, '.next', 'standalone', 'server.js'));
+        const cliFail = spawnSync(
+          process.execPath,
+          [TSX_CLI_PATH, CHECK_SCRIPT_PATH, '--standalone-only'],
+          {
+            cwd: standaloneOnlyDir,
+            encoding: 'utf8',
+          }
+        );
+        expect(cliFail.status).toBe(1);
+      } finally {
+        fs.rmSync(standaloneOnlyDir, { recursive: true, force: true });
+      }
+    });
   });
 });

@@ -36,8 +36,8 @@
     "lint:migrations": "node --experimental-strip-types scripts/verify-migration-compatibility.ts",
     "lint:unused": "knip",
     "lint:unused:fix": "knip --fix --allow-remove-files",
-    "type-check": "next typegen && tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.build.json && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tsconfig.e2e.json && tsc --noEmit -p tsconfig.scripts.json",
-    "typecheck": "next typegen && tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.build.json && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tsconfig.e2e.json && tsc --noEmit -p tsconfig.scripts.json",
+    "type-check": "([ -f next-env.d.ts ] && [ -f .next/types/routes.d.ts ] || next typegen) && tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.build.json && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tsconfig.e2e.json && tsc --noEmit -p tsconfig.scripts.json",
+    "typecheck": "([ -f next-env.d.ts ] && [ -f .next/types/routes.d.ts ] || next typegen) && tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.build.json && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tsconfig.e2e.json && tsc --noEmit -p tsconfig.scripts.json",
     "pretest": "node scripts/pretest.mjs",
     "pretest:watch": "npm run pretest",
     "pretest:cov": "npm run pretest",
@@ -83,7 +83,7 @@
     "check:all": "npm run quality",
     "scaffold": "node scripts/scaffold-feature.mjs",
     "prepare": "node -e 'import(\"fs\").then(f => f.existsSync(\"./scripts/install-git-hooks.js\") && import(\"./scripts/install-git-hooks.js\"))'",
-    "postinstall": "next typegen && prisma generate && node scripts/pretest.mjs --record-install-state"
+    "postinstall": "([ \"$SKIP_NEXT_TYPEGEN\" = \"true\" ] || [ \"$STATIC_EXPORT\" = \"true\" ] || next typegen) && prisma generate && node scripts/pretest.mjs --record-install-state"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1173.0",
