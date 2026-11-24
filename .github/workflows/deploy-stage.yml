@@ -119,6 +119,8 @@ jobs:
       cloud_run_region: ${{ inputs.cloud_run_region || '' }}
       dry_run: ${{ inputs.dry_run || false }}
       caller_holds_lock: true
+      auto_rollback_on_failure: ${{ inputs.rollback_environment == '' }}
+      previous_tag: ${{ inputs.previous_tag || '' }}
     secrets: inherit
 
   verify-deployment:
@@ -127,9 +129,9 @@ jobs:
     if: "!cancelled() && needs.deploy-provider.result == 'success'"
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    environment: ${{ inputs.environment }}
     outputs:
       health_status: ${{ steps.health-probe.outputs.health_status }}
+      http_status: ${{ steps.health-probe.outputs.http_status }}
     steps:
       - name: Execute Post-Deployment Health Probe Verification
         id: health-probe
@@ -138,6 +140,8 @@ jobs:
           VAR_SERVICE_URL: ${{ vars.SERVICE_URL }}
           SERVICE_URL: ${{ needs.deploy-provider.outputs.service_url }}
           SECRET_SERVICE_URL: ${{ secrets.SERVICE_URL }}
+          PROVIDER_HEALTH_STATUS: ${{ needs.deploy-provider.outputs.health_status }}
+          PROVIDER_HTTP_STATUS: ${{ needs.deploy-provider.outputs.http_status }}
           IS_DRY_RUN: ${{ (inputs.dry_run && needs.deploy-provider.outputs.is_dry_run == 'true') && 'true' || 'false' }}
         run: |
           TARGET_ENV="${TARGET_ENV:-production}"
@@ -157,11 +161,13 @@ jobs:
           esac
 
           RESOLVED_URL="${VAR_SERVICE_URL:-}"
+          USED_SECRET_FALLBACK="false"
           if [ -z "$RESOLVED_URL" ] && [ -n "${SERVICE_URL:-}" ] && [ "$SERVICE_URL" != "***" ]; then
             RESOLVED_URL="$SERVICE_URL"
           fi
-          if [ -z "$RESOLVED_URL" ]; then
-            RESOLVED_URL="${SECRET_SERVICE_URL:-}"
+          if [ -z "$RESOLVED_URL" ] && [ -n "${SECRET_SERVICE_URL:-}" ]; then
+            RESOLVED_URL="$SECRET_SERVICE_URL"
+            USED_SECRET_FALLBACK="true"
           fi
 
           if [ "${IS_DRY_RUN:-false}" = "true" ]; then
@@ -170,6 +176,36 @@ jobs:
             TARGET_URL="$RESOLVED_URL"
           fi
           TARGET_URL="${TARGET_URL%/}"
+
+          DISPLAY_URL="${TARGET_URL:-configured via deploy-provider}"
+          if [ "$USED_SECRET_FALLBACK" = "true" ]; then
+            DISPLAY_URL="[configured via secrets.SERVICE_URL]"
+          fi
+
+          if [ "${PROVIDER_HEALTH_STATUS:-}" = "healthy" ]; then
+            EFFECTIVE_HTTP="${PROVIDER_HTTP_STATUS:-200}"
+            echo "health_status=healthy" >> "$GITHUB_OUTPUT"
+            echo "http_status=${EFFECTIVE_HTTP}" >> "$GITHUB_OUTPUT"
+            echo "### 🟢 ${ENV_TITLE} Post-Deployment Health Verification Passed" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Environment:** \`${TARGET_ENV}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Target Service URL:** \`${DISPLAY_URL}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Health Endpoint:** \`/api/health\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **HTTP Status:** \`${EFFECTIVE_HTTP}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Verification Outcome:** \`HEALTHY\`" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          elif [ "${PROVIDER_HEALTH_STATUS:-}" = "unhealthy" ]; then
+            EFFECTIVE_HTTP="${PROVIDER_HTTP_STATUS:-unreachable}"
+            echo "health_status=unhealthy" >> "$GITHUB_OUTPUT"
+            echo "http_status=${EFFECTIVE_HTTP}" >> "$GITHUB_OUTPUT"
+            echo "### 🔴 ${ENV_TITLE} Post-Deployment Health Verification Failed" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Environment:** \`${TARGET_ENV}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Target Service URL:** \`${DISPLAY_URL}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Health Endpoint:** \`/api/health\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **HTTP Status:** \`${EFFECTIVE_HTTP}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Verification Outcome:** \`UNHEALTHY\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Action:** Triggering automated rollback pipeline with N-1 schema compatibility verification..." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
 
           if [ -z "$TARGET_URL" ] || [[ ! "$TARGET_URL" =~ ^https?://[^[:space:]]+ ]]; then
             echo "::error::Missing or invalid SERVICE_URL for ${TARGET_ENV} health verification. Configure vars.SERVICE_URL (recommended) or legacy secrets.SERVICE_URL with a valid http:// or https:// URL in the '${TARGET_ENV}' GitHub Environment."
@@ -257,18 +293,20 @@ jobs:
 
           if [ "$SUCCESS" = "true" ]; then
             echo "health_status=healthy" >> "$GITHUB_OUTPUT"
+            echo "http_status=${HTTP_STATUS:-200}" >> "$GITHUB_OUTPUT"
             echo "### 🟢 ${ENV_TITLE} Post-Deployment Health Verification Passed" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Environment:** \`${TARGET_ENV}\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Target Service URL:** \`${TARGET_URL}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Target Service URL:** \`${DISPLAY_URL}\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Health Endpoint:** \`/api/health\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- **HTTP Status:** \`${HTTP_STATUS}\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Verification Outcome:** \`HEALTHY\`" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           else
             echo "health_status=unhealthy" >> "$GITHUB_OUTPUT"
+            echo "http_status=${HTTP_STATUS:-unreachable}" >> "$GITHUB_OUTPUT"
             echo "### 🔴 ${ENV_TITLE} Post-Deployment Health Verification Failed" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Environment:** \`${TARGET_ENV}\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Target Service URL:** \`${TARGET_URL}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Target Service URL:** \`${DISPLAY_URL}\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Health Endpoint:** \`/api/health\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- **HTTP Status:** \`${HTTP_STATUS:-unreachable}\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Last Response:** \`${RESPONSE_BODY}\`" >> "$GITHUB_STEP_SUMMARY"
@@ -289,8 +327,17 @@ jobs:
     needs: [deploy-provider, verify-deployment]
     if: |
       (failure() || cancelled()) &&
-      needs.deploy-provider.result == 'success' &&
-      (needs.verify-deployment.result == 'failure' || needs.verify-deployment.result == 'cancelled')
+      needs.deploy-provider.outputs.inline_rollback_completed != 'true' &&
+      (
+        (
+          needs.deploy-provider.outputs.rollout_executed == 'true' &&
+          (needs.deploy-provider.result == 'failure' || needs.deploy-provider.result == 'cancelled')
+        ) ||
+        (
+          needs.deploy-provider.result == 'success' &&
+          (needs.verify-deployment.result == 'failure' || needs.verify-deployment.result == 'cancelled')
+        )
+      )
     uses: ./.github/workflows/rollback.yml
     with:
       target_environment: ${{ inputs.environment }}
