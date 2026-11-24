@@ -181,7 +181,8 @@ export function optimizeContrast(baseHex: string, bgHex: string, minRatio: numbe
   const safeBgHex = typeof bgHex === 'string' ? bgHex : '';
   const cacheKey = `${baseHex.toLowerCase()}:${safeBgHex.toLowerCase()}:${minRatio}`;
   if (contrastCache.has(cacheKey)) {
-    return contrastCache.get(cacheKey)!;
+    const cached = contrastCache.get(cacheKey)!;
+    return cached.toLowerCase() === baseHex.toLowerCase() ? baseHex : cached;
   }
 
   let computedHex = baseHex;
@@ -247,6 +248,17 @@ function resolveDarkSurfaceBg(minDarkBgHex: string, candidateBgHex?: string | nu
     return candidateBgHex;
   }
   return minDarkBgHex;
+}
+
+function resolveLightSurfaceBg(fallbackBgHex: string, candidateBgHex?: string | null): string {
+  if (!candidateBgHex || !hexColorRegex.test(candidateBgHex)) {
+    return fallbackBgHex;
+  }
+  const candLum = getLuminance(hexToRgb(candidateBgHex));
+  if (candLum >= 0.5) {
+    return candidateBgHex;
+  }
+  return fallbackBgHex;
 }
 
 interface DarkSurfaceTokenSet {
@@ -510,6 +522,29 @@ export function generateDynamicStyles(
     '--badge-inverse-text' in darkCustomTokenOverrides
   );
 
+  const lightCardBg = resolveLightSurfaceBg('#ffffff', lightPresetTokens['--card-bg']);
+  const lightInputBg = resolveLightSurfaceBg(lightCardBg, lightPresetTokens['--input-bg']);
+  const lightTextSurfaceMap: Record<string, string> = {
+    '--form-label-text': lightInputBg,
+    '--form-message-text': lightCardBg,
+    '--form-error-text': lightCardBg,
+    '--form-success-text': lightCardBg,
+    '--form-warning-text': lightCardBg,
+    '--dialog-desc-color': resolveLightSurfaceBg('#ffffff', lightPresetTokens['--dialog-bg']),
+    '--schedule-filter-text': resolveLightSurfaceBg('#f3f4f6', lightPresetTokens['--schedule-filter-bg']),
+    '--schedule-tag-text': resolveLightSurfaceBg('#f3f4f6', lightPresetTokens['--schedule-tag-bg']),
+  };
+
+  for (const [textKey, surfaceBg] of Object.entries(lightTextSurfaceMap)) {
+    const rawVal = lightPresetTokens[textKey];
+    if (!rawVal) continue;
+    const parsedText = parseColorRgb(rawVal);
+    if (parsedText) {
+      const rawHex = rgbToHex(parsedText.r, parsedText.g, parsedText.b);
+      lightPresetTokens[textKey] = optimizeContrast(rawHex, surfaceBg, 4.5);
+    }
+  }
+
   const darkCardAndInputBg = resolveDarkSurfaceBg(
     resolveDarkSurfaceBg('#18181b', darkPresetTokens['--card-bg']),
     darkPresetTokens['--input-bg']
@@ -541,6 +576,14 @@ export function generateDynamicStyles(
         if (typeof baseFallback === 'string') {
           darkPresetTokens[textKey] = baseFallback;
         }
+      }
+    } else {
+      const rawVal = darkPresetTokens[textKey];
+      if (!rawVal) continue;
+      const parsedText = parseColorRgb(rawVal);
+      if (parsedText) {
+        const rawHex = rgbToHex(parsedText.r, parsedText.g, parsedText.b);
+        darkPresetTokens[textKey] = optimizeContrast(rawHex, surfaceBg, 4.5);
       }
     }
   }

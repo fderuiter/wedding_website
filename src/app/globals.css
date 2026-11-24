@@ -29,8 +29,8 @@
   --color-surface-border: var(--card-border);
   --color-heading: var(--heading-color);
   --color-muted: var(--form-message-text, var(--color-muted, #6B7280));
-  --color-badge: var(--schedule-tag-bg, var(--color-secondary-light, #F3F4F6));
-  --color-badge-text: var(--schedule-tag-text, var(--color-secondary, #B45309));
+  --color-badge: var(--schedule-tag-bg, #F3F4F6);
+  --color-badge-text: var(--schedule-tag-text, #374151);
   --shadow-card: var(--card-shadow);
 
   --font-sans: var(--font-body, var(--font-geist-sans), Arial, Helvetica, sans-serif);
@@ -171,6 +171,8 @@
   --card-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
   --heading-color: var(--color-primary, #b91c1c);
   --color-muted: #4b5563;
+  --schedule-tag-bg: #f3f4f6;
+  --schedule-tag-text: #374151;
 }
 
 .dark {
@@ -207,6 +209,8 @@
   --card-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.5);
   --heading-color: #f9fafb;
   --color-muted: #9ca3af;
+  --schedule-tag-bg: #27272a;
+  --schedule-tag-text: #e4e4e7;
 
   --dialog-bg: var(--color-background);
   --dialog-border-color: var(--color-border);
