@@ -15,6 +15,7 @@ export interface QualityRunOptions {
   stepsToRun?: Step[];
   staticOnly?: boolean;
   skipDocSync?: boolean;
+  skipActionPins?: boolean;
   execCommand?: (command: string, cwd: string) => void;
 }
 
@@ -151,12 +152,21 @@ export const steps: Step[] = [
 
 export function resolveQualitySteps(options: QualityRunOptions = {}): Step[] {
   const baseSteps = options.stepsToRun || (options.staticOnly ? staticSteps : steps);
-  if (!options.skipDocSync) {
-    return baseSteps;
-  }
-  return baseSteps.filter(
-    (step) => step.script !== 'check:doc-sync' && step.command !== 'npm run check:doc-sync'
-  );
+  return baseSteps.filter((step) => {
+    if (
+      options.skipDocSync &&
+      (step.script === 'check:doc-sync' || step.command === 'npm run check:doc-sync')
+    ) {
+      return false;
+    }
+    if (
+      options.skipActionPins &&
+      (step.script === 'check:action-pins' || step.command === 'npm run check:action-pins')
+    ) {
+      return false;
+    }
+    return true;
+  });
 }
 
 export function main(options: QualityRunOptions = {}): void {
@@ -222,5 +232,6 @@ if (isDirectCall) {
   main({
     staticOnly: cliArgs.includes('--static'),
     skipDocSync: cliArgs.includes('--skip-doc-sync'),
+    skipActionPins: cliArgs.includes('--skip-action-pins'),
   });
 }

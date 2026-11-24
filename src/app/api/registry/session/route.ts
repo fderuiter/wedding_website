@@ -19,6 +19,7 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
       invitationCode: null,
       code: null,
       guestName: null,
+      email: null,
     });
 
     if (existingCookie) {
@@ -33,6 +34,7 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     invitationCode: session.code,
     code: session.code,
     guestName: session.guestName,
+    email: session.email ?? null,
   });
 });
 
@@ -42,6 +44,7 @@ export const DELETE = withApiMiddleware(async (request: NextRequest) => {
     invitationCode: null,
     code: null,
     guestName: null,
+    email: null,
   });
 
   clearGuestInviteSessionCookie(response, request);

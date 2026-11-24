@@ -12,6 +12,11 @@ import { CARD_PROCESSING_FEE_RATE } from '@/lib/stripe.client';
 import { notifyGuestSessionChanged } from '@/utils/guestSessionEvents';
 import { normalizePartyTags } from '@/utils/invitationValidation';
 import { buildArchetypeDataset, type ArchetypeDataset } from './demoSeed';
+import {
+  isDemoRuntimeActive,
+  registerDemoRuntimeBridge,
+  setDemoBridgeRuntimeActive,
+} from './demoRuntimeBridge';
 
 function isDemoAddressCollectionOnly(partyTags: unknown): boolean {
   return normalizePartyTags(partyTags).includes('address-collection');
@@ -69,12 +74,58 @@ const ALL_DEMO_MODULES = [
 const VALID_PERSONAS: DemoPersona[] = ['guest', 'admin', 'setup'];
 const VALID_ARCHETYPES: ArchetypeId[] = ['classic', 'destination', 'romantic'];
 
-function createDefaultDatasets(): Record<ArchetypeId, ArchetypeDataset> {
-  return {
-    classic: buildArchetypeDataset('classic'),
-    destination: buildArchetypeDataset('destination'),
-    romantic: buildArchetypeDataset('romantic'),
+const RAW_DATASETS = Symbol('rawDemoDatasets');
+
+type LazyDatasetMap = Record<ArchetypeId, ArchetypeDataset> & {
+  [RAW_DATASETS]?: Partial<Record<ArchetypeId, ArchetypeDataset>>;
+};
+
+function createLazyDatasets(
+  initial: Partial<Record<ArchetypeId, ArchetypeDataset>> = {}
+): Record<ArchetypeId, ArchetypeDataset> {
+  const materialized: Partial<Record<ArchetypeId, ArchetypeDataset>> = {
+    ...initial,
   };
+
+  return new Proxy(materialized as LazyDatasetMap, {
+    get(target, prop, receiver) {
+      if (prop === RAW_DATASETS) {
+        return target;
+      }
+      if (prop === 'toJSON') {
+        return () => ({ ...target });
+      }
+      if (
+        typeof prop === 'string' &&
+        (VALID_ARCHETYPES as readonly string[]).includes(prop)
+      ) {
+        const key = prop as ArchetypeId;
+        if (!target[key]) {
+          target[key] = buildArchetypeDataset(key);
+        }
+        return target[key];
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+}
+
+function getMaterializedDatasets(
+  datasets: Record<ArchetypeId, ArchetypeDataset>
+): Partial<Record<ArchetypeId, ArchetypeDataset>> {
+  const raw = (datasets as LazyDatasetMap)[RAW_DATASETS];
+  return raw ? { ...raw } : { ...datasets };
+}
+
+function withUpdatedDataset(
+  datasets: Record<ArchetypeId, ArchetypeDataset>,
+  archetype: ArchetypeId,
+  nextDataset: ArchetypeDataset
+): Record<ArchetypeId, ArchetypeDataset> {
+  return createLazyDatasets({
+    ...getMaterializedDatasets(datasets),
+    [archetype]: nextDataset,
+  });
 }
 
 function createInitialDemoState(resetCounter = 0): DemoStoreState {
@@ -86,7 +137,7 @@ function createInitialDemoState(resetCounter = 0): DemoStoreState {
     setupAuthenticated: false,
     configOverrides: {},
     activeModules: [...ALL_DEMO_MODULES],
-    datasets: createDefaultDatasets(),
+    datasets: createLazyDatasets(),
     guestSession: null,
     rsvpOverrides: {},
     claimTokens: {},
@@ -263,10 +314,16 @@ function syncStaticDemoConfigOverrides(overrides: Partial<PublicAppConfig>): voi
   });
 }
 
-let runtimeActive = false;
 let hasHydratedFromStorage = false;
-let state: DemoStoreState = createInitialDemoState(0);
+let state: DemoStoreState | null = null;
 const listeners = new Set<() => void>();
+
+function ensureState(): DemoStoreState {
+  if (!state) {
+    state = createInitialDemoState(0);
+  }
+  return state;
+}
 
 function emitChange(): void {
   for (const listener of listeners) {
@@ -275,7 +332,7 @@ function emitChange(): void {
 }
 
 function persistDemoState(): void {
-  if (!runtimeActive || typeof window === 'undefined') return;
+  if (!isDemoRuntimeActive() || typeof window === 'undefined' || !state) return;
   try {
     window.localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(state));
   } catch {
@@ -290,7 +347,7 @@ export function hydrateDemoStateFromStorage(): void {
     const raw = window.localStorage.getItem(DEMO_STORAGE_KEY);
     if (!raw) return;
     const parsed = JSON.parse(raw) as Partial<DemoStoreState>;
-    const defaults = createInitialDemoState(state.resetCounter);
+    const currentResetCounter = state?.resetCounter ?? 0;
 
     const persona: DemoPersona =
       parsed.persona && VALID_PERSONAS.includes(parsed.persona) ? parsed.persona : 'guest';
@@ -303,17 +360,13 @@ export function hydrateDemoStateFromStorage(): void {
         ? parsed.themePreset
         : 'classic';
 
-    const hydratedDatasets: Record<ArchetypeId, ArchetypeDataset> = {
-      classic: parsed.datasets?.classic
-        ? reviveDatasetDates(parsed.datasets.classic)
-        : defaults.datasets.classic,
-      destination: parsed.datasets?.destination
-        ? reviveDatasetDates(parsed.datasets.destination)
-        : defaults.datasets.destination,
-      romantic: parsed.datasets?.romantic
-        ? reviveDatasetDates(parsed.datasets.romantic)
-        : defaults.datasets.romantic,
-    };
+    const hydratedSeed: Partial<Record<ArchetypeId, ArchetypeDataset>> = {};
+    for (const key of VALID_ARCHETYPES) {
+      const savedDataset = parsed.datasets?.[key];
+      if (savedDataset) {
+        hydratedSeed[key] = reviveDatasetDates(savedDataset);
+      }
+    }
 
     state = {
       persona,
@@ -338,7 +391,7 @@ export function hydrateDemoStateFromStorage(): void {
       activeModules: Array.isArray(parsed.activeModules)
         ? parsed.activeModules.filter((m): m is string => typeof m === 'string')
         : [...ALL_DEMO_MODULES],
-      datasets: hydratedDatasets,
+      datasets: createLazyDatasets(hydratedSeed),
       guestSession:
         parsed.guestSession &&
         typeof parsed.guestSession.invitationCode === 'string' &&
@@ -351,7 +404,7 @@ export function hydrateDemoStateFromStorage(): void {
           : {},
       claimTokens:
         parsed.claimTokens && typeof parsed.claimTokens === 'object' ? parsed.claimTokens : {},
-      resetCounter: state.resetCounter,
+      resetCounter: currentResetCounter,
     };
     const bridge = getStaticDemoStoreBridge();
     if (bridge) {
@@ -370,24 +423,26 @@ export function hydrateDemoStateFromStorage(): void {
 }
 
 export function setDemoRuntimeActive(active: boolean): void {
-  runtimeActive = active;
+  setDemoBridgeRuntimeActive(active);
   if (active && !hasHydratedFromStorage && typeof window !== 'undefined') {
     hydrateDemoStateFromStorage();
   }
   emitChange();
 }
 
-export function isDemoRuntimeActive(): boolean {
-  return runtimeActive;
-}
+export { isDemoRuntimeActive };
 
 export function isDemoAdminSession(): boolean {
-  if (!runtimeActive) return false;
-  return state.persona === 'admin' || (state.persona === 'setup' && state.setupAuthenticated);
+  if (!isDemoRuntimeActive()) return false;
+  const current = ensureState();
+  return (
+    current.persona === 'admin' ||
+    (current.persona === 'setup' && current.setupAuthenticated)
+  );
 }
 
 export function getDemoState(): DemoStoreState {
-  return state;
+  return ensureState();
 }
 
 export function subscribeDemoState(listener: () => void): () => void {
@@ -398,12 +453,13 @@ export function subscribeDemoState(listener: () => void): () => void {
 }
 
 function updateState(updater: (prev: DemoStoreState) => DemoStoreState): void {
-  const prevGuestCode = state.guestSession?.invitationCode ?? null;
-  state = updater(state);
+  const current = ensureState();
+  const prevGuestCode = current.guestSession?.invitationCode ?? null;
+  state = updater(current);
   const nextGuestCode = state.guestSession?.invitationCode ?? null;
   persistDemoState();
   emitChange();
-  if (runtimeActive && prevGuestCode !== nextGuestCode) {
+  if (isDemoRuntimeActive() && prevGuestCode !== nextGuestCode) {
     notifyGuestSessionChanged();
   }
 }
@@ -413,7 +469,7 @@ export function setDemoPersona(persona: DemoPersona): void {
     ...prev,
     persona,
   }));
-  syncStaticDemoPersona(persona, state.setupAuthenticated);
+  syncStaticDemoPersona(persona, ensureState().setupAuthenticated);
 }
 
 export function setDemoArchetype(archetype: ArchetypeId): void {
@@ -434,12 +490,13 @@ export function setDemoArchetype(archetype: ArchetypeId): void {
         : null,
     };
   });
+  const current = ensureState();
   const bridge = getStaticDemoStoreBridge();
   if (bridge) {
     bridge.switchArchetype(archetype);
-    syncStaticDemoPersona(state.persona, state.setupAuthenticated);
-    syncStaticDemoConfigOverrides(state.configOverrides);
-    syncStaticDemoGuestSession(state.guestSession);
+    syncStaticDemoPersona(current.persona, current.setupAuthenticated);
+    syncStaticDemoConfigOverrides(current.configOverrides);
+    syncStaticDemoGuestSession(current.guestSession);
   }
 }
 
@@ -470,7 +527,7 @@ export function setDemoSetupAuthenticated(authenticated: boolean): void {
     ...prev,
     setupAuthenticated: authenticated,
   }));
-  syncStaticDemoPersona(state.persona, authenticated);
+  syncStaticDemoPersona(ensureState().persona, authenticated);
 }
 
 export function updateDemoConfigOverrides(overrides: Partial<PublicAppConfig>): void {
@@ -496,16 +553,14 @@ export function applyDemoSampleSelection(archetype: ArchetypeId, modules: string
     ...prev,
     archetype,
     activeModules: [...modules],
-    datasets: {
-      ...prev.datasets,
-      [archetype]: buildArchetypeDataset(archetype),
-    },
+    datasets: withUpdatedDataset(prev.datasets, archetype, buildArchetypeDataset(archetype)),
   }));
+  const current = ensureState();
   const bridge = getStaticDemoStoreBridge();
   if (bridge) {
     bridge.switchArchetype(archetype);
-    syncStaticDemoPersona(state.persona, state.setupAuthenticated);
-    syncStaticDemoConfigOverrides(state.configOverrides);
+    syncStaticDemoPersona(current.persona, current.setupAuthenticated);
+    syncStaticDemoConfigOverrides(current.configOverrides);
   }
 }
 
@@ -520,18 +575,15 @@ export function purgeDemoSampleData(): void {
     return {
       ...prev,
       activeModules: [],
-      datasets: {
-        ...prev.datasets,
-        [prev.archetype]: {
-          ...current,
-          registryItems: current.registryItems.filter((i) => !i.isSample),
-          guests: filteredGuests,
-          seatingTables: filteredTables,
-          weddingParty: current.weddingParty.filter((m) => !m.isSample),
-          attractions: current.attractions.filter((a) => !a.isSample),
-          faqs: [],
-        },
-      },
+      datasets: withUpdatedDataset(prev.datasets, prev.archetype, {
+        ...current,
+        registryItems: current.registryItems.filter((i) => !i.isSample),
+        guests: filteredGuests,
+        seatingTables: filteredTables,
+        weddingParty: current.weddingParty.filter((m) => !m.isSample),
+        attractions: current.attractions.filter((a) => !a.isSample),
+        faqs: [],
+      }),
     };
   });
   getStaticDemoStoreBridge()?.mutate((draft) => {
@@ -547,8 +599,8 @@ export function purgeDemoSampleData(): void {
 }
 
 export function resetDemoState(): void {
-  const hadGuestSession = Boolean(state.guestSession);
-  const nextResetCounter = state.resetCounter + 1;
+  const hadGuestSession = Boolean(state?.guestSession);
+  const nextResetCounter = (state?.resetCounter ?? 0) + 1;
   state = createInitialDemoState(nextResetCounter);
   hasHydratedFromStorage = true;
 
@@ -567,13 +619,13 @@ export function resetDemoState(): void {
     syncStaticDemoPersona('guest', false);
   }
   emitChange();
-  if (runtimeActive && hadGuestSession) {
+  if (isDemoRuntimeActive() && hadGuestSession) {
     notifyGuestSessionChanged();
   }
 }
 
 export function getActiveArchetypeDataset(
-  targetState: DemoStoreState = state
+  targetState: DemoStoreState = ensureState()
 ): ArchetypeDataset {
   const current = targetState.datasets[targetState.archetype] ?? targetState.datasets.classic;
   const activeSet = new Set(targetState.activeModules);
@@ -581,6 +633,7 @@ export function getActiveArchetypeDataset(
     registryItems: activeSet.has('registry')
       ? current.registryItems
       : current.registryItems.filter((i) => !i.isSample),
+    offlineContributors: current.offlineContributors ?? [],
     guests: activeSet.has('guests')
       ? current.guests
       : current.guests.filter((g) => !g.isSample),
@@ -602,18 +655,19 @@ export function findDemoGuestByCode(rawCode: string): InvitationCodeDTO | null {
   const normalized = rawCode.trim().toUpperCase();
   if (!normalized) return null;
 
-  const activeGuests = getActiveArchetypeDataset().guests;
+  const currentState = ensureState();
+  const activeGuests = getActiveArchetypeDataset(currentState).guests;
   const directMatch = activeGuests.find((g) => g.code.toUpperCase() === normalized);
   if (directMatch) {
     return isDemoAddressCollectionOnly(directMatch.partyTags) ? null : directMatch;
   }
 
-  const presetGuests = ARCHETYPE_PRESETS[state.archetype]?.guests ?? [];
+  const presetGuests = ARCHETYPE_PRESETS[currentState.archetype]?.guests ?? [];
   const presetMatch = presetGuests.find((g) => g.code.toUpperCase() === normalized);
   if (!presetMatch || isDemoAddressCollectionOnly(presetMatch.partyTags)) return null;
 
   return {
-    id: `demo-${state.archetype}-preset-${normalized}`,
+    id: `demo-${currentState.archetype}-preset-${normalized}`,
     code: presetMatch.code.toUpperCase(),
     guestName: presetMatch.guestName,
     householdName: presetMatch.householdName,
@@ -686,14 +740,11 @@ export function updateDemoGuestAddress(
 
     return {
       ...prev,
-      datasets: {
-        ...prev.datasets,
-        [prev.archetype]: {
-          ...current,
-          guests: nextGuests,
-          seatingTables: syncTableGuests(current.seatingTables, nextGuests),
-        },
-      },
+      datasets: withUpdatedDataset(prev.datasets, prev.archetype, {
+        ...current,
+        guests: nextGuests,
+        seatingTables: syncTableGuests(current.seatingTables, nextGuests),
+      }),
     };
   });
 
@@ -855,21 +906,97 @@ export function recordDemoContribution(
     return {
       ...prev,
       claimTokens: nextClaimTokens,
-      datasets: {
-        ...prev.datasets,
-        [prev.archetype]: {
-          ...current,
-          guests: nextGuests,
-          seatingTables: syncTableGuests(current.seatingTables, nextGuests),
-          registryItems: current.registryItems.map((i) =>
-            i.id === updatedItem.id ? updatedItem : i
-          ),
-        },
-      },
+      datasets: withUpdatedDataset(prev.datasets, prev.archetype, {
+        ...current,
+        guests: nextGuests,
+        seatingTables: syncTableGuests(current.seatingTables, nextGuests),
+        registryItems: current.registryItems.map((i) =>
+          i.id === updatedItem.id ? updatedItem : i
+        ),
+      }),
     };
   });
 
   return resultItem;
+}
+
+export interface DemoClaimPreview {
+  action: 'confirm' | 'cancel';
+  status: 'RESERVED' | 'CONFIRMED' | 'CANCELLED' | 'REFUNDED';
+  amount: number;
+  itemId: string;
+  itemName: string;
+  itemType: 'PHYSICAL' | 'CASH_FUND' | 'EXPERIENCE_FUND';
+  isGroupGift: boolean;
+  vendorUrl: string | null;
+  paymentHandle: string | null;
+  paymentHandleType: string | null;
+}
+
+function resolveDemoClaimRecord(token: string): DemoClaimTokenRecord | null {
+  const trimmed = token.trim();
+  if (!trimmed) return null;
+
+  const currentState = ensureState();
+  const direct = currentState.claimTokens[trimmed];
+  if (direct) return direct;
+
+  const patternMatch =
+    /^demo_(confirm|cancel)_(.+)$/.exec(trimmed) ??
+    /^demo-claim:(confirm|cancel):(.+)$/.exec(trimmed);
+  if (!patternMatch) return null;
+
+  const action = patternMatch[1] as 'confirm' | 'cancel';
+  const contributorId = patternMatch[2];
+  const current = currentState.datasets[currentState.archetype];
+  for (const item of current.registryItems) {
+    if ((item.contributors || []).some((c) => c.id === contributorId)) {
+      return {
+        itemId: item.id,
+        contributorId,
+        action,
+      };
+    }
+  }
+  return null;
+}
+
+export function previewDemoClaimToken(token: string): DemoClaimPreview | null {
+  const record = resolveDemoClaimRecord(token);
+  if (!record) return null;
+
+  const currentState = ensureState();
+  const current = currentState.datasets[currentState.archetype];
+  const item = current.registryItems.find((i) => i.id === record.itemId);
+  if (!item) return null;
+
+  const contributor = (item.contributors || []).find((c) => c.id === record.contributorId);
+  if (!contributor) return null;
+
+  const status: DemoClaimPreview['status'] =
+    contributor.status === 'CONFIRMED' ||
+    contributor.status === 'CANCELLED' ||
+    contributor.status === 'REFUNDED'
+      ? contributor.status
+      : 'RESERVED';
+
+  const itemType: DemoClaimPreview['itemType'] =
+    item.itemType === 'CASH_FUND' || item.itemType === 'EXPERIENCE_FUND'
+      ? item.itemType
+      : 'PHYSICAL';
+
+  return {
+    action: record.action,
+    status,
+    amount: contributor.amount,
+    itemId: item.id,
+    itemName: item.name,
+    itemType,
+    isGroupGift: Boolean(item.isGroupGift),
+    vendorUrl: item.vendorUrl ?? null,
+    paymentHandle: item.paymentHandle || '@alex-and-taylor',
+    paymentHandleType: item.paymentHandleType || 'Venmo',
+  };
 }
 
 export function processDemoClaimToken(token: string): {
@@ -878,7 +1005,7 @@ export function processDemoClaimToken(token: string): {
   changed: boolean;
   item: RegistryItem | null;
 } | null {
-  const record = state.claimTokens[token];
+  const record = resolveDemoClaimRecord(token);
   if (!record) return null;
 
   let updatedItem: RegistryItem | null = null;
@@ -926,13 +1053,10 @@ export function processDemoClaimToken(token: string): {
 
     return {
       ...prev,
-      datasets: {
-        ...prev.datasets,
-        [prev.archetype]: {
-          ...current,
-          registryItems: current.registryItems.map((i) => (i.id === nextItem.id ? nextItem : i)),
-        },
-      },
+      datasets: withUpdatedDataset(prev.datasets, prev.archetype, {
+        ...current,
+        registryItems: current.registryItems.map((i) => (i.id === nextItem.id ? nextItem : i)),
+      }),
     };
   });
 
@@ -952,13 +1076,15 @@ export function mutateActiveDataset(
     const next = updater(current);
     return {
       ...prev,
-      datasets: {
-        ...prev.datasets,
-        [prev.archetype]: {
-          ...next,
-          seatingTables: syncTableGuests(next.seatingTables, next.guests),
-        },
-      },
+      datasets: withUpdatedDataset(prev.datasets, prev.archetype, {
+        ...next,
+        seatingTables: syncTableGuests(next.seatingTables, next.guests),
+      }),
     };
   });
 }
+
+registerDemoRuntimeBridge({
+  isAdminSession: isDemoAdminSession,
+  findGuestByCode: findDemoGuestByCode,
+});

@@ -15,6 +15,8 @@ import {
   GET as validateCodeRoute,
   POST as validateCodePostRoute,
 } from '@/app/api/registry/validate-code/route';
+import { GET as registrySessionGet } from '@/app/api/registry/session/route';
+import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyGuestInviteSessionToken } from '@/core/auth/guestInviteSession';
 
@@ -73,6 +75,7 @@ describe('validate-code Route', () => {
       id: 'invite-123',
       code: 'USEDCODE',
       guestName: 'John Doe',
+      email: null,
       used: true,
     });
     const req = new Request('http://localhost/api/registry/validate-code?code=USEDCODE', {
@@ -87,16 +90,19 @@ describe('validate-code Route', () => {
         valid: true,
         guestName: 'John Doe',
         code: 'USEDCODE',
+        email: null,
       }
     });
   });
 
-  it('GET returns 200 with guestName and valid: true without setting cookies or mutating BroadcastRecipient', async () => {
+  it('GET returns 200 with guestName, invite email, and valid: true without setting cookies or mutating BroadcastRecipient', async () => {
     mockFindUnique.mockResolvedValue({
       id: 'invite-123',
       code: 'GOODCODE',
       guestName: 'Jane Smith',
+      email: 'jane.smith@example.com',
       used: false,
+      isSample: false,
     });
     const req = new Request('http://localhost/api/registry/validate-code?code=GOODCODE', {
       method: 'GET',
@@ -110,6 +116,7 @@ describe('validate-code Route', () => {
         valid: true,
         guestName: 'Jane Smith',
         code: 'GOODCODE',
+        email: 'jane.smith@example.com',
       }
     });
 
@@ -117,12 +124,14 @@ describe('validate-code Route', () => {
     expect(mockRecipientUpdateMany).not.toHaveBeenCalled();
   });
 
-  it('POST returns 200 with guestName and valid: true for an active code, sets guest_invite_session cookie, and updates BroadcastRecipient', async () => {
+  it('POST returns 200 with guestName, invite email, and valid: true, sets guest_invite_session cookie, updates BroadcastRecipient, and hydrates email in /api/registry/session', async () => {
     mockFindUnique.mockResolvedValue({
       id: 'invite-123',
       code: 'GOODCODE',
       guestName: 'Jane Smith',
+      email: 'jane.smith@example.com',
       used: false,
+      isSample: false,
     });
     const req = new Request('http://localhost/api/registry/validate-code', {
       method: 'POST',
@@ -138,6 +147,7 @@ describe('validate-code Route', () => {
         valid: true,
         guestName: 'Jane Smith',
         code: 'GOODCODE',
+        email: 'jane.smith@example.com',
       }
     });
 
@@ -155,5 +165,20 @@ describe('validate-code Route', () => {
     expect(verified).not.toBeNull();
     expect(verified?.code).toBe('GOODCODE');
     expect(verified?.guestName).toBe('Jane Smith');
+
+    const sessionRes = await registrySessionGet(
+      new NextRequest('http://localhost/api/registry/session', {
+        headers: { cookie: `guest_invite_session=${token}` },
+      })
+    );
+    expect(sessionRes.status).toBe(200);
+    const sessionJson = await sessionRes.json();
+    expect(sessionJson.data).toEqual({
+      isVerified: true,
+      invitationCode: 'GOODCODE',
+      code: 'GOODCODE',
+      guestName: 'Jane Smith',
+      email: 'jane.smith@example.com',
+    });
   });
 });

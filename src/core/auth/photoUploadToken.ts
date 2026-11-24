@@ -1,5 +1,11 @@
 import { NextRequest } from 'next/server';
+import { normalizeTenantSubdomain } from '@/utils/hostValidation';
 import { getGuestSessionSecret } from './guestInviteToken';
+import {
+  resolveEdgeRequestSubdomain,
+  type TenantTokenClaims,
+  verifyEdgeTenantClaims,
+} from './tenantClaims';
 import {
   readRequestCookieCandidates,
   signCompactToken,
@@ -11,14 +17,14 @@ export const PHOTO_QR_QUERY_PARAM = 'qr';
 export const PHOTO_QR_LINK_TTL_MS = 180 * 24 * 60 * 60 * 1000; // 180 days for printed reception cards
 export const GUEST_PHOTO_SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60; // 7 days
 
-export interface PhotoQrLinkPayload {
+export interface PhotoQrLinkPayload extends TenantTokenClaims {
   purpose: 'photo_qr_link';
   v: number;
   iat: number;
   exp: number;
 }
 
-export interface PhotoUploadSessionPayload {
+export interface PhotoUploadSessionPayload extends TenantTokenClaims {
   purpose: 'photo_upload_session';
   v: number;
   iat: number;
@@ -37,6 +43,8 @@ function normalizeTokenVersion(version?: number): number {
  */
 export async function signPhotoQrLinkToken(options?: {
   v?: number;
+  siteId?: string;
+  subdomain?: string | null;
   iat?: number;
   exp?: number;
 }): Promise<string> {
@@ -45,6 +53,10 @@ export async function signPhotoQrLinkToken(options?: {
   const payload: PhotoQrLinkPayload = {
     purpose: 'photo_qr_link',
     v: normalizeTokenVersion(options?.v),
+    ...(options?.siteId !== undefined ? { siteId: options.siteId } : {}),
+    ...(options && 'subdomain' in options && options.subdomain !== undefined
+      ? { subdomain: normalizeTenantSubdomain(options.subdomain) }
+      : {}),
     iat,
     exp,
   };
@@ -84,6 +96,11 @@ export async function verifyPhotoQrLinkToken(
     return {
       purpose: 'photo_qr_link',
       v: payload.v,
+      ...(typeof payload.siteId === 'string' ? { siteId: payload.siteId } : {}),
+      ...('subdomain' in payload &&
+      (payload.subdomain === null || typeof payload.subdomain === 'string')
+        ? { subdomain: normalizeTenantSubdomain(payload.subdomain) }
+        : {}),
       iat: payload.iat,
       exp: payload.exp,
     };
@@ -97,6 +114,8 @@ export async function verifyPhotoQrLinkToken(
  */
 export async function signPhotoUploadSessionToken(options?: {
   v?: number;
+  siteId?: string;
+  subdomain?: string | null;
   iat?: number;
   exp?: number;
 }): Promise<string> {
@@ -105,6 +124,10 @@ export async function signPhotoUploadSessionToken(options?: {
   const payload: PhotoUploadSessionPayload = {
     purpose: 'photo_upload_session',
     v: normalizeTokenVersion(options?.v),
+    ...(options?.siteId !== undefined ? { siteId: options.siteId } : {}),
+    ...(options && 'subdomain' in options && options.subdomain !== undefined
+      ? { subdomain: normalizeTenantSubdomain(options.subdomain) }
+      : {}),
     iat,
     exp,
   };
@@ -144,6 +167,11 @@ export async function verifyPhotoUploadSessionToken(
     return {
       purpose: 'photo_upload_session',
       v: payload.v,
+      ...(typeof payload.siteId === 'string' ? { siteId: payload.siteId } : {}),
+      ...('subdomain' in payload &&
+      (payload.subdomain === null || typeof payload.subdomain === 'string')
+        ? { subdomain: normalizeTenantSubdomain(payload.subdomain) }
+        : {}),
       iat: payload.iat,
       exp: payload.exp,
     };
@@ -157,8 +185,63 @@ const requestSignedPhotoSessionCache = new WeakMap<
   Map<string, Promise<PhotoUploadSessionPayload | null>>
 >();
 
+async function verifyCachedPhotoCookieCandidate(
+  cookieValue: string,
+  req?: NextRequest
+): Promise<PhotoUploadSessionPayload | null> {
+  if (req && typeof req === 'object') {
+    let byCookie = requestSignedPhotoSessionCache.get(req);
+    let cached = byCookie?.get(cookieValue);
+    if (!cached) {
+      cached = verifyPhotoUploadSessionToken(cookieValue).catch((err) => {
+        byCookie?.delete(cookieValue);
+        throw err;
+      });
+      if (!byCookie) {
+        byCookie = new Map();
+        requestSignedPhotoSessionCache.set(req, byCookie);
+      }
+      byCookie.set(cookieValue, cached);
+    }
+
+    try {
+      const payload = await cached;
+      return payload && payload.exp >= Date.now() ? payload : null;
+    } catch {
+      return null;
+    }
+  }
+
+  return verifyPhotoUploadSessionToken(cookieValue);
+}
+
 /**
- * Reads and verifies the HMAC signature and expiration of the guest_photo_session cookie (Edge-compatible).
+ * Reads and verifies the HMAC signature and expiration of the `guest_photo_session`
+ * cookie with per-request WeakMap deduplication, prior to tenant claim filtering.
+ */
+export async function getRawSignedPhotoUploadSession(
+  req?: NextRequest
+): Promise<PhotoUploadSessionPayload | null> {
+  const candidates = await readRequestCookieCandidates(GUEST_PHOTO_COOKIE, req, {
+    suppressErrors: true,
+  });
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  for (const cookieValue of candidates) {
+    const payload = await verifyCachedPhotoCookieCandidate(cookieValue, req);
+    if (payload) {
+      return payload;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Reads and verifies the HMAC signature, expiration, and Edge tenant claims of the
+ * `guest_photo_session` cookie (Edge-compatible), evaluating every matching candidate.
  */
 export async function getSignedPhotoUploadSession(
   req?: NextRequest
@@ -170,37 +253,21 @@ export async function getSignedPhotoUploadSession(
     return null;
   }
 
+  let resolvedSubdomain: string | null | undefined;
   for (const cookieValue of candidates) {
-    if (req && typeof req === 'object') {
-      let byCookie = requestSignedPhotoSessionCache.get(req);
-      let cached = byCookie?.get(cookieValue);
-      if (!cached) {
-        cached = verifyPhotoUploadSessionToken(cookieValue).catch((err) => {
-          byCookie?.delete(cookieValue);
-          throw err;
-        });
-        if (!byCookie) {
-          byCookie = new Map();
-          requestSignedPhotoSessionCache.set(req, byCookie);
-        }
-        byCookie.set(cookieValue, cached);
-      }
-
-      try {
-        const payload = await cached;
-        if (payload && payload.exp >= Date.now()) {
-          return payload;
-        }
-      } catch {
-        // Fall through to next matching cookie candidate
-      }
+    const payload = await verifyCachedPhotoCookieCandidate(cookieValue, req);
+    if (!payload) {
       continue;
     }
 
-    const payload = await verifyPhotoUploadSessionToken(cookieValue);
-    if (payload) {
-      return payload;
+    if (resolvedSubdomain === undefined) {
+      resolvedSubdomain = await resolveEdgeRequestSubdomain(req);
     }
+    if (!verifyEdgeTenantClaims(payload, resolvedSubdomain)) {
+      continue;
+    }
+
+    return payload;
   }
 
   return null;
@@ -211,9 +278,16 @@ export async function getSignedPhotoUploadSession(
  */
 export async function buildSignedPhotoUploadUrl(
   baseUrl: string | null | undefined,
-  tokenVersion?: number
+  tokenVersion?: number,
+  tenantClaims?: TenantTokenClaims
 ): Promise<{ token: string; uploadUrl: string }> {
-  const token = await signPhotoQrLinkToken({ v: tokenVersion });
+  const token = await signPhotoQrLinkToken({
+    v: tokenVersion,
+    ...(tenantClaims?.siteId !== undefined ? { siteId: tenantClaims.siteId } : {}),
+    ...(tenantClaims && 'subdomain' in tenantClaims && tenantClaims.subdomain !== undefined
+      ? { subdomain: tenantClaims.subdomain }
+      : {}),
+  });
   const cleanBaseUrl = (baseUrl ?? '').trim().replace(/\/+$/, '');
   const uploadUrl = `${cleanBaseUrl}/photos?${PHOTO_QR_QUERY_PARAM}=${encodeURIComponent(token)}`;
   return { token, uploadUrl };

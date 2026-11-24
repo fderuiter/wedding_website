@@ -1543,5 +1543,130 @@ describe('check-docker-build', () => {
         ])
       );
     });
+
+    it('rejects demo and setup markers in eager standalone route chunks while permitting lazy dynamic chunks and /admin/setup', () => {
+      writeValidStandaloneBundle(tempDir);
+      const standaloneNextDir = path.join(tempDir, '.next', 'standalone', '.next');
+      const chunksDir = path.join(standaloneNextDir, 'static', 'chunks');
+      const serverAppDir = path.join(standaloneNextDir, 'server', 'app');
+      fs.mkdirSync(path.join(serverAppDir, 'admin', 'setup'), { recursive: true });
+
+      // Lazy on-demand demo chunk (not in rootMainFiles or route entryJSFiles) + /admin/setup chunk
+      fs.writeFileSync(
+        path.join(chunksDir, 'lazy-demo.js'),
+        'export const k = "wedding_showcase_demo_v1"; export const u = "Interactive Demo Controls";\n'
+      );
+      fs.writeFileSync(
+        path.join(chunksDir, 'admin-setup-only.js'),
+        'export const s = "Step 3: Sample Data Selection";\n'
+      );
+      fs.writeFileSync(
+        path.join(standaloneNextDir, 'build-manifest.json'),
+        JSON.stringify({ rootMainFiles: ['static/chunks/main.js'] })
+      );
+      fs.writeFileSync(
+        path.join(serverAppDir, 'page_client-reference-manifest.js'),
+        `globalThis.__RSC_MANIFEST = globalThis.__RSC_MANIFEST || {};\nglobalThis.__RSC_MANIFEST["/page"] = ${JSON.stringify(
+          {
+            entryJSFiles: {
+              '[project]/src/app/layout': ['static/chunks/main.js'],
+            },
+          }
+        )};\n`
+      );
+      fs.writeFileSync(
+        path.join(serverAppDir, 'admin', 'setup', 'page_client-reference-manifest.js'),
+        `globalThis.__RSC_MANIFEST = globalThis.__RSC_MANIFEST || {};\nglobalThis.__RSC_MANIFEST["/admin/setup/page"] = ${JSON.stringify(
+          {
+            entryJSFiles: {
+              '[project]/src/app/admin/setup/page': ['static/chunks/admin-setup-only.js'],
+            },
+          }
+        )};\n`
+      );
+
+      // Clean isolation passes under both --require-standalone and --standalone-only
+      expect(checkDockerBuild(tempDir, { requireStandalone: true }).violations).toEqual([]);
+      expect(checkDockerBuild(tempDir, { standaloneOnly: true }).violations).toEqual([]);
+
+      // Leaking demo and setup markers into /page or rootMainFiles fails
+      fs.writeFileSync(
+        path.join(chunksDir, 'main.js'),
+        [
+          'const storeKey = "wedding_showcase_demo_v1";',
+          'const checkout = "Non-Charging Demo Checkout";',
+          'const wizard = "Step 3: Sample Data Selection";',
+          'const csv = "Import Guest Invitation Codes";',
+        ].join('\n')
+      );
+
+      const expectedViolations = expect.arrayContaining([
+        expect.objectContaining({
+          filePath: '.next/standalone/.next/static/chunks/main.js',
+          imageRef: 'wedding_showcase_demo_v1',
+        }),
+        expect.objectContaining({
+          filePath: '.next/standalone/.next/static/chunks/main.js',
+          imageRef: 'Non-Charging Demo Checkout',
+        }),
+        expect.objectContaining({
+          filePath: '.next/standalone/.next/static/chunks/main.js',
+          imageRef: 'Step 3: Sample Data Selection',
+        }),
+        expect.objectContaining({
+          filePath: '.next/standalone/.next/static/chunks/main.js',
+          imageRef: 'Import Guest Invitation Codes',
+        }),
+      ]);
+      expect(checkDockerBuild(tempDir, { requireStandalone: true }).violations).toEqual(
+        expectedViolations
+      );
+      expect(checkDockerBuild(tempDir, { standaloneOnly: true }).violations).toEqual(
+        expectedViolations
+      );
+    });
+
+    it('validates only .next/standalone portability under --standalone-only without re-running static Dockerfile or Compose checks', () => {
+      const standaloneOnlyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'standalone-only-test-'));
+      try {
+        // Fails when .next/standalone is missing even with no Dockerfile/Compose files
+        const missingRes = checkDockerBuild(standaloneOnlyDir, { standaloneOnly: true });
+        expect(missingRes.violations).toEqual([
+          expect.objectContaining({
+            filePath: '.next',
+            imageRef: '.next',
+          }),
+        ]);
+
+        writeValidStandaloneBundle(standaloneOnlyDir);
+        const validRes = checkDockerBuild(standaloneOnlyDir, { standaloneOnly: true });
+        expect(validRes.violations).toEqual([]);
+
+        const cliPass = spawnSync(
+          process.execPath,
+          [TSX_CLI_PATH, CHECK_SCRIPT_PATH, '--standalone-only'],
+          {
+            cwd: standaloneOnlyDir,
+            encoding: 'utf8',
+          }
+        );
+        expect(cliPass.status).toBe(0);
+        expect(cliPass.stdout).toContain('--standalone-only');
+        expect(cliPass.stdout).toContain('passed');
+
+        fs.rmSync(path.join(standaloneOnlyDir, '.next', 'standalone', 'server.js'));
+        const cliFail = spawnSync(
+          process.execPath,
+          [TSX_CLI_PATH, CHECK_SCRIPT_PATH, '--standalone-only'],
+          {
+            cwd: standaloneOnlyDir,
+            encoding: 'utf8',
+          }
+        );
+        expect(cliFail.status).toBe(1);
+      } finally {
+        fs.rmSync(standaloneOnlyDir, { recursive: true, force: true });
+      }
+    });
   });
 });

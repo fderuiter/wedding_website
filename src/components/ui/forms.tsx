@@ -198,6 +198,25 @@ export function FormGroup({
   );
 }
 
+const INVALID_CONTROL_SELECTOR =
+  'input[aria-invalid="true"]:not([disabled]):not([type="hidden"]), select[aria-invalid="true"]:not([disabled]), textarea[aria-invalid="true"]:not([disabled]), [role="combobox"][aria-invalid="true"]:not([aria-disabled="true"]), [aria-invalid="true"][tabindex]:not([tabindex="-1"]):not([disabled])';
+
+export function focusFirstInvalidControl(
+  root?: ParentNode | null
+): HTMLElement | null {
+  const scope = root ?? (typeof document !== 'undefined' ? document : null);
+  if (!scope) return null;
+  const candidates = scope.querySelectorAll<HTMLElement>(INVALID_CONTROL_SELECTOR);
+  for (const el of Array.from(candidates)) {
+    if (el.closest('[aria-hidden="true"], .hidden, [hidden]')) {
+      continue;
+    }
+    el.focus();
+    return el;
+  }
+  return null;
+}
+
 const useFormItem = () => {
   const context = useContext(FormItemContext);
   if (!context) {

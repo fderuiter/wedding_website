@@ -226,7 +226,7 @@ describe('useScheduleRsvpManager', () => {
 
     expect(success).toBe(false);
     expect(result.current.batchError).toBe('Network timeout occurred.');
-    expect(result.current.liveMessage).toContain('Network timeout occurred.');
+    expect(result.current.liveMessage).toBeNull();
 
     const event1 = result.current.getRsvpState('event-1');
     expect(event1.state).toBe('error');
@@ -763,5 +763,127 @@ describe('useScheduleRsvpManager', () => {
     expect(result.current.getRsvpState('se-dinner').current.plusOneNames).toEqual([
       'Riley Companion',
     ]);
+  });
+
+  it('populates per-field fieldErrors, clears them on updateRsvp, guards concurrent submissions while isAnySubmitting, and suppresses duplicate liveMessage during inline alerts', async () => {
+    const promptEvents = [
+      {
+        id: 'se-gala',
+        title: 'Gala Dinner',
+        mealOptions: [{ id: 'm-beef', label: 'Filet', dietaryTags: [] }],
+        customQuestions: [
+          {
+            id: 'q-shuttle',
+            prompt: 'Shuttle needed?',
+            type: 'choice' as const,
+            required: true,
+            options: ['Yes', 'No'],
+          },
+        ],
+        userRsvp: { status: 'pending' as const, plusOneCount: 0, dietaryNotes: '' },
+      },
+    ];
+
+    const { result } = renderHook(() =>
+      useScheduleRsvpManager({
+        initialEvents: promptEvents,
+        maxPlusOnes: 1,
+      })
+    );
+
+    // Saving while status is still pending sets fieldErrors.status and suppresses duplicate liveMessage
+    let pendingValid = true;
+    await act(async () => {
+      pendingValid = await result.current.submitSingle('se-gala');
+    });
+    expect(pendingValid).toBe(false);
+    expect(result.current.getRsvpState('se-gala').fieldErrors.status).toBe(
+      'Please select Attending or Declined before saving.'
+    );
+    expect(result.current.liveMessage).toBeNull();
+
+    act(() => {
+      result.current.updateRsvp('se-gala', {
+        status: 'attending',
+        plusOneCount: 2,
+      });
+    });
+
+    let valid = true;
+    await act(async () => {
+      valid = await result.current.submitSingle('se-gala');
+    });
+
+    expect(valid).toBe(false);
+    const galaErrorState = result.current.getRsvpState('se-gala');
+    expect(galaErrorState.fieldErrors.plusOneCount).toMatch(/allocated limit of 1/i);
+    expect(galaErrorState.fieldErrors['mealSelections.0']).toBe('Please select an entrée option.');
+    expect(galaErrorState.fieldErrors['mealSelections.1']).toBe('Please select an entrée option.');
+    expect(galaErrorState.fieldErrors['plusOneNames.0']).toMatch(/plus-one/i);
+    expect(galaErrorState.fieldErrors['customAnswers.q-shuttle']).toMatch(/Shuttle needed\?/i);
+    expect(result.current.liveMessage).toBeNull();
+
+    // Updating the event clears stale fieldErrors
+    act(() => {
+      result.current.updateRsvp('se-gala', {
+        plusOneCount: 1,
+        plusOneNames: ['Alex Partner'],
+        mealSelections: ['m-beef', 'm-beef'],
+        customAnswers: { 'q-shuttle': 'Yes' },
+      });
+    });
+    expect(result.current.getRsvpState('se-gala').fieldErrors).toEqual({});
+
+    // Guard concurrent submitSingle and submitBatch while in-flight
+    let resolveInFlight: ((val: unknown) => void) | null = null;
+    (global.fetch as jest.Mock).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveInFlight = resolve;
+        })
+    );
+
+    let firstPromise!: Promise<boolean>;
+    let duplicateSingleResult = true;
+    let duplicateBatchResult = true;
+
+    act(() => {
+      firstPromise = result.current.submitSingle('se-gala');
+    });
+    expect(result.current.isAnySubmitting).toBe(true);
+
+    await act(async () => {
+      duplicateSingleResult = await result.current.submitSingle('se-gala');
+      duplicateBatchResult = await result.current.submitBatch();
+    });
+
+    expect(duplicateSingleResult).toBe(false);
+    expect(duplicateBatchResult).toBe(false);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveInFlight?.({
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: [
+            {
+              id: 'rsvp-gala',
+              subEventId: 'se-gala',
+              status: 'attending',
+              plusOneCount: 1,
+              plusOneNames: ['Alex Partner'],
+              mealSelections: ['m-beef', 'm-beef'],
+              customAnswers: { 'q-shuttle': 'Yes' },
+              dietaryNotes: '',
+            },
+          ],
+        }),
+      });
+      await firstPromise;
+    });
+
+    expect(result.current.isAnySubmitting).toBe(false);
+    expect(result.current.liveMessage).toBe('Successfully saved RSVP.');
   });
 });

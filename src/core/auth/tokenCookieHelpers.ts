@@ -8,6 +8,7 @@ import {
   hmacSha256,
   timingSafeEqualJS,
 } from '@/utils/crypto';
+import { resolveRequestProtocol } from '@/utils/hostValidation';
 
 const HOST_COOKIE_PREFIX = '__Host-';
 
@@ -34,8 +35,8 @@ function stripHostCookiePrefix(cookieName: string): string {
 
 /**
  * Determines whether session cookies should be issued with the `__Host-` prefix and `Secure`
- * flag. Returns `true` only in production over HTTPS (`x-forwarded-proto: https`, `https:` URL,
- * or omitted request context), and `false` on plain HTTP local development or loopback servers
+ * flag. Returns `true` only in production over HTTPS (trusted `x-forwarded-proto: https`, `https:`
+ * URL, or omitted request context), and `false` on plain HTTP local development or loopback servers
  * because browsers reject `__Host-` cookies without `Secure`.
  */
 function isSecureCookieContext(req?: CookieContextRequest): boolean {
@@ -48,30 +49,24 @@ function isSecureCookieContext(req?: CookieContextRequest): boolean {
     return true;
   }
 
-  const forwardedProto =
-    typeof req.headers?.get === 'function'
-      ? req.headers.get('x-forwarded-proto')?.split(',')[0]?.trim().toLowerCase()
-      : undefined;
-  if (forwardedProto === 'https') {
-    return true;
-  }
-  if (forwardedProto === 'http') {
-    return false;
-  }
-
-  let protocol = req.nextUrl?.protocol?.toLowerCase();
-  if (!protocol && typeof req.url === 'string' && req.url) {
+  let fallbackProtocol = req.nextUrl?.protocol?.toLowerCase();
+  if (!fallbackProtocol && typeof req.url === 'string' && req.url) {
     try {
-      protocol = new URL(req.url, 'http://localhost').protocol.toLowerCase();
+      fallbackProtocol = new URL(req.url, 'http://localhost').protocol.toLowerCase();
     } catch {
-      protocol = undefined;
+      fallbackProtocol = undefined;
     }
   }
 
-  if (protocol === 'https:') {
+  const headersLookup =
+    typeof req.headers?.get === 'function'
+      ? { get: (name: string) => req.headers!.get!(name) }
+      : null;
+  const resolvedProto = resolveRequestProtocol(headersLookup, fallbackProtocol);
+  if (resolvedProto === 'https') {
     return true;
   }
-  if (protocol === 'http:') {
+  if (resolvedProto === 'http') {
     return false;
   }
 

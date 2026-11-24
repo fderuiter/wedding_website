@@ -180,6 +180,7 @@ describe('docs/3D_TECHNICAL_GUIDE.md specification & portal verification', () =>
         'src/middleware.ts',
         'src/lib/theme/presets.ts',
         'src/components/ThemeProvider.tsx',
+        'src/components/demo/ActiveDemoProvider.tsx',
         'src/components/demo/DemoContext.tsx',
         'src/components/setup/SetupWizard.tsx',
         'src/app/heart/page.tsx',

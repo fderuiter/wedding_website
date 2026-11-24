@@ -90,6 +90,26 @@ export function stageExportWorkspace(targetRoot = rootDir) {
         return true;
       },
     });
+
+    // Ensure Tailwind v4 @tailwindcss/oxide scans non-ignored root src/ when staged under gitignored .next/export-stage
+    const stagedGlobalsCssPath = path.join(stageDir, 'src', 'app', 'globals.css');
+    if (fs.existsSync(stagedGlobalsCssPath)) {
+      const globalsCssRaw = fs.readFileSync(stagedGlobalsCssPath, 'utf8');
+      const relativeRootSrc = path
+        .relative(path.dirname(stagedGlobalsCssPath), srcDir)
+        .split(path.sep)
+        .join('/');
+      const sourceDirective = `@source "${relativeRootSrc}/**/*.{ts,tsx}";`;
+      if (!globalsCssRaw.includes(sourceDirective)) {
+        const updatedCss = globalsCssRaw.includes('@import "tailwindcss";')
+          ? globalsCssRaw.replace(
+            '@import "tailwindcss";',
+            `@import "tailwindcss";\n${sourceDirective}`
+          )
+          : `${sourceDirective}\n${globalsCssRaw}`;
+        fs.writeFileSync(stagedGlobalsCssPath, updatedCss, 'utf8');
+      }
+    }
   }
 
   const rootExportCacheDir = path.join(targetRoot, '.next-export', 'cache');

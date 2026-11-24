@@ -61,6 +61,28 @@ const mockData = {
 describe('ThankYouNotesPage', () => {
   beforeEach(() => {
     global.fetch = jest.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/admin/thank-you-notes/export-labels')) {
+        return Promise.resolve(
+          new Response('%PDF-1.4 mock', {
+            status: 200,
+            headers: {
+              'Content-Type': 'application/pdf',
+              'Content-Disposition': 'attachment; filename="thank-you-labels.pdf"',
+            },
+          })
+        );
+      }
+      if (url.includes('/api/admin/thank-you-notes/export')) {
+        return Promise.resolve(
+          new Response('Contributor Name,Email\nAlice Johnson,alice@example.com\n', {
+            status: 200,
+            headers: {
+              'Content-Type': 'text/csv',
+              'Content-Disposition': 'attachment; filename="thank-you-notes.csv"',
+            },
+          })
+        );
+      }
       if (url.includes('/api/admin/thank-you-notes')) {
         return Promise.resolve({
           ok: true,
@@ -68,7 +90,7 @@ describe('ThankYouNotesPage', () => {
         });
       }
       return Promise.reject(new Error('Unknown endpoint'));
-    }) as any;
+    }) as unknown as typeof fetch;
   });
 
   afterEach(() => {
@@ -186,7 +208,7 @@ describe('ThankYouNotesPage', () => {
     expect(screen.getByRole('button', { name: 'Mark Selected as Sent' })).toBeInTheDocument();
   });
 
-  it('triggers download link when Export CSV button is clicked with active filter options', async () => {
+  it('triggers fetch-backed blob download when Export CSV button is clicked with active filter options', async () => {
     render(
       <ToastProvider>
         <ThankYouNotesPage />
@@ -200,19 +222,27 @@ describe('ThankYouNotesPage', () => {
     const exportBtn = screen.getByRole('button', { name: 'Export CSV' });
     expect(exportBtn).toBeInTheDocument();
 
+    const clickSpy = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     const appendChildSpy = jest.spyOn(document.body, 'appendChild');
     const removeChildSpy = jest.spyOn(document.body, 'removeChild');
 
     fireEvent.click(exportBtn);
 
-    expect(appendChildSpy).toHaveBeenCalled();
-    expect(removeChildSpy).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/admin/thank-you-notes/export')
+      );
+      expect(appendChildSpy).toHaveBeenCalled();
+      expect(removeChildSpy).toHaveBeenCalled();
+      expect(screen.getByText('Thank-you notes exported to CSV.')).toBeInTheDocument();
+    });
 
+    clickSpy.mockRestore();
     appendChildSpy.mockRestore();
     removeChildSpy.mockRestore();
   });
 
-  it('triggers download link when Export Address Labels dropdown options are clicked', async () => {
+  it('triggers fetch-backed blob download when Export Address Labels dropdown options are clicked', async () => {
     render(
       <ToastProvider>
         <ThankYouNotesPage />
@@ -231,14 +261,24 @@ describe('ThankYouNotesPage', () => {
     const avery5160Option = screen.getByText('Avery 5160 PDF');
     expect(avery5160Option).toBeInTheDocument();
 
+    const clickSpy = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     const appendChildSpy = jest.spyOn(document.body, 'appendChild');
     const removeChildSpy = jest.spyOn(document.body, 'removeChild');
 
     fireEvent.click(avery5160Option);
 
-    expect(appendChildSpy).toHaveBeenCalled();
-    expect(removeChildSpy).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/admin/thank-you-notes/export-labels?template=avery_5160')
+      );
+      expect(appendChildSpy).toHaveBeenCalled();
+      expect(removeChildSpy).toHaveBeenCalled();
+      expect(
+        screen.getByText('Mailing labels PDF exported successfully.')
+      ).toBeInTheDocument();
+    });
 
+    clickSpy.mockRestore();
     appendChildSpy.mockRestore();
     removeChildSpy.mockRestore();
   });
@@ -1230,5 +1270,98 @@ describe('ThankYouNotesPage', () => {
         })
       );
     });
+  });
+
+  it('renders accessible error alert with calibrated contrast and zero axe violations when loading fails', async () => {
+    (global.fetch as jest.Mock).mockImplementation((url: string) => {
+      if (url.includes('/api/admin/thank-you-notes')) {
+        return Promise.resolve({
+          ok: false,
+          status: 500,
+          json: () => Promise.resolve({ error: 'Database unavailable' }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    });
+
+    const { container } = render(
+      <ToastProvider>
+        <ThankYouNotesPage />
+      </ToastProvider>
+    );
+
+    const errorAlert = await screen.findByRole('alert');
+    expect(errorAlert).toHaveTextContent(/Failed to fetch thank-you notes/i);
+    expect(errorAlert).toHaveClass('text-red-700', 'dark:text-red-400');
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it('prefixes NEXT_PUBLIC_BASE_PATH when searching guest households under a subpath deployment', async () => {
+    const prevBasePath = process.env.NEXT_PUBLIC_BASE_PATH;
+    process.env.NEXT_PUBLIC_BASE_PATH = '/wedding_website/demo';
+    try {
+      (global.fetch as jest.Mock).mockImplementation((url: string) => {
+        if (url.startsWith('/wedding_website/demo/api/admin/invitation-codes/catalog')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              data: {
+                items: [
+                  {
+                    id: 'inv-subpath-1',
+                    code: 'SUB2026',
+                    guestName: 'Taylor Household',
+                    householdName: 'The Taylors',
+                    addressLine1: '100 Subpath Way',
+                    city: 'Chicago',
+                    state: 'IL',
+                    zipCode: '60601',
+                    country: 'USA',
+                  },
+                ],
+              },
+            }),
+          });
+        }
+        if (url.startsWith('/wedding_website/demo/api/registry/items')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ success: true, data: { items: [] } }),
+          });
+        }
+        if (url.includes('/api/admin/thank-you-notes')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => mockData,
+          });
+        }
+        return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      });
+
+      render(
+        <ToastProvider>
+          <ThankYouNotesPage />
+        </ToastProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Alice Johnson')).toBeInTheDocument();
+      });
+
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Edit thank-you note for Alice Johnson' })
+      );
+      fireEvent.change(
+        screen.getByLabelText('Search guest household for Alice Johnson'),
+        { target: { value: 'Taylor' } }
+      );
+
+      expect(await screen.findByRole('button', { name: /Taylor Household/i })).toBeInTheDocument();
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/wedding_website/demo/api/admin/invitation-codes/catalog?')
+      );
+    } finally {
+      process.env.NEXT_PUBLIC_BASE_PATH = prevBasePath;
+    }
   });
 });

@@ -137,6 +137,47 @@ describe('POST /api/registry/payment-intent', () => {
     expect(createPayload).not.toHaveProperty('receipt_email');
   });
 
+  it('falls back to inviteRecord.email when a verified guest leaves the email field blank', async () => {
+    const { getGuestInviteSession } = jest.requireMock('@/core/auth/guestInviteSession') as {
+      getGuestInviteSession: jest.Mock;
+    };
+    getGuestInviteSession.mockResolvedValueOnce({
+      invitationId: 'inv-1',
+      code: 'INVITE88',
+      guestName: 'Invited Guest',
+      email: 'invited.fallback@example.com',
+      issuedAt: 1000,
+      expiresAt: 9999999999,
+      jti: 'jti-1',
+    });
+
+    const request = new NextRequest('http://localhost:3000/api/registry/payment-intent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        itemId: 'fund-101',
+        amount: 100,
+        coverFee: false,
+        name: 'Invited Guest',
+        email: '',
+        code: 'INVITE88',
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(200);
+
+    expect(mockPaymentIntentsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        receipt_email: 'invited.fallback@example.com',
+        metadata: expect.objectContaining({
+          contributorEmail: 'invited.fallback@example.com',
+          invitationCode: 'INVITE88',
+        }),
+      })
+    );
+  });
+
   it('populates receipt_email on PaymentIntent update and clears it when the guest removes their email', async () => {
     // 1. Update with guest email present
     const requestWithEmail = new NextRequest('http://localhost:3000/api/registry/payment-intent', {

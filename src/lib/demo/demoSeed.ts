@@ -1,5 +1,6 @@
 import { ARCHETYPE_PRESETS, type ArchetypeId } from '@/lib/sampleData/archetypes';
 import type {
+  ContributorRecord,
   InvitationCodeDTO,
   RegistryItem,
   RegistryShippingAddress,
@@ -11,6 +12,7 @@ import type { ContentNodeDTO } from '@/features/content';
 
 export interface ArchetypeDataset {
   registryItems: RegistryItem[];
+  offlineContributors?: ContributorRecord[];
   guests: InvitationCodeDTO[];
   seatingTables: SeatingTableDTO[];
   weddingParty: WeddingPartyMemberDTO[];
@@ -42,7 +44,15 @@ function escapeXml(value: string): string {
     .replace(/'/g, '&apos;');
 }
 
+const sampleItemSvgCache = new Map<string, string>();
+
 function createSampleItemSvgDataUrl(title: string, category: string): string {
+  const cacheKey = `${category}::${title}`;
+  const cached = sampleItemSvgCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   const palette = CATEGORY_PALETTES[category] ?? {
     bgStart: '#fff1f2',
     bgEnd: '#fce7f3',
@@ -72,7 +82,9 @@ function createSampleItemSvgDataUrl(title: string, category: string): string {
     '</svg>',
   ].join('');
 
-  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  const encoded = `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  sampleItemSvgCache.set(cacheKey, encoded);
+  return encoded;
 }
 
 export const DEMO_SHIPPING_ADDRESS: RegistryShippingAddress = {

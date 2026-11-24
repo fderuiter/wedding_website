@@ -563,5 +563,39 @@ describe('Fetch Metadata origin enforcement, 415 Content-Type validation, and au
       const lockedRes = await validateCodePost(sixthAttemptReq);
       expect(lockedRes.status).toBe(429);
     });
+
+    it('gates x-forwarded-host and x-forwarded-proto behind TRUST_PROXY in validateMutatingRequestOrigin', () => {
+      process.env.ALLOWED_HOSTS = 'wedding.example,alt.wedding.example';
+      process.env.TRUST_PROXY = 'false';
+
+      // Spoofed x-forwarded-host must be ignored when TRUST_PROXY=false
+      const spoofedForwardedHostReq = new NextRequest('https://wedding.example/api/rsvp', {
+        method: 'POST',
+        headers: {
+          host: 'wedding.example',
+          'x-forwarded-host': 'alt.wedding.example',
+          'x-forwarded-proto': 'https',
+          origin: 'https://alt.wedding.example',
+        },
+      });
+      expect(validateMutatingRequestOrigin(spoofedForwardedHostReq)).toBe(
+        'Cross-origin request blocked.'
+      );
+
+      // Spoofed x-forwarded-proto: http must not downgrade expected https:// origin when TRUST_PROXY=false
+      const spoofedProtoReq = new NextRequest('https://wedding.example/api/rsvp', {
+        method: 'POST',
+        headers: {
+          host: 'wedding.example',
+          'x-forwarded-proto': 'http',
+          origin: 'https://wedding.example',
+        },
+      });
+      expect(validateMutatingRequestOrigin(spoofedProtoReq)).toBeNull();
+
+      // With TRUST_PROXY=1, trusted rightmost forwarded hop is honored
+      process.env.TRUST_PROXY = '1';
+      expect(validateMutatingRequestOrigin(spoofedForwardedHostReq)).toBeNull();
+    });
   });
 });

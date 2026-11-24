@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { prisma } from '@/lib/prisma';
 import { generateCsvContent } from '@/utils/csv';
+import { resolveRequestOrigin } from '@/utils/hostValidation';
 import {
   matchDietaryCategory,
   getAttendanceStatus,
@@ -219,11 +220,8 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     }
   }
 
-  // Determine base URL for complete RSVP links
-  const origin = request.nextUrl.origin;
-  const proto = request.headers.get('x-forwarded-proto') || request.nextUrl.protocol.replace(':', '');
-  const host = request.headers.get('x-forwarded-host') || request.headers.get('host');
-  const baseUrl = (host ? `${proto}://${host}` : origin).replace(/\/+$/, '');
+  // Determine validated base URL for complete RSVP links
+  const baseUrl = resolveRequestOrigin(request);
 
   // Map to export format
   const exportRecords: InvitationCodeExportRecord[] = dbRecords.map((item) => {

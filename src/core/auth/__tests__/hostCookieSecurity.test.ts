@@ -331,5 +331,36 @@ describe('__Host- session cookie security and multi-cookie HMAC verification', (
       const sessionRateResult = await rateLimit(shadowedSessionReq, 2, 60_000);
       expect(sessionRateResult).toBeNull();
     });
+
+    it('gates x-forwarded-proto behind TRUST_PROXY when resolving __Host- cookie context', () => {
+      Object.defineProperty(process.env, 'NODE_ENV', {
+        value: 'production',
+        configurable: true,
+        writable: true,
+      });
+      process.env.TRUST_PROXY = 'false';
+
+      // Spoofed x-forwarded-proto: http on an https:// socket must not downgrade __Host- or Secure
+      const spoofedDowngradeReq = new NextRequest('https://wedding.example/api/guest/login', {
+        method: 'POST',
+        headers: {
+          host: 'wedding.example',
+          'x-forwarded-proto': 'http',
+        },
+      });
+      expect(resolveSessionCookieName(GUEST_COOKIE, spoofedDowngradeReq)).toBe('__Host-guest_auth');
+      expect(getSessionCookieOptions(3600, spoofedDowngradeReq).secure).toBe(true);
+
+      // Spoofed x-forwarded-proto: https on a plain http://localhost socket must not force __Host- when TRUST_PROXY=false
+      const spoofedUpgradeReq = new NextRequest('http://localhost:3000/api/guest/login', {
+        method: 'POST',
+        headers: {
+          host: 'localhost:3000',
+          'x-forwarded-proto': 'https',
+        },
+      });
+      expect(resolveSessionCookieName(GUEST_COOKIE, spoofedUpgradeReq)).toBe('guest_auth');
+      expect(getSessionCookieOptions(3600, spoofedUpgradeReq).secure).toBe(false);
+    });
   });
 });

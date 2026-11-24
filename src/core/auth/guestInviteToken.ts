@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { env } from '@/env';
+import { normalizeTenantSubdomain } from '@/utils/hostValidation';
+import { resolveGuestSigningSecret } from './guestHeaderSignature';
+import {
+  resolveEdgeRequestSubdomain,
+  verifyEdgeTenantClaims,
+} from './tenantClaims';
 import {
   clearSessionCookie,
   getSessionCookieOptions,
@@ -32,33 +37,15 @@ export function clearGuestInviteSessionCookie(
 export interface GuestInviteSessionPayload {
   code: string;
   guestName: string;
+  email?: string | null;
+  siteId?: string;
+  subdomain?: string | null;
   iat?: number;
   exp?: number;
 }
 
 export async function getGuestSessionSecret(): Promise<string> {
-  const isProduction = (process.env.NODE_ENV || env.NODE_ENV) === 'production';
-  const fallback = isProduction ? '' : 'default-guest-session-secret';
-  const secret = isProduction
-    ? (process.env.GUEST_SESSION_SECRET || fallback)
-    : (env.GUEST_SESSION_SECRET || process.env.GUEST_SESSION_SECRET || fallback);
-  const passcode = isProduction
-    ? (process.env.GUEST_PASSCODE || 'wedding2026')
-    : (env.GUEST_PASSCODE || process.env.GUEST_PASSCODE || 'wedding2026');
-
-  if (isProduction) {
-    if (!secret || secret === 'default-guest-session-secret') {
-      throw new Error('GUEST_SESSION_SECRET must be configured with a distinct secret in production');
-    }
-    if (secret.length < 32) {
-      throw new Error('GUEST_SESSION_SECRET must be at least 32 characters long in production');
-    }
-  }
-
-  if (secret === passcode) {
-    throw new Error('GUEST_SESSION_SECRET must not use the value of GUEST_PASSCODE');
-  }
-  return secret;
+  return resolveGuestSigningSecret();
 }
 
 /**
@@ -72,6 +59,10 @@ export async function signGuestInviteSessionToken(
   const fullPayload: GuestInviteSessionPayload = {
     code: payload.code,
     guestName: payload.guestName,
+    ...(payload.siteId !== undefined ? { siteId: payload.siteId } : {}),
+    ...('subdomain' in payload && payload.subdomain !== undefined
+      ? { subdomain: normalizeTenantSubdomain(payload.subdomain) }
+      : {}),
     iat,
     exp,
   };
@@ -82,7 +73,9 @@ export async function signGuestInviteSessionToken(
 /**
  * Validates a guest invitation session token signature and expiry without database access.
  */
-export async function verifyGuestInviteSessionToken(token: string): Promise<GuestInviteSessionPayload | null> {
+export async function verifyGuestInviteSessionToken(
+  token: string
+): Promise<GuestInviteSessionPayload | null> {
   if (!token || typeof token !== 'string') return null;
 
   try {
@@ -108,12 +101,42 @@ const requestSignedSessionCache = new WeakMap<
   Map<string, Promise<GuestInviteSessionPayload | null>>
 >();
 
+async function verifyCachedInviteCookieCandidate(
+  cookieValue: string,
+  req?: NextRequest
+): Promise<GuestInviteSessionPayload | null> {
+  if (req && typeof req === 'object') {
+    let byCookie = requestSignedSessionCache.get(req);
+    let cached = byCookie?.get(cookieValue);
+    if (!cached) {
+      cached = verifyGuestInviteSessionToken(cookieValue).catch((err) => {
+        byCookie?.delete(cookieValue);
+        throw err;
+      });
+      if (!byCookie) {
+        byCookie = new Map();
+        requestSignedSessionCache.set(req, byCookie);
+      }
+      byCookie.set(cookieValue, cached);
+    }
+
+    try {
+      const payload = await cached;
+      return payload && (!payload.exp || payload.exp >= Date.now()) ? payload : null;
+    } catch {
+      return null;
+    }
+  }
+
+  return verifyGuestInviteSessionToken(cookieValue);
+}
+
 /**
- * Reads and verifies the HMAC signature and expiration of the guest_invite_session cookie,
- * returning both the matched cookie token string and its verified payload while caching per
- * `NextRequest` instance. Prefers `__Host-` cookies and checks every matching `Cookie` entry.
+ * Reads and verifies the HMAC signature and expiration of the `guest_invite_session`
+ * cookie with per-request WeakMap deduplication, prior to tenant claim filtering.
+ * Prefers `__Host-` cookies and checks every matching `Cookie` entry.
  */
-export async function getSignedGuestInviteSessionWithToken(
+export async function getRawSignedGuestInviteSessionWithToken(
   req?: NextRequest
 ): Promise<{ token: string; payload: GuestInviteSessionPayload } | null> {
   const candidates = await readRequestCookieCandidates(GUEST_INVITE_COOKIE, req, {
@@ -122,33 +145,7 @@ export async function getSignedGuestInviteSessionWithToken(
   if (candidates.length === 0) return null;
 
   for (const cookieValue of candidates) {
-    if (req && typeof req === 'object') {
-      let byCookie = requestSignedSessionCache.get(req);
-      let cached = byCookie?.get(cookieValue);
-      if (!cached) {
-        cached = verifyGuestInviteSessionToken(cookieValue).catch((err) => {
-          byCookie?.delete(cookieValue);
-          throw err;
-        });
-        if (!byCookie) {
-          byCookie = new Map();
-          requestSignedSessionCache.set(req, byCookie);
-        }
-        byCookie.set(cookieValue, cached);
-      }
-
-      try {
-        const payload = await cached;
-        if (payload && (!payload.exp || payload.exp >= Date.now())) {
-          return { token: cookieValue, payload };
-        }
-      } catch {
-        // Fall through to next matching cookie candidate
-      }
-      continue;
-    }
-
-    const payload = await verifyGuestInviteSessionToken(cookieValue);
+    const payload = await verifyCachedInviteCookieCandidate(cookieValue, req);
     if (payload) {
       return { token: cookieValue, payload };
     }
@@ -158,11 +155,58 @@ export async function getSignedGuestInviteSessionWithToken(
 }
 
 /**
- * Reads and verifies the HMAC signature and expiration of the guest_invite_session cookie
- * without performing database lookups (Edge-compatible). Prefers `__Host-` cookies and checks
- * every matching `Cookie` entry until HMAC verification succeeds.
+ * Reads and verifies the HMAC signature and expiration of the `guest_invite_session`
+ * cookie prior to tenant claim filtering.
  */
-export async function getSignedGuestInviteSession(req?: NextRequest): Promise<GuestInviteSessionPayload | null> {
+export async function getRawSignedGuestInviteSession(
+  req?: NextRequest
+): Promise<GuestInviteSessionPayload | null> {
+  const verified = await getRawSignedGuestInviteSessionWithToken(req);
+  return verified ? verified.payload : null;
+}
+
+/**
+ * Reads and verifies the HMAC signature, expiration, and Edge tenant claims of the
+ * `guest_invite_session` cookie, returning both the matched cookie token string and its
+ * verified payload while caching per `NextRequest` instance. Prefers `__Host-` cookies
+ * and checks every matching `Cookie` entry.
+ */
+export async function getSignedGuestInviteSessionWithToken(
+  req?: NextRequest
+): Promise<{ token: string; payload: GuestInviteSessionPayload } | null> {
+  const candidates = await readRequestCookieCandidates(GUEST_INVITE_COOKIE, req, {
+    suppressErrors: true,
+  });
+  if (candidates.length === 0) return null;
+
+  let resolvedSubdomain: string | null | undefined;
+  for (const cookieValue of candidates) {
+    const payload = await verifyCachedInviteCookieCandidate(cookieValue, req);
+    if (!payload) {
+      continue;
+    }
+
+    if (resolvedSubdomain === undefined) {
+      resolvedSubdomain = await resolveEdgeRequestSubdomain(req);
+    }
+    if (!verifyEdgeTenantClaims(payload, resolvedSubdomain)) {
+      continue;
+    }
+
+    return { token: cookieValue, payload };
+  }
+
+  return null;
+}
+
+/**
+ * Reads and verifies the HMAC signature, expiration, and Edge tenant claims of the
+ * `guest_invite_session` cookie without performing database lookups (Edge-compatible).
+ * Prefers `__Host-` cookies and checks every matching `Cookie` entry until verification succeeds.
+ */
+export async function getSignedGuestInviteSession(
+  req?: NextRequest
+): Promise<GuestInviteSessionPayload | null> {
   const verified = await getSignedGuestInviteSessionWithToken(req);
   return verified ? verified.payload : null;
 }

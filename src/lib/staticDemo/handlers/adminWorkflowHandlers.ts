@@ -867,10 +867,7 @@ export async function handleAdminWorkflowRoutes(
     if (method === 'GET') {
       const snapshot = store.getSnapshot();
       const config = getActiveAppConfig(snapshot);
-      return wrapMiddlewareJson({
-        features: config.features,
-        modules: config.modules,
-      });
+      return wrapMiddlewareJson(config.features);
     }
 
     if (method === 'PUT' || method === 'POST') {

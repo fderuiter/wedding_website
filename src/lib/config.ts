@@ -1,6 +1,6 @@
 import { cache } from 'react';
 import { prisma } from './prisma';
-import { getOrLoadRequestAppConfig } from './requestContext';
+import { getActiveContextRequest, getOrLoadRequestAppConfig } from './requestContext';
 import {
   AppConfigSchema,
   PublicAppConfigSchema,
@@ -11,7 +11,7 @@ import {
 } from '@/features/content';
 import type { AppConfigDTO, PublicAppConfigDTO } from '@/features/content';
 import { coordinateSchema } from '../utils/validation';
-import { isHostAllowed } from '../utils/hostValidation';
+import { resolveRequestSubdomain } from '../utils/hostValidation';
 import {
   evaluateRsvpCutoff,
   sanitizeRsvpClosedMessage,
@@ -604,31 +604,12 @@ async function getSubdomainFromHeaders(): Promise<string | null> {
   }
   try {
     const headersList = await headers();
-    const forwardedHost = headersList
-      .get('x-forwarded-host')
-      ?.split(',')[0]
-      ?.trim();
-    const host = forwardedHost || headersList.get('host');
-    if (!host || !isHostAllowed(host)) return null;
-
-    const cleanHost = host.split(':')[0];
-    if (cleanHost === 'localhost' || cleanHost === '127.0.0.1') {
-      return null;
-    }
-
-    const parts = cleanHost.split('.');
-    if (cleanHost.endsWith('.localhost')) {
-      return parts[0];
-    }
-
-    if (parts.length >= 3) {
-      const sub = parts[0];
-      if (sub.toLowerCase() === 'www') return null;
-      return sub;
-    }
-
-    return null;
+    return resolveRequestSubdomain(headersList);
   } catch {
+    const activeRequest = getActiveContextRequest();
+    if (activeRequest?.headers) {
+      return resolveRequestSubdomain(activeRequest.headers, activeRequest.nextUrl?.host);
+    }
     return null;
   }
 }

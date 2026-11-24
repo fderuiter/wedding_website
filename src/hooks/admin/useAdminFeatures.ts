@@ -12,8 +12,13 @@ export function useAdminFeatures() {
   const { data: features = EMPTY_ARRAY as any[], isLoading: loading, error: queryError } = useQuery<any[], Error>({
     queryKey,
     queryFn: async () => {
-      let data = await apiClient.get<any[]>(endpoint);
-      if (!data || data.length === 0) {
+      const raw = await apiClient.get<any[] | { features?: any[] }>(endpoint);
+      let data = Array.isArray(raw)
+        ? raw
+        : Array.isArray(raw?.features)
+          ? raw.features
+          : [];
+      if (data.length === 0) {
         data = [
           { id: 'story', type: 'story', title: 'Our Story', visible: true },
           { id: 'details', type: 'details', title: 'Wedding Day Details', visible: true },

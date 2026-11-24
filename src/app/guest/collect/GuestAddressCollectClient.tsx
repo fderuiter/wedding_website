@@ -1,10 +1,19 @@
 'use client';
 
-import React, { useState } from 'react';
-import { FormGroup, Label, Input, Textarea, FormMessage } from '@/components/ui/forms';
+import React, { useEffect, useRef, useState } from 'react';
+import { z } from 'zod';
+import {
+  FormGroup,
+  Label,
+  Input,
+  Textarea,
+  FormMessage,
+  focusFirstInvalidControl,
+} from '@/components/ui/forms';
 import { Button } from '@/components/ui/Button';
 import { Container } from '@/components/ui/Layout';
 import { GuestHelpTrigger } from '@/components/guest/GuestHelpModal';
+import { PublicAddressCollectSchema } from '@/features/registry';
 import { withBasePath } from '@/lib/basePath';
 
 type AddressFieldKey =
@@ -86,29 +95,75 @@ export default function GuestAddressCollectPage() {
   const [submitted, setSubmitted] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<AddressFieldKey, string>>>({});
+  const [invalidFocusTick, setInvalidFocusTick] = useState(0);
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const isSubmittingRef = useRef(false);
+
+  useEffect(() => {
+    if (invalidFocusTick === 0) return;
+    focusFirstInvalidControl(formRef.current);
+  }, [invalidFocusTick]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    if (isSubmitting || isSubmittingRef.current) return;
     const { name, value } = e.target;
+    const field = name as AddressFieldKey;
     setFormData((prev) => ({ ...prev, [name]: value }));
-    if (errorMessage) setErrorMessage(null);
-    setFieldErrors((prev) => {
-      if (!prev[name as AddressFieldKey]) return prev;
-      const next = { ...prev };
-      delete next[name as AddressFieldKey];
-      return next;
-    });
+    if (fieldErrors[field]) {
+      const nextFieldErrors = { ...fieldErrors };
+      delete nextFieldErrors[field];
+      setFieldErrors(nextFieldErrors);
+      if (Object.keys(nextFieldErrors).length === 0 && errorMessage) {
+        setErrorMessage(null);
+      }
+    } else if (errorMessage && Object.keys(fieldErrors).length === 0) {
+      setErrorMessage(null);
+    }
   };
 
   const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setErrorMessage(null);
-    setFieldErrors({});
-
-    if (!formData.guestName.trim()) {
-      setFieldErrors({ guestName: 'Please enter your full name.' });
+    if (isSubmitting || isSubmittingRef.current) {
       return;
     }
 
+    setErrorMessage(null);
+    setFieldErrors({});
+
+    const rawPayload = {
+      guestName: formData.guestName.trim(),
+      householdName: formData.householdName.trim() || undefined,
+      email: formData.email.trim() || undefined,
+      phone: formData.phone.trim() || undefined,
+      addressLine1: formData.addressLine1.trim() || undefined,
+      addressLine2: formData.addressLine2.trim() || undefined,
+      city: formData.city.trim() || undefined,
+      state: formData.state.trim() || undefined,
+      zipCode: formData.zipCode.trim() || undefined,
+      country: formData.country.trim() || undefined,
+      notes: formData.notes.trim() || undefined,
+      website: formData.website, // Honeypot
+    };
+
+    if (!formData.website.trim()) {
+      const parseResult = PublicAddressCollectSchema.safeParse(rawPayload);
+      if (!parseResult.success) {
+        const mappedErrors = extractFieldErrors(z.formatError(parseResult.error));
+        const errorEntries = Object.values(mappedErrors).filter(Boolean);
+        setFieldErrors(mappedErrors);
+        if (errorEntries.length > 1) {
+          setErrorMessage('Please correct the highlighted fields before submitting.');
+        } else if (errorEntries.length === 0) {
+          setErrorMessage(
+            parseResult.error.issues[0]?.message || 'Please check your address details.'
+          );
+        }
+        setInvalidFocusTick((prev) => prev + 1);
+        return;
+      }
+    }
+
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
 
     try {
@@ -117,20 +172,7 @@ export default function GuestAddressCollectPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          guestName: formData.guestName.trim(),
-          householdName: formData.householdName.trim() || undefined,
-          email: formData.email.trim() || undefined,
-          phone: formData.phone.trim() || undefined,
-          addressLine1: formData.addressLine1.trim() || undefined,
-          addressLine2: formData.addressLine2.trim() || undefined,
-          city: formData.city.trim() || undefined,
-          state: formData.state.trim() || undefined,
-          zipCode: formData.zipCode.trim() || undefined,
-          country: formData.country.trim() || undefined,
-          notes: formData.notes.trim() || undefined,
-          website: formData.website, // Honeypot
-        }),
+        body: JSON.stringify(rawPayload),
       });
 
       const data = await response.json();
@@ -140,12 +182,21 @@ export default function GuestAddressCollectPage() {
         const rootErrors = Array.isArray(data?.details?._errors)
           ? data.details._errors.filter((m: unknown): m is string => typeof m === 'string' && Boolean(m.trim()))
           : [];
+        const mappedCount = Object.keys(mappedErrors).length;
 
-        if (Object.keys(mappedErrors).length > 0) {
+        if (mappedCount > 0) {
           setFieldErrors(mappedErrors);
+          const fieldMessages = new Set(Object.values(mappedErrors).filter(Boolean));
           if (rootErrors.length > 0) {
             setErrorMessage(rootErrors[0]);
+          } else if (mappedCount > 1) {
+            setErrorMessage(
+              data?.error && !fieldMessages.has(data.error)
+                ? data.error
+                : 'Please correct the highlighted fields before submitting.'
+            );
           }
+          setInvalidFocusTick((prev) => prev + 1);
           return;
         }
 
@@ -156,6 +207,7 @@ export default function GuestAddressCollectPage() {
     } catch (err: any) {
       setErrorMessage(err.message || 'An unexpected error occurred.');
     } finally {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -231,7 +283,7 @@ export default function GuestAddressCollectPage() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} noValidate className="space-y-4">
+        <form ref={formRef} onSubmit={handleSubmit} noValidate className="space-y-4">
           {/* Honeypot Field (Hidden from human users) */}
           <div className="hidden" aria-hidden="true" style={{ display: 'none' }}>
             <label htmlFor="website">Website</label>
@@ -246,8 +298,12 @@ export default function GuestAddressCollectPage() {
             />
           </div>
 
-          <FormGroup state={fieldErrors.guestName ? 'error' : 'default'}>
-            <Label>Full Name <span className="text-red-500">*</span></Label>
+          <FormGroup
+            required
+            busy={isSubmitting}
+            state={fieldErrors.guestName ? 'error' : 'default'}
+          >
+            <Label>Full Name</Label>
             <Input
               type="text"
               name="guestName"
@@ -255,17 +311,23 @@ export default function GuestAddressCollectPage() {
               value={formData.guestName}
               onChange={handleChange}
               autoComplete="name"
-              required
+              busy={isSubmitting}
               maxLength={100}
             />
             {fieldErrors.guestName && (
-              <FormMessage id={errorMessage ? 'guestName-error' : 'address-collect-error'}>
+              <FormMessage
+                id="guestName-error"
+                role={errorMessage ? 'none' : undefined}
+              >
                 {fieldErrors.guestName}
               </FormMessage>
             )}
           </FormGroup>
 
-          <FormGroup state={fieldErrors.householdName ? 'error' : 'default'}>
+          <FormGroup
+            busy={isSubmitting}
+            state={fieldErrors.householdName ? 'error' : 'default'}
+          >
             <Label>Household Name (Optional)</Label>
             <Input
               type="text"
@@ -274,14 +336,23 @@ export default function GuestAddressCollectPage() {
               value={formData.householdName}
               onChange={handleChange}
               autoComplete="organization"
+              busy={isSubmitting}
               maxLength={100}
             />
             {fieldErrors.householdName && (
-              <FormMessage>{fieldErrors.householdName}</FormMessage>
+              <FormMessage
+                id="householdName-error"
+                role={errorMessage ? 'none' : undefined}
+              >
+                {fieldErrors.householdName}
+              </FormMessage>
             )}
           </FormGroup>
 
-          <FormGroup state={fieldErrors.email ? 'error' : 'default'}>
+          <FormGroup
+            busy={isSubmitting}
+            state={fieldErrors.email ? 'error' : 'default'}
+          >
             <Label>Email Address (Optional)</Label>
             <Input
               type="email"
@@ -290,13 +361,22 @@ export default function GuestAddressCollectPage() {
               value={formData.email}
               onChange={handleChange}
               autoComplete="email"
+              busy={isSubmitting}
             />
             {fieldErrors.email && (
-              <FormMessage>{fieldErrors.email}</FormMessage>
+              <FormMessage
+                id="email-error"
+                role={errorMessage ? 'none' : undefined}
+              >
+                {fieldErrors.email}
+              </FormMessage>
             )}
           </FormGroup>
 
-          <FormGroup state={fieldErrors.phone ? 'error' : 'default'}>
+          <FormGroup
+            busy={isSubmitting}
+            state={fieldErrors.phone ? 'error' : 'default'}
+          >
             <Label>Phone Number (Optional)</Label>
             <Input
               type="tel"
@@ -305,15 +385,25 @@ export default function GuestAddressCollectPage() {
               value={formData.phone}
               onChange={handleChange}
               autoComplete="tel"
+              busy={isSubmitting}
               maxLength={30}
             />
             {fieldErrors.phone && (
-              <FormMessage>{fieldErrors.phone}</FormMessage>
+              <FormMessage
+                id="phone-error"
+                role={errorMessage ? 'none' : undefined}
+              >
+                {fieldErrors.phone}
+              </FormMessage>
             )}
           </FormGroup>
 
-          <FormGroup state={fieldErrors.addressLine1 ? 'error' : 'default'}>
-            <Label>Street Address Line 1 <span className="text-red-500">*</span></Label>
+          <FormGroup
+            required
+            busy={isSubmitting}
+            state={fieldErrors.addressLine1 ? 'error' : 'default'}
+          >
+            <Label>Street Address Line 1</Label>
             <Input
               type="text"
               name="addressLine1"
@@ -321,15 +411,23 @@ export default function GuestAddressCollectPage() {
               value={formData.addressLine1}
               onChange={handleChange}
               autoComplete="address-line1"
-              required
+              busy={isSubmitting}
               maxLength={150}
             />
             {fieldErrors.addressLine1 && (
-              <FormMessage>{fieldErrors.addressLine1}</FormMessage>
+              <FormMessage
+                id="addressLine1-error"
+                role={errorMessage ? 'none' : undefined}
+              >
+                {fieldErrors.addressLine1}
+              </FormMessage>
             )}
           </FormGroup>
 
-          <FormGroup state={fieldErrors.addressLine2 ? 'error' : 'default'}>
+          <FormGroup
+            busy={isSubmitting}
+            state={fieldErrors.addressLine2 ? 'error' : 'default'}
+          >
             <Label>Address Line 2 (Optional)</Label>
             <Input
               type="text"
@@ -338,16 +436,26 @@ export default function GuestAddressCollectPage() {
               value={formData.addressLine2}
               onChange={handleChange}
               autoComplete="address-line2"
+              busy={isSubmitting}
               maxLength={150}
             />
             {fieldErrors.addressLine2 && (
-              <FormMessage>{fieldErrors.addressLine2}</FormMessage>
+              <FormMessage
+                id="addressLine2-error"
+                role={errorMessage ? 'none' : undefined}
+              >
+                {fieldErrors.addressLine2}
+              </FormMessage>
             )}
           </FormGroup>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormGroup state={fieldErrors.city ? 'error' : 'default'}>
-              <Label>City <span className="text-red-500">*</span></Label>
+            <FormGroup
+              required
+              busy={isSubmitting}
+              state={fieldErrors.city ? 'error' : 'default'}
+            >
+              <Label>City</Label>
               <Input
                 type="text"
                 name="city"
@@ -355,16 +463,25 @@ export default function GuestAddressCollectPage() {
                 value={formData.city}
                 onChange={handleChange}
                 autoComplete="address-level2"
-                required
+                busy={isSubmitting}
                 maxLength={100}
               />
               {fieldErrors.city && (
-                <FormMessage>{fieldErrors.city}</FormMessage>
+                <FormMessage
+                  id="city-error"
+                  role={errorMessage ? 'none' : undefined}
+                >
+                  {fieldErrors.city}
+                </FormMessage>
               )}
             </FormGroup>
 
-            <FormGroup state={fieldErrors.state ? 'error' : 'default'}>
-              <Label>State / Province <span className="text-red-500">*</span></Label>
+            <FormGroup
+              required
+              busy={isSubmitting}
+              state={fieldErrors.state ? 'error' : 'default'}
+            >
+              <Label>State / Province</Label>
               <Input
                 type="text"
                 name="state"
@@ -372,18 +489,27 @@ export default function GuestAddressCollectPage() {
                 value={formData.state}
                 onChange={handleChange}
                 autoComplete="address-level1"
-                required
+                busy={isSubmitting}
                 maxLength={100}
               />
               {fieldErrors.state && (
-                <FormMessage>{fieldErrors.state}</FormMessage>
+                <FormMessage
+                  id="state-error"
+                  role={errorMessage ? 'none' : undefined}
+                >
+                  {fieldErrors.state}
+                </FormMessage>
               )}
             </FormGroup>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormGroup state={fieldErrors.zipCode ? 'error' : 'default'}>
-              <Label>ZIP / Postal Code <span className="text-red-500">*</span></Label>
+            <FormGroup
+              required
+              busy={isSubmitting}
+              state={fieldErrors.zipCode ? 'error' : 'default'}
+            >
+              <Label>ZIP / Postal Code</Label>
               <Input
                 type="text"
                 name="zipCode"
@@ -391,15 +517,23 @@ export default function GuestAddressCollectPage() {
                 value={formData.zipCode}
                 onChange={handleChange}
                 autoComplete="postal-code"
-                required
+                busy={isSubmitting}
                 maxLength={20}
               />
               {fieldErrors.zipCode && (
-                <FormMessage>{fieldErrors.zipCode}</FormMessage>
+                <FormMessage
+                  id="zipCode-error"
+                  role={errorMessage ? 'none' : undefined}
+                >
+                  {fieldErrors.zipCode}
+                </FormMessage>
               )}
             </FormGroup>
 
-            <FormGroup state={fieldErrors.country ? 'error' : 'default'}>
+            <FormGroup
+              busy={isSubmitting}
+              state={fieldErrors.country ? 'error' : 'default'}
+            >
               <Label>Country (Optional)</Label>
               <Input
                 type="text"
@@ -408,15 +542,24 @@ export default function GuestAddressCollectPage() {
                 value={formData.country}
                 onChange={handleChange}
                 autoComplete="country-name"
+                busy={isSubmitting}
                 maxLength={100}
               />
               {fieldErrors.country && (
-                <FormMessage>{fieldErrors.country}</FormMessage>
+                <FormMessage
+                  id="country-error"
+                  role={errorMessage ? 'none' : undefined}
+                >
+                  {fieldErrors.country}
+                </FormMessage>
               )}
             </FormGroup>
           </div>
 
-          <FormGroup state={fieldErrors.notes ? 'error' : 'default'}>
+          <FormGroup
+            busy={isSubmitting}
+            state={fieldErrors.notes ? 'error' : 'default'}
+          >
             <Label>Household Notes (Optional)</Label>
             <Textarea
               name="notes"
@@ -424,10 +567,16 @@ export default function GuestAddressCollectPage() {
               placeholder="Family members, children names, or mailing instructions (please save dietary needs for your RSVP)"
               value={formData.notes}
               onChange={handleChange}
+              busy={isSubmitting}
               maxLength={1000}
             />
             {fieldErrors.notes && (
-              <FormMessage>{fieldErrors.notes}</FormMessage>
+              <FormMessage
+                id="notes-error"
+                role={errorMessage ? 'none' : undefined}
+              >
+                {fieldErrors.notes}
+              </FormMessage>
             )}
           </FormGroup>
 
@@ -435,7 +584,7 @@ export default function GuestAddressCollectPage() {
             type="submit"
             variant="primary"
             className="w-full mt-6 py-3 font-bold text-base"
-            disabled={isSubmitting}
+            busy={isSubmitting}
           >
             {isSubmitting ? 'Submitting Address...' : 'Submit Address'}
           </Button>

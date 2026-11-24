@@ -18,8 +18,12 @@ import {
   type ArchetypeId,
 } from './archetypes';
 import { ArchetypeIdSchema } from './schemas';
+import {
+  REGISTRY_EDIT_FALLBACK_ID,
+  buildRegistryEditItemHref,
+} from './registryEditHref';
 
-export const REGISTRY_EDIT_FALLBACK_ID = 'fallback';
+export { REGISTRY_EDIT_FALLBACK_ID, buildRegistryEditItemHref };
 export const SAMPLE_SUBEVENT_ID_PREFIX = 'sample-subevent-';
 
 const BASE_SEED_TIMESTAMP_MS = Date.parse('2026-01-15T12:00:00.000Z');
@@ -1021,9 +1025,10 @@ export function getRegistryEditStaticParams(): Array<{ id: string }> {
   };
 
   for (const archetypeId of ArchetypeIdSchema.options) {
-    for (const item of ARCHETYPE_PRESETS[archetypeId].registryItems) {
+    ARCHETYPE_PRESETS[archetypeId].registryItems.forEach((item, idx) => {
       addId(item.id);
-    }
+      addId(`demo-${archetypeId}-item-${idx + 1}`);
+    });
   }
 
   addId(REGISTRY_EDIT_FALLBACK_ID);
@@ -1049,6 +1054,22 @@ export function findSeededRegistryItemById(
     return includeContributors
       ? firstClassic
       : { ...firstClassic, contributors: [] };
+  }
+
+  const demoMatch = /^demo-(classic|destination|romantic)-item-(\d+)$/.exec(trimmed);
+  if (demoMatch) {
+    const archetypeId = demoMatch[1] as ArchetypeId;
+    const idx = Number.parseInt(demoMatch[2], 10) - 1;
+    if (idx >= 0) {
+      const seed = buildArchetypeSeedData(archetypeId);
+      const base = seed.registryItems[idx];
+      if (base) {
+        return {
+          ...(includeContributors ? base : { ...base, contributors: [] }),
+          id: trimmed,
+        };
+      }
+    }
   }
 
   for (const archetypeId of ArchetypeIdSchema.options) {

@@ -23,6 +23,8 @@ import { Icon } from '@/components/ui/Icon';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
 import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
 import { formatCurrency, formatDate } from '@/utils/intl';
+import { isDemoRuntimeFlagActive } from '@/lib/demo/runtimeFlag';
+import { buildRegistryEditItemHref } from '@/lib/sampleData/registryEditHref';
 
 type RegistryLayoutVariant = 'desktop' | 'mobile';
 
@@ -874,7 +876,14 @@ export default function AdminRegistryPage() {
                                     isPurchased={item.purchased}
                                     isUnclaimPending={pendingUnclaimItemId === item.id}
                                     onUnclaim={() => void handleUnclaimItem(item)}
-                                    onEdit={() => router.push(`/registry/edit-item/${item.id}`)}
+                                    onEdit={() =>
+                                      router.push(
+                                        buildRegistryEditItemHref(
+                                          item.id,
+                                          isDemoRuntimeFlagActive()
+                                        )
+                                      )
+                                    }
                                     onDelete={(e) => void handleDeleteItem(e, item.id, 'desktop')}
                                   />
                                 </TableCell>
@@ -975,7 +984,14 @@ export default function AdminRegistryPage() {
                               isPurchased={item.purchased}
                               isUnclaimPending={pendingUnclaimItemId === item.id}
                               onUnclaim={() => void handleUnclaimItem(item)}
-                              onEdit={() => router.push(`/registry/edit-item/${item.id}`)}
+                              onEdit={() =>
+                                router.push(
+                                  buildRegistryEditItemHref(
+                                    item.id,
+                                    isDemoRuntimeFlagActive()
+                                  )
+                                )
+                              }
                               onDelete={(e) => void handleDeleteItem(e, item.id, 'mobile')}
                             />
                           </div>

@@ -152,6 +152,7 @@ describe('Host Validation Utility', () => {
 
   describe('resolveRequestOrigin', () => {
     const originalAllowedHosts = process.env.ALLOWED_HOSTS;
+    const originalTrustProxy = process.env.TRUST_PROXY;
 
     afterEach(() => {
       if (originalAllowedHosts === undefined) {
@@ -159,23 +160,60 @@ describe('Host Validation Utility', () => {
       } else {
         process.env.ALLOWED_HOSTS = originalAllowedHosts;
       }
+      if (originalTrustProxy === undefined) {
+        delete process.env.TRUST_PROXY;
+      } else {
+        process.env.TRUST_PROXY = originalTrustProxy;
+      }
     });
 
-    it('reads first x-forwarded-host and x-forwarded-proto values when allowed', () => {
-      process.env.ALLOWED_HOSTS = 'wedding.example,localhost';
+    it('ignores x-forwarded-host and x-forwarded-proto when TRUST_PROXY is false', () => {
+      process.env.TRUST_PROXY = 'false';
+      process.env.ALLOWED_HOSTS = 'wedding.example,evil.example,localhost';
       const headers = new Headers({
-        'x-forwarded-host': 'wedding.example, proxy.internal',
-        'x-forwarded-proto': 'https, http',
+        'x-forwarded-host': 'evil.example',
+        'x-forwarded-proto': 'https',
         host: 'localhost:3000',
       });
       const origin = resolveRequestOrigin({
         headers,
         nextUrl: new URL('http://localhost:3000/api/admin/broadcast/send'),
       });
-      expect(origin).toBe('https://wedding.example');
+      expect(origin).toBe('http://localhost:3000');
+    });
+
+    it('selects right-to-left x-forwarded-host and x-forwarded-proto hops when TRUST_PROXY is enabled', () => {
+      process.env.ALLOWED_HOSTS = 'wedding.example,localhost';
+
+      process.env.TRUST_PROXY = '1';
+      const singleHopHeaders = new Headers({
+        'x-forwarded-host': 'spoofed.evil.com, wedding.example',
+        'x-forwarded-proto': 'http, https',
+        host: 'localhost:3000',
+      });
+      expect(
+        resolveRequestOrigin({
+          headers: singleHopHeaders,
+          nextUrl: new URL('http://localhost:3000/api/admin/broadcast/send'),
+        })
+      ).toBe('https://wedding.example');
+
+      process.env.TRUST_PROXY = '2';
+      const twoHopHeaders = new Headers({
+        'x-forwarded-host': 'spoofed.evil.com, wedding.example, proxy.internal',
+        'x-forwarded-proto': 'http, https, http',
+        host: 'localhost:3000',
+      });
+      expect(
+        resolveRequestOrigin({
+          headers: twoHopHeaders,
+          nextUrl: new URL('http://localhost:3000/api/admin/broadcast/send'),
+        })
+      ).toBe('https://wedding.example');
     });
 
     it('preserves local nextUrl.origin fallback on localhost and 127.0.0.1 when host is unapproved', () => {
+      process.env.TRUST_PROXY = 'true';
       process.env.ALLOWED_HOSTS = 'wedding.example';
       const localReq = {
         headers: new Headers({ 'x-forwarded-host': 'evil.com' }),

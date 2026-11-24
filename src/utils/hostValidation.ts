@@ -220,29 +220,172 @@ export function getValidatedCanonicalUrl(
   return fallbackBaseUrl;
 }
 
+export interface HeadersLookup {
+  get(_name: string): string | null | undefined;
+}
+
+/**
+ * Selects the trusted hop from a comma-separated forwarded header value (`X-Forwarded-Host`,
+ * `X-Forwarded-Proto`) when `TRUST_PROXY` is enabled, matching `src/utils/rateLimit.ts`.
+ * Returns `null` when `TRUST_PROXY` is disabled or when the header contains control characters.
+ */
+function resolveTrustedForwardedValue(
+  rawHeader: string | null | undefined,
+  trustProxy: boolean | number = env.TRUST_PROXY
+): string | null {
+  if (!trustProxy || !rawHeader || typeof rawHeader !== 'string') {
+    return null;
+  }
+
+  if (/[\r\n\x00-\x1f\x7f]/.test(rawHeader)) {
+    return null;
+  }
+
+  const hops = typeof trustProxy === 'number' ? Math.max(1, Math.trunc(trustProxy)) : 1;
+  const parts = rawHeader
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length === 0) {
+    return null;
+  }
+
+  return parts[Math.max(0, parts.length - hops)] ?? null;
+}
+
+/**
+ * Resolves the effective request `Host` authority, reading `X-Forwarded-Host` only when
+ * `env.TRUST_PROXY` is enabled and falling back to `Host` (or `fallbackHost`).
+ */
+export function resolveRequestHost(
+  headers: HeadersLookup | null | undefined,
+  fallbackHost?: string | null
+): string | null {
+  const forwardedHost = headers
+    ? resolveTrustedForwardedValue(headers.get('x-forwarded-host'))
+    : null;
+  if (forwardedHost) {
+    return forwardedHost;
+  }
+
+  const directHost = headers?.get('host')?.trim();
+  if (directHost) {
+    return directHost;
+  }
+
+  const normalizedFallback = fallbackHost?.trim();
+  return normalizedFallback || null;
+}
+
+/**
+ * Resolves the effective request protocol (`http` or `https`), reading `X-Forwarded-Proto`
+ * only when `env.TRUST_PROXY` is enabled and falling back to `fallbackProto` when valid.
+ */
+export function resolveRequestProtocol(
+  headers: HeadersLookup | null | undefined,
+  fallbackProto?: string | null
+): 'http' | 'https' | null {
+  const forwardedProto = headers
+    ? resolveTrustedForwardedValue(headers.get('x-forwarded-proto'))?.toLowerCase()
+    : null;
+  if (forwardedProto === 'https' || forwardedProto === 'http') {
+    return forwardedProto;
+  }
+
+  const normalizedFallback = fallbackProto?.trim().replace(/:$/, '').toLowerCase();
+  if (normalizedFallback === 'https' || normalizedFallback === 'http') {
+    return normalizedFallback;
+  }
+
+  return null;
+}
+
+/**
+ * Normalizes a tenant subdomain identifier to lowercase, treating empty values and `www`
+ * as the root/global site (`null`).
+ */
+export function normalizeTenantSubdomain(subdomain: string | null | undefined): string | null {
+  if (!subdomain || typeof subdomain !== 'string') {
+    return null;
+  }
+  const normalized = subdomain.trim().toLowerCase();
+  if (!normalized || normalized === 'www') {
+    return null;
+  }
+  return normalized;
+}
+
+/**
+ * Extracts the normalized tenant subdomain from a single `Host` authority after verifying
+ * `ALLOWED_HOSTS` membership. Returns `null` for loopback hosts, `www`, apex domains, or
+ * disallowed hosts.
+ */
+function extractSubdomainFromHost(
+  hostHeader: string | null | undefined,
+  customAllowedHosts?: string[]
+): string | null {
+  if (!hostHeader || !isHostAllowed(hostHeader, customAllowedHosts)) {
+    return null;
+  }
+
+  const parsed = parseHostHeader(hostHeader);
+  if (!parsed) {
+    return null;
+  }
+
+  const { hostname } = parsed;
+  if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('[')) {
+    return null;
+  }
+
+  const parts = hostname.split('.');
+  if (hostname.endsWith('.localhost')) {
+    return normalizeTenantSubdomain(parts[0]);
+  }
+
+  if (parts.length >= 3) {
+    return normalizeTenantSubdomain(parts[0]);
+  }
+
+  return null;
+}
+
+/**
+ * Resolves the normalized tenant subdomain from request headers using `TRUST_PROXY`-gated
+ * host resolution and `ALLOWED_HOSTS` validation.
+ */
+export function resolveRequestSubdomain(
+  headers: HeadersLookup | null | undefined,
+  fallbackHost?: string | null
+): string | null {
+  const host = resolveRequestHost(headers, fallbackHost);
+  return extractSubdomainFromHost(host);
+}
+
 interface OriginAwareRequest {
-  headers: {
-    get(_name: string): string | null;
-  };
+  headers: HeadersLookup;
   nextUrl?: {
-    hostname: string;
-    origin: string;
+    hostname?: string;
+    host?: string;
+    protocol?: string;
+    origin?: string;
   };
 }
 
 /**
- * Resolves a validated canonical request origin from forwarded and host headers,
+ * Resolves a validated canonical request origin from `TRUST_PROXY`-gated forwarded and host headers,
  * preserving local loopback origins (`localhost` or `127.0.0.1`) as fallback.
  */
 export function resolveRequestOrigin(req: OriginAwareRequest): string {
-  const hostHeader =
-    req.headers.get('x-forwarded-host')?.split(',')[0]?.trim() || req.headers.get('host');
-  const protoHeader = req.headers.get('x-forwarded-proto')?.split(',')[0]?.trim();
+  const hostHeader = resolveRequestHost(req.headers, req.nextUrl?.host);
+  const protoHeader = resolveRequestProtocol(req.headers, req.nextUrl?.protocol);
   const safeLocalFallback =
-    req.nextUrl?.hostname === 'localhost' || req.nextUrl?.hostname === '127.0.0.1'
+    (req.nextUrl?.hostname === 'localhost' || req.nextUrl?.hostname === '127.0.0.1') &&
+    req.nextUrl?.origin
       ? req.nextUrl.origin
       : undefined;
-  return getValidatedCanonicalUrl(hostHeader, protoHeader, safeLocalFallback);
+  return getValidatedCanonicalUrl(hostHeader, protoHeader, safeLocalFallback).replace(/\/+$/, '');
 }
 
 const MUTATING_HTTP_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -307,12 +450,14 @@ function resolveStrictExpectedOrigin(req: MutationOriginCheckRequest): string {
     }
   }
 
-  const forwardedHost = req.headers.get('x-forwarded-host')?.split(',')[0]?.trim();
+  const forwardedHost = resolveTrustedForwardedValue(req.headers.get('x-forwarded-host'));
   const rawHost = req.headers.get('host')?.trim();
   const fallbackUrlHost = req.nextUrl?.host || parsedReqUrl?.host || req.nextUrl?.hostname || '';
   const effectiveHost = forwardedHost || rawHost || fallbackUrlHost;
 
-  const forwardedProto = req.headers.get('x-forwarded-proto')?.split(',')[0]?.trim().toLowerCase();
+  const forwardedProto = resolveTrustedForwardedValue(
+    req.headers.get('x-forwarded-proto')
+  )?.toLowerCase();
   const rawUrlProto = (req.nextUrl?.protocol || parsedReqUrl?.protocol || '')
     .replace(/:$/, '')
     .toLowerCase();

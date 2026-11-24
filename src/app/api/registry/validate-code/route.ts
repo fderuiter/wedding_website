@@ -13,6 +13,10 @@ import {
   signGuestInviteSessionToken,
   verifyGuestInviteSessionToken,
 } from '@/core/auth/guestInviteSession';
+import {
+  resolveTenantClaimsForSigning,
+  verifyNodeTenantClaims,
+} from '@/core/auth/tenantClaims.node';
 import { findVerifiedRequestCookie } from '@/core/auth/tokenCookieHelpers';
 import { hasAddressCollectionTag } from '@/features/registry';
 
@@ -94,10 +98,16 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
   }
 
   const { invite } = lookup;
+  const resolvedEmail =
+    typeof invite.email === 'string' && invite.email.trim().length > 0
+      ? invite.email.trim()
+      : null;
+
   return NextResponse.json({
     valid: true,
     guestName: invite.guestName,
     code: invite.code,
+    email: resolvedEmail,
   });
 });
 
@@ -152,7 +162,8 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
         if (
           existingPayload &&
           existingPayload.code.trim().toUpperCase() === invite.code.trim().toUpperCase() &&
-          existingPayload.guestName === invite.guestName
+          existingPayload.guestName === invite.guestName &&
+          (await verifyNodeTenantClaims(existingPayload, request))
         ) {
           return existingPayload;
         }
@@ -166,16 +177,24 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   }
 
   if (!token) {
+    const tenantClaims = await resolveTenantClaimsForSigning(request);
     token = await signGuestInviteSessionToken({
       code: invite.code,
       guestName: invite.guestName,
+      ...tenantClaims,
     });
   }
+
+  const resolvedEmail =
+    typeof invite.email === 'string' && invite.email.trim().length > 0
+      ? invite.email.trim()
+      : null;
 
   const response = NextResponse.json({
     valid: true,
     guestName: invite.guestName,
     code: invite.code,
+    email: resolvedEmail,
   });
 
   setGuestInviteSessionCookie(response, token, request);

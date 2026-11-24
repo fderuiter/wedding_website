@@ -9,7 +9,10 @@ import {
 } from '../types';
 import { ContributionSchema } from '../schemas';
 import { apiClient } from '@/lib/apiClient';
-import { findDemoGuestByCode, isDemoRuntimeActive } from '@/lib/demo/demoStore';
+import {
+  findDemoGuestByCode,
+  isDemoRuntimeActive,
+} from '@/lib/demo/demoRuntimeBridge';
 import { useGuestSession } from '../context/GuestSessionContext';
 import { formatCurrency } from '@/utils/intl';
 import { getItemRemainingAmount, getItemUnitCounts } from '../lib/registryStatusUtils';
@@ -71,6 +74,13 @@ export interface UseRegistryContributionMachineOptions {
   initialCountry?: string;
 }
 
+interface VerifiedSubmissionIdentity {
+  ok: boolean;
+  code: string;
+  contributorName: string;
+  email: string;
+}
+
 export interface UseRegistryContributionMachineReturn {
   // Deterministic flags
   isValidatingCode: boolean;
@@ -128,14 +138,22 @@ export interface UseRegistryContributionMachineReturn {
   setSubmissionError: (error: string | null) => void;
 
   // Actions
-  validateContribution: () => boolean;
+  validateContribution: (overrides?: {
+    contributorName?: string;
+    email?: string;
+    code?: string;
+  }) => boolean;
+  ensureCodeVerifiedForSubmit: () => Promise<VerifiedSubmissionIdentity>;
   handleCodeChange: (e: React.ChangeEvent<HTMLInputElement> | string) => void;
   handleVerifyCode: () => Promise<boolean>;
   handleClearCode: () => Promise<void>;
   handleSubmit: (
     e?: React.SubmitEvent<HTMLFormElement>,
     paymentIntentId?: string,
-    options?: { coverFeeOverride?: boolean }
+    options?: {
+      coverFeeOverride?: boolean;
+      identityOverride?: Omit<VerifiedSubmissionIdentity, 'ok'>;
+    }
   ) => Promise<void>;
   handlePresetClick: (presetValue: number) => void;
 }
@@ -163,6 +181,7 @@ export function useRegistryContributionMachine({
   const {
     invitationCode: sessionCode,
     guestName: sessionGuestName,
+    email: sessionEmail,
     isVerified: isSessionVerified,
     setSession,
     clearSession,
@@ -173,7 +192,8 @@ export function useRegistryContributionMachine({
   // Form fields
   const [contributorNameState, setContributorNameState] = useState(initialContributorName);
   const [hasEditedContributorName, setHasEditedContributorName] = useState(false);
-  const [email, setEmailState] = useState(initialEmail);
+  const [emailState, setEmailState] = useState(initialEmail);
+  const [hasEditedEmail, setHasEditedEmail] = useState(false);
   const [amount, setAmountState] = useState<number | string>(initialAmount);
   const [selectedUnitsState, setSelectedUnitsState] = useState<number>(initialUnits);
   const [message, setMessageState] = useState(initialMessage);
@@ -191,6 +211,7 @@ export function useRegistryContributionMachine({
   const [dismissedSessionKey, setDismissedSessionKey] = useState<string | null>(null);
 
   // Partitioned error states
+  const [trackedItemId, setTrackedItemId] = useState(item.id);
   const [fieldErrors, setFieldErrors] = useState<ContributionFieldErrors>({});
   const [codeErrorState, setCodeError] = useState<string | null>(null);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
@@ -200,7 +221,22 @@ export function useRegistryContributionMachine({
   // AbortController for cancelling in-flight validation requests
   const abortControllerRef = useRef<AbortController | null>(null);
   const invitationCodeInputRef = useRef<HTMLInputElement | null>(null);
+  const lockedCodeRef = useRef<string | null>(null);
   const [codeFailureCount, setCodeFailureCount] = useState(0);
+
+  if (trackedItemId !== item.id) {
+    setTrackedItemId(item.id);
+    setSelectedUnitsState(initialUnits);
+    setFieldErrors({});
+    setCodeError(null);
+    setSubmissionError(null);
+    setPaymentTransactionId(null);
+    setClaimActions(null);
+    if (phaseState !== 'code_locked') {
+      setPhase('idle');
+      setInvitationCodeState(initialInvitationCode);
+    }
+  }
 
   const currentSessionKey =
     isSessionVerified && sessionCode ? `${sessionCode}:${sessionGuestName || ''}` : null;
@@ -216,6 +252,9 @@ export function useRegistryContributionMachine({
   const contributorName = hasEditedContributorName
     ? contributorNameState
     : contributorNameState || (isSessionSynced ? sessionGuestName || '' : '');
+  const email = hasEditedEmail
+    ? emailState
+    : emailState || (isSessionSynced ? sessionEmail || '' : '');
   const codeError = isSessionSynced ? null : codeErrorState;
 
   // Clean up any pending validation request on unmount
@@ -242,6 +281,7 @@ export function useRegistryContributionMachine({
   }, []);
 
   const setEmail = useCallback((val: string) => {
+    setHasEditedEmail(true);
     setEmailState(val);
     setFieldErrors((prev) => {
       if (!prev.email) return prev;
@@ -401,21 +441,36 @@ export function useRegistryContributionMachine({
   }, []);
 
   // Internal unified verification helper
-  const verifyCode = useCallback(
-    async (codeToVerify: string): Promise<boolean> => {
+  const verifyCodeWithDetails = useCallback(
+    async (
+      codeToVerify: string
+    ): Promise<{
+      valid: boolean;
+      code?: string;
+      guestName?: string;
+      email?: string | null;
+    }> => {
       const code = codeToVerify.trim().toUpperCase();
       if (!code) {
         setCodeError('Please enter an invitation code.');
         setCodeFailureCount((count) => count + 1);
-        return false;
+        return { valid: false };
       }
 
       if (isDemoRuntimeActive()) {
         const matched = findDemoGuestByCode(code);
         if (matched) {
+          const resolvedEmail =
+            typeof matched.email === 'string' && matched.email.trim().length > 0
+              ? matched.email.trim()
+              : null;
+          lockedCodeRef.current = matched.code;
           setInvitationCodeState(matched.code);
-          if (matched.guestName) {
+          if (matched.guestName && (!hasEditedContributorName || !contributorNameState.trim())) {
             setContributorNameState(matched.guestName);
+          }
+          if (resolvedEmail && !hasEditedEmail && !emailState.trim()) {
+            setEmailState(resolvedEmail);
           }
           setDismissedSessionKey(null);
           setPhase('code_locked');
@@ -424,14 +479,21 @@ export function useRegistryContributionMachine({
           setSession({
             invitationCode: matched.code,
             guestName: matched.guestName,
+            email: resolvedEmail,
             isVerified: true,
           });
-          return true;
+          return {
+            valid: true,
+            code: matched.code,
+            guestName: matched.guestName,
+            email: resolvedEmail,
+          };
         }
+        lockedCodeRef.current = null;
         setPhase('idle');
         setCodeError('Invalid invitation code.');
         setCodeFailureCount((count) => count + 1);
-        return false;
+        return { valid: false };
       }
 
       // Abort previous in-flight validation requests
@@ -447,31 +509,52 @@ export function useRegistryContributionMachine({
       setSubmissionError(null);
 
       try {
-        const data = await apiClient.post(
+        const data = await apiClient.post<{
+          valid?: boolean;
+          code?: string;
+          guestName?: string;
+          email?: string | null;
+          error?: string;
+        }>(
           '/api/registry/validate-code',
           { code },
           { signal: controller.signal }
         );
 
         if (controller.signal.aborted) {
-          return false;
+          return { valid: false };
         }
 
         if (data && data.valid) {
           const verifiedCode = data.code || code;
+          const resolvedEmail =
+            typeof data.email === 'string' && data.email.trim().length > 0
+              ? data.email.trim()
+              : null;
+          lockedCodeRef.current = verifiedCode;
           setInvitationCodeState(verifiedCode);
-          if (data.guestName) {
+          if (data.guestName && (!hasEditedContributorName || !contributorNameState.trim())) {
             setContributorNameState(data.guestName);
+          }
+          if (resolvedEmail && !hasEditedEmail && !emailState.trim()) {
+            setEmailState(resolvedEmail);
           }
           setDismissedSessionKey(null);
           setPhase('code_locked');
           setSession({
             invitationCode: verifiedCode,
             guestName: data.guestName || '',
+            email: resolvedEmail,
             isVerified: true,
           });
-          return true;
+          return {
+            valid: true,
+            code: verifiedCode,
+            guestName: data.guestName || '',
+            email: resolvedEmail,
+          };
         } else {
+          lockedCodeRef.current = null;
           setPhase('idle');
           setCodeError(
             typeof data?.error === 'string' && data.error.trim()
@@ -479,27 +562,42 @@ export function useRegistryContributionMachine({
               : 'Invalid invitation code.'
           );
           setCodeFailureCount((count) => count + 1);
-          return false;
+          return { valid: false };
         }
       } catch (err: unknown) {
         if (controller.signal.aborted || (err as Error)?.name === 'AbortError') {
-          return false;
+          return { valid: false };
         }
+        lockedCodeRef.current = null;
         setPhase('idle');
         const msg = err instanceof Error ? err.message : 'Invalid invitation code.';
         setCodeError(msg || 'Invalid invitation code.');
         setCodeFailureCount((count) => count + 1);
-        return false;
+        return { valid: false };
       } finally {
         if (abortControllerRef.current === controller) {
           abortControllerRef.current = null;
         }
       }
     },
-    [setSession]
+    [
+      contributorNameState,
+      emailState,
+      hasEditedContributorName,
+      hasEditedEmail,
+      setSession,
+    ]
   );
 
-  // Action: Code change handler with automatic 8-character validation & immediate cancellation
+  const verifyCode = useCallback(
+    async (codeToVerify: string): Promise<boolean> => {
+      const outcome = await verifyCodeWithDetails(codeToVerify);
+      return outcome.valid;
+    },
+    [verifyCodeWithDetails]
+  );
+
+  // Action: Code change handler without automatic 8-character network checks
   const handleCodeChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement> | string) => {
       const val = (typeof e === 'string' ? e : e.target.value).toUpperCase();
@@ -510,6 +608,8 @@ export function useRegistryContributionMachine({
         abortControllerRef.current = null;
       }
 
+      lockedCodeRef.current = null;
+
       if (currentSessionKey && val !== sessionCode) {
         setDismissedSessionKey(currentSessionKey);
       }
@@ -517,22 +617,11 @@ export function useRegistryContributionMachine({
       setInvitationCodeState(val);
       setCodeError(null);
 
-      if (val === '') {
-        if (phase === 'code_locked' || phase === 'validating_code') {
-          setPhase('idle');
-        }
-        return;
-      }
-
-      if (val.length === 8) {
-        if (!isDemoRuntimeActive() || Boolean(findDemoGuestByCode(val))) {
-          void verifyCode(val);
-        }
-      } else if (phase === 'validating_code') {
+      if (phase === 'code_locked' || phase === 'validating_code') {
         setPhase('idle');
       }
     },
-    [currentSessionKey, sessionCode, phase, verifyCode]
+    [currentSessionKey, sessionCode, phase]
   );
 
   // Action: Manual verification
@@ -540,12 +629,67 @@ export function useRegistryContributionMachine({
     return verifyCode(invitationCode);
   }, [invitationCode, verifyCode]);
 
+  // Action: Ensure unverified non-empty invitation code is verified at submit time
+  const ensureCodeVerifiedForSubmit = useCallback(async (): Promise<VerifiedSubmissionIdentity> => {
+    const trimmedCode = invitationCode.trim().toUpperCase();
+    if (
+      !trimmedCode ||
+      phase === 'code_locked' ||
+      (lockedCodeRef.current && lockedCodeRef.current === trimmedCode)
+    ) {
+      return {
+        ok: true,
+        code: trimmedCode,
+        contributorName,
+        email,
+      };
+    }
+
+    const verification = await verifyCodeWithDetails(trimmedCode);
+    if (!verification.valid) {
+      return {
+        ok: false,
+        code: trimmedCode,
+        contributorName,
+        email,
+      };
+    }
+
+    const resolvedCode = verification.code || trimmedCode;
+    const resolvedName =
+      (!hasEditedContributorName || !contributorNameState.trim()) && verification.guestName
+        ? verification.guestName
+        : contributorName;
+    const resolvedEmail =
+      !hasEditedEmail && !emailState.trim() && verification.email
+        ? verification.email
+        : email;
+
+    return {
+      ok: true,
+      code: resolvedCode,
+      contributorName: resolvedName,
+      email: resolvedEmail,
+    };
+  }, [
+    contributorName,
+    contributorNameState,
+    email,
+    emailState,
+    hasEditedContributorName,
+    hasEditedEmail,
+    invitationCode,
+    phase,
+    verifyCodeWithDetails,
+  ]);
+
   // Action: Clear code & session
   const handleClearCode = useCallback(async () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    lockedCodeRef.current = null;
     if (currentSessionKey) {
       setDismissedSessionKey(currentSessionKey);
     }
@@ -554,6 +698,8 @@ export function useRegistryContributionMachine({
     setInvitationCodeState('');
     setHasEditedContributorName(false);
     setContributorNameState('');
+    setHasEditedEmail(false);
+    setEmailState('');
     setCodeError(null);
     setFieldErrors({});
     setSubmissionError(null);
@@ -562,104 +708,114 @@ export function useRegistryContributionMachine({
   const { requestedUnits, remainingUnits } = getItemUnitCounts(item);
   const selectedUnits = selectedUnitsState;
 
-  const validateContribution = useCallback((): boolean => {
-    setFieldErrors({});
-    setSubmissionError(null);
+  const validateContribution = useCallback(
+    (overrides?: { contributorName?: string; email?: string; code?: string }): boolean => {
+      setFieldErrors({});
+      setSubmissionError(null);
 
-    if (!item.isGroupGift && requestedUnits > 1) {
-      if (
-        !Number.isInteger(selectedUnits) ||
-        selectedUnits < 1 ||
-        selectedUnits > remainingUnits
-      ) {
-        setFieldErrors({
-          units:
-            remainingUnits > 0
-              ? `Please select between 1 and ${remainingUnits} available units.`
-              : 'No units are currently available.',
-        });
-        setPhase('error');
-        return false;
-      }
-    }
-
-    const rawAmount = item.isGroupGift
-      ? amount
-      : requestedUnits > 1
-        ? Math.round(item.price * selectedUnits * 100) / 100
-        : item.price;
-
-    const result = ContributionSchema.safeParse({
-      itemId: item.id,
-      name: contributorName,
-      email: email || undefined,
-      amount: rawAmount,
-      code: invitationCode || undefined,
-      message: message || undefined,
-      coverFee,
-      retailerOrderNumber: retailerOrderNumber || undefined,
-      carrier: carrier || undefined,
-      trackingNumber: trackingNumber || undefined,
-      addressLine1: addressLine1 || undefined,
-      addressLine2: addressLine2 || undefined,
-      city: city || undefined,
-      state: state || undefined,
-      zipCode: zipCode || undefined,
-      country: country || undefined,
-    });
-
-    if (!result.success) {
-      const errors: ContributionFieldErrors = {};
-      for (const issue of result.error.issues) {
-        const field = issue.path[0] as keyof ContributionFieldErrors;
-        if (field && !errors[field]) {
-          errors[field] = issue.message;
+      if (!item.isGroupGift && requestedUnits > 1) {
+        if (
+          !Number.isInteger(selectedUnits) ||
+          selectedUnits < 1 ||
+          selectedUnits > remainingUnits
+        ) {
+          setFieldErrors({
+            units:
+              remainingUnits > 0
+                ? `Please select between 1 and ${remainingUnits} available units.`
+                : 'No units are currently available.',
+          });
+          setPhase('error');
+          return false;
         }
       }
-      setFieldErrors(errors);
-      setPhase('error');
-      return false;
-    }
 
-    if (item.isGroupGift) {
-      const remainingAmount = getItemRemainingAmount(item);
-      if (result.data.amount > remainingAmount) {
-        const msg = `Amount cannot exceed the remaining ${formatCurrency(remainingAmount)}.`;
-        setFieldErrors({ amount: msg });
+      const rawAmount = item.isGroupGift
+        ? amount
+        : requestedUnits > 1
+          ? Math.round(item.price * selectedUnits * 100) / 100
+          : item.price;
+
+      const effectiveName = overrides?.contributorName ?? contributorName;
+      const effectiveEmail = overrides?.email ?? email;
+      const effectiveCode = overrides?.code ?? invitationCode;
+
+      const result = ContributionSchema.safeParse({
+        itemId: item.id,
+        name: effectiveName,
+        email: effectiveEmail || undefined,
+        amount: rawAmount,
+        code: effectiveCode || undefined,
+        message: message || undefined,
+        coverFee,
+        retailerOrderNumber: retailerOrderNumber || undefined,
+        carrier: carrier || undefined,
+        trackingNumber: trackingNumber || undefined,
+        addressLine1: addressLine1 || undefined,
+        addressLine2: addressLine2 || undefined,
+        city: city || undefined,
+        state: state || undefined,
+        zipCode: zipCode || undefined,
+        country: country || undefined,
+      });
+
+      if (!result.success) {
+        const errors: ContributionFieldErrors = {};
+        for (const issue of result.error.issues) {
+          const field = issue.path[0] as keyof ContributionFieldErrors;
+          if (field && !errors[field]) {
+            errors[field] = issue.message;
+          }
+        }
+        setFieldErrors(errors);
         setPhase('error');
         return false;
       }
-    }
 
-    return true;
-  }, [
-    item,
-    requestedUnits,
-    remainingUnits,
-    selectedUnits,
-    amount,
-    contributorName,
-    email,
-    invitationCode,
-    message,
-    coverFee,
-    retailerOrderNumber,
-    carrier,
-    trackingNumber,
-    addressLine1,
-    addressLine2,
-    city,
-    state,
-    zipCode,
-    country,
-  ]);
+      if (item.isGroupGift) {
+        const remainingAmount = getItemRemainingAmount(item);
+        if (result.data.amount > remainingAmount) {
+          const msg = `Amount cannot exceed the remaining ${formatCurrency(remainingAmount)}.`;
+          setFieldErrors({ amount: msg });
+          setPhase('error');
+          return false;
+        }
+      }
+
+      return true;
+    },
+    [
+      item,
+      requestedUnits,
+      remainingUnits,
+      selectedUnits,
+      amount,
+      contributorName,
+      email,
+      invitationCode,
+      message,
+      coverFee,
+      retailerOrderNumber,
+      carrier,
+      trackingNumber,
+      addressLine1,
+      addressLine2,
+      city,
+      state,
+      zipCode,
+      country,
+    ]
+  );
 
   // Action: Submit contribution
   const handleSubmit = useCallback(
     async (
       e?: React.SubmitEvent<HTMLFormElement>,
       paymentIntentId?: string,
-      options?: { coverFeeOverride?: boolean }
+      options?: {
+        coverFeeOverride?: boolean;
+        identityOverride?: Omit<VerifiedSubmissionIdentity, 'ok'>;
+      }
     ) => {
       if (e) {
         e.preventDefault();
@@ -672,6 +828,30 @@ export function useRegistryContributionMachine({
 
       setFieldErrors({});
       setSubmissionError(null);
+
+      const trimmedCode = invitationCode.trim().toUpperCase();
+      const needsAsyncCodeVerification =
+        !options?.identityOverride &&
+        Boolean(trimmedCode) &&
+        phase !== 'code_locked' &&
+        lockedCodeRef.current !== trimmedCode;
+
+      let resolvedIdentity: Omit<VerifiedSubmissionIdentity, 'ok'>;
+      if (options?.identityOverride) {
+        resolvedIdentity = options.identityOverride;
+      } else if (!needsAsyncCodeVerification) {
+        resolvedIdentity = {
+          code: trimmedCode,
+          contributorName,
+          email,
+        };
+      } else {
+        const verified = await ensureCodeVerifiedForSubmit();
+        if (!verified.ok) {
+          return;
+        }
+        resolvedIdentity = verified;
+      }
 
       if (!item.isGroupGift && requestedUnits > 1) {
         if (
@@ -700,10 +880,10 @@ export function useRegistryContributionMachine({
 
       const result = ContributionSchema.safeParse({
         itemId: item.id,
-        name: contributorName,
-        email: email || undefined,
+        name: resolvedIdentity.contributorName,
+        email: resolvedIdentity.email || undefined,
         amount: rawAmount,
-        code: invitationCode || undefined,
+        code: resolvedIdentity.code || undefined,
         message: message || undefined,
         coverFee: effectiveCoverFee,
         paymentIntentId,
@@ -862,6 +1042,7 @@ export function useRegistryContributionMachine({
     },
     [
       phase,
+      ensureCodeVerifiedForSubmit,
       item,
       requestedUnits,
       remainingUnits,
@@ -951,6 +1132,7 @@ export function useRegistryContributionMachine({
     setSubmissionError,
 
     validateContribution,
+    ensureCodeVerifiedForSubmit,
     handleCodeChange,
     handleVerifyCode,
     handleClearCode,

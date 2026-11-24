@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/Button';
+import { FormGroup, Input, Label } from '@/components/ui/forms';
 import { Icon } from '@/components/ui/Icon';
 import {
   UploadAlert,
@@ -457,20 +458,21 @@ export function GuestPhotoDropzone({
   return (
     <div className={className}>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-        <div>
-          <label
+        <FormGroup>
+          <Label
             htmlFor="guest-photo-uploader-name"
-            className="block text-sm font-medium text-stone-800 dark:text-stone-200 mb-1"
+            className="font-medium text-stone-800 dark:text-stone-200 mb-1"
           >
             Your Name{' '}
             <span className="text-[var(--color-muted-text,#4b5563)] font-normal">
               (optional)
             </span>
-          </label>
-          <input
+          </Label>
+          <Input
             id="guest-photo-uploader-name"
             name="uploaderName"
             type="text"
+            autoComplete="name"
             maxLength={100}
             value={uploaderName}
             onChange={(e) => {
@@ -479,20 +481,21 @@ export function GuestPhotoDropzone({
             }}
             placeholder="e.g. Aunt Clara"
             data-testid="guest-photo-uploader-name"
-            className="w-full rounded-xl border border-[var(--color-surface-border,#6b7280)] bg-white dark:bg-stone-900 px-3.5 py-2 text-sm text-stone-900 dark:text-stone-100 placeholder:text-[var(--color-muted-text,#4b5563)] focus:border-[var(--color-focus-ring,var(--color-primary,#B91C1C))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary,#B91C1C))] focus-visible:ring-offset-2"
+            style={{ borderRadius: '0.75rem' }}
+            className="rounded-xl bg-white dark:bg-stone-900 px-3.5 py-2 text-stone-900 dark:text-stone-100 placeholder:text-[var(--color-muted-text,#4b5563)]"
           />
-        </div>
-        <div>
-          <label
+        </FormGroup>
+        <FormGroup>
+          <Label
             htmlFor="guest-photo-caption"
-            className="block text-sm font-medium text-stone-800 dark:text-stone-200 mb-1"
+            className="font-medium text-stone-800 dark:text-stone-200 mb-1"
           >
             Caption or Note{' '}
             <span className="text-[var(--color-muted-text,#4b5563)] font-normal">
               (optional)
             </span>
-          </label>
-          <input
+          </Label>
+          <Input
             id="guest-photo-caption"
             name="caption"
             type="text"
@@ -501,9 +504,10 @@ export function GuestPhotoDropzone({
             onChange={(e) => setCaption(e.target.value)}
             placeholder="e.g. Sparkler exit!"
             data-testid="guest-photo-caption"
-            className="w-full rounded-xl border border-[var(--color-surface-border,#6b7280)] bg-white dark:bg-stone-900 px-3.5 py-2 text-sm text-stone-900 dark:text-stone-100 placeholder:text-[var(--color-muted-text,#4b5563)] focus:border-[var(--color-focus-ring,var(--color-primary,#B91C1C))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary,#B91C1C))] focus-visible:ring-offset-2"
+            style={{ borderRadius: '0.75rem' }}
+            className="rounded-xl bg-white dark:bg-stone-900 px-3.5 py-2 text-stone-900 dark:text-stone-100 placeholder:text-[var(--color-muted-text,#4b5563)]"
           />
-        </div>
+        </FormGroup>
       </div>
 
       <label htmlFor="guest-photo-file-input" className="sr-only">

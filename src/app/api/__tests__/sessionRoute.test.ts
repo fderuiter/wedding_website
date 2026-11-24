@@ -39,6 +39,7 @@ describe('session Route', () => {
         invitationCode: null,
         code: null,
         guestName: null,
+        email: null,
       },
     });
     expect(res.headers.get('set-cookie')).toBeNull();
@@ -74,6 +75,7 @@ describe('session Route', () => {
         invitationCode: 'WEDDING2026',
         code: 'WEDDING2026',
         guestName: 'Jane Doe',
+        email: null,
       },
     });
   });
@@ -103,6 +105,7 @@ describe('session Route', () => {
         invitationCode: null,
         code: null,
         guestName: null,
+        email: null,
       },
     });
 

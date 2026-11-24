@@ -2,6 +2,18 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
+import {
+  JestA11yShardReporter,
+  aggregateJestViolationShards,
+  appendJestViolations,
+  cleanJestViolationShards,
+  createJestAxeMock,
+  getWorkerShardPath,
+  listJestViolationShards,
+} from '../jest-a11y-reporter.cjs';
+
+jest.mock('jest-axe', () => createJestAxeMock(jest));
+
 import { toHaveNoViolations } from 'jest-axe';
 import {
   findJestAxeSuites,
@@ -524,6 +536,53 @@ describe('a11y-report', () => {
       const recorded = JSON.parse(fs.readFileSync(customReportFile, 'utf8'));
       expect(recorded).toHaveLength(1);
       expect(recorded[0].id).toBe('button-name');
+      cleanJestViolationShards(customReportFile);
+    });
+
+    it('writes isolated per-worker shard files and aggregates them into jest-a11y-violations.json on reporter completion', () => {
+      const resultsDir = path.join(tempDir, 'test-results');
+      fs.mkdirSync(resultsDir, { recursive: true });
+      const reportFile = path.join(resultsDir, 'jest-a11y-violations.json');
+      process.env.JEST_A11Y_REPORT_PATH = reportFile;
+
+      // Seed a stale shard and ensure onRunStart removes it
+      const staleShard = getWorkerShardPath(reportFile, 'stale-worker');
+      fs.writeFileSync(staleShard, JSON.stringify([{ id: 'stale-rule' }]), 'utf8');
+
+      const reporter = new JestA11yShardReporter({ rootDir: tempDir });
+      reporter.onRunStart();
+      expect(listJestViolationShards(reportFile)).toEqual([]);
+
+      // Simulate three parallel unit-jsdom workers recording violations independently
+      appendJestViolations(
+        [{ id: 'color-contrast', description: 'Low contrast', impact: 'serious' }],
+        { reportFile, workerKey: '1-1001' }
+      );
+      appendJestViolations(
+        [{ id: 'button-name', description: 'Missing name', impact: 'critical' }],
+        { reportFile, workerKey: '2-1002' }
+      );
+      appendJestViolations(
+        [{ id: 'image-alt', description: 'Missing alt', impact: 'critical' }],
+        { reportFile, workerKey: '1-1001' }
+      );
+
+      expect(listJestViolationShards(reportFile)).toHaveLength(2);
+      const midRunAggregated = aggregateJestViolationShards(reportFile);
+      expect(midRunAggregated.map((v: { id: string }) => v.id)).toEqual([
+        'color-contrast',
+        'image-alt',
+        'button-name',
+      ]);
+
+      reporter.onRunComplete();
+      expect(listJestViolationShards(reportFile)).toEqual([]);
+      const finalized = JSON.parse(fs.readFileSync(reportFile, 'utf8'));
+      expect(finalized.map((v: { id: string }) => v.id)).toEqual([
+        'color-contrast',
+        'image-alt',
+        'button-name',
+      ]);
     });
   });
 

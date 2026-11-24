@@ -4,6 +4,10 @@ import { createRequire } from 'module';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { PGlite } from '@electric-sql/pglite';
+import {
+  REQUIRED_MIGRATION_NAMES,
+  REQUIRED_SCHEMA_TABLES,
+} from '../src/lib/readinessManifest';
 
 interface PGLiteSocketServerOptions {
   db: PGlite;
@@ -39,6 +43,8 @@ export interface PrismaCheckOptions {
   skipValidate?: boolean;
   skipGenerate?: boolean;
   quiet?: boolean;
+  requiredTables?: readonly string[];
+  requiredMigrations?: readonly string[];
 }
 
 export interface PrismaCheckResult {
@@ -150,6 +156,132 @@ async function startPgliteShadowServer(cwd: string): Promise<{
   await server.start();
   const shadowUrl = `postgresql://postgres:postgres@${server.getServerConn()}/postgres?sslmode=disable`;
   return { db, server, shadowUrl };
+}
+
+function extractSchemaTableNames(schemaRaw: string): string[] {
+  const tables: string[] = [];
+  const modelBlockRegex = /^model\s+([A-Za-z0-9_]+)\s*\{([\s\S]*?)^\}/gm;
+  let match: RegExpExecArray | null;
+  while ((match = modelBlockRegex.exec(schemaRaw)) !== null) {
+    const modelName = match[1];
+    const body = match[2];
+    const mapMatch = body.match(/@@map\(\s*["']([^"']+)["']\s*\)/);
+    tables.push(mapMatch ? mapMatch[1] : modelName);
+  }
+  return tables;
+}
+
+function listMigrationDirectoryNames(migrationsDirAbs: string): string[] {
+  if (!fs.existsSync(migrationsDirAbs)) {
+    return [];
+  }
+  return fs
+    .readdirSync(migrationsDirAbs, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+}
+
+function findDuplicates(items: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const item of items) {
+    if (seen.has(item)) {
+      duplicates.add(item);
+    }
+    seen.add(item);
+  }
+  return Array.from(duplicates);
+}
+
+export function verifyReadinessManifestParity(options: {
+  cwd?: string;
+  schemaPath?: string;
+  migrationsPath?: string;
+  requiredTables?: readonly string[];
+  requiredMigrations?: readonly string[];
+} = {}): string[] {
+  const cwd = options.cwd ?? process.cwd();
+  const schemaAbsPath = path.resolve(cwd, options.schemaPath ?? 'prisma/schema.prisma');
+  const migrationsAbsPath = path.resolve(cwd, options.migrationsPath ?? 'prisma/migrations');
+  const manifestTables = options.requiredTables ?? REQUIRED_SCHEMA_TABLES;
+  const manifestMigrations = options.requiredMigrations ?? REQUIRED_MIGRATION_NAMES;
+
+  const issues: string[] = [];
+
+  if (!fs.existsSync(schemaAbsPath)) {
+    issues.push(`Prisma schema file not found at ${schemaAbsPath}.`);
+    return issues;
+  }
+
+  const schemaRaw = fs.readFileSync(schemaAbsPath, 'utf8');
+  const expectedTables = extractSchemaTableNames(schemaRaw);
+  const manifestTableSet = new Set(manifestTables);
+  const expectedTableSet = new Set(expectedTables);
+
+  const missingTables = expectedTables.filter((table) => !manifestTableSet.has(table));
+  const extraTables = manifestTables.filter((table) => !expectedTableSet.has(table));
+  const duplicateTables = findDuplicates(manifestTables);
+
+  if (missingTables.length > 0) {
+    issues.push(
+      `Readiness manifest REQUIRED_SCHEMA_TABLES omits Prisma schema model table(s): ${missingTables.join(', ')}`
+    );
+  }
+  if (extraTables.length > 0) {
+    issues.push(
+      `Readiness manifest REQUIRED_SCHEMA_TABLES contains stale table(s) absent from prisma/schema.prisma: ${extraTables.join(', ')}`
+    );
+  }
+  if (duplicateTables.length > 0) {
+    issues.push(
+      `Readiness manifest REQUIRED_SCHEMA_TABLES contains duplicate table entry/entries: ${duplicateTables.join(', ')}`
+    );
+  }
+
+  const expectedMigrations = listMigrationDirectoryNames(migrationsAbsPath);
+  const manifestMigrationSet = new Set(manifestMigrations);
+  const expectedMigrationSet = new Set(expectedMigrations);
+
+  const missingMigrations = expectedMigrations.filter(
+    (migrationName) => !manifestMigrationSet.has(migrationName)
+  );
+  const extraMigrations = manifestMigrations.filter(
+    (migrationName) => !expectedMigrationSet.has(migrationName)
+  );
+  const duplicateMigrations = findDuplicates(manifestMigrations);
+
+  if (missingMigrations.length > 0) {
+    issues.push(
+      `Readiness manifest REQUIRED_MIGRATION_NAMES omits migration directory/directories: ${missingMigrations.join(', ')}`
+    );
+  }
+  if (extraMigrations.length > 0) {
+    issues.push(
+      `Readiness manifest REQUIRED_MIGRATION_NAMES contains stale migration(s) absent from prisma/migrations: ${extraMigrations.join(', ')}`
+    );
+  }
+  if (duplicateMigrations.length > 0) {
+    issues.push(
+      `Readiness manifest REQUIRED_MIGRATION_NAMES contains duplicate migration entry/entries: ${duplicateMigrations.join(', ')}`
+    );
+  }
+
+  const readyRouteAbsPath = path.join(cwd, 'src', 'app', 'api', 'ready', 'route.ts');
+  if (fs.existsSync(readyRouteAbsPath)) {
+    const readyRouteRaw = fs.readFileSync(readyRouteAbsPath, 'utf8');
+    if (
+      !readyRouteRaw.includes('REQUIRED_SCHEMA_TABLES') ||
+      !readyRouteRaw.includes('REQUIRED_MIGRATION_NAMES') ||
+      !readyRouteRaw.includes('readinessManifest')
+    ) {
+      issues.push(
+        'src/app/api/ready/route.ts must import and enforce REQUIRED_SCHEMA_TABLES and REQUIRED_MIGRATION_NAMES from @/lib/readinessManifest.'
+      );
+    }
+  }
+
+  return issues;
 }
 
 export async function checkPrismaSchema(
@@ -267,7 +399,28 @@ export async function checkPrismaSchema(
   }
 
   if (diffCheckRes.exitCode === 0) {
-    log('✅ Prisma schema validation, client generation, and migration sync check passed!');
+    const manifestIssues = verifyReadinessManifestParity({
+      cwd,
+      schemaPath,
+      migrationsPath,
+      requiredTables: options.requiredTables,
+      requiredMigrations: options.requiredMigrations,
+    });
+    if (manifestIssues.length > 0) {
+      return {
+        ok: false,
+        exitCode: 1,
+        driftSql: '',
+        errorOutput: [
+          'Readiness manifest drift detected in src/lib/readinessManifest.ts:',
+          ...manifestIssues.map((issue) => `  - ${issue}`),
+        ].join('\n'),
+      };
+    }
+
+    log(
+      '✅ Prisma schema validation, client generation, and migration sync check passed (readiness manifest verified)!'
+    );
     return {
       ok: true,
       exitCode: 0,
@@ -334,6 +487,17 @@ ACTIONABLE REMEDIATION:
 2. Run 'npm run migrate:dev' against your local PostgreSQL database to record a
    new migration file in prisma/migrations/, then run 'npm run lint:migrations'.
 3. Once reconciled, re-run 'npm run check:prisma' to verify zero schema drift.
+================================================================================
+`);
+  } else if (result.errorOutput.includes('Readiness manifest drift detected')) {
+    sections.push(`
+================================================================================
+ACTIONABLE REMEDIATION:
+--------------------------------------------------------------------------------
+1. Update REQUIRED_SCHEMA_TABLES and REQUIRED_MIGRATION_NAMES in
+   src/lib/readinessManifest.ts so GET /api/ready checks every persisted model
+   in prisma/schema.prisma and every committed directory in prisma/migrations/.
+2. Re-run 'npm run check:prisma' to verify readiness manifest parity.
 ================================================================================
 `);
   } else {

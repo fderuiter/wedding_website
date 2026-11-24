@@ -1612,9 +1612,20 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       'docker-compose.ci.yml: `app` service must provide a valid 16-byte-salt / 64-byte-key scrypt fallback in `ADMIN_PASSWORD`'
     );
   }
-  if (!ciWorkflowRaw.includes('-f docker-compose.yml -f docker-compose.ci.yml')) {
+  const testContainerScriptPath = path.join(repoRoot, 'scripts/test-container.mjs');
+  const testContainerScriptRaw = fs.existsSync(testContainerScriptPath)
+    ? fs.readFileSync(testContainerScriptPath, 'utf8')
+    : '';
+  const ciInvokesIsolatedCompose =
+    ciWorkflowRaw.includes('-f docker-compose.yml -f docker-compose.ci.yml') ||
+    ((/\btest:container\b/.test(ciWorkflowRaw) ||
+      ciWorkflowRaw.includes('scripts/test-container.mjs')) &&
+      (!testContainerScriptRaw ||
+        (testContainerScriptRaw.includes("'docker-compose.yml'") &&
+          testContainerScriptRaw.includes("'docker-compose.ci.yml'"))));
+  if (!ciInvokesIsolatedCompose) {
     errors.push(
-      '.github/workflows/ci.yml: Container jobs must explicitly pass `-f docker-compose.yml -f docker-compose.ci.yml`'
+      '.github/workflows/ci.yml: Container jobs must invoke `scripts/test-container.mjs` (`npm run test:container`) or explicitly pass `-f docker-compose.yml -f docker-compose.ci.yml`'
     );
   }
 
@@ -2587,7 +2598,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
-  for (const requiredCiJob of ['static-export-build', 'storybook-build', 'deploy-docs']) {
+  for (const requiredCiJob of ['static-export-build', 'storybook-build', 'pages-verify', 'deploy-docs']) {
     if (ciJobIds.includes(requiredCiJob) && !deploymentMd.includes(requiredCiJob)) {
       errors.push(`DEPLOYMENT.md: Missing ci.yml job reference "${requiredCiJob}"`);
     }
@@ -2612,6 +2623,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     const runNode: unknown = stepItem.get('run', true);
     if (!isScalar(runNode) || typeof runNode.value !== 'string') continue;
     const skipsDocSync = /\bcheck:static\b[^\n]*--skip-doc-sync\b/.test(runNode.value);
+    const skipsActionPins = /\bcheck:static\b[^\n]*--skip-action-pins\b/.test(runNode.value);
     const npmRunRegex = /\bnpm\s+run\s+([a-zA-Z0-9:_-]+)\b/g;
     let scriptMatch: RegExpExecArray | null;
     while ((scriptMatch = npmRunRegex.exec(runNode.value)) !== null) {
@@ -2623,6 +2635,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
         for (const staticStep of staticSteps) {
           if (!staticStep.script) continue;
           if (skipsDocSync && staticStep.script === 'check:doc-sync') continue;
+          if (skipsActionPins && staticStep.script === 'check:action-pins') continue;
           if (!ciVerifyScripts.includes(staticStep.script)) {
             ciVerifyScripts.push(staticStep.script);
           }
@@ -3003,20 +3016,40 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
-  // 5. Rollback workflow jq `.data.status` / `.data.database` & `publish-artifact.yml` `v*` tag checks
+  // 5. Rollout (`deploy-provider.yml`, `deploy-stage.yml`) & Rollback (`rollback.yml`) dual `/api/health` + `/api/ready` probe contracts & `publish-artifact.yml` `v*` tag checks
+  const deployProviderWorkflowRaw = fs.readFileSync(path.join(workflowsDir, 'deploy-provider.yml'), 'utf8');
+  const deployStageWorkflowRaw = fs.readFileSync(path.join(workflowsDir, 'deploy-stage.yml'), 'utf8');
   const rollbackWorkflowRaw = fs.readFileSync(path.join(workflowsDir, 'rollback.yml'), 'utf8');
-  if (!rollbackWorkflowRaw.includes('.data.status') || !rollbackWorkflowRaw.includes('.data.database')) {
-    errors.push('.github/workflows/rollback.yml: Health check jq query must read `.data.status` and `.data.database`');
-  }
-  if (/jq\s+-r\s+['"]\.(?:status|database)\s*\/\//.test(rollbackWorkflowRaw)) {
-    errors.push(
-      '.github/workflows/rollback.yml: Unwrapped `.status` or `.database` jq query detected (must read `.data.status` / `.data.database`)'
-    );
+  for (const [workflowRelPath, workflowRaw] of [
+    ['.github/workflows/deploy-provider.yml', deployProviderWorkflowRaw],
+    ['.github/workflows/deploy-stage.yml', deployStageWorkflowRaw],
+    ['.github/workflows/rollback.yml', rollbackWorkflowRaw],
+  ] as const) {
+    if (!workflowRaw.includes('.data.status') || !workflowRaw.includes('.data.database')) {
+      errors.push(`${workflowRelPath}: Health check jq query must read \`.data.status\` and \`.data.database\``);
+    }
+    if (/jq\s+-r\s+['"]\.(?:status|database)\s*\/\//.test(workflowRaw)) {
+      errors.push(
+        `${workflowRelPath}: Unwrapped \`.status\` or \`.database\` jq query detected (must read \`.data.status\` / \`.data.database\`)`
+      );
+    }
+    if (
+      !workflowRaw.includes('READY_ENDPOINT="${TARGET_URL}/api/ready"') ||
+      !workflowRaw.includes('READY_STATUS_VAL') ||
+      !/READY_STATUS_VAL"\s*=\s*"ready"/.test(workflowRaw)
+    ) {
+      errors.push(
+        `${workflowRelPath}: Post-deployment/rollback probe must poll both \`/api/health\` and \`/api/ready\` (\`status == "ready"\`)`
+      );
+    }
   }
   for (const relPath of ['DEPLOYMENT.md', 'docs/deployment/gcp-cloud-run.md']) {
     const content = runbookContents.get(relPath) ?? '';
     if (!content.includes('.data.status') || !content.includes('.data.database')) {
       errors.push(`${relPath}: Rollback health probe documentation must reference \`.data.status\` and \`.data.database\``);
+    }
+    if (!content.includes('/api/health') || !content.includes('/api/ready')) {
+      errors.push(`${relPath}: Deployment and rollback probe documentation must reference both \`/api/health\` and \`/api/ready\``);
     }
   }
 
@@ -3095,10 +3128,26 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
-  const forwardedIdx = configTsRaw.indexOf("'x-forwarded-host'");
-  const hostIdx = configTsRaw.indexOf("headersList.get('host')");
-  if (forwardedIdx === -1 || hostIdx === -1 || forwardedIdx > hostIdx) {
-    errors.push("src/lib/config.ts: `getSubdomainFromHeaders` must check `'x-forwarded-host'` before `'host'`");
+  const delegatesToSharedHostHelper = configTsRaw.includes('resolveRequestSubdomain(');
+  const hostValidationPath = path.join(repoRoot, 'src/utils/hostValidation.ts');
+  const hostSourceToCheck =
+    delegatesToSharedHostHelper && fs.existsSync(hostValidationPath)
+      ? fs.readFileSync(hostValidationPath, 'utf8')
+      : configTsRaw;
+  const checkingSharedHostHelper =
+    delegatesToSharedHostHelper && fs.existsSync(hostValidationPath);
+  const forwardedIdx = hostSourceToCheck.indexOf("'x-forwarded-host'");
+  const hostIdx = checkingSharedHostHelper
+    ? hostSourceToCheck.indexOf(".get('host')")
+    : hostSourceToCheck.indexOf("headersList.get('host')");
+  if (
+    !delegatesToSharedHostHelper || checkingSharedHostHelper
+      ? forwardedIdx === -1 || hostIdx === -1 || forwardedIdx > hostIdx
+      : false
+  ) {
+    errors.push(
+      "src/lib/config.ts: `getSubdomainFromHeaders` (or `resolveRequestHost` in `src/utils/hostValidation.ts`) must check `'x-forwarded-host'` before `'host'`"
+    );
   }
 
   const prismaSchemaRaw = fs.readFileSync(path.join(repoRoot, 'prisma/schema.prisma'), 'utf8');

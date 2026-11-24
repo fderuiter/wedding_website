@@ -402,7 +402,7 @@ describe('SeatingTableAdminService', () => {
       expect(mockTxInvitationCodeUpdate).not.toHaveBeenCalled();
       expect(mockTxExecuteRaw).toHaveBeenCalledTimes(1);
       const rawQuery = mockTxExecuteRaw.mock.calls[0][0];
-      expect(rawQuery.sql).toContain('UPDATE "InvitationCode" AS t');
+      expect(rawQuery.sql).toContain('UPDATE "public"."InvitationCode" AS t');
       expect(rawQuery.sql).toContain('WHERE t."id" = v."id"');
       expect(rawQuery.values).toContain('g1');
       expect(rawQuery.values).toContain('table-2');

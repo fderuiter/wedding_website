@@ -1,4 +1,6 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { qualifyPostgresTable } from '@/lib/postgres-url.js';
 import { createAuditSnapshot } from '@/lib/audit';
 import { executeInTransaction } from '@/lib/transaction';
 import { ApiError } from '@/utils/ApiError';
@@ -373,7 +375,10 @@ class RegistryRepository implements IRegistryRepository {
     const runTransaction = async (txClient: any) => {
       // 1. Acquire PostgreSQL row-level lock on the targeted registry item row
       if (typeof txClient.$queryRaw === 'function') {
-        await txClient.$queryRaw`SELECT id FROM "RegistryItem" WHERE id = ${itemId} FOR UPDATE`;
+        const registryItemTable = Prisma.raw(qualifyPostgresTable('RegistryItem'));
+        await txClient.$queryRaw(
+          Prisma.sql`SELECT id FROM ${registryItemTable} WHERE id = ${itemId} FOR UPDATE`
+        );
       }
 
       // Check for idempotent duplicate if a Stripe PaymentIntent ID is provided
@@ -414,7 +419,7 @@ class RegistryRepository implements IRegistryRepository {
         throw new Error('This item has already been purchased.');
       }
 
-      const emailToSave =
+      let emailToSave =
         contribution.email && contribution.email.trim() ? contribution.email.trim() : null;
       const trimOrNull = (value?: string | null) =>
         value && value.trim() ? value.trim() : null;
@@ -441,6 +446,13 @@ class RegistryRepository implements IRegistryRepository {
         finalName = contribution.name || inviteRecord.guestName;
         invitationCodeId = inviteRecord.id;
         linkedInviteRecord = inviteRecord;
+        if (
+          !emailToSave &&
+          typeof inviteRecord.email === 'string' &&
+          inviteRecord.email.trim().length > 0
+        ) {
+          emailToSave = inviteRecord.email.trim();
+        }
       } else if (emailToSave && typeof txClient.invitationCode?.findMany === 'function') {
         const normalizedLookupEmail = emailToSave.toLowerCase();
         const emailMatches = await txClient.invitationCode.findMany({
@@ -704,7 +716,10 @@ class RegistryRepository implements IRegistryRepository {
     }
 
     if (typeof txClient.$queryRaw === 'function') {
-      await txClient.$queryRaw`SELECT id FROM "RegistryItem" WHERE id = ${itemId} FOR UPDATE`;
+      const registryItemTable = Prisma.raw(qualifyPostgresTable('RegistryItem'));
+      await txClient.$queryRaw(
+        Prisma.sql`SELECT id FROM ${registryItemTable} WHERE id = ${itemId} FOR UPDATE`
+      );
     }
 
     const item = await txClient.registryItem.findUnique({
@@ -1018,7 +1033,10 @@ class RegistryRepository implements IRegistryRepository {
       }
 
       if (located.registryItemId && typeof txClient.$queryRaw === 'function') {
-        await txClient.$queryRaw`SELECT id FROM "RegistryItem" WHERE id = ${located.registryItemId} FOR UPDATE`;
+        const registryItemTable = Prisma.raw(qualifyPostgresTable('RegistryItem'));
+        await txClient.$queryRaw(
+          Prisma.sql`SELECT id FROM ${registryItemTable} WHERE id = ${located.registryItemId} FOR UPDATE`
+        );
       }
 
       const existing =
@@ -1107,7 +1125,10 @@ class RegistryRepository implements IRegistryRepository {
   ): Promise<RegistryItemDTO> {
     return executeInTransaction(this.client, async (txClient: any) => {
       if (typeof txClient.$queryRaw === 'function') {
-        await txClient.$queryRaw`SELECT id FROM "RegistryItem" WHERE id = ${itemId} FOR UPDATE`;
+        const registryItemTable = Prisma.raw(qualifyPostgresTable('RegistryItem'));
+        await txClient.$queryRaw(
+          Prisma.sql`SELECT id FROM ${registryItemTable} WHERE id = ${itemId} FOR UPDATE`
+        );
       }
 
       const item = await txClient.registryItem.findUnique({
@@ -1185,7 +1206,10 @@ class RegistryRepository implements IRegistryRepository {
       }
 
       if (located.registryItemId && typeof txClient.$queryRaw === 'function') {
-        await txClient.$queryRaw`SELECT id FROM "RegistryItem" WHERE id = ${located.registryItemId} FOR UPDATE`;
+        const registryItemTable = Prisma.raw(qualifyPostgresTable('RegistryItem'));
+        await txClient.$queryRaw(
+          Prisma.sql`SELECT id FROM ${registryItemTable} WHERE id = ${located.registryItemId} FOR UPDATE`
+        );
       }
 
       const existing =
@@ -1260,7 +1284,10 @@ class RegistryRepository implements IRegistryRepository {
       }
 
       if (located.registryItemId && typeof txClient.$queryRaw === 'function') {
-        await txClient.$queryRaw`SELECT id FROM "RegistryItem" WHERE id = ${located.registryItemId} FOR UPDATE`;
+        const registryItemTable = Prisma.raw(qualifyPostgresTable('RegistryItem'));
+        await txClient.$queryRaw(
+          Prisma.sql`SELECT id FROM ${registryItemTable} WHERE id = ${located.registryItemId} FOR UPDATE`
+        );
       }
 
       const existing =

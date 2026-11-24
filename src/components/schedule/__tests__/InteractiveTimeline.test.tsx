@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import InteractiveTimeline from '../InteractiveTimeline';
@@ -431,10 +431,16 @@ describe('InteractiveTimeline Component', () => {
       const saveAllBtn = screen.getByRole('button', { name: /save all modified events/i });
       fireEvent.click(saveAllBtn);
 
-      // All input controls should be disabled while submission is in flight (Criterion 4)
-      expect(attendingBtn1).toBeDisabled();
-      expect(plusOneInput2).toBeDisabled();
-      expect(saveAllBtn).toBeDisabled();
+      // All input controls should be locked with busy ARIA attributes while submission is in flight
+      expect(attendingBtn1).not.toBeDisabled();
+      expect(attendingBtn1).toHaveAttribute('aria-disabled', 'true');
+      expect(attendingBtn1).toHaveAttribute('aria-busy', 'true');
+      expect(plusOneInput2).not.toBeDisabled();
+      expect(plusOneInput2).toHaveAttribute('readonly');
+      expect(plusOneInput2).toHaveAttribute('aria-busy', 'true');
+      expect(saveAllBtn).not.toBeDisabled();
+      expect(saveAllBtn).toHaveAttribute('aria-disabled', 'true');
+      expect(saveAllBtn).toHaveAttribute('aria-busy', 'true');
 
       // Resolve the fetch call
       resolveFetch!({
@@ -932,10 +938,10 @@ describe('InteractiveTimeline Component', () => {
       const plusOneNameInput = within(card).getByLabelText('Plus-One Full Name') as HTMLInputElement;
       expect(plusOneNameInput.value).toBe('John Doe');
 
-      const primaryMealSelect = within(card).getByLabelText('Entrée for Jane Doe *') as HTMLSelectElement;
-      const plusOneMealSelect = within(card).getByLabelText('Entrée for John Doe *') as HTMLSelectElement;
+      const primaryMealSelect = within(card).getByLabelText(/^Entrée for Jane Doe/i) as HTMLSelectElement;
+      const plusOneMealSelect = within(card).getByLabelText(/^Entrée for John Doe/i) as HTMLSelectElement;
       const shuttleSelect = within(card).getByLabelText(
-        'Will you use the hotel shuttle? *'
+        /^Will you use the hotel shuttle\?/i
       ) as HTMLSelectElement;
       const songInput = within(card).getByLabelText('Song request') as HTMLInputElement;
 
@@ -1163,7 +1169,7 @@ describe('InteractiveTimeline Component', () => {
 
       // Removed meal option and removed choice option remain visible as selected values
       const primaryMealSelect = within(dinnerCard).getByLabelText(
-        'Entrée for Jane Doe *'
+        /^Entrée for Jane Doe/i
       ) as HTMLSelectElement;
       expect(primaryMealSelect.value).toBe('m-removed-dish');
       expect(within(primaryMealSelect).getByText(/m-removed-dish/i)).toBeInTheDocument();
@@ -1240,6 +1246,168 @@ describe('InteractiveTimeline Component', () => {
       expect(
         await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
       ).toHaveNoViolations();
+    });
+
+    it('hides required asterisks with aria-hidden, omits autocomplete="name" on plus-one names, focuses first invalid control, keeps focus during saves, and mounts at most one role="alert"', async () => {
+      const saveDeferred: { resolve?: (val: unknown) => void } = {};
+      (global.fetch as jest.Mock).mockImplementation((url: string) => {
+        if (url === '/api/schedule') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              isGuest: true,
+              guestName: 'Jane Doe',
+              plusOneAllocations: 1,
+              savedPlusOneNames: [],
+              rsvpOpen: true,
+              timezone: 'UTC',
+              data: [
+                {
+                  id: 'se-a11y-1',
+                  title: 'Plated Dinner',
+                  startTime: '2026-06-20T18:00:00Z',
+                  isPrivate: false,
+                  isReadOnly: false,
+                  mealOptions: [{ id: 'm-1', label: 'Salmon', dietaryTags: [] }],
+                  customQuestions: [
+                    {
+                      id: 'q-req',
+                      prompt: 'Shuttle seat?',
+                      type: 'choice',
+                      required: true,
+                      options: ['Yes', 'No'],
+                    },
+                  ],
+                  userRsvp: { status: 'attending', plusOneCount: 1, dietaryNotes: '' },
+                },
+                {
+                  id: 'se-a11y-2',
+                  title: 'Farewell Brunch',
+                  startTime: '2026-06-21T10:00:00Z',
+                  isPrivate: false,
+                  isReadOnly: false,
+                  mealOptions: [{ id: 'm-2', label: 'Waffles', dietaryTags: [] }],
+                  customQuestions: [],
+                  userRsvp: { status: 'pending', plusOneCount: 0, dietaryNotes: '' },
+                },
+              ],
+            }),
+          });
+        }
+        if (url === '/api/rsvp') {
+          return new Promise((resolve) => {
+            saveDeferred.resolve = resolve;
+          });
+        }
+        return Promise.resolve({ ok: false, json: async () => ({}) });
+      });
+
+      const { container } = render(
+        <InteractiveTimeline events={[]} timezone="UTC" emptyStateMessage="No events" />
+      );
+
+      const card1 = await screen.findByTestId('rsvp-card-se-a11y-1');
+      const card2 = screen.getByTestId('rsvp-card-se-a11y-2');
+
+      // Plus-one name input is required + aria-required="true" without autocomplete="name"
+      const plusOneNameInput = within(card1).getByLabelText('Plus-One Full Name');
+      expect(plusOneNameInput).toBeRequired();
+      expect(plusOneNameInput).toHaveAttribute('aria-required', 'true');
+      expect(plusOneNameInput).not.toHaveAttribute('autocomplete', 'name');
+
+      // Every visible asterisk in RSVP cards is hidden with aria-hidden="true"
+      const mealSelect = within(card1).getByLabelText(/^Entrée for Jane Doe/i);
+      const shuttleSelect = within(card1).getByLabelText(/^Shuttle seat\?/i);
+      expect(mealSelect).toBeRequired();
+      expect(mealSelect).toHaveAttribute('aria-required', 'true');
+      expect(shuttleSelect).toBeRequired();
+      expect(shuttleSelect).toHaveAttribute('aria-required', 'true');
+
+      const asteriskElements = Array.from(card1.querySelectorAll('*')).filter(
+        (el) => el.children.length === 0 && el.textContent?.trim() === '*'
+      );
+      expect(asteriskElements.length).toBeGreaterThanOrEqual(3);
+      asteriskElements.forEach((el) => {
+        expect(el).toHaveAttribute('aria-hidden', 'true');
+      });
+
+      // Attempting to save a pending card marks the RSVP radiogroup aria-invalid and focuses Attending radio
+      const saveCard2PendingBtn = within(card2).getByRole('button', { name: 'Save RSVP' });
+      const card2AttendingRadio = within(card2).getByRole('radio', { name: /^attending$/i });
+      saveCard2PendingBtn.focus();
+      fireEvent.click(saveCard2PendingBtn);
+
+      await waitFor(() => {
+        expect(
+          within(card2).getByRole('radiogroup', { name: /Your RSVP for Farewell Brunch/i })
+        ).toHaveAttribute('aria-invalid', 'true');
+        expect(document.activeElement).toBe(card2AttendingRadio);
+      });
+      expect(screen.getAllByRole('alert')).toHaveLength(1);
+      expect(await axe(container)).toHaveNoViolations();
+
+      // Dirty both cards without selecting required meals -> Batch Save fails client validation
+      fireEvent.change(within(card1).getByLabelText(/Dietary Requirements/i), {
+        target: { value: 'Gluten free' },
+      });
+      fireEvent.click(within(card2).getByRole('radio', { name: /^attending$/i }));
+
+      const saveAllBtn = screen.getByRole('button', { name: /save all modified events/i });
+      saveAllBtn.focus();
+      fireEvent.click(saveAllBtn);
+
+      // Single active role="alert" across batch + cards + FormMessages, and first invalid control focused
+      await waitFor(() => {
+        expect(mealSelect).toHaveAttribute('aria-invalid', 'true');
+        expect(document.activeElement).toBe(plusOneNameInput);
+      });
+      expect(mealSelect).toHaveAttribute('aria-describedby');
+      expect(plusOneNameInput).toHaveAttribute('aria-invalid', 'true');
+      expect(shuttleSelect).toHaveAttribute('aria-invalid', 'true');
+      expect(screen.getAllByRole('alert')).toHaveLength(1);
+      expect(await axe(container)).toHaveNoViolations();
+
+      // Complete valid inputs and verify Save RSVP keeps focus on button while busy
+      fireEvent.change(plusOneNameInput, { target: { value: 'Jordan Taylor' } });
+      fireEvent.change(mealSelect, { target: { value: 'm-1' } });
+      fireEvent.change(within(card1).getByLabelText(/^Entrée for Jordan Taylor/i), {
+        target: { value: 'm-1' },
+      });
+      fireEvent.change(shuttleSelect, { target: { value: 'Yes' } });
+      fireEvent.change(within(card2).getByLabelText(/^Entrée for Jane Doe/i), {
+        target: { value: 'm-2' },
+      });
+
+      const saveCard1Btn = within(card1).getByRole('button', { name: 'Save RSVP' });
+      saveCard1Btn.focus();
+      fireEvent.click(saveCard1Btn);
+
+      expect(document.activeElement).toBe(saveCard1Btn);
+      expect(saveCard1Btn).not.toBeDisabled();
+      expect(saveCard1Btn).toHaveAttribute('aria-busy', 'true');
+      expect(saveCard1Btn).toHaveAttribute('aria-disabled', 'true');
+
+      saveDeferred.resolve?.({
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: [
+            {
+              id: 'r-saved-1',
+              subEventId: 'se-a11y-1',
+              status: 'attending',
+              plusOneCount: 1,
+              plusOneNames: ['Jordan Taylor'],
+              mealSelections: ['m-1', 'm-1'],
+              customAnswers: { 'q-req': 'Yes' },
+              dietaryNotes: '',
+            },
+          ],
+        }),
+      });
+
+      expect(await within(card1).findByText('RSVP submitted successfully!')).toBeInTheDocument();
     });
   });
 });

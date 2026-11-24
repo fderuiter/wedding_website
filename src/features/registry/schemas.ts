@@ -453,6 +453,22 @@ export type PaymentIntentRequestDTO = z.infer<
   typeof PaymentIntentRequestSchema
 >;
 
+export const ReconcilePaymentIntentSchema = z.object({
+  paymentIntentId: z
+    .string({ message: 'Missing or invalid paymentIntentId.' })
+    .trim()
+    .min(1, 'Missing or invalid paymentIntentId.'),
+  clientSecret: z
+    .string({ message: 'Missing or invalid clientSecret.' })
+    .trim()
+    .min(1, 'Missing or invalid clientSecret.'),
+  itemId: z.string().trim().min(1).optional(),
+});
+
+export type ReconcilePaymentIntentDTO = z.infer<
+  typeof ReconcilePaymentIntentSchema
+>;
+
 export const ItemTypeEnum = z.enum([
   'PHYSICAL',
   'CASH_FUND',

@@ -18,18 +18,25 @@ describe('GuestPhotoDropzone', () => {
     global.fetch = originalFetch;
   });
 
-  it('renders dropzone with instructions and acceptable file formats', () => {
-    render(<GuestPhotoDropzone />);
+  it('renders dropzone with instructions and acceptable file formats', async () => {
+    const { container } = render(<GuestPhotoDropzone />);
 
     expect(screen.getByText('Share Your Wedding Photos')).toBeInTheDocument();
     expect(screen.getByText(/Supports JPEG, PNG, WebP, and HEIC/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Your Name/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Caption or Note/i)).toBeInTheDocument();
+    const uploaderNameInput = screen.getByLabelText(/Your Name/i);
+    const captionInput = screen.getByLabelText(/Caption or Note/i);
+    expect(uploaderNameInput).toHaveAttribute('id', 'guest-photo-uploader-name');
+    expect(uploaderNameInput).toHaveAttribute('autocomplete', 'name');
+    expect(uploaderNameInput).toHaveAttribute('aria-invalid', 'false');
+    expect(captionInput).toHaveAttribute('id', 'guest-photo-caption');
+    expect(captionInput).toHaveAttribute('aria-invalid', 'false');
     expect(screen.getByTestId('guest-photo-dropzone')).toBeInTheDocument();
     const fileInput = screen.getByLabelText('Upload wedding photos');
     expect(fileInput).toBeInTheDocument();
     expect(fileInput).toHaveAttribute('type', 'file');
     expect(fileInput).toHaveAttribute('id', 'guest-photo-file-input');
+
+    expect(await axe(container)).toHaveNoViolations();
   });
 
   it('shows client validation error when file exceeds 10MB limit', async () => {

@@ -1,16 +1,12 @@
+import { Prisma } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
+import { qualifyPostgresTable, resolvePostgresSchema } from '@/lib/postgres-url.js';
 import { prisma } from '@/lib/prisma';
+import {
+  REQUIRED_MIGRATION_NAMES,
+  REQUIRED_SCHEMA_TABLES,
+} from '@/lib/readinessManifest';
 import { rateLimit } from '@/utils/rateLimit';
-
-const REQUIRED_SCHEMA_TABLES = [
-  'AppConfig',
-  'Media',
-  'RegistryItem',
-  'Contributor',
-  'InvitationCode',
-  'ContentNode',
-  'SubEvent',
-] as const;
 
 const READY_BURST_LIMIT = 100;
 const READY_BURST_WINDOW_MS = 60 * 1000;
@@ -34,6 +30,7 @@ type ReadinessProbeOutcome =
 interface HealthyMemoEntry {
   expiresAt: number;
   queryFnRef: unknown;
+  schema: string;
 }
 
 let inFlightProbe: Promise<ReadinessProbeOutcome> | null = null;
@@ -45,8 +42,16 @@ function isHealthyMemoFresh(): boolean {
     healthyMemo = null;
     return false;
   }
+  let currentSchema: string;
+  try {
+    currentSchema = resolvePostgresSchema();
+  } catch {
+    healthyMemo = null;
+    return false;
+  }
   const currentQueryFn = prisma.$queryRaw as { mock?: { calls?: unknown[] } };
   if (
+    healthyMemo.schema !== currentSchema ||
     healthyMemo.queryFnRef !== prisma.$queryRaw ||
     (Array.isArray(currentQueryFn?.mock?.calls) && currentQueryFn.mock.calls.length === 0)
   ) {
@@ -58,12 +63,15 @@ function isHealthyMemoFresh(): boolean {
 
 async function runReadinessCheck(): Promise<ReadinessProbeOutcome> {
   try {
-    const tableRows = await prisma.$queryRaw<TableRow[]>`
-      SELECT table_name
-      FROM information_schema.tables
-      WHERE table_schema = current_schema()
-        AND table_type = 'BASE TABLE'
-    `;
+    const targetSchema = resolvePostgresSchema();
+    const tableRows = await prisma.$queryRaw<TableRow[]>(
+      Prisma.sql`
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema = ${targetSchema}
+          AND table_type = 'BASE TABLE'
+      `
+    );
 
     const presentTables = new Set(
       (Array.isArray(tableRows) ? tableRows : []).map((row) => row.table_name)
@@ -79,10 +87,13 @@ async function runReadinessCheck(): Promise<ReadinessProbeOutcome> {
     }
 
     if (presentTables.has('_prisma_migrations')) {
-      const migrationRows = await prisma.$queryRaw<MigrationRow[]>`
-        SELECT migration_name, finished_at, rolled_back_at
-        FROM "_prisma_migrations"
-      `;
+      const migrationsTable = Prisma.raw(qualifyPostgresTable('_prisma_migrations'));
+      const migrationRows = await prisma.$queryRaw<MigrationRow[]>(
+        Prisma.sql`
+          SELECT migration_name, finished_at, rolled_back_at
+          FROM ${migrationsTable}
+        `
+      );
 
       const normalizedMigrations = Array.isArray(migrationRows) ? migrationRows : [];
       const failedMigrations = normalizedMigrations.filter(
@@ -98,15 +109,29 @@ async function runReadinessCheck(): Promise<ReadinessProbeOutcome> {
         };
       }
 
-      const appliedCount = normalizedMigrations.filter(
-        (row) => row.finished_at !== null && row.rolled_back_at === null
-      ).length;
+      const appliedMigrationNames = new Set(
+        normalizedMigrations
+          .filter((row) => row.finished_at !== null && row.rolled_back_at === null)
+          .map((row) => row.migration_name)
+      );
 
-      if (appliedCount === 0) {
+      if (appliedMigrationNames.size === 0) {
         console.error('Readiness check failed: zero applied migrations in _prisma_migrations');
         return {
           kind: 'schema_unavailable',
           detailMessage: 'No applied database migrations found in _prisma_migrations',
+        };
+      }
+
+      const missingMigrations = REQUIRED_MIGRATION_NAMES.filter(
+        (migrationName) => !appliedMigrationNames.has(migrationName)
+      );
+
+      if (missingMigrations.length > 0) {
+        console.error('Readiness check failed: missing required migrations:', missingMigrations);
+        return {
+          kind: 'schema_unavailable',
+          detailMessage: `Missing required database migrations: ${missingMigrations.join(', ')}`,
         };
       }
     }
@@ -114,6 +139,7 @@ async function runReadinessCheck(): Promise<ReadinessProbeOutcome> {
     healthyMemo = {
       expiresAt: Date.now() + READY_HEALTHY_TTL_MS,
       queryFnRef: prisma.$queryRaw,
+      schema: targetSchema,
     };
     return { kind: 'ready' };
   } catch (error: unknown) {

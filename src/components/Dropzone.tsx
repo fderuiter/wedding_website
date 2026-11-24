@@ -228,7 +228,7 @@ function Dropzone({
 
         {hasHint && (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center px-6 pb-5 text-center select-none">
-            <p id={hintId} className="text-xs text-gray-500 dark:text-gray-400">
+            <p id={hintId} className="text-xs text-gray-600 dark:text-gray-400">
               {hint}
             </p>
           </div>

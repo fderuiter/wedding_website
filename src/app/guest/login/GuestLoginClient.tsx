@@ -236,19 +236,12 @@ export default function GuestLoginPage() {
         variants={fadeUp}
         className="w-full max-w-md"
       >
-        <Suspense
-          fallback={
-            <div
-              data-suspense-fallback="true"
-              className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl p-8 sm:p-10 flex flex-col gap-6 border border-gray-100 dark:border-gray-700 relative overflow-hidden items-center justify-center min-h-[300px]"
-            >
-              <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white tracking-tight py-1">
-                Guest Portal
-              </h1>
-              <Icon name="Loader2" className="animate-spin h-10 w-10 text-primary" aria-hidden="true" />
-            </div>
-          }
-        >
+        <Suspense fallback={
+          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl p-8 sm:p-10 flex flex-col gap-6 border border-gray-100 dark:border-gray-700 relative overflow-hidden items-center justify-center min-h-[300px]">
+            <h1 className="sr-only">Guest Portal</h1>
+            <Icon name="Loader2" className="animate-spin h-10 w-10 text-primary" />
+          </div>
+        }>
           <GuestLoginForm />
         </Suspense>
       </motion.div>

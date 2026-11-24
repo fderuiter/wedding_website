@@ -1,5 +1,5 @@
 import React from 'react';
-import { render } from '@testing-library/react';
+import { render, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import { Button, getButtonClassName, type ButtonProps } from '../Button';
@@ -77,6 +77,44 @@ describe('Button', () => {
 
     button.click();
     expect(handleClick).not.toHaveBeenCalled();
+  });
+
+  test('busy prop sets aria-disabled="true" and aria-busy="true", preserves focus without native disabled, blocks pointer/Enter/Space, and passes jest-axe', async () => {
+    const handleClick = jest.fn();
+    const handleKeyDown = jest.fn();
+
+    const { container, getByRole, rerender } = render(
+      <Button busy={false} onClick={handleClick} onKeyDown={handleKeyDown}>
+        Save RSVP
+      </Button>
+    );
+
+    const button = getByRole('button', { name: 'Save RSVP' });
+    button.focus();
+    expect(document.activeElement).toBe(button);
+
+    rerender(
+      <Button busy onClick={handleClick} onKeyDown={handleKeyDown}>
+        Saving...
+      </Button>
+    );
+
+    expect(document.activeElement).toBe(button);
+    expect(button).not.toBeDisabled();
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    expect(button).toHaveClass('aria-busy:cursor-wait');
+
+    fireEvent.click(button);
+    fireEvent.keyDown(button, { key: 'Enter' });
+    fireEvent.keyDown(button, { key: ' ' });
+    expect(handleClick).not.toHaveBeenCalled();
+    expect(handleKeyDown).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(button, { key: 'Tab' });
+    expect(handleKeyDown).toHaveBeenCalledTimes(1);
+
+    expect(await axe(container)).toHaveNoViolations();
   });
 
   test('supports pressed and srContext props with visible-first accessible name and passes jest-axe', async () => {

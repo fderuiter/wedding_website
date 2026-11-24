@@ -18,6 +18,7 @@ import {
 import { useOverlay } from '@/hooks/useOverlay';
 import { useMenuNavigation } from '@/hooks/useMenuNavigation';
 import { withBasePath } from '@/lib/basePath';
+import { downloadExportBlob } from '@/utils/exportDownload';
 
 interface ThankYouContributorItem {
   id: string;
@@ -386,7 +387,7 @@ export default function ThankYouNotesPage() {
 
   const { handleMenuKeyDown } = useMenuNavigation(overlayRef);
 
-  const handleExportCsv = () => {
+  const handleExportCsv = async () => {
     const params = new URLSearchParams();
     if (statusFilter !== 'All') {
       params.set('status', statusFilter);
@@ -397,15 +398,20 @@ export default function ThankYouNotesPage() {
     const query = params.toString();
     const url = query ? `/api/admin/thank-you-notes/export?${query}` : '/api/admin/thank-you-notes/export';
 
-    const link = document.createElement('a');
-    link.href = withBasePath(url);
-    link.setAttribute('download', '');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+      await downloadExportBlob(url, 'thank-you-notes.csv');
+      addToast('Thank-you notes exported to CSV.', 'success');
+    } catch (err: unknown) {
+      addToast(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Failed to export thank-you notes CSV.',
+        'error'
+      );
+    }
   };
 
-  const handleExportLabels = (template: 'avery_5160' | 'avery_5163') => {
+  const handleExportLabels = async (template: 'avery_5160' | 'avery_5163') => {
     setIsLabelDropdownOpen(false);
     exportTriggerRef.current?.focus();
     const params = new URLSearchParams();
@@ -422,12 +428,17 @@ export default function ThankYouNotesPage() {
     const query = params.toString();
     const url = `/api/admin/thank-you-notes/export-labels?${query}`;
 
-    const link = document.createElement('a');
-    link.href = withBasePath(url);
-    link.setAttribute('download', '');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+      await downloadExportBlob(url, `thank-you-labels-${template}.pdf`);
+      addToast('Mailing labels PDF exported successfully.', 'success');
+    } catch (err: unknown) {
+      addToast(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Failed to export mailing labels PDF.',
+        'error'
+      );
+    }
   };
 
   const fetchData = useCallback(async () => {
@@ -567,7 +578,7 @@ export default function ThankYouNotesPage() {
     setIsSearchingHouseholds(true);
     try {
       const params = new URLSearchParams({ search: trimmed, limit: '8' });
-      const res = await fetch(`/api/admin/invitation-codes/catalog?${params.toString()}`);
+      const res = await fetch(withBasePath(`/api/admin/invitation-codes/catalog?${params.toString()}`));
       if (!res.ok) {
         throw new Error('Failed to search guest households.');
       }
@@ -1281,7 +1292,10 @@ export default function ThankYouNotesPage() {
             Loading contributor records...
           </div>
         ) : error ? (
-          <div className="py-8 text-center text-red-500 font-medium">
+          <div
+            role="alert"
+            className="py-8 text-center text-red-700 dark:text-red-400 font-medium"
+          >
             Error: {error}
           </div>
         ) : items.length === 0 ? (

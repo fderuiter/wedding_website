@@ -1,29 +1,31 @@
 import { execSync } from 'child_process';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 describe('CLI Scaffolding Tool - Base Class Inheritance Alignment', () => {
   const featureName = 'scaffold-test-feature';
-  const featureDir = path.join(__dirname, '..', 'features', featureName);
+  let tempRoot: string;
+  let featureDir: string;
 
   beforeAll(() => {
-    // Clean up if it somehow already exists
-    if (fs.existsSync(featureDir)) {
-      fs.rmSync(featureDir, { recursive: true, force: true });
-    }
+    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'scaffold-feature-test-'));
+    featureDir = path.join(tempRoot, 'src', 'features', featureName);
   });
 
   afterAll(() => {
     // Clean up after the test runs
-    if (fs.existsSync(featureDir)) {
-      fs.rmSync(featureDir, { recursive: true, force: true });
+    if (tempRoot && fs.existsSync(tempRoot)) {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
     }
   });
 
   it('generates a working feature that implements BaseRepository and BaseService', () => {
     // Run the CLI scaffolding script via node subprocess
     const scriptPath = path.join(__dirname, '..', '..', 'scripts', 'scaffold-feature.mjs');
-    const output = execSync(`node ${scriptPath} ${featureName}`).toString();
+    const output = execSync(`node ${scriptPath} ${featureName}`, {
+      env: { ...process.env, SCAFFOLD_ROOT_DIR: tempRoot },
+    }).toString();
 
     expect(output).toContain(`Successfully scaffolded feature ${featureName}`);
     expect(fs.existsSync(featureDir)).toBe(true);

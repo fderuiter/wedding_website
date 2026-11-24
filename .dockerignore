@@ -55,6 +55,9 @@ playwright.config.ts
 jest.config.mjs
 jest.polyfills.js
 jest.setup.js
+jest.setup.jsdom.js
+jest-serial-runner.cjs
+jest-a11y-reporter.cjs
 jsdom-env.cjs
 tsconfig.test.json
 tsconfig.e2e.json

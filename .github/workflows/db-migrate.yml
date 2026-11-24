@@ -233,7 +233,41 @@ jobs:
             ')"
             export POSTGRES_URL_NON_POOLING
           fi
-          echo "Executing pre-flight Prisma migration status audit & SQL DDL summary..."
+          echo "Verifying PostgreSQL TLS handshake and executing pre-flight Prisma migration status audit & SQL DDL summary..."
+          if ! TLS_GATE_ERR="$(
+            node --input-type=module -e '
+              import fs from "node:fs";
+              import path from "node:path";
+              import { pathToFileURL } from "node:url";
+              const helperPath = path.resolve("src/lib/postgres-url.js");
+              if (fs.existsSync(helperPath)) {
+                const { resolveDirectMigrationPostgresUrl, verifyPostgresTlsHandshake } = await import(
+                  pathToFileURL(helperPath).href
+                );
+                const targetUrl = resolveDirectMigrationPostgresUrl(
+                  process.env.DATABASE_URL ?? "",
+                  process.env.POSTGRES_URL_NON_POOLING
+                );
+                try {
+                  await verifyPostgresTlsHandshake(targetUrl);
+                } catch (err) {
+                  console.error(err instanceof Error ? err.message : String(err));
+                  process.exit(1);
+                }
+              }
+            ' 2>&1 >/dev/null
+          )"; then
+            echo "::error::Pre-flight PostgreSQL TLS handshake check failed: ${TLS_GATE_ERR}"
+            if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+              {
+                echo "## 🗄️ Pre-Flight Database Migration Summary"
+                echo "- **Environment:** \`${TARGET_ENVIRONMENT:-production}\`"
+                echo "- **Pre-Flight Gate:** \`FAILED\` ❌"
+                echo "- **Error:** Pre-flight PostgreSQL TLS handshake check failed: \`${TLS_GATE_ERR}\`"
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+            exit 1
+          fi
           npx tsx scripts/preflight-migration-summary.ts --require-db
 
       - name: Run Prisma Migrate Deploy
@@ -261,6 +295,32 @@ jobs:
               process.stdout.write(isValidPostgresUrl(raw) ? normalizePostgresUrl(raw) : raw);
             ')"
             export POSTGRES_URL_NON_POOLING
+          fi
+          if ! TLS_DEPLOY_ERR="$(
+            node --input-type=module -e '
+              import fs from "node:fs";
+              import path from "node:path";
+              import { pathToFileURL } from "node:url";
+              const helperPath = path.resolve("src/lib/postgres-url.js");
+              if (fs.existsSync(helperPath)) {
+                const { resolveDirectMigrationPostgresUrl, verifyPostgresTlsHandshake } = await import(
+                  pathToFileURL(helperPath).href
+                );
+                const targetUrl = resolveDirectMigrationPostgresUrl(
+                  process.env.DATABASE_URL ?? "",
+                  process.env.POSTGRES_URL_NON_POOLING
+                );
+                try {
+                  await verifyPostgresTlsHandshake(targetUrl);
+                } catch (err) {
+                  console.error(err instanceof Error ? err.message : String(err));
+                  process.exit(1);
+                }
+              }
+            ' 2>&1 >/dev/null
+          )"; then
+            echo "::error::Pre-migration PostgreSQL TLS handshake check failed: ${TLS_DEPLOY_ERR}"
+            exit 1
           fi
           echo "Executing database migrations..."
           npx prisma migrate deploy

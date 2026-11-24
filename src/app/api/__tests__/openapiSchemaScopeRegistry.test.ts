@@ -1,13 +1,29 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { execSync } from 'child_process';
 
 describe('AST Method Scope Disambiguation and Expanded Registry in OpenAPI Generator', () => {
-  const openapiPath = path.resolve(process.cwd(), 'public/openapi.json');
+  let tempDir: string;
+  let openapiPath: string;
 
   beforeAll(() => {
-    // Regenerate OpenAPI specification
-    execSync('npx tsx scripts/generate-openapi.ts', { stdio: 'inherit' });
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openapi-scope-'));
+    openapiPath = path.join(tempDir, 'openapi.json');
+    // Regenerate OpenAPI specification into isolated temp path
+    execSync('npx tsx scripts/generate-openapi.ts', {
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        OPENAPI_OUTPUT_PATH: openapiPath,
+      },
+    });
+  });
+
+  afterAll(() => {
+    if (tempDir && fs.existsSync(tempDir)) {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it('correctly assigns DatabaseBackupSchema to POST /api/admin/maintenance/import instead of ImportBackupSchema', () => {

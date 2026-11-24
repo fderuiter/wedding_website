@@ -112,7 +112,7 @@ function GuestClaimContent() {
   const isConfirmFlow = preview?.action !== 'cancel';
   const paymentDeepLink =
     preview?.paymentHandle && preview?.paymentHandleType
-      ? getPaymentUrl(preview.paymentHandleType, preview.paymentHandle)
+      ? getPaymentUrl(preview.paymentHandleType, preview.paymentHandle, preview.amount)
       : null;
 
   return (
@@ -282,14 +282,12 @@ export default function GuestClaimPage() {
     <Suspense
       fallback={
         <Container className="max-w-none p-6">
-          <div data-suspense-fallback="true" className="space-y-2">
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 dark:text-white tracking-tight">
-              Loading Gift Reservation...
-            </h1>
-            <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Loading gift verification...
-            </p>
-          </div>
+          <h1 className="text-xl font-bold text-gray-900 dark:text-white">
+            Loading Gift Reservation...
+          </h1>
+          <p className="mt-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+            Loading gift verification...
+          </p>
         </Container>
       }
     >

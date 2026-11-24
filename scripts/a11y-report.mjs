@@ -190,6 +190,11 @@ export function runA11yUnit(options = {}) {
 
   const resultsDir = path.join(cwd, 'test-results');
   fs.mkdirSync(resultsDir, { recursive: true });
+  for (const entry of fs.readdirSync(resultsDir)) {
+    if (entry.startsWith('.jest-a11y-violations.shard-')) {
+      fs.rmSync(path.join(resultsDir, entry), { force: true });
+    }
+  }
   const jestFile = path.join(resultsDir, 'jest-a11y-violations.json');
   fs.writeFileSync(jestFile, '[]\n', 'utf8');
 
@@ -198,6 +203,13 @@ export function runA11yUnit(options = {}) {
     ['jest', '--runInBand', '--coverage=false', '--runTestsByPath', ...suites],
     cwd
   );
+  if (fs.existsSync(resultsDir)) {
+    for (const entry of fs.readdirSync(resultsDir)) {
+      if (entry.startsWith('.jest-a11y-violations.shard-')) {
+        fs.rmSync(path.join(resultsDir, entry), { force: true });
+      }
+    }
+  }
   if (jestStatus !== 0) {
     return jestStatus;
   }

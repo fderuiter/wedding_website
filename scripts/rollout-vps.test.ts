@@ -215,6 +215,10 @@ describe('scripts/rollout-vps.sh', () => {
   let standbyServer: http.Server;
   let probeLog: RecordedHttpProbe[];
   let allowedHosts: string[];
+  let slotHealth: {
+    primary: (imageId: string) => boolean;
+    standby: (imageId: string) => boolean;
+  };
   let slotReadiness: {
     primary: (imageId: string) => boolean;
     standby: (imageId: string) => boolean;
@@ -281,6 +285,29 @@ describe('scripts/rollout-vps.sh', () => {
         res.statusCode = 200;
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify({ status: 'alive' }));
+        return;
+      }
+
+      if (pathname === '/api/health') {
+        const isHealthy = slotHealth[slot](container.imageId);
+        const statusCode = isHealthy ? 200 : 503;
+        probeLog.push({
+          slot,
+          method,
+          url: pathname,
+          hostHeader: rawHost,
+          statusCode,
+          imageId: container.imageId,
+        });
+        res.statusCode = statusCode;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(
+          JSON.stringify(
+            isHealthy
+              ? { success: true, data: { status: 'ok', database: 'connected' } }
+              : { success: false, status: 'degraded', database: 'disconnected' }
+          )
+        );
         return;
       }
 
@@ -400,6 +427,10 @@ describe('scripts/rollout-vps.sh', () => {
 
     probeLog = [];
     allowedHosts = ['localhost', '127.0.0.1', '*.localhost'];
+    slotHealth = {
+      primary: () => true,
+      standby: () => true,
+    };
     slotReadiness = {
       primary: () => true,
       standby: () => true,
@@ -478,7 +509,7 @@ describe('scripts/rollout-vps.sh', () => {
     expect(finalState.containers['app-standby']).toBeUndefined();
   });
 
-  it('probes loopback /api/live and /api/ready with HTTP 200 without Host overrides for leading-dot ALLOWED_HOSTS under both curl and Node fetch', async () => {
+  it('probes loopback /api/live, /api/health, and /api/ready with HTTP 200 without Host overrides for leading-dot ALLOWED_HOSTS under both curl and Node fetch', async () => {
     allowedHosts = ['.wedding.example.com'];
     fs.writeFileSync(
       path.join(tempDir, '.env'),
@@ -489,7 +520,10 @@ describe('scripts/rollout-vps.sh', () => {
     // 1. Probe path with host `curl`
     const curlRes = await runRollout();
     expect(curlRes.status).toBe(0);
-    expect(probeLog.length).toBeGreaterThanOrEqual(4);
+    expect(probeLog.length).toBeGreaterThanOrEqual(6);
+    expect(probeLog.map((p) => p.url)).toEqual(
+      expect.arrayContaining(['/api/live', '/api/health', '/api/ready'])
+    );
     expect(probeLog.every((p) => p.statusCode === 200)).toBe(true);
     expect(
       probeLog.every(
@@ -521,7 +555,10 @@ describe('scripts/rollout-vps.sh', () => {
 
     const fetchRes = await runRollout({ PATH: noCurlBinDir });
     expect(fetchRes.status).toBe(0);
-    expect(probeLog.length).toBeGreaterThanOrEqual(4);
+    expect(probeLog.length).toBeGreaterThanOrEqual(6);
+    expect(probeLog.map((p) => p.url)).toEqual(
+      expect.arrayContaining(['/api/live', '/api/health', '/api/ready'])
+    );
     expect(probeLog.every((p) => p.statusCode === 200)).toBe(true);
     expect(
       probeLog.every(

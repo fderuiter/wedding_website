@@ -206,9 +206,25 @@ function resolveOperationTag(routePath: string): string {
 }
 
 const project = new Project({ tsConfigFilePath: path.join(rootPath, 'tsconfig.json') });
-const routeFiles = project
-  .getSourceFiles(['src/app/api/**/route.ts', 'src/app/api/**/route.tsx'])
-  .filter((file) => !file.getFilePath().includes('__tests__'));
+const extraAppDir = process.env.OPENAPI_EXTRA_APP_DIR
+  ? path.resolve(process.env.OPENAPI_EXTRA_APP_DIR)
+  : null;
+if (extraAppDir && fs.existsSync(extraAppDir)) {
+  project.addSourceFilesAtPaths([
+    path.join(extraAppDir, 'api/**/route.ts'),
+    path.join(extraAppDir, 'api/**/route.tsx'),
+  ]);
+}
+const mainAppPrefix = `${path.join(rootPath, 'src/app').replace(/\\/g, '/')}/api/`;
+const extraAppPrefix = extraAppDir ? `${extraAppDir.replace(/\\/g, '/')}/api/` : null;
+const routeFiles = project.getSourceFiles().filter((file) => {
+  const normalizedPath = file.getFilePath().replace(/\\/g, '/');
+  if (normalizedPath.includes('__tests__')) return false;
+  const inMainOrExtra =
+    normalizedPath.startsWith(mainAppPrefix) ||
+    Boolean(extraAppPrefix && normalizedPath.startsWith(extraAppPrefix));
+  return inMainOrExtra && /\/route\.(ts|tsx)$/.test(normalizedPath);
+});
 
 function extractAdminEntitySlugs(): string[] {
   const registryPath = path.join(rootPath, 'src/features/admin/registry.ts');
@@ -2220,11 +2236,14 @@ async function run() {
   const sortedFiles = routeFiles.sort((a, b) => a.getFilePath().localeCompare(b.getFilePath()));
 
   for (const file of sortedFiles) {
-    const routePath = file
-      .getFilePath()
-      .replace(rootPath, '')
-      .replace(/\\/g, '/')
-      .replace(/^\/src\/app/, '')
+    const normalizedFilePath = file.getFilePath().replace(/\\/g, '/');
+    const normalizedExtraApp = extraAppDir ? extraAppDir.replace(/\\/g, '/') : null;
+    const appBasePrefix =
+      normalizedExtraApp && normalizedFilePath.startsWith(`${normalizedExtraApp}/`)
+        ? normalizedExtraApp
+        : path.join(rootPath, 'src/app').replace(/\\/g, '/');
+    const routePath = normalizedFilePath
+      .slice(appBasePrefix.length)
       .replace(/\/route\.(ts|tsx)$/, '');
     const openapiPath = routePath
       .replace(/\[\.\.\.([^\]]+)\]/g, '{$1}')
@@ -2435,7 +2454,9 @@ async function run() {
     process.exit(1);
   }
 
-  const outputPath = path.join(rootPath, 'public', 'openapi.json');
+  const outputPath = process.env.OPENAPI_OUTPUT_PATH
+    ? path.resolve(process.env.OPENAPI_OUTPUT_PATH)
+    : path.join(rootPath, 'public', 'openapi.json');
   const serialized = JSON.stringify(openapi, null, 2);
   if (process.argv.includes('--check')) {
     const existing = fs.existsSync(outputPath) ? fs.readFileSync(outputPath, 'utf8') : null;
@@ -2446,7 +2467,13 @@ async function run() {
     console.log(`Verified OpenAPI schema is in sync at ${outputPath}`);
     return;
   }
-  fs.writeFileSync(outputPath, serialized);
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  const tempOutputPath = path.join(
+    path.dirname(outputPath),
+    `.${path.basename(outputPath)}.${process.pid}-${Date.now()}.tmp`
+  );
+  fs.writeFileSync(tempOutputPath, serialized);
+  fs.renameSync(tempOutputPath, outputPath);
   console.log(`Successfully generated OpenAPI schema at ${outputPath}`);
 }
 

@@ -43,6 +43,11 @@ describe('GuestAddressCollectPage (/guest/collect)', () => {
     render(<GuestAddressCollectPage />);
 
     const nameInput = screen.getByLabelText(/Full Name/i);
+    fireEvent.change(screen.getByLabelText(/Street Address Line 1/i), { target: { value: '100 Main St' } });
+    fireEvent.change(screen.getByLabelText(/City/i), { target: { value: 'Denver' } });
+    fireEvent.change(screen.getByLabelText(/State \/ Province/i), { target: { value: 'CO' } });
+    fireEvent.change(screen.getByLabelText(/ZIP \/ Postal Code/i), { target: { value: '80202' } });
+
     expect(nameInput).toHaveAttribute('aria-invalid', 'false');
     expect(nameInput).not.toHaveAttribute('aria-describedby');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
@@ -51,13 +56,14 @@ describe('GuestAddressCollectPage (/guest/collect)', () => {
     fireEvent.submit(submitBtn.closest('form')!);
 
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('Please enter your full name.');
-    expect(alert).toHaveAttribute('id', 'address-collect-error');
+    expect(alert).toHaveTextContent('Guest name is required and must be under 100 characters.');
+    expect(alert).toHaveAttribute('id', 'guestName-error');
     expect(alert).toHaveAttribute('aria-live', 'assertive');
     expect(alert).toHaveAttribute('aria-atomic', 'true');
 
     expect(nameInput).toHaveAttribute('aria-invalid', 'true');
-    expect(nameInput).toHaveAttribute('aria-describedby', 'address-collect-error');
+    expect(nameInput).toHaveAttribute('aria-describedby', 'guestName-error');
+    expect(document.activeElement).toBe(nameInput);
     expect(globalFetch).not.toHaveBeenCalled();
   });
 
@@ -114,7 +120,11 @@ describe('GuestAddressCollectPage (/guest/collect)', () => {
     const nameInput = screen.getByLabelText(/Full Name/i);
     const emailInput = screen.getByLabelText(/Email Address/i);
     fireEvent.change(nameInput, { target: { value: 'Bob Guest' } });
-    fireEvent.change(emailInput, { target: { value: 'invalid-email' } });
+    fireEvent.change(screen.getByLabelText(/Street Address Line 1/i), { target: { value: '100 Main St' } });
+    fireEvent.change(screen.getByLabelText(/City/i), { target: { value: 'Denver' } });
+    fireEvent.change(screen.getByLabelText(/State \/ Province/i), { target: { value: 'CO' } });
+    fireEvent.change(screen.getByLabelText(/ZIP \/ Postal Code/i), { target: { value: '80202' } });
+    fireEvent.change(emailInput, { target: { value: 'bob@example.com' } });
 
     const submitBtn = screen.getByRole('button', { name: /Submit Address/i });
     fireEvent.submit(submitBtn.closest('form')!);
@@ -148,6 +158,10 @@ describe('GuestAddressCollectPage (/guest/collect)', () => {
     const nameInput = screen.getByLabelText(/Full Name/i);
     const emailInput = screen.getByLabelText(/Email Address/i);
     fireEvent.change(nameInput, { target: { value: 'Bob Guest' } });
+    fireEvent.change(screen.getByLabelText(/Street Address Line 1/i), { target: { value: '100 Main St' } });
+    fireEvent.change(screen.getByLabelText(/City/i), { target: { value: 'Denver' } });
+    fireEvent.change(screen.getByLabelText(/State \/ Province/i), { target: { value: 'CO' } });
+    fireEvent.change(screen.getByLabelText(/ZIP \/ Postal Code/i), { target: { value: '80202' } });
 
     const submitBtn = screen.getByRole('button', { name: /Submit Address/i });
     fireEvent.submit(submitBtn.closest('form')!);
@@ -164,12 +178,17 @@ describe('GuestAddressCollectPage (/guest/collect)', () => {
     render(<GuestAddressCollectPage />);
 
     const nameInput = screen.getByLabelText(/Full Name/i);
+    fireEvent.change(screen.getByLabelText(/Street Address Line 1/i), { target: { value: '100 Main St' } });
+    fireEvent.change(screen.getByLabelText(/City/i), { target: { value: 'Denver' } });
+    fireEvent.change(screen.getByLabelText(/State \/ Province/i), { target: { value: 'CO' } });
+    fireEvent.change(screen.getByLabelText(/ZIP \/ Postal Code/i), { target: { value: '80202' } });
+
     const submitBtn = screen.getByRole('button', { name: /Submit Address/i });
     fireEvent.submit(submitBtn.closest('form')!);
 
     expect(await screen.findByRole('alert')).toBeInTheDocument();
     expect(nameInput).toHaveAttribute('aria-invalid', 'true');
-    expect(nameInput).toHaveAttribute('aria-describedby', 'address-collect-error');
+    expect(nameInput).toHaveAttribute('aria-describedby', 'guestName-error');
 
     fireEvent.change(nameInput, { target: { value: 'Alice' } });
 
@@ -190,6 +209,10 @@ describe('GuestAddressCollectPage (/guest/collect)', () => {
     render(<GuestAddressCollectPage />);
 
     fireEvent.change(screen.getByLabelText(/Full Name/i), { target: { value: 'Charlie Guest' } });
+    fireEvent.change(screen.getByLabelText(/Street Address Line 1/i), { target: { value: '100 Main St' } });
+    fireEvent.change(screen.getByLabelText(/City/i), { target: { value: 'Denver' } });
+    fireEvent.change(screen.getByLabelText(/State \/ Province/i), { target: { value: 'CO' } });
+    fireEvent.change(screen.getByLabelText(/ZIP \/ Postal Code/i), { target: { value: '80202' } });
     const submitBtn = screen.getByRole('button', { name: /Submit Address/i });
     fireEvent.submit(submitBtn.closest('form')!);
 
@@ -242,7 +265,7 @@ describe('GuestAddressCollectPage (/guest/collect)', () => {
     });
   });
 
-  test('marks street, city, state, and postal code inputs required and surfaces field validation messages on HTTP 400', async () => {
+  test('marks street, city, state, and postal code inputs required and surfaces field validation messages on client and HTTP 400', async () => {
     globalFetch.mockResolvedValueOnce({
       ok: false,
       status: 400,
@@ -251,10 +274,10 @@ describe('GuestAddressCollectPage (/guest/collect)', () => {
         error: 'Street address is required',
         details: {
           _errors: [],
-          addressLine1: { _errors: ['Street address is required'] },
-          city: { _errors: ['City is required'] },
-          state: { _errors: ['State or province is required'] },
-          zipCode: { _errors: ['ZIP or postal code is required'] },
+          addressLine1: { _errors: ['Street address could not be verified'] },
+          city: { _errors: ['City could not be verified'] },
+          state: { _errors: ['State or province is invalid'] },
+          zipCode: { _errors: ['ZIP or postal code is invalid'] },
         },
       }),
     });
@@ -274,13 +297,128 @@ describe('GuestAddressCollectPage (/guest/collect)', () => {
     fireEvent.change(screen.getByLabelText(/Full Name/i), { target: { value: 'Postal Missing Guest' } });
     fireEvent.submit(screen.getByRole('button', { name: /Submit Address/i }).closest('form')!);
 
-    expect(await screen.findByText('Street address is required')).toBeInTheDocument();
-    expect(screen.getByText('City is required')).toBeInTheDocument();
-    expect(screen.getByText('State or province is required')).toBeInTheDocument();
-    expect(screen.getByText('ZIP or postal code is required')).toBeInTheDocument();
+    expect(await screen.findByText('Street address is required.')).toBeInTheDocument();
+    expect(screen.getByText('City is required.')).toBeInTheDocument();
+    expect(screen.getByText('State / Province is required.')).toBeInTheDocument();
+    expect(screen.getByText('ZIP / Postal code is required.')).toBeInTheDocument();
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
     expect(streetInput).toHaveAttribute('aria-invalid', 'true');
     expect(cityInput).toHaveAttribute('aria-invalid', 'true');
     expect(stateInput).toHaveAttribute('aria-invalid', 'true');
     expect(zipInput).toHaveAttribute('aria-invalid', 'true');
+    expect(document.activeElement).toBe(streetInput);
+    expect(globalFetch).not.toHaveBeenCalled();
+
+    fireEvent.change(streetInput, { target: { value: '123 Main St' } });
+    fireEvent.change(cityInput, { target: { value: 'Denver' } });
+    fireEvent.change(stateInput, { target: { value: 'CO' } });
+    fireEvent.change(zipInput, { target: { value: '80202' } });
+    fireEvent.submit(screen.getByRole('button', { name: /Submit Address/i }).closest('form')!);
+
+    expect(await screen.findByText('Street address could not be verified')).toBeInTheDocument();
+    expect(screen.getByText('City could not be verified')).toBeInTheDocument();
+    expect(screen.getByText('State or province is invalid')).toBeInTheDocument();
+    expect(screen.getByText('ZIP or postal code is invalid')).toBeInTheDocument();
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+  });
+
+  test('hides all five required asterisks with aria-hidden="true", deduplicates empty-submit errors to a single role="alert" without duplicate IDs, locks busy controls without dropping focus, and preserves #website honeypot', async () => {
+    const submitDeferred: { resolve?: (val: unknown) => void } = {};
+    globalFetch.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          submitDeferred.resolve = resolve;
+        })
+    );
+
+    const { container } = render(<GuestAddressCollectPage />);
+
+    const nameInput = screen.getByLabelText(/Full Name/i);
+    const streetInput = screen.getByLabelText(/Street Address Line 1/i);
+    const cityInput = screen.getByLabelText(/City/i);
+    const stateInput = screen.getByLabelText(/State \/ Province/i);
+    const zipInput = screen.getByLabelText(/ZIP \/ Postal Code/i);
+
+    for (const requiredInput of [nameInput, streetInput, cityInput, stateInput, zipInput]) {
+      expect(requiredInput).toBeRequired();
+      expect(requiredInput).toHaveAttribute('aria-required', 'true');
+    }
+
+    const asterisks = Array.from(container.querySelectorAll('label span')).filter(
+      (el) => el.textContent?.trim() === '*'
+    );
+    expect(asterisks).toHaveLength(5);
+    asterisks.forEach((span) => {
+      expect(span).toHaveAttribute('aria-hidden', 'true');
+    });
+
+    // Empty submission flags all 5 fields with unique IDs, focuses Full Name, and mounts only 1 alert
+    const submitBtn = screen.getByRole('button', { name: /Submit Address/i });
+    submitBtn.focus();
+    fireEvent.submit(submitBtn.closest('form')!);
+
+    const alerts = await screen.findAllByRole('alert');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toHaveAttribute('id', 'address-collect-error');
+    expect(container.querySelectorAll('#address-collect-error')).toHaveLength(1);
+
+    expect(nameInput).toHaveAttribute('aria-invalid', 'true');
+    expect(nameInput).toHaveAttribute('aria-describedby', 'guestName-error');
+    expect(streetInput).toHaveAttribute('aria-describedby', 'addressLine1-error');
+    expect(cityInput).toHaveAttribute('aria-describedby', 'city-error');
+    expect(stateInput).toHaveAttribute('aria-describedby', 'state-error');
+    expect(zipInput).toHaveAttribute('aria-describedby', 'zipCode-error');
+    expect(document.activeElement).toBe(nameInput);
+    expect(await axe(container)).toHaveNoViolations();
+
+    // Fill valid address and verify busy lock keeps focus on submit button and ignores duplicate submit
+    fireEvent.change(nameInput, { target: { value: 'Jane Doe' } });
+    fireEvent.change(streetInput, { target: { value: '100 Main St' } });
+    fireEvent.change(cityInput, { target: { value: 'Denver' } });
+    fireEvent.change(stateInput, { target: { value: 'CO' } });
+    fireEvent.change(zipInput, { target: { value: '80202' } });
+
+    submitBtn.focus();
+    fireEvent.submit(submitBtn.closest('form')!);
+
+    const busyBtn = screen.getByRole('button', { name: /Submitting Address/i });
+    expect(document.activeElement).toBe(busyBtn);
+    expect(busyBtn).not.toBeDisabled();
+    expect(busyBtn).toHaveAttribute('aria-busy', 'true');
+    expect(busyBtn).toHaveAttribute('aria-disabled', 'true');
+    expect(nameInput).toHaveAttribute('readonly');
+    expect(nameInput).toHaveAttribute('aria-busy', 'true');
+
+    await waitFor(() => {
+      expect(globalFetch).toHaveBeenCalledTimes(1);
+    });
+
+    // Duplicate submit while busy is ignored
+    fireEvent.submit(busyBtn.closest('form')!);
+    expect(globalFetch).toHaveBeenCalledTimes(1);
+
+    submitDeferred.resolve?.({
+      ok: true,
+      json: async () => ({
+        success: true,
+        message: 'Address submitted successfully.',
+      }),
+    });
+
+    expect(await screen.findByText('Address Received!')).toBeInTheDocument();
+
+    // Reset and verify #website honeypot bypasses client error hints so server honeypot handles bots
+    fireEvent.click(screen.getByRole('button', { name: /Submit Another Address/i }));
+    globalFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ success: true, message: 'Address submitted successfully.' }),
+    });
+    const honeypot = container.querySelector('#website') as HTMLInputElement;
+    expect(honeypot).toBeInTheDocument();
+    fireEvent.change(honeypot, { target: { value: 'https://spam.example' } });
+    fireEvent.submit(screen.getByRole('button', { name: /Submit Address/i }).closest('form')!);
+    await waitFor(() => {
+      expect(globalFetch).toHaveBeenCalledTimes(2);
+    });
   });
 });

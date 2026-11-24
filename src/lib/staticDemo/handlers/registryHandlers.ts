@@ -742,6 +742,43 @@ export async function handleRegistryRoutes(
     });
   }
 
+  if (pathname === '/api/registry/payment-intent/reconcile' && method === 'POST') {
+    const body = await readJsonBody(request);
+    const paymentIntentId =
+      typeof body.paymentIntentId === 'string' ? body.paymentIntentId.trim() : '';
+    const clientSecret =
+      typeof body.clientSecret === 'string' ? body.clientSecret.trim() : '';
+    const itemId = typeof body.itemId === 'string' ? body.itemId.trim() : '';
+    if (!paymentIntentId || !clientSecret) {
+      return errorJson(400, 'Missing or invalid paymentIntentId.');
+    }
+    const snapshot = store.getSnapshot();
+    const target = itemId
+      ? snapshot.registryItem.find((r) => r.id === itemId)
+      : snapshot.registryItem[0];
+    if (!target) {
+      return errorJson(404, 'Item not found');
+    }
+    const itemDto = toRegistryItemDto(snapshot, target, { maskPublic: true });
+    return wrapMiddlewareJson({
+      reconciled: true,
+      status: 'succeeded',
+      itemId: target.id,
+      item: itemDto,
+      receipt: {
+        itemId: target.id,
+        paymentIntentId,
+        contributorName: snapshot.guestSession?.guestName || 'Demo Guest',
+        contributorEmail: null,
+        baseAmount: target.price,
+        feeAmount: 0,
+        coverFee: false,
+        totalChargeAmount: target.price,
+        message: null,
+      },
+    });
+  }
+
   if (pathname === '/api/registry/validate-code' && (method === 'GET' || method === 'POST')) {
     const rawCode =
       method === 'GET'
@@ -791,10 +828,15 @@ export async function handleRegistryRoutes(
         }
       });
     }
+    const resolvedEmail =
+      typeof invite.email === 'string' && invite.email.trim().length > 0
+        ? invite.email.trim()
+        : null;
     return wrapMiddlewareJson({
       valid: true,
       guestName: invite.guestName,
       code: invite.code,
+      email: resolvedEmail,
     });
   }
 
@@ -818,13 +860,19 @@ export async function handleRegistryRoutes(
           invitationCode: null,
           code: null,
           guestName: null,
+          email: null,
         });
       }
+      const resolvedEmail =
+        typeof invite.email === 'string' && invite.email.trim().length > 0
+          ? invite.email.trim()
+          : null;
       return wrapMiddlewareJson({
         isVerified: true,
         invitationCode: invite.code,
         code: invite.code,
         guestName: invite.guestName,
+        email: resolvedEmail,
       });
     }
 
@@ -837,6 +885,7 @@ export async function handleRegistryRoutes(
         invitationCode: null,
         code: null,
         guestName: null,
+        email: null,
       });
     }
   }
