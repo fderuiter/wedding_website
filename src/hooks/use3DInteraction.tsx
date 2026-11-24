@@ -1,4 +1,4 @@
-import { useId, useState, useCallback, KeyboardEvent, MouseEvent } from 'react';
+import { useId, useState, useCallback, type KeyboardEvent, type MouseEvent } from 'react';
 
 export type Use3DInteractionOptions = {
   instructions: string;

@@ -1,29 +1,36 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { chromium, defineConfig, devices } from '@playwright/test';
-import fs from 'fs';
-import path from 'path';
 
-if (process.env.TEST_WORKER_INDEX === undefined) {
-  const staticViolationsPath = path.join(
-    process.cwd(),
-    'test-results',
-    'static-demo-a11y-violations.json'
-  );
-  fs.mkdirSync(path.dirname(staticViolationsPath), { recursive: true });
-  fs.writeFileSync(staticViolationsPath, '{}\n', 'utf8');
-}
-
-function resolveChromiumExecutablePath(): string | undefined {
+function resolveChromiumExecutable(): string | undefined {
   const explicitPath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?.trim();
-  if (explicitPath) {
+  if (explicitPath && fs.existsSync(explicitPath)) {
     return explicitPath;
   }
 
   try {
-    if (fs.existsSync(chromium.executablePath())) {
+    const defaultExecutable = chromium.executablePath();
+    if (defaultExecutable && fs.existsSync(defaultExecutable)) {
       return undefined;
     }
   } catch {
-    // Fall through to system Chrome probe
+    // Fall back to pre-installed system/cache Chromium binaries below
+  }
+
+  const msPlaywrightDir = path.join(os.homedir(), '.cache', 'ms-playwright');
+  if (fs.existsSync(msPlaywrightDir)) {
+    const entries = fs
+      .readdirSync(msPlaywrightDir)
+      .filter((name) => name.startsWith('chromium-'))
+      .sort()
+      .reverse();
+    for (const entry of entries) {
+      const candidate = path.join(msPlaywrightDir, entry, 'chrome-linux64', 'chrome');
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
   }
 
   if (fs.existsSync('/usr/bin/google-chrome')) {
@@ -33,32 +40,31 @@ function resolveChromiumExecutablePath(): string | undefined {
   return undefined;
 }
 
-const resolvedExecutablePath = resolveChromiumExecutablePath();
-
-const staticPort = process.env.STATIC_DEMO_PORT || '4173';
-const staticBaseUrl = `http://localhost:${staticPort}`;
+const port = Number.parseInt(process.env.STATIC_AUDIT_PORT || '4173', 10);
+const basePath =
+  (process.env.NEXT_PUBLIC_BASE_PATH || '/wedding_website/demo').trim().replace(/\/+$/, '') || '';
+const origin = `http://127.0.0.1:${port}`;
+const fallbackExecutablePath = resolveChromiumExecutable();
 
 export default defineConfig({
-  testDir: './e2e',
-  testMatch: 'static-demo.spec.ts',
-  outputDir: 'test-results/playwright-static',
-  fullyParallel: false,
+  testDir: './e2e/static',
+  testMatch: '**/*.audit.ts',
+  fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  workers: 1,
-  reporter: 'list',
+  workers: 2,
+  timeout: 180_000,
+  reporter: process.env.CI ? 'github' : 'list',
   use: {
-    baseURL: staticBaseUrl,
-    contextOptions: {
-      reducedMotion: 'reduce',
-    },
-    trace: 'on-first-retry',
+    baseURL: origin,
+    trace: 'retain-on-failure',
     launchOptions: {
-      ...(resolvedExecutablePath ? { executablePath: resolvedExecutablePath } : {}),
+      ...(fallbackExecutablePath ? { executablePath: fallbackExecutablePath } : {}),
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-gpu',
+        '--disable-dev-shm-usage',
       ],
     },
   },
@@ -69,10 +75,13 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'node scripts/serve-static-demo.mjs',
-    url: `${staticBaseUrl}/wedding_website/demo`,
-    reuseExistingServer:
-      !process.env.CI && process.env.PLAYWRIGHT_REUSE_STATIC_SERVER === 'true',
-    timeout: 180000,
+    command: 'node scripts/serve-static-export.mjs',
+    url: `${origin}/__health`,
+    reuseExistingServer: !process.env.CI,
+    timeout: 30_000,
+    env: {
+      NEXT_PUBLIC_BASE_PATH: basePath || '/wedding_website/demo',
+      STATIC_AUDIT_PORT: String(port),
+    },
   },
 });

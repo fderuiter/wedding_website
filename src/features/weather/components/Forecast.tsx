@@ -37,10 +37,10 @@ const getWeatherDescription = (code: number): string => {
 };
 
 const getWeatherIcon = (code: number): { name: IconName, color: string } => {
-  if (code <= 1) return { name: 'Sun', color: 'text-secondary' };
+  if (code <= 1) return { name: 'Sun', color: 'text-amber-700 dark:text-amber-300' };
   if (code <= 3) return { name: 'Cloud', color: 'text-muted-text' };
-  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return { name: 'CloudRain', color: 'text-blue-400' };
-  if ((code >= 71 && code <= 77) || (code >= 85 && code <= 86)) return { name: 'CloudSnow', color: 'text-sky-300' };
+  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return { name: 'CloudRain', color: 'text-blue-700 dark:text-blue-300' };
+  if ((code >= 71 && code <= 77) || (code >= 85 && code <= 86)) return { name: 'CloudSnow', color: 'text-sky-700 dark:text-sky-300' };
   return { name: 'Cloud', color: 'text-muted-text' };
 };
 
@@ -104,7 +104,7 @@ const Forecast: React.FC = () => {
   if (isLoading) {
     return (
       <div
-        className="bg-white/25 backdrop-blur-lg rounded-[var(--radius-card)] shadow-2xl p-[var(--card-padding)] border border-white/20 max-w-[var(--container-max-w)] mx-auto min-h-[320px] flex flex-col justify-between"
+        className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg rounded-[var(--radius-card)] shadow-2xl p-[var(--card-padding)] border border-gray-200/70 dark:border-gray-700/70 max-w-[var(--container-max-w)] mx-auto min-h-[320px] flex flex-col justify-between"
         data-testid="forecast-skeleton"
       >
         <span className="sr-only">Loading forecast...</span>
@@ -133,16 +133,11 @@ const Forecast: React.FC = () => {
         className="bg-white/90 dark:bg-gray-900/90 backdrop-blur-lg rounded-[var(--radius-card)] shadow-2xl p-[var(--card-padding)] border border-gray-200 dark:border-gray-700 max-w-[var(--container-max-w)] mx-auto text-center flex flex-col items-center justify-center min-h-[300px] space-y-4"
         role="alert"
       >
-        <Icon name="AlertTriangle" className="w-12 h-12 text-primary mx-auto mb-1" />
-        <Heading
-          as="h2"
-          variant="none"
-          unstyledColor
-          className="text-xl font-bold text-gray-900 dark:text-white"
-        >
+        <Icon name="AlertTriangle" className="w-12 h-12 text-red-700 dark:text-red-300 mx-auto mb-1" />
+        <Heading as="h2" variant="none" unstyledColor className="text-xl font-bold text-gray-900 dark:text-white">
           Unable to Load Weather
         </Heading>
-        <p className="text-base text-red-700 dark:text-red-300 font-medium">
+        <p className="text-base text-red-800 dark:text-red-200 font-medium">
           Failed to load forecast. Please try again later.
         </p>
         <Button onClick={fetchWeather} variant="primary" size="md">
@@ -171,7 +166,7 @@ const Forecast: React.FC = () => {
       initial={{ opacity: 0, y: 'calc(20px * var(--scale-factor, 1))' }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration, ease: parseMotionEasing(presetTokens['--motion-ease-default']) }}
-      className="bg-white/25 backdrop-blur-lg rounded-[var(--radius-card)] shadow-[var(--shadow-lg)] p-[var(--card-padding)] border border-white/20 max-w-[var(--container-max-w)] mx-auto"
+      className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg rounded-[var(--radius-card)] shadow-[var(--shadow-lg)] p-[var(--card-padding)] border border-gray-200/70 dark:border-gray-700/70 max-w-[var(--container-max-w)] mx-auto"
       style={{ boxShadow: 'var(--shadow-lg)' }}
     >
       {!isLiveForecast && (

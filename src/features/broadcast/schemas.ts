@@ -36,7 +36,7 @@ export const SendBroadcastSchema = z.object({
   targetFilters: BroadcastTargetFiltersSchema.optional(),
   customRecipientIds: z.array(z.string()).optional(),
   scheduledFor: z.string().refine((val) => !isNaN(Date.parse(val)), { message: 'Invalid date format' }).optional(),
-});
+}).strict();
 
 export const PreviewBroadcastSchema = z.object({
   channel: z.enum(['EMAIL', 'SMS']),

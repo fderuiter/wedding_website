@@ -114,6 +114,7 @@ const ThingsToDoList: React.FC<ThingsToDoListProps> = ({
 
   return (
     <div>
+      <h2 className="sr-only">Local Attractions &amp; Recommendations</h2>
       <div className="flex justify-center gap-2 mb-8 flex-wrap print:hidden">
         <CategoryFilter
           categories={categories}

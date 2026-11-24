@@ -53,7 +53,7 @@ To publish the unified documentation portal (`/`), interactive static demo (`/de
    - Both default repository subpaths (`/<repo>/`, `/<repo>/demo/`, `/<repo>/storybook/`) and custom domains (`/`, `/demo/`, `/storybook/`) are detected automatically via `actions/configure-pages` and `NEXT_PUBLIC_BASE_PATH`.
 2. **Environment Configuration**:
    - Verify that the `github-pages` deployment environment is created or permitted under repository **Settings** > **Environments**.
-   - Review or configure deployment branch rules and protection gates if needed (by default, `deploy-docs` runs on pushes to `main` and published releases after `verify`, `static-export-build`, `storybook-build`, and `static-demo-e2e` succeed, verifying `index.html`, `demo/index.html`, `storybook/index.html`, and `.nojekyll` before upload).
+   - Review or configure deployment branch rules and protection gates if needed (by default, `deploy-docs` runs on pushes to `main` and published releases after `verify`, `static-export-build` — including `npm run test:e2e:static` — and `storybook-build` succeed, verifying `index.html`, `demo/index.html`, `storybook/index.html`, and `.nojekyll` before upload).
 3. **Workflow Permissions**:
    - The `.github/workflows/ci.yml` workflow explicitly requires `contents: read`, `pages: write`, and `id-token: write` for the `deploy-docs` job.
    - Ensure repository settings under **Settings** > **Actions** > **General** > **Workflow permissions** permit workflows to read and write tokens.

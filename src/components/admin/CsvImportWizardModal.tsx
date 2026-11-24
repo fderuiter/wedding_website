@@ -14,8 +14,8 @@ import {
   generateFailedRowsCsv,
   parsePlusOneNameCell,
   MAX_CSV_FILE_SIZE,
-  ParsedCsvRow,
-  ColumnMappingOptions,
+  type ParsedCsvRow,
+  type ColumnMappingOptions,
   type EditableCsvRow,
   type FailedCsvExportRow,
 } from '@/utils/csv';

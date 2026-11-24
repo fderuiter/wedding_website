@@ -1,6 +1,12 @@
 import { ImageResponse } from 'next/og';
-import { getAppConfig } from '@/lib/config';
+import type { NextRequest } from 'next/server';
+import { getAppConfig, toUnauthenticatedAppConfig } from '@/lib/config';
+import { deriveBrandMonogram } from '@/features/content';
+import { isAdminRequest } from '@/core/auth/auth.server';
+import { isGuestRequest } from '@/core/auth/guest.server';
+import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { getServerExportTokens } from '@/lib/theme/presets';
+import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { readFile } from 'fs/promises';
 import path from 'path';
 
@@ -47,34 +53,63 @@ function getFontBuffers(): Promise<FontBuffers> {
   return fontBuffersPromise;
 }
 
-export async function GET(request: Request) {
-  let config;
+export const GET = withApiMiddleware(async (request: NextRequest) => {
+  const isStaticExport =
+    process.env.STATIC_EXPORT === 'true' ||
+    process.env.STATIC_EXPORT === '1' ||
+    process.env.npm_lifecycle_event === 'build:export';
+
+  let isAuthenticated = isStaticExport;
+  if (!isStaticExport) {
+    try {
+      const [adminAuth, guestAuth, inviteSession] = await Promise.all([
+        isAdminRequest(request),
+        isGuestRequest(request),
+        getGuestInviteSession(request),
+      ]);
+      isAuthenticated = Boolean(adminAuth || guestAuth || inviteSession);
+    } catch {
+      isAuthenticated = false;
+    }
+  }
+
+  let rawConfig;
   try {
-    config = await getAppConfig();
+    rawConfig = await getAppConfig();
   } catch {
-    config = null;
+    rawConfig = null;
   }
 
-  const { searchParams } = new URL(request.url);
+  const config =
+    rawConfig && !isAuthenticated ? toUnauthenticatedAppConfig(rawConfig) : rawConfig;
 
-  const p1 = searchParams.get('p1') || config?.partner1Name || config?.brideName || '';
-  const p2 = searchParams.get('p2') || config?.partner2Name || config?.groomName || '';
+  const { searchParams } = new URL(request.url, 'http://localhost');
 
-  let couplesNames = '';
-  if (p1 && p2) {
-    couplesNames = `${p1} & ${p2}`;
+  const p1Override = isAuthenticated ? searchParams.get('p1') : null;
+  const p2Override = isAuthenticated ? searchParams.get('p2') : null;
+  const titleOverride = isAuthenticated ? searchParams.get('title') : null;
+  const primaryParam = isAuthenticated ? searchParams.get('primary') || undefined : undefined;
+  const secondaryParam = isAuthenticated ? searchParams.get('secondary') || undefined : undefined;
+
+  const p1 = p1Override || config?.partner1Name || config?.brideName || '';
+  const p2 = p2Override || config?.partner2Name || config?.groomName || '';
+
+  let badgeLabel = '';
+  if (!isAuthenticated) {
+    badgeLabel = config?.brandMonogram?.trim() || deriveBrandMonogram(config);
+  } else if (p1 && p2) {
+    badgeLabel = `${p1} & ${p2}`;
   } else if (p1) {
-    couplesNames = p1;
+    badgeLabel = p1;
   } else if (p2) {
-    couplesNames = p2;
+    badgeLabel = p2;
   } else {
-    couplesNames = 'Wedding Celebration';
+    badgeLabel = 'Wedding Celebration';
   }
 
-  const title = searchParams.get('title') || config?.seoTitle || (p1 && p2 ? `${p1} & ${p2}'s Wedding` : couplesNames);
-
-  const primaryParam = searchParams.get('primary') || undefined;
-  const secondaryParam = searchParams.get('secondary') || undefined;
+  const title = isAuthenticated
+    ? titleOverride || config?.seoTitle || (p1 && p2 ? `${p1} & ${p2}'s Wedding` : badgeLabel)
+    : 'Wedding Website';
 
   const exportTokens = getServerExportTokens(
     config?.themePreset,
@@ -89,7 +124,7 @@ export async function GET(request: Request) {
   const colorSecondary = exportTokens.colorSecondary;
 
   let dateStr = '';
-  if (config?.weddingDate) {
+  if (isAuthenticated && config?.weddingDate) {
     try {
       const d = new Date(config.weddingDate);
       if (!isNaN(d.getTime())) {
@@ -100,7 +135,9 @@ export async function GET(request: Request) {
     }
   }
 
-  const venueParts = [config?.venueName, config?.venueCity, config?.venueState].filter(Boolean);
+  const venueParts = isAuthenticated
+    ? [config?.venueName, config?.venueCity, config?.venueState].filter(Boolean)
+    : [];
   const venueStr = venueParts.join(' • ');
 
   const { fontRegularBuffer, fontBoldBuffer } = await getFontBuffers();
@@ -186,7 +223,7 @@ export async function GET(request: Request) {
               display: 'flex',
             }}
           >
-            {couplesNames}
+            {badgeLabel}
           </div>
 
           {/* Main Title */}
@@ -231,8 +268,9 @@ export async function GET(request: Request) {
       height: 630,
       fonts: fonts.length > 0 ? fonts : undefined,
       headers: {
-        'Cache-Control': 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800',
+        'Cache-Control': isAuthenticated ? 'private, max-age=3600' : 'private, no-cache',
+        Vary: 'Cookie',
       },
     }
   );
-}
+});

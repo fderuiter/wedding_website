@@ -442,22 +442,37 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
     });
   });
 
-  it('uses theme background surface token on fixed header and disambiguates landmarks when rendered inside an embedded preview iframe', async () => {
-    const { container } = render(
+  it('labels header landmark with aria-label="Site header" per ARIA14, uses theme background surface token, and suppresses header/nav landmarks in preview mode', async () => {
+    const { container, rerender } = render(
       <Navbar
         isAdmin={false}
         handleLogout={jest.fn()}
         headerRef={headerRef}
         config={mockConfig}
-        isEmbeddedPreview={true}
       />
     );
 
-    const previewBanner = screen.getByRole('banner', { name: 'Live Preview Header' });
-    expect(previewBanner).toHaveClass('bg-[var(--color-background,#ffffff)]');
-    expect(
-      screen.getByRole('navigation', { name: 'Live Preview Navigation' })
-    ).toBeInTheDocument();
+    const banner = screen.getByRole('banner', { name: 'Site header' });
+    expect(banner).toBeInTheDocument();
+    expect(banner).toHaveClass('bg-[var(--color-background,#ffffff)]');
+    expect(headerRef.current).toBe(banner);
+    expect(screen.getByRole('navigation', { name: 'Global Navigation' })).toBeInTheDocument();
+    expect(await axe(container)).toHaveNoViolations();
+
+    rerender(
+      <Navbar
+        isAdmin={false}
+        handleLogout={jest.fn()}
+        headerRef={headerRef}
+        config={mockConfig}
+        isPreview
+      />
+    );
+
+    expect(screen.queryByRole('banner')).not.toBeInTheDocument();
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
+    expect(headerRef.current).toBeInstanceOf(HTMLDivElement);
+    expect(screen.getByText('A & B')).toBeInTheDocument();
     expect(await axe(container)).toHaveNoViolations();
   });
 });

@@ -106,16 +106,17 @@ A variety of verification scripts in [package.json](../package.json) support com
 
 - **Accessibility (A11y) Audits:**
   ```bash
-  # Fast component-only jest-axe checks (64 src/ suites, no Docker required):
+  # Fast component-only jest-axe checks (68 src/ suites, no Docker required):
   npm run test:a11y:unit
 
-  # Database-free static GitHub Pages showcase E2E & WCAG 2.2 AA audit (32 routes):
-  npm run test:e2e:static
+  # Standalone static showcase light & dark WCAG 2.2 AA audit (no Docker or database required):
+  NEXT_PUBLIC_BASE_PATH="/wedding_website/demo" npm run build:export
+  NEXT_PUBLIC_BASE_PATH="/wedding_website/demo" npm run test:a11y:static
 
   # Full component + @a11y Playwright WCAG 2.2 AA audit:
   npm run test:a11y
   ```
-  `npm run test:a11y:unit` runs [scripts/a11y-report.mjs](../scripts/a11y-report.mjs) (`--unit`), executing only the 64 `src/` `jest-axe` suites with `--coverage=false` and recording component violations to `test-results/jest-a11y-violations.json`. `npm run test:e2e:static` runs [playwright.static.config.ts](../playwright.static.config.ts) ([e2e/static-demo.spec.ts](../e2e/static-demo.spec.ts)) against [scripts/serve-static-demo.mjs](../scripts/serve-static-demo.mjs) (`http://localhost:4173/wedding_website/demo`) without Docker or PostgreSQL, auditing all 32 exported routes and recording violations to `test-results/static-demo-a11y-violations.json`. `npm run test:a11y` runs `scripts/a11y-report.mjs` (`--run`), which cleans `test-results/`, runs the targeted `--unit` component pass, reseeds `wedding_test` via `npx tsx scripts/seed.ts` ([scripts/seed.ts](../scripts/seed.ts)) to restore valid `AppConfig` data wiped by Jest integration teardowns (skipping `<SetupWizard />` in `src/app/layout.tsx`), runs `npx playwright test --grep @a11y`, and writes unfiltered WCAG 2.2 AA violations to `test-results/a11y-summary.md` (for production standalone mode, run `npm run build && CI=true npm run test:a11y`). In [.github/workflows/ci.yml](workflows/ci.yml), an isolated `a11y-report` job depends on `unit-test`, `e2e-test`, and `static-demo-e2e` (`if: '!cancelled()'`), downloads `jest-a11y-violations`, `playwright-a11y-violations`, and `static-demo-a11y-violations` (`--require-static-demo`), marks missing suite artifacts as incomplete in `test-results/a11y-summary.md`, and updates the `<!-- a11y-report -->` pull request comment and `$GITHUB_STEP_SUMMARY` even when violations exit non-zero.
+  `npm run test:a11y:unit` runs [scripts/a11y-report.mjs](../scripts/a11y-report.mjs) (`--unit`), executing only the 68 `src/` `jest-axe` suites with `--coverage=false` and recording component violations to `test-results/jest-a11y-violations.json`. `npm run test:a11y:static` (`node scripts/a11y-report.mjs --static`, delegating browser execution to `npm run test:e2e:static` via [playwright.static.config.ts](../playwright.static.config.ts) and [scripts/serve-static-export.mjs](../scripts/serve-static-export.mjs)) serves the pre-built `out/` directory under `NEXT_PUBLIC_BASE_PATH` without Docker, PostgreSQL, live Next.js servers, or external network calls, scanning all exported showcase routes in both `light` and `dark` themes (`>= 62` route/theme scans) and writing `test-results/static-a11y-violations.json` + `test-results/a11y-summary.md`. `npm run test:a11y` runs `scripts/a11y-report.mjs` (`--run`), which cleans `test-results/`, runs the targeted `--unit` component pass, reseeds `wedding_test` via `npx tsx scripts/seed.ts` ([scripts/seed.ts](../scripts/seed.ts)) to restore valid `AppConfig` data wiped by Jest integration teardowns (skipping `<SetupWizard />` in `src/app/layout.tsx`), runs `npx playwright test --grep @a11y`, and writes unfiltered WCAG 2.2 AA violations to `test-results/a11y-summary.md` (for production standalone mode, run `npm run build && CI=true npm run test:a11y`). In [.github/workflows/ci.yml](workflows/ci.yml), an isolated `a11y-report` job depends on `unit-test`, `e2e-test`, and `static-export-build` (`if: '!cancelled()'`), downloads `jest-a11y-violations`, `playwright-a11y-violations`, and `static-a11y-violations` (`--include-static`), marks missing suite artifacts as incomplete in `test-results/a11y-summary.md`, and updates the `<!-- a11y-report -->` pull request comment and `$GITHUB_STEP_SUMMARY` even when violations exit non-zero.
 
 - **Standalone Server Smoke Test:**
   ```bash
@@ -152,12 +153,12 @@ A variety of verification scripts in [package.json](../package.json) support com
   ```
   Compiles component stories (`src/**/*.stories.tsx`), Storybook configuration ([.storybook/main.ts](../.storybook/main.ts), [.storybook/preview.tsx](../.storybook/preview.tsx)), and MSW mock handlers ([src/mocks/handlers.ts](../src/mocks/handlers.ts)) via Webpack 5, matching the parallel `storybook-build` CI job in [.github/workflows/ci.yml](workflows/ci.yml) and manual [.github/workflows/storybook.yml](workflows/storybook.yml) workflow (both installing dependencies with `npm ci --ignore-scripts`). Use `npm run storybook` for interactive component development.
 
-- **Static HTML Showcase Build & E2E Audit:**
+- **Static HTML Showcase Build & Subpath Runtime/A11y Audit:**
   ```bash
-  npm run build:export
-  npm run test:e2e:static
+  NEXT_PUBLIC_BASE_PATH="/wedding_website/demo" npm run build:export
+  NEXT_PUBLIC_BASE_PATH="/wedding_website/demo" npm run test:e2e:static
   ```
-  `npm run build:export` compiles the database-free static HTML showcase (`output: 'export'`) inside `.next/export-stage` without `src/app/api` ([scripts/build-export.mjs](../scripts/build-export.mjs)), isolating export build caches in `.next-export/cache` ([next.config.ts](../next.config.ts)) while preserving `src/app/api` and `.next/standalone` in the repository root, matching the parallel `static-export-build` CI job in [.github/workflows/ci.yml](workflows/ci.yml). `npm run test:e2e:static` serves the assembled VitePress + `/demo` bundle under `/wedding_website` ([scripts/serve-static-demo.mjs](../scripts/serve-static-demo.mjs)) and verifies HTTP 200 responses, subpath asset resolution, zero `pageerror` exceptions, and zero WCAG 2.2 AA Axe violations across all 32 exported routes (`static-demo-e2e` in `ci.yml`, gating `deploy-docs`).
+  Compiles the database-free static HTML showcase (`output: 'export'`) inside `.next/export-stage` without `src/app/api` ([scripts/build-export.mjs](../scripts/build-export.mjs)), isolating export build caches in `.next-export/cache` ([next.config.ts](../next.config.ts)) while preserving `src/app/api` and `.next/standalone` in the repository root, then serves `out/` over loopback via [scripts/serve-static-export.mjs](../scripts/serve-static-export.mjs) and executes [e2e/static/static-showcase.audit.ts](../e2e/static/static-showcase.audit.ts) ([playwright.static.config.ts](../playwright.static.config.ts)) across every exported subpath route in light and dark themes, matching the `static-export-build` CI job in [.github/workflows/ci.yml](workflows/ci.yml) that gates `deploy-docs`.
 
 - **Complete Quality Gate:**
   ```bash

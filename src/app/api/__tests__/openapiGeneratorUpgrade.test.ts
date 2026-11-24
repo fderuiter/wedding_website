@@ -42,6 +42,11 @@ interface OpenApiOperation {
 
 interface OpenApiDocument {
   openapi: string;
+  info?: {
+    title?: string;
+    version?: string;
+    description?: string;
+  };
   servers?: Array<{ url: string; description?: string }>;
   tags?: Array<{ name: string; description?: string }>;
   paths: Record<string, Record<string, unknown>>;
@@ -484,10 +489,61 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     expect(schema.properties?.sampleModules).toBeDefined();
     expect(schema.properties?.partner1Name).toBeDefined();
     expect(schema.properties?.weddingDate).toBeDefined();
+    expect(schema.properties?.modules).toEqual(
+      expect.objectContaining({
+        type: 'object',
+        properties: expect.objectContaining({
+          registry: expect.objectContaining({ type: 'boolean' }),
+          groupGifting: expect.objectContaining({ type: 'boolean' }),
+          weather: expect.objectContaining({ type: 'boolean' }),
+          weddingParty: expect.objectContaining({ type: 'boolean' }),
+          attractions: expect.objectContaining({ type: 'boolean' }),
+          gallery: expect.objectContaining({ type: 'boolean' }),
+          countdown: expect.objectContaining({ type: 'boolean' }),
+          addToCalendar: expect.objectContaining({ type: 'boolean' }),
+          interactive3D: expect.objectContaining({ type: 'boolean' }),
+        }),
+      })
+    );
 
+    expect(setupPost.requestBody?.required).toBe(false);
     expect(schema.required ?? []).toHaveLength(0);
     expect(Array.isArray(schema.anyOf)).toBe(true);
+    expect(schema.anyOf).toHaveLength(4);
     expect(schema.description).toMatch(/ADMIN_PASSWORD_HASH/);
+    expect(schema.description).toMatch(/modules/);
+    expect(schema.description).toMatch(/status check/);
+  });
+
+  it('publishes current product title and package.json version and marks required query params and optional request bodies accurately', () => {
+    const pkg = JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8')
+    ) as { version: string };
+
+    expect(openapi.info?.title).toBe('Wedding Website & Custom Registry API');
+    expect(openapi.info?.version).toBe(pkg.version);
+
+    const claimGet = openapi.paths['/api/registry/claim']?.get as OpenApiOperation;
+    const claimTokenParam = claimGet.parameters?.find((p) => p.in === 'query' && p.name === 'token');
+    expect(claimTokenParam?.required).toBe(true);
+
+    const inviteRsvpsGet = openapi.paths['/api/admin/invitation-codes/rsvps']?.get as OpenApiOperation;
+    const inviteIdParam = inviteRsvpsGet.parameters?.find(
+      (p) => p.in === 'query' && p.name === 'invitationCodeId'
+    );
+    expect(inviteIdParam?.required).toBe(true);
+
+    const optionalBodyKeys = getAllOperations()
+      .filter(({ operation }) => operation.requestBody && operation.requestBody.required === false)
+      .map(({ method, routePath }) => `${method} ${routePath}`)
+      .sort();
+
+    expect(optionalBodyKeys).toEqual([
+      'DELETE /api/admin/contributors/{id}',
+      'POST /api/admin/registry/items/{id}/unclaim',
+      'POST /api/admin/seating/auto-assign',
+      'POST /api/admin/setup',
+    ]);
   });
 
   it('defines components.securitySchemes across every protected operation and query parameters across query operations', () => {
@@ -534,8 +590,6 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
         'GET /api/ready',
         'GET /api/registry/claim',
         'GET /api/registry/validate-code',
-        'GET /api/uploads/{path}',
-        'HEAD /api/uploads/{path}',
         'POST /api/admin/login',
         'POST /api/admin/logout',
         'POST /api/admin/setup',
@@ -556,6 +610,16 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
       { guestInviteCookieAuth: [] },
     ]);
     expect((openapi.paths['/api/photos/upload']?.post as OpenApiOperation).security).toEqual([
+      { guestCookieAuth: [] },
+      { guestInviteCookieAuth: [] },
+      { adminCookieAuth: [] },
+    ]);
+    expect((openapi.paths['/api/uploads/{path}']?.get as OpenApiOperation).security).toEqual([
+      { guestCookieAuth: [] },
+      { guestInviteCookieAuth: [] },
+      { adminCookieAuth: [] },
+    ]);
+    expect((openapi.paths['/api/uploads/{path}']?.head as OpenApiOperation).security).toEqual([
       { guestCookieAuth: [] },
       { guestInviteCookieAuth: [] },
       { adminCookieAuth: [] },
@@ -1072,6 +1136,7 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
             'Content-Length',
             'Last-Modified',
             'Cache-Control',
+            'Vary',
             'X-Content-Type-Options',
           ])
         );

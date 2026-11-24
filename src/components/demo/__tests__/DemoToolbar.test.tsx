@@ -97,17 +97,63 @@ function renderDemoShell(isStaticExport = true) {
 }
 
 describe('DemoToolbar & DemoProvider', () => {
+  const originalBasePath = process.env.NEXT_PUBLIC_BASE_PATH;
+
   beforeEach(() => {
     mockPathname = '/';
     mockPush.mockReset();
     window.localStorage.clear();
     resetDemoState();
+    delete process.env.NEXT_PUBLIC_BASE_PATH;
+  });
+
+  afterEach(() => {
+    if (originalBasePath === undefined) {
+      delete process.env.NEXT_PUBLIC_BASE_PATH;
+    } else {
+      process.env.NEXT_PUBLIC_BASE_PATH = originalBasePath;
+    }
   });
 
   it('does not render DemoToolbar when isStaticExport is false (standalone server mode)', () => {
     renderDemoShell(false);
     expect(screen.queryByTestId('demo-toolbar')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('demo-showcase-links')).not.toBeInTheDocument();
     expect(screen.getByTestId('probe-persona')).toHaveTextContent('none');
+  });
+
+  it('renders subpath-safe showcase links to /, /api/, and /storybook/ in both expanded and collapsed toolbar states', () => {
+    process.env.NEXT_PUBLIC_BASE_PATH = '/wedding_website/demo';
+    const { unmount } = renderDemoShell(true);
+
+    const assertShowcaseLinks = (expectedPrefix: string) => {
+      const docsLink = screen.getByTestId('demo-link-docs');
+      const apiLink = screen.getByTestId('demo-link-api');
+      const storybookLink = screen.getByTestId('demo-link-storybook');
+
+      expect(docsLink).toHaveAttribute('href', `${expectedPrefix}/`);
+      expect(docsLink).toHaveAttribute('data-static-demo-bypass', 'true');
+      expect(apiLink).toHaveAttribute('href', `${expectedPrefix}/api/`);
+      expect(apiLink).toHaveAttribute('data-static-demo-bypass', 'true');
+      expect(storybookLink).toHaveAttribute('href', `${expectedPrefix}/storybook/`);
+      expect(storybookLink).toHaveAttribute('data-static-demo-bypass', 'true');
+      expect(storybookLink).toHaveAttribute('target', '_blank');
+      expect(storybookLink).toHaveAttribute('rel', 'noopener noreferrer');
+    };
+
+    // Expanded state on repository subpath
+    expect(screen.getByTestId('demo-toolbar-toggle')).toHaveAttribute('aria-expanded', 'true');
+    assertShowcaseLinks('/wedding_website');
+
+    // Collapsed state on repository subpath
+    fireEvent.click(screen.getByTestId('demo-toolbar-toggle'));
+    expect(screen.getByTestId('demo-toolbar-toggle')).toHaveAttribute('aria-expanded', 'false');
+    assertShowcaseLinks('/wedding_website');
+
+    unmount();
+    delete process.env.NEXT_PUBLIC_BASE_PATH;
+    renderDemoShell(true);
+    assertShowcaseLinks('');
   });
 
   it('renders DemoToolbar with Invited Guest active by default and persists visitor selections across remounts', () => {
@@ -299,5 +345,23 @@ describe('DemoToolbar & DemoProvider', () => {
     const darkResults = await axe(container);
     expect(darkResults).toHaveNoViolations();
     document.documentElement.classList.remove('dark');
+  });
+
+  it('resolves the parent Docs Portal link across root and GitHub Pages subpath base paths', () => {
+    const prevBase = process.env.NEXT_PUBLIC_BASE_PATH;
+    try {
+      process.env.NEXT_PUBLIC_BASE_PATH = '/wedding_website/demo';
+      const { unmount } = renderDemoShell(true);
+      expect(screen.getByTestId('demo-portal-link')).toHaveAttribute('href', '/wedding_website/');
+      expect(document.documentElement.dataset.staticDemo).toBe('true');
+      unmount();
+      expect(document.documentElement.dataset.staticDemo).toBeUndefined();
+    } finally {
+      if (prevBase === undefined) {
+        delete process.env.NEXT_PUBLIC_BASE_PATH;
+      } else {
+        process.env.NEXT_PUBLIC_BASE_PATH = prevBase;
+      }
+    }
   });
 });

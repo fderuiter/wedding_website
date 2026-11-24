@@ -1,4 +1,4 @@
-import { InvitationCodeDTO } from '@/features/registry';
+import type { InvitationCodeDTO } from '@/features/registry';
 import {
   formatCompanionSeatLabel,
   getDietaryBadges,

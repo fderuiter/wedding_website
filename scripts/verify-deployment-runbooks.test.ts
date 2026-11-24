@@ -1221,4 +1221,45 @@ describe('verify-deployment-runbooks', () => {
       ])
     );
   });
+
+  it('rejects TypeScript major version drift and unrestricted npm Dependabot groups', () => {
+    const pkgPath = path.join(tempDir, 'package.json');
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as {
+      devDependencies?: Record<string, string>;
+    };
+    if (pkg.devDependencies) {
+      pkg.devDependencies.typescript = '^7.0.2';
+    }
+    fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
+
+    const dependabotPath = path.join(tempDir, '.github/dependabot.yml');
+    fs.writeFileSync(
+      dependabotPath,
+      fs
+        .readFileSync(dependabotPath, 'utf8')
+        .replace(
+          /\s*- dependency-name: "typescript"\n\s*versions: \[">= 6\.1\.0"\](?:\n\s*update-types: \["version-update:semver-major"\])?/g,
+          ''
+        )
+        .replace(/\s*update-types:\n\s*- "minor"\n\s*- "patch"/g, '')
+    );
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          'package.json: `devDependencies["typescript"]` ("^7.0.2") must pin the TypeScript 5.9 release line (< 6.1.0)'
+        ),
+        expect.stringContaining(
+          '.github/dependabot.yml: Missing `versions: [">= 6.1.0"]` ignore rule for `typescript` under `npm` ecosystem'
+        ),
+        expect.stringContaining(
+          '.github/dependabot.yml: Group `production-dependencies` under `npm` ecosystem must restrict `update-types` to `["minor", "patch"]`'
+        ),
+        expect.stringContaining(
+          '.github/dependabot.yml: Group `development-dependencies` under `npm` ecosystem must restrict `update-types` to `["minor", "patch"]`'
+        ),
+      ])
+    );
+  });
 });

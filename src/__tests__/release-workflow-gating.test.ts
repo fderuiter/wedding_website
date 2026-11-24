@@ -97,7 +97,6 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       'container-arm64:',
       'storybook-build:',
       'static-export-build:',
-      'static-demo-e2e:',
       'e2e-test:',
       'container-e2e-smoke:',
       'a11y-report:',
@@ -119,7 +118,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(docDriftCommentBlock).not.toContain('actions/checkout');
     expect(docDriftCommentBlock).not.toContain('npm ci');
     expect(ciWorkflow).toMatch(
-      /deploy-docs:\n\s+needs:\s*\[verify, static-export-build, storybook-build, static-demo-e2e\]\n\s+if:\s*\(github\.ref == 'refs\/heads\/main' && github\.event_name == 'push'\) \|\| github\.event_name == 'release'/
+      /deploy-docs:\n\s+needs:\s*\[verify, static-export-build, storybook-build\]\n\s+if:\s*\(github\.ref == 'refs\/heads\/main' && github\.event_name == 'push'\) \|\| github\.event_name == 'release'/
     );
     expect(ciWorkflow).toContain('docs-portal/.vitepress/dist/index.html');
     expect(ciWorkflow).toContain('docs-portal/.vitepress/dist/demo/index.html');
@@ -159,23 +158,18 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(staticExportJob).not.toContain('services:');
     expect(staticExportJob).toContain('path: .next-export/cache');
     expect(staticExportJob).toContain('npm run build:export');
+    expect(staticExportJob).toContain('npm run test:e2e:static');
+    expect(staticExportJob).toContain('name: static-a11y-violations');
     expect(staticExportJob).toContain('name: demo-static');
+    expect(staticExportJob.indexOf('npm run test:e2e:static')).toBeLessThan(
+      staticExportJob.indexOf('name: demo-static')
+    );
 
-    // static-demo-e2e runs in parallel after verify without DB services and gates both a11y-report and deploy-docs
-    const staticDemoE2eMatch = ciWorkflow.match(
-      /  static-demo-e2e:\n([\s\S]*?)(?=\n  [a-z0-9-]+:|\s*$)/
-    );
-    expect(staticDemoE2eMatch).not.toBeNull();
-    const staticDemoE2eJob = staticDemoE2eMatch?.[1] ?? '';
-    expect(staticDemoE2eJob).toContain('needs: verify');
-    expect(staticDemoE2eJob).toMatch(/permissions:\n\s+contents: read/);
-    expect(staticDemoE2eJob).not.toContain('services:');
-    expect(staticDemoE2eJob).toContain('npm run test:e2e:static');
-    expect(staticDemoE2eJob).toContain('name: static-demo-a11y-violations');
-    expect(ciWorkflow).toMatch(
-      /  a11y-report:\n\s+needs: \[unit-test, e2e-test, static-demo-e2e\]\n/
-    );
-    expect(ciWorkflow).toContain('run: node scripts/a11y-report.mjs --require-static-demo');
+    const a11yReportSection =
+      ciWorkflow.split(/\n  deploy-docs:\n/)[0]?.split(/\n  a11y-report:\n/)[1] ?? '';
+    expect(a11yReportSection).toContain('needs: [unit-test, e2e-test, static-export-build]');
+    expect(a11yReportSection).toContain('name: static-a11y-violations');
+    expect(a11yReportSection).toContain('node scripts/a11y-report.mjs --include-static');
 
     // e2e-test and container-e2e-smoke do not depend on static-export-build so static export checks never delay Playwright runs
     expect(ciWorkflow).toMatch(/  e2e-test:\n\s+needs: \[verify, build\]\n/);

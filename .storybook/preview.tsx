@@ -22,6 +22,7 @@ const preview: Preview = {
     mswLoader(async () => {
       const worker = setupWorker(...defaultHandlers);
       await worker.start({
+        quiet: true,
         onUnhandledFrame: 'bypass',
         serviceWorker: {
           url: './mockServiceWorker.js',
