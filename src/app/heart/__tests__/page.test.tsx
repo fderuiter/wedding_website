@@ -1,10 +1,26 @@
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
+import HeartScene from '../components/HeartScene';
 import HeartClient from '../HeartClient';
 import { HEART_FONT_URL } from '../constants';
 import nextConfig from '../../../../next.config';
 import { RigidBodyType } from '@dimforge/rapier3d-compat';
 import { getAppConfig } from '@/lib/config';
+
+let dynamicMountCount = 0;
+
+// Mock next/dynamic to load HeartScene synchronously in test environment
+jest.mock('next/dynamic', () => {
+  return {
+    __esModule: true,
+    default: () => {
+      return function MockDynamic(props: React.ComponentProps<typeof HeartScene>) {
+        dynamicMountCount += 1;
+        return <HeartScene {...props} />;
+      };
+    },
+  };
+});
 
 const mockCreateRigidBodyApi = () => ({
   setBodyType: jest.fn(),
@@ -194,6 +210,7 @@ describe('HeartPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     canvasMountCount = 0;
+    dynamicMountCount = 0;
     delete (window as any).__mockWebGLSupport;
     delete (window as any).__mockFps;
     mockMainBodyApi.__triggerContactForce = null;
@@ -316,6 +333,7 @@ describe('HeartPage', () => {
 
     render(<HeartPage />);
 
+    expect(dynamicMountCount).toBe(0);
     expect(canvasMountCount).toBe(0);
     expect(screen.queryByTestId('canvas')).not.toBeInTheDocument();
     expect(screen.getByTestId('webgl-fallback-container')).toBeInTheDocument();
