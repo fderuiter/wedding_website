@@ -194,7 +194,7 @@ docker compose up -d
 ```
 
 ### Zero-Downtime Deployment Update (`scripts/rollout-vps.sh`)
-Use `./scripts/rollout-vps.sh` (layered with `docker-compose.rollout.yml`) so updates compile the image once, apply pending Prisma migrations, warm `app-standby` on `127.0.0.1:${STANDBY_PORT:-3001}:3000`, verify `/api/live` and `/api/ready` probes, recreate primary `app` on `127.0.0.1:${PORT:-3000}:3000` without dropping requests behind Caddy or Nginx, and retire `app-standby`:
+Use `./scripts/rollout-vps.sh` (layered with `docker-compose.rollout.yml`) so updates compile the image once, apply pending Prisma migrations, warm `app-standby` on `127.0.0.1:${STANDBY_PORT:-3001}:3000`, verify `/api/live`, `/api/health`, and `/api/ready` probes, recreate primary `app` on `127.0.0.1:${PORT:-3000}:3000` without dropping requests behind Caddy or Nginx, and retire `app-standby`:
 ```bash
 git pull origin main
 ./scripts/rollout-vps.sh
@@ -235,7 +235,7 @@ Verify live container status with `docker compose ps`. Stateless `GET` and `HEAD
   }
 }
 ```
-When PostgreSQL is unreachable (`HTTP 503 Service Unavailable`), `withApiMiddleware` (`isHealthProbe: true` in `src/utils/withApiMiddleware.ts`) preserves diagnostic probe fields `{ "success": false, "status": "degraded", "database": "disconnected", "timestamp": "2026-09-30T14:30:00.000Z", "error": "Database connection failed" }` on `/api/health` while sanitizing error text in `NODE_ENV=production` so internal driver details never leak. Unwrapped readiness monitors can query `/api/ready`, which verifies core schema tables and applied `_prisma_migrations` without requiring seeded `AppConfig` rows and returns `HTTP 200` `{ "status": "ready", "database": "connected", "timestamp": "..." }` or `HTTP 503` with `status: "unhealthy"` (`database: "connected"` and `error: "Database schema is not ready"` when schema/migrations are incomplete, or `database: "disconnected"` and `error: "Database connection failed"` when PostgreSQL is unreachable).
+When PostgreSQL is unreachable (`HTTP 503 Service Unavailable`), `withApiMiddleware` (`isHealthProbe: true` in `src/utils/withApiMiddleware.ts`) preserves diagnostic probe fields `{ "success": false, "status": "degraded", "database": "disconnected", "timestamp": "2026-09-30T14:30:00.000Z", "error": "Database connection failed" }` on `/api/health` while sanitizing error text in `NODE_ENV=production` so internal driver details never leak. Unwrapped readiness monitors and rollout gates query `/api/ready`, which verifies all 16 `prisma/schema.prisma` tables (`REQUIRED_SCHEMA_TABLES` in `src/lib/readinessManifest.ts`) and all 47 committed `_prisma_migrations` entries (`REQUIRED_MIGRATION_NAMES` in `src/lib/readinessManifest.ts`, allowing extra forward `N+1` migrations during `N-1` rollbacks) without requiring seeded `AppConfig` rows and returns `HTTP 200` `{ "status": "ready", "database": "connected", "timestamp": "..." }` or `HTTP 503` with `status: "unhealthy"` (`database: "connected"` and `error: "Database schema is not ready"` when schema/migrations are incomplete, or `database: "disconnected"` and `error: "Database connection failed"` when PostgreSQL is unreachable).
 
 ---
 
@@ -269,7 +269,7 @@ When PostgreSQL is unreachable (`HTTP 503 Service Unavailable`), `withApiMiddlew
            -e E2E_TEST=false \
            wedding-website:previous
        ```
-3. **Automated GitHub Actions Rollback (`rollback.yml` & `deploy-provider.yml`)**: When deploying via `provider: docker-host` or `provider: generic-webhook`, `.github/workflows/deploy-provider.yml` filters completed `deploy.yml` and `deploy-provider.yml` runs to the last non-dry-run target-environment (`staging` or `production`) rollout, verifies candidate tags in GHCR via `docker buildx imagetools inspect` (skipping unpublished `HEAD^1` commits), and forwards both `previous_image_tag` and `previous_image_digest` to `.github/workflows/rollback.yml` if `/api/health` fails.
+3. **Automated GitHub Actions Rollback (`rollback.yml` & `deploy-provider.yml`)**: When deploying via `provider: docker-host` or `provider: generic-webhook`, `.github/workflows/deploy-provider.yml` filters completed `deploy.yml` and `deploy-provider.yml` runs to the last non-dry-run target-environment (`staging` or `production`) rollout, verifies candidate tags in GHCR via `docker buildx imagetools inspect` (skipping unpublished `HEAD^1` commits), and forwards both `previous_image_tag` and `previous_image_digest` to `.github/workflows/rollback.yml` if `/api/health` or `/api/ready` fails.
 4. **Database Schema Rollback**: Prisma migrations are forward-only by design. Keep database schema changes backward-compatible (e.g., expand-and-contract pattern) to ensure older container versions can operate alongside migrated schemas.
 
 ---

@@ -5,9 +5,12 @@ import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  createComposePsqlDriver,
   httpRequest as smokeHttpRequest,
   runCheckedCommand,
+  runSigtermDrainProbe,
   runSmokeRouteProbes,
+  waitForChildProcessExit,
   waitForPostgresReady,
   waitForServerReady,
 } from './smoke-runner.mjs';
@@ -114,6 +117,57 @@ function buildHeicMultipartPayload(boundary) {
   );
   const epilogue = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
   return Buffer.concat([preamble, VALID_HEIC_BUFFER, epilogue]);
+}
+
+async function createDirectPgDriver(databaseUrl, dbName) {
+  const pgModule = await import('pg');
+  const PgClient = pgModule.default?.Client || pgModule.Client;
+  return {
+    dbName,
+    async queryDb(sql) {
+      const client = new PgClient({ connectionString: databaseUrl });
+      await client.connect();
+      try {
+        const res = await client.query(sql);
+        const firstRow = res.rows?.[0];
+        if (!firstRow) return '';
+        const firstKey = Object.keys(firstRow)[0];
+        return firstKey !== undefined ? String(firstRow[firstKey] ?? '') : '';
+      } finally {
+        await client.end().catch(() => undefined);
+      }
+    },
+    async acquireExclusiveLock(tableName = 'AppConfig') {
+      const safeTable = String(tableName).replace(/"/g, '""');
+      const lockClient = new PgClient({ connectionString: databaseUrl });
+      await lockClient.connect();
+      await lockClient.query('BEGIN');
+      await lockClient.query(`LOCK TABLE "${safeTable}" IN ACCESS EXCLUSIVE MODE`);
+      let released = false;
+      return {
+        async release() {
+          if (released) return;
+          released = true;
+          try {
+            await lockClient.query('COMMIT');
+          } finally {
+            await lockClient.end().catch(() => undefined);
+          }
+        },
+        async cleanup() {
+          if (released) return;
+          released = true;
+          try {
+            await lockClient.query('ROLLBACK');
+          } catch {
+            // Ignore rollback cleanup errors
+          } finally {
+            await lockClient.end().catch(() => undefined);
+          }
+        },
+      };
+    },
+  };
 }
 
 async function main() {
@@ -243,12 +297,18 @@ async function main() {
 
   let managedComposeDb = false;
   let serverProcess = null;
+  let serverExitPromise = null;
   let serverLogs = '';
   let killed = false;
   let passed = false;
 
   const cleanup = () => {
-    if (!killed && serverProcess && !serverProcess.killed) {
+    if (
+      !killed &&
+      serverProcess &&
+      serverProcess.exitCode === null &&
+      serverProcess.signalCode === null
+    ) {
       killed = true;
       serverProcess.kill('SIGTERM');
     }
@@ -314,6 +374,8 @@ async function main() {
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    serverExitPromise = waitForChildProcessExit(serverProcess, 15000);
+    serverExitPromise.catch(() => undefined);
 
     serverProcess.stdout.on('data', (chunk) => {
       const text = chunk.toString();
@@ -436,6 +498,40 @@ async function main() {
       `✅ Standalone HEIC upload transcoded via worker (nodeId=${uploadedItem.nodeId}, url withheld while PENDING), /uploads/photos/* gated 401, /api/live responsive, 0 worker errors`
     );
 
+    // Test 5: Verify unauthenticated /guest/login redaction and authenticated SIGTERM lock draining before stopping PostgreSQL
+    const standaloneDbDriver = dbTarget.useComposeDb
+      ? createComposePsqlDriver({
+        composeArgs: COMPOSE_ARGS,
+        composeEnv,
+        rootDir,
+      })
+      : await createDirectPgDriver(configuredDbUrl, dbName);
+
+    await runSigtermDrainProbe({
+      baseUrl: BASE_URL,
+      hostHeader: HOST_HEADER,
+      guestCookie,
+      guestPasscode: ephemeralGuestPasscode,
+      drainTitleMarker: 'Standalone SIGTERM Drain Verified',
+      holdMs: 5000,
+      dbDriver: standaloneDbDriver,
+      label: 'standalone',
+      async triggerStop() {
+        cleanup();
+      },
+      async isRunningDuringDrain() {
+        return (
+          serverProcess !== null &&
+          serverProcess.exitCode === null &&
+          serverProcess.signalCode === null
+        );
+      },
+      async waitForExitCode() {
+        const { exitCode } = await serverExitPromise;
+        return exitCode;
+      },
+    });
+
     console.log('=============================================');
     console.log('🎉 Standalone server smoke tests PASSED successfully!');
     console.log('=============================================');
@@ -448,6 +544,32 @@ async function main() {
     process.exitCode = 1;
   } finally {
     cleanup();
+    if (serverProcess && serverExitPromise) {
+      try {
+        const { exitCode, signal } = await serverExitPromise;
+        if (passed && exitCode !== 143) {
+          console.error(
+            `❌ Standalone server exited with code ${exitCode} (signal=${signal}), expected 143.`
+          );
+          passed = false;
+          process.exitCode = 1;
+        }
+      } catch (drainErr) {
+        try {
+          serverProcess.kill('SIGKILL');
+        } catch {
+          // Ignore SIGKILL cleanup errors
+        }
+        if (passed) {
+          console.error(drainErr instanceof Error ? drainErr.message : drainErr);
+          passed = false;
+          process.exitCode = 1;
+        }
+      }
+    }
+    process.off('exit', cleanup);
+    process.off('SIGINT', cleanup);
+    process.off('SIGTERM', cleanup);
     // Clean up uploaded smoke-test files in .next/standalone/public/uploads
     for (const uploadedFilePath of uploadedStandaloneFiles) {
       try {
@@ -469,9 +591,7 @@ async function main() {
         env: composeEnv,
       });
     }
-    setTimeout(() => {
-      process.exit(passed ? 0 : 1);
-    }, 300);
+    process.exit(passed ? 0 : 1);
   }
 }
 

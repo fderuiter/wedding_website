@@ -1784,8 +1784,31 @@ process.exit(1);
     it('polls /api/health to verify wrapped recovery, unwrapped fallback, .success==false rejection, malformed JSON, and degraded payloads', async () => {
       let attempt = 0;
       let mode: 'recover' | 'unwrapped' | 'success-false' | 'malformed' | 'degraded' = 'recover';
+      let readyHealthy = true;
 
       const server = http.createServer((req, res) => {
+        if (req.url === '/api/ready') {
+          if (readyHealthy) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(
+              JSON.stringify({
+                status: 'ready',
+                database: 'connected',
+                timestamp: '2026-11-20T00:00:00.000Z',
+              })
+            );
+          } else {
+            res.writeHead(503, { 'Content-Type': 'application/json' });
+            res.end(
+              JSON.stringify({
+                status: 'unhealthy',
+                database: 'connected',
+                error: 'Database schema is not ready',
+              })
+            );
+          }
+          return;
+        }
         if (req.url !== '/api/health') {
           res.writeHead(404);
           res.end();
@@ -1905,6 +1928,21 @@ process.exit(1);
         expect(failRes.status).toBe(1);
         expect(failRes.outputs.health_status).toBe('unhealthy');
         expect(attempt).toBeGreaterThanOrEqual(1);
+
+        // Healthy /api/health with HTTP 503 /api/ready fails closed
+        mode = 'unwrapped';
+        readyHealthy = false;
+        attempt = 0;
+        const readyFailRes = await runBashStepAsync(fastFailScript, {
+          ENV_SERVICE_URL: `http://127.0.0.1:${port}`,
+          PROVIDER_SERVICE_URL: '',
+          IS_DRY_RUN: 'false',
+          TARGET_ENV: 'production',
+          RESTORED_TAG: 'v1.2.2',
+        });
+        expect(readyFailRes.status).toBe(1);
+        expect(readyFailRes.outputs.health_status).toBe('unhealthy');
+        expect(attempt).toBeGreaterThanOrEqual(1);
       } finally {
         await new Promise<void>(resolve => server.close(() => resolve()));
       }
@@ -1918,6 +1956,17 @@ process.exit(1);
             JSON.stringify({
               success: true,
               data: { status: 'ok', timestamp: '2026-11-20T00:00:00.000Z', database: 'connected' },
+            })
+          );
+          return;
+        }
+        if (req.url === '/api/ready') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              status: 'ready',
+              database: 'connected',
+              timestamp: '2026-11-20T00:00:00.000Z',
             })
           );
           return;

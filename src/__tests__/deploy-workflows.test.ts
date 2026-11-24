@@ -1014,6 +1014,7 @@ process.exit(1);
     );
 
     let healthMode: 'wrapped-ok' | 'unwrapped-ok' | 'degraded' | 'success-false' | 'malformed' = 'wrapped-ok';
+    let readyMode: 'ready' | 'unhealthy-503' | 'unhealthy-200' | 'malformed' = 'ready';
 
     const server = http.createServer((req, res) => {
       if (req.url === '/api/health') {
@@ -1056,6 +1057,44 @@ process.exit(1);
         }
         res.writeHead(200, { 'Content-Type': 'text/html' });
         res.end('{"success":true,"data":{"status":"ok"');
+        return;
+      }
+      if (req.url === '/api/ready') {
+        if (readyMode === 'ready') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              status: 'ready',
+              database: 'connected',
+              timestamp: '2026-11-20T00:00:00.000Z',
+            })
+          );
+          return;
+        }
+        if (readyMode === 'unhealthy-503') {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              status: 'unhealthy',
+              database: 'connected',
+              error: 'Database schema is not ready',
+              timestamp: '2026-11-20T00:00:00.000Z',
+            })
+          );
+          return;
+        }
+        if (readyMode === 'unhealthy-200') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              status: 'unhealthy',
+              database: 'connected',
+            })
+          );
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end('{"status":"ready"');
         return;
       }
       res.writeHead(404);
@@ -1181,6 +1220,21 @@ process.exit(1);
       });
       expect(malformedRes.status).toBe(1);
       expect(malformedRes.outputs).toContain('health_status=unhealthy');
+
+      // Healthy /api/health with failing /api/ready (HTTP 503, status != ready, or malformed JSON) fails closed
+      healthMode = 'wrapped-ok';
+      for (const failingReadyMode of ['unhealthy-503', 'unhealthy-200', 'malformed'] as const) {
+        readyMode = failingReadyMode;
+        const readyFailRes = await runAsync(fastFailScript, {
+          TARGET_ENV: 'production',
+          VAR_SERVICE_URL: liveUrl,
+          SERVICE_URL: '',
+          SECRET_SERVICE_URL: '',
+          IS_DRY_RUN: 'false',
+        });
+        expect(readyFailRes.status).toBe(1);
+        expect(readyFailRes.outputs).toContain('health_status=unhealthy');
+      }
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
@@ -2173,6 +2227,147 @@ process.exit(1);
     ]) {
       expect(script).toContain('http.${ORIGIN_SERVER}/.extraheader=AUTHORIZATION: basic');
       expect(script).toContain('git "${GIT_AUTH_ARGS[@]}" fetch');
+    }
+  });
+
+  it('verifies scripts/rollout-vps.sh polls /api/live, /api/health, and /api/ready and rejects targets that fail /api/ready or /api/health', async () => {
+    const rolloutScriptPath = path.join(process.cwd(), 'scripts', 'rollout-vps.sh');
+    const rolloutDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rollout-vps-probe-'));
+    const mockBinDir = path.join(rolloutDir, 'bin');
+    fs.mkdirSync(mockBinDir, { recursive: true });
+
+    fs.writeFileSync(
+      path.join(mockBinDir, 'docker'),
+      `#!/usr/bin/env bash
+if [[ "$*" == *"ps -q"* ]]; then
+  echo "mock-cid-123"
+  exit 0
+fi
+if [[ "$*" == *"inspect -f"* ]]; then
+  echo "healthy"
+  exit 0
+fi
+exit 0
+`,
+      { mode: 0o755 }
+    );
+
+    let healthOk = true;
+    let readyOk = true;
+
+    const createProbeHandler = () => (req: http.IncomingMessage, res: http.ServerResponse) => {
+      if (req.url === '/api/live') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'alive' }));
+        return;
+      }
+      if (req.url === '/api/health') {
+        if (healthOk) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              success: true,
+              data: { status: 'ok', database: 'connected', timestamp: '2026-11-20T00:00:00.000Z' },
+            })
+          );
+        } else {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              success: false,
+              error: 'Database connection failed',
+            })
+          );
+        }
+        return;
+      }
+      if (req.url === '/api/ready') {
+        if (readyOk) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              status: 'ready',
+              database: 'connected',
+              timestamp: '2026-11-20T00:00:00.000Z',
+            })
+          );
+        } else {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              status: 'unhealthy',
+              database: 'connected',
+              error: 'Database schema is not ready',
+            })
+          );
+        }
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    };
+
+    const primaryServer = http.createServer(createProbeHandler());
+    const standbyServer = http.createServer(createProbeHandler());
+
+    await Promise.all([
+      new Promise<void>((resolve) => primaryServer.listen(0, '127.0.0.1', () => resolve())),
+      new Promise<void>((resolve) => standbyServer.listen(0, '127.0.0.1', () => resolve())),
+    ]);
+
+    const primaryAddr = primaryServer.address();
+    const standbyAddr = standbyServer.address();
+    const primaryPort = typeof primaryAddr === 'object' && primaryAddr ? primaryAddr.port : 0;
+    const standbyPort = typeof standbyAddr === 'object' && standbyAddr ? standbyAddr.port : 0;
+
+    const runRollout = () =>
+      new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+        const child = spawn('bash', [rolloutScriptPath], {
+          env: {
+            ...process.env,
+            PATH: `${mockBinDir}:${process.env.PATH || ''}`,
+            PORT: String(primaryPort),
+            STANDBY_PORT: String(standbyPort),
+            ALLOWED_HOSTS: 'localhost',
+            SKIP_IMAGE_BUILD: 'true',
+            ROLLOUT_WAIT_SECONDS: '1',
+            DB_WAIT_SECONDS: '2',
+            STANDBY_DRAIN_SECONDS: '0',
+          },
+        });
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', (chunk) => {
+          stdout += chunk.toString();
+        });
+        child.stderr.on('data', (chunk) => {
+          stderr += chunk.toString();
+        });
+        child.on('error', reject);
+        child.on('close', (code) => resolve({ status: code, stdout, stderr }));
+      });
+
+    try {
+      const okRollout = await runRollout();
+      expect(okRollout.status).toBe(0);
+      expect(okRollout.stdout).toContain('passed /api/live, /api/health, and /api/ready probes');
+
+      readyOk = false;
+      const readyFailRollout = await runRollout();
+      expect(readyFailRollout.status).toBe(1);
+      expect(readyFailRollout.stderr).toContain('/api/ready');
+
+      readyOk = true;
+      healthOk = false;
+      const healthFailRollout = await runRollout();
+      expect(healthFailRollout.status).toBe(1);
+      expect(healthFailRollout.stderr).toContain('/api/health');
+    } finally {
+      await Promise.all([
+        new Promise<void>((resolve) => primaryServer.close(() => resolve())),
+        new Promise<void>((resolve) => standbyServer.close(() => resolve())),
+      ]);
+      fs.rmSync(rolloutDir, { recursive: true, force: true });
     }
   });
 });

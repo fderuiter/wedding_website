@@ -312,6 +312,15 @@ export async function runSmokeRouteProbes({
         `[${label}] Route ${route.path} returned ${res.statusCode}, expected ${route.expectedStatus}`
       );
     }
+    if (
+      route.path === '/guest/login' &&
+      /<title>/i.test(res.body) &&
+      !res.body.includes('Guest Sign-In | Wedding Website')
+    ) {
+      throw new Error(
+        `[${label}] Unauthenticated GET /guest/login did not render expected redacted title 'Guest Sign-In | Wedding Website'`
+      );
+    }
     console.log(`✅ [${label}] ${route.name} (${route.path}) returned ${res.statusCode}`);
   }
 
@@ -369,4 +378,358 @@ export async function runSmokeRouteProbes({
   console.log(
     `✅ [${label}] Authenticated GET /api/registry/items returned 200 (${itemsPayload.items.length} items)`
   );
+}
+
+export function waitForChildProcessExit(childProc, timeoutMs = 15000) {
+  if (!childProc) {
+    return Promise.resolve({ exitCode: null, signal: null });
+  }
+  if (childProc.exitCode !== null || childProc.signalCode !== null) {
+    return Promise.resolve({
+      exitCode: childProc.exitCode,
+      signal: childProc.signalCode,
+    });
+  }
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (err, payload) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      childProc.removeListener('exit', onExit);
+      childProc.removeListener('close', onExit);
+      childProc.removeListener('error', onError);
+      if (err) {
+        reject(err);
+      } else {
+        resolve(payload);
+      }
+    };
+
+    const onExit = (code, signal) => {
+      finish(null, {
+        exitCode: code ?? childProc.exitCode,
+        signal: signal ?? childProc.signalCode,
+      });
+    };
+    const onError = (err) => {
+      finish(err, null);
+    };
+
+    const timer = setTimeout(() => {
+      finish(
+        new Error(`Timed out after ${timeoutMs}ms waiting for server process to exit after SIGTERM`),
+        null
+      );
+    }, timeoutMs);
+
+    childProc.once('exit', onExit);
+    childProc.once('close', onExit);
+    childProc.once('error', onError);
+  });
+}
+
+export function createComposePsqlDriver({ composeArgs, composeEnv, rootDir }) {
+  const dbUser = composeEnv.DB_USER || 'wedding';
+  const dbName = composeEnv.DB_NAME || 'wedding';
+
+  return {
+    dbName,
+    queryDb(sql) {
+      const res = child_process.spawnSync(
+        'docker',
+        [
+          'compose',
+          ...composeArgs,
+          'exec',
+          '-T',
+          'db',
+          'psql',
+          '-v',
+          'ON_ERROR_STOP=1',
+          '-At',
+          '-U',
+          dbUser,
+          '-d',
+          dbName,
+          '-c',
+          sql,
+        ],
+        {
+          cwd: rootDir,
+          env: composeEnv,
+          encoding: 'utf8',
+          shell: process.platform === 'win32',
+        }
+      );
+      if (res.status !== 0) {
+        throw new Error(`psql query failed (${res.status}): ${res.stderr || res.stdout}`);
+      }
+      return (res.stdout || '').trim();
+    },
+
+    async acquireExclusiveLock(tableName = 'AppConfig') {
+      const safeTable = String(tableName).replace(/"/g, '""');
+      const lockProc = child_process.spawn(
+        'docker',
+        [
+          'compose',
+          ...composeArgs,
+          'exec',
+          '-T',
+          'db',
+          'psql',
+          '-v',
+          'ON_ERROR_STOP=1',
+          '-At',
+          '-U',
+          dbUser,
+          '-d',
+          dbName,
+        ],
+        {
+          cwd: rootDir,
+          env: composeEnv,
+          shell: process.platform === 'win32',
+          stdio: ['pipe', 'pipe', 'pipe'],
+        }
+      );
+
+      let lockStdout = '';
+      let lockStderr = '';
+      let released = false;
+
+      const lockReadyPromise = new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          reject(
+            new Error(
+              `Timed out acquiring ${tableName} table lock. stdout=${lockStdout} stderr=${lockStderr}`
+            )
+          );
+        }, 10000);
+
+        lockProc.stdout.on('data', (chunk) => {
+          lockStdout += chunk.toString();
+          if (lockStdout.includes('LOCK_ACQUIRED')) {
+            clearTimeout(timer);
+            resolve();
+          }
+        });
+        lockProc.stderr.on('data', (chunk) => {
+          lockStderr += chunk.toString();
+        });
+        lockProc.once('error', (err) => {
+          clearTimeout(timer);
+          reject(err);
+        });
+      });
+
+      lockProc.stdin.write(
+        `BEGIN;\nLOCK TABLE "${safeTable}" IN ACCESS EXCLUSIVE MODE;\nSELECT 'LOCK_ACQUIRED';\n`
+      );
+      await lockReadyPromise;
+
+      return {
+        async release() {
+          if (released) return;
+          released = true;
+          const closePromise = new Promise((resolve) => lockProc.once('close', resolve));
+          lockProc.stdin.end('COMMIT;\n\\q\n');
+          await closePromise;
+        },
+        async cleanup() {
+          if (released) return;
+          released = true;
+          try {
+            lockProc.stdin.end('ROLLBACK;\n\\q\n');
+          } catch {
+            // Ignore stdin cleanup errors
+          }
+          try {
+            lockProc.kill();
+          } catch {
+            // Ignore kill cleanup errors
+          }
+        },
+      };
+    },
+
+    getDbLogs() {
+      const res = child_process.spawnSync(
+        'docker',
+        ['compose', ...composeArgs, 'logs', '--no-color', 'db'],
+        {
+          cwd: rootDir,
+          env: composeEnv,
+          encoding: 'utf8',
+          shell: process.platform === 'win32',
+        }
+      );
+      return res.stdout || '';
+    },
+  };
+}
+
+export async function runSigtermDrainProbe({
+  baseUrl,
+  hostHeader,
+  guestCookie = '',
+  guestPasscode = '',
+  drainTitleMarker = 'SIGTERM Drain Verified',
+  holdMs = 5000,
+  lockPollAttempts = 50,
+  lockPollIntervalMs = 100,
+  dbDriver,
+  triggerStop,
+  isRunningDuringDrain,
+  waitForExitCode,
+  label = 'Server',
+}) {
+  if (!dbDriver || typeof dbDriver.queryDb !== 'function' || typeof dbDriver.acquireExclusiveLock !== 'function') {
+    throw new Error(`[${label}] runSigtermDrainProbe requires a dbDriver with queryDb and acquireExclusiveLock.`);
+  }
+
+  let activeGuestCookie = guestCookie || '';
+  if (!activeGuestCookie) {
+    if (!guestPasscode) {
+      throw new Error(`[${label}] runSigtermDrainProbe requires guestCookie or guestPasscode.`);
+    }
+    const loginRes = await httpRequest(baseUrl, '/api/guest/login', {
+      method: 'POST',
+      hostHeader,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ passcode: guestPasscode }),
+    });
+    if (loginRes.statusCode !== 200) {
+      throw new Error(
+        `[${label}] POST /api/guest/login before SIGTERM probe returned ${loginRes.statusCode}: ${loginRes.body}`
+      );
+    }
+    activeGuestCookie = extractCookiePair(loginRes.headers['set-cookie'], 'guest_auth') || '';
+  }
+  if (!activeGuestCookie.startsWith('guest_auth=')) {
+    throw new Error(`[${label}] Missing valid guest_auth cookie for authenticated SIGTERM drain probe.`);
+  }
+
+  const safeBaseUrl = String(baseUrl).replace(/'/g, "''");
+  const safeMarker = String(drainTitleMarker).replace(/'/g, "''");
+  const safeDbName = String(dbDriver.dbName || 'wedding').replace(/'/g, "''");
+
+  await dbDriver.queryDb(
+    `INSERT INTO "AppConfig" ("id", "partner1Name", "partner2Name", "brideName", "groomName", "baseUrl", "seoTitle", "updatedAt")
+     VALUES ('global', 'Alex', 'Taylor', 'Alex', 'Taylor', '${safeBaseUrl}', '${safeMarker}', NOW())
+     ON CONFLICT ("id") DO UPDATE SET
+       "partner1Name" = 'Alex',
+       "partner2Name" = 'Taylor',
+       "brideName" = 'Alex',
+       "groomName" = 'Taylor',
+       "seoTitle" = '${safeMarker}',
+       "updatedAt" = NOW();`
+  );
+
+  console.log(`[${label}] Verifying unauthenticated GET /guest/login redacts seoTitle...`);
+  const unauthLoginRes = await httpRequest(baseUrl, '/guest/login', {
+    hostHeader,
+    timeoutMs: 10000,
+  });
+  if (unauthLoginRes.statusCode !== 200) {
+    throw new Error(
+      `[${label}] Unauthenticated GET /guest/login returned ${unauthLoginRes.statusCode}, expected 200`
+    );
+  }
+  if (!unauthLoginRes.body.includes('Guest Sign-In | Wedding Website')) {
+    throw new Error(
+      `[${label}] Unauthenticated GET /guest/login did not render 'Guest Sign-In | Wedding Website'.`
+    );
+  }
+  if (unauthLoginRes.body.includes(drainTitleMarker)) {
+    throw new Error(
+      `[${label}] Unauthenticated GET /guest/login leaked unredacted seoTitle marker '${drainTitleMarker}'.`
+    );
+  }
+  console.log(
+    `✅ [${label}] Unauthenticated GET /guest/login rendered 'Guest Sign-In | Wedding Website' with seoTitle redacted`
+  );
+
+  console.log(
+    `[${label}] Testing authenticated in-flight SSR request completion during SIGTERM graceful shutdown...`
+  );
+  const lockHandle = await dbDriver.acquireExclusiveLock('AppConfig');
+  try {
+    const inflightPromise = httpRequest(baseUrl, '/guest/login', {
+      hostHeader,
+      headers: {
+        Cookie: activeGuestCookie,
+      },
+      timeoutMs: 15000,
+    });
+
+    let queryBlockedInDb = false;
+    for (let i = 0; i < lockPollAttempts; i++) {
+      const rawWaiting = await dbDriver.queryDb(
+        `SELECT count(*) FROM pg_stat_activity WHERE datname = '${safeDbName}' AND wait_event_type = 'Lock' AND state = 'active';`
+      );
+      const waitingCount = Number.parseInt(String(rawWaiting).trim(), 10);
+      if (waitingCount >= 1) {
+        queryBlockedInDb = true;
+        break;
+      }
+      await sleep(lockPollIntervalMs);
+    }
+
+    if (!queryBlockedInDb) {
+      throw new Error(
+        `[${label}] In-flight authenticated /guest/login request did not reach PostgreSQL lock wait state before SIGTERM.`
+      );
+    }
+
+    await triggerStop();
+    await sleep(holdMs);
+
+    const stillRunning = await isRunningDuringDrain();
+    if (!stillRunning) {
+      throw new Error(
+        `[${label}] Server exited prematurely before in-flight request finished draining.`
+      );
+    }
+
+    await lockHandle.release();
+
+    const inflightRes = await inflightPromise;
+    if (inflightRes.statusCode !== 200) {
+      throw new Error(
+        `[${label}] In-flight authenticated /guest/login during SIGTERM returned status ${inflightRes.statusCode}, expected 200`
+      );
+    }
+    if (!inflightRes.body.includes(drainTitleMarker)) {
+      throw new Error(
+        `[${label}] In-flight authenticated /guest/login response did not include database-backed AppConfig title marker.`
+      );
+    }
+
+    const exitCode = await waitForExitCode();
+    if (String(exitCode) !== '143') {
+      throw new Error(
+        `[${label}] Expected exit code 143 after SIGTERM drain, got ${exitCode}`
+      );
+    }
+
+    if (typeof dbDriver.getDbLogs === 'function') {
+      const dbLogsAfterStop = await dbDriver.getDbLogs();
+      if (/unexpected EOF on client connection|Connection reset by peer/i.test(dbLogsAfterStop)) {
+        throw new Error(
+          `[${label}] PostgreSQL reported abrupt socket closure during SIGTERM drain:\n${dbLogsAfterStop}`
+        );
+      }
+    }
+
+    console.log(
+      `✅ [${label}] Authenticated in-flight request returned HTTP 200 after >4500 ms SIGTERM drain and exited with code 143!`
+    );
+  } finally {
+    await lockHandle.cleanup();
+  }
 }

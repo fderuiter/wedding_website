@@ -177,7 +177,7 @@ jobs:
             echo "### 🔴 ${ENV_TITLE} Post-Deployment Health Verification Failed" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Environment:** \`${TARGET_ENV}\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Target Service URL:** \`${TARGET_URL:-unconfigured}\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Health Endpoint:** \`/api/health\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Probe Endpoints:** \`/api/health\`, \`/api/ready\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- **HTTP Status:** \`invalid-url\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Verification Outcome:** \`UNHEALTHY\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Action:** Triggering automated rollback pipeline with N-1 schema compatibility verification..." >> "$GITHUB_STEP_SUMMARY"
@@ -185,12 +185,14 @@ jobs:
           fi
 
           HEALTH_ENDPOINT="${TARGET_URL}/api/health"
+          READY_ENDPOINT="${TARGET_URL}/api/ready"
 
           echo "=================================================="
-          echo "    ${ENV_UPPER} HEALTH CHECK VERIFICATION PROBE    "
+          echo "    ${ENV_UPPER} HEALTH & READINESS PROBES        "
           echo "=================================================="
           echo "Target Service URL : ${TARGET_URL}"
           echo "Health Probe Path  : ${HEALTH_ENDPOINT}"
+          echo "Readiness Probe    : ${READY_ENDPOINT}"
           echo "Dry Run Environment: ${IS_DRY_RUN}"
           echo "=================================================="
 
@@ -205,7 +207,7 @@ jobs:
             CURRENT_TIME=$(date +%s)
             ELAPSED=$((CURRENT_TIME - START_TIME))
             if [ $ELAPSED -ge $MAX_TIMEOUT ]; then
-              echo "❌ Health check timed out after ${MAX_TIMEOUT} seconds."
+              echo "❌ Health and readiness check timed out after ${MAX_TIMEOUT} seconds."
               break
             fi
 
@@ -228,9 +230,27 @@ jobs:
               fi
 
               if [ "$DB_STATUS" = "connected" ] && [ "$STATUS_VAL" = "ok" ]; then
-                echo "✅ ${ENV_TITLE} health check probe succeeded! HTTP ${HTTP_STATUS}, status: ${STATUS_VAL}, database: ${DB_STATUS}"
-                SUCCESS=true
-                break
+                echo "Polling ${READY_ENDPOINT} (elapsed: ${ELAPSED}s)..."
+                READY_HTTP_RESPONSE=$(curl -s -S --connect-timeout 5 --max-time 10 -w "\nHTTP_STATUS_CODE:%{http_code}" "${READY_ENDPOINT}" || true)
+                READY_HTTP_STATUS=$(printf '%s\n' "$READY_HTTP_RESPONSE" | grep "HTTP_STATUS_CODE:" | tail -n 1 | cut -d':' -f2 || true)
+                READY_RESPONSE_BODY=$(printf '%s\n' "$READY_HTTP_RESPONSE" | sed '/HTTP_STATUS_CODE:/d')
+                READY_IS_OBJECT=$(printf '%s' "$READY_RESPONSE_BODY" | jq -r 'if type == "object" then "true" else "false" end' 2>/dev/null || true)
+                READY_STATUS_VAL=""
+                READY_DB_STATUS=""
+                if [ "$READY_IS_OBJECT" = "true" ]; then
+                  READY_STATUS_VAL=$(printf '%s' "$READY_RESPONSE_BODY" | jq -r '(.status) // empty' 2>/dev/null || true)
+                  READY_DB_STATUS=$(printf '%s' "$READY_RESPONSE_BODY" | jq -r '(.database) // empty' 2>/dev/null || true)
+                fi
+
+                if [ "$READY_HTTP_STATUS" = "200" ] && [ "$READY_STATUS_VAL" = "ready" ] && [ "$READY_DB_STATUS" = "connected" ]; then
+                  echo "✅ ${ENV_TITLE} health and readiness probes succeeded! /api/health (${STATUS_VAL}/${DB_STATUS}), /api/ready (${READY_STATUS_VAL}/${READY_DB_STATUS})"
+                  SUCCESS=true
+                  break
+                else
+                  HTTP_STATUS="${READY_HTTP_STATUS:-unreachable}"
+                  RESPONSE_BODY="$READY_RESPONSE_BODY"
+                  echo "⚠️ Readiness probe ${READY_ENDPOINT} failed (HTTP '${READY_HTTP_STATUS:-unreachable}', status: '${READY_STATUS_VAL}', database: '${READY_DB_STATUS}'). Retrying in ${DELAY}s..."
+                fi
               else
                 echo "⚠️ Endpoint returned 200 but payload unhealthy. status: '${STATUS_VAL}', database: '${DB_STATUS}'. Retrying in ${DELAY}s..."
               fi
@@ -240,10 +260,10 @@ jobs:
 
             if [ "$IS_DRY_RUN" = "true" ] && { [ -z "$HTTP_STATUS" ] || [ "$HTTP_STATUS" = "000" ]; }; then
               if [ $ELAPSED -ge 6 ]; then
-                echo "::notice::Dry-run ${TARGET_ENV} environment detected without live endpoint. Dry-run health verification probe validated."
+                echo "::notice::Dry-run ${TARGET_ENV} environment detected without live endpoint. Dry-run health and readiness verification probes validated."
                 SUCCESS=true
                 HTTP_STATUS="200 (dry-run)"
-                RESPONSE_BODY='{"success":true,"data":{"status":"ok","database":"connected","mode":"dry-run"}}'
+                RESPONSE_BODY='{"success":true,"data":{"status":"ok","database":"connected","ready":"ready","mode":"dry-run"}}'
                 break
               fi
             fi
@@ -257,19 +277,19 @@ jobs:
 
           if [ "$SUCCESS" = "true" ]; then
             echo "health_status=healthy" >> "$GITHUB_OUTPUT"
-            echo "### 🟢 ${ENV_TITLE} Post-Deployment Health Verification Passed" >> "$GITHUB_STEP_SUMMARY"
+            echo "### 🟢 ${ENV_TITLE} Post-Deployment Health & Readiness Verification Passed" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Environment:** \`${TARGET_ENV}\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Target Service URL:** \`${TARGET_URL}\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Health Endpoint:** \`/api/health\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Probe Endpoints:** \`/api/health\`, \`/api/ready\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- **HTTP Status:** \`${HTTP_STATUS}\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Verification Outcome:** \`HEALTHY\`" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           else
             echo "health_status=unhealthy" >> "$GITHUB_OUTPUT"
-            echo "### 🔴 ${ENV_TITLE} Post-Deployment Health Verification Failed" >> "$GITHUB_STEP_SUMMARY"
+            echo "### 🔴 ${ENV_TITLE} Post-Deployment Health & Readiness Verification Failed" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Environment:** \`${TARGET_ENV}\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Target Service URL:** \`${TARGET_URL}\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Health Endpoint:** \`/api/health\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Probe Endpoints:** \`/api/health\`, \`/api/ready\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- **HTTP Status:** \`${HTTP_STATUS:-unreachable}\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Last Response:** \`${RESPONSE_BODY}\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Verification Outcome:** \`UNHEALTHY\`" >> "$GITHUB_STEP_SUMMARY"
@@ -301,7 +321,7 @@ jobs:
       provider: ${{ inputs.provider || 'google-cloud-run' }}
       cloud_run_service: ${{ inputs.cloud_run_service || needs.deploy-provider.outputs.cloud_run_service || '' }}
       cloud_run_region: ${{ inputs.cloud_run_region || needs.deploy-provider.outputs.cloud_run_region || '' }}
-      reason: ${{ format('Automated {0} post-deployment health check failure on /api/health', inputs.environment) }}
+      reason: ${{ format('Automated {0} post-deployment verification failure on /api/health or /api/ready', inputs.environment) }}
       dry_run: ${{ inputs.dry_run || false }}
       caller_holds_lock: true
     secrets: inherit
