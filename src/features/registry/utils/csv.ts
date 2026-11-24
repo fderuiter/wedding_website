@@ -2,7 +2,7 @@ import { parseCsvContent } from '@/utils/csv';
 
 export const MAX_REGISTRY_CSV_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
-export interface ParsedRegistryItemRow {
+interface ParsedRegistryItemRow {
   id: string;
   rowIndex: number;
   name: string;
@@ -21,7 +21,7 @@ export interface ParsedRegistryItemRow {
   errors: string[];
 }
 
-export interface RegistryCsvParseResult {
+interface RegistryCsvParseResult {
   headers: string[];
   rows: ParsedRegistryItemRow[];
   totalRows: number;

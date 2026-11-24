@@ -4,13 +4,9 @@ import SeatingChartAdminPage from '../page';
 import { useSeatingState } from '@/features/seating';
 
 // Mock useSeatingState
-jest.mock('@/features/seating', () => {
-  const actual = jest.requireActual('@/features/seating');
-  return {
-    ...actual,
-    useSeatingState: jest.fn(),
-  };
-});
+jest.mock('@/features/seating/hooks/useSeatingState', () => ({
+  useSeatingState: jest.fn(),
+}));
 
 describe('SeatingChartAdminPage Dialog integration', () => {
   const mockTable = {

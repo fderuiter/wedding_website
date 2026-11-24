@@ -17,7 +17,7 @@ import {
   type AddressContributorInput,
 } from '@/utils/pdfLabelGenerator';
 
-export interface ThankYouNotesFilterOptions {
+interface ThankYouNotesFilterOptions {
   status?: string;
   search?: string;
   page?: number;
@@ -33,14 +33,7 @@ export interface ProgressMetrics {
   completionPercentage: number;
 }
 
-export interface PaginationMeta {
-  page: number;
-  pageSize: number;
-  totalItems: number;
-  totalPages: number;
-}
-
-export interface SendThankYouEmailResult {
+interface SendThankYouEmailResult {
   mode: 'preview' | 'test' | 'send';
   to: string | null;
   testRecipient?: string | null;

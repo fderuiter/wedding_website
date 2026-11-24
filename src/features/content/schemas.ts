@@ -49,8 +49,6 @@ export const ThemeTokensSchema = z
   )
   .default({});
 
-export type ThemeTokensDTO = z.infer<typeof ThemeTokensSchema>;
-
 const fontTokenRegex = /^[a-zA-Z0-9_\-\s,'"\(\)]*$/;
 export const fontTokenSchema = z
   .string()
@@ -76,8 +74,6 @@ export const TypographyScaleSchema = z.object({
   lineHeightRelaxed: z.string().optional().default('1.75'),
 });
 
-export type TypographyScaleDTO = z.infer<typeof TypographyScaleSchema>;
-
 export const SpacingScaleSchema = z.object({
   spacingXs: layoutTokenSchema.optional().default('0.25rem'),
   spacingSm: layoutTokenSchema.optional().default('0.5rem'),
@@ -90,8 +86,6 @@ export const SpacingScaleSchema = z.object({
   cardPadding: layoutTokenSchema.optional().default('2rem'),
 });
 
-export type SpacingScaleDTO = z.infer<typeof SpacingScaleSchema>;
-
 export const BorderTreatmentSchema = z.object({
   borderRadiusSm: layoutTokenSchema.optional().default('0.25rem'),
   borderRadiusMd: layoutTokenSchema.optional().default('0.5rem'),
@@ -103,8 +97,6 @@ export const BorderTreatmentSchema = z.object({
   borderStyleDefault: z.string().optional().default('solid'),
 });
 
-export type BorderTreatmentDTO = z.infer<typeof BorderTreatmentSchema>;
-
 export const BrandDimensionsSchema = z.object({
   logoWidth: layoutTokenSchema.optional().default('120px'),
   logoHeight: layoutTokenSchema.optional().default('40px'),
@@ -113,8 +105,6 @@ export const BrandDimensionsSchema = z.object({
   watermarkOpacity: z.string().optional().default('0.1'),
   badgeSize: layoutTokenSchema.optional().default('48px'),
 });
-
-export type BrandDimensionsDTO = z.infer<typeof BrandDimensionsSchema>;
 
 function validateHexColorFields(
   val: Record<string, unknown>,

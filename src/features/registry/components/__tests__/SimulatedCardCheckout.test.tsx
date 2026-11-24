@@ -8,7 +8,7 @@ import { Overlay } from '@/components/ui/Overlay';
 import { DemoProvider, useOptionalDemo } from '@/components/demo/DemoContext';
 import RegistryItemCard from '../RegistryItemCard';
 import type { SimulatedTestCardId } from '../SimulatedCardCheckout';
-import { GuestSessionProvider } from '@/features/registry';
+import { GuestSessionProvider } from '../../context/GuestSessionContext';
 import { resetDemoState, setDemoArchetype } from '@/lib/demo/demoStore';
 
 expect.extend(toHaveNoViolations);

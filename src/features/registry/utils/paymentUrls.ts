@@ -30,9 +30,9 @@ export function sanitizePaymentHandle(
   return cleaned.trim();
 }
 
-export type PaymentDescriptorKind = 'deep_link' | 'manual_zelle' | 'manual_handle' | 'none';
+type PaymentDescriptorKind = 'deep_link' | 'manual_zelle' | 'manual_handle' | 'none';
 
-export interface PaymentDescriptor {
+interface PaymentDescriptor {
   kind: PaymentDescriptorKind;
   providerLabel: string;
   rawHandle: string;

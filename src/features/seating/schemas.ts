@@ -110,8 +110,6 @@ export const AutoAssignSchema = z
   })
   .optional();
 
-export type AutoAssignDTO = z.infer<typeof AutoAssignSchema>;
-
 export const AutoAssignResultSchema = z.object({
   assignedCount: z.number().int().min(0),
   unassignedCount: z.number().int().min(0),

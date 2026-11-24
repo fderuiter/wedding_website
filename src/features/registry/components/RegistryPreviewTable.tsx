@@ -24,7 +24,7 @@ export interface PreviewRegistryItem {
   errors: string[];
 }
 
-export interface RegistryPreviewTableProps {
+interface RegistryPreviewTableProps {
   items: PreviewRegistryItem[];
   onUpdateItem: (id: string, updated: Partial<PreviewRegistryItem>) => void;
   onRemoveItem: (id: string) => void;

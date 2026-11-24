@@ -30,31 +30,29 @@ jest.mock('@/core/auth/auth.server', () => ({
   isAdminRequest: jest.fn().mockResolvedValue(true),
 }));
 
-jest.mock('@/features/content', () => {
-  const original = jest.requireActual('@/features/content');
-  return {
-    ...original,
-    contentService: {
-      getPendingPhotos: jest.fn(),
-      moderatePhoto: jest.fn(),
-      moderatePhotosBatch: jest.fn(),
-    },
-  };
-});
-
 import { getAppConfig } from '@/lib/config';
 import { contentService } from '@/features/content';
 
 const mockGetAppConfig = getAppConfig as jest.MockedFunction<typeof getAppConfig>;
+const contentServiceSpies = [
+  jest.spyOn(contentService, 'getPendingPhotos'),
+  jest.spyOn(contentService, 'moderatePhoto'),
+  jest.spyOn(contentService, 'moderatePhotosBatch'),
+];
 const mockContentService = contentService as jest.Mocked<typeof contentService>;
 
 describe('Admin Photo Moderation Routes', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    contentServiceSpies.forEach((spy) => spy.mockReset());
     mockGetAppConfig.mockResolvedValue({
       id: 'default',
       modules: { gallery: true },
     } as any);
+  });
+
+  afterAll(() => {
+    contentServiceSpies.forEach((spy) => spy.mockRestore());
   });
 
   describe('GET /api/admin/photos/moderation', () => {

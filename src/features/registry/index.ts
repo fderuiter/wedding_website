@@ -12,22 +12,14 @@ export {
   InvitationCodeInputSchema,
   InvitationCodeUpdateInputSchema,
   GuestAddressUpdateSchema,
-  ItemTypeEnum,
   BatchImportInvitationCodesSchema,
   BatchDeleteInvitationCodesSchema,
   BatchUpdateInvitationTagsSchema,
   DryRunValidateBatchSchema,
   MergeInvitationCodesSchema,
-  PaymentIntentRequestSchema,
-  ReconcilePaymentIntentSchema,
-  BatchScrapeUrlsSchema,
-  BatchCreateRegistryItemsSchema,
   translateSnapshotToActive,
   translateContributorSnapshot,
   PublicAddressCollectSchema,
-  ContributorStatusEnum,
-  GuestClaimQuerySchema,
-  GuestClaimActionSchema,
   AdminContributorActionSchema,
   AdminUnclaimRegistryItemSchema,
   AdminUpdateContributorSchema,
@@ -37,26 +29,14 @@ export {
 export { registryService } from './service';
 export { registryRepository } from './repository';
 export { thankYouService, ThankYouService } from './thank-you.service';
-export type {
-  ProgressMetrics,
-  PaginationMeta,
-  ThankYouNotesFilterOptions,
-  SendThankYouEmailResult,
-} from './thank-you.service';
+export type { ProgressMetrics } from './thank-you.service';
 export type {
   RegistryItem,
   CreateRegistryItemInput,
-  ThankYouTemplate,
   ThankYouTemplateTokens,
   RegistryShippingAddress,
-  OrderTrackingDetails,
-  ContributorAddressDetails,
   GuestClaimActions,
   ContributorRecord,
-  ContributorLifecycleResult,
-  StripeLedgerReconciliationResult,
-  ReconciledContributionReceipt,
-  ReconcilePaymentIntentResponse,
 } from './types';
 export {
   THANK_YOU_TEMPLATES,
@@ -64,53 +44,26 @@ export {
 } from './types';
 export type {
   InvitationCodeDTO,
-  BatchImportInvitationCodesDTO,
   BatchDeleteInvitationCodesDTO,
   BatchUpdateInvitationTagsDTO,
   DryRunValidateBatchDTO,
-  DryRunValidatedRow,
   DryRunValidationSummary,
   DryRunValidationResponse,
   MergeInvitationCodesDTO,
   MergeInvitationCodesResult,
-  GuestAddressUpdateDTO,
-  UpdateThankYouNoteDTO,
-  SendThankYouEmailDTO,
-  PaymentIntentRequestDTO,
-  ReconcilePaymentIntentDTO,
   PublicAddressCollectDTO,
-  ItemType,
-  BatchScrapeUrlsDTO,
-  BatchCreateRegistryItemsDTO,
   ContributorStatus,
   AdminUpdateContributorInput,
-  InvitationCatalogQueryDTO,
   InvitationSubEventRsvpSummaryDTO,
 } from './schemas';
+export { sanitizeRegistryItem } from './lib/masking';
 export {
-  signContributorActionToken,
-  verifyContributorActionToken,
-} from './lib/contributorToken';
-export type {
-  ContributorActionScope,
-  ContributorActionTokenPayload,
-} from './lib/contributorToken';
-export {
-  maskContributor,
-  sanitizeContributor,
-  maskRegistryItem,
-  sanitizeRegistryItem,
-} from './lib/masking';
-export {
-  dispatchContributionNotifications,
   dispatchConfirmedContributionAlert,
   dispatchPoliteReminderNotification,
-  dispatchLedgerAdjustmentNotification,
 } from './notifications';
 export { GET as registryClaimGET, POST as registryClaimPOST } from './api/claim';
 export { InvitationCodeAdminService } from './invitation-code.admin.service';
 export { RegistryItemAdminService } from './admin.service';
-export { useRegistry } from './hooks/useRegistry';
 export { useRegistryCapabilities } from './hooks/useRegistryCapabilities';
 export { default as RegistryPage } from './pages/index';
 export { default as AddItemPage } from './pages/add-item';
@@ -130,55 +83,8 @@ export {
 } from './api/item-by-id';
 export { POST as registryScrapePOST } from './api/scrape';
 export { POST as registryBatchScrapePOST } from './api/batch-scrape';
-export {
-  GuestSessionProvider,
-  GuestSessionContext,
-  useGuestSession,
-} from './context/GuestSessionContext';
-export type {
-  GuestSessionState,
-  GuestSessionContextType,
-  GuestSessionStatus,
-} from './context/GuestSessionContext';
 export { ContributorLifecycleBadge } from './components/ContributorLifecycleBadge';
-export type { ContributorLifecycleBadgeProps } from './components/ContributorLifecycleBadge';
-export { SessionRecoveryModal } from './components/SessionRecoveryModal';
-export type { SessionRecoveryModalProps } from './components/SessionRecoveryModal';
-export { RegistryPreviewTable } from './components/RegistryPreviewTable';
-export type {
-  PreviewRegistryItem,
-  RegistryPreviewTableProps,
-} from './components/RegistryPreviewTable';
-export { BatchUrlScraper } from './components/BatchUrlScraper';
-export type { BatchUrlScraperProps } from './components/BatchUrlScraper';
-export { CsvRegistryImport } from './components/CsvRegistryImport';
-export type { CsvRegistryImportProps } from './components/CsvRegistryImport';
-export {
-  parseRegistryCsv,
-  validateRegistryItemRow,
-  generateRegistryCsvTemplate,
-  MAX_REGISTRY_CSV_FILE_SIZE,
-} from './utils/csv';
-export type {
-  ParsedRegistryItemRow,
-  RegistryCsvParseResult,
-} from './utils/csv';
-export {
-  getPaymentUrl,
-  getPaymentDescriptor,
-  sanitizePaymentHandle,
-} from './utils/paymentUrls';
-export type {
-  PaymentDescriptor,
-  PaymentDescriptorKind,
-} from './utils/paymentUrls';
-export { useRegistryContributionMachine } from './hooks/useRegistryContributionMachine';
-export type {
-  ContributionPhase,
-  ContributionFieldErrors,
-  UseRegistryContributionMachineOptions,
-  UseRegistryContributionMachineReturn,
-} from './hooks/useRegistryContributionMachine';
+export { getPaymentUrl } from './utils/paymentUrls';
 export {
   extractDietaryTags,
   matchDietaryCategory,
@@ -192,8 +98,4 @@ export {
   isAddressComplete,
   generateRandomCode,
 } from './utils/invitation';
-export type {
-  AttendanceStatus,
-  AttendanceStatusItem,
-  AddressItem,
-} from './utils/invitation';
+export type { AttendanceStatus } from './utils/invitation';

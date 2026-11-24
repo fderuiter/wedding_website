@@ -87,7 +87,7 @@ export interface PartyMemberAttendeeInfo {
   dietaryBadges: DietaryBadgeInfo[];
 }
 
-export interface TableMealSummary {
+interface TableMealSummary {
   totalAttendees: number;
   mealCounts: Array<{ label: string; count: number }>;
   unspecifiedMealCount: number;
@@ -118,7 +118,7 @@ function normalizeExtraFields(extraFields: unknown): Record<string, unknown> | n
 /**
  * Checks whether a guest record carries the public `address-collection` tag.
  */
-export function hasAddressCollectionTag(partyTags: unknown): boolean {
+function hasAddressCollectionTag(partyTags: unknown): boolean {
   return (
     Array.isArray(partyTags) &&
     partyTags.some(
@@ -553,7 +553,7 @@ export function getAttendingPlusOneCount(guest: SeatingPartyGuestCandidate): num
 /**
  * Total chairs required to seat an invitation at one table (`1` primary guest + attending/allocated plus-ones).
  */
-export function getRequiredChairCount(guest: SeatingPartyGuestCandidate): number {
+function getRequiredChairCount(guest: SeatingPartyGuestCandidate): number {
   if (!isGuestEligibleForSeating(guest)) {
     return 0;
   }

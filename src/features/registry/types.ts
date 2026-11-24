@@ -44,7 +44,7 @@ export interface ThankYouTemplateTokens {
   amount?: number | string | null;
 }
 
-export interface ThankYouTemplate {
+interface ThankYouTemplate {
   id: string;
   name: string;
   template: string;
