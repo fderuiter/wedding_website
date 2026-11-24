@@ -3,8 +3,14 @@ import { NextResponse, NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { env } from '@/env';
 import { ApiError } from '@/utils/ApiError';
+import { MAX_PASSWORD_LENGTH } from '@/utils/password';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
-import { signGuestInviteSessionToken, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
+import {
+  signGuestInviteSessionToken,
+  verifyGuestInviteSessionToken,
+  GUEST_INVITE_COOKIE,
+} from '@/core/auth/guestInviteSession';
+import { readRequestCookie } from '@/core/auth/tokenCookieHelpers';
 import { hasAddressCollectionTag } from '@/features/registry';
 
 function safeComparePasscode(a: string, b: string): boolean {
@@ -27,6 +33,10 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
 
   if (!code) {
     throw new ApiError(400, 'Code is required.');
+  }
+
+  if (rawCode.length > MAX_PASSWORD_LENGTH || code.length > MAX_PASSWORD_LENGTH) {
+    throw new ApiError(400, `Code must be at most ${MAX_PASSWORD_LENGTH} characters.`);
   }
 
   const invite = await prisma.invitationCode.findUnique({
@@ -67,10 +77,32 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     });
   }
 
-  const token = await signGuestInviteSessionToken({
-    code: invite.code,
-    guestName: invite.guestName,
-  });
+  let token: string | null = null;
+  if (
+    typeof readRequestCookie === 'function' &&
+    typeof verifyGuestInviteSessionToken === 'function'
+  ) {
+    const existingToken = await readRequestCookie(GUEST_INVITE_COOKIE, request, {
+      suppressErrors: true,
+    });
+    if (existingToken) {
+      const existingPayload = await verifyGuestInviteSessionToken(existingToken);
+      if (
+        existingPayload &&
+        existingPayload.code.trim().toUpperCase() === invite.code.trim().toUpperCase() &&
+        existingPayload.guestName === invite.guestName
+      ) {
+        token = existingToken;
+      }
+    }
+  }
+
+  if (!token) {
+    token = await signGuestInviteSessionToken({
+      code: invite.code,
+      guestName: invite.guestName,
+    });
+  }
 
   const response = NextResponse.json({
     valid: true,

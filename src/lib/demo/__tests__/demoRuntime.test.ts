@@ -1,4 +1,11 @@
 import { buildArchetypeDataset, DEMO_SHIPPING_ADDRESS } from '../demoSeed';
+import { createDemoStore } from '@/lib/staticDemo/store';
+import {
+  getBasePath,
+  getPortalBaseUrl,
+  stripBasePath,
+  withBasePath,
+} from '@/lib/basePath';
 import {
   applyDemoSampleSelection,
   findDemoGuestByCode,
@@ -99,6 +106,32 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
     expect(active.weddingParty).toEqual([]);
     expect(active.attractions).toEqual([]);
     expect(active.faqs).toEqual([]);
+
+    // Re-hydrating when staticDemo store already has matching activeArchetype preserves its snapshot
+    const prevInstalled = window.__STATIC_DEMO_INSTALLED__;
+    try {
+      const matchingStore = createDemoStore({ storage: null, initialArchetype: 'destination' });
+      const matchingSwitchSpy = jest.spyOn(matchingStore, 'switchArchetype');
+      window.__STATIC_DEMO_INSTALLED__ = {
+        store: matchingStore,
+        routeRequest: jest.fn(),
+        uninstall: jest.fn(),
+      };
+      hydrateDemoStateFromStorage();
+      expect(matchingSwitchSpy).not.toHaveBeenCalled();
+
+      const differentStore = createDemoStore({ storage: null, initialArchetype: 'classic' });
+      const differentSwitchSpy = jest.spyOn(differentStore, 'switchArchetype');
+      window.__STATIC_DEMO_INSTALLED__ = {
+        store: differentStore,
+        routeRequest: jest.fn(),
+        uninstall: jest.fn(),
+      };
+      hydrateDemoStateFromStorage();
+      expect(differentSwitchSpy).toHaveBeenCalledWith('destination');
+    } finally {
+      window.__STATIC_DEMO_INSTALLED__ = prevInstalled;
+    }
 
     unsubscribe();
   });
@@ -893,6 +926,38 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
         expect.objectContaining({ status: 'none', isVerified: false })
       );
 
+      expect((await window.fetch('/api/ready')).status).toBe(200);
+      expect((await (await window.fetch('/api/weather')).json()).data.current.temperature).toBe(72);
+      const photosInitial = await (await window.fetch('/api/photos')).json();
+      expect(Array.isArray(photosInitial.photos)).toBe(true);
+      expect(photosInitial.photos.length).toBeGreaterThan(0);
+      const photosSince = await (
+        await window.fetch('/api/photos?since=2026-02-01T00%3A00%3A00.000Z')
+      ).json();
+      expect(photosSince.photos).toEqual([]);
+      expect(Array.isArray((await (await window.fetch('/api/media')).json()).data)).toBe(true);
+      const moderationPayload = await (
+        await window.fetch('/api/admin/photos/moderation')
+      ).json();
+      expect(moderationPayload.photos).toEqual([]);
+      expect(moderationPayload.data).toEqual([]);
+      const publicAddrRes = await window.fetch('/api/guest/address/public', {
+        method: 'POST',
+        body: JSON.stringify({
+          guestName: 'Public Collect Guest',
+          addressLine1: '100 Michigan Ave',
+          city: 'Chicago',
+          state: 'IL',
+          zipCode: '60601',
+        }),
+      });
+      expect(publicAddrRes.status).toBe(200);
+      expect(Array.isArray((await (await window.fetch('/api/admin/features')).json()).data)).toBe(true);
+      expect(Array.isArray((await (await window.fetch('/api/admin/settings?list=true')).json()).data)).toBe(true);
+      expect((await (await window.fetch('/api/admin/settings')).json()).data.id).toBe('global');
+      expect(Array.isArray((await (await window.fetch('/api/admin/content-nodes')).json()).data)).toBe(true);
+      expect(Array.isArray((await (await window.fetch('/api/admin/versions')).json()).data.items)).toBe(true);
+      expect((await window.fetch('/api/admin/seating/export?format=pdf')).headers.get('Content-Type')).toBe('application/pdf');
       expect((await window.fetch('/api/unknown-endpoint', { method: 'POST', body: '["array-body"]' })).status).toBe(404);
 
       // Public address collection postal validation, tag isolation, and promotion to invited
@@ -990,5 +1055,24 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
       uninstallFirst();
       window.fetch = originalFetch;
     }
+  });
+
+  it('normalizes subpath URLs idempotently via basePath helpers', () => {
+    expect(getBasePath('')).toBe('');
+    expect(getBasePath('/wedding_website/demo/')).toBe('/wedding_website/demo');
+    expect(withBasePath('/images/placeholder.png', '/wedding_website/demo')).toBe(
+      '/wedding_website/demo/images/placeholder.png'
+    );
+    expect(
+      withBasePath('/wedding_website/demo/images/placeholder.png', '/wedding_website/demo')
+    ).toBe('/wedding_website/demo/images/placeholder.png');
+    expect(withBasePath('https://example.com/photo.jpg', '/wedding_website/demo')).toBe(
+      'https://example.com/photo.jpg'
+    );
+    expect(stripBasePath('/wedding_website/demo/api/weather', '/wedding_website/demo')).toBe(
+      '/api/weather'
+    );
+    expect(getPortalBaseUrl('/wedding_website/demo')).toBe('/wedding_website/');
+    expect(getPortalBaseUrl('/demo')).toBe('/');
   });
 });

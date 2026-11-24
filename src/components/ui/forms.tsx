@@ -13,6 +13,9 @@ type RegisteredControl = {
 type FormItemContextValue = {
   id: string;
   controlId: string;
+  groupLabelId: string;
+  isGroup: boolean;
+  asFieldset: boolean;
   controls: RegisteredControl[];
   state: FormFeedbackState;
   required: boolean;
@@ -70,20 +73,31 @@ function mergeAriaDescribedBy(
   return tokens.length > 0 ? tokens.join(' ') : undefined;
 }
 
+export type FormGroupProps = (
+  | (React.ComponentPropsWithRef<'div'> & { as?: 'div' })
+  | (React.ComponentPropsWithRef<'fieldset'> & { as: 'fieldset' })
+) & {
+  state?: FormFeedbackState;
+  required?: boolean;
+  busy?: boolean;
+  group?: boolean;
+};
+
 export function FormGroup({
   className,
   state = 'default',
   required: groupRequired = false,
   busy = false,
+  group = false,
+  as = 'div',
   ref,
   ...props
-}: React.ComponentPropsWithRef<'div'> & {
-  state?: FormFeedbackState;
-  required?: boolean;
-  busy?: boolean;
-}) {
+}: FormGroupProps) {
   const id = useId();
   const messageId = `${id}-message`;
+  const groupLabelId = `${id}-label`;
+  const asFieldset = as === 'fieldset';
+  const isGroup = Boolean(group) || asFieldset;
 
   const [controls, setControls] = React.useState<RegisteredControl[]>([]);
   const [describedByIds, setDescribedByIds] = React.useState<string[]>([]);
@@ -131,11 +145,16 @@ export function FormGroup({
   const hasMessage = describedByIds.length > 0;
   const isRequired = Boolean(groupRequired || controls.some((item) => item.required));
 
+  const describedByValue = describedByIds.length > 0 ? describedByIds.join(' ') : undefined;
+
   return (
     <FormItemContext.Provider
       value={{
         id,
         controlId,
+        groupLabelId,
+        isGroup,
+        asFieldset,
         controls,
         state,
         required: isRequired,
@@ -149,7 +168,32 @@ export function FormGroup({
         registerMessage,
       }}
     >
-      <div ref={ref} className={cn('space-y-1', className)} {...props} />
+      {asFieldset ? (
+        <fieldset
+          ref={ref as React.Ref<HTMLFieldSetElement>}
+          aria-describedby={
+            (props as React.ComponentPropsWithoutRef<'fieldset'>)['aria-describedby'] ??
+            describedByValue
+          }
+          className={cn('space-y-1 min-w-0 border-0 p-0 m-0', className)}
+          {...(props as React.ComponentPropsWithoutRef<'fieldset'>)}
+        />
+      ) : (
+        <div
+          ref={ref as React.Ref<HTMLDivElement>}
+          role={(props as React.ComponentPropsWithoutRef<'div'>).role ?? (isGroup ? 'group' : undefined)}
+          aria-labelledby={
+            (props as React.ComponentPropsWithoutRef<'div'>)['aria-labelledby'] ??
+            (isGroup ? groupLabelId : undefined)
+          }
+          aria-describedby={
+            (props as React.ComponentPropsWithoutRef<'div'>)['aria-describedby'] ??
+            (isGroup ? describedByValue : undefined)
+          }
+          className={cn('space-y-1', className)}
+          {...(props as React.ComponentPropsWithoutRef<'div'>)}
+        />
+      )}
     </FormItemContext.Provider>
   );
 }
@@ -238,6 +282,7 @@ function useFormControl({
 
 export function Label({
   className,
+  id: propId,
   htmlFor: propHtmlFor,
   required: propRequired,
   hideRequiredIndicator = false,
@@ -248,27 +293,31 @@ export function Label({
   required?: boolean;
   hideRequiredIndicator?: boolean;
 }) {
-  const { controlId, state, required: contextRequired, groupRequired } = useFormItem();
+  const {
+    controlId,
+    groupLabelId,
+    isGroup,
+    asFieldset,
+    state,
+    required: contextRequired,
+    groupRequired,
+  } = useFormItem();
   const isRequired = propRequired !== undefined ? propRequired : contextRequired;
   const showIndicator =
     !hideRequiredIndicator &&
     (propRequired !== undefined ? propRequired : groupRequired);
 
-  return (
-    <label
-      ref={ref}
-      {...props}
-      htmlFor={propHtmlFor || controlId}
-      data-required={isRequired ? 'true' : undefined}
-      className={cn(
-        'block text-sm font-semibold leading-none',
-        state === 'error' ? 'text-[var(--form-error-text,var(--color-error-text,#dc2626))]' :
-          state === 'success' ? 'text-[var(--form-success-text,var(--color-status-success-text,#166534))]' :
-            state === 'warning' ? 'text-[var(--form-warning-text,var(--color-warning-text,#78350f))]' :
-              'text-[var(--form-label-text,var(--color-primary-text,#111827))]',
-        className
-      )}
-    >
+  const labelClasses = cn(
+    'block text-sm font-semibold leading-none',
+    state === 'error' ? 'text-[var(--form-error-text,var(--color-error-text,#dc2626))]' :
+      state === 'success' ? 'text-[var(--form-success-text,var(--color-status-success-text,#166534))]' :
+        state === 'warning' ? 'text-[var(--form-warning-text,var(--color-warning-text,#78350f))]' :
+          'text-[var(--form-label-text,var(--color-primary-text,#111827))]',
+    className
+  );
+
+  const content = (
+    <>
       {children}
       {showIndicator && (
         <span
@@ -278,6 +327,34 @@ export function Label({
           *
         </span>
       )}
+    </>
+  );
+
+  if (asFieldset && !propHtmlFor) {
+    const { form: _form, ...legendProps } = props;
+    return (
+      <legend
+        ref={ref as unknown as React.Ref<HTMLLegendElement>}
+        {...(legendProps as React.ComponentPropsWithoutRef<'legend'>)}
+        id={propId || groupLabelId}
+        data-required={isRequired ? 'true' : undefined}
+        className={cn('p-0', labelClasses)}
+      >
+        {content}
+      </legend>
+    );
+  }
+
+  return (
+    <label
+      ref={ref}
+      {...props}
+      id={propId || (isGroup ? groupLabelId : undefined)}
+      htmlFor={propHtmlFor ?? (isGroup ? undefined : controlId)}
+      data-required={isRequired ? 'true' : undefined}
+      className={labelClasses}
+    >
+      {content}
     </label>
   );
 }
@@ -389,7 +466,7 @@ export function Input({
         ...style,
       }}
       className={cn(
-        'flex w-full border bg-[var(--input-bg,#ffffff)] text-[var(--form-label-text,var(--color-primary-text,#111827))] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 aria-busy:cursor-not-allowed aria-busy:opacity-60 aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
+        'flex w-full border bg-[var(--input-bg,#ffffff)] text-[var(--form-label-text,var(--color-primary-text,#111827))] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 aria-busy:cursor-wait aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
         sizeStyles[sizeVariant],
         stateStyles[state],
         className
@@ -465,7 +542,7 @@ export function Textarea({
         ...style,
       }}
       className={cn(
-        'flex min-h-[80px] w-full border bg-[var(--input-bg,#ffffff)] px-3 py-2 text-sm text-[var(--form-label-text,var(--color-primary-text,#111827))] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 aria-busy:cursor-not-allowed aria-busy:opacity-60',
+        'flex min-h-[80px] w-full border bg-[var(--input-bg,#ffffff)] px-3 py-2 text-sm text-[var(--form-label-text,var(--color-primary-text,#111827))] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 aria-busy:cursor-wait',
         stateStyles[state],
         className
       )}

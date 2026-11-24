@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { FormGroup, Label, Input, Textarea, FormMessage } from '@/components/ui/forms';
 import { Button } from '@/components/ui/Button';
+import { Container } from '@/components/ui/Layout';
 import { GuestHelpTrigger } from '@/components/guest/GuestHelpModal';
 import { withBasePath } from '@/lib/basePath';
 
@@ -181,7 +182,7 @@ export default function GuestAddressCollectPage() {
 
   if (submitted) {
     return (
-      <main className="min-h-screen py-12 px-4 sm:px-6 flex items-center justify-center bg-container">
+      <Container className="max-w-none py-12 px-4 sm:px-6 bg-container">
         <div className="max-w-md w-full bg-card rounded-2xl shadow-card p-8 border border-card-border text-center">
           <div className="w-16 h-16 bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
             ✓
@@ -199,12 +200,12 @@ export default function GuestAddressCollectPage() {
             <GuestHelpTrigger defaultCategory="passcode" label="Need Help?" />
           </div>
         </div>
-      </main>
+      </Container>
     );
   }
 
   return (
-    <main className="min-h-screen py-12 px-4 sm:px-6 flex items-center justify-center bg-container">
+    <Container className="max-w-none py-12 px-4 sm:px-6 bg-container">
       <div className="max-w-lg w-full bg-card rounded-2xl shadow-card p-8 border border-card-border">
         <div className="text-center mb-8">
           <h1 className="text-2xl sm:text-3xl font-extrabold text-heading">
@@ -440,6 +441,6 @@ export default function GuestAddressCollectPage() {
           </Button>
         </form>
       </div>
-    </main>
+    </Container>
   );
 }

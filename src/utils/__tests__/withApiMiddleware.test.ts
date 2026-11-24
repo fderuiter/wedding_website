@@ -649,4 +649,62 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
       expect(mockFindUnique).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('Per-IP Concurrent Auth Serialization & Bounded Queue Shedding', () => {
+    beforeEach(() => {
+      resetRateLimitsForTesting();
+    });
+
+    test('sending 30 concurrent failed logins from one IP invokes the handler 5 times and returns 25 HTTP 429 responses', async () => {
+      const attackerHeaders = createVerifiedSocketIpHeaders('203.0.113.199');
+      const handler = jest.fn(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return new Response(JSON.stringify({ success: false, error: 'Invalid credentials' }), {
+          status: 401,
+          headers: { 'content-type': 'application/json' },
+        });
+      });
+
+      const middleware = withApiMiddleware(handler);
+
+      const responses = await Promise.all(
+        Array.from({ length: 30 }, () =>
+          middleware(
+            new NextRequest('http://localhost/api/guest/login', {
+              method: 'POST',
+              headers: attackerHeaders,
+            }),
+            {}
+          )
+        )
+      );
+
+      expect(handler).toHaveBeenCalledTimes(5);
+      const statusCounts = responses.reduce<Record<number, number>>((acc, res) => {
+        acc[res.status] = (acc[res.status] ?? 0) + 1;
+        return acc;
+      }, {});
+      expect(statusCounts[401]).toBe(5);
+      expect(statusCounts[429]).toBe(25);
+
+      // Unrelated client IP can still authenticate concurrently without interference
+      const legitimateHeaders = createVerifiedSocketIpHeaders('203.0.113.200');
+      const validHandler = jest.fn(async () =>
+        new Response(JSON.stringify({ success: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      );
+      const validMiddleware = withApiMiddleware(validHandler);
+      const validRes = await validMiddleware(
+        new NextRequest('http://localhost/api/guest/login', {
+          method: 'POST',
+          headers: legitimateHeaders,
+        }),
+        {}
+      );
+      expect(validRes.status).toBe(200);
+      expect(validHandler).toHaveBeenCalledTimes(1);
+    });
+  });
 });

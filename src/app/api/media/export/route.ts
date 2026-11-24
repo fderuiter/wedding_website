@@ -29,6 +29,7 @@ import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { safeFetch } from '@/utils/safeFetch';
 import { PathContainmentError, resolveContainedExistingPath } from '@/utils/pathContainment';
+import { getStorageProvider } from '@/utils/storage';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { MediaExportSchema } from '@/utils/validation';
 
@@ -616,6 +617,28 @@ async function handleExport(req: NextRequest) {
               });
 
               if (!target.exists) {
+                if (
+                  Boolean(process.env.S3_BUCKET?.trim()) &&
+                  (target.cleanKey.startsWith('uploads/') || item.url.startsWith('/uploads/'))
+                ) {
+                  const providerAsset = await getStorageProvider().openReadStream(target.cleanKey);
+                  if (providerAsset?.stream) {
+                    const reader = providerAsset.stream.getReader();
+                    const chunks: Buffer[] = [];
+                    while (true) {
+                      if (exportAbortController.signal.aborted || streamClosed) {
+                        await reader.cancel().catch(() => undefined);
+                        return [];
+                      }
+                      const { done, value } = await reader.read();
+                      if (done) break;
+                      if (value) {
+                        chunks.push(Buffer.from(value));
+                      }
+                    }
+                    return [{ type: 'buffer', buffer: Buffer.concat(chunks), name: filename }];
+                  }
+                }
                 return [
                   {
                     type: 'buffer',

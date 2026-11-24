@@ -1,4 +1,5 @@
 import React from 'react';
+import { FormGroup, Label } from '@/components/ui/forms';
 import { formatCurrency } from '@/utils/intl';
 
 /**
@@ -35,16 +36,18 @@ export const PriceRangeFilter: React.FC<PriceRangeFilterProps> = ({ min, max, va
     onChange([minValue, newMax]);
   };
 
+  const formattedMin = formatCurrency(minValue);
+  const formattedMax = formatCurrency(maxValue);
   const priceDisplay =
     minValue === maxValue
-      ? formatCurrency(minValue)
-      : `${formatCurrency(minValue)} – ${formatCurrency(maxValue)}`;
+      ? formattedMin
+      : `${formattedMin} – ${formattedMax}`;
 
   return (
-    <div className="flex flex-col gap-1.5 mb-4">
-      <span className="text-sm font-medium text-foreground">
-        {priceDisplay}
-      </span>
+    <FormGroup group className="flex flex-col gap-1.5 mb-4 space-y-0">
+      <Label className="text-sm font-medium text-foreground">
+        Price range: {priceDisplay}
+      </Label>
       <div className="flex items-center gap-2">
         <input
           type="range"
@@ -54,6 +57,7 @@ export const PriceRangeFilter: React.FC<PriceRangeFilterProps> = ({ min, max, va
           onChange={handleMinChange}
           className="accent-primary focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none focus-visible:ring-offset-2"
           aria-label="Minimum price"
+          aria-valuetext={formattedMin}
         />
         <input
           type="range"
@@ -63,8 +67,9 @@ export const PriceRangeFilter: React.FC<PriceRangeFilterProps> = ({ min, max, va
           onChange={handleMaxChange}
           className="accent-primary focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none focus-visible:ring-offset-2"
           aria-label="Maximum price"
+          aria-valuetext={formattedMax}
         />
       </div>
-    </div>
+    </FormGroup>
   );
 };

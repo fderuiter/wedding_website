@@ -1,6 +1,8 @@
 import {
   AdminEntityBatchUpdateSchema,
   AdminLoginSchema,
+  AdminSetupSchema,
+  GuestLoginSchema,
   GuestPhotoUploadSchema,
   HEIC_EXTENSIONS,
   ScrapeUrlSchema,
@@ -11,6 +13,19 @@ import {
 
 test('AdminLoginSchema is defined', () => {
   expect(AdminLoginSchema).toBeDefined();
+});
+
+describe('Password and Passcode 256-character caps', () => {
+  it('accepts secrets up to 256 characters and rejects 257+ characters across login and setup schemas', () => {
+    expect(AdminLoginSchema.safeParse({ password: 'a'.repeat(256) }).success).toBe(true);
+    expect(AdminLoginSchema.safeParse({ password: 'a'.repeat(257) }).success).toBe(false);
+
+    expect(GuestLoginSchema.safeParse({ passcode: 'p'.repeat(256) }).success).toBe(true);
+    expect(GuestLoginSchema.safeParse({ passcode: 'p'.repeat(257) }).success).toBe(false);
+
+    expect(AdminSetupSchema.safeParse({ password: 's'.repeat(256) }).success).toBe(true);
+    expect(AdminSetupSchema.safeParse({ password: 's'.repeat(257) }).success).toBe(false);
+  });
 });
 
 describe('sanitizeUrl', () => {

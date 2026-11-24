@@ -65,6 +65,41 @@ describe('BroadcastService', () => {
       });
     });
 
+    it('excludes isSample: true records in live server mode while preserving them when STATIC_EXPORT=true', async () => {
+      const mixedSampleAndLive = [
+        { id: 'live-1', guestName: 'Real Guest', email: 'real@example.com', isSample: false },
+        { id: 'sample-1', guestName: 'Sample Guest', email: 'sample@example.com', isSample: true },
+      ];
+      (prisma.invitationCode.findMany as jest.Mock).mockResolvedValue(mixedSampleAndLive);
+
+      const originalStaticExport = process.env.STATIC_EXPORT;
+      try {
+        delete process.env.STATIC_EXPORT;
+        const unfilteredLive = await BroadcastService.resolveTargetGuests();
+        expect(unfilteredLive.map((g) => g.id)).toEqual(['live-1']);
+
+        const filteredLive = await BroadcastService.resolveTargetGuests({
+          selectedIds: ['live-1', 'sample-1'],
+        });
+        expect(filteredLive.map((g) => g.id)).toEqual(['live-1']);
+
+        process.env.STATIC_EXPORT = 'true';
+        const showcaseUnfiltered = await BroadcastService.resolveTargetGuests();
+        expect(showcaseUnfiltered.map((g) => g.id)).toEqual(['live-1', 'sample-1']);
+
+        const showcaseFiltered = await BroadcastService.resolveTargetGuests({
+          selectedIds: ['live-1', 'sample-1'],
+        });
+        expect(showcaseFiltered.map((g) => g.id)).toEqual(['live-1', 'sample-1']);
+      } finally {
+        if (originalStaticExport === undefined) {
+          delete process.env.STATIC_EXPORT;
+        } else {
+          process.env.STATIC_EXPORT = originalStaticExport;
+        }
+      }
+    });
+
     describe('attendance status filtering via domain utility', () => {
       const mockGuestList = [
         // Attending guests

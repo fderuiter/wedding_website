@@ -1,10 +1,16 @@
 /** @jest-environment node */
 
+import crypto from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { GET } from '../route';
+import { POST as guestLoginPost } from '@/app/api/guest/login/route';
+import { POST as adminLoginPost } from '@/app/api/admin/login/route';
 import { prisma } from '@/lib/prisma';
-import { resetRateLimitsForTesting } from '@/utils/rateLimit';
+import { rateLimit, resetRateLimitsForTesting } from '@/utils/rateLimit';
 import { GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
+import { GUEST_COOKIE } from '@/core/auth/guest.server';
+import { ADMIN_COOKIE } from '@/core/auth/auth.server';
+import { env } from '@/env';
 
 jest.mock('@/lib/prisma', () => ({
   prisma: {
@@ -123,6 +129,163 @@ describe('GET /api/registry/validate-code', () => {
         delete process.env.GUEST_PASSCODE;
       } else {
         process.env.GUEST_PASSCODE = prevPasscode;
+      }
+    }
+  });
+
+  test('repeated checks for one code reuse incoming cookie and share one canonical household rate-limit bucket', async () => {
+    mockFindUnique.mockResolvedValue({
+      id: 'inv-household-1',
+      code: 'HOUSEHOLD1',
+      guestName: 'The Miller Household',
+      isSample: false,
+    });
+
+    const firstRes = await GET(
+      new NextRequest('http://localhost/api/registry/validate-code?code=household1')
+    );
+    expect(firstRes.status).toBe(200);
+    const firstToken = firstRes.cookies.get(GUEST_INVITE_COOKIE)?.value;
+    expect(firstToken).toBeTruthy();
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    // Re-checking with valid incoming cookie reuses the exact same token instead of minting a new one
+    const reusedRes = await GET(
+      new NextRequest('http://localhost/api/registry/validate-code?code=HOUSEHOLD1', {
+        headers: { cookie: `${GUEST_INVITE_COOKIE}=${firstToken}` },
+      })
+    );
+    expect(reusedRes.status).toBe(200);
+    expect(reusedRes.cookies.get(GUEST_INVITE_COOKIE)?.value).toBe(firstToken);
+
+    // Even when a caller omits the cookie to obtain a second distinct token, both share one household bucket
+    const uncookieSecondRes = await GET(
+      new NextRequest('http://localhost/api/registry/validate-code?code=HOUSEHOLD1')
+    );
+    const secondToken = uncookieSecondRes.cookies.get(GUEST_INVITE_COOKIE)?.value;
+    expect(secondToken).toBeTruthy();
+    expect(secondToken).not.toBe(firstToken);
+
+    const reqWithFirstToken = new NextRequest('http://localhost/api/registry/items', {
+      headers: { cookie: `${GUEST_INVITE_COOKIE}=${firstToken}` },
+    });
+    const reqWithSecondToken = new NextRequest('http://localhost/api/registry/items', {
+      headers: { cookie: `${GUEST_INVITE_COOKIE}=${secondToken}` },
+    });
+
+    expect(await rateLimit(reqWithFirstToken, 1, 60_000)).toBeNull();
+    expect((await rateLimit(reqWithSecondToken, 1, 60_000))?.status).toBe(429);
+  });
+
+  test('reuses valid incoming cookies on guest and admin login and rejects 257-char login secrets before scrypt', async () => {
+    const previousAdminPassword = process.env.ADMIN_PASSWORD;
+    process.env.ADMIN_PASSWORD =
+      'scrypt:8R6mvU36W2Cqp3C8vq+r1g==:XlhFCFplIJUauzo9FzPUPVgA5458RRwbTpQtFCRWjoLN4AI6VCH76jOksMQdQX/5f45ALowp67Xxo58mFrcb3g==';
+    const scryptSpy = jest.spyOn(crypto, 'scrypt');
+
+    try {
+      // 1. 257-char secrets rejected before scrypt on admin login, guest login, and validate-code
+      const oversizedAdminRes = await adminLoginPost(
+        new NextRequest('http://localhost/api/admin/login', {
+          method: 'POST',
+          body: JSON.stringify({ password: 'a'.repeat(257) }),
+        })
+      );
+      expect(oversizedAdminRes.status).toBe(400);
+
+      const oversizedGuestRes = await guestLoginPost(
+        new NextRequest('http://localhost/api/guest/login', {
+          method: 'POST',
+          body: JSON.stringify({ passcode: 'p'.repeat(257) }),
+        })
+      );
+      expect(oversizedGuestRes.status).toBe(400);
+
+      const oversizedCodeRes = await GET(
+        new NextRequest(`http://localhost/api/registry/validate-code?code=${'C'.repeat(257)}`)
+      );
+      expect(oversizedCodeRes.status).toBe(400);
+      expect(scryptSpy).not.toHaveBeenCalled();
+
+      // 2. Guest shared-passcode login reuses valid incoming guest_auth cookie (preserving jti)
+      const guestRes1 = await guestLoginPost(
+        new NextRequest('http://localhost/api/guest/login', {
+          method: 'POST',
+          body: JSON.stringify({ passcode: env.GUEST_PASSCODE }),
+        })
+      );
+      expect(guestRes1.status).toBe(200);
+      const guestToken1 = guestRes1.cookies.get(GUEST_COOKIE)?.value;
+      expect(guestToken1).toBeTruthy();
+
+      const guestRes2 = await guestLoginPost(
+        new NextRequest('http://localhost/api/guest/login', {
+          method: 'POST',
+          headers: { cookie: `${GUEST_COOKIE}=${guestToken1}` },
+          body: JSON.stringify({ passcode: env.GUEST_PASSCODE }),
+        })
+      );
+      expect(guestRes2.status).toBe(200);
+      expect(guestRes2.cookies.get(GUEST_COOKIE)?.value).toBe(guestToken1);
+
+      // 2b. Guest invitation-code login reuses valid incoming guest_invite_session cookie
+      mockFindUnique.mockResolvedValue({
+        id: 'inv-login-reuse-1',
+        code: 'INVREUSE1',
+        guestName: 'Taylor Household',
+        isSample: false,
+      });
+      const inviteLoginRes1 = await guestLoginPost(
+        new NextRequest('http://localhost/api/guest/login', {
+          method: 'POST',
+          body: JSON.stringify({ passcode: 'invreuse1' }),
+        })
+      );
+      expect(inviteLoginRes1.status).toBe(200);
+      const inviteLoginToken1 = inviteLoginRes1.cookies.get(GUEST_INVITE_COOKIE)?.value;
+      expect(inviteLoginToken1).toBeTruthy();
+
+      await new Promise((resolve) => setTimeout(resolve, 5));
+
+      const inviteLoginRes2 = await guestLoginPost(
+        new NextRequest('http://localhost/api/guest/login', {
+          method: 'POST',
+          headers: { cookie: `${GUEST_INVITE_COOKIE}=${inviteLoginToken1}` },
+          body: JSON.stringify({ passcode: 'INVREUSE1' }),
+        })
+      );
+      expect(inviteLoginRes2.status).toBe(200);
+      expect(inviteLoginRes2.cookies.get(GUEST_INVITE_COOKIE)?.value).toBe(inviteLoginToken1);
+
+      // 3. Admin login reuses valid incoming admin_auth cookie
+      const adminRes1 = await adminLoginPost(
+        new NextRequest('http://localhost/api/admin/login', {
+          method: 'POST',
+          body: JSON.stringify({ password: 'secret' }),
+        })
+      );
+      expect(adminRes1.status).toBe(200);
+      const adminToken1 = adminRes1.cookies.get(ADMIN_COOKIE)?.value;
+      expect(adminToken1).toBeTruthy();
+
+      await new Promise((resolve) => setTimeout(resolve, 5));
+
+      const adminRes2 = await adminLoginPost(
+        new NextRequest('http://localhost/api/admin/login', {
+          method: 'POST',
+          headers: { cookie: `${ADMIN_COOKIE}=${adminToken1}` },
+          body: JSON.stringify({ password: 'secret' }),
+        })
+      );
+      expect(adminRes2.status).toBe(200);
+      expect(adminRes2.cookies.get(ADMIN_COOKIE)?.value).toBe(adminToken1);
+    } finally {
+      scryptSpy.mockRestore();
+      if (previousAdminPassword === undefined) {
+        delete process.env.ADMIN_PASSWORD;
+      } else {
+        process.env.ADMIN_PASSWORD = previousAdminPassword;
       }
     }
   });

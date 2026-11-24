@@ -640,6 +640,16 @@ describe('Static Demo Fetch Router & Versioned Store', () => {
     const summaryJson = await summaryRes!.json();
     expect(summaryJson.data.global.attendingHouseholds).toBe(initialAttending + 1);
     expect(summaryJson.data.global.dietary.vegan).toBeGreaterThanOrEqual(1);
+    for (const subSummary of summaryJson.data.subEvents) {
+      expect(Array.isArray(subSummary.mealCounts)).toBe(true);
+      expect(typeof subSummary.attendingCount).toBe('number');
+      expect(typeof subSummary.declinedCount).toBe('number');
+      expect(typeof subSummary.pendingCount).toBe('number');
+    }
+
+    const accessRes = await router('http://localhost:3000/api/admin/sub-events/access');
+    const accessJson = await accessRes!.json();
+    expect(Array.isArray(accessJson.data.invitationCodes[0]?.allowedSubEventIds)).toBe(true);
 
     // 2. Registry contribution -> magic-link confirm -> thank-you ledger -> admin void recalculation
     const targetItem = store.getSnapshot().registryItem[0]!;
@@ -1012,6 +1022,21 @@ describe('Static Demo Fetch Router & Versioned Store', () => {
     const afterStep5 = store.getSnapshot();
     expect(afterStep5.isSetupMode).toBe(false);
     expect(afterStep5.appConfig[0].setupCompleted).toBe(true);
+    expect(afterStep5.appConfig[0].heroTitle).toBe('Taylor & Jordan');
+    expect(afterStep5.appConfig[0].storyText).toContain('Taylor and Jordan');
+
+    const milestonesRes = await router(
+      'http://localhost:3000/api/admin/onboarding-milestones',
+    );
+    expect(milestonesRes?.status).toBe(200);
+    const milestonesJson = await milestonesRes!.json();
+    const milestonesData = milestonesJson.data ?? milestonesJson;
+    expect(milestonesData.milestones).toHaveLength(6);
+    expect(
+      milestonesData.milestones.some(
+        (m: { id: string }) => m.id === 'story-and-schedule',
+      ),
+    ).toBe(true);
   });
 
   it('serves GET /api/admin/geocode candidates by archetype and resolves cross-archetype seeded registry items (#1222, #1248)', async () => {

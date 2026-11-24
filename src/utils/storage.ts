@@ -1,4 +1,10 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  PutObjectCommand,
+  DeleteObjectCommand,
+  HeadObjectCommand,
+  GetObjectCommand,
+} from '@aws-sdk/client-s3';
 import path from 'path';
 import crypto from 'crypto';
 import { getNormalizedExtension } from './validation';
@@ -58,6 +64,14 @@ export interface StorageProvider {
    * Fetch metadata for an asset if it exists.
    */
   getMetadata(keyOrUrl: string): Promise<StorageObject | null>;
+
+  /**
+   * Open a read stream (or metadata-only result when headOnly is true) for an uploaded asset.
+   */
+  openReadStream(
+    keyOrUrl: string,
+    options?: { headOnly?: boolean }
+  ): Promise<LocalUploadStreamResult | null>;
 
   /**
    * Validate provider configuration and operational health.
@@ -424,7 +438,56 @@ class S3StorageProvider implements StorageProvider {
     }
   }
 
+  private normalizeUploadsKey(rawInput: string, ensureUploadsPrefix: boolean): string {
+    if (
+      typeof rawInput !== 'string' ||
+      rawInput.includes('\0') ||
+      rawInput.includes('\\') ||
+      /%(?:00|2e|2f|5c)/i.test(rawInput)
+    ) {
+      throw new PathContainmentError('Key or URL contains disallowed characters');
+    }
+
+    const trimmed = rawInput.replace(/^\/+|\/+$/g, '');
+    if (trimmed.includes('//')) {
+      throw new PathContainmentError('Key or URL contains empty path segments');
+    }
+
+    const segments = trimmed ? trimmed.split('/') : [];
+    for (const seg of segments) {
+      if (seg === '.' || seg === '..') {
+        throw new PathContainmentError('Path traversal segment is forbidden');
+      }
+    }
+
+    if (!ensureUploadsPrefix) {
+      return trimmed;
+    }
+
+    if (!trimmed || trimmed === 'uploads') {
+      return 'uploads';
+    }
+    if (trimmed.startsWith('uploads/')) {
+      return trimmed;
+    }
+    return `uploads/${trimmed}`;
+  }
+
   private extractKey(keyOrUrl: string): string {
+    if (
+      typeof keyOrUrl !== 'string' ||
+      keyOrUrl.includes('\0') ||
+      keyOrUrl.includes('\\') ||
+      /%(?:00|2e|2f|5c)/i.test(keyOrUrl)
+    ) {
+      throw new PathContainmentError('Key or URL contains disallowed characters');
+    }
+
+    if (this.publicUrl && keyOrUrl.startsWith(`${this.publicUrl}/`)) {
+      const stripped = keyOrUrl.slice(this.publicUrl.length + 1).split('?')[0].split('#')[0];
+      return this.normalizeUploadsKey(stripped, false);
+    }
+
     if (keyOrUrl.startsWith('http://') || keyOrUrl.startsWith('https://')) {
       try {
         const parsed = new URL(keyOrUrl);
@@ -432,12 +495,16 @@ class S3StorageProvider implements StorageProvider {
         if (pathname.startsWith(`${this.bucket}/`)) {
           pathname = pathname.substring(this.bucket.length + 1);
         }
-        return pathname;
-      } catch {
-        // Fallback
+        return this.normalizeUploadsKey(pathname, false);
+      } catch (err) {
+        if (err instanceof PathContainmentError) {
+          throw err;
+        }
       }
     }
-    return keyOrUrl.replace(/^\/+/, '');
+
+    const withoutQuery = keyOrUrl.split('?')[0].split('#')[0];
+    return this.normalizeUploadsKey(withoutQuery, false);
   }
 
   async upload(input: StorageUploadInput, options?: UploadOptions): Promise<StorageObject> {
@@ -459,13 +526,14 @@ class S3StorageProvider implements StorageProvider {
 
     let key: string;
     if (options?.key) {
-      key = options.key.replace(/^\/+/, '');
+      key = this.normalizeUploadsKey(options.key, true);
     } else {
       const folder = options?.folder ?? 'uploads';
+      const cleanFolder = this.normalizeUploadsKey(folder, true);
       const hash = crypto.randomBytes(8).toString('hex');
       const ext = getNormalizedExtension(mimeType, filename);
       const fileWithExt = `${hash}${ext}`;
-      key = folder ? `${folder}/${fileWithExt}` : fileWithExt;
+      key = `${cleanFolder}/${fileWithExt}`;
     }
 
     await this.client.send(
@@ -492,6 +560,9 @@ class S3StorageProvider implements StorageProvider {
 
   async delete(keyOrUrl: string): Promise<void> {
     const key = this.extractKey(keyOrUrl);
+    if (!key) {
+      throw new PathContainmentError('Storage key is required');
+    }
     await this.client.send(
       new DeleteObjectCommand({
         Bucket: this.bucket,
@@ -505,11 +576,17 @@ class S3StorageProvider implements StorageProvider {
       return keyOrUrl;
     }
     const cleanKey = keyOrUrl.replace(/^\/+/, '');
-    return `${this.publicUrl}/${cleanKey}`;
+    if (cleanKey === 'uploads' || cleanKey.startsWith('uploads/')) {
+      return `/${cleanKey}`;
+    }
+    return cleanKey ? `/uploads/${cleanKey}` : '/uploads';
   }
 
   async getMetadata(keyOrUrl: string): Promise<StorageObject | null> {
     const key = this.extractKey(keyOrUrl);
+    if (!key) {
+      return null;
+    }
     try {
       const response = await this.client.send(
         new HeadObjectCommand({
@@ -522,13 +599,117 @@ class S3StorageProvider implements StorageProvider {
         key,
         url: this.getPublicUrl(key),
         size: response.ContentLength ?? 0,
-        mimeType: response.ContentType ?? 'application/octet-stream',
+        mimeType: response.ContentType ?? getLocalUploadMimeType(key),
         metadata: response.Metadata,
         etag: response.ETag,
         updatedAt: response.LastModified,
       };
     } catch {
       return null;
+    }
+  }
+
+  private static isS3NotFoundError(err: unknown): boolean {
+    if (!err || typeof err !== 'object') {
+      return false;
+    }
+    const candidate = err as {
+      name?: string;
+      Code?: string;
+      code?: string;
+      $metadata?: { httpStatusCode?: number };
+    };
+    return (
+      candidate.name === 'NotFound' ||
+      candidate.name === 'NoSuchKey' ||
+      candidate.Code === 'NoSuchKey' ||
+      candidate.Code === 'NotFound' ||
+      candidate.code === 'ENOENT' ||
+      candidate.$metadata?.httpStatusCode === 404
+    );
+  }
+
+  async openReadStream(
+    keyOrUrl: string,
+    options?: { headOnly?: boolean }
+  ): Promise<LocalUploadStreamResult | null> {
+    const key = this.extractKey(keyOrUrl);
+    if (!key.startsWith('uploads/') || key === 'uploads/') {
+      throw new PathContainmentError('Upload key must stay within uploads/');
+    }
+
+    try {
+      if (options?.headOnly) {
+        const headRes = await this.client.send(
+          new HeadObjectCommand({
+            Bucket: this.bucket,
+            Key: key,
+          })
+        );
+        return {
+          key,
+          size: headRes.ContentLength ?? 0,
+          mimeType: headRes.ContentType || getLocalUploadMimeType(key),
+          updatedAt: headRes.LastModified ?? new Date(0),
+        };
+      }
+
+      const getRes = await this.client.send(
+        new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+        })
+      );
+      const body = getRes.Body as
+        | {
+          transformToWebStream?: () => ReadableStream<Uint8Array>;
+          pipe?: unknown;
+        }
+        | ReadableStream<Uint8Array>
+        | Uint8Array
+        | undefined;
+
+      if (!body) {
+        return null;
+      }
+
+      let webStream: ReadableStream<Uint8Array>;
+      if (typeof (body as { transformToWebStream?: unknown }).transformToWebStream === 'function') {
+        webStream = (body as { transformToWebStream: () => ReadableStream<Uint8Array> }).transformToWebStream();
+      } else if (typeof ReadableStream !== 'undefined' && body instanceof ReadableStream) {
+        webStream = body;
+      } else if (body instanceof Uint8Array) {
+        const bytes = new Uint8Array(body);
+        webStream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(bytes);
+            controller.close();
+          },
+        });
+      } else if (typeof (body as { pipe?: unknown }).pipe === 'function') {
+        const { Readable } = await import('stream');
+        webStream = Readable.toWeb(
+          body as unknown as import('stream').Readable
+        ) as unknown as ReadableStream<Uint8Array>;
+      } else {
+        return null;
+      }
+
+      return {
+        key,
+        size: getRes.ContentLength ?? 0,
+        mimeType: getRes.ContentType || getLocalUploadMimeType(key),
+        updatedAt: getRes.LastModified ?? new Date(0),
+        stream: webStream,
+      };
+    } catch (err: unknown) {
+      if (err instanceof PathContainmentError) {
+        throw err;
+      }
+      if (S3StorageProvider.isS3NotFoundError(err)) {
+        return null;
+      }
+      throw err;
     }
   }
 

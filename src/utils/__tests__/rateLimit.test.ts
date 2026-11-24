@@ -791,4 +791,184 @@ describe('rateLimit', () => {
       expect(normalizeApiPathname('/api/uploads/photos/hero.webp')).toBe('/api/uploads/:path');
     });
   });
+
+  describe('Canonical Principals, Dual Session + IP Ceilings & Protected LRU Eviction', () => {
+    beforeEach(() => {
+      process.env.TRUST_PROXY = '1';
+    });
+
+    test('keys admin and invitation sessions on canonical identifiers regardless of token iat rotation', async () => {
+      const now = Date.now();
+      const exp = now + 3_600_000;
+      const adminToken1 = await signAdminToken({ isAdmin: true, iat: now, exp });
+      const adminToken2 = await signAdminToken({ isAdmin: true, iat: now + 1000, exp });
+      expect(adminToken1).not.toBe(adminToken2);
+
+      const adminReq1 = new NextRequest('http://localhost/api/admin/settings', {
+        headers: { 'x-forwarded-for': '198.51.100.10', cookie: `${ADMIN_COOKIE}=${adminToken1}` },
+      });
+      const adminReq2 = new NextRequest('http://localhost/api/admin/settings', {
+        headers: { 'x-forwarded-for': '198.51.100.11', cookie: `${ADMIN_COOKIE}=${adminToken2}` },
+      });
+      expect(await rateLimit(adminReq1, 1, 60_000)).toBeNull();
+      expect((await rateLimit(adminReq2, 1, 60_000))?.status).toBe(429);
+
+      const inviteToken1 = await signGuestInviteSessionToken({
+        code: 'familya',
+        guestName: 'Family A',
+        iat: now,
+        exp,
+      });
+      const inviteToken2 = await signGuestInviteSessionToken({
+        code: 'FAMILYA',
+        guestName: 'Family A',
+        iat: now + 2000,
+        exp,
+      });
+      expect(inviteToken1).not.toBe(inviteToken2);
+
+      const inviteReq1 = new NextRequest('http://localhost/api/rsvp', {
+        headers: {
+          'x-forwarded-for': '198.51.100.12',
+          cookie: `${GUEST_INVITE_COOKIE}=${inviteToken1}`,
+        },
+      });
+      const inviteReq2 = new NextRequest('http://localhost/api/rsvp', {
+        headers: {
+          'x-forwarded-for': '198.51.100.13',
+          cookie: `${GUEST_INVITE_COOKIE}=${inviteToken2}`,
+        },
+      });
+      expect(await rateLimit(inviteReq1, 1, 60_000)).toBeNull();
+      expect((await rateLimit(inviteReq2, 1, 60_000))?.status).toBe(429);
+    });
+
+    test('enforces aggregate client-IP ceiling across rotated guest_auth jti tokens while isolating shared Wi-Fi sessions', async () => {
+      const abusiveIp = '203.0.113.200';
+      const now = Date.now();
+      const exp = now + 3_600_000;
+
+      // Default aggregate IP ceiling for limit=5 is max(5 * 5, 20) = 25
+      for (let i = 1; i <= 25; i++) {
+        const rotatedGuestToken = await signGuestToken({
+          guest: true,
+          jti: `rotated-guest-${i}`,
+          iat: now + i,
+          exp,
+        });
+        const req = new NextRequest('http://localhost/api/schedule', {
+          headers: {
+            'x-forwarded-for': abusiveIp,
+            cookie: `${GUEST_COOKIE}=${rotatedGuestToken}`,
+          },
+        });
+        expect(await rateLimit(req, 5, 60_000)).toBeNull();
+      }
+
+      const twentySixthToken = await signGuestToken({
+        guest: true,
+        jti: 'rotated-guest-26',
+        iat: now + 26,
+        exp,
+      });
+      const blockedByIpCeiling = new NextRequest('http://localhost/api/schedule', {
+        headers: {
+          'x-forwarded-for': abusiveIp,
+          cookie: `${GUEST_COOKIE}=${twentySixthToken}`,
+        },
+      });
+      expect((await rateLimit(blockedByIpCeiling, 5, 60_000))?.status).toBe(429);
+
+      // Different client IP remains unaffected
+      const otherIpReq = new NextRequest('http://localhost/api/schedule', {
+        headers: {
+          'x-forwarded-for': '203.0.113.201',
+          cookie: `${GUEST_COOKIE}=${twentySixthToken}`,
+        },
+      });
+      expect(await rateLimit(otherIpReq, 5, 60_000)).toBeNull();
+    });
+
+    test('retains active blocked keys in generalStore and authStore when inserting 10,000 unblocked keys and refreshes LRU on access', async () => {
+      // 1. Block an attacker IP on public_address_collect (limit = 2)
+      const blockedGeneralIp = '198.51.100.250';
+      const makeBlockedReq = () =>
+        new NextRequest('http://localhost/api/guest/address/public', {
+          method: 'POST',
+          headers: { 'x-forwarded-for': blockedGeneralIp },
+        });
+      expect(await rateLimit(makeBlockedReq(), 2, 60_000, 'public_address_collect', 'general', { scope: 'ip' })).toBeNull();
+      expect(await rateLimit(makeBlockedReq(), 2, 60_000, 'public_address_collect', 'general', { scope: 'ip' })).toBeNull();
+      expect(
+        (await rateLimit(makeBlockedReq(), 2, 60_000, 'public_address_collect', 'general', { scope: 'ip' }))?.status
+      ).toBe(429);
+
+      // 2. Seed an early unblocked key that we will refresh via LRU access
+      const hotUnblockedIp = '198.51.100.251';
+      const hotReq = new NextRequest('http://localhost/api/weather', {
+        headers: { 'x-forwarded-for': hotUnblockedIp },
+      });
+      expect(await rateLimit(hotReq, 10, 60_000)).toBeNull();
+
+      // Seed a cold unblocked key right after hotReq
+      const coldUnblockedIp = '198.51.100.252';
+      const coldReq = new NextRequest('http://localhost/api/weather', {
+        headers: { 'x-forwarded-for': coldUnblockedIp },
+      });
+      expect(await rateLimit(coldReq, 10, 60_000)).toBeNull();
+
+      // Refresh hotReq so it moves after coldReq in LRU order
+      expect(await rateLimit(hotReq, 10, 60_000)).toBeNull();
+
+      // Fill up to MAX_RATE_LIMIT_KEYS (currently 3 entries -> insert 9,997 + 1 overflow = 9,998 unblocked keys)
+      for (let i = 0; i < MAX_RATE_LIMIT_KEYS - 2; i++) {
+        const fillerReq = new NextRequest('http://localhost/api/weather', {
+          headers: { 'x-forwarded-for': `10.99.${Math.floor(i / 256)}.${i % 256}` },
+        });
+        expect(await rateLimit(fillerReq, 10, 60_000)).toBeNull();
+      }
+
+      // Cold unblocked key was evicted first, while refreshed hot key AND active blocked key remain!
+      expect(getRateLimitsCountForTesting()).toBe(MAX_RATE_LIMIT_KEYS);
+      expect(getRateLimitsForTesting().has(`/api/weather:${coldUnblockedIp}`)).toBe(false);
+      expect(getRateLimitsForTesting().has(`/api/weather:${hotUnblockedIp}`)).toBe(true);
+      expect(getRateLimitsForTesting().has(`public_address_collect:${blockedGeneralIp}`)).toBe(true);
+
+      // Insert 10,000 MORE unblocked keys to churn the entire unblocked capacity
+      for (let i = 0; i < MAX_RATE_LIMIT_KEYS; i++) {
+        const churnReq = new NextRequest('http://localhost/api/weather', {
+          headers: { 'x-forwarded-for': `10.100.${Math.floor(i / 256)}.${i % 256}` },
+        });
+        expect(await rateLimit(churnReq, 10, 60_000)).toBeNull();
+      }
+
+      expect(getRateLimitsCountForTesting()).toBe(MAX_RATE_LIMIT_KEYS);
+      expect(getRateLimitsForTesting().has(`public_address_collect:${blockedGeneralIp}`)).toBe(true);
+      expect(
+        (await rateLimit(makeBlockedReq(), 2, 60_000, 'public_address_collect', 'general', { scope: 'ip' }))?.status
+      ).toBe(429);
+
+      // 3. Verify authStore also retains active blocked keys across 10,000 unblocked failure keys
+      const blockedAuthIp = '198.51.100.253';
+      const blockedAuthReq = new NextRequest('http://localhost/api/admin/login', {
+        method: 'POST',
+        headers: { 'x-forwarded-for': blockedAuthIp },
+      });
+      for (let i = 0; i < 5; i++) {
+        await recordAuthFailure(blockedAuthReq, 15 * 60 * 1000);
+      }
+      expect((await checkAuthLockout(blockedAuthReq, 5, 15 * 60 * 1000))?.status).toBe(429);
+
+      for (let i = 0; i < MAX_RATE_LIMIT_KEYS; i++) {
+        const unblockedAuthReq = new NextRequest('http://localhost/api/admin/login', {
+          method: 'POST',
+          headers: { 'x-forwarded-for': `10.101.${Math.floor(i / 256)}.${i % 256}` },
+        });
+        await recordAuthFailure(unblockedAuthReq, 15 * 60 * 1000);
+      }
+
+      expect(getAuthRateLimitsCountForTesting()).toBe(MAX_RATE_LIMIT_KEYS);
+      expect((await checkAuthLockout(blockedAuthReq, 5, 15 * 60 * 1000))?.status).toBe(429);
+    });
+  });
 });
