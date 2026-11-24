@@ -138,7 +138,159 @@ export function writeLockfileHash(rootDir = defaultRootDir) {
   return null;
 }
 
-export function recordInstallState(rootDir = defaultRootDir) {
+function matchesLockConstraintList(list, value) {
+  if (!Array.isArray(list) || list.length === 0) {
+    return true;
+  }
+  const positives = list.filter((entry) => typeof entry === 'string' && !entry.startsWith('!'));
+  const negatives = list
+    .filter((entry) => typeof entry === 'string' && entry.startsWith('!'))
+    .map((entry) => entry.slice(1));
+  if (negatives.includes(value)) {
+    return false;
+  }
+  if (positives.length > 0 && !positives.includes(value)) {
+    return false;
+  }
+  return true;
+}
+
+function isLockNodeHostCompatible(node, platform, arch) {
+  if (!node || !node.optional) {
+    return true;
+  }
+  return (
+    matchesLockConstraintList(node.os, platform) && matchesLockConstraintList(node.cpu, arch)
+  );
+}
+
+function removeEmptyModuleAncestors(targetDir, nodeModulesRoot) {
+  let currentDir = path.dirname(targetDir);
+  const resolvedStop = path.resolve(nodeModulesRoot);
+  while (currentDir.startsWith(resolvedStop) && path.resolve(currentDir) !== resolvedStop) {
+    try {
+      const remaining = fs.readdirSync(currentDir);
+      if (remaining.length > 0) {
+        break;
+      }
+      fs.rmdirSync(currentDir);
+    } catch {
+      break;
+    }
+    currentDir = path.dirname(currentDir);
+  }
+}
+
+export function pruneUnreachableOptionalPackages(rootDir = defaultRootDir, options = {}) {
+  const platform = options.platform ?? process.platform;
+  const arch = options.arch ?? process.arch;
+  if (arch === 'wasm32') {
+    return [];
+  }
+
+  const lockfilePath = path.join(rootDir, 'package-lock.json');
+  const nodeModulesDir = path.join(rootDir, 'node_modules');
+  if (!fs.existsSync(lockfilePath) || !fs.existsSync(nodeModulesDir)) {
+    return [];
+  }
+
+  let lockData;
+  try {
+    lockData = JSON.parse(fs.readFileSync(lockfilePath, 'utf8'));
+  } catch {
+    return [];
+  }
+  const packages = lockData && typeof lockData === 'object' ? lockData.packages : null;
+  if (!packages || typeof packages !== 'object') {
+    return [];
+  }
+
+  const reachable = new Set(['']);
+  const queue = [''];
+  while (queue.length > 0) {
+    const cur = queue.shift();
+    const node = packages[cur];
+    if (!node || typeof node !== 'object') {
+      continue;
+    }
+    const depMap = {
+      ...(node.dependencies ?? {}),
+      ...(node.devDependencies ?? {}),
+      ...(node.optionalDependencies ?? {}),
+      ...(node.peerDependencies ?? {}),
+    };
+    for (const depName of Object.keys(depMap)) {
+      let cursor = cur;
+      while (true) {
+        const candidate = `${cursor ? `${cursor}/` : ''}node_modules/${depName}`;
+        const candidateNode = packages[candidate];
+        if (candidateNode) {
+          if (
+            isLockNodeHostCompatible(candidateNode, platform, arch) &&
+            !reachable.has(candidate)
+          ) {
+            reachable.add(candidate);
+            queue.push(candidate);
+          }
+          break;
+        }
+        const parentIdx = cursor.lastIndexOf('/node_modules/');
+        if (parentIdx !== -1) {
+          cursor = cursor.slice(0, parentIdx);
+        } else if (cursor.startsWith('node_modules/')) {
+          cursor = '';
+        } else {
+          break;
+        }
+      }
+    }
+  }
+
+  const unreachableOptionalPaths = Object.entries(packages)
+    .filter(([pkgPath, pkgNode]) => Boolean(pkgPath) && pkgNode?.optional === true && !reachable.has(pkgPath))
+    .map(([pkgPath]) => pkgPath)
+    .sort((a, b) => b.length - a.length);
+
+  if (unreachableOptionalPaths.length === 0) {
+    return [];
+  }
+
+  const pruned = [];
+  for (const relPkgPath of unreachableOptionalPaths) {
+    const absPkgPath = path.join(rootDir, relPkgPath);
+    if (fs.existsSync(absPkgPath)) {
+      fs.rmSync(absPkgPath, { recursive: true, force: true });
+      removeEmptyModuleAncestors(absPkgPath, nodeModulesDir);
+      pruned.push(relPkgPath);
+    }
+  }
+
+  const hiddenLockPath = path.join(nodeModulesDir, '.package-lock.json');
+  if (fs.existsSync(hiddenLockPath)) {
+    try {
+      const hiddenLock = JSON.parse(fs.readFileSync(hiddenLockPath, 'utf8'));
+      if (hiddenLock && typeof hiddenLock.packages === 'object' && hiddenLock.packages) {
+        let modified = false;
+        for (const relPkgPath of unreachableOptionalPaths) {
+          if (Object.prototype.hasOwnProperty.call(hiddenLock.packages, relPkgPath)) {
+            delete hiddenLock.packages[relPkgPath];
+            modified = true;
+          }
+        }
+        if (modified) {
+          fs.writeFileSync(hiddenLockPath, `${JSON.stringify(hiddenLock, null, 2)}\n`, 'utf8');
+        }
+      }
+    } catch {
+      // Ignore unreadable hidden lockfile
+    }
+  }
+
+  return pruned;
+}
+
+export function recordInstallState(rootDir = defaultRootDir, options = {}) {
+  pruneUnreachableOptionalPackages(rootDir, options);
   writeLockfileHash(rootDir);
 
   const schemaHash = computeFileSha256(path.join(rootDir, 'prisma', 'schema.prisma'));
@@ -414,6 +566,9 @@ export async function main(options = {}) {
   const sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
 
   if (argv.includes('--record-install-state')) {
+    if (String(env.npm_config_package_lock_only ?? '').trim().toLowerCase() === 'true') {
+      return;
+    }
     recordInstallState(rootDir);
     return;
   }

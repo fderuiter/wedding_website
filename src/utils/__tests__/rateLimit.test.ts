@@ -765,8 +765,13 @@ describe('rateLimit', () => {
   describe('normalizeApiPathname', () => {
     test('preserves static API endpoints while collapsing dynamic parameters', () => {
       expect(normalizeApiPathname('/api/admin/login')).toBe('/api/admin/login');
+      expect(normalizeApiPathname('/api/admin/geocode')).toBe('/api/admin/geocode');
       expect(normalizeApiPathname('/api/admin/setup/')).toBe('/api/admin/setup');
+      expect(normalizeApiPathname('/api/guest/session')).toBe('/api/guest/session');
       expect(normalizeApiPathname('/api/registry/validate-code')).toBe('/api/registry/validate-code');
+      expect(normalizeApiPathname('/api/registry/payment-intent/reconcile')).toBe(
+        '/api/registry/payment-intent/reconcile'
+      );
       expect(normalizeApiPathname('/api/registry/items/batch')).toBe('/api/registry/items/batch');
       expect(normalizeApiPathname('/api/registry/items/item-123')).toBe('/api/registry/items/:id');
       expect(normalizeApiPathname('/api/media/export')).toBe('/api/media/export');

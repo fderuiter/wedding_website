@@ -6,10 +6,10 @@ import {
   getGuestInviteSession,
   GUEST_INVITE_COOKIE,
 } from '@/core/auth/guestInviteSession';
-import { getSignedGuestInviteSession } from '@/core/auth/guestInviteToken';
+import { getRawSignedGuestInviteSession } from '@/core/auth/guestInviteToken';
 import {
   GUEST_PHOTO_COOKIE,
-  getSignedPhotoUploadSession,
+  getRawSignedPhotoUploadSession,
   isPhotoScopedApiRoute,
 } from '@/core/auth/photoUploadToken';
 import {
@@ -63,6 +63,7 @@ function isInviteRevocationExcludedApiPath(normalizedPathname: string): boolean 
     normalizedPathname === '/api/cron' ||
     normalizedPathname.startsWith('/api/cron/') ||
     normalizedPathname === '/api/guest/login' ||
+    normalizedPathname === '/api/guest/session' ||
     normalizedPathname === '/api/guest/address' ||
     normalizedPathname === '/api/guest/address/public' ||
     normalizedPathname === '/api/registry/claim' ||
@@ -201,8 +202,8 @@ export function withApiMiddleware(
           throw new ApiError(401, 'Unauthorized');
         }
       } else if (req && !isInviteRevocationExcludedApiPath(normalizedPathname)) {
-        const signedInvite = await getSignedGuestInviteSession(req);
-        const signedPhoto = await getSignedPhotoUploadSession(req);
+        const signedInvite = await getRawSignedGuestInviteSession(req);
+        const signedPhoto = await getRawSignedPhotoUploadSession(req);
         if (signedInvite || signedPhoto) {
           const hasFallbackAuth = (await isAdminRequest(req)) || (await isGuestRequest(req));
           if (!hasFallbackAuth) {

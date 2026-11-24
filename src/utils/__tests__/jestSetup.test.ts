@@ -352,6 +352,8 @@ describe('Global Jest Setup (jest.setup.js)', () => {
           displayName?: string | { name?: string };
           runner?: string;
           testEnvironment?: string;
+          testMatch?: string[];
+          testPathIgnorePatterns?: string[];
         }>;
       };
       expect(resolvedJestConfig.workerIdleMemoryLimit).toBe('1024MB');
@@ -362,9 +364,25 @@ describe('Global Jest Setup (jest.setup.js)', () => {
       );
       expect(projectNames).toEqual(['unit-node', 'unit-jsdom', 'db-serial']);
 
+      const nodeProject = projects.find((proj) => proj.displayName === 'unit-node');
+      const jsdomProject = projects.find((proj) => proj.displayName === 'unit-jsdom');
       const dbProject = projects.find((proj) => proj.displayName === 'db-serial');
       expect(dbProject?.runner).toBe('<rootDir>/jest-serial-runner.cjs');
       expect(dbProject?.testEnvironment).toBe('node');
+      expect(jsdomProject?.testEnvironment).toBe('<rootDir>/jsdom-env.cjs');
+      expect(jsdomProject?.testMatch).toEqual(
+        expect.arrayContaining([
+          '<rootDir>/src/__tests__/generate-portal.test.ts',
+          '<rootDir>/src/utils/__tests__/exportDownload.test.ts',
+        ])
+      );
+      expect(
+        (nodeProject?.testPathIgnorePatterns ?? []).some((pattern) =>
+          new RegExp(pattern.replace('<rootDir>', '/app')).test(
+            '/app/src/utils/__tests__/exportDownload.test.ts'
+          )
+        )
+      ).toBe(true);
     });
 
     it('clears active timeout, interval, and immediate handles during jsdom-env.cjs teardown', async () => {

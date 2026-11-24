@@ -10,6 +10,8 @@ import { ARCHETYPE_PRESETS } from '../sampleData/archetypes';
 import {
   REGISTRY_EDIT_FALLBACK_ID,
   buildArchetypeSeedData,
+  buildRegistryEditItemHref,
+  findSeededRegistryItemById,
   getRegistryEditStaticParams,
 } from '../sampleData/builder';
 import { prisma } from '../prisma';
@@ -100,16 +102,27 @@ describe('Dual-mode static export mock adapter', () => {
     }
   });
 
-  it('emits static registry edit-item params for every archetype preset ID plus fallback', () => {
+  it('emits static registry edit-item params for every archetype preset ID, demo ID, plus fallback', () => {
     const params = getRegistryEditStaticParams().map((entry) => entry.id);
 
     for (const archetypeId of ['classic', 'destination', 'romantic'] as const) {
-      for (const item of ARCHETYPE_PRESETS[archetypeId].registryItems) {
+      ARCHETYPE_PRESETS[archetypeId].registryItems.forEach((item, idx) => {
         expect(params).toContain(item.id);
-      }
+        expect(params).toContain(`demo-${archetypeId}-item-${idx + 1}`);
+      });
     }
     expect(params).toContain(REGISTRY_EDIT_FALLBACK_ID);
     expect(params).toContain('1');
+
+    expect(findSeededRegistryItemById('demo-classic-item-1')?.name).toBe(
+      ARCHETYPE_PRESETS.classic.registryItems[0].name
+    );
+    expect(buildRegistryEditItemHref('demo-custom-item-1', true)).toBe(
+      '/registry/edit-item/fallback?id=demo-custom-item-1'
+    );
+    expect(buildRegistryEditItemHref('sample-registry-classic-1', false)).toBe(
+      '/registry/edit-item/sample-registry-classic-1'
+    );
   });
 
   it('provides initialized static mock config without database queries when STATIC_EXPORT is enabled', async () => {

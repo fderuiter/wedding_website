@@ -48,6 +48,7 @@ const JSDOM_TS_TEST_MATCH = [
   '<rootDir>/src/lib/demo/**/__tests__/**/*.ts',
   '<rootDir>/src/lib/demo/**/*.@(test|spec).ts',
   '<rootDir>/src/__tests__/generate-portal.test.ts',
+  '<rootDir>/src/utils/__tests__/exportDownload.test.ts',
 ];
 
 const toPathIgnoreRegex = (relPath) => `<rootDir>/${relPath}`.replace(/\./g, '\\.');
@@ -61,6 +62,7 @@ const JSDOM_TS_IGNORE_PATTERNS = [
   '<rootDir>/src/(?:.+/)?hooks/',
   '<rootDir>/src/lib/demo/',
   toPathIgnoreRegex('src/__tests__/generate-portal.test.ts'),
+  toPathIgnoreRegex('src/utils/__tests__/exportDownload.test.ts'),
 ];
 
 /** @type {import('jest').Config} */

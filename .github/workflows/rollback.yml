@@ -503,7 +503,6 @@ jobs:
     with:
       environment: ${{ inputs.target_environment || 'production' }}
       rollback_environment: ${{ inputs.rollback_environment || '' }}
-      commit_sha: ${{ inputs.commit_sha || '' }}
       image_digest: ${{ needs.preflight.outputs.effective_digest || '' }}
       image_tag: ${{ needs.preflight.outputs.effective_tag }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
@@ -529,6 +528,8 @@ jobs:
           VAR_SERVICE_URL: ${{ vars.SERVICE_URL }}
           ENV_SERVICE_URL: ${{ secrets.SERVICE_URL }}
           PROVIDER_SERVICE_URL: ${{ needs.redeploy.outputs.service_url }}
+          PROVIDER_HEALTH_STATUS: ${{ needs.redeploy.outputs.health_status }}
+          PROVIDER_HTTP_STATUS: ${{ needs.redeploy.outputs.http_status }}
           IS_DRY_RUN: ${{ (inputs.dry_run && needs.redeploy.outputs.is_dry_run == 'true') && 'true' || 'false' }}
           TARGET_ENV: ${{ inputs.target_environment || 'production' }}
           RESTORED_TAG: ${{ needs.preflight.outputs.effective_tag || needs.preflight.outputs.effective_digest }}
@@ -559,6 +560,22 @@ jobs:
             OUTPUT_SERVICE_URL=""
           fi
 
+          if [ "${PROVIDER_HEALTH_STATUS:-}" = "healthy" ]; then
+            EFFECTIVE_HTTP="${PROVIDER_HTTP_STATUS:-200}"
+            echo "✅ Consumed verified provider /api/health outcome from deploy-provider.yml (HTTP ${EFFECTIVE_HTTP}) for '${TARGET_ENV}'."
+            echo "service_url=${OUTPUT_SERVICE_URL}" >> "$GITHUB_OUTPUT"
+            echo "http_status=${EFFECTIVE_HTTP}" >> "$GITHUB_OUTPUT"
+            echo "health_status=healthy" >> "$GITHUB_OUTPUT"
+            exit 0
+          elif [ "${PROVIDER_HEALTH_STATUS:-}" = "unhealthy" ]; then
+            EFFECTIVE_HTTP="${PROVIDER_HTTP_STATUS:-unreachable}"
+            echo "::error::Provider health verification reported unhealthy for '${TARGET_ENV}' (HTTP ${EFFECTIVE_HTTP})."
+            echo "service_url=${OUTPUT_SERVICE_URL}" >> "$GITHUB_OUTPUT"
+            echo "http_status=${EFFECTIVE_HTTP}" >> "$GITHUB_OUTPUT"
+            echo "health_status=unhealthy" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
           if [ -z "$TARGET_URL" ] || [[ ! "$TARGET_URL" =~ ^https?://[^[:space:]]+ ]]; then
             echo "::error::Invalid or missing SERVICE_URL '${OUTPUT_SERVICE_URL}'. Must start with http:// or https://."
             echo "health_status=unhealthy" >> "$GITHUB_OUTPUT"
@@ -568,14 +585,16 @@ jobs:
           fi
 
           HEALTH_ENDPOINT="${TARGET_URL}/api/health"
+          READY_ENDPOINT="${TARGET_URL}/api/ready"
 
           echo "=================================================="
-          echo "     POST-ROLLBACK HEALTH VERIFICATION PROBE      "
+          echo "   POST-ROLLBACK HEALTH & READINESS PROBES        "
           echo "=================================================="
           echo "Target Environment : ${TARGET_ENV}"
           echo "Restored Image Tag : ${RESTORED_TAG}"
           echo "Target Service URL : ${TARGET_URL}"
           echo "Health Probe Path  : ${HEALTH_ENDPOINT}"
+          echo "Readiness Probe    : ${READY_ENDPOINT}"
           echo "Dry Run Environment: ${IS_DRY_RUN}"
           echo "=================================================="
 
@@ -590,7 +609,7 @@ jobs:
             CURRENT_TIME=$(date +%s)
             ELAPSED=$((CURRENT_TIME - START_TIME))
             if [ $ELAPSED -ge $MAX_TIMEOUT ]; then
-              echo "❌ Post-rollback health check timed out after ${MAX_TIMEOUT} seconds."
+              echo "❌ Post-rollback health and readiness check timed out after ${MAX_TIMEOUT} seconds."
               break
             fi
 
@@ -613,9 +632,27 @@ jobs:
               fi
 
               if [ "$STATUS_VAL" = "ok" ] && [ "$DB_STATUS" = "connected" ]; then
-                echo "✅ Post-rollback health probe succeeded! HTTP ${HTTP_STATUS}, status: ${STATUS_VAL}, database: ${DB_STATUS}"
-                SUCCESS=true
-                break
+                echo "Polling ${READY_ENDPOINT} (elapsed: ${ELAPSED}s)..."
+                READY_HTTP_RESPONSE=$(curl -s -S --connect-timeout 5 --max-time 10 -w "\nHTTP_STATUS_CODE:%{http_code}" "${READY_ENDPOINT}" || true)
+                READY_HTTP_STATUS=$(printf '%s\n' "$READY_HTTP_RESPONSE" | grep "HTTP_STATUS_CODE:" | tail -n 1 | cut -d':' -f2 || true)
+                READY_RESPONSE_BODY=$(printf '%s\n' "$READY_HTTP_RESPONSE" | sed '/HTTP_STATUS_CODE:/d')
+                READY_IS_OBJECT=$(printf '%s' "$READY_RESPONSE_BODY" | jq -r 'if type == "object" then "true" else "false" end' 2>/dev/null || true)
+                READY_STATUS_VAL=""
+                READY_DB_STATUS=""
+                if [ "$READY_IS_OBJECT" = "true" ]; then
+                  READY_STATUS_VAL=$(printf '%s' "$READY_RESPONSE_BODY" | jq -r '(.status) // empty' 2>/dev/null || true)
+                  READY_DB_STATUS=$(printf '%s' "$READY_RESPONSE_BODY" | jq -r '(.database) // empty' 2>/dev/null || true)
+                fi
+
+                if [ "$READY_HTTP_STATUS" = "200" ] && [ "$READY_STATUS_VAL" = "ready" ] && [ "$READY_DB_STATUS" = "connected" ]; then
+                  echo "✅ Post-rollback health and readiness probes succeeded! /api/health (${STATUS_VAL}/${DB_STATUS}), /api/ready (${READY_STATUS_VAL}/${READY_DB_STATUS})"
+                  SUCCESS=true
+                  break
+                else
+                  HTTP_STATUS="${READY_HTTP_STATUS:-unreachable}"
+                  RESPONSE_BODY="$READY_RESPONSE_BODY"
+                  echo "⚠️ Post-rollback readiness probe ${READY_ENDPOINT} failed (HTTP '${READY_HTTP_STATUS:-unreachable}', status: '${READY_STATUS_VAL}', database: '${READY_DB_STATUS}'). Retrying in ${DELAY}s..."
+                fi
               else
                 echo "⚠️ Endpoint returned 200 but payload unhealthy. status: '${STATUS_VAL}', database: '${DB_STATUS}'. Retrying in ${DELAY}s..."
               fi
@@ -625,10 +662,10 @@ jobs:
 
             if [ "$IS_DRY_RUN" = "true" ] && { [ -z "$HTTP_STATUS" ] || [ "$HTTP_STATUS" = "000" ]; }; then
               if [ $ELAPSED -ge 2 ]; then
-                echo "::notice::Dry-run rollback environment detected without live endpoint. Dry-run health verification probe validated."
+                echo "::notice::Dry-run rollback environment detected without live endpoint. Dry-run health and readiness verification probes validated."
                 SUCCESS=true
                 HTTP_STATUS="200 (dry-run)"
-                RESPONSE_BODY='{"success":true,"data":{"status":"ok","database":"connected","mode":"dry-run"}}'
+                RESPONSE_BODY='{"success":true,"data":{"status":"ok","database":"connected","ready":"ready","mode":"dry-run"}}'
                 break
               fi
             fi
@@ -647,7 +684,7 @@ jobs:
             echo "health_status=healthy" >> "$GITHUB_OUTPUT"
             exit 0
           else
-            echo "::error::Post-rollback health verification failed for ${HEALTH_ENDPOINT} (last HTTP status: ${HTTP_STATUS:-unreachable})."
+            echo "::error::Post-rollback health and readiness verification failed for ${HEALTH_ENDPOINT} / ${READY_ENDPOINT} (last HTTP status: ${HTTP_STATUS:-unreachable})."
             echo "health_status=unhealthy" >> "$GITHUB_OUTPUT"
             exit 1
           fi
@@ -733,14 +770,14 @@ jobs:
           - **Timestamp:** \`${NOW}\`
           - **Pre-Rollback Database Safety Gate:** \`${DB_GATE_SUMMARY}\`
           - **Provider Container Redeployment:** \`${REDEPLOY_SUMMARY}\`
-          - **Post-Rollback Health Probe (\`/api/health\`):** \`${VERIFY_SUMMARY}\` (URL: \`${SAFE_URL}\`)
+          - **Post-Rollback Health & Readiness Probes (\`/api/health\`, \`/api/ready\`):** \`${VERIFY_SUMMARY}\` (URL: \`${SAFE_URL}\`)
           - **Database Schema Action:** \`Preserved (Forward-Only / Expand-Migrate-Contract Compliant)\`
           - **Failed Stage:** \`${FAILED_STAGE}\`
           - **Overall Rollback Status:** \`${OVERALL_STATUS}\`
 
           #### Diagnostic & Safety Details
           1. **N-1 Backward Compatibility**: Database migrations are verified with \`npm run lint:migrations\` before container restoration.
-          2. **Container Restoration**: Reusable workflow \`deploy-provider.yml\` redeploys immutable tag \`${SAFE_TAG}\` and \`verify\` probes \`/api/health\` for \`.data.status == "ok"\` and \`.data.database == "connected"\`.
+          2. **Container Restoration**: Reusable workflow \`deploy-provider.yml\` redeploys immutable tag \`${SAFE_TAG}\` and \`verify\` probes \`/api/health\` (\`.data.status == "ok"\` and \`.data.database == "connected"\`) and \`/api/ready\` (\`status == "ready"\` and \`database == "connected"\`).
           3. **Next Steps**: Inspect the failed stage logs if status is \`FAILED\`, or investigate the root cause of the triggering release failure before re-attempting forward deployment.
           EOF
 

@@ -65,8 +65,27 @@ describe('local smoke isolation, staged static exports, and untracked next-env.d
         path.join(repoRoot, 'scripts/test-container.mjs'),
         'utf8'
       );
+      const standaloneScriptRaw = fs.readFileSync(
+        path.join(repoRoot, 'scripts/test-standalone.mjs'),
+        'utf8'
+      );
+      const smokeRunnerRaw = fs.readFileSync(
+        path.join(repoRoot, 'scripts/smoke-runner.mjs'),
+        'utf8'
+      );
       expect(containerScriptRaw).not.toMatch(/lsof\s+-ti:3000/);
       expect(containerScriptRaw).not.toMatch(/kill\s+-9/);
+      expect(standaloneScriptRaw).not.toMatch(/lsof\s+-ti:3000/);
+      expect(standaloneScriptRaw).not.toMatch(/kill\s+-9/);
+      expect(containerScriptRaw).toContain('await runSigtermDrainProbe({');
+      expect(standaloneScriptRaw).toContain('await runSigtermDrainProbe({');
+      expect(smokeRunnerRaw).toContain('Guest Sign-In | Wedding Website');
+      expect(smokeRunnerRaw).toContain(
+        'Unauthenticated GET /guest/login leaked unredacted seoTitle marker'
+      );
+      expect(smokeRunnerRaw).toMatch(
+        /const inflightPromise = httpRequest\(baseUrl,\s*'\/guest\/login',\s*\{\s*hostHeader,\s*headers:\s*\{\s*Cookie:\s*activeGuestCookie,?\s*\}/
+      );
     });
 
     it('allocates distinct free loopback ports and honors valid overrides', async () => {
@@ -319,7 +338,7 @@ describe('local smoke isolation, staged static exports, and untracked next-env.d
       expect(tsconfig.exclude).toContain('.next/export-stage');
     });
 
-    it('keeps next-env.d.ts untracked in Git while running next typegen in typecheck, type-check, and postinstall', () => {
+    it('keeps next-env.d.ts untracked in Git while conditionally running next typegen in typecheck, type-check, and postinstall', () => {
       const trackedCheck = spawnSync('git', ['ls-files', 'next-env.d.ts'], {
         cwd: repoRoot,
         encoding: 'utf8',
@@ -330,9 +349,19 @@ describe('local smoke isolation, staged static exports, and untracked next-env.d
       const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as {
         scripts: Record<string, string>;
       };
-      expect(pkg.scripts.typecheck.startsWith('next typegen && ')).toBe(true);
-      expect(pkg.scripts['type-check'].startsWith('next typegen && ')).toBe(true);
-      expect(pkg.scripts.postinstall.startsWith('next typegen && ')).toBe(true);
+      expect(
+        pkg.scripts.typecheck.startsWith(
+          '([ -f next-env.d.ts ] && [ -f .next/types/routes.d.ts ] || next typegen) && '
+        )
+      ).toBe(true);
+      expect(
+        pkg.scripts['type-check'].startsWith(
+          '([ -f next-env.d.ts ] && [ -f .next/types/routes.d.ts ] || next typegen) && '
+        )
+      ).toBe(true);
+      expect(pkg.scripts.postinstall).toBe(
+        '([ "$SKIP_NEXT_TYPEGEN" = "true" ] || [ "$STATIC_EXPORT" = "true" ] || next typegen) && prisma generate && node scripts/pretest.mjs --record-install-state || node -e "process.exit(process.env.npm_config_package_lock_only === \'true\' ? 0 : 1)"'
+      );
 
       const knip = JSON.parse(fs.readFileSync(path.join(repoRoot, 'knip.json'), 'utf8')) as {
         entry?: string[];

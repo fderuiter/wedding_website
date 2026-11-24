@@ -1,7 +1,8 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import AddToCalendar from '../AddToCalendar';
+import { ToastProvider } from '@/components/ui/ToastProvider';
 import { CalendarEvent } from '@/utils/calendar';
 import * as calendarUtils from '@/utils/calendar';
 
@@ -98,8 +99,17 @@ describe('AddToCalendar', () => {
     expect(mockRevokeObjectURL).toHaveBeenCalledWith('blob:http://localhost/mock-url');
   });
 
-  it('triggers direct download using downloadUrl prop without Blob generation', () => {
+  it('triggers fetch-backed blob download using downloadUrl prop without client ICS generation', async () => {
     const clickSpy = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValueOnce(
+      new Response('BEGIN:VCALENDAR\r\nEND:VCALENDAR', {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/calendar',
+          'Content-Disposition': 'attachment; filename="custom-event.ics"',
+        },
+      })
+    );
     render(
       <AddToCalendar
         event={sampleEvent}
@@ -109,14 +119,24 @@ describe('AddToCalendar', () => {
     fireEvent.click(screen.getByText('Add to Calendar'));
     fireEvent.click(screen.getByText('Apple'));
 
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith('/api/schedule/custom-event-id/ics');
+      expect(mockCreateObjectURL).toHaveBeenCalled();
+      expect(clickSpy).toHaveBeenCalled();
+    });
     expect(calendarUtils.createIcsFile).not.toHaveBeenCalled();
-    expect(mockCreateObjectURL).not.toHaveBeenCalled();
-    expect(clickSpy).toHaveBeenCalled();
     clickSpy.mockRestore();
+    fetchSpy.mockRestore();
   });
 
-  it('triggers direct download using eventId prop', () => {
+  it('triggers fetch-backed blob download using eventId prop', async () => {
     const clickSpy = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValueOnce(
+      new Response('BEGIN:VCALENDAR\r\nEND:VCALENDAR', {
+        status: 200,
+        headers: { 'Content-Type': 'text/calendar' },
+      })
+    );
     render(
       <AddToCalendar
         event={sampleEvent}
@@ -126,23 +146,53 @@ describe('AddToCalendar', () => {
     fireEvent.click(screen.getByText('Add to Calendar'));
     fireEvent.click(screen.getByText('iCal'));
 
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith('/api/schedule/event-123/ics');
+      expect(mockCreateObjectURL).toHaveBeenCalled();
+      expect(clickSpy).toHaveBeenCalled();
+    });
     expect(calendarUtils.createIcsFile).not.toHaveBeenCalled();
-    expect(mockCreateObjectURL).not.toHaveBeenCalled();
-    expect(clickSpy).toHaveBeenCalled();
     clickSpy.mockRestore();
+    fetchSpy.mockRestore();
   });
 
-  it('triggers direct download when event has id property', () => {
+  it('triggers fetch-backed blob download when event has id property and shows error toast on failure', async () => {
     const clickSpy = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce(
+        new Response('BEGIN:VCALENDAR\r\nEND:VCALENDAR', {
+          status: 200,
+          headers: { 'Content-Type': 'text/calendar' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: 'Calendar feed unavailable' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
     const eventWithId = { ...sampleEvent, id: 'event-with-id' };
-    render(<AddToCalendar event={eventWithId} />);
+    render(
+      <ToastProvider>
+        <AddToCalendar event={eventWithId} />
+      </ToastProvider>
+    );
     fireEvent.click(screen.getByText('Add to Calendar'));
     fireEvent.click(screen.getByText('Apple'));
 
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith('/api/schedule/event-with-id/ics');
+      expect(clickSpy).toHaveBeenCalledTimes(1);
+    });
     expect(calendarUtils.createIcsFile).not.toHaveBeenCalled();
-    expect(mockCreateObjectURL).not.toHaveBeenCalled();
-    expect(clickSpy).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText('Add to Calendar'));
+    fireEvent.click(screen.getByText('Apple'));
+    expect(await screen.findByText('Calendar feed unavailable')).toBeInTheDocument();
+
     clickSpy.mockRestore();
+    fetchSpy.mockRestore();
   });
 
   it('closes the dropdown when Escape key is pressed', () => {

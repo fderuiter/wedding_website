@@ -11,6 +11,8 @@ const DEPLOY_YML_PATH = path.join(WORKFLOWS_DIR, 'deploy.yml');
 const DEPLOY_STAGE_YML_PATH = path.join(WORKFLOWS_DIR, 'deploy-stage.yml');
 const DEPLOY_PROVIDER_YML_PATH = path.join(WORKFLOWS_DIR, 'deploy-provider.yml');
 const DB_MIGRATE_YML_PATH = path.join(WORKFLOWS_DIR, 'db-migrate.yml');
+const CI_YML_PATH = path.join(WORKFLOWS_DIR, 'ci.yml');
+const STORYBOOK_YML_PATH = path.join(WORKFLOWS_DIR, 'storybook.yml');
 const DEPLOYMENT_DOC_PATH = path.join(REPO_ROOT, 'DEPLOYMENT.md');
 const CLOUD_RUN_DOC_PATH = path.join(REPO_ROOT, 'docs', 'deployment', 'gcp-cloud-run.md');
 
@@ -61,6 +63,8 @@ describe('Release & Provider Deployment Workflow Digest Pinning and Provenance C
   const deployStageYml = fs.readFileSync(DEPLOY_STAGE_YML_PATH, 'utf8');
   const deployProviderYml = fs.readFileSync(DEPLOY_PROVIDER_YML_PATH, 'utf8');
   const dbMigrateYml = fs.readFileSync(DB_MIGRATE_YML_PATH, 'utf8');
+  const ciYml = fs.readFileSync(CI_YML_PATH, 'utf8');
+  const storybookYml = fs.readFileSync(STORYBOOK_YML_PATH, 'utf8');
 
   let tempDir: string;
   let binDir: string;
@@ -410,6 +414,113 @@ process.exit(1);
         expect(groupExpr).not.toContain(forbiddenCtx);
       }
     }
+
+    // 4. ci.yml and storybook.yml enforce queue: max FIFO concurrency and deploy-docs locks github-pages
+    const ciDoc = parseDocument(ciYml, { version: '1.2', strict: true }).toJS() as {
+      concurrency?: { group?: string; 'cancel-in-progress'?: boolean | string; queue?: string };
+      jobs?: Record<
+        string,
+        {
+          if?: string;
+          concurrency?: { group?: string; 'cancel-in-progress'?: boolean | string; queue?: string };
+        }
+      >;
+    };
+    const storybookDoc = parseDocument(storybookYml, { version: '1.2', strict: true }).toJS() as WorkflowShape;
+
+    expect(ciDoc.concurrency).toEqual({
+      group: '${{ github.workflow }}-${{ github.ref }}',
+      'cancel-in-progress': "${{ github.event_name == 'pull_request' }}",
+      queue: 'max',
+    });
+    expect(storybookDoc.concurrency).toEqual({
+      group: 'storybook',
+      'cancel-in-progress': false,
+      queue: 'max',
+    });
+    expect(ciDoc.jobs?.['deploy-docs']?.if).toBe(
+      "github.ref == 'refs/heads/main' && github.event_name == 'push'"
+    );
+    expect(ciDoc.jobs?.['deploy-docs']?.concurrency).toEqual({
+      group: 'github-pages',
+      'cancel-in-progress': false,
+      queue: 'max',
+    });
+  });
+
+  it('verifies origin/main HEAD freshness in ci.yml deploy-docs and skips stale commits cleanly', () => {
+    const freshnessScript = extractStepRunScript(ciYml, 'Verify Main Branch Tip Freshness');
+    expect(freshnessScript).not.toContain('${{');
+
+    const bareOriginDir = path.join(tempDir, 'origin.git');
+    const workRepoDir = path.join(tempDir, 'work');
+    fs.mkdirSync(bareOriginDir, { recursive: true });
+    execFileSync('git', ['init', '--bare', '--initial-branch=main'], { cwd: bareOriginDir });
+    execFileSync('git', ['clone', bareOriginDir, workRepoDir]);
+    execFileSync('git', ['config', 'user.email', 'ci@example.com'], { cwd: workRepoDir });
+    execFileSync('git', ['config', 'user.name', 'CI Bot'], { cwd: workRepoDir });
+
+    fs.writeFileSync(path.join(workRepoDir, 'doc.txt'), 'v1\n');
+    execFileSync('git', ['add', 'doc.txt'], { cwd: workRepoDir });
+    execFileSync('git', ['commit', '-m', 'first commit'], { cwd: workRepoDir });
+    const firstSha = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: workRepoDir,
+      encoding: 'utf8',
+    }).trim();
+    execFileSync('git', ['push', 'origin', 'HEAD:refs/heads/main'], { cwd: workRepoDir });
+
+    // 1. Tip commit matches origin/main HEAD -> is_latest=true
+    fs.writeFileSync(outputFile, '');
+    const latestRes = runBashStep(
+      freshnessScript,
+      {
+        GITHUB_TOKEN: '',
+        CURRENT_SHA: firstSha,
+      },
+      workRepoDir
+    );
+    expect(latestRes.status).toBe(0);
+    expect(fs.readFileSync(outputFile, 'utf8')).toContain(`main_head_sha=${firstSha}`);
+    expect(fs.readFileSync(outputFile, 'utf8')).toContain('is_latest=true');
+
+    // 2. Newer commit pushed to origin/main -> stale commit skips Pages with exit 0 and is_latest=false
+    fs.writeFileSync(path.join(workRepoDir, 'doc.txt'), 'v2\n');
+    execFileSync('git', ['add', 'doc.txt'], { cwd: workRepoDir });
+    execFileSync('git', ['commit', '-m', 'second commit'], { cwd: workRepoDir });
+    const secondSha = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: workRepoDir,
+      encoding: 'utf8',
+    }).trim();
+    execFileSync('git', ['push', 'origin', 'HEAD:refs/heads/main'], { cwd: workRepoDir });
+    execFileSync('git', ['checkout', '--detach', firstSha], { cwd: workRepoDir, stdio: 'ignore' });
+
+    fs.writeFileSync(outputFile, '');
+    const staleRes = runBashStep(
+      freshnessScript,
+      {
+        GITHUB_TOKEN: '',
+        CURRENT_SHA: firstSha,
+      },
+      workRepoDir
+    );
+    expect(staleRes.status).toBe(0);
+    expect(staleRes.stdout + staleRes.stderr).toContain('Skipping GitHub Pages deployment for stale commit');
+    expect(fs.readFileSync(outputFile, 'utf8')).toContain(`main_head_sha=${secondSha}`);
+    expect(fs.readFileSync(outputFile, 'utf8')).toContain('is_latest=false');
+
+    // 3. Missing origin remote fails closed with exit 1
+    execFileSync('git', ['remote', 'remove', 'origin'], { cwd: workRepoDir });
+    fs.writeFileSync(outputFile, '');
+    const missingOriginRes = runBashStep(
+      freshnessScript,
+      {
+        GITHUB_TOKEN: '',
+        CURRENT_SHA: secondSha,
+      },
+      workRepoDir
+    );
+    expect(missingOriginRes.status).toBe(1);
+    expect(missingOriginRes.stdout + missingOriginRes.stderr).toContain("Missing git remote 'origin'");
   });
 
   it('propagates image_digest in deploy.yml and removes latest defaults in deploy-provider.yml', () => {
@@ -1014,6 +1125,7 @@ process.exit(1);
     );
 
     let healthMode: 'wrapped-ok' | 'unwrapped-ok' | 'degraded' | 'success-false' | 'malformed' = 'wrapped-ok';
+    let readyMode: 'ready' | 'unhealthy-503' | 'unhealthy-200' | 'malformed' = 'ready';
 
     const server = http.createServer((req, res) => {
       if (req.url === '/api/health') {
@@ -1056,6 +1168,44 @@ process.exit(1);
         }
         res.writeHead(200, { 'Content-Type': 'text/html' });
         res.end('{"success":true,"data":{"status":"ok"');
+        return;
+      }
+      if (req.url === '/api/ready') {
+        if (readyMode === 'ready') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              status: 'ready',
+              database: 'connected',
+              timestamp: '2026-11-20T00:00:00.000Z',
+            })
+          );
+          return;
+        }
+        if (readyMode === 'unhealthy-503') {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              status: 'unhealthy',
+              database: 'connected',
+              error: 'Database schema is not ready',
+              timestamp: '2026-11-20T00:00:00.000Z',
+            })
+          );
+          return;
+        }
+        if (readyMode === 'unhealthy-200') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              status: 'unhealthy',
+              database: 'connected',
+            })
+          );
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end('{"status":"ready"');
         return;
       }
       res.writeHead(404);
@@ -1181,6 +1331,21 @@ process.exit(1);
       });
       expect(malformedRes.status).toBe(1);
       expect(malformedRes.outputs).toContain('health_status=unhealthy');
+
+      // Healthy /api/health with failing /api/ready (HTTP 503, status != ready, or malformed JSON) fails closed
+      healthMode = 'wrapped-ok';
+      for (const failingReadyMode of ['unhealthy-503', 'unhealthy-200', 'malformed'] as const) {
+        readyMode = failingReadyMode;
+        const readyFailRes = await runAsync(fastFailScript, {
+          TARGET_ENV: 'production',
+          VAR_SERVICE_URL: liveUrl,
+          SERVICE_URL: '',
+          SECRET_SERVICE_URL: '',
+          IS_DRY_RUN: 'false',
+        });
+        expect(readyFailRes.status).toBe(1);
+        expect(readyFailRes.outputs).toContain('health_status=unhealthy');
+      }
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
@@ -1661,9 +1826,20 @@ process.exit(0);
       const okRes = runBashStep(verifySecretScript, {
         TARGET_ENV: 'production',
         DATABASE_URL: validSocketUrl,
+        POSTGRES_URL_NON_POOLING: validSocketUrl,
       });
       expect(okRes.status).toBe(0);
     }
+
+    const badNonPoolingRes = runBashStep(verifySecretScript, {
+      TARGET_ENV: 'production',
+      DATABASE_URL: 'postgresql://wedding_user:STRONG_PASSWORD@localhost:5432/wedding_db',
+      POSTGRES_URL_NON_POOLING: `postgresql://wedding:${secretToken}@/wedding_db`,
+    });
+    expect(badNonPoolingRes.status).toBe(1);
+    const badNonPoolingOut = badNonPoolingRes.stdout + badNonPoolingRes.stderr;
+    expect(badNonPoolingOut).toContain('Invalid format for POSTGRES_URL_NON_POOLING');
+    expect(badNonPoolingOut).not.toContain(secretToken);
   });
 
   it('accepts image_tag in deploy.yml for tagged rollouts, resolves v* tag to origin/main commit SHA, skips rebuild, and runs db-migrate.yml before deploy-provider.yml', () => {
@@ -1988,9 +2164,14 @@ process.exit(0);
       deployYml,
       'Generate Pre-Flight Schema Migration & SQL DDL Summary'
     );
+    const schemaCompatSection =
+      (deployYml.split(/\n  schema-compatibility:\n/)[1] ?? '').split(/\n  publish-artifact:\n/)[0] ?? '';
+    expect(schemaCompatSection).not.toContain('npm ci');
+    expect(schemaCompatSection).not.toContain("cache: 'npm'");
     expect(statusCheckScript).not.toContain('${{');
     expect(statusCheckScript).toContain('--require-db');
     expect(offlineSummaryScript).not.toContain('${{');
+    expect(offlineSummaryScript).toContain('node --experimental-strip-types scripts/preflight-migration-summary.ts');
     expect(offlineSummaryScript).toContain('--offline');
 
     const realTsxBin = path.join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
@@ -2077,7 +2258,16 @@ process.exit(1);
     // 4. deploy.yml schema-compatibility --offline emits NOT QUERIED git diff without fabricating slice(-3)
     const offlineRepo = path.join(tempDir, 'offline-repo');
     const offlineMigrations = path.join(offlineRepo, 'prisma', 'migrations');
+    const offlineScriptsDir = path.join(offlineRepo, 'scripts');
+    const offlineSrcLibDir = path.join(offlineRepo, 'src', 'lib');
     fs.mkdirSync(offlineMigrations, { recursive: true });
+    fs.mkdirSync(offlineScriptsDir, { recursive: true });
+    fs.mkdirSync(offlineSrcLibDir, { recursive: true });
+    fs.copyFileSync(realPreflightScript, path.join(offlineScriptsDir, 'preflight-migration-summary.ts'));
+    fs.copyFileSync(
+      path.join(REPO_ROOT, 'src', 'lib', 'postgres-url.js'),
+      path.join(offlineSrcLibDir, 'postgres-url.js')
+    );
     const gitEnv = {
       ...process.env,
       GIT_AUTHOR_NAME: 'CI Bot',
@@ -2173,6 +2363,473 @@ process.exit(1);
     ]) {
       expect(script).toContain('http.${ORIGIN_SERVER}/.extraheader=AUTHORIZATION: basic');
       expect(script).toContain('git "${GIT_AUTH_ARGS[@]}" fetch');
+    }
+  });
+
+  it('verifies scripts/rollout-vps.sh polls /api/live, /api/health, and /api/ready and rejects targets that fail /api/ready or /api/health', async () => {
+    const rolloutScriptPath = path.join(process.cwd(), 'scripts', 'rollout-vps.sh');
+    const rolloutDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rollout-vps-probe-'));
+    const mockBinDir = path.join(rolloutDir, 'bin');
+    fs.mkdirSync(mockBinDir, { recursive: true });
+
+    fs.writeFileSync(
+      path.join(mockBinDir, 'docker'),
+      `#!/usr/bin/env bash
+if [[ "$*" == *"image inspect"* ]]; then
+  exit 1
+fi
+if [[ "$*" == *"ps -q"* ]]; then
+  echo "mock-cid-123"
+  exit 0
+fi
+if [[ "$*" == *"inspect -f"* ]]; then
+  echo "healthy"
+  exit 0
+fi
+exit 0
+`,
+      { mode: 0o755 }
+    );
+
+    let healthOk = true;
+    let readyOk = true;
+
+    const createProbeHandler = () => (req: http.IncomingMessage, res: http.ServerResponse) => {
+      if (req.url === '/api/live') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'alive' }));
+        return;
+      }
+      if (req.url === '/api/health') {
+        if (healthOk) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              success: true,
+              data: { status: 'ok', database: 'connected', timestamp: '2026-11-20T00:00:00.000Z' },
+            })
+          );
+        } else {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              success: false,
+              error: 'Database connection failed',
+            })
+          );
+        }
+        return;
+      }
+      if (req.url === '/api/ready') {
+        if (readyOk) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              status: 'ready',
+              database: 'connected',
+              timestamp: '2026-11-20T00:00:00.000Z',
+            })
+          );
+        } else {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              status: 'unhealthy',
+              database: 'connected',
+              error: 'Database schema is not ready',
+            })
+          );
+        }
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    };
+
+    const primaryServer = http.createServer(createProbeHandler());
+    const standbyServer = http.createServer(createProbeHandler());
+
+    await Promise.all([
+      new Promise<void>((resolve) => primaryServer.listen(0, '127.0.0.1', () => resolve())),
+      new Promise<void>((resolve) => standbyServer.listen(0, '127.0.0.1', () => resolve())),
+    ]);
+
+    const primaryAddr = primaryServer.address();
+    const standbyAddr = standbyServer.address();
+    const primaryPort = typeof primaryAddr === 'object' && primaryAddr ? primaryAddr.port : 0;
+    const standbyPort = typeof standbyAddr === 'object' && standbyAddr ? standbyAddr.port : 0;
+
+    const runRollout = () =>
+      new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+        const child = spawn('bash', [rolloutScriptPath], {
+          env: {
+            ...process.env,
+            PATH: `${mockBinDir}:${process.env.PATH || ''}`,
+            PORT: String(primaryPort),
+            STANDBY_PORT: String(standbyPort),
+            SKIP_IMAGE_BUILD: 'true',
+            ROLLOUT_WAIT_SECONDS: '1',
+            ROLLOUT_POLL_INTERVAL: '0.1',
+            DB_WAIT_SECONDS: '2',
+            STANDBY_DRAIN_SECONDS: '0',
+          },
+        });
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', (chunk) => {
+          stdout += chunk.toString();
+        });
+        child.stderr.on('data', (chunk) => {
+          stderr += chunk.toString();
+        });
+        child.on('error', reject);
+        child.on('close', (code) => resolve({ status: code, stdout, stderr }));
+      });
+
+    try {
+      const okRollout = await runRollout();
+      expect(okRollout.status).toBe(0);
+      expect(okRollout.stdout).toContain('passed /api/live, /api/health, and /api/ready probes');
+
+      readyOk = false;
+      const readyFailRollout = await runRollout();
+      expect(readyFailRollout.status).toBe(1);
+      expect(readyFailRollout.stderr).toContain('/api/ready');
+
+      readyOk = true;
+      healthOk = false;
+      const healthFailRollout = await runRollout();
+      expect(healthFailRollout.status).toBe(1);
+      expect(healthFailRollout.stderr).toContain('/api/health');
+    } finally {
+      await Promise.all([
+        new Promise<void>((resolve) => primaryServer.close(() => resolve())),
+        new Promise<void>((resolve) => standbyServer.close(() => resolve())),
+      ]);
+      fs.rmSync(rolloutDir, { recursive: true, force: true });
+    }
+  });
+
+  it('probes /api/health and /api/ready in deploy-provider.yml with bounded timeouts, redacts secrets.SERVICE_URL, stamps resolved tag/provenance SHAs, transitions GitHub Deployments two-phase, and gates rollback.yml in deploy-stage.yml', async () => {
+    const providerDoc = parseDocument(deployProviderYml, { version: '1.2', strict: true }).toJS() as {
+      on?: {
+        workflow_dispatch?: { inputs?: Record<string, unknown> };
+        workflow_call?: { inputs?: Record<string, unknown>; outputs?: Record<string, unknown> };
+      };
+      jobs?: {
+        deploy?: {
+          'timeout-minutes'?: number;
+          outputs?: Record<string, string>;
+          steps?: Array<{
+            id?: string;
+            name?: string;
+            if?: string;
+            uses?: string;
+            with?: Record<string, unknown>;
+          }>;
+        };
+      };
+    };
+    const stageDoc = parseDocument(deployStageYml, { version: '1.2', strict: true }).toJS() as {
+      jobs?: {
+        'deploy-provider'?: { with?: Record<string, unknown> };
+        'verify-deployment'?: { environment?: unknown; outputs?: Record<string, string> };
+        rollback?: { if?: string };
+      };
+    };
+
+    expect(providerDoc.jobs?.deploy?.['timeout-minutes']).toBe(10);
+    expect(providerDoc.on?.workflow_dispatch?.inputs).not.toHaveProperty('auto_rollback_on_failure');
+    expect(providerDoc.on?.workflow_call?.inputs).toHaveProperty('auto_rollback_on_failure');
+    expect(providerDoc.on?.workflow_call?.outputs).toHaveProperty('health_status');
+    expect(providerDoc.on?.workflow_call?.outputs).toHaveProperty('http_status');
+    expect(providerDoc.on?.workflow_call?.outputs).toHaveProperty('inline_rollback_completed');
+
+    const deploySteps = providerDoc.jobs?.deploy?.steps ?? [];
+    const cloudrunStep = deploySteps.find((s) => s.id === 'cloudrun');
+    expect(cloudrunStep?.with?.labels).toBe(
+      '${{ steps.provenance.outputs.cloud_run_labels || steps.standalone-target.outputs.cloud_run_labels || steps.resolve.outputs.cloud_run_labels }}'
+    );
+
+    const finalizeStep = deploySteps.find((s) => s.id === 'finalize-deployment');
+    expect(finalizeStep?.if).toContain('always()');
+
+    const setupNodeStep = deploySteps.find((s) => s.name === 'Setup Node.js for Migration Linter');
+    expect(setupNodeStep?.uses).toContain('actions/setup-node@');
+    expect(setupNodeStep?.with?.['node-version-file']).toBe('.nvmrc');
+
+    expect(stageDoc.jobs?.['deploy-provider']?.with?.auto_rollback_on_failure).toBe(
+      "${{ inputs.rollback_environment == '' }}"
+    );
+    expect(stageDoc.jobs?.['verify-deployment']?.environment).toBeUndefined();
+    expect(stageDoc.jobs?.rollback?.if).toContain(
+      "needs.deploy-provider.outputs.inline_rollback_completed != 'true'"
+    );
+
+    const providerProbeScript = extractStepRunScript(deployProviderYml, 'Verify Provider Service Health');
+    const recordDeployScript = extractStepRunScript(deployProviderYml, 'Record Environment Deployment State');
+    const finalizeDeployScript = extractStepRunScript(deployProviderYml, 'Finalize Environment Deployment Status');
+    const stageProbeScript = extractStepRunScript(
+      deployStageYml,
+      'Execute Post-Deployment Health Probe Verification'
+    );
+    expect(providerProbeScript).toContain('--connect-timeout 5 --max-time 10');
+    expect(providerProbeScript).toContain('READY_ENDPOINT="${TARGET_URL}/api/ready"');
+
+    let probeState: 'ok' | 'degraded' = 'ok';
+    let readyState: 'ready' | 'unhealthy' = 'ready';
+    const createdDeployments: Array<{
+      id: number;
+      ref: string;
+      payload: Record<string, unknown>;
+      statuses: Array<{ state: string; auto_inactive?: boolean }>;
+    }> = [];
+
+    const mockServer = http.createServer((req, res) => {
+      const reqUrl = req.url ?? '/';
+      if (reqUrl === '/api/health') {
+        if (probeState === 'ok') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, data: { status: 'ok', database: 'connected' } }));
+        } else {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, status: 'degraded', database: 'disconnected' }));
+        }
+        return;
+      }
+      if (reqUrl === '/api/ready') {
+        if (readyState === 'ready') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ready', database: 'connected' }));
+        } else {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'unhealthy', database: 'connected', error: 'Database schema is not ready' }));
+        }
+        return;
+      }
+      let body = '';
+      req.on('data', (c) => {
+        body += c.toString();
+      });
+      req.on('end', () => {
+        res.setHeader('Content-Type', 'application/json');
+        if (req.method === 'POST' && reqUrl === '/repos/OwnerOrg/Wedding_Website/deployments') {
+          const parsed = JSON.parse(body) as { ref: string; payload: Record<string, unknown> };
+          const id = 800 + createdDeployments.length + 1;
+          createdDeployments.push({ id, ref: parsed.ref, payload: parsed.payload, statuses: [] });
+          res.writeHead(201);
+          res.end(JSON.stringify({ id }));
+          return;
+        }
+        const statusMatch = reqUrl.match(/^\/repos\/OwnerOrg\/Wedding_Website\/deployments\/(\d+)\/statuses$/);
+        if (req.method === 'POST' && statusMatch) {
+          const id = Number(statusMatch[1]);
+          const parsed = JSON.parse(body) as { state: string; auto_inactive?: boolean };
+          const dep = createdDeployments.find((d) => d.id === id);
+          dep?.statuses.push(parsed);
+          res.writeHead(201);
+          res.end(JSON.stringify(parsed));
+          return;
+        }
+        res.writeHead(404);
+        res.end('{}');
+      });
+    });
+
+    await new Promise<void>((resolve) => mockServer.listen(0, '127.0.0.1', () => resolve()));
+    const addr = mockServer.address();
+    const port = typeof addr === 'object' && addr ? addr.port : 0;
+    const secretBaseUrl = `http://127.0.0.1:${port}`;
+
+    function runBashStepAsync(script: string, envOverrides: Record<string, string>) {
+      return new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+        const child = spawn('bash', ['-eo', 'pipefail', '-c', script], {
+          cwd: tempDir,
+          env: {
+            ...process.env,
+            PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+            GITHUB_API_URL: apiBaseUrl,
+            GITHUB_REPOSITORY: 'OwnerOrg/Wedding_Website',
+            GITHUB_OUTPUT: outputFile,
+            GITHUB_STEP_SUMMARY: summaryFile,
+            ...envOverrides,
+          },
+        });
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', (chunk) => {
+          stdout += chunk.toString();
+        });
+        child.stderr.on('data', (chunk) => {
+          stderr += chunk.toString();
+        });
+        child.on('error', reject);
+        child.on('close', (status) => resolve({ status, stdout, stderr }));
+      });
+    }
+
+    try {
+      // 1. Standalone workflow_dispatch with image_tag: v1.0.0 and empty commit_sha records resolved tag SHA instead of github.sha
+      const resolvedTagSha = '1234567890abcdef1234567890abcdef12345678';
+      const driftedGithubSha = 'fedcba0987654321fedcba0987654321fedcba09';
+
+      fs.writeFileSync(outputFile, '');
+      const recordRes = await runBashStepAsync(recordDeployScript, {
+        GITHUB_TOKEN: 'ghs_test_token',
+        GITHUB_REPOSITORY: 'OwnerOrg/Wedding_Website',
+        GITHUB_API_URL: secretBaseUrl,
+        TARGET_ENV: 'production',
+        PROVIDER: 'docker-host',
+        IMAGE_URI: `ghcr.io/ownerorg/wedding_website@${VALID_DIGEST}`,
+        IMAGE_DIGEST: VALID_DIGEST,
+        IMAGE_TAG: 'v1.0.0',
+        SOURCE_REVISION: resolvedTagSha,
+        STANDALONE_TARGET_SHA: resolvedTagSha,
+        INPUT_COMMIT_SHA: '',
+        CURRENT_SHA: driftedGithubSha,
+        VAR_SERVICE_URL: '',
+        CLOUDRUN_URL: '',
+      });
+      expect(recordRes.status).toBe(0);
+      expect(fs.readFileSync(outputFile, 'utf8')).toContain('deployment_id=801');
+      expect(createdDeployments[0]?.ref).toBe(resolvedTagSha);
+      expect(createdDeployments[0]?.payload.commit_sha).toBe(resolvedTagSha);
+      expect(createdDeployments[0]?.statuses).toEqual([
+        { state: 'in_progress', auto_inactive: false, environment: 'production' },
+      ]);
+
+      // 2. Verify Provider Service Health resolves secrets.SERVICE_URL in-memory without leaking it
+      fs.writeFileSync(outputFile, '');
+      fs.writeFileSync(summaryFile, '');
+      const healthyProbeRes = await runBashStepAsync(providerProbeScript, {
+        TARGET_ENV: 'production',
+        VAR_SERVICE_URL: '',
+        CLOUDRUN_URL: '',
+        SECRET_SERVICE_URL: `${secretBaseUrl}/`,
+        IS_DRY_RUN: 'false',
+      });
+      expect(healthyProbeRes.status).toBe(0);
+      const healthyOutputs = fs.readFileSync(outputFile, 'utf8');
+      expect(healthyOutputs).toContain('health_status=healthy');
+      expect(healthyOutputs).toContain('http_status=200');
+      expect(healthyOutputs).not.toContain(secretBaseUrl);
+      expect(healthyProbeRes.stdout + healthyProbeRes.stderr).not.toContain(secretBaseUrl);
+      expect(fs.readFileSync(summaryFile, 'utf8')).not.toContain(secretBaseUrl);
+
+      // 3. Finalize Environment Deployment Status transitions 801 -> success (auto_inactive: true)
+      fs.writeFileSync(outputFile, '');
+      const finalizeOkRes = await runBashStepAsync(finalizeDeployScript, {
+        GITHUB_TOKEN: 'ghs_test_token',
+        GITHUB_REPOSITORY: 'OwnerOrg/Wedding_Website',
+        GITHUB_API_URL: secretBaseUrl,
+        TARGET_ENV: 'production',
+        DEPLOYMENT_ID: '801',
+        HEALTH_OUTCOME: 'success',
+        HEALTH_STATUS: 'healthy',
+        VAR_SERVICE_URL: '',
+        CLOUDRUN_URL: '',
+      });
+      expect(finalizeOkRes.status).toBe(0);
+      expect(createdDeployments[0]?.statuses[1]).toEqual({
+        state: 'success',
+        auto_inactive: true,
+        environment: 'production',
+      });
+
+      // 4. deploy-stage.yml consumes health_status & http_status directly from deploy-provider.yml without polling
+      fs.writeFileSync(outputFile, '');
+      fs.writeFileSync(summaryFile, '');
+      const consumedStageRes = await runBashStepAsync(stageProbeScript, {
+        TARGET_ENV: 'production',
+        VAR_SERVICE_URL: '',
+        SERVICE_URL: '',
+        SECRET_SERVICE_URL: '',
+        PROVIDER_HEALTH_STATUS: 'healthy',
+        PROVIDER_HTTP_STATUS: '200',
+        IS_DRY_RUN: 'false',
+      });
+      expect(consumedStageRes.status).toBe(0);
+      expect(fs.readFileSync(outputFile, 'utf8')).toContain('health_status=healthy');
+      expect(fs.readFileSync(outputFile, 'utf8')).toContain('http_status=200');
+
+      // 5. Fails closed when /api/health returns 200 ok/connected but /api/ready returns 503 unhealthy
+      readyState = 'unhealthy';
+      const fastOneIterationProbe = providerProbeScript
+        .replace('MAX_TIMEOUT=120', 'MAX_TIMEOUT=1')
+        .replace('sleep $DELAY', 'sleep 1');
+      fs.writeFileSync(outputFile, '');
+      fs.writeFileSync(summaryFile, '');
+      const unreadyProbeRes = await runBashStepAsync(fastOneIterationProbe, {
+        TARGET_ENV: 'production',
+        VAR_SERVICE_URL: '',
+        CLOUDRUN_URL: '',
+        SECRET_SERVICE_URL: secretBaseUrl,
+        IS_DRY_RUN: 'false',
+      });
+      expect(unreadyProbeRes.status).toBe(1);
+      expect(fs.readFileSync(outputFile, 'utf8')).toContain('health_status=unhealthy');
+      expect(fs.readFileSync(outputFile, 'utf8')).toContain('http_status=503');
+      expect(unreadyProbeRes.stdout + unreadyProbeRes.stderr).not.toContain(secretBaseUrl);
+      expect(fs.readFileSync(summaryFile, 'utf8')).not.toContain(secretBaseUrl);
+      readyState = 'ready';
+
+      // 6. Failed /api/health probe marks active GitHub Deployment failure (never success)
+      probeState = 'degraded';
+      const brokenSha = 'abcdefabcdefabcdefabcdefabcdefabcdefabcd';
+      fs.writeFileSync(outputFile, '');
+      await runBashStepAsync(recordDeployScript, {
+        GITHUB_TOKEN: 'ghs_test_token',
+        GITHUB_REPOSITORY: 'OwnerOrg/Wedding_Website',
+        GITHUB_API_URL: secretBaseUrl,
+        TARGET_ENV: 'production',
+        PROVIDER: 'google-cloud-run',
+        IMAGE_URI: `ghcr.io/ownerorg/wedding_website@${VALID_DIGEST}`,
+        IMAGE_DIGEST: VALID_DIGEST,
+        IMAGE_TAG: brokenSha,
+        SOURCE_REVISION: brokenSha,
+        STANDALONE_TARGET_SHA: '',
+        INPUT_COMMIT_SHA: brokenSha,
+        CURRENT_SHA: brokenSha,
+        VAR_SERVICE_URL: '',
+        CLOUDRUN_URL: '',
+      });
+      expect(createdDeployments[1]?.statuses).toEqual([
+        { state: 'in_progress', auto_inactive: false, environment: 'production' },
+      ]);
+
+      const fastFailProbe = providerProbeScript.replace('MAX_TIMEOUT=120', 'MAX_TIMEOUT=0');
+      fs.writeFileSync(outputFile, '');
+      fs.writeFileSync(summaryFile, '');
+      const failedProbeRes = await runBashStepAsync(fastFailProbe, {
+        TARGET_ENV: 'production',
+        VAR_SERVICE_URL: '',
+        CLOUDRUN_URL: '',
+        SECRET_SERVICE_URL: secretBaseUrl,
+        IS_DRY_RUN: 'false',
+      });
+      expect(failedProbeRes.status).toBe(1);
+      expect(fs.readFileSync(outputFile, 'utf8')).toContain('health_status=unhealthy');
+      expect(fs.readFileSync(summaryFile, 'utf8')).toContain('[configured via secrets.SERVICE_URL]');
+      expect(fs.readFileSync(summaryFile, 'utf8')).not.toContain(secretBaseUrl);
+
+      await runBashStepAsync(finalizeDeployScript, {
+        GITHUB_TOKEN: 'ghs_test_token',
+        GITHUB_REPOSITORY: 'OwnerOrg/Wedding_Website',
+        GITHUB_API_URL: secretBaseUrl,
+        TARGET_ENV: 'production',
+        DEPLOYMENT_ID: '802',
+        HEALTH_OUTCOME: 'failure',
+        HEALTH_STATUS: 'unhealthy',
+        VAR_SERVICE_URL: '',
+        CLOUDRUN_URL: '',
+      });
+      expect(createdDeployments[1]?.statuses[1]).toEqual({
+        state: 'failure',
+        auto_inactive: false,
+        environment: 'production',
+      });
+    } finally {
+      await new Promise<void>((resolve) => mockServer.close(() => resolve()));
     }
   });
 });

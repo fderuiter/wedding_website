@@ -857,7 +857,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
                     onPointerMove={handleCardPointerMove}
                     onPointerUp={handleCardPointerUp}
                     onPointerCancel={handleCardPointerCancel}
-                    className="flex items-center justify-between gap-2 cursor-grab active:cursor-grabbing select-none"
+                    className="flex items-center justify-between gap-2 cursor-grab active:cursor-grabbing select-none touch-none"
                   >
                     <div className="min-w-0 flex items-center gap-1.5 flex-wrap">
                       <span
@@ -912,7 +912,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
                           onPointerMove={handleCardPointerMove}
                           onPointerUp={handleCardPointerUp}
                           onPointerCancel={handleCardPointerCancel}
-                          className={`p-2 bg-white dark:bg-gray-900/70 border border-gray-200 dark:border-gray-700 rounded-md cursor-grab active:cursor-grabbing select-none flex items-center justify-between gap-2 ${
+                          className={`p-2 bg-white dark:bg-gray-900/70 border border-gray-200 dark:border-gray-700 rounded-md cursor-grab active:cursor-grabbing select-none touch-none flex items-center justify-between gap-2 ${
                             isBeingPointerDragged ? 'opacity-50 ring-2 ring-primary' : ''
                           }`}
                         >
@@ -956,7 +956,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
                 onPointerMove={handleCardPointerMove}
                 onPointerUp={handleCardPointerUp}
                 onPointerCancel={handleCardPointerCancel}
-                className={`group p-2.5 bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 hover:border-primary/50 dark:hover:border-primary/50 rounded-lg cursor-grab active:cursor-grabbing select-none transition-all flex items-center justify-between shadow-xs hover:shadow-sm ${
+                className={`group p-2.5 bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 hover:border-primary/50 dark:hover:border-primary/50 rounded-lg cursor-grab active:cursor-grabbing select-none touch-none transition-all flex items-center justify-between shadow-xs hover:shadow-sm ${
                   isBeingPointerDragged ? 'opacity-50 ring-2 ring-primary' : ''
                 }`}
                 role="listitem"

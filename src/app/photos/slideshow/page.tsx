@@ -8,7 +8,12 @@ import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { enforceActiveGuestPageSession } from '@/core/auth/guestInviteSession';
 import { buildSignedPhotoUploadUrl } from '@/core/auth/photoUploadToken';
-import { isHostAllowed } from '@/utils/hostValidation';
+import { resolveTenantClaimsForSigning } from '@/core/auth/tenantClaims.node';
+import {
+  isHostAllowed,
+  resolveRequestHost,
+  resolveRequestProtocol,
+} from '@/utils/hostValidation';
 import { ReceptionSlideshowClient, SlideshowPhoto } from '@/components/photos/ReceptionSlideshowClient';
 
 export const metadata: Metadata = {
@@ -82,13 +87,16 @@ export default async function PhotosSlideshowPage() {
       : undefined;
   } else {
     let headerHost: string | undefined;
-    let headerProto: string | undefined;
+    let headerProto: 'http' | 'https' | undefined;
     try {
       const headerStore = await headers();
       if (headerStore && typeof headerStore.get === 'function') {
-        const forwardedHost = headerStore.get('x-forwarded-host')?.split(',')[0]?.trim();
-        headerHost = forwardedHost || headerStore.get('host')?.trim() || undefined;
-        headerProto = headerStore.get('x-forwarded-proto')?.split(',')[0]?.trim() || undefined;
+        headerHost = resolveRequestHost(headerStore) ?? undefined;
+        headerProto =
+          resolveRequestProtocol(
+            headerStore,
+            process.env.NODE_ENV === 'production' ? 'https' : 'http'
+          ) ?? undefined;
       }
     } catch {
       // Request headers may be unavailable in isolated unit test renders
@@ -107,7 +115,12 @@ export default async function PhotosSlideshowPage() {
     }
 
     try {
-      const signed = await buildSignedPhotoUploadUrl(origin, config.guestPhotoQrTokenVersion);
+      const tenantClaims = await resolveTenantClaimsForSigning(undefined, config);
+      const signed = await buildSignedPhotoUploadUrl(
+        origin,
+        config.guestPhotoQrTokenVersion,
+        tenantClaims
+      );
       uploadUrl = signed.uploadUrl;
     } catch {
       uploadUrl = origin ? `${origin}/photos?tab=guest` : '/photos?tab=guest';

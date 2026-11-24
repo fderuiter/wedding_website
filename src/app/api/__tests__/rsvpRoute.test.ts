@@ -199,4 +199,58 @@ describe('POST /api/rsvp Route', () => {
     expect(json.error).toBe('Online RSVPs are locked. Please email hosts@example.com.');
     expect(mockSubmitSubEventRsvps).not.toHaveBeenCalled();
   });
+
+  it('returns 400 when single or batch RSVP attempts to submit pending status', async () => {
+    const mockGetRsvpStatus = subEventService.getRsvpStatus as jest.MockedFunction<
+      typeof subEventService.getRsvpStatus
+    >;
+    mockGetGuestInviteSession.mockResolvedValue({
+      code: 'VALIDCODE',
+      guestName: 'Jane Smith',
+    });
+    mockGetRsvpStatus.mockResolvedValue({
+      isOpen: true,
+      isManuallyLocked: false,
+      isPastDeadline: false,
+      isInGraceWindow: false,
+      deadlineDate: '2026-08-15',
+      formattedDeadline: 'August 15, 2026',
+      timezone: 'America/Chicago',
+      closedMessage: 'Closed',
+    });
+
+    const singleRes = await POST(
+      new NextRequest('http://localhost:3000/api/rsvp', {
+        method: 'POST',
+        body: JSON.stringify({
+          subEventId: 'se-1',
+          status: 'pending',
+          plusOneCount: 0,
+        }),
+      }),
+      {}
+    );
+    const singleJson = await singleRes.json();
+    expect(singleRes.status).toBe(400);
+    expect(singleJson.success).toBe(false);
+    expect(singleJson.error).toContain('Please select Attending or Declined before saving.');
+
+    const batchRes = await POST(
+      new NextRequest('http://localhost:3000/api/rsvp', {
+        method: 'POST',
+        body: JSON.stringify({
+          rsvps: [
+            { subEventId: 'se-1', status: 'attending', plusOneCount: 0 },
+            { subEventId: 'se-2', status: 'pending', plusOneCount: 0 },
+          ],
+        }),
+      }),
+      {}
+    );
+    const batchJson = await batchRes.json();
+    expect(batchRes.status).toBe(400);
+    expect(batchJson.success).toBe(false);
+    expect(batchJson.error).toContain('Please select Attending or Declined before saving.');
+    expect(mockSubmitSubEventRsvps).not.toHaveBeenCalled();
+  });
 });

@@ -377,6 +377,59 @@ describe('Invitation Codes Export API Route (GET /api/admin/invitation-codes/exp
     expect(lines[1]).toContain('"Hotel shuttle?: Yes, round-trip"');
   });
 
+  it('exports confirmed extraFields.plusOneCount for attending/declined guests instead of raw plusOneAllocations', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    mockPrisma.invitationCode.findMany.mockResolvedValue([
+      {
+        id: 'ic-attending-1',
+        guestName: 'Allocated Two Bringing One',
+        code: 'ONEPLUS26',
+        email: 'one@example.com',
+        plusOneAllocations: 2,
+        used: true,
+        extraFields: {
+          attendanceStatus: 'attending',
+          plusOneCount: 1,
+          plusOneNames: ['Alex Partner'],
+        },
+      },
+      {
+        id: 'ic-declined-2',
+        guestName: 'Declined With Allocation',
+        code: 'DECPLUS26',
+        email: 'dec@example.com',
+        plusOneAllocations: 2,
+        used: true,
+        extraFields: {
+          attendanceStatus: 'declined',
+          plusOneCount: 0,
+        },
+      },
+      {
+        id: 'ic-pending-2',
+        guestName: 'Pending Unresponded Guest',
+        code: 'PENDPLUS26',
+        email: 'pend@example.com',
+        plusOneAllocations: 2,
+        used: false,
+        extraFields: null,
+      },
+    ] as any);
+
+    const req = new NextRequest('http://localhost:3000/api/admin/invitation-codes/export');
+    const res = await GET(req);
+    const csvText = await res.text();
+    const lines = csvText.trim().split('\n');
+
+    expect(lines).toHaveLength(4);
+    // Attending guest allocated 2 but bringing 1 exports Plus Ones = 1
+    expect(lines[1]).toContain(',1,Redeemed,Attending,');
+    // Declined guest allocated 2 exports Plus Ones = 0
+    expect(lines[2]).toContain(',0,Redeemed,Declined,');
+    // Unresponded pending guest falls back to plusOneAllocations = 2
+    expect(lines[3]).toContain(',2,Unused,Pending,');
+  });
+
   it('round-trips exported CSV through parseCsvContent and validateSingleCsvRow preserving getGuestPhone, isAddressComplete, Plus-One Name, and dietaryNotes without matching Meal Selections', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
     mockPrisma.invitationCode.findMany.mockResolvedValue([
@@ -465,5 +518,81 @@ describe('Invitation Codes Export API Route (GET /api/admin/invitation-codes/exp
       phone: '+15551234567',
       plusOneNames: ['John Doe', 'Tommy Doe'],
     });
+  });
+
+  it('ignores spoofed forwarded headers when TRUST_PROXY=false and emits validated single-host RSVP links when TRUST_PROXY is active', async () => {
+    const prevTrustProxy = process.env.TRUST_PROXY;
+    const prevAllowedHosts = process.env.ALLOWED_HOSTS;
+    process.env.ALLOWED_HOSTS = 'localhost,wedding.example';
+
+    (prisma.invitationCode.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: 'inv-safe-1',
+        code: 'SAFE2026',
+        guestName: 'Alex Rivera',
+        email: 'alex@example.com',
+        extraFields: null,
+        plusOneFirstName: null,
+        plusOneLastName: null,
+        householdName: null,
+        partyGroup: null,
+        partyTags: [],
+        addressLine1: null,
+        addressLine2: null,
+        city: null,
+        state: null,
+        zipCode: null,
+        country: null,
+        dietaryNotes: null,
+        plusOneAllocations: 0,
+        used: false,
+        rsvp: null,
+      },
+    ]);
+
+    try {
+      process.env.TRUST_PROXY = 'false';
+      const spoofedReq = new NextRequest(
+        'http://localhost:3000/api/admin/invitation-codes/export',
+        {
+          headers: {
+            host: 'localhost:3000',
+            'x-forwarded-host': 'phishing.evil.org, injected,col',
+            'x-forwarded-proto': 'https',
+          },
+        }
+      );
+      const spoofedRes = await GET(spoofedReq);
+      const spoofedCsv = (await spoofedRes.text()).replace(/^\uFEFF/, '');
+      expect(spoofedCsv).toContain('http://localhost:3000/guest?code=SAFE2026');
+      expect(spoofedCsv).not.toContain('phishing.evil.org');
+
+      process.env.TRUST_PROXY = '1';
+      const proxiedReq = new NextRequest(
+        'http://localhost:3000/api/admin/invitation-codes/export',
+        {
+          headers: {
+            host: 'localhost:3000',
+            'x-forwarded-host': 'attacker.evil.org, wedding.example',
+            'x-forwarded-proto': 'http, https',
+          },
+        }
+      );
+      const proxiedRes = await GET(proxiedReq);
+      const proxiedCsv = (await proxiedRes.text()).replace(/^\uFEFF/, '');
+      expect(proxiedCsv).toContain('https://wedding.example/guest?code=SAFE2026');
+      expect(proxiedCsv).not.toContain('attacker.evil.org');
+    } finally {
+      if (prevTrustProxy === undefined) {
+        delete process.env.TRUST_PROXY;
+      } else {
+        process.env.TRUST_PROXY = prevTrustProxy;
+      }
+      if (prevAllowedHosts === undefined) {
+        delete process.env.ALLOWED_HOSTS;
+      } else {
+        process.env.ALLOWED_HOSTS = prevAllowedHosts;
+      }
+    }
   });
 });

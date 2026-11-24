@@ -176,10 +176,21 @@ describe('check-quality', () => {
         (s) => s.script === 'check:doc-sync'
       )
     ).toBe(false);
+    expect(
+      resolveQualitySteps({ staticOnly: true, skipActionPins: true }).some(
+        (s) => s.script === 'check:action-pins'
+      )
+    ).toBe(false);
+    expect(
+      resolveQualitySteps({ staticOnly: true, skipDocSync: true, skipActionPins: true }).some(
+        (s) => s.script === 'check:doc-sync' || s.script === 'check:action-pins'
+      )
+    ).toBe(false);
 
     expect(pkg.scripts['check:static']).toBe('npx tsx scripts/check-quality.ts --static');
-    expect(ciWorkflow).toContain('run: npm run check:static -- --skip-doc-sync');
-    expect(ciWorkflow).toContain('run: npm run check:standalone -- --require-standalone');
+    expect(ciWorkflow).toContain('run: npm run check:static -- --skip-doc-sync --skip-action-pins');
+    expect(ciWorkflow).toContain('run: npm run check:action-pins -- --verify-upstream');
+    expect(ciWorkflow).toContain('run: npm run check:standalone -- --standalone-only');
   });
 
   it('includes check:audit in full quality steps before docs:build while keeping staticSteps offline', () => {
@@ -202,6 +213,6 @@ describe('check-quality', () => {
     expect(pkg.scripts['check:audit']).toBe(
       'npm audit --audit-level=moderate && npm --prefix docker/prisma-cli audit --audit-level=moderate'
     );
-    expect(ciWorkflow.match(/run: npm run check:audit/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(ciWorkflow.match(/run: npm run check:audit/g)?.length).toBe(1);
   });
 });

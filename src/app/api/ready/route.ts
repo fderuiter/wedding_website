@@ -1,16 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import {
+  REQUIRED_MIGRATION_NAMES,
+  REQUIRED_SCHEMA_TABLES,
+} from '@/lib/readinessManifest';
 import { rateLimit } from '@/utils/rateLimit';
-
-const REQUIRED_SCHEMA_TABLES = [
-  'AppConfig',
-  'Media',
-  'RegistryItem',
-  'Contributor',
-  'InvitationCode',
-  'ContentNode',
-  'SubEvent',
-] as const;
 
 const READY_BURST_LIMIT = 100;
 const READY_BURST_WINDOW_MS = 60 * 1000;
@@ -98,15 +92,29 @@ async function runReadinessCheck(): Promise<ReadinessProbeOutcome> {
         };
       }
 
-      const appliedCount = normalizedMigrations.filter(
-        (row) => row.finished_at !== null && row.rolled_back_at === null
-      ).length;
+      const appliedMigrationNames = new Set(
+        normalizedMigrations
+          .filter((row) => row.finished_at !== null && row.rolled_back_at === null)
+          .map((row) => row.migration_name)
+      );
 
-      if (appliedCount === 0) {
+      if (appliedMigrationNames.size === 0) {
         console.error('Readiness check failed: zero applied migrations in _prisma_migrations');
         return {
           kind: 'schema_unavailable',
           detailMessage: 'No applied database migrations found in _prisma_migrations',
+        };
+      }
+
+      const missingMigrations = REQUIRED_MIGRATION_NAMES.filter(
+        (migrationName) => !appliedMigrationNames.has(migrationName)
+      );
+
+      if (missingMigrations.length > 0) {
+        console.error('Readiness check failed: missing required migrations:', missingMigrations);
+        return {
+          kind: 'schema_unavailable',
+          detailMessage: `Missing required database migrations: ${missingMigrations.join(', ')}`,
         };
       }
     }

@@ -677,4 +677,41 @@ describe('verify-setup-guides contract check', () => {
       ])
     );
   });
+
+  it('rejects missing lint-staged cache/ignore flags, missing docs:sync, non-incremental tsconfig.build.json, and missing pre-push worktree/lint/audit checks', () => {
+    const pkgPath = path.join(tempDir, 'package.json');
+    fs.writeFileSync(
+      pkgPath,
+      fs
+        .readFileSync(pkgPath, 'utf8')
+        .replace('--cache --cache-location .eslintcache --no-warn-ignored ', '')
+        .replace('    "docs:sync": "npx tsx scripts/generate-openapi.ts && npx tsx scripts/generate-docs.ts --skip-openapi",\n', '')
+    );
+
+    const tsconfigBuildPath = path.join(tempDir, 'tsconfig.build.json');
+    fs.writeFileSync(
+      tsconfigBuildPath,
+      fs.readFileSync(tsconfigBuildPath, 'utf8').replace('"incremental": true', '"incremental": false')
+    );
+
+    const prePushPath = path.join(tempDir, '.githooks/pre-push');
+    fs.writeFileSync(
+      prePushPath,
+      fs
+        .readFileSync(prePushPath, 'utf8')
+        .replace("  { name: 'ESLint code linting', script: 'lint' },\n", '')
+        .replace(/\bworktree\b/gi, 'tempdir')
+    );
+
+    const errors = verifySetupGuides(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        'package.json: "lint-staged" must pass "--cache --cache-location .eslintcache --no-warn-ignored --fix --max-warnings=0"',
+        'package.json: "docs:sync" must invoke "scripts/generate-openapi.ts" and "scripts/generate-docs.ts"',
+        'tsconfig.build.json: Must enable "incremental": true with "tsBuildInfoFile": "./tsconfig.build.tsbuildinfo"',
+        '.githooks/pre-push: Must run "lint"',
+        '.githooks/pre-push: Must verify dirty pushes inside an ephemeral detached git worktree',
+      ])
+    );
+  });
 });

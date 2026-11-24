@@ -338,7 +338,7 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     return operations;
   }
 
-  it('discovers every live route file (.ts and .tsx) and HTTP operation including GET /api/live, GET /api/og, GET & HEAD /api/uploads/{path}, GET /api/admin/broadcast/{id}, GET /api/admin/geocode, GET/POST /api/admin/photos/qr, POST /api/admin/thank-you-notes/{id}/send-email, and POST /api/admin/invitation-codes/merge', () => {
+  it('discovers every live route file (.ts and .tsx) and HTTP operation including GET /api/live, GET /api/og, GET & DELETE /api/guest/session, GET & HEAD /api/uploads/{path}, GET /api/admin/broadcast/{id}, GET /api/admin/geocode, GET/POST /api/admin/photos/qr, POST /api/admin/thank-you-notes/{id}/send-email, and POST /api/admin/invitation-codes/merge', () => {
     expect(openapi.openapi).toBe('3.0.3');
     expect(Array.isArray(openapi.servers)).toBe(true);
     expect((openapi.servers ?? []).length).toBeGreaterThanOrEqual(1);
@@ -354,6 +354,8 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
       .sort();
     expect(actualOperationKeys).toEqual(expectedOperationKeys);
 
+    expect(openapi.paths['/api/guest/session']?.get).toBeDefined();
+    expect(openapi.paths['/api/guest/session']?.delete).toBeDefined();
     expect(openapi.paths['/api/uploads/{path}']?.get).toBeDefined();
     expect(openapi.paths['/api/uploads/{path}']?.head).toBeDefined();
     expect(openapi.paths['/api/admin/broadcast/{id}']?.get).toBeDefined();
@@ -598,8 +600,10 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     expect(unprotectedOpKeys).toEqual(expectedPublicOpKeys);
     expect(unprotectedOpKeys).toEqual(
       expect.arrayContaining([
+        'DELETE /api/guest/session',
         'GET /api/admin/me',
         'GET /api/admin/setup',
+        'GET /api/guest/session',
         'GET /api/health',
         'GET /api/live',
         'GET /api/og',

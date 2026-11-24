@@ -1,6 +1,5 @@
 import { cache } from 'react';
 import { headers } from 'next/headers';
-import { redirect } from 'next/navigation';
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import {
@@ -9,8 +8,10 @@ import {
   setHydratedGuestInvitation,
 } from '@/lib/requestContext';
 import { normalizeSafeCallbackPath } from '@/utils/safeCallbackUrl';
+import { isStaticExportBuild, redirectWithSeeOther } from './adminPageGuard';
 import { isAdminRequest } from './auth.server';
 import { isGuestRequest } from './guest.server';
+import { verifyGuestInternalHeaders } from './guestHeaderSignature';
 import {
   GUEST_INVITE_COOKIE,
   type GuestInviteSessionPayload,
@@ -25,6 +26,11 @@ import {
   isPhotoScopedPagePath,
   verifyPhotoUploadSessionToken,
 } from './photoUploadToken';
+import {
+  resolveEdgeRequestSubdomain,
+  verifyEdgeTenantClaims,
+} from './tenantClaims';
+import { verifyNodeTenantClaims } from './tenantClaims.node';
 import { readRequestCookie } from './tokenCookieHelpers';
 
 export {
@@ -37,6 +43,7 @@ export {
 interface InvitationLookupRecord extends Record<string, unknown> {
   code?: string;
   guestName?: string;
+  email?: string | null;
   isSample?: boolean;
   partyTags?: unknown;
 }
@@ -71,14 +78,6 @@ interface AppConfigTokenVersionLookupDelegate {
   }) => Promise<AppConfigTokenVersionRecord | null | undefined>;
 }
 
-function isStaticExportBuild(): boolean {
-  return (
-    process.env.STATIC_EXPORT === 'true' ||
-    process.env.STATIC_EXPORT === '1' ||
-    process.env.npm_lifecycle_event === 'build:export'
-  );
-}
-
 async function resolveActiveInvitationSession(
   payload: GuestInviteSessionPayload,
   req?: NextRequest
@@ -89,7 +88,8 @@ async function resolveActiveInvitationSession(
   }
 
   try {
-    const delegate = (prisma as unknown as { invitationCode?: InvitationCodeLookupDelegate })?.invitationCode;
+    const delegate = (prisma as unknown as { invitationCode?: InvitationCodeLookupDelegate })
+      ?.invitationCode;
     if (!delegate) {
       return null;
     }
@@ -121,6 +121,10 @@ async function resolveActiveInvitationSession(
       typeof invite.guestName === 'string' && invite.guestName.trim()
         ? invite.guestName
         : payload.guestName;
+    const resolvedEmail =
+      typeof invite.email === 'string' && invite.email.trim()
+        ? invite.email.trim()
+        : null;
 
     setHydratedGuestInvitation(
       buildHydratedGuestInvitation(invite, normalizedCode, resolvedGuestName),
@@ -131,6 +135,7 @@ async function resolveActiveInvitationSession(
       ...payload,
       code: payload.code,
       guestName: resolvedGuestName,
+      email: resolvedEmail,
     };
   } catch {
     return null;
@@ -138,10 +143,12 @@ async function resolveActiveInvitationSession(
 }
 
 function buildGuestSessionCacheKey(payload: GuestInviteSessionPayload): string {
-  return `${payload.code}:${payload.guestName}:${payload.exp ?? ''}`;
+  return `${payload.code}:${payload.guestName}:${payload.siteId ?? ''}:${payload.subdomain ?? ''}:${payload.exp ?? ''}`;
 }
 
-const getCachedServerSignedGuestInviteSession = cache(() => getSignedGuestInviteSession());
+const getCachedVerifiedInviteToken = cache((cookieValue: string) =>
+  verifyGuestInviteSessionToken(cookieValue)
+);
 const getCachedVerifiedPhotoUploadSession = cache((cookieValue: string) =>
   verifyPhotoUploadSessionToken(cookieValue)
 );
@@ -160,13 +167,36 @@ async function resolveServerSignedPhotoUploadSession(): Promise<PhotoUploadSessi
   return payload;
 }
 
+const getCachedServerRawVerifiedInviteToken = cache(async () => {
+  const cookieValue = await readRequestCookie(GUEST_INVITE_COOKIE, undefined, {
+    suppressErrors: true,
+  });
+  if (!cookieValue) {
+    return null;
+  }
+  const payload = await getCachedVerifiedInviteToken(cookieValue);
+  if (!payload || (payload.exp && payload.exp < Date.now())) {
+    return null;
+  }
+  return payload;
+});
+
 async function resolveServerCookieGuestInviteSession(): Promise<GuestInviteSessionPayload | null> {
   if (isStaticExportBuild()) {
     return null;
   }
 
-  const signedPayload = await getCachedServerSignedGuestInviteSession();
+  const signedPayload = await getCachedServerRawVerifiedInviteToken();
   if (!signedPayload) {
+    return null;
+  }
+
+  const requestSubdomain = await resolveEdgeRequestSubdomain();
+  if (!verifyEdgeTenantClaims(signedPayload, requestSubdomain)) {
+    return null;
+  }
+
+  if (!(await verifyNodeTenantClaims(signedPayload))) {
     return null;
   }
 
@@ -178,9 +208,12 @@ async function resolveServerCookieGuestInviteSession(): Promise<GuestInviteSessi
 
 /**
  * Retrieve verified guest invitation session from NextRequest or cookieStore,
- * confirming that the session code still matches an active, non-sample InvitationCode record.
+ * confirming tenant claims (when `MULTISITE_ENABLED` is active) and verifying that
+ * the session code still matches an active, non-sample InvitationCode record.
  */
-export async function getGuestInviteSession(req?: NextRequest): Promise<GuestInviteSessionPayload | null> {
+export async function getGuestInviteSession(
+  req?: NextRequest
+): Promise<GuestInviteSessionPayload | null> {
   if (isStaticExportBuild()) {
     return null;
   }
@@ -191,6 +224,10 @@ export async function getGuestInviteSession(req?: NextRequest): Promise<GuestInv
 
   const signedPayload = await getSignedGuestInviteSession(req);
   if (!signedPayload) {
+    return null;
+  }
+
+  if (!(await verifyNodeTenantClaims(signedPayload, req))) {
     return null;
   }
 
@@ -209,24 +246,25 @@ export function buildGuestLoginRedirectTarget(callbackPath: string | null): stri
   return '/guest/login';
 }
 
-function redirectWithSeeOther(url: string): void {
-  try {
-    redirect(url);
-  } catch (err: unknown) {
-    if (
-      err &&
-      typeof err === 'object' &&
-      'digest' in err &&
-      typeof (err as { digest?: unknown }).digest === 'string' &&
-      (err as { digest: string }).digest.startsWith('NEXT_REDIRECT;')
-    ) {
-      (err as { digest: string }).digest = (err as { digest: string }).digest.replace(/;30[78];$/, ';303;');
-    }
-    throw err;
-  }
+function isExcludedGuestCallbackRoute(callbackUrl: string): boolean {
+  return (
+    callbackUrl === '/guest' ||
+    callbackUrl.startsWith('/guest?') ||
+    callbackUrl === '/guest/login' ||
+    callbackUrl.startsWith('/guest/login?') ||
+    callbackUrl === '/guest/collect' ||
+    callbackUrl.startsWith('/guest/collect?') ||
+    callbackUrl === '/guest/claim' ||
+    callbackUrl.startsWith('/guest/claim?') ||
+    callbackUrl === '/admin' ||
+    callbackUrl.startsWith('/admin/')
+  );
 }
 
-async function resolveActivePhotoTokenVersion(expectedVersion?: number): Promise<number> {
+async function resolveActivePhotoTokenVersion(
+  expectedVersion?: number,
+  siteId?: string
+): Promise<number> {
   if (
     typeof expectedVersion === 'number' &&
     Number.isInteger(expectedVersion) &&
@@ -243,10 +281,11 @@ async function resolveActivePhotoTokenVersion(expectedVersion?: number): Promise
       return 1;
     }
 
+    const targetConfigId = siteId && siteId.trim() ? siteId.trim() : 'global';
     let record: AppConfigTokenVersionRecord | null | undefined;
     if (typeof delegate.findUnique === 'function') {
       record = await delegate.findUnique({
-        where: { id: 'global' },
+        where: { id: targetConfigId },
         select: { guestPhotoQrTokenVersion: true },
       });
     }
@@ -267,8 +306,9 @@ async function resolveActivePhotoTokenVersion(expectedVersion?: number): Promise
 }
 
 /**
- * Retrieves and verifies the active photo-scoped session cookie against the current
- * database QR token rotation version. Returns null when missing, expired, or rotated.
+ * Retrieves and verifies the active photo-scoped session cookie against tenant claims
+ * (when `MULTISITE_ENABLED` is active) and the current database QR token rotation version.
+ * Returns null when missing, expired, cross-tenant, or rotated.
  */
 export async function getActivePhotoUploadSession(
   req?: NextRequest,
@@ -285,7 +325,21 @@ export async function getActivePhotoUploadSession(
     return null;
   }
 
-  const activeVersion = await resolveActivePhotoTokenVersion(expectedVersion);
+  if (!req) {
+    const requestSubdomain = await resolveEdgeRequestSubdomain();
+    if (!verifyEdgeTenantClaims(signedPayload, requestSubdomain)) {
+      return null;
+    }
+  }
+
+  if (!(await verifyNodeTenantClaims(signedPayload, req))) {
+    return null;
+  }
+
+  const activeVersion = await resolveActivePhotoTokenVersion(
+    expectedVersion,
+    signedPayload.siteId
+  );
   if (signedPayload.v !== activeVersion) {
     return null;
   }
@@ -295,36 +349,41 @@ export async function getActivePhotoUploadSession(
 
 /**
  * Server-side rendering guard for guest-gated pages and layouts.
- * Redirects callers holding a revoked, rotated, or sample guest_invite_session cookie
- * or a rotated/out-of-scope guest_photo_session cookie (without a valid guest_auth
- * or admin_auth cookie) to /guest/login with HTTP 303.
+ * Requires a valid HMAC stamp on internal `x-guest-gated-page` and `x-guest-callback-url`
+ * headers before skipping database revocation verification or trusting `callbackUrl`.
+ * Redirects callers holding a revoked, rotated, sample, or cross-tenant `guest_invite_session`
+ * cookie or a rotated/out-of-scope `guest_photo_session` cookie (without a valid `guest_auth`
+ * or `admin_auth` cookie) to `/guest/login` with HTTP 303.
  */
 export async function enforceActiveGuestPageSession(): Promise<void> {
   if (isStaticExportBuild()) {
     return;
   }
 
-  const signedInvite = await getCachedServerSignedGuestInviteSession();
+  const rawVerifiedInvite = await getCachedServerRawVerifiedInviteToken();
   const signedPhoto = await resolveServerSignedPhotoUploadSession();
-  if (!signedInvite && !signedPhoto) {
+  if (!rawVerifiedInvite && !signedPhoto) {
     return;
   }
 
-  let isGuestGatedPage: string | null = null;
-  let callbackUrlHeader: string | null = null;
+  let verifiedGatedPage: '0' | '1' | null = null;
+  let verifiedCallbackUrl: string | null = null;
   try {
     if (typeof headers === 'function') {
       const headerStore = await headers();
       if (headerStore && typeof headerStore.get === 'function') {
-        isGuestGatedPage = headerStore.get('x-guest-gated-page');
-        callbackUrlHeader = headerStore.get('x-guest-callback-url');
+        const verifiedHeaders = await verifyGuestInternalHeaders(headerStore);
+        if (verifiedHeaders.valid) {
+          verifiedGatedPage = verifiedHeaders.gatedPage;
+          verifiedCallbackUrl = verifiedHeaders.callbackUrl;
+        }
       }
     }
   } catch {
     // Request headers may be unavailable in isolated unit test renders
   }
 
-  const rawCallbackPath = callbackUrlHeader ? callbackUrlHeader.split('?')[0] : null;
+  const rawCallbackPath = verifiedCallbackUrl ? verifiedCallbackUrl.split('?')[0] : null;
   const normalizedCallbackPath =
     rawCallbackPath && rawCallbackPath.length > 1
       ? rawCallbackPath.replace(/\/+$/, '') || '/'
@@ -332,34 +391,22 @@ export async function enforceActiveGuestPageSession(): Promise<void> {
 
   if (
     normalizedCallbackPath === '/guest' &&
-    !callbackUrlHeader?.includes('code=') &&
+    !verifiedCallbackUrl?.includes('code=') &&
     signedPhoto &&
-    !signedInvite
+    !rawVerifiedInvite
   ) {
     if ((await isAdminRequest()) || (await isGuestRequest())) {
       return;
     }
-    redirectWithSeeOther(buildGuestLoginRedirectTarget(callbackUrlHeader));
+    redirectWithSeeOther(buildGuestLoginRedirectTarget(verifiedCallbackUrl));
     return;
   }
 
-  if (isGuestGatedPage === '0') {
+  if (verifiedGatedPage === '0') {
     return;
   }
 
-  if (
-    callbackUrlHeader &&
-    (callbackUrlHeader === '/guest' ||
-      callbackUrlHeader.startsWith('/guest?') ||
-      callbackUrlHeader === '/guest/login' ||
-      callbackUrlHeader.startsWith('/guest/login?') ||
-      callbackUrlHeader === '/guest/collect' ||
-      callbackUrlHeader.startsWith('/guest/collect?') ||
-      callbackUrlHeader === '/guest/claim' ||
-      callbackUrlHeader.startsWith('/guest/claim?') ||
-      callbackUrlHeader === '/admin' ||
-      callbackUrlHeader.startsWith('/admin/'))
-  ) {
+  if (verifiedCallbackUrl && isExcludedGuestCallbackRoute(verifiedCallbackUrl)) {
     return;
   }
 
@@ -367,7 +414,7 @@ export async function enforceActiveGuestPageSession(): Promise<void> {
     return;
   }
 
-  if (signedInvite) {
+  if (rawVerifiedInvite) {
     const activeSession = await getGuestInviteSession();
     if (activeSession) {
       return;
@@ -385,5 +432,5 @@ export async function enforceActiveGuestPageSession(): Promise<void> {
     }
   }
 
-  redirectWithSeeOther(buildGuestLoginRedirectTarget(callbackUrlHeader));
+  redirectWithSeeOther(buildGuestLoginRedirectTarget(verifiedCallbackUrl));
 }

@@ -511,6 +511,36 @@ export function generateDynamicStyles(
     targetTokens['--floorplan-seat-dimmed-bg'] = dimmedBgHex;
     targetTokens['--floorplan-seat-dimmed-text'] = optimizeContrast(rawDimmedTextHex, dimmedBgHex, 4.5);
     targetTokens['--floorplan-seat-dimmed-border'] = dimmedBorderHex;
+
+    const rawSuccessBgHex = resolveHex(targetTokens['--btn-success-bg'], '#15803d');
+    const rawSuccessHoverBgHex = resolveHex(targetTokens['--btn-success-hover-bg'], '#166534');
+    const rawSuccessTextHex = resolveHex(targetTokens['--btn-success-text'], '#ffffff');
+    const isLightSuccessLabel = getLuminance(hexToRgb(rawSuccessTextHex)) > 0.5;
+
+    let calibratedSuccessBgHex = rawSuccessBgHex;
+    let calibratedSuccessHoverBgHex = rawSuccessHoverBgHex;
+    let calibratedSuccessTextHex = rawSuccessTextHex;
+
+    if (isLightSuccessLabel) {
+      calibratedSuccessBgHex = optimizeContrast(rawSuccessBgHex, rawSuccessTextHex, 4.5);
+      calibratedSuccessHoverBgHex = optimizeContrast(rawSuccessHoverBgHex, rawSuccessTextHex, 4.5);
+      calibratedSuccessTextHex = optimizeContrast(
+        optimizeContrast(rawSuccessTextHex, calibratedSuccessBgHex, 4.5),
+        calibratedSuccessHoverBgHex,
+        4.5
+      );
+    } else {
+      calibratedSuccessTextHex = optimizeContrast(
+        optimizeContrast(rawSuccessTextHex, calibratedSuccessBgHex, 4.5),
+        calibratedSuccessHoverBgHex,
+        4.5
+      );
+    }
+
+    targetTokens['--btn-success-bg'] = calibratedSuccessBgHex;
+    targetTokens['--btn-success-hover-bg'] = calibratedSuccessHoverBgHex;
+    targetTokens['--btn-success-text'] = calibratedSuccessTextHex;
+    targetTokens['--btn-success-border'] = targetTokens['--btn-success-border'] || 'transparent';
   };
 
   calibrateInverseAndToastTokens(

@@ -45,7 +45,7 @@ describe('/api/og route', () => {
     jest.clearAllMocks();
   });
 
-  it('renders a redacted monogram card for unauthenticated callers, ignores query overrides, and sets Vary: Cookie', async () => {
+  it('renders a redacted monogram card for unauthenticated callers, ignores query overrides, and sets Vary: Cookie, Host, X-Forwarded-Host', async () => {
     const req = new Request(
       'http://localhost:3000/api/og?title=Test&p1=A&p2=B&primary=%230000ff&secondary=%2300ff00'
     );
@@ -53,7 +53,7 @@ describe('/api/og route', () => {
 
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('image/png');
-    expect(res.headers.get('vary')).toBe('Cookie');
+    expect(res.headers.get('vary')).toBe('Cookie, Host, X-Forwarded-Host');
     expect(res.headers.get('cache-control')).toContain('private');
     expect(res.headers.get('cache-control')).not.toContain('public');
     expect(res.headers.get('cache-control')).not.toContain('s-maxage');
@@ -78,7 +78,7 @@ describe('/api/og route', () => {
     expect(serializedTree).not.toContain('#00ff00');
   });
 
-  it('renders full couple, date, and venue details with Cache-Control: private, max-age=3600 and Vary: Cookie when authenticated', async () => {
+  it('renders full couple, date, and venue details with Cache-Control: private, max-age=3600 and Vary: Cookie, Host, X-Forwarded-Host when authenticated', async () => {
     const guestToken = await signGuestToken({
       guest: true,
       exp: Date.now() + 60_000,
@@ -93,7 +93,7 @@ describe('/api/og route', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('image/png');
     expect(res.headers.get('cache-control')).toBe('private, max-age=3600');
-    expect(res.headers.get('vary')).toBe('Cookie');
+    expect(res.headers.get('vary')).toBe('Cookie, Host, X-Forwarded-Host');
 
     const buffer = await res.arrayBuffer();
     expect(buffer.byteLength).toBeGreaterThan(0);
@@ -135,7 +135,7 @@ describe('/api/og route', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('image/png');
     expect(res.headers.get('cache-control')).toBe('private, max-age=3600');
-    expect(res.headers.get('vary')).toBe('Cookie');
+    expect(res.headers.get('vary')).toBe('Cookie, Host, X-Forwarded-Host');
 
     const mockCalls = (ImageResponse as unknown as jest.Mock).mock.calls;
     const serializedTree = JSON.stringify(mockCalls[mockCalls.length - 1][0]);

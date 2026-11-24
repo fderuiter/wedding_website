@@ -624,10 +624,29 @@ describe('InvitationCodesDashboardPage', () => {
     expect(mockPush).toHaveBeenCalledWith('/admin/dashboard');
   });
 
-  it('exports CSV file via server route when Export CSV button is clicked', () => {
-    let clickedHref = '';
-    const mockAnchorClick = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
-      clickedHref = this.href;
+  it('exports CSV file via fetch-backed blob download when Export CSV button is clicked', async () => {
+    const mockAnchorClick = jest
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {});
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/api/admin/invitation-codes/export')) {
+        return Promise.resolve(
+          new Response('id,code\ncode-1,ALICE123\n', {
+            status: 200,
+            headers: {
+              'Content-Type': 'text/csv',
+              'Content-Disposition': 'attachment; filename="invitation-codes.csv"',
+            },
+          })
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ data: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
     });
 
     renderComponent();
@@ -635,10 +654,49 @@ describe('InvitationCodesDashboardPage', () => {
     const exportBtn = screen.getByRole('button', { name: 'Export CSV' });
     fireEvent.click(exportBtn);
 
-    expect(mockAnchorClick).toHaveBeenCalledTimes(1);
-    expect(clickedHref).toContain('/api/admin/invitation-codes/export');
-    expect(screen.getByText('Invitation codes exported successfully.')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith('/api/admin/invitation-codes/export');
+      expect(mockAnchorClick).toHaveBeenCalledTimes(1);
+      expect(screen.getByText('Invitation codes exported successfully.')).toBeInTheDocument();
+    });
 
+    fetchSpy.mockRestore();
+    mockAnchorClick.mockRestore();
+  });
+
+  it('shows error toast without false success toast when CSV export fails', async () => {
+    const mockAnchorClick = jest
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {});
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/api/admin/invitation-codes/export')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: 'CSV export backend failed' }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ data: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+    });
+
+    renderComponent();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+
+    expect(await screen.findByText('CSV export backend failed')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Invitation codes exported successfully.')
+    ).not.toBeInTheDocument();
+    expect(mockAnchorClick).not.toHaveBeenCalled();
+
+    fetchSpy.mockRestore();
     mockAnchorClick.mockRestore();
   });
 
@@ -768,11 +826,29 @@ describe('InvitationCodesDashboardPage', () => {
       });
     });
 
-    it('exports selected invitation codes to CSV via server route', () => {
-      let clickedHref = '';
-      const mockAnchorClick = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
-        clickedHref = this.href;
-      });
+    it('exports selected invitation codes to CSV via fetch-backed blob download', async () => {
+      const mockAnchorClick = jest
+        .spyOn(HTMLAnchorElement.prototype, 'click')
+        .mockImplementation(() => {});
+      const fetchSpy = jest
+        .spyOn(global, 'fetch')
+        .mockImplementation((input: RequestInfo | URL) => {
+          const url = typeof input === 'string' ? input : input.toString();
+          if (url.includes('/api/admin/invitation-codes/export')) {
+            return Promise.resolve(
+              new Response('id,code\ncode-1,ALICE123\ncode-3,CHARLIE789\n', {
+                status: 200,
+                headers: { 'Content-Type': 'text/csv' },
+              })
+            );
+          }
+          return Promise.resolve(
+            new Response(JSON.stringify({ data: [] }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            })
+          );
+        });
 
       renderComponent();
 
@@ -781,10 +857,17 @@ describe('InvitationCodesDashboardPage', () => {
 
       fireEvent.click(screen.getByRole('button', { name: 'Export Selected CSV' }));
 
-      expect(mockAnchorClick).toHaveBeenCalledTimes(1);
-      expect(clickedHref).toContain('/api/admin/invitation-codes/export?ids=code-1%2Ccode-3');
-      expect(screen.getByText('Exported 2 selected invitation code(s) to CSV.')).toBeInTheDocument();
+      await waitFor(() => {
+        expect(fetchSpy).toHaveBeenCalledWith(
+          '/api/admin/invitation-codes/export?ids=code-1%2Ccode-3'
+        );
+        expect(mockAnchorClick).toHaveBeenCalledTimes(1);
+        expect(
+          screen.getByText('Exported 2 selected invitation code(s) to CSV.')
+        ).toBeInTheDocument();
+      });
 
+      fetchSpy.mockRestore();
       mockAnchorClick.mockRestore();
     });
 

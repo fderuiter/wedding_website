@@ -39,7 +39,7 @@ test(
         name: `Banquet Rect ${runTag}`,
         shape: 'rectangular',
         capacity: 8,
-        x: 80,
+        x: 300,
         y: 120,
         width: 220,
         height: 110,
@@ -50,7 +50,7 @@ test(
         name: `Royal Head ${runTag}`,
         shape: 'head',
         capacity: 4,
-        x: 380,
+        x: 590,
         y: 120,
         width: 240,
         height: 85,
@@ -199,7 +199,8 @@ test(
         new RegExp(`Seat 4: Liam Pointer ${runTag}`)
       );
 
-      // 5. Touch Pointer Events cross-panel drag: drag Brooks Pair household header onto Royal Head Table
+      // 5. Real browser touch drag (via CDP Input.dispatchTouchEvent so browser touch-action / panning rules run):
+      // Drag Brooks Pair household header across the scrollable UnassignedGuestPanel onto Royal Head Table
       const householdCardHeader = unassignedList
         .getByText(`Brooks Pair ${runTag}`)
         .first()
@@ -215,45 +216,105 @@ test(
       const dropX = Math.round(headBox!.x + headBox!.width / 2);
       const dropY = Math.round(headBox!.y + headBox!.height / 2);
 
-      await householdCardHeader.dispatchEvent('pointerdown', {
-        pointerId: 21,
-        pointerType: 'touch',
-        isPrimary: true,
-        button: 0,
-        clientX: startX,
-        clientY: startY,
-        bubbles: true,
-      });
-      await householdCardHeader.dispatchEvent('pointermove', {
-        pointerId: 21,
-        pointerType: 'touch',
-        isPrimary: true,
-        clientX: dropX,
-        clientY: dropY,
-        bubbles: true,
-      });
+      const cdpSession = await context.newCDPSession(page);
+      try {
+        await cdpSession.send('Emulation.setTouchEmulationEnabled', {
+          enabled: true,
+          maxTouchPoints: 5,
+        });
 
-      await expect(page.getByTestId('guest-drag-chip')).toBeVisible();
-      await expect(page.getByTestId('guest-drag-chip')).toContainText(`Brooks Pair ${runTag}`);
-      await page.screenshot({
-        path: testInfo.outputPath('seating-pointer-drag-chip.png'),
-        animations: 'disabled',
-      });
+        await cdpSession.send('Input.dispatchTouchEvent', {
+          type: 'touchStart',
+          touchPoints: [{ x: startX, y: startY, radiusX: 4, radiusY: 4, force: 1, id: 1 }],
+        });
 
-      await householdCardHeader.dispatchEvent('pointerup', {
-        pointerId: 21,
-        pointerType: 'touch',
-        isPrimary: true,
-        button: 0,
-        clientX: dropX,
-        clientY: dropY,
-        bubbles: true,
-      });
+        // Include vertical + diagonal motion inside the overflow-y-auto guest list so native panning would cancel without touch-none
+        const waypoints = [
+          { x: startX + 3, y: startY + 24 },
+          { x: Math.round(startX + (dropX - startX) * 0.35), y: Math.round(startY + (dropY - startY) * 0.35) },
+          { x: Math.round(startX + (dropX - startX) * 0.7), y: Math.round(startY + (dropY - startY) * 0.7) },
+          { x: dropX, y: dropY },
+        ];
+        for (const pt of waypoints) {
+          await cdpSession.send('Input.dispatchTouchEvent', {
+            type: 'touchMove',
+            touchPoints: [{ x: pt.x, y: pt.y, radiusX: 4, radiusY: 4, force: 1, id: 1 }],
+          });
+        }
+
+        await expect(page.getByTestId('guest-drag-chip')).toBeVisible();
+        await expect(page.getByTestId('guest-drag-chip')).toContainText(`Brooks Pair ${runTag}`);
+        await page.screenshot({
+          path: testInfo.outputPath('seating-pointer-drag-chip.png'),
+          animations: 'disabled',
+        });
+
+        await cdpSession.send('Input.dispatchTouchEvent', {
+          type: 'touchEnd',
+          touchPoints: [],
+        });
+      } finally {
+        await cdpSession
+          .send('Emulation.setTouchEmulationEnabled', { enabled: false })
+          .catch(() => {});
+        await cdpSession.detach().catch(() => {});
+      }
+
       await expect(page.getByTestId('guest-drag-chip')).toHaveCount(0);
 
       await expect(
         page.locator(`div[role="button"][data-table-id="${headTable.id}"]`)
       ).toHaveAttribute('aria-label', new RegExp(`Royal Head ${runTag}, shape head, capacity 4, seated 2`));
+
+      // 5b. Verify legacy (0, 0) / border-clamped table keeps all perimeter seats and flipped rotation-handle unclipped inside stage
+      const cornerTable = await createTable({
+        name: `Corner Guard ${runTag}`,
+        shape: 'round',
+        capacity: 8,
+        x: 0,
+        y: 0,
+        width: 120,
+        height: 120,
+        rotation: 0,
+      });
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      const cornerNode = page.locator(`div[role="button"][data-table-id="${cornerTable.id}"]`);
+      await expect(cornerNode).toBeVisible({ timeout: 20000 });
+      await cornerNode.click();
+
+      const stageEl = page.getByTestId('floorplan-stage');
+      const stageBox = await stageEl.boundingBox();
+      expect(stageBox).not.toBeNull();
+
+      const flippedHandle = page.getByTestId('rotation-handle');
+      await expect(flippedHandle).toHaveAttribute('data-handle-flipped', 'true');
+      const handleBox = await flippedHandle.boundingBox();
+      const toolbarBox = await page.getByTestId('rotation-controls').boundingBox();
+      expect(handleBox).not.toBeNull();
+      expect(toolbarBox).not.toBeNull();
+      expect(handleBox!.x).toBeGreaterThanOrEqual(stageBox!.x);
+      expect(handleBox!.y).toBeGreaterThanOrEqual(stageBox!.y);
+      expect(toolbarBox!.x).toBeGreaterThanOrEqual(stageBox!.x);
+      expect(toolbarBox!.y).toBeGreaterThanOrEqual(handleBox!.y + handleBox!.height);
+
+      const cornerSeatBoxes = await page
+        .locator(`button[data-table-id="${cornerTable.id}"][data-seat-number]`)
+        .evaluateAll((els) =>
+          els.map((el) => {
+            const r = el.getBoundingClientRect();
+            return { x: r.x, y: r.y, width: r.width, height: r.height };
+          })
+        );
+      expect(cornerSeatBoxes).toHaveLength(8);
+      for (const sb of cornerSeatBoxes) {
+        expect(sb.x).toBeGreaterThanOrEqual(stageBox!.x);
+        expect(sb.y).toBeGreaterThanOrEqual(stageBox!.y);
+      }
+
+      await page.screenshot({
+        path: testInfo.outputPath('seating-corner-unclipped-controls.png'),
+        animations: 'disabled',
+      });
 
       // 6. Verify PDF export endpoint succeeds with unified seat resolution & dietary legend
       const pdfRes = await context.request.get('/api/admin/seating/export?format=pdf');

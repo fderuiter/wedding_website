@@ -2442,12 +2442,22 @@ async function run() {
   const outputPath = process.env.OPENAPI_OUTPUT_PATH
     ? path.resolve(process.env.OPENAPI_OUTPUT_PATH)
     : path.join(rootPath, 'public', 'openapi.json');
+  const serialized = JSON.stringify(openapi, null, 2);
+  if (process.argv.includes('--check')) {
+    const existing = fs.existsSync(outputPath) ? fs.readFileSync(outputPath, 'utf8') : null;
+    if (existing !== serialized) {
+      console.error('Drift detected in public/openapi.json');
+      process.exit(1);
+    }
+    console.log(`Verified OpenAPI schema is in sync at ${outputPath}`);
+    return;
+  }
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   const tempOutputPath = path.join(
     path.dirname(outputPath),
     `.${path.basename(outputPath)}.${process.pid}-${Date.now()}.tmp`
   );
-  fs.writeFileSync(tempOutputPath, JSON.stringify(openapi, null, 2));
+  fs.writeFileSync(tempOutputPath, serialized);
   fs.renameSync(tempOutputPath, outputPath);
   console.log(`Successfully generated OpenAPI schema at ${outputPath}`);
 }

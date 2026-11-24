@@ -770,6 +770,54 @@ describe('RegistryRepository', () => {
       });
     });
 
+    it('falls back to inviteRecord.email when a verified guest leaves email blank', async () => {
+      const tx = {
+        invitationCode: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'inv-email-fallback',
+            code: 'GUEST777',
+            guestName: 'Invited Contributor',
+            email: 'household@example.com',
+            used: false,
+            isSample: false,
+            partyTags: [],
+          }),
+          update: jest.fn().mockResolvedValue({ id: 'inv-email-fallback', used: true }),
+        },
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
+          update: jest.fn().mockResolvedValue({ ...mockRegistryItem, amountContributed: 60 }),
+        },
+        snapshotVersion: {
+          create: jest.fn(),
+          findMany: jest.fn(),
+          deleteMany: jest.fn(),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((callback) => callback(tx));
+
+      await registryRepository.contributeToItem('1', {
+        name: 'Invited Contributor',
+        email: '',
+        amount: 60,
+        code: 'GUEST777',
+      });
+
+      expect(tx.registryItem.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            contributors: {
+              create: expect.objectContaining({
+                name: 'Invited Contributor',
+                email: 'household@example.com',
+                invitationCodeId: 'inv-email-fallback',
+              }),
+            },
+          }),
+        })
+      );
+    });
+
     it('rejects cross-item stripePaymentIntentId reuse and keeps same-item retries idempotent including on P2002 races', async () => {
       const existingSameItem = {
         id: 'contrib-1',

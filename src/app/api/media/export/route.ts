@@ -27,6 +27,11 @@ import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import {
+  isHostAllowed,
+  resolveRequestHost,
+  resolveRequestProtocol,
+} from '@/utils/hostValidation';
 import { safeFetch } from '@/utils/safeFetch';
 import { PathContainmentError, resolveContainedExistingPath } from '@/utils/pathContainment';
 import { getStorageProvider } from '@/utils/storage';
@@ -230,14 +235,13 @@ function validatePostExportOrigin(req: NextRequest): void {
     throw new ApiError(403, 'Invalid request origin');
   }
 
-  const forwardedHost = req.headers.get('x-forwarded-host')?.split(',')[0]?.trim();
-  const hostHeader = forwardedHost || req.headers.get('host');
+  const hostHeader = resolveRequestHost(req.headers, req.nextUrl?.host);
   let expectedOrigin = req.nextUrl?.origin?.toLowerCase() ?? '';
   if (hostHeader) {
-    const forwardedProto = req.headers.get('x-forwarded-proto')?.split(',')[0]?.trim().toLowerCase();
-    const fallbackProto = (req.nextUrl?.protocol || 'http:').replace(/:$/, '').toLowerCase();
-    const proto =
-      forwardedProto === 'https' || forwardedProto === 'http' ? forwardedProto : fallbackProto;
+    if (!isHostAllowed(hostHeader)) {
+      throw new ApiError(403, 'Cross-origin export request blocked');
+    }
+    const proto = resolveRequestProtocol(req.headers, req.nextUrl?.protocol || 'http:') ?? 'http';
     expectedOrigin = `${proto}://${hostHeader.trim().toLowerCase()}`;
   }
 
