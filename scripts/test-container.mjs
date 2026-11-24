@@ -4,8 +4,10 @@ import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  createComposePsqlDriver,
   httpRequest as smokeHttpRequest,
   runCheckedCommand as runCommand,
+  runSigtermDrainProbe,
   runSmokeRouteProbes,
   waitForPostgresReady,
   waitForServerReady,
@@ -57,6 +59,7 @@ export function buildCiComposeEnv(extra = {}) {
       process.env.GUEST_SESSION_SECRET || 'playwright-e2e-session-secret-32-chars-min',
     E2E_TEST: process.env.E2E_TEST || 'true',
     POSTGRES_URL_NON_POOLING: '',
+    CONTAINER_POSTGRES_URL_NON_POOLING: '',
     ...extra,
   };
 }
@@ -103,34 +106,6 @@ function buildHeicMultipartPayload(boundary) {
   );
   const epilogue = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
   return Buffer.concat([preamble, VALID_HEIC_BUFFER, epilogue]);
-}
-
-function queryContainerDb(sql, composeEnv) {
-  const res = child_process.spawnSync(
-    'docker',
-    [
-      'compose',
-      ...COMPOSE_ARGS,
-      'exec',
-      '-T',
-      'db',
-      'psql',
-      '-v',
-      'ON_ERROR_STOP=1',
-      '-At',
-      '-U',
-      composeEnv.DB_USER,
-      '-d',
-      composeEnv.DB_NAME,
-      '-c',
-      sql,
-    ],
-    { cwd: rootDir, env: composeEnv, encoding: 'utf8' }
-  );
-  if (res.status !== 0) {
-    throw new Error(`psql query failed (${res.status}): ${res.stderr || res.stdout}`);
-  }
-  return res.stdout.trim();
 }
 
 function printLogs(composeEnv) {
@@ -420,9 +395,13 @@ async function main() {
       }
     }
 
-    const activeBackendsRaw = queryContainerDb(
-      `SELECT count(*) FROM pg_stat_activity WHERE datname = '${composeEnv.DB_NAME}' AND usename = '${composeEnv.DB_USER}' AND pid <> pg_backend_pid();`,
-      composeEnv
+    const composeDbDriver = createComposePsqlDriver({
+      composeArgs: COMPOSE_ARGS,
+      composeEnv,
+      rootDir,
+    });
+    const activeBackendsRaw = composeDbDriver.queryDb(
+      `SELECT count(*) FROM pg_stat_activity WHERE datname = '${composeEnv.DB_NAME}' AND usename = '${composeEnv.DB_USER}' AND pid <> pg_backend_pid();`
     );
     const activeBackends = Number.parseInt(activeBackendsRaw, 10);
     if (!Number.isFinite(activeBackends) || activeBackends < 1 || activeBackends > 10) {
@@ -450,8 +429,7 @@ async function main() {
       `✅ Shared globalThis pool verified (${activeBackends} PostgreSQL connections <= 10, 1 runtime initialization)`
     );
 
-    // 10. Verify in-flight request completes with HTTP 200 during SIGTERM (> 4500 ms drain) before container exits with 143
-    console.log('Testing in-flight SSR request completion during SIGTERM graceful shutdown...');
+    // 10. Verify unauthenticated /guest/login redaction and authenticated in-flight request completion during SIGTERM (> 4500 ms drain) before container exits with 143
     const containerIdRes = child_process.spawnSync(
       'docker',
       ['compose', ...COMPOSE_ARGS, 'ps', '-q', 'app'],
@@ -462,215 +440,73 @@ async function main() {
       throw new Error('Could not resolve running app container ID prior to SIGTERM test.');
     }
 
-    const drainTitleMarker = 'Container SIGTERM Drain Verified';
-    queryContainerDb(
-      `INSERT INTO "AppConfig" ("id", "partner1Name", "partner2Name", "brideName", "groomName", "baseUrl", "seoTitle", "updatedAt")
-       VALUES ('global', 'Alex', 'Taylor', 'Alex', 'Taylor', 'http://127.0.0.1:${PORT}', '${drainTitleMarker}', NOW())
-       ON CONFLICT ("id") DO UPDATE SET "seoTitle" = '${drainTitleMarker}', "updatedAt" = NOW();`,
-      composeEnv
-    );
+    let stopProc = null;
+    let stopOutput = '';
+    let stopClosePromise = null;
 
-    const unauthDrainProbe = await request('/guest/login', 5000);
-    if (unauthDrainProbe.statusCode !== 200 || unauthDrainProbe.body.includes(drainTitleMarker)) {
-      throw new Error(
-        `Expected unauthenticated /guest/login SSR response to redact AppConfig seoTitle (status=${unauthDrainProbe.statusCode}).`
-      );
-    }
-
-    const lockProc = child_process.spawn(
-      'docker',
-      [
-        'compose',
-        ...COMPOSE_ARGS,
-        'exec',
-        '-T',
-        'db',
-        'psql',
-        '-v',
-        'ON_ERROR_STOP=1',
-        '-At',
-        '-U',
-        composeEnv.DB_USER,
-        '-d',
-        composeEnv.DB_NAME,
-      ],
-      { cwd: rootDir, env: composeEnv, stdio: ['pipe', 'pipe', 'pipe'] }
-    );
-
-    let lockStdout = '';
-    let lockStderr = '';
-    let lockReleased = false;
-
-    try {
-      const lockReadyPromise = new Promise((resolve, reject) => {
-        const timer = setTimeout(() => {
-          reject(
-            new Error(
-              `Timed out acquiring AppConfig table lock. stdout=${lockStdout} stderr=${lockStderr}`
-            )
-          );
-        }, 10000);
-        lockProc.stdout.on('data', (chunk) => {
-          lockStdout += chunk.toString();
-          if (lockStdout.includes('LOCK_ACQUIRED')) {
-            clearTimeout(timer);
-            resolve();
-          }
-        });
-        lockProc.stderr.on('data', (chunk) => {
-          lockStderr += chunk.toString();
-        });
-        lockProc.once('error', (err) => {
-          clearTimeout(timer);
-          reject(err);
-        });
-      });
-
-      lockProc.stdin.write(
-        'BEGIN;\nLOCK TABLE "AppConfig" IN ACCESS EXCLUSIVE MODE;\nSELECT \'LOCK_ACQUIRED\';\n'
-      );
-      await lockReadyPromise;
-
-      // Issue authenticated in-flight SSR request that blocks on "AppConfig" inside getAppConfig()
-      const inflightPromise = httpRequest('/guest/login', {
-        headers: {
-          Cookie: guestCookie,
-        },
-        timeoutMs: 15000,
-      });
-
-      let queryBlockedInDb = false;
-      for (let i = 0; i < 50; i++) {
-        const waitingCount = Number.parseInt(
-          queryContainerDb(
-            `SELECT count(*) FROM pg_stat_activity WHERE datname = '${composeEnv.DB_NAME}' AND wait_event_type = 'Lock' AND state = 'active';`,
-            composeEnv
-          ),
-          10
-        );
-        if (waitingCount >= 1) {
-          queryBlockedInDb = true;
-          break;
-        }
-        await new Promise((r) => setTimeout(r, 100));
-      }
-
-      if (!queryBlockedInDb) {
-        throw new Error(
-          'In-flight /guest/login request did not reach PostgreSQL lock wait state before SIGTERM.'
-        );
-      }
-
-      // Deliver SIGTERM via docker compose stop (honoring stop_grace_period: 15s)
-      const stopProc = child_process.spawn('docker', ['compose', ...COMPOSE_ARGS, 'stop', 'app'], {
-        cwd: rootDir,
-        env: composeEnv,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      let stopOutput = '';
-      const stopStartedPromise = new Promise((resolve) => {
-        const onChunk = (chunk) => {
-          stopOutput += chunk.toString();
-          if (/Stopping|Container/i.test(stopOutput)) {
-            resolve();
-          }
-        };
-        stopProc.stdout.on('data', onChunk);
-        stopProc.stderr.on('data', onChunk);
-        setTimeout(resolve, 250);
-      });
-      await stopStartedPromise;
-
-      // Hold the in-flight request past the removed 4500 ms fallbackTimer (5000 ms)
-      await new Promise((r) => setTimeout(r, 5000));
-
-      const runningDuringDrain = child_process
-        .spawnSync('docker', ['inspect', '-f', '{{.State.Running}}', appContainerId], {
-          cwd: rootDir,
-          env: composeEnv,
-          encoding: 'utf8',
-        })
-        .stdout.trim();
-      if (runningDuringDrain !== 'true') {
-        throw new Error(
-          `App container exited prematurely before in-flight request finished draining (State.Running=${runningDuringDrain})`
-        );
-      }
-
-      // Release table lock so the in-flight SSR request completes
-      lockReleased = true;
-      const lockExitPromise = new Promise((resolve) => lockProc.once('close', resolve));
-      lockProc.stdin.end('COMMIT;\n\\q\n');
-      await lockExitPromise;
-
-      const inflightRes = await inflightPromise;
-      if (inflightRes.statusCode !== 200) {
-        throw new Error(
-          `In-flight /guest/login during SIGTERM returned status ${inflightRes.statusCode}, expected 200`
-        );
-      }
-      if (!inflightRes.body.includes(drainTitleMarker)) {
-        throw new Error(
-          'In-flight /guest/login response did not include database-backed AppConfig title marker.'
-        );
-      }
-
-      const stopExitCode = await new Promise((resolve, reject) => {
-        stopProc.once('error', reject);
-        stopProc.once('close', resolve);
-      });
-      if (stopExitCode !== 0) {
-        throw new Error(
-          `docker compose stop app failed with status ${stopExitCode}: ${stopOutput}`
-        );
-      }
-
-      const containerExitCode = child_process
-        .spawnSync('docker', ['inspect', '-f', '{{.State.ExitCode}}', appContainerId], {
-          cwd: rootDir,
-          env: composeEnv,
-          encoding: 'utf8',
-        })
-        .stdout.trim();
-      if (containerExitCode !== '143') {
-        throw new Error(
-          `Expected app container exit code 143 after SIGTERM drain, got ${containerExitCode}`
-        );
-      }
-
-      const dbLogsAfterStop =
-        child_process.spawnSync(
+    await runSigtermDrainProbe({
+      baseUrl: BASE_URL,
+      hostHeader: HOST_HEADER,
+      guestCookie,
+      guestPasscode: composeEnv.GUEST_PASSCODE,
+      drainTitleMarker: 'Container SIGTERM Drain Verified',
+      holdMs: 5000,
+      dbDriver: composeDbDriver,
+      label: 'container',
+      async triggerStop() {
+        stopProc = child_process.spawn(
           'docker',
-          ['compose', ...COMPOSE_ARGS, 'logs', '--no-color', 'db'],
+          ['compose', ...COMPOSE_ARGS, 'stop', 'app'],
           {
             cwd: rootDir,
             env: composeEnv,
-            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'pipe'],
           }
-        ).stdout || '';
-      if (/unexpected EOF on client connection|Connection reset by peer/i.test(dbLogsAfterStop)) {
-        throw new Error(
-          `PostgreSQL reported abrupt socket closure during SIGTERM drain:\n${dbLogsAfterStop}`
         );
-      }
-
-      console.log(
-        '✅ In-flight request returned HTTP 200 after >4500 ms SIGTERM drain and container exited with code 143!'
-      );
-    } finally {
-      if (!lockReleased) {
-        try {
-          lockProc.stdin.end('ROLLBACK;\n\\q\n');
-        } catch {
-          // Ignore stdin errors during cleanup
+        stopClosePromise = new Promise((resolve, reject) => {
+          stopProc.once('error', reject);
+          stopProc.once('close', resolve);
+        });
+        await new Promise((resolve) => {
+          const onChunk = (chunk) => {
+            stopOutput += chunk.toString();
+            if (/Stopping|Container/i.test(stopOutput)) {
+              resolve();
+            }
+          };
+          stopProc.stdout.on('data', onChunk);
+          stopProc.stderr.on('data', onChunk);
+          setTimeout(resolve, 250);
+        });
+      },
+      async isRunningDuringDrain() {
+        const runningDuringDrain = child_process
+          .spawnSync('docker', ['inspect', '-f', '{{.State.Running}}', appContainerId], {
+            cwd: rootDir,
+            env: composeEnv,
+            encoding: 'utf8',
+          })
+          .stdout.trim();
+        return runningDuringDrain === 'true';
+      },
+      async waitForExitCode() {
+        if (stopClosePromise) {
+          const stopExitCode = await stopClosePromise;
+          if (stopExitCode !== 0) {
+            throw new Error(
+              `docker compose stop app failed with status ${stopExitCode}: ${stopOutput}`
+            );
+          }
         }
-        try {
-          lockProc.kill();
-        } catch {
-          // Ignore kill errors during cleanup
-        }
-      }
-    }
+        return child_process
+          .spawnSync('docker', ['inspect', '-f', '{{.State.ExitCode}}', appContainerId], {
+            cwd: rootDir,
+            env: composeEnv,
+            encoding: 'utf8',
+          })
+          .stdout.trim();
+      },
+    });
 
     console.log('=============================================');
     console.log('🎉 Container execution & migration smoke tests PASSED!');

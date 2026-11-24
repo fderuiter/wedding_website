@@ -197,6 +197,10 @@ function buildExternalUrlPattern(origin: string): RegExp {
 
 async function waitForStaticRouteSettled(page: Page, theme: ColorTheme) {
   await page
+    .locator('main, [role="main"]')
+    .first()
+    .waitFor({ state: 'attached', timeout: 15_000 });
+  await page
     .locator('h1, [role="heading"][aria-level="1"]')
     .first()
     .waitFor({ state: 'attached', timeout: 15_000 });

@@ -519,4 +519,80 @@ describe('Invitation Codes Export API Route (GET /api/admin/invitation-codes/exp
       plusOneNames: ['John Doe', 'Tommy Doe'],
     });
   });
+
+  it('ignores spoofed forwarded headers when TRUST_PROXY=false and emits validated single-host RSVP links when TRUST_PROXY is active', async () => {
+    const prevTrustProxy = process.env.TRUST_PROXY;
+    const prevAllowedHosts = process.env.ALLOWED_HOSTS;
+    process.env.ALLOWED_HOSTS = 'localhost,wedding.example';
+
+    (prisma.invitationCode.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: 'inv-safe-1',
+        code: 'SAFE2026',
+        guestName: 'Alex Rivera',
+        email: 'alex@example.com',
+        extraFields: null,
+        plusOneFirstName: null,
+        plusOneLastName: null,
+        householdName: null,
+        partyGroup: null,
+        partyTags: [],
+        addressLine1: null,
+        addressLine2: null,
+        city: null,
+        state: null,
+        zipCode: null,
+        country: null,
+        dietaryNotes: null,
+        plusOneAllocations: 0,
+        used: false,
+        rsvp: null,
+      },
+    ]);
+
+    try {
+      process.env.TRUST_PROXY = 'false';
+      const spoofedReq = new NextRequest(
+        'http://localhost:3000/api/admin/invitation-codes/export',
+        {
+          headers: {
+            host: 'localhost:3000',
+            'x-forwarded-host': 'phishing.evil.org, injected,col',
+            'x-forwarded-proto': 'https',
+          },
+        }
+      );
+      const spoofedRes = await GET(spoofedReq);
+      const spoofedCsv = (await spoofedRes.text()).replace(/^\uFEFF/, '');
+      expect(spoofedCsv).toContain('http://localhost:3000/guest?code=SAFE2026');
+      expect(spoofedCsv).not.toContain('phishing.evil.org');
+
+      process.env.TRUST_PROXY = '1';
+      const proxiedReq = new NextRequest(
+        'http://localhost:3000/api/admin/invitation-codes/export',
+        {
+          headers: {
+            host: 'localhost:3000',
+            'x-forwarded-host': 'attacker.evil.org, wedding.example',
+            'x-forwarded-proto': 'http, https',
+          },
+        }
+      );
+      const proxiedRes = await GET(proxiedReq);
+      const proxiedCsv = (await proxiedRes.text()).replace(/^\uFEFF/, '');
+      expect(proxiedCsv).toContain('https://wedding.example/guest?code=SAFE2026');
+      expect(proxiedCsv).not.toContain('attacker.evil.org');
+    } finally {
+      if (prevTrustProxy === undefined) {
+        delete process.env.TRUST_PROXY;
+      } else {
+        process.env.TRUST_PROXY = prevTrustProxy;
+      }
+      if (prevAllowedHosts === undefined) {
+        delete process.env.ALLOWED_HOSTS;
+      } else {
+        process.env.ALLOWED_HOSTS = prevAllowedHosts;
+      }
+    }
+  });
 });

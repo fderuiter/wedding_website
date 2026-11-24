@@ -52,6 +52,10 @@ import {
   GUEST_INVITE_COOKIE,
   signGuestInviteSessionToken,
 } from '@/core/auth/guestInviteToken';
+import {
+  GUEST_HEADER_SIGNATURE_HEADER,
+  signGuestInternalHeaders,
+} from '@/core/auth/guestHeaderSignature';
 import { enforceActiveGuestPageSession } from '@/core/auth/guestInviteSession';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 
@@ -263,7 +267,12 @@ describe('Middleware QR Token Exchange, Scope Isolation, and Token Rotation', ()
       expect(freshUploadRes.status).toBe(201);
 
       // 3. enforceActiveGuestPageSession redirects stale v1 photo session on /photos to /guest/login
+      mockHeadersMap.set('x-guest-gated-page', '1');
       mockHeadersMap.set('x-guest-callback-url', '/photos');
+      const photosSig = await signGuestInternalHeaders('1', '/photos');
+      if (photosSig) {
+        mockHeadersMap.set(GUEST_HEADER_SIGNATURE_HEADER, photosSig);
+      }
       mockCookieStore.set(GUEST_PHOTO_COOKIE, v1PhotoSession);
       await expect(enforceActiveGuestPageSession()).rejects.toThrow('NEXT_REDIRECT:/guest/login');
 
@@ -272,6 +281,10 @@ describe('Middleware QR Token Exchange, Scope Isolation, and Token Rotation', ()
       await expect(enforceActiveGuestPageSession()).resolves.toBeUndefined();
 
       mockHeadersMap.set('x-guest-callback-url', '/registry');
+      const registrySig = await signGuestInternalHeaders('1', '/registry');
+      if (registrySig) {
+        mockHeadersMap.set(GUEST_HEADER_SIGNATURE_HEADER, registrySig);
+      }
       await expect(enforceActiveGuestPageSession()).rejects.toThrow('NEXT_REDIRECT:/guest/login');
 
       // 5. Admin, passcode guest, and active invite sessions retain full access even when holding a rotated v1 photo cookie

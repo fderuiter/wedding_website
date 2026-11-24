@@ -24,6 +24,7 @@ import {
   setAdminAuthCookie,
   signAdminToken,
 } from '@/core/auth/auth.server';
+import { resolveTenantClaimsForSigning } from '@/core/auth/tenantClaims.node';
 import { MAX_PASSWORD_LENGTH, verifyPassword } from '@/utils/password';
 import { env } from '@/env';
 
@@ -159,10 +160,11 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
   if (!hasConfigPayload) {
     if (initialized && isAdmin && typeof body.setupCompleted === 'boolean') {
+      const targetId = config.id || 'global';
       await prisma.appConfig.upsert({
-        where: { id: 'global' },
+        where: { id: targetId },
         update: { setupCompleted: body.setupCompleted },
-        create: { id: 'global', setupCompleted: body.setupCompleted },
+        create: { id: targetId, setupCompleted: body.setupCompleted },
       });
 
       try {
@@ -173,9 +175,10 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
         // Ignore in non-Next runtime/test environments
       }
 
+      const tenantClaims = await resolveTenantClaimsForSigning(req, config);
       const iat = Date.now();
       const exp = iat + 60 * 60 * 8 * 1000;
-      const token = await signAdminToken({ isAdmin: true, iat, exp });
+      const token = await signAdminToken({ isAdmin: true, ...tenantClaims, iat, exp });
       const response = NextResponse.json({
         success: true,
         initialized: true,
@@ -187,9 +190,10 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     }
 
     // Auth-only check for step 1
+    const tenantClaims = await resolveTenantClaimsForSigning(req, config);
     const iat = Date.now();
     const exp = iat + 60 * 60 * 8 * 1000;
-    const token = await signAdminToken({ isAdmin: true, iat, exp });
+    const token = await signAdminToken({ isAdmin: true, ...tenantClaims, iat, exp });
     const completed = isSetupCompleted(config);
     const response = NextResponse.json({
       success: true,
@@ -357,7 +361,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     }
   }
 
-  const targetId = 'global';
+  const targetId = config.id || 'global';
   const dbPayload = toAppConfigDbPayload(resolvedSetupData);
 
   const updatedConfig = await prisma.appConfig.upsert({
@@ -401,9 +405,10 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     // Ignore in non-Next runtime/test environments
   }
 
+  const tenantClaims = await resolveTenantClaimsForSigning(req, parsedUpdatedConfig);
   const iat = Date.now();
   const exp = iat + 60 * 60 * 8 * 1000;
-  const token = await signAdminToken({ isAdmin: true, iat, exp });
+  const token = await signAdminToken({ isAdmin: true, ...tenantClaims, iat, exp });
 
   const response = NextResponse.json({
     success: true,

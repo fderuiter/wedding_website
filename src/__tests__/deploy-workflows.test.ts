@@ -1125,6 +1125,7 @@ process.exit(1);
     );
 
     let healthMode: 'wrapped-ok' | 'unwrapped-ok' | 'degraded' | 'success-false' | 'malformed' = 'wrapped-ok';
+    let readyMode: 'ready' | 'unhealthy-503' | 'unhealthy-200' | 'malformed' = 'ready';
 
     const server = http.createServer((req, res) => {
       if (req.url === '/api/health') {
@@ -1167,6 +1168,44 @@ process.exit(1);
         }
         res.writeHead(200, { 'Content-Type': 'text/html' });
         res.end('{"success":true,"data":{"status":"ok"');
+        return;
+      }
+      if (req.url === '/api/ready') {
+        if (readyMode === 'ready') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              status: 'ready',
+              database: 'connected',
+              timestamp: '2026-11-20T00:00:00.000Z',
+            })
+          );
+          return;
+        }
+        if (readyMode === 'unhealthy-503') {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              status: 'unhealthy',
+              database: 'connected',
+              error: 'Database schema is not ready',
+              timestamp: '2026-11-20T00:00:00.000Z',
+            })
+          );
+          return;
+        }
+        if (readyMode === 'unhealthy-200') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              status: 'unhealthy',
+              database: 'connected',
+            })
+          );
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end('{"status":"ready"');
         return;
       }
       res.writeHead(404);
@@ -1292,6 +1331,21 @@ process.exit(1);
       });
       expect(malformedRes.status).toBe(1);
       expect(malformedRes.outputs).toContain('health_status=unhealthy');
+
+      // Healthy /api/health with failing /api/ready (HTTP 503, status != ready, or malformed JSON) fails closed
+      healthMode = 'wrapped-ok';
+      for (const failingReadyMode of ['unhealthy-503', 'unhealthy-200', 'malformed'] as const) {
+        readyMode = failingReadyMode;
+        const readyFailRes = await runAsync(fastFailScript, {
+          TARGET_ENV: 'production',
+          VAR_SERVICE_URL: liveUrl,
+          SERVICE_URL: '',
+          SECRET_SERVICE_URL: '',
+          IS_DRY_RUN: 'false',
+        });
+        expect(readyFailRes.status).toBe(1);
+        expect(readyFailRes.outputs).toContain('health_status=unhealthy');
+      }
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
@@ -2110,9 +2164,14 @@ process.exit(0);
       deployYml,
       'Generate Pre-Flight Schema Migration & SQL DDL Summary'
     );
+    const schemaCompatSection =
+      (deployYml.split(/\n  schema-compatibility:\n/)[1] ?? '').split(/\n  publish-artifact:\n/)[0] ?? '';
+    expect(schemaCompatSection).not.toContain('npm ci');
+    expect(schemaCompatSection).not.toContain("cache: 'npm'");
     expect(statusCheckScript).not.toContain('${{');
     expect(statusCheckScript).toContain('--require-db');
     expect(offlineSummaryScript).not.toContain('${{');
+    expect(offlineSummaryScript).toContain('node --experimental-strip-types scripts/preflight-migration-summary.ts');
     expect(offlineSummaryScript).toContain('--offline');
 
     const realTsxBin = path.join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
@@ -2199,7 +2258,16 @@ process.exit(1);
     // 4. deploy.yml schema-compatibility --offline emits NOT QUERIED git diff without fabricating slice(-3)
     const offlineRepo = path.join(tempDir, 'offline-repo');
     const offlineMigrations = path.join(offlineRepo, 'prisma', 'migrations');
+    const offlineScriptsDir = path.join(offlineRepo, 'scripts');
+    const offlineSrcLibDir = path.join(offlineRepo, 'src', 'lib');
     fs.mkdirSync(offlineMigrations, { recursive: true });
+    fs.mkdirSync(offlineScriptsDir, { recursive: true });
+    fs.mkdirSync(offlineSrcLibDir, { recursive: true });
+    fs.copyFileSync(realPreflightScript, path.join(offlineScriptsDir, 'preflight-migration-summary.ts'));
+    fs.copyFileSync(
+      path.join(REPO_ROOT, 'src', 'lib', 'postgres-url.js'),
+      path.join(offlineSrcLibDir, 'postgres-url.js')
+    );
     const gitEnv = {
       ...process.env,
       GIT_AUTHOR_NAME: 'CI Bot',
@@ -2298,7 +2366,151 @@ process.exit(1);
     }
   });
 
-  it('probes /api/health in deploy-provider.yml with bounded timeouts, redacts secrets.SERVICE_URL, stamps resolved tag/provenance SHAs, transitions GitHub Deployments two-phase, and gates rollback.yml in deploy-stage.yml', async () => {
+  it('verifies scripts/rollout-vps.sh polls /api/live, /api/health, and /api/ready and rejects targets that fail /api/ready or /api/health', async () => {
+    const rolloutScriptPath = path.join(process.cwd(), 'scripts', 'rollout-vps.sh');
+    const rolloutDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rollout-vps-probe-'));
+    const mockBinDir = path.join(rolloutDir, 'bin');
+    fs.mkdirSync(mockBinDir, { recursive: true });
+
+    fs.writeFileSync(
+      path.join(mockBinDir, 'docker'),
+      `#!/usr/bin/env bash
+if [[ "$*" == *"image inspect"* ]]; then
+  exit 1
+fi
+if [[ "$*" == *"ps -q"* ]]; then
+  echo "mock-cid-123"
+  exit 0
+fi
+if [[ "$*" == *"inspect -f"* ]]; then
+  echo "healthy"
+  exit 0
+fi
+exit 0
+`,
+      { mode: 0o755 }
+    );
+
+    let healthOk = true;
+    let readyOk = true;
+
+    const createProbeHandler = () => (req: http.IncomingMessage, res: http.ServerResponse) => {
+      if (req.url === '/api/live') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'alive' }));
+        return;
+      }
+      if (req.url === '/api/health') {
+        if (healthOk) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              success: true,
+              data: { status: 'ok', database: 'connected', timestamp: '2026-11-20T00:00:00.000Z' },
+            })
+          );
+        } else {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              success: false,
+              error: 'Database connection failed',
+            })
+          );
+        }
+        return;
+      }
+      if (req.url === '/api/ready') {
+        if (readyOk) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              status: 'ready',
+              database: 'connected',
+              timestamp: '2026-11-20T00:00:00.000Z',
+            })
+          );
+        } else {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              status: 'unhealthy',
+              database: 'connected',
+              error: 'Database schema is not ready',
+            })
+          );
+        }
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    };
+
+    const primaryServer = http.createServer(createProbeHandler());
+    const standbyServer = http.createServer(createProbeHandler());
+
+    await Promise.all([
+      new Promise<void>((resolve) => primaryServer.listen(0, '127.0.0.1', () => resolve())),
+      new Promise<void>((resolve) => standbyServer.listen(0, '127.0.0.1', () => resolve())),
+    ]);
+
+    const primaryAddr = primaryServer.address();
+    const standbyAddr = standbyServer.address();
+    const primaryPort = typeof primaryAddr === 'object' && primaryAddr ? primaryAddr.port : 0;
+    const standbyPort = typeof standbyAddr === 'object' && standbyAddr ? standbyAddr.port : 0;
+
+    const runRollout = () =>
+      new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+        const child = spawn('bash', [rolloutScriptPath], {
+          env: {
+            ...process.env,
+            PATH: `${mockBinDir}:${process.env.PATH || ''}`,
+            PORT: String(primaryPort),
+            STANDBY_PORT: String(standbyPort),
+            SKIP_IMAGE_BUILD: 'true',
+            ROLLOUT_WAIT_SECONDS: '1',
+            ROLLOUT_POLL_INTERVAL: '0.1',
+            DB_WAIT_SECONDS: '2',
+            STANDBY_DRAIN_SECONDS: '0',
+          },
+        });
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', (chunk) => {
+          stdout += chunk.toString();
+        });
+        child.stderr.on('data', (chunk) => {
+          stderr += chunk.toString();
+        });
+        child.on('error', reject);
+        child.on('close', (code) => resolve({ status: code, stdout, stderr }));
+      });
+
+    try {
+      const okRollout = await runRollout();
+      expect(okRollout.status).toBe(0);
+      expect(okRollout.stdout).toContain('passed /api/live, /api/health, and /api/ready probes');
+
+      readyOk = false;
+      const readyFailRollout = await runRollout();
+      expect(readyFailRollout.status).toBe(1);
+      expect(readyFailRollout.stderr).toContain('/api/ready');
+
+      readyOk = true;
+      healthOk = false;
+      const healthFailRollout = await runRollout();
+      expect(healthFailRollout.status).toBe(1);
+      expect(healthFailRollout.stderr).toContain('/api/health');
+    } finally {
+      await Promise.all([
+        new Promise<void>((resolve) => primaryServer.close(() => resolve())),
+        new Promise<void>((resolve) => standbyServer.close(() => resolve())),
+      ]);
+      fs.rmSync(rolloutDir, { recursive: true, force: true });
+    }
+  });
+
+  it('probes /api/health and /api/ready in deploy-provider.yml with bounded timeouts, redacts secrets.SERVICE_URL, stamps resolved tag/provenance SHAs, transitions GitHub Deployments two-phase, and gates rollback.yml in deploy-stage.yml', async () => {
     const providerDoc = parseDocument(deployProviderYml, { version: '1.2', strict: true }).toJS() as {
       on?: {
         workflow_dispatch?: { inputs?: Record<string, unknown> };
@@ -2362,8 +2574,10 @@ process.exit(1);
       'Execute Post-Deployment Health Probe Verification'
     );
     expect(providerProbeScript).toContain('--connect-timeout 5 --max-time 10');
+    expect(providerProbeScript).toContain('READY_ENDPOINT="${TARGET_URL}/api/ready"');
 
     let probeState: 'ok' | 'degraded' = 'ok';
+    let readyState: 'ready' | 'unhealthy' = 'ready';
     const createdDeployments: Array<{
       id: number;
       ref: string;
@@ -2380,6 +2594,16 @@ process.exit(1);
         } else {
           res.writeHead(503, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: false, status: 'degraded', database: 'disconnected' }));
+        }
+        return;
+      }
+      if (reqUrl === '/api/ready') {
+        if (readyState === 'ready') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ready', database: 'connected' }));
+        } else {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'unhealthy', database: 'connected', error: 'Database schema is not ready' }));
         }
         return;
       }
@@ -2528,7 +2752,28 @@ process.exit(1);
       expect(fs.readFileSync(outputFile, 'utf8')).toContain('health_status=healthy');
       expect(fs.readFileSync(outputFile, 'utf8')).toContain('http_status=200');
 
-      // 5. Failed /api/health probe marks active GitHub Deployment failure (never success)
+      // 5. Fails closed when /api/health returns 200 ok/connected but /api/ready returns 503 unhealthy
+      readyState = 'unhealthy';
+      const fastOneIterationProbe = providerProbeScript
+        .replace('MAX_TIMEOUT=120', 'MAX_TIMEOUT=1')
+        .replace('sleep $DELAY', 'sleep 1');
+      fs.writeFileSync(outputFile, '');
+      fs.writeFileSync(summaryFile, '');
+      const unreadyProbeRes = await runBashStepAsync(fastOneIterationProbe, {
+        TARGET_ENV: 'production',
+        VAR_SERVICE_URL: '',
+        CLOUDRUN_URL: '',
+        SECRET_SERVICE_URL: secretBaseUrl,
+        IS_DRY_RUN: 'false',
+      });
+      expect(unreadyProbeRes.status).toBe(1);
+      expect(fs.readFileSync(outputFile, 'utf8')).toContain('health_status=unhealthy');
+      expect(fs.readFileSync(outputFile, 'utf8')).toContain('http_status=503');
+      expect(unreadyProbeRes.stdout + unreadyProbeRes.stderr).not.toContain(secretBaseUrl);
+      expect(fs.readFileSync(summaryFile, 'utf8')).not.toContain(secretBaseUrl);
+      readyState = 'ready';
+
+      // 6. Failed /api/health probe marks active GitHub Deployment failure (never success)
       probeState = 'degraded';
       const brokenSha = 'abcdefabcdefabcdefabcdefabcdefabcdefabcd';
       fs.writeFileSync(outputFile, '');

@@ -10,7 +10,7 @@ import {
   PathDiagnostic,
 } from '@/utils/backupValidation';
 import { formatBackupDiagnosticPath } from '@/utils/adminLabels';
-import { withBasePath } from '@/lib/basePath';
+import { downloadExportBlob } from '@/utils/exportDownload';
 
 export type PreflightState = 'idle' | 'reading_file' | 'validating_schema' | 'valid' | 'invalid';
 
@@ -73,9 +73,10 @@ export function useAdminMaintenance() {
   const [importStage, setImportStage] = useState<ImportStage>('idle');
   const [importError, setImportError] = useState<string | null>(null);
 
-  const exportData = () => {
-    window.open(withBasePath('/api/admin/maintenance/export'), '_blank');
-  };
+  const exportData = useCallback(async () => {
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    await downloadExportBlob('/api/admin/maintenance/export', `wedding-backup-${dateStamp}.json`);
+  }, []);
 
   const resetPreflight = useCallback(() => {
     setPreflightState('idle');

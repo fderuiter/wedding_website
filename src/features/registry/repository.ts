@@ -414,7 +414,7 @@ class RegistryRepository implements IRegistryRepository {
         throw new Error('This item has already been purchased.');
       }
 
-      const emailToSave =
+      let emailToSave =
         contribution.email && contribution.email.trim() ? contribution.email.trim() : null;
       const trimOrNull = (value?: string | null) =>
         value && value.trim() ? value.trim() : null;
@@ -441,6 +441,13 @@ class RegistryRepository implements IRegistryRepository {
         finalName = contribution.name || inviteRecord.guestName;
         invitationCodeId = inviteRecord.id;
         linkedInviteRecord = inviteRecord;
+        if (
+          !emailToSave &&
+          typeof inviteRecord.email === 'string' &&
+          inviteRecord.email.trim().length > 0
+        ) {
+          emailToSave = inviteRecord.email.trim();
+        }
       } else if (emailToSave && typeof txClient.invitationCode?.findMany === 'function') {
         const normalizedLookupEmail = emailToSave.toLowerCase();
         const emailMatches = await txClient.invitationCode.findMany({

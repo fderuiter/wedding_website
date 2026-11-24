@@ -8,6 +8,7 @@ import { checkAdminClient } from '@/core/auth/auth.client';
 import { server } from '@/mocks/server';
 import { http, HttpResponse } from 'msw';
 import { createMockRegistryItem } from '@/testing/factories/registryFactory';
+import { setDemoRuntimeFlag } from '@/lib/demo/runtimeFlag';
 
 // Mock next/navigation
 const mockPush = jest.fn();
@@ -137,6 +138,16 @@ describe('useRegistry', () => {
     });
 
     expect(mockPush).toHaveBeenCalledWith('/registry/edit-item/1');
+
+    setDemoRuntimeFlag(true);
+    try {
+      act(() => {
+        result.current.handleEdit('demo-custom-item-7');
+      });
+      expect(mockPush).toHaveBeenCalledWith('/registry/edit-item/fallback?id=demo-custom-item-7');
+    } finally {
+      setDemoRuntimeFlag(false);
+    }
   });
 
   it('should handle delete', async () => {

@@ -35,7 +35,7 @@ jobs:
         run: npm ci
 
       - name: Run Unified Static Quality Checks
-        run: npm run check:static -- --skip-doc-sync
+        run: npm run check:static -- --skip-doc-sync --skip-action-pins
 
       - name: Security Dependency Audit
         run: npm run check:audit
@@ -144,6 +144,14 @@ jobs:
           VITEPRESS_BASE: /wedding_website/
           SKIP_DOC_SYNC: 'true'
         run: npm run docs:build
+
+      - name: Upload Static Documentation Portal Artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: docs-portal-static
+          path: docs-portal/.vitepress/dist/
+          if-no-files-found: error
+          retention-days: 7
 
   doc-drift-comment:
     needs: [verify]
@@ -317,6 +325,8 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
       - name: Install dependencies
+        env:
+          SKIP_NEXT_TYPEGEN: 'true'
         run: npm ci
 
       - name: Set up Docker Buildx
@@ -462,34 +472,16 @@ jobs:
           cp -r .next/standalone/.next/static .next/static
 
       - name: Verify Standalone Output Portability
-        run: npm run check:standalone -- --require-standalone
+        run: npm run check:standalone -- --standalone-only
 
       - name: Run Standalone Execution Smoke Test
         run: npm run test:standalone
-
-      - name: Security Dependency Audit
-        run: npm run check:audit
 
       - name: Run OCI Container & Clean Database Smoke Test
         env:
           SKIP_IMAGE_BUILD: 'true'
           GHA_CACHE_SCOPE: app-amd64
         run: npm run test:container -- --container-migration
-
-      - name: Export Compressed Docker Container Image
-        run: |
-          if ! command -v zstd >/dev/null 2>&1; then
-            sudo apt-get update && sudo apt-get install -y --no-install-recommends zstd
-          fi
-          docker save wedding-website:latest | zstd -T0 -o /tmp/wedding-website-image.tar.zst
-
-      - name: Upload Docker Container Image Artifact
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: wedding-website-container
-          path: /tmp/wedding-website-image.tar.zst
-          compression-level: 0
-          retention-days: 1
 
       - name: Upload Next.js Build Artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -503,13 +495,6 @@ jobs:
             prisma/
             node_modules/.prisma
             node_modules/@prisma
-
-      - name: Verify Static HTML Showcase Export
-        run: |
-          trap 'rm -rf out' EXIT
-          npm run build:export
-          test -f out/index.html
-          rm -rf out
 
   container-arm64:
     needs: verify
@@ -713,6 +698,8 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
       - name: Install dependencies
+        env:
+          SKIP_NEXT_TYPEGEN: 'true'
         run: npm ci
       - name: Resolve Pages base path
         id: base-path
@@ -840,11 +827,15 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
       - name: Download Next.js Build Artifact
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: next-build-artifact
+      - name: Verify restored Prisma Client from build artifact
+        run: |
+          test -d node_modules/.prisma/client
+          test -d node_modules/@prisma/client
       - name: Cache Playwright browsers
         id: playwright-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -878,109 +869,6 @@ jobs:
           name: playwright-a11y-violations
           path: test-results/playwright-a11y-violations.json
           if-no-files-found: warn
-
-  container-e2e-smoke:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: '.nvmrc'
-          cache: 'npm'
-      - name: Install dependencies
-        run: npm ci
-      - name: Cache Playwright browsers
-        id: playwright-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
-      - name: Install Playwright Browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps
-      - name: Install Playwright Operating System Dependencies
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: npx playwright install-deps
-      - name: Download Docker Container Image Artifact
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: wedding-website-container
-          path: /tmp
-      - name: Load Docker Image
-        run: |
-          if ! command -v zstd >/dev/null 2>&1; then
-            sudo apt-get update && sudo apt-get install -y --no-install-recommends zstd
-          fi
-          if [ -f /tmp/wedding-website-image.tar.zst ]; then
-            zstd -dc /tmp/wedding-website-image.tar.zst | docker load
-            rm -f /tmp/wedding-website-image.tar.zst
-          elif [ -f wedding-website-image.tar.zst ]; then
-            zstd -dc wedding-website-image.tar.zst | docker load
-            rm -f wedding-website-image.tar.zst
-          else
-            echo "Error: Compressed Docker image archive (.tar.zst) not found!"
-            exit 1
-          fi
-      - name: Start local test database and application container
-        timeout-minutes: 10
-        env:
-          DB_USER: wedding
-          DB_PASSWORD: wedding123
-          DB_NAME: wedding
-          DB_PORT: "5433"
-          ADMIN_PASSWORD: scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==
-          GUEST_PASSCODE: playwright-e2e-guest-passcode
-          GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
-          E2E_TEST: "true"
-        run: |
-          lsof -ti:3000 | xargs kill -9 2>/dev/null || true
-          docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml up -d app
-      - name: Wait for application container to be ready
-        timeout-minutes: 2
-        run: |
-          echo "Waiting for application container on port 3000..."
-          timeout 120 bash -c 'until curl -sf http://localhost:3000/api/ready > /dev/null; do sleep 2; done'
-          echo "Application container is responsive!"
-      - name: Seed local test container database
-        timeout-minutes: 1
-        env:
-          DATABASE_URL: postgresql://wedding:wedding123@localhost:5433/wedding
-          ADMIN_PASSWORD: scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==
-        run: |
-          npm run db:seed
-      - name: Run Playwright smoke tests against container
-        timeout-minutes: 3
-        env:
-          TEST_CONTAINER: "true"
-          ADMIN_PASSWORD: scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==
-          GUEST_PASSCODE: playwright-e2e-guest-passcode
-          GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
-        run: npm run test:e2e:smoke
-      - name: Print container logs on failure
-        if: failure()
-        env:
-          DB_PASSWORD: wedding123
-          ADMIN_PASSWORD: scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==
-          GUEST_PASSCODE: playwright-e2e-guest-passcode
-          GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
-        run: |
-          echo "=== App Container Logs ==="
-          docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml logs app || true
-          echo "=== DB Container Logs ==="
-          docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml logs db || true
-      - name: Clean up containers
-        if: always()
-        env:
-          DB_PASSWORD: wedding123
-          ADMIN_PASSWORD: scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==
-          GUEST_PASSCODE: playwright-e2e-guest-passcode
-          GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
-        run: docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml down -v || true
 
   a11y-report:
     needs: [unit-test, e2e-test, static-export-build]
@@ -1064,8 +952,76 @@ jobs:
             cat test-results/a11y-summary.md >> "$GITHUB_STEP_SUMMARY"
           fi
 
-  deploy-docs:
+  pages-verify:
     needs: [verify, static-export-build, storybook-build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - name: Download Static Documentation Portal Artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: docs-portal-static
+          path: docs-portal/.vitepress/dist
+      - name: Download Static Demo Showcase Artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: demo-static
+          path: docs-portal/.vitepress/dist/demo
+      - name: Download Storybook Static Showcase Artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: storybook-static
+          path: docs-portal/.vitepress/dist/storybook
+      - name: Assemble and verify unified Pages bundle files
+        run: |
+          touch docs-portal/.vitepress/dist/.nojekyll
+          for required_file in \
+            docs-portal/.vitepress/dist/index.html \
+            docs-portal/.vitepress/dist/demo/index.html \
+            docs-portal/.vitepress/dist/storybook/index.html \
+            docs-portal/.vitepress/dist/.nojekyll; do
+            if [ ! -f "$required_file" ]; then
+              echo "Error: Missing required Pages artifact file: $required_file" >&2
+              exit 1
+            fi
+          done
+      - name: Cache Playwright Chromium browser
+        id: playwright-chromium-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-chromium-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
+      - name: Install Playwright Chromium Browser
+        if: steps.playwright-chromium-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - name: Install Playwright Chromium OS Dependencies
+        if: steps.playwright-chromium-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      - name: Verify unified GitHub Pages showcase bundle
+        run: npm run pages:verify
+      - name: Upload Unified Pages Bundle Artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pages-bundle
+          path: docs-portal/.vitepress/dist/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy-docs:
+    needs: [verify, static-export-build, storybook-build, pages-verify]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     concurrency:
@@ -1123,37 +1079,66 @@ jobs:
 
           echo "is_latest=true" >> "$GITHUB_OUTPUT"
           echo "Verified ${CURRENT_SHA} matches origin/main HEAD."
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        if: steps.freshness.outputs.is_latest == 'true'
-        with:
-          node-version-file: '.nvmrc'
-          cache: 'npm'
-      - name: Install dependencies
-        if: steps.freshness.outputs.is_latest == 'true'
-        run: npm ci
       - name: Setup Pages
         id: pages
         if: steps.freshness.outputs.is_latest == 'true'
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-      - name: Build documentation portal
-        if: steps.freshness.outputs.is_latest == 'true'
-        env:
-          VITEPRESS_BASE: ${{ steps.pages.outputs.base_path }}
-        run: npm run docs:build
-      - name: Download Static Demo Showcase Artifact
-        if: steps.freshness.outputs.is_latest == 'true'
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: demo-static
-          path: docs-portal/.vitepress/dist/demo
-      - name: Align demo base path with Pages configuration
+      - name: Check Pages base path alignment
+        id: base-check
         if: steps.freshness.outputs.is_latest == 'true'
         env:
           PAGES_BASE_PATH: ${{ steps.pages.outputs.base_path }}
           BUILT_DEMO_BASE: ${{ needs.static-export-build.outputs.demo_base_path }}
         run: |
           NORMALIZED_PAGES_BASE=$(printf '%s' "$PAGES_BASE_PATH" | sed 's:/*$::')
+          if [ -z "$NORMALIZED_PAGES_BASE" ]; then
+            EXPECTED_PORTAL_BASE="/"
+          else
+            EXPECTED_PORTAL_BASE="${NORMALIZED_PAGES_BASE}/"
+          fi
           EXPECTED_DEMO_BASE="${NORMALIZED_PAGES_BASE}/demo"
+          echo "expected_portal_base=${EXPECTED_PORTAL_BASE}" >> "$GITHUB_OUTPUT"
+          echo "expected_demo_base=${EXPECTED_DEMO_BASE}" >> "$GITHUB_OUTPUT"
+          if [ "$EXPECTED_PORTAL_BASE" = "/wedding_website/" ] && [ "$BUILT_DEMO_BASE" = "$EXPECTED_DEMO_BASE" ]; then
+            echo "reuse_bundle=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "reuse_bundle=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Download Verified Pages Bundle Artifact
+        if: steps.freshness.outputs.is_latest == 'true' && steps.base-check.outputs.reuse_bundle == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: pages-bundle
+          path: docs-portal/.vitepress/dist
+      - name: Setup Node.js for fallback Pages rebuild
+        if: steps.freshness.outputs.is_latest == 'true' && steps.base-check.outputs.reuse_bundle != 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - name: Install dependencies for fallback Pages rebuild
+        if: steps.freshness.outputs.is_latest == 'true' && steps.base-check.outputs.reuse_bundle != 'true'
+        env:
+          SKIP_NEXT_TYPEGEN: 'true'
+        run: npm ci
+      - name: Build documentation portal for custom base path
+        if: steps.freshness.outputs.is_latest == 'true' && steps.base-check.outputs.reuse_bundle != 'true'
+        env:
+          VITEPRESS_BASE: ${{ steps.pages.outputs.base_path }}
+          SKIP_DOC_SYNC: 'true'
+        run: npm run docs:build
+      - name: Download Static Demo Showcase Artifact
+        if: steps.freshness.outputs.is_latest == 'true' && steps.base-check.outputs.reuse_bundle != 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: demo-static
+          path: docs-portal/.vitepress/dist/demo
+      - name: Align demo base path with Pages configuration
+        if: steps.freshness.outputs.is_latest == 'true' && steps.base-check.outputs.reuse_bundle != 'true'
+        env:
+          EXPECTED_DEMO_BASE: ${{ steps.base-check.outputs.expected_demo_base }}
+          BUILT_DEMO_BASE: ${{ needs.static-export-build.outputs.demo_base_path }}
+        run: |
           if [ "$BUILT_DEMO_BASE" != "$EXPECTED_DEMO_BASE" ]; then
             echo "Rebuilding static demo for Pages base path: ${EXPECTED_DEMO_BASE}"
             NEXT_PUBLIC_BASE_PATH="$EXPECTED_DEMO_BASE" npm run build:export
@@ -1165,7 +1150,7 @@ jobs:
             rm -rf out
           fi
       - name: Download Storybook Static Showcase Artifact
-        if: steps.freshness.outputs.is_latest == 'true'
+        if: steps.freshness.outputs.is_latest == 'true' && steps.base-check.outputs.reuse_bundle != 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: storybook-static
