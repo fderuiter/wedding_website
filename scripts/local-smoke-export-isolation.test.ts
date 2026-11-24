@@ -65,13 +65,26 @@ describe('local smoke isolation, staged static exports, and untracked next-env.d
         path.join(repoRoot, 'scripts/test-container.mjs'),
         'utf8'
       );
+      const standaloneScriptRaw = fs.readFileSync(
+        path.join(repoRoot, 'scripts/test-standalone.mjs'),
+        'utf8'
+      );
+      const smokeRunnerRaw = fs.readFileSync(
+        path.join(repoRoot, 'scripts/smoke-runner.mjs'),
+        'utf8'
+      );
       expect(containerScriptRaw).not.toMatch(/lsof\s+-ti:3000/);
       expect(containerScriptRaw).not.toMatch(/kill\s+-9/);
-      expect(containerScriptRaw).toContain(
-        'Expected unauthenticated /guest/login SSR response to redact AppConfig seoTitle'
+      expect(standaloneScriptRaw).not.toMatch(/lsof\s+-ti:3000/);
+      expect(standaloneScriptRaw).not.toMatch(/kill\s+-9/);
+      expect(containerScriptRaw).toContain('await runSigtermDrainProbe({');
+      expect(standaloneScriptRaw).toContain('await runSigtermDrainProbe({');
+      expect(smokeRunnerRaw).toContain('Guest Sign-In | Wedding Website');
+      expect(smokeRunnerRaw).toContain(
+        'Unauthenticated GET /guest/login leaked unredacted seoTitle marker'
       );
-      expect(containerScriptRaw).toMatch(
-        /const inflightPromise = httpRequest\('\/guest\/login',\s*\{\s*headers:\s*\{\s*Cookie:\s*guestCookie,?\s*\}/
+      expect(smokeRunnerRaw).toMatch(
+        /const inflightPromise = httpRequest\(baseUrl,\s*'\/guest\/login',\s*\{\s*hostHeader,\s*headers:\s*\{\s*Cookie:\s*activeGuestCookie,?\s*\}/
       );
     });
 

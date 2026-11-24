@@ -3016,20 +3016,40 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
-  // 5. Rollback workflow jq `.data.status` / `.data.database` & `publish-artifact.yml` `v*` tag checks
+  // 5. Rollout (`deploy-provider.yml`, `deploy-stage.yml`) & Rollback (`rollback.yml`) dual `/api/health` + `/api/ready` probe contracts & `publish-artifact.yml` `v*` tag checks
+  const deployProviderWorkflowRaw = fs.readFileSync(path.join(workflowsDir, 'deploy-provider.yml'), 'utf8');
+  const deployStageWorkflowRaw = fs.readFileSync(path.join(workflowsDir, 'deploy-stage.yml'), 'utf8');
   const rollbackWorkflowRaw = fs.readFileSync(path.join(workflowsDir, 'rollback.yml'), 'utf8');
-  if (!rollbackWorkflowRaw.includes('.data.status') || !rollbackWorkflowRaw.includes('.data.database')) {
-    errors.push('.github/workflows/rollback.yml: Health check jq query must read `.data.status` and `.data.database`');
-  }
-  if (/jq\s+-r\s+['"]\.(?:status|database)\s*\/\//.test(rollbackWorkflowRaw)) {
-    errors.push(
-      '.github/workflows/rollback.yml: Unwrapped `.status` or `.database` jq query detected (must read `.data.status` / `.data.database`)'
-    );
+  for (const [workflowRelPath, workflowRaw] of [
+    ['.github/workflows/deploy-provider.yml', deployProviderWorkflowRaw],
+    ['.github/workflows/deploy-stage.yml', deployStageWorkflowRaw],
+    ['.github/workflows/rollback.yml', rollbackWorkflowRaw],
+  ] as const) {
+    if (!workflowRaw.includes('.data.status') || !workflowRaw.includes('.data.database')) {
+      errors.push(`${workflowRelPath}: Health check jq query must read \`.data.status\` and \`.data.database\``);
+    }
+    if (/jq\s+-r\s+['"]\.(?:status|database)\s*\/\//.test(workflowRaw)) {
+      errors.push(
+        `${workflowRelPath}: Unwrapped \`.status\` or \`.database\` jq query detected (must read \`.data.status\` / \`.data.database\`)`
+      );
+    }
+    if (
+      !workflowRaw.includes('READY_ENDPOINT="${TARGET_URL}/api/ready"') ||
+      !workflowRaw.includes('READY_STATUS_VAL') ||
+      !/READY_STATUS_VAL"\s*=\s*"ready"/.test(workflowRaw)
+    ) {
+      errors.push(
+        `${workflowRelPath}: Post-deployment/rollback probe must poll both \`/api/health\` and \`/api/ready\` (\`status == "ready"\`)`
+      );
+    }
   }
   for (const relPath of ['DEPLOYMENT.md', 'docs/deployment/gcp-cloud-run.md']) {
     const content = runbookContents.get(relPath) ?? '';
     if (!content.includes('.data.status') || !content.includes('.data.database')) {
       errors.push(`${relPath}: Rollback health probe documentation must reference \`.data.status\` and \`.data.database\``);
+    }
+    if (!content.includes('/api/health') || !content.includes('/api/ready')) {
+      errors.push(`${relPath}: Deployment and rollback probe documentation must reference both \`/api/health\` and \`/api/ready\``);
     }
   }
 

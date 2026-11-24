@@ -7,7 +7,12 @@ import {
   checkPrismaSchema,
   formatPrismaCheckFailure,
   parsePrismaCheckArgs,
+  verifyReadinessManifestParity,
 } from './check-prisma-schema';
+import {
+  REQUIRED_MIGRATION_NAMES,
+  REQUIRED_SCHEMA_TABLES,
+} from '../src/lib/readinessManifest';
 
 describe('check-prisma-schema PGlite migration drift guard', () => {
   let tempDir: string;
@@ -108,4 +113,63 @@ describe('check-prisma-schema PGlite migration drift guard', () => {
     expect(res.stderr).toContain('unmigratedTestColumn');
     expect(res.stderr).toContain('npm run migrate:dev');
   }, 20000);
+
+  it('verifies readiness manifest covers all 16 schema models and all 47 migration directories', () => {
+    expect(REQUIRED_SCHEMA_TABLES).toHaveLength(16);
+    expect(REQUIRED_MIGRATION_NAMES).toHaveLength(47);
+    expect(verifyReadinessManifestParity({ cwd: process.cwd() })).toEqual([]);
+
+    const missingTableIssues = verifyReadinessManifestParity({
+      cwd: process.cwd(),
+      requiredTables: REQUIRED_SCHEMA_TABLES.filter((table) => table !== 'AuthLockout'),
+    });
+    expect(missingTableIssues).toEqual([
+      expect.stringContaining('AuthLockout'),
+    ]);
+
+    const missingMigration = '20261123020000_add_plus_one_seat_numbers';
+    const missingMigrationIssues = verifyReadinessManifestParity({
+      cwd: process.cwd(),
+      requiredMigrations: REQUIRED_MIGRATION_NAMES.filter(
+        (migration) => migration !== missingMigration
+      ),
+    });
+    expect(missingMigrationIssues).toEqual([
+      expect.stringContaining(missingMigration),
+    ]);
+  });
+
+  it('exits non-zero when prisma/migrations contains a directory omitted from readinessManifest', () => {
+    const copiedMigrationsDir = path.join(tempDir, 'migrations');
+    fs.cpSync(path.join(process.cwd(), 'prisma/migrations'), copiedMigrationsDir, {
+      recursive: true,
+    });
+    const extraMigrationDir = path.join(
+      copiedMigrationsDir,
+      '20261231000000_unregistered_manifest_migration'
+    );
+    fs.mkdirSync(extraMigrationDir, { recursive: true });
+    fs.writeFileSync(path.join(extraMigrationDir, 'migration.sql'), '-- no-op test migration\n');
+
+    const res = spawnSync(
+      tsxBin,
+      [
+        'scripts/check-prisma-schema.ts',
+        '--migrations',
+        copiedMigrationsDir,
+        '--skip-validate',
+        '--skip-generate',
+      ],
+      {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        shell: process.platform === 'win32',
+      }
+    );
+
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain('Readiness manifest drift detected');
+    expect(res.stderr).toContain('20261231000000_unregistered_manifest_migration');
+    expect(res.stderr).toContain('src/lib/readinessManifest.ts');
+  }, 25000);
 });

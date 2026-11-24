@@ -1427,6 +1427,17 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
       '.github/TESTING.md: Must document that scripts/test-standalone.mjs requires "npm run build" and joins scripts/test-container.mjs (.env.ci) in isolating Compose projects (-p wedding-smoke-standalone / -p wedding-smoke-container) before "docker compose ... down -v"'
     );
   }
+  if (
+    !testingRaw.includes('smoke-runner.mjs') ||
+    !testingRaw.includes('Guest Sign-In | Wedding Website') ||
+    !testingRaw.includes('143') ||
+    !agentsRaw.includes('smoke-runner.mjs') ||
+    !runtimeContractRaw.includes('readinessManifest.ts')
+  ) {
+    errors.push(
+      'Setup guides (.github/TESTING.md, AGENTS.md, docs/runtime-contract.md): Must document shared scripts/smoke-runner.mjs authenticated SIGTERM exit-143 draining, unauthenticated "/guest/login" ("Guest Sign-In | Wedding Website") redaction, and src/lib/readinessManifest.ts readiness parity'
+    );
+  }
 
   // 6. AGENTS.md concise workflow & TypeScript configuration split checks
   const tsconfig = JSON.parse(tsconfigRaw) as { exclude?: string[] };
