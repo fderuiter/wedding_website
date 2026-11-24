@@ -2,6 +2,7 @@ import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
 import { SeatingTableDTO, AutoAssignResultDTO } from './schemas';
 import { createAuditSnapshot, createBatchAuditSnapshots } from '@/lib/audit';
+import { qualifyPostgresTable } from '@/lib/postgres-url.js';
 import { Prisma } from '@prisma/client';
 import { InvitationCodeDTO } from '@/features/registry';
 import {
@@ -368,9 +369,10 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
       return Prisma.sql`(${item.guestId}::text, ${item.tableId}::text, ${item.seatNumber}::integer, ${plusOneArraySql})`;
     });
     const values = Prisma.join(rows, ', ');
+    const invitationCodeTable = Prisma.raw(qualifyPostgresTable('InvitationCode'));
 
     const bulkUpdateQuery = Prisma.sql`
-      UPDATE "InvitationCode" AS t
+      UPDATE ${invitationCodeTable} AS t
       SET
         "tableId" = v."tableId",
         "seatNumber" = v."seatNumber",

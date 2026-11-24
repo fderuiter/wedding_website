@@ -1,4 +1,6 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { qualifyPostgresTable } from '@/lib/postgres-url.js';
 import { getAppConfig } from '@/lib/config';
 import { getPresetTokens } from '@/lib/theme/presets';
 import { createAuditSnapshot, createBatchAuditSnapshots } from '@/lib/audit';
@@ -253,7 +255,10 @@ export class ThankYouService {
 
       if (targetItemId) {
         if (typeof txClient.$queryRaw === 'function') {
-          await txClient.$queryRaw`SELECT id FROM "RegistryItem" WHERE id = ${targetItemId} FOR UPDATE`;
+          const registryItemTable = Prisma.raw(qualifyPostgresTable('RegistryItem'));
+          await txClient.$queryRaw(
+            Prisma.sql`SELECT id FROM ${registryItemTable} WHERE id = ${targetItemId} FOR UPDATE`
+          );
         }
         const targetItem = await txClient.registryItem.findUnique({
           where: { id: targetItemId },

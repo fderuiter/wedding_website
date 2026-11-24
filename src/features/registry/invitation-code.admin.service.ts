@@ -9,6 +9,7 @@ import {
 } from './schemas';
 import { executeInTransaction } from '@/lib/transaction';
 import { createAuditSnapshot } from '@/lib/audit';
+import { qualifyPostgresTable } from '@/lib/postgres-url.js';
 import { Prisma } from '@prisma/client';
 import { generateRandomCode } from './utils/invitation';
 import {
@@ -821,9 +822,10 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         });
 
         const values = Prisma.join(rows, ', ');
+        const invitationCodeTable = Prisma.raw(qualifyPostgresTable('InvitationCode'));
 
         const bulkUpdateQuery = Prisma.sql`
-          UPDATE "InvitationCode" AS t
+          UPDATE ${invitationCodeTable} AS t
           SET
             "guestName" = COALESCE(v."guestName", t."guestName"),
             "email" = CASE WHEN v."has_email" THEN v."email" ELSE t."email" END,
@@ -1188,9 +1190,10 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         Prisma.sql`(${record.id}::text, ${record.partyTags}::text[])`
       );
       const values = Prisma.join(rows, ', ');
+      const invitationCodeTable = Prisma.raw(qualifyPostgresTable('InvitationCode'));
 
       const bulkUpdateQuery = Prisma.sql`
-        UPDATE "InvitationCode" AS t
+        UPDATE ${invitationCodeTable} AS t
         SET
           "partyTags" = v."partyTags",
           "updatedAt" = NOW()

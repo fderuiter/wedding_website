@@ -1,8 +1,19 @@
 import fs from 'fs';
 import path from 'path';
 import child_process from 'child_process';
-import { fileURLToPath } from 'url';
-import { isValidPostgresUrl, normalizePostgresUrl } from '../src/lib/postgres-url.js';
+import { fileURLToPath, pathToFileURL } from 'url';
+import {
+  isValidPostgresUrl,
+  normalizePostgresUrl,
+  parsePostgresUrl,
+  redactPostgresUrl,
+  resolveDirectMigrationPostgresUrl,
+} from '../src/lib/postgres-url.js';
+
+const currentFilePath =
+  typeof import.meta.filename === 'string'
+    ? import.meta.filename
+    : fileURLToPath(import.meta.url);
 
 export interface ParsedMigrateStatus {
   isUpToDate: boolean;
@@ -699,41 +710,86 @@ export function runPreflightCheck(options?: PreflightCheckOptions): { success: b
     return { success: false, summary: missingDbSummary };
   }
 
-  let rawOutput = options?.mockOutput;
+  let rawOutput: string;
   let exitCode: number | null | undefined = options?.mockExitCode;
   let spawnError: Error | null = options?.mockSpawnError ?? null;
 
-  if (rawOutput === undefined) {
-    console.log(`Running "npx prisma migrate status" for environment "${environment}"...`);
-    const normalizedPrimaryUrl =
-      databaseUrl && isValidPostgresUrl(databaseUrl.trim())
-        ? normalizePostgresUrl(databaseUrl.trim())
-        : databaseUrl;
-    const rawNonPooling = process.env.POSTGRES_URL_NON_POOLING?.trim();
-    const unquotedNonPooling =
-      rawNonPooling &&
-      rawNonPooling.length >= 2 &&
-      ((rawNonPooling.startsWith('"') && rawNonPooling.endsWith('"')) ||
-        (rawNonPooling.startsWith('\'') && rawNonPooling.endsWith('\'')))
-        ? rawNonPooling.slice(1, -1).trim()
-        : rawNonPooling;
-    const childEnv: NodeJS.ProcessEnv = { ...process.env, DATABASE_URL: normalizedPrimaryUrl };
-    if (unquotedNonPooling) {
-      childEnv.POSTGRES_URL_NON_POOLING = isValidPostgresUrl(unquotedNonPooling)
-        ? normalizePostgresUrl(unquotedNonPooling)
-        : unquotedNonPooling;
+  if (options?.mockOutput !== undefined) {
+    rawOutput = options.mockOutput;
+  } else {
+    const resolvedDbUrl = databaseUrl?.trim() ?? '';
+    if (!isValidPostgresUrl(resolvedDbUrl)) {
+      rawOutput = `Error: Invalid PostgreSQL DATABASE_URL (${redactPostgresUrl(resolvedDbUrl)}).`;
+      exitCode = 1;
     } else {
-      delete childEnv.POSTGRES_URL_NON_POOLING;
+      const normalizedPrimaryUrl = normalizePostgresUrl(resolvedDbUrl);
+      const rawNonPooling = process.env.POSTGRES_URL_NON_POOLING?.trim();
+      const unquotedNonPooling =
+        rawNonPooling &&
+        rawNonPooling.length >= 2 &&
+        ((rawNonPooling.startsWith('"') && rawNonPooling.endsWith('"')) ||
+          (rawNonPooling.startsWith("'") && rawNonPooling.endsWith("'")))
+          ? rawNonPooling.slice(1, -1).trim()
+          : rawNonPooling;
+      const childEnv: NodeJS.ProcessEnv = { ...process.env, DATABASE_URL: normalizedPrimaryUrl };
+      if (unquotedNonPooling) {
+        childEnv.POSTGRES_URL_NON_POOLING = isValidPostgresUrl(unquotedNonPooling)
+          ? normalizePostgresUrl(unquotedNonPooling)
+          : unquotedNonPooling;
+      } else {
+        delete childEnv.POSTGRES_URL_NON_POOLING;
+      }
+
+      const targetMigrationUrl = resolveDirectMigrationPostgresUrl(
+        normalizedPrimaryUrl,
+        childEnv.POSTGRES_URL_NON_POOLING
+      );
+      const parsedTargetUrl = parsePostgresUrl(targetMigrationUrl);
+      let tlsFailureOutput: string | null = null;
+      if (parsedTargetUrl.tlsMode !== 'disable') {
+        const helperModuleUrl = pathToFileURL(
+          path.resolve(path.dirname(currentFilePath), '../src/lib/postgres-url.js')
+        ).href;
+        try {
+          child_process.execFileSync(
+            process.execPath,
+            [
+              '--input-type=module',
+              '-e',
+              `const { verifyPostgresTlsHandshake } = await import(${JSON.stringify(helperModuleUrl)}); try { await verifyPostgresTlsHandshake(process.env.TARGET_MIGRATION_URL ?? ''); } catch (err) { console.error(err instanceof Error ? err.message : String(err)); process.exit(1); }`,
+            ],
+            {
+              cwd: workDir,
+              encoding: 'utf8',
+              env: { ...childEnv, TARGET_MIGRATION_URL: targetMigrationUrl },
+            }
+          );
+        } catch (tlsErr: unknown) {
+          const errObj = tlsErr as { stderr?: string; stdout?: string; message?: string };
+          const detail =
+            `${errObj.stderr || ''}\n${errObj.stdout || ''}`.trim() ||
+            (errObj.message ?? 'TLS handshake failed');
+          const combinedErr = redactDatabaseUrls(detail);
+          tlsFailureOutput = `Error: Pre-flight PostgreSQL TLS handshake check failed: ${combinedErr}`;
+        }
+      }
+
+      if (tlsFailureOutput !== null) {
+        rawOutput = tlsFailureOutput;
+        exitCode = 1;
+      } else {
+        console.log(`Running "npx prisma migrate status" for environment "${environment}"...`);
+        const result = child_process.spawnSync('npx', ['prisma', 'migrate', 'status'], {
+          cwd: workDir,
+          encoding: 'utf8',
+          shell: process.platform === 'win32',
+          env: childEnv,
+        });
+        rawOutput = `${result.stdout || ''}\n${result.stderr || ''}`;
+        exitCode = result.status;
+        spawnError = result.error ?? null;
+      }
     }
-    const result = child_process.spawnSync('npx', ['prisma', 'migrate', 'status'], {
-      cwd: workDir,
-      encoding: 'utf8',
-      shell: process.platform === 'win32',
-      env: childEnv,
-    });
-    rawOutput = `${result.stdout || ''}\n${result.stderr || ''}`;
-    exitCode = result.status;
-    spawnError = result.error ?? null;
   }
 
   const parsedStatus = parsePrismaMigrateStatus(rawOutput, { exitCode, spawnError });
@@ -761,10 +817,6 @@ export function runPreflightCheck(options?: PreflightCheckOptions): { success: b
 }
 
 // Auto-run if executed as main CLI
-const currentFilePath =
-  typeof import.meta.filename === 'string'
-    ? import.meta.filename
-    : fileURLToPath(import.meta.url);
 const isMain =
   typeof process.argv[1] === 'string' &&
   path.resolve(process.argv[1]) === path.resolve(currentFilePath);
