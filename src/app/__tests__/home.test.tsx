@@ -134,7 +134,7 @@ jest.mock('@/features/attractions', () => ({
 const mockGetHomepageLogistics = jest.fn();
 jest.mock('@/features/logistics', () => ({
   logisticsService: {
-    getHomepageLogistics: () => mockGetHomepageLogistics(),
+    getHomepageLogistics: (...args: unknown[]) => mockGetHomepageLogistics(...args),
   },
 }));
 
@@ -558,5 +558,210 @@ describe('Home Page', () => {
         addressCountry: 'US',
       },
     });
+  });
+
+  it('propagates HTTP 303 NEXT_REDIRECT from enforceActiveGuestPageSession without running data queries', async () => {
+    const redirectError = Object.assign(new Error('NEXT_REDIRECT'), {
+      digest: 'NEXT_REDIRECT;replace;/guest/login?callbackUrl=%2F;303;',
+    });
+    mockEnforceActiveGuestPageSession.mockRejectedValue(redirectError);
+
+    await expect(HomePage()).rejects.toBe(redirectError);
+
+    expect(mockGetGuestInviteSession).not.toHaveBeenCalled();
+    expect(mockGetHomepageLogistics).not.toHaveBeenCalled();
+    expect(mockGetScheduleForGuest).not.toHaveBeenCalled();
+    expect(mockGetVisibleAttractions).not.toHaveBeenCalled();
+  });
+
+  it('executes Stage 1 config/session checks concurrently and Stage 2 data queries concurrently via Promise.all', async () => {
+    let resolveConfig!: (val: typeof defaultMockConfig) => void;
+    let resolveGuard!: () => void;
+    let resolveLogistics!: (val: unknown[]) => void;
+    let resolveSchedule!: (val: unknown[]) => void;
+    let resolveAttractions!: (val: unknown[]) => void;
+
+    const stage1Started: string[] = [];
+    const stage2Started: string[] = [];
+
+    (getAppConfig as jest.Mock).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          stage1Started.push('getAppConfig');
+          resolveConfig = resolve;
+        })
+    );
+    mockEnforceActiveGuestPageSession.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          stage1Started.push('enforceActiveGuestPageSession');
+          resolveGuard = resolve;
+        })
+    );
+    mockGetGuestInviteSession.mockResolvedValue({
+      code: 'VIP2026',
+      guestName: 'VIP Household',
+    });
+
+    let markStage2Entry!: () => void;
+    const stage2AllEntered = new Promise<void>((resolve) => {
+      markStage2Entry = () => {
+        if (stage2Started.length === 3) {
+          resolve();
+        }
+      };
+    });
+
+    mockGetHomepageLogistics.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          stage2Started.push('getHomepageLogistics');
+          resolveLogistics = resolve;
+          markStage2Entry();
+        })
+    );
+    mockGetScheduleForGuest.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          stage2Started.push('getScheduleForGuest');
+          resolveSchedule = resolve;
+          markStage2Entry();
+        })
+    );
+    mockGetVisibleAttractions.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          stage2Started.push('getVisibleAttractions');
+          resolveAttractions = resolve;
+          markStage2Entry();
+        })
+    );
+
+    const renderPromise = HomePage();
+
+    // Both Stage 1 promises start synchronously before either resolves
+    expect(stage1Started).toEqual(['getAppConfig', 'enforceActiveGuestPageSession']);
+    expect(stage2Started).toEqual([]);
+
+    resolveConfig({ ...defaultMockConfig });
+    resolveGuard();
+
+    await stage2AllEntered;
+
+    // All three Stage 2 promises are in flight concurrently before any resolves
+    expect(stage2Started).toEqual([
+      'getHomepageLogistics',
+      'getScheduleForGuest',
+      'getVisibleAttractions',
+    ]);
+    expect(mockGetHomepageLogistics).toHaveBeenCalledWith({
+      includePublicSubEvents: false,
+    });
+    expect(mockGetScheduleForGuest).toHaveBeenCalledWith('VIP2026', {
+      includeContentNodeFallback: false,
+    });
+
+    resolveLogistics([]);
+    resolveSchedule([]);
+    resolveAttractions([]);
+
+    const Component = await renderPromise;
+    expect(Component).toBeTruthy();
+  });
+
+  it('preserves read-only Schedule ContentNode fallbacks for invited guests when SubEvent table is empty', async () => {
+    mockGetGuestInviteSession.mockResolvedValue({
+      code: 'FALLBACK26',
+      guestName: 'Fallback Household',
+    });
+    mockGetHomepageLogistics.mockResolvedValue([
+      {
+        id: 'fallback-sched-1',
+        type: 'Schedule',
+        tags: ['Homepage', 'Schedule'],
+        data: {
+          title: 'Fallback Sunset Ceremony',
+          startTime: '2026-06-20T17:00:00.000Z',
+          isPrivate: false,
+          isReadOnly: true,
+        },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ]);
+    mockGetScheduleForGuest.mockResolvedValue([]);
+
+    const Component = await HomePage();
+    render(Component);
+
+    expect(mockGetHomepageLogistics).toHaveBeenCalledWith({ includePublicSubEvents: false });
+    expect(mockGetScheduleForGuest).toHaveBeenCalledWith('FALLBACK26', {
+      includeContentNodeFallback: false,
+    });
+    expect(screen.getByText('Fallback Sunset Ceremony')).toBeInTheDocument();
+  });
+
+  it('bypasses guest session guards and loads static export schedules concurrently when STATIC_EXPORT=true', async () => {
+    const prevStaticExport = process.env.STATIC_EXPORT;
+    process.env.STATIC_EXPORT = 'true';
+
+    try {
+      mockGetHomepageLogistics.mockResolvedValue([
+        {
+          id: 'static-sched-stale',
+          type: 'Schedule',
+          tags: ['Homepage', 'Schedule'],
+          data: {
+            title: 'Stale Static Node Schedule',
+            startTime: '2026-06-20T12:00:00.000Z',
+          },
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+        },
+        {
+          id: 'static-logistics-card',
+          type: 'Logistics',
+          tags: ['Homepage', 'Logistics'],
+          data: {
+            title: 'Static Shuttle Stop',
+            description: 'Main fountain pickup',
+          },
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      ]);
+      mockGetScheduleForGuest.mockResolvedValue([
+        {
+          id: 'static-se-1',
+          title: 'Static Showcase Ceremony',
+          description: 'Interactive showcase event',
+          startTime: '2026-06-20T15:00:00.000Z',
+          endTime: '2026-06-20T16:00:00.000Z',
+          locationName: 'Showcase Lawn',
+          isPrivate: false,
+          isReadOnly: false,
+          userRsvp: null,
+        },
+      ]);
+
+      const Component = await HomePage();
+      render(Component);
+
+      expect(mockEnforceActiveGuestPageSession).not.toHaveBeenCalled();
+      expect(mockGetGuestInviteSession).not.toHaveBeenCalled();
+      expect(mockGetHomepageLogistics).toHaveBeenCalledWith({ includePublicSubEvents: false });
+      expect(mockGetScheduleForGuest).toHaveBeenCalledWith(null, {
+        includeContentNodeFallback: false,
+      });
+      expect(screen.getByText('Static Showcase Ceremony')).toBeInTheDocument();
+      expect(screen.getByText('Static Shuttle Stop')).toBeInTheDocument();
+      expect(screen.queryByText('Stale Static Node Schedule')).not.toBeInTheDocument();
+    } finally {
+      if (prevStaticExport === undefined) {
+        delete process.env.STATIC_EXPORT;
+      } else {
+        process.env.STATIC_EXPORT = prevStaticExport;
+      }
+    }
   });
 });

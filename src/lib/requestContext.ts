@@ -33,6 +33,7 @@ interface RequestContextStore {
   guestSessionsByKey: Map<string, Promise<unknown>>;
   invitationsByCode: Map<string, HydratedGuestInvitation>;
   appConfigByKey: Map<string, Promise<unknown>>;
+  requestDataByKey: Map<string, Promise<unknown>>;
 }
 
 function createRequestContextStore(request?: object): RequestContextStore {
@@ -41,6 +42,7 @@ function createRequestContextStore(request?: object): RequestContextStore {
     guestSessionsByKey: new Map<string, Promise<unknown>>(),
     invitationsByCode: new Map<string, HydratedGuestInvitation>(),
     appConfigByKey: new Map<string, Promise<unknown>>(),
+    requestDataByKey: new Map<string, Promise<unknown>>(),
   };
 }
 
@@ -298,4 +300,33 @@ export function getOrLoadRequestAppConfig<T>(
   });
   activeStore.appConfigByKey.set(cacheKey, pending);
   return pending;
+}
+
+export function getOrLoadRequestData<T>(
+  cacheKey: string,
+  loader: () => Promise<T>,
+  req?: NextRequest
+): Promise<T> {
+  const store = resolveRequestContextStore(req);
+  const existing = store.requestDataByKey.get(cacheKey) as Promise<T> | undefined;
+  if (existing) {
+    return existing;
+  }
+
+  const pending = loader().catch((err) => {
+    if (store.requestDataByKey.get(cacheKey) === pending) {
+      store.requestDataByKey.delete(cacheKey);
+    }
+    throw err;
+  });
+  store.requestDataByKey.set(cacheKey, pending);
+  return pending;
+}
+
+export function peekRequestData<T>(
+  cacheKey: string,
+  req?: NextRequest
+): Promise<T> | undefined {
+  const store = resolveRequestContextStore(req);
+  return store.requestDataByKey.get(cacheKey) as Promise<T> | undefined;
 }

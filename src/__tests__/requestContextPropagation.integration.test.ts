@@ -41,7 +41,7 @@ import {
   signGuestInviteSessionToken,
 } from '@/core/auth/guestInviteSession';
 import { runWithRequestContext } from '@/lib/requestContext';
-import { AppConfigSchema } from '@/features/content';
+import { AppConfigSchema, ContentNodeSchema } from '@/features/content';
 import { subEventService } from '@/features/sub-events';
 import { base64urlDecode, hmacSha256 } from '@/utils/crypto';
 import { resetRateLimitsForTesting } from '@/utils/rateLimit';
@@ -50,11 +50,15 @@ import { POST as postRsvp } from '@/app/api/rsvp/route';
 import { GET as getScheduleIcs } from '@/app/api/schedule/[id]/ics/route';
 import { GET as getGuestAddress, PUT as putGuestAddress } from '@/app/api/guest/address/route';
 import { GET as getWeather } from '@/app/api/weather/route';
+import RootLayout from '@/app/layout';
 import HomePage from '@/app/page';
 
 interface SqlCounters {
   invitationCodeSelects: number;
   appConfigSelects: number;
+  contentNodeSelects: number;
+  subEventSelects: number;
+  attractionSelects: number;
   allQueries: string[];
 }
 
@@ -79,6 +83,9 @@ describe('Per-request context propagation, guest session hydration, and AppConfi
   const counters: SqlCounters = {
     invitationCodeSelects: 0,
     appConfigSelects: 0,
+    contentNodeSelects: 0,
+    subEventSelects: 0,
+    attractionSelects: 0,
     allQueries: [],
   };
 
@@ -88,6 +95,9 @@ describe('Per-request context propagation, guest session hydration, and AppConfi
   function resetCounters(): void {
     counters.invitationCodeSelects = 0;
     counters.appConfigSelects = 0;
+    counters.contentNodeSelects = 0;
+    counters.subEventSelects = 0;
+    counters.attractionSelects = 0;
     counters.allQueries = [];
   }
 
@@ -100,6 +110,15 @@ describe('Per-request context propagation, guest session hydration, and AppConfi
     }
     if (/^\s*SELECT\b[\s\S]*?"AppConfig"/i.test(sql)) {
       counters.appConfigSelects += 1;
+    }
+    if (/^\s*SELECT\b[\s\S]*?"ContentNode"/i.test(sql)) {
+      counters.contentNodeSelects += 1;
+    }
+    if (/^\s*SELECT\b[\s\S]*?\bFROM\s+(?:"[^"]+"\.)?"SubEvent"/i.test(sql)) {
+      counters.subEventSelects += 1;
+    }
+    if (/^\s*SELECT\b[\s\S]*?"Attraction"/i.test(sql)) {
+      counters.attractionSelects += 1;
     }
   }
 
@@ -129,6 +148,8 @@ describe('Per-request context propagation, guest session hydration, and AppConfi
     await prisma.subEventAccess.deleteMany({});
     await prisma.subEvent.deleteMany({});
     await prisma.invitationCode.deleteMany({});
+    await prisma.contentNode.deleteMany({});
+    await prisma.attraction.deleteMany({});
     await prisma.$disconnect();
     if (pool && typeof pool.end === 'function') {
       await pool.end();
@@ -149,6 +170,8 @@ describe('Per-request context propagation, guest session hydration, and AppConfi
     await prisma.subEventAccess.deleteMany({});
     await prisma.subEvent.deleteMany({});
     await prisma.invitationCode.deleteMany({});
+    await prisma.contentNode.deleteMany({});
+    await prisma.attraction.deleteMany({});
 
     await prisma.appConfig.upsert({
       where: { id: 'global' },
@@ -474,20 +497,87 @@ describe('Per-request context propagation, guest session hydration, and AppConfi
     expect(counters.invitationCodeSelects).toBe(1);
     expect(counters.appConfigSelects).toBe(1);
 
-    // 2. HomePage Server Component render
+    // 2. Concurrent RootLayout + HomePage Server Component render
+    await prisma.contentNode.createMany({
+      data: [
+        {
+          type: 'FAQ',
+          tags: ['Homepage', 'FAQ'],
+          data: {
+            question: 'Is shuttle service provided?',
+            answer: 'Yes, from Grand Hotel.',
+            displayOrder: 1,
+            isVisible: true,
+          },
+        },
+        {
+          type: 'FAQ',
+          tags: ['FAQ'],
+          data: {
+            question: 'What is the dress code?',
+            answer: 'Formal attire.',
+            displayOrder: 2,
+            isVisible: true,
+          },
+        },
+        {
+          type: 'Logistics',
+          tags: ['Homepage', 'Logistics'],
+          data: {
+            title: 'Valet Parking',
+            description: 'Complimentary at north gate.',
+          },
+        },
+      ],
+    });
+    await prisma.subEvent.create({
+      data: {
+        title: 'Garden Ceremony',
+        description: 'Main lawn ceremony',
+        locationName: 'Conservatory Lawn',
+        location: '100 Garden Way',
+        startTime: new Date('2027-06-20T20:00:00.000Z'),
+        endTime: new Date('2027-06-20T21:00:00.000Z'),
+        isPrivate: false,
+      },
+    });
+    await prisma.attraction.create({
+      data: {
+        name: 'Grand Conservatory Hotel',
+        description: 'Reserved room block',
+        category: 'hotel',
+        website: 'https://example.com/hotel',
+        directions: 'https://maps.google.com/?q=Grand+Conservatory',
+        latitude: 41.8781,
+        longitude: -87.6298,
+        isVisible: true,
+      },
+    });
+
     clearReactTestCache();
     mockCookieMap.set(GUEST_INVITE_COOKIE, token);
     mockHeaderMap.set('x-guest-gated-page', '1');
     mockHeaderMap.set('x-guest-callback-url', '/');
     const hmacMock = hmacSha256 as jest.Mock;
     hmacMock.mockClear();
+    const contentNodeParseSpy = jest.spyOn(ContentNodeSchema, 'parse');
     resetCounters();
 
-    const homeElement = await HomePage();
+    const [layoutElement, homeElement] = await Promise.all([
+      RootLayout({ children: null }),
+      HomePage(),
+    ]);
+    expect(layoutElement).toBeTruthy();
     expect(homeElement).toBeTruthy();
     expect(hmacMock).toHaveBeenCalledTimes(1);
     expect(counters.invitationCodeSelects).toBe(1);
     expect(counters.appConfigSelects).toBe(1);
+    expect(counters.contentNodeSelects).toBe(1);
+    expect(counters.subEventSelects).toBe(1);
+    expect(counters.attractionSelects).toBe(1);
+    // 3 ContentNode rows parsed once + 2 authorized guest SubEvents mapped to Schedule nodes in HomePage
+    expect(contentNodeParseSpy).toHaveBeenCalledTimes(5);
+    contentNodeParseSpy.mockRestore();
 
     // 3. GET /api/guest/address
     resetCounters();
@@ -784,5 +874,84 @@ describe('Per-request context propagation, guest session hydration, and AppConfi
     });
 
     expect(counters.invitationCodeSelects).toBe(2);
+  });
+
+  it('executes 1 ContentNode select and preserves fallback Schedule nodes when SubEvent table is empty during concurrent RootLayout + HomePage render', async () => {
+    await prisma.invitationCode.create({
+      data: {
+        code: 'EMPTYSE26',
+        guestName: 'Fallback Household',
+        isSample: false,
+      },
+    });
+    await prisma.contentNode.createMany({
+      data: [
+        {
+          type: 'FAQ',
+          tags: ['FAQ'],
+          data: {
+            question: 'Can we bring kids?',
+            answer: 'Adults-only reception.',
+            displayOrder: 1,
+            isVisible: true,
+          },
+        },
+        {
+          type: 'Schedule',
+          tags: ['Homepage', 'Schedule'],
+          data: {
+            title: 'Legacy Fallback Ceremony',
+            startTime: '2027-06-20T20:00:00.000Z',
+            isPrivate: false,
+          },
+        },
+      ],
+    });
+
+    const token = await signGuestInviteSessionToken({
+      code: 'EMPTYSE26',
+      guestName: 'Fallback Household',
+    });
+
+    clearReactTestCache();
+    mockCookieMap.set(GUEST_INVITE_COOKIE, token);
+    mockHeaderMap.set('x-guest-gated-page', '1');
+    mockHeaderMap.set('x-guest-callback-url', '/');
+    const contentNodeParseSpy = jest.spyOn(ContentNodeSchema, 'parse');
+    resetCounters();
+
+    const [layoutElement, homeElement] = await Promise.all([
+      RootLayout({ children: null }),
+      HomePage(),
+    ]);
+    expect(layoutElement).toBeTruthy();
+    expect(homeElement).toBeTruthy();
+    expect(counters.appConfigSelects).toBe(1);
+    expect(counters.invitationCodeSelects).toBe(1);
+    expect(counters.contentNodeSelects).toBe(1);
+    expect(counters.subEventSelects).toBe(1);
+    expect(contentNodeParseSpy).toHaveBeenCalledTimes(2);
+    expect((homeElement as { props: { contentNodes: Array<{ data: { title?: string; isReadOnly?: boolean } }> } }).props.contentNodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'Schedule',
+          data: expect.objectContaining({
+            title: 'Legacy Fallback Ceremony',
+            isReadOnly: true,
+          }),
+        }),
+      ])
+    );
+
+    // Non-homepage RootLayout render queries only FAQ rows when homepage ContentNodes are not in flight
+    contentNodeParseSpy.mockClear();
+    clearReactTestCache();
+    resetCounters();
+
+    const standaloneLayout = await RootLayout({ children: null });
+    expect(standaloneLayout).toBeTruthy();
+    expect(counters.contentNodeSelects).toBe(1);
+    expect(contentNodeParseSpy).toHaveBeenCalledTimes(1);
+    contentNodeParseSpy.mockRestore();
   });
 });

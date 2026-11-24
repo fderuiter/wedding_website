@@ -119,101 +119,111 @@ export async function generateMetadata(): Promise<Metadata> {
  * @returns The homepage JSX element populated with the public app configuration, a calendar event for the wedding, and the fetched content nodes (or an empty array if fetching fails).
  */
 export default async function HomePage() {
-  const config = await getAppConfig();
-  const publicConfig = toPublicAppConfig(config);
-
-  let contentNodes = (
-    await withPageQuery(
-      () => logisticsService.getHomepageLogistics(),
-      []
-    )
-  ).filter((n) => !isPrivateContentNode(n));
-
   const isStaticExport = isStaticExportBuild();
 
-  let guestScheduleCode: string | null = null;
-  if (!isStaticExport) {
-    await enforceActiveGuestPageSession();
-    const guestSession = await getGuestInviteSession();
-    guestScheduleCode = guestSession?.code ?? null;
-  }
+  const [config, guestScheduleCode] = await Promise.all([
+    getAppConfig(),
+    isStaticExport
+      ? Promise.resolve<string | null>(null)
+      : (async () => {
+        await enforceActiveGuestPageSession();
+        const guestSession = await getGuestInviteSession();
+        return guestSession?.code ?? null;
+      })(),
+  ]);
 
-  if (isStaticExport || guestScheduleCode) {
-    const guestSchedule = await withPageQuery(
-      () => subEventService.getScheduleForGuest(guestScheduleCode),
-      []
-    );
+  const publicConfig = toPublicAppConfig(config);
+  const shouldLoadGuestSchedule = isStaticExport || Boolean(guestScheduleCode);
 
-    if (guestSchedule.length > 0) {
-      const nonScheduleNodes = contentNodes.filter((n) => {
-        if (isPrivateContentNode(n)) {
-          return false;
-        }
-        const data = n.data as any;
-        return !(
-          n.type === 'Schedule' ||
-          n.tags.includes('Schedule') ||
-          n.tags.includes('schedule') ||
-          Boolean(data?.startTime)
-        );
+  const [rawContentNodes, guestSchedule, attractions] = await Promise.all([
+    withPageQuery(
+      () =>
+        logisticsService.getHomepageLogistics({
+          includePublicSubEvents: !shouldLoadGuestSchedule,
+        }),
+      [] as ContentNodeDTO[]
+    ),
+    shouldLoadGuestSchedule
+      ? withPageQuery(
+        () =>
+          subEventService.getScheduleForGuest(guestScheduleCode, {
+            includeContentNodeFallback: false,
+          }),
+        []
+      )
+      : Promise.resolve([]),
+    isFeatureEnabled('attractions', config.modules)
+      ? withPageQuery(
+        async () => {
+          const rawAttractions = await attractionsRepository.getVisibleAttractions();
+          return [...rawAttractions].sort((a, b) => {
+            const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            return timeB - timeA;
+          });
+        },
+        [] as AttractionDTO[]
+      )
+      : Promise.resolve([] as AttractionDTO[]),
+  ]);
+
+  let contentNodes = rawContentNodes.filter((n) => !isPrivateContentNode(n));
+
+  if (shouldLoadGuestSchedule && guestSchedule.length > 0) {
+    const nonScheduleNodes = contentNodes.filter((n) => {
+      if (isPrivateContentNode(n)) {
+        return false;
+      }
+      const data = n.data as any;
+      return !(
+        n.type === 'Schedule' ||
+        n.tags.includes('Schedule') ||
+        n.tags.includes('schedule') ||
+        Boolean(data?.startTime)
+      );
+    });
+
+    const authorizedScheduleNodes: ContentNodeDTO[] = guestSchedule.map((evt) => {
+      const startIso =
+        evt.startTime instanceof Date
+          ? evt.startTime.toISOString()
+          : evt.startTime || undefined;
+      const endIso =
+        evt.endTime instanceof Date
+          ? evt.endTime.toISOString()
+          : evt.endTime || undefined;
+      const category =
+        typeof evt.category === 'string' && evt.category.trim()
+          ? evt.category.trim()
+          : undefined;
+
+      return ContentNodeSchema.parse({
+        id: evt.id,
+        type: 'Schedule',
+        tags: ['Homepage', 'Schedule'],
+        data: {
+          title: evt.title,
+          description: evt.description || '',
+          startTime: startIso,
+          endTime: endIso,
+          locationName: evt.locationName || evt.location || '',
+          location: evt.location || '',
+          category,
+          categoryTags: category ? [category] : [],
+          attireRules: evt.attireRules || undefined,
+          isPrivate: Boolean(evt.isPrivate),
+          isReadOnly: Boolean(evt.isReadOnly),
+          mealOptions: evt.mealOptions ?? [],
+          customQuestions: evt.customQuestions ?? [],
+          userRsvp: evt.userRsvp ?? undefined,
+        },
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
       });
+    });
 
-      const authorizedScheduleNodes: ContentNodeDTO[] = guestSchedule.map((evt) => {
-        const startIso =
-          evt.startTime instanceof Date
-            ? evt.startTime.toISOString()
-            : evt.startTime || undefined;
-        const endIso =
-          evt.endTime instanceof Date
-            ? evt.endTime.toISOString()
-            : evt.endTime || undefined;
-        const category =
-          typeof evt.category === 'string' && evt.category.trim()
-            ? evt.category.trim()
-            : undefined;
-
-        return ContentNodeSchema.parse({
-          id: evt.id,
-          type: 'Schedule',
-          tags: ['Homepage', 'Schedule'],
-          data: {
-            title: evt.title,
-            description: evt.description || '',
-            startTime: startIso,
-            endTime: endIso,
-            locationName: evt.locationName || evt.location || '',
-            location: evt.location || '',
-            category,
-            categoryTags: category ? [category] : [],
-            attireRules: evt.attireRules || undefined,
-            isPrivate: Boolean(evt.isPrivate),
-            isReadOnly: Boolean(evt.isReadOnly),
-            mealOptions: evt.mealOptions ?? [],
-            customQuestions: evt.customQuestions ?? [],
-            userRsvp: evt.userRsvp ?? undefined,
-          },
-          createdAt: new Date(0),
-          updatedAt: new Date(0),
-        });
-      });
-
-      contentNodes = [...nonScheduleNodes, ...authorizedScheduleNodes];
-    }
+    contentNodes = [...nonScheduleNodes, ...authorizedScheduleNodes];
   }
-
-  const attractions = isFeatureEnabled('attractions', config.modules)
-    ? await withPageQuery(
-      async () => {
-        const rawAttractions = await attractionsRepository.getVisibleAttractions();
-        return [...rawAttractions].sort((a, b) => {
-          const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-          const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-          return timeB - timeA;
-        });
-      },
-      [] as AttractionDTO[]
-    )
-    : [];
 
   return <HomePageClient config={publicConfig} contentNodes={contentNodes} attractions={attractions} />;
 }

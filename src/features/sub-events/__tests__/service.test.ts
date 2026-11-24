@@ -125,6 +125,24 @@ describe('SubEventService', () => {
       expect(events[0].isReadOnly).toBe(true);
     });
 
+    it('skips ContentNode fallback query when includeContentNodeFallback is false and SubEvent table is empty', async () => {
+      mockPrisma.subEvent.findMany.mockResolvedValue([]);
+      mockPrisma.contentNode.findMany.mockResolvedValue([
+        {
+          id: 'cn-1',
+          type: 'Schedule',
+          data: { title: 'Welcome Drinks', startTime: '2026-06-19T17:00:00Z', isPrivate: false },
+        },
+      ]);
+
+      const events = await service.getScheduleForGuest(null, {
+        includeContentNodeFallback: false,
+      });
+
+      expect(events).toEqual([]);
+      expect(mockPrisma.contentNode.findMany).not.toHaveBeenCalled();
+    });
+
     it('filters private ContentNode fallback items with boolean or string "true" while keeping string "false" public', async () => {
       mockPrisma.subEvent.findMany.mockResolvedValue([]);
       mockPrisma.contentNode.findMany.mockResolvedValue([

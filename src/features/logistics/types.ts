@@ -1,6 +1,10 @@
 import { ContentNodeDTO } from '../content/schemas';
 
+export interface GetLogisticsNodesOptions {
+  includePublicSubEvents?: boolean;
+}
+
 export interface ILogisticsRepository {
-  getLogisticsNodes(): Promise<ContentNodeDTO[]>;
+  getLogisticsNodes(options?: GetLogisticsNodesOptions): Promise<ContentNodeDTO[]>;
   getVisibleFaqs?(): Promise<Extract<ContentNodeDTO, { type: 'FAQ' }>[]>;
 }
