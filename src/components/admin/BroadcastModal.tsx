@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
+import { StickyBar } from '@/components/ui/useStickyOffset';
 import { SegmentedTabs, SegmentedTabPanel } from '@/components/ui/SegmentedTabs';
 import { FormGroup, Label, Input, Textarea, Select } from '@/components/ui/forms';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -1063,7 +1064,11 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
       )}
 
       {/* Modal Actions */}
-      <div className="sticky bottom-0 bg-white dark:bg-zinc-900 flex justify-end space-x-3 pt-3 pb-1 border-t border-gray-200 dark:border-zinc-800">
+      <StickyBar
+        edge="bottom"
+        scope="scroll-region"
+        className="sticky bottom-0 z-20 bg-white dark:bg-zinc-900 flex justify-end space-x-3 pt-3 pb-1 border-t border-gray-200 dark:border-zinc-800"
+      >
         <Button variant="secondary" onClick={onClose} disabled={sending || sendingTest}>
           Cancel
         </Button>
@@ -1094,7 +1099,7 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
             : (isScheduled ? 'Schedule Broadcast' : `Send ${channel === 'EMAIL' ? 'Email' : 'SMS'}`)
           }
         </Button>
-      </div>
+      </StickyBar>
     </div>
   );
 };

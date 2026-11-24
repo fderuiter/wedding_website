@@ -38,7 +38,9 @@ describe('GuestAddressPage (/guest)', () => {
     render(<GuestAddressPage />);
 
     expect(await screen.findByLabelText('Invitation Code')).toBeInTheDocument();
-    expect(screen.getByText('Guest RSVP & Address Portal')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Guest RSVP & Address Portal' })
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Access Guest Portal/i })).toBeInTheDocument();
   });
 
@@ -160,7 +162,7 @@ describe('GuestAddressPage (/guest)', () => {
       const signal = (init?.signal || input?.signal) as AbortSignal;
       const rawBody = typeof init?.body === 'string' ? init.body : '';
 
-      if (url.includes('/api/guest/address') && !signals.fast) {
+      if ((url.includes('/api/guest/session') || url.includes('/api/guest/address')) && !signals.fast) {
         // Initial session check: unauthenticated
         return {
           ok: false,
@@ -360,15 +362,22 @@ describe('GuestAddressPage (/guest)', () => {
 
     // Session is reset, returns to invitation code entry form
     expect(await screen.findByLabelText('Invitation Code')).toBeInTheDocument();
-    expect(screen.getByText('Guest RSVP & Address Portal')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Guest RSVP & Address Portal' })
+    ).toBeInTheDocument();
   });
 
   it('renders both personalized RSVP controls (public + authorized private SubEvents) and mailing address form when visiting /guest?code=<valid_code>', async () => {
     window.history.pushState({}, '', '/guest?code=UNIFIED26');
 
-    globalFetch.mockImplementation(async (input: any) => {
+    globalFetch.mockImplementation(async (input: any, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input?.url || '';
-      if (url.includes('/api/registry/validate-code?code=UNIFIED26')) {
+      const rawBody = typeof init?.body === 'string' ? init.body : '';
+      if (
+        url.includes('/api/registry/validate-code') &&
+        init?.method === 'POST' &&
+        rawBody.includes('UNIFIED26')
+      ) {
         return {
           ok: true,
           status: 200,
@@ -514,6 +523,21 @@ describe('GuestAddressPage (/guest)', () => {
   it('renders the formatted deadline and venue timezone banner above the schedule while RSVPs remain open', async () => {
     globalFetch.mockImplementation(async (input: any) => {
       const url = typeof input === 'string' ? input : input?.url || '';
+      if (url.includes('/api/guest/session')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: {
+              status: 'invitation',
+              isVerified: true,
+              code: 'HARTFIELD26',
+              guestName: 'Emma Woodhouse',
+            },
+          }),
+        };
+      }
       if (url.includes('/api/guest/address')) {
         return {
           ok: true,
@@ -563,7 +587,7 @@ describe('GuestAddressPage (/guest)', () => {
 
     const deadlineBanner = await screen.findByTestId('guest-rsvp-deadline-banner');
     expect(deadlineBanner).toHaveTextContent('August 15, 2026');
-    expect(deadlineBanner).toHaveTextContent('America/Chicago');
+    expect(deadlineBanner).toHaveTextContent('Central Time (CT)');
     expect(screen.getByTestId('rsvp-card-se-1')).toBeInTheDocument();
   });
 
@@ -571,6 +595,21 @@ describe('GuestAddressPage (/guest)', () => {
     let addressPatchSaved = false;
     globalFetch.mockImplementation(async (input: any, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input?.url || '';
+      if (url.includes('/api/guest/session')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: {
+              status: 'invitation',
+              isVerified: true,
+              code: 'HARTFIELD26',
+              guestName: 'Emma Woodhouse',
+            },
+          }),
+        };
+      }
       if (url.includes('/api/guest/address') && init?.method === 'PUT') {
         addressPatchSaved = true;
         return {
@@ -654,6 +693,168 @@ describe('GuestAddressPage (/guest)', () => {
     await waitFor(() => {
       expect(addressPatchSaved).toBe(true);
     });
+  });
+
+  it('renders public schedule on /guest without calling /api/guest/address when session status is passcode, and shows guidance when shared passcode is entered', async () => {
+    const calledUrls: string[] = [];
+    globalFetch.mockImplementation(async (input: any, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input?.url || '';
+      calledUrls.push(url);
+
+      if (url.includes('/api/guest/session')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: {
+              status: 'passcode',
+              isVerified: false,
+              invitationCode: null,
+              code: null,
+              guestName: null,
+              hasPasscodeSession: true,
+            },
+          }),
+        };
+      }
+      if (url.includes('/api/schedule')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            isGuest: false,
+            guestName: null,
+            plusOneAllocations: null,
+            rsvpOpen: true,
+            rsvpDeadlineDate: '2026-08-15',
+            rsvpFormattedDeadline: 'August 15, 2026',
+            timezone: 'America/Los_Angeles',
+            data: [
+              {
+                id: 'se-pub-1',
+                title: 'Public Ceremony',
+                startTime: '2026-09-19T22:00:00.000Z',
+                category: 'Ceremony',
+                isPrivate: false,
+                isReadOnly: false,
+                userRsvp: null,
+              },
+            ],
+          }),
+        };
+      }
+      if (url.includes('/api/registry/validate-code') && init?.method === 'POST') {
+        const parsedBody =
+          typeof init.body === 'string' && init.body ? JSON.parse(init.body) : {};
+        if (parsedBody.code === 'WEDDING2026') {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              success: true,
+              data: {
+                valid: false,
+                reason: 'shared_passcode',
+                error: 'That is the shared website passcode. Please enter your unique household invitation code.',
+              },
+            }),
+          };
+        }
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    });
+
+    render(<GuestAddressPage />);
+
+    expect(await screen.findByTestId('guest-public-schedule-section')).toBeInTheDocument();
+    expect(await screen.findByText('Public Ceremony')).toBeInTheDocument();
+    expect(screen.queryByTestId('rsvp-card-se-pub-1')).not.toBeInTheDocument();
+    expect(calledUrls.some((u) => u.includes('/api/guest/address'))).toBe(false);
+
+    // Entering the shared site passcode shows amber guidance instead of error alert
+    const codeInput = screen.getByLabelText('Invitation Code');
+    fireEvent.change(codeInput, { target: { value: 'WEDDING2026' } });
+    fireEvent.click(screen.getByRole('button', { name: /Access Guest Portal/i }));
+
+    const guidance = await screen.findByTestId('guest-portal-passcode-guidance');
+    expect(guidance).toHaveTextContent(/shared website passcode/i);
+    expect(screen.queryByTestId('guest-portal-auth-error')).not.toBeInTheDocument();
+  });
+
+  it('clears household invitation session when Switch Household button is clicked', async () => {
+    let switchedOut = false;
+    globalFetch.mockImplementation(async (input: any, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input?.url || '';
+      if (url.includes('/api/guest/session') && init?.method === 'DELETE') {
+        switchedOut = true;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: { status: 'passcode', isVerified: false, hasPasscodeSession: true },
+          }),
+        };
+      }
+      if (url.includes('/api/guest/session')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: switchedOut
+              ? { status: 'passcode', isVerified: false, hasPasscodeSession: true }
+              : {
+                status: 'invitation',
+                isVerified: true,
+                code: 'DARCY26',
+                guestName: 'Fitzwilliam Darcy',
+                hasPasscodeSession: true,
+              },
+          }),
+        };
+      }
+      if (url.includes('/api/guest/address')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: {
+              guestName: 'Fitzwilliam Darcy',
+              code: 'DARCY26',
+              addressLine1: 'Pemberley',
+            },
+          }),
+        };
+      }
+      if (url.includes('/api/schedule')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            isGuest: !switchedOut,
+            guestName: switchedOut ? null : 'Fitzwilliam Darcy',
+            plusOneAllocations: switchedOut ? null : 1,
+            rsvpOpen: true,
+            timezone: 'America/Los_Angeles',
+            data: [],
+          }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({ success: true, data: [] }) };
+    });
+
+    render(<GuestAddressPage />);
+
+    const switchBtn = await screen.findByTestId('guest-switch-household-button');
+    fireEvent.click(switchBtn);
+
+    expect(await screen.findByLabelText('Invitation Code')).toBeInTheDocument();
+    expect(switchedOut).toBe(true);
   });
 
   it('binds #guest-invitation-code to aria-invalid="true" and aria-describedby on failed validation and passes jest-axe', async () => {

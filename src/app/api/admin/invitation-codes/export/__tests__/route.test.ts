@@ -377,6 +377,59 @@ describe('Invitation Codes Export API Route (GET /api/admin/invitation-codes/exp
     expect(lines[1]).toContain('"Hotel shuttle?: Yes, round-trip"');
   });
 
+  it('exports confirmed extraFields.plusOneCount for attending/declined guests instead of raw plusOneAllocations', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    mockPrisma.invitationCode.findMany.mockResolvedValue([
+      {
+        id: 'ic-attending-1',
+        guestName: 'Allocated Two Bringing One',
+        code: 'ONEPLUS26',
+        email: 'one@example.com',
+        plusOneAllocations: 2,
+        used: true,
+        extraFields: {
+          attendanceStatus: 'attending',
+          plusOneCount: 1,
+          plusOneNames: ['Alex Partner'],
+        },
+      },
+      {
+        id: 'ic-declined-2',
+        guestName: 'Declined With Allocation',
+        code: 'DECPLUS26',
+        email: 'dec@example.com',
+        plusOneAllocations: 2,
+        used: true,
+        extraFields: {
+          attendanceStatus: 'declined',
+          plusOneCount: 0,
+        },
+      },
+      {
+        id: 'ic-pending-2',
+        guestName: 'Pending Unresponded Guest',
+        code: 'PENDPLUS26',
+        email: 'pend@example.com',
+        plusOneAllocations: 2,
+        used: false,
+        extraFields: null,
+      },
+    ] as any);
+
+    const req = new NextRequest('http://localhost:3000/api/admin/invitation-codes/export');
+    const res = await GET(req);
+    const csvText = await res.text();
+    const lines = csvText.trim().split('\n');
+
+    expect(lines).toHaveLength(4);
+    // Attending guest allocated 2 but bringing 1 exports Plus Ones = 1
+    expect(lines[1]).toContain(',1,Redeemed,Attending,');
+    // Declined guest allocated 2 exports Plus Ones = 0
+    expect(lines[2]).toContain(',0,Redeemed,Declined,');
+    // Unresponded pending guest falls back to plusOneAllocations = 2
+    expect(lines[3]).toContain(',2,Unused,Pending,');
+  });
+
   it('round-trips exported CSV through parseCsvContent and validateSingleCsvRow preserving getGuestPhone, isAddressComplete, Plus-One Name, and dietaryNotes without matching Meal Selections', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
     mockPrisma.invitationCode.findMany.mockResolvedValue([

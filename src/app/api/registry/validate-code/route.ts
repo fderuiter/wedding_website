@@ -1,5 +1,7 @@
+import crypto from 'node:crypto';
 import { NextResponse, NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { env } from '@/env';
 import { ApiError } from '@/utils/ApiError';
 import { assertJsonContentType } from '@/utils/contentType';
 import { MAX_PASSWORD_LENGTH } from '@/utils/password';
@@ -14,13 +16,40 @@ import {
 import { findVerifiedRequestCookie } from '@/core/auth/tokenCookieHelpers';
 import { hasAddressCollectionTag } from '@/features/registry';
 
-async function findActiveInvitationCode(rawCode: string | undefined | null) {
-  const code = rawCode?.trim().toUpperCase();
+function safeComparePasscode(a: string, b: string): boolean {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const bufA = Buffer.from(a, 'utf8');
+  const bufB = Buffer.from(b, 'utf8');
+  const maxLen = Math.max(bufA.length, bufB.length, 1);
+  const paddedA = Buffer.alloc(maxLen);
+  const paddedB = Buffer.alloc(maxLen);
+  bufA.copy(paddedA);
+  bufB.copy(paddedB);
+  const bytesEqual = crypto.timingSafeEqual(paddedA, paddedB);
+  return bytesEqual && bufA.length === bufB.length;
+}
+
+type InvitationLookupResult =
+  | {
+    kind: 'invite';
+    invite: NonNullable<Awaited<ReturnType<typeof prisma.invitationCode.findUnique>>>;
+  }
+  | {
+    kind: 'shared_passcode';
+    error: string;
+  };
+
+async function findActiveInvitationCode(
+  rawCodeInput: string | undefined | null
+): Promise<InvitationLookupResult> {
+  const rawCode = rawCodeInput?.trim() || '';
+  const code = rawCode.toUpperCase();
+
   if (!code) {
     throw new ApiError(400, 'Code is required.');
   }
 
-  if (code.length > MAX_PASSWORD_LENGTH) {
+  if (rawCode.length > MAX_PASSWORD_LENGTH || code.length > MAX_PASSWORD_LENGTH) {
     throw new ApiError(400, `Code must be at most ${MAX_PASSWORD_LENGTH} characters.`);
   }
 
@@ -29,16 +58,42 @@ async function findActiveInvitationCode(rawCode: string | undefined | null) {
   });
 
   if (!invite || invite.isSample || hasAddressCollectionTag(invite.partyTags)) {
+    const isProduction = (process.env.NODE_ENV || env.NODE_ENV) === 'production';
+    const expectedPasscode = (
+      isProduction ? (process.env.GUEST_PASSCODE ?? '') : (process.env.GUEST_PASSCODE ?? env.GUEST_PASSCODE ?? '')
+    ).trim();
+
+    if (
+      expectedPasscode &&
+      (safeComparePasscode(rawCode, expectedPasscode) ||
+        safeComparePasscode(code, expectedPasscode.toUpperCase()))
+    ) {
+      return {
+        kind: 'shared_passcode',
+        error:
+          'That is the shared website passcode. Please enter the personal household invitation code printed on your invitation.',
+      };
+    }
+
     throw new ApiError(404, 'Invalid invitation code.');
   }
 
-  return invite;
+  return { kind: 'invite', invite };
 }
 
 export const GET = withApiMiddleware(async (request: NextRequest) => {
   const { searchParams } = new URL(request.url);
-  const invite = await findActiveInvitationCode(searchParams.get('code'));
+  const lookup = await findActiveInvitationCode(searchParams.get('code'));
 
+  if (lookup.kind === 'shared_passcode') {
+    return NextResponse.json({
+      valid: false,
+      reason: 'shared_passcode',
+      error: lookup.error,
+    });
+  }
+
+  const { invite } = lookup;
   return NextResponse.json({
     valid: true,
     guestName: invite.guestName,
@@ -61,7 +116,16 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     throw new ApiError(400, parsed.error.issues[0]?.message || 'Code is required.');
   }
 
-  const invite = await findActiveInvitationCode(parsed.data.code);
+  const lookup = await findActiveInvitationCode(parsed.data.code);
+  if (lookup.kind === 'shared_passcode') {
+    return NextResponse.json({
+      valid: false,
+      reason: 'shared_passcode',
+      error: lookup.error,
+    });
+  }
+
+  const { invite } = lookup;
 
   if (invite.id && typeof prisma.broadcastRecipient?.updateMany === 'function') {
     await prisma.broadcastRecipient.updateMany({

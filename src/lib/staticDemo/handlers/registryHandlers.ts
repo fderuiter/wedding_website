@@ -761,6 +761,18 @@ export async function handleRegistryRoutes(
         (tag) => tag.trim().toLowerCase() === 'address-collection',
       )
     ) {
+      const envPasscode =
+        typeof process !== 'undefined' && typeof process.env?.GUEST_PASSCODE === 'string'
+          ? process.env.GUEST_PASSCODE.trim().toUpperCase()
+          : '';
+      if (code === 'WEDDING2026' || (envPasscode && code === envPasscode)) {
+        return wrapMiddlewareJson({
+          valid: false,
+          reason: 'shared_passcode',
+          error:
+            'That looks like the shared site passcode rather than your personal household invitation code. Please check your invitation card or email for your household code.',
+        });
+      }
       return errorJson(404, 'Invalid invitation code.');
     }
     if (method === 'POST') {

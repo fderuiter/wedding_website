@@ -21896,6 +21896,311 @@
         }
       }
     },
+    "/api/guest/session": {
+      "get": {
+        "tags": [
+          "Guest"
+        ],
+        "summary": "GET /api/guest/session",
+        "description": "Endpoint for /api/guest/session",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "success",
+                        "data"
+                      ],
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "none",
+                                "passcode",
+                                "invitation"
+                              ]
+                            },
+                            "isVerified": {
+                              "type": "boolean",
+                              "enum": [
+                                false
+                              ]
+                            },
+                            "invitationCode": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "code": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "guestName": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "hasPasscodeSession": {
+                              "type": "boolean",
+                              "enum": [
+                                false
+                              ]
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "isVerified",
+                            "invitationCode",
+                            "code",
+                            "guestName",
+                            "hasPasscodeSession"
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "success",
+                        "data"
+                      ],
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "none",
+                                "passcode",
+                                "invitation"
+                              ]
+                            },
+                            "isVerified": {
+                              "type": "boolean",
+                              "enum": [
+                                true
+                              ]
+                            },
+                            "invitationCode": {
+                              "type": "string"
+                            },
+                            "code": {
+                              "type": "string"
+                            },
+                            "guestName": {
+                              "type": "string"
+                            },
+                            "hasPasscodeSession": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "isVerified",
+                            "invitationCode",
+                            "code",
+                            "guestName",
+                            "hasPasscodeSession"
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "success",
+                        "data"
+                      ],
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "none",
+                                "passcode"
+                              ]
+                            },
+                            "isVerified": {
+                              "type": "boolean",
+                              "enum": [
+                                false
+                              ]
+                            },
+                            "invitationCode": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "code": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "guestName": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "hasPasscodeSession": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "isVerified",
+                            "invitationCode",
+                            "code",
+                            "guestName",
+                            "hasPasscodeSession"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Guest"
+        ],
+        "summary": "DELETE /api/guest/session",
+        "description": "Endpoint for /api/guest/session",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "none",
+                            "passcode"
+                          ]
+                        },
+                        "isVerified": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "invitationCode": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "code": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "guestName": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "hasPasscodeSession": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "isVerified",
+                        "invitationCode",
+                        "code",
+                        "guestName",
+                        "hasPasscodeSession"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [
@@ -26832,40 +27137,82 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": [
-                    "success",
-                    "data"
-                  ],
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "enum": [
-                        true
-                      ]
-                    },
-                    "data": {
+                  "anyOf": [
+                    {
                       "type": "object",
+                      "required": [
+                        "success",
+                        "data"
+                      ],
                       "properties": {
-                        "valid": {
+                        "success": {
                           "type": "boolean",
                           "enum": [
                             true
                           ]
                         },
-                        "guestName": {
-                          "type": "string"
-                        },
-                        "code": {
-                          "type": "string"
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "valid": {
+                              "type": "boolean",
+                              "enum": [
+                                false
+                              ]
+                            },
+                            "reason": {
+                              "type": "string"
+                            },
+                            "error": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "valid",
+                            "reason",
+                            "error"
+                          ]
                         }
-                      },
+                      }
+                    },
+                    {
+                      "type": "object",
                       "required": [
-                        "valid",
-                        "guestName",
-                        "code"
-                      ]
+                        "success",
+                        "data"
+                      ],
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "valid": {
+                              "type": "boolean",
+                              "enum": [
+                                true
+                              ]
+                            },
+                            "guestName": {
+                              "type": "string"
+                            },
+                            "code": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "valid",
+                            "guestName",
+                            "code"
+                          ]
+                        }
+                      }
                     }
-                  }
+                  ]
                 }
               }
             }
@@ -26945,40 +27292,82 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": [
-                    "success",
-                    "data"
-                  ],
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "enum": [
-                        true
-                      ]
-                    },
-                    "data": {
+                  "anyOf": [
+                    {
                       "type": "object",
+                      "required": [
+                        "success",
+                        "data"
+                      ],
                       "properties": {
-                        "valid": {
+                        "success": {
                           "type": "boolean",
                           "enum": [
                             true
                           ]
                         },
-                        "guestName": {
-                          "type": "string"
-                        },
-                        "code": {
-                          "type": "string"
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "valid": {
+                              "type": "boolean",
+                              "enum": [
+                                false
+                              ]
+                            },
+                            "reason": {
+                              "type": "string"
+                            },
+                            "error": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "valid",
+                            "reason",
+                            "error"
+                          ]
                         }
-                      },
+                      }
+                    },
+                    {
+                      "type": "object",
                       "required": [
-                        "valid",
-                        "guestName",
-                        "code"
-                      ]
+                        "success",
+                        "data"
+                      ],
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "valid": {
+                              "type": "boolean",
+                              "enum": [
+                                true
+                              ]
+                            },
+                            "guestName": {
+                              "type": "string"
+                            },
+                            "code": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "valid",
+                            "guestName",
+                            "code"
+                          ]
+                        }
+                      }
                     }
-                  }
+                  ]
                 }
               }
             }
@@ -27173,8 +27562,7 @@
                               "type": "string",
                               "enum": [
                                 "attending",
-                                "declined",
-                                "pending"
+                                "declined"
                               ]
                             },
                             "plusOneCount": {
@@ -27186,6 +27574,9 @@
                             "dietaryNotes": {
                               "default": "",
                               "type": "string"
+                            },
+                            "clearDietaryNotes": {
+                              "type": "boolean"
                             },
                             "mealSelections": {
                               "maxItems": 21,
@@ -27233,8 +27624,7 @@
                         "type": "string",
                         "enum": [
                           "attending",
-                          "declined",
-                          "pending"
+                          "declined"
                         ]
                       },
                       "plusOneCount": {
@@ -27246,6 +27636,9 @@
                       "dietaryNotes": {
                         "default": "",
                         "type": "string"
+                      },
+                      "clearDietaryNotes": {
+                        "type": "boolean"
                       },
                       "mealSelections": {
                         "maxItems": 21,

@@ -164,6 +164,52 @@ describe('/api/registry/validate-code', () => {
     expect(body.error).toMatch(/too many requests/i);
   });
 
+  test('returns 200 with shared_passcode guidance and no invite cookie when code matches GUEST_PASSCODE on GET and POST', async () => {
+    const prevPasscode = process.env.GUEST_PASSCODE;
+    process.env.GUEST_PASSCODE = 'WEDDING2026';
+    try {
+      mockFindUnique.mockResolvedValueOnce(null);
+      const getRes = await GET(
+        new NextRequest('http://localhost/api/registry/validate-code?code=wedding2026')
+      );
+      expect(getRes.status).toBe(200);
+      const getBody = await getRes.json();
+      expect(getBody.success).toBe(true);
+      expect(getBody.data).toMatchObject({
+        valid: false,
+        reason: 'shared_passcode',
+      });
+      expect(getBody.data.error).toMatch(/shared website passcode/i);
+      expect(getRes.cookies.get(GUEST_INVITE_COOKIE)?.value).toBeUndefined();
+
+      mockFindUnique.mockResolvedValueOnce(null);
+      const postRes = await POST(
+        new NextRequest('http://localhost/api/registry/validate-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: 'wedding2026' }),
+        })
+      );
+      expect(postRes.status).toBe(200);
+      const postBody = await postRes.json();
+      expect(postBody.success).toBe(true);
+      expect(postBody.data).toMatchObject({
+        valid: false,
+        reason: 'shared_passcode',
+      });
+      expect(postBody.data.error).toMatch(/shared website passcode/i);
+      expect(postRes.cookies.get(GUEST_INVITE_COOKIE)?.value).toBeUndefined();
+      expect(mockRecipientUpdateMany).not.toHaveBeenCalled();
+      expect(mockFindUnique).toHaveBeenCalledWith({ where: { code: 'WEDDING2026' } });
+    } finally {
+      if (prevPasscode === undefined) {
+        delete process.env.GUEST_PASSCODE;
+      } else {
+        process.env.GUEST_PASSCODE = prevPasscode;
+      }
+    }
+  });
+
   test('repeated POST checks for one code reuse incoming cookie and share one canonical household rate-limit bucket', async () => {
     mockFindUnique.mockResolvedValue({
       id: 'inv-household-1',

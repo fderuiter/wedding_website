@@ -473,7 +473,11 @@ export function useRegistryContributionMachine({
           return true;
         } else {
           setPhase('idle');
-          setCodeError('Invalid invitation code.');
+          setCodeError(
+            typeof data?.error === 'string' && data.error.trim()
+              ? data.error
+              : 'Invalid invitation code.'
+          );
           setCodeFailureCount((count) => count + 1);
           return false;
         }

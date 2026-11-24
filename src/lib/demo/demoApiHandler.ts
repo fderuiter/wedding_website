@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { ARCHETYPE_PRESETS, type ArchetypeId } from '@/lib/sampleData/archetypes';
-import { findSeededRegistryItemById } from '@/lib/sampleData/builder';
+import {
+  buildArchetypeSeedData,
+  findSeededRegistryItemById,
+} from '@/lib/sampleData/builder';
 import { THEME_PRESET_KEYS, type ThemePreset } from '@/lib/theme/presets';
 import type { PublicAppConfig } from '@/lib/config';
 import {
@@ -9,7 +12,6 @@ import {
   hasNonPlaceholderVenueDetails,
 } from '@/lib/setupCopy';
 import { resolveModuleConfig } from '@/lib/modules';
-import { formatCurrency } from '@/utils/intl';
 import type {
   InvitationCodeDTO,
   RegistryItem,
@@ -19,6 +21,15 @@ import type { SeatingTableDTO } from '@/features/seating';
 import type { WeddingPartyMemberDTO, WeddingPartySide } from '@/features/wedding-party';
 import type { AttractionDTO } from '@/features/attractions';
 import { stripBasePath, withBasePath } from '@/lib/basePath';
+import { formatCurrency } from '@/utils/intl';
+import { DEFAULT_RSVP_CLOSED_MESSAGE, resolveValidTimezone } from '@/utils/rsvpDeadline';
+import {
+  normalizeCustomAnswers,
+  normalizeCustomQuestions,
+  normalizeMealOptions,
+  normalizeMealSelections,
+  normalizePlusOneNames,
+} from '@/utils/rsvpPrompts';
 import {
   computeLiveForecastAvailableDate,
   formatForecastDateInTimezone,
@@ -52,6 +63,7 @@ import {
   setDemoSetupAuthenticated,
   updateDemoConfigOverrides,
   updateDemoGuestAddress,
+  upsertDemoSubEventRsvp,
 } from './demoStore';
 
 const DEMO_LANDMARK_SHAPES = new Set<string>(['dance-floor', 'bar', 'dj', 'buffet', 'cake']);
@@ -733,6 +745,26 @@ async function handleDemoApi(
     }
     const matched = findDemoGuestByCode(rawCode);
     if (!matched) {
+      const trimmedUpper = rawCode.trim().toUpperCase();
+      const envPasscode =
+        typeof process !== 'undefined' && typeof process.env?.GUEST_PASSCODE === 'string'
+          ? process.env.GUEST_PASSCODE.trim().toUpperCase()
+          : '';
+      if (trimmedUpper === 'WEDDING2026' || (envPasscode && trimmedUpper === envPasscode)) {
+        const guidanceError =
+          'That is the shared website passcode. Please enter the personal household invitation code printed on your invitation.';
+        return jsonResponse({
+          valid: false,
+          success: true,
+          reason: 'shared_passcode',
+          error: guidanceError,
+          data: {
+            valid: false,
+            reason: 'shared_passcode',
+            error: guidanceError,
+          },
+        });
+      }
       return jsonResponse(
         {
           valid: false,
@@ -764,20 +796,245 @@ async function handleDemoApi(
   if (path === '/api/registry/session') {
     if (method === 'GET') {
       const session = getDemoState().guestSession;
-      if (!session) {
+      const activeGuest = session ? findDemoGuestByCode(session.invitationCode) : null;
+      if (!session || !activeGuest) {
         return jsonResponse({ isVerified: false, invitationCode: '', guestName: '' });
       }
       return jsonResponse({
         isVerified: true,
-        invitationCode: session.invitationCode,
-        code: session.invitationCode,
-        guestName: session.guestName,
+        invitationCode: activeGuest.code,
+        code: activeGuest.code,
+        guestName: activeGuest.guestName,
       });
     }
     if (method === 'DELETE') {
       setDemoGuestSession(null);
       return jsonResponse({ success: true });
     }
+  }
+
+  if (path === '/api/guest/session') {
+    if (method === 'GET') {
+      const session = getDemoState().guestSession;
+      const activeGuest = session ? findDemoGuestByCode(session.invitationCode) : null;
+      if (!session || !activeGuest) {
+        return jsonResponse({
+          status: 'none',
+          isVerified: false,
+          invitationCode: null,
+          code: null,
+          guestName: null,
+          hasPasscodeSession: false,
+        });
+      }
+      return jsonResponse({
+        status: 'invitation',
+        isVerified: true,
+        invitationCode: activeGuest.code,
+        code: activeGuest.code,
+        guestName: activeGuest.guestName,
+        hasPasscodeSession: false,
+      });
+    }
+    if (method === 'DELETE') {
+      setDemoGuestSession(null);
+      return jsonResponse({
+        status: 'none',
+        isVerified: false,
+        invitationCode: null,
+        code: null,
+        guestName: null,
+        hasPasscodeSession: false,
+      });
+    }
+  }
+
+  if (path === '/api/schedule' && method === 'GET') {
+    const demoState = getDemoState();
+    const seed = buildArchetypeSeedData(demoState.archetype);
+    const rawSession = demoState.guestSession;
+    const normalizedCode = rawSession?.invitationCode?.trim().toUpperCase() || '';
+    const matchedGuest = normalizedCode ? findDemoGuestByCode(normalizedCode) : null;
+    const session = rawSession && matchedGuest ? rawSession : null;
+    const activeCode = session ? matchedGuest!.code.toUpperCase() : '';
+    const seedGuest = activeCode
+      ? seed.guests.find((g) => g.code.toUpperCase() === activeCode)
+      : undefined;
+    const guestDietaryNotes = (
+      matchedGuest?.dietaryNotes ||
+      seedGuest?.dietaryNotes ||
+      ''
+    ).trim();
+
+    const savedPlusOneNameSet = new Set<string>();
+    const schedule = seed.subEvents
+      .filter((evt) => {
+        if (!evt.isPrivate) return true;
+        if (!seedGuest) return false;
+        return evt.accesses.some((acc) => acc.invitationCodeId === seedGuest.id);
+      })
+      .sort((a, b) => a.startTime.getTime() - b.startTime.getTime())
+      .map((evt) => {
+        const override = activeCode
+          ? demoState.rsvpOverrides[`${demoState.archetype}:${activeCode}:${evt.id}`]
+          : undefined;
+        const seededRsvp = seedGuest
+          ? evt.rsvps.find((entry) => entry.invitationCodeId === seedGuest.id) ?? null
+          : null;
+        const resolvedRsvp = override ?? seededRsvp;
+        if (resolvedRsvp) {
+          for (const name of normalizePlusOneNames(resolvedRsvp.plusOneNames)) {
+            if (name) savedPlusOneNameSet.add(name);
+          }
+        }
+        return {
+          id: evt.id,
+          title: evt.title,
+          description: evt.description || '',
+          startTime: evt.startTime.toISOString(),
+          endTime: evt.endTime.toISOString(),
+          locationName: evt.locationName || '',
+          location: evt.location || '',
+          category: evt.category || '',
+          isPrivate: evt.isPrivate,
+          isReadOnly: false,
+          attireRules: evt.attireRules || null,
+          mealOptions: normalizeMealOptions(evt.mealOptions),
+          customQuestions: normalizeCustomQuestions(evt.customQuestions),
+          userRsvp: session
+            ? resolvedRsvp
+              ? {
+                status: resolvedRsvp.status,
+                plusOneCount: resolvedRsvp.plusOneCount,
+                dietaryNotes: resolvedRsvp.dietaryNotes || '',
+                mealSelections: normalizeMealSelections(resolvedRsvp.mealSelections),
+                customAnswers: normalizeCustomAnswers(resolvedRsvp.customAnswers),
+                plusOneNames: normalizePlusOneNames(resolvedRsvp.plusOneNames),
+              }
+              : guestDietaryNotes
+                ? {
+                  status: 'pending' as const,
+                  plusOneCount: 0,
+                  dietaryNotes: guestDietaryNotes,
+                }
+                : null
+            : null,
+        };
+      });
+
+    const timezone = resolveValidTimezone(
+      demoState.configOverrides.timezone || seed.config.timezone
+    );
+
+    return jsonResponse({
+      success: true,
+      data: schedule,
+      isGuest: Boolean(session),
+      guestName: matchedGuest?.guestName || session?.guestName || null,
+      plusOneAllocations: session
+        ? (matchedGuest?.plusOneAllocations ?? seedGuest?.plusOneAllocations ?? 0)
+        : null,
+      savedPlusOneNames: session ? Array.from(savedPlusOneNameSet) : [],
+      rsvpOpen: demoState.configOverrides.rsvpOpen !== false,
+      rsvpDeadlineDate: null,
+      rsvpFormattedDeadline: null,
+      timezone,
+      rsvpClosedMessage: DEFAULT_RSVP_CLOSED_MESSAGE,
+    });
+  }
+
+  if (path === '/api/rsvp' && method === 'POST') {
+    const demoState = getDemoState();
+    const session = demoState.guestSession;
+    const matchedGuest = session?.invitationCode
+      ? findDemoGuestByCode(session.invitationCode)
+      : null;
+    if (!session || !session.invitationCode || !matchedGuest) {
+      return jsonResponse(
+        { error: 'Unauthorized: Please log in with your invitation code to submit RSVPs.' },
+        401
+      );
+    }
+    const body = await parseJsonBody(init);
+    const rawList = Array.isArray(body.rsvps)
+      ? (body.rsvps as Array<Record<string, unknown>>)
+      : typeof body.subEventId === 'string'
+        ? [body]
+        : null;
+    if (!rawList || rawList.length === 0) {
+      return jsonResponse(
+        { error: 'Invalid RSVP payload format. Expected { subEventId, status } or { rsvps: [...] }.' },
+        400
+      );
+    }
+
+    const hasInvalidStatus = rawList.some(
+      (entry) => entry.status !== 'attending' && entry.status !== 'declined'
+    );
+    if (hasInvalidStatus) {
+      return jsonResponse({ error: 'Please select Attending or Declined.' }, 400);
+    }
+
+    const seed = buildArchetypeSeedData(demoState.archetype);
+    const normalizedCode = matchedGuest.code.trim().toUpperCase();
+    const seedGuest = seed.guests.find((g) => g.code.toUpperCase() === normalizedCode);
+    const fallbackDietary = (
+      matchedGuest.dietaryNotes ||
+      seedGuest?.dietaryNotes ||
+      ''
+    ).trim();
+
+    const updatedRsvps = rawList.map((entry) => {
+      const subEventId = String(entry.subEventId || '').trim();
+      const status: 'attending' | 'declined' =
+        entry.status === 'declined' ? 'declined' : 'attending';
+      const plusOneCount =
+        status === 'declined' ? 0 : Math.max(0, Number(entry.plusOneCount || 0));
+      const existingOverride =
+        demoState.rsvpOverrides[`${demoState.archetype}:${normalizedCode}:${subEventId}`];
+      const seededRsvp = seedGuest
+        ? seed.subEvents
+          .find((evt) => evt.id === subEventId)
+          ?.rsvps.find((r) => r.invitationCodeId === seedGuest.id)
+        : undefined;
+      const rawDietary = entry.dietaryNotes;
+      const hasExplicitDietaryString = typeof rawDietary === 'string';
+      const incomingDietary = hasExplicitDietaryString ? rawDietary.trim() : '';
+      const hadExistingEventNote = Boolean(
+        existingOverride?.dietaryNotes?.trim() || seededRsvp?.dietaryNotes?.trim()
+      );
+      const shouldClearDietary =
+        entry.clearDietaryNotes === true ||
+        (status !== 'declined' && hasExplicitDietaryString && incomingDietary === '' && hadExistingEventNote);
+      const resolvedDietary = shouldClearDietary
+        ? ''
+        : incomingDietary ||
+          existingOverride?.dietaryNotes ||
+          seededRsvp?.dietaryNotes ||
+          fallbackDietary;
+
+      const record = {
+        status,
+        plusOneCount,
+        dietaryNotes: resolvedDietary,
+        mealSelections:
+          status === 'declined' ? [] : normalizeMealSelections(entry.mealSelections),
+        customAnswers:
+          status === 'declined' ? {} : normalizeCustomAnswers(entry.customAnswers),
+        plusOneNames:
+          status === 'declined' ? [] : normalizePlusOneNames(entry.plusOneNames),
+      };
+      upsertDemoSubEventRsvp(normalizedCode, subEventId, record);
+      return {
+        subEventId,
+        ...record,
+      };
+    });
+
+    return jsonResponse({
+      success: true,
+      data: updatedRsvps,
+    });
   }
 
   // 4. Guest Address Portal & Public Address Collection
@@ -861,10 +1118,10 @@ async function handleDemoApi(
 
   if (path === '/api/guest/address') {
     const session = getDemoState().guestSession;
-    if (!session) {
+    const guest = session ? findDemoGuestByCode(session.invitationCode) : null;
+    if (!session || !guest) {
       return jsonResponse({ success: false, error: 'Authentication required.' }, 401);
     }
-    const guest = findDemoGuestByCode(session.invitationCode);
     if (method === 'GET') {
       return jsonResponse({
         success: true,
@@ -2131,10 +2388,15 @@ async function handleDemoApi(
     return jsonResponse({ success: true, updatedCount: 1, data: { updatedCount: 1 } });
   }
 
-  // Guest login & RSVP submission
+  // Guest login
   if (path === '/api/guest/login' && method === 'POST') {
     const body = await parseJsonBody(init);
-    const code = typeof body.code === 'string' ? body.code.trim() : '';
+    const code =
+      typeof body.code === 'string'
+        ? body.code.trim()
+        : typeof body.passcode === 'string'
+          ? body.passcode.trim()
+          : '';
     const matched = code
       ? findDemoGuestByCode(code)
       : getActiveArchetypeDataset().guests.find((g) => !isDemoAddressCollectionOnly(g.partyTags));
@@ -2146,11 +2408,6 @@ async function handleDemoApi(
       authenticated: true,
       data: { authenticated: true, guestName: matched?.guestName ?? 'Invited Guest' },
     });
-  }
-
-  if (path === '/api/rsvp' && method === 'POST') {
-    const body = await parseJsonBody(init);
-    return jsonResponse({ success: true, data: { submitted: true, ...body } });
   }
 
   // Admin Settings (/admin/dashboard/settings)

@@ -111,6 +111,16 @@ on:
         required: false
         default: false
         type: boolean
+      auto_rollback_on_failure:
+        description: 'Run automatic in-job fallback rollback when /api/health fails and rollback_environment is empty'
+        required: false
+        default: false
+        type: boolean
+      previous_tag:
+        description: 'Optional immutable rollback image tag override for automatic in-job fallback recovery'
+        required: false
+        default: ''
+        type: string
     secrets:
       GCP_SA_KEY:
         required: false
@@ -152,6 +162,18 @@ on:
       cloud_run_region:
         description: 'Resolved Cloud Run region'
         value: ${{ jobs.deploy.outputs.cloud_run_region }}
+      health_status:
+        description: 'Post-deployment /api/health probe status (healthy or unhealthy)'
+        value: ${{ jobs.deploy.outputs.health_status }}
+      http_status:
+        description: 'Last HTTP status code returned by /api/health probe'
+        value: ${{ jobs.deploy.outputs.http_status }}
+      rollout_executed:
+        description: 'Whether a live provider rollout step completed before post-deployment verification'
+        value: ${{ jobs.deploy.outputs.rollout_executed }}
+      inline_rollback_completed:
+        description: 'Whether automatic in-job fallback rollback restored the prior healthy container'
+        value: ${{ jobs.deploy.outputs.inline_rollback_completed }}
 
 concurrency:
   group: ${{ inputs.caller_holds_lock && format('caller-deploy-provider-{0}-{1}-{2}', inputs.environment || 'production', github.run_id, github.run_attempt) || format('deploy-env-{0}', inputs.environment || 'production') }}
@@ -170,6 +192,7 @@ jobs:
       deployments: write
       id-token: write
     environment: ${{ (github.event_name == 'workflow_call' && inputs.rollback_environment) || inputs.environment || 'production' }}
+    timeout-minutes: 10
     outputs:
       service_url: ${{ steps.resolve-url.outputs.service_url }}
       is_dry_run: ${{ steps.resolve-url.outputs.is_dry_run }}
@@ -180,6 +203,10 @@ jobs:
       attestation_status: ${{ steps.provenance.outputs.attestation_status }}
       cloud_run_service: ${{ steps.capture-previous.outputs.cloud_run_service }}
       cloud_run_region: ${{ steps.capture-previous.outputs.cloud_run_region }}
+      health_status: ${{ steps.health-probe.outputs.health_status }}
+      http_status: ${{ steps.health-probe.outputs.http_status }}
+      rollout_executed: ${{ steps.rollout-marker.outputs.rollout_executed }}
+      inline_rollback_completed: ${{ steps.inline-rollback.outputs.inline_rollback_completed }}
     steps:
       - name: Validate Commit SHA Input
         id: validate-sha
@@ -457,6 +484,7 @@ jobs:
 
           echo "source_ref=${EXPECTED_SOURCE_REF}" >> "$GITHUB_OUTPUT"
           echo "source_revision=${SOURCE_REVISION}" >> "$GITHUB_OUTPUT"
+          echo "cloud_run_labels=commit-sha=${SOURCE_REVISION}" >> "$GITHUB_OUTPUT"
           echo "attestation_status=verified" >> "$GITHUB_OUTPUT"
           echo "Verified OIDC build provenance attestation (${EXPECTED_SOURCE_REF}) and passing ci.yml run (ID: ${VERIFIED_CI_RUN_ID}) for ${IMAGE_DIGEST} (revision: ${SOURCE_REVISION})."
 
@@ -531,8 +559,10 @@ jobs:
             exit 1
           fi
 
-          echo "target_sha=${TARGET_SHA}" >> "$GITHUB_OUTPUT"
-          echo "Verified standalone promotion commit ${TARGET_SHA} is an ancestor of origin/main."
+          TARGET_SHA_LOWER=$(printf '%s' "$TARGET_SHA" | tr '[:upper:]' '[:lower:]')
+          echo "target_sha=${TARGET_SHA_LOWER}" >> "$GITHUB_OUTPUT"
+          echo "cloud_run_labels=commit-sha=${TARGET_SHA_LOWER}" >> "$GITHUB_OUTPUT"
+          echo "Verified standalone promotion commit ${TARGET_SHA_LOWER} is an ancestor of origin/main."
 
       - name: Verify Standalone CI & Database Migration Status
         if: "github.event_name == 'workflow_dispatch' && !inputs.dry_run"
@@ -1204,9 +1234,13 @@ jobs:
             fi
 
             if [ "$EFFECTIVE_ENV" = "staging" ]; then
+              STAGE_PROVIDER_JOB_PREFIX="Staging Deployment Stage / Provider Deployment (staging)"
+              STAGE_VERIFY_JOB_PREFIX="Staging Deployment Stage / Post-Deployment Health Verification (staging)"
               PROVIDER_JOB_PREFIX="Staging Provider Deployment"
               VERIFY_JOB_NAME="Staging Post-Deployment Health Verification"
             else
+              STAGE_PROVIDER_JOB_PREFIX="Production Deployment Stage / Provider Deployment (production)"
+              STAGE_VERIFY_JOB_PREFIX="Production Deployment Stage / Post-Deployment Health Verification (production)"
               PROVIDER_JOB_PREFIX="Production Provider Deployment"
               VERIFY_JOB_NAME="Production Post-Deployment Health Verification"
             fi
@@ -1260,11 +1294,26 @@ jobs:
                 if [ "$WF_KIND" = "deploy.yml" ]; then
                   if [ "$HAS_JOBS_ARRAY" = "true" ]; then
                     RUN_MATCHED=$(printf '%s' "$JOBS_JSON" | jq -r \
+                      --arg stage_p_prefix "$STAGE_PROVIDER_JOB_PREFIX" \
+                      --arg stage_v_prefix "$STAGE_VERIFY_JOB_PREFIX" \
                       --arg p_prefix "$PROVIDER_JOB_PREFIX" \
                       --arg v_name "$VERIFY_JOB_NAME" \
                       '
-                        ([.jobs[]? | select(.name == $p_prefix or (.name | startswith($p_prefix + " / ")) or (.name | test($p_prefix)))]) as $p_jobs |
-                        ([.jobs[]? | select(.name == $v_name or (.name | test($v_name)))]) as $v_jobs |
+                        ([.jobs[]? | select(
+                          ((.name // "") == $stage_p_prefix)
+                          or ((.name // "") | startswith($stage_p_prefix + " / "))
+                          or ((.name // "") | contains($stage_p_prefix))
+                          or ((.name // "") == $p_prefix)
+                          or ((.name // "") | startswith($p_prefix + " / "))
+                          or ((.name // "") | contains($p_prefix))
+                        )]) as $p_jobs |
+                        ([.jobs[]? | select(
+                          ((.name // "") == $stage_v_prefix)
+                          or ((.name // "") | startswith($stage_v_prefix + " / "))
+                          or ((.name // "") | contains($stage_v_prefix))
+                          or ((.name // "") == $v_name)
+                          or ((.name // "") | contains($v_name))
+                        )]) as $v_jobs |
                         (
                           if ($v_jobs | length) > 0 then
                             ($v_jobs | all(.conclusion == "success")) and (($p_jobs | length) == 0 or ($p_jobs | all(.conclusion == "success")))
@@ -1435,9 +1484,10 @@ jobs:
           image: ${{ steps.resolve.outputs.image_uri }}
           region: ${{ steps.verify-credentials.outputs.cloud_run_region || inputs.cloud_run_region || vars.CLOUD_RUN_REGION || 'us-central1' }}
           project_id: ${{ secrets.GCP_PROJECT_ID || steps.gcp-auth-oidc.outputs.project_id || steps.gcp-auth-key.outputs.project_id || steps.verify-credentials.outputs.gcp_project_id }}
-          labels: ${{ steps.resolve.outputs.cloud_run_labels }}
+          labels: ${{ steps.provenance.outputs.cloud_run_labels || steps.standalone-target.outputs.cloud_run_labels || steps.resolve.outputs.cloud_run_labels }}
 
       - name: Deploy via Generic Webhook Adapter
+        id: webhook
         if: >-
           (!inputs.dry_run) &&
           (inputs.provider == 'generic-webhook' || inputs.provider == 'docker-host')
@@ -1482,6 +1532,12 @@ jobs:
             -H "X-Deploy-Signature-256: sha256=${TIMESTAMP_SIGNATURE}" \
             -d "$PAYLOAD"
 
+      - name: Mark Provider Rollout Executed
+        id: rollout-marker
+        if: "!inputs.dry_run && (steps.cloudrun.outcome == 'success' || steps.webhook.outcome == 'success')"
+        run: |
+          echo "rollout_executed=true" >> "$GITHUB_OUTPUT"
+
       - name: Record Environment Deployment State
         id: record-deployment
         if: "!inputs.dry_run"
@@ -1492,6 +1548,8 @@ jobs:
           IMAGE_URI: ${{ steps.resolve.outputs.image_uri }}
           IMAGE_DIGEST: ${{ steps.resolve.outputs.image_digest }}
           IMAGE_TAG: ${{ inputs.image_tag || '' }}
+          SOURCE_REVISION: ${{ steps.provenance.outputs.source_revision }}
+          STANDALONE_TARGET_SHA: ${{ steps.standalone-target.outputs.target_sha }}
           INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
           CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}
           VAR_SERVICE_URL: ${{ vars.SERVICE_URL }}
@@ -1510,12 +1568,22 @@ jobs:
 
           DEPLOY_REF=""
           COMMIT_SHA_META=""
-          if [[ "${INPUT_COMMIT_SHA:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
-            DEPLOY_REF="$INPUT_COMMIT_SHA"
-            COMMIT_SHA_META="$INPUT_COMMIT_SHA"
+          if [[ "${SOURCE_REVISION:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            NORMALIZED_REV=$(printf '%s' "$SOURCE_REVISION" | tr '[:upper:]' '[:lower:]')
+            DEPLOY_REF="$NORMALIZED_REV"
+            COMMIT_SHA_META="$NORMALIZED_REV"
+          elif [[ "${STANDALONE_TARGET_SHA:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            NORMALIZED_REV=$(printf '%s' "$STANDALONE_TARGET_SHA" | tr '[:upper:]' '[:lower:]')
+            DEPLOY_REF="$NORMALIZED_REV"
+            COMMIT_SHA_META="$NORMALIZED_REV"
+          elif [[ "${INPUT_COMMIT_SHA:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            NORMALIZED_REV=$(printf '%s' "$INPUT_COMMIT_SHA" | tr '[:upper:]' '[:lower:]')
+            DEPLOY_REF="$NORMALIZED_REV"
+            COMMIT_SHA_META="$NORMALIZED_REV"
           elif [[ "${IMAGE_TAG:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
-            DEPLOY_REF="$IMAGE_TAG"
-            COMMIT_SHA_META="$IMAGE_TAG"
+            NORMALIZED_REV=$(printf '%s' "$IMAGE_TAG" | tr '[:upper:]' '[:lower:]')
+            DEPLOY_REF="$NORMALIZED_REV"
+            COMMIT_SHA_META="$NORMALIZED_REV"
           elif [ -n "${CURRENT_SHA:-}" ]; then
             DEPLOY_REF="$CURRENT_SHA"
           fi
@@ -1565,9 +1633,9 @@ jobs:
               --arg env "$EFFECTIVE_ENV" \
               --arg env_url "$PUBLIC_ENV_URL" \
               'if ($env_url | length) > 0 then
-                { state: "success", auto_inactive: true, environment: $env, environment_url: $env_url }
+                { state: "in_progress", auto_inactive: false, environment: $env, environment_url: $env_url }
               else
-                { state: "success", auto_inactive: true, environment: $env }
+                { state: "in_progress", auto_inactive: false, environment: $env }
               end')
             curl -fsSL --connect-timeout 5 --max-time 10 \
               -X POST \
@@ -1588,6 +1656,693 @@ jobs:
           IMAGE_DIGEST: ${{ steps.resolve.outputs.image_digest }}
         run: |
           echo "::notice::Explicit dry-run mode enabled. Validated provider adapter deployment parameters for pinned image URI ${IMAGE_URI} (${IMAGE_DIGEST})."
+
+      - name: Verify Provider Service Health
+        id: health-probe
+        env:
+          TARGET_ENV: ${{ inputs.environment || 'production' }}
+          VAR_SERVICE_URL: ${{ vars.SERVICE_URL }}
+          CLOUDRUN_URL: ${{ steps.cloudrun.outputs.url }}
+          SECRET_SERVICE_URL: ${{ secrets.SERVICE_URL }}
+          IS_DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+        run: |
+          EFFECTIVE_ENV="${TARGET_ENV:-production}"
+          RESOLVED_URL=""
+          USED_SECRET_FALLBACK="false"
+          if [ -n "${VAR_SERVICE_URL:-}" ]; then
+            RESOLVED_URL="$VAR_SERVICE_URL"
+          elif [ -n "${CLOUDRUN_URL:-}" ] && [ "$CLOUDRUN_URL" != "***" ]; then
+            RESOLVED_URL="$CLOUDRUN_URL"
+          elif [ -n "${SECRET_SERVICE_URL:-}" ]; then
+            RESOLVED_URL="$SECRET_SERVICE_URL"
+            USED_SECRET_FALLBACK="true"
+          fi
+
+          if [ "${IS_DRY_RUN:-false}" = "true" ] && [ -z "$RESOLVED_URL" ]; then
+            TARGET_URL="http://127.0.0.1:3000"
+          else
+            TARGET_URL="$RESOLVED_URL"
+          fi
+          TARGET_URL="${TARGET_URL%/}"
+
+          DISPLAY_URL="${TARGET_URL:-unconfigured}"
+          if [ "$USED_SECRET_FALLBACK" = "true" ]; then
+            DISPLAY_URL="[configured via secrets.SERVICE_URL]"
+          fi
+
+          if [ -z "$TARGET_URL" ] || [[ ! "$TARGET_URL" =~ ^https?://[^[:space:]]+ ]]; then
+            echo "::error::Missing or invalid SERVICE_URL for '${EFFECTIVE_ENV}' health verification. Configure vars.SERVICE_URL (recommended) or legacy secrets.SERVICE_URL with a valid http:// or https:// URL in the '${EFFECTIVE_ENV}' GitHub Environment."
+            echo "health_status=unhealthy" >> "$GITHUB_OUTPUT"
+            echo "http_status=invalid-url" >> "$GITHUB_OUTPUT"
+            echo "### 🔴 Provider Health Verification Failed (${EFFECTIVE_ENV})" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Environment:** \`${EFFECTIVE_ENV}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Target Service URL:** \`${DISPLAY_URL}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Health Endpoint:** \`/api/health\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **HTTP Status:** \`invalid-url\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Verification Outcome:** \`UNHEALTHY\`" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          HEALTH_ENDPOINT="${TARGET_URL}/api/health"
+          echo "Polling ${DISPLAY_URL}/api/health for environment '${EFFECTIVE_ENV}' (dry_run=${IS_DRY_RUN:-false})..."
+
+          MAX_TIMEOUT=120
+          START_TIME=$(date +%s)
+          DELAY=2
+          SUCCESS="false"
+          HTTP_STATUS=""
+          RESPONSE_BODY=""
+
+          while true; do
+            CURRENT_TIME=$(date +%s)
+            ELAPSED=$((CURRENT_TIME - START_TIME))
+            if [ $ELAPSED -ge $MAX_TIMEOUT ]; then
+              echo "❌ Health check timed out after ${MAX_TIMEOUT} seconds."
+              break
+            fi
+
+            HTTP_RESPONSE=$(curl -s -S --connect-timeout 5 --max-time 10 -w "\nHTTP_STATUS_CODE:%{http_code}" "${HEALTH_ENDPOINT}" || true)
+            HTTP_STATUS=$(printf '%s\n' "$HTTP_RESPONSE" | grep "HTTP_STATUS_CODE:" | tail -n 1 | cut -d':' -f2 || true)
+            RESPONSE_BODY=$(printf '%s\n' "$HTTP_RESPONSE" | sed '/HTTP_STATUS_CODE:/d')
+
+            if [ "$HTTP_STATUS" = "200" ]; then
+              PAYLOAD_KIND=$(printf '%s' "$RESPONSE_BODY" | jq -r 'if type != "object" then "invalid" elif has("success") then (if .success == true and (.data | type) == "object" then "wrapped" else "rejected" end) else "unwrapped" end' 2>/dev/null || true)
+              STATUS_VAL=""
+              DB_STATUS=""
+              if [ "$PAYLOAD_KIND" = "wrapped" ]; then
+                STATUS_VAL=$(printf '%s' "$RESPONSE_BODY" | jq -r '.data.status // empty' 2>/dev/null || true)
+                DB_STATUS=$(printf '%s' "$RESPONSE_BODY" | jq -r '.data.database // empty' 2>/dev/null || true)
+              elif [ "$PAYLOAD_KIND" = "unwrapped" ]; then
+                STATUS_VAL=$(printf '%s' "$RESPONSE_BODY" | jq -r '(.status) // empty' 2>/dev/null || true)
+                DB_STATUS=$(printf '%s' "$RESPONSE_BODY" | jq -r '(.database) // empty' 2>/dev/null || true)
+              fi
+
+              if [ "$STATUS_VAL" = "ok" ] && [ "$DB_STATUS" = "connected" ]; then
+                echo "✅ Provider health check probe succeeded! HTTP ${HTTP_STATUS}, status: ${STATUS_VAL}, database: ${DB_STATUS}"
+                SUCCESS="true"
+                break
+              else
+                echo "⚠️ Endpoint returned 200 but payload unhealthy (status: '${STATUS_VAL}', database: '${DB_STATUS}'). Retrying in ${DELAY}s..."
+              fi
+            else
+              echo "⚠️ Probe query failed with HTTP status '${HTTP_STATUS:-unreachable}'. Retrying in ${DELAY}s..."
+            fi
+
+            if [ "${IS_DRY_RUN:-false}" = "true" ] && { [ -z "$HTTP_STATUS" ] || [ "$HTTP_STATUS" = "000" ]; }; then
+              if [ $ELAPSED -ge 6 ]; then
+                echo "::notice::Dry-run '${EFFECTIVE_ENV}' environment detected without live endpoint. Dry-run health verification probe validated."
+                SUCCESS="true"
+                HTTP_STATUS="200 (dry-run)"
+                break
+              fi
+            fi
+
+            sleep $DELAY
+            DELAY=$((DELAY * 2))
+            if [ $DELAY -gt 16 ]; then
+              DELAY=16
+            fi
+          done
+
+          if [ "$SUCCESS" = "true" ]; then
+            echo "health_status=healthy" >> "$GITHUB_OUTPUT"
+            echo "http_status=${HTTP_STATUS:-200}" >> "$GITHUB_OUTPUT"
+            exit 0
+          else
+            echo "::error::Provider health check failed for '${EFFECTIVE_ENV}' (last HTTP status: ${HTTP_STATUS:-unreachable})."
+            echo "health_status=unhealthy" >> "$GITHUB_OUTPUT"
+            echo "http_status=${HTTP_STATUS:-unreachable}" >> "$GITHUB_OUTPUT"
+            echo "### 🔴 Provider Health Verification Failed (${EFFECTIVE_ENV})" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Environment:** \`${EFFECTIVE_ENV}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Target Service URL:** \`${DISPLAY_URL}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Health Endpoint:** \`/api/health\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **HTTP Status:** \`${HTTP_STATUS:-unreachable}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Verification Outcome:** \`UNHEALTHY\`" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Finalize Environment Deployment Status
+        id: finalize-deployment
+        if: "always() && !inputs.dry_run && steps.record-deployment.outputs.deployment_id != ''"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TARGET_ENV: ${{ inputs.environment || 'production' }}
+          DEPLOYMENT_ID: ${{ steps.record-deployment.outputs.deployment_id }}
+          HEALTH_OUTCOME: ${{ steps.health-probe.outcome }}
+          HEALTH_STATUS: ${{ steps.health-probe.outputs.health_status }}
+          VAR_SERVICE_URL: ${{ vars.SERVICE_URL }}
+          CLOUDRUN_URL: ${{ steps.cloudrun.outputs.url }}
+        run: |
+          if [ -z "${GITHUB_TOKEN:-}" ] || [ -z "${GITHUB_REPOSITORY:-}" ] || [[ ! "${DEPLOYMENT_ID:-}" =~ ^[0-9]+$ ]]; then
+            exit 0
+          fi
+
+          API_BASE="${GITHUB_API_URL:-https://api.github.com}"
+          EFFECTIVE_ENV="${TARGET_ENV:-production}"
+          PUBLIC_ENV_URL="${VAR_SERVICE_URL:-${CLOUDRUN_URL:-}}"
+
+          if [ "${HEALTH_OUTCOME:-}" = "success" ] && [ "${HEALTH_STATUS:-}" = "healthy" ]; then
+            FINAL_STATE="success"
+            AUTO_INACTIVE="true"
+          else
+            FINAL_STATE="failure"
+            AUTO_INACTIVE="false"
+          fi
+
+          STATUS_BODY=$(jq -n \
+            --arg state "$FINAL_STATE" \
+            --arg env "$EFFECTIVE_ENV" \
+            --arg env_url "$PUBLIC_ENV_URL" \
+            --argjson auto_inactive "$AUTO_INACTIVE" \
+            'if ($env_url | length) > 0 and $state == "success" then
+              { state: $state, auto_inactive: $auto_inactive, environment: $env, environment_url: $env_url }
+            else
+              { state: $state, auto_inactive: $auto_inactive, environment: $env }
+            end')
+
+          curl -fsSL --connect-timeout 5 --max-time 10 \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Content-Type: application/json" \
+            "${API_BASE}/repos/${GITHUB_REPOSITORY}/deployments/${DEPLOYMENT_ID}/statuses" \
+            -d "$STATUS_BODY" >/dev/null 2>&1 || true
+          echo "deployment_state=${FINAL_STATE}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js for Migration Linter
+        if: >-
+          (failure() || cancelled()) &&
+          github.event_name == 'workflow_call' &&
+          !inputs.dry_run &&
+          inputs.auto_rollback_on_failure &&
+          inputs.rollback_environment == '' &&
+          steps.rollout-marker.outputs.rollout_executed == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Execute Inline Fallback Rollback
+        id: inline-rollback
+        if: >-
+          (failure() || cancelled()) &&
+          github.event_name == 'workflow_call' &&
+          !inputs.dry_run &&
+          inputs.auto_rollback_on_failure &&
+          inputs.rollback_environment == '' &&
+          steps.rollout-marker.outputs.rollout_executed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_ACTOR_LOGIN: ${{ github.actor }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          SIGNER_WORKFLOW: ${{ github.repository }}/.github/workflows/publish-artifact.yml
+          TARGET_ENV: ${{ inputs.environment || 'production' }}
+          PROVIDER: ${{ inputs.provider || 'google-cloud-run' }}
+          FAILING_SOURCE_REVISION: ${{ steps.provenance.outputs.source_revision }}
+          INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
+          CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}
+          FAILING_IMAGE_DIGEST: ${{ steps.resolve.outputs.image_digest }}
+          PREVIOUS_TAG_OVERRIDE: ${{ inputs.previous_tag }}
+          CAPTURED_PREVIOUS_TAG: ${{ steps.capture-previous.outputs.previous_image_tag }}
+          CAPTURED_PREVIOUS_DIGEST: ${{ steps.capture-previous.outputs.previous_image_digest }}
+          CLOUD_RUN_SERVICE: ${{ steps.verify-credentials.outputs.cloud_run_service || steps.capture-previous.outputs.cloud_run_service || inputs.cloud_run_service || vars.CLOUD_RUN_SERVICE }}
+          CLOUD_RUN_REGION: ${{ steps.verify-credentials.outputs.cloud_run_region || steps.capture-previous.outputs.cloud_run_region || inputs.cloud_run_region || vars.CLOUD_RUN_REGION || 'us-central1' }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID || steps.gcp-auth-oidc.outputs.project_id || steps.gcp-auth-key.outputs.project_id || steps.verify-credentials.outputs.gcp_project_id }}
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+          DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+          DEPLOY_WEBHOOK_SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
+          VAR_SERVICE_URL: ${{ vars.SERVICE_URL }}
+          CLOUDRUN_URL: ${{ steps.cloudrun.outputs.url }}
+          SECRET_SERVICE_URL: ${{ secrets.SERVICE_URL }}
+        run: |
+          EFFECTIVE_ENV="${TARGET_ENV:-production}"
+          API_BASE="${GITHUB_API_URL:-https://api.github.com}"
+          TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+
+          fail_inline_rollback() {
+            echo "inline_rollback_completed=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          }
+
+          echo "=================================================="
+          echo "   INLINE FALLBACK ROLLBACK (${EFFECTIVE_ENV})    "
+          echo "=================================================="
+          echo "Verifying N-1 database migration backward compatibility before restoring prior container..."
+          if ! npm run lint:migrations; then
+            echo "::error::Inline fallback rollback aborted: npm run lint:migrations failed."
+            fail_inline_rollback
+          fi
+
+          if [ "${PREVIOUS_TAG_OVERRIDE:-}" = "latest" ]; then
+            echo "::error::Inline fallback rollback aborted: mutable tag 'latest' is rejected."
+            fail_inline_rollback
+          fi
+
+          CANDIDATE_TAG=""
+          CANDIDATE_DIGEST=""
+          if [ -n "${PREVIOUS_TAG_OVERRIDE:-}" ]; then
+            CANDIDATE_TAG="$PREVIOUS_TAG_OVERRIDE"
+          else
+            CANDIDATE_TAG="${CAPTURED_PREVIOUS_TAG:-}"
+            CANDIDATE_DIGEST="${CAPTURED_PREVIOUS_DIGEST:-}"
+          fi
+
+          if [ "$CANDIDATE_TAG" = "latest" ]; then
+            echo "::error::Inline fallback rollback aborted: mutable tag 'latest' is rejected."
+            fail_inline_rollback
+          fi
+
+          if [ -z "$CANDIDATE_TAG" ] && [ -z "$CANDIDATE_DIGEST" ]; then
+            echo "::error::Inline fallback rollback aborted: no prior rollback tag or digest available for '${EFFECTIVE_ENV}'."
+            fail_inline_rollback
+          fi
+
+          FAILING_SHA_RAW="${FAILING_SOURCE_REVISION:-${INPUT_COMMIT_SHA:-${CURRENT_SHA:-}}}"
+          FAILING_SHA_LOWER=$(printf '%s' "$FAILING_SHA_RAW" | tr '[:upper:]' '[:lower:]')
+          FAILING_DIGEST_LOWER=$(printf '%s' "${FAILING_IMAGE_DIGEST:-}" | tr '[:upper:]' '[:lower:]')
+
+          if [ -n "$CANDIDATE_TAG" ] && [ -n "$FAILING_SHA_LOWER" ]; then
+            CANDIDATE_TAG_LOWER=$(printf '%s' "$CANDIDATE_TAG" | tr '[:upper:]' '[:lower:]')
+            if [ "$CANDIDATE_TAG_LOWER" = "$FAILING_SHA_LOWER" ]; then
+              echo "::error::Inline fallback rollback aborted: candidate tag '${CANDIDATE_TAG}' matches failing commit SHA '${FAILING_SHA_RAW}'."
+              fail_inline_rollback
+            fi
+          fi
+
+          if [ -n "$CANDIDATE_DIGEST" ]; then
+            CANDIDATE_DIGEST=$(printf '%s' "$CANDIDATE_DIGEST" | tr '[:upper:]' '[:lower:]')
+            if [[ ! "$CANDIDATE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+              echo "::error::Inline fallback rollback aborted: invalid candidate digest '${CANDIDATE_DIGEST}'."
+              fail_inline_rollback
+            fi
+            if [ -n "$FAILING_DIGEST_LOWER" ] && [ "$CANDIDATE_DIGEST" = "$FAILING_DIGEST_LOWER" ]; then
+              echo "::error::Inline fallback rollback aborted: candidate digest '${CANDIDATE_DIGEST}' matches failing digest."
+              fail_inline_rollback
+            fi
+          fi
+
+          if [ -z "$TOKEN" ] || [ -z "${GITHUB_REPOSITORY:-}" ]; then
+            echo "::error::Inline fallback rollback aborted: missing GITHUB_TOKEN or GITHUB_REPOSITORY required to verify prior successful GitHub Deployments."
+            fail_inline_rollback
+          fi
+
+          DEPLOYMENTS_JSON=$(curl -fsSL --connect-timeout 5 --max-time 10 \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${TOKEN}" \
+            "${API_BASE}/repos/${GITHUB_REPOSITORY}/deployments?environment=${EFFECTIVE_ENV}&per_page=30" 2>/dev/null || true)
+
+          if [[ "${DEPLOYMENTS_JSON#"${DEPLOYMENTS_JSON%%[![:space:]]*}"}" != \[* ]]; then
+            echo "::error::Inline fallback rollback aborted: unable to query GitHub Deployments for '${EFFECTIVE_ENV}'."
+            fail_inline_rollback
+          fi
+
+          VERIFIED_DEP_ID=""
+          while IFS='|' read -r DEP_ID DEP_SHA DEP_COMMIT DEP_TAG DEP_DIGEST DEP_DRY_RUN; do
+            [ -z "$DEP_ID" ] && continue
+            if [ "$DEP_DRY_RUN" = "true" ]; then
+              continue
+            fi
+
+            NORM_DEP_SHA=$(printf '%s' "$DEP_SHA" | tr '[:upper:]' '[:lower:]')
+            NORM_DEP_COMMIT=$(printf '%s' "$DEP_COMMIT" | tr '[:upper:]' '[:lower:]')
+            NORM_DEP_DIGEST=$(printf '%s' "$DEP_DIGEST" | tr '[:upper:]' '[:lower:]')
+            NORM_CAND_TAG=$(printf '%s' "$CANDIDATE_TAG" | tr '[:upper:]' '[:lower:]')
+
+            MATCHES_TARGET="false"
+            if [ -n "$CANDIDATE_DIGEST" ] && [ "$NORM_DEP_DIGEST" = "$CANDIDATE_DIGEST" ]; then
+              MATCHES_TARGET="true"
+            elif [ -n "$CANDIDATE_TAG" ]; then
+              if [ "$DEP_TAG" = "$CANDIDATE_TAG" ] || [ "$NORM_DEP_SHA" = "$NORM_CAND_TAG" ] || [ "$NORM_DEP_COMMIT" = "$NORM_CAND_TAG" ]; then
+                MATCHES_TARGET="true"
+              fi
+            fi
+
+            if [ "$MATCHES_TARGET" != "true" ]; then
+              continue
+            fi
+
+            if [ -n "$FAILING_SHA_LOWER" ]; then
+              if [ "$NORM_DEP_SHA" = "$FAILING_SHA_LOWER" ] || [ "$NORM_DEP_COMMIT" = "$FAILING_SHA_LOWER" ]; then
+                echo "::error::Inline fallback rollback aborted: deployment #${DEP_ID} matches failing commit SHA '${FAILING_SHA_RAW}'."
+                fail_inline_rollback
+              fi
+            fi
+
+            STATUSES_JSON=$(curl -fsSL --connect-timeout 5 --max-time 10 \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${TOKEN}" \
+              "${API_BASE}/repos/${GITHUB_REPOSITORY}/deployments/${DEP_ID}/statuses?per_page=20" 2>/dev/null || true)
+            ACTIVE_STATE=""
+            if [[ "${STATUSES_JSON#"${STATUSES_JSON%%[![:space:]]*}"}" == \[* ]]; then
+              ACTIVE_STATE=$(printf '%s' "$STATUSES_JSON" | jq -r '[.[]? | select(.state != null and .state != "inactive") | .state] | .[0] // empty' 2>/dev/null || true)
+            fi
+            if [ "$ACTIVE_STATE" != "success" ]; then
+              continue
+            fi
+
+            VERIFIED_DEP_ID="$DEP_ID"
+            if [ -z "$CANDIDATE_DIGEST" ] && [[ "$NORM_DEP_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+              CANDIDATE_DIGEST="$NORM_DEP_DIGEST"
+            fi
+            break
+          done < <(printf '%s' "$DEPLOYMENTS_JSON" | jq -r --arg env "$EFFECTIVE_ENV" '
+            .[]?
+            | select((.environment // $env) == $env and .id != null)
+            | [
+                (.id | tostring),
+                (.sha // ""),
+                ((.payload | if type == "object" then (.commit_sha // "") else "" end) | tostring),
+                ((.payload | if type == "object" then (.image_tag // "") else "" end) | tostring),
+                ((.payload | if type == "object" then (.image_digest // "") else "" end) | tostring),
+                ((.payload | if type == "object" then (.dry_run // false) else false end) | tostring)
+              ]
+            | join("|")
+          ' 2>/dev/null || true)
+
+          if [ -z "$VERIFIED_DEP_ID" ]; then
+            echo "::error::Inline fallback rollback aborted: '${CANDIDATE_DIGEST:-$CANDIDATE_TAG}' has no prior successful GitHub Deployment in '${EFFECTIVE_ENV}'."
+            fail_inline_rollback
+          fi
+
+          IMAGE_REPO_LOWER=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          RESTORED_DIGEST="$CANDIDATE_DIGEST"
+          if [ -z "$RESTORED_DIGEST" ]; then
+            printf '%s\n' "$TOKEN" | docker login ghcr.io -u "${GITHUB_ACTOR_LOGIN:-github-actions}" --password-stdin >/dev/null 2>&1 || true
+            RAW_MANIFEST_FILE=$(mktemp)
+            if ! docker buildx imagetools inspect "ghcr.io/${IMAGE_REPO_LOWER}:${CANDIDATE_TAG}" --raw > "$RAW_MANIFEST_FILE" || [ ! -s "$RAW_MANIFEST_FILE" ]; then
+              rm -f "$RAW_MANIFEST_FILE"
+              echo "::error::Inline fallback rollback aborted: failed to resolve GHCR manifest digest for tag '${CANDIDATE_TAG}'."
+              fail_inline_rollback
+            fi
+            RESTORED_DIGEST="sha256:$(sha256sum "$RAW_MANIFEST_FILE" | awk '{print $1}')"
+            rm -f "$RAW_MANIFEST_FILE"
+          fi
+
+          if [[ ! "$RESTORED_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "::error::Inline fallback rollback aborted: invalid resolved digest '${RESTORED_DIGEST}'."
+            fail_inline_rollback
+          fi
+          if [ -n "$FAILING_DIGEST_LOWER" ] && [ "$RESTORED_DIGEST" = "$FAILING_DIGEST_LOWER" ]; then
+            echo "::error::Inline fallback rollback aborted: resolved digest '${RESTORED_DIGEST}' matches failing digest."
+            fail_inline_rollback
+          fi
+
+          RESTORED_IMAGE_URI="ghcr.io/${IMAGE_REPO_LOWER}@${RESTORED_DIGEST}"
+
+          EXPECTED_REF="refs/heads/main"
+          if [[ "${CANDIDATE_TAG:-}" =~ ^v[0-9] ]]; then
+            EXPECTED_REF="refs/tags/${CANDIDATE_TAG}"
+          fi
+
+          ATTESTATION_JSON=""
+          if ATTESTATION_OUT=$(gh attestation verify "oci://${RESTORED_IMAGE_URI}" \
+            --owner "${REPO_OWNER:-${GITHUB_REPOSITORY%%/*}}" \
+            --signer-workflow "${SIGNER_WORKFLOW:-${GITHUB_REPOSITORY}/.github/workflows/publish-artifact.yml}" \
+            --source-ref "$EXPECTED_REF" \
+            --format json 2>/dev/null); then
+            ATTESTATION_JSON="$ATTESTATION_OUT"
+          elif [ "$EXPECTED_REF" = "refs/heads/main" ]; then
+            UNPINNED_JSON=$(gh attestation verify "oci://${RESTORED_IMAGE_URI}" \
+              --owner "${REPO_OWNER:-${GITHUB_REPOSITORY%%/*}}" \
+              --signer-workflow "${SIGNER_WORKFLOW:-${GITHUB_REPOSITORY}/.github/workflows/publish-artifact.yml}" \
+              --format json 2>/dev/null || true)
+            DETECTED_TAG_REF=$(printf '%s' "$UNPINNED_JSON" | jq -r '.[0].verificationResult.signature.certificate.sourceRepositoryRef // empty' 2>/dev/null || true)
+            if [[ "$DETECTED_TAG_REF" =~ ^refs/tags/v[0-9][0-9A-Za-z._+-]*$ ]]; then
+              ATTESTATION_JSON=$(gh attestation verify "oci://${RESTORED_IMAGE_URI}" \
+                --owner "${REPO_OWNER:-${GITHUB_REPOSITORY%%/*}}" \
+                --signer-workflow "${SIGNER_WORKFLOW:-${GITHUB_REPOSITORY}/.github/workflows/publish-artifact.yml}" \
+                --source-ref "$DETECTED_TAG_REF" \
+                --format json 2>/dev/null || true)
+            fi
+          fi
+
+          if [ -z "$ATTESTATION_JSON" ]; then
+            echo "::error::Inline fallback rollback aborted: OIDC provenance verification failed for '${RESTORED_IMAGE_URI}'."
+            fail_inline_rollback
+          fi
+
+          RESTORED_SOURCE_REVISION=$(printf '%s' "$ATTESTATION_JSON" | jq -r '
+            (
+              .[0].verificationResult.signature.certificate.sourceRepositoryDigest //
+              .[0].verificationResult.statement.predicate.buildDefinition.resolvedDependencies[0].digest.gitCommit //
+              .[0].verificationResult.statement.predicate.invocation.configSource.digest.sha1 //
+              empty
+            ) | ascii_downcase
+          ' 2>/dev/null || true)
+
+          if [[ ! "$RESTORED_SOURCE_REVISION" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Inline fallback rollback aborted: missing valid 40-char source_revision in provenance attestation."
+            fail_inline_rollback
+          fi
+          if [ -n "$FAILING_SHA_LOWER" ] && [ "$RESTORED_SOURCE_REVISION" = "$FAILING_SHA_LOWER" ]; then
+            echo "::error::Inline fallback rollback aborted: attested source_revision '${RESTORED_SOURCE_REVISION}' matches failing SHA."
+            fail_inline_rollback
+          fi
+
+          CI_RUNS_JSON=$(curl -fsSL --connect-timeout 5 --max-time 10 \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${TOKEN}" \
+            "${API_BASE}/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${RESTORED_SOURCE_REVISION}&status=completed&per_page=100" 2>/dev/null || true)
+          VERIFIED_CI_ID=$(printf '%s' "$CI_RUNS_JSON" | jq -r --arg sha "$RESTORED_SOURCE_REVISION" --arg repo "$GITHUB_REPOSITORY" '
+            [
+              .workflow_runs[]?
+              | select(.status == "completed" and .conclusion == "success")
+              | select((.head_sha // "" | ascii_downcase) == ($sha | ascii_downcase))
+              | select((.head_repository == null) or ((.head_repository.full_name // "" | ascii_downcase) == ($repo | ascii_downcase)))
+              | (.id | tostring)
+            ][0] // empty
+          ' 2>/dev/null || true)
+
+          if [ -z "$VERIFIED_CI_ID" ]; then
+            echo "::error::Inline fallback rollback aborted: no passing ci.yml run found for '${RESTORED_SOURCE_REVISION}'."
+            fail_inline_rollback
+          fi
+
+          RESTORED_CLOUDRUN_URL="${CLOUDRUN_URL:-}"
+          if [ "${PROVIDER:-google-cloud-run}" = "google-cloud-run" ]; then
+            DEFAULT_SERVICE="wedding-website"
+            if [ "$EFFECTIVE_ENV" = "staging" ]; then
+              DEFAULT_SERVICE="wedding-website-staging"
+            fi
+            RESOLVED_CR_SERVICE="${CLOUD_RUN_SERVICE:-$DEFAULT_SERVICE}"
+            RESOLVED_CR_REGION="${CLOUD_RUN_REGION:-us-central1}"
+            RESOLVED_GCP_PROJECT="${GCP_PROJECT_ID:-}"
+            if [ -z "$RESOLVED_GCP_PROJECT" ] && [ -n "${GCP_SA_KEY:-}" ]; then
+              RESOLVED_GCP_PROJECT=$(printf '%s' "$GCP_SA_KEY" | jq -r '.project_id // empty' 2>/dev/null || true)
+            fi
+            ACTIVE_GCLOUD_ACCOUNT=$(gcloud auth list --filter=status:ACTIVE --format="value(account)" 2>/dev/null | head -n 1 || true)
+            if [ -z "$ACTIVE_GCLOUD_ACCOUNT" ] && [ -n "${GCP_SA_KEY:-}" ]; then
+              SA_KEY_FILE=$(mktemp)
+              chmod 600 "$SA_KEY_FILE"
+              printf '%s' "$GCP_SA_KEY" > "$SA_KEY_FILE"
+              gcloud auth activate-service-account --key-file="$SA_KEY_FILE" --quiet >/dev/null 2>&1 || true
+              rm -f "$SA_KEY_FILE"
+            fi
+
+            DEPLOY_ARGS=(
+              run deploy "$RESOLVED_CR_SERVICE"
+              "--image=${RESTORED_IMAGE_URI}"
+              "--region=${RESOLVED_CR_REGION}"
+              "--update-labels=commit-sha=${RESTORED_SOURCE_REVISION}"
+              --quiet
+              --format=json
+            )
+            if [ -n "$RESOLVED_GCP_PROJECT" ]; then
+              DEPLOY_ARGS+=("--project=${RESOLVED_GCP_PROJECT}")
+            fi
+            if ! DEPLOY_JSON=$(gcloud "${DEPLOY_ARGS[@]}"); then
+              echo "::error::Inline fallback rollback failed during Cloud Run redeployment."
+              fail_inline_rollback
+            fi
+            EXTRACTED_CR_URL=$(printf '%s' "$DEPLOY_JSON" | jq -r '.status.url // empty' 2>/dev/null || true)
+            if [ -n "$EXTRACTED_CR_URL" ]; then
+              RESTORED_CLOUDRUN_URL="$EXTRACTED_CR_URL"
+            fi
+          elif [ "$PROVIDER" = "generic-webhook" ] || [ "$PROVIDER" = "docker-host" ]; then
+            if [ -z "${DEPLOY_WEBHOOK_URL:-}" ] || [ -z "${DEPLOY_WEBHOOK_SECRET:-}" ]; then
+              echo "::error::Inline fallback rollback aborted: missing DEPLOY_WEBHOOK_URL or DEPLOY_WEBHOOK_SECRET."
+              fail_inline_rollback
+            fi
+            PAYLOAD=$(jq -n --arg image "$RESTORED_IMAGE_URI" --arg digest "$RESTORED_DIGEST" --arg env "$EFFECTIVE_ENV" '{image: $image, digest: $digest, environment: $env}')
+            WEBHOOK_TIMESTAMP=$(date -u +%s)
+            BODY_SIGNATURE=$(printf '%s' "$PAYLOAD" | openssl dgst -sha256 -hmac "$DEPLOY_WEBHOOK_SECRET" | awk '{print $NF}')
+            TIMESTAMP_SIGNATURE=$(printf '%s' "${WEBHOOK_TIMESTAMP}.${PAYLOAD}" | openssl dgst -sha256 -hmac "$DEPLOY_WEBHOOK_SECRET" | awk '{print $NF}')
+            curl --silent --show-error --location --fail-with-body \
+              --connect-timeout 10 --max-time 30 \
+              -X POST "$DEPLOY_WEBHOOK_URL" \
+              -H "Content-Type: application/json" \
+              -H "X-Hub-Signature-256: sha256=${BODY_SIGNATURE}" \
+              -H "X-Deploy-Timestamp: ${WEBHOOK_TIMESTAMP}" \
+              -H "X-Deploy-Signature-256: sha256=${TIMESTAMP_SIGNATURE}" \
+              -d "$PAYLOAD"
+          else
+            echo "::error::Unsupported provider '${PROVIDER}' for inline fallback rollback."
+            fail_inline_rollback
+          fi
+
+          IS_PROD_ENV="false"
+          if [ "$EFFECTIVE_ENV" = "production" ]; then
+            IS_PROD_ENV="true"
+          fi
+          RESTORED_CREATE_BODY=$(jq -n \
+            --arg ref "$RESTORED_SOURCE_REVISION" \
+            --arg env "$EFFECTIVE_ENV" \
+            --arg provider "${PROVIDER:-google-cloud-run}" \
+            --arg image_uri "$RESTORED_IMAGE_URI" \
+            --arg image_digest "$RESTORED_DIGEST" \
+            --arg image_tag "${CANDIDATE_TAG:-$RESTORED_SOURCE_REVISION}" \
+            --arg commit_sha "$RESTORED_SOURCE_REVISION" \
+            --argjson prod "$IS_PROD_ENV" \
+            '{
+              ref: $ref,
+              environment: $env,
+              auto_merge: false,
+              required_contexts: [],
+              transient_environment: false,
+              production_environment: $prod,
+              payload: {
+                provider: $provider,
+                image_uri: $image_uri,
+                image_digest: $image_digest,
+                image_tag: $image_tag,
+                commit_sha: $commit_sha,
+                dry_run: false,
+                rollback: true
+              }
+            }')
+          RESTORED_CREATED_JSON=$(curl -fsSL --connect-timeout 5 --max-time 10 \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "Content-Type: application/json" \
+            "${API_BASE}/repos/${GITHUB_REPOSITORY}/deployments" \
+            -d "$RESTORED_CREATE_BODY" 2>/dev/null || true)
+          RESTORED_DEP_ID=$(printf '%s' "$RESTORED_CREATED_JSON" | jq -r '.id // empty' 2>/dev/null || true)
+          PUBLIC_ENV_URL="${VAR_SERVICE_URL:-${RESTORED_CLOUDRUN_URL:-}}"
+          if [[ "$RESTORED_DEP_ID" =~ ^[0-9]+$ ]]; then
+            IN_PROGRESS_BODY=$(jq -n --arg env "$EFFECTIVE_ENV" '{ state: "in_progress", auto_inactive: false, environment: $env }')
+            curl -fsSL --connect-timeout 5 --max-time 10 \
+              -X POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${TOKEN}" \
+              -H "Content-Type: application/json" \
+              "${API_BASE}/repos/${GITHUB_REPOSITORY}/deployments/${RESTORED_DEP_ID}/statuses" \
+              -d "$IN_PROGRESS_BODY" >/dev/null 2>&1 || true
+          fi
+
+          RESOLVED_URL=""
+          USED_SECRET_FALLBACK="false"
+          if [ -n "${VAR_SERVICE_URL:-}" ]; then
+            RESOLVED_URL="$VAR_SERVICE_URL"
+          elif [ -n "${RESTORED_CLOUDRUN_URL:-}" ] && [ "$RESTORED_CLOUDRUN_URL" != "***" ]; then
+            RESOLVED_URL="$RESTORED_CLOUDRUN_URL"
+          elif [ -n "${SECRET_SERVICE_URL:-}" ]; then
+            RESOLVED_URL="$SECRET_SERVICE_URL"
+            USED_SECRET_FALLBACK="true"
+          fi
+          TARGET_URL="${RESOLVED_URL%/}"
+          DISPLAY_URL="${TARGET_URL:-unconfigured}"
+          if [ "$USED_SECRET_FALLBACK" = "true" ]; then
+            DISPLAY_URL="[configured via secrets.SERVICE_URL]"
+          fi
+
+          if [ -z "$TARGET_URL" ] || [[ ! "$TARGET_URL" =~ ^https?://[^[:space:]]+ ]]; then
+            if [[ "$RESTORED_DEP_ID" =~ ^[0-9]+$ ]]; then
+              FAIL_BODY=$(jq -n --arg env "$EFFECTIVE_ENV" '{ state: "failure", auto_inactive: false, environment: $env }')
+              curl -fsSL --connect-timeout 5 --max-time 10 \
+                -X POST \
+                -H "Accept: application/vnd.github+json" \
+                -H "Authorization: Bearer ${TOKEN}" \
+                -H "Content-Type: application/json" \
+                "${API_BASE}/repos/${GITHUB_REPOSITORY}/deployments/${RESTORED_DEP_ID}/statuses" \
+                -d "$FAIL_BODY" >/dev/null 2>&1 || true
+            fi
+            echo "::error::Inline fallback rollback failed: missing or invalid SERVICE_URL for restored health check."
+            fail_inline_rollback
+          fi
+
+          HEALTH_ENDPOINT="${TARGET_URL}/api/health"
+          MAX_TIMEOUT=55
+          START_TIME=$(date +%s)
+          DELAY=2
+          RESTORED_HEALTHY="false"
+          RESTORED_HTTP=""
+
+          while true; do
+            CURRENT_TIME=$(date +%s)
+            ELAPSED=$((CURRENT_TIME - START_TIME))
+            if [ $ELAPSED -ge $MAX_TIMEOUT ]; then
+              break
+            fi
+            HTTP_RESPONSE=$(curl -s -S --connect-timeout 5 --max-time 10 -w "\nHTTP_STATUS_CODE:%{http_code}" "${HEALTH_ENDPOINT}" || true)
+            RESTORED_HTTP=$(printf '%s\n' "$HTTP_RESPONSE" | grep "HTTP_STATUS_CODE:" | tail -n 1 | cut -d':' -f2 || true)
+            RESPONSE_BODY=$(printf '%s\n' "$HTTP_RESPONSE" | sed '/HTTP_STATUS_CODE:/d')
+            if [ "$RESTORED_HTTP" = "200" ]; then
+              PAYLOAD_KIND=$(printf '%s' "$RESPONSE_BODY" | jq -r 'if type != "object" then "invalid" elif has("success") then (if .success == true and (.data | type) == "object" then "wrapped" else "rejected" end) else "unwrapped" end' 2>/dev/null || true)
+              STATUS_VAL=""
+              DB_STATUS=""
+              if [ "$PAYLOAD_KIND" = "wrapped" ]; then
+                STATUS_VAL=$(printf '%s' "$RESPONSE_BODY" | jq -r '.data.status // empty' 2>/dev/null || true)
+                DB_STATUS=$(printf '%s' "$RESPONSE_BODY" | jq -r '.data.database // empty' 2>/dev/null || true)
+              elif [ "$PAYLOAD_KIND" = "unwrapped" ]; then
+                STATUS_VAL=$(printf '%s' "$RESPONSE_BODY" | jq -r '(.status) // empty' 2>/dev/null || true)
+                DB_STATUS=$(printf '%s' "$RESPONSE_BODY" | jq -r '(.database) // empty' 2>/dev/null || true)
+              fi
+              if [ "$STATUS_VAL" = "ok" ] && [ "$DB_STATUS" = "connected" ]; then
+                RESTORED_HEALTHY="true"
+                break
+              fi
+            fi
+            sleep $DELAY
+            DELAY=$((DELAY * 2))
+            if [ $DELAY -gt 8 ]; then
+              DELAY=8
+            fi
+          done
+
+          if [ "$RESTORED_HEALTHY" != "true" ]; then
+            if [[ "$RESTORED_DEP_ID" =~ ^[0-9]+$ ]]; then
+              FAIL_BODY=$(jq -n --arg env "$EFFECTIVE_ENV" '{ state: "failure", auto_inactive: false, environment: $env }')
+              curl -fsSL --connect-timeout 5 --max-time 10 \
+                -X POST \
+                -H "Accept: application/vnd.github+json" \
+                -H "Authorization: Bearer ${TOKEN}" \
+                -H "Content-Type: application/json" \
+                "${API_BASE}/repos/${GITHUB_REPOSITORY}/deployments/${RESTORED_DEP_ID}/statuses" \
+                -d "$FAIL_BODY" >/dev/null 2>&1 || true
+            fi
+            echo "::error::Inline fallback rollback failed: restored container failed /api/health (HTTP ${RESTORED_HTTP:-unreachable})."
+            fail_inline_rollback
+          fi
+
+          if [[ "$RESTORED_DEP_ID" =~ ^[0-9]+$ ]]; then
+            OK_BODY=$(jq -n \
+              --arg env "$EFFECTIVE_ENV" \
+              --arg env_url "$PUBLIC_ENV_URL" \
+              'if ($env_url | length) > 0 then
+                { state: "success", auto_inactive: true, environment: $env, environment_url: $env_url }
+              else
+                { state: "success", auto_inactive: true, environment: $env }
+              end')
+            curl -fsSL --connect-timeout 5 --max-time 10 \
+              -X POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${TOKEN}" \
+              -H "Content-Type: application/json" \
+              "${API_BASE}/repos/${GITHUB_REPOSITORY}/deployments/${RESTORED_DEP_ID}/statuses" \
+              -d "$OK_BODY" >/dev/null 2>&1 || true
+          fi
+
+          echo "inline_rollback_completed=true" >> "$GITHUB_OUTPUT"
+          echo "restored_source_revision=${RESTORED_SOURCE_REVISION}" >> "$GITHUB_OUTPUT"
+          echo "### ⏪ Inline Fallback Rollback Succeeded (${EFFECTIVE_ENV})" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Environment:** \`${EFFECTIVE_ENV}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Restored Artifact URI:** \`${RESTORED_IMAGE_URI}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Restored Source Revision:** \`${RESTORED_SOURCE_REVISION}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Target Service URL:** \`${DISPLAY_URL}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Restored Health Probe:** \`HEALTHY (HTTP ${RESTORED_HTTP})\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "::error::Forward '${EFFECTIVE_ENV}' rollout failed /api/health; prior healthy image '${RESTORED_IMAGE_URI}' (${RESTORED_SOURCE_REVISION}) was automatically restored."
+          exit 1
 
       - name: Resolve Service URL Output
         id: resolve-url
@@ -1626,6 +2381,7 @@ jobs:
           fi
 
       - name: Deployment Summary
+        if: always()
         env:
           TARGET_ENV: ${{ inputs.environment || 'production' }}
           PROVIDER: ${{ inputs.provider || 'google-cloud-run' }}
@@ -1635,15 +2391,23 @@ jobs:
           SERVICE_URL: ${{ steps.resolve-url.outputs.service_url }}
           PREVIOUS_TAG: ${{ steps.capture-previous.outputs.previous_image_tag }}
           PREVIOUS_DIGEST: ${{ steps.capture-previous.outputs.previous_image_digest }}
+          HEALTH_STATUS: ${{ steps.health-probe.outputs.health_status }}
+          INLINE_ROLLBACK_COMPLETED: ${{ steps.inline-rollback.outputs.inline_rollback_completed }}
         run: |
           echo "### 🚀 Provider Deployment Summary" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Environment:** \`${TARGET_ENV}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Provider:** \`${PROVIDER}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Verified Digest:** \`${IMAGE_DIGEST}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Pinned Artifact URI:** \`${IMAGE_URI}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Verified Digest:** \`${IMAGE_DIGEST:-none}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Pinned Artifact URI:** \`${IMAGE_URI:-none}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Provenance Attestation:** \`${ATTESTATION_STATUS}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Previous Image Tag:** \`${PREVIOUS_TAG:-none}\`" >> "$GITHUB_STEP_SUMMARY"
           if [ -n "${PREVIOUS_DIGEST:-}" ]; then
             echo "- **Previous Image Digest:** \`${PREVIOUS_DIGEST}\`" >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "- **Service URL:** \`${SERVICE_URL:-none}\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "${HEALTH_STATUS:-}" ]; then
+            echo "- **Health Probe Status:** \`${HEALTH_STATUS}\`" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ "${INLINE_ROLLBACK_COMPLETED:-}" = "true" ]; then
+            echo "- **Inline Fallback Rollback:** \`completed\`" >> "$GITHUB_STEP_SUMMARY"
+          fi

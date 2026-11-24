@@ -5,6 +5,7 @@ import { POST as guestLoginPost } from '@/app/api/guest/login/route';
 import { POST as guestLookupPost } from '@/app/api/guest/lookup/route';
 import { POST as rsvpPost } from '@/app/api/rsvp/route';
 import { GET as addressGet, PUT as addressPut } from '@/app/api/guest/address/route';
+import { GET as guestSessionGet } from '@/app/api/guest/session/route';
 import { GET as scheduleGet } from '@/app/api/schedule/route';
 import { GET as photosGet } from '@/app/api/photos/route';
 import { GET as registryItemsGet } from '@/app/api/registry/items/route';
@@ -662,6 +663,47 @@ describe('Guest Session Security Integration', () => {
       const body = await res.json();
       expect(body.success).toBe(false);
       expect(res.headers.get('set-cookie') || '').toBe('');
+    });
+
+    test('expires guest_invite_session and falls back to passcode status on GET /api/guest/session for unpromoted address-collection records', async () => {
+      const unpromotedToken = await signGuestInviteSessionToken({
+        code: 'ADDRONLY1',
+        guestName: 'Unpromoted Prospect',
+      });
+      const validGuestAuth = await signGuestToken({
+        guest: true,
+        exp: Date.now() + 60 * 60 * 1000,
+      });
+      (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValueOnce({
+        id: 'addr-col-1',
+        code: 'ADDRONLY1',
+        guestName: 'Unpromoted Prospect',
+        isSample: false,
+        partyTags: ['address-collection'],
+      });
+
+      const res = await guestSessionGet(
+        new NextRequest('http://localhost:3000/api/guest/session', {
+          method: 'GET',
+          headers: {
+            cookie: `${GUEST_INVITE_COOKIE}=${unpromotedToken}; ${GUEST_COOKIE}=${validGuestAuth}`,
+          },
+        }),
+        {}
+      );
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.data).toEqual({
+        status: 'passcode',
+        isVerified: false,
+        invitationCode: null,
+        code: null,
+        guestName: null,
+        hasPasscodeSession: true,
+      });
+      expect(res.cookies.get(GUEST_INVITE_COOKIE)?.value).toBe('');
+      expect(res.cookies.get(GUEST_COOKIE)).toBeUndefined();
     });
   });
 });

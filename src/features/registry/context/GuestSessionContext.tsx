@@ -280,7 +280,13 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
           return true;
         } else {
-          setSessionState(prev => ({ ...prev, lastErrorCode: 'INVALID_CODE' }));
+          setSessionState(prev => ({
+            ...prev,
+            lastErrorCode:
+              data?.reason === 'shared_passcode' && typeof data?.error === 'string' && data.error.trim()
+                ? data.error
+                : 'INVALID_CODE',
+          }));
           return false;
         }
       } catch (err: unknown) {
