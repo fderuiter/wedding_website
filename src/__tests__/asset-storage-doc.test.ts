@@ -59,6 +59,7 @@ describe('docs/ASSET_STORAGE.md Contract & Portal Staging Suite', () => {
         'src/app/api/media/[id]/route.ts',
         'src/app/api/media/export/route.ts',
         'src/app/api/uploads/[...path]/route.ts',
+        'src/features/content/repository.ts',
         'src/features/content/service.ts',
         'src/features/media/repository.ts',
       ]) {
