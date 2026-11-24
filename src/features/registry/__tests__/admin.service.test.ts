@@ -149,6 +149,90 @@ describe('RegistryItemAdminService Reorder & Partial Updates', () => {
       );
       expect(mockTxRegistryItemFindMany).not.toHaveBeenCalled();
     });
+
+    it('uses one parameterized $executeRaw UPDATE FROM VALUES query on displayOrder and captures full snapshots when $executeRaw exists', async () => {
+      const mockExecuteRaw = jest.fn().mockResolvedValue(2);
+      const mockFindMany = jest.fn().mockResolvedValue([
+        {
+          id: 'gift-1',
+          itemType: 'PHYSICAL',
+          name: 'Stand Mixer',
+          description: '5-quart mixer',
+          category: 'Kitchen',
+          price: 399,
+          imageId: 'media-gift-1',
+          quantity: 1,
+          isGroupGift: false,
+          isMostWanted: true,
+          displayOrder: 1,
+          purchased: false,
+          amountContributed: 0,
+          isSample: false,
+        },
+        {
+          id: 'gift-2',
+          itemType: 'CASH_FUND',
+          name: 'Honeymoon Fund',
+          description: 'Flights',
+          category: 'Travel',
+          price: 1000,
+          imageId: 'media-gift-2',
+          quantity: 1,
+          isGroupGift: true,
+          isMostWanted: false,
+          displayOrder: 0,
+          purchased: false,
+          amountContributed: 250,
+          isSample: false,
+        },
+      ]);
+      const mockUpdate = jest.fn();
+      const rawTx: any = {
+        registryItem: {
+          findMany: mockFindMany,
+          update: mockUpdate,
+        },
+        $executeRaw: mockExecuteRaw,
+      };
+      const rawClient = {
+        $transaction: jest.fn((cb: any) => cb(rawTx)),
+      };
+      const rawAdminService = new RegistryItemAdminService(rawClient);
+
+      await rawAdminService.reorder(['gift-2', 'gift-1'], 'Coordinator');
+
+      expect(mockFindMany).toHaveBeenCalledWith({
+        where: { id: { in: ['gift-2', 'gift-1'] } },
+      });
+      expect(mockExecuteRaw).toHaveBeenCalledTimes(1);
+      expect(mockUpdate).not.toHaveBeenCalled();
+
+      const sqlArg = mockExecuteRaw.mock.calls[0][0];
+      const normalizedSql = sqlArg.strings.join('?').replace(/\s+/g, ' ').trim();
+      expect(normalizedSql).toContain('UPDATE "public"."RegistryItem" AS t');
+      expect(normalizedSql).toContain('SET "displayOrder" = v."displayOrder", "updatedAt" = NOW()');
+      expect(sqlArg.values).toEqual(['gift-2', 0, 'gift-1', 1]);
+
+      expect(createBatchAuditSnapshots).toHaveBeenCalledWith(
+        'RegistryItem',
+        [
+          expect.objectContaining({
+            id: 'gift-2',
+            name: 'Honeymoon Fund',
+            imageId: 'media-gift-2',
+            displayOrder: 0,
+          }),
+          expect.objectContaining({
+            id: 'gift-1',
+            name: 'Stand Mixer',
+            imageId: 'media-gift-1',
+            displayOrder: 1,
+          }),
+        ],
+        'Coordinator',
+        rawTx
+      );
+    });
   });
 
   describe('partial updates and imageId preservation', () => {
