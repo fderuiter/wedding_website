@@ -13,6 +13,7 @@ import { AdminViewState } from '@/components/admin/AdminViewState';
 import AdminPreviewLayout from '@/components/admin/AdminPreviewLayout';
 import { FormGroup, Label, Input, Textarea, Select, FormMessage } from '@/components/ui/forms';
 import { Button } from '@/components/ui/Button';
+import { StickyBar } from '@/components/ui/useStickyOffset';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useAdminBroadcast } from '@/hooks/admin/useAdminBroadcast';
 import { MAX_UPLOAD_SIZE, ACCEPTED_IMAGE_TYPES } from '@/utils/validation';
@@ -2058,7 +2059,12 @@ export default function AdminSettingsPage() {
                 </div>
               </section>
 
-              <div className="flex justify-end sticky bottom-0 bg-gray-100 dark:bg-gray-900 py-4 shadow-t">
+              <StickyBar
+                edge="bottom"
+                scope="scroll-region"
+                containerSelector="#studio-left-pane"
+                className="flex justify-end sticky bottom-0 z-20 bg-gray-100 dark:bg-gray-900 py-4 shadow-t"
+              >
                 <Button
                   type="submit"
                   disabled={saving}
@@ -2066,7 +2072,7 @@ export default function AdminSettingsPage() {
                 >
                   {saving ? 'Saving...' : 'Save Settings'}
                 </Button>
-              </div>
+              </StickyBar>
             </form>
           </div>
 

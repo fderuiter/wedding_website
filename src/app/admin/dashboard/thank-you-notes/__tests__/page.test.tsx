@@ -1183,7 +1183,11 @@ describe('ThankYouNotesPage', () => {
       expect(screen.getByText('Alice Johnson')).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Compose thank-you email for Alice Johnson' }));
+    expect(
+      await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
+    ).toHaveNoViolations();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send Email for Alice Johnson' }));
 
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText(/Compose Thank-You Email — Alice Johnson/)).toBeInTheDocument();

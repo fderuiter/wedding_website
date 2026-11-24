@@ -19,6 +19,7 @@ import {
 } from '@/components/guest/GuestHelpModal';
 import { GlobalRadialGlow } from '@/components/ui/GlobalRadialGlow';
 import { MainLandmark, SiteFooter } from '@/components/ui/Layout';
+import { useStickyOffset } from '@/components/ui/useStickyOffset';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useTheme } from '@/components/ThemeProvider';
 import type { ThemePreset } from '@/lib/theme/presets';
@@ -200,22 +201,6 @@ function RootLayoutInner({
     return demoOverrides?.faqs ?? baseFaqs;
   }, [baseFaqs, demo, demoOverrides, isDemoMode]);
 
-  useLayoutEffect(() => {
-    if (isSetupPersona || !headerRef.current) return;
-
-    setMainPaddingTop(headerRef.current.offsetHeight || 64);
-
-    const resizeObserver = new ResizeObserver(() => {
-      if (headerRef.current) {
-        setMainPaddingTop(headerRef.current.offsetHeight || 64);
-      }
-    });
-
-    resizeObserver.observe(headerRef.current);
-
-    return () => resizeObserver.disconnect();
-  }, [pathname, isSetupPersona]);
-
   const normalizedPathname =
     pathname && pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
   const isHomePage = normalizedPathname === '/';
@@ -232,6 +217,36 @@ function RootLayoutInner({
     Boolean(normalizedPathname?.startsWith('/admin/dashboard/')) ||
     isSetupPage;
   const delegatesMainLandmark = isAdminDashboardPage || isSlideshowPage;
+
+  const previewRegionRef = useRef<HTMLElement>(null);
+  const isEmbeddedIframe =
+    typeof window !== 'undefined' && window !== window.parent;
+  const isInlinePreview = Boolean(
+    isPreview && !isPreviewQuery && !isEmbeddedIframe
+  );
+  const hasVisibleHeader = !isSetupPersona && !isStandalonePage;
+
+  useStickyOffset({
+    edge: 'top',
+    scope: 'document',
+    cssVar: '--header-h',
+    combineMode: 'max',
+    targetRef: headerRef,
+    containerRef: isInlinePreview ? previewRegionRef : undefined,
+    enabled: hasVisibleHeader,
+    onMeasure: setMainPaddingTop,
+  });
+
+  useLayoutEffect(() => {
+    if (hasVisibleHeader || isInlinePreview || typeof document === 'undefined') {
+      return;
+    }
+    const rootEl = document.documentElement;
+    rootEl.style.setProperty('--header-h', '0px');
+    return () => {
+      rootEl.style.removeProperty('--header-h');
+    };
+  }, [hasVisibleHeader, isInlinePreview]);
 
   const handleLogout = async () => {
     if (isDemoMode && demo) {
@@ -305,11 +320,23 @@ function RootLayoutInner({
             </div>
           ) : isPreview ? (
             <MainLandmark
+              ref={previewRegionRef}
               suppressLandmark
               role="region"
               aria-label="Live Preview"
+              data-scroll-region={isInlinePreview ? '' : undefined}
               className={bottomToolbarClearance}
-              style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}
+              style={
+                {
+                  paddingTop: isStandalonePage ? 0 : mainPaddingTop,
+                  ...(mainPaddingTop > 0
+                    ? {
+                      '--header-h': `${mainPaddingTop}px`,
+                      '--local-sticky-top': `${mainPaddingTop}px`,
+                    }
+                    : {}),
+                } as React.CSSProperties
+              }
             >
               {children}
               {isHomePage && (

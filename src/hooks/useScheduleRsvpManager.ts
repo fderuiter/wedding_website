@@ -63,6 +63,13 @@ export interface UseScheduleRsvpManagerOptions {
   onRsvpClosed?: (_message: string) => void;
 }
 
+function getStatusValidationError(status: SubEventRsvpData['status']): string | null {
+  if (status !== 'attending' && status !== 'declined') {
+    return 'Please select Attending or Declined before saving.';
+  }
+  return null;
+}
+
 function getPlusOneValidationError(
   plusOneCount: number,
   maxPlusOnes?: number | null
@@ -209,14 +216,23 @@ function buildSubmissionPayloadItem(
   meta?: EventPromptMeta
 ): SubEventRsvpSubmissionItem {
   const isDeclined = item.current.status === 'declined';
+  const resolvedStatus: 'attending' | 'declined' = isDeclined ? 'declined' : 'attending';
   const effectivePlusOneCount = isDeclined ? 0 : item.current.plusOneCount;
 
   const payloadItem: SubEventRsvpSubmissionItem = {
     subEventId: item.id,
-    status: item.current.status,
+    status: resolvedStatus,
     plusOneCount: effectivePlusOneCount,
     dietaryNotes: item.current.dietaryNotes,
   };
+
+  if (
+    !isDeclined &&
+    item.baseline.dietaryNotes.trim().length > 0 &&
+    item.current.dietaryNotes.trim().length === 0
+  ) {
+    payloadItem.clearDietaryNotes = true;
+  }
 
   const hasMealsConfigured = (meta?.mealOptions.length ?? 0) > 0;
   const hasMealValues =
@@ -286,6 +302,13 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
   const apiEndpoint = options?.apiEndpoint || '/api/rsvp';
   const sharedPlusOneNamesRef = useRef<string[]>(
     extractSharedPlusOneNames(options?.initialEvents, options?.defaultPlusOneNames)
+  );
+  const readOnlyIdsRef = useRef<Set<string>>(
+    new Set(
+      (options?.initialEvents ?? [])
+        .filter((ev) => Boolean(ev.isReadOnly))
+        .map((ev) => ev.id)
+    )
   );
   const eventMetaRef = useRef<Record<string, EventPromptMeta>>((() => {
     const meta: Record<string, EventPromptMeta> = {};
@@ -358,9 +381,11 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
 
       events.forEach((ev) => {
         if (ev.isReadOnly) {
+          readOnlyIdsRef.current.add(ev.id);
           delete eventMetaRef.current[ev.id];
           return;
         }
+        readOnlyIdsRef.current.delete(ev.id);
         eventMetaRef.current[ev.id] = {
           title: ev.title,
           mealOptions: normalizeMealOptions(ev.mealOptions),
@@ -421,6 +446,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
 
   const updateRsvp = useCallback(
     (subEventId: string, updates: Partial<SubEventRsvpData>) => {
+      if (readOnlyIdsRef.current.has(subEventId)) return;
       setBatchError(null);
       setBatchSuccessMessage(null);
 
@@ -606,6 +632,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
         item.current.status === 'declined' ? 0 : item.current.plusOneCount;
       const meta = eventMetaRef.current[subEventId];
       const validationError =
+        getStatusValidationError(item.current.status) ||
         getPlusOneValidationError(effectivePlusOneCount, optionsRef.current?.maxPlusOnes) ||
         getEventPromptValidationError(item.current, effectivePlusOneCount, meta);
       if (validationError) {
@@ -731,6 +758,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
         return {
           id: item.id,
           error:
+            getStatusValidationError(item.current.status) ||
             getPlusOneValidationError(effectiveCount, configuredMax) ||
             getEventPromptValidationError(item.current, effectiveCount, meta),
         };

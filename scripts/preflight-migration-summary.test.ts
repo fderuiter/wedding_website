@@ -449,7 +449,7 @@ CREATE INDEX "Contributor_coverFee_idx" ON "Contributor"("coverFee");
       expect(singlePendingRes.summary).toContain('ALTER TABLE "Guest" ADD COLUMN "tableNote" TEXT');
     });
 
-    it('strips POSTGRES_URL_NON_POOLING when spawning prisma migrate status, returns READY TO APPLY on clean exit 1, and fails closed on non-pending exit 1', () => {
+    it('preserves and normalizes POSTGRES_URL_NON_POOLING when spawning prisma migrate status, unsets blank values, returns READY TO APPLY on clean exit 1, and fails closed on non-pending exit 1', () => {
       const migrationDir = path.join(tmpDir, '20261122010000_add_guest_notes');
       fs.mkdirSync(migrationDir, { recursive: true });
       fs.writeFileSync(
@@ -459,9 +459,10 @@ CREATE INDEX "Contributor_coverFee_idx" ON "Contributor"("coverFee");
 
       const originalDbUrl = process.env.DATABASE_URL;
       const originalShadowUrl = process.env.POSTGRES_URL_NON_POOLING;
-      process.env.DATABASE_URL = 'postgresql://wedding:secret@localhost:5432/wedding?schema=public';
+      process.env.DATABASE_URL =
+        'postgresql://wedding:secret@pooler.internal:6543/wedding?pgbouncer=true&schema=public';
       process.env.POSTGRES_URL_NON_POOLING =
-        'postgresql://wedding:secret@localhost:5432/wedding?schema=public';
+        '"postgresql://wedding:secret@/wedding?host=/cloudsql/proj:us-central1:db&schema=public"';
 
       const spawnSpy = jest.spyOn(child_process, 'spawnSync');
       try {
@@ -489,8 +490,11 @@ CREATE INDEX "Contributor_coverFee_idx" ON "Contributor"("coverFee");
         expect(pendingRes.summary).toContain('**Pre-Flight Gate:** `READY TO APPLY` 🟡');
         expect(pendingRes.summary).toContain('20261122010000_add_guest_notes');
         const spawnedEnv = spawnSpy.mock.calls[0]?.[2]?.env;
-        expect(spawnedEnv?.POSTGRES_URL_NON_POOLING).toBeUndefined();
+        expect(spawnedEnv?.POSTGRES_URL_NON_POOLING).toBe(
+          'postgresql://wedding:secret@localhost/wedding?host=/cloudsql/proj:us-central1:db&schema=public'
+        );
 
+        process.env.POSTGRES_URL_NON_POOLING = '""';
         spawnSpy.mockReturnValueOnce({
           pid: 1235,
           output: ['', '', ''],
@@ -507,6 +511,8 @@ CREATE INDEX "Contributor_coverFee_idx" ON "Contributor"("coverFee");
 
         expect(failedRes.success).toBe(false);
         expect(failedRes.summary).toContain('**Pre-Flight Gate:** `FAILED` ❌');
+        const secondSpawnedEnv = spawnSpy.mock.calls[1]?.[2]?.env;
+        expect(secondSpawnedEnv?.POSTGRES_URL_NON_POOLING).toBeUndefined();
       } finally {
         spawnSpy.mockRestore();
         if (originalDbUrl === undefined) {
@@ -781,7 +787,7 @@ CREATE INDEX "Contributor_coverFee_idx" ON "Contributor"("coverFee");
       ).toBe(shadowDb);
     });
 
-    it('prefers POSTGRES_URL_NON_POOLING for datasource.url when DATABASE_URL is pooled during migrate deploy, status, or resolve', () => {
+    it('promotes POSTGRES_URL_NON_POOLING for datasource.url only when DATABASE_URL is pooled and POSTGRES_URL_NON_POOLING is unpooled with matching database and schema', () => {
       for (const subcommand of ['deploy', 'status', 'resolve'] as const) {
         expect(
           resolvePrismaDatasourceUrl(pooledNeon, directNeon, [
@@ -792,6 +798,67 @@ CREATE INDEX "Contributor_coverFee_idx" ON "Contributor"("coverFee");
           ])
         ).toBe(directNeon);
       }
+
+      // Promotes across distinct external pooler and direct PostgreSQL hosts when DB & schema match
+      const pooledExternal =
+        'postgresql://wedding:pass@pgbouncer.internal:6543/wedding?pgbouncer=true&schema=public';
+      const directExternal =
+        'postgresql://wedding:pass@postgres-primary.internal:5432/wedding?schema=public';
+      expect(
+        resolvePrismaDatasourceUrl(pooledExternal, directExternal, [
+          'node',
+          'prisma',
+          'migrate',
+          'deploy',
+        ])
+      ).toBe(directExternal);
+
+      // Keeps primary DATABASE_URL when POSTGRES_URL_NON_POOLING points to wedding_shadow
+      expect(
+        resolvePrismaDatasourceUrl(pooledNeon, shadowDb, ['node', 'prisma', 'migrate', 'deploy'])
+      ).toBe(pooledNeon);
+
+      // Keeps primary DATABASE_URL when POSTGRES_URL_NON_POOLING targets a different schema
+      const wrongSchemaDirect =
+        'postgresql://user:pass@ep-cool-darkness-123456.us-east-2.aws.neon.tech/wedding?sslmode=require&schema=staging';
+      expect(
+        resolvePrismaDatasourceUrl(pooledNeon, wrongSchemaDirect, [
+          'node',
+          'prisma',
+          'migrate',
+          'deploy',
+        ])
+      ).toBe(pooledNeon);
+
+      // Keeps primary DATABASE_URL when POSTGRES_URL_NON_POOLING is also pooled
+      const secondaryPooled =
+        'postgresql://user:pass@ep-other-pooler.us-east-2.aws.neon.tech/wedding?sslmode=require';
+      expect(
+        resolvePrismaDatasourceUrl(pooledNeon, secondaryPooled, [
+          'node',
+          'prisma',
+          'migrate',
+          'deploy',
+        ])
+      ).toBe(pooledNeon);
+
+      // Prevents P3025 during migrate dev when pooled DATABASE_URL + direct POSTGRES_URL_NON_POOLING share DB/schema
+      expect(
+        resolvePrismaShadowDatabaseUrl(directNeon, pooledNeon, [
+          'node',
+          'prisma',
+          'migrate',
+          'dev',
+        ])
+      ).toBeUndefined();
+      expect(
+        resolvePrismaShadowDatabaseUrl(shadowDb, pooledNeon, [
+          'node',
+          'prisma',
+          'migrate',
+          'dev',
+        ])
+      ).toBe(shadowDb);
 
       // Keeps primary DATABASE_URL when unpooled or outside deploy/status/resolve
       expect(

@@ -27,10 +27,11 @@ describe('Dropzone Component', () => {
     expect(
       screen.getByText('Drag and drop an image file here, or click to browse')
     ).toBeInTheDocument();
-    const hintElement = screen.getByText('Supports JPG, PNG, and ICO files up to 5MB');
-    expect(hintElement).toBeInTheDocument();
+    const hint = screen.getByText('Supports JPG, PNG, and ICO files up to 5MB');
+    expect(hint).toBeInTheDocument();
     const dropzone = screen.getByRole('button', { name: defaultPrompt });
-    expect(dropzone.contains(hintElement)).toBe(false);
+    expect(dropzone.contains(hint)).toBe(false);
+    expect(hint.parentElement).toHaveClass('pointer-events-none');
     expect(dropzone).toHaveAccessibleDescription('Supports JPG, PNG, and ICO files up to 5MB');
     expect(
       await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
@@ -135,6 +136,12 @@ describe('Dropzone Component', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Uploading image...' })).toBeInTheDocument();
     });
+    expect(
+      screen.queryByText('Supports JPG, PNG, and ICO files up to 5MB')
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Uploading image...' })).not.toHaveAttribute(
+      'aria-describedby'
+    );
     expect(
       await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
     ).toHaveNoViolations();

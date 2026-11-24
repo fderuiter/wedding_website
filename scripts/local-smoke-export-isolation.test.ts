@@ -67,6 +67,12 @@ describe('local smoke isolation, staged static exports, and untracked next-env.d
       );
       expect(containerScriptRaw).not.toMatch(/lsof\s+-ti:3000/);
       expect(containerScriptRaw).not.toMatch(/kill\s+-9/);
+      expect(containerScriptRaw).toContain(
+        'Expected unauthenticated /guest/login SSR response to redact AppConfig seoTitle'
+      );
+      expect(containerScriptRaw).toMatch(
+        /const inflightPromise = httpRequest\('\/guest\/login',\s*\{\s*headers:\s*\{\s*Cookie:\s*guestCookie,?\s*\}/
+      );
     });
 
     it('allocates distinct free loopback ports and honors valid overrides', async () => {

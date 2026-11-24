@@ -890,45 +890,66 @@ function checkDockerComposeFile(
     }
   }
 
+  for (const forbiddenBuildService of ['migration', 'app-standby']) {
+    const svcNode = servicesNode.get(forbiddenBuildService, true);
+    const buildNode = isMap(svcNode) ? svcNode.get('build', true) : undefined;
+    const hasBuild =
+      buildNode !== undefined && (!isScalar(buildNode) || buildNode.value !== null);
+    if (hasBuild) {
+      const offset =
+        isMap(buildNode) || isSeq(buildNode) || isScalar(buildNode)
+          ? (buildNode.range?.[0] ?? 0)
+          : 0;
+      const lineNumber = lineCounter.linePos(offset).line;
+      violations.push({
+        filePath: relPath,
+        lineNumber,
+        lineContent: (lines[lineNumber - 1] ?? '').trim(),
+        imageRef: `${forbiddenBuildService}.build`,
+        reason: `${relPath} service "${forbiddenBuildService}" must not configure "build"; keep "app" as the sole image build owner and reuse wedding-website:latest via pull_policy: never.`,
+      });
+    }
+  }
+
   if (relPath === 'docker-compose.ci.yml') {
-    for (const requiredService of ['migration', 'app']) {
-      const svcNode = servicesNode.get(requiredService, true);
-      const buildNode = isMap(svcNode) ? svcNode.get('build', true) : undefined;
-      const cacheFromNode = isMap(buildNode) ? buildNode.get('cache_from', true) : undefined;
-      const hasValidGhaCacheFrom =
-        isSeq(cacheFromNode) &&
-        cacheFromNode.items.some(
-          (item) =>
-            isScalar(item) &&
-            typeof item.value === 'string' &&
-            item.value.includes('type=gha') &&
-            item.value.includes('${GHA_CACHE_SCOPE:-app-amd64}')
-        );
+    const appSvcNode = servicesNode.get('app', true);
+    const buildNode = isMap(appSvcNode) ? appSvcNode.get('build', true) : undefined;
+    const cacheFromNode = isMap(buildNode) ? buildNode.get('cache_from', true) : undefined;
+    const hasValidGhaCacheFrom =
+      isSeq(cacheFromNode) &&
+      cacheFromNode.items.some(
+        (item) =>
+          isScalar(item) &&
+          typeof item.value === 'string' &&
+          item.value.includes('type=gha') &&
+          item.value.includes('${GHA_CACHE_SCOPE:-app-amd64}')
+      );
 
-      if (!hasValidGhaCacheFrom) {
-        violations.push({
-          filePath: relPath,
-          lineNumber: 1,
-          lineContent: '',
-          imageRef: `${requiredService}.build.cache_from`,
-          reason: `docker-compose.ci.yml service "${requiredService}" must configure build.cache_from with "type=gha,scope=\${GHA_CACHE_SCOPE:-app-amd64}".`,
-        });
-      }
+    if (!hasValidGhaCacheFrom) {
+      violations.push({
+        filePath: relPath,
+        lineNumber: 1,
+        lineContent: '',
+        imageRef: 'app.build.cache_from',
+        reason:
+          'docker-compose.ci.yml service "app" must configure build.cache_from with "type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64}".',
+      });
+    }
 
-      const cacheToNode = isMap(buildNode) ? buildNode.get('cache_to', true) : undefined;
-      if (cacheToNode !== undefined) {
-        const offset = isMap(cacheToNode) || isSeq(cacheToNode) || isScalar(cacheToNode)
+    const cacheToNode = isMap(buildNode) ? buildNode.get('cache_to', true) : undefined;
+    if (cacheToNode !== undefined) {
+      const offset =
+        isMap(cacheToNode) || isSeq(cacheToNode) || isScalar(cacheToNode)
           ? (cacheToNode.range?.[0] ?? 0)
           : 0;
-        const lineNumber = lineCounter.linePos(offset).line;
-        violations.push({
-          filePath: relPath,
-          lineNumber,
-          lineContent: (lines[lineNumber - 1] ?? '').trim(),
-          imageRef: `${requiredService}.build.cache_to`,
-          reason: `docker-compose.ci.yml service "${requiredService}" must not configure build.cache_to.`,
-        });
-      }
+      const lineNumber = lineCounter.linePos(offset).line;
+      violations.push({
+        filePath: relPath,
+        lineNumber,
+        lineContent: (lines[lineNumber - 1] ?? '').trim(),
+        imageRef: 'app.build.cache_to',
+        reason: 'docker-compose.ci.yml service "app" must not configure build.cache_to.',
+      });
     }
   }
 
@@ -1742,11 +1763,6 @@ export function checkDockerBuild(
         'package-lock.json',
         parsedRootLock,
         rootManifest.overrides,
-        {
-          ...(rootManifest.dependencies ?? {}),
-          ...(rootManifest.devDependencies ?? {}),
-          ...(rootManifest.optionalDependencies ?? {}),
-        },
         violations
       );
     } catch (err) {
@@ -1768,11 +1784,6 @@ export function checkDockerBuild(
         'docker/prisma-cli/package-lock.json',
         parsedCliLock,
         cliManifest.overrides,
-        {
-          ...(cliManifest.dependencies ?? {}),
-          ...(cliManifest.devDependencies ?? {}),
-          ...(cliManifest.optionalDependencies ?? {}),
-        },
         violations
       );
     } catch (err) {
@@ -2148,28 +2159,18 @@ function validateLockfilePeerDependencies(
   lockRelPath: string,
   lockData: ParsedLockfile,
   manifestOverrides: Record<string, unknown> | undefined,
-  manifestRootDeps: Record<string, string>,
   violations: Violation[]
 ): void {
   const packages = lockData.packages;
   if (!packages) {
     return;
   }
-  const rootLockNode = packages[''] ?? {};
-  const rootDeps: Record<string, string> = {
-    ...manifestRootDeps,
-    ...(rootLockNode.dependencies ?? {}),
-    ...(rootLockNode.devDependencies ?? {}),
-    ...(rootLockNode.optionalDependencies ?? {}),
-  };
 
   for (const [pkgPath, pkgNode] of Object.entries(packages)) {
     if (!pkgPath || !pkgNode.peerDependencies || pkgNode.resolved?.startsWith('file:')) {
       continue;
     }
     const pkgName = extractPackageNameFromLockPath(pkgPath);
-    const isTopLevelNode = !pkgPath.slice('node_modules/'.length).includes('node_modules/');
-    const isDirectRootDep = isTopLevelNode && Object.prototype.hasOwnProperty.call(rootDeps, pkgName);
 
     for (const [peerName, peerRange] of Object.entries(pkgNode.peerDependencies)) {
       const isOptional = pkgNode.peerDependenciesMeta?.[peerName]?.optional === true;
@@ -2209,10 +2210,6 @@ function validateLockfilePeerDependencies(
           resolved.node.version
         )
       ) {
-        continue;
-      }
-
-      if (!isDirectRootDep && Object.prototype.hasOwnProperty.call(rootDeps, peerName)) {
         continue;
       }
 

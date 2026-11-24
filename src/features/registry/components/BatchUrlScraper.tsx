@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { apiClient } from '@/lib/apiClient';
+import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useFormPersist } from '@/hooks/useFormPersist';
 import { RegistryPreviewTable, PreviewRegistryItem } from './RegistryPreviewTable';
@@ -227,15 +228,21 @@ export const BatchUrlScraper: React.FC<BatchUrlScraperProps> = ({ onSuccess }) =
               Reset Draft
             </button>
           )}
-          <button
+          <Button
             type="button"
+            variant="secondary"
             onClick={handleScrape}
             disabled={urlCount === 0 || urlCount > 20 || isScraping || isSubmitting}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-amber-700 hover:bg-amber-800 dark:bg-amber-700 dark:hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-md shadow-sm transition-colors"
+            className="gap-2 shadow-sm"
           >
             {isScraping ? (
               <>
-                <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                <svg
+                  aria-hidden="true"
+                  className="animate-spin h-4 w-4 text-current"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                 </svg>
@@ -244,7 +251,7 @@ export const BatchUrlScraper: React.FC<BatchUrlScraperProps> = ({ onSuccess }) =
             ) : (
               `Scrape Product URLs (${urlCount})`
             )}
-          </button>
+          </Button>
         </div>
       </div>
 

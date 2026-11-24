@@ -67,6 +67,26 @@ describe('Dialog', () => {
     });
   });
 
+  test('marks dialog body container with data-scroll-region by default and supports scrollRegion=false', () => {
+    const { getByRole, rerender } = render(
+      <Dialog isOpen={true} onClose={() => {}} title="Scrollable Dialog">
+        <div data-testid="dialog-inner-child">Body</div>
+      </Dialog>
+    );
+
+    const dialog = getByRole('dialog');
+    const scrollRegionEl = dialog.querySelector('[data-scroll-region]');
+    expect(scrollRegionEl).not.toBeNull();
+
+    rerender(
+      <Dialog isOpen={true} onClose={() => {}} title="Scrollable Dialog" scrollRegion={false}>
+        <div data-testid="dialog-inner-child">Body</div>
+      </Dialog>
+    );
+
+    expect(getByRole('dialog').querySelector('[data-scroll-region]')).toBeNull();
+  });
+
   test('prompts via ToastProvider.confirm when isDirty=true on Escape or outside click and closes cleanly when isDirty=false', async () => {
     const onClose = jest.fn();
 
