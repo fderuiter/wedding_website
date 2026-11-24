@@ -19,6 +19,10 @@ import {
   signPhotoUploadSessionToken,
   verifyPhotoQrLinkToken,
 } from '@/core/auth/photoUploadToken';
+import {
+  resolveEdgeRequestSubdomain,
+  verifyEdgeTenantClaims,
+} from '@/core/auth/tenantClaims';
 import { env } from '@/env';
 import { isProtectedRoute } from '@/lib/routes';
 import { timingSafeEqualJS } from '@/utils/crypto';
@@ -125,6 +129,9 @@ export async function middleware(request: NextRequest) {
   ) {
     const rawQrToken = request.nextUrl.searchParams.get(PHOTO_QR_QUERY_PARAM);
     const verifiedQr = await verifyPhotoQrLinkToken(rawQrToken);
+    const requestSubdomain = verifiedQr ? await resolveEdgeRequestSubdomain(request) : null;
+    const isQrValidForTenant =
+      Boolean(verifiedQr) && verifyEdgeTenantClaims(verifiedQr!, requestSubdomain);
     const cleanTargetUrl = new URL('/photos', request.url);
     const remainingParams = new URLSearchParams(request.nextUrl.search);
     remainingParams.delete(PHOTO_QR_QUERY_PARAM);
@@ -133,8 +140,14 @@ export async function middleware(request: NextRequest) {
     }
     cleanTargetUrl.search = remainingParams.toString();
 
-    if (verifiedQr) {
-      const sessionToken = await signPhotoUploadSessionToken({ v: verifiedQr.v });
+    if (isQrValidForTenant && verifiedQr) {
+      const sessionToken = await signPhotoUploadSessionToken({
+        v: verifiedQr.v,
+        ...(verifiedQr.siteId !== undefined ? { siteId: verifiedQr.siteId } : {}),
+        ...('subdomain' in verifiedQr && verifiedQr.subdomain !== undefined
+          ? { subdomain: verifiedQr.subdomain }
+          : {}),
+      });
       const redirectResponse = NextResponse.redirect(cleanTargetUrl, { status: 303 });
       setPhotoSessionCookieOnResponse(redirectResponse, sessionToken);
       return redirectResponse;

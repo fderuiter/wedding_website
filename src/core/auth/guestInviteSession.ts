@@ -255,7 +255,10 @@ function isExcludedGuestCallbackRoute(callbackUrl: string): boolean {
   );
 }
 
-async function resolveActivePhotoTokenVersion(expectedVersion?: number): Promise<number> {
+async function resolveActivePhotoTokenVersion(
+  expectedVersion?: number,
+  siteId?: string
+): Promise<number> {
   if (
     typeof expectedVersion === 'number' &&
     Number.isInteger(expectedVersion) &&
@@ -272,10 +275,11 @@ async function resolveActivePhotoTokenVersion(expectedVersion?: number): Promise
       return 1;
     }
 
+    const targetConfigId = siteId && siteId.trim() ? siteId.trim() : 'global';
     let record: AppConfigTokenVersionRecord | null | undefined;
     if (typeof delegate.findUnique === 'function') {
       record = await delegate.findUnique({
-        where: { id: 'global' },
+        where: { id: targetConfigId },
         select: { guestPhotoQrTokenVersion: true },
       });
     }
@@ -296,8 +300,9 @@ async function resolveActivePhotoTokenVersion(expectedVersion?: number): Promise
 }
 
 /**
- * Retrieves and verifies the active photo-scoped session cookie against the current
- * database QR token rotation version. Returns null when missing, expired, or rotated.
+ * Retrieves and verifies the active photo-scoped session cookie against tenant claims
+ * (when `MULTISITE_ENABLED` is active) and the current database QR token rotation version.
+ * Returns null when missing, expired, cross-tenant, or rotated.
  */
 export async function getActivePhotoUploadSession(
   req?: NextRequest,
@@ -314,7 +319,21 @@ export async function getActivePhotoUploadSession(
     return null;
   }
 
-  const activeVersion = await resolveActivePhotoTokenVersion(expectedVersion);
+  if (!req) {
+    const requestSubdomain = await resolveEdgeRequestSubdomain();
+    if (!verifyEdgeTenantClaims(signedPayload, requestSubdomain)) {
+      return null;
+    }
+  }
+
+  if (!(await verifyNodeTenantClaims(signedPayload, req))) {
+    return null;
+  }
+
+  const activeVersion = await resolveActivePhotoTokenVersion(
+    expectedVersion,
+    signedPayload.siteId
+  );
   if (signedPayload.v !== activeVersion) {
     return null;
   }

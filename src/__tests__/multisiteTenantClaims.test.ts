@@ -2,8 +2,9 @@
 
 import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { POST as postAdminLogin } from '@/app/api/admin/login/route';
+import { GET as getPhotoQr } from '@/app/api/admin/photos/qr/route';
 import { POST as postAdminSetup } from '@/app/api/admin/setup/route';
 import { POST as postGuestLogin } from '@/app/api/guest/login/route';
 import { GET as getValidateCode } from '@/app/api/registry/validate-code/route';
@@ -27,14 +28,23 @@ import {
 } from '@/core/auth/guestHeaderSignature';
 import {
   enforceActiveGuestPageSession,
+  getActivePhotoUploadSession,
   getGuestInviteSession,
   GUEST_INVITE_COOKIE,
   signGuestInviteSessionToken,
   verifyGuestInviteSessionToken,
 } from '@/core/auth/guestInviteSession';
+import {
+  GUEST_PHOTO_COOKIE,
+  PHOTO_QR_QUERY_PARAM,
+  signPhotoUploadSessionToken,
+  verifyPhotoQrLinkToken,
+  verifyPhotoUploadSessionToken,
+} from '@/core/auth/photoUploadToken';
 import { prisma } from '@/lib/prisma';
 import { middleware } from '@/middleware';
 import { resetRateLimitsForTesting } from '@/utils/rateLimit';
+import { withApiMiddleware } from '@/utils/withApiMiddleware';
 
 jest.mock('next/headers', () => ({
   cookies: jest.fn(),
@@ -307,6 +317,55 @@ describe('Multisite Cookie Claims, Forged Header Defenses & Metadata Host Trust'
         siteId: 'site-new',
         subdomain: 'newcouple',
       });
+
+      // 6. GET /api/admin/photos/qr -> photo_qr_link carrying siteId & subdomain
+      const aliceQrReq = new NextRequest('http://alice.wedding.example/api/admin/photos/qr', {
+        headers: {
+          host: 'alice.wedding.example',
+          cookie: `${ADMIN_COOKIE}=${adminToken}`,
+        },
+      });
+      const aliceQrRes = await getPhotoQr(aliceQrReq);
+      expect(aliceQrRes.status).toBe(200);
+      const aliceQrJson = await aliceQrRes.json();
+      const aliceQrToken = new URL(aliceQrJson.uploadUrl).searchParams.get(PHOTO_QR_QUERY_PARAM);
+      await expect(verifyPhotoQrLinkToken(aliceQrToken)).resolves.toMatchObject({
+        purpose: 'photo_qr_link',
+        siteId: 'site-alice',
+        subdomain: 'alice',
+      });
+
+      // Exchanging Alice's QR link succeeds on alice.wedding.example and stamps tenant claims on guest_photo_session
+      const aliceQrExchangeReq = new NextRequest(
+        `http://alice.wedding.example/photos?qr=${encodeURIComponent(aliceQrToken || '')}`,
+        { headers: { host: 'alice.wedding.example' } }
+      );
+      const aliceQrExchangeRes = await middleware(aliceQrExchangeReq);
+      expect(aliceQrExchangeRes.status).toBe(303);
+      expect(aliceQrExchangeRes.headers.get('location')).toBe(
+        'http://alice.wedding.example/photos?tab=guest'
+      );
+      const alicePhotoCookie = extractSetCookieToken(
+        aliceQrExchangeRes.headers.get('set-cookie'),
+        GUEST_PHOTO_COOKIE
+      );
+      await expect(verifyPhotoUploadSessionToken(alicePhotoCookie)).resolves.toMatchObject({
+        purpose: 'photo_upload_session',
+        siteId: 'site-alice',
+        subdomain: 'alice',
+      });
+
+      // Replaying Alice's QR link on bob.wedding.example is rejected without minting a cookie
+      const bobQrReplayReq = new NextRequest(
+        `http://bob.wedding.example/photos?qr=${encodeURIComponent(aliceQrToken || '')}`,
+        { headers: { host: 'bob.wedding.example' } }
+      );
+      const bobQrReplayRes = await middleware(bobQrReplayReq);
+      expect(bobQrReplayRes.status).toBe(303);
+      expect(bobQrReplayRes.headers.get('location')).toBe(
+        'http://bob.wedding.example/guest/login?callbackUrl=%2Fphotos%3Ftab%3Dguest'
+      );
+      expect(bobQrReplayRes.headers.get('set-cookie')).toBeNull();
     });
 
     it('rejects Tenant A cookies on Tenant B across Edge middleware and Node auth helpers when MULTISITE_ENABLED=true', async () => {
@@ -395,6 +454,61 @@ describe('Multisite Cookie Claims, Forged Header Defenses & Metadata Host Trust'
       });
       expect((await middleware(bobAdminReq)).status).toBe(303);
       await expect(isAdminRequest(bobAdminReq)).resolves.toBe(false);
+
+      // guest_photo_session valid on Tenant A, rejected on Tenant B across Edge, Node helper, and withApiMiddleware
+      const alicePhotoToken = await signPhotoUploadSessionToken({
+        v: 1,
+        siteId: 'site-alice',
+        subdomain: 'alice',
+      });
+      const alicePhotoReq = new NextRequest('http://alice.wedding.example/photos', {
+        headers: {
+          host: 'alice.wedding.example',
+          cookie: `${GUEST_PHOTO_COOKIE}=${alicePhotoToken}`,
+        },
+      });
+      expect((await middleware(alicePhotoReq)).status).toBe(200);
+      await expect(getActivePhotoUploadSession(alicePhotoReq)).resolves.toMatchObject({
+        purpose: 'photo_upload_session',
+        siteId: 'site-alice',
+        subdomain: 'alice',
+      });
+
+      const bobPhotoReq = new NextRequest('http://bob.wedding.example/photos', {
+        headers: {
+          host: 'bob.wedding.example',
+          cookie: `${GUEST_PHOTO_COOKIE}=${alicePhotoToken}`,
+        },
+      });
+      expect((await middleware(bobPhotoReq)).status).toBe(303);
+      await expect(getActivePhotoUploadSession(bobPhotoReq)).resolves.toBeNull();
+
+      const directUploadGuard = withApiMiddleware(async () =>
+        NextResponse.json({ success: true }, { status: 201 })
+      );
+      const bobDirectUploadReq = new NextRequest(
+        'http://bob.wedding.example/api/guest/photos/upload',
+        {
+          method: 'POST',
+          headers: {
+            host: 'bob.wedding.example',
+            cookie: `${GUEST_PHOTO_COOKIE}=${alicePhotoToken}`,
+          },
+        }
+      );
+      expect((await directUploadGuard(bobDirectUploadReq)).status).toBe(401);
+
+      const bobDirectInviteUploadReq = new NextRequest(
+        'http://bob.wedding.example/api/guest/photos/upload',
+        {
+          method: 'POST',
+          headers: {
+            host: 'bob.wedding.example',
+            cookie: `${GUEST_INVITE_COOKIE}=${aliceInviteToken}`,
+          },
+        }
+      );
+      expect((await directUploadGuard(bobDirectInviteUploadReq)).status).toBe(401);
     });
 
     it('rejects tokens missing subdomain/siteId claims or carrying mismatched siteId when MULTISITE_ENABLED=true, while preserving single-site tokens when MULTISITE_ENABLED=false', async () => {

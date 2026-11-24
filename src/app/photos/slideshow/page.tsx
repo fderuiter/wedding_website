@@ -8,6 +8,7 @@ import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { enforceActiveGuestPageSession } from '@/core/auth/guestInviteSession';
 import { buildSignedPhotoUploadUrl } from '@/core/auth/photoUploadToken';
+import { resolveTenantClaimsForSigning } from '@/core/auth/tenantClaims.node';
 import {
   isHostAllowed,
   resolveRequestHost,
@@ -114,7 +115,12 @@ export default async function PhotosSlideshowPage() {
     }
 
     try {
-      const signed = await buildSignedPhotoUploadUrl(origin, config.guestPhotoQrTokenVersion);
+      const tenantClaims = await resolveTenantClaimsForSigning(undefined, config);
+      const signed = await buildSignedPhotoUploadUrl(
+        origin,
+        config.guestPhotoQrTokenVersion,
+        tenantClaims
+      );
       uploadUrl = signed.uploadUrl;
     } catch {
       uploadUrl = origin ? `${origin}/photos?tab=guest` : '/photos?tab=guest';
