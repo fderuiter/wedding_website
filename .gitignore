@@ -14,14 +14,12 @@
 /.next-export/
 /.turbo/
 /out/
-out/
 /.api-backup-export
 next-env.d.ts
 
 # Production
 /build
 /storybook-static
-storybook-static/
 
 # Misc
 .DS_Store
