@@ -1,8 +1,11 @@
 import { formatCurrency } from '@/utils/intl';
+import { withBasePath } from '@/lib/basePath';
 import {
   cleanOptionalSetupText,
   hasCustomStoryText,
   hasNonPlaceholderVenueDetails,
+  resolveSetupCopyField,
+  synthesizeSetupStarterCopy,
 } from '@/lib/setupCopy';
 import { isValidArchetypeId, buildArchetypeSeedSnapshot } from '../seeds';
 import type {
@@ -257,38 +260,62 @@ export async function handleAdminWorkflowRoutes(
         config.partner2Name = partner2Name;
         config.brideName = partner1Name;
         config.groomName = partner2Name;
-        if (typeof body.weddingDate === 'string' && body.weddingDate.trim()) {
-          config.weddingDate = body.weddingDate.trim();
-        }
+        const resolvedWeddingDate =
+          typeof body.weddingDate === 'string' && body.weddingDate.trim()
+            ? body.weddingDate.trim()
+            : config.weddingDate;
+        const resolvedTimezone =
+          typeof body.timezone === 'string' && body.timezone.trim()
+            ? body.timezone.trim()
+            : config.timezone;
+        const cleanedVenueName =
+          body.venueName !== undefined
+            ? cleanOptionalSetupText(body.venueName)
+            : config.venueName;
+        const cleanedVenueAddress =
+          body.venueAddress !== undefined
+            ? cleanOptionalSetupText(body.venueAddress)
+            : config.venueAddress;
+        const cleanedVenueCity =
+          body.venueCity !== undefined
+            ? cleanOptionalSetupText(body.venueCity)
+            : config.venueCity;
+        const cleanedVenueState =
+          body.venueState !== undefined
+            ? cleanOptionalSetupText(body.venueState)
+            : config.venueState;
+        const cleanedVenueZip =
+          body.venueZip !== undefined
+            ? cleanOptionalSetupText(body.venueZip)
+            : config.venueZip;
+        const starterCopy = synthesizeSetupStarterCopy({
+          partner1Name,
+          partner2Name,
+          weddingDate: resolvedWeddingDate,
+          timezone: resolvedTimezone,
+          venueName: cleanedVenueName,
+          venueCity: cleanedVenueCity,
+          venueState: cleanedVenueState,
+        });
+
+        config.weddingDate = resolvedWeddingDate;
+        config.timezone = resolvedTimezone;
         if (typeof body.baseUrl === 'string' && body.baseUrl.trim()) {
           config.baseUrl = body.baseUrl.trim();
         }
         if (typeof body.contactEmail === 'string') {
           config.contactEmail = body.contactEmail.trim();
         }
-        if (typeof body.venueName === 'string') {
-          config.venueName = cleanOptionalSetupText(body.venueName);
-        }
-        if (typeof body.venueAddress === 'string') {
-          config.venueAddress = cleanOptionalSetupText(body.venueAddress);
-        }
-        if (typeof body.venueCity === 'string') {
-          config.venueCity = cleanOptionalSetupText(body.venueCity);
-        }
-        if (typeof body.venueState === 'string') {
-          config.venueState = cleanOptionalSetupText(body.venueState);
-        }
-        if (typeof body.venueZip === 'string') {
-          config.venueZip = cleanOptionalSetupText(body.venueZip);
-        }
+        config.venueName = cleanedVenueName;
+        config.venueAddress = cleanedVenueAddress;
+        config.venueCity = cleanedVenueCity;
+        config.venueState = cleanedVenueState;
+        config.venueZip = cleanedVenueZip;
         if (typeof body.latitude === 'number' && Number.isFinite(body.latitude)) {
           config.latitude = body.latitude;
         }
         if (typeof body.longitude === 'number' && Number.isFinite(body.longitude)) {
           config.longitude = body.longitude;
-        }
-        if (typeof body.timezone === 'string' && body.timezone.trim()) {
-          config.timezone = body.timezone.trim();
         }
         if (typeof body.themePreset === 'string' && body.themePreset.trim()) {
           config.themePreset = body.themePreset.trim();
@@ -299,29 +326,37 @@ export async function handleAdminWorkflowRoutes(
         if (typeof body.colorSecondary === 'string' && body.colorSecondary.trim()) {
           config.colorSecondary = body.colorSecondary.trim();
         }
-        if (typeof body.heroSubtitle === 'string') {
-          config.heroSubtitle = body.heroSubtitle.trim();
-        }
-        if (typeof body.storyText === 'string') {
-          config.storyText = cleanOptionalSetupText(body.storyText);
-        }
-        if (typeof body.venueDescription === 'string') {
+        if (body.venueDescription !== undefined) {
           config.venueDescription = cleanOptionalSetupText(body.venueDescription);
         }
-        if (typeof body.travelAdvice === 'string') {
+        if (body.travelAdvice !== undefined) {
           config.travelAdvice = cleanOptionalSetupText(body.travelAdvice);
         }
-        if (typeof body.seoDescription === 'string') {
-          config.seoDescription = body.seoDescription.trim();
-        }
-        config.heroTitle =
-          typeof body.heroTitle === 'string' && body.heroTitle.trim()
-            ? body.heroTitle.trim()
-            : `${partner1Name} & ${partner2Name}`;
-        config.seoTitle =
-          typeof body.seoTitle === 'string' && body.seoTitle.trim()
-            ? body.seoTitle.trim()
-            : `${partner1Name} & ${partner2Name} Wedding`;
+        config.storyText = resolveSetupCopyField(
+          body.storyText,
+          starterCopy.storyText,
+          'storyText',
+        );
+        config.heroTitle = resolveSetupCopyField(
+          body.heroTitle,
+          starterCopy.heroTitle,
+          'heroTitle',
+        );
+        config.heroSubtitle = resolveSetupCopyField(
+          body.heroSubtitle,
+          starterCopy.heroSubtitle,
+          'heroSubtitle',
+        );
+        config.seoTitle = resolveSetupCopyField(
+          body.seoTitle,
+          starterCopy.seoTitle,
+          'seo',
+        );
+        config.seoDescription = resolveSetupCopyField(
+          body.seoDescription,
+          starterCopy.seoDescription,
+          'seo',
+        );
         config.setupCompleted = requestedSetupCompleted;
         draft.setupStep2Saved = !requestedSetupCompleted;
         if (requestedSetupCompleted) {
@@ -409,6 +444,7 @@ export async function handleAdminWorkflowRoutes(
       !Number.isNaN(new Date(config.weddingDate).getTime());
     const weddingDetailsCompleted =
       !snapshot.isSetupMode &&
+      config.setupCompleted !== false &&
       Boolean(
         config.partner1Name.trim() &&
           config.partner2Name.trim() &&
@@ -1142,6 +1178,7 @@ export async function handleAdminWorkflowRoutes(
 
   if (pathname === '/api/admin/photos/qr') {
     const origin = new URL(request.url).origin;
+    const photosPath = withBasePath('/photos');
     if (method === 'GET') {
       const snapshot = store.getSnapshot();
       const cfg = getActiveAppConfig(snapshot);
@@ -1149,7 +1186,7 @@ export async function handleAdminWorkflowRoutes(
       const autoApproveGuestPhotos = Boolean(cfg.autoApproveGuestPhotos);
       return wrapMiddlewareJson({
         success: true,
-        uploadUrl: `${origin}/photos?qr=demo-signed-qr-v${tokenVersion}`,
+        uploadUrl: `${origin}${photosPath}?qr=demo-signed-qr-v${tokenVersion}`,
         tokenVersion,
         autoApproveGuestPhotos,
       });
@@ -1181,7 +1218,7 @@ export async function handleAdminWorkflowRoutes(
 
       return wrapMiddlewareJson({
         success: true,
-        uploadUrl: `${origin}/photos?qr=demo-signed-qr-v${result.tokenVersion}`,
+        uploadUrl: `${origin}${photosPath}?qr=demo-signed-qr-v${result.tokenVersion}`,
         tokenVersion: result.tokenVersion,
         autoApproveGuestPhotos: result.autoApproveGuestPhotos,
       });
@@ -1901,12 +1938,16 @@ export async function handleAdminWorkflowRoutes(
         ...ev,
         accesses: snapshot.subEventAccess.filter((a) => a.subEventId === ev.id),
       }));
-      const invitationCodes = snapshot.invitationCode.map((inv) => ({
-        ...inv,
-        subEventAccesses: snapshot.subEventAccess.filter(
+      const invitationCodes = snapshot.invitationCode.map((inv) => {
+        const subEventAccesses = snapshot.subEventAccess.filter(
           (a) => a.invitationCodeId === inv.id,
-        ),
-      }));
+        );
+        return {
+          ...inv,
+          allowedSubEventIds: subEventAccesses.map((a) => a.subEventId),
+          subEventAccesses,
+        };
+      });
       return wrapMiddlewareJson({
         subEvents,
         invitationCodes,
@@ -1916,8 +1957,38 @@ export async function handleAdminWorkflowRoutes(
 
     if (method === 'POST' || method === 'PUT') {
       const body = await readJsonBody(request);
-      const subEventId =
-        typeof body.subEventId === 'string' ? body.subEventId : '';
+      if (
+        method === 'PUT' &&
+        typeof body.invitationCodeId === 'string' &&
+        Array.isArray(body.allowedSubEventIds)
+      ) {
+        const invId = body.invitationCodeId;
+        const allowedIds = new Set(
+          body.allowedSubEventIds.filter((id): id is string => typeof id === 'string'),
+        );
+        const count = store.mutate((draft) => {
+          const nowIso = new Date().toISOString();
+          draft.subEventAccess = draft.subEventAccess.filter(
+            (a) => a.invitationCodeId !== invId,
+          );
+          for (const subEventId of allowedIds) {
+            draft.subEventAccess.push({
+              id: generateDemoId('acc'),
+              subEventId,
+              invitationCodeId: invId,
+              createdAt: nowIso,
+            });
+          }
+          return allowedIds.size;
+        });
+        return wrapMiddlewareJson({ success: true, count, updatedCount: count });
+      }
+
+      const subEventIds = Array.isArray(body.subEventIds)
+        ? body.subEventIds.filter((id): id is string => typeof id === 'string' && Boolean(id))
+        : typeof body.subEventId === 'string' && body.subEventId
+          ? [body.subEventId]
+          : [];
       const invIds = Array.isArray(body.invitationCodeIds)
         ? body.invitationCodeIds.filter(
           (id): id is string => typeof id === 'string',
@@ -1929,22 +2000,26 @@ export async function handleAdminWorkflowRoutes(
 
       const count = store.mutate((draft) => {
         const nowIso = new Date().toISOString();
+        const targetInvIds =
+          invIds.length > 0 ? invIds : draft.invitationCode.map((inv) => inv.id);
         let changed = 0;
-        for (const invId of invIds) {
-          const idx = draft.subEventAccess.findIndex(
-            (a) => a.subEventId === subEventId && a.invitationCodeId === invId,
-          );
-          if (grant && idx < 0 && subEventId) {
-            draft.subEventAccess.push({
-              id: generateDemoId('acc'),
-              subEventId,
-              invitationCodeId: invId,
-              createdAt: nowIso,
-            });
-            changed += 1;
-          } else if (!grant && idx >= 0) {
-            draft.subEventAccess.splice(idx, 1);
-            changed += 1;
+        for (const subEventId of subEventIds) {
+          for (const invId of targetInvIds) {
+            const idx = draft.subEventAccess.findIndex(
+              (a) => a.subEventId === subEventId && a.invitationCodeId === invId,
+            );
+            if (grant && idx < 0 && subEventId) {
+              draft.subEventAccess.push({
+                id: generateDemoId('acc'),
+                subEventId,
+                invitationCodeId: invId,
+                createdAt: nowIso,
+              });
+              changed += 1;
+            } else if (!grant && idx >= 0) {
+              draft.subEventAccess.splice(idx, 1);
+              changed += 1;
+            }
           }
         }
         return changed;
@@ -2053,18 +2128,57 @@ export async function handleAdminWorkflowRoutes(
       const attending = rsvps.filter((r) => r.status === 'attending');
       const declined = rsvps.filter((r) => r.status === 'declined');
       const plusOnes = attending.reduce((s, r) => s + r.plusOneCount, 0);
+      const invitedCount = ev.isPrivate
+        ? snapshot.subEventAccess.filter(
+          (a) => a.subEventId === ev.id && eligibleInviteIds.has(a.invitationCodeId),
+        ).length
+        : invitations.length;
+      const pendingCount = Math.max(
+        0,
+        invitedCount - attending.length - declined.length,
+      );
+      const mealCounts = (ev.mealOptions ?? []).map((opt) => ({
+        optionId: opt.id,
+        label: opt.label,
+        dietaryTags: opt.dietaryTags ?? [],
+        count: attending.reduce(
+          (sum, r) =>
+            sum + (r.mealSelections ?? []).filter((selId) => selId === opt.id).length,
+          0,
+        ),
+      }));
       return {
         id: ev.id,
         subEventId: ev.id,
         title: ev.title,
+        isPrivate: ev.isPrivate,
+        invitedCount,
         attendingHouseholds: attending.length,
+        attendingCount: attending.length,
         attendingHeadcount: attending.length + plusOnes,
         attendingPlusOnes: plusOnes,
         declinedHouseholds: declined.length,
+        declinedCount: declined.length,
         pendingHouseholds: Math.max(
           0,
           invitations.length - attending.length - declined.length,
         ),
+        pendingCount,
+        kidsCount: 0,
+        mealCounts,
+        dietaryCounts: {
+          totalWithRestrictions: 0,
+          glutenFree: 0,
+          vegetarian: 0,
+          vegan: 0,
+          dairyFree: 0,
+          nutFree: 0,
+          halal: 0,
+          kosher: 0,
+          other: 0,
+          kids: 0,
+        },
+        questionBreakdowns: [],
       };
     });
 

@@ -300,4 +300,22 @@ describe('DemoToolbar & DemoProvider', () => {
     expect(darkResults).toHaveNoViolations();
     document.documentElement.classList.remove('dark');
   });
+
+  it('resolves the parent Docs Portal link across root and GitHub Pages subpath base paths', () => {
+    const prevBase = process.env.NEXT_PUBLIC_BASE_PATH;
+    try {
+      process.env.NEXT_PUBLIC_BASE_PATH = '/wedding_website/demo';
+      const { unmount } = renderDemoShell(true);
+      expect(screen.getByTestId('demo-portal-link')).toHaveAttribute('href', '/wedding_website/');
+      expect(document.documentElement.dataset.staticDemo).toBe('true');
+      unmount();
+      expect(document.documentElement.dataset.staticDemo).toBeUndefined();
+    } finally {
+      if (prevBase === undefined) {
+        delete process.env.NEXT_PUBLIC_BASE_PATH;
+      } else {
+        process.env.NEXT_PUBLIC_BASE_PATH = prevBase;
+      }
+    }
+  });
 });
