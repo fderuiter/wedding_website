@@ -109,6 +109,39 @@ function permissionsHaveWriteScope(permissionsNode: unknown): boolean {
   return false;
 }
 
+function concurrencyAlwaysCancelsInProgress(concurrencyNode: unknown): boolean {
+  if (!isMap(concurrencyNode)) {
+    return false;
+  }
+  const cancelNode: unknown = concurrencyNode.get('cancel-in-progress', true);
+  if (!isScalar(cancelNode)) {
+    return false;
+  }
+  if (cancelNode.value === true) {
+    return true;
+  }
+  if (typeof cancelNode.value === 'string') {
+    const trimmed = cancelNode.value.trim();
+    return trimmed === 'true' || /^\$\{\{\s*true\s*\}\}$/.test(trimmed);
+  }
+  return false;
+}
+
+function hasGithubPagesFifoConcurrency(concurrencyNode: unknown): boolean {
+  if (!isMap(concurrencyNode)) {
+    return false;
+  }
+  const groupVal = getScalarString(concurrencyNode.get('group', true))?.trim();
+  const cancelNode: unknown = concurrencyNode.get('cancel-in-progress', true);
+  const queueVal = getScalarString(concurrencyNode.get('queue', true))?.trim();
+  return (
+    groupVal === 'github-pages' &&
+    isScalar(cancelNode) &&
+    cancelNode.value === false &&
+    queueVal === 'max'
+  );
+}
+
 function evaluateAstPolicies(
   doc: ReturnType<typeof parseDocument>,
   lineCounter: LineCounter,
@@ -136,9 +169,35 @@ function evaluateAstPolicies(
     });
   };
 
+  const checkConcurrencyFifoQueue = (
+    concurrencyNode: unknown,
+    scopeRef: string
+  ): void => {
+    if (concurrencyNode === undefined || concurrencyNode === null) {
+      return;
+    }
+    if (concurrencyAlwaysCancelsInProgress(concurrencyNode)) {
+      return;
+    }
+    const queueNode: unknown = isMap(concurrencyNode)
+      ? concurrencyNode.get('queue', true)
+      : undefined;
+    const queueVal = getScalarString(queueNode)?.trim();
+    if (queueVal !== 'max') {
+      addAstViolation(
+        queueNode ?? concurrencyNode,
+        scopeRef,
+        `Non-cancelling ${scopeRef} block must set "queue: max" to queue pending runs in FIFO order without evicting commits.`
+      );
+    }
+  };
+
   const onNode: unknown = doc.contents.get('on', true);
   const hasPullRequestTrigger = workflowTriggersOnPullRequest(onNode);
   const topPermissionsNode: unknown = doc.contents.get('permissions', true);
+  const topConcurrencyNode: unknown = doc.contents.get('concurrency', true);
+
+  checkConcurrencyFifoQueue(topConcurrencyNode, 'concurrency');
 
   // Rule: rollback_environment must not appear under workflow_dispatch.inputs outside rollback.yml
   if (fileName !== 'rollback.yml' && isMap(onNode)) {
@@ -181,6 +240,12 @@ function evaluateAstPolicies(
       ? jobMap.get('permissions', true)
       : topPermissionsNode;
     const jobHasWritePermissions = permissionsHaveWriteScope(jobPermissionsNode);
+
+    const jobConcurrencyNode: unknown = jobMap.get('concurrency', true);
+    checkConcurrencyFifoQueue(jobConcurrencyNode, `jobs.${jobId}.concurrency`);
+    const effectiveJobConcurrency: unknown = jobMap.has('concurrency')
+      ? jobConcurrencyNode
+      : topConcurrencyNode;
 
     // Rule: jobs.<id>.environment referencing rollback_environment outside rollback.yml must guard on workflow_call
     if (fileName !== 'rollback.yml' && jobMap.has('environment')) {
@@ -267,6 +332,20 @@ function evaluateAstPolicies(
           `jobs.${jobId}.permissions`,
           `Job "${jobId}" executes npm install/ci on pull_request while holding write permissions; drop write scopes before running package scripts.`
         );
+      }
+
+      // Rule 3: Every actions/deploy-pages step must execute inside github-pages FIFO concurrency
+      if (
+        usesRaw === 'actions/deploy-pages' ||
+        usesRaw.startsWith('actions/deploy-pages@')
+      ) {
+        if (!hasGithubPagesFifoConcurrency(effectiveJobConcurrency)) {
+          addAstViolation(
+            usesNode ?? stepNode,
+            usesRaw,
+            `Job "${jobId}" uses actions/deploy-pages without "github-pages" FIFO concurrency (group: github-pages, cancel-in-progress: false, queue: max).`
+          );
+        }
       }
 
       // Rule 4: Release cache isolation & safe tar extraction in publish-artifact.yml
@@ -647,6 +726,8 @@ ACTIONABLE REMEDIATION:
 3. Every third-party uses: line must include an inline "# v..." version comment:
    uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 4. Local workflow references (starting with ./ or ./.github/) do not require commit SHAs.
+5. Every non-cancelling concurrency block must set "queue: max" to queue pending runs in FIFO order.
+6. Every job invoking actions/deploy-pages must set concurrency: { group: github-pages, cancel-in-progress: false, queue: max }.
 ================================================================================
 `);
   process.exit(1);

@@ -29,6 +29,7 @@ function TestComponent() {
       <span data-testid="card-max-rotation">{theme.cardMaxRotation}</span>
       <span data-testid="card-spring-stiffness">{theme.cardSpringStiffness}</span>
       <span data-testid="card-spring-damping">{theme.cardSpringDamping}</span>
+      <span data-testid="timezone">{theme.timezone}</span>
     </div>
   );
 }
@@ -47,6 +48,7 @@ describe('ThemeProvider Sanitization', () => {
     expect(getByTestId('layout-grid-gap')).toHaveTextContent('1.5rem');
     expect(getByTestId('layout-card-padding')).toHaveTextContent('2rem');
     expect(getByTestId('layout-border-radius')).toHaveTextContent('1rem');
+    expect(getByTestId('timezone')).toHaveTextContent('');
 
     const styleEl = document.getElementById('dynamic-theme-style');
     expect(styleEl).not.toBeNull();
@@ -466,6 +468,15 @@ describe('ThemeProvider Theme Presets', () => {
     expect(styleElem?.textContent).toContain('--input-radius: 0.375rem;');
     expect(styleElem?.textContent).toContain('--form-label-text: #111827;');
     expect(styleElem?.textContent).toContain('--form-error-text: #b91c1c;');
+  });
+
+  it('exposes configured venue timezone through ThemeProvider context', () => {
+    const { getByTestId } = render(
+      <ThemeProvider config={{ timezone: 'America/Los_Angeles' }}>
+        <TestComponent />
+      </ThemeProvider>
+    );
+    expect(getByTestId('timezone')).toHaveTextContent('America/Los_Angeles');
   });
 
   it('injects romantic theme preset tokens when themePreset prop is romantic', () => {

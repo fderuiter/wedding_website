@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '@/lib/apiClient';
 import { useOptionalToast } from '@/components/ui/ToastProvider';
+import { notifyGuestSessionChanged } from '@/utils/guestSessionEvents';
 import { SessionRecoveryModal } from '../components/SessionRecoveryModal';
 
 export type GuestSessionStatus = 'authenticated' | 'unauthenticated' | 'expired' | 'error';
@@ -243,6 +244,7 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         lastErrorCode: null,
         isRecoveryModalOpen: false,
       }));
+      notifyGuestSessionChanged();
     },
     []
   );
@@ -264,6 +266,7 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         draftInvitationCode: '',
         isRecoveryModalOpen: false,
       });
+      notifyGuestSessionChanged();
     }
   }, []);
 
@@ -309,6 +312,7 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
           if (toast) {
             toast.addToast('Session restored successfully!', 'success');
           }
+          notifyGuestSessionChanged();
 
           return true;
         } else {

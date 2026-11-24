@@ -47,6 +47,10 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(tokens['--btn-primary-bg']).toBeDefined();
       expect(tokens['--btn-primary-text']).toBeDefined();
       expect(tokens['--btn-secondary-bg']).toBeDefined();
+      expect(tokens['--btn-success-bg']).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(tokens['--btn-success-text']).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(tokens['--btn-success-hover-bg']).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(tokens['--btn-success-border']).toBeDefined();
       expect(tokens['--dialog-bg']).toBeDefined();
       expect(tokens['--dialog-border-radius']).toBeDefined();
       expect(tokens['--dialog-shadow']).toBeDefined();
@@ -537,6 +541,12 @@ describe('Theme Preset Catalog & Token Mapping', () => {
         expect(getContrast(tokens['--form-error-text'], cardBg)).toBeGreaterThanOrEqual(4.5);
         expect(getContrast(tokens['--form-success-text'], cardBg)).toBeGreaterThanOrEqual(4.5);
         expect(getContrast(tokens['--form-warning-text'], cardBg)).toBeGreaterThanOrEqual(4.5);
+        expect(
+          getContrast(tokens['--btn-success-text'], tokens['--btn-success-bg'])
+        ).toBeGreaterThanOrEqual(4.5);
+        expect(
+          getContrast(tokens['--btn-success-text'], tokens['--btn-success-hover-bg'])
+        ).toBeGreaterThanOrEqual(4.5);
       }
     }
   });

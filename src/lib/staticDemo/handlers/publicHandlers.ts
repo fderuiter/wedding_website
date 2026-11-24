@@ -231,7 +231,7 @@ export async function handlePublicRoutes(
           : {
             status: 'pending',
             plusOneCount: 0,
-            dietaryNotes: '',
+            dietaryNotes: activeInvite?.dietaryNotes ?? '',
             mealSelections: [],
             customAnswers: {},
             plusOneNames: [],
@@ -290,6 +290,19 @@ export async function handlePublicRoutes(
         ? [body]
         : [];
 
+    for (const entry of rawList) {
+      if (entry && typeof entry === 'object') {
+        const rawStatus = (entry as Record<string, unknown>).status;
+        if (
+          typeof rawStatus === 'string' &&
+          rawStatus.trim().toLowerCase() !== 'attending' &&
+          rawStatus.trim().toLowerCase() !== 'declined'
+        ) {
+          return errorJson(400, 'Please choose either Attending or Declined.');
+        }
+      }
+    }
+
     const updatedItems = store.mutate((draft) => {
       let invite = resolveActiveInvitation(draft);
       const nowIso = new Date().toISOString();
@@ -336,15 +349,31 @@ export async function handlePublicRoutes(
         const rawStatus =
           typeof item.status === 'string' ? item.status.trim().toLowerCase() : 'attending';
         const status: DemoRsvpStatus =
-          rawStatus === 'declined' || rawStatus === 'pending'
-            ? rawStatus
-            : 'attending';
+          rawStatus === 'declined' ? 'declined' : 'attending';
         const isDeclined = status === 'declined';
         const plusOneCount = isDeclined
           ? 0
           : Math.max(0, Number(item.plusOneCount ?? 0) || 0);
+        const existingIdx = draft.subEventRsvp.findIndex(
+          (r) =>
+            r.subEventId === subEventId && r.invitationCodeId === invite!.id,
+        );
+        const existingRsvp =
+          existingIdx >= 0 ? draft.subEventRsvp[existingIdx] : null;
+        const rawDietary =
+          typeof item.dietaryNotes === 'string'
+            ? item.dietaryNotes.trim()
+            : undefined;
+        const explicitClear = item.clearDietaryNotes === true;
+        const hadExistingEventNote = Boolean(existingRsvp?.dietaryNotes?.trim());
+        const shouldClearDietary =
+          explicitClear || (rawDietary === '' && hadExistingEventNote);
         const dietaryNotes =
-          typeof item.dietaryNotes === 'string' ? item.dietaryNotes : '';
+          rawDietary && rawDietary.length > 0
+            ? rawDietary
+            : shouldClearDietary
+              ? ''
+              : (existingRsvp?.dietaryNotes ?? invite.dietaryNotes ?? '');
         const mealSelections =
           !isDeclined && Array.isArray(item.mealSelections)
             ? item.mealSelections.filter((m): m is string => typeof m === 'string')
@@ -361,10 +390,6 @@ export async function handlePublicRoutes(
             ? item.plusOneNames.filter((n): n is string => typeof n === 'string')
             : [];
 
-        const existingIdx = draft.subEventRsvp.findIndex(
-          (r) =>
-            r.subEventId === subEventId && r.invitationCodeId === invite!.id,
-        );
         const record: DemoSubEventRsvpRecord = {
           id:
             existingIdx >= 0
@@ -391,9 +416,17 @@ export async function handlePublicRoutes(
 
         invite.used = true;
         invite.usedAt = nowIso;
-        if (dietaryNotes) {
-          invite.dietaryNotes = dietaryNotes;
+        if (rawDietary && rawDietary.length > 0) {
+          invite.dietaryNotes = rawDietary;
+        } else if (shouldClearDietary) {
+          invite.dietaryNotes = '';
         }
+        invite.extraFields = {
+          ...(invite.extraFields && typeof invite.extraFields === 'object'
+            ? invite.extraFields
+            : {}),
+          plusOneCount,
+        };
         if (plusOneNames.length > 0) {
           const parts = plusOneNames[0].trim().split(/\s+/);
           invite.plusOneFirstName = parts[0] || null;
@@ -586,6 +619,81 @@ export async function handlePublicRoutes(
       },
       { status: 201 },
     );
+  }
+
+  if (pathname === '/api/guest/session' && (method === 'GET' || method === 'DELETE')) {
+    if (method === 'DELETE') {
+      const nextSession = store.mutate((draft) => {
+        if (draft.guestSession?.sessionType === 'invite') {
+          draft.guestSession = null;
+        }
+        return draft.guestSession;
+      });
+      const hasPasscode = nextSession?.sessionType === 'guest';
+      return wrapMiddlewareJson({
+        status: hasPasscode ? 'passcode' : 'none',
+        isVerified: false,
+        invitationCode: null,
+        code: null,
+        guestName: null,
+        hasPasscodeSession: hasPasscode,
+      });
+    }
+
+    const snapshot = store.getSnapshot();
+    const session = snapshot.guestSession;
+    if (!session) {
+      return wrapMiddlewareJson({
+        status: 'none',
+        isVerified: false,
+        invitationCode: null,
+        code: null,
+        guestName: null,
+        hasPasscodeSession: false,
+      });
+    }
+
+    const matchedInvite =
+      session.sessionType === 'invite'
+        ? snapshot.invitationCode.find(
+          (inv) => inv.code.toUpperCase() === session.code.toUpperCase(),
+        )
+        : null;
+
+    if (session.sessionType === 'invite') {
+      if (!matchedInvite || hasUnpromotedAddressCollectionTag(matchedInvite.partyTags)) {
+        store.mutate((draft) => {
+          if (draft.guestSession?.sessionType === 'invite') {
+            draft.guestSession = null;
+          }
+        });
+        return wrapMiddlewareJson({
+          status: 'none',
+          isVerified: false,
+          invitationCode: null,
+          code: null,
+          guestName: null,
+          hasPasscodeSession: false,
+        });
+      }
+      return wrapMiddlewareJson({
+        status: 'invitation',
+        isVerified: true,
+        invitationCode: matchedInvite.code,
+        code: matchedInvite.code,
+        guestName: matchedInvite.guestName,
+        hasPasscodeSession: false,
+      });
+    }
+
+    return wrapMiddlewareJson({
+      status: 'passcode',
+      isVerified: false,
+      invitationCode: null,
+      code: null,
+      guestName: null,
+      hasPasscodeSession: true,
+    });
   }
 
   if (pathname === '/api/guest/login' && method === 'POST') {
