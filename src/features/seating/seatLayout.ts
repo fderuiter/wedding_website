@@ -40,6 +40,66 @@ export interface ScaledTableDimensions {
   height: number;
 }
 
+const GUEST_TABLE_MIN_MARGIN_PX = 36;
+const SEAT_CLEARANCE_RADIUS_PX = 18;
+
+/**
+ * Computes minimum stage X and Y coordinates so rotated table surfaces and 32x32px perimeter seat
+ * targets remain unclipped inside the scrollable floorplan stage (`>= 36px` for guest tables, `>= 0px` for landmarks).
+ */
+export function computeTableMinBounds(
+  options: ScaledTableDimensionsOptions
+): { minX: number; minY: number } {
+  const { width: scaledWidth, height: scaledHeight } = computeScaledTableDimensions(options);
+  const cx = scaledWidth / 2;
+  const cy = scaledHeight / 2;
+  const normalizedRotation = (((Number(options.rotation) || 0) % 360) + 360) % 360;
+  const rad = (normalizedRotation * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+
+  const surfaceHalfExtentX = Math.abs(cx * cos) + Math.abs(cy * sin);
+  const surfaceHalfExtentY = Math.abs(cx * sin) + Math.abs(cy * cos);
+
+  if (isLandmarkTableShape(options.shape) || options.capacity <= 0) {
+    return {
+      minX: Math.max(0, Math.ceil(surfaceHalfExtentX - cx)),
+      minY: Math.max(0, Math.ceil(surfaceHalfExtentY - cy)),
+    };
+  }
+
+  const safeCapacity = Math.max(1, Math.floor(Number(options.capacity) || 1));
+  const shapeLower = (options.shape || 'round').toLowerCase();
+  const isRound = shapeLower === 'round';
+  const isOneSided = isOneSidedTableShape(shapeLower);
+  const resolvedOffset = options.offset ?? (isRound || isOneSided ? 18 : 16);
+
+  let maxLeftFromCenter = surfaceHalfExtentX;
+  let maxTopFromCenter = surfaceHalfExtentY;
+
+  for (let seatNumber = 1; seatNumber <= safeCapacity; seatNumber++) {
+    const local = computeSeatPosition({
+      shape: options.shape,
+      seatNumber,
+      capacity: safeCapacity,
+      width: scaledWidth,
+      height: scaledHeight,
+      offset: resolvedOffset,
+    });
+    const dx = local.x - cx;
+    const dy = local.y - cy;
+    const rotX = dx * cos - dy * sin;
+    const rotY = dx * sin + dy * cos;
+    maxLeftFromCenter = Math.max(maxLeftFromCenter, -rotX + SEAT_CLEARANCE_RADIUS_PX);
+    maxTopFromCenter = Math.max(maxTopFromCenter, -rotY + SEAT_CLEARANCE_RADIUS_PX);
+  }
+
+  return {
+    minX: Math.max(GUEST_TABLE_MIN_MARGIN_PX, Math.ceil(maxLeftFromCenter - cx)),
+    minY: Math.max(GUEST_TABLE_MIN_MARGIN_PX, Math.ceil(maxTopFromCenter - cy)),
+  };
+}
+
 /**
  * Scales rendered table bounds automatically for capacities 1 through 50 so adjacent seat targets
  * maintain at least 24x24 CSS pixels of unobscured space (WCAG 2.5.8 & C42) on the floorplan
