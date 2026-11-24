@@ -38,6 +38,12 @@ function copyFixtureFiles(srcRoot: string, destRoot: string): void {
     '.github/TESTING.md',
     'AGENTS.md',
     '.github/ISSUE_TEMPLATE/documentation.md',
+    'DEPLOYMENT.md',
+    'docs-portal/.vitepress/config.mts',
+    'docs-portal/index.md',
+    'src/lib/basePath.ts',
+    'src/components/demo/DemoToolbar.tsx',
+    'src/app/project-info/ProjectInfoClient.tsx',
   ];
 
   for (const relPath of filesToCopy) {
@@ -598,6 +604,76 @@ describe('verify-setup-guides contract check', () => {
         'scripts/check-quality.ts: Must run "npm run test:cov" to enforce global coverage thresholds',
         '.github/TESTING.md: Missing scripts/pretest.mjs or coverage workflow reference "TEST_DATABASE_URL"',
         '.github/TESTING.md: Pretest Lifecycle section must not claim scripts/pretest.mjs runs "npx tsx scripts/generate-portal.ts" or inspects "npm_lifecycle_event"',
+      ])
+    );
+  });
+
+  it('rejects VitePress same-tab Storybook regressions, collapsed DemoToolbar link omissions, stale /project-info claims, missing build:export quality summaries, and missing demo runtime docs', () => {
+    const configPath = path.join(tempDir, 'docs-portal/.vitepress/config.mts');
+    fs.writeFileSync(
+      configPath,
+      fs
+        .readFileSync(configPath, 'utf8')
+        .replace(
+          "{ text: 'Storybook', link: '/storybook/', target: '_blank', rel: 'noopener noreferrer' }",
+          "{ text: 'Storybook', link: '/storybook/', target: '_self' }"
+        )
+    );
+
+    const indexPath = path.join(tempDir, 'docs-portal/index.md');
+    fs.writeFileSync(
+      indexPath,
+      fs.readFileSync(indexPath, 'utf8').replace(/target:\s*_blank/g, 'target: _self')
+    );
+
+    const toolbarPath = path.join(tempDir, 'src/components/demo/DemoToolbar.tsx');
+    fs.writeFileSync(
+      toolbarPath,
+      fs
+        .readFileSync(toolbarPath, 'utf8')
+        .replace('data-testid="demo-link-api"', 'data-testid="demo-link-api-drifted"')
+    );
+
+    const projectInfoPath = path.join(tempDir, 'src/app/project-info/ProjectInfoClient.tsx');
+    fs.writeFileSync(
+      projectInfoPath,
+      fs
+        .readFileSync(projectInfoPath, 'utf8')
+        .replace('TanStack Query & Zod', 'Fuse.js')
+        .replace('Railway &amp; Render', 'Netlify')
+        .replace('npm ci', 'npm install')
+        .replace('.github/CONTRIBUTING.md', 'CONTRIBUTING.md')
+    );
+
+    const contributingPath = path.join(tempDir, '.github/CONTRIBUTING.md');
+    fs.writeFileSync(
+      contributingPath,
+      fs
+        .readFileSync(contributingPath, 'utf8')
+        .replace('and static HTML showcase (`npm run build:export`) ', '')
+    );
+
+    const devSetupPath = path.join(tempDir, 'docs/developer-setup.md');
+    fs.writeFileSync(
+      devSetupPath,
+      fs
+        .readFileSync(devSetupPath, 'utf8')
+        .replace(/src\/lib\/demo\/demoApiHandler\.ts/g, 'src/lib/demo/legacyMock.ts')
+    );
+
+    const errors = verifySetupGuides(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        "docs-portal/.vitepress/config.mts: Nav link \"/storybook/\" must open in a new tab with target: '_blank' and rel: 'noopener noreferrer'",
+        'docs-portal/index.md: Every "/storybook/" action and feature card must set target: _blank and rel: noopener noreferrer',
+        'src/components/demo/DemoToolbar.tsx: Showcase link "demo-link-api" must render in both expanded and collapsed states with data-static-demo-bypass="true"',
+        'src/app/project-info/ProjectInfoClient.tsx: Must not claim unshipped "Fuse.js" library absent from package.json',
+        'src/app/project-info/ProjectInfoClient.tsx: Must not claim unsupported "Netlify" hosting absent from DEPLOYMENT.md Support Tier Matrix',
+        'src/app/project-info/ProjectInfoClient.tsx: Must list supported hosting target "Railway & Render" from DEPLOYMENT.md Support Tier Matrix',
+        'src/app/project-info/ProjectInfoClient.tsx: Must prescribe "npm ci" rather than "npm install"',
+        'src/app/project-info/ProjectInfoClient.tsx: Must link CONTRIBUTING.md to ".github/CONTRIBUTING.md"',
+        '.github/CONTRIBUTING.md: "Run All Quality Checks" (npm run quality) summary must include "npm run build:export"',
+        'docs/developer-setup.md: Missing interactive demo runtime module documentation for "src/lib/demo/demoApiHandler.ts"',
       ])
     );
   });

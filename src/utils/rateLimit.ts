@@ -118,6 +118,7 @@ const KNOWN_STATIC_API_PATHS = new Set([
   '/api/live',
   '/api/media',
   '/api/media/export',
+  '/api/og',
   '/api/photos',
   '/api/photos/upload',
   '/api/ready',

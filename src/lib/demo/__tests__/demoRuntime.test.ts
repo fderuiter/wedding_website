@@ -31,7 +31,11 @@ import {
   updateDemoConfigOverrides,
   updateDemoGuestAddress,
 } from '../demoStore';
-import { installDemoFetchInterceptor } from '../demoApiHandler';
+import { dispatchDemoApiRequest, installDemoFetchInterceptor } from '../demoApiHandler';
+import {
+  dispatchDemoApiRequest as noopDispatchDemoApiRequest,
+  installDemoFetchInterceptor as noopInstallDemoFetchInterceptor,
+} from '../demoApiHandler.noop';
 import { DatabaseBackupSchema, formatZodIssues, reviveDates } from '@/utils/backupValidation';
 
 describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
@@ -876,7 +880,9 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
       ).toBe(404);
       expect((await window.fetch('/api/admin/overview-stats')).status).toBe(200);
       expect((await window.fetch('/api/ready')).status).toBe(200);
-      expect((await (await window.fetch('/api/weather')).json()).data.current.temperature).toBe(72);
+      expect(
+        Array.isArray((await (await window.fetch('/api/weather')).json()).data.daily.temperature_2m_max)
+      ).toBe(true);
       const photosInitial = await (await window.fetch('/api/photos')).json();
       expect(Array.isArray(photosInitial.photos)).toBe(true);
       expect(photosInitial.photos.length).toBeGreaterThan(0);
@@ -1119,6 +1125,135 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
       uninstallFirst();
       window.fetch = originalFetch;
     }
+  });
+
+  it('serves localized seasonal climate forecast from /api/weather in demo mode without external calls', async () => {
+    const originalFetch = window.fetch;
+    const fallbackFetch = jest.fn(async () => new Response('unexpected', { status: 500 }));
+    window.fetch = fallbackFetch as unknown as typeof window.fetch;
+
+    setDemoRuntimeActive(true);
+    const uninstall = installDemoFetchInterceptor();
+
+    try {
+      // Classic preset (Minneapolis, September -> warm temperate)
+      const classicRes = await window.fetch('/api/weather');
+      expect(classicRes.status).toBe(200);
+      const classicForecast = await classicRes.json();
+      expect(classicForecast.isLiveForecast).toBe(false);
+      expect(classicForecast.liveForecastAvailableDate).toBe('2026-09-02');
+      expect(classicForecast.daily.time).toEqual(['2026-09-19']);
+      expect(classicForecast.daily.temperature_2m_max[0]).toBe(82);
+
+      // Destination preset (Amalfi Coast October -> mild Mediterranean autumn)
+      setDemoArchetype('destination');
+      const destRes = await window.fetch('/api/weather');
+      expect(destRes.status).toBe(200);
+      const destForecast = await destRes.json();
+      expect(destForecast.isLiveForecast).toBe(false);
+      expect(destForecast.daily.temperature_2m_max[0]).toBe(62);
+
+      // Tropical venue override (Maui July -> warm tropical band)
+      updateDemoConfigOverrides({
+        latitude: 20.7984,
+        longitude: -156.3319,
+        weddingDate: new Date('2026-07-18T18:00:00.000Z'),
+        timezone: 'Pacific/Honolulu',
+      });
+      const tropicalRes = await window.fetch('/api/weather');
+      expect(tropicalRes.status).toBe(200);
+      const tropicalForecast = await tropicalRes.json();
+      expect(tropicalForecast.daily.temperature_2m_max[0]).toBeGreaterThanOrEqual(85);
+
+      // Custom venue override (high latitude winter)
+      updateDemoConfigOverrides({
+        latitude: 64.1466,
+        longitude: -21.9426,
+        weddingDate: new Date('2026-12-12T16:00:00.000Z'),
+        timezone: 'UTC',
+      });
+      const customRes = await window.fetch('/api/weather');
+      expect(customRes.status).toBe(200);
+      const customForecast = await customRes.json();
+      expect(customForecast.daily.time).toEqual(['2026-12-12']);
+      expect(customForecast.daily.temperature_2m_max[0]).toBeLessThanOrEqual(32);
+      expect(fallbackFetch).not.toHaveBeenCalled();
+    } finally {
+      uninstall();
+      window.fetch = originalFetch;
+    }
+  });
+
+  it('dispatches demo API requests directly without patching window.fetch and provides safe noop stubs for standalone builds', async () => {
+    expect(await noopDispatchDemoApiRequest('/api/admin/me')).toBeNull();
+    const noopUninstall = noopInstallDemoFetchInterceptor();
+    expect(() => noopUninstall()).not.toThrow();
+
+    setDemoPersona('setup');
+    const emptySetupCheck = await dispatchDemoApiRequest('/api/admin/setup', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    expect(emptySetupCheck?.status).toBe(200);
+    expect(await emptySetupCheck?.json()).toMatchObject({
+      success: true,
+      requiresSetup: true,
+      setupCompleted: false,
+    });
+
+    const modulesRes = await dispatchDemoApiRequest('/api/admin/setup', {
+      method: 'POST',
+      body: JSON.stringify({
+        partner1Name: 'Avery',
+        partner2Name: 'Jordan',
+        modules: { weather: false, interactive3D: false },
+      }),
+    });
+    expect(modulesRes?.status).toBe(200);
+    expect(getDemoState().configOverrides.modules?.weather).toBe(false);
+    expect(getDemoState().configOverrides.modules?.interactive3D).toBe(false);
+
+    const completeRes = await dispatchDemoApiRequest('/api/admin/setup', {
+      method: 'POST',
+      body: JSON.stringify({ setupCompleted: true }),
+    });
+    expect(completeRes?.status).toBe(200);
+    expect(getDemoState().persona).toBe('admin');
+
+    // Subpath /api/* normalization, alias lookup, read-only claim preview, and binary exports work via dispatchDemoApiRequest
+    const subpathRes = await dispatchDemoApiRequest('/wedding_website/api/admin/me');
+    expect(subpathRes?.status).toBe(200);
+    expect(await subpathRes?.json()).toEqual({ isAdmin: true });
+
+    const aliasRes = await dispatchDemoApiRequest(
+      '/wedding_website/api/registry/items/sample-registry-classic-1'
+    );
+    expect(aliasRes?.status).toBe(200);
+    expect((await aliasRes?.json()).id).toBe('demo-classic-item-1');
+
+    const physicalItem = getActiveArchetypeDataset().registryItems.find((i) => !i.isGroupGift)!;
+    const reservedContrib = recordDemoContribution({
+      itemId: physicalItem.id,
+      purchaserName: 'Sandbox Guest',
+      amount: physicalItem.price,
+    });
+    expect(reservedContrib?.claimActions?.confirmToken).toBeDefined();
+    const claimPreviewRes = await dispatchDemoApiRequest(
+      `/wedding_website/api/registry/claim?token=${encodeURIComponent(reservedContrib!.claimActions!.confirmToken)}`
+    );
+    expect(claimPreviewRes?.status).toBe(200);
+    expect(await claimPreviewRes?.json()).toMatchObject({
+      action: 'confirm',
+      status: 'RESERVED',
+      itemId: physicalItem.id,
+    });
+
+    const icsExportRes = await dispatchDemoApiRequest(
+      '/wedding_website/api/schedule/sample-subevent-classic-ceremony/ics'
+    );
+    expect(icsExportRes?.status).toBe(200);
+    expect(icsExportRes?.headers.get('Content-Type')).toContain('text/calendar');
+    expect(await icsExportRes?.text()).toContain('BEGIN:VCALENDAR');
   });
 
   it('normalizes subpath URLs idempotently via basePath helpers', () => {

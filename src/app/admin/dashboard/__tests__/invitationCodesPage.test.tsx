@@ -2691,5 +2691,83 @@ describe('InvitationCodesDashboardPage', () => {
       ).toContain('[CARD:formal-invitation]');
     });
   });
+
+  describe('WCAG 2.2 AA contrast tokens across light and dark themes', () => {
+    it('renders calibrated high-contrast badges, status labels, filter labels, catering tiles, and empty placeholders with zero axe violations', async () => {
+      (useAdminInvitationCodes as jest.Mock).mockReturnValue({
+        data: [
+          {
+            id: 'contrast-1',
+            guestName: 'Arthur Pendragon',
+            code: 'CAMELOT26',
+            email: null,
+            dietaryNotes: 'Vegetarian',
+            partyTags: ['Royal Court'],
+            used: true,
+            extraFields: { attendanceStatus: 'attending' },
+          },
+          {
+            id: 'contrast-2',
+            guestName: 'Morgana Le Fay',
+            code: 'AVALON26',
+            email: 'morgana@example.com',
+            dietaryNotes: null,
+            partyTags: [],
+            used: false,
+            extraFields: { attendanceStatus: 'declined' },
+          },
+          {
+            id: 'contrast-3',
+            guestName: 'Merlin Ambrosius',
+            code: 'TOWER26',
+            email: null,
+            dietaryNotes: null,
+            partyTags: [],
+            used: false,
+            extraFields: { rsvpStatus: 'pending' },
+          },
+        ],
+        isLoading: false,
+        error: null,
+        create: mockCreate,
+        update: mockUpdate,
+        remove: mockRemove,
+        removeBatch: mockRemoveBatch,
+        updateBatch: mockUpdateBatch,
+        batchUpdateTags: mockBatchUpdateTags,
+        mergeDuplicates: mockMergeDuplicates,
+        fetchAll: mockFetchAll,
+      });
+
+      const { container } = renderComponent();
+
+      const codeBadge = screen.getByText('CAMELOT26');
+      expect(codeBadge.className).toContain('text-red-800');
+      expect(codeBadge.className).toContain('dark:text-red-200');
+
+      expect(screen.getByText('Redeemed/Used', { selector: 'span' }).className).toContain('text-red-800');
+      expect(screen.getAllByText('Active/Unused', { selector: 'span' })[0].className).toContain('text-emerald-800');
+
+      expect(screen.getByText('Attending', { selector: 'span' }).className).toContain('text-emerald-800');
+      expect(screen.getByText('Declined', { selector: 'span' }).className).toContain('text-red-800');
+      expect(screen.getByText('Pending', { selector: 'span' }).className).toContain('text-amber-800');
+
+      expect(screen.getAllByText('No address provided')[0].className).toContain('text-gray-700');
+
+      for (const labelText of ['Redemption:', 'Address:', 'Attendance:']) {
+        const label = screen.getByText(labelText);
+        expect(label.className).toContain('text-gray-700');
+        expect(label.className).toContain('dark:text-gray-200');
+      }
+
+      expect(await axe(container)).toHaveNoViolations();
+      document.documentElement.classList.add('dark');
+      try {
+        expect(await axe(container)).toHaveNoViolations();
+      } finally {
+        document.documentElement.classList.remove('dark');
+      }
+    });
+  });
 });
 

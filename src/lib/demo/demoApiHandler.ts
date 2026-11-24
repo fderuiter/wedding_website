@@ -13,6 +13,7 @@ import {
   hasNonPlaceholderVenueDetails,
 } from '@/lib/setupCopy';
 import { createIcsFile, formatScheduleEventToCalendarEvent } from '@/utils/calendar';
+import { resolveModuleConfig } from '@/lib/modules';
 import { formatCurrency } from '@/utils/intl';
 import type {
   ContributorRecord,
@@ -24,6 +25,11 @@ import type { SeatingTableDTO } from '@/features/seating';
 import type { WeddingPartyMemberDTO, WeddingPartySide } from '@/features/wedding-party';
 import type { AttractionDTO } from '@/features/attractions';
 import { stripBasePath, withBasePath } from '@/lib/basePath';
+import {
+  computeLiveForecastAvailableDate,
+  formatForecastDateInTimezone,
+  getLocalizedClimateFallback,
+} from '@/utils/climateFallback';
 import {
   ADDRESS_LINE_MAX_LENGTH,
   CITY_MAX_LENGTH,
@@ -367,6 +373,12 @@ function resolveApiPathname(input: RequestInfo | URL): URL | null {
     const url = new URL(rawUrl, window.location.origin);
     if (url.origin !== window.location.origin) return null;
     let path = stripBasePath(url.pathname);
+    if (!path.startsWith('/api/')) {
+      const apiIdx = path.indexOf('/api/');
+      if (apiIdx > 0) {
+        path = path.slice(apiIdx);
+      }
+    }
     if (!path.startsWith('/api/')) return null;
     if (path.length > 1 && path.endsWith('/')) {
       path = path.replace(/\/+$/, '');
@@ -522,9 +534,33 @@ async function handleDemoApi(
 
   if (path === '/api/admin/setup' && method === 'POST') {
     const body = await parseJsonBody(init);
-    if ('password' in body && Object.keys(body).length === 1) {
+    const bodyKeys = Object.keys(body);
+    if (bodyKeys.length === 0) {
+      const isSetup = getDemoState().persona === 'setup' && !getDemoState().setupAuthenticated;
+      return jsonResponse({
+        success: true,
+        initialized: true,
+        setupCompleted: !isSetup,
+        requiresSetup: isSetup,
+      });
+    }
+    if ('password' in body && bodyKeys.length === 1) {
       setDemoSetupAuthenticated(true);
       return jsonResponse({ success: true });
+    }
+    if ('setupCompleted' in body && typeof body.setupCompleted === 'boolean' && bodyKeys.length === 1) {
+      if (body.setupCompleted) {
+        setDemoSetupAuthenticated(true);
+        if (getDemoState().persona === 'setup') {
+          setDemoPersona('admin');
+        }
+      }
+      return jsonResponse({
+        success: true,
+        initialized: true,
+        setupCompleted: body.setupCompleted,
+        requiresSetup: !body.setupCompleted,
+      });
     }
     const overrides: Partial<PublicAppConfig> = {};
     if (typeof body.partner1Name === 'string') overrides.partner1Name = body.partner1Name;
@@ -578,9 +614,16 @@ async function handleDemoApi(
     }
     if (typeof body.colorPrimary === 'string') overrides.colorPrimary = body.colorPrimary;
     if (typeof body.colorSecondary === 'string') overrides.colorSecondary = body.colorSecondary;
+    if (body.modules && typeof body.modules === 'object' && !Array.isArray(body.modules)) {
+      const currentModules = getDemoState().configOverrides.modules;
+      overrides.modules = resolveModuleConfig({
+        ...(currentModules ?? {}),
+        ...(body.modules as Record<string, unknown>),
+      });
+    }
     updateDemoConfigOverrides(overrides);
     setDemoSetupAuthenticated(true);
-    return jsonResponse({ success: true });
+    return jsonResponse({ success: true, modules: overrides.modules });
   }
 
   if (path === '/api/admin/geocode' && method === 'GET') {
@@ -2911,7 +2954,47 @@ async function handleDemoApi(
     return binaryDemoResponse(icsContent, 'text/calendar; charset=utf-8', `${cleanTitle}.ics`);
   }
 
-  // Delegate extended OpenAPI routes (schedule, rsvp, photos, weather, media, content-nodes,
+  // Guest weather forecast (localized seasonal climate fallback with venue/override support)
+  if (path === '/api/weather' && method === 'GET') {
+    const state = getDemoState();
+    const preset = ARCHETYPE_PRESETS[state.archetype] ?? ARCHETYPE_PRESETS.classic;
+    const overrides = state.configOverrides;
+    const latitude =
+      typeof overrides.latitude === 'number' && Number.isFinite(overrides.latitude)
+        ? overrides.latitude
+        : preset.siteConfig.latitude;
+    const longitude =
+      typeof overrides.longitude === 'number' && Number.isFinite(overrides.longitude)
+        ? overrides.longitude
+        : preset.siteConfig.longitude;
+    const timezone =
+      (typeof overrides.timezone === 'string' && overrides.timezone.trim()) ||
+      preset.siteConfig.timezone ||
+      'UTC';
+    const rawWeddingDate =
+      overrides.weddingDate instanceof Date && !Number.isNaN(overrides.weddingDate.getTime())
+        ? overrides.weddingDate
+        : new Date(preset.siteConfig.weddingDate);
+    const weddingDate = Number.isNaN(rawWeddingDate.getTime())
+      ? new Date('2026-09-19T16:00:00.000Z')
+      : rawWeddingDate;
+    const weddingDayStr = formatForecastDateInTimezone(weddingDate, timezone);
+    const availableDateStr = computeLiveForecastAvailableDate(weddingDayStr, timezone);
+    const forecast = getLocalizedClimateFallback(
+      latitude,
+      longitude,
+      weddingDayStr,
+      availableDateStr
+    );
+
+    return jsonResponse({
+      success: true,
+      data: forecast,
+      ...forecast,
+    });
+  }
+
+  // Delegate extended OpenAPI routes (schedule, rsvp, photos, media, content-nodes,
   // versions, guest login/lookup) to the staticDemo router when installed
   const delegatedExtended = await delegateToStaticDemoRouter(rawInput ?? url, init, method, path);
   if (delegatedExtended) {
@@ -2944,36 +3027,6 @@ async function handleDemoApi(
     method === 'GET'
   ) {
     return jsonResponse({ status: 'ok', ready: true, mode: 'static-demo' });
-  }
-
-  // Guest weather forecast
-  if (path === '/api/weather' && method === 'GET') {
-    const state = getDemoState();
-    const preset = ARCHETYPE_PRESETS[state.archetype] ?? ARCHETYPE_PRESETS.classic;
-    return jsonResponse({
-      success: true,
-      data: {
-        location: `${preset.siteConfig.venueCity}, ${preset.siteConfig.venueState}`,
-        isHistoricalEstimate: true,
-        current: {
-          temperature: 72,
-          condition: 'Partly Sunny',
-          humidity: 54,
-          windSpeed: 8,
-        },
-        daily: [
-          { date: '2026-10-17', high: 73, low: 58, condition: 'Sunny', precipitationChance: 10 },
-          { date: '2026-10-18', high: 74, low: 59, condition: 'Clear', precipitationChance: 5 },
-          {
-            date: '2026-10-19',
-            high: 71,
-            low: 56,
-            condition: 'Partly Cloudy',
-            precipitationChance: 15,
-          },
-        ],
-      },
-    });
   }
 
   // Public & moderated photos + media library (#1232 cursor-compatible)
@@ -3259,6 +3312,19 @@ async function handleDemoApi(
   }
 
   return jsonResponse({ error: `Demo endpoint not implemented: ${method} ${path}` }, 404);
+}
+
+export async function dispatchDemoApiRequest(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<Response | null> {
+  if (!isDemoRuntimeActive()) return null;
+  const apiUrl = resolveApiPathname(input);
+  if (!apiUrl) return null;
+  if (init?.signal?.aborted) {
+    throw new DOMException('The operation was aborted.', 'AbortError');
+  }
+  return handleDemoApi(apiUrl, init, input);
 }
 
 let activeInterceptCount = 0;

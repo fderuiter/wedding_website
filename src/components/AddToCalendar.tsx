@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useId } from 'react';
-import { createGoogleCalendarLink, createYahooCalendarLink, createOutlookCalendarLink, createIcsFile, CalendarEvent } from '@/utils/calendar';
+import { createGoogleCalendarLink, createYahooCalendarLink, createOutlookCalendarLink, createIcsFile, type CalendarEvent } from '@/utils/calendar';
 import { useOverlay } from '@/hooks/useOverlay';
 import { useMenuNavigation } from '@/hooks/useMenuNavigation';
 import { useOptionalToast } from '@/components/ui/ToastProvider';

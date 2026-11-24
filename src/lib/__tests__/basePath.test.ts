@@ -6,6 +6,8 @@ import {
   getPortalBaseUrl,
   withBasePath,
   stripBasePath,
+  getShowcasePortalBasePath,
+  resolveShowcasePath,
 } from '../basePath';
 import { APP_DEFAULTS, STATIC_MOCK_CONFIG } from '../config';
 import { ARCHETYPE_PRESETS } from '../sampleData/archetypes';
@@ -131,6 +133,46 @@ describe('basePath helper utilities', () => {
       expect(getPortalBaseUrl('/wedding_website/demo')).toBe('/wedding_website/');
       expect(getPortalBaseUrl('/wedding_website/demo/')).toBe('/wedding_website/');
       expect(getPortalBaseUrl('/custom-prefix')).toBe('/custom-prefix/');
+    });
+  });
+
+  describe('getShowcasePortalBasePath & resolveShowcasePath', () => {
+    it('resolves root-origin showcase URLs when NEXT_PUBLIC_BASE_PATH is unset, "/", or "/demo"', () => {
+      delete process.env.NEXT_PUBLIC_BASE_PATH;
+      expect(getShowcasePortalBasePath()).toBe('');
+      expect(resolveShowcasePath('/')).toBe('/');
+      expect(resolveShowcasePath('/api/')).toBe('/api/');
+      expect(resolveShowcasePath('/storybook/')).toBe('/storybook/');
+
+      expect(getShowcasePortalBasePath('/')).toBe('');
+      expect(getShowcasePortalBasePath('/demo')).toBe('');
+      expect(getShowcasePortalBasePath('/demo/')).toBe('');
+      expect(resolveShowcasePath('/', '/demo/')).toBe('/');
+      expect(resolveShowcasePath('/api/', '/demo')).toBe('/api/');
+      expect(resolveShowcasePath('/storybook/', '/demo')).toBe('/storybook/');
+    });
+
+    it('derives repository subpath sibling URLs when NEXT_PUBLIC_BASE_PATH ends with /demo', () => {
+      process.env.NEXT_PUBLIC_BASE_PATH = '/wedding_website/demo/';
+      expect(getShowcasePortalBasePath()).toBe('/wedding_website');
+      expect(resolveShowcasePath('/')).toBe('/wedding_website/');
+      expect(resolveShowcasePath('/api/')).toBe('/wedding_website/api/');
+      expect(resolveShowcasePath('/storybook/')).toBe('/wedding_website/storybook/');
+
+      expect(resolveShowcasePath('/', '/org/preview-123/demo')).toBe('/org/preview-123/');
+      expect(resolveShowcasePath('/api/', '/org/preview-123/demo')).toBe(
+        '/org/preview-123/api/'
+      );
+      expect(resolveShowcasePath('/storybook/', '/org/preview-123/demo')).toBe(
+        '/org/preview-123/storybook/'
+      );
+    });
+
+    it('preserves non-demo custom base paths cleanly', () => {
+      expect(getShowcasePortalBasePath('/wedding_website')).toBe('/wedding_website');
+      expect(resolveShowcasePath('/storybook/', '/wedding_website')).toBe(
+        '/wedding_website/storybook/'
+      );
     });
   });
 });

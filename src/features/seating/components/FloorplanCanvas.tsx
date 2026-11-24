@@ -4,9 +4,9 @@ import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { EnsureToastProvider, useToast } from '@/components/ui/ToastProvider';
-import { SeatingTableDTO } from '../schemas';
+import type { SeatingTableDTO } from '../schemas';
 import {
-  InvitationCodeDTO,
+  type InvitationCodeDTO,
   formatGuestCustomAnswers,
   formatGuestMealSelections,
   formatGuestPlusOneNames,

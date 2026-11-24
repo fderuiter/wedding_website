@@ -1,4 +1,6 @@
-import { z } from 'zod'; import { MAX_PASSWORD_LENGTH } from './password';
+import { z } from 'zod';
+import { ModuleConfigSchema } from '@/lib/modules';
+import { MAX_PASSWORD_LENGTH } from './password';
 import {
   ACCEPTED_IMAGE_TYPES,
   ALLOWED_EXTENSIONS,
@@ -292,10 +294,11 @@ export const AdminSetupSchema = z.object({
   showCountdown: z.boolean().optional(),
   showAddToCalendar: z.boolean().optional(),
   setupCompleted: z.boolean().optional(),
+  modules: ModuleConfigSchema.partial().optional(),
   subdomain: z.string().nullable().optional(),
 }).meta({
   description:
-    'First-run site setup and authenticated configuration payload. Requires either password (validated against ADMIN_PASSWORD_HASH or ADMIN_PASSWORD during step-1 setup authentication), setupCompleted (for authenticated wizard completion), or full site initialization fields (non-placeholder baseUrl plus partner1Name & partner2Name or legacy brideName & groomName; unauthenticated first-run requests must also include password).',
+    'First-run site setup, feature module toggles, and authenticated configuration or status check payload. Authenticated callers with an admin_auth session cookie may omit the request body for step-1 status checks or send setupCompleted for wizard completion; unauthenticated callers must provide password (validated against ADMIN_PASSWORD_HASH or ADMIN_PASSWORD), or submit full site initialization fields with optional modules toggles (non-placeholder baseUrl plus partner1Name & partner2Name or legacy brideName & groomName).',
   anyOf: [
     {
       type: 'object',
