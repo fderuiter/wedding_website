@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext } from 'react';
-import dynamic from 'next/dynamic';
+import ActiveDemoProvider from './ActiveDemoProvider';
 import type { ThemePreset } from '@/lib/theme/presets';
 import type { ArchetypeId } from '@/lib/sampleData/archetypes';
 import type { PublicAppConfig } from '@/lib/config';
@@ -36,8 +36,6 @@ export interface DemoContextValue {
 
 export const DemoContext = createContext<DemoContextValue | null>(null);
 
-const DynamicActiveDemoProvider = dynamic(() => import('./ActiveDemoProvider'));
-
 interface DemoProviderProps {
   enabled: boolean;
   children: React.ReactNode;
@@ -47,7 +45,7 @@ export function DemoProvider({ enabled, children }: DemoProviderProps) {
   if (!enabled) {
     return <>{children}</>;
   }
-  return <DynamicActiveDemoProvider>{children}</DynamicActiveDemoProvider>;
+  return <ActiveDemoProvider context={DemoContext}>{children}</ActiveDemoProvider>;
 }
 
 export function useOptionalDemo(): DemoContextValue | null {

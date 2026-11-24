@@ -24,7 +24,6 @@ import { useToast } from '@/components/ui/ToastProvider';
 import { useTheme } from '@/components/ThemeProvider';
 import type { ThemePreset } from '@/lib/theme/presets';
 import { MotionConfig, MotionGlobalConfig } from 'framer-motion';
-import dynamic from 'next/dynamic';
 import type { ContentNodeDTO } from '@/features/content';
 import {
   ensureStaticDemoRuntime,
@@ -51,14 +50,8 @@ if (
 import type { PublicAppConfig } from '@/lib/config';
 import { withBasePath } from '@/lib/basePath';
 import { DemoProvider, useOptionalDemo } from '@/components/demo/DemoContext';
-
-const SetupWizard = dynamic(() => import('@/components/setup/SetupWizard'), {
-  loading: () => null,
-});
-
-const DemoToolbar = dynamic(() =>
-  import('@/components/demo/DemoToolbar').then((mod) => mod.DemoToolbar)
-);
+import { DemoSetupSlot } from '@/components/demo/DemoSetupSlot';
+import { DemoToolbar } from '@/components/demo/DemoToolbar';
 
 /**
  * @interface RootLayoutClientProps
@@ -300,12 +293,11 @@ function RootLayoutInner({
     <GuestHelpProvider config={helpConfig} pathname={pathname}>
       <GlobalRadialGlow />
       {isSetupPersona ? (
-        <div className={bottomToolbarClearance}>
-          <SetupWizard
-            key={`demo-setup-${demo?.resetCounter ?? 0}`}
-            onDemoComplete={() => router.push('/admin/dashboard')}
-          />
-        </div>
+        <DemoSetupSlot
+          className={bottomToolbarClearance}
+          resetCounter={demo?.resetCounter ?? 0}
+          onDemoComplete={() => router.push('/admin/dashboard')}
+        />
       ) : (
         <>
           {!isStandalonePage && (

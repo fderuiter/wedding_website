@@ -133,9 +133,16 @@ export default withMermaid(
     },
     vite: {
       resolve: {
-        alias: {
-          '@': srcDir
-        }
+        alias: [
+          {
+            find: /^@\/features\/(content|wedding-party|attractions|registry)$/,
+            replacement: `${srcDir}/features/$1/schemas.ts`
+          },
+          {
+            find: '@',
+            replacement: srcDir
+          }
+        ]
       },
       define: {
         'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production'),

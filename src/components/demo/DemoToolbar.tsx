@@ -8,7 +8,7 @@ import { getPortalBaseUrl, resolveShowcasePath } from '@/lib/basePath';
 import { ARCHETYPE_PRESETS, type ArchetypeId } from '@/lib/sampleData/archetypes';
 import { THEME_PRESET_KEYS, type ThemePreset } from '@/lib/theme/presets';
 import type { DemoPersona } from '@/lib/demo/demoStore';
-import { useOptionalDemo } from './DemoContext';
+import { useOptionalDemo } from '@/components/demo/DemoContext';
 
 const PERSONA_OPTIONS: Array<{ id: DemoPersona; label: string; testId: string }> = [
   { id: 'guest', label: 'Invited Guest', testId: 'demo-persona-guest' },

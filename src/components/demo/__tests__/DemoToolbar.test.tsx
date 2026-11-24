@@ -320,13 +320,13 @@ describe('DemoToolbar & DemoProvider', () => {
   it('switches to First-Run Setup and walks through all 5 SetupWizard steps locally without server requests', async () => {
     const fetchSpy = jest.spyOn(window, 'fetch');
     renderDemoShell(true);
-    expect(await screen.findByTestId('demo-toolbar')).toBeInTheDocument();
+    expect(screen.getByTestId('demo-toolbar')).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('demo-persona-setup'));
     expect(screen.getByTestId('demo-persona-setup')).toHaveAttribute('aria-pressed', 'true');
 
-    // Step 1: Unlock wizard (SetupWizard is dynamically imported on demand)
-    const passwordInput = await screen.findByLabelText(/Admin Password/i);
+    // Step 1: Unlock wizard (DemoSetupSlot renders SetupWizard synchronously in Jest)
+    const passwordInput = screen.getByLabelText(/Admin Password/i);
     expect(passwordInput).toBeInTheDocument();
     fireEvent.change(passwordInput, {
       target: { value: 'demo-showcase-pass' },
