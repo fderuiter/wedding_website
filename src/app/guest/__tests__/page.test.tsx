@@ -904,4 +904,125 @@ describe('GuestAddressPage (/guest)', () => {
 
     expect(await axe(container)).toHaveNoViolations();
   });
+
+  it('locks portal submit, save, and retry buttons with busy instead of native disabled, retains focus on network failure, and focuses #guest-invitation-code on validation failure', async () => {
+    const portalDeferred: {
+      resolveValidate?: (val: unknown) => void;
+      resolveSave?: (val: unknown) => void;
+    } = {};
+
+    globalFetch
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({ success: false, error: 'Unauthorized' }),
+      })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            portalDeferred.resolveValidate = resolve;
+          })
+      );
+
+    const { container } = render(<GuestAddressPage />);
+
+    const codeInput = (await screen.findByLabelText('Invitation Code')) as HTMLInputElement;
+    const accessBtn = screen.getByRole('button', { name: /Access Guest Portal/i });
+
+    // Empty submission focuses #guest-invitation-code
+    accessBtn.focus();
+    fireEvent.click(accessBtn);
+    await waitFor(() => {
+      expect(document.activeElement).toBe(codeInput);
+    });
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+
+    // Busy lock during code verification keeps focus on Access Guest Portal button
+    fireEvent.change(codeInput, { target: { value: 'DARCY2026' } });
+    accessBtn.focus();
+    fireEvent.click(accessBtn);
+
+    const verifyingBtn = screen.getByRole('button', { name: /Verifying Code/i });
+    expect(document.activeElement).toBe(verifyingBtn);
+    expect(verifyingBtn).not.toBeDisabled();
+    expect(verifyingBtn).toHaveAttribute('aria-busy', 'true');
+    expect(verifyingBtn).toHaveAttribute('aria-disabled', 'true');
+
+    // Authenticate and load schedule + address
+    globalFetch.mockImplementation(async (input: any, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input?.url || '';
+      if (url.includes('/api/guest/address') && init?.method === 'PUT') {
+        return new Promise((resolve) => {
+          portalDeferred.resolveSave = resolve;
+        });
+      }
+      if (url.includes('/api/guest/address')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: {
+              guestName: 'Fitzwilliam Darcy',
+              code: 'DARCY2026',
+              addressLine1: 'Pemberley',
+            },
+          }),
+        };
+      }
+      if (url.includes('/api/schedule')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            isGuest: true,
+            guestName: 'Fitzwilliam Darcy',
+            rsvpOpen: true,
+            timezone: 'UTC',
+            data: [],
+          }),
+        };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    });
+
+    portalDeferred.resolveValidate?.({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        valid: true,
+        guestName: 'Fitzwilliam Darcy',
+        code: 'DARCY2026',
+      }),
+    });
+
+    expect(await screen.findByText('Mailing Address')).toBeInTheDocument();
+
+    const saveBtn = screen.getByRole('button', { name: /Save Mailing Address/i });
+    saveBtn.focus();
+    fireEvent.click(saveBtn);
+
+    const savingBtn = screen.getByRole('button', { name: /^Saving\.\.\.$/i });
+    expect(document.activeElement).toBe(savingBtn);
+    expect(savingBtn).not.toBeDisabled();
+    expect(savingBtn).toHaveAttribute('aria-busy', 'true');
+    expect(savingBtn).toHaveAttribute('aria-disabled', 'true');
+
+    // Fail address save with 500 -> trigger button retains focus and Retry Save uses busy prop
+    portalDeferred.resolveSave?.({
+      ok: false,
+      status: 500,
+      json: async () => ({
+        success: false,
+        error: 'Temporary database outage.',
+      }),
+    });
+
+    expect(await screen.findByTestId('guest-address-save-error-alert')).toBeInTheDocument();
+    expect(document.activeElement).not.toBe(document.body);
+    const retrySaveBtn = screen.getByRole('button', { name: /Retry Save/i });
+    expect(retrySaveBtn).not.toBeDisabled();
+    expect(await axe(container)).toHaveNoViolations();
+  });
 });

@@ -929,6 +929,82 @@ describe('useGuestAddressPortal hook', () => {
     expect(result.current.state.error).toBe('Code not recognized.');
     expect(mockAddToast).not.toHaveBeenCalled();
   });
+
+  it('ignores duplicate handleValidateCode and handleSaveAddress calls while busy and focuses #guest-invitation-code on validation failure', async () => {
+    const codeInput = document.createElement('input');
+    codeInput.id = 'guest-invitation-code';
+    const submitTrigger = document.createElement('button');
+    document.body.appendChild(codeInput);
+    document.body.appendChild(submitTrigger);
+
+    let resolveValidate: ((val: unknown) => void) | null = null;
+    globalFetch
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({ success: false, error: 'Unauthorized' }),
+      })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveValidate = resolve;
+          })
+      );
+
+    const { result } = renderHook(() => useGuestAddressPortal());
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    // Empty code validation focuses #guest-invitation-code
+    submitTrigger.focus();
+    expect(document.activeElement).toBe(submitTrigger);
+    await act(async () => {
+      await result.current.handleValidateCode();
+    });
+    expect(document.activeElement).toBe(codeInput);
+
+    // Duplicate handleValidateCode while validating same code is ignored
+    act(() => {
+      result.current.setCode('GUEST99');
+    });
+    submitTrigger.focus();
+
+    let pendingValidation!: Promise<void>;
+    act(() => {
+      pendingValidation = result.current.handleValidateCode();
+    });
+    expect(result.current.isValidating).toBe(true);
+
+    await act(async () => {
+      await result.current.handleValidateCode();
+    });
+    // 1 initial session check + 1 validate-code request
+    expect(globalFetch).toHaveBeenCalledTimes(2);
+
+    // Resolving 404 validation failure moves focus back to #guest-invitation-code
+    await act(async () => {
+      resolveValidate?.({
+        ok: false,
+        status: 404,
+        json: async () => ({ success: false, error: 'Invalid code.' }),
+      });
+      await pendingValidation;
+    });
+    expect(document.activeElement).toBe(codeInput);
+
+    // Network failure keeps trigger focus instead of stealing focus to #guest-invitation-code
+    submitTrigger.focus();
+    globalFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    await act(async () => {
+      await result.current.handleValidateCode();
+    });
+    expect(document.activeElement).toBe(submitTrigger);
+
+    codeInput.remove();
+    submitTrigger.remove();
+  });
 });
 
 describe('Helper error utilities', () => {

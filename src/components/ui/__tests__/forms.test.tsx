@@ -1,7 +1,16 @@
 import { useState } from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { axe, toHaveNoViolations } from 'jest-axe';
-import { FormGroup, Label, Input, Checkbox, Textarea, Select, FormMessage } from '../forms';
+import {
+  FormGroup,
+  Label,
+  Input,
+  Checkbox,
+  Textarea,
+  Select,
+  FormMessage,
+  focusFirstInvalidControl,
+} from '../forms';
 
 expect.extend(toHaveNoViolations);
 
@@ -606,6 +615,44 @@ test('FormGroup as="fieldset" renders semantic fieldset and legend without htmlF
   expect(legend).toHaveTextContent('Price Range');
   expect(container.querySelector('label[for]')).toBeNull();
   expect(await axe(container)).toHaveNoViolations();
+});
+
+test('focusFirstInvalidControl focuses the first visible enabled aria-invalid="true" control and returns null when none are invalid', () => {
+  const { container } = render(
+    <div>
+      <div className="hidden" aria-hidden="true">
+        <input data-testid="honeypot-invalid" aria-invalid="true" />
+      </div>
+      <FormGroup>
+        <Label>Valid Name</Label>
+        <Input data-testid="valid-input" defaultValue="Jane" />
+      </FormGroup>
+      <FormGroup state="error">
+        <Label>Disabled Invalid</Label>
+        <Input data-testid="disabled-invalid" disabled />
+      </FormGroup>
+      <FormGroup state="error">
+        <Label>Meal Choice</Label>
+        <Select data-testid="first-invalid-select" defaultValue="">
+          <option value="">Choose meal</option>
+        </Select>
+        <FormMessage>Meal is required</FormMessage>
+      </FormGroup>
+      <FormGroup state="error">
+        <Label>Notes</Label>
+        <Textarea data-testid="second-invalid-textarea" />
+        <FormMessage>Notes invalid</FormMessage>
+      </FormGroup>
+    </div>
+  );
+
+  const focused = focusFirstInvalidControl(container);
+  const firstInvalid = screen.getByTestId('first-invalid-select');
+  expect(focused).toBe(firstInvalid);
+  expect(document.activeElement).toBe(firstInvalid);
+
+  const validContainer = document.createElement('div');
+  expect(focusFirstInvalidControl(validContainer)).toBeNull();
 });
 
 

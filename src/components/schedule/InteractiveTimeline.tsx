@@ -19,6 +19,15 @@ import type {
   CustomRsvpQuestionDTO,
 } from '@/features/sub-events';
 import { useScheduleRsvpManager } from '@/hooks/useScheduleRsvpManager';
+import { Button } from '@/components/ui/Button';
+import {
+  FormGroup,
+  FormMessage,
+  Input,
+  Label,
+  Select,
+  focusFirstInvalidControl,
+} from '@/components/ui/forms';
 import { ToggleButtonGroup } from '@/components/ui/ToggleButtonGroup';
 import { AccessibleExternalLink } from '@/components/ui/AccessibleExternalLink';
 import { Icon } from '@/components/ui/Icon';
@@ -522,6 +531,29 @@ export default function InteractiveTimeline({
 
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const timelinePanelRef = useRef<HTMLDivElement | null>(null);
+  const [invalidFocusRequest, setInvalidFocusRequest] = useState<{
+    selector: string;
+    tick: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!invalidFocusRequest) return;
+    const scope =
+      invalidFocusRequest.selector === '#timeline-events-panel'
+        ? timelinePanelRef.current
+        : typeof document !== 'undefined'
+          ? document.querySelector(invalidFocusRequest.selector)
+          : null;
+    if (scope) {
+      if (!focusFirstInvalidControl(scope)) {
+        const pendingStatusRadio = scope.querySelector<HTMLElement>(
+          '[data-rsvp-status-invalid="true"] button[role="radio"]:not([disabled])'
+        );
+        pendingStatusRadio?.focus();
+      }
+    }
+  }, [invalidFocusRequest]);
 
   const activeCategorySlug = useMemo(() => slugifyCategory(activeCategory), [activeCategory]);
 
@@ -589,6 +621,34 @@ export default function InteractiveTimeline({
   }
 
   const categoryLabelText = activeCategory.toLowerCase() === 'all' ? 'All categories' : activeCategory;
+
+  const handleSingleRsvpSubmit = async (eventId: string) => {
+    const ok = await rsvpManager.submitSingle(eventId);
+    if (!ok) {
+      setInvalidFocusRequest((prev) => ({
+        selector: `[data-testid="rsvp-card-${eventId}"]`,
+        tick: (prev?.tick ?? 0) + 1,
+      }));
+    }
+  };
+
+  const handleBatchRsvpSubmit = async () => {
+    const ok = await rsvpManager.submitBatch();
+    if (!ok) {
+      setInvalidFocusRequest((prev) => ({
+        selector: '#timeline-events-panel',
+        tick: (prev?.tick ?? 0) + 1,
+      }));
+    }
+  };
+
+  const firstVisibleErrorEventId = effectiveRsvpOpen
+    ? filteredEvents.find((ev) => {
+      const hasExplicitUserRsvp = ev.userRsvp !== undefined && ev.userRsvp !== null;
+      if (ev.isReadOnly || !(isGuest || hasExplicitUserRsvp)) return false;
+      return Boolean(rsvpManager.getRsvpState(ev.id).error);
+    })?.id ?? null
+    : null;
 
   return (
     <section className={`mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8 ${className}`} id={sectionId}>
@@ -713,7 +773,10 @@ export default function InteractiveTimeline({
               )}
             </div>
             {rsvpManager.batchError && (
-              <span className="text-xs text-rose-600 dark:text-rose-400">
+              <span
+                role={firstVisibleErrorEventId === null ? 'alert' : undefined}
+                className="text-xs text-rose-700 dark:text-rose-300"
+              >
                 {rsvpManager.batchError}
               </span>
             )}
@@ -721,25 +784,33 @@ export default function InteractiveTimeline({
 
           <div className="flex items-center gap-2">
             {rsvpManager.dirtyCount > 0 && (
-              <button
+              <Button
                 type="button"
-                disabled={rsvpManager.isAnySubmitting}
-                onClick={() => rsvpManager.submitBatch()}
-                className="px-4 py-2 bg-primary text-white font-semibold text-xs rounded-lg shadow hover:opacity-90 disabled:opacity-50 transition-opacity"
+                variant="primary"
+                size="sm"
+                busy={rsvpManager.isAnySubmitting}
+                onClick={() => {
+                  void handleBatchRsvpSubmit();
+                }}
+                className="px-4 py-2 h-auto bg-primary text-white font-semibold text-xs rounded-lg shadow hover:opacity-90 transition-opacity"
                 data-testid="rsvp-save-all-button"
               >
                 {rsvpManager.isBatchSubmitting ? 'Saving All...' : 'Save All modified events'}
-              </button>
+              </Button>
             )}
             {rsvpManager.batchError && (
-              <button
+              <Button
                 type="button"
-                disabled={rsvpManager.isAnySubmitting}
-                onClick={() => rsvpManager.submitBatch()}
-                className="px-3 py-1.5 border border-rose-500 text-rose-600 dark:text-rose-400 font-semibold text-xs rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/20 disabled:opacity-50 transition-colors"
+                variant="outline"
+                size="sm"
+                busy={rsvpManager.isAnySubmitting}
+                onClick={() => {
+                  void handleBatchRsvpSubmit();
+                }}
+                className="px-3 py-1.5 h-auto border border-rose-600 text-rose-700 dark:text-rose-300 font-semibold text-xs rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/20 transition-colors"
               >
                 Retry Batch
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -747,6 +818,7 @@ export default function InteractiveTimeline({
 
       {/* Timeline Event Cards or EmptyState */}
       <div
+        ref={timelinePanelRef}
         id="timeline-events-panel"
         role="tabpanel"
         aria-labelledby={`timeline-tab-${activeCategorySlug}`}
@@ -1061,8 +1133,7 @@ export default function InteractiveTimeline({
                       const isZeroPlusOneAllowance = resolvedMaxPlusOnes === 0;
                       const isDeclined = itemState.current.status === 'declined';
                       const isAttending = itemState.current.status === 'attending';
-                      const isPlusOneDisabled =
-                        isControlDisabled || isZeroPlusOneAllowance || isDeclined;
+                      const isPlusOneNonTransientlyDisabled = isZeroPlusOneAllowance || isDeclined;
                       const plusOneMaxAttr =
                         typeof resolvedMaxPlusOnes === 'number'
                           ? Math.min(MAX_RSVP_PLUS_ONE_COUNT, Math.max(0, resolvedMaxPlusOnes))
@@ -1070,6 +1141,11 @@ export default function InteractiveTimeline({
                       const attendingPlusOneCount =
                         isZeroPlusOneAllowance || !isAttending ? 0 : itemState.current.plusOneCount;
                       const attendingPartySize = isAttending ? 1 + attendingPlusOneCount : 0;
+                      const hasCardOrBatchAlert = Boolean(itemState.error || rsvpManager.batchError);
+                      const isPrimaryErrorAlertCard =
+                        Boolean(itemState.error) && firstVisibleErrorEventId === event.id;
+                      const statusFieldError = itemState.fieldErrors.status;
+                      const plusOneFieldError = itemState.fieldErrors.plusOneCount;
 
                       return (
                         <div
@@ -1101,6 +1177,9 @@ export default function InteractiveTimeline({
                           <ToggleButtonGroup
                             mode="radiogroup"
                             aria-labelledby={`rsvp-heading-${event.id}`}
+                            aria-invalid={statusFieldError ? true : undefined}
+                            data-rsvp-status-invalid={statusFieldError ? 'true' : undefined}
+                            busy={isControlDisabled}
                             value={
                               itemState.current.status === 'pending'
                                 ? null
@@ -1111,7 +1190,6 @@ export default function InteractiveTimeline({
                             options={(['attending', 'declined'] as const).map((st) => ({
                               value: st,
                               label: st,
-                              disabled: isControlDisabled,
                               className: 'px-3 py-1.5 rounded-lg text-xs font-semibold capitalize',
                               activeClassName:
                                 st === 'attending'
@@ -1123,10 +1201,13 @@ export default function InteractiveTimeline({
                           />
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-                            <div>
-                              <label
+                            <FormGroup
+                              state={plusOneFieldError ? 'error' : 'default'}
+                              busy={isControlDisabled}
+                            >
+                              <Label
                                 htmlFor={`rsvp-plus-one-${event.id}`}
-                                className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1"
+                                className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1"
                               >
                                 Plus-One Count
                                 {typeof resolvedMaxPlusOnes === 'number' && (
@@ -1136,20 +1217,22 @@ export default function InteractiveTimeline({
                                       : `(Max ${resolvedMaxPlusOnes})`}
                                   </span>
                                 )}
-                              </label>
-                              <input
+                              </Label>
+                              <Input
                                 id={`rsvp-plus-one-${event.id}`}
                                 type="number"
+                                sizeVariant="compact"
                                 min={0}
                                 max={plusOneMaxAttr}
-                                disabled={isPlusOneDisabled}
+                                disabled={isPlusOneNonTransientlyDisabled}
+                                busy={isControlDisabled}
                                 value={
-                                  isZeroPlusOneAllowance || isDeclined
+                                  isPlusOneNonTransientlyDisabled
                                     ? 0
                                     : itemState.current.plusOneCount
                                 }
                                 onChange={(e) => {
-                                  if (isZeroPlusOneAllowance || isDeclined) return;
+                                  if (isPlusOneNonTransientlyDisabled || isControlDisabled) return;
                                   rsvpManager.updateRsvp(event.id, {
                                     ...(itemState.current.status === 'pending'
                                       ? { status: 'attending' }
@@ -1157,34 +1240,43 @@ export default function InteractiveTimeline({
                                     plusOneCount: Math.max(0, parseInt(e.target.value, 10) || 0),
                                   });
                                 }}
-                                className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                                style={{ borderRadius: '0.5rem' }}
+                                className="h-auto px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                               />
-                            </div>
+                              {plusOneFieldError && (
+                                <FormMessage role={hasCardOrBatchAlert ? 'none' : undefined}>
+                                  {plusOneFieldError}
+                                </FormMessage>
+                              )}
+                            </FormGroup>
 
-                            <div>
-                              <label
+                            <FormGroup busy={isControlDisabled}>
+                              <Label
                                 htmlFor={`rsvp-dietary-notes-${event.id}`}
-                                className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1"
+                                className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1"
                               >
                                 Dietary Requirements / Notes
-                              </label>
-                              <input
+                              </Label>
+                              <Input
                                 id={`rsvp-dietary-notes-${event.id}`}
                                 type="text"
+                                sizeVariant="compact"
                                 placeholder="e.g. Vegetarian, Nut allergy"
-                                disabled={isControlDisabled}
+                                busy={isControlDisabled}
                                 value={itemState.current.dietaryNotes}
-                                onChange={(e) =>
+                                onChange={(e) => {
+                                  if (isControlDisabled) return;
                                   rsvpManager.updateRsvp(event.id, {
                                     ...(itemState.current.status === 'pending'
                                       ? { status: 'attending' }
                                       : {}),
                                     dietaryNotes: e.target.value,
-                                  })
-                                }
-                                className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                                  });
+                                }}
+                                style={{ borderRadius: '0.5rem' }}
+                                className="h-auto px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                               />
-                            </div>
+                            </FormGroup>
                           </div>
 
                           {/* Conditional Plus-One Name Inputs for Attending Guests */}
@@ -1199,23 +1291,32 @@ export default function InteractiveTimeline({
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 {Array.from({ length: attendingPlusOneCount }, (_, idx) => {
                                   const nameInputId = `rsvp-plus-one-name-${event.id}-${idx}`;
+                                  const nameFieldError =
+                                    itemState.fieldErrors[`plusOneNames.${idx}`];
                                   return (
-                                    <div key={nameInputId}>
-                                      <label
+                                    <FormGroup
+                                      key={nameInputId}
+                                      state={nameFieldError ? 'error' : 'default'}
+                                      busy={isControlDisabled}
+                                    >
+                                      <Label
                                         htmlFor={nameInputId}
-                                        className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
+                                        className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
                                       >
                                         {attendingPlusOneCount === 1
                                           ? 'Plus-One Full Name'
                                           : `Plus-One #${idx + 1} Full Name`}
-                                      </label>
-                                      <input
+                                      </Label>
+                                      <Input
                                         id={nameInputId}
                                         type="text"
+                                        sizeVariant="compact"
+                                        required
                                         placeholder="e.g. Jordan Taylor"
-                                        disabled={isControlDisabled}
+                                        busy={isControlDisabled}
                                         value={itemState.current.plusOneNames[idx] ?? ''}
                                         onChange={(e) => {
+                                          if (isControlDisabled) return;
                                           const nextNames = Array.from(
                                             { length: attendingPlusOneCount },
                                             (__, nIdx) =>
@@ -1227,9 +1328,15 @@ export default function InteractiveTimeline({
                                             plusOneNames: nextNames,
                                           });
                                         }}
-                                        className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                                        style={{ borderRadius: '0.5rem' }}
+                                        className="h-auto px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                                       />
-                                    </div>
+                                      {nameFieldError && (
+                                        <FormMessage role={hasCardOrBatchAlert ? 'none' : undefined}>
+                                          {nameFieldError}
+                                        </FormMessage>
+                                      )}
+                                    </FormGroup>
                                   );
                                 })}
                               </div>
@@ -1243,7 +1350,13 @@ export default function InteractiveTimeline({
                               data-testid={`rsvp-meals-${event.id}`}
                             >
                               <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">
-                                Entrée Selections *
+                                Entrée Selections{' '}
+                                <span
+                                  aria-hidden="true"
+                                  className="text-[var(--form-error-text,var(--color-error-text,#dc2626))]"
+                                >
+                                  *
+                                </span>
                               </p>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 {Array.from({ length: attendingPartySize }, (_, attendeeIdx) => {
@@ -1258,21 +1371,28 @@ export default function InteractiveTimeline({
                                   const selectedMealObj = eventMealOptions.find(
                                     (m) => m.id === selectedMealId
                                   );
+                                  const mealFieldError =
+                                    itemState.fieldErrors[`mealSelections.${attendeeIdx}`];
 
                                   return (
-                                    <div key={selectId}>
-                                      <label
+                                    <FormGroup
+                                      key={selectId}
+                                      required
+                                      state={mealFieldError ? 'error' : 'default'}
+                                      busy={isControlDisabled}
+                                    >
+                                      <Label
                                         htmlFor={selectId}
-                                        className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
+                                        className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
                                       >
-                                        {`Entrée for ${attendeeLabel} *`}
-                                      </label>
-                                      <select
+                                        {`Entrée for ${attendeeLabel}`}
+                                      </Label>
+                                      <Select
                                         id={selectId}
-                                        required
-                                        disabled={isControlDisabled}
+                                        busy={isControlDisabled}
                                         value={selectedMealId}
                                         onChange={(e) => {
+                                          if (isControlDisabled) return;
                                           const nextMeals = Array.from(
                                             { length: attendingPartySize },
                                             (__, mIdx) =>
@@ -1284,7 +1404,8 @@ export default function InteractiveTimeline({
                                             mealSelections: nextMeals,
                                           });
                                         }}
-                                        className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                                        style={{ borderRadius: '0.5rem' }}
+                                        className="h-auto px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                                       >
                                         <option value="">Select an entrée...</option>
                                         {selectedMealId && !selectedMealObj && (
@@ -1299,13 +1420,18 @@ export default function InteractiveTimeline({
                                               : opt.label}
                                           </option>
                                         ))}
-                                      </select>
+                                      </Select>
                                       {selectedMealObj?.description && (
-                                        <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                        <p className="mt-1 text-[11px] text-gray-600 dark:text-gray-400">
                                           {selectedMealObj.description}
                                         </p>
                                       )}
-                                    </div>
+                                      {mealFieldError && (
+                                        <FormMessage role={hasCardOrBatchAlert ? 'none' : undefined}>
+                                          {mealFieldError}
+                                        </FormMessage>
+                                      )}
+                                    </FormGroup>
                                   );
                                 })}
                               </div>
@@ -1326,31 +1452,38 @@ export default function InteractiveTimeline({
                                   const qControlId = `rsvp-question-${event.id}-${question.id}`;
                                   const currentAnswer =
                                     itemState.current.customAnswers[question.id] ?? '';
+                                  const questionFieldError =
+                                    itemState.fieldErrors[`customAnswers.${question.id}`];
 
                                   return (
-                                    <div key={question.id}>
-                                      <label
+                                    <FormGroup
+                                      key={question.id}
+                                      required={question.required}
+                                      state={questionFieldError ? 'error' : 'default'}
+                                      busy={isControlDisabled}
+                                    >
+                                      <Label
                                         htmlFor={qControlId}
-                                        className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
+                                        className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
                                       >
                                         {question.prompt}
-                                        {question.required ? ' *' : ''}
-                                      </label>
+                                      </Label>
                                       {question.type === 'choice' ? (
-                                        <select
+                                        <Select
                                           id={qControlId}
-                                          required={question.required}
-                                          disabled={isControlDisabled}
+                                          busy={isControlDisabled}
                                           value={currentAnswer}
-                                          onChange={(e) =>
+                                          onChange={(e) => {
+                                            if (isControlDisabled) return;
                                             rsvpManager.updateRsvp(event.id, {
                                               customAnswers: {
                                                 ...itemState.current.customAnswers,
                                                 [question.id]: e.target.value,
                                               },
-                                            })
-                                          }
-                                          className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                                            });
+                                          }}
+                                          style={{ borderRadius: '0.5rem' }}
+                                          className="h-auto px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                                         >
                                           <option value="">Select an option...</option>
                                           {currentAnswer && !question.options.includes(currentAnswer) && (
@@ -1363,26 +1496,33 @@ export default function InteractiveTimeline({
                                               {choice}
                                             </option>
                                           ))}
-                                        </select>
+                                        </Select>
                                       ) : (
-                                        <input
+                                        <Input
                                           id={qControlId}
                                           type="text"
-                                          required={question.required}
-                                          disabled={isControlDisabled}
+                                          sizeVariant="compact"
+                                          busy={isControlDisabled}
                                           value={currentAnswer}
-                                          onChange={(e) =>
+                                          onChange={(e) => {
+                                            if (isControlDisabled) return;
                                             rsvpManager.updateRsvp(event.id, {
                                               customAnswers: {
                                                 ...itemState.current.customAnswers,
                                                 [question.id]: e.target.value,
                                               },
-                                            })
-                                          }
-                                          className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                                            });
+                                          }}
+                                          style={{ borderRadius: '0.5rem' }}
+                                          className="h-auto px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                                         />
                                       )}
-                                    </div>
+                                      {questionFieldError && (
+                                        <FormMessage role={hasCardOrBatchAlert ? 'none' : undefined}>
+                                          {questionFieldError}
+                                        </FormMessage>
+                                      )}
+                                    </FormGroup>
                                   );
                                 })}
                               </div>
@@ -1390,14 +1530,18 @@ export default function InteractiveTimeline({
                           )}
 
                           <div className="flex justify-between items-center">
-                            <button
+                            <Button
                               type="button"
-                              disabled={isControlDisabled}
-                              onClick={() => rsvpManager.submitSingle(event.id)}
-                              className="px-4 py-1.5 bg-primary text-white font-semibold text-xs rounded-lg shadow hover:opacity-90 disabled:opacity-50 transition-opacity"
+                              variant="primary"
+                              size="sm"
+                              busy={isControlDisabled}
+                              onClick={() => {
+                                void handleSingleRsvpSubmit(event.id);
+                              }}
+                              className="px-4 py-1.5 h-auto bg-primary text-white font-semibold text-xs rounded-lg shadow hover:opacity-90 transition-opacity"
                             >
                               {itemState.isSubmitting ? 'Submitting...' : 'Save RSVP'}
-                            </button>
+                            </Button>
 
                             {itemState.message && !itemState.error && (
                               <span className="text-xs font-medium text-status-success-text">
@@ -1408,18 +1552,22 @@ export default function InteractiveTimeline({
 
                           {itemState.error && (
                             <div
-                              role="alert"
-                              className="mt-2 text-xs text-rose-600 dark:text-rose-400 flex items-center justify-between"
+                              role={isPrimaryErrorAlertCard ? 'alert' : undefined}
+                              className="mt-2 text-xs text-rose-700 dark:text-rose-300 flex items-center justify-between"
                             >
                               <span>{itemState.error}</span>
-                              <button
+                              <Button
                                 type="button"
-                                disabled={isControlDisabled}
-                                onClick={() => rsvpManager.submitSingle(event.id)}
-                                className="underline font-medium hover:text-rose-700 ml-2"
+                                variant="ghost"
+                                size="sm"
+                                busy={isControlDisabled}
+                                onClick={() => {
+                                  void handleSingleRsvpSubmit(event.id);
+                                }}
+                                className="h-auto px-1 py-0.5 text-xs text-rose-700 dark:text-rose-300 underline font-medium hover:text-rose-800 dark:hover:text-rose-200 ml-2"
                               >
                                 Retry
-                              </button>
+                              </Button>
                             </div>
                           )}
                         </div>
