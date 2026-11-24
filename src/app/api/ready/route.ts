@@ -96,8 +96,12 @@ async function runReadinessCheck(): Promise<ReadinessProbeOutcome> {
       );
 
       const normalizedMigrations = Array.isArray(migrationRows) ? migrationRows : [];
+      const requiredMigrationSet = new Set<string>(REQUIRED_MIGRATION_NAMES);
       const failedMigrations = normalizedMigrations.filter(
-        (row) => row.finished_at === null && row.rolled_back_at === null
+        (row) =>
+          requiredMigrationSet.has(row.migration_name) &&
+          row.finished_at === null &&
+          row.rolled_back_at === null
       );
 
       if (failedMigrations.length > 0) {
