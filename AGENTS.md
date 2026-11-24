@@ -4,12 +4,12 @@ This guide defines the local bootstrap, architecture boundaries, TypeScript conf
 
 ## 1. Environment Bootstrap
 
-- **Node.js & npm:** Node.js **v22.x LTS** (`>=22.22.1 <23.0.0`, pinned in [`.nvmrc`](.nvmrc)) and **`npm@10.9.x`** (`^10.9.0`, enforced via [`.npmrc`](.npmrc) and `devEngines` in [`package.json`](package.json); run `nvm use` if `nvm` is available).
+- **Node.js & npm:** Node.js **v22.x LTS** (`>=22.22.1 <23.0.0`, pinned in [`.nvmrc`](.nvmrc)) and **`npm@10.9.x`** (`^10.9.0`, pinned via `packageManager` for Corepack and enforced via [`.npmrc`](.npmrc) and `devEngines` in [`package.json`](package.json) and [`docker/prisma-cli/package.json`](docker/prisma-cli/package.json); run `nvm use` if `nvm` is available and `corepack enable` or `corepack npm` so Corepack selects `npm@10.9.x` automatically).
 - **Install dependencies:**
   ```bash
   CI=true npm ci
   ```
-  *(Setting `CI=true` skips `.githooks` reconfiguration inside non-interactive sandboxes while still running `next typegen`, Prisma Client generation, and `node_modules/.package-lock-hash` recording via `postinstall`.)*
+  *(Setting `CI=true` skips `.githooks` reconfiguration inside non-interactive sandboxes while still running `next typegen`, Prisma Client generation, non-`wasm32` optional WASM pruning, and `node_modules/.package-lock-hash` recording via `postinstall`; lockfile-only runs via `npm install --package-lock-only` skip binary/hash hooks safely.)*
 - **Regenerate Prisma Client (after schema edits):**
   ```bash
   npm run prisma:generate

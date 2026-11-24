@@ -1170,6 +1170,86 @@ describe('check-docker-build', () => {
       }),
     ]);
   });
+
+  it('flags non-overridden transitive peerDependencies conflicts against root packages while honoring scoped overrides', () => {
+    const pkgPath = path.join(tempDir, 'package.json');
+    const basePkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as Record<string, unknown>;
+    fs.writeFileSync(
+      pkgPath,
+      `${JSON.stringify(
+        {
+          ...basePkg,
+          devDependencies: {
+            '@babel/core': '^8.0.0',
+            eslint: '^10.15.0',
+            'eslint-config-next': '^16.4.6',
+          },
+          overrides: {
+            'eslint-plugin-import': {
+              eslint: '$eslint',
+            },
+          },
+        },
+        null,
+        2
+      )}\n`
+    );
+
+    fs.writeFileSync(
+      path.join(tempDir, 'package-lock.json'),
+      JSON.stringify(
+        {
+          lockfileVersion: 3,
+          packages: {
+            '': {
+              devDependencies: {
+                '@babel/core': '^8.0.0',
+                eslint: '^10.15.0',
+                'eslint-config-next': '^16.4.6',
+              },
+            },
+            'node_modules/@babel/core': { version: '8.1.3' },
+            'node_modules/eslint': { version: '10.15.0' },
+            'node_modules/eslint-config-next': {
+              version: '16.4.6',
+              peerDependencies: { eslint: '>=9.0.0' },
+            },
+            'node_modules/eslint-config-next/node_modules/eslint-plugin-import': {
+              version: '2.32.0',
+              peerDependencies: { eslint: '^2 || ^3 || ^4 || ^5 || ^6 || ^7.2.0 || ^8 || ^9' },
+            },
+            'node_modules/eslint-config-next/node_modules/eslint-plugin-jsx-a11y': {
+              version: '6.10.2',
+              peerDependencies: { eslint: '^3 || ^4 || ^5 || ^6 || ^7 || ^8 || ^9' },
+            },
+            'node_modules/babel-preset-current-node-syntax/node_modules/@babel/plugin-syntax-bigint': {
+              version: '7.8.3',
+              peerDependencies: { '@babel/core': '^7.0.0-0' },
+            },
+            'node_modules/prisma': { version: '7.10.1' },
+            'node_modules/@prisma/config': { version: '7.10.1' },
+            'node_modules/effect': { version: '3.22.5' },
+          },
+        },
+        null,
+        2
+      )
+    );
+
+    const { violations } = checkDockerBuild(tempDir);
+    expect(violations).toEqual([
+      expect.objectContaining({
+        filePath: 'package-lock.json',
+        imageRef: 'eslint-plugin-jsx-a11y -> eslint',
+        reason: expect.stringContaining('conflicts with resolved "node_modules/eslint@10.15.0"'),
+      }),
+      expect.objectContaining({
+        filePath: 'package-lock.json',
+        imageRef: '@babel/plugin-syntax-bigint -> @babel/core',
+        reason: expect.stringContaining('conflicts with resolved "node_modules/@babel/core@8.1.3"'),
+      }),
+    ]);
+  });
   it('allows pull_policy: never services sharing a local build image across docker-compose.yml and docker-compose.rollout.yml', () => {
     fs.writeFileSync(
       path.join(tempDir, 'docker-compose.yml'),

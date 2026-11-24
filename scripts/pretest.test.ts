@@ -13,6 +13,7 @@ import {
   main,
   parseDatabaseEndpoint,
   probeTcpReadiness,
+  pruneUnreachableOptionalPackages,
   recordInstallState,
   resolveTestEnvironment,
   shouldGeneratePrismaClient,
@@ -451,6 +452,106 @@ describe('CI-aware pretest & Jest setup environment orchestration', () => {
 
       expect(migrateAttempts).toBe(2);
       expect(resetCalls).toEqual([{ url: DEFAULT_TEST_DATABASE_URL, schema: 'public' }]);
+    });
+
+    it('prunes unpacked unreachable WASM optional packages on non-wasm32 hosts and skips hash recording on --package-lock-only', async () => {
+      const lockPayload = {
+        name: 'wedding_website',
+        lockfileVersion: 3,
+        packages: {
+          '': {
+            dependencies: {
+              sharp: '0.35.5',
+            },
+          },
+          'node_modules/sharp': {
+            version: '0.35.5',
+            optionalDependencies: {
+              '@img/sharp-linux-x64': '0.35.5',
+              '@img/sharp-webcontainers-wasm32': '0.35.5',
+            },
+          },
+          'node_modules/@img/sharp-linux-x64': {
+            version: '0.35.5',
+            optional: true,
+            os: ['linux'],
+            cpu: ['x64'],
+          },
+          'node_modules/@img/sharp-webcontainers-wasm32': {
+            version: '0.35.5',
+            optional: true,
+            cpu: ['wasm32'],
+            dependencies: {
+              '@img/sharp-wasm32': '0.35.5',
+            },
+          },
+          'node_modules/@img/sharp-wasm32': {
+            version: '0.35.5',
+            optional: true,
+            dependencies: {
+              '@emnapi/runtime': '^1.11.3',
+            },
+          },
+          'node_modules/@emnapi/runtime': {
+            version: '1.11.3',
+            optional: true,
+          },
+        },
+      };
+      fs.writeFileSync(
+        path.join(tempDir, 'package-lock.json'),
+        `${JSON.stringify(lockPayload, null, 2)}\n`,
+        'utf8'
+      );
+
+      const nmDir = path.join(tempDir, 'node_modules');
+      fs.mkdirSync(path.join(nmDir, '@img/sharp-linux-x64'), { recursive: true });
+      fs.mkdirSync(path.join(nmDir, '@img/sharp-wasm32'), { recursive: true });
+      fs.mkdirSync(path.join(nmDir, '@emnapi/runtime'), { recursive: true });
+      fs.writeFileSync(
+        path.join(nmDir, '.package-lock.json'),
+        `${JSON.stringify(
+          {
+            lockfileVersion: 3,
+            packages: {
+              'node_modules/@img/sharp-linux-x64': { version: '0.35.5', optional: true },
+              'node_modules/@img/sharp-wasm32': { version: '0.35.5', optional: true },
+              'node_modules/@emnapi/runtime': { version: '1.11.3', optional: true },
+            },
+          },
+          null,
+          2
+        )}\n`,
+        'utf8'
+      );
+
+      // Lockfile-only postinstall run must not write .package-lock-hash or prune node_modules
+      await main({
+        rootDir: tempDir,
+        env: { npm_config_package_lock_only: 'true' },
+        argv: ['node', 'scripts/pretest.mjs', '--record-install-state'],
+      });
+      expect(fs.existsSync(path.join(nmDir, '.package-lock-hash'))).toBe(false);
+      expect(fs.existsSync(path.join(nmDir, '@img/sharp-wasm32'))).toBe(true);
+
+      // On wasm32 hosts, WASM optional packages are preserved
+      expect(
+        pruneUnreachableOptionalPackages(tempDir, { platform: 'linux', arch: 'wasm32' })
+      ).toEqual([]);
+      expect(fs.existsSync(path.join(nmDir, '@img/sharp-wasm32'))).toBe(true);
+
+      // On non-wasm32 hosts, recordInstallState prunes unreachable WASM packages and updates hidden lockfile
+      recordInstallState(tempDir, { platform: 'linux', arch: 'x64' });
+      expect(fs.existsSync(path.join(nmDir, '@img/sharp-linux-x64'))).toBe(true);
+      expect(fs.existsSync(path.join(nmDir, '@img/sharp-wasm32'))).toBe(false);
+      expect(fs.existsSync(path.join(nmDir, '@emnapi/runtime'))).toBe(false);
+      expect(fs.existsSync(path.join(nmDir, '@emnapi'))).toBe(false);
+      expect(fs.existsSync(path.join(nmDir, '.package-lock-hash'))).toBe(true);
+
+      const hiddenLock = JSON.parse(
+        fs.readFileSync(path.join(nmDir, '.package-lock.json'), 'utf8')
+      ) as { packages: Record<string, unknown> };
+      expect(Object.keys(hiddenLock.packages)).toEqual(['node_modules/@img/sharp-linux-x64']);
     });
   });
 });

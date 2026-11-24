@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "license": "AGPL-3.0-or-later",
+  "packageManager": "npm@10.9.11+sha512.3da90f8750d59cdb9ac567a167d74341cbc1026a49abb9271e20d62864b14f9f15d757035426732e1d8dfa98cc51a4f668a6e3cdfa5b82d73c31731e80dec88c",
   "engines": {
     "node": ">=22.22.1 <23.0.0",
     "npm": "^10.9.0"
@@ -83,7 +84,7 @@
     "check:all": "npm run quality",
     "scaffold": "node scripts/scaffold-feature.mjs",
     "prepare": "node -e 'import(\"fs\").then(f => f.existsSync(\"./scripts/install-git-hooks.js\") && import(\"./scripts/install-git-hooks.js\"))'",
-    "postinstall": "next typegen && prisma generate && node scripts/pretest.mjs --record-install-state"
+    "postinstall": "next typegen && prisma generate && node scripts/pretest.mjs --record-install-state || node -e \"process.exit(process.env.npm_config_package_lock_only === 'true' ? 0 : 1)\""
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1173.0",
@@ -126,6 +127,8 @@
     "@babel/preset-env": "^8.0.7",
     "@babel/preset-react": "^8.0.1",
     "@babel/preset-typescript": "^8.0.7",
+    "@electric-sql/pglite": "0.4.3",
+    "@electric-sql/pglite-socket": "0.1.3",
     "@eslint/eslintrc": "^3.3.7",
     "@playwright/test": "^1.65.1",
     "@storybook/addon-docs": "^10.6.8",
@@ -176,7 +179,58 @@
     "yaml": "^2.9.1"
   },
   "overrides": {
+    "@babel/plugin-syntax-async-generators": {
+      "@babel/core": "$@babel/core"
+    },
+    "@babel/plugin-syntax-bigint": {
+      "@babel/core": "$@babel/core"
+    },
+    "@babel/plugin-syntax-class-properties": {
+      "@babel/core": "$@babel/core"
+    },
+    "@babel/plugin-syntax-class-static-block": {
+      "@babel/core": "$@babel/core"
+    },
+    "@babel/plugin-syntax-import-attributes": {
+      "@babel/core": "$@babel/core"
+    },
+    "@babel/plugin-syntax-import-meta": {
+      "@babel/core": "$@babel/core"
+    },
+    "@babel/plugin-syntax-json-strings": {
+      "@babel/core": "$@babel/core"
+    },
+    "@babel/plugin-syntax-logical-assignment-operators": {
+      "@babel/core": "$@babel/core"
+    },
+    "@babel/plugin-syntax-nullish-coalescing-operator": {
+      "@babel/core": "$@babel/core"
+    },
+    "@babel/plugin-syntax-numeric-separator": {
+      "@babel/core": "$@babel/core"
+    },
+    "@babel/plugin-syntax-object-rest-spread": {
+      "@babel/core": "$@babel/core"
+    },
+    "@babel/plugin-syntax-optional-catch-binding": {
+      "@babel/core": "$@babel/core"
+    },
+    "@babel/plugin-syntax-optional-chaining": {
+      "@babel/core": "$@babel/core"
+    },
+    "@babel/plugin-syntax-private-property-in-object": {
+      "@babel/core": "$@babel/core"
+    },
+    "@babel/plugin-syntax-top-level-await": {
+      "@babel/core": "$@babel/core"
+    },
     "effect": "^3.22.5",
+    "eslint-plugin-import": {
+      "eslint": "$eslint"
+    },
+    "eslint-plugin-jsx-a11y": {
+      "eslint": "$eslint"
+    },
     "eslint-plugin-react": {
       "eslint": "$eslint"
     },
