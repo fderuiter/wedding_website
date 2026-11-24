@@ -571,8 +571,8 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
     }
   });
 
-  it('labels header landmark with aria-label="Site header" per ARIA14 and suppresses header/nav landmarks in preview mode', () => {
-    const { rerender } = render(
+  it('labels header landmark with aria-label="Site header" per ARIA14, uses theme background surface token, and suppresses header/nav landmarks in preview mode', async () => {
+    const { container, rerender } = render(
       <Navbar
         isAdmin={false}
         handleLogout={jest.fn()}
@@ -583,8 +583,10 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
 
     const banner = screen.getByRole('banner', { name: 'Site header' });
     expect(banner).toBeInTheDocument();
+    expect(banner).toHaveClass('bg-[var(--color-background,#ffffff)]');
     expect(headerRef.current).toBe(banner);
     expect(screen.getByRole('navigation', { name: 'Global Navigation' })).toBeInTheDocument();
+    expect(await axe(container)).toHaveNoViolations();
 
     rerender(
       <Navbar
@@ -600,5 +602,6 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
     expect(headerRef.current).toBeInstanceOf(HTMLDivElement);
     expect(screen.getByText('A & B')).toBeInTheDocument();
+    expect(await axe(container)).toHaveNoViolations();
   });
 });

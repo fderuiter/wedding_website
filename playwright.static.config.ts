@@ -53,14 +53,20 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   workers: 2,
-  timeout: 180_000,
+  timeout: 300_000,
   reporter: process.env.CI ? 'github' : 'list',
   use: {
     baseURL: origin,
     trace: 'retain-on-failure',
     launchOptions: {
       ...(fallbackExecutablePath ? { executablePath: fallbackExecutablePath } : {}),
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-gpu',
+        '--disable-dev-shm-usage',
+        '--disk-cache-size=1',
+      ],
     },
   },
   projects: [

@@ -631,7 +631,7 @@ export default function Navbar({
   );
 
   const headerClassName =
-    'fixed top-0 left-0 right-0 z-50 bg-transparent backdrop-filter backdrop-blur-lg border-b border-[var(--color-surface-border,rgba(0,0,0,0.1))]';
+    'fixed top-0 left-0 right-0 z-50 bg-[var(--color-background,#ffffff)] backdrop-filter backdrop-blur-lg border-b border-[var(--color-surface-border,rgba(0,0,0,0.1))]';
 
   const navbarContent = (
     <>

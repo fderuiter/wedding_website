@@ -238,6 +238,7 @@ export default function GuestLoginPage() {
       >
         <Suspense fallback={
           <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl p-8 sm:p-10 flex flex-col gap-6 border border-gray-100 dark:border-gray-700 relative overflow-hidden items-center justify-center min-h-[300px]">
+            <h1 className="sr-only">Guest Portal</h1>
             <Icon name="Loader2" className="animate-spin h-10 w-10 text-primary" />
           </div>
         }>

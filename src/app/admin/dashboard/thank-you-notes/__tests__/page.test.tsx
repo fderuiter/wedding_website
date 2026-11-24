@@ -1272,6 +1272,30 @@ describe('ThankYouNotesPage', () => {
     });
   });
 
+  it('renders accessible error alert with calibrated contrast and zero axe violations when loading fails', async () => {
+    (global.fetch as jest.Mock).mockImplementation((url: string) => {
+      if (url.includes('/api/admin/thank-you-notes')) {
+        return Promise.resolve({
+          ok: false,
+          status: 500,
+          json: () => Promise.resolve({ error: 'Database unavailable' }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    });
+
+    const { container } = render(
+      <ToastProvider>
+        <ThankYouNotesPage />
+      </ToastProvider>
+    );
+
+    const errorAlert = await screen.findByRole('alert');
+    expect(errorAlert).toHaveTextContent(/Failed to fetch thank-you notes/i);
+    expect(errorAlert).toHaveClass('text-red-700', 'dark:text-red-400');
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
   it('prefixes NEXT_PUBLIC_BASE_PATH when searching guest households under a subpath deployment', async () => {
     const prevBasePath = process.env.NEXT_PUBLIC_BASE_PATH;
     process.env.NEXT_PUBLIC_BASE_PATH = '/wedding_website/demo';

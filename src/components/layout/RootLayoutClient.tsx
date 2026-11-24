@@ -23,7 +23,7 @@ import { useStickyOffset } from '@/components/ui/useStickyOffset';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useTheme } from '@/components/ThemeProvider';
 import type { ThemePreset } from '@/lib/theme/presets';
-import { MotionGlobalConfig } from 'framer-motion';
+import { MotionConfig, MotionGlobalConfig } from 'framer-motion';
 import type { ContentNodeDTO } from '@/features/content';
 import SetupWizard from '@/components/setup/SetupWizard';
 import {
@@ -39,6 +39,7 @@ import { isFeatureEnabled } from '@/lib/modules';
 
 if (
   typeof window !== 'undefined' &&
+  MotionGlobalConfig &&
   (window.navigator.userAgent.includes('HeadlessChrome') ||
     window.navigator.webdriver === true ||
     (typeof window.matchMedia === 'function' &&
@@ -110,7 +111,7 @@ function RootLayoutInner({
   const router = useRouter();
   const pathname = usePathname();
   const headerRef = useRef<HTMLElement>(null);
-  const [mainPaddingTop, setMainPaddingTop] = useState(0);
+  const [mainPaddingTop, setMainPaddingTop] = useState(64);
 
   useEffect(() => {
     if (!isPreview || typeof window === 'undefined') return;
@@ -423,13 +424,21 @@ export default function RootLayoutClient({
     return client;
   });
 
+  const layoutTree = (
+    <DemoProvider enabled={isStaticExport}>
+      <RootLayoutInner config={config} faqs={faqs} isPreview={isPreview} queryClient={queryClient}>
+        {children}
+      </RootLayoutInner>
+    </DemoProvider>
+  );
+
   return (
     <QueryClientProvider client={queryClient}>
-      <DemoProvider enabled={isStaticExport}>
-        <RootLayoutInner config={config} faqs={faqs} isPreview={isPreview} queryClient={queryClient}>
-          {children}
-        </RootLayoutInner>
-      </DemoProvider>
+      {typeof MotionConfig === 'function' ? (
+        <MotionConfig reducedMotion="user">{layoutTree}</MotionConfig>
+      ) : (
+        layoutTree
+      )}
     </QueryClientProvider>
   );
 }

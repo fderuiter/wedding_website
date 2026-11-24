@@ -181,6 +181,7 @@ describe('local smoke isolation, staged static exports, and untracked next-env.d
       fs.writeFileSync(path.join(tempDir, 'public', 'uploads', 'guest-photo.jpg'), 'secret');
 
       fs.mkdirSync(path.join(tempDir, 'src', 'app', 'api', 'ready'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, 'src', 'app', 'globals.css'), '@import "tailwindcss";\n');
       fs.writeFileSync(path.join(tempDir, 'src', 'app', 'page.tsx'), 'export default function Page() { return null; }');
       fs.writeFileSync(path.join(tempDir, 'src', 'app', 'api', 'ready', 'route.ts'), 'export function GET() {}');
 
@@ -188,6 +189,9 @@ describe('local smoke isolation, staged static exports, and untracked next-env.d
       expect(stageDir).toBe(path.join(tempDir, '.next', 'export-stage'));
       expect(fs.existsSync(path.join(tempDir, 'src', 'app', 'api', 'ready', 'route.ts'))).toBe(true);
       expect(fs.existsSync(path.join(stageDir, 'src', 'app', 'page.tsx'))).toBe(true);
+      expect(fs.readFileSync(path.join(stageDir, 'src', 'app', 'globals.css'), 'utf8')).toContain(
+        '@source "../../../../src/**/*.{ts,tsx}";'
+      );
       expect(fs.existsSync(path.join(stageDir, 'src', 'app', 'api'))).toBe(false);
       expect(fs.existsSync(path.join(stageDir, 'public', 'favicon.ico'))).toBe(true);
       expect(fs.existsSync(path.join(stageDir, 'public', 'uploads'))).toBe(false);

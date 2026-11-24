@@ -1,6 +1,7 @@
 import { render, screen, act, fireEvent, createEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
+import type { DemoContextValue } from '@/components/demo/DemoContext';
 import { ReceptionSlideshowClient } from '../ReceptionSlideshowClient';
 import RootLayoutClient from '@/components/layout/RootLayoutClient';
 import { ToastProvider } from '@/components/ui/ToastProvider';
@@ -14,6 +15,12 @@ jest.mock('next/navigation', () => ({
 }));
 
 expect.extend(toHaveNoViolations);
+
+const mockUseOptionalDemo = jest.fn<DemoContextValue | null, []>(() => null);
+jest.mock('@/components/demo/DemoContext', () => ({
+  ...jest.requireActual('@/components/demo/DemoContext'),
+  useOptionalDemo: () => mockUseOptionalDemo(),
+}));
 
 // Mock ThemedQRCode
 jest.mock('@/components/ui/ThemedQRCode', () => ({
@@ -1355,6 +1362,42 @@ describe('ReceptionSlideshowClient', () => {
       } else {
         process.env.NEXT_PUBLIC_BASE_PATH = previousBasePath;
       }
+    }
+  });
+
+  it('offsets bottom controls and QR overlay above DemoToolbar when demo mode is active', () => {
+    mockUseOptionalDemo.mockReturnValue({
+      isDemoMode: true,
+      isToolbarCollapsed: false,
+    } as DemoContextValue);
+
+    try {
+      const { rerender } = render(
+        <ReceptionSlideshowClient
+          initialPhotos={samplePhotos}
+          uploadUrl="https://wedding.example.com/photos"
+        />
+      );
+
+      expect(screen.getByTestId('slideshow-controls')).toHaveClass('bottom-20');
+      expect(screen.getByTestId('slideshow-qr-overlay')).toHaveClass('bottom-36');
+
+      mockUseOptionalDemo.mockReturnValue({
+        isDemoMode: true,
+        isToolbarCollapsed: true,
+      } as DemoContextValue);
+
+      rerender(
+        <ReceptionSlideshowClient
+          initialPhotos={samplePhotos}
+          uploadUrl="https://wedding.example.com/photos"
+        />
+      );
+
+      expect(screen.getByTestId('slideshow-controls')).toHaveClass('bottom-16');
+      expect(screen.getByTestId('slideshow-qr-overlay')).toHaveClass('bottom-32');
+    } finally {
+      mockUseOptionalDemo.mockReturnValue(null);
     }
   });
 

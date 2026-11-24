@@ -1292,7 +1292,10 @@ export default function ThankYouNotesPage() {
             Loading contributor records...
           </div>
         ) : error ? (
-          <div className="py-8 text-center text-red-500 font-medium">
+          <div
+            role="alert"
+            className="py-8 text-center text-red-700 dark:text-red-400 font-medium"
+          >
             Error: {error}
           </div>
         ) : items.length === 0 ? (
