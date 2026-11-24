@@ -11,6 +11,7 @@ export const GUEST_INVITE_COOKIE = 'guest_invite_session';
 export interface GuestInviteSessionPayload {
   code: string;
   guestName: string;
+  email?: string | null;
   iat?: number;
   exp?: number;
 }

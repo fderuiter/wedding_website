@@ -2110,9 +2110,14 @@ process.exit(0);
       deployYml,
       'Generate Pre-Flight Schema Migration & SQL DDL Summary'
     );
+    const schemaCompatSection =
+      (deployYml.split(/\n  schema-compatibility:\n/)[1] ?? '').split(/\n  publish-artifact:\n/)[0] ?? '';
+    expect(schemaCompatSection).not.toContain('npm ci');
+    expect(schemaCompatSection).not.toContain("cache: 'npm'");
     expect(statusCheckScript).not.toContain('${{');
     expect(statusCheckScript).toContain('--require-db');
     expect(offlineSummaryScript).not.toContain('${{');
+    expect(offlineSummaryScript).toContain('node --experimental-strip-types scripts/preflight-migration-summary.ts');
     expect(offlineSummaryScript).toContain('--offline');
 
     const realTsxBin = path.join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
@@ -2199,7 +2204,16 @@ process.exit(1);
     // 4. deploy.yml schema-compatibility --offline emits NOT QUERIED git diff without fabricating slice(-3)
     const offlineRepo = path.join(tempDir, 'offline-repo');
     const offlineMigrations = path.join(offlineRepo, 'prisma', 'migrations');
+    const offlineScriptsDir = path.join(offlineRepo, 'scripts');
+    const offlineSrcLibDir = path.join(offlineRepo, 'src', 'lib');
     fs.mkdirSync(offlineMigrations, { recursive: true });
+    fs.mkdirSync(offlineScriptsDir, { recursive: true });
+    fs.mkdirSync(offlineSrcLibDir, { recursive: true });
+    fs.copyFileSync(realPreflightScript, path.join(offlineScriptsDir, 'preflight-migration-summary.ts'));
+    fs.copyFileSync(
+      path.join(REPO_ROOT, 'src', 'lib', 'postgres-url.js'),
+      path.join(offlineSrcLibDir, 'postgres-url.js')
+    );
     const gitEnv = {
       ...process.env,
       GIT_AUTHOR_NAME: 'CI Bot',

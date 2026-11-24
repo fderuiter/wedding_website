@@ -1,10 +1,13 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { registryService } from '../service';
 import { PaymentIntentRequestSchema } from '../schemas';
+import { hasAddressCollectionTag } from '../utils/invitation';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
+import { prisma } from '@/lib/prisma';
+import { getHydratedGuestInvitation } from '@/lib/requestContext';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { getStripeInstance, calculateContributionAmounts } from '@/lib/stripe';
 import { timingSafeEqualJS } from '@/utils/crypto';
@@ -14,6 +17,54 @@ const STRIPE_METADATA_VALUE_MAX_LENGTH = 500;
 function truncateStripeMetadata(value?: string | null): string {
   if (!value) return '';
   return value.slice(0, STRIPE_METADATA_VALUE_MAX_LENGTH);
+}
+
+async function resolveInviteFallbackEmail(
+  code: string,
+  request: NextRequest
+): Promise<string | null> {
+  const normalizedCode = code.trim().toUpperCase();
+  if (!normalizedCode) {
+    return null;
+  }
+
+  const hydrated = getHydratedGuestInvitation(normalizedCode, request);
+  if (hydrated && typeof hydrated.email === 'string' && hydrated.email.trim().length > 0) {
+    return hydrated.email.trim();
+  }
+
+  try {
+    const delegate = (
+      prisma as unknown as {
+        invitationCode?: {
+          findUnique?: (args: {
+            where: { code: string };
+          }) => Promise<{
+            email?: string | null;
+            used?: boolean;
+            isSample?: boolean;
+            partyTags?: unknown;
+          } | null>;
+        };
+      }
+    )?.invitationCode;
+
+    if (typeof delegate?.findUnique !== 'function') {
+      return null;
+    }
+
+    const invite = await delegate.findUnique({
+      where: { code: normalizedCode },
+    });
+    if (!invite || invite.isSample || invite.used || hasAddressCollectionTag(invite.partyTags)) {
+      return null;
+    }
+    return typeof invite.email === 'string' && invite.email.trim().length > 0
+      ? invite.email.trim()
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
@@ -85,11 +136,20 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     }
   }
 
-  let finalCode = code;
-  if (!finalCode) {
+  let finalCode = code?.trim() || undefined;
+  let sessionEmail: string | null = null;
+  if (!finalCode || !email?.trim()) {
     const session = await getGuestInviteSession(request);
     if (session?.code) {
-      finalCode = session.code;
+      if (!finalCode) {
+        finalCode = session.code;
+      }
+      if (finalCode.trim().toUpperCase() === session.code.trim().toUpperCase()) {
+        sessionEmail =
+          typeof session.email === 'string' && session.email.trim().length > 0
+            ? session.email.trim()
+            : null;
+      }
     }
   }
 
@@ -108,7 +168,12 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
       { status: 503 }
     );
   }
-  const trimmedEmail = email?.trim() || '';
+  const explicitEmail = email?.trim() || '';
+  const fallbackInviteEmail =
+    !explicitEmail && finalCode
+      ? sessionEmail ?? (await resolveInviteFallbackEmail(finalCode, request))
+      : null;
+  const trimmedEmail = explicitEmail || fallbackInviteEmail || '';
   const metadata: Record<string, string> = {
     itemId: truncateStripeMetadata(targetItem.id),
     itemName: truncateStripeMetadata(targetItem.name),

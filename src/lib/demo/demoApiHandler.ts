@@ -728,6 +728,57 @@ async function handleDemoApi(
     return jsonResponse(result);
   }
 
+  if (path === '/api/registry/payment-intent' && method === 'POST') {
+    const body = await parseJsonBody(init);
+    const amount = Math.max(1, Number(body.amount ?? 50) || 50);
+    const piId = nextDemoId('pi_demo');
+    return jsonResponse({
+      clientSecret: `${piId}_secret_demo`,
+      paymentIntentId: piId,
+      amount: Math.round(amount * 100),
+    });
+  }
+
+  if (path === '/api/registry/payment-intent/reconcile' && method === 'POST') {
+    const body = await parseJsonBody(init);
+    const paymentIntentId =
+      typeof body.paymentIntentId === 'string' ? body.paymentIntentId.trim() : '';
+    const clientSecret =
+      typeof body.clientSecret === 'string' ? body.clientSecret.trim() : '';
+    const itemId = typeof body.itemId === 'string' ? body.itemId.trim() : '';
+    if (!paymentIntentId || !clientSecret) {
+      return jsonResponse({ error: 'Missing or invalid paymentIntentId.' }, 400);
+    }
+    const items = getActiveArchetypeDataset().registryItems;
+    const target = itemId ? items.find((r) => r.id === itemId) : items[0];
+    if (!target) {
+      return jsonResponse({ error: 'Item not found' }, 404);
+    }
+    const session = getDemoState().guestSession;
+    const activeGuest = session ? findDemoGuestByCode(session.invitationCode) : null;
+    const resolvedEmail =
+      activeGuest && typeof activeGuest.email === 'string' && activeGuest.email.trim().length > 0
+        ? activeGuest.email.trim()
+        : null;
+    return jsonResponse({
+      reconciled: true,
+      status: 'succeeded',
+      itemId: target.id,
+      item: target,
+      receipt: {
+        itemId: target.id,
+        paymentIntentId,
+        contributorName: activeGuest?.guestName || session?.guestName || 'Demo Guest',
+        contributorEmail: resolvedEmail,
+        baseAmount: target.price,
+        feeAmount: 0,
+        coverFee: false,
+        totalChargeAmount: target.price,
+        message: null,
+      },
+    });
+  }
+
   if (path === '/api/registry/validate-code' && method === 'GET') {
     const rawCode = url.searchParams.get('code') || '';
     const matched = findDemoGuestByCode(rawCode);
@@ -761,6 +812,10 @@ async function handleDemoApi(
         404
       );
     }
+    const resolvedEmail =
+      typeof matched.email === 'string' && matched.email.trim().length > 0
+        ? matched.email.trim()
+        : null;
     setDemoGuestSession({
       invitationCode: matched.code,
       guestName: matched.guestName,
@@ -770,10 +825,12 @@ async function handleDemoApi(
       success: true,
       code: matched.code,
       guestName: matched.guestName,
+      email: resolvedEmail,
       data: {
         valid: true,
         code: matched.code,
         guestName: matched.guestName,
+        email: resolvedEmail,
       },
     });
   }
@@ -783,18 +840,28 @@ async function handleDemoApi(
       const session = getDemoState().guestSession;
       const activeGuest = session ? findDemoGuestByCode(session.invitationCode) : null;
       if (!session || !activeGuest) {
-        return jsonResponse({ isVerified: false, invitationCode: '', guestName: '' });
+        return jsonResponse({
+          isVerified: false,
+          invitationCode: '',
+          guestName: '',
+          email: null,
+        });
       }
+      const resolvedEmail =
+        typeof activeGuest.email === 'string' && activeGuest.email.trim().length > 0
+          ? activeGuest.email.trim()
+          : null;
       return jsonResponse({
         isVerified: true,
         invitationCode: activeGuest.code,
         code: activeGuest.code,
         guestName: activeGuest.guestName,
+        email: resolvedEmail,
       });
     }
     if (method === 'DELETE') {
       setDemoGuestSession(null);
-      return jsonResponse({ success: true });
+      return jsonResponse({ success: true, email: null });
     }
   }
 

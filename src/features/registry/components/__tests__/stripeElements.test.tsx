@@ -203,6 +203,14 @@ describe('Stripe Elements Embedded Checkout Flow', () => {
       expect(screen.getByText('Contribution Confirmed!')).toBeInTheDocument();
     });
 
+    expect(mockConfirmPayment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        confirmParams: expect.objectContaining({
+          return_url: expect.stringMatching(/\/registry\?item=fund-paris$/),
+        }),
+      })
+    );
+
     // Check that verified transaction reference is displayed
     expect(screen.getByText(/Transaction Reference:/i)).toBeInTheDocument();
     expect(screen.getByText('pi_verified_test_789')).toBeInTheDocument();

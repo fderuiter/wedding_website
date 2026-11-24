@@ -26,6 +26,7 @@ function copyRepoFixture(srcRoot: string, destRoot: string): void {
     'src/app/api/uploads/[...path]/route.ts',
     'src/app/api/admin/maintenance/export/route.ts',
     'scripts/preflight-env.ts',
+    'scripts/test-container.mjs',
     'scripts/rollout-vps.sh',
     'scripts/verify-migration-compatibility.ts',
     'ARCHITECTURE.md',

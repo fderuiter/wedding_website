@@ -1585,8 +1585,9 @@ describe('check-docker-build', () => {
         )};\n`
       );
 
-      // Clean isolation passes
+      // Clean isolation passes under both --require-standalone and --standalone-only
       expect(checkDockerBuild(tempDir, { requireStandalone: true }).violations).toEqual([]);
+      expect(checkDockerBuild(tempDir, { standaloneOnly: true }).violations).toEqual([]);
 
       // Leaking demo and setup markers into /page or rootMainFiles fails
       fs.writeFileSync(
@@ -1599,27 +1600,73 @@ describe('check-docker-build', () => {
         ].join('\n')
       );
 
-      const { violations } = checkDockerBuild(tempDir, { requireStandalone: true });
-      expect(violations).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            filePath: '.next/standalone/.next/static/chunks/main.js',
-            imageRef: 'wedding_showcase_demo_v1',
-          }),
-          expect.objectContaining({
-            filePath: '.next/standalone/.next/static/chunks/main.js',
-            imageRef: 'Non-Charging Demo Checkout',
-          }),
-          expect.objectContaining({
-            filePath: '.next/standalone/.next/static/chunks/main.js',
-            imageRef: 'Step 3: Sample Data Selection',
-          }),
-          expect.objectContaining({
-            filePath: '.next/standalone/.next/static/chunks/main.js',
-            imageRef: 'Import Guest Invitation Codes',
-          }),
-        ])
+      const expectedViolations = expect.arrayContaining([
+        expect.objectContaining({
+          filePath: '.next/standalone/.next/static/chunks/main.js',
+          imageRef: 'wedding_showcase_demo_v1',
+        }),
+        expect.objectContaining({
+          filePath: '.next/standalone/.next/static/chunks/main.js',
+          imageRef: 'Non-Charging Demo Checkout',
+        }),
+        expect.objectContaining({
+          filePath: '.next/standalone/.next/static/chunks/main.js',
+          imageRef: 'Step 3: Sample Data Selection',
+        }),
+        expect.objectContaining({
+          filePath: '.next/standalone/.next/static/chunks/main.js',
+          imageRef: 'Import Guest Invitation Codes',
+        }),
+      ]);
+      expect(checkDockerBuild(tempDir, { requireStandalone: true }).violations).toEqual(
+        expectedViolations
       );
+      expect(checkDockerBuild(tempDir, { standaloneOnly: true }).violations).toEqual(
+        expectedViolations
+      );
+    });
+
+    it('validates only .next/standalone portability under --standalone-only without re-running static Dockerfile or Compose checks', () => {
+      const standaloneOnlyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'standalone-only-test-'));
+      try {
+        // Fails when .next/standalone is missing even with no Dockerfile/Compose files
+        const missingRes = checkDockerBuild(standaloneOnlyDir, { standaloneOnly: true });
+        expect(missingRes.violations).toEqual([
+          expect.objectContaining({
+            filePath: '.next',
+            imageRef: '.next',
+          }),
+        ]);
+
+        writeValidStandaloneBundle(standaloneOnlyDir);
+        const validRes = checkDockerBuild(standaloneOnlyDir, { standaloneOnly: true });
+        expect(validRes.violations).toEqual([]);
+
+        const cliPass = spawnSync(
+          process.execPath,
+          [TSX_CLI_PATH, CHECK_SCRIPT_PATH, '--standalone-only'],
+          {
+            cwd: standaloneOnlyDir,
+            encoding: 'utf8',
+          }
+        );
+        expect(cliPass.status).toBe(0);
+        expect(cliPass.stdout).toContain('--standalone-only');
+        expect(cliPass.stdout).toContain('passed');
+
+        fs.rmSync(path.join(standaloneOnlyDir, '.next', 'standalone', 'server.js'));
+        const cliFail = spawnSync(
+          process.execPath,
+          [TSX_CLI_PATH, CHECK_SCRIPT_PATH, '--standalone-only'],
+          {
+            cwd: standaloneOnlyDir,
+            encoding: 'utf8',
+          }
+        );
+        expect(cliFail.status).toBe(1);
+      } finally {
+        fs.rmSync(standaloneOnlyDir, { recursive: true, force: true });
+      }
     });
   });
 });
