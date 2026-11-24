@@ -1,6 +1,11 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { registryService } from '../service';
 import { PaymentIntentRequestSchema } from '../schemas';
+import {
+  resolveStripeClient,
+  serializeStripePaymentIntentMetadata,
+  verifyPaymentIntentOwnership,
+} from './stripeSettlementHelpers';
 import { hasAddressCollectionTag } from '../utils/invitation';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
@@ -10,15 +15,7 @@ import { isFeatureEnabled } from '@/lib/modules';
 import { prisma } from '@/lib/prisma';
 import { getHydratedGuestInvitation } from '@/lib/requestContext';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
-import { getStripeInstance, calculateContributionAmounts } from '@/lib/stripe';
-import { timingSafeEqualJS } from '@/utils/crypto';
-
-const STRIPE_METADATA_VALUE_MAX_LENGTH = 500;
-
-function truncateStripeMetadata(value?: string | null): string {
-  if (!value) return '';
-  return value.slice(0, STRIPE_METADATA_VALUE_MAX_LENGTH);
-}
+import { calculateContributionAmounts } from '@/lib/stripe';
 
 async function resolveInviteFallbackEmail(
   code: string,
@@ -82,21 +79,8 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   }
 
   const {
-    itemId,
-    amount,
-    coverFee,
-    paymentIntentId,
-    clientSecret,
-    name,
-    email,
-    message,
-    code,
-    addressLine1,
-    addressLine2,
-    city,
-    state,
-    zipCode,
-    country,
+    itemId, amount, coverFee, paymentIntentId, clientSecret,
+    name, email, message, code, ...addressFields
   } = parseResult.data;
 
   const targetItem = await registryService.getItemById(itemId);
@@ -157,73 +141,42 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   const { baseAmount, feeAmount, totalChargeAmount, totalChargeCents, netPayout } =
     calculateContributionAmounts(amount, Boolean(coverFee));
 
-  let stripe;
-  try {
-    stripe = getStripeInstance();
-  } catch (err: any) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: err?.message || 'Card checkout is not configured on this deployment.',
-      },
-      { status: 503 }
-    );
+  const stripeResult = resolveStripeClient();
+  if (!stripeResult.ok) {
+    return stripeResult.response;
   }
+  const { stripe } = stripeResult;
+
   const explicitEmail = email?.trim() || '';
   const fallbackInviteEmail =
     !explicitEmail && finalCode
       ? sessionEmail ?? (await resolveInviteFallbackEmail(finalCode, request))
       : null;
   const trimmedEmail = explicitEmail || fallbackInviteEmail || '';
-  const metadata: Record<string, string> = {
-    itemId: truncateStripeMetadata(targetItem.id),
-    itemName: truncateStripeMetadata(targetItem.name),
-    baseAmount: baseAmount.toFixed(2),
-    feeAmount: feeAmount.toFixed(2),
-    coverFee: coverFee ? 'true' : 'false',
-    totalChargeAmount: totalChargeAmount.toFixed(2),
-    contributorName: truncateStripeMetadata(name),
-    contributorEmail: truncateStripeMetadata(trimmedEmail),
-    contributorMessage: truncateStripeMetadata(message),
-    invitationCode: truncateStripeMetadata(finalCode),
-    addressLine1: truncateStripeMetadata(addressLine1?.trim()),
-    addressLine2: truncateStripeMetadata(addressLine2?.trim()),
-    city: truncateStripeMetadata(city?.trim()),
-    state: truncateStripeMetadata(state?.trim()),
-    zipCode: truncateStripeMetadata(zipCode?.trim()),
-    country: truncateStripeMetadata(country?.trim()),
-  };
+  const metadata = serializeStripePaymentIntentMetadata({
+    ...addressFields,
+    itemId: targetItem.id,
+    itemName: targetItem.name,
+    baseAmount,
+    feeAmount,
+    coverFee: Boolean(coverFee),
+    totalChargeAmount,
+    contributorName: name,
+    contributorEmail: trimmedEmail,
+    contributorMessage: message,
+    invitationCode: finalCode,
+  });
 
   if (paymentIntentId) {
-    if (!clientSecret) {
-      throw new ApiError(403, 'Valid clientSecret is required to update an existing PaymentIntent.');
-    }
-
-    let existingIntent;
-    try {
-      existingIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
-    } catch {
-      throw new ApiError(403, 'Unable to verify ownership of the specified PaymentIntent.');
-    }
-
-    if (!existingIntent) {
-      throw new ApiError(403, 'Unable to verify ownership of the specified PaymentIntent.');
-    }
-
-    const encoder = new TextEncoder();
-    const providedSecretBytes = encoder.encode(clientSecret);
-    const expectedSecretBytes =
-      typeof existingIntent.client_secret === 'string' && existingIntent.client_secret.length > 0
-        ? encoder.encode(existingIntent.client_secret)
-        : null;
-    const hasMatchingSecret =
-      expectedSecretBytes !== null &&
-      timingSafeEqualJS(providedSecretBytes, expectedSecretBytes);
-    const hasMatchingItem = existingIntent.metadata?.itemId === targetItem.id;
-
-    if (!hasMatchingSecret || !hasMatchingItem) {
-      throw new ApiError(403, 'Forbidden: PaymentIntent ownership or item binding mismatch.');
-    }
+    const { paymentIntent: existingIntent } = await verifyPaymentIntentOwnership(
+      {
+        source: { stripe, paymentIntentId },
+        requireClientSecret: true,
+        clientSecret,
+        expectedItemId: targetItem.id,
+      },
+      403
+    );
 
     if (existingIntent.status === 'requires_payment_method') {
       try {

@@ -1,6 +1,15 @@
-import { NextResponse, NextRequest, after } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
+import type Stripe from 'stripe';
 import { registryService } from '../service';
 import { ContributionSchema } from '../schemas';
+import {
+  buildOptionalAddressFields,
+  buildStripeUnavailableResponse,
+  projectViewerRegistryItem,
+  runContributionNotifications,
+  validateSettlementPaymentIntent,
+  verifyPaymentIntentOwnership,
+} from './stripeSettlementHelpers';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import {
@@ -9,12 +18,10 @@ import {
   isJsonMediaType,
 } from '@/utils/contentType';
 import { isAdminRequest } from '@/core/auth/auth.server';
-import { maskRegistryItem, sanitizeRegistryItem } from '../lib/masking';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
-import { getStripeInstance, validatePaymentIntentInvariants } from '@/lib/stripe';
-import { dispatchContributionNotifications } from '../notifications';
+import { getStripeInstance } from '@/lib/stripe';
 import { signContributorActionToken } from '../lib/contributorToken';
 import type { GuestClaimActions } from '../types';
 import { resolveEffectivePaymentHandle } from '../utils/paymentUrls';
@@ -53,44 +60,21 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   }
 
   const {
-    itemId,
-    name,
-    email,
-    amount,
-    code,
-    message,
-    coverFee,
-    paymentIntentId,
-    retailerOrderNumber,
-    carrier,
-    trackingNumber,
-    addressLine1,
-    addressLine2,
-    city,
-    state,
-    zipCode,
-    country,
+    itemId, name, email, amount, code, message, coverFee, paymentIntentId,
+    retailerOrderNumber, carrier, trackingNumber,
   } = parseResult.data;
 
   const targetItemSettledPromise = settle(() => registryService.getItemById(itemId));
-  const guestSessionSettledPromise = !code
-    ? settle(() => getGuestInviteSession(request))
-    : null;
+  const guestSessionSettledPromise = !code ? settle(() => getGuestInviteSession(request)) : null;
 
   let hasStripeConfigError = false;
   let stripeConfigError: unknown = null;
-  let paymentIntentSettledPromise: Promise<
-    PromiseSettledResult<
-      Awaited<ReturnType<ReturnType<typeof getStripeInstance>['paymentIntents']['retrieve']>>
-    >
-  > | null = null;
+  let paymentIntentSettledPromise: Promise<PromiseSettledResult<Stripe.PaymentIntent>> | null = null;
 
   if (paymentIntentId) {
     try {
       const stripe = getStripeInstance();
-      paymentIntentSettledPromise = settle(() =>
-        stripe.paymentIntents.retrieve(paymentIntentId)
-      );
+      paymentIntentSettledPromise = settle(() => stripe.paymentIntents.retrieve(paymentIntentId));
     } catch (err: unknown) {
       hasStripeConfigError = true;
       stripeConfigError = err;
@@ -145,38 +129,20 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   let transactionTimestamp: Date | null = null;
 
   if (paymentIntentId) {
-    if (hasStripeConfigError) {
-      const err = stripeConfigError as { message?: string } | null;
-      return NextResponse.json(
-        {
-          success: false,
-          error: err?.message || 'Card checkout is not configured on this deployment.',
-        },
-        { status: 503 }
-      );
-    }
+    if (hasStripeConfigError) return buildStripeUnavailableResponse(stripeConfigError);
 
-    const paymentIntentSettled = await paymentIntentSettledPromise!;
-    if (paymentIntentSettled.status === 'rejected') {
-      const err = paymentIntentSettled.reason as { message?: string } | null;
-      throw new ApiError(400, `Invalid or unresolved Stripe PaymentIntent: ${err?.message}`);
-    }
-    const paymentIntent = paymentIntentSettled.value;
-
-    const invariantCheck = validatePaymentIntentInvariants(paymentIntent, {
-      itemId,
-      baseAmount: amount,
-      coverFee: effectiveCoverFee,
-    });
-    if (!invariantCheck.valid) {
-      throw new ApiError(400, invariantCheck.error || 'Invalid Stripe PaymentIntent.');
-    }
-
-    stripePaymentIntentId = paymentIntent.id;
-    stripeChargeId = typeof paymentIntent.latest_charge === 'string'
-      ? paymentIntent.latest_charge
-      : (paymentIntent.latest_charge as any)?.id || null;
-    transactionTimestamp = paymentIntent.created ? new Date(paymentIntent.created * 1000) : new Date();
+    const { paymentIntent } = await verifyPaymentIntentOwnership(
+      { source: { settledResult: await paymentIntentSettledPromise! }, requireClientSecret: false },
+      400
+    );
+    const settlement = validateSettlementPaymentIntent(
+      paymentIntent,
+      { itemId, expectedAmounts: { baseAmount: amount, coverFee: effectiveCoverFee }, errorMode: 'api-error' },
+      400
+    );
+    stripePaymentIntentId = settlement.stripePaymentIntentId;
+    stripeChargeId = settlement.stripeChargeId;
+    transactionTimestamp = settlement.transactionTimestamp;
   }
 
   const updatedItem = await registryService.contributeToItem(itemId, {
@@ -189,22 +155,14 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     ...(retailerOrderNumber ? { retailerOrderNumber } : {}),
     ...(carrier ? { carrier } : {}),
     ...(trackingNumber ? { trackingNumber } : {}),
-    ...(addressLine1 ? { addressLine1 } : {}),
-    ...(addressLine2 ? { addressLine2 } : {}),
-    ...(city ? { city } : {}),
-    ...(state ? { state } : {}),
-    ...(zipCode ? { zipCode } : {}),
-    ...(country ? { country } : {}),
+    ...buildOptionalAddressFields(parseResult.data),
     ...(stripePaymentIntentId
       ? { stripePaymentIntentId, stripeChargeId, transactionTimestamp }
       : {}),
   });
 
-  const requestUrl = request.url;
-  const isReservation = !stripePaymentIntentId;
-  let notificationDispatchPromise: Promise<void> | undefined;
-  const runNotifications = () => {
-    notificationDispatchPromise ??= dispatchContributionNotifications({
+  await runContributionNotifications(
+    {
       itemId,
       targetItem,
       updatedItem,
@@ -221,76 +179,53 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
         ...(trackingNumber ? { trackingNumber } : {}),
       },
       config,
-      requestUrl,
-      isReservation,
-    });
-    return notificationDispatchPromise;
-  };
-
-  let scheduledPostResponse = false;
-  if (typeof after === 'function') {
-    try {
-      after(runNotifications);
-      scheduledPostResponse = true;
-    } catch {
-      scheduledPostResponse = false;
-    }
-  }
-
-  if (!scheduledPostResponse) {
-    await runNotifications();
-  }
+      requestUrl: request.url,
+      isReservation: !stripePaymentIntentId,
+    },
+    { mode: 'after' }
+  );
 
   const isAdminSettled = await isAdminSettledPromise;
   if (isAdminSettled.status === 'rejected') {
     throw isAdminSettled.reason;
   }
   const isAdmin = isAdminSettled.value;
-  if (!isAdmin) {
-    let claimActions: GuestClaimActions | undefined;
-    if (!stripePaymentIntentId) {
-      const previousIds = new Set(
-        (Array.isArray(targetItem?.contributors) ? targetItem.contributors : [])
-          .map((c) => c?.id)
-          .filter((id): id is string => Boolean(id))
-      );
-      const updatedContributors = Array.isArray(updatedItem.contributors)
-        ? updatedItem.contributors
-        : [];
-      const newlyAdded = updatedContributors.filter((c) => c?.id && !previousIds.has(c.id));
-      const matchedContributor =
-        newlyAdded.length > 0
-          ? newlyAdded[newlyAdded.length - 1]
-          : [...updatedContributors]
-            .reverse()
-            .find((c) => c?.id && c.name === name && c.amount === amount);
+  let claimActions: GuestClaimActions | undefined;
+  if (!isAdmin && !stripePaymentIntentId) {
+    const previousIds = new Set(
+      (Array.isArray(targetItem?.contributors) ? targetItem.contributors : [])
+        .map((c) => c?.id)
+        .filter((id): id is string => Boolean(id))
+    );
+    const updatedContributors = Array.isArray(updatedItem.contributors)
+      ? updatedItem.contributors
+      : [];
+    const newlyAdded = updatedContributors.filter((c) => c?.id && !previousIds.has(c.id));
+    const matchedContributor =
+      newlyAdded.length > 0
+        ? newlyAdded[newlyAdded.length - 1]
+        : [...updatedContributors]
+          .reverse()
+          .find((c) => c?.id && c.name === name && c.amount === amount);
 
-      if (matchedContributor?.id) {
-        try {
-          const [confirmToken, cancelToken] = await Promise.all([
-            signContributorActionToken({
-              contributorId: matchedContributor.id,
-              action: 'confirm',
-            }),
-            signContributorActionToken({
-              contributorId: matchedContributor.id,
-              action: 'cancel',
-            }),
-          ]);
-          claimActions = { confirmToken, cancelToken };
-        } catch {
-          claimActions = undefined;
-        }
+    if (matchedContributor?.id) {
+      try {
+        const [confirmToken, cancelToken] = await Promise.all([
+          signContributorActionToken({
+            contributorId: matchedContributor.id,
+            action: 'confirm',
+          }),
+          signContributorActionToken({
+            contributorId: matchedContributor.id,
+            action: 'cancel',
+          }),
+        ]);
+        claimActions = { confirmToken, cancelToken };
+      } catch {
+        claimActions = undefined;
       }
     }
-
-    const maskedItem = maskRegistryItem({
-      ...updatedItem,
-      contributors: [],
-    });
-    return NextResponse.json(
-      claimActions ? { ...maskedItem, claimActions } : maskedItem
-    );
   }
-  return NextResponse.json(sanitizeRegistryItem(updatedItem));
+
+  return NextResponse.json(projectViewerRegistryItem(updatedItem, isAdmin, claimActions));
 });
