@@ -783,17 +783,52 @@ async function executeSmtpTransaction(params: {
   }
 }
 
-interface EmailMessagePayload {
+type EmailBodyFormat = 'text' | 'html';
+
+export interface EmailMessagePayload {
   to: string;
   from?: string;
   subject: string;
   body: string;
+  text?: string;
+  isHtml?: boolean;
+  format?: EmailBodyFormat;
 }
 
 interface SmsMessagePayload {
   to: string;
   from?: string;
   body: string;
+}
+
+interface ResolvedEmailBodies {
+  htmlBody: string;
+  textBody: string;
+  includePlainTextPart: boolean;
+}
+
+function resolveEmailBodies(
+  payload: EmailMessagePayload,
+  appConfig?: StationeryCardConfig | null
+): ResolvedEmailBodies {
+  const isExplicitHtml = payload.isHtml === true || payload.format === 'html';
+  const htmlBody = isExplicitHtml
+    ? payload.body
+    : formatEmailHtmlBody(payload.body, appConfig);
+  const textBody =
+    typeof payload.text === 'string'
+      ? payload.text
+      : isExplicitHtml
+        ? htmlToPlainText(payload.body)
+        : unescapeHtmlEntitiesForPlainText(
+          stripStationeryCardDirective(payload.body).replace(/\r\n?/g, '\n')
+        );
+
+  return {
+    htmlBody,
+    textBody,
+    includePlainTextPart: isExplicitHtml || typeof payload.text === 'string',
+  };
 }
 
 interface MessagingProvider {
@@ -885,6 +920,7 @@ export class MultiChannelMessagingProvider implements MessagingProvider {
     }
 
     const timeoutMs = this.resolveEmailTimeoutMs();
+    const { htmlBody, textBody, includePlainTextPart } = resolveEmailBodies(payload, this.config);
 
     try {
       const res = await fetch('https://api.resend.com/emails', {
@@ -897,7 +933,8 @@ export class MultiChannelMessagingProvider implements MessagingProvider {
           from: payload.from,
           to: payload.to,
           subject: payload.subject,
-          html: formatEmailHtmlBody(payload.body, this.config),
+          html: htmlBody,
+          ...(includePlainTextPart ? { text: textBody } : {}),
         }),
         signal: AbortSignal.timeout(timeoutMs),
       });
@@ -923,6 +960,13 @@ export class MultiChannelMessagingProvider implements MessagingProvider {
     }
 
     const timeoutMs = this.resolveEmailTimeoutMs();
+    const { htmlBody, textBody, includePlainTextPart } = resolveEmailBodies(payload, this.config);
+    const content = includePlainTextPart
+      ? [
+        { type: 'text/plain', value: textBody },
+        { type: 'text/html', value: htmlBody },
+      ]
+      : [{ type: 'text/html', value: htmlBody }];
 
     try {
       const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
@@ -935,7 +979,7 @@ export class MultiChannelMessagingProvider implements MessagingProvider {
           personalizations: [{ to: [{ email: payload.to }] }],
           from: { email: payload.from },
           subject: payload.subject,
-          content: [{ type: 'text/html', value: formatEmailHtmlBody(payload.body, this.config) }],
+          content,
         }),
         signal: AbortSignal.timeout(timeoutMs),
       });
@@ -982,17 +1026,7 @@ export class MultiChannelMessagingProvider implements MessagingProvider {
         : DEFAULT_SMTP_TIMEOUT_MS;
     const rejectUnauthorized = this.config.smtpRejectUnauthorized !== false;
 
-    const isPreEscapedNotificationHtml = /^<div style="font-family:/i.test(
-      payload.body.trimStart()
-    );
-    const htmlBody = isPreEscapedNotificationHtml
-      ? payload.body
-      : formatEmailHtmlBody(payload.body, this.config);
-    const textBody = isPreEscapedNotificationHtml
-      ? htmlToPlainText(payload.body)
-      : unescapeHtmlEntitiesForPlainText(
-        stripStationeryCardDirective(payload.body).replace(/\r\n?/g, '\n')
-      );
+    const { htmlBody, textBody } = resolveEmailBodies(payload, this.config);
 
     return executeSmtpTransaction({
       mode: 'send',

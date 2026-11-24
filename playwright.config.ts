@@ -1,6 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const runWebServer = !process.env.TEST_CONTAINER;
+const runsPagesShowcaseExplicitly = process.argv.some((arg) =>
+  arg.includes('pages-showcase.spec.ts')
+);
+const runWebServer = !process.env.TEST_CONTAINER && !runsPagesShowcaseExplicitly;
 const reuseExistingServer = !process.env.CI && process.env.PLAYWRIGHT_REUSE_SERVER === 'true';
 const defaultE2EAdminPassword =
   'scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==';
@@ -27,6 +30,7 @@ const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefi
 export default defineConfig({
   testDir: './e2e',
   testMatch: '**/*.spec.ts',
+  testIgnore: runsPagesShowcaseExplicitly ? [] : ['**/pages-showcase.spec.ts'],
   outputDir: 'test-results/playwright',
   workers: 1,
   retries: process.env.CI ? 2 : 0,

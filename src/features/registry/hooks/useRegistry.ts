@@ -11,6 +11,8 @@ import {
   OrderTrackingDetails,
   ContributorAddressDetails,
   GuestClaimActions,
+  ReconciledContributionReceipt,
+  ReconcilePaymentIntentResponse,
 } from '../types';
 import { checkAdminClient } from '@/core/auth/auth.client';
 import { useOptionalDemo } from '@/components/demo/DemoContext';
@@ -137,6 +139,14 @@ export function useRegistry() {
   const shippingAddress = isCapabilitiesLoading ? null : detectedShippingAddress;
   const [selectedItem, setSelectedItem] = useState<RegistryItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [reconciledReceipt, setReconciledReceipt] = useState<ReconciledContributionReceipt | null>(
+    null
+  );
+  const [reconciledItems, setReconciledItems] = useState<Record<string, RegistryItem>>({});
+  const [redirectRecoveryState, setRedirectRecoveryState] = useState<{
+    itemId: string | null;
+    message: string;
+  } | null>(null);
   const [visibleItemsCount, setVisibleItemsCount] = useState(REGISTRY_INITIAL_VISIBLE_ITEMS);
   const [isAdmin, setIsAdmin] = useState(false);
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 1000]);
@@ -146,6 +156,7 @@ export function useRegistry() {
   const [sortOption, setSortOptionState] = useState<SortOption>('default');
   const [priceRangeUserSet, setPriceRangeUserSet] = useState(false);
   const attemptedDeepLinkIds = useRef<Set<string>>(new Set());
+  const reconciledIntentKeysRef = useRef<Set<string>>(new Set());
   const router = useRouter();
 
   useEffect(() => {
@@ -189,19 +200,53 @@ export function useRegistry() {
     if (isDemoMode && demoRegistryItems) {
       return demoRegistryItems;
     }
-    if (!queryResult) return EMPTY_ITEMS;
-    if (Array.isArray(queryResult)) return queryResult;
-    if (typeof queryResult === 'object' && Array.isArray(queryResult.items)) {
-      return queryResult.items;
+    let baseItems: RegistryItem[] = EMPTY_ITEMS;
+    if (Array.isArray(queryResult)) {
+      baseItems = queryResult;
+    } else if (queryResult && typeof queryResult === 'object' && Array.isArray(queryResult.items)) {
+      baseItems = queryResult.items;
     }
-    return EMPTY_ITEMS;
-  }, [demoRegistryItems, isDemoMode, queryResult]);
+    if (baseItems.length === 0 || Object.keys(reconciledItems).length === 0) {
+      return baseItems;
+    }
+    return baseItems.map((item) => {
+      const reconciled = reconciledItems[item.id];
+      if (
+        reconciled &&
+        (reconciled.amountContributed ?? 0) >= (item.amountContributed ?? 0)
+      ) {
+        return reconciled;
+      }
+      return item;
+    });
+  }, [demoRegistryItems, isDemoMode, queryResult, reconciledItems]);
 
   const effectiveSelectedItem = useMemo<RegistryItem | null>(() => {
     if (!selectedItem) return null;
-    if (!isDemoMode || !demoRegistryItems) return selectedItem;
-    return demoRegistryItems.find((i) => i.id === selectedItem.id) ?? null;
-  }, [demoRegistryItems, isDemoMode, selectedItem]);
+    if (isDemoMode && demoRegistryItems) {
+      return demoRegistryItems.find((i) => i.id === selectedItem.id) ?? null;
+    }
+    const reconciled = reconciledItems[selectedItem.id];
+    if (
+      reconciled &&
+      (reconciled.amountContributed ?? 0) >= (selectedItem.amountContributed ?? 0)
+    ) {
+      return reconciled;
+    }
+    return selectedItem;
+  }, [demoRegistryItems, isDemoMode, reconciledItems, selectedItem]);
+
+  const redirectRecoveryError = useMemo<string | null>(() => {
+    if (!redirectRecoveryState) return null;
+    if (
+      redirectRecoveryState.itemId &&
+      effectiveSelectedItem &&
+      redirectRecoveryState.itemId !== effectiveSelectedItem.id
+    ) {
+      return null;
+    }
+    return redirectRecoveryState.message;
+  }, [effectiveSelectedItem, redirectRecoveryState]);
 
   const effectiveIsModalOpen = isModalOpen && Boolean(effectiveSelectedItem);
 
@@ -383,6 +428,8 @@ export function useRegistry() {
   }, [filteredItems, visibleItemsCount]);
 
   const handleCardClick = useCallback((item: RegistryItem) => {
+    setReconciledReceipt((prev) => (prev && prev.itemId === item.id ? prev : null));
+    setRedirectRecoveryState(null);
     setSelectedItem(item);
     setIsModalOpen(true);
     if (typeof window !== 'undefined') {
@@ -396,6 +443,8 @@ export function useRegistry() {
   const handleCloseModal = useCallback(() => {
     setIsModalOpen(false);
     setSelectedItem(null);
+    setReconciledReceipt(null);
+    setRedirectRecoveryState(null);
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       if (params.has('item')) {
@@ -406,6 +455,189 @@ export function useRegistry() {
       }
     }
   }, []);
+
+  const syncItemInCache = useCallback((nextItem: RegistryItem) => {
+    if (!nextItem || !nextItem.id) return;
+    setReconciledItems((prev) => ({ ...prev, [nextItem.id]: nextItem }));
+    queryClient.setQueriesData<RegistryQueryData>(
+      { queryKey: ['registry-items'] },
+      (old) => mapRegistryQueryData(old, (item) => (item.id === nextItem.id ? nextItem : item))
+    );
+    setSelectedItem((prev) => (prev && prev.id === nextItem.id ? nextItem : prev));
+    queryClient.invalidateQueries({ queryKey: ['admin-registry'] });
+    queryClient.invalidateQueries({ queryKey: ['admin-registry-item', nextItem.id] });
+  }, [queryClient]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const searchParams = new URLSearchParams(window.location.search);
+    const targetItemParam = searchParams.get('item');
+    const paymentIntentId = searchParams.get('payment_intent');
+    const clientSecret = searchParams.get('payment_intent_client_secret');
+    const redirectStatus = searchParams.get('redirect_status');
+    const hasStripeRedirectParams = Boolean(
+      paymentIntentId ||
+        clientSecret ||
+        redirectStatus ||
+        searchParams.has('source_redirect_slug')
+    );
+
+    if (!hasStripeRedirectParams) {
+      return;
+    }
+
+    searchParams.delete('payment_intent');
+    searchParams.delete('payment_intent_client_secret');
+    searchParams.delete('redirect_status');
+    searchParams.delete('source_redirect_slug');
+
+    const cleanedQuery = searchParams.toString();
+    const cleanedUrl = cleanedQuery
+      ? `${window.location.pathname}?${cleanedQuery}`
+      : window.location.pathname;
+    window.history.replaceState(window.history.state ?? {}, '', cleanedUrl);
+
+    const ensureItemQueryParam = (resolvedItemId: string) => {
+      if (typeof window === 'undefined' || !resolvedItemId) return;
+      const nextParams = new URLSearchParams(window.location.search);
+      if (nextParams.get('item') !== resolvedItemId) {
+        nextParams.set('item', resolvedItemId);
+        window.history.replaceState(
+          window.history.state ?? {},
+          '',
+          `${window.location.pathname}?${nextParams.toString()}`
+        );
+      }
+    };
+
+    const normalizedStatus = redirectStatus?.trim().toLowerCase() ?? '';
+    const isExplicitNonSucceeded =
+      normalizedStatus.length > 0 && normalizedStatus !== 'succeeded';
+
+    if (isExplicitNonSucceeded) {
+      const recoveryMessage =
+        normalizedStatus === 'canceled' || normalizedStatus === 'cancelled'
+          ? 'Your payment was canceled before completion. No contribution was recorded — you can try again below or choose another payment method.'
+          : 'Your payment could not be completed. No contribution was recorded — please check your payment details and try again.';
+
+      if (targetItemParam) {
+        queueMicrotask(() => {
+          setReconciledReceipt(null);
+          setRedirectRecoveryState({
+            itemId: targetItemParam,
+            message: recoveryMessage,
+          });
+        });
+        return;
+      }
+
+      if (paymentIntentId && clientSecret) {
+        const dedupeKey = `${paymentIntentId}:${clientSecret}:failed`;
+        if (reconciledIntentKeysRef.current.has(dedupeKey)) {
+          return;
+        }
+        reconciledIntentKeysRef.current.add(dedupeKey);
+
+        void (async () => {
+          try {
+            const res = await apiClient.post<ReconcilePaymentIntentResponse>(
+              '/api/registry/payment-intent/reconcile',
+              { paymentIntentId, clientSecret }
+            );
+            const fallbackItemId = res?.itemId ?? null;
+            if (fallbackItemId) {
+              ensureItemQueryParam(fallbackItemId);
+              const fetchedItem = await apiClient
+                .get<RegistryItem>(`/api/registry/items/${encodeURIComponent(fallbackItemId)}`)
+                .catch(() => null);
+              if (fetchedItem && fetchedItem.id === fallbackItemId) {
+                setSelectedItem(fetchedItem);
+                setIsModalOpen(true);
+              }
+            }
+            setReconciledReceipt(null);
+            setRedirectRecoveryState({
+              itemId: fallbackItemId,
+              message: res?.error || recoveryMessage,
+            });
+          } catch {
+            setReconciledReceipt(null);
+            setRedirectRecoveryState({
+              itemId: null,
+              message: recoveryMessage,
+            });
+          }
+        })();
+      }
+      return;
+    }
+
+    if (!paymentIntentId || !clientSecret) {
+      if (targetItemParam) {
+        queueMicrotask(() => {
+          setReconciledReceipt(null);
+          setRedirectRecoveryState({
+            itemId: targetItemParam,
+            message:
+              'We could not verify your payment redirect details. No contribution was recorded — please check your confirmation email or try again.',
+          });
+        });
+      }
+      return;
+    }
+
+    const dedupeKey = `${paymentIntentId}:${clientSecret}`;
+    if (reconciledIntentKeysRef.current.has(dedupeKey)) {
+      return;
+    }
+    reconciledIntentKeysRef.current.add(dedupeKey);
+
+    void (async () => {
+      try {
+        const res = await apiClient.post<ReconcilePaymentIntentResponse>(
+          '/api/registry/payment-intent/reconcile',
+          {
+            paymentIntentId,
+            clientSecret,
+            ...(targetItemParam ? { itemId: targetItemParam } : {}),
+          }
+        );
+
+        if (res?.reconciled && res.item && res.receipt) {
+          ensureItemQueryParam(res.item.id);
+          syncItemInCache(res.item);
+          setRedirectRecoveryState(null);
+          setReconciledReceipt(res.receipt);
+          setSelectedItem(res.item);
+          setIsModalOpen(true);
+          return;
+        }
+
+        const unresolvedItemId = res?.itemId ?? targetItemParam ?? null;
+        if (unresolvedItemId) {
+          ensureItemQueryParam(unresolvedItemId);
+        }
+        setReconciledReceipt(null);
+        setRedirectRecoveryState({
+          itemId: unresolvedItemId,
+          message:
+            res?.error ||
+            'Your payment has not settled yet. No contribution was recorded — please try again or choose another payment method.',
+        });
+      } catch (err: unknown) {
+        const errorMessage =
+          err instanceof Error && err.message
+            ? err.message
+            : 'Unable to verify your payment right now. Please check your confirmation email or try again.';
+        setReconciledReceipt(null);
+        setRedirectRecoveryState({
+          itemId: targetItemParam ?? null,
+          message: errorMessage,
+        });
+      }
+    })();
+  }, [syncItemInCache]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || isLoading) return;
@@ -446,6 +678,8 @@ export function useRegistry() {
       } else if (isPopState) {
         setIsModalOpen(false);
         setSelectedItem(null);
+        setReconciledReceipt(null);
+        setRedirectRecoveryState(null);
       }
     };
 
@@ -486,6 +720,12 @@ export function useRegistry() {
     orderDetails?: OrderTrackingDetails,
     addressDetails?: ContributorAddressDetails
   ) => {
+    setReconciledItems((prev) => {
+      if (!(itemId in prev)) return prev;
+      const next = { ...prev };
+      delete next[itemId];
+      return next;
+    });
     return new Promise<unknown>((resolve, reject) => {
       contribute(
         {
@@ -519,17 +759,6 @@ export function useRegistry() {
     });
   }, [contribute]);
 
-  const syncItemInCache = useCallback((nextItem: RegistryItem) => {
-    if (!nextItem || !nextItem.id) return;
-    queryClient.setQueriesData<RegistryQueryData>(
-      { queryKey: ['registry-items'] },
-      (old) => mapRegistryQueryData(old, (item) => (item.id === nextItem.id ? nextItem : item))
-    );
-    setSelectedItem((prev) => (prev && prev.id === nextItem.id ? nextItem : prev));
-    queryClient.invalidateQueries({ queryKey: ['admin-registry'] });
-    queryClient.invalidateQueries({ queryKey: ['admin-registry-item', nextItem.id] });
-  }, [queryClient]);
-
   const handleClearFilters = useCallback(() => {
     setCategoryFilter([]);
     setPriceRange([minPrice, maxPrice]);
@@ -548,6 +777,8 @@ export function useRegistry() {
     refetch,
     selectedItem: effectiveSelectedItem,
     isModalOpen: effectiveIsModalOpen,
+    reconciledReceipt,
+    redirectRecoveryError,
     setVisibleItemsCount,
     isAdmin,
     cardCheckoutEnabled,

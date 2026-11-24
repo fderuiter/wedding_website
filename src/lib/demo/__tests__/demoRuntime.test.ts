@@ -1340,6 +1340,24 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
     expect(aliasRes?.status).toBe(200);
     expect((await aliasRes?.json()).id).toBe('demo-classic-item-1');
 
+    const reconcileAliasRes = await dispatchDemoApiRequest(
+      '/wedding_website/api/registry/payment-intent/reconcile',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          paymentIntentId: 'pi_demo_1',
+          clientSecret: 'pi_demo_1_secret_demo',
+          itemId: 'sample-registry-classic-1',
+        }),
+      }
+    );
+    expect(reconcileAliasRes?.status).toBe(200);
+    expect(await reconcileAliasRes?.json()).toMatchObject({
+      reconciled: true,
+      status: 'succeeded',
+      itemId: 'demo-classic-item-1',
+    });
+
     const physicalItem = getActiveArchetypeDataset().registryItems.find((i) => !i.isGroupGift)!;
     const reservedContrib = recordDemoContribution({
       itemId: physicalItem.id,
