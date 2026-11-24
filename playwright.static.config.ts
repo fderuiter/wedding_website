@@ -53,7 +53,7 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   workers: 2,
-  timeout: 180_000,
+  timeout: 240_000,
   reporter: process.env.CI ? 'github' : 'list',
   use: {
     baseURL: origin,

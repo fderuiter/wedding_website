@@ -282,6 +282,7 @@ export default function GuestClaimPage() {
     <Suspense
       fallback={
         <Container className="max-w-none p-6">
+          <h1 className="sr-only">Wedding Registry Verification</h1>
           <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
             Loading gift verification...
           </p>

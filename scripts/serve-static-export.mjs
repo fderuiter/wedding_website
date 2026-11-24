@@ -51,7 +51,7 @@ function resolveCandidateFile(outRoot, relativeRequestPath) {
     try {
       const stat = fs.statSync(resolved);
       if (stat.isFile()) {
-        return resolved;
+        return { filePath: resolved, size: stat.size };
       }
     } catch {
       // Try next candidate
@@ -68,6 +68,17 @@ export function createStaticExportServer(options = {}) {
   const basePath = normalizeStaticBasePath(
     options.basePath ?? process.env.NEXT_PUBLIC_BASE_PATH ?? '/wedding_website/demo'
   );
+
+  const fileBufferCache = new Map();
+
+  function readCachedFileBuffer(filePath) {
+    let cached = fileBufferCache.get(filePath);
+    if (!cached) {
+      cached = fs.readFileSync(filePath);
+      fileBufferCache.set(filePath, cached);
+    }
+    return cached;
+  }
 
   return http.createServer((req, res) => {
     const method = (req.method || 'GET').toUpperCase();
@@ -103,17 +114,18 @@ export function createStaticExportServer(options = {}) {
     }
 
     const relativePath = basePath ? pathname.slice(basePath.length) || '/' : pathname;
-    const resolvedFile = resolveCandidateFile(outRoot, relativePath);
+    const resolvedEntry = resolveCandidateFile(outRoot, relativePath);
 
-    if (!resolvedFile) {
+    if (!resolvedEntry) {
       const notFoundHtml = path.join(outRoot, '404.html');
       if (fs.existsSync(notFoundHtml)) {
-        res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
-        if (method === 'HEAD') {
-          res.end();
-        } else {
-          fs.createReadStream(notFoundHtml).pipe(res);
-        }
+        const notFoundBuf = readCachedFileBuffer(notFoundHtml);
+        res.writeHead(404, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Content-Length': notFoundBuf.byteLength,
+          'Cache-Control': 'no-cache',
+        });
+        res.end(method === 'HEAD' ? undefined : notFoundBuf);
         return;
       }
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -121,19 +133,17 @@ export function createStaticExportServer(options = {}) {
       return;
     }
 
+    const { filePath: resolvedFile } = resolvedEntry;
+    const bodyBuffer = readCachedFileBuffer(resolvedFile);
     const ext = path.extname(resolvedFile).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
     res.writeHead(200, {
       'Content-Type': contentType,
+      'Content-Length': bodyBuffer.byteLength,
       'Cache-Control': 'no-cache',
     });
 
-    if (method === 'HEAD') {
-      res.end();
-      return;
-    }
-
-    fs.createReadStream(resolvedFile).pipe(res);
+    res.end(method === 'HEAD' ? undefined : bodyBuffer);
   });
 }
 

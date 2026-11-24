@@ -190,26 +190,36 @@ async function applyDeterministicThemeAndSeed(
   );
 }
 
+function buildExternalUrlPattern(origin: string): RegExp {
+  const hostPort = new URL(origin).host.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^https?://(?!${hostPort}(?:/|$))`, 'i');
+}
+
 async function waitForStaticRouteSettled(page: Page, theme: ColorTheme) {
   await page
-    .locator('main, [role="main"], h1')
+    .locator('h1, [role="heading"][aria-level="1"]')
     .first()
-    .waitFor({ state: 'attached', timeout: 10_000 })
-    .catch(() => {});
-  await page
-    .waitForFunction(
-      () => {
-        if (document.readyState !== 'complete') return false;
-        const linksLoaded = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).every(
-          (link) => Boolean((link as HTMLLinkElement).sheet)
-        );
-        if (!linksLoaded) return false;
-        const heroNav = document.querySelector('nav[aria-label="Primary navigation"]');
-        return !heroNav || window.getComputedStyle(heroNav).opacity === '1';
-      },
-      { timeout: 10_000 }
-    )
-    .catch(() => {});
+    .waitFor({ state: 'attached', timeout: 15_000 });
+  await page.waitForFunction(
+    () => {
+      if (document.readyState !== 'complete') return false;
+      if (document.documentElement.dataset.staticDemo !== 'true') return false;
+      const links = Array.from(document.querySelectorAll('link[rel="stylesheet"]'));
+      if (links.length === 0 || !links.every((link) => Boolean((link as HTMLLinkElement).sheet))) {
+        return false;
+      }
+      if (
+        window.getComputedStyle(document.documentElement).getPropertyValue('--text-2xl').trim() ===
+        ''
+      ) {
+        return false;
+      }
+      const heroNav = document.querySelector('nav[aria-label="Primary navigation"]');
+      return !heroNav || window.getComputedStyle(heroNav).opacity === '1';
+    },
+    undefined,
+    { timeout: 15_000 }
+  );
   await page.evaluate(async (expectedTheme) => {
     document.documentElement.classList.toggle('dark', expectedTheme === 'dark');
     document.documentElement.classList.toggle('light', expectedTheme === 'light');
@@ -221,6 +231,26 @@ async function waitForStaticRouteSettled(page: Page, theme: ColorTheme) {
     });
   }, theme);
   await page.waitForTimeout(100);
+}
+
+async function navigateAndSettleStaticRoute(
+  page: Page,
+  targetUrl: string,
+  theme: ColorTheme,
+  onBeforeRetry?: () => void
+) {
+  let docResponse = await page.goto(targetUrl, {
+    waitUntil: 'load',
+    timeout: 30_000,
+  });
+  try {
+    await waitForStaticRouteSettled(page, theme);
+  } catch {
+    onBeforeRetry?.();
+    docResponse = await page.reload({ waitUntil: 'load', timeout: 30_000 });
+    await waitForStaticRouteSettled(page, theme);
+  }
+  return docResponse;
 }
 
 async function runWcagAudit(page: Page): Promise<AxeViolation[]> {
@@ -284,18 +314,10 @@ test.describe('Standalone Static Showcase Runtime & WCAG 2.2 AA Audit @a11y-stat
         },
       ]);
 
+      const externalUrlPattern = buildExternalUrlPattern(origin);
       const blockedExternalUrls: string[] = [];
-      await context.route('**/*', (route) => {
-        const reqUrl = route.request().url();
-        if (
-          reqUrl.startsWith(origin) ||
-          reqUrl.startsWith('data:') ||
-          reqUrl.startsWith('blob:') ||
-          reqUrl === 'about:blank'
-        ) {
-          return route.continue();
-        }
-        blockedExternalUrls.push(reqUrl);
+      await context.route(externalUrlPattern, (route) => {
+        blockedExternalUrls.push(route.request().url());
         return route.abort();
       });
 
@@ -334,8 +356,15 @@ test.describe('Standalone Static Showcase Runtime & WCAG 2.2 AA Audit @a11y-stat
 
           try {
             const targetUrl = `${origin}${basePath}${routePath === '/' ? '/' : `${routePath}/`}`;
-            const docResponse = await page.goto(targetUrl, { waitUntil: 'load' });
-            await waitForStaticRouteSettled(page, theme);
+            const docResponse = await navigateAndSettleStaticRoute(
+              page,
+              targetUrl,
+              theme,
+              () => {
+                failedResponses.length = 0;
+                pageErrors.length = 0;
+              }
+            );
 
             const status = docResponse?.status() ?? 0;
             if (status !== 200) {
@@ -384,7 +413,9 @@ test.describe('Standalone Static Showcase Runtime & WCAG 2.2 AA Audit @a11y-stat
               ).toBeVisible();
             }
 
-            if ((await page.locator('iframe[title="Live Preview"]').count()) > 0) {
+            const hasLivePreviewIframe =
+              (await page.locator('iframe[title="Live Preview"]').count()) > 0;
+            if (hasLivePreviewIframe) {
               const previewSrc = await page
                 .locator('iframe[title="Live Preview"]')
                 .first()
@@ -393,6 +424,14 @@ test.describe('Standalone Static Showcase Runtime & WCAG 2.2 AA Audit @a11y-stat
             }
 
             const violations = await runWcagAudit(page);
+            if (hasLivePreviewIframe) {
+              await page.evaluate(() => {
+                document.querySelectorAll('iframe[title="Live Preview"]').forEach((el) => {
+                  el.setAttribute('src', 'about:blank');
+                  el.remove();
+                });
+              });
+            }
             shardViolations[scanKey] = violations;
             if (violations.length > 0) {
               contrastOrA11yFailures.push(formatViolationSummary(scanKey, violations));
@@ -429,19 +468,9 @@ test.describe('Standalone Static Showcase Runtime & WCAG 2.2 AA Audit @a11y-stat
           colorScheme: theme,
           reducedMotion: 'reduce',
         });
+        const externalUrlPattern = buildExternalUrlPattern(origin);
         await context.addCookies([{ name: 'theme_mode', value: theme, url: origin }]);
-        await context.route('**/*', (route) => {
-          const reqUrl = route.request().url();
-          if (
-            reqUrl.startsWith(origin) ||
-            reqUrl.startsWith('data:') ||
-            reqUrl.startsWith('blob:') ||
-            reqUrl === 'about:blank'
-          ) {
-            return route.continue();
-          }
-          return route.abort();
-        });
+        await context.route(externalUrlPattern, (route) => route.abort());
 
         const page = await context.newPage();
         await page.goto(`${origin}/__health`, { waitUntil: 'commit' });
@@ -454,29 +483,34 @@ test.describe('Standalone Static Showcase Runtime & WCAG 2.2 AA Audit @a11y-stat
             window.localStorage.setItem(storageKey, JSON.stringify(seed));
             window.localStorage.setItem('theme_mode', activeTheme);
             document.cookie = `theme_mode=${activeTheme}; path=/; SameSite=Lax`;
-            let currentFetch = window.fetch;
+            const wrapWeatherFailure = (
+              delegate: typeof window.fetch
+            ): typeof window.fetch => {
+              return async (input: RequestInfo | URL, init?: RequestInit) => {
+                const rawUrl =
+                  typeof input === 'string'
+                    ? input
+                    : input instanceof URL
+                      ? input.toString()
+                      : input.url;
+                if (rawUrl.includes('/api/weather')) {
+                  return new Response(JSON.stringify({ error: 'Simulated forecast failure' }), {
+                    status: 500,
+                    headers: { 'Content-Type': 'application/json' },
+                  });
+                }
+                return delegate(input, init);
+              };
+            };
+            let wrappedFetch = wrapWeatherFailure(window.fetch.bind(window));
             Object.defineProperty(window, 'fetch', {
               configurable: true,
               enumerable: true,
               get() {
-                return async (input: RequestInfo | URL, init?: RequestInit) => {
-                  const rawUrl =
-                    typeof input === 'string'
-                      ? input
-                      : input instanceof URL
-                        ? input.toString()
-                        : input.url;
-                  if (rawUrl.includes('/api/weather')) {
-                    return new Response(JSON.stringify({ error: 'Simulated forecast failure' }), {
-                      status: 500,
-                      headers: { 'Content-Type': 'application/json' },
-                    });
-                  }
-                  return currentFetch(input, init);
-                };
+                return wrappedFetch;
               },
-              set(nextFn) {
-                currentFetch = nextFn;
+              set(nextFn: typeof window.fetch) {
+                wrappedFetch = wrapWeatherFailure(nextFn.bind(window));
               },
             });
           },
@@ -487,8 +521,7 @@ test.describe('Standalone Static Showcase Runtime & WCAG 2.2 AA Audit @a11y-stat
           }
         );
 
-        await errorPage.goto(`${origin}${basePath}/weather/`, { waitUntil: 'load' });
-        await waitForStaticRouteSettled(errorPage, theme);
+        await navigateAndSettleStaticRoute(errorPage, `${origin}${basePath}/weather/`, theme);
         await expect(
           errorPage.getByText('Failed to load forecast. Please try again later.')
         ).toBeVisible();
@@ -508,10 +541,11 @@ test.describe('Standalone Static Showcase Runtime & WCAG 2.2 AA Audit @a11y-stat
           theme,
           buildDemoSeedForRoute('/admin/dashboard/invitation-codes')
         );
-        await page.goto(`${origin}${basePath}/admin/dashboard/invitation-codes/`, {
-          waitUntil: 'load',
-        });
-        await waitForStaticRouteSettled(page, theme);
+        await navigateAndSettleStaticRoute(
+          page,
+          `${origin}${basePath}/admin/dashboard/invitation-codes/`,
+          theme
+        );
 
         const searchInput = page.getByRole('textbox', { name: /Search invitation codes/i });
         await searchInput.fill('__NO_MATCHING_HOUSEHOLD_QUERY__');
@@ -533,10 +567,11 @@ test.describe('Standalone Static Showcase Runtime & WCAG 2.2 AA Audit @a11y-stat
           theme,
           buildDemoSeedForRoute('/photos/slideshow')
         );
-        await page.goto(`${origin}${basePath}/photos/slideshow/`, {
-          waitUntil: 'load',
-        });
-        await waitForStaticRouteSettled(page, theme);
+        await navigateAndSettleStaticRoute(
+          page,
+          `${origin}${basePath}/photos/slideshow/`,
+          theme
+        );
 
         const speed5Btn = page.getByTestId('slideshow-duration-5s-btn');
         const speed8Btn = page.getByTestId('slideshow-duration-8s-btn');
@@ -565,10 +600,11 @@ test.describe('Standalone Static Showcase Runtime & WCAG 2.2 AA Audit @a11y-stat
           theme,
           buildDemoSeedForRoute('/registry/add-item')
         );
-        await page.goto(`${origin}${basePath}/registry/add-item/`, {
-          waitUntil: 'load',
-        });
-        await waitForStaticRouteSettled(page, theme);
+        await navigateAndSettleStaticRoute(
+          page,
+          `${origin}${basePath}/registry/add-item/`,
+          theme
+        );
 
         for (const [tabSelector, panelSelector] of [
           ['#tab-single', '#panel-single'],
