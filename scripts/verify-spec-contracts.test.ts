@@ -986,4 +986,38 @@ export function isProtectedRoute() { return false; }
       expect(raw).not.toMatch(/#L\d+/);
     }
   });
+
+  it('handles CommonMark backtick info strings, multi-line HTML comments, backticked comment literals, angle-bracket links, and interface members', () => {
+    writeFixture(
+      tempDir,
+      'src/features/rsvp/contract.ts',
+      [
+        'export interface RsvpContract {',
+        '  readonly guestId: string;',
+        '  confirmRsvp(code: string): Promise<boolean>;',
+        '}',
+        'export function submitRsvp(): boolean {',
+        '  return true;',
+        '}',
+      ].join('\n'),
+    );
+    writeFixture(
+      tempDir,
+      'docs/CONTRACT_SPEC.md',
+      [
+        '# Contract Spec',
+        'Inline triple-backtick code ```not a fence` keeps scanner outside fences.',
+        '<!--',
+        '- `GET /api/nonexistent/commented`',
+        '- [missingInComment](<../src/features/rsvp/contract.ts>)',
+        '-->',
+        '- Preserves `<!-- literal marker -->` while checking [submitRsvp](<../src/features/rsvp/contract.ts>), [`RsvpContract.confirmRsvp`](<../src/features/rsvp/contract.ts>), and [missingHelper](<../src/features/rsvp/contract.ts>).',
+      ].join('\n'),
+    );
+
+    const res = verifySpecContracts(tempDir, { specFiles: ['docs/CONTRACT_SPEC.md'] });
+    expect(res.errors).toEqual([
+      'docs/CONTRACT_SPEC.md:7: Symbol "missingHelper" is not declared or exported in src/features/rsvp/contract.ts',
+    ]);
+  });
 });

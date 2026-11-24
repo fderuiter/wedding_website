@@ -2,7 +2,17 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import ts from 'typescript';
-import { scanLinksAndCodeInLine, transformNonFencedMarkdownLines } from './check-doc-links';
+import {
+  extractFilePathFromLinkTarget,
+  extractMarkdownHeadings,
+  getTsPropertyKeyName,
+  type MarkdownFenceState,
+  parseTsSourceFile,
+  scanLinksAndCodeInLine,
+  scanMarkdownDocument,
+  stepMarkdownFence,
+  transformNonFencedMarkdownLines,
+} from './doc-markdown-utils';
 import { ARCHITECTURAL_DOCS, rewriteMarkdownLinks } from './generate-portal';
 
 const COMMENTED_OPTIONAL_ENV_KEYS = [
@@ -68,18 +78,16 @@ function extractMarkdownSection(
 ): string {
   const lines = markdown.split(/\r?\n/);
   const out: string[] = [];
+  const fenceState: MarkdownFenceState = { inFence: false, fenceChar: '', fenceLen: 0 };
   let inSection = false;
-  let inFence = false;
 
   for (const line of lines) {
-    if (/^\s*(`{3,}|~{3,})/.test(line)) {
-      inFence = !inFence;
-    }
-    if (!inFence && !inSection && headingPattern.test(line)) {
+    const isOutsideFence = stepMarkdownFence(line, fenceState).kind === 'outside';
+    if (isOutsideFence && !inSection && headingPattern.test(line)) {
       inSection = true;
       continue;
     }
-    if (!inFence && inSection && stopHeadingPattern.test(line)) {
+    if (isOutsideFence && inSection && stopHeadingPattern.test(line)) {
       break;
     }
     if (inSection) {
@@ -120,110 +128,6 @@ const IGNORED_ROOT_DIRECTORIES = new Set([
   'tmp',
 ]);
 
-interface ReadmeHeadingInfo {
-  level: number;
-  text: string;
-  slug: string;
-}
-
-function slugifyGithubHeading(rawHeading: string): string {
-  const plain = rawHeading
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
-    .replace(/[*_~]/g, '')
-    .trim();
-  return plain
-    .toLowerCase()
-    .replace(/[\uFE00-\uFE0F\u200D]/g, '')
-    .replace(/[^\p{L}\p{M}\p{N}_\- ]/gu, '')
-    .replace(/ /g, '-');
-}
-
-function extractReadmeHeadings(readmeContent: string): ReadmeHeadingInfo[] {
-  const headings: ReadmeHeadingInfo[] = [];
-  const slugCounts = new Map<string, number>();
-  const lines = readmeContent.split(/\r?\n/);
-  let inFrontmatter = false;
-  let inFence = false;
-  let fenceChar = '';
-  let fenceLen = 0;
-  let inHtmlComment = false;
-
-  lines.forEach((rawLine, index) => {
-    if (index === 0 && rawLine.trim() === '---') {
-      inFrontmatter = true;
-      return;
-    }
-    if (inFrontmatter) {
-      if (rawLine.trim() === '---' || rawLine.trim() === '...') {
-        inFrontmatter = false;
-      }
-      return;
-    }
-
-    const fenceMatch = rawLine.match(/^\s{0,3}(`{3,}|~{3,})(.*)$/);
-    if (fenceMatch) {
-      const marker = fenceMatch[1];
-      const rest = fenceMatch[2];
-      const ch = marker[0];
-      const len = marker.length;
-      if (!inFence) {
-        if (!(ch === '`' && rest.includes('`'))) {
-          inFence = true;
-          fenceChar = ch;
-          fenceLen = len;
-          return;
-        }
-      } else if (ch === fenceChar && len >= fenceLen && /^\s*$/.test(rest)) {
-        inFence = false;
-        fenceChar = '';
-        fenceLen = 0;
-        return;
-      }
-    }
-
-    if (inFence) {
-      return;
-    }
-
-    let line = rawLine;
-    if (inHtmlComment) {
-      const endIdx = line.indexOf('-->');
-      if (endIdx === -1) {
-        return;
-      }
-      line = line.slice(endIdx + 3);
-      inHtmlComment = false;
-    }
-    while (line.includes('<!--')) {
-      const startIdx = line.indexOf('<!--');
-      const endIdx = line.indexOf('-->', startIdx + 4);
-      if (endIdx === -1) {
-        line = line.slice(0, startIdx);
-        inHtmlComment = true;
-        break;
-      }
-      line = line.slice(0, startIdx) + line.slice(endIdx + 3);
-    }
-
-    const match = line.match(/^\s{0,3}(#{1,6})\s+(.+?)(?:\s+#+\s*)?$/);
-    if (!match) {
-      return;
-    }
-
-    const level = match[1].length;
-    const text = match[2].trim();
-    const baseSlug = slugifyGithubHeading(text);
-    const seen = slugCounts.get(baseSlug) ?? 0;
-    slugCounts.set(baseSlug, seen + 1);
-    const slug = seen === 0 ? baseSlug : `${baseSlug}-${seen}`;
-
-    headings.push({ level, text, slug });
-  });
-
-  return headings;
-}
-
 function extractReadmeTocAnchors(readmeContent: string): string[] {
   const tocSection = extractMarkdownSection(
     readmeContent,
@@ -231,11 +135,17 @@ function extractReadmeTocAnchors(readmeContent: string): string[] {
     /^##\s+/
   );
   const anchors: string[] = [];
-  const linkRegex = /\[[^\]]+\]\(#([^)\s]+)\)/g;
-  let match: RegExpExecArray | null;
-  while ((match = linkRegex.exec(tocSection)) !== null) {
-    anchors.push(match[1].trim());
-  }
+  scanMarkdownDocument(
+    tocSection,
+    (line, lineNum) => {
+      for (const link of scanLinksAndCodeInLine(line, lineNum).links) {
+        if (!link.isImage && link.rawTarget.startsWith('#') && link.rawTarget.length > 1) {
+          anchors.push(link.rawTarget.slice(1).trim());
+        }
+      }
+    },
+    { htmlCommentMode: 'strip' }
+  );
   return anchors;
 }
 
@@ -456,15 +366,12 @@ function hasPortalCrossLink(
   transformNonFencedMarkdownLines(summaryContent, (line, lineNumber) => {
     const { links } = scanLinksAndCodeInLine(line, lineNumber);
     for (const link of links) {
-      const rawPathPart = link.rawTarget.trim().split(/[?#]/)[0];
-      if (!rawPathPart || /^[a-z]+:/i.test(rawPathPart)) {
+      const trimmedTarget = link.rawTarget.trim();
+      if (/^[a-z]+:/i.test(trimmedTarget)) {
         continue;
       }
-      const resolvedFile = rawPathPart.startsWith('/')
-        ? path.resolve(repoRoot, rawPathPart.slice(1))
-        : path.resolve(srcDir, rawPathPart);
-      const resolvedRel = path.relative(repoRoot, resolvedFile).replace(/\\/g, '/');
-      if (resolvedRel === canonicalRelPath) {
+      const resolvedFile = extractFilePathFromLinkTarget(trimmedTarget, srcDir, repoRoot);
+      if (resolvedFile && path.relative(repoRoot, resolvedFile).replace(/\\/g, '/') === canonicalRelPath) {
         hasRelativeSourceLink = true;
       }
     }
@@ -1288,7 +1195,7 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     );
   }
 
-  const readmeHeadings = extractReadmeHeadings(readmeRaw);
+  const readmeHeadings = extractMarkdownHeadings(readmeRaw);
   const readmeH1Headings = readmeHeadings.filter((heading) => heading.level === 1);
   if (readmeH1Headings.length !== 1) {
     errors.push(
@@ -1301,15 +1208,15 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     errors.push('README.md: Missing "## Table of Contents" anchor entries');
   } else {
     const tocAnchorSet = new Set(readmeTocAnchors);
-    const allHeadingSlugs = new Set(readmeHeadings.map((heading) => heading.slug));
+    const allHeadingSlugs = new Set(readmeHeadings.map((heading) => heading.githubSlug));
     const expectedTocHeadings = readmeHeadings.filter(
       (heading) =>
-        (heading.level === 2 || heading.level === 3) && heading.slug !== 'table-of-contents'
+        (heading.level === 2 || heading.level === 3) && heading.githubSlug !== 'table-of-contents'
     );
     for (const heading of expectedTocHeadings) {
-      if (!tocAnchorSet.has(heading.slug)) {
+      if (!tocAnchorSet.has(heading.githubSlug)) {
         errors.push(
-          `README.md: Table of Contents is missing entry for "${heading.text}" (#${heading.slug})`
+          `README.md: Table of Contents is missing entry for "${heading.rawText}" (#${heading.githubSlug})`
         );
       }
     }
@@ -1722,14 +1629,7 @@ function getObjectLiteralStringProps(obj: ts.ObjectLiteralExpression): Map<strin
   const map = new Map<string, string>();
   for (const prop of obj.properties) {
     if (!ts.isPropertyAssignment(prop)) continue;
-    let key: string | null = null;
-    if (
-      ts.isIdentifier(prop.name) ||
-      ts.isStringLiteral(prop.name) ||
-      ts.isNoSubstitutionTemplateLiteral(prop.name)
-    ) {
-      key = prop.name.text;
-    }
+    const key = getTsPropertyKeyName(prop.name);
     if (!key) continue;
     if (
       ts.isStringLiteral(prop.initializer) ||
@@ -1756,13 +1656,7 @@ function verifyShowcasePortalLinks(
     );
   }
 
-  const configSf = ts.createSourceFile(
-    'docs-portal/.vitepress/config.mts',
-    vitepressConfigRaw,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TS
-  );
+  const configSf = parseTsSourceFile('docs-portal/.vitepress/config.mts', vitepressConfigRaw, true);
 
   const navItems: Array<Map<string, string>> = [];
   function visitConfig(node: ts.Node): void {
@@ -1890,13 +1784,7 @@ function verifyShowcaseReturnLinksAndProjectInfo(
     );
   }
 
-  const toolbarSf = ts.createSourceFile(
-    'src/components/demo/DemoToolbar.tsx',
-    demoToolbarRaw,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX
-  );
+  const toolbarSf = parseTsSourceFile('src/components/demo/DemoToolbar.tsx', demoToolbarRaw, true);
   if (!/if\s*\(\s*!demo\?\.isDemoMode\s*\)\s*\{\s*return\s+null;/.test(demoToolbarRaw)) {
     errors.push(
       'src/components/demo/DemoToolbar.tsx: Must gate toolbar rendering on demo?.isDemoMode'
@@ -1996,12 +1884,10 @@ function verifyShowcaseReturnLinksAndProjectInfo(
     );
   }
 
-  const projectInfoSf = ts.createSourceFile(
+  const projectInfoSf = parseTsSourceFile(
     'src/app/project-info/ProjectInfoClient.tsx',
     projectInfoRaw,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX
+    true
   );
   const projectInfoRoutes = collectResolvedShowcaseRoutes(projectInfoSf);
   for (const route of REQUIRED_SHOWCASE_ROUTES) {

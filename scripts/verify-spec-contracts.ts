@@ -7,6 +7,18 @@ import {
   isMiddlewarePublicApiMethod,
 } from './generate-docs';
 import { ARCHITECTURAL_DOCS } from './check-doc-links';
+import {
+  escapeRegExp,
+  extractFilePathFromLinkTarget,
+  HTTP_METHOD_NAMES,
+  type InlineCodeSpan,
+  type ParsedMarkdownLink,
+  parseLineFragmentRange,
+  parseTsSourceFile,
+  PROSE_LINK_WORDS,
+  scanLinksAndCodeInLine,
+  scanMarkdownDocument,
+} from './doc-markdown-utils';
 
 interface RouteContractEntry {
   routePath: string;
@@ -19,16 +31,6 @@ const scriptDir = typeof __dirname !== 'undefined'
   : path.dirname(fileURLToPath(import.meta.url));
 
 const ROOT_DIR = path.resolve(scriptDir, '..');
-
-const HTTP_METHODS_SET = new Set([
-  'GET',
-  'POST',
-  'PUT',
-  'PATCH',
-  'DELETE',
-  'OPTIONS',
-  'HEAD',
-]);
 
 const PRIMITIVE_KEYWORDS = new Set([
   'true',
@@ -86,29 +88,6 @@ const STANDARD_HTTP_HEADERS = new Set([
   'Location',
   'Origin',
   'Referer',
-]);
-
-const REPO_GITHUB_BLOB_URL_RE =
-  /^https?:\/\/github\.com\/fderuiter\/wedding_website\/blob\/[^/]+\/([^?#]+)(?:\?[^#]*)?(?:#(.*))?$/;
-
-const PROSE_LOWERCASE_LINK_LABELS = new Set([
-  'details',
-  'docs',
-  'example',
-  'file',
-  'handler',
-  'here',
-  'implementation',
-  'link',
-  'module',
-  'more',
-  'repo',
-  'route',
-  'sample',
-  'schema',
-  'service',
-  'source',
-  'target',
 ]);
 
 type ConstPrimitiveValue = string | number | boolean;
@@ -226,16 +205,9 @@ function collectBindingIdentifiers(name: ts.BindingName, target: Set<string>) {
   }
 }
 
-function collectInheritedClassMembers(
-  classDecl: ts.ClassDeclaration,
-  filePath: string,
+function collectNamedImportMap(
   sourceFile: ts.SourceFile,
-  rootDir: string,
-  visited: Set<string>,
-): Set<string> {
-  const members = new Set<string>();
-  if (!classDecl.heritageClauses) return members;
-
+): Map<string, { specifier: string; importedName: string }> {
   const importMap = new Map<string, { specifier: string; importedName: string }>();
   for (const stmt of sourceFile.statements) {
     if (
@@ -252,6 +224,20 @@ function collectInheritedClassMembers(
       }
     }
   }
+  return importMap;
+}
+
+function collectInheritedClassMembers(
+  classDecl: ts.ClassDeclaration,
+  filePath: string,
+  sourceFile: ts.SourceFile,
+  rootDir: string,
+  visited: Set<string>,
+): Set<string> {
+  const members = new Set<string>();
+  if (!classDecl.heritageClauses) return members;
+
+  const importMap = collectNamedImportMap(sourceFile);
 
   for (const clause of classDecl.heritageClauses) {
     if (clause.token !== ts.SyntaxKind.ExtendsKeyword) continue;
@@ -279,7 +265,6 @@ function collectInheritedClassMembers(
 }
 
 const symbolInventoryCache = new Map<string, ModuleSymbolInventory>();
-const exportedConstInitializersCache = new Map<string, Map<string, Set<ConstPrimitiveValue>>>();
 const parsedSourceCache = new Map<string, { content: string; sf: ts.SourceFile }>();
 const moduleExportsCache = new Map<string, { values: Set<string>; types: Set<string> }>();
 const localModuleResolveCache = new Map<string, string | null>();
@@ -332,14 +317,7 @@ function getCachedSourceFile(filePath: string): { content: string; sf: ts.Source
   const cached = parsedSourceCache.get(filePath);
   if (cached) return cached;
   const content = fs.readFileSync(filePath, 'utf8');
-  const sf = ts.createSourceFile(
-    filePath,
-    content,
-    ts.ScriptTarget.Latest,
-    false,
-    filePath.endsWith('.tsx') || filePath.endsWith('.jsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
-  );
-  const entry = { content, sf };
+  const entry = { content, sf: parseTsSourceFile(filePath, content, false) };
   parsedSourceCache.set(filePath, entry);
   return entry;
 }
@@ -456,7 +434,7 @@ function collectFastApiRouteEntries(rootDir: string): RouteContractEntry[] {
     const routePath =
       '/' + relFromRoot.replace(/^src\/app\//, '').replace(/\/route\.(tsx|ts|jsx|js)$/, '');
     const { values } = collectCachedModuleExports(fullPath, rootDir);
-    const methods = Array.from(HTTP_METHODS_SET).filter((m) => values.has(m));
+    const methods = Array.from(HTTP_METHOD_NAMES).filter((m) => values.has(m));
     return { routePath, handlerPath: relFromRoot, methods };
   });
 }
@@ -466,22 +444,10 @@ function extractFastAdminEntityKeys(rootDir: string): Set<string> {
   if (!fs.existsSync(registryPath)) return new Set();
 
   const sf = getCachedSourceFile(registryPath).sf;
-  const importedClasses = new Map<string, { specifier: string; importedName: string }>();
+  const importedClasses = collectNamedImportMap(sf);
 
   const visitRegistry = (node: ts.Node) => {
     if (
-      ts.isImportDeclaration(node) &&
-      ts.isStringLiteral(node.moduleSpecifier) &&
-      node.importClause?.namedBindings &&
-      ts.isNamedImports(node.importClause.namedBindings)
-    ) {
-      for (const el of node.importClause.namedBindings.elements) {
-        importedClasses.set(el.name.text, {
-          specifier: node.moduleSpecifier.text,
-          importedName: el.propertyName ? el.propertyName.text : el.name.text,
-        });
-      }
-    } else if (
       ts.isVariableDeclaration(node) &&
       ts.isArrayBindingPattern(node.name) &&
       node.initializer &&
@@ -571,101 +537,6 @@ function extractFastAdminEntityKeys(rootDir: string): Set<string> {
     if (key) keys.add(key);
   }
   return keys;
-}
-
-function getExportedConstInitializers(
-  filePath: string,
-  rootDir: string,
-  visited: Set<string> = new Set(),
-): Map<string, Set<ConstPrimitiveValue>> {
-  const cached = exportedConstInitializersCache.get(filePath);
-  if (cached) return cached;
-
-  const result = new Map<string, Set<ConstPrimitiveValue>>();
-  if (!fs.existsSync(filePath) || visited.has(filePath)) {
-    return result;
-  }
-
-  const nextVisited = new Set(visited);
-  nextVisited.add(filePath);
-
-  const sf = getCachedSourceFile(filePath).sf;
-  const localImports = new Map<string, { specifier: string; importedName: string }>();
-
-  const addVal = (name: string, val: ConstPrimitiveValue) => {
-    const set = result.get(name) ?? new Set<ConstPrimitiveValue>();
-    set.add(val);
-    result.set(name, set);
-  };
-
-  for (const stmt of sf.statements) {
-    if (
-      ts.isImportDeclaration(stmt) &&
-      ts.isStringLiteral(stmt.moduleSpecifier) &&
-      stmt.importClause?.namedBindings &&
-      ts.isNamedImports(stmt.importClause.namedBindings)
-    ) {
-      for (const el of stmt.importClause.namedBindings.elements) {
-        localImports.set(el.name.text, {
-          specifier: stmt.moduleSpecifier.text,
-          importedName: el.propertyName ? el.propertyName.text : el.name.text,
-        });
-      }
-    } else if (ts.isVariableStatement(stmt) && hasExportModifier(stmt)) {
-      for (const decl of stmt.declarationList.declarations) {
-        if (ts.isIdentifier(decl.name) && decl.initializer) {
-          const val = evaluateStaticExpression(decl.initializer);
-          if (val !== null) {
-            addVal(decl.name.text, val);
-          }
-        }
-      }
-    } else if (ts.isExportDeclaration(stmt)) {
-      const specifier =
-        stmt.moduleSpecifier && ts.isStringLiteral(stmt.moduleSpecifier)
-          ? stmt.moduleSpecifier.text
-          : null;
-      if (specifier && !stmt.exportClause) {
-        const targetPath = resolveLocalTsModule(filePath, specifier, rootDir);
-        if (targetPath) {
-          const subMap = getExportedConstInitializers(targetPath, rootDir, nextVisited);
-          for (const [k, vals] of subMap.entries()) {
-            for (const v of vals) addVal(k, v);
-          }
-        }
-      } else if (stmt.exportClause && ts.isNamedExports(stmt.exportClause)) {
-        for (const el of stmt.exportClause.elements) {
-          const localOrImported = el.propertyName ? el.propertyName.text : el.name.text;
-          const exportedName = el.name.text;
-          if (specifier) {
-            const targetPath = resolveLocalTsModule(filePath, specifier, rootDir);
-            if (targetPath) {
-              const subMap = getExportedConstInitializers(targetPath, rootDir, nextVisited);
-              const vals = subMap.get(localOrImported);
-              if (vals) {
-                for (const v of vals) addVal(exportedName, v);
-              }
-            }
-          } else {
-            const imp = localImports.get(localOrImported);
-            if (imp) {
-              const targetPath = resolveLocalTsModule(filePath, imp.specifier, rootDir);
-              if (targetPath) {
-                const subMap = getExportedConstInitializers(targetPath, rootDir, nextVisited);
-                const vals = subMap.get(imp.importedName);
-                if (vals) {
-                  for (const v of vals) addVal(exportedName, v);
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  exportedConstInitializersCache.set(filePath, result);
-  return result;
 }
 
 function unwrapExpression(expr: ts.Expression): ts.Expression {
@@ -811,21 +682,12 @@ function getModuleSymbolInventory(
   }
 
   const sf = getCachedSourceFile(filePath).sf;
+  for (const [k, v] of collectNamedImportMap(sf)) {
+    localImports.set(k, v);
+  }
   const localTypeDecls = new Map<string, ts.InterfaceDeclaration | ts.TypeAliasDeclaration>();
   for (const stmt of sf.statements) {
-    if (
-      ts.isImportDeclaration(stmt) &&
-      ts.isStringLiteral(stmt.moduleSpecifier) &&
-      stmt.importClause?.namedBindings &&
-      ts.isNamedImports(stmt.importClause.namedBindings)
-    ) {
-      for (const el of stmt.importClause.namedBindings.elements) {
-        localImports.set(el.name.text, {
-          specifier: stmt.moduleSpecifier.text,
-          importedName: el.propertyName ? el.propertyName.text : el.name.text,
-        });
-      }
-    } else if (ts.isInterfaceDeclaration(stmt) || ts.isTypeAliasDeclaration(stmt)) {
+    if (ts.isInterfaceDeclaration(stmt) || ts.isTypeAliasDeclaration(stmt)) {
       localTypeDecls.set(stmt.name.text, stmt);
     }
   }
@@ -1135,19 +997,7 @@ function getModuleSymbolInventory(
   collectPropertiesAndLiterals(sf);
 
   for (const stmt of sf.statements) {
-    if (
-      ts.isImportDeclaration(stmt) &&
-      ts.isStringLiteral(stmt.moduleSpecifier) &&
-      stmt.importClause?.namedBindings &&
-      ts.isNamedImports(stmt.importClause.namedBindings)
-    ) {
-      for (const el of stmt.importClause.namedBindings.elements) {
-        localImports.set(el.name.text, {
-          specifier: stmt.moduleSpecifier.text,
-          importedName: el.propertyName ? el.propertyName.text : el.name.text,
-        });
-      }
-    } else if (ts.isFunctionDeclaration(stmt) && stmt.name) {
+    if (ts.isFunctionDeclaration(stmt) && stmt.name) {
       topLevelDeclarations.add(stmt.name.text);
     } else if (ts.isVariableStatement(stmt)) {
       const isExported = hasExportModifier(stmt);
@@ -1158,14 +1008,7 @@ function getModuleSymbolInventory(
         }
         if (ts.isIdentifier(decl.name) && decl.initializer) {
           const containerName = decl.name.text;
-          let init = decl.initializer;
-          while (
-            ts.isAsExpression(init) ||
-            ts.isSatisfiesExpression(init) ||
-            ts.isParenthesizedExpression(init)
-          ) {
-            init = init.expression;
-          }
+          const init = unwrapExpression(decl.initializer);
           if (isExported) {
             const staticVal = evaluateStaticExpression(init);
             if (staticVal !== null) {
@@ -1238,6 +1081,10 @@ function getModuleSymbolInventory(
           if (specifier) {
             mergeReExportedSymbol(specifier, localOrImported, exportedName);
           } else {
+            const localVals = constInitializers.get(localOrImported);
+            if (localVals) {
+              for (const v of localVals) recordConstValue(exportedConstInitializers, exportedName, v);
+            }
             const imp = localImports.get(localOrImported);
             if (imp) {
               mergeReExportedSymbol(imp.specifier, imp.importedName, exportedName);
@@ -1439,38 +1286,37 @@ function resolveApiRouteMatch(
   };
 }
 
-interface InlineCodeSpan {
-  code: string;
-  start: number;
-  end: number;
+function maskSpansAndLinkTargets(
+  line: string,
+  spans: InlineCodeSpan[],
+  links: ParsedMarkdownLink[],
+): string {
+  const chars = line.split('');
+  for (const span of spans) {
+    for (let c = span.startIndex; c < span.endIndex && c < chars.length; c++) {
+      chars[c] = ' ';
+    }
+  }
+  for (const link of links) {
+    const closeBracketIdx = link.startIndex + 1 + link.linkText.length;
+    for (let c = closeBracketIdx; c < link.endIndex && c < chars.length; c++) {
+      chars[c] = ' ';
+    }
+  }
+  return chars.join('');
 }
 
-function extractInlineCodeSpans(line: string): InlineCodeSpan[] {
-  const spans: InlineCodeSpan[] = [];
-  let i = 0;
-  while (i < line.length) {
-    if (line[i] !== '`') {
-      i++;
-      continue;
-    }
-    let tickCount = 1;
-    while (i + tickCount < line.length && line[i + tickCount] === '`') {
-      tickCount++;
-    }
-    const closer = '`'.repeat(tickCount);
-    const closeIdx = line.indexOf(closer, i + tickCount);
-    if (closeIdx === -1) {
-      i += tickCount;
-      continue;
-    }
-    spans.push({
-      code: line.slice(i + tickCount, closeIdx),
-      start: i,
-      end: closeIdx + tickCount,
-    });
-    i = closeIdx + tickCount;
-  }
-  return spans;
+function toCitedSrcTsRelPath(
+  rawTarget: string,
+  docDir: string,
+  rootDir: string,
+): string | null {
+  const abs = extractFilePathFromLinkTarget(rawTarget, docDir, rootDir, {
+    resolveRepoRootSrc: true,
+  });
+  if (!abs) return null;
+  const rel = path.relative(rootDir, abs).replace(/\\/g, '/');
+  return rel.startsWith('src/') && /\.tsx?$/.test(rel) ? rel : null;
 }
 
 function parseMethodsList(rawMethods: string | undefined): string[] {
@@ -1478,15 +1324,15 @@ function parseMethodsList(rawMethods: string | undefined): string[] {
   return rawMethods
     .split(/(?:\s*\/\s*|\s*,\s*|\s+\band\b\s+|\s+\bor\b\s+)/)
     .map((m) => m.trim())
-    .filter((m) => HTTP_METHODS_SET.has(m));
+    .filter((m) => HTTP_METHOD_NAMES.has(m));
 }
 
 function extractRouteCitationsFromLine(line: string): Array<{ methods: string[]; routePath: string }> {
   const citations: Array<{ methods: string[]; routePath: string }> = [];
-  const spans = extractInlineCodeSpans(line);
+  const { links, codeSpans: spans } = scanLinksAndCodeInLine(line);
 
   for (const span of spans) {
-    const trimmed = span.code.trim();
+    const trimmed = span.text.trim();
     const directMatch = trimmed.match(
       /^(?:((?:GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)(?:\s*(?:\/|,|\band\b|\bor\b)\s*(?:GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD))*)\s+)?(\/api\/[^\s`]+)$/,
     );
@@ -1511,14 +1357,7 @@ function extractRouteCitationsFromLine(line: string): Array<{ methods: string[];
     }
   }
 
-  let masked = '';
-  let cursor = 0;
-  for (const span of spans) {
-    masked += line.slice(cursor, span.start) + ' '.repeat(span.end - span.start);
-    cursor = span.end;
-  }
-  masked += line.slice(cursor);
-  masked = masked.replace(/\]\([^)]*\)/g, (m) => ' '.repeat(m.length));
+  const masked = maskSpansAndLinkTargets(line, spans, links);
 
   const bareRegex =
     /(?:^|[\s(])(?:((?:GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)(?:\/(?:GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD))*)\s+)?(\/api\/[A-Za-z0-9_[\]./*{}-]+)/g;
@@ -1531,48 +1370,6 @@ function extractRouteCitationsFromLine(line: string): Array<{ methods: string[];
   }
 
   return citations;
-}
-
-function safeDecodeTargetPath(raw: string): string {
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    return raw;
-  }
-}
-
-function resolveDocCitedSrcPath(rawTarget: string, docAbsPath: string, rootDir: string): string | null {
-  const trimmedTarget = rawTarget.trim();
-  const repoMatch = trimmedTarget.match(REPO_GITHUB_BLOB_URL_RE);
-  if (repoMatch) {
-    const repoRel = safeDecodeTargetPath(repoMatch[1]).replace(/\/+$/, '');
-    if (!repoRel.startsWith('src/') || !/\.tsx?$/.test(repoRel)) {
-      return null;
-    }
-    return repoRel;
-  }
-
-  const withoutAnchor = safeDecodeTargetPath(trimmedTarget.replace(/[?#].*$/, '').trim());
-  if (!withoutAnchor || !/\.tsx?$/.test(withoutAnchor)) {
-    return null;
-  }
-
-  let candidateAbs: string;
-  if (withoutAnchor.startsWith('src/')) {
-    candidateAbs = path.join(rootDir, withoutAnchor);
-  } else if (withoutAnchor.startsWith('/src/')) {
-    candidateAbs = path.join(rootDir, withoutAnchor.slice(1));
-  } else if (withoutAnchor.startsWith('./') || withoutAnchor.startsWith('../')) {
-    candidateAbs = path.resolve(path.dirname(docAbsPath), withoutAnchor);
-  } else {
-    return null;
-  }
-
-  const relToRoot = path.relative(rootDir, candidateAbs).replace(/\\/g, '/');
-  if (!relToRoot.startsWith('src/')) {
-    return null;
-  }
-  return relToRoot;
 }
 
 interface SymbolCitation {
@@ -1608,9 +1405,9 @@ function parseAssignedSpan(rawInner: string): ParsedSpanSymbol | null {
 
 function extractBacktickedSymbolEntries(segment: string): ParsedSpanSymbol[] {
   const results: ParsedSpanSymbol[] = [];
-  const spans = extractInlineCodeSpans(segment);
+  const { codeSpans: spans } = scanLinksAndCodeInLine(segment);
   for (const span of spans) {
-    const inner = span.code.trim();
+    const inner = span.text.trim();
     const assigned = parseAssignedSpan(inner);
     if (assigned) {
       results.push(assigned);
@@ -1631,71 +1428,6 @@ function extractBacktickedSymbolIdentifiers(segment: string): string[] {
   return extractBacktickedSymbolEntries(segment)
     .filter((entry) => entry.expectedValue === undefined)
     .map((entry) => entry.symbol);
-}
-
-function scanMarkdownLinksInLine(
-  line: string,
-): Array<{ label: string; rawTarget: string; start: number; end: number }> {
-  const found: Array<{ label: string; rawTarget: string; start: number; end: number }> = [];
-  let i = 0;
-  while (i < line.length) {
-    if (line[i] === '\\') {
-      i += 2;
-      continue;
-    }
-    if (line[i] === '`') {
-      let tickCount = 1;
-      while (i + tickCount < line.length && line[i + tickCount] === '`') tickCount++;
-      const closer = '`'.repeat(tickCount);
-      const closeIdx = line.indexOf(closer, i + tickCount);
-      i = closeIdx === -1 ? i + tickCount : closeIdx + tickCount;
-      continue;
-    }
-    if (line[i] === '[' && (i === 0 || line[i - 1] !== '!')) {
-      let depth = 1;
-      let j = i + 1;
-      while (j < line.length && depth > 0) {
-        if (line[j] === '\\') {
-          j += 2;
-          continue;
-        }
-        if (line[j] === '`') {
-          let tickCount = 1;
-          while (j + tickCount < line.length && line[j + tickCount] === '`') tickCount++;
-          const closer = '`'.repeat(tickCount);
-          const closeIdx = line.indexOf(closer, j + tickCount);
-          j = closeIdx === -1 ? j + tickCount : closeIdx + tickCount;
-          continue;
-        }
-        if (line[j] === '[') depth++;
-        else if (line[j] === ']') depth--;
-        j++;
-      }
-      if (depth === 0 && j < line.length && line[j] === '(') {
-        let pDepth = 1;
-        let k = j + 1;
-        while (k < line.length && pDepth > 0) {
-          if (line[k] === '\\') {
-            k += 2;
-            continue;
-          }
-          if (line[k] === '(') pDepth++;
-          else if (line[k] === ')') pDepth--;
-          k++;
-        }
-        if (pDepth === 0) {
-          const label = line.slice(i + 1, j - 1);
-          const rawInner = line.slice(j + 1, k - 1).trim();
-          const rawTarget = rawInner.replace(/^<([^>]+)>$/, '$1').split(/\s+/)[0] ?? '';
-          found.push({ label, rawTarget, start: i, end: k });
-          i = k;
-          continue;
-        }
-      }
-    }
-    i++;
-  }
-  return found;
 }
 
 function extractSymbolCitationsFromLine(
@@ -1721,7 +1453,7 @@ function extractSymbolCitationsFromLine(
     if (BUILTIN_GLOBAL_IDENTIFIERS.has(symbol) || STANDARD_HTTP_HEADERS.has(symbol)) return true;
     const isApiOrRouteModule =
       /(?:^|\/)route\.tsx?$/.test(srcRelPath) || srcRelPath.includes('/api/');
-    if (HTTP_METHODS_SET.has(symbol) && !isApiOrRouteModule) return true;
+    if (HTTP_METHOD_NAMES.has(symbol) && !isApiOrRouteModule) return true;
     return false;
   }
 
@@ -1759,7 +1491,9 @@ function extractSymbolCitationsFromLine(
   }
 
   // Extract [Symbol](src/...) and [`Symbol`](src/...) link labels
-  const lineLinks = scanMarkdownLinksInLine(line);
+  const docDir = path.dirname(docAbsPath);
+  const { links: parsedLinks, codeSpans: lineCodeSpans } = scanLinksAndCodeInLine(line);
+  const lineLinks = parsedLinks.filter((lk) => !lk.isImage);
   const resolvedLineTargets: Array<{
     srcRelPath: string;
     start: number;
@@ -1767,11 +1501,11 @@ function extractSymbolCitationsFromLine(
   }> = [];
 
   for (const link of lineLinks) {
-    const srcRelPath = resolveDocCitedSrcPath(link.rawTarget, docAbsPath, rootDir);
+    const srcRelPath = toCitedSrcTsRelPath(link.rawTarget, docDir, rootDir);
     if (!srcRelPath) continue;
-    resolvedLineTargets.push({ srcRelPath, start: link.start, end: link.end });
+    resolvedLineTargets.push({ srcRelPath, start: link.startIndex, end: link.endIndex });
 
-    const trimmedLabel = link.label.trim();
+    const trimmedLabel = link.linkText.trim();
     const isBacktickedLabel = /^`[^`]+`$/.test(trimmedLabel);
     let innerLabel = isBacktickedLabel ? trimmedLabel.slice(1, -1).trim() : trimmedLabel;
     if (innerLabel.includes('/') || /\.[A-Za-z0-9]+$/.test(innerLabel)) {
@@ -1803,7 +1537,7 @@ function extractSymbolCitationsFromLine(
     if (!/^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)?$/.test(innerLabel)) {
       continue;
     }
-    if (!isBacktickedLabel && !hasCallParens && PROSE_LOWERCASE_LINK_LABELS.has(innerLabel)) {
+    if (!isBacktickedLabel && !hasCallParens && PROSE_LINK_WORDS.has(innerLabel)) {
       continue;
     }
     if (shouldSkipSymbol(innerLabel, srcRelPath)) {
@@ -1816,14 +1550,14 @@ function extractSymbolCitationsFromLine(
     });
   }
 
-  const lineCodeSpans = extractInlineCodeSpans(line);
-
   // Also record bare backticked `src/...ts(x)` targets on the line for symbol & constant resolution
   for (const span of lineCodeSpans) {
-    if (lineLinks.some((lk) => span.start >= lk.start && span.end <= lk.end)) continue;
-    const srcRelPath = resolveDocCitedSrcPath(span.code, docAbsPath, rootDir);
+    if (lineLinks.some((lk) => span.startIndex >= lk.startIndex && span.endIndex <= lk.endIndex)) {
+      continue;
+    }
+    const srcRelPath = toCitedSrcTsRelPath(span.text, docDir, rootDir);
     if (!srcRelPath) continue;
-    resolvedLineTargets.push({ srcRelPath, start: span.start, end: span.end });
+    resolvedLineTargets.push({ srcRelPath, start: span.startIndex, end: span.endIndex });
   }
   resolvedLineTargets.sort((a, b) => a.start - b.start);
 
@@ -1845,7 +1579,7 @@ function extractSymbolCitationsFromLine(
 
     let spanIdx = -1;
     for (let s = lineCodeSpans.length - 1; s >= 0; s--) {
-      if (lineCodeSpans[s].end === headTrimmedLen) {
+      if (lineCodeSpans[s].endIndex === headTrimmedLen) {
         spanIdx = s;
         break;
       }
@@ -1855,14 +1589,14 @@ function extractSymbolCitationsFromLine(
     const chainEntries: ParsedSpanSymbol[] = [];
     let currIdx = spanIdx;
     while (currIdx >= 0) {
-      const spanText = `\`${lineCodeSpans[currIdx].code}\``;
+      const spanText = `\`${lineCodeSpans[currIdx].text}\``;
       const parsedEntries = extractBacktickedSymbolEntries(spanText);
       if (parsedEntries.length === 0) break;
       chainEntries.unshift(...parsedEntries);
 
       if (currIdx === 0) break;
       const prevSpan = lineCodeSpans[currIdx - 1];
-      const between = head.slice(prevSpan.end, lineCodeSpans[currIdx].start);
+      const between = head.slice(prevSpan.endIndex, lineCodeSpans[currIdx].startIndex);
       if (!symChainSepRe.test(between)) break;
       currIdx--;
     }
@@ -1885,7 +1619,7 @@ function extractSymbolCitationsFromLine(
 
   // Extract assigned constant code spans like `REGISTRY_LOAD_MORE_INCREMENT = 8` paired with a module citation on the line (or intro header)
   for (const span of lineCodeSpans) {
-    const rawTrimmed = span.code.trim();
+    const rawTrimmed = span.text.trim();
     // Require SCREAMING_SNAKE_CASE constant with spaces around `=` for unbound clause-level constant spans
     if (!/^[A-Z][A-Z0-9_]*_[A-Z0-9_]*\s+=\s+[^=]|^[A-Z]{2,}[A-Z0-9]*\s+=\s+[^=]/.test(rawTrimmed)) {
       continue;
@@ -1902,7 +1636,7 @@ function extractSymbolCitationsFromLine(
     }
 
     if (resolvedLineTargets.length > 0) {
-      const afterTargets = resolvedLineTargets.filter((t) => t.start > span.end);
+      const afterTargets = resolvedLineTargets.filter((t) => t.start > span.endIndex);
       const chosen = afterTargets.length > 0 ? afterTargets[0] : resolvedLineTargets[resolvedLineTargets.length - 1];
       if (!shouldSkipSymbol(parsed.symbol, chosen.srcRelPath)) {
         pushCitation({
@@ -1960,7 +1694,7 @@ function extractSymbolCitationsFromLine(
       'prototype',
     ]);
     for (const span of lineCodeSpans) {
-      const inner = span.code.trim();
+      const inner = span.text.trim();
       const dottedMatch = inner.match(
         /^([A-Za-z_$][A-Za-z0-9_$]*)\.([A-Za-z_$][A-Za-z0-9_$]*)(?:\(\))?$/,
       );
@@ -2001,7 +1735,9 @@ function resolveImportedConstValues(
   if (!imp) return undefined;
   const targetPath = resolveLocalTsModule(absTarget, imp.specifier, rootDir);
   if (!targetPath) return undefined;
-  return getExportedConstInitializers(targetPath, rootDir).get(imp.importedName);
+  return getModuleSymbolInventory(targetPath, rootDir).exportedConstInitializers.get(
+    imp.importedName,
+  );
 }
 
 function verifyExpectedConstantValue(
@@ -2079,10 +1815,6 @@ function verifySymbolInModule(
   return `Symbol "${citation.symbol}" is not declared or exported in ${citation.srcRelPath}`;
 }
 
-function escapeRegExpLiteral(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 function verifyExclusiveCallableClaimsOnLine(
   line: string,
   symbolCitations: SymbolCitation[],
@@ -2090,15 +1822,8 @@ function verifyExclusiveCallableClaimsOnLine(
 ): string[] {
   if (symbolCitations.length === 0) return [];
 
-  const spans = extractInlineCodeSpans(line);
-  let masked = '';
-  let cursor = 0;
-  for (const span of spans) {
-    masked += line.slice(cursor, span.start) + ' '.repeat(span.end - span.start);
-    cursor = span.end;
-  }
-  masked += line.slice(cursor);
-  masked = masked.replace(/\]\([^)]*\)/g, (m) => ' '.repeat(m.length));
+  const { links, codeSpans: spans } = scanLinksAndCodeInLine(line);
+  const masked = maskSpansAndLinkTargets(line, spans, links);
 
   const exposeMatch = /\b(?:exposes\s+only|only\s+exposes)\b/i.exec(masked);
   if (!exposeMatch) return [];
@@ -2133,12 +1858,12 @@ function verifyExclusiveCallableClaimsOnLine(
   const prefixBeforeExpose = line.slice(0, exposeIdx);
   const allCandidates = Array.from(candidates.values());
   const priorCandidates = allCandidates.filter((cand) =>
-    new RegExp(`\\b${escapeRegExpLiteral(cand.containerName)}\\b`).test(prefixBeforeExpose),
+    new RegExp(`\\b${escapeRegExp(cand.containerName)}\\b`).test(prefixBeforeExpose),
   );
   const activeCandidates = priorCandidates.length > 0 ? priorCandidates : allCandidates;
 
   const afterSymbolEntries = extractBacktickedSymbolEntries(afterExpose);
-  const afterLinks = scanMarkdownLinksInLine(afterExpose);
+  const afterLinks = scanLinksAndCodeInLine(afterExpose).links.filter((lk) => !lk.isImage);
 
   const claimErrors: string[] = [];
   for (const cand of activeCandidates) {
@@ -2151,7 +1876,7 @@ function verifyExclusiveCallableClaimsOnLine(
       }
     }
     for (const link of afterLinks) {
-      let label = link.label.trim();
+      let label = link.linkText.trim();
       if (/^`[^`]+`$/.test(label)) {
         label = label.slice(1, -1).trim();
       }
@@ -2306,38 +2031,14 @@ function collectSiteEnvOverridesFromConfig(rootDir: string): string[] {
 }
 
 function stripFencesAndHtmlComments(markdown: string): string {
-  const lines = markdown.split(/\r?\n/);
   const kept: string[] = [];
-  let inFence = false;
-  let fenceChar = '';
-  let fenceLen = 0;
-
-  for (const line of lines) {
-    const fenceMatch = line.match(/^\s{0,3}(`{3,}|~{3,})(.*)$/);
-    if (fenceMatch) {
-      const marker = fenceMatch[1];
-      const trailing = fenceMatch[2];
-      if (!inFence) {
-        inFence = true;
-        fenceChar = marker[0];
-        fenceLen = marker.length;
-        continue;
-      } else if (
-        marker[0] === fenceChar &&
-        marker.length >= fenceLen &&
-        trailing.trim() === ''
-      ) {
-        inFence = false;
-        fenceChar = '';
-        fenceLen = 0;
-        continue;
-      }
-    }
-    if (inFence) continue;
-    if (line.trim().startsWith('<!--') && line.trim().endsWith('-->')) continue;
-    kept.push(line);
-  }
-
+  scanMarkdownDocument(
+    markdown,
+    (line) => {
+      kept.push(line);
+    },
+    { htmlCommentMode: 'strip' },
+  );
   return kept.join('\n');
 }
 
@@ -2427,34 +2128,8 @@ const DEMO_RUNTIME_SPEC_DOCS = [
 
 function extractDemoStorageKeyFromStore(rootDir: string): string | null {
   const storePath = path.join(rootDir, 'src/lib/demo/demoStore.ts');
-  if (!fs.existsSync(storePath)) {
-    return null;
-  }
-  const sourceText = fs.readFileSync(storePath, 'utf8');
-  const sf = ts.createSourceFile(
-    storePath,
-    sourceText,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TS,
-  );
-
-  let storageKey: string | null = null;
-  function visit(node: ts.Node): void {
-    if (
-      ts.isVariableDeclaration(node) &&
-      ts.isIdentifier(node.name) &&
-      node.name.text === 'DEMO_STORAGE_KEY' &&
-      node.initializer &&
-      (ts.isStringLiteral(node.initializer) ||
-        ts.isNoSubstitutionTemplateLiteral(node.initializer))
-    ) {
-      storageKey = node.initializer.text;
-    }
-    ts.forEachChild(node, visit);
-  }
-  visit(sf);
-  return storageKey;
+  if (!fs.existsSync(storePath)) return null;
+  return extractConstStringValueFromSourceFile(getCachedSourceFile(storePath).sf, 'DEMO_STORAGE_KEY');
 }
 
 function verifyDemoRuntimeSpecContracts(
@@ -2696,78 +2371,28 @@ function getActiveSpecLines(
   markdown: string,
   includedAutogenBlocks?: ReadonlySet<string>,
 ): ActiveSpecLine[] {
-  const rawLines = markdown.split(/\r?\n/);
   const active: ActiveSpecLine[] = [];
-  let inFence = false;
-  let fenceChar = '';
-  let fenceLen = 0;
-  let inSkippedAutogenBlock = false;
-
-  for (let i = 0; i < rawLines.length; i++) {
-    const line = rawLines[i];
-    const lineNum = i + 1;
-    const trimmed = line.trim();
-
-    if (trimmed.startsWith('<!-- BEGIN AUTOGENERATED')) {
-      const blockMatch = trimmed.match(/^<!--\s*BEGIN\s+AUTOGENERATED\s+([A-Z0-9_]+)\s*-->$/);
-      const blockName = blockMatch ? blockMatch[1] : '';
-      inSkippedAutogenBlock = !(blockName && includedAutogenBlocks?.has(blockName));
-      continue;
-    }
-    if (trimmed.startsWith('<!-- END AUTOGENERATED')) {
-      inSkippedAutogenBlock = false;
-      continue;
-    }
-    if (inSkippedAutogenBlock) continue;
-
-    const fenceMatch = line.match(/^\s{0,3}(`{3,}|~{3,})(.*)$/);
-    if (fenceMatch) {
-      const marker = fenceMatch[1];
-      const trailing = fenceMatch[2];
-      if (!inFence) {
-        inFence = true;
-        fenceChar = marker[0];
-        fenceLen = marker.length;
-        continue;
-      } else if (
-        marker[0] === fenceChar &&
-        marker.length >= fenceLen &&
-        trailing.trim() === ''
-      ) {
-        inFence = false;
-        fenceChar = '';
-        fenceLen = 0;
-        continue;
-      }
-    }
-
-    if (inFence) continue;
-    if (trimmed.startsWith('<!--') && trimmed.endsWith('-->')) continue;
-    active.push({ lineNum, line });
-  }
-
+  scanMarkdownDocument(
+    markdown,
+    (line, lineNum) => {
+      active.push({ lineNum, line });
+    },
+    {
+      htmlCommentMode: 'strip',
+      skipAutogeneratedBlocks: true,
+      includedAutogenBlocks,
+    },
+  );
   return active;
 }
 
 function findMatchingSpecLineNum(
   lines: ActiveSpecLine[],
-  predicate: (line: string) => boolean,
+  predicate: (_line: string) => boolean,
   fallbackLineNum = 1,
 ): number {
   const hit = lines.find((entry) => predicate(entry.line));
   return hit ? hit.lineNum : fallbackLineNum;
-}
-
-function unwrapTsExpression(node: ts.Expression): ts.Expression {
-  let current = node;
-  while (
-    ts.isAsExpression(current) ||
-    ts.isSatisfiesExpression(current) ||
-    ts.isParenthesizedExpression(current)
-  ) {
-    current = current.expression;
-  }
-  return current;
 }
 
 function extractZodObjectInfoFromSourceFile(
@@ -2781,13 +2406,13 @@ function extractZodObjectInfoFromSourceFile(
         continue;
       }
       const lineNum = sf.getLineAndCharacterOfPosition(decl.getStart(sf)).line + 1;
-      let expr: ts.Expression = unwrapTsExpression(decl.initializer);
+      let expr: ts.Expression = unwrapExpression(decl.initializer);
       let isStrict = false;
 
       while (ts.isCallExpression(expr)) {
         if (ts.isPropertyAccessExpression(expr.expression)) {
           const methodName = expr.expression.name.text;
-          const receiver = unwrapTsExpression(expr.expression.expression);
+          const receiver = unwrapExpression(expr.expression.expression);
           if (ts.isIdentifier(receiver) && receiver.text === 'z') {
             if (methodName === 'strictObject') {
               isStrict = true;
@@ -2832,11 +2457,11 @@ function extractStringArrayFromSourceFile(sf: ts.SourceFile, varName: string): s
       if (!ts.isIdentifier(decl.name) || decl.name.text !== varName || !decl.initializer) {
         continue;
       }
-      const init = unwrapTsExpression(decl.initializer);
+      const init = unwrapExpression(decl.initializer);
       if (!ts.isArrayLiteralExpression(init)) continue;
       const values: string[] = [];
       for (const el of init.elements) {
-        const unwrapped = unwrapTsExpression(el);
+        const unwrapped = unwrapExpression(el);
         if (ts.isStringLiteralLike(unwrapped)) {
           values.push(unwrapped.text);
         }
@@ -2907,23 +2532,7 @@ function resolveExportedSymbolOriginFile(
   visited.add(visitKey);
 
   const { sf } = getCachedSourceFile(filePath);
-  const localImports = new Map<string, { specifier: string; importedName: string }>();
-
-  for (const stmt of sf.statements) {
-    if (
-      ts.isImportDeclaration(stmt) &&
-      stmt.importClause?.namedBindings &&
-      ts.isNamedImports(stmt.importClause.namedBindings) &&
-      ts.isStringLiteral(stmt.moduleSpecifier)
-    ) {
-      for (const el of stmt.importClause.namedBindings.elements) {
-        localImports.set(el.name.text, {
-          specifier: stmt.moduleSpecifier.text,
-          importedName: el.propertyName ? el.propertyName.text : el.name.text,
-        });
-      }
-    }
-  }
+  const localImports = collectNamedImportMap(sf);
 
   for (const stmt of sf.statements) {
     if (!ts.isExportDeclaration(stmt)) continue;
@@ -3031,7 +2640,7 @@ function collectRegistryRouteGuardFacts(rootDir: string): {
 
         let checksRegistryFeature = sourceFileChecksRegistryFeature(fullPath);
         if (!checksRegistryFeature) {
-          for (const method of HTTP_METHODS_SET) {
+          for (const method of HTTP_METHOD_NAMES) {
             const originFile = resolveExportedSymbolOriginFile(fullPath, method, rootDir);
             if (originFile !== fullPath && sourceFileChecksRegistryFeature(originFile)) {
               checksRegistryFeature = true;
@@ -3555,7 +3164,6 @@ export function verifySpecContracts(
   options: SpecContractVerificationOptions = {},
 ): SpecContractVerificationResult {
   symbolInventoryCache.clear();
-  exportedConstInitializersCache.clear();
   parsedSourceCache.clear();
   moduleExportsCache.clear();
   localModuleResolveCache.clear();
@@ -3578,113 +3186,103 @@ export function verifySpecContracts(
     if (!fs.existsSync(specAbsPath)) continue;
 
     const content = fs.readFileSync(specAbsPath, 'utf8');
-    const lines = content.split(/\r?\n/);
-
-    let inFence = false;
-    let fenceMarkerChar = '';
-    let fenceMarkerLen = 0;
+    const specDir = path.dirname(specAbsPath);
     let activeIntroConstSrcRelPath: string | null = null;
 
-    for (let idx = 0; idx < lines.length; idx++) {
-      const line = lines[idx];
-      const lineNum = idx + 1;
-
-      const fenceMatch = line.match(/^\s{0,3}(`{3,}|~{3,})(.*)$/);
-      if (fenceMatch) {
-        const marker = fenceMatch[1];
-        const trailing = fenceMatch[2];
-        if (!inFence) {
-          inFence = true;
-          fenceMarkerChar = marker[0];
-          fenceMarkerLen = marker.length;
+    scanMarkdownDocument(
+      content,
+      (line, lineNum) => {
+        if (/^\s{0,3}#{1,6}\s+/.test(line) || line.trim() === '---') {
           activeIntroConstSrcRelPath = null;
-          continue;
         } else if (
-          marker[0] === fenceMarkerChar &&
-          marker.length >= fenceMarkerLen &&
-          trailing.trim() === ''
+          line.trim() !== '' &&
+          !/^\s*(?:[-*+]|\d+\.)\s+/.test(line) &&
+          !line.trim().endsWith(':')
         ) {
-          inFence = false;
-          fenceMarkerChar = '';
-          fenceMarkerLen = 0;
-          continue;
+          activeIntroConstSrcRelPath = null;
         }
-      }
 
-      if (inFence) continue;
-      if (line.trim().startsWith('<!--') && line.trim().endsWith('-->')) continue;
-      if (/^\s{0,3}#{1,6}\s+/.test(line) || line.trim() === '---') {
-        activeIntroConstSrcRelPath = null;
-      } else if (line.trim() !== '' && !/^\s*(?:[-*+]|\d+\.)\s+/.test(line) && !line.trim().endsWith(':')) {
-        activeIntroConstSrcRelPath = null;
-      }
+        const { links: rawLinks, codeSpans } = scanLinksAndCodeInLine(line, lineNum);
+        const nonImageLinks = rawLinks.filter((lk) => !lk.isImage);
 
-      for (const link of scanMarkdownLinksInLine(line)) {
-        const citedSrc = resolveDocCitedSrcPath(link.rawTarget, specAbsPath, rootDir);
-        if (citedSrc && /#L\d+(?:C\d+)?(?:-L?\d+(?:C\d+)?)?$/i.test(link.rawTarget.trim())) {
-          errors.push(
-            `${specRelPath}:${lineNum}: Source line-range anchor in "${link.rawTarget.trim()}" is prohibited; cite "${citedSrc}" by symbol name instead`,
+        for (const link of nonImageLinks) {
+          const citedSrc = toCitedSrcTsRelPath(link.rawTarget, specDir, rootDir);
+          const hashIdx = link.rawTarget.indexOf('#');
+          if (
+            citedSrc &&
+            hashIdx !== -1 &&
+            parseLineFragmentRange(link.rawTarget.slice(hashIdx + 1).trim())
+          ) {
+            errors.push(
+              `${specRelPath}:${lineNum}: Source line-range anchor in "${link.rawTarget.trim()}" is prohibited; cite "${citedSrc}" by symbol name instead`,
+            );
+          }
+        }
+
+        const routeCitations = extractRouteCitationsFromLine(line);
+        for (const routeCitation of routeCitations) {
+          checkedRoutes++;
+          const matchResult = resolveApiRouteMatch(
+            routeCitation.routePath,
+            apiEntries,
+            adminEntityKeys,
+            routeCitation.methods.length > 0,
           );
-        }
-      }
-
-      const routeCitations = extractRouteCitationsFromLine(line);
-      for (const routeCitation of routeCitations) {
-        checkedRoutes++;
-        const matchResult = resolveApiRouteMatch(
-          routeCitation.routePath,
-          apiEntries,
-          adminEntityKeys,
-          routeCitation.methods.length > 0,
-        );
-        if (matchResult.kind === 'error') {
-          errors.push(`${specRelPath}:${lineNum}: ${matchResult.reason}`);
-          continue;
-        }
-        if (matchResult.kind === 'entry' && routeCitation.methods.length > 0) {
-          for (const method of routeCitation.methods) {
-            if (!matchResult.entry.methods.includes(method)) {
-              errors.push(
-                `${specRelPath}:${lineNum}: Route "${routeCitation.routePath}" does not export HTTP method "${method}" (exported: [${matchResult.entry.methods.join(', ')}] in ${matchResult.entry.handlerPath})`,
-              );
+          if (matchResult.kind === 'error') {
+            errors.push(`${specRelPath}:${lineNum}: ${matchResult.reason}`);
+            continue;
+          }
+          if (matchResult.kind === 'entry' && routeCitation.methods.length > 0) {
+            for (const method of routeCitation.methods) {
+              if (!matchResult.entry.methods.includes(method)) {
+                errors.push(
+                  `${specRelPath}:${lineNum}: Route "${routeCitation.routePath}" does not export HTTP method "${method}" (exported: [${matchResult.entry.methods.join(', ')}] in ${matchResult.entry.handlerPath})`,
+                );
+              }
             }
           }
         }
-      }
 
-      const symbolCitations = extractSymbolCitationsFromLine(
-        line,
-        specAbsPath,
-        rootDir,
-        envVarNames,
-        activeIntroConstSrcRelPath,
-      );
-      for (const symCitation of symbolCitations) {
-        checkedSymbols++;
-        const symError = verifySymbolInModule(symCitation, rootDir);
-        if (symError) {
-          errors.push(`${specRelPath}:${lineNum}: ${symError}`);
+        const symbolCitations = extractSymbolCitationsFromLine(
+          line,
+          specAbsPath,
+          rootDir,
+          envVarNames,
+          activeIntroConstSrcRelPath,
+        );
+        for (const symCitation of symbolCitations) {
+          checkedSymbols++;
+          const symError = verifySymbolInModule(symCitation, rootDir);
+          if (symError) {
+            errors.push(`${specRelPath}:${lineNum}: ${symError}`);
+          }
         }
-      }
-      for (const claimError of verifyExclusiveCallableClaimsOnLine(line, symbolCitations, rootDir)) {
-        errors.push(`${specRelPath}:${lineNum}: ${claimError}`);
-      }
+        for (const claimError of verifyExclusiveCallableClaimsOnLine(line, symbolCitations, rootDir)) {
+          errors.push(`${specRelPath}:${lineNum}: ${claimError}`);
+        }
 
-      if (line.trim().endsWith(':') && !/^\s{2,}(?:[-*+]|\d+\.)\s+/.test(line)) {
-        const introPaths = new Set<string>();
-        for (const link of scanMarkdownLinksInLine(line)) {
-          const p = resolveDocCitedSrcPath(link.rawTarget, specAbsPath, rootDir);
-          if (p) introPaths.add(p);
+        if (line.trim().endsWith(':') && !/^\s{2,}(?:[-*+]|\d+\.)\s+/.test(line)) {
+          const introPaths = new Set<string>();
+          for (const link of nonImageLinks) {
+            const p = toCitedSrcTsRelPath(link.rawTarget, specDir, rootDir);
+            if (p) introPaths.add(p);
+          }
+          for (const span of codeSpans) {
+            const p = toCitedSrcTsRelPath(span.text, specDir, rootDir);
+            if (p) introPaths.add(p);
+          }
+          if (introPaths.size === 1) {
+            activeIntroConstSrcRelPath = Array.from(introPaths)[0];
+          }
         }
-        for (const span of extractInlineCodeSpans(line)) {
-          const p = resolveDocCitedSrcPath(span.code, specAbsPath, rootDir);
-          if (p) introPaths.add(p);
-        }
-        if (introPaths.size === 1) {
-          activeIntroConstSrcRelPath = Array.from(introPaths)[0];
-        }
-      }
-    }
+      },
+      {
+        htmlCommentMode: 'strip',
+        onFenceBoundary: () => {
+          activeIntroConstSrcRelPath = null;
+        },
+      },
+    );
   }
 
   verifyArchitectureAndMiddlewareContracts(rootDir, apiEntries, specFiles, errors);

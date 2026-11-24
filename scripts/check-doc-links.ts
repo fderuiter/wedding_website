@@ -4,6 +4,23 @@ import { fileURLToPath } from 'url';
 import vm from 'vm';
 import ts from 'typescript';
 import { isMap, isPair, isScalar, isSeq, LineCounter, parseDocument } from 'yaml';
+import {
+  buildTsDeclRanges, escapeRegExp, extractFilePathFromLinkTarget, extractMarkdownHeadings,
+  getTsPropertyKeyName, HTTP_METHOD_NAMES, type InlineCodeSpan, LINE_FRAGMENT_RE,
+  type ParsedMarkdownLink, parseLineFragmentRange, parseTsSourceFile, PROSE_LINK_WORDS,
+  REPO_GITHUB_URL_RE, safeDecodeURIComponent, scanLinksAndCodeInLine, scanMarkdownDocument,
+  type TsDeclRange,
+} from './doc-markdown-utils';
+
+export {
+  buildTsDeclRanges, type ExtractFilePathOptions, extractFilePathFromLinkTarget,
+  extractMarkdownHeadings, type FenceTransitionResult, findInlineCodeEnd, type FrontmatterScanMode,
+  githubSlugify, type HtmlCommentScanMode, type InlineCodeSpan, type MarkdownFenceState,
+  type MarkdownHeading, type MarkdownScanOptions, type ParsedMarkdownLink, parseLineFragmentRange,
+  resolveVitePressHeadingSlug, safeDecodeURIComponent, scanLinksAndCodeInLine, scanMarkdownDocument,
+  type ScannedMermaidBlock, stepMarkdownFence, stripHtmlTags, stripInlineMarkdown,
+  transformNonFencedMarkdownLines, type TsDeclRange, vitepressSlugify,
+} from './doc-markdown-utils';
 
 const ROOT_DIR = process.cwd();
 
@@ -196,16 +213,8 @@ const EXCLUDE_REL_PATHS = [
   'docs-portal/public',
 ];
 
-const REPO_GITHUB_URL_RE =
-  /^https?:\/\/github\.com\/fderuiter\/wedding_website\/(blob|tree)\/[^/]+\/([^?#]*)(?:\?[^#]*)?(?:#(.*))?$/;
-
-const LINE_FRAGMENT_RE = /^L(\d+)(?:C\d+)?(?:-L?(\d+)(?:C\d+)?)?$/;
 const PAREN_LINE_CITATION_RE = /\(L(\d+)(?:\s*[-–—]\s*L?(\d+))?\)/g;
 const FILE_TOKEN_RE = /^(?:\.{0,2}\/)?[A-Za-z0-9_.\-/\[\]@%]+\.[A-Za-z0-9]{1,6}$/;
-
-const VP_CONTROL_RE = /[\u0000-\u001f]/g;
-const VP_SPECIAL_RE = /[\s~`!@#$%^&*()\-_+=[\]{}|\\;:"'\u201C\u201D\u2018\u2019<>,.?/]+/g;
-const VP_COMBINING_RE = /[\u0300-\u036F]/g;
 
 export interface LinkError {
   sourceFile: string;
@@ -213,28 +222,6 @@ export interface LinkError {
   linkText: string;
   targetPath: string;
   resolvedPath: string;
-}
-
-export interface ParsedMarkdownLink {
-  line: number;
-  startIndex: number;
-  endIndex: number;
-  linkText: string;
-  rawTarget: string;
-}
-
-export interface MarkdownHeading {
-  line: number;
-  level: number;
-  rawText: string;
-  githubSlug: string;
-  vitepressSlug: string;
-}
-
-interface InlineCodeSpan {
-  text: string;
-  startIndex: number;
-  endIndex: number;
 }
 
 interface FileCandidate {
@@ -324,47 +311,19 @@ function getVitePressLanguageAliases(
     return [];
   }
 
-  const sf = ts.createSourceFile(
-    configAbs,
-    content,
-    ts.ScriptTarget.Latest,
-    false,
-    ts.ScriptKind.TS
-  );
-  const lineStarts = sf.getLineStarts();
-  const offsetToLine = (pos: number): number => {
-    let low = 0;
-    let high = lineStarts.length - 1;
-    while (low <= high) {
-      const mid = (low + high) >>> 1;
-      if (lineStarts[mid] <= pos) low = mid + 1;
-      else high = mid - 1;
-    }
-    return high + 1;
-  };
-
-  const getKeyName = (nameNode: ts.PropertyName): string | null => {
-    if (
-      ts.isIdentifier(nameNode) ||
-      ts.isStringLiteral(nameNode) ||
-      ts.isNoSubstitutionTemplateLiteral(nameNode)
-    ) {
-      return nameNode.text;
-    }
-    return null;
-  };
+  const sf = parseTsSourceFile(configAbs, content, true);
 
   const aliases: Array<{ alias: string; target: string; line: number }> = [];
 
   function visit(node: ts.Node) {
     if (
       ts.isPropertyAssignment(node) &&
-      getKeyName(node.name) === 'languageAlias' &&
+      getTsPropertyKeyName(node.name) === 'languageAlias' &&
       ts.isObjectLiteralExpression(node.initializer)
     ) {
       for (const prop of node.initializer.properties) {
         if (!ts.isPropertyAssignment(prop)) continue;
-        const aliasKey = getKeyName(prop.name);
+        const aliasKey = getTsPropertyKeyName(prop.name);
         if (!aliasKey) continue;
         if (
           ts.isStringLiteral(prop.initializer) ||
@@ -373,7 +332,7 @@ function getVitePressLanguageAliases(
           aliases.push({
             alias: aliasKey,
             target: prop.initializer.text,
-            line: offsetToLine(prop.initializer.pos + 1),
+            line: sf.getLineAndCharacterOfPosition(prop.initializer.getStart(sf)).line + 1,
           });
         }
       }
@@ -511,595 +470,10 @@ export function findMarkdownFiles(
   return fileList;
 }
 
-export function safeDecodeURIComponent(value: string): string {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
-
-export function findInlineCodeEnd(
-  line: string,
-  start: number
-): { tickLen: number; closeEnd: number | null } {
-  let tickLen = 0;
-  while (start + tickLen < line.length && line[start + tickLen] === '`') {
-    tickLen++;
-  }
-  const ticks = '`'.repeat(tickLen);
-  let searchFrom = start + tickLen;
-
-  while (searchFrom < line.length) {
-    const idx = line.indexOf(ticks, searchFrom);
-    if (idx === -1) {
-      break;
-    }
-    const beforeOk = idx === 0 || line[idx - 1] !== '`';
-    const afterOk = idx + tickLen >= line.length || line[idx + tickLen] !== '`';
-    if (beforeOk && afterOk) {
-      return { tickLen, closeEnd: idx + tickLen };
-    }
-    searchFrom = idx + 1;
-  }
-
-  return { tickLen, closeEnd: null };
-}
-
-function normalizeLinkDestination(rawInner: string): string {
-  const trimmed = rawInner.trim();
-  if (trimmed.startsWith('<')) {
-    const closeAngle = trimmed.indexOf('>');
-    if (closeAngle !== -1) {
-      return trimmed.slice(1, closeAngle).trim();
-    }
-  }
-  const titleMatch = trimmed.match(/^(\S+)\s+(?:"[^"]*"|'[^']*')$/);
-  return titleMatch ? titleMatch[1] : trimmed;
-}
-
-export function scanLinksAndCodeInLine(
-  line: string,
-  lineNumber: number
-): { links: ParsedMarkdownLink[]; codeSpans: InlineCodeSpan[] } {
-  const links: ParsedMarkdownLink[] = [];
-  const codeSpans: InlineCodeSpan[] = [];
-
-  let i = 0;
-  while (i < line.length) {
-    if (line[i] === '\\') {
-      i += 2;
-      continue;
-    }
-
-    if (line[i] === '`') {
-      const { tickLen, closeEnd } = findInlineCodeEnd(line, i);
-      if (closeEnd !== null) {
-        codeSpans.push({
-          text: line.slice(i + tickLen, closeEnd - tickLen),
-          startIndex: i,
-          endIndex: closeEnd,
-        });
-        i = closeEnd;
-      } else {
-        i += tickLen;
-      }
-      continue;
-    }
-
-    if (line[i] === '[') {
-      let bracketDepth = 1;
-      let j = i + 1;
-      const innerCodeSpans: InlineCodeSpan[] = [];
-
-      while (j < line.length && bracketDepth > 0) {
-        if (line[j] === '\\') {
-          j += 2;
-          continue;
-        }
-        if (line[j] === '`') {
-          const { tickLen, closeEnd } = findInlineCodeEnd(line, j);
-          if (closeEnd !== null) {
-            innerCodeSpans.push({
-              text: line.slice(j + tickLen, closeEnd - tickLen),
-              startIndex: j,
-              endIndex: closeEnd,
-            });
-            j = closeEnd;
-          } else {
-            j += tickLen;
-          }
-          continue;
-        }
-        if (line[j] === '[') {
-          bracketDepth++;
-        } else if (line[j] === ']') {
-          bracketDepth--;
-        }
-        j++;
-      }
-
-      if (bracketDepth === 0 && j < line.length && line[j] === '(') {
-        let k = j + 1;
-        let parenDepth = 1;
-        let inAngleBrackets = false;
-
-        let firstNonSpace = k;
-        while (firstNonSpace < line.length && /\s/.test(line[firstNonSpace])) {
-          firstNonSpace++;
-        }
-        if (line[firstNonSpace] === '<') {
-          inAngleBrackets = true;
-        }
-
-        while (k < line.length && parenDepth > 0) {
-          if (line[k] === '\\') {
-            k += 2;
-            continue;
-          }
-          if (inAngleBrackets && line[k] === '>') {
-            inAngleBrackets = false;
-            k++;
-            continue;
-          }
-          if (!inAngleBrackets) {
-            if (line[k] === '(') {
-              parenDepth++;
-            } else if (line[k] === ')') {
-              parenDepth--;
-            }
-          }
-          k++;
-        }
-
-        if (parenDepth === 0) {
-          const linkText = line.slice(i + 1, j - 1);
-          const rawTarget = normalizeLinkDestination(line.slice(j + 1, k - 1));
-          links.push({
-            line: lineNumber,
-            startIndex: i,
-            endIndex: k,
-            linkText,
-            rawTarget,
-          });
-          codeSpans.push(...innerCodeSpans);
-          i = k;
-          continue;
-        }
-      }
-    }
-
-    i++;
-  }
-
-  return { links, codeSpans };
-}
-
-export function stripHtmlTags(input: string): string {
-  let result = '';
-  let depth = 0;
-  let quote: '"' | "'" | null = null;
-
-  for (let i = 0; i < input.length; i++) {
-    const ch = input[i];
-
-    if (depth > 0) {
-      if (quote !== null) {
-        if (ch === quote) {
-          quote = null;
-        }
-        continue;
-      }
-      if (ch === '"' || ch === "'") {
-        const closeQuote = input.indexOf(ch, i + 1);
-        if (closeQuote !== -1 && input.indexOf('>', closeQuote + 1) !== -1) {
-          quote = ch;
-        }
-        continue;
-      }
-      if (ch === '<') {
-        depth++;
-        continue;
-      }
-      if (ch === '>') {
-        depth--;
-        continue;
-      }
-      continue;
-    }
-
-    if (ch === '<') {
-      depth = 1;
-      continue;
-    }
-
-    if (ch === '>') {
-      continue;
-    }
-
-    result += ch;
-  }
-
-  return result;
-}
-
-export function stripInlineMarkdown(raw: string): string {
-  let s = raw;
-
-  // Unwrap links/images iteratively first (preserves inline code spans inside link labels)
-  let prev = '';
-  while (s !== prev) {
-    prev = s;
-    const { links } = scanLinksAndCodeInLine(s, 1);
-    if (links.length === 0) {
-      break;
-    }
-    let rebuilt = '';
-    let cursor = 0;
-    for (const link of links) {
-      const prefixEnd =
-        link.startIndex > 0 && s[link.startIndex - 1] === '!'
-          ? link.startIndex - 1
-          : link.startIndex;
-      rebuilt += s.slice(cursor, prefixEnd) + link.linkText;
-      cursor = link.endIndex;
-    }
-    rebuilt += s.slice(cursor);
-    s = rebuilt;
-  }
-
-  // Isolate inline code spans with collision-free sentinels so inner text is preserved literally
-  let tokenPrefix = '\uE000CODE';
-  while (s.includes(tokenPrefix)) {
-    tokenPrefix += '_';
-  }
-  const codeContents: string[] = [];
-  let tokenized = '';
-  let idx = 0;
-  while (idx < s.length) {
-    if (s[idx] === '`') {
-      const { tickLen, closeEnd } = findInlineCodeEnd(s, idx);
-      if (closeEnd !== null) {
-        const tokenIndex = codeContents.length;
-        codeContents.push(s.slice(idx + tickLen, closeEnd - tickLen));
-        tokenized += `${tokenPrefix}${tokenIndex}\uE001`;
-        idx = closeEnd;
-        continue;
-      }
-      tokenized += s.slice(idx, idx + tickLen);
-      idx += tickLen;
-      continue;
-    }
-    tokenized += s[idx];
-    idx++;
-  }
-  s = tokenized;
-
-  s = s.replace(/(\*\*|__)(.*?)\1/g, '$2');
-  s = s.replace(/(\*|_)(?=\S)(.+?)(?<=\S)\1/g, '$2');
-  s = s.replace(/~~(.*?)~~/g, '$1');
-  s = s.replace(/\\([\\`*_{}[\]()#+\-.!|])/g, '$1');
-  s = stripHtmlTags(s);
-
-  for (let c = 0; c < codeContents.length; c++) {
-    s = s.split(`${tokenPrefix}${c}\uE001`).join(codeContents[c]);
-  }
-
-  return s.trim();
-}
-
-export function vitepressSlugify(str: string): string {
-  return str
-    .normalize('NFKD')
-    .replace(VP_COMBINING_RE, '')
-    .replace(VP_CONTROL_RE, '')
-    .replace(VP_SPECIAL_RE, '-')
-    .replace(/-{2,}/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .replace(/^(\d)/, '_$1')
-    .toLowerCase();
-}
-
-export function githubSlugify(str: string): string {
-  return str
-    .trim()
-    .toLowerCase()
-    .replace(/[\uFE00-\uFE0F\u200D]/g, '')
-    .replace(/[^\p{L}\p{M}\p{N}_\- ]/gu, '')
-    .replace(/ /g, '-');
-}
-
-const COMMONMARK_FENCE_RE = /^\s{0,3}(`{3,}|~{3,})(.*)$/;
-
-export interface MarkdownFenceState {
-  inFence: boolean;
-  fenceChar: string;
-  fenceLen: number;
-}
-
-export type FenceTransitionResult =
-  | { kind: 'open'; infoString: string }
-  | { kind: 'close' }
-  | { kind: 'inside' }
-  | { kind: 'outside' };
-
-export function stepMarkdownFence(
-  rawLine: string,
-  state: MarkdownFenceState
-): FenceTransitionResult {
-  const fenceMatch = rawLine.match(COMMONMARK_FENCE_RE);
-  if (fenceMatch) {
-    const marker = fenceMatch[1];
-    const rest = fenceMatch[2];
-    const ch = marker[0];
-    const len = marker.length;
-    if (!state.inFence) {
-      if (!(ch === '`' && rest.includes('`'))) {
-        state.inFence = true;
-        state.fenceChar = ch;
-        state.fenceLen = len;
-        return { kind: 'open', infoString: rest };
-      }
-    } else if (ch === state.fenceChar && len >= state.fenceLen && /^\s*$/.test(rest)) {
-      state.inFence = false;
-      state.fenceChar = '';
-      state.fenceLen = 0;
-      return { kind: 'close' };
-    }
-  }
-
-  return state.inFence ? { kind: 'inside' } : { kind: 'outside' };
-}
-
-export type FrontmatterScanMode = 'none' | 'skip' | 'collect';
-export type HtmlCommentScanMode = 'none' | 'strip' | 'pad';
-
-export interface ScannedMermaidBlock {
-  fenceStartLine: number;
-  code: string;
-}
-
-export interface MarkdownScanOptions {
-  frontmatterMode?: FrontmatterScanMode;
-  htmlCommentMode?: HtmlCommentScanMode;
-  onFrontmatter?: (_lines: string[]) => void;
-  onFenceOpen?: (_infoString: string, _marker: string, _lineNumber: number) => void;
-  onFenceBoundary?: () => void;
-  onMermaidBlock?: (_block: ScannedMermaidBlock) => void;
-}
-
-export function scanMarkdownDocument(
-  content: string,
-  onLine: (_line: string, _lineNumber: number) => void,
-  options: MarkdownScanOptions = {}
-): void {
-  const frontmatterMode = options.frontmatterMode ?? 'none';
-  const htmlCommentMode = options.htmlCommentMode ?? 'none';
-
-  const lines = content.split(/\r?\n/);
-  const fenceState: MarkdownFenceState = { inFence: false, fenceChar: '', fenceLen: 0 };
-
-  let inFrontmatter = false;
-  const frontmatterLines: string[] = [];
-  let inMermaidFence = false;
-  let mermaidFenceStartLine = 0;
-  let mermaidLines: string[] = [];
-  let inHtmlComment = false;
-
-  lines.forEach((rawLine, index) => {
-    const lineNum = index + 1;
-
-    if (frontmatterMode !== 'none') {
-      if (index === 0 && rawLine.trim() === '---') {
-        inFrontmatter = true;
-        return;
-      }
-      if (inFrontmatter) {
-        if (rawLine.trim() === '---' || rawLine.trim() === '...') {
-          inFrontmatter = false;
-          if (frontmatterMode === 'collect') {
-            options.onFrontmatter?.(frontmatterLines);
-          }
-        } else if (frontmatterMode === 'collect') {
-          frontmatterLines.push(rawLine);
-        }
-        return;
-      }
-    }
-
-    const fenceStep = stepMarkdownFence(rawLine, fenceState);
-    if (fenceStep.kind === 'open') {
-      const markerMatch = rawLine.match(COMMONMARK_FENCE_RE);
-      const marker = markerMatch ? markerMatch[1] : '```';
-      options.onFenceOpen?.(fenceStep.infoString, marker, lineNum);
-      if (options.onMermaidBlock) {
-        const infoLang = fenceStep.infoString.trim().split(/[\s{[:]/)[0]?.toLowerCase() ?? '';
-        if (infoLang === 'mermaid' || infoLang === 'mmd') {
-          inMermaidFence = true;
-          mermaidFenceStartLine = lineNum;
-          mermaidLines = [];
-        }
-      }
-      options.onFenceBoundary?.();
-      return;
-    }
-    if (fenceStep.kind === 'close') {
-      if (inMermaidFence) {
-        options.onMermaidBlock?.({
-          fenceStartLine: mermaidFenceStartLine,
-          code: mermaidLines.join('\n'),
-        });
-        inMermaidFence = false;
-        mermaidFenceStartLine = 0;
-        mermaidLines = [];
-      }
-      options.onFenceBoundary?.();
-      return;
-    }
-    if (fenceStep.kind === 'inside') {
-      if (inMermaidFence) {
-        mermaidLines.push(rawLine);
-      }
-      return;
-    }
-
-    let lineText = rawLine;
-    if (htmlCommentMode !== 'none') {
-      if (inHtmlComment) {
-        const endIdx = lineText.indexOf('-->');
-        if (endIdx === -1) {
-          return;
-        }
-        lineText =
-          htmlCommentMode === 'pad'
-            ? ' '.repeat(endIdx + 3) + lineText.slice(endIdx + 3)
-            : lineText.slice(endIdx + 3);
-        inHtmlComment = false;
-      }
-      while (lineText.includes('<!--')) {
-        const startIdx = lineText.indexOf('<!--');
-        const endIdx = lineText.indexOf('-->', startIdx + 4);
-        if (endIdx === -1) {
-          lineText = lineText.slice(0, startIdx);
-          inHtmlComment = true;
-          break;
-        }
-        lineText =
-          htmlCommentMode === 'pad'
-            ? lineText.slice(0, startIdx) +
-              ' '.repeat(endIdx + 3 - startIdx) +
-              lineText.slice(endIdx + 3)
-            : lineText.slice(0, startIdx) + lineText.slice(endIdx + 3);
-      }
-    }
-
-    onLine(lineText, lineNum);
-  });
-
-  if (inMermaidFence) {
-    options.onMermaidBlock?.({
-      fenceStartLine: mermaidFenceStartLine,
-      code: mermaidLines.join('\n'),
-    });
-  }
-}
-
-export function transformNonFencedMarkdownLines(
-  content: string,
-  transformLine: (_line: string, _lineNumber: number) => string
-): string {
-  const chunks = content.match(/[^\r\n]*(?:\r?\n|$)/g) || [];
-  const fenceState: MarkdownFenceState = { inFence: false, fenceChar: '', fenceLen: 0 };
-
-  return chunks
-    .map((chunk, idx) => {
-      if (!chunk) {
-        return '';
-      }
-      const lineMatch = chunk.match(/^([^\r\n]*)(\r?\n?)$/);
-      const line = lineMatch ? lineMatch[1] : chunk;
-      const eol = lineMatch ? lineMatch[2] : '';
-
-      if (stepMarkdownFence(line, fenceState).kind !== 'outside') {
-        return chunk;
-      }
-
-      return transformLine(line, idx + 1) + eol;
-    })
-    .join('');
-}
-
-export function extractMarkdownHeadings(content: string): MarkdownHeading[] {
-  const headings: MarkdownHeading[] = [];
-  const vpCounts = new Map<string, number>();
-  const ghCounts = new Map<string, number>();
-
-  scanMarkdownDocument(
-    content,
-    (line, lineNum) => {
-      const headingMatch = line.match(/^\s{0,3}(#{1,6})\s+(.+?)(?:\s+#+\s*)?$/);
-      if (!headingMatch) {
-        return;
-      }
-
-      const level = headingMatch[1].length;
-      const headingRaw = headingMatch[2].trim();
-      const customIdMatch = headingRaw.match(/\s*\{#([^}]+)\}\s*$/);
-
-      let baseVp: string;
-      let baseGh: string;
-      if (customIdMatch) {
-        baseVp = customIdMatch[1];
-        baseGh = customIdMatch[1];
-      } else {
-        const plain = stripInlineMarkdown(headingRaw);
-        baseVp = vitepressSlugify(plain);
-        baseGh = githubSlugify(plain);
-      }
-
-      const vpSeen = vpCounts.get(baseVp) || 0;
-      vpCounts.set(baseVp, vpSeen + 1);
-      const vitepressSlug = vpSeen === 0 ? baseVp : `${baseVp}-${vpSeen}`;
-
-      const ghSeen = ghCounts.get(baseGh) || 0;
-      ghCounts.set(baseGh, ghSeen + 1);
-      const githubSlug = ghSeen === 0 ? baseGh : `${baseGh}-${ghSeen}`;
-
-      headings.push({
-        line: lineNum,
-        level,
-        rawText: headingRaw,
-        githubSlug,
-        vitepressSlug,
-      });
-    },
-    {
-      frontmatterMode: 'skip',
-      htmlCommentMode: 'strip',
-    }
-  );
-
-  return headings;
-}
-
-export function resolveVitePressHeadingSlug(
-  targetMarkdownPath: string,
-  rawHash: string,
-  headingsCache?: Map<string, MarkdownHeading[]>
-): string {
-  if (!rawHash || LINE_FRAGMENT_RE.test(rawHash)) {
-    return rawHash;
-  }
-
-  let headings = headingsCache?.get(targetMarkdownPath);
-  if (!headings) {
-    try {
-      const content = fs.readFileSync(targetMarkdownPath, 'utf8');
-      headings = extractMarkdownHeadings(content);
-      headingsCache?.set(targetMarkdownPath, headings);
-    } catch {
-      return rawHash;
-    }
-  }
-
-  const decoded = safeDecodeURIComponent(rawHash);
-  const directVp = headings.find(h => h.vitepressSlug === decoded);
-  if (directVp) {
-    return directVp.vitepressSlug;
-  }
-
-  const fromGh = headings.find(h => h.githubSlug === decoded);
-  if (fromGh) {
-    return fromGh.vitepressSlug;
-  }
-
-  return rawHash;
-}
-
 interface SourceSliceCacheEntry {
   content: string;
   lines: string[];
-  declRanges?: Map<string, Array<{ start: number; end: number }>>;
+  declRanges?: Map<string, TsDeclRange[]>;
 }
 
 const GENERIC_SLICE_STOP_TOKENS = new Set([
@@ -1174,36 +548,6 @@ const GENERIC_SLICE_STOP_TOKENS = new Set([
   'OPTIONS',
 ]);
 
-const PROSE_LINK_WORDS = new Set([
-  'details',
-  'docs',
-  'example',
-  'file',
-  'handler',
-  'here',
-  'implementation',
-  'link',
-  'module',
-  'more',
-  'repo',
-  'route',
-  'sample',
-  'schema',
-  'service',
-  'source',
-  'target',
-]);
-
-const HTTP_METHOD_NAMES = new Set([
-  'GET',
-  'POST',
-  'PUT',
-  'PATCH',
-  'DELETE',
-  'HEAD',
-  'OPTIONS',
-]);
-
 function getSourceSliceData(
   filePath: string,
   sliceCache: Map<string, SourceSliceCacheEntry>,
@@ -1224,102 +568,11 @@ function getSourceSliceData(
 function getTsDeclRanges(
   filePath: string,
   entry: SourceSliceCacheEntry
-): Map<string, Array<{ start: number; end: number }>> {
-  if (entry.declRanges) {
-    return entry.declRanges;
+): Map<string, TsDeclRange[]> {
+  if (!entry.declRanges) {
+    entry.declRanges = buildTsDeclRanges(filePath, entry.content);
   }
-  const declRanges = new Map<string, Array<{ start: number; end: number }>>();
-  if (!/\.[cm]?[jt]sx?$/.test(filePath)) {
-    entry.declRanges = declRanges;
-    return declRanges;
-  }
-
-  const sf = ts.createSourceFile(
-    filePath,
-    entry.content,
-    ts.ScriptTarget.Latest,
-    false,
-    filePath.endsWith('.tsx') || filePath.endsWith('.jsx')
-      ? ts.ScriptKind.TSX
-      : ts.ScriptKind.TS
-  );
-  const lineStarts = sf.getLineStarts();
-  const offsetToLine = (pos: number): number => {
-    let low = 0;
-    let high = lineStarts.length - 1;
-    while (low <= high) {
-      const mid = (low + high) >>> 1;
-      if (lineStarts[mid] <= pos) low = mid + 1;
-      else high = mid - 1;
-    }
-    return high + 1;
-  };
-  const skipTrivia = (pos: number, end: number): number => {
-    let p = pos;
-    while (p < end) {
-      const ch = entry.content.charCodeAt(p);
-      if (ch === 32 || ch === 9 || ch === 10 || ch === 13) p++;
-      else if (ch === 47 && entry.content.charCodeAt(p + 1) === 47) {
-        p += 2;
-        while (p < end && entry.content.charCodeAt(p) !== 10) p++;
-      } else if (ch === 47 && entry.content.charCodeAt(p + 1) === 42) {
-        p += 2;
-        while (
-          p + 1 < end &&
-          !(entry.content.charCodeAt(p) === 42 && entry.content.charCodeAt(p + 1) === 47)
-        ) {
-          p++;
-        }
-        p += 2;
-      } else {
-        break;
-      }
-    }
-    return p;
-  };
-  const addRange = (name: string, node: ts.Node) => {
-    const s = offsetToLine(skipTrivia(node.pos, node.end));
-    const e = offsetToLine(Math.max(node.pos, node.end - 1));
-    const arr = declRanges.get(name) ?? [];
-    arr.push({ start: s, end: e });
-    declRanges.set(name, arr);
-  };
-  const visit = (node: ts.Node) => {
-    if (
-      (ts.isFunctionDeclaration(node) ||
-        ts.isClassDeclaration(node) ||
-        ts.isInterfaceDeclaration(node) ||
-        ts.isTypeAliasDeclaration(node) ||
-        ts.isEnumDeclaration(node)) &&
-      node.name
-    ) {
-      addRange(node.name.text, node);
-    } else if (ts.isVariableStatement(node)) {
-      for (const decl of node.declarationList.declarations) {
-        if (ts.isIdentifier(decl.name)) addRange(decl.name.text, node);
-      }
-    } else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
-      addRange(node.name.text, node);
-    } else if (
-      (ts.isMethodDeclaration(node) ||
-        ts.isPropertyDeclaration(node) ||
-        ts.isGetAccessorDeclaration(node) ||
-        ts.isSetAccessorDeclaration(node) ||
-        ts.isPropertyAssignment(node)) &&
-      node.name &&
-      (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name))
-    ) {
-      addRange(node.name.text, node);
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(sf);
-  entry.declRanges = declRanges;
-  return declRanges;
-}
-
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return entry.declRanges;
 }
 
 function textContainsCueToken(haystack: string, cue: string): boolean {
@@ -1442,14 +695,10 @@ function validateSliceContentAgainstContext(
     .map(lk => {
       const targetAbs = extractFilePathFromLinkTarget(lk.rawTarget, ctx.fileDir, ctx.rootDir);
       const hashIdx = lk.rawTarget.indexOf('#');
-      const frag = hashIdx === -1 ? '' : lk.rawTarget.slice(hashIdx + 1);
-      const lm = frag.match(LINE_FRAGMENT_RE);
       return {
         link: lk,
         targetAbs,
-        lineRange: lm
-          ? { start: parseInt(lm[1], 10), end: lm[2] !== undefined ? parseInt(lm[2], 10) : parseInt(lm[1], 10) }
-          : null,
+        lineRange: hashIdx === -1 ? null : parseLineFragmentRange(lk.rawTarget.slice(hashIdx + 1)),
       };
     })
     .filter(item => item.targetAbs !== null);
@@ -1802,10 +1051,9 @@ function validateFragmentOnFile(
   sliceContext?: SliceLineContext,
   sliceCache?: Map<string, SourceSliceCacheEntry>
 ): { valid: boolean; reason?: string } {
-  const lineMatch = fragment.match(LINE_FRAGMENT_RE);
-  if (lineMatch) {
-    const start = parseInt(lineMatch[1], 10);
-    const end = lineMatch[2] !== undefined ? parseInt(lineMatch[2], 10) : start;
+  const parsedRange = parseLineFragmentRange(fragment);
+  if (parsedRange) {
+    const { start, end } = parsedRange;
     const totalLines = getFileLineCount(resolvedPath, lineCountCache, sliceCache);
     if (!isValidLineRange(start, end, totalLines)) {
       return { valid: false, reason: `file has ${totalLines} lines` };
@@ -1838,40 +1086,6 @@ function validateFragmentOnFile(
 
   // Non-Markdown files only support valid #L<start>[-L<end>] fragments
   return { valid: false };
-}
-
-function extractFilePathFromLinkTarget(
-  rawTarget: string,
-  fileDir: string,
-  rootDir: string
-): string | null {
-  const repoMatch = rawTarget.match(REPO_GITHUB_URL_RE);
-  if (repoMatch) {
-    if (repoMatch[1] === 'tree') {
-      return null;
-    }
-    const repoRel = safeDecodeURIComponent(repoMatch[2]).replace(/\/+$/, '');
-    return repoRel ? path.resolve(rootDir, repoRel) : null;
-  }
-
-  if (
-    rawTarget.startsWith('http://') ||
-    rawTarget.startsWith('https://') ||
-    rawTarget.startsWith('mailto:') ||
-    rawTarget.startsWith('tel:') ||
-    rawTarget.startsWith('#')
-  ) {
-    return null;
-  }
-
-  const cleanPath = safeDecodeURIComponent(rawTarget.split('#')[0].split('?')[0]);
-  if (!cleanPath) {
-    return null;
-  }
-
-  return cleanPath.startsWith('/')
-    ? path.resolve(rootDir, cleanPath.slice(1))
-    : path.resolve(fileDir, cleanPath);
 }
 
 function resolveProseFileToken(
@@ -2324,25 +1538,18 @@ export function checkVitePressConfigLinks(
     return;
   }
 
-  const sf = ts.createSourceFile(configAbs, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const sf = parseTsSourceFile(configAbs, content, true);
   const configOptions: LinkTargetValidationOptions = {
     queryTargetMode: 'error',
     portalRouteMode: 'always',
     intraFileAnchorMode: 'markdown-only',
   };
 
-  function getPropertyKeyName(nameNode: ts.PropertyName): string | null {
-    if (ts.isIdentifier(nameNode) || ts.isStringLiteral(nameNode) || ts.isNoSubstitutionTemplateLiteral(nameNode)) {
-      return nameNode.text;
-    }
-    return null;
-  }
-
   function scanNavOrSidebarSubtree(node: ts.Node, sectionLabel: string) {
     if (ts.isObjectLiteralExpression(node)) {
       let itemLabel = `${sectionLabel} link`;
       for (const prop of node.properties) {
-        if (ts.isPropertyAssignment(prop) && getPropertyKeyName(prop.name) === 'text') {
+        if (ts.isPropertyAssignment(prop) && getTsPropertyKeyName(prop.name) === 'text') {
           if (ts.isStringLiteral(prop.initializer) || ts.isNoSubstitutionTemplateLiteral(prop.initializer)) {
             itemLabel = prop.initializer.text;
           }
@@ -2350,7 +1557,7 @@ export function checkVitePressConfigLinks(
       }
 
       for (const prop of node.properties) {
-        if (ts.isPropertyAssignment(prop) && getPropertyKeyName(prop.name) === 'link') {
+        if (ts.isPropertyAssignment(prop) && getTsPropertyKeyName(prop.name) === 'link') {
           const lineNum = sf.getLineAndCharacterOfPosition(prop.initializer.getStart(sf)).line + 1;
           if (ts.isStringLiteral(prop.initializer) || ts.isNoSubstitutionTemplateLiteral(prop.initializer)) {
             validateLinkTarget(
@@ -2386,7 +1593,7 @@ export function checkVitePressConfigLinks(
 
   function visitRoot(node: ts.Node) {
     if (ts.isPropertyAssignment(node)) {
-      const propName = getPropertyKeyName(node.name);
+      const propName = getTsPropertyKeyName(node.name);
       if (propName === 'nav' || propName === 'sidebar') {
         scanNavOrSidebarSubtree(node.initializer, propName);
         return;
@@ -2398,7 +1605,7 @@ export function checkVitePressConfigLinks(
         const supported = getShikiSupportedLanguages();
         for (const aliasProp of node.initializer.properties) {
           if (!ts.isPropertyAssignment(aliasProp)) continue;
-          const aliasKey = getPropertyKeyName(aliasProp.name);
+          const aliasKey = getTsPropertyKeyName(aliasProp.name);
           if (!aliasKey) continue;
           const lineNum =
             sf.getLineAndCharacterOfPosition(aliasProp.initializer.getStart(sf)).line + 1;

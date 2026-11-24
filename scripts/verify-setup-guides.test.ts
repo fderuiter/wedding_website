@@ -741,4 +741,28 @@ describe('verify-setup-guides contract check', () => {
       ])
     );
   });
+
+  it('handles backtick info strings, multi-line HTML comments, backticked comment literals, and angle-bracket links in README', () => {
+    const readmePath = path.join(tempDir, 'README.md');
+    const updatedReadme = fs
+      .readFileSync(readmePath, 'utf8')
+      .replace(
+        /\(\.\/docs\/developer-setup\.md\)/g,
+        '(<./docs/developer-setup.md>)'
+      )
+      .replace(
+        /(^##\s+Table of Contents\r?\n)/m,
+        '$1<!--\n- [Commented Ghost Section](#ghost-section)\n-->\n'
+      )
+      .replace(
+        /\(#table-of-contents\)/,
+        '(<#table-of-contents>)'
+      )
+      .concat(
+        '\nInline ```npm ci` span and `<!-- literal comment -->` stay active outside fences.\n<!--\n## Ghost Heading Inside Comment\n-->\n'
+      );
+    fs.writeFileSync(readmePath, updatedReadme, 'utf8');
+
+    expect(verifySetupGuides(tempDir)).toEqual([]);
+  });
 });
