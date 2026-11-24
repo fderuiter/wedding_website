@@ -1,8 +1,27 @@
 import { render, screen } from '@testing-library/react';
 import { PrintableFloorplan } from '../PrintableFloorplan';
+import { resolveDetailedSeatAssignments } from '../../seatLayout';
+import { getInvitationPartyMembers, summarizeAttendeeMeals } from '../../utils/seatingHelpers';
 import { SeatingTableDTO } from '../../schemas';
 import { InvitationCodeDTO } from '@/features/registry';
 import { createMockInvitationCode } from '@/testing/factories/registryFactory';
+
+jest.mock('../../seatLayout', () => {
+  const actual = jest.requireActual('../../seatLayout');
+  return {
+    ...actual,
+    resolveDetailedSeatAssignments: jest.fn(actual.resolveDetailedSeatAssignments),
+  };
+});
+
+jest.mock('../../utils/seatingHelpers', () => {
+  const actual = jest.requireActual('../../utils/seatingHelpers');
+  return {
+    ...actual,
+    getInvitationPartyMembers: jest.fn(actual.getInvitationPartyMembers),
+    summarizeAttendeeMeals: jest.fn(actual.summarizeAttendeeMeals),
+  };
+});
 
 describe('PrintableFloorplan component', () => {
   const mockTables: SeatingTableDTO[] = [
@@ -415,5 +434,110 @@ describe('PrintableFloorplan component', () => {
     expect(screen.getByText('Seat 2: Morgan Taylor (Jordan Taylor +1)')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: 'Unassigned Guests (3)' })).toBeInTheDocument();
     expect(screen.getByText('Alex Rivera (+2)')).toBeInTheDocument();
+  });
+
+  describe('Roster-scoped memoization and single-pass party resolution', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('parses each seated party once on mount and re-renders 0 table cards when x, y, width, height, or rotation change across 50 tables', () => {
+      const resolveSeatsSpy = resolveDetailedSeatAssignments as jest.Mock;
+      const partyMembersSpy = getInvitationPartyMembers as jest.Mock;
+      const summarizeMealsSpy = summarizeAttendeeMeals as jest.Mock;
+
+      const fiftyTables: SeatingTableDTO[] = Array.from({ length: 50 }, (_, index) => {
+        const tableNum = index + 1;
+        return {
+          id: `print-tbl-${tableNum}`,
+          name: `Print Table ${tableNum}`,
+          shape: 'round',
+          capacity: 8,
+          x: 100 + index * 20,
+          y: 120,
+          width: 120,
+          height: 120,
+          rotation: 0,
+          isSample: false,
+          invitationCodes: [
+            createMockInvitationCode({
+              id: `print-guest-${tableNum}`,
+              code: `SECRET-${tableNum}`,
+              guestName: `Seated Host ${tableNum}`,
+              seatNumber: 1,
+              plusOneSeatNumbers: [2],
+              used: true,
+              extraFields: {
+                attending: true,
+                plusOneNames: [`Companion ${tableNum}`],
+                mealSelections: [
+                  { attendeeName: `Seated Host ${tableNum}`, mealOptionLabel: 'Herb Salmon' },
+                  { attendeeName: `Companion ${tableNum}`, mealOptionLabel: 'Filet Mignon' },
+                ],
+              },
+            }),
+          ],
+        };
+      });
+
+      const { rerender } = render(
+        <PrintableFloorplan tables={fiftyTables} unassignedGuests={[]} />
+      );
+
+      // Single-pass resolution: 50 tables -> 50 resolveDetailedSeatAssignments calls, 50 meal summaries, and 50 party parses (1 per party, not 2-3x)
+      expect(resolveSeatsSpy).toHaveBeenCalledTimes(50);
+      expect(summarizeMealsSpy).toHaveBeenCalledTimes(50);
+      expect(partyMembersSpy).toHaveBeenCalledTimes(50);
+
+      resolveSeatsSpy.mockClear();
+      summarizeMealsSpy.mockClear();
+      partyMembersSpy.mockClear();
+
+      // Update x, y, width, height, and rotation on tables with cloned array -> 0 table cards re-render
+      const movedAndRotatedTables = fiftyTables.map((table, index) =>
+        index === 0
+          ? {
+            ...table,
+            x: table.x + 250,
+            y: table.y + 140,
+            width: 160,
+            height: 160,
+            rotation: 135,
+          }
+          : { ...table, rotation: 45 }
+      );
+
+      rerender(<PrintableFloorplan tables={movedAndRotatedTables} unassignedGuests={[]} />);
+
+      expect(resolveSeatsSpy).toHaveBeenCalledTimes(0);
+      expect(summarizeMealsSpy).toHaveBeenCalledTimes(0);
+      expect(partyMembersSpy).toHaveBeenCalledTimes(0);
+
+      // Updating invitationCodes on a single table re-renders ONLY that 1 table card (49 static cards stay untouched)
+      const oneRosterUpdated = movedAndRotatedTables.map((table, index) =>
+        index === 0
+          ? {
+            ...table,
+            invitationCodes: [
+              ...(table.invitationCodes || []),
+              createMockInvitationCode({
+                id: 'print-guest-extra',
+                code: 'SECRET-EXTRA',
+                guestName: 'Added Guest',
+                seatNumber: 3,
+                used: true,
+                extraFields: { attending: true },
+              }),
+            ],
+          }
+          : table
+      );
+
+      rerender(<PrintableFloorplan tables={oneRosterUpdated} unassignedGuests={[]} />);
+
+      expect(resolveSeatsSpy).toHaveBeenCalledTimes(1);
+      expect(partyMembersSpy).toHaveBeenCalledTimes(2);
+      expect(screen.getByText('Seat 3: Added Guest')).toBeInTheDocument();
+    });
   });
 });

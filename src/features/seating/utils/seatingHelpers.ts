@@ -770,37 +770,35 @@ export function getInvitationPartyMembers(
 }
 
 /**
- * Computes aggregated entrée counts and dietary restriction counts across all eligible attendees seated at a table.
+ * Aggregates entrée counts and dietary restriction counts from pre-resolved party members or seat occupants
+ * without re-parsing guest extraFields or dietary regular expressions.
  */
-export function computeTableMealCounts(
-  guests: ReadonlyArray<SeatingPartyGuestCandidate> | undefined
+export function summarizeAttendeeMeals(
+  attendees: Iterable<Pick<PartyMemberAttendeeInfo, 'mealChoice' | 'dietaryBadges'>>
 ): TableMealSummary {
   const mealMap = new Map<string, number>();
   const dietaryMap = new Map<string, { shortLabel: string; label: string; count: number }>();
   let totalAttendees = 0;
   let unspecifiedMealCount = 0;
 
-  for (const guest of guests ?? []) {
-    const members = getInvitationPartyMembers(guest);
-    for (const member of members) {
-      totalAttendees++;
-      if (member.mealChoice) {
-        mealMap.set(member.mealChoice, (mealMap.get(member.mealChoice) ?? 0) + 1);
-      } else {
-        unspecifiedMealCount++;
-      }
+  for (const member of attendees) {
+    totalAttendees++;
+    if (member.mealChoice) {
+      mealMap.set(member.mealChoice, (mealMap.get(member.mealChoice) ?? 0) + 1);
+    } else {
+      unspecifiedMealCount++;
+    }
 
-      for (const badge of member.dietaryBadges) {
-        const existing = dietaryMap.get(badge.shortLabel);
-        if (existing) {
-          existing.count++;
-        } else {
-          dietaryMap.set(badge.shortLabel, {
-            shortLabel: badge.shortLabel,
-            label: badge.label,
-            count: 1,
-          });
-        }
+    for (const badge of member.dietaryBadges) {
+      const existing = dietaryMap.get(badge.shortLabel);
+      if (existing) {
+        existing.count++;
+      } else {
+        dietaryMap.set(badge.shortLabel, {
+          shortLabel: badge.shortLabel,
+          label: badge.label,
+          count: 1,
+        });
       }
     }
   }
@@ -838,4 +836,17 @@ export function computeTableMealCounts(
     formattedMeals,
     formattedDietary,
   };
+}
+
+/**
+ * Computes aggregated entrée counts and dietary restriction counts across all eligible attendees seated at a table.
+ */
+export function computeTableMealCounts(
+  guests: ReadonlyArray<SeatingPartyGuestCandidate> | undefined
+): TableMealSummary {
+  const members: PartyMemberAttendeeInfo[] = [];
+  for (const guest of guests ?? []) {
+    members.push(...getInvitationPartyMembers(guest));
+  }
+  return summarizeAttendeeMeals(members);
 }

@@ -1,12 +1,48 @@
+import { ComponentProps, memo } from 'react';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import SeatingChartAdminPage from '../page';
-import { useSeatingState } from '@/features/seating';
+import { FloorplanCanvas, resolveSeatAssignments, useSeatingState } from '@/features/seating';
+import { matchDietaryCategory } from '@/features/registry';
 
-// Mock useSeatingState
+type FloorplanCanvasPropsSnapshot = ComponentProps<typeof FloorplanCanvas>;
+const recordedFloorplanProps: FloorplanCanvasPropsSnapshot[] = [];
+
+// Mock concrete leaf modules while preserving React.memo and public barrel boundaries
 jest.mock('@/features/seating/hooks/useSeatingState', () => ({
   useSeatingState: jest.fn(),
 }));
+
+jest.mock('@/features/seating/components/FloorplanCanvas', () => {
+  const actual = jest.requireActual('@/features/seating/components/FloorplanCanvas');
+  const ActualFloorplanCanvas = actual.FloorplanCanvas;
+  const SpiedFloorplanCanvas = memo(function SpiedFloorplanCanvas(
+    props: ComponentProps<typeof ActualFloorplanCanvas>
+  ) {
+    recordedFloorplanProps.push(props);
+    return <ActualFloorplanCanvas {...props} />;
+  });
+  return {
+    ...actual,
+    FloorplanCanvas: SpiedFloorplanCanvas,
+  };
+});
+
+jest.mock('@/features/seating/seatLayout', () => {
+  const actual = jest.requireActual('@/features/seating/seatLayout');
+  return {
+    ...actual,
+    resolveSeatAssignments: jest.fn(actual.resolveSeatAssignments),
+  };
+});
+
+jest.mock('@/features/registry/utils/invitation', () => {
+  const actual = jest.requireActual('@/features/registry/utils/invitation');
+  return {
+    ...actual,
+    matchDietaryCategory: jest.fn(actual.matchDietaryCategory),
+  };
+});
 
 describe('SeatingChartAdminPage Dialog integration', () => {
   const mockTable = {
@@ -42,6 +78,7 @@ describe('SeatingChartAdminPage Dialog integration', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    recordedFloorplanProps.length = 0;
     (useSeatingState as jest.Mock).mockReturnValue({
       tables: [mockTable],
       allGuests: [mockGuest],
@@ -664,5 +701,141 @@ describe('SeatingChartAdminPage Dialog integration', () => {
     expect(mockUpdateTablePosition).toHaveBeenCalledWith('lm-border', 0, 8);
     fireEvent.click(within(landmarkControls).getByRole('button', { name: 'Nudge Border Stage up' }));
     expect(mockUpdateTablePosition).toHaveBeenCalledWith('lm-border', 8, 0);
+  });
+
+  test('preserves FloorplanCanvas callback references across parent renders, skips resolveSeatAssignments when no guest declined, and re-renders 0 PrintableFloorplan cards on selection/search/geometry updates', () => {
+    const seatedTables = [
+      {
+        ...mockTable,
+        id: 'table-1',
+        name: 'Table 1',
+        capacity: 6,
+        invitationCodes: [
+          {
+            id: 'g-attending-1',
+            guestName: 'Attending One',
+            code: 'ATT01',
+            tableId: 'table-1',
+            seatNumber: 1,
+            used: true,
+            dietaryNotes: 'Vegan',
+            extraFields: { attending: true },
+          },
+        ],
+      },
+      {
+        ...mockTable,
+        id: 'table-2',
+        name: 'Table 2',
+        x: 320,
+        y: 120,
+        capacity: 6,
+        invitationCodes: [
+          {
+            id: 'g-attending-2',
+            guestName: 'Attending Two',
+            code: 'ATT02',
+            tableId: 'table-2',
+            seatNumber: 1,
+            used: true,
+            dietaryNotes: 'Gluten-Free',
+            extraFields: { attending: true },
+          },
+        ],
+      },
+    ];
+
+    (useSeatingState as jest.Mock).mockReturnValue({
+      tables: seatedTables,
+      allGuests: [...seatedTables[0].invitationCodes, ...seatedTables[1].invitationCodes],
+      unassignedGuests: [mockGuest],
+      isLoading: false,
+      errorMsg: null,
+      canUndo: false,
+      undoLabel: null,
+      assignGuestToTable: mockAssignGuestToTable,
+      assignGuestsToTable: jest.fn(),
+      unassignGuest: mockUnassignGuest,
+      clearTableSeats: jest.fn(),
+      undoLastBatchAction: jest.fn(),
+      applyAutoAssignResult: mockApplyAutoAssignResult,
+      saveTable: mockSaveTable,
+      deleteTable: mockDeleteTable,
+      updateTablePosition: mockUpdateTablePosition,
+      updateTableRotation: mockUpdateTableRotation,
+    });
+
+    const resolveSeatSpy = resolveSeatAssignments as jest.Mock;
+    const matchDietarySpy = matchDietaryCategory as jest.Mock;
+
+    const { rerender } = render(<SeatingChartAdminPage />);
+
+    // Guarded declinedSeatedGuests skips resolveSeatAssignments when zero seated guests declined
+    expect(resolveSeatSpy).toHaveBeenCalledTimes(0);
+    expect(matchDietarySpy.mock.calls.length).toBeGreaterThan(0);
+    expect(recordedFloorplanProps.length).toBe(1);
+    const initialFloorplanProps = recordedFloorplanProps[0];
+
+    // Opening Add Table modal in SeatingChartClient does NOT re-render memoized FloorplanCanvas or PrintableFloorplan cards
+    matchDietarySpy.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: /Add Table/i }));
+    expect(recordedFloorplanProps.length).toBe(1);
+    expect(matchDietarySpy).toHaveBeenCalledTimes(0);
+
+    // Close modal via Escape
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(recordedFloorplanProps.length).toBe(1);
+
+    // Selecting Table 1 updates selectedTableId on FloorplanCanvas while keeping all callback props referentially identical
+    matchDietarySpy.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: /^Table 1, shape round/i }));
+    const afterSelectProps = recordedFloorplanProps[recordedFloorplanProps.length - 1];
+    expect(afterSelectProps.selectedTableId).toBe('table-1');
+    expect(afterSelectProps.onSelectTable).toBe(initialFloorplanProps.onSelectTable);
+    expect(afterSelectProps.onOpenSeatAssignModal).toBe(initialFloorplanProps.onOpenSeatAssignModal);
+    expect(afterSelectProps.onAddTable).toBe(initialFloorplanProps.onAddTable);
+    expect(afterSelectProps.onPlacementModeChange).toBe(initialFloorplanProps.onPlacementModeChange);
+    expect(afterSelectProps.onUpdateTablePosition).toBe(initialFloorplanProps.onUpdateTablePosition);
+    expect(afterSelectProps.onUpdateTableRotation).toBe(initialFloorplanProps.onUpdateTableRotation);
+    expect(afterSelectProps.onDropGuestOnTable).toBe(initialFloorplanProps.onDropGuestOnTable);
+    expect(afterSelectProps.onUnassignGuest).toBe(initialFloorplanProps.onUnassignGuest);
+
+    // Typing a search query re-renders 0 PrintableFloorplan table cards and 0 FloorplanCanvas seat assignments
+    matchDietarySpy.mockClear();
+    const searchInput = screen.getByLabelText(/Search all guests across floorplan and unassigned list/i);
+    fireEvent.change(searchInput, { target: { value: 'Attending One' } });
+    expect(matchDietarySpy).toHaveBeenCalledTimes(0);
+
+    // Updating table position and rotation re-renders 0 PrintableFloorplan cards and 0 FloorplanTableNode seat maps
+    const movedTables = [
+      { ...seatedTables[0], x: 240, y: 200, rotation: 90 },
+      seatedTables[1],
+    ];
+    (useSeatingState as jest.Mock).mockReturnValue({
+      tables: movedTables,
+      allGuests: [...seatedTables[0].invitationCodes, ...seatedTables[1].invitationCodes],
+      unassignedGuests: [mockGuest],
+      isLoading: false,
+      errorMsg: null,
+      canUndo: false,
+      undoLabel: null,
+      assignGuestToTable: mockAssignGuestToTable,
+      assignGuestsToTable: jest.fn(),
+      unassignGuest: mockUnassignGuest,
+      clearTableSeats: jest.fn(),
+      undoLastBatchAction: jest.fn(),
+      applyAutoAssignResult: mockApplyAutoAssignResult,
+      saveTable: mockSaveTable,
+      deleteTable: mockDeleteTable,
+      updateTablePosition: mockUpdateTablePosition,
+      updateTableRotation: mockUpdateTableRotation,
+    });
+
+    matchDietarySpy.mockClear();
+    rerender(<SeatingChartAdminPage />);
+    // Table 1 is selected in Inspector, whose memo is scoped to [selectedTableCodes, selectedTableCapacity, selectedTableIsLandmark]
+    // so neither FloorplanCanvas, PrintableFloorplan, nor Selected Table Inspector re-parses any party or dietary badge!
+    expect(matchDietarySpy).toHaveBeenCalledTimes(0);
+    expect(resolveSeatSpy).toHaveBeenCalledTimes(0);
   });
 });

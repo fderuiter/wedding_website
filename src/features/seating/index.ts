@@ -31,4 +31,5 @@ export {
   getTableOccupiedChairCount,
   isGuestEligibleForSeating,
   isLandmarkTable,
+  summarizeAttendeeMeals,
 } from './utils/seatingHelpers';
