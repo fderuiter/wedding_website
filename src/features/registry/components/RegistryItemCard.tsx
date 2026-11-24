@@ -39,13 +39,26 @@ import {
   getStripePromise,
   isValidStripePublishableKey,
 } from '@/lib/stripe.client';
+import dynamic from 'next/dynamic';
 import { apiClient } from '@/lib/apiClient';
 import { useOptionalDemo } from '@/components/demo/DemoContext';
-import {
-  SIMULATED_TEST_CARDS,
-  SimulatedCardCheckout,
-  type SimulatedTestCardId,
+import type {
+  SimulatedTestCardId,
+  SimulatedTestCardOption,
 } from './SimulatedCardCheckout';
+
+let loadedSimulatedTestCards: SimulatedTestCardOption[] | null = null;
+
+const SimulatedCardCheckout = dynamic(
+  () =>
+    import('./SimulatedCardCheckout').then((mod) => {
+      loadedSimulatedTestCards = mod.SIMULATED_TEST_CARDS;
+      return mod.SimulatedCardCheckout;
+    }),
+  {
+    loading: () => null,
+  }
+);
 
 const FIXED_PRESETS = [50, 100, 250];
 
@@ -80,6 +93,7 @@ interface RegistryItemCardProps {
   isAdmin?: boolean;
   reconciledReceipt?: ReconciledContributionReceipt | null;
   redirectRecoveryError?: string | null;
+  initialSimulatedCardId?: SimulatedTestCardId;
 }
 
 interface StripeControllerHandle {
@@ -187,6 +201,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   isAdmin = false,
   reconciledReceipt = null,
   redirectRecoveryError = null,
+  initialSimulatedCardId = 'approved_visa',
 }) => {
   const { resolvedTheme } = useTheme();
   const demo = useOptionalDemo();
@@ -198,7 +213,9 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   const claimRadioRef = useRef<HTMLButtonElement | null>(null);
   const directRadioRef = useRef<HTMLButtonElement | null>(null);
   const cardRadioRef = useRef<HTMLButtonElement | null>(null);
-  const [simulatedCardId, setSimulatedCardId] = useState<SimulatedTestCardId>('approved_visa');
+  const [simulatedCardId, setSimulatedCardId] = useState<SimulatedTestCardId>(
+    initialSimulatedCardId
+  );
   const [simulatedBillingZip, setSimulatedBillingZip] = useState('60611');
 
   const {
@@ -673,13 +690,27 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
 
     if (isDemoMode) {
       setSubmissionError(null);
-      const selectedCard =
-        SIMULATED_TEST_CARDS.find((c) => c.id === simulatedCardId) ?? SIMULATED_TEST_CARDS[0];
-      if (selectedCard.outcome === 'declined') {
+      const isDeclinedCardId = simulatedCardId.startsWith('declined');
+      let selectedCard = loadedSimulatedTestCards?.find(
+        (c) => c.id === simulatedCardId
+      );
+      if (!selectedCard && !isDeclinedCardId) {
+        try {
+          const { SIMULATED_TEST_CARDS } = await import('./SimulatedCardCheckout');
+          loadedSimulatedTestCards = SIMULATED_TEST_CARDS;
+          selectedCard =
+            SIMULATED_TEST_CARDS.find((c) => c.id === simulatedCardId) ??
+            SIMULATED_TEST_CARDS[0];
+        } catch {
+          selectedCard = undefined;
+        }
+      }
+
+      if (isDeclinedCardId || selectedCard?.outcome === 'declined') {
         setPhase('error');
         setSubmissionError(
-          selectedCard.declineMessage ||
-            'Simulated card declined. Gift funding totals remain unchanged.'
+          selectedCard?.declineMessage ||
+            'Your test card ending in 0002 was declined. No payment was recorded and gift funding totals remain unchanged.'
         );
         return;
       }

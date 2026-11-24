@@ -38,6 +38,9 @@ import {
   installDemoFetchInterceptor as noopInstallDemoFetchInterceptor,
 } from '../demoApiHandler.noop';
 import { DatabaseBackupSchema, formatZodIssues, reviveDates } from '@/utils/backupValidation';
+import { isDemoRuntimeFlagActive } from '../runtimeFlag';
+import { buildRegistryEditItemHref as buildRegistryEditItemHrefDirect } from '@/lib/sampleData/registryEditHref';
+import { buildRegistryEditItemHref as buildRegistryEditItemHrefFromBuilder } from '@/lib/sampleData/builder';
 
 describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
   beforeEach(() => {
@@ -1235,6 +1238,45 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
       uninstallFirst();
       window.fetch = originalFetch;
     }
+  });
+
+  it('initializes archetype datasets lazily on demand and keeps runtimeFlag synchronized with demoRuntimeBridge', () => {
+    resetDemoState();
+    const initialState = getDemoState();
+
+    // Before reading any archetype dataset, zero datasets are materialized and claim preview stays lazy
+    expect(Object.keys(JSON.parse(JSON.stringify(initialState.datasets)))).toEqual([]);
+    expect(previewDemoClaimToken('nonexistent-token')).toBeNull();
+    expect(Object.keys(JSON.parse(JSON.stringify(getDemoState().datasets)))).toEqual([]);
+
+    // Runtime flag stays synchronized with demoRuntimeBridge / demoStore state
+    setDemoRuntimeActive(false);
+    expect(isDemoRuntimeFlagActive()).toBe(false);
+    expect(isDemoRuntimeActive()).toBe(false);
+    setDemoRuntimeActive(true);
+    expect(isDemoRuntimeFlagActive()).toBe(true);
+    expect(isDemoRuntimeActive()).toBe(true);
+
+    // Lightweight registryEditHref module matches builder re-export
+    expect(buildRegistryEditItemHrefDirect('item-42', true)).toBe(
+      buildRegistryEditItemHrefFromBuilder('item-42', true)
+    );
+    expect(buildRegistryEditItemHrefDirect('item-42', false)).toBe('/registry/edit-item/item-42');
+
+    // Reading the active ('classic') dataset builds only 'classic'
+    const classicDataset = getActiveArchetypeDataset();
+    expect(classicDataset.registryItems.length).toBeGreaterThan(0);
+    expect(Object.keys(JSON.parse(JSON.stringify(getDemoState().datasets)))).toEqual([
+      'classic',
+    ]);
+
+    // Switching to 'destination' and reading active dataset builds 'destination' while leaving 'romantic' unbuilt
+    setDemoArchetype('destination');
+    const destinationDataset = getActiveArchetypeDataset();
+    expect(destinationDataset.guests[0].city).toBe('Miami');
+    expect(
+      Object.keys(JSON.parse(JSON.stringify(getDemoState().datasets))).sort()
+    ).toEqual(['classic', 'destination']);
   });
 
   it('serves localized seasonal climate forecast from /api/weather in demo mode without external calls', async () => {

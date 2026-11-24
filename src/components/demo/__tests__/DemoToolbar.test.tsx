@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
@@ -8,7 +9,7 @@ import { ToastProvider } from '@/components/ui/ToastProvider';
 import RootLayoutClient from '@/components/layout/RootLayoutClient';
 import { useOptionalDemo } from '@/components/demo/DemoContext';
 import { checkAdminClient } from '@/core/auth/auth.client';
-import { resetDemoState } from '@/lib/demo/demoStore';
+import { isDemoRuntimeActive, resetDemoState } from '@/lib/demo/demoStore';
 import { APP_DEFAULTS } from '@/lib/config';
 import { PublicAppConfigSchema } from '@/features/content';
 
@@ -78,7 +79,32 @@ function DemoConsumerProbe() {
   );
 }
 
-function renderDemoShell(isStaticExport = true) {
+function ChildMountFetchProbe() {
+  const [cardEnabled, setCardEnabled] = useState<string>('pending');
+
+  useEffect(() => {
+    let active = true;
+    void fetch('/api/registry/capabilities')
+      .then((res) => res.json())
+      .then((payload: { cardCheckoutEnabled?: boolean }) => {
+        if (active) {
+          setCardEnabled(String(Boolean(payload.cardCheckoutEnabled)));
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setCardEnabled('error');
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  return <div data-testid="child-mount-caps">{cardEnabled}</div>;
+}
+
+function renderDemoShell(isStaticExport = true, extraChild?: React.ReactNode) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -89,6 +115,7 @@ function renderDemoShell(isStaticExport = true) {
         <ToastProvider>
           <RootLayoutClient config={baseConfig} isStaticExport={isStaticExport}>
             <DemoConsumerProbe />
+            {extraChild}
           </RootLayoutClient>
         </ToastProvider>
       </ThemeProvider>
@@ -115,14 +142,41 @@ describe('DemoToolbar & DemoProvider', () => {
     }
   });
 
-  it('does not render DemoToolbar when isStaticExport is false (standalone server mode)', () => {
+  it('does not render DemoToolbar or activate demo runtime when isStaticExport is false (standalone server mode)', async () => {
     renderDemoShell(false);
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.queryByTestId('demo-toolbar')).not.toBeInTheDocument();
     expect(screen.queryByTestId('demo-showcase-links')).not.toBeInTheDocument();
     expect(screen.getByTestId('probe-persona')).toHaveTextContent('none');
+    expect(isDemoRuntimeActive()).toBe(false);
   });
 
-  it('renders subpath-safe showcase links to /, /api/, and /storybook/ in both expanded and collapsed toolbar states', () => {
+  it('installs the demo fetch interceptor before child useEffect hooks call /api/* when isStaticExport is true', async () => {
+    const originalFetch = window.fetch;
+    const uninterceptedCapabilitiesCalls: string[] = [];
+    window.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/registry/capabilities')) {
+        uninterceptedCapabilitiesCalls.push(url);
+      }
+      return new Response(JSON.stringify({ cardCheckoutEnabled: false }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as unknown as typeof window.fetch;
+
+    try {
+      renderDemoShell(true, <ChildMountFetchProbe />);
+      await waitFor(() => {
+        expect(screen.getByTestId('child-mount-caps')).toHaveTextContent('true');
+      });
+      expect(uninterceptedCapabilitiesCalls).toHaveLength(0);
+    } finally {
+      window.fetch = originalFetch;
+    }
+  });
+
+  it('renders subpath-safe showcase links to /, /api/, and /storybook/ in both expanded and collapsed toolbar states', async () => {
     process.env.NEXT_PUBLIC_BASE_PATH = '/wedding_website/demo';
     const { unmount } = renderDemoShell(true);
 
@@ -142,24 +196,26 @@ describe('DemoToolbar & DemoProvider', () => {
     };
 
     // Expanded state on repository subpath
-    expect(screen.getByTestId('demo-toolbar-toggle')).toHaveAttribute('aria-expanded', 'true');
+    const toggleBtn = await screen.findByTestId('demo-toolbar-toggle');
+    expect(toggleBtn).toHaveAttribute('aria-expanded', 'true');
     assertShowcaseLinks('/wedding_website');
 
     // Collapsed state on repository subpath
-    fireEvent.click(screen.getByTestId('demo-toolbar-toggle'));
-    expect(screen.getByTestId('demo-toolbar-toggle')).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggleBtn);
+    expect(toggleBtn).toHaveAttribute('aria-expanded', 'false');
     assertShowcaseLinks('/wedding_website');
 
     unmount();
     delete process.env.NEXT_PUBLIC_BASE_PATH;
     renderDemoShell(true);
+    await screen.findByTestId('demo-toolbar-toggle');
     assertShowcaseLinks('');
   });
 
-  it('renders DemoToolbar with Invited Guest active by default and persists visitor selections across remounts', () => {
+  it('renders DemoToolbar with Invited Guest active by default and persists visitor selections across remounts', async () => {
     const { unmount } = renderDemoShell(true);
 
-    expect(screen.getByTestId('demo-toolbar')).toBeInTheDocument();
+    expect(await screen.findByTestId('demo-toolbar')).toBeInTheDocument();
     expect(screen.getByTestId('demo-persona-guest')).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByTestId('demo-persona-admin')).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByTestId('demo-persona-setup')).toHaveAttribute('aria-pressed', 'false');
@@ -178,7 +234,10 @@ describe('DemoToolbar & DemoProvider', () => {
     // Remount on another route and confirm persistence
     mockPathname = '/registry';
     renderDemoShell(true);
-    expect(screen.getByTestId('demo-toolbar-toggle')).toHaveAttribute('aria-expanded', 'false');
+    expect(await screen.findByTestId('demo-toolbar-toggle')).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
     expect(screen.getByTestId('probe-archetype')).toHaveTextContent('destination');
 
     // Expand toolbar again
@@ -188,6 +247,7 @@ describe('DemoToolbar & DemoProvider', () => {
 
   it('switches to Couple Admin to unlock Dashboard links and checkAdminClient(), and returns to Invited Guest on Navbar Logout', async () => {
     renderDemoShell(true);
+    expect(await screen.findByTestId('demo-toolbar')).toBeInTheDocument();
 
     expect(await checkAdminClient()).toBe(false);
     expect(screen.queryByRole('link', { name: /^Dashboard$/i })).not.toBeInTheDocument();
@@ -213,13 +273,15 @@ describe('DemoToolbar & DemoProvider', () => {
   it('switches to First-Run Setup and walks through all 5 SetupWizard steps locally without server requests', async () => {
     const fetchSpy = jest.spyOn(window, 'fetch');
     renderDemoShell(true);
+    expect(await screen.findByTestId('demo-toolbar')).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('demo-persona-setup'));
     expect(screen.getByTestId('demo-persona-setup')).toHaveAttribute('aria-pressed', 'true');
 
-    // Step 1: Unlock wizard
-    expect(screen.getByLabelText(/Admin Password/i)).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText(/Admin Password/i), {
+    // Step 1: Unlock wizard (SetupWizard is dynamically imported on demand)
+    const passwordInput = await screen.findByLabelText(/Admin Password/i);
+    expect(passwordInput).toBeInTheDocument();
+    fireEvent.change(passwordInput, {
       target: { value: 'demo-showcase-pass' },
     });
     fireEvent.click(screen.getByRole('button', { name: /^Continue$/i }));
@@ -260,8 +322,9 @@ describe('DemoToolbar & DemoProvider', () => {
     fetchSpy.mockRestore();
   });
 
-  it('switches live across all 3 wedding archetypes and all 5 visual theme presets', () => {
+  it('switches live across all 3 wedding archetypes and all 5 visual theme presets', async () => {
     renderDemoShell(true);
+    expect(await screen.findByTestId('demo-toolbar')).toBeInTheDocument();
 
     // Classic defaults
     expect(screen.getByTestId('probe-first-item')).toHaveTextContent('KitchenAid Stand Mixer');
@@ -297,11 +360,12 @@ describe('DemoToolbar & DemoProvider', () => {
     }
   });
 
-  it('resets local overrides, persona, archetype, and theme preset when clicking Reset Demo', () => {
+  it('resets local overrides, persona, archetype, and theme preset when clicking Reset Demo', async () => {
     window.localStorage.setItem('setup_wizard_draft', JSON.stringify({ step: 4 }));
     window.localStorage.setItem('isAdminLoggedIn', 'true');
 
     renderDemoShell(true);
+    expect(await screen.findByTestId('demo-toolbar')).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('demo-persona-admin'));
     fireEvent.change(screen.getByTestId('demo-archetype-select'), {
@@ -332,12 +396,13 @@ describe('DemoToolbar & DemoProvider', () => {
     disabledView.unmount();
 
     renderDemoShell(true);
-    fireEvent.click(screen.getByTestId('demo-sample-code-button'));
+    fireEvent.click(await screen.findByTestId('demo-sample-code-button'));
     expect(writeTextMock).toHaveBeenCalledWith('SMITH2026');
   });
 
   it('has zero axe accessibility violations in light and dark modes', async () => {
     const { container } = renderDemoShell(true);
+    expect(await screen.findByTestId('demo-toolbar')).toBeInTheDocument();
     const lightResults = await axe(container);
     expect(lightResults).toHaveNoViolations();
 
@@ -347,12 +412,15 @@ describe('DemoToolbar & DemoProvider', () => {
     document.documentElement.classList.remove('dark');
   });
 
-  it('resolves the parent Docs Portal link across root and GitHub Pages subpath base paths', () => {
+  it('resolves the parent Docs Portal link across root and GitHub Pages subpath base paths', async () => {
     const prevBase = process.env.NEXT_PUBLIC_BASE_PATH;
     try {
       process.env.NEXT_PUBLIC_BASE_PATH = '/wedding_website/demo';
       const { unmount } = renderDemoShell(true);
-      expect(screen.getByTestId('demo-portal-link')).toHaveAttribute('href', '/wedding_website/');
+      expect(await screen.findByTestId('demo-portal-link')).toHaveAttribute(
+        'href',
+        '/wedding_website/'
+      );
       expect(document.documentElement.dataset.staticDemo).toBe('true');
       unmount();
       expect(document.documentElement.dataset.staticDemo).toBeUndefined();

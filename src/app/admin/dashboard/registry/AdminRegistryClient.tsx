@@ -24,7 +24,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
 import { formatCurrency, formatDate } from '@/utils/intl';
 import { isDemoRuntimeFlagActive } from '@/lib/demo/runtimeFlag';
-import { buildRegistryEditItemHref } from '@/lib/sampleData/builder';
+import { buildRegistryEditItemHref } from '@/lib/sampleData/registryEditHref';
 
 type RegistryLayoutVariant = 'desktop' | 'mobile';
 

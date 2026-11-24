@@ -29,7 +29,7 @@ import {
 import { useRegistryCapabilities } from './useRegistryCapabilities';
 import { getItemTotalTargetAmount } from '../lib/registryStatusUtils';
 import { isDemoRuntimeFlagActive } from '@/lib/demo/runtimeFlag';
-import { buildRegistryEditItemHref } from '@/lib/sampleData/builder';
+import { buildRegistryEditItemHref } from '@/lib/sampleData/registryEditHref';
 
 export type SortOption = 'default' | 'price-asc' | 'price-desc' | 'most-wanted';
 

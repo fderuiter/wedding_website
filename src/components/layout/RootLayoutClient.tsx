@@ -24,8 +24,8 @@ import { useToast } from '@/components/ui/ToastProvider';
 import { useTheme } from '@/components/ThemeProvider';
 import type { ThemePreset } from '@/lib/theme/presets';
 import { MotionConfig, MotionGlobalConfig } from 'framer-motion';
+import dynamic from 'next/dynamic';
 import type { ContentNodeDTO } from '@/features/content';
-import SetupWizard from '@/components/setup/SetupWizard';
 import {
   ensureStaticDemoRuntime,
   useStaticDemoPageOverrides,
@@ -51,7 +51,14 @@ if (
 import type { PublicAppConfig } from '@/lib/config';
 import { withBasePath } from '@/lib/basePath';
 import { DemoProvider, useOptionalDemo } from '@/components/demo/DemoContext';
-import { DemoToolbar } from '@/components/demo/DemoToolbar';
+
+const SetupWizard = dynamic(() => import('@/components/setup/SetupWizard'), {
+  loading: () => null,
+});
+
+const DemoToolbar = dynamic(() =>
+  import('@/components/demo/DemoToolbar').then((mod) => mod.DemoToolbar)
+);
 
 /**
  * @interface RootLayoutClientProps
