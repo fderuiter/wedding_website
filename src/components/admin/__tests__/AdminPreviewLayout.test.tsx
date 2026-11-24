@@ -259,6 +259,7 @@ describe('AdminPreviewLayout studio draft preservation & accessibility', () => {
 
     expect(editorTab).toHaveAttribute('aria-selected', 'true');
     expect(previewTab).toHaveAttribute('aria-selected', 'false');
+    expect(leftPane).toHaveAttribute('data-scroll-region', '');
     expect(leftPane).toHaveClass('w-full', 'md:w-1/2');
     expect(rightPane).toHaveClass('hidden', 'md:flex');
 

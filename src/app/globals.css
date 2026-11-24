@@ -53,7 +53,7 @@
   --letter-spacing-heading: var(--letter-spacing-heading);
   --letter-spacing-body: var(--letter-spacing-body);
 
-  --spacing-header: 56px;
+  --spacing-header: 64px;
 
   --container-max-w: 64rem;
   --grid-gap: 1.5rem;
@@ -160,6 +160,9 @@
   --background: var(--color-background);
   --foreground: var(--color-foreground);
   --header-h: var(--spacing-header); /* Height of sticky header */
+  --sticky-top-extra: 0px; /* Height of stacked sticky bars below header */
+  --sticky-bottom-extra: 0px; /* Height of fixed bottom toolbars */
+  --focus-scroll-clearance: 8px; /* Focus-ring clearance per WCAG Technique C45 */
   --scale-factor: 1; /* Fluid scaling multiplier */
   --container-max-w: 64rem;
   --grid-gap: 1.5rem;
@@ -292,9 +295,67 @@ html:focus-within {
   }
 }
 
-/* Prevent anchor targets from hiding under the sticky header */
-[id] {
-  scroll-margin-top: var(--header-h);
+/* Root and nested scroll-padding formulas (WCAG Techniques C43 & C45) */
+html {
+  scroll-padding-top: calc(
+    var(--header-h, var(--spacing-header, 64px)) +
+      var(--sticky-top-extra, 0px) +
+      var(--focus-scroll-clearance, 8px)
+  );
+  scroll-padding-bottom: calc(
+    var(--sticky-bottom-extra, 0px) +
+      var(--focus-scroll-clearance, 8px)
+  );
+}
+
+[data-scroll-region] {
+  --local-sticky-top: 0px;
+  --local-sticky-bottom: 0px;
+  scroll-padding-top: calc(
+    var(--local-sticky-top, 0px) +
+      var(--focus-scroll-clearance, 8px)
+  );
+  scroll-padding-bottom: calc(
+    var(--local-sticky-bottom, 0px) +
+      var(--focus-scroll-clearance, 8px)
+  );
+}
+
+@media (max-height: 560px) {
+  html {
+    scroll-padding-top: min(
+      45vh,
+      calc(
+        var(--header-h, var(--spacing-header, 64px)) +
+          var(--sticky-top-extra, 0px) +
+          var(--focus-scroll-clearance, 8px)
+      )
+    );
+    scroll-padding-bottom: min(
+      45vh,
+      calc(
+        var(--sticky-bottom-extra, 0px) +
+          var(--focus-scroll-clearance, 8px)
+      )
+    );
+  }
+
+  [data-scroll-region] {
+    scroll-padding-top: min(
+      45vh,
+      calc(
+        var(--local-sticky-top, 0px) +
+          var(--focus-scroll-clearance, 8px)
+      )
+    );
+    scroll-padding-bottom: min(
+      45vh,
+      calc(
+        var(--local-sticky-bottom, 0px) +
+          var(--focus-scroll-clearance, 8px)
+      )
+    );
+  }
 }
 
 /* Focus styles */
@@ -317,6 +378,8 @@ html:focus-within {
 }
 .skip-link:focus,
 a.skip-link:focus {
+  position: fixed;
+  top: 0;
   left: 0;
   z-index: 100;
   color: #111827 !important;
@@ -409,6 +472,8 @@ a.skip-link, .skip-link {
   top: 0;
 }
 a.skip-link:focus, .skip-link:focus, a.skip-link:focus-visible, .skip-link:focus-visible {
+  position: fixed !important;
+  top: 0 !important;
   left: 0 !important;
   z-index: 100 !important;
   color: #111827 !important;

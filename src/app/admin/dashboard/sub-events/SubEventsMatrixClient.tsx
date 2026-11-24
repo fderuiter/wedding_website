@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'r
 import { QueryClient, QueryClientProvider, QueryClientContext } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/ToastProvider';
 import { Button } from '@/components/ui/Button';
+import { StickyBar } from '@/components/ui/useStickyOffset';
 import { Table } from '@/components/ui/Table';
 import { useAdminSubEvents } from '@/hooks/admin/useAdminSubEvents';
 import {
@@ -1194,7 +1195,11 @@ function SubEventsMatrixPageContent() {
 
       {/* Floating Multi-Guest Action Bar */}
       {selectedRowIds.length > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-2xl bg-gray-900 text-white dark:bg-gray-800 p-4 rounded-2xl shadow-2xl border border-gray-700 flex flex-wrap items-center justify-between gap-3 animate-fade-in">
+        <StickyBar
+          edge="bottom"
+          scope="document"
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-2xl bg-gray-900 text-white dark:bg-gray-800 p-4 rounded-2xl shadow-2xl border border-gray-700 flex flex-wrap items-center justify-between gap-3 animate-fade-in"
+        >
           <div className="flex items-center gap-2">
             <span className="font-bold px-2.5 py-1 bg-primary text-white rounded-lg text-xs tracking-wide uppercase">
               {selectedRowIds.length} Guests Selected
@@ -1212,7 +1217,7 @@ function SubEventsMatrixPageContent() {
               Clear Selection
             </Button>
           </div>
-        </div>
+        </StickyBar>
       )}
 
       <SubEventEditorModal

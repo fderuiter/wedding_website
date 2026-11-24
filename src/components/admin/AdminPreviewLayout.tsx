@@ -179,6 +179,7 @@ export default function AdminPreviewLayout({
       <div
         id="studio-left-pane"
         data-testid="studio-left-pane"
+        data-scroll-region=""
         className={`${
           mobilePane === 'editor' ? 'flex' : 'hidden'
         } md:flex flex-col w-full md:w-1/2 flex-1 min-h-0 md:h-full overflow-y-auto md:border-r border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xl z-10 relative`}
