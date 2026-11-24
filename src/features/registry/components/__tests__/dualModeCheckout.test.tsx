@@ -123,11 +123,22 @@ describe('Capability-Aware Dual-Mode Fund Checkout UI', () => {
   const mockOnClose = jest.fn();
   const mockOnContribute = jest.fn().mockResolvedValue(undefined);
   let postSpy: jest.SpyInstance;
+  let getSpy: jest.SpyInstance;
 
   beforeEach(() => {
     jest.clearAllMocks();
     capturedElementsOptionsHistory.length = 0;
     latestElementsOptions = undefined;
+    getSpy = jest.spyOn(apiClient, 'get').mockImplementation(async (url) => {
+      if (url.includes('/api/registry/validate-code')) {
+        return {
+          valid: true,
+          code: 'INVITE26',
+          guestName: 'Morgan Guest',
+        };
+      }
+      return { isVerified: false };
+    });
     postSpy = jest.spyOn(apiClient, 'post').mockImplementation(async (_url, body) => {
       const payload = (body ?? {}) as {
         amount?: number;
@@ -147,6 +158,7 @@ describe('Capability-Aware Dual-Mode Fund Checkout UI', () => {
 
   afterEach(() => {
     postSpy.mockRestore();
+    getSpy.mockRestore();
   });
 
   it('Acceptance Criterion 2: opening a fund with a transfer handle without Stripe keys triggers zero requests to card endpoints', async () => {
@@ -194,6 +206,10 @@ describe('Capability-Aware Dual-Mode Fund Checkout UI', () => {
       </Overlay>
     );
 
+    fireEvent.change(screen.getByPlaceholderText('ABCDEF12'), { target: { value: 'INVITE26' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
+    await screen.findByText(/Code verified!/i);
+
     fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Morgan Guest' } });
     fireEvent.change(screen.getByLabelText(/Contribution Amount/i), { target: { value: '125' } });
     fireEvent.change(screen.getByLabelText(/Personal Message/i), {
@@ -207,7 +223,7 @@ describe('Capability-Aware Dual-Mode Fund Checkout UI', () => {
         'fund-hybrid-1',
         'Morgan Guest',
         125,
-        undefined,
+        'INVITE26',
         'Enjoy gelato in Positano!'
       );
     });
@@ -748,6 +764,10 @@ describe('Capability-Aware Dual-Mode Fund Checkout UI', () => {
         />
       </Overlay>
     );
+
+    fireEvent.change(screen.getByPlaceholderText('ABCDEF12'), { target: { value: 'INVITE26' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
+    await screen.findByText(/Code verified!/i);
 
     fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Morgan Guest' } });
     fireEvent.change(screen.getByLabelText(/Contribution Amount/i), { target: { value: '125' } });

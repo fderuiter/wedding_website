@@ -688,6 +688,16 @@ describe('Custom PostgreSQL schema & TLS migration/runtime parity integration', 
         expect(retagged).toHaveLength(2);
         expect(retagged[0]?.partyTags).toContain('Rehearsal');
 
+        // Raw SQL #9b: RegistryRepository.contributeToItem with verified code (FOR UPDATE on InvitationCode)
+        const inviteReserved = await registryRepository.contributeToItem(groupFund.id, {
+          name: 'Guest Epsilon Updated',
+          amount: 25,
+          code: 'TENANT01',
+        });
+        expect(
+          inviteReserved.contributors?.some((c) => c.name === 'Guest Epsilon Updated')
+        ).toBe(true);
+
         // Raw SQL #10: SubEventService.getAccessMatrix
         const welcomeSubEvent = await prisma.subEvent.create({
           data: {

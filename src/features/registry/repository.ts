@@ -15,6 +15,7 @@ import {
   isStaticExportBuild,
 } from '@/lib/sampleData/builder';
 import type {
+  ActiveCatalogCapabilitiesSummary,
   IRegistryRepository,
   GetItemsOptions,
   PaginatedRegistryItems,
@@ -31,7 +32,9 @@ import {
   RegistryItemSchema,
   RegistryItemDTO,
 } from './schemas';
-import { isAddressComplete } from './utils/invitation';
+import { hasAddressCollectionTag, isAddressComplete } from './utils/invitation';
+
+const MAX_ACTIVE_HOUSEHOLD_RESERVATIONS = 5;
 
 /**
  * @class RegistryRepository
@@ -190,6 +193,61 @@ class RegistryRepository implements IRegistryRepository {
       include,
     });
     return item ? RegistryItemSchema.parse(item) : null;
+  }
+
+  async getActiveCatalogCapabilitiesSummary(): Promise<ActiveCatalogCapabilitiesSummary> {
+    if (isStaticExportBuild()) {
+      const seeded = buildArchetypeSeedData('classic').registryItems.filter(
+        (item) => !item.isSample && !item.purchased
+      );
+      return {
+        hasActivePhysicalItems: seeded.some(
+          (item) =>
+            (item.itemType ?? 'PHYSICAL') === 'PHYSICAL' && !item.isGroupGift
+        ),
+        hasActiveFundsOrGroupGifts: seeded.some(
+          (item) =>
+            item.itemType === 'CASH_FUND' ||
+            item.itemType === 'EXPERIENCE_FUND' ||
+            Boolean(item.isGroupGift)
+        ),
+      };
+    }
+
+    if (typeof this.client?.registryItem?.findFirst === 'function') {
+      const [activePhysical, activeFundOrGroup] = await Promise.all([
+        this.client.registryItem.findFirst({
+          where: {
+            isSample: false,
+            purchased: false,
+            itemType: 'PHYSICAL',
+            isGroupGift: false,
+          },
+          select: { id: true },
+        }),
+        this.client.registryItem.findFirst({
+          where: {
+            isSample: false,
+            purchased: false,
+            OR: [
+              { itemType: { in: ['CASH_FUND', 'EXPERIENCE_FUND'] } },
+              { isGroupGift: true },
+            ],
+          },
+          select: { id: true },
+        }),
+      ]);
+
+      return {
+        hasActivePhysicalItems: Boolean(activePhysical),
+        hasActiveFundsOrGroupGifts: Boolean(activeFundOrGroup),
+      };
+    }
+
+    return {
+      hasActivePhysicalItems: true,
+      hasActiveFundsOrGroupGifts: true,
+    };
   }
 
   private async persistItem(
@@ -436,11 +494,40 @@ class RegistryRepository implements IRegistryRepository {
 
       if (contribution.code && contribution.code.trim()) {
         const inviteRecord = await txClient.invitationCode.findUnique({
-          where: { code: contribution.code.trim().toUpperCase(), isSample: false }
+          where: { code: contribution.code.trim().toUpperCase(), isSample: false },
         });
 
-        if (!inviteRecord || inviteRecord.isSample) {
+        if (
+          !inviteRecord ||
+          inviteRecord.isSample ||
+          hasAddressCollectionTag(inviteRecord.partyTags) ||
+          (typeof inviteRecord.source === 'string' &&
+            inviteRecord.source.trim().toLowerCase() === 'address-collection')
+        ) {
           throw new Error('Invalid invitation code.');
+        }
+
+        if (!contribution.stripePaymentIntentId) {
+          if (typeof txClient.$queryRaw === 'function') {
+            const invitationCodeTable = Prisma.raw(qualifyPostgresTable('InvitationCode'));
+            await txClient.$queryRaw(
+              Prisma.sql`SELECT id FROM ${invitationCodeTable} WHERE id = ${inviteRecord.id} FOR UPDATE`
+            );
+          }
+          if (typeof txClient.contributor?.count === 'function') {
+            const activeReservationCount = await txClient.contributor.count({
+              where: {
+                invitationCodeId: inviteRecord.id,
+                status: 'RESERVED',
+              },
+            });
+            if (activeReservationCount >= MAX_ACTIVE_HOUSEHOLD_RESERVATIONS) {
+              throw new ApiError(
+                429,
+                `Your household already has ${MAX_ACTIVE_HOUSEHOLD_RESERVATIONS} pending gift reservations. Please confirm or release an existing reservation before claiming another gift.`
+              );
+            }
+          }
         }
 
         finalName = contribution.name || inviteRecord.guestName;
@@ -452,25 +539,6 @@ class RegistryRepository implements IRegistryRepository {
           inviteRecord.email.trim().length > 0
         ) {
           emailToSave = inviteRecord.email.trim();
-        }
-      } else if (emailToSave && typeof txClient.invitationCode?.findMany === 'function') {
-        const normalizedLookupEmail = emailToSave.toLowerCase();
-        const emailMatches = await txClient.invitationCode.findMany({
-          where: {
-            email: { equals: normalizedLookupEmail, mode: 'insensitive' },
-            isSample: false,
-          },
-          take: 2,
-        });
-        if (
-          Array.isArray(emailMatches) &&
-          emailMatches.length === 1 &&
-          emailMatches[0] &&
-          !emailMatches[0].isSample
-        ) {
-          linkedInviteRecord = emailMatches[0];
-          invitationCodeId = linkedInviteRecord.id;
-          finalName = contribution.name || linkedInviteRecord.guestName;
         }
       }
 
@@ -494,6 +562,7 @@ class RegistryRepository implements IRegistryRepository {
       }
 
       if (
+        Boolean(contribution.code && contribution.code.trim()) &&
         linkedInviteRecord &&
         typeof txClient.invitationCode?.update === 'function' &&
         isAddressComplete({
@@ -503,16 +572,18 @@ class RegistryRepository implements IRegistryRepository {
           zipCode: zipCodeToSave,
         })
       ) {
-        const existingComplete = isAddressComplete(linkedInviteRecord);
-        const sameStreetAndZip =
-          existingComplete &&
-          linkedInviteRecord.addressLine1?.trim().toLowerCase() ===
-            addressLine1ToSave?.toLowerCase() &&
-          linkedInviteRecord.zipCode?.trim().toLowerCase() === zipCodeToSave?.toLowerCase();
+        const existingStreet = linkedInviteRecord.addressLine1?.trim() || '';
+        const existingZip = linkedInviteRecord.zipCode?.trim() || '';
+        const hasConflictingStreet =
+          Boolean(existingStreet) &&
+          existingStreet.toLowerCase() !== addressLine1ToSave?.toLowerCase();
+        const hasConflictingZip =
+          Boolean(existingZip) &&
+          existingZip.toLowerCase() !== zipCodeToSave?.toLowerCase();
 
-        if (!existingComplete || sameStreetAndZip) {
+        if (!hasConflictingStreet && !hasConflictingZip) {
           const backfillData: Record<string, string> = {};
-          if (!linkedInviteRecord.addressLine1?.trim() && addressLine1ToSave) {
+          if (!existingStreet && addressLine1ToSave) {
             backfillData.addressLine1 = addressLine1ToSave;
           }
           if (!linkedInviteRecord.addressLine2?.trim() && addressLine2ToSave) {
@@ -524,7 +595,7 @@ class RegistryRepository implements IRegistryRepository {
           if (!linkedInviteRecord.state?.trim() && stateToSave) {
             backfillData.state = stateToSave;
           }
-          if (!linkedInviteRecord.zipCode?.trim() && zipCodeToSave) {
+          if (!existingZip && zipCodeToSave) {
             backfillData.zipCode = zipCodeToSave;
           }
           if (!linkedInviteRecord.country?.trim() && countryToSave) {
@@ -868,7 +939,10 @@ class RegistryRepository implements IRegistryRepository {
 
       const updated = await txClient.contributor.update({
         where: { id: contributorId },
-        data: { status: 'CONFIRMED' },
+        data: {
+          status: 'CONFIRMED',
+          alertEmailSentAt: null,
+        },
       });
       await createAuditSnapshot('Contributor', updated.id, updated, author, txClient);
 
@@ -1225,6 +1299,7 @@ class RegistryRepository implements IRegistryRepository {
         );
       }
 
+      const previousStatus = this.normalizeStatus(existing.status);
       const updatePayload: Record<string, unknown> = {};
       if (data.name !== undefined) {
         updatePayload.name = data.name.trim();
@@ -1240,6 +1315,9 @@ class RegistryRepository implements IRegistryRepository {
       }
       if (data.status !== undefined) {
         updatePayload.status = data.status;
+        if (data.status === 'CONFIRMED' && previousStatus !== 'CONFIRMED') {
+          updatePayload.alertEmailSentAt = null;
+        }
         if (
           (data.status === 'CANCELLED' || data.status === 'REFUNDED') &&
           (existing.thankYouStatus || 'Unsent').trim().toLowerCase() === 'unsent'

@@ -49,7 +49,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     name,
     email,
     amount,
-    code,
+    code: _ignoredClientCode,
     message,
     coverFee,
     paymentIntentId,
@@ -65,9 +65,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   } = parseResult.data;
 
   const targetItemSettledPromise = settle(() => registryService.getItemById(itemId));
-  const guestSessionSettledPromise = !code
-    ? settle(() => getGuestInviteSession(request))
-    : null;
+  const guestSessionSettledPromise = settle(() => getGuestInviteSession(request));
 
   let hasStripeConfigError = false;
   let stripeConfigError: unknown = null;
@@ -119,15 +117,24 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     );
   }
 
-  let finalCode = code;
-  if (!finalCode && guestSessionSettledPromise) {
-    const sessionSettled = await guestSessionSettledPromise;
-    if (sessionSettled.status === 'rejected') {
-      throw sessionSettled.reason;
-    }
-    if (sessionSettled.value?.code) {
-      finalCode = sessionSettled.value.code;
-    }
+  const [sessionSettled, isAdminSettled] = await Promise.all([
+    guestSessionSettledPromise,
+    isAdminSettledPromise,
+  ]);
+  if (sessionSettled.status === 'rejected') {
+    throw sessionSettled.reason;
+  }
+  if (isAdminSettled.status === 'rejected') {
+    throw isAdminSettled.reason;
+  }
+  const finalCode = sessionSettled.value?.code;
+  const isAdmin = isAdminSettled.value;
+
+  if (!paymentIntentId && !finalCode && !isAdmin) {
+    throw new ApiError(
+      403,
+      'Please verify your household invitation code before claiming a gift or recording a direct transfer.'
+    );
   }
 
   const effectiveCoverFee = isPayableGroupGift && !paymentIntentId ? false : Boolean(coverFee);
@@ -215,6 +222,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
       config,
       requestUrl,
       isReservation,
+      verifiedInvitationCode: finalCode,
     });
     return notificationDispatchPromise;
   };
@@ -233,11 +241,6 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     await runNotifications();
   }
 
-  const isAdminSettled = await isAdminSettledPromise;
-  if (isAdminSettled.status === 'rejected') {
-    throw isAdminSettled.reason;
-  }
-  const isAdmin = isAdminSettled.value;
   if (!isAdmin) {
     let claimActions: GuestClaimActions | undefined;
     if (!stripePaymentIntentId) {
@@ -285,4 +288,4 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     );
   }
   return NextResponse.json(sanitizeRegistryItem(updatedItem));
-});
+}, { limit: 20, windowMs: 60 * 1000, keyPrefix: 'registry-contribute' });

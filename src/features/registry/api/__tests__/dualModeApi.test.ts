@@ -11,12 +11,17 @@ import { registryService } from '../../service';
 import { createRegistryRepository } from '../../repository';
 import { getAppConfig } from '@/lib/config';
 import { isAdminRequest } from '@/core/auth/auth.server';
+import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { getStripeInstance } from '@/lib/stripe';
 
 jest.mock('../../service', () => ({
   registryService: {
     getItemById: jest.fn(),
     contributeToItem: jest.fn(),
+    getActiveCatalogCapabilitiesSummary: jest.fn().mockResolvedValue({
+      hasActivePhysicalItems: true,
+      hasActiveFundsOrGroupGifts: true,
+    }),
   },
 }));
 
@@ -209,13 +214,33 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
   });
 
   describe('POST /api/registry/contribute', () => {
-    it('records self-reported direct transfer with 0% fee (coverFee=false) without requiring paymentIntentId', async () => {
+    it('rejects unverified direct transfer without guest_invite_session with HTTP 403 and records 0% fee direct transfer when guest_invite_session is verified', async () => {
+      const unverifiedRes = await contributeToRegistry(
+        new NextRequest('http://localhost:3000/api/registry/contribute', {
+          method: 'POST',
+          body: JSON.stringify({
+            itemId: 'fund-dual-1',
+            name: 'Sam Direct',
+            amount: 120,
+            code: 'SPOOFED1',
+          }),
+        })
+      );
+      expect(unverifiedRes.status).toBe(403);
+      expect(registryService.contributeToItem).not.toHaveBeenCalled();
+
+      (getGuestInviteSession as jest.Mock).mockResolvedValueOnce({
+        code: 'INVITE26',
+        guestName: 'Sam Household',
+      });
+
       const req = new NextRequest('http://localhost:3000/api/registry/contribute', {
         method: 'POST',
         body: JSON.stringify({
           itemId: 'fund-dual-1',
           name: 'Sam Direct',
           amount: 120,
+          code: 'SPOOFED1',
           message: 'Sent via Venmo!',
           coverFee: true, // Should be forced to false for unverified direct transfers
         }),
@@ -228,7 +253,7 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
         name: 'Sam Direct',
         email: undefined,
         amount: 120,
-        code: undefined,
+        code: 'INVITE26',
         message: 'Sent via Venmo!',
         coverFee: false,
       });

@@ -49,6 +49,7 @@ export type {
   ThankYouTemplate,
   ThankYouTemplateTokens,
   RegistryShippingAddress,
+  ActiveCatalogCapabilitiesSummary,
   OrderTrackingDetails,
   ContributorAddressDetails,
   GuestClaimActions,

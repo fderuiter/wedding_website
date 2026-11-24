@@ -127,7 +127,7 @@ describe('ProjectInfo Page', () => {
     }
   });
 
-  it('exposes subpath-safe showcase links in demo mode only and omits them in standalone mode', () => {
+  it('exposes subpath-safe showcase links in demo mode only and omits them in standalone mode', async () => {
     process.env.NEXT_PUBLIC_BASE_PATH = '/wedding_website/demo';
 
     const standalone = renderWithDemo(false);
@@ -135,7 +135,7 @@ describe('ProjectInfo Page', () => {
     standalone.unmount();
 
     renderWithDemo(true);
-    expect(screen.getByTestId('project-info-showcase-links')).toBeInTheDocument();
+    expect(await screen.findByTestId('project-info-showcase-links')).toBeInTheDocument();
 
     const docsLink = screen.getByTestId('project-info-link-docs');
     const apiLink = screen.getByTestId('project-info-link-api');
@@ -153,6 +153,7 @@ describe('ProjectInfo Page', () => {
 
   it('has zero axe accessibility violations in light and dark modes', async () => {
     const { container } = renderWithDemo(true, true);
+    await screen.findByRole('heading', { level: 1, name: /about this project/i });
     const lightResults = await axe(container);
     expect(lightResults).toHaveNoViolations();
 

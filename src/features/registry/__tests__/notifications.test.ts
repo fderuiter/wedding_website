@@ -5,6 +5,7 @@ import * as tls from 'node:tls';
 import { validateAndResolveHost } from '@/utils/ssrf';
 import { isAllowedSmtpPort } from '@/utils/validationPrimitives';
 import { getAppConfig } from '@/lib/config';
+import { prisma } from '@/lib/prisma';
 import {
   dispatchContributionNotifications,
   dispatchConfirmedContributionAlert,
@@ -389,6 +390,12 @@ describe('Registry Transactional HTML Notifications & Plain-Text Thank-You Escap
       releaseContributorEmailSend: jest.fn().mockResolvedValue(undefined),
     } as any;
 
+    (prisma.invitationCode.findUnique as jest.Mock).mockResolvedValueOnce({
+      email: 'guest@example.com',
+      isSample: false,
+      source: 'admin',
+    });
+
     await dispatchContributionNotifications({
       itemId: 'fund-zelle',
       updatedItem: {
@@ -408,7 +415,12 @@ describe('Registry Transactional HTML Notifications & Plain-Text Thank-You Escap
           },
         ],
       },
-      contribution: { name: 'Zelle Guest', email: 'guest@example.com', amount: 120 },
+      contribution: {
+        name: 'Zelle Guest',
+        email: 'guest@example.com',
+        amount: 120,
+      },
+      verifiedInvitationCode: 'ZELLE123',
       config,
       repository: mockRepo,
       isReservation: true,
@@ -419,6 +431,52 @@ describe('Registry Transactional HTML Notifications & Plain-Text Thank-You Escap
     expect(fetchCalls[0].html).not.toContain('mailto:');
     expect(fetchCalls[0].html).not.toContain('tel:');
 
+    // Anti-relay: unverified or spoofed RESERVED claims never send guest confirmation emails, while still sending couple reservation alerts
+    fetchCalls.length = 0;
+    (prisma.invitationCode.findUnique as jest.Mock).mockResolvedValueOnce({
+      email: null,
+      isSample: false,
+      source: 'admin',
+    });
+    await dispatchContributionNotifications({
+      itemId: 'fund-zelle',
+      updatedItem: {
+        id: 'fund-zelle',
+        name: 'Home Down Payment',
+        itemType: 'CASH_FUND',
+        isGroupGift: true,
+        paymentHandleType: 'Zelle',
+        paymentHandle: 'couple@example.com',
+        contributors: [
+          {
+            id: 'c-spoofed',
+            name: 'Spoofed Guest',
+            email: 'victim@thirdparty.example',
+            amount: 120,
+            status: 'RESERVED',
+          },
+        ],
+      },
+      contribution: {
+        name: 'Spoofed Guest',
+        email: 'victim@thirdparty.example',
+        amount: 120,
+      },
+      verifiedInvitationCode: 'NOEMAIL1',
+      config: {
+        ...config,
+        contactEmail: 'couple@wedding.example',
+      },
+      repository: mockRepo,
+      isReservation: true,
+    });
+
+    expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0].to).toBe('couple@wedding.example');
+    expect(fetchCalls[0].subject).toContain('New Registry Reservation:');
+    expect(fetchCalls[0].html).toContain('Direct Transfer (Zelle) (Reserved)');
+
+    fetchCalls.length = 0;
     await dispatchPoliteReminderNotification({
       contributor: {
         id: 'c-cashapp',
@@ -437,8 +495,8 @@ describe('Registry Transactional HTML Notifications & Plain-Text Thank-You Escap
       config,
     });
 
-    expect(fetchCalls).toHaveLength(2);
-    expect(fetchCalls[1].html).toContain('https://cash.app/$happycouple/45.00');
+    expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0].html).toContain('https://cash.app/$happycouple/45.00');
   });
 
   it.each(['resend', 'sendgrid', 'smtp'] as const)(

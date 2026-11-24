@@ -175,6 +175,25 @@ describe('POST /api/registry/payment-intent', () => {
     );
   });
 
+  it('ignores client-supplied invitation code in PaymentIntent metadata when guest_invite_session cookie is absent', async () => {
+    const request = new NextRequest('http://localhost:3000/api/registry/payment-intent', {
+      method: 'POST',
+      body: JSON.stringify({
+        itemId: 'fund-101',
+        amount: 100,
+        coverFee: false,
+        name: 'Unverified Card Guest',
+        code: 'SPOOFED8',
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(200);
+    const createPayload = mockPaymentIntentsCreate.mock.calls[0][0];
+    expect(createPayload.metadata.invitationCode).toBe('');
+    expect(createPayload).not.toHaveProperty('receipt_email');
+  });
+
   it('populates receipt_email on PaymentIntent update and clears it when the guest removes their email', async () => {
     // 1. Update with guest email present
     const requestWithEmail = new NextRequest('http://localhost:3000/api/registry/payment-intent', {
