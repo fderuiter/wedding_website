@@ -133,6 +133,7 @@ concurrency:
 jobs:
   preflight:
     name: Validate Inputs & Database Compatibility
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -152,6 +153,7 @@ jobs:
     steps:
       - name: Log Rollback Request Details
         id: validate
+        if: always()
         env:
           TARGET_ENV: ${{ inputs.target_environment || 'production' }}
           ROLLBACK_ENV: ${{ inputs.rollback_environment }}
@@ -250,7 +252,7 @@ jobs:
 
       - name: Verify Rollback Digest Deployment History
         id: verify_deployment
-        if: "!inputs.dry_run && (steps.validate.outputs.effective_digest != '' || github.event_name == 'workflow_dispatch')"
+        if: "always() && steps.validate.outcome == 'success' && !inputs.dry_run && (steps.validate.outputs.effective_digest != '' || github.event_name == 'workflow_dispatch')"
         timeout-minutes: 3
         env:
           GH_TOKEN: ${{ github.token }}
@@ -297,24 +299,76 @@ jobs:
                 --signer-workflow "$RESOLVED_SIGNER" \
                 --format json 2>/dev/null || true)
               if [ -n "$ATTESTATION_JSON" ]; then
-                ATTESTED_SHA=$(printf '%s' "$ATTESTATION_JSON" | jq -r '
-                  [
-                    (if type == "array" then .[] else . end)
-                    | (
-                        ((.verificationResult.statement.predicate // .statement.predicate // .predicate // empty) | (
-                          .buildDefinition.externalParameters.inputs.commit_sha,
-                          (.buildDefinition.resolvedDependencies[]? | (.digest.gitCommit, .digest.sha1)),
-                          .buildDefinition.internalParameters.github.sha,
-                          .invocation.configSource.digest.sha1,
-                          (.materials[]? | (.digest.gitCommit, .digest.sha1))
-                        )),
-                        .verificationResult.signature.certificate.sourceRepositoryDigest,
-                        .verificationResult.statement.subject[]?.annotations["org.opencontainers.image.revision"],
-                        .statement.subject[]?.annotations["org.opencontainers.image.revision"]
+                RAW_MANIFEST=""
+                if command -v docker >/dev/null 2>&1; then
+                  ensure_ghcr_login
+                  RAW_MANIFEST=$(docker buildx imagetools inspect --raw "$IMAGE_URI" 2>/dev/null || true)
+                fi
+
+                ATTESTED_SHA=""
+                if [ -f ./scripts/resolve-oci-provenance.sh ]; then
+                  if ! PROVENANCE_ROW=$(ATTESTATION_JSON="$ATTESTATION_JSON" RAW_MANIFEST_JSON="$RAW_MANIFEST" bash ./scripts/resolve-oci-provenance.sh --image-label "$IMAGE_URI"); then
+                    exit 1
+                  fi
+                  IFS='|' read -r ATTESTED_SHA _ _ _ <<< "$PROVENANCE_ROW"
+                else
+                  INDEX_REVISION=""
+                  if [[ "${RAW_MANIFEST#"${RAW_MANIFEST%%[![:space:]]*}"}" == \{* ]]; then
+                    INDEX_REVISION=$(printf '%s' "$RAW_MANIFEST" | jq -r '
+                      (
+                        .annotations["org.opencontainers.image.revision"]
+                        // .config.Labels["org.opencontainers.image.revision"]
+                        // ([.manifests[]?.annotations["org.opencontainers.image.revision"] | select(type == "string" and test("^[a-fA-F0-9]{40}$"))][0])
+                        // empty
                       )
-                    | select(type == "string" and test("^[a-fA-F0-9]{40}$"))
-                  ][0] // empty
-                ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+                    ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+                    if [[ ! "$INDEX_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
+                      INDEX_REVISION=""
+                    fi
+                  fi
+
+                  SLSA_INPUT_REVISION=$(printf '%s' "$ATTESTATION_JSON" | jq -r '
+                    [
+                      (if type == "array" then .[] else . end)
+                      | (.verificationResult.statement.predicate // .statement.predicate // .predicate // empty)
+                      | .buildDefinition.externalParameters.inputs.commit_sha
+                      | select(type == "string" and test("^[a-fA-F0-9]{40}$"))
+                    ][0] // empty
+                  ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+                  if [[ ! "$SLSA_INPUT_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
+                    SLSA_INPUT_REVISION=""
+                  fi
+
+                  if [ -n "$INDEX_REVISION" ] && [ -n "$SLSA_INPUT_REVISION" ] && [ "$INDEX_REVISION" != "$SLSA_INPUT_REVISION" ]; then
+                    echo "::error::Attested OCI index revision '${INDEX_REVISION}' conflicts with SLSA input commit_sha '${SLSA_INPUT_REVISION}' for '${IMAGE_URI}'. Blocking rollback."
+                    exit 1
+                  fi
+
+                  SLSA_REVISION=$(printf '%s' "$ATTESTATION_JSON" | jq -r '
+                    [
+                      (if type == "array" then .[] else . end)
+                      | (
+                          .verificationResult.statement.subject[]?.annotations["org.opencontainers.image.revision"],
+                          .statement.subject[]?.annotations["org.opencontainers.image.revision"],
+                          ((.verificationResult.statement.predicate // .statement.predicate // .predicate // empty) | (
+                            .buildDefinition.externalParameters.inputs.commit_sha,
+                            (.buildDefinition.resolvedDependencies[]? | (.digest.gitCommit, .digest.sha1)),
+                            .buildDefinition.internalParameters.github.sha,
+                            .invocation.configSource.digest.sha1,
+                            (.materials[]? | (.digest.gitCommit, .digest.sha1))
+                          )),
+                          .verificationResult.signature.certificate.sourceRepositoryDigest
+                        )
+                      | select(type == "string" and test("^[a-fA-F0-9]{40}$"))
+                    ][0] // empty
+                  ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+                  if [[ ! "$SLSA_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
+                    SLSA_REVISION=""
+                  fi
+
+                  ATTESTED_SHA="${INDEX_REVISION:-${SLSA_REVISION}}"
+                fi
+
                 if [ -n "$ATTESTED_SHA" ] && [ -n "$NORMALIZED_CURRENT_SHA" ] && [ "$ATTESTED_SHA" = "$NORMALIZED_CURRENT_SHA" ]; then
                   echo "::error::Rollback image digest '${EFFECTIVE_DIGEST}' was built from the failing commit SHA '${RESOLVED_CURRENT_SHA}'. Specify a prior healthy deployment digest."
                   exit 1
@@ -322,28 +376,12 @@ jobs:
               fi
             fi
 
-            if command -v docker >/dev/null 2>&1; then
+            if command -v docker >/dev/null 2>&1 && [[ "$NORMALIZED_CURRENT_SHA" =~ ^[a-f0-9]{40}$ ]]; then
               ensure_ghcr_login
-              RAW_MANIFEST=$(docker buildx imagetools inspect --raw "$IMAGE_URI" 2>/dev/null || true)
-              if [[ "${RAW_MANIFEST#"${RAW_MANIFEST%%[![:space:]]*}"}" == \{* ]]; then
-                MANIFEST_REV=$(printf '%s' "$RAW_MANIFEST" | jq -r '
-                  .annotations["org.opencontainers.image.revision"]
-                  // .config.Labels["org.opencontainers.image.revision"]
-                  // ([.manifests[]?.annotations["org.opencontainers.image.revision"] | select(type == "string" and test("^[a-fA-F0-9]{40}$"))][0])
-                  // empty
-                ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
-                if [ -n "$MANIFEST_REV" ] && [ -n "$NORMALIZED_CURRENT_SHA" ] && [ "$MANIFEST_REV" = "$NORMALIZED_CURRENT_SHA" ]; then
-                  echo "::error::Rollback image digest '${EFFECTIVE_DIGEST}' matches OCI revision '${RESOLVED_CURRENT_SHA}' (CURRENT_SHA). Specify a prior healthy deployment digest."
-                  exit 1
-                fi
-              fi
-
-              if [[ "$NORMALIZED_CURRENT_SHA" =~ ^[a-f0-9]{40}$ ]]; then
-                CURRENT_SHA_DIGEST=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "ghcr.io/${REPO_LOWER}:${NORMALIZED_CURRENT_SHA}" 2>/dev/null | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]' || true)
-                if [ -n "$CURRENT_SHA_DIGEST" ] && [ "$CURRENT_SHA_DIGEST" = "$NORMALIZED_DIGEST" ]; then
-                  echo "::error::Rollback image digest '${EFFECTIVE_DIGEST}' matches the image digest of failing commit SHA '${RESOLVED_CURRENT_SHA}'. Specify a prior healthy deployment digest."
-                  exit 1
-                fi
+              CURRENT_SHA_DIGEST=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "ghcr.io/${REPO_LOWER}:${NORMALIZED_CURRENT_SHA}" 2>/dev/null | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]' || true)
+              if [ -n "$CURRENT_SHA_DIGEST" ] && [ "$CURRENT_SHA_DIGEST" = "$NORMALIZED_DIGEST" ]; then
+                echo "::error::Rollback image digest '${EFFECTIVE_DIGEST}' matches the image digest of failing commit SHA '${RESOLVED_CURRENT_SHA}'. Specify a prior healthy deployment digest."
+                exit 1
               fi
             fi
           fi
@@ -448,18 +486,23 @@ jobs:
           echo "✅ Verified prior successful '${TARGET_ENV}' GitHub Deployment #${VERIFIED_DEPLOYMENT_ID} for rollback target '${EFFECTIVE_DIGEST:-$EFFECTIVE_TAG}'."
 
       - name: Checkout Repository
+        id: checkout
+        if: "always() && steps.validate.outcome == 'success' && (steps.verify_deployment.outcome == 'success' || steps.verify_deployment.outcome == 'skipped')"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.commit_sha }}
           persist-credentials: false
 
       - name: Setup Node.js
+        id: setup_node
+        if: "always() && steps.checkout.outcome == 'success'"
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: '.nvmrc'
 
       - name: Pre-Rollback Database Compatibility Safety Gate
         id: db_safety_check
+        if: "always() && steps.setup_node.outcome == 'success'"
         env:
           TARGET_ENV: ${{ inputs.target_environment || 'production' }}
           PREVIOUS_TAG: ${{ steps.validate.outputs.effective_tag }}
@@ -475,7 +518,15 @@ jobs:
 
       - name: Record Preflight Failure Stage
         id: record_failure
-        if: failure()
+        if: >-
+          always() &&
+          (
+            steps.validate.outcome != 'success' ||
+            steps.verify_deployment.outcome == 'failure' ||
+            steps.checkout.outcome != 'success' ||
+            steps.setup_node.outcome != 'success' ||
+            steps.db_safety_check.outcome != 'success'
+          )
         env:
           VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
           VERIFY_DEPLOYMENT_OUTCOME: ${{ steps.verify_deployment.outcome }}
@@ -501,6 +552,7 @@ jobs:
       deployments: write
       id-token: write
     needs: [preflight]
+    if: "always() && needs.preflight.result == 'success'"
     uses: ./.github/workflows/deploy-provider.yml
     with:
       environment: ${{ inputs.target_environment || 'production' }}
@@ -512,11 +564,13 @@ jobs:
       cloud_run_region: ${{ inputs.cloud_run_region || '' }}
       dry_run: ${{ inputs.dry_run || false }}
       caller_holds_lock: true
+      is_rollback: true
     secrets: inherit
 
   verify:
     name: Verify Restored Container Health
     needs: [preflight, redeploy]
+    if: "always() && needs.preflight.result == 'success' && needs.redeploy.result == 'success'"
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -526,6 +580,7 @@ jobs:
     steps:
       - name: Poll Restored Service Health
         id: health_probe
+        if: always()
         timeout-minutes: 2
         env:
           VAR_SERVICE_URL: ${{ vars.SERVICE_URL }}
@@ -700,6 +755,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Send Rollback Notification
+        id: send_notification
+        if: always()
         env:
           TARGET_ENV: ${{ inputs.target_environment || 'production' }}
           ROLLBACK_ENV: ${{ inputs.rollback_environment }}

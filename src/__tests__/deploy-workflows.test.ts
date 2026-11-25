@@ -311,7 +311,10 @@ process.exit(1);
       };
     };
     const provenanceStep = parsed.jobs?.deploy?.steps?.find((step) => step.id === 'provenance');
-    expect(provenanceStep?.if).toBe(
+    expect(provenanceStep?.if).toContain('always()');
+    expect(provenanceStep?.if).toContain("steps.validate-sha.outputs.is_rollback_call == 'true'");
+    expect(provenanceStep?.if).toContain("steps.resolve.outcome == 'success'");
+    expect(provenanceStep?.if).toContain(
       "!(inputs.dry_run && inputs.image_digest == '' && inputs.image_tag == 'latest')"
     );
   });
@@ -1717,7 +1720,7 @@ process.exit(0);
     const deployProviderDoc = parseDocument(deployProviderYml, { version: '1.2', strict: true }).toJS() as {
       jobs?: {
         deploy?: {
-          steps?: Array<{ id?: string; if?: string; with?: Record<string, string> }>;
+          steps?: Array<{ id?: string; name?: string; if?: string; with?: Record<string, string> }>;
         };
       };
     };
@@ -1725,15 +1728,20 @@ process.exit(0);
     const verifyStep = steps.find((s) => s.id === 'verify-credentials');
     const oidcStep = steps.find((s) => s.id === 'gcp-auth-oidc');
     const keyStep = steps.find((s) => s.id === 'gcp-auth-key');
-    const dryRunStep = steps.find((s) => s.if === 'inputs.dry_run');
+    const dryRunStep = steps.find((s) => s.id === 'dry-run-adapter');
 
-    expect(verifyStep?.if).toBe('!inputs.dry_run');
+    expect(verifyStep?.if).toContain('always()');
+    expect(verifyStep?.if).toContain("steps.resolve.outcome == 'success'");
+    expect(verifyStep?.if).toContain('!inputs.dry_run');
     expect(oidcStep?.if).toContain('vars.GCP_WORKLOAD_IDENTITY_PROVIDER !=');
     expect(oidcStep?.if).toContain('vars.GCP_SERVICE_ACCOUNT !=');
     expect(oidcStep?.with?.workload_identity_provider).toBe('${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}');
     expect(keyStep?.if).toContain("vars.GCP_WORKLOAD_IDENTITY_PROVIDER == '' || vars.GCP_SERVICE_ACCOUNT == ''");
     expect(keyStep?.if).toContain("secrets.GCP_SA_KEY != ''");
     expect(dryRunStep).toBeDefined();
+    expect(dryRunStep?.if).toContain('always()');
+    expect(dryRunStep?.if).toContain("steps.capture-previous.outcome == 'success'");
+    expect(dryRunStep?.if).toContain('inputs.dry_run');
   });
 
   it('defaults manual db-migrate.yml workflow_dispatch confirm to false and aborts before npx prisma migrate deploy when unconfirmed', () => {
@@ -2518,12 +2526,14 @@ exit 0
       };
       jobs?: {
         deploy?: {
+          if?: string;
           'timeout-minutes'?: number;
           outputs?: Record<string, string>;
           steps?: Array<{
             id?: string;
             name?: string;
             if?: string;
+            'timeout-minutes'?: number;
             uses?: string;
             with?: Record<string, unknown>;
           }>;
@@ -2538,18 +2548,28 @@ exit 0
       };
     };
 
-    expect(providerDoc.jobs?.deploy?.['timeout-minutes']).toBe(10);
+    expect(providerDoc.jobs?.deploy?.if).toBe('always()');
+    expect(providerDoc.jobs?.deploy?.['timeout-minutes']).toBe(20);
     expect(providerDoc.on?.workflow_dispatch?.inputs).not.toHaveProperty('auto_rollback_on_failure');
+    expect(providerDoc.on?.workflow_dispatch?.inputs).not.toHaveProperty('is_rollback');
     expect(providerDoc.on?.workflow_call?.inputs).toHaveProperty('auto_rollback_on_failure');
+    expect(providerDoc.on?.workflow_call?.inputs).toHaveProperty('is_rollback');
     expect(providerDoc.on?.workflow_call?.outputs).toHaveProperty('health_status');
     expect(providerDoc.on?.workflow_call?.outputs).toHaveProperty('http_status');
     expect(providerDoc.on?.workflow_call?.outputs).toHaveProperty('inline_rollback_completed');
 
     const deploySteps = providerDoc.jobs?.deploy?.steps ?? [];
     const cloudrunStep = deploySteps.find((s) => s.id === 'cloudrun');
+    expect(cloudrunStep?.['timeout-minutes']).toBe(5);
     expect(cloudrunStep?.with?.labels).toBe(
       '${{ steps.provenance.outputs.cloud_run_labels || steps.standalone-target.outputs.cloud_run_labels || steps.resolve.outputs.cloud_run_labels }}'
     );
+
+    const webhookStep = deploySteps.find((s) => s.id === 'webhook');
+    expect(webhookStep?.['timeout-minutes']).toBe(2);
+
+    const healthProbeStep = deploySteps.find((s) => s.id === 'health-probe');
+    expect(healthProbeStep?.['timeout-minutes']).toBe(4);
 
     const finalizeStep = deploySteps.find((s) => s.id === 'finalize-deployment');
     expect(finalizeStep?.if).toContain('always()');
@@ -2831,5 +2851,217 @@ exit 0
     } finally {
       await new Promise<void>((resolve) => mockServer.close(() => resolve()));
     }
+  });
+
+  it('reads attested OCI org.opencontainers.image.revision before sourceRepositoryDigest in standalone-target and capture-previous, fails closed on OCI/SLSA conflict, and guards rollback paths against cancellation', () => {
+    const validateShaScript = extractStepRunScript(deployProviderYml, 'Validate Commit SHA Input');
+    const standaloneTargetScript = extractStepRunScript(
+      deployProviderYml,
+      'Resolve Standalone Promotion Commit & Main Ancestry'
+    );
+    const capturePreviousScript = extractStepRunScript(
+      deployProviderYml,
+      'Capture Active Image Tag Before Rollout'
+    );
+
+    const bareOrigin = path.join(tempDir, 'origin-oci-rev.git');
+    const workRepo = path.join(tempDir, 'work-oci-rev');
+    spawnSync('git', ['init', '--bare', bareOrigin], { stdio: 'pipe' });
+    spawnSync('git', ['init', '-b', 'main', workRepo], { stdio: 'pipe' });
+    spawnSync('git', ['-C', workRepo, 'config', 'user.email', 'ci@example.com'], { stdio: 'pipe' });
+    spawnSync('git', ['-C', workRepo, 'config', 'user.name', 'CI Bot'], { stdio: 'pipe' });
+    spawnSync('git', ['-C', workRepo, 'remote', 'add', 'origin', bareOrigin], { stdio: 'pipe' });
+
+    fs.writeFileSync(path.join(workRepo, 'app.txt'), 'c1\n');
+    spawnSync('git', ['-C', workRepo, 'add', 'app.txt'], { stdio: 'pipe' });
+    spawnSync('git', ['-C', workRepo, 'commit', '-m', 'c1 built release'], { stdio: 'pipe' });
+    const c1Sha = spawnSync('git', ['-C', workRepo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+
+    fs.writeFileSync(path.join(workRepo, 'app.txt'), 'c2\n');
+    spawnSync('git', ['-C', workRepo, 'add', 'app.txt'], { stdio: 'pipe' });
+    spawnSync('git', ['-C', workRepo, 'commit', '-m', 'c2 drifted head'], { stdio: 'pipe' });
+    const c2Sha = spawnSync('git', ['-C', workRepo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+    spawnSync('git', ['-C', workRepo, 'push', 'origin', 'main'], { stdio: 'pipe' });
+
+    // 0. validate-sha emits single-source is_rollback_call output consumed by downstream steps
+    fs.writeFileSync(outputFile, '');
+    const validateRollbackRes = runBashStep(validateShaScript, {
+      INPUT_COMMIT_SHA: '',
+      IS_ROLLBACK_CALL: 'true',
+    });
+    expect(validateRollbackRes.status).toBe(0);
+    expect(fs.readFileSync(outputFile, 'utf8')).toContain('is_rollback_call=true');
+
+    // 1. Standalone digest promotion resolves C1 from OCI index org.opencontainers.image.revision ahead of certificate.sourceRepositoryDigest (C2)
+    fs.writeFileSync(outputFile, '');
+    const driftStandaloneRes = spawnSync('bash', ['-eo', 'pipefail', '-c', standaloneTargetScript], {
+      cwd: workRepo,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+        GITHUB_OUTPUT: outputFile,
+        GH_TOKEN: 'ghs_test_token',
+        GITHUB_ACTOR_LOGIN: 'octocat',
+        IMAGE_URI: `ghcr.io/ownerorg/wedding_website@${VALID_DIGEST}`,
+        RAW_TAG: '',
+        EXPECTED_SOURCE_REF: 'refs/heads/main',
+        REPO_OWNER: 'OwnerOrg',
+        SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+        MOCK_INDEX_REVISION: c1Sha,
+        MOCK_ATTESTATION_SHA: c2Sha,
+        MOCK_SLSA_REVISION: c2Sha,
+      },
+    });
+    expect(driftStandaloneRes.status).toBe(0);
+    expect(fs.readFileSync(outputFile, 'utf8')).toContain(`target_sha=${c1Sha}`);
+
+    // 2. Standalone digest promotion fails closed when OCI index revision conflicts with SLSA inputs.commit_sha
+    const conflictStandaloneRes = spawnSync('bash', ['-eo', 'pipefail', '-c', standaloneTargetScript], {
+      cwd: workRepo,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+        GITHUB_OUTPUT: outputFile,
+        GH_TOKEN: 'ghs_test_token',
+        GITHUB_ACTOR_LOGIN: 'octocat',
+        IMAGE_URI: `ghcr.io/ownerorg/wedding_website@${VALID_DIGEST}`,
+        RAW_TAG: '',
+        EXPECTED_SOURCE_REF: 'refs/heads/main',
+        REPO_OWNER: 'OwnerOrg',
+        SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+        MOCK_INDEX_REVISION: c1Sha,
+        MOCK_SLSA_INPUT_SHA: c2Sha,
+        MOCK_ATTESTATION_SHA: c2Sha,
+      },
+    });
+    expect(conflictStandaloneRes.status).not.toBe(0);
+    expect(conflictStandaloneRes.stdout + conflictStandaloneRes.stderr).toContain('conflicts with SLSA input commit_sha');
+
+    // 3. Capture Active Image Tag Before Rollout reads OCI revision ahead of OIDC GITHUB_SHA only AFTER gh attestation verify succeeds
+    const servingDigest = 'sha256:9999999999999999999999999999999999999999999999999999999999999999';
+    const gcloudShim = path.join(binDir, 'gcloud');
+    fs.writeFileSync(
+      gcloudShim,
+      `#!/usr/bin/env bash
+if [[ "$*" == *"services describe"* ]]; then
+  printf '{"status":{"traffic":[{"revisionName":"wedding-website-00021","percent":100}]}}'
+  exit 0
+fi
+if [[ "$*" == *"revisions describe"* ]]; then
+  printf 'ghcr.io/ownerorg/wedding_website@${servingDigest}\\n'
+  exit 0
+fi
+exit 0
+`,
+      { mode: 0o755 }
+    );
+
+    fs.writeFileSync(outputFile, '');
+    fs.writeFileSync(callLogFile, '');
+    const captureAttestedRes = runBashStep(capturePreviousScript, {
+      PROVIDER: 'google-cloud-run',
+      TARGET_ENV: 'production',
+      INCOMING_TAG: c2Sha,
+      INCOMING_DIGEST: VALID_DIGEST,
+      INPUT_COMMIT_SHA: c2Sha,
+      CURRENT_SHA: c2Sha,
+      DRY_RUN: 'false',
+      GCP_WORKLOAD_IDENTITY_PROVIDER: 'projects/1/locations/global/workloadIdentityPools/p/providers/o',
+      GCP_SERVICE_ACCOUNT: 'deployer@demo-proj.iam.gserviceaccount.com',
+      GITHUB_TOKEN: 'ghs_test_token',
+      GH_TOKEN: 'ghs_test_token',
+      GITHUB_ACTOR_LOGIN: 'octocat',
+      REPO_OWNER: 'OwnerOrg',
+      SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+      MOCK_INDEX_REVISION: c1Sha,
+      MOCK_ATTESTATION_SHA: c2Sha,
+      MOCK_SLSA_REVISION: c2Sha,
+    });
+    expect(captureAttestedRes.status).toBe(0);
+    expect(fs.readFileSync(outputFile, 'utf8')).toContain(`previous_image_tag=${c1Sha}`);
+    expect(fs.readFileSync(outputFile, 'utf8')).toContain(`previous_image_digest=${servingDigest}`);
+    expect(fs.readFileSync(outputFile, 'utf8')).toContain('previous_tag_source=oci-revision-label');
+
+    // When gh attestation verify fails on serving digest, docker buildx imagetools inspect --raw is never called on the unattested digest
+    fs.writeFileSync(outputFile, '');
+    fs.writeFileSync(callLogFile, '');
+    const captureUnattestedRes = runBashStep(capturePreviousScript, {
+      PROVIDER: 'google-cloud-run',
+      TARGET_ENV: 'production',
+      INCOMING_TAG: c2Sha,
+      INCOMING_DIGEST: VALID_DIGEST,
+      INPUT_COMMIT_SHA: c2Sha,
+      CURRENT_SHA: c2Sha,
+      DRY_RUN: 'false',
+      GCP_WORKLOAD_IDENTITY_PROVIDER: 'projects/1/locations/global/workloadIdentityPools/p/providers/o',
+      GCP_SERVICE_ACCOUNT: 'deployer@demo-proj.iam.gserviceaccount.com',
+      GITHUB_TOKEN: '',
+      GH_TOKEN: 'ghs_test_token',
+      GITHUB_ACTOR_LOGIN: 'octocat',
+      REPO_OWNER: 'OwnerOrg',
+      SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+      MOCK_ATTESTATION_FAIL: 'true',
+      MOCK_INDEX_REVISION: c1Sha,
+    });
+    expect(captureUnattestedRes.status).toBe(0);
+    expect(fs.readFileSync(callLogFile, 'utf8')).not.toContain(
+      `docker buildx imagetools inspect --raw ghcr.io/ownerorg/wedding_website@${servingDigest}`
+    );
+
+    // 4. Every rollback-path step in deploy-provider.yml (validate-sha through health-probe) evaluates always() and prior step outcomes
+    const parsedProvider = parseDocument(deployProviderYml, { version: '1.2', strict: true }).toJS() as {
+      jobs?: {
+        deploy?: {
+          steps?: Array<{ id?: string; name?: string; if?: string }>;
+        };
+      };
+    };
+    const steps = parsedProvider.jobs?.deploy?.steps ?? [];
+    for (const stepId of [
+      'validate-sha',
+      'checkout',
+      'resolve',
+      'provenance',
+      'verify-credentials',
+      'gcp-auth-oidc',
+      'gcp-auth-key',
+      'capture-previous',
+      'cloudrun',
+      'webhook',
+      'rollout-marker',
+      'record-deployment',
+      'dry-run-adapter',
+      'health-probe',
+      'finalize-deployment',
+      'setup-node-rollback',
+      'inline-rollback',
+    ]) {
+      const step = steps.find((s) => s.id === stepId);
+      expect(step?.if).toContain('always()');
+    }
+    for (const stepId of [
+      'checkout',
+      'resolve',
+      'provenance',
+      'verify-credentials',
+      'gcp-auth-oidc',
+      'gcp-auth-key',
+      'capture-previous',
+      'cloudrun',
+      'webhook',
+      'rollout-marker',
+      'record-deployment',
+      'dry-run-adapter',
+      'health-probe',
+    ]) {
+      const step = steps.find((s) => s.id === stepId);
+      expect(step?.if).toContain("steps.validate-sha.outputs.is_rollback_call == 'true'");
+    }
+    const inlineStep = steps.find((s) => s.id === 'inline-rollback');
+    expect(inlineStep?.if).toContain("steps.setup-node-rollback.outcome == 'success'");
+    expect(inlineStep?.if).toContain("steps.health-probe.outcome != 'success'");
+    expect(inlineStep?.if).toContain('!inputs.is_rollback');
   });
 });
