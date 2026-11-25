@@ -1661,6 +1661,106 @@ describe('check-docker-build', () => {
         }
       );
       expect(conflictResult.status).toBe(1);
+
+      // Positional file paths appended by lint-staged pass while unknown --flags still fail
+      const lintStagedPositional = spawnSync(
+        process.execPath,
+        [TSX_CLI_PATH, CHECK_SCRIPT_PATH, '--static-only', 'Dockerfile', 'docker-compose.yml'],
+        {
+          cwd: process.cwd(),
+          encoding: 'utf8',
+        }
+      );
+      expect(lintStagedPositional.status).toBe(0);
+
+      const unknownFlag = spawnSync(
+        process.execPath,
+        [TSX_CLI_PATH, CHECK_SCRIPT_PATH, '--unknown-flag'],
+        {
+          cwd: process.cwd(),
+          encoding: 'utf8',
+        }
+      );
+      expect(unknownFlag.status).toBe(1);
+    });
+
+    it('detects package.json and docker/prisma-cli/package.json specifier drift against package-lock.json in static checks', () => {
+      const pkgPath = path.join(tempDir, 'package.json');
+      const basePkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as Record<string, unknown>;
+      fs.writeFileSync(
+        pkgPath,
+        `${JSON.stringify(
+          {
+            ...basePkg,
+            dependencies: { zod: '^4.3.6' },
+            devDependencies: { eslint: '^10.15.0' },
+          },
+          null,
+          2
+        )}\n`
+      );
+      fs.writeFileSync(
+        path.join(tempDir, 'package-lock.json'),
+        `${JSON.stringify(
+          {
+            name: 'wedding-website-fixture',
+            lockfileVersion: 3,
+            packages: {
+              '': {
+                dependencies: { zod: '^4.3.6' },
+                devDependencies: { eslint: '^10.15.0' },
+              },
+              'node_modules/zod': { version: '4.3.6' },
+              'node_modules/eslint': { version: '10.15.0' },
+            },
+          },
+          null,
+          2
+        )}\n`
+      );
+
+      expect(checkDockerBuild(tempDir, { staticOnly: true }).violations).toEqual([]);
+
+      // Bump dependency version in package.json without updating package-lock.json
+      fs.writeFileSync(
+        pkgPath,
+        `${JSON.stringify(
+          {
+            ...basePkg,
+            dependencies: { zod: '^5.0.0' },
+            devDependencies: { eslint: '^10.15.0' },
+          },
+          null,
+          2
+        )}\n`
+      );
+
+      const drifted = checkDockerBuild(tempDir, { staticOnly: true });
+      expect(drifted.violations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            filePath: 'package-lock.json',
+            imageRef: 'package.json -> zod',
+            reason: expect.stringContaining('does not match "^4.3.6"'),
+          }),
+          expect.objectContaining({
+            filePath: 'package-lock.json',
+            imageRef: 'package.json -> zod',
+            reason: expect.stringContaining('is not satisfied by resolved "node_modules/zod@4.3.6"'),
+          }),
+        ])
+      );
+
+      const cliDrift = spawnSync(
+        process.execPath,
+        [TSX_CLI_PATH, CHECK_SCRIPT_PATH, '--static-only'],
+        {
+          cwd: tempDir,
+          encoding: 'utf8',
+        }
+      );
+      expect(cliDrift.status).toBe(1);
+      expect(cliDrift.stderr).toContain('package-lock.json');
     });
 
     it('validates only .next/standalone portability under --standalone-only without re-running static Dockerfile or Compose checks', () => {

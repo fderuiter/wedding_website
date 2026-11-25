@@ -1,9 +1,11 @@
+import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import {
   verifyMigrationContent,
   verifyMigrations,
+  verifyMigrationFiles,
   findSqlFiles,
 } from './verify-migration-compatibility';
 
@@ -522,6 +524,31 @@ describe('SQL Migration Backwards Compatibility Linter', () => {
       expect(result.totalFiles).toBeGreaterThanOrEqual(31);
       expect(result.violations).toEqual([]);
       expect(result.errors).toEqual([]);
+    });
+
+    it('verifies explicit .sql file arguments passed by lint-staged via verifyMigrationFiles and CLI', () => {
+      const safeFile = path.join(tempDir, 'safe.sql');
+      const unsafeFile = path.join(tempDir, 'unsafe.sql');
+      fs.writeFileSync(safeFile, 'ALTER TABLE "User" ADD COLUMN "bio" TEXT;\n');
+      fs.writeFileSync(unsafeFile, 'DROP TABLE "User";\n');
+
+      expect(verifyMigrationFiles([safeFile]).valid).toBe(true);
+      expect(verifyMigrationFiles([safeFile, unsafeFile]).valid).toBe(false);
+
+      const scriptPath = path.join(process.cwd(), 'scripts', 'verify-migration-compatibility.ts');
+      const cliPass = spawnSync(
+        process.execPath,
+        ['--experimental-strip-types', scriptPath, safeFile],
+        { cwd: process.cwd(), encoding: 'utf8' }
+      );
+      expect(cliPass.status).toBe(0);
+
+      const cliFail = spawnSync(
+        process.execPath,
+        ['--experimental-strip-types', scriptPath, unsafeFile],
+        { cwd: process.cwd(), encoding: 'utf8' }
+      );
+      expect(cliFail.status).toBe(1);
     });
   });
 });

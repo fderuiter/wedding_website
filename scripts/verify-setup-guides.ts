@@ -989,17 +989,30 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   if (!/\blint-staged\b/.test(preCommitRaw)) {
     errors.push('.githooks/pre-commit: Must run "npx lint-staged" on staged files');
   }
-  const lintStagedCmd = pkg['lint-staged']?.['*.{js,jsx,ts,tsx,mjs,cjs}'] ?? '';
-  if (
-    !lintStagedCmd.includes('--cache') ||
-    !lintStagedCmd.includes('.eslintcache') ||
-    !lintStagedCmd.includes('--no-warn-ignored') ||
-    !lintStagedCmd.includes('--fix') ||
-    !lintStagedCmd.includes('--max-warnings=0')
-  ) {
+  const lintStagedConfig = pkg['lint-staged'] ?? {};
+  const lintStagedJsCmd = lintStagedConfig['*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}'] ?? '';
+  const lintStagedHooksCmd = lintStagedConfig['.githooks/*'] ?? '';
+  const hasRequiredEslintStagedFlags = (cmd: string): boolean =>
+    cmd.includes('--cache') &&
+    cmd.includes('.eslintcache') &&
+    cmd.includes('--no-warn-ignored') &&
+    cmd.includes('--fix') &&
+    cmd.includes('--max-warnings=0');
+  if (!hasRequiredEslintStagedFlags(lintStagedJsCmd) || !hasRequiredEslintStagedFlags(lintStagedHooksCmd)) {
     errors.push(
       'package.json: "lint-staged" must pass "--cache --cache-location .eslintcache --no-warn-ignored --fix --max-warnings=0"'
     );
+  }
+  const lintStagedValues = Object.values(lintStagedConfig);
+  for (const requiredValidator of [
+    'check:action-pins',
+    'lint:migrations',
+    'check:standalone',
+    'check:links',
+  ]) {
+    if (!lintStagedValues.some((cmd) => cmd.includes(requiredValidator))) {
+      errors.push(`package.json: "lint-staged" must route staged files to "${requiredValidator}"`);
+    }
   }
   if (
     !scripts['docs:sync']?.includes('scripts/generate-openapi.ts') ||
@@ -1067,11 +1080,13 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     );
   }
   if (
+    !prePushRaw.includes("'package.json'") ||
     !prePushRaw.includes('package-lock.json') ||
+    !prePushRaw.includes('docker/prisma-cli/package.json') ||
     !prePushRaw.includes('docker/prisma-cli/package-lock.json')
   ) {
     errors.push(
-      '.githooks/pre-push: Must guard "check:audit" against both "package-lock.json" and "docker/prisma-cli/package-lock.json"'
+      '.githooks/pre-push: Must guard "check:audit" against "package.json", "package-lock.json", "docker/prisma-cli/package.json", and "docker/prisma-cli/package-lock.json"'
     );
   }
   for (const staticSubscript of staticStepScripts) {

@@ -806,7 +806,9 @@ ACTIONABLE REMEDIATION:
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const unknownArgs = args.filter((arg) => arg !== '--verify-upstream');
+  const unknownArgs = args.filter(
+    (arg) => arg !== '--verify-upstream' && !/\.ya?ml$/i.test(arg)
+  );
   if (unknownArgs.length > 0) {
     console.error(`❌ Unknown option(s): ${unknownArgs.join(', ')}`);
     process.exit(1);
