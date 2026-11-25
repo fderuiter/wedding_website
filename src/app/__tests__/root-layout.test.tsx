@@ -179,6 +179,7 @@ describe('RootLayout Server Component Cookie Hydration', () => {
       const innerChild = themeProviderEl!.props.children as React.ReactElement;
       expect(React.isValidElement(innerChild)).toBe(true);
       expect(typeof innerChild.type === 'function' && innerChild.type.name).toBe('SetupWizard');
+      expect(headers).not.toHaveBeenCalled();
     } finally {
       if (prevStaticExport === undefined) {
         delete process.env.STATIC_EXPORT;
@@ -186,6 +187,36 @@ describe('RootLayout Server Component Cookie Hydration', () => {
         process.env.STATIC_EXPORT = prevStaticExport;
       }
     }
+  });
+
+  it('reads x-nonce from headers() in dynamic mode and attaches nonce to the inline theme script while ignoring invalid nonces', async () => {
+    const mockHeaders = headers as unknown as jest.Mock;
+    mockCookies.mockResolvedValue({
+      get: () => undefined,
+    });
+    mockHeaders.mockResolvedValueOnce({
+      get: (name: string) => (name === 'x-nonce' ? 'dGVzdC1ub25jZS1hcHA=' : null),
+    });
+
+    const jsxWithNonce = await RootLayout({ children: <div>Child Content</div> });
+    const headWithNonce = jsxWithNonce.props.children[0];
+    const scriptWithNonce = React.Children.toArray(headWithNonce.props.children).find(
+      (child): child is React.ReactElement<{ nonce?: string; dangerouslySetInnerHTML: { __html: string } }> =>
+        React.isValidElement(child) && child.type === 'script'
+    );
+    expect(scriptWithNonce).toBeDefined();
+    expect(scriptWithNonce!.props.nonce).toBe('dGVzdC1ub25jZS1hcHA=');
+
+    mockHeaders.mockResolvedValueOnce({
+      get: (name: string) => (name === 'x-nonce' ? 'bad"nonce<script>' : null),
+    });
+    const jsxInvalidNonce = await RootLayout({ children: <div>Child Content</div> });
+    const headInvalidNonce = jsxInvalidNonce.props.children[0];
+    const scriptInvalidNonce = React.Children.toArray(headInvalidNonce.props.children).find(
+      (child): child is React.ReactElement<{ nonce?: string }> =>
+        React.isValidElement(child) && child.type === 'script'
+    );
+    expect(scriptInvalidNonce!.props.nonce).toBeUndefined();
   });
 
   it('renders complete server stylesheet in head with dynamic-theme-style id and WCAG contrast tokens', async () => {

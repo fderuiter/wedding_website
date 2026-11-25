@@ -30,6 +30,20 @@ const mockWriteFile = writeFile as jest.MockedFunction<typeof writeFile>;
 
 const VALID_PNG_BUF = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 const VALID_JPEG_BUF = Buffer.from('/9j/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAABgj/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABykX//Z', 'base64');
+const VALID_ICO_BUF = (() => {
+  const ico = Buffer.alloc(22 + VALID_PNG_BUF.length);
+  ico.writeUInt16LE(0, 0);
+  ico.writeUInt16LE(1, 2);
+  ico.writeUInt16LE(1, 4);
+  ico[6] = 1;
+  ico[7] = 1;
+  ico.writeUInt16LE(1, 10);
+  ico.writeUInt16LE(32, 12);
+  ico.writeUInt32LE(VALID_PNG_BUF.length, 14);
+  ico.writeUInt32LE(22, 18);
+  VALID_PNG_BUF.copy(ico, 22);
+  return ico;
+})();
 
 function makeRequest(overrides: {
   hasAuth?: boolean;
@@ -257,30 +271,55 @@ describe('POST /api/admin/upload', () => {
       expect(res.status).toBe(200);
     });
 
-    it('accepts image/x-icon files', async () => {
+    it('accepts image/x-icon files and transcodes them to .png', async () => {
       const icoFile = {
         name: 'favicon.ico',
-        size: 512,
+        size: VALID_ICO_BUF.byteLength,
+        type: 'image/x-icon',
+        arrayBuffer: async () =>
+          VALID_ICO_BUF.buffer.slice(
+            VALID_ICO_BUF.byteOffset,
+            VALID_ICO_BUF.byteOffset + VALID_ICO_BUF.byteLength
+          ),
+      };
+      const req = makeRequest({ file: icoFile as any });
+      const res = await POST(req);
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.data.url).toMatch(/\.png$/);
+    });
+
+    it('accepts image/vnd.microsoft.icon files and transcodes them to .png', async () => {
+      const icoFile = {
+        name: 'favicon.ico',
+        size: VALID_ICO_BUF.byteLength,
+        type: 'image/vnd.microsoft.icon',
+        arrayBuffer: async () =>
+          VALID_ICO_BUF.buffer.slice(
+            VALID_ICO_BUF.byteOffset,
+            VALID_ICO_BUF.byteOffset + VALID_ICO_BUF.byteLength
+          ),
+      };
+      const req = makeRequest({ file: icoFile as any });
+      const res = await POST(req);
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.data.url).toMatch(/\.png$/);
+    });
+
+    it('rejects truncated or malformed .ico payloads with HTTP 400', async () => {
+      const badIcoFile = {
+        name: 'favicon.ico',
+        size: 4,
         type: 'image/x-icon',
         arrayBuffer: async () => new Uint8Array([0, 0, 1, 0]).buffer,
       };
-      const req = makeRequest({ file: icoFile as any });
+      const req = makeRequest({ file: badIcoFile as any });
       const res = await POST(req);
 
-      expect(res.status).toBe(200);
-    });
-
-    it('accepts image/vnd.microsoft.icon files', async () => {
-      const icoFile = {
-        name: 'favicon.ico',
-        size: 512,
-        type: 'image/vnd.microsoft.icon',
-        arrayBuffer: async () => new Uint8Array([0, 0, 1, 0]).buffer,
-      };
-      const req = makeRequest({ file: icoFile as any });
-      const res = await POST(req);
-
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(400);
     });
   });
 

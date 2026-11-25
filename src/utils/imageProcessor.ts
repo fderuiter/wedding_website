@@ -10,6 +10,7 @@ import {
 } from './validationPrimitives';
 import {
   isHeicBuffer,
+  isIcoBuffer,
   type ProcessImageWorkerOptions,
   type WorkerReadyMessage,
   type WorkerResult,
@@ -109,6 +110,7 @@ function removeSlotFromPool(slot: PooledWorkerSlot): void {
 function postTaskToReadyWorker(slot: PooledWorkerSlot, task: ActiveWorkerTask): void {
   const { buffer } = task;
   const expectHeic = Boolean(task.options?.expectHeic);
+  const expectIco = Boolean(task.options?.expectIco);
   const maxBytes = task.options?.maxBytes ?? MAX_GUEST_PHOTO_SIZE;
   const canTransferDirectly =
     !Buffer.isBuffer(buffer) &&
@@ -122,6 +124,7 @@ function postTaskToReadyWorker(slot: PooledWorkerSlot, task: ActiveWorkerTask): 
         id: task.id,
         buffer,
         expectHeic,
+        expectIco,
         maxBytes,
       };
       slot.worker.postMessage(payload, [buffer.buffer]);
@@ -136,6 +139,7 @@ function postTaskToReadyWorker(slot: PooledWorkerSlot, task: ActiveWorkerTask): 
     id: task.id,
     buffer: ownedBuffer,
     expectHeic,
+    expectIco,
     maxBytes,
   };
   slot.worker.postMessage(payload, [ownedBuffer.buffer]);
@@ -437,6 +441,10 @@ function isHeicMimeType(mime: string): boolean {
   );
 }
 
+function isIcoMimeType(mime: string): boolean {
+  return mime === 'image/x-icon' || mime === 'image/vnd.microsoft.icon';
+}
+
 function toNormalizedJpegFilename(filename: string): string {
   const trimmed = (filename || '').trim();
   if (!trimmed) {
@@ -453,31 +461,47 @@ function toNormalizedJpegFilename(filename: string): string {
   return `${replaced}.jpg`;
 }
 
+function toNormalizedPngFilename(filename: string): string {
+  const trimmed = (filename || '').trim();
+  if (!trimmed) {
+    return 'favicon.png';
+  }
+  const replaced = trimmed.replace(/\.ico$/i, '.png');
+  if (replaced !== trimmed) {
+    return replaced;
+  }
+  const lastDot = replaced.lastIndexOf('.');
+  if (lastDot > 0) {
+    return `${replaced.slice(0, lastDot)}.png`;
+  }
+  return `${replaced}.png`;
+}
+
 /**
  * Sanitizes image files by auto-rotating them based on their EXIF orientation tag,
  * stripping all sensitive EXIF metadata (GPS, camera model, timestamps, etc.),
- * preserving JPEG/PNG/WebP formats, and transcoding HEIC/HEIF uploads into
- * browser-compatible JPEG files.
- * Offloads Sharp and HEIC decoding to a Node.js worker thread.
- * Skips sanitization for non-Sharp image formats (such as ICO).
- * Throws an error if sanitization fails for supported formats.
+ * preserving JPEG/PNG/WebP formats, transcoding HEIC/HEIF uploads into
+ * browser-compatible JPEG files, and transcoding ICO uploads into sanitized PNG files.
+ * Offloads Sharp, HEIC, and ICO decoding to a Node.js worker thread.
+ * Rejects unsupported or corrupt formats with an HTTP 400 ApiError.
  */
 export async function sanitizeImage(file: File): Promise<File> {
   const fileType = file.type;
   const normalizedMime = (fileType || '').toLowerCase();
   const ext = getFileExtension(file.name);
   const isHeicInput = isHeicMimeType(normalizedMime) || isHeicExtension(ext);
+  const isIcoInput =
+    isIcoMimeType(normalizedMime) ||
+    (ext === '.ico' && (normalizedMime === '' || isIcoMimeType(normalizedMime)));
   const isStandardRaster =
     normalizedMime === 'image/jpeg' ||
     normalizedMime === 'image/jpg' ||
     normalizedMime === 'image/png' ||
     normalizedMime === 'image/webp';
 
-  // Only process standard JPEG, PNG, WebP, and HEIC/HEIF files.
-  // Skip unsupported formats like ICO.
-  if (!isStandardRaster && !isHeicInput) {
-    logger.debug(`Skipping sanitization for non-supported format: ${fileType}`);
-    return file;
+  if (!isStandardRaster && !isHeicInput && !isIcoInput) {
+    logger.error(`Rejected unsupported image format during sanitization: ${fileType || ext || 'unknown'}`);
+    throw new ApiError(400, 'Image sanitization failed. Unsupported image format.');
   }
 
   try {
@@ -491,10 +515,15 @@ export async function sanitizeImage(file: File): Promise<File> {
     }
 
     const buffer = new Uint8Array(arrayBuffer);
-    const transcodeToJpeg = isHeicInput || isHeicBuffer(buffer);
+    if (!isIcoInput && isIcoBuffer(buffer)) {
+      throw new ApiError(400, 'Image sanitization failed. The file may be corrupt or invalid.');
+    }
+
+    const transcodeToJpeg = !isIcoInput && (isHeicInput || isHeicBuffer(buffer));
 
     const sanitizedBuffer = await offloadSanitizeToWorker(buffer, 10000, {
       expectHeic: isHeicInput,
+      expectIco: isIcoInput,
       maxBytes: MAX_GUEST_PHOTO_SIZE,
     });
 
@@ -506,6 +535,12 @@ export async function sanitizeImage(file: File): Promise<File> {
           sanitizedBuffer.byteLength
         )
         : Buffer.from(sanitizedBuffer);
+
+    if (isIcoInput) {
+      const normalizedFilename = toNormalizedPngFilename(file.name);
+      logger.info(`Successfully transcoded and sanitized ICO image to image/png (${normalizedFilename})`);
+      return new File([outputBuffer], normalizedFilename, { type: 'image/png' });
+    }
 
     if (transcodeToJpeg) {
       const normalizedFilename = toNormalizedJpegFilename(file.name);

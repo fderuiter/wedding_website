@@ -14,9 +14,18 @@ import { prisma } from '@/lib/prisma';
 export const runtime = 'nodejs';
 
 const BASE_SECURITY_HEADERS: Record<string, string> = {
+  'Content-Security-Policy': "default-src 'none'; sandbox",
+  'Cross-Origin-Resource-Policy': 'same-origin',
   'X-Content-Type-Options': 'nosniff',
   Vary: 'Cookie',
 };
+
+const SAFE_INLINE_UPLOAD_MIME_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/x-icon',
+]);
 
 function createErrorResponse(status: number, message: string, headOnly: boolean): NextResponse {
   if (headOnly) {
@@ -302,6 +311,10 @@ async function handleUploadRequest(
       'Cache-Control': access.cacheControl,
       Vary: 'Cookie',
     };
+
+    if (!SAFE_INLINE_UPLOAD_MIME_TYPES.has(asset.mimeType)) {
+      headers['Content-Disposition'] = 'attachment';
+    }
 
     if (headOnly || !asset.stream) {
       return new NextResponse(null, { status: 200, headers });

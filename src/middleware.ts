@@ -28,6 +28,11 @@ import {
   resolveSessionCookieName,
 } from '@/core/auth/tokenCookieHelpers';
 import { env } from '@/env';
+import {
+  buildContentSecurityPolicy,
+  CSP_NONCE_HEADER,
+  generateCspNonce,
+} from '@/lib/csp';
 import { isProtectedRoute } from '@/lib/routes';
 import { timingSafeEqualJS } from '@/utils/crypto';
 import {
@@ -183,16 +188,16 @@ export async function middleware(request: NextRequest) {
 
   const isApiRoute = normalizedPath === '/api' || normalizedPath.startsWith('/api/');
   const isUploadsRoute = normalizedPath === '/uploads' || normalizedPath.startsWith('/uploads/');
+  const isUploadAssetRoute =
+    isUploadsRoute ||
+    normalizedPath === '/api/uploads' ||
+    normalizedPath.startsWith('/api/uploads/');
   const isPhotoUploadAssetRoute =
     normalizedPath === '/uploads/photos' ||
     normalizedPath.startsWith('/uploads/photos/') ||
     normalizedPath === '/api/uploads/photos' ||
     normalizedPath.startsWith('/api/uploads/photos/');
-  const isNonPhotoUploadAssetRoute =
-    !isPhotoUploadAssetRoute &&
-    (isUploadsRoute ||
-      normalizedPath === '/api/uploads' ||
-      normalizedPath.startsWith('/api/uploads/'));
+  const isNonPhotoUploadAssetRoute = !isPhotoUploadAssetRoute && isUploadAssetRoute;
 
   const isExcluded =
     normalizedPath === '/guest' ||
@@ -257,6 +262,8 @@ export async function middleware(request: NextRequest) {
     if (!isGuest && !isAdmin && !hasPhotoAccess) {
       if (isPhotoUploadAssetRoute) {
         const authHeaders = {
+          'Content-Security-Policy': "default-src 'none'; sandbox",
+          'Cross-Origin-Resource-Policy': 'same-origin',
           'X-Content-Type-Options': 'nosniff',
           Vary: 'Cookie',
         };
@@ -313,9 +320,10 @@ export async function middleware(request: NextRequest) {
     });
   }
   stripClientGuestHeaders(requestHeaders);
+  requestHeaders.delete(CSP_NONCE_HEADER);
 
   const gatedPageValue: '0' | '1' =
-    !isExcluded && !isApiRoute && !isUploadsRoute && !isProtected ? '1' : '0';
+    !isExcluded && !isApiRoute && !isUploadAssetRoute && !isProtected ? '1' : '0';
   const callbackUrlValue = pathname + request.nextUrl.search;
   requestHeaders.set(GUEST_GATED_PAGE_HEADER, gatedPageValue);
   requestHeaders.set(GUEST_CALLBACK_URL_HEADER, callbackUrlValue);
@@ -325,11 +333,27 @@ export async function middleware(request: NextRequest) {
     requestHeaders.set(GUEST_HEADER_SIGNATURE_HEADER, headerSignature);
   }
 
-  return NextResponse.next({
+  let nonce: string | null = null;
+  let cspHeaderValue: string | null = null;
+  if (!isUploadAssetRoute) {
+    nonce = generateCspNonce();
+    cspHeaderValue = buildContentSecurityPolicy({ nonce });
+    requestHeaders.set(CSP_NONCE_HEADER, nonce);
+    requestHeaders.set('Content-Security-Policy', cspHeaderValue);
+  }
+
+  const response = NextResponse.next({
     request: {
       headers: requestHeaders,
     },
   });
+
+  if (nonce && cspHeaderValue) {
+    response.headers.set(CSP_NONCE_HEADER, nonce);
+    response.headers.set('Content-Security-Policy', cspHeaderValue);
+  }
+
+  return response;
 }
 
 // Run middleware on all API routes, uploads, and non-static page requests

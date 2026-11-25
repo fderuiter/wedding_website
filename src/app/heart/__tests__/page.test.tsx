@@ -4,6 +4,10 @@ import HeartScene from '../components/HeartScene';
 import HeartClient from '../HeartClient';
 import { HEART_FONT_URL } from '../constants';
 import nextConfig from '../../../../next.config';
+import {
+  buildContentSecurityPolicy,
+  type BuildContentSecurityPolicyOptions,
+} from '@/lib/csp';
 import { RigidBodyType } from '@dimforge/rapier3d-compat';
 import { getAppConfig } from '@/lib/config';
 
@@ -669,7 +673,7 @@ describe('HeartPage', () => {
     });
   });
 
-  it('passes HEART_FONT_URL to all partner Text meshes and allows blob: workers in next.config.ts CSP', async () => {
+  it('passes HEART_FONT_URL to all partner Text meshes, enforces nonced + wasm/blob CSP via buildContentSecurityPolicy, and scopes next.config.ts to static security headers', async () => {
     render(<HeartPage />);
 
     const textMeshes = screen.getAllByTestId('text');
@@ -682,8 +686,42 @@ describe('HeartPage', () => {
     const routeHeaders = await nextConfig.headers!();
     const globalRule = routeHeaders.find((entry) => entry.source === '/(.*)');
     expect(globalRule).toBeDefined();
-    const cspHeader = globalRule?.headers.find((h) => h.key === 'Content-Security-Policy');
-    expect(cspHeader?.value).toContain("worker-src 'self' blob:");
-    expect(cspHeader?.value).toMatch(/script-src[^;]*\bblob:/);
+    expect(globalRule?.headers.find((h) => h.key === 'Content-Security-Policy')).toBeUndefined();
+    expect(globalRule?.headers).toEqual(
+      expect.arrayContaining([
+        { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+        { key: 'X-Content-Type-Options', value: 'nosniff' },
+        { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+        { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
+        { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+      ])
+    );
+
+    const prodOptions: BuildContentSecurityPolicyOptions = {
+      nonce: 'dGVzdC1ub25jZS0xMjM0NTY=',
+      isDev: false,
+      s3PublicUrl: 'https://cdn.wedding.example.com/uploads',
+    };
+    const prodCsp = buildContentSecurityPolicy(prodOptions);
+    expect(prodCsp).toContain("worker-src 'self' blob:");
+    expect(prodCsp).toMatch(/script-src[^;]*'nonce-dGVzdC1ub25jZS0xMjM0NTY='/);
+    expect(prodCsp).toMatch(/script-src[^;]*'wasm-unsafe-eval'/);
+    expect(prodCsp).toMatch(/script-src[^;]*\bblob:/);
+    expect(prodCsp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
+    expect(prodCsp).not.toMatch(/script-src[^;]*'unsafe-eval'/);
+    expect(prodCsp).toContain("object-src 'none'");
+    expect(prodCsp).toContain("base-uri 'self'");
+    expect(prodCsp).toContain("form-action 'self'");
+    expect(prodCsp).toContain("frame-ancestors 'self'");
+    expect(prodCsp).toContain(
+      "connect-src 'self' https://api.stripe.com https://js.stripe.com https://hooks.stripe.com https://*.basemaps.cartocdn.com https://cdn.wedding.example.com"
+    );
+
+    const devCsp = buildContentSecurityPolicy({
+      nonce: 'dGVzdC1ub25jZS0xMjM0NTY=',
+      isDev: true,
+    });
+    expect(devCsp).toMatch(/script-src[^;]*'unsafe-eval'/);
+    expect(devCsp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
   });
 });
