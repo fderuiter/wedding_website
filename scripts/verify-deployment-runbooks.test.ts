@@ -330,8 +330,8 @@ describe('verify-deployment-runbooks', () => {
     const brokenWorkflow = fs
       .readFileSync(deployProviderPath, 'utf8')
       .replace(
-        'if: "!(inputs.dry_run && inputs.image_digest == \'\' && inputs.image_tag == \'latest\')"',
-        "if: !(inputs.dry_run && inputs.image_digest == '' && inputs.image_tag == 'latest')"
+        /if: "!\(inputs\.dry_run && inputs\.image_digest == '' && inputs\.image_tag == 'latest'\)([^"]*)"/,
+        "if: !(inputs.dry_run && inputs.image_digest == '' && inputs.image_tag == 'latest')$1"
       );
     fs.writeFileSync(deployProviderPath, brokenWorkflow);
     const expectedLine =
