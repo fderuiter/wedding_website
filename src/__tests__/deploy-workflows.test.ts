@@ -433,7 +433,8 @@ process.exit(1);
 
     expect(ciDoc.concurrency).toEqual({
       group: '${{ github.workflow }}-${{ github.ref }}',
-      'cancel-in-progress': "${{ github.event_name == 'pull_request' }}",
+      'cancel-in-progress':
+        "${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}",
       queue: 'max',
     });
     expect(storybookDoc.concurrency).toEqual({
