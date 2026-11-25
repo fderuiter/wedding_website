@@ -510,6 +510,11 @@ describe('RootLayout Server Component Cookie Hydration', () => {
       seoKeywords: 'wedding',
       faviconUrl: '/assets/favicon.png',
       ogImageUrl: '/images/placeholder.png',
+      brandMonogram: 'A & B',
+      brandLogoAlt: 'Alice & Bob Crest',
+      heroImageAlt: 'Alice & Bob Portrait',
+      brandWatermarkAlt: 'Alice & Bob Watermark',
+      badgeGraphicAlt: 'Alice & Bob Seal',
       contactEmail: 'hosts@wedding.example',
       timezone: 'America/Los_Angeles',
       rsvpOpen: true,
@@ -626,8 +631,24 @@ describe('RootLayout Server Component Cookie Hydration', () => {
       expect(passedConfig.seoTitle).toBe('');
       expect(passedConfig.seoDescription).toBe('');
       expect(passedConfig.seoKeywords).toBe('');
-      expect(passedConfig.contactEmail).toBe('hosts@wedding.example');
+      expect(passedConfig.contactEmail).toBe('');
+      expect(passedConfig.brandMonogram).toBe('');
+      expect(passedConfig.brandLogoAlt).toBe('');
+      expect(passedConfig.heroImageAlt).toBe('');
+      expect(passedConfig.brandWatermarkAlt).toBe('');
+      expect(passedConfig.badgeGraphicAlt).toBe('');
+      expect(passedConfig.rsvpDeadlineDate).toBe('');
+      expect(passedConfig.rsvpClosedMessage).toBe('');
       expect(passedConfig.colorPrimary).toBe('#991B1B');
+      expect(passedConfig.colorSecondary).toBe('#B45309');
+
+      const serialized = JSON.stringify(passedConfig);
+      expect(serialized).not.toContain('hosts@wedding.example');
+      expect(serialized).not.toContain('A & B');
+      expect(serialized).not.toContain('Alice');
+      expect(serialized).not.toContain('Bob');
+      expect(serialized).not.toContain('2099-05-01');
+      expect(serialized).not.toContain('RSVPs are closed.');
 
       expect(logisticsService.getVisibleFaqs).not.toHaveBeenCalled();
       const clientProps = extractRootLayoutClientProps(jsx);

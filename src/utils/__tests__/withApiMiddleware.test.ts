@@ -425,6 +425,58 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
       expect(res6.status).toBe(429);
     });
 
+    test('records AuthLockout quota usage on HTTP 200 responses for POST /api/guest/lookup and returns 429 on attempt 6', async () => {
+      let shouldMatch = true;
+      const handler = jest.fn().mockImplementation(() => {
+        if (!shouldMatch) {
+          throw new ApiError(404, 'No invitation found matching the provided details.');
+        }
+        return new Response(JSON.stringify({ success: true, guestName: 'J. D.' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      });
+      const middleware = withApiMiddleware(handler);
+
+      // 5 consecutive HTTP 200 lookup matches from 127.0.0.4 exhaust the 5-attempt quota
+      for (let i = 0; i < 5; i++) {
+        const req = new NextRequest('http://localhost/api/guest/lookup', {
+          method: 'POST',
+          headers: createVerifiedSocketIpHeaders('127.0.0.4'),
+        });
+        const res = await middleware(req, {});
+        expect(res.status).toBe(200);
+      }
+
+      const callsBeforeLocked = handler.mock.calls.length;
+      const attempt6Req = new NextRequest('http://localhost/api/guest/lookup', {
+        method: 'POST',
+        headers: createVerifiedSocketIpHeaders('127.0.0.4'),
+      });
+      const attempt6Res = await middleware(attempt6Req, {});
+      expect(attempt6Res.status).toBe(429);
+      expect(handler).toHaveBeenCalledTimes(callsBeforeLocked);
+
+      // Mixed 200 + 404 probes on a distinct IP (127.0.0.5) also lock out on attempt 6
+      const statuses = [200, 404, 200, 404, 200];
+      for (const expectedStatus of statuses) {
+        shouldMatch = expectedStatus === 200;
+        const req = new NextRequest('http://localhost/api/guest/lookup', {
+          method: 'POST',
+          headers: createVerifiedSocketIpHeaders('127.0.0.5'),
+        });
+        const res = await middleware(req, {});
+        expect(res.status).toBe(expectedStatus);
+      }
+
+      const mixedAttempt6Req = new NextRequest('http://localhost/api/guest/lookup', {
+        method: 'POST',
+        headers: createVerifiedSocketIpHeaders('127.0.0.5'),
+      });
+      const mixedAttempt6Res = await middleware(mixedAttempt6Req, {});
+      expect(mixedAttempt6Res.status).toBe(429);
+    });
+
     test('exempts /api/health from rate limiting across more than 100 consecutive requests', async () => {
       const handler = jest.fn().mockResolvedValue(
         new Response(JSON.stringify({ status: 'ok', database: 'connected' }), {

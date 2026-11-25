@@ -185,19 +185,28 @@ describe('Registry Ledger, Multi-Quantity Capacity, Shipping Security Perimeter 
         defaultPaymentHandle: '@site-default',
       });
 
-      // 1. Passcode-only guest (no guest_invite_session, not admin): shippingAddress omitted
+      // 1. Passcode-only guest (no guest_invite_session, not admin): both shippingAddress and defaultPaymentHandle omitted while card capabilities remain intact
+      process.env.STRIPE_SECRET_KEY = 'sk_test_capabilities_passcode_guest';
+      process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = 'pk_test_capabilities_passcode_guest';
+      (isAdminRequest as jest.Mock).mockResolvedValueOnce(false);
       (getGuestInviteSession as jest.Mock).mockResolvedValueOnce(null);
       const passcodeOnlyRes = await getCapabilities(
         new NextRequest('http://localhost:3000/api/registry/capabilities')
       );
       expect(passcodeOnlyRes.status).toBe(200);
       const passcodeBody = await passcodeOnlyRes.json();
-      expect(passcodeBody.data.defaultPaymentHandleType).toBe('Venmo');
-      expect(passcodeBody.data.defaultPaymentHandle).toBe('@site-default');
+      expect(passcodeBody.data.cardCheckoutEnabled).toBe(true);
+      expect(passcodeBody.data.stripePublishableKey).toBe('pk_test_capabilities_passcode_guest');
+      expect(passcodeBody.data.defaultPaymentHandleType).toBeUndefined();
+      expect(passcodeBody.data.defaultPaymentHandle).toBeUndefined();
       expect(passcodeBody.data.shippingAddress).toBeUndefined();
       expect(JSON.stringify(passcodeBody)).not.toContain('742 Evergreen Terrace');
+      expect(JSON.stringify(passcodeBody)).not.toContain('@site-default');
+      delete process.env.STRIPE_SECRET_KEY;
+      delete process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
 
-      // 2. Verified guest_invite_session with active physical items: shippingAddress included
+      // 2. Verified guest_invite_session with active physical HTTP vendorUrl items & fallback-needing funds: both included
+      (isAdminRequest as jest.Mock).mockResolvedValueOnce(false);
       (getGuestInviteSession as jest.Mock).mockResolvedValueOnce({
         code: 'INVITE26',
         guestName: 'Invited Household',
@@ -221,11 +230,12 @@ describe('Registry Ledger, Multi-Quantity Capacity, Shipping Security Perimeter 
         deliveryNotes: 'Front porch',
       });
 
-      // 3. Verified guest when catalog has zero active physical items and zero funds: both omitted
+      // 3. Verified guest when catalog has zero active physical items with HTTP vendorUrl and zero fallback-needing funds: both omitted
       catalogSpy.mockResolvedValueOnce({
         hasActivePhysicalItems: false,
         hasActiveFundsOrGroupGifts: false,
       });
+      (isAdminRequest as jest.Mock).mockResolvedValueOnce(false);
       (getGuestInviteSession as jest.Mock).mockResolvedValueOnce({
         code: 'INVITE26',
         guestName: 'Invited Household',
@@ -237,7 +247,166 @@ describe('Registry Ledger, Multi-Quantity Capacity, Shipping Security Perimeter 
       expect(emptyCatalogBody.data.shippingAddress).toBeUndefined();
       expect(emptyCatalogBody.data.defaultPaymentHandle).toBeUndefined();
 
+      // 4. Admin request receives configured shippingAddress and defaultPaymentHandle even when catalog has zero active items
+      catalogSpy.mockResolvedValueOnce({
+        hasActivePhysicalItems: false,
+        hasActiveFundsOrGroupGifts: false,
+      });
+      (isAdminRequest as jest.Mock).mockResolvedValueOnce(true);
+      (getGuestInviteSession as jest.Mock).mockResolvedValueOnce(null);
+      const adminCapRes = await getCapabilities(
+        new NextRequest('http://localhost:3000/api/registry/capabilities')
+      );
+      expect(adminCapRes.status).toBe(200);
+      const adminCapBody = await adminCapRes.json();
+      expect(adminCapBody.data.shippingAddress?.addressLine1).toBe('742 Evergreen Terrace');
+      expect(adminCapBody.data.defaultPaymentHandle).toBe('@site-default');
+      expect(adminCapBody.data.defaultPaymentHandleType).toBe('Venmo');
+
       catalogSpy.mockRestore();
+    });
+
+    it('evaluates HTTP vendorUrl physical items and fallback-needing funds against PostgreSQL in GET /api/registry/capabilities', async () => {
+      const repo = createRegistryRepository(realPrisma);
+      const summarySpy = jest
+        .spyOn(registryService, 'getActiveCatalogCapabilitiesSummary')
+        .mockImplementation(() => repo.getActiveCatalogCapabilitiesSummary!());
+
+      await realPrisma.contributor.deleteMany({
+        where: { registryItem: { isSample: false } },
+      });
+      await realPrisma.registryItem.deleteMany({
+        where: { isSample: false },
+      });
+
+      (getAppConfig as jest.Mock).mockResolvedValue({
+        modules: { registry: true, groupGifting: true },
+        shippingRecipientName: 'Alex & Jordan',
+        shippingAddressLine1: '742 Evergreen Terrace',
+        shippingCity: 'Portland',
+        shippingState: 'OR',
+        shippingZip: '97205',
+        shippingCountry: 'United States',
+        defaultPaymentHandleType: 'Venmo',
+        defaultPaymentHandle: '@site-default',
+      });
+
+      const createdIds: string[] = [];
+      let testMediaId: string | null = null;
+      try {
+        const testMedia = await realPrisma.media.create({
+          data: {
+            url: '/images/placeholder.png',
+            isDecorative: true,
+          },
+        });
+        testMediaId = testMedia.id;
+
+        // Active non-sample physical item WITHOUT HTTP vendorUrl + fund WITH its own paymentHandle -> both omitted for non-admin invite session
+        const noUrlPhysical = await realPrisma.registryItem.create({
+          data: {
+            name: 'In-Person Gift Box',
+            description: 'No external vendor link',
+            price: 50,
+            quantity: 1,
+            category: 'Home',
+            itemType: 'PHYSICAL',
+            imageId: testMedia.id,
+            isSample: false,
+            purchased: false,
+            vendorUrl: null,
+          },
+        });
+        createdIds.push(noUrlPhysical.id);
+
+        const selfHandledFund = await realPrisma.registryItem.create({
+          data: {
+            name: 'Self-Handled Fund',
+            description: 'Has dedicated handle',
+            price: 500,
+            quantity: 1,
+            category: 'Honeymoon',
+            itemType: 'CASH_FUND',
+            imageId: testMedia.id,
+            isGroupGift: true,
+            isSample: false,
+            purchased: false,
+            paymentHandleType: 'Venmo',
+            paymentHandle: '@dedicated-fund',
+          },
+        });
+        createdIds.push(selfHandledFund.id);
+
+        (isAdminRequest as jest.Mock).mockResolvedValueOnce(false);
+        (getGuestInviteSession as jest.Mock).mockResolvedValueOnce({
+          code: 'INVITE26',
+          guestName: 'Invited Household',
+        });
+        const withheldRes = await getCapabilities(
+          new NextRequest('http://localhost:3000/api/registry/capabilities')
+        );
+        const withheldBody = await withheldRes.json();
+        expect(withheldBody.data.shippingAddress).toBeUndefined();
+        expect(withheldBody.data.defaultPaymentHandle).toBeUndefined();
+
+        // Add active non-sample physical item WITH HTTP vendorUrl + fund needing fallback handle -> both disclosed to verified household
+        const httpPhysical = await realPrisma.registryItem.create({
+          data: {
+            name: 'Stand Mixer',
+            description: 'External store link',
+            price: 300,
+            quantity: 1,
+            category: 'Kitchen',
+            itemType: 'PHYSICAL',
+            imageId: testMedia.id,
+            isSample: false,
+            purchased: false,
+            vendorUrl: 'https://retailer.example.com/stand-mixer',
+          },
+        });
+        createdIds.push(httpPhysical.id);
+
+        const fallbackFund = await realPrisma.registryItem.create({
+          data: {
+            name: 'Fallback Fund',
+            description: 'Uses site default handle',
+            price: 400,
+            quantity: 1,
+            category: 'Honeymoon',
+            itemType: 'CASH_FUND',
+            imageId: testMedia.id,
+            isGroupGift: true,
+            isSample: false,
+            purchased: false,
+            paymentHandle: null,
+          },
+        });
+        createdIds.push(fallbackFund.id);
+
+        (isAdminRequest as jest.Mock).mockResolvedValueOnce(false);
+        (getGuestInviteSession as jest.Mock).mockResolvedValueOnce({
+          code: 'INVITE26',
+          guestName: 'Invited Household',
+        });
+        const disclosedRes = await getCapabilities(
+          new NextRequest('http://localhost:3000/api/registry/capabilities')
+        );
+        const disclosedBody = await disclosedRes.json();
+        expect(disclosedBody.data.shippingAddress?.addressLine1).toBe('742 Evergreen Terrace');
+        expect(disclosedBody.data.defaultPaymentHandle).toBe('@site-default');
+      } finally {
+        summarySpy.mockRestore();
+        if (createdIds.length > 0) {
+          await realPrisma.registryItem.deleteMany({
+            where: { id: { in: createdIds } },
+          });
+        }
+        if (testMediaId) {
+          await realPrisma.media.deleteMany({
+            where: { id: testMediaId },
+          });
+        }
+      }
     });
   });
 

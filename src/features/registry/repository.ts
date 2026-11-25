@@ -203,13 +203,15 @@ class RegistryRepository implements IRegistryRepository {
       return {
         hasActivePhysicalItems: seeded.some(
           (item) =>
-            (item.itemType ?? 'PHYSICAL') === 'PHYSICAL' && !item.isGroupGift
+            (item.itemType ?? 'PHYSICAL') === 'PHYSICAL' &&
+            /^https?:\/\//i.test(item.vendorUrl?.trim() ?? '')
         ),
         hasActiveFundsOrGroupGifts: seeded.some(
           (item) =>
-            item.itemType === 'CASH_FUND' ||
-            item.itemType === 'EXPERIENCE_FUND' ||
-            Boolean(item.isGroupGift)
+            (item.itemType === 'CASH_FUND' ||
+              item.itemType === 'EXPERIENCE_FUND' ||
+              Boolean(item.isGroupGift)) &&
+            !item.paymentHandle?.trim()
         ),
       };
     }
@@ -221,7 +223,10 @@ class RegistryRepository implements IRegistryRepository {
             isSample: false,
             purchased: false,
             itemType: 'PHYSICAL',
-            isGroupGift: false,
+            OR: [
+              { vendorUrl: { startsWith: 'http://', mode: 'insensitive' } },
+              { vendorUrl: { startsWith: 'https://', mode: 'insensitive' } },
+            ],
           },
           select: { id: true },
         }),
@@ -229,9 +234,16 @@ class RegistryRepository implements IRegistryRepository {
           where: {
             isSample: false,
             purchased: false,
-            OR: [
-              { itemType: { in: ['CASH_FUND', 'EXPERIENCE_FUND'] } },
-              { isGroupGift: true },
+            AND: [
+              {
+                OR: [
+                  { itemType: { in: ['CASH_FUND', 'EXPERIENCE_FUND'] } },
+                  { isGroupGift: true },
+                ],
+              },
+              {
+                OR: [{ paymentHandle: null }, { paymentHandle: '' }],
+              },
             ],
           },
           select: { id: true },

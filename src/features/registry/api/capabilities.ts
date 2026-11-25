@@ -46,13 +46,15 @@ export const GET = withApiMiddleware(async (request?: NextRequest) => {
       shippingCandidate.country
   );
 
+  const hasInviteSession = Boolean(guestSession?.code);
+
   const canViewShippingAddress =
     hasShippingAddress &&
-    (isAdmin || Boolean(guestSession?.code)) &&
-    catalogSummary.hasActivePhysicalItems;
+    (isAdmin || (hasInviteSession && catalogSummary.hasActivePhysicalItems));
 
   const canViewDefaultPaymentHandle =
-    Boolean(defaultPaymentHandle) && catalogSummary.hasActiveFundsOrGroupGifts;
+    Boolean(defaultPaymentHandle) &&
+    (isAdmin || (hasInviteSession && catalogSummary.hasActiveFundsOrGroupGifts));
 
   return NextResponse.json({
     success: true,

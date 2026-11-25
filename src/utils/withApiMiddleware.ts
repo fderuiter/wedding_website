@@ -60,6 +60,17 @@ function isAuthFailureStatus(status: number): boolean {
   return status === 401 || status === 403 || status === 404;
 }
 
+function shouldRecordAuthLockoutAttempt(
+  pathname: string,
+  method: string,
+  status: number
+): boolean {
+  if (isAuthFailureStatus(status)) {
+    return true;
+  }
+  return pathname === '/api/guest/lookup' && method.toUpperCase() === 'POST' && status === 200;
+}
+
 function isInviteRevocationExcludedApiPath(normalizedPathname: string): boolean {
   return (
     normalizedPathname === '/api/cron' ||
@@ -261,7 +272,7 @@ export function withApiMiddleware(
         !isHealthPath &&
         prechecksCompleted &&
         req &&
-        isAuthFailureStatus(response.status) &&
+        shouldRecordAuthLockoutAttempt(normalizedPathname, method, response.status) &&
         typeof recordAuthFailure === 'function'
       ) {
         await recordAuthFailure(

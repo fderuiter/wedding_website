@@ -1080,7 +1080,7 @@ describe('Request-Level Configuration Memoization (React cache)', () => {
       ]);
     });
 
-    it('clears gated event details in toUnauthenticatedAppConfig while preserving branding, theme tokens, modules, contactEmail, timezone, and RSVP fields', () => {
+    it('clears couple PII, contactEmail, brandMonogram, alt text, and RSVP deadlines in toUnauthenticatedAppConfig while preserving theme tokens, modules, timezone, and boolean RSVP state', () => {
       const richConfig = {
         ...baseConfig,
         partner1Name: 'Taylor',
@@ -1153,7 +1153,7 @@ describe('Request-Level Configuration Memoization (React cache)', () => {
 
       const unauth = toUnauthenticatedAppConfig(richConfig);
 
-      // Gated fields are cleared
+      // Gated PII, monogram, alt text, and RSVP deadline fields are cleared
       expect(unauth.partner1Name).toBe('');
       expect(unauth.partner2Name).toBe('');
       expect(unauth.brideName).toBe('');
@@ -1162,6 +1162,14 @@ describe('Request-Level Configuration Memoization (React cache)', () => {
       expect(unauth.seoTitle).toBe('');
       expect(unauth.seoDescription).toBe('');
       expect(unauth.seoKeywords).toBe('');
+      expect(unauth.contactEmail).toBe('');
+      expect(unauth.brandMonogram).toBe('');
+      expect(unauth.brandLogoAlt).toBe('');
+      expect(unauth.heroImageAlt).toBe('');
+      expect(unauth.brandWatermarkAlt).toBe('');
+      expect(unauth.badgeGraphicAlt).toBe('');
+      expect(unauth.rsvpDeadlineDate).toBe('');
+      expect(unauth.rsvpClosedMessage).toBe('');
       expect(unauth.photoAlbumUrl).toBe('');
       expect(unauth.venueName).toBe('');
       expect(unauth.venueAddress).toBe('');
@@ -1177,10 +1185,8 @@ describe('Request-Level Configuration Memoization (React cache)', () => {
       expect(unauth.heroSubtitle).toBe('');
       expect(unauth.features).toEqual([]);
 
-      // Branding tokens, theme, modules, contactEmail, timezone, and RSVP fields are preserved
-      expect(unauth.brandMonogram).toBe('T & M');
+      // Theme variables, modules, timezone, and boolean RSVP state are preserved
       expect(unauth.brandLogoUrl).toBe('/uploads/logo.png');
-      expect(unauth.brandLogoAlt).toBe('Couple monogram');
       expect(unauth.heroImageUrl).toBe('/uploads/hero.jpg');
       expect(unauth.brandWatermarkUrl).toBe('/uploads/watermark.png');
       expect(unauth.badgeGraphicUrl).toBe('/uploads/badge.png');
@@ -1188,12 +1194,9 @@ describe('Request-Level Configuration Memoization (React cache)', () => {
       expect(unauth.colorSecondary).toBe('#D97706');
       expect(unauth.themePreset).toBe('editorial');
       expect(unauth.themeTokens).toEqual({ '--color-accent': '#0F766E' });
-      expect(unauth.contactEmail).toBe('hosts@wedding.example');
       expect(unauth.timezone).toBe('America/New_York');
       expect(unauth.rsvpOpen).toBe(true);
       expect(unauth.isRsvpOpen).toBe(true);
-      expect(unauth.rsvpDeadlineDate).toBe('2099-09-01');
-      expect(unauth.rsvpClosedMessage).toBe('Please email hosts for late RSVP updates.');
       expect(unauth.modules.registry).toBe(true);
       expect(unauth.modules.attractions).toBe(false);
     });

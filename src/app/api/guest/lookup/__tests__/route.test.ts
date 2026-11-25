@@ -220,7 +220,9 @@ describe('POST /api/guest/lookup', () => {
 
       const json = await res.json();
       expect(json.success).toBe(true);
-      expect(json.guestName).toBe('Jane Doe');
+      expect(json.guestName).toBe('J. D.');
+      expect(json.data?.guestName).toBe('J. D.');
+      expect(JSON.stringify(json)).not.toContain('Jane Doe');
       expect(json.code).toBeUndefined();
       expect(json.data?.code).toBeUndefined();
 
@@ -253,7 +255,9 @@ describe('POST /api/guest/lookup', () => {
 
       const json = await res.json();
       expect(json.success).toBe(true);
-      expect(json.guestName).toBe('Jane Doe');
+      expect(json.guestName).toBe('J. D.');
+      expect(json.data?.guestName).toBe('J. D.');
+      expect(JSON.stringify(json)).not.toContain('Jane Doe');
       expect(json.code).toBeUndefined();
 
       const setCookieHeaders = res.headers.get('set-cookie') || '';
@@ -283,7 +287,9 @@ describe('POST /api/guest/lookup', () => {
 
       const json = await res.json();
       expect(json.success).toBe(true);
-      expect(json.guestName).toBe('Alex Smith');
+      expect(json.guestName).toBe('A. S.');
+      expect(json.data?.guestName).toBe('A. S.');
+      expect(JSON.stringify(json)).not.toContain('Alex Smith');
       expect(json.code).toBeUndefined();
 
       const setCookieHeaders = res.headers.get('set-cookie') || '';
@@ -336,7 +342,9 @@ describe('POST /api/guest/lookup', () => {
       const res = await lookupRoute(req);
       expect(res.status).toBe(200);
       const json = await res.json();
-      expect(json.guestName).toBe('Jordan Lee');
+      expect(json.guestName).toBe('J. L.');
+      expect(json.data?.guestName).toBe('J. L.');
+      expect(JSON.stringify(json)).not.toContain('Jordan Lee');
       expect(json.code).toBeUndefined();
     });
 
@@ -408,7 +416,9 @@ describe('POST /api/guest/lookup', () => {
 
       const json = await res.json();
       expect(json.success).toBe(true);
-      expect(json.guestName).toBe('Primary Host');
+      expect(json.guestName).toBe('P. H.');
+      expect(json.data?.guestName).toBe('P. H.');
+      expect(JSON.stringify(json)).not.toContain('Primary Host');
       expect(json.code).toBeUndefined();
 
       const setCookieHeaders = res.headers.get('set-cookie') || '';
@@ -449,7 +459,9 @@ describe('POST /api/guest/lookup', () => {
 
       const json = await res.json();
       expect(json.success).toBe(true);
-      expect(json.guestName).toBe('Primary Host');
+      expect(json.guestName).toBe('P. H.');
+      expect(json.data?.guestName).toBe('P. H.');
+      expect(JSON.stringify(json)).not.toContain('Primary Host');
       expect(json.code).toBeUndefined();
 
       expect(mockFindFirst).toHaveBeenCalledWith({
@@ -520,6 +532,40 @@ describe('POST /api/guest/lookup', () => {
       const json = await rateLimitedRes.json();
       expect(json.success).toBe(false);
       expect(json.error).toMatch(/too many requests/i);
+    });
+
+    it('masks honorific household names to initials and locks out IP on attempt 6 even when all 5 prior lookups return HTTP 200', async () => {
+      mockFindFirst.mockResolvedValue({
+        id: 'inv-uuid-smith',
+        code: 'SMITH2026',
+        guestName: 'Mr. & Mrs. Robert Smith',
+        email: 'robert@example.com',
+      });
+
+      const makeMatchedRequest = () =>
+        lookupRoute(
+          new NextRequest('http://localhost/api/guest/lookup', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-forwarded-for': '198.51.100.99',
+            },
+            body: JSON.stringify({ email: 'robert@example.com' }),
+          })
+        );
+
+      for (let i = 1; i <= 5; i++) {
+        const res = await makeMatchedRequest();
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.guestName).toBe('R. S.');
+        expect(body.data?.guestName).toBe('R. S.');
+        expect(JSON.stringify(body)).not.toContain('Robert');
+        expect(JSON.stringify(body)).not.toContain('Smith');
+      }
+
+      const sixthRes = await makeMatchedRequest();
+      expect(sixthRes.status).toBe(429);
     });
   });
 });

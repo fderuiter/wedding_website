@@ -349,7 +349,8 @@ export default function Navbar({
   const partner2 = config.partner2Name || config.groomName || '';
   const couplesNames = partner1 && partner2 ? `${partner1} & ${partner2}` : (partner1 || partner2);
   const brandLogoAlt = config.brandLogoAlt || (couplesNames ? `${couplesNames} Logo` : 'Brand Logo');
-  const monogram = deriveBrandMonogram(config);
+  const hasBrandIdentity = Boolean(config.brandMonogram?.trim() || partner1 || partner2);
+  const monogram = hasBrandIdentity ? deriveBrandMonogram(config) : 'Wedding Website';
   const disablePrefetch = normalizedPathname === '/guest/login';
   const defaultHelpCategory = resolveHelpCategoryForPath(normalizedPathname);
 
