@@ -17,6 +17,7 @@ import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { calculateContributionAmounts } from '@/lib/stripe';
 import { parseJsonRequestBody } from '@/utils/contentType';
+import { checkAuthLockout, recordAuthFailure } from '@/utils/rateLimit';
 
 /**
  * Reconciles a redirected Stripe PaymentIntent on return to `/registry`.
@@ -25,6 +26,14 @@ import { parseJsonRequestBody } from '@/utils/contentType';
  * and triggers deduplicated guest/couple notifications.
  */
 export const POST = withApiMiddleware(async (request: NextRequest) => {
+  const hasHeaders = Boolean(request?.headers && typeof request.headers.get === 'function');
+  if (hasHeaders) {
+    const lockoutResponse = await checkAuthLockout(request);
+    if (lockoutResponse) {
+      return lockoutResponse;
+    }
+  }
+
   const data = await parseJsonRequestBody(request);
   const [config, isAdmin] = await Promise.all([getAppConfig(), isAdminRequest(request)]);
 
@@ -42,16 +51,27 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   const stripeResult = resolveStripeClient();
   if (!stripeResult.ok) return stripeResult.response;
 
-  const { paymentIntent, resolvedItemId } = await verifyPaymentIntentOwnership(
-    {
-      source: { stripe: stripeResult.stripe, paymentIntentId },
-      requireClientSecret: true,
-      clientSecret,
-      expectedItemId: requestedItemId,
-      requireMetadataItemId: true,
-    },
-    403
-  );
+  let paymentIntent;
+  let resolvedItemId: string;
+  try {
+    const ownership = await verifyPaymentIntentOwnership(
+      {
+        source: { stripe: stripeResult.stripe, paymentIntentId },
+        requireClientSecret: true,
+        clientSecret,
+        expectedItemId: requestedItemId,
+        requireMetadataItemId: true,
+      },
+      403
+    );
+    paymentIntent = ownership.paymentIntent;
+    resolvedItemId = ownership.resolvedItemId;
+  } catch (err: unknown) {
+    if (err instanceof ApiError && err.statusCode === 403 && hasHeaders) {
+      await recordAuthFailure(request);
+    }
+    throw err;
+  }
 
   if (paymentIntent.status !== 'succeeded') {
     const declineMessage =

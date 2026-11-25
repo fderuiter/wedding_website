@@ -347,6 +347,7 @@ export const ContributionSchema = z
         .nullable(),
       coverFee: z.boolean().optional().default(false),
       paymentIntentId: z.string().trim().optional(),
+      clientSecret: z.string().trim().optional(),
       retailerOrderNumber: optionalNullableTrimmedField(
         120,
         'Retailer order number',
@@ -398,6 +399,9 @@ export const ContributionSchema = z
     return {
       ...data,
       name: resolvedName,
+      ...(data.clientSecret !== undefined
+        ? { clientSecret: normalizeOptional(data.clientSecret) }
+        : {}),
       ...(data.retailerOrderNumber !== undefined
         ? { retailerOrderNumber: normalizeOptional(data.retailerOrderNumber) }
         : {}),

@@ -546,13 +546,24 @@ export async function handleRegistryRoutes(
         typeof body.paymentIntentId === 'string' && body.paymentIntentId.trim()
           ? body.paymentIntentId.trim()
           : null;
-      const codeInput =
-        typeof body.code === 'string' && body.code.trim()
-          ? body.code.trim()
-          : draft.guestSession?.code ?? null;
+      const submittedCode =
+        typeof body.code === 'string' && body.code.trim() ? body.code.trim() : null;
+      const sessionCode = draft.guestSession?.code?.trim() || null;
+
+      if (!draft.isAdminAuthenticated && submittedCode) {
+        if (!sessionCode || sessionCode.toUpperCase() !== submittedCode.toUpperCase()) {
+          return {
+            errorStatus: 403,
+            errorMessage:
+              'Forbidden: Please verify your household invitation code before linking a contribution to a household.',
+          } as const;
+        }
+      }
+
+      const codeInput = draft.isAdminAuthenticated ? submittedCode : sessionCode;
       const matchedInvite = codeInput
         ? draft.invitationCode.find(
-          (inv) => inv.code.toLowerCase() === codeInput.toLowerCase(),
+          (inv) => !inv.isSample && inv.code.toLowerCase() === codeInput.toLowerCase(),
         )
         : null;
 

@@ -43,7 +43,10 @@ function LiveDemoRegistryItemHarness({
     message?: string,
     coverFee?: boolean,
     email?: string,
-    paymentIntentId?: string
+    paymentIntentId?: string,
+    _orderDetails?: unknown,
+    _addressDetails?: unknown,
+    clientSecret?: string
   ) => {
     const res = await fetch('/api/registry/contribute', {
       method: 'POST',
@@ -57,6 +60,7 @@ function LiveDemoRegistryItemHarness({
         coverFee,
         email,
         paymentIntentId,
+        ...(paymentIntentId && clientSecret ? { clientSecret } : {}),
       }),
     });
     if (!res.ok) {

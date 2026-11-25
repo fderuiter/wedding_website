@@ -48,6 +48,7 @@ interface ContributeVariables {
   coverFee?: boolean;
   email?: string | null;
   paymentIntentId?: string;
+  clientSecret?: string;
   retailerOrderNumber?: string;
   carrier?: string;
   trackingNumber?: string;
@@ -298,6 +299,7 @@ export function useRegistry() {
       coverFee,
       email,
       paymentIntentId,
+      clientSecret,
       retailerOrderNumber,
       carrier,
       trackingNumber,
@@ -317,6 +319,7 @@ export function useRegistry() {
         coverFee,
         email,
         paymentIntentId,
+        ...(paymentIntentId && clientSecret ? { clientSecret } : {}),
         ...(retailerOrderNumber ? { retailerOrderNumber } : {}),
         ...(carrier ? { carrier } : {}),
         ...(trackingNumber ? { trackingNumber } : {}),
@@ -718,7 +721,8 @@ export function useRegistry() {
     email?: string,
     paymentIntentId?: string,
     orderDetails?: OrderTrackingDetails,
-    addressDetails?: ContributorAddressDetails
+    addressDetails?: ContributorAddressDetails,
+    clientSecret?: string
   ) => {
     setReconciledItems((prev) => {
       if (!(itemId in prev)) return prev;
@@ -737,6 +741,7 @@ export function useRegistry() {
           coverFee,
           email,
           paymentIntentId,
+          clientSecret: paymentIntentId ? clientSecret : undefined,
           retailerOrderNumber: orderDetails?.retailerOrderNumber || undefined,
           carrier: orderDetails?.carrier || undefined,
           trackingNumber: orderDetails?.trackingNumber || undefined,

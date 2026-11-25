@@ -58,7 +58,8 @@ interface UseRegistryContributionMachineOptions {
     email?: string,
     paymentIntentId?: string,
     orderDetails?: OrderTrackingDetails,
-    addressDetails?: ContributorAddressDetails
+    addressDetails?: ContributorAddressDetails,
+    clientSecret?: string
   ) => Promise<unknown>;
   initialContributorName?: string;
   initialEmail?: string;
@@ -158,6 +159,7 @@ interface UseRegistryContributionMachineReturn {
     options?: {
       coverFeeOverride?: boolean;
       identityOverride?: Omit<VerifiedSubmissionIdentity, 'ok'>;
+      clientSecret?: string;
     }
   ) => Promise<void>;
   handlePresetClick: (presetValue: number) => void;
@@ -839,6 +841,7 @@ export function useRegistryContributionMachine({
       options?: {
         coverFeeOverride?: boolean;
         identityOverride?: Omit<VerifiedSubmissionIdentity, 'ok'>;
+        clientSecret?: string;
       }
     ) => {
       if (e) {
@@ -923,6 +926,7 @@ export function useRegistryContributionMachine({
         message: message || undefined,
         coverFee: effectiveCoverFee,
         paymentIntentId,
+        clientSecret: paymentIntentId ? options?.clientSecret || undefined : undefined,
         retailerOrderNumber: retailerOrderNumber || undefined,
         carrier: carrier || undefined,
         trackingNumber: trackingNumber || undefined,
@@ -1008,7 +1012,21 @@ export function useRegistryContributionMachine({
       setPhase('submitting');
       try {
         let contributeResult: unknown;
-        if (addressDetailsPayload) {
+        if (validData.clientSecret !== undefined && onContribute.length >= 11) {
+          contributeResult = await onContribute(
+            item.id,
+            validData.name,
+            finalAmount,
+            validData.code || undefined,
+            validData.message || undefined,
+            validData.coverFee,
+            validData.email || undefined,
+            paymentIntentId,
+            orderDetailsPayload,
+            addressDetailsPayload,
+            validData.clientSecret
+          );
+        } else if (addressDetailsPayload) {
           contributeResult = await onContribute(
             item.id,
             validData.name,

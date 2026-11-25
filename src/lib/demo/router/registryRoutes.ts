@@ -1,5 +1,6 @@
 import { ARCHETYPE_PRESETS } from '@/lib/sampleData/archetypes';
 import { findSeededRegistryItemById } from '@/lib/sampleData/builder';
+import { timingSafeEqualJS } from '@/utils/crypto';
 import { formatCurrency } from '@/utils/intl';
 import type {
   ContributorRecord,
@@ -29,6 +30,42 @@ import {
   nextDemoId,
   parseJsonBody,
 } from './http';
+
+interface DemoStoredPaymentIntent {
+  id: string;
+  clientSecret: string;
+  itemId: string;
+  baseAmount: number;
+  coverFee: boolean;
+  contributorName: string;
+  contributorEmail: string | null;
+  contributorMessage: string | null;
+  invitationCode?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  country?: string;
+}
+
+let trackedDemoResetCounter = -1;
+const demoPaymentIntents = new Map<string, DemoStoredPaymentIntent>();
+
+function getSyncedDemoPaymentIntents(): Map<string, DemoStoredPaymentIntent> {
+  const currentCounter = getDemoState().resetCounter;
+  if (currentCounter !== trackedDemoResetCounter) {
+    demoPaymentIntents.clear();
+    trackedDemoResetCounter = currentCounter;
+  }
+  return demoPaymentIntents;
+}
+
+function verifyDemoSecretConstantTime(provided?: string, expected?: string): boolean {
+  if (!provided || !expected) return false;
+  const encoder = new TextEncoder();
+  return timingSafeEqualJS(encoder.encode(provided), encoder.encode(expected));
+}
 
 function escapeDemoHtml(input: string): string {
   return input
@@ -443,35 +480,117 @@ export async function handleRegistryAndThankYouRoutes(
   // 3. Registry Contributions, Payment Intents, Reconcile, Scrape, Claims & Session
   if (path === '/api/registry/contribute' && method === 'POST') {
     const body = await parseJsonBody(init, rawInput);
-    const itemId = String(body.itemId || '');
+    const itemId = String(body.itemId || '').trim();
     const purchaserName = String(body.purchaserName || body.name || '').trim();
     const amount = Number(body.amount || 0);
     if (!itemId || !purchaserName || !(amount > 0)) {
       return jsonResponse({ error: 'Missing contribution details.' }, 400);
     }
+
+    const demoState = getDemoState();
+    const isAdmin = demoState.persona === 'admin';
+    const submittedCode =
+      typeof body.code === 'string' && body.code.trim() ? body.code.trim() : undefined;
+    const sessionCode = demoState.guestSession?.invitationCode?.trim() || undefined;
+
+    if (!isAdmin && submittedCode) {
+      if (!sessionCode || sessionCode.toUpperCase() !== submittedCode.toUpperCase()) {
+        return jsonResponse(
+          {
+            success: false,
+            error:
+              'Forbidden: Please verify your household invitation code before linking a contribution to a household.',
+          },
+          403
+        );
+      }
+    }
+
+    const verifiedCode = isAdmin ? submittedCode : sessionCode;
+    const paymentIntentId =
+      typeof body.paymentIntentId === 'string' && body.paymentIntentId.trim()
+        ? body.paymentIntentId.trim()
+        : undefined;
+    const clientSecret =
+      typeof body.clientSecret === 'string' && body.clientSecret.trim()
+        ? body.clientSecret.trim()
+        : undefined;
+
+    let effectiveName = purchaserName;
+    let effectiveAmount = amount;
+    let effectiveCoverFee = Boolean(body.coverFee);
+    let effectiveCode = verifiedCode;
+    let effectiveMessage = typeof body.message === 'string' ? body.message : null;
+    let effectiveEmail = typeof body.email === 'string' ? body.email : null;
+    let effectiveAddressLine1 = typeof body.addressLine1 === 'string' ? body.addressLine1 : undefined;
+    let effectiveAddressLine2 = typeof body.addressLine2 === 'string' ? body.addressLine2 : undefined;
+    let effectiveCity = typeof body.city === 'string' ? body.city : undefined;
+    let effectiveState = typeof body.state === 'string' ? body.state : undefined;
+    let effectiveZipCode = typeof body.zipCode === 'string' ? body.zipCode : undefined;
+    let effectiveCountry = typeof body.country === 'string' ? body.country : undefined;
+
+    if (paymentIntentId) {
+      const storeMap = getSyncedDemoPaymentIntents();
+      const storedIntent = storeMap.get(paymentIntentId);
+      const expectedSecret = storedIntent?.clientSecret ?? `${paymentIntentId}_secret_demo`;
+
+      if (!verifyDemoSecretConstantTime(clientSecret, expectedSecret)) {
+        return jsonResponse(
+          {
+            success: false,
+            error: clientSecret
+              ? 'Forbidden: PaymentIntent ownership mismatch.'
+              : 'Valid clientSecret is required to update an existing PaymentIntent.',
+          },
+          403
+        );
+      }
+
+      if (storedIntent) {
+        const resolvedTarget = resolveDemoRegistryItemTarget(itemId).target;
+        const canonicalItemId = resolvedTarget?.id ?? itemId;
+        if (storedIntent.itemId && storedIntent.itemId !== canonicalItemId && storedIntent.itemId !== itemId) {
+          return jsonResponse(
+            { success: false, error: 'Forbidden: PaymentIntent item binding mismatch.' },
+            403
+          );
+        }
+        effectiveName = storedIntent.contributorName || 'Anonymous Guest';
+        effectiveAmount = storedIntent.baseAmount;
+        effectiveCoverFee = storedIntent.coverFee;
+        effectiveCode = storedIntent.invitationCode;
+        effectiveMessage = storedIntent.contributorMessage;
+        effectiveEmail = storedIntent.contributorEmail;
+        effectiveAddressLine1 = storedIntent.addressLine1;
+        effectiveAddressLine2 = storedIntent.addressLine2;
+        effectiveCity = storedIntent.city;
+        effectiveState = storedIntent.state;
+        effectiveZipCode = storedIntent.zipCode;
+        effectiveCountry = storedIntent.country;
+      }
+    }
+
     const updated = recordDemoContribution({
       itemId,
-      purchaserName,
-      amount,
-      code: typeof body.code === 'string' ? body.code : undefined,
-      message: typeof body.message === 'string' ? body.message : null,
-      coverFee: Boolean(body.coverFee),
-      email: typeof body.email === 'string' ? body.email : null,
-      paymentIntentId:
-        typeof body.paymentIntentId === 'string' && body.paymentIntentId
-          ? body.paymentIntentId
-          : undefined,
+      purchaserName: effectiveName,
+      amount: effectiveAmount,
+      code: effectiveCode,
+      message: effectiveMessage,
+      coverFee: effectiveCoverFee,
+      email: effectiveEmail,
+      paymentIntentId,
+      clientSecret,
       retailerOrderNumber:
         typeof body.retailerOrderNumber === 'string' ? body.retailerOrderNumber : undefined,
       carrier: typeof body.carrier === 'string' ? body.carrier : undefined,
       trackingNumber:
         typeof body.trackingNumber === 'string' ? body.trackingNumber : undefined,
-      addressLine1: typeof body.addressLine1 === 'string' ? body.addressLine1 : undefined,
-      addressLine2: typeof body.addressLine2 === 'string' ? body.addressLine2 : undefined,
-      city: typeof body.city === 'string' ? body.city : undefined,
-      state: typeof body.state === 'string' ? body.state : undefined,
-      zipCode: typeof body.zipCode === 'string' ? body.zipCode : undefined,
-      country: typeof body.country === 'string' ? body.country : undefined,
+      addressLine1: effectiveAddressLine1,
+      addressLine2: effectiveAddressLine2,
+      city: effectiveCity,
+      state: effectiveState,
+      zipCode: effectiveZipCode,
+      country: effectiveCountry,
     });
     if (!updated) {
       return jsonResponse({ error: 'Registry item not found.' }, 404);
@@ -481,12 +600,95 @@ export async function handleRegistryAndThankYouRoutes(
 
   if (path === '/api/registry/payment-intent' && method === 'POST') {
     const body = await parseJsonBody(init, rawInput);
+    const demoState = getDemoState();
+    const isAdmin = demoState.persona === 'admin';
+    const submittedCode =
+      typeof body.code === 'string' && body.code.trim() ? body.code.trim() : undefined;
+    const sessionCode = demoState.guestSession?.invitationCode?.trim() || undefined;
+
+    if (!isAdmin && submittedCode) {
+      if (!sessionCode || sessionCode.toUpperCase() !== submittedCode.toUpperCase()) {
+        return jsonResponse(
+          {
+            success: false,
+            error:
+              'Forbidden: Please verify your household invitation code before linking a contribution to a household.',
+          },
+          403
+        );
+      }
+    }
+
+    const finalCode = isAdmin ? submittedCode : sessionCode;
+    const rawItemId = typeof body.itemId === 'string' ? body.itemId.trim() : '';
+    const resolvedTarget = rawItemId ? resolveDemoRegistryItemTarget(rawItemId).target : null;
+    const canonicalItemId = resolvedTarget?.id ?? rawItemId;
     const amount = Math.max(1, Number(body.amount || 50));
-    const intentId = nextDemoId('pi_demo');
+    const coverFee = Boolean(body.coverFee);
+    const existingId =
+      typeof body.paymentIntentId === 'string' && body.paymentIntentId.trim()
+        ? body.paymentIntentId.trim()
+        : '';
+    const providedSecret =
+      typeof body.clientSecret === 'string' && body.clientSecret.trim()
+        ? body.clientSecret.trim()
+        : undefined;
+
+    const storeMap = getSyncedDemoPaymentIntents();
+    let intentId = nextDemoId('pi_demo');
+    let resolvedSecret = `${intentId}_secret_demo`;
+
+    if (existingId) {
+      const existingStored = storeMap.get(existingId);
+      const expectedSecret = existingStored?.clientSecret ?? `${existingId}_secret_demo`;
+      if (!verifyDemoSecretConstantTime(providedSecret, expectedSecret)) {
+        return jsonResponse(
+          {
+            success: false,
+            error: providedSecret
+              ? 'Forbidden: PaymentIntent ownership mismatch.'
+              : 'Valid clientSecret is required to update an existing PaymentIntent.',
+          },
+          403
+        );
+      }
+      if (
+        existingStored?.itemId &&
+        canonicalItemId &&
+        existingStored.itemId !== canonicalItemId &&
+        existingStored.itemId !== rawItemId
+      ) {
+        return jsonResponse(
+          { success: false, error: 'Forbidden: PaymentIntent item binding mismatch.' },
+          403
+        );
+      }
+      intentId = existingId;
+      resolvedSecret = expectedSecret;
+    }
+
+    storeMap.set(intentId, {
+      id: intentId,
+      clientSecret: resolvedSecret,
+      itemId: canonicalItemId,
+      baseAmount: amount,
+      coverFee,
+      contributorName: typeof body.name === 'string' && body.name.trim() ? body.name.trim() : 'Anonymous Guest',
+      contributorEmail: typeof body.email === 'string' && body.email.trim() ? body.email.trim() : null,
+      contributorMessage: typeof body.message === 'string' && body.message.trim() ? body.message.trim() : null,
+      invitationCode: finalCode,
+      addressLine1: typeof body.addressLine1 === 'string' && body.addressLine1.trim() ? body.addressLine1.trim() : undefined,
+      addressLine2: typeof body.addressLine2 === 'string' && body.addressLine2.trim() ? body.addressLine2.trim() : undefined,
+      city: typeof body.city === 'string' && body.city.trim() ? body.city.trim() : undefined,
+      state: typeof body.state === 'string' && body.state.trim() ? body.state.trim() : undefined,
+      zipCode: typeof body.zipCode === 'string' && body.zipCode.trim() ? body.zipCode.trim() : undefined,
+      country: typeof body.country === 'string' && body.country.trim() ? body.country.trim() : undefined,
+    });
+
     return jsonResponse({
       success: true,
       paymentIntentId: intentId,
-      clientSecret: `${intentId}_secret_demo`,
+      clientSecret: resolvedSecret,
       amount: Math.round(amount * 100),
       currency: 'usd',
       simulated: true,

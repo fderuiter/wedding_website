@@ -178,21 +178,65 @@ describe('POST /api/registry/payment-intent', () => {
     );
   });
 
-  it('ignores client-supplied invitation code in PaymentIntent metadata when guest_invite_session cookie is absent', async () => {
-    const request = new NextRequest('http://localhost:3000/api/registry/payment-intent', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        itemId: 'fund-101',
-        amount: 100,
-        coverFee: false,
-        name: 'Unverified Card Guest',
-        code: 'SPOOFED8',
-      }),
+  it('rejects client-supplied invitation code with HTTP 403 when guest_invite_session is absent or mismatched, while allowing passcode guests without a code', async () => {
+    const spoofedRes = await POST(
+      new NextRequest('http://localhost:3000/api/registry/payment-intent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemId: 'fund-101',
+          amount: 100,
+          coverFee: false,
+          name: 'Unverified Card Guest',
+          code: 'SPOOFED8',
+        }),
+      })
+    );
+    expect(spoofedRes.status).toBe(403);
+    expect(mockPaymentIntentsCreate).not.toHaveBeenCalled();
+
+    const { getGuestInviteSession } = jest.requireMock('@/core/auth/guestInviteSession') as {
+      getGuestInviteSession: jest.Mock;
+    };
+    getGuestInviteSession.mockResolvedValueOnce({
+      invitationId: 'inv-1',
+      code: 'INVITE88',
+      guestName: 'Invited Guest',
+      email: 'invited@example.com',
+      issuedAt: 1000,
+      expiresAt: 9999999999,
+      jti: 'jti-mismatch',
     });
 
-    const response = await POST(request);
-    expect(response.status).toBe(200);
+    const mismatchRes = await POST(
+      new NextRequest('http://localhost:3000/api/registry/payment-intent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemId: 'fund-101',
+          amount: 100,
+          coverFee: false,
+          name: 'Invited Guest',
+          code: 'OTHER999',
+        }),
+      })
+    );
+    expect(mismatchRes.status).toBe(403);
+    expect(mockPaymentIntentsCreate).not.toHaveBeenCalled();
+
+    const passcodeGuestRes = await POST(
+      new NextRequest('http://localhost:3000/api/registry/payment-intent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemId: 'fund-101',
+          amount: 100,
+          coverFee: false,
+          name: 'Passcode Friend',
+        }),
+      })
+    );
+    expect(passcodeGuestRes.status).toBe(200);
     const createPayload = mockPaymentIntentsCreate.mock.calls[0][0];
     expect(createPayload.metadata.invitationCode).toBe('');
     expect(createPayload).not.toHaveProperty('receipt_email');
@@ -447,5 +491,36 @@ describe('POST /api/registry/payment-intent', () => {
         country: 'USA',
       })
     );
+  });
+
+  it('locks out client IP with HTTP 429 after 5 failed household code or clientSecret checks on payment-intent', async () => {
+    for (let i = 1; i <= 5; i += 1) {
+      const res = await POST(
+        new NextRequest('http://localhost:3000/api/registry/payment-intent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            itemId: 'fund-101',
+            amount: 50,
+            paymentIntentId: 'pi_test_existing_456',
+            clientSecret: `pi_test_existing_456_secret_bad_${i}`,
+          }),
+        })
+      );
+      expect(res.status).toBe(403);
+    }
+
+    const sixthRes = await POST(
+      new NextRequest('http://localhost:3000/api/registry/payment-intent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemId: 'fund-101',
+          amount: 50,
+          name: 'Blocked Caller',
+        }),
+      })
+    );
+    expect(sixthRes.status).toBe(429);
   });
 });

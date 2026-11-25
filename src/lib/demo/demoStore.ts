@@ -1057,6 +1057,7 @@ export interface DemoContributionInput {
   coverFee?: boolean;
   email?: string | null;
   paymentIntentId?: string;
+  clientSecret?: string;
   retailerOrderNumber?: string;
   carrier?: string;
   trackingNumber?: string;
@@ -1088,17 +1089,13 @@ export function recordDemoContribution(
 
     const normalizedEmail = input.email?.trim() || null;
     const normalizedCode = input.code?.trim().toUpperCase() || '';
-    let linkedGuest = normalizedCode
-      ? current.guests.find((g) => g.code.toUpperCase() === normalizedCode) ?? null
+    const linkedGuest = normalizedCode
+      ? current.guests.find(
+        (g) =>
+          g.code.toUpperCase() === normalizedCode &&
+          !isDemoAddressCollectionOnly(g.partyTags)
+      ) ?? null
       : null;
-    if (!linkedGuest && !normalizedCode && normalizedEmail) {
-      const emailMatches = current.guests.filter(
-        (g) => (g.email || '').trim().toLowerCase() === normalizedEmail.toLowerCase()
-      );
-      if (emailMatches.length === 1) {
-        linkedGuest = emailMatches[0];
-      }
-    }
 
     const addressLine1 = input.addressLine1?.trim() || null;
     const addressLine2 = input.addressLine2?.trim() || null;
@@ -1140,8 +1137,20 @@ export function recordDemoContribution(
     };
 
     const hasCompleteContributorAddress = Boolean(addressLine1 && city && stateVal && zipCode);
+    const existingGuestStreet = linkedGuest?.addressLine1?.trim() || '';
+    const existingGuestZip = linkedGuest?.zipCode?.trim() || '';
+    const hasConflictingStreet =
+      Boolean(existingGuestStreet) &&
+      existingGuestStreet.toLowerCase() !== addressLine1?.toLowerCase();
+    const hasConflictingZip =
+      Boolean(existingGuestZip) &&
+      existingGuestZip.toLowerCase() !== zipCode?.toLowerCase();
     const nextGuests =
-      linkedGuest && hasCompleteContributorAddress && !linkedGuest.addressLine1?.trim()
+      Boolean(normalizedCode) &&
+      linkedGuest &&
+      hasCompleteContributorAddress &&
+      !hasConflictingStreet &&
+      !hasConflictingZip
         ? current.guests.map((g) =>
           g.id === linkedGuest.id
             ? {

@@ -715,5 +715,45 @@ describe('useRegistry', () => {
       expect(result.current.items.find(i => i.id === 'gift-34')?.purchased).toBe(true);
       expect(result.current.filteredItems.some(i => i.id === 'gift-34')).toBe(false);
     });
+
+    it('sends clientSecret alongside paymentIntentId in POST /api/registry/contribute', async () => {
+      let capturedBody: Record<string, unknown> | null = null;
+      server.use(
+        http.post('/api/registry/contribute', async ({ request }) => {
+          capturedBody = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({
+            success: true,
+            data: { ...mockItems[2], amountContributed: 200 },
+          });
+        })
+      );
+
+      const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      await act(async () => {
+        await result.current.handleContribute(
+          '3',
+          'Card Donor',
+          50,
+          undefined,
+          'Happy wedding!',
+          true,
+          'donor@example.com',
+          'pi_hook_123',
+          undefined,
+          undefined,
+          'pi_hook_123_secret_xyz'
+        );
+      });
+
+      expect(capturedBody).toMatchObject({
+        itemId: '3',
+        purchaserName: 'Card Donor',
+        amount: 50,
+        paymentIntentId: 'pi_hook_123',
+        clientSecret: 'pi_hook_123_secret_xyz',
+      });
+    });
   });
 });

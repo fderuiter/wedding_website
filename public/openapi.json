@@ -24197,6 +24197,9 @@
                   "paymentIntentId": {
                     "type": "string"
                   },
+                  "clientSecret": {
+                    "type": "string"
+                  },
                   "retailerOrderNumber": {
                     "nullable": true,
                     "anyOf": [

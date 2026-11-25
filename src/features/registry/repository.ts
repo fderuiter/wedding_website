@@ -472,9 +472,28 @@ class RegistryRepository implements IRegistryRepository {
         throw new Error('Sample registry items do not accept contributions or payments.');
       }
 
-      // 3. Perform validations inside the locked transactional context
+      // 3. Perform availability, remaining balance, and whole-unit validations BEFORE any household lookup
       if (item.purchased) {
         throw new Error('This item has already been purchased.');
+      }
+
+      const isFund = item.itemType === 'CASH_FUND' || item.itemType === 'EXPERIENCE_FUND';
+      const quantity = isFund ? 1 : Math.max(1, Math.floor(item.quantity || 1));
+      const unitPriceCents = Math.round(item.price * 100);
+      const totalTargetCents = unitPriceCents * quantity;
+      const contributedCents = Math.round(item.amountContributed * 100);
+      const remainingCents = totalTargetCents - contributedCents;
+      const contributionCents = Math.round(contribution.amount * 100);
+
+      if (contributionCents > remainingCents) {
+        throw new Error('Contribution cannot be greater than the remaining amount.');
+      }
+
+      const isGroupGift = Boolean(isFund || item.isGroupGift);
+      if (!isGroupGift && unitPriceCents > 0) {
+        if (contributionCents < unitPriceCents || contributionCents % unitPriceCents !== 0) {
+          throw new ApiError(400, 'Contribution amount must match a whole number of available units.');
+        }
       }
 
       let emailToSave =
@@ -539,25 +558,6 @@ class RegistryRepository implements IRegistryRepository {
           inviteRecord.email.trim().length > 0
         ) {
           emailToSave = inviteRecord.email.trim();
-        }
-      }
-
-      const isFund = item.itemType === 'CASH_FUND' || item.itemType === 'EXPERIENCE_FUND';
-      const quantity = isFund ? 1 : Math.max(1, Math.floor(item.quantity || 1));
-      const unitPriceCents = Math.round(item.price * 100);
-      const totalTargetCents = unitPriceCents * quantity;
-      const contributedCents = Math.round(item.amountContributed * 100);
-      const remainingCents = totalTargetCents - contributedCents;
-      const contributionCents = Math.round(contribution.amount * 100);
-
-      if (contributionCents > remainingCents) {
-        throw new Error('Contribution cannot be greater than the remaining amount.');
-      }
-
-      const isGroupGift = Boolean(isFund || item.isGroupGift);
-      if (!isGroupGift && unitPriceCents > 0) {
-        if (contributionCents < unitPriceCents || contributionCents % unitPriceCents !== 0) {
-          throw new ApiError(400, 'Contribution amount must match a whole number of available units.');
         }
       }
 
