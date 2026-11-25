@@ -5,8 +5,12 @@ import { createAuditSnapshot } from '@/lib/audit';
 import { getAppConfig } from '@/lib/config';
 import { sanitizeAppConfigForBackup } from '@/lib/backupPersistence';
 import { DEFAULT_MODULE_CONFIG, isFeatureEnabled } from '@/lib/modules';
-import { buildSignedPhotoUploadUrl } from '@/core/auth/photoUploadToken';
+import {
+  PHOTO_QR_QUERY_PARAM,
+  signPhotoQrLinkToken,
+} from '@/core/auth/photoUploadToken';
 import { resolveTenantClaimsForSigning } from '@/core/auth/tenantClaims.node';
+import type { TenantTokenClaims } from '@/core/auth/tenantClaims';
 import { AdminPhotoQrUpdateSchema } from '@/features/content';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
@@ -18,12 +22,7 @@ import {
   resolveRequestProtocol,
 } from '@/utils/hostValidation';
 
-function resolveRequestOrigin(req: NextRequest, configuredBaseUrl: string | undefined): string {
-  const cleanConfigured = configuredBaseUrl?.trim().replace(/\/+$/, '') || '';
-  if (cleanConfigured) {
-    return cleanConfigured;
-  }
-
+function resolveActiveRequestOrigin(req: NextRequest): string {
   try {
     const parsedUrl = new URL(req.url);
     const candidateHost = resolveRequestHost(req.headers, parsedUrl.host);
@@ -33,10 +32,45 @@ function resolveRequestOrigin(req: NextRequest, configuredBaseUrl: string | unde
       return `${protocol}://${candidateHost}`;
     }
   } catch {
-    // Fallback to relative path when origin cannot be derived
+    // Fallback to empty origin when request URL cannot be parsed
   }
 
   return '';
+}
+
+function formatPhotoQrUrl(origin: string, token: string): string {
+  const cleanOrigin = origin.trim().replace(/\/+$/, '');
+  const query = `${PHOTO_QR_QUERY_PARAM}=${encodeURIComponent(token)}`;
+  return cleanOrigin ? `${cleanOrigin}/photos?${query}` : `/photos?${query}`;
+}
+
+async function buildDualOriginPhotoQrUrls(
+  req: NextRequest,
+  configuredBaseUrl: string | undefined,
+  version: number,
+  tenantClaims: TenantTokenClaims
+): Promise<{
+  uploadUrl: string;
+  activeUploadUrl: string;
+  configuredUploadUrl: string | null;
+}> {
+  const token = await signPhotoQrLinkToken({
+    v: version,
+    ...tenantClaims,
+  });
+  const cleanConfigured = configuredBaseUrl?.trim().replace(/\/+$/, '') || '';
+  const activeOrigin = resolveActiveRequestOrigin(req);
+  const configuredUploadUrl = cleanConfigured
+    ? formatPhotoQrUrl(cleanConfigured, token)
+    : null;
+  const activeUploadUrl = formatPhotoQrUrl(activeOrigin, token);
+  const uploadUrl = configuredUploadUrl ?? activeUploadUrl;
+
+  return {
+    uploadUrl,
+    activeUploadUrl,
+    configuredUploadUrl,
+  };
 }
 
 export const GET = withApiMiddleware(async (req: NextRequest) => {
@@ -45,17 +79,23 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
     throw new ApiError(404, "Feature 'gallery' is disabled");
   }
 
-  const origin = resolveRequestOrigin(req, config.baseUrl);
   const tokenVersion =
     typeof config.guestPhotoQrTokenVersion === 'number' && config.guestPhotoQrTokenVersion >= 1
       ? config.guestPhotoQrTokenVersion
       : 1;
   const tenantClaims = await resolveTenantClaimsForSigning(req, config);
-  const { uploadUrl } = await buildSignedPhotoUploadUrl(origin, tokenVersion, tenantClaims);
+  const { uploadUrl, activeUploadUrl, configuredUploadUrl } = await buildDualOriginPhotoQrUrls(
+    req,
+    config.baseUrl,
+    tokenVersion,
+    tenantClaims
+  );
 
   return NextResponse.json({
     success: true,
     uploadUrl,
+    activeUploadUrl,
+    configuredUploadUrl,
     tokenVersion,
     autoApproveGuestPhotos: Boolean(config.autoApproveGuestPhotos),
   });
@@ -158,16 +198,22 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
       : shouldRotate
         ? currentVersion + 1
         : currentVersion;
-  const origin = resolveRequestOrigin(req, updatedRow.baseUrl ?? config.baseUrl);
   const tenantClaims = await resolveTenantClaimsForSigning(req, {
     id: updatedRow.id || targetConfigId,
     subdomain: updatedRow.subdomain ?? config.subdomain,
   });
-  const { uploadUrl } = await buildSignedPhotoUploadUrl(origin, resolvedVersion, tenantClaims);
+  const { uploadUrl, activeUploadUrl, configuredUploadUrl } = await buildDualOriginPhotoQrUrls(
+    req,
+    updatedRow.baseUrl ?? config.baseUrl,
+    resolvedVersion,
+    tenantClaims
+  );
 
   return NextResponse.json({
     success: true,
     uploadUrl,
+    activeUploadUrl,
+    configuredUploadUrl,
     tokenVersion: resolvedVersion,
     autoApproveGuestPhotos:
       typeof updatedRow.autoApproveGuestPhotos === 'boolean'

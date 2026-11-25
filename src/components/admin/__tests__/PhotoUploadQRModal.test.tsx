@@ -229,4 +229,54 @@ describe('PhotoUploadQRModal Component', () => {
       HTMLCanvasElement.prototype.getContext = originalGetContext;
     }
   });
+
+  it('warns when configuredUploadUrl origin differs from current host and lets admins toggle between origins', async () => {
+    const originalClipboard = navigator.clipboard;
+    const writeTextMock = jest.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, {
+      clipboard: { writeText: writeTextMock },
+    });
+
+    try {
+      const configuredUrl = 'https://wedding.example.com/photos?qr=signed-token-v2';
+      const activeUrl = `${window.location.origin}/photos?qr=signed-token-v2`;
+
+      const { container } = render(
+        <PhotoUploadQRModal
+          {...defaultProps}
+          uploadUrl={configuredUrl}
+          configuredUploadUrl={configuredUrl}
+          activeUploadUrl={activeUrl}
+        />
+      );
+
+      const warningBanner = screen.getByTestId('photo-qr-origin-mismatch-warning');
+      expect(warningBanner).toBeInTheDocument();
+      expect(warningBanner).toHaveTextContent('https://wedding.example.com');
+      expect(warningBanner).toHaveTextContent(window.location.origin);
+
+      const urlInput = screen.getByTestId('photo-qr-signed-url-input') as HTMLInputElement;
+      expect(urlInput.value).toBe(configuredUrl);
+
+      const activeOriginBtn = screen.getByTestId('photo-qr-origin-active-btn');
+      const configuredOriginBtn = screen.getByTestId('photo-qr-origin-configured-btn');
+      expect(configuredOriginBtn).toHaveAttribute('aria-pressed', 'true');
+      expect(activeOriginBtn).toHaveAttribute('aria-pressed', 'false');
+
+      fireEvent.click(activeOriginBtn);
+      expect(activeOriginBtn).toHaveAttribute('aria-pressed', 'true');
+      expect(configuredOriginBtn).toHaveAttribute('aria-pressed', 'false');
+      expect(urlInput.value).toBe(activeUrl);
+
+      fireEvent.click(screen.getByTestId('copy-photo-qr-link-btn'));
+      await waitFor(() => {
+        expect(writeTextMock).toHaveBeenCalledWith(activeUrl);
+      });
+
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
+    } finally {
+      Object.assign(navigator, { clipboard: originalClipboard });
+    }
+  });
 });

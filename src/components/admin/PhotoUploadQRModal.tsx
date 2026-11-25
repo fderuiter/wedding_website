@@ -15,9 +15,41 @@ export interface PhotoUploadQRModalProps {
   isOpen: boolean;
   onClose: () => void;
   uploadUrl: string;
+  configuredUploadUrl?: string | null;
+  activeUploadUrl?: string | null;
   tokenVersion: number;
   isRotating?: boolean;
   onRotateToken: () => Promise<void>;
+}
+
+function extractUrlOrigin(rawUrl: string | null | undefined): string {
+  if (!rawUrl || rawUrl.startsWith('/')) {
+    return '';
+  }
+  try {
+    return new URL(rawUrl).origin;
+  } catch {
+    return '';
+  }
+}
+
+function swapUrlOrigin(rawUrl: string, nextOrigin: string): string {
+  const cleanOrigin = nextOrigin.trim().replace(/\/+$/, '');
+  if (!cleanOrigin) {
+    return rawUrl;
+  }
+  if (!rawUrl) {
+    return `${cleanOrigin}${withBasePath('/photos?tab=guest')}`;
+  }
+  if (rawUrl.startsWith('/')) {
+    return `${cleanOrigin}${withBasePath(rawUrl)}`;
+  }
+  try {
+    const parsed = new URL(rawUrl);
+    return `${cleanOrigin}${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return rawUrl;
+  }
 }
 
 const DEFAULT_COPIES_BY_TEMPLATE: Record<PhotoPrintTemplateType, number> = {
@@ -30,6 +62,8 @@ export const PhotoUploadQRModal: React.FC<PhotoUploadQRModalProps> = ({
   isOpen,
   onClose,
   uploadUrl,
+  configuredUploadUrl,
+  activeUploadUrl,
   tokenVersion,
   isRotating = false,
   onRotateToken,
@@ -38,23 +72,69 @@ export const PhotoUploadQRModal: React.FC<PhotoUploadQRModalProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [copied, setCopied] = useState(false);
   const [activeMode, setActiveMode] = useState<'preview' | 'print'>('preview');
+  const [selectedOriginSource, setSelectedOriginSource] = useState<'configured' | 'active'>(
+    'configured'
+  );
   const [template, setTemplate] = useState<PhotoPrintTemplateType>('table_cards');
   const [copies, setCopies] = useState<number>(DEFAULT_COPIES_BY_TEMPLATE.table_cards);
   const [cardHeadline, setCardHeadline] = useState('Share Your Wedding Photos');
 
-  const resolvedUploadUrl = useMemo(() => {
-    const origin =
+  const {
+    resolvedConfiguredUrl,
+    resolvedActiveUrl,
+    configuredOrigin,
+    activeOrigin,
+    hasOriginMismatch,
+  } = useMemo(() => {
+    const browserOrigin =
       typeof window !== 'undefined' && window.location?.origin ? window.location.origin : '';
-    if (!uploadUrl) {
+    const rawConfigured = configuredUploadUrl || uploadUrl;
+
+    let normalizedConfigured: string;
+    if (!rawConfigured) {
       const photosPath = withBasePath('/photos?tab=guest');
-      return origin ? `${origin}${photosPath}` : photosPath;
+      normalizedConfigured = browserOrigin ? `${browserOrigin}${photosPath}` : photosPath;
+    } else if (rawConfigured.startsWith('/')) {
+      const prefixed = withBasePath(rawConfigured);
+      normalizedConfigured = browserOrigin ? `${browserOrigin}${prefixed}` : prefixed;
+    } else {
+      normalizedConfigured = rawConfigured;
     }
-    if (uploadUrl.startsWith('/')) {
-      const prefixed = withBasePath(uploadUrl);
-      return origin ? `${origin}${prefixed}` : prefixed;
+
+    let normalizedActive: string;
+    if (activeUploadUrl) {
+      if (activeUploadUrl.startsWith('/')) {
+        const prefixed = withBasePath(activeUploadUrl);
+        normalizedActive = browserOrigin ? `${browserOrigin}${prefixed}` : prefixed;
+      } else {
+        normalizedActive = activeUploadUrl;
+      }
+    } else if (browserOrigin) {
+      normalizedActive = swapUrlOrigin(normalizedConfigured, browserOrigin);
+    } else {
+      normalizedActive = normalizedConfigured;
     }
-    return uploadUrl;
-  }, [uploadUrl]);
+
+    const cfgOrigin = extractUrlOrigin(normalizedConfigured);
+    const actOrigin = browserOrigin || extractUrlOrigin(normalizedActive);
+    const alignedActiveUrl =
+      browserOrigin && extractUrlOrigin(normalizedActive) !== browserOrigin
+        ? swapUrlOrigin(normalizedActive, browserOrigin)
+        : normalizedActive;
+
+    return {
+      resolvedConfiguredUrl: normalizedConfigured,
+      resolvedActiveUrl: alignedActiveUrl,
+      configuredOrigin: cfgOrigin,
+      activeOrigin: actOrigin,
+      hasOriginMismatch: Boolean(cfgOrigin && actOrigin && cfgOrigin !== actOrigin),
+    };
+  }, [activeUploadUrl, configuredUploadUrl, uploadUrl]);
+
+  const resolvedUploadUrl =
+    hasOriginMismatch && selectedOriginSource === 'active'
+      ? resolvedActiveUrl
+      : resolvedConfiguredUrl;
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -156,6 +236,64 @@ export const PhotoUploadQRModal: React.FC<PhotoUploadQRModalProps> = ({
 
   const cardIndices = Array.from({ length: copies }, (_, idx) => idx);
 
+  const originMismatchBanner = hasOriginMismatch ? (
+    <div
+      role="region"
+      aria-label="QR host mismatch warning"
+      data-testid="photo-qr-origin-mismatch-warning"
+      className="no-print rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/60 p-3.5 space-y-2.5 text-amber-950 dark:text-amber-100"
+    >
+      <div className="flex items-start gap-2.5">
+        <Icon
+          name="AlertTriangle"
+          size={16}
+          className="mt-0.5 shrink-0 text-amber-800 dark:text-amber-300"
+          aria-hidden="true"
+        />
+        <div className="text-xs space-y-1">
+          <p className="font-semibold">
+            Configured site URL differs from your current browser host
+          </p>
+          <p className="text-amber-900 dark:text-amber-200">
+            Configured domain is <span className="font-mono font-semibold">{configuredOrigin}</span>, while this dashboard is open on <span className="font-mono font-semibold">{activeOrigin}</span>. Switch origins below before copying or printing if guests should scan a different host.
+          </p>
+        </div>
+      </div>
+      <div
+        role="group"
+        aria-label="QR link origin"
+        className="flex flex-wrap items-center gap-2 pt-0.5"
+      >
+        <button
+          type="button"
+          aria-pressed={selectedOriginSource === 'configured'}
+          onClick={() => setSelectedOriginSource('configured')}
+          data-testid="photo-qr-origin-configured-btn"
+          className={`inline-flex items-center min-h-[32px] px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
+            selectedOriginSource === 'configured'
+              ? 'bg-stone-900 text-white border-stone-900 dark:bg-stone-100 dark:text-stone-900 dark:border-stone-100'
+              : 'bg-white text-stone-800 border-stone-300 hover:bg-stone-100 dark:bg-stone-900 dark:text-stone-100 dark:border-stone-700 dark:hover:bg-stone-800'
+          }`}
+        >
+          Configured URL ({configuredOrigin})
+        </button>
+        <button
+          type="button"
+          aria-pressed={selectedOriginSource === 'active'}
+          onClick={() => setSelectedOriginSource('active')}
+          data-testid="photo-qr-origin-active-btn"
+          className={`inline-flex items-center min-h-[32px] px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
+            selectedOriginSource === 'active'
+              ? 'bg-stone-900 text-white border-stone-900 dark:bg-stone-100 dark:text-stone-900 dark:border-stone-100'
+              : 'bg-white text-stone-800 border-stone-300 hover:bg-stone-100 dark:bg-stone-900 dark:text-stone-100 dark:border-stone-700 dark:hover:bg-stone-800'
+          }`}
+        >
+          Current Host ({activeOrigin})
+        </button>
+      </div>
+    </div>
+  ) : null;
+
   return (
     <Dialog
       isOpen={isOpen}
@@ -165,6 +303,7 @@ export const PhotoUploadQRModal: React.FC<PhotoUploadQRModalProps> = ({
     >
       {activeMode === 'preview' ? (
         <div className="space-y-5" data-testid="photo-qr-preview-panel">
+          {originMismatchBanner}
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-stone-100 dark:bg-stone-800/80 px-3.5 py-2.5 border border-stone-200 dark:border-stone-700">
             <div className="text-xs text-stone-700 dark:text-stone-300">
               <span className="font-semibold">Photo-Only Access:</span> Unlocks gallery &amp; uploads only. RSVPs and private events stay protected.
@@ -282,6 +421,7 @@ export const PhotoUploadQRModal: React.FC<PhotoUploadQRModalProps> = ({
         </div>
       ) : (
         <div className="printable-qr-labels-area space-y-5" data-testid="photo-qr-print-panel">
+          {originMismatchBanner}
           <div className="no-print bg-stone-50 dark:bg-zinc-800/80 p-4 rounded-xl border border-stone-200 dark:border-zinc-700 space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>

@@ -36,4 +36,7 @@ export type {
   AppConfigDTO,
   PublicAppConfigDTO,
 } from './schemas';
-export type { IContentRepository } from './types';
+export type {
+  IContentRepository,
+  BatchPhotoModerationOverrides,
+} from './types';

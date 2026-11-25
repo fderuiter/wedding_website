@@ -24,12 +24,9 @@ describe('GuestPhotoDropzone', () => {
     expect(screen.getByText('Share Your Wedding Photos')).toBeInTheDocument();
     expect(screen.getByText(/Supports JPEG, PNG, WebP, and HEIC/i)).toBeInTheDocument();
     const uploaderNameInput = screen.getByLabelText(/Your Name/i);
-    const captionInput = screen.getByLabelText(/Caption or Note/i);
     expect(uploaderNameInput).toHaveAttribute('id', 'guest-photo-uploader-name');
     expect(uploaderNameInput).toHaveAttribute('autocomplete', 'name');
     expect(uploaderNameInput).toHaveAttribute('aria-invalid', 'false');
-    expect(captionInput).toHaveAttribute('id', 'guest-photo-caption');
-    expect(captionInput).toHaveAttribute('aria-invalid', 'false');
     expect(screen.getByTestId('guest-photo-dropzone')).toBeInTheDocument();
     const fileInput = screen.getByLabelText('Upload wedding photos');
     expect(fileInput).toBeInTheDocument();
@@ -258,7 +255,7 @@ describe('GuestPhotoDropzone', () => {
     expect(global.fetch).toHaveBeenCalledTimes(2);
   });
 
-  it('throttles concurrent uploads to at most 2 active requests and processes remaining queued files as slots free up', async () => {
+  it('throttles concurrent batch uploads to at most 2 active 10-file requests and processes remaining queued batches as slots free up', async () => {
     const resolvers: Array<(_resolveValue: unknown) => void> = [];
     (global.fetch as jest.Mock).mockImplementation(() => {
       return new Promise((resolve) => {
@@ -269,74 +266,66 @@ describe('GuestPhotoDropzone', () => {
     render(<GuestPhotoDropzone />);
     const fileInput = screen.getByTestId('guest-photo-file-input');
 
-    const files = [
-      new File(['f1'], 'file1.jpg', { type: 'image/jpeg' }),
-      new File(['f2'], 'file2.jpg', { type: 'image/jpeg' }),
-      new File(['f3'], 'file3.jpg', { type: 'image/jpeg' }),
-      new File(['f4'], 'file4.jpg', { type: 'image/jpeg' }),
-    ];
+    const files = Array.from({ length: 25 }, (_, idx) =>
+      new File([`f${idx + 1}`], `file${idx + 1}.jpg`, { type: 'image/jpeg' })
+    );
 
     fireEvent.change(fileInput, { target: { files } });
     expect(global.fetch).not.toHaveBeenCalled();
-    expect(screen.getByTestId('confirm-upload-btn')).toHaveTextContent('Upload 4 Photos');
+    expect(screen.getByTestId('staged-batch-pill')).toHaveTextContent('25 · 3 Batches');
+    expect(screen.getByTestId('confirm-upload-btn')).toHaveTextContent('Upload 25 Photos');
     fireEvent.click(screen.getByTestId('confirm-upload-btn'));
 
-    // Exactly 2 active uploads should be triggered initially
+    // 25 files -> 2 active 10-file batch requests initially, with 5 remaining queued
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledTimes(2);
     });
 
-    // 2 uploading badges and 2 queued badges
-    expect(screen.getAllByText('Uploading...')).toHaveLength(2);
-    expect(screen.getAllByText('Queued')).toHaveLength(2);
+    expect(screen.getAllByText('Uploading...')).toHaveLength(20);
+    expect(screen.getAllByText('Queued')).toHaveLength(5);
 
-    // Resolve the first upload
+    // Resolve first 10-file batch
     resolvers[0]({
       ok: true,
       json: async () => ({
         success: true,
-        data: { id: 'media-1', url: '/uploads/file1.jpg' },
+        data: Array.from({ length: 10 }, (_, idx) => ({
+          id: `media-b1-${idx}`,
+          url: `/uploads/file${idx + 1}.jpg`,
+        })),
       }),
     });
 
-    // Slot freed -> 3rd upload starts
+    // Slot freed -> 3rd batch (remaining 5 files) starts
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledTimes(3);
     });
 
-    // Resolve the second upload
+    // Resolve 2nd and 3rd batches
     resolvers[1]({
       ok: true,
       json: async () => ({
         success: true,
-        data: { id: 'media-2', url: '/uploads/file2.jpg' },
+        data: Array.from({ length: 10 }, (_, idx) => ({
+          id: `media-b2-${idx}`,
+          url: `/uploads/file${idx + 11}.jpg`,
+        })),
       }),
     });
-
-    // Slot freed -> 4th upload starts
-    await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledTimes(4);
-    });
-
-    // Resolve remaining 2 uploads
     resolvers[2]({
       ok: true,
       json: async () => ({
         success: true,
-        data: { id: 'media-3', url: '/uploads/file3.jpg' },
-      }),
-    });
-    resolvers[3]({
-      ok: true,
-      json: async () => ({
-        success: true,
-        data: { id: 'media-4', url: '/uploads/file4.jpg' },
+        data: Array.from({ length: 5 }, (_, idx) => ({
+          id: `media-b3-${idx}`,
+          url: `/uploads/file${idx + 21}.jpg`,
+        })),
       }),
     });
 
-    // All 4 uploads complete successfully
+    // All 25 uploads complete successfully
     await waitFor(() => {
-      expect(screen.getAllByTestId('upload-success-badge')).toHaveLength(4);
+      expect(screen.getAllByTestId('upload-success-badge')).toHaveLength(25);
     });
   });
 
@@ -400,10 +389,9 @@ describe('GuestPhotoDropzone', () => {
 
     const { unmount } = render(<GuestPhotoDropzone />);
     const fileInput = screen.getByTestId('guest-photo-file-input');
-    const files = [
-      new File(['d1'], 'unmount1.jpg', { type: 'image/jpeg' }),
-      new File(['d2'], 'unmount2.jpg', { type: 'image/jpeg' }),
-    ];
+    const files = Array.from({ length: 12 }, (_, idx) =>
+      new File([`d${idx}`], `unmount${idx + 1}.jpg`, { type: 'image/jpeg' })
+    );
 
     fireEvent.change(fileInput, { target: { files } });
     fireEvent.click(screen.getByTestId('confirm-upload-btn'));
@@ -438,11 +426,9 @@ describe('GuestPhotoDropzone', () => {
 
     render(<GuestPhotoDropzone />);
     const fileInput = screen.getByTestId('guest-photo-file-input');
-    const files = [
-      new File(['d1'], 'clear1.jpg', { type: 'image/jpeg' }),
-      new File(['d2'], 'clear2.jpg', { type: 'image/jpeg' }),
-      new File(['d3'], 'clear3.jpg', { type: 'image/jpeg' }),
-    ];
+    const files = Array.from({ length: 22 }, (_, idx) =>
+      new File([`d${idx}`], `clear${idx + 1}.jpg`, { type: 'image/jpeg' })
+    );
 
     fireEvent.change(fileInput, { target: { files } });
     fireEvent.click(screen.getByTestId('confirm-upload-btn'));
@@ -494,13 +480,15 @@ describe('GuestPhotoDropzone', () => {
     fireEvent.change(screen.getByTestId('guest-photo-uploader-name'), {
       target: { value: '  Aunt Clara  ' },
     });
-    fireEvent.change(screen.getByTestId('guest-photo-caption'), {
-      target: { value: '  Sparkler exit!  ' },
-    });
 
     const heicFile = new File(['heic-bytes'], 'IMG_1234.HEIC', { type: '' });
     fireEvent.change(screen.getByTestId('guest-photo-file-input'), {
       target: { files: [heicFile] },
+    });
+
+    expect(screen.getByTestId('upload-heic-badge')).toHaveTextContent('HEIC');
+    fireEvent.change(screen.getByLabelText('Caption for IMG_1234.HEIC'), {
+      target: { value: '  Sparkler exit!  ' },
     });
 
     expect(global.fetch).not.toHaveBeenCalled();
@@ -511,8 +499,9 @@ describe('GuestPhotoDropzone', () => {
     });
 
     expect(submittedFormData).toBeInstanceOf(FormData);
-    expect((submittedFormData?.get('file') as File)?.name).toBe('IMG_1234.HEIC');
+    expect((submittedFormData?.get('files') as File)?.name).toBe('IMG_1234.HEIC');
     expect(submittedFormData?.get('uploaderName')).toBe('Aunt Clara');
+    expect(submittedFormData?.getAll('captions')).toEqual(['Sparkler exit!']);
     expect(submittedFormData?.get('caption')).toBe('Sparkler exit!');
 
     await waitFor(() => {
@@ -540,7 +529,6 @@ describe('GuestPhotoDropzone', () => {
     render(<GuestPhotoDropzone defaultUploaderName="The Rivera Family" />);
 
     const uploaderInput = screen.getByTestId('guest-photo-uploader-name') as HTMLInputElement;
-    const captionInput = screen.getByTestId('guest-photo-caption') as HTMLInputElement;
     expect(uploaderInput.value).toBe('The Rivera Family');
 
     // Select a file FIRST before typing caption or editing uploaderName
@@ -556,7 +544,8 @@ describe('GuestPhotoDropzone', () => {
 
     // Edit attribution AFTER file selection
     fireEvent.change(uploaderInput, { target: { value: 'Elena Rivera' } });
-    fireEvent.change(captionInput, { target: { value: 'Cheers from Table 4!' } });
+    const perPhotoCaptionInput = screen.getByLabelText('Caption for table-toast.jpg') as HTMLInputElement;
+    fireEvent.change(perPhotoCaptionInput, { target: { value: 'Cheers from Table 4!' } });
 
     // Confirm upload
     fireEvent.click(screen.getByTestId('confirm-upload-btn'));
@@ -570,9 +559,11 @@ describe('GuestPhotoDropzone', () => {
       caption: 'Cheers from Table 4!',
     });
 
-    // uploaderName stays populated for subsequent uploads while caption is cleared
+    // uploaderName stays populated for subsequent uploads while staged caption input is replaced by uploaded status
     expect(uploaderInput.value).toBe('Elena Rivera');
-    expect(captionInput.value).toBe('');
+    await waitFor(() => {
+      expect(screen.queryByTestId('guest-photo-caption-input')).not.toBeInTheDocument();
+    });
   });
 
   it('maintains sequential h2 heading hierarchy, accessible progressbar/alert/status semantics, per-file action labels, and zero axe violations', async () => {
@@ -597,12 +588,20 @@ describe('GuestPhotoDropzone', () => {
     const activeFile = new File(['active-bytes'], 'ceremony-vows.jpg', { type: 'image/jpeg' });
     const failingFile = new File(['fail-bytes'], 'reception-dance.jpg', { type: 'image/jpeg' });
 
-    fireEvent.change(fileInput, { target: { files: [activeFile, failingFile] } });
+    fireEvent.change(fileInput, { target: { files: [activeFile] } });
 
     // Verify staged confirmation bar and staged badges have zero axe violations prior to upload
     expect(screen.getByTestId('staged-uploads-bar')).toBeInTheDocument();
     expect(await axe(container)).toHaveNoViolations();
 
+    // Start first upload (remains in-flight)
+    fireEvent.click(screen.getByTestId('confirm-upload-btn'));
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    // Stage and confirm second upload so it runs in parallel slot 2 and rejects independently
+    fireEvent.change(fileInput, { target: { files: [failingFile] } });
     fireEvent.click(screen.getByTestId('confirm-upload-btn'));
 
     await waitFor(() => {
@@ -692,5 +691,108 @@ describe('GuestPhotoDropzone', () => {
       expect(screen.queryByTestId('upload-pending-notice')).not.toBeInTheDocument();
     });
     expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it('chunks 16 staged photos into 2 multipart POST requests (10 + 6) with aligned per-photo captions, renders local thumbnails, and revokes every object URL on removal, clear, and unmount', async () => {
+    const origCreateObjectURL = URL.createObjectURL;
+    const origRevokeObjectURL = URL.revokeObjectURL;
+    let blobSeq = 0;
+    const createObjectUrlMock = jest.fn(() => `blob:http://localhost/preview-${++blobSeq}`);
+    const revokeObjectUrlMock = jest.fn();
+    URL.createObjectURL = createObjectUrlMock;
+    URL.revokeObjectURL = revokeObjectUrlMock;
+
+    const postedBatches: Array<{ filenames: string[]; captions: string[] }> = [];
+    (global.fetch as jest.Mock).mockImplementation(async (_url, options) => {
+      const fd = options?.body as FormData;
+      const files = fd.getAll('files') as File[];
+      const captions = fd.getAll('captions').map((c) => String(c));
+      postedBatches.push({
+        filenames: files.map((f) => f.name),
+        captions,
+      });
+      return {
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: files.map((f, idx) => ({
+            id: `media-${f.name}-${idx}`,
+            nodeId: `node-${f.name}-${idx}`,
+            status: 'PENDING',
+            isVisible: false,
+          })),
+        }),
+      };
+    });
+
+    try {
+      const { container, unmount } = render(<GuestPhotoDropzone />);
+      const fileInput = screen.getByTestId('guest-photo-file-input');
+
+      // Stage 17 files (16 JPEGs + 1 HEIC), then remove 1 JPEG -> 16 staged photos
+      const initialFiles = [
+        new File(['rm'], 'remove-me.jpg', { type: 'image/jpeg' }),
+        ...Array.from({ length: 15 }, (_, idx) =>
+          new File([`img-${idx + 1}`], `photo-${idx + 1}.jpg`, { type: 'image/jpeg' })
+        ),
+        new File(['heic-raw'], 'photo-16.HEIC', { type: 'image/heic' }),
+      ];
+
+      fireEvent.change(fileInput, { target: { files: initialFiles } });
+
+      // 16 JPEGs created object URLs; 1 HEIC uses upload-heic-badge fallback without object URL
+      expect(createObjectUrlMock).toHaveBeenCalledTimes(16);
+      expect(screen.getAllByTestId('upload-thumbnail-preview')).toHaveLength(16);
+      expect(screen.getAllByTestId('upload-heic-badge')).toHaveLength(1);
+
+      // Remove 1 item -> immediately revokes its object URL
+      fireEvent.click(screen.getByLabelText('Remove remove-me.jpg'));
+      expect(revokeObjectUrlMock).toHaveBeenCalledWith('blob:http://localhost/preview-1');
+      expect(screen.getByTestId('staged-batch-pill')).toHaveTextContent('16 · 2 Batches');
+
+      // Enter distinct captions on photo-1.jpg (batch 1 index 0) and photo-12.jpg (batch 2 index 1)
+      fireEvent.change(screen.getByLabelText('Caption for photo-1.jpg'), {
+        target: { value: 'Ceremony aisle walk' },
+      });
+      fireEvent.change(screen.getByLabelText('Caption for photo-12.jpg'), {
+        target: { value: 'Sparkler send-off' },
+      });
+
+      expect(await axe(container)).toHaveNoViolations();
+
+      // Confirm upload -> sends 2 POST requests (10 + 6)
+      fireEvent.click(screen.getByTestId('confirm-upload-btn'));
+
+      await waitFor(() => {
+        expect(global.fetch).toHaveBeenCalledTimes(2);
+        expect(screen.getAllByTestId('upload-success-badge')).toHaveLength(16);
+      });
+
+      expect(postedBatches).toHaveLength(2);
+      expect(postedBatches[0].filenames).toHaveLength(10);
+      expect(postedBatches[0].captions).toHaveLength(10);
+      expect(postedBatches[0].captions[0]).toBe('Ceremony aisle walk');
+      expect(postedBatches[0].captions[1]).toBe('');
+
+      expect(postedBatches[1].filenames).toHaveLength(6);
+      expect(postedBatches[1].captions).toHaveLength(6);
+      expect(postedBatches[1].filenames[1]).toBe('photo-12.jpg');
+      expect(postedBatches[1].captions[1]).toBe('Sparkler send-off');
+
+      // Clear status -> revokes all remaining 15 object URLs
+      fireEvent.click(screen.getByTestId('clear-status-button'));
+      expect(revokeObjectUrlMock).toHaveBeenCalledTimes(16);
+
+      // Stage 1 more JPEG and unmount -> revokes its object URL on unmount
+      fireEvent.change(fileInput, {
+        target: { files: [new File(['extra'], 'after-clear.jpg', { type: 'image/jpeg' })] },
+      });
+      expect(createObjectUrlMock).toHaveBeenCalledTimes(17);
+      unmount();
+      expect(revokeObjectUrlMock).toHaveBeenCalledTimes(17);
+    } finally {
+      URL.createObjectURL = origCreateObjectURL;
+      URL.revokeObjectURL = origRevokeObjectURL;
+    }
   });
 });

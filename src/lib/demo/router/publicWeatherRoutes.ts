@@ -114,9 +114,12 @@ export async function handlePublicAndWeatherRoutes(
       sinceTime = parsed;
     }
 
-    const approvedPhotos = dataset.photos
+    const allActivePhotos = dataset.photos.filter(
+      (p) => p.status === 'APPROVED' && p.isVisible && Boolean(p.url)
+    );
+
+    const approvedPhotos = allActivePhotos
       .filter((p) => {
-        if (p.status !== 'APPROVED' || !p.isVisible || !p.url) return false;
         if (sinceTime > 0) {
           const updated = new Date(p.updatedAt || p.createdAt).getTime();
           return updated > sinceTime;
@@ -141,6 +144,7 @@ export async function handlePublicAndWeatherRoutes(
       success: true,
       photos: approvedPhotos,
       data: approvedPhotos,
+      ...(sinceTime > 0 ? { activeIds: allActivePhotos.map((p) => p.nodeId) } : {}),
     });
   }
 

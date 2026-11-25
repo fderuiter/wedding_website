@@ -623,4 +623,92 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
     expect(screen.getByText('A & B')).toBeInTheDocument();
     expect(await axe(container)).toHaveNoViolations();
   });
+
+  it('switches to scoped QR mode when /api/guest/session returns status: photo_qr, hiding gated links and passing axe', async () => {
+    const originalFetch = global.fetch;
+    currentPathname = '/photos';
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        success: true,
+        data: {
+          status: 'photo_qr',
+          isVerified: false,
+          invitationCode: null,
+          code: null,
+          guestName: null,
+          hasPasscodeSession: false,
+        },
+      }),
+    }) as unknown as typeof fetch;
+
+    try {
+      const { container } = render(
+        <Navbar
+          isAdmin={false}
+          handleLogout={jest.fn()}
+          headerRef={headerRef}
+          config={{
+            ...mockConfig,
+            modules: {
+              gallery: true,
+              rsvp: true,
+              schedule: true,
+              registry: true,
+              guestbook: true,
+              bridalParty: true,
+              faq: true,
+              meal: true,
+            },
+          }}
+        />
+      );
+
+      const inviteCodeLinks = await screen.findAllByRole('link', { name: 'Enter Invite Code' });
+      expect(inviteCodeLinks.length).toBeGreaterThan(0);
+      expect(inviteCodeLinks[0]).toHaveAttribute('href', '/guest/login');
+
+      // Monogram brand link points to /photos in QR mode
+      const brandLink = screen.getByText('A & B').closest('a');
+      expect(brandLink).toHaveAttribute('href', '/photos');
+
+      // Only Photos, Live Slideshow, and Enter Invite Code links appear
+      const photosLink = screen.getByRole('link', { name: 'Photos' });
+      expect(photosLink).toHaveAttribute('href', '/photos');
+      expect(photosLink).toHaveAttribute('aria-current', 'page');
+
+      const slideshowLink = screen.getByRole('link', { name: 'Live Slideshow' });
+      expect(slideshowLink).toHaveAttribute('href', '/photos/slideshow');
+
+      // Gated routes and Event Guide dropdown are hidden
+      expect(screen.queryByRole('link', { name: 'Home' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /event guide/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Schedule' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'RSVP' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Registry' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Guestbook' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /more/i })).not.toBeInTheDocument();
+
+      // Open mobile drawer and verify mobile links are also scoped to QR mode
+      const mobileToggle = screen.getByRole('button', { name: /open main menu/i });
+      fireEvent.click(mobileToggle);
+      const mobileMenu = screen.getByRole('navigation', { name: /mobile navigation/i });
+      expect(within(mobileMenu).getByRole('link', { name: 'Photos' })).toHaveAttribute('href', '/photos');
+      expect(within(mobileMenu).getByRole('link', { name: 'Live Slideshow' })).toHaveAttribute(
+        'href',
+        '/photos/slideshow'
+      );
+      expect(within(mobileMenu).getByRole('link', { name: 'Enter Invite Code' })).toHaveAttribute(
+        'href',
+        '/guest/login'
+      );
+      expect(within(mobileMenu).queryByRole('link', { name: 'RSVP' })).not.toBeInTheDocument();
+
+      expect(await axe(container)).toHaveNoViolations();
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
 });

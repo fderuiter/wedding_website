@@ -349,6 +349,11 @@ export class ContentRepository implements IContentRepository {
     return parsedNodes;
   }
 
+  async getActivePublicPhotoIds(): Promise<string[]> {
+    const activeNodes = await this.getPublicPhotos();
+    return activeNodes.map((node) => node.id);
+  }
+
   async getEntityBoundMediaIds(
     mediaIds: string[],
     client: any = this.client
@@ -436,7 +441,8 @@ export class ContentRepository implements IContentRepository {
 
   async approvePhotosBatch(
     ids: string[],
-    author: string = 'System'
+    author: string = 'System',
+    pendingEdits?: Record<string, { caption?: string; uploaderName?: string }>
   ): Promise<ContentNodeDTO[]> {
     const uniqueIds = Array.from(
       new Set((ids || []).filter((id): id is string => typeof id === 'string' && id.length > 0))
@@ -445,48 +451,170 @@ export class ContentRepository implements IContentRepository {
       return [];
     }
 
-    return executeInTransaction(this.client, async (tx) => {
-      let updatedRawNodes: any[] = [];
+    const buildApprovedNodeData = (
+      node: { tags?: string[] | null; data?: unknown },
+      override?: { caption?: string; uploaderName?: string }
+    ): Record<string, any> => {
+      const currentData =
+        node.data && typeof node.data === 'object' && !Array.isArray(node.data)
+          ? (node.data as Record<string, any>)
+          : {};
+      const updatedData: Record<string, any> = {
+        ...currentData,
+        status: 'APPROVED',
+        isVisible: true,
+      };
 
-      if (typeof tx.$queryRaw === 'function') {
-        const contentNodeTable = Prisma.raw(qualifyPostgresTable('ContentNode'));
-        const rows = await tx.$queryRaw(Prisma.sql`
-          UPDATE ${contentNodeTable}
-          SET
-            "data" = COALESCE(
-              CASE WHEN jsonb_typeof("data") = 'object' THEN "data" ELSE '{}'::jsonb END,
-              '{}'::jsonb
-            ) || '{"status":"APPROVED","isVisible":true}'::jsonb,
-            "updatedAt" = NOW()
-          WHERE "type" = 'Photo'
-            AND "id" = ANY(${uniqueIds}::text[])
-          RETURNING "id", "type", COALESCE("tags", ARRAY[]::text[]) AS "tags", "data", "createdAt", "updatedAt"
-        `);
-        updatedRawNodes = Array.isArray(rows)
-          ? rows.map((row) => normalizeStoredNodeTimestamps(row))
-          : [];
-      } else if (typeof tx.contentNode?.findMany === 'function') {
-        const existingNodes = await tx.contentNode.findMany({
-          where: {
-            id: { in: uniqueIds },
-            type: 'Photo',
-          },
-        });
-        for (const node of existingNodes) {
-          const currentData =
-            node.data && typeof node.data === 'object' && !Array.isArray(node.data)
-              ? (node.data as Record<string, any>)
-              : {};
-          const nextData = {
-            ...currentData,
-            status: 'APPROVED',
-            isVisible: true,
-          };
-          const updated = await tx.contentNode.update({
-            where: { id: node.id },
-            data: { data: nextData },
+      const hasOverride =
+        override !== undefined &&
+        (override.caption !== undefined || override.uploaderName !== undefined);
+
+      if (hasOverride) {
+        if (override.caption !== undefined) {
+          const trimmedCaption = override.caption.trim();
+          if (trimmedCaption) {
+            updatedData.caption = trimmedCaption;
+          } else {
+            delete updatedData.caption;
+          }
+        }
+        if (override.uploaderName !== undefined) {
+          const trimmedUploader = override.uploaderName.trim();
+          if (trimmedUploader) {
+            updatedData.uploaderName = trimmedUploader;
+          } else {
+            delete updatedData.uploaderName;
+          }
+        }
+
+        const effectiveCaption =
+          typeof updatedData.caption === 'string' && updatedData.caption.trim()
+            ? updatedData.caption.trim()
+            : undefined;
+        const effectiveUploader =
+          typeof updatedData.uploaderName === 'string' && updatedData.uploaderName.trim()
+            ? updatedData.uploaderName.trim()
+            : undefined;
+        const isGuestNode = Boolean(
+          Array.isArray(node.tags) && node.tags.includes('guest-upload')
+        );
+        const previousAutoLabel =
+          currentData.caption ||
+          (currentData.uploaderName ? `Photo by ${currentData.uploaderName}` : 'Guest Photo');
+
+        if (isGuestNode || !currentData.title || currentData.title === previousAutoLabel) {
+          const nextTitle =
+            effectiveCaption ||
+            (effectiveUploader ? `Photo by ${effectiveUploader}` : 'Guest Photo');
+          updatedData.title = nextTitle;
+          updatedData.altText = nextTitle;
+        }
+      }
+
+      return updatedData;
+    };
+
+    const editedIds = uniqueIds.filter((id) => {
+      const edit = pendingEdits?.[id];
+      return edit !== undefined && (edit.caption !== undefined || edit.uploaderName !== undefined);
+    });
+    const editedIdSet = new Set(editedIds);
+    const uneditedIds = uniqueIds.filter((id) => !editedIdSet.has(id));
+
+    return executeInTransaction(this.client, async (tx) => {
+      const updatedRawNodes: any[] = [];
+
+      if (uneditedIds.length > 0) {
+        if (typeof tx.$queryRaw === 'function') {
+          const contentNodeTable = Prisma.raw(qualifyPostgresTable('ContentNode'));
+          const rows = await tx.$queryRaw(Prisma.sql`
+            UPDATE ${contentNodeTable}
+            SET
+              "data" = COALESCE(
+                CASE WHEN jsonb_typeof("data") = 'object' THEN "data" ELSE '{}'::jsonb END,
+                '{}'::jsonb
+              ) || '{"status":"APPROVED","isVisible":true}'::jsonb,
+              "updatedAt" = NOW()
+            WHERE "type" = 'Photo'
+              AND "id" = ANY(${uneditedIds}::text[])
+            RETURNING "id", "type", COALESCE("tags", ARRAY[]::text[]) AS "tags", "data", "createdAt", "updatedAt"
+          `);
+          if (Array.isArray(rows)) {
+            for (const row of rows) {
+              updatedRawNodes.push(normalizeStoredNodeTimestamps(row));
+            }
+          }
+        } else if (typeof tx.contentNode?.findMany === 'function') {
+          const existingNodes = await tx.contentNode.findMany({
+            where: {
+              id: { in: uneditedIds },
+              type: 'Photo',
+            },
           });
-          updatedRawNodes.push(normalizeStoredNodeTimestamps(updated));
+          for (const node of existingNodes) {
+            const nextData = buildApprovedNodeData(node);
+            const updated = await tx.contentNode.update({
+              where: { id: node.id },
+              data: { data: nextData },
+            });
+            updatedRawNodes.push(normalizeStoredNodeTimestamps(updated));
+          }
+        }
+      }
+
+      if (editedIds.length > 0) {
+        if (
+          typeof tx.contentNode?.findMany === 'function' &&
+          typeof tx.contentNode?.update === 'function'
+        ) {
+          const existingEditedNodes = await tx.contentNode.findMany({
+            where: {
+              id: { in: editedIds },
+              type: 'Photo',
+            },
+          });
+          for (const node of existingEditedNodes) {
+            const nextData = buildApprovedNodeData(node, pendingEdits?.[node.id]);
+            const updated = await tx.contentNode.update({
+              where: { id: node.id },
+              data: { data: nextData },
+            });
+            if (nextData.mediaId && nextData.altText && typeof tx.media?.update === 'function') {
+              try {
+                await tx.media.update({
+                  where: { id: String(nextData.mediaId) },
+                  data: { altText: String(nextData.altText) },
+                });
+              } catch {
+                // Ignore optional media altText sync failure
+              }
+            }
+            updatedRawNodes.push(normalizeStoredNodeTimestamps(updated));
+          }
+        } else if (typeof tx.$queryRaw === 'function') {
+          const contentNodeTable = Prisma.raw(qualifyPostgresTable('ContentNode'));
+          const existingRows = await tx.$queryRaw(Prisma.sql`
+            SELECT "id", "type", COALESCE("tags", ARRAY[]::text[]) AS "tags", "data", "createdAt", "updatedAt"
+            FROM ${contentNodeTable}
+            WHERE "type" = 'Photo'
+              AND "id" = ANY(${editedIds}::text[])
+          `);
+          if (Array.isArray(existingRows)) {
+            for (const row of existingRows) {
+              const nextData = buildApprovedNodeData(row, pendingEdits?.[String(row.id)]);
+              const nextJson = JSON.stringify(nextData);
+              const updatedRows = await tx.$queryRaw(Prisma.sql`
+                UPDATE ${contentNodeTable}
+                SET "data" = ${nextJson}::jsonb, "updatedAt" = NOW()
+                WHERE "type" = 'Photo'
+                  AND "id" = ${String(row.id)}
+                RETURNING "id", "type", COALESCE("tags", ARRAY[]::text[]) AS "tags", "data", "createdAt", "updatedAt"
+              `);
+              if (Array.isArray(updatedRows) && updatedRows[0]) {
+                updatedRawNodes.push(normalizeStoredNodeTimestamps(updatedRows[0]));
+              }
+            }
+          }
         }
       }
 

@@ -457,4 +457,63 @@ describe('Guest Login Page with Unified Sign-In and Help Drawer', () => {
 
     expect(await axe(container)).toHaveNoViolations();
   });
+
+  it('renders Back to Wedding Photos link when /api/guest/session returns status: photo_qr and hides it when status is none', async () => {
+    const fetchMock = jest
+      .fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          data: {
+            status: 'photo_qr',
+            isVerified: false,
+            invitationCode: null,
+            code: null,
+            guestName: null,
+            hasPasscodeSession: false,
+          },
+        }),
+      } as unknown as Response);
+    globalWithFetch.fetch = fetchMock;
+
+    const { container, unmount } = render(<GuestLoginPage />);
+
+    const backLink = await screen.findByTestId('back-to-wedding-photos-link');
+    expect(backLink).toBeInTheDocument();
+    expect(backLink).toHaveTextContent('Back to Wedding Photos');
+    expect(backLink).toHaveAttribute('href', '/photos?tab=guest');
+    expect(await axe(container)).toHaveNoViolations();
+
+    unmount();
+
+    // Verify link is hidden when status is none
+    globalWithFetch.fetch = jest
+      .fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          data: {
+            status: 'none',
+            isVerified: false,
+            invitationCode: null,
+            code: null,
+            guestName: null,
+            hasPasscodeSession: false,
+          },
+        }),
+      } as unknown as Response);
+
+    render(<GuestLoginPage />);
+    await waitFor(() => {
+      expect(globalWithFetch.fetch).toHaveBeenCalledWith(
+        '/api/guest/session',
+        expect.any(Object)
+      );
+    });
+    expect(screen.queryByTestId('back-to-wedding-photos-link')).not.toBeInTheDocument();
+  });
 });

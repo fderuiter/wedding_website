@@ -1454,4 +1454,61 @@ describe('ReceptionSlideshowClient', () => {
     expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
     expect(await axe(container, a11yConfig)).toHaveNoViolations();
   });
+
+  it('evicts unpublished or rejected slides missing from activeIds on incremental ?since= polls and clamps currentIndex', async () => {
+    const initialSlides = [
+      {
+        id: 'slide-keep-1',
+        url: 'https://example.com/keep1.jpg',
+        title: 'Ceremony Kiss',
+        updatedAt: '2026-06-20T20:00:00.000Z',
+      },
+      {
+        id: 'slide-keep-2',
+        url: 'https://example.com/keep2.jpg',
+        title: 'First Dance',
+        updatedAt: '2026-06-20T20:05:00.000Z',
+      },
+      {
+        id: 'slide-unpublished-3',
+        url: 'https://example.com/removed3.jpg',
+        title: 'Removed Guest Upload',
+        updatedAt: '2026-06-20T20:10:00.000Z',
+      },
+    ];
+
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        photos: [],
+        activeIds: ['slide-keep-1', 'slide-keep-2'],
+      }),
+    });
+
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={initialSlides}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    // Navigate to the 3rd slide (index 2) before it is unpublished
+    fireEvent.click(screen.getByTestId('slideshow-next-btn'));
+    fireEvent.click(screen.getByTestId('slideshow-next-btn'));
+    expect(screen.getByTestId('slideshow-photo-title')).toHaveTextContent('Removed Guest Upload');
+
+    // Trigger 30s incremental poll -> slide-unpublished-3 is omitted from activeIds
+    await act(async () => {
+      jest.advanceTimersByTime(30000);
+    });
+
+    // Slide count drops from 3 to 2, removed slide disappears, and currentIndex clamps to index 1 (First Dance)
+    expect(screen.queryByText('Removed Guest Upload')).not.toBeInTheDocument();
+    expect(screen.getByTestId('slideshow-photo-title')).toHaveTextContent('First Dance');
+    expect(screen.getByTestId('slideshow-image')).toHaveAttribute(
+      'src',
+      'https://example.com/keep2.jpg'
+    );
+  });
 });

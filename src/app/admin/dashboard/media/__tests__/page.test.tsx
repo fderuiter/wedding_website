@@ -764,4 +764,86 @@ describe('MediaDashboardPage', () => {
       );
     });
   });
+
+  it('sends pendingEdits overrides when batch-approving multiple pending moderation cards', async () => {
+    mockGet.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/admin/photos/moderation')) {
+        return {
+          photos: [
+            {
+              id: 'batch-edit-1',
+              createdAt: '2026-06-20T21:15:00.000Z',
+              data: {
+                url: '/uploads/photos/p1.jpg',
+                title: 'Photo 1',
+                caption: 'Original caption 1',
+                uploaderName: 'Aunt Clara',
+                status: 'PENDING',
+              },
+            },
+            {
+              id: 'batch-edit-2',
+              createdAt: '2026-06-20T21:16:00.000Z',
+              data: {
+                url: '/uploads/photos/p2.jpg',
+                title: 'Photo 2',
+                caption: 'Original caption 2',
+                uploaderName: 'Uncle Joe',
+                status: 'PENDING',
+              },
+            },
+          ],
+        };
+      }
+      return [];
+    });
+    mockPost.mockResolvedValue({
+      success: true,
+      total: 2,
+      succeededCount: 2,
+      failedCount: 0,
+      results: [
+        { id: 'batch-edit-1', success: true, action: 'approve' },
+        { id: 'batch-edit-2', success: true, action: 'approve' },
+      ],
+    });
+
+    render(<MediaDashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pending-count-badge')).toHaveTextContent('2');
+    });
+
+    fireEvent.click(screen.getByTestId('toggle-moderation-drawer'));
+
+    fireEvent.change(screen.getByTestId('pending-caption-input-batch-edit-1'), {
+      target: { value: 'Curated Sparkler Exit' },
+    });
+    fireEvent.change(screen.getByTestId('pending-caption-input-batch-edit-2'), {
+      target: { value: 'Curated Cake Cutting' },
+    });
+    fireEvent.change(screen.getByTestId('pending-uploader-input-batch-edit-2'), {
+      target: { value: 'Uncle Joe & Family' },
+    });
+
+    fireEvent.click(screen.getByTestId('select-all-pending-btn'));
+    fireEvent.click(screen.getByTestId('batch-approve-btn'));
+
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith('/api/admin/photos/moderation/batch', {
+        ids: ['batch-edit-1', 'batch-edit-2'],
+        action: 'approve',
+        pendingEdits: {
+          'batch-edit-1': {
+            caption: 'Curated Sparkler Exit',
+            uploaderName: 'Aunt Clara',
+          },
+          'batch-edit-2': {
+            caption: 'Curated Cake Cutting',
+            uploaderName: 'Uncle Joe & Family',
+          },
+        },
+      });
+    });
+  });
 });

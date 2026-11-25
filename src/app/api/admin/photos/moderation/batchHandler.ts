@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
-import { contentService, BatchPhotoModerationSchema } from '@/features/content';
+import {
+  contentService,
+  BatchPhotoModerationSchema,
+  type BatchPhotoModerationOverrides,
+} from '@/features/content';
 import { ApiError } from '@/utils/ApiError';
 
 function resolveModerationAction(payload: Record<string, unknown>): 'approve' | 'reject' {
@@ -49,7 +53,15 @@ export async function handleBatchPhotoModeration(body: unknown): Promise<NextRes
 
   const ids = rawIds.map((item) => String(item));
   const action = resolveModerationAction(payload);
-  const result = await contentService.moderatePhotosBatch(ids, action, 'Admin');
+  const pendingEdits: BatchPhotoModerationOverrides | undefined = parsed.data.pendingEdits;
+  const hasPendingEdits =
+    pendingEdits !== undefined &&
+    pendingEdits !== null &&
+    typeof pendingEdits === 'object' &&
+    Object.keys(pendingEdits).length > 0;
+  const result = hasPendingEdits
+    ? await contentService.moderatePhotosBatch(ids, action, 'Admin', pendingEdits)
+    : await contentService.moderatePhotosBatch(ids, action, 'Admin');
 
   return NextResponse.json({
     success: true,

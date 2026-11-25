@@ -109,6 +109,22 @@ export async function verifyPhotoQrLinkToken(
   }
 }
 
+let fallbackNonceCounter = 0;
+
+function generatePhotoSessionNonce(): string {
+  if (typeof globalThis.crypto?.getRandomValues === 'function') {
+    const bytes = new Uint8Array(12);
+    globalThis.crypto.getRandomValues(bytes);
+    let hex = '';
+    for (let i = 0; i < bytes.length; i += 1) {
+      hex += bytes[i].toString(16).padStart(2, '0');
+    }
+    return hex;
+  }
+  fallbackNonceCounter += 1;
+  return `${Date.now().toString(36)}-${fallbackNonceCounter.toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 /**
  * Signs an HttpOnly photo-scoped session cookie token carrying the QR rotation version.
  */
@@ -118,12 +134,14 @@ export async function signPhotoUploadSessionToken(options?: {
   subdomain?: string | null;
   iat?: number;
   exp?: number;
+  jti?: string;
 }): Promise<string> {
   const iat = options?.iat ?? Date.now();
   const exp = options?.exp ?? iat + GUEST_PHOTO_SESSION_MAX_AGE_SECONDS * 1000;
-  const payload: PhotoUploadSessionPayload = {
-    purpose: 'photo_upload_session',
+  const payload = {
+    purpose: 'photo_upload_session' as const,
     v: normalizeTokenVersion(options?.v),
+    jti: options?.jti ?? generatePhotoSessionNonce(),
     ...(options?.siteId !== undefined ? { siteId: options.siteId } : {}),
     ...(options && 'subdomain' in options && options.subdomain !== undefined
       ? { subdomain: normalizeTenantSubdomain(options.subdomain) }
@@ -241,11 +259,12 @@ export async function getRawSignedPhotoUploadSession(
 
 /**
  * Reads and verifies the HMAC signature, expiration, and Edge tenant claims of the
- * `guest_photo_session` cookie (Edge-compatible), evaluating every matching candidate.
+ * `guest_photo_session` cookie (Edge-compatible), returning both the verified payload
+ * and the matched raw cookie string.
  */
-export async function getSignedPhotoUploadSession(
+export async function getSignedPhotoUploadSessionWithToken(
   req?: NextRequest
-): Promise<PhotoUploadSessionPayload | null> {
+): Promise<{ payload: PhotoUploadSessionPayload; token: string } | null> {
   const candidates = await readRequestCookieCandidates(GUEST_PHOTO_COOKIE, req, {
     suppressErrors: true,
   });
@@ -267,10 +286,21 @@ export async function getSignedPhotoUploadSession(
       continue;
     }
 
-    return payload;
+    return { payload, token: cookieValue };
   }
 
   return null;
+}
+
+/**
+ * Reads and verifies the HMAC signature, expiration, and Edge tenant claims of the
+ * `guest_photo_session` cookie (Edge-compatible), evaluating every matching candidate.
+ */
+export async function getSignedPhotoUploadSession(
+  req?: NextRequest
+): Promise<PhotoUploadSessionPayload | null> {
+  const verified = await getSignedPhotoUploadSessionWithToken(req);
+  return verified ? verified.payload : null;
 }
 
 /**

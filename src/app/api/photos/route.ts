@@ -31,9 +31,23 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     sinceDate = parsed;
   }
 
-  const nodes = await contentService.getPublicPhotos(
-    sinceDate ? { since: sinceDate } : { limit: 50 }
-  );
+  const [nodes, activeIds] = await Promise.all([
+    contentService.getPublicPhotos(sinceDate ? { since: sinceDate } : { limit: 50 }),
+    sinceDate
+      ? typeof (contentService as { getActivePublicPhotoIds?: () => Promise<string[]> })
+        .getActivePublicPhotoIds === 'function'
+        ? (
+          contentService as unknown as { getActivePublicPhotoIds: () => Promise<string[]> }
+        ).getActivePublicPhotoIds()
+        : contentService.getPublicPhotos().then((allNodes) =>
+          Array.isArray(allNodes)
+            ? allNodes
+              .filter((n) => Boolean((n.data as { url?: string } | undefined)?.url))
+              .map((n) => n.id)
+            : []
+        )
+      : Promise.resolve(undefined),
+  ]);
 
   const photos = nodes
     .map((node) => {
@@ -72,5 +86,6 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
   return NextResponse.json({
     success: true,
     photos,
+    ...(activeIds !== undefined ? { activeIds } : {}),
   });
 });

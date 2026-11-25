@@ -579,5 +579,53 @@ describe('Admin Photo Moderation Routes', () => {
       expect(json.failedCount).toBe(1);
       expect(json.results).toEqual(mixedBatchResult.results);
     });
+
+    it('forwards pendingEdits per-photo caption and uploaderName overrides on batch approval', async () => {
+      const batchEdits = {
+        p1: { caption: 'First Dance Sparklers', uploaderName: 'Aunt Clara' },
+        p2: { caption: 'Table 4 Toast', uploaderName: 'Uncle Joe' },
+      };
+      const mockBatchResult = {
+        total: 2,
+        succeededCount: 2,
+        failedCount: 0,
+        results: [
+          {
+            id: 'p1',
+            success: true,
+            action: 'approve' as const,
+            data: { id: 'p1', status: 'APPROVED' as const },
+          },
+          {
+            id: 'p2',
+            success: true,
+            action: 'approve' as const,
+            data: { id: 'p2', status: 'APPROVED' as const },
+          },
+        ],
+      };
+      (mockContentService.moderatePhotosBatch as jest.Mock).mockResolvedValueOnce(mockBatchResult);
+
+      const req = new NextRequest('http://localhost:3000/api/admin/photos/moderation/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ids: ['p1', 'p2'],
+          action: 'approve',
+          pendingEdits: batchEdits,
+        }),
+      });
+      const res = await postBatchModeration(req);
+      const json = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(json.success).toBe(true);
+      expect(mockContentService.moderatePhotosBatch).toHaveBeenCalledWith(
+        ['p1', 'p2'],
+        'approve',
+        'Admin',
+        batchEdits
+      );
+    });
   });
 });

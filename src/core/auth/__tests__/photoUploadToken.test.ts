@@ -64,6 +64,8 @@ describe('Photo Upload Scoped Tokens & Cross-Cookie Non-Replayability', () => {
   it('signs and verifies photo upload session cookie tokens and reads them from NextRequest', async () => {
     const now = Date.now();
     const sessionToken = await signPhotoUploadSessionToken({ v: 2, iat: now });
+    const secondSessionTokenSameInstant = await signPhotoUploadSessionToken({ v: 2, iat: now });
+    expect(sessionToken).not.toBe(secondSessionTokenSameInstant);
     const verified = await verifyPhotoUploadSessionToken(sessionToken);
 
     expect(verified).toEqual({
