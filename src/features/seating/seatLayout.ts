@@ -188,9 +188,11 @@ export function computeScaledTableDimensions({
   };
 }
 
-interface ResolvedSeatOccupant {
+export interface ResolvedSeatOccupant {
   seatNumber: number;
   guest: InvitationCodeDTO;
+  memberId?: string;
+  role?: string | null;
   attendeeName: string;
   displayName: string;
   isCompanion: boolean;
@@ -200,6 +202,7 @@ interface ResolvedSeatOccupant {
   partySize: number;
   primarySeatNumber: number;
   mealChoice: string | null;
+  dietaryNotesText?: string | null;
   dietaryBadges: DietaryBadgeInfo[];
 }
 
@@ -261,13 +264,15 @@ function buildSeatOccupant(
   const member = members[memberIndex] || members[0];
   const isCompanion = memberIndex > 0;
   const companionIndex = isCompanion ? memberIndex - 1 : -1;
-  const displayName = isCompanion
-    ? formatCompanionSeatLabel(guest, companionIndex)
-    : guest.guestName;
+  const displayName =
+    member.displayNameOverride ||
+    (isCompanion ? formatCompanionSeatLabel(guest, companionIndex) : guest.guestName);
 
   return {
     seatNumber,
     guest,
+    ...(member.memberId ? { memberId: member.memberId } : {}),
+    ...(member.role !== undefined ? { role: member.role } : {}),
     attendeeName: member.attendeeName,
     displayName,
     isCompanion,
@@ -277,6 +282,7 @@ function buildSeatOccupant(
     partySize: members.length,
     primarySeatNumber,
     mealChoice: member.mealChoice,
+    dietaryNotesText: member.dietaryNotesText ?? null,
     dietaryBadges: member.dietaryBadges,
   };
 }
@@ -322,7 +328,7 @@ export function resolveDetailedSeatAssignments(
   for (const guest of guests) {
     const members = resolvePartyMembersWithFallback(guest);
     totalHeadcount += members.length;
-    const explicitSeat = guest.seatNumber;
+    const explicitSeat = members[0]?.explicitSeatNumber ?? guest.seatNumber;
     if (
       typeof explicitSeat === 'number' &&
       Number.isInteger(explicitSeat) &&
@@ -343,7 +349,7 @@ export function resolveDetailedSeatAssignments(
 
   const maxBound = Math.max(safeCapacity, totalHeadcount);
 
-  // Pass 1b: Allocate companion chairs for Pass 1a parties (honoring explicit plusOneSeatNumbers, else contiguous)
+  // Pass 1b: Allocate companion chairs for Pass 1a parties (honoring member.seatNumber / plusOneSeatNumbers, else contiguous)
   for (const entry of placedExplicit) {
     const companionCount = entry.members.length - 1;
     const explicitPlusOneSeats = Array.isArray(entry.guest.plusOneSeatNumbers)
@@ -351,7 +357,9 @@ export function resolveDetailedSeatAssignments(
       : [];
 
     for (let cIdx = 0; cIdx < companionCount; cIdx++) {
-      const explicitCompanionSeat = explicitPlusOneSeats[cIdx];
+      const companionMember = entry.members[cIdx + 1];
+      const explicitCompanionSeat =
+        companionMember?.explicitSeatNumber ?? explicitPlusOneSeats[cIdx];
       const preferredSeat = entry.primarySeat + cIdx + 1;
       let assignedCompanionSeat: number;
 

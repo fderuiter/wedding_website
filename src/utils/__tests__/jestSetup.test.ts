@@ -11,12 +11,14 @@ const EXPECTED_MODEL_DELEGATES = [
   'attraction',
   'registryItem',
   'contributor',
+  'householdMember',
   'invitationCode',
   'seatingTable',
   'contentNode',
   'snapshotVersion',
   'subEvent',
   'subEventAccess',
+  'subEventMemberRsvp',
   'subEventRsvp',
   'broadcastMessage',
   'broadcastRecipient',
@@ -30,12 +32,17 @@ describe('Global Jest Setup (jest.setup.js)', () => {
         cookie: 'admin_auth=tok_abc==; guest_auth=guest_xyz=',
         'x-custom-header': 'from-web-headers',
       });
-      const reqFromHeaders = new NextRequest('http://localhost:3000/api/admin/me', {
-        headers: webHeaders,
-      });
+      const reqFromHeaders = new NextRequest(
+        'http://localhost:3000/api/admin/me',
+        {
+          headers: webHeaders,
+        },
+      );
 
       expect(reqFromHeaders.headers).toBeInstanceOf(Headers);
-      expect(reqFromHeaders.headers.get('x-custom-header')).toBe('from-web-headers');
+      expect(reqFromHeaders.headers.get('x-custom-header')).toBe(
+        'from-web-headers',
+      );
       expect(reqFromHeaders.headers.get('host')).toBe('localhost:3000');
       expect(reqFromHeaders.cookies.get('admin_auth')).toEqual({
         name: 'admin_auth',
@@ -62,12 +69,17 @@ describe('Global Jest Setup (jest.setup.js)', () => {
           cb('realm-val', 'x-realm');
         },
       };
-      const reqFromCrossRealm = new NextRequest('http://localhost:3000/api/ready', {
-        headers: crossRealmHeadersLike as unknown as HeadersInit,
-      });
+      const reqFromCrossRealm = new NextRequest(
+        'http://localhost:3000/api/ready',
+        {
+          headers: crossRealmHeadersLike as unknown as HeadersInit,
+        },
+      );
       expect(reqFromCrossRealm.headers).toBeInstanceOf(Headers);
       expect(reqFromCrossRealm.headers.get('x-realm')).toBe('realm-val');
-      expect(reqFromCrossRealm.cookies.get('realm_cookie')?.value).toBe('cross_val');
+      expect(reqFromCrossRealm.cookies.get('realm_cookie')?.value).toBe(
+        'cross_val',
+      );
     });
 
     it('defaults method to GET and supports cookies.getAll, cookies.has, cookies.set, and cookies.delete', () => {
@@ -104,15 +116,18 @@ describe('Global Jest Setup (jest.setup.js)', () => {
       await expect(emptyReq.json()).resolves.toEqual({});
 
       const payload = { event: 'payment_intent.succeeded', amount: 5000 };
-      const jsonReq = new NextRequest('http://localhost:3000/api/registry/webhook/stripe', {
-        method: 'POST',
-        headers: new Headers({
-          'content-type': 'application/json',
-          'stripe-signature': 't=123,v1=sig',
-          cookie: 'guest_auth=1',
-        }),
-        body: JSON.stringify(payload),
-      });
+      const jsonReq = new NextRequest(
+        'http://localhost:3000/api/registry/webhook/stripe',
+        {
+          method: 'POST',
+          headers: new Headers({
+            'content-type': 'application/json',
+            'stripe-signature': 't=123,v1=sig',
+            cookie: 'guest_auth=1',
+          }),
+          body: JSON.stringify(payload),
+        },
+      );
 
       const cloned = jsonReq.clone() as NextRequest;
       expect(cloned.method).toBe('POST');
@@ -123,27 +138,35 @@ describe('Global Jest Setup (jest.setup.js)', () => {
       await expect(jsonReq.text()).resolves.toBe(JSON.stringify(payload));
 
       const binarySource = new Uint8Array([0x25, 0x50, 0x44, 0x46]);
-      const binaryReq = new NextRequest('http://localhost:3000/api/admin/upload', {
-        method: 'POST',
-        body: binarySource,
-      });
+      const binaryReq = new NextRequest(
+        'http://localhost:3000/api/admin/upload',
+        {
+          method: 'POST',
+          body: binarySource,
+        },
+      );
       const ab = await binaryReq.arrayBuffer();
       expect(Array.from(new Uint8Array(ab))).toEqual([0x25, 0x50, 0x44, 0x46]);
 
       const fd = new FormData();
       fd.append('uploaderName', 'Alex');
       fd.append('caption', 'Ceremony');
-      const formReq = new NextRequest('http://localhost:3000/api/guest/photos/upload', {
-        method: 'POST',
-        body: fd,
-      });
+      const formReq = new NextRequest(
+        'http://localhost:3000/api/guest/photos/upload',
+        {
+          method: 'POST',
+          body: fd,
+        },
+      );
       const parsedForm = await formReq.formData();
       expect(parsedForm.get('uploaderName')).toBe('Alex');
       expect(parsedForm.get('caption')).toBe('Ceremony');
     });
 
     it('queues and flushes Next.js after() tasks inside __runWithAfterScope alongside NextRequest and NextResponse', async () => {
-      expect(() => after(() => {})).toThrow('`after` was called outside a request scope');
+      expect(() => after(() => {})).toThrow(
+        '`after` was called outside a request scope',
+      );
 
       const runWithAfterScope = (
         globalThis as unknown as {
@@ -157,10 +180,13 @@ describe('Global Jest Setup (jest.setup.js)', () => {
 
       const events: string[] = [];
       const scoped = await runWithAfterScope(async () => {
-        const req = new NextRequest('http://localhost:3000/api/registry/contribute', {
-          method: 'POST',
-          body: JSON.stringify({ amount: 50 }),
-        });
+        const req = new NextRequest(
+          'http://localhost:3000/api/registry/contribute',
+          {
+            method: 'POST',
+            body: JSON.stringify({ amount: 50 }),
+          },
+        );
         const body = await req.json();
         after(async () => {
           events.push(`deferred:${body.amount}`);
@@ -180,10 +206,17 @@ describe('Global Jest Setup (jest.setup.js)', () => {
 
   describe('PrismaClient mock and integration test bypass', () => {
     it('generates CRUD delegates for all 16 Prisma models, passes all 16 delegates into $transaction, and stubs raw queries', async () => {
-      expect(Object.keys(Prisma.ModelName)).toHaveLength(EXPECTED_MODEL_DELEGATES.length);
+      expect(Object.keys(Prisma.ModelName)).toHaveLength(
+        EXPECTED_MODEL_DELEGATES.length,
+      );
 
-      const client = new PrismaClient() as unknown as Record<string, Record<string, unknown>> & {
-        $transaction: <T>(_fn: (_tx: Record<string, unknown>) => Promise<T>) => Promise<T>;
+      const client = new PrismaClient() as unknown as Record<
+        string,
+        Record<string, unknown>
+      > & {
+        $transaction: <T>(
+          _fn: (_tx: Record<string, unknown>) => Promise<T>,
+        ) => Promise<T>;
         $queryRaw: jest.Mock;
         $queryRawUnsafe: jest.Mock;
         $executeRaw: jest.Mock;
@@ -244,7 +277,8 @@ describe('Global Jest Setup (jest.setup.js)', () => {
         jest.resetModules();
         getStateSpy.mockImplementation(() => ({
           ...originalGetState(),
-          testPath: '/app/src/app/api/admin/__tests__/onboardingMilestones.integration.test.ts',
+          testPath:
+            '/app/src/app/api/admin/__tests__/onboardingMilestones.integration.test.ts',
         }));
         const integrationPrisma = await import('@prisma/client');
         expect(jest.isMockFunction(integrationPrisma.PrismaClient)).toBe(false);
@@ -265,7 +299,7 @@ describe('Global Jest Setup (jest.setup.js)', () => {
 
   describe('afterEach rate limit reset across 6 sequential auth tests', () => {
     const authLoginHandler = withApiMiddleware(async () =>
-      NextResponse.json({ authenticated: true }, { status: 200 })
+      NextResponse.json({ authenticated: true }, { status: 200 }),
     );
 
     it.each([1, 2, 3, 4, 5, 6])(
@@ -278,37 +312,46 @@ describe('Global Jest Setup (jest.setup.js)', () => {
         });
         const res = await authLoginHandler(req);
         expect(res.status).toBe(200);
-      }
+      },
     );
   });
 
   describe('scoped module.createRequire paths', () => {
     it('maps /pdfkit.js URLs to node_modules/pdfkit/js/pdfkit.js', () => {
-      const pdfRequire = moduleModule.createRequire('http://localhost/pdfkit.js');
+      const pdfRequire = moduleModule.createRequire(
+        'http://localhost/pdfkit.js',
+      );
       const resolvedFont = pdfRequire.resolve('./standard-fonts/Helvetica.cjs');
       expect(resolvedFont).toBe(
-        path.join(process.cwd(), 'node_modules', 'pdfkit', 'js', 'standard-fonts', 'Helvetica.cjs')
+        path.join(
+          process.cwd(),
+          'node_modules',
+          'pdfkit',
+          'js',
+          'standard-fonts',
+          'Helvetica.cjs',
+        ),
       );
     });
 
     it('resolves non-pdfkit JSDOM http/https URLs relative to process.cwd() and preserves standard paths', () => {
       const rootRequire = moduleModule.createRequire('http://localhost/');
       expect(rootRequire.resolve('./package.json')).toBe(
-        path.join(process.cwd(), 'package.json')
+        path.join(process.cwd(), 'package.json'),
       );
 
       const utilsRequire = moduleModule.createRequire(
-        'http://localhost/src/utils/placeholder.js'
+        'http://localhost/src/utils/placeholder.js',
       );
       expect(utilsRequire.resolve('./rateLimit.ts')).toBe(
-        path.join(process.cwd(), 'src', 'utils', 'rateLimit.ts')
+        path.join(process.cwd(), 'src', 'utils', 'rateLimit.ts'),
       );
 
       const fileRequire = moduleModule.createRequire(
-        path.join(process.cwd(), 'package.json')
+        path.join(process.cwd(), 'package.json'),
       );
       expect(fileRequire.resolve('./jest.setup.js')).toBe(
-        path.join(process.cwd(), 'jest.setup.js')
+        path.join(process.cwd(), 'jest.setup.js'),
       );
     });
   });
@@ -317,24 +360,31 @@ describe('Global Jest Setup (jest.setup.js)', () => {
     it('executes unit-node suites in native node without booting JSDOM or DOM globals', () => {
       expect(typeof window).toBe('undefined');
       expect(typeof document).toBe('undefined');
-      expect(typeof (globalThis as Record<string, unknown>).ResizeObserver).toBe('undefined');
-      expect(typeof (globalThis as Record<string, unknown>).HTMLCanvasElement).toBe('undefined');
       expect(
-        typeof (expect(null) as unknown as Record<string, unknown>).toBeInTheDocument
+        typeof (globalThis as Record<string, unknown>).ResizeObserver,
+      ).toBe('undefined');
+      expect(
+        typeof (globalThis as Record<string, unknown>).HTMLCanvasElement,
+      ).toBe('undefined');
+      expect(
+        typeof (expect(null) as unknown as Record<string, unknown>)
+          .toBeInTheDocument,
       ).toBe('undefined');
     });
 
     it('exposes isSerial = true on jest-serial-runner.cjs and partitions jest.config.mjs into unit-node, unit-jsdom, and db-serial', async () => {
-      const rootRequire = moduleModule.createRequire(path.join(process.cwd(), 'package.json'));
+      const rootRequire = moduleModule.createRequire(
+        path.join(process.cwd(), 'package.json'),
+      );
       const SerialTestRunner = rootRequire('./jest-serial-runner.cjs') as new (
         _globalConfig: Record<string, unknown>,
-        _context: Record<string, unknown>
+        _context: Record<string, unknown>,
       ) => { isSerial?: boolean };
       const runnerInstance = new SerialTestRunner({ maxWorkers: 2 }, {});
       expect(runnerInstance.isSerial).toBe(true);
 
       const { execFileSync } = moduleModule.createRequire(
-        path.join(process.cwd(), 'package.json')
+        path.join(process.cwd(), 'package.json'),
       )('node:child_process') as typeof import('node:child_process');
       const rawStdout = execFileSync(
         process.execPath,
@@ -343,7 +393,7 @@ describe('Global Jest Setup (jest.setup.js)', () => {
           '-e',
           'const cfg = await (await import("./jest.config.mjs")).default; process.stdout.write("\\n__JEST_CFG__:" + JSON.stringify(cfg));',
         ],
-        { cwd: process.cwd(), encoding: 'utf8' }
+        { cwd: process.cwd(), encoding: 'utf8' },
       );
       const rawConfigJson = rawStdout.split('__JEST_CFG__:')[1] ?? '{}';
       const resolvedJestConfig = JSON.parse(rawConfigJson) as {
@@ -360,13 +410,21 @@ describe('Global Jest Setup (jest.setup.js)', () => {
       const projects = resolvedJestConfig.projects ?? [];
       expect(Array.isArray(projects)).toBe(true);
       const projectNames = projects.map((proj) =>
-        typeof proj.displayName === 'string' ? proj.displayName : proj.displayName?.name
+        typeof proj.displayName === 'string'
+          ? proj.displayName
+          : proj.displayName?.name,
       );
       expect(projectNames).toEqual(['unit-node', 'unit-jsdom', 'db-serial']);
 
-      const nodeProject = projects.find((proj) => proj.displayName === 'unit-node');
-      const jsdomProject = projects.find((proj) => proj.displayName === 'unit-jsdom');
-      const dbProject = projects.find((proj) => proj.displayName === 'db-serial');
+      const nodeProject = projects.find(
+        (proj) => proj.displayName === 'unit-node',
+      );
+      const jsdomProject = projects.find(
+        (proj) => proj.displayName === 'unit-jsdom',
+      );
+      const dbProject = projects.find(
+        (proj) => proj.displayName === 'db-serial',
+      );
       expect(dbProject?.runner).toBe('<rootDir>/jest-serial-runner.cjs');
       expect(dbProject?.testEnvironment).toBe('node');
       expect(jsdomProject?.testEnvironment).toBe('<rootDir>/jsdom-env.cjs');
@@ -374,19 +432,21 @@ describe('Global Jest Setup (jest.setup.js)', () => {
         expect.arrayContaining([
           '<rootDir>/src/__tests__/generate-portal.test.ts',
           '<rootDir>/src/utils/__tests__/exportDownload.test.ts',
-        ])
+        ]),
       );
       expect(
         (nodeProject?.testPathIgnorePatterns ?? []).some((pattern) =>
           new RegExp(pattern.replace('<rootDir>', '/app')).test(
-            '/app/src/utils/__tests__/exportDownload.test.ts'
-          )
-        )
+            '/app/src/utils/__tests__/exportDownload.test.ts',
+          ),
+        ),
       ).toBe(true);
     });
 
     it('clears active timeout, interval, and immediate handles during jsdom-env.cjs teardown', async () => {
-      const rootRequire = moduleModule.createRequire(path.join(process.cwd(), 'package.json'));
+      const rootRequire = moduleModule.createRequire(
+        path.join(process.cwd(), 'package.json'),
+      );
       const CustomEnvironment = rootRequire('./jsdom-env.cjs') as new (
         _config: {
           globalConfig: Record<string, unknown>;
@@ -396,7 +456,11 @@ describe('Global Jest Setup (jest.setup.js)', () => {
             fakeTimers: Record<string, unknown>;
           };
         },
-        _context: { console: Console; docblockPragmas: Record<string, unknown>; testPath: string }
+        _context: {
+          console: Console;
+          docblockPragmas: Record<string, unknown>;
+          testPath: string;
+        },
       ) => {
         global: typeof globalThis;
         _activeTimeouts: Set<{ hasRef: () => boolean }>;
@@ -418,8 +482,11 @@ describe('Global Jest Setup (jest.setup.js)', () => {
         {
           console,
           docblockPragmas: {},
-          testPath: path.join(process.cwd(), 'src/components/__tests__/teardown.test.tsx'),
-        }
+          testPath: path.join(
+            process.cwd(),
+            'src/components/__tests__/teardown.test.tsx',
+          ),
+        },
       );
 
       await envInstance.setup();

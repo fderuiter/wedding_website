@@ -1,3 +1,6 @@
+import type { HouseholdMemberDTO, HouseholdMemberRole } from '../schemas';
+import { splitMemberFullName } from '@/utils/invitationValidation';
+
 export type AttendanceStatus = 'attending' | 'declined' | 'pending';
 
 export interface AttendanceStatusItem {
@@ -213,18 +216,164 @@ export function formatAttendanceLabel(item: AttendanceStatusItem): string {
   return 'Pending';
 }
 
+export function isPlaceholderPlusOneName(name: string | null | undefined): boolean {
+  if (!name) return true;
+  const trimmed = name.trim();
+  if (!trimmed) return true;
+  return /^(plus[- ]?one\s*#?\d+|guest\s*\+\d+)$/i.test(trimmed);
+}
+
 /**
- * Formats guest plus-one names from synced JSONB extraFields or legacy first/last name columns.
+ * Derives an ordered list of relational HouseholdMemberDTO objects from an InvitationCode-like record.
+ * Prefers persisted `item.members` (sorted by `displayOrder`), and falls back deterministically to
+ * legacy scalar/JSONB fields when `members` is absent (such as in isolated unit test mocks).
+ */
+export function deriveHouseholdMembersFromInvitation(item: {
+  id?: string | null;
+  guestName?: string | null;
+  email?: string | null;
+  dietaryNotes?: string | null;
+  partyTags?: string[] | null;
+  plusOneAllocations?: number | null;
+  plusOneFirstName?: string | null;
+  plusOneLastName?: string | null;
+  seatNumber?: number | null;
+  plusOneSeatNumbers?: number[] | null;
+  extraFields?: unknown;
+  members?: ReadonlyArray<Partial<HouseholdMemberDTO>> | null;
+}): HouseholdMemberDTO[] {
+  const inviteId = typeof item.id === 'string' && item.id.trim() ? item.id.trim() : 'inv';
+
+  if (Array.isArray(item.members) && item.members.length > 0) {
+    return [...item.members]
+      .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0))
+      .map((m, idx) => {
+        const fullName = (m.fullName || (idx === 0 ? item.guestName : '') || `Member #${idx + 1}`).trim();
+        const split = splitMemberFullName(fullName);
+        const role: HouseholdMemberRole =
+          m.role === 'PRIMARY' || m.role === 'PARTNER' || m.role === 'CHILD' || m.role === 'PLUS_ONE'
+            ? m.role
+            : idx === 0
+              ? 'PRIMARY'
+              : 'PARTNER';
+        return {
+          id: m.id && m.id.trim() ? m.id.trim() : `${inviteId}-member-${idx}`,
+          invitationCodeId: m.invitationCodeId ?? inviteId,
+          fullName,
+          firstName: m.firstName ?? split.firstName,
+          lastName: m.lastName ?? split.lastName,
+          role,
+          email: m.email ?? null,
+          phone: m.phone ?? null,
+          dietaryNotes: m.dietaryNotes ?? null,
+          tags: Array.isArray(m.tags)
+            ? m.tags.filter((t: unknown): t is string => typeof t === 'string')
+            : [],
+          displayOrder: typeof m.displayOrder === 'number' ? m.displayOrder : idx,
+          seatNumber: typeof m.seatNumber === 'number' && m.seatNumber > 0 ? m.seatNumber : null,
+        };
+      });
+  }
+
+  const extra = parseExtraFieldsObject(item.extraFields);
+  const primaryName = (item.guestName || '').trim() || 'Primary Guest';
+  const primarySplit = splitMemberFullName(primaryName);
+  const primaryPhone =
+    extra && typeof extra.phone === 'string' && extra.phone.trim() ? extra.phone.trim() : null;
+
+  const result: HouseholdMemberDTO[] = [
+    {
+      id: `${inviteId}-member-0`,
+      invitationCodeId: inviteId,
+      fullName: primaryName,
+      firstName: primarySplit.firstName,
+      lastName: primarySplit.lastName,
+      role: 'PRIMARY',
+      email: item.email?.trim() || null,
+      phone: primaryPhone,
+      dietaryNotes: item.dietaryNotes?.trim() || null,
+      tags: Array.isArray(item.partyTags) ? [...item.partyTags] : [],
+      displayOrder: 0,
+      seatNumber: typeof item.seatNumber === 'number' && item.seatNumber > 0 ? item.seatNumber : null,
+    },
+  ];
+
+  const extraNames =
+    extra && Array.isArray(extra.plusOneNames)
+      ? extra.plusOneNames
+        .filter((v): v is string => typeof v === 'string')
+        .map((v) => v.trim())
+      : [];
+  const legacyFirstComp = [item.plusOneFirstName, item.plusOneLastName]
+    .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+    .map((v) => v.trim())
+    .join(' ');
+  const seatNumbers = Array.isArray(item.plusOneSeatNumbers) ? item.plusOneSeatNumbers : [];
+  const companionCount = Math.max(
+    item.plusOneAllocations ?? 0,
+    extraNames.filter(Boolean).length,
+    legacyFirstComp ? 1 : 0,
+    seatNumbers.length
+  );
+
+  for (let c = 0; c < companionCount; c++) {
+    const explicitName = extraNames[c] || (c === 0 ? legacyFirstComp : '') || '';
+    const fullName = explicitName || `Plus-One #${c + 1}`;
+    const split = explicitName ? splitMemberFullName(explicitName) : { firstName: null, lastName: null };
+    const isChild = Boolean(explicitName && /\b(kid|kids|child|children|infant|toddler)\b/i.test(explicitName));
+    const role: HouseholdMemberRole = isChild
+      ? 'CHILD'
+      : c === 0 && explicitName
+        ? 'PARTNER'
+        : 'PLUS_ONE';
+    const seatNum = seatNumbers[c];
+
+    result.push({
+      id: `${inviteId}-member-${c + 1}`,
+      invitationCodeId: inviteId,
+      fullName,
+      firstName: split.firstName,
+      lastName: split.lastName,
+      role,
+      email: null,
+      phone: null,
+      dietaryNotes: null,
+      tags: isChild ? ['kids'] : [],
+      displayOrder: c + 1,
+      seatNumber: typeof seatNum === 'number' && seatNum > 0 ? seatNum : null,
+    });
+  }
+
+  return result;
+}
+
+/**
+ * Formats guest plus-one names from relational members, synced JSONB extraFields, or legacy first/last name columns.
  */
 export function formatGuestPlusOneNames(item: {
   plusOneFirstName?: string | null;
   plusOneLastName?: string | null;
   extraFields?: unknown;
+  members?: ReadonlyArray<{
+    role?: string | null;
+    displayOrder?: number | null;
+    fullName?: string | null;
+  }> | null;
   subEventRsvps?: Array<{
     status?: string | null;
     plusOneNames?: unknown;
   }> | null;
 }): string {
+  if (Array.isArray(item.members) && item.members.length > 0) {
+    const sortedCompanions = [...item.members]
+      .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0))
+      .filter((m, idx) => (m.role ? m.role !== 'PRIMARY' : idx > 0))
+      .map((m) => (typeof m.fullName === 'string' ? m.fullName.trim() : ''))
+      .filter((name) => name.length > 0 && !isPlaceholderPlusOneName(name));
+    if (sortedCompanions.length > 0) {
+      return sortedCompanions.join(', ');
+    }
+  }
   const extra = parseExtraFieldsObject(item.extraFields);
   if (extra && Array.isArray(extra.plusOneNames)) {
     const names = extra.plusOneNames

@@ -20,11 +20,16 @@ import {
   HOUSEHOLD_NAME_MAX_LENGTH,
   normalizePartyTags,
   PHONE_MAX_LENGTH,
+  splitMemberFullName,
   STATE_MAX_LENGTH,
   ZIP_CODE_MAX_LENGTH,
 } from '@/utils/invitationValidation';
-import type { InvitationCodeDTO } from '@/features/registry';
-import type { DemoSubEventRsvpRecord } from '../demoSeed';
+import type { HouseholdMemberDTO, HouseholdMemberRole, InvitationCodeDTO } from '@/features/registry';
+import {
+  buildDemoHouseholdMembersForGuest,
+  type DemoSubEventMemberRsvpRecord,
+  type DemoSubEventRsvpRecord,
+} from '../demoSeed';
 import {
   findDemoGuestByCode,
   getActiveArchetypeDataset,
@@ -85,6 +90,19 @@ function createOptionalDemoPostalField(max: number, label: string) {
     .nullable();
 }
 
+const DemoPublicPartnerSchema = z.object({
+  fullName: createRequiredDemoPostalField(GUEST_NAME_MAX_LENGTH, 'Partner name'),
+  email: z.string().trim().email('Invalid partner email.').optional().or(z.literal('')).nullable(),
+  phone: z.string().trim().max(PHONE_MAX_LENGTH).optional().or(z.literal('')).nullable(),
+  dietaryNotes: createOptionalDemoPostalField(500, 'Partner dietary notes'),
+});
+
+const DemoPublicChildSchema = z.object({
+  fullName: createRequiredDemoPostalField(GUEST_NAME_MAX_LENGTH, 'Child name'),
+  dietaryNotes: createOptionalDemoPostalField(500, 'Child dietary notes'),
+  isKidsMeal: z.boolean().optional(),
+});
+
 const DemoPublicAddressCollectSchema = z.object({
   guestName: createRequiredDemoPostalField(GUEST_NAME_MAX_LENGTH, 'Guest name'),
   email: z.string().trim().email('Invalid email address.').optional().or(z.literal('')).nullable(),
@@ -102,6 +120,7 @@ const DemoPublicAddressCollectSchema = z.object({
     )
     .optional()
     .nullable(),
+  dietaryNotes: createOptionalDemoPostalField(500, 'Dietary notes'),
   addressLine1: createRequiredDemoPostalField(ADDRESS_LINE_MAX_LENGTH, 'Street address'),
   addressLine2: createOptionalDemoPostalField(ADDRESS_LINE_MAX_LENGTH, 'Address Line 2'),
   city: createRequiredDemoPostalField(CITY_MAX_LENGTH, 'City'),
@@ -116,6 +135,8 @@ const DemoPublicAddressCollectSchema = z.object({
     .optional()
     .or(z.literal(''))
     .nullable(),
+  partner: DemoPublicPartnerSchema.optional().nullable(),
+  children: z.array(DemoPublicChildSchema).max(10).optional(),
 });
 
 function toClientRsvpStatus(
@@ -168,6 +189,7 @@ function buildScheduleForGuest(invitationCode?: string | null) {
           ? evt.endTime
           : null;
 
+    const guestMembers = matchedGuest ? buildDemoHouseholdMembersForGuest(matchedGuest) : [];
     const userRsvp = rsvp
       ? {
         status: toClientRsvpStatus(rsvp.status),
@@ -176,6 +198,33 @@ function buildScheduleForGuest(invitationCode?: string | null) {
         mealSelections: normalizeMealSelections(rsvp.mealSelections),
         customAnswers: normalizeCustomAnswers(rsvp.customAnswers),
         plusOneNames: normalizePlusOneNames(rsvp.plusOneNames),
+        memberRsvps:
+          rsvp.memberRsvps && rsvp.memberRsvps.length > 0
+            ? rsvp.memberRsvps.map((mr) => ({
+              householdMemberId: mr.householdMemberId,
+              status: mr.status,
+              mealOptionId: mr.mealOptionId ?? null,
+              dietaryNotes: mr.dietaryNotes ?? null,
+            }))
+            : guestMembers.map((m, mIdx) => {
+              const clientStatus = toClientRsvpStatus(rsvp.status);
+              const cap = clientStatus === 'attending' ? 1 + Math.max(0, rsvp.plusOneCount ?? 0) : 0;
+              const mStatus =
+                clientStatus === 'declined'
+                  ? ('declined' as const)
+                  : clientStatus === 'pending'
+                    ? ('pending' as const)
+                    : mIdx < cap
+                      ? ('attending' as const)
+                      : ('declined' as const);
+              const normalizedMeals = normalizeMealSelections(rsvp.mealSelections);
+              return {
+                householdMemberId: m.id,
+                status: mStatus,
+                mealOptionId: mStatus === 'attending' ? (normalizedMeals[mIdx] ?? null) : null,
+                dietaryNotes: mStatus === 'declined' ? null : (m.dietaryNotes ?? null),
+              };
+            }),
       }
       : matchedGuest && baseDietary
         ? {
@@ -347,13 +396,24 @@ export async function handleGuestRoutes(ctx: DemoRouteContext): Promise<Response
       (g) => !isAddressCollectionOnly(g.partyTags)
     );
     const matches = candidates.filter((g) => {
-      if (rawEmail && g.email && g.email.trim().toLowerCase() === rawEmail) {
-        return true;
+      const adultMembers = buildDemoHouseholdMembersForGuest(g).filter(
+        (m) => m.role !== 'CHILD'
+      );
+      if (rawEmail) {
+        if (g.email && g.email.trim().toLowerCase() === rawEmail) {
+          return true;
+        }
+        if (adultMembers.some((m) => m.email && m.email.trim().toLowerCase() === rawEmail)) {
+          return true;
+        }
       }
       if (rawName) {
         const guestName = g.guestName.toLowerCase();
         const householdName = (g.householdName || '').toLowerCase();
         if (guestName.includes(rawName) || householdName.includes(rawName)) {
+          return true;
+        }
+        if (adultMembers.some((m) => m.fullName.toLowerCase().includes(rawName))) {
           return true;
         }
       }
@@ -442,8 +502,77 @@ export async function handleGuestRoutes(ctx: DemoRouteContext): Promise<Response
       extraFields.householdNotes = payload.notes.trim();
     }
 
+    const guestId = nextDemoId('demo-collect');
+    const nowIso = new Date().toISOString();
+    const primarySplit = splitMemberFullName(payload.guestName.trim());
+    const collectedMembers: HouseholdMemberDTO[] = [
+      {
+        id: `${guestId}-member-1`,
+        invitationCodeId: guestId,
+        fullName: payload.guestName.trim(),
+        firstName: primarySplit.firstName,
+        lastName: primarySplit.lastName,
+        role: 'PRIMARY',
+        email: payload.email?.trim() || null,
+        phone: payload.phone?.trim() || null,
+        dietaryNotes: payload.dietaryNotes?.trim() || null,
+        tags: ['address-collection'],
+        displayOrder: 0,
+        seatNumber: null,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      },
+    ];
+    if (payload.partner && payload.partner.fullName.trim()) {
+      const pSplit = splitMemberFullName(payload.partner.fullName.trim());
+      collectedMembers.push({
+        id: `${guestId}-member-2`,
+        invitationCodeId: guestId,
+        fullName: payload.partner.fullName.trim(),
+        firstName: pSplit.firstName,
+        lastName: pSplit.lastName,
+        role: 'PARTNER',
+        email: payload.partner.email?.trim() || null,
+        phone: payload.partner.phone?.trim() || null,
+        dietaryNotes: payload.partner.dietaryNotes?.trim() || null,
+        tags: [],
+        displayOrder: collectedMembers.length,
+        seatNumber: null,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      });
+    }
+    if (Array.isArray(payload.children)) {
+      for (const child of payload.children) {
+        if (!child.fullName.trim()) continue;
+        const cSplit = splitMemberFullName(child.fullName.trim());
+        collectedMembers.push({
+          id: `${guestId}-member-${collectedMembers.length + 1}`,
+          invitationCodeId: guestId,
+          fullName: child.fullName.trim(),
+          firstName: cSplit.firstName,
+          lastName: cSplit.lastName,
+          role: 'CHILD',
+          email: null,
+          phone: null,
+          dietaryNotes: child.dietaryNotes?.trim() || null,
+          tags: child.isKidsMeal !== false ? ['kids'] : [],
+          displayOrder: collectedMembers.length,
+          seatNumber: null,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        });
+      }
+    }
+
+    const companionNames = collectedMembers.slice(1).map((m) => m.fullName);
+    const extraFieldsWithMembers: Record<string, unknown> = {
+      ...extraFields,
+      ...(companionNames.length > 0 ? { plusOneNames: companionNames } : {}),
+    };
+
     const createdGuest: InvitationCodeDTO = {
-      id: nextDemoId('demo-collect'),
+      id: guestId,
       code: uniqueCode,
       guestName: payload.guestName.trim(),
       email: payload.email?.trim() || null,
@@ -454,11 +583,16 @@ export async function handleGuestRoutes(ctx: DemoRouteContext): Promise<Response
       zipCode: payload.zipCode || null,
       country: payload.country || null,
       householdName: payload.householdName || '',
-      dietaryNotes: null,
-      ...(Object.keys(extraFields).length > 0 ? { extraFields } : {}),
+      dietaryNotes: payload.dietaryNotes?.trim() || null,
+      ...(Object.keys(extraFieldsWithMembers).length > 0
+        ? { extraFields: extraFieldsWithMembers }
+        : {}),
       partyGroup: '',
       partyTags: ['address-collection'],
-      plusOneAllocations: 0,
+      plusOneAllocations: Math.max(0, collectedMembers.length - 1),
+      plusOneFirstName: collectedMembers[1]?.firstName ?? null,
+      plusOneLastName: collectedMembers[1]?.lastName ?? null,
+      members: collectedMembers,
       used: false,
       isSample: false,
     };
@@ -491,10 +625,12 @@ export async function handleGuestRoutes(ctx: DemoRouteContext): Promise<Response
       return jsonResponse({ success: false, error: 'Authentication required.' }, 401);
     }
     if (method === 'GET') {
+      const members = buildDemoHouseholdMembersForGuest(guest);
       return jsonResponse({
         success: true,
         data: {
           guestName: guest.guestName || session.guestName,
+          householdName: guest.householdName || '',
           code: activeGuestCode(guest, session.invitationCode),
           addressLine1: guest.addressLine1 || '',
           addressLine2: guest.addressLine2 || '',
@@ -502,23 +638,64 @@ export async function handleGuestRoutes(ctx: DemoRouteContext): Promise<Response
           state: guest.state || '',
           zipCode: guest.zipCode || '',
           country: guest.country || '',
+          members,
         },
       });
     }
     if (method === 'PUT' || method === 'POST') {
       const body = await parseJsonBody(init, rawInput);
+      const rawMembers = Array.isArray(body.members)
+        ? body.members
+          .filter((m): m is Record<string, unknown> => Boolean(m && typeof m === 'object'))
+          .map((m) => ({
+            ...(typeof m.id === 'string' ? { id: m.id } : {}),
+            fullName: String(m.fullName ?? '').trim(),
+            ...(typeof m.firstName === 'string' || m.firstName === null
+              ? { firstName: m.firstName }
+              : {}),
+            ...(typeof m.lastName === 'string' || m.lastName === null
+              ? { lastName: m.lastName }
+              : {}),
+            ...(m.role === 'PRIMARY' ||
+              m.role === 'PARTNER' ||
+              m.role === 'CHILD' ||
+              m.role === 'PLUS_ONE'
+              ? { role: m.role as HouseholdMemberRole }
+              : {}),
+            ...(typeof m.email === 'string' || m.email === null ? { email: m.email } : {}),
+            ...(typeof m.phone === 'string' || m.phone === null ? { phone: m.phone } : {}),
+            ...(typeof m.dietaryNotes === 'string' || m.dietaryNotes === null
+              ? { dietaryNotes: m.dietaryNotes }
+              : {}),
+            ...(Array.isArray(m.tags) ? { tags: m.tags.map(String) } : {}),
+          }))
+          .filter((m) => m.fullName.length > 0)
+        : undefined;
+      if (Array.isArray(body.members) && (!rawMembers || rawMembers.length === 0)) {
+        return jsonResponse(
+          { success: false, error: 'At least one household member with a name is required.' },
+          400
+        );
+      }
       const updated = updateDemoGuestAddress(session.invitationCode, {
-        addressLine1: typeof body.addressLine1 === 'string' ? body.addressLine1 : '',
-        addressLine2: typeof body.addressLine2 === 'string' ? body.addressLine2 : '',
-        city: typeof body.city === 'string' ? body.city : '',
-        state: typeof body.state === 'string' ? body.state : '',
-        zipCode: typeof body.zipCode === 'string' ? body.zipCode : '',
-        country: typeof body.country === 'string' ? body.country : '',
+        ...(typeof body.addressLine1 === 'string' ? { addressLine1: body.addressLine1 } : {}),
+        ...(typeof body.addressLine2 === 'string' ? { addressLine2: body.addressLine2 } : {}),
+        ...(typeof body.city === 'string' ? { city: body.city } : {}),
+        ...(typeof body.state === 'string' ? { state: body.state } : {}),
+        ...(typeof body.zipCode === 'string' ? { zipCode: body.zipCode } : {}),
+        ...(typeof body.country === 'string' ? { country: body.country } : {}),
+        ...(typeof body.householdName === 'string' ? { householdName: body.householdName } : {}),
+        ...(rawMembers ? { members: rawMembers } : {}),
       });
+      if (updated) {
+        upsertInvitationsIntoStaticDemoStore([updated]);
+      }
+      const members = updated ? buildDemoHouseholdMembersForGuest(updated) : [];
       return jsonResponse({
         success: true,
         data: {
           guestName: updated?.guestName || session.guestName,
+          householdName: updated?.householdName || '',
           code: activeGuestCode(updated, session.invitationCode),
           addressLine1: updated?.addressLine1 || '',
           addressLine2: updated?.addressLine2 || '',
@@ -526,6 +703,7 @@ export async function handleGuestRoutes(ctx: DemoRouteContext): Promise<Response
           state: updated?.state || '',
           zipCode: updated?.zipCode || '',
           country: updated?.country || '',
+          members,
         },
       });
     }
@@ -561,12 +739,15 @@ export async function handleGuestRoutes(ctx: DemoRouteContext): Promise<Response
       : [];
 
     const schedule = buildScheduleForGuest(matchedGuest?.code ?? null);
+    const householdMembers = matchedGuest ? buildDemoHouseholdMembersForGuest(matchedGuest) : [];
 
     return jsonResponse({
       success: true,
       data: schedule,
       isGuest: Boolean(matchedGuest),
       guestName: matchedGuest?.guestName ?? null,
+      householdName: matchedGuest?.householdName ?? null,
+      householdMembers,
       plusOneAllocations: matchedGuest ? Math.max(0, matchedGuest.plusOneAllocations ?? 0) : null,
       savedPlusOneNames,
       rsvpOpen: cutoff.isOpen,
@@ -723,8 +904,9 @@ export async function handleGuestRoutes(ctx: DemoRouteContext): Promise<Response
     }
 
     for (const sub of rawSubmissions) {
+      const hasMemberRsvps = Array.isArray(sub.memberRsvps) && sub.memberRsvps.length > 0;
       const rawStatus = typeof sub.status === 'string' ? sub.status.trim().toLowerCase() : '';
-      if (rawStatus !== 'attending' && rawStatus !== 'declined') {
+      if (!hasMemberRsvps && rawStatus !== 'attending' && rawStatus !== 'declined') {
         return jsonResponse(
           { success: false, error: 'Please select Attending or Declined.' },
           400
@@ -738,30 +920,94 @@ export async function handleGuestRoutes(ctx: DemoRouteContext): Promise<Response
     mutateActiveDataset((current) => {
       const nextRsvps = [...current.subEventRsvps];
       let nextGuestDietary: string | null = guest.dietaryNotes ?? null;
+      const guestMembers = buildDemoHouseholdMembersForGuest(guest);
+      const memberById = new Map(guestMembers.map((m) => [m.id, m]));
 
       for (const sub of rawSubmissions) {
         const subEventId = String(sub.subEventId ?? '').trim();
         if (!subEventId) continue;
-        const rawStatus = String(sub.status ?? 'attending').trim().toLowerCase();
-        const storedStatus: 'ATTENDING' | 'DECLINED' =
-          rawStatus === 'declined' ? 'DECLINED' : 'ATTENDING';
-        const isDeclined = storedStatus === 'DECLINED';
-        const plusOneCount = isDeclined
-          ? 0
-          : Math.min(10, Math.max(0, Math.floor(Number(sub.plusOneCount ?? 0) || 0)));
-        const mealSelections = isDeclined
-          ? []
-          : Array.isArray(sub.mealSelections)
-            ? normalizeMealSelections(sub.mealSelections)
-            : typeof sub.mealSelection === 'string' && sub.mealSelection
-              ? [sub.mealSelection]
-              : [];
-        const plusOneNames = isDeclined ? [] : normalizePlusOneNames(sub.plusOneNames);
-        const customAnswers = isDeclined ? {} : normalizeCustomAnswers(sub.customAnswers);
 
         const existingIdx = nextRsvps.findIndex(
           (r) => r.subEventId === subEventId && r.invitationCodeId === guest.id
         );
+        const rsvpId = existingIdx >= 0 ? nextRsvps[existingIdx].id : nextDemoId('demo-rsvp');
+
+        let storedStatus: 'ATTENDING' | 'DECLINED';
+        let plusOneCount: number;
+        let mealSelections: string[];
+        let plusOneNames: string[];
+        let memberRsvps: DemoSubEventMemberRsvpRecord[];
+
+        if (Array.isArray(sub.memberRsvps) && sub.memberRsvps.length > 0) {
+          const parsedMr = (sub.memberRsvps as Array<Record<string, unknown>>)
+            .filter((mr) => typeof mr.householdMemberId === 'string')
+            .map((mr, mIdx): DemoSubEventMemberRsvpRecord => {
+              const rawSt = String(mr.status ?? 'pending').trim().toLowerCase();
+              const st: 'attending' | 'declined' | 'pending' =
+                rawSt === 'attending'
+                  ? 'attending'
+                  : rawSt === 'declined'
+                    ? 'declined'
+                    : 'pending';
+              return {
+                id: `${rsvpId}-mr-${mIdx + 1}`,
+                subEventRsvpId: rsvpId,
+                householdMemberId: String(mr.householdMemberId),
+                status: st,
+                mealOptionId:
+                  st === 'attending' && typeof mr.mealOptionId === 'string' && mr.mealOptionId
+                    ? mr.mealOptionId
+                    : null,
+                dietaryNotes:
+                  st !== 'declined' && typeof mr.dietaryNotes === 'string' && mr.dietaryNotes.trim()
+                    ? mr.dietaryNotes.trim()
+                    : null,
+              };
+            });
+          memberRsvps = parsedMr;
+          const attendingMembers = parsedMr.filter((mr) => mr.status === 'attending');
+          storedStatus = attendingMembers.length > 0 ? 'ATTENDING' : 'DECLINED';
+          plusOneCount =
+            storedStatus === 'ATTENDING' ? Math.max(0, attendingMembers.length - 1) : 0;
+          mealSelections = attendingMembers
+            .map((mr) => mr.mealOptionId)
+            .filter((id): id is string => Boolean(id));
+          plusOneNames = attendingMembers
+            .map((mr) => memberById.get(mr.householdMemberId))
+            .filter((m): m is HouseholdMemberDTO => Boolean(m && m.role !== 'PRIMARY'))
+            .map((m) => m.fullName);
+        } else {
+          const rawStatus = String(sub.status ?? 'attending').trim().toLowerCase();
+          storedStatus = rawStatus === 'declined' ? 'DECLINED' : 'ATTENDING';
+          const isDeclined = storedStatus === 'DECLINED';
+          plusOneCount = isDeclined
+            ? 0
+            : Math.min(10, Math.max(0, Math.floor(Number(sub.plusOneCount ?? 0) || 0)));
+          mealSelections = isDeclined
+            ? []
+            : Array.isArray(sub.mealSelections)
+              ? normalizeMealSelections(sub.mealSelections)
+              : typeof sub.mealSelection === 'string' && sub.mealSelection
+                ? [sub.mealSelection]
+                : [];
+          plusOneNames = isDeclined ? [] : normalizePlusOneNames(sub.plusOneNames);
+          const cap = isDeclined ? 0 : 1 + plusOneCount;
+          memberRsvps = guestMembers.map((m, mIdx) => {
+            const st: 'attending' | 'declined' = mIdx < cap ? 'attending' : 'declined';
+            return {
+              id: `${rsvpId}-mr-${mIdx + 1}`,
+              subEventRsvpId: rsvpId,
+              householdMemberId: m.id,
+              status: st,
+              mealOptionId: st === 'attending' ? (mealSelections[mIdx] ?? null) : null,
+              dietaryNotes: st === 'attending' ? (m.dietaryNotes ?? null) : null,
+            };
+          });
+        }
+
+        const isDeclined = storedStatus === 'DECLINED';
+        const customAnswers = isDeclined ? {} : normalizeCustomAnswers(sub.customAnswers);
+
         const existingEventNote =
           existingIdx >= 0 ? (nextRsvps[existingIdx].dietaryNotes || '').trim() : '';
         const incomingDietary =
@@ -783,7 +1029,7 @@ export async function handleGuestRoutes(ctx: DemoRouteContext): Promise<Response
         }
 
         const record: DemoSubEventRsvpRecord = {
-          id: existingIdx >= 0 ? nextRsvps[existingIdx].id : nextDemoId('demo-rsvp'),
+          id: rsvpId,
           subEventId,
           invitationCodeId: guest.id,
           guestCode: guest.code,
@@ -795,6 +1041,7 @@ export async function handleGuestRoutes(ctx: DemoRouteContext): Promise<Response
           mealSelections,
           dietaryNotes: resolvedDietary,
           customAnswers,
+          memberRsvps,
           respondedAt: existingIdx >= 0 ? nextRsvps[existingIdx].respondedAt : nowIso,
           updatedAt: nowIso,
         };
@@ -815,6 +1062,7 @@ export async function handleGuestRoutes(ctx: DemoRouteContext): Promise<Response
           mealSelections: record.mealSelections,
           dietaryNotes: record.dietaryNotes,
           customAnswers: record.customAnswers,
+          memberRsvps: record.memberRsvps ?? [],
           updatedAt: record.updatedAt,
         });
       }

@@ -5,6 +5,7 @@ All notable changes to the `wedding_website` project will be documented in this 
 The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 Release entries distinguish between:
+
 - **🚀 Application Changes**
 - **🗄️ Schema Changes**
 - **⚙️ Configuration Changes**
@@ -18,19 +19,22 @@ Release entries distinguish between:
 > **Adopter Action Required**: Yes (Database schema migrations, production 64-byte scrypt and session secret hardening, and Docker Compose `:?` secret guards required)
 
 ### 🚀 Application Changes
+
 - Implemented comprehensive downstream upgrade strategy ([`docs/upgrading.md`](./docs/upgrading.md)) covering Docker Compose, standalone Docker, and host Node.js workflows, alongside semantic versioning and release governance ([`docs/versioning.md`](./docs/versioning.md)).
 - Added a read-only local environment preflight CLI ([`scripts/preflight-env.ts`](./scripts/preflight-env.ts), `npm run preflight:env`) supporting `dotenv -c` cascade discovery (`.env.<mode>.local`, `.env.local`, `.env.<mode>`, `.env`) and `--mode development|production` validation against `src/env.ts` secret blocklists and Docker Compose `:?` secret guards without printing raw secret values or connection URLs.
-- Upgraded full-database JSON backups via `BACKUP_SCHEMA_VERSION` in [`src/app/api/admin/maintenance/export/route.ts`](./src/app/api/admin/maintenance/export/route.ts) to `schemaVersion: "2.0"` (`BACKUP_SCHEMA_VERSION = '2.0'`), streaming cursor-chunked exports across all 15 domain Prisma models (excluding ephemeral `AuthLockout` rows) while redacting raw messaging/server secrets and preserving backward-compatible `1.0` backup imports.
+- Upgraded full-database JSON backups via `BACKUP_SCHEMA_VERSION` in [`src/app/api/admin/maintenance/export/route.ts`](./src/app/api/admin/maintenance/export/route.ts) to `schemaVersion: "2.0"` (`BACKUP_SCHEMA_VERSION = '2.0'`), streaming cursor-chunked exports across all 17 domain Prisma models (excluding ephemeral `AuthLockout` rows) while redacting raw messaging/server secrets and preserving backward-compatible `1.0` and 15-model `2.0` backup imports.
 - Hardened authentication rate limiting and proxy-scoped client IP extraction (`src/utils/rateLimit.ts`, `src/utils/withApiMiddleware.ts`), synchronizing failed-attempt-only auth lockouts in PostgreSQL (`AuthLockout` with HMAC-SHA256 hashed IP keys and fail-open memory fallback) while isolating general API quotas per verified session.
 - Added the five-step first-run `SetupWizard`, starter sample-data archetypes (`isSample` tracking), CSV guest-list import wizard, interactive drag-and-drop seating chart, multi-event access matrix and JSONB meal/custom-question RSVPs, RSVP deadline locking, QR-scoped guest photo upload sessions (`guest_photo_session`) with print-ready QR modal and live gallery auto-approval (`/api/admin/photos/qr`), cash funds with Stripe Elements checkout and fee coverage (`/api/registry/webhook/stripe`), shipping/order/refund lifecycle tracking, configurable registry access/shipping disclosure tiers with multi-item Claim & Fulfillment Hub (`/guest/claim`), and scheduled email/SMS guest broadcasts (`/api/cron/broadcasts`).
 
 ### 🗄️ Schema Changes
-- Applied post-`0.1.0` Prisma migrations in [`prisma/migrations/`](./prisma/migrations/) (through `20261124000000_add_registry_access_tiers_and_hold_limits`), expanding [`prisma/schema.prisma`](./prisma/schema.prisma) and `AppConfig`:
-  - **New Models**: `SeatingTable` (`20261007000000_add_seating_table`), `SubEvent`, `SubEventAccess`, and `SubEventRsvp` (`20261019000000_add_sub_event_access_matrix`, `20261120020000_add_rsvp_meals_and_questions_jsonb`), `BroadcastMessage` and `BroadcastRecipient` (`20261023000000_add_broadcast_messaging`, `20261027000000_add_broadcast_scheduled_for`), plus `AuthLockout` (`20261123000000_add_auth_lockout`).
+
+- Applied post-`0.1.0` Prisma migrations in [`prisma/migrations/`](./prisma/migrations/) (through `20261125000000_add_household_members_and_member_rsvps`), expanding [`prisma/schema.prisma`](./prisma/schema.prisma) and `AppConfig`:
+  - **New Models**: `SeatingTable` (`20261007000000_add_seating_table`), `SubEvent`, `SubEventAccess`, and `SubEventRsvp` (`20261019000000_add_sub_event_access_matrix`, `20261120020000_add_rsvp_meals_and_questions_jsonb`), `HouseholdMember` and `SubEventMemberRsvp` (`20261125000000_add_household_members_and_member_rsvps`), `BroadcastMessage` and `BroadcastRecipient` (`20261023000000_add_broadcast_messaging`, `20261027000000_add_broadcast_scheduled_for`), plus `AuthLockout` (`20261123000000_add_auth_lockout`).
   - **`AppConfig` Additions**: Added `contactEmail`, `photoAlbumUrl`, guest photo QR and moderation controls (`autoApproveGuestPhotos`, `guestPhotoQrTokenVersion` in `20261123000000_add_guest_photo_qr_and_auto_approve`), theme and brand media tokens (`themePreset`, `themeTokens`, `brandMonogram`, `brandLogoUrl`, `brandLogoAlt`, `heroImageUrl`, `heroImageAlt`, `brandWatermarkUrl`, `brandWatermarkAlt`, `badgeGraphicUrl`, `badgeGraphicAlt`), layout tokens (`layoutContainerMaxWidth`, `layoutGridGap`, `layoutCardPadding`, `layoutBorderRadius`), persisted feature `modules` JSON (`20261120010000_add_appconfig_modules`), RSVP lock settings (`rsvpOpen`, `rsvpDeadlineDate`, `rsvpGracePeriodHours`, `rsvpClosedMessage` in `20261119000000_add_rsvp_deadline_and_lock`), outbound email/SMS delivery settings (`emailProvider`, `smtp*`, `resend*`, `sendgrid*`, `smsProvider`, `twilio*`, `broadcastBatchSize`, `broadcastBatchDelayMs`), registry shipping address fields (`shipping*` in `20261121000000_add_registry_shipping_and_order_tracking`), default cash-fund payment handles (`defaultPaymentHandleType`, `defaultPaymentHandle`), configurable registry access tiers and physical hold limits (`registryGiftAccessTier`, `shippingDisclosureTier`, `maxPendingReservations` in `20261124000000_add_registry_access_tiers_and_hold_limits`), and resumable onboarding setup completion state (`setupCompleted` in `20261123010000_add_appconfig_setup_completed`).
   - **Guest, Registry & Logistics Additions**: Added `WeddingPartySide` enum and `side` on `WeddingPartyMember`; hotel block fields (`promoCode`, `bookingUrl`, `roomRate`, `cutoffDate`, `shuttleInfo`) on `Attraction`; postal address, plus-one names, `householdName`, `partyGroup`, GIN-indexed `partyTags`, `extraFields`, and seating assignment (`tableId`, `seatNumber`, `plusOneSeatNumbers` in `20261123020000_add_plus_one_seat_numbers`) on `InvitationCode`; cash-fund `itemType`/`paymentHandle*`, `isMostWanted`, `displayOrder`, and required `imageId` foreign key (`20261122010000_reconcile_schema_migration_drift`, `20261123000000_reconcile_schema_drift_and_registry_media_contract`) on `RegistryItem`; thank-you tracking, contributor postal address & thank-you email timestamp (`20261123000000_add_contributor_address_and_email_sent_at`), `message`, `coverFee`/`feeAmount`, unique `stripePaymentIntentId`/`stripeChargeId`/`transactionTimestamp` (`20261116000000_add_stripe_transaction_fields`, `20261120000000_unique_stripe_payment_intent_id`), notification timestamps, order/carrier tracking, and `refundedAmount`/`status` (`20261122000000_add_contributor_lifecycle_and_refunds`) on `Contributor`; `isSample` flags across sample-capable models; and composite/foreign-key indexes (`20261116010000_add_composite_and_fk_indexes`, `20261122010000_add_content_node_type_created_at_index` on `ContentNode(type, createdAt DESC)`).
 
 ### ⚙️ Configuration Changes
+
 - Added **7 environment variables** to `envSchema` in [`src/env.ts`](./src/env.ts) (21 runtime schema keys total, documented in [`.env.example`](./.env.example)):
   - `GUEST_SESSION_SECRET`: Dedicated HMAC-SHA256 signing secret for `guest_auth` cookies (required in production, minimum 32 characters, distinct from `GUEST_PASSCODE`).
   - `RUN_MIGRATIONS`: Boolean container startup flag (default `false`) instructing [`docker-entrypoint.sh`](./docker-entrypoint.sh) to execute `prisma migrate deploy` for standalone `docker run` deployments.
@@ -47,6 +51,7 @@ Release entries distinguish between:
 - Updated `ModuleConfigSchema` in [`src/lib/modules.ts`](./src/lib/modules.ts) to persist **9 feature toggles** (`registry`, `groupGifting`, `weather`, `weddingParty`, `attractions`, `gallery`, `countdown`, `addToCalendar`, `interactive3D`) in `AppConfig.modules`, retiring the legacy `guestPasscode` toggle so guest authentication is enforced consistently via `GUEST_PASSCODE` and `GUEST_SESSION_SECRET`.
 
 ### 🐳 Deployment & Infrastructure Changes
+
 - Hardened [`docker-compose.yml`](./docker-compose.yml) for production VPS self-hosting:
   - Enforced mandatory `:?` Compose secret guards with zero fallback defaults for `DB_PASSWORD`, `ADMIN_PASSWORD`, `GUEST_PASSCODE`, and `GUEST_SESSION_SECRET` (isolating disposable CI defaults inside `.env.ci` and `docker-compose.ci.yml`).
   - Added a dedicated one-shot `migration` service executing `./node_modules/.bin/prisma migrate deploy` offline (`restart: "no"`) before `app` starts (`condition: service_completed_successfully`), scoping container PostgreSQL overrides identically across `migration`, `app`, and `app-standby` via `${CONTAINER_DATABASE_URL:-...}` and `${CONTAINER_POSTGRES_URL_NON_POOLING:-}` so host `@localhost:5432` `DATABASE_URL` and `POSTGRES_URL_NON_POOLING` values never leak into containers, and setting `NODE_ENV: production`, `RUN_MIGRATIONS: ${RUN_MIGRATIONS:-false}`, `E2E_TEST: ${E2E_TEST:-false}`, and `HOSTNAME: "0.0.0.0"` on `app` alongside full 21-variable runtime forwarding.
@@ -57,6 +62,7 @@ Release entries distinguish between:
 - Exempted stateless read-only (`GET` and `HEAD`) probe requests to `/api/live`, `/api/health`, and `/api/ready` in [`src/middleware.ts`](./src/middleware.ts) from `ALLOWED_HOSTS` domain matching while enforcing syntactic `Host` validation (`isHostSyntaxValid` in [`src/utils/hostValidation.ts`](./src/utils/hostValidation.ts)) and `Cache-Control: no-store`, simplifying loopback container `/api/live` healthchecks across [`Dockerfile`](./Dockerfile), [`docker-compose.yml`](./docker-compose.yml), and [`docker-compose.rollout.yml`](./docker-compose.rollout.yml).
 
 ### ⚠️ Breaking Changes & Migration Guide
+
 1. **Back Up Data & Tag Rollback Image**:
    - Export a full-database JSON backup from `/admin/dashboard/maintenance` (**Export All Data**, `schemaVersion: "2.0"` — legacy `"1.0"` exports also remain importable) and/or run `pg_dump` against PostgreSQL.
    - On container hosts, tag the currently running image before pulling or rebuilding: `docker tag wedding-website:latest wedding-website:previous`.
@@ -81,13 +87,17 @@ Release entries distinguish between:
 > **Adopter Action Required**: Yes (Initial setup and database migration)
 
 ### 🚀 Application Changes
+
 - Initial release of the customizable wedding website template with App Router UI, interactive 3D heart scene, registry management, RSVP system, and admin dashboard.
 
 ### 🗄️ Schema Changes
+
 - Created initial Prisma database schema (`prisma/schema.prisma`) including `AppConfig`, `Media`, `WeddingPartyMember`, `Attraction`, `RegistryItem`, `Contributor`, `InvitationCode`, `ContentNode`, and `SnapshotVersion`.
 
 ### ⚙️ Configuration Changes
+
 - Added central Zod `AppConfigSchema` and environment variable validation schema (`src/env.ts`).
 
 ### 🐳 Deployment & Infrastructure Changes
+
 - Containerized setup with `Dockerfile`, `docker-compose.yml`, and `docker-entrypoint.sh`.
