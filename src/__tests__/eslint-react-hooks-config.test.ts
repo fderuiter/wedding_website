@@ -71,7 +71,10 @@ describe('eslint-plugin-react-hooks configuration and rule enforcement', () => {
     expect(packageJson.devDependencies?.['typescript-eslint']).toBeDefined();
     expect(packageJson.devDependencies?.['@typescript-eslint/eslint-plugin']).toBeDefined();
     expect(packageJson.scripts?.lint).toMatch(/\beslint\s+\..*--max-warnings[=\s]+0\b/);
-    expect(packageJson['lint-staged']?.['*.{js,jsx,ts,tsx,mjs,cjs}']).toContain('--max-warnings=0');
+    expect(packageJson['lint-staged']?.['*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}']).toContain(
+      '--max-warnings=0'
+    );
+    expect(packageJson['lint-staged']?.['.githooks/*']).toContain('--max-warnings=0');
   });
 
   it('preserves authentic implementations for all five React 19 react-hooks rules', () => {
@@ -316,6 +319,7 @@ describe('eslint-plugin-react-hooks configuration and rule enforcement', () => {
         messages: ProbeMessage[];
       };
       anyProbes: Record<string, ProbeMessage[]>;
+      ignoredProbes: Record<string, boolean>;
     }
 
     let probeResults: ProbeResults;
@@ -338,6 +342,8 @@ describe('eslint-plugin-react-hooks configuration and rule enforcement', () => {
           'src/components/MediaImage.tsx',
           'src/hooks/useUnified3DInput.ts',
           'scripts/check-quality.ts',
+          '.githooks/pre-commit',
+          '.githooks/pre-push',
           'e2e/verification.spec.ts',
           'src/utils/cn.ts',
         ];
@@ -383,6 +389,11 @@ describe('eslint-plugin-react-hooks configuration and rule enforcement', () => {
         const anySnippet = 'export const untypedValue: any = 42;\\n';
         const anyTargets = [
           'src/utils/cleanAnyProbe.ts',
+          'src/app/api/admin/broadcast/history/route.ts',
+          'src/app/api/admin/seating/export/route.ts',
+          'src/app/api/ready/route.ts',
+          'src/mocks/handlers.ts',
+          'docs-portal/.vitepress/config.mts',
           'src/utils/__tests__/exemptAnyProbe.test.ts',
           'e2e/exemptAnyProbe.spec.ts',
           'scripts/exemptAnyProbe.ts',
@@ -398,6 +409,19 @@ describe('eslint-plugin-react-hooks configuration and rule enforcement', () => {
           }));
         }
 
+        const ignoredTargets = [
+          '.githooks/pre-commit',
+          '.githooks/pre-push',
+          'docs-portal/.vitepress/config.mts',
+          'docs-portal/.vitepress/theme/index.ts',
+          'docs-portal/.vitepress/dist/app.js',
+          'docs-portal/.vitepress/cache/deps.js',
+        ];
+        const ignoredProbes = {};
+        for (const target of ignoredTargets) {
+          ignoredProbes[target] = await eslint.isPathIgnored(target);
+        }
+
         process.stdout.write(JSON.stringify({
           configs,
           signatureProbe: {
@@ -410,6 +434,7 @@ describe('eslint-plugin-react-hooks configuration and rule enforcement', () => {
             })),
           },
           anyProbes,
+          ignoredProbes,
         }));
       `;
 
@@ -429,14 +454,20 @@ describe('eslint-plugin-react-hooks configuration and rule enforcement', () => {
         }
       }
 
-      for (const nonReactTarget of ['scripts/check-quality.ts', 'e2e/verification.spec.ts', 'src/utils/cn.ts']) {
+      for (const nonReactTarget of [
+        'scripts/check-quality.ts',
+        '.githooks/pre-commit',
+        '.githooks/pre-push',
+        'e2e/verification.spec.ts',
+        'src/utils/cn.ts',
+      ]) {
         const targetCfg = probeResults.configs[nonReactTarget];
         expect(targetCfg).toBeDefined();
         expect(targetCfg.reactOrHookRuleKeys).toEqual([]);
       }
     });
 
-    it('caps shrink-only legacy baseline overrides at <= 102 existing files without wildcards', () => {
+    it('caps shrink-only legacy baseline overrides at <= 98 existing files without wildcards', () => {
       const arrayRegex = /const\s+(LEGACY_[A-Z0-9_]+_BASELINE_FILES)\s*=\s*\[([\s\S]*?)\];/g;
       const baselineGroups = new Map<string, string[]>();
       let match: RegExpExecArray | null;
@@ -449,7 +480,7 @@ describe('eslint-plugin-react-hooks configuration and rule enforcement', () => {
 
       expect(Array.from(baselineGroups.keys())).toEqual(['LEGACY_EXPLICIT_ANY_BASELINE_FILES']);
       const anyBaseline = baselineGroups.get('LEGACY_EXPLICIT_ANY_BASELINE_FILES') ?? [];
-      expect(anyBaseline.length).toBeLessThanOrEqual(102);
+      expect(anyBaseline.length).toBeLessThanOrEqual(98);
 
       const allBaselineFiles = new Set<string>();
       for (const files of baselineGroups.values()) {
@@ -460,8 +491,16 @@ describe('eslint-plugin-react-hooks configuration and rule enforcement', () => {
         }
       }
 
-      expect(allBaselineFiles.has('src/components/ui/__tests__/Overlay.test.tsx')).toBe(false);
-      expect(allBaselineFiles.size).toBeLessThanOrEqual(102);
+      for (const ratchetedFile of [
+        'src/components/ui/__tests__/Overlay.test.tsx',
+        'src/app/api/admin/broadcast/history/route.ts',
+        'src/app/api/admin/seating/export/route.ts',
+        'src/app/api/ready/route.ts',
+        'src/mocks/handlers.ts',
+      ]) {
+        expect(allBaselineFiles.has(ratchetedFile)).toBe(false);
+      }
+      expect(allBaselineFiles.size).toBeLessThanOrEqual(98);
     });
 
     it('emits 0 unused-imports/no-unused-vars warnings on TypeScript signatures, catch bindings, and rest siblings', () => {
@@ -473,12 +512,28 @@ describe('eslint-plugin-react-hooks configuration and rule enforcement', () => {
       expect(probeResults.signatureProbe.warningCount).toBe(0);
     });
 
-    it('enforces @typescript-eslint/no-explicit-any as an error in clean src/ files and exempts tests, e2e/, scripts/, and .storybook/main.ts', () => {
-      expect(
-        probeResults.anyProbes['src/utils/cleanAnyProbe.ts'].some(
-          (m) => m.ruleId === '@typescript-eslint/no-explicit-any' && m.severity === 2
-        )
-      ).toBe(true);
+    it('enforces @typescript-eslint/no-explicit-any as an error in clean src/ and docs-portal/ files and exempts tests, e2e/, scripts/, and .storybook/main.ts', () => {
+      for (const strictPath of [
+        'src/utils/cleanAnyProbe.ts',
+        'src/app/api/admin/broadcast/history/route.ts',
+        'src/app/api/admin/seating/export/route.ts',
+        'src/app/api/ready/route.ts',
+        'src/mocks/handlers.ts',
+        'docs-portal/.vitepress/config.mts',
+      ]) {
+        expect(
+          probeResults.anyProbes[strictPath].some(
+            (m) => m.ruleId === '@typescript-eslint/no-explicit-any' && m.severity === 2
+          )
+        ).toBe(true);
+      }
+
+      expect(probeResults.ignoredProbes['.githooks/pre-commit']).toBe(false);
+      expect(probeResults.ignoredProbes['.githooks/pre-push']).toBe(false);
+      expect(probeResults.ignoredProbes['docs-portal/.vitepress/config.mts']).toBe(false);
+      expect(probeResults.ignoredProbes['docs-portal/.vitepress/theme/index.ts']).toBe(false);
+      expect(probeResults.ignoredProbes['docs-portal/.vitepress/dist/app.js']).toBe(true);
+      expect(probeResults.ignoredProbes['docs-portal/.vitepress/cache/deps.js']).toBe(true);
 
       for (const exemptPath of [
         'src/utils/__tests__/exemptAnyProbe.test.ts',

@@ -14,8 +14,12 @@ import {
   isDemoRuntimeActive,
 } from '@/lib/demo/demoRuntimeBridge';
 import { useGuestSession } from '../context/GuestSessionContext';
+import { notifyCapabilitiesRefresh } from './useRegistryCapabilities';
 import { formatCurrency } from '@/utils/intl';
 import { getItemRemainingAmount, getItemUnitCounts } from '../lib/registryStatusUtils';
+
+export const VERIFIED_CODE_REQUIRED_MESSAGE =
+  'Please verify your 8-character invitation code to claim this gift.';
 
 type ContributionPhase =
   | 'idle'
@@ -72,6 +76,7 @@ interface UseRegistryContributionMachineOptions {
   initialState?: string;
   initialZipCode?: string;
   initialCountry?: string;
+  requireVerifiedCode?: boolean;
 }
 
 interface VerifiedSubmissionIdentity {
@@ -177,6 +182,7 @@ export function useRegistryContributionMachine({
   initialState = '',
   initialZipCode = '',
   initialCountry = '',
+  requireVerifiedCode = false,
 }: UseRegistryContributionMachineOptions): UseRegistryContributionMachineReturn {
   const {
     invitationCode: sessionCode,
@@ -222,6 +228,7 @@ export function useRegistryContributionMachine({
   const abortControllerRef = useRef<AbortController | null>(null);
   const invitationCodeInputRef = useRef<HTMLInputElement | null>(null);
   const lockedCodeRef = useRef<string | null>(null);
+  const [verifiedCodeState, setVerifiedCodeState] = useState<string | null>(null);
   const [codeFailureCount, setCodeFailureCount] = useState(0);
 
   if (trackedItemId !== item.id) {
@@ -235,6 +242,7 @@ export function useRegistryContributionMachine({
     if (phaseState !== 'code_locked') {
       setPhase('idle');
       setInvitationCodeState(initialInvitationCode);
+      setVerifiedCodeState(null);
     }
   }
 
@@ -243,9 +251,12 @@ export function useRegistryContributionMachine({
   const isSessionSynced = Boolean(
     currentSessionKey && dismissedSessionKey !== currentSessionKey
   );
+  const hasVerifiedCode = Boolean(
+    isSessionSynced || (verifiedCodeState && invitationCodeState === verifiedCodeState)
+  );
 
   const phase: ContributionPhase =
-    isSessionSynced && (phaseState === 'idle' || phaseState === 'validating_code')
+    hasVerifiedCode && (phaseState === 'idle' || phaseState === 'validating_code')
       ? 'code_locked'
       : phaseState;
   const invitationCode = isSessionSynced && sessionCode ? sessionCode : invitationCodeState;
@@ -465,6 +476,7 @@ export function useRegistryContributionMachine({
               ? matched.email.trim()
               : null;
           lockedCodeRef.current = matched.code;
+          setVerifiedCodeState(matched.code);
           setInvitationCodeState(matched.code);
           if (matched.guestName && (!hasEditedContributorName || !contributorNameState.trim())) {
             setContributorNameState(matched.guestName);
@@ -482,6 +494,7 @@ export function useRegistryContributionMachine({
             email: resolvedEmail,
             isVerified: true,
           });
+          notifyCapabilitiesRefresh();
           return {
             valid: true,
             code: matched.code,
@@ -490,6 +503,7 @@ export function useRegistryContributionMachine({
           };
         }
         lockedCodeRef.current = null;
+        setVerifiedCodeState(null);
         setPhase('idle');
         setCodeError('Invalid invitation code.');
         setCodeFailureCount((count) => count + 1);
@@ -515,6 +529,7 @@ export function useRegistryContributionMachine({
           guestName?: string;
           email?: string | null;
           error?: string;
+          reason?: string;
         }>(
           '/api/registry/validate-code',
           { code },
@@ -532,6 +547,7 @@ export function useRegistryContributionMachine({
               ? data.email.trim()
               : null;
           lockedCodeRef.current = verifiedCode;
+          setVerifiedCodeState(verifiedCode);
           setInvitationCodeState(verifiedCode);
           if (data.guestName && (!hasEditedContributorName || !contributorNameState.trim())) {
             setContributorNameState(data.guestName);
@@ -547,6 +563,7 @@ export function useRegistryContributionMachine({
             email: resolvedEmail,
             isVerified: true,
           });
+          notifyCapabilitiesRefresh();
           return {
             valid: true,
             code: verifiedCode,
@@ -555,10 +572,11 @@ export function useRegistryContributionMachine({
           };
         } else {
           lockedCodeRef.current = null;
+          setVerifiedCodeState(null);
           setPhase('idle');
           setCodeError(
             typeof data?.error === 'string' && data.error.trim()
-              ? data.error
+              ? data.error.trim()
               : 'Invalid invitation code.'
           );
           setCodeFailureCount((count) => count + 1);
@@ -569,6 +587,7 @@ export function useRegistryContributionMachine({
           return { valid: false };
         }
         lockedCodeRef.current = null;
+        setVerifiedCodeState(null);
         setPhase('idle');
         const msg = err instanceof Error ? err.message : 'Invalid invitation code.';
         setCodeError(msg || 'Invalid invitation code.');
@@ -609,6 +628,7 @@ export function useRegistryContributionMachine({
       }
 
       lockedCodeRef.current = null;
+      setVerifiedCodeState(null);
 
       if (currentSessionKey && val !== sessionCode) {
         setDismissedSessionKey(currentSessionKey);
@@ -634,6 +654,7 @@ export function useRegistryContributionMachine({
     const trimmedCode = invitationCode.trim().toUpperCase();
     if (
       !trimmedCode ||
+      hasVerifiedCode ||
       phase === 'code_locked' ||
       (lockedCodeRef.current && lockedCodeRef.current === trimmedCode)
     ) {
@@ -678,6 +699,7 @@ export function useRegistryContributionMachine({
     emailState,
     hasEditedContributorName,
     hasEditedEmail,
+    hasVerifiedCode,
     invitationCode,
     phase,
     verifyCodeWithDetails,
@@ -690,10 +712,12 @@ export function useRegistryContributionMachine({
       abortControllerRef.current = null;
     }
     lockedCodeRef.current = null;
+    setVerifiedCodeState(null);
     if (currentSessionKey) {
       setDismissedSessionKey(currentSessionKey);
     }
     await clearSession();
+    notifyCapabilitiesRefresh();
     setPhase('idle');
     setInvitationCodeState('');
     setHasEditedContributorName(false);
@@ -833,6 +857,7 @@ export function useRegistryContributionMachine({
       const needsAsyncCodeVerification =
         !options?.identityOverride &&
         Boolean(trimmedCode) &&
+        !hasVerifiedCode &&
         phase !== 'code_locked' &&
         lockedCodeRef.current !== trimmedCode;
 
@@ -853,12 +878,23 @@ export function useRegistryContributionMachine({
         resolvedIdentity = verified;
       }
 
+      const isIdentityVerified = Boolean(
+        hasVerifiedCode ||
+          phase === 'code_locked' ||
+          (resolvedIdentity.code && lockedCodeRef.current === resolvedIdentity.code)
+      );
+      const isMissingRequiredCode =
+        requireVerifiedCode && !paymentIntentId && !isIdentityVerified;
+
       if (!item.isGroupGift && requestedUnits > 1) {
         if (
           !Number.isInteger(selectedUnits) ||
           selectedUnits < 1 ||
           selectedUnits > remainingUnits
         ) {
+          if (isMissingRequiredCode) {
+            setCodeError(VERIFIED_CODE_REQUIRED_MESSAGE);
+          }
           setFieldErrors({
             units:
               remainingUnits > 0
@@ -883,7 +919,7 @@ export function useRegistryContributionMachine({
         name: resolvedIdentity.contributorName,
         email: resolvedIdentity.email || undefined,
         amount: rawAmount,
-        code: resolvedIdentity.code || undefined,
+        code: isIdentityVerified ? resolvedIdentity.code || undefined : undefined,
         message: message || undefined,
         coverFee: effectiveCoverFee,
         paymentIntentId,
@@ -899,6 +935,9 @@ export function useRegistryContributionMachine({
       });
 
       if (!result.success) {
+        if (isMissingRequiredCode) {
+          setCodeError(VERIFIED_CODE_REQUIRED_MESSAGE);
+        }
         const errors: ContributionFieldErrors = {};
         for (const issue of result.error.issues) {
           const field = issue.path[0] as keyof ContributionFieldErrors;
@@ -917,11 +956,21 @@ export function useRegistryContributionMachine({
       if (item.isGroupGift) {
         const remainingAmount = getItemRemainingAmount(item);
         if (finalAmount > remainingAmount) {
+          if (isMissingRequiredCode) {
+            setCodeError(VERIFIED_CODE_REQUIRED_MESSAGE);
+          }
           const msg = `Amount cannot exceed the remaining ${formatCurrency(remainingAmount)}.`;
           setFieldErrors({ amount: msg });
           setPhase('error');
           return;
         }
+      }
+
+      if (isMissingRequiredCode) {
+        setCodeError(VERIFIED_CODE_REQUIRED_MESSAGE);
+        setPhase('idle');
+        setCodeFailureCount((count) => count + 1);
+        return;
       }
 
       const hasOrderDetails = Boolean(
@@ -1042,6 +1091,8 @@ export function useRegistryContributionMachine({
     },
     [
       phase,
+      hasVerifiedCode,
+      requireVerifiedCode,
       ensureCodeVerifiedForSubmit,
       item,
       requestedUnits,
@@ -1075,7 +1126,7 @@ export function useRegistryContributionMachine({
 
   // Deterministic flags
   const isValidatingCode = phase === 'validating_code';
-  const isCodeLocked = phase === 'code_locked';
+  const isCodeLocked = hasVerifiedCode || phase === 'code_locked';
   const isSubmitting = phase === 'submitting';
   const isSuccess = phase === 'success';
   const isSubmitDisabled = isValidatingCode || isSubmitting;

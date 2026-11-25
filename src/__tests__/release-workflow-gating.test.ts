@@ -33,6 +33,41 @@ function extractTopLevelSection(yaml: string, sectionKey: string): string {
   return sectionLines.join('\n');
 }
 
+function extractJobSection(yaml: string, jobId: string): string {
+  const lines = yaml.split(/\r?\n/);
+  const startIndex = lines.findIndex((line) => line === `  ${jobId}:`);
+  if (startIndex === -1) {
+    return '';
+  }
+
+  const sectionLines: string[] = [lines[startIndex]];
+  for (let i = startIndex + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim() === '' || line.startsWith('    ') || line.trim().startsWith('#')) {
+      sectionLines.push(line);
+    } else {
+      break;
+    }
+  }
+  return sectionLines.join('\n');
+}
+
+interface ParsedWorkflowJob {
+  needs?: string | string[];
+  if?: string;
+  'runs-on'?: string;
+  'timeout-minutes'?: number;
+  concurrency?: { group?: string; 'cancel-in-progress'?: boolean | string; queue?: string };
+  permissions?: Record<string, string>;
+}
+
+function parseWorkflowJobs(yaml: string): Record<string, ParsedWorkflowJob> {
+  const parsed = parseDocument(yaml, { version: '1.2', strict: true }).toJS() as {
+    jobs?: Record<string, ParsedWorkflowJob>;
+  };
+  return parsed.jobs ?? {};
+}
+
 function extractRunBlocks(yaml: string): string[] {
   const lines = yaml.split(/\r?\n/);
   const blocks: string[] = [];
@@ -114,6 +149,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       'e2e-test:',
       'a11y-report:',
       'pages-verify:',
+      'ci-complete:',
       'deploy-docs:',
     ]) {
       expect(ciWorkflow).toContain(`  ${jobId}`);
@@ -121,7 +157,8 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(ciWorkflow).not.toContain('  container-e2e-smoke:');
     expect(ciWorkflow).not.toContain('wedding-website-container');
 
-    const verifyJobBlock = ciWorkflow.split(/\n  doc-drift-comment:\n/)[0]?.split(/\n  verify:\n/)[1] ?? '';
+    const ciJobs = parseWorkflowJobs(ciWorkflow);
+    const verifyJobBlock = extractJobSection(ciWorkflow, 'verify');
     expect(verifyJobBlock).toMatch(/permissions:\n\s+contents: read\n/);
     expect(verifyJobBlock).not.toContain('pull-requests: write');
     expect(verifyJobBlock).not.toContain('issues: write');
@@ -129,18 +166,30 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(verifyJobBlock).toContain('run: npm run check:action-pins -- --verify-upstream');
     expect(verifyJobBlock).toContain('name: docs-portal-static');
 
-    const docDriftCommentBlock =
-      ciWorkflow.split(/\n  unit-test:\n/)[0]?.split(/\n  doc-drift-comment:\n/)[1] ?? '';
+    const docDriftCommentBlock = extractJobSection(ciWorkflow, 'doc-drift-comment');
     expect(docDriftCommentBlock).toContain('needs: [verify]');
     expect(docDriftCommentBlock).toContain('pull-requests: write');
     expect(docDriftCommentBlock).toContain('issues: write');
     expect(docDriftCommentBlock).not.toContain('actions/checkout');
     expect(docDriftCommentBlock).not.toContain('npm ci');
-    expect(ciWorkflow).toMatch(
-      /deploy-docs:\n\s+needs:\s*\[verify, static-export-build, storybook-build, pages-verify\]\n\s+if:\s*github\.ref == 'refs\/heads\/main' && github\.event_name == 'push'\n\s+runs-on:\s*ubuntu-latest\n\s+concurrency:\n\s+group:\s*github-pages\n\s+cancel-in-progress:\s*false\n\s+queue:\s*max/
+    expect(ciJobs['deploy-docs']?.needs).toEqual([
+      'ci-complete',
+      'static-export-build',
+      'storybook-build',
+      'pages-verify',
+    ]);
+    expect(ciJobs['deploy-docs']?.if).toBe(
+      "github.ref == 'refs/heads/main' && github.event_name == 'push'"
     );
+    expect(ciJobs['deploy-docs']?.['runs-on']).toBe('ubuntu-latest');
+    expect(ciJobs['deploy-docs']?.['timeout-minutes']).toBe(20);
+    expect(ciJobs['deploy-docs']?.concurrency).toEqual({
+      group: 'github-pages',
+      'cancel-in-progress': false,
+      queue: 'max',
+    });
     expect(ciWorkflow).not.toContain("github.event_name == 'release'");
-    const deployDocsSection = ciWorkflow.split(/\n  deploy-docs:\n/)[1] ?? '';
+    const deployDocsSection = extractJobSection(ciWorkflow, 'deploy-docs');
     expect(deployDocsSection).toContain('- name: Verify Main Branch Tip Freshness');
     expect(deployDocsSection).toContain('fetch --depth=1 --no-tags origin +refs/heads/main:refs/remotes/origin/main');
     expect(deployDocsSection).toContain("if: steps.freshness.outputs.is_latest == 'true'");
@@ -171,12 +220,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       expect(source).not.toMatch(/(?:sk|rk)_(?:test|live)_[0-9a-zA-Z_]{10,}/);
     }
 
-    // static-export-build runs in parallel after verify with read-only permissions and zero DB services
-    const staticExportMatch = ciWorkflow.match(
-      /  static-export-build:\n([\s\S]*?)(?=\n  [a-z0-9-]+:|\s*$)/
-    );
-    expect(staticExportMatch).not.toBeNull();
-    const staticExportJob = staticExportMatch?.[1] ?? '';
+    const staticExportJob = extractJobSection(ciWorkflow, 'static-export-build');
     expect(staticExportJob).toContain('needs: verify');
     expect(staticExportJob).toMatch(/permissions:\n\s+contents: read/);
     expect(staticExportJob).not.toContain('services:');
@@ -184,19 +228,25 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(staticExportJob).toContain('npm run build:export');
     expect(staticExportJob).toContain('npm run test:e2e:static');
     expect(staticExportJob).toContain('name: static-a11y-violations');
+    expect(staticExportJob).toContain('name: playwright-static-traces');
+    expect(staticExportJob).toContain('path: test-results/playwright-static/');
+    expect(staticExportJob).toContain('if: failure()');
     expect(staticExportJob).toContain('name: demo-static');
     expect(staticExportJob.indexOf('npm run test:e2e:static')).toBeLessThan(
       staticExportJob.indexOf('name: demo-static')
     );
 
-    const a11yReportSection =
-      ciWorkflow.split(/\n  pages-verify:\n/)[0]?.split(/\n  a11y-report:\n/)[1] ?? '';
-    expect(a11yReportSection).toContain('needs: [unit-test, e2e-test, static-export-build]');
+    const a11yReportSection = extractJobSection(ciWorkflow, 'a11y-report');
+    expect(ciJobs['a11y-report']?.needs).toEqual(['unit-test', 'e2e-test', 'static-export-build']);
+    expect(ciJobs['a11y-report']?.if).toBe('always() && !cancelled()');
+    expect(ciJobs['a11y-report']?.['timeout-minutes']).toBe(5);
     expect(a11yReportSection).toContain('name: static-a11y-violations');
-    expect(a11yReportSection).toContain('node scripts/a11y-report.mjs --include-static');
+    expect(a11yReportSection).toContain(
+      'node scripts/a11y-report.mjs --include-static --require-complete'
+    );
+    expect(a11yReportSection).toContain('Verify Upstream Accessibility Suite Jobs');
 
-    const pagesVerifySection =
-      ciWorkflow.split(/\n  deploy-docs:\n/)[0]?.split(/\n  pages-verify:\n/)[1] ?? '';
+    const pagesVerifySection = extractJobSection(ciWorkflow, 'pages-verify');
     expect(pagesVerifySection).toContain('needs: [verify, static-export-build, storybook-build]');
     expect(pagesVerifySection).toContain('run: npm ci --ignore-scripts');
     expect(pagesVerifySection).toContain('name: docs-portal-static');
@@ -204,6 +254,29 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(pagesVerifySection).toContain('name: storybook-static');
     expect(pagesVerifySection).toContain('run: npm run pages:verify');
     expect(pagesVerifySection).toContain('name: pages-bundle');
+
+    const ciCompleteSection = extractJobSection(ciWorkflow, 'ci-complete');
+    const expectedVerificationJobs = [
+      'verify',
+      'unit-test',
+      'build',
+      'container-arm64',
+      'storybook-build',
+      'static-export-build',
+      'e2e-test',
+      'a11y-report',
+      'pages-verify',
+    ];
+    expect(ciJobs['ci-complete']?.needs).toEqual(expectedVerificationJobs);
+    expect(ciJobs['ci-complete']?.if).toBe('always()');
+    expect(ciJobs['ci-complete']?.['runs-on']).toBe('ubuntu-latest');
+    expect(ciJobs['ci-complete']?.['timeout-minutes']).toBe(5);
+    expect(ciJobs['ci-complete']?.permissions).toEqual({ contents: 'read' });
+    expect(ciCompleteSection).not.toContain('actions/checkout');
+    expect(ciCompleteSection).not.toContain('npm ci');
+    for (const gatedJob of expectedVerificationJobs) {
+      expect(ciCompleteSection).toContain(`needs.${gatedJob}.result`);
+    }
 
     expect(deployDocsSection).toContain(
       "if: steps.freshness.outputs.is_latest == 'true' && steps.base-check.outputs.reuse_bundle == 'true'"
@@ -1658,7 +1731,7 @@ process.exit(1);
     const storybookWorkflow = readWorkflow('storybook.yml');
     expect(storybookWorkflow).toContain('run: npm ci --ignore-scripts');
 
-    const e2eSection = (ciWorkflow.split(/\n  e2e-test:\n/)[1] ?? '').split(/\n  a11y-report:\n/)[0] ?? '';
+    const e2eSection = extractJobSection(ciWorkflow, 'e2e-test');
     expect(e2eSection).toContain('needs: [verify, build]');
     expect(e2eSection).toContain('run: npm ci --ignore-scripts');
     expect(e2eSection).toContain('name: next-build-artifact');
@@ -1666,8 +1739,18 @@ process.exit(1);
     expect(e2eSection).toContain('test -d node_modules/@prisma/client');
     expect(e2eSection).toContain('image: ${{ needs.verify.outputs.db_image }}');
     expect(e2eSection).toContain('run: npx playwright test');
+    expect(e2eSection).toContain('name: playwright-traces');
+    expect(e2eSection).toContain('path: test-results/playwright/');
+    expect(e2eSection).toContain('if: failure()');
 
     const playwrightConfigRaw = fs.readFileSync(path.join(process.cwd(), 'playwright.config.ts'), 'utf8');
+    const playwrightStaticConfigRaw = fs.readFileSync(
+      path.join(process.cwd(), 'playwright.static.config.ts'),
+      'utf8'
+    );
+    expect(playwrightConfigRaw).toContain("trace: 'retain-on-failure'");
+    expect(playwrightStaticConfigRaw).toContain("outputDir: 'test-results/playwright-static'");
+    expect(playwrightStaticConfigRaw).toContain("trace: 'retain-on-failure'");
     expect(playwrightConfigRaw).toMatch(
       /process\.argv\.some\(\(arg\)\s*=>\s*arg\.includes\('pages-showcase\.spec\.ts'\)\s*\)/
     );
@@ -1862,6 +1945,80 @@ process.exit(1);
     } finally {
       fs.rmSync(handoffDir, { recursive: true, force: true });
       fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('executes ci-complete and a11y-report upstream result gates and fails closed whenever any required job does not succeed', () => {
+    const runBlocks = extractRunBlocks(ciWorkflow);
+    const a11yUpstreamScript = runBlocks.find((block) =>
+      block.includes('Upstream accessibility suite job(s) did not succeed:')
+    );
+    const ciCompleteScript = runBlocks.find((block) =>
+      block.includes('All 9 CI verification jobs succeeded.')
+    );
+
+    expect(a11yUpstreamScript).toBeDefined();
+    expect(ciCompleteScript).toBeDefined();
+
+    const baseA11yEnv: Record<string, string> = {
+      UNIT_TEST_RESULT: 'success',
+      E2E_TEST_RESULT: 'success',
+      STATIC_EXPORT_BUILD_RESULT: 'success',
+    };
+    const passA11y = spawnSync('bash', ['-eo', 'pipefail', '-c', a11yUpstreamScript!], {
+      encoding: 'utf8',
+      env: { ...process.env, ...baseA11yEnv },
+    });
+    expect(passA11y.status).toBe(0);
+
+    for (const [envKey, jobName] of [
+      ['UNIT_TEST_RESULT', 'unit-test'],
+      ['E2E_TEST_RESULT', 'e2e-test'],
+      ['STATIC_EXPORT_BUILD_RESULT', 'static-export-build'],
+    ] as const) {
+      const failA11y = spawnSync('bash', ['-eo', 'pipefail', '-c', a11yUpstreamScript!], {
+        encoding: 'utf8',
+        env: { ...process.env, ...baseA11yEnv, [envKey]: 'failure' },
+      });
+      expect(failA11y.status).toBe(1);
+      expect(failA11y.stdout + failA11y.stderr).toContain(`${jobName} (failure)`);
+    }
+
+    const baseCiEnv: Record<string, string> = {
+      VERIFY_RESULT: 'success',
+      UNIT_TEST_RESULT: 'success',
+      BUILD_RESULT: 'success',
+      CONTAINER_ARM64_RESULT: 'success',
+      STORYBOOK_BUILD_RESULT: 'success',
+      STATIC_EXPORT_BUILD_RESULT: 'success',
+      E2E_TEST_RESULT: 'success',
+      A11Y_REPORT_RESULT: 'success',
+      PAGES_VERIFY_RESULT: 'success',
+    };
+    const passCi = spawnSync('bash', ['-eo', 'pipefail', '-c', ciCompleteScript!], {
+      encoding: 'utf8',
+      env: { ...process.env, ...baseCiEnv },
+    });
+    expect(passCi.status).toBe(0);
+    expect(passCi.stdout).toContain('All 9 CI verification jobs succeeded.');
+
+    for (const [envKey, jobName] of [
+      ['VERIFY_RESULT', 'verify'],
+      ['UNIT_TEST_RESULT', 'unit-test'],
+      ['BUILD_RESULT', 'build'],
+      ['CONTAINER_ARM64_RESULT', 'container-arm64'],
+      ['STORYBOOK_BUILD_RESULT', 'storybook-build'],
+      ['STATIC_EXPORT_BUILD_RESULT', 'static-export-build'],
+      ['E2E_TEST_RESULT', 'e2e-test'],
+      ['A11Y_REPORT_RESULT', 'a11y-report'],
+      ['PAGES_VERIFY_RESULT', 'pages-verify'],
+    ] as const) {
+      const failCi = spawnSync('bash', ['-eo', 'pipefail', '-c', ciCompleteScript!], {
+        encoding: 'utf8',
+        env: { ...process.env, ...baseCiEnv, [envKey]: 'skipped' },
+      });
+      expect(failCi.status).toBe(1);
+      expect(failCi.stdout + failCi.stderr).toContain(`${jobName} (skipped)`);
     }
   });
 });

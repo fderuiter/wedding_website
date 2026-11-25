@@ -712,6 +712,7 @@ describe('verify-setup-guides contract check', () => {
       fs
         .readFileSync(pkgPath, 'utf8')
         .replace('--cache --cache-location .eslintcache --no-warn-ignored ', '')
+        .replace('    ".github/workflows/*.{yml,yaml}": "npm run check:action-pins",\n', '')
         .replace('    "docs:sync": "npx tsx scripts/generate-openapi.ts && npx tsx scripts/generate-docs.ts --skip-openapi",\n', '')
     );
 
@@ -726,6 +727,7 @@ describe('verify-setup-guides contract check', () => {
       prePushPath,
       fs
         .readFileSync(prePushPath, 'utf8')
+        .replace("  'package.json',\n", '')
         .replace("  { name: 'ESLint code linting', script: 'lint' },\n", '')
         .replace(/\bworktree\b/gi, 'tempdir')
     );
@@ -734,9 +736,11 @@ describe('verify-setup-guides contract check', () => {
     expect(errors).toEqual(
       expect.arrayContaining([
         'package.json: "lint-staged" must pass "--cache --cache-location .eslintcache --no-warn-ignored --fix --max-warnings=0"',
+        'package.json: "lint-staged" must route staged files to "check:action-pins"',
         'package.json: "docs:sync" must invoke "scripts/generate-openapi.ts" and "scripts/generate-docs.ts"',
         'tsconfig.build.json: Must enable "incremental": true with "tsBuildInfoFile": "./tsconfig.build.tsbuildinfo"',
         '.githooks/pre-push: Must run "lint"',
+        '.githooks/pre-push: Must guard "check:audit" against "package.json", "package-lock.json", "docker/prisma-cli/package.json", and "docker/prisma-cli/package-lock.json"',
         '.githooks/pre-push: Must verify dirty pushes inside an ephemeral detached git worktree',
       ])
     );

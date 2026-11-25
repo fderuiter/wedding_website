@@ -109,8 +109,10 @@ jobs:
 
       - name: Write Documentation Drift Report to Job Summary
         if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        env:
+          VERIFY_DOCS_OUTCOME: ${{ steps.verify-docs.outcome }}
         run: |
-          if [ "${{ steps.verify-docs.outcome }}" = "failure" ]; then
+          if [ "$VERIFY_DOCS_OUTCOME" = "failure" ]; then
             if [ -f "drift_files.txt" ]; then
               {
                 echo "### ⚠️ Documentation Drift Detected"
@@ -729,6 +731,15 @@ jobs:
           name: static-a11y-violations
           path: test-results/static-a11y-violations.json
           if-no-files-found: warn
+      - name: Upload Static Showcase Playwright Traces
+        if: failure()
+        timeout-minutes: 3
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-static-traces
+          path: test-results/playwright-static/
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Upload Static Demo Showcase Artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -812,10 +823,19 @@ jobs:
           name: playwright-a11y-violations
           path: test-results/playwright-a11y-violations.json
           if-no-files-found: warn
+      - name: Upload Playwright Failure Traces
+        if: failure()
+        timeout-minutes: 3
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-traces
+          path: test-results/playwright/
+          if-no-files-found: ignore
+          retention-days: 7
 
   a11y-report:
     needs: [unit-test, e2e-test, static-export-build]
-    if: '!cancelled()'
+    if: always() && !cancelled()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -848,9 +868,9 @@ jobs:
           name: static-a11y-violations
           path: test-results
       - name: Generate A11y Report
-        run: node scripts/a11y-report.mjs --include-static
+        run: node scripts/a11y-report.mjs --include-static --require-complete
       - name: Post A11y Report to PR
-        if: "!cancelled() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository"
+        if: always() && !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         timeout-minutes: 2
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
@@ -891,10 +911,32 @@ jobs:
               console.warn('Failed to post A11y report via GitHub API:', err);
             }
       - name: Write A11y Report to Job Summary
-        if: '!cancelled()'
+        if: always() && !cancelled()
         run: |
           if [ -f "test-results/a11y-summary.md" ]; then
             cat test-results/a11y-summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Verify Upstream Accessibility Suite Jobs
+        if: always() && !cancelled()
+        env:
+          UNIT_TEST_RESULT: ${{ needs.unit-test.result }}
+          E2E_TEST_RESULT: ${{ needs.e2e-test.result }}
+          STATIC_EXPORT_BUILD_RESULT: ${{ needs.static-export-build.result }}
+        run: |
+          FAILED_SUITES=()
+          for pair in \
+            "unit-test:${UNIT_TEST_RESULT}" \
+            "e2e-test:${E2E_TEST_RESULT}" \
+            "static-export-build:${STATIC_EXPORT_BUILD_RESULT}"; do
+            JOB_NAME="${pair%%:*}"
+            JOB_RESULT="${pair#*:}"
+            if [ "$JOB_RESULT" != "success" ]; then
+              FAILED_SUITES+=("${JOB_NAME} (${JOB_RESULT:-unknown})")
+            fi
+          done
+          if [ "${#FAILED_SUITES[@]}" -gt 0 ]; then
+            echo "::error::Upstream accessibility suite job(s) did not succeed: ${FAILED_SUITES[*]}"
+            exit 1
           fi
 
   pages-verify:
@@ -968,8 +1010,61 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  ci-complete:
+    needs:
+      - verify
+      - unit-test
+      - build
+      - container-arm64
+      - storybook-build
+      - static-export-build
+      - e2e-test
+      - a11y-report
+      - pages-verify
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Verify All CI Quality Gates Succeeded
+        env:
+          VERIFY_RESULT: ${{ needs.verify.result }}
+          UNIT_TEST_RESULT: ${{ needs.unit-test.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          CONTAINER_ARM64_RESULT: ${{ needs.container-arm64.result }}
+          STORYBOOK_BUILD_RESULT: ${{ needs.storybook-build.result }}
+          STATIC_EXPORT_BUILD_RESULT: ${{ needs.static-export-build.result }}
+          E2E_TEST_RESULT: ${{ needs.e2e-test.result }}
+          A11Y_REPORT_RESULT: ${{ needs.a11y-report.result }}
+          PAGES_VERIFY_RESULT: ${{ needs.pages-verify.result }}
+        run: |
+          FAILED_JOBS=()
+          for pair in \
+            "verify:${VERIFY_RESULT}" \
+            "unit-test:${UNIT_TEST_RESULT}" \
+            "build:${BUILD_RESULT}" \
+            "container-arm64:${CONTAINER_ARM64_RESULT}" \
+            "storybook-build:${STORYBOOK_BUILD_RESULT}" \
+            "static-export-build:${STATIC_EXPORT_BUILD_RESULT}" \
+            "e2e-test:${E2E_TEST_RESULT}" \
+            "a11y-report:${A11Y_REPORT_RESULT}" \
+            "pages-verify:${PAGES_VERIFY_RESULT}"; do
+            JOB_NAME="${pair%%:*}"
+            JOB_RESULT="${pair#*:}"
+            echo "${JOB_NAME}: ${JOB_RESULT}"
+            if [ "$JOB_RESULT" != "success" ]; then
+              FAILED_JOBS+=("${JOB_NAME} (${JOB_RESULT:-unknown})")
+            fi
+          done
+          if [ "${#FAILED_JOBS[@]}" -gt 0 ]; then
+            echo "::error::CI verification gate failed. Non-passing jobs: ${FAILED_JOBS[*]}"
+            exit 1
+          fi
+          echo "All 9 CI verification jobs succeeded."
+
   deploy-docs:
-    needs: [verify, static-export-build, storybook-build, pages-verify]
+    needs: [ci-complete, static-export-build, storybook-build, pages-verify]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     concurrency:

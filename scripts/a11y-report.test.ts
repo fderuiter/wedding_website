@@ -196,6 +196,56 @@ describe('a11y-report', () => {
         '**Status:** Incomplete (static-showcase results missing)'
       );
     });
+
+    it('records parseErrors and writes incomplete summary without throwing when suite JSON files or violation structures are malformed', () => {
+      const resultsDir = path.join(tempDir, 'test-results');
+      fs.mkdirSync(resultsDir, { recursive: true });
+      fs.writeFileSync(path.join(resultsDir, 'jest-a11y-violations.json'), '{invalid-json');
+      fs.writeFileSync(path.join(resultsDir, 'playwright-a11y-violations.json'), 'null');
+      fs.writeFileSync(path.join(resultsDir, 'static-a11y-violations.json'), '{"truncated":');
+
+      const result = generateReport({
+        cwd: tempDir,
+        requireStatic: true,
+        requireComplete: true,
+      });
+
+      expect(result.totalViolations).toBe(0);
+      expect(result.incompleteSuites).toEqual(['jest', 'playwright', 'static-showcase']);
+      expect(result.parseErrors).toEqual(['jest', 'playwright', 'static-showcase']);
+      expect(fs.existsSync(result.outputPath)).toBe(true);
+      expect(result.report).toContain(
+        '⚠️ Incomplete: Jest accessibility artifact (`test-results/jest-a11y-violations.json`) could not be parsed.'
+      );
+      expect(result.report).toContain(
+        '⚠️ Incomplete: Playwright accessibility artifact (`test-results/playwright-a11y-violations.json`) could not be parsed.'
+      );
+      expect(result.report).toContain(
+        '⚠️ Incomplete: Static showcase accessibility artifact (`test-results/static-a11y-violations.json`) could not be parsed.'
+      );
+      expect(result.report).toContain(
+        '**Status:** Incomplete (jest, playwright, static-showcase results missing)'
+      );
+
+      // Also rejects structurally invalid JSON values (e.g. non-object array entries or non-array route values)
+      fs.writeFileSync(path.join(resultsDir, 'jest-a11y-violations.json'), '[null]');
+      fs.writeFileSync(
+        path.join(resultsDir, 'playwright-a11y-violations.json'),
+        JSON.stringify({ '/': 'not-an-array' })
+      );
+      fs.writeFileSync(
+        path.join(resultsDir, 'static-a11y-violations.json'),
+        JSON.stringify({ '[light] /wedding_website/demo/': [null] })
+      );
+
+      const shapeResult = generateReport({
+        cwd: tempDir,
+        requireStatic: true,
+        requireComplete: true,
+      });
+      expect(shapeResult.incompleteSuites).toEqual(['jest', 'playwright', 'static-showcase']);
+      expect(shapeResult.parseErrors).toEqual(['jest', 'playwright', 'static-showcase']);
+    });
   });
 
   describe('standalone CLI exit codes', () => {
@@ -216,6 +266,105 @@ describe('a11y-report', () => {
       const summaryFile = path.join(resultsDir, 'a11y-summary.md');
       expect(fs.existsSync(summaryFile)).toBe(true);
       expect(fs.readFileSync(summaryFile, 'utf8')).toContain('**Total Accessibility Violations:** 0');
+    });
+
+    it('preserves exit 0 when --require-complete is omitted and suite files are missing with zero violations', () => {
+      const resultsDir = path.join(tempDir, 'test-results');
+      fs.mkdirSync(resultsDir, { recursive: true });
+      fs.writeFileSync(path.join(resultsDir, 'jest-a11y-violations.json'), '[]');
+
+      const proc = spawnSync(process.execPath, [scriptPath], {
+        cwd: tempDir,
+        encoding: 'utf8',
+      });
+
+      expect(proc.status).toBe(0);
+      const summaryFile = path.join(resultsDir, 'a11y-summary.md');
+      expect(fs.existsSync(summaryFile)).toBe(true);
+      expect(fs.readFileSync(summaryFile, 'utf8')).toContain(
+        '**Status:** Incomplete (playwright results missing)'
+      );
+    });
+
+    it('exits 0 with --include-static --require-complete when all three suite artifacts are present and clean', () => {
+      const resultsDir = path.join(tempDir, 'test-results');
+      fs.mkdirSync(resultsDir, { recursive: true });
+      fs.writeFileSync(path.join(resultsDir, 'jest-a11y-violations.json'), '[]');
+      fs.writeFileSync(path.join(resultsDir, 'playwright-a11y-violations.json'), '{"/": []}');
+      fs.writeFileSync(
+        path.join(resultsDir, 'static-a11y-violations.json'),
+        '{"[light] /wedding_website/demo/": []}'
+      );
+
+      const proc = spawnSync(
+        process.execPath,
+        [scriptPath, '--include-static', '--require-complete'],
+        {
+          cwd: tempDir,
+          encoding: 'utf8',
+        }
+      );
+
+      expect(proc.status).toBe(0);
+      const summary = fs.readFileSync(path.join(resultsDir, 'a11y-summary.md'), 'utf8');
+      expect(summary).not.toContain('**Status:** Incomplete');
+      expect(summary).toContain('**Total Accessibility Violations:** 0');
+    });
+
+    it.each([
+      ['jest-a11y-violations.json', 'jest'],
+      ['playwright-a11y-violations.json', 'playwright'],
+      ['static-a11y-violations.json', 'static-showcase'],
+    ])(
+      'writes summary first and exits 1 with --include-static --require-complete when %s is missing',
+      (missingFile, expectedSuiteLabel) => {
+        const resultsDir = path.join(tempDir, 'test-results');
+        fs.mkdirSync(resultsDir, { recursive: true });
+        const fixtures: Record<string, string> = {
+          'jest-a11y-violations.json': '[]',
+          'playwright-a11y-violations.json': '{"/": []}',
+          'static-a11y-violations.json': '{"[light] /wedding_website/demo/": []}',
+        };
+        for (const [fileName, content] of Object.entries(fixtures)) {
+          if (fileName !== missingFile) {
+            fs.writeFileSync(path.join(resultsDir, fileName), content);
+          }
+        }
+
+        const proc = spawnSync(
+          process.execPath,
+          [scriptPath, '--include-static', '--require-complete'],
+          {
+            cwd: tempDir,
+            encoding: 'utf8',
+          }
+        );
+
+        expect(proc.status).toBe(1);
+        const summaryFile = path.join(resultsDir, 'a11y-summary.md');
+        expect(fs.existsSync(summaryFile)).toBe(true);
+        const summary = fs.readFileSync(summaryFile, 'utf8');
+        expect(summary).toContain(`**Status:** Incomplete (${expectedSuiteLabel} results missing)`);
+      }
+    );
+
+    it('writes summary first and exits 1 when JSON parsing fails on a suite artifact even without --require-complete', () => {
+      const resultsDir = path.join(tempDir, 'test-results');
+      fs.mkdirSync(resultsDir, { recursive: true });
+      fs.writeFileSync(path.join(resultsDir, 'jest-a11y-violations.json'), '[]');
+      fs.writeFileSync(path.join(resultsDir, 'playwright-a11y-violations.json'), '{broken');
+
+      const proc = spawnSync(process.execPath, [scriptPath], {
+        cwd: tempDir,
+        encoding: 'utf8',
+      });
+
+      expect(proc.status).toBe(1);
+      const summaryFile = path.join(resultsDir, 'a11y-summary.md');
+      expect(fs.existsSync(summaryFile)).toBe(true);
+      const summary = fs.readFileSync(summaryFile, 'utf8');
+      expect(summary).toContain('could not be parsed');
+      expect(summary).toContain('**Status:** Incomplete (playwright results missing)');
     });
 
     it('writes summary first and exits 1 when violations exceed 0', () => {

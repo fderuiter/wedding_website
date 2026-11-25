@@ -15,6 +15,10 @@ jest.mock('@/core/auth/auth.server', () => ({
   isAdminRequest: jest.fn(),
 }));
 
+jest.mock('@/core/auth/guestInviteSession', () => ({
+  getGuestInviteSession: jest.fn(),
+}));
+
 jest.mock('@/lib/config', () => {
   const actual = jest.requireActual('@/lib/config');
   return {
@@ -29,6 +33,7 @@ import { registryGetItemsGET as getItems } from '@/features/registry';
 import { registryItemByIdGET as getItemByIdRoute, registryItemByIdPUT as updateItemRoute, registryItemByIdDELETE as deleteItemRoute } from '@/features/registry';
 import { registryService } from '@/features/registry';
 import { isAdminRequest } from '@/core/auth/auth.server';
+import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { getAppConfig, APP_DEFAULTS } from '@/lib/config';
 import { DEFAULT_MODULE_CONFIG } from '@/lib/modules';
 import type { NextRequest } from 'next/server';
@@ -40,11 +45,17 @@ const mockGetItemById = registryService.getItemById as jest.Mock;
 const mockUpdateItem = registryService.updateItem as jest.Mock;
 const mockDeleteItem = registryService.deleteItem as jest.Mock;
 const mockIsAdminRequest = isAdminRequest as jest.Mock;
+const mockGetGuestInviteSession = getGuestInviteSession as jest.Mock;
 const mockGetAppConfig = getAppConfig as jest.MockedFunction<typeof getAppConfig>;
 
 describe('Registry API routes', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockIsAdminRequest.mockResolvedValue(false);
+    mockGetGuestInviteSession.mockResolvedValue({
+      code: 'INVITE26',
+      guestName: 'John',
+    });
   });
 
   describe('POST /api/registry/items', () => {
@@ -131,7 +142,21 @@ describe('Registry API routes', () => {
       expect(mockContributeToItem).toHaveBeenCalledWith(validContribution.itemId, expect.objectContaining({
         name: validContribution.name,
         amount: validContribution.amount,
+        code: 'INVITE26',
       }));
+    });
+
+    it('returns 403 for zero-Stripe contribution when caller lacks verified invite session and is not admin', async () => {
+      mockGetGuestInviteSession.mockResolvedValueOnce(null);
+      mockIsAdminRequest.mockResolvedValueOnce(false);
+      const req = new Request('http://localhost/api/registry/contribute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(validContribution),
+      });
+      const res = await contribute(req as unknown as NextRequest);
+      expect(res.status).toBe(403);
+      expect(mockContributeToItem).not.toHaveBeenCalled();
     });
 
     it('processes a valid contribution with personal message', async () => {

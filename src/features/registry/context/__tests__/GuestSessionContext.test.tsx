@@ -2,6 +2,7 @@ import { render, screen, waitFor, act } from '@testing-library/react';
 import { GuestSessionProvider, useGuestSession } from '../GuestSessionContext';
 import { ToastProvider } from '@/components/ui/ToastProvider';
 import { apiClient } from '@/lib/apiClient';
+import { notifyGuestSessionChanged } from '@/utils/guestSessionEvents';
 
 jest.mock('@/lib/apiClient', () => ({
   apiClient: {
@@ -264,5 +265,45 @@ describe('GuestSessionContext', () => {
     expect(screen.getByTestId('code')).toHaveTextContent('');
     expect(screen.getByTestId('name')).toHaveTextContent('');
     expect(screen.getByTestId('status')).toHaveTextContent('unauthenticated');
+  });
+
+  it('synchronizes session state quietly when notifyGuestSessionChanged fires externally without opening recovery modal', async () => {
+    (apiClient.get as jest.Mock)
+      .mockResolvedValueOnce({
+        isVerified: true,
+        invitationCode: 'WEDDING2026',
+        guestName: 'Jane Doe',
+      })
+      .mockResolvedValueOnce({
+        isVerified: false,
+        invitationCode: null,
+        guestName: null,
+      });
+
+    render(
+      <ToastProvider>
+        <GuestSessionProvider>
+          <TestComponent />
+        </GuestSessionProvider>
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('status')).toHaveTextContent('authenticated');
+      expect(screen.getByTestId('code')).toHaveTextContent('WEDDING2026');
+    });
+
+    await act(async () => {
+      notifyGuestSessionChanged();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('status')).toHaveTextContent('unauthenticated');
+      expect(screen.getByTestId('verified')).toHaveTextContent('no');
+      expect(screen.getByTestId('code')).toHaveTextContent('');
+      expect(screen.getByTestId('modalOpen')).toHaveTextContent('closed');
+    });
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });

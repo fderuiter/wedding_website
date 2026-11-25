@@ -4,7 +4,17 @@ import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/apiClient';
 import { isValidStripePublishableKey, type StripeCapability } from '@/lib/stripe.client';
 import { useOptionalDemo } from '@/components/demo/DemoContext';
+import { subscribeGuestSessionChanged } from '@/utils/guestSessionEvents';
+import { useGuestSession } from '../context/GuestSessionContext';
 import type { RegistryShippingAddress } from '../types';
+
+const REGISTRY_CAPABILITIES_REFRESH_EVENT = 'registry:capabilities-refresh';
+
+export function notifyCapabilitiesRefresh(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(REGISTRY_CAPABILITIES_REFRESH_EVENT));
+  }
+}
 
 interface RegistryCapabilitiesPayload extends StripeCapability {
   defaultPaymentHandleType?: string | null;
@@ -50,6 +60,8 @@ export function useRegistryCapabilities(
   const { enabled = true } = options;
   const demo = useOptionalDemo();
   const isDemoMode = Boolean(demo?.isDemoMode);
+  const { isVerified, invitationCode } = useGuestSession();
+  const [refreshTick, setRefreshTick] = useState(0);
   const [state, setState] = useState<InternalCapabilitiesState>(() => {
     const fallback = getClientEnvCapabilityFallback();
     return {
@@ -57,6 +69,24 @@ export function useRegistryCapabilities(
       hasLoaded: process.env.NODE_ENV === 'test',
     };
   });
+
+  useEffect(() => {
+    if (!enabled || isDemoMode || typeof window === 'undefined') {
+      return;
+    }
+
+    const triggerRefresh = () => {
+      setRefreshTick((tick) => tick + 1);
+    };
+
+    window.addEventListener(REGISTRY_CAPABILITIES_REFRESH_EVENT, triggerRefresh);
+    const unsubscribeGuestSession = subscribeGuestSessionChanged(triggerRefresh);
+
+    return () => {
+      window.removeEventListener(REGISTRY_CAPABILITIES_REFRESH_EVENT, triggerRefresh);
+      unsubscribeGuestSession();
+    };
+  }, [enabled, isDemoMode]);
 
   useEffect(() => {
     if (!enabled || isDemoMode) {
@@ -107,7 +137,7 @@ export function useRegistryCapabilities(
     return () => {
       active = false;
     };
-  }, [enabled, isDemoMode]);
+  }, [enabled, isDemoMode, isVerified, invitationCode, refreshTick]);
 
   if (enabled && isDemoMode && demo) {
     return {
