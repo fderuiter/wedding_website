@@ -192,13 +192,16 @@ The application expects to be deployed behind an HTTP reverse proxy, load balanc
 ## 7. HTTPS Assumptions & Security Policy
 
 - **Transport Security**: Production deployments assume HTTPS termination at the reverse proxy/ingress layer.
-- **Security Headers (Standalone / Server Mode Only)**: When running in standalone/server mode (`!isStaticExport`), `next.config.ts` (`headers()`) automatically injects the following HTTP security headers on all routes (`/(.*)`):
-  - `Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://js.stripe.com; worker-src 'self' blob:; frame-src 'self' https://js.stripe.com https://hooks.stripe.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https:; frame-ancestors 'self';`
-  - `Strict-Transport-Security: max-age=31536000; includeSubDomains`
-  - `X-Frame-Options: SAMEORIGIN`
-  - `X-Content-Type-Options: nosniff`
-  - `Referrer-Policy: strict-origin-when-cross-origin`
-- **Static Export Header Caveat**: Next.js `headers()` is disabled when `STATIC_EXPORT` is `'true'` or `'1'` (`output: 'export'`). Operators serving static showcase builds must configure equivalent `Content-Security-Policy` (including `worker-src 'self' blob:` and `blob:` in `script-src` so `/heart` 3D text `blob:` workers and `importScripts` module hydration succeed), HSTS, framing, MIME-sniffing, and referrer headers at their CDN, static host, or reverse-proxy layer.
+- **Security Headers (Standalone / Server Mode Only)**:
+  - **Static Non-CSP Headers (`next.config.ts`)**: When running in standalone/server mode (`!isStaticExport`), `next.config.ts` (`headers()`) injects static non-CSP security headers across all routes (`/(.*)`):
+    - `Strict-Transport-Security: max-age=31536000; includeSubDomains`
+    - `X-Frame-Options: SAMEORIGIN`
+    - `X-Content-Type-Options: nosniff`
+    - `Referrer-Policy: strict-origin-when-cross-origin`
+    - `Permissions-Policy: camera=(), microphone=(), geolocation=()`
+  - **Per-Request Nonced Application CSP (`src/middleware.ts` & `src/lib/csp.ts`)**: On non-upload routes, `src/middleware.ts` generates a cryptographic base64 nonce (`x-nonce` / `CSP_NONCE_HEADER`) and emits a per-request `Content-Security-Policy` via `buildContentSecurityPolicy` (`src/lib/csp.ts`)—replacing production `'unsafe-inline'` and `'unsafe-eval'` in `script-src` with `'nonce-<base64>'`, `'wasm-unsafe-eval'`, and `blob:` workers (allowing `'unsafe-eval'` only when `NODE_ENV === 'development'`), enforcing `object-src 'none'`, `base-uri 'self'`, `form-action 'self'`, and `frame-ancestors 'self'`, and scoping `connect-src` to `'self'`, `https://api.stripe.com`, `https://js.stripe.com`, `https://hooks.stripe.com`, `https://*.basemaps.cartocdn.com`, and any configured `S3_PUBLIC_URL` origin (`src/app/layout.tsx` reads `x-nonce` via `headers()` when `!isStaticExport` and passes `nonce` to the inline theme `<script>`).
+  - **Sandboxed Upload Stream CSP (`src/app/api/uploads/[...path]/route.ts`)**: `src/middleware.ts` skips `/uploads/*` and `/api/uploads/*` when emitting the application `Content-Security-Policy` so `src/app/api/uploads/[...path]/route.ts` emits a single `Content-Security-Policy: default-src 'none'; sandbox` header alongside `Cross-Origin-Resource-Policy: same-origin` (and `Content-Disposition: attachment` for fallback `application/octet-stream` payloads).
+- **Static Export Header Caveat**: Next.js `headers()` and Edge Middleware are disabled when `STATIC_EXPORT` is `'true'` or `'1'` (`output: 'export'`). Operators serving static showcase builds must configure equivalent `Content-Security-Policy` (including `'wasm-unsafe-eval'`, `worker-src 'self' blob:`, and `blob:` in `script-src` so `/heart` Rapier WASM physics and 3D text `blob:` workers succeed), `Permissions-Policy`, HSTS, framing, MIME-sniffing, and referrer headers at their CDN, static host, or reverse-proxy layer.
 
 ---
 

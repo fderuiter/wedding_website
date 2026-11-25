@@ -36,6 +36,8 @@ jest.mock('@/lib/prisma', () => ({
 }));
 
 import { GET, HEAD } from '../[...path]/route';
+import { middleware } from '@/middleware';
+import { CSP_NONCE_HEADER } from '@/lib/csp';
 import { resetStorageProvider } from '@/utils/storage';
 import { ADMIN_COOKIE, signAdminToken } from '@/core/auth/auth.server';
 import { GUEST_COOKIE, signGuestToken } from '@/core/auth/guest.server';
@@ -146,6 +148,8 @@ describe('Uploads Serving Route (/api/uploads/[...path]) — Auth, Moderation, C
       });
       expect(getRes.status).toBe(401);
       expect(getRes.headers.get('X-Content-Type-Options')).toBe('nosniff');
+      expect(getRes.headers.get('Content-Security-Policy')).toBe("default-src 'none'; sandbox");
+      expect(getRes.headers.get('Cross-Origin-Resource-Policy')).toBe('same-origin');
       expect(getRes.headers.get('Vary')).toBe('Cookie');
       expect(await getRes.json()).toEqual({ error: 'Unauthorized' });
 
@@ -155,6 +159,8 @@ describe('Uploads Serving Route (/api/uploads/[...path]) — Auth, Moderation, C
       );
       expect(headRes.status).toBe(401);
       expect(headRes.headers.get('X-Content-Type-Options')).toBe('nosniff');
+      expect(headRes.headers.get('Content-Security-Policy')).toBe("default-src 'none'; sandbox");
+      expect(headRes.headers.get('Cross-Origin-Resource-Policy')).toBe('same-origin');
       expect((await headRes.arrayBuffer()).byteLength).toBe(0);
     }
   });
@@ -188,6 +194,9 @@ describe('Uploads Serving Route (/api/uploads/[...path]) — Auth, Moderation, C
     );
     expect(favHeadRes.status).toBe(200);
     expect(favHeadRes.headers.get('Content-Type')).toBe('image/x-icon');
+    expect(favHeadRes.headers.get('Content-Security-Policy')).toBe("default-src 'none'; sandbox");
+    expect(favHeadRes.headers.get('Cross-Origin-Resource-Policy')).toBe('same-origin');
+    expect(favHeadRes.headers.get('Content-Disposition')).toBeNull();
     expect(favHeadRes.headers.get('Cache-Control')).toBe('private, no-cache');
     expect(favHeadRes.headers.get('Vary')).toBe('Cookie');
 
@@ -312,6 +321,9 @@ describe('Uploads Serving Route (/api/uploads/[...path]) — Auth, Moderation, C
     expect(pngRes.headers.get('Cache-Control')).toBe('private, no-cache');
     expect(pngRes.headers.get('Vary')).toBe('Cookie');
     expect(pngRes.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    expect(pngRes.headers.get('Content-Security-Policy')).toBe("default-src 'none'; sandbox");
+    expect(pngRes.headers.get('Cross-Origin-Resource-Policy')).toBe('same-origin');
+    expect(pngRes.headers.get('Content-Disposition')).toBeNull();
     expect(Buffer.from(await pngRes.arrayBuffer())).toEqual(pngPayload);
 
     const headRes = await HEAD(
@@ -324,9 +336,11 @@ describe('Uploads Serving Route (/api/uploads/[...path]) — Auth, Moderation, C
     expect(headRes.status).toBe(200);
     expect(headRes.headers.get('Content-Type')).toBe('image/x-icon');
     expect(headRes.headers.get('Content-Length')).toBe(String(icoPayload.length));
+    expect(headRes.headers.get('Content-Security-Policy')).toBe("default-src 'none'; sandbox");
+    expect(headRes.headers.get('Cross-Origin-Resource-Policy')).toBe('same-origin');
     expect((await headRes.arrayBuffer()).byteLength).toBe(0);
 
-    // S3 streaming via getStorageProvider().openReadStream
+    // S3 streaming via getStorageProvider().openReadStream ignores untrusted S3 ContentType metadata
     process.env.S3_BUCKET = 'wedding-s3-bucket';
     process.env.S3_REGION = 'us-east-1';
     process.env.S3_ACCESS_KEY_ID = 's3-key';
@@ -343,7 +357,7 @@ describe('Uploads Serving Route (/api/uploads/[...path]) — Auth, Moderation, C
         expect(cmd).toBeInstanceOf(GetObjectCommand);
         return {
           ContentLength: webpPayload.byteLength,
-          ContentType: 'image/webp',
+          ContentType: 'text/html; charset=utf-8',
           LastModified: new Date('2026-07-01T00:00:00Z'),
           Body: new ReadableStream<Uint8Array>({
             start(controller) {
@@ -357,7 +371,7 @@ describe('Uploads Serving Route (/api/uploads/[...path]) — Auth, Moderation, C
         expect(cmd).toBeInstanceOf(HeadObjectCommand);
         return {
           ContentLength: webpPayload.byteLength,
-          ContentType: 'image/webp',
+          ContentType: 'text/html',
           LastModified: new Date('2026-07-01T00:00:00Z'),
         } as never;
       });
@@ -370,6 +384,9 @@ describe('Uploads Serving Route (/api/uploads/[...path]) — Auth, Moderation, C
     );
     expect(s3GetRes.status).toBe(200);
     expect(s3GetRes.headers.get('Content-Type')).toBe('image/webp');
+    expect(s3GetRes.headers.get('Content-Security-Policy')).toBe("default-src 'none'; sandbox");
+    expect(s3GetRes.headers.get('Cross-Origin-Resource-Policy')).toBe('same-origin');
+    expect(s3GetRes.headers.get('Content-Disposition')).toBeNull();
     expect(s3GetRes.headers.get('Cache-Control')).toBe('private, no-cache');
     expect(s3GetRes.headers.get('Vary')).toBe('Cookie');
     expect(Buffer.from(await s3GetRes.arrayBuffer())).toEqual(webpPayload);
@@ -385,6 +402,9 @@ describe('Uploads Serving Route (/api/uploads/[...path]) — Auth, Moderation, C
       { params: Promise.resolve({ path: ['photos', 's3-streamed.webp'] }) }
     );
     expect(s3HeadRes.status).toBe(200);
+    expect(s3HeadRes.headers.get('Content-Type')).toBe('image/webp');
+    expect(s3HeadRes.headers.get('Content-Security-Policy')).toBe("default-src 'none'; sandbox");
+    expect(s3HeadRes.headers.get('Cross-Origin-Resource-Policy')).toBe('same-origin');
     expect(s3HeadRes.headers.get('Content-Length')).toBe(String(webpPayload.byteLength));
     expect((await s3HeadRes.arrayBuffer()).byteLength).toBe(0);
 
@@ -457,5 +477,82 @@ describe('Uploads Serving Route (/api/uploads/[...path]) — Auth, Moderation, C
     );
     expect(dirRes.status).toBe(404);
     expect(dirRes.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    expect(dirRes.headers.get('Content-Security-Policy')).toBe("default-src 'none'; sandbox");
+    expect(dirRes.headers.get('Cross-Origin-Resource-Policy')).toBe('same-origin');
+  });
+
+  it('forces Content-Disposition: attachment on fallback application/octet-stream uploads (local & S3) and prevents duplicate CSP headers from middleware', async () => {
+    const svgPayload = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+    fs.writeFileSync(path.join(testSubdirPath, 'legacy-vector.svg'), svgPayload);
+    mockFindManyMedia.mockResolvedValue([
+      { id: 'm-svg', url: `/uploads/${testSubdirName}/legacy-vector.svg` },
+    ]);
+
+    const localFallbackRes = await GET(
+      new NextRequest(`http://localhost:3000/uploads/${testSubdirName}/legacy-vector.svg`, {
+        headers: { cookie: guestCookieHeader },
+      }),
+      { params: Promise.resolve({ path: [testSubdirName, 'legacy-vector.svg'] }) }
+    );
+    expect(localFallbackRes.status).toBe(200);
+    expect(localFallbackRes.headers.get('Content-Type')).toBe('application/octet-stream');
+    expect(localFallbackRes.headers.get('Content-Disposition')).toBe('attachment');
+    expect(localFallbackRes.headers.get('Content-Security-Policy')).toBe("default-src 'none'; sandbox");
+    expect(localFallbackRes.headers.get('Cross-Origin-Resource-Policy')).toBe('same-origin');
+
+    // S3 fallback stream with malicious ContentType metadata must still serve application/octet-stream + attachment
+    process.env.S3_BUCKET = 'wedding-s3-bucket';
+    process.env.S3_REGION = 'us-east-1';
+    process.env.S3_ACCESS_KEY_ID = 's3-key';
+    process.env.S3_SECRET_ACCESS_KEY = 's3-secret';
+    resetStorageProvider();
+
+    const s3SendSpy = jest.spyOn(S3Client.prototype, 'send').mockResolvedValueOnce({
+      ContentLength: svgPayload.byteLength,
+      ContentType: 'image/svg+xml',
+      LastModified: new Date('2026-07-02T00:00:00Z'),
+      Body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array(svgPayload));
+          controller.close();
+        },
+      }),
+    } as never);
+
+    const s3FallbackRes = await GET(
+      new NextRequest(`http://localhost:3000/uploads/${testSubdirName}/legacy-vector.svg`, {
+        headers: { cookie: guestCookieHeader },
+      }),
+      { params: Promise.resolve({ path: [testSubdirName, 'legacy-vector.svg'] }) }
+    );
+    expect(s3FallbackRes.status).toBe(200);
+    expect(s3FallbackRes.headers.get('Content-Type')).toBe('application/octet-stream');
+    expect(s3FallbackRes.headers.get('Content-Disposition')).toBe('attachment');
+    expect(s3FallbackRes.headers.get('Content-Security-Policy')).toBe("default-src 'none'; sandbox");
+    s3SendSpy.mockRestore();
+
+    // Middleware emits nonced CSP + x-nonce on page routes, while skipping /uploads/* and /api/uploads/*
+    const pageMwRes = await middleware(
+      new NextRequest('http://localhost:3000/guest/login', {
+        headers: { host: 'localhost:3000' },
+      })
+    );
+    const pageNonce = pageMwRes.headers.get(CSP_NONCE_HEADER);
+    expect(pageNonce).toBeTruthy();
+    expect(pageMwRes.headers.get('Content-Security-Policy')).toContain(`'nonce-${pageNonce}'`);
+
+    for (const uploadUrl of [
+      `http://localhost:3000/uploads/${testSubdirName}/legacy-vector.svg`,
+      `http://localhost:3000/api/uploads/${testSubdirName}/legacy-vector.svg`,
+      'http://localhost:3000/uploads/photos/approved.jpg',
+    ]) {
+      const uploadMwRes = await middleware(
+        new NextRequest(uploadUrl, {
+          headers: { host: 'localhost:3000', cookie: guestCookieHeader },
+        })
+      );
+      expect(uploadMwRes.headers.get(CSP_NONCE_HEADER)).toBeNull();
+      expect(uploadMwRes.headers.get('Content-Security-Policy')).toBeNull();
+    }
   });
 });

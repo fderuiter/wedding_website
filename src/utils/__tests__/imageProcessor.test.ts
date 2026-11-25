@@ -15,12 +15,15 @@ import {
 } from '../imageProcessor';
 import {
   isHeicBuffer,
+  isIcoBuffer,
   MAX_IMAGE_DIMENSION,
   MAX_IMAGE_PIXELS,
   MAX_WORKER_INPUT_BYTES,
   parseHeicSpatialExtents,
+  parseIcoDirectoryEntries,
   processImageWorkerBuffer,
   type HeicSpatialExtent,
+  type IcoDirectoryEntry,
 } from '../imageProcessorWorker';
 
 // Real 16x16 HEIC (ISOBMFF ftyp=heic, HEVC primary frame)
@@ -150,17 +153,168 @@ describe('imageProcessor - sanitizeImage', () => {
     expect(sanitizedMeta.format).toBe('webp');
   });
 
-  it('should ignore and bypass ICO files without modification', async () => {
-    // Create a dummy buffer for ICO file
-    const dummyIcoBytes = new Uint8Array([0, 0, 1, 0, 1, 0, 16, 16]);
-    const originalFile = createTestFile(dummyIcoBytes, 'favicon.ico', 'image/x-icon');
+  it('should parse multi-frame ICO directory headers and transcode the largest frame to PNG (both embedded PNG and BMP DIB frames)', async () => {
+    const png16 = await sharp({
+      create: {
+        width: 16,
+        height: 16,
+        channels: 4,
+        background: { r: 255, g: 0, b: 0, alpha: 1 },
+      },
+    })
+      .png()
+      .toBuffer();
 
-    const sanitizedFile = await sanitizeImage(originalFile);
+    const png48 = await sharp({
+      create: {
+        width: 48,
+        height: 48,
+        channels: 4,
+        background: { r: 0, g: 128, b: 255, alpha: 1 },
+      },
+    })
+      .png()
+      .toBuffer();
 
-    // Verify it is the exact same file object
-    expect(sanitizedFile).toBe(originalFile);
-    const bytes = new Uint8Array(await getFileArrayBuffer(sanitizedFile));
-    expect(bytes).toEqual(dummyIcoBytes);
+    // Build a 2-entry ICONDIR (16x16 + 48x48 PNG frames)
+    const headerSize = 6 + 2 * 16;
+    const icoMultiPng = Buffer.alloc(headerSize + png16.length + png48.length);
+    icoMultiPng.writeUInt16LE(0, 0); // reserved
+    icoMultiPng.writeUInt16LE(1, 2); // type = 1 (icon)
+    icoMultiPng.writeUInt16LE(2, 4); // count = 2
+
+    // Entry 0: 16x16
+    icoMultiPng[6] = 16;
+    icoMultiPng[7] = 16;
+    icoMultiPng.writeUInt16LE(1, 6 + 4);
+    icoMultiPng.writeUInt16LE(32, 6 + 6);
+    icoMultiPng.writeUInt32LE(png16.length, 6 + 8);
+    icoMultiPng.writeUInt32LE(headerSize, 6 + 12);
+
+    // Entry 1: 48x48 (largest)
+    icoMultiPng[22] = 48;
+    icoMultiPng[23] = 48;
+    icoMultiPng.writeUInt16LE(1, 22 + 4);
+    icoMultiPng.writeUInt16LE(32, 22 + 6);
+    icoMultiPng.writeUInt32LE(png48.length, 22 + 8);
+    icoMultiPng.writeUInt32LE(headerSize + png16.length, 22 + 12);
+
+    png16.copy(icoMultiPng, headerSize);
+    png48.copy(icoMultiPng, headerSize + png16.length);
+
+    expect(isIcoBuffer(icoMultiPng)).toBe(true);
+    const parsedEntries: IcoDirectoryEntry[] = parseIcoDirectoryEntries(icoMultiPng);
+    expect(parsedEntries).toHaveLength(2);
+    expect(parsedEntries[1]).toMatchObject({ width: 48, height: 48, isPngFrame: true });
+
+    const icoFile = createTestFile(new Uint8Array(icoMultiPng), 'favicon.ico', 'image/x-icon');
+    const sanitizedPng = await sanitizeImage(icoFile);
+    expect(sanitizedPng.name).toBe('favicon.png');
+    expect(sanitizedPng.type).toBe('image/png');
+
+    const sanitizedMeta = await sharp(Buffer.from(await getFileArrayBuffer(sanitizedPng))).metadata();
+    expect(sanitizedMeta.format).toBe('png');
+    expect(sanitizedMeta.width).toBe(48);
+    expect(sanitizedMeta.height).toBe(48);
+
+    // Build a classic uncompressed 32-bit BITMAPINFOHEADER DIB ICO frame (2x2)
+    const dibWidth = 2;
+    const dibHeight = 2;
+    const xorBytes = dibWidth * 4 * dibHeight; // 16 bytes
+    const andBytes = 4 * dibHeight; // 8 bytes (DWORD-padded 1-bit mask rows)
+    const dibBuf = Buffer.alloc(40 + xorBytes + andBytes);
+    dibBuf.writeUInt32LE(40, 0); // biSize
+    dibBuf.writeInt32LE(dibWidth, 4);
+    dibBuf.writeInt32LE(dibHeight * 2, 8); // XOR + AND height
+    dibBuf.writeUInt16LE(1, 12); // biPlanes
+    dibBuf.writeUInt16LE(32, 14); // biBitCount
+    dibBuf.writeUInt32LE(0, 16); // BI_RGB
+    // Fill BGRA pixels with opaque teal
+    for (let p = 0; p < dibWidth * dibHeight; p++) {
+      const off = 40 + p * 4;
+      dibBuf[off] = 180; // B
+      dibBuf[off + 1] = 160; // G
+      dibBuf[off + 2] = 20; // R
+      dibBuf[off + 3] = 255; // A
+    }
+
+    const dibIco = Buffer.alloc(22 + dibBuf.length);
+    dibIco.writeUInt16LE(0, 0);
+    dibIco.writeUInt16LE(1, 2);
+    dibIco.writeUInt16LE(1, 4);
+    dibIco[6] = dibWidth;
+    dibIco[7] = dibHeight;
+    dibIco.writeUInt16LE(1, 10);
+    dibIco.writeUInt16LE(32, 12);
+    dibIco.writeUInt32LE(dibBuf.length, 14);
+    dibIco.writeUInt32LE(22, 18);
+    dibBuf.copy(dibIco, 22);
+
+    const vndIcoFile = createTestFile(
+      new Uint8Array(dibIco),
+      'brand.ICO',
+      'image/vnd.microsoft.icon'
+    );
+    const sanitizedDibPng = await sanitizeImage(vndIcoFile);
+    expect(sanitizedDibPng.name).toBe('brand.png');
+    expect(sanitizedDibPng.type).toBe('image/png');
+    const dibMeta = await sharp(Buffer.from(await getFileArrayBuffer(sanitizedDibPng))).metadata();
+    expect(dibMeta.format).toBe('png');
+    expect(dibMeta.width).toBe(2);
+    expect(dibMeta.height).toBe(2);
+  });
+
+  it('should fail closed with ApiError(400) for corrupt/spoofed ICO files and unsupported image formats', async () => {
+    // Truncated ICO buffer
+    const truncatedIco = createTestFile(
+      new Uint8Array([0, 0, 1, 0, 1, 0, 16, 16]),
+      'favicon.ico',
+      'image/x-icon'
+    );
+    await expect(sanitizeImage(truncatedIco)).rejects.toThrow(ApiError);
+    await expect(sanitizeImage(truncatedIco)).rejects.toMatchObject({ statusCode: 400 });
+
+    // Out-of-bounds ICONDIRENTRY offset
+    const oobIco = Buffer.alloc(22 + 8);
+    oobIco.writeUInt16LE(0, 0);
+    oobIco.writeUInt16LE(1, 2);
+    oobIco.writeUInt16LE(1, 4);
+    oobIco[6] = 16;
+    oobIco[7] = 16;
+    oobIco.writeUInt32LE(64, 14); // claims 64 bytes past end of buffer
+    oobIco.writeUInt32LE(22, 18);
+    expect(() => parseIcoDirectoryEntries(oobIco)).toThrow(/Out-of-bounds ICO frame payload/);
+
+    // Spoofed ICO header uploaded with image/png MIME
+    const spoofedPngWithIcoBytes = createTestFile(
+      new Uint8Array(oobIco),
+      'spoof.png',
+      'image/png'
+    );
+    await expect(sanitizeImage(spoofedPngWithIcoBytes)).rejects.toMatchObject({ statusCode: 400 });
+
+    // Unsupported formats (SVG, GIF, octet-stream) must reject with ApiError(400) instead of bypassing
+    const svgFile = createTestFile(
+      new Uint8Array(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>')),
+      'vector.svg',
+      'image/svg+xml'
+    );
+    await expect(sanitizeImage(svgFile)).rejects.toThrow(ApiError);
+    await expect(sanitizeImage(svgFile)).rejects.toMatchObject({
+      statusCode: 400,
+      message: expect.stringContaining('Unsupported image format'),
+    });
+
+    const gifBytes = await sharp({
+      create: { width: 4, height: 4, channels: 4, background: { r: 255, g: 0, b: 0, alpha: 1 } },
+    })
+      .gif()
+      .toBuffer();
+    const gifFile = createTestFile(new Uint8Array(gifBytes), 'anim.gif', 'image/gif');
+    await expect(sanitizeImage(gifFile)).rejects.toMatchObject({
+      statusCode: 400,
+      message: expect.stringContaining('Unsupported image format'),
+    });
   });
 
   it('should throw an error if sharp fails to sanitize image', async () => {

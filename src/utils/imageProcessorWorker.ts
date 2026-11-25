@@ -24,6 +24,7 @@ export interface WorkerTaskMessage {
   id: number;
   buffer: Uint8Array;
   expectHeic?: boolean;
+  expectIco?: boolean;
   maxBytes?: number;
 }
 
@@ -31,12 +32,23 @@ export type WorkerResult = WorkerSuccessResult | WorkerErrorResult;
 
 export interface ProcessImageWorkerOptions {
   expectHeic?: boolean;
+  expectIco?: boolean;
   maxBytes?: number;
 }
 
 export interface HeicSpatialExtent {
   width: number;
   height: number;
+}
+
+export interface IcoDirectoryEntry {
+  index: number;
+  width: number;
+  height: number;
+  bitCount: number;
+  bytesInRes: number;
+  imageOffset: number;
+  isPngFrame: boolean;
 }
 
 // Matches MAX_GUEST_PHOTO_SIZE (10 MB) in src/utils/validationPrimitives.ts without relative TS imports
@@ -245,10 +257,315 @@ export function isHeicBuffer(input: Uint8Array | ArrayBuffer | Buffer): boolean 
   return !hasAvifCompat;
 }
 
+const PNG_MAGIC_BYTES = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] as const;
+const MAX_ICO_DIRECTORY_ENTRIES = 256;
+
+function readUint16LE(bytes: Uint8Array, offset: number): number {
+  return (bytes[offset] | (bytes[offset + 1] << 8)) >>> 0;
+}
+
+function readUint32LE(bytes: Uint8Array, offset: number): number {
+  return (
+    (bytes[offset] >>> 0) +
+    ((bytes[offset + 1] << 8) >>> 0) +
+    ((bytes[offset + 2] << 16) >>> 0) +
+    ((bytes[offset + 3] << 24) >>> 0)
+  );
+}
+
+function readInt32LE(bytes: Uint8Array, offset: number): number {
+  return (
+    bytes[offset] |
+    (bytes[offset + 1] << 8) |
+    (bytes[offset + 2] << 16) |
+    (bytes[offset + 3] << 24)
+  );
+}
+
+function hasPngSignature(bytes: Uint8Array, offset: number, length: number): boolean {
+  if (length < PNG_MAGIC_BYTES.length) {
+    return false;
+  }
+  for (let i = 0; i < PNG_MAGIC_BYTES.length; i++) {
+    if (bytes[offset + i] !== PNG_MAGIC_BYTES[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Checks whether an input buffer starts with a structurally valid ICO ICONDIR header
+ * and in-bounds directory table.
+ */
+export function isIcoBuffer(input: Uint8Array | ArrayBuffer | Buffer): boolean {
+  const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+  if (bytes.byteLength < 22) {
+    return false;
+  }
+  const reserved = readUint16LE(bytes, 0);
+  const type = readUint16LE(bytes, 2);
+  const count = readUint16LE(bytes, 4);
+  if (reserved !== 0 || type !== 1 || count < 1 || count > MAX_ICO_DIRECTORY_ENTRIES) {
+    return false;
+  }
+  const directoryEnd = 6 + count * 16;
+  if (directoryEnd > bytes.byteLength) {
+    return false;
+  }
+  for (let i = 0; i < count; i++) {
+    const entryOffset = 6 + i * 16;
+    if (bytes[entryOffset + 3] !== 0) {
+      return false;
+    }
+    const bytesInRes = readUint32LE(bytes, entryOffset + 8);
+    const imageOffset = readUint32LE(bytes, entryOffset + 12);
+    if (
+      bytesInRes < 8 ||
+      imageOffset < directoryEnd ||
+      imageOffset + bytesInRes > bytes.byteLength
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Parses and validates all ICONDIRENTRY records inside an ICO container, resolving
+ * effective frame dimensions from embedded PNG IHDR or DIB BITMAPINFOHEADER headers.
+ */
+export function parseIcoDirectoryEntries(
+  input: Uint8Array | ArrayBuffer | Buffer
+): IcoDirectoryEntry[] {
+  const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+  if (bytes.byteLength < 22) {
+    throw new Error('Invalid ICO file header');
+  }
+  const reserved = readUint16LE(bytes, 0);
+  const type = readUint16LE(bytes, 2);
+  const count = readUint16LE(bytes, 4);
+  if (reserved !== 0 || type !== 1 || count < 1 || count > MAX_ICO_DIRECTORY_ENTRIES) {
+    throw new Error('Invalid ICO file header');
+  }
+
+  const directoryEnd = 6 + count * 16;
+  if (directoryEnd > bytes.byteLength) {
+    throw new Error('Truncated ICO directory table');
+  }
+
+  const entries: IcoDirectoryEntry[] = [];
+  for (let i = 0; i < count; i++) {
+    const entryOffset = 6 + i * 16;
+    const rawWidth = bytes[entryOffset];
+    const rawHeight = bytes[entryOffset + 1];
+    const entryReserved = bytes[entryOffset + 3];
+    if (entryReserved !== 0) {
+      throw new Error('Malformed ICO directory entry reserved byte');
+    }
+
+    const dirWidth = rawWidth === 0 ? 256 : rawWidth;
+    const dirHeight = rawHeight === 0 ? 256 : rawHeight;
+    const bitCount = readUint16LE(bytes, entryOffset + 6);
+    const bytesInRes = readUint32LE(bytes, entryOffset + 8);
+    const imageOffset = readUint32LE(bytes, entryOffset + 12);
+
+    if (
+      bytesInRes < 8 ||
+      imageOffset < directoryEnd ||
+      imageOffset + bytesInRes > bytes.byteLength
+    ) {
+      throw new Error('Out-of-bounds ICO frame payload');
+    }
+
+    assertWithinImageDimensionLimits(dirWidth, dirHeight, 'ICO directory entry');
+
+    const isPngFrame = hasPngSignature(bytes, imageOffset, bytesInRes);
+    let effectiveWidth = dirWidth;
+    let effectiveHeight = dirHeight;
+    let effectiveBitCount = bitCount;
+
+    if (isPngFrame) {
+      if (bytesInRes < 24 || readRawFourCC(bytes, imageOffset + 12) !== 'IHDR') {
+        throw new Error('Malformed embedded PNG header in ICO frame');
+      }
+      effectiveWidth = readUint32BE(bytes, imageOffset + 16);
+      effectiveHeight = readUint32BE(bytes, imageOffset + 20);
+      assertWithinImageDimensionLimits(effectiveWidth, effectiveHeight, 'ICO PNG frame');
+    } else {
+      if (bytesInRes < 40) {
+        throw new Error('Truncated ICO DIB frame header');
+      }
+      const dibHeaderSize = readUint32LE(bytes, imageOffset);
+      if (dibHeaderSize < 40 || dibHeaderSize > bytesInRes) {
+        throw new Error('Malformed ICO DIB header size');
+      }
+      const dibWidth = readInt32LE(bytes, imageOffset + 4);
+      const dibCombinedHeight = readInt32LE(bytes, imageOffset + 8);
+      const dibBpp = readUint16LE(bytes, imageOffset + 14);
+      const dibHeight = Math.floor(Math.abs(dibCombinedHeight) / 2);
+      assertWithinImageDimensionLimits(dibWidth, dibHeight, 'ICO DIB frame');
+      effectiveWidth = dibWidth;
+      effectiveHeight = dibHeight;
+      if (dibBpp > 0) {
+        effectiveBitCount = dibBpp;
+      }
+    }
+
+    entries.push({
+      index: i,
+      width: effectiveWidth,
+      height: effectiveHeight,
+      bitCount: effectiveBitCount,
+      bytesInRes,
+      imageOffset,
+      isPngFrame,
+    });
+  }
+
+  return entries;
+}
+
+function selectLargestIcoEntry(entries: IcoDirectoryEntry[]): IcoDirectoryEntry {
+  let best = entries[0];
+  for (let i = 1; i < entries.length; i++) {
+    const candidate = entries[i];
+    const bestArea = best.width * best.height;
+    const candidateArea = candidate.width * candidate.height;
+    if (
+      candidateArea > bestArea ||
+      (candidateArea === bestArea && candidate.bitCount > best.bitCount) ||
+      (candidateArea === bestArea &&
+        candidate.bitCount === best.bitCount &&
+        candidate.bytesInRes > best.bytesInRes)
+    ) {
+      best = candidate;
+    }
+  }
+  return best;
+}
+
+function decodeIcoDibFrameToRgba(frame: Uint8Array): {
+  rgba: Buffer;
+  width: number;
+  height: number;
+} {
+  if (frame.byteLength < 40) {
+    throw new Error('Truncated ICO DIB frame');
+  }
+  const headerSize = readUint32LE(frame, 0);
+  if (headerSize < 40 || headerSize > frame.byteLength) {
+    throw new Error('Invalid ICO DIB header size');
+  }
+  const width = readInt32LE(frame, 4);
+  const combinedHeight = readInt32LE(frame, 8);
+  const planes = readUint16LE(frame, 12);
+  const bpp = readUint16LE(frame, 14);
+  const compression = readUint32LE(frame, 16);
+  const clrUsed = readUint32LE(frame, 32);
+
+  if (planes !== 0 && planes !== 1) {
+    throw new Error(`Unsupported ICO DIB color planes: ${planes}`);
+  }
+  if (compression !== 0) {
+    throw new Error(`Unsupported ICO DIB compression mode: ${compression}`);
+  }
+  if (bpp !== 1 && bpp !== 4 && bpp !== 8 && bpp !== 24 && bpp !== 32) {
+    throw new Error(`Unsupported ICO DIB bit depth: ${bpp}`);
+  }
+
+  const height = Math.floor(Math.abs(combinedHeight) / 2);
+  assertWithinImageDimensionLimits(width, height, 'ICO DIB frame');
+  const topDown = combinedHeight < 0;
+
+  let paletteEntries = 0;
+  if (bpp <= 8) {
+    const maxPalette = 1 << bpp;
+    paletteEntries = clrUsed > 0 ? clrUsed : maxPalette;
+    if (paletteEntries < 1 || paletteEntries > maxPalette) {
+      throw new Error('Malformed ICO DIB palette count');
+    }
+  }
+
+  const paletteBytes = paletteEntries * 4;
+  const xorOffset = headerSize + paletteBytes;
+  const xorStride = Math.floor((width * bpp + 31) / 32) * 4;
+  const xorByteLength = xorStride * height;
+  if (xorOffset + xorByteLength > frame.byteLength) {
+    throw new Error('Truncated ICO DIB pixel data');
+  }
+
+  const andOffset = xorOffset + xorByteLength;
+  const andStride = Math.floor((width + 31) / 32) * 4;
+  const hasAndMask = andOffset + andStride * height <= frame.byteLength;
+
+  let hasExplicitAlpha = false;
+  if (bpp === 32) {
+    for (let row = 0; row < height && !hasExplicitAlpha; row++) {
+      const rowBase = xorOffset + row * xorStride;
+      for (let x = 0; x < width; x++) {
+        if (frame[rowBase + x * 4 + 3] !== 0) {
+          hasExplicitAlpha = true;
+          break;
+        }
+      }
+    }
+  }
+
+  const rgba = Buffer.alloc(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    const srcRow = topDown ? y : height - 1 - y;
+    const xorRowBase = xorOffset + srcRow * xorStride;
+    const andRowBase = andOffset + srcRow * andStride;
+
+    for (let x = 0; x < width; x++) {
+      const dstIdx = (y * width + x) * 4;
+      const isMaskedOut =
+        hasAndMask &&
+        ((frame[andRowBase + (x >> 3)] >> (7 - (x & 7))) & 1) === 1;
+
+      if (bpp === 32) {
+        const px = xorRowBase + x * 4;
+        rgba[dstIdx] = frame[px + 2];
+        rgba[dstIdx + 1] = frame[px + 1];
+        rgba[dstIdx + 2] = frame[px];
+        rgba[dstIdx + 3] = hasExplicitAlpha ? frame[px + 3] : (isMaskedOut ? 0 : 255);
+      } else if (bpp === 24) {
+        const px = xorRowBase + x * 3;
+        rgba[dstIdx] = frame[px + 2];
+        rgba[dstIdx + 1] = frame[px + 1];
+        rgba[dstIdx + 2] = frame[px];
+        rgba[dstIdx + 3] = isMaskedOut ? 0 : 255;
+      } else {
+        let paletteIdx = 0;
+        if (bpp === 8) {
+          paletteIdx = frame[xorRowBase + x];
+        } else if (bpp === 4) {
+          const byteVal = frame[xorRowBase + (x >> 1)];
+          paletteIdx = (x & 1) === 0 ? (byteVal >> 4) & 0x0f : byteVal & 0x0f;
+        } else {
+          const byteVal = frame[xorRowBase + (x >> 3)];
+          paletteIdx = (byteVal >> (7 - (x & 7))) & 1;
+        }
+        if (paletteIdx >= paletteEntries) {
+          throw new Error('Out-of-range ICO DIB palette index');
+        }
+        const palBase = headerSize + paletteIdx * 4;
+        rgba[dstIdx] = frame[palBase + 2];
+        rgba[dstIdx + 1] = frame[palBase + 1];
+        rgba[dstIdx + 2] = frame[palBase];
+        rgba[dstIdx + 3] = isMaskedOut ? 0 : 255;
+      }
+    }
+  }
+
+  return { rgba, width, height };
+}
+
 /**
  * Sanitizes an image buffer in a worker thread by auto-rotating based on EXIF
- * orientation tag, stripping all EXIF metadata, and transcoding HEIC/HEIF
- * primary frames to sanitized JPEG images.
+ * orientation tag, stripping all EXIF metadata, transcoding HEIC/HEIF primary
+ * frames to sanitized JPEG images, and transcoding the largest ICO frame to PNG.
  */
 export async function processImageWorkerBuffer(
   inputBuffer: Uint8Array | ArrayBuffer | Buffer,
@@ -270,8 +587,54 @@ export async function processImageWorkerBuffer(
     throw new Error('Invalid HEIC/HEIF file header');
   }
 
+  const uint8View = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  const icoDetected = isIcoBuffer(uint8View);
+  if (options?.expectIco && !icoDetected) {
+    throw new Error('Invalid ICO file header');
+  }
+
+  if (icoDetected) {
+    const entries = parseIcoDirectoryEntries(uint8View);
+    const largestEntry = selectLargestIcoEntry(entries);
+    const frameSlice = buffer.subarray(
+      largestEntry.imageOffset,
+      largestEntry.imageOffset + largestEntry.bytesInRes
+    );
+
+    if (largestEntry.isPngFrame) {
+      const frameMeta = await sharp(frameSlice, { limitInputPixels: MAX_IMAGE_PIXELS }).metadata();
+      if (frameMeta.format !== 'png') {
+        throw new Error('Invalid embedded PNG frame in ICO container');
+      }
+      assertWithinImageDimensionLimits(
+        frameMeta.width ?? 0,
+        frameMeta.height ?? 0,
+        'ICO PNG frame'
+      );
+      const pngBuffer = await sharp(frameSlice, { limitInputPixels: MAX_IMAGE_PIXELS })
+        .rotate()
+        .png()
+        .toBuffer();
+      return new Uint8Array(pngBuffer);
+    }
+
+    const decodedDib = decodeIcoDibFrameToRgba(
+      new Uint8Array(frameSlice.buffer, frameSlice.byteOffset, frameSlice.byteLength)
+    );
+    const pngBuffer = await sharp(decodedDib.rgba, {
+      limitInputPixels: MAX_IMAGE_PIXELS,
+      raw: {
+        width: decodedDib.width,
+        height: decodedDib.height,
+        channels: 4,
+      },
+    })
+      .png()
+      .toBuffer();
+    return new Uint8Array(pngBuffer);
+  }
+
   if (heicDetected) {
-    const uint8View = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
     const spatialExtents = parseHeicSpatialExtents(uint8View);
     if (spatialExtents.length === 0) {
       throw new Error('Missing HEIC spatial extents (ispe) metadata');
@@ -351,6 +714,7 @@ if (parentPort && isPoolWorker) {
     try {
       const sanitized = await processImageWorkerBuffer(task.buffer, {
         expectHeic: Boolean(task.expectHeic),
+        expectIco: Boolean(task.expectIco),
         maxBytes: typeof task.maxBytes === 'number' ? task.maxBytes : undefined,
       });
       const response: WorkerSuccessResult = {
@@ -385,10 +749,12 @@ if (parentPort && isPoolWorker) {
       const legacyData = workerData as {
         buffer: Uint8Array;
         expectHeic?: boolean;
+        expectIco?: boolean;
         maxBytes?: number;
       };
       const sanitized = await processImageWorkerBuffer(legacyData.buffer, {
         expectHeic: Boolean(legacyData.expectHeic),
+        expectIco: Boolean(legacyData.expectIco),
         maxBytes: typeof legacyData.maxBytes === 'number' ? legacyData.maxBytes : undefined,
       });
       parentPort?.postMessage(

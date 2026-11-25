@@ -599,7 +599,7 @@ class S3StorageProvider implements StorageProvider {
         key,
         url: this.getPublicUrl(key),
         size: response.ContentLength ?? 0,
-        mimeType: response.ContentType ?? getLocalUploadMimeType(key),
+        mimeType: getLocalUploadMimeType(key),
         metadata: response.Metadata,
         etag: response.ETag,
         updatedAt: response.LastModified,
@@ -649,7 +649,7 @@ class S3StorageProvider implements StorageProvider {
         return {
           key,
           size: headRes.ContentLength ?? 0,
-          mimeType: headRes.ContentType || getLocalUploadMimeType(key),
+          mimeType: getLocalUploadMimeType(key),
           updatedAt: headRes.LastModified ?? new Date(0),
         };
       }
@@ -698,7 +698,7 @@ class S3StorageProvider implements StorageProvider {
       return {
         key,
         size: getRes.ContentLength ?? 0,
-        mimeType: getRes.ContentType || getLocalUploadMimeType(key),
+        mimeType: getLocalUploadMimeType(key),
         updatedAt: getRes.LastModified ?? new Date(0),
         stream: webStream,
       };

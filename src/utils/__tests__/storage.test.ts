@@ -318,11 +318,11 @@ describe('Hybrid Storage Provider', () => {
       mockSend.mockRestore();
     });
 
-    it('fetches metadata using HeadObjectCommand', async () => {
+    it('fetches metadata using HeadObjectCommand and derives mimeType from key extension instead of untrusted S3 ContentType', async () => {
       const provider = getStorageProvider();
       const mockSend = jest.spyOn(S3Client.prototype, 'send').mockResolvedValue({
         ContentLength: 4096,
-        ContentType: 'image/jpeg',
+        ContentType: 'text/html',
         Metadata: { owner: 'admin' },
         ETag: '"etag-123"',
         LastModified: new Date('2026-05-01'),
@@ -340,6 +340,9 @@ describe('Hybrid Storage Provider', () => {
         updatedAt: new Date('2026-05-01'),
       });
 
+      const unknownExtMeta = await provider.getMetadata('uploads/legacy.svg');
+      expect(unknownExtMeta?.mimeType).toBe('application/octet-stream');
+
       mockSend.mockRestore();
     });
 
@@ -352,7 +355,7 @@ describe('Hybrid Storage Provider', () => {
           expect(cmd).toBeInstanceOf(GetObjectCommand);
           return {
             ContentLength: payloadBytes.byteLength,
-            ContentType: 'image/jpeg',
+            ContentType: 'text/html',
             LastModified: new Date('2026-06-01T12:00:00Z'),
             Body: {
               transformToWebStream: () =>
@@ -369,7 +372,7 @@ describe('Hybrid Storage Provider', () => {
           expect(cmd).toBeInstanceOf(HeadObjectCommand);
           return {
             ContentLength: payloadBytes.byteLength,
-            ContentType: 'image/jpeg',
+            ContentType: 'text/html',
             LastModified: new Date('2026-06-01T12:00:00Z'),
           } as never;
         })

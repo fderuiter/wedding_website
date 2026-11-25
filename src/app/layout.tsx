@@ -20,7 +20,8 @@ import {
 import { ThemeProvider, ThemeMode } from '@/components/ThemeProvider';
 import SetupWizard from '@/components/setup/LazySetupWizard';
 import { ToastProvider } from '@/components/ui/ToastProvider';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
+import { CSP_NONCE_HEADER, isValidCspNonce } from '@/lib/csp';
 import { generateThemeStylesheet } from '@/lib/theme/stylesheet';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { isGuestRequest } from '@/core/auth/guest.server';
@@ -110,6 +111,7 @@ export default async function RootLayout({
 
   let initialThemeMode: ThemeMode = 'system';
   let isAuthenticated = isStaticExport;
+  let cspNonce: string | undefined;
   if (!isStaticExport) {
     await enforceActiveGuestPageSession();
 
@@ -131,6 +133,16 @@ export default async function RootLayout({
       }
     } catch {
       // Ignore if cookies are unavailable
+    }
+
+    try {
+      const headerStore = await headers();
+      const rawNonce = headerStore?.get(CSP_NONCE_HEADER)?.trim();
+      if (isValidCspNonce(rawNonce)) {
+        cspNonce = rawNonce;
+      }
+    } catch {
+      // Ignore if headers are unavailable
     }
   }
 
@@ -158,7 +170,7 @@ export default async function RootLayout({
       className={[initialHtmlClass, fontClasses].filter(Boolean).join(' ')}
     >
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <script nonce={cspNonce} dangerouslySetInnerHTML={{ __html: themeScript }} />
         <style id="dynamic-theme-style" dangerouslySetInnerHTML={{ __html: serverThemeStyles }} />
       </head>
       <body
