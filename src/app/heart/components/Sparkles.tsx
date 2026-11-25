@@ -6,7 +6,15 @@ import { inSphere } from '../../../utils/math';
 import { useReducedMotion } from '../../../hooks/useReducedMotion';
 import { useTheme } from '../../../components/ThemeProvider';
 
-export function Sparkles({ count = 200, color }: { count?: number; color?: string }) {
+export function Sparkles({
+  count = 200,
+  color,
+  isPaused = false,
+}: {
+  count?: number;
+  color?: string;
+  isPaused?: boolean;
+}) {
   const reduceMotion = useReducedMotion();
   const { themeAccent } = useTheme();
   const activeColor = color || themeAccent;
@@ -17,7 +25,7 @@ export function Sparkles({ count = 200, color }: { count?: number; color?: strin
   );
 
   useFrame(() => {
-    if (pointsRef.current && !reduceMotion) {
+    if (pointsRef.current && !reduceMotion && !isPaused) {
       pointsRef.current.rotation.y += 0.001;
     }
   });

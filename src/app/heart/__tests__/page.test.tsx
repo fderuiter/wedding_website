@@ -51,9 +51,26 @@ const mockRightBodyApi = mockCreateRigidBodyApi();
 let canvasMountCount = 0;
 
 jest.mock('@react-three/fiber', () => ({
-  Canvas: ({ children }: { children: React.ReactNode }) => {
+  Canvas: ({
+    children,
+    onCreated,
+  }: {
+    children: React.ReactNode;
+    onCreated?: (state: { gl: { domElement: HTMLCanvasElement } }) => void;
+  }) => {
     canvasMountCount += 1;
-    return <div data-testid="canvas">{children}</div>;
+    const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+    React.useEffect(() => {
+      if (canvasRef.current && onCreated) {
+        onCreated({ gl: { domElement: canvasRef.current } });
+      }
+    }, [onCreated]);
+    return (
+      <div data-testid="canvas">
+        <canvas ref={canvasRef} />
+        {children}
+      </div>
+    );
   },
   useFrame: jest.fn(),
   useThree: jest.fn(() => ({
@@ -226,9 +243,11 @@ describe('HeartPage', () => {
   });
 
   it('renders the page without crashing', () => {
-    render(<HeartPage />);
+    const { container } = render(<HeartPage />);
+    expect(screen.getByText('Pause Animation')).toBeInTheDocument();
     expect(screen.getByText('Back Home')).toBeInTheDocument();
     expect(screen.getByText('Reset')).toBeInTheDocument();
+    expect(container.querySelector('canvas')).toHaveAttribute('aria-hidden', 'true');
   });
 
   it('handles reset button clicks', () => {
@@ -549,6 +568,57 @@ describe('HeartPage', () => {
       expect(leftShardBtn).toBeInTheDocument();
       expect(document.activeElement).toBe(resetButton);
     });
+
+    it('focuses partner-named left shard via prefix fallback selector when ref is unavailable and does not trap .skip-link', () => {
+      rafSpy.mockRestore();
+      const callbacks: FrameRequestCallback[] = [];
+      rafSpy = jest.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => {
+        callbacks.push(cb);
+        return callbacks.length;
+      });
+      const cancelSpy = jest.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+
+      const externalShard = document.createElement('button');
+      externalShard.setAttribute('aria-label', 'Broken heart left segment: Abbi.');
+
+      try {
+        const { unmount } = render(
+          <>
+            <a href="#main-content" className="skip-link">Skip to main content</a>
+            <main id="main-content" tabIndex={-1}>
+              <HeartPage />
+            </main>
+          </>
+        );
+
+        const skipLink = screen.getByText('Skip to main content');
+        act(() => {
+          skipLink.focus();
+        });
+        expect(document.activeElement).toBe(skipLink);
+
+        const wholeHeartBtn = screen.getByLabelText(/Interactive 3D Heart/);
+        act(() => {
+          wholeHeartBtn.focus();
+          fireEvent.click(wholeHeartBtn);
+        });
+
+        // Remove rendered Drei shard button and attach detached portal button so focusLeft exercises querySelector fallback
+        const mountedLeftShard = screen.getByLabelText('Broken heart left segment: Abbi.');
+        mountedLeftShard.remove();
+        document.body.appendChild(externalShard);
+
+        act(() => {
+          callbacks.splice(0).forEach((cb) => cb(16));
+        });
+        expect(document.activeElement).toBe(externalShard);
+
+        unmount();
+      } finally {
+        externalShard.remove();
+        cancelSpy.mockRestore();
+      }
+    });
   });
 
   describe('Accessible Canvas Easter Egg', () => {
@@ -670,6 +740,72 @@ describe('HeartPage', () => {
       });
 
       expect(screen.getByLabelText('Interactive 3D Heart. Status: Whole. Secret message revealed: I love you!')).toBeInTheDocument();
+    });
+
+    it('moves kinematically via arrow keys into the Easter egg zone and restores Dynamic body type on drag, break, and Reset', () => {
+      const prevWidth = global.innerWidth;
+      global.innerWidth = 1024;
+      let trackedPos = { x: 0, y: 0, z: 0 };
+      mockMainBodyApi.translation.mockImplementation(() => trackedPos);
+      mockMainBodyApi.setNextKinematicTranslation.mockImplementation((next: { x: number; y: number; z: number }) => {
+        trackedPos = next;
+      });
+
+      try {
+        render(<HeartPage />);
+        setupGroupMock();
+
+        const wholeHeartBtn = screen.getByLabelText('Interactive 3D Heart: Abbi and Fred. Status: Whole.');
+        act(() => {
+          wholeHeartBtn.focus();
+        });
+
+        // Step right 4 times and up 2 times (step = 20 * 0.05 = 1.0 -> (4, 2))
+        for (let i = 0; i < 4; i++) {
+          fireEvent.keyDown(wholeHeartBtn, { key: 'ArrowRight' });
+        }
+        for (let i = 0; i < 2; i++) {
+          fireEvent.keyDown(wholeHeartBtn, { key: 'ArrowUp' });
+        }
+
+        expect(mockMainBodyApi.setBodyType).toHaveBeenCalledWith(RigidBodyType.KinematicPositionBased, true);
+        expect(mockMainBodyApi.applyImpulse).not.toHaveBeenCalled();
+        expect(trackedPos.x).toBeCloseTo(4, 5);
+        expect(trackedPos.y).toBeCloseTo(2, 5);
+
+        const mockState = { clock: { getElapsedTime: () => 1.0 } };
+        act(() => {
+          physicsFrameCallback?.(mockState, 0.016);
+        });
+
+        expect(screen.getByRole('status')).toHaveTextContent('I love you!');
+        expect(mockMainBodyApi.addForce).not.toHaveBeenCalled();
+
+        // Clamps within ScreenBounds (viewport 10x7.5, scale 0.6 -> maxX = 4.1, maxY = 2.85)
+        for (let i = 0; i < 5; i++) {
+          fireEvent.keyDown(wholeHeartBtn, { key: 'ArrowRight' });
+          fireEvent.keyDown(wholeHeartBtn, { key: 'ArrowUp' });
+        }
+        expect(trackedPos.x).toBeCloseTo(4.1, 5);
+        expect(trackedPos.y).toBeCloseTo(2.85, 5);
+
+        // Pointer drag start + end restores Dynamic body type
+        const group = screen.getAllByTestId('rigidbody')[0].querySelector('group') || screen.getAllByTestId('rigidbody')[0].firstChild;
+        mockMainBodyApi.setBodyType.mockClear();
+        fireEvent.pointerDown(group as Element, { clientX: 400, clientY: 300, pointerId: 1 });
+        fireEvent.pointerUp(group as Element, { clientX: 400, clientY: 300, pointerId: 1 });
+        expect(mockMainBodyApi.setBodyType).toHaveBeenLastCalledWith(RigidBodyType.Dynamic, true);
+
+        // Arrow movement then Reset restores Dynamic body type cleanly
+        fireEvent.keyDown(wholeHeartBtn, { key: 'ArrowLeft' });
+        mockMainBodyApi.setBodyType.mockClear();
+        fireEvent.click(screen.getByRole('button', { name: 'Reset heart' }));
+        expect(mockMainBodyApi.setBodyType).toHaveBeenCalledWith(RigidBodyType.Dynamic, true);
+      } finally {
+        global.innerWidth = prevWidth;
+        mockMainBodyApi.translation.mockReturnValue({ x: 0, y: 0, z: 0 });
+        mockMainBodyApi.setNextKinematicTranslation.mockReset();
+      }
     });
   });
 

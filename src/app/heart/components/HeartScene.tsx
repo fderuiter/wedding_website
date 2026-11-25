@@ -18,6 +18,11 @@ import { Sparkles } from './Sparkles';
 
 export type PerformanceTier = 'high' | 'medium' | 'low';
 
+const KEYBOARD_STEP_SCALE = 0.05;
+const MAIN_BODY_USER_DATA = { id: 'main' };
+const LEFT_SHARD_USER_DATA = { id: 'left' };
+const RIGHT_SHARD_USER_DATA = { id: 'right' };
+
 type FpsTestableWindow = Window & {
   __mockFps?: number;
 };
@@ -26,6 +31,7 @@ interface HeartSceneProps {
   scale: number;
   interacted: boolean;
   onInteract: () => void;
+  isPaused?: boolean;
   performanceTier: PerformanceTier;
   onTierChange: (tier: PerformanceTier) => void;
   resetKey: number;
@@ -50,6 +56,7 @@ function PhysicsHeart({
   scale,
   interacted,
   onInteract,
+  isPaused = false,
   primaryColor,
   secondaryColor,
   accentColor,
@@ -61,6 +68,7 @@ function PhysicsHeart({
   scale: number;
   interacted: boolean;
   onInteract: () => void;
+  isPaused?: boolean;
   primaryColor: string;
   secondaryColor: string;
   accentColor: string;
@@ -85,6 +93,8 @@ function PhysicsHeart({
   const groupRef = useRef<THREE.Group>(null!);
   const [pulseSpeed, setPulseSpeed] = useState(physics.pulseSpeedIdle);
   const [showEasterEgg, setShowEasterEgg] = useState(false);
+  const [isKeyboardControlled, setIsKeyboardControlled] = useState(false);
+  const keyboardPositionRef = useRef<{ x: number; y: number; z: number } | null>(null);
   const baseWholeHeartLabel = namesText
     ? `Interactive 3D Heart: ${namesText}. Status: Whole.`
     : 'Interactive 3D Heart. Status: Whole.';
@@ -97,17 +107,59 @@ function PhysicsHeart({
   const leftButtonRef = useRef<HTMLButtonElement | null>(null);
   const rightButtonRef = useRef<HTMLButtonElement | null>(null);
   const focusedButtonRef = useRef<'none' | 'whole' | 'left' | 'right'>('none');
+  const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleFocus = (type: 'whole' | 'left' | 'right') => {
+    if (blurTimeoutRef.current !== null) {
+      clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = null;
+    }
     focusedButtonRef.current = type;
   };
 
   const handleBlur = (type: 'whole' | 'left' | 'right') => {
-    setTimeout(() => {
+    if (blurTimeoutRef.current !== null) {
+      clearTimeout(blurTimeoutRef.current);
+    }
+    blurTimeoutRef.current = setTimeout(() => {
       if (focusedButtonRef.current === type) {
         focusedButtonRef.current = 'none';
       }
+      blurTimeoutRef.current = null;
     }, 50);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (blurTimeoutRef.current !== null) {
+        clearTimeout(blurTimeoutRef.current);
+        blurTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  const stepHeartByKeyboard = (dirX: number, dirY: number) => {
+    if (!heartRef.current) return;
+    if (!interacted) onInteract();
+    setIsKeyboardControlled(true);
+
+    const currentPos = keyboardPositionRef.current ?? heartRef.current.translation();
+    const step = physics.accessibilityImpulse * KEYBOARD_STEP_SCALE;
+    const colliderMargin = Math.min(1.5 * scale, 1);
+    const maxX = Math.max(0, viewport.width / 2 - colliderMargin);
+    const maxY = Math.max(0, viewport.height / 2 - colliderMargin);
+    const nextPosition = {
+      x: Math.max(-maxX, Math.min(maxX, currentPos.x + dirX * step)),
+      y: Math.max(-maxY, Math.min(maxY, currentPos.y + dirY * step)),
+      z: currentPos.z,
+    };
+
+    keyboardPositionRef.current = nextPosition;
+    heartRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    heartRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    heartRef.current.setBodyType(RigidBodyType.KinematicPositionBased, true);
+    heartRef.current.setTranslation?.(nextPosition, true);
+    heartRef.current.setNextKinematicTranslation(nextPosition);
   };
 
   const {
@@ -133,24 +185,16 @@ function PhysicsHeart({
         action: 'Heart broken',
       },
       onUp: () => {
-        if (!heartRef.current) return;
-        if (!interacted) onInteract();
-        heartRef.current.applyImpulse({ x: 0, y: physics.accessibilityImpulse, z: 0 }, true);
+        stepHeartByKeyboard(0, 1);
       },
       onDown: () => {
-        if (!heartRef.current) return;
-        if (!interacted) onInteract();
-        heartRef.current.applyImpulse({ x: 0, y: -physics.accessibilityImpulse, z: 0 }, true);
+        stepHeartByKeyboard(0, -1);
       },
       onLeft: () => {
-        if (!heartRef.current) return;
-        if (!interacted) onInteract();
-        heartRef.current.applyImpulse({ x: -physics.accessibilityImpulse, y: 0, z: 0 }, true);
+        stepHeartByKeyboard(-1, 0);
       },
       onRight: () => {
-        if (!heartRef.current) return;
-        if (!interacted) onInteract();
-        heartRef.current.applyImpulse({ x: physics.accessibilityImpulse, y: 0, z: 0 }, true);
+        stepHeartByKeyboard(1, 0);
       },
       onAction: (e) => {
         if (!heartRef.current) return;
@@ -159,6 +203,8 @@ function PhysicsHeart({
       },
     },
     onDragStart: () => {
+      setIsKeyboardControlled(false);
+      keyboardPositionRef.current = null;
       if (!interacted) onInteract();
       setPulseSpeed(physics.pulseSpeedDragging);
       if (heartRef.current) {
@@ -191,9 +237,15 @@ function PhysicsHeart({
       }
     },
     onDestroy: () => {
+      setIsKeyboardControlled(false);
+      keyboardPositionRef.current = null;
       if (heartRef.current) {
         heartRef.current.setBodyType(RigidBodyType.Dynamic, true);
       }
+    },
+    onReconstruct: () => {
+      setIsKeyboardControlled(false);
+      keyboardPositionRef.current = null;
     },
   });
 
@@ -232,6 +284,8 @@ function PhysicsHeart({
     groupRef,
     isBroken,
     reduceMotion,
+    isPaused,
+    isKeyboardControlled,
     interacted,
     viewportWidth: viewport.width,
     viewportHeight: viewport.height,
@@ -241,39 +295,55 @@ function PhysicsHeart({
   });
 
   useEffect(() => {
+    let rafId: number | null = null;
+    let cancelled = false;
+
     if (isBroken) {
       if (focusedButtonRef.current === 'whole') {
         const focusLeft = () => {
-          if (leftButtonRef.current) {
+          if (cancelled) return;
+          if (leftButtonRef.current && leftButtonRef.current.isConnected) {
             leftButtonRef.current.focus();
           } else {
-            const btn = document.querySelector('[aria-label="Broken heart left segment."]') as HTMLElement | null;
+            const btn = document.querySelector<HTMLElement>(
+              '[aria-label^="Broken heart left segment"]',
+            );
             if (btn) {
               btn.focus();
             } else {
-              requestAnimationFrame(focusLeft);
+              rafId = requestAnimationFrame(focusLeft);
             }
           }
         };
-        requestAnimationFrame(focusLeft);
+        rafId = requestAnimationFrame(focusLeft);
       }
     } else {
       if (focusedButtonRef.current === 'left' || focusedButtonRef.current === 'right') {
         const focusWhole = () => {
-          if (wholeButtonRef.current) {
+          if (cancelled) return;
+          if (wholeButtonRef.current && wholeButtonRef.current.isConnected) {
             wholeButtonRef.current.focus();
           } else {
-            const btn = document.querySelector('[aria-label^="Interactive 3D Heart"]') as HTMLElement | null;
+            const btn = document.querySelector<HTMLElement>(
+              '[aria-label^="Interactive 3D Heart"]',
+            );
             if (btn) {
               btn.focus();
             } else {
-              requestAnimationFrame(focusWhole);
+              rafId = requestAnimationFrame(focusWhole);
             }
           }
         };
-        requestAnimationFrame(focusWhole);
+        rafId = requestAnimationFrame(focusWhole);
       }
     }
+
+    return () => {
+      cancelled = true;
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+    };
   }, [isBroken]);
 
   return (
@@ -300,7 +370,7 @@ function PhysicsHeart({
       </Html>
 
       <RigidBody
-        userData={{ id: 'main' }}
+        userData={MAIN_BODY_USER_DATA}
         ref={heartRef}
         restitution={0.9}
         colliders={false}
@@ -318,7 +388,7 @@ function PhysicsHeart({
         </group>
       </RigidBody>
 
-      <RigidBody userData={{ id: 'left' }} ref={brokenHeartLeftRef} colliders={false} restitution={0.9} type={'fixed'}>
+      <RigidBody userData={LEFT_SHARD_USER_DATA} ref={brokenHeartLeftRef} colliders={false} restitution={0.9} type={'fixed'}>
         <CuboidCollider args={[0.75 * scale, 1.5 * scale, 0.8 * scale]} position={[-0.75 * scale, 0, 0]} />
         <group visible={isBroken}>
           <Heart3D scale={scale} primaryColor={primaryColor} secondaryColor={secondaryColor} partner1Name={p1} partner2Name={p2} shardSide="left" />
@@ -338,7 +408,7 @@ function PhysicsHeart({
           </Html>
         )}
       </RigidBody>
-      <RigidBody userData={{ id: 'right' }} ref={brokenHeartRightRef} colliders={false} restitution={0.9} type={'fixed'}>
+      <RigidBody userData={RIGHT_SHARD_USER_DATA} ref={brokenHeartRightRef} colliders={false} restitution={0.9} type={'fixed'}>
         <CuboidCollider args={[0.75 * scale, 1.5 * scale, 0.8 * scale]} position={[0.75 * scale, 0, 0]} />
         <group visible={isBroken}>
           <Heart3D scale={scale} primaryColor={primaryColor} secondaryColor={secondaryColor} partner1Name={p1} partner2Name={p2} shardSide="right" />
@@ -426,6 +496,7 @@ export default function HeartScene({
   scale,
   interacted,
   onInteract,
+  isPaused = false,
   performanceTier,
   onTierChange,
   resetKey,
@@ -440,13 +511,20 @@ export default function HeartScene({
   groomName,
 }: HeartSceneProps) {
   return (
-    <Canvas camera={{ position: [0, 0, 15], fov: 50 }} dpr={[1, 2]} gl={{ localClippingEnabled: true }}>
+    <Canvas
+      camera={{ position: [0, 0, 15], fov: 50 }}
+      dpr={[1, 2]}
+      gl={{ localClippingEnabled: true }}
+      onCreated={({ gl }) => {
+        gl?.domElement?.setAttribute?.('aria-hidden', 'true');
+      }}
+    >
       <ambientLight intensity={lighting?.ambientIntensity ?? 0.8} />
       <directionalLight position={[5, 8, 5]} intensity={lighting?.directionalIntensity ?? 1.6} />
       <PerformanceTracker currentTier={performanceTier} onTierChange={onTierChange} />
       <Suspense fallback={null}>
         <Physics key={resetKey} gravity={[0, 0, 0]}>
-          {performanceTier !== 'low' && <Sparkles />}
+          {performanceTier !== 'low' && <Sparkles isPaused={isPaused} />}
           {performanceTier !== 'low' && (
             <Environment frames={1} resolution={256}>
               <Lightformer
@@ -490,6 +568,7 @@ export default function HeartScene({
             scale={scale}
             interacted={interacted}
             onInteract={onInteract}
+            isPaused={isPaused}
             primaryColor={primaryColor}
             secondaryColor={secondaryColor}
             accentColor={accentColor}

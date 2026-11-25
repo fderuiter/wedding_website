@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { render } from '@testing-library/react';
 import * as THREE from 'three';
 import { useHeartPhysics } from '../hooks/useHeartPhysics';
@@ -50,14 +51,26 @@ describe('useHeartPhysics Hook', () => {
     };
   });
 
-  function TestComponent({ interacted = false, reduceMotion = false, isBroken = false }) {
+  function TestComponent({
+    interacted = false,
+    reduceMotion = false,
+    isPaused = false,
+    isKeyboardControlled = false,
+    isBroken = false,
+  }) {
+    const mainRbRef = useRef(mockMainRb);
+    const leftRbRef = useRef(mockLeftRb);
+    const rightRbRef = useRef(mockRightRb);
+    const groupRef = useRef(mockGroup);
     useHeartPhysics({
-      mainRbRef: { current: mockMainRb },
-      leftRbRef: { current: mockLeftRb },
-      rightRbRef: { current: mockRightRb },
-      groupRef: { current: mockGroup },
+      mainRbRef,
+      leftRbRef,
+      rightRbRef,
+      groupRef,
       isBroken,
       reduceMotion,
+      isPaused,
+      isKeyboardControlled,
       interacted,
       viewportWidth: 10,
       viewportHeight: 7.5,
@@ -118,5 +131,68 @@ describe('useHeartPhysics Hook', () => {
     frameCallback!(mockState, 0.016);
 
     expect(setShowEasterEgg).toHaveBeenCalledWith(true);
+  });
+
+  it('halts idle rotation, pulsing, and return force drift when isPaused is true', () => {
+    const { rerender } = render(
+      <TestComponent interacted={false} reduceMotion={false} isPaused={true} />,
+    );
+    const mockState = { clock: { getElapsedTime: () => 1.0 } };
+
+    frameCallback!(mockState, 0.016);
+    expect(mockMainRb.setRotation).not.toHaveBeenCalled();
+    expect(mockGroup.scale.set).toHaveBeenCalledWith(1, 1, 1);
+
+    mockMainRb.translation.mockReturnValue({ x: 3, y: 4, z: 0 });
+    rerender(<TestComponent interacted={true} reduceMotion={false} isPaused={true} />);
+
+    frameCallback!(mockState, 0.016);
+    expect(mockMainRb.addForce).not.toHaveBeenCalled();
+    expect(mockMainRb.setLinvel).toHaveBeenCalledWith({ x: 0, y: 0, z: 0 }, true);
+    expect(mockMainRb.setAngvel).toHaveBeenCalledWith({ x: 0, y: 0, z: 0 }, true);
+  });
+
+  it('preserves kinematic keyboard position into Easter egg zone under reduceMotion and isPaused without snapping to origin', () => {
+    mockMainRb.translation.mockReturnValue({ x: 4, y: 2, z: 0 });
+    const { rerender } = render(
+      <TestComponent
+        interacted={true}
+        reduceMotion={true}
+        isPaused={false}
+        isKeyboardControlled={true}
+      />,
+    );
+
+    const mockState = { clock: { getElapsedTime: () => 1.0 } };
+    mockMainRb.setTranslation.mockClear();
+    mockMainRb.addForce.mockClear();
+
+    frameCallback!(mockState, 0.016);
+
+    expect(setShowEasterEgg).toHaveBeenCalledWith(true);
+    expect(mockMainRb.setTranslation).not.toHaveBeenCalled();
+    expect(mockMainRb.addForce).not.toHaveBeenCalled();
+    expect(mockGroup.scale.set).toHaveBeenCalledWith(1, 1, 1);
+
+    // Also verify when isPaused is true with normal motion
+    setShowEasterEgg.mockClear();
+    mockMainRb.translation.mockReturnValue({ x: 0, y: 0, z: 0 });
+    rerender(
+      <TestComponent
+        interacted={true}
+        reduceMotion={false}
+        isPaused={true}
+        isKeyboardControlled={true}
+      />,
+    );
+    mockMainRb.setTranslation.mockClear();
+    frameCallback!(mockState, 0.016);
+    expect(setShowEasterEgg).toHaveBeenCalledWith(false);
+
+    mockMainRb.translation.mockReturnValue({ x: 4.1, y: 2.5, z: 0 });
+    frameCallback!(mockState, 0.016);
+    expect(setShowEasterEgg).toHaveBeenCalledWith(true);
+    expect(mockMainRb.addForce).not.toHaveBeenCalled();
+    expect(mockMainRb.setTranslation).not.toHaveBeenCalled();
   });
 });

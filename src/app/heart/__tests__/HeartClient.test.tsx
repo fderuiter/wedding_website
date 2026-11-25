@@ -65,18 +65,47 @@ const mockCreateRigidBodyApi = () => ({
 const mockMainBodyApi = mockCreateRigidBodyApi();
 const mockLeftBodyApi = mockCreateRigidBodyApi();
 const mockRightBodyApi = mockCreateRigidBodyApi();
+const mockSparklesPoints = { rotation: { x: 0, y: 0, z: 0 } };
 
 const frameCallbacks: ((state: any, delta: number) => void)[] = [];
 let canvasRenderCount = 0;
 let pendingPhysicsPromise: Promise<void> | null = null;
 
 jest.mock('@react-three/fiber', () => ({
-  Canvas: ({ children }: { children: React.ReactNode }) => {
+  Canvas: ({
+    children,
+    onCreated,
+  }: {
+    children: React.ReactNode;
+    onCreated?: (state: { gl: { domElement: HTMLCanvasElement } }) => void;
+  }) => {
     canvasRenderCount += 1;
-    return <div data-testid="canvas">{children}</div>;
+    const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+    React.useEffect(() => {
+      if (canvasRef.current && onCreated) {
+        onCreated({ gl: { domElement: canvasRef.current } });
+      }
+    }, [onCreated]);
+    return (
+      <div data-testid="canvas">
+        <canvas ref={canvasRef} />
+        {children}
+      </div>
+    );
   },
   useFrame: (cb: (state: any, delta: number) => void) => {
-    frameCallbacks.push(cb);
+    const cbRef = React.useRef(cb);
+    cbRef.current = cb;
+    React.useEffect(() => {
+      const runner = (state: any, delta: number) => cbRef.current(state, delta);
+      frameCallbacks.push(runner);
+      return () => {
+        const idx = frameCallbacks.indexOf(runner);
+        if (idx !== -1) {
+          frameCallbacks.splice(idx, 1);
+        }
+      };
+    }, []);
   },
   useThree: jest.fn(() => ({
     size: { width: 800, height: 600 },
@@ -127,7 +156,13 @@ jest.mock('@react-three/drei', () => ({
       {children}
     </div>
   ),
-  Points: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Points: React.forwardRef(function MockPoints(
+    { children }: { children: React.ReactNode },
+    ref: React.Ref<{ rotation: { x: number; y: number; z: number } }>,
+  ) {
+    React.useImperativeHandle(ref, () => mockSparklesPoints);
+    return <div>{children}</div>;
+  }),
   PointMaterial: () => null,
 }));
 
@@ -148,6 +183,8 @@ jest.mock('@react-three/rapier', () => {
     userData?: { id: string };
     ref?: React.Ref<unknown>;
   }) {
+    const prevUserDataRef = React.useRef<unknown>(undefined);
+
     React.useEffect(() => {
       const targetApi =
         userData?.id === 'main'
@@ -168,7 +205,19 @@ jest.mock('@react-three/rapier', () => {
       if (onContactForce && userData?.id === 'main') {
         mockMainBodyApi.__triggerContactForce = onContactForce;
       }
-    }, [ref, onContactForce, userData?.id]);
+
+      // Mirror @react-three/rapier useUpdateRigidBodyOptions: if mutable userData changes
+      // object identity on re-render, Rapier resets translation/bodyType from Object3D matrix
+      if (
+        prevUserDataRef.current !== undefined &&
+        prevUserDataRef.current !== userData &&
+        userData?.id === 'main'
+      ) {
+        mockMainBodyApi.setTranslation({ x: 0, y: 0, z: 0 }, false);
+        mockMainBodyApi.setBodyType(0, true);
+      }
+      prevUserDataRef.current = userData;
+    }, [ref, onContactForce, userData]);
 
     return <div data-testid="rigidbody">{children}</div>;
   }
@@ -269,6 +318,7 @@ describe('HeartClient Easter Egg Accessibility and Live Region', () => {
     mockMainBodyApi.__triggerContactForce = null;
     mockMainBodyApi.translation.mockReturnValue({ x: 0, y: 0, z: 0 });
     mockMainBodyApi.rotation.mockReturnValue({ x: 0, y: 0, z: 0, w: 1 });
+    mockSparklesPoints.rotation = { x: 0, y: 0, z: 0 };
   });
 
   it('renders initial live region with "Heart is whole." and does not render easter egg DOM node', () => {
@@ -572,6 +622,220 @@ describe('HeartClient Easter Egg Accessibility and Live Region', () => {
     expect(fallbackBackLink).toHaveClass('focus-visible:ring-[var(--toast-action-bg,#ffffff)]');
     expect(fallbackBackLink).not.toHaveClass('bg-white/80');
     expect(fallbackBackLink.querySelector('button')).toBeNull();
+  });
+
+  it('marks WebGL <canvas> aria-hidden="true" via onCreated while keeping <Html> controls exposed (WCAG 1.1.1)', () => {
+    const { container } = render(<HeartClient partner1Name="Abbi" partner2Name="Fred" />);
+
+    const canvasEl = container.querySelector('canvas');
+    expect(canvasEl).toBeInTheDocument();
+    expect(canvasEl).toHaveAttribute('aria-hidden', 'true');
+
+    const canvasWrapper = screen.getByTestId('canvas');
+    expect(canvasWrapper).not.toHaveAttribute('aria-hidden');
+
+    const wholeHeartBtn = screen.getByRole('button', {
+      name: /Interactive 3D Heart: Abbi and Fred\. Status: Whole\./,
+    });
+    expect(wholeHeartBtn).toBeInTheDocument();
+    expect(canvasEl?.contains(wholeHeartBtn)).toBe(false);
+    expect(screen.getByRole('status')).toHaveTextContent('Heart is whole.');
+  });
+
+  it('toggles Pause Animation / Resume Animation with aria-pressed, halts WebGL and fallback motion, and renders keyboard hint (WCAG 2.2.2)', () => {
+    const { unmount } = render(<HeartClient partner1Name="Abbi" partner2Name="Fred" />);
+
+    expect(screen.getByTestId('heart-keyboard-hint')).toHaveTextContent(
+      'Use arrow keys to move the heart, Space or Enter to break it',
+    );
+
+    const pauseBtn = screen.getByRole('button', { name: 'Pause Animation' });
+    expect(pauseBtn).toHaveAttribute('aria-pressed', 'false');
+
+    // Unpaused frame rotates Sparkles and idle heart
+    advancePhysicsFrame();
+    expect(mockSparklesPoints.rotation.y).toBeGreaterThan(0);
+    expect(mockMainBodyApi.setRotation).toHaveBeenCalled();
+
+    // Pause animation
+    fireEvent.click(pauseBtn);
+    const resumeBtn = screen.getByRole('button', { name: 'Resume Animation' });
+    expect(resumeBtn).toHaveAttribute('aria-pressed', 'true');
+
+    mockMainBodyApi.setRotation.mockClear();
+    const pausedSparklesY = mockSparklesPoints.rotation.y;
+    advancePhysicsFrame();
+    expect(mockSparklesPoints.rotation.y).toBe(pausedSparklesY);
+    expect(mockMainBodyApi.setRotation).not.toHaveBeenCalled();
+
+    // Resume animation
+    fireEvent.click(resumeBtn);
+    expect(screen.getByRole('button', { name: 'Pause Animation' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    advancePhysicsFrame();
+    expect(mockSparklesPoints.rotation.y).toBeGreaterThan(pausedSparklesY);
+    expect(mockMainBodyApi.setRotation).toHaveBeenCalled();
+
+    unmount();
+
+    // Verify 2D WebGLFallback also respects Pause Animation
+    (window as Window & { __mockWebGLSupport?: boolean }).__mockWebGLSupport = false;
+    render(<HeartClient partner1Name="Abbi" partner2Name="Fred" />);
+
+    expect(screen.getByTestId('heart-keyboard-hint')).toHaveTextContent(
+      'Use arrow keys to move the heart',
+    );
+    const fallbackSvg = screen.getByTestId('webgl-fallback-heart').querySelector('svg');
+    expect(fallbackSvg).toHaveClass('animate-pulse');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pause Animation' }));
+    expect(screen.getByRole('button', { name: 'Resume Animation' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(fallbackSvg).toHaveClass('animate-none');
+    expect(fallbackSvg).not.toHaveClass('animate-pulse');
+  });
+
+  it('preserves natural focus order without trapping Tab away from .skip-link (WCAG 2.4.3)', () => {
+    render(
+      <>
+        <a href="#main-content" className="skip-link">
+          Skip to main content
+        </a>
+        <main id="main-content" tabIndex={-1}>
+          <HeartClient partner1Name="Abbi" partner2Name="Fred" />
+        </main>
+      </>,
+    );
+
+    // Mount must not hijack focus onto overlay buttons before user tabs
+    expect(document.activeElement).toBe(document.body);
+
+    const skipLink = screen.getByRole('link', { name: 'Skip to main content' });
+    const pauseBtn = screen.getByRole('button', { name: 'Pause Animation' });
+    const backHomeLink = screen.getByRole('link', { name: 'Back Home' });
+    const wholeHeartBtn = screen.getByRole('button', {
+      name: /Interactive 3D Heart: Abbi and Fred/,
+    });
+
+    expect(
+      Boolean(skipLink.compareDocumentPosition(pauseBtn) & Node.DOCUMENT_POSITION_FOLLOWING),
+    ).toBe(true);
+
+    // Tabbing from the last control inside /heart must NOT be prevented/wrapped by an overlay trap
+    act(() => {
+      wholeHeartBtn.focus();
+    });
+    const tabFromLast = new KeyboardEvent('keydown', {
+      key: 'Tab',
+      bubbles: true,
+      cancelable: true,
+    });
+    document.dispatchEvent(tabFromLast);
+    expect(tabFromLast.defaultPrevented).toBe(false);
+
+    // Focusing .skip-link outside HeartClient and pressing Tab must NOT be intercepted
+    act(() => {
+      skipLink.focus();
+    });
+    expect(document.activeElement).toBe(skipLink);
+    const tabFromSkip = new KeyboardEvent('keydown', {
+      key: 'Tab',
+      bubbles: true,
+      cancelable: true,
+    });
+    document.dispatchEvent(tabFromSkip);
+    expect(tabFromSkip.defaultPrevented).toBe(false);
+    expect(backHomeLink).toHaveAttribute('href', '/');
+  });
+
+  it('cancels pending shard focus requestAnimationFrame callbacks on unmount and matches partner-named shard labels', () => {
+    const queuedFrames = new Map<number, FrameRequestCallback>();
+    let nextRafId = 1;
+    const rafSpy = jest
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((cb: FrameRequestCallback) => {
+        const id = nextRafId++;
+        queuedFrames.set(id, cb);
+        return id;
+      });
+    const cancelRafSpy = jest
+      .spyOn(window, 'cancelAnimationFrame')
+      .mockImplementation((id: number) => {
+        queuedFrames.delete(id);
+      });
+
+    try {
+      const { unmount } = render(<HeartClient partner1Name="Abbi" partner2Name="Fred" />);
+
+      const wholeHeartBtn = screen.getByRole('button', {
+        name: /Interactive 3D Heart: Abbi and Fred/,
+      });
+      act(() => {
+        wholeHeartBtn.focus();
+      });
+      expect(document.activeElement).toBe(wholeHeartBtn);
+
+      act(() => {
+        fireEvent.click(wholeHeartBtn);
+      });
+
+      expect(queuedFrames.size).toBeGreaterThan(0);
+
+      // Unmounting before frame callback executes cancels the scheduled animation frame
+      unmount();
+      expect(cancelRafSpy).toHaveBeenCalled();
+      expect(queuedFrames.size).toBe(0);
+    } finally {
+      rafSpy.mockRestore();
+      cancelRafSpy.mockRestore();
+    }
+  });
+
+  it('reaches the top-right Easter egg via ArrowRight and ArrowUp without Rapier RigidBody re-render resets even when paused (WCAG 2.1.1)', () => {
+    let currentPos = { x: 0, y: 0, z: 0 };
+    mockMainBodyApi.translation.mockImplementation(() => currentPos);
+    mockMainBodyApi.setTranslation.mockImplementation(
+      (nextPos: { x: number; y: number; z: number }) => {
+        currentPos = { ...nextPos };
+      },
+    );
+    mockMainBodyApi.setNextKinematicTranslation.mockImplementation(
+      (nextPos: { x: number; y: number; z: number }) => {
+        currentPos = { ...nextPos };
+      },
+    );
+
+    try {
+      render(<HeartClient partner1Name="Abbi" partner2Name="Fred" />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Pause Animation' }));
+
+      const wholeHeartBtn = screen.getByRole('button', {
+        name: /Interactive 3D Heart: Abbi and Fred\. Status: Whole\./,
+      });
+
+      for (let i = 0; i < 6; i++) {
+        fireEvent.keyDown(wholeHeartBtn, { key: 'ArrowRight' });
+        fireEvent.keyDown(wholeHeartBtn, { key: 'ArrowUp' });
+      }
+
+      advancePhysicsFrame();
+
+      expect(screen.getByRole('status')).toHaveTextContent('I love you!');
+      expect(
+        screen.getByRole('button', {
+          name: /Secret message revealed: I love you!/,
+        }),
+      ).toBeInTheDocument();
+    } finally {
+      mockMainBodyApi.setTranslation.mockReset();
+      mockMainBodyApi.setNextKinematicTranslation.mockReset();
+      mockMainBodyApi.translation.mockReset();
+    }
   });
 
   it('loads HeartScene dynamically with ssr: false, removes heart-loading-overlay after onReady, and keeps sceneReady across Reset clicks', async () => {
