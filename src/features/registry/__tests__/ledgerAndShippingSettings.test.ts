@@ -16,6 +16,7 @@ import { parseRegistryCsv, generateRegistryCsvTemplate } from '../utils/csv';
 import { registryService } from '../service';
 import { MultiChannelMessagingProvider } from '@/features/broadcast';
 import { isAdminRequest } from '@/core/auth/auth.server';
+import { signGuestToken } from '@/core/auth/guest.server';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 
 jest.unmock('@prisma/client');
@@ -185,25 +186,42 @@ describe('Registry Ledger, Multi-Quantity Capacity, Shipping Security Perimeter 
         defaultPaymentHandle: '@site-default',
       });
 
-      // 1. Passcode-only guest (no guest_invite_session, not admin): both shippingAddress and defaultPaymentHandle omitted while card capabilities remain intact
+      // 1. Unauthenticated request (no guest_auth, no guest_invite_session, not admin): hasShippingAddress=true returned while shippingAddress and defaultPaymentHandle are omitted
       process.env.STRIPE_SECRET_KEY = 'sk_test_capabilities_passcode_guest';
       process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = 'pk_test_capabilities_passcode_guest';
       (isAdminRequest as jest.Mock).mockResolvedValueOnce(false);
       (getGuestInviteSession as jest.Mock).mockResolvedValueOnce(null);
-      const passcodeOnlyRes = await getCapabilities(
+      const unauthHandlerRes = await getCapabilities(
         new NextRequest('http://localhost:3000/api/registry/capabilities')
       );
-      expect(passcodeOnlyRes.status).toBe(200);
-      const passcodeBody = await passcodeOnlyRes.json();
-      expect(passcodeBody.data.cardCheckoutEnabled).toBe(true);
-      expect(passcodeBody.data.stripePublishableKey).toBe('pk_test_capabilities_passcode_guest');
-      expect(passcodeBody.data.defaultPaymentHandleType).toBeUndefined();
-      expect(passcodeBody.data.defaultPaymentHandle).toBeUndefined();
-      expect(passcodeBody.data.shippingAddress).toBeUndefined();
-      expect(JSON.stringify(passcodeBody)).not.toContain('742 Evergreen Terrace');
-      expect(JSON.stringify(passcodeBody)).not.toContain('@site-default');
+      expect(unauthHandlerRes.status).toBe(200);
+      const unauthBody = await unauthHandlerRes.json();
+      expect(unauthBody.data.cardCheckoutEnabled).toBe(true);
+      expect(unauthBody.data.stripePublishableKey).toBe('pk_test_capabilities_passcode_guest');
+      expect(unauthBody.data.hasShippingAddress).toBe(true);
+      expect(unauthBody.data.defaultPaymentHandleType).toBeUndefined();
+      expect(unauthBody.data.defaultPaymentHandle).toBeUndefined();
+      expect(unauthBody.data.shippingAddress).toBeUndefined();
+      expect(JSON.stringify(unauthBody)).not.toContain('742 Evergreen Terrace');
+      expect(JSON.stringify(unauthBody)).not.toContain('@site-default');
       delete process.env.STRIPE_SECRET_KEY;
       delete process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+
+      // 1b. Passcode-authenticated guest (valid guest_auth cookie): receives shippingAddress and defaultPaymentHandle when active items exist
+      const guestToken = await signGuestToken({ guest: true });
+      (isAdminRequest as jest.Mock).mockResolvedValueOnce(false);
+      (getGuestInviteSession as jest.Mock).mockResolvedValueOnce(null);
+      const passcodeGuestRes = await getCapabilities(
+        new NextRequest('http://localhost:3000/api/registry/capabilities', {
+          headers: { cookie: `guest_auth=${guestToken}` },
+        })
+      );
+      expect(passcodeGuestRes.status).toBe(200);
+      const passcodeGuestBody = await passcodeGuestRes.json();
+      expect(passcodeGuestBody.data.hasShippingAddress).toBe(true);
+      expect(passcodeGuestBody.data.defaultPaymentHandleType).toBe('Venmo');
+      expect(passcodeGuestBody.data.defaultPaymentHandle).toBe('@site-default');
+      expect(passcodeGuestBody.data.shippingAddress?.addressLine1).toBe('742 Evergreen Terrace');
 
       // 2. Verified guest_invite_session with active physical HTTP vendorUrl items & fallback-needing funds: both included
       (isAdminRequest as jest.Mock).mockResolvedValueOnce(false);

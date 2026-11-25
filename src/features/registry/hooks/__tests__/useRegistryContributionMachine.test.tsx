@@ -2,7 +2,7 @@ import { renderHook, act } from '@testing-library/react';
 import React from 'react';
 import {
   useRegistryContributionMachine,
-  VERIFIED_CODE_REQUIRED_MESSAGE,
+  EMAIL_REQUIRED_FOR_CLAIM_MESSAGE,
 } from '../useRegistryContributionMachine';
 import { RegistryItem } from '../../types';
 import { apiClient } from '@/lib/apiClient';
@@ -109,6 +109,7 @@ describe('useRegistryContributionMachine Hook', () => {
         guestName: 'Verified Guest',
         email: 'verified.session@example.com',
         isVerified: true,
+        hasPasscodeSession: false,
         isLoading: false,
         status: 'authenticated',
         lastErrorCode: null,
@@ -157,6 +158,7 @@ describe('useRegistryContributionMachine Hook', () => {
         guestName: 'Verified Guest',
         email: 'verified.session@example.com',
         isVerified: true,
+        hasPasscodeSession: false,
         isLoading: false,
         status: 'authenticated',
         lastErrorCode: null,
@@ -683,7 +685,7 @@ describe('useRegistryContributionMachine Hook', () => {
       }
     });
 
-    it('blocks unverified zero-Stripe submit when requireVerifiedCode is true while allowing Stripe paymentIntentId submit', async () => {
+    it('requires email on unverified zero-Stripe submit when requireEmailWhenUnverified is true, allows submit once email is provided, and allows Stripe paymentIntentId submit without email', async () => {
       const eightArgContribute = (
         a: string,
         b: string,
@@ -700,7 +702,7 @@ describe('useRegistryContributionMachine Hook', () => {
           item: mockSingleItem,
           onContribute: eightArgContribute,
           initialContributorName: 'Jane',
-          requireVerifiedCode: true,
+          requireEmailWhenUnverified: true,
         })
       );
 
@@ -709,7 +711,7 @@ describe('useRegistryContributionMachine Hook', () => {
       });
 
       expect(mockOnContribute).not.toHaveBeenCalled();
-      expect(result.current.codeError).toBe(VERIFIED_CODE_REQUIRED_MESSAGE);
+      expect(result.current.fieldErrors.email).toBe(EMAIL_REQUIRED_FOR_CLAIM_MESSAGE);
 
       await act(async () => {
         await result.current.handleSubmit(undefined, 'pi_card_123');
@@ -724,6 +726,28 @@ describe('useRegistryContributionMachine Hook', () => {
         false,
         undefined,
         'pi_card_123'
+      );
+      expect(result.current.isSuccess).toBe(true);
+
+      mockOnContribute.mockClear();
+      act(() => {
+        result.current.setPhase('idle');
+        result.current.setEmail('jane@example.com');
+      });
+
+      await act(async () => {
+        await result.current.handleSubmit();
+      });
+
+      expect(mockOnContribute).toHaveBeenCalledWith(
+        'item-machine-1',
+        'Jane',
+        150,
+        undefined,
+        undefined,
+        false,
+        'jane@example.com',
+        undefined
       );
       expect(result.current.isSuccess).toBe(true);
     });
@@ -753,7 +777,7 @@ describe('useRegistryContributionMachine Hook', () => {
           onContribute: eightArgContribute,
           initialContributorName: 'Jane',
           initialAmount: 50,
-          requireVerifiedCode: false,
+          requireEmailWhenUnverified: false,
         })
       );
 
@@ -803,7 +827,7 @@ describe('useRegistryContributionMachine Hook', () => {
         useRegistryContributionMachine({
           item: mockSingleItem,
           onContribute: mockOnContribute,
-          requireVerifiedCode: true,
+          requireEmailWhenUnverified: true,
         })
       );
 

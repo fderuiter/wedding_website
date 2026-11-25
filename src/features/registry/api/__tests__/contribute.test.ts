@@ -5,6 +5,7 @@ import { registryService } from '../../service';
 import { dispatchConfirmedContributionAlert } from '../../notifications';
 import { NextRequest, after } from 'next/server';
 import { isAdminRequest } from '@/core/auth/auth.server';
+import { signGuestToken } from '@/core/auth/guest.server';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { getAppConfig } from '@/lib/config';
 import { MultiChannelMessagingProvider } from '@/features/broadcast';
@@ -89,7 +90,7 @@ describe('POST /api/registry/contribute', () => {
     (registryService.contributeToItem as jest.Mock).mockResolvedValue(mockUpdatedItem);
   });
 
-  it('rejects zero-Stripe claim with HTTP 403 when guest_invite_session is absent (even if client supplies body.code)', async () => {
+  it('rejects zero-Stripe claim with HTTP 403 when guest_invite_session and guest_auth are both absent (even if client supplies body.code)', async () => {
     (getGuestInviteSession as jest.Mock).mockResolvedValueOnce(null);
 
     const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
@@ -98,6 +99,7 @@ describe('POST /api/registry/contribute', () => {
       body: JSON.stringify({
         itemId: 'item-123',
         name: 'Unverified Claimant',
+        email: 'unauth@example.com',
         amount: 50,
         code: 'SPOOFED8',
       }),
@@ -108,6 +110,101 @@ describe('POST /api/registry/contribute', () => {
     const body = await response.json();
     expect(body.error).toMatch(/verify your household invitation code/i);
     expect(registryService.contributeToItem).not.toHaveBeenCalled();
+  });
+
+  it('authorizes physical claims and direct transfers for guest_auth passcode sessions when email is provided, and rejects with HTTP 400 when email is omitted', async () => {
+    process.env.GUEST_PASSCODE = 'celebrate2027';
+    process.env.GUEST_SESSION_SECRET = '0123456789abcdef0123456789abcdef';
+    const guestToken = await signGuestToken({ guest: true });
+
+    try {
+      (getGuestInviteSession as jest.Mock).mockResolvedValue(null);
+
+      // Missing email on passcode RESERVED claim -> HTTP 400
+      const missingEmailReq = new NextRequest('http://localhost:3000/api/registry/contribute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: `guest_auth=${guestToken}`,
+        },
+        body: JSON.stringify({
+          itemId: 'item-123',
+          name: 'Passcode Guest',
+          amount: 50,
+        }),
+      });
+      const missingEmailRes = await POST(missingEmailReq);
+      expect(missingEmailRes.status).toBe(400);
+      const missingEmailBody = await missingEmailRes.json();
+      expect(missingEmailBody.error).toMatch(/email address is required/i);
+      expect(registryService.contributeToItem).not.toHaveBeenCalled();
+
+      // Spoofed body.code without matching guest_invite_session -> HTTP 403
+      const spoofedCodeReq = new NextRequest('http://localhost:3000/api/registry/contribute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: `guest_auth=${guestToken}`,
+        },
+        body: JSON.stringify({
+          itemId: 'item-123',
+          name: 'Passcode Guest',
+          email: 'passcode@example.com',
+          amount: 50,
+          code: 'SPOOFED8',
+        }),
+      });
+      const spoofedCodeRes = await POST(spoofedCodeReq);
+      expect(spoofedCodeRes.status).toBe(403);
+      expect(registryService.contributeToItem).not.toHaveBeenCalled();
+
+      // Valid passcode RESERVED claim with email -> HTTP 200 + signed claimActions
+      (registryService.contributeToItem as jest.Mock).mockResolvedValueOnce({
+        ...mockItem,
+        amountContributed: 50,
+        contributors: [
+          {
+            id: 'c-passcode-1',
+            name: 'Passcode Guest',
+            email: 'passcode@example.com',
+            amount: 50,
+            status: 'RESERVED',
+          },
+        ],
+      });
+
+      const validPasscodeReq = new NextRequest('http://localhost:3000/api/registry/contribute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: `guest_auth=${guestToken}`,
+        },
+        body: JSON.stringify({
+          itemId: 'item-123',
+          name: 'Passcode Guest',
+          email: 'passcode@example.com',
+          amount: 50,
+        }),
+      });
+      const validPasscodeRes = await POST(validPasscodeReq);
+      expect(validPasscodeRes.status).toBe(200);
+      const validBody = await validPasscodeRes.json();
+      expect(validBody.data.claimActions).toEqual({
+        confirmToken: expect.any(String),
+        cancelToken: expect.any(String),
+      });
+      expect(registryService.contributeToItem).toHaveBeenCalledWith('item-123', {
+        name: 'Passcode Guest',
+        email: 'passcode@example.com',
+        amount: 50,
+        code: undefined,
+        message: undefined,
+        coverFee: false,
+      });
+    } finally {
+      delete process.env.GUEST_PASSCODE;
+      delete process.env.GUEST_SESSION_SECRET;
+    }
   });
 
   it('rejects non-admin contribution with HTTP 403 when submitted code does not match guest_invite_session, and succeeds when code matches or is omitted while stripping relational contributors', async () => {

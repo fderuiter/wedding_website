@@ -23748,11 +23748,15 @@
                         "stripePublishableKey": {
                           "type": "string",
                           "nullable": true
+                        },
+                        "hasShippingAddress": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
                         "cardCheckoutEnabled",
-                        "stripePublishableKey"
+                        "stripePublishableKey",
+                        "hasShippingAddress"
                       ],
                       "additionalProperties": true
                     }
@@ -23907,7 +23911,8 @@
                         "vendorUrl",
                         "paymentHandle",
                         "paymentHandleType"
-                      ]
+                      ],
+                      "additionalProperties": true
                     }
                   }
                 }
@@ -23982,6 +23987,51 @@
                   "token": {
                     "type": "string",
                     "minLength": 1
+                  },
+                  "retailerOrderNumber": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "carrier": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "trackingNumber": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -27248,7 +27298,8 @@
                             "code",
                             "guestName",
                             "email"
-                          ]
+                          ],
+                          "additionalProperties": true
                         }
                       }
                     },
@@ -27294,7 +27345,8 @@
                             "code",
                             "guestName",
                             "email"
-                          ]
+                          ],
+                          "additionalProperties": true
                         }
                       }
                     }
@@ -27402,7 +27454,8 @@
                         "code",
                         "guestName",
                         "email"
-                      ]
+                      ],
+                      "additionalProperties": true
                     }
                   }
                 }

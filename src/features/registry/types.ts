@@ -186,7 +186,8 @@ export interface IRegistryRepository {
   ): Promise<void>;
   confirmContribution?(
     contributorId: string,
-    author?: string
+    author?: string,
+    orderDetails?: OrderTrackingDetails
   ): Promise<ContributorLifecycleResult>;
   cancelReservedContribution?(
     contributorId: string,

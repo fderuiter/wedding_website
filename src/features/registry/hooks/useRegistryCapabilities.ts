@@ -19,12 +19,14 @@ export function notifyCapabilitiesRefresh(): void {
 interface RegistryCapabilitiesPayload extends StripeCapability {
   defaultPaymentHandleType?: string | null;
   defaultPaymentHandle?: string | null;
+  hasShippingAddress?: boolean;
   shippingAddress?: RegistryShippingAddress | null;
 }
 
 interface NormalizedCapabilities extends StripeCapability {
   defaultPaymentHandleType: string | null;
   defaultPaymentHandle: string | null;
+  hasShippingAddress: boolean;
   shippingAddress: RegistryShippingAddress | null;
 }
 
@@ -37,6 +39,7 @@ function getClientEnvCapabilityFallback(): NormalizedCapabilities {
     stripePublishableKey: valid && envKey ? envKey.trim() : null,
     defaultPaymentHandleType: null,
     defaultPaymentHandle: null,
+    hasShippingAddress: false,
     shippingAddress: null,
   };
 }
@@ -60,7 +63,7 @@ export function useRegistryCapabilities(
   const { enabled = true } = options;
   const demo = useOptionalDemo();
   const isDemoMode = Boolean(demo?.isDemoMode);
-  const { isVerified, invitationCode } = useGuestSession();
+  const { isVerified, invitationCode, hasPasscodeSession } = useGuestSession();
   const [refreshTick, setRefreshTick] = useState(0);
   const [state, setState] = useState<InternalCapabilitiesState>(() => {
     const fallback = getClientEnvCapabilityFallback();
@@ -101,12 +104,17 @@ export function useRegistryCapabilities(
       try {
         const res = await apiClient.get<RegistryCapabilitiesPayload>('/api/registry/capabilities');
         if (res && typeof res.cardCheckoutEnabled === 'boolean') {
+          const resolvedAddress = res.shippingAddress ?? null;
           resolved = {
             cardCheckoutEnabled: res.cardCheckoutEnabled,
             stripePublishableKey: res.stripePublishableKey ?? null,
             defaultPaymentHandleType: res.defaultPaymentHandleType ?? null,
             defaultPaymentHandle: res.defaultPaymentHandle ?? null,
-            shippingAddress: res.shippingAddress ?? null,
+            hasShippingAddress:
+              typeof res.hasShippingAddress === 'boolean'
+                ? res.hasShippingAddress
+                : Boolean(resolvedAddress),
+            shippingAddress: resolvedAddress,
           };
         }
       } catch {
@@ -120,6 +128,7 @@ export function useRegistryCapabilities(
           prev.stripePublishableKey === resolved.stripePublishableKey &&
           prev.defaultPaymentHandleType === resolved.defaultPaymentHandleType &&
           prev.defaultPaymentHandle === resolved.defaultPaymentHandle &&
+          prev.hasShippingAddress === resolved.hasShippingAddress &&
           JSON.stringify(prev.shippingAddress) === JSON.stringify(resolved.shippingAddress) &&
           prev.hasLoaded === true
         ) {
@@ -137,7 +146,7 @@ export function useRegistryCapabilities(
     return () => {
       active = false;
     };
-  }, [enabled, isDemoMode, isVerified, invitationCode, refreshTick]);
+  }, [enabled, isDemoMode, isVerified, invitationCode, hasPasscodeSession, refreshTick]);
 
   if (enabled && isDemoMode && demo) {
     return {
@@ -145,6 +154,7 @@ export function useRegistryCapabilities(
       stripePublishableKey: null,
       defaultPaymentHandleType: 'Venmo',
       defaultPaymentHandle: '@alex-and-taylor',
+      hasShippingAddress: Boolean(demo.shippingAddress),
       shippingAddress: demo.shippingAddress,
       isCapabilitiesLoading: false,
     };
@@ -155,6 +165,7 @@ export function useRegistryCapabilities(
     stripePublishableKey: state.stripePublishableKey,
     defaultPaymentHandleType: state.defaultPaymentHandleType,
     defaultPaymentHandle: state.defaultPaymentHandle,
+    hasShippingAddress: state.hasShippingAddress,
     shippingAddress: state.shippingAddress,
     isCapabilitiesLoading: enabled && !state.hasLoaded,
   };

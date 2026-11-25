@@ -152,4 +152,102 @@ describe('GuestClaimPage (/guest/claim)', () => {
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });
+
+  it('displays vendorUrl, copies shippingAddress, and submits optional order tracking details on physical gift confirmation', async () => {
+    const writeTextMock = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: writeTextMock },
+      configurable: true,
+    });
+
+    mockSearchToken = 'signed-physical-confirm-789';
+    mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+      if (url.startsWith('/api/registry/claim?token=') && (!options?.method || options.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          json: async () => ({
+            success: true,
+            data: {
+              action: 'confirm',
+              status: 'RESERVED',
+              amount: 220,
+              itemId: 'item-phys-9',
+              itemName: 'Enameled Cast Iron Dutch Oven',
+              itemType: 'PHYSICAL',
+              isGroupGift: false,
+              vendorUrl: 'https://retailer.example.com/dutch-oven',
+              shippingAddress: {
+                recipientName: 'Alex & Taylor',
+                addressLine1: '742 Evergreen Terrace',
+                addressLine2: 'Apt 4B',
+                city: 'Portland',
+                state: 'OR',
+                zip: '97205',
+                country: 'United States',
+                phone: '(555) 234-5678',
+                deliveryNotes: 'Leave on covered porch',
+              },
+              paymentHandle: null,
+              paymentHandleType: null,
+            },
+          }),
+        });
+      }
+      if (url === '/api/registry/claim' && options?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          json: async () => ({
+            success: true,
+            data: {
+              action: 'confirm',
+              status: 'CONFIRMED',
+              changed: true,
+            },
+          }),
+        });
+      }
+      return Promise.reject(new Error(`Unexpected request: ${url}`));
+    });
+
+    render(<GuestClaimPage />);
+
+    expect(await screen.findByText('Enameled Cast Iron Dutch Oven')).toBeInTheDocument();
+    expect(screen.getByTestId('claim-vendor-link')).toHaveAttribute(
+      'href',
+      'https://retailer.example.com/dutch-oven'
+    );
+    expect(screen.getByTestId('claim-shipping-address-card')).toHaveTextContent(
+      '742 Evergreen Terrace'
+    );
+
+    fireEvent.click(screen.getByTestId('copy-shipping-address-button'));
+    expect(writeTextMock).toHaveBeenCalledWith(expect.stringContaining('742 Evergreen Terrace'));
+
+    fireEvent.change(screen.getByLabelText(/Retailer Order Number/i), {
+      target: { value: ' 114-3941689-8772232 ' },
+    });
+    fireEvent.change(screen.getByLabelText(/Shipping Carrier/i), {
+      target: { value: ' UPS ' },
+    });
+    fireEvent.change(screen.getByLabelText(/Tracking Number/i), {
+      target: { value: ' 1Z999AA10123456784 ' },
+    });
+
+    fireEvent.click(screen.getByTestId('guest-claim-submit-button'));
+
+    expect(await screen.findByRole('heading', { name: 'Gift Confirmed!' })).toBeInTheDocument();
+    const postCall = mockFetch.mock.calls.find(
+      ([, opts]) => (opts as RequestInit | undefined)?.method === 'POST'
+    );
+    expect(postCall).toBeDefined();
+    const submittedBody = JSON.parse(String((postCall![1] as RequestInit).body));
+    expect(submittedBody).toEqual({
+      token: 'signed-physical-confirm-789',
+      retailerOrderNumber: '114-3941689-8772232',
+      carrier: 'UPS',
+      trackingNumber: '1Z999AA10123456784',
+    });
+  });
 });

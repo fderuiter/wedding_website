@@ -70,10 +70,11 @@ function resolveClientSafeCapabilities(
       state: config.shippingState ?? '',
       zip: config.shippingZip ?? '',
       country: config.shippingCountry ?? 'United States',
-      phoneNumber: config.shippingPhone ?? '',
+      phone: config.shippingPhone ?? '',
       deliveryNotes: config.shippingDeliveryNotes ?? '',
     }
     : null;
+  const hasShippingAddress = Boolean(shippingAddress);
 
   if (mode === 'msw') {
     const pubKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
@@ -91,11 +92,13 @@ function resolveClientSafeCapabilities(
       return {
         cardCheckoutEnabled,
         stripePublishableKey: cardCheckoutEnabled && pubKey ? pubKey.trim() : null,
+        hasShippingAddress,
       };
     }
     return {
       cardCheckoutEnabled: true,
       stripePublishableKey: 'pk_test_msw_mock_publishable_key',
+      hasShippingAddress,
     };
   }
 
@@ -104,6 +107,7 @@ function resolveClientSafeCapabilities(
   return {
     cardCheckoutEnabled: false,
     stripePublishableKey: validLiveKey ? candidateKey.trim() : null,
+    hasShippingAddress,
     defaultPaymentHandle: config.defaultPaymentHandle || '@AlexAndTaylor2026',
     defaultPaymentHandleType: config.defaultPaymentHandleType || 'Venmo',
     shippingAddress,
@@ -667,15 +671,33 @@ export async function handleRegistryRoutes(
         return errorJson(404, 'Gift reservation not found.');
       }
       const config = getActiveAppConfig(snapshot);
+      const itemType = item.itemType || 'PHYSICAL';
+      const claimShipping =
+        itemType === 'PHYSICAL' && config.shippingAddressLine1
+          ? {
+            recipientName:
+              config.shippingRecipientName ||
+              `${config.partner1Name} & ${config.partner2Name}`,
+            addressLine1: config.shippingAddressLine1,
+            addressLine2: config.shippingAddressLine2 ?? '',
+            city: config.shippingCity ?? '',
+            state: config.shippingState ?? '',
+            zip: config.shippingZip ?? '',
+            country: config.shippingCountry ?? 'United States',
+            phone: config.shippingPhone ?? '',
+            deliveryNotes: config.shippingDeliveryNotes ?? '',
+          }
+          : null;
       return wrapMiddlewareJson({
         action: decoded.action,
         status: contributor.status,
         amount: contributor.amount,
         itemId: item.id,
         itemName: item.name,
-        itemType: item.itemType || 'PHYSICAL',
+        itemType,
         isGroupGift: Boolean(item.isGroupGift),
         vendorUrl: item.vendorUrl,
+        ...(claimShipping ? { shippingAddress: claimShipping } : {}),
         paymentHandle: item.paymentHandle || config.defaultPaymentHandle || null,
         paymentHandleType:
           item.paymentHandleType || config.defaultPaymentHandleType || null,
@@ -712,6 +734,17 @@ export async function handleRegistryRoutes(
         decoded.action === 'confirm' ? 'CONFIRMED' : 'CANCELLED';
       const changed = contributor.status !== targetStatus;
       contributor.status = targetStatus;
+      if (targetStatus === 'CONFIRMED') {
+        if (typeof body.retailerOrderNumber === 'string' && body.retailerOrderNumber.trim()) {
+          contributor.retailerOrderNumber = body.retailerOrderNumber.trim();
+        }
+        if (typeof body.carrier === 'string' && body.carrier.trim()) {
+          contributor.carrier = body.carrier.trim();
+        }
+        if (typeof body.trackingNumber === 'string' && body.trackingNumber.trim()) {
+          contributor.trackingNumber = body.trackingNumber.trim();
+        }
+      }
       if (
         targetStatus === 'CANCELLED' &&
         (contributor.thankYouStatus || 'Unsent').trim().toLowerCase() === 'unsent'

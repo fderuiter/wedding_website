@@ -197,6 +197,12 @@ export const GuestClaimQuerySchema = z.object({
 
 export const GuestClaimActionSchema = z.object({
   token: z.string({ message: 'Missing or invalid claim token.' }).trim().min(1, 'Missing or invalid claim token.'),
+  retailerOrderNumber: optionalNullableTrimmedField(
+    120,
+    'Retailer order number',
+  ),
+  carrier: optionalNullableTrimmedField(100, 'Carrier'),
+  trackingNumber: optionalNullableTrimmedField(120, 'Tracking number'),
 });
 
 export const AdminContributorActionSchema = z.object({

@@ -9,7 +9,10 @@ import { verifyContributorActionToken } from '../lib/contributorToken';
 import { maskRegistryItem } from '../lib/masking';
 import { dispatchConfirmedContributionAlert } from '../notifications';
 import { registryService } from '../service';
-import { resolveEffectivePaymentHandle } from '../utils/paymentUrls';
+import {
+  extractShippingAddressFromConfig,
+  resolveEffectivePaymentHandle,
+} from '../utils/paymentUrls';
 
 function extractQueryToken(request: NextRequest): string {
   const fromNextUrl = request.nextUrl?.searchParams?.get('token');
@@ -51,7 +54,11 @@ export const GET = withApiMiddleware(
       throw new ApiError(404, 'Gift reservation not found.');
     }
 
+    const itemType = record.item.itemType ?? 'PHYSICAL';
     const effectiveHandle = resolveEffectivePaymentHandle(record.item, config);
+    const { shippingCandidate, hasShippingAddress } = extractShippingAddressFromConfig(config);
+    const shippingAddress =
+      itemType === 'PHYSICAL' && hasShippingAddress ? shippingCandidate : null;
 
     return NextResponse.json({
       action: tokenPayload.action,
@@ -59,9 +66,10 @@ export const GET = withApiMiddleware(
       amount: record.contributor.amount,
       itemId: record.item.id,
       itemName: record.item.name,
-      itemType: record.item.itemType ?? 'PHYSICAL',
+      itemType,
       isGroupGift: Boolean(record.item.isGroupGift),
       vendorUrl: record.item.vendorUrl ?? null,
+      ...(shippingAddress ? { shippingAddress } : {}),
       paymentHandle: effectiveHandle.paymentHandle || null,
       paymentHandleType: effectiveHandle.paymentHandleType || null,
     });
@@ -90,7 +98,14 @@ export const POST = withApiMiddleware(
       throw new ApiError(400, parsedBody.error.issues[0].message);
     }
 
-    const tokenPayload = await verifyContributorActionToken(parsedBody.data.token);
+    const {
+      token,
+      retailerOrderNumber,
+      carrier,
+      trackingNumber,
+    } = parsedBody.data;
+
+    const tokenPayload = await verifyContributorActionToken(token);
     if (!tokenPayload) {
       throw new ApiError(401, 'This gift link is invalid or has expired.');
     }
@@ -101,10 +116,22 @@ export const POST = withApiMiddleware(
     }
 
     if (tokenPayload.action === 'confirm') {
-      const result = await registryService.confirmContribution(
-        tokenPayload.contributorId,
-        'Guest'
+      const trimOrUndefined = (val?: string | null) =>
+        val && val.trim().length > 0 ? val.trim() : undefined;
+      const cleanOrderNumber = trimOrUndefined(retailerOrderNumber);
+      const cleanCarrier = trimOrUndefined(carrier);
+      const cleanTrackingNumber = trimOrUndefined(trackingNumber);
+      const hasOrderDetails = Boolean(
+        cleanOrderNumber || cleanCarrier || cleanTrackingNumber
       );
+
+      const result = hasOrderDetails
+        ? await registryService.confirmContribution(tokenPayload.contributorId, 'Guest', {
+          ...(cleanOrderNumber ? { retailerOrderNumber: cleanOrderNumber } : {}),
+          ...(cleanCarrier ? { carrier: cleanCarrier } : {}),
+          ...(cleanTrackingNumber ? { trackingNumber: cleanTrackingNumber } : {}),
+        })
+        : await registryService.confirmContribution(tokenPayload.contributorId, 'Guest');
 
       await dispatchConfirmedContributionAlert({
         contributor: result.contributor,

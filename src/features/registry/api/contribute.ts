@@ -19,6 +19,7 @@ import {
   isJsonMediaType,
 } from '@/utils/contentType';
 import { isAdminRequest } from '@/core/auth/auth.server';
+import { isGuestRequest } from '@/core/auth/guest.server';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
@@ -86,6 +87,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
 
   const targetItemSettledPromise = settle(() => registryService.getItemById(itemId));
   const guestSessionSettledPromise = settle(() => getGuestInviteSession(request));
+  const isPasscodeGuestSettledPromise = settle(() => isGuestRequest(request));
 
   let hasStripeConfigError = false;
   let stripeConfigError: unknown = null;
@@ -133,9 +135,10 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     );
   }
 
-  const [sessionSettled, isAdminSettled] = await Promise.all([
+  const [sessionSettled, isAdminSettled, isPasscodeGuestSettled] = await Promise.all([
     guestSessionSettledPromise,
     isAdminSettledPromise,
+    isPasscodeGuestSettledPromise,
   ]);
   if (sessionSettled.status === 'rejected') {
     throw sessionSettled.reason;
@@ -143,9 +146,13 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   if (isAdminSettled.status === 'rejected') {
     throw isAdminSettled.reason;
   }
+  if (isPasscodeGuestSettled.status === 'rejected') {
+    throw isPasscodeGuestSettled.reason;
+  }
 
   const session = sessionSettled.value;
   const isAdmin = isAdminSettled.value;
+  const isPasscodeGuest = isPasscodeGuestSettled.value;
   const submittedCode = code?.trim() ? code.trim() : undefined;
   const sessionCode = session?.code?.trim() ? session.code.trim() : undefined;
 
@@ -162,12 +169,23 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   }
 
   const verifiedHouseholdCode = isAdmin ? submittedCode : sessionCode;
+  const isAuthorizedClaimer = isAdmin || Boolean(verifiedHouseholdCode) || isPasscodeGuest;
 
-  if (!paymentIntentId && !verifiedHouseholdCode && !isAdmin) {
+  if (!paymentIntentId && !isAuthorizedClaimer) {
     throw new ApiError(
       403,
-      'Please verify your household invitation code before claiming a gift or recording a direct transfer.'
+      'Please sign in with the wedding passcode or verify your household invitation code before claiming a gift or recording a direct transfer.'
     );
+  }
+
+  if (!paymentIntentId && !verifiedHouseholdCode && !isAdmin) {
+    const trimmedClaimEmail = email?.trim() ?? '';
+    if (!trimmedClaimEmail) {
+      throw new ApiError(
+        400,
+        'Email address is required when claiming a gift or recording a transfer without a household invitation code.'
+      );
+    }
   }
 
   let effectiveName = name;
@@ -279,6 +297,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
       requestUrl: request.url,
       isReservation: !stripePaymentIntentId,
       verifiedInvitationCode: effectiveCode,
+      allowPasscodeReservationEmail: Boolean(!effectiveCode && isPasscodeGuest && !isAdmin),
     },
     { mode: 'after' }
   );
@@ -321,4 +340,4 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   }
 
   return NextResponse.json(projectViewerRegistryItem(updatedItem, isAdmin, claimActions));
-}, { limit: 20, windowMs: 60 * 1000, keyPrefix: 'registry-contribute' });
+}, { limit: 20, windowMs: 60 * 1000, keyPrefix: 'registry-contribute', ipLimit: 20 });

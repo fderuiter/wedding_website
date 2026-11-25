@@ -370,7 +370,7 @@ describe('RegistryItemCard Component', () => {
   it('shows inline error and connects accessibility attributes for invalid email format', async () => {
     render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
     const nameInput = screen.getByLabelText(/Your Name/i);
-    const emailInput = screen.getByLabelText(/Email Address \(Optional\)/i);
+    const emailInput = screen.getByLabelText(/Email Address/i);
     expect(emailInput).not.toHaveAttribute('aria-describedby');
     expect(emailInput).toHaveAttribute('aria-invalid', 'false');
 
@@ -559,7 +559,7 @@ describe('RegistryItemCard Component', () => {
       });
     });
 
-    it('blocks submission and focuses code input when invitation code is unverified on single gift claim, and allows claim once verified', async () => {
+    it('keeps invitation code optional, requires email when claiming without a verified household code, and makes email optional once household code is verified', async () => {
       (apiClient.post as jest.Mock).mockResolvedValue({
         valid: true,
         guestName: 'Guest Contributor',
@@ -573,7 +573,10 @@ describe('RegistryItemCard Component', () => {
       );
 
       const codeInput = screen.getByPlaceholderText('ABCDEF12');
-      expect(codeInput).toBeRequired();
+      expect(codeInput).not.toBeRequired();
+
+      const emailInput = screen.getByLabelText(/Email Address \(For confirmation\)/i);
+      expect(emailInput).toBeRequired();
 
       const nameInput = screen.getByLabelText(/Your Name/i);
       fireEvent.change(nameInput, { target: { value: 'Guest Contributor' } });
@@ -582,17 +585,14 @@ describe('RegistryItemCard Component', () => {
       fireEvent.click(submitButton);
 
       expect(
-        await screen.findByText(
-          'Please verify your 8-character invitation code to claim this gift.'
-        )
+        await screen.findByText('Email address is required for confirmation.')
       ).toBeInTheDocument();
       expect(mockOnContribute).not.toHaveBeenCalled();
-      expect(codeInput).toHaveAttribute('aria-invalid', 'true');
-      expect(document.activeElement).toBe(codeInput);
 
       fireEvent.change(codeInput, { target: { value: 'INVITE26' } });
       fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
       await screen.findByText(/Code verified!/i);
+      expect(screen.getByLabelText(/Email Address \(Optional\)/i)).not.toBeRequired();
 
       fireEvent.click(submitButton);
 
@@ -1329,7 +1329,7 @@ describe('RegistryItemCard Component', () => {
       );
 
       const nameInput = screen.getByLabelText(/Your Name/i);
-      const emailInput = screen.getByLabelText(/Email Address \(Optional\)/i);
+      const emailInput = screen.getByLabelText(/Email Address/i);
       const submitBtn = screen.getByRole('button', { name: 'Claim Gift' });
 
       fireEvent.change(nameInput, { target: { value: 'Well Wisher' } });
@@ -1744,8 +1744,12 @@ describe('RegistryItemCard Component', () => {
         </Overlay>
       );
 
-      // Hidden for unverified guests even if prop is supplied
+      // Hidden for unverified guests even if prop is supplied, while sign-in prompt is shown
       expect(screen.queryByTestId('registry-shipping-address-card')).not.toBeInTheDocument();
+      expect(screen.getByTestId('registry-shipping-signin-prompt')).toBeInTheDocument();
+      expect(
+        screen.getByRole('link', { name: /Sign in with Wedding Passcode/i })
+      ).toHaveAttribute('href', '/guest/login?callbackUrl=/registry');
 
       fireEvent.change(screen.getByPlaceholderText('ABCDEF12'), { target: { value: 'INVITE26' } });
       fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
@@ -1896,6 +1900,84 @@ describe('RegistryItemCard Component', () => {
         screen.getByText(/Payment completion confirmed — the couple has been notified of your gift!/i)
       ).toBeInTheDocument();
       expect(mockOnItemUpdated).toHaveBeenCalledWith(confirmedItem);
+    });
+
+    it('keeps shipping address and order-tracking cards visible to active passcode claim holders and forwards tracking details on inline confirm', async () => {
+      const claimOnContribute = jest.fn().mockResolvedValue({
+        claimActions: {
+          confirmToken: 'signed-confirm-token-passcode',
+          cancelToken: 'signed-cancel-token-passcode',
+          status: 'RESERVED',
+        },
+      });
+      (apiClient.post as jest.Mock).mockResolvedValue({
+        action: 'confirm',
+        status: 'CONFIRMED',
+        changed: true,
+      });
+
+      render(
+        <ToastProvider>
+          <Overlay isOpen={true} onClose={mockOnClose}>
+            <RegistryItemCard
+              item={mockSingleItem}
+              onClose={mockOnClose}
+              onContribute={claimOnContribute}
+              isAdmin={true}
+              shippingAddress={{
+                recipientName: 'Alex & Jordan Rivera',
+                addressLine1: '742 Evergreen Terrace',
+                addressLine2: '',
+                city: 'Portland',
+                state: 'OR',
+                zip: '97205',
+                country: 'United States',
+                phone: '',
+                deliveryNotes: '',
+              }}
+            />
+          </Overlay>
+        </ToastProvider>
+      );
+
+      fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Passcode Claimer' } });
+      fireEvent.change(screen.getByLabelText(/Email Address/i), {
+        target: { value: 'claimer@example.com' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
+
+      await screen.findByTestId('post-claim-lifecycle-controls');
+      expect(screen.getByTestId('registry-shipping-address-card')).toHaveTextContent(
+        '742 Evergreen Terrace'
+      );
+      expect(screen.getByTestId('external-order-tracking-fields')).toBeInTheDocument();
+
+      fireEvent.change(screen.getByLabelText(/Retailer Order Number/i), {
+        target: { value: '114-2223334' },
+      });
+      fireEvent.change(screen.getByLabelText(/Shipping Carrier/i), {
+        target: { value: 'UPS' },
+      });
+      fireEvent.change(screen.getByLabelText(/Tracking Number/i), {
+        target: { value: '1Z999AA10123456784' },
+      });
+
+      fireEvent.click(screen.getByTestId('post-claim-confirm-button'));
+
+      await waitFor(() => {
+        expect(apiClient.post).toHaveBeenCalledWith('/api/registry/claim', {
+          token: 'signed-confirm-token-passcode',
+          retailerOrderNumber: '114-2223334',
+          carrier: 'UPS',
+          trackingNumber: '1Z999AA10123456784',
+        });
+      });
+
+      expect(await screen.findByText('Confirmed')).toBeInTheDocument();
+      expect(screen.getByTestId('registry-shipping-address-card')).toBeInTheDocument();
+      expect(screen.getByTestId('external-order-tracking-fields')).toHaveTextContent(
+        '114-2223334'
+      );
     });
 
     it('lets guest cancel a RESERVED claim via signed token and reopens item state', async () => {
