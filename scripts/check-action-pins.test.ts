@@ -174,50 +174,57 @@ describe('check-action-pins', () => {
     const authHeaders: Array<string | null> = [];
     const inProcessApiBase = 'https://mock-github-api.local';
 
+    const routeBaselineUpstreamApi = (
+      pathname: string
+    ): { status: number; body: Record<string, unknown> } => {
+      if (pathname === `/repos/actions/checkout/commits/${validCheckoutSha}`) {
+        return { status: 200, body: { sha: validCheckoutSha } };
+      }
+      if (pathname === '/repos/actions/checkout/git/ref/tags/v7.0.1') {
+        return {
+          status: 200,
+          body: {
+            ref: 'refs/tags/v7.0.1',
+            object: { type: 'commit', sha: validCheckoutSha },
+          },
+        };
+      }
+      if (pathname === `/repos/github/codeql-action/commits/${validCodeqlSha}`) {
+        return { status: 200, body: { sha: validCodeqlSha } };
+      }
+      if (pathname === '/repos/github/codeql-action/git/ref/tags/v4.39.3') {
+        return {
+          status: 200,
+          body: {
+            ref: 'refs/tags/v4.39.3',
+            object: { type: 'commit', sha: validCodeqlSha },
+          },
+        };
+      }
+      if (pathname === `/repos/actions/attest-build-provenance/commits/${brokenAttestSha}`) {
+        return {
+          status: 422,
+          body: { message: `No commit found for SHA: ${brokenAttestSha}` },
+        };
+      }
+      return { status: 404, body: { message: 'Not Found' } };
+    };
+
     mswServer.use(
-      mswHttp.get(`${inProcessApiBase}/repos/:owner/:repo/commits/:sha`, ({ request, params }) => {
+      mswHttp.get(`${inProcessApiBase}/*`, ({ request }) => {
         const pathname = new URL(request.url).pathname;
         requestedPaths.push(pathname);
         authHeaders.push(request.headers.get('authorization'));
-
-        if (params.owner === 'actions' && params.repo === 'checkout' && params.sha === validCheckoutSha) {
-          return HttpResponse.json({ sha: validCheckoutSha }, { status: 200 });
-        }
-        if (params.owner === 'github' && params.repo === 'codeql-action' && params.sha === validCodeqlSha) {
-          return HttpResponse.json({ sha: validCodeqlSha }, { status: 200 });
-        }
-        if (
-          params.owner === 'actions' &&
-          params.repo === 'attest-build-provenance' &&
-          params.sha === brokenAttestSha
-        ) {
-          return HttpResponse.json(
-            { message: `No commit found for SHA: ${brokenAttestSha}` },
-            { status: 422 }
-          );
-        }
-        return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+        const mocked = routeBaselineUpstreamApi(pathname);
+        return HttpResponse.json(mocked.body, { status: mocked.status });
       })
     );
 
     const server = http.createServer((req, res) => {
-      if (req.url === `/repos/actions/checkout/commits/${validCheckoutSha}`) {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ sha: validCheckoutSha }));
-        return;
-      }
-      if (req.url === `/repos/github/codeql-action/commits/${validCodeqlSha}`) {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ sha: validCodeqlSha }));
-        return;
-      }
-      if (req.url === `/repos/actions/attest-build-provenance/commits/${brokenAttestSha}`) {
-        res.writeHead(422, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ message: `No commit found for SHA: ${brokenAttestSha}` }));
-        return;
-      }
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ message: 'Not Found' }));
+      const pathname = new URL(req.url ?? '/', 'http://127.0.0.1').pathname;
+      const mocked = routeBaselineUpstreamApi(pathname);
+      res.writeHead(mocked.status, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(mocked.body));
     });
 
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
@@ -263,7 +270,9 @@ describe('check-action-pins', () => {
       expect(upstreamRes.verifiedPins).toBe(3);
       expect(requestedPaths).toEqual([
         `/repos/actions/checkout/commits/${validCheckoutSha}`,
+        '/repos/actions/checkout/git/ref/tags/v7.0.1',
         `/repos/github/codeql-action/commits/${validCodeqlSha}`,
+        '/repos/github/codeql-action/git/ref/tags/v4.39.3',
         `/repos/actions/attest-build-provenance/commits/${brokenAttestSha}`,
       ]);
       expect(authHeaders.every((header) => header === 'Bearer ghs_mock_ci_token')).toBe(true);

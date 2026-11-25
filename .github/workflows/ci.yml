@@ -110,8 +110,10 @@ jobs:
 
       - name: Write Documentation Drift Report to Job Summary
         if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        env:
+          VERIFY_DOCS_OUTCOME: ${{ steps.verify-docs.outcome }}
         run: |
-          if [ "${{ steps.verify-docs.outcome }}" = "failure" ]; then
+          if [ "$VERIFY_DOCS_OUTCOME" = "failure" ]; then
             if [ -f "drift_files.txt" ]; then
               {
                 echo "### ⚠️ Documentation Drift Detected"

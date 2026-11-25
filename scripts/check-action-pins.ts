@@ -1,113 +1,36 @@
-import { spawnSync } from 'child_process';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { isMap, isPair, isScalar, isSeq, LineCounter, parseDocument } from 'yaml';
-
-interface Violation {
-  filePath: string;
-  lineNumber: number;
-  lineContent: string;
-  actionRef: string;
-  reason: string;
-}
-
-interface PinnedActionOccurrence {
-  filePath: string;
-  lineNumber: number;
-  lineContent: string;
-  actionRef: string;
-  owner: string;
-  repo: string;
-  sha: string;
-}
-
-interface VerifyUpstreamOptions {
-  apiBaseUrl?: string;
-  token?: string;
-  timeoutMs?: number;
-}
+import {
+  conditionExcludesTrigger,
+  getUntrustedWorkflowTriggers,
+  permissionsHaveWriteScope,
+} from './action-pins/condition-parser';
+import {
+  findMapPair,
+  getConditionString,
+  getNodeLineNumber,
+  getScalarString,
+  PinnedActionOccurrence,
+  VerifyUpstreamOptions,
+  Violation,
+} from './action-pins/types';
+import { verifyUpstreamPins } from './action-pins/upstream-verifier';
+import { validateUsesPair } from './action-pins/uses-validator';
 
 const WORKFLOWS_DIR = path.join(process.cwd(), '.github', 'workflows');
-const COMMIT_SHA_REGEX = /^[a-fA-F0-9]{40}$/;
-const VERSION_COMMENT_REGEX = /^v\d+(?:\.\d+)*(?:-[0-9A-Za-z.-]+)?(?:\s.*)?$/;
-const DEFAULT_GITHUB_API_BASE_URL = 'https://api.github.com';
-const DEFAULT_UPSTREAM_TIMEOUT_MS = 15000;
 
-function getNodeLineNumber(node: unknown, lineCounter: LineCounter): number {
-  if (
-    node &&
-    typeof node === 'object' &&
-    'range' in node &&
-    Array.isArray((node as { range?: unknown }).range) &&
-    typeof (node as { range: [number] }).range[0] === 'number'
-  ) {
-    return lineCounter.linePos((node as { range: [number] }).range[0]).line;
-  }
-  return 1;
-}
-
-function getScalarString(node: unknown): string | null {
-  if (isScalar(node) && typeof node.value === 'string') {
-    return node.value;
-  }
-  return null;
-}
-
-function workflowTriggersOnPullRequest(onNode: unknown): boolean {
-  if (isScalar(onNode)) {
-    return onNode.value === 'pull_request';
-  }
-  if (isSeq(onNode)) {
-    return onNode.items.some(
-      (item) => isScalar(item) && item.value === 'pull_request'
-    );
-  }
-  if (isMap(onNode)) {
-    return onNode.items.some(
-      (pair) => isPair(pair) && isScalar(pair.key) && pair.key.value === 'pull_request'
-    );
-  }
-  return false;
-}
-
-function conditionExcludesPullRequest(ifValue: string | null): boolean {
-  if (!ifValue) return false;
-  const normalized = ifValue.replace(/\s+/g, ' ').trim();
-  if (
-    /github\.event_name\s*!=\s*['"]pull_request['"]/.test(normalized) ||
-    /['"]pull_request['"]\s*!=\s*github\.event_name/.test(normalized)
-  ) {
-    return true;
-  }
-
-  const eqMatches = [
-    ...normalized.matchAll(/github\.event_name\s*==\s*['"]([^'"]+)['"]/g),
-    ...normalized.matchAll(/['"]([^'"]+)['"]\s*==\s*github\.event_name/g),
-  ];
-  if (eqMatches.length > 0) {
-    return eqMatches.every((m) => m[1] !== 'pull_request');
-  }
-
-  return false;
-}
-
-function permissionsHaveWriteScope(permissionsNode: unknown): boolean {
-  if (isScalar(permissionsNode)) {
-    return permissionsNode.value === 'write-all';
-  }
-  if (isMap(permissionsNode)) {
-    return permissionsNode.items.some(
-      (pair) =>
-        isPair(pair) &&
-        isScalar(pair.value) &&
-        typeof pair.value.value === 'string' &&
-        pair.value.value.trim() === 'write'
-    );
-  }
-  return false;
-}
+const REMEDIATION_STEPS = [
+  'All workflow files in .github/workflows/ must be valid YAML 1.2 with zero\n   parser errors or unresolved tag warnings (quote conditionals starting with "!").',
+  'All third-party GitHub Actions and reusable workflows must be pinned to full\n   40-character commit SHAs reachable from an upstream tag or branch.',
+  'Every third-party uses: directive must include an inline "# v..." version comment:\n   uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
+  'Local workflow references (starting with ./) do not require commit SHAs.',
+  'Every non-cancelling concurrency block must set "queue: max" to queue pending runs in FIFO order.',
+  'Every job invoking actions/deploy-pages must set concurrency: { group: github-pages, cancel-in-progress: false, queue: max }.',
+  'Every runs-on job must declare an integer "timeout-minutes" between 1 and 60 (reusable workflow caller jobs with uses: and no runs-on are exempt), and any step "timeout-minutes" must be an integer strictly less than its enclosing job "timeout-minutes".',
+  'Step "run" scripts must bind GitHub Actions expressions via "env:" instead of interpolating "${{ ... }}" directly.',
+];
 
 function concurrencyAlwaysCancelsInProgress(concurrencyNode: unknown): boolean {
   if (!isMap(concurrencyNode)) {
@@ -148,7 +71,8 @@ function evaluateAstPolicies(
   lines: string[],
   relPath: string,
   fileName: string,
-  violations: Violation[]
+  violations: Violation[],
+  pinnedOccurrences: PinnedActionOccurrence[]
 ): void {
   if (!isMap(doc.contents)) {
     return;
@@ -193,7 +117,9 @@ function evaluateAstPolicies(
   };
 
   const onNode: unknown = doc.contents.get('on', true);
-  const hasPullRequestTrigger = workflowTriggersOnPullRequest(onNode);
+  const untrustedTriggers = getUntrustedWorkflowTriggers(onNode);
+  const hasUntrustedTrigger = untrustedTriggers.length > 0;
+  const untrustedTriggerLabel = untrustedTriggers.join('/');
   const topPermissionsNode: unknown = doc.contents.get('permissions', true);
   const topConcurrencyNode: unknown = doc.contents.get('concurrency', true);
 
@@ -233,9 +159,21 @@ function evaluateAstPolicies(
     }
     const jobId = String(jobPair.key.value);
     const jobMap = jobPair.value;
-    const jobIf = getScalarString(jobMap.get('if', true));
-    const jobExcludesPr = conditionExcludesPullRequest(jobIf);
 
+    const jobUsesPair = findMapPair(jobMap, 'uses');
+    if (jobUsesPair) {
+      validateUsesPair(
+        jobUsesPair,
+        `jobs.${jobId}.uses`,
+        lineCounter,
+        lines,
+        relPath,
+        violations,
+        pinnedOccurrences
+      );
+    }
+
+    const jobIf = getConditionString(jobMap.get('if', true));
     const jobPermissionsNode: unknown = jobMap.has('permissions')
       ? jobMap.get('permissions', true)
       : topPermissionsNode;
@@ -250,9 +188,7 @@ function evaluateAstPolicies(
     // Rule: Every runs-on job must declare an integer timeout-minutes between 1 and 60
     let validJobTimeoutMinutes: number | null = null;
     if (jobMap.has('runs-on')) {
-      const timeoutPair = jobMap.items.find(
-        (item) => isPair(item) && isScalar(item.key) && item.key.value === 'timeout-minutes'
-      );
+      const timeoutPair = findMapPair(jobMap, 'timeout-minutes');
       if (!timeoutPair) {
         addAstViolation(
           jobPair.key,
@@ -314,9 +250,7 @@ function evaluateAstPolicies(
         continue;
       }
 
-      const stepTimeoutPair = stepNode.items.find(
-        (item) => isPair(item) && isScalar(item.key) && item.key.value === 'timeout-minutes'
-      );
+      const stepTimeoutPair = findMapPair(stepNode, 'timeout-minutes');
       if (stepTimeoutPair) {
         const stepTimeoutNode: unknown = stepTimeoutPair.value;
         if (
@@ -348,10 +282,28 @@ function evaluateAstPolicies(
         }
       }
 
-      const usesNode: unknown = stepNode.get('uses', true);
-      const usesRaw = getScalarString(usesNode)?.trim() ?? '';
-      const stepIf = getScalarString(stepNode.get('if', true));
-      const stepExcludesPr = jobExcludesPr || conditionExcludesPullRequest(stepIf);
+      const stepUsesPair = findMapPair(stepNode, 'uses');
+      const usesNode: unknown = stepUsesPair?.value;
+      const usesRaw = stepUsesPair
+        ? validateUsesPair(
+          stepUsesPair,
+          `jobs.${jobId}.steps[${stepIdx}].uses`,
+          lineCounter,
+          lines,
+          relPath,
+          violations,
+          pinnedOccurrences
+        )
+        : '';
+
+      const stepIf = getConditionString(stepNode.get('if', true));
+      const stepExcludesAllUntrustedTriggers =
+        hasUntrustedTrigger &&
+        untrustedTriggers.every(
+          (trigger) =>
+            conditionExcludesTrigger(jobIf, trigger) ||
+            conditionExcludesTrigger(stepIf, trigger)
+        );
       const withNode: unknown = stepNode.get('with', true);
       const runNode: unknown = stepNode.get('run', true);
       const runScript = getScalarString(runNode);
@@ -375,24 +327,27 @@ function evaluateAstPolicies(
         }
       }
 
-      // Rule 2a: crazy-max/ghaction-github-runtime must be guarded against pull_request
+      // Rule 2a: crazy-max/ghaction-github-runtime must be guarded against untrusted triggers
       if (
-        hasPullRequestTrigger &&
+        hasUntrustedTrigger &&
         (usesRaw === 'crazy-max/ghaction-github-runtime' ||
           usesRaw.startsWith('crazy-max/ghaction-github-runtime@')) &&
-        !stepExcludesPr
+        !stepExcludesAllUntrustedTriggers
       ) {
+        const guardHint = untrustedTriggers
+          .map((trigger) => `github.event_name != '${trigger}'`)
+          .join(' && ');
         addAstViolation(
           usesNode ?? stepNode,
           usesRaw,
-          'crazy-max/ghaction-github-runtime must be guarded with "if: github.event_name != \'pull_request\'" in pull_request workflows.'
+          `crazy-max/ghaction-github-runtime must be guarded with "if: ${guardHint}" in ${untrustedTriggerLabel} workflows.`
         );
       }
 
-      // Rule 2b: Jobs running npm ci / npm install on pull_request must not hold write permissions
+      // Rule 2b: Jobs running npm ci / npm install on untrusted triggers must not hold write permissions
       if (
-        hasPullRequestTrigger &&
-        !stepExcludesPr &&
+        hasUntrustedTrigger &&
+        !stepExcludesAllUntrustedTriggers &&
         jobHasWritePermissions &&
         runScript &&
         /\bnpm\s+(?:ci|install|i)\b/.test(runScript)
@@ -400,7 +355,16 @@ function evaluateAstPolicies(
         addAstViolation(
           runNode ?? stepNode,
           `jobs.${jobId}.permissions`,
-          `Job "${jobId}" executes npm install/ci on pull_request while holding write permissions; drop write scopes before running package scripts.`
+          `Job "${jobId}" executes npm install/ci on ${untrustedTriggerLabel} while holding write permissions; drop write scopes before running package scripts.`
+        );
+      }
+
+      // Rule 2c: steps[].run must never interpolate ${{ ... }} expressions directly into shell scripts
+      if (runScript && /\$\{\{/.test(runScript)) {
+        addAstViolation(
+          runNode ?? stepNode,
+          `jobs.${jobId}.steps[${stepIdx}].run`,
+          `Job "${jobId}" interpolates "\${{ ... }}" directly inside a step "run" script; bind GitHub Actions expressions via "env:" instead.`
         );
       }
 
@@ -501,96 +465,15 @@ function checkWorkflowFile(
     });
   }
 
-  if (doc.errors.length === 0) {
-    evaluateAstPolicies(doc, lineCounter, lines, relPath, fileName, violations);
-  }
-
-  lines.forEach((line, index) => {
-    const trimmed = line.trim();
-    if (trimmed.startsWith('#')) {
-      return; // Skip full-line comments
-    }
-
-    // Match lines containing a `uses:` directive
-    const usesMatch = line.match(/(?:^|\s|-)\s*uses:\s*([^\r\n]+)/);
-    if (!usesMatch) {
-      return;
-    }
-
-    const rawValue = usesMatch[1].trim();
-    // Separate inline comments starting with '#'
-    const hashIdx = rawValue.indexOf('#');
-    const rawTarget = hashIdx === -1 ? rawValue : rawValue.slice(0, hashIdx);
-    const inlineComment = hashIdx === -1 ? '' : rawValue.slice(hashIdx + 1).trim();
-    const actionTarget = rawTarget.trim().replace(/^['"]|['"]$/g, '');
-
-    // Skip local path references (e.g., ./.github/workflows/publish-artifact.yml)
-    if (actionTarget.startsWith('.')) {
-      return;
-    }
-
-    const lastAtIdx = actionTarget.lastIndexOf('@');
-    if (lastAtIdx === -1) {
-      violations.push({
-        filePath: relPath,
-        lineNumber: index + 1,
-        lineContent: line.trim(),
-        actionRef: actionTarget,
-        reason: 'Missing "@<commit-sha>" reference specifier.',
-      });
-      return;
-    }
-
-    const actionPath = actionTarget.substring(0, lastAtIdx);
-    const ref = actionTarget.substring(lastAtIdx + 1);
-    let hasLineViolation = false;
-
-    const repoSegments = actionPath.split('/').filter(Boolean);
-    if (repoSegments.length < 2) {
-      violations.push({
-        filePath: relPath,
-        lineNumber: index + 1,
-        lineContent: line.trim(),
-        actionRef: actionTarget,
-        reason: `Action target "${actionPath}" must specify "<owner>/<repo>".`,
-      });
-      hasLineViolation = true;
-    }
-
-    if (!COMMIT_SHA_REGEX.test(ref)) {
-      violations.push({
-        filePath: relPath,
-        lineNumber: index + 1,
-        lineContent: line.trim(),
-        actionRef: actionTarget,
-        reason: `Action tag "${ref}" is not a 40-character commit SHA.`,
-      });
-      hasLineViolation = true;
-    }
-
-    if (!inlineComment || !VERSION_COMMENT_REGEX.test(inlineComment)) {
-      violations.push({
-        filePath: relPath,
-        lineNumber: index + 1,
-        lineContent: line.trim(),
-        actionRef: actionTarget,
-        reason: 'Missing inline "# v..." version comment (e.g., "# v4.2.2").',
-      });
-      hasLineViolation = true;
-    }
-
-    if (!hasLineViolation && repoSegments.length >= 2) {
-      pinnedOccurrences.push({
-        filePath: relPath,
-        lineNumber: index + 1,
-        lineContent: line.trim(),
-        actionRef: actionTarget,
-        owner: repoSegments[0],
-        repo: repoSegments[1],
-        sha: ref.toLowerCase(),
-      });
-    }
-  });
+  evaluateAstPolicies(
+    doc,
+    lineCounter,
+    lines,
+    relPath,
+    fileName,
+    violations,
+    pinnedOccurrences
+  );
 }
 
 function collectActionPins(workflowsDir: string = WORKFLOWS_DIR): {
@@ -627,59 +510,6 @@ export function checkActionPins(workflowsDir: string = WORKFLOWS_DIR): {
   return { workflowFiles, violations };
 }
 
-function verifyCommitViaGitSmartHttp(
-  owner: string,
-  repo: string,
-  sha: string,
-  timeoutMs: number
-): string | null {
-  const tempGitDir = fs.mkdtempSync(path.join(os.tmpdir(), 'check-action-pins-git-'));
-  try {
-    const initRes = spawnSync('git', ['init', '--bare', '--quiet'], {
-      cwd: tempGitDir,
-      encoding: 'utf8',
-      timeout: timeoutMs,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-    });
-    if (initRes.status !== 0) {
-      return `Upstream git fallback failed to initialize repository: ${(initRes.stderr || '').trim()}`;
-    }
-
-    const remoteUrl = `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}.git`;
-    const fetchRes = spawnSync(
-      'git',
-      ['fetch', '--depth=1', '--filter=blob:none', '--no-tags', '--quiet', remoteUrl, sha],
-      {
-        cwd: tempGitDir,
-        encoding: 'utf8',
-        timeout: timeoutMs,
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-      }
-    );
-    if (fetchRes.status !== 0) {
-      const stderr = (fetchRes.stderr || '').trim();
-      if (/not our ref|couldn't find remote ref|Repository not found/i.test(stderr)) {
-        return `Upstream commit "${sha}" does not exist in "${owner}/${repo}".`;
-      }
-      return `Failed to verify upstream commit "${sha}" in "${owner}/${repo}": ${stderr || 'git fetch failed'}`;
-    }
-
-    const revParseRes = spawnSync('git', ['rev-parse', '--verify', `${sha}^{commit}`], {
-      cwd: tempGitDir,
-      encoding: 'utf8',
-      timeout: timeoutMs,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-    });
-    if (revParseRes.status !== 0 || revParseRes.stdout.trim().toLowerCase() !== sha) {
-      return `Upstream commit "${sha}" does not exist in "${owner}/${repo}".`;
-    }
-
-    return null;
-  } finally {
-    fs.rmSync(tempGitDir, { recursive: true, force: true });
-  }
-}
-
 export async function verifyUpstreamActionPins(
   workflowsDir: string = WORKFLOWS_DIR,
   options: VerifyUpstreamOptions = {}
@@ -689,89 +519,12 @@ export async function verifyUpstreamActionPins(
   verifiedPins: number;
 }> {
   const { workflowFiles, violations, pinnedOccurrences } = collectActionPins(workflowsDir);
-  const apiBaseUrl = (
-    options.apiBaseUrl ??
-    process.env.GITHUB_API_URL ??
-    DEFAULT_GITHUB_API_BASE_URL
-  ).replace(/\/+$/, '');
-  const token = (
-    options.token ??
-    process.env.GITHUB_TOKEN ??
-    process.env.GH_TOKEN ??
-    ''
-  ).trim();
-  const timeoutMs = options.timeoutMs ?? DEFAULT_UPSTREAM_TIMEOUT_MS;
-
-  const groupedByPin = new Map<string, PinnedActionOccurrence[]>();
-  for (const occurrence of pinnedOccurrences) {
-    const key = `${occurrence.owner}/${occurrence.repo}@${occurrence.sha}`;
-    const existing = groupedByPin.get(key);
-    if (existing) {
-      existing.push(occurrence);
-    } else {
-      groupedByPin.set(key, [occurrence]);
-    }
-  }
-
-  const headers: Record<string, string> = {
-    Accept: 'application/vnd.github+json',
-    'User-Agent': 'wedding-website-check-action-pins',
-    'X-GitHub-Api-Version': '2022-11-28',
-  };
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-
-  for (const [, occurrences] of groupedByPin.entries()) {
-    const { owner, repo, sha } = occurrences[0];
-    const commitUrl = `${apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(sha)}`;
-
-    let failureReason: string | null = null;
-    try {
-      const response = await fetch(commitUrl, {
-        method: 'GET',
-        headers,
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-
-      if (response.status === 404 || response.status === 422) {
-        failureReason = `Upstream commit "${sha}" does not exist in "${owner}/${repo}" (HTTP ${response.status}).`;
-      } else if (
-        (response.status === 403 || response.status === 429) &&
-        !token &&
-        apiBaseUrl === DEFAULT_GITHUB_API_BASE_URL
-      ) {
-        failureReason = verifyCommitViaGitSmartHttp(owner, repo, sha, timeoutMs);
-      } else if (!response.ok) {
-        failureReason = `Failed to verify upstream commit "${sha}" in "${owner}/${repo}" (HTTP ${response.status} ${response.statusText}).`;
-      } else {
-        const body = (await response.json()) as { sha?: string };
-        if (typeof body.sha === 'string' && body.sha.toLowerCase() !== sha) {
-          failureReason = `Upstream commit lookup for "${owner}/${repo}@${sha}" resolved to mismatched SHA "${body.sha}".`;
-        }
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      failureReason = `Upstream commit check failed for "${owner}/${repo}@${sha}": ${message}`;
-    }
-
-    if (failureReason) {
-      for (const occurrence of occurrences) {
-        violations.push({
-          filePath: occurrence.filePath,
-          lineNumber: occurrence.lineNumber,
-          lineContent: occurrence.lineContent,
-          actionRef: occurrence.actionRef,
-          reason: failureReason,
-        });
-      }
-    }
-  }
+  const verifiedPins = await verifyUpstreamPins(pinnedOccurrences, violations, options);
 
   return {
     workflowFiles,
     violations,
-    verifiedPins: groupedByPin.size,
+    verifiedPins,
   };
 }
 
@@ -785,20 +538,15 @@ function reportViolationsAndExit(violations: Violation[]): never {
     console.error(`      Reason: ${v.reason}\n`);
   });
 
+  const formattedRemediation = REMEDIATION_STEPS.map(
+    (step, idx) => `${idx + 1}. ${step}`
+  ).join('\n');
+
   console.error(`
 ================================================================================
 ACTIONABLE REMEDIATION:
 --------------------------------------------------------------------------------
-1. All workflow files in .github/workflows/ must be valid YAML 1.2 with zero
-   parser errors or unresolved tag warnings (quote conditionals starting with "!").
-2. All third-party GitHub Actions must be pinned to full 40-character commit SHAs
-   that exist in the upstream GitHub repository.
-3. Every third-party uses: line must include an inline "# v..." version comment:
-   uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-4. Local workflow references (starting with ./ or ./.github/) do not require commit SHAs.
-5. Every non-cancelling concurrency block must set "queue: max" to queue pending runs in FIFO order.
-6. Every job invoking actions/deploy-pages must set concurrency: { group: github-pages, cancel-in-progress: false, queue: max }.
-7. Every runs-on job must declare an integer "timeout-minutes" between 1 and 60 (reusable workflow caller jobs with uses: and no runs-on are exempt), and any step "timeout-minutes" must be an integer strictly less than its enclosing job "timeout-minutes".
+${formattedRemediation}
 ================================================================================
 `);
   process.exit(1);
