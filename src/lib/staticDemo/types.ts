@@ -103,6 +103,9 @@ export interface DemoAppConfigRecord {
   shippingDeliveryNotes: string;
   defaultPaymentHandleType: string;
   defaultPaymentHandle: string;
+  registryGiftAccessTier: 'PASSCODE_GUESTS' | 'INVITED_HOUSEHOLDS';
+  shippingDisclosureTier: 'PASSCODE_GUESTS' | 'INVITED_HOUSEHOLDS' | 'POST_CLAIM_ONLY';
+  maxPendingReservations: number;
 }
 
 export interface DemoMediaRecord {

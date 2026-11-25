@@ -52,7 +52,7 @@ export const SlideshowQrOverlay = forwardRef<HTMLElement, SlideshowQrOverlayProp
         className={
           isRenderedAsChip
             ? `fixed ${qrOverlayBottomClass} right-3 sm:right-6 z-40`
-            : `fixed ${qrOverlayBottomClass} ${qrOverlayMaxHeightClass} right-3 sm:right-6 left-3 sm:left-auto z-40 sm:w-80 md:w-96 max-w-[calc(100vw-1.5rem)] overflow-y-auto overscroll-contain rounded-2xl p-3.5 sm:p-5 bg-stone-900/95 text-white shadow-2xl backdrop-blur-md border border-white/15 animate-fade-in motion-reduce:animate-none`
+            : `fixed ${qrOverlayBottomClass} ${qrOverlayMaxHeightClass} right-3 sm:right-6 left-3 sm:left-auto mx-auto sm:mx-0 z-40 sm:w-80 md:w-96 max-w-[290px] sm:max-w-[calc(100vw-1.5rem)] overflow-y-auto overscroll-contain rounded-2xl p-3.5 sm:p-5 bg-stone-900/95 text-white shadow-2xl backdrop-blur-md border border-white/15 animate-fade-in motion-reduce:animate-none`
         }
         data-testid="slideshow-qr-overlay"
       >
@@ -145,7 +145,7 @@ export const SlideshowQrOverlay = forwardRef<HTMLElement, SlideshowQrOverlayProp
                 aria-label="QR Code linking directly to guest photo upload"
               />
               <span
-                className="mt-2 text-[11px] font-mono font-medium text-stone-700 text-center break-all"
+                className="mt-2 max-w-full truncate text-[11px] font-mono font-medium text-stone-700 text-center"
                 data-testid="slideshow-upload-url"
               >
                 {resolvedUploadUrl}

@@ -41,6 +41,8 @@ const BUTTON_SIZES: Record<NonNullable<ButtonProps['size']>, string> = {
   lg: 'h-12 px-8 text-lg',
 };
 
+const EXPLICIT_POSITION_CLASS_RE = /(?:^|\s)!?(?:static|fixed|absolute|relative|sticky)(?:\s|$)/;
+
 export function getButtonClassName({
   variant = 'primary',
   size = 'md',
@@ -52,10 +54,18 @@ export function getButtonClassName({
   isPressed?: boolean;
   className?: string;
 } = {}): string {
+  const positionStyle = className && EXPLICIT_POSITION_CLASS_RE.test(className) ? '' : 'relative';
   const pressedStyles = isPressed
     ? 'ring-2 ring-offset-1 ring-current forced-colors:outline forced-colors:outline-2'
     : '';
-  return cn(BUTTON_BASE_STYLES, BUTTON_VARIANTS[variant], BUTTON_SIZES[size], pressedStyles, className);
+  return cn(
+    positionStyle,
+    BUTTON_BASE_STYLES,
+    BUTTON_VARIANTS[variant],
+    BUTTON_SIZES[size],
+    pressedStyles,
+    className
+  );
 }
 
 export function Button({

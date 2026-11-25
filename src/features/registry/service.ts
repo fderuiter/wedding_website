@@ -125,6 +125,7 @@ class RegistryService {
       state?: string | null;
       zipCode?: string | null;
       country?: string | null;
+      maxPendingReservations?: number;
     }
   ) {
     if (!contribution || typeof contribution.amount !== 'number' || contribution.amount <= 0) {
@@ -222,6 +223,21 @@ class RegistryService {
       return this.repository.getContributorWithItem(contributorId);
     }
     return registryRepository.getContributorWithItem!(contributorId);
+  }
+
+  /**
+   * Lists all active RESERVED contributions linked to a verified household invitation code (read-only).
+   */
+  async getReservedContributionsByInvitationCode(
+    code: string
+  ): Promise<Array<{ contributor: ContributorRecord; item: RegistryItem }>> {
+    if (typeof this.repository.getReservedContributionsByInvitationCode === 'function') {
+      return this.repository.getReservedContributionsByInvitationCode(code);
+    }
+    if (typeof registryRepository.getReservedContributionsByInvitationCode === 'function') {
+      return registryRepository.getReservedContributionsByInvitationCode(code);
+    }
+    return [];
   }
 
   /**

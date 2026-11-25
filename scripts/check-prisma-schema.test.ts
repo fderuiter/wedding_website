@@ -116,9 +116,9 @@ describe('check-prisma-schema PGlite migration drift guard', () => {
     expect(res.stderr).toContain('npm run migrate:dev');
   }, 20000);
 
-  it('verifies readiness manifest covers all 16 schema models and all 47 migration directories', () => {
+  it('verifies readiness manifest covers all 18 schema models and all 49 migration directories', () => {
     expect(REQUIRED_SCHEMA_TABLES).toHaveLength(18);
-    expect(REQUIRED_MIGRATION_NAMES).toHaveLength(48);
+    expect(REQUIRED_MIGRATION_NAMES).toHaveLength(49);
     expect(verifyReadinessManifestParity({ cwd: process.cwd() })).toEqual([]);
 
     const missingTableIssues = verifyReadinessManifestParity({

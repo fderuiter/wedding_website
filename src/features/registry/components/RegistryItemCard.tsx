@@ -8,10 +8,13 @@ import { useTheme } from '@/components/ThemeProvider';
 import {
   RegistryItem,
   RegistryShippingAddress,
+  RegistryGiftAccessTier,
+  ShippingDisclosureTier,
   OrderTrackingDetails,
   ContributorAddressDetails,
   ReconciledContributionReceipt,
 } from '../types';
+import { removeStoredSessionClaimHoldByToken } from '../lib/claimHubStorage';
 import { ContributorLifecycleBadge } from './ContributorLifecycleBadge';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
 import { MediaImage } from '@/components/MediaImage';
@@ -95,6 +98,10 @@ interface RegistryItemCardProps {
   defaultPaymentHandle?: string | null;
   hasShippingAddress?: boolean;
   shippingAddress?: RegistryShippingAddress | null;
+  giftAccessTier?: RegistryGiftAccessTier;
+  shippingDisclosureTier?: ShippingDisclosureTier;
+  maxPendingReservations?: number;
+  onOpenClaimHub?: () => void;
   isAdmin?: boolean;
   reconciledReceipt?: ReconciledContributionReceipt | null;
   redirectRecoveryError?: string | null;
@@ -204,6 +211,9 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   defaultPaymentHandle,
   hasShippingAddress,
   shippingAddress,
+  giftAccessTier,
+  shippingDisclosureTier,
+  onOpenClaimHub,
   isAdmin = false,
   reconciledReceipt = null,
   redirectRecoveryError = null,
@@ -294,6 +304,24 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   const showFeeDisclosurePanel = isDemoMode ? isDirectMode || isCardMode : isPayableGroupGift;
   const requireEmailWhenUnverified = !isDemoMode && !isAdmin && (isClaimMode || isDirectMode);
 
+  const [hasLockedCodeOnce, setHasLockedCodeOnce] = useState(false);
+  const shouldFetchStandaloneCapabilities =
+    shippingAddress === undefined &&
+    !isDemoMode &&
+    Boolean(item.vendorUrl) &&
+    (isAdmin || hasLockedCodeOnce || hasPasscodeSession);
+  const standaloneCapabilities = useRegistryCapabilities({
+    enabled: shouldFetchStandaloneCapabilities,
+  });
+  const effectiveGiftAccessTier: RegistryGiftAccessTier =
+    giftAccessTier ?? standaloneCapabilities.giftAccessTier ?? 'PASSCODE_GUESTS';
+  const effectiveShippingDisclosureTier: ShippingDisclosureTier =
+    shippingDisclosureTier ??
+    standaloneCapabilities.shippingDisclosureTier ??
+    'PASSCODE_GUESTS';
+  const requireInvitationCode =
+    !isDemoMode && !isAdmin && effectiveGiftAccessTier === 'INVITED_HOUSEHOLDS';
+
   const {
     isValidatingCode,
     isCodeLocked,
@@ -343,6 +371,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     setCountry,
     setPaymentTransactionId,
     setPhase,
+    setCodeError,
     setSubmissionError,
 
     validateContribution,
@@ -356,27 +385,28 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     item,
     onContribute,
     requireEmailWhenUnverified,
+    requireInvitationCode,
   });
 
   const isEmailRequired = requireEmailWhenUnverified && !isCodeLocked;
+  if (isCodeLocked && !hasLockedCodeOnce) {
+    setHasLockedCodeOnce(true);
+  }
 
-  const shouldFetchStandaloneCapabilities =
-    shippingAddress === undefined &&
-    !isDemoMode &&
-    Boolean(item.vendorUrl) &&
-    (isAdmin || isCodeLocked || hasPasscodeSession);
-  const standaloneCapabilities = useRegistryCapabilities({
-    enabled: shouldFetchStandaloneCapabilities,
-  });
   const canDisplayShippingAddress =
     isDemoMode || isAdmin || isCodeLocked || hasPasscodeSession;
-  const resolvedShippingAddress = canDisplayShippingAddress
-    ? shippingAddress !== undefined
-      ? shippingAddress
-      : standaloneCapabilities.shippingAddress
-    : null;
+  const resolvedShippingAddress =
+    claimActions?.shippingAddress ??
+    (canDisplayShippingAddress
+      ? shippingAddress !== undefined
+        ? shippingAddress
+        : standaloneCapabilities.shippingAddress
+      : null);
   const resolvedHasShippingAddress = Boolean(
-    hasShippingAddress || standaloneCapabilities.hasShippingAddress || shippingAddress
+    hasShippingAddress ||
+      standaloneCapabilities.hasShippingAddress ||
+      shippingAddress ||
+      claimActions?.shippingAddress
   );
 
   const { handleShare, copied } = useShareItem(item);
@@ -705,6 +735,14 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
 
     // Card Checkout mode: verify any unverified invitation code first, then validate fields
     const trimmedCardCode = invitationCode.trim().toUpperCase();
+    if (requireInvitationCode && !isCodeLocked && !trimmedCardCode) {
+      setCodeError(
+        'Please enter and verify your household invitation code to claim or contribute to gifts.'
+      );
+      setPhase('error');
+      invitationCodeInputRef.current?.focus();
+      return;
+    }
     const verifiedIdentity =
       trimmedCardCode && !isCodeLocked
         ? await ensureCodeVerifiedForSubmit()
@@ -1038,6 +1076,9 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
         key: activeClaimKey,
         status: action === 'confirm' ? 'CONFIRMED' : 'CANCELLED',
       });
+      if (claimActions.confirmToken) {
+        removeStoredSessionClaimHoldByToken(claimActions.confirmToken);
+      }
 
       if (response?.item) {
         onItemUpdated?.(response.item);
@@ -1612,7 +1653,62 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
         !isClaimedReadOnly &&
         !isSampleLocked &&
         !hasFormattedShipping &&
-        resolvedHasShippingAddress && (
+        resolvedHasShippingAddress &&
+        effectiveShippingDisclosureTier === 'POST_CLAIM_ONLY' && (
+        <div
+          data-testid="registry-shipping-disclosure-notice"
+          className="mb-4 p-3.5 rounded-lg bg-amber-50/80 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-sm flex flex-wrap items-center justify-between gap-2.5"
+        >
+          <div className="space-y-0.5">
+            <p className="font-semibold text-amber-950 dark:text-amber-100">
+              Ship Directly to Couple — Revealed After Claiming
+            </p>
+            <p className="text-xs text-amber-900/90 dark:text-amber-200">
+              To protect household privacy, the couple&apos;s shipping address is revealed immediately once you reserve this gift below and in your{' '}
+              <Link href="/guest/claim" className="underline font-semibold">
+                Reserved Gifts Hub
+              </Link>
+              .
+            </p>
+          </div>
+          {!hasPasscodeSession && !isCodeLocked && effectiveGiftAccessTier === 'PASSCODE_GUESTS' && (
+            <Link
+              href="/guest/login?callbackUrl=/registry"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary underline hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded px-2 py-1"
+            >
+              Sign in with Wedding Passcode
+            </Link>
+          )}
+        </div>
+      )}
+
+      {isVendorUrlSafe &&
+        !isClaimedReadOnly &&
+        !isSampleLocked &&
+        !hasFormattedShipping &&
+        resolvedHasShippingAddress &&
+        effectiveShippingDisclosureTier === 'INVITED_HOUSEHOLDS' && (
+        <div
+          data-testid="registry-shipping-disclosure-notice"
+          className="mb-4 p-3.5 rounded-lg bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700 text-sm flex flex-wrap items-center justify-between gap-2.5"
+        >
+          <div className="space-y-0.5">
+            <p className="font-semibold text-gray-800 dark:text-gray-100">
+              Ship Directly to Couple — Household Verification Required
+            </p>
+            <p className="text-xs text-gray-700 dark:text-gray-300">
+              Enter and verify your personal household invitation code below to reveal the couple&apos;s shipping address before checkout.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {isVendorUrlSafe &&
+        !isClaimedReadOnly &&
+        !isSampleLocked &&
+        !hasFormattedShipping &&
+        resolvedHasShippingAddress &&
+        effectiveShippingDisclosureTier === 'PASSCODE_GUESTS' && (
         <div
           data-testid="registry-shipping-signin-prompt"
           className="mb-4 p-3.5 rounded-lg bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700 text-sm flex flex-wrap items-center justify-between gap-2.5"
@@ -1904,12 +2000,29 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
               {activeRedirectRecoveryError}
             </div>
           )}
+          {requireInvitationCode && !isCodeLocked && (
+            <div
+              role="note"
+              data-testid="invited-households-access-notice"
+              className="mb-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-700 text-amber-950 dark:text-amber-100 text-xs space-y-1"
+            >
+              <p className="font-semibold">Household Invitation Code Required</p>
+              <p>
+                Only invited households can claim gifts or contribute on this registry. Enter the personal invitation code from your invitation below and click Verify.
+              </p>
+            </div>
+          )}
           <FormGroup
+            required={requireInvitationCode}
             state={codeError ? 'error' : isCodeLocked ? 'success' : 'default'}
             busy={isBusy || isValidatingCode}
             className="mb-3"
           >
-            <Label>Invitation Code (Optional — pre-fills household)</Label>
+            <Label>
+              {requireInvitationCode
+                ? 'Household Invitation Code (Required)'
+                : 'Invitation Code (Optional — pre-fills household)'}
+            </Label>
             <div className="flex gap-2">
               <Input
                 ref={invitationCodeInputRef}
@@ -2487,6 +2600,33 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
           {submissionError && (
             <FormGroup state="error" className="mb-3">
               <FormMessage>{submissionError}</FormMessage>
+              {(submissionError.includes('/guest/claim') ||
+                /pending.*reservation/i.test(submissionError)) && (
+                <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
+                  <Link
+                    href="/guest/claim"
+                    data-testid="hold-quota-claim-hub-link"
+                    className="inline-flex items-center gap-1 font-semibold text-primary underline hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
+                  >
+                    <Icon name="ExternalLink" className="w-3.5 h-3.5" />
+                    Manage Reserved Gifts (/guest/claim)
+                  </Link>
+                  {onOpenClaimHub && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        onClose();
+                        onOpenClaimHub();
+                      }}
+                      className="text-xs"
+                    >
+                      Open Claim Hub
+                    </Button>
+                  )}
+                </div>
+              )}
             </FormGroup>
           )}
           <Button

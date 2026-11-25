@@ -944,6 +944,9 @@ export function buildArchetypeSeedSnapshot(
     shippingDeliveryNotes: 'Leave packages with the concierge desk.',
     defaultPaymentHandleType: 'Venmo',
     defaultPaymentHandle: meta.paymentHandle,
+    registryGiftAccessTier: 'PASSCODE_GUESTS',
+    shippingDisclosureTier: 'PASSCODE_GUESTS',
+    maxPendingReservations: 5,
   };
 
   const broadcastId = `broadcast-${resolvedArchetype}-1`;

@@ -197,4 +197,12 @@ describe('AdminViewState Component', () => {
     fireEvent.click(dashboardBtn);
     expect(mockPush).toHaveBeenCalledWith('/admin/dashboard');
   });
+
+  it('uses fluid max-w-* placeholders and flex-wrap rows in default skeleton for 320px reflow', () => {
+    const { container } = render(<AdminViewState isLoading={true} />);
+
+    expect(container.querySelector('.max-w-64')).toBeInTheDocument();
+    expect(container.querySelector('.max-w-96')).toBeInTheDocument();
+    expect(container.querySelector('.w-96')).toBeNull();
+  });
 });

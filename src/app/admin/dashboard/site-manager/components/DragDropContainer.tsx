@@ -79,24 +79,24 @@ export default function DragDropContainer({
                     <div
                       ref={provided.innerRef}
                       {...provided.draggableProps}
-                      className={`p-4 rounded-xl shadow border border-primary dark:border-primary flex justify-between items-center bg-white dark:bg-gray-800 transition ${
+                      className={`p-4 rounded-xl shadow border border-primary dark:border-primary flex flex-wrap justify-between items-center gap-3 bg-white dark:bg-gray-800 transition ${
                         !feature.visible ? 'opacity-50' : ''
                       }`}
                     >
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-3 sm:gap-4 min-w-0">
                         <div
                           {...provided.dragHandleProps}
                           aria-label={`Reorder ${feature.title || feature.id}`}
-                          className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 cursor-grab active:cursor-grabbing focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded p-1 transition-colors"
+                          className="shrink-0 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 cursor-grab active:cursor-grabbing focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded p-1 transition-colors"
                         >
                           <Icon name="DragHandle" className="h-6 w-6" />
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <Heading
                             as={headingLevel}
                             variant="none"
                             unstyledColor
-                            className="font-bold text-xl text-primary"
+                            className="font-bold text-xl text-primary break-words"
                           >
                             {feature.title || feature.id}
                           </Heading>
@@ -105,7 +105,7 @@ export default function DragDropContainer({
                           </span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <Button
                           type="button"
                           variant="outline"

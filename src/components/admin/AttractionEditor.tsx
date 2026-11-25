@@ -200,7 +200,7 @@ export function AttractionEditorForm({
           </div>
         </FormGroup>
         <details className="md:col-span-2 rounded-lg border border-gray-200 dark:border-zinc-700 bg-gray-50/60 dark:bg-zinc-900/40 p-3">
-          <summary className="cursor-pointer select-none font-medium text-sm text-gray-700 dark:text-gray-200 min-h-11 flex items-center justify-between gap-2">
+          <summary className="cursor-pointer select-none font-medium text-sm text-gray-700 dark:text-gray-200 min-h-11 flex flex-wrap items-center justify-between gap-2">
             <span>Manual Coordinates (Optional)</span>
             <span className="text-xs text-gray-500 dark:text-gray-400">
               Override decimal latitude &amp; longitude
@@ -289,7 +289,7 @@ export function AttractionEditorForm({
       </div>
 
       {actionsAlign === 'end' ? (
-        <div className="flex gap-3 justify-end pt-2">
+        <div className="flex flex-wrap gap-3 justify-end pt-2">
           <Button type="button" variant={cancelVariant} onClick={onCancel}>
             Cancel
           </Button>
@@ -298,7 +298,7 @@ export function AttractionEditorForm({
           </Button>
         </div>
       ) : (
-        <div className="flex gap-4 mt-6">
+        <div className="flex flex-wrap gap-4 mt-6">
           <Button type="submit" variant="primary" disabled={saving}>
             {saving ? 'Saving...' : submitLabel}
           </Button>
@@ -342,23 +342,23 @@ export function AttractionCard({
     <div
       ref={ref}
       className={cn(
-        'bg-white dark:bg-zinc-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-zinc-700 flex justify-between items-center gap-4',
+        'bg-white dark:bg-zinc-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-zinc-700 flex flex-wrap justify-between items-center gap-4',
         !attraction.isVisible && 'opacity-60',
         className
       )}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 min-w-0">
         {attraction.image && (
         // eslint-disable-next-line @next/next/no-img-element
           <img
             src={withBasePath(attraction.image.url || '/images/placeholder.png')}
             alt={attraction.image.isDecorative ? '' : (attraction.image.altText || attraction.name)}
-            className="w-12 h-12 rounded-lg object-cover bg-gray-100"
+            className="w-12 h-12 shrink-0 rounded-lg object-cover bg-gray-100"
           />
         )}
-        <div>
-          <div className="font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-            <span>{attraction.name}</span>
+        <div className="min-w-0">
+          <div className="font-semibold text-gray-900 dark:text-gray-100 flex flex-wrap items-center gap-2">
+            <span className="break-words">{attraction.name}</span>
             {showSampleBadge && attraction.isSample && (
               <span className="px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 font-semibold border border-amber-300 dark:border-amber-700">
                 Sample
@@ -376,7 +376,7 @@ export function AttractionCard({
           )}
         </div>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Button
           variant="secondary"
           size="sm"

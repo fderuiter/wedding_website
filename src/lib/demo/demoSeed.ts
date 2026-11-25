@@ -174,6 +174,9 @@ interface DemoSiteConfigSeed {
   shippingDeliveryNotes: string;
   defaultPaymentHandleType: string;
   defaultPaymentHandle: string;
+  registryGiftAccessTier: 'PASSCODE_GUESTS' | 'INVITED_HOUSEHOLDS';
+  shippingDisclosureTier: 'PASSCODE_GUESTS' | 'INVITED_HOUSEHOLDS' | 'POST_CLAIM_ONLY';
+  maxPendingReservations: number;
   updatedAt?: string;
 }
 
@@ -1054,6 +1057,9 @@ export function buildArchetypeDataset(archetypeId: ArchetypeId): ArchetypeDatase
     shippingDeliveryNotes: preset.siteConfig.shippingDeliveryNotes,
     defaultPaymentHandleType: 'Venmo',
     defaultPaymentHandle: '@alex-and-taylor',
+    registryGiftAccessTier: 'PASSCODE_GUESTS',
+    shippingDisclosureTier: 'PASSCODE_GUESTS',
+    maxPendingReservations: 5,
   };
 
   const snapshotVersions: DemoSnapshotVersionRecord[] = [

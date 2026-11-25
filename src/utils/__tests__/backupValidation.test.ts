@@ -514,7 +514,7 @@ describe('DatabaseBackupSchema Validation Tests', () => {
         ...APP_CONFIG_SECRET_KEYS,
       ].sort();
 
-      expect(APP_CONFIG_BACKUP_KEYS).toHaveLength(82);
+      expect(APP_CONFIG_BACKUP_KEYS).toHaveLength(85);
       expect(APP_CONFIG_SECRET_KEYS).toHaveLength(4);
       expect(combinedKeys).toEqual(prismaNames);
 
@@ -524,7 +524,7 @@ describe('DatabaseBackupSchema Validation Tests', () => {
       expect(overlap).toEqual([]);
     });
 
-    test('sanitizeAppConfigForBackup retains all 82 non-secret columns and strips secrets and virtual DTO keys', () => {
+    test('sanitizeAppConfigForBackup retains all 85 non-secret columns and strips secrets and virtual DTO keys', () => {
       const fullParsedDto = AppConfigSchema.parse({
         id: 'global',
         subdomain: 'couple',
@@ -691,9 +691,14 @@ describe('DatabaseBackupSchema Validation Tests', () => {
           col === 'rsvpGracePeriodHours' ||
           col === 'smtpPort' ||
           col === 'broadcastBatchSize' ||
-          col === 'broadcastBatchDelayMs'
+          col === 'broadcastBatchDelayMs' ||
+          col === 'maxPendingReservations'
         ) {
           populatedSnapshot[col] = 24;
+        } else if (col === 'registryGiftAccessTier') {
+          populatedSnapshot[col] = 'PASSCODE_GUESTS';
+        } else if (col === 'shippingDisclosureTier') {
+          populatedSnapshot[col] = 'PASSCODE_GUESTS';
         } else if (col === 'features') {
           populatedSnapshot[col] = [];
         } else if (col === 'modules' || col === 'themeTokens') {

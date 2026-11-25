@@ -111,6 +111,9 @@ export function buildArchetypeDataset(
       shippingDeliveryNotes: '',
       defaultPaymentHandleType: '',
       defaultPaymentHandle: '',
+      registryGiftAccessTier: 'PASSCODE_GUESTS',
+      shippingDisclosureTier: 'PASSCODE_GUESTS',
+      maxPendingReservations: 5,
     },
   };
 }
