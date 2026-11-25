@@ -137,6 +137,7 @@ jobs:
     steps:
       - name: Execute Post-Deployment Health Probe Verification
         id: health-probe
+        timeout-minutes: 3
         env:
           TARGET_ENV: ${{ inputs.environment }}
           VAR_SERVICE_URL: ${{ vars.SERVICE_URL }}

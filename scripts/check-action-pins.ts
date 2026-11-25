@@ -247,6 +247,41 @@ function evaluateAstPolicies(
       ? jobConcurrencyNode
       : topConcurrencyNode;
 
+    // Rule: Every runs-on job must declare an integer timeout-minutes between 1 and 60
+    let validJobTimeoutMinutes: number | null = null;
+    if (jobMap.has('runs-on')) {
+      const timeoutPair = jobMap.items.find(
+        (item) => isPair(item) && isScalar(item.key) && item.key.value === 'timeout-minutes'
+      );
+      if (!timeoutPair) {
+        addAstViolation(
+          jobPair.key,
+          `jobs.${jobId}.timeout-minutes`,
+          `Job "${jobId}" with runs-on must set an explicit integer "timeout-minutes" between 1 and 60 to prevent 6-hour hung runner locks.`
+        );
+      } else {
+        const timeoutNode: unknown = timeoutPair.value;
+        if (
+          isScalar(timeoutNode) &&
+          typeof timeoutNode.value === 'number' &&
+          Number.isInteger(timeoutNode.value) &&
+          timeoutNode.value >= 1 &&
+          timeoutNode.value <= 60
+        ) {
+          validJobTimeoutMinutes = timeoutNode.value;
+        } else {
+          const formattedActual = isScalar(timeoutNode)
+            ? JSON.stringify(timeoutNode.value)
+            : 'non-scalar value';
+          addAstViolation(
+            timeoutPair.key ?? timeoutNode ?? jobPair.key,
+            `jobs.${jobId}.timeout-minutes`,
+            `Job "${jobId}" must set "timeout-minutes" to an integer between 1 and 60 (got ${formattedActual}).`
+          );
+        }
+      }
+    }
+
     // Rule: jobs.<id>.environment referencing rollback_environment outside rollback.yml must guard on workflow_call
     if (fileName !== 'rollback.yml' && jobMap.has('environment')) {
       const envNode: unknown = jobMap.get('environment', true);
@@ -273,9 +308,44 @@ function evaluateAstPolicies(
       continue;
     }
 
-    for (const stepNode of stepsNode.items) {
+    for (let stepIdx = 0; stepIdx < stepsNode.items.length; stepIdx += 1) {
+      const stepNode: unknown = stepsNode.items[stepIdx];
       if (!isMap(stepNode)) {
         continue;
+      }
+
+      const stepTimeoutPair = stepNode.items.find(
+        (item) => isPair(item) && isScalar(item.key) && item.key.value === 'timeout-minutes'
+      );
+      if (stepTimeoutPair) {
+        const stepTimeoutNode: unknown = stepTimeoutPair.value;
+        if (
+          isScalar(stepTimeoutNode) &&
+          typeof stepTimeoutNode.value === 'number' &&
+          Number.isInteger(stepTimeoutNode.value) &&
+          stepTimeoutNode.value >= 1 &&
+          stepTimeoutNode.value <= 60
+        ) {
+          if (
+            validJobTimeoutMinutes !== null &&
+            stepTimeoutNode.value >= validJobTimeoutMinutes
+          ) {
+            addAstViolation(
+              stepTimeoutPair.key ?? stepTimeoutNode ?? stepNode,
+              `jobs.${jobId}.steps[${stepIdx}].timeout-minutes`,
+              `Step ${stepIdx + 1} in job "${jobId}" sets "timeout-minutes: ${stepTimeoutNode.value}", which must be strictly less than enclosing job "timeout-minutes: ${validJobTimeoutMinutes}".`
+            );
+          }
+        } else {
+          const formattedStepTimeout = isScalar(stepTimeoutNode)
+            ? JSON.stringify(stepTimeoutNode.value)
+            : 'non-scalar value';
+          addAstViolation(
+            stepTimeoutPair.key ?? stepTimeoutNode ?? stepNode,
+            `jobs.${jobId}.steps[${stepIdx}].timeout-minutes`,
+            `Step ${stepIdx + 1} in job "${jobId}" must set "timeout-minutes" to an integer between 1 and 60 (got ${formattedStepTimeout}).`
+          );
+        }
       }
 
       const usesNode: unknown = stepNode.get('uses', true);
@@ -728,6 +798,7 @@ ACTIONABLE REMEDIATION:
 4. Local workflow references (starting with ./ or ./.github/) do not require commit SHAs.
 5. Every non-cancelling concurrency block must set "queue: max" to queue pending runs in FIFO order.
 6. Every job invoking actions/deploy-pages must set concurrency: { group: github-pages, cancel-in-progress: false, queue: max }.
+7. Every runs-on job must declare an integer "timeout-minutes" between 1 and 60 (reusable workflow caller jobs with uses: and no runs-on are exempt), and any step "timeout-minutes" must be an integer strictly less than its enclosing job "timeout-minutes".
 ================================================================================
 `);
   process.exit(1);
