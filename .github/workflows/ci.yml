@@ -302,6 +302,7 @@ jobs:
           fi
       - name: Run unit & integration tests
         env:
+          CI_REQUIRE_DB: 'true'
           DATABASE_URL: postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public
           TEST_DATABASE_URL: postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public
         run: npm run test:cov
@@ -787,8 +788,6 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-chromium-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
       - name: Install Playwright Chromium Browser
         if: steps.playwright-chromium-cache.outputs.cache-hit != 'true'
         timeout-minutes: 5
@@ -865,20 +864,20 @@ jobs:
         run: |
           test -d node_modules/.prisma/client
           test -d node_modules/@prisma/client
-      - name: Cache Playwright browsers
-        id: playwright-cache
+      - name: Cache Playwright Chromium browser
+        id: playwright-chromium-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
-      - name: Install Playwright Browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
+          key: ${{ runner.os }}-playwright-chromium-${{ hashFiles('package-lock.json') }}
+      - name: Install Playwright Chromium Browser
+        if: steps.playwright-chromium-cache.outputs.cache-hit != 'true'
         timeout-minutes: 5
-        run: npx playwright install --with-deps
-      - name: Install Playwright Operating System Dependencies
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install --with-deps chromium
+      - name: Install Playwright Chromium OS Dependencies
+        if: steps.playwright-chromium-cache.outputs.cache-hit == 'true'
         timeout-minutes: 5
-        run: npx playwright install-deps
+        run: npx playwright install-deps chromium
       - name: Migrate & Seed Test Database
         env:
           DATABASE_URL: postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public
@@ -1066,8 +1065,6 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-chromium-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
       - name: Install Playwright Chromium Browser
         if: steps.playwright-chromium-cache.outputs.cache-hit != 'true'
         timeout-minutes: 5

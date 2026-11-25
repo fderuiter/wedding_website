@@ -94,6 +94,28 @@ export function isCiEnv(env) {
   return rawCi === 'true' || rawCi === '1';
 }
 
+export function isDatabaseRequired(options = {}) {
+  const env = options.env ?? process.env;
+  const argv = options.argv ?? process.argv;
+  const rawRequireDb = String(env.CI_REQUIRE_DB ?? '').trim().toLowerCase();
+  if (rawRequireDb === 'true' || rawRequireDb === '1') {
+    return true;
+  }
+  if (!Array.isArray(argv)) {
+    return false;
+  }
+  return argv.some((arg) => {
+    if (arg === '--require-db') {
+      return true;
+    }
+    if (typeof arg === 'string' && arg.startsWith('--require-db=')) {
+      const flagValue = arg.slice('--require-db='.length).trim().toLowerCase();
+      return flagValue === 'true' || flagValue === '1';
+    }
+    return false;
+  });
+}
+
 export function shouldInstallDependencies(options = {}) {
   const rootDir = options.rootDir ?? defaultRootDir;
   const env = options.env ?? process.env;
@@ -553,6 +575,235 @@ async function probeDatabaseState(connectionString, expectedMigrations) {
   }
 }
 
+function isLocalDefaultPostgresEndpoint(host, port) {
+  return (host === 'localhost' || host === '127.0.0.1' || host === '::1') && port === 5432;
+}
+
+async function ensureDatabaseReachability({
+  rootDir,
+  env,
+  dbHost,
+  dbPort,
+  probeTcp,
+  spawnSync,
+  sleep,
+}) {
+  const dbListenerActive = await probeTcp(dbHost, dbPort);
+  if (dbListenerActive) {
+    return true;
+  }
+
+  if (isCiEnv(env)) {
+    console.log(
+      `CI environment detected without an active listener at ${dbHost}:${dbPort}. Skipping Docker Compose auto-start.`
+    );
+    return false;
+  }
+
+  if (!isLocalDefaultPostgresEndpoint(dbHost, dbPort)) {
+    console.log(
+      `Database endpoint ${dbHost}:${dbPort} is offline. Skipping default Docker Compose auto-start.`
+    );
+    return false;
+  }
+
+  let dockerRunning = false;
+  try {
+    const docInfo = spawnSync('docker', ['info'], {
+      stdio: 'ignore',
+      shell: process.platform === 'win32',
+      env,
+    });
+    if (docInfo.status === 0) {
+      dockerRunning = true;
+    }
+  } catch {
+    // Docker command not found or not running
+  }
+
+  if (!dockerRunning) {
+    console.log('Docker command not found or daemon not running. Skipping database container auto-start.');
+    return false;
+  }
+
+  console.log('Ensuring local PostgreSQL database container is running...');
+  const ciComposeArgs = [
+    'compose',
+    '--env-file',
+    '.env.ci',
+    '-f',
+    'docker-compose.yml',
+    '-f',
+    'docker-compose.ci.yml',
+  ];
+  const ciComposeEnv = {
+    ...env,
+    DB_USER: env.DB_USER || 'wedding',
+    DB_PASSWORD: env.DB_PASSWORD || 'wedding123',
+    DB_NAME: env.DB_NAME || 'wedding',
+    ADMIN_PASSWORD:
+      env.ADMIN_PASSWORD ||
+      'scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==',
+    GUEST_PASSCODE: env.GUEST_PASSCODE || 'build-fallback-guest-passcode',
+    GUEST_SESSION_SECRET:
+      env.GUEST_SESSION_SECRET || 'playwright-e2e-session-secret-32-chars-min',
+  };
+  const startResult = spawnSync('docker', [...ciComposeArgs, 'up', '-d', 'db'], {
+    cwd: rootDir,
+    stdio: 'inherit',
+    shell: process.platform === 'win32',
+    env: ciComposeEnv,
+  });
+
+  if (startResult.status !== 0) {
+    console.warn(
+      'Failed to start database container via docker compose. Proceeding assuming database is already running...'
+    );
+    return probeTcp(dbHost, dbPort);
+  }
+
+  console.log('Waiting for database to be ready...');
+  for (let i = 0; i < 15; i++) {
+    try {
+      const check = spawnSync(
+        'docker',
+        [...ciComposeArgs, 'exec', '-T', 'db', 'pg_isready', '-U', 'wedding'],
+        {
+          stdio: 'ignore',
+          shell: process.platform === 'win32',
+          cwd: rootDir,
+          env: ciComposeEnv,
+        }
+      );
+      if (check.status === 0) {
+        console.log('Database is ready.');
+        return true;
+      }
+    } catch {
+      // Ignored
+    }
+    await sleep(1000);
+  }
+
+  console.log('Database was not ready in time, proceeding anyway...');
+  return probeTcp(dbHost, dbPort);
+}
+
+async function synchronizePrismaMigrations({
+  rootDir,
+  env,
+  testDbUrl,
+  dbHost,
+  dbPort,
+  dbReachable,
+  requireDb,
+  migrationsHash,
+  expectedMigrations,
+  state,
+  probeDbState,
+  ensureDatabase,
+  resetSchema,
+  spawnSync,
+  exit,
+}) {
+  if (!dbReachable) {
+    if (requireDb) {
+      console.error(
+        `PostgreSQL database at ${dbHost}:${dbPort} is unreachable while database readiness is required (CI_REQUIRE_DB=true or --require-db).`
+      );
+      exit(1);
+      return false;
+    }
+    if (state.dbSync) {
+      delete state.dbSync;
+      writePretestState(state, rootDir);
+    }
+    console.warn(
+      `PostgreSQL is offline at ${dbHost}:${dbPort}; skipping Prisma migrations (set CI_REQUIRE_DB=true or pass --require-db to require database readiness).`
+    );
+    return true;
+  }
+
+  let isDbSchemaCached = false;
+  if (
+    Boolean(migrationsHash) &&
+    state.dbSync?.schemaHash === migrationsHash &&
+    state.dbSync?.testDbUrl === testDbUrl
+  ) {
+    const dbState = await probeDbState(testDbUrl, expectedMigrations);
+    isDbSchemaCached = Boolean(dbState?.hasAppConfigTable && dbState?.allMigrationsApplied);
+  }
+
+  if (isDbSchemaCached) {
+    return true;
+  }
+
+  let targetDbName = '';
+  let targetSchema = 'public';
+  try {
+    const parsedTestUrl = new URL(testDbUrl);
+    targetDbName = decodeURIComponent(parsedTestUrl.pathname.replace(/^\//, ''));
+    targetSchema = parsedTestUrl.searchParams.get('schema') || 'public';
+  } catch {
+    // Keep defaults when URL cannot be parsed
+  }
+  const isIsolatedTestDb =
+    targetDbName === 'wedding_test' ||
+    targetDbName.endsWith('_test') ||
+    targetDbName.startsWith('wedding_test_');
+
+  await ensureDatabase(testDbUrl);
+
+  console.log('Applying Prisma migrations to isolated test database (provider: postgresql)...');
+
+  const migrateEnv = { ...env, DATABASE_URL: testDbUrl };
+  delete migrateEnv.POSTGRES_URL_NON_POOLING;
+
+  const migrateResult = spawnSync('npx', ['prisma', 'migrate', 'deploy'], {
+    cwd: rootDir,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    shell: process.platform === 'win32',
+    env: migrateEnv,
+  });
+
+  const migrateStdout = migrateResult.stdout ? migrateResult.stdout.toString() : '';
+  const migrateStderr = migrateResult.stderr ? migrateResult.stderr.toString() : '';
+  if (migrateStdout) process.stdout.write(migrateStdout);
+  if (migrateStderr) process.stderr.write(migrateStderr);
+
+  if (migrateResult.status !== 0) {
+    const combinedMigrateOutput = `${migrateStdout}\n${migrateStderr}`;
+    if (
+      /\bP3005\b/.test(combinedMigrateOutput) &&
+      isIsolatedTestDb &&
+      /^[A-Za-z_][A-Za-z0-9_]*$/.test(targetSchema)
+    ) {
+      console.warn(
+        `Detected unbaselined schema "${targetSchema}" in "${targetDbName}" from prior local "prisma db push" state (P3005). Resetting "${targetSchema}" schema and retrying "npx prisma migrate deploy"...`
+      );
+      await resetSchema(testDbUrl, targetSchema);
+
+      runCommand('npx', ['prisma', 'migrate', 'deploy'], {
+        cwd: rootDir,
+        spawnSync,
+        exit,
+        env: migrateEnv,
+      });
+    } else {
+      console.error('Command failed: npx prisma migrate deploy');
+      exit(migrateResult.status || 1);
+      return false;
+    }
+  }
+
+  if (migrationsHash) {
+    state.dbSync = { schemaHash: migrationsHash, testDbUrl };
+    writePretestState(state, rootDir);
+  }
+
+  return true;
+}
+
 export async function main(options = {}) {
   const rootDir = options.rootDir ?? defaultRootDir;
   const env = options.env ?? process.env;
@@ -612,177 +863,42 @@ export async function main(options = {}) {
   // 3. Resolve isolated test environment while preserving explicit CI or TEST_DATABASE_URL overrides
   const testDbUrl = resolveTestEnvironment({ rootDir, env });
   const { host: dbHost, port: dbPort } = parseDatabaseEndpoint(testDbUrl);
-  const dbListenerActive = await probeTcp(dbHost, dbPort);
+  const dbReachable = await ensureDatabaseReachability({
+    rootDir,
+    env,
+    dbHost,
+    dbPort,
+    probeTcp,
+    spawnSync,
+    sleep,
+  });
 
-  if (dbListenerActive) {
-    // Listener already active; skip Docker Compose database startup
-  } else if (isCiEnv(env)) {
-    console.log(
-      `CI environment detected without an active listener at ${dbHost}:${dbPort}. Skipping Docker Compose auto-start.`
-    );
-  } else {
-    let dockerRunning = false;
-    try {
-      const docInfo = spawnSync('docker', ['info'], {
-        stdio: 'ignore',
-        shell: process.platform === 'win32',
-        env,
-      });
-      if (docInfo.status === 0) {
-        dockerRunning = true;
-      }
-    } catch {
-      // Docker command not found or not running
-    }
-
-    if (dockerRunning) {
-      console.log('Ensuring local PostgreSQL database container is running...');
-      const ciComposeArgs = [
-        'compose',
-        '--env-file',
-        '.env.ci',
-        '-f',
-        'docker-compose.yml',
-        '-f',
-        'docker-compose.ci.yml',
-      ];
-      const ciComposeEnv = {
-        ...env,
-        DB_USER: env.DB_USER || 'wedding',
-        DB_PASSWORD: env.DB_PASSWORD || 'wedding123',
-        DB_NAME: env.DB_NAME || 'wedding',
-        ADMIN_PASSWORD:
-          env.ADMIN_PASSWORD ||
-          'scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==',
-        GUEST_PASSCODE: env.GUEST_PASSCODE || 'build-fallback-guest-passcode',
-        GUEST_SESSION_SECRET:
-          env.GUEST_SESSION_SECRET || 'playwright-e2e-session-secret-32-chars-min',
-      };
-      const startResult = spawnSync('docker', [...ciComposeArgs, 'up', '-d', 'db'], {
-        cwd: rootDir,
-        stdio: 'inherit',
-        shell: process.platform === 'win32',
-        env: ciComposeEnv,
-      });
-
-      if (startResult.status !== 0) {
-        console.warn(
-          'Failed to start database container via docker compose. Proceeding assuming database is already running...'
-        );
-      } else {
-        console.log('Waiting for database to be ready...');
-        let ready = false;
-        for (let i = 0; i < 15; i++) {
-          try {
-            const check = spawnSync(
-              'docker',
-              [...ciComposeArgs, 'exec', '-T', 'db', 'pg_isready', '-U', 'wedding'],
-              {
-                stdio: 'ignore',
-                shell: process.platform === 'win32',
-                cwd: rootDir,
-                env: ciComposeEnv,
-              }
-            );
-            if (check.status === 0) {
-              ready = true;
-              console.log('Database is ready.');
-              break;
-            }
-          } catch {
-            // Ignored
-          }
-          await sleep(1000);
-        }
-        if (!ready) {
-          console.log('Database was not ready in time, proceeding anyway...');
-        }
-      }
-    } else {
-      console.log('Docker command not found or daemon not running. Skipping database container auto-start.');
-    }
-  }
-
-  // 4. Synchronize Prisma migrations only when invalidated or unapplied
+  // 4. Synchronize Prisma migrations only when reachable and invalidated or unapplied
   const schemaHash = computeFileSha256(path.join(rootDir, 'prisma', 'schema.prisma'));
   const migrationsHash = computeMigrationsAndSchemaHash(rootDir);
   const expectedMigrations = listCommittedMigrationNames(rootDir);
   const state = readPretestState(rootDir);
+  const requireDb = isDatabaseRequired({ env, argv });
 
-  let isDbSchemaCached = false;
-  if (
-    dbListenerActive &&
-    Boolean(migrationsHash) &&
-    state.dbSync?.schemaHash === migrationsHash &&
-    state.dbSync?.testDbUrl === testDbUrl
-  ) {
-    const dbState = await probeDbState(testDbUrl, expectedMigrations);
-    isDbSchemaCached = Boolean(dbState?.hasAppConfigTable && dbState?.allMigrationsApplied);
-  }
-
-  if (!isDbSchemaCached) {
-    let targetDbName = '';
-    let targetSchema = 'public';
-    try {
-      const parsedTestUrl = new URL(testDbUrl);
-      targetDbName = decodeURIComponent(parsedTestUrl.pathname.replace(/^\//, ''));
-      targetSchema = parsedTestUrl.searchParams.get('schema') || 'public';
-    } catch {
-      // Keep defaults when URL cannot be parsed
-    }
-    const isIsolatedTestDb =
-      targetDbName === 'wedding_test' ||
-      targetDbName.endsWith('_test') ||
-      targetDbName.startsWith('wedding_test_');
-
-    await ensureDatabase(testDbUrl);
-
-    console.log('Applying Prisma migrations to isolated test database (provider: postgresql)...');
-
-    const migrateEnv = { ...env, DATABASE_URL: testDbUrl };
-    delete migrateEnv.POSTGRES_URL_NON_POOLING;
-
-    const migrateResult = spawnSync('npx', ['prisma', 'migrate', 'deploy'], {
-      cwd: rootDir,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      shell: process.platform === 'win32',
-      env: migrateEnv,
-    });
-
-    const migrateStdout = migrateResult.stdout ? migrateResult.stdout.toString() : '';
-    const migrateStderr = migrateResult.stderr ? migrateResult.stderr.toString() : '';
-    if (migrateStdout) process.stdout.write(migrateStdout);
-    if (migrateStderr) process.stderr.write(migrateStderr);
-
-    if (migrateResult.status !== 0) {
-      const combinedMigrateOutput = `${migrateStdout}\n${migrateStderr}`;
-      if (
-        /\bP3005\b/.test(combinedMigrateOutput) &&
-        isIsolatedTestDb &&
-        /^[A-Za-z_][A-Za-z0-9_]*$/.test(targetSchema)
-      ) {
-        console.warn(
-          `Detected unbaselined schema "${targetSchema}" in "${targetDbName}" from prior local "prisma db push" state (P3005). Resetting "${targetSchema}" schema and retrying "npx prisma migrate deploy"...`
-        );
-        await resetSchema(testDbUrl, targetSchema);
-
-        runCommand('npx', ['prisma', 'migrate', 'deploy'], {
-          cwd: rootDir,
-          spawnSync,
-          exit,
-          env: migrateEnv,
-        });
-      } else {
-        console.error('Command failed: npx prisma migrate deploy');
-        exit(migrateResult.status || 1);
-        return;
-      }
-    }
-
-    if (migrationsHash) {
-      state.dbSync = { schemaHash: migrationsHash, testDbUrl };
-      writePretestState(state, rootDir);
-    }
+  const canContinue = await synchronizePrismaMigrations({
+    rootDir,
+    env,
+    testDbUrl,
+    dbHost,
+    dbPort,
+    dbReachable,
+    requireDb,
+    migrationsHash,
+    expectedMigrations,
+    state,
+    probeDbState,
+    ensureDatabase,
+    resetSchema,
+    spawnSync,
+    exit,
+  });
+  if (!canContinue) {
+    return;
   }
 
   // 5. Generate Prisma Client only when missing or invalidated
