@@ -51,8 +51,14 @@ jobs:
     permissions:
       contents: read
       actions: read
+      packages: read
+      attestations: read
     outputs:
       resolved_sha: ${{ steps.resolve.outputs.resolved_sha }}
+      promote_existing: ${{ steps.inspect-ghcr.outputs.promote_existing }}
+      amd64_digest: ${{ steps.inspect-ghcr.outputs.amd64_digest }}
+      arm64_digest: ${{ steps.inspect-ghcr.outputs.arm64_digest }}
+      source_index_digest: ${{ steps.inspect-ghcr.outputs.source_index_digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -271,9 +277,22 @@ jobs:
               `Verified successful CI run #${successfulRun.run_number} (ID: ${successfulRun.id}) for commit ${targetSha}.`
             );
 
+      - name: Inspect Existing Attested GHCR Release Image
+        id: inspect-ghcr
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_ACTOR_LOGIN: ${{ github.actor }}
+          EVENT_NAME: ${{ github.event_name }}
+          RESOLVED_SHA: ${{ steps.resolve.outputs.resolved_sha }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          SIGNER_WORKFLOW: ${{ github.repository }}/.github/workflows/publish-artifact.yml
+        run: bash scripts/ghcr-release-promotion.sh inspect-preflight
+
   build:
     name: Build, Scan & Smoke Test (${{ matrix.platform }})
     needs: [preflight]
+    if: needs.preflight.outputs.promote_existing != 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 35
     permissions:
@@ -404,50 +423,17 @@ jobs:
 
       - name: Persist BuildKit Cache Mounts
         if: steps.buildkit-deps-cache.outputs.cache-hit != 'true' || steps.buildkit-next-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 5
         env:
           TARGET_PLATFORM: ${{ matrix.platform }}
           MOUNT_CACHE_DIR: /tmp/buildkit-mounts
           DEPS_CACHE_HIT: ${{ steps.buildkit-deps-cache.outputs.cache-hit }}
           NEXT_CACHE_HIT: ${{ steps.buildkit-next-cache.outputs.cache-hit }}
         run: |
-          BASE_IMAGE=$(awk '/^FROM / {print $2; exit}' Dockerfile)
-          EMPTY_DIR=$(mktemp -d)
-          OUT_DIR=$(mktemp -d)
-          trap 'rm -rf "$EMPTY_DIR" "$OUT_DIR"' EXIT
-          EXPORT_DEPS="false"
-          EXPORT_NEXT="false"
-          if [ "$DEPS_CACHE_HIT" != "true" ]; then EXPORT_DEPS="true"; fi
-          if [ "$NEXT_CACHE_HIT" != "true" ]; then EXPORT_NEXT="true"; fi
-          printf '%s\n' \
-            '# syntax=docker/dockerfile:1' \
-            "FROM ${BASE_IMAGE} AS exporter" \
-            'ARG CACHEBUST=1' \
-            'ARG EXPORT_DEPS=false' \
-            'ARG EXPORT_NEXT=false' \
-            'RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \' \
-            '    --mount=type=cache,target=/var/lib/apt,sharing=locked \' \
-            '    --mount=type=cache,target=/root/.npm,sharing=locked \' \
-            '    --mount=type=cache,target=/app/.next/cache,sharing=locked \' \
-            '    echo "$CACHEBUST" >/dev/null && \' \
-            '    mkdir -p /out /var/cache/apt /var/lib/apt /root/.npm /app/.next/cache && \' \
-            '    if [ "$EXPORT_DEPS" = "true" ]; then mkdir -p /out/deps && tar -cf /out/deps/mounts.tar -C / var/cache/apt var/lib/apt root/.npm; fi && \' \
-            '    if [ "$EXPORT_NEXT" = "true" ]; then mkdir -p /out/next && tar -cf /out/next/mounts.tar -C / app/.next/cache; fi' \
-            'FROM scratch' \
-            'COPY --from=exporter /out /' \
-            | docker buildx build \
-              --platform "$TARGET_PLATFORM" \
-              --build-arg "CACHEBUST=$(date +%s%N)" \
-              --build-arg "EXPORT_DEPS=${EXPORT_DEPS}" \
-              --build-arg "EXPORT_NEXT=${EXPORT_NEXT}" \
-              --output "type=local,dest=${OUT_DIR}" \
-              -f - "$EMPTY_DIR"
-          if [ -f "$OUT_DIR/deps/mounts.tar" ]; then
-            mkdir -p "$MOUNT_CACHE_DIR/deps"
-            mv -f "$OUT_DIR/deps/mounts.tar" "$MOUNT_CACHE_DIR/deps/mounts.tar"
-          fi
-          if [ -f "$OUT_DIR/next/mounts.tar" ]; then
-            mkdir -p "$MOUNT_CACHE_DIR/next"
-            mv -f "$OUT_DIR/next/mounts.tar" "$MOUNT_CACHE_DIR/next/mounts.tar"
+          if [ -f scripts/persist-buildkit-mounts.sh ]; then
+            bash scripts/persist-buildkit-mounts.sh
+          else
+            echo "::notice::Skipping BuildKit mount persistence because scripts/persist-buildkit-mounts.sh is absent at checked-out revision."
           fi
 
       - name: Load OCI Archive into Local Docker Daemon
@@ -537,7 +523,11 @@ jobs:
 
   publish:
     name: Merge Multi-Arch Index & Attest Provenance
-    needs: [build]
+    needs: [preflight, build]
+    if: |
+      !cancelled() &&
+      needs.preflight.result == 'success' &&
+      (needs.build.result == 'success' || (needs.preflight.outputs.promote_existing == 'true' && needs.build.result == 'skipped'))
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -674,6 +664,7 @@ jobs:
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
 
       - name: Download Verified OCI Archive Artifacts
+        if: needs.preflight.outputs.promote_existing != 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: oci-archive-*
@@ -700,7 +691,22 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Verify Per-Architecture SPDX SBOM Artifacts
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROMOTE_EXISTING: ${{ needs.preflight.outputs.promote_existing }}
+          IMAGE_REPOSITORY: ${{ steps.meta.outputs.image_repository }}
+          PROMOTED_AMD64_DIGEST: ${{ needs.preflight.outputs.amd64_digest }}
+          PROMOTED_ARM64_DIGEST: ${{ needs.preflight.outputs.arm64_digest }}
+          REVISION: ${{ steps.meta.outputs.revision }}
+          RESOLVED_SHA: ${{ steps.meta.outputs.resolved_sha }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          SIGNER_WORKFLOW: ${{ github.repository }}/.github/workflows/publish-artifact.yml
         run: |
+          if [ "${PROMOTE_EXISTING:-false}" = "true" ]; then
+            bash scripts/ghcr-release-promotion.sh extract-promoted-sboms
+          fi
+
           for required_arch in amd64 arm64; do
             SBOM_FILE="/tmp/oci-handoff/sbom-${required_arch}.spdx.json"
             if [ ! -f "$SBOM_FILE" ] || ! jq -e '.spdxVersion and (.packages | type == "array")' "$SBOM_FILE" >/dev/null; then
@@ -712,10 +718,21 @@ jobs:
       - name: Verify and Push Architecture OCI Archives
         timeout-minutes: 5
         env:
+          PROMOTE_EXISTING: ${{ needs.preflight.outputs.promote_existing }}
           IMAGE_REPOSITORY: ${{ steps.meta.outputs.image_repository }}
           DOCKERHUB_REPOSITORY: ${{ steps.meta.outputs.dockerhub_repository }}
+          PROMOTED_INDEX_DIGEST: ${{ needs.preflight.outputs.source_index_digest }}
+          PROMOTED_AMD64_DIGEST: ${{ needs.preflight.outputs.amd64_digest }}
+          PROMOTED_ARM64_DIGEST: ${{ needs.preflight.outputs.arm64_digest }}
+          REVISION: ${{ steps.meta.outputs.revision }}
+          RESOLVED_SHA: ${{ steps.meta.outputs.resolved_sha }}
         run: |
           mkdir -p /tmp/digests
+
+          if [ "${PROMOTE_EXISTING:-false}" = "true" ]; then
+            bash scripts/ghcr-release-promotion.sh mirror-promoted-digests
+            exit 0
+          fi
 
           for required_arch in amd64 arm64; do
             DIGEST_FILE="/tmp/oci-handoff/${required_arch}.digest"

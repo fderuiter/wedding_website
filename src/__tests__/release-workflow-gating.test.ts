@@ -116,12 +116,13 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
   const migrateWorkflow = readWorkflow('db-migrate.yml');
   const rollbackWorkflow = readWorkflow('rollback.yml');
 
-  it('triggers ci.yml once on main pushes, v* tags, and pull requests with FIFO queueing while restricting deploy-docs to serialized main tip pushes', () => {
+  it('triggers ci.yml once on main pushes and pull requests without duplicate v* tag runs while restricting deploy-docs to serialized main tip pushes', () => {
     expect(ciWorkflow).toContain('name: CI');
     const onSection = extractTopLevelSection(ciWorkflow, 'on');
     expect(onSection).toContain('push:');
     expect(onSection).toContain('branches: [ main ]');
-    expect(onSection).toContain("tags: [ 'v*' ]");
+    expect(onSection).not.toContain('tags:');
+    expect(onSection).not.toContain("'v*'");
     expect(onSection).toContain('pull_request:');
     expect(onSection).not.toContain('release:');
     expect(onSection).not.toContain('published');
@@ -210,7 +211,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       expect(section).toContain('aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25');
       expect(section).toContain('image-ref: wedding-website:latest');
       expect(section).toContain("ignore-unfixed: 'true'");
-      expect(section).toContain("severity: 'CRITICAL,HIGH'");
+      expect(section).toContain("severity: 'CRITICAL,HIGH,MEDIUM'");
       expect(section).toContain("exit-code: '1'");
     }
 
@@ -320,10 +321,11 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     const [beforePublishSection = '', publishJobSection = ''] = publishWorkflow.split(/\n  publish:\n/);
     const [preflightJobSection = '', buildJobSection = ''] = beforePublishSection.split(/\n  build:\n/);
 
-    // Job preflight scopes contents: read and actions: read strictly inside preflight
+    // Job preflight scopes strictly read-only permissions (contents, actions, packages, attestations) with zero write scopes
     expect(preflightJobSection).toMatch(
-      /preflight:\n[\s\S]*?permissions:\n\s+contents: read\n\s+actions: read/
+      /preflight:\n[\s\S]*?permissions:\n\s+contents: read\n\s+actions: read\n\s+packages: read\n\s+attestations: read/
     );
+    expect(preflightJobSection).not.toContain(': write');
     expect(publishWorkflow.match(/actions:\s*read/g) ?? []).toHaveLength(1);
 
     // Job build retains only contents: read and security-events: write, with zero registry credentials
@@ -883,6 +885,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(publishWorkflow.match(/uses:\s*docker\/build-push-action@/g)).toHaveLength(1);
     const buildJobSection = publishWorkflow.split(/\n  publish:\n/)[0]?.split(/\n  build:\n/)[1] ?? '';
     expect(buildJobSection).toContain('needs: [preflight]');
+    expect(buildJobSection).toContain("if: needs.preflight.outputs.promote_existing != 'true'");
     expect(buildJobSection.match(/uses:\s*docker\/build-push-action@/g)).toHaveLength(1);
     expect(buildJobSection).toContain('provenance: false');
     expect(buildJobSection).toContain('sbom: false');
@@ -921,7 +924,10 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
 
     // Verify publish job step ordering: download -> login -> verify SBOMs -> skopeo inspect & copy --preserve-digests -> merge -> index SBOM -> v4.2.2 per-arch & index provenance + SPDX SBOM attestations
     const publishJobSection = publishWorkflow.split(/\n  publish:\n/)[1] ?? '';
-    expect(publishJobSection).toContain('needs: [build]');
+    expect(publishJobSection).toContain('needs: [preflight, build]');
+    expect(publishJobSection).toContain(
+      "(needs.build.result == 'success' || (needs.preflight.outputs.promote_existing == 'true' && needs.build.result == 'skipped'))"
+    );
 
     const downloadIdx = publishJobSection.indexOf('actions/download-artifact@');
     const ghcrLoginIdx = publishJobSection.indexOf('registry: ghcr.io');
