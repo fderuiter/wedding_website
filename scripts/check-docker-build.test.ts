@@ -15,6 +15,49 @@ const NODE_DIGEST = 'sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf56
 const DEBIAN_DIGEST = 'sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc';
 const POSTGRES_DIGEST = 'sha256:e18480a22d6e48f4d816a6696769b1ec09ac73a824c5649e49c7d8b684913f3d';
 const ALT_DIGEST = 'sha256:1111111111111111111111111111111111111111111111111111111111111111';
+const VALID_SHA512 = `sha512-${Buffer.alloc(64, 0x42).toString('base64')}`;
+const FIXTURE_ENGINES_COMMIT = 'd1b3f377ca835d73fd50954a5e22128b9ebdd6b8';
+const FIXTURE_ENGINES_VERSION = `8.1.0-1.${FIXTURE_ENGINES_COMMIT}`;
+
+function pinnedPkg(
+  name: string,
+  version: string,
+  extra: Record<string, unknown> = {}
+): Record<string, unknown> {
+  const tarName = name.startsWith('@') ? name.split('/')[1] : name;
+  return {
+    version,
+    resolved: `https://registry.npmjs.org/${name}/-/${tarName}-${version}.tgz`,
+    integrity: VALID_SHA512,
+    ...extra,
+  };
+}
+
+function buildValidEngineDigestsFixture(
+  enginesVersion: string = FIXTURE_ENGINES_VERSION,
+  enginesCommit: string = FIXTURE_ENGINES_COMMIT
+): Record<string, unknown> {
+  return {
+    enginesVersion,
+    enginesCommit,
+    platforms: {
+      'linux/amd64': {
+        binaryTarget: 'debian-openssl-3.0.x',
+        binaryName: 'schema-engine-debian-openssl-3.0.x',
+        url: `https://binaries.prisma.sh/all_commits/${enginesCommit}/debian-openssl-3.0.x/schema-engine.gz`,
+        gzipSha256: '5827f56149193f0249b2f4b8a64e60c300c3129ed6514bad0a11c340e1cffad6',
+        sha256: '7116e00278a793ee13db6f0a732c1aaec10f795a37bc02e3a7df3b06b2f1311f',
+      },
+      'linux/arm64': {
+        binaryTarget: 'linux-arm64-openssl-3.0.x',
+        binaryName: 'schema-engine-linux-arm64-openssl-3.0.x',
+        url: `https://binaries.prisma.sh/all_commits/${enginesCommit}/linux-arm64-openssl-3.0.x/schema-engine.gz`,
+        gzipSha256: 'aee61c23442accf150d3b253d3b829c15085ea810fd690c5f38944cd64f9cb0e',
+        sha256: '81d8f205f0e6ed3240d0bebf2e45a85646dca2c8acb2679781832d5ace7876ce',
+      },
+    },
+  };
+}
 
 function writeValidFixtureWorkspace(targetDir: string): void {
   const workflowsDir = path.join(targetDir, '.github', 'workflows');
@@ -65,6 +108,12 @@ function writeValidFixtureWorkspace(targetDir: string): void {
       '    printf \'update-notifier=false\\n\' > /usr/local/etc/npmrc',
       'FROM base AS prisma-cli',
       'WORKDIR /opt/prisma-cli',
+      'COPY docker/prisma-cli/package.json docker/prisma-cli/package-lock.json docker/prisma-cli/engine-digests.json ./',
+      'COPY docker/prisma-cli/stubs ./stubs',
+      'RUN --mount=type=cache,target=/root/.npm,sharing=locked \\',
+      '    npm ci --ignore-scripts --install-links --omit=dev --no-audit --no-fund && \\',
+      '    printf \'%s  %s\\n\' "$EXPECTED_BIN_SHA256" "$ENGINE_BIN" | sha256sum -c - && \\',
+      '    find /opt/prisma-cli/node_modules -type f -name "schema-engine-*" -exec strip --strip-unneeded {} +',
       'FROM base AS builder',
       'COPY package.json package-lock.json .npmrc ./',
       'RUN --mount=type=cache,target=/root/.npm,sharing=locked \\',
@@ -181,6 +230,13 @@ function writeValidFixtureWorkspace(targetDir: string): void {
   fs.writeFileSync(
     path.join(targetDir, 'next.config.ts'),
     ["const nextConfig = { output: 'standalone' };", 'export default nextConfig;', ''].join('\n')
+  );
+
+  const cliDir = path.join(targetDir, 'docker', 'prisma-cli');
+  fs.mkdirSync(cliDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(cliDir, 'engine-digests.json'),
+    `${JSON.stringify(buildValidEngineDigestsFixture(), null, 2)}\n`
   );
 }
 
@@ -1058,9 +1114,9 @@ describe('check-docker-build', () => {
         {
           lockfileVersion: 3,
           packages: {
-            'node_modules/prisma': { version: '7.10.1' },
-            'node_modules/@prisma/config': { version: '7.10.1' },
-            'node_modules/effect': { version: '3.22.5' },
+            'node_modules/prisma': pinnedPkg('prisma', '7.10.1'),
+            'node_modules/@prisma/config': pinnedPkg('@prisma/config', '7.10.1'),
+            'node_modules/effect': pinnedPkg('effect', '3.22.5'),
           },
         },
         null,
@@ -1075,9 +1131,9 @@ describe('check-docker-build', () => {
         {
           lockfileVersion: 3,
           packages: {
-            'node_modules/prisma': { version: '7.10.1' },
-            'node_modules/@prisma/config': { version: '7.10.1' },
-            'node_modules/effect': { version: '3.20.0' },
+            'node_modules/prisma': pinnedPkg('prisma', '7.10.1'),
+            'node_modules/@prisma/config': pinnedPkg('@prisma/config', '7.10.1'),
+            'node_modules/effect': pinnedPkg('effect', '3.20.0'),
           },
         },
         null,
@@ -1134,28 +1190,26 @@ describe('check-docker-build', () => {
                 typescript: '^7.0.2',
               },
             },
-            'node_modules/@typescript-eslint/eslint-plugin': {
-              version: '8.74.0',
-              peerDependencies: {
-                eslint: '^8.57.0 || ^9.0.0 || ^10.0.0',
-                typescript: '>=4.8.4 <6.1.0',
-              },
-            },
-            'node_modules/eslint-plugin-react': {
-              version: '7.37.5',
+            'node_modules/@typescript-eslint/eslint-plugin': pinnedPkg(
+              '@typescript-eslint/eslint-plugin',
+              '8.74.0',
+              {
+                peerDependencies: {
+                  eslint: '^8.57.0 || ^9.0.0 || ^10.0.0',
+                  typescript: '>=4.8.4 <6.1.0',
+                },
+              }
+            ),
+            'node_modules/eslint-plugin-react': pinnedPkg('eslint-plugin-react', '7.37.5', {
               peerDependencies: {
                 eslint: '^3 || ^4 || ^5 || ^6 || ^7 || ^8 || ^9.7',
               },
-            },
-            'node_modules/eslint': {
-              version: '10.15.0',
-            },
-            'node_modules/typescript': {
-              version: '7.0.2',
-            },
-            'node_modules/prisma': { version: '7.10.1' },
-            'node_modules/@prisma/config': { version: '7.10.1' },
-            'node_modules/effect': { version: '3.22.5' },
+            }),
+            'node_modules/eslint': pinnedPkg('eslint', '10.15.0'),
+            'node_modules/typescript': pinnedPkg('typescript', '7.0.2'),
+            'node_modules/prisma': pinnedPkg('prisma', '7.10.1'),
+            'node_modules/@prisma/config': pinnedPkg('@prisma/config', '7.10.1'),
+            'node_modules/effect': pinnedPkg('effect', '3.22.5'),
           },
         },
         null,
@@ -1192,8 +1246,7 @@ describe('check-docker-build', () => {
                 prisma: '7.10.1',
               },
             },
-            'node_modules/prisma': {
-              version: '7.10.1',
+            'node_modules/prisma': pinnedPkg('prisma', '7.10.1', {
               peerDependencies: {
                 'better-sqlite3': '>=9.0.0',
                 'required-driver': '^2.0.0',
@@ -1201,9 +1254,9 @@ describe('check-docker-build', () => {
               peerDependenciesMeta: {
                 'better-sqlite3': { optional: true },
               },
-            },
-            'node_modules/@prisma/config': { version: '7.10.1' },
-            'node_modules/effect': { version: '3.22.5' },
+            }),
+            'node_modules/@prisma/config': pinnedPkg('@prisma/config', '7.10.1'),
+            'node_modules/effect': pinnedPkg('effect', '3.22.5'),
           },
         },
         null,
@@ -1263,27 +1316,32 @@ describe('check-docker-build', () => {
                 'eslint-config-next': '^16.4.6',
               },
             },
-            'node_modules/@babel/core': { version: '8.1.3' },
-            'node_modules/eslint': { version: '10.15.0' },
-            'node_modules/eslint-config-next': {
-              version: '16.4.6',
+            'node_modules/@babel/core': pinnedPkg('@babel/core', '8.1.3'),
+            'node_modules/eslint': pinnedPkg('eslint', '10.15.0'),
+            'node_modules/eslint-config-next': pinnedPkg('eslint-config-next', '16.4.6', {
               peerDependencies: { eslint: '>=9.0.0' },
-            },
-            'node_modules/eslint-config-next/node_modules/eslint-plugin-import': {
-              version: '2.32.0',
-              peerDependencies: { eslint: '^2 || ^3 || ^4 || ^5 || ^6 || ^7.2.0 || ^8 || ^9' },
-            },
-            'node_modules/eslint-config-next/node_modules/eslint-plugin-jsx-a11y': {
-              version: '6.10.2',
-              peerDependencies: { eslint: '^3 || ^4 || ^5 || ^6 || ^7 || ^8 || ^9' },
-            },
-            'node_modules/babel-preset-current-node-syntax/node_modules/@babel/plugin-syntax-bigint': {
-              version: '7.8.3',
-              peerDependencies: { '@babel/core': '^7.0.0-0' },
-            },
-            'node_modules/prisma': { version: '7.10.1' },
-            'node_modules/@prisma/config': { version: '7.10.1' },
-            'node_modules/effect': { version: '3.22.5' },
+            }),
+            'node_modules/eslint-config-next/node_modules/eslint-plugin-import': pinnedPkg(
+              'eslint-plugin-import',
+              '2.32.0',
+              {
+                peerDependencies: { eslint: '^2 || ^3 || ^4 || ^5 || ^6 || ^7.2.0 || ^8 || ^9' },
+              }
+            ),
+            'node_modules/eslint-config-next/node_modules/eslint-plugin-jsx-a11y': pinnedPkg(
+              'eslint-plugin-jsx-a11y',
+              '6.10.2',
+              {
+                peerDependencies: { eslint: '^3 || ^4 || ^5 || ^6 || ^7 || ^8 || ^9' },
+              }
+            ),
+            'node_modules/babel-preset-current-node-syntax/node_modules/@babel/plugin-syntax-bigint':
+              pinnedPkg('@babel/plugin-syntax-bigint', '7.8.3', {
+                peerDependencies: { '@babel/core': '^7.0.0-0' },
+              }),
+            'node_modules/prisma': pinnedPkg('prisma', '7.10.1'),
+            'node_modules/@prisma/config': pinnedPkg('@prisma/config', '7.10.1'),
+            'node_modules/effect': pinnedPkg('effect', '3.22.5'),
           },
         },
         null,
@@ -1304,6 +1362,274 @@ describe('check-docker-build', () => {
         reason: expect.stringContaining('conflicts with resolved "node_modules/@babel/core@8.1.3"'),
       }),
     ]);
+  });
+
+  it('rejects missing integrity fields, non-HTTPS resolved URLs, weak sha1- hashes, and non-stub file: entries while permitting file:stubs/* in docker/prisma-cli/package-lock.json', () => {
+    fs.writeFileSync(
+      path.join(tempDir, 'package-lock.json'),
+      `${JSON.stringify(
+        {
+          lockfileVersion: 3,
+          packages: {
+            '': {},
+            'node_modules/pg': {
+              version: '8.23.1',
+            },
+            'node_modules/weak-sha1-pkg': {
+              version: '1.0.0',
+              resolved: 'https://registry.npmjs.org/weak-sha1-pkg/-/weak-sha1-pkg-1.0.0.tgz',
+              integrity: 'sha1-2lrz036390+5444444444444444=',
+            },
+            'node_modules/http-tarball-pkg': {
+              version: '2.0.0',
+              resolved: 'http://registry.npmjs.org/http-tarball-pkg/-/http-tarball-pkg-2.0.0.tgz',
+              integrity: VALID_SHA512,
+            },
+            'node_modules/root-local-stub': {
+              version: '0.0.0',
+              resolved: 'file:stubs/empty',
+            },
+            'node_modules/short-sha512-pkg': {
+              version: '1.2.3',
+              resolved: 'https://registry.npmjs.org/short-sha512-pkg/-/short-sha512-pkg-1.2.3.tgz',
+              integrity: 'sha512-YWJjZA==',
+            },
+          },
+        },
+        null,
+        2
+      )}\n`
+    );
+
+    const cliDir = path.join(tempDir, 'docker', 'prisma-cli');
+    fs.mkdirSync(cliDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(cliDir, 'package-lock.json'),
+      `${JSON.stringify(
+        {
+          lockfileVersion: 3,
+          packages: {
+            '': {},
+            'node_modules/@prisma/dev': {
+              version: '0.0.0-disabled',
+              resolved: 'file:stubs/prisma-dev',
+            },
+            'node_modules/fast-check': {
+              name: 'empty-stub',
+              version: '0.0.0-disabled',
+              resolved: 'file:./stubs/empty',
+            },
+            'node_modules/weak-stub': {
+              version: '0.0.0-disabled',
+              resolved: 'file:stubs/empty',
+              integrity: 'sha1-2lrz036390+5444444444444444=',
+            },
+            'node_modules/outside-stub': {
+              version: '0.0.0-disabled',
+              resolved: 'file:../outside',
+            },
+          },
+        },
+        null,
+        2
+      )}\n`
+    );
+
+    const { violations } = checkDockerBuild(tempDir, { staticOnly: true });
+
+    // Permitted local stubs in docker/prisma-cli/package-lock.json produce zero violations
+    expect(violations.some((v) => v.imageRef === 'node_modules/@prisma/dev')).toBe(false);
+    expect(violations.some((v) => v.imageRef === 'node_modules/fast-check')).toBe(false);
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filePath: 'package-lock.json',
+          imageRef: 'node_modules/pg',
+          reason: expect.stringContaining('missing a canonical "https://" resolved tarball URL'),
+        }),
+        expect.objectContaining({
+          filePath: 'package-lock.json',
+          imageRef: 'node_modules/pg',
+          reason: expect.stringContaining('missing a "sha512-" integrity digest'),
+        }),
+        expect.objectContaining({
+          filePath: 'package-lock.json',
+          imageRef: 'node_modules/weak-sha1-pkg',
+          reason: expect.stringContaining('uses weak "sha1-" integrity digest'),
+        }),
+        expect.objectContaining({
+          filePath: 'package-lock.json',
+          imageRef: 'node_modules/http-tarball-pkg',
+          reason: expect.stringContaining('must declare an "https://" resolved tarball URL'),
+        }),
+        expect.objectContaining({
+          filePath: 'package-lock.json',
+          imageRef: 'node_modules/root-local-stub',
+          reason: expect.stringContaining('must declare an "https://" resolved tarball URL'),
+        }),
+        expect.objectContaining({
+          filePath: 'package-lock.json',
+          imageRef: 'node_modules/short-sha512-pkg',
+          reason: expect.stringContaining('expected 64-byte base64 "sha512-..." digest'),
+        }),
+        expect.objectContaining({
+          filePath: 'docker/prisma-cli/package-lock.json',
+          imageRef: 'node_modules/weak-stub',
+          reason: expect.stringContaining('uses weak "sha1-" integrity digest'),
+        }),
+        expect.objectContaining({
+          filePath: 'docker/prisma-cli/package-lock.json',
+          imageRef: 'node_modules/outside-stub',
+          reason: expect.stringContaining('must declare an "https://" resolved tarball URL'),
+        }),
+      ])
+    );
+
+    const pgMissingViolation = violations.find(
+      (v) => v.imageRef === 'node_modules/pg' && v.reason.includes('missing a "sha512-"')
+    );
+    expect(pgMissingViolation?.lineNumber).toBeGreaterThan(1);
+
+    const cliExit = spawnSync(
+      process.execPath,
+      [TSX_CLI_PATH, CHECK_SCRIPT_PATH, '--static-only'],
+      {
+        cwd: tempDir,
+        encoding: 'utf8',
+      }
+    );
+    expect(cliExit.status).toBe(1);
+    expect(cliExit.stderr).toContain('node_modules/pg');
+  });
+
+  it('rejects missing --ignore-scripts, missing engine-digests.json COPY, and sha256sum -c after strip in Dockerfile prisma-cli stage', () => {
+    const dockerfilePath = path.join(tempDir, 'Dockerfile');
+    const validDockerfile = fs.readFileSync(dockerfilePath, 'utf8');
+
+    // 1. Missing --ignore-scripts and missing engine-digests.json COPY, plus sha256sum -c ordered after strip
+    fs.writeFileSync(
+      dockerfilePath,
+      validDockerfile
+        .replace(' docker/prisma-cli/engine-digests.json', '')
+        .replace('npm ci --ignore-scripts', 'npm ci')
+        .replace(
+          '    printf \'%s  %s\\n\' "$EXPECTED_BIN_SHA256" "$ENGINE_BIN" | sha256sum -c - && \\\n    find /opt/prisma-cli/node_modules -type f -name "schema-engine-*" -exec strip --strip-unneeded {} +',
+          '    find /opt/prisma-cli/node_modules -type f -name "schema-engine-*" -exec strip --strip-unneeded {} + && \\\n    printf \'%s  %s\\n\' "$EXPECTED_BIN_SHA256" "$ENGINE_BIN" | sha256sum -c -'
+        )
+    );
+
+    const { violations } = checkDockerBuild(tempDir, { staticOnly: true });
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: 'docker/prisma-cli/engine-digests.json',
+          reason: expect.stringContaining('must copy "docker/prisma-cli/engine-digests.json"'),
+        }),
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: 'npm ci --ignore-scripts',
+          reason: expect.stringContaining('must pass "--ignore-scripts" to "npm ci"'),
+        }),
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: 'sha256sum -c',
+          reason: expect.stringContaining('verify schema-engine binaries with "sha256sum -c" before stripping'),
+        }),
+      ])
+    );
+  });
+
+  it('rejects missing or stale docker/prisma-cli/engine-digests.json and @prisma/engines-version drift', () => {
+    const cliDir = path.join(tempDir, 'docker', 'prisma-cli');
+    const digestsPath = path.join(cliDir, 'engine-digests.json');
+
+    const lockWithEngines = (enginesVer: string) =>
+      JSON.stringify(
+        {
+          lockfileVersion: 3,
+          packages: {
+            '': {},
+            'node_modules/prisma': pinnedPkg('prisma', '7.10.1'),
+            'node_modules/@prisma/config': pinnedPkg('@prisma/config', '7.10.1'),
+            'node_modules/@prisma/engines': pinnedPkg('@prisma/engines', '7.10.1', {
+              dependencies: { '@prisma/engines-version': enginesVer },
+            }),
+            'node_modules/@prisma/engines-version': pinnedPkg(
+              '@prisma/engines-version',
+              enginesVer
+            ),
+            'node_modules/effect': pinnedPkg('effect', '3.22.5'),
+          },
+        },
+        null,
+        2
+      );
+
+    fs.writeFileSync(path.join(tempDir, 'package-lock.json'), lockWithEngines(FIXTURE_ENGINES_VERSION));
+    fs.writeFileSync(path.join(cliDir, 'package-lock.json'), lockWithEngines(FIXTURE_ENGINES_VERSION));
+
+    // Matching digests pass cleanly
+    expect(checkDockerBuild(tempDir, { staticOnly: true }).violations).toEqual([]);
+
+    // 1. Missing engine-digests.json fails
+    fs.rmSync(digestsPath);
+    expect(checkDockerBuild(tempDir, { staticOnly: true }).violations).toEqual([
+      expect.objectContaining({
+        filePath: 'docker/prisma-cli/engine-digests.json',
+        reason: expect.stringContaining('docker/prisma-cli/engine-digests.json is missing'),
+      }),
+    ]);
+
+    // 2. Stale enginesVersion, missing linux/arm64, mismatched URL, and duplicate gzip/uncompressed SHA-256 fail
+    const staleCommit = '1111111111111111111111111111111111111111';
+    const sameHash = '7116e00278a793ee13db6f0a732c1aaec10f795a37bc02e3a7df3b06b2f1311f';
+    fs.writeFileSync(
+      digestsPath,
+      `${JSON.stringify(
+        {
+          enginesVersion: `8.0.0-1.${staleCommit}`,
+          enginesCommit: staleCommit,
+          platforms: {
+            'linux/amd64': {
+              binaryTarget: 'debian-openssl-3.0.x',
+              binaryName: 'schema-engine-debian-openssl-3.0.x',
+              url: 'https://example.com/schema-engine.gz',
+              gzipSha256: sameHash,
+              sha256: sameHash,
+            },
+          },
+        },
+        null,
+        2
+      )}\n`
+    );
+
+    const staleRes = checkDockerBuild(tempDir, { staticOnly: true });
+    expect(staleRes.violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filePath: 'docker/prisma-cli/engine-digests.json',
+          imageRef: 'linux/arm64',
+          reason: expect.stringContaining('missing required platform "linux/arm64"'),
+        }),
+        expect.objectContaining({
+          filePath: 'docker/prisma-cli/engine-digests.json',
+          imageRef: 'linux/amd64.url',
+        }),
+        expect.objectContaining({
+          filePath: 'docker/prisma-cli/engine-digests.json',
+          imageRef: 'linux/amd64.sha256',
+          reason: expect.stringContaining('distinct compressed ("gzipSha256") and uncompressed ("sha256")'),
+        }),
+        expect.objectContaining({
+          filePath: 'docker/prisma-cli/engine-digests.json',
+          imageRef: '@prisma/engines-version',
+          reason: expect.stringContaining('does not match "node_modules/@prisma/engines-version"'),
+        }),
+      ])
+    );
   });
   it('allows pull_policy: never services sharing a local build image across docker-compose.yml and docker-compose.rollout.yml', () => {
     fs.writeFileSync(
@@ -1710,8 +2036,8 @@ describe('check-docker-build', () => {
                 dependencies: { zod: '^4.3.6' },
                 devDependencies: { eslint: '^10.15.0' },
               },
-              'node_modules/zod': { version: '4.3.6' },
-              'node_modules/eslint': { version: '10.15.0' },
+              'node_modules/zod': pinnedPkg('zod', '4.3.6'),
+              'node_modules/eslint': pinnedPkg('eslint', '10.15.0'),
             },
           },
           null,

@@ -19,10 +19,52 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # Isolated Prisma CLI stage pinned via committed lockfile (excludes Studio, @prisma/dev, fast-check, and @prisma/fetch-engine)
 FROM base AS prisma-cli
 WORKDIR /opt/prisma-cli
-COPY docker/prisma-cli/package.json docker/prisma-cli/package-lock.json ./
+COPY docker/prisma-cli/package.json docker/prisma-cli/package-lock.json docker/prisma-cli/engine-digests.json ./
 COPY docker/prisma-cli/stubs ./stubs
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
-    npm ci --install-links --omit=dev --no-audit --no-fund && \
+    npm ci --ignore-scripts --install-links --omit=dev --no-audit --no-fund && \
+    PLATFORM="$(node -p 'process.arch === "x64" ? "linux/amd64" : process.arch === "arm64" ? "linux/arm64" : ""')" && \
+    [ -n "$PLATFORM" ] && \
+    BINARY_NAME="$(node -p 'require("./engine-digests.json").platforms[process.argv[1]].binaryName' "$PLATFORM")" && \
+    ENGINE_URL="$(node -p 'require("./engine-digests.json").platforms[process.argv[1]].url' "$PLATFORM")" && \
+    EXPECTED_GZ_SHA256="$(node -p 'require("./engine-digests.json").platforms[process.argv[1]].gzipSha256' "$PLATFORM")" && \
+    EXPECTED_BIN_SHA256="$(node -p 'require("./engine-digests.json").platforms[process.argv[1]].sha256' "$PLATFORM")" && \
+    ENGINE_COMMIT="$(node -p 'require("./engine-digests.json").enginesCommit')" && \
+    CACHE_GZ="/root/.npm/_prisma-engines/${BINARY_NAME}-${ENGINE_COMMIT}.gz" && \
+    ENGINE_BIN="/opt/prisma-cli/node_modules/@prisma/engines/${BINARY_NAME}" && \
+    mkdir -p /root/.npm/_prisma-engines && \
+    if [ ! -f "$CACHE_GZ" ]; then \
+      node -e ' \
+        const fs = require("fs"); \
+        const [url, dest] = process.argv.slice(1); \
+        (async () => { \
+          for (let attempt = 1; attempt <= 3; attempt++) { \
+            try { \
+              const res = await fetch(url); \
+              if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`); \
+              fs.writeFileSync(dest, Buffer.from(await res.arrayBuffer())); \
+              return; \
+            } catch (err) { \
+              if (attempt === 3) throw err; \
+              await new Promise((r) => setTimeout(r, 500 * attempt)); \
+            } \
+          } \
+        })().catch((err) => { \
+          try { fs.rmSync(dest, { force: true }); } catch {} \
+          console.error(err); \
+          process.exit(1); \
+        }); \
+      ' "$ENGINE_URL" "${CACHE_GZ}.tmp" && \
+      if ! printf '%s  %s\n' "$EXPECTED_GZ_SHA256" "${CACHE_GZ}.tmp" | sha256sum -c -; then \
+        rm -f "${CACHE_GZ}.tmp"; \
+        exit 1; \
+      fi && \
+      mv "${CACHE_GZ}.tmp" "$CACHE_GZ"; \
+    fi && \
+    printf '%s  %s\n' "$EXPECTED_GZ_SHA256" "$CACHE_GZ" | sha256sum -c - && \
+    gunzip -c "$CACHE_GZ" > "$ENGINE_BIN" && \
+    printf '%s  %s\n' "$EXPECTED_BIN_SHA256" "$ENGINE_BIN" | sha256sum -c - && \
+    chmod 0755 "$ENGINE_BIN" && \
     /opt/prisma-cli/node_modules/.bin/prisma --version | grep -q "schema-engine-cli" && \
     printf '%s\n' \
       '"use strict";' \
@@ -46,6 +88,7 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked \
       > /opt/prisma-cli/node_modules/@prisma/engines/dist/index.js && \
     rm -rf \
       /opt/prisma-cli/package-lock.json \
+      /opt/prisma-cli/engine-digests.json \
       /opt/prisma-cli/stubs \
       /opt/prisma-cli/node_modules/fast-check \
       /opt/prisma-cli/node_modules/pure-rand \

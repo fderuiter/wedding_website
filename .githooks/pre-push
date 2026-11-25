@@ -17,6 +17,7 @@ const LOCKFILE_PATHS = [
   'package-lock.json',
   'docker/prisma-cli/package.json',
   'docker/prisma-cli/package-lock.json',
+  'docker/prisma-cli/engine-digests.json',
 ];
 const LOCAL_GIT_ENV_VARS = [
   'GIT_DIR',

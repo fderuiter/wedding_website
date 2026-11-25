@@ -402,7 +402,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /tmp/buildkit-mounts/deps
-          key: buildkit-deps-amd64-${{ hashFiles('Dockerfile', 'package-lock.json', '.npmrc') }}
+          key: buildkit-deps-amd64-${{ hashFiles('Dockerfile', 'package-lock.json', 'docker/prisma-cli/package-lock.json', 'docker/prisma-cli/engine-digests.json', '.npmrc') }}
           restore-keys: |
             buildkit-deps-amd64-
 
@@ -566,7 +566,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /tmp/buildkit-mounts/deps
-          key: buildkit-deps-arm64-${{ hashFiles('Dockerfile', 'package-lock.json', '.npmrc') }}
+          key: buildkit-deps-arm64-${{ hashFiles('Dockerfile', 'package-lock.json', 'docker/prisma-cli/package-lock.json', 'docker/prisma-cli/engine-digests.json', '.npmrc') }}
           restore-keys: |
             buildkit-deps-arm64-
 

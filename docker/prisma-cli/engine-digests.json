@@ -1,0 +1,20 @@
+{
+  "enginesVersion": "8.1.0-1.d1b3f377ca835d73fd50954a5e22128b9ebdd6b8",
+  "enginesCommit": "d1b3f377ca835d73fd50954a5e22128b9ebdd6b8",
+  "platforms": {
+    "linux/amd64": {
+      "binaryTarget": "debian-openssl-3.0.x",
+      "binaryName": "schema-engine-debian-openssl-3.0.x",
+      "url": "https://binaries.prisma.sh/all_commits/d1b3f377ca835d73fd50954a5e22128b9ebdd6b8/debian-openssl-3.0.x/schema-engine.gz",
+      "gzipSha256": "5827f56149193f0249b2f4b8a64e60c300c3129ed6514bad0a11c340e1cffad6",
+      "sha256": "7116e00278a793ee13db6f0a732c1aaec10f795a37bc02e3a7df3b06b2f1311f"
+    },
+    "linux/arm64": {
+      "binaryTarget": "linux-arm64-openssl-3.0.x",
+      "binaryName": "schema-engine-linux-arm64-openssl-3.0.x",
+      "url": "https://binaries.prisma.sh/all_commits/d1b3f377ca835d73fd50954a5e22128b9ebdd6b8/linux-arm64-openssl-3.0.x/schema-engine.gz",
+      "gzipSha256": "aee61c23442accf150d3b253d3b829c15085ea810fd690c5f38944cd64f9cb0e",
+      "sha256": "81d8f205f0e6ed3240d0bebf2e45a85646dca2c8acb2679781832d5ace7876ce"
+    }
+  }
+}

@@ -301,6 +301,12 @@ function checkDockerfileContent(
   let hasBaseStage = false;
   let baseStageLine = 1;
   let seenBaseGlobalNpmrc = false;
+  let hasPrismaCliStage = false;
+  let prismaCliStageLine = 1;
+  let seenPrismaCliNpmCi = false;
+  let seenPrismaCliSha256Verify = false;
+  let seenPrismaCliStrip = false;
+  const prismaCliCopiedFiles = new Set<string>();
   let hasBuilderStage = false;
   let seenBuilderNpmCi = false;
   let builderNpmCiLine = 1;
@@ -374,6 +380,9 @@ function checkDockerfileContent(
           if (normalizedAlias === 'base') {
             hasBaseStage = true;
             baseStageLine = instr.startLine;
+          } else if (normalizedAlias === 'prisma-cli') {
+            hasPrismaCliStage = true;
+            prismaCliStageLine = instr.startLine;
           } else if (normalizedAlias === 'builder') {
             hasBuilderStage = true;
           } else if (normalizedAlias === 'runner') {
@@ -440,6 +449,24 @@ function checkDockerfileContent(
     }
 
     const copyMatch = instr.text.match(/^COPY\s+(.*)$/i);
+    if (copyMatch && currentStage === 'prisma-cli') {
+      const tokens = copyMatch[1]
+        .trim()
+        .split(/\s+/)
+        .filter((tok) => tok && !tok.startsWith('--'));
+      const sources = tokens.length > 1 ? tokens.slice(0, -1) : [];
+      for (const rawSrc of sources) {
+        const cleanedSrc = rawSrc
+          .replace(/^['"]|['"]$/g, '')
+          .replace(/^\.\//, '')
+          .replace(/\/+$/, '');
+        if (cleanedSrc) {
+          prismaCliCopiedFiles.add(cleanedSrc);
+        }
+      }
+      continue;
+    }
+
     if (copyMatch && currentStage === 'builder') {
       const tokens = copyMatch[1]
         .trim()
@@ -491,15 +518,49 @@ function checkDockerfileContent(
     }
 
     if (runMatch && currentStage === 'prisma-cli') {
-      if (/\bnpm\s+install\b/.test(runMatch[1])) {
+      const prismaRunBody = runMatch[1];
+      if (/\bnpm\s+install\b/.test(prismaRunBody)) {
         violations.push({
           filePath: relPath,
           lineNumber: instr.startLine,
           lineContent: instr.firstLineContent,
           imageRef: 'npm install',
           reason:
-            'Dockerfile prisma-cli stage must use "npm ci" with a committed lockfile instead of unpinned "npm install".',
+            'Dockerfile prisma-cli stage must use "npm ci --ignore-scripts" with a committed lockfile instead of unpinned "npm install".',
         });
+      }
+      const npmCiInvocations = prismaRunBody.match(/\bnpm\s+ci\b[^\n;&|]*/g);
+      if (npmCiInvocations) {
+        seenPrismaCliNpmCi = true;
+        if (npmCiInvocations.some((cmd) => !/--ignore-scripts\b/.test(cmd))) {
+          violations.push({
+            filePath: relPath,
+            lineNumber: instr.startLine,
+            lineContent: instr.firstLineContent,
+            imageRef: 'npm ci --ignore-scripts',
+            reason:
+              'Dockerfile prisma-cli stage must pass "--ignore-scripts" to "npm ci" so Prisma native binaries are verified against engine-digests.json rather than fetched by unverified install scripts.',
+          });
+        }
+      }
+      const sha256Idx = prismaRunBody.search(/\bsha256sum\s+-c\b/);
+      const stripIdx = prismaRunBody.search(/\bstrip\b/);
+      if (sha256Idx !== -1) {
+        if (seenPrismaCliStrip || (stripIdx !== -1 && sha256Idx > stripIdx)) {
+          violations.push({
+            filePath: relPath,
+            lineNumber: instr.startLine,
+            lineContent: instr.firstLineContent,
+            imageRef: 'sha256sum -c',
+            reason:
+              'Dockerfile prisma-cli stage must verify schema-engine binaries with "sha256sum -c" before stripping.',
+          });
+        } else {
+          seenPrismaCliSha256Verify = true;
+        }
+      }
+      if (stripIdx !== -1) {
+        seenPrismaCliStrip = true;
       }
     }
 
@@ -688,6 +749,39 @@ function checkDockerfileContent(
         lineContent: '',
         imageRef: 'npm run build:docker',
         reason: 'Dockerfile builder stage must execute "npm run build:docker".',
+      });
+    }
+  }
+
+  if (hasPrismaCliStage) {
+    if (!prismaCliCopiedFiles.has('docker/prisma-cli/engine-digests.json')) {
+      violations.push({
+        filePath: relPath,
+        lineNumber: prismaCliStageLine,
+        lineContent: '',
+        imageRef: 'docker/prisma-cli/engine-digests.json',
+        reason:
+          'Dockerfile prisma-cli stage must copy "docker/prisma-cli/engine-digests.json" to verify downloaded schema-engine binaries.',
+      });
+    }
+    if (!seenPrismaCliNpmCi) {
+      violations.push({
+        filePath: relPath,
+        lineNumber: prismaCliStageLine,
+        lineContent: '',
+        imageRef: 'npm ci --ignore-scripts',
+        reason:
+          'Dockerfile prisma-cli stage must execute "npm ci --ignore-scripts" against docker/prisma-cli/package-lock.json.',
+      });
+    }
+    if (!seenPrismaCliSha256Verify) {
+      violations.push({
+        filePath: relPath,
+        lineNumber: prismaCliStageLine,
+        lineContent: '',
+        imageRef: 'sha256sum -c',
+        reason:
+          'Dockerfile prisma-cli stage must verify schema-engine binaries with "sha256sum -c" before stripping.',
       });
     }
   }
@@ -1657,6 +1751,7 @@ export function checkDockerBuild(
   }
 
   // 1. Check Dockerfile
+  let dockerfileHasPrismaCliStage = false;
   const dockerfilePath = path.join(rootDir, 'Dockerfile');
   if (!fs.existsSync(dockerfilePath)) {
     violations.push({
@@ -1668,6 +1763,9 @@ export function checkDockerBuild(
     });
   } else {
     const dockerfileContent = fs.readFileSync(dockerfilePath, 'utf8');
+    dockerfileHasPrismaCliStage =
+      /^FROM\s+[^\n]*\bAS\s+prisma-cli\b/im.test(dockerfileContent) ||
+      dockerfileContent.includes('docker/prisma-cli/engine-digests.json');
     checkDockerfileContent(
       dockerfileContent,
       'Dockerfile',
@@ -1906,10 +2004,11 @@ export function checkDockerBuild(
     validateStandaloneOutput(rootDir, requireStandalone, violations);
   }
 
-  // 8. Verify isolated Prisma CLI lockfile version parity and offline peerDependencies ranges across both lockfiles
+  // 8. Verify lockfile SHA-512 integrity, isolated Prisma CLI lockfile version parity, offline peerDependencies ranges, and Prisma engine SHA-256 digests
   const rootLockPath = path.join(rootDir, 'package-lock.json');
   const cliLockPath = path.join(rootDir, 'docker', 'prisma-cli', 'package-lock.json');
   const cliPkgJsonPath = path.join(rootDir, 'docker', 'prisma-cli', 'package.json');
+  const engineDigestsPath = path.join(rootDir, 'docker', 'prisma-cli', 'engine-digests.json');
 
   const parseJsonManifest = (
     absPath: string
@@ -1939,7 +2038,9 @@ export function checkDockerBuild(
 
   if (fs.existsSync(rootLockPath)) {
     try {
-      parsedRootLock = JSON.parse(fs.readFileSync(rootLockPath, 'utf8')) as ParsedLockfile;
+      const rootLockRaw = fs.readFileSync(rootLockPath, 'utf8');
+      parsedRootLock = JSON.parse(rootLockRaw) as ParsedLockfile;
+      const rootLockLines = indexLockfilePackageLines(rootLockRaw);
       const rootManifest = parseJsonManifest(packageJsonPath);
       validateManifestLockfileSync(
         'package.json',
@@ -1954,6 +2055,13 @@ export function checkDockerBuild(
         rootManifest.overrides,
         violations
       );
+      validateLockfileIntegrity(
+        'package-lock.json',
+        parsedRootLock,
+        rootLockLines,
+        violations,
+        false
+      );
     } catch (err) {
       violations.push({
         filePath: 'package-lock.json',
@@ -1967,7 +2075,9 @@ export function checkDockerBuild(
 
   if (fs.existsSync(cliLockPath)) {
     try {
-      parsedCliLock = JSON.parse(fs.readFileSync(cliLockPath, 'utf8')) as ParsedLockfile;
+      const cliLockRaw = fs.readFileSync(cliLockPath, 'utf8');
+      parsedCliLock = JSON.parse(cliLockRaw) as ParsedLockfile;
+      const cliLockLines = indexLockfilePackageLines(cliLockRaw);
       const cliManifest = parseJsonManifest(cliPkgJsonPath);
       validateManifestLockfileSync(
         'docker/prisma-cli/package.json',
@@ -1982,6 +2092,13 @@ export function checkDockerBuild(
         cliManifest.overrides,
         violations
       );
+      validateLockfileIntegrity(
+        'docker/prisma-cli/package-lock.json',
+        parsedCliLock,
+        cliLockLines,
+        violations,
+        true
+      );
     } catch (err) {
       violations.push({
         filePath: 'docker/prisma-cli/package-lock.json',
@@ -1994,10 +2111,20 @@ export function checkDockerBuild(
   }
 
   if (parsedRootLock && parsedCliLock) {
-    for (const pkgKey of ['node_modules/prisma', 'node_modules/@prisma/config', 'node_modules/effect']) {
+    for (const pkgKey of [
+      'node_modules/prisma',
+      'node_modules/@prisma/config',
+      'node_modules/@prisma/engines',
+      'node_modules/@prisma/engines-version',
+      'node_modules/effect',
+    ]) {
       const rootVersion = parsedRootLock.packages?.[pkgKey]?.version;
       const cliVersion = parsedCliLock.packages?.[pkgKey]?.version;
-      if (rootVersion && cliVersion !== rootVersion) {
+      const isCoreCliRequirement =
+        pkgKey === 'node_modules/prisma' ||
+        pkgKey === 'node_modules/@prisma/config' ||
+        pkgKey === 'node_modules/effect';
+      if (rootVersion && (isCoreCliRequirement || cliVersion !== undefined) && cliVersion !== rootVersion) {
         const pkgName = pkgKey.replace(/^node_modules\//, '');
         violations.push({
           filePath: 'docker/prisma-cli/package-lock.json',
@@ -2008,6 +2135,19 @@ export function checkDockerBuild(
         });
       }
     }
+  }
+
+  if (
+    dockerfileHasPrismaCliStage ||
+    fs.existsSync(engineDigestsPath) ||
+    fs.existsSync(cliLockPath)
+  ) {
+    validatePrismaEngineDigests(
+      engineDigestsPath,
+      parsedCliLock,
+      parsedRootLock,
+      violations
+    );
   }
 
   return { violations };
@@ -2021,8 +2161,11 @@ interface ParsedSemver {
 }
 
 interface LockfilePackageNode {
+  name?: string;
   version?: string;
   resolved?: string;
+  integrity?: string;
+  link?: boolean;
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
@@ -2032,6 +2175,346 @@ interface LockfilePackageNode {
 
 interface ParsedLockfile {
   packages?: Record<string, LockfilePackageNode>;
+}
+
+interface PrismaEnginePlatformDigest {
+  binaryTarget?: unknown;
+  binaryName?: unknown;
+  url?: unknown;
+  gzipSha256?: unknown;
+  sha256?: unknown;
+}
+
+interface ParsedPrismaEngineDigests {
+  enginesVersion?: unknown;
+  enginesCommit?: unknown;
+  platforms?: Record<string, PrismaEnginePlatformDigest | undefined>;
+}
+
+const CLI_LOCAL_STUB_RESOLVED_REGEX = /^file:(?:\.\/)?stubs\/[a-zA-Z0-9._-]+(?:\/[a-zA-Z0-9._-]+)*$/;
+const SHA512_SRI_TOKEN_REGEX = /^sha512-([A-Za-z0-9+/]+={0,2})$/;
+const HEX_SHA256_REGEX = /^[a-fA-F0-9]{64}$/;
+const HEX_COMMIT_SHA_REGEX = /^[a-f0-9]{40}$/;
+
+const REQUIRED_PRISMA_ENGINE_PLATFORMS: ReadonlyArray<{
+  platform: string;
+  binaryTarget: string;
+}> = [
+  { platform: 'linux/amd64', binaryTarget: 'debian-openssl-3.0.x' },
+  { platform: 'linux/arm64', binaryTarget: 'linux-arm64-openssl-3.0.x' },
+];
+
+function indexLockfilePackageLines(rawContent: string): Map<string, number> {
+  const lineMap = new Map<string, number>();
+  const lines = rawContent.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const match = lines[i].match(/^    "((?:[^"\\]|\\.)*)":\s*\{/);
+    if (match) {
+      try {
+        const key = JSON.parse(`"${match[1]}"`) as string;
+        if (!lineMap.has(key)) {
+          lineMap.set(key, i + 1);
+        }
+      } catch {
+        lineMap.set(match[1], i + 1);
+      }
+    }
+  }
+  return lineMap;
+}
+
+function isValidHttpsTarballUrl(rawUrl: string): boolean {
+  if (!rawUrl.startsWith('https://') || /\s/.test(rawUrl)) {
+    return false;
+  }
+  try {
+    const parsed = new URL(rawUrl);
+    return parsed.protocol === 'https:' && Boolean(parsed.hostname) && !parsed.username && !parsed.password;
+  } catch {
+    return false;
+  }
+}
+
+function isValidSha512Base64Digest(b64: string): boolean {
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(b64)) {
+    return false;
+  }
+  return Buffer.from(b64, 'base64').length === 64;
+}
+
+function validateLockfileIntegrity(
+  lockRelPath: string,
+  lockData: ParsedLockfile,
+  packageLines: ReadonlyMap<string, number>,
+  violations: Violation[],
+  allowCliStubs: boolean
+): void {
+  const packages = lockData.packages;
+  if (!packages) {
+    return;
+  }
+
+  for (const [pkgPath, pkgNode] of Object.entries(packages)) {
+    if (pkgPath === '') {
+      continue;
+    }
+
+    const lineNumber = packageLines.get(pkgPath) ?? 1;
+    const rawResolved = typeof pkgNode.resolved === 'string' ? pkgNode.resolved.trim() : '';
+    const rawIntegrity = typeof pkgNode.integrity === 'string' ? pkgNode.integrity.trim() : '';
+    const isAllowedLocalStub = allowCliStubs && CLI_LOCAL_STUB_RESOLVED_REGEX.test(rawResolved);
+
+    if (!isAllowedLocalStub) {
+      if (!rawResolved) {
+        violations.push({
+          filePath: lockRelPath,
+          lineNumber,
+          lineContent: `"${pkgPath}"`,
+          imageRef: pkgPath,
+          reason: `${lockRelPath} package "${pkgPath}" (${pkgNode.version ?? 'unknown'}) is missing a canonical "https://" resolved tarball URL.`,
+        });
+      } else if (!isValidHttpsTarballUrl(rawResolved)) {
+        violations.push({
+          filePath: lockRelPath,
+          lineNumber,
+          lineContent: `"resolved": "${rawResolved}"`,
+          imageRef: pkgPath,
+          reason: `${lockRelPath} package "${pkgPath}" (${pkgNode.version ?? 'unknown'}) must declare an "https://" resolved tarball URL, found "${rawResolved}".`,
+        });
+      }
+    }
+
+    if (isAllowedLocalStub && !rawIntegrity) {
+      continue;
+    }
+
+    if (!rawIntegrity) {
+      violations.push({
+        filePath: lockRelPath,
+        lineNumber,
+        lineContent: `"${pkgPath}"`,
+        imageRef: pkgPath,
+        reason: `${lockRelPath} package "${pkgPath}" (${pkgNode.version ?? 'unknown'}) is missing a "sha512-" integrity digest.`,
+      });
+      continue;
+    }
+
+    const sriTokens = rawIntegrity.split(/\s+/).filter(Boolean);
+    if (sriTokens.some((tok) => /^sha1-/i.test(tok))) {
+      violations.push({
+        filePath: lockRelPath,
+        lineNumber,
+        lineContent: `"integrity": "${rawIntegrity}"`,
+        imageRef: pkgPath,
+        reason: `${lockRelPath} package "${pkgPath}" (${pkgNode.version ?? 'unknown'}) uses weak "sha1-" integrity digest "${rawIntegrity}"; pin a "sha512-" digest instead.`,
+      });
+      continue;
+    }
+
+    const hasValidSha512 = sriTokens.some((tok) => {
+      const match = tok.match(SHA512_SRI_TOKEN_REGEX);
+      return match !== null && isValidSha512Base64Digest(match[1]);
+    });
+
+    if (!hasValidSha512) {
+      violations.push({
+        filePath: lockRelPath,
+        lineNumber,
+        lineContent: `"integrity": "${rawIntegrity}"`,
+        imageRef: pkgPath,
+        reason: `${lockRelPath} package "${pkgPath}" (${pkgNode.version ?? 'unknown'}) has invalid integrity "${rawIntegrity}" (expected 64-byte base64 "sha512-..." digest).`,
+      });
+    }
+  }
+}
+
+function validatePrismaEngineDigests(
+  engineDigestsPath: string,
+  parsedCliLock: ParsedLockfile | null,
+  parsedRootLock: ParsedLockfile | null,
+  violations: Violation[]
+): void {
+  const relPath = 'docker/prisma-cli/engine-digests.json';
+  if (!fs.existsSync(engineDigestsPath)) {
+    violations.push({
+      filePath: relPath,
+      lineNumber: 1,
+      lineContent: '',
+      imageRef: relPath,
+      reason:
+        'docker/prisma-cli/engine-digests.json is missing; commit SHA-256 schema-engine digests for linux/amd64 and linux/arm64.',
+    });
+    return;
+  }
+
+  let parsed: ParsedPrismaEngineDigests;
+  try {
+    parsed = JSON.parse(fs.readFileSync(engineDigestsPath, 'utf8')) as ParsedPrismaEngineDigests;
+  } catch (err) {
+    violations.push({
+      filePath: relPath,
+      lineNumber: 1,
+      lineContent: '',
+      imageRef: relPath,
+      reason: `Failed to parse ${relPath}: ${(err as Error).message}`,
+    });
+    return;
+  }
+
+  const enginesVersion =
+    typeof parsed.enginesVersion === 'string' ? parsed.enginesVersion.trim() : '';
+  const enginesCommit =
+    typeof parsed.enginesCommit === 'string' ? parsed.enginesCommit.trim() : '';
+
+  if (!HEX_COMMIT_SHA_REGEX.test(enginesCommit)) {
+    violations.push({
+      filePath: relPath,
+      lineNumber: 1,
+      lineContent: enginesCommit ? `"enginesCommit": "${enginesCommit}"` : '',
+      imageRef: 'enginesCommit',
+      reason: `${relPath} must declare a 40-character lowercase hexadecimal "enginesCommit" matching @prisma/engines-version.`,
+    });
+  }
+
+  if (!enginesVersion || (HEX_COMMIT_SHA_REGEX.test(enginesCommit) && !enginesVersion.endsWith(`.${enginesCommit}`))) {
+    violations.push({
+      filePath: relPath,
+      lineNumber: 1,
+      lineContent: enginesVersion ? `"enginesVersion": "${enginesVersion}"` : '',
+      imageRef: 'enginesVersion',
+      reason: `${relPath} "enginesVersion" ("${enginesVersion || 'missing'}") must match @prisma/engines-version and end with ".${enginesCommit || '<40-hex-commit>'}".`,
+    });
+  }
+
+  const platformsObj =
+    parsed.platforms && typeof parsed.platforms === 'object' && !Array.isArray(parsed.platforms)
+      ? parsed.platforms
+      : {};
+
+  for (const { platform, binaryTarget } of REQUIRED_PRISMA_ENGINE_PLATFORMS) {
+    const entry = platformsObj[platform];
+    if (!entry || typeof entry !== 'object') {
+      violations.push({
+        filePath: relPath,
+        lineNumber: 1,
+        lineContent: '',
+        imageRef: platform,
+        reason: `${relPath} is missing required platform "${platform}" (${binaryTarget}) schema-engine digest entry.`,
+      });
+      continue;
+    }
+
+    const expectedBinaryName = `schema-engine-${binaryTarget}`;
+    const rawTarget = typeof entry.binaryTarget === 'string' ? entry.binaryTarget.trim() : '';
+    const rawBinaryName = typeof entry.binaryName === 'string' ? entry.binaryName.trim() : '';
+    const rawUrl = typeof entry.url === 'string' ? entry.url.trim() : '';
+    const rawGzipSha256 = typeof entry.gzipSha256 === 'string' ? entry.gzipSha256.trim() : '';
+    const rawSha256 = typeof entry.sha256 === 'string' ? entry.sha256.trim() : '';
+
+    if (rawTarget !== binaryTarget) {
+      violations.push({
+        filePath: relPath,
+        lineNumber: 1,
+        lineContent: rawTarget ? `"binaryTarget": "${rawTarget}"` : '',
+        imageRef: `${platform}.binaryTarget`,
+        reason: `${relPath} platforms["${platform}"].binaryTarget must equal "${binaryTarget}", found "${rawTarget || 'missing'}".`,
+      });
+    }
+
+    if (rawBinaryName !== expectedBinaryName) {
+      violations.push({
+        filePath: relPath,
+        lineNumber: 1,
+        lineContent: rawBinaryName ? `"binaryName": "${rawBinaryName}"` : '',
+        imageRef: `${platform}.binaryName`,
+        reason: `${relPath} platforms["${platform}"].binaryName must equal "${expectedBinaryName}", found "${rawBinaryName || 'missing'}".`,
+      });
+    }
+
+    const expectedUrl = HEX_COMMIT_SHA_REGEX.test(enginesCommit)
+      ? `https://binaries.prisma.sh/all_commits/${enginesCommit}/${binaryTarget}/schema-engine.gz`
+      : null;
+    if (!isValidHttpsTarballUrl(rawUrl) || (expectedUrl !== null && rawUrl !== expectedUrl)) {
+      violations.push({
+        filePath: relPath,
+        lineNumber: 1,
+        lineContent: rawUrl ? `"url": "${rawUrl}"` : '',
+        imageRef: `${platform}.url`,
+        reason: `${relPath} platforms["${platform}"].url must equal "${expectedUrl ?? `https://binaries.prisma.sh/all_commits/<commit>/${binaryTarget}/schema-engine.gz`}", found "${rawUrl || 'missing'}".`,
+      });
+    }
+
+    if (!HEX_SHA256_REGEX.test(rawGzipSha256)) {
+      violations.push({
+        filePath: relPath,
+        lineNumber: 1,
+        lineContent: rawGzipSha256 ? `"gzipSha256": "${rawGzipSha256}"` : '',
+        imageRef: `${platform}.gzipSha256`,
+        reason: `${relPath} platforms["${platform}"].gzipSha256 must be a 64-character hex SHA-256 digest.`,
+      });
+    }
+
+    if (!HEX_SHA256_REGEX.test(rawSha256)) {
+      violations.push({
+        filePath: relPath,
+        lineNumber: 1,
+        lineContent: rawSha256 ? `"sha256": "${rawSha256}"` : '',
+        imageRef: `${platform}.sha256`,
+        reason: `${relPath} platforms["${platform}"].sha256 must be a 64-character hex SHA-256 digest.`,
+      });
+    } else if (
+      HEX_SHA256_REGEX.test(rawGzipSha256) &&
+      rawGzipSha256.toLowerCase() === rawSha256.toLowerCase()
+    ) {
+      violations.push({
+        filePath: relPath,
+        lineNumber: 1,
+        lineContent: `"sha256": "${rawSha256}"`,
+        imageRef: `${platform}.sha256`,
+        reason: `${relPath} platforms["${platform}"] must record distinct compressed ("gzipSha256") and uncompressed ("sha256") SHA-256 digests.`,
+      });
+    }
+  }
+
+  for (const [lockRelPath, lockObj] of [
+    ['docker/prisma-cli/package-lock.json', parsedCliLock],
+    ['package-lock.json', parsedRootLock],
+  ] as const) {
+    const packages = lockObj?.packages;
+    if (!packages) {
+      continue;
+    }
+    const enginesNode = packages['node_modules/@prisma/engines'];
+    const enginesVersionNode = packages['node_modules/@prisma/engines-version'];
+    const lockedEnginesVersion = enginesVersionNode?.version?.trim() ?? '';
+    const depEnginesVersion = enginesNode?.dependencies?.['@prisma/engines-version']?.trim() ?? '';
+
+    if (enginesNode && !lockedEnginesVersion) {
+      violations.push({
+        filePath: relPath,
+        lineNumber: 1,
+        lineContent: '',
+        imageRef: '@prisma/engines-version',
+        reason: `${lockRelPath} defines "node_modules/@prisma/engines" without a locked "node_modules/@prisma/engines-version" entry.`,
+      });
+    } else if (lockedEnginesVersion && lockedEnginesVersion !== enginesVersion) {
+      violations.push({
+        filePath: relPath,
+        lineNumber: 1,
+        lineContent: `"enginesVersion": "${enginesVersion}"`,
+        imageRef: '@prisma/engines-version',
+        reason: `${relPath} enginesVersion ("${enginesVersion || 'missing'}") does not match "node_modules/@prisma/engines-version" ("${lockedEnginesVersion}") in ${lockRelPath}.`,
+      });
+    } else if (!lockedEnginesVersion && depEnginesVersion && depEnginesVersion !== enginesVersion) {
+      violations.push({
+        filePath: relPath,
+        lineNumber: 1,
+        lineContent: `"enginesVersion": "${enginesVersion}"`,
+        imageRef: '@prisma/engines-version',
+        reason: `${relPath} enginesVersion ("${enginesVersion || 'missing'}") does not match @prisma/engines dependency "@prisma/engines-version" ("${depEnginesVersion}") in ${lockRelPath}.`,
+      });
+    }
+  }
 }
 
 function parseSemver(raw: string): ParsedSemver | null {
@@ -2582,9 +3065,13 @@ ACTIONABLE REMEDIATION:
    /var/lib/apt, run "rm -f /etc/apt/apt.conf.d/docker-clean" before "apt-get",
    pass "--no-install-recommends" to "apt-get install", and do not delete
    "/var/lib/apt/lists/*" inside the cache mount.
-3. Ensure next.config.ts contains output: 'standalone', and Dockerfile and
+3. Ensure every external package in package-lock.json and
+   docker/prisma-cli/package-lock.json pins an "https://" resolved URL and a
+   "sha512-" integrity digest, and keep docker/prisma-cli/engine-digests.json
+   synchronized with @prisma/engines-version across linux/amd64 and linux/arm64.
+4. Ensure next.config.ts contains output: 'standalone', and Dockerfile and
    docker-entrypoint.sh exist in the repository root.
-4. Run 'npm run build' to generate the standalone build bundle at .next/standalone.
+5. Run 'npm run build' to generate the standalone build bundle at .next/standalone.
 ================================================================================
 `);
     process.exit(1);

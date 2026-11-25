@@ -119,6 +119,8 @@ export const staticSteps: Step[] = [
     name: 'Check Container Digest Pins & Standalone Portability',
     script: 'check:standalone',
     command: 'npm run check:standalone',
+    remediation:
+      'Container digest, npm lockfile SHA-512 integrity, Prisma engine SHA-256 digest, or standalone portability violation detected.\nRun "npm run check:standalone -- --static-only" locally and ensure all external entries in "package-lock.json" and "docker/prisma-cli/package-lock.json" include "https://" resolved URLs and "sha512-" integrity digests, "Dockerfile" runs "npm ci --ignore-scripts" and "sha256sum -c" in "prisma-cli", and "docker/prisma-cli/engine-digests.json" matches "@prisma/engines-version" for "linux/amd64" and "linux/arm64".',
   },
   {
     name: 'Check Documentation Relative Links',
