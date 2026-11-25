@@ -1,4 +1,4 @@
-import { Worker } from 'node:worker_threads';
+import { Worker, type ResourceLimits } from 'node:worker_threads';
 import os from 'node:os';
 import path from 'node:path';
 import { logger } from '@/lib/logger';
@@ -26,9 +26,17 @@ const DEFAULT_MAX_WORKER_POOL_SIZE = Math.max(
   )
 );
 
+export const MAX_CONCURRENT_HEIC_WORKERS = 2;
+
+export const WORKER_RESOURCE_LIMITS: Readonly<ResourceLimits> = Object.freeze({
+  maxOldGenerationSizeMb: 256,
+  maxYoungGenerationSizeMb: 64,
+});
+
 interface ActiveWorkerTask {
   id: number;
   buffer: Uint8Array;
+  isHeic: boolean;
   options?: ProcessImageWorkerOptions;
   settled: boolean;
   timer: NodeJS.Timeout | null;
@@ -39,6 +47,7 @@ interface ActiveWorkerTask {
 interface QueuedWorkerTask {
   id: number;
   buffer: Uint8Array;
+  isHeic: boolean;
   timeoutMs: number;
   options?: ProcessImageWorkerOptions;
   resolve: (_buffer: Uint8Array) => void;
@@ -59,6 +68,7 @@ export interface ImageWorkerPoolStats {
   maxPoolSize: number;
   readyWorkers: number;
   busyWorkers: number;
+  activeHeicWorkers: number;
   queuedTasks: number;
   workerIds: number[];
   heicLoadedWorkerIds: number[];
@@ -153,6 +163,7 @@ function attachTaskToSlot(slot: PooledWorkerSlot, queued: QueuedWorkerTask): voi
   const activeTask: ActiveWorkerTask = {
     id: queued.id,
     buffer: queued.buffer,
+    isHeic: queued.isHeic,
     options: queued.options,
     settled: false,
     timer: null,
@@ -196,11 +207,13 @@ function spawnPooledWorkerForTask(initialTask: QueuedWorkerTask): void {
         ?? path.resolve(process.cwd(), 'src', 'utils', 'imageProcessorWorker.ts');
       worker = new Worker(/* turbopackIgnore: true */ testWorkerPath, {
         workerData: { isImageProcessorPoolWorker: true },
+        resourceLimits: { ...WORKER_RESOURCE_LIMITS },
         execArgv: testWorkerPath.endsWith('.ts') ? ['--experimental-strip-types'] : undefined,
       });
     } else {
       worker = new Worker(new URL('./imageProcessorWorker.ts', import.meta.url), {
         workerData: { isImageProcessorPoolWorker: true },
+        resourceLimits: { ...WORKER_RESOURCE_LIMITS },
       });
     }
   } catch (err) {
@@ -238,10 +251,8 @@ function spawnPooledWorkerForTask(initialTask: QueuedWorkerTask): void {
           failAndEvictWorkerSlot(slot);
         }
       } else if (!slot.activeTask) {
-        if (pendingTaskQueue.length > 0) {
-          const nextQueued = pendingTaskQueue.shift()!;
-          attachTaskToSlot(slot, nextQueued);
-        } else {
+        drainPendingTasks();
+        if (!slot.dead && slot.activeTask === null) {
           slot.worker.unref();
         }
       }
@@ -273,10 +284,8 @@ function spawnPooledWorkerForTask(initialTask: QueuedWorkerTask): void {
       );
     }
 
-    if (pendingTaskQueue.length > 0 && !slot.dead) {
-      const nextQueued = pendingTaskQueue.shift()!;
-      attachTaskToSlot(slot, nextQueued);
-    } else if (!slot.dead) {
+    drainPendingTasks();
+    if (!slot.dead && slot.activeTask === null) {
       slot.worker.unref();
     }
   });
@@ -299,19 +308,41 @@ function spawnPooledWorkerForTask(initialTask: QueuedWorkerTask): void {
   });
 }
 
+function countActiveHeicWorkers(): number {
+  return workerPool.filter(
+    (slot) => !slot.dead && slot.activeTask !== null && slot.activeTask.isHeic
+  ).length;
+}
+
 function drainPendingTasks(): void {
+  const maxHeicWorkers = Math.min(MAX_CONCURRENT_HEIC_WORKERS, maxWorkerPoolSize);
+
   while (pendingTaskQueue.length > 0) {
-    const idleReadySlot = workerPool.find(
-      (slot) => !slot.dead && slot.ready && slot.activeTask === null
+    const activeHeicWorkers = countActiveHeicWorkers();
+    const nextTaskIndex = pendingTaskQueue.findIndex(
+      (task) => !task.isHeic || activeHeicWorkers < maxHeicWorkers
     );
+    if (nextTaskIndex === -1) {
+      break;
+    }
+
+    const candidateTask = pendingTaskQueue[nextTaskIndex];
+    const idleReadySlot = candidateTask.isHeic
+      ? workerPool.find(
+        (slot) =>
+          !slot.dead && slot.ready && slot.activeTask === null && slot.heicDecoderLoaded
+      ) ??
+        workerPool.find((slot) => !slot.dead && slot.ready && slot.activeTask === null)
+      : workerPool.find((slot) => !slot.dead && slot.ready && slot.activeTask === null);
+
     if (idleReadySlot) {
-      const task = pendingTaskQueue.shift()!;
+      const [task] = pendingTaskQueue.splice(nextTaskIndex, 1);
       attachTaskToSlot(idleReadySlot, task);
       continue;
     }
 
     if (workerPool.length < maxWorkerPoolSize) {
-      const task = pendingTaskQueue.shift()!;
+      const [task] = pendingTaskQueue.splice(nextTaskIndex, 1);
       spawnPooledWorkerForTask(task);
       continue;
     }
@@ -326,6 +357,7 @@ export function getImageWorkerPoolStats(): ImageWorkerPoolStats {
     maxPoolSize: maxWorkerPoolSize,
     readyWorkers: workerPool.filter((s) => !s.dead && s.ready).length,
     busyWorkers: workerPool.filter((s) => !s.dead && s.activeTask !== null).length,
+    activeHeicWorkers: countActiveHeicWorkers(),
     queuedTasks: pendingTaskQueue.length,
     workerIds: workerPool.map((s) => s.workerId),
     heicLoadedWorkerIds: workerPool.filter((s) => s.heicDecoderLoaded).map((s) => s.workerId),
@@ -380,10 +412,13 @@ export function offloadSanitizeToWorker(
     );
   }
 
+  const isHeic = Boolean(options?.expectHeic) || isHeicBuffer(buffer);
+
   return new Promise((resolve, reject) => {
     pendingTaskQueue.push({
       id: nextTaskId++,
       buffer,
+      isHeic,
       timeoutMs,
       options,
       resolve,

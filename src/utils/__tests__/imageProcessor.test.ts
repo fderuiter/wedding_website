@@ -8,15 +8,18 @@ import { ApiError } from '@/utils/ApiError';
 import { MAX_GUEST_PHOTO_SIZE, MAX_UPLOAD_SIZE } from '../validationPrimitives';
 import {
   getImageWorkerPoolStats,
+  MAX_CONCURRENT_HEIC_WORKERS,
   offloadSanitizeToWorker,
   resetImageWorkerPool,
   sanitizeImage,
+  WORKER_RESOURCE_LIMITS,
   type ImageWorkerPoolStats,
 } from '../imageProcessor';
 import {
   isHeicBuffer,
   MAX_IMAGE_DIMENSION,
   MAX_IMAGE_PIXELS,
+  MAX_ISOBMFF_BOX_DEPTH,
   MAX_WORKER_INPUT_BYTES,
   parseHeicSpatialExtents,
   processImageWorkerBuffer,
@@ -337,6 +340,138 @@ describe('imageProcessor - sanitizeImage', () => {
       }
     });
 
+    it('should fail closed on depth-7 ISOBMFF boxes instead of returning early before loading heic-decode', async () => {
+      await resetImageWorkerPool({ maxPoolSize: 1 });
+      expect(MAX_ISOBMFF_BOX_DEPTH).toBe(6);
+
+      const makeIspeBox = (width: number, height: number): Buffer => {
+        const box = Buffer.alloc(20);
+        box.writeUInt32BE(20, 0);
+        box.write('ispe', 4, 'ascii');
+        box.writeUInt32BE(0, 8);
+        box.writeUInt32BE(width, 12);
+        box.writeUInt32BE(height, 16);
+        return box;
+      };
+
+      const wrapContainerBoxes = (inner: Buffer, count: number): Buffer => {
+        let current = inner;
+        for (let i = 0; i < count; i += 1) {
+          const wrapped = Buffer.alloc(8 + current.length);
+          wrapped.writeUInt32BE(wrapped.length, 0);
+          wrapped.write('moov', 4, 'ascii');
+          current.copy(wrapped, 8);
+          current = wrapped;
+        }
+        return current;
+      };
+
+      // Depth 6 (6 nested container boxes wrapping ispe) remains permitted
+      const depth6Container = wrapContainerBoxes(makeIspeBox(32, 32), MAX_ISOBMFF_BOX_DEPTH);
+      expect(parseHeicSpatialExtents(depth6Container)).toEqual([{ width: 32, height: 32 }]);
+
+      // Depth 7 (7 nested container boxes wrapping oversized ispe alongside a valid shallow ispe) must throw
+      const ftypHeader = VALID_HEIC_BUFFER.subarray(0, 28);
+      const shallowValidContainer = wrapContainerBoxes(makeIspeBox(64, 64), 2);
+      const depth7BombContainer = wrapContainerBoxes(
+        makeIspeBox(MAX_IMAGE_DIMENSION + 5000, MAX_IMAGE_DIMENSION + 5000),
+        MAX_ISOBMFF_BOX_DEPTH + 1
+      );
+      const depth7Heic = Buffer.concat([ftypHeader, shallowValidContainer, depth7HeicTail(depth7BombContainer)]);
+
+      function depth7HeicTail(box: Buffer): Buffer {
+        return box;
+      }
+
+      expect(() => parseHeicSpatialExtents(depth7Heic)).toThrow(
+        /ISOBMFF box nesting depth \(7\) exceeds maximum allowed limit \(6\)/
+      );
+      await expect(processImageWorkerBuffer(depth7Heic)).rejects.toThrow(
+        /ISOBMFF box nesting depth \(7\) exceeds maximum allowed limit \(6\)/
+      );
+
+      const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => {});
+      try {
+        const depth7File = createTestFile(new Uint8Array(depth7Heic), 'nested.heic', 'image/heic');
+        await expect(sanitizeImage(depth7File)).rejects.toBeInstanceOf(ApiError);
+        expect(getImageWorkerPoolStats().heicLoadedWorkerIds).toEqual([]);
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
+
+    it('should reject oversized HEIF grid and derived frame canvases via heic-decode all() before decode() and always call dispose()', async () => {
+      // 1. Real WASM integration check: ispe remains 64x64 while clap derived canvas header is 16000x16000
+      const oversizedDerivedHeic = Buffer.from(VALID_HEIC_BUFFER);
+      const clapOffset = oversizedDerivedHeic.indexOf(Buffer.from('clap', 'ascii')) - 4;
+      expect(clapOffset).toBeGreaterThan(0);
+      oversizedDerivedHeic.writeUInt32BE(16000, clapOffset + 8);
+      oversizedDerivedHeic.writeUInt32BE(1, clapOffset + 12);
+      oversizedDerivedHeic.writeUInt32BE(16000, clapOffset + 16);
+      oversizedDerivedHeic.writeUInt32BE(1, clapOffset + 20);
+
+      expect(parseHeicSpatialExtents(oversizedDerivedHeic)).toEqual([{ width: 64, height: 64 }]);
+      await expect(processImageWorkerBuffer(oversizedDerivedHeic)).rejects.toThrow(
+        /HEIC frame dimensions \(16000x16000\) exceed maximum allowed limits/
+      );
+
+      // 2. Isolated unit check for multi-frame HEIF grid containers and finally { images.dispose() } cleanup
+      await jest.isolateModulesAsync(async () => {
+        const primaryDecodeSpy = jest.fn();
+        const gridDecodeSpy = jest.fn();
+        const disposeSpy = jest.fn();
+        let mode: 'oversized-grid-frame' | 'decode-throws' = 'oversized-grid-frame';
+
+        const mockAll = jest.fn(async () => {
+          const frames =
+            mode === 'oversized-grid-frame'
+              ? [
+                { width: 512, height: 512, decode: primaryDecodeSpy },
+                { width: 16384, height: 16384, decode: gridDecodeSpy },
+              ]
+              : [
+                {
+                  width: 64,
+                  height: 64,
+                  decode: async () => {
+                    primaryDecodeSpy();
+                    throw new Error('Simulated libheif decode failure');
+                  },
+                },
+              ];
+          return Object.defineProperty(frames, 'dispose', {
+            enumerable: false,
+            value: disposeSpy,
+          });
+        });
+
+        jest.doMock('heic-decode', () => ({
+          all: mockAll,
+          default: Object.assign(jest.fn(), { all: mockAll }),
+        }));
+
+        const { processImageWorkerBuffer: isolatedProcessBuffer } = await import(
+          '../imageProcessorWorker'
+        );
+
+        await expect(isolatedProcessBuffer(VALID_HEIC_BUFFER)).rejects.toThrow(
+          /HEIC frame dimensions \(16384x16384\) exceed maximum allowed limits/
+        );
+        expect(mockAll).toHaveBeenCalledTimes(1);
+        expect(primaryDecodeSpy).not.toHaveBeenCalled();
+        expect(gridDecodeSpy).not.toHaveBeenCalled();
+        expect(disposeSpy).toHaveBeenCalledTimes(1);
+
+        disposeSpy.mockClear();
+        mode = 'decode-throws';
+        await expect(isolatedProcessBuffer(VALID_HEIC_BUFFER)).rejects.toThrow(
+          'Simulated libheif decode failure'
+        );
+        expect(primaryDecodeSpy).toHaveBeenCalledTimes(1);
+        expect(disposeSpy).toHaveBeenCalledTimes(1);
+      });
+    });
+
     it('should reject oversized raster images exceeding max side (12000) or pixel limit (64000000)', async () => {
       const widePng = await sharp({
         create: {
@@ -633,6 +768,97 @@ describe('imageProcessor - sanitizeImage', () => {
         }
       });
     });
+
+    it('should pass V8 resourceLimits to Worker in test and production modes and evict worker on heap OOM', async () => {
+      expect(WORKER_RESOURCE_LIMITS).toEqual({
+        maxOldGenerationSizeMb: 256,
+        maxYoungGenerationSizeMb: 64,
+      });
+
+      const validPng = await sharp({
+        create: { width: 8, height: 8, channels: 3, background: { r: 9, g: 8, b: 7 } },
+      })
+        .png()
+        .toBuffer();
+
+      const constructedOptions: Array<Record<string, unknown> | undefined> = [];
+      const terminateMock = jest.fn().mockResolvedValue(1);
+      let triggerOomOnNextTask = false;
+
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('node:worker_threads', () => ({
+          Worker: jest.fn().mockImplementation((_script: unknown, options?: Record<string, unknown>) => {
+            constructedOptions.push(options);
+            const emitter = new EventEmitter() as EventEmitter & {
+              ref: jest.Mock;
+              unref: jest.Mock;
+              postMessage: jest.Mock;
+              terminate: jest.Mock;
+            };
+            emitter.ref = jest.fn();
+            emitter.unref = jest.fn();
+            emitter.terminate = terminateMock;
+            emitter.postMessage = jest.fn((task: { id: number }) => {
+              queueMicrotask(() => {
+                if (triggerOomOnNextTask) {
+                  triggerOomOnNextTask = false;
+                  const oomErr = new Error('Worker terminated due to reaching memory limit: JS heap out of memory');
+                  (oomErr as NodeJS.ErrnoException).code = 'ERR_WORKER_OUT_OF_MEMORY';
+                  emitter.emit('error', oomErr);
+                  return;
+                }
+                emitter.emit('message', {
+                  id: task.id,
+                  success: true,
+                  buffer: new Uint8Array(validPng),
+                });
+              });
+            });
+            queueMicrotask(() => {
+              emitter.emit('message', { type: 'ready' });
+            });
+            return emitter;
+          }),
+        }));
+
+        const { logger: isolatedLogger } = await import('@/lib/logger');
+        const errorSpy = jest.spyOn(isolatedLogger, 'error').mockImplementation(() => {});
+        const {
+          sanitizeImage: isolatedSanitize,
+          getImageWorkerPoolStats: isolatedStats,
+          resetImageWorkerPool: isolatedResetPool,
+        } = await import('../imageProcessor');
+
+        try {
+          (process.env as Record<string, string | undefined>).NODE_ENV = 'test';
+          await isolatedSanitize(createTestFile(new Uint8Array(validPng), 'limits-test.png', 'image/png'));
+          expect(constructedOptions[0]?.resourceLimits).toEqual(WORKER_RESOURCE_LIMITS);
+          const firstWorkerId = isolatedStats().workerIds[0];
+
+          // Trigger V8 resourceLimits OOM error and verify failAndEvictWorkerSlot evicts the worker
+          triggerOomOnNextTask = true;
+          await expect(
+            isolatedSanitize(createTestFile(new Uint8Array(validPng), 'oom.png', 'image/png'))
+          ).rejects.toMatchObject({
+            statusCode: 400,
+            message: 'Image sanitization failed. The file may be corrupt or invalid.',
+          });
+          expect(terminateMock).toHaveBeenCalledTimes(1);
+          expect(isolatedStats().workerIds).not.toContain(firstWorkerId);
+          expect(errorSpy).toHaveBeenCalled();
+
+          await isolatedResetPool();
+
+          (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+          await isolatedSanitize(createTestFile(new Uint8Array(validPng), 'limits-prod.png', 'image/png'));
+          expect(constructedOptions[constructedOptions.length - 1]?.resourceLimits).toEqual(
+            WORKER_RESOURCE_LIMITS
+          );
+        } finally {
+          await isolatedResetPool();
+        }
+      });
+    });
   });
 
   describe('warm worker pool, lazy HEIC loading, and fault isolation', () => {
@@ -822,6 +1048,78 @@ describe('imageProcessor - sanitizeImage', () => {
         } finally {
           errorSpy.mockRestore();
         }
+      } finally {
+        await resetImageWorkerPool();
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    it('caps active HEIC tasks at 2 workers while keeping 4 workers available for raster images', async () => {
+      expect(MAX_CONCURRENT_HEIC_WORKERS).toBe(2);
+
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'img-heic-cap-test-'));
+      const tempWorkerPath = path.join(tempDir, 'mockHeicCapWorker.mjs');
+
+      await fs.writeFile(
+        tempWorkerPath,
+        [
+          "import { parentPort } from 'node:worker_threads';",
+          'let heicLoaded = false;',
+          'parentPort.on("message", (task) => {',
+          '  const isHeic = Boolean(task.expectHeic);',
+          '  if (isHeic) heicLoaded = true;',
+          '  const delay = isHeic ? 90 : 50;',
+          '  setTimeout(() => {',
+          '    const out = new Uint8Array([isHeic ? 0xaa : 0xbb, task.id]);',
+          '    parentPort.postMessage({ id: task.id, success: true, buffer: out, heicDecoderLoaded: heicLoaded }, [out.buffer]);',
+          '  }, delay);',
+          '});',
+          'parentPort.postMessage({ type: "ready" });',
+        ].join('\n'),
+        'utf8'
+      );
+
+      try {
+        await resetImageWorkerPool({ workerPathOverride: tempWorkerPath, maxPoolSize: 4 });
+
+        // Dispatch 4 concurrent HEIC tasks: only 2 may run concurrently, queuing the other 2
+        const heicPromises = Array.from({ length: 4 }, () =>
+          offloadSanitizeToWorker(new Uint8Array(VALID_HEIC_BUFFER), 5000, { expectHeic: true })
+        );
+
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        const midHeicStats = getImageWorkerPoolStats();
+        expect(midHeicStats.maxPoolSize).toBe(4);
+        expect(midHeicStats.activeHeicWorkers).toBe(2);
+        expect(midHeicStats.busyWorkers).toBe(2);
+        expect(midHeicStats.queuedTasks).toBe(2);
+
+        // Dispatch 2 raster tasks while 2 HEIC tasks are active and 2 HEIC tasks remain queued:
+        // raster tasks bypass the queued HEIC tasks and scale the pool up to all 4 workers!
+        const rasterPromises = [
+          offloadSanitizeToWorker(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), 5000, { expectHeic: false }),
+          offloadSanitizeToWorker(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]), 5000, { expectHeic: false }),
+        ];
+
+        await new Promise((resolve) => setTimeout(resolve, 15));
+        const mixedStats = getImageWorkerPoolStats();
+        expect(mixedStats.poolSize).toBe(4);
+        expect(mixedStats.busyWorkers).toBe(4);
+        expect(mixedStats.activeHeicWorkers).toBe(2);
+        expect(mixedStats.queuedTasks).toBe(2);
+
+        const [heicResults, rasterResults] = await Promise.all([
+          Promise.all(heicPromises),
+          Promise.all(rasterPromises),
+        ]);
+        expect(heicResults).toHaveLength(4);
+        expect(rasterResults).toHaveLength(2);
+
+        const settledStats = getImageWorkerPoolStats();
+        expect(settledStats.busyWorkers).toBe(0);
+        expect(settledStats.activeHeicWorkers).toBe(0);
+        expect(settledStats.queuedTasks).toBe(0);
+        expect(settledStats.heicLoadedWorkerIds.length).toBeLessThanOrEqual(2);
       } finally {
         await resetImageWorkerPool();
         await fs.rm(tempDir, { recursive: true, force: true });
