@@ -17,7 +17,9 @@ import {
   getGuestsHeadcount,
   getInvitationPartyMembers,
   getSeatingShapeLabel,
+  isGuestEligibleForSeating,
   isLandmarkTable,
+  parseAttendeeSortName,
   type DietaryBadgeInfo,
 } from './utils/seatingHelpers';
 
@@ -80,8 +82,20 @@ export async function generateSeatingChartPdf(
           day: 'numeric',
         });
 
-      const guestTables = tables.filter((t) => !isLandmarkTable(t));
-      const landmarkTables = tables.filter((t) => isLandmarkTable(t));
+      const visibleTables = tables
+        .filter((t) => !t.isSample)
+        .map((t) => ({
+          ...t,
+          invitationCodes: (t.invitationCodes || []).filter((g) =>
+            isGuestEligibleForSeating(g)
+          ),
+        }));
+      const eligibleUnassignedGuests = unassignedGuests.filter((g) =>
+        isGuestEligibleForSeating(g)
+      );
+
+      const guestTables = visibleTables.filter((t) => !isLandmarkTable(t));
+      const landmarkTables = visibleTables.filter((t) => isLandmarkTable(t));
 
       // Calculate total stats using party headcounts
       let totalCapacity = 0;
@@ -90,7 +104,7 @@ export async function generateSeatingChartPdf(
         totalCapacity += t.capacity;
         totalSeated += getGuestsHeadcount(t.invitationCodes || []);
       });
-      const unassignedCount = getGuestsHeadcount(unassignedGuests);
+      const unassignedCount = getGuestsHeadcount(eligibleUnassignedGuests);
 
       // ==========================================
       // PAGE 1: VISUAL FLOORPLAN SCHEMATIC
@@ -122,7 +136,7 @@ export async function generateSeatingChartPdf(
         .fillColor('#94a3b8')
         .text('FLOORPLAN SCHEMATIC', margin + 10, canvasTop + 8);
 
-      if (tables.length === 0) {
+      if (visibleTables.length === 0) {
         doc
           .fontSize(12)
           .font('Helvetica-Oblique')
@@ -137,7 +151,7 @@ export async function generateSeatingChartPdf(
         let maxX = -Infinity;
         let maxY = -Infinity;
 
-        tables.forEach((t) => {
+        visibleTables.forEach((t) => {
           const { width: w, height: h } = computeScaledTableDimensions({
             shape: t.shape,
             capacity: t.capacity,
@@ -145,10 +159,18 @@ export async function generateSeatingChartPdf(
             height: t.height,
             rotation: t.rotation,
           });
-          if (t.x < minX) minX = t.x;
-          if (t.y < minY) minY = t.y;
-          if (t.x + w > maxX) maxX = t.x + w;
-          if (t.y + h > maxY) maxY = t.y + h;
+          const rotationDeg = (((Number(t.rotation) || 0) % 360) + 360) % 360;
+          const rad = (rotationDeg * Math.PI) / 180;
+          const cos = Math.abs(Math.cos(rad));
+          const sin = Math.abs(Math.sin(rad));
+          const halfW = (w / 2) * cos + (h / 2) * sin;
+          const halfH = (w / 2) * sin + (h / 2) * cos;
+          const cxModel = t.x + w / 2;
+          const cyModel = t.y + h / 2;
+          if (cxModel - halfW < minX) minX = cxModel - halfW;
+          if (cyModel - halfH < minY) minY = cyModel - halfH;
+          if (cxModel + halfW > maxX) maxX = cxModel + halfW;
+          if (cyModel + halfH > maxY) maxY = cyModel + halfH;
         });
 
         const padding = 50;
@@ -175,7 +197,7 @@ export async function generateSeatingChartPdf(
         const offsetX = drawAreaLeft + (drawAreaWidth - scaledBboxW) / 2 - minX * scale;
         const offsetY = drawAreaTop + (drawAreaHeight - scaledBboxH) / 2 - minY * scale;
 
-        tables.forEach((table) => {
+        visibleTables.forEach((table) => {
           const scaledBounds = computeScaledTableDimensions({
             shape: table.shape,
             capacity: table.capacity,
@@ -187,12 +209,23 @@ export async function generateSeatingChartPdf(
           const th = scaledBounds.height * scale;
           const tx = offsetX + table.x * scale;
           const ty = offsetY + table.y * scale;
+          const cx = tx + tw / 2;
+          const cy = ty + th / 2;
+          const rotationDeg = (((Number(table.rotation) || 0) % 360) + 360) % 360;
           const shapeLower = (table.shape || 'round').toLowerCase();
+          const uprightLabelWidth = Math.max(
+            40,
+            (rotationDeg % 180 !== 0 ? Math.max(tw, th) : tw) - 4
+          );
+          const uprightLabelLeft = cx - uprightLabelWidth / 2;
 
           if (isLandmarkTable(table)) {
             const cornerRadius =
               shapeLower === 'cake' ? Math.min(tw, th) / 2 : Math.max(3, 6 * scale);
             doc.save();
+            if (rotationDeg !== 0) {
+              doc.rotate(rotationDeg, { origin: [cx, cy] });
+            }
             doc.dash(4, { space: 2 });
             doc.roundedRect(tx, ty, tw, th, cornerRadius).fillAndStroke('#f1f5f9', '#64748b');
             doc.undash();
@@ -202,8 +235,8 @@ export async function generateSeatingChartPdf(
               .fontSize(Math.max(7, Math.min(10, 10 * scale)))
               .font('Helvetica-Bold')
               .fillColor('#1e293b')
-              .text(table.name, tx + 2, ty + th / 2 - 8, {
-                width: tw - 4,
+              .text(table.name, uprightLabelLeft, cy - 8, {
+                width: uprightLabelWidth,
                 align: 'center',
               });
 
@@ -211,8 +244,8 @@ export async function generateSeatingChartPdf(
               .fontSize(Math.max(6, Math.min(8, 8 * scale)))
               .font('Helvetica')
               .fillColor('#475569')
-              .text(getSeatingShapeLabel(table.shape), tx + 2, ty + th / 2 + 3, {
-                width: tw - 4,
+              .text(getSeatingShapeLabel(table.shape), uprightLabelLeft, cy + 3, {
+                width: uprightLabelWidth,
                 align: 'center',
               });
             return;
@@ -230,28 +263,13 @@ export async function generateSeatingChartPdf(
 
           if (isRound) {
             const radius = Math.min(tw, th) / 2;
-            const cx = tx + tw / 2;
-            const cy = ty + th / 2;
+
+            doc.save();
+            if (rotationDeg !== 0) {
+              doc.rotate(rotationDeg, { origin: [cx, cy] });
+            }
 
             doc.circle(cx, cy, radius).fillAndStroke(fillColor, strokeColor);
-
-            doc
-              .fontSize(Math.max(7, Math.min(10, 10 * scale)))
-              .font('Helvetica-Bold')
-              .fillColor('#0f172a')
-              .text(table.name, cx - radius + 2, cy - 8, {
-                width: radius * 2 - 4,
-                align: 'center',
-              });
-
-            doc
-              .fontSize(Math.max(6, Math.min(8, 8 * scale)))
-              .font('Helvetica')
-              .fillColor(isOverCapacity ? '#dc2626' : '#64748b')
-              .text(`${assignedCount}/${table.capacity} seats`, cx - radius + 2, cy + 3, {
-                width: radius * 2 - 4,
-                align: 'center',
-              });
 
             const seatOffset = 12 * scale;
             const seatDotRadius = Math.max(3, 4.5 * scale);
@@ -281,17 +299,15 @@ export async function generateSeatingChartPdf(
                 doc.circle(sx, sy, seatDotRadius).fillAndStroke('#ffffff', '#94a3b8');
               }
             }
-          } else {
-            doc
-              .roundedRect(tx, ty, tw, th, Math.max(3, 6 * scale))
-              .fillAndStroke(fillColor, strokeColor);
+
+            doc.restore();
 
             doc
               .fontSize(Math.max(7, Math.min(10, 10 * scale)))
               .font('Helvetica-Bold')
               .fillColor('#0f172a')
-              .text(table.name, tx + 2, ty + th / 2 - 8, {
-                width: tw - 4,
+              .text(table.name, cx - radius + 2, cy - 8, {
+                width: radius * 2 - 4,
                 align: 'center',
               });
 
@@ -299,10 +315,19 @@ export async function generateSeatingChartPdf(
               .fontSize(Math.max(6, Math.min(8, 8 * scale)))
               .font('Helvetica')
               .fillColor(isOverCapacity ? '#dc2626' : '#64748b')
-              .text(`${assignedCount}/${table.capacity} seats`, tx + 2, ty + th / 2 + 3, {
-                width: tw - 4,
+              .text(`${assignedCount}/${table.capacity} seats`, cx - radius + 2, cy + 3, {
+                width: radius * 2 - 4,
                 align: 'center',
               });
+          } else {
+            doc.save();
+            if (rotationDeg !== 0) {
+              doc.rotate(rotationDeg, { origin: [cx, cy] });
+            }
+
+            doc
+              .roundedRect(tx, ty, tw, th, Math.max(3, 6 * scale))
+              .fillAndStroke(fillColor, strokeColor);
 
             const seatDotRadius = Math.max(3, 4.5 * scale);
             const cap = table.capacity;
@@ -333,6 +358,26 @@ export async function generateSeatingChartPdf(
                 doc.circle(sx, sy, seatDotRadius).fillAndStroke('#ffffff', '#94a3b8');
               }
             }
+
+            doc.restore();
+
+            doc
+              .fontSize(Math.max(7, Math.min(10, 10 * scale)))
+              .font('Helvetica-Bold')
+              .fillColor('#0f172a')
+              .text(table.name, uprightLabelLeft, cy - 8, {
+                width: uprightLabelWidth,
+                align: 'center',
+              });
+
+            doc
+              .fontSize(Math.max(6, Math.min(8, 8 * scale)))
+              .font('Helvetica')
+              .fillColor(isOverCapacity ? '#dc2626' : '#64748b')
+              .text(`${assignedCount}/${table.capacity} seats`, uprightLabelLeft, cy + 3, {
+                width: uprightLabelWidth,
+                align: 'center',
+              });
           }
         });
       }
@@ -380,7 +425,7 @@ export async function generateSeatingChartPdf(
         .text('Table Seating & Caterer Entrée Rosters', margin, currentY);
       currentY += 24;
 
-      if (guestTables.length === 0 && unassignedGuests.length === 0) {
+      if (guestTables.length === 0 && eligibleUnassignedGuests.length === 0) {
         doc
           .fontSize(10)
           .font('Helvetica-Oblique')
@@ -521,7 +566,7 @@ export async function generateSeatingChartPdf(
         }
 
         // Unassigned Guests Section (without Invitation Codes)
-        if (unassignedGuests.length > 0) {
+        if (eligibleUnassignedGuests.length > 0) {
           checkPageBreak(60);
 
           doc.rect(margin, currentY, contentWidth, 22).fillAndStroke('#475569', '#475569');
@@ -548,8 +593,8 @@ export async function generateSeatingChartPdf(
           );
           currentY += 18;
 
-          for (let idx = 0; idx < unassignedGuests.length; idx++) {
-            const guest = unassignedGuests[idx];
+          for (let idx = 0; idx < eligibleUnassignedGuests.length; idx++) {
+            const guest = eligibleUnassignedGuests[idx];
             const companions = getGuestCompanionNames(guest);
             const guestDisplay =
               companions.length > 0
@@ -694,7 +739,12 @@ export async function generateAveryCardsPdf(
       const margin = 36;
       const contentWidth = pageWidth - margin * 2;
 
-      const guestTables = tables.filter((t) => !isLandmarkTable(t));
+      const guestTables = tables
+        .filter((t) => !t.isSample && !isLandmarkTable(t))
+        .map((t) => ({
+          ...t,
+          invitationCodes: (t.invitationCodes || []).filter((g) => isGuestEligibleForSeating(g)),
+        }));
       const cards: AveryCardEntry[] = [];
 
       for (const table of guestTables) {
@@ -713,12 +763,26 @@ export async function generateAveryCardsPdf(
       }
 
       if (mode === 'escort-cards') {
-        cards.sort(
-          (a, b) =>
-            a.attendeeName.localeCompare(b.attendeeName) ||
-            a.tableName.localeCompare(b.tableName) ||
-            a.seatNumber - b.seatNumber
-        );
+        cards.sort((a, b) => {
+          const parsedA = parseAttendeeSortName(a.attendeeName);
+          const parsedB = parseAttendeeSortName(b.attendeeName);
+          return (
+            parsedA.surname.localeCompare(parsedB.surname, undefined, {
+              sensitivity: 'base',
+              numeric: true,
+            }) ||
+            parsedA.givenName.localeCompare(parsedB.givenName, undefined, {
+              sensitivity: 'base',
+              numeric: true,
+            }) ||
+            a.tableName.localeCompare(b.tableName, undefined, {
+              sensitivity: 'base',
+              numeric: true,
+            }) ||
+            a.seatNumber - b.seatNumber ||
+            a.attendeeName.localeCompare(b.attendeeName)
+          );
+        });
       }
 
       const cols = 2;

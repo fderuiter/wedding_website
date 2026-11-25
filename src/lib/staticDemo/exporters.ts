@@ -224,8 +224,9 @@ export function buildSeatingCsv(
   snapshot?: StaticDemoSnapshot,
 ): string {
   const guestTables = tables.filter(
-    (t) => !isDemoLandmarkShape(t.shape) && t.capacity > 0,
+    (t) => !t.isSample && !isDemoLandmarkShape(t.shape) && t.capacity > 0,
   );
+  const eligibleInvitations = invitations.filter((inv) => !inv.isSample);
   const mealLabelById = resolveMealLabelMap(snapshot?.subEvent ?? []);
   const headers = [
     'Table Name',
@@ -244,7 +245,7 @@ export function buildSeatingCsv(
 
   const rows: Array<Array<unknown>> = [];
   for (const table of guestTables) {
-    const seated = invitations
+    const seated = eligibleInvitations
       .filter((inv) => inv.tableId === table.id)
       .sort((a, b) => (a.seatNumber ?? 999) - (b.seatNumber ?? 999));
 
@@ -302,7 +303,7 @@ export function buildSeatingCsv(
     }
   }
 
-  for (const inv of invitations.filter((g) => !g.tableId)) {
+  for (const inv of eligibleInvitations.filter((g) => !g.tableId)) {
     const info = snapshot
       ? summarizeGuestRsvpFields(snapshot, inv, mealLabelById)
       : {
@@ -335,7 +336,7 @@ export function buildSeatingCsv(
 
 export function buildSeatingMealCountsCsv(snapshot: StaticDemoSnapshot): string {
   const guestTables = snapshot.seatingTable.filter(
-    (t) => !isDemoLandmarkShape(t.shape) && t.capacity > 0,
+    (t) => !t.isSample && !isDemoLandmarkShape(t.shape) && t.capacity > 0,
   );
   const mealLabelById = resolveMealLabelMap(snapshot.subEvent);
   const headers = [
@@ -351,7 +352,9 @@ export function buildSeatingMealCountsCsv(snapshot: StaticDemoSnapshot): string 
   const allSeated: DemoInvitationCodeRecord[] = [];
 
   for (const table of guestTables) {
-    const seated = snapshot.invitationCode.filter((inv) => inv.tableId === table.id);
+    const seated = snapshot.invitationCode.filter(
+      (inv) => !inv.isSample && inv.tableId === table.id,
+    );
     allSeated.push(...seated);
     const summary = summarizeTableMealsAndDietary(snapshot, seated, mealLabelById);
     rows.push([

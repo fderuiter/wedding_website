@@ -838,4 +838,117 @@ describe('SeatingChartAdminPage Dialog integration', () => {
     expect(matchDietarySpy).toHaveBeenCalledTimes(0);
     expect(resolveSeatSpy).toHaveBeenCalledTimes(0);
   });
+
+  it('lists seated guests grouped by table in <select name="guestId"> when unassignedGuests is empty and subtracts moving party size for same-table moves', async () => {
+    const sameTableCouple = {
+      id: 'g-same-couple',
+      guestName: 'Harper Chen',
+      code: 'HARPER1',
+      tableId: 'table-1',
+      seatNumber: 1,
+      plusOneSeatNumbers: [2],
+      plusOneAllocations: 1,
+      used: true,
+      isSample: false,
+      extraFields: {
+        attending: true,
+        plusOneCount: 1,
+        plusOneNames: ['Kai Chen'],
+      },
+    };
+    const otherTableSolo = {
+      id: 'g-other-solo',
+      guestName: 'Lucas Reed',
+      code: 'LUCAS1',
+      tableId: 'table-2',
+      seatNumber: 1,
+      used: true,
+      isSample: false,
+      extraFields: { attending: true },
+    };
+
+    const tablesWithSeated = [
+      {
+        id: 'table-1',
+        name: 'Table 1 - Magnolia',
+        shape: 'round' as const,
+        capacity: 3,
+        x: 100,
+        y: 100,
+        width: 120,
+        height: 120,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [sameTableCouple],
+      },
+      {
+        id: 'table-2',
+        name: 'Table 2 - Cedar',
+        shape: 'round' as const,
+        capacity: 4,
+        x: 320,
+        y: 100,
+        width: 120,
+        height: 120,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [otherTableSolo],
+      },
+    ];
+
+    (useSeatingState as jest.Mock).mockReturnValue({
+      tables: tablesWithSeated,
+      allGuests: [sameTableCouple, otherTableSolo],
+      unassignedGuests: [],
+      hiddenSampleTableCount: 2,
+      hiddenSampleGuestCount: 6,
+      isLoading: false,
+      errorMsg: null,
+      canUndo: false,
+      undoLabel: null,
+      assignGuestToTable: mockAssignGuestToTable,
+      assignGuestsToTable: jest.fn(),
+      unassignGuest: mockUnassignGuest,
+      clearTableSeats: jest.fn(),
+      undoLastBatchAction: jest.fn(),
+      applyAutoAssignResult: jest.fn(),
+      saveTable: mockSaveTable,
+      deleteTable: mockDeleteTable,
+      updateTablePosition: mockUpdateTablePosition,
+      updateTableRotation: mockUpdateTableRotation,
+    });
+
+    const { container } = render(<SeatingChartAdminPage />);
+
+    // Compact sample banner is displayed with hidden counts
+    const banner = screen.getByTestId('seating-sample-data-banner');
+    expect(banner).toHaveTextContent(
+      'Sample records hidden: 2 sample tables and 6 sample guests are excluded from live seating, auto-assign, and caterer exports.'
+    );
+    expect(within(banner).getByRole('button', { name: 'Purge Sample Data' })).toBeInTheDocument();
+
+    // Click empty Seat 3 on Table 1 (where unassignedGuests is empty and raw openSeats is 1, but Harper Chen's 2-person party is on the same table!)
+    const emptySeat3Btn = container.querySelector(
+      'button[data-table-id="table-1"][data-seat-number="3"]'
+    ) as HTMLButtonElement;
+    fireEvent.click(emptySeat3Btn);
+
+    const dialog = await screen.findByRole('dialog');
+    const selectEl = within(dialog).getByLabelText('Select Guest') as HTMLSelectElement;
+    expect(selectEl).toHaveAttribute('name', 'guestId');
+
+    const optgroups = Array.from(selectEl.querySelectorAll('optgroup')).map((og) => og.label);
+    expect(optgroups).toEqual(['Table 1 - Magnolia (Same Table)', 'Table 2 - Cedar (Move Seated)']);
+
+    const sameTableOption = Array.from(selectEl.options).find(
+      (opt) => opt.value === 'g-same-couple'
+    );
+    expect(sameTableOption).toBeDefined();
+    expect(sameTableOption?.disabled).toBe(false);
+
+    fireEvent.change(selectEl, { target: { value: 'g-other-solo' } });
+    fireEvent.submit(selectEl.closest('form')!);
+
+    expect(mockAssignGuestToTable).toHaveBeenCalledWith('g-other-solo', 'table-1', 3);
+  });
 });

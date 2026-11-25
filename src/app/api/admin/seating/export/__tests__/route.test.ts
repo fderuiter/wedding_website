@@ -723,4 +723,144 @@ describe('Seating Export API Route (GET /api/admin/seating/export)', () => {
     expect(escortPdf).toContain('Garden Table');
     expect(escortPdf).not.toContain('SECRET-CLARA-99');
   });
+
+  it('excludes isSample: true tables and guests across csv, meals, pdf, place-cards, and escort-cards formats including TOTAL meal counts', async () => {
+    mockPrisma.seatingTable.findMany.mockResolvedValue([
+      {
+        id: 't-real',
+        name: 'Orchid Table',
+        shape: 'rectangular',
+        capacity: 6,
+        x: 100,
+        y: 100,
+        width: 180,
+        height: 100,
+        rotation: 90,
+        isSample: false,
+        invitationCodes: [
+          {
+            id: 'g-real',
+            guestName: 'Zoe Adams',
+            code: 'REAL-ZOE',
+            seatNumber: 1,
+            tableId: 't-real',
+            used: true,
+            isSample: false,
+            extraFields: {
+              attending: true,
+              mealSelections: [{ attendeeName: 'Zoe Adams', mealOptionLabel: 'Herb Salmon' }],
+            },
+          },
+          {
+            id: 'g-sample-on-real',
+            guestName: 'Sample Intruder',
+            code: 'SAMPLE-INTRUDER',
+            seatNumber: 2,
+            tableId: 't-real',
+            used: true,
+            isSample: true,
+            extraFields: {
+              attending: true,
+              mealSelections: [{ attendeeName: 'Sample Intruder', mealOptionLabel: 'Lobster Tail' }],
+            },
+          },
+        ],
+      },
+      {
+        id: 't-sample',
+        name: 'Demo Sample Table',
+        shape: 'round',
+        capacity: 8,
+        x: 350,
+        y: 100,
+        width: 120,
+        height: 120,
+        rotation: 0,
+        isSample: true,
+        invitationCodes: [
+          {
+            id: 'g-sample-table-guest',
+            guestName: 'Sample Table Guest',
+            code: 'SAMPLE-TBL',
+            seatNumber: 1,
+            tableId: 't-sample',
+            used: true,
+            isSample: true,
+            extraFields: {
+              attending: true,
+              mealSelections: [{ attendeeName: 'Sample Table Guest', mealOptionLabel: 'Filet Mignon' }],
+            },
+          },
+        ],
+      },
+    ] as any);
+
+    mockPrisma.invitationCode.findMany.mockResolvedValue([
+      {
+        id: 'u-real',
+        guestName: 'Liam Baker',
+        code: 'REAL-LIAM',
+        tableId: null,
+        used: true,
+        isSample: false,
+        extraFields: { attending: true },
+      },
+      {
+        id: 'u-sample',
+        guestName: 'Sample Unassigned',
+        code: 'SAMPLE-UNASSIGNED',
+        tableId: null,
+        used: true,
+        isSample: true,
+        extraFields: { attending: true },
+      },
+    ] as any);
+
+    // 1. CSV roster
+    const csvRes = await GET(new NextRequest('http://localhost:3000/api/admin/seating/export?format=csv'));
+    const csvText = await csvRes.text();
+    expect(csvText).toContain('Orchid Table');
+    expect(csvText).toContain('Zoe Adams');
+    expect(csvText).toContain('Liam Baker');
+    expect(csvText).not.toContain('Demo Sample Table');
+    expect(csvText).not.toContain('Sample Intruder');
+    expect(csvText).not.toContain('Sample Table Guest');
+    expect(csvText).not.toContain('Sample Unassigned');
+
+    // 2. Meals summary CSV (TOTAL counts only real seated attendee = 1 Herb Salmon)
+    const mealsRes = await GET(new NextRequest('http://localhost:3000/api/admin/seating/export?format=meals'));
+    const mealsText = await mealsRes.text();
+    expect(mealsText).toContain('Orchid Table,rectangular,6,1,Herb Salmon: 1,None');
+    expect(mealsText).toContain('TOTAL,,6,1,Herb Salmon: 1,None');
+    expect(mealsText).not.toContain('Demo Sample Table');
+    expect(mealsText).not.toContain('Lobster Tail');
+    expect(mealsText).not.toContain('Filet Mignon');
+
+    // 3. Floorplan PDF
+    const pdfRes = await GET(new NextRequest('http://localhost:3000/api/admin/seating/export?format=pdf'));
+    const pdfText = decodePdfText(await pdfRes.text());
+    expect(pdfText).toContain('Orchid Table');
+    expect(pdfText).toContain('Zoe Adams');
+    expect(pdfText).toContain('Liam Baker');
+    expect(pdfText).not.toContain('Demo Sample Table');
+    expect(pdfText).not.toContain('Sample Intruder');
+    expect(pdfText).not.toContain('Sample Unassigned');
+
+    // 4. Place Cards PDF
+    const placeRes = await GET(new NextRequest('http://localhost:3000/api/admin/seating/export?format=place-cards'));
+    const placeText = decodePdfText(await placeRes.text());
+    expect(placeText).toContain('Zoe Adams');
+    expect(placeText).not.toContain('Sample Intruder');
+    expect(placeText).not.toContain('Sample Table Guest');
+    expect(placeText).not.toContain('Demo Sample Table');
+
+    // 5. Escort Cards PDF
+    const escortRes = await GET(new NextRequest('http://localhost:3000/api/admin/seating/export?format=escort-cards'));
+    const escortText = decodePdfText(await escortRes.text());
+    expect(escortText).toContain('Zoe Adams');
+    expect(escortText).toContain('Orchid Table');
+    expect(escortText).not.toContain('Sample Intruder');
+    expect(escortText).not.toContain('Sample Table Guest');
+    expect(escortText).not.toContain('Demo Sample Table');
+  });
 });

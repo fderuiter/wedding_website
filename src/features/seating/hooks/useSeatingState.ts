@@ -50,6 +50,8 @@ export interface SeatingState {
   isLoading: boolean;
   error: string | null;
   undoStack?: SeatingUndoSnapshot[];
+  hiddenSampleTableCount?: number;
+  hiddenSampleGuestCount?: number;
 }
 
 type SeatingAction =
@@ -537,6 +539,8 @@ export const initialSeatingState: SeatingState = {
   isLoading: true,
   error: null,
   undoStack: [],
+  hiddenSampleTableCount: 0,
+  hiddenSampleGuestCount: 0,
 };
 
 /**
@@ -545,15 +549,50 @@ export const initialSeatingState: SeatingState = {
 export function seatingReducer(state: SeatingState, action: SeatingAction): SeatingState {
   switch (action.type) {
     case 'INIT_DATA': {
-      const mergedGuests = mergeTableOccupantsIntoGuests(
-        action.payload.tables,
-        action.payload.guests
+      const rawTables = action.payload.tables || [];
+      const allMergedGuests = mergeTableOccupantsIntoGuests(
+        rawTables,
+        action.payload.guests || []
       );
-      const nextTables = syncTablesWithGuests(action.payload.tables, mergedGuests);
+      const sampleTableIds = new Set<string>();
+      const realTables: SeatingTableDTO[] = [];
+      for (const table of rawTables) {
+        if (table.isSample === true) {
+          sampleTableIds.add(table.id);
+        } else {
+          realTables.push({
+            ...table,
+            invitationCodes: (table.invitationCodes || []).filter((g) => g.isSample !== true),
+          });
+        }
+      }
+
+      let hiddenSampleGuestCount = 0;
+      const realGuests: InvitationCodeDTO[] = [];
+      for (const guest of allMergedGuests) {
+        if (guest.isSample === true) {
+          hiddenSampleGuestCount += 1;
+          continue;
+        }
+        if (guest.tableId && sampleTableIds.has(guest.tableId)) {
+          realGuests.push({
+            ...guest,
+            tableId: null,
+            seatNumber: null,
+            plusOneSeatNumbers: [],
+          });
+        } else {
+          realGuests.push(guest);
+        }
+      }
+
+      const nextTables = syncTablesWithGuests(realTables, realGuests);
       return {
         ...state,
         tables: nextTables,
-        guests: mergedGuests,
+        guests: realGuests,
+        hiddenSampleTableCount: sampleTableIds.size,
+        hiddenSampleGuestCount,
         isLoading: false,
         error: null,
       };
@@ -1079,6 +1118,8 @@ export interface UseSeatingStateReturn {
   tables: SeatingTableDTO[];
   allGuests: InvitationCodeDTO[];
   unassignedGuests: InvitationCodeDTO[];
+  hiddenSampleTableCount: number;
+  hiddenSampleGuestCount: number;
   isLoading: boolean;
   errorMsg: string | null;
   assignGuestToTable: (
@@ -1339,7 +1380,19 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         seatNumber: currentGuest.seatNumber,
         plusOneSeatNumbers: currentGuest.plusOneSeatNumbers,
       };
-      const shouldPushUndo = !targetTableId && Boolean(currentGuest.tableId);
+      const isUnassign = !targetTableId && Boolean(currentGuest.tableId);
+      const isSeatMove = Boolean(
+        targetTableId &&
+          currentGuest.tableId &&
+          (currentGuest.tableId !== targetTableId ||
+            (targetSeatNumber !== null && currentGuest.seatNumber !== targetSeatNumber))
+      );
+      const shouldPushUndo = isUnassign || isSeatMove;
+      const snapshotLabel = isUnassign
+        ? `Unassign ${currentGuest.guestName}`
+        : isSeatMove
+          ? `Move ${currentGuest.guestName}`
+          : undefined;
 
       let displacedGuest: { guestId: string; seatNumber?: number | null } | null = null;
       if (targetTableId && targetSeatNumber) {
@@ -1368,7 +1421,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
             ? { plusOneSeatNumbers: optimisticPlusOneSeats }
             : {}),
           pushUndo: shouldPushUndo,
-          snapshotLabel: shouldPushUndo ? `Unassign ${currentGuest.guestName}` : undefined,
+          snapshotLabel,
         },
       });
 
@@ -1973,6 +2026,8 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
     tables: state.tables,
     allGuests: state.guests,
     unassignedGuests,
+    hiddenSampleTableCount: state.hiddenSampleTableCount ?? 0,
+    hiddenSampleGuestCount: state.hiddenSampleGuestCount ?? 0,
     isLoading: state.isLoading,
     errorMsg: state.error,
     assignGuestToTable,

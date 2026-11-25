@@ -1245,5 +1245,117 @@ describe('useSeatingState & seatingReducer', () => {
       expect(result.current.canUndo).toBe(false);
       expect(result.current.undoLabel).toBeNull();
     });
+
+    it('excludes isSample: true tables and guests while tracking hiddenSampleTableCount/hiddenSampleGuestCount and records undo snapshots on direct seat moves', async () => {
+      const sampleTable: SeatingTableDTO = {
+        ...mockTable1,
+        id: 'sample-table',
+        name: 'Sample Table',
+        isSample: true,
+      };
+      const realTableA: SeatingTableDTO = {
+        ...mockTable1,
+        id: 'real-table-a',
+        name: 'Real Table A',
+        capacity: 4,
+        isSample: false,
+      };
+      const realTableB: SeatingTableDTO = {
+        ...mockTable2,
+        id: 'real-table-b',
+        name: 'Real Table B',
+        capacity: 4,
+        isSample: false,
+      };
+
+      const realSeatedGuest: InvitationCodeDTO = {
+        ...mockGuest1,
+        id: 'real-g-1',
+        guestName: 'Seated Mover',
+        tableId: 'real-table-a',
+        seatNumber: 1,
+        isSample: false,
+      };
+      const sampleGuest: InvitationCodeDTO = {
+        ...mockGuest2,
+        id: 'sample-g-1',
+        guestName: 'Hidden Sample Guest',
+        tableId: null,
+        seatNumber: null,
+        isSample: true,
+      };
+
+      global.fetch = jest.fn((url: string | URL | Request, init?: RequestInit) => {
+        const urlStr = url.toString();
+        if (urlStr.endsWith('/api/admin/seating-tables') && (!init || !init.method || init.method === 'GET')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve([sampleTable, realTableA, realTableB]),
+          } as Response);
+        }
+        if (urlStr.includes('/api/admin/invitation-codes/catalog')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ items: [realSeatedGuest, sampleGuest] }),
+          } as Response);
+        }
+        if (urlStr.endsWith('/api/admin/seating/assign') && init?.method === 'POST') {
+          const body = JSON.parse(init.body as string);
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                ...realSeatedGuest,
+                tableId: body.tableId,
+                seatNumber: body.seatNumber ?? null,
+              }),
+          } as Response);
+        }
+        if (urlStr.endsWith('/api/admin/seating/assign-batch') && init?.method === 'POST') {
+          const body = JSON.parse(init.body as string);
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                updatedGuests: (body.assignments || []).map((a: any) => ({
+                  id: a.invitationCodeId,
+                  tableId: a.tableId,
+                  seatNumber: a.seatNumber,
+                })),
+              }),
+          } as Response);
+        }
+        return Promise.reject(new Error(`Unhandled mock: ${urlStr}`));
+      });
+
+      const { result } = renderHook(() => useSeatingState());
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(result.current.tables.map((t) => t.id)).toEqual(['real-table-a', 'real-table-b']);
+      expect(result.current.allGuests.map((g) => g.id)).toEqual(['real-g-1']);
+      expect(result.current.hiddenSampleTableCount).toBe(1);
+      expect(result.current.hiddenSampleGuestCount).toBe(1);
+      expect(result.current.canUndo).toBe(false);
+
+      // Direct move of already-seated guest to Real Table B Seat 2 records Move undo snapshot
+      await act(async () => {
+        await result.current.assignGuestToTable('real-g-1', 'real-table-b', 2);
+      });
+
+      expect(result.current.allGuests[0].tableId).toBe('real-table-b');
+      expect(result.current.allGuests[0].seatNumber).toBe(2);
+      expect(result.current.canUndo).toBe(true);
+      expect(result.current.undoLabel).toBe('Move Seated Mover');
+
+      // Undoing restores guest back to Real Table A Seat 1
+      await act(async () => {
+        await result.current.undoLastBatchAction();
+      });
+      expect(result.current.allGuests[0].tableId).toBe('real-table-a');
+      expect(result.current.allGuests[0].seatNumber).toBe(1);
+    });
   });
 });
