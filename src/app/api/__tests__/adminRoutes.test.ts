@@ -97,4 +97,121 @@ describe('Admin API routes', () => {
     const jsonAnon = await resAnon.json();
     expect(jsonAnon.isAdmin).toBe(false);
   });
+
+  test('authenticated logout increments AppConfig.adminTokenVersion and revokes prior admin_auth cookies while unauthenticated logout does not advance version', async () => {
+    const { prisma } = await import('@/lib/prisma');
+    let persistedVersion = 1;
+    const appConfigDelegate = prisma.appConfig as unknown as {
+      findUnique: jest.Mock;
+      upsert: jest.Mock;
+    };
+
+    appConfigDelegate.findUnique.mockImplementation(async () => ({
+      id: 'global',
+      subdomain: null,
+      adminTokenVersion: persistedVersion,
+      setupCompleted: true,
+    }));
+    appConfigDelegate.upsert.mockImplementation(async ({ update, create }) => {
+      if (update?.adminTokenVersion?.increment) {
+        persistedVersion += update.adminTokenVersion.increment;
+      } else if (typeof create?.adminTokenVersion === 'number') {
+        persistedVersion = create.adminTokenVersion;
+      }
+      return { id: 'global', adminTokenVersion: persistedVersion };
+    });
+
+    try {
+      // 1. Login issues a v=1 token
+      const loginRes1 = await login(
+        new NextRequest('http://localhost/api/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: 'secret' }),
+        })
+      );
+      expect(loginRes1.status).toBe(200);
+      const tokenV1 = loginRes1.cookies.get('admin_auth')?.value ?? '';
+      expect(tokenV1).toContain('.');
+      appConfigDelegate.upsert.mockClear();
+
+      // 2. Unauthenticated logout clears browser cookie without incrementing adminTokenVersion
+      const unauthLogoutRes = await logout(
+        new NextRequest('http://localhost/api/admin/logout', {
+          method: 'POST',
+          headers: { origin: 'http://localhost' },
+        })
+      );
+      expect(unauthLogoutRes.status).toBe(200);
+      expect(persistedVersion).toBe(1);
+      expect(appConfigDelegate.upsert).not.toHaveBeenCalled();
+
+      // Active admin session (v=1) remains valid after unauthenticated logout
+      const meStillValid = await me(
+        new NextRequest('http://localhost/api/admin/me', {
+          headers: { cookie: `admin_auth=${tokenV1}` },
+        })
+      );
+      expect((await meStillValid.json()).isAdmin).toBe(true);
+
+      // 3. Authenticated logout increments adminTokenVersion (1 -> 2) and revokes tokenV1
+      const authLogoutRes = await logout(
+        new NextRequest('http://localhost/api/admin/logout', {
+          method: 'POST',
+          headers: {
+            origin: 'http://localhost',
+            cookie: `admin_auth=${tokenV1}`,
+          },
+        })
+      );
+      expect(authLogoutRes.status).toBe(200);
+      expect(persistedVersion).toBe(2);
+      expect(appConfigDelegate.upsert).toHaveBeenCalledTimes(1);
+
+      const meAfterLogout = await me(
+        new NextRequest('http://localhost/api/admin/me', {
+          headers: { cookie: `admin_auth=${tokenV1}` },
+        })
+      );
+      expect((await meAfterLogout.json()).isAdmin).toBe(false);
+
+      // Replaying the revoked v=1 cookie against logout again cannot advance version further
+      const replayLogoutRes = await logout(
+        new NextRequest('http://localhost/api/admin/logout', {
+          method: 'POST',
+          headers: {
+            origin: 'http://localhost',
+            cookie: `admin_auth=${tokenV1}`,
+          },
+        })
+      );
+      expect(replayLogoutRes.status).toBe(200);
+      expect(persistedVersion).toBe(2);
+
+      // 4. Subsequent login with stale v=1 cookie does NOT reuse tokenV1; issues fresh v=2 token
+      const loginRes2 = await login(
+        new NextRequest('http://localhost/api/admin/login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            cookie: `admin_auth=${tokenV1}`,
+          },
+          body: JSON.stringify({ password: 'secret' }),
+        })
+      );
+      expect(loginRes2.status).toBe(200);
+      const tokenV2 = loginRes2.cookies.get('admin_auth')?.value ?? '';
+      expect(tokenV2).not.toBe(tokenV1);
+
+      const meWithV2 = await me(
+        new NextRequest('http://localhost/api/admin/me', {
+          headers: { cookie: `admin_auth=${tokenV2}` },
+        })
+      );
+      expect((await meWithV2.json()).isAdmin).toBe(true);
+    } finally {
+      appConfigDelegate.findUnique.mockReset();
+      appConfigDelegate.upsert.mockReset();
+    }
+  });
 });

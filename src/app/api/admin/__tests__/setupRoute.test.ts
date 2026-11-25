@@ -1118,5 +1118,44 @@ describe('Setup API Route (/api/admin/setup)', () => {
         scryptSpy.mockRestore();
       }
     });
+
+    test('stamps AppConfig.adminTokenVersion into admin_auth cookie across setup step-1, toggle, and save responses', async () => {
+      const { verifyAdminToken } = await import('@/core/auth/auth.server');
+      const v3Uninitialized = { ...uninitializedConfig, adminTokenVersion: 3 };
+      const v4Initialized = { ...initializedConfig, adminTokenVersion: 4 };
+
+      // 1. Auth-only step 1 check stamps v=3
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(v3Uninitialized);
+      const step1Res = await POST(
+        new NextRequest('http://localhost/api/admin/setup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: 'secret' }),
+        })
+      );
+      expect(step1Res.status).toBe(200);
+      const step1Decoded = await verifyAdminToken(step1Res.cookies.get('admin_auth')?.value ?? '');
+      expect(step1Decoded?.v).toBe(3);
+
+      // 2. Initialized setupCompleted toggle stamps v=4
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(v4Initialized);
+      (mockPrisma.appConfig.upsert as jest.Mock).mockResolvedValue(v4Initialized);
+      const adminTokenV4 = await signAdminToken({ isAdmin: true, v: 4, iat: Date.now() });
+      const toggleRes = await POST(
+        new NextRequest('http://localhost/api/admin/setup', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            cookie: `admin_auth=${adminTokenV4}`,
+          },
+          body: JSON.stringify({ password: 'secret', setupCompleted: true }),
+        })
+      );
+      expect(toggleRes.status).toBe(200);
+      const toggleDecoded = await verifyAdminToken(
+        toggleRes.cookies.get('admin_auth')?.value ?? ''
+      );
+      expect(toggleDecoded?.v).toBe(4);
+    });
   });
 });

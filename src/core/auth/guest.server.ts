@@ -1,4 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { env } from '@/env';
+import {
+  base64urlDecodeToBytes,
+  hmacSha256,
+  timingSafeEqualJS,
+} from '@/utils/crypto';
 import { normalizeTenantSubdomain } from '@/utils/hostValidation';
 import { resolveGuestSigningSecret } from './guestHeaderSignature';
 import {
@@ -14,6 +20,7 @@ import {
 } from './tokenCookieHelpers';
 
 export const GUEST_COOKIE = 'guest_auth';
+const GUEST_PASSCODE_DIGEST_DOMAIN = 'wedding-website:guest-passcode-digest:v1';
 
 export function setGuestAuthCookie(
   response: NextResponse,
@@ -28,6 +35,7 @@ export function setGuestAuthCookie(
 interface GuestTokenPayload {
   guest: boolean;
   jti?: string;
+  pwd?: string;
   siteId?: string;
   subdomain?: string | null;
   iat?: number;
@@ -41,14 +49,31 @@ function createPerLoginTokenId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
+function resolveActiveGuestPasscode(): string {
+  const isProduction = (process.env.NODE_ENV || env.NODE_ENV) === 'production';
+  const rawPasscode = isProduction
+    ? (process.env.GUEST_PASSCODE || 'wedding2026')
+    : (env.GUEST_PASSCODE || process.env.GUEST_PASSCODE || 'wedding2026');
+  return rawPasscode.trim() || 'wedding2026';
+}
+
+async function computeGuestPasscodeDigest(secret: string, passcode: string): Promise<string> {
+  return hmacSha256(`${GUEST_PASSCODE_DIGEST_DOMAIN}:${secret}`, passcode);
+}
+
 export async function signGuestToken(payload: GuestTokenPayload): Promise<string> {
   const secret = resolveGuestSigningSecret();
   if (!secret) {
     throw new Error('Guest auth secret is not configured');
   }
+  const passcodeDigest = await computeGuestPasscodeDigest(
+    secret,
+    resolveActiveGuestPasscode()
+  );
   const normalizedPayload: GuestTokenPayload = {
     ...payload,
     jti: payload.jti ?? createPerLoginTokenId(),
+    pwd: passcodeDigest,
     ...('subdomain' in payload && payload.subdomain !== undefined
       ? { subdomain: normalizeTenantSubdomain(payload.subdomain) }
       : {}),
@@ -64,6 +89,20 @@ export async function verifyGuestToken(token: string): Promise<GuestTokenPayload
     if (!secret) return null;
     const payload = await verifyCompactToken<GuestTokenPayload>(token, secret);
     if (!payload || payload.guest !== true) {
+      return null;
+    }
+
+    if (typeof payload.pwd !== 'string' || payload.pwd.length === 0) {
+      return null;
+    }
+
+    const expectedDigest = await computeGuestPasscodeDigest(
+      secret,
+      resolveActiveGuestPasscode()
+    );
+    const actualBytes = base64urlDecodeToBytes(payload.pwd);
+    const expectedBytes = base64urlDecodeToBytes(expectedDigest);
+    if (!timingSafeEqualJS(actualBytes, expectedBytes)) {
       return null;
     }
 

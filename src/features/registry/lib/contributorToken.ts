@@ -1,9 +1,11 @@
 import { env } from '@/env';
+import type { TenantTokenClaims } from '@/core/auth/tenantClaims';
 import { signCompactToken, verifyCompactToken } from '@/core/auth/tokenCookieHelpers';
+import { normalizeTenantSubdomain } from '@/utils/hostValidation';
 
 type ContributorActionScope = 'confirm' | 'cancel';
 
-interface ContributorActionTokenPayload {
+interface ContributorActionTokenPayload extends TenantTokenClaims {
   contributorId: string;
   action: ContributorActionScope;
   iat: number;
@@ -39,11 +41,14 @@ async function getContributorTokenSecret(): Promise<string> {
 }
 
 /**
- * Signs a contributor action token scoping contributorId, action ('confirm' | 'cancel'), and expiration.
+ * Signs a contributor action token scoping contributorId, action ('confirm' | 'cancel'),
+ * optional tenant claims (siteId, subdomain), and expiration.
  */
 export async function signContributorActionToken(input: {
   contributorId: string;
   action: ContributorActionScope;
+  siteId?: string;
+  subdomain?: string | null;
   iat?: number;
   exp?: number;
 }): Promise<string> {
@@ -52,6 +57,12 @@ export async function signContributorActionToken(input: {
   const payload: ContributorActionTokenPayload = {
     contributorId: input.contributorId,
     action: input.action,
+    ...(typeof input.siteId === 'string' && input.siteId.trim().length > 0
+      ? { siteId: input.siteId.trim() }
+      : {}),
+    ...('subdomain' in input && input.subdomain !== undefined
+      ? { subdomain: normalizeTenantSubdomain(input.subdomain) }
+      : {}),
     iat,
     exp,
   };
@@ -83,6 +94,18 @@ export async function verifyContributorActionToken(
       return null;
     }
 
+    if (payload.siteId !== undefined && typeof payload.siteId !== 'string') {
+      return null;
+    }
+
+    if (
+      payload.subdomain !== undefined &&
+      payload.subdomain !== null &&
+      typeof payload.subdomain !== 'string'
+    ) {
+      return null;
+    }
+
     if (payload.exp < Date.now()) {
       return null;
     }
@@ -91,7 +114,18 @@ export async function verifyContributorActionToken(
       return null;
     }
 
-    return payload;
+    return {
+      contributorId: payload.contributorId,
+      action: payload.action,
+      ...(typeof payload.siteId === 'string' && payload.siteId.trim().length > 0
+        ? { siteId: payload.siteId.trim() }
+        : {}),
+      ...(payload.subdomain !== undefined
+        ? { subdomain: normalizeTenantSubdomain(payload.subdomain) }
+        : {}),
+      iat: payload.iat,
+      exp: payload.exp,
+    };
   } catch {
     return null;
   }

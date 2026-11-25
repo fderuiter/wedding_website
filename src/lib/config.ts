@@ -70,6 +70,7 @@ export const APP_DEFAULTS: LocalAppConfig = {
   photoAlbumUrl: '',
   autoApproveGuestPhotos: false,
   guestPhotoQrTokenVersion: 1,
+  adminTokenVersion: 1,
   faviconUrl: '/assets/favicon.png',
   ogImageUrl: '/images/placeholder.png',
   brandMonogram: undefined,

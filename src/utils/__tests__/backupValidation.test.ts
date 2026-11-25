@@ -514,7 +514,7 @@ describe('DatabaseBackupSchema Validation Tests', () => {
         ...APP_CONFIG_SECRET_KEYS,
       ].sort();
 
-      expect(APP_CONFIG_BACKUP_KEYS).toHaveLength(82);
+      expect(APP_CONFIG_BACKUP_KEYS).toHaveLength(83);
       expect(APP_CONFIG_SECRET_KEYS).toHaveLength(4);
       expect(combinedKeys).toEqual(prismaNames);
 
@@ -688,6 +688,7 @@ describe('DatabaseBackupSchema Validation Tests', () => {
           populatedSnapshot[col] = true;
         } else if (
           col === 'guestPhotoQrTokenVersion' ||
+          col === 'adminTokenVersion' ||
           col === 'rsvpGracePeriodHours' ||
           col === 'smtpPort' ||
           col === 'broadcastBatchSize' ||

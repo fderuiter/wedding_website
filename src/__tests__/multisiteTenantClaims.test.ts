@@ -129,6 +129,8 @@ describe('Multisite Cookie Claims, Forged Header Defenses & Metadata Host Trust'
     timezone: 'America/Chicago',
     showCountdown: true,
     showAddToCalendar: true,
+    guestPhotoQrTokenVersion: 1,
+    adminTokenVersion: 1,
     setupCompleted: true,
     features: '[]',
     createdAt: new Date(),

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getStorageProvider, type LocalUploadStreamResult } from '@/utils/storage';
 import { PathContainmentError } from '@/utils/pathContainment';
+import { rateLimit } from '@/utils/rateLimit';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { isGuestRequest } from '@/core/auth/guest.server';
 import {
@@ -225,6 +226,11 @@ async function handleUploadRequest(
   context: { params: Promise<{ path: string[] }> | { path: string[] } },
   headOnly: boolean
 ): Promise<NextResponse> {
+  const rateLimitResponse = await rateLimit(request, 100, 60 * 1000);
+  if (rateLimitResponse) {
+    return createErrorResponse(429, 'Too many requests, please try again later.', headOnly);
+  }
+
   try {
     validateRawRequestPathname(request.url);
     const resolvedParams = await Promise.resolve(context.params);

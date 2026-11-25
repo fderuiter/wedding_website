@@ -84,6 +84,7 @@ export function buildArchetypeDataset(
       timezone: 'UTC',
       autoApproveGuestPhotos: false,
       guestPhotoQrTokenVersion: 1,
+      adminTokenVersion: 1,
       rsvpOpen: false,
       rsvpDeadlineDate: null,
       rsvpGracePeriodHours: 0,

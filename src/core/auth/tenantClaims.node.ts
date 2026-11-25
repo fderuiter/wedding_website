@@ -1,6 +1,7 @@
 import { headers } from 'next/headers';
 import type { NextRequest } from 'next/server';
 import { getAppConfig } from '@/lib/config';
+import { prisma } from '@/lib/prisma';
 import { getActiveContextRequest } from '@/lib/requestContext';
 import {
   normalizeTenantSubdomain,
@@ -11,6 +12,75 @@ import {
   type TenantTokenClaims,
   verifyEdgeTenantClaims,
 } from './tenantClaims';
+
+interface AppConfigAdminVersionRecord {
+  adminTokenVersion?: number | null;
+}
+
+interface AppConfigAdminVersionLookupDelegate {
+  findUnique?: (args: {
+    where: { id: string };
+    select: { adminTokenVersion: boolean };
+  }) => Promise<AppConfigAdminVersionRecord | null>;
+  findFirst?: (args: {
+    select: { adminTokenVersion: boolean };
+  }) => Promise<AppConfigAdminVersionRecord | null>;
+}
+
+function isStaticExportBuild(): boolean {
+  return (
+    process.env.STATIC_EXPORT === 'true' ||
+    process.env.STATIC_EXPORT === '1' ||
+    process.env.npm_lifecycle_event === 'build:export'
+  );
+}
+
+/**
+ * Resolves the active `AppConfig.adminTokenVersion` for Node-runtime admin session verification.
+ * Returns `1` on uninitialized/defaulted databases and `null` (fail-closed) when Prisma throws
+ * or returns an invalid version value.
+ */
+export async function resolveActiveAdminTokenVersion(siteId?: string): Promise<number | null> {
+  if (isStaticExportBuild()) {
+    return 1;
+  }
+
+  try {
+    const delegate = (
+      prisma as unknown as { appConfig?: AppConfigAdminVersionLookupDelegate }
+    )?.appConfig;
+    if (!delegate) {
+      return 1;
+    }
+
+    const targetConfigId = siteId && siteId.trim() ? siteId.trim() : 'global';
+    let record: AppConfigAdminVersionRecord | null | undefined;
+    if (typeof delegate.findUnique === 'function') {
+      record = await delegate.findUnique({
+        where: { id: targetConfigId },
+        select: { adminTokenVersion: true },
+      });
+    }
+    if (record === undefined && typeof delegate.findFirst === 'function') {
+      record = await delegate.findFirst({
+        select: { adminTokenVersion: true },
+      });
+    }
+
+    if (record === null || record === undefined || record.adminTokenVersion === undefined) {
+      return 1;
+    }
+
+    const version = record.adminTokenVersion;
+    if (typeof version === 'number' && Number.isInteger(version) && version >= 1) {
+      return version;
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 async function resolveNodeRequestSubdomain(req?: NextRequest): Promise<string | null> {
   if (req) {

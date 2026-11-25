@@ -799,4 +799,39 @@ describe('POST /api/registry/webhook/stripe', () => {
       warnSpy.mockRestore();
     }
   });
+
+  it('enforces 100-per-minute IP rate limit before reading request.text() body or verifying Stripe signatures', async () => {
+    const { resetRateLimitsForTesting } = await import('@/utils/rateLimit');
+    await resetRateLimitsForTesting();
+
+    try {
+      for (let i = 0; i < 100; i++) {
+        const res = await POST(
+          new NextRequest('http://localhost:3000/api/registry/webhook/stripe', {
+            method: 'POST',
+            body: '{}',
+          })
+        );
+        expect(res.status).toBe(400);
+      }
+
+      mockConstructEvent.mockClear();
+      const overflowReq = new NextRequest('http://localhost:3000/api/registry/webhook/stripe', {
+        method: 'POST',
+        headers: { 'stripe-signature': 't=12345,v1=validsig' },
+        body: JSON.stringify({ type: 'payment_intent.succeeded' }),
+      });
+      const textSpy = jest.spyOn(overflowReq, 'text');
+
+      const throttledRes = await POST(overflowReq);
+      expect(throttledRes.status).toBe(429);
+      expect(await throttledRes.json()).toEqual({
+        error: 'Too many requests, please try again later.',
+      });
+      expect(textSpy).not.toHaveBeenCalled();
+      expect(mockConstructEvent).not.toHaveBeenCalled();
+    } finally {
+      await resetRateLimitsForTesting();
+    }
+  });
 });

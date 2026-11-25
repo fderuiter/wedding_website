@@ -181,4 +181,61 @@ describe('/api/guest/session Route', () => {
       (process.env as Record<string, string | undefined>).NODE_ENV = prevNodeEnv;
     }
   });
+
+  it('clears guest_auth, guest_invite_session, and guest_photo_session (including __Host- variants) when scope=all is requested', async () => {
+    mockIsGuestRequest.mockResolvedValue(true);
+
+    const localFullSignOutRes = await DELETE(
+      new NextRequest('http://localhost:3000/api/guest/session?scope=all', {
+        method: 'DELETE',
+        headers: {
+          cookie:
+            'guest_auth=valid-passcode-jwt; guest_invite_session=active-invite-token; guest_photo_session=active-photo-token',
+        },
+      }),
+      {}
+    );
+    const localBody = await localFullSignOutRes.json();
+
+    expect(localFullSignOutRes.status).toBe(200);
+    expect(localBody.data).toEqual({
+      status: 'none',
+      isVerified: false,
+      invitationCode: null,
+      code: null,
+      guestName: null,
+      hasPasscodeSession: false,
+    });
+    expect(localFullSignOutRes.cookies.get('guest_auth')?.value).toBe('');
+    expect(localFullSignOutRes.cookies.get(GUEST_INVITE_COOKIE)?.value).toBe('');
+    expect(localFullSignOutRes.cookies.get('guest_photo_session')?.value).toBe('');
+
+    const prevNodeEnv = process.env.NODE_ENV;
+    (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+    try {
+      const httpsFullSignOutRes = await DELETE(
+        new NextRequest('https://wedding.example/api/guest/session?scope=all', {
+          method: 'DELETE',
+          headers: {
+            host: 'wedding.example',
+            origin: 'https://wedding.example',
+            'x-forwarded-proto': 'https',
+            'sec-fetch-site': 'same-origin',
+            cookie:
+              '__Host-guest_auth=valid-passcode-jwt; guest_auth=legacy-passcode; __Host-guest_invite_session=active-invite-token; guest_invite_session=legacy-invite; __Host-guest_photo_session=active-photo-token; guest_photo_session=legacy-photo',
+          },
+        }),
+        {}
+      );
+      expect(httpsFullSignOutRes.status).toBe(200);
+      expect(httpsFullSignOutRes.cookies.get('__Host-guest_auth')?.value).toBe('');
+      expect(httpsFullSignOutRes.cookies.get('guest_auth')?.value).toBe('');
+      expect(httpsFullSignOutRes.cookies.get('__Host-guest_invite_session')?.value).toBe('');
+      expect(httpsFullSignOutRes.cookies.get(GUEST_INVITE_COOKIE)?.value).toBe('');
+      expect(httpsFullSignOutRes.cookies.get('__Host-guest_photo_session')?.value).toBe('');
+      expect(httpsFullSignOutRes.cookies.get('guest_photo_session')?.value).toBe('');
+    } finally {
+      (process.env as Record<string, string | undefined>).NODE_ENV = prevNodeEnv;
+    }
+  });
 });

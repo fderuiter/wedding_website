@@ -144,6 +144,7 @@ interface DemoSiteConfigSeed {
   timezone: string;
   autoApproveGuestPhotos: boolean;
   guestPhotoQrTokenVersion: number;
+  adminTokenVersion: number;
   rsvpOpen: boolean;
   rsvpDeadlineDate: string | null;
   rsvpGracePeriodHours: number;
@@ -843,6 +844,7 @@ export function buildArchetypeDataset(archetypeId: ArchetypeId): ArchetypeDatase
     timezone: preset.siteConfig.timezone,
     autoApproveGuestPhotos: false,
     guestPhotoQrTokenVersion: 1,
+    adminTokenVersion: 1,
     rsvpOpen: true,
     rsvpDeadlineDate: null,
     rsvpGracePeriodHours: 24,

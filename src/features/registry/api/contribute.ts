@@ -18,6 +18,7 @@ import {
   isJsonMediaType,
 } from '@/utils/contentType';
 import { isAdminRequest } from '@/core/auth/auth.server';
+import { resolveTenantClaimsForSigning } from '@/core/auth/tenantClaims.node';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
@@ -215,14 +216,17 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
 
     if (matchedContributor?.id) {
       try {
+        const tenantClaims = await resolveTenantClaimsForSigning(request, config);
         const [confirmToken, cancelToken] = await Promise.all([
           signContributorActionToken({
             contributorId: matchedContributor.id,
             action: 'confirm',
+            ...tenantClaims,
           }),
           signContributorActionToken({
             contributorId: matchedContributor.id,
             action: 'cancel',
+            ...tenantClaims,
           }),
         ]);
         claimActions = { confirmToken, cancelToken };

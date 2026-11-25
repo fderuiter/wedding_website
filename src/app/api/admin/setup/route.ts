@@ -172,9 +172,21 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
       }
 
       const tenantClaims = await resolveTenantClaimsForSigning(req, config);
+      const activeAdminTokenVersion =
+        typeof config.adminTokenVersion === 'number' &&
+        Number.isInteger(config.adminTokenVersion) &&
+        config.adminTokenVersion >= 1
+          ? config.adminTokenVersion
+          : 1;
       const iat = Date.now();
       const exp = iat + 60 * 60 * 8 * 1000;
-      const token = await signAdminToken({ isAdmin: true, ...tenantClaims, iat, exp });
+      const token = await signAdminToken({
+        isAdmin: true,
+        v: activeAdminTokenVersion,
+        ...tenantClaims,
+        iat,
+        exp,
+      });
       const response = NextResponse.json({
         success: true,
         initialized: true,
@@ -187,9 +199,21 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
     // Auth-only check for step 1
     const tenantClaims = await resolveTenantClaimsForSigning(req, config);
+    const activeAdminTokenVersion =
+      typeof config.adminTokenVersion === 'number' &&
+      Number.isInteger(config.adminTokenVersion) &&
+      config.adminTokenVersion >= 1
+        ? config.adminTokenVersion
+        : 1;
     const iat = Date.now();
     const exp = iat + 60 * 60 * 8 * 1000;
-    const token = await signAdminToken({ isAdmin: true, ...tenantClaims, iat, exp });
+    const token = await signAdminToken({
+      isAdmin: true,
+      v: activeAdminTokenVersion,
+      ...tenantClaims,
+      iat,
+      exp,
+    });
     const completed = isSetupCompleted(config);
     const response = NextResponse.json({
       success: true,
@@ -402,9 +426,25 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   }
 
   const tenantClaims = await resolveTenantClaimsForSigning(req, parsedUpdatedConfig);
+  const updatedAdminTokenVersion =
+    typeof parsedUpdatedConfig.adminTokenVersion === 'number' &&
+    Number.isInteger(parsedUpdatedConfig.adminTokenVersion) &&
+    parsedUpdatedConfig.adminTokenVersion >= 1
+      ? parsedUpdatedConfig.adminTokenVersion
+      : typeof config.adminTokenVersion === 'number' &&
+          Number.isInteger(config.adminTokenVersion) &&
+          config.adminTokenVersion >= 1
+        ? config.adminTokenVersion
+        : 1;
   const iat = Date.now();
   const exp = iat + 60 * 60 * 8 * 1000;
-  const token = await signAdminToken({ isAdmin: true, ...tenantClaims, iat, exp });
+  const token = await signAdminToken({
+    isAdmin: true,
+    v: updatedAdminTokenVersion,
+    ...tenantClaims,
+    iat,
+    exp,
+  });
 
   const response = NextResponse.json({
     success: true,

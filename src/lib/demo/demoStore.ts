@@ -1408,6 +1408,7 @@ export function getEffectiveDemoSettings(
     timezone: ov.timezone ?? cfg.timezone,
     autoApproveGuestPhotos: cfg.autoApproveGuestPhotos,
     guestPhotoQrTokenVersion: cfg.guestPhotoQrTokenVersion,
+    adminTokenVersion: cfg.adminTokenVersion,
     rsvpOpen: typeof ov.rsvpOpen === 'boolean' ? ov.rsvpOpen : cfg.rsvpOpen,
     rsvpDeadlineDate: cfg.rsvpDeadlineDate,
     rsvpGracePeriodHours: cfg.rsvpGracePeriodHours,

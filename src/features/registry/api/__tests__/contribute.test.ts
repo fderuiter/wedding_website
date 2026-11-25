@@ -1333,4 +1333,84 @@ describe('POST /api/registry/contribute', () => {
     expect(serialized).not.toContain('62704');
     expect(serialized).not.toContain('alex@example.com');
   });
+
+  it('stamps siteId and normalized subdomain onto claimActions confirmToken and cancelToken', async () => {
+    const { verifyContributorActionToken } = await import('../../lib/contributorToken');
+    const savedAllowedHosts = process.env.ALLOWED_HOSTS;
+    const savedMultisite = process.env.MULTISITE_ENABLED;
+    process.env.ALLOWED_HOSTS = 'localhost,*.wedding.test,wedding.test';
+    process.env.MULTISITE_ENABLED = 'true';
+
+    try {
+      (getAppConfig as jest.Mock).mockResolvedValue({
+        id: 'site-alice',
+        subdomain: 'Alice',
+        modules: ['registry', 'groupGifting'],
+        emailProvider: 'none',
+      });
+      (registryService.getItemById as jest.Mock).mockResolvedValueOnce(mockItem);
+      (registryService.contributeToItem as jest.Mock).mockResolvedValueOnce({
+        ...mockItem,
+        amountContributed: 60,
+        contributors: [
+          {
+            id: 'contrib-tenant-claim-1',
+            name: 'Alice Friend',
+            amount: 60,
+            status: 'RESERVED',
+          },
+        ],
+      });
+
+      const res = await POST(
+        new NextRequest('https://Alice.wedding.test/api/registry/contribute', {
+          method: 'POST',
+          headers: {
+            host: 'Alice.wedding.test',
+            origin: 'https://alice.wedding.test',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            itemId: 'item-123',
+            name: 'Alice Friend',
+            amount: 60,
+          }),
+        })
+      );
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      const verifiedConfirm = await verifyContributorActionToken(
+        body.data.claimActions.confirmToken,
+        'confirm'
+      );
+      const verifiedCancel = await verifyContributorActionToken(
+        body.data.claimActions.cancelToken,
+        'cancel'
+      );
+      expect(verifiedConfirm).toMatchObject({
+        contributorId: 'contrib-tenant-claim-1',
+        action: 'confirm',
+        siteId: 'site-alice',
+        subdomain: 'alice',
+      });
+      expect(verifiedCancel).toMatchObject({
+        contributorId: 'contrib-tenant-claim-1',
+        action: 'cancel',
+        siteId: 'site-alice',
+        subdomain: 'alice',
+      });
+    } finally {
+      if (savedAllowedHosts !== undefined) {
+        process.env.ALLOWED_HOSTS = savedAllowedHosts;
+      } else {
+        delete process.env.ALLOWED_HOSTS;
+      }
+      if (savedMultisite !== undefined) {
+        process.env.MULTISITE_ENABLED = savedMultisite;
+      } else {
+        delete process.env.MULTISITE_ENABLED;
+      }
+    }
+  });
 });

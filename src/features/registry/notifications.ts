@@ -1,7 +1,12 @@
 import { z } from 'zod';
+import { resolveTenantClaimsForSigning } from '@/core/auth/tenantClaims.node';
 import { getAppConfig } from '@/lib/config';
 import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
+import {
+  normalizeTenantSubdomain,
+  resolveRequestSubdomain,
+} from '@/utils/hostValidation';
 import { formatCurrency } from '@/utils/intl';
 import { signContributorActionToken } from './lib/contributorToken';
 import { registryRepository } from './repository';
@@ -792,14 +797,36 @@ export async function dispatchContributionNotifications(
     let cancelActionUrl: string | undefined;
     if (canSendGuestConfirmation && isReserved && savedContributor.id) {
       try {
+        const baseTenantClaims = await resolveTenantClaimsForSigning(undefined, activeConfig);
+        const urlSubdomain = (() => {
+          if (!requestUrl) return null;
+          try {
+            const host = new URL(requestUrl).host;
+            return host ? resolveRequestSubdomain(new Headers({ host }), host) : null;
+          } catch {
+            return null;
+          }
+        })();
+        const tenantClaims = {
+          siteId:
+            typeof activeConfig?.id === 'string' && activeConfig.id.trim().length > 0
+              ? activeConfig.id.trim()
+              : baseTenantClaims.siteId,
+          subdomain:
+            baseTenantClaims.subdomain ??
+            urlSubdomain ??
+            normalizeTenantSubdomain(activeConfig?.subdomain),
+        };
         const [confirmToken, cancelToken] = await Promise.all([
           signContributorActionToken({
             contributorId: savedContributor.id,
             action: 'confirm',
+            ...tenantClaims,
           }),
           signContributorActionToken({
             contributorId: savedContributor.id,
             action: 'cancel',
+            ...tenantClaims,
           }),
         ]);
         const claimPrefix = baseUrl ? `${baseUrl}/guest/claim` : '/guest/claim';

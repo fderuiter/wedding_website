@@ -1244,6 +1244,7 @@ export const AppConfigSchema = z.object({
   photoAlbumUrl: z.string().default('').describe('Optional external shared photo album URL displayed on the public gallery page.'),
   autoApproveGuestPhotos: z.boolean().default(false).describe('Admin-only toggle controlling whether new guest photo uploads are automatically approved and published immediately without manual moderation; omitted from public DTOs.'),
   guestPhotoQrTokenVersion: z.number().int().min(1).default(1).describe('Admin-only monotonic version counter for rotating signed guest photo upload QR links and invalidating previously issued photo sessions; omitted from public DTOs.'),
+  adminTokenVersion: z.number().int().min(1).default(1).describe('Admin-only monotonic version counter incremented on authenticated administrator logout to revoke previously issued admin_auth sessions; omitted from public DTOs.'),
   faviconUrl: z.string().describe('Asset path or safe URL for the browser tab favicon icon.'),
   ogImageUrl: z.string().describe('Default Open Graph social sharing preview image URL or asset path.'),
   brandMonogram: z.string().nullable().optional().describe('Custom monogram text overriding initials derived from partner names.'),
@@ -1646,6 +1647,21 @@ export function translateAppConfigSnapshot(
     create.guestPhotoQrTokenVersion = resolvedVersion;
   } else {
     create.guestPhotoQrTokenVersion = 1;
+  }
+
+  if (
+    snapshotData.adminTokenVersion !== undefined &&
+    snapshotData.adminTokenVersion !== null
+  ) {
+    const numericVersion = Number(snapshotData.adminTokenVersion);
+    const resolvedVersion =
+      Number.isInteger(numericVersion) && numericVersion >= 1
+        ? numericVersion
+        : 1;
+    update.adminTokenVersion = resolvedVersion;
+    create.adminTokenVersion = resolvedVersion;
+  } else {
+    create.adminTokenVersion = 1;
   }
 
   const faviconUrl =

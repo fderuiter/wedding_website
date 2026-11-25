@@ -105,6 +105,7 @@ export const BackupAppConfigSchema = z.object({
   photoAlbumUrl: RawUpdateAppConfigSchema.shape.photoAlbumUrl.optional(),
   autoApproveGuestPhotos: z.boolean().optional(),
   guestPhotoQrTokenVersion: z.number().int().min(1).optional(),
+  adminTokenVersion: z.number().int().min(1).optional(),
   faviconUrl: RawUpdateAppConfigSchema.shape.faviconUrl.optional(),
   ogImageUrl: RawUpdateAppConfigSchema.shape.ogImageUrl.optional(),
   brandMonogram: z.string().nullable().optional(),

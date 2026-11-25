@@ -195,6 +195,9 @@ function isIpScopedGeneralRoute(
 export function normalizeApiPathname(pathname: string): string {
   if (!pathname) return '';
   const cleaned = pathname.length > 1 ? pathname.replace(/\/+$/, '') || '/' : pathname;
+  if (/^\/uploads\/.+$/.test(cleaned)) {
+    return '/api/uploads/:path';
+  }
   if (!cleaned.startsWith('/api/')) {
     return cleaned;
   }

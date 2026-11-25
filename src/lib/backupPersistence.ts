@@ -36,6 +36,7 @@ export const APP_CONFIG_BACKUP_KEYS = [
   'photoAlbumUrl',
   'autoApproveGuestPhotos',
   'guestPhotoQrTokenVersion',
+  'adminTokenVersion',
   'faviconUrl',
   'ogImageUrl',
   'brandMonogram',

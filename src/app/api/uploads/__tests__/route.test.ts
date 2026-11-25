@@ -458,4 +458,61 @@ describe('Uploads Serving Route (/api/uploads/[...path]) — Auth, Moderation, C
     expect(dirRes.status).toBe(404);
     expect(dirRes.headers.get('X-Content-Type-Options')).toBe('nosniff');
   });
+
+  it('enforces 100-per-minute rateLimit on GET and HEAD before database or storage reads and preserves empty body on HEAD 429', async () => {
+    const { resetRateLimitsForTesting } = await import('@/utils/rateLimit');
+    await resetRateLimitsForTesting();
+
+    try {
+      mockFindManyContentNode.mockResolvedValue([]);
+      mockFindManyMedia.mockResolvedValue([]);
+      mockGetAppConfig.mockResolvedValue({
+        ogImageUrl: '/images/og.jpg',
+        faviconUrl: '/assets/favicon.png',
+      });
+
+      // Exhaust 100 requests across varied /uploads/* and /api/uploads/* paths from same client IP
+      for (let i = 0; i < 100; i++) {
+        const url =
+          i % 2 === 0
+            ? `http://localhost:3000/uploads/photos/burst-${i}.jpg`
+            : `http://localhost:3000/api/uploads/photos/burst-${i}.jpg`;
+        const res = await GET(new NextRequest(url), {
+          params: Promise.resolve({ path: ['photos', `burst-${i}.jpg`] }),
+        });
+        expect(res.status).toBe(401);
+      }
+
+      mockFindManyContentNode.mockClear();
+      mockFindManyMedia.mockClear();
+      mockGetAppConfig.mockClear();
+
+      // 101st GET request hits 429 before any database or config reads
+      const throttledGetRes = await GET(
+        new NextRequest('http://localhost:3000/uploads/photos/burst-overflow.jpg'),
+        { params: Promise.resolve({ path: ['photos', 'burst-overflow.jpg'] }) }
+      );
+      expect(throttledGetRes.status).toBe(429);
+      expect(throttledGetRes.headers.get('X-Content-Type-Options')).toBe('nosniff');
+      expect(await throttledGetRes.json()).toEqual({
+        error: 'Too many requests, please try again later.',
+      });
+      expect(mockFindManyContentNode).not.toHaveBeenCalled();
+      expect(mockFindManyMedia).not.toHaveBeenCalled();
+      expect(mockGetAppConfig).not.toHaveBeenCalled();
+
+      // Throttled HEAD request returns 429 with empty body (no JSON payload)
+      const throttledHeadRes = await HEAD(
+        new NextRequest('http://localhost:3000/api/uploads/photos/burst-overflow.jpg', {
+          method: 'HEAD',
+        }),
+        { params: Promise.resolve({ path: ['photos', 'burst-overflow.jpg'] }) }
+      );
+      expect(throttledHeadRes.status).toBe(429);
+      expect(throttledHeadRes.headers.get('X-Content-Type-Options')).toBe('nosniff');
+      expect((await throttledHeadRes.arrayBuffer()).byteLength).toBe(0);
+    } finally {
+      await resetRateLimitsForTesting();
+    }
+  });
 });

@@ -322,5 +322,41 @@ describe('Middleware QR Token Exchange, Scope Isolation, and Token Rotation', ()
       });
       expect((await uploadHandler(inviteUploadReq)).status).toBe(201);
     });
+
+    it('fails closed and rejects guest_photo_session cookies when Prisma throws or omits AppConfig', async () => {
+      const { getActivePhotoUploadSession } = await import('@/core/auth/guestInviteSession');
+      const v1PhotoSession = await signPhotoUploadSessionToken({ v: 1 });
+      const uploadHandler = withApiMiddleware(async () =>
+        NextResponse.json({ success: true }, { status: 201 })
+      );
+      const makeUploadReq = () =>
+        new NextRequest('http://localhost:3000/api/guest/photos/upload', {
+          method: 'POST',
+          headers: {
+            host: 'localhost:3000',
+            cookie: `${GUEST_PHOTO_COOKIE}=${v1PhotoSession}`,
+          },
+        });
+
+      // 1. Prisma throws an error -> getActivePhotoUploadSession returns null & route returns 401
+      mockFindFirstAppConfig.mockRejectedValueOnce(new Error('Database unavailable'));
+      await expect(getActivePhotoUploadSession(makeUploadReq())).resolves.toBeNull();
+
+      mockFindFirstAppConfig.mockRejectedValueOnce(new Error('Database unavailable'));
+      const dbErrRes = await uploadHandler(makeUploadReq());
+      expect(dbErrRes.status).toBe(401);
+
+      // 2. Prisma omits AppConfig row (null) -> getActivePhotoUploadSession returns null & route returns 401
+      mockFindFirstAppConfig.mockResolvedValueOnce(null);
+      await expect(getActivePhotoUploadSession(makeUploadReq())).resolves.toBeNull();
+
+      mockFindFirstAppConfig.mockResolvedValueOnce(null);
+      const missingRowRes = await uploadHandler(makeUploadReq());
+      expect(missingRowRes.status).toBe(401);
+
+      // 3. Prisma returns partial object omitting guestPhotoQrTokenVersion -> fails closed
+      mockFindFirstAppConfig.mockResolvedValueOnce({});
+      await expect(getActivePhotoUploadSession(makeUploadReq())).resolves.toBeNull();
+    });
   });
 });

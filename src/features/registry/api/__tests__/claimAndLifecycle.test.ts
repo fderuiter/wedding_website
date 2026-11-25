@@ -387,4 +387,195 @@ describe('Contributor Signed Links, Scanner-Safe Claims, Middleware & Admin Life
       }
     });
   });
+
+  describe('Multisite Tenant Claims & Legacy Single-Site Claim Compatibility', () => {
+    const originalMultisite = process.env.MULTISITE_ENABLED;
+    const originalAllowedHosts = process.env.ALLOWED_HOSTS;
+
+    afterEach(() => {
+      if (originalMultisite !== undefined) {
+        process.env.MULTISITE_ENABLED = originalMultisite;
+      } else {
+        delete process.env.MULTISITE_ENABLED;
+      }
+      if (originalAllowedHosts !== undefined) {
+        process.env.ALLOWED_HOSTS = originalAllowedHosts;
+      } else {
+        delete process.env.ALLOWED_HOSTS;
+      }
+    });
+
+    it('stamps siteId and normalized subdomain in signContributorActionToken and dispatchContributionNotifications, blocks cross-tenant claims when MULTISITE_ENABLED=true, and accepts legacy tokens when MULTISITE_ENABLED=false', async () => {
+      const { getAppConfig } = await import('@/lib/config');
+      const { dispatchContributionNotifications } = await import('../../notifications');
+
+      process.env.ALLOWED_HOSTS = 'localhost,*.wedding.test,wedding.test';
+      process.env.MULTISITE_ENABLED = 'true';
+
+      const aliceConfig = {
+        id: 'site-alice',
+        subdomain: 'alice',
+        modules: ['registry', 'groupGifting'],
+        emailProvider: 'smtp',
+        smtpHost: 'smtp.wedding.test',
+        contactEmail: 'alice@wedding.test',
+        baseUrl: 'https://alice.wedding.test',
+        defaultPaymentHandleType: 'Venmo',
+        defaultPaymentHandle: '@alice-venmo',
+      };
+      const bobConfig = {
+        ...aliceConfig,
+        id: 'site-bob',
+        subdomain: 'bob',
+        contactEmail: 'bob@wedding.test',
+        baseUrl: 'https://bob.wedding.test',
+      };
+
+      (getAppConfig as jest.Mock).mockImplementation(async (subdomainOrId?: string) => {
+        if (subdomainOrId === 'bob' || subdomainOrId === 'site-bob') {
+          return bobConfig;
+        }
+        return aliceConfig;
+      });
+
+      // 1. Verify dispatchContributionNotifications stamps siteId + normalized subdomain on email links
+      const sendEmailSpy = jest
+        .spyOn(MultiChannelMessagingProvider.prototype, 'sendEmail')
+        .mockResolvedValue({ success: true });
+      try {
+        await dispatchContributionNotifications({
+          itemId: 'item-tenant-1',
+          targetItem: { id: 'item-tenant-1', name: 'Espresso Machine', itemType: 'PHYSICAL' },
+          updatedItem: {
+            id: 'item-tenant-1',
+            name: 'Espresso Machine',
+            itemType: 'PHYSICAL',
+            contributors: [
+              {
+                id: 'contrib-alice-1',
+                name: 'Alice Guest',
+                email: 'guest@alice.test',
+                amount: 150,
+                status: 'RESERVED',
+                invitationCode: {
+                  id: 'inv-1',
+                  code: 'ALICEVIP',
+                  email: 'guest@alice.test',
+                  isSample: false,
+                },
+              },
+            ],
+          },
+          contribution: {
+            name: 'Alice Guest',
+            email: 'guest@alice.test',
+            amount: 150,
+          },
+          config: { ...aliceConfig, subdomain: 'ALICE' },
+          requestUrl: 'https://ALICE.wedding.test/api/registry/contribute',
+          isReservation: true,
+          verifiedInvitationCode: 'ALICEVIP',
+        });
+
+        const guestMailCall = sendEmailSpy.mock.calls.find(
+          (call) => call[0].to === 'guest@alice.test'
+        );
+        expect(guestMailCall).toBeDefined();
+        const tokenMatch = guestMailCall![0].body.match(/\/guest\/claim\?token=([^"&<\s]+)/);
+        expect(tokenMatch).not.toBeNull();
+        const emailedToken = decodeURIComponent(tokenMatch![1]);
+        const verifiedEmailed = await verifyContributorActionToken(emailedToken);
+        expect(verifiedEmailed).toMatchObject({
+          contributorId: 'contrib-alice-1',
+          siteId: 'site-alice',
+          subdomain: 'alice',
+        });
+      } finally {
+        sendEmailSpy.mockRestore();
+      }
+
+      // 2. Tenant A token succeeds on Tenant A and is rejected with 401 on Tenant B (GET & POST)
+      const aliceConfirmToken = await signContributorActionToken({
+        contributorId: 'contrib-alice-1',
+        action: 'confirm',
+        siteId: 'site-alice',
+        subdomain: 'Alice',
+      });
+      expect(await verifyContributorActionToken(aliceConfirmToken)).toMatchObject({
+        contributorId: 'contrib-alice-1',
+        action: 'confirm',
+        siteId: 'site-alice',
+        subdomain: 'alice',
+      });
+
+      (registryService.getContributorWithItem as jest.Mock).mockResolvedValue({
+        contributor: { id: 'contrib-alice-1', status: 'RESERVED', amount: 150 },
+        item: {
+          id: 'item-tenant-1',
+          name: 'Espresso Machine',
+          itemType: 'PHYSICAL',
+          isSample: false,
+        },
+      });
+
+      const bobGetRes = await claimGET(
+        new NextRequest(
+          `https://bob.wedding.test/api/registry/claim?token=${encodeURIComponent(aliceConfirmToken)}`,
+          { headers: { host: 'bob.wedding.test' } }
+        ),
+        {}
+      );
+      expect(bobGetRes.status).toBe(401);
+      expect(registryService.getContributorWithItem).not.toHaveBeenCalled();
+
+      const bobPostRes = await claimPOST(
+        new NextRequest('https://bob.wedding.test/api/registry/claim', {
+          method: 'POST',
+          headers: {
+            host: 'bob.wedding.test',
+            origin: 'https://bob.wedding.test',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({ token: aliceConfirmToken }),
+        }),
+        {}
+      );
+      expect(bobPostRes.status).toBe(401);
+      expect(registryService.confirmContribution).not.toHaveBeenCalled();
+
+      // Legacy claimless token is rejected when MULTISITE_ENABLED=true
+      const legacyClaimlessToken = await signContributorActionToken({
+        contributorId: 'contrib-legacy-1',
+        action: 'confirm',
+      });
+      const multisiteLegacyRes = await claimGET(
+        new NextRequest(
+          `https://alice.wedding.test/api/registry/claim?token=${encodeURIComponent(legacyClaimlessToken)}`,
+          { headers: { host: 'alice.wedding.test' } }
+        ),
+        {}
+      );
+      expect(multisiteLegacyRes.status).toBe(401);
+
+      // Same-tenant token succeeds when MULTISITE_ENABLED=true
+      const aliceGetRes = await claimGET(
+        new NextRequest(
+          `https://alice.wedding.test/api/registry/claim?token=${encodeURIComponent(aliceConfirmToken)}`,
+          { headers: { host: 'alice.wedding.test' } }
+        ),
+        {}
+      );
+      expect(aliceGetRes.status).toBe(200);
+
+      // 3. Legacy claimless 30-day email token succeeds when MULTISITE_ENABLED=false
+      process.env.MULTISITE_ENABLED = 'false';
+      const singleSiteLegacyGetRes = await claimGET(
+        new NextRequest(
+          `http://localhost:3000/api/registry/claim?token=${encodeURIComponent(legacyClaimlessToken)}`
+        ),
+        {}
+      );
+      expect(singleSiteLegacyGetRes.status).toBe(200);
+    });
+  });
 });

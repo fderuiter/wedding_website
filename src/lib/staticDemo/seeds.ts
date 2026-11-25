@@ -704,6 +704,7 @@ export function buildArchetypeSeedSnapshot(
     showAddToCalendar: true,
     autoApproveGuestPhotos: false,
     guestPhotoQrTokenVersion: 1,
+    adminTokenVersion: 1,
     setupCompleted: true,
     rsvpOpen: true,
     rsvpDeadlineDate: '',

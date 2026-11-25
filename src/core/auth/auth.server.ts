@@ -60,11 +60,18 @@ async function getSecret(): Promise<string> {
 
 interface AdminTokenPayload {
   isAdmin: boolean;
+  v?: number;
   siteId?: string;
   subdomain?: string | null;
   iat?: number;
   exp?: number;
   [key: string]: unknown;
+}
+
+function normalizeAdminTokenVersion(version: unknown): number {
+  return typeof version === 'number' && Number.isInteger(version) && version >= 1
+    ? version
+    : 1;
 }
 
 /**
@@ -78,6 +85,7 @@ export async function signAdminToken(payload: AdminTokenPayload): Promise<string
 
   const normalizedPayload: AdminTokenPayload = {
     ...payload,
+    v: normalizeAdminTokenVersion(payload.v),
     ...('subdomain' in payload && payload.subdomain !== undefined
       ? { subdomain: normalizeTenantSubdomain(payload.subdomain) }
       : {}),
@@ -98,6 +106,14 @@ export async function verifyAdminToken(token: string): Promise<AdminTokenPayload
 
     const payload = await verifyCompactToken<AdminTokenPayload>(token, secret);
     if (!payload) {
+      return null;
+    }
+
+    if (
+      typeof payload.v !== 'number' ||
+      !Number.isInteger(payload.v) ||
+      payload.v < 1
+    ) {
       return null;
     }
 
@@ -123,7 +139,8 @@ export async function verifyAdminToken(token: string): Promise<AdminTokenPayload
  * Determine whether the current request/session represents an authenticated admin.
  * In Edge middleware (`NEXT_RUNTIME === 'edge'` or `edgeOnly: true`), verifies the
  * stateless `subdomain` claim without database access; in Node API/SSR contexts,
- * verifies both `siteId` and `subdomain` against `AppConfig` when `MULTISITE_ENABLED` is active.
+ * verifies `AppConfig.adminTokenVersion` and both `siteId` and `subdomain` against
+ * `AppConfig` when `MULTISITE_ENABLED` is active.
  */
 export async function isAdminRequest(
   req?: NextRequest,
@@ -139,8 +156,15 @@ export async function isAdminRequest(
       }
 
       if (process.env.NEXT_RUNTIME !== 'edge' && !options?.edgeOnly) {
-        const { verifyNodeTenantClaims } = await import('./tenantClaims.node');
-        return (await verifyNodeTenantClaims(payload, req)) ? payload : null;
+        const {
+          verifyNodeTenantClaims,
+          resolveActiveAdminTokenVersion,
+        } = await import('./tenantClaims.node');
+        if (!(await verifyNodeTenantClaims(payload, req))) {
+          return null;
+        }
+        const activeVersion = await resolveActiveAdminTokenVersion(payload.siteId);
+        return activeVersion !== null && payload.v === activeVersion ? payload : null;
       }
 
       const requestSubdomain = await resolveEdgeRequestSubdomain(req);

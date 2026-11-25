@@ -1,5 +1,4 @@
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import {
   ADMIN_COOKIE,
   getAdminCookieOptions,
@@ -184,6 +183,49 @@ describe('admin authentication helpers', () => {
         await expect(isAdminRequest(rawReq)).resolves.toBe(false);
       } finally {
         process.env.ADMIN_PASSWORD = savedPassword;
+      }
+    });
+
+    it('stamps v on signAdminToken, enforces AppConfig.adminTokenVersion in Node, fails closed on DB errors, and skips DB in edgeOnly mode', async () => {
+      const { prisma } = await import('@/lib/prisma');
+      const appConfigDelegate = prisma.appConfig as unknown as {
+        findUnique: jest.Mock;
+      };
+      const originalImpl = appConfigDelegate.findUnique.getMockImplementation();
+
+      try {
+        const v1Token = await signAdminToken({ isAdmin: true, iat: Date.now() });
+        const decodedV1 = await verifyAdminToken(v1Token);
+        expect(decodedV1?.v).toBe(1);
+
+        const v2Token = await signAdminToken({ isAdmin: true, v: 2, iat: Date.now() });
+        const decodedV2 = await verifyAdminToken(v2Token);
+        expect(decodedV2?.v).toBe(2);
+
+        const makeReq = (token: string) =>
+          new NextRequest('http://localhost:3000/api/admin/me', {
+            headers: { cookie: `admin_auth=${token}` },
+          });
+
+        // Active version 2 rejects v1 token in Node, accepts v2 token
+        appConfigDelegate.findUnique.mockResolvedValue({ adminTokenVersion: 2 });
+        await expect(isAdminRequest(makeReq(v1Token))).resolves.toBe(false);
+        await expect(isAdminRequest(makeReq(v2Token))).resolves.toBe(true);
+
+        // Edge verification remains stateless and does not query Prisma
+        appConfigDelegate.findUnique.mockClear();
+        await expect(isAdminRequest(makeReq(v1Token), { edgeOnly: true })).resolves.toBe(true);
+        expect(appConfigDelegate.findUnique).not.toHaveBeenCalled();
+
+        // Prisma database errors fail closed in Node runtime
+        appConfigDelegate.findUnique.mockRejectedValueOnce(new Error('DB connection lost'));
+        await expect(isAdminRequest(makeReq(v2Token))).resolves.toBe(false);
+      } finally {
+        if (originalImpl) {
+          appConfigDelegate.findUnique.mockImplementation(originalImpl);
+        } else {
+          appConfigDelegate.findUnique.mockReset();
+        }
       }
     });
   });
