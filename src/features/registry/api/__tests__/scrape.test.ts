@@ -3,7 +3,10 @@
 import dns from 'dns';
 import type { NextRequest } from 'next/server';
 import { POST as rawPOST } from '@/app/api/registry/scrape/route';
+import { MAX_SCRAPE_HTML_BYTES, scrapeProductUrl } from '../scrape';
 import { isAdminRequest } from '@/core/auth/auth.server';
+import { getAppConfig } from '@/lib/config';
+import { DEFAULT_MODULE_CONFIG } from '@/lib/modules';
 import { server } from '@/mocks/server';
 import { http, HttpResponse } from 'msw';
 
@@ -29,7 +32,16 @@ jest.mock('@/core/auth/auth.server', () => ({
   isAdminRequest: jest.fn(),
 }));
 
+jest.mock('@/lib/config', () => {
+  const actual = jest.requireActual('@/lib/config');
+  return {
+    ...actual,
+    getAppConfig: jest.fn(actual.getAppConfig),
+  };
+});
+
 const mockIsAdminRequest = isAdminRequest as jest.Mock;
+const mockGetAppConfig = getAppConfig as jest.MockedFunction<typeof getAppConfig>;
 
 const runIfMock = process.env.LIVE_TESTS !== 'true' ? it : it.skip;
 const runIfLive = process.env.LIVE_TESTS === 'true' ? it : it.skip;
@@ -857,6 +869,103 @@ describe('POST /api/registry/scrape', () => {
       expect(body.error).toBe('Blocked: URL resolves to a private or restricted IP address');
     } finally {
       dns.promises.lookup = originalLookup;
+    }
+  });
+
+  it('should block non-canonical IPv6 loopback and NAT64 metadata URLs with HTTP status 400', async () => {
+    for (const blockedUrl of [
+      'http://[0:0:0:0:0:0:0:1]/internal',
+      'http://[0:0:0:0:0:ffff:169.254.169.254]/latest/meta-data/',
+      'http://[64:ff9b::a9fe:a9fe]/metadata',
+      'http://198.18.0.1/benchmark',
+    ]) {
+      const request = new Request('http://localhost/api/registry/scrape', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: blockedUrl }),
+      });
+
+      const response = await POST(request);
+      expect(response.status).toBe(400);
+      const body = await response.json();
+      expect(body.error).toBe('Blocked: URL resolves to a private or restricted IP address');
+    }
+  });
+
+  runIfMock('should return 404 when registry module is disabled and reject > 1 MiB HTML payloads with 422', async () => {
+    const baseConfig = await mockGetAppConfig();
+    mockGetAppConfig.mockResolvedValueOnce({
+      ...baseConfig,
+      modules: { ...DEFAULT_MODULE_CONFIG, registry: false, groupGifting: false },
+    });
+
+    const disabledReq = new Request('http://localhost/api/registry/scrape', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: 'https://www.example.com/item' }),
+    });
+    const disabledRes = await POST(disabledReq);
+    expect(disabledRes.status).toBe(404);
+    const disabledBody = await disabledRes.json();
+    expect(disabledBody.error).toBe("Feature 'registry' is disabled");
+
+    const hugeUrl = 'https://www.example.com/huge-html';
+    const oversizedHtml = 'a'.repeat(MAX_SCRAPE_HTML_BYTES + 1024);
+    server.use(
+      http.get(hugeUrl, () => {
+        return new HttpResponse(oversizedHtml, {
+          headers: { 'Content-Type': 'text/html' },
+        });
+      })
+    );
+
+    const hugeReq = new Request('http://localhost/api/registry/scrape', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: hugeUrl }),
+    });
+    const hugeRes = await POST(hugeReq);
+    expect(hugeRes.status).toBe(422);
+    const hugeBody = await hugeRes.json();
+    expect(hugeBody.details.errorDomain).toBe('NETWORK_TIMEOUT');
+  });
+
+  runIfMock('keeps timeoutMs and externalSignal active across in-flight response body streams', async () => {
+    const stalledUrl = 'https://93.184.216.34/stalled-body';
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(() => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('<html><head><title>Stalled'));
+        },
+      });
+      return Promise.resolve(
+        new Response(stream, {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' },
+        })
+      );
+    });
+
+    try {
+      await expect(scrapeProductUrl(stalledUrl, 45)).rejects.toMatchObject({
+        statusCode: 422,
+        data: { errorDomain: 'NETWORK_TIMEOUT' },
+      });
+
+      const masterController = new AbortController();
+      const timer = setTimeout(() => masterController.abort(), 30);
+      try {
+        await expect(
+          scrapeProductUrl(stalledUrl, 5_000, masterController.signal)
+        ).rejects.toMatchObject({
+          statusCode: 422,
+          data: { errorDomain: 'NETWORK_TIMEOUT' },
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+    } finally {
+      fetchSpy.mockRestore();
     }
   });
 

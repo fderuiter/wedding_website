@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import dns from 'node:dns';
 import net from 'node:net';
 import tls from 'node:tls';
 import { validateAndResolveHost } from '@/utils/ssrf';
@@ -439,6 +440,26 @@ function parseEhloCapabilities(lines: string[]): {
   return { supportsStartTls, authMechanisms };
 }
 
+function createPinnedSmtpLookup(address: string, family: number): net.LookupFunction {
+  return (_hostname, opts, cb) => {
+    let callback = cb as (
+      err: NodeJS.ErrnoException | null,
+      addressOrAddresses: string | dns.LookupAddress[],
+      resolvedFamily?: number
+    ) => void;
+    let options: dns.LookupOptions = typeof opts === 'object' && opts !== null ? opts : {};
+    if (typeof opts === 'function') {
+      callback = opts as unknown as typeof callback;
+      options = {};
+    }
+    if (options.all) {
+      callback(null, [{ address, family }]);
+    } else {
+      callback(null, address, family);
+    }
+  };
+}
+
 async function openSmtpSession(params: {
   host: string;
   port: number;
@@ -449,14 +470,18 @@ async function openSmtpSession(params: {
   const { host, port, secure, rejectUnauthorized, timeoutMs } = params;
   const resolved = await validateAndResolveHost(host);
   const servername = resolveSniServername(host);
+  const lookup = createPinnedSmtpLookup(resolved.address, resolved.family);
 
   if (secure) {
-    const tlsSock = tls.connect({
+    const tlsOptions: tls.ConnectionOptions & { family: number } = {
       host: resolved.address,
       port,
+      family: resolved.family,
+      lookup,
       servername,
       rejectUnauthorized,
-    });
+    };
+    const tlsSock = tls.connect(tlsOptions);
     tlsSock.setTimeout(timeoutMs);
     const session = new SmtpSocketSession(tlsSock, null);
 
@@ -489,6 +514,7 @@ async function openSmtpSession(params: {
     host: resolved.address,
     port,
     family: resolved.family,
+    lookup,
   });
   rawSock.setTimeout(timeoutMs);
   const session = new SmtpSocketSession(rawSock, rawSock);

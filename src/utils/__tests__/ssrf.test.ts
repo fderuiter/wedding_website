@@ -1,5 +1,11 @@
 
-import { isPrivateUrl, isPrivateIP, validateAndResolveHost } from '../ssrf';
+import {
+  isPrivateUrl,
+  isPrivateIP,
+  validateAndResolveHost,
+  parseIPv4ToBigInt,
+  parseIPv6ToBigInt,
+} from '../ssrf';
 import dns from 'dns';
 
 // Mock dns.promises.lookup
@@ -155,5 +161,107 @@ describe('validateAndResolveHost', () => {
     await expect(validateAndResolveHost('unresolvable.test')).rejects.toThrow(
       'Blocked: URL resolves to a private or restricted IP address'
     );
+  });
+
+  it('rejects non-canonical IPv6, NAT64, transitional IPv6, benchmarking, and encoded IPv4 vectors without DNS lookup', async () => {
+    const blockedLiterals = [
+      '0:0:0:0:0:0:0:1',
+      '[0:0:0:0:0:0:0:1]',
+      '0:0:0:0:0:0:0:0',
+      '0:0:0:0:0:ffff:127.0.0.1',
+      '[0:0:0:0:0:ffff:127.0.0.1]',
+      '0:0:0:0:0:ffff:169.254.169.254',
+      '0:0:0:0:0:FFFF:7f00:0001',
+      '64:ff9b::a9fe:a9fe',
+      '[64:ff9b::a9fe:a9fe]',
+      '64:ff9b:1::1',
+      '::7f00:1',
+      '[::7f00:1]',
+      '2002:7f00:1::',
+      '2001::1',
+      '2001:2::1',
+      '198.18.0.1',
+      '198.19.255.255',
+      '192.0.2.1',
+      '198.51.100.10',
+      '203.0.113.5',
+      '0177.0.0.1',
+      '0x7f000001',
+      '2130706433',
+      'fe80::1%eth0',
+    ];
+
+    for (const host of blockedLiterals) {
+      expect(isPrivateIP(host)).toBe(true);
+      await expect(validateAndResolveHost(host)).rejects.toThrow(
+        'Blocked: URL resolves to a private or restricted IP address'
+      );
+    }
+    expect(mockLookup).not.toHaveBeenCalled();
+  });
+
+  it('canonicalizes expanded public IPv6 literals and permits adjacent public ranges', async () => {
+    await expect(
+      validateAndResolveHost('2001:4860:4860:0000:0000:0000:0000:8888')
+    ).resolves.toEqual({
+      address: '2001:4860:4860::8888',
+      family: 6,
+    });
+
+    await expect(validateAndResolveHost('198.17.255.254')).resolves.toEqual({
+      address: '198.17.255.254',
+      family: 4,
+    });
+
+    await expect(validateAndResolveHost('198.20.0.1')).resolves.toEqual({
+      address: '198.20.0.1',
+      family: 4,
+    });
+    expect(mockLookup).not.toHaveBeenCalled();
+  });
+
+  it('rejects multihomed DNS responses when any record is a non-canonical restricted IPv6 address', async () => {
+    mockLookup.mockResolvedValue([
+      { address: '93.184.216.34', family: 4 },
+      { address: '0:0:0:0:0:ffff:169.254.169.254', family: 6 },
+    ]);
+
+    await expect(validateAndResolveHost('dualstack-rebind.example.com')).rejects.toThrow(
+      'Blocked: URL resolves to a private or restricted IP address'
+    );
+    expect(await isPrivateUrl('https://dualstack-rebind.example.com/item')).toBe(true);
+  });
+});
+
+describe('parseIPv4ToBigInt and parseIPv6ToBigInt', () => {
+  it('parses canonical IPv4 literals into unsigned 32-bit BigInts and rejects non-canonical strings', () => {
+    expect(parseIPv4ToBigInt('0.0.0.0')).toBe(BigInt(0));
+    expect(parseIPv4ToBigInt('127.0.0.1')).toBe(BigInt(0x7f000001));
+    expect(parseIPv4ToBigInt('198.18.0.1')).toBe(BigInt(0xc6120001));
+    expect(parseIPv4ToBigInt('255.255.255.255')).toBe(BigInt(0xffffffff));
+
+    expect(parseIPv4ToBigInt('')).toBeNull();
+    expect(parseIPv4ToBigInt('256.0.0.1')).toBeNull();
+    expect(parseIPv4ToBigInt('0177.0.0.1')).toBeNull();
+    expect(parseIPv4ToBigInt('127.1')).toBeNull();
+  });
+
+  it('parses expanded, compressed, and IPv4-embedded IPv6 literals into identical 128-bit BigInts', () => {
+    expect(parseIPv6ToBigInt('::1')).toBe(BigInt(1));
+    expect(parseIPv6ToBigInt('0:0:0:0:0:0:0:1')).toBe(BigInt(1));
+    expect(parseIPv6ToBigInt('[0000:0000:0000:0000:0000:0000:0000:0001]')).toBe(BigInt(1));
+
+    expect(parseIPv6ToBigInt('::ffff:127.0.0.1')).toBe(BigInt('0xffff7f000001'));
+    expect(parseIPv6ToBigInt('0:0:0:0:0:ffff:127.0.0.1')).toBe(BigInt('0xffff7f000001'));
+    expect(parseIPv6ToBigInt('0:0:0:0:0:ffff:169.254.169.254')).toBe(BigInt('0xffffa9fea9fe'));
+    expect(parseIPv6ToBigInt('::7f00:1')).toBe(BigInt(0x7f000001));
+    expect(parseIPv6ToBigInt('64:ff9b::a9fe:a9fe')).toBe(
+      (BigInt(0x0064ff9b) << BigInt(96)) | BigInt(0xa9fea9fe)
+    );
+
+    expect(parseIPv6ToBigInt('')).toBeNull();
+    expect(parseIPv6ToBigInt('fe80::1%lo0')).toBeNull();
+    expect(parseIPv6ToBigInt('2001:::1')).toBeNull();
+    expect(parseIPv6ToBigInt('1:2:3:4:5:6:7:8:9')).toBeNull();
   });
 });

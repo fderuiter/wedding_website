@@ -1271,5 +1271,154 @@ describe('MultiChannelMessagingProvider', () => {
         timeoutSpy.mockRestore();
       }
     });
+
+    it('blocks non-canonical IPv6 and restricted IP literals across sendEmail and testConnection before opening SMTP sockets', async () => {
+      mockValidateAndResolveHost.mockImplementation(actualSsrf.validateAndResolveHost);
+      const realNet = jest.requireActual('node:net') as typeof net;
+      const realTls = jest.requireActual('node:tls') as typeof tls;
+      const netConnectSpy = jest.spyOn(realNet, 'connect');
+      const tlsConnectSpy = jest.spyOn(realTls, 'connect');
+
+      try {
+        const restrictedHosts = [
+          '0:0:0:0:0:0:0:1',
+          '[0:0:0:0:0:ffff:127.0.0.1]',
+          '0:0:0:0:0:ffff:169.254.169.254',
+          '64:ff9b::a9fe:a9fe',
+          '::7f00:1',
+          '198.18.0.1',
+        ];
+
+        for (const smtpHost of restrictedHosts) {
+          const provider = new MultiChannelMessagingProvider({
+            emailProvider: 'smtp',
+            smtpHost,
+            smtpPort: 587,
+            smtpSecure: false,
+            smtpFrom: 'couple@wedding.example',
+          });
+
+          const sendRes = await provider.sendEmail({
+            to: 'guest@example.com',
+            subject: 'SSRF Check',
+            body: 'Should never connect',
+          });
+          expect(sendRes.success).toBe(false);
+          expect(sendRes.error).toContain(
+            'Blocked: URL resolves to a private or restricted IP address'
+          );
+
+          const testRes = await provider.testConnection({
+            type: 'email',
+            provider: 'smtp',
+          });
+          expect(testRes.success).toBe(false);
+          expect(testRes.error).toContain(
+            'Blocked: URL resolves to a private or restricted IP address'
+          );
+        }
+
+        expect(netConnectSpy).not.toHaveBeenCalled();
+        expect(tlsConnectSpy).not.toHaveBeenCalled();
+      } finally {
+        netConnectSpy.mockRestore();
+        tlsConnectSpy.mockRestore();
+      }
+    });
+
+    it('pins family and lookup to the validated IP address across net.connect and tls.connect', async () => {
+      const plainServer = await startTestSmtpServer({ advertiseStartTls: false });
+      const implicitTlsServer = await startTestSmtpServer({ implicitTls: true });
+      const realNet = jest.requireActual('node:net') as typeof net;
+      const realTls = jest.requireActual('node:tls') as typeof tls;
+      const netConnectSpy = jest.spyOn(realNet, 'connect');
+      const tlsConnectSpy = jest.spyOn(realTls, 'connect');
+
+      try {
+        allowLoopbackTestTarget(plainServer.port, '127.0.0.1');
+        const plainProvider = new MultiChannelMessagingProvider({
+          emailProvider: 'smtp',
+          smtpHost: 'smtp.public-mail.example',
+          smtpPort: plainServer.port,
+          smtpSecure: false,
+          smtpRejectUnauthorized: false,
+          smtpFrom: 'couple@wedding.example',
+        });
+
+        const plainTest = await plainProvider.testConnection({
+          type: 'email',
+          provider: 'smtp',
+        });
+        expect(plainTest).toEqual({ success: true });
+        expect(netConnectSpy).toHaveBeenCalledTimes(1);
+
+        const netConnectOpts =
+          netConnectSpy.mock.calls[0][0] as unknown as net.TcpSocketConnectOpts;
+        expect(netConnectOpts.host).toBe('127.0.0.1');
+        expect(netConnectOpts.family).toBe(4);
+        expect(typeof netConnectOpts.lookup).toBe('function');
+
+        let singleLookupResult: { addr?: string; fam?: number } = {};
+        netConnectOpts.lookup!(
+          'rebind.attacker.example',
+          {},
+          (_err, address, family) => {
+            singleLookupResult = { addr: address as string, fam: family };
+          }
+        );
+        expect(singleLookupResult).toEqual({ addr: '127.0.0.1', fam: 4 });
+
+        let allLookupResult: dns.LookupAddress[] = [];
+        netConnectOpts.lookup!(
+          'rebind.attacker.example',
+          { all: true },
+          (_err, addresses) => {
+            allLookupResult = addresses as unknown as dns.LookupAddress[];
+          }
+        );
+        expect(allLookupResult).toEqual([{ address: '127.0.0.1', family: 4 }]);
+
+        allowLoopbackTestTarget(implicitTlsServer.port, '127.0.0.1');
+        const tlsProvider = new MultiChannelMessagingProvider({
+          emailProvider: 'smtp',
+          smtpHost: 'smtp.public-mail.example',
+          smtpPort: implicitTlsServer.port,
+          smtpSecure: true,
+          smtpRejectUnauthorized: false,
+          smtpFrom: 'couple@wedding.example',
+        });
+
+        const tlsSend = await tlsProvider.sendEmail({
+          to: 'guest@example.com',
+          subject: 'Pinned TLS Session',
+          body: 'Verified pinned lookup on tls.connect',
+        });
+        expect(tlsSend).toEqual({ success: true });
+        expect(tlsConnectSpy).toHaveBeenCalled();
+
+        const tlsConnectOpts = tlsConnectSpy.mock.calls[0][0] as tls.ConnectionOptions & {
+          family?: number;
+        };
+        expect(tlsConnectOpts.host).toBe('127.0.0.1');
+        expect(tlsConnectOpts.family).toBe(4);
+        expect(tlsConnectOpts.servername).toBe('smtp.public-mail.example');
+        expect(typeof tlsConnectOpts.lookup).toBe('function');
+
+        let tlsLookupResult: { addr?: string; fam?: number } = {};
+        tlsConnectOpts.lookup!(
+          'rebind.attacker.example',
+          {},
+          (_err, address, family) => {
+            tlsLookupResult = { addr: address as string, fam: family };
+          }
+        );
+        expect(tlsLookupResult).toEqual({ addr: '127.0.0.1', fam: 4 });
+      } finally {
+        netConnectSpy.mockRestore();
+        tlsConnectSpy.mockRestore();
+        await plainServer.close();
+        await implicitTlsServer.close();
+      }
+    });
   });
 });

@@ -11,6 +11,10 @@ import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { safeFetch } from '@/utils/safeFetch';
+import {
+  MAX_REMOTE_EXPORT_BYTES,
+  REMOTE_EXPORT_TIMEOUT_MS,
+} from '@/utils/boundedStream';
 
 jest.mock('@/lib/prisma', () => ({
   prisma: {
@@ -946,6 +950,104 @@ describe('GET & POST /api/media/export Integration Tests', () => {
           process.env.TRUST_PROXY = prevTrustProxy;
         }
       }
+    });
+  });
+
+  describe('Bounded Remote Stream & Memory Ceiling Guards', () => {
+    test('streams remote HTTP bodies into archiver without calling Response.arrayBuffer and passes per-request signal', async () => {
+      expect(REMOTE_EXPORT_TIMEOUT_MS).toBe(15_000);
+      expect(MAX_REMOTE_EXPORT_BYTES).toBe(25 * 1024 * 1024);
+
+      mockPrisma.media.findMany.mockResolvedValue([
+        { id: 'm-stream', url: 'https://cdn.example.com/streamed.jpg', altText: 'Streamed Photo' },
+      ]);
+      mockPrisma.contentNode.findMany.mockResolvedValue([]);
+
+      const part1 = Buffer.from('streamed-jpeg-');
+      const part2 = Buffer.from('payload-bytes');
+      let observedSignal: AbortSignal | undefined;
+
+      mockSafeFetch.mockImplementationOnce(async (_url, init) => {
+        observedSignal = init?.signal ?? undefined;
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(part1);
+            controller.enqueue(part2);
+            controller.close();
+          },
+        });
+        const response = new Response(body, { status: 200 });
+        jest.spyOn(response, 'arrayBuffer').mockRejectedValue(
+          new Error('Response.arrayBuffer() must not be called when streaming exports')
+        );
+        return response;
+      });
+
+      const req = new NextRequest('http://localhost/api/media/export?ids=m-stream');
+      const res = await GET(req);
+      expect(res.status).toBe(200);
+
+      const entries = parseZipArchive(await readStream(res));
+      expect(observedSignal).toBeDefined();
+      expect(entries).toHaveLength(1);
+      expect(entries[0].name).toBe('Streamed_Photo.jpg');
+      expect(entries[0].data.toString('utf8')).toBe('streamed-jpeg-payload-bytes');
+    });
+
+    test('rejects remote assets exceeding MAX_REMOTE_EXPORT_BYTES via Content-Length or chunked stream overflow with error notices', async () => {
+      mockPrisma.media.findMany.mockResolvedValue([
+        { id: 'm-header', url: 'https://cdn.example.com/too-big-header.jpg', altText: 'BigHeader' },
+        { id: 'm-chunked', url: 'https://cdn.example.com/too-big-stream.jpg', altText: 'BigStream' },
+        { id: 'm-valid', url: 'https://cdn.example.com/good.png', altText: 'ValidPic' },
+      ]);
+      mockPrisma.contentNode.findMany.mockResolvedValue([]);
+
+      let chunkedPullCount = 0;
+      const fourMiBChunk = new Uint8Array(4 * 1024 * 1024).fill(0x58);
+
+      mockSafeFetch.mockImplementation(async (url) => {
+        if (url.includes('too-big-header')) {
+          return new Response('ignored', {
+            status: 200,
+            headers: { 'Content-Length': String(MAX_REMOTE_EXPORT_BYTES + 100) },
+          });
+        }
+        if (url.includes('too-big-stream')) {
+          const stream = new ReadableStream<Uint8Array>(
+            {
+              pull(controller) {
+                chunkedPullCount += 1;
+                controller.enqueue(fourMiBChunk);
+                if (chunkedPullCount >= 10) {
+                  controller.close();
+                }
+              },
+            },
+            { highWaterMark: 0 }
+          );
+          return new Response(stream, { status: 200 });
+        }
+        return new Response(Buffer.from('valid-png-data'), { status: 200 });
+      });
+
+      const req = new NextRequest(
+        'http://localhost/api/media/export?ids=m-header,m-chunked,m-valid'
+      );
+      const res = await GET(req);
+      expect(res.status).toBe(200);
+
+      const entries = parseZipArchive(await readStream(res));
+      const byName = new Map(entries.map((entry) => [entry.name, entry]));
+
+      expect(byName.get('ValidPic.png')?.data.toString('utf8')).toBe('valid-png-data');
+      expect(byName.get('error_BigHeader.jpg.txt')?.data.toString('utf8')).toContain(
+        `Response body exceeded maximum size of ${MAX_REMOTE_EXPORT_BYTES} bytes`
+      );
+      expect(byName.get('error_BigStream.jpg.txt')?.data.toString('utf8')).toContain(
+        `Response body exceeded maximum size of ${MAX_REMOTE_EXPORT_BYTES} bytes`
+      );
+      // 7 * 4 MiB = 28 MiB > 25 MiB cap; stream stops before pulling all 10 chunks
+      expect(chunkedPullCount).toBe(7);
     });
   });
 });
