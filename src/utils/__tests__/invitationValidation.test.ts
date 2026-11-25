@@ -17,6 +17,7 @@ import {
   normalizeBatchInvitationRecord,
   validateInvitationGuestFields,
   resolveBatchGuestMatches,
+  resolveAddressCollectionMatches,
   mergeDietaryNotes,
   computeMergedInvitationPreview,
 } from '../invitationValidation';
@@ -746,6 +747,102 @@ describe('invitationValidation shared helpers', () => {
           secondaryIds: [],
         }).success
       ).toBe(false);
+    });
+  });
+
+  describe('resolveAddressCollectionMatches', () => {
+    it('matches quarantined address-collection submissions against invited households by email, name+household, and unique name while ignoring self codes', () => {
+      const records = [
+        {
+          id: 'inv-alice',
+          code: 'ALICE26',
+          guestName: 'Alice Smith',
+          email: 'alice@example.com',
+          householdName: 'Smith Household',
+          partyTags: ['Bride'],
+        },
+        {
+          id: 'inv-bob',
+          code: 'BOB26',
+          guestName: 'Bob Miller',
+          email: null,
+          householdName: 'Miller Family',
+          partyTags: [],
+        },
+        {
+          id: 'inv-dup-1',
+          code: 'CHRIS1',
+          guestName: 'Chris Taylor',
+          email: null,
+          householdName: 'East Coast Taylors',
+          partyTags: [],
+        },
+        {
+          id: 'inv-dup-2',
+          code: 'CHRIS2',
+          guestName: 'Chris Taylor',
+          email: null,
+          householdName: 'West Coast Taylors',
+          partyTags: [],
+        },
+        {
+          id: 'addr-1',
+          code: 'ADDR0001',
+          guestName: 'A. Smith',
+          email: 'ALICE@EXAMPLE.COM',
+          addressLine1: '100 Maple St',
+          city: 'Boston',
+          state: 'MA',
+          zipCode: '02108',
+          partyTags: ['address-collection'],
+        },
+        {
+          id: 'addr-2',
+          code: 'ADDR0002',
+          guestName: 'Bob Miller',
+          email: 'bob-new@example.com',
+          addressLine1: '200 Oak Ave',
+          city: 'Austin',
+          state: 'TX',
+          zipCode: '78701',
+          partyTags: ['address-collection'],
+        },
+        {
+          id: 'addr-ambig',
+          code: 'ADDR0003',
+          guestName: 'Chris Taylor',
+          email: null,
+          addressLine1: '300 Pine Rd',
+          partyTags: ['address-collection'],
+        },
+        {
+          id: 'addr-unmatched',
+          code: 'ADDR0004',
+          guestName: 'Brand New Relative',
+          email: 'new@example.com',
+          addressLine1: '400 Birch Ln',
+          partyTags: ['address-collection'],
+        },
+      ];
+
+      const result = resolveAddressCollectionMatches(records);
+
+      expect(result.matched).toHaveLength(2);
+      expect(result.matched[0]).toMatchObject({
+        submission: expect.objectContaining({ id: 'addr-1' }),
+        matchedHousehold: expect.objectContaining({ id: 'inv-alice', code: 'ALICE26' }),
+        matchedBy: 'email',
+      });
+      expect(result.matched[1]).toMatchObject({
+        submission: expect.objectContaining({ id: 'addr-2' }),
+        matchedHousehold: expect.objectContaining({ id: 'inv-bob', code: 'BOB26' }),
+        matchedBy: 'unique_name',
+      });
+
+      expect(result.ambiguityBySubmissionId.get('addr-ambig')).toContain(
+        'Multiple existing guests'
+      );
+      expect(result.ambiguityBySubmissionId.get('addr-unmatched')).toBeUndefined();
     });
   });
 });
