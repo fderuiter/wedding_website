@@ -4,6 +4,8 @@ import {
   FeatureSchema,
   PhotoDataSchema,
   RawUpdateAppConfigSchema,
+  ThemeTokensSchema,
+  layoutTokenSchema,
 } from '@/features/content';
 import { ModuleConfigSchema, resolveModuleConfig } from '@/lib/modules';
 import { isSafeMediaOrPhotoUrl } from '@/utils/validationPrimitives';
@@ -121,12 +123,57 @@ export const BackupAppConfigSchema = z.object({
   // Theme, layout, feature, and calendar columns
   colorPrimary: RawUpdateAppConfigSchema.shape.colorPrimary.optional(),
   colorSecondary: RawUpdateAppConfigSchema.shape.colorSecondary.optional(),
-  themePreset: z.string().max(100).optional(),
-  themeTokens: z.record(z.string(), z.unknown()).nullable().optional(),
-  layoutContainerMaxWidth: z.string().max(100).optional(),
-  layoutGridGap: z.string().max(100).optional(),
-  layoutCardPadding: z.string().max(100).optional(),
-  layoutBorderRadius: z.string().max(100).optional(),
+  themePreset: z
+    .enum(['classic', 'modern', 'romantic', 'minimal', 'editorial'])
+    .optional(),
+  themeTokens: z
+    .union([
+      z.string(),
+      z.record(z.string(), z.unknown()),
+      z.null(),
+    ])
+    .optional()
+    .transform((val, ctx) => {
+      if (val === undefined || val === null) {
+        return val;
+      }
+      let candidate: unknown = val;
+      if (typeof val === 'string') {
+        try {
+          const parsed = JSON.parse(val);
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            ctx.addIssue({
+              code: 'custom',
+              message: 'Invalid themeTokens JSON object.',
+            });
+            return z.NEVER;
+          }
+          candidate = parsed;
+        } catch {
+          ctx.addIssue({
+            code: 'custom',
+            message: 'Invalid themeTokens JSON string.',
+          });
+          return z.NEVER;
+        }
+      }
+      const validated = ThemeTokensSchema.safeParse(candidate);
+      if (!validated.success) {
+        for (const issue of validated.error.issues) {
+          ctx.addIssue({
+            code: 'custom',
+            path: issue.path,
+            message: issue.message,
+          });
+        }
+        return z.NEVER;
+      }
+      return validated.data;
+    }),
+  layoutContainerMaxWidth: layoutTokenSchema.optional(),
+  layoutGridGap: layoutTokenSchema.optional(),
+  layoutCardPadding: layoutTokenSchema.optional(),
+  layoutBorderRadius: layoutTokenSchema.optional(),
   features: z.array(FeatureSchema).optional(),
   modules: ModuleConfigSchema.partial()
     .optional()

@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { getAppConfig } from '@/lib/config';
 import { generateSecureUUID } from '@/utils/uuid';
+import { sanitizeUrl } from '@/utils/validationPrimitives';
 import {
   buildGuestRsvpUrl,
   isStationeryCardBody,
@@ -17,21 +18,41 @@ import {
 const RECIPIENT_CHUNK_SIZE = 250;
 const DEFAULT_FALLBACK_ORIGIN = 'http://localhost:3000';
 
+function sanitizeBroadcastHttpOrigin(url: string | null | undefined): string {
+  const sanitized = sanitizeUrl(url);
+  if (!sanitized) {
+    return '';
+  }
+  try {
+    const parsed = new URL(sanitized);
+    if (
+      (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+      Boolean(parsed.hostname)
+    ) {
+      return sanitized.replace(/\/+$/, '');
+    }
+  } catch {
+    return '';
+  }
+  return '';
+}
+
 function resolveBroadcastBaseUrl(
   configBaseUrl: string | null | undefined,
   requestOrigin?: string
 ): { baseUrl: string; baseUrlWarning?: string } {
-  const configured = (configBaseUrl || '').trim().replace(/\/+$/, '');
+  const configured = sanitizeBroadcastHttpOrigin(configBaseUrl);
   if (configured) {
     return { baseUrl: configured };
   }
 
-  const fallbackOrigin = (
-    requestOrigin?.trim() ||
-    DEFAULT_FALLBACK_ORIGIN
-  ).replace(/\/+$/, '');
+  const fallbackOrigin =
+    sanitizeBroadcastHttpOrigin(requestOrigin) || DEFAULT_FALLBACK_ORIGIN;
 
-  const baseUrlWarning = `Site Base URL is empty in Settings; falling back to ${fallbackOrigin} for personalized RSVP links.`;
+  const rawConfigured = (configBaseUrl || '').trim();
+  const baseUrlWarning = rawConfigured
+    ? `Site Base URL is invalid or unsafe in Settings; falling back to ${fallbackOrigin} for personalized RSVP links.`
+    : `Site Base URL is empty in Settings; falling back to ${fallbackOrigin} for personalized RSVP links.`;
   console.warn(`[BroadcastService] ${baseUrlWarning}`);
 
   return {
@@ -522,12 +543,16 @@ export class BroadcastService {
         }
         : {};
 
+    const safeBaseUrl = sanitizeBroadcastHttpOrigin(baseUrl) || DEFAULT_FALLBACK_ORIGIN;
+    const safeRsvpUrl =
+      sanitizeUrl(buildGuestRsvpUrl(safeBaseUrl, sampleGuest.code || '')) ??
+      '/guest';
     const htmlBody =
       input.channel === 'EMAIL' && isStationeryCardBody(rendered.body)
         ? formatEmailHtmlBody(rendered.body, {
           ...(config as Record<string, any>),
-          baseUrl,
-          rsvpUrl: buildGuestRsvpUrl(baseUrl, sampleGuest.code || ''),
+          baseUrl: safeBaseUrl,
+          rsvpUrl: safeRsvpUrl,
         })
         : undefined;
 

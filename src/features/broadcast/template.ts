@@ -4,6 +4,7 @@ import {
   createOutlookCalendarLink,
   createYahooCalendarLink,
 } from '@/utils/calendar';
+import { sanitizeUrl } from '@/utils/validationPrimitives';
 import { BroadcastTemplateContext } from './types';
 
 const HTML_ESCAPE_MAP: Record<string, string> = {
@@ -70,6 +71,25 @@ export function sanitizeEmailSubject(subject: string): string {
   return subject.replace(/[\r\n<>]/g, '');
 }
 
+function sanitizeBaseOriginUrl(baseUrl: string | null | undefined): string {
+  const sanitized = sanitizeUrl(baseUrl);
+  if (!sanitized) {
+    return '';
+  }
+  try {
+    const parsed = new URL(sanitized);
+    if (
+      (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+      Boolean(parsed.hostname)
+    ) {
+      return sanitized.replace(/\/+$/, '');
+    }
+  } catch {
+    return '';
+  }
+  return '';
+}
+
 /**
  * Constructs a personalized one-click guest RSVP & address portal URL matching InvitationQRPreviewModal.
  */
@@ -77,7 +97,7 @@ export function buildGuestRsvpUrl(
   baseUrl: string | null | undefined,
   code: string | null | undefined
 ): string {
-  const normalizedBase = (baseUrl || '').trim().replace(/\/+$/, '');
+  const normalizedBase = sanitizeBaseOriginUrl(baseUrl);
   const encodedCode = encodeURIComponent(code || '');
   return `${normalizedBase}/guest?code=${encodedCode}`;
 }
@@ -200,16 +220,18 @@ function extractCardRsvpUrl(
     unescaped.match(/https?:\/\/[^\s<>"']+/i) ||
     unescaped.match(/\/guest\?code=[^\s<>"']*/i);
 
-  let rsvpUrl = '';
+  let rawCandidateUrl = '';
   if (urlMatch) {
-    rsvpUrl = urlMatch[0].replace(/[.,;!?)]+$/, '');
+    rawCandidateUrl = urlMatch[0].replace(/[.,;!?)]+$/, '');
   } else if (config?.rsvpUrl) {
-    rsvpUrl = config.rsvpUrl.trim();
+    rawCandidateUrl = config.rsvpUrl.trim();
   } else if (config?.baseUrl) {
-    rsvpUrl = `${config.baseUrl.trim().replace(/\/+$/, '')}/guest`;
+    const safeBase = sanitizeBaseOriginUrl(config.baseUrl);
+    rawCandidateUrl = safeBase ? `${safeBase}/guest` : '/guest';
   } else {
-    rsvpUrl = '/guest';
+    rawCandidateUrl = '/guest';
   }
+  const rsvpUrl = sanitizeUrl(rawCandidateUrl) ?? '/guest';
 
   const normalized = content.replace(/\r\n?/g, '\n');
   const rawParagraphs = normalized
@@ -219,7 +241,11 @@ function extractCardRsvpUrl(
 
   const cleanedParagraphs = rawParagraphs.filter((paragraph) => {
     const plain = unescapeStandardEntities(paragraph).trim();
-    if (plain === rsvpUrl || plain === '{{rsvpUrl}}') {
+    if (
+      plain === rsvpUrl ||
+      (rawCandidateUrl && plain === rawCandidateUrl) ||
+      plain === '{{rsvpUrl}}'
+    ) {
       return false;
     }
     return true;
@@ -292,7 +318,8 @@ export function renderStationeryCardHtml(
   const safeDisplayDate = escapePreservingStandardEntities(displayDate);
   const safeVenueHeadline = escapePreservingStandardEntities(venueHeadline);
   const safeVenueSubline = escapePreservingStandardEntities(venueSubline);
-  const safeRsvpUrl = escapeHtmlEntities(rsvpUrl);
+  const sanitizedCardRsvpUrl = sanitizeUrl(rsvpUrl) ?? '/guest';
+  const safeRsvpUrl = escapeHtmlEntities(sanitizedCardRsvpUrl);
   const safeCtaLabel = escapeHtmlEntities(ctaLabel);
 
   const renderedParagraphs = cleanedParagraphs
@@ -374,7 +401,7 @@ export function renderBroadcastTemplate(
     }
     if (trimmedKey === 'rsvpUrl') {
       if (context.rsvpUrl !== undefined && context.rsvpUrl !== null) {
-        const resolvedUrl = String(context.rsvpUrl);
+        const resolvedUrl = sanitizeUrl(String(context.rsvpUrl)) ?? '/guest';
         return shouldEscape ? escapeHtmlEntities(resolvedUrl) : resolvedUrl;
       }
       if (context.baseUrl !== undefined && context.baseUrl !== null) {
@@ -382,7 +409,15 @@ export function renderBroadcastTemplate(
           String(context.baseUrl),
           context.invitationCode ?? context.code ?? ''
         );
-        return shouldEscape ? escapeHtmlEntities(computedUrl) : computedUrl;
+        const safeComputedUrl = sanitizeUrl(computedUrl) ?? '/guest';
+        return shouldEscape ? escapeHtmlEntities(safeComputedUrl) : safeComputedUrl;
+      }
+      return match;
+    }
+    if (trimmedKey === 'baseUrl') {
+      if (context.baseUrl !== undefined && context.baseUrl !== null) {
+        const safeBaseUrl = sanitizeBaseOriginUrl(String(context.baseUrl));
+        return shouldEscape ? escapeHtmlEntities(safeBaseUrl) : safeBaseUrl;
       }
       return match;
     }

@@ -752,5 +752,71 @@ describe('DatabaseBackupSchema Validation Tests', () => {
         );
       }
     });
+
+    test('BackupAppConfigSchema enforces AppConfigSchema rules for baseUrl, themePreset, themeTokens, and layout fields', () => {
+      const baseRecord = getValidBackup().appConfig[0];
+
+      expect(
+        BackupAppConfigSchema.safeParse({
+          ...baseRecord,
+          themePreset: 'editorial',
+          themeTokens: { '--btn-radius': '0.5rem' },
+          layoutContainerMaxWidth: '72rem',
+          layoutGridGap: '1.5rem',
+          layoutCardPadding: '2rem',
+          layoutBorderRadius: '0.75rem',
+        }).success,
+      ).toBe(true);
+
+      expect(
+        BackupAppConfigSchema.safeParse({
+          ...baseRecord,
+          themeTokens: JSON.stringify({ '--btn-radius': '0.5rem' }),
+        }).success,
+      ).toBe(true);
+
+      expect(
+        BackupAppConfigSchema.safeParse({
+          ...baseRecord,
+          baseUrl: 'javascript:alert(1)',
+        }).success,
+      ).toBe(false);
+
+      expect(
+        BackupAppConfigSchema.safeParse({
+          ...baseRecord,
+          themePreset: 'unsupported-preset',
+        }).success,
+      ).toBe(false);
+
+      for (const badTokens of [
+        { '--card-bg': 'url(https://evil.example/a.png)' },
+        { '--card-bg': 'expression(alert(1))' },
+        { '--card-bg': '@import "https://evil.example/a.css"' },
+        { '--card-bg': '\\75\\72\\6c(x)' },
+        { notACssVar: '12px' },
+      ]) {
+        expect(
+          BackupAppConfigSchema.safeParse({
+            ...baseRecord,
+            themeTokens: badTokens,
+          }).success,
+        ).toBe(false);
+      }
+
+      for (const layoutField of [
+        'layoutContainerMaxWidth',
+        'layoutGridGap',
+        'layoutCardPadding',
+        'layoutBorderRadius',
+      ] as const) {
+        expect(
+          BackupAppConfigSchema.safeParse({
+            ...baseRecord,
+            [layoutField]: '64rem; background: url(https://evil.example)',
+          }).success,
+        ).toBe(false);
+      }
+    });
   });
 });

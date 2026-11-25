@@ -691,6 +691,57 @@ describe('ThankYouService', () => {
       expect(csv).toContain('\'=Category');
     });
 
+    it('prefixes whitespace-padded formulas while keeping untrimmed plain ContributionSchema messages unprefixed with standard CSV quoting', async () => {
+      const { ContributionSchema } = await import('../schemas');
+      const parsedPlain = ContributionSchema.parse({
+        itemId: 'item1',
+        name: 'Grace Hopper',
+        email: 'grace@example.com',
+        amount: 125,
+        message: '  Wishing you a lifetime of joy,\nlaughter, and adventure!  ',
+      });
+      const parsedFormula = ContributionSchema.parse({
+        itemId: 'item1',
+        name: 'Eve Tester',
+        email: 'eve@example.com',
+        amount: 50,
+        message: '  =HYPERLINK("https://evil.example","Click")',
+      });
+
+      mockPrisma.contributor.findMany.mockResolvedValue([
+        {
+          id: 'c-plain-msg',
+          name: parsedPlain.name,
+          email: parsedPlain.email,
+          message: parsedPlain.message,
+          amount: parsedPlain.amount,
+          date: '2026-06-01T00:00:00.000Z',
+          thankYouStatus: 'Unsent',
+          registryItem: { id: 'item1', name: 'Vase', category: 'Home' },
+        },
+        {
+          id: 'c-padded-formula',
+          name: parsedFormula.name,
+          email: parsedFormula.email,
+          message: parsedFormula.message,
+          amount: parsedFormula.amount,
+          date: '2026-06-02T00:00:00.000Z',
+          thankYouStatus: 'Unsent',
+          registryItem: { id: 'item1', name: 'Vase', category: 'Home' },
+        },
+      ]);
+
+      const stream = service.exportThankYouNotesCsv();
+      const csv = await streamToText(stream);
+
+      expect(csv).toContain(
+        '"  Wishing you a lifetime of joy,\nlaughter, and adventure!  "',
+      );
+      expect(csv).toContain(
+        '"\'  =HYPERLINK(""https://evil.example"",""Click"")"',
+      );
+    });
+
     it('exports Linked Guest and prefers contributor postal address over linked invitationCode address', async () => {
       mockPrisma.contributor.findMany.mockResolvedValue([
         {

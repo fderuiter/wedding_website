@@ -5,6 +5,7 @@ import {
   isAllowedSmtpPort,
   isSafeConfigAssetUrl,
   isSafeMediaOrPhotoUrl,
+  safeUrlSchema,
 } from '@/utils/validationPrimitives';
 import {
   ModuleConfigSchema,
@@ -28,10 +29,34 @@ export const layoutTokenSchema = z
 
 export const cssTokenKeyRegex = /^--[a-zA-Z0-9_-]+$/;
 
+const DISALLOWED_CSS_FUNCTION_OR_AT_RULE_REGEX =
+  /(?:^|[^a-zA-Z0-9_-])(?:url|expression)\s*\(|@import/i;
+
+export function isSafeHttpBaseUrl(val: string): boolean {
+  if (val === '') return true;
+  if (
+    val !== val.trim() ||
+    val.includes('\0') ||
+    !safeUrlSchema.safeParse(val).success
+  ) {
+    return false;
+  }
+  try {
+    const parsed = new URL(val);
+    return (
+      (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+      Boolean(parsed.hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function isValidCssTokenValue(val: string): boolean {
   if (typeof val !== 'string') return false;
-  // Disallow CSS code injection characters and control syntax
-  if (/[;{}<>\r\n]|\/\*|\*\//.test(val)) return false;
+  // Disallow CSS code injection characters, escape backslashes, external resource loads, and legacy script expressions
+  if (/[;{}<>\\\r\n]|\/\*|\*\//.test(val)) return false;
+  if (DISALLOWED_CSS_FUNCTION_OR_AT_RULE_REGEX.test(val)) return false;
   return true;
 }
 
@@ -145,11 +170,8 @@ const rawUpdateAppConfigBaseSchema = z.object({
     )
     .transform((val) => new Date(val)),
   baseUrl: z
-    .url({
-      error: (issue) =>
-        issue.code === 'invalid_type' ? undefined : 'Invalid URL format',
-    })
-    .or(z.literal('')),
+    .string()
+    .refine(isSafeHttpBaseUrl, { message: 'Invalid URL format' }),
   venueName: z.string(),
   venueAddress: z.string(),
   venueCity: z.string(),
@@ -172,21 +194,9 @@ const rawUpdateAppConfigBaseSchema = z.object({
     .optional(),
   photoAlbumUrl: z
     .string()
-    .refine(
-      (val) => {
-        if (!val || val === '') return true;
-        try {
-          const parsed = new URL(val);
-          return (
-            (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
-            Boolean(parsed.hostname)
-          );
-        } catch {
-          return false;
-        }
-      },
-      { message: 'Invalid URL format' },
-    )
+    .refine((val) => !val || isSafeHttpBaseUrl(val), {
+      message: 'Invalid URL format',
+    })
     .optional(),
   autoApproveGuestPhotos: z.boolean().optional(),
   faviconUrl: z
@@ -1225,7 +1235,7 @@ export const AppConfigSchema = z.object({
   brideName: z.string().nullable().optional().describe('Legacy optional alias for the first partner name retained for backward compatibility.'),
   groomName: z.string().nullable().optional().describe('Legacy optional alias for the second partner name retained for backward compatibility.'),
   weddingDate: z.date().describe('Scheduled wedding ceremony date and timestamp used by countdowns and calendar exports.'),
-  baseUrl: z.string().describe('Canonical public base URL of the deployed wedding website used for SEO and Open Graph tags.'),
+  baseUrl: z.string().refine(isSafeHttpBaseUrl, { message: 'Invalid URL format' }).describe('Canonical public base URL of the deployed wedding website used for SEO and Open Graph tags.'),
   venueName: z.string().describe('Display name of the primary wedding ceremony or reception venue.'),
   venueAddress: z.string().describe('Street address of the primary wedding venue.'),
   venueCity: z.string().describe('City where the primary wedding venue is located.'),
@@ -1240,29 +1250,32 @@ export const AppConfigSchema = z.object({
   heroSubtitle: z.string().describe('Secondary tagline rendered beneath the homepage hero headline.'),
   seoTitle: z.string().describe('HTML document title and social preview title for search engines and link cards.'),
   seoDescription: z.string().describe('Meta description summarizing the wedding website for search engines and Open Graph previews.'),
-  contactEmail: z.string().default('').describe('Public host contact email address displayed for guest inquiries.'),
-  photoAlbumUrl: z.string().default('').describe('Optional external shared photo album URL displayed on the public gallery page.'),
+  contactEmail: z.string().refine((val) => val === '' || z.email().safeParse(val).success, { message: 'Invalid email address format' }).default('').describe('Public host contact email address displayed for guest inquiries.'),
+  photoAlbumUrl: z.string().refine(isSafeHttpBaseUrl, { message: 'Invalid URL format' }).default('').describe('Optional external shared photo album URL displayed on the public gallery page.'),
   autoApproveGuestPhotos: z.boolean().default(false).describe('Admin-only toggle controlling whether new guest photo uploads are automatically approved and published immediately without manual moderation; omitted from public DTOs.'),
   guestPhotoQrTokenVersion: z.number().int().min(1).default(1).describe('Admin-only monotonic version counter for rotating signed guest photo upload QR links and invalidating previously issued photo sessions; omitted from public DTOs.'),
-  faviconUrl: z.string().describe('Asset path or safe URL for the browser tab favicon icon.'),
-  ogImageUrl: z.string().describe('Default Open Graph social sharing preview image URL or asset path.'),
+  faviconUrl: z.string().refine(isSafeConfigAssetUrl, { message: 'Invalid URL format' }).describe('Asset path or safe URL for the browser tab favicon icon.'),
+  ogImageUrl: z.string().refine(isSafeConfigAssetUrl, { message: 'Invalid URL format' }).describe('Default Open Graph social sharing preview image URL or asset path.'),
   brandMonogram: z.string().nullable().optional().describe('Custom monogram text overriding initials derived from partner names.'),
-  brandLogoUrl: z.string().nullable().optional().describe('Optional custom brand logo image URL or asset path rendered in navigation.'),
+  brandLogoUrl: z.string().refine(isSafeConfigAssetUrl, { message: 'Invalid URL format' }).nullable().optional().describe('Optional custom brand logo image URL or asset path rendered in navigation.'),
   brandLogoAlt: z.string().nullable().optional().describe('Accessible alt text describing the custom brand logo image.'),
-  heroImageUrl: z.string().nullable().optional().describe('Optional custom hero background or featured image URL on the homepage.'),
+  heroImageUrl: z.string().refine(isSafeConfigAssetUrl, { message: 'Invalid URL format' }).nullable().optional().describe('Optional custom hero background or featured image URL on the homepage.'),
   heroImageAlt: z.string().nullable().optional().describe('Accessible alt text describing the homepage hero image.'),
-  brandWatermarkUrl: z.string().nullable().optional().describe('Optional decorative watermark graphic URL rendered in page backgrounds.'),
+  brandWatermarkUrl: z.string().refine(isSafeConfigAssetUrl, { message: 'Invalid URL format' }).nullable().optional().describe('Optional decorative watermark graphic URL rendered in page backgrounds.'),
   brandWatermarkAlt: z.string().nullable().optional().describe('Accessible alt text for the brand watermark graphic when non-decorative.'),
-  badgeGraphicUrl: z.string().nullable().optional().describe('Optional emblem or badge graphic URL displayed in headers or footers.'),
+  badgeGraphicUrl: z.string().refine(isSafeConfigAssetUrl, { message: 'Invalid URL format' }).nullable().optional().describe('Optional emblem or badge graphic URL displayed in headers or footers.'),
   badgeGraphicAlt: z.string().nullable().optional().describe('Accessible alt text describing the custom badge graphic.'),
   seoKeywords: z.string().describe('Comma-separated SEO meta keywords template supporting partner and venue placeholders.'),
-  colorPrimary: z.string().default('#B91C1C').describe('Primary brand hex color applied to accents, buttons, and interactive highlights.'),
-  colorSecondary: z.string().default('#B45309').describe('Secondary brand hex color applied to complementary badges, borders, and highlights.'),
+  colorPrimary: z.string().regex(hexColorRegex, 'Invalid hex color format').default('#B91C1C').describe('Primary brand hex color applied to accents, buttons, and interactive highlights.'),
+  colorSecondary: z.string().regex(hexColorRegex, 'Invalid hex color format').default('#B45309').describe('Secondary brand hex color applied to complementary badges, borders, and highlights.'),
   themePreset: z.enum(['classic', 'modern', 'romantic', 'minimal', 'editorial']).default('classic').describe('Named visual theme preset controlling baseline palette and typographic styling.'),
   themeTokens: z.union([
     z.string().transform((str) => {
       try {
-        return JSON.parse(str);
+        const parsed = JSON.parse(str);
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+          ? parsed
+          : {};
       } catch {
         return {};
       }
@@ -1292,8 +1305,8 @@ export const AppConfigSchema = z.object({
   showAddToCalendar: z.boolean().default(true).describe('Toggle controlling whether Add-to-Calendar links and ICS downloads are shown.'),
   rsvpOpen: z.boolean().default(true).describe('Manual toggle controlling whether online guest RSVP submissions and edits are enabled.'),
   isRsvpOpen: z.boolean().optional().describe('Virtual server-evaluated flag indicating whether online RSVPs are currently open after evaluating manual lock, cutoff date, and grace period.'),
-  rsvpDeadlineDate: z.string().default('').describe('Optional global RSVP cutoff calendar date (YYYY-MM-DD) enforced at midnight in the venue timezone.'),
-  rsvpGracePeriodHours: z.number().int().default(0).describe('Admin-only silent grace window in hours (0, 12, 24, 48, 72, or 168) after the midnight RSVP cutoff; omitted from public DTOs.'),
+  rsvpDeadlineDate: z.string().refine((val) => val === '' || isValidRsvpDeadlineDate(val), { message: 'Invalid RSVP deadline date. Expected YYYY-MM-DD.' }).default('').describe('Optional global RSVP cutoff calendar date (YYYY-MM-DD) enforced at midnight in the venue timezone.'),
+  rsvpGracePeriodHours: z.number().int().refine(isValidRsvpGracePeriodHours, { message: 'Invalid RSVP grace period hours.' }).default(0).describe('Admin-only silent grace window in hours (0, 12, 24, 48, 72, or 168) after the midnight RSVP cutoff; omitted from public DTOs.'),
   rsvpClosedMessage: z.string().default('').transform((val) => sanitizeRsvpClosedMessage(val)).describe('Sanitized custom message displayed to guests and returned by RSVP APIs once online RSVPs close.'),
   emailProvider: z.string().default('smtp').describe('Active outbound email transport provider identifier (smtp, resend, or sendgrid).'),
   smtpHost: z.string().nullable().optional().default('').describe('Hostname of the outbound SMTP relay server for guest broadcasts.'),
@@ -1486,6 +1499,13 @@ const APP_CONFIG_NULLABLE_BRAND_COLUMNS = [
   'badgeGraphicAlt',
 ] as const;
 
+const APP_CONFIG_NULLABLE_BRAND_URL_SET = new Set<string>([
+  'brandLogoUrl',
+  'heroImageUrl',
+  'brandWatermarkUrl',
+  'badgeGraphicUrl',
+]);
+
 const APP_CONFIG_LAYOUT_DEFAULTS = {
   layoutContainerMaxWidth: '64rem',
   layoutGridGap: '1.5rem',
@@ -1615,7 +1635,17 @@ export function translateAppConfigSnapshot(
 
   for (const key of APP_CONFIG_EMPTY_STRING_COLUMNS) {
     const raw = snapshotData[key];
-    const resolved = raw === undefined || raw === null ? '' : String(raw);
+    let resolved = raw === undefined || raw === null ? '' : String(raw);
+    if (key === 'baseUrl' || key === 'photoAlbumUrl') {
+      const candidate = resolved.trim();
+      resolved = isSafeHttpBaseUrl(candidate) ? candidate : '';
+    } else if (key === 'contactEmail') {
+      const candidate = resolved.trim();
+      resolved =
+        candidate === '' || z.email().safeParse(candidate).success
+          ? candidate
+          : '';
+    }
     create[key] = resolved;
     if (raw !== undefined) {
       update[key] = resolved;
@@ -1649,7 +1679,8 @@ export function translateAppConfigSnapshot(
   }
 
   const faviconUrl =
-    typeof snapshotData.faviconUrl === 'string'
+    typeof snapshotData.faviconUrl === 'string' &&
+    isSafeConfigAssetUrl(snapshotData.faviconUrl)
       ? snapshotData.faviconUrl
       : '/assets/favicon.png';
   create.faviconUrl = faviconUrl;
@@ -1658,7 +1689,8 @@ export function translateAppConfigSnapshot(
   }
 
   const ogImageUrl =
-    typeof snapshotData.ogImageUrl === 'string'
+    typeof snapshotData.ogImageUrl === 'string' &&
+    isSafeConfigAssetUrl(snapshotData.ogImageUrl)
       ? snapshotData.ogImageUrl
       : '/images/placeholder.png';
   create.ogImageUrl = ogImageUrl;
@@ -1666,19 +1698,21 @@ export function translateAppConfigSnapshot(
     update.ogImageUrl = ogImageUrl;
   }
 
-  const latitude =
+  const parsedLat =
     snapshotData.latitude !== undefined
-      ? coordinateSchema.parse(snapshotData.latitude || 0)
-      : 0;
+      ? coordinateSchema.safeParse(snapshotData.latitude ?? 0)
+      : null;
+  const latitude = parsedLat && parsedLat.success ? parsedLat.data : 0;
   create.latitude = latitude;
   if (snapshotData.latitude !== undefined) {
     update.latitude = latitude;
   }
 
-  const longitude =
+  const parsedLng =
     snapshotData.longitude !== undefined
-      ? coordinateSchema.parse(snapshotData.longitude || 0)
-      : 0;
+      ? coordinateSchema.safeParse(snapshotData.longitude ?? 0)
+      : null;
+  const longitude = parsedLng && parsedLng.success ? parsedLng.data : 0;
   create.longitude = longitude;
   if (snapshotData.longitude !== undefined) {
     update.longitude = longitude;
@@ -1687,7 +1721,13 @@ export function translateAppConfigSnapshot(
   for (const key of APP_CONFIG_NULLABLE_BRAND_COLUMNS) {
     const raw = snapshotData[key];
     if (raw !== undefined) {
-      const resolved = raw === null ? null : String(raw);
+      const candidate = raw === null ? null : String(raw);
+      const resolved =
+        candidate === null ||
+        !APP_CONFIG_NULLABLE_BRAND_URL_SET.has(key) ||
+        isSafeConfigAssetUrl(candidate)
+          ? candidate
+          : null;
       update[key] = resolved;
       create[key] = resolved;
     } else {
@@ -1697,7 +1737,7 @@ export function translateAppConfigSnapshot(
 
   const colorPrimary =
     typeof snapshotData.colorPrimary === 'string' &&
-    snapshotData.colorPrimary.length > 0
+    hexColorRegex.test(snapshotData.colorPrimary)
       ? snapshotData.colorPrimary
       : '#B91C1C';
   create.colorPrimary = colorPrimary;
@@ -1707,7 +1747,7 @@ export function translateAppConfigSnapshot(
 
   const colorSecondary =
     typeof snapshotData.colorSecondary === 'string' &&
-    snapshotData.colorSecondary.length > 0
+    hexColorRegex.test(snapshotData.colorSecondary)
       ? snapshotData.colorSecondary
       : '#B45309';
   create.colorSecondary = colorSecondary;
@@ -1715,24 +1755,48 @@ export function translateAppConfigSnapshot(
     update.colorSecondary = colorSecondary;
   }
 
-  const themePreset =
-    typeof snapshotData.themePreset === 'string' &&
-    snapshotData.themePreset.length > 0
-      ? snapshotData.themePreset
-      : 'classic';
+  const parsedThemePreset = AppConfigSchema.shape.themePreset.safeParse(
+    snapshotData.themePreset,
+  );
+  const themePreset = parsedThemePreset.success
+    ? parsedThemePreset.data
+    : 'classic';
   create.themePreset = themePreset;
   if (snapshotData.themePreset !== undefined) {
     update.themePreset = themePreset;
   }
 
   if (snapshotData.themeTokens !== undefined) {
-    const resolvedTokens =
-      snapshotData.themeTokens === null
-        ? null
-        : typeof snapshotData.themeTokens === 'object' &&
-            !Array.isArray(snapshotData.themeTokens)
-          ? snapshotData.themeTokens
-          : {};
+    let resolvedTokens: Record<string, string> | null = {};
+    if (snapshotData.themeTokens === null) {
+      resolvedTokens = null;
+    } else {
+      let candidateTokens: unknown = snapshotData.themeTokens;
+      if (typeof candidateTokens === 'string') {
+        try {
+          candidateTokens = JSON.parse(candidateTokens);
+        } catch {
+          candidateTokens = {};
+        }
+      }
+      if (
+        candidateTokens &&
+        typeof candidateTokens === 'object' &&
+        !Array.isArray(candidateTokens)
+      ) {
+        const filteredTokens: Record<string, string> = {};
+        for (const [tokenKey, tokenVal] of Object.entries(candidateTokens)) {
+          if (
+            cssTokenKeyRegex.test(tokenKey) &&
+            typeof tokenVal === 'string' &&
+            isValidCssTokenValue(tokenVal)
+          ) {
+            filteredTokens[tokenKey] = tokenVal;
+          }
+        }
+        resolvedTokens = filteredTokens;
+      }
+    }
     update.themeTokens = resolvedTokens;
     create.themeTokens = resolvedTokens;
   } else {
@@ -1741,7 +1805,12 @@ export function translateAppConfigSnapshot(
 
   for (const [key, fallback] of Object.entries(APP_CONFIG_LAYOUT_DEFAULTS)) {
     const raw = snapshotData[key];
-    const resolved = typeof raw === 'string' && raw.length > 0 ? raw : fallback;
+    const resolved =
+      typeof raw === 'string' &&
+      raw.length > 0 &&
+      layoutTokenSchema.safeParse(raw).success
+        ? raw
+        : fallback;
     create[key] = resolved;
     if (raw !== undefined) {
       update[key] = resolved;
@@ -1749,7 +1818,10 @@ export function translateAppConfigSnapshot(
   }
 
   const features = Array.isArray(snapshotData.features)
-    ? snapshotData.features
+    ? snapshotData.features.flatMap((entry) => {
+      const parsedFeature = FeatureSchema.safeParse(entry);
+      return parsedFeature.success ? [parsedFeature.data] : [];
+    })
     : [];
   create.features = features;
   if (snapshotData.features !== undefined) {
@@ -1884,8 +1956,15 @@ export function translateAppConfigSnapshot(
   }
 
   if (snapshotData.smtpPort !== undefined) {
-    const resolvedPort =
+    const numericPort =
       snapshotData.smtpPort === null ? null : Number(snapshotData.smtpPort);
+    const resolvedPort =
+      numericPort === null ||
+      (Number.isInteger(numericPort) &&
+        numericPort >= 1 &&
+        numericPort <= 65535)
+        ? numericPort
+        : 587;
     update.smtpPort = resolvedPort;
     create.smtpPort = resolvedPort;
   } else {
@@ -1907,7 +1986,11 @@ export function translateAppConfigSnapshot(
     snapshotData.broadcastBatchSize !== undefined &&
     snapshotData.broadcastBatchSize !== null
   ) {
-    const resolvedBatchSize = Number(snapshotData.broadcastBatchSize);
+    const numericBatchSize = Number(snapshotData.broadcastBatchSize);
+    const resolvedBatchSize =
+      Number.isInteger(numericBatchSize) && numericBatchSize >= 1
+        ? numericBatchSize
+        : 50;
     update.broadcastBatchSize = resolvedBatchSize;
     create.broadcastBatchSize = resolvedBatchSize;
   } else {
@@ -1918,7 +2001,11 @@ export function translateAppConfigSnapshot(
     snapshotData.broadcastBatchDelayMs !== undefined &&
     snapshotData.broadcastBatchDelayMs !== null
   ) {
-    const resolvedBatchDelay = Number(snapshotData.broadcastBatchDelayMs);
+    const numericBatchDelay = Number(snapshotData.broadcastBatchDelayMs);
+    const resolvedBatchDelay =
+      Number.isInteger(numericBatchDelay) && numericBatchDelay >= 0
+        ? numericBatchDelay
+        : 500;
     update.broadcastBatchDelayMs = resolvedBatchDelay;
     create.broadcastBatchDelayMs = resolvedBatchDelay;
   } else {

@@ -1466,4 +1466,140 @@ describe('POST /api/admin/versions/[id]/restore', () => {
       }),
     });
   });
+
+  it('rejects unsafe URLs, invalid theme/layout tokens, and malformed AppConfig fields during version restore', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+
+    const invalidCases = [
+      {
+        id: 'v-bad-app-baseurl',
+        entityType: 'AppConfig',
+        entityId: 'global',
+        data: {
+          partner1Name: 'Alice',
+          partner2Name: 'Bob',
+          baseUrl: 'javascript:alert(1)',
+        },
+      },
+      {
+        id: 'v-bad-app-tokens',
+        entityType: 'AppConfig',
+        entityId: 'global',
+        data: {
+          partner1Name: 'Alice',
+          partner2Name: 'Bob',
+          themeTokens: { '--card-bg': 'url(https://evil.example/bg.png)' },
+        },
+      },
+      {
+        id: 'v-bad-app-preset',
+        entityType: 'AppConfig',
+        entityId: 'global',
+        data: {
+          partner1Name: 'Alice',
+          partner2Name: 'Bob',
+          themePreset: 'nonexistent-preset',
+        },
+      },
+      {
+        id: 'v-bad-app-layout',
+        entityType: 'AppConfig',
+        entityId: 'global',
+        data: {
+          partner1Name: 'Alice',
+          partner2Name: 'Bob',
+          layoutContainerMaxWidth: '100px; color: red',
+        },
+      },
+      {
+        id: 'v-bad-member-link',
+        entityType: 'WeddingPartyMember',
+        entityId: 'member-bad',
+        data: {
+          name: 'Best Man',
+          role: 'Groomsman',
+          bio: 'Bio',
+          link: 'javascript:alert(1)',
+        },
+      },
+      {
+        id: 'v-bad-attr-website',
+        entityType: 'Attraction',
+        entityId: 'attr-bad',
+        data: {
+          name: 'Hotel',
+          description: 'Desc',
+          category: 'Hotel',
+          website: 'javascript:alert(1)',
+          directions: 'North',
+          latitude: 40,
+          longitude: -74,
+        },
+      },
+      {
+        id: 'v-bad-attr-booking',
+        entityType: 'Attraction',
+        entityId: 'attr-bad-book',
+        data: {
+          name: 'Hotel',
+          description: 'Desc',
+          category: 'Hotel',
+          website: 'https://hotel.example.com',
+          bookingUrl: '//evil.example.com/phish',
+          directions: 'North',
+          latitude: 40,
+          longitude: -74,
+        },
+      },
+      {
+        id: 'v-bad-reg-vendor',
+        entityType: 'RegistryItem',
+        entityId: 'reg-bad',
+        data: {
+          name: 'Toaster',
+          description: '2-slice',
+          category: 'Kitchen',
+          price: 50,
+          imageId: 'img-1',
+          quantity: 1,
+          vendorUrl: 'javascript:alert(1)',
+        },
+      },
+      {
+        id: 'v-bad-reg-legacy-vendor',
+        entityType: 'RegistryItem',
+        entityId: 'reg-bad-legacy',
+        data: {
+          legacy_name: 'Legacy Toaster',
+          legacy_description: '2-slice',
+          legacy_category: 'Kitchen',
+          legacy_price: 50,
+          legacy_imageId: 'img-1',
+          legacy_quantity: 1,
+          legacy_vendorUrl: 'data:text/html,<script>alert(1)</script>',
+        },
+      },
+    ];
+
+    for (const invalidCase of invalidCases) {
+      (
+        mockPrisma.snapshotVersion.findUnique as jest.Mock
+      ).mockResolvedValueOnce(invalidCase);
+      const res = await restoreVersion(
+        new NextRequest(
+          `http://localhost/api/admin/versions/${invalidCase.id}/restore`,
+          { method: 'POST' },
+        ),
+        { params: Promise.resolve({ id: invalidCase.id }) },
+      );
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.success).toBe(false);
+    }
+
+    expect(mockPrisma.appConfig.upsert).not.toHaveBeenCalled();
+    expect(mockPrisma.weddingPartyMember.upsert).not.toHaveBeenCalled();
+    expect(mockPrisma.attraction.upsert).not.toHaveBeenCalled();
+    expect(mockPrisma.registryItem.upsert).not.toHaveBeenCalled();
+  });
 });

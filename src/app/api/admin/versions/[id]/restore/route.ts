@@ -2,10 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Prisma, WeddingPartySide } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { createAuditSnapshot } from '@/lib/audit';
-import { coordinateSchema, isSafeMediaOrPhotoUrl } from '@/utils/validation';
+import {
+  coordinateSchema,
+  isSafeMediaOrPhotoUrl,
+  safeUrlSchema,
+} from '@/utils/validation';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import {
+  AppConfigSchema,
   PhotoDataSchema,
   translateAppConfigSnapshot,
 } from '@/features/content';
@@ -149,6 +154,128 @@ function isFeatureToggleDelta(snapshotData: Record<string, unknown>): boolean {
   );
 }
 
+const APP_CONFIG_STRICT_URL_KEYS = [
+  'baseUrl',
+  'photoAlbumUrl',
+  'faviconUrl',
+  'ogImageUrl',
+  'brandLogoUrl',
+  'heroImageUrl',
+  'brandWatermarkUrl',
+  'badgeGraphicUrl',
+] as const;
+
+const APP_CONFIG_STRICT_LAYOUT_KEYS = [
+  'layoutContainerMaxWidth',
+  'layoutGridGap',
+  'layoutCardPadding',
+  'layoutBorderRadius',
+] as const;
+
+function validateAppConfigSnapshotFields(
+  snapshotData: Record<string, unknown>,
+): void {
+  for (const key of APP_CONFIG_STRICT_URL_KEYS) {
+    const rawVal = snapshotData[key];
+    if (rawVal !== undefined && rawVal !== null) {
+      if (
+        typeof rawVal !== 'string' ||
+        !AppConfigSchema.shape[key].safeParse(rawVal).success
+      ) {
+        throw new ApiError(400, `Invalid ${key} in AppConfig snapshot`);
+      }
+    }
+  }
+
+  if (
+    snapshotData.contactEmail !== undefined &&
+    snapshotData.contactEmail !== null &&
+    (typeof snapshotData.contactEmail !== 'string' ||
+      !AppConfigSchema.shape.contactEmail.safeParse(snapshotData.contactEmail)
+        .success)
+  ) {
+    throw new ApiError(400, 'Invalid contactEmail in AppConfig snapshot');
+  }
+
+  for (const colorKey of ['colorPrimary', 'colorSecondary'] as const) {
+    const rawColor = snapshotData[colorKey];
+    if (rawColor !== undefined && rawColor !== null && rawColor !== '') {
+      if (
+        typeof rawColor !== 'string' ||
+        !AppConfigSchema.shape[colorKey].safeParse(rawColor).success
+      ) {
+        throw new ApiError(400, `Invalid ${colorKey} in AppConfig snapshot`);
+      }
+    }
+  }
+
+  if (
+    snapshotData.themePreset !== undefined &&
+    snapshotData.themePreset !== null &&
+    snapshotData.themePreset !== '' &&
+    !AppConfigSchema.shape.themePreset.safeParse(snapshotData.themePreset)
+      .success
+  ) {
+    throw new ApiError(400, 'Invalid themePreset in AppConfig snapshot');
+  }
+
+  if (
+    snapshotData.themeTokens !== undefined &&
+    snapshotData.themeTokens !== null
+  ) {
+    let parsedTokens: unknown = snapshotData.themeTokens;
+    if (typeof parsedTokens === 'string') {
+      try {
+        parsedTokens = JSON.parse(parsedTokens);
+      } catch {
+        throw new ApiError(400, 'Invalid themeTokens in AppConfig snapshot');
+      }
+    }
+    if (
+      !parsedTokens ||
+      typeof parsedTokens !== 'object' ||
+      Array.isArray(parsedTokens) ||
+      !AppConfigSchema.shape.themeTokens.safeParse(parsedTokens).success
+    ) {
+      throw new ApiError(400, 'Invalid themeTokens in AppConfig snapshot');
+    }
+  }
+
+  for (const layoutKey of APP_CONFIG_STRICT_LAYOUT_KEYS) {
+    const rawLayout = snapshotData[layoutKey];
+    if (rawLayout !== undefined && rawLayout !== null) {
+      if (
+        typeof rawLayout !== 'string' ||
+        !AppConfigSchema.shape[layoutKey].safeParse(rawLayout).success
+      ) {
+        throw new ApiError(400, `Invalid ${layoutKey} in AppConfig snapshot`);
+      }
+    }
+  }
+
+  for (const fontKey of ['fontHeading', 'fontBody', 'fontMono'] as const) {
+    const rawFont = snapshotData[fontKey];
+    if (
+      rawFont !== undefined &&
+      rawFont !== null &&
+      !AppConfigSchema.shape[fontKey].safeParse(rawFont).success
+    ) {
+      throw new ApiError(400, `Invalid ${fontKey} in AppConfig snapshot`);
+    }
+  }
+
+  for (const coordKey of ['latitude', 'longitude'] as const) {
+    const rawCoord = snapshotData[coordKey];
+    if (
+      rawCoord !== undefined &&
+      rawCoord !== null &&
+      !coordinateSchema.safeParse(rawCoord).success
+    ) {
+      throw new ApiError(400, `Invalid ${coordKey} in AppConfig snapshot`);
+    }
+  }
+}
+
 export const POST = withApiMiddleware(
   async (
     _request: NextRequest,
@@ -182,21 +309,38 @@ export const POST = withApiMiddleware(
 
     if (version.entityType === 'AppConfig') {
       if (isFeatureToggleDelta(snapshotData)) {
+        const parsedFeatures = AppConfigSchema.shape.features.safeParse(
+          snapshotData.current,
+        );
+        if (!parsedFeatures.success) {
+          throw new ApiError(400, 'Invalid AppConfig features snapshot data');
+        }
         await prisma.appConfig.upsert({
           where: { id: version.entityId },
-          update: { features: snapshotData.current as Prisma.InputJsonValue },
+          update: { features: parsedFeatures.data as Prisma.InputJsonValue },
           create: {
             id: version.entityId,
-            features: snapshotData.current as Prisma.InputJsonValue,
+            features: parsedFeatures.data as Prisma.InputJsonValue,
           },
         });
       } else {
+        validateAppConfigSnapshotFields(snapshotData);
         const translatedConfig = translateAppConfigSnapshot(
           snapshotData,
           version.entityId,
         );
         if (!translatedConfig) {
           throw new ApiError(400, 'Invalid snapshot data');
+        }
+        const validatedConfig = AppConfigSchema.safeParse({
+          ...translatedConfig.create,
+          id: version.entityId,
+          themeTokens: translatedConfig.create.themeTokens ?? {},
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+        if (!validatedConfig.success) {
+          throw new ApiError(400, 'Invalid AppConfig snapshot data');
         }
         const updatePayload = {
           ...translatedConfig.update,
@@ -245,6 +389,18 @@ export const POST = withApiMiddleware(
         create: { id: version.entityId, ...data },
       });
     } else if (version.entityType === 'WeddingPartyMember') {
+      if (
+        snapshotData.link !== undefined &&
+        snapshotData.link !== null &&
+        (typeof snapshotData.link !== 'string' ||
+          !safeUrlSchema.safeParse(snapshotData.link).success)
+      ) {
+        throw new ApiError(
+          400,
+          'Invalid link URL in WeddingPartyMember snapshot',
+        );
+      }
+
       const resolvedPhotoId = await resolveForeignKeyId(
         snapshotData.photoId,
         prisma.media,
@@ -268,6 +424,33 @@ export const POST = withApiMiddleware(
         create: { id: version.entityId, ...data },
       });
     } else if (version.entityType === 'Attraction') {
+      if (
+        snapshotData.website !== undefined &&
+        snapshotData.website !== null &&
+        (typeof snapshotData.website !== 'string' ||
+          !safeUrlSchema.safeParse(snapshotData.website).success)
+      ) {
+        throw new ApiError(400, 'Invalid website URL in Attraction snapshot');
+      }
+      if (
+        snapshotData.bookingUrl !== undefined &&
+        snapshotData.bookingUrl !== null &&
+        (typeof snapshotData.bookingUrl !== 'string' ||
+          !safeUrlSchema.safeParse(snapshotData.bookingUrl).success)
+      ) {
+        throw new ApiError(400, 'Invalid booking URL in Attraction snapshot');
+      }
+
+      const parsedLatitude = coordinateSchema.safeParse(
+        snapshotData.latitude ?? 0,
+      );
+      const parsedLongitude = coordinateSchema.safeParse(
+        snapshotData.longitude ?? 0,
+      );
+      if (!parsedLatitude.success || !parsedLongitude.success) {
+        throw new ApiError(400, 'Invalid coordinates in Attraction snapshot');
+      }
+
       const resolvedImageId = await resolveForeignKeyId(
         snapshotData.imageId,
         prisma.media,
@@ -280,8 +463,8 @@ export const POST = withApiMiddleware(
         category: snapshotData.category as string,
         website: snapshotData.website as string,
         directions: snapshotData.directions as string,
-        latitude: coordinateSchema.parse(snapshotData.latitude || 0),
-        longitude: coordinateSchema.parse(snapshotData.longitude || 0),
+        latitude: parsedLatitude.data,
+        longitude: parsedLongitude.data,
         isVisible: snapshotData.isVisible !== false,
         ...(snapshotData.promoCode !== undefined
           ? { promoCode: snapshotData.promoCode }
@@ -318,6 +501,17 @@ export const POST = withApiMiddleware(
       const translated = translateSnapshotToActive(snapshotData);
       if (!translated) {
         throw new ApiError(400, 'Invalid snapshot data');
+      }
+      if (
+        translated.vendorUrl !== undefined &&
+        translated.vendorUrl !== null &&
+        (typeof translated.vendorUrl !== 'string' ||
+          !safeUrlSchema.safeParse(translated.vendorUrl).success)
+      ) {
+        throw new ApiError(
+          400,
+          'Invalid vendor URL in RegistryItem snapshot',
+        );
       }
       const data = {
         ...translated,
@@ -356,7 +550,7 @@ export const POST = withApiMiddleware(
           translatedContributor.create as Prisma.ContributorUncheckedCreateInput,
       });
     } else if (version.entityType === 'Media') {
-      const parsedData = MediaSchema.parse({
+      const parsedMedia = MediaSchema.safeParse({
         id: version.entityId,
         url: snapshotData.url ?? '',
         altText: snapshotData.altText ?? null,
@@ -368,6 +562,10 @@ export const POST = withApiMiddleware(
           ? new Date(snapshotData.updatedAt)
           : new Date(),
       });
+      if (!parsedMedia.success) {
+        throw new ApiError(400, 'Invalid Media snapshot data');
+      }
+      const parsedData = parsedMedia.data;
       const data = {
         url: parsedData.url,
         altText: parsedData.altText,

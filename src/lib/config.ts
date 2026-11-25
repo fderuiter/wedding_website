@@ -3,11 +3,14 @@ import { prisma } from './prisma';
 import { getActiveContextRequest, getOrLoadRequestAppConfig } from './requestContext';
 import {
   AppConfigSchema,
+  FeatureSchema,
   PublicAppConfigSchema,
   TypographyScaleSchema,
   SpacingScaleSchema,
   BorderTreatmentSchema,
   BrandDimensionsSchema,
+  cssTokenKeyRegex,
+  isValidCssTokenValue,
 } from '@/features/content';
 import type { AppConfigDTO, PublicAppConfigDTO } from '@/features/content';
 import { coordinateSchema } from '../utils/validation';
@@ -614,12 +617,32 @@ async function getSubdomainFromHeaders(): Promise<string | null> {
   }
 }
 
+const SPECIAL_DB_NORMALIZED_KEYS = new Set<string>([
+  'id',
+  'modules',
+  'themeTokens',
+  'features',
+  'weddingDate',
+  'createdAt',
+  'updatedAt',
+  'latitude',
+  'longitude',
+  'timezone',
+]);
+
 function normalizeRawDbConfig(raw: Record<string, unknown>): Record<string, unknown> {
   const definedEntries: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(raw)) {
     if (value !== undefined) {
       definedEntries[key] = value;
     }
+  }
+
+  if (
+    'id' in definedEntries &&
+    (typeof definedEntries.id !== 'string' || !definedEntries.id.trim())
+  ) {
+    definedEntries.id = APP_DEFAULTS.id;
   }
 
   let parsedThemeTokens = definedEntries.themeTokens;
@@ -633,12 +656,105 @@ function normalizeRawDbConfig(raw: Record<string, unknown>): Record<string, unkn
     }
   }
 
-  const rawModules =
+  const sanitizedThemeTokens: Record<string, string> = {};
+  if (
+    parsedThemeTokens &&
+    typeof parsedThemeTokens === 'object' &&
+    !Array.isArray(parsedThemeTokens)
+  ) {
+    for (const [tokenKey, tokenVal] of Object.entries(parsedThemeTokens)) {
+      if (
+        cssTokenKeyRegex.test(tokenKey) &&
+        typeof tokenVal === 'string' &&
+        isValidCssTokenValue(tokenVal)
+      ) {
+        sanitizedThemeTokens[tokenKey] = tokenVal;
+      }
+    }
+  }
+
+  if ('features' in definedEntries) {
+    let rawFeatures = definedEntries.features;
+    if (typeof rawFeatures === 'string') {
+      try {
+        rawFeatures = JSON.parse(rawFeatures);
+      } catch {
+        rawFeatures = [];
+      }
+    }
+    definedEntries.features = Array.isArray(rawFeatures)
+      ? rawFeatures.flatMap((item) => {
+        const parsedFeature = FeatureSchema.safeParse(item);
+        return parsedFeature.success ? [parsedFeature.data] : [];
+      })
+      : APP_DEFAULTS.features;
+  }
+
+  for (const dateKey of ['weddingDate', 'createdAt', 'updatedAt'] as const) {
+    if (dateKey in definedEntries) {
+      const rawDate = definedEntries[dateKey];
+      const parsedDate =
+        rawDate instanceof Date
+          ? rawDate
+          : typeof rawDate === 'string' || typeof rawDate === 'number'
+            ? new Date(rawDate)
+            : null;
+      definedEntries[dateKey] =
+        parsedDate && !Number.isNaN(parsedDate.getTime())
+          ? parsedDate
+          : APP_DEFAULTS[dateKey];
+    }
+  }
+
+  for (const coordKey of ['latitude', 'longitude'] as const) {
+    if (coordKey in definedEntries) {
+      const parsedCoord = coordinateSchema.safeParse(definedEntries[coordKey]);
+      definedEntries[coordKey] =
+        parsedCoord.success && Number.isFinite(parsedCoord.data)
+          ? parsedCoord.data
+          : APP_DEFAULTS[coordKey];
+    }
+  }
+
+  const shapeRecord = AppConfigSchema.shape as unknown as Record<
+    string,
+    { safeParse: (_val: unknown) => { success: boolean; data?: unknown } }
+  >;
+  const defaultsRecord = APP_DEFAULTS as unknown as Record<string, unknown>;
+
+  for (const [key, value] of Object.entries(definedEntries)) {
+    if (SPECIAL_DB_NORMALIZED_KEYS.has(key)) {
+      continue;
+    }
+    const fieldSchema = shapeRecord[key];
+    if (!fieldSchema) {
+      continue;
+    }
+    const parsedField = fieldSchema.safeParse(value);
+    if (parsedField.success) {
+      definedEntries[key] = parsedField.data;
+    } else {
+      const fallback = defaultsRecord[key];
+      if (fallback === undefined) {
+        delete definedEntries[key];
+      } else {
+        definedEntries[key] = fallback;
+      }
+    }
+  }
+
+  const rawModules: Record<string, boolean> = {};
+  if (
     typeof definedEntries.modules === 'object' &&
     definedEntries.modules !== null &&
     !Array.isArray(definedEntries.modules)
-      ? (definedEntries.modules as Record<string, unknown>)
-      : {};
+  ) {
+    for (const [modKey, modVal] of Object.entries(definedEntries.modules)) {
+      if (typeof modVal === 'boolean') {
+        rawModules[modKey] = modVal;
+      }
+    }
+  }
 
   return {
     ...definedEntries,
@@ -646,10 +762,7 @@ function normalizeRawDbConfig(raw: Record<string, unknown>): Record<string, unkn
       typeof definedEntries.timezone === 'string' && definedEntries.timezone.trim()
         ? definedEntries.timezone
         : 'America/Chicago',
-    themeTokens:
-      parsedThemeTokens && typeof parsedThemeTokens === 'object' && !Array.isArray(parsedThemeTokens)
-        ? parsedThemeTokens
-        : {},
+    themeTokens: sanitizedThemeTokens,
     modules: {
       ...(typeof definedEntries.showCountdown === 'boolean'
         ? { countdown: definedEntries.showCountdown }
@@ -775,18 +888,28 @@ async function resolveAppConfig(idOrSubdomain?: string): Promise<AppConfigDTO> {
       ? previousDbPreset
       : undefined,
   );
-  const rawEnvTokens =
-    (envOverrides as any)?.themeTokens &&
-    typeof (envOverrides as any).themeTokens === 'object'
-      ? (envOverrides as any).themeTokens
+  const rawEnvTokens: Record<string, unknown> =
+    envOverrides.themeTokens &&
+    typeof envOverrides.themeTokens === 'object' &&
+    !Array.isArray(envOverrides.themeTokens)
+      ? (envOverrides.themeTokens as Record<string, unknown>)
       : {};
-  const mergedThemeTokens = stripPresetDefaultTokens(
-    {
-      ...sparseDbTokens,
-      ...rawEnvTokens,
-    },
-    activePreset,
-  );
+  const invalidEnvTokenEntries: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(rawEnvTokens)) {
+    if (!key.startsWith('--') || typeof val !== 'string') {
+      invalidEnvTokenEntries[key] = val;
+    }
+  }
+  const mergedThemeTokens = {
+    ...stripPresetDefaultTokens(
+      {
+        ...sparseDbTokens,
+        ...rawEnvTokens,
+      },
+      activePreset,
+    ),
+    ...invalidEnvTokenEntries,
+  };
 
   // Deterministic Precedence: Generic Defaults < DB Config < Env Overrides
   const baseModules = resolveModuleConfig(
