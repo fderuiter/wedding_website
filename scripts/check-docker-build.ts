@@ -1941,6 +1941,13 @@ export function checkDockerBuild(
     try {
       parsedRootLock = JSON.parse(fs.readFileSync(rootLockPath, 'utf8')) as ParsedLockfile;
       const rootManifest = parseJsonManifest(packageJsonPath);
+      validateManifestLockfileSync(
+        'package.json',
+        'package-lock.json',
+        rootManifest,
+        parsedRootLock,
+        violations
+      );
       validateLockfilePeerDependencies(
         'package-lock.json',
         parsedRootLock,
@@ -1962,6 +1969,13 @@ export function checkDockerBuild(
     try {
       parsedCliLock = JSON.parse(fs.readFileSync(cliLockPath, 'utf8')) as ParsedLockfile;
       const cliManifest = parseJsonManifest(cliPkgJsonPath);
+      validateManifestLockfileSync(
+        'docker/prisma-cli/package.json',
+        'docker/prisma-cli/package-lock.json',
+        cliManifest,
+        parsedCliLock,
+        violations
+      );
       validateLockfilePeerDependencies(
         'docker/prisma-cli/package-lock.json',
         parsedCliLock,
@@ -2337,6 +2351,114 @@ function isPeerOverriddenInManifest(
   return false;
 }
 
+function validateManifestLockfileSync(
+  manifestRelPath: string,
+  lockRelPath: string,
+  manifest: {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+    optionalDependencies?: Record<string, string>;
+    overrides?: Record<string, unknown>;
+  },
+  lockData: ParsedLockfile,
+  violations: Violation[]
+): void {
+  const packages = lockData.packages;
+  if (!packages) {
+    return;
+  }
+
+  const rootEntry = packages[''];
+  const depSections = ['dependencies', 'devDependencies', 'optionalDependencies'] as const;
+
+  for (const section of depSections) {
+    const manifestDeps = manifest[section] ?? {};
+    const lockRootDeps = rootEntry?.[section] ?? {};
+
+    if (rootEntry) {
+      for (const [depName, manifestSpec] of Object.entries(manifestDeps)) {
+        const lockSpec = lockRootDeps[depName];
+        if (lockSpec === undefined) {
+          violations.push({
+            filePath: lockRelPath,
+            lineNumber: 1,
+            lineContent: `"${depName}": "${manifestSpec}"`,
+            imageRef: `${manifestRelPath} -> ${depName}`,
+            reason: `${manifestRelPath} declares ${section}["${depName}"] ("${manifestSpec}"), which is missing from ${lockRelPath} packages[""].${section}. Run 'npm install --package-lock-only' to synchronize ${lockRelPath}.`,
+          });
+        } else if (lockSpec !== manifestSpec) {
+          violations.push({
+            filePath: lockRelPath,
+            lineNumber: 1,
+            lineContent: `"${depName}": "${manifestSpec}"`,
+            imageRef: `${manifestRelPath} -> ${depName}`,
+            reason: `${manifestRelPath} declares ${section}["${depName}"] ("${manifestSpec}"), which does not match "${lockSpec}" in ${lockRelPath} packages[""].${section}. Run 'npm install --package-lock-only' to synchronize ${lockRelPath}.`,
+          });
+        }
+      }
+
+      for (const [depName, lockSpec] of Object.entries(lockRootDeps)) {
+        if (manifestDeps[depName] === undefined) {
+          violations.push({
+            filePath: lockRelPath,
+            lineNumber: 1,
+            lineContent: `"${depName}": "${lockSpec}"`,
+            imageRef: `${manifestRelPath} -> ${depName}`,
+            reason: `${lockRelPath} packages[""].${section} retains stale entry "${depName}" ("${lockSpec}") removed from ${manifestRelPath}. Run 'npm install --package-lock-only' to synchronize ${lockRelPath}.`,
+          });
+        }
+      }
+    }
+
+    for (const [depName, manifestSpec] of Object.entries(manifestDeps)) {
+      const resolvedNode = packages[`node_modules/${depName}`];
+      if (!resolvedNode || !resolvedNode.version) {
+        if (section === 'optionalDependencies') {
+          continue;
+        }
+        violations.push({
+          filePath: lockRelPath,
+          lineNumber: 1,
+          lineContent: `"${depName}": "${manifestSpec}"`,
+          imageRef: `${manifestRelPath} -> ${depName}`,
+          reason: `${manifestRelPath} declares ${section}["${depName}"] ("${manifestSpec}"), but "node_modules/${depName}" is missing from ${lockRelPath}.`,
+        });
+        continue;
+      }
+
+      if (
+        resolvedNode.resolved?.startsWith('file:') ||
+        manifestSpec.startsWith('file:') ||
+        manifestSpec.startsWith('npm:') ||
+        manifestSpec.startsWith('git+') ||
+        manifestSpec.startsWith('http:') ||
+        manifestSpec.startsWith('https:')
+      ) {
+        continue;
+      }
+
+      if (!satisfiesSemverRange(resolvedNode.version, manifestSpec)) {
+        const overridden =
+          manifest.overrides !== undefined &&
+          Object.entries(manifest.overrides).some(
+            ([key, val]) =>
+              typeof val === 'string' &&
+              matchesOverrideSelectorKey(key, depName, resolvedNode.version)
+          );
+        if (!overridden) {
+          violations.push({
+            filePath: lockRelPath,
+            lineNumber: 1,
+            lineContent: `"${depName}": "${manifestSpec}"`,
+            imageRef: `${manifestRelPath} -> ${depName}`,
+            reason: `${manifestRelPath} declares ${section}["${depName}"] ("${manifestSpec}"), which is not satisfied by resolved "node_modules/${depName}@${resolvedNode.version}" in ${lockRelPath}.`,
+          });
+        }
+      }
+    }
+  }
+}
+
 function validateLockfilePeerDependencies(
   lockRelPath: string,
   lockData: ParsedLockfile,
@@ -2408,10 +2530,11 @@ function validateLockfilePeerDependencies(
 
 function main(): void {
   const args = process.argv.slice(2);
-  const standaloneOnly = args.includes('--standalone-only');
-  const requireStandalone = args.includes('--require-standalone') || standaloneOnly;
-  const staticOnly = args.includes('--static-only');
-  const unknownFlags = args.filter(
+  const flagArgs = args.filter((arg) => arg.startsWith('-'));
+  const standaloneOnly = flagArgs.includes('--standalone-only');
+  const requireStandalone = flagArgs.includes('--require-standalone') || standaloneOnly;
+  const staticOnly = flagArgs.includes('--static-only');
+  const unknownFlags = flagArgs.filter(
     (arg) =>
       arg !== '--require-standalone' && arg !== '--static-only' && arg !== '--standalone-only'
   );

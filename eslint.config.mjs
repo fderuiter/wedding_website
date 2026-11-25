@@ -30,6 +30,8 @@ const jsxA11yPlugin = coreWebVitalsConfigs.find(
   (cfg) => cfg.plugins?.['jsx-a11y']
 )?.plugins?.['jsx-a11y'];
 
+const GITHOOK_FILES = ['.githooks/[!.]*'];
+
 const REACT_FILES = [
   '**/*.{tsx,jsx}',
   'src/**/hooks/**/*.{ts,js}',
@@ -70,6 +72,9 @@ const scopeNextCoreWebVitals = (configs) =>
 
     const { react: reactSettings, ...otherSettings } = config.settings ?? {};
     const baseConfig = { ...config };
+    if (Array.isArray(baseConfig.files)) {
+      baseConfig.files = [...baseConfig.files, ...GITHOOK_FILES];
+    }
     if (Object.keys(basePlugins).length > 0) {
       baseConfig.plugins = basePlugins;
     } else {
@@ -99,7 +104,7 @@ const scopeNextCoreWebVitals = (configs) =>
 
 const escapeGlobPath = (filePath) => filePath.replace(/([[\]])/g, '\\$1');
 
-// Shrink-only legacy baseline (capped at <= 102 unique files across all legacy groups).
+// Shrink-only legacy baseline (capped at <= 98 unique files across all legacy groups).
 // Do not add new files here; remove entries as legacy modules are refactored.
 const LEGACY_EXPLICIT_ANY_BASELINE_FILES = [
   'src/app/admin/dashboard/history/HistoryTimelineClient.tsx',
@@ -111,14 +116,12 @@ const LEGACY_EXPLICIT_ANY_BASELINE_FILES = [
   'src/app/api/admin/[entity]/[id]/route.ts',
   'src/app/api/admin/[entity]/batch/route.ts',
   'src/app/api/admin/[entity]/route.ts',
-  'src/app/api/admin/broadcast/history/route.ts',
   'src/app/api/admin/broadcast/schedule/[id]/route.ts',
   'src/app/api/admin/invitation-codes/batch/route.ts',
   'src/app/api/admin/invitation-codes/export/route.ts',
   'src/app/api/admin/invitation-codes/validate/route.ts',
   'src/app/api/admin/photos/moderation/route.ts',
   'src/app/api/admin/seating/assign/route.ts',
-  'src/app/api/admin/seating/export/route.ts',
   'src/app/api/admin/settings/route.ts',
   'src/app/api/admin/versions/route.ts',
   'src/app/api/cron/broadcasts/route.ts',
@@ -126,7 +129,6 @@ const LEGACY_EXPLICIT_ANY_BASELINE_FILES = [
   'src/app/api/guest/photos/upload/route.ts',
   'src/app/api/media/export/route.ts',
   'src/app/api/og/route.tsx',
-  'src/app/api/ready/route.ts',
   'src/app/guest/collect/GuestAddressCollectClient.tsx',
   'src/app/heart/HeartClient.tsx',
   'src/app/heart/hooks/useHeartPhysics.ts',
@@ -195,7 +197,6 @@ const LEGACY_EXPLICIT_ANY_BASELINE_FILES = [
   'src/lib/stripe.ts',
   'src/lib/theme/presets.ts',
   'src/lib/transaction.ts',
-  'src/mocks/handlers.ts',
   'src/testing/factories/mediaFactory.ts',
   'src/utils/ApiError.ts',
   'src/utils/backupValidation.ts',
@@ -209,7 +210,10 @@ const LEGACY_EXPLICIT_ANY_BASELINE_FILES = [
 const eslintConfig = [
   {
     ignores: [
-      'docs-portal/**',
+      'docs-portal/.vitepress/dist/**',
+      'docs-portal/.vitepress/cache/**',
+      'docs-portal/.vitepress/.temp/**',
+      '.githooks/*.md',
       'storybook-static/**',
       'public/mockServiceWorker.js',
       '.next/**',
@@ -296,7 +300,7 @@ const eslintConfig = [
     },
   },
   {
-    files: ['src/**/*.{ts,tsx,mts,cts}'],
+    files: ['src/**/*.{ts,tsx,mts,cts}', 'docs-portal/**/*.{ts,tsx,mts,cts}'],
     plugins: {
       '@typescript-eslint': tseslint.plugin,
     },
@@ -311,6 +315,7 @@ const eslintConfig = [
       '**/*.{test,spec}.{ts,tsx,js,jsx,mjs,cjs}',
       'e2e/**/*.{ts,tsx,js,jsx}',
       'scripts/**/*.{ts,tsx,js,jsx,mjs,cjs}',
+      ...GITHOOK_FILES,
       '.storybook/main.ts',
       '.storybook/**/*.{ts,tsx,js,jsx}',
     ],

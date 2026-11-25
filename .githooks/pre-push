@@ -6,7 +6,12 @@ import os from 'os';
 import path from 'path';
 
 const ZERO_OID_REGEX = /^0+$/;
-const LOCKFILE_PATHS = ['package-lock.json', 'docker/prisma-cli/package-lock.json'];
+const LOCKFILE_PATHS = [
+  'package.json',
+  'package-lock.json',
+  'docker/prisma-cli/package.json',
+  'docker/prisma-cli/package-lock.json',
+];
 const LOCAL_GIT_ENV_VARS = [
   'GIT_DIR',
   'GIT_WORK_TREE',

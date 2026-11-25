@@ -518,5 +518,19 @@ describe('check-action-pins', () => {
     );
 
     expect(checkActionPins(workflowsDir).violations).toEqual([]);
+
+    const cliPositionalPass = spawnSync(
+      process.execPath,
+      [TSX_CLI_PATH, CHECK_SCRIPT_PATH, path.join(workflowsDir, 'compliant-queues.yml')],
+      { cwd: tempDir, encoding: 'utf8' }
+    );
+    expect(cliPositionalPass.status).toBe(0);
+
+    const cliUnknownFlag = spawnSync(
+      process.execPath,
+      [TSX_CLI_PATH, CHECK_SCRIPT_PATH, '--unknown-flag'],
+      { cwd: tempDir, encoding: 'utf8' }
+    );
+    expect(cliUnknownFlag.status).toBe(1);
   });
 });
