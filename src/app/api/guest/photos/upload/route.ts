@@ -81,11 +81,21 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
   const rawUploaderName = typeof formData.get === 'function' ? formData.get('uploaderName') : undefined;
   const rawCaption = typeof formData.get === 'function' ? formData.get('caption') : undefined;
+  let rawCaptions: unknown[] = [];
+  if (typeof formData.getAll === 'function') {
+    rawCaptions = formData.getAll('captions');
+  } else if (typeof formData.get === 'function') {
+    const singleCaptionsEntry = formData.get('captions');
+    if (singleCaptionsEntry !== null && singleCaptionsEntry !== undefined) {
+      rawCaptions = [singleCaptionsEntry];
+    }
+  }
 
   const parsed = GuestPhotoUploadSchema.safeParse({
     files: rawFiles,
     uploaderName: rawUploaderName,
     caption: rawCaption,
+    ...(rawCaptions.length > 0 ? { captions: rawCaptions } : {}),
   });
   if (!parsed.success) {
     const errorMessage = parsed.error.issues[0]?.message || 'Validation failed';
@@ -103,8 +113,8 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     }
   }
   const uploaderName = parsed.data.uploaderName || sessionUploaderName;
-  const caption = parsed.data.caption;
-  const publicTitle = caption || (uploaderName ? `Photo by ${uploaderName}` : 'Guest Photo');
+  const fallbackCaption = parsed.data.caption;
+  const perFileCaptions = parsed.data.captions;
   const actorName = uploaderName || 'Guest';
   const autoApprove = Boolean(config.autoApproveGuestPhotos);
   const photoStatus = autoApprove ? 'APPROVED' : 'PENDING';
@@ -116,17 +126,26 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   const sanitizedBatch = await mapWithConcurrency(
     files,
     BATCH_SANITIZE_CONCURRENCY,
-    async (file) => ({
-      originalFilename: file.name || undefined,
-      sanitizedFile: await sanitizeImage(file),
-    })
+    async (file, index) => {
+      const indexedCaption =
+        perFileCaptions && index < perFileCaptions.length
+          ? perFileCaptions[index]?.trim() || undefined
+          : undefined;
+      return {
+        originalFilename: file.name || undefined,
+        itemCaption: indexedCaption ?? fallbackCaption,
+        sanitizedFile: await sanitizeImage(file),
+      };
+    }
   );
 
   const storage = getStorageProvider();
   const uploadedPhotos: GuestPhotoUploadResponseItem[] = await mapWithConcurrency(
     sanitizedBatch,
     BATCH_PERSIST_CONCURRENCY,
-    async ({ originalFilename, sanitizedFile }) => {
+    async ({ originalFilename, itemCaption, sanitizedFile }) => {
+      const publicTitle =
+        itemCaption || (uploaderName ? `Photo by ${uploaderName}` : 'Guest Photo');
       const storageResult = await storage.upload(sanitizedFile, { folder: 'uploads/photos' });
 
       // Record in Media table
@@ -149,7 +168,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
           altText: publicTitle,
           mediaId: media.id,
           ...(uploaderName ? { uploaderName } : {}),
-          ...(caption ? { caption } : {}),
+          ...(itemCaption ? { caption: itemCaption } : {}),
           ...(originalFilename ? { originalFilename } : {}),
         },
       }, actorName);
@@ -160,7 +179,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
         altText: media.altText,
         title: publicTitle,
         ...(uploaderName ? { uploaderName } : {}),
-        ...(caption ? { caption } : {}),
+        ...(itemCaption ? { caption: itemCaption } : {}),
         ...(originalFilename ? { originalFilename } : {}),
         createdAt: media.createdAt,
         nodeId: photoNode.id,

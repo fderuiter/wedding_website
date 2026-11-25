@@ -31,6 +31,8 @@ export interface SlideshowPhoto {
 interface ReceptionSlideshowClientProps {
   initialPhotos?: (SlideshowPhoto | string)[];
   uploadUrl?: string;
+  activeUploadUrl?: string;
+  configuredUploadUrl?: string | null;
 }
 
 const getServerFalse = () => false;
@@ -56,6 +58,8 @@ function normalizePhotos(items?: (SlideshowPhoto | string)[]): SlideshowPhoto[] 
 export function ReceptionSlideshowClient({
   initialPhotos,
   uploadUrl,
+  activeUploadUrl,
+  configuredUploadUrl,
 }: ReceptionSlideshowClientProps) {
   const demo = useOptionalDemo();
   const hasExpandedDemoToolbar = Boolean(demo?.isDemoMode && !demo.isToolbarCollapsed);
@@ -155,21 +159,39 @@ export function ReceptionSlideshowClient({
     () => ''
   );
 
-  // Derive resolved upload URL (upgrading relative signed QR paths and basePath-prefixed fallbacks after hydration)
+  // Derive resolved upload URL (preferring activeUploadUrl when its origin matches clientOrigin, and upgrading relative paths)
   const resolvedUploadUrl = useMemo(() => {
-    if (uploadUrl) {
-      if (uploadUrl.startsWith('/')) {
-        const prefixed = withBasePath(uploadUrl);
+    const normalizeCandidate = (candidate?: string | null): string => {
+      if (!candidate) return '';
+      if (candidate.startsWith('/')) {
+        const prefixed = withBasePath(candidate);
         return clientOrigin ? `${clientOrigin}${prefixed}` : prefixed;
       }
-      return uploadUrl;
+      return candidate;
+    };
+
+    const normalizedActive = normalizeCandidate(activeUploadUrl);
+    if (normalizedActive && clientOrigin) {
+      try {
+        if (new URL(normalizedActive).origin === clientOrigin) {
+          return normalizedActive;
+        }
+      } catch {
+        // Ignore unparseable candidate URL
+      }
     }
+
+    const primaryUrl = normalizeCandidate(uploadUrl ?? configuredUploadUrl);
+    if (primaryUrl) {
+      return primaryUrl;
+    }
+
     const photosPath = withBasePath('/photos?tab=guest');
     if (clientOrigin) {
       return `${clientOrigin}${photosPath}`;
     }
     return photosPath;
-  }, [uploadUrl, clientOrigin]);
+  }, [activeUploadUrl, clientOrigin, configuredUploadUrl, uploadUrl]);
 
   // Helper to determine whether an element is an interactive control in the slideshow
   const isInteractiveControl = useCallback((node: Node | null): boolean => {
@@ -351,8 +373,15 @@ export function ReceptionSlideshowClient({
       if (!response.ok) return;
 
       const data = await response.json();
-      if (data?.photos && Array.isArray(data.photos) && data.photos.length > 0) {
-        for (const p of data.photos as SlideshowPhoto[]) {
+      const polledPhotos: SlideshowPhoto[] = Array.isArray(data?.photos) ? data.photos : [];
+      const activeIdSet: Set<string> | null = Array.isArray(data?.activeIds)
+        ? new Set(
+          (data.activeIds as unknown[]).filter((id): id is string => typeof id === 'string')
+        )
+        : null;
+
+      if (polledPhotos.length > 0) {
+        for (const p of polledPhotos) {
           const cursorValue = p.updatedAt || p.createdAt;
           if (cursorValue) {
             const ms = new Date(cursorValue).getTime();
@@ -366,7 +395,9 @@ export function ReceptionSlideshowClient({
             }
           }
         }
+      }
 
+      if (polledPhotos.length > 0 || activeIdSet !== null) {
         const mapPolledSlide = (p: SlideshowPhoto): SlideshowPhoto => {
           const caption = p.caption?.trim() || undefined;
           const uploaderName = p.uploaderName?.trim() || undefined;
@@ -390,11 +421,29 @@ export function ReceptionSlideshowClient({
         };
 
         setPhotos((prev) => {
+          let didEvict = false;
+          const retainedPrev =
+            activeIdSet !== null
+              ? prev.filter((existing) => {
+                if (!existing.id || existing.id.startsWith('initial-')) {
+                  return true;
+                }
+                const keep = activeIdSet.has(existing.id);
+                if (!keep) {
+                  didEvict = true;
+                }
+                return keep;
+              })
+              : prev;
+
           const incomingById = new Map<string, SlideshowPhoto>();
           const incomingByUrl = new Map<string, SlideshowPhoto>();
 
-          for (const raw of data.photos as SlideshowPhoto[]) {
+          for (const raw of polledPhotos) {
             if (!raw?.url || failedUrls.has(raw.url) || failedUrlsRef.current.has(raw.url)) {
+              continue;
+            }
+            if (activeIdSet !== null && raw.id && !activeIdSet.has(raw.id)) {
               continue;
             }
             const normalized = mapPolledSlide(raw);
@@ -405,7 +454,7 @@ export function ReceptionSlideshowClient({
           }
 
           let didUpdateExisting = false;
-          const refreshedPrev = prev.map((existing) => {
+          const refreshedPrev = retainedPrev.map((existing) => {
             const updated =
               (existing.id ? incomingById.get(existing.id) : undefined) ||
               incomingByUrl.get(existing.url);
@@ -426,10 +475,11 @@ export function ReceptionSlideshowClient({
           );
           const existingUrls = new Set(refreshedPrev.map((p) => p.url));
 
-          const newPhotos: SlideshowPhoto[] = (data.photos as SlideshowPhoto[])
+          const newPhotos: SlideshowPhoto[] = polledPhotos
             .filter(
               (p) =>
                 p?.url &&
+                (!activeIdSet || !p.id || activeIdSet.has(p.id)) &&
                 (!p.id || !existingIds.has(p.id)) &&
                 !existingUrls.has(p.url) &&
                 !failedUrls.has(p.url) &&
@@ -437,8 +487,12 @@ export function ReceptionSlideshowClient({
             )
             .map(mapPolledSlide);
 
-          if (didUpdateExisting || newPhotos.length > 0) {
-            return [...refreshedPrev, ...newPhotos];
+          if (didEvict || didUpdateExisting || newPhotos.length > 0) {
+            const nextList = [...refreshedPrev, ...newPhotos];
+            setCurrentIndex((prevIdx) =>
+              nextList.length === 0 ? 0 : Math.min(prevIdx, nextList.length - 1)
+            );
+            return nextList;
           }
           return prev;
         });

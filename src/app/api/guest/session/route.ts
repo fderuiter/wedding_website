@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import {
   clearGuestInviteSessionCookie,
+  getActivePhotoUploadSession,
   getGuestInviteSession,
   GUEST_INVITE_COOKIE,
 } from '@/core/auth/guestInviteSession';
 import { isGuestRequest } from '@/core/auth/guest.server';
 import { readRequestCookie } from '@/core/auth/tokenCookieHelpers';
 
-type GuestPortalSessionStatus = 'invitation' | 'passcode' | 'none';
+type GuestPortalSessionStatus = 'invitation' | 'passcode' | 'photo_qr' | 'none';
 
 const PRIVATE_SESSION_HEADERS = {
   'Cache-Control': 'private, no-store',
@@ -21,6 +22,14 @@ function isStaticExportBuild(): boolean {
     process.env.STATIC_EXPORT === '1' ||
     process.env.npm_lifecycle_event === 'build:export'
   );
+}
+
+async function hasActivePhotoQrSession(request: NextRequest): Promise<boolean> {
+  if (typeof getActivePhotoUploadSession !== 'function') {
+    return false;
+  }
+  const photoSession = await getActivePhotoUploadSession(request);
+  return Boolean(photoSession);
 }
 
 export const GET = withApiMiddleware(async (request: NextRequest) => {
@@ -61,7 +70,12 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     );
   }
 
-  const status: GuestPortalSessionStatus = hasPasscodeSession ? 'passcode' : 'none';
+  const hasPhotoQrSession = hasPasscodeSession ? false : await hasActivePhotoQrSession(request);
+  const status: GuestPortalSessionStatus = hasPasscodeSession
+    ? 'passcode'
+    : hasPhotoQrSession
+      ? 'photo_qr'
+      : 'none';
   const response = NextResponse.json(
     {
       status,
@@ -82,8 +96,15 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
 });
 
 export const DELETE = withApiMiddleware(async (request: NextRequest) => {
-  const hasPasscodeSession = isStaticExportBuild() ? false : await isGuestRequest(request);
-  const status: GuestPortalSessionStatus = hasPasscodeSession ? 'passcode' : 'none';
+  const staticExport = isStaticExportBuild();
+  const hasPasscodeSession = staticExport ? false : await isGuestRequest(request);
+  const hasPhotoQrSession =
+    staticExport || hasPasscodeSession ? false : await hasActivePhotoQrSession(request);
+  const status: GuestPortalSessionStatus = hasPasscodeSession
+    ? 'passcode'
+    : hasPhotoQrSession
+      ? 'photo_qr'
+      : 'none';
 
   const response = NextResponse.json(
     {

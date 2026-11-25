@@ -1113,5 +1113,127 @@ describe('Content Domain Database Integration', () => {
       ]);
     }
   });
+
+  test('batch approval persists per-photo caption and uploaderName overrides, updates linked Media.altText, and getActivePublicPhotoIds tracks published visibility', async () => {
+    const [media1, media2] = await Promise.all([
+      realPrisma.media.create({
+        data: {
+          id: 'it-batch-edit-media-1',
+          url: '/uploads/photos/batch-edit-1.jpg',
+          altText: 'Photo by Aunt Clara',
+        },
+      }),
+      realPrisma.media.create({
+        data: {
+          id: 'it-batch-edit-media-2',
+          url: '/uploads/photos/batch-edit-2.jpg',
+          altText: 'Raw guest typo',
+        },
+      }),
+    ]);
+
+    await realPrisma.contentNode.createMany({
+      data: [
+        {
+          id: 'it-batch-edit-photo-1',
+          type: 'Photo',
+          tags: ['gallery', 'guest-upload'],
+          data: {
+            url: media1.url,
+            mediaId: media1.id,
+            title: 'Photo by Aunt Clara',
+            altText: 'Photo by Aunt Clara',
+            uploaderName: 'Aunt Clara',
+            status: 'PENDING',
+            isVisible: false,
+          },
+        },
+        {
+          id: 'it-batch-edit-photo-2',
+          type: 'Photo',
+          tags: ['gallery', 'guest-upload'],
+          data: {
+            url: media2.url,
+            mediaId: media2.id,
+            title: 'Raw guest typo',
+            altText: 'Raw guest typo',
+            caption: 'Raw guest typo',
+            uploaderName: 'Uncle Leo',
+            status: 'PENDING',
+            isVisible: false,
+          },
+        },
+      ],
+    });
+
+    // Neither pending photo is in getActivePublicPhotoIds before approval
+    expect(await contentSvc.getActivePublicPhotoIds()).toEqual([]);
+
+    const batchRes = await contentSvc.moderatePhotosBatch(
+      ['it-batch-edit-photo-1', 'it-batch-edit-photo-2'],
+      'approve',
+      'CoupleModerator',
+      {
+        'it-batch-edit-photo-1': {
+          caption: 'Grand Entrance Applause',
+          uploaderName: 'Clara & Joe',
+        },
+        'it-batch-edit-photo-2': {
+          caption: 'Champagne Tower Toast',
+          uploaderName: 'Uncle Leo',
+        },
+      }
+    );
+
+    expect(batchRes.succeededCount).toBe(2);
+    expect(batchRes.failedCount).toBe(0);
+
+    const [node1, node2, updatedMedia1, updatedMedia2] = await Promise.all([
+      realPrisma.contentNode.findUnique({ where: { id: 'it-batch-edit-photo-1' } }),
+      realPrisma.contentNode.findUnique({ where: { id: 'it-batch-edit-photo-2' } }),
+      realPrisma.media.findUnique({ where: { id: media1.id } }),
+      realPrisma.media.findUnique({ where: { id: media2.id } }),
+    ]);
+
+    expect(node1?.data).toEqual(
+      expect.objectContaining({
+        status: 'APPROVED',
+        isVisible: true,
+        caption: 'Grand Entrance Applause',
+        uploaderName: 'Clara & Joe',
+        title: 'Grand Entrance Applause',
+        altText: 'Grand Entrance Applause',
+      })
+    );
+    expect(node2?.data).toEqual(
+      expect.objectContaining({
+        status: 'APPROVED',
+        isVisible: true,
+        caption: 'Champagne Tower Toast',
+        uploaderName: 'Uncle Leo',
+        title: 'Champagne Tower Toast',
+        altText: 'Champagne Tower Toast',
+      })
+    );
+    expect(updatedMedia1?.altText).toBe('Grand Entrance Applause');
+    expect(updatedMedia2?.altText).toBe('Champagne Tower Toast');
+
+    // Both approved photos appear in getActivePublicPhotoIds
+    const activeIds = await contentSvc.getActivePublicPhotoIds();
+    expect(activeIds.sort()).toEqual(['it-batch-edit-photo-1', 'it-batch-edit-photo-2']);
+
+    // Unpublishing photo 2 removes it from getActivePublicPhotoIds immediately
+    await contentRepo.updateNode(
+      'it-batch-edit-photo-2',
+      {
+        data: {
+          ...(node2?.data as Record<string, unknown>),
+          isVisible: false,
+        },
+      },
+      'CoupleModerator'
+    );
+    expect(await contentSvc.getActivePublicPhotoIds()).toEqual(['it-batch-edit-photo-1']);
+  });
 });
 

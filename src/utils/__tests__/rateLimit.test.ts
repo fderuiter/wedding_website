@@ -25,6 +25,10 @@ import {
   signGuestInviteSessionToken,
   GUEST_INVITE_COOKIE,
 } from '@/core/auth/guestInviteToken';
+import {
+  signPhotoUploadSessionToken,
+  GUEST_PHOTO_COOKIE,
+} from '@/core/auth/photoUploadToken';
 import { logger } from '@/lib/logger';
 import {
   INTERNAL_SOCKET_IP_HEADER,
@@ -972,6 +976,59 @@ describe('rateLimit', () => {
 
       expect(getAuthRateLimitsCountForTesting()).toBe(MAX_RATE_LIMIT_KEYS);
       expect((await checkAuthLockout(blockedAuthReq, 5, 15 * 60 * 1000))?.status).toBe(429);
+    });
+
+    test('assigns distinct session:photo:<hash> principals per guest_photo_session cookie and raises shared venue IP ceiling so concurrent QR guests do not collide', async () => {
+      const venueIp = '198.51.100.88';
+      const qrSessionA = await signPhotoUploadSessionToken({ v: 1 });
+      const qrSessionB = await signPhotoUploadSessionToken({ v: 1 });
+      expect(qrSessionA).not.toBe(qrSessionB);
+
+      const makeQrUploadReq = (cookieVal: string) =>
+        new NextRequest('http://localhost/api/guest/photos/upload', {
+          method: 'POST',
+          headers: {
+            'x-forwarded-for': venueIp,
+            cookie: `${GUEST_PHOTO_COOKIE}=${cookieVal}`,
+          },
+        });
+
+      // Guest A uses all 15 requests/min on venueIp (configured ipLimit=20 is elevated >= 300 for session:photo:*)
+      for (let i = 0; i < 15; i += 1) {
+        const res = await rateLimit(
+          makeQrUploadReq(qrSessionA),
+          15,
+          60_000,
+          'guest_photo_upload',
+          'general',
+          { scope: 'session', ipLimit: 20 }
+        );
+        expect(res).toBeNull();
+      }
+
+      // Guest B on the same venueIp also gets a full 15 requests/min bucket (30 total requests on venueIp > 20)
+      for (let i = 0; i < 15; i += 1) {
+        const res = await rateLimit(
+          makeQrUploadReq(qrSessionB),
+          15,
+          60_000,
+          'guest_photo_upload',
+          'general',
+          { scope: 'session', ipLimit: 20 }
+        );
+        expect(res).toBeNull();
+      }
+
+      // Guest A's 16th request is blocked with 429
+      const blockedA = await rateLimit(
+        makeQrUploadReq(qrSessionA),
+        15,
+        60_000,
+        'guest_photo_upload',
+        'general',
+        { scope: 'session', ipLimit: 20 }
+      );
+      expect(blockedA?.status).toBe(429);
     });
   });
 });

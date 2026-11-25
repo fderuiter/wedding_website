@@ -10,6 +10,12 @@ import {
   verifyGuestInviteSessionToken,
   GUEST_INVITE_COOKIE,
 } from '@/core/auth/guestInviteToken';
+import {
+  getSignedPhotoUploadSession,
+  getSignedPhotoUploadSessionWithToken,
+  verifyPhotoUploadSessionToken,
+  GUEST_PHOTO_COOKIE,
+} from '@/core/auth/photoUploadToken';
 import { readRequestCookieCandidates } from '@/core/auth/tokenCookieHelpers';
 import { env } from '@/env';
 import { logger } from '@/lib/logger';
@@ -43,6 +49,8 @@ export const MAX_RATE_LIMIT_KEYS = 10000;
 const DEFAULT_AUTH_LOCKOUT_LIMIT = 5;
 const GENERAL_IP_CEILING_MULTIPLIER = 5;
 const MIN_GENERAL_IP_CEILING = 20;
+const PHOTO_SESSION_IP_CEILING_MULTIPLIER = 20;
+const MIN_PHOTO_SESSION_IP_CEILING = 300;
 const MAX_AUTH_WAITERS_PER_IP = 10;
 const AUTH_LOCKOUT_QUERY_TIMEOUT_MS = 1000;
 const DB_PRUNE_INTERVAL_MS = 60 * 1000;
@@ -606,6 +614,65 @@ async function resolveSessionPrincipal(req: NextRequest): Promise<string | null>
     }
   }
 
+  const photoCookieName = GUEST_PHOTO_COOKIE || 'guest_photo_session';
+  const photoCandidates = await readRequestCookieCandidates(photoCookieName, req, {
+    suppressErrors: true,
+  });
+  if (photoCandidates.length > 0) {
+    if (
+      typeof getSignedPhotoUploadSessionWithToken === 'function' &&
+      !isMockedFunction(getSignedPhotoUploadSession) &&
+      !isMockedFunction(verifyPhotoUploadSessionToken)
+    ) {
+      try {
+        const verified = await getSignedPhotoUploadSessionWithToken(req);
+        if (verified && verified.payload.purpose === 'photo_upload_session') {
+          const tokenHash = crypto
+            .createHash('sha256')
+            .update(verified.token)
+            .digest('hex');
+          return `session:photo:${tokenHash}`;
+        }
+      } catch {
+        // Malformed or invalid guest photo cookie falls through
+      }
+    } else {
+      if (
+        typeof getSignedPhotoUploadSession === 'function' &&
+        isMockedFunction(getSignedPhotoUploadSession)
+      ) {
+        try {
+          const payload = await getSignedPhotoUploadSession(req);
+          if (payload && payload.purpose === 'photo_upload_session') {
+            const tokenHash = crypto
+              .createHash('sha256')
+              .update(photoCandidates[0])
+              .digest('hex');
+            return `session:photo:${tokenHash}`;
+          }
+        } catch {
+          // Malformed or invalid guest photo cookie falls through
+        }
+      }
+      if (typeof verifyPhotoUploadSessionToken === 'function') {
+        for (const photoCookie of photoCandidates) {
+          try {
+            const payload = await verifyPhotoUploadSessionToken(photoCookie);
+            if (payload && payload.purpose === 'photo_upload_session') {
+              const tokenHash = crypto
+                .createHash('sha256')
+                .update(photoCookie)
+                .digest('hex');
+              return `session:photo:${tokenHash}`;
+            }
+          } catch {
+            // Malformed or invalid photo cookie candidate falls through to next entry
+          }
+        }
+      }
+    }
+  }
+
   return null;
 }
 
@@ -999,8 +1066,11 @@ export async function rateLimit(
     return null;
   }
 
-  const ipLimit =
+  const baseIpLimit =
     behavior?.ipLimit ?? Math.max(limit * GENERAL_IP_CEILING_MULTIPLIER, MIN_GENERAL_IP_CEILING);
+  const ipLimit = sessionPrincipal.startsWith('session:photo:')
+    ? Math.max(baseIpLimit, limit * PHOTO_SESSION_IP_CEILING_MULTIPLIER, MIN_PHOTO_SESSION_IP_CEILING)
+    : baseIpLimit;
   const sessionKey = buildRateLimitKey(rawPathname, sessionPrincipal, keyPrefix);
   const ipCeilingKey = buildRateLimitKey(rawPathname, `ip-ceiling:${clientIp}`, keyPrefix);
 

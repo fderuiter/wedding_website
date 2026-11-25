@@ -74,12 +74,12 @@ test.describe('Guest Photos Empty State', () => {
 
     // Fill attribution after selecting file, then confirm upload
     await page.getByTestId('guest-photo-uploader-name').fill('Elena Rivera');
-    await page.getByTestId('guest-photo-caption').fill('Cheers from Table 2!');
+    await page.getByTestId('guest-photo-caption-input').fill('Cheers from Table 2!');
     await page.getByTestId('confirm-upload-btn').click();
 
     await expect(page.getByTestId('upload-pending-notice')).toBeVisible();
     expect(uploadRequests).toBe(1);
     await expect(page.getByTestId('guest-photo-uploader-name')).toHaveValue('Elena Rivera');
-    await expect(page.getByTestId('guest-photo-caption')).toHaveValue('');
+    await expect(page.getByTestId('guest-photo-caption-input')).toHaveCount(0);
   });
 });

@@ -110,7 +110,28 @@ test.describe('Scoped QR Photo Uploads, Auto-Approval, Print Modal & Token Rotat
       const docCookie = await qrGuestPage.evaluate(() => document.cookie);
       expect(docCookie).not.toContain('guest_photo_session');
 
-      // 3. Verify strict scope isolation on non-photo pages and APIs
+      // 3. Verify scoped QR Navbar mode, Back to Wedding Photos link on /guest/login, and strict scope isolation on non-photo pages and APIs
+      const globalNav = qrGuestPage.getByRole('navigation', { name: 'Global Navigation' });
+      await expect(globalNav.getByRole('link', { name: 'Photos' })).toBeVisible();
+      await expect(globalNav.getByRole('link', { name: 'Live Slideshow' })).toBeVisible();
+      const enterInviteLink = globalNav.getByRole('link', { name: 'Enter Invite Code' });
+      await expect(enterInviteLink).toBeVisible();
+      await expect(globalNav.getByRole('link', { name: 'RSVP' })).toHaveCount(0);
+      await expect(globalNav.getByRole('link', { name: 'Schedule' })).toHaveCount(0);
+
+      // Navigate via Enter Invite Code -> verify Back to Wedding Photos link returns to /photos?tab=guest
+      await enterInviteLink.click();
+      await expect(qrGuestPage).toHaveURL(/\/guest\/login$/);
+      const backToPhotosLink = qrGuestPage.getByTestId('back-to-wedding-photos-link');
+      await expect(backToPhotosLink).toBeVisible();
+      await qrGuestPage.screenshot({
+        path: '/tmp/qr-guest-login-back-link.png',
+        animations: 'disabled',
+      });
+      await backToPhotosLink.click();
+      await expect(qrGuestPage).toHaveURL(/\/photos\?tab=guest$/);
+      await expect(qrGuestPage.getByTestId('guest-photo-dropzone')).toBeVisible();
+
       for (const restrictedPath of ['/', '/guest', '/registry']) {
         const restrictedRes = await qrGuestPage.request.get(restrictedPath, { maxRedirects: 0 });
         expect(restrictedRes.status()).toBe(303);
@@ -121,19 +142,24 @@ test.describe('Scoped QR Photo Uploads, Auto-Approval, Print Modal & Token Rotat
       });
       expect(rsvpApiRes.status()).toBe(401);
 
-      // 4. Upload a photo as the QR-scoped visitor while Auto-Approve is enabled -> 201 APPROVED + immediate render
+      // 4. Stage photo, enter per-photo caption, and upload as QR-scoped visitor while Auto-Approve is enabled -> 201 APPROVED + immediate render
       const uniqueCaption = `QR Reception Toast ${Date.now()}`;
       await qrGuestPage.getByTestId('guest-photo-uploader-name').fill('Table 7 Guest');
-      await qrGuestPage.getByTestId('guest-photo-caption').fill(uniqueCaption);
-
-      const uploadResponsePromise = qrGuestPage.waitForResponse(
-        (res) => res.url().includes('/api/guest/photos/upload') && res.request().method() === 'POST'
-      );
       await qrGuestPage.getByTestId('guest-photo-file-input').setInputFiles({
         name: 'table7-toast.jpg',
         mimeType: 'image/jpeg',
         buffer: validJpegBuffer,
       });
+      await expect(qrGuestPage.getByTestId('upload-thumbnail-preview')).toBeVisible();
+      await qrGuestPage.getByTestId('guest-photo-caption-input').fill(uniqueCaption);
+      await qrGuestPage.screenshot({
+        path: '/tmp/qr-staged-photo-dropzone.png',
+        animations: 'disabled',
+      });
+
+      const uploadResponsePromise = qrGuestPage.waitForResponse(
+        (res) => res.url().includes('/api/guest/photos/upload') && res.request().method() === 'POST'
+      );
       await qrGuestPage.getByTestId('confirm-upload-btn').click();
 
       const uploadRes = await uploadResponsePromise;
@@ -147,7 +173,9 @@ test.describe('Scoped QR Photo Uploads, Auto-Approval, Print Modal & Token Rotat
       expect(firstUploaded.isVisible).toBe(true);
 
       await expect(qrGuestPage.getByTestId('upload-live-notice')).toBeVisible();
-      await expect(qrGuestPage.getByText(uniqueCaption)).toBeVisible();
+      await expect(
+        qrGuestPage.getByTestId('guest-photos-grid').getByText(uniqueCaption)
+      ).toBeVisible();
       await qrGuestPage.screenshot({
         path: '/tmp/qr-scoped-upload-dropzone.png',
         animations: 'disabled',

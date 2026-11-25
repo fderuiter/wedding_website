@@ -50,11 +50,18 @@ jest.mock('@/lib/query-wrapper', () => ({
 }));
 
 jest.mock('@/components/photos/ReceptionSlideshowClient', () => ({
-  ReceptionSlideshowClient: ({ initialPhotos, uploadUrl }: any) => (
+  ReceptionSlideshowClient: ({
+    initialPhotos,
+    uploadUrl,
+    activeUploadUrl,
+    configuredUploadUrl,
+  }: any) => (
     <div
       data-testid="reception-slideshow-client"
       data-count={initialPhotos?.length}
       data-upload-url={uploadUrl}
+      data-active-upload-url={activeUploadUrl ?? ''}
+      data-configured-upload-url={configuredUploadUrl ?? ''}
     >
       Slideshow Client Mock
     </div>

@@ -7,7 +7,10 @@ import { withPageQuery } from '@/lib/query-wrapper';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { enforceActiveGuestPageSession } from '@/core/auth/guestInviteSession';
-import { buildSignedPhotoUploadUrl } from '@/core/auth/photoUploadToken';
+import {
+  PHOTO_QR_QUERY_PARAM,
+  signPhotoQrLinkToken,
+} from '@/core/auth/photoUploadToken';
 import { resolveTenantClaimsForSigning } from '@/core/auth/tenantClaims.node';
 import {
   isHostAllowed,
@@ -81,10 +84,13 @@ export default async function PhotosSlideshowPage() {
     .filter((item): item is SlideshowPhoto => item !== null);
 
   let uploadUrl: string | undefined;
+  let activeUploadUrl: string | undefined;
+  let configuredUploadUrl: string | null = null;
   if (isStaticExport) {
-    uploadUrl = config.baseUrl
+    configuredUploadUrl = config.baseUrl
       ? `${config.baseUrl.replace(/\/$/, '')}/photos?tab=guest`
-      : undefined;
+      : null;
+    uploadUrl = configuredUploadUrl ?? undefined;
   } else {
     let headerHost: string | undefined;
     let headerProto: 'http' | 'https' | undefined;
@@ -103,27 +109,33 @@ export default async function PhotosSlideshowPage() {
     }
 
     const cleanConfigured = config.baseUrl?.trim().replace(/\/+$/, '') || '';
-    let origin = cleanConfigured;
-    if (!origin && headerHost && isHostAllowed(headerHost)) {
+    let activeOrigin = '';
+    if (headerHost && isHostAllowed(headerHost)) {
       const protocol =
         headerProto === 'https' || headerProto === 'http'
           ? headerProto
           : process.env.NODE_ENV === 'production'
             ? 'https'
             : 'http';
-      origin = `${protocol}://${headerHost}`;
+      activeOrigin = `${protocol}://${headerHost}`;
     }
+
+    const fallbackOrigin = cleanConfigured || activeOrigin;
 
     try {
       const tenantClaims = await resolveTenantClaimsForSigning(undefined, config);
-      const signed = await buildSignedPhotoUploadUrl(
-        origin,
-        config.guestPhotoQrTokenVersion,
-        tenantClaims
-      );
-      uploadUrl = signed.uploadUrl;
+      const token = await signPhotoQrLinkToken({
+        v: config.guestPhotoQrTokenVersion,
+        ...tenantClaims,
+      });
+      const query = `${PHOTO_QR_QUERY_PARAM}=${encodeURIComponent(token)}`;
+      configuredUploadUrl = cleanConfigured ? `${cleanConfigured}/photos?${query}` : null;
+      activeUploadUrl = activeOrigin ? `${activeOrigin}/photos?${query}` : `/photos?${query}`;
+      uploadUrl = configuredUploadUrl ?? activeUploadUrl;
     } catch {
-      uploadUrl = origin ? `${origin}/photos?tab=guest` : '/photos?tab=guest';
+      configuredUploadUrl = cleanConfigured ? `${cleanConfigured}/photos?tab=guest` : null;
+      activeUploadUrl = activeOrigin ? `${activeOrigin}/photos?tab=guest` : '/photos?tab=guest';
+      uploadUrl = fallbackOrigin ? `${fallbackOrigin}/photos?tab=guest` : '/photos?tab=guest';
     }
   }
 
@@ -131,6 +143,8 @@ export default async function PhotosSlideshowPage() {
     <ReceptionSlideshowClient
       initialPhotos={initialPhotos}
       uploadUrl={uploadUrl}
+      activeUploadUrl={activeUploadUrl}
+      configuredUploadUrl={configuredUploadUrl}
     />
   );
 }

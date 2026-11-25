@@ -14343,6 +14343,22 @@
                       "APPROVED",
                       "REJECTED"
                     ]
+                  },
+                  "pendingEdits": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "object",
+                      "properties": {
+                        "caption": {
+                          "type": "string",
+                          "maxLength": 500
+                        },
+                        "uploaderName": {
+                          "type": "string",
+                          "maxLength": 100
+                        }
+                      }
+                    }
                   }
                 },
                 "additionalProperties": {},
@@ -14925,6 +14941,22 @@
                           "APPROVED",
                           "REJECTED"
                         ]
+                      },
+                      "pendingEdits": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "object",
+                          "properties": {
+                            "caption": {
+                              "type": "string",
+                              "maxLength": 500
+                            },
+                            "uploaderName": {
+                              "type": "string",
+                              "maxLength": 100
+                            }
+                          }
+                        }
                       }
                     },
                     "additionalProperties": {},
@@ -15313,6 +15345,13 @@
                     "uploadUrl": {
                       "type": "string"
                     },
+                    "activeUploadUrl": {
+                      "type": "string"
+                    },
+                    "configuredUploadUrl": {
+                      "type": "string",
+                      "nullable": true
+                    },
                     "tokenVersion": {
                       "type": "number"
                     },
@@ -15323,6 +15362,8 @@
                   "required": [
                     "success",
                     "uploadUrl",
+                    "activeUploadUrl",
+                    "configuredUploadUrl",
                     "tokenVersion",
                     "autoApproveGuestPhotos"
                   ]
@@ -15436,6 +15477,13 @@
                     "uploadUrl": {
                       "type": "string"
                     },
+                    "activeUploadUrl": {
+                      "type": "string"
+                    },
+                    "configuredUploadUrl": {
+                      "type": "string",
+                      "nullable": true
+                    },
                     "tokenVersion": {
                       "type": "number"
                     },
@@ -15446,6 +15494,8 @@
                   "required": [
                     "success",
                     "uploadUrl",
+                    "activeUploadUrl",
+                    "configuredUploadUrl",
                     "tokenVersion",
                     "autoApproveGuestPhotos"
                   ]
@@ -21798,6 +21848,14 @@
                   "caption": {
                     "type": "string",
                     "maxLength": 500
+                  },
+                  "captions": {
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 500
+                    }
                   }
                 },
                 "required": [
@@ -21926,7 +21984,8 @@
                               "enum": [
                                 "none",
                                 "passcode",
-                                "invitation"
+                                "invitation",
+                                "photo_qr"
                               ]
                             },
                             "isVerified": {
@@ -21986,7 +22045,8 @@
                               "enum": [
                                 "none",
                                 "passcode",
-                                "invitation"
+                                "invitation",
+                                "photo_qr"
                               ]
                             },
                             "isVerified": {
@@ -22039,7 +22099,8 @@
                               "type": "string",
                               "enum": [
                                 "none",
-                                "passcode"
+                                "passcode",
+                                "photo_qr"
                               ]
                             },
                             "isVerified": {
@@ -22133,7 +22194,8 @@
                           "type": "string",
                           "enum": [
                             "none",
-                            "passcode"
+                            "passcode",
+                            "photo_qr"
                           ]
                         },
                         "isVerified": {
@@ -23434,7 +23496,8 @@
                   "required": [
                     "success",
                     "photos"
-                  ]
+                  ],
+                  "additionalProperties": true
                 }
               }
             }
@@ -23533,6 +23596,14 @@
                   "caption": {
                     "type": "string",
                     "maxLength": 500
+                  },
+                  "captions": {
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 500
+                    }
                   }
                 },
                 "required": [

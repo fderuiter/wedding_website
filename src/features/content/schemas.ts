@@ -989,6 +989,15 @@ export const BatchPhotoModerationSchema = z
     nodeIds: z.array(z.string()).optional(),
     action: z.enum(['approve', 'reject', 'APPROVE', 'REJECT']).optional(),
     status: z.enum(['APPROVED', 'REJECTED']).optional(),
+    pendingEdits: z
+      .record(
+        z.string(),
+        z.object({
+          caption: z.string().max(500).optional(),
+          uploaderName: z.string().max(100).optional(),
+        }),
+      )
+      .optional(),
   })
   .loose()
   .superRefine((data, ctx) => {

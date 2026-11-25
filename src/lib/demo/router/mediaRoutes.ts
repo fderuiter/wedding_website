@@ -90,6 +90,11 @@ export async function handleMediaAndPhotoRoutes(
     const rawCaption = (
       formData ? String(formData.get('caption') ?? '') : String(body.caption ?? '')
     ).trim();
+    const rawCaptions = formData
+      ? formData.getAll('captions').map((entry) => String(entry ?? '').trim())
+      : Array.isArray(body.captions)
+        ? body.captions.map((entry: unknown) => String(entry ?? '').trim())
+        : [];
 
     if (files.length === 0 && typeof body.url !== 'string' && !formData) {
       return jsonResponse({ success: false, error: 'Please attach at least one photo file.' }, 400);
@@ -108,13 +113,14 @@ export async function handleMediaAndPhotoRoutes(
       for (let i = 0; i < files.length; i += 1) {
         const file = files[i];
         const title = file.name ? file.name.replace(/\.[^.]+$/, '') : `Guest Upload ${i + 1}`;
+        const itemCaption = (i < rawCaptions.length ? rawCaptions[i] : '') || rawCaption;
         const encoded = await encodeDemoUploadedFile(file, title);
         const photoId = nextDemoId('demo-guest-photo');
         const mediaId = `${photoId}-media`;
         createdMedia.push({
           id: mediaId,
           url: encoded.url,
-          altText: rawCaption || `${title} uploaded by ${rawUploader}`,
+          altText: itemCaption || `${title} uploaded by ${rawUploader}`,
           isDecorative: false,
           isSample: false,
           createdAt: now,
@@ -125,9 +131,9 @@ export async function handleMediaAndPhotoRoutes(
           nodeId: photoId,
           mediaId,
           url: encoded.url,
-          title,
-          caption: rawCaption || `Shared by ${rawUploader}`,
-          altText: rawCaption || `${title} uploaded by ${rawUploader}`,
+          title: itemCaption || title,
+          caption: itemCaption || `Shared by ${rawUploader}`,
+          altText: itemCaption || `${title} uploaded by ${rawUploader}`,
           category: 'guest',
           source: 'guest-upload',
           status: initialStatus,
@@ -510,6 +516,10 @@ export async function handleMediaAndPhotoRoutes(
     const action = String(body.action ?? 'approve')
       .trim()
       .toLowerCase();
+    const pendingEditsMap =
+      body.pendingEdits && typeof body.pendingEdits === 'object' && !Array.isArray(body.pendingEdits)
+        ? (body.pendingEdits as Record<string, { caption?: unknown; uploaderName?: unknown }>)
+        : {};
     const idSet = new Set(ids);
     const nowIso = new Date().toISOString();
     let count = 0;
@@ -536,10 +546,20 @@ export async function handleMediaAndPhotoRoutes(
         photos: current.photos.map((p) => {
           if (!idSet.has(p.id) && !idSet.has(p.nodeId)) return p;
           count += 1;
+          const edit = pendingEditsMap[p.id] ?? pendingEditsMap[p.nodeId];
+          const nextCaption =
+            edit && typeof edit.caption === 'string' ? edit.caption.trim() : p.caption;
+          const nextUploader =
+            edit && typeof edit.uploaderName === 'string'
+              ? edit.uploaderName.trim()
+              : p.uploaderName;
           return {
             ...p,
             status: 'APPROVED',
             isVisible: true,
+            caption: nextCaption,
+            uploaderName: nextUploader,
+            ...(nextCaption ? { title: nextCaption, altText: nextCaption } : {}),
             updatedAt: nowIso,
           };
         }),
@@ -572,15 +592,22 @@ export async function handleMediaAndPhotoRoutes(
       }
     }
     if (method === 'GET' || method === 'POST') {
-      const autoApprove = Boolean(getActiveArchetypeDataset().siteConfig.autoApproveGuestPhotos);
-      const uploadUrl = `${url.origin}${withBasePath('/photos')}?tab=guest&v=${demoPhotoQrTokenVersion}`;
+      const dataset = getActiveArchetypeDataset();
+      const autoApprove = Boolean(dataset.siteConfig.autoApproveGuestPhotos);
+      const activeUploadUrl = `${url.origin}${withBasePath('/photos')}?tab=guest&v=${demoPhotoQrTokenVersion}`;
+      const configuredBase = (dataset.siteConfig.baseUrl || url.origin).trim().replace(/\/+$/, '');
+      const configuredUploadUrl = `${configuredBase}${withBasePath('/photos')}?tab=guest&v=${demoPhotoQrTokenVersion}`;
       return jsonResponse({
         success: true,
-        uploadUrl,
+        uploadUrl: configuredUploadUrl,
+        activeUploadUrl,
+        configuredUploadUrl,
         tokenVersion: demoPhotoQrTokenVersion,
         autoApproveGuestPhotos: autoApprove,
         data: {
-          uploadUrl,
+          uploadUrl: configuredUploadUrl,
+          activeUploadUrl,
+          configuredUploadUrl,
           tokenVersion: demoPhotoQrTokenVersion,
           autoApproveGuestPhotos: autoApprove,
         },

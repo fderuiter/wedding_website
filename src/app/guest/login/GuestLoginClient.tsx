@@ -1,6 +1,8 @@
 'use client';
 
-import { Suspense } from 'react';
+import { Suspense, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, FormMessage, Input, Label } from '@/components/ui/forms';
 import { Icon } from '@/components/ui/Icon';
@@ -8,6 +10,7 @@ import { motion, Variants } from 'framer-motion';
 import { useTheme } from '@/components/ThemeProvider';
 import { Overlay } from '@/components/ui/Overlay';
 import { useGuestLoginMachine } from '@/hooks/useGuestLoginMachine';
+import { withBasePath } from '@/lib/basePath';
 
 const fadeUp: Variants = {
   hidden: { opacity: 0, y: 20 },
@@ -52,7 +55,29 @@ function GuestLoginForm() {
     setShowHelp,
   } = useGuestLoginMachine();
 
+  const searchParams = useSearchParams();
+  const codeParam = searchParams?.get('code')?.trim() ?? '';
   const mailtoUrl = getSafeMailtoUrl(contactEmail);
+  const [hasPhotoQrSession, setHasPhotoQrSession] = useState(false);
+
+  useEffect(() => {
+    if (codeParam || typeof fetch !== 'function') return;
+    const controller = new AbortController();
+    fetch(withBasePath('/api/guest/session'), { signal: controller.signal })
+      .then((res) => (res && res.ok && typeof res.json === 'function' ? res.json() : null))
+      .then((json) => {
+        if (controller.signal.aborted) return;
+        const payload = json?.data ?? json;
+        setHasPhotoQrSession(payload?.status === 'photo_qr');
+      })
+      .catch(() => {
+        // Ignore transient or mocked-out session check errors on login form
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [codeParam]);
 
   return (
     <>
@@ -147,6 +172,19 @@ function GuestLoginForm() {
             <span>Access Portal</span>
           )}
         </Button>
+
+        {hasPhotoQrSession && (
+          <div className="pt-2 border-t border-gray-100 dark:border-gray-700 text-center">
+            <Link
+              href="/photos?tab=guest"
+              data-testid="back-to-wedding-photos-link"
+              className="inline-flex items-center justify-center gap-2 min-h-[44px] px-4 py-2 rounded-xl text-sm font-semibold text-gray-800 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+            >
+              <Icon name="ArrowLeft" className="w-4 h-4 shrink-0" aria-hidden="true" />
+              <span>Back to Wedding Photos</span>
+            </Link>
+          </div>
+        )}
       </form>
 
       <Overlay

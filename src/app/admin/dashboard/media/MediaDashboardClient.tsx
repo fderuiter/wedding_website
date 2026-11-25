@@ -43,6 +43,8 @@ interface MediaDashboardContentProps {
   setA11yNotice: React.Dispatch<React.SetStateAction<string>>;
   fetchMedia: (_targetPage?: number, _options?: { background?: boolean }) => Promise<void>;
   qrUploadUrl: string;
+  qrActiveUploadUrl?: string;
+  qrConfiguredUploadUrl?: string;
   qrTokenVersion: number;
   autoApproveGuestPhotos: boolean;
   onToggleAutoApprove: () => Promise<void>;
@@ -67,6 +69,8 @@ function MediaDashboardContent({
   setA11yNotice,
   fetchMedia,
   qrUploadUrl,
+  qrActiveUploadUrl,
+  qrConfiguredUploadUrl,
   qrTokenVersion,
   autoApproveGuestPhotos,
   onToggleAutoApprove,
@@ -158,6 +162,12 @@ function MediaDashboardContent({
       await apiClient.patch('/api/admin/photos/moderation', { id, action: 'reject' });
       setPendingPhotos((prev) => prev.filter((p) => p.id !== id));
       setSelectedPendingIds((prev) => prev.filter((i) => i !== id));
+      setPendingEdits((prev) => {
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
       setA11yNotice('Photo rejected and removed.');
     } catch (e) {
       console.error(e);
@@ -168,9 +178,30 @@ function MediaDashboardContent({
   const handleBatchApprove = async (idsToApprove: string[] = selectedPendingIds) => {
     if (idsToApprove.length === 0) return;
     try {
-      await apiClient.post('/api/admin/photos/moderation/batch', { ids: idsToApprove, action: 'approve' });
+      const batchPendingEdits: Record<string, { caption: string; uploaderName: string }> = {};
+      for (const id of idsToApprove) {
+        if (pendingEdits[id] !== undefined) {
+          batchPendingEdits[id] = pendingEdits[id];
+        }
+      }
+      const payload =
+        Object.keys(batchPendingEdits).length > 0
+          ? { ids: idsToApprove, action: 'approve', pendingEdits: batchPendingEdits }
+          : { ids: idsToApprove, action: 'approve' };
+      await apiClient.post('/api/admin/photos/moderation/batch', payload);
       setPendingPhotos((prev) => prev.filter((p) => !idsToApprove.includes(p.id)));
       setSelectedPendingIds((prev) => prev.filter((id) => !idsToApprove.includes(id)));
+      setPendingEdits((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const id of idsToApprove) {
+          if (id in next) {
+            delete next[id];
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
       setA11yNotice(`Successfully approved ${idsToApprove.length} photo(s).`);
       fetchMedia(page, { background: true });
     } catch (e) {
@@ -189,6 +220,17 @@ function MediaDashboardContent({
       await apiClient.post('/api/admin/photos/moderation/batch', { ids: idsToReject, action: 'reject' });
       setPendingPhotos((prev) => prev.filter((p) => !idsToReject.includes(p.id)));
       setSelectedPendingIds((prev) => prev.filter((id) => !idsToReject.includes(id)));
+      setPendingEdits((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const id of idsToReject) {
+          if (id in next) {
+            delete next[id];
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
       setA11yNotice(`Successfully rejected and removed ${idsToReject.length} photo(s).`);
     } catch (e) {
       console.error(e);
@@ -834,6 +876,8 @@ function MediaDashboardContent({
         isOpen={qrModalOpen}
         onClose={() => setQrModalOpen(false)}
         uploadUrl={qrUploadUrl}
+        activeUploadUrl={qrActiveUploadUrl}
+        configuredUploadUrl={qrConfiguredUploadUrl}
         tokenVersion={qrTokenVersion}
         isRotating={isRotatingQrToken}
         onRotateToken={onRotateQrToken}
@@ -844,6 +888,8 @@ function MediaDashboardContent({
 
 interface PhotoQrSettingsSnapshot {
   uploadUrl: string;
+  activeUploadUrl?: string;
+  configuredUploadUrl?: string;
   tokenVersion: number;
   autoApproveGuestPhotos: boolean;
 }
@@ -855,10 +901,14 @@ async function requestPhotoQrSettings(): Promise<PhotoQrSettingsSnapshot | null>
   }
   const envelope = res as {
     uploadUrl?: unknown;
+    activeUploadUrl?: unknown;
+    configuredUploadUrl?: unknown;
     tokenVersion?: unknown;
     autoApproveGuestPhotos?: unknown;
     data?: {
       uploadUrl?: unknown;
+      activeUploadUrl?: unknown;
+      configuredUploadUrl?: unknown;
       tokenVersion?: unknown;
       autoApproveGuestPhotos?: unknown;
     };
@@ -869,6 +919,12 @@ async function requestPhotoQrSettings(): Promise<PhotoQrSettingsSnapshot | null>
   }
   return {
     uploadUrl: payload.uploadUrl,
+    ...(typeof payload.activeUploadUrl === 'string'
+      ? { activeUploadUrl: payload.activeUploadUrl }
+      : {}),
+    ...(typeof payload.configuredUploadUrl === 'string'
+      ? { configuredUploadUrl: payload.configuredUploadUrl }
+      : {}),
     tokenVersion:
       typeof payload.tokenVersion === 'number' && payload.tokenVersion >= 1
         ? payload.tokenVersion
@@ -982,6 +1038,10 @@ export default function MediaDashboardPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [qrUploadUrl, setQrUploadUrl] = useState('');
+  const [qrActiveUploadUrl, setQrActiveUploadUrl] = useState<string | undefined>(undefined);
+  const [qrConfiguredUploadUrl, setQrConfiguredUploadUrl] = useState<string | undefined>(
+    undefined
+  );
   const [qrTokenVersion, setQrTokenVersion] = useState(1);
   const [autoApproveGuestPhotos, setAutoApproveGuestPhotos] = useState(false);
   const [isUpdatingAutoApprove, setIsUpdatingAutoApprove] = useState(false);
@@ -990,6 +1050,8 @@ export default function MediaDashboardPage() {
   const applyPhotoQrSnapshot = useCallback((snapshot: PhotoQrSettingsSnapshot | null) => {
     if (!snapshot) return;
     setQrUploadUrl(snapshot.uploadUrl);
+    setQrActiveUploadUrl(snapshot.activeUploadUrl);
+    setQrConfiguredUploadUrl(snapshot.configuredUploadUrl);
     setQrTokenVersion(snapshot.tokenVersion);
     setAutoApproveGuestPhotos(snapshot.autoApproveGuestPhotos);
   }, []);
@@ -1013,11 +1075,19 @@ export default function MediaDashboardPage() {
       if (res && typeof res === 'object') {
         const envelope = res as {
           uploadUrl?: unknown;
+          activeUploadUrl?: unknown;
+          configuredUploadUrl?: unknown;
           tokenVersion?: unknown;
           autoApproveGuestPhotos?: unknown;
         };
         if (typeof envelope.uploadUrl === 'string') {
           setQrUploadUrl(envelope.uploadUrl);
+        }
+        if (typeof envelope.activeUploadUrl === 'string') {
+          setQrActiveUploadUrl(envelope.activeUploadUrl);
+        }
+        if (typeof envelope.configuredUploadUrl === 'string') {
+          setQrConfiguredUploadUrl(envelope.configuredUploadUrl);
         }
         if (typeof envelope.tokenVersion === 'number' && envelope.tokenVersion >= 1) {
           setQrTokenVersion(envelope.tokenVersion);
@@ -1052,10 +1122,18 @@ export default function MediaDashboardPage() {
       if (res && typeof res === 'object') {
         const envelope = res as {
           uploadUrl?: unknown;
+          activeUploadUrl?: unknown;
+          configuredUploadUrl?: unknown;
           tokenVersion?: unknown;
         };
         if (typeof envelope.uploadUrl === 'string') {
           setQrUploadUrl(envelope.uploadUrl);
+        }
+        if (typeof envelope.activeUploadUrl === 'string') {
+          setQrActiveUploadUrl(envelope.activeUploadUrl);
+        }
+        if (typeof envelope.configuredUploadUrl === 'string') {
+          setQrConfiguredUploadUrl(envelope.configuredUploadUrl);
         }
         if (typeof envelope.tokenVersion === 'number' && envelope.tokenVersion >= 1) {
           setQrTokenVersion(envelope.tokenVersion);
@@ -1189,6 +1267,8 @@ export default function MediaDashboardPage() {
           setA11yNotice={setA11yNotice}
           fetchMedia={fetchMedia}
           qrUploadUrl={qrUploadUrl}
+          qrActiveUploadUrl={qrActiveUploadUrl}
+          qrConfiguredUploadUrl={qrConfiguredUploadUrl}
           qrTokenVersion={qrTokenVersion}
           autoApproveGuestPhotos={autoApproveGuestPhotos}
           onToggleAutoApprove={handleToggleAutoApprove}

@@ -179,6 +179,12 @@ function normalizeOptionalGuestText(raw: unknown): unknown {
   return raw;
 }
 
+function normalizeOptionalGuestCaptions(raw: unknown): unknown {
+  if (raw === null || raw === undefined) return undefined;
+  const list = Array.isArray(raw) ? raw : [raw];
+  return list.map((entry) => (typeof entry === 'string' ? entry.trim() : entry));
+}
+
 export const GuestPhotoUploadSchema = z.preprocess(
   (val: any) => {
     if (!val) return { files: [] };
@@ -186,9 +192,11 @@ export const GuestPhotoUploadSchema = z.preprocess(
     if (typeof val === 'object') {
       const uploaderName = normalizeOptionalGuestText(val.uploaderName);
       const caption = normalizeOptionalGuestText(val.caption);
+      const captions = normalizeOptionalGuestCaptions(val.captions);
       const metadata = {
         ...(uploaderName !== undefined ? { uploaderName } : {}),
         ...(caption !== undefined ? { caption } : {}),
+        ...(captions !== undefined ? { captions } : {}),
       };
       if (val.files !== undefined) {
         return {
@@ -206,6 +214,7 @@ export const GuestPhotoUploadSchema = z.preprocess(
         ...val,
         uploaderName,
         caption,
+        ...(captions !== undefined ? { captions } : {}),
       };
     }
     return val;
@@ -216,6 +225,10 @@ export const GuestPhotoUploadSchema = z.preprocess(
       .max(10, 'Maximum 10 photos allowed per upload'),
     uploaderName: z.string().trim().max(100, 'Uploader name must be 100 characters or fewer').optional(),
     caption: z.string().trim().max(500, 'Caption must be 500 characters or fewer').optional(),
+    captions: z
+      .array(z.string().trim().max(500, 'Caption must be 500 characters or fewer'))
+      .max(10, 'Maximum 10 captions allowed per upload')
+      .optional(),
   })
 );
 

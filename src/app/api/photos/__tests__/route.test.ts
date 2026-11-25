@@ -8,6 +8,7 @@ import { getAppConfig } from '@/lib/config';
 jest.mock('@/features/content', () => ({
   contentService: {
     getPublicPhotos: jest.fn(),
+    getActivePublicPhotoIds: jest.fn(),
   },
 }));
 
@@ -15,7 +16,12 @@ jest.mock('@/lib/config', () => ({
   getAppConfig: jest.fn(),
 }));
 
-const mockGetPublicPhotos = contentService.getPublicPhotos as jest.MockedFunction<typeof contentService.getPublicPhotos>;
+const mockGetPublicPhotos = contentService.getPublicPhotos as jest.MockedFunction<
+  typeof contentService.getPublicPhotos
+>;
+const mockGetActivePublicPhotoIds = contentService.getActivePublicPhotoIds as jest.MockedFunction<
+  typeof contentService.getActivePublicPhotoIds
+>;
 const mockGetAppConfig = getAppConfig as jest.MockedFunction<typeof getAppConfig>;
 
 describe('GET /api/photos', () => {
@@ -24,6 +30,7 @@ describe('GET /api/photos', () => {
     mockGetAppConfig.mockResolvedValue({
       modules: { gallery: true },
     } as any);
+    mockGetActivePublicPhotoIds.mockResolvedValue(['photo-1', 'photo-2']);
   });
 
   it('returns approved public photos successfully', async () => {
@@ -124,8 +131,9 @@ describe('GET /api/photos', () => {
     ]);
   });
 
-  it('queries only photos created after since cursor when since query parameter is present', async () => {
+  it('queries only photos created after since cursor and includes activeIds when since query parameter is present', async () => {
     mockGetPublicPhotos.mockResolvedValue([]);
+    mockGetActivePublicPhotoIds.mockResolvedValueOnce(['photo-1', 'photo-3']);
 
     const req = new NextRequest('http://localhost/api/photos?since=2026-06-20T18:00:00.000Z');
     const res = await GET(req);
@@ -134,10 +142,12 @@ describe('GET /api/photos', () => {
     const json = await res.json();
     expect(json.success).toBe(true);
     expect(json.photos).toEqual([]);
+    expect(json.activeIds).toEqual(['photo-1', 'photo-3']);
     expect(json.data).toBeUndefined();
     expect(mockGetPublicPhotos).toHaveBeenCalledWith({
       since: new Date('2026-06-20T18:00:00.000Z'),
     });
+    expect(mockGetActivePublicPhotoIds).toHaveBeenCalledTimes(1);
   });
 
   it('returns 400 when since query parameter is not a valid date', async () => {
