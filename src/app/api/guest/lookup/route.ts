@@ -7,6 +7,48 @@ import { assertJsonContentType } from '@/utils/contentType';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { GuestLookupSchema } from '@/utils/validation';
 
+const IGNORED_LOOKUP_NAME_TOKENS = new Set([
+  '&',
+  '+',
+  'and',
+  'the',
+  'family',
+  'mr',
+  'mrs',
+  'ms',
+  'mx',
+  'miss',
+  'dr',
+  'prof',
+  'rev',
+]);
+
+function maskHouseholdInitials(guestName: string): string {
+  const rawTokens = guestName.trim().split(/\s+/).filter(Boolean);
+  if (rawTokens.length === 0) {
+    return 'G.';
+  }
+
+  const filteredTokens = rawTokens.filter((token) => {
+    const normalized = token.replace(/\.+$/g, '').toLowerCase();
+    return !IGNORED_LOOKUP_NAME_TOKENS.has(normalized) && /\p{L}/u.test(token);
+  });
+
+  const sourceTokens =
+    filteredTokens.length > 0
+      ? filteredTokens
+      : rawTokens.filter((token) => /\p{L}/u.test(token));
+
+  const initials = sourceTokens
+    .map((token) => {
+      const match = token.match(/\p{L}/u);
+      return match ? `${match[0].toUpperCase()}.` : '';
+    })
+    .filter(Boolean);
+
+  return initials.length > 0 ? initials.join(' ') : 'G.';
+}
+
 export const POST = withApiMiddleware(async (req: NextRequest) => {
   assertJsonContentType(req);
 
@@ -76,11 +118,13 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     throw new ApiError(404, 'No invitation found matching the provided details.');
   }
 
+  const maskedGuestName = maskHouseholdInitials(invite.guestName);
+
   return NextResponse.json({
     success: true,
-    guestName: invite.guestName,
+    guestName: maskedGuestName,
     data: {
-      guestName: invite.guestName,
+      guestName: maskedGuestName,
     },
   });
 });

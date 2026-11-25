@@ -45,7 +45,7 @@ describe('/api/og route', () => {
     jest.clearAllMocks();
   });
 
-  it('renders a redacted monogram card for unauthenticated callers, ignores query overrides, and sets Vary: Cookie, Host, X-Forwarded-Host', async () => {
+  it('renders a neutral card with zero couple PII or monogram for unauthenticated callers while keeping theme variables intact, ignores query overrides, and sets Vary: Cookie, Host, X-Forwarded-Host', async () => {
     const req = new Request(
       'http://localhost:3000/api/og?title=Test&p1=A&p2=B&primary=%230000ff&secondary=%2300ff00'
     );
@@ -65,8 +65,12 @@ describe('/api/og route', () => {
     const [renderedElement] = mockCalls[mockCalls.length - 1];
     const serializedTree = JSON.stringify(renderedElement);
 
-    expect(serializedTree).toContain('A & B');
+    expect(serializedTree).toContain('Wedding Celebration');
     expect(serializedTree).toContain('Wedding Website');
+    expect(serializedTree).toContain('#B91C1C');
+    expect(serializedTree).toContain('#B45309');
+    expect(serializedTree).not.toContain('A & B');
+    expect(serializedTree).not.toContain('A & F');
     expect(serializedTree).not.toContain('Test');
     expect(serializedTree).not.toContain('Alice');
     expect(serializedTree).not.toContain('Bob');

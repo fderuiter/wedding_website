@@ -1,7 +1,6 @@
 import { ImageResponse } from 'next/og';
 import type { NextRequest } from 'next/server';
 import { getAppConfig, toUnauthenticatedAppConfig } from '@/lib/config';
-import { deriveBrandMonogram } from '@/features/content';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { isGuestRequest } from '@/core/auth/guest.server';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
@@ -94,17 +93,15 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
   const p1 = p1Override || config?.partner1Name || config?.brideName || '';
   const p2 = p2Override || config?.partner2Name || config?.groomName || '';
 
-  let badgeLabel = '';
-  if (!isAuthenticated) {
-    badgeLabel = config?.brandMonogram?.trim() || deriveBrandMonogram(config);
-  } else if (p1 && p2) {
-    badgeLabel = `${p1} & ${p2}`;
-  } else if (p1) {
-    badgeLabel = p1;
-  } else if (p2) {
-    badgeLabel = p2;
-  } else {
-    badgeLabel = 'Wedding Celebration';
+  let badgeLabel = 'Wedding Celebration';
+  if (isAuthenticated) {
+    if (p1 && p2) {
+      badgeLabel = `${p1} & ${p2}`;
+    } else if (p1) {
+      badgeLabel = p1;
+    } else if (p2) {
+      badgeLabel = p2;
+    }
   }
 
   const title = isAuthenticated

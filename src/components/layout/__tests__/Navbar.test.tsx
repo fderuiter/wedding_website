@@ -76,6 +76,25 @@ describe('Navbar Component Brand Rendering', () => {
     expect(logoImg).toHaveAttribute('src', '/images/tenant-logo.png');
     expect(screen.queryByText('A & B')).not.toBeInTheDocument();
   });
+
+  it('renders neutral Wedding Website label without fallback monogram when partner names and brandMonogram are redacted', () => {
+    render(
+      <Navbar
+        {...defaultProps}
+        config={{
+          ...baseConfig,
+          partner1Name: '',
+          partner2Name: '',
+          brideName: '',
+          groomName: '',
+          brandMonogram: '',
+        }}
+      />
+    );
+
+    expect(screen.getByText('Wedding Website')).toBeInTheDocument();
+    expect(screen.queryByText('A & F')).not.toBeInTheDocument();
+  });
 });
 
 describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', () => {

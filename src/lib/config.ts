@@ -487,9 +487,12 @@ export function toPublicAppConfig<T extends AppConfigDTO | Record<string, any>>(
 /**
  * Produce a layout-safe configuration view for unauthenticated requests by
  * clearing couple names, `weddingDate`, SEO strings (`seoTitle`, `seoDescription`,
- * `seoKeywords`), and gated event details (`photoAlbumUrl`, venue location fields,
- * `storyText`, `travelAdvice`, hero text, and `features`) while preserving
- * branding tokens, theme tokens, `modules`, `contactEmail`, `timezone`, and RSVP fields.
+ * `seoKeywords`), host `contactEmail`, `brandMonogram`, descriptive image alt text
+ * (`brandLogoAlt`, `heroImageAlt`, `brandWatermarkAlt`, `badgeGraphicAlt`), RSVP
+ * deadline copy (`rsvpDeadlineDate`, `rsvpClosedMessage`), and gated event details
+ * (`photoAlbumUrl`, venue location fields, `storyText`, `travelAdvice`, hero text,
+ * and `features`) while preserving theme tokens, `modules`, `timezone`, and boolean
+ * RSVP state.
  *
  * @param config - The full `AppConfig` object or raw config payload
  * @returns The redacted configuration payload safe for unauthenticated layouts
@@ -513,6 +516,14 @@ export function toUnauthenticatedAppConfig<T extends AppConfigDTO | Record<strin
     seoTitle: '',
     seoDescription: '',
     seoKeywords: '',
+    contactEmail: '',
+    brandMonogram: '',
+    brandLogoAlt: '',
+    heroImageAlt: '',
+    brandWatermarkAlt: '',
+    badgeGraphicAlt: '',
+    rsvpDeadlineDate: '',
+    rsvpClosedMessage: '',
     photoAlbumUrl: '',
     venueName: '',
     venueAddress: '',

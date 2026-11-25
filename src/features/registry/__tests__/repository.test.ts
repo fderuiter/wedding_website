@@ -1680,17 +1680,38 @@ describe('RegistryRepository', () => {
       expect(txConfirmed.snapshotVersion.create).toHaveBeenCalledTimes(2);
     });
 
-    it('computes active catalog capabilities summary excluding sample and fully purchased items', async () => {
+    it('computes active catalog capabilities summary requiring HTTP vendorUrl for physical items and missing item-level paymentHandle for fallback-needing funds', async () => {
       (prisma.registryItem.findFirst as jest.Mock)
         .mockResolvedValueOnce({ id: 'phys-1' })
         .mockResolvedValueOnce(null);
       const physicalOnly = await registryRepository.getActiveCatalogCapabilitiesSummary!();
-      expect(prisma.registryItem.findFirst).toHaveBeenCalledWith({
+      expect(prisma.registryItem.findFirst).toHaveBeenNthCalledWith(1, {
         where: {
           isSample: false,
           purchased: false,
           itemType: 'PHYSICAL',
-          isGroupGift: false,
+          OR: [
+            { vendorUrl: { startsWith: 'http://', mode: 'insensitive' } },
+            { vendorUrl: { startsWith: 'https://', mode: 'insensitive' } },
+          ],
+        },
+        select: { id: true },
+      });
+      expect(prisma.registryItem.findFirst).toHaveBeenNthCalledWith(2, {
+        where: {
+          isSample: false,
+          purchased: false,
+          AND: [
+            {
+              OR: [
+                { itemType: { in: ['CASH_FUND', 'EXPERIENCE_FUND'] } },
+                { isGroupGift: true },
+              ],
+            },
+            {
+              OR: [{ paymentHandle: null }, { paymentHandle: '' }],
+            },
+          ],
         },
         select: { id: true },
       });
