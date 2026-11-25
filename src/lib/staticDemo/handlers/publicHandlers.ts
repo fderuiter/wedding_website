@@ -623,8 +623,9 @@ export async function handlePublicRoutes(
 
   if (pathname === '/api/guest/session' && (method === 'GET' || method === 'DELETE')) {
     if (method === 'DELETE') {
+      const clearAll = searchParams.get('scope') === 'all';
       const nextSession = store.mutate((draft) => {
-        if (draft.guestSession?.sessionType === 'invite') {
+        if (clearAll || draft.guestSession?.sessionType === 'invite') {
           draft.guestSession = null;
         }
         return draft.guestSession;

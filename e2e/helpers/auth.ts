@@ -6,6 +6,7 @@ const DEFAULT_E2E_GUEST_PASSCODE = 'playwright-e2e-guest-passcode';
 const DEFAULT_E2E_ADMIN_PASSWORD =
   'scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==';
 const ADMIN_COOKIE_SIGNING_DOMAIN = 'wedding-website:admin-cookie-signing-key:v1';
+const GUEST_PASSCODE_DIGEST_DOMAIN = 'wedding-website:guest-passcode-digest:v1';
 const STRICT_BASE64_PATTERN =
   /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 const DEFAULT_E2E_ORIGINS = ['http://127.0.0.1:3000', 'http://localhost:3000'];
@@ -69,15 +70,20 @@ function resolveCookieOrigins(extraOrigins?: string[]): string[] {
 
 export function generateGuestCookieValue(): string {
   const secret = process.env.GUEST_SESSION_SECRET || DEFAULT_E2E_GUEST_SESSION_SECRET;
-  const passcode = process.env.GUEST_PASSCODE || DEFAULT_E2E_GUEST_PASSCODE;
+  const passcode = (process.env.GUEST_PASSCODE || DEFAULT_E2E_GUEST_PASSCODE).trim() || 'wedding2026';
   if (secret === passcode) {
     throw new Error('GUEST_SESSION_SECRET must not use the value of GUEST_PASSCODE');
   }
 
+  const pwd = crypto
+    .createHmac('sha256', `${GUEST_PASSCODE_DIGEST_DOMAIN}:${secret}`)
+    .update(passcode)
+    .digest('base64url');
   const now = Date.now();
   return signCompactE2EToken(
     {
       guest: true,
+      pwd,
       iat: now,
       exp: now + SESSION_TTL_MS,
     },
@@ -115,6 +121,7 @@ export function generateAdminCookieValue(): string {
   return signCompactE2EToken(
     {
       isAdmin: true,
+      v: 1,
       iat: now,
       exp: now + SESSION_TTL_MS,
     },

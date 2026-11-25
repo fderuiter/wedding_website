@@ -10,6 +10,7 @@ import {
 import { getStripeInstance } from '@/lib/stripe';
 import { getAppConfig } from '@/lib/config';
 import { logger } from '@/lib/logger';
+import { rateLimit } from '@/utils/rateLimit';
 import { StripeWebhookEventSchema } from '@/utils/validation';
 
 /**
@@ -18,6 +19,18 @@ import { StripeWebhookEventSchema } from '@/utils/validation';
  * Processes payment_intent.succeeded, charge.refunded, and charge.dispute.created idempotently.
  */
 export async function POST(request: NextRequest) {
+  const rateLimitResponse = await rateLimit(
+    request,
+    100,
+    60 * 1000,
+    undefined,
+    'general',
+    { scope: 'ip' }
+  );
+  if (rateLimitResponse) {
+    return rateLimitResponse;
+  }
+
   const signature = request.headers.get('stripe-signature');
   if (!signature) {
     return new NextResponse('Missing stripe-signature header', { status: 400 });

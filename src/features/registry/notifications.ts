@@ -3,7 +3,7 @@ import { getAppConfig } from '@/lib/config';
 import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
 import { formatCurrency } from '@/utils/intl';
-import { signContributorActionToken } from './lib/contributorToken';
+import { mintContributorActionPair } from './lib/contributorToken';
 import { registryRepository } from './repository';
 import { registryService } from './service';
 import type { IRegistryRepository } from './types';
@@ -792,16 +792,11 @@ export async function dispatchContributionNotifications(
     let cancelActionUrl: string | undefined;
     if (canSendGuestConfirmation && isReserved && savedContributor.id) {
       try {
-        const [confirmToken, cancelToken] = await Promise.all([
-          signContributorActionToken({
-            contributorId: savedContributor.id,
-            action: 'confirm',
-          }),
-          signContributorActionToken({
-            contributorId: savedContributor.id,
-            action: 'cancel',
-          }),
-        ]);
+        const { confirmToken, cancelToken } = await mintContributorActionPair({
+          contributorId: savedContributor.id,
+          requestUrl,
+          config: activeConfig,
+        });
         const claimPrefix = baseUrl ? `${baseUrl}/guest/claim` : '/guest/claim';
         confirmActionUrl = `${claimPrefix}?token=${encodeURIComponent(confirmToken)}`;
         cancelActionUrl = `${claimPrefix}?token=${encodeURIComponent(cancelToken)}`;
@@ -1193,10 +1188,11 @@ export async function dispatchPoliteReminderNotification(params: {
         ? getPaymentUrl(paymentHandleType, paymentHandle, baseAmount)
         : null;
 
-    const [confirmToken, cancelToken] = await Promise.all([
-      signContributorActionToken({ contributorId: contributor.id, action: 'confirm' }),
-      signContributorActionToken({ contributorId: contributor.id, action: 'cancel' }),
-    ]);
+    const { confirmToken, cancelToken } = await mintContributorActionPair({
+      contributorId: contributor.id,
+      requestUrl,
+      config: activeConfig,
+    });
 
     const baseUrl = resolveBaseUrl(activeConfig, requestUrl);
     const claimPrefix = baseUrl ? `${baseUrl}/guest/claim` : '/guest/claim';

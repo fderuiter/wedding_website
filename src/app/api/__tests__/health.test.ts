@@ -175,7 +175,7 @@ describe('Health and Readiness Endpoints', () => {
     });
 
     it('returns 200 OK during N-1 rollout or rollback when _prisma_migrations includes finished and unfinished forward migrations from an N+1 release', async () => {
-      expect(REQUIRED_MIGRATION_NAMES).toHaveLength(47);
+      expect(REQUIRED_MIGRATION_NAMES).toHaveLength(48);
       const migrationsWithForwardRows = [
         ...appliedMigrationRows,
         {
@@ -303,8 +303,8 @@ describe('Health and Readiness Endpoints', () => {
       }
     });
 
-    it('returns 503 Service Unavailable whenever any of the 47 required migrations is missing and masks names in production', async () => {
-      expect(REQUIRED_MIGRATION_NAMES).toHaveLength(47);
+    it('returns 503 Service Unavailable whenever any of the 48 required migrations is missing and masks names in production', async () => {
+      expect(REQUIRED_MIGRATION_NAMES).toHaveLength(48);
 
       for (const omittedMigration of REQUIRED_MIGRATION_NAMES) {
         const subsetMigrations = appliedMigrationRows.filter(

@@ -1254,6 +1254,7 @@ export const AppConfigSchema = z.object({
   photoAlbumUrl: z.string().refine(isSafeHttpBaseUrl, { message: 'Invalid URL format' }).default('').describe('Optional external shared photo album URL displayed on the public gallery page.'),
   autoApproveGuestPhotos: z.boolean().default(false).describe('Admin-only toggle controlling whether new guest photo uploads are automatically approved and published immediately without manual moderation; omitted from public DTOs.'),
   guestPhotoQrTokenVersion: z.number().int().min(1).default(1).describe('Admin-only monotonic version counter for rotating signed guest photo upload QR links and invalidating previously issued photo sessions; omitted from public DTOs.'),
+  adminTokenVersion: z.number().int().min(1).default(1).describe('Admin-only monotonic version counter incremented on authenticated administrator logout to revoke previously issued admin_auth sessions; omitted from public DTOs.'),
   faviconUrl: z.string().refine(isSafeConfigAssetUrl, { message: 'Invalid URL format' }).describe('Asset path or safe URL for the browser tab favicon icon.'),
   ogImageUrl: z.string().refine(isSafeConfigAssetUrl, { message: 'Invalid URL format' }).describe('Default Open Graph social sharing preview image URL or asset path.'),
   brandMonogram: z.string().nullable().optional().describe('Custom monogram text overriding initials derived from partner names.'),
@@ -1663,19 +1664,19 @@ export function translateAppConfigSnapshot(
     create.autoApproveGuestPhotos = false;
   }
 
-  if (
-    snapshotData.guestPhotoQrTokenVersion !== undefined &&
-    snapshotData.guestPhotoQrTokenVersion !== null
-  ) {
-    const numericVersion = Number(snapshotData.guestPhotoQrTokenVersion);
-    const resolvedVersion =
-      Number.isInteger(numericVersion) && numericVersion >= 1
-        ? numericVersion
-        : 1;
-    update.guestPhotoQrTokenVersion = resolvedVersion;
-    create.guestPhotoQrTokenVersion = resolvedVersion;
-  } else {
-    create.guestPhotoQrTokenVersion = 1;
+  for (const epochKey of ['guestPhotoQrTokenVersion', 'adminTokenVersion'] as const) {
+    const rawVersion = snapshotData[epochKey];
+    if (rawVersion !== undefined && rawVersion !== null) {
+      const numericVersion = Number(rawVersion);
+      const resolvedVersion =
+        Number.isInteger(numericVersion) && numericVersion >= 1
+          ? numericVersion
+          : 1;
+      update[epochKey] = resolvedVersion;
+      create[epochKey] = resolvedVersion;
+    } else {
+      create[epochKey] = 1;
+    }
   }
 
   const faviconUrl =

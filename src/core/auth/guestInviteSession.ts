@@ -319,7 +319,7 @@ function isExcludedGuestCallbackRoute(callbackUrl: string): boolean {
 async function resolveActivePhotoTokenVersion(
   expectedVersion?: number,
   siteId?: string
-): Promise<number> {
+): Promise<number | null> {
   if (
     typeof expectedVersion === 'number' &&
     Number.isInteger(expectedVersion) &&
@@ -333,7 +333,7 @@ async function resolveActivePhotoTokenVersion(
       prisma as unknown as { appConfig?: AppConfigTokenVersionLookupDelegate }
     )?.appConfig;
     if (!delegate) {
-      return 1;
+      return null;
     }
 
     const targetConfigId = siteId && siteId.trim() ? siteId.trim() : 'global';
@@ -354,16 +354,16 @@ async function resolveActivePhotoTokenVersion(
     if (typeof version === 'number' && Number.isInteger(version) && version >= 1) {
       return version;
     }
-    return 1;
+    return null;
   } catch {
-    return 1;
+    return null;
   }
 }
 
 /**
  * Retrieves and verifies the active photo-scoped session cookie against tenant claims
  * (when `MULTISITE_ENABLED` is active) and the current database QR token rotation version.
- * Returns null when missing, expired, cross-tenant, or rotated.
+ * Returns null when missing, expired, cross-tenant, rotated, or when version state cannot be verified.
  */
 export async function getActivePhotoUploadSession(
   req?: NextRequest,
@@ -404,7 +404,7 @@ export async function getActivePhotoUploadSession(
       expectedVersion,
       signedPayload.siteId
     );
-    if (signedPayload.v !== activeVersion) {
+    if (activeVersion === null || signedPayload.v !== activeVersion) {
       continue;
     }
 

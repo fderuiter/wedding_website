@@ -54,6 +54,7 @@ export function toPublicConfigDto(
   delete clone.twilioAccountSid;
   delete clone.autoApproveGuestPhotos;
   delete clone.guestPhotoQrTokenVersion;
+  delete clone.adminTokenVersion;
   return clone;
 }
 

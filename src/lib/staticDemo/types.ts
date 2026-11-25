@@ -73,6 +73,7 @@ export interface DemoAppConfigRecord {
   showAddToCalendar: boolean;
   autoApproveGuestPhotos: boolean;
   guestPhotoQrTokenVersion: number;
+  adminTokenVersion: number;
   setupCompleted: boolean;
   rsvpOpen: boolean;
   rsvpDeadlineDate: string;

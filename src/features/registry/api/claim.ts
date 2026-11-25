@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { verifyNodeTenantClaims } from '@/core/auth/tenantClaims.node';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { parseJsonRequestBody } from '@/utils/contentType';
@@ -42,7 +43,7 @@ export const GET = withApiMiddleware(
     }
 
     const tokenPayload = await verifyContributorActionToken(parsedQuery.data.token);
-    if (!tokenPayload) {
+    if (!tokenPayload || !(await verifyNodeTenantClaims(tokenPayload, request))) {
       throw new ApiError(401, 'This gift link is invalid or has expired.');
     }
 
@@ -91,7 +92,7 @@ export const POST = withApiMiddleware(
     }
 
     const tokenPayload = await verifyContributorActionToken(parsedBody.data.token);
-    if (!tokenPayload) {
+    if (!tokenPayload || !(await verifyNodeTenantClaims(tokenPayload, request))) {
       throw new ApiError(401, 'This gift link is invalid or has expired.');
     }
 

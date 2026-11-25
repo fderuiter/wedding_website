@@ -12,6 +12,7 @@ import {
   verifyNodeTenantClaims,
 } from '@/core/auth/tenantClaims.node';
 import { findVerifiedRequestCookie } from '@/core/auth/tokenCookieHelpers';
+import { normalizeTokenEpochVersion } from '@/core/auth/tokenEpochs';
 import { env } from '@/env';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
@@ -41,7 +42,9 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   }
 
   let requiresSetup = false;
-  let resolvedConfig: { id?: string; subdomain?: string | null } | undefined;
+  let resolvedConfig:
+    | { id?: string; subdomain?: string | null; adminTokenVersion?: number | null }
+    | undefined;
   try {
     const config = await getAppConfig();
     resolvedConfig = config;
@@ -49,6 +52,10 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   } catch {
     requiresSetup = false;
   }
+
+  const activeAdminTokenVersion = normalizeTokenEpochVersion(
+    resolvedConfig?.adminTokenVersion
+  );
 
   let token: string | null = null;
   if (typeof findVerifiedRequestCookie === 'function' && typeof verifyAdminToken === 'function') {
@@ -60,6 +67,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
         if (
           existingPayload &&
           existingPayload.isAdmin === true &&
+          existingPayload.v === activeAdminTokenVersion &&
           (await verifyNodeTenantClaims(existingPayload, req))
         ) {
           return existingPayload;
@@ -77,7 +85,13 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     const tenantClaims = await resolveTenantClaimsForSigning(req, resolvedConfig);
     const iat = Date.now();
     const exp = iat + 60 * 60 * 8 * 1000;
-    token = await signAdminToken({ isAdmin: true, ...tenantClaims, iat, exp });
+    token = await signAdminToken({
+      isAdmin: true,
+      v: activeAdminTokenVersion,
+      ...tenantClaims,
+      iat,
+      exp,
+    });
   }
 
   const response = NextResponse.json({ success: true, requiresSetup });

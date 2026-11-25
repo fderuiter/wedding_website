@@ -7,6 +7,10 @@ import {
   verifyEdgeTenantClaims,
 } from './tenantClaims';
 import {
+  isValidTokenEpochVersion,
+  normalizeTokenEpochVersion,
+} from './tokenEpochs';
+import {
   clearSessionCookie,
   findVerifiedRequestCookie,
   getSessionCookieOptions,
@@ -60,6 +64,7 @@ async function getSecret(): Promise<string> {
 
 interface AdminTokenPayload {
   isAdmin: boolean;
+  v?: number;
   siteId?: string;
   subdomain?: string | null;
   iat?: number;
@@ -78,6 +83,7 @@ export async function signAdminToken(payload: AdminTokenPayload): Promise<string
 
   const normalizedPayload: AdminTokenPayload = {
     ...payload,
+    v: normalizeTokenEpochVersion(payload.v),
     ...('subdomain' in payload && payload.subdomain !== undefined
       ? { subdomain: normalizeTenantSubdomain(payload.subdomain) }
       : {}),
@@ -97,7 +103,7 @@ export async function verifyAdminToken(token: string): Promise<AdminTokenPayload
     if (!secret) return null;
 
     const payload = await verifyCompactToken<AdminTokenPayload>(token, secret);
-    if (!payload) {
+    if (!payload || !isValidTokenEpochVersion(payload.v)) {
       return null;
     }
 
@@ -139,8 +145,16 @@ export async function isAdminRequest(
       }
 
       if (process.env.NEXT_RUNTIME !== 'edge' && !options?.edgeOnly) {
-        const { verifyNodeTenantClaims } = await import('./tenantClaims.node');
-        return (await verifyNodeTenantClaims(payload, req)) ? payload : null;
+        const [{ verifyNodeTenantClaims }, { resolveActiveAdminTokenVersion }] =
+          await Promise.all([
+            import('./tenantClaims.node'),
+            import('./adminTokenVersion.node'),
+          ]);
+        if (!(await verifyNodeTenantClaims(payload, req))) {
+          return null;
+        }
+        const activeVersion = await resolveActiveAdminTokenVersion(payload.siteId);
+        return activeVersion !== null && payload.v === activeVersion ? payload : null;
       }
 
       const requestSubdomain = await resolveEdgeRequestSubdomain(req);

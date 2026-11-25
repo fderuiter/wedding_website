@@ -24,7 +24,7 @@ import { isFeatureEnabled } from '@/lib/modules';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { getStripeInstance } from '@/lib/stripe';
 import { checkAuthLockout, recordAuthFailure } from '@/utils/rateLimit';
-import { signContributorActionToken } from '../lib/contributorToken';
+import { mintContributorActionPair } from '../lib/contributorToken';
 import type { GuestClaimActions } from '../types';
 import { resolveEffectivePaymentHandle } from '../utils/paymentUrls';
 
@@ -303,17 +303,11 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
 
     if (matchedContributor?.id) {
       try {
-        const [confirmToken, cancelToken] = await Promise.all([
-          signContributorActionToken({
-            contributorId: matchedContributor.id,
-            action: 'confirm',
-          }),
-          signContributorActionToken({
-            contributorId: matchedContributor.id,
-            action: 'cancel',
-          }),
-        ]);
-        claimActions = { confirmToken, cancelToken };
+        claimActions = await mintContributorActionPair({
+          contributorId: matchedContributor.id,
+          request,
+          config,
+        });
       } catch {
         claimActions = undefined;
       }

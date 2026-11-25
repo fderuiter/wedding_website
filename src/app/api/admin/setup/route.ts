@@ -26,6 +26,10 @@ import {
   signAdminToken,
 } from '@/core/auth/auth.server';
 import { resolveTenantClaimsForSigning } from '@/core/auth/tenantClaims.node';
+import {
+  isValidTokenEpochVersion,
+  normalizeTokenEpochVersion,
+} from '@/core/auth/tokenEpochs';
 import { MAX_PASSWORD_LENGTH, verifyPassword } from '@/utils/password';
 import { env } from '@/env';
 
@@ -174,7 +178,13 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
       const tenantClaims = await resolveTenantClaimsForSigning(req, config);
       const iat = Date.now();
       const exp = iat + 60 * 60 * 8 * 1000;
-      const token = await signAdminToken({ isAdmin: true, ...tenantClaims, iat, exp });
+      const token = await signAdminToken({
+        isAdmin: true,
+        v: normalizeTokenEpochVersion(config.adminTokenVersion),
+        ...tenantClaims,
+        iat,
+        exp,
+      });
       const response = NextResponse.json({
         success: true,
         initialized: true,
@@ -189,7 +199,13 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     const tenantClaims = await resolveTenantClaimsForSigning(req, config);
     const iat = Date.now();
     const exp = iat + 60 * 60 * 8 * 1000;
-    const token = await signAdminToken({ isAdmin: true, ...tenantClaims, iat, exp });
+    const token = await signAdminToken({
+      isAdmin: true,
+      v: normalizeTokenEpochVersion(config.adminTokenVersion),
+      ...tenantClaims,
+      iat,
+      exp,
+    });
     const completed = isSetupCompleted(config);
     const response = NextResponse.json({
       success: true,
@@ -402,9 +418,20 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   }
 
   const tenantClaims = await resolveTenantClaimsForSigning(req, parsedUpdatedConfig);
+  const updatedAdminTokenVersion = isValidTokenEpochVersion(
+    parsedUpdatedConfig.adminTokenVersion
+  )
+    ? parsedUpdatedConfig.adminTokenVersion
+    : normalizeTokenEpochVersion(config.adminTokenVersion);
   const iat = Date.now();
   const exp = iat + 60 * 60 * 8 * 1000;
-  const token = await signAdminToken({ isAdmin: true, ...tenantClaims, iat, exp });
+  const token = await signAdminToken({
+    isAdmin: true,
+    v: updatedAdminTokenVersion,
+    ...tenantClaims,
+    iat,
+    exp,
+  });
 
   const response = NextResponse.json({
     success: true,
