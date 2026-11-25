@@ -704,6 +704,7 @@ export async function handlePublicRoutes(
         : typeof body.code === 'string'
           ? body.code.trim()
           : '';
+    const requireInvitation = body.requireInvitation === true;
     if (!passcode) {
       return errorJson(400, 'Passcode or invitation code is required.');
     }
@@ -735,7 +736,26 @@ export async function handlePublicRoutes(
         success: true,
         sessionType: 'invitation',
         guestName: matchedInvite.guestName,
+        code: matchedInvite.code,
       });
+    }
+
+    if (requireInvitation) {
+      const envPasscode =
+        typeof process !== 'undefined' && typeof process.env?.GUEST_PASSCODE === 'string'
+          ? process.env.GUEST_PASSCODE.trim()
+          : '';
+      if (passcode === 'WEDDING2026' || (envPasscode && passcode === envPasscode)) {
+        return errorJson(
+          401,
+          'That looks like the shared site passcode rather than your personal household invitation code. Please check your invitation card or email for your household code.',
+          {
+            valid: false,
+            reason: 'shared_passcode',
+          },
+        );
+      }
+      return errorJson(401, 'Invalid passcode or invitation code.');
     }
 
     if (

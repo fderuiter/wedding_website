@@ -514,11 +514,14 @@ describe('Portal Documentation Generator & Development Section', () => {
           isVerified: true,
           invitationCode: 'SMITH2026',
         });
-        const sharedPasscodeRes = await sandbox.executeFetch(
-          '/api/registry/validate-code?code=WEDDING2026'
-        );
-        expect(sharedPasscodeRes.status).toBe(200);
+        const sharedPasscodeRes = await sandbox.executeFetch('/api/registry/validate-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: 'WEDDING2026' }),
+        });
+        expect(sharedPasscodeRes.status).toBe(401);
         expect(await sharedPasscodeRes.json()).toMatchObject({
+          success: false,
           valid: false,
           reason: 'shared_passcode',
         });

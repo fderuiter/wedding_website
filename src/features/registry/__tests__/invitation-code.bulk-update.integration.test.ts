@@ -69,7 +69,7 @@ describe('InvitationCodeAdminService Bulk SQL Update Integration', () => {
     const initialRecords = await Promise.all([
       realPrisma.invitationCode.create({
         data: {
-          code: 'GUEST01',
+          code: 'GUEST01A',
           guestName: 'Original Guest 1',
           email: 'g1@example.com',
           city: 'Chicago',
@@ -81,7 +81,7 @@ describe('InvitationCodeAdminService Bulk SQL Update Integration', () => {
       }),
       realPrisma.invitationCode.create({
         data: {
-          code: 'GUEST02',
+          code: 'GUEST02B',
           guestName: 'Original Guest 2',
           email: 'g2@example.com',
           city: 'New York',
@@ -94,25 +94,25 @@ describe('InvitationCodeAdminService Bulk SQL Update Integration', () => {
     ]);
 
     // Batch update:
-    // GUEST01: updates guestName and city; leaves email, state, partyTags, extraFields untouched
-    // GUEST02: updates guestName, sets email to null, sets partyTags to ['vip', 'wedding-party'], sets extraFields to { tablePreference: 'head-table' }
-    // NEWGUEST: creates a new record
+    // GUEST01A: updates guestName and city; leaves email, state, partyTags, extraFields untouched
+    // GUEST02B: updates guestName, sets email to null, sets partyTags to ['vip', 'wedding-party'], sets extraFields to { tablePreference: 'head-table' }
+    // GUEST03C: creates a new record
     const batchInput = [
       {
         guestName: 'Guest 1 Updated',
-        code: 'GUEST01',
+        code: 'GUEST01A',
         city: 'Evanston',
       },
       {
         guestName: 'Guest 2 Updated',
-        code: 'GUEST02',
+        code: 'GUEST02B',
         email: null,
         partyTags: ['vip', 'wedding-party'],
         extraFields: { tablePreference: 'head-table' },
       },
       {
         guestName: 'New Guest 3',
-        code: 'GUEST03',
+        code: 'GUEST03C',
         email: 'g3@example.com',
       },
     ];
@@ -127,9 +127,9 @@ describe('InvitationCodeAdminService Bulk SQL Update Integration', () => {
       updated: 2,
     });
 
-    // Verify database state for GUEST01
+    // Verify database state for GUEST01A
     const updated1 = await realPrisma.invitationCode.findUnique({
-      where: { code: 'GUEST01' },
+      where: { code: 'GUEST01A' },
     });
     expect(updated1).not.toBeNull();
     expect(updated1!.guestName).toBe('Guest 1 Updated');
@@ -142,9 +142,9 @@ describe('InvitationCodeAdminService Bulk SQL Update Integration', () => {
     expect(updated1!.extraFields).toEqual({ dietary: 'gluten-free' });
     expect(updated1!.updatedAt.getTime()).toBeGreaterThanOrEqual(initialRecords[0].updatedAt.getTime());
 
-    // Verify database state for GUEST02
+    // Verify database state for GUEST02B
     const updated2 = await realPrisma.invitationCode.findUnique({
-      where: { code: 'GUEST02' },
+      where: { code: 'GUEST02B' },
     });
     expect(updated2).not.toBeNull();
     expect(updated2!.guestName).toBe('Guest 2 Updated');
@@ -154,9 +154,9 @@ describe('InvitationCodeAdminService Bulk SQL Update Integration', () => {
     expect(updated2!.partyTags).toEqual(['vip', 'wedding-party']);
     expect(updated2!.extraFields).toEqual({ tablePreference: 'head-table' });
 
-    // Verify database state for GUEST03 (created)
+    // Verify database state for GUEST03C (created)
     const created3 = await realPrisma.invitationCode.findUnique({
-      where: { code: 'GUEST03' },
+      where: { code: 'GUEST03C' },
     });
     expect(created3).not.toBeNull();
     expect(created3!.guestName).toBe('New Guest 3');
@@ -172,7 +172,7 @@ describe('InvitationCodeAdminService Bulk SQL Update Integration', () => {
   it('rolls back all changes when batch execution encounters an error', async () => {
     await realPrisma.invitationCode.create({
       data: {
-        code: 'GUEST10',
+        code: 'GUEST10X',
         guestName: 'Stable Guest',
       },
     });
@@ -190,15 +190,15 @@ describe('InvitationCodeAdminService Bulk SQL Update Integration', () => {
     const batchInput = [
       {
         guestName: 'Should Not Persist',
-        code: 'GUEST10',
+        code: 'GUEST10X',
       },
     ];
 
     await expect(service.importBatch(batchInput, 'update')).rejects.toThrow('Simulated executeRaw DB failure');
 
-    // Confirm that GUEST10 was not updated
+    // Confirm that GUEST10X was not updated
     const record = await realPrisma.invitationCode.findUnique({
-      where: { code: 'GUEST10' },
+      where: { code: 'GUEST10X' },
     });
     expect(record!.guestName).toBe('Stable Guest');
 
@@ -224,7 +224,7 @@ describe('InvitationCodeAdminService Bulk SQL Update Integration', () => {
     const usedTimestamp = new Date('2026-05-01T12:30:00.000Z');
     const guest = await realPrisma.invitationCode.create({
       data: {
-        code: 'ORIG100',
+        code: 'ORIG1002',
         guestName: 'Original Guest',
         email: 'orig@example.com',
         householdName: 'Original Household',
@@ -335,6 +335,25 @@ describe('InvitationCodeAdminService Bulk SQL Update Integration', () => {
     expect(reloaded!.subEventRsvps[0].plusOneCount).toBe(1);
     expect(reloaded!.contributors).toHaveLength(1);
     expect(reloaded!.contributors[0].amount).toBe(150);
+
+    // Existing legacy <8-char DB rows remain editable on non-code fields without forced code rotation
+    const legacyGuest = await realPrisma.invitationCode.create({
+      data: {
+        code: 'VIP26',
+        guestName: 'Legacy Short Code Guest',
+        city: 'Chicago',
+      },
+    });
+    const updatedLegacy = await service.update(
+      legacyGuest.id,
+      {
+        guestName: 'Legacy Short Code Guest Updated',
+        city: 'Portland',
+      },
+      'TestAdmin'
+    );
+    expect(updatedLegacy.code).toBe('VIP26');
+    expect(updatedLegacy.city).toBe('Portland');
   });
 
   describe('batchUpdateTags SQL Integration', () => {

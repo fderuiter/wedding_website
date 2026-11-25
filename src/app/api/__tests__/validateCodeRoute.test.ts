@@ -11,14 +11,12 @@ jest.mock('@/lib/prisma', () => ({
   },
 }));
 
-import {
-  GET as validateCodeRoute,
-  POST as validateCodePostRoute,
-} from '@/app/api/registry/validate-code/route';
+import { POST as validateCodePostRoute } from '@/app/api/registry/validate-code/route';
 import { GET as registrySessionGet } from '@/app/api/registry/session/route';
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyGuestInviteSessionToken } from '@/core/auth/guestInviteSession';
+import { resetRateLimitsForTesting } from '@/utils/rateLimit';
 
 const mockFindUnique = prisma.invitationCode.findUnique as jest.Mock;
 const mockRecipientUpdateMany = prisma.broadcastRecipient.updateMany as jest.Mock;
@@ -26,13 +24,16 @@ const mockRecipientUpdateMany = prisma.broadcastRecipient.updateMany as jest.Moc
 describe('validate-code Route', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    resetRateLimitsForTesting();
   });
 
   it('returns 400 if code parameter is missing', async () => {
     const req = new Request('http://localhost/api/registry/validate-code', {
-      method: 'GET',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
     });
-    const res = await validateCodeRoute(req as any);
+    const res = await validateCodePostRoute(req as any);
     expect(res.status).toBe(400);
     const json = await res.json();
     expect(json.error).toBe('Code is required.');
@@ -40,10 +41,12 @@ describe('validate-code Route', () => {
 
   it('returns 404 if invitation code is not found', async () => {
     mockFindUnique.mockResolvedValue(null);
-    const req = new Request('http://localhost/api/registry/validate-code?code=INVALID1', {
-      method: 'GET',
+    const req = new Request('http://localhost/api/registry/validate-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: 'INVALID1' }),
     });
-    const res = await validateCodeRoute(req as any);
+    const res = await validateCodePostRoute(req as any);
     expect(res.status).toBe(404);
     const json = await res.json();
     expect(json.error).toBe('Invalid invitation code.');
@@ -60,28 +63,33 @@ describe('validate-code Route', () => {
       used: false,
       isSample: true,
     });
-    const req = new Request('http://localhost/api/registry/validate-code?code=smith2026', {
-      method: 'GET',
+    const req = new Request('http://localhost/api/registry/validate-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: 'smith2026' }),
     });
-    const res = await validateCodeRoute(req as any);
+    const res = await validateCodePostRoute(req as any);
     expect(res.status).toBe(404);
     const json = await res.json();
     expect(json.error).toBe('Invalid invitation code.');
     expect(res.headers.get('set-cookie') || '').not.toContain('guest_invite_session=');
   });
 
-  it('returns 200 with guestName and valid: true for a previously used invitation code', async () => {
+  it('returns 200 with guestName and valid: true without email for a previously used invitation code', async () => {
     mockFindUnique.mockResolvedValue({
       id: 'invite-123',
       code: 'USEDCODE',
       guestName: 'John Doe',
-      email: null,
+      email: 'john.doe@example.com',
       used: true,
+      isSample: false,
     });
-    const req = new Request('http://localhost/api/registry/validate-code?code=USEDCODE', {
-      method: 'GET',
+    const req = new Request('http://localhost/api/registry/validate-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: 'USEDCODE' }),
     });
-    const res = await validateCodeRoute(req as any);
+    const res = await validateCodePostRoute(req as any);
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json).toEqual({
@@ -90,41 +98,12 @@ describe('validate-code Route', () => {
         valid: true,
         guestName: 'John Doe',
         code: 'USEDCODE',
-        email: null,
-      }
+      },
     });
+    expect(json.data.email).toBeUndefined();
   });
 
-  it('GET returns 200 with guestName, invite email, and valid: true without setting cookies or mutating BroadcastRecipient', async () => {
-    mockFindUnique.mockResolvedValue({
-      id: 'invite-123',
-      code: 'GOODCODE',
-      guestName: 'Jane Smith',
-      email: 'jane.smith@example.com',
-      used: false,
-      isSample: false,
-    });
-    const req = new Request('http://localhost/api/registry/validate-code?code=GOODCODE', {
-      method: 'GET',
-    });
-    const res = await validateCodeRoute(req as any);
-    expect(res.status).toBe(200);
-    const json = await res.json();
-    expect(json).toEqual({
-      success: true,
-      data: {
-        valid: true,
-        guestName: 'Jane Smith',
-        code: 'GOODCODE',
-        email: 'jane.smith@example.com',
-      }
-    });
-
-    expect(res.headers.get('set-cookie') || '').toBe('');
-    expect(mockRecipientUpdateMany).not.toHaveBeenCalled();
-  });
-
-  it('POST returns 200 with guestName, invite email, and valid: true, sets guest_invite_session cookie, updates BroadcastRecipient, and hydrates email in /api/registry/session', async () => {
+  it('POST omits email PII from validate-code response, sets guest_invite_session cookie, updates BroadcastRecipient, and hydrates email via /api/registry/session', async () => {
     mockFindUnique.mockResolvedValue({
       id: 'invite-123',
       code: 'GOODCODE',
@@ -147,9 +126,9 @@ describe('validate-code Route', () => {
         valid: true,
         guestName: 'Jane Smith',
         code: 'GOODCODE',
-        email: 'jane.smith@example.com',
-      }
+      },
     });
+    expect(json.data.email).toBeUndefined();
 
     const setCookieHeader = res.headers.get('set-cookie') || '';
     expect(setCookieHeader).toContain('guest_invite_session=');

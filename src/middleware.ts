@@ -204,7 +204,6 @@ export async function middleware(request: NextRequest) {
     normalizedPath === '/api/guest/address' ||
     normalizedPath === '/api/guest/address/public' ||
     normalizedPath === '/api/registry/claim' ||
-    normalizedPath === '/api/registry/validate-code' ||
     (normalizedPath === '/api/registry/webhook/stripe' && method === 'POST') ||
     isNonPhotoUploadAssetRoute ||
     normalizedPath === '/admin/login' ||

@@ -81,7 +81,7 @@ describe('Registry Zod v4 Schema Validation', () => {
 
     const invite = InvitationCodeSchema.safeParse({
       id: 'inv-1',
-      code: 'INVITE1',
+      code: 'INVITE12',
       guestName: 'Alex Guest',
       email: '  alex@example.com  ',
     });
@@ -196,6 +196,40 @@ describe('Registry Zod v4 Schema Validation', () => {
     if (parsed.success) {
       expect(parsed.data.guestName).toBe("Élodie O'Connor-St. Clair, Jr.");
       expect(parsed.data.householdName).toBe("Famille O'Connor & Müller-Søren.");
+    }
+  });
+
+  it('enforces 8-character minimum length, >=4 distinct characters, and non-GUEST_PASSCODE rules on custom invitation codes', () => {
+    const prevPasscode = process.env.GUEST_PASSCODE;
+    process.env.GUEST_PASSCODE = 'WEDDING2026';
+    try {
+      for (const badCode of ['SHORT12', 'AAAAAAAA', 'ABABABAB', 'ABCABCAB', 'wedding2026']) {
+        expect(
+          InvitationCodeSchema.safeParse({
+            id: 'inv-bad',
+            code: badCode,
+            guestName: 'Alex Guest',
+          }).success
+        ).toBe(false);
+        expect(
+          BatchImportInvitationCodesSchema.safeParse({
+            records: [{ guestName: 'Alex Guest', code: badCode }],
+          }).success
+        ).toBe(false);
+      }
+
+      // Blank code in batch import remains valid for auto-generation
+      expect(
+        BatchImportInvitationCodesSchema.safeParse({
+          records: [{ guestName: 'Alex Guest', code: '   ' }],
+        }).success
+      ).toBe(true);
+    } finally {
+      if (prevPasscode === undefined) {
+        delete process.env.GUEST_PASSCODE;
+      } else {
+        process.env.GUEST_PASSCODE = prevPasscode;
+      }
     }
   });
 });

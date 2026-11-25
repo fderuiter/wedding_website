@@ -8,10 +8,7 @@ import { GET as getPhotoQr } from '@/app/api/admin/photos/qr/route';
 import { POST as postAdminSetup } from '@/app/api/admin/setup/route';
 import { POST as postGuestLogin } from '@/app/api/guest/login/route';
 import { GET as getGuestSession } from '@/app/api/guest/session/route';
-import {
-  GET as getValidateCode,
-  POST as postValidateCode,
-} from '@/app/api/registry/validate-code/route';
+import { POST as postValidateCode } from '@/app/api/registry/validate-code/route';
 import { generateMetadata } from '@/app/metadata';
 import {
   ADMIN_COOKIE,
@@ -255,30 +252,13 @@ describe('Multisite Cookie Claims, Forged Header Defenses & Metadata Host Trust'
         subdomain: 'alice',
       });
 
-      // 3. GET /api/registry/validate-code is read-only; POST mints guest_invite_session
-      (prisma.invitationCode.findUnique as jest.Mock)
-        .mockResolvedValueOnce({
-          id: 'inv-2',
-          code: 'REGINV01',
-          guestName: 'Morgan Guest',
-          isSample: false,
-        })
-        .mockResolvedValueOnce({
-          id: 'inv-2',
-          code: 'REGINV01',
-          guestName: 'Morgan Guest',
-          isSample: false,
-        });
-      const previewValidateRes = await getValidateCode(
-        new NextRequest(
-          'http://alice.wedding.example/api/registry/validate-code?code=REGINV01',
-          {
-            headers: { host: 'alice.wedding.example' },
-          }
-        )
-      );
-      expect(previewValidateRes.status).toBe(200);
-      expect(previewValidateRes.headers.get('set-cookie')).toBeNull();
+      // 3. POST /api/registry/validate-code mints guest_invite_session
+      (prisma.invitationCode.findUnique as jest.Mock).mockResolvedValueOnce({
+        id: 'inv-2',
+        code: 'REGINV01',
+        guestName: 'Morgan Guest',
+        isSample: false,
+      });
 
       const validateCodeReq = new NextRequest(
         'http://alice.wedding.example/api/registry/validate-code',

@@ -779,16 +779,20 @@ export async function handleRegistryRoutes(
     });
   }
 
-  if (pathname === '/api/registry/validate-code' && (method === 'GET' || method === 'POST')) {
-    const rawCode =
-      method === 'GET'
-        ? searchParams.get('code')
-        : String((await readJsonBody(request)).code ?? '');
-    const code = rawCode?.trim().toUpperCase();
+  if (pathname === '/api/registry/validate-code') {
+    const snapshot = store.getSnapshot();
+    if (!snapshot.guestSession && !snapshot.isAdminAuthenticated) {
+      return errorJson(401, 'Unauthorized');
+    }
+    if (method !== 'POST') {
+      return errorJson(405, 'Method Not Allowed');
+    }
+    const rawCode = String((await readJsonBody(request)).code ?? '');
+    const trimmedInput = rawCode.trim();
+    const code = trimmedInput.toUpperCase();
     if (!code) {
       return errorJson(400, 'Code is required.');
     }
-    const snapshot = store.getSnapshot();
     const invite = snapshot.invitationCode.find(
       (inv) => inv.code.toUpperCase() === code,
     );
@@ -800,43 +804,38 @@ export async function handleRegistryRoutes(
     ) {
       const envPasscode =
         typeof process !== 'undefined' && typeof process.env?.GUEST_PASSCODE === 'string'
-          ? process.env.GUEST_PASSCODE.trim().toUpperCase()
+          ? process.env.GUEST_PASSCODE.trim()
           : '';
-      if (code === 'WEDDING2026' || (envPasscode && code === envPasscode)) {
-        return wrapMiddlewareJson({
-          valid: false,
-          reason: 'shared_passcode',
-          error:
-            'That looks like the shared site passcode rather than your personal household invitation code. Please check your invitation card or email for your household code.',
-        });
+      if (trimmedInput === 'WEDDING2026' || (envPasscode && trimmedInput === envPasscode)) {
+        return errorJson(
+          401,
+          'That looks like the shared site passcode rather than your personal household invitation code. Please check your invitation card or email for your household code.',
+          {
+            valid: false,
+            reason: 'shared_passcode',
+          },
+        );
       }
       return errorJson(404, 'Invalid invitation code.');
     }
-    if (method === 'POST') {
-      store.mutate((draft) => {
-        const nowIso = new Date().toISOString();
-        draft.guestSession = {
-          code: invite.code,
-          guestName: invite.guestName,
-          sessionType: 'invite',
-        };
-        for (const rec of draft.broadcastRecipient) {
-          if (rec.invitationCodeId === invite.id && rec.status === 'SENT') {
-            rec.status = 'VIEWED';
-            rec.updatedAt = nowIso;
-          }
+    store.mutate((draft) => {
+      const nowIso = new Date().toISOString();
+      draft.guestSession = {
+        code: invite.code,
+        guestName: invite.guestName,
+        sessionType: 'invite',
+      };
+      for (const rec of draft.broadcastRecipient) {
+        if (rec.invitationCodeId === invite.id && rec.status === 'SENT') {
+          rec.status = 'VIEWED';
+          rec.updatedAt = nowIso;
         }
-      });
-    }
-    const resolvedEmail =
-      typeof invite.email === 'string' && invite.email.trim().length > 0
-        ? invite.email.trim()
-        : null;
+      }
+    });
     return wrapMiddlewareJson({
       valid: true,
       guestName: invite.guestName,
       code: invite.code,
-      email: resolvedEmail,
     });
   }
 

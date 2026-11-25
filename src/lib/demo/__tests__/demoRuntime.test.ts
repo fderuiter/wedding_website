@@ -488,7 +488,25 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
       expect((await window.fetch(`/api/registry/items/${createdItem.id}`, { method: 'DELETE' })).status).toBe(200);
 
       // Validate code & guest address portal
-      expect((await window.fetch('/api/registry/validate-code?code=INVALID')).status).toBe(404);
+      expect((await window.fetch('/api/registry/validate-code?code=INVALID')).status).toBe(405);
+      expect(
+        (
+          await window.fetch('/api/registry/validate-code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: 'INVALID' }),
+          })
+        ).status
+      ).toBe(404);
+      expect(
+        (
+          await window.fetch('/api/registry/validate-code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: 'WEDDING2026' }),
+          })
+        ).status
+      ).toBe(401);
       expect(
         (
           await window.fetch('/api/registry/validate-code', {
@@ -501,12 +519,6 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
       expect((await window.fetch('/api/guest/address')).status).toBe(401);
       expect((await (await window.fetch('/api/registry/session')).json()).isVerified).toBe(false);
 
-      const readOnlyCodeRes = await (
-        await window.fetch('/api/registry/validate-code?code=SMITH2026')
-      ).json();
-      expect(readOnlyCodeRes.valid).toBe(true);
-      expect((await (await window.fetch('/api/registry/session')).json()).isVerified).toBe(false);
-
       const validCodeRes = await (
         await window.fetch('/api/registry/validate-code', {
           method: 'POST',
@@ -515,6 +527,7 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
         })
       ).json();
       expect(validCodeRes.valid).toBe(true);
+      expect(validCodeRes.email).toBeUndefined();
       expect((await (await window.fetch('/api/registry/session')).json()).isVerified).toBe(true);
 
       expect((await window.fetch('/api/guest/address')).status).toBe(200);
@@ -933,8 +946,8 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
         ).status
       ).toBe(401);
 
-      const previewCodeRes = await window.fetch('/api/registry/validate-code?code=SMITH2026');
-      expect(previewCodeRes.status).toBe(200);
+      const getDisallowedRes = await window.fetch('/api/registry/validate-code?code=SMITH2026');
+      expect(getDisallowedRes.status).toBe(405);
       expect(await (await window.fetch('/api/guest/session')).json()).toEqual(
         expect.objectContaining({ status: 'none', isVerified: false })
       );
@@ -1232,8 +1245,13 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
 
       // Unpromoted address-collection records cannot validate as invited guests or complete Guest List milestone
       expect(
-        (await window.fetch(`/api/registry/validate-code?code=${encodeURIComponent(collectedCode)}`))
-          .status
+        (
+          await window.fetch('/api/registry/validate-code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: collectedCode }),
+          })
+        ).status
       ).toBe(404);
       setDemoGuestSession({ invitationCode: collectedCode, guestName: 'Morgan Address Only' });
       const unpromotedDemoSession = await (await window.fetch('/api/guest/session')).json();
@@ -1260,8 +1278,13 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
       });
       expect(promoteRes.status).toBe(200);
       expect(
-        (await window.fetch(`/api/registry/validate-code?code=${encodeURIComponent(collectedCode)}`))
-          .status
+        (
+          await window.fetch('/api/registry/validate-code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: collectedCode }),
+          })
+        ).status
       ).toBe(200);
       const milestonesAfterPromote = await (
         await window.fetch('/api/admin/onboarding-milestones')

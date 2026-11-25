@@ -5,11 +5,12 @@ import {
   VERIFIED_CODE_REQUIRED_MESSAGE,
 } from '../useRegistryContributionMachine';
 import { RegistryItem } from '../../types';
-import { apiClient } from '@/lib/apiClient';
+import { apiClient, ApiError } from '@/lib/apiClient';
 import { GuestSessionContext, GuestSessionContextType } from '../../context/GuestSessionContext';
 import { createMockRegistryItem } from '@/testing/factories/registryFactory';
 
 jest.mock('@/lib/apiClient', () => ({
+  ...jest.requireActual('@/lib/apiClient'),
   apiClient: {
     get: jest.fn(),
     delete: jest.fn(),
@@ -202,12 +203,17 @@ describe('useRegistryContributionMachine Hook', () => {
   });
 
   describe('Explicit Code Verification & Zero Auto-Check on Edit', () => {
-    it('triggers zero network requests across 6+ edits of an 8-character code and verifies explicitly on Verify or submit', async () => {
+    it('triggers zero network requests across 6+ edits of an 8-character code and verifies explicitly on Verify or submit while hydrating email from /api/registry/session', async () => {
       (apiClient.post as jest.Mock).mockResolvedValue({
         valid: true,
         guestName: 'Jane Smith',
-        email: 'jane.smith@example.com',
         code: 'VALDCODE',
+      });
+      (apiClient.get as jest.Mock).mockResolvedValue({
+        isVerified: true,
+        guestName: 'Jane Smith',
+        code: 'VALDCODE',
+        email: 'jane.smith@example.com',
       });
 
       const { result } = renderHook(() =>
@@ -257,6 +263,10 @@ describe('useRegistryContributionMachine Hook', () => {
       expect(apiClient.post).toHaveBeenCalledWith(
         '/api/registry/validate-code',
         { code: 'VALDCODE' },
+        expect.objectContaining({ signal: expect.any(Object) })
+      );
+      expect(apiClient.get).toHaveBeenCalledWith(
+        '/api/registry/session',
         expect.objectContaining({ signal: expect.any(Object) })
       );
     });
@@ -728,13 +738,20 @@ describe('useRegistryContributionMachine Hook', () => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    it('surfaces server-provided shared_passcode error text and omits unverified code from onContribute', async () => {
-      (apiClient.post as jest.Mock).mockResolvedValueOnce({
-        valid: false,
-        reason: 'shared_passcode',
-        error:
+    it('surfaces server-provided shared_passcode error text on HTTP 401 ApiError and omits unverified code from onContribute', async () => {
+      (apiClient.post as jest.Mock).mockRejectedValueOnce(
+        new ApiError(
+          401,
           'Please enter the personal 8-character invitation code from your envelope rather than the site-wide password.',
-      });
+          {
+            success: false,
+            valid: false,
+            reason: 'shared_passcode',
+            error:
+              'Please enter the personal 8-character invitation code from your envelope rather than the site-wide password.',
+          }
+        )
+      );
 
       const eightArgContribute = (
         a: string,

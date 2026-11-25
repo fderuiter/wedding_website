@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '@/lib/apiClient';
+import { ApiError } from '@/utils/ApiError';
 import { useOptionalToast } from '@/components/ui/ToastProvider';
 import { notifyGuestSessionChanged, subscribeGuestSessionChanged } from '@/utils/guestSessionEvents';
 import { SessionRecoveryModal } from '../components/SessionRecoveryModal';
@@ -303,40 +304,105 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const recoverSession = useCallback(
     async (codeToVerify?: string): Promise<boolean> => {
-      const targetCode = (
+      const rawTargetCode = (
         codeToVerify ||
         sessionState.draftInvitationCode ||
         sessionState.invitationCode
-      )
-        .trim()
-        .toUpperCase();
+      ).trim();
 
-      if (!targetCode) {
+      if (!rawTargetCode) {
         setSessionState(prev => ({ ...prev, lastErrorCode: 'MISSING_CODE' }));
         return false;
       }
 
+      const fallbackUpperCode = rawTargetCode.toUpperCase();
+
       try {
-        const data = await apiClient.post('/api/registry/validate-code', {
-          code: targetCode,
+        const data = await apiClient.post<{
+          success?: boolean;
+          valid?: boolean;
+          sessionType?: string;
+          guestName?: string;
+          code?: string;
+          reason?: string;
+          error?: string;
+        }>('/api/guest/login', {
+          passcode: rawTargetCode,
+          requireInvitation: true,
         });
-        if (data && data.valid) {
-          const verifiedCode = data.code || targetCode;
-          const verifiedEmail =
-            typeof data.email === 'string' && data.email.trim().length > 0
-              ? data.email.trim()
-              : null;
+
+        const isInvitationVerified =
+          Boolean(data) &&
+          data.valid !== false &&
+          (data.sessionType === 'invitation' ||
+            data.sessionType === 'invite' ||
+            data.valid === true ||
+            (data.success === true && data.sessionType !== 'guest' && data.sessionType !== 'shared'));
+
+        if (isInvitationVerified) {
+          let verifiedCode = typeof data.code === 'string' && data.code.trim() ? data.code.trim().toUpperCase() : '';
+          let verifiedGuestName = typeof data.guestName === 'string' ? data.guestName : '';
+          let verifiedEmail: string | null = null;
+
+          if (!verifiedCode) {
+            try {
+              const guestSession = await apiClient.get<{
+                code?: string | null;
+                invitationCode?: string | null;
+                guestName?: string | null;
+              }>('/api/guest/session');
+              if (guestSession?.code) {
+                verifiedCode = guestSession.code.trim().toUpperCase();
+              } else if (guestSession?.invitationCode) {
+                verifiedCode = guestSession.invitationCode.trim().toUpperCase();
+              }
+              if (!verifiedGuestName && guestSession?.guestName) {
+                verifiedGuestName = guestSession.guestName;
+              }
+            } catch {
+              // Fall back to normalized target code when session hydration endpoint is unavailable
+            }
+          }
+
+          try {
+            const registrySession = await apiClient.get<{
+              isVerified?: boolean;
+              email?: string | null;
+              code?: string;
+              invitationCode?: string;
+              guestName?: string;
+            }>('/api/registry/session');
+            if (
+              registrySession &&
+              typeof registrySession.email === 'string' &&
+              registrySession.email.trim().length > 0
+            ) {
+              verifiedEmail = registrySession.email.trim();
+            }
+            if (!verifiedCode && registrySession?.code) {
+              verifiedCode = registrySession.code.trim().toUpperCase();
+            } else if (!verifiedCode && registrySession?.invitationCode) {
+              verifiedCode = registrySession.invitationCode.trim().toUpperCase();
+            }
+            if (!verifiedGuestName && registrySession?.guestName) {
+              verifiedGuestName = registrySession.guestName;
+            }
+          } catch {
+            // Optional email hydration; ignore failures
+          }
+
+          const finalCode = verifiedCode || fallbackUpperCode;
 
           setSessionState(prev => ({
             ...prev,
-            invitationCode: verifiedCode,
-            guestName: data.guestName || prev.guestName,
+            invitationCode: finalCode,
+            guestName: verifiedGuestName || prev.guestName,
             email: verifiedEmail ?? prev.email ?? null,
             isVerified: true,
             isLoading: false,
             status: 'authenticated',
             lastErrorCode: null,
-            draftInvitationCode: verifiedCode,
+            draftInvitationCode: finalCode,
             isRecoveryModalOpen: false,
           }));
 
@@ -357,9 +423,18 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
           return false;
         }
       } catch (err: unknown) {
+        const apiErrData =
+          err instanceof ApiError && err.data && typeof err.data === 'object'
+            ? (err.data as { reason?: string; error?: string })
+            : null;
+        const sharedGuidance =
+          apiErrData?.reason === 'shared_passcode' && typeof apiErrData.error === 'string' && apiErrData.error.trim()
+            ? apiErrData.error.trim()
+            : null;
         setSessionState(prev => ({
           ...prev,
-          lastErrorCode: err instanceof Error ? err.message : 'RECOVERY_FAILED',
+          lastErrorCode:
+            sharedGuidance || (err instanceof Error ? err.message : 'RECOVERY_FAILED'),
         }));
         return false;
       }

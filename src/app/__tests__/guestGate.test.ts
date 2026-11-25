@@ -361,7 +361,9 @@ describe('Edge-enforced Guest Passcode Gate', () => {
         const data = await res.json();
         expect(data.success).toBe(true);
         expect(data.sessionType).toBe('invitation');
+        expect(data.code).toBe('LOVE2026');
         expect(data.guestName).toBe('Jordan Lee');
+        expect(data.email).toBeUndefined();
 
         expect(findFirstMock).toHaveBeenCalledWith({
           where: {
@@ -419,6 +421,74 @@ describe('Edge-enforced Guest Passcode Gate', () => {
         expect(cookieHeader).not.toContain(GUEST_COOKIE);
       } finally {
         prismaWithInvite.invitationCode = originalInvitationCode;
+      }
+    });
+
+    it('rejects exact-case GUEST_PASSCODE with 401 shared_passcode when requireInvitation is true and enforces AuthLockout', async () => {
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        const req = new NextRequest('http://localhost/api/guest/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ passcode: env.GUEST_PASSCODE, requireInvitation: true }),
+        });
+        const res = await guestLoginPost(req);
+        expect(res.status).toBe(401);
+        const data = await res.json();
+        expect(data).toMatchObject({
+          success: false,
+          valid: false,
+          reason: 'shared_passcode',
+        });
+        expect(data.error).toMatch(/shared website passcode/i);
+        expect(res.headers.get('set-cookie')).toBeNull();
+      }
+
+      const sixthReq = new NextRequest('http://localhost/api/guest/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ passcode: env.GUEST_PASSCODE, requireInvitation: true }),
+      });
+      const sixthRes = await guestLoginPost(sixthReq);
+      expect(sixthRes.status).toBe(429);
+    });
+
+    it('accepts legacy <8-character personal invitation codes from the database without forced rotation', async () => {
+      const prismaWithInvite = prisma as unknown as {
+        invitationCode?: { findFirst: jest.Mock };
+        broadcastRecipient?: { updateMany: jest.Mock };
+      };
+      const originalInvitationCode = prismaWithInvite.invitationCode;
+      const originalBroadcastRecipient = prismaWithInvite.broadcastRecipient;
+      prismaWithInvite.invitationCode = {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'inv-legacy-5',
+          code: 'VIP26',
+          guestName: 'Legacy Household',
+          email: 'legacy@example.com',
+          isSample: false,
+        }),
+      };
+      prismaWithInvite.broadcastRecipient = { updateMany: jest.fn().mockResolvedValue({ count: 0 }) };
+
+      try {
+        const req = new NextRequest('http://localhost/api/guest/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ passcode: 'vip26', requireInvitation: true }),
+        });
+        const res = await guestLoginPost(req);
+        expect(res.status).toBe(200);
+        const data = await res.json();
+        expect(data).toEqual({
+          success: true,
+          sessionType: 'invitation',
+          code: 'VIP26',
+          guestName: 'Legacy Household',
+        });
+        expect(res.headers.get('set-cookie')).toContain(GUEST_INVITE_COOKIE);
+      } finally {
+        prismaWithInvite.invitationCode = originalInvitationCode;
+        prismaWithInvite.broadcastRecipient = originalBroadcastRecipient;
       }
     });
 
@@ -510,6 +580,53 @@ describe('Edge-enforced Guest Passcode Gate', () => {
       const res = await middleware(req);
       expect(res.status).toBe(200);
       expect(res.headers.get('location')).toBeNull();
+    });
+
+    it('rejects unauthenticated GET and POST requests to /api/registry/validate-code with 401', async () => {
+      const getReq = new NextRequest('http://localhost/api/registry/validate-code?code=LOVE2026');
+      const getRes = await middleware(getReq);
+      expect(getRes.status).toBe(401);
+      expect((await getRes.json()).error).toBe('Unauthorized');
+
+      const postReq = new NextRequest('http://localhost/api/registry/validate-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: 'LOVE2026' }),
+      });
+      const postRes = await middleware(postReq);
+      expect(postRes.status).toBe(401);
+      expect((await postRes.json()).error).toBe('Unauthorized');
+    });
+
+    it('allows /api/registry/validate-code when authenticated via guest_auth, guest_invite_session, or admin_auth', async () => {
+      const guestToken = await signGuestToken({ guest: true, exp: Date.now() + 60_000 });
+      const guestRes = await middleware(
+        createMockNextRequest('http://localhost/api/registry/validate-code', {
+          method: 'POST',
+          cookies: { [GUEST_COOKIE]: guestToken },
+        })
+      );
+      expect(guestRes.status).toBe(200);
+
+      const inviteToken = await signGuestInviteSessionToken({
+        code: 'LOVE2026',
+        guestName: 'Jordan Lee',
+        iat: Date.now(),
+        exp: Date.now() + 60_000,
+      });
+      const inviteRes = await middleware(
+        createMockNextRequest('http://localhost/api/registry/validate-code', {
+          method: 'POST',
+          cookies: { [GUEST_INVITE_COOKIE]: inviteToken },
+        })
+      );
+      expect(inviteRes.status).toBe(200);
+
+      mockIsAdminRequest.mockResolvedValueOnce(true);
+      const adminRes = await middleware(
+        new NextRequest('http://localhost/api/registry/validate-code', { method: 'POST' })
+      );
+      expect(adminRes.status).toBe(200);
     });
 
     it('rejects unauthenticated requests to self-service lookup API /api/guest/lookup with 401', async () => {

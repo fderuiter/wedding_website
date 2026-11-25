@@ -99,8 +99,16 @@ test.describe('Sample Data Generator & Admin Workflow', () => {
     });
     expect(seedRes.status()).toBe(200);
 
-    // 2. Validate sample code SMITH2026 -> expect 404 and no guest_invite_session Set-Cookie
-    const validateRes = await request.get('/api/registry/validate-code?code=SMITH2026');
+    // 2. Unauthenticated validate-code returns 401; authenticated POST with sample code SMITH2026 returns 404 and no guest_invite_session Set-Cookie
+    const unauthValidateRes = await request.post('/api/registry/validate-code', {
+      data: { code: 'SMITH2026' },
+    });
+    expect(unauthValidateRes.status()).toBe(401);
+
+    const validateRes = await request.post('/api/registry/validate-code', {
+      headers: { Cookie: `guest_auth=${guestCookie}` },
+      data: { code: 'SMITH2026' },
+    });
     expect(validateRes.status()).toBe(404);
     const validateBody = await validateRes.json();
     expect(validateBody.error).toBe('Invalid invitation code.');

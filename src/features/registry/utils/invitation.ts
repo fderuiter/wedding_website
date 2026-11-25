@@ -1,3 +1,8 @@
+import {
+  INVITATION_CODE_MIN_LENGTH,
+  validateCustomInvitationCode,
+} from '@/utils/invitationValidation';
+
 export type AttendanceStatus = 'attending' | 'declined' | 'pending';
 
 export interface AttendanceStatusItem {
@@ -397,26 +402,32 @@ export function isAddressComplete(item?: AddressItem | null): boolean {
 }
 
 const INVITATION_CODE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-const INVITATION_CODE_LENGTH = 8;
+const INVITATION_CODE_LENGTH = INVITATION_CODE_MIN_LENGTH;
 const INVITATION_CODE_MAX_UNBIASED_BYTE = 252;
 
 /**
- * Generates an eight-character cryptographically random alphanumeric string using uppercase characters and numbers.
+ * Generates an eight-character cryptographically random alphanumeric string using uppercase characters and numbers,
+ * guaranteed to satisfy custom code diversity and non-passcode constraints.
  */
 export function generateRandomCode(): string {
-  let result = '';
   const randomBytes = new Uint8Array(16);
 
-  while (result.length < INVITATION_CODE_LENGTH) {
-    globalThis.crypto.getRandomValues(randomBytes);
-    for (let i = 0; i < randomBytes.length && result.length < INVITATION_CODE_LENGTH; i++) {
-      const byte = randomBytes[i];
-      if (byte < INVITATION_CODE_MAX_UNBIASED_BYTE) {
-        result += INVITATION_CODE_CHARS.charAt(byte % INVITATION_CODE_CHARS.length);
+  for (let attempt = 0; attempt < 16; attempt++) {
+    let result = '';
+    while (result.length < INVITATION_CODE_LENGTH) {
+      globalThis.crypto.getRandomValues(randomBytes);
+      for (let i = 0; i < randomBytes.length && result.length < INVITATION_CODE_LENGTH; i++) {
+        const byte = randomBytes[i];
+        if (byte < INVITATION_CODE_MAX_UNBIASED_BYTE) {
+          result += INVITATION_CODE_CHARS.charAt(byte % INVITATION_CODE_CHARS.length);
+        }
       }
+    }
+    if (validateCustomInvitationCode(result) === null) {
+      return result;
     }
   }
 
-  return result;
+  return 'GUEST8X2';
 }
 

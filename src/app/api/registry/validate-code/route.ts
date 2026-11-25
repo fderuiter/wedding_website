@@ -67,11 +67,7 @@ async function findActiveInvitationCode(
       isProduction ? (process.env.GUEST_PASSCODE ?? '') : (process.env.GUEST_PASSCODE ?? env.GUEST_PASSCODE ?? '')
     ).trim();
 
-    if (
-      expectedPasscode &&
-      (safeComparePasscode(rawCode, expectedPasscode) ||
-        safeComparePasscode(code, expectedPasscode.toUpperCase()))
-    ) {
+    if (expectedPasscode && safeComparePasscode(rawCode, expectedPasscode)) {
       return {
         kind: 'shared_passcode',
         error:
@@ -84,32 +80,6 @@ async function findActiveInvitationCode(
 
   return { kind: 'invite', invite };
 }
-
-export const GET = withApiMiddleware(async (request: NextRequest) => {
-  const { searchParams } = new URL(request.url);
-  const lookup = await findActiveInvitationCode(searchParams.get('code'));
-
-  if (lookup.kind === 'shared_passcode') {
-    return NextResponse.json({
-      valid: false,
-      reason: 'shared_passcode',
-      error: lookup.error,
-    });
-  }
-
-  const { invite } = lookup;
-  const resolvedEmail =
-    typeof invite.email === 'string' && invite.email.trim().length > 0
-      ? invite.email.trim()
-      : null;
-
-  return NextResponse.json({
-    valid: true,
-    guestName: invite.guestName,
-    code: invite.code,
-    email: resolvedEmail,
-  });
-});
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
   assertJsonContentType(request);
@@ -128,11 +98,14 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
 
   const lookup = await findActiveInvitationCode(parsed.data.code);
   if (lookup.kind === 'shared_passcode') {
-    return NextResponse.json({
-      valid: false,
-      reason: 'shared_passcode',
-      error: lookup.error,
-    });
+    return NextResponse.json(
+      {
+        valid: false,
+        reason: 'shared_passcode',
+        error: lookup.error,
+      },
+      { status: 401 }
+    );
   }
 
   const { invite } = lookup;
@@ -185,16 +158,10 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     });
   }
 
-  const resolvedEmail =
-    typeof invite.email === 'string' && invite.email.trim().length > 0
-      ? invite.email.trim()
-      : null;
-
   const response = NextResponse.json({
     valid: true,
     guestName: invite.guestName,
     code: invite.code,
-    email: resolvedEmail,
   });
 
   setGuestInviteSessionCookie(response, token, request);

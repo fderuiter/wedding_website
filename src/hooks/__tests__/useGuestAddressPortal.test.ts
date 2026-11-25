@@ -309,18 +309,19 @@ describe('useGuestAddressPortal hook', () => {
             ? await input.clone().text()
             : '';
 
-      if (url.includes('/api/registry/validate-code') && rawBody.includes('SLOWMOUNT')) {
+      if (url.includes('/api/guest/login') && rawBody.includes('SLOWMOUNT')) {
         signals.mount = signal;
         // Never resolve slowly to test cancellation
         return new Promise(() => {});
       }
-      if (url.includes('/api/registry/validate-code') && rawBody.includes('FASTMANUAL')) {
+      if (url.includes('/api/guest/login') && rawBody.includes('FASTMANUAL')) {
         signals.manual = signal;
         return {
           ok: true,
           status: 200,
           json: async () => ({
-            valid: true,
+            success: true,
+            sessionType: 'invitation',
             guestName: 'Fast Guest',
             code: 'FASTMANUAL',
           }),
@@ -630,9 +631,12 @@ describe('useGuestAddressPortal hook', () => {
         : typeof (firstFetchArg as Request | undefined)?.clone === 'function'
           ? await (firstFetchArg as Request).clone().text()
           : '{}';
-    expect(firstFetchUrl).toContain('/api/registry/validate-code');
+    expect(firstFetchUrl).toContain('/api/guest/login');
     expect(firstFetchMethod).toBe('POST');
-    expect(JSON.parse(firstFetchBody)).toEqual({ code: 'INVITE77' });
+    expect(JSON.parse(firstFetchBody)).toEqual({
+      passcode: 'INVITE77',
+      requireInvitation: true,
+    });
     expect(replaceStateSpy).toHaveBeenCalledWith(
       expect.anything(),
       '',
@@ -675,7 +679,7 @@ describe('useGuestAddressPortal hook', () => {
     expect(calledUrls.some((u) => u.includes('/api/guest/address'))).toBe(false);
   });
 
-  it('surfaces friendly guidance without error toast when validate-code returns reason: shared_passcode', async () => {
+  it('surfaces friendly guidance without error toast when /api/guest/login returns 401 with reason: shared_passcode', async () => {
     globalFetch
       .mockResolvedValueOnce({
         ok: true,
@@ -686,15 +690,13 @@ describe('useGuestAddressPortal hook', () => {
         }),
       })
       .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
+        ok: false,
+        status: 401,
         json: async () => ({
-          success: true,
-          data: {
-            valid: false,
-            reason: 'shared_passcode',
-            error: 'That is the shared website passcode. Please enter your unique household invitation code.',
-          },
+          success: false,
+          valid: false,
+          reason: 'shared_passcode',
+          error: 'That is the shared website passcode. Please enter your unique household invitation code.',
         }),
       });
 

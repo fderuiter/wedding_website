@@ -8,6 +8,7 @@ import {
 } from '@/utils/validationPrimitives';
 import { parseOptionalDate } from '@/lib/backupPersistence';
 import {
+  INVITATION_CODE_MIN_LENGTH,
   INVITATION_CODE_MAX_LENGTH,
   GUEST_NAME_MAX_LENGTH,
   ADDRESS_LINE_MAX_LENGTH,
@@ -20,6 +21,7 @@ import {
   PARTY_GROUP_MAX_LENGTH,
   INVITATION_COLLISION_STRATEGIES,
   normalizePartyTags,
+  validateCustomInvitationCode,
   type BatchInvitationCodeRecord,
 } from '@/utils/invitationValidation';
 import {
@@ -808,11 +810,23 @@ export const InvitationCodeSchema = z.object({
   code: z
     .string()
     .trim()
-    .min(1, 'Code is required.')
+    .min(
+      INVITATION_CODE_MIN_LENGTH,
+      `Invitation code must be at least ${INVITATION_CODE_MIN_LENGTH} characters.`,
+    )
     .max(
       INVITATION_CODE_MAX_LENGTH,
       `Code must be under ${INVITATION_CODE_MAX_LENGTH} characters.`,
-    ),
+    )
+    .superRefine((val, ctx) => {
+      const err = validateCustomInvitationCode(val);
+      if (err) {
+        ctx.addIssue({
+          code: 'custom',
+          message: err,
+        });
+      }
+    }),
   guestName: requiredGuestNameField,
   email: trimmedEmailPipe.nullable().optional().or(z.literal('')),
   addressLine1: nullableOptionalTrimmedField(
@@ -886,7 +900,25 @@ const BatchImportInvitationCodeItemSchema = z.object({
       GUEST_NAME_MAX_LENGTH,
       `Guest name must be under ${GUEST_NAME_MAX_LENGTH} characters.`,
     ),
-  code: z.string().trim().optional().or(z.literal('')),
+  code: z
+    .string()
+    .trim()
+    .max(
+      INVITATION_CODE_MAX_LENGTH,
+      `Invitation code must be under ${INVITATION_CODE_MAX_LENGTH} characters.`,
+    )
+    .superRefine((val, ctx) => {
+      if (!val) return;
+      const err = validateCustomInvitationCode(val);
+      if (err) {
+        ctx.addIssue({
+          code: 'custom',
+          message: err,
+        });
+      }
+    })
+    .optional()
+    .or(z.literal('')),
   email: z.union([trimmedEmailPipe, z.literal(''), z.null()]).optional(),
   ...optionalAddressFields,
   dietaryNotes: z.string().trim().optional().or(z.literal('')).nullable(),

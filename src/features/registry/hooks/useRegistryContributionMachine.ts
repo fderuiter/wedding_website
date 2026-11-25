@@ -461,7 +461,8 @@ export function useRegistryContributionMachine({
       guestName?: string;
       email?: string | null;
     }> => {
-      const code = codeToVerify.trim().toUpperCase();
+      const rawCode = codeToVerify.trim();
+      const code = rawCode.toUpperCase();
       if (!code) {
         setCodeError('Please enter an invitation code.');
         setCodeFailureCount((count) => count + 1);
@@ -527,12 +528,11 @@ export function useRegistryContributionMachine({
           valid?: boolean;
           code?: string;
           guestName?: string;
-          email?: string | null;
           error?: string;
           reason?: string;
         }>(
           '/api/registry/validate-code',
-          { code },
+          { code: rawCode },
           { signal: controller.signal }
         );
 
@@ -542,10 +542,28 @@ export function useRegistryContributionMachine({
 
         if (data && data.valid) {
           const verifiedCode = data.code || code;
-          const resolvedEmail =
-            typeof data.email === 'string' && data.email.trim().length > 0
-              ? data.email.trim()
-              : null;
+          let resolvedEmail: string | null = null;
+          try {
+            const sessionData = await apiClient.get<{
+              isVerified?: boolean;
+              email?: string | null;
+            }>('/api/registry/session', { signal: controller.signal });
+            if (controller.signal.aborted) {
+              return { valid: false };
+            }
+            if (
+              sessionData &&
+              typeof sessionData.email === 'string' &&
+              sessionData.email.trim().length > 0
+            ) {
+              resolvedEmail = sessionData.email.trim();
+            }
+          } catch (sessionErr: unknown) {
+            if (controller.signal.aborted || (sessionErr as Error)?.name === 'AbortError') {
+              return { valid: false };
+            }
+          }
+
           lockedCodeRef.current = verifiedCode;
           setVerifiedCodeState(verifiedCode);
           setInvitationCodeState(verifiedCode);

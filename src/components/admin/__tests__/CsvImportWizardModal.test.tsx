@@ -128,7 +128,7 @@ describe('CsvImportWizardModal Component', () => {
     const csvContent =
       'Guest Name,Invitation Code,Email,Dietary Allergies,Plus Ones,Custom Group\n' +
       'Alice Smith,ALICE100,alice@example.com,Gluten Free,1,VIP Table\n' +
-      'Bob Johnson,BOB200,bob@example.com,Vegan,2,Family';
+      'Bob Johnson,BOBJ2026,bob@example.com,Vegan,2,Family';
     const file = new File([csvContent], 'guests.csv', { type: 'text/csv' });
     (file as any)._content = csvContent;
 
@@ -202,7 +202,7 @@ describe('CsvImportWizardModal Component', () => {
             },
             {
               guestName: 'Bob Johnson',
-              code: 'BOB200',
+              code: 'BOBJ2026',
               email: 'bob@example.com',
               dietaryNotes: 'Vegan',
               plusOneAllocations: 2,
@@ -312,7 +312,7 @@ describe('CsvImportWizardModal Component', () => {
     const rowsCount = 2000;
     const editableRows = Array.from({ length: rowsCount }, (_, i) => ({
       guestName: `Guest ${i}`,
-      code: `CODE_${i}`,
+      code: `CODE_${String(i).padStart(4, '0')}`,
       email: `guest${i}@example.com`,
       dietaryNotes: '',
       plusOneAllocations: '0',

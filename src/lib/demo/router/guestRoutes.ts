@@ -249,6 +249,7 @@ export async function handleGuestRoutes(ctx: DemoRouteContext): Promise<Response
   if (path === '/api/guest/login' && method === 'POST') {
     const body = await parseJsonBody(init, rawInput);
     const rawCode = String(body.passcode ?? body.code ?? '').trim();
+    const requireInvitation = body.requireInvitation === true;
     if (!rawCode) {
       return jsonResponse({ success: false, error: 'Invitation code or passcode is required.' }, 400);
     }
@@ -291,6 +292,32 @@ export async function handleGuestRoutes(ctx: DemoRouteContext): Promise<Response
         guestName: matchedGuest.guestName,
       };
       return jsonResponse({ ...payload, data: payload });
+    }
+
+    const envPasscode =
+      typeof process !== 'undefined' && typeof process.env?.GUEST_PASSCODE === 'string'
+        ? process.env.GUEST_PASSCODE.trim()
+        : '';
+    if (requireInvitation) {
+      if (rawCode === 'WEDDING2026' || (envPasscode && rawCode === envPasscode)) {
+        return jsonResponse(
+          {
+            success: false,
+            valid: false,
+            reason: 'shared_passcode',
+            error:
+              'That is the shared website passcode. Please enter the personal household invitation code printed on your invitation.',
+          },
+          401
+        );
+      }
+      return jsonResponse(
+        {
+          success: false,
+          error: 'Invalid invitation code or passcode.',
+        },
+        401
+      );
     }
 
     const upperCode = rawCode.toUpperCase();

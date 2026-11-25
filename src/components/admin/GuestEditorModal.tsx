@@ -22,6 +22,7 @@ import {
   COUNTRY_MAX_LENGTH,
   GUEST_NAME_MAX_LENGTH,
   HOUSEHOLD_NAME_MAX_LENGTH,
+  INVITATION_CODE_MIN_LENGTH,
   INVITATION_CODE_MAX_LENGTH,
   PARTY_GROUP_MAX_LENGTH,
   PHONE_MAX_LENGTH,
@@ -32,6 +33,7 @@ import {
   normalizeInvitationCode,
   normalizeNullableString,
   normalizePartyTags,
+  validateCustomInvitationCode,
   validateGuestPhone,
   validateInvitationGuestFields,
 } from '@/utils/invitationValidation';
@@ -233,7 +235,21 @@ function GuestEditorFormInner(props: GuestEditorFormProps) {
       setValidationError('Invitation code is required.');
       return;
     }
-    if (trimmedCode && trimmedCode.length > INVITATION_CODE_MAX_LENGTH) {
+    if (trimmedCode && (!isEditMode || hasCodeChanged)) {
+      if (trimmedCode.length < INVITATION_CODE_MIN_LENGTH) {
+        setValidationError(`Invitation code must be at least ${INVITATION_CODE_MIN_LENGTH} characters.`);
+        return;
+      }
+      if (trimmedCode.length > INVITATION_CODE_MAX_LENGTH) {
+        setValidationError(`Invitation code must be under ${INVITATION_CODE_MAX_LENGTH} characters.`);
+        return;
+      }
+      const codeEntropyError = validateCustomInvitationCode(trimmedCode);
+      if (codeEntropyError) {
+        setValidationError(codeEntropyError);
+        return;
+      }
+    } else if (trimmedCode && trimmedCode.length > INVITATION_CODE_MAX_LENGTH) {
       setValidationError(`Invitation code must be under ${INVITATION_CODE_MAX_LENGTH} characters.`);
       return;
     }
@@ -272,9 +288,11 @@ function GuestEditorFormInner(props: GuestEditorFormProps) {
     if (isEditMode && guest) {
       const originalPhone = normalizeGuestPhone(getInitialGuestPhone(guest));
       const originalHouseholdNotes = normalizeNullableString(getInitialHouseholdNotes(guest));
+      const shouldIncludeEditCode =
+        hasCodeChanged || validateCustomInvitationCode(trimmedCode) === null;
       payload = {
         guestName: trimmedName,
-        code: trimmedCode,
+        ...(shouldIncludeEditCode ? { code: trimmedCode } : {}),
         email: normalizedEmail,
         householdName: normalizedHouseholdName,
         partyGroup: normalizedPartyGroup,
@@ -435,7 +453,7 @@ function GuestEditorFormInner(props: GuestEditorFormProps) {
               value={formState.code}
               onChange={(e) => updateField('code', e.target.value)}
               className="font-mono uppercase"
-              placeholder={isEditMode ? 'e.g. ALICE123' : 'e.g. JOHN123'}
+              placeholder={isEditMode ? 'e.g. ALICE2026' : 'e.g. JOHN2026'}
             />
           </FormGroup>
 

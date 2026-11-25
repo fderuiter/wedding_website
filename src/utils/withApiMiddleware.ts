@@ -352,6 +352,8 @@ export function withApiMiddleware(
             { 
               success: false, 
               error: data.error || data.message || 'API Error',
+              ...(typeof data.reason === 'string' && data.reason ? { reason: data.reason } : {}),
+              ...(typeof data.valid === 'boolean' ? { valid: data.valid } : {}),
               ...(data.details ? { details: data.details } : {}),
               ...(data.helpPrompt ? { helpPrompt: data.helpPrompt } : {})
             },

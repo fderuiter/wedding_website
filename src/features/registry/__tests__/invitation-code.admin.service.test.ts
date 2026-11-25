@@ -70,25 +70,51 @@ describe('InvitationCodeAdminService', () => {
 
     it('throws error for invalid email format', async () => {
       await expect(
-        (service as any).validate({ guestName: 'Alice Smith', code: 'A1', email: 'not-an-email' })
+        (service as any).validate({ guestName: 'Alice Smith', code: 'ALICE123', email: 'not-an-email' })
       ).rejects.toThrow('Validation Error: Invalid email format.');
     });
 
     it('throws error for negative plus-one allocation', async () => {
       await expect(
-        (service as any).validate({ guestName: 'Alice Smith', code: 'A1', plusOneAllocations: -1 })
+        (service as any).validate({ guestName: 'Alice Smith', code: 'ALICE123', plusOneAllocations: -1 })
       ).rejects.toThrow('Validation Error: Plus-one allocation must be a non-negative integer.');
     });
 
     it('throws error for plusOneFirstName or plusOneLastName over 100 characters', async () => {
       const longName = 'A'.repeat(101);
       await expect(
-        (service as any).validate({ guestName: 'Alice Smith', code: 'A1', plusOneFirstName: longName })
+        (service as any).validate({ guestName: 'Alice Smith', code: 'ALICE123', plusOneFirstName: longName })
       ).rejects.toThrow('Validation Error: Plus-one first name must be under 100 characters.');
 
       await expect(
-        (service as any).validate({ guestName: 'Alice Smith', code: 'A1', plusOneLastName: longName })
+        (service as any).validate({ guestName: 'Alice Smith', code: 'ALICE123', plusOneLastName: longName })
       ).rejects.toThrow('Validation Error: Plus-one last name must be under 100 characters.');
+    });
+
+    it('rejects custom codes shorter than 8 chars, with <4 distinct chars, or matching GUEST_PASSCODE', async () => {
+      const prevPasscode = process.env.GUEST_PASSCODE;
+      process.env.GUEST_PASSCODE = 'WEDDING2026';
+      try {
+        await expect(
+          (service as any).validate({ guestName: 'Alice Smith', code: 'SHORT12' })
+        ).rejects.toThrow('Validation Error: Invitation code must be at least 8 characters.');
+
+        await expect(
+          (service as any).validate({ guestName: 'Alice Smith', code: 'AAAAAAAA' })
+        ).rejects.toThrow(
+          'Validation Error: Invitation code must include at least 4 distinct characters.'
+        );
+
+        await expect(
+          (service as any).validate({ guestName: 'Alice Smith', code: 'wedding2026' })
+        ).rejects.toThrow('Validation Error: Invitation code cannot match the shared event passcode.');
+      } finally {
+        if (prevPasscode === undefined) {
+          delete process.env.GUEST_PASSCODE;
+        } else {
+          process.env.GUEST_PASSCODE = prevPasscode;
+        }
+      }
     });
   });
 
@@ -173,7 +199,7 @@ describe('InvitationCodeAdminService', () => {
       const records = [
         {
           guestName: 'John Doe',
-          code: 'JOHN100',
+          code: 'JOHN1002',
           email: 'john@example.com',
           dietaryNotes: 'Gluten Free',
           plusOneAllocations: 1,
@@ -195,7 +221,7 @@ describe('InvitationCodeAdminService', () => {
       expect(createManyCall.data).toHaveLength(2);
       expect(createManyCall.data[0]).toEqual({
         guestName: 'John Doe',
-        code: 'JOHN100',
+        code: 'JOHN1002',
         email: 'john@example.com',
         householdName: null,
         partyGroup: null,
@@ -297,7 +323,7 @@ describe('InvitationCodeAdminService', () => {
 
     it('merges extraFields via JSONB concatenation, strips reserved RSVP keys, and omits unmapped plusOneAllocations on update', async () => {
       mockPrismaClient.invitationCode.findMany.mockResolvedValue([
-        { id: 'inv-1', code: 'GUEST1', guestName: 'Jane Doe' },
+        { id: 'inv-1', code: 'GUEST102', guestName: 'Jane Doe' },
       ]);
       mockPrismaClient.$executeRaw.mockResolvedValue(1);
 
@@ -305,7 +331,7 @@ describe('InvitationCodeAdminService', () => {
         [
           {
             guestName: 'Jane Doe',
-            code: 'GUEST1',
+            code: 'GUEST102',
             city: 'Boston',
             extraFields: {
               attendanceStatus: 'pending',
@@ -342,7 +368,7 @@ describe('InvitationCodeAdminService', () => {
       // Simulate 60 existing records in DB to exceed previous chunk boundaries
       const dbRecords = Array.from({ length: 60 }, (_, idx) => ({
         id: `id-${idx + 1}`,
-        code: `CODE${idx + 1}`,
+        code: `CODE${String(idx + 1).padStart(4, '0')}`,
         guestName: `Guest ${idx + 1}`,
       }));
       mockPrismaClient.invitationCode.findMany.mockResolvedValue(dbRecords);
@@ -373,7 +399,7 @@ describe('InvitationCodeAdminService', () => {
       mockPrismaClient.invitationCode.createMany.mockResolvedValue({ count: 1 });
 
       const records = [
-        { guestName: 'Brand New Guest', code: 'NEW1' },
+        { guestName: 'Brand New Guest', code: 'NEW12345' },
       ];
 
       const result = await service.importBatch(records, 'update');
@@ -415,7 +441,7 @@ describe('InvitationCodeAdminService', () => {
       mockPrismaClient.invitationCode.findMany.mockResolvedValue([]);
 
       const records = [
-        { guestName: 'Bad Email Guest', code: 'CODE1', email: 'invalid-email' },
+        { guestName: 'Bad Email Guest', code: 'CODE1234', email: 'invalid-email' },
       ];
 
       await expect(service.importBatch(records, 'skip')).rejects.toThrow(
@@ -432,8 +458,8 @@ describe('InvitationCodeAdminService', () => {
 
       const records = [
         { guestName: 'Alice Smith', code: 'EXISTING1', email: 'alice@example.com' },
-        { guestName: 'Bob Jones', code: 'BOB200' },
-        { guestName: '', code: 'BAD1' },
+        { guestName: 'Bob Jones', code: 'BOB2026A' },
+        { guestName: '', code: 'BAD12345' },
       ];
 
       const result = await service.dryRunValidateBatch(records, 'skip');
@@ -505,11 +531,11 @@ describe('InvitationCodeAdminService', () => {
 
     it('maps validation and duplicate code errors to specific columns in fieldErrors', async () => {
       mockPrismaClient.invitationCode.findMany.mockResolvedValue([
-        { id: '1', code: 'TAKEN1', guestName: 'Existing Guest' },
+        { id: '1', code: 'TAKEN123', guestName: 'Existing Guest' },
       ]);
 
       const records = [
-        { guestName: 'Alice Smith', code: 'TAKEN1', email: 'bad-email' },
+        { guestName: 'Alice Smith', code: 'TAKEN123', email: 'bad-email' },
         { guestName: 'Bob Dup 1', code: 'BATCHDUP' },
         { guestName: 'Bob Dup 2', code: 'BATCHDUP' },
       ];
@@ -518,7 +544,7 @@ describe('InvitationCodeAdminService', () => {
 
       expect(result.rows[0].fieldErrors).toEqual({
         email: ['Invalid email format.'],
-        code: ['Code "TAKEN1" already exists in database (belongs to "Existing Guest").'],
+        code: ['Code "TAKEN123" already exists in database (belongs to "Existing Guest").'],
       });
       expect(result.rows[1].fieldErrors).toEqual({
         code: ['Duplicate invitation code "BATCHDUP" within batch.'],
@@ -636,6 +662,28 @@ describe('InvitationCodeAdminService', () => {
       ).rejects.toThrow('Validation Error: Invitation code "TAKEN999" is already in use.');
 
       expect(mockPrismaClient.invitationCode.update).not.toHaveBeenCalled();
+    });
+
+    it('allows non-code updates on legacy <8-char DB rows without forced rotation', async () => {
+      mockPrismaClient.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-legacy',
+        code: 'VIP26',
+        guestName: 'Legacy Guest',
+      });
+      mockPrismaClient.invitationCode.update.mockImplementation(({ where, data }: any) =>
+        Promise.resolve({
+          id: where.id,
+          code: 'VIP26',
+          ...data,
+        })
+      );
+
+      const updated = await service.update('inv-legacy', {
+        guestName: 'Legacy Guest Updated',
+        city: 'Portland',
+      });
+      expect(updated.code).toBe('VIP26');
+      expect(updated.city).toBe('Portland');
     });
   });
 

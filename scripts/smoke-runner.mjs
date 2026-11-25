@@ -303,6 +303,7 @@ export async function runSmokeRouteProbes({
     { path: '/guest/login', expectedStatus: 200, name: 'Guest Login page' },
     { path: '/', expectedStatus: 303, name: 'Home page (unauthenticated redirect)' },
     { path: '/api/registry/items', expectedStatus: 401, name: 'Registry items API (unauthenticated)' },
+    { path: '/api/registry/validate-code', expectedStatus: 401, name: 'Registry validate-code API (unauthenticated)' },
   ];
   for (const route of perimeterRoutes) {
     console.log(`[${label}] Testing ${route.name} (${route.path})...`);
@@ -324,18 +325,7 @@ export async function runSmokeRouteProbes({
     console.log(`✅ [${label}] ${route.name} (${route.path}) returned ${res.statusCode}`);
   }
 
-  // 6. Unauthenticated Data-Backed Schema Probe (/api/registry/validate-code)
-  const validatePath = '/api/registry/validate-code?code=SMOKE-NONEXISTENT-CODE';
-  console.log(`[${label}] Testing data-backed GET ${validatePath}...`);
-  const validateRes = await httpRequest(baseUrl, validatePath, { hostHeader });
-  if (validateRes.statusCode !== 404) {
-    throw new Error(
-      `[${label}] GET ${validatePath} returned ${validateRes.statusCode} (expected 404): ${validateRes.body}`
-    );
-  }
-  console.log(`✅ [${label}] ${validatePath} returned 404 (InvitationCode table verified)`);
-
-  // 7. Authenticated Guest Session + Data-Backed Registry Items Probe
+  // 6. Authenticated Guest Session + Data-Backed Schema & Registry Items Probes
   console.log(`[${label}] Authenticating guest session via POST /api/guest/login...`);
   const loginRes = await httpRequest(baseUrl, '/api/guest/login', {
     method: 'POST',
@@ -355,6 +345,24 @@ export async function runSmokeRouteProbes({
     throw new Error(`[${label}] POST /api/guest/login did not issue a guest_auth Set-Cookie header.`);
   }
   console.log(`✅ [${label}] POST /api/guest/login issued guest_auth session cookie`);
+
+  const validatePath = '/api/registry/validate-code';
+  console.log(`[${label}] Testing authenticated data-backed POST ${validatePath}...`);
+  const validateRes = await httpRequest(baseUrl, validatePath, {
+    method: 'POST',
+    hostHeader,
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: guestCookie,
+    },
+    body: JSON.stringify({ code: 'SMOKE-NONEXISTENT-CODE' }),
+  });
+  if (validateRes.statusCode !== 404) {
+    throw new Error(
+      `[${label}] POST ${validatePath} returned ${validateRes.statusCode} (expected 404): ${validateRes.body}`
+    );
+  }
+  console.log(`✅ [${label}] POST ${validatePath} returned 404 (InvitationCode table verified)`);
 
   console.log(`[${label}] Testing authenticated GET /api/registry/items...`);
   const itemsRes = await httpRequest(baseUrl, '/api/registry/items', {

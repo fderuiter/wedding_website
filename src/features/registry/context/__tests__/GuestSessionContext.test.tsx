@@ -1,10 +1,11 @@
 import { render, screen, waitFor, act } from '@testing-library/react';
 import { GuestSessionProvider, useGuestSession } from '../GuestSessionContext';
 import { ToastProvider } from '@/components/ui/ToastProvider';
-import { apiClient } from '@/lib/apiClient';
+import { apiClient, ApiError } from '@/lib/apiClient';
 import { notifyGuestSessionChanged } from '@/utils/guestSessionEvents';
 
 jest.mock('@/lib/apiClient', () => ({
+  ...jest.requireActual('@/lib/apiClient'),
   apiClient: {
     get: jest.fn(),
     post: jest.fn(),
@@ -16,6 +17,7 @@ const TestComponent = () => {
   const {
     invitationCode,
     guestName,
+    email,
     isVerified,
     isLoading,
     status,
@@ -36,6 +38,7 @@ const TestComponent = () => {
       <div data-testid="verified">{isVerified ? 'yes' : 'no'}</div>
       <div data-testid="code">{invitationCode}</div>
       <div data-testid="name">{guestName}</div>
+      <div data-testid="email">{email || ''}</div>
       <div data-testid="status">{status}</div>
       <div data-testid="lastErrorCode">{lastErrorCode || 'none'}</div>
       <div data-testid="draftCode">{draftInvitationCode}</div>
@@ -145,7 +148,7 @@ describe('GuestSessionContext', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Session expired. Re-verify invitation code');
   });
 
-  it('restores authenticated status when recoverSession succeeds', async () => {
+  it('restores authenticated status and hydrates email from /api/registry/session when recoverSession succeeds', async () => {
     (apiClient.get as jest.Mock)
       .mockResolvedValueOnce({
         isVerified: true,
@@ -154,9 +157,16 @@ describe('GuestSessionContext', () => {
       })
       .mockResolvedValueOnce({
         isVerified: false,
+      })
+      .mockResolvedValueOnce({
+        isVerified: true,
+        invitationCode: 'RECOVER123',
+        code: 'RECOVER123',
+        guestName: 'Jane Restored',
+        email: 'jane.restored@example.com',
       });
     (apiClient.post as jest.Mock).mockResolvedValueOnce({
-      valid: true,
+      sessionType: 'invitation',
       code: 'RECOVER123',
       guestName: 'Jane Restored',
     });
@@ -192,12 +202,67 @@ describe('GuestSessionContext', () => {
       expect(screen.getByTestId('verified')).toHaveTextContent('yes');
       expect(screen.getByTestId('code')).toHaveTextContent('RECOVER123');
       expect(screen.getByTestId('name')).toHaveTextContent('Jane Restored');
+      expect(screen.getByTestId('email')).toHaveTextContent('jane.restored@example.com');
       expect(screen.getByTestId('modalOpen')).toHaveTextContent('closed');
     });
 
-    expect(apiClient.post).toHaveBeenCalledWith('/api/registry/validate-code', {
-      code: 'RECOVER123',
+    expect(apiClient.post).toHaveBeenCalledWith('/api/guest/login', {
+      passcode: 'RECOVER123',
+      requireInvitation: true,
     });
+  });
+
+  it('returns shared_passcode guidance when recoverSession receives 401 ApiError with reason: shared_passcode', async () => {
+    (apiClient.get as jest.Mock).mockResolvedValueOnce({
+      isVerified: false,
+      invitationCode: null,
+      guestName: null,
+    });
+    (apiClient.post as jest.Mock).mockRejectedValueOnce(
+      new ApiError(
+        401,
+        'That is the shared website passcode. Please enter your unique household invitation code.',
+        {
+          success: false,
+          valid: false,
+          reason: 'shared_passcode',
+          error:
+            'That is the shared website passcode. Please enter your unique household invitation code.',
+        }
+      )
+    );
+
+    let outcome: boolean | undefined;
+    const RecoveryProbe = () => {
+      const { recoverSession, lastErrorCode } = useGuestSession();
+      return (
+        <div>
+          <div data-testid="probe-error">{lastErrorCode || 'none'}</div>
+          <button
+            onClick={async () => {
+              outcome = await recoverSession('WEDDING2026');
+            }}
+          >
+            Probe Shared
+          </button>
+        </div>
+      );
+    };
+
+    render(
+      <GuestSessionProvider>
+        <RecoveryProbe />
+      </GuestSessionProvider>
+    );
+
+    await act(async () => {
+      screen.getByText('Probe Shared').click();
+    });
+
+    expect(outcome).toBe(false);
+    expect(screen.getByTestId('probe-error')).toHaveTextContent(
+      'That is the shared website passcode. Please enter your unique household invitation code.'
+    );
   });
 
   it('safely degrades when rendered outside ToastProvider', async () => {

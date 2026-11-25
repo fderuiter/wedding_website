@@ -2617,7 +2617,7 @@ export function generateFeatureBarrelsTable(rootDir: string = ROOT_DIR): string 
 const REGISTRY_SKIP_ROUTE_NOTES: Record<string, string> = {
   '/api/registry/scrape': 'reused by Admin Content Hub photo metadata import',
   '/api/registry/session': 'global guest invitation session hydration',
-  '/api/registry/validate-code': 'reused by `/guest/collect` address portal',
+  '/api/registry/validate-code': 'reused by authenticated `/guest` household session upgrade',
   '/api/registry/webhook/stripe':
     'asynchronous settlement reconciliation for already-created PaymentIntents',
 };

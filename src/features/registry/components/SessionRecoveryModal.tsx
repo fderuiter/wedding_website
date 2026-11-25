@@ -15,13 +15,23 @@ interface SessionRecoveryModalProps {
 
 interface SessionRecoveryFormProps {
   defaultCode: string;
+  lastErrorCode: string | null;
   recoverSession: (code: string) => Promise<boolean>;
   onClose: () => void;
   onSuccess?: () => void;
 }
 
+const INTERNAL_ERROR_CODES = new Set([
+  'SESSION_EXPIRED',
+  'MISSING_CODE',
+  'INVALID_CODE',
+  'NETWORK_ERROR',
+  'RECOVERY_FAILED',
+]);
+
 const SessionRecoveryForm: React.FC<SessionRecoveryFormProps> = ({
   defaultCode,
+  lastErrorCode,
   recoverSession,
   onClose,
   onSuccess,
@@ -32,10 +42,15 @@ const SessionRecoveryForm: React.FC<SessionRecoveryFormProps> = ({
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const code = draftCode ?? defaultCode;
+  const contextualGuidance =
+    errorMessage && lastErrorCode && !INTERNAL_ERROR_CODES.has(lastErrorCode)
+      ? lastErrorCode
+      : null;
+  const displayedError = contextualGuidance || errorMessage;
 
   const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const cleanCode = code.trim().toUpperCase();
+    const cleanCode = code.trim();
     if (!cleanCode) {
       setErrorMessage('Please enter an invitation code.');
       inputRef.current?.focus();
@@ -67,7 +82,7 @@ const SessionRecoveryForm: React.FC<SessionRecoveryFormProps> = ({
 
   return (
     <form onSubmit={handleSubmit} className="mt-4 space-y-4" noValidate>
-      <FormGroup required busy={isSubmitting} state={errorMessage ? 'error' : 'default'}>
+      <FormGroup required busy={isSubmitting} state={displayedError ? 'error' : 'default'}>
         <Label htmlFor="recovery-invitation-code">Invitation Code</Label>
         <Input
           ref={inputRef}
@@ -76,14 +91,14 @@ const SessionRecoveryForm: React.FC<SessionRecoveryFormProps> = ({
           placeholder="e.g. ABCDEF12"
           value={code}
           onChange={(e) => {
-            setDraftCode(e.target.value.toUpperCase());
+            setDraftCode(e.target.value);
             setErrorMessage(null);
           }}
           required
           busy={isSubmitting}
           autoFocus
         />
-        {errorMessage && <FormMessage>{errorMessage}</FormMessage>}
+        {displayedError && <FormMessage>{displayedError}</FormMessage>}
       </FormGroup>
 
       <div className="flex justify-end gap-3 mt-6">
@@ -125,6 +140,7 @@ export const SessionRecoveryModal: React.FC<SessionRecoveryModalProps> = ({
     closeRecoveryModal,
     draftInvitationCode,
     invitationCode,
+    lastErrorCode,
     recoverSession,
   } = useGuestSession();
 
@@ -148,6 +164,7 @@ export const SessionRecoveryModal: React.FC<SessionRecoveryModalProps> = ({
       <SessionRecoveryForm
         key={activeIsOpen ? 'open' : 'closed'}
         defaultCode={draftInvitationCode || invitationCode || ''}
+        lastErrorCode={lastErrorCode}
         recoverSession={recoverSession}
         onClose={handleClose}
         onSuccess={onSuccess}

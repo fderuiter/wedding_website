@@ -86,6 +86,17 @@ describe('scripts/smoke-runner.mjs', () => {
           return;
         }
         if (url.pathname === '/api/registry/validate-code') {
+          const cookie = req.headers.cookie || '';
+          if (!cookie.includes('guest_auth=signed-smoke-token')) {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Unauthorized' }));
+            return;
+          }
+          if (req.method !== 'POST') {
+            res.writeHead(405, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Method Not Allowed' }));
+            return;
+          }
           res.writeHead(validateCodeStatus, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: false, error: 'Invalid invitation code.' }));
           return;

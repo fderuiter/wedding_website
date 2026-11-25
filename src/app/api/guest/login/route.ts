@@ -47,7 +47,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     return NextResponse.json({ success: false, error: parseResult.error.issues[0].message }, { status: 400 });
   }
 
-  const { passcode } = parseResult.data;
+  const { passcode, requireInvitation } = parseResult.data;
   const trimmedCode = passcode.trim();
 
   const isProduction = (process.env.NODE_ENV || env.NODE_ENV) === 'production';
@@ -68,6 +68,19 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
       (trimmedCode.length > 0 && trimmedCode !== passcode && safeComparePasscode(trimmedCode, expectedPasscode)));
 
   if (matchesSharedPasscode) {
+    if (requireInvitation) {
+      return NextResponse.json(
+        {
+          success: false,
+          valid: false,
+          reason: 'shared_passcode',
+          error:
+            'That is the shared website passcode. Please enter the personal household invitation code printed on your invitation.',
+        },
+        { status: 401 }
+      );
+    }
+
     let token: string | null = null;
     if (typeof findVerifiedRequestCookie === 'function' && typeof verifyGuestToken === 'function') {
       const verifiedExisting = await findVerifiedRequestCookie(
@@ -188,6 +201,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
       success: true,
       sessionType: 'invitation',
       guestName: invite.guestName,
+      code: invite.code,
     });
     setGuestInviteSessionCookie(response, inviteToken, req);
     return response;

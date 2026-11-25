@@ -3,11 +3,12 @@ import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import { SessionRecoveryModal } from '../SessionRecoveryModal';
 import { GuestSessionProvider } from '../../context/GuestSessionContext';
-import { apiClient } from '@/lib/apiClient';
+import { apiClient, ApiError } from '@/lib/apiClient';
 
 expect.extend(toHaveNoViolations);
 
 jest.mock('@/lib/apiClient', () => ({
+  ...jest.requireActual('@/lib/apiClient'),
   apiClient: {
     get: jest.fn(),
     post: jest.fn(),
@@ -35,9 +36,16 @@ describe('SessionRecoveryModal', () => {
   });
 
   it('allows user to enter invitation code and submit recovery', async () => {
-    (apiClient.get as jest.Mock).mockResolvedValueOnce({ isVerified: false });
+    (apiClient.get as jest.Mock)
+      .mockResolvedValueOnce({ isVerified: false })
+      .mockResolvedValueOnce({
+        isVerified: true,
+        code: 'NEWCODE1',
+        guestName: 'Jane Restored',
+        email: 'jane@example.com',
+      });
     (apiClient.post as jest.Mock).mockResolvedValueOnce({
-      valid: true,
+      sessionType: 'invitation',
       code: 'NEWCODE1',
       guestName: 'Jane Restored',
     });
@@ -57,11 +65,41 @@ describe('SessionRecoveryModal', () => {
     fireEvent.click(submitBtn);
 
     await waitFor(() => {
-      expect(apiClient.post).toHaveBeenCalledWith('/api/registry/validate-code', {
-        code: 'NEWCODE1',
+      expect(apiClient.post).toHaveBeenCalledWith('/api/guest/login', {
+        passcode: 'NEWCODE1',
+        requireInvitation: true,
       });
       expect(handleSuccess).toHaveBeenCalled();
     });
+  });
+
+  it('surfaces shared_passcode guidance when /api/guest/login returns HTTP 401 with reason: shared_passcode', async () => {
+    (apiClient.get as jest.Mock).mockResolvedValueOnce({ isVerified: false });
+    (apiClient.post as jest.Mock).mockRejectedValueOnce(
+      new ApiError(
+        401,
+        'That is the shared website passcode. Please enter your unique household invitation code.',
+        {
+          success: false,
+          valid: false,
+          reason: 'shared_passcode',
+          error:
+            'That is the shared website passcode. Please enter your unique household invitation code.',
+        }
+      )
+    );
+
+    render(
+      <GuestSessionProvider>
+        <SessionRecoveryModal isOpen={true} />
+      </GuestSessionProvider>
+    );
+
+    const input = screen.getByLabelText(/Invitation Code/i);
+    fireEvent.change(input, { target: { value: 'WEDDING2026' } });
+    fireEvent.click(screen.getByRole('button', { name: /Re-verify Code/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/shared website passcode/i);
   });
 
   it('displays error message when invitation code validation fails', async () => {

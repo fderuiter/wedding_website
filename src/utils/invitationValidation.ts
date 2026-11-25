@@ -1,4 +1,6 @@
+export const INVITATION_CODE_MIN_LENGTH = 8;
 export const INVITATION_CODE_MAX_LENGTH = 50;
+const INVITATION_CODE_MIN_UNIQUE_CHARS = 4;
 export const GUEST_NAME_MAX_LENGTH = 100;
 export const ADDRESS_LINE_MAX_LENGTH = 150;
 export const CITY_MAX_LENGTH = 100;
@@ -136,6 +138,96 @@ export function normalizeInvitationCode(value: unknown): string {
   if (typeof value !== 'string') return '';
   const trimmed = value.trim();
   return trimmed ? trimmed.toUpperCase() : '';
+}
+
+const DISALLOWED_CODE_CHARS_PATTERN = /[\s\u0000-\u001F\u007F]/;
+
+function resolveActiveSharedPasscodeUpper(explicitPasscode?: string | null): string {
+  if (explicitPasscode !== undefined) {
+    return typeof explicitPasscode === 'string' ? explicitPasscode.trim().toUpperCase() : '';
+  }
+  if (typeof process === 'undefined' || !process.env) {
+    return '';
+  }
+  const rawEnvPasscode = process.env.GUEST_PASSCODE;
+  if (typeof rawEnvPasscode === 'string') {
+    return rawEnvPasscode.trim().toUpperCase();
+  }
+  if (typeof window === 'undefined' && process.env.NODE_ENV !== 'production') {
+    return 'WEDDING2026';
+  }
+  return '';
+}
+
+function hasMinimumDistinctCharacters(str: string, minUnique: number): boolean {
+  let c0 = -1;
+  let c1 = -1;
+  let c2 = -1;
+  let count = 0;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    if (count === 0) {
+      c0 = ch;
+      count = 1;
+    } else if (count === 1) {
+      if (ch !== c0) {
+        c1 = ch;
+        count = 2;
+      }
+    } else if (count === 2) {
+      if (ch !== c0 && ch !== c1) {
+        c2 = ch;
+        count = 3;
+      }
+    } else if (ch !== c0 && ch !== c1 && ch !== c2) {
+      return true;
+    }
+    if (count >= minUnique) {
+      return true;
+    }
+  }
+  return count >= minUnique;
+}
+
+/**
+ * Validates custom or imported household invitation codes for minimum length (8),
+ * maximum length (50), character diversity (>= 4 distinct characters), and
+ * non-collision with the shared event passcode (`GUEST_PASSCODE`).
+ * Returns `null` when valid or blank/omitted, or a user-facing error message string.
+ */
+export function validateCustomInvitationCode(
+  value: unknown,
+  options?: { forbiddenPasscode?: string | null }
+): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string') {
+    return 'Invitation code must be a string.';
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (DISALLOWED_CODE_CHARS_PATTERN.test(trimmed)) {
+    return 'Invitation code cannot contain spaces or control characters.';
+  }
+
+  const normalized = trimmed.toUpperCase();
+  if (normalized.length < INVITATION_CODE_MIN_LENGTH) {
+    return `Invitation code must be at least ${INVITATION_CODE_MIN_LENGTH} characters.`;
+  }
+  if (normalized.length > INVITATION_CODE_MAX_LENGTH) {
+    return `Invitation code must be under ${INVITATION_CODE_MAX_LENGTH} characters.`;
+  }
+
+  const forbiddenUpper = resolveActiveSharedPasscodeUpper(options?.forbiddenPasscode);
+  if (forbiddenUpper && normalized === forbiddenUpper) {
+    return 'Invitation code cannot match the shared event passcode.';
+  }
+
+  if (!hasMinimumDistinctCharacters(normalized, INVITATION_CODE_MIN_UNIQUE_CHARS)) {
+    return `Invitation code must include at least ${INVITATION_CODE_MIN_UNIQUE_CHARS} distinct characters.`;
+  }
+
+  return null;
 }
 
 export function sanitizeGuestPhoneInput(value: unknown): string {
@@ -303,6 +395,11 @@ export function validateInvitationGuestFieldsWithColumns(
     (typeof record.code !== 'string' || record.code.trim() === '')
   ) {
     pushError('code', 'Validation Error: Code cannot be empty.');
+  } else if (typeof record.code === 'string' && record.code.trim() !== '') {
+    const codeErr = validateCustomInvitationCode(record.code);
+    if (codeErr) {
+      pushError('code', formatModeMessage(mode, rowNumber, codeErr));
+    }
   }
 
   if (typeof record.email === 'string') {

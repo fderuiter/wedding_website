@@ -33,6 +33,8 @@ export function wrapMiddlewareJson(
     const errorBody: Record<string, unknown> = {
       success: false,
       error: errorMessage,
+      ...(typeof record.reason === 'string' ? { reason: record.reason } : {}),
+      ...(typeof record.valid === 'boolean' ? { valid: record.valid } : {}),
       ...(record.details !== undefined ? { details: record.details } : {}),
       ...(record.helpPrompt !== undefined ? { helpPrompt: record.helpPrompt } : {}),
     };

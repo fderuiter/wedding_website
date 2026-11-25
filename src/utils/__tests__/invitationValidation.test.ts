@@ -1,4 +1,5 @@
 import {
+  INVITATION_CODE_MIN_LENGTH,
   INVITATION_CODE_MAX_LENGTH,
   GUEST_NAME_MAX_LENGTH,
   ADDRESS_LINE_MAX_LENGTH,
@@ -12,6 +13,7 @@ import {
   BatchInvitationCodeRecord,
   normalizeNullableString,
   normalizeInvitationCode,
+  validateCustomInvitationCode,
   normalizePartyTags,
   normalizePartialInvitationFields,
   normalizeBatchInvitationRecord,
@@ -33,7 +35,8 @@ import {
 
 describe('invitationValidation shared helpers', () => {
   describe('exported length constants & Zod schema boundaries', () => {
-    it('exports canonical field length constants', () => {
+    it('exports canonical field length constants and enforces custom invitation code entropy rules', () => {
+      expect(INVITATION_CODE_MIN_LENGTH).toBe(8);
       expect(INVITATION_CODE_MAX_LENGTH).toBe(50);
       expect(GUEST_NAME_MAX_LENGTH).toBe(100);
       expect(ADDRESS_LINE_MAX_LENGTH).toBe(150);
@@ -44,6 +47,28 @@ describe('invitationValidation shared helpers', () => {
       expect(PLUS_ONE_NAME_MAX_LENGTH).toBe(100);
       expect(HOUSEHOLD_NAME_MAX_LENGTH).toBe(100);
       expect(PARTY_GROUP_MAX_LENGTH).toBe(100);
+
+      const prevPasscode = process.env.GUEST_PASSCODE;
+      process.env.GUEST_PASSCODE = 'Wedding2026';
+      try {
+        expect(validateCustomInvitationCode('SHORT12')).toContain('at least 8 characters');
+        expect(validateCustomInvitationCode('X'.repeat(51))).toContain('under 50 characters');
+        expect(validateCustomInvitationCode('CODE 1234')).toContain('cannot contain spaces');
+        expect(validateCustomInvitationCode('CODE\t1234')).toContain('cannot contain spaces');
+        expect(validateCustomInvitationCode('AAAAAAAA')).toContain('at least 4 distinct characters');
+        expect(validateCustomInvitationCode('ABABABAB')).toContain('at least 4 distinct characters');
+        expect(validateCustomInvitationCode('ABCABCAB')).toContain('at least 4 distinct characters');
+        expect(validateCustomInvitationCode('wedding2026')).toContain('shared event passcode');
+        expect(validateCustomInvitationCode('WEDDING2026')).toContain('shared event passcode');
+        expect(validateCustomInvitationCode('SMITH2026')).toBeNull();
+        expect(validateCustomInvitationCode('  valid123  ')).toBeNull();
+      } finally {
+        if (prevPasscode === undefined) {
+          delete process.env.GUEST_PASSCODE;
+        } else {
+          process.env.GUEST_PASSCODE = prevPasscode;
+        }
+      }
     });
 
     it('retains max(100) guestName rule in HTTP Zod schemas while imperative validators allow >100-char non-empty guestName', async () => {
@@ -271,104 +296,120 @@ describe('invitationValidation shared helpers', () => {
     }> = [
       {
         description: 'empty guestName',
-        record: { guestName: '   ', code: 'CODE1' },
-        csvRow: { guestName: '   ', code: 'CODE1' },
+        record: { guestName: '   ', code: 'CODE1234' },
+        csvRow: { guestName: '   ', code: 'CODE1234' },
         expectedRowError: 'Guest name is required.',
         expectedServiceError: 'Validation Error: Guest name is required.',
         expectedBatchRow2Error: 'Validation Error: Row 2 has an empty guest name.',
       },
       {
+        description: 'custom code shorter than 8 characters',
+        record: { guestName: 'Jane', code: 'SHORT12' },
+        csvRow: { guestName: 'Jane', code: 'SHORT12' },
+        expectedRowError: 'Invitation code must be at least 8 characters.',
+        expectedServiceError: 'Validation Error: Invitation code must be at least 8 characters.',
+        expectedBatchRow2Error: 'Validation Error: Row 2 Invitation code must be at least 8 characters.',
+      },
+      {
+        description: 'custom code with fewer than 4 distinct characters',
+        record: { guestName: 'Jane', code: 'AAAAAAAA' },
+        csvRow: { guestName: 'Jane', code: 'AAAAAAAA' },
+        expectedRowError: 'Invitation code must include at least 4 distinct characters.',
+        expectedServiceError: 'Validation Error: Invitation code must include at least 4 distinct characters.',
+        expectedBatchRow2Error: 'Validation Error: Row 2 Invitation code must include at least 4 distinct characters.',
+      },
+      {
         description: 'invalid email',
-        record: { guestName: 'Jane', code: 'CODE1', email: 'not-an-email' },
-        csvRow: { guestName: 'Jane', code: 'CODE1', email: 'not-an-email' },
+        record: { guestName: 'Jane', code: 'CODE1234', email: 'not-an-email' },
+        csvRow: { guestName: 'Jane', code: 'CODE1234', email: 'not-an-email' },
         expectedRowError: 'Invalid email format.',
         expectedServiceError: 'Validation Error: Invalid email format.',
         expectedBatchRow2Error: 'Validation Error: Row 2 has an invalid email format.',
       },
       {
         description: 'invalid plusOneAllocations',
-        record: { guestName: 'Jane', code: 'CODE1', plusOneAllocations: -1 },
-        csvRow: { guestName: 'Jane', code: 'CODE1', plusOneAllocations: '-1' },
+        record: { guestName: 'Jane', code: 'CODE1234', plusOneAllocations: -1 },
+        csvRow: { guestName: 'Jane', code: 'CODE1234', plusOneAllocations: '-1' },
         expectedRowError: 'Plus-one allocation must be a non-negative integer.',
         expectedServiceError: 'Validation Error: Plus-one allocation must be a non-negative integer.',
         expectedBatchRow2Error: 'Validation Error: Row 2 has an invalid plus-one count.',
       },
       {
         description: 'addressLine1 over 150 chars',
-        record: { guestName: 'Jane', code: 'CODE1', addressLine1: 'A'.repeat(151) },
-        csvRow: { guestName: 'Jane', code: 'CODE1', addressLine1: 'A'.repeat(151) },
+        record: { guestName: 'Jane', code: 'CODE1234', addressLine1: 'A'.repeat(151) },
+        csvRow: { guestName: 'Jane', code: 'CODE1234', addressLine1: 'A'.repeat(151) },
         expectedRowError: 'Address Line 1 must be under 150 characters.',
         expectedServiceError: 'Validation Error: Address Line 1 must be under 150 characters.',
         expectedBatchRow2Error: 'Validation Error: Row 2 Address Line 1 must be under 150 characters.',
       },
       {
         description: 'addressLine2 over 150 chars',
-        record: { guestName: 'Jane', code: 'CODE1', addressLine2: 'A'.repeat(151) },
-        csvRow: { guestName: 'Jane', code: 'CODE1', addressLine2: 'A'.repeat(151) },
+        record: { guestName: 'Jane', code: 'CODE1234', addressLine2: 'A'.repeat(151) },
+        csvRow: { guestName: 'Jane', code: 'CODE1234', addressLine2: 'A'.repeat(151) },
         expectedRowError: 'Address Line 2 must be under 150 characters.',
         expectedServiceError: 'Validation Error: Address Line 2 must be under 150 characters.',
         expectedBatchRow2Error: 'Validation Error: Row 2 Address Line 2 must be under 150 characters.',
       },
       {
         description: 'city over 100 chars',
-        record: { guestName: 'Jane', code: 'CODE1', city: 'C'.repeat(101) },
-        csvRow: { guestName: 'Jane', code: 'CODE1', city: 'C'.repeat(101) },
+        record: { guestName: 'Jane', code: 'CODE1234', city: 'C'.repeat(101) },
+        csvRow: { guestName: 'Jane', code: 'CODE1234', city: 'C'.repeat(101) },
         expectedRowError: 'City must be under 100 characters.',
         expectedServiceError: 'Validation Error: City must be under 100 characters.',
         expectedBatchRow2Error: 'Validation Error: Row 2 City must be under 100 characters.',
       },
       {
         description: 'state over 100 chars',
-        record: { guestName: 'Jane', code: 'CODE1', state: 'S'.repeat(101) },
-        csvRow: { guestName: 'Jane', code: 'CODE1', state: 'S'.repeat(101) },
+        record: { guestName: 'Jane', code: 'CODE1234', state: 'S'.repeat(101) },
+        csvRow: { guestName: 'Jane', code: 'CODE1234', state: 'S'.repeat(101) },
         expectedRowError: 'State must be under 100 characters.',
         expectedServiceError: 'Validation Error: State must be under 100 characters.',
         expectedBatchRow2Error: 'Validation Error: Row 2 State must be under 100 characters.',
       },
       {
         description: 'zipCode over 20 chars',
-        record: { guestName: 'Jane', code: 'CODE1', zipCode: '9'.repeat(21) },
-        csvRow: { guestName: 'Jane', code: 'CODE1', zipCode: '9'.repeat(21) },
+        record: { guestName: 'Jane', code: 'CODE1234', zipCode: '9'.repeat(21) },
+        csvRow: { guestName: 'Jane', code: 'CODE1234', zipCode: '9'.repeat(21) },
         expectedRowError: 'Zip Code must be under 20 characters.',
         expectedServiceError: 'Validation Error: Zip Code must be under 20 characters.',
         expectedBatchRow2Error: 'Validation Error: Row 2 Zip Code must be under 20 characters.',
       },
       {
         description: 'country over 100 chars',
-        record: { guestName: 'Jane', code: 'CODE1', country: 'U'.repeat(101) },
-        csvRow: { guestName: 'Jane', code: 'CODE1', country: 'U'.repeat(101) },
+        record: { guestName: 'Jane', code: 'CODE1234', country: 'U'.repeat(101) },
+        csvRow: { guestName: 'Jane', code: 'CODE1234', country: 'U'.repeat(101) },
         expectedRowError: 'Country must be under 100 characters.',
         expectedServiceError: 'Validation Error: Country must be under 100 characters.',
         expectedBatchRow2Error: 'Validation Error: Row 2 Country must be under 100 characters.',
       },
       {
         description: 'plusOneFirstName over 100 chars',
-        record: { guestName: 'Jane', code: 'CODE1', plusOneFirstName: 'P'.repeat(101) },
-        csvRow: { guestName: 'Jane', code: 'CODE1', plusOneFirstName: 'P'.repeat(101) },
+        record: { guestName: 'Jane', code: 'CODE1234', plusOneFirstName: 'P'.repeat(101) },
+        csvRow: { guestName: 'Jane', code: 'CODE1234', plusOneFirstName: 'P'.repeat(101) },
         expectedRowError: 'Plus-one first name must be under 100 characters.',
         expectedServiceError: 'Validation Error: Plus-one first name must be under 100 characters.',
         expectedBatchRow2Error: 'Validation Error: Row 2 has an invalid plus-one first name.',
       },
       {
         description: 'plusOneLastName over 100 chars',
-        record: { guestName: 'Jane', code: 'CODE1', plusOneLastName: 'L'.repeat(101) },
-        csvRow: { guestName: 'Jane', code: 'CODE1', plusOneLastName: 'L'.repeat(101) },
+        record: { guestName: 'Jane', code: 'CODE1234', plusOneLastName: 'L'.repeat(101) },
+        csvRow: { guestName: 'Jane', code: 'CODE1234', plusOneLastName: 'L'.repeat(101) },
         expectedRowError: 'Plus-one last name must be under 100 characters.',
         expectedServiceError: 'Validation Error: Plus-one last name must be under 100 characters.',
         expectedBatchRow2Error: 'Validation Error: Row 2 has an invalid plus-one last name.',
       },
       {
         description: 'householdName over 100 chars',
-        record: { guestName: 'Jane', code: 'CODE1', householdName: 'H'.repeat(101) },
-        csvRow: { guestName: 'Jane', code: 'CODE1', householdName: 'H'.repeat(101) },
+        record: { guestName: 'Jane', code: 'CODE1234', householdName: 'H'.repeat(101) },
+        csvRow: { guestName: 'Jane', code: 'CODE1234', householdName: 'H'.repeat(101) },
         expectedRowError: 'Household name must be under 100 characters.',
         expectedServiceError: 'Validation Error: Household name must be under 100 characters.',
         expectedBatchRow2Error: 'Validation Error: Row 2 Household name must be under 100 characters.',
       },
       {
         description: 'partyGroup over 100 chars',
-        record: { guestName: 'Jane', code: 'CODE1', partyGroup: 'G'.repeat(101) },
-        csvRow: { guestName: 'Jane', code: 'CODE1', partyGroup: 'G'.repeat(101) },
+        record: { guestName: 'Jane', code: 'CODE1234', partyGroup: 'G'.repeat(101) },
+        csvRow: { guestName: 'Jane', code: 'CODE1234', partyGroup: 'G'.repeat(101) },
         expectedRowError: 'Party group must be under 100 characters.',
         expectedServiceError: 'Validation Error: Party group must be under 100 characters.',
         expectedBatchRow2Error: 'Validation Error: Row 2 Party group must be under 100 characters.',
@@ -388,7 +429,7 @@ describe('invitationValidation shared helpers', () => {
         await expect(invokeProtectedValidate(service, record)).rejects.toThrow(expectedServiceError);
 
         // 2. InvitationCodeAdminService.importBatch (tested at row 2 to verify 1-based row indexing)
-        const validRow: BatchInvitationCodeRecord = { guestName: 'Valid First Row', code: 'FIRST1' };
+        const validRow: BatchInvitationCodeRecord = { guestName: 'Valid First Row', code: 'FIRST123' };
         await expect(service.importBatch([validRow, record], 'skip')).rejects.toThrow(
           expectedBatchRow2Error
         );
@@ -399,11 +440,12 @@ describe('invitationValidation shared helpers', () => {
         expect(dryRun.rows[0].errors).toEqual([expectedRowError]);
 
         // 4. validateSingleCsvRow
+        const rowCode = (csvRow.code || 'CODE1234').trim().toUpperCase();
         const csvValidated = validateSingleCsvRow(
           csvRow,
           0,
           { guestNameCol: 'guestName', codeCol: 'code' },
-          new Map([['CODE1', 1]]),
+          new Map([[rowCode, 1]]),
           new Set()
         );
         expect(csvValidated.isValid).toBe(false);
@@ -417,20 +459,20 @@ describe('invitationValidation shared helpers', () => {
       ).rejects.toThrow('Validation Error: Code cannot be empty.');
 
       await expect(
-        invokeProtectedValidate(service, { guestName: 'Jane', code: 'JANE1', partyTags: 'VIP' })
+        invokeProtectedValidate(service, { guestName: 'Jane', code: 'JANE1234', partyTags: 'VIP' })
       ).rejects.toThrow('Validation Error: Party tags must be an array of strings.');
     });
 
     it('merges partial updateData across multiple batch rows targeting the same existing DB code', async () => {
       mockPrismaClient.invitationCode.findMany.mockResolvedValue([
-        { id: 'db-1', code: 'SHARED1', guestName: 'Original Guest' },
+        { id: 'db-1', code: 'SHARED12', guestName: 'Original Guest' },
       ]);
       mockPrismaClient.$executeRaw.mockResolvedValue(1);
 
       const result = await service.importBatch(
         [
-          { guestName: 'First Update', code: 'SHARED1', city: 'Boston' },
-          { guestName: 'Second Update', code: 'SHARED1', state: 'MA' },
+          { guestName: 'First Update', code: 'SHARED12', city: 'Boston' },
+          { guestName: 'Second Update', code: 'SHARED12', state: 'MA' },
         ],
         'update'
       );

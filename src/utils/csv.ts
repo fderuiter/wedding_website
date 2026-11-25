@@ -686,6 +686,7 @@ export function validateSingleCsvRow(
   const { errors, fieldErrors } = validateInvitationGuestFieldsWithColumns(
     {
       guestName,
+      code: codeCol ? r[codeCol] : undefined,
       email,
       plusOneAllocations: rawPlusOne === '' ? undefined : (plusOneAllocations ?? NaN),
       addressLine1,

@@ -80,6 +80,7 @@ describe('RegistryItemCard Component', () => {
   beforeEach(() => {
     // Reset mocks before each test
     jest.clearAllMocks();
+    (apiClient.get as jest.Mock).mockReset();
   });
 
   it('renders correctly for a single, available item', () => {
@@ -1196,8 +1197,13 @@ describe('RegistryItemCard Component', () => {
       (apiClient.post as jest.Mock).mockResolvedValue({
         valid: true,
         guestName: 'Jane Smith',
-        email: 'jane.invite@example.com',
         code: 'ABCDEF17',
+      });
+      (apiClient.get as jest.Mock).mockResolvedValue({
+        isVerified: true,
+        guestName: 'Jane Smith',
+        code: 'ABCDEF17',
+        email: 'jane.invite@example.com',
       });
 
       render(
@@ -1224,6 +1230,7 @@ describe('RegistryItemCard Component', () => {
 
       fireEvent.keyDown(codeInput, { key: 'Enter' });
 
+      const emailInput = screen.getByLabelText(/Email Address \(Optional\)/i);
       await waitFor(() => {
         expect(apiClient.post).toHaveBeenCalledTimes(1);
         expect(apiClient.post).toHaveBeenCalledWith(
@@ -1231,11 +1238,13 @@ describe('RegistryItemCard Component', () => {
           { code: 'ABCDEF17' },
           expect.objectContaining({ signal: expect.any(AbortSignal) })
         );
+        expect(apiClient.get).toHaveBeenCalledWith(
+          '/api/registry/session',
+          expect.objectContaining({ signal: expect.any(AbortSignal) })
+        );
         expect(screen.getByText('Code verified! Name pre-filled.')).toBeInTheDocument();
+        expect(emailInput).toHaveValue('jane.invite@example.com');
       });
-
-      const emailInput = screen.getByLabelText(/Email Address \(Optional\)/i);
-      expect(emailInput).toHaveValue('jane.invite@example.com');
 
       fireEvent.change(emailInput, { target: { value: 'custom@example.com' } });
       expect(emailInput).toHaveValue('custom@example.com');

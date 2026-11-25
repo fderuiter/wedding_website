@@ -246,10 +246,10 @@ describe('CSV Parser Utility', () => {
     it('validates a single CSV row correctly using provided frequency map and DB set', () => {
       const row = {
         'Guest Name': 'Alice Smith',
-        Code: 'ALICE1',
+        Code: 'ALICE100',
         Email: 'alice@example.com',
       };
-      const freqMap = new Map([['ALICE1', 1]]);
+      const freqMap = new Map([['ALICE100', 1]]);
       const dbCodes = new Set<string>();
 
       const result = validateSingleCsvRow(
@@ -262,7 +262,7 @@ describe('CSV Parser Utility', () => {
 
       expect(result.isValid).toBe(true);
       expect(result.guestName).toBe('Alice Smith');
-      expect(result.code).toBe('ALICE1');
+      expect(result.code).toBe('ALICE100');
       expect(result.email).toBe('alice@example.com');
     });
 
@@ -306,9 +306,9 @@ describe('CSV Parser Utility', () => {
       const row = {
         'First Name': 'Jane',
         'Last Name': 'Doe',
-        Code: 'JANE12',
+        Code: 'JANE1234',
       };
-      const freqMap = new Map([['JANE12', 1]]);
+      const freqMap = new Map([['JANE1234', 1]]);
       const dbCodes = new Set<string>();
 
       const result = validateSingleCsvRow(
@@ -408,13 +408,13 @@ describe('CSV Parser Utility', () => {
     });
 
     it('maps row validation errors to individual columns in fieldErrors', () => {
-      const freqMap = new Map([['DUP100', 2]]);
+      const freqMap = new Map([['DUP10026', 2]]);
       const dbCodes = new Set<string>();
 
       const result = validateSingleCsvRow(
         {
           'Guest Name': '',
-          Code: 'DUP100',
+          Code: 'DUP10026',
           Email: 'not-an-email',
           'Plus Ones': '-2',
         },
@@ -434,8 +434,37 @@ describe('CSV Parser Utility', () => {
         guestName: ['Guest name is required.'],
         email: ['Invalid email format.'],
         plusOneAllocations: ['Plus-one allocation must be a non-negative integer.'],
-        code: ['Duplicate code "DUP100" within CSV file.'],
+        code: ['Duplicate code "DUP10026" within CSV file.'],
       });
+    });
+
+    it('rejects short, low-diversity, and shared-passcode custom codes in validateSingleCsvRow', () => {
+      const mapping = { guestNameCol: 'Guest Name', codeCol: 'Code' };
+      const dbCodes = new Set<string>();
+
+      const shortRow = validateSingleCsvRow(
+        { 'Guest Name': 'Short Guest', Code: 'SHORT1' },
+        0,
+        mapping,
+        new Map([['SHORT1', 1]]),
+        dbCodes
+      );
+      expect(shortRow.isValid).toBe(false);
+      expect(shortRow.fieldErrors?.code).toContain(
+        'Invitation code must be at least 8 characters.'
+      );
+
+      const repetitiveRow = validateSingleCsvRow(
+        { 'Guest Name': 'Repetitive Guest', Code: 'AAAAAAAA' },
+        0,
+        mapping,
+        new Map([['AAAAAAAA', 1]]),
+        dbCodes
+      );
+      expect(repetitiveRow.isValid).toBe(false);
+      expect(repetitiveRow.fieldErrors?.code).toContain(
+        'Invitation code must include at least 4 distinct characters.'
+      );
     });
   });
 
@@ -656,7 +685,7 @@ describe('CSV Parser Utility', () => {
       const validRow = validateSingleCsvRow(
         {
           'Guest Name': 'Clara Oswald',
-          'Invitation Code': 'CLARA26',
+          'Invitation Code': 'CLARA2026',
           'Phone Number': "'+1 (555) 234-5678",
           'Plus-One Name': 'Danny Pink, Rupert Pink',
           'Address Line 1': '123 Clara Ln',
@@ -678,7 +707,7 @@ describe('CSV Parser Utility', () => {
           countryCol: 'Country',
           extraCols: [],
         },
-        new Map([['CLARA26', 1]]),
+        new Map([['CLARA2026', 1]]),
         new Set()
       );
 

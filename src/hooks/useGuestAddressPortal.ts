@@ -533,7 +533,8 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
 
   const validateCode = useCallback(
     async (rawCode: string, signal: AbortSignal, isAutoMount = false) => {
-      const trimmedCode = rawCode.trim().toUpperCase();
+      const rawTrimmedCode = rawCode.trim();
+      const trimmedCode = rawTrimmedCode.toUpperCase();
       if (!trimmedCode) {
         dispatch({
           type: 'VALIDATE_FAILURE',
@@ -555,18 +556,24 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
         const data = await apiClient.post<{
           valid?: boolean;
           success?: boolean;
+          sessionType?: string;
           reason?: string;
           guestName?: string | null;
           code?: string;
           error?: string;
           data?: {
             valid?: boolean;
+            sessionType?: string;
             reason?: string;
             guestName?: string | null;
             code?: string;
             error?: string;
           };
-        }>('/api/registry/validate-code', { code: trimmedCode }, { signal });
+        }>(
+          '/api/guest/login',
+          { passcode: rawTrimmedCode, requireInvitation: true },
+          { signal }
+        );
         if (signal.aborted) return;
 
         const payload = data?.data ?? data;
@@ -579,8 +586,25 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
           return;
         }
 
-        const isExplicitInvalid = payload?.valid === false;
-        const isOk = !isExplicitInvalid && Boolean(data?.success || payload?.valid);
+        const resolvedSessionType = payload?.sessionType ?? data?.sessionType;
+        const isSharedOnly = resolvedSessionType === 'guest' || resolvedSessionType === 'shared';
+        if (isSharedOnly) {
+          const guidanceMsg =
+            'That is the shared website passcode. Please enter the personal household invitation code printed on your invitation.';
+          dispatch({ type: 'VALIDATE_SHARED_PASSCODE', guidance: guidanceMsg });
+          addToast(guidanceMsg, 'info');
+          return;
+        }
+
+        const isExplicitInvalid = payload?.valid === false || data?.success === false;
+        const isOk =
+          !isExplicitInvalid &&
+          Boolean(
+            data?.success ||
+              payload?.valid ||
+              resolvedSessionType === 'invitation' ||
+              resolvedSessionType === 'invite'
+          );
 
         if (!isOk) {
           const errMsg =
@@ -614,7 +638,7 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
           return;
         }
 
-        // Validate code succeeded, now retrieve full address details
+        // Invitation login succeeded, now clean URL and retrieve full address details
         if (typeof window !== 'undefined' && typeof window.history?.replaceState === 'function') {
           const params = new URLSearchParams(window.location.search);
           if (params.has('code')) {
@@ -628,19 +652,39 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
         const addrResult = await fetchAddressData(signal);
         if (signal.aborted) return;
 
+        let canonicalCode =
+          addrResult.data?.code ||
+          payload?.code ||
+          data?.code ||
+          '';
+
+        if (!canonicalCode) {
+          try {
+            const sessionInfo = await apiClient.get<{
+              code?: string | null;
+              invitationCode?: string | null;
+            }>('/api/guest/session', { signal });
+            if (signal.aborted) return;
+            canonicalCode = sessionInfo?.code || sessionInfo?.invitationCode || '';
+          } catch {
+            // Fall back to normalized trimmedCode below
+          }
+        }
+
+        const finalCode = canonicalCode ? canonicalCode.trim().toUpperCase() : trimmedCode;
         const guest = addrResult.data?.guestName || payload?.guestName || data?.guestName || '';
         if (addrResult.success && addrResult.data) {
           dispatch({
             type: 'VALIDATE_SUCCESS',
             guestName: addrResult.data.guestName || guest,
-            code: addrResult.data.code || trimmedCode,
+            code: finalCode,
             address: addrResult.data,
           });
         } else {
           dispatch({
             type: 'VALIDATE_SUCCESS',
             guestName: guest,
-            code: trimmedCode,
+            code: finalCode,
             address: initialAddressData,
           });
         }
@@ -649,6 +693,19 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
         addToast(`Welcome ${guest}!`, 'success');
       } catch (err: unknown) {
         if (isAbortError(err) || signal.aborted) return;
+
+        if (err instanceof ApiError && err.data && typeof err.data === 'object') {
+          const errObj = err.data as { reason?: unknown; error?: unknown };
+          if (errObj.reason === 'shared_passcode') {
+            const guidanceMsg =
+              typeof errObj.error === 'string' && errObj.error.trim()
+                ? errObj.error.trim()
+                : 'That is the shared website passcode. Please enter the personal household invitation code printed on your invitation.';
+            dispatch({ type: 'VALIDATE_SHARED_PASSCODE', guidance: guidanceMsg });
+            addToast(guidanceMsg, 'info');
+            return;
+          }
+        }
 
         let isAuth = false;
         let errorMsg = err instanceof Error ? err.message : 'Error validating code.';

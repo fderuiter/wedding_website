@@ -750,4 +750,69 @@ describe('GuestEditorForm', () => {
 
     unmount();
   });
+
+  it('rejects <8-char or low-diversity custom codes while allowing non-code edits on legacy <8-char guests without forced rotation', async () => {
+    const onCreate = jest.fn().mockResolvedValue({});
+    const { unmount: unmountCreate } = render(
+      <GuestEditorForm mode="create" onClose={jest.fn()} onCreate={onCreate} />
+    );
+
+    fireEvent.change(screen.getByLabelText('Guest Name *'), {
+      target: { value: 'River Song' },
+    });
+    fireEvent.change(
+      screen.getByLabelText('Invitation Code (Optional - auto-generated if blank)'),
+      { target: { value: 'SHORT12' } }
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('at least 8 characters');
+    expect(onCreate).not.toHaveBeenCalled();
+
+    fireEvent.change(
+      screen.getByLabelText('Invitation Code (Optional - auto-generated if blank)'),
+      { target: { value: 'AAAAAAAA' } }
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('at least 4 distinct characters');
+    expect(onCreate).not.toHaveBeenCalled();
+    unmountCreate();
+
+    const onSave = jest.fn().mockResolvedValue({});
+    const onClose = jest.fn();
+    const legacyGuest: InvitationCodeDTO = {
+      ...sampleGuest,
+      id: 'legacy-guest-1',
+      code: 'VIP26',
+    };
+
+    render(
+      <GuestEditorModal
+        isOpen={true}
+        guest={legacyGuest}
+        onClose={onClose}
+        onSave={onSave}
+      />
+    );
+
+    // Editing non-code fields on legacy <8-char guest saves cleanly without sending `code`
+    fireEvent.change(screen.getByLabelText('City'), {
+      target: { value: 'Cardiff' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Guest Changes' }));
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledTimes(1);
+    });
+    const savedPayload = onSave.mock.calls[0][1] as Record<string, unknown>;
+    expect(savedPayload.city).toBe('Cardiff');
+    expect(savedPayload.code).toBeUndefined();
+
+    // Changing the code on that legacy guest to another <8-char value IS rejected
+    fireEvent.change(screen.getByLabelText('Invitation Code *'), {
+      target: { value: 'VIP27' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Guest Changes' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('at least 8 characters');
+    expect(onSave).toHaveBeenCalledTimes(1);
+  });
 });

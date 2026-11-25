@@ -609,7 +609,6 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
         'GET /api/og',
         'GET /api/ready',
         'GET /api/registry/claim',
-        'GET /api/registry/validate-code',
         'POST /api/admin/login',
         'POST /api/admin/logout',
         'POST /api/admin/setup',

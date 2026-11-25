@@ -492,7 +492,7 @@ describe('InvitationCodesDashboardPage', () => {
 
     // Guest Name and Code inputs
     const guestNameInput = screen.getByPlaceholderText('e.g. John Doe');
-    const codeInput = screen.getByPlaceholderText('e.g. JOHN123');
+    const codeInput = screen.getByPlaceholderText('e.g. JOHN2026');
 
     fireEvent.change(guestNameInput, { target: { value: 'David Miller' } });
     fireEvent.change(codeInput, { target: { value: 'david123' } });
@@ -543,7 +543,7 @@ describe('InvitationCodesDashboardPage', () => {
     fireEvent.change(screen.getByPlaceholderText('e.g. John Doe'), {
       target: { value: '  Nora Valkyrie  ' },
     });
-    fireEvent.change(screen.getByPlaceholderText('e.g. JOHN123'), {
+    fireEvent.change(screen.getByPlaceholderText('e.g. JOHN2026'), {
       target: { value: '    ' },
     });
     fireEvent.change(screen.getByLabelText('Plus-One Allocations'), {

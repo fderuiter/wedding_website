@@ -596,12 +596,13 @@ export async function handleRegistryAndThankYouRoutes(
     }
   }
 
-  if (path === '/api/registry/validate-code' && (method === 'GET' || method === 'POST')) {
-    const rawCode =
-      method === 'GET'
-        ? url.searchParams.get('code') || ''
-        : String((await parseJsonBody(init, rawInput)).code || '');
-    if (!rawCode.trim()) {
+  if (path === '/api/registry/validate-code') {
+    if (method !== 'POST') {
+      return jsonResponse({ error: 'Method Not Allowed' }, 405);
+    }
+    const rawCode = String((await parseJsonBody(init, rawInput)).code || '');
+    const trimmedInput = rawCode.trim();
+    if (!trimmedInput) {
       return jsonResponse(
         {
           valid: false,
@@ -611,27 +612,24 @@ export async function handleRegistryAndThankYouRoutes(
         400
       );
     }
-    const matched = findDemoGuestByCode(rawCode);
+    const matched = findDemoGuestByCode(trimmedInput);
     if (!matched) {
-      const trimmedUpper = rawCode.trim().toUpperCase();
       const envPasscode =
         typeof process !== 'undefined' && typeof process.env?.GUEST_PASSCODE === 'string'
-          ? process.env.GUEST_PASSCODE.trim().toUpperCase()
+          ? process.env.GUEST_PASSCODE.trim()
           : '';
-      if (trimmedUpper === 'WEDDING2026' || (envPasscode && trimmedUpper === envPasscode)) {
+      if (trimmedInput === 'WEDDING2026' || (envPasscode && trimmedInput === envPasscode)) {
         const guidanceError =
           'That is the shared website passcode. Please enter the personal household invitation code printed on your invitation.';
-        return jsonResponse({
-          valid: false,
-          success: true,
-          reason: 'shared_passcode',
-          error: guidanceError,
-          data: {
+        return jsonResponse(
+          {
             valid: false,
+            success: false,
             reason: 'shared_passcode',
             error: guidanceError,
           },
-        });
+          401
+        );
       }
       return jsonResponse(
         {
@@ -642,27 +640,19 @@ export async function handleRegistryAndThankYouRoutes(
         404
       );
     }
-    const resolvedEmail =
-      typeof matched.email === 'string' && matched.email.trim().length > 0
-        ? matched.email.trim()
-        : null;
-    if (method === 'POST') {
-      setDemoGuestSession({
-        invitationCode: matched.code,
-        guestName: matched.guestName,
-      });
-    }
+    setDemoGuestSession({
+      invitationCode: matched.code,
+      guestName: matched.guestName,
+    });
     return jsonResponse({
       valid: true,
       success: true,
       code: matched.code,
       guestName: matched.guestName,
-      email: resolvedEmail,
       data: {
         valid: true,
         code: matched.code,
         guestName: matched.guestName,
-        email: resolvedEmail,
       },
     });
   }

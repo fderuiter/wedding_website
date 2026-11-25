@@ -93,12 +93,6 @@ function buildOpenApiRequestInit(
     (n) => n.type.toUpperCase() === 'PHOTO',
   );
 
-  if (resolvedPath === '/api/registry/validate-code' && method === 'GET') {
-    return {
-      url: `${base}?code=${encodeURIComponent(firstInvite?.code ?? 'DEMO2026')}`,
-      init: { method },
-    };
-  }
   if (resolvedPath === '/api/registry/claim' && method === 'GET') {
     return {
       url: `${base}?token=${encodeURIComponent(`demo-claim:confirm:${firstContrib?.id ?? 'c1'}`)}`,
@@ -567,7 +561,12 @@ describe('Static Demo Fetch Router & Versioned Store', () => {
     expect(unpromotedLoginRes?.status).toBe(401);
 
     const unpromotedValidateRes = await router(
-      `http://localhost:3000/api/registry/validate-code?code=${encodeURIComponent(newCode)}`,
+      'http://localhost:3000/api/registry/validate-code',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: newCode }),
+      },
     );
     expect(unpromotedValidateRes?.status).toBe(404);
 
@@ -1262,6 +1261,24 @@ describe('Static Demo Fetch Router & Versioned Store', () => {
     });
 
     // Shared passcode login sets status: 'passcode' and validate-code returns shared_passcode guidance
+    store.mutate((draft) => {
+      draft.isAdminAuthenticated = false;
+      draft.guestSession = null;
+    });
+    const unauthValidateGet = await router(
+      'http://localhost:3000/api/registry/validate-code?code=WEDDING2026',
+    );
+    expect(unauthValidateGet?.status).toBe(401);
+    const unauthValidatePost = await router(
+      'http://localhost:3000/api/registry/validate-code',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: 'WEDDING2026' }),
+      },
+    );
+    expect(unauthValidatePost?.status).toBe(401);
+
     await router('http://localhost:3000/api/guest/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1274,11 +1291,22 @@ describe('Static Demo Fetch Router & Versioned Store', () => {
       hasPasscodeSession: true,
     });
 
-    const passcodeValidateRes = await router(
+    const getValidateRes = await router(
       'http://localhost:3000/api/registry/validate-code?code=WEDDING2026',
     );
-    expect(passcodeValidateRes?.status).toBe(200);
-    expect((await passcodeValidateRes!.json()).data).toMatchObject({
+    expect(getValidateRes?.status).toBe(405);
+
+    const passcodeValidateRes = await router(
+      'http://localhost:3000/api/registry/validate-code',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: 'WEDDING2026' }),
+      },
+    );
+    expect(passcodeValidateRes?.status).toBe(401);
+    expect(await passcodeValidateRes!.json()).toMatchObject({
+      success: false,
       valid: false,
       reason: 'shared_passcode',
     });
@@ -1294,22 +1322,19 @@ describe('Static Demo Fetch Router & Versioned Store', () => {
       );
     });
 
-    const previewRes = await router(
-      `http://localhost:3000/api/registry/validate-code?code=${encodeURIComponent(targetInvite.code)}`,
-    );
-    expect(previewRes?.status).toBe(200);
-    expect(
-      (await (await router('http://localhost:3000/api/guest/session'))!.json()).data,
-    ).toMatchObject({
-      status: 'passcode',
-      isVerified: false,
-    });
-
-    await router('http://localhost:3000/api/registry/validate-code', {
+    const validateInviteRes = await router('http://localhost:3000/api/registry/validate-code', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code: targetInvite.code }),
     });
+    expect(validateInviteRes?.status).toBe(200);
+    const validateInviteJson = await validateInviteRes!.json();
+    expect(validateInviteJson.data).toEqual({
+      valid: true,
+      guestName: targetInvite.guestName,
+      code: targetInvite.code,
+    });
+    expect(validateInviteJson.data.email).toBeUndefined();
     const inviteSessionRes = await router('http://localhost:3000/api/guest/session');
     expect((await inviteSessionRes!.json()).data).toMatchObject({
       status: 'invitation',

@@ -48,12 +48,13 @@ describe('GuestAddressPage (/guest)', () => {
     // Set URL with code query param via pushState
     window.history.pushState({}, '', '/guest?code=AUTOPREAUTH26');
 
-    // 1st fetch: /api/registry/validate-code?code=AUTOPREAUTH26
+    // 1st fetch: POST /api/guest/login
     globalFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
       json: async () => ({
-        valid: true,
+        success: true,
+        sessionType: 'invitation',
         guestName: 'Marianne Dashwood',
         code: 'AUTOPREAUTH26',
       }),
@@ -86,9 +87,10 @@ describe('GuestAddressPage (/guest)', () => {
         const init = call[1] as RequestInit | undefined;
         const url = typeof arg === 'string' ? arg : arg?.url || '';
         return (
-          url.includes('/api/registry/validate-code') &&
+          url.includes('/api/guest/login') &&
           init?.method === 'POST' &&
-          String(init?.body || '').includes('AUTOPREAUTH26')
+          String(init?.body || '').includes('AUTOPREAUTH26') &&
+          String(init?.body || '').includes('"requireInvitation":true')
         );
       });
       expect(hasPostValidateCall).toBe(true);
@@ -170,17 +172,18 @@ describe('GuestAddressPage (/guest)', () => {
           json: async () => ({ success: false, error: 'Unauthorized' }),
         };
       }
-      if (url.includes('/api/registry/validate-code') && rawBody.includes('SLOWCODE')) {
+      if (url.includes('/api/guest/login') && rawBody.includes('SLOWCODE')) {
         signals.slow = signal;
         return new Promise(() => {});
       }
-      if (url.includes('/api/registry/validate-code') && rawBody.includes('FASTCODE')) {
+      if (url.includes('/api/guest/login') && rawBody.includes('FASTCODE')) {
         signals.fast = signal;
         return {
           ok: true,
           status: 200,
           json: async () => ({
-            valid: true,
+            success: true,
+            sessionType: 'invitation',
             guestName: 'Jane Fairfax',
             code: 'FASTCODE',
           }),
@@ -374,7 +377,7 @@ describe('GuestAddressPage (/guest)', () => {
       const url = typeof input === 'string' ? input : input?.url || '';
       const rawBody = typeof init?.body === 'string' ? init.body : '';
       if (
-        url.includes('/api/registry/validate-code') &&
+        url.includes('/api/guest/login') &&
         init?.method === 'POST' &&
         rawBody.includes('UNIFIED26')
       ) {
@@ -382,7 +385,8 @@ describe('GuestAddressPage (/guest)', () => {
           ok: true,
           status: 200,
           json: async () => ({
-            valid: true,
+            success: true,
+            sessionType: 'invitation',
             guestName: 'Elizabeth Bennet',
             code: 'UNIFIED26',
           }),
@@ -745,20 +749,18 @@ describe('GuestAddressPage (/guest)', () => {
           }),
         };
       }
-      if (url.includes('/api/registry/validate-code') && init?.method === 'POST') {
+      if (url.includes('/api/guest/login') && init?.method === 'POST') {
         const parsedBody =
           typeof init.body === 'string' && init.body ? JSON.parse(init.body) : {};
-        if (parsedBody.code === 'WEDDING2026') {
+        if (parsedBody.passcode === 'WEDDING2026' && parsedBody.requireInvitation === true) {
           return {
-            ok: true,
-            status: 200,
+            ok: false,
+            status: 401,
             json: async () => ({
-              success: true,
-              data: {
-                valid: false,
-                reason: 'shared_passcode',
-                error: 'That is the shared website passcode. Please enter your unique household invitation code.',
-              },
+              success: false,
+              valid: false,
+              reason: 'shared_passcode',
+              error: 'That is the shared website passcode. Please enter your unique household invitation code.',
             }),
           };
         }

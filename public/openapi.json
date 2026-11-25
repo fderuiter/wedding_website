@@ -1459,7 +1459,7 @@
                     "properties": {
                       "code": {
                         "type": "string",
-                        "minLength": 1,
+                        "minLength": 8,
                         "maxLength": 50
                       },
                       "guestName": {
@@ -4164,7 +4164,7 @@
                         "anyOf": [
                           {
                             "type": "string",
-                            "minLength": 1,
+                            "minLength": 8,
                             "maxLength": 50
                           },
                           {
@@ -7669,7 +7669,8 @@
                             "code": {
                               "anyOf": [
                                 {
-                                  "type": "string"
+                                  "type": "string",
+                                  "maxLength": 50
                                 },
                                 {
                                   "type": "string",
@@ -8662,7 +8663,8 @@
                         "code": {
                           "anyOf": [
                             {
-                              "type": "string"
+                              "type": "string",
+                              "maxLength": 50
                             },
                             {
                               "type": "string",
@@ -10016,7 +10018,8 @@
                         "code": {
                           "anyOf": [
                             {
-                              "type": "string"
+                              "type": "string",
+                              "maxLength": 50
                             },
                             {
                               "type": "string",
@@ -21486,6 +21489,9 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 256
+                  },
+                  "requireInvitation": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -21535,12 +21541,16 @@
                         },
                         "guestName": {
                           "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
                         }
                       },
                       "required": [
                         "success",
                         "sessionType",
-                        "guestName"
+                        "guestName",
+                        "code"
                       ]
                     }
                   ]
@@ -27454,162 +27464,23 @@
       }
     },
     "/api/registry/validate-code": {
-      "get": {
-        "tags": [
-          "Registry"
-        ],
-        "summary": "GET /api/registry/validate-code",
-        "description": "Endpoint for /api/registry/validate-code",
-        "parameters": [
-          {
-            "name": "code",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "required": [
-                        "success",
-                        "data"
-                      ],
-                      "properties": {
-                        "success": {
-                          "type": "boolean",
-                          "enum": [
-                            true
-                          ]
-                        },
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "valid": {
-                              "type": "boolean",
-                              "enum": [
-                                false
-                              ]
-                            },
-                            "reason": {
-                              "type": "string"
-                            },
-                            "error": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "valid",
-                            "reason",
-                            "error"
-                          ]
-                        }
-                      }
-                    },
-                    {
-                      "type": "object",
-                      "required": [
-                        "success",
-                        "data"
-                      ],
-                      "properties": {
-                        "success": {
-                          "type": "boolean",
-                          "enum": [
-                            true
-                          ]
-                        },
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "valid": {
-                              "type": "boolean",
-                              "enum": [
-                                true
-                              ]
-                            },
-                            "guestName": {
-                              "type": "string"
-                            },
-                            "code": {
-                              "type": "string"
-                            },
-                            "email": {
-                              "type": "string",
-                              "nullable": true
-                            }
-                          },
-                          "required": [
-                            "valid",
-                            "guestName",
-                            "code",
-                            "email"
-                          ]
-                        }
-                      }
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Too Many Requests",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      },
       "post": {
         "tags": [
           "Registry"
         ],
         "summary": "POST /api/registry/validate-code",
         "description": "Endpoint for /api/registry/validate-code",
+        "security": [
+          {
+            "guestCookieAuth": []
+          },
+          {
+            "guestInviteCookieAuth": []
+          },
+          {
+            "adminCookieAuth": []
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -27637,93 +27508,56 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "required": [
-                        "success",
-                        "data"
-                      ],
-                      "properties": {
-                        "success": {
-                          "type": "boolean",
-                          "enum": [
-                            true
-                          ]
-                        },
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "valid": {
-                              "type": "boolean",
-                              "enum": [
-                                false
-                              ]
-                            },
-                            "reason": {
-                              "type": "string"
-                            },
-                            "error": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "valid",
-                            "reason",
-                            "error"
-                          ]
-                        }
-                      }
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
                     },
-                    {
+                    "data": {
                       "type": "object",
-                      "required": [
-                        "success",
-                        "data"
-                      ],
                       "properties": {
-                        "success": {
+                        "valid": {
                           "type": "boolean",
                           "enum": [
                             true
                           ]
                         },
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "valid": {
-                              "type": "boolean",
-                              "enum": [
-                                true
-                              ]
-                            },
-                            "guestName": {
-                              "type": "string"
-                            },
-                            "code": {
-                              "type": "string"
-                            },
-                            "email": {
-                              "type": "string",
-                              "nullable": true
-                            }
-                          },
-                          "required": [
-                            "valid",
-                            "guestName",
-                            "code",
-                            "email"
-                          ]
+                        "guestName": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
                         }
-                      }
+                      },
+                      "required": [
+                        "valid",
+                        "guestName",
+                        "code"
+                      ]
                     }
-                  ]
+                  }
                 }
               }
             }
           },
           "400": {
             "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
