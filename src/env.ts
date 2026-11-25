@@ -1,5 +1,61 @@
 import { z } from 'zod';
-import { isValidPostgresUrl, normalizePostgresUrl } from './lib/postgres-url.js';
+import {
+  isLoopbackPostgresHost,
+  isValidPostgresUrl,
+  normalizePostgresUrl,
+  parsePostgresUrl,
+} from './lib/postgres-url.js';
+
+const DISALLOWED_PROD_REMOTE_POSTGRES_TLS_MODES = new Set([
+  'disable',
+  'allow',
+  'prefer',
+  'no-verify',
+]);
+
+function getInsecureProductionPostgresTlsError(
+  rawUrl: string | undefined,
+  varName: 'DATABASE_URL' | 'POSTGRES_URL_NON_POOLING'
+): string | null {
+  if (!rawUrl || !isValidPostgresUrl(rawUrl)) {
+    return null;
+  }
+  const parsed = parsePostgresUrl(rawUrl);
+  if (parsed.isUnixSocket || isLoopbackPostgresHost(parsed.host)) {
+    return null;
+  }
+  // Preserve explicit sslmode=disable opt-out for the internal single-host Compose `db` service
+  if (parsed.host.toLowerCase() === 'db' && parsed.sslmode === 'disable') {
+    return null;
+  }
+  if (DISALLOWED_PROD_REMOTE_POSTGRES_TLS_MODES.has(parsed.tlsMode)) {
+    return `${varName} must not use insecure TLS mode "${parsed.tlsMode}" for remote PostgreSQL hosts in production; omit sslmode (defaults to verify-full) or set sslmode=require, sslmode=verify-ca, or sslmode=verify-full`;
+  }
+  return null;
+}
+
+function enforceProductionPostgresTlsRefinement(
+  data: {
+    NODE_ENV: 'development' | 'test' | 'production';
+    DATABASE_URL: string;
+    POSTGRES_URL_NON_POOLING?: string;
+  },
+  ctx: z.RefinementCtx
+): void {
+  if (data.NODE_ENV !== 'production' || isBuildTime) {
+    return;
+  }
+  for (const varName of ['DATABASE_URL', 'POSTGRES_URL_NON_POOLING'] as const) {
+    const tlsError = getInsecureProductionPostgresTlsError(data[varName], varName);
+    if (tlsError) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [varName],
+        message: tlsError,
+      });
+    }
+  }
+}
 
 function isPlaceholderStripeKey(key: string): boolean {
   const prefix = key.slice(0, 3);
@@ -265,6 +321,7 @@ const envSchema = z.object({
       });
     }
   }
+  enforceProductionPostgresTlsRefinement(data, ctx);
   if (
     data.GUEST_SESSION_SECRET &&
     data.GUEST_PASSCODE &&
@@ -427,6 +484,22 @@ if (process.env.NODE_ENV === 'production' && !isBuildTime && process.env.NEXT_RU
   if (normalizedGuestSessionSecret === trimmedGuestPasscode) {
     console.error('❌ Security Error: GUEST_SESSION_SECRET must not match GUEST_PASSCODE.');
     throw new Error('GUEST_SESSION_SECRET must not match GUEST_PASSCODE.');
+  }
+  const bootDatabaseUrlTlsError = getInsecureProductionPostgresTlsError(
+    normalizeOptionalEnv(process.env.DATABASE_URL),
+    'DATABASE_URL'
+  );
+  if (bootDatabaseUrlTlsError) {
+    console.error(`❌ Security Error: ${bootDatabaseUrlTlsError}.`);
+    throw new Error(`${bootDatabaseUrlTlsError}.`);
+  }
+  const bootNonPoolingUrlTlsError = getInsecureProductionPostgresTlsError(
+    normalizeOptionalEnv(process.env.POSTGRES_URL_NON_POOLING),
+    'POSTGRES_URL_NON_POOLING'
+  );
+  if (bootNonPoolingUrlTlsError) {
+    console.error(`❌ Security Error: ${bootNonPoolingUrlTlsError}.`);
+    throw new Error(`${bootNonPoolingUrlTlsError}.`);
   }
 }
 

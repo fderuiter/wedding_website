@@ -2223,11 +2223,25 @@ process.exit(1);
         },
       });
 
-    // 1. Fails closed with redacted URL when prisma migrate status hits P1001
+    // 0. Remote URL without sslmode defaults to verify-full and runs pre-flight TLS handshake before Prisma CLI
     fs.writeFileSync(summaryFile, '');
     const leakedSecret = 'PROD_DB_SECRET_98765';
-    const p1001Res = runWorkflowScriptInCwd(REPO_ROOT, statusCheckScript, {
+    const remoteDefaultTlsRes = runWorkflowScriptInCwd(REPO_ROOT, statusCheckScript, {
       DATABASE_URL: `postgresql://wedding:${leakedSecret}@db.prod.internal:5432/wedding`,
+      TARGET_ENVIRONMENT: 'production',
+      MOCK_PRISMA_EXIT: '0',
+    });
+    expect(remoteDefaultTlsRes.status).toBe(1);
+    const remoteDefaultSummary = fs.readFileSync(summaryFile, 'utf8');
+    expect(remoteDefaultSummary).toContain('**Pre-Flight Gate:** `FAILED` ❌');
+    expect(remoteDefaultSummary).toContain('Pre-flight PostgreSQL TLS handshake check failed');
+    expect(remoteDefaultSummary).not.toContain(leakedSecret);
+    expect(remoteDefaultSummary).not.toContain('postgresql://');
+
+    // 1. Fails closed with redacted URL when prisma migrate status hits P1001
+    fs.writeFileSync(summaryFile, '');
+    const p1001Res = runWorkflowScriptInCwd(REPO_ROOT, statusCheckScript, {
+      DATABASE_URL: `postgresql://wedding:${leakedSecret}@db.prod.internal:5432/wedding?sslmode=disable`,
       TARGET_ENVIRONMENT: 'production',
       MOCK_PRISMA_EXIT: '1',
       MOCK_PRISMA_STDERR: `Error: P1001: Can't reach database server at postgresql://wedding:${leakedSecret}@db.prod.internal:5432/wedding\n`,
@@ -2242,7 +2256,7 @@ process.exit(1);
     // 2. Fails closed on schema drift / diverged migration history
     fs.writeFileSync(summaryFile, '');
     const driftRes = runWorkflowScriptInCwd(REPO_ROOT, statusCheckScript, {
-      DATABASE_URL: 'postgresql://wedding:pw@db.prod.internal:5432/wedding',
+      DATABASE_URL: 'postgresql://wedding:pw@db.prod.internal:5432/wedding?sslmode=disable',
       TARGET_ENVIRONMENT: 'production',
       MOCK_PRISMA_EXIT: '1',
       MOCK_PRISMA_STDERR:
@@ -2254,7 +2268,7 @@ process.exit(1);
     // 3. Succeeds when Prisma 7 exits 1 with clean singular pending migration
     fs.writeFileSync(summaryFile, '');
     const singlePendingRes = runWorkflowScriptInCwd(REPO_ROOT, statusCheckScript, {
-      DATABASE_URL: 'postgresql://wedding:pw@db.prod.internal:5432/wedding',
+      DATABASE_URL: 'postgresql://wedding:pw@db.prod.internal:5432/wedding?sslmode=disable',
       TARGET_ENVIRONMENT: 'production',
       MOCK_PRISMA_EXIT: '1',
       MOCK_PRISMA_STDOUT:

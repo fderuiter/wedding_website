@@ -360,8 +360,10 @@ class SmtpSocketSession {
     this.terminalError = null;
 
     const underlying = this.rawSocket || (this.socket as net.Socket);
+    const cleanPeerHost = host.trim().replace(/^\[|\]$/g, '');
     const tlsSock = tls.connect({
       socket: underlying,
+      host: cleanPeerHost,
       servername: resolveSniServername(host),
       rejectUnauthorized,
     });
@@ -657,36 +659,34 @@ async function executeSmtpTransaction(params: {
     let isTlsEncrypted = secure;
 
     if (!secure) {
-      if (port === 587 && !capabilities.supportsStartTls) {
+      if (!capabilities.supportsStartTls) {
         return {
           success: false,
-          error: 'SMTP server on port 587 does not advertise STARTTLS',
+          error: `SMTP server on port ${port} does not advertise STARTTLS`,
         };
       }
 
-      if (port === 587 || capabilities.supportsStartTls) {
-        await session.writeCommand('STARTTLS\r\n', timeoutMs);
-        const startTlsResp = await session.readResponse(timeoutMs);
-        if (startTlsResp.code !== 220) {
-          return {
-            success: false,
-            error: `SMTP STARTTLS rejected (${startTlsResp.code})`,
-          };
-        }
-
-        await session.upgradeToTls(cleanHost, rejectUnauthorized, timeoutMs);
-        isTlsEncrypted = true;
-
-        await session.writeCommand(`EHLO ${ehloHost}\r\n`, timeoutMs);
-        const postTlsEhlo = await session.readResponse(timeoutMs);
-        if (postTlsEhlo.code !== 250) {
-          return {
-            success: false,
-            error: `SMTP EHLO after STARTTLS rejected (${postTlsEhlo.code})`,
-          };
-        }
-        capabilities = parseEhloCapabilities(postTlsEhlo.lines);
+      await session.writeCommand('STARTTLS\r\n', timeoutMs);
+      const startTlsResp = await session.readResponse(timeoutMs);
+      if (startTlsResp.code !== 220) {
+        return {
+          success: false,
+          error: `SMTP STARTTLS rejected (${startTlsResp.code})`,
+        };
       }
+
+      await session.upgradeToTls(cleanHost, rejectUnauthorized, timeoutMs);
+      isTlsEncrypted = true;
+
+      await session.writeCommand(`EHLO ${ehloHost}\r\n`, timeoutMs);
+      const postTlsEhlo = await session.readResponse(timeoutMs);
+      if (postTlsEhlo.code !== 250) {
+        return {
+          success: false,
+          error: `SMTP EHLO after STARTTLS rejected (${postTlsEhlo.code})`,
+        };
+      }
+      capabilities = parseEhloCapabilities(postTlsEhlo.lines);
     }
 
     const cleanUser = user.trim();
@@ -1024,7 +1024,7 @@ export class MultiChannelMessagingProvider implements MessagingProvider {
       typeof this.config.smtpTimeoutMs === 'number' && this.config.smtpTimeoutMs > 0
         ? this.config.smtpTimeoutMs
         : DEFAULT_SMTP_TIMEOUT_MS;
-    const rejectUnauthorized = this.config.smtpRejectUnauthorized !== false;
+    const rejectUnauthorized = true;
 
     const { htmlBody, textBody } = resolveEmailBodies(payload, this.config);
 
@@ -1140,7 +1140,7 @@ export class MultiChannelMessagingProvider implements MessagingProvider {
           typeof this.config.smtpTimeoutMs === 'number' && this.config.smtpTimeoutMs > 0
             ? this.config.smtpTimeoutMs
             : DEFAULT_SMTP_TIMEOUT_MS;
-        const rejectUnauthorized = this.config.smtpRejectUnauthorized !== false;
+        const rejectUnauthorized = true;
 
         return executeSmtpTransaction({
           mode: 'test',

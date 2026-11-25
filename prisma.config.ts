@@ -4,6 +4,7 @@ import {
   isValidPostgresUrl,
   normalizePostgresUrl,
   parsePostgresUrl,
+  redactPostgresUrl,
   resolveDirectMigrationPostgresUrl,
 } from './src/lib/postgres-url.js';
 
@@ -34,28 +35,35 @@ function safeNormalizePostgresUrl(rawUrl?: string): string | undefined {
 }
 
 /**
- * Rewrites `ssl=` boolean/no-verify flags and libpq `sslmode` values that Prisma CLI's
+ * Rewrites `ssl=` boolean/no-verify flags and endpoint-aware `tlsMode` values that Prisma CLI's
  * `quaint` engine would otherwise discard or downgrade to `sslmode=prefer`:
- * - `ssl=true` / `ssl=1` -> `sslmode=require` (strips `ssl`)
+ * - Omitted `sslmode`/`ssl` on non-loopback TCP hosts (`tlsMode: 'verify-full'`) -> `sslmode=require&sslaccept=strict`
+ * - `ssl=true` / `ssl=1` -> `sslmode=require` (strips `ssl`; maps custom `sslrootcert` to `sslcert` with `sslaccept=strict`)
  * - `ssl=false` / `ssl=0` -> `sslmode=disable` (strips `ssl`)
  * - `ssl=no-verify` / `sslmode=no-verify` -> `sslmode=require&sslaccept=accept_invalid_certs`
  * - `sslmode=allow` -> `sslmode=prefer`
- * - `sslmode=verify-ca` -> `sslmode=require` (CA chain verified by pre-migration Node TLS gate)
- * - `sslmode=verify-full` / `sslrootcert=system` -> `sslmode=require&sslaccept=strict`
- *   (maps explicit custom `sslrootcert` path to `sslcert` when `sslcert` is unset)
+ * - `sslmode=verify-ca` / `sslmode=verify-full` / `sslrootcert=system` -> `sslmode=require&sslaccept=strict`
+ *   (maps explicit custom `sslrootcert` path to `sslcert`, failing closed if `sslrootcert` and `sslcert` collide)
  */
 export function rewritePostgresUrlForPrismaCli(rawUrl: string): string {
   if (!isValidPostgresUrl(rawUrl)) {
     return rawUrl;
   }
   const parsed = parsePostgresUrl(rawUrl);
+
+  if (parsed.sslrootcert && parsed.sslcert) {
+    throw new Error(
+      `PostgreSQL URL (${redactPostgresUrl(rawUrl)}) cannot specify both "sslrootcert" and "sslcert" for Prisma CLI.`
+    );
+  }
+
   const needsTlsRewrite =
     parsed.sslFlag !== undefined ||
-    parsed.sslrootcert === 'system' ||
-    parsed.sslmode === 'allow' ||
-    parsed.sslmode === 'no-verify' ||
-    parsed.sslmode === 'verify-ca' ||
-    parsed.sslmode === 'verify-full';
+    parsed.sslrootcert !== undefined ||
+    parsed.tlsMode === 'allow' ||
+    parsed.tlsMode === 'no-verify' ||
+    parsed.tlsMode === 'verify-ca' ||
+    parsed.tlsMode === 'verify-full';
 
   if (!needsTlsRewrite) {
     return parsed.normalizedUrl;
@@ -85,17 +93,17 @@ export function rewritePostgresUrlForPrismaCli(rawUrl: string): string {
       break;
     case 'require':
       params.set('sslmode', 'require');
+      if (parsed.sslrootcert && parsed.sslrootcert !== 'system') {
+        params.set('sslaccept', 'strict');
+        params.set('sslcert', parsed.sslrootcert);
+      }
       params.delete('sslrootcert');
       break;
     case 'verify-ca':
-      params.set('sslmode', 'require');
-      params.delete('sslrootcert');
-      params.delete('sslaccept');
-      break;
     case 'verify-full':
       params.set('sslmode', 'require');
       params.set('sslaccept', 'strict');
-      if (parsed.sslrootcert && parsed.sslrootcert !== 'system' && !parsed.sslcert) {
+      if (parsed.sslrootcert && parsed.sslrootcert !== 'system') {
         params.set('sslcert', parsed.sslrootcert);
       }
       params.delete('sslrootcert');

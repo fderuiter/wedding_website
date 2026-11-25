@@ -11,7 +11,7 @@ services:
 
   migration:
     environment:
-      DATABASE_URL: ${CONTAINER_DATABASE_URL:-postgres://${DB_USER:-wedding}:${DB_PASSWORD:-wedding123}@db:5432/${DB_NAME:-wedding}}
+      DATABASE_URL: ${CONTAINER_DATABASE_URL:-postgres://${DB_USER:-wedding}:${DB_PASSWORD:-wedding123}@db:5432/${DB_NAME:-wedding}?sslmode=disable}
       POSTGRES_URL_NON_POOLING: ${CONTAINER_POSTGRES_URL_NON_POOLING:-}
 
   app:
@@ -20,7 +20,7 @@ services:
         - type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64}
     environment:
       NODE_ENV: production
-      DATABASE_URL: ${CONTAINER_DATABASE_URL:-postgres://${DB_USER:-wedding}:${DB_PASSWORD:-wedding123}@db:5432/${DB_NAME:-wedding}}
+      DATABASE_URL: ${CONTAINER_DATABASE_URL:-postgres://${DB_USER:-wedding}:${DB_PASSWORD:-wedding123}@db:5432/${DB_NAME:-wedding}?sslmode=disable}
       POSTGRES_URL_NON_POOLING: ${CONTAINER_POSTGRES_URL_NON_POOLING:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,*.localhost,app,db,wedding_website-app-1,0.0.0.0}
