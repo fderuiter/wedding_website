@@ -546,7 +546,7 @@ export default function Navbar({
             type="button"
             aria-expanded={isMenuOpen}
             aria-controls="mobile-menu"
-            className="inline-flex items-center justify-center p-2 rounded-md text-[var(--color-primary-text)] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))]"
+            className="relative inline-flex items-center justify-center p-2 rounded-md text-[var(--color-primary-text)] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))]"
           >
             <span className="sr-only">{isMenuOpen ? 'Close main menu' : 'Open main menu'}</span>
             {isMenuOpen ? (

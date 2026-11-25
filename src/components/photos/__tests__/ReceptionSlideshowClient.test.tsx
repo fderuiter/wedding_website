@@ -1454,4 +1454,26 @@ describe('ReceptionSlideshowClient', () => {
     expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
     expect(await axe(container, a11yConfig)).toHaveNoViolations();
   });
+
+  it('applies mobile reflow classes on top header, floating control bar, and QR overlay', () => {
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={samplePhotos}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    expect(screen.getByTestId('slideshow-top-header')).toHaveClass('flex-wrap');
+    expect(screen.getByTestId('slideshow-controls')).toHaveClass(
+      'w-[calc(100vw-1.5rem)]',
+      'max-w-[calc(100vw-1.5rem)]'
+    );
+    expect(screen.getByTestId('slideshow-secondary-controls')).toHaveClass('flex-wrap');
+    expect(screen.getByTestId('slideshow-qr-overlay')).toHaveClass(
+      'left-4',
+      'right-4',
+      'max-w-[290px]'
+    );
+    expect(screen.getByTestId('slideshow-upload-url')).toHaveClass('truncate');
+  });
 });

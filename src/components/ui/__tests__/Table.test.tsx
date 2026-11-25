@@ -317,5 +317,34 @@ describe('Table Component Accessibility & Functionality', () => {
     expect(scrollLeft).toBe(50);
     expect(onKeyDownMock).toHaveBeenCalledTimes(1);
   });
+
+  test('defaults scroll region to relative positioning while preserving explicit container position overrides', () => {
+    const { rerender } = render(
+      <Table containerAriaLabel="Thank-you notes">
+        <TableBody>
+          <TableRow>
+            <TableCell>Row 1</TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>
+    );
+
+    let region = screen.getByRole('region', { name: 'Thank-you notes' });
+    expect(region).toHaveClass('relative');
+
+    rerender(
+      <Table containerAriaLabel="Thank-you notes" containerClassName="sticky top-0">
+        <TableBody>
+          <TableRow>
+            <TableCell>Row 1</TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>
+    );
+
+    region = screen.getByRole('region', { name: 'Thank-you notes' });
+    expect(region).toHaveClass('sticky');
+    expect(region).not.toHaveClass('relative');
+  });
 });
 

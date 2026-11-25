@@ -176,4 +176,23 @@ describe('AccessibleExternalLink Component', () => {
     };
     expect(props.href).toBe('https://example.com');
   });
+
+  it('defaults to relative positioning to anchor sr-only spans while preserving explicit position overrides', () => {
+    const { rerender } = render(
+      <AccessibleExternalLink href="https://example.com" className="inline-flex items-center">
+        View Registry
+      </AccessibleExternalLink>
+    );
+    let link = screen.getByRole('link', { name: 'View Registry (opens in a new tab)' });
+    expect(link).toHaveClass('relative', 'inline-flex');
+
+    rerender(
+      <AccessibleExternalLink href="https://example.com" className="absolute top-2 right-2">
+        External Badge
+      </AccessibleExternalLink>
+    );
+    link = screen.getByRole('link', { name: 'External Badge (opens in a new tab)' });
+    expect(link).toHaveClass('absolute');
+    expect(link).not.toHaveClass('relative');
+  });
 });

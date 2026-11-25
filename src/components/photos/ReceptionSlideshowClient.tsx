@@ -55,12 +55,12 @@ export function ReceptionSlideshowClient({
     ? 'bottom-20'
     : hasCollapsedDemoToolbar
       ? 'bottom-16'
-      : 'bottom-6';
+      : 'bottom-6 max-sm:bottom-4';
   const qrOverlayBottomClass = hasExpandedDemoToolbar
-    ? 'bottom-36'
+    ? 'bottom-36 max-sm:bottom-48'
     : hasCollapsedDemoToolbar
-      ? 'bottom-32'
-      : 'bottom-24';
+      ? 'bottom-32 max-sm:bottom-44'
+      : 'bottom-24 max-sm:bottom-32';
   const [photos, setPhotos] = useState<SlideshowPhoto[]>(() => normalizePhotos(initialPhotos));
   const [failedUrls, setFailedUrls] = useState<Set<string>>(() => new Set());
   const failedUrlsRef = useRef<Set<string>>(new Set());
@@ -510,20 +510,20 @@ export function ReceptionSlideshowClient({
         {/* Top Header Information Overlay */}
         <div
           ref={headerRef}
-          className={`relative z-20 flex items-center justify-between p-6 transition-opacity duration-500 focus-within:opacity-100 focus-within:pointer-events-auto ${
+          className={`relative z-20 flex flex-wrap items-center justify-between gap-2 sm:gap-3 px-4 py-3 sm:p-6 transition-opacity duration-500 focus-within:opacity-100 focus-within:pointer-events-auto ${
             shouldShowControls ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
           }`}
           data-testid="slideshow-top-header"
         >
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
             <Link
               href="/photos"
-              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/15 text-sm font-medium text-white transition focus:outline-none focus:ring-2 focus:ring-white"
+              className="shrink-0 flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/15 text-xs sm:text-sm font-medium text-white transition focus:outline-none focus:ring-2 focus:ring-white"
               aria-label="Exit slideshow and return to photos gallery"
               data-testid="slideshow-back-link"
             >
               <svg
-                className="w-4 h-4"
+                className="w-3.5 h-3.5 sm:w-4 sm:h-4"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -533,12 +533,12 @@ export function ReceptionSlideshowClient({
               </svg>
               Gallery
             </Link>
-            <h1 className="text-xs uppercase tracking-wider font-semibold text-stone-300 drop-shadow-md">
+            <h1 className="min-w-0 flex-1 sm:flex-initial text-center sm:text-left text-xs uppercase tracking-wider font-semibold text-stone-300 leading-tight drop-shadow-md">
               Live Reception Slideshow
             </h1>
           </div>
 
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-xs font-medium text-stone-200">
+          <div className="shrink-0 flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-xs font-medium tabular-nums text-stone-200">
             <span>{photos.length > 0 ? safeIndex + 1 : 0}</span>
             <span className="text-stone-300">/</span>
             <span>{photos.length}</span>
@@ -597,7 +597,7 @@ export function ReceptionSlideshowClient({
           ref={controlsRef}
           role="toolbar"
           aria-label="Slideshow Controls"
-          className={`group fixed ${controlsBottomClass} left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-3 rounded-full border text-white transition-all duration-500 focus-within:bg-stone-900/85 focus-within:backdrop-blur-md focus-within:border-white/15 focus-within:shadow-2xl ${
+          className={`group fixed ${controlsBottomClass} left-1/2 -translate-x-1/2 z-50 w-[calc(100vw-1.5rem)] sm:w-max max-w-[calc(100vw-1.5rem)] sm:max-w-[calc(100vw-2rem)] flex items-start sm:items-center gap-1.5 sm:gap-3 px-2.5 sm:px-6 py-2.5 sm:py-3 rounded-2xl sm:rounded-full border text-white transition-all duration-500 focus-within:bg-stone-900/85 focus-within:backdrop-blur-md focus-within:border-white/15 focus-within:shadow-2xl ${
             shouldShowControls
               ? 'bg-stone-900/85 backdrop-blur-md border-white/15 shadow-2xl'
               : 'bg-transparent border-transparent shadow-none'
@@ -608,16 +608,16 @@ export function ReceptionSlideshowClient({
           <button
             type="button"
             onClick={() => setIsPlaying((prev) => !prev)}
-            className="cursor-pointer p-2.5 rounded-full bg-white text-stone-900 hover:bg-stone-200 transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-stone-900 focus:ring-white shadow-md"
+            className="shrink-0 cursor-pointer w-9 h-9 sm:w-auto sm:h-auto flex items-center justify-center sm:p-2.5 rounded-full bg-white text-stone-900 hover:bg-stone-200 transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-stone-900 focus:ring-white shadow-md"
             aria-label={isPlaying ? 'Pause slideshow' : 'Play slideshow'}
             data-testid="slideshow-play-pause-btn"
           >
             {isPlaying ? (
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
               </svg>
             ) : (
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M8 5v14l11-7z" />
               </svg>
             )}
@@ -625,7 +625,7 @@ export function ReceptionSlideshowClient({
 
           {/* Secondary Toolbar Controls (fade after 3s of inactivity during auto-play) */}
           <div
-            className={`flex items-center gap-2 sm:gap-3 transition-opacity duration-500 focus-within:opacity-100 focus-within:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto ${
+            className={`flex-1 sm:flex-initial min-w-0 flex flex-wrap sm:flex-nowrap items-center gap-y-2 gap-x-1 sm:gap-3 transition-opacity duration-500 focus-within:opacity-100 focus-within:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto ${
               shouldShowControls ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
             }`}
             data-testid="slideshow-secondary-controls"
@@ -634,11 +634,11 @@ export function ReceptionSlideshowClient({
             <button
               type="button"
               onClick={goToPrev}
-              className="p-2 rounded-full hover:bg-white/15 text-stone-200 hover:text-white transition focus:outline-none focus:ring-2 focus:ring-white"
+              className="shrink-0 p-1.5 sm:p-2 rounded-full bg-white/10 sm:bg-transparent hover:bg-white/15 text-stone-200 hover:text-white transition focus:outline-none focus:ring-2 focus:ring-white"
               aria-label="Previous photo"
               data-testid="slideshow-prev-btn"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </button>
@@ -647,11 +647,11 @@ export function ReceptionSlideshowClient({
             <button
               type="button"
               onClick={goToNext}
-              className="p-2 rounded-full hover:bg-white/15 text-stone-200 hover:text-white transition focus:outline-none focus:ring-2 focus:ring-white"
+              className="shrink-0 p-1.5 sm:p-2 rounded-full bg-white/10 sm:bg-transparent hover:bg-white/15 text-stone-200 hover:text-white transition focus:outline-none focus:ring-2 focus:ring-white"
               aria-label="Next photo"
               data-testid="slideshow-next-btn"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </button>
@@ -660,7 +660,7 @@ export function ReceptionSlideshowClient({
 
             {/* Duration / Speed Switcher (5s, 8s, 10s) */}
             <div
-              className="flex items-center gap-1 bg-stone-800/80 rounded-full p-1 border border-white/10"
+              className="ml-auto sm:ml-0 flex items-center gap-0.5 sm:gap-1 bg-stone-800/80 rounded-full p-1 border border-white/10"
               role="group"
               aria-label="Cycle speed duration"
             >
@@ -685,7 +685,7 @@ export function ReceptionSlideshowClient({
                         fontWeight: 600,
                       } as React.CSSProperties
                     }
-                    className={`!h-auto min-h-[24px] !px-2.5 !py-1 rounded-full !ring-offset-0 focus-visible:!ring-white focus-visible:!ring-offset-0 ${
+                    className={`!h-auto min-h-[24px] !px-2 sm:!px-2.5 !py-1 rounded-full !ring-offset-0 focus-visible:!ring-white focus-visible:!ring-offset-0 ${
                       isSelected ? 'shadow-sm' : 'hover:!text-white'
                     }`}
                   >
@@ -697,79 +697,82 @@ export function ReceptionSlideshowClient({
 
             <div className="h-5 w-px bg-white/20 mx-1 hidden sm:block" aria-hidden="true" />
 
-            {/* QR Code Overlay Toggle */}
-            <button
-              type="button"
-              onClick={() => setShowQrCode((prev) => !prev)}
-              className={`p-2 rounded-full transition focus:outline-none focus:ring-2 focus:ring-white ${
-                showQrCode
-                  ? 'bg-white/20 text-white'
-                  : 'text-stone-300 hover:text-white hover:bg-white/10'
-              }`}
-              aria-label={showQrCode ? 'Hide QR upload overlay' : 'Show QR upload overlay'}
-              aria-pressed={showQrCode}
-              data-testid="slideshow-qr-toggle-btn"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="3" y="3" width="7" height="7" rx="1" strokeWidth={2} />
-                <rect x="14" y="3" width="7" height="7" rx="1" strokeWidth={2} />
-                <rect x="14" y="14" width="7" height="7" rx="1" strokeWidth={2} />
-                <rect x="3" y="14" width="7" height="7" rx="1" strokeWidth={2} />
-              </svg>
-            </button>
-
-            {/* Single-Key Keyboard Shortcuts Toggle */}
-            <button
-              type="button"
-              onClick={() => setAreShortcutsEnabled((prev) => !prev)}
-              className={`p-2 rounded-full transition focus:outline-none focus:ring-2 focus:ring-white ${
-                areShortcutsEnabled
-                  ? 'bg-white/20 text-white'
-                  : 'text-stone-300 hover:text-white hover:bg-white/10'
-              }`}
-              aria-label="Keyboard shortcuts (Space, F, Q)"
-              aria-pressed={areShortcutsEnabled}
-              title={
-                areShortcutsEnabled
-                  ? 'Disable keyboard shortcuts (Space, F, Q)'
-                  : 'Enable keyboard shortcuts (Space, F, Q)'
-              }
-              data-testid="slideshow-shortcuts-toggle-btn"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="2" y="5" width="20" height="14" rx="2" strokeWidth={2} />
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M18 13h.01M9 13h6"
-                />
-              </svg>
-            </button>
-
-            {/* Fullscreen Toggle */}
-            <button
-              type="button"
-              onClick={toggleFullscreen}
-              className="p-2 rounded-full hover:bg-white/15 text-stone-200 hover:text-white transition focus:outline-none focus:ring-2 focus:ring-white"
-              aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-              data-testid="slideshow-fullscreen-btn"
-            >
-              {isFullscreen ? (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            {/* Row 2 on Mobile: QR, Keyboard Shortcuts & Fullscreen Controls */}
+            <div className="basis-full sm:basis-auto -ml-[2.625rem] w-[calc(100%+2.625rem)] sm:ml-0 sm:w-auto flex items-center justify-center gap-3 sm:gap-2 pt-2 sm:pt-0 border-t border-white/10 sm:border-t-0">
+              {/* QR Code Overlay Toggle */}
+              <button
+                type="button"
+                onClick={() => setShowQrCode((prev) => !prev)}
+                className={`p-2 rounded-xl sm:rounded-full transition focus:outline-none focus:ring-2 focus:ring-white ${
+                  showQrCode
+                    ? 'bg-white/20 text-white border border-white/20 sm:border-0'
+                    : 'bg-white/10 sm:bg-transparent text-stone-300 hover:text-white hover:bg-white/15'
+                }`}
+                aria-label={showQrCode ? 'Hide QR upload overlay' : 'Show QR upload overlay'}
+                aria-pressed={showQrCode}
+                data-testid="slideshow-qr-toggle-btn"
+              >
+                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="3" y="3" width="7" height="7" rx="1" strokeWidth={2} />
+                  <rect x="14" y="3" width="7" height="7" rx="1" strokeWidth={2} />
+                  <rect x="14" y="14" width="7" height="7" rx="1" strokeWidth={2} />
+                  <rect x="3" y="14" width="7" height="7" rx="1" strokeWidth={2} />
                 </svg>
-              ) : (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              </button>
+
+              {/* Single-Key Keyboard Shortcuts Toggle */}
+              <button
+                type="button"
+                onClick={() => setAreShortcutsEnabled((prev) => !prev)}
+                className={`p-2 rounded-xl sm:rounded-full transition focus:outline-none focus:ring-2 focus:ring-white ${
+                  areShortcutsEnabled
+                    ? 'bg-white/20 text-white border border-white/20 sm:border-0'
+                    : 'bg-white/10 sm:bg-transparent text-stone-300 hover:text-white hover:bg-white/15'
+                }`}
+                aria-label="Keyboard shortcuts (Space, F, Q)"
+                aria-pressed={areShortcutsEnabled}
+                title={
+                  areShortcutsEnabled
+                    ? 'Disable keyboard shortcuts (Space, F, Q)'
+                    : 'Enable keyboard shortcuts (Space, F, Q)'
+                }
+                data-testid="slideshow-shortcuts-toggle-btn"
+              >
+                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="2" y="5" width="20" height="14" rx="2" strokeWidth={2} />
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeWidth={2}
-                    d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
+                    d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M18 13h.01M9 13h6"
                   />
                 </svg>
-              )}
-            </button>
+              </button>
+
+              {/* Fullscreen Toggle */}
+              <button
+                type="button"
+                onClick={toggleFullscreen}
+                className="p-2 rounded-xl sm:rounded-full bg-white/10 sm:bg-transparent hover:bg-white/15 text-stone-200 hover:text-white transition focus:outline-none focus:ring-2 focus:ring-white"
+                aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                data-testid="slideshow-fullscreen-btn"
+              >
+                {isFullscreen ? (
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
+                    />
+                  </svg>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </MainLandmark>
@@ -778,14 +781,14 @@ export function ReceptionSlideshowClient({
       {showQrCode && (
         <aside
           aria-label="Guest Photo Upload QR Code"
-          className={`fixed ${qrOverlayBottomClass} right-6 z-40 max-w-xs md:max-w-sm rounded-2xl p-5 bg-stone-900/90 text-white shadow-2xl backdrop-blur-md border border-white/15 animate-fade-in`}
+          className={`fixed ${qrOverlayBottomClass} left-4 right-4 sm:left-auto sm:right-6 mx-auto sm:mx-0 z-40 w-auto max-w-[290px] sm:max-w-xs md:max-w-sm max-h-[calc(100dvh-14.5rem)] sm:max-h-[calc(100dvh-10rem)] overflow-y-auto rounded-2xl p-4 sm:p-5 bg-stone-900/90 text-white shadow-2xl backdrop-blur-md border border-white/15 animate-fade-in`}
           data-testid="slideshow-qr-overlay"
         >
-          <div className="flex items-start justify-between gap-3 mb-3">
-            <div>
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
+          <div className="flex items-start justify-between gap-3 mb-2.5 sm:mb-3">
+            <div className="min-w-0">
+              <h2 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
                 <svg
-                  className="w-5 h-5 text-amber-400"
+                  className="w-4 h-4 sm:w-5 sm:h-5 shrink-0 text-amber-400"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -801,24 +804,24 @@ export function ReceptionSlideshowClient({
                 </svg>
                 Upload Your Photos
               </h2>
-              <p className="text-xs text-stone-300 mt-0.5">
+              <p className="text-[11px] sm:text-xs text-stone-300 mt-0.5 leading-snug">
                 Scan with your phone to display your photos on screen!
               </p>
             </div>
             <button
               type="button"
               onClick={() => setShowQrCode(false)}
-              className="p-1 rounded-full text-stone-300 hover:text-white hover:bg-white/10 transition focus:outline-none focus:ring-2 focus:ring-white"
+              className="shrink-0 p-1 rounded-full text-stone-300 hover:text-white hover:bg-white/10 transition focus:outline-none focus:ring-2 focus:ring-white"
               aria-label="Dismiss QR code overlay"
               data-testid="slideshow-qr-close-btn"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
           </div>
 
-          <div className="flex flex-col items-center justify-center p-3 rounded-xl bg-white text-stone-900 shadow-inner">
+          <div className="flex flex-col items-center justify-center p-2.5 sm:p-3 rounded-xl bg-white text-stone-900 shadow-inner">
             <ThemedQRCode
               value={resolvedUploadUrl}
               size={148}
@@ -827,7 +830,7 @@ export function ReceptionSlideshowClient({
               aria-label="QR Code linking directly to guest photo upload"
             />
             <span
-              className="mt-2 text-[11px] font-mono font-medium text-stone-700 text-center break-all"
+              className="mt-2 max-w-full truncate text-[11px] font-mono font-medium text-stone-700 text-center"
               data-testid="slideshow-upload-url"
             >
               {resolvedUploadUrl}

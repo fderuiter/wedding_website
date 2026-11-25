@@ -204,5 +204,22 @@ describe('Button', () => {
     expect(button).toHaveClass('forced-colors:border-[ButtonText]');
     expect(await axe(container)).toHaveNoViolations();
   });
+
+  test('defaults to relative positioning to anchor sr-only spans while preserving explicit position overrides', () => {
+    const { getByRole, rerender } = render(
+      <Button srContext="for John Doe">Send Note</Button>
+    );
+    let button = getByRole('button', { name: 'Send Note for John Doe' });
+    expect(button).toHaveClass('relative');
+
+    rerender(
+      <Button className="absolute top-3 right-3" aria-label="Favorite">
+        ★
+      </Button>
+    );
+    button = getByRole('button', { name: 'Favorite' });
+    expect(button).toHaveClass('absolute');
+    expect(button).not.toHaveClass('relative');
+  });
 });
 

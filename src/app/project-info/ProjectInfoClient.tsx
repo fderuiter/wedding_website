@@ -123,22 +123,24 @@ const ProjectInfo = () => {
         variants={sectionVariants}
         custom={1}
       >
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-10 flex flex-col items-center border border-primary dark:border-gray-700">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 sm:p-10 min-w-0 flex flex-col items-center border border-primary dark:border-gray-700">
           <h2 className="text-2xl font-bold mb-6 text-gray-900 dark:text-gray-100 tracking-tight">Key Features</h2>
           <ul className="space-y-4 w-full">
             {features.map(f => (
-              <li key={f.label} className="flex items-center text-lg text-gray-700 dark:text-gray-300">
-                <span aria-hidden="true" className="mr-3 text-2xl">{f.icon}</span> {f.label}
+              <li key={f.label} className="flex items-start text-base sm:text-lg text-gray-700 dark:text-gray-300">
+                <span aria-hidden="true" className="mr-3 text-2xl shrink-0">{f.icon}</span>
+                <span className="min-w-0 break-words">{f.label}</span>
               </li>
             ))}
           </ul>
         </div>
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-10 flex flex-col items-center border border-secondary dark:border-gray-700">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 sm:p-10 min-w-0 flex flex-col items-center border border-secondary dark:border-gray-700">
           <h2 className="text-2xl font-bold mb-6 text-gray-900 dark:text-gray-100 tracking-tight">Technology Stack</h2>
           <ul className="space-y-4 w-full">
             {techStack.map(t => (
-              <li key={t.name} className="flex items-center text-lg text-gray-700 dark:text-gray-300">
-                <span className="font-semibold text-gray-800 dark:text-gray-200 w-44 inline-block">{t.type}:</span> {t.name}
+              <li key={t.name} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-base sm:text-lg text-gray-700 dark:text-gray-300">
+                <span className="font-semibold text-gray-800 dark:text-gray-200 w-full max-w-44">{t.type}:</span>
+                <span className="min-w-0 break-words">{t.name}</span>
               </li>
             ))}
           </ul>
@@ -154,7 +156,7 @@ const ProjectInfo = () => {
         variants={sectionVariants}
         custom={2}
       >
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-10 border border-gray-200 dark:border-gray-700">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 sm:p-10 min-w-0 border border-gray-200 dark:border-gray-700">
           <h2 className="text-2xl font-bold mb-4 text-gray-900 dark:text-gray-100 tracking-tight">Architecture Overview</h2>
           <ul className="list-disc pl-6 text-gray-700 dark:text-gray-300 space-y-2">
             <li><strong>Landing Page:</strong> A responsive landing page featuring a 3D heart animation.</li>
@@ -169,7 +171,7 @@ const ProjectInfo = () => {
 
       {/* Deployment & Contribution */}
       <div className="max-w-4xl mx-auto mt-12 px-4 grid md:grid-cols-2 gap-8">
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 flex flex-col border border-gray-200 dark:border-gray-700">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 sm:p-8 min-w-0 flex flex-col border border-gray-200 dark:border-gray-700">
           <h2 className="text-xl font-bold mb-3 text-gray-900 dark:text-gray-100">Deployment</h2>
           <ul className="list-disc pl-6 text-gray-700 dark:text-gray-300 space-y-2">
             <li>Deploy on Docker / VPS, <AccessibleExternalLink href="https://cloud.google.com/run" className={INLINE_EXTERNAL_LINK_CLASS}>Google Cloud Run</AccessibleExternalLink>, <AccessibleExternalLink href="https://vercel.com/" className={INLINE_EXTERNAL_LINK_CLASS}>Vercel</AccessibleExternalLink>, or Railway &amp; Render.</li>
@@ -178,7 +180,7 @@ const ProjectInfo = () => {
             <li>See <AccessibleExternalLink href="https://github.com/fderuiter/wedding_website#readme" className={INLINE_EXTERNAL_LINK_CLASS}>README</AccessibleExternalLink> for full setup instructions.</li>
           </ul>
         </div>
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 flex flex-col border border-gray-200 dark:border-gray-700">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 sm:p-8 min-w-0 flex flex-col border border-gray-200 dark:border-gray-700">
           <h2 className="text-xl font-bold mb-3 text-gray-900 dark:text-gray-100">Contributing</h2>
           <ul className="list-disc pl-6 text-gray-700 dark:text-gray-300 space-y-2">
             <li>The project is open source and available on GitHub.</li>
