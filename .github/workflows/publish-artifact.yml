@@ -51,8 +51,14 @@ jobs:
     permissions:
       contents: read
       actions: read
+      packages: read
+      attestations: read
     outputs:
       resolved_sha: ${{ steps.resolve.outputs.resolved_sha }}
+      promote_existing: ${{ steps.inspect-ghcr.outputs.promote_existing }}
+      amd64_digest: ${{ steps.inspect-ghcr.outputs.amd64_digest }}
+      arm64_digest: ${{ steps.inspect-ghcr.outputs.arm64_digest }}
+      source_index_digest: ${{ steps.inspect-ghcr.outputs.source_index_digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -268,9 +274,176 @@ jobs:
               `Verified successful CI run #${successfulRun.run_number} (ID: ${successfulRun.id}) for commit ${targetSha}.`
             );
 
+      - name: Inspect Existing Attested GHCR Release Image
+        id: inspect-ghcr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_ACTOR_LOGIN: ${{ github.actor }}
+          EVENT_NAME: ${{ github.event_name }}
+          RESOLVED_SHA: ${{ steps.resolve.outputs.resolved_sha }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          SIGNER_WORKFLOW: ${{ github.repository }}/.github/workflows/publish-artifact.yml
+        run: |
+          fallback_to_build() {
+            local reason="$1"
+            echo "::notice::${reason} Falling back to native multi-architecture build."
+            echo "promote_existing=false" >> "$GITHUB_OUTPUT"
+            echo "amd64_digest=" >> "$GITHUB_OUTPUT"
+            echo "arm64_digest=" >> "$GITHUB_OUTPUT"
+            echo "source_index_digest=" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+
+          if [ "${EVENT_NAME:-}" != "push" ] && [ "${EVENT_NAME:-}" != "workflow_dispatch" ]; then
+            echo "Event '${EVENT_NAME:-unknown}' builds fresh artifacts; skipping GHCR promotion lookup."
+            echo "promote_existing=false" >> "$GITHUB_OUTPUT"
+            echo "amd64_digest=" >> "$GITHUB_OUTPUT"
+            echo "arm64_digest=" >> "$GITHUB_OUTPUT"
+            echo "source_index_digest=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          SOURCE_REVISION=$(printf '%s' "${RESOLVED_SHA:-}" | tr '[:upper:]' '[:lower:]')
+          if [[ ! "$SOURCE_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "::error::Invalid resolved commit SHA '${RESOLVED_SHA:-}' for GHCR inspection."
+            exit 1
+          fi
+
+          if [ -z "${GITHUB_REPOSITORY:-}" ]; then
+            echo "::error::Missing GITHUB_REPOSITORY required to inspect GHCR artifact."
+            exit 1
+          fi
+
+          REPO_LOWER=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          IMAGE_REPO="ghcr.io/${REPO_LOWER}"
+          RESOLVED_OWNER="${REPO_OWNER:-${GITHUB_REPOSITORY%%/*}}"
+          RESOLVED_SIGNER="${SIGNER_WORKFLOW:-${GITHUB_REPOSITORY}/.github/workflows/publish-artifact.yml}"
+
+          if [ -n "${GH_TOKEN:-}" ] && [ -n "${GITHUB_ACTOR_LOGIN:-}" ] && command -v docker >/dev/null 2>&1; then
+            printf '%s\n' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR_LOGIN" --password-stdin >/dev/null 2>&1 || true
+          fi
+
+          CANDIDATE_TAG_URI="${IMAGE_REPO}:${SOURCE_REVISION}"
+          SOURCE_INDEX_DIGEST=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$CANDIDATE_TAG_URI" 2>/dev/null | tr -d '[:space:]' || true)
+          if [[ ! "$SOURCE_INDEX_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            fallback_to_build "No existing GHCR manifest found at '${CANDIDATE_TAG_URI}'."
+          fi
+
+          SOURCE_INDEX_URI="${IMAGE_REPO}@${SOURCE_INDEX_DIGEST}"
+          RAW_INDEX=$(docker buildx imagetools inspect --raw "$SOURCE_INDEX_URI" 2>/dev/null || true)
+          if [[ "${RAW_INDEX#"${RAW_INDEX%%[![:space:]]*}"}" != \{* ]]; then
+            fallback_to_build "Unable to inspect raw OCI index JSON for '${SOURCE_INDEX_URI}'."
+          fi
+
+          AMD64_DIGEST=$(printf '%s' "$RAW_INDEX" | jq -r '
+            [.manifests[]? | select(.platform.os == "linux" and .platform.architecture == "amd64") | .digest][0] // empty
+          ' 2>/dev/null | tr -d '[:space:]' || true)
+          ARM64_DIGEST=$(printf '%s' "$RAW_INDEX" | jq -r '
+            [.manifests[]? | select(.platform.os == "linux" and .platform.architecture == "arm64") | .digest][0] // empty
+          ' 2>/dev/null | tr -d '[:space:]' || true)
+
+          if [[ ! "$AMD64_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]] || [[ ! "$ARM64_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            fallback_to_build "Existing GHCR index '${SOURCE_INDEX_URI}' is missing valid linux/amd64 or linux/arm64 manifest digests."
+          fi
+
+          RECORDED_REVISION=$(printf '%s' "$RAW_INDEX" | jq -r '.annotations["org.opencontainers.image.revision"] // empty' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+          if [ "$RECORDED_REVISION" != "$SOURCE_REVISION" ]; then
+            fallback_to_build "Existing GHCR index '${SOURCE_INDEX_URI}' revision '${RECORDED_REVISION}' does not match '${SOURCE_REVISION}'."
+          fi
+
+          for arch_digest in "$AMD64_DIGEST" "$ARM64_DIGEST"; do
+            if ! docker buildx imagetools inspect --raw "${IMAGE_REPO}@${arch_digest}" >/dev/null 2>&1; then
+              fallback_to_build "Per-architecture manifest '${IMAGE_REPO}@${arch_digest}' is not accessible in GHCR."
+            fi
+          done
+
+          verify_subject_attestations() {
+            local subject_digest="$1"
+            local subject_uri="${IMAGE_REPO}@${subject_digest}"
+            local prov_json=""
+            prov_json=$(gh attestation verify "oci://${subject_uri}" \
+              --owner "$RESOLVED_OWNER" \
+              --signer-workflow "$RESOLVED_SIGNER" \
+              --predicate-type "https://slsa.dev/provenance/v1" \
+              --format json 2>/dev/null || true)
+            if [ -z "$prov_json" ]; then
+              return 1
+            fi
+            if ! printf '%s' "$prov_json" | jq -e --arg expected_sha "$SOURCE_REVISION" '
+              [
+                (if type == "array" then .[] else . end)
+                | (.verificationResult.signature.certificate.sourceRepositoryRef // "") as $cert_ref
+                | select(($cert_ref == "") or ($cert_ref | test("^(refs/heads/main|refs/tags/v[0-9][a-zA-Z0-9_.-]*)$")))
+                | (
+                    [
+                      ((.verificationResult.statement.predicate // .statement.predicate // .predicate // empty) | (
+                        .buildDefinition.externalParameters.inputs.commit_sha,
+                        (.buildDefinition.resolvedDependencies[]? | (.digest.gitCommit, .digest.sha1)),
+                        .buildDefinition.internalParameters.github.sha,
+                        .invocation.configSource.digest.sha1,
+                        (.materials[]? | (.digest.gitCommit, .digest.sha1))
+                      )),
+                      .verificationResult.signature.certificate.sourceRepositoryDigest,
+                      .verificationResult.statement.subject[]?.annotations["org.opencontainers.image.revision"],
+                      .statement.subject[]?.annotations["org.opencontainers.image.revision"]
+                    ]
+                    | map(select(type == "string" and test("^[a-fA-F0-9]{40}$")) | ascii_downcase)[0] // ""
+                  )
+                | select(. == ($expected_sha | ascii_downcase))
+              ] | length > 0
+            ' >/dev/null 2>&1; then
+              return 1
+            fi
+
+            local spdx_ok="false"
+            for pred_type in "https://spdx.dev/Document/v2.3" "https://spdx.dev/Document"; do
+              local spdx_json=""
+              spdx_json=$(gh attestation verify "oci://${subject_uri}" \
+                --owner "$RESOLVED_OWNER" \
+                --signer-workflow "$RESOLVED_SIGNER" \
+                --predicate-type "$pred_type" \
+                --format json 2>/dev/null || true)
+              if [ -n "$spdx_json" ] && printf '%s' "$spdx_json" | jq -e '
+                [
+                  (if type == "array" then .[] else . end)
+                  | (.verificationResult.signature.certificate.sourceRepositoryRef // "") as $cert_ref
+                  | select(($cert_ref == "") or ($cert_ref | test("^(refs/heads/main|refs/tags/v[0-9][a-zA-Z0-9_.-]*)$")))
+                  | (.verificationResult.statement.predicate // .statement.predicate // .predicate // empty)
+                  | select(type == "object" and (.spdxVersion | type == "string") and (.packages | type == "array"))
+                ] | length > 0
+              ' >/dev/null 2>&1; then
+                spdx_ok="true"
+                break
+              fi
+            done
+            [ "$spdx_ok" = "true" ]
+          }
+
+          for required_digest in "$SOURCE_INDEX_DIGEST" "$AMD64_DIGEST" "$ARM64_DIGEST"; do
+            if ! verify_subject_attestations "$required_digest"; then
+              fallback_to_build "OIDC provenance or SPDX SBOM attestation verification failed for '${IMAGE_REPO}@${required_digest}'."
+            fi
+          done
+
+          echo "Verified complete and attested GHCR multi-platform artifact '${SOURCE_INDEX_URI}' (amd64: ${AMD64_DIGEST}, arm64: ${ARM64_DIGEST})."
+          echo "promote_existing=true" >> "$GITHUB_OUTPUT"
+          echo "amd64_digest=${AMD64_DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "arm64_digest=${ARM64_DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "source_index_digest=${SOURCE_INDEX_DIGEST}" >> "$GITHUB_OUTPUT"
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            {
+              echo "### ♻️ Verified Existing Attested GHCR Artifact"
+              echo "- **Source Index:** \`${SOURCE_INDEX_URI}\`"
+              echo "- **linux/amd64 Digest:** \`${AMD64_DIGEST}\`"
+              echo "- **linux/arm64 Digest:** \`${ARM64_DIGEST}\`"
+              echo "- **Action:** Skipping duplicate matrix builds and promoting attested digests."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   build:
     name: Build, Scan & Smoke Test (${{ matrix.platform }})
     needs: [preflight]
+    if: needs.preflight.outputs.promote_existing != 'true'
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -425,8 +598,8 @@ jobs:
             '    --mount=type=cache,target=/app/.next/cache,sharing=locked \' \
             '    echo "$CACHEBUST" >/dev/null && \' \
             '    mkdir -p /out /var/cache/apt /var/lib/apt /root/.npm /app/.next/cache && \' \
-            '    if [ "$EXPORT_DEPS" = "true" ]; then mkdir -p /out/deps && tar -cf /out/deps/mounts.tar -C / var/cache/apt var/lib/apt root/.npm; fi && \' \
-            '    if [ "$EXPORT_NEXT" = "true" ]; then mkdir -p /out/next && tar -cf /out/next/mounts.tar -C / app/.next/cache; fi' \
+            '    if [ "$EXPORT_DEPS" = "true" ] && [ -n "$(find /var/cache/apt /var/lib/apt /root/.npm -type f -print -quit 2>/dev/null)" ]; then mkdir -p /out/deps && tar -cf /out/deps/mounts.tar -C / var/cache/apt var/lib/apt root/.npm; fi && \' \
+            '    if [ "$EXPORT_NEXT" = "true" ] && [ -n "$(find /app/.next/cache -type f -print -quit 2>/dev/null)" ]; then mkdir -p /out/next && tar -cf /out/next/mounts.tar -C / app/.next/cache; fi' \
             'FROM scratch' \
             'COPY --from=exporter /out /' \
             | docker buildx build \
@@ -436,11 +609,11 @@ jobs:
               --build-arg "EXPORT_NEXT=${EXPORT_NEXT}" \
               --output "type=local,dest=${OUT_DIR}" \
               -f - "$EMPTY_DIR"
-          if [ -f "$OUT_DIR/deps/mounts.tar" ]; then
+          if [ -s "$OUT_DIR/deps/mounts.tar" ] && tar -tf "$OUT_DIR/deps/mounts.tar" | awk '!/\/$/ { found=1 } END { exit !found }'; then
             mkdir -p "$MOUNT_CACHE_DIR/deps"
             mv -f "$OUT_DIR/deps/mounts.tar" "$MOUNT_CACHE_DIR/deps/mounts.tar"
           fi
-          if [ -f "$OUT_DIR/next/mounts.tar" ]; then
+          if [ -s "$OUT_DIR/next/mounts.tar" ] && tar -tf "$OUT_DIR/next/mounts.tar" | awk '!/\/$/ { found=1 } END { exit !found }'; then
             mkdir -p "$MOUNT_CACHE_DIR/next"
             mv -f "$OUT_DIR/next/mounts.tar" "$MOUNT_CACHE_DIR/next/mounts.tar"
           fi
@@ -529,7 +702,14 @@ jobs:
 
   publish:
     name: Merge Multi-Arch Index & Attest Provenance
-    needs: [build]
+    needs: [preflight, build]
+    if: |
+      !cancelled() &&
+      needs.preflight.result == 'success' &&
+      (
+        needs.build.result == 'success' ||
+        (needs.preflight.outputs.promote_existing == 'true' && needs.build.result == 'skipped')
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -665,6 +845,7 @@ jobs:
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
 
       - name: Download Verified OCI Archive Artifacts
+        if: needs.preflight.outputs.promote_existing != 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: oci-archive-*
@@ -689,7 +870,104 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Verify Per-Architecture SPDX SBOM Artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROMOTE_EXISTING: ${{ needs.preflight.outputs.promote_existing }}
+          IMAGE_REPOSITORY: ${{ steps.meta.outputs.image_repository }}
+          PROMOTED_AMD64_DIGEST: ${{ needs.preflight.outputs.amd64_digest }}
+          PROMOTED_ARM64_DIGEST: ${{ needs.preflight.outputs.arm64_digest }}
+          REVISION: ${{ steps.meta.outputs.revision }}
+          RESOLVED_SHA: ${{ steps.meta.outputs.resolved_sha }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          SIGNER_WORKFLOW: ${{ github.repository }}/.github/workflows/publish-artifact.yml
         run: |
+          if [ "${PROMOTE_EXISTING:-false}" = "true" ]; then
+            mkdir -p /tmp/oci-handoff
+            SOURCE_REVISION=$(printf '%s' "${REVISION:-${RESOLVED_SHA:-${GITHUB_SHA:-}}}" | tr '[:upper:]' '[:lower:]')
+            if [[ ! "$SOURCE_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
+              echo "::error::Invalid 40-character source revision '${SOURCE_REVISION}' during promoted SBOM verification."
+              exit 1
+            fi
+            RESOLVED_OWNER="${REPO_OWNER:-${GITHUB_REPOSITORY%%/*}}"
+            RESOLVED_SIGNER="${SIGNER_WORKFLOW:-${GITHUB_REPOSITORY}/.github/workflows/publish-artifact.yml}"
+
+            for required_arch in amd64 arm64; do
+              if [ "$required_arch" = "amd64" ]; then
+                ARCH_DIGEST=$(printf '%s' "${PROMOTED_AMD64_DIGEST:-}" | tr -d '[:space:]')
+              else
+                ARCH_DIGEST=$(printf '%s' "${PROMOTED_ARM64_DIGEST:-}" | tr -d '[:space:]')
+              fi
+              if [[ ! "$ARCH_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+                echo "::error::Invalid promoted digest '${ARCH_DIGEST}' for architecture '${required_arch}'."
+                exit 1
+              fi
+
+              SUBJECT_URI="${IMAGE_REPOSITORY}@${ARCH_DIGEST}"
+              if ! PROV_JSON=$(gh attestation verify "oci://${SUBJECT_URI}" \
+                --owner "$RESOLVED_OWNER" \
+                --signer-workflow "$RESOLVED_SIGNER" \
+                --predicate-type "https://slsa.dev/provenance/v1" \
+                --format json); then
+                echo "::error::OIDC provenance attestation verification failed for promoted '${SUBJECT_URI}'."
+                exit 1
+              fi
+              if ! printf '%s' "$PROV_JSON" | jq -e --arg expected_sha "$SOURCE_REVISION" '
+                [
+                  (if type == "array" then .[] else . end)
+                  | (.verificationResult.signature.certificate.sourceRepositoryRef // "") as $cert_ref
+                  | select(($cert_ref == "") or ($cert_ref | test("^(refs/heads/main|refs/tags/v[0-9][a-zA-Z0-9_.-]*)$")))
+                  | (
+                      [
+                        ((.verificationResult.statement.predicate // .statement.predicate // .predicate // empty) | (
+                          .buildDefinition.externalParameters.inputs.commit_sha,
+                          (.buildDefinition.resolvedDependencies[]? | (.digest.gitCommit, .digest.sha1)),
+                          .buildDefinition.internalParameters.github.sha,
+                          .invocation.configSource.digest.sha1,
+                          (.materials[]? | (.digest.gitCommit, .digest.sha1))
+                        )),
+                        .verificationResult.signature.certificate.sourceRepositoryDigest,
+                        .verificationResult.statement.subject[]?.annotations["org.opencontainers.image.revision"],
+                        .statement.subject[]?.annotations["org.opencontainers.image.revision"]
+                      ]
+                      | map(select(type == "string" and test("^[a-fA-F0-9]{40}$")) | ascii_downcase)[0] // ""
+                    )
+                  | select(. == ($expected_sha | ascii_downcase))
+                ] | length > 0
+              ' >/dev/null; then
+                echo "::error::Promoted '${SUBJECT_URI}' provenance revision does not match '${SOURCE_REVISION}'."
+                exit 1
+              fi
+
+              EXTRACTED_SBOM=""
+              for pred_type in "https://spdx.dev/Document/v2.3" "https://spdx.dev/Document"; do
+                CANDIDATE_SPDX=$(gh attestation verify "oci://${SUBJECT_URI}" \
+                  --owner "$RESOLVED_OWNER" \
+                  --signer-workflow "$RESOLVED_SIGNER" \
+                  --predicate-type "$pred_type" \
+                  --format json 2>/dev/null || true)
+                if [ -n "$CANDIDATE_SPDX" ]; then
+                  EXTRACTED_SBOM=$(printf '%s' "$CANDIDATE_SPDX" | jq -c '
+                    [
+                      (if type == "array" then .[] else . end)
+                      | (.verificationResult.signature.certificate.sourceRepositoryRef // "") as $cert_ref
+                      | select(($cert_ref == "") or ($cert_ref | test("^(refs/heads/main|refs/tags/v[0-9][a-zA-Z0-9_.-]*)$")))
+                      | (.verificationResult.statement.predicate // .statement.predicate // .predicate // empty)
+                      | select(type == "object" and (.spdxVersion | type == "string") and (.packages | type == "array"))
+                    ][0] // empty
+                  ' 2>/dev/null || true)
+                  if [ -n "$EXTRACTED_SBOM" ]; then
+                    break
+                  fi
+                fi
+              done
+              if [ -z "$EXTRACTED_SBOM" ]; then
+                echo "::error::Missing or invalid SPDX SBOM attestation for promoted '${SUBJECT_URI}'."
+                exit 1
+              fi
+              printf '%s\n' "$EXTRACTED_SBOM" > "/tmp/oci-handoff/sbom-${required_arch}.spdx.json"
+            done
+          fi
+
           for required_arch in amd64 arm64; do
             SBOM_FILE="/tmp/oci-handoff/sbom-${required_arch}.spdx.json"
             if [ ! -f "$SBOM_FILE" ] || ! jq -e '.spdxVersion and (.packages | type == "array")' "$SBOM_FILE" >/dev/null; then
@@ -700,51 +978,102 @@ jobs:
 
       - name: Verify and Push Architecture OCI Archives
         env:
+          PROMOTE_EXISTING: ${{ needs.preflight.outputs.promote_existing }}
+          PROMOTED_INDEX_DIGEST: ${{ needs.preflight.outputs.source_index_digest }}
+          PROMOTED_AMD64_DIGEST: ${{ needs.preflight.outputs.amd64_digest }}
+          PROMOTED_ARM64_DIGEST: ${{ needs.preflight.outputs.arm64_digest }}
+          REVISION: ${{ steps.meta.outputs.revision }}
+          RESOLVED_SHA: ${{ steps.meta.outputs.resolved_sha }}
           IMAGE_REPOSITORY: ${{ steps.meta.outputs.image_repository }}
           DOCKERHUB_REPOSITORY: ${{ steps.meta.outputs.dockerhub_repository }}
         run: |
           mkdir -p /tmp/digests
 
-          for required_arch in amd64 arm64; do
-            DIGEST_FILE="/tmp/oci-handoff/${required_arch}.digest"
-            COMPRESSED_ARCHIVE="/tmp/oci-handoff/oci-${required_arch}.tar.zst"
-            DECOMPRESSED_ARCHIVE="/tmp/oci-handoff/oci-${required_arch}.tar"
+          if [ "${PROMOTE_EXISTING:-false}" != "true" ]; then
+            for required_arch in amd64 arm64; do
+              DIGEST_FILE="/tmp/oci-handoff/${required_arch}.digest"
+              COMPRESSED_ARCHIVE="/tmp/oci-handoff/oci-${required_arch}.tar.zst"
+              DECOMPRESSED_ARCHIVE="/tmp/oci-handoff/oci-${required_arch}.tar"
 
-            if [ ! -f "$DIGEST_FILE" ] || [ ! -f "$COMPRESSED_ARCHIVE" ]; then
-              echo "::error::Missing OCI archive or digest artifact for architecture '${required_arch}'."
-              exit 1
-            fi
+              if [ ! -f "$DIGEST_FILE" ] || [ ! -f "$COMPRESSED_ARCHIVE" ]; then
+                echo "::error::Missing OCI archive or digest artifact for architecture '${required_arch}'."
+                exit 1
+              fi
 
-            EXPECTED_DIGEST=$(tr -d '[:space:]' < "$DIGEST_FILE")
-            if [[ ! "$EXPECTED_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
-              echo "::error::Invalid expected digest '${EXPECTED_DIGEST}' for architecture '${required_arch}'."
-              exit 1
-            fi
+              EXPECTED_DIGEST=$(tr -d '[:space:]' < "$DIGEST_FILE")
+              if [[ ! "$EXPECTED_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+                echo "::error::Invalid expected digest '${EXPECTED_DIGEST}' for architecture '${required_arch}'."
+                exit 1
+              fi
 
-            zstd -d -f "$COMPRESSED_ARCHIVE" -o "$DECOMPRESSED_ARCHIVE"
-            ACTUAL_DIGEST=$(skopeo inspect --format '{{.Digest}}' "oci-archive:${DECOMPRESSED_ARCHIVE}" | tr -d '[:space:]')
-            if [ "$ACTUAL_DIGEST" != "$EXPECTED_DIGEST" ]; then
-              echo "::error::OCI archive digest mismatch for '${required_arch}': expected '${EXPECTED_DIGEST}', inspected '${ACTUAL_DIGEST}'."
-              exit 1
-            fi
+              zstd -d -f "$COMPRESSED_ARCHIVE" -o "$DECOMPRESSED_ARCHIVE"
+              ACTUAL_DIGEST=$(skopeo inspect --format '{{.Digest}}' "oci-archive:${DECOMPRESSED_ARCHIVE}" | tr -d '[:space:]')
+              if [ "$ACTUAL_DIGEST" != "$EXPECTED_DIGEST" ]; then
+                echo "::error::OCI archive digest mismatch for '${required_arch}': expected '${EXPECTED_DIGEST}', inspected '${ACTUAL_DIGEST}'."
+                exit 1
+              fi
 
-            printf '%s\n' "$EXPECTED_DIGEST" > "/tmp/digests/${required_arch}.digest"
-          done
+              printf '%s\n' "$EXPECTED_DIGEST" > "/tmp/digests/${required_arch}.digest"
+            done
 
-          for required_arch in amd64 arm64; do
-            ARCH_DIGEST=$(tr -d '[:space:]' < "/tmp/digests/${required_arch}.digest")
-            DECOMPRESSED_ARCHIVE="/tmp/oci-handoff/oci-${required_arch}.tar"
+            for required_arch in amd64 arm64; do
+              ARCH_DIGEST=$(tr -d '[:space:]' < "/tmp/digests/${required_arch}.digest")
+              DECOMPRESSED_ARCHIVE="/tmp/oci-handoff/oci-${required_arch}.tar"
 
-            skopeo copy --preserve-digests \
-              "oci-archive:${DECOMPRESSED_ARCHIVE}" \
-              "docker://${IMAGE_REPOSITORY}@${ARCH_DIGEST}"
-
-            if [ -n "$DOCKERHUB_REPOSITORY" ]; then
               skopeo copy --preserve-digests \
                 "oci-archive:${DECOMPRESSED_ARCHIVE}" \
-                "docker://docker.io/${DOCKERHUB_REPOSITORY}@${ARCH_DIGEST}"
+                "docker://${IMAGE_REPOSITORY}@${ARCH_DIGEST}"
+
+              if [ -n "$DOCKERHUB_REPOSITORY" ]; then
+                skopeo copy --preserve-digests \
+                  "oci-archive:${DECOMPRESSED_ARCHIVE}" \
+                  "docker://docker.io/${DOCKERHUB_REPOSITORY}@${ARCH_DIGEST}"
+              fi
+            done
+          else
+            SOURCE_REVISION=$(printf '%s' "${REVISION:-${RESOLVED_SHA:-${GITHUB_SHA:-}}}" | tr '[:upper:]' '[:lower:]')
+            if [[ ! "$SOURCE_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
+              echo "::error::Missing or invalid 40-character source revision '${SOURCE_REVISION}' for promoted GHCR index."
+              exit 1
             fi
-          done
+
+            INDEX_DIGEST=$(printf '%s' "${PROMOTED_INDEX_DIGEST:-}" | tr -d '[:space:]')
+            AMD64_DIGEST=$(printf '%s' "${PROMOTED_AMD64_DIGEST:-}" | tr -d '[:space:]')
+            ARM64_DIGEST=$(printf '%s' "${PROMOTED_ARM64_DIGEST:-}" | tr -d '[:space:]')
+            for candidate_digest in "$INDEX_DIGEST" "$AMD64_DIGEST" "$ARM64_DIGEST"; do
+              if [[ ! "$candidate_digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+                echo "::error::Invalid promoted OCI digest '${candidate_digest}'."
+                exit 1
+              fi
+            done
+
+            SOURCE_INDEX_URI="${IMAGE_REPOSITORY}@${INDEX_DIGEST}"
+            RAW_SOURCE_INDEX=$(docker buildx imagetools inspect --raw "$SOURCE_INDEX_URI")
+            INSPECTED_AMD64=$(printf '%s' "$RAW_SOURCE_INDEX" | jq -r '[.manifests[]? | select(.platform.os == "linux" and .platform.architecture == "amd64") | .digest][0] // empty' | tr -d '[:space:]')
+            INSPECTED_ARM64=$(printf '%s' "$RAW_SOURCE_INDEX" | jq -r '[.manifests[]? | select(.platform.os == "linux" and .platform.architecture == "arm64") | .digest][0] // empty' | tr -d '[:space:]')
+            INSPECTED_REVISION=$(printf '%s' "$RAW_SOURCE_INDEX" | jq -r '.annotations["org.opencontainers.image.revision"] // empty' | tr '[:upper:]' '[:lower:]')
+
+            if [ "$INSPECTED_AMD64" != "$AMD64_DIGEST" ] || [ "$INSPECTED_ARM64" != "$ARM64_DIGEST" ]; then
+              echo "::error::Promoted GHCR index '${SOURCE_INDEX_URI}' architecture digests ('${INSPECTED_AMD64}', '${INSPECTED_ARM64}') do not match preflight digests ('${AMD64_DIGEST}', '${ARM64_DIGEST}')."
+              exit 1
+            fi
+            if [ "$INSPECTED_REVISION" != "$SOURCE_REVISION" ]; then
+              echo "::error::Promoted GHCR index '${SOURCE_INDEX_URI}' revision '${INSPECTED_REVISION}' does not match '${SOURCE_REVISION}'."
+              exit 1
+            fi
+
+            printf '%s\n' "$AMD64_DIGEST" > /tmp/digests/amd64.digest
+            printf '%s\n' "$ARM64_DIGEST" > /tmp/digests/arm64.digest
+
+            if [ -n "${DOCKERHUB_REPOSITORY:-}" ]; then
+              for required_arch in amd64 arm64; do
+                ARCH_DIGEST=$(tr -d '[:space:]' < "/tmp/digests/${required_arch}.digest")
+                skopeo copy --preserve-digests \
+                  "docker://${IMAGE_REPOSITORY}@${ARCH_DIGEST}" \
+                  "docker://docker.io/${DOCKERHUB_REPOSITORY}@${ARCH_DIGEST}"
+              done
+            fi
+          fi
 
       - name: Merge and Push Multi-Platform OCI Index
         id: merge

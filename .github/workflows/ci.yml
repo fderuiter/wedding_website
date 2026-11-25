@@ -6,7 +6,6 @@ name: CI
 on:
   push:
     branches: [ main ]
-    tags: [ 'v*' ]
   pull_request:
 
 concurrency:
@@ -432,8 +431,8 @@ jobs:
             '    --mount=type=cache,target=/app/.next/cache,sharing=locked \' \
             '    echo "$CACHEBUST" >/dev/null && \' \
             '    mkdir -p /out /var/cache/apt /var/lib/apt /root/.npm /app/.next/cache && \' \
-            '    if [ "$EXPORT_DEPS" = "true" ]; then mkdir -p /out/deps && tar -cf /out/deps/mounts.tar -C / var/cache/apt var/lib/apt root/.npm; fi && \' \
-            '    if [ "$EXPORT_NEXT" = "true" ]; then mkdir -p /out/next && tar -cf /out/next/mounts.tar -C / app/.next/cache; fi' \
+            '    if [ "$EXPORT_DEPS" = "true" ] && [ -n "$(find /var/cache/apt /var/lib/apt /root/.npm -type f -print -quit 2>/dev/null)" ]; then mkdir -p /out/deps && tar -cf /out/deps/mounts.tar -C / var/cache/apt var/lib/apt root/.npm; fi && \' \
+            '    if [ "$EXPORT_NEXT" = "true" ] && [ -n "$(find /app/.next/cache -type f -print -quit 2>/dev/null)" ]; then mkdir -p /out/next && tar -cf /out/next/mounts.tar -C / app/.next/cache; fi' \
             'FROM scratch' \
             'COPY --from=exporter /out /' \
             | docker buildx build \
@@ -443,11 +442,11 @@ jobs:
               --build-arg "EXPORT_NEXT=${EXPORT_NEXT}" \
               --output "type=local,dest=${OUT_DIR}" \
               -f - "$EMPTY_DIR"
-          if [ -f "$OUT_DIR/deps/mounts.tar" ]; then
+          if [ -s "$OUT_DIR/deps/mounts.tar" ] && tar -tf "$OUT_DIR/deps/mounts.tar" | awk '!/\/$/ { found=1 } END { exit !found }'; then
             mkdir -p "$MOUNT_CACHE_DIR/deps"
             mv -f "$OUT_DIR/deps/mounts.tar" "$MOUNT_CACHE_DIR/deps/mounts.tar"
           fi
-          if [ -f "$OUT_DIR/next/mounts.tar" ]; then
+          if [ -s "$OUT_DIR/next/mounts.tar" ] && tar -tf "$OUT_DIR/next/mounts.tar" | awk '!/\/$/ { found=1 } END { exit !found }'; then
             mkdir -p "$MOUNT_CACHE_DIR/next"
             mv -f "$OUT_DIR/next/mounts.tar" "$MOUNT_CACHE_DIR/next/mounts.tar"
           fi
@@ -458,7 +457,7 @@ jobs:
           image-ref: wedding-website:latest
           format: 'table'
           ignore-unfixed: 'true'
-          severity: 'CRITICAL,HIGH'
+          severity: 'CRITICAL,HIGH,MEDIUM'
           exit-code: '1'
 
       - name: Extract Standalone Output from Container Image
@@ -613,8 +612,8 @@ jobs:
             '    --mount=type=cache,target=/app/.next/cache,sharing=locked \' \
             '    echo "$CACHEBUST" >/dev/null && \' \
             '    mkdir -p /out /var/cache/apt /var/lib/apt /root/.npm /app/.next/cache && \' \
-            '    if [ "$EXPORT_DEPS" = "true" ]; then mkdir -p /out/deps && tar -cf /out/deps/mounts.tar -C / var/cache/apt var/lib/apt root/.npm; fi && \' \
-            '    if [ "$EXPORT_NEXT" = "true" ]; then mkdir -p /out/next && tar -cf /out/next/mounts.tar -C / app/.next/cache; fi' \
+            '    if [ "$EXPORT_DEPS" = "true" ] && [ -n "$(find /var/cache/apt /var/lib/apt /root/.npm -type f -print -quit 2>/dev/null)" ]; then mkdir -p /out/deps && tar -cf /out/deps/mounts.tar -C / var/cache/apt var/lib/apt root/.npm; fi && \' \
+            '    if [ "$EXPORT_NEXT" = "true" ] && [ -n "$(find /app/.next/cache -type f -print -quit 2>/dev/null)" ]; then mkdir -p /out/next && tar -cf /out/next/mounts.tar -C / app/.next/cache; fi' \
             'FROM scratch' \
             'COPY --from=exporter /out /' \
             | docker buildx build \
@@ -624,11 +623,11 @@ jobs:
               --build-arg "EXPORT_NEXT=${EXPORT_NEXT}" \
               --output "type=local,dest=${OUT_DIR}" \
               -f - "$EMPTY_DIR"
-          if [ -f "$OUT_DIR/deps/mounts.tar" ]; then
+          if [ -s "$OUT_DIR/deps/mounts.tar" ] && tar -tf "$OUT_DIR/deps/mounts.tar" | awk '!/\/$/ { found=1 } END { exit !found }'; then
             mkdir -p "$MOUNT_CACHE_DIR/deps"
             mv -f "$OUT_DIR/deps/mounts.tar" "$MOUNT_CACHE_DIR/deps/mounts.tar"
           fi
-          if [ -f "$OUT_DIR/next/mounts.tar" ]; then
+          if [ -s "$OUT_DIR/next/mounts.tar" ] && tar -tf "$OUT_DIR/next/mounts.tar" | awk '!/\/$/ { found=1 } END { exit !found }'; then
             mkdir -p "$MOUNT_CACHE_DIR/next"
             mv -f "$OUT_DIR/next/mounts.tar" "$MOUNT_CACHE_DIR/next/mounts.tar"
           fi
@@ -639,7 +638,7 @@ jobs:
           image-ref: wedding-website:latest
           format: 'table'
           ignore-unfixed: 'true'
-          severity: 'CRITICAL,HIGH'
+          severity: 'CRITICAL,HIGH,MEDIUM'
           exit-code: '1'
 
       - name: Run Native ARM64 OCI Container & Clean Database Smoke Test
