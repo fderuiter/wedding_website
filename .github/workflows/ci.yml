@@ -16,6 +16,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     outputs:
@@ -37,9 +38,11 @@ jobs:
         run: npm run check:static -- --skip-doc-sync --skip-action-pins
 
       - name: Security Dependency Audit
+        timeout-minutes: 5
         run: npm run check:audit
 
       - name: Check Third-Party Action Pin Commit SHAs
+        timeout-minutes: 5
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: npm run check:action-pins -- --verify-upstream
@@ -156,6 +159,7 @@ jobs:
     needs: [verify]
     if: always() && !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: write
@@ -169,6 +173,7 @@ jobs:
           path: /tmp/doc-drift
 
       - name: Report Documentation Drift
+        timeout-minutes: 2
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
@@ -237,6 +242,7 @@ jobs:
   unit-test:
     needs: verify
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
     services:
@@ -313,6 +319,7 @@ jobs:
   build:
     needs: verify
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -394,6 +401,7 @@ jobs:
               -f - "$CTX_DIR"
 
       - name: Build OCI Container Image (amd64)
+        timeout-minutes: 20
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -452,6 +460,7 @@ jobs:
           fi
 
       - name: Scan OCI Container Image with Trivy (amd64)
+        timeout-minutes: 5
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: wedding-website:latest
@@ -498,6 +507,7 @@ jobs:
   container-arm64:
     needs: verify
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -575,6 +585,7 @@ jobs:
               -f - "$CTX_DIR"
 
       - name: Build Native ARM64 OCI Container Image
+        timeout-minutes: 20
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -633,6 +644,7 @@ jobs:
           fi
 
       - name: Scan Native ARM64 OCI Container Image with Trivy
+        timeout-minutes: 5
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: wedding-website:latest
@@ -650,6 +662,7 @@ jobs:
   storybook-build:
     needs: verify
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -684,6 +697,7 @@ jobs:
   static-export-build:
     needs: verify
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     permissions:
       contents: read
     outputs:
@@ -702,6 +716,7 @@ jobs:
         run: npm ci
       - name: Resolve Pages base path
         id: base-path
+        timeout-minutes: 2
         env:
           GH_REPO: ${{ github.repository }}
           GITHUB_TOKEN: ${{ github.token }}
@@ -773,9 +788,11 @@ jobs:
             ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
       - name: Install Playwright Chromium Browser
         if: steps.playwright-chromium-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 5
         run: npx playwright install --with-deps chromium
       - name: Install Playwright Chromium OS Dependencies
         if: steps.playwright-chromium-cache.outputs.cache-hit == 'true'
+        timeout-minutes: 5
         run: npx playwright install-deps chromium
       - name: Audit static HTML showcase runtime and WCAG 2.2 AA accessibility
         env:
@@ -799,6 +816,7 @@ jobs:
   e2e-test:
     needs: [verify, build]
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     permissions:
       contents: read
     env:
@@ -843,9 +861,11 @@ jobs:
           key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
       - name: Install Playwright Browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 5
         run: npx playwright install --with-deps
       - name: Install Playwright Operating System Dependencies
         if: steps.playwright-cache.outputs.cache-hit == 'true'
+        timeout-minutes: 5
         run: npx playwright install-deps
       - name: Migrate & Seed Test Database
         env:
@@ -873,6 +893,7 @@ jobs:
     needs: [unit-test, e2e-test, static-export-build]
     if: '!cancelled()'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: write
@@ -906,6 +927,7 @@ jobs:
         run: node scripts/a11y-report.mjs --include-static
       - name: Post A11y Report to PR
         if: "!cancelled() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository"
+        timeout-minutes: 2
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
@@ -954,6 +976,7 @@ jobs:
   pages-verify:
     needs: [verify, static-export-build, storybook-build]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -1004,9 +1027,11 @@ jobs:
             ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
       - name: Install Playwright Chromium Browser
         if: steps.playwright-chromium-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 5
         run: npx playwright install --with-deps chromium
       - name: Install Playwright Chromium OS Dependencies
         if: steps.playwright-chromium-cache.outputs.cache-hit == 'true'
+        timeout-minutes: 5
         run: npx playwright install-deps chromium
       - name: Verify unified GitHub Pages showcase bundle
         run: npm run pages:verify
@@ -1027,6 +1052,7 @@ jobs:
       group: github-pages
       cancel-in-progress: false
       queue: max
+    timeout-minutes: 20
     permissions:
       contents: read
       pages: write
@@ -1040,6 +1066,7 @@ jobs:
           persist-credentials: false
       - name: Verify Main Branch Tip Freshness
         id: freshness
+        timeout-minutes: 2
         env:
           GITHUB_TOKEN: ${{ github.token }}
           CURRENT_SHA: ${{ github.sha }}
@@ -1081,6 +1108,7 @@ jobs:
       - name: Setup Pages
         id: pages
         if: steps.freshness.outputs.is_latest == 'true'
+        timeout-minutes: 3
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - name: Check Pages base path alignment
         id: base-check
@@ -1134,6 +1162,7 @@ jobs:
           path: docs-portal/.vitepress/dist/demo
       - name: Align demo base path with Pages configuration
         if: steps.freshness.outputs.is_latest == 'true' && steps.base-check.outputs.reuse_bundle != 'true'
+        timeout-minutes: 10
         env:
           EXPECTED_DEMO_BASE: ${{ steps.base-check.outputs.expected_demo_base }}
           BUILT_DEMO_BASE: ${{ needs.static-export-build.outputs.demo_base_path }}
@@ -1170,11 +1199,13 @@ jobs:
           done
       - name: Upload Pages artifact
         if: steps.freshness.outputs.is_latest == 'true'
+        timeout-minutes: 5
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: docs-portal/.vitepress/dist
       - name: Deploy to GitHub Pages
         id: deployment
         if: steps.freshness.outputs.is_latest == 'true'
+        timeout-minutes: 5
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
 

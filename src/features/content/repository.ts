@@ -4,7 +4,8 @@ import { Prisma } from '@prisma/client';
 import type { IContentRepository, PendingPhotosOptions, PaginatedPendingPhotosResult, GetNodesByTypeOptions } from './types';
 import { ContentNodeSchema, PhotoNodeSchema, PhotoDataSchema, AppConfigSchema, ContentNodeDTO, AppConfigDTO } from './schemas';
 import { executeInTransaction } from '@/lib/transaction';
-import { createAuditSnapshot } from '@/lib/audit';
+import { createAuditSnapshot, createBatchAuditSnapshots } from '@/lib/audit';
+import { qualifyPostgresTable } from '@/lib/postgres-url.js';
 import { buildArchetypeSeedData, isStaticExportBuild } from '@/lib/sampleData/builder';
 
 function isMultisiteEnabled(): boolean {
@@ -17,12 +18,32 @@ const StoredLegacyPhotoNodeSchema = PhotoNodeSchema.extend({
   }),
 });
 
+function normalizeStoredNodeTimestamps<T extends Record<string, any>>(node: T): T {
+  if (!node || typeof node !== 'object') {
+    return node;
+  }
+  return {
+    ...node,
+    ...('tags' in node && !Array.isArray(node.tags) ? { tags: [] } : {}),
+    ...(node.createdAt !== undefined && !(node.createdAt instanceof Date)
+      ? { createdAt: new Date(node.createdAt) }
+      : {}),
+    ...(node.updatedAt !== undefined && !(node.updatedAt instanceof Date)
+      ? { updatedAt: new Date(node.updatedAt) }
+      : {}),
+  };
+}
+
 function parseStoredPhotoNode(node: unknown): ContentNodeDTO {
-  const parsed = PhotoNodeSchema.safeParse(node);
+  const normalized =
+    node && typeof node === 'object'
+      ? normalizeStoredNodeTimestamps(node as Record<string, any>)
+      : node;
+  const parsed = PhotoNodeSchema.safeParse(normalized);
   if (parsed.success) {
     return parsed.data;
   }
-  return StoredLegacyPhotoNodeSchema.parse(node);
+  return StoredLegacyPhotoNodeSchema.parse(normalized);
 }
 
 function parseStoredContentNode(node: unknown): ContentNodeDTO {
@@ -328,7 +349,10 @@ export class ContentRepository implements IContentRepository {
     return parsedNodes;
   }
 
-  async getEntityBoundMediaIds(mediaIds: string[]): Promise<Set<string>> {
+  async getEntityBoundMediaIds(
+    mediaIds: string[],
+    client: any = this.client
+  ): Promise<Set<string>> {
     if (!mediaIds.length) {
       return new Set();
     }
@@ -338,11 +362,11 @@ export class ContentRepository implements IContentRepository {
       return new Set(mediaIds.filter((id) => boundSet.has(id)));
     }
 
-    if (!this.client.media?.findMany) {
+    if (!client?.media?.findMany) {
       return new Set();
     }
 
-    const boundMedia = await this.client.media.findMany({
+    const boundMedia = await client.media.findMany({
       where: {
         id: { in: mediaIds },
         OR: [
@@ -408,6 +432,240 @@ export class ContentRepository implements IContentRepository {
         await createAuditSnapshot('ContentNode', id, { deleted: true, previous: node }, author, tx);
       }
     });
+  }
+
+  async approvePhotosBatch(
+    ids: string[],
+    author: string = 'System'
+  ): Promise<ContentNodeDTO[]> {
+    const uniqueIds = Array.from(
+      new Set((ids || []).filter((id): id is string => typeof id === 'string' && id.length > 0))
+    );
+    if (uniqueIds.length === 0) {
+      return [];
+    }
+
+    return executeInTransaction(this.client, async (tx) => {
+      let updatedRawNodes: any[] = [];
+
+      if (typeof tx.$queryRaw === 'function') {
+        const contentNodeTable = Prisma.raw(qualifyPostgresTable('ContentNode'));
+        const rows = await tx.$queryRaw(Prisma.sql`
+          UPDATE ${contentNodeTable}
+          SET
+            "data" = COALESCE(
+              CASE WHEN jsonb_typeof("data") = 'object' THEN "data" ELSE '{}'::jsonb END,
+              '{}'::jsonb
+            ) || '{"status":"APPROVED","isVisible":true}'::jsonb,
+            "updatedAt" = NOW()
+          WHERE "type" = 'Photo'
+            AND "id" = ANY(${uniqueIds}::text[])
+          RETURNING "id", "type", COALESCE("tags", ARRAY[]::text[]) AS "tags", "data", "createdAt", "updatedAt"
+        `);
+        updatedRawNodes = Array.isArray(rows)
+          ? rows.map((row) => normalizeStoredNodeTimestamps(row))
+          : [];
+      } else if (typeof tx.contentNode?.findMany === 'function') {
+        const existingNodes = await tx.contentNode.findMany({
+          where: {
+            id: { in: uniqueIds },
+            type: 'Photo',
+          },
+        });
+        for (const node of existingNodes) {
+          const currentData =
+            node.data && typeof node.data === 'object' && !Array.isArray(node.data)
+              ? (node.data as Record<string, any>)
+              : {};
+          const nextData = {
+            ...currentData,
+            status: 'APPROVED',
+            isVisible: true,
+          };
+          const updated = await tx.contentNode.update({
+            where: { id: node.id },
+            data: { data: nextData },
+          });
+          updatedRawNodes.push(normalizeStoredNodeTimestamps(updated));
+        }
+      }
+
+      if (updatedRawNodes.length === 0) {
+        return [];
+      }
+
+      await createBatchAuditSnapshots('ContentNode', updatedRawNodes, author, tx);
+      return updatedRawNodes.map((node) => parseStoredPhotoNode(node));
+    });
+  }
+
+  async rejectPhotosBatch(
+    ids: string[],
+    author: string = 'System'
+  ): Promise<string[]> {
+    const uniqueIds = Array.from(
+      new Set((ids || []).filter((id): id is string => typeof id === 'string' && id.length > 0))
+    );
+    if (uniqueIds.length === 0) {
+      return [];
+    }
+
+    const { MediaRepository, mediaRepository, unlinkManagedStorageUrls } = await import(
+      '@/features/media'
+    );
+    const mediaRepo =
+      this.client && this.client !== mediaRepository.client
+        ? new MediaRepository(this.client)
+        : mediaRepository;
+
+    const { deletedIds, urlsToUnlink } = await executeInTransaction(
+      this.client,
+      async (tx) => {
+        let deletedRawNodes: any[] = [];
+
+        if (typeof tx.$queryRaw === 'function') {
+          const contentNodeTable = Prisma.raw(qualifyPostgresTable('ContentNode'));
+          const rows = await tx.$queryRaw(Prisma.sql`
+            DELETE FROM ${contentNodeTable}
+            WHERE "type" = 'Photo'
+              AND "id" = ANY(${uniqueIds}::text[])
+            RETURNING "id", "type", COALESCE("tags", ARRAY[]::text[]) AS "tags", "data", "createdAt", "updatedAt"
+          `);
+          deletedRawNodes = Array.isArray(rows)
+            ? rows.map((row) => normalizeStoredNodeTimestamps(row))
+            : [];
+        } else if (typeof tx.contentNode?.findMany === 'function') {
+          const existingNodes = await tx.contentNode.findMany({
+            where: {
+              id: { in: uniqueIds },
+              type: 'Photo',
+            },
+          });
+          if (Array.isArray(existingNodes) && existingNodes.length > 0) {
+            const existingIds = existingNodes.map((node: { id: string }) => node.id);
+            if (typeof tx.contentNode.deleteMany === 'function') {
+              await tx.contentNode.deleteMany({
+                where: { id: { in: existingIds } },
+              });
+            } else if (typeof tx.contentNode.delete === 'function') {
+              for (const existingId of existingIds) {
+                await tx.contentNode.delete({ where: { id: existingId } });
+              }
+            }
+            deletedRawNodes = existingNodes.map((node: any) =>
+              normalizeStoredNodeTimestamps(node)
+            );
+          }
+        }
+
+        if (deletedRawNodes.length === 0) {
+          return { deletedIds: [] as string[], urlsToUnlink: [] as string[] };
+        }
+
+        await createBatchAuditSnapshots(
+          'ContentNode',
+          deletedRawNodes.map((node) => ({
+            entityId: node.id,
+            data: { deleted: true, previous: node },
+          })),
+          author,
+          tx
+        );
+
+        const candidateMediaIds = Array.from(
+          new Set(
+            deletedRawNodes
+              .map((node) => {
+                const nodeData = node.data as { mediaId?: unknown } | null | undefined;
+                return typeof nodeData?.mediaId === 'string' && nodeData.mediaId.trim()
+                  ? nodeData.mediaId.trim()
+                  : null;
+              })
+              .filter((mediaId): mediaId is string => Boolean(mediaId))
+          )
+        );
+
+        let entityBoundMediaIds = new Set<string>();
+        if (candidateMediaIds.length > 0) {
+          entityBoundMediaIds = await this.getEntityBoundMediaIds(candidateMediaIds, tx);
+        }
+
+        const unboundMediaIds = candidateMediaIds.filter(
+          (mediaId) => !entityBoundMediaIds.has(mediaId)
+        );
+
+        const deletedMediaList =
+          unboundMediaIds.length > 0
+            ? await mediaRepo.deleteMediaBatch(unboundMediaIds, author, {
+              tx,
+              skipLinkedNodeCleanup: true,
+              skipStorageCleanup: true,
+            })
+            : [];
+
+        const deletedMediaById = new Map(deletedMediaList.map((m) => [m.id, m]));
+        const stillExistingUnboundIds = new Set<string>();
+        if (
+          unboundMediaIds.length > deletedMediaList.length &&
+          typeof tx.media?.findMany === 'function'
+        ) {
+          const remainingIds = unboundMediaIds.filter((id) => !deletedMediaById.has(id));
+          if (remainingIds.length > 0) {
+            const remainingRows = await tx.media.findMany({
+              where: { id: { in: remainingIds } },
+              select: { id: true },
+            });
+            if (Array.isArray(remainingRows)) {
+              for (const row of remainingRows) {
+                if (row?.id) {
+                  stillExistingUnboundIds.add(row.id);
+                }
+              }
+            }
+          }
+        }
+
+        const collectedUrls: string[] = [];
+        for (const media of deletedMediaList) {
+          if (typeof media.url === 'string' && media.url) {
+            collectedUrls.push(media.url);
+          }
+        }
+
+        for (const node of deletedRawNodes) {
+          const nodeData = (node.data as { mediaId?: unknown; url?: unknown } | null) || {};
+          const rawMediaId =
+            typeof nodeData.mediaId === 'string' && nodeData.mediaId.trim()
+              ? nodeData.mediaId.trim()
+              : undefined;
+
+          if (rawMediaId) {
+            if (
+              deletedMediaById.has(rawMediaId) ||
+              entityBoundMediaIds.has(rawMediaId) ||
+              stillExistingUnboundIds.has(rawMediaId)
+            ) {
+              continue;
+            }
+          }
+
+          if (typeof nodeData.url === 'string' && nodeData.url) {
+            collectedUrls.push(nodeData.url);
+          }
+        }
+
+        return {
+          deletedIds: deletedRawNodes.map((node) => String(node.id)),
+          urlsToUnlink: collectedUrls,
+        };
+      }
+    );
+
+    if (urlsToUnlink.length > 0) {
+      await unlinkManagedStorageUrls(urlsToUnlink, 'ContentRepository.rejectPhotosBatch');
+    }
+
+    return deletedIds;
   }
 
 }

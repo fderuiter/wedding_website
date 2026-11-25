@@ -135,6 +135,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'workflow_call'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       actions: read
       contents: read
@@ -151,6 +152,7 @@ jobs:
 
       - name: Resolve Target Commit SHA
         id: resolve-sha
+        timeout-minutes: 5
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_ACTOR_LOGIN: ${{ github.actor }}
@@ -382,6 +384,7 @@ jobs:
 
       - name: Verify Successful CI Run for Commit
         if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call'
+        timeout-minutes: 3
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           TARGET_SHA: ${{ steps.resolve-sha.outputs.target_sha }}
@@ -444,6 +447,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'workflow_call'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       compatibility_status: ${{ steps.lint.outputs.compatibility_status }}
     steps:
@@ -454,6 +458,7 @@ jobs:
 
       - name: Align Workspace to Verified Commit SHA
         if: github.event_name == 'workflow_run' || inputs.image_tag != '' || inputs.release_ref != '' || inputs.image_digest != '' || needs.ci-gate.outputs.target_sha != github.sha
+        timeout-minutes: 3
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}

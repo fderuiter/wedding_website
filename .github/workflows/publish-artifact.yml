@@ -67,6 +67,7 @@ jobs:
 
       - name: Verify Commit SHA & Main Branch Ancestry
         id: resolve
+        timeout-minutes: 3
         env:
           GH_TOKEN: ${{ github.token }}
           INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
@@ -122,6 +123,7 @@ jobs:
 
       - name: Poll Active CI Runs & Verify Passing CI Status
         id: verify-ci
+        timeout-minutes: 42
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
@@ -237,6 +239,7 @@ jobs:
           done
 
       - name: Verify Successful CI Run for Commit
+        timeout-minutes: 3
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           TARGET_SHA: ${{ steps.resolve.outputs.resolved_sha }}
@@ -276,6 +279,7 @@ jobs:
 
       - name: Inspect Existing Attested GHCR Release Image
         id: inspect-ghcr
+        timeout-minutes: 5
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_ACTOR_LOGIN: ${{ github.actor }}
@@ -445,6 +449,7 @@ jobs:
     needs: [preflight]
     if: needs.preflight.outputs.promote_existing != 'true'
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
     permissions:
       contents: read
       security-events: write
@@ -556,6 +561,7 @@ jobs:
 
       - name: Build Native Container Image
         id: build_image
+        timeout-minutes: 20
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -630,6 +636,7 @@ jobs:
           skopeo copy "oci-archive:${OCI_TAR}" "docker-daemon:wedding-website:latest"
 
       - name: Scan Native Container Image with Trivy
+        timeout-minutes: 5
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: wedding-website:latest
@@ -640,6 +647,7 @@ jobs:
           exit-code: '1'
 
       - name: Generate Native Container SPDX SBOM
+        timeout-minutes: 5
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: wedding-website:latest
@@ -647,6 +655,7 @@ jobs:
           output: 'sbom-${{ matrix.arch }}.spdx.json'
 
       - name: Upload Trivy Scan Results to GitHub Code Scanning
+        timeout-minutes: 5
         uses: github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
         if: always() && hashFiles(format('trivy-results-{0}.sarif', matrix.arch)) != ''
         with:
@@ -711,6 +720,7 @@ jobs:
         (needs.preflight.outputs.promote_existing == 'true' && needs.build.result == 'skipped')
       )
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
@@ -856,6 +866,7 @@ jobs:
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Log in to GHCR
+        timeout-minutes: 2
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
@@ -864,12 +875,14 @@ jobs:
 
       - name: Log in to Docker Hub (optional)
         if: secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != ''
+        timeout-minutes: 2
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Verify Per-Architecture SPDX SBOM Artifacts
+        timeout-minutes: 5
         env:
           GH_TOKEN: ${{ github.token }}
           PROMOTE_EXISTING: ${{ needs.preflight.outputs.promote_existing }}
@@ -977,6 +990,7 @@ jobs:
           done
 
       - name: Verify and Push Architecture OCI Archives
+        timeout-minutes: 5
         env:
           PROMOTE_EXISTING: ${{ needs.preflight.outputs.promote_existing }}
           PROMOTED_INDEX_DIGEST: ${{ needs.preflight.outputs.source_index_digest }}
@@ -1077,6 +1091,7 @@ jobs:
 
       - name: Merge and Push Multi-Platform OCI Index
         id: merge
+        timeout-minutes: 5
         env:
           IMAGE_REPOSITORY: ${{ steps.meta.outputs.image_repository }}
           DOCKERHUB_REPOSITORY: ${{ steps.meta.outputs.dockerhub_repository }}
@@ -1297,6 +1312,7 @@ jobs:
             ' > /tmp/oci-handoff/sbom-index.spdx.json
 
       - name: Attest amd64 Build Provenance
+        timeout-minutes: 3
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ${{ steps.meta.outputs.image_repository }}
@@ -1304,6 +1320,7 @@ jobs:
           push-to-registry: true
 
       - name: Attest arm64 Build Provenance
+        timeout-minutes: 3
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ${{ steps.meta.outputs.image_repository }}
@@ -1311,6 +1328,7 @@ jobs:
           push-to-registry: true
 
       - name: Attest Build Provenance
+        timeout-minutes: 3
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ${{ steps.meta.outputs.image_repository }}
@@ -1318,6 +1336,7 @@ jobs:
           push-to-registry: true
 
       - name: Attest amd64 SPDX SBOM
+        timeout-minutes: 3
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ${{ steps.meta.outputs.image_repository }}
@@ -1326,6 +1345,7 @@ jobs:
           push-to-registry: true
 
       - name: Attest arm64 SPDX SBOM
+        timeout-minutes: 3
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ${{ steps.meta.outputs.image_repository }}
@@ -1334,6 +1354,7 @@ jobs:
           push-to-registry: true
 
       - name: Attest Index SPDX SBOM
+        timeout-minutes: 3
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ${{ steps.meta.outputs.image_repository }}
@@ -1343,6 +1364,7 @@ jobs:
 
       - name: Attest Docker Hub amd64 Build Provenance (optional)
         if: steps.meta.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
+        timeout-minutes: 3
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: docker.io/${{ steps.meta.outputs.dockerhub_repository }}
@@ -1352,6 +1374,7 @@ jobs:
 
       - name: Attest Docker Hub arm64 Build Provenance (optional)
         if: steps.meta.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
+        timeout-minutes: 3
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: docker.io/${{ steps.meta.outputs.dockerhub_repository }}
@@ -1361,6 +1384,7 @@ jobs:
 
       - name: Attest Docker Hub Build Provenance (optional)
         if: steps.meta.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
+        timeout-minutes: 3
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: docker.io/${{ steps.meta.outputs.dockerhub_repository }}
@@ -1370,6 +1394,7 @@ jobs:
 
       - name: Attest Docker Hub amd64 SPDX SBOM (optional)
         if: steps.meta.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
+        timeout-minutes: 3
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: docker.io/${{ steps.meta.outputs.dockerhub_repository }}
@@ -1380,6 +1405,7 @@ jobs:
 
       - name: Attest Docker Hub arm64 SPDX SBOM (optional)
         if: steps.meta.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
+        timeout-minutes: 3
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: docker.io/${{ steps.meta.outputs.dockerhub_repository }}
@@ -1390,6 +1416,7 @@ jobs:
 
       - name: Attest Docker Hub Index SPDX SBOM (optional)
         if: steps.meta.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
+        timeout-minutes: 3
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: docker.io/${{ steps.meta.outputs.dockerhub_repository }}

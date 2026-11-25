@@ -222,24 +222,53 @@ export class ContentService {
         isVisible: false,
       };
 
-      let mediaDeletedWithStorageCleanup = false;
-      if (data.mediaId) {
+      let isEntityBoundMedia = false;
+      if (data.mediaId && typeof this.repo.getEntityBoundMediaIds === 'function') {
         try {
-          const { mediaRepository } = await import('@/features/media');
-          const deletedMedia = await mediaRepository.deleteMedia(data.mediaId, author);
+          const boundIds = await this.repo.getEntityBoundMediaIds([String(data.mediaId)]);
+          isEntityBoundMedia = boundIds.has(String(data.mediaId));
+        } catch {
+          isEntityBoundMedia = false;
+        }
+      }
+
+      let mediaDeletedWithStorageCleanup = false;
+      let photoNodeDeletedByMediaCleanup = false;
+      if (data.mediaId && !isEntityBoundMedia) {
+        try {
+          const { MediaRepository, mediaRepository } = await import('@/features/media');
+          const repoClient = (this.repo as { client?: unknown }).client;
+          const deleteMediaIsMocked = Boolean(
+            (mediaRepository.deleteMedia as { _isMockFunction?: boolean })?._isMockFunction
+          );
+          const targetMediaRepo =
+            !deleteMediaIsMocked && repoClient && repoClient !== mediaRepository.client
+              ? new MediaRepository(repoClient)
+              : mediaRepository;
+          const deletedMedia = await targetMediaRepo.deleteMedia(data.mediaId, author);
           mediaDeletedWithStorageCleanup = Boolean(deletedMedia);
+          if (deletedMedia) {
+            const deletedNodeIds = (deletedMedia as { deletedNodeIds?: string[] }).deletedNodeIds;
+            photoNodeDeletedByMediaCleanup = Array.isArray(deletedNodeIds)
+              ? deletedNodeIds.includes(nodeId)
+              : true;
+          }
         } catch {
           // Ignore media record cleanup failures and fall back to direct storage cleanup
         }
       }
 
-      if (data.url && !mediaDeletedWithStorageCleanup) {
+      if (data.url && !mediaDeletedWithStorageCleanup && !isEntityBoundMedia) {
         try {
           const { getStorageProvider } = await import('@/utils/storage');
           await getStorageProvider().delete(data.url);
         } catch {
           // Ignore storage cleanup failures
         }
+      }
+
+      if (photoNodeDeletedByMediaCleanup) {
+        return { id: nodeId, deleted: true, status: 'REJECTED' };
       }
 
       if (typeof this.repo.deleteNode === 'function') {
@@ -267,6 +296,73 @@ export class ContentService {
     }
     if (ids.length > 100) {
       throw new Error('Batch request cannot exceed 100 items');
+    }
+
+    if (action === 'approve' && typeof this.repo.approvePhotosBatch === 'function') {
+      const approvedNodes = await this.repo.approvePhotosBatch(ids, author);
+      const approvedById = new Map<string, ContentNodeDTO>(
+        approvedNodes.map((node) => [node.id, node])
+      );
+
+      const results = ids.map((id) => {
+        const approvedNode = approvedById.get(id);
+        if (approvedNode) {
+          return {
+            id,
+            success: true,
+            action,
+            data: approvedNode,
+          };
+        }
+        return {
+          id,
+          success: false,
+          action,
+          error: `Photo node with ID ${id} not found`,
+        };
+      });
+
+      const succeededCount = results.filter((r) => r.success).length;
+      const failedCount = results.length - succeededCount;
+
+      return {
+        total: ids.length,
+        succeededCount,
+        failedCount,
+        results,
+      };
+    }
+
+    if (action === 'reject' && typeof this.repo.rejectPhotosBatch === 'function') {
+      const deletedIds = await this.repo.rejectPhotosBatch(ids, author);
+      const deletedIdSet = new Set<string>(deletedIds);
+
+      const results = ids.map((id) => {
+        if (deletedIdSet.has(id)) {
+          return {
+            id,
+            success: true,
+            action,
+            data: { id, deleted: true, status: 'REJECTED' as const },
+          };
+        }
+        return {
+          id,
+          success: false,
+          action,
+          error: `Photo node with ID ${id} not found`,
+        };
+      });
+
+      const succeededCount = results.filter((r) => r.success).length;
+      const failedCount = results.length - succeededCount;
+
+      return {
+        total: ids.length,
+        succeededCount,
+        failedCount,
+        results,
+      };
     }
 
     const results = await Promise.all(

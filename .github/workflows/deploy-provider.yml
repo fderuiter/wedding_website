@@ -226,6 +226,7 @@ jobs:
 
       - name: Resolve Artifact Image URI
         id: resolve
+        timeout-minutes: 3
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_ACTOR_LOGIN: ${{ github.actor }}
@@ -331,6 +332,7 @@ jobs:
       - name: Verify Artifact Provenance Attestation
         id: provenance
         if: "!(inputs.dry_run && inputs.image_digest == '' && inputs.image_tag == 'latest')"
+        timeout-minutes: 3
         env:
           GH_TOKEN: ${{ github.token }}
           IMAGE_URI: ${{ steps.resolve.outputs.image_uri }}
@@ -491,6 +493,7 @@ jobs:
       - name: Resolve Standalone Promotion Commit & Main Ancestry
         id: standalone-target
         if: "github.event_name == 'workflow_dispatch' && !inputs.dry_run"
+        timeout-minutes: 3
         env:
           GH_TOKEN: ${{ github.token }}
           IMAGE_URI: ${{ steps.resolve.outputs.image_uri }}
@@ -566,6 +569,7 @@ jobs:
 
       - name: Verify Standalone CI & Database Migration Status
         if: "github.event_name == 'workflow_dispatch' && !inputs.dry_run"
+        timeout-minutes: 3
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           TARGET_SHA: ${{ steps.standalone-target.outputs.target_sha }}
@@ -816,6 +820,7 @@ jobs:
           (inputs.provider == 'google-cloud-run' || inputs.provider == '') &&
           vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' &&
           vars.GCP_SERVICE_ACCOUNT != ''
+        timeout-minutes: 2
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
@@ -828,6 +833,7 @@ jobs:
           (inputs.provider == 'google-cloud-run' || inputs.provider == '') &&
           (vars.GCP_WORKLOAD_IDENTITY_PROVIDER == '' || vars.GCP_SERVICE_ACCOUNT == '') &&
           secrets.GCP_SA_KEY != ''
+        timeout-minutes: 2
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
@@ -844,6 +850,7 @@ jobs:
 
       - name: Capture Active Image Tag Before Rollout
         id: capture-previous
+        timeout-minutes: 3
         env:
           PROVIDER: ${{ inputs.provider || 'google-cloud-run' }}
           TARGET_ENV: ${{ inputs.environment || 'production' }}
@@ -1478,6 +1485,7 @@ jobs:
           (!inputs.dry_run) &&
           (inputs.provider == 'google-cloud-run' || inputs.provider == '') &&
           ((vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && vars.GCP_SERVICE_ACCOUNT != '') || secrets.GCP_SA_KEY != '')
+        timeout-minutes: 5
         uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d # v3.0.1
         with:
           service: ${{ steps.verify-credentials.outputs.cloud_run_service || inputs.cloud_run_service || vars.CLOUD_RUN_SERVICE || (inputs.environment == 'staging' && 'wedding-website-staging') || 'wedding-website' }}
@@ -1491,6 +1499,7 @@ jobs:
         if: >-
           (!inputs.dry_run) &&
           (inputs.provider == 'generic-webhook' || inputs.provider == 'docker-host')
+        timeout-minutes: 2
         env:
           IMAGE_URI: ${{ steps.resolve.outputs.image_uri }}
           IMAGE_DIGEST: ${{ steps.resolve.outputs.image_digest }}
@@ -1541,6 +1550,7 @@ jobs:
       - name: Record Environment Deployment State
         id: record-deployment
         if: "!inputs.dry_run"
+        timeout-minutes: 2
         env:
           GITHUB_TOKEN: ${{ github.token }}
           TARGET_ENV: ${{ inputs.environment || 'production' }}
@@ -1659,6 +1669,7 @@ jobs:
 
       - name: Verify Provider Service Health
         id: health-probe
+        timeout-minutes: 3
         env:
           TARGET_ENV: ${{ inputs.environment || 'production' }}
           VAR_SERVICE_URL: ${{ vars.SERVICE_URL }}
@@ -1802,6 +1813,7 @@ jobs:
       - name: Finalize Environment Deployment Status
         id: finalize-deployment
         if: "always() && !inputs.dry_run && steps.record-deployment.outputs.deployment_id != ''"
+        timeout-minutes: 2
         env:
           GITHUB_TOKEN: ${{ github.token }}
           TARGET_ENV: ${{ inputs.environment || 'production' }}
@@ -1868,6 +1880,7 @@ jobs:
           inputs.auto_rollback_on_failure &&
           inputs.rollback_environment == '' &&
           steps.rollout-marker.outputs.rollout_executed == 'true'
+        timeout-minutes: 4
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
