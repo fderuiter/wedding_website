@@ -13,7 +13,7 @@ import { STATIC_DEMO_BACKUP_SCHEMA_VERSION } from './types';
 function escapeCsvCell(value: unknown): string {
   if (value === null || value === undefined) return '';
   const str = String(value);
-  const formulaSafe = /^[=+\-@\t\r]/.test(str) ? `'${str}` : str;
+  const formulaSafe = /^(?:[\t\r]|\s*[=+\-@])/.test(str) ? `'${str}` : str;
   if (/[",\r\n]/.test(formulaSafe)) {
     return `"${formulaSafe.replace(/"/g, '""')}"`;
   }

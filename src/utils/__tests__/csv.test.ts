@@ -121,6 +121,19 @@ describe('CSV Parser Utility', () => {
       expect(escapeCsvCell('+1,234.56')).toBe("\"'+1,234.56\"");
       expect(escapeCsvCell('-foo\nbar')).toBe("\"'-foo\nbar\"");
       expect(escapeCsvCell('@org,"test"')).toBe("\"'@org,\"\"test\"\"\"");
+
+      // Leading whitespace and newline padded formula triggers
+      expect(escapeCsvCell(' =1+1')).toBe("' =1+1");
+      expect(escapeCsvCell('   +SUM(A1:A5)')).toBe("'   +SUM(A1:A5)");
+      expect(escapeCsvCell('  -cmd|"/C calc"!A0')).toBe("\"'  -cmd|\"\"/C calc\"\"!A0\"");
+      expect(escapeCsvCell(' @IMPORTXML(A1,B1)')).toBe("\"' @IMPORTXML(A1,B1)\"");
+      expect(escapeCsvCell('\n=1+1')).toBe("\"'\n=1+1\"");
+      expect(escapeCsvCell('\r\n+1+1')).toBe("\"'\r\n+1+1\"");
+
+      // Padded plain text without formula trigger stays unprefixed with RFC 4180 quoting preserved
+      expect(escapeCsvCell('  Warmest congratulations!')).toBe('  Warmest congratulations!');
+      expect(escapeCsvCell('  Love, Alice & Bob  ')).toBe('"  Love, Alice & Bob  "');
+      expect(escapeCsvCell('\nSo happy for you both!')).toBe('"\nSo happy for you both!"');
     });
 
     it('formats an array of objects into standard CSV text', () => {

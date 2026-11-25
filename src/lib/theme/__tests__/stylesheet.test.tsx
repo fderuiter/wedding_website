@@ -4,6 +4,7 @@ import { compile } from 'tailwindcss';
 import {
   generateDynamicStyles,
   generateThemeStylesheet,
+  sanitizeTokenValue,
   optimizeContrast,
   hexToRgb,
   getContrastRatio,
@@ -649,5 +650,46 @@ describe('Isomorphic Theme Stylesheet Generation', () => {
         expect(getContrastRatio(hexToRgb(textHex), hexToRgb(hoverHex))).toBeGreaterThanOrEqual(4.5);
       }
     }
+  });
+
+  it('clears disallowed CSS functions and backslashes in sanitizeTokenValue and skips empty overrides in generateDynamicStyles', () => {
+    expect(sanitizeTokenValue('url(https://evil.example/track.png)')).toBe('');
+    expect(sanitizeTokenValue('URL ("https://evil.example/track.png")')).toBe('');
+    expect(sanitizeTokenValue('@import "https://evil.example/evil.css"')).toBe('');
+    expect(sanitizeTokenValue('expression(alert(1))')).toBe('');
+    expect(sanitizeTokenValue('\\75\\72\\6c(https://evil.example)')).toBe('');
+    expect(sanitizeTokenValue(';/*comment*/')).toBe('');
+    expect(sanitizeTokenValue('0.875rem')).toBe('0.875rem');
+    expect(sanitizeTokenValue('rgba(15, 23, 42, 0.72)')).toBe('rgba(15, 23, 42, 0.72)');
+
+    const css = generateDynamicStyles(
+      '#B91C1C',
+      '#B45309',
+      'classic',
+      {
+        '--btn-radius': 'url(https://evil.example/exfil.png)',
+        '--card-bg': 'expression(alert(1))',
+        '--custom-import': '@import "https://evil.example/a.css"',
+        '--custom-escaped': '\\65\\78\\70\\72\\65\\73\\73\\69\\6f\\6e(alert(1))',
+        '--custom-valid': '1.25rem',
+      },
+      undefined,
+      undefined,
+      {
+        spacingHeader: 'url(https://evil.example/spacer.png)',
+        spacingCustomSafe: '32px',
+      }
+    );
+
+    expect(css).not.toContain('evil.example');
+    expect(css).not.toContain('expression(');
+    expect(css).not.toContain('@import');
+    expect(css).not.toMatch(/--btn-radius:\s*;/);
+    expect(css).not.toMatch(/--custom-import:\s*;/);
+    expect(css).not.toMatch(/--spacing-header:\s*;/);
+    // Preset default --btn-radius for classic preset remains intact because the cleared override was skipped
+    expect(css).toMatch(/--btn-radius:\s*[^;\s][^;]*;/);
+    expect(css).toContain('--custom-valid: 1.25rem;');
+    expect(css).toContain('--spacing-custom-safe: 32px;');
   });
 });

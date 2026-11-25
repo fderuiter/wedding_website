@@ -1,4 +1,4 @@
-import { FAQNodeSchema, LogisticsNodeSchema, ScheduleNodeSchema, GenericNodeSchema, ContentNodeSchema, isPrivateContentNode, RawUpdateAppConfigSchema, AppConfigSchema, layoutTokenSchema, fontTokenSchema, deriveBrandMonogram, ThemeTokensSchema, TypographyScaleSchema, SpacingScaleSchema, BorderTreatmentSchema, BrandDimensionsSchema } from '../schemas';
+import { FAQNodeSchema, LogisticsNodeSchema, ScheduleNodeSchema, GenericNodeSchema, ContentNodeSchema, isPrivateContentNode, isValidCssTokenValue, translateAppConfigSnapshot, RawUpdateAppConfigSchema, AppConfigSchema, layoutTokenSchema, fontTokenSchema, deriveBrandMonogram, ThemeTokensSchema, TypographyScaleSchema, SpacingScaleSchema, BorderTreatmentSchema, BrandDimensionsSchema } from '../schemas';
 import { ContentNodeAdminService } from '../admin.service';
 
 describe('Content Node Schema Validation', () => {
@@ -1075,6 +1075,118 @@ describe('Content Node Schema Validation', () => {
       expect(isPrivateContentNode({ data: ['true'] })).toBe(false);
       expect(isPrivateContentNode(null)).toBe(false);
       expect(isPrivateContentNode(undefined)).toBe(false);
+    });
+  });
+
+  describe('URL, CSS Token, and Snapshot Hardening', () => {
+    it('restricts baseUrl in RawUpdateAppConfigSchema and AppConfigSchema to empty string, http:, or https: origins', () => {
+      for (const allowedUrl of [
+        '',
+        'http://localhost:3000',
+        'https://wedding.example.com',
+        'https://wedding.example.com/celebration',
+      ]) {
+        expect(
+          RawUpdateAppConfigSchema.shape.baseUrl.safeParse(allowedUrl).success,
+        ).toBe(true);
+        expect(
+          AppConfigSchema.shape.baseUrl.safeParse(allowedUrl).success,
+        ).toBe(true);
+      }
+
+      for (const disallowedUrl of [
+        'javascript:alert(1)',
+        'data:text/html,<script>alert(1)</script>',
+        'vbscript:msgbox(1)',
+        'ftp://files.example.com',
+        'mailto:couple@example.com',
+        'tel:+15551234567',
+        '//evil.example.com',
+        '/relative/path',
+        ' https://wedding.example.com ',
+      ]) {
+        expect(
+          RawUpdateAppConfigSchema.shape.baseUrl.safeParse(disallowedUrl)
+            .success,
+        ).toBe(false);
+        expect(
+          AppConfigSchema.shape.baseUrl.safeParse(disallowedUrl).success,
+        ).toBe(false);
+      }
+    });
+
+    it('rejects url(, @import, expression(, and backslashes in isValidCssTokenValue and ThemeTokensSchema', () => {
+      for (const safeValue of [
+        '#B91C1C',
+        'rgba(15, 23, 42, 0.72)',
+        'linear-gradient(135deg, #fff, #000)',
+        '0 10px 25px -5px rgba(0, 0, 0, 0.1)',
+        'var(--custom-url-hint)',
+        '0.75rem',
+      ]) {
+        expect(isValidCssTokenValue(safeValue)).toBe(true);
+        expect(
+          ThemeTokensSchema.safeParse({ '--card-bg': safeValue }).success,
+        ).toBe(true);
+      }
+
+      for (const unsafeValue of [
+        'url(https://evil.example/exfil.png)',
+        'URL ("https://evil.example/exfil.png")',
+        '#fff url(https://evil.example/bg.svg)',
+        'image-set(url("x.png") 1x)',
+        '@import "https://evil.example/inject.css"',
+        '@IMPORT url(https://evil.example/inject.css)',
+        'expression(alert(1))',
+        'width:expression(alert(1))',
+        '\\75\\72\\6c(https://evil.example/escaped)',
+        'Inter\\27, sans-serif',
+      ]) {
+        expect(isValidCssTokenValue(unsafeValue)).toBe(false);
+        expect(
+          ThemeTokensSchema.safeParse({ '--card-bg': unsafeValue }).success,
+        ).toBe(false);
+      }
+    });
+
+    it('sanitizes unsafe URLs, colors, presets, layout tokens, and CSS tokens in translateAppConfigSnapshot', () => {
+      const translated = translateAppConfigSnapshot(
+        {
+          baseUrl: 'javascript:alert(1)',
+          photoAlbumUrl: 'ftp://evil.example/photos',
+          contactEmail: 'not-an-email',
+          faviconUrl: 'javascript:alert(1)',
+          ogImageUrl: '//evil.example/og.png',
+          brandLogoUrl: 'data:text/html,<script>alert(1)</script>',
+          colorPrimary: 'red; background: url(x)',
+          themePreset: 'unknown-preset',
+          layoutContainerMaxWidth: '100px; color: red',
+          themeTokens: {
+            '--btn-radius': '0.75rem',
+            '--card-bg': 'url(https://evil.example/bg.png)',
+            '--bad-expr': 'expression(alert(1))',
+            '--bad-slash': '\\75\\72\\6c(x)',
+            invalidKey: '12px',
+          },
+        },
+        'global',
+      );
+
+      expect(translated).not.toBeNull();
+      expect(translated!.update).toMatchObject({
+        baseUrl: '',
+        photoAlbumUrl: '',
+        contactEmail: '',
+        faviconUrl: '/assets/favicon.png',
+        ogImageUrl: '/images/placeholder.png',
+        brandLogoUrl: null,
+        colorPrimary: '#B91C1C',
+        themePreset: 'classic',
+        layoutContainerMaxWidth: '64rem',
+        themeTokens: {
+          '--btn-radius': '0.75rem',
+        },
+      });
     });
   });
 });

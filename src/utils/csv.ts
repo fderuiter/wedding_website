@@ -777,7 +777,7 @@ export function validateSingleCsvRow(
 export function escapeCsvCell(val: unknown): string {
   if (val === null || val === undefined) return '';
   let str = String(val);
-  if (/^[=+\-@\t\r]/.test(str)) {
+  if (/^(?:[\t\r]|\s*[=+\-@])/.test(str)) {
     str = `'${str}`;
   }
   if (str.includes('"') || str.includes(',') || str.includes('\n') || str.includes('\r')) {

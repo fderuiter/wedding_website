@@ -204,4 +204,53 @@ describe('{{rsvpUrl}} placeholder and BROADCAST_STARTER_TEMPLATES', () => {
     expect(cardHtml).toContain('RSVP &amp; View Invitation');
     expect(cardHtml).not.toContain('<script>');
   });
+
+  it('filters unsafe baseUrl and rsvpUrl schemes via sanitizeUrl before rendering href attributes', () => {
+    for (const unsafeBaseUrl of [
+      'javascript:alert(1)',
+      'data:text/html,<script>alert(1)</script>',
+      'vbscript:msgbox(1)',
+      'mailto:attacker@example.com',
+      '//evil.example.com',
+    ]) {
+      expect(buildGuestRsvpUrl(unsafeBaseUrl, 'GUEST26')).toBe(
+        '/guest?code=GUEST26'
+      );
+
+      const emailHtml = renderBroadcastTemplate(
+        '<a href="{{rsvpUrl}}">RSVP</a>',
+        {
+          guestName: 'Alice',
+          invitationCode: 'GUEST26',
+          baseUrl: unsafeBaseUrl,
+        },
+        { escapeHtml: true }
+      );
+      expect(emailHtml).toBe('<a href="/guest?code=GUEST26">RSVP</a>');
+    }
+
+    const explicitUnsafeRsvpHtml = renderBroadcastTemplate(
+      '<a href="{{rsvpUrl}}">RSVP</a>',
+      {
+        guestName: 'Alice',
+        invitationCode: 'GUEST26',
+        rsvpUrl: 'javascript:alert("xss")',
+      },
+      { escapeHtml: true }
+    );
+    expect(explicitUnsafeRsvpHtml).toBe('<a href="/guest">RSVP</a>');
+
+    const unsafeCardHtml = renderStationeryCardHtml(
+      'save-the-date',
+      'We cannot wait to celebrate with you!',
+      {
+        partner1Name: 'Sarah',
+        partner2Name: 'Dan',
+        baseUrl: 'javascript:alert(1)',
+        rsvpUrl: 'javascript:alert("card-xss")',
+      }
+    );
+    expect(unsafeCardHtml).toContain('href="/guest"');
+    expect(unsafeCardHtml).not.toContain('javascript:');
+  });
 });

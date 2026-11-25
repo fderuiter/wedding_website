@@ -1198,4 +1198,97 @@ describe('Request-Level Configuration Memoization (React cache)', () => {
       expect(unauth.modules.attractions).toBe(false);
     });
   });
+
+  describe('Database Column Sanitization vs Strict SITE_* Environment Validation', () => {
+    const savedEnv = process.env;
+
+    beforeEach(() => {
+      process.env = { ...savedEnv };
+      const globalWithStore = globalThis as typeof globalThis & {
+        globalFallbackStore?: Map<string, unknown>;
+      };
+      globalWithStore.globalFallbackStore?.clear();
+    });
+
+    afterAll(() => {
+      process.env = savedEnv;
+    });
+
+    it('sanitizes invalid database columns back to APP_DEFAULTS in normalizeRawDbConfig without crashing getAppConfig', async () => {
+      (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+
+      (prisma.appConfig.findUnique as jest.Mock).mockResolvedValueOnce({
+        ...baseConfig,
+        id: 'global',
+        partner1Name: 'Alex',
+        partner2Name: 'Taylor',
+        baseUrl: 'javascript:alert(1)',
+        photoAlbumUrl: 'ftp://bad.example/album',
+        contactEmail: 'invalid-email',
+        faviconUrl: 'javascript:alert(1)',
+        ogImageUrl: '//evil.example/og.png',
+        brandLogoUrl: 'javascript:alert(1)',
+        colorPrimary: 'not-a-hex-color',
+        colorSecondary: 'rgb(255, 0, 0)',
+        themePreset: 'corrupted-preset',
+        themeTokens: {
+          '--btn-radius': '12px',
+          '--card-bg': 'url(https://evil.example/bg.png)',
+          '--bad-expr': 'expression(alert(1))',
+          invalidKey: '10px',
+        },
+        layoutContainerMaxWidth: 'invalid-unit',
+        layoutGridGap: '10px; color: red',
+        rsvpDeadlineDate: 'not-a-date',
+        rsvpGracePeriodHours: 999,
+      });
+
+      const resolved = await getAppConfig('global');
+
+      expect(resolved.partner1Name).toBe('Alex');
+      expect(resolved.baseUrl).toBe(APP_DEFAULTS.baseUrl);
+      expect(resolved.photoAlbumUrl).toBe(APP_DEFAULTS.photoAlbumUrl);
+      expect(resolved.contactEmail).toBe(APP_DEFAULTS.contactEmail);
+      expect(resolved.faviconUrl).toBe(APP_DEFAULTS.faviconUrl);
+      expect(resolved.ogImageUrl).toBe(APP_DEFAULTS.ogImageUrl);
+      expect(resolved.brandLogoUrl).toBeUndefined();
+      expect(resolved.colorPrimary).toBe(APP_DEFAULTS.colorPrimary);
+      expect(resolved.colorSecondary).toBe(APP_DEFAULTS.colorSecondary);
+      expect(resolved.themePreset).toBe(APP_DEFAULTS.themePreset);
+      expect(resolved.themeTokens).toEqual({ '--btn-radius': '12px' });
+      expect(resolved.layoutContainerMaxWidth).toBe(
+        APP_DEFAULTS.layoutContainerMaxWidth,
+      );
+      expect(resolved.layoutGridGap).toBe(APP_DEFAULTS.layoutGridGap);
+      expect(resolved.rsvpDeadlineDate).toBe(APP_DEFAULTS.rsvpDeadlineDate);
+      expect(resolved.rsvpGracePeriodHours).toBe(
+        APP_DEFAULTS.rsvpGracePeriodHours,
+      );
+    });
+
+    it('keeps strict SITE_* environment variable validation in resolveAppConfig for unsafe URLs and disallowed CSS tokens', async () => {
+      (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+      (prisma.appConfig.findUnique as jest.Mock).mockResolvedValue({
+        ...baseConfig,
+        id: 'global',
+      });
+
+      const globalWithStore = globalThis as typeof globalThis & {
+        globalFallbackStore?: Map<string, unknown>;
+      };
+
+      process.env.SITE_BASE_URL = 'javascript:alert(1)';
+      await expect(getAppConfig('global')).rejects.toThrow(
+        /Production Configuration Validation Failure/,
+      );
+
+      delete process.env.SITE_BASE_URL;
+      globalWithStore.globalFallbackStore?.clear();
+      process.env.SITE_THEME_TOKENS =
+        '{"--card-bg":"url(https://evil.example/bg.png)"}';
+      await expect(getAppConfig('global')).rejects.toThrow(
+        /Production Configuration Validation Failure/,
+      );
+    });
+  });
 });

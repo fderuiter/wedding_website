@@ -10604,18 +10604,7 @@
                             "format": "date-time"
                           },
                           "baseUrl": {
-                            "anyOf": [
-                              {
-                                "type": "string",
-                                "format": "uri"
-                              },
-                              {
-                                "type": "string",
-                                "enum": [
-                                  ""
-                                ]
-                              }
-                            ]
+                            "type": "string"
                           },
                           "venueName": {
                             "type": "string",
@@ -10743,28 +10732,43 @@
                           },
                           "themePreset": {
                             "type": "string",
-                            "maxLength": 100
+                            "enum": [
+                              "classic",
+                              "modern",
+                              "romantic",
+                              "minimal",
+                              "editorial"
+                            ]
                           },
                           "themeTokens": {
-                            "nullable": true,
-                            "type": "object",
-                            "additionalProperties": {}
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "object",
+                                "additionalProperties": {}
+                              },
+                              {
+                                "type": "string",
+                                "nullable": true,
+                                "enum": [
+                                  null
+                                ]
+                              }
+                            ]
                           },
                           "layoutContainerMaxWidth": {
-                            "type": "string",
-                            "maxLength": 100
+                            "type": "string"
                           },
                           "layoutGridGap": {
-                            "type": "string",
-                            "maxLength": 100
+                            "type": "string"
                           },
                           "layoutCardPadding": {
-                            "type": "string",
-                            "maxLength": 100
+                            "type": "string"
                           },
                           "layoutBorderRadius": {
-                            "type": "string",
-                            "maxLength": 100
+                            "type": "string"
                           },
                           "features": {
                             "type": "array",
@@ -12300,18 +12304,7 @@
                           "format": "date-time"
                         },
                         "baseUrl": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "format": "uri"
-                            },
-                            {
-                              "type": "string",
-                              "enum": [
-                                ""
-                              ]
-                            }
-                          ]
+                          "type": "string"
                         },
                         "venueName": {
                           "type": "string",
@@ -12439,28 +12432,43 @@
                         },
                         "themePreset": {
                           "type": "string",
-                          "maxLength": 100
+                          "enum": [
+                            "classic",
+                            "modern",
+                            "romantic",
+                            "minimal",
+                            "editorial"
+                          ]
                         },
                         "themeTokens": {
-                          "nullable": true,
-                          "type": "object",
-                          "additionalProperties": {}
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "object",
+                              "additionalProperties": {}
+                            },
+                            {
+                              "type": "string",
+                              "nullable": true,
+                              "enum": [
+                                null
+                              ]
+                            }
+                          ]
                         },
                         "layoutContainerMaxWidth": {
-                          "type": "string",
-                          "maxLength": 100
+                          "type": "string"
                         },
                         "layoutGridGap": {
-                          "type": "string",
-                          "maxLength": 100
+                          "type": "string"
                         },
                         "layoutCardPadding": {
-                          "type": "string",
-                          "maxLength": 100
+                          "type": "string"
                         },
                         "layoutBorderRadius": {
-                          "type": "string",
-                          "maxLength": 100
+                          "type": "string"
                         },
                         "features": {
                           "type": "array",
@@ -16673,18 +16681,7 @@
                     ]
                   },
                   "baseUrl": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "format": "uri"
-                      },
-                      {
-                        "type": "string",
-                        "enum": [
-                          ""
-                        ]
-                      }
-                    ]
+                    "type": "string"
                   },
                   "venueName": {
                     "type": "string"
@@ -17250,18 +17247,7 @@
                     ]
                   },
                   "baseUrl": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "format": "uri"
-                      },
-                      {
-                        "type": "string",
-                        "enum": [
-                          ""
-                        ]
-                      }
-                    ]
+                    "type": "string"
                   },
                   "venueName": {
                     "type": "string"

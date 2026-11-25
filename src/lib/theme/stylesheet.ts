@@ -52,9 +52,18 @@ export function sanitizeFontToken(token: string | undefined | null, fallback: st
   return fallback;
 }
 
+const DISALLOWED_CSS_TOKEN_VALUE_REGEX =
+  /(?:^|[^a-zA-Z0-9_-])(?:url|expression)\s*\(|@import|\\/i;
+
 export function sanitizeTokenValue(val: string | undefined | null): string {
   if (!val || typeof val !== 'string') return '';
-  return val.replace(/[;{}<>\r\n]|\/\*|\*\//g, '');
+  if (DISALLOWED_CSS_TOKEN_VALUE_REGEX.test(val)) return '';
+  const cleaned = val
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/[;{}<>\r\n]|\/\*|\*\//g, '')
+    .trim();
+  if (!cleaned || DISALLOWED_CSS_TOKEN_VALUE_REGEX.test(cleaned)) return '';
+  return cleaned;
 }
 
 export function hexToRgb(hex: string): RGB {
@@ -368,7 +377,10 @@ export function generateDynamicStyles(
   if (customTokens && typeof customTokens === 'object') {
     for (const [k, v] of Object.entries(customTokens)) {
       if (k.startsWith('--')) {
-        sanitizedCustomTokens[k] = sanitizeTokenValue(v);
+        const sanitized = sanitizeTokenValue(v);
+        if (sanitized) {
+          sanitizedCustomTokens[k] = sanitized;
+        }
       }
     }
   }
@@ -377,7 +389,10 @@ export function generateDynamicStyles(
     for (const [k, v] of Object.entries(nonColorTokens)) {
       if (v && typeof v === 'string') {
         const tokenKey = k.startsWith('--') ? k : `--${k.replace(/([A-Z])/g, '-$1').toLowerCase()}`;
-        sanitizedCustomTokens[tokenKey] = sanitizeTokenValue(v);
+        const sanitized = sanitizeTokenValue(v);
+        if (sanitized) {
+          sanitizedCustomTokens[tokenKey] = sanitized;
+        }
       }
     }
   }
