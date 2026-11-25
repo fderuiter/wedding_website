@@ -8,12 +8,14 @@ import { CreateOfflineThankYouNoteSchema, thankYouService } from '@/features/reg
 export const GET = withApiMiddleware(async (req: NextRequest) => {
   const { searchParams } = new URL(req.url);
   const status = searchParams.get('status') || undefined;
+  const contributorStatus = searchParams.get('contributorStatus') || undefined;
   const search = searchParams.get('search') || undefined;
   const pageParam = searchParams.get('page');
   const pageSizeParam = searchParams.get('pageSize');
 
   const options: Parameters<typeof thankYouService.getThankYouNotes>[0] = {};
   if (status) options.status = status;
+  if (contributorStatus) options.contributorStatus = contributorStatus;
   if (search) options.search = search;
   if (pageParam) options.page = parseInt(pageParam, 10);
   if (pageSizeParam) options.pageSize = parseInt(pageSizeParam, 10);

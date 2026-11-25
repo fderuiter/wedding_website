@@ -1,5 +1,6 @@
 import { formatCurrency } from '@/utils/intl';
 import { withBasePath } from '@/lib/basePath';
+import { isFeatureEnabled, resolveModuleConfig } from '@/lib/modules';
 import {
   cleanOptionalSetupText,
   hasCustomStoryText,
@@ -213,23 +214,56 @@ export async function handleAdminWorkflowRoutes(
         const outcome = store.mutate((draft) => {
           draft.isAdminAuthenticated = true;
           const config = getActiveAppConfig(draft);
+          let didMutate = false;
+          if (
+            body.modules !== undefined ||
+            typeof body.showCountdown === 'boolean' ||
+            typeof body.showAddToCalendar === 'boolean'
+          ) {
+            const resolvedModules = resolveModuleConfig({
+              ...(config.modules ?? {}),
+              ...(typeof body.showCountdown === 'boolean'
+                ? { countdown: body.showCountdown }
+                : {}),
+              ...(typeof body.showAddToCalendar === 'boolean'
+                ? { addToCalendar: body.showAddToCalendar }
+                : {}),
+              ...(body.modules && typeof body.modules === 'object' && !Array.isArray(body.modules)
+                ? (body.modules as Record<string, unknown>)
+                : {}),
+            });
+            config.modules = resolvedModules;
+            config.showCountdown =
+              typeof body.showCountdown === 'boolean'
+                ? body.showCountdown
+                : resolvedModules.countdown;
+            config.showAddToCalendar =
+              typeof body.showAddToCalendar === 'boolean'
+                ? body.showAddToCalendar
+                : resolvedModules.addToCalendar;
+            didMutate = true;
+          }
           if (typeof body.setupCompleted === 'boolean') {
             config.setupCompleted = body.setupCompleted;
             if (body.setupCompleted) {
               draft.isSetupMode = false;
               draft.setupStep2Saved = false;
             }
+            didMutate = true;
+          }
+          if (didMutate) {
             config.updatedAt = new Date().toISOString();
           }
           const initialized = !draft.isSetupMode;
           const setupCompleted = initialized && config.setupCompleted !== false;
-          return { initialized, setupCompleted };
+          return { initialized, setupCompleted, modules: config.modules };
         });
         return wrapMiddlewareJson({
           success: true,
           initialized: outcome.initialized,
           setupCompleted: outcome.setupCompleted,
           requiresSetup: !outcome.initialized || !outcome.setupCompleted,
+          modules: outcome.modules,
         });
       }
 
@@ -325,6 +359,33 @@ export async function handleAdminWorkflowRoutes(
         }
         if (typeof body.colorSecondary === 'string' && body.colorSecondary.trim()) {
           config.colorSecondary = body.colorSecondary.trim();
+        }
+        if (
+          body.modules !== undefined ||
+          typeof body.showCountdown === 'boolean' ||
+          typeof body.showAddToCalendar === 'boolean'
+        ) {
+          const resolvedModules = resolveModuleConfig({
+            ...(config.modules ?? {}),
+            ...(typeof body.showCountdown === 'boolean'
+              ? { countdown: body.showCountdown }
+              : {}),
+            ...(typeof body.showAddToCalendar === 'boolean'
+              ? { addToCalendar: body.showAddToCalendar }
+              : {}),
+            ...(body.modules && typeof body.modules === 'object' && !Array.isArray(body.modules)
+              ? (body.modules as Record<string, unknown>)
+              : {}),
+          });
+          config.modules = resolvedModules;
+          config.showCountdown =
+            typeof body.showCountdown === 'boolean'
+              ? body.showCountdown
+              : resolvedModules.countdown;
+          config.showAddToCalendar =
+            typeof body.showAddToCalendar === 'boolean'
+              ? body.showAddToCalendar
+              : resolvedModules.addToCalendar;
         }
         if (body.venueDescription !== undefined) {
           config.venueDescription = cleanOptionalSetupText(body.venueDescription);
@@ -526,14 +587,18 @@ export async function handleAdminWorkflowRoutes(
         href: '/admin/dashboard/invitation-codes',
         actionLabel: guestListCompleted ? 'Manage Guest List' : 'Add Guest List',
       },
-      {
-        id: 'registry',
-        title: 'Gift Registry',
-        description: 'Add gifts or cash funds to your wedding registry.',
-        completed: registryCompleted,
-        href: '/registry/add-item',
-        actionLabel: registryCompleted ? 'Add More Gifts' : 'Add Registry Gifts',
-      },
+      ...(isFeatureEnabled('registry', config.modules)
+        ? [
+          {
+            id: 'registry',
+            title: 'Gift Registry',
+            description: 'Add gifts or cash funds to your wedding registry.',
+            completed: registryCompleted,
+            href: '/registry/add-item',
+            actionLabel: registryCompleted ? 'Add More Gifts' : 'Add Registry Gifts',
+          },
+        ]
+        : []),
       {
         id: 'seating-layout',
         title: 'Seating Layout',
@@ -2785,6 +2850,9 @@ export async function handleAdminWorkflowRoutes(
   if (pathname === '/api/admin/thank-you-notes' && method === 'GET') {
     const snapshot = store.getSnapshot();
     const statusParam = (searchParams.get('status') || 'all').trim().toLowerCase();
+    const contributorStatusParam = (searchParams.get('contributorStatus') || 'CONFIRMED')
+      .trim()
+      .toUpperCase();
     const search = (searchParams.get('search') || '').trim().toLowerCase();
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
     const pageSize = Math.max(
@@ -2792,10 +2860,13 @@ export async function handleAdminWorkflowRoutes(
       parseInt(searchParams.get('pageSize') || '50', 10) || 50,
     );
 
+    const confirmedContributors = snapshot.contributor.filter(
+      (c) => String(c.status || 'CONFIRMED').trim().toUpperCase() === 'CONFIRMED',
+    );
     let sent = 0;
     let unsent = 0;
     let notNeeded = 0;
-    for (const c of snapshot.contributor) {
+    for (const c of confirmedContributors) {
       const st = (c.thankYouStatus || 'Unsent')
         .trim()
         .toLowerCase()
@@ -2804,13 +2875,17 @@ export async function handleAdminWorkflowRoutes(
       else if (st === 'not needed' || st === 'notneeded') notNeeded += 1;
       else unsent += 1;
     }
-    const totalAll = snapshot.contributor.length;
+    const totalAll = confirmedContributors.length;
     const thanked = sent + notNeeded;
     const completionPercentage =
       totalAll > 0 ? Math.round((thanked / totalAll) * 100) : 0;
 
     const filtered = snapshot.contributor
       .filter((c) => {
+        if (contributorStatusParam && contributorStatusParam !== 'ALL') {
+          const lifecycle = String(c.status || 'CONFIRMED').trim().toUpperCase();
+          if (lifecycle !== contributorStatusParam) return false;
+        }
         if (statusParam && statusParam !== 'all') {
           const normalized = (c.thankYouStatus || 'Unsent')
             .trim()
@@ -2859,8 +2934,16 @@ export async function handleAdminWorkflowRoutes(
 
   if (pathname === '/api/admin/thank-you-notes/export' && method === 'GET') {
     const snapshot = store.getSnapshot();
+    const contributorStatusParam = (searchParams.get('contributorStatus') || 'CONFIRMED')
+      .trim()
+      .toUpperCase();
+    const exportContributors = snapshot.contributor.filter((c) =>
+      contributorStatusParam === 'ALL'
+        ? true
+        : String(c.status || 'CONFIRMED').trim().toUpperCase() === contributorStatusParam,
+    );
     const csv = buildThankYouNotesCsv(
-      snapshot.contributor,
+      exportContributors,
       snapshot.registryItem,
       snapshot.invitationCode,
     );
@@ -2874,13 +2957,27 @@ export async function handleAdminWorkflowRoutes(
     (method === 'GET' || method === 'POST')
   ) {
     const body = method === 'POST' ? await readJsonBody(request) : {};
+    const rawSkipQuery = searchParams.get('skipUnaddressed');
     const skipUnaddressed =
-      searchParams.get('skipUnaddressed') === 'true' ||
-      searchParams.get('skipUnaddressed') === '1' ||
-      body.skipUnaddressed === true;
+      body.skipUnaddressed !== undefined
+        ? Boolean(body.skipUnaddressed)
+        : rawSkipQuery === null || rawSkipQuery.trim() === ''
+          ? true
+          : rawSkipQuery.trim().toLowerCase() !== 'false' && rawSkipQuery.trim() !== '0';
+    const contributorStatusParam = (searchParams.get('contributorStatus') || 'CONFIRMED')
+      .trim()
+      .toUpperCase();
     const snapshot = store.getSnapshot();
     const lines: string[] = [];
+    const seenInviteIds = new Set<string>();
+    const seenAddresses = new Set<string>();
     for (const c of snapshot.contributor) {
+      if (
+        contributorStatusParam !== 'ALL' &&
+        String(c.status || 'CONFIRMED').trim().toUpperCase() !== contributorStatusParam
+      ) {
+        continue;
+      }
       const inv = c.invitationCodeId
         ? snapshot.invitationCode.find((i) => i.id === c.invitationCodeId)
         : null;
@@ -2895,6 +2992,17 @@ export async function handleAdminWorkflowRoutes(
       if (resolvedParts.length === 0 && skipUnaddressed) {
         continue;
       }
+      const inviteKey = (c.invitationCodeId || '').trim();
+      const addrKey = resolvedParts
+        .join(', ')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+      if ((inviteKey && seenInviteIds.has(inviteKey)) || (addrKey && seenAddresses.has(addrKey))) {
+        continue;
+      }
+      if (inviteKey) seenInviteIds.add(inviteKey);
+      if (addrKey) seenAddresses.add(addrKey);
       const addr = resolvedParts.length > 0 ? resolvedParts.join(', ') : 'Address pending';
       lines.push(`${c.name} — ${addr}`);
     }

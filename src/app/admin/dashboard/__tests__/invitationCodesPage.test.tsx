@@ -2769,5 +2769,81 @@ describe('InvitationCodesDashboardPage', () => {
       }
     });
   });
+
+  describe('Quarantined address-collection household reconciliation', () => {
+    it('surfaces Merge into <Household> and reconciliation banner for matched address-collection rows while preserving Promote to Invited for unmatched rows', async () => {
+      mockMergeDuplicates.mockResolvedValue({ id: 'inv-primary' });
+      (useAdminInvitationCodes as jest.Mock).mockReturnValue({
+        data: [
+          {
+            id: 'inv-primary',
+            guestName: 'Elena Gilbert',
+            householdName: 'Gilbert Household',
+            code: 'GILBERT26',
+            email: 'elena@example.com',
+            partyTags: ['Bride'],
+            used: true,
+          },
+          {
+            id: 'addr-matched',
+            guestName: 'Elena Gilbert',
+            code: 'ADDR1111',
+            email: 'elena@example.com',
+            addressLine1: '2104 Maple St',
+            city: 'Mystic Falls',
+            state: 'VA',
+            zipCode: '22901',
+            partyTags: ['address-collection'],
+            used: false,
+          },
+          {
+            id: 'addr-unmatched',
+            guestName: 'Distant Cousin',
+            code: 'ADDR2222',
+            email: 'cousin@example.com',
+            addressLine1: '99 Oak Ln',
+            city: 'Richmond',
+            state: 'VA',
+            zipCode: '23220',
+            partyTags: ['address-collection'],
+            used: false,
+          },
+        ],
+        isLoading: false,
+        error: null,
+        create: mockCreate,
+        update: mockUpdate,
+        remove: mockRemove,
+        removeBatch: mockRemoveBatch,
+        updateBatch: mockUpdateBatch,
+        batchUpdateTags: mockBatchUpdateTags,
+        mergeDuplicates: mockMergeDuplicates,
+        fetchAll: mockFetchAll,
+      });
+
+      const { container } = renderComponent();
+
+      const banner = screen.getByTestId('matched-address-submissions-banner');
+      expect(banner).toHaveTextContent('1 guest address submission matched invited households');
+
+      // Matched address-collection row renders Merge into Gilbert Household as primary action
+      const mergeRowBtn = screen.getByTestId('merge-address-guest-addr-matched');
+      expect(mergeRowBtn).toHaveTextContent('Merge into Gilbert Household');
+
+      // Unmatched address-collection row keeps Promote to Invited as primary action without Merge button
+      expect(screen.queryByTestId('merge-address-guest-addr-unmatched')).not.toBeInTheDocument();
+      expect(screen.getByTestId('promote-guest-addr-unmatched')).toBeInTheDocument();
+
+      expect(await axe(container)).toHaveNoViolations();
+
+      fireEvent.click(mergeRowBtn);
+      // Confirm dialog before merge
+      const confirmBtn = await screen.findByRole('button', { name: /Merge into Household/i });
+      fireEvent.click(confirmBtn);
+      await waitFor(() => {
+        expect(mockMergeDuplicates).toHaveBeenCalledWith('inv-primary', ['addr-matched']);
+      });
+    });
+  });
 });
 

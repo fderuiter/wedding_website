@@ -1364,4 +1364,187 @@ describe('ThankYouNotesPage', () => {
       process.env.NEXT_PUBLIC_BASE_PATH = prevBasePath;
     }
   });
+
+  it('defaults Skip unaddressed labels to checked, toggles Confirmed gifts only lifecycle filter, submits inline offline gift mailing addresses, and merges matched address-collection households', async () => {
+    let catalogItems = [
+      {
+        id: 'inv-jenkins',
+        code: 'JENKINS26',
+        guestName: 'Sarah Jenkins',
+        householdName: 'The Jenkins Family',
+        email: 'sarah@example.com',
+        partyTags: ['Bride'],
+      },
+      {
+        id: 'addr-jenkins',
+        code: 'ADDR9001',
+        guestName: 'Sarah Jenkins',
+        email: 'sarah@example.com',
+        addressLine1: '742 Evergreen Terrace',
+        city: 'Springfield',
+        state: 'IL',
+        zipCode: '62704',
+        country: 'USA',
+        partyTags: ['address-collection'],
+      },
+    ];
+
+    (global.fetch as jest.Mock).mockImplementation((url: string, options?: RequestInit) => {
+      if (url.includes('/api/admin/invitation-codes/catalog')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ success: true, data: { items: catalogItems } }),
+        });
+      }
+      if (url.includes('/api/registry/items')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            data: { items: [{ id: 'r1', name: 'Espresso Machine', category: 'Kitchen' }] },
+          }),
+        });
+      }
+      if (url.includes('/api/admin/invitation-codes/merge') && options?.method === 'POST') {
+        catalogItems = [
+          {
+            ...catalogItems[0],
+            addressLine1: '742 Evergreen Terrace',
+            city: 'Springfield',
+            state: 'IL',
+            zipCode: '62704',
+            country: 'USA',
+          } as (typeof catalogItems)[number],
+        ];
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ success: true, data: catalogItems[0] }),
+        });
+      }
+      if (url.endsWith('/api/admin/thank-you-notes') && options?.method === 'POST') {
+        const body = JSON.parse(String(options.body));
+        return Promise.resolve({
+          ok: true,
+          status: 201,
+          json: async () => ({
+            success: true,
+            item: {
+              id: 'c-offline-inline',
+              name: body.name,
+              amount: body.amount,
+              date: new Date().toISOString(),
+              thankYouStatus: 'Unsent',
+              addressLine1: body.addressLine1,
+              city: body.city,
+              state: body.state,
+              zipCode: body.zipCode,
+              country: body.country,
+            },
+          }),
+        });
+      }
+      if (url.includes('/api/admin/thank-you-notes')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => mockData,
+        });
+      }
+      return Promise.reject(new Error(`Unknown endpoint: ${url}`));
+    });
+
+    const { container } = render(
+      <ToastProvider>
+        <ThankYouNotesPage />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Alice Johnson')).toBeInTheDocument();
+    });
+
+    // 1. Skip unaddressed labels is checked by default
+    const skipCheckbox = screen.getByLabelText('Skip unaddressed labels') as HTMLInputElement;
+    expect(skipCheckbox.checked).toBe(true);
+
+    // 2. Matched address-collection banner renders and merges cleanly via /api/admin/invitation-codes/merge
+    const banner = await screen.findByTestId('matched-households-banner');
+    expect(banner).toHaveTextContent('1 guest address submission matched invited households');
+    fireEvent.click(
+      within(banner).getByRole('button', { name: /Review & Merge into Households/i })
+    );
+
+    const mergeDialog = await screen.findByRole('dialog');
+    expect(await axe(mergeDialog)).toHaveNoViolations();
+    fireEvent.click(within(mergeDialog).getByTestId('thank-you-merge-match-addr-jenkins'));
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/admin/invitation-codes/merge'),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            primaryId: 'inv-jenkins',
+            secondaryIds: ['addr-jenkins'],
+          }),
+        })
+      );
+    });
+
+    // 3. Confirmed gifts only switch toggles lifecycle filter and forwards contributorStatus
+    const confirmedSwitch = screen.getByRole('switch', { name: 'Confirmed gifts only' });
+    expect(confirmedSwitch).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(confirmedSwitch);
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('contributorStatus=ALL')
+      );
+    });
+
+    const lifecycleSelect = await screen.findByLabelText('Filter by gift lifecycle status');
+    fireEvent.change(lifecycleSelect, { target: { value: 'RESERVED' } });
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('contributorStatus=RESERVED')
+      );
+    });
+
+    // 4. Record Offline Gift submits inline mailing address without requiring household selection
+    fireEvent.click(screen.getByRole('button', { name: 'Record Offline Gift' }));
+    fireEvent.change(await screen.findByLabelText('Contributor Name'), {
+      target: { value: 'Uncle George' },
+    });
+    fireEvent.change(screen.getByLabelText('Gift Value ($)'), {
+      target: { value: '200' },
+    });
+    fireEvent.change(screen.getByLabelText('Address Line 1'), {
+      target: { value: '550 Madison Ave' },
+    });
+    fireEvent.change(screen.getByLabelText('City'), {
+      target: { value: 'New York' },
+    });
+    fireEvent.change(screen.getByLabelText('State'), {
+      target: { value: 'NY' },
+    });
+    fireEvent.change(screen.getByLabelText('ZIP Code'), {
+      target: { value: '10022' },
+    });
+    fireEvent.change(screen.getByLabelText('Country'), {
+      target: { value: 'USA' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save Offline Gift' }));
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/admin/thank-you-notes'),
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.stringContaining('"addressLine1":"550 Madison Ave"'),
+        })
+      );
+    });
+
+    expect(await axe(container)).toHaveNoViolations();
+  });
 });

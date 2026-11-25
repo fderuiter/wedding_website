@@ -131,14 +131,15 @@ test.describe('Resumable Setup Route & Unified Sample Cache Invalidation', () =>
     expect(new URL(page.url()).pathname).toBe('/admin/setup');
     await expect(page.getByRole('heading', { name: 'Step 4: Guest List Import' })).toBeVisible();
 
-    // Advance to Step 5 and verify Wedding Party & Attractions counts reflect seeded sample data (> 0)
+    // Advance to Step 5 and verify Wedding Party & Attractions counts exclude sample data (0 custom items) while OnboardingChecklist renders
     await page.getByRole('button', { name: 'Skip for Now' }).click();
     await expect(page.getByRole('heading', { name: 'Step 5: Complete Setup' })).toBeVisible();
 
     const partyBtn = page.getByRole('button', { name: /Manage Wedding Party/i });
     const attractionsBtn = page.getByRole('button', { name: /Manage Attractions/i });
-    await expect(partyBtn).not.toContainText('(0 members)');
-    await expect(attractionsBtn).not.toContainText('(0 items)');
+    await expect(partyBtn).toContainText('(0 members)');
+    await expect(attractionsBtn).toContainText('(0 items)');
+    await expect(page.getByTestId('onboarding-checklist')).toBeVisible();
 
     // Reload browser on Step 5 -> SetupWizard remains mounted on /admin/setup at Step 5
     await page.reload({ waitUntil: 'domcontentloaded' });

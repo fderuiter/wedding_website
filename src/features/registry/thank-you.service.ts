@@ -5,7 +5,12 @@ import { getAppConfig } from '@/lib/config';
 import { getPresetTokens } from '@/lib/theme/presets';
 import { createAuditSnapshot, createBatchAuditSnapshots } from '@/lib/audit';
 import { executeInTransaction } from '@/lib/transaction';
-import { ContributorSchema, type SendThankYouEmailDTO, type UpdateThankYouNoteDTO } from './schemas';
+import {
+  ContributorSchema,
+  type ContributorStatus,
+  type SendThankYouEmailDTO,
+  type UpdateThankYouNoteDTO,
+} from './schemas';
 import { substituteThankYouTemplateTokens, type ContributorRecord } from './types';
 import { ApiError } from '@/utils/ApiError';
 import { escapeCsvCell } from '@/utils/csv';
@@ -19,6 +24,7 @@ import {
 
 interface ThankYouNotesFilterOptions {
   status?: string;
+  contributorStatus?: ContributorStatus | 'ALL' | string;
   search?: string;
   page?: number;
   pageSize?: number;
@@ -72,6 +78,48 @@ function normalizeNullablePostalValue(value: string | null | undefined): string 
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function isStaticExportRuntime(): boolean {
+  return process.env.STATIC_EXPORT === 'true' || process.env.STATIC_EXPORT === '1';
+}
+
+function buildSampleContributorExclusionClause() {
+  return {
+    OR: [
+      { registryItem: { isSample: true } },
+      { invitationCode: { isSample: true } },
+      { id: { startsWith: 'sample-contributor-' } },
+    ],
+  };
+}
+
+function normalizePostalDedupeKey(
+  resolved: ReturnType<typeof resolveContributorPostalAddress>
+): string {
+  const cleanSegment = (val: string) =>
+    val
+      .trim()
+      .toLowerCase()
+      .replace(/[.,#]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  const rawCountry = cleanSegment(resolved.country);
+  const normalizedCountry =
+    !rawCountry ||
+    rawCountry === 'us' ||
+    rawCountry === 'usa' ||
+    rawCountry === 'united states'
+      ? 'us'
+      : rawCountry;
+  return [
+    cleanSegment(resolved.addressLine1),
+    cleanSegment(resolved.addressLine2),
+    cleanSegment(resolved.city),
+    cleanSegment(resolved.state),
+    cleanSegment(resolved.zipCode),
+    normalizedCountry,
+  ].join('|');
+}
+
 function buildDefaultThankYouSubject(config: Record<string, any> | null | undefined): string {
   const partner1 = String(config?.partner1Name || config?.brideName || '').trim();
   const partner2 = String(config?.partner2Name || config?.groomName || '').trim();
@@ -87,9 +135,36 @@ function buildDefaultThankYouSubject(config: Record<string, any> | null | undefi
 export class ThankYouService {
   constructor(private client: any = prisma) {}
 
+  private buildMetricsWhereClause(): Record<string, any> {
+    const where: Record<string, any> = {
+      status: { equals: 'CONFIRMED', mode: 'insensitive' },
+    };
+    if (!isStaticExportRuntime()) {
+      where.NOT = buildSampleContributorExclusionClause();
+    }
+    return where;
+  }
+
   private buildWhereClause(options: ThankYouNotesFilterOptions = {}): any {
-    const { status, search } = options;
+    const { status, contributorStatus, search } = options;
     const where: any = {};
+
+    const normalizedLifecycle = contributorStatus?.trim().toUpperCase();
+    if (!normalizedLifecycle || normalizedLifecycle === 'CONFIRMED') {
+      where.status = { equals: 'CONFIRMED', mode: 'insensitive' };
+    } else if (
+      normalizedLifecycle === 'RESERVED' ||
+      normalizedLifecycle === 'CANCELLED' ||
+      normalizedLifecycle === 'REFUNDED'
+    ) {
+      where.status = { equals: normalizedLifecycle, mode: 'insensitive' };
+    } else if (normalizedLifecycle !== 'ALL') {
+      where.status = { equals: contributorStatus!.trim(), mode: 'insensitive' };
+    }
+
+    if (!isStaticExportRuntime()) {
+      where.NOT = buildSampleContributorExclusionClause();
+    }
 
     if (status && status.trim() && status.toLowerCase() !== 'all') {
       const targetStatus = status.trim().toLowerCase().replace(/_/g, ' ');
@@ -129,11 +204,13 @@ export class ThankYouService {
     const take = pageSize;
 
     const where = this.buildWhereClause(options);
+    const metricsWhere = this.buildMetricsWhereClause();
 
     // Compute status progress aggregations, total matching filtered items, and paginated records concurrently
     const [statusGroups, totalFilteredCount, rawContributors] = await Promise.all([
       this.client.contributor.groupBy({
         by: ['thankYouStatus'],
+        where: metricsWhere,
         _count: { _all: true },
       }),
       this.client.contributor.count({ where }),
@@ -226,6 +303,12 @@ export class ThankYouService {
       invitationCodeId?: string | null;
       thankYouStatus?: 'Unsent' | 'Sent' | 'Not Needed';
       thankYouNote?: string | null;
+      addressLine1?: string | null;
+      addressLine2?: string | null;
+      city?: string | null;
+      state?: string | null;
+      zipCode?: string | null;
+      country?: string | null;
     },
     author: string = 'Admin'
   ) {
@@ -263,6 +346,12 @@ export class ThankYouService {
 
       const resolvedStatus = data.thankYouStatus || 'Unsent';
       const resolvedSentAt = resolvedStatus === 'Sent' ? new Date() : null;
+      const inlinePostalData: Record<string, string | null> = {};
+      for (const key of POSTAL_ADDRESS_KEYS) {
+        if (data[key] !== undefined) {
+          inlinePostalData[key] = normalizeNullablePostalValue(data[key]);
+        }
+      }
 
       const created = await txClient.contributor.create({
         data: {
@@ -278,6 +367,7 @@ export class ThankYouService {
             data.thankYouNote && data.thankYouNote.trim() ? data.thankYouNote.trim() : null,
           registryItemId: targetItemId,
           invitationCodeId: targetInviteId,
+          ...inlinePostalData,
         },
         include: {
           registryItem: {
@@ -613,6 +703,7 @@ export class ThankYouService {
             'Category',
             'Contribution Amount',
             'Contribution Date',
+            'Contribution Status',
             'Thank-You Status',
             'Sent Date',
             'Note Draft',
@@ -650,6 +741,7 @@ export class ThankYouService {
                 country: true,
                 message: true,
                 amount: true,
+                status: true,
                 date: true,
                 thankYouStatus: true,
                 thankYouSentAt: true,
@@ -703,6 +795,7 @@ export class ThankYouService {
                 escapeCsvCell(item.registryItem?.category || ''),
                 escapeCsvCell(item.amount !== undefined && item.amount !== null ? item.amount : ''),
                 escapeCsvCell(formattedDate),
+                escapeCsvCell(item.status || 'CONFIRMED'),
                 escapeCsvCell(item.thankYouStatus || 'Unsent'),
                 escapeCsvCell(formattedSentAt),
                 escapeCsvCell(item.thankYouNote || ''),
@@ -757,43 +850,99 @@ export class ThankYouService {
     const batchSize = 1000;
     const template = options.template || 'avery_5160';
     const skipUnaddressed = Boolean(
-      options.skipUnaddressed ?? options.themeOptions?.skipUnaddressed
+      options.skipUnaddressed ?? options.themeOptions?.skipUnaddressed ?? true
     );
     let resolvedThemeOptions: LabelThemeOptions | undefined = options.themeOptions
       ? { ...options.themeOptions, skipUnaddressed }
       : undefined;
 
+    const seenInviteIds = new Set<string>();
+    const seenPostalKeys = new Set<string>();
+
     const chunkFetcher = async (cursor?: string) => {
-      const records: (AddressContributorInput & { id: string })[] = await client.contributor.findMany({
-        where,
-        take: batchSize,
-        orderBy: { id: 'asc' },
-        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-        select: {
-          id: true,
-          name: true,
-          addressLine1: true,
-          addressLine2: true,
-          city: true,
-          state: true,
-          zipCode: true,
-          country: true,
-          invitationCode: {
-            select: {
-              guestName: true,
-              addressLine1: true,
-              addressLine2: true,
-              city: true,
-              state: true,
-              zipCode: true,
-              country: true,
+      if (!cursor) {
+        seenInviteIds.clear();
+        seenPostalKeys.clear();
+      }
+
+      let activeCursor = cursor;
+      while (true) {
+        const records: (AddressContributorInput & {
+          id: string;
+          invitationCodeId?: string | null;
+          invitationCode?: NonNullable<AddressContributorInput['invitationCode']> & {
+            id?: string;
+            householdName?: string | null;
+          };
+        })[] = await client.contributor.findMany({
+          where,
+          take: batchSize,
+          orderBy: { id: 'asc' },
+          ...(activeCursor ? { cursor: { id: activeCursor }, skip: 1 } : {}),
+          select: {
+            id: true,
+            name: true,
+            invitationCodeId: true,
+            addressLine1: true,
+            addressLine2: true,
+            city: true,
+            state: true,
+            zipCode: true,
+            country: true,
+            invitationCode: {
+              select: {
+                id: true,
+                guestName: true,
+                householdName: true,
+                addressLine1: true,
+                addressLine2: true,
+                city: true,
+                state: true,
+                zipCode: true,
+                country: true,
+              },
             },
           },
-        },
-      });
+        });
 
-      const nextCursor = records.length > 0 ? records[records.length - 1].id : null;
-      return { items: records, nextCursor };
+        if (!records || records.length === 0) {
+          return { items: [], nextCursor: null };
+        }
+
+        const deduped: typeof records = [];
+        for (const record of records) {
+          const inviteId = (record.invitationCodeId || record.invitationCode?.id || '').trim();
+          const resolvedPostal = resolveContributorPostalAddress(record);
+          const postalKey = resolvedPostal.hasAddress
+            ? normalizePostalDedupeKey(resolvedPostal)
+            : '';
+
+          if ((inviteId && seenInviteIds.has(inviteId)) || (postalKey && seenPostalKeys.has(postalKey))) {
+            continue;
+          }
+
+          if (inviteId) {
+            seenInviteIds.add(inviteId);
+          }
+          if (postalKey) {
+            seenPostalKeys.add(postalKey);
+          }
+
+          deduped.push(record);
+        }
+
+        const lastId = records[records.length - 1]?.id ?? null;
+        const hasMorePages = records.length >= batchSize && Boolean(lastId) && lastId !== activeCursor;
+
+        if (deduped.length > 0 || !hasMorePages) {
+          return {
+            items: deduped,
+            nextCursor: hasMorePages ? lastId : null,
+          };
+        }
+
+        activeCursor = lastId ?? undefined;
+      }
     };
 
     if (!resolvedThemeOptions) {

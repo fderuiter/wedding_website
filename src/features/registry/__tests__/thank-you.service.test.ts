@@ -1,3 +1,4 @@
+import { inflateSync } from 'zlib';
 import { ThankYouService } from '../thank-you.service';
 import { getAppConfig } from '@/lib/config';
 import { MultiChannelMessagingProvider } from '@/features/broadcast';
@@ -45,32 +46,57 @@ describe('ThankYouService', () => {
   beforeEach(() => {
     let mockData: any[] = [];
 
+    const applyMockWhere = (rows: any[], where?: any) => {
+      let results = [...rows];
+      if (!where) return results;
+
+      if (where.status?.equals) {
+        const eq = where.status.equals.toLowerCase();
+        results = results.filter(
+          (c) => (c.status || 'CONFIRMED').toLowerCase() === eq
+        );
+      }
+
+      if (where.NOT?.OR) {
+        results = results.filter(
+          (c) =>
+            c.registryItem?.isSample !== true &&
+            c.invitationCode?.isSample !== true &&
+            !(typeof c.id === 'string' && c.id.startsWith('sample-contributor-'))
+        );
+      }
+
+      if (where.thankYouStatus?.equals) {
+        const eq = where.thankYouStatus.equals.toLowerCase();
+        results = results.filter(
+          (c) => (c.thankYouStatus || 'unsent').toLowerCase() === eq
+        );
+      } else if (where.thankYouStatus?.in) {
+        const list = where.thankYouStatus.in.map((s: string) => s.toLowerCase());
+        results = results.filter((c) =>
+          list.includes((c.thankYouStatus || 'unsent').toLowerCase())
+        );
+      }
+
+      if (where.OR) {
+        const term = where.OR[0].name.contains.toLowerCase();
+        results = results.filter(
+          (c) =>
+            (c.name || '').toLowerCase().includes(term) ||
+            (c.registryItem?.name || '').toLowerCase().includes(term)
+        );
+      }
+
+      return results;
+    };
+
     mockPrisma = {
       contributor: {
         findMany: jest.fn().mockImplementation(async (args?: any) => {
           if (!args || (!args.where && args.skip === undefined && args.take === undefined && !args.cursor)) {
             return mockData;
           }
-          let results = [...mockData];
-          if (args.where?.thankYouStatus?.equals) {
-            const eq = args.where.thankYouStatus.equals.toLowerCase();
-            results = results.filter(
-              (c) => (c.thankYouStatus || 'unsent').toLowerCase() === eq
-            );
-          } else if (args.where?.thankYouStatus?.in) {
-            const list = args.where.thankYouStatus.in.map((s: string) => s.toLowerCase());
-            results = results.filter((c) =>
-              list.includes((c.thankYouStatus || 'unsent').toLowerCase())
-            );
-          }
-          if (args.where?.OR) {
-            const term = args.where.OR[0].name.contains.toLowerCase();
-            results = results.filter(
-              (c) =>
-                (c.name || '').toLowerCase().includes(term) ||
-                (c.registryItem?.name || '').toLowerCase().includes(term)
-            );
-          }
+          let results = applyMockWhere(mockData, args.where);
           if (args.cursor?.id) {
             const cursorIdx = results.findIndex((c) => c.id === args.cursor.id);
             if (cursorIdx !== -1) {
@@ -84,31 +110,12 @@ describe('ThankYouService', () => {
           return results.slice(0, take);
         }),
         count: jest.fn().mockImplementation(async (args?: any) => {
-          let results = [...mockData];
-          if (args?.where?.thankYouStatus?.equals) {
-            const eq = args.where.thankYouStatus.equals.toLowerCase();
-            results = results.filter(
-              (c) => (c.thankYouStatus || 'unsent').toLowerCase() === eq
-            );
-          } else if (args?.where?.thankYouStatus?.in) {
-            const list = args.where.thankYouStatus.in.map((s: string) => s.toLowerCase());
-            results = results.filter((c) =>
-              list.includes((c.thankYouStatus || 'unsent').toLowerCase())
-            );
-          }
-          if (args?.where?.OR) {
-            const term = args.where.OR[0].name.contains.toLowerCase();
-            results = results.filter(
-              (c) =>
-                (c.name || '').toLowerCase().includes(term) ||
-                (c.registryItem?.name || '').toLowerCase().includes(term)
-            );
-          }
-          return results.length;
+          return applyMockWhere(mockData, args?.where).length;
         }),
-        groupBy: jest.fn().mockImplementation(async () => {
+        groupBy: jest.fn().mockImplementation(async (args?: any) => {
+          const filtered = applyMockWhere(mockData, args?.where);
           const map: Record<string, number> = {};
-          for (const c of mockData) {
+          for (const c of filtered) {
             const st = c.thankYouStatus || 'Unsent';
             map[st] = (map[st] || 0) + 1;
           }
@@ -290,6 +297,14 @@ describe('ThankYouService', () => {
       expect(mockPrisma.contributor.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
+            status: { equals: 'CONFIRMED', mode: 'insensitive' },
+            NOT: {
+              OR: [
+                { registryItem: { isSample: true } },
+                { invitationCode: { isSample: true } },
+                { id: { startsWith: 'sample-contributor-' } },
+              ],
+            },
             thankYouStatus: { equals: 'Unsent', mode: 'insensitive' },
             OR: [
               { name: { contains: 'Coffee', mode: 'insensitive' } },
@@ -300,6 +315,16 @@ describe('ThankYouService', () => {
       );
       expect(mockPrisma.contributor.groupBy).toHaveBeenCalledWith({
         by: ['thankYouStatus'],
+        where: {
+          status: { equals: 'CONFIRMED', mode: 'insensitive' },
+          NOT: {
+            OR: [
+              { registryItem: { isSample: true } },
+              { invitationCode: { isSample: true } },
+              { id: { startsWith: 'sample-contributor-' } },
+            ],
+          },
+        },
         _count: { _all: true },
       });
     });
@@ -490,7 +515,7 @@ describe('ThankYouService', () => {
       const csv = await streamToText(stream);
 
       expect(csv).toContain(
-        'Contributor Name,Email,Guest Message,Gift Item,Category,Contribution Amount,Contribution Date,Thank-You Status,Sent Date,Note Draft'
+        'Contributor Name,Email,Guest Message,Gift Item,Category,Contribution Amount,Contribution Date,Contribution Status,Thank-You Status,Sent Date,Note Draft'
       );
       expect(csv).toContain('Alice Johnson');
       expect(csv).toContain('alice@example.com');
@@ -536,7 +561,7 @@ describe('ThankYouService', () => {
       const csv = await streamToText(stream);
 
       expect(csv).toBe(
-        'Contributor Name,Email,Guest Message,Gift Item,Category,Contribution Amount,Contribution Date,Thank-You Status,Sent Date,Note Draft,Retailer Order Number,Carrier,Tracking Number,Linked Guest,Address Line 1,Address Line 2,City,State,ZIP Code,Country\n'
+        'Contributor Name,Email,Guest Message,Gift Item,Category,Contribution Amount,Contribution Date,Contribution Status,Thank-You Status,Sent Date,Note Draft,Retailer Order Number,Carrier,Tracking Number,Linked Guest,Address Line 1,Address Line 2,City,State,ZIP Code,Country\n'
       );
     });
 
@@ -1185,6 +1210,338 @@ describe('ThankYouService', () => {
       );
       expect(linked.invitationCode?.addressLine1).toBe('100 Wedding Blvd');
       expect(mockPrisma.snapshotVersion.create).toHaveBeenCalled();
+    });
+
+    it('persists inline street/city/state/zip/country on Contributor in createOfflineGift without requiring a linked household', async () => {
+      const txClient = {
+        $queryRaw: jest.fn().mockResolvedValue([{ id: 'item-1' }]),
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'item-1',
+            name: 'Cash Fund',
+            price: 500,
+            amountContributed: 0,
+            isGroupGift: true,
+          }),
+          update: jest.fn().mockResolvedValue({ id: 'item-1' }),
+        },
+        invitationCode: {
+          findUnique: jest.fn(),
+        },
+        contributor: {
+          create: jest.fn().mockImplementation(async ({ data }: any) => ({
+            id: 'c-inline-addr',
+            ...data,
+            date: new Date('2026-06-20T00:00:00.000Z'),
+            registryItem: { id: 'item-1', name: 'Cash Fund', category: 'Travel' },
+            invitationCode: null,
+          })),
+        },
+        snapshotVersion: {
+          create: jest.fn().mockResolvedValue({ id: 'snap-1' }),
+          findMany: jest.fn().mockResolvedValue([]),
+          deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+        },
+      };
+      mockPrisma.$transaction = jest.fn((fn: any) => fn(txClient));
+
+      const created = await service.createOfflineGift({
+        name: 'Uncle George',
+        amount: 200,
+        registryItemId: 'item-1',
+        addressLine1: '  550 Madison Ave  ',
+        addressLine2: '  Apt 12B ',
+        city: ' New York ',
+        state: ' NY ',
+        zipCode: ' 10022 ',
+        country: ' USA ',
+      });
+
+      expect(txClient.contributor.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            addressLine1: '550 Madison Ave',
+            addressLine2: 'Apt 12B',
+            city: 'New York',
+            state: 'NY',
+            zipCode: '10022',
+            country: 'USA',
+          }),
+        })
+      );
+      expect(created.addressLine1).toBe('550 Madison Ave');
+      expect(created.city).toBe('New York');
+    });
+  });
+
+  describe('Confirmed-only default filtering, sample suppression, and PDF household deduplication', () => {
+    it('excludes RESERVED, CANCELLED, REFUNDED, and live sample records from default queue and ProgressMetrics while allowing secondary inspection', async () => {
+      mockPrisma.contributor.findMany.mockResolvedValue([
+        {
+          id: 'c-confirmed-unsent',
+          name: 'Real Confirmed Guest',
+          amount: 120,
+          status: 'CONFIRMED',
+          date: '2026-06-10T00:00:00.000Z',
+          thankYouStatus: 'Unsent',
+          registryItem: { id: 'r1', name: 'Blender', category: 'Kitchen', isSample: false },
+        },
+        {
+          id: 'c-reserved',
+          name: 'Pending Checkout Guest',
+          amount: 75,
+          status: 'RESERVED',
+          date: '2026-06-11T00:00:00.000Z',
+          thankYouStatus: 'Unsent',
+          registryItem: { id: 'r2', name: 'Toaster', category: 'Kitchen', isSample: false },
+        },
+        {
+          id: 'c-cancelled',
+          name: 'Voided Claim Guest',
+          amount: 90,
+          status: 'CANCELLED',
+          date: '2026-06-12T00:00:00.000Z',
+          thankYouStatus: 'Not Needed',
+          registryItem: { id: 'r3', name: 'Kettle', category: 'Kitchen', isSample: false },
+        },
+        {
+          id: 'c-refunded',
+          name: 'Refunded Guest',
+          amount: 150,
+          status: 'REFUNDED',
+          date: '2026-06-13T00:00:00.000Z',
+          thankYouStatus: 'Not Needed',
+          registryItem: { id: 'r4', name: 'Mixer', category: 'Kitchen', isSample: false },
+        },
+        {
+          id: 'sample-contributor-demo-1',
+          name: 'Seeded Demo Contributor',
+          amount: 50,
+          status: 'CONFIRMED',
+          date: '2026-06-14T00:00:00.000Z',
+          thankYouStatus: 'Sent',
+          registryItem: { id: 'r5', name: 'Plates', category: 'Kitchen', isSample: false },
+        },
+        {
+          id: 'c-sample-item',
+          name: 'Sample Registry Contributor',
+          amount: 60,
+          status: 'CONFIRMED',
+          date: '2026-06-15T00:00:00.000Z',
+          thankYouStatus: 'Sent',
+          registryItem: { id: 'r-sample', name: 'Sample Gift', category: 'Kitchen', isSample: true },
+        },
+        {
+          id: 'c-sample-invite',
+          name: 'Sample Invite Contributor',
+          amount: 80,
+          status: 'CONFIRMED',
+          date: '2026-06-16T00:00:00.000Z',
+          thankYouStatus: 'Sent',
+          invitationCode: { id: 'inv-sample', isSample: true },
+          registryItem: { id: 'r6', name: 'Glasses', category: 'Kitchen', isSample: false },
+        },
+      ]);
+
+      const defaultQueue = await service.getThankYouNotes();
+      expect(defaultQueue.items.map((i: { id: string }) => i.id)).toEqual(['c-confirmed-unsent']);
+      // 0 confirmed gifts thanked => 0% completion (not inflated by CANCELLED/REFUNDED "Not Needed" or sample "Sent")
+      expect(defaultQueue.metrics).toEqual({
+        total: 1,
+        sent: 0,
+        unsent: 1,
+        notNeeded: 0,
+        thanked: 0,
+        completionPercentage: 0,
+      });
+
+      // Secondary filter inspects RESERVED claims without polluting ProgressMetrics
+      const reservedQueue = await service.getThankYouNotes({ contributorStatus: 'RESERVED' });
+      expect(reservedQueue.items.map((i: { id: string }) => i.id)).toEqual(['c-reserved']);
+      expect(reservedQueue.metrics.total).toBe(1);
+      expect(reservedQueue.metrics.completionPercentage).toBe(0);
+
+      // ALL lifecycle states still suppresses live sample records
+      const allLifecycleQueue = await service.getThankYouNotes({ contributorStatus: 'ALL' });
+      expect(allLifecycleQueue.items.map((i: { id: string }) => i.id)).toEqual([
+        'c-confirmed-unsent',
+        'c-reserved',
+        'c-cancelled',
+        'c-refunded',
+      ]);
+
+      // CSV export excludes unfulfilled/sample rows by default, and includes Contribution Status when ALL is requested
+      const defaultCsv = await streamToText(service.exportThankYouNotesCsv());
+      expect(defaultCsv).toContain('Real Confirmed Guest');
+      expect(defaultCsv).not.toContain('Pending Checkout Guest');
+      expect(defaultCsv).not.toContain('Voided Claim Guest');
+      expect(defaultCsv).not.toContain('Seeded Demo Contributor');
+
+      const allCsv = await streamToText(
+        service.exportThankYouNotesCsv({ contributorStatus: 'ALL' })
+      );
+      expect(allCsv).toContain('Pending Checkout Guest');
+      expect(allCsv).toContain('RESERVED');
+      expect(allCsv).toContain('CANCELLED');
+      expect(allCsv).not.toContain('Seeded Demo Contributor');
+    });
+
+    it('retains sample records when STATIC_EXPORT=true', async () => {
+      const prevStatic = process.env.STATIC_EXPORT;
+      process.env.STATIC_EXPORT = 'true';
+      try {
+        mockPrisma.contributor.findMany.mockResolvedValue([
+          {
+            id: 'sample-contributor-1',
+            name: 'Static Demo Guest',
+            amount: 100,
+            status: 'CONFIRMED',
+            date: '2026-06-10T00:00:00.000Z',
+            thankYouStatus: 'Sent',
+          },
+        ]);
+
+        const res = await service.getThankYouNotes();
+        expect(res.items).toHaveLength(1);
+        expect(res.items[0].id).toBe('sample-contributor-1');
+      } finally {
+        if (prevStatic === undefined) {
+          delete process.env.STATIC_EXPORT;
+        } else {
+          process.env.STATIC_EXPORT = prevStatic;
+        }
+      }
+    });
+
+    it('skips unaddressed labels by default and deduplicates multi-gift households by invitationCodeId or normalized address', async () => {
+      mockPrisma.contributor.findMany.mockResolvedValue([
+        {
+          id: 'c-hh1-gift1',
+          name: 'Sarah Jenkins',
+          status: 'CONFIRMED',
+          date: '2026-06-01T00:00:00.000Z',
+          thankYouStatus: 'Unsent',
+          invitationCodeId: 'inv-jenkins',
+          invitationCode: {
+            id: 'inv-jenkins',
+            householdName: 'The Jenkins Family',
+            addressLine1: '742 Evergreen Terrace',
+            city: 'Springfield',
+            state: 'IL',
+            zipCode: '62704',
+            country: 'USA',
+          },
+        },
+        {
+          id: 'c-hh1-gift2',
+          name: 'Mark Jenkins',
+          status: 'CONFIRMED',
+          date: '2026-06-02T00:00:00.000Z',
+          thankYouStatus: 'Unsent',
+          invitationCodeId: 'inv-jenkins',
+          invitationCode: {
+            id: 'inv-jenkins',
+            householdName: 'The Jenkins Family',
+            addressLine1: '742 Evergreen Terrace',
+            city: 'Springfield',
+            state: 'IL',
+            zipCode: '62704',
+            country: 'USA',
+          },
+        },
+        {
+          id: 'c-addr-dup-1',
+          name: 'Cousin Vinny',
+          status: 'CONFIRMED',
+          date: '2026-06-03T00:00:00.000Z',
+          thankYouStatus: 'Unsent',
+          addressLine1: '100 Main St',
+          city: 'Brooklyn',
+          state: 'NY',
+          zipCode: '11201',
+          country: 'USA',
+        },
+        {
+          id: 'c-addr-dup-2',
+          name: 'Mona Lisa Vito',
+          status: 'CONFIRMED',
+          date: '2026-06-04T00:00:00.000Z',
+          thankYouStatus: 'Unsent',
+          addressLine1: '  100 MAIN ST ',
+          city: 'brooklyn',
+          state: 'ny',
+          zipCode: '11201',
+          country: 'usa',
+        },
+        {
+          id: 'c-unaddressed',
+          name: 'Unaddressed Donor',
+          status: 'CONFIRMED',
+          date: '2026-06-05T00:00:00.000Z',
+          thankYouStatus: 'Unsent',
+        },
+      ]);
+
+      const extractDecompressedPdfStreams = (pdfBuf: Buffer): string => {
+        const raw = pdfBuf.toString('latin1');
+        const lines: string[] = [];
+        const regex = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
+        let match: RegExpExecArray | null;
+        while ((match = regex.exec(raw)) !== null) {
+          let inflated = match[1];
+          try {
+            inflated = inflateSync(Buffer.from(match[1], 'latin1')).toString('latin1');
+          } catch {
+            // Uncompressed stream
+          }
+          // Extract text runs from [(...) num (...) / <hex> ...] TJ and (...) Tj / <hex> Tj
+          const textOpRegex = /\[((?:\\.|[^\]])*)\]\s*TJ|\(((?:\\.|[^)])*)\)\s*Tj|<([0-9a-fA-F]+)>\s*Tj/g;
+          let op: RegExpExecArray | null;
+          while ((op = textOpRegex.exec(inflated)) !== null) {
+            if (op[1] !== undefined) {
+              const segRegex = /\(((?:\\.|[^)])*)\)|<([0-9a-fA-F]+)>/g;
+              let seg: RegExpExecArray | null;
+              let joined = '';
+              while ((seg = segRegex.exec(op[1])) !== null) {
+                if (seg[1] !== undefined) {
+                  joined += seg[1];
+                } else if (seg[2] !== undefined) {
+                  joined += Buffer.from(seg[2], 'hex').toString('latin1');
+                }
+              }
+              lines.push(joined);
+            } else if (op[2] !== undefined) {
+              lines.push(op[2]);
+            } else if (op[3] !== undefined) {
+              lines.push(Buffer.from(op[3], 'hex').toString('latin1'));
+            }
+          }
+        }
+        return lines.join('\n');
+      };
+
+      // Default call (skipUnaddressed defaults to true):
+      // - Unaddressed Donor is skipped (no "Address Pending")
+      // - 2 gifts from inv-jenkins -> 1 label
+      // - 2 gifts sharing normalized "100 Main St, Brooklyn, NY 11201" -> 1 label
+      const defaultPdfBytes = await streamToBuffer(service.exportThankYouNotesPdf());
+      expect(defaultPdfBytes.toString('utf-8', 0, 5)).toBe('%PDF-');
+
+      const defaultDecompressed = extractDecompressedPdfStreams(defaultPdfBytes);
+      expect(defaultDecompressed).not.toContain('Address Pending');
+      expect(defaultDecompressed).not.toContain('Unaddressed Donor');
+      expect((defaultDecompressed.match(/742 Evergreen Terrace/g) || []).length).toBe(1);
+      expect((defaultDecompressed.match(/100 Main St/gi) || []).length).toBe(1);
+
+      // Explicit skipUnaddressed: false includes "Address Pending" for Unaddressed Donor
+      const includeUnaddressedBytes = await streamToBuffer(
+        service.exportThankYouNotesPdf({ skipUnaddressed: false })
+      );
+      expect(includeUnaddressedBytes.toString('utf-8', 0, 5)).toBe('%PDF-');
+
+      const includeDecompressed = extractDecompressedPdfStreams(includeUnaddressedBytes);
+      expect(includeDecompressed).toContain('Address Pending');
+      expect(includeDecompressed).toContain('Unaddressed Donor');
     });
   });
 });

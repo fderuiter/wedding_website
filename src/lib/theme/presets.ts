@@ -943,7 +943,7 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--btn-font-weight': '500',
     '--btn-primary-bg': 'var(--color-primary, #B91C1C)',
     '--btn-primary-text': '#ffffff',
-    '--btn-primary-hover-bg': 'color-mix(in srgb, var(--color-primary, #B91C1C) 88%, #ffffff)',
+    '--btn-primary-hover-bg': 'color-mix(in srgb, var(--color-primary, #B91C1C) 88%, #000000)',
     '--btn-primary-border': 'transparent',
     '--btn-secondary-bg': 'var(--color-secondary, #B45309)',
     '--btn-secondary-text': '#ffffff',

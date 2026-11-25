@@ -5,9 +5,14 @@ import { thankYouService } from '@/features/registry';
 export const GET = withApiMiddleware(async (req: NextRequest) => {
   const { searchParams } = new URL(req.url);
   const status = searchParams.get('status') || undefined;
+  const contributorStatus = searchParams.get('contributorStatus') || undefined;
   const search = searchParams.get('search') || undefined;
 
-  const stream = thankYouService.exportThankYouNotesCsv({ status, search });
+  const stream = thankYouService.exportThankYouNotesCsv({
+    status,
+    ...(contributorStatus ? { contributorStatus } : {}),
+    search,
+  });
 
   const dateStr = new Date().toISOString().split('T')[0];
   const filename = `thank-you-notes-${dateStr}.csv`;

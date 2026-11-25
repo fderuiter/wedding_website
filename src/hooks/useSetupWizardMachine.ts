@@ -2,11 +2,51 @@
 
 import { useReducer, useEffect, useCallback, useRef } from 'react';
 import { checkAdminClient } from '@/core/auth/auth.client';
+import {
+  DEFAULT_MODULE_CONFIG,
+  resolveModuleConfig,
+  type ModuleConfig,
+} from '@/lib/modules';
 import { ArchetypeId } from '@/lib/sampleData/archetypes';
+import {
+  DEFAULT_THEME_PRESET,
+  isThemePreset,
+  type ThemePreset,
+} from '@/lib/theme/presets';
 
 export const SETUP_WIZARD_STORAGE_KEY = 'setup_wizard_draft';
 
 export type SetupWizardModal = 'weddingParty' | 'attractions' | 'csv' | null;
+
+export function isValidIanaTimezone(tz: unknown): tz is string {
+  if (typeof tz !== 'string') return false;
+  const trimmed = tz.trim();
+  if (!trimmed) return false;
+  if (trimmed === 'UTC' || trimmed === 'GMT') return true;
+  try {
+    if (typeof Intl !== 'undefined' && typeof Intl.supportedValuesOf === 'function') {
+      return Intl.supportedValuesOf('timeZone').includes(trimmed);
+    }
+    Intl.DateTimeFormat(undefined, { timeZone: trimmed });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function detectBrowserTimezone(fallback = 'America/Chicago'): string {
+  try {
+    if (typeof Intl !== 'undefined' && typeof Intl.DateTimeFormat === 'function') {
+      const resolved = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (isValidIanaTimezone(resolved)) {
+        return resolved.trim();
+      }
+    }
+  } catch {
+    // Fall back to default timezone when Intl fails or is unavailable
+  }
+  return fallback;
+}
 
 export interface SetupWizardPersistedState {
   step: number;
@@ -23,6 +63,10 @@ export interface SetupWizardPersistedState {
   latitude?: number;
   longitude?: number;
   timezone: string;
+  themePreset: ThemePreset;
+  colorPrimary: string;
+  colorSecondary: string;
+  enabledFeatures: ModuleConfig;
   sampleArchetype: ArchetypeId;
   selectedModules: string[];
   importedGuestCount?: number;
@@ -43,6 +87,10 @@ export const initialSetupWizardState: SetupWizardPersistedState = {
   latitude: 0,
   longitude: 0,
   timezone: 'America/Chicago',
+  themePreset: DEFAULT_THEME_PRESET,
+  colorPrimary: '#4A5568',
+  colorSecondary: '#2D3748',
+  enabledFeatures: { ...DEFAULT_MODULE_CONFIG },
   sampleArchetype: 'classic',
   selectedModules: ['registry', 'guests', 'seating', 'weddingParty', 'attractions', 'faqs'],
   importedGuestCount: 0,
@@ -77,6 +125,25 @@ export function createInitialMachineState(
     ...initialSetupWizardState,
     ...initialDraft,
   };
+  const resolvedThemePreset: ThemePreset = isThemePreset(initialDraft?.themePreset)
+    ? initialDraft.themePreset
+    : initialSetupWizardState.themePreset;
+  const resolvedColorPrimary =
+    typeof initialDraft?.colorPrimary === 'string' && initialDraft.colorPrimary.length > 0
+      ? initialDraft.colorPrimary
+      : initialSetupWizardState.colorPrimary;
+  const resolvedColorSecondary =
+    typeof initialDraft?.colorSecondary === 'string' && initialDraft.colorSecondary.length > 0
+      ? initialDraft.colorSecondary
+      : initialSetupWizardState.colorSecondary;
+  const resolvedEnabledFeatures = resolveModuleConfig(initialDraft?.enabledFeatures);
+  const rawSelectedModules = Array.isArray(mergedDraft.selectedModules)
+    ? mergedDraft.selectedModules
+    : initialSetupWizardState.selectedModules;
+  const resolvedSelectedModules = resolvedEnabledFeatures.registry
+    ? rawSelectedModules
+    : rawSelectedModules.filter((m) => m !== 'registry');
+
   const validDraftStep =
     typeof mergedDraft.step === 'number' && mergedDraft.step >= 1 && mergedDraft.step <= 5
       ? mergedDraft.step
@@ -84,6 +151,11 @@ export function createInitialMachineState(
 
   return {
     ...mergedDraft,
+    themePreset: resolvedThemePreset,
+    colorPrimary: resolvedColorPrimary,
+    colorSecondary: resolvedColorSecondary,
+    enabledFeatures: resolvedEnabledFeatures,
+    selectedModules: resolvedSelectedModules,
     contactEmail: mergedDraft.contactEmail ?? '',
     step: 1,
     persistedDraftStep: validDraftStep,
@@ -196,10 +268,30 @@ export function setupWizardReducer(
             ? action.payload.step
             : state.persistedDraftStep
           : state.persistedDraftStep;
+      const nextThemePreset =
+        action.payload.themePreset !== undefined
+          ? isThemePreset(action.payload.themePreset)
+            ? action.payload.themePreset
+            : state.themePreset
+          : state.themePreset;
+      const nextEnabledFeatures =
+        action.payload.enabledFeatures !== undefined
+          ? resolveModuleConfig(action.payload.enabledFeatures)
+          : state.enabledFeatures;
+      const baseSelectedModules =
+        action.payload.selectedModules !== undefined
+          ? action.payload.selectedModules
+          : state.selectedModules;
+      const nextSelectedModules = nextEnabledFeatures.registry
+        ? baseSelectedModules
+        : baseSelectedModules.filter((m) => m !== 'registry');
 
       return {
         ...state,
         ...action.payload,
+        themePreset: nextThemePreset,
+        enabledFeatures: nextEnabledFeatures,
+        selectedModules: nextSelectedModules,
         contactEmail:
           action.payload.contactEmail !== undefined
             ? action.payload.contactEmail
@@ -320,6 +412,10 @@ export function useSetupWizardMachine(initialValues?: Partial<SetupWizardPersist
         latitude: state.latitude ?? 0,
         longitude: state.longitude ?? 0,
         timezone: state.timezone,
+        themePreset: state.themePreset,
+        colorPrimary: state.colorPrimary,
+        colorSecondary: state.colorSecondary,
+        enabledFeatures: state.enabledFeatures,
         sampleArchetype: state.sampleArchetype,
         selectedModules: state.selectedModules,
         importedGuestCount: state.importedGuestCount,
@@ -345,6 +441,10 @@ export function useSetupWizardMachine(initialValues?: Partial<SetupWizardPersist
     state.latitude,
     state.longitude,
     state.timezone,
+    state.themePreset,
+    state.colorPrimary,
+    state.colorSecondary,
+    state.enabledFeatures,
     state.sampleArchetype,
     state.selectedModules,
     state.importedGuestCount,

@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useRef, useEffect, useContext } from 'react';
+import React, { useState, useRef, useEffect, useContext, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   QueryClient,
@@ -20,15 +20,27 @@ import { useAdminInvitationCodes } from '@/hooks/admin/useAdminInvitationCodes';
 import { hasAddressCollectionTag } from '@/features/registry';
 import {
   SETUP_WIZARD_STORAGE_KEY,
+  detectBrowserTimezone,
   useSetupWizardMachine,
   type SetupWizardPersistedState,
 } from '@/hooks/useSetupWizardMachine';
-import { invalidateSampleDataCaches } from '@/lib/adminCacheSync';
+import {
+  ADMIN_SETTINGS_QUERY_KEY,
+  invalidateOnboardingMilestones,
+  invalidateSampleDataCaches,
+} from '@/lib/adminCacheSync';
+import {
+  FEATURE_METADATA,
+  resolveModuleConfig,
+  type FeatureId,
+} from '@/lib/modules';
 import dynamic from 'next/dynamic';
 import { WeddingPartyManagerModal } from './WeddingPartyManagerModal';
 import { AttractionsManagerModal } from './AttractionsManagerModal';
 import { ThemeConfigurationPanel } from '@/components/admin/ThemeConfigurationPanel';
 import { AddressLookupInput } from '@/components/admin/AddressLookupInput';
+import { SearchableTimezoneSelect } from '@/components/admin/SearchableTimezoneSelect';
+import { OnboardingChecklist } from '@/components/admin/OnboardingChecklist';
 import { isNonPlaceholderVenueText } from '@/utils/maps';
 import { ThemeProvider, useTheme } from '@/components/ThemeProvider';
 import { useOptionalDemo } from '@/components/demo/DemoContext';
@@ -71,7 +83,16 @@ function isDefaultUrl(url: string): boolean {
   }
 }
 
-type Step2ErrorField = 'partner1' | 'partner2' | 'siteUrl' | 'contactEmail';
+export type Step2ErrorField =
+  | 'partner1'
+  | 'partner2'
+  | 'weddingDate'
+  | 'timezone'
+  | 'siteUrl'
+  | 'contactEmail'
+  | 'colorPrimary'
+  | 'colorSecondary'
+  | 'form';
 
 const CsvImportWizardModal = dynamic(
   () =>
@@ -121,21 +142,54 @@ function isValidOptionalContactEmail(email: string): boolean {
   return /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(trimmed);
 }
 
-function resolveStep2BackendErrorField(message: string): Step2ErrorField {
+export function resolveStep2BackendErrorField(message: string): Step2ErrorField {
   const lower = message.toLowerCase();
+  if (
+    lower.includes('weddingdate') ||
+    lower.includes('wedding date') ||
+    lower.includes('chronological date')
+  ) {
+    return 'weddingDate';
+  }
+  if (lower.includes('timezone') || lower.includes('iana')) {
+    return 'timezone';
+  }
+  if (lower.includes('colorprimary') || lower.includes('primary color')) {
+    return 'colorPrimary';
+  }
+  if (lower.includes('colorsecondary') || lower.includes('secondary color')) {
+    return 'colorSecondary';
+  }
   if (lower.includes('contactemail') || lower.includes('contact email')) {
     return 'contactEmail';
   }
-  if (lower.includes('partner2name')) {
+  if (
+    lower.includes('partner2name') ||
+    lower.includes('groomname') ||
+    lower.includes('partner 2')
+  ) {
     return 'partner2';
   }
-  if (lower.includes('partner1name') || lower.includes('partner name')) {
+  if (
+    lower.includes('partner1name') ||
+    lower.includes('bridename') ||
+    lower.includes('partner 1') ||
+    lower.includes('partner name')
+  ) {
     return 'partner1';
   }
-  return 'siteUrl';
+  if (
+    lower.includes('baseurl') ||
+    lower.includes('base url') ||
+    lower.includes('site url') ||
+    lower.includes('valid url')
+  ) {
+    return 'siteUrl';
+  }
+  return 'form';
 }
 
-function getReadableTextOnHex(hexColor: string): string {
+function parseHexLuminance(hexColor: string): number | null {
   const cleaned = hexColor.trim().replace(/^#/, '');
   const full =
     cleaned.length === 3
@@ -145,15 +199,68 @@ function getReadableTextOnHex(hexColor: string): string {
         .join('')
       : cleaned;
   if (!/^[0-9a-fA-F]{6}$/.test(full)) {
-    return '#ffffff';
+    return null;
   }
   const r = parseInt(full.slice(0, 2), 16) / 255;
   const g = parseInt(full.slice(2, 4), 16) / 255;
   const b = parseInt(full.slice(4, 6), 16) / 255;
   const toLinear = (c: number) =>
     c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-  const lum = 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+}
+
+function getReadableTextOnHex(hexColor: string): string {
+  const lum = parseHexLuminance(hexColor);
+  if (lum === null) {
+    return '#ffffff';
+  }
   return lum > 0.179 ? '#111827' : '#ffffff';
+}
+
+function ensureContrastColor(
+  candidateHex: string,
+  backgroundHex: string,
+  fallbackHex: string,
+  minRatio = 4.5
+): string {
+  const fgLum = parseHexLuminance(candidateHex);
+  const bgLum = parseHexLuminance(backgroundHex);
+  if (fgLum === null || bgLum === null) {
+    return fallbackHex;
+  }
+  const lighter = Math.max(fgLum, bgLum);
+  const darker = Math.min(fgLum, bgLum);
+  const ratio = (lighter + 0.05) / (darker + 0.05);
+  return ratio >= minRatio ? candidateHex : fallbackHex;
+}
+
+function resolvePreviewCssToken(
+  rawValue: string | undefined,
+  primaryHex: string,
+  secondaryHex: string,
+  fallbackHex: string
+): string {
+  if (typeof rawValue !== 'string' || !rawValue.trim()) {
+    return fallbackHex;
+  }
+  const trimmed = rawValue.trim();
+  if (trimmed.includes('--color-primary')) {
+    return primaryHex;
+  }
+  if (trimmed.includes('--color-secondary')) {
+    return secondaryHex;
+  }
+  if (trimmed.startsWith('var(') && trimmed.endsWith(')')) {
+    const commaIdx = trimmed.indexOf(',');
+    if (commaIdx !== -1) {
+      const innerFallback = trimmed.slice(commaIdx + 1, trimmed.length - 1).trim();
+      if (innerFallback && !innerFallback.startsWith('var(')) {
+        return innerFallback;
+      }
+    }
+    return fallbackHex;
+  }
+  return trimmed;
 }
 
 export interface SetupWizardSavedConfig extends Partial<SetupWizardPersistedState> {
@@ -177,18 +284,25 @@ function SetupWizardContent({
   const demo = useOptionalDemo();
   const isDemoMode = Boolean(demo?.isDemoMode);
   const [hasOpenedCsvModal, setHasOpenedCsvModal] = useState(false);
-  const normalizedInitialSavedConfig = initialSavedConfig
-    ? {
-      ...initialSavedConfig,
-      step:
-        initialSavedConfig.step ??
-        (initialSavedConfig.partner1Name &&
-        initialSavedConfig.partner2Name &&
-        initialSavedConfig.baseUrl
-          ? 3
-          : undefined),
-    }
-    : undefined;
+  const browserDetectedTimezone = useMemo(
+    () => detectBrowserTimezone('America/Chicago'),
+    []
+  );
+  const normalizedInitialSavedConfig: Partial<SetupWizardPersistedState> = {
+    timezone: initialSavedConfig?.timezone || browserDetectedTimezone,
+    ...(initialSavedConfig
+      ? {
+        ...initialSavedConfig,
+        step:
+          initialSavedConfig.step ??
+          (initialSavedConfig.partner1Name &&
+          initialSavedConfig.partner2Name &&
+          initialSavedConfig.baseUrl
+            ? 3
+            : undefined),
+      }
+      : {}),
+  };
   const {
     state,
     setStep,
@@ -221,6 +335,10 @@ function SetupWizardContent({
     latitude = 0,
     longitude = 0,
     timezone,
+    themePreset,
+    colorPrimary,
+    colorSecondary,
+    enabledFeatures,
     sampleArchetype,
     selectedModules,
     importedGuestCount = 0,
@@ -276,6 +394,8 @@ function SetupWizardContent({
   const { data: partyMembers = [] } = useAdminWeddingParty({ enabled: isAuthenticated });
   const { data: attractions = [] } = useAdminAttractions({ enabled: isAuthenticated });
   const { data: invitationCodes = [], fetchAll: refetchInvitationCodes } = useAdminInvitationCodes({ enabled: isAuthenticated });
+  const nonSamplePartyMembers = partyMembers.filter((member) => !member.isSample);
+  const nonSampleAttractions = attractions.filter((attraction) => !attraction.isSample);
   const nonSampleInvitationCodes = invitationCodes.filter(
     (code) => !code.isSample && !hasAddressCollectionTag(code.partyTags)
   );
@@ -296,20 +416,14 @@ function SetupWizardContent({
   };
 
   // Theme & Step 2 live preview state
-  const { setPreviewConfig } = useTheme();
-  const [themePreset, setThemePreset] = useState<ThemePreset>(
-    initialSavedConfig?.themePreset ?? 'classic'
-  );
-  const [colorPrimary, setColorPrimary] = useState(
-    initialSavedConfig?.colorPrimary ?? '#4A5568'
-  );
-  const [colorSecondary, setColorSecondary] = useState(
-    initialSavedConfig?.colorSecondary ?? '#2D3748'
-  );
+  const { resolvedTheme, setThemeMode, setPreviewConfig } = useTheme();
+  const previewMode: 'light' | 'dark' = resolvedTheme === 'dark' ? 'dark' : 'light';
   const [step2Viewport, setStep2Viewport] = useState<'desktop' | 'mobile'>('desktop');
   const step2DesktopBtnRef = useRef<HTMLButtonElement>(null);
   const step2MobileBtnRef = useRef<HTMLButtonElement>(null);
-  const [step2ErrorField, setStep2ErrorField] = useState<Step2ErrorField>('siteUrl');
+  const step2LightModeBtnRef = useRef<HTMLButtonElement>(null);
+  const step2DarkModeBtnRef = useRef<HTMLButtonElement>(null);
+  const [step2ErrorField, setStep2ErrorField] = useState<Step2ErrorField>('form');
 
   const handleStep2ViewportKeyDown = (
     e: React.KeyboardEvent<HTMLButtonElement>,
@@ -332,10 +446,36 @@ function SetupWizardContent({
       step2MobileBtnRef.current?.focus();
     }
   };
+
+  const handleStep2ColorModeKeyDown = (
+    e: React.KeyboardEvent<HTMLButtonElement>,
+    current: 'light' | 'dark',
+  ) => {
+    let next: 'light' | 'dark' | null = null;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      next = current === 'light' ? 'dark' : 'light';
+    } else if (e.key === 'Home') {
+      next = 'light';
+    } else if (e.key === 'End') {
+      next = 'dark';
+    }
+    if (!next) return;
+    e.preventDefault();
+    setThemeMode(next);
+    if (next === 'light') {
+      step2LightModeBtnRef.current?.focus();
+    } else {
+      step2DarkModeBtnRef.current?.focus();
+    }
+  };
+
   const partner1InputRef = useRef<HTMLInputElement>(null);
   const partner2InputRef = useRef<HTMLInputElement>(null);
+  const weddingDateInputRef = useRef<HTMLInputElement>(null);
+  const timezoneInputRef = useRef<HTMLInputElement>(null);
   const siteUrlInputRef = useRef<HTMLInputElement>(null);
   const contactEmailInputRef = useRef<HTMLInputElement>(null);
+  const step2FormAlertRef = useRef<HTMLDivElement>(null);
 
   const focusStep2Field = (field: Step2ErrorField) => {
     switch (field) {
@@ -345,15 +485,40 @@ function SetupWizardContent({
       case 'partner2':
         partner2InputRef.current?.focus();
         break;
+      case 'weddingDate':
+        weddingDateInputRef.current?.focus();
+        break;
+      case 'timezone':
+        timezoneInputRef.current?.focus();
+        break;
       case 'contactEmail':
         contactEmailInputRef.current?.focus();
         break;
+      case 'colorPrimary':
+        if (typeof document !== 'undefined') {
+          (document.getElementById('colorPrimary') as HTMLInputElement | null)?.focus();
+        }
+        break;
+      case 'colorSecondary':
+        if (typeof document !== 'undefined') {
+          (document.getElementById('colorSecondary') as HTMLInputElement | null)?.focus();
+        }
+        break;
       case 'siteUrl':
-      default:
         siteUrlInputRef.current?.focus();
+        break;
+      case 'form':
+      default:
+        step2FormAlertRef.current?.focus();
         break;
     }
   };
+
+  React.useLayoutEffect(() => {
+    if (step === 2 && error && step2ErrorField === 'form') {
+      step2FormAlertRef.current?.focus();
+    }
+  }, [step, error, step2ErrorField]);
 
   useEffect(() => {
     if (isAuthenticated && !isDemoMode) {
@@ -378,9 +543,19 @@ function SetupWizardContent({
       colorSecondary: string;
     }>
   ) => {
-    if (fields.themePreset !== undefined) setThemePreset(fields.themePreset as ThemePreset);
-    if (fields.colorPrimary !== undefined) setColorPrimary(fields.colorPrimary);
-    if (fields.colorSecondary !== undefined) setColorSecondary(fields.colorSecondary);
+    const patch: Partial<SetupWizardPersistedState> = {};
+    if (fields.themePreset !== undefined) {
+      patch.themePreset = fields.themePreset as ThemePreset;
+    }
+    if (fields.colorPrimary !== undefined) {
+      patch.colorPrimary = fields.colorPrimary;
+    }
+    if (fields.colorSecondary !== undefined) {
+      patch.colorSecondary = fields.colorSecondary;
+    }
+    if (Object.keys(patch).length > 0) {
+      updateDraft(patch);
+    }
   };
 
   const handleLogin = async (e: React.SubmitEvent<HTMLFormElement>) => {
@@ -470,7 +645,11 @@ function SetupWizardContent({
     const cleanedVenueCity = cleanOptionalSetupText(venueCity);
     const cleanedVenueState = cleanOptionalSetupText(venueState);
     const cleanedVenueZip = cleanOptionalSetupText(venueZip);
-    const resolvedTimezone = timezone || 'America/Chicago';
+    const rawTimezoneInput = timezoneInputRef.current?.value;
+    const resolvedTimezone =
+      (typeof rawTimezoneInput === 'string' ? rawTimezoneInput.trim() : timezone.trim()) ||
+      'America/Chicago';
+    const resolvedModules = resolveModuleConfig(enabledFeatures);
     const starterCopy = synthesizeSetupStarterCopy({
       partner1Name: trimmedPartner1,
       partner2Name: trimmedPartner2,
@@ -491,6 +670,7 @@ function SetupWizardContent({
       venueCity: cleanedVenueCity,
       venueState: cleanedVenueState,
       venueZip: cleanedVenueZip,
+      timezone: resolvedTimezone,
     });
 
     if (isDemoMode && demo) {
@@ -517,6 +697,9 @@ function SetupWizardContent({
         themePreset,
         colorPrimary,
         colorSecondary,
+        modules: resolvedModules,
+        showCountdown: resolvedModules.countdown,
+        showAddToCalendar: resolvedModules.addToCalendar,
       });
       demo.setSetupAuthenticated(true);
       setStep(3);
@@ -552,6 +735,9 @@ function SetupWizardContent({
           themePreset,
           colorPrimary,
           colorSecondary,
+          modules: resolvedModules,
+          showCountdown: resolvedModules.countdown,
+          showAddToCalendar: resolvedModules.addToCalendar,
           setupCompleted: false,
         }),
       });
@@ -580,42 +766,131 @@ function SetupWizardContent({
         focusStep2Field(targetField);
       }
     } catch (err: unknown) {
-      setStep2ErrorField('siteUrl');
+      setStep2ErrorField('form');
       setError(getSetupErrorMessage(err, 'Failed to save config.'));
-      siteUrlInputRef.current?.focus();
+      focusStep2Field('form');
     }
+  };
+
+  const persistStep3FeatureToggles = async () => {
+    const resolvedModules = resolveModuleConfig(enabledFeatures);
+    if (isDemoMode && demo) {
+      demo.updateConfigOverrides({
+        modules: resolvedModules,
+        showCountdown: resolvedModules.countdown,
+        showAddToCalendar: resolvedModules.addToCalendar,
+      });
+      if (queryClient) {
+        await queryClient.invalidateQueries({ queryKey: ADMIN_SETTINGS_QUERY_KEY });
+      }
+      invalidateOnboardingMilestones(queryClient);
+      return;
+    }
+
+    const setupRes = await fetch(withBasePath('/api/admin/setup'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        setupCompleted: false,
+        modules: resolvedModules,
+        showCountdown: resolvedModules.countdown,
+        showAddToCalendar: resolvedModules.addToCalendar,
+      }),
+    });
+    if (setupRes && !setupRes.ok) {
+      const data = await setupRes.json().catch(() => ({}));
+      throw new Error(
+        typeof data.error === 'string' && data.error
+          ? data.error
+          : 'Failed to save feature module settings.'
+      );
+    }
+    if (queryClient) {
+      await queryClient.invalidateQueries({ queryKey: ADMIN_SETTINGS_QUERY_KEY });
+    }
+    invalidateOnboardingMilestones(queryClient);
+  };
+
+  const handleFeatureToggle = (featureId: FeatureId, checked: boolean) => {
+    const nextFeatures = resolveModuleConfig({
+      ...enabledFeatures,
+      [featureId]: checked,
+    });
+    const nextSampleModules = nextFeatures.registry
+      ? selectedModules
+      : selectedModules.filter((m) => m !== 'registry');
+    updateDraft({
+      enabledFeatures: nextFeatures,
+      selectedModules: nextSampleModules,
+    });
   };
 
   const handleSampleDataSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
+    const effectiveSampleModules = enabledFeatures.registry
+      ? selectedModules
+      : selectedModules.filter((m) => m !== 'registry');
+
     if (isDemoMode && demo) {
-      demo.applySampleSelection(sampleArchetype, selectedModules);
+      await persistStep3FeatureToggles();
+      demo.applySampleSelection(sampleArchetype, effectiveSampleModules);
       await invalidateSampleDataCaches(queryClient);
       setStep(4);
       return;
     }
     startSubmit();
     try {
-      if (selectedModules.length > 0) {
+      await persistStep3FeatureToggles();
+      if (effectiveSampleModules.length > 0) {
         const res = await fetch(withBasePath('/api/admin/sample-data'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             archetype: sampleArchetype,
-            modules: selectedModules,
+            modules: effectiveSampleModules,
           }),
         });
-        if (!res.ok) {
+        if (res && !res.ok) {
           const data = await res.json().catch(() => ({}));
           throw new Error(data.error || 'Failed to generate sample data.');
         }
       } else {
-        await fetch(withBasePath('/api/admin/sample-data'), { method: 'DELETE' });
+        const delRes = await fetch(withBasePath('/api/admin/sample-data'), { method: 'DELETE' });
+        if (delRes && !delRes.ok) {
+          const data = await delRes.json().catch(() => ({}));
+          throw new Error(data.error || 'Failed to clear sample data.');
+        }
       }
       await invalidateSampleDataCaches(queryClient);
       setStep(4);
     } catch (err: unknown) {
       setError(getSetupErrorMessage(err, 'Error configuring sample data.'));
+    }
+  };
+
+  const handleSkipSampleData = async () => {
+    setSelectedModules([]);
+    if (isDemoMode && demo) {
+      await persistStep3FeatureToggles();
+      demo.applySampleSelection(sampleArchetype, []);
+      await invalidateSampleDataCaches(queryClient);
+      setStep(4);
+      return;
+    }
+    startSubmit();
+    try {
+      await persistStep3FeatureToggles();
+      const delRes = await fetch(withBasePath('/api/admin/sample-data'), {
+        method: 'DELETE',
+      });
+      if (delRes && !delRes.ok) {
+        const data = await delRes.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to clear sample data.');
+      }
+      await invalidateSampleDataCaches(queryClient);
+      setStep(4);
+    } catch (err: unknown) {
+      setError(getSetupErrorMessage(err, 'Error skipping sample data.'));
     }
   };
 
@@ -639,10 +914,77 @@ function SetupWizardContent({
     colorPrimary,
     colorSecondary,
   });
-  const previewCompTokens = getPresetTokens(themePreset, 'light');
+  const previewCompTokens = getPresetTokens(themePreset, previewMode);
+  const defaultPreviewModeTokens = getPresetTokens('classic', previewMode);
+  const previewCanvasBg = resolvePreviewCssToken(
+    previewCompTokens['--container-bg'],
+    colorPrimary,
+    colorSecondary,
+    defaultPreviewModeTokens['--container-bg'] || previewExportTokens.canvasBg
+  );
+  const previewCardBg = resolvePreviewCssToken(
+    previewCompTokens['--card-bg'],
+    colorPrimary,
+    colorSecondary,
+    defaultPreviewModeTokens['--card-bg'] || previewExportTokens.cardBg
+  );
+  const previewCardBorder = resolvePreviewCssToken(
+    previewCompTokens['--card-border'],
+    colorPrimary,
+    colorSecondary,
+    defaultPreviewModeTokens['--card-border'] || '#e5e7eb'
+  );
+  const previewBodyTextColor = resolvePreviewCssToken(
+    previewCompTokens['--form-label-text'],
+    colorPrimary,
+    colorSecondary,
+    defaultPreviewModeTokens['--form-label-text']
+  );
+  const rawPreviewHeadingColor = resolvePreviewCssToken(
+    previewCompTokens['--heading-color'],
+    colorPrimary,
+    colorSecondary,
+    previewBodyTextColor
+  );
+  const previewHeadingOnCanvas = ensureContrastColor(
+    rawPreviewHeadingColor,
+    previewCanvasBg,
+    previewBodyTextColor,
+    4.5
+  );
+  const previewHeadingOnCard = ensureContrastColor(
+    rawPreviewHeadingColor,
+    previewCardBg,
+    previewBodyTextColor,
+    4.5
+  );
+  const rawPreviewMutedColor = resolvePreviewCssToken(
+    previewCompTokens['--form-message-text'],
+    colorPrimary,
+    colorSecondary,
+    previewMode === 'dark' ? '#d4d4d8' : '#4b5563'
+  );
+  const previewMutedOnCanvas = ensureContrastColor(
+    rawPreviewMutedColor,
+    previewCanvasBg,
+    previewBodyTextColor,
+    4.5
+  );
+  const previewMutedOnCard = ensureContrastColor(
+    rawPreviewMutedColor,
+    previewCardBg,
+    previewBodyTextColor,
+    4.5
+  );
   const previewCardRadius = previewCompTokens['--schedule-card-radius'] || '1rem';
   const previewBtnRadius = previewCompTokens['--btn-radius'] || '9999px';
-  const previewCtaTextColor = getReadableTextOnHex(colorPrimary);
+  const safePreviewPrimary = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(colorPrimary.trim())
+    ? colorPrimary.trim()
+    : '#4A5568';
+  const safePreviewSecondary = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(colorSecondary.trim())
+    ? colorSecondary.trim()
+    : '#2D3748';
+  const previewCtaTextColor = getReadableTextOnHex(safePreviewPrimary);
   const previewParsedDate = weddingDate
     ? /^\d{4}-\d{2}-\d{2}$/.test(weddingDate.trim())
       ? new Date(`${weddingDate.trim()}T16:00:00.000Z`)
@@ -652,9 +994,11 @@ function SetupWizardContent({
     previewParsedDate && !Number.isNaN(previewParsedDate.getTime())
   );
   const showPreviewCountdown =
-    hasValidPreviewDate && isUpcomingWeddingDate(weddingDate);
+    enabledFeatures.countdown &&
+    hasValidPreviewDate &&
+    isUpcomingWeddingDate(weddingDate);
 
-  const handleCompleteAndExit = async () => {
+  const handleCompleteAndExit = async (destinationPath = '/admin/dashboard') => {
     completeStaticDemoSetup();
     if (typeof window !== 'undefined') {
       try {
@@ -667,10 +1011,10 @@ function SetupWizardContent({
       clearPersistedState();
       demo.setSetupAuthenticated(false);
       demo.setPersona('admin');
-      if (onDemoComplete) {
+      if (onDemoComplete && destinationPath === '/admin/dashboard') {
         onDemoComplete();
       } else if (hasAppShell && router?.push) {
-        router.push('/admin/dashboard');
+        router.push(destinationPath);
         router.refresh?.();
       }
       return;
@@ -688,11 +1032,11 @@ function SetupWizardContent({
     }
     clearPersistedState();
     if (hasAppShell && router?.push) {
-      router.push('/admin/dashboard');
+      router.push(destinationPath);
       router.refresh?.();
     } else if (typeof window !== 'undefined') {
       window.location.assign(
-        new URL(withBasePath('/admin/dashboard'), window.location.origin).href
+        new URL(withBasePath(destinationPath), window.location.origin).href
       );
     }
   };
@@ -733,12 +1077,70 @@ function SetupWizardContent({
         </Container>
       </AccessibleStep>
 
+      {step >= 2 && (
+        <nav
+          aria-label="Setup wizard progress"
+          className="w-full max-w-6xl mx-auto px-4 sm:px-6 mb-6"
+        >
+          <ol className="flex flex-wrap items-center justify-center sm:justify-between gap-2 rounded-xl border border-gray-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/90 px-4 py-2.5 text-xs font-semibold shadow-xs">
+            {[
+              { num: 1, label: 'Auth' },
+              { num: 2, label: 'Essentials' },
+              { num: 3, label: 'Features & Sample Data' },
+              { num: 4, label: 'Guest List' },
+              { num: 5, label: 'Complete' },
+            ].map((item) => {
+              const isCurrent = step === item.num;
+              const isDone = step > item.num;
+              return (
+                <li
+                  key={item.num}
+                  aria-current={isCurrent ? 'step' : undefined}
+                  className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-lg ${
+                    isCurrent
+                      ? 'bg-rose-50 dark:bg-zinc-800 text-gray-900 dark:text-white ring-1 ring-primary/40'
+                      : isDone
+                        ? 'text-emerald-800 dark:text-emerald-300'
+                        : 'text-gray-600 dark:text-zinc-400'
+                  }`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold ${
+                      isCurrent
+                        ? 'bg-primary text-white'
+                        : isDone
+                          ? 'bg-emerald-700 text-white dark:bg-emerald-500 dark:text-gray-950'
+                          : 'bg-gray-200 dark:bg-zinc-800 text-gray-700 dark:text-zinc-300'
+                    }`}
+                  >
+                    {isDone ? '✓' : item.num}
+                  </span>
+                  <span>{item.label}</span>
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
+      )}
+
       <AccessibleStep isActive={step === 2}>
         <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           <Card className="w-full max-w-none lg:col-span-7">
             <Heading as="h2" className="mb-4">Step 2: The Essentials</Heading>
             <p className="mb-4 text-gray-700 dark:text-gray-200">Let&apos;s start with your names and when the big day is.</p>
-            <form onSubmit={handleSaveConfig} className="space-y-4">
+            {error && step === 2 && step2ErrorField === 'form' && (
+              <div
+                ref={step2FormAlertRef}
+                role="alert"
+                tabIndex={-1}
+                data-testid="step2-form-error-banner"
+                className="mb-4 rounded-xl border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/40 p-3.5 text-sm font-medium text-red-900 dark:text-red-200 focus:outline-none focus:ring-2 focus:ring-red-500"
+              >
+                {error}
+              </div>
+            )}
+            <form onSubmit={handleSaveConfig} noValidate className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <FormGroup state={!!error && step === 2 && step2ErrorField === 'partner1' ? 'error' : 'default'}>
                   <Label htmlFor="partner1">Partner 1</Label>
@@ -751,7 +1153,7 @@ function SetupWizardContent({
                     required
                   />
                   {error && step === 2 && step2ErrorField === 'partner1' ? (
-                    <FormMessage>{error}</FormMessage>
+                    <FormMessage role="alert">{error}</FormMessage>
                   ) : null}
                 </FormGroup>
                 <FormGroup state={!!error && step === 2 && step2ErrorField === 'partner2' ? 'error' : 'default'}>
@@ -765,18 +1167,44 @@ function SetupWizardContent({
                     required
                   />
                   {error && step === 2 && step2ErrorField === 'partner2' ? (
-                    <FormMessage>{error}</FormMessage>
+                    <FormMessage role="alert">{error}</FormMessage>
                   ) : null}
                 </FormGroup>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <FormGroup>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <FormGroup state={!!error && step === 2 && step2ErrorField === 'weddingDate' ? 'error' : 'default'}>
                   <Label htmlFor="weddingDate">Wedding Date</Label>
-                  <Input id="weddingDate" type="date" value={weddingDate} onChange={(e) => setWeddingDate(e.target.value)} required />
+                  <Input
+                    ref={weddingDateInputRef}
+                    id="weddingDate"
+                    type="date"
+                    value={weddingDate}
+                    onChange={(e) => setWeddingDate(e.target.value)}
+                    required
+                  />
+                  {error && step === 2 && step2ErrorField === 'weddingDate' ? (
+                    <FormMessage role="alert">{error}</FormMessage>
+                  ) : null}
                 </FormGroup>
-                <FormGroup>
-                  <Label htmlFor="timezone">Timezone</Label>
-                  <Input id="timezone" type="text" value={timezone} onChange={(e) => setTimezone(e.target.value)} placeholder="e.g. America/Chicago" required />
+                <FormGroup state={!!error && step === 2 && step2ErrorField === 'timezone' ? 'error' : 'default'}>
+                  <Label htmlFor="timezone">Venue Timezone</Label>
+                  <SearchableTimezoneSelect
+                    ref={timezoneInputRef}
+                    id="timezone"
+                    name="timezone"
+                    value={timezone}
+                    onChange={(val) => setTimezone(val)}
+                    placeholder="Search and select timezone (e.g. America/Chicago)..."
+                    required
+                    commitRawOnBlur
+                  />
+                  {error && step === 2 && step2ErrorField === 'timezone' ? (
+                    <FormMessage role="alert">{error}</FormMessage>
+                  ) : !initialSavedConfig?.timezone && timezone === browserDetectedTimezone ? (
+                    <FormMessage id="timezone-detected-hint">
+                      Detected from your browser ({browserDetectedTimezone})
+                    </FormMessage>
+                  ) : null}
                 </FormGroup>
               </div>
               <FormGroup state={isDefaultUrl(baseUrl) || (!!error && step === 2 && step2ErrorField === 'siteUrl') ? 'error' : 'default'}>
@@ -790,9 +1218,9 @@ function SetupWizardContent({
                   required 
                 />
                 {isDefaultUrl(baseUrl) ? (
-                  <FormMessage>Please use your own URL.</FormMessage>
+                  <FormMessage role="alert">Please use your own URL.</FormMessage>
                 ) : (error && step === 2 && step2ErrorField === 'siteUrl') ? (
-                  <FormMessage>{error}</FormMessage>
+                  <FormMessage role="alert">{error}</FormMessage>
                 ) : null}
               </FormGroup>
               <FormGroup state={!!error && step === 2 && step2ErrorField === 'contactEmail' ? 'error' : 'default'}>
@@ -806,7 +1234,7 @@ function SetupWizardContent({
                   placeholder="e.g. hosts@ourwedding.com"
                 />
                 {error && step === 2 && step2ErrorField === 'contactEmail' ? (
-                  <FormMessage>{error}</FormMessage>
+                  <FormMessage role="alert">{error}</FormMessage>
                 ) : null}
               </FormGroup>
               <div className="space-y-4 pt-2 border-t border-gray-200 dark:border-zinc-700">
@@ -865,6 +1293,13 @@ function SetupWizardContent({
                     colorPrimary,
                     colorSecondary,
                   }}
+                  errors={
+                    error && step === 2 && step2ErrorField === 'colorPrimary'
+                      ? { colorPrimary: error }
+                      : error && step === 2 && step2ErrorField === 'colorSecondary'
+                        ? { colorSecondary: error }
+                        : undefined
+                  }
                   onChange={handleThemeChange}
                 />
               </div>
@@ -904,41 +1339,80 @@ function SetupWizardContent({
                 </span>
               </div>
 
-              <div
-                role="group"
-                aria-label="Step 2 preview viewport"
-                className="inline-flex items-center rounded-lg bg-gray-200/80 dark:bg-zinc-800 p-0.5 border border-gray-300 dark:border-zinc-700"
-              >
-                <button
-                  ref={step2DesktopBtnRef}
-                  type="button"
-                  aria-pressed={step2Viewport === 'desktop'}
-                  onClick={() => setStep2Viewport('desktop')}
-                  onKeyDown={(e) => handleStep2ViewportKeyDown(e, 'desktop')}
-                  className={`inline-flex min-h-[30px] items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-                    step2Viewport === 'desktop'
-                      ? 'bg-white dark:bg-zinc-700 text-gray-900 dark:text-white shadow-xs'
-                      : 'text-gray-700 dark:text-zinc-300 hover:text-gray-900 dark:hover:text-white'
-                  }`}
+              <div className="flex flex-wrap items-center gap-2">
+                <div
+                  role="group"
+                  aria-label="Preview color mode"
+                  className="inline-flex items-center rounded-lg bg-gray-200/80 dark:bg-zinc-800 p-0.5 border border-gray-300 dark:border-zinc-700"
                 >
-                  <Icon name="Monitor" size={13} />
-                  <span>Desktop</span>
-                </button>
-                <button
-                  ref={step2MobileBtnRef}
-                  type="button"
-                  aria-pressed={step2Viewport === 'mobile'}
-                  onClick={() => setStep2Viewport('mobile')}
-                  onKeyDown={(e) => handleStep2ViewportKeyDown(e, 'mobile')}
-                  className={`inline-flex min-h-[30px] items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-                    step2Viewport === 'mobile'
-                      ? 'bg-white dark:bg-zinc-700 text-gray-900 dark:text-white shadow-xs'
-                      : 'text-gray-700 dark:text-zinc-300 hover:text-gray-900 dark:hover:text-white'
-                  }`}
+                  <button
+                    ref={step2LightModeBtnRef}
+                    type="button"
+                    aria-pressed={previewMode === 'light'}
+                    onClick={() => setThemeMode('light')}
+                    onKeyDown={(e) => handleStep2ColorModeKeyDown(e, 'light')}
+                    className={`inline-flex min-h-[30px] items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                      previewMode === 'light'
+                        ? 'bg-white dark:bg-zinc-700 text-gray-900 dark:text-white shadow-xs'
+                        : 'text-gray-700 dark:text-zinc-300 hover:text-gray-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <Icon name="Sun" size={13} />
+                    <span>Light</span>
+                  </button>
+                  <button
+                    ref={step2DarkModeBtnRef}
+                    type="button"
+                    aria-pressed={previewMode === 'dark'}
+                    onClick={() => setThemeMode('dark')}
+                    onKeyDown={(e) => handleStep2ColorModeKeyDown(e, 'dark')}
+                    className={`inline-flex min-h-[30px] items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                      previewMode === 'dark'
+                        ? 'bg-white dark:bg-zinc-700 text-gray-900 dark:text-white shadow-xs'
+                        : 'text-gray-700 dark:text-zinc-300 hover:text-gray-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <Icon name="Moon" size={13} />
+                    <span>Dark</span>
+                  </button>
+                </div>
+
+                <div
+                  role="group"
+                  aria-label="Step 2 preview viewport"
+                  className="inline-flex items-center rounded-lg bg-gray-200/80 dark:bg-zinc-800 p-0.5 border border-gray-300 dark:border-zinc-700"
                 >
-                  <Icon name="Smartphone" size={13} />
-                  <span>Mobile (375px)</span>
-                </button>
+                  <button
+                    ref={step2DesktopBtnRef}
+                    type="button"
+                    aria-pressed={step2Viewport === 'desktop'}
+                    onClick={() => setStep2Viewport('desktop')}
+                    onKeyDown={(e) => handleStep2ViewportKeyDown(e, 'desktop')}
+                    className={`inline-flex min-h-[30px] items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                      step2Viewport === 'desktop'
+                        ? 'bg-white dark:bg-zinc-700 text-gray-900 dark:text-white shadow-xs'
+                        : 'text-gray-700 dark:text-zinc-300 hover:text-gray-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <Icon name="Monitor" size={13} />
+                    <span>Desktop</span>
+                  </button>
+                  <button
+                    ref={step2MobileBtnRef}
+                    type="button"
+                    aria-pressed={step2Viewport === 'mobile'}
+                    onClick={() => setStep2Viewport('mobile')}
+                    onKeyDown={(e) => handleStep2ViewportKeyDown(e, 'mobile')}
+                    className={`inline-flex min-h-[30px] items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                      step2Viewport === 'mobile'
+                        ? 'bg-white dark:bg-zinc-700 text-gray-900 dark:text-white shadow-xs'
+                        : 'text-gray-700 dark:text-zinc-300 hover:text-gray-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <Icon name="Smartphone" size={13} />
+                    <span>Mobile (375px)</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -946,14 +1420,16 @@ function SetupWizardContent({
               <div
                 data-testid="step2-preview-frame"
                 data-viewport={step2Viewport}
+                data-theme-mode={previewMode}
                 style={{
                   width: step2Viewport === 'mobile' ? '375px' : '100%',
                   maxWidth: '100%',
-                  backgroundColor: previewExportTokens.canvasBg,
+                  backgroundColor: previewCanvasBg,
                   fontFamily: previewExportTokens.fontBody,
-                  color: '#111827',
+                  color: previewBodyTextColor,
+                  borderColor: previewCardBorder,
                 }}
-                className={`transition-all overflow-hidden border border-black/10 ${
+                className={`transition-all overflow-hidden border ${
                   step2Viewport === 'mobile'
                     ? 'rounded-[1.5rem] shadow-xl'
                     : 'w-full rounded-xl shadow-md'
@@ -962,7 +1438,7 @@ function SetupWizardContent({
                 <div className="px-5 py-7 text-center space-y-4">
                   <div
                     className="inline-block h-1 w-12 rounded-full"
-                    style={{ backgroundColor: colorSecondary }}
+                    style={{ backgroundColor: safePreviewSecondary }}
                     aria-hidden="true"
                   />
                   <p
@@ -970,7 +1446,7 @@ function SetupWizardContent({
                     className={`${step2Viewport === 'mobile' ? 'text-2xl' : 'text-3xl'} font-bold tracking-tight leading-tight`}
                     style={{
                       fontFamily: previewExportTokens.fontHeading,
-                      color: '#111827',
+                      color: previewHeadingOnCanvas,
                     }}
                   >
                     {previewStarterCopy.heroTitle}
@@ -978,7 +1454,7 @@ function SetupWizardContent({
                   <p
                     data-testid="step2-preview-subtitle"
                     className="text-sm leading-relaxed"
-                    style={{ color: '#374151' }}
+                    style={{ color: previewMutedOnCanvas }}
                   >
                     {previewStarterCopy.heroSubtitle}
                   </p>
@@ -987,10 +1463,11 @@ function SetupWizardContent({
                     <div className="flex flex-wrap items-center justify-center gap-2 text-xs font-medium">
                       {previewStarterCopy.formattedDate && (
                         <span
-                          className="px-3 py-1 border border-black/15"
+                          className="px-3 py-1 border"
                           style={{
-                            backgroundColor: previewExportTokens.cardBg,
-                            color: '#111827',
+                            backgroundColor: previewCardBg,
+                            color: previewBodyTextColor,
+                            borderColor: previewCardBorder,
                             borderRadius: previewBtnRadius,
                           }}
                         >
@@ -1000,10 +1477,11 @@ function SetupWizardContent({
                       {previewVenue.shortLocation && (
                         <span
                           data-testid="step2-preview-venue"
-                          className="px-3 py-1 border border-black/15"
+                          className="px-3 py-1 border"
                           style={{
-                            backgroundColor: previewExportTokens.cardBg,
-                            color: '#111827',
+                            backgroundColor: previewCardBg,
+                            color: previewBodyTextColor,
+                            borderColor: previewCardBorder,
                             borderRadius: previewBtnRadius,
                           }}
                         >
@@ -1018,10 +1496,11 @@ function SetupWizardContent({
                   {showPreviewCountdown && previewParsedDate && (
                     <div
                       data-testid="step2-preview-countdown"
-                      className="text-sm font-semibold py-1.5 px-3 inline-block border border-black/10"
+                      className="text-sm font-semibold py-1.5 px-3 inline-block border"
                       style={{
-                        backgroundColor: previewExportTokens.cardBg,
-                        color: '#111827',
+                        backgroundColor: previewCardBg,
+                        color: previewBodyTextColor,
+                        borderColor: previewCardBorder,
                         borderRadius: previewCardRadius,
                       }}
                     >
@@ -1033,7 +1512,7 @@ function SetupWizardContent({
                     <span
                       className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-semibold shadow-sm"
                       style={{
-                        backgroundColor: colorPrimary,
+                        backgroundColor: safePreviewPrimary,
                         color: previewCtaTextColor,
                         borderRadius: previewBtnRadius,
                       }}
@@ -1044,9 +1523,11 @@ function SetupWizardContent({
 
                   {previewStarterCopy.storyText && (
                     <div
-                      className="mt-4 p-4 text-left border border-black/10 space-y-1.5"
+                      data-testid="step2-preview-story-card"
+                      className="mt-4 p-4 text-left border space-y-1.5"
                       style={{
-                        backgroundColor: previewExportTokens.cardBg,
+                        backgroundColor: previewCardBg,
+                        borderColor: previewCardBorder,
                         borderRadius: previewCardRadius,
                       }}
                     >
@@ -1054,12 +1535,12 @@ function SetupWizardContent({
                         className="text-sm font-bold"
                         style={{
                           fontFamily: previewExportTokens.fontHeading,
-                          color: '#111827',
+                          color: previewHeadingOnCard,
                         }}
                       >
                         Our Story
                       </p>
-                      <p className="text-xs leading-relaxed" style={{ color: '#374151' }}>
+                      <p className="text-xs leading-relaxed" style={{ color: previewMutedOnCard }}>
                         {previewStarterCopy.storyText}
                       </p>
                     </div>
@@ -1073,18 +1554,82 @@ function SetupWizardContent({
 
       <AccessibleStep isActive={step === 3}>
         <Container>
-          <Card className="max-w-2xl">
+          <Card className="max-w-3xl">
             <Heading as="h2" className="mb-2">Step 3: Sample Data Selection</Heading>
             <p className="mb-6 text-gray-700 dark:text-gray-300">
-              Populate your wedding site with sample records so you can explore features right away. You can clear or keep sample data anytime from the admin dashboard.
+              Choose which site modules to enable and optionally populate your wedding site with sample records so you can explore features right away. You can adjust modules or clear sample data anytime from the admin dashboard.
             </p>
 
             <form onSubmit={handleSampleDataSubmit} className="space-y-6">
               {error && step === 3 && (
                 <FormGroup state="error">
-                  <FormMessage>{error}</FormMessage>
+                  <FormMessage role="alert">{error}</FormMessage>
                 </FormGroup>
               )}
+
+              <section aria-labelledby="setup-site-features-heading" className="space-y-3">
+                <div>
+                  <h3
+                    id="setup-site-features-heading"
+                    className="text-sm font-semibold text-gray-900 dark:text-gray-100"
+                  >
+                    Site Features &amp; Modules
+                  </h3>
+                  <p className="text-xs text-gray-600 dark:text-gray-300 mt-0.5">
+                    Toggle guest-facing sections, countdown timer, and calendar links. Disabling Gift Registry automatically turns off Group Gifting.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-gray-50 dark:bg-gray-800/50 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
+                  {Object.values(FEATURE_METADATA).map((feature) => {
+                    const isDependencyDisabled = Boolean(
+                      feature.dependencies?.some((dep) => !enabledFeatures[dep])
+                    );
+                    const isChecked = isDependencyDisabled
+                      ? false
+                      : Boolean(enabledFeatures[feature.id]);
+
+                    return (
+                      <FormGroup
+                        key={feature.id}
+                        className={`rounded-lg border p-3 transition-colors ${
+                          isDependencyDisabled
+                            ? 'bg-gray-100/80 dark:bg-gray-900/40 border-gray-200 dark:border-gray-800 opacity-75'
+                            : 'bg-white dark:bg-gray-900/70 border-gray-200 dark:border-gray-700'
+                        }`}
+                      >
+                        <label
+                          className={`flex items-start gap-3 ${
+                            isDependencyDisabled ? 'cursor-not-allowed' : 'cursor-pointer'
+                          }`}
+                        >
+                          <Checkbox
+                            id={`setup-feature-${feature.id}`}
+                            data-testid={`setup-feature-toggle-${feature.id}`}
+                            checked={isChecked}
+                            disabled={isDependencyDisabled}
+                            onChange={(e) => handleFeatureToggle(feature.id, e.target.checked)}
+                            className="mt-0.5"
+                          />
+                          <span className="flex-1 text-left">
+                            <span className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-gray-900 dark:text-gray-100">
+                              <span>{feature.title}</span>
+                              {feature.dependencies && feature.dependencies.length > 0 && (
+                                <span className="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/60 px-2 py-0.5 text-[11px] font-semibold text-amber-900 dark:text-amber-100">
+                                  Requires Gift Registry
+                                </span>
+                              )}
+                            </span>
+                            <span className="mt-0.5 block text-xs text-gray-600 dark:text-gray-300">
+                              {feature.description}
+                            </span>
+                          </span>
+                        </label>
+                      </FormGroup>
+                    );
+                  })}
+                </div>
+              </section>
 
               <div>
                 <span
@@ -1099,7 +1644,11 @@ function SetupWizardContent({
                   value={sampleArchetype}
                   onChange={(key) => {
                     setSampleArchetype(key);
-                    setSelectedModules(['registry', 'guests', 'seating', 'weddingParty', 'attractions', 'faqs']);
+                    setSelectedModules(
+                      enabledFeatures.registry
+                        ? ['registry', 'guests', 'seating', 'weddingParty', 'attractions', 'faqs']
+                        : ['guests', 'seating', 'weddingParty', 'attractions', 'faqs']
+                    );
                   }}
                   className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-transparent dark:bg-transparent p-0 border-0 rounded-none"
                   options={(Object.keys(ARCHETYPE_PRESETS) as ArchetypeId[]).map((key) => {
@@ -1121,7 +1670,13 @@ function SetupWizardContent({
                   <div className="space-x-2 text-xs">
                     <button
                       type="button"
-                      onClick={() => setSelectedModules(['registry', 'guests', 'seating', 'weddingParty', 'attractions', 'faqs'])}
+                      onClick={() =>
+                        setSelectedModules(
+                          enabledFeatures.registry
+                            ? ['registry', 'guests', 'seating', 'weddingParty', 'attractions', 'faqs']
+                            : ['guests', 'seating', 'weddingParty', 'attractions', 'faqs']
+                        )
+                      }
                       className="text-primary underline hover:opacity-80"
                     >
                       Select All
@@ -1138,15 +1693,17 @@ function SetupWizardContent({
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-gray-50 dark:bg-gray-800/50 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
-                  <FormGroup className="flex items-center space-x-3 cursor-pointer">
-                    <label className="flex items-center space-x-3 cursor-pointer">
-                      <Checkbox
-                        checked={selectedModules.includes('registry')}
-                        onChange={() => toggleModule('registry')}
-                      />
-                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Registry Items & Cash Funds</span>
-                    </label>
-                  </FormGroup>
+                  {enabledFeatures.registry && (
+                    <FormGroup className="flex items-center space-x-3 cursor-pointer">
+                      <label className="flex items-center space-x-3 cursor-pointer">
+                        <Checkbox
+                          checked={selectedModules.includes('registry')}
+                          onChange={() => toggleModule('registry')}
+                        />
+                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Registry Items &amp; Cash Funds</span>
+                      </label>
+                    </FormGroup>
+                  )}
 
                   <FormGroup className="flex items-center space-x-3 cursor-pointer">
                     <label className="flex items-center space-x-3 cursor-pointer">
@@ -1154,7 +1711,7 @@ function SetupWizardContent({
                         checked={selectedModules.includes('guests')}
                         onChange={() => toggleModule('guests')}
                       />
-                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Guest List & Invitation Codes</span>
+                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Guest List &amp; Invitation Codes</span>
                     </label>
                   </FormGroup>
 
@@ -1164,7 +1721,7 @@ function SetupWizardContent({
                         checked={selectedModules.includes('seating')}
                         onChange={() => toggleModule('seating')}
                       />
-                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Seating Layout & Tables</span>
+                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Seating Layout &amp; Tables</span>
                     </label>
                   </FormGroup>
 
@@ -1184,7 +1741,7 @@ function SetupWizardContent({
                         checked={selectedModules.includes('attractions')}
                         onChange={() => toggleModule('attractions')}
                       />
-                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Local Attractions & Hotel Blocks</span>
+                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Local Attractions &amp; Hotel Blocks</span>
                     </label>
                   </FormGroup>
 
@@ -1223,8 +1780,7 @@ function SetupWizardContent({
                   variant="secondary"
                   disabled={loading}
                   onClick={() => {
-                    setSelectedModules([]);
-                    setStep(4);
+                    void handleSkipSampleData();
                   }}
                   className="py-3 px-6"
                 >
@@ -1316,15 +1872,15 @@ function SetupWizardContent({
 
       <AccessibleStep isActive={step === 5}>
         <Container>
-          <Card className="max-w-2xl text-center">
+          <Card className="max-w-3xl text-center">
             <Heading as="h2" className="mb-4">Step 5: Complete Setup</Heading>
             <p className="mb-6 text-gray-700 dark:text-gray-200">Great! Your wedding website setup is complete. You can now manage custom details or view your guest site.</p>
             <div className="space-y-4">
               <Button onClick={() => openModal('weddingParty')} variant="secondary" className="w-full py-3">
-                Manage Wedding Party ({partyMembers.length} {partyMembers.length === 1 ? 'member' : 'members'})
+                Manage Wedding Party ({nonSamplePartyMembers.length} {nonSamplePartyMembers.length === 1 ? 'member' : 'members'})
               </Button>
               <Button onClick={() => openModal('attractions')} variant="secondary" className="w-full py-3">
-                Manage Attractions ({attractions.length} {attractions.length === 1 ? 'item' : 'items'})
+                Manage Attractions ({nonSampleAttractions.length} {nonSampleAttractions.length === 1 ? 'item' : 'items'})
               </Button>
             </div>
             {activeNonSampleGuestCount > 0 && (
@@ -1332,6 +1888,14 @@ function SetupWizardContent({
                 Guest List: {activeNonSampleGuestCount} invitation code(s) active
               </p>
             )}
+            <OnboardingChecklist
+              refreshTrigger={step === 5 ? 1 : 0}
+              headingLevel="h3"
+              className="mt-6 mb-2 shadow-none"
+              onNavigate={(href) => {
+                void handleCompleteAndExit(href);
+              }}
+            />
             <p className="mt-6 mb-4 text-sm text-gray-600 dark:text-gray-300">You can also manage content and clear sample data anytime from the Admin Dashboard.</p>
             <div className="flex flex-col sm:flex-row gap-3">
               <Button

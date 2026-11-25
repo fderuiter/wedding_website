@@ -38,7 +38,10 @@ import {
   type InvitationCodeDTO,
 } from '@/features/registry';
 import type { RsvpSummaryResponse, SubEventDTO } from '@/features/sub-events';
-import { computeMergedInvitationPreview } from '@/utils/invitationValidation';
+import {
+  computeMergedInvitationPreview,
+  resolveAddressCollectionMatches,
+} from '@/utils/invitationValidation';
 import { INVITATION_DEFAULT_PAGE_SIZE } from '@/utils/invitationPagination';
 import { withBasePath } from '@/lib/basePath';
 import { downloadExportBlob } from '@/utils/exportDownload';
@@ -389,6 +392,8 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
 
 interface InvitationCodeRowActionsProps {
   item: InvitationCodeDTO;
+  matchedHousehold?: InvitationCodeDTO | null;
+  onMergeMatched?: (_submission: InvitationCodeDTO, _targetHousehold: InvitationCodeDTO) => void;
   onPromote?: (_item: InvitationCodeDTO) => void;
   onSendInvite: (_item: InvitationCodeDTO) => void;
   onEdit: (_item: InvitationCodeDTO) => void;
@@ -396,11 +401,42 @@ interface InvitationCodeRowActionsProps {
 }
 
 const InvitationCodeRowActions = React.memo<InvitationCodeRowActionsProps>(
-  function InvitationCodeRowActions({ item, onPromote, onSendInvite, onEdit, onDelete }) {
+  function InvitationCodeRowActions({
+    item,
+    matchedHousehold,
+    onMergeMatched,
+    onPromote,
+    onSendInvite,
+    onEdit,
+    onDelete,
+  }) {
     const isAddressCollectionOnly = hasAddressCollectionTag(item.partyTags);
     return (
       <div className="flex flex-wrap items-center gap-2 shrink-0">
-        {isAddressCollectionOnly && onPromote ? (
+        {isAddressCollectionOnly && matchedHousehold && onMergeMatched ? (
+          <>
+            <Button
+              variant="primary"
+              size="sm"
+              data-testid={`merge-address-guest-${item.id}`}
+              srContext={`for ${item.guestName}`}
+              onClick={() => onMergeMatched(item, matchedHousehold)}
+            >
+              Merge into {matchedHousehold.householdName || matchedHousehold.guestName}
+            </Button>
+            {onPromote && (
+              <Button
+                variant="secondary"
+                size="sm"
+                data-testid={`promote-guest-${item.id}`}
+                srContext={`for ${item.guestName}`}
+                onClick={() => onPromote(item)}
+              >
+                Promote to Invited
+              </Button>
+            )}
+          </>
+        ) : isAddressCollectionOnly && onPromote ? (
           <Button
             variant="primary"
             size="sm"
@@ -451,9 +487,11 @@ const InvitationCodeRow = React.memo<InvitationCodeRowProps>(function Invitation
   isSelected,
   subEvents,
   allowedSubEventIds,
+  matchedHousehold,
   onToggleSelect,
   onPreviewQr,
   onToggleSubEventAccess,
+  onMergeMatched,
   onPromote,
   onSendInvite,
   onEdit,
@@ -479,6 +517,8 @@ const InvitationCodeRow = React.memo<InvitationCodeRowProps>(function Invitation
       </div>
       <InvitationCodeRowActions
         item={item}
+        matchedHousehold={matchedHousehold}
+        onMergeMatched={onMergeMatched}
         onPromote={onPromote}
         onSendInvite={onSendInvite}
         onEdit={onEdit}
@@ -544,6 +584,8 @@ export default function InvitationCodesDashboardPage() {
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
   const [primaryMergeId, setPrimaryMergeId] = useState<string>('');
   const [isMerging, setIsMerging] = useState(false);
+  const [isAddressMatchReviewOpen, setIsAddressMatchReviewOpen] = useState(false);
+  const [isMergingAddressMatches, setIsMergingAddressMatches] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'redeemed' | 'unused'>('all');
   const [addressFilter, setAddressFilter] = useState<'all' | 'complete' | 'missing'>('all');
@@ -791,6 +833,16 @@ export default function InvitationCodesDashboardPage() {
   const invitedCodes = useMemo(
     () => codes.filter((c) => !c.isSample && !hasAddressCollectionTag(c.partyTags)),
     [codes]
+  );
+
+  const addressCollectionMatches = useMemo(
+    () => resolveAddressCollectionMatches(codes).matched,
+    [codes]
+  );
+
+  const matchedHouseholdBySubmissionId = useMemo(
+    () => new Map(addressCollectionMatches.map((m) => [m.submission.id, m.matchedHousehold])),
+    [addressCollectionMatches]
   );
 
   const counts = useMemo(() => {
@@ -1181,6 +1233,62 @@ export default function InvitationCodesDashboardPage() {
     setIsPrintLabelsModalOpen(true);
   };
 
+  const handleMergeMatchedAddressGuest = useCallback(
+    async (submission: InvitationCodeDTO, targetHousehold: InvitationCodeDTO) => {
+      try {
+        await mergeDuplicates(targetHousehold.id, [submission.id]);
+        void queryClient.invalidateQueries({ queryKey: RSVP_SUMMARY_QUERY_KEY });
+        void queryClient.invalidateQueries({ queryKey: ['admin-onboarding-milestones'] });
+        fetchSubEventsAndMatrix();
+        addToast(
+          `Merged ${submission.guestName}'s address into ${targetHousehold.householdName || targetHousehold.guestName}.`,
+          'success'
+        );
+      } catch (e: unknown) {
+        addToast(
+          e instanceof Error && e.message
+            ? e.message
+            : 'Failed to merge address submission into invited household.',
+          'error'
+        );
+      }
+    },
+    [mergeDuplicates, queryClient, addToast]
+  );
+
+  const handleMergeAllMatchedAddressGuests = useCallback(async () => {
+    if (addressCollectionMatches.length === 0) return;
+    setIsMergingAddressMatches(true);
+    try {
+      const grouped = new Map<string, string[]>();
+      for (const match of addressCollectionMatches) {
+        const list = grouped.get(match.matchedHousehold.id);
+        if (list) list.push(match.submission.id);
+        else grouped.set(match.matchedHousehold.id, [match.submission.id]);
+      }
+      for (const [primaryId, secondaryIds] of grouped.entries()) {
+        await mergeDuplicates(primaryId, secondaryIds);
+      }
+      void queryClient.invalidateQueries({ queryKey: RSVP_SUMMARY_QUERY_KEY });
+      void queryClient.invalidateQueries({ queryKey: ['admin-onboarding-milestones'] });
+      fetchSubEventsAndMatrix();
+      setIsAddressMatchReviewOpen(false);
+      addToast(
+        `Merged ${addressCollectionMatches.length} matched address submission(s) into invited households.`,
+        'success'
+      );
+    } catch (e: unknown) {
+      addToast(
+        e instanceof Error && e.message
+          ? e.message
+          : 'Failed to merge matched address submissions.',
+        'error'
+      );
+    } finally {
+      setIsMergingAddressMatches(false);
+    }
+  }, [addressCollectionMatches, mergeDuplicates, queryClient, addToast]);
+
   const handlePromoteGuest = useCallback(
     async (item: InvitationCodeDTO) => {
       try {
@@ -1462,6 +1570,37 @@ export default function InvitationCodesDashboardPage() {
         )}
 
         {/* Catering & Dietary Summary Widget */}
+        {addressCollectionMatches.length > 0 && (
+          <div
+            data-testid="matched-address-submissions-banner"
+            className="bg-[#fef9ec] dark:bg-amber-950/40 border border-[#f2d078] dark:border-amber-700/60 rounded-xl px-4 py-3 mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm text-amber-950 dark:text-amber-100 shadow-xs"
+          >
+            <div>
+              <strong className="font-semibold">
+                {addressCollectionMatches.length} guest address{' '}
+                {addressCollectionMatches.length === 1 ? 'submission' : 'submissions'}
+              </strong>{' '}
+              matched invited households (
+              {addressCollectionMatches
+                .slice(0, 3)
+                .map((m) => m.matchedHousehold.householdName || m.matchedHousehold.guestName)
+                .join(', ')}
+              {addressCollectionMatches.length > 3
+                ? `, +${addressCollectionMatches.length - 3} more`
+                : ''}
+              )
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsAddressMatchReviewOpen(true)}
+                className="inline-flex items-center text-xs font-semibold text-amber-950 dark:text-amber-100 hover:bg-amber-100 dark:hover:bg-amber-900/60 bg-white dark:bg-gray-800 border border-amber-400 dark:border-amber-600 px-3.5 py-1.5 rounded-lg shadow-2xs transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                Review &amp; Merge into Households
+              </button>
+            </div>
+          </div>
+        )}
         <div className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow border border-gray-200 dark:border-gray-700 mb-8" data-testid="catering-summary-widget">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 border-b border-gray-100 dark:border-gray-700/60 pb-3">
             <div>
@@ -1809,6 +1948,8 @@ export default function InvitationCodesDashboardPage() {
                 onToggleSelect={handleToggleSelectRow}
                 onPreviewQr={setQrPreviewGuest}
                 onToggleSubEventAccess={handleToggleSubEventAccess}
+                matchedHousehold={matchedHouseholdBySubmissionId.get(item.id) ?? null}
+                onMergeMatched={handleMergeMatchedAddressGuest}
                 onPromote={handlePromoteGuest}
                 onSendInvite={handleSendInviteToGuest}
                 onEdit={setEditingGuest}
@@ -2388,6 +2529,97 @@ export default function InvitationCodesDashboardPage() {
               </Button>
             </div>
           </form>
+        </Dialog>
+
+        <Dialog
+          isOpen={isAddressMatchReviewOpen}
+          onClose={() => {
+            if (!isMergingAddressMatches) {
+              setIsAddressMatchReviewOpen(false);
+            }
+          }}
+          title="Review & Merge Matched Address Submissions"
+          className="max-w-2xl w-full"
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              These quarantined <code>address-collection</code> submissions matched existing invited households. Merging copies the submitted mailing address onto the invited household and deletes the duplicate submission.
+            </p>
+            {addressCollectionMatches.length === 0 ? (
+              <p className="text-sm text-gray-600 dark:text-gray-300">
+                All matched address submissions have been merged.
+              </p>
+            ) : (
+              <ul className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                {addressCollectionMatches.map((match) => {
+                  const submittedAddr = [
+                    match.submission.addressLine1,
+                    match.submission.addressLine2,
+                    match.submission.city,
+                    match.submission.state,
+                    match.submission.zipCode,
+                    match.submission.country,
+                  ]
+                    .filter(Boolean)
+                    .join(', ');
+                  const targetLabel =
+                    match.matchedHousehold.householdName || match.matchedHousehold.guestName;
+
+                  return (
+                    <li
+                      key={match.submission.id}
+                      className="p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    >
+                      <div className="text-xs space-y-1">
+                        <div className="font-bold text-sm text-gray-900 dark:text-white">
+                          {match.submission.guestName} → {targetLabel} ({match.matchedHousehold.code})
+                        </div>
+                        <div className="text-gray-700 dark:text-gray-300">
+                          📍 {submittedAddr || 'No street address entered'}
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="primary"
+                        disabled={isMergingAddressMatches}
+                        onClick={() =>
+                          void handleMergeMatchedAddressGuest(
+                            match.submission,
+                            match.matchedHousehold
+                          )
+                        }
+                      >
+                        Merge into Household
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <div className="flex justify-end gap-3 pt-2">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={isMergingAddressMatches}
+                onClick={() => setIsAddressMatchReviewOpen(false)}
+              >
+                Close
+              </Button>
+              {addressCollectionMatches.length > 0 && (
+                <Button
+                  type="button"
+                  variant="primary"
+                  disabled={isMergingAddressMatches}
+                  onClick={() => void handleMergeAllMatchedAddressGuests()}
+                >
+                  {isMergingAddressMatches
+                    ? 'Merging...'
+                    : `Merge All (${addressCollectionMatches.length})`}
+                </Button>
+              )}
+            </div>
+          </div>
         </Dialog>
 
         <GuestEditorModal

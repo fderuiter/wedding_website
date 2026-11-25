@@ -3,6 +3,7 @@
 import React, { useMemo, useSyncExternalStore } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
 import type { PublicAppConfig } from '@/lib/config';
+import { resolveModuleConfig, type ModuleConfig } from '@/lib/modules';
 import type { ContentNodeDTO } from '@/features/content';
 import type { AttractionDTO } from '@/features/attractions';
 import type { WeddingPartyMemberDTO } from '@/features/wedding-party';
@@ -332,6 +333,7 @@ export interface StaticDemoSavedSetupConfig {
   themePreset?: PublicAppConfig['themePreset'];
   colorPrimary?: string;
   colorSecondary?: string;
+  enabledFeatures?: ModuleConfig;
 }
 
 export function getStaticDemoSavedSetupConfig():
@@ -394,6 +396,7 @@ export function getStaticDemoSavedSetupConfig():
     themePreset: publicCfg.themePreset as PublicAppConfig['themePreset'],
     colorPrimary: rawConfig.colorPrimary || undefined,
     colorSecondary: rawConfig.colorSecondary || undefined,
+    enabledFeatures: resolveModuleConfig(publicCfg.modules),
   };
 }
 

@@ -6,18 +6,23 @@ import type { LabelTemplate } from '@/utils/pdfLabelGenerator';
 export const GET = withApiMiddleware(async (req: NextRequest) => {
   const { searchParams } = new URL(req.url);
   const status = searchParams.get('status') || undefined;
+  const contributorStatus = searchParams.get('contributorStatus') || undefined;
   const search = searchParams.get('search') || undefined;
   const rawTemplate = searchParams.get('template') || 'avery_5160';
   const rawSkipUnaddressed = searchParams.get('skipUnaddressed');
-  const skipUnaddressed = rawSkipUnaddressed === 'true' || rawSkipUnaddressed === '1';
+  const skipUnaddressed =
+    rawSkipUnaddressed === null || rawSkipUnaddressed.trim() === ''
+      ? true
+      : rawSkipUnaddressed.trim().toLowerCase() !== 'false' && rawSkipUnaddressed.trim() !== '0';
 
   const template: LabelTemplate = rawTemplate === 'avery_5163' ? 'avery_5163' : 'avery_5160';
 
   const stream = thankYouService.exportThankYouNotesPdf({
     status,
+    ...(contributorStatus ? { contributorStatus } : {}),
     search,
     template,
-    ...(skipUnaddressed ? { skipUnaddressed: true } : {}),
+    skipUnaddressed,
   });
 
   const dateStr = new Date().toISOString().split('T')[0];

@@ -692,4 +692,280 @@ describe('Isomorphic Theme Stylesheet Generation', () => {
     expect(css).toContain('--custom-valid: 1.25rem;');
     expect(css).toContain('--spacing-custom-safe: 32px;');
   });
+
+  it('calibrates light semantic tokens across all 5 presets, custom palettes, and tinted/hover/100 surfaces while keeping solid fills on #FFFFFF', async () => {
+    const { THEME_PRESET_KEYS, getPresetTokens } = await import('@/lib/theme/presets');
+
+    const palettes = [
+      { primary: '#B91C1C', secondary: '#B45309' },
+      { primary: '#EF4444', secondary: '#F59E0B' },
+      { primary: '#F472B6', secondary: '#FACC15' }, // Blush & Gold
+      { primary: '#0EA5E9', secondary: '#6366F1' },
+      { primary: '#10B981', secondary: '#EC4899' },
+      { primary: '#000000', secondary: '#000000' },
+    ];
+
+    const compositeRgbaOverHex = (raw: string, backdropHex: string): string => {
+      if (/^#[0-9a-fA-F]{6}$/.test(raw.trim())) {
+        return raw.trim();
+      }
+      const m = raw
+        .trim()
+        .match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)$/i);
+      if (!m) {
+        return backdropHex;
+      }
+      const r = Number(m[1]);
+      const g = Number(m[2]);
+      const b = Number(m[3]);
+      const a = m[4] !== undefined ? Number(m[4]) : 1;
+      const bg = hexToRgb(backdropHex);
+      const toHex = (n: number) => Math.round(n).toString(16).padStart(2, '0');
+      return `#${toHex(r * a + bg.r * (1 - a))}${toHex(g * a + bg.g * (1 - a))}${toHex(b * a + bg.b * (1 - a))}`;
+    };
+
+    const compositeAlphaHex = (fgHex: string, alpha: number, backdropHex: string): string => {
+      const fg = hexToRgb(fgHex);
+      const bg = hexToRgb(backdropHex);
+      const toHex = (n: number) => Math.round(n).toString(16).padStart(2, '0');
+      return `#${toHex(fg.r * alpha + bg.r * (1 - alpha))}${toHex(fg.g * alpha + bg.g * (1 - alpha))}${toHex(fg.b * alpha + bg.b * (1 - alpha))}`;
+    };
+
+    const extractVar = (blockCss: string, varName: string): string => {
+      const escaped = varName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const m = blockCss.match(new RegExp(`${escaped}:\\s*([^;]+);`, 'i'));
+      return m ? m[1].trim() : '';
+    };
+
+    let auditedPairs = 0;
+
+    for (const preset of THEME_PRESET_KEYS) {
+      const lightPreset = getPresetTokens(preset, 'light');
+      const containerBg = compositeRgbaOverHex(lightPreset['--container-bg'], '#FFFFFF');
+      const cardBg = compositeRgbaOverHex(lightPreset['--card-bg'], containerBg);
+      const scheduleFilterBg = compositeRgbaOverHex(lightPreset['--schedule-filter-bg'], cardBg);
+      const ghostHoverBg = compositeRgbaOverHex(lightPreset['--btn-ghost-hover-bg'], containerBg);
+      const outlineHoverBg = compositeRgbaOverHex(lightPreset['--btn-outline-hover-bg'], cardBg);
+
+      for (const palette of palettes) {
+        const css = generateDynamicStyles(palette.primary, palette.secondary, preset);
+        const rootBlock = css.match(/:root\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+        const lightDocMatch = css.match(/\[data-surface="light"\]\s*\{([\s\S]*?)\}/);
+        expect(lightDocMatch).not.toBeNull();
+        const lightBlock = lightDocMatch![1];
+
+        // Solid fills (--color-primary, --color-secondary) stay calibrated against #FFFFFF
+        const expectedSolidPrimary = optimizeContrast(palette.primary, '#FFFFFF', 4.5);
+        const expectedSolidSecondary = optimizeContrast(palette.secondary, '#FFFFFF', 4.5);
+        expect(extractVar(rootBlock, '--color-primary').toLowerCase()).toBe(
+          expectedSolidPrimary.toLowerCase()
+        );
+        expect(extractVar(rootBlock, '--color-secondary').toLowerCase()).toBe(
+          expectedSolidSecondary.toLowerCase()
+        );
+
+        // Light text tokens referencing brand variables use --color-primary-text rather than raw --color-primary
+        const headingToken = extractVar(rootBlock, '--heading-color');
+        const outlineTextToken = extractVar(rootBlock, '--btn-outline-text');
+        expect(headingToken).not.toContain('var(--color-primary,');
+        expect(outlineTextToken).not.toContain('var(--color-primary,');
+
+        const primaryText = extractVar(lightBlock, '--color-primary-text');
+        const secondaryText = extractVar(lightBlock, '--color-secondary-text');
+        const errorText = extractVar(lightBlock, '--color-error-text');
+        const mutedText = extractVar(lightBlock, '--color-muted-text');
+        const focusRing = extractVar(lightBlock, '--color-focus-ring');
+        const surfaceBorder = extractVar(lightBlock, '--color-surface-border');
+
+        const primaryTintOnWhite = compositeAlphaHex(expectedSolidPrimary, 0.1, '#FFFFFF');
+        const primaryTintOnCard = compositeAlphaHex(expectedSolidPrimary, 0.1, cardBg);
+
+        const surfaces = [
+          '#FFFFFF',
+          cardBg,
+          containerBg,
+          scheduleFilterBg,
+          ghostHoverBg,
+          outlineHoverBg,
+          primaryTintOnWhite,
+          primaryTintOnCard,
+          '#FEF2F2', // bg-red-50
+          '#F3F4F6', // .bg-*-100
+        ];
+
+        for (const surfaceHex of surfaces) {
+          const surfaceRgb = hexToRgb(surfaceHex);
+          for (const fgHex of [primaryText, secondaryText, errorText, mutedText]) {
+            expect(getContrastRatio(hexToRgb(fgHex), surfaceRgb)).toBeGreaterThanOrEqual(4.5);
+            auditedPairs += 1;
+          }
+          expect(getContrastRatio(hexToRgb(focusRing), surfaceRgb)).toBeGreaterThanOrEqual(3.0);
+          expect(getContrastRatio(hexToRgb(surfaceBorder), surfaceRgb)).toBeGreaterThanOrEqual(3.0);
+        }
+      }
+    }
+
+    expect(auditedPairs).toBeGreaterThanOrEqual(600);
+  });
+
+  it('splits .bg-*-200, .bg-*-300, and .bg-*-400 across gray, slate, zinc, stone, and neutral into dedicated calibrated tiers', () => {
+    const css = generateThemeStylesheet({
+      ...sampleConfig,
+      colorPrimary: '#F472B6',
+      colorSecondary: '#FACC15',
+      themePreset: 'romantic',
+    });
+    const styleEl = document.createElement('style');
+    styleEl.textContent = css;
+    document.head.appendChild(styleEl);
+
+    const prevHtmlClass = document.documentElement.className;
+    document.documentElement.className = 'light';
+
+    const families = ['gray', 'slate', 'zinc', 'stone', 'neutral'] as const;
+    const shadeBackdrops: Record<'100' | '200' | '300' | '400', string[]> = {
+      '100': ['#F3F4F6'],
+      '200': ['#E4E4E7'],
+      '300': ['#CBD5E1', '#D6D3D1'],
+      '400': ['#94A3B8', '#90A1B9'],
+    };
+
+    const host = document.createElement('div');
+    const nodesHtml: string[] = [];
+    for (const family of families) {
+      for (const shade of ['100', '200', '300', '400'] as const) {
+        nodesHtml.push(`<div id="tier-${family}-${shade}" class="bg-${family}-${shade}"></div>`);
+      }
+    }
+    nodesHtml.push(
+      '<div id="paired-200-dark-700" class="bg-gray-200 dark:bg-gray-700"></div>'
+    );
+    host.innerHTML = nodesHtml.join('\n');
+    document.body.appendChild(host);
+
+    try {
+      for (const family of families) {
+        for (const shade of ['100', '200', '300', '400'] as const) {
+          const computed = getComputedStyle(document.getElementById(`tier-${family}-${shade}`)!);
+          const textVars = [
+            '--color-primary-text',
+            '--color-secondary-text',
+            '--color-muted-text',
+            '--color-error-text',
+            '--color-warning-text',
+            '--color-foreground',
+          ];
+          for (const backdropHex of shadeBackdrops[shade]) {
+            const backdropRgb = hexToRgb(backdropHex);
+            for (const varName of textVars) {
+              const fgHex = computed.getPropertyValue(varName).trim();
+              expect(getContrastRatio(hexToRgb(fgHex), backdropRgb)).toBeGreaterThanOrEqual(4.5);
+            }
+            const borderHex = computed.getPropertyValue('--color-surface-border').trim();
+            const ringHex = computed.getPropertyValue('--color-focus-ring').trim();
+            expect(getContrastRatio(hexToRgb(borderHex), backdropRgb)).toBeGreaterThanOrEqual(3.0);
+            expect(getContrastRatio(hexToRgb(ringHex), backdropRgb)).toBeGreaterThanOrEqual(3.0);
+          }
+        }
+      }
+
+      // Switching to .dark ensures paired .bg-gray-200.dark:bg-gray-700 resolves dark-700 calibration instead of light-200
+      document.documentElement.className = 'dark';
+      const darkPairedPrimary = getComputedStyle(document.getElementById('paired-200-dark-700')!)
+        .getPropertyValue('--color-primary-text')
+        .trim();
+      expect(getContrastRatio(hexToRgb(darkPairedPrimary), hexToRgb('#374151'))).toBeGreaterThanOrEqual(
+        4.5
+      );
+    } finally {
+      host.remove();
+      styleEl.remove();
+      document.documentElement.className = prevHtmlClass;
+    }
+  });
+
+  it('calibrates romantic hovered primary buttons and custom --btn-primary-*/--btn-secondary-* overrides against paired labels (WCAG F24)', async () => {
+    const { THEME_PRESET_KEYS } = await import('@/lib/theme/presets');
+
+    const extractVar = (blockCss: string, varName: string): string => {
+      const escaped = varName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const m = blockCss.match(new RegExp(`${escaped}:\\s*([^;]+);`, 'i'));
+      return m ? m[1].trim() : '';
+    };
+
+    const evalColorMixSrgb = (expr: string, solidPrimaryHex: string, solidSecondaryHex: string): string => {
+      const resolved = expr
+        .replace(/var\(\s*--color-primary\s*(?:,\s*#[0-9a-fA-F]{6}\s*)?\)/gi, solidPrimaryHex)
+        .replace(/var\(\s*--color-secondary\s*(?:,\s*#[0-9a-fA-F]{6}\s*)?\)/gi, solidSecondaryHex)
+        .trim();
+      if (/^#[0-9a-fA-F]{6}$/.test(resolved)) {
+        return resolved;
+      }
+      const mixMatch = resolved.match(
+        /^color-mix\(\s*in\s+srgb\s*,\s*(#[0-9a-fA-F]{6})\s+([\d.]+)%\s*,\s*(#[0-9a-fA-F]{6})(?:\s+([\d.]+)%)?\s*\)$/i
+      );
+      expect(mixMatch).not.toBeNull();
+      const c1 = hexToRgb(mixMatch![1]);
+      const p1 = Number(mixMatch![2]) / 100;
+      const c2 = hexToRgb(mixMatch![3]);
+      const p2 = mixMatch![4] !== undefined ? Number(mixMatch![4]) / 100 : 1 - p1;
+      const total = p1 + p2;
+      const w1 = p1 / total;
+      const w2 = p2 / total;
+      const toHex = (n: number) => Math.round(n).toString(16).padStart(2, '0');
+      return `#${toHex(c1.r * w1 + c2.r * w2)}${toHex(c1.g * w1 + c2.g * w2)}${toHex(c1.b * w1 + c2.b * w2)}`;
+    };
+
+    // 1. Default presets (including romantic Blush & Gold) darken hover state and maintain >= 4.5:1 with #ffffff
+    for (const preset of THEME_PRESET_KEYS) {
+      for (const palette of [
+        { primary: '#B91C1C', secondary: '#B45309' },
+        { primary: '#F472B6', secondary: '#FACC15' },
+        { primary: '#38BDF8', secondary: '#A3E635' },
+      ]) {
+        const css = generateDynamicStyles(palette.primary, palette.secondary, preset);
+        const rootBlock = css.match(/:root\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+        const solidPrimary = extractVar(rootBlock, '--color-primary');
+        const solidSecondary = extractVar(rootBlock, '--color-secondary');
+        const primaryHoverRaw = extractVar(rootBlock, '--btn-primary-hover-bg');
+        const primaryText = extractVar(rootBlock, '--btn-primary-text');
+
+        expect(primaryHoverRaw.toLowerCase()).not.toContain('#ffffff');
+        const hoverHex = evalColorMixSrgb(primaryHoverRaw, solidPrimary, solidSecondary);
+        expect(getContrastRatio(hexToRgb(primaryText), hexToRgb(hoverHex))).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+
+    // 2. Custom low-contrast button background/hover overrides calibrate against paired label tokens in :root and .dark
+    const customF24Css = generateDynamicStyles('#F472B6', '#FACC15', 'romantic', {
+      '--btn-primary-bg': '#fbcfe8',
+      '--btn-primary-hover-bg': 'color-mix(in srgb, var(--color-primary, #F472B6) 88%, #ffffff)',
+      '--btn-primary-text': '#ffffff',
+      '--btn-secondary-bg': '#fef08a',
+      '--btn-secondary-hover-bg': '#fde047',
+      '--btn-secondary-text': '#ca8a04',
+    });
+
+    const rootCustom = customF24Css.match(/:root\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+    const darkCustom = customF24Css.match(/\.dark\s*\{([\s\S]*?)\}/)?.[1] ?? '';
+
+    for (const block of [rootCustom, darkCustom]) {
+      const pBg = extractVar(block, '--btn-primary-bg');
+      const pHover = extractVar(block, '--btn-primary-hover-bg');
+      const pText = extractVar(block, '--btn-primary-text');
+      const sBg = extractVar(block, '--btn-secondary-bg');
+      const sHover = extractVar(block, '--btn-secondary-hover-bg');
+      const sText = extractVar(block, '--btn-secondary-text');
+
+      expect(pBg).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(pHover).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(sBg).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(sHover).toMatch(/^#[0-9a-fA-F]{6}$/);
+
+      expect(getContrastRatio(hexToRgb(pText), hexToRgb(pBg))).toBeGreaterThanOrEqual(4.5);
+      expect(getContrastRatio(hexToRgb(pText), hexToRgb(pHover))).toBeGreaterThanOrEqual(4.5);
+      expect(getContrastRatio(hexToRgb(sText), hexToRgb(sBg))).toBeGreaterThanOrEqual(4.5);
+      expect(getContrastRatio(hexToRgb(sText), hexToRgb(sHover))).toBeGreaterThanOrEqual(4.5);
+    }
+  });
 });

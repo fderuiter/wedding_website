@@ -633,6 +633,81 @@ export function resolveBatchGuestMatches(
   return { dbCodeMap, matches };
 }
 
+export interface AddressCollectionMatchResult<T extends ExistingGuestMatchCandidate> {
+  submission: T;
+  matchedHousehold: T;
+  matchedBy: Exclude<CompositeMatchSource, 'code'>;
+}
+
+/**
+ * Matches quarantined `address-collection` submissions against existing invited households
+ * using `resolveBatchGuestMatches` (email -> name + household -> unique name).
+ */
+export function resolveAddressCollectionMatches<
+  T extends ExistingGuestMatchCandidate & Partial<BatchInvitationCodeRecord>,
+>(records: ReadonlyArray<T>): {
+  matched: AddressCollectionMatchResult<T>[];
+  ambiguityBySubmissionId: Map<string, string>;
+} {
+  const submissions: T[] = [];
+  const invitedRecords: T[] = [];
+  const invitedById = new Map<string, T>();
+
+  for (const rec of records) {
+    if (!rec || !rec.id) continue;
+    if (hasAddressCollectionPartyTag(rec.partyTags)) {
+      submissions.push(rec);
+    } else if (rec.code && rec.code.trim()) {
+      invitedRecords.push(rec);
+      invitedById.set(rec.id, rec);
+    }
+  }
+
+  if (submissions.length === 0 || invitedRecords.length === 0) {
+    return { matched: [], ambiguityBySubmissionId: new Map() };
+  }
+
+  const normalizedSubmissions = submissions.map((sub) =>
+    normalizeBatchInvitationRecord({
+      guestName: sub.guestName || '',
+      code: '',
+      email: sub.email ?? null,
+      addressLine1: sub.addressLine1 ?? null,
+      addressLine2: sub.addressLine2 ?? null,
+      city: sub.city ?? null,
+      state: sub.state ?? null,
+      zipCode: sub.zipCode ?? null,
+      country: sub.country ?? null,
+      householdName: sub.householdName ?? null,
+      partyGroup: sub.partyGroup ?? null,
+      partyTags: sub.partyTags ?? null,
+    })
+  );
+
+  const { matches } = resolveBatchGuestMatches(normalizedSubmissions, invitedRecords);
+  const matched: AddressCollectionMatchResult<T>[] = [];
+  const ambiguityBySubmissionId = new Map<string, string>();
+
+  for (let i = 0; i < submissions.length; i++) {
+    const entry = matches[i];
+    const sub = submissions[i];
+    if (entry?.matchedRecord && entry.matchedBy && entry.matchedBy !== 'code') {
+      const target = invitedById.get(entry.matchedRecord.id);
+      if (target) {
+        matched.push({
+          submission: sub,
+          matchedHousehold: target,
+          matchedBy: entry.matchedBy,
+        });
+      }
+    } else if (entry?.ambiguityWarning) {
+      ambiguityBySubmissionId.set(sub.id, entry.ambiguityWarning);
+    }
+  }
+
+  return { matched, ambiguityBySubmissionId };
+}
+
 export function mergeDietaryNotes(notesList: ReadonlyArray<string | null | undefined>): string | null {
   const seen = new Set<string>();
   const collected: string[] = [];

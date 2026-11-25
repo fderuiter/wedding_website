@@ -18209,7 +18209,8 @@
                         "initialized",
                         "setupCompleted",
                         "requiresSetup"
-                      ]
+                      ],
+                      "additionalProperties": true
                     },
                     {
                       "type": "object",
@@ -19690,6 +19691,14 @@
             }
           },
           {
+            "name": "contributorStatus",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "search",
             "in": "query",
             "required": false,
@@ -19791,6 +19800,14 @@
             }
           },
           {
+            "name": "contributorStatus",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "search",
             "in": "query",
             "required": false,
@@ -19868,6 +19885,14 @@
         "parameters": [
           {
             "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "contributorStatus",
             "in": "query",
             "required": false,
             "schema": {
@@ -20146,6 +20171,96 @@
                     "nullable": true,
                     "type": "string",
                     "maxLength": 2000
+                  },
+                  "addressLine1": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 150
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "addressLine2": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 150
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "city": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "state": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "zipCode": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 20
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "country": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
                   }
                 },
                 "required": [

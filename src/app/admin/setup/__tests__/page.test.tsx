@@ -185,4 +185,64 @@ describe('AdminSetupPage (/admin/setup)', () => {
       }),
     });
   });
+
+  it('hydrates enabledFeatures from saved AppConfig modules and countdown/calendar flags', async () => {
+    (getAppConfig as jest.Mock).mockResolvedValue({
+      id: 'global',
+      partner1Name: 'Alex',
+      partner2Name: 'Sam',
+      brideName: 'Alex',
+      groomName: 'Sam',
+      baseUrl: 'https://alexandsam.example.org',
+      weddingDate: new Date('2027-06-20T16:00:00.000Z'),
+      timezone: 'America/New_York',
+      venueName: 'The Conservatory',
+      venueAddress: '100 Park Ave',
+      venueCity: 'New York',
+      venueState: 'NY',
+      venueZip: '10001',
+      latitude: 40.75,
+      longitude: -73.98,
+      contactEmail: 'hosts@alexandsam.example.org',
+      themePreset: 'modern',
+      colorPrimary: '#0F172A',
+      colorSecondary: '#475569',
+      showCountdown: false,
+      showAddToCalendar: true,
+      modules: JSON.stringify({
+        registry: false,
+        groupGifting: true,
+        weather: true,
+        weddingParty: true,
+        attractions: false,
+        gallery: true,
+        countdown: false,
+        addToCalendar: true,
+        interactive3D: false,
+      }),
+      setupCompleted: false,
+    });
+
+    const element = await AdminSetupPage();
+    render(element);
+
+    expect(mockSetupWizard).toHaveBeenCalledWith({
+      initialSavedConfig: expect.objectContaining({
+        themePreset: 'modern',
+        colorPrimary: '#0F172A',
+        colorSecondary: '#475569',
+        enabledFeatures: {
+          registry: false,
+          groupGifting: false,
+          weather: true,
+          weddingParty: true,
+          attractions: false,
+          gallery: true,
+          countdown: false,
+          addToCalendar: true,
+          interactive3D: false,
+        },
+      }),
+    });
+  });
 });
