@@ -1035,12 +1035,9 @@ export function findSqlFiles(dir: string): string[] {
 }
 
 /**
- * Verifies all SQL migration files in the given directory.
+ * Verifies an explicit list of SQL migration files.
  */
-export function verifyMigrations(targetDir?: string): VerificationResult {
-  const migrationsDir = targetDir || path.join(process.cwd(), 'prisma/migrations');
-  const sqlFiles = findSqlFiles(migrationsDir);
-
+export function verifyMigrationFiles(sqlFiles: string[]): VerificationResult {
   const allViolations: MigrationViolation[] = [];
   const errors: string[] = [];
 
@@ -1070,10 +1067,28 @@ export function verifyMigrations(targetDir?: string): VerificationResult {
   };
 }
 
+/**
+ * Verifies all SQL migration files in the given directory.
+ */
+export function verifyMigrations(targetDir?: string): VerificationResult {
+  const migrationsDir = targetDir || path.join(process.cwd(), 'prisma/migrations');
+  const sqlFiles = findSqlFiles(migrationsDir);
+  return verifyMigrationFiles(sqlFiles);
+}
+
 // CLI Execution Entry Point
 export function main(): void {
-  const targetDir = process.argv[2] ? path.resolve(process.cwd(), process.argv[2]) : undefined;
-  const result = verifyMigrations(targetDir);
+  const cliArgs = process.argv.slice(2);
+  let result: VerificationResult;
+  if (cliArgs.length > 0 && cliArgs.every((arg) => arg.toLowerCase().endsWith('.sql'))) {
+    const resolvedFiles = cliArgs
+      .map((arg) => path.resolve(process.cwd(), arg))
+      .filter((absPath) => fs.existsSync(absPath));
+    result = verifyMigrationFiles(resolvedFiles);
+  } else {
+    const targetDir = cliArgs[0] ? path.resolve(process.cwd(), cliArgs[0]) : undefined;
+    result = verifyMigrations(targetDir);
+  }
 
   if (!result.valid) {
     console.error('\n❌ Migration Compatibility Check Failed!');

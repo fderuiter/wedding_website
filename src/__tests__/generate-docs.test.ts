@@ -280,8 +280,37 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       );
     });
 
-    it('generates non-empty environment specifications', () => {
-      expect(generateEnvSpecs()).toContain('**Node.js**: v22.x');
+    it('generates major release line environment specifications invariant to minor and patch bumps', () => {
+      const envSpecs = generateEnvSpecs();
+      expect(envSpecs).toContain('- **Node.js**: v22.x');
+      expect(envSpecs).toContain('- **Next.js**: 16.x');
+      expect(envSpecs).toContain('- **React**: 19.x');
+      expect(envSpecs).toContain('- **Prisma**: 7.x');
+      expect(envSpecs).toContain('- **Zod**: 4.x');
+
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'env-specs-major-'));
+      try {
+        fs.writeFileSync(path.join(tmpDir, '.nvmrc'), '22\n', 'utf8');
+        fs.writeFileSync(
+          path.join(tmpDir, 'package.json'),
+          JSON.stringify(
+            {
+              dependencies: {
+                next: '^16.99.4',
+                react: '^19.8.2',
+                '@prisma/client': '^7.24.9',
+                zod: '^4.12.3',
+              },
+            },
+            null,
+            2,
+          ),
+          'utf8',
+        );
+        expect(generateEnvSpecs(tmpDir)).toBe(envSpecs);
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
     });
 
     it('encodes bracketed, hyphenated, and catch-all route segments into distinct collision-free Mermaid node IDs', () => {

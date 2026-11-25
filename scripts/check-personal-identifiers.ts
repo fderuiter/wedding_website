@@ -60,7 +60,7 @@ export function isAllowlisted(relPath: string, isDir = false): boolean {
     return true;
   }
   for (const prefix of ALLOWLIST_PREFIXES) {
-    if (pathToCheck.startsWith(prefix) || prefix.startsWith(pathToCheck)) {
+    if (pathToCheck.startsWith(prefix)) {
       return true;
     }
   }

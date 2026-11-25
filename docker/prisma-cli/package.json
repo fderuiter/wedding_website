@@ -20,11 +20,11 @@
     }
   },
   "dependencies": {
-    "@prisma/config": "7.10.1",
-    "prisma": "7.10.1"
+    "@prisma/config": "^7.10.1",
+    "prisma": "^7.10.1"
   },
   "overrides": {
-    "effect": "3.22.5",
+    "effect": "^3.22.5",
     "fast-check": "file:./stubs/empty",
     "@prisma/studio-core": "file:./stubs/studio-core",
     "@prisma/dev": "file:./stubs/prisma-dev",
