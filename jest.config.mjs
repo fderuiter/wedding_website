@@ -1,4 +1,9 @@
 import nextJest from 'next/jest.js';
+import {
+  hasCoverageDisableFlag,
+  resolveIsCoverageRun,
+  shouldEnforceGlobalCoverageThreshold,
+} from './scripts/jest/cli-options.mjs';
 
 const createJestConfig = nextJest({
   // Provide the path to your Next.js app to load next.config.js and .env files in your test environment
@@ -6,23 +11,13 @@ const createJestConfig = nextJest({
 });
 
 const cliArgs = process.argv.slice(2);
-const hasCoverageDisableFlag = cliArgs.some(
-  (arg) => arg === '--coverage=false' || arg === '--collectCoverage=false' || arg === '--no-coverage'
-);
-const hasCoverageEnableFlag = cliArgs.some(
-  (arg) =>
-    arg === '--coverage' ||
-    arg === '--collectCoverage' ||
-    arg === '--coverage=true' ||
-    arg === '--collectCoverage=true'
-);
+const coverageDisabled = hasCoverageDisableFlag(cliArgs);
 const lifecycleEvent = process.env.npm_lifecycle_event || '';
-const isCoverageRun =
-  !hasCoverageDisableFlag &&
-  (lifecycleEvent === 'test:cov' ||
-    lifecycleEvent === 'test:cov:html' ||
-    process.env.COLLECT_COVERAGE === 'true' ||
-    hasCoverageEnableFlag);
+const isCoverageRun = resolveIsCoverageRun({ args: cliArgs, env: process.env });
+const enforceGlobalCoverageThreshold = shouldEnforceGlobalCoverageThreshold({
+  args: cliArgs,
+  env: process.env,
+});
 const includeHtmlCoverage =
   lifecycleEvent === 'test:cov:html' ||
   process.env.COVERAGE_HTML === 'true' ||
@@ -151,7 +146,7 @@ export default (async () => {
     reporters: ['default', '<rootDir>/jest-a11y-reporter.cjs'],
     testTimeout: resolvedTestTimeout,
     workerIdleMemoryLimit: '1024MB',
-    collectCoverage: process.env.COLLECT_COVERAGE === 'true' && !hasCoverageDisableFlag,
+    collectCoverage: process.env.COLLECT_COVERAGE === 'true' && !coverageDisabled,
     coverageDirectory: 'coverage',
     coverageReporters: includeHtmlCoverage
       ? ['json', 'lcov', 'text', 'clover', 'html']
@@ -175,7 +170,7 @@ export default (async () => {
       '!<rootDir>/postcss.config.mjs',
       '!<rootDir>/eslint.config.mjs',
     ],
-    ...(isCoverageRun
+    ...(enforceGlobalCoverageThreshold
       ? {
         coverageThreshold: {
           global: {
