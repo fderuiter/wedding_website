@@ -13,6 +13,7 @@ interface GuestSessionState {
   guestName: string;
   email?: string | null;
   isVerified: boolean;
+  hasPasscodeSession: boolean;
   isLoading: boolean;
   status: GuestSessionStatus;
   lastErrorCode: string | null;
@@ -39,6 +40,7 @@ const defaultContextValue: GuestSessionContextType = {
   guestName: '',
   email: null,
   isVerified: false,
+  hasPasscodeSession: false,
   isLoading: false,
   status: 'unauthenticated',
   lastErrorCode: null,
@@ -62,6 +64,7 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
     guestName: '',
     email: null,
     isVerified: false,
+    hasPasscodeSession: false,
     isLoading: true,
     status: 'unauthenticated',
     lastErrorCode: null,
@@ -92,6 +95,7 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
       const preserveExpiryPrompt = options?.preserveExpiryPrompt ?? true;
       try {
         const data = await apiClient.get('/api/registry/session');
+        const passcodeActive = Boolean(data?.hasPasscodeSession);
         if (data && (data.isVerified || data.invitationCode || data.code)) {
           const code = data.invitationCode || data.code || '';
           const name = data.guestName || '';
@@ -105,6 +109,7 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
             guestName: name,
             email: sessionEmail,
             isVerified: true,
+            hasPasscodeSession: passcodeActive,
             isLoading: false,
             status: 'authenticated',
             lastErrorCode: null,
@@ -126,6 +131,7 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
                 invitationCode: draftCode,
                 guestName: currentName,
                 isVerified: false,
+                hasPasscodeSession: passcodeActive,
                 isLoading: false,
                 status: 'expired',
                 lastErrorCode: 'SESSION_EXPIRED',
@@ -139,6 +145,7 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
                 guestName: '',
                 email: null,
                 isVerified: false,
+                hasPasscodeSession: passcodeActive,
                 isLoading: false,
                 status: 'unauthenticated',
                 lastErrorCode: null,
@@ -286,17 +293,18 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
     } catch {
       // Ignore API failure and clear client state
     } finally {
-      setSessionState({
+      setSessionState(prev => ({
         invitationCode: '',
         guestName: '',
         email: null,
         isVerified: false,
+        hasPasscodeSession: prev.hasPasscodeSession,
         isLoading: false,
         status: 'unauthenticated',
         lastErrorCode: null,
         draftInvitationCode: '',
         isRecoveryModalOpen: false,
-      });
+      }));
       emitSessionChanged();
     }
   }, [emitSessionChanged]);

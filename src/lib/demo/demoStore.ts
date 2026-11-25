@@ -5,7 +5,9 @@ import type {
   ContributorRecord,
   GuestClaimActions,
   InvitationCodeDTO,
+  OrderTrackingDetails,
   RegistryItem,
+  RegistryShippingAddress,
 } from '@/features/registry';
 import type { SeatingTableDTO } from '@/features/seating';
 import type { WeddingPartyMemberDTO } from '@/features/wedding-party';
@@ -20,6 +22,7 @@ import { notifyGuestSessionChanged } from '@/utils/guestSessionEvents';
 import { normalizePartyTags } from '@/utils/invitationValidation';
 import {
   buildArchetypeDataset,
+  DEMO_SHIPPING_ADDRESS,
   type ArchetypeDataset,
   type DemoBroadcastRecord,
   type DemoFeatureItem,
@@ -59,6 +62,7 @@ export interface DemoClaimPreview {
   itemType: 'PHYSICAL' | 'CASH_FUND' | 'EXPERIENCE_FUND';
   isGroupGift: boolean;
   vendorUrl: string | null;
+  shippingAddress: RegistryShippingAddress | null;
   paymentHandle: string | null;
   paymentHandleType: string | null;
   contributorName: string;
@@ -1281,13 +1285,17 @@ export function previewDemoClaimToken(token: string): DemoClaimPreview | null {
     itemType,
     isGroupGift: Boolean(item.isGroupGift),
     vendorUrl: item.vendorUrl ?? null,
+    shippingAddress: itemType === 'PHYSICAL' ? DEMO_SHIPPING_ADDRESS : null,
     paymentHandle: item.paymentHandle || '@alex-and-taylor',
     paymentHandleType: item.paymentHandleType || 'Venmo',
     contributorName: contributor.name,
   };
 }
 
-export function processDemoClaimToken(token: string): {
+export function processDemoClaimToken(
+  token: string,
+  orderDetails?: OrderTrackingDetails
+): {
   action: 'confirm' | 'cancel';
   status: 'CONFIRMED' | 'CANCELLED';
   changed: boolean;
@@ -1300,6 +1308,20 @@ export function processDemoClaimToken(token: string): {
   let changed = false;
   const targetStatus: 'CONFIRMED' | 'CANCELLED' =
     record.action === 'confirm' ? 'CONFIRMED' : 'CANCELLED';
+  const trimOpt = (val?: string | null) =>
+    typeof val === 'string' && val.trim().length > 0 ? val.trim() : undefined;
+  const trackingPatch: Partial<ContributorRecord> =
+    targetStatus === 'CONFIRMED'
+      ? {
+        ...(trimOpt(orderDetails?.retailerOrderNumber)
+          ? { retailerOrderNumber: trimOpt(orderDetails?.retailerOrderNumber) }
+          : {}),
+        ...(trimOpt(orderDetails?.carrier) ? { carrier: trimOpt(orderDetails?.carrier) } : {}),
+        ...(trimOpt(orderDetails?.trackingNumber)
+          ? { trackingNumber: trimOpt(orderDetails?.trackingNumber) }
+          : {}),
+      }
+      : {};
 
   updateState((prev) => {
     const current = prev.datasets[prev.archetype];
@@ -1312,14 +1334,14 @@ export function processDemoClaimToken(token: string): {
       return prev;
     }
 
-    if (contributor.status === targetStatus) {
+    if (contributor.status === targetStatus && Object.keys(trackingPatch).length === 0) {
       updatedItem = item;
       return prev;
     }
 
-    changed = true;
+    changed = contributor.status !== targetStatus;
     const nextContributors = item.contributors.map((c) =>
-      c.id === record.contributorId ? { ...c, status: targetStatus } : c
+      c.id === record.contributorId ? { ...c, status: targetStatus, ...trackingPatch } : c
     );
 
     const activeTotal = nextContributors

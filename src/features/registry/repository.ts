@@ -23,6 +23,7 @@ import type {
   ContributorDeleteResult,
   ContributorLifecycleResult,
   ContributorRecord,
+  OrderTrackingDetails,
   StripeLedgerReconciliationResult,
 } from './types';
 import {
@@ -198,16 +199,18 @@ class RegistryRepository implements IRegistryRepository {
   async getActiveCatalogCapabilitiesSummary(): Promise<ActiveCatalogCapabilitiesSummary> {
     if (isStaticExportBuild()) {
       const seeded = buildArchetypeSeedData('classic').registryItems.filter(
-        (item) => !item.isSample && !item.purchased
+        (item) => !item.isSample
       );
       return {
         hasActivePhysicalItems: seeded.some(
           (item) =>
             (item.itemType ?? 'PHYSICAL') === 'PHYSICAL' &&
-            /^https?:\/\//i.test(item.vendorUrl?.trim() ?? '')
+            (/^https?:\/\//i.test(item.vendorUrl?.trim() ?? '') || Boolean(item.isGroupGift))
         ),
         hasActiveFundsOrGroupGifts: seeded.some(
           (item) =>
+            (!item.purchased ||
+              (item.contributors ?? []).some((c) => c.status === 'RESERVED')) &&
             (item.itemType === 'CASH_FUND' ||
               item.itemType === 'EXPERIENCE_FUND' ||
               Boolean(item.isGroupGift)) &&
@@ -221,11 +224,11 @@ class RegistryRepository implements IRegistryRepository {
         this.client.registryItem.findFirst({
           where: {
             isSample: false,
-            purchased: false,
             itemType: 'PHYSICAL',
             OR: [
               { vendorUrl: { startsWith: 'http://', mode: 'insensitive' } },
               { vendorUrl: { startsWith: 'https://', mode: 'insensitive' } },
+              { isGroupGift: true },
             ],
           },
           select: { id: true },
@@ -233,8 +236,13 @@ class RegistryRepository implements IRegistryRepository {
         this.client.registryItem.findFirst({
           where: {
             isSample: false,
-            purchased: false,
             AND: [
+              {
+                OR: [
+                  { purchased: false },
+                  { contributors: { some: { status: 'RESERVED' } } },
+                ],
+              },
               {
                 OR: [
                   { itemType: { in: ['CASH_FUND', 'EXPERIENCE_FUND'] } },
@@ -538,7 +546,7 @@ class RegistryRepository implements IRegistryRepository {
           throw new Error('Invalid invitation code.');
         }
 
-        if (!contribution.stripePaymentIntentId) {
+        if (!contribution.stripePaymentIntentId && !isFund) {
           if (typeof txClient.$queryRaw === 'function') {
             const invitationCodeTable = Prisma.raw(qualifyPostgresTable('InvitationCode'));
             await txClient.$queryRaw(
@@ -550,12 +558,13 @@ class RegistryRepository implements IRegistryRepository {
               where: {
                 invitationCodeId: inviteRecord.id,
                 status: 'RESERVED',
+                registryItem: { itemType: 'PHYSICAL' },
               },
             });
             if (activeReservationCount >= MAX_ACTIVE_HOUSEHOLD_RESERVATIONS) {
               throw new ApiError(
                 429,
-                `Your household already has ${MAX_ACTIVE_HOUSEHOLD_RESERVATIONS} pending gift reservations. Please confirm or release an existing reservation before claiming another gift.`
+                `Your household already has ${MAX_ACTIVE_HOUSEHOLD_RESERVATIONS} pending physical gift reservations. Please confirm or release an existing reservation using the /guest/claim links in your confirmation email before claiming another gift.`
               );
             }
           }
@@ -570,6 +579,30 @@ class RegistryRepository implements IRegistryRepository {
           inviteRecord.email.trim().length > 0
         ) {
           emailToSave = inviteRecord.email.trim();
+        }
+      }
+
+      if (!invitationCodeId && !contribution.stripePaymentIntentId && !isFund && emailToSave) {
+        const normalizedEmail = emailToSave.trim().toLowerCase();
+        if (typeof txClient.$queryRaw === 'function') {
+          await txClient.$queryRaw(
+            Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`registry-hold:${normalizedEmail}`}))::text AS locked`
+          );
+        }
+        if (typeof txClient.contributor?.count === 'function') {
+          const activeEmailReservationCount = await txClient.contributor.count({
+            where: {
+              email: { equals: normalizedEmail, mode: 'insensitive' },
+              status: 'RESERVED',
+              registryItem: { itemType: 'PHYSICAL' },
+            },
+          });
+          if (activeEmailReservationCount >= MAX_ACTIVE_HOUSEHOLD_RESERVATIONS) {
+            throw new ApiError(
+              429,
+              `This email address already has ${MAX_ACTIVE_HOUSEHOLD_RESERVATIONS} pending physical gift reservations. Please confirm or release an existing reservation using the /guest/claim links in your confirmation email before claiming another gift.`
+            );
+          }
         }
       }
 
@@ -916,7 +949,8 @@ class RegistryRepository implements IRegistryRepository {
 
   async confirmContribution(
     contributorId: string,
-    author: string = 'Guest'
+    author: string = 'Guest',
+    orderDetails?: OrderTrackingDetails
   ): Promise<ContributorLifecycleResult> {
     return executeInTransaction(this.client, async (txClient: any) => {
       const existing = await txClient.contributor.findUnique({
@@ -934,7 +968,32 @@ class RegistryRepository implements IRegistryRepository {
         );
       }
 
+      const trimField = (val?: string | null) =>
+        typeof val === 'string' && val.trim().length > 0 ? val.trim() : undefined;
+      const trackingPatch: Record<string, string> = {};
+      const nextOrderNumber = trimField(orderDetails?.retailerOrderNumber);
+      const nextCarrier = trimField(orderDetails?.carrier);
+      const nextTrackingNumber = trimField(orderDetails?.trackingNumber);
+      if (nextOrderNumber) trackingPatch.retailerOrderNumber = nextOrderNumber;
+      if (nextCarrier) trackingPatch.carrier = nextCarrier;
+      if (nextTrackingNumber) trackingPatch.trackingNumber = nextTrackingNumber;
+      const hasTrackingPatch = Object.keys(trackingPatch).length > 0;
+
       if (previousStatus === 'CONFIRMED') {
+        let confirmedContributor = existing;
+        if (hasTrackingPatch) {
+          confirmedContributor = await txClient.contributor.update({
+            where: { id: contributorId },
+            data: trackingPatch,
+          });
+          await createAuditSnapshot(
+            'Contributor',
+            confirmedContributor.id,
+            confirmedContributor,
+            author,
+            txClient
+          );
+        }
         const currentItem = existing.registryItemId
           ? await txClient.registryItem.findUnique({
             where: { id: existing.registryItemId },
@@ -942,7 +1001,7 @@ class RegistryRepository implements IRegistryRepository {
           })
           : null;
         return {
-          contributor: ContributorSchema.parse(existing),
+          contributor: ContributorSchema.parse(confirmedContributor),
           item: currentItem ? RegistryItemSchema.parse(currentItem) : null,
           previousStatus,
           changed: false,
@@ -954,6 +1013,7 @@ class RegistryRepository implements IRegistryRepository {
         data: {
           status: 'CONFIRMED',
           alertEmailSentAt: null,
+          ...trackingPatch,
         },
       });
       await createAuditSnapshot('Contributor', updated.id, updated, author, txClient);

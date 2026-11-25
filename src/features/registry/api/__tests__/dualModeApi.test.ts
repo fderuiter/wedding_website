@@ -129,6 +129,7 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
         data: {
           cardCheckoutEnabled: false,
           stripePublishableKey: null,
+          hasShippingAddress: false,
         },
       });
     });
@@ -146,6 +147,7 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
         data: {
           cardCheckoutEnabled: true,
           stripePublishableKey: 'pk_test_valid_pub_12345',
+          hasShippingAddress: false,
         },
       });
       expect(JSON.stringify(body)).not.toContain('sk_test_valid_secret_12345');

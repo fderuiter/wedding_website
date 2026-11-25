@@ -292,7 +292,7 @@ describe('RegistryPage end-to-end contribution receipt and cache sync integratio
     expect(window.location.search).not.toContain('item=fund-honeymoon');
   });
 
-  test('blocks unverified physical gift claim until guest verifies invitation code, then unlocks shipping address and completes claim', async () => {
+  test('shows shipping sign-in prompt on unauthenticated view, requires email when household code is unverified, and unlocks shipping address once verified', async () => {
     let sessionVerified = false;
     server.use(
       http.get('/api/registry/capabilities', () => {
@@ -301,6 +301,7 @@ describe('RegistryPage end-to-end contribution receipt and cache sync integratio
           stripePublishableKey: 'pk_test_12345',
           defaultPaymentHandleType: null,
           defaultPaymentHandle: null,
+          hasShippingAddress: true,
           shippingAddress: sessionVerified
             ? {
               recipientName: 'Alex & Jordan Rivera',
@@ -347,6 +348,7 @@ describe('RegistryPage end-to-end contribution receipt and cache sync integratio
 
     const dialog = await screen.findByRole('dialog', { name: 'Pour-Over Electric Kettle' });
     expect(within(dialog).queryByTestId('registry-shipping-address-card')).not.toBeInTheDocument();
+    expect(await within(dialog).findByTestId('registry-shipping-signin-prompt')).toBeInTheDocument();
 
     fireEvent.change(within(dialog).getByLabelText(/Your Name/i), {
       target: { value: 'Alex Guest' },
@@ -354,7 +356,7 @@ describe('RegistryPage end-to-end contribution receipt and cache sync integratio
     fireEvent.click(within(dialog).getByRole('button', { name: 'Claim Gift' }));
 
     expect(
-      await within(dialog).findByText(/Please verify your 8-character invitation code to claim this gift/i)
+      await within(dialog).findByText(/Email address is required for confirmation/i)
     ).toBeInTheDocument();
 
     fireEvent.change(within(dialog).getByPlaceholderText('ABCDEF12'), {

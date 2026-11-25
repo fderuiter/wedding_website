@@ -5,6 +5,7 @@ import { signCompactToken } from '@/core/auth/tokenCookieHelpers';
 import { middleware } from '@/middleware';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { isGuestRequest } from '@/core/auth/guest.server';
+import { getAppConfig } from '@/lib/config';
 import { MultiChannelMessagingProvider } from '@/features/broadcast';
 import {
   signContributorActionToken,
@@ -288,6 +289,112 @@ describe('Contributor Signed Links, Scanner-Safe Claims, Middleware & Admin Life
         const cancelJson = await postCancelRes.json();
         expect(cancelJson.data.status).toBe('CANCELLED');
         expect(cancelJson.data.item.amountContributed).toBe(0);
+
+        // 4. Physical item claim preview returns vendorUrl + shippingAddress with zero DB mutations, and POST forwards optional order tracking details
+        (getAppConfig as jest.Mock).mockResolvedValueOnce({
+          modules: { registry: true, groupGifting: true },
+          contactEmail: 'couple@wedding.test',
+          partner1Name: 'Alex',
+          partner2Name: 'Taylor',
+          shippingRecipientName: 'Alex & Taylor',
+          shippingAddressLine1: '742 Evergreen Terrace',
+          shippingCity: 'Portland',
+          shippingState: 'OR',
+          shippingZip: '97205',
+          shippingCountry: 'United States',
+        });
+        const physicalConfirmToken = await signContributorActionToken({
+          contributorId: 'c-phys-42',
+          action: 'confirm',
+        });
+        (registryService.getContributorWithItem as jest.Mock).mockResolvedValue({
+          contributor: {
+            id: 'c-phys-42',
+            name: 'Passcode Guest',
+            email: 'guest@example.com',
+            amount: 180,
+            refundedAmount: 0,
+            status: 'RESERVED',
+          },
+          item: {
+            id: 'item-phys-42',
+            name: 'Dutch Oven',
+            itemType: 'PHYSICAL',
+            isGroupGift: false,
+            isSample: false,
+            vendorUrl: 'https://retailer.example.com/dutch-oven',
+            price: 180,
+            amountContributed: 0,
+            purchased: true,
+            contributors: [],
+          },
+        });
+
+        const physPreviewRes = await claimGET(
+          new NextRequest(
+            `http://localhost:3000/api/registry/claim?token=${encodeURIComponent(physicalConfirmToken)}`
+          )
+        );
+        expect(physPreviewRes.status).toBe(200);
+        const physPreviewJson = await physPreviewRes.json();
+        expect(physPreviewJson.data.vendorUrl).toBe('https://retailer.example.com/dutch-oven');
+        expect(physPreviewJson.data.shippingAddress).toMatchObject({
+          recipientName: 'Alex & Taylor',
+          addressLine1: '742 Evergreen Terrace',
+          city: 'Portland',
+          state: 'OR',
+          zip: '97205',
+        });
+        expect(registryService.confirmContribution).toHaveBeenCalledTimes(1);
+
+        (registryService.confirmContribution as jest.Mock).mockResolvedValueOnce({
+          changed: true,
+          previousStatus: 'RESERVED',
+          contributor: {
+            id: 'c-phys-42',
+            name: 'Passcode Guest',
+            email: 'guest@example.com',
+            amount: 180,
+            refundedAmount: 0,
+            status: 'CONFIRMED',
+            retailerOrderNumber: 'ORD-7788',
+            carrier: 'FedEx',
+            trackingNumber: '777123456789',
+          },
+          item: {
+            id: 'item-phys-42',
+            name: 'Dutch Oven',
+            itemType: 'PHYSICAL',
+            isGroupGift: false,
+            price: 180,
+            amountContributed: 180,
+            purchased: true,
+            contributors: [],
+          },
+        });
+
+        const physPostRes = await claimPOST(
+          new NextRequest('http://localhost:3000/api/registry/claim', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              token: physicalConfirmToken,
+              retailerOrderNumber: ' ORD-7788 ',
+              carrier: ' FedEx ',
+              trackingNumber: ' 777123456789 ',
+            }),
+          })
+        );
+        expect(physPostRes.status).toBe(200);
+        expect(registryService.confirmContribution).toHaveBeenLastCalledWith(
+          'c-phys-42',
+          'Guest',
+          {
+            retailerOrderNumber: 'ORD-7788',
+            carrier: 'FedEx',
+            trackingNumber: '777123456789',
+          }
+        );
       } finally {
         sendEmailSpy.mockRestore();
       }

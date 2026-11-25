@@ -1,14 +1,21 @@
 'use client';
 
-import React, { Suspense, useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
+import { Icon } from '@/components/ui/Icon';
 import { Container } from '@/components/ui/Layout';
+import { FormGroup, Input, Label } from '@/components/ui/forms';
 import { AccessibleExternalLink } from '@/components/ui/AccessibleExternalLink';
 import { apiClient } from '@/lib/apiClient';
 import { formatCurrency } from '@/utils/intl';
-import { ContributorLifecycleBadge, getPaymentUrl } from '@/features/registry';
+import {
+  ContributorLifecycleBadge,
+  formatRegistryShippingAddress,
+  getPaymentUrl,
+  type RegistryShippingAddress,
+} from '@/features/registry';
 
 interface ClaimPreviewData {
   action: 'confirm' | 'cancel';
@@ -19,6 +26,7 @@ interface ClaimPreviewData {
   itemType: string;
   isGroupGift: boolean;
   vendorUrl: string | null;
+  shippingAddress?: RegistryShippingAddress | null;
   paymentHandle: string | null;
   paymentHandleType: string | null;
 }
@@ -41,6 +49,19 @@ function GuestClaimContent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [completedResult, setCompletedResult] = useState<ClaimMutationResponse | null>(null);
+  const [retailerOrderNumber, setRetailerOrderNumber] = useState('');
+  const [carrier, setCarrier] = useState('');
+  const [trackingNumber, setTrackingNumber] = useState('');
+  const [copiedAddress, setCopiedAddress] = useState(false);
+  const addressCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (addressCopyTimerRef.current) {
+        clearTimeout(addressCopyTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!token) {
@@ -54,6 +75,9 @@ function GuestClaimContent() {
       .then((data) => {
         if (!active) return;
         setFetchState({ token, preview: data, error: null });
+        setRetailerOrderNumber('');
+        setCarrier('');
+        setTrackingNumber('');
       })
       .catch((err: unknown) => {
         if (!active) return;
@@ -80,6 +104,65 @@ function GuestClaimContent() {
       ? fetchState.error
       : null;
 
+  const currentStatus = (completedResult?.status || preview?.status || '').toUpperCase();
+  const isConfirmFlow = preview?.action !== 'cancel';
+  const isVendorUrlSafe = Boolean(
+    preview?.vendorUrl &&
+      (preview.vendorUrl.startsWith('http://') || preview.vendorUrl.startsWith('https://'))
+  );
+  const formattedShippingText = preview?.shippingAddress
+    ? formatRegistryShippingAddress(preview.shippingAddress)
+    : '';
+  const showShippingAddressCard = Boolean(
+    formattedShippingText &&
+      completedResult?.action !== 'cancel' &&
+      currentStatus !== 'CANCELLED' &&
+      currentStatus !== 'REFUNDED'
+  );
+  const showOrderTrackingInputs = Boolean(
+    isConfirmFlow && (preview?.itemType || 'PHYSICAL') === 'PHYSICAL'
+  );
+
+  const handleCopyShippingAddress = async () => {
+    if (!formattedShippingText) return;
+    let copySucceeded = false;
+
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(formattedShippingText);
+        copySucceeded = true;
+      } catch {
+        // Fallback below
+      }
+    }
+
+    if (!copySucceeded && typeof document !== 'undefined') {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = formattedShippingText;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        copySucceeded = true;
+      } catch {
+        // Fallback failed
+      }
+    }
+
+    if (copySucceeded) {
+      setCopiedAddress(true);
+      if (addressCopyTimerRef.current) {
+        clearTimeout(addressCopyTimerRef.current);
+      }
+      addressCopyTimerRef.current = setTimeout(() => {
+        setCopiedAddress(false);
+      }, 2500);
+    }
+  };
+
   const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!token || isSubmitting) return;
@@ -88,9 +171,16 @@ function GuestClaimContent() {
     setSubmitError(null);
 
     try {
-      const response = await apiClient.post<ClaimMutationResponse>('/api/registry/claim', {
-        token,
-      });
+      const payload: Record<string, string> = { token };
+      if (isConfirmFlow) {
+        const cleanOrderNumber = retailerOrderNumber.trim();
+        const cleanCarrier = carrier.trim();
+        const cleanTracking = trackingNumber.trim();
+        if (cleanOrderNumber) payload.retailerOrderNumber = cleanOrderNumber;
+        if (cleanCarrier) payload.carrier = cleanCarrier;
+        if (cleanTracking) payload.trackingNumber = cleanTracking;
+      }
+      const response = await apiClient.post<ClaimMutationResponse>('/api/registry/claim', payload);
       setCompletedResult(response);
       setFetchState((prev) =>
         prev && prev.preview
@@ -108,8 +198,6 @@ function GuestClaimContent() {
     }
   };
 
-  const currentStatus = (completedResult?.status || preview?.status || '').toUpperCase();
-  const isConfirmFlow = preview?.action !== 'cancel';
   const paymentDeepLink =
     preview?.paymentHandle && preview?.paymentHandleType
       ? getPaymentUrl(preview.paymentHandleType, preview.paymentHandle, preview.amount)
@@ -165,7 +253,47 @@ function GuestClaimContent() {
               <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
                 Reserved Amount: <span className="font-bold">{formatCurrency(preview.amount)}</span>
               </p>
+              {isVendorUrlSafe && preview.vendorUrl && (
+                <div className="pt-1">
+                  <AccessibleExternalLink
+                    href={preview.vendorUrl}
+                    showIcon
+                    iconClassName="w-3.5 h-3.5"
+                    data-testid="claim-vendor-link"
+                    className="inline-flex items-center gap-1 text-primary underline text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
+                  >
+                    View on Vendor Site
+                  </AccessibleExternalLink>
+                </div>
+              )}
             </div>
+
+            {showShippingAddressCard && (
+              <div
+                data-testid="claim-shipping-address-card"
+                className="rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-4 text-sm space-y-2"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <span className="font-semibold text-gray-900 dark:text-white">
+                    Ship Directly to Couple
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    data-testid="copy-shipping-address-button"
+                    onClick={() => void handleCopyShippingAddress()}
+                    className="inline-flex items-center gap-1.5 text-xs"
+                  >
+                    <Icon name={copiedAddress ? 'Check' : 'Copy'} className="w-3.5 h-3.5" />
+                    {copiedAddress ? 'Address Copied!' : 'Copy Shipping Address'}
+                  </Button>
+                </div>
+                <pre className="whitespace-pre-wrap font-sans text-xs text-gray-700 dark:text-gray-300 leading-relaxed m-0">
+                  {formattedShippingText}
+                </pre>
+              </div>
+            )}
 
             {completedResult ? (
               <div
@@ -211,6 +339,51 @@ function GuestClaimContent() {
                             </AccessibleExternalLink>
                           </p>
                         )}
+                      </div>
+                    )}
+                    {showOrderTrackingInputs && (
+                      <div
+                        data-testid="claim-order-tracking-fields"
+                        className="rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-4 space-y-3"
+                      >
+                        <p className="text-xs font-semibold text-gray-800 dark:text-gray-200">
+                          Order &amp; Shipping Details (Optional)
+                        </p>
+                        <FormGroup busy={isSubmitting} className="mb-0">
+                          <Label>Retailer Order Number (Optional)</Label>
+                          <Input
+                            type="text"
+                            placeholder="e.g. 114-3941689-8772232"
+                            value={retailerOrderNumber}
+                            onChange={(e) => setRetailerOrderNumber(e.target.value)}
+                            busy={isSubmitting}
+                            maxLength={120}
+                          />
+                        </FormGroup>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <FormGroup busy={isSubmitting} className="mb-0">
+                            <Label>Shipping Carrier (Optional)</Label>
+                            <Input
+                              type="text"
+                              placeholder="e.g. UPS, FedEx, USPS"
+                              value={carrier}
+                              onChange={(e) => setCarrier(e.target.value)}
+                              busy={isSubmitting}
+                              maxLength={100}
+                            />
+                          </FormGroup>
+                          <FormGroup busy={isSubmitting} className="mb-0">
+                            <Label>Tracking Number (Optional)</Label>
+                            <Input
+                              type="text"
+                              placeholder="e.g. 1Z999AA10123456784"
+                              value={trackingNumber}
+                              onChange={(e) => setTrackingNumber(e.target.value)}
+                              busy={isSubmitting}
+                              maxLength={120}
+                            />
+                          </FormGroup>
+                        </div>
                       </div>
                     )}
                   </div>

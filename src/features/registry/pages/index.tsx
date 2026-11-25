@@ -59,6 +59,7 @@ function RegistryPageContent() {
     stripePublishableKey,
     defaultPaymentHandleType,
     defaultPaymentHandle,
+    hasShippingAddress,
     shippingAddress,
     filteredItems,
     visibleItems,
@@ -411,6 +412,7 @@ function RegistryPageContent() {
               stripePublishableKey={stripePublishableKey}
               defaultPaymentHandleType={defaultPaymentHandleType}
               defaultPaymentHandle={defaultPaymentHandle}
+              hasShippingAddress={hasShippingAddress}
               shippingAddress={shippingAddress}
               isAdmin={isAdmin}
               reconciledReceipt={reconciledReceipt}

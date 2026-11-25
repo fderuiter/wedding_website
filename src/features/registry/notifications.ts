@@ -76,6 +76,7 @@ interface DispatchContributionNotificationsParams {
   repository?: IRegistryRepository;
   isReservation?: boolean;
   verifiedInvitationCode?: string | null;
+  allowPasscodeReservationEmail?: boolean;
 }
 
 function isEmailProviderConfigured(config: Record<string, any> | null | undefined): boolean {
@@ -767,20 +768,28 @@ export async function dispatchContributionNotifications(
     let recipientGuestEmail = guestEmailRaw;
     let canSendGuestConfirmation = hasValidGuestEmail;
     if (isReserved) {
-      const verifiedHouseholdEmail = await resolveVerifiedReservationHouseholdEmail({
-        savedContributor,
-        verifiedInvitationCode: params.verifiedInvitationCode,
-        dbClient,
-      });
-      if (
-        !verifiedHouseholdEmail ||
-        (hasValidGuestEmail &&
-          verifiedHouseholdEmail.toLowerCase() !== guestEmailRaw.toLowerCase())
-      ) {
-        canSendGuestConfirmation = false;
-      } else {
-        recipientGuestEmail = verifiedHouseholdEmail;
+      const hasLinkedHousehold =
+        Boolean(savedContributor.invitationCodeId) ||
+        Boolean(params.verifiedInvitationCode?.trim());
+      if (!hasLinkedHousehold && params.allowPasscodeReservationEmail && hasValidGuestEmail) {
+        recipientGuestEmail = guestEmailRaw;
         canSendGuestConfirmation = true;
+      } else {
+        const verifiedHouseholdEmail = await resolveVerifiedReservationHouseholdEmail({
+          savedContributor,
+          verifiedInvitationCode: params.verifiedInvitationCode,
+          dbClient,
+        });
+        if (
+          !verifiedHouseholdEmail ||
+          (hasValidGuestEmail &&
+            verifiedHouseholdEmail.toLowerCase() !== guestEmailRaw.toLowerCase())
+        ) {
+          canSendGuestConfirmation = false;
+        } else {
+          recipientGuestEmail = verifiedHouseholdEmail;
+          canSendGuestConfirmation = true;
+        }
       }
     }
 
