@@ -132,16 +132,31 @@ if (args[0] === 'run' && args[1]) {
 
   if (!fs.existsSync(${JSON.stringify(worktreeProbeFile)})) {
     const nmPath = path.join(cwd, 'node_modules');
-    fs.writeFileSync(
-      ${JSON.stringify(worktreeProbeFile)},
-      JSON.stringify({
-        cwd: fs.realpathSync(cwd),
-        hasNodeModulesSymlink: fs.existsSync(nmPath) && fs.lstatSync(nmPath).isSymbolicLink(),
-        hasEslintCache: fs.existsSync(path.join(cwd, '.eslintcache')),
-        hasBuildInfo: fs.existsSync(path.join(cwd, 'tsconfig.build.tsbuildinfo')),
-        gitDirEnv: process.env.GIT_DIR ?? null,
-      })
-    );
+    const eslintCachePath = path.join(cwd, '.eslintcache');
+    try {
+      fs.writeFileSync(
+        ${JSON.stringify(worktreeProbeFile)},
+        JSON.stringify({
+          cwd: fs.realpathSync(cwd),
+          hasNodeModulesSymlink: fs.existsSync(nmPath) && fs.lstatSync(nmPath).isSymbolicLink(),
+          hasEslintCache: fs.existsSync(eslintCachePath),
+          eslintCacheRaw: fs.existsSync(eslintCachePath) ? fs.readFileSync(eslintCachePath, 'utf8') : null,
+          hasBuildInfo: fs.existsSync(path.join(cwd, 'tsconfig.build.tsbuildinfo')),
+          hasNextEnv: fs.existsSync(path.join(cwd, 'next-env.d.ts')),
+          hasNextTypes: fs.existsSync(path.join(cwd, '.next', 'types', 'routes.d.ts')),
+          gitDirEnv: process.env.GIT_DIR ?? null,
+        }),
+        { flag: 'wx' }
+      );
+    } catch {
+      // Another parallel worker wrote the probe first
+    }
+  }
+
+  if (process.env.SLOW_CHECK_SCRIPT === scriptName) {
+    const delayMs = Number(process.env.SLOW_CHECK_DELAY_MS || '4000');
+    setTimeout(() => process.exit(0), delayMs);
+    return;
   }
 
   if (process.env.FAIL_CHECK_SCRIPT === scriptName) {
@@ -183,7 +198,7 @@ process.exit(0);
 
     fs.writeFileSync(
       path.join(tempDir, '.gitignore'),
-      '.test-bin/\n.executed-checks.log\n.executed-cwds.log\n.worktree-probe.json\n.lint-task.cjs\nnode_modules\n*.tsbuildinfo\n.eslintcache\n'
+      '.test-bin/\n.executed-checks.log\n.executed-cwds.log\n.worktree-probe.json\n.lint-task.cjs\nnode_modules\n*.tsbuildinfo\n.eslintcache\nnext-env.d.ts\n.next\n'
     );
     fs.writeFileSync(
       path.join(tempDir, 'package.json'),
@@ -504,7 +519,7 @@ for (const file of process.argv.slice(2)) {
       expect(hookContent).not.toMatch(/\bgit\s+checkout\b|['"]checkout['"]/);
     });
 
-    it('passes in place when HEAD and tracked files match the pushed commit, executing all fourteen standard checks in order', () => {
+    it('passes in place when HEAD and tracked files match the pushed commit, executing all fourteen standard checks in parallel', () => {
       const result = runHook(PRE_PUSH_PATH);
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('Running Documentation synchronization check...');
@@ -512,7 +527,7 @@ for (const file of process.argv.slice(2)) {
       expect(result.stdout).not.toContain('ephemeral Git worktree');
 
       const executed = fs.readFileSync(logFile, 'utf-8').trim().split('\n');
-      expect(executed).toEqual([
+      const expectedChecks = [
         'npm:type-check',
         'npm:lint',
         'npm:lint:unused',
@@ -527,7 +542,9 @@ for (const file of process.argv.slice(2)) {
         'npm:check:prisma',
         'npm:lint:migrations',
         'npm:check:doc-sync',
-      ]);
+      ];
+      expect(executed).toHaveLength(expectedChecks.length);
+      expect(executed.slice().sort()).toEqual(expectedChecks.slice().sort());
 
       const probe = JSON.parse(fs.readFileSync(worktreeProbeFile, 'utf-8')) as { cwd: string };
       expect(probe.cwd).toBe(fs.realpathSync(tempDir));
@@ -562,15 +579,43 @@ for (const file of process.argv.slice(2)) {
       );
     });
 
-    it('verifies clean pushed commits in an ephemeral detached worktree when unstaged errors exist on disk, hydrating caches and cleaning up', () => {
-      // Seed node_modules, .eslintcache, and tsconfig.build.tsbuildinfo in tempDir
+    it('verifies clean pushed commits in an ephemeral detached worktree when unstaged errors exist on disk, hydrating rewritten .eslintcache and Next.js route types and cleaning up', () => {
+      // Commit a clean TypeScript file so both repoRoot and worktree have it
+      const cleanPath = path.join(tempDir, 'clean.ts');
+      fs.writeFileSync(cleanPath, 'export const cleanValue = 1;\n');
+      execSync('git add clean.ts && git commit -m "Add clean.ts"', {
+        cwd: tempDir,
+        stdio: 'ignore',
+      });
+
+      const realRepoDir = fs.realpathSync(tempDir);
+      const realCleanPath = path.join(realRepoDir, 'clean.ts');
+      const realPartialPath = path.join(realRepoDir, 'partial.ts');
+      const cleanStat = fs.statSync(realCleanPath);
+
+      // Seed node_modules, flatted .eslintcache, tsconfig.build.tsbuildinfo, next-env.d.ts, and .next/types
       fs.mkdirSync(path.join(tempDir, 'node_modules', '.marker'), { recursive: true });
-      fs.writeFileSync(path.join(tempDir, '.eslintcache'), 'cached-eslint-state');
+      fs.mkdirSync(path.join(tempDir, '.next', 'types'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, 'next-env.d.ts'), '/// <reference types="next" />\n');
+      fs.writeFileSync(path.join(tempDir, '.next', 'types', 'routes.d.ts'), 'export {};\n');
       fs.writeFileSync(path.join(tempDir, 'tsconfig.build.tsbuildinfo'), 'cached-tsbuildinfo-state');
 
       // Introduce unstaged TypeScript & ESLint errors in the working tree while HEAD remains clean
       const dirtyEdit = 'export const dirty = TS_ERROR_TOKEN + ESLINT_ERROR_TOKEN;\n';
       fs.writeFileSync(path.join(tempDir, 'partial.ts'), dirtyEdit);
+      const dirtyStat = fs.statSync(realPartialPath);
+
+      // Seed a flatted-style .eslintcache referencing both clean.ts and dirty partial.ts under repoRoot
+      const flattedCache = [
+        ['1', '2'],
+        { key: '3', value: '4' },
+        { key: '5', value: '6' },
+        realCleanPath,
+        { size: cleanStat.size, mtime: cleanStat.mtime.getTime(), data: { hashOfConfig: 'cfg1' } },
+        realPartialPath,
+        { size: dirtyStat.size, mtime: dirtyStat.mtime.getTime(), data: { hashOfConfig: 'cfg1' } },
+      ];
+      fs.writeFileSync(path.join(tempDir, '.eslintcache'), JSON.stringify(flattedCache));
 
       const result = runHook(PRE_PUSH_PATH, { GIT_DIR: path.join(tempDir, '.git') });
       expect(result.status).toBe(0);
@@ -581,14 +626,27 @@ for (const file of process.argv.slice(2)) {
         cwd: string;
         hasNodeModulesSymlink: boolean;
         hasEslintCache: boolean;
+        eslintCacheRaw: string | null;
         hasBuildInfo: boolean;
+        hasNextEnv: boolean;
+        hasNextTypes: boolean;
         gitDirEnv: string | null;
       };
-      expect(probe.cwd).not.toBe(fs.realpathSync(tempDir));
+      expect(probe.cwd).not.toBe(realRepoDir);
       expect(probe.hasNodeModulesSymlink).toBe(true);
       expect(probe.hasEslintCache).toBe(true);
       expect(probe.hasBuildInfo).toBe(true);
+      expect(probe.hasNextEnv).toBe(true);
+      expect(probe.hasNextTypes).toBe(true);
       expect(probe.gitDirEnv).toBeNull();
+
+      // Verify .eslintcache paths were rewritten to the worktree root and dirty files invalidated
+      expect(probe.eslintCacheRaw).not.toBeNull();
+      const hydratedCache = JSON.parse(probe.eslintCacheRaw ?? '[]') as unknown[];
+      expect(hydratedCache[3]).toBe(path.join(probe.cwd, 'clean.ts'));
+      expect(hydratedCache[5]).toBe(path.join(probe.cwd, 'partial.ts'));
+      expect((hydratedCache[4] as { mtime: number }).mtime).toBeGreaterThan(0);
+      expect((hydratedCache[6] as { mtime: number }).mtime).toBe(-1);
 
       // Ephemeral worktree must be removed and pruned after completion
       expect(fs.existsSync(probe.cwd)).toBe(false);
@@ -723,15 +781,25 @@ for (const file of process.argv.slice(2)) {
       expect(execSync('git stash list', { cwd: tempDir, encoding: 'utf-8' }).trim()).toBe('');
     });
 
-    it('stops immediately and exits non-zero when an earlier workspace check fails', () => {
-      const result = runHook(PRE_PUSH_PATH, { FAIL_CHECK_SCRIPT: 'lint:unused' });
+    it('cancels in-flight checks, skips queued checks, and exits non-zero when a parallel workspace check fails', () => {
+      const startTime = Date.now();
+      const result = runHook(PRE_PUSH_PATH, {
+        PRE_PUSH_CONCURRENCY: '2',
+        SLOW_CHECK_SCRIPT: 'type-check',
+        SLOW_CHECK_DELAY_MS: '5000',
+        FAIL_CHECK_SCRIPT: 'lint',
+      });
+      const elapsedMs = Date.now() - startTime;
+
       expect(result.status).not.toBe(0);
       expect(`${result.stdout}\n${result.stderr}`).toContain(
-        'Pre-push check failed: Knip dead-code analysis failed.'
+        'Pre-push check failed: ESLint code linting failed.'
       );
+      expect(elapsedMs).toBeLessThan(4000);
 
       const executed = fs.readFileSync(logFile, 'utf-8').trim().split('\n');
-      expect(executed).toEqual(['npm:type-check', 'npm:lint', 'npm:lint:unused']);
+      expect(executed).toContain('npm:lint');
+      expect(executed).not.toContain('npm:check:doc-sync');
     });
   });
 

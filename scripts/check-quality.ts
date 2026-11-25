@@ -1,5 +1,6 @@
-import { execSync } from 'child_process';
+import { execSync, spawn, type ChildProcess } from 'child_process';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -10,6 +11,11 @@ export interface Step {
   remediation?: string;
 }
 
+export interface AsyncCommandOutput {
+  stdout?: string;
+  stderr?: string;
+}
+
 export interface QualityRunOptions {
   cwd?: string;
   stepsToRun?: Step[];
@@ -17,7 +23,31 @@ export interface QualityRunOptions {
   prePush?: boolean;
   skipDocSync?: boolean;
   skipActionPins?: boolean;
+  concurrency?: number;
   execCommand?: (command: string, cwd: string) => void;
+  execAsyncCommand?: (
+    command: string,
+    cwd: string,
+    signal: AbortSignal
+  ) => Promise<AsyncCommandOutput | void>;
+}
+
+const SERIAL_HEAVY_STEP_TOKENS = [
+  'docs:build',
+  'build-storybook',
+  'build:export',
+  'test:cov',
+] as const;
+
+export const DEFAULT_QUALITY_CONCURRENCY = Math.max(
+  2,
+  Math.min(6, typeof os.availableParallelism === 'function' ? os.availableParallelism() : os.cpus().length)
+);
+
+export function isSerialHeavyStep(step: Step): boolean {
+  return SERIAL_HEAVY_STEP_TOKENS.some(
+    (token) => step.script === token || step.command.includes(token)
+  );
 }
 
 export function cleanupPortalTempDirs(cwd: string = process.cwd()): void {
@@ -51,6 +81,33 @@ export function cleanupStaticExportOutDir(cwd: string = process.cwd()): void {
       // Ignore cleanup errors
     }
   }
+}
+
+function cleanupStepArtifactsOnFailure(step: Step, cwd: string): void {
+  if (step.command.includes('docs:build')) {
+    cleanupPortalTempDirs(cwd);
+  }
+  if (step.command.includes('build-storybook')) {
+    cleanupStorybookStaticDir(cwd);
+  }
+  if (step.command.includes('build:export')) {
+    cleanupStaticExportOutDir(cwd);
+  }
+}
+
+function reportStepFailure(step: Step, index: number, total: number): void {
+  console.error(`\n❌ [${index + 1}/${total}] ${step.name} FAILED!`);
+  console.error(`\nCommand: "${step.command}"\n`);
+  const remediationText = step.remediation
+    ? `The quality check step "${step.name}" failed.\n\n${step.remediation}\n\nAlternatively, run '${step.command}' locally to view full details.`
+    : `The quality check step "${step.name}" failed.\nRun '${step.command}' locally to view full details and fix any issues before pushing.`;
+  console.error(`
+================================================================================
+ACTIONABLE REMEDIATION:
+--------------------------------------------------------------------------------
+${remediationText}
+================================================================================
+`);
 }
 
 export const staticSteps: Step[] = [
@@ -193,7 +250,252 @@ export function resolveQualitySteps(options: QualityRunOptions = {}): Step[] {
   });
 }
 
+function resolvePoolConcurrency(explicitConcurrency: number | undefined, taskCount: number): number {
+  if (taskCount <= 0) {
+    return 1;
+  }
+  const envConcurrency = Number.parseInt(process.env.QUALITY_CONCURRENCY ?? '', 10);
+  const candidate =
+    typeof explicitConcurrency === 'number' && explicitConcurrency > 0
+      ? explicitConcurrency
+      : Number.isFinite(envConcurrency) && envConcurrency > 0
+        ? envConcurrency
+        : DEFAULT_QUALITY_CONCURRENCY;
+  return Math.max(1, Math.min(taskCount, candidate));
+}
+
+function terminateChildTree(child: ChildProcess): void {
+  if (child.pid && process.platform !== 'win32') {
+    try {
+      process.kill(-child.pid, 'SIGTERM');
+      return;
+    } catch {
+      // Fall back to direct child signal
+    }
+  }
+  try {
+    child.kill('SIGTERM');
+  } catch {
+    // Ignore already-exited child processes
+  }
+}
+
+function spawnBufferedCommand(
+  command: string,
+  cwd: string,
+  signal: AbortSignal
+): Promise<AsyncCommandOutput> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new Error('Aborted before spawn'));
+      return;
+    }
+
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    let settled = false;
+
+    const child = spawn(command, {
+      cwd,
+      shell: true,
+      env: process.env,
+      detached: process.platform !== 'win32',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    const onAbort = () => {
+      terminateChildTree(child);
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+
+    child.stdout?.on('data', (chunk: Buffer | string) => {
+      stdoutChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+    child.stderr?.on('data', (chunk: Buffer | string) => {
+      stderrChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+
+    child.on('error', (err) => {
+      signal.removeEventListener('abort', onAbort);
+      if (settled) return;
+      settled = true;
+      const error = Object.assign(new Error(err.message), {
+        stdout: Buffer.concat(stdoutChunks).toString('utf8'),
+        stderr: Buffer.concat(stderrChunks).toString('utf8'),
+      });
+      reject(error);
+    });
+
+    child.on('close', (code) => {
+      signal.removeEventListener('abort', onAbort);
+      if (settled) return;
+      settled = true;
+      const stdout = Buffer.concat(stdoutChunks).toString('utf8');
+      const stderr = Buffer.concat(stderrChunks).toString('utf8');
+      if (code === 0 && !signal.aborted) {
+        resolve({ stdout, stderr });
+      } else {
+        const error = Object.assign(new Error(`Command exited with code ${code ?? 1}`), {
+          stdout,
+          stderr,
+        });
+        reject(error);
+      }
+    });
+  });
+}
+
+function spawnInheritedSerialCommand(command: string, cwd: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, {
+      cwd,
+      shell: true,
+      env: process.env,
+      stdio: 'inherit',
+    });
+    child.on('error', (err) => reject(err));
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`Command exited with code ${code ?? 1}`));
+      }
+    });
+  });
+}
+
+function flushBufferedOutput(output?: AsyncCommandOutput | void): void {
+  if (!output) {
+    return;
+  }
+  if (output.stdout?.trim()) {
+    console.log(output.stdout.trimEnd());
+  }
+  if (output.stderr?.trim()) {
+    console.error(output.stderr.trimEnd());
+  }
+}
+
+export async function runQualityChecks(options: QualityRunOptions = {}): Promise<void> {
+  const cwd = options.cwd || process.cwd();
+  const activeSteps = resolveQualitySteps(options);
+  const suiteLabel = options.staticOnly
+    ? 'static verification'
+    : options.prePush
+      ? 'pre-push quality'
+      : 'local quality';
+  console.log(`🚀 Running all ${suiteLabel} checks...\n`);
+
+  const total = activeSteps.length;
+  let passed = 0;
+
+  const indexedParallelSteps: Array<{ step: Step; index: number }> = [];
+  const indexedSerialSteps: Array<{ step: Step; index: number }> = [];
+
+  for (let i = 0; i < activeSteps.length; i++) {
+    const step = activeSteps[i];
+    if (isSerialHeavyStep(step)) {
+      indexedSerialSteps.push({ step, index: i });
+    } else {
+      indexedParallelSteps.push({ step, index: i });
+    }
+  }
+
+  if (!options.stepsToRun && indexedParallelSteps.length > 1) {
+    const priorityScripts = new Set(['check:doc-sync', 'typecheck', 'lint', 'lint:unused', 'check:prisma']);
+    indexedParallelSteps.sort((a, b) => {
+      const aPriority = a.step.script && priorityScripts.has(a.step.script) ? 0 : 1;
+      const bPriority = b.step.script && priorityScripts.has(b.step.script) ? 0 : 1;
+      return aPriority !== bPriority ? aPriority - bPriority : a.index - b.index;
+    });
+  }
+
+  if (indexedParallelSteps.length > 0) {
+    const workerCount = resolvePoolConcurrency(options.concurrency, indexedParallelSteps.length);
+    const abortController = new AbortController();
+    const runParallelStep = options.execAsyncCommand ?? spawnBufferedCommand;
+    let nextQueueIdx = 0;
+    let firstFailure: {
+      step: Step;
+      index: number;
+      stdout?: string;
+      stderr?: string;
+    } | null = null;
+
+    const workers = Array.from({ length: workerCount }, async () => {
+      while (!abortController.signal.aborted) {
+        const queueIdx = nextQueueIdx++;
+        if (queueIdx >= indexedParallelSteps.length) {
+          return;
+        }
+        const { step, index } = indexedParallelSteps[queueIdx];
+        console.log(`[${index + 1}/${total}] ⏳ ${step.name}...`);
+        try {
+          const result = await runParallelStep(step.command, cwd, abortController.signal);
+          if (abortController.signal.aborted) {
+            return;
+          }
+          flushBufferedOutput(result);
+          console.log(`[${index + 1}/${total}] ✅ ${step.name} passed!\n`);
+          passed++;
+        } catch (err: unknown) {
+          if (!firstFailure) {
+            const errWithIo = err as { stdout?: string; stderr?: string } | undefined;
+            firstFailure = {
+              step,
+              index,
+              stdout: errWithIo?.stdout,
+              stderr: errWithIo?.stderr,
+            };
+            abortController.abort();
+          }
+          return;
+        }
+      }
+    });
+
+    await Promise.allSettled(workers);
+
+    if (firstFailure) {
+      const failed: { step: Step; index: number; stdout?: string; stderr?: string } = firstFailure;
+      flushBufferedOutput({ stdout: failed.stdout, stderr: failed.stderr });
+      cleanupStepArtifactsOnFailure(failed.step, cwd);
+      reportStepFailure(failed.step, failed.index, total);
+      process.exit(1);
+    }
+  }
+
+  for (const { step, index } of indexedSerialSteps) {
+    console.log(`[${index + 1}/${total}] ⏳ ${step.name}...`);
+    try {
+      if (options.execAsyncCommand) {
+        const serialAbort = new AbortController();
+        const result = await options.execAsyncCommand(step.command, cwd, serialAbort.signal);
+        flushBufferedOutput(result);
+      } else {
+        await spawnInheritedSerialCommand(step.command, cwd);
+      }
+      console.log(`[${index + 1}/${total}] ✅ ${step.name} passed!\n`);
+      passed++;
+    } catch (err: unknown) {
+      const errWithIo = err as { stdout?: string; stderr?: string } | undefined;
+      flushBufferedOutput({ stdout: errWithIo?.stdout, stderr: errWithIo?.stderr });
+      cleanupStepArtifactsOnFailure(step, cwd);
+      reportStepFailure(step, index, total);
+      process.exit(1);
+    }
+  }
+
+  console.log(`\n🎉 All ${passed}/${total} quality check gates passed successfully!`);
+  process.exit(0);
+}
+
 export function main(options: QualityRunOptions = {}): void {
+  if (!options.execCommand) {
+    void runQualityChecks(options);
+    return;
+  }
+
   const cwd = options.cwd || process.cwd();
   const activeSteps = resolveQualitySteps(options);
   const runCmd =
@@ -220,27 +522,8 @@ export function main(options: QualityRunOptions = {}): void {
       console.log(`[${i + 1}/${total}] ✅ ${step.name} passed!\n`);
       passed++;
     } catch {
-      if (step.command.includes('docs:build')) {
-        cleanupPortalTempDirs(cwd);
-      }
-      if (step.command.includes('build-storybook')) {
-        cleanupStorybookStaticDir(cwd);
-      }
-      if (step.command.includes('build:export')) {
-        cleanupStaticExportOutDir(cwd);
-      }
-      console.error(`\n❌ [${i + 1}/${total}] ${step.name} FAILED!`);
-      console.error(`\nCommand: "${step.command}"\n`);
-      const remediationText = step.remediation
-        ? `The quality check step "${step.name}" failed.\n\n${step.remediation}\n\nAlternatively, run '${step.command}' locally to view full details.`
-        : `The quality check step "${step.name}" failed.\nRun '${step.command}' locally to view full details and fix any issues before pushing.`;
-      console.error(`
-================================================================================
-ACTIONABLE REMEDIATION:
---------------------------------------------------------------------------------
-${remediationText}
-================================================================================
-`);
+      cleanupStepArtifactsOnFailure(step, cwd);
+      reportStepFailure(step, i, total);
       process.exit(1);
     }
   }
@@ -257,7 +540,7 @@ const isDirectCall =
 
 if (isDirectCall) {
   const cliArgs = process.argv.slice(2);
-  main({
+  void runQualityChecks({
     staticOnly: cliArgs.includes('--static'),
     prePush: cliArgs.includes('--pre-push'),
     skipDocSync: cliArgs.includes('--skip-doc-sync'),

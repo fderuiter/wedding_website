@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { spawnSync } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -192,6 +192,100 @@ function pushedCommitsTouchLockfiles(repoRoot, remoteName, commitSha, remoteShas
   return false;
 }
 
+function rewriteEslintCacheForWorktree(srcCache, destCache, repoRoot, worktreeDir) {
+  const raw = fs.readFileSync(srcCache, 'utf8');
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    fs.copyFileSync(srcCache, destCache);
+    return;
+  }
+
+  if (!Array.isArray(parsed)) {
+    fs.copyFileSync(srcCache, destCache);
+    return;
+  }
+
+  const realRepoRoot = fs.realpathSync(repoRoot);
+  const resolvedRepoRoot = path.resolve(repoRoot);
+  const realWorktreeDir = fs.realpathSync(worktreeDir);
+  const sourceRoots = Array.from(new Set([realRepoRoot, resolvedRepoRoot]));
+  const rewrittenByIndex = new Map();
+
+  for (let i = 0; i < parsed.length; i++) {
+    const value = parsed[i];
+    if (typeof value !== 'string') {
+      continue;
+    }
+
+    for (const rootCandidate of sourceRoots) {
+      const prefix = `${rootCandidate}${path.sep}`;
+      if (value.startsWith(prefix)) {
+        const relPath = value.slice(prefix.length);
+        const srcFile = path.join(realRepoRoot, relPath);
+        const destFile = path.join(realWorktreeDir, relPath);
+        parsed[i] = destFile;
+        rewrittenByIndex.set(i, { srcFile, destFile });
+        break;
+      }
+    }
+  }
+
+  for (const entry of parsed) {
+    if (
+      !entry ||
+      typeof entry !== 'object' ||
+      Array.isArray(entry) ||
+      typeof entry.key !== 'string' ||
+      typeof entry.value !== 'string'
+    ) {
+      continue;
+    }
+
+    const keyIndex = Number.parseInt(entry.key, 10);
+    const valueIndex = Number.parseInt(entry.value, 10);
+    const fileMapping = rewrittenByIndex.get(keyIndex);
+    const meta = parsed[valueIndex];
+    if (
+      !fileMapping ||
+      !meta ||
+      typeof meta !== 'object' ||
+      Array.isArray(meta) ||
+      typeof meta.size !== 'number' ||
+      typeof meta.mtime !== 'number'
+    ) {
+      continue;
+    }
+
+    let cacheReusable = false;
+    try {
+      const srcStat = fs.statSync(fileMapping.srcFile);
+      const destStat = fs.statSync(fileMapping.destFile);
+      if (
+        srcStat.isFile() &&
+        destStat.isFile() &&
+        srcStat.size === meta.size &&
+        destStat.size === meta.size &&
+        srcStat.mtime.getTime() === meta.mtime &&
+        fs.readFileSync(fileMapping.srcFile).equals(fs.readFileSync(fileMapping.destFile))
+      ) {
+        meta.mtime = destStat.mtime.getTime();
+        cacheReusable = true;
+      }
+    } catch {
+      cacheReusable = false;
+    }
+
+    if (!cacheReusable) {
+      meta.mtime = -1;
+      delete meta.hash;
+    }
+  }
+
+  fs.writeFileSync(destCache, JSON.stringify(parsed), 'utf8');
+}
+
 function hydrateWorktreeCaches(repoRoot, worktreeDir) {
   const srcNodeModules = path.join(repoRoot, 'node_modules');
   const destNodeModules = path.join(worktreeDir, 'node_modules');
@@ -203,6 +297,27 @@ function hydrateWorktreeCaches(repoRoot, worktreeDir) {
     );
   }
 
+  const srcNextEnv = path.join(repoRoot, 'next-env.d.ts');
+  const destNextEnv = path.join(worktreeDir, 'next-env.d.ts');
+  try {
+    if (fs.existsSync(srcNextEnv) && !fs.existsSync(destNextEnv) && fs.statSync(srcNextEnv).isFile()) {
+      fs.copyFileSync(srcNextEnv, destNextEnv);
+    }
+  } catch {
+    // Ignore concurrent next-env.d.ts updates during copy
+  }
+
+  const srcNextTypes = path.join(repoRoot, '.next', 'types');
+  const destNextTypes = path.join(worktreeDir, '.next', 'types');
+  try {
+    if (fs.existsSync(srcNextTypes) && !fs.existsSync(destNextTypes) && fs.statSync(srcNextTypes).isDirectory()) {
+      fs.mkdirSync(path.dirname(destNextTypes), { recursive: true });
+      fs.cpSync(srcNextTypes, destNextTypes, { recursive: true });
+    }
+  } catch {
+    // Ignore concurrent .next/types updates during copy
+  }
+
   for (const entry of fs.readdirSync(repoRoot)) {
     if (entry !== '.eslintcache' && !entry.endsWith('.tsbuildinfo')) {
       continue;
@@ -210,7 +325,12 @@ function hydrateWorktreeCaches(repoRoot, worktreeDir) {
     const srcCache = path.join(repoRoot, entry);
     const destCache = path.join(worktreeDir, entry);
     try {
-      if (fs.statSync(srcCache).isFile()) {
+      if (!fs.statSync(srcCache).isFile()) {
+        continue;
+      }
+      if (entry === '.eslintcache') {
+        rewriteEslintCacheForWorktree(srcCache, destCache, repoRoot, worktreeDir);
+      } else {
         fs.copyFileSync(srcCache, destCache);
       }
     } catch {
@@ -227,24 +347,153 @@ function buildIsolatedWorktreeEnv() {
   return childEnv;
 }
 
-function executeChecks(targetDir, childEnv, includeLockfileAudit) {
-  const orderedChecks = includeLockfileAudit
-    ? [...checks.slice(0, 3), lockfileAuditCheck, ...checks.slice(3)]
-    : checks;
+function terminateCheckProcess(child) {
+  if (child.pid && process.platform !== 'win32') {
+    try {
+      process.kill(-child.pid, 'SIGTERM');
+      return;
+    } catch {
+      // Fall back to direct child termination
+    }
+  }
+  try {
+    child.kill('SIGTERM');
+  } catch {
+    // Ignore already-exited child processes
+  }
+}
 
-  for (const check of orderedChecks) {
-    console.log(`Running ${check.name}...`);
-    const result = spawnSync('npm', ['run', check.script, ...(check.args ?? [])], {
+function resolvePrePushConcurrency(childEnv, totalChecks) {
+  const envConcurrency = Number.parseInt(childEnv.PRE_PUSH_CONCURRENCY ?? '', 10);
+  const defaultWorkers = Math.max(
+    2,
+    Math.min(6, typeof os.availableParallelism === 'function' ? os.availableParallelism() : os.cpus().length)
+  );
+  const requested = Number.isFinite(envConcurrency) && envConcurrency > 0 ? envConcurrency : defaultWorkers;
+  return Math.max(1, Math.min(totalChecks, requested));
+}
+
+function runSingleCheck(check, targetDir, childEnv, activeChildren, isCancelled) {
+  return new Promise((resolve) => {
+    if (isCancelled()) {
+      resolve({ status: 0, stdout: '', stderr: '', cancelled: true });
+      return;
+    }
+
+    const stdoutChunks = [];
+    const stderrChunks = [];
+    let settled = false;
+
+    const child = spawn('npm', ['run', check.script, ...(check.args ?? [])], {
       cwd: targetDir,
       env: childEnv,
-      stdio: 'inherit',
       shell: true,
+      detached: process.platform !== 'win32',
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
+    activeChildren.add(child);
 
-    if (result.status !== 0) {
-      console.error(`\n❌ Pre-push check failed: ${check.name} failed.`);
-      return result.status ?? 1;
+    if (child.stdout) {
+      child.stdout.on('data', (chunk) => {
+        stdoutChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      });
     }
+    if (child.stderr) {
+      child.stderr.on('data', (chunk) => {
+        stderrChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      });
+    }
+
+    const finish = (status) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      activeChildren.delete(child);
+      resolve({
+        status: status ?? 1,
+        stdout: Buffer.concat(stdoutChunks).toString('utf8'),
+        stderr: Buffer.concat(stderrChunks).toString('utf8'),
+        cancelled: isCancelled(),
+      });
+    };
+
+    child.on('error', () => finish(1));
+    child.on('close', (code) => finish(code));
+  });
+}
+
+function flushCheckOutput(stdout, stderr) {
+  if (stdout) {
+    process.stdout.write(stdout.endsWith('\n') ? stdout : `${stdout}\n`);
+  }
+  if (stderr) {
+    process.stderr.write(stderr.endsWith('\n') ? stderr : `${stderr}\n`);
+  }
+}
+
+async function executeChecks(targetDir, childEnv, includeLockfileAudit) {
+  const baseChecks = includeLockfileAudit
+    ? [...checks.slice(0, 3), lockfileAuditCheck, ...checks.slice(3)]
+    : checks;
+  const docSyncCheck = baseChecks.find((item) => item.script === 'check:doc-sync');
+  const orderedChecks = docSyncCheck
+    ? [
+        ...baseChecks.slice(0, 2),
+        docSyncCheck,
+        ...baseChecks.slice(2).filter((item) => item.script !== 'check:doc-sync'),
+      ]
+    : baseChecks;
+
+  const workerCount = resolvePrePushConcurrency(childEnv, orderedChecks.length);
+  const activeChildren = new Set();
+  let nextCheckIndex = 0;
+  let failure = null;
+
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (failure === null) {
+      const currentIndex = nextCheckIndex++;
+      if (currentIndex >= orderedChecks.length) {
+        return;
+      }
+
+      const check = orderedChecks[currentIndex];
+      console.log(`Running ${check.name}...`);
+      const result = await runSingleCheck(
+        check,
+        targetDir,
+        childEnv,
+        activeChildren,
+        () => failure !== null
+      );
+
+      if (failure !== null) {
+        return;
+      }
+
+      if (result.status !== 0) {
+        failure = {
+          check,
+          status: result.status || 1,
+          stdout: result.stdout,
+          stderr: result.stderr,
+        };
+        for (const activeChild of Array.from(activeChildren)) {
+          terminateCheckProcess(activeChild);
+        }
+        return;
+      }
+
+      flushCheckOutput(result.stdout, result.stderr);
+    }
+  });
+
+  await Promise.allSettled(workers);
+
+  if (failure !== null) {
+    flushCheckOutput(failure.stdout, failure.stderr);
+    console.error(`\n❌ Pre-push check failed: ${failure.check.name} failed.`);
+    return failure.status;
   }
 
   return 0;
@@ -327,7 +576,7 @@ if (canRunInPlace) {
     commitSha,
     commitUpdates.get(commitSha)
   );
-  const status = executeChecks(repoRoot, process.env, includeAudit);
+  const status = await executeChecks(repoRoot, process.env, includeAudit);
   if (status !== 0) {
     process.exit(status);
   }
@@ -355,7 +604,7 @@ if (canRunInPlace) {
         status = addRes.status ?? 1;
       } else {
         hydrateWorktreeCaches(repoRoot, worktreeDir);
-        status = executeChecks(worktreeDir, worktreeEnv, includeAudit);
+        status = await executeChecks(worktreeDir, worktreeEnv, includeAudit);
       }
     } finally {
       cleanupWorktree(worktreeDir);
