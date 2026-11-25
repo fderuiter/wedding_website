@@ -3,11 +3,14 @@ import os from 'os';
 import path from 'path';
 import {
   cleanupStaticExportOutDir,
+  isSerialHeavyStep,
   main,
   prePushSteps,
   resolveQualitySteps,
+  runQualityChecks,
   staticSteps,
   steps,
+  type Step,
 } from './check-quality';
 
 describe('check-quality', () => {
@@ -238,5 +241,126 @@ describe('check-quality', () => {
     for (const heavyCmd of ['npm run docs:build', 'npm run build-storybook', 'npm run build:export', 'npm run test:cov']) {
       expect(prePushSteps.some((s) => s.command === heavyCmd)).toBe(false);
     }
+  });
+
+  it('runs read-only steps via a bounded worker pool and runs heavy build/test steps serially afterward', async () => {
+    const customSteps: Step[] = [
+      { name: 'Static A', script: 'check:env-docs', command: 'check-a' },
+      { name: 'Static B', script: 'check:links', command: 'check-b' },
+      { name: 'Static C', script: 'typecheck', command: 'check-c' },
+      { name: 'Static D', script: 'lint', command: 'check-d' },
+      { name: 'Static E', script: 'lint:unused', command: 'check-e' },
+      { name: 'Build Docs', command: 'npm run docs:build' },
+      { name: 'Build Storybook', command: 'npm run build-storybook' },
+      { name: 'Build Export', command: 'npm run build:export' },
+      { name: 'Unit Tests', command: 'npm run test:cov' },
+    ];
+
+    expect(customSteps.slice(0, 5).every((s) => !isSerialHeavyStep(s))).toBe(true);
+    expect(customSteps.slice(5).every((s) => isSerialHeavyStep(s))).toBe(true);
+
+    let activeParallel = 0;
+    let maxParallelObserved = 0;
+    let activeSerial = 0;
+    let maxSerialObserved = 0;
+    const completedParallel: string[] = [];
+    const serialStartOrder: string[] = [];
+
+    await expect(
+      runQualityChecks({
+        cwd: tempDir,
+        stepsToRun: customSteps,
+        concurrency: 2,
+        execAsyncCommand: async (command) => {
+          const isSerial = command.startsWith('npm run ');
+          if (!isSerial) {
+            activeParallel++;
+            maxParallelObserved = Math.max(maxParallelObserved, activeParallel);
+            await new Promise((resolve) => setTimeout(resolve, 25));
+            activeParallel--;
+            completedParallel.push(command);
+          } else {
+            expect(completedParallel).toHaveLength(5);
+            activeSerial++;
+            maxSerialObserved = Math.max(maxSerialObserved, activeSerial);
+            serialStartOrder.push(command);
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            activeSerial--;
+          }
+        },
+      })
+    ).rejects.toThrow('process.exit: 0');
+
+    expect(maxParallelObserved).toBe(2);
+    expect(completedParallel.sort()).toEqual(['check-a', 'check-b', 'check-c', 'check-d', 'check-e']);
+    expect(maxSerialObserved).toBe(1);
+    expect(serialStartOrder).toEqual([
+      'npm run docs:build',
+      'npm run build-storybook',
+      'npm run build:export',
+      'npm run test:cov',
+    ]);
+  });
+
+  it('cancels in-flight tasks, skips queued tasks, and prints remediation when a parallel check fails', async () => {
+    const customSteps: Step[] = [
+      { name: 'Slow Check', command: 'slow-check' },
+      {
+        name: 'Failing Check',
+        command: 'failing-check',
+        remediation: 'Fix failing-check contract drift.',
+      },
+      { name: 'Queued Check', command: 'queued-check' },
+      { name: 'Build Docs', command: 'npm run docs:build' },
+    ];
+
+    const started: string[] = [];
+    let slowCheckAborted = false;
+
+    await expect(
+      runQualityChecks({
+        cwd: tempDir,
+        stepsToRun: customSteps,
+        concurrency: 2,
+        execAsyncCommand: (command, _cwd, signal) =>
+          new Promise((resolve, reject) => {
+            started.push(command);
+            if (command === 'slow-check') {
+              const timer = setTimeout(() => resolve({ stdout: 'slow finished' }), 5000);
+              signal.addEventListener(
+                'abort',
+                () => {
+                  slowCheckAborted = true;
+                  clearTimeout(timer);
+                  reject(new Error('Aborted'));
+                },
+                { once: true }
+              );
+              return;
+            }
+            if (command === 'failing-check') {
+              setTimeout(() => {
+                reject(
+                  Object.assign(new Error('Check failed'), {
+                    stderr: 'Contract mismatch in failing-check',
+                  })
+                );
+              }, 15);
+              return;
+            }
+            resolve();
+          }),
+      })
+    ).rejects.toThrow('process.exit: 1');
+
+    expect(slowCheckAborted).toBe(true);
+    expect(started).toEqual(['slow-check', 'failing-check']);
+    expect(started).not.toContain('queued-check');
+    expect(started).not.toContain('npm run docs:build');
+
+    const errorOutput = mockConsoleError.mock.calls.map((args) => args.join(' ')).join('\n');
+    expect(errorOutput).toContain('Contract mismatch in failing-check');
+    expect(errorOutput).toContain('Failing Check FAILED!');
+    expect(errorOutput).toContain('Fix failing-check contract drift.');
   });
 });

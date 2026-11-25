@@ -62,21 +62,73 @@ jobs:
             process.stdout.write(image);
           ')
           echo "db_image=${DB_IMAGE}" >> "$GITHUB_OUTPUT"
-      - name: TypeScript Typecheck
-        run: npm run typecheck
+      - name: Run Parallel Typecheck, ESLint, and Knip Analysis
+        timeout-minutes: 10
+        run: |
+          LOG_DIR=$(mktemp -d)
+          trap 'rm -rf "$LOG_DIR"' EXIT
 
-      - name: ESLint Code Linting
-        run: npm run lint
+          npm run typecheck >"$LOG_DIR/typecheck.log" 2>&1 &
+          PID_TYPECHECK=$!
+          npm run lint >"$LOG_DIR/lint.log" 2>&1 &
+          PID_LINT=$!
+          npm run lint:unused >"$LOG_DIR/knip.log" 2>&1 &
+          PID_KNIP=$!
 
-      - name: Knip Unused Export Analysis
-        run: npm run lint:unused
+          FAILED=0
+          for ENTRY in "TypeScript Typecheck:$PID_TYPECHECK:$LOG_DIR/typecheck.log" \
+                       "ESLint Code Linting:$PID_LINT:$LOG_DIR/lint.log" \
+                       "Knip Unused Export Analysis:$PID_KNIP:$LOG_DIR/knip.log"; do
+            LABEL="${ENTRY%%:*}"
+            REST="${ENTRY#*:}"
+            PID="${REST%%:*}"
+            LOG_FILE="${REST#*:}"
+            if ! wait "$PID"; then
+              echo "::group::❌ $LABEL"
+              cat "$LOG_FILE"
+              echo "::endgroup::"
+              kill "$PID_TYPECHECK" "$PID_LINT" "$PID_KNIP" 2>/dev/null || true
+              FAILED=1
+              break
+            fi
+            echo "::group::✅ $LABEL"
+            cat "$LOG_FILE"
+            echo "::endgroup::"
+          done
+
+          wait 2>/dev/null || true
+          exit "$FAILED"
 
       - name: Verify Documentation and Architecture Sync
         id: verify-docs
+        timeout-minutes: 10
         run: |
-          npx tsx scripts/generate-openapi.ts
-          npx tsx scripts/generate-docs.ts --skip-openapi
-          
+          DOC_LOG_DIR=$(mktemp -d)
+          trap 'rm -rf "$DOC_LOG_DIR"' EXIT
+
+          npx tsx scripts/generate-openapi.ts >"$DOC_LOG_DIR/openapi.log" 2>&1 &
+          PID_OPENAPI=$!
+          npx tsx scripts/generate-docs.ts --skip-openapi >"$DOC_LOG_DIR/docs.log" 2>&1 &
+          PID_DOCS=$!
+
+          GEN_FAILED=0
+          if ! wait "$PID_OPENAPI"; then
+            cat "$DOC_LOG_DIR/openapi.log"
+            kill "$PID_DOCS" 2>/dev/null || true
+            GEN_FAILED=1
+          else
+            cat "$DOC_LOG_DIR/openapi.log"
+          fi
+          if ! wait "$PID_DOCS"; then
+            cat "$DOC_LOG_DIR/docs.log"
+            GEN_FAILED=1
+          else
+            cat "$DOC_LOG_DIR/docs.log"
+          fi
+          if [ "$GEN_FAILED" -ne 0 ]; then
+            exit 1
+          fi
+
           # Capture status before creating any files
           STATUS=$(git status --porcelain)
           if [ -n "$STATUS" ]; then

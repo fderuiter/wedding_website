@@ -81,8 +81,65 @@ export function checkDocDrift(
   }
 }
 
+const PARALLEL_DOC_CHECK_COORDINATOR = `
+const { spawn } = require('child_process');
+const commands = JSON.parse(process.argv[1]);
+const isWin = process.platform === 'win32';
+Promise.all(
+  commands.map(
+    (cmd) =>
+      new Promise((resolve) => {
+        const stdoutChunks = [];
+        const stderrChunks = [];
+        let settled = false;
+        const child = spawn('npx', cmd.args, {
+          cwd: process.cwd(),
+          env: process.env,
+          shell: isWin,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        if (child.stdout) {
+          child.stdout.on('data', (chunk) => stdoutChunks.push(Buffer.from(chunk)));
+        }
+        if (child.stderr) {
+          child.stderr.on('data', (chunk) => stderrChunks.push(Buffer.from(chunk)));
+        }
+        child.on('error', (err) => {
+          if (settled) return;
+          settled = true;
+          resolve({
+            status: 1,
+            stdout: Buffer.concat(stdoutChunks).toString('utf8'),
+            stderr: Buffer.concat(stderrChunks).toString('utf8'),
+            errorMessage: err && err.message ? err.message : String(err),
+          });
+        });
+        child.on('close', (code) => {
+          if (settled) return;
+          settled = true;
+          resolve({
+            status: code,
+            stdout: Buffer.concat(stdoutChunks).toString('utf8'),
+            stderr: Buffer.concat(stderrChunks).toString('utf8'),
+            errorMessage: null,
+          });
+        });
+      })
+  )
+).then((results) => {
+  process.stdout.write(JSON.stringify(results));
+});
+`;
+
+interface ParallelCheckSpawnResult {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+  errorMessage: string | null;
+}
+
 /**
- * Executes the OpenAPI schema and architectural documentation generators in read-only --check mode,
+ * Executes the OpenAPI schema and architectural documentation generators in parallel read-only --check mode,
  * returning any drifted documentation paths without modifying files on disk.
  */
 export function runDocGeneration(
@@ -101,19 +158,40 @@ export function runDocGeneration(
     },
   ];
 
-  for (const cmd of checkCommands) {
-    const res = spawnSync('npx', cmd.args, {
+  const coordinatorRes = spawnSync(
+    process.execPath,
+    ['-e', PARALLEL_DOC_CHECK_COORDINATOR, JSON.stringify(checkCommands)],
+    {
       cwd,
       encoding: 'utf8',
-      shell: process.platform === 'win32',
-    });
+      maxBuffer: 64 * 1024 * 1024,
+    }
+  );
+
+  if (coordinatorRes.error) {
+    throw coordinatorRes.error;
+  }
+  if (coordinatorRes.status !== 0 || !coordinatorRes.stdout) {
+    const detail = (
+      coordinatorRes.stderr ||
+      coordinatorRes.stdout ||
+      `Parallel doc check coordinator exited with code ${coordinatorRes.status}`
+    ).trim();
+    throw new Error(detail);
+  }
+
+  const results = JSON.parse(coordinatorRes.stdout) as ParallelCheckSpawnResult[];
+
+  for (let i = 0; i < checkCommands.length; i++) {
+    const cmd = checkCommands[i];
+    const res = results[i];
 
     if (res.stdout?.trim()) {
       console.log(res.stdout.trim());
     }
 
-    if (res.error) {
-      throw res.error;
+    if (res.errorMessage) {
+      throw new Error(res.errorMessage);
     }
 
     if (res.status !== 0) {
