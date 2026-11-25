@@ -436,7 +436,17 @@ describe('RegistryItemCard Component', () => {
   });
 
   it('calls onContribute with correct details for single item claim', async () => {
+    (apiClient.post as jest.Mock).mockResolvedValue({
+      valid: true,
+      code: 'INVITE26',
+      guestName: 'Claimer',
+    });
+
     render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+    fireEvent.change(screen.getByPlaceholderText('ABCDEF12'), { target: { value: 'INVITE26' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
+    await screen.findByText(/Code verified!/i);
+
     fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Claimer' } });
     // Corrected button name
     fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
@@ -446,24 +456,40 @@ describe('RegistryItemCard Component', () => {
 
     await waitFor(() => {
       expect(mockOnContribute).toHaveBeenCalledTimes(1);
-      // For single items, amount sent is the full price
-      expect(mockOnContribute).toHaveBeenCalledWith(mockSingleItem.id, 'Claimer', mockSingleItem.price);
+      // For single items, amount sent is the full price plus verified code
+      expect(mockOnContribute).toHaveBeenCalledWith(
+        mockSingleItem.id,
+        'Claimer',
+        mockSingleItem.price,
+        'INVITE26',
+        undefined
+      );
     });
   });
 
   it('allows entering a personal message and passes it to onContribute', async () => {
+    (apiClient.post as jest.Mock).mockResolvedValue({
+      valid: true,
+      code: 'INVITE26',
+      guestName: 'Jane Contributor',
+    });
+
     render(
       <Overlay isOpen={true} onClose={mockOnClose}>
         <RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />
       </Overlay>
     );
 
+    fireEvent.change(screen.getByPlaceholderText('ABCDEF12'), { target: { value: 'INVITE26' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
+    await screen.findByText(/Code verified!/i);
+
     fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Jane Contributor' } });
     fireEvent.change(screen.getByLabelText(/Personal Message/i), { target: { value: 'So happy for you both!' } });
     fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
 
     await waitFor(() => {
-      expect(mockOnContribute).toHaveBeenCalledWith('item-1', 'Jane Contributor', 100, undefined, 'So happy for you both!');
+      expect(mockOnContribute).toHaveBeenCalledWith('item-1', 'Jane Contributor', 100, 'INVITE26', 'So happy for you both!');
     });
   });
 
@@ -533,12 +559,21 @@ describe('RegistryItemCard Component', () => {
       });
     });
 
-    it('allows submission when invitation code field is empty (single gift claim)', async () => {
+    it('blocks submission and focuses code input when invitation code is unverified on single gift claim, and allows claim once verified', async () => {
+      (apiClient.post as jest.Mock).mockResolvedValue({
+        valid: true,
+        guestName: 'Guest Contributor',
+        code: 'INVITE26',
+      });
+
       render(
         <Overlay isOpen={true} onClose={mockOnClose}>
           <RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />
         </Overlay>
       );
+
+      const codeInput = screen.getByPlaceholderText('ABCDEF12');
+      expect(codeInput).toBeRequired();
 
       const nameInput = screen.getByLabelText(/Your Name/i);
       fireEvent.change(nameInput, { target: { value: 'Guest Contributor' } });
@@ -546,8 +581,29 @@ describe('RegistryItemCard Component', () => {
       const submitButton = screen.getByRole('button', { name: 'Claim Gift' });
       fireEvent.click(submitButton);
 
+      expect(
+        await screen.findByText(
+          'Please verify your 8-character invitation code to claim this gift.'
+        )
+      ).toBeInTheDocument();
+      expect(mockOnContribute).not.toHaveBeenCalled();
+      expect(codeInput).toHaveAttribute('aria-invalid', 'true');
+      expect(document.activeElement).toBe(codeInput);
+
+      fireEvent.change(codeInput, { target: { value: 'INVITE26' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
+      await screen.findByText(/Code verified!/i);
+
+      fireEvent.click(submitButton);
+
       await waitFor(() => {
-        expect(mockOnContribute).toHaveBeenCalledWith('item-1', 'Guest Contributor', 100);
+        expect(mockOnContribute).toHaveBeenCalledWith(
+          'item-1',
+          'Guest Contributor',
+          100,
+          'INVITE26',
+          undefined
+        );
       });
     });
 
@@ -1234,11 +1290,21 @@ describe('RegistryItemCard Component', () => {
     });
 
     it('renders optional email input field and submits contributor email when provided', async () => {
+      (apiClient.post as jest.Mock).mockResolvedValue({
+        valid: true,
+        code: 'INVITE26',
+        guestName: 'Well Wisher',
+      });
+
       render(
         <Overlay isOpen={true} onClose={mockOnClose}>
           <RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />
         </Overlay>
       );
+
+      fireEvent.change(screen.getByPlaceholderText('ABCDEF12'), { target: { value: 'INVITE26' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
+      await screen.findByText(/Code verified!/i);
 
       const nameInput = screen.getByLabelText(/Your Name/i);
       const emailInput = screen.getByLabelText(/Email Address \(Optional\)/i);
@@ -1251,7 +1317,7 @@ describe('RegistryItemCard Component', () => {
       fireEvent.click(submitBtn);
 
       await waitFor(() => {
-        expect(mockOnContribute).toHaveBeenCalledWith('item-1', 'Well Wisher', 100, undefined, undefined, false, 'wellwisher@example.com');
+        expect(mockOnContribute).toHaveBeenCalledWith('item-1', 'Well Wisher', 100, 'INVITE26', undefined, false, 'wellwisher@example.com');
       });
     });
 
@@ -1596,6 +1662,12 @@ describe('RegistryItemCard Component', () => {
         isGroupGift: false,
       };
 
+      (apiClient.post as jest.Mock).mockResolvedValue({
+        valid: true,
+        code: 'INVITE26',
+        guestName: 'Alex Buyer',
+      });
+
       render(
         <Overlay isOpen={true} onClose={mockOnClose}>
           <RegistryItemCard item={multiQtyItem} onClose={mockOnClose} onContribute={mockOnContribute} />
@@ -1608,6 +1680,10 @@ describe('RegistryItemCard Component', () => {
       expect(unitSelect.options).toHaveLength(3);
       fireEvent.change(unitSelect, { target: { value: '2' } });
 
+      fireEvent.change(screen.getByPlaceholderText('ABCDEF12'), { target: { value: 'INVITE26' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
+      await screen.findByText(/Code verified!/i);
+
       fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Alex Buyer' } });
       fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
 
@@ -1615,12 +1691,20 @@ describe('RegistryItemCard Component', () => {
         expect(mockOnContribute).toHaveBeenCalledWith(
           'item-multi-1',
           'Alex Buyer',
-          90
+          90,
+          'INVITE26',
+          undefined
         );
       });
     });
 
-    it('displays shipping address only when provided, copies address, and forwards order tracking details on external claims', async () => {
+    it('hides shipping address until invite code is verified, then displays address, copies it, and forwards order tracking details on external claims', async () => {
+      (apiClient.post as jest.Mock).mockResolvedValue({
+        valid: true,
+        code: 'INVITE26',
+        guestName: 'Morgan Guest',
+      });
+
       const writeTextMock = jest.fn().mockResolvedValue(undefined);
       Object.assign(navigator, {
         clipboard: { writeText: writeTextMock },
@@ -1660,6 +1744,13 @@ describe('RegistryItemCard Component', () => {
         </Overlay>
       );
 
+      // Hidden for unverified guests even if prop is supplied
+      expect(screen.queryByTestId('registry-shipping-address-card')).not.toBeInTheDocument();
+
+      fireEvent.change(screen.getByPlaceholderText('ABCDEF12'), { target: { value: 'INVITE26' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
+      await screen.findByText(/Code verified!/i);
+
       expect(screen.getByTestId('registry-shipping-address-card')).toHaveTextContent('742 Evergreen Terrace');
       expect(screen.getByTestId('registry-shipping-address-card')).toHaveTextContent('Leave on covered porch');
 
@@ -1680,7 +1771,7 @@ describe('RegistryItemCard Component', () => {
           mockSingleItem.id,
           'Morgan Guest',
           100,
-          undefined,
+          'INVITE26',
           undefined,
           false,
           undefined,
@@ -1753,11 +1844,20 @@ describe('RegistryItemCard Component', () => {
         amountContributed: 100,
         purchaserName: 'Alex Claimer',
       };
-      (apiClient.post as jest.Mock).mockResolvedValueOnce({
-        action: 'confirm',
-        status: 'CONFIRMED',
-        changed: true,
-        item: confirmedItem,
+      (apiClient.post as jest.Mock).mockImplementation(async (url: string) => {
+        if (url === '/api/registry/validate-code') {
+          return {
+            valid: true,
+            code: 'INVITE26',
+            guestName: 'Alex Claimer',
+          };
+        }
+        return {
+          action: 'confirm',
+          status: 'CONFIRMED',
+          changed: true,
+          item: confirmedItem,
+        };
       });
 
       render(
@@ -1772,6 +1872,10 @@ describe('RegistryItemCard Component', () => {
           </Overlay>
         </ToastProvider>
       );
+
+      fireEvent.change(screen.getByPlaceholderText('ABCDEF12'), { target: { value: 'INVITE26' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
+      await screen.findByText(/Code verified!/i);
 
       fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Alex Claimer' } });
       fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
@@ -1809,11 +1913,20 @@ describe('RegistryItemCard Component', () => {
         amountContributed: 0,
         purchaserName: null,
       };
-      (apiClient.post as jest.Mock).mockResolvedValueOnce({
-        action: 'cancel',
-        status: 'CANCELLED',
-        changed: true,
-        item: reopenedItem,
+      (apiClient.post as jest.Mock).mockImplementation(async (url: string) => {
+        if (url === '/api/registry/validate-code') {
+          return {
+            valid: true,
+            code: 'INVITE26',
+            guestName: 'Taylor Guest',
+          };
+        }
+        return {
+          action: 'cancel',
+          status: 'CANCELLED',
+          changed: true,
+          item: reopenedItem,
+        };
       });
 
       render(
@@ -1828,6 +1941,10 @@ describe('RegistryItemCard Component', () => {
           </Overlay>
         </ToastProvider>
       );
+
+      fireEvent.change(screen.getByPlaceholderText('ABCDEF12'), { target: { value: 'INVITE26' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
+      await screen.findByText(/Code verified!/i);
 
       fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Taylor Guest' } });
       fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
@@ -1848,6 +1965,12 @@ describe('RegistryItemCard Component', () => {
   });
 
   it('expands optional return-address section and forwards giver postal fields to onContribute', async () => {
+    (apiClient.post as jest.Mock).mockResolvedValue({
+      valid: true,
+      code: 'INVITE26',
+      guestName: 'Jordan Donor',
+    });
+
     const captureContribute = jest.fn().mockResolvedValue(undefined);
     render(
       <Overlay isOpen={true} onClose={mockOnClose}>
@@ -1866,6 +1989,10 @@ describe('RegistryItemCard Component', () => {
     fireEvent.click(toggleBtn);
     expect(toggleBtn).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByTestId('contributor-return-address-fields')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText('ABCDEF12'), { target: { value: 'INVITE26' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Verify' }));
+    await screen.findByText(/Code verified!/i);
 
     fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Jordan Donor' } });
     fireEvent.change(screen.getByLabelText(/^Address Line 1$/i), {
@@ -1894,7 +2021,7 @@ describe('RegistryItemCard Component', () => {
         'item-1',
         'Jordan Donor',
         100,
-        undefined,
+        'INVITE26',
         undefined,
         false,
         undefined,
@@ -2149,6 +2276,12 @@ describe('RegistryItemCard Component', () => {
         },
       });
 
+      (apiClient.post as jest.Mock).mockResolvedValue({
+        valid: true,
+        code: 'INVITE26',
+        guestName: 'Taylor Guest',
+      });
+
       render(
         <ToastProvider>
           <Dialog isOpen={true} onClose={mockOnClose} aria-labelledby="registry-item-title-item-1">
@@ -2163,6 +2296,12 @@ describe('RegistryItemCard Component', () => {
       );
 
       const dialog = screen.getByRole('dialog', { name: 'Single Item' });
+      fireEvent.change(within(dialog).getByPlaceholderText('ABCDEF12'), {
+        target: { value: 'INVITE26' },
+      });
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Verify' }));
+      await within(dialog).findByText(/Code verified!/i);
+
       fireEvent.change(within(dialog).getByLabelText(/Your Name/i), {
         target: { value: 'Taylor Guest' },
       });

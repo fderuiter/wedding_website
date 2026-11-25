@@ -21,6 +21,7 @@ import { formatCurrency, formatDate } from '@/utils/intl';
 import { Button } from '@/components/ui/Button';
 import { useOptionalToast } from '@/components/ui/ToastProvider';
 import { useShareItem } from '../hooks/useShareItem';
+import { useRegistryCapabilities } from '../hooks/useRegistryCapabilities';
 import { useRegistryContributionMachine } from '../hooks/useRegistryContributionMachine';
 import {
   getPaymentDescriptor,
@@ -218,124 +219,6 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   );
   const [simulatedBillingZip, setSimulatedBillingZip] = useState('60611');
 
-  const {
-    isValidatingCode,
-    isCodeLocked,
-    isSubmitting,
-    isSuccess,
-    isSubmitDisabled,
-    invitationCodeInputRef,
-
-    contributorName,
-    email,
-    amount,
-    selectedUnits,
-    message,
-    coverFee,
-    invitationCode,
-    retailerOrderNumber,
-    carrier,
-    trackingNumber,
-    addressLine1,
-    addressLine2,
-    city,
-    state,
-    zipCode,
-    country,
-
-    paymentTransactionId,
-    claimActions,
-
-    fieldErrors,
-    codeError,
-    submissionError,
-
-    setContributorName,
-    setEmail,
-    setAmount,
-    setSelectedUnits,
-    setMessage,
-    setCoverFee,
-    setRetailerOrderNumber,
-    setCarrier,
-    setTrackingNumber,
-    setAddressLine1,
-    setAddressLine2,
-    setCity,
-    setState,
-    setZipCode,
-    setCountry,
-    setPaymentTransactionId,
-    setPhase,
-    setSubmissionError,
-
-    validateContribution,
-    ensureCodeVerifiedForSubmit,
-    handleCodeChange,
-    handleVerifyCode,
-    handleClearCode,
-    handleSubmit,
-    handlePresetClick,
-  } = useRegistryContributionMachine({ item, onContribute });
-
-  const { handleShare, copied } = useShareItem(item);
-  const toastContext = useOptionalToast();
-  const [copiedReceiptKey, setCopiedReceiptKey] = useState<string | null>(null);
-  const [copiedAddress, setCopiedAddress] = useState(false);
-  const [copiedHandle, setCopiedHandle] = useState(false);
-  const [dismissedRecoveryMessage, setDismissedRecoveryMessage] = useState<string | null>(null);
-  const [isReturnAddressOpen, setIsReturnAddressOpen] = useState(false);
-  const [isCardProcessing, setIsCardProcessing] = useState(false);
-  const [postClaimOverride, setPostClaimOverride] = useState<{
-    key: string;
-    status: 'CONFIRMED' | 'CANCELLED';
-  } | null>(null);
-  const [isClaimActionPending, setIsClaimActionPending] = useState(false);
-  const [claimActionError, setClaimActionError] = useState<string | null>(null);
-  const [modalStatusMessage, setModalStatusMessage] = useState('');
-  const receiptCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const addressCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const handleCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const verifyCodeButtonRef = useRef<HTMLButtonElement | null>(null);
-  const clearCodeButtonRef = useRef<HTMLButtonElement | null>(null);
-  const codeRowFocusedRef = useRef(false);
-  const wasCodeLockedRef = useRef(isCodeLocked);
-  const wasClearedByUserRef = useRef(false);
-
-  useEffect(() => {
-    const previouslyLocked = wasCodeLockedRef.current;
-    wasCodeLockedRef.current = isCodeLocked;
-
-    if (!previouslyLocked && isCodeLocked && codeRowFocusedRef.current) {
-      clearCodeButtonRef.current?.focus();
-    } else if (previouslyLocked && !isCodeLocked && wasClearedByUserRef.current) {
-      wasClearedByUserRef.current = false;
-      invitationCodeInputRef.current?.focus();
-    }
-  }, [isCodeLocked, invitationCodeInputRef]);
-
-  useEffect(() => {
-    return () => {
-      if (receiptCopyTimerRef.current) {
-        clearTimeout(receiptCopyTimerRef.current);
-      }
-      if (addressCopyTimerRef.current) {
-        clearTimeout(addressCopyTimerRef.current);
-      }
-      if (handleCopyTimerRef.current) {
-        clearTimeout(handleCopyTimerRef.current);
-      }
-    };
-  }, []);
-
-  const activeReconciledReceipt =
-    reconciledReceipt && reconciledReceipt.itemId === item.id ? reconciledReceipt : null;
-  const isConfirmedSuccess = isSuccess || Boolean(activeReconciledReceipt);
-  const activeRedirectRecoveryError =
-    redirectRecoveryError && dismissedRecoveryMessage !== redirectRecoveryError
-      ? redirectRecoveryError
-      : null;
-
   const { requestedUnits, claimedUnits, remainingUnits } = getItemUnitCounts(item);
   const totalTargetAmount = getItemTotalTargetAmount(item);
   const remainingAmount = getItemRemainingAmount(item);
@@ -403,6 +286,145 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     ? activePaymentMode === 'card'
     : isPayableGroupGift && activePaymentMode === 'card';
   const showFeeDisclosurePanel = isDemoMode ? isDirectMode || isCardMode : isPayableGroupGift;
+  const requiresCodeVerification = !isDemoMode && !isAdmin && (isClaimMode || isDirectMode);
+
+  const {
+    isValidatingCode,
+    isCodeLocked,
+    isSubmitting,
+    isSuccess,
+    isSubmitDisabled,
+    invitationCodeInputRef,
+
+    contributorName,
+    email,
+    amount,
+    selectedUnits,
+    message,
+    coverFee,
+    invitationCode,
+    retailerOrderNumber,
+    carrier,
+    trackingNumber,
+    addressLine1,
+    addressLine2,
+    city,
+    state,
+    zipCode,
+    country,
+
+    paymentTransactionId,
+    claimActions,
+
+    fieldErrors,
+    codeError,
+    submissionError,
+
+    setContributorName,
+    setEmail,
+    setAmount,
+    setSelectedUnits,
+    setMessage,
+    setCoverFee,
+    setRetailerOrderNumber,
+    setCarrier,
+    setTrackingNumber,
+    setAddressLine1,
+    setAddressLine2,
+    setCity,
+    setState,
+    setZipCode,
+    setCountry,
+    setPaymentTransactionId,
+    setPhase,
+    setSubmissionError,
+
+    validateContribution,
+    ensureCodeVerifiedForSubmit,
+    handleCodeChange,
+    handleVerifyCode,
+    handleClearCode,
+    handleSubmit,
+    handlePresetClick,
+  } = useRegistryContributionMachine({
+    item,
+    onContribute,
+    requireVerifiedCode: requiresCodeVerification,
+  });
+
+  const shouldFetchStandaloneCapabilities =
+    shippingAddress === undefined &&
+    !isDemoMode &&
+    Boolean(item.vendorUrl) &&
+    (isAdmin || isCodeLocked);
+  const standaloneCapabilities = useRegistryCapabilities({
+    enabled: shouldFetchStandaloneCapabilities,
+  });
+  const canDisplayShippingAddress = isDemoMode || isAdmin || isCodeLocked;
+  const resolvedShippingAddress = canDisplayShippingAddress
+    ? shippingAddress !== undefined
+      ? shippingAddress
+      : standaloneCapabilities.shippingAddress
+    : null;
+
+  const { handleShare, copied } = useShareItem(item);
+  const toastContext = useOptionalToast();
+  const [copiedReceiptKey, setCopiedReceiptKey] = useState<string | null>(null);
+  const [copiedAddress, setCopiedAddress] = useState(false);
+  const [copiedHandle, setCopiedHandle] = useState(false);
+  const [dismissedRecoveryMessage, setDismissedRecoveryMessage] = useState<string | null>(null);
+  const [isReturnAddressOpen, setIsReturnAddressOpen] = useState(false);
+  const [isCardProcessing, setIsCardProcessing] = useState(false);
+  const [postClaimOverride, setPostClaimOverride] = useState<{
+    key: string;
+    status: 'CONFIRMED' | 'CANCELLED';
+  } | null>(null);
+  const [isClaimActionPending, setIsClaimActionPending] = useState(false);
+  const [claimActionError, setClaimActionError] = useState<string | null>(null);
+  const [modalStatusMessage, setModalStatusMessage] = useState('');
+  const receiptCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const addressCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const verifyCodeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const clearCodeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const codeRowFocusedRef = useRef(false);
+  const wasCodeLockedRef = useRef(isCodeLocked);
+  const wasClearedByUserRef = useRef(false);
+
+  useEffect(() => {
+    const previouslyLocked = wasCodeLockedRef.current;
+    wasCodeLockedRef.current = isCodeLocked;
+
+    if (!previouslyLocked && isCodeLocked && codeRowFocusedRef.current) {
+      clearCodeButtonRef.current?.focus();
+    } else if (previouslyLocked && !isCodeLocked && wasClearedByUserRef.current) {
+      wasClearedByUserRef.current = false;
+      invitationCodeInputRef.current?.focus();
+    }
+  }, [isCodeLocked, invitationCodeInputRef]);
+
+  useEffect(() => {
+    return () => {
+      if (receiptCopyTimerRef.current) {
+        clearTimeout(receiptCopyTimerRef.current);
+      }
+      if (addressCopyTimerRef.current) {
+        clearTimeout(addressCopyTimerRef.current);
+      }
+      if (handleCopyTimerRef.current) {
+        clearTimeout(handleCopyTimerRef.current);
+      }
+    };
+  }, []);
+
+  const activeReconciledReceipt =
+    reconciledReceipt && reconciledReceipt.itemId === item.id ? reconciledReceipt : null;
+  const isConfirmedSuccess = isSuccess || Boolean(activeReconciledReceipt);
+  const activeRedirectRecoveryError =
+    redirectRecoveryError && dismissedRecoveryMessage !== redirectRecoveryError
+      ? redirectRecoveryError
+      : null;
+
   const isBusy = isSubmitting || isCardProcessing;
   const isEffectiveSubmitDisabled = isSubmitDisabled || isCardProcessing;
 
@@ -1095,10 +1117,12 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     item.vendorUrl && (item.vendorUrl.startsWith('http://') || item.vendorUrl.startsWith('https://'));
 
   const formattedShippingText = useMemo(
-    () => (shippingAddress ? formatRegistryShippingAddress(shippingAddress) : ''),
-    [shippingAddress]
+    () => (resolvedShippingAddress ? formatRegistryShippingAddress(resolvedShippingAddress) : ''),
+    [resolvedShippingAddress]
   );
-  const hasFormattedShipping = Boolean(isVendorUrlSafe && shippingAddress && formattedShippingText);
+  const hasFormattedShipping = Boolean(
+    isVendorUrlSafe && resolvedShippingAddress && formattedShippingText
+  );
 
   const handleCopyShippingAddress = async () => {
     if (!formattedShippingText) return;
@@ -1758,16 +1782,21 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             </div>
           )}
           <FormGroup
+            required={requiresCodeVerification}
             state={codeError ? 'error' : isCodeLocked ? 'success' : 'default'}
             busy={isBusy || isValidatingCode}
             className="mb-3"
           >
-            <Label>Invitation Code (Optional)</Label>
+            <Label>
+              Invitation Code {requiresCodeVerification ? '(Required to claim)' : '(Optional)'}
+            </Label>
             <div className="flex gap-2">
               <Input
                 ref={invitationCodeInputRef}
                 type="text"
                 placeholder="ABCDEF12"
+                required={requiresCodeVerification}
+                aria-required={requiresCodeVerification ? 'true' : undefined}
                 value={invitationCode}
                 onChange={handleCodeChange}
                 onKeyDown={(e) => {
@@ -1831,8 +1860,18 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                 </Button>
               )}
             </div>
-            <FormMessage className={isCodeLocked && !codeError ? 'text-sm' : undefined}>
-              {codeError || (isCodeLocked ? 'Code verified! Name pre-filled.' : null)}
+            <FormMessage
+              role={!codeError && !isCodeLocked && requiresCodeVerification ? 'none' : undefined}
+              className={
+                !codeError && (isCodeLocked || requiresCodeVerification) ? 'text-sm' : undefined
+              }
+            >
+              {codeError ||
+                (isCodeLocked
+                  ? 'Code verified! Name pre-filled.'
+                  : requiresCodeVerification
+                    ? 'Enter the 8-character code from your wedding invitation (not the shared site password).'
+                    : null)}
             </FormMessage>
           </FormGroup>
           <FormGroup

@@ -1,6 +1,9 @@
 import { renderHook, act } from '@testing-library/react';
 import React from 'react';
-import { useRegistryContributionMachine } from '../useRegistryContributionMachine';
+import {
+  useRegistryContributionMachine,
+  VERIFIED_CODE_REQUIRED_MESSAGE,
+} from '../useRegistryContributionMachine';
 import { RegistryItem } from '../../types';
 import { apiClient } from '@/lib/apiClient';
 import { GuestSessionContext, GuestSessionContextType } from '../../context/GuestSessionContext';
@@ -678,6 +681,148 @@ describe('useRegistryContributionMachine Hook', () => {
       } finally {
         codeEl.remove();
       }
+    });
+
+    it('blocks unverified zero-Stripe submit when requireVerifiedCode is true while allowing Stripe paymentIntentId submit', async () => {
+      const eightArgContribute = (
+        a: string,
+        b: string,
+        c: number,
+        d?: string,
+        e?: string,
+        f?: boolean,
+        g?: string,
+        h?: string
+      ) => mockOnContribute(a, b, c, d, e, f, g, h);
+
+      const { result } = renderHook(() =>
+        useRegistryContributionMachine({
+          item: mockSingleItem,
+          onContribute: eightArgContribute,
+          initialContributorName: 'Jane',
+          requireVerifiedCode: true,
+        })
+      );
+
+      await act(async () => {
+        await result.current.handleSubmit();
+      });
+
+      expect(mockOnContribute).not.toHaveBeenCalled();
+      expect(result.current.codeError).toBe(VERIFIED_CODE_REQUIRED_MESSAGE);
+
+      await act(async () => {
+        await result.current.handleSubmit(undefined, 'pi_card_123');
+      });
+
+      expect(mockOnContribute).toHaveBeenCalledWith(
+        'item-machine-1',
+        'Jane',
+        150,
+        undefined,
+        undefined,
+        false,
+        undefined,
+        'pi_card_123'
+      );
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    it('surfaces server-provided shared_passcode error text and omits unverified code from onContribute', async () => {
+      (apiClient.post as jest.Mock).mockResolvedValueOnce({
+        valid: false,
+        reason: 'shared_passcode',
+        error:
+          'Please enter the personal 8-character invitation code from your envelope rather than the site-wide password.',
+      });
+
+      const eightArgContribute = (
+        a: string,
+        b: string,
+        c: number,
+        d?: string,
+        e?: string,
+        f?: boolean,
+        g?: string,
+        h?: string
+      ) => mockOnContribute(a, b, c, d, e, f, g, h);
+
+      const { result } = renderHook(() =>
+        useRegistryContributionMachine({
+          item: mockGroupItem,
+          onContribute: eightArgContribute,
+          initialContributorName: 'Jane',
+          initialAmount: 50,
+          requireVerifiedCode: false,
+        })
+      );
+
+      act(() => {
+        result.current.handleCodeChange('WEDD2026');
+      });
+      await act(async () => {
+        await result.current.handleVerifyCode();
+      });
+
+      expect(result.current.codeError).toBe(
+        'Please enter the personal 8-character invitation code from your envelope rather than the site-wide password.'
+      );
+
+      // Even if an unverified draft code is passed via identityOverride on card submit, unverified code is omitted
+      await act(async () => {
+        await result.current.handleSubmit(undefined, 'pi_card_456', {
+          identityOverride: {
+            code: 'DRAFT123',
+            contributorName: 'Jane',
+            email: '',
+          },
+        });
+      });
+
+      expect(mockOnContribute).toHaveBeenCalledWith(
+        mockGroupItem.id,
+        'Jane',
+        50,
+        undefined,
+        undefined,
+        false,
+        undefined,
+        'pi_card_456'
+      );
+    });
+
+    it('retains isCodeLocked across transient onContribute submission error', async () => {
+      (apiClient.post as jest.Mock).mockResolvedValueOnce({
+        valid: true,
+        code: 'LOCKED88',
+        guestName: 'Locked Guest',
+      });
+      mockOnContribute.mockRejectedValueOnce(new Error('Network hiccup'));
+
+      const { result } = renderHook(() =>
+        useRegistryContributionMachine({
+          item: mockSingleItem,
+          onContribute: mockOnContribute,
+          requireVerifiedCode: true,
+        })
+      );
+
+      act(() => {
+        result.current.handleCodeChange('LOCKED88');
+      });
+      await act(async () => {
+        await result.current.handleVerifyCode();
+      });
+
+      expect(result.current.isCodeLocked).toBe(true);
+
+      await act(async () => {
+        await result.current.handleSubmit();
+      });
+
+      expect(result.current.submissionError).toBe('Network hiccup');
+      expect(result.current.isCodeLocked).toBe(true);
+      expect(result.current.invitationCode).toBe('LOCKED88');
     });
   });
 });

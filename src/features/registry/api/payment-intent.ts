@@ -80,7 +80,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
 
   const {
     itemId, amount, coverFee, paymentIntentId, clientSecret,
-    name, email, message, code, ...addressFields
+    name, email, message, code: _ignoredClientCode, ...addressFields
   } = parseResult.data;
 
   const targetItem = await registryService.getItemById(itemId);
@@ -121,22 +121,12 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     }
   }
 
-  let finalCode = code?.trim() || undefined;
-  let sessionEmail: string | null = null;
-  if (!finalCode || !email?.trim()) {
-    const session = await getGuestInviteSession(request);
-    if (session?.code) {
-      if (!finalCode) {
-        finalCode = session.code;
-      }
-      if (finalCode.trim().toUpperCase() === session.code.trim().toUpperCase()) {
-        sessionEmail =
-          typeof session.email === 'string' && session.email.trim().length > 0
-            ? session.email.trim()
-            : null;
-      }
-    }
-  }
+  const session = await getGuestInviteSession(request);
+  const finalCode = session?.code;
+  const sessionEmail =
+    typeof session?.email === 'string' && session.email.trim().length > 0
+      ? session.email.trim()
+      : null;
 
   const { baseAmount, feeAmount, totalChargeAmount, totalChargeCents, netPayout } =
     calculateContributionAmounts(amount, Boolean(coverFee));
@@ -219,4 +209,4 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     coverFee: Boolean(coverFee),
     netPayout,
   });
-});
+}, { limit: 30, windowMs: 60 * 1000, keyPrefix: 'registry-payment-intent' });

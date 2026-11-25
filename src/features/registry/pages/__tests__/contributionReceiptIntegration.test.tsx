@@ -291,8 +291,42 @@ describe('RegistryPage end-to-end contribution receipt and cache sync integratio
     expect(window.location.search).not.toContain('item=fund-honeymoon');
   });
 
-  test('claims physical gift, shows Contribution Confirmed!, marks card Claimed, and closes on Done', async () => {
+  test('blocks unverified physical gift claim until guest verifies invitation code, then unlocks shipping address and completes claim', async () => {
+    let sessionVerified = false;
     server.use(
+      http.get('/api/registry/capabilities', () => {
+        return HttpResponse.json({
+          cardCheckoutEnabled: true,
+          stripePublishableKey: 'pk_test_12345',
+          defaultPaymentHandleType: null,
+          defaultPaymentHandle: null,
+          shippingAddress: sessionVerified
+            ? {
+              recipientName: 'Alex & Jordan Rivera',
+              addressLine1: '742 Evergreen Terrace',
+              addressLine2: null,
+              city: 'Portland',
+              state: 'OR',
+              zip: '97205',
+              country: 'United States',
+              phone: null,
+              deliveryNotes: null,
+            }
+            : null,
+        });
+      }),
+      http.post('/api/registry/validate-code', async ({ request }) => {
+        const body = (await request.json()) as { code?: string };
+        if (body.code === 'INVITE26') {
+          sessionVerified = true;
+          return HttpResponse.json({
+            valid: true,
+            code: 'INVITE26',
+            guestName: 'Alex Guest',
+          });
+        }
+        return HttpResponse.json({ valid: false });
+      }),
       http.post('/api/registry/contribute', async () => {
         const updatedGift: RegistryItem = {
           ...physicalGiftItem,
@@ -311,9 +345,26 @@ describe('RegistryPage end-to-end contribution receipt and cache sync integratio
     fireEvent.click(contributeBtn);
 
     const dialog = await screen.findByRole('dialog', { name: 'Pour-Over Electric Kettle' });
+    expect(within(dialog).queryByTestId('registry-shipping-address-card')).not.toBeInTheDocument();
+
     fireEvent.change(within(dialog).getByLabelText(/Your Name/i), {
       target: { value: 'Alex Guest' },
     });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Claim Gift' }));
+
+    expect(
+      await within(dialog).findByText(/Please verify your 8-character invitation code to claim this gift/i)
+    ).toBeInTheDocument();
+
+    fireEvent.change(within(dialog).getByPlaceholderText('ABCDEF12'), {
+      target: { value: 'INVITE26' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Verify' }));
+
+    expect(await within(dialog).findByTestId('registry-shipping-address-card')).toHaveTextContent(
+      '742 Evergreen Terrace'
+    );
+
     fireEvent.click(within(dialog).getByRole('button', { name: 'Claim Gift' }));
 
     await waitFor(() => {
@@ -337,6 +388,14 @@ describe('RegistryPage end-to-end contribution receipt and cache sync integratio
   test('rolls back paginated cache and preserves guest inputs when contribution API fails, then succeeds on retry', async () => {
     let attempt = 0;
     server.use(
+      http.get('/api/registry/session', () => {
+        return HttpResponse.json({
+          isVerified: true,
+          invitationCode: 'INVITE26',
+          guestName: 'Alex Retry',
+          email: 'alex@example.com',
+        });
+      }),
       http.post('/api/registry/contribute', async () => {
         attempt += 1;
         if (attempt === 1) {
@@ -389,6 +448,14 @@ describe('RegistryPage end-to-end contribution receipt and cache sync integratio
 
   test('resets contribution state when URL popstate switches selectedItem to a different item', async () => {
     server.use(
+      http.get('/api/registry/session', () => {
+        return HttpResponse.json({
+          isVerified: true,
+          invitationCode: 'INVITE26',
+          guestName: 'Alex Guest',
+          email: 'alex@example.com',
+        });
+      }),
       http.post('/api/registry/contribute', async () => {
         return HttpResponse.json({
           ...physicalGiftItem,

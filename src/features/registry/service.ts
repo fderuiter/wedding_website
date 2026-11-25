@@ -1,6 +1,7 @@
 import { registryRepository } from './repository';
 import type { AdminUpdateContributorInput } from './schemas';
 import type {
+  ActiveCatalogCapabilitiesSummary,
   ContributorDeleteResult,
   ContributorLifecycleResult,
   ContributorRecord,
@@ -40,6 +41,23 @@ class RegistryService {
    */
   async getItemById(id: string, options?: { includeContributors?: boolean }) {
     return this.repository.getItemById(id, options);
+  }
+
+  /**
+   * Summarizes whether the active (non-sample, unclaimed) catalog currently
+   * contains direct-claim physical gifts or payable funds/group gifts.
+   */
+  async getActiveCatalogCapabilitiesSummary(): Promise<ActiveCatalogCapabilitiesSummary> {
+    if (typeof this.repository.getActiveCatalogCapabilitiesSummary === 'function') {
+      return this.repository.getActiveCatalogCapabilitiesSummary();
+    }
+    if (typeof registryRepository.getActiveCatalogCapabilitiesSummary === 'function') {
+      return registryRepository.getActiveCatalogCapabilitiesSummary();
+    }
+    return {
+      hasActivePhysicalItems: true,
+      hasActiveFundsOrGroupGifts: true,
+    };
   }
 
   /**

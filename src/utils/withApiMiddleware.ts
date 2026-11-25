@@ -102,6 +102,12 @@ export function withApiMiddleware(
     let authLimit = 5;
     let authWindowMs = 15 * 60 * 1000;
     let prechecksCompleted = false;
+    let shouldClearRevokedInviteCookie = false;
+
+    const expireRevokedInviteCookie = (res: NextResponse) => {
+      if (!shouldClearRevokedInviteCookie) return;
+      clearGuestInviteSessionCookie(res, req);
+    };
 
     let releaseAuthIpLock: (() => void) | null = null;
 
@@ -218,29 +224,30 @@ export function withApiMiddleware(
         const signedInvite = await getRawSignedGuestInviteSession(req);
         const signedPhoto = await getRawSignedPhotoUploadSession(req);
         if (signedInvite || signedPhoto) {
-          const hasFallbackAuth = (await isAdminRequest(req)) || (await isGuestRequest(req));
-          if (!hasFallbackAuth) {
-            const activeInvite = signedInvite ? await getGuestInviteSession(req) : null;
-            if (!activeInvite) {
-              const photoRouteAllowed = isPhotoScopedApiRoute(normalizedPathname, method);
-              const activePhoto =
-                photoRouteAllowed && signedPhoto
-                  ? await getActivePhotoUploadSession(req)
-                  : null;
-              if (!activePhoto) {
-                const unauthorizedResponse = NextResponse.json(
-                  { success: false, error: 'Unauthorized' },
-                  { status: 401 }
-                );
-                unauthorizedResponse.headers.set('x-api-version', 'v2');
-                if (signedInvite) {
-                  clearGuestInviteSessionCookie(unauthorizedResponse, req);
-                }
-                if (signedPhoto && photoRouteAllowed) {
-                  clearSessionCookie(unauthorizedResponse, GUEST_PHOTO_COOKIE, req);
-                }
-                return unauthorizedResponse;
+          const [hasFallbackAuth, activeInvite] = await Promise.all([
+            isAdminRequest(req).then((isAdmin) => (isAdmin ? true : isGuestRequest(req))),
+            signedInvite ? getGuestInviteSession(req) : Promise.resolve(null),
+          ]);
+          if (signedInvite && !activeInvite) {
+            shouldClearRevokedInviteCookie = true;
+          }
+          if (!hasFallbackAuth && !activeInvite) {
+            const photoRouteAllowed = isPhotoScopedApiRoute(normalizedPathname, method);
+            const activePhoto =
+              photoRouteAllowed && signedPhoto
+                ? await getActivePhotoUploadSession(req)
+                : null;
+            if (!activePhoto) {
+              const unauthorizedResponse = NextResponse.json(
+                { success: false, error: 'Unauthorized' },
+                { status: 401 }
+              );
+              unauthorizedResponse.headers.set('x-api-version', 'v2');
+              expireRevokedInviteCookie(unauthorizedResponse);
+              if (signedPhoto && photoRouteAllowed) {
+                clearSessionCookie(unauthorizedResponse, GUEST_PHOTO_COOKIE, req);
               }
+              return unauthorizedResponse;
             }
           }
         }
@@ -272,6 +279,34 @@ export function withApiMiddleware(
       
       // We assume it's JSON unless it's explicitly something else, to handle test mocks
       if ((contentType && !contentType.includes('application/json')) || isAttachment) {
+        if (shouldClearRevokedInviteCookie) {
+          if (
+            'cookies' in response &&
+            typeof (response as NextResponse).cookies?.set === 'function'
+          ) {
+            expireRevokedInviteCookie(response as NextResponse);
+            return response as NextResponse;
+          }
+          const tempCookieCarrier = NextResponse.json({});
+          expireRevokedInviteCookie(tempCookieCarrier);
+          const clearCookieHeaders =
+            typeof tempCookieCarrier.headers.getSetCookie === 'function'
+              ? tempCookieCarrier.headers.getSetCookie()
+              : [tempCookieCarrier.headers.get('set-cookie')].filter(
+                (header): header is string => Boolean(header)
+              );
+          if (clearCookieHeaders.length > 0 && typeof response.headers?.append === 'function') {
+            clearCookieHeaders.forEach((header) => {
+              response.headers.append('set-cookie', header);
+            });
+            return response as NextResponse;
+          }
+          if (clearCookieHeaders[0] && typeof response.headers?.set === 'function') {
+            response.headers.set('set-cookie', clearCookieHeaders[0]);
+            return response as NextResponse;
+          }
+          return response as NextResponse;
+        }
         return response as NextResponse;
       }
 
@@ -387,6 +422,8 @@ export function withApiMiddleware(
         });
       }
 
+      expireRevokedInviteCookie(finalResponse);
+
       return finalResponse;
       
     } catch (error: any) {
@@ -413,14 +450,16 @@ export function withApiMiddleware(
       }
 
       if (error instanceof ApiError && error.statusCode < 500) {
-        return NextResponse.json(
-          { 
-            success: false, 
+        const operationalErrorResponse = NextResponse.json(
+          {
+            success: false,
             error: error.message,
-            ...(error.data ? { details: error.data } : {})
+            ...(error.data ? { details: error.data } : {}),
           },
           { status: error.statusCode }
         );
+        expireRevokedInviteCookie(operationalErrorResponse);
+        return operationalErrorResponse;
       }
 
       const apiVersion = 'v2';

@@ -7,6 +7,7 @@ jest.mock('@/lib/prisma', () => ({
   prisma: {
     registryItem: {
       findMany: jest.fn(),
+      findFirst: jest.fn(),
       findUnique: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
@@ -529,6 +530,10 @@ describe('RegistryRepository', () => {
 
     it('should successfully contribute when a valid and unused invitation code is provided', async () => {
       const tx = {
+        $queryRaw: jest.fn().mockResolvedValue([{ id: 'invite-good' }]),
+        contributor: {
+          count: jest.fn().mockResolvedValue(0),
+        },
         registryItem: {
           findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
           update: jest.fn().mockResolvedValue({ ...mockRegistryItem, amountContributed: 50 }),
@@ -629,6 +634,10 @@ describe('RegistryRepository', () => {
 
     it('should successfully contribute when a previously used invitation code is provided', async () => {
       const tx = {
+        $queryRaw: jest.fn().mockResolvedValue([{ id: 'invite-used' }]),
+        contributor: {
+          count: jest.fn().mockResolvedValue(2),
+        },
         registryItem: {
           findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
           update: jest.fn().mockResolvedValue({ ...mockRegistryItem, amountContributed: 50 }),
@@ -772,6 +781,10 @@ describe('RegistryRepository', () => {
 
     it('falls back to inviteRecord.email when a verified guest leaves email blank', async () => {
       const tx = {
+        $queryRaw: jest.fn().mockResolvedValue([{ id: 'inv-email-fallback' }]),
+        contributor: {
+          count: jest.fn().mockResolvedValue(0),
+        },
         invitationCode: {
           findUnique: jest.fn().mockResolvedValue({
             id: 'inv-email-fallback',
@@ -988,6 +1001,10 @@ describe('RegistryRepository', () => {
       const confirmRes = await registryRepository.confirmContribution!('c-res-1', 'Guest');
       expect(confirmRes.changed).toBe(true);
       expect(confirmRes.contributor.status).toBe('CONFIRMED');
+      expect(txConfirm.contributor.update).toHaveBeenCalledWith({
+        where: { id: 'c-res-1' },
+        data: { status: 'CONFIRMED', alertEmailSentAt: null },
+      });
 
       // 2. Guest cancel on CONFIRMED is rejected with 409
       const txCancelConfirmed = {
@@ -1184,6 +1201,10 @@ describe('RegistryRepository', () => {
         subEventRsvps: [],
       };
       const tx = {
+        $queryRaw: jest.fn().mockResolvedValue([{ id: 'invite-pending' }]),
+        contributor: {
+          count: jest.fn().mockResolvedValue(0),
+        },
         registryItem: {
           findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
           update: jest.fn().mockResolvedValue({ ...mockRegistryItem, amountContributed: 50 }),
@@ -1210,34 +1231,16 @@ describe('RegistryRepository', () => {
       expect(getAttendanceStatus(inviteRow)).toBe('pending');
     });
 
-    it('auto-links unique non-sample guest email when code is omitted and skips linking when multiple households share an email', async () => {
-      const uniqueInvite = {
-        id: 'invite-unique-email',
-        code: 'UNIQUEMAIL',
-        guestName: 'Unique Guest',
-        email: 'unique@example.com',
-        used: false,
-        addressLine1: null,
-        city: null,
-        state: null,
-        zipCode: null,
-      };
-
-      const txUnique = {
+    it('never auto-links or backfills InvitationCode from unverified guest email, rejects address-collection codes, and enforces MAX_ACTIVE_HOUSEHOLD_RESERVATIONS=5 on RESERVED claims while allowing Stripe CONFIRMED payments', async () => {
+      const txEmailOnly = {
         registryItem: {
           findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
           update: jest.fn().mockResolvedValue({ ...mockRegistryItem, amountContributed: 75 }),
         },
         invitationCode: {
-          findMany: jest.fn().mockResolvedValue([uniqueInvite]),
-          update: jest.fn().mockResolvedValue({
-            ...uniqueInvite,
-            addressLine1: '100 Pine St',
-            city: 'Denver',
-            state: 'CO',
-            zipCode: '80202',
-            country: 'USA',
-          }),
+          findMany: jest.fn(),
+          findUnique: jest.fn(),
+          update: jest.fn(),
         },
         snapshotVersion: {
           create: jest.fn(),
@@ -1245,10 +1248,10 @@ describe('RegistryRepository', () => {
           deleteMany: jest.fn(),
         },
       };
-      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txUnique));
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txEmailOnly));
 
       await registryRepository.contributeToItem('1', {
-        name: 'Unique Guest',
+        name: 'Unverified Email Guest',
         email: '  UNIQUE@example.com ',
         amount: 75,
         addressLine1: '100 Pine St',
@@ -1258,51 +1261,96 @@ describe('RegistryRepository', () => {
         country: 'USA',
       });
 
-      expect(txUnique.invitationCode.findMany).toHaveBeenCalledWith({
-        where: {
-          email: { equals: 'unique@example.com', mode: 'insensitive' },
-          isSample: false,
-        },
-        take: 2,
-      });
-      expect(txUnique.invitationCode.update).toHaveBeenCalledWith({
-        where: { id: 'invite-unique-email' },
-        data: {
-          addressLine1: '100 Pine St',
-          city: 'Denver',
-          state: 'CO',
-          zipCode: '80202',
-          country: 'USA',
-        },
-      });
-      expect(txUnique.registryItem.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            contributors: {
-              create: expect.objectContaining({
-                invitationCodeId: 'invite-unique-email',
-                addressLine1: '100 Pine St',
-                city: 'Denver',
-                state: 'CO',
-                zipCode: '80202',
-                country: 'USA',
-              }),
-            },
-          }),
-        })
-      );
+      expect(txEmailOnly.invitationCode.findMany).not.toHaveBeenCalled();
+      expect(txEmailOnly.invitationCode.findUnique).not.toHaveBeenCalled();
+      expect(txEmailOnly.invitationCode.update).not.toHaveBeenCalled();
+      const unlinkedCreateData = (txEmailOnly.registryItem.update as jest.Mock).mock.calls[0][0]
+        .data.contributors.create;
+      expect(unlinkedCreateData.invitationCodeId).toBeUndefined();
+      expect(unlinkedCreateData.email).toBe('UNIQUE@example.com');
+      expect(unlinkedCreateData.addressLine1).toBe('100 Pine St');
 
-      // Duplicate email across two households -> do not auto-link
-      const txDuplicateEmail = {
+      // Rejects address-collection invitation codes
+      const txAddrSource = {
         registryItem: {
           findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
-          update: jest.fn().mockResolvedValue({ ...mockRegistryItem, amountContributed: 40 }),
+          update: jest.fn(),
         },
         invitationCode: {
-          findMany: jest.fn().mockResolvedValue([
-            { id: 'inv-1', email: 'shared@example.com' },
-            { id: 'inv-2', email: 'shared@example.com' },
-          ]),
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'inv-addr-only',
+            code: 'ADDRONLY',
+            guestName: 'Address Collector',
+            isSample: false,
+            partyTags: ['address-collection'],
+            source: 'address-collection',
+          }),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txAddrSource));
+
+      await expect(
+        registryRepository.contributeToItem('1', {
+          name: 'Address Collector',
+          amount: 50,
+          code: 'ADDRONLY',
+        })
+      ).rejects.toThrow('Invalid invitation code.');
+      expect(txAddrSource.registryItem.update).not.toHaveBeenCalled();
+
+      // Rejects 6th active RESERVED claim for the same household with ApiError(429)
+      const txCapped = {
+        $queryRaw: jest.fn().mockResolvedValue([{ id: 'inv-capped' }]),
+        contributor: {
+          count: jest.fn().mockResolvedValue(5),
+        },
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
+          update: jest.fn(),
+        },
+        invitationCode: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'inv-capped',
+            code: 'CAPPED05',
+            guestName: 'Capped Household',
+            isSample: false,
+            source: 'admin',
+          }),
+          update: jest.fn(),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txCapped));
+
+      await expect(
+        registryRepository.contributeToItem('1', {
+          name: 'Capped Household',
+          amount: 25,
+          code: 'CAPPED05',
+        })
+      ).rejects.toMatchObject({
+        statusCode: 429,
+      });
+      expect(txCapped.$queryRaw).toHaveBeenCalledTimes(2);
+      expect(txCapped.registryItem.update).not.toHaveBeenCalled();
+
+      // Stripe CONFIRMED payment bypasses RESERVED cap even when 5 RESERVED claims exist
+      const txStripeAllowed = {
+        contributor: {
+          findFirst: jest.fn().mockResolvedValue(null),
+          count: jest.fn(),
+        },
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
+          update: jest.fn().mockResolvedValue({ ...mockRegistryItem, amountContributed: 50 }),
+        },
+        invitationCode: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'inv-capped',
+            code: 'CAPPED05',
+            guestName: 'Capped Household',
+            isSample: false,
+            source: 'admin',
+          }),
           update: jest.fn(),
         },
         snapshotVersion: {
@@ -1311,22 +1359,19 @@ describe('RegistryRepository', () => {
           deleteMany: jest.fn(),
         },
       };
-      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txDuplicateEmail));
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txStripeAllowed));
 
-      await registryRepository.contributeToItem('1', {
-        name: 'Shared Household',
-        email: 'shared@example.com',
-        amount: 40,
+      const stripeAllowedRes = await registryRepository.contributeToItem('1', {
+        name: 'Capped Household',
+        amount: 50,
+        code: 'CAPPED05',
+        stripePaymentIntentId: 'pi_verified_bypass_cap',
       });
-
-      expect(txDuplicateEmail.invitationCode.update).not.toHaveBeenCalled();
-      const duplicateCreateData = (txDuplicateEmail.registryItem.update as jest.Mock).mock.calls[0][0]
-        .data.contributors.create;
-      expect(duplicateCreateData.invitationCodeId).toBeUndefined();
-      expect(duplicateCreateData.email).toBe('shared@example.com');
+      expect(stripeAllowedRes.amountContributed).toBe(50);
+      expect(txStripeAllowed.contributor.count).not.toHaveBeenCalled();
     });
 
-    it('never overwrites an existing household street address during contributor checkout backfill', async () => {
+    it('never overwrites an existing household street address or partially mismatched address during verified contributor checkout backfill', async () => {
       const existingAddressedInvite = {
         id: 'invite-has-addr',
         code: 'ADDRCODE',
@@ -1340,6 +1385,10 @@ describe('RegistryRepository', () => {
         country: 'USA',
       };
       const tx = {
+        $queryRaw: jest.fn().mockResolvedValue([{ id: 'invite-has-addr' }]),
+        contributor: {
+          count: jest.fn().mockResolvedValue(0),
+        },
         registryItem: {
           findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
           update: jest.fn().mockResolvedValue({ ...mockRegistryItem, amountContributed: 60 }),
@@ -1629,6 +1678,35 @@ describe('RegistryRepository', () => {
       expect(deleted.item?.amountContributed).toBe(0);
       expect(deleted.item?.purchaserName).toBeNull();
       expect(txConfirmed.snapshotVersion.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('computes active catalog capabilities summary excluding sample and fully purchased items', async () => {
+      (prisma.registryItem.findFirst as jest.Mock)
+        .mockResolvedValueOnce({ id: 'phys-1' })
+        .mockResolvedValueOnce(null);
+      const physicalOnly = await registryRepository.getActiveCatalogCapabilitiesSummary!();
+      expect(prisma.registryItem.findFirst).toHaveBeenCalledWith({
+        where: {
+          isSample: false,
+          purchased: false,
+          itemType: 'PHYSICAL',
+          isGroupGift: false,
+        },
+        select: { id: true },
+      });
+      expect(physicalOnly).toEqual({
+        hasActivePhysicalItems: true,
+        hasActiveFundsOrGroupGifts: false,
+      });
+
+      (prisma.registryItem.findFirst as jest.Mock)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 'fund-1' });
+      const fundOnly = await registryRepository.getActiveCatalogCapabilitiesSummary!();
+      expect(fundOnly).toEqual({
+        hasActivePhysicalItems: false,
+        hasActiveFundsOrGroupGifts: true,
+      });
     });
   });
 });
