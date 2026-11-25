@@ -182,7 +182,7 @@ export default function AdminPreviewLayout({
         data-scroll-region=""
         className={`${
           mobilePane === 'editor' ? 'flex' : 'hidden'
-        } md:flex flex-col w-full md:w-1/2 flex-1 min-h-0 md:h-full overflow-y-auto md:border-r border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xl z-10 relative`}
+        } md:flex flex-col w-full md:w-1/2 flex-1 min-w-0 min-h-0 md:h-full overflow-y-auto md:border-r border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xl z-10 relative`}
       >
         <div className="flex items-center justify-end px-4 sm:px-6 pt-3 pb-2 border-b border-gray-100 dark:border-gray-700/60 shrink-0">
           <button
@@ -249,13 +249,13 @@ export default function AdminPreviewLayout({
         data-testid="studio-right-pane"
         className={`${
           mobilePane === 'preview' ? 'flex' : 'hidden'
-        } md:flex flex-col w-full md:w-1/2 flex-1 min-h-0 md:h-full bg-gray-100 dark:bg-gray-950`}
+        } md:flex flex-col w-full md:w-1/2 flex-1 min-w-0 min-h-0 md:h-full bg-gray-100 dark:bg-gray-950`}
       >
         {/* Viewport Toggle & Status Toolbar */}
         <div
           role="toolbar"
           aria-label="Preview controls"
-          className="flex items-center justify-between gap-3 px-4 py-2.5 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 shrink-0"
+          className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 shrink-0"
         >
           <div
             role="group"

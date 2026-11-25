@@ -101,9 +101,9 @@ function AttractionsDashboardContent({
       }}
     >
       <div className="py-10 px-4 sm:px-6 max-w-5xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
+        <div className="flex flex-wrap justify-between items-center gap-4 mb-8">
           <h1 className="text-3xl font-extrabold text-primary">Attractions Studio</h1>
-          <div className="flex gap-4">
+          <div className="flex flex-wrap items-center gap-3">
             <Button variant="ghost" onClick={() => router.push('/admin/dashboard')}>Back to Dashboard</Button>
             <Button onClick={() => { 
               setCurrentAttraction({ name: '', description: '', imageUrl: '', category: 'food', website: '', directions: '', latitude: 0, longitude: 0, isVisible: true, promoCode: '', bookingUrl: '', roomRate: '', cutoffDate: '', shuttleInfo: '' }); 

@@ -89,23 +89,23 @@ function extractErrorMessage(err: unknown): string {
 function DefaultAdminSkeleton() {
   return (
     <div className="py-8 px-4 sm:px-6 max-w-5xl mx-auto space-y-6" aria-hidden="true">
-      <div className="flex justify-between items-center pb-4 border-b border-gray-200 dark:border-gray-800">
-        <div className="space-y-2">
-          <Skeleton className="h-8 w-64" role="presentation" aria-hidden="true" />
-          <Skeleton className="h-4 w-96 max-w-full" role="presentation" aria-hidden="true" />
+      <div className="flex flex-wrap justify-between items-center gap-4 pb-4 border-b border-gray-200 dark:border-gray-800">
+        <div className="space-y-2 min-w-0 flex-1 basis-64 max-w-full">
+          <Skeleton className="h-8 w-full max-w-64" role="presentation" aria-hidden="true" />
+          <Skeleton className="h-4 w-full max-w-96" role="presentation" aria-hidden="true" />
         </div>
-        <div className="flex gap-2">
-          <Skeleton className="h-10 w-24" role="presentation" aria-hidden="true" />
-          <Skeleton className="h-10 w-32" role="presentation" aria-hidden="true" />
+        <div className="flex flex-wrap gap-2 max-w-full">
+          <Skeleton className="h-10 w-24 max-w-full" role="presentation" aria-hidden="true" />
+          <Skeleton className="h-10 w-32 max-w-full" role="presentation" aria-hidden="true" />
         </div>
       </div>
       <div className="space-y-4">
         {[1, 2, 3, 4].map((i) => (
           <div
             key={i}
-            className="p-4 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-800 flex justify-between items-center"
+            className="p-4 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-800 flex flex-wrap justify-between items-center gap-3"
           >
-            <div className="space-y-2 w-1/2">
+            <div className="space-y-2 w-1/2 min-w-36">
               <Skeleton className="h-5 w-3/4" role="presentation" aria-hidden="true" />
               <Skeleton className="h-3 w-1/2" role="presentation" aria-hidden="true" />
             </div>

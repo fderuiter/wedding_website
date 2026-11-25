@@ -1778,4 +1778,31 @@ describe('ReceptionSlideshowClient', () => {
       'https://example.com/keep2.jpg'
     );
   });
+
+  it('applies mobile reflow classes on top header, floating control bar, and QR overlay', () => {
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={samplePhotos}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    expect(screen.getByTestId('slideshow-top-header')).toHaveClass('flex-wrap');
+    expect(screen.getByTestId('slideshow-controls')).toHaveClass(
+      'w-[calc(100vw-1.5rem)]',
+      'max-w-md',
+      'md:flex-wrap'
+    );
+    expect(screen.getByTestId('slideshow-secondary-controls')).toHaveClass(
+      'flex-col',
+      'md:flex-row',
+      'md:flex-wrap'
+    );
+    expect(screen.getByTestId('slideshow-qr-overlay')).toHaveClass(
+      'left-3',
+      'right-3',
+      'max-w-[290px]'
+    );
+    expect(screen.getByTestId('slideshow-upload-url')).toHaveClass('truncate');
+  });
 });

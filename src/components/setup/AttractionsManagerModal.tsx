@@ -91,7 +91,7 @@ function AttractionsManagerModalContent({ isOpen, onClose }: AttractionsManagerM
     >
       <div className="space-y-6 pt-2">
         {!isEditing && (
-          <div className="flex justify-between items-center pb-2 border-b border-gray-200 dark:border-zinc-800">
+          <div className="flex flex-wrap justify-between items-center gap-3 pb-2 border-b border-gray-200 dark:border-zinc-800">
             <span className="text-sm text-gray-600 dark:text-gray-400">
               {attractions.length} {attractions.length === 1 ? 'attraction' : 'attractions'} configured
             </span>

@@ -12,6 +12,8 @@ export interface AccessibleExternalLinkProps
   srText?: string;
 }
 
+const EXPLICIT_POSITION_CLASS_RE = /(?:^|\s)!?(?:static|fixed|absolute|relative|sticky)(?:\s|$)/;
+
 export function AccessibleExternalLink({
   href,
   children,
@@ -35,6 +37,9 @@ export function AccessibleExternalLink({
     }
   }
 
+  const positionClass =
+    className && EXPLICIT_POSITION_CLASS_RE.test(className) ? undefined : 'relative';
+
   return (
     <a
       ref={ref}
@@ -43,7 +48,7 @@ export function AccessibleExternalLink({
       target="_blank"
       rel="noopener noreferrer"
       aria-label={computedAriaLabel}
-      className={cn(className)}
+      className={cn(positionClass, className)}
     >{children}{showIcon && (
         <Icon
           name="ExternalLink"

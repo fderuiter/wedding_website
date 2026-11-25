@@ -18,11 +18,11 @@ function DragDropSkeleton() {
       {[1, 2, 3, 4, 5, 6].map((i) => (
         <div
           key={i}
-          className="p-4 rounded-xl shadow border border-primary dark:border-primary flex justify-between items-center bg-white dark:bg-gray-800 animate-pulse"
+          className="p-4 rounded-xl shadow border border-primary dark:border-primary flex flex-wrap justify-between items-center gap-3 bg-white dark:bg-gray-800 animate-pulse"
         >
-          <div className="flex items-center gap-4 w-full">
-            <div className="h-6 w-6 bg-gray-200 dark:bg-gray-700 rounded" />
-            <div className="space-y-2 w-1/3">
+          <div className="flex items-center gap-4 min-w-0 flex-1">
+            <div className="h-6 w-6 shrink-0 bg-gray-200 dark:bg-gray-700 rounded" />
+            <div className="space-y-2 w-1/3 min-w-24">
               <div className="h-5 bg-gray-200 dark:bg-gray-700 rounded w-3/4" />
               <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-1/2" />
             </div>
@@ -91,9 +91,9 @@ export default function SiteManagerPage() {
     >
       <div className="py-10">
         <div className="max-w-4xl mx-auto">
-          <div className="flex justify-between items-center mb-8">
-            <h1 className="text-4xl font-extrabold text-primary tracking-tight">Visual Site Manager</h1>
-            <div className="space-x-4">
+          <div className="flex flex-wrap justify-between items-center gap-4 mb-8">
+            <h1 className="text-3xl sm:text-4xl font-extrabold text-primary tracking-tight">Visual Site Manager</h1>
+            <div className="flex flex-wrap items-center gap-3">
               <Button onClick={() => setShowCustomModal(true)} variant="secondary">Add Custom Section</Button>
             </div>
           </div>

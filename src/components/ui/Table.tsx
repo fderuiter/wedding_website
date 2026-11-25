@@ -7,6 +7,8 @@ export interface TableProps extends React.ComponentPropsWithRef<'table'> {
   containerProps?: React.HTMLAttributes<HTMLDivElement>;
 }
 
+const EXPLICIT_POSITION_CLASS_RE = /(?:^|\s)!?(?:static|fixed|absolute|relative|sticky)(?:\s|$)/;
+
 export function Table({
   className,
   containerClassName,
@@ -16,6 +18,11 @@ export function Table({
   ...props
 }: TableProps) {
   const { onKeyDown: containerOnKeyDown, className: containerPropsClassName, ...restContainerProps } = containerProps || {};
+  const mergedCustomContainerClass = cn(containerClassName, containerPropsClassName);
+  const containerPositionClass =
+    mergedCustomContainerClass && EXPLICIT_POSITION_CLASS_RE.test(mergedCustomContainerClass)
+      ? undefined
+      : 'relative';
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (containerOnKeyDown) {
@@ -87,6 +94,7 @@ export function Table({
       {...restContainerProps}
       onKeyDown={handleKeyDown}
       className={cn(
+        containerPositionClass,
         'w-full overflow-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--input-focus-ring,var(--color-primary,#B91C1C))] focus-visible:ring-offset-2 rounded-md',
         containerClassName,
         containerPropsClassName

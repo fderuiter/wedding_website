@@ -692,12 +692,12 @@ export function ReceptionSlideshowClient({
           onMouseLeave={() => handleRegionLeave('header')}
           onPointerEnter={(e) => handleRegionEnter('header', e.pointerType)}
           onPointerLeave={() => handleRegionLeave('header')}
-          className={`relative z-30 flex items-center justify-between gap-2 px-3 py-1.5 sm:px-6 sm:py-4 transition-opacity duration-500 motion-reduce:transition-none focus-within:opacity-100 focus-within:pointer-events-auto ${
+          className={`relative z-30 flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 sm:px-6 sm:py-4 transition-opacity duration-500 motion-reduce:transition-none focus-within:opacity-100 focus-within:pointer-events-auto ${
             shouldShowControls ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
           }`}
           data-testid="slideshow-top-header"
         >
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
             <Link
               href="/photos"
               className="shrink-0 inline-flex items-center gap-1.5 min-h-8 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/15 text-xs sm:text-sm font-medium text-white transition focus:outline-none focus:ring-2 focus:ring-white"
@@ -715,7 +715,7 @@ export function ReceptionSlideshowClient({
               </svg>
               Gallery
             </Link>
-            <h1 className="text-[11px] sm:text-xs uppercase tracking-wider font-semibold text-stone-200 drop-shadow-md truncate">
+            <h1 className="min-w-0 text-[11px] sm:text-xs uppercase tracking-wider font-semibold text-stone-200 drop-shadow-md truncate">
               Live Reception Slideshow
             </h1>
           </div>
