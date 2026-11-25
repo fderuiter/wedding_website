@@ -230,5 +230,39 @@ describe('Host Validation Utility', () => {
       };
       expect(resolveRequestOrigin(nonLocalReq)).toBe('http://localhost:3000');
     });
+
+    it('ignores unapproved x-forwarded-host values when TRUST_PROXY is enabled, falls back to Host, and sanitizes downstream headers', async () => {
+      const { resolveRequestHost, sanitizeForwardedHostHeader } = await import(
+        '@/utils/hostValidation'
+      );
+      process.env.TRUST_PROXY = '1';
+      process.env.ALLOWED_HOSTS = 'wedding.example,localhost';
+
+      const headersWithUnapprovedForwarded = new Headers({
+        'x-forwarded-host': 'unapproved.attacker.invalid',
+        'x-forwarded-proto': 'https',
+        host: 'wedding.example',
+      });
+      const resolved = resolveRequestHost(headersWithUnapprovedForwarded, 'localhost:3000');
+      expect(resolved).toBe('wedding.example');
+      expect(
+        resolveRequestOrigin({
+          headers: headersWithUnapprovedForwarded,
+          nextUrl: new URL('http://localhost:3000/api/admin/broadcast/send'),
+        })
+      ).toBe('https://wedding.example');
+
+      const sanitizedAllowed = new Headers(headersWithUnapprovedForwarded);
+      sanitizeForwardedHostHeader(sanitizedAllowed, resolved, 'unapproved.attacker.invalid');
+      expect(sanitizedAllowed.get('x-forwarded-host')).toBe('wedding.example');
+
+      process.env.TRUST_PROXY = '0';
+      const strippedWhenDisabled = new Headers({
+        'x-forwarded-host': 'wedding.example',
+        host: 'wedding.example',
+      });
+      sanitizeForwardedHostHeader(strippedWhenDisabled, 'wedding.example', 'wedding.example');
+      expect(strippedWhenDisabled.has('x-forwarded-host')).toBe(false);
+    });
   });
 });

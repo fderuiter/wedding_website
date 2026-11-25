@@ -382,4 +382,34 @@ describe('verify-env-docs section-aware validation', () => {
       ])
     );
   });
+
+  it('keeps defaulted fields optional when superRefine applies a cross-field NODE_ENV === production check', () => {
+    const schemaSource = `
+      import { z } from 'zod';
+      const envSchema = z.object({
+        NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+        ALLOWED_HOSTS: z.string().default('localhost,127.0.0.1,*.localhost'),
+        TRUST_PROXY: z.string().default('false').transform((val) => val === 'true' ? 1 : 0),
+        GUEST_PASSCODE: z.string().default('wedding2026'),
+      }).superRefine((data, ctx) => {
+        if (data.NODE_ENV === 'production' && data.GUEST_PASSCODE === 'wedding2026') {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['GUEST_PASSCODE'], message: 'Required in production' });
+        }
+        if (data.NODE_ENV === 'production' && data.ALLOWED_HOSTS.includes('wedding.example') && data.TRUST_PROXY === 0) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['TRUST_PROXY'], message: 'Explicit hop count required' });
+        }
+      });
+    `;
+    const specs = extractEnvSchemaSpecs(schemaSource);
+    expect(specs.get('GUEST_PASSCODE')).toEqual({
+      key: 'GUEST_PASSCODE',
+      classification: 'production-required',
+      defaultValue: 'wedding2026',
+    });
+    expect(specs.get('TRUST_PROXY')).toEqual({
+      key: 'TRUST_PROXY',
+      classification: 'optional',
+      defaultValue: 'false',
+    });
+  });
 });

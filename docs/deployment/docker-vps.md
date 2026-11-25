@@ -39,7 +39,7 @@ For the complete environment variable matrix, defaults, and persisted entity rul
 ### `.env` Interpolation & Secret Requirements in `docker-compose.yml`
 `docker-compose.yml` substitutes environment variables directly from `.env` without hardcoding production fallback secrets:
 *   **Mandatory Operator Secrets (`:?` required)**: `DB_PASSWORD`, `ADMIN_PASSWORD` (`scrypt:[16-byte saltBase64]:[64-byte keyBase64]` generated via `node scripts/generate-password-hash.mjs "password"`), `GUEST_PASSCODE`, and `GUEST_SESSION_SECRET` (32+ characters, distinct from `GUEST_PASSCODE`) have no default values in `docker-compose.yml`. Running `docker compose config` or `docker compose up -d` without setting them fails immediately. In addition, `src/env.ts` rejects non-64-byte scrypt hashes and repository placeholder/E2E fallback secrets in `NODE_ENV=production`.
-*   **Compose Network, Proxy & Database Interpolation**: `DB_USER` (`wedding`), `DB_NAME` (`wedding`), and `DB_PORT` (`127.0.0.1:${DB_PORT:-5432}:5432`) configure the `db` container and fallback `DATABASE_URL`; `PORT` (`127.0.0.1:${PORT:-3000}:3000`), `STANDBY_PORT` (`127.0.0.1:${STANDBY_PORT:-3001}:3000` in `docker-compose.rollout.yml`), and `HOSTNAME` (`0.0.0.0`) configure loopback host port publishing and container network binding; `ALLOWED_HOSTS` and `TRUST_PROXY=1` (`${TRUST_PROXY:-1}` default in `docker-compose.yml` and `docker-compose.rollout.yml`, or `2` behind an upstream CDN/load balancer plus host proxy) configure reverse-proxy host validation and client IP forwarding behind Caddy or Nginx.
+*   **Compose Network, Proxy & Database Interpolation**: `DB_USER` (`wedding`), `DB_NAME` (`wedding`), and `DB_PORT` (`127.0.0.1:${DB_PORT:-5432}:5432`) configure the `db` container and fallback `DATABASE_URL`; `PORT` (`127.0.0.1:${PORT:-3000}:3000`), `STANDBY_PORT` (`127.0.0.1:${STANDBY_PORT:-3001}:3000` in `docker-compose.rollout.yml`), and `HOSTNAME` (`0.0.0.0`) configure loopback host port publishing and container network binding; `ALLOWED_HOSTS` and `TRUST_PROXY` (`${TRUST_PROXY:-false}` fail-closed default in `docker-compose.yml` and `docker-compose.rollout.yml`; set an explicit integer hop count in `.env` for public production domains: `0` for direct/L4 NLB traffic, `1` behind Caddy or Nginx, or `2` behind an upstream CDN/load balancer plus host proxy) configure reverse-proxy host validation and client IP forwarding behind Caddy or Nginx.
 *   **Scoped Container Runtime, Full 21-Variable Forwarding & 32-Variable `SITE_*` Overrides**: `app` (in `docker-compose.yml`) and `app-standby` (in `docker-compose.rollout.yml`) pin `NODE_ENV: production` so host development overrides never leak into production containers, forward all 21 runtime keys from `src/env.ts` (including optional `S3_*`, `STRIPE_*`, `CRON_SECRET`, `RUN_MIGRATIONS`, and `POSTGRES_URL_NON_POOLING` — see the [Application Runtime Contract](../runtime-contract.md)) plus all 32 optional Layer 1 `SITE_*` overrides (`${SITE_*:-}`), and scope container `DATABASE_URL` (`${CONTAINER_DATABASE_URL:-...}`) and `POSTGRES_URL_NON_POOLING` (`${CONTAINER_POSTGRES_URL_NON_POOLING:-}`) identically across `migration`, `app`, and `app-standby` without requiring a manual `docker-compose.override.yml` file (automated CI smoke tests layer `--env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml` separately).
 *   **Trimmed & Blank-Safe `SITE_*` Overrides**: `src/lib/config.ts` (`getEnvConfigOverrides`) trims leading/trailing whitespace on all 32 `SITE_*` keys and treats empty or whitespace-only values as unset before Zod validation and `isSiteInitialized` checks, while still rejecting non-empty malformed overrides (such as invalid coordinates, dates, or hex colors) at startup. Optional `SITE_*` keys (plus `STANDBY_PORT=3001` for `./scripts/rollout-vps.sh`) can be set directly in `.env`:
     ```env
@@ -106,7 +106,7 @@ When running the image directly via `docker run` without Docker Compose's `migra
 
 ## 5. Custom Domain & TLS
 
-Use a reverse proxy such as **Caddy** or **Nginx** with **Let's Encrypt** on the host, configured with **dual loopback upstreams** (`127.0.0.1:3000` primary `app` and `127.0.0.1:3001` standby `app-standby`) so `./scripts/rollout-vps.sh` updates `app` with zero dropped HTTP requests. Always configure reverse proxies to sanitize and overwrite client IP headers (`X-Real-IP` and `X-Forwarded-For`) to prevent attackers from spoofing their IP address to evade rate limiting.
+Use a reverse proxy such as **Caddy** or **Nginx** with **Let's Encrypt** on the host, configured with **dual loopback upstreams** (`127.0.0.1:3000` primary `app` and `127.0.0.1:3001` standby `app-standby`) so `./scripts/rollout-vps.sh` updates `app` with zero dropped HTTP requests. Always configure reverse proxies to append trusted client IPs to `X-Forwarded-For` and overwrite `X-Forwarded-Host` with the ingress host (`single-address` `X-Real-IP` headers are ignored by the application).
 
 ### Option A: Caddy (Automatic TLS + Standby Failover)
 Create a `Caddyfile`:
@@ -117,12 +117,12 @@ wedding.mydomain.com {
         lb_try_duration 5s
         lb_try_interval 100ms
         fail_duration 5s
-        # Overwrite/strip untrusted incoming X-Real-IP header with trusted remote client IP
-        header_up X-Real-IP {remote_host}
+        # Overwrite incoming X-Forwarded-Host with the verified TLS ingress host
+        header_up X-Forwarded-Host {host}
     }
 }
 ```
-*Note: `lb_policy first` sends all normal traffic to primary `localhost:3000` and automatically retries/fails over to warm `localhost:3001` (`app-standby`) while `app` recreates during `./scripts/rollout-vps.sh`. Caddy automatically manages `X-Forwarded-For` by appending the client IP, and `header_up X-Real-IP {remote_host}` ensures any incoming forged client `X-Real-IP` header is stripped and overwritten before the request reaches the container.*
+*Note: `lb_policy first` sends all normal traffic to primary `localhost:3000` and automatically retries/fails over to warm `localhost:3001` (`app-standby`) while `app` recreates during `./scripts/rollout-vps.sh`. Caddy automatically appends the connecting client IP to `X-Forwarded-For`, sets `X-Forwarded-Proto`, and `header_up X-Forwarded-Host {host}` overwrites any forged incoming `X-Forwarded-Host` header before the request reaches the container (pair with `TRUST_PROXY=1` in `.env`).*
 
 ### Option B: Nginx + Certbot (Primary + Backup Upstream Failover)
 ```nginx
@@ -145,13 +145,12 @@ server {
         proxy_set_header Connection 'upgrade';
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 ```
-*Note: Marking `127.0.0.1:3001` as `backup` routes all steady-state requests to primary `127.0.0.1:3000` and transparently retries on `127.0.0.1:3001` (`app-standby`) via `proxy_next_upstream` the instant `app` closes its socket during rollout. Setting `proxy_set_header X-Forwarded-Host $host;` and `proxy_set_header X-Real-IP $remote_addr;` explicitly overwrites any client-supplied `X-Forwarded-Host` or `X-Real-IP` headers with the ingress host `$host` and direct connecting IP address `$remote_addr`. Combined with `$proxy_add_x_forwarded_for` and `TRUST_PROXY=1` (the `docker-compose.yml` default), the application evaluates only the trusted proxy hop for host validation, canonical origin resolution, and rate limiting while ignoring spoofed forwarded headers whenever `TRUST_PROXY=false`.*
+*Note: Marking `127.0.0.1:3001` as `backup` routes all steady-state requests to primary `127.0.0.1:3000` and transparently retries on `127.0.0.1:3001` (`app-standby`) via `proxy_next_upstream` the instant `app` closes its socket during rollout. Setting `proxy_set_header Host $host;` and `proxy_set_header X-Forwarded-Host $host;` explicitly overwrites any client-supplied host headers with the ingress `$host`. Combined with `$proxy_add_x_forwarded_for` and `TRUST_PROXY=1` in `.env` (`docker-compose.yml` defaults to `${TRUST_PROXY:-false}` and rejects omitted or boolean `TRUST_PROXY` values when `ALLOWED_HOSTS` includes public domains), the application evaluates only the configured right-to-left hop on `X-Forwarded-For`, `X-Forwarded-Proto`, and `ALLOWED_HOSTS`-approved `X-Forwarded-Host` while issuing `__Host-` `Secure` session cookies on approved non-local production hosts even over internal HTTP upstream traffic.*
 
 Obtain TLS certificate:
 ```bash

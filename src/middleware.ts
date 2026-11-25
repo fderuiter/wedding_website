@@ -27,7 +27,6 @@ import {
   getSessionCookieOptions,
   resolveSessionCookieName,
 } from '@/core/auth/tokenCookieHelpers';
-import { env } from '@/env';
 import {
   buildContentSecurityPolicy,
   CSP_NONCE_HEADER,
@@ -39,6 +38,7 @@ import {
   isHostAllowed,
   isHostSyntaxValid,
   resolveRequestHost,
+  sanitizeForwardedHostHeader,
   validateMutatingRequestOrigin,
 } from '@/utils/hostValidation';
 import { getSafeCallbackUrl } from '@/utils/safeCallbackUrl';
@@ -100,13 +100,10 @@ export async function middleware(request: NextRequest) {
       normalizedPath === '/api/ready');
 
   // Validate Host header at perimeter before executing any route logic
-  const trustProxy = Boolean(env.TRUST_PROXY);
   const rawForwardedHost = request.headers.get('x-forwarded-host');
   const rawHost = request.headers.get('host');
   const hasMalformedForwardedHost =
-    rawForwardedHost !== null &&
-    (/[\r\n\x00-\x1f\x7f]/.test(rawForwardedHost) ||
-      (trustProxy && !rawForwardedHost.trim()));
+    rawForwardedHost !== null && /[\r\n\x00-\x1f\x7f]/.test(rawForwardedHost);
   const hasInvalidRawHost = rawHost !== null && !isHostSyntaxValid(rawHost);
   const host = resolveRequestHost(request.headers, request.nextUrl?.host);
 
@@ -319,6 +316,7 @@ export async function middleware(request: NextRequest) {
       }
     });
   }
+  sanitizeForwardedHostHeader(requestHeaders, host, rawForwardedHost);
   stripClientGuestHeaders(requestHeaders);
   requestHeaders.delete(CSP_NONCE_HEADER);
 

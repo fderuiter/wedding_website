@@ -5,6 +5,11 @@ import {
   normalizePostgresUrl,
   parsePostgresUrl,
 } from './lib/postgres-url.js';
+import {
+  getProductionTrustProxyError,
+  isValidTrustProxyInput,
+  parseTrustProxyValue,
+} from './lib/trustProxyPolicy.js';
 
 const DISALLOWED_PROD_REMOTE_POSTGRES_TLS_MODES = new Set([
   'disable',
@@ -54,6 +59,30 @@ function enforceProductionPostgresTlsRefinement(
         message: tlsError,
       });
     }
+  }
+}
+
+function enforceProductionTrustProxyRefinement(
+  data: {
+    NODE_ENV: 'development' | 'test' | 'production';
+    ALLOWED_HOSTS: string;
+    TRUST_PROXY: boolean | number;
+  },
+  ctx: z.RefinementCtx
+): void {
+  const trustProxyError = getProductionTrustProxyError({
+    isProduction: data.NODE_ENV === 'production',
+    isBuildTime,
+    isE2ETestMode: process.env.E2E_TEST === 'true',
+    allowedHosts: data.ALLOWED_HOSTS,
+    parsedTrustProxy: data.TRUST_PROXY,
+  });
+  if (trustProxyError) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['TRUST_PROXY'],
+      message: trustProxyError,
+    });
   }
 }
 
@@ -154,25 +183,6 @@ function normalizeOptionalEnv(val: string | undefined): string | undefined {
   return unquoted.length > 0 ? unquoted : undefined;
 }
 
-function parseTrustProxy(val: unknown): boolean | number {
-  if (val === undefined || val === null || val === '') return false;
-  if (typeof val === 'boolean') return val;
-  if (typeof val === 'number') {
-    if (!Number.isInteger(val) || val < 0) return false;
-    return val === 0 ? false : val;
-  }
-  if (typeof val === 'string') {
-    const trimmed = stripEnvQuotes(val).toLowerCase();
-    if (trimmed === '' || trimmed === 'false' || trimmed === '0') return false;
-    if (trimmed === 'true') return true;
-    if (/^\d+$/.test(trimmed)) {
-      const hops = parseInt(trimmed, 10);
-      return hops > 0 ? hops : false;
-    }
-  }
-  return false;
-}
-
 // Conditionally skip production secret placeholder validation during build (e.g., for Next.js compilation or Prisma generation)
 const isEdge = process.env.NEXT_RUNTIME === 'edge';
 const procArgv = (!isEdge && typeof process !== 'undefined' && Array.isArray(process['argv'])) ? process['argv'] : [];
@@ -251,15 +261,10 @@ const envSchema = z.object({
   TRUST_PROXY: z.union([z.boolean(), z.number().int().min(0), z.string()])
     .optional()
     .default(false)
-    .refine(val => {
-      if (typeof val === 'boolean') return true;
-      if (typeof val === 'number') return Number.isInteger(val) && val >= 0;
-      const trimmed = stripEnvQuotes(val).toLowerCase();
-      return trimmed === '' || trimmed === 'true' || trimmed === 'false' || /^\d+$/.test(trimmed);
-    }, {
+    .refine(isValidTrustProxyInput, {
       message: 'TRUST_PROXY must be true, false, or a non-negative integer hop count',
     })
-    .transform((val): boolean | number => parseTrustProxy(val)),
+    .transform((val): boolean | number => parseTrustProxyValue(val)),
   GUEST_PASSCODE: z.string().default('wedding2026').transform(stripEnvQuotes),
   GUEST_SESSION_SECRET: z.string().default('default-guest-session-secret').transform(stripEnvQuotes),
   HISTORY_VERSION_LIMIT: z.preprocess(
@@ -322,6 +327,7 @@ const envSchema = z.object({
     }
   }
   enforceProductionPostgresTlsRefinement(data, ctx);
+  enforceProductionTrustProxyRefinement(data, ctx);
   if (
     data.GUEST_SESSION_SECRET &&
     data.GUEST_PASSCODE &&
@@ -501,6 +507,17 @@ if (process.env.NODE_ENV === 'production' && !isBuildTime && process.env.NEXT_RU
     console.error(`❌ Security Error: ${bootNonPoolingUrlTlsError}.`);
     throw new Error(`${bootNonPoolingUrlTlsError}.`);
   }
+  const bootTrustProxyError = getProductionTrustProxyError({
+    isProduction: true,
+    isBuildTime,
+    isE2ETestMode,
+    allowedHosts: normalizeOptionalEnv(process.env.ALLOWED_HOSTS),
+    rawTrustProxy: process.env.TRUST_PROXY,
+  });
+  if (bootTrustProxyError) {
+    console.error(`❌ Security Error: ${bootTrustProxyError}.`);
+    throw new Error(`${bootTrustProxyError}.`);
+  }
 }
 
 // Even during build, fail if incomplete or invalid S3/R2 credentials are provided explicitly
@@ -568,7 +585,7 @@ if (process.env.NEXT_RUNTIME === 'edge' || isStaticExport || (isBuildTime && (!n
     ALLOWED_HOSTS: normalizeOptionalEnv(process.env.ALLOWED_HOSTS) || 'localhost,127.0.0.1,*.localhost',
     MULTISITE_ENABLED: fallbackMultisite === 'true' || fallbackMultisite === '1',
     RUN_MIGRATIONS: fallbackMigrations === 'true' || fallbackMigrations === '1',
-    TRUST_PROXY: parseTrustProxy(process.env.TRUST_PROXY),
+    TRUST_PROXY: parseTrustProxyValue(process.env.TRUST_PROXY),
     GUEST_PASSCODE: normalizeOptionalEnv(process.env.GUEST_PASSCODE) || 'wedding2026',
     GUEST_SESSION_SECRET: normalizeOptionalEnv(process.env.GUEST_SESSION_SECRET) || 'default-guest-session-secret',
     HISTORY_VERSION_LIMIT: fallbackHistoryLimit ? parseInt(fallbackHistoryLimit, 10) : 50,
@@ -598,7 +615,7 @@ export const env = new Proxy(_env, {
     if (typeof prop === 'string') {
       const rawVal = process.env[prop];
       if (prop === 'TRUST_PROXY') {
-        return rawVal !== undefined && rawVal !== '' ? parseTrustProxy(rawVal) : target.TRUST_PROXY;
+        return rawVal !== undefined && rawVal !== '' ? parseTrustProxyValue(rawVal) : target.TRUST_PROXY;
       }
       if (rawVal !== undefined && rawVal !== '') {
         const val = stripEnvQuotes(rawVal);

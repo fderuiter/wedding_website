@@ -80,7 +80,7 @@ describe('scripts/preflight-env.ts', () => {
         'ALLOWED_HOSTS="wedding.example.com,localhost,127.0.0.1"',
         'GUEST_PASSCODE="autumn-orchard-celebration-2027"',
         'GUEST_SESSION_SECRET="8f4a2e9c1d7b3a6f0e5c8d2a9b4f7e1c3d6a8b0e2f4c6d8a1b3e5f7a9c0d2e4f"',
-        'TRUST_PROXY=true',
+        'TRUST_PROXY=1',
         'E2E_TEST=false',
       ].join('\n'),
       'utf8'
@@ -91,6 +91,77 @@ describe('scripts/preflight-env.ts', () => {
     expect(cliRes.stderr).toBe('');
     expect(cliRes.stdout).toContain('Environment preflight passed');
     expect(cliRes.stdout).toContain('DB_PASSWORD');
+  });
+
+  it('rejects omitted or boolean TRUST_PROXY values on public production hosts while accepting explicit integer hop counts (0, 1, 2) and local-only defaults', () => {
+    const validHash = generateValidAdminScryptHash();
+    const baseLines = [
+      'NODE_ENV=production',
+      'DATABASE_URL="postgresql://wedding_app:9a8b7c6d5e4f3a2b1c0d@db.internal:5432/wedding?schema=public"',
+      `ADMIN_PASSWORD="${validHash}"`,
+      'GUEST_PASSCODE="harbor-lights-2027"',
+      'GUEST_SESSION_SECRET="1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b"',
+    ];
+
+    for (const invalidLine of [null, 'TRUST_PROXY=true', 'TRUST_PROXY=false']) {
+      const envPath = path.join(tempDir, '.env.public-invalid');
+      fs.writeFileSync(
+        envPath,
+        [
+          ...baseLines,
+          'ALLOWED_HOSTS="wedding.example.com,localhost"',
+          ...(invalidLine ? [invalidLine] : []),
+        ].join('\n'),
+        'utf8'
+      );
+      const res = runEnvPreflightFile({
+        cwd: tempDir,
+        envFile: '.env.public-invalid',
+        target: 'host',
+      });
+      expect(res.ok).toBe(false);
+      expect(res.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            key: 'TRUST_PROXY',
+            rule: 'ambiguous-production-trust-proxy',
+          }),
+        ])
+      );
+    }
+
+    for (const validHops of ['0', '1', '2']) {
+      const envPath = path.join(tempDir, '.env.public-valid');
+      fs.writeFileSync(
+        envPath,
+        [
+          ...baseLines,
+          'ALLOWED_HOSTS="wedding.example.com,localhost"',
+          `TRUST_PROXY=${validHops}`,
+        ].join('\n'),
+        'utf8'
+      );
+      const res = runEnvPreflightFile({
+        cwd: tempDir,
+        envFile: '.env.public-valid',
+        target: 'host',
+      });
+      expect(res.ok).toBe(true);
+    }
+
+    const localOnlyPath = path.join(tempDir, '.env.local-only');
+    fs.writeFileSync(
+      localOnlyPath,
+      [...baseLines, 'ALLOWED_HOSTS="localhost,127.0.0.1,*.localhost"'].join('\n'),
+      'utf8'
+    );
+    expect(
+      runEnvPreflightFile({
+        cwd: tempDir,
+        envFile: '.env.local-only',
+        target: 'host',
+      }).ok
+    ).toBe(true);
   });
 
   it('supports --no-compose / --target host when DATABASE_URL is set without DB_PASSWORD', () => {
@@ -104,6 +175,7 @@ describe('scripts/preflight-env.ts', () => {
         'DATABASE_URL="postgresql://wedding_app:9a8b7c6d5e4f3a2b1c0d@db.internal:5432/wedding?schema=public"',
         `ADMIN_PASSWORD="${validHash}"`,
         'ALLOWED_HOSTS="wedding.example.com,localhost"',
+        'TRUST_PROXY=1',
         'GUEST_PASSCODE="harbor-lights-2027"',
         'GUEST_SESSION_SECRET="1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b"',
       ].join('\n'),

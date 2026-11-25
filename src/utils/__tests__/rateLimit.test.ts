@@ -429,15 +429,36 @@ describe('rateLimit', () => {
       expect(await rateLimit(differentClientReq, 1, 60000)).toBeNull();
     });
 
-    test('extracts sanitized client IP from x-real-ip when x-forwarded-for is missing', async () => {
-      const req = new NextRequest('http://localhost/api/test', {
-        headers: { 'x-real-ip': '198.51.100.42:55100' },
+    test('ignores single-address x-real-ip headers when x-forwarded-for is missing and falls back directly to verified socket IP', async () => {
+      process.env.TRUST_PROXY = '1';
+      const socketBackedReq = new NextRequest('http://localhost/api/test', {
+        headers: createVerifiedSocketIpHeaders('203.0.113.77', {
+          'x-real-ip': '198.51.100.42:55100',
+        }),
       });
+      expect(getClientIp(socketBackedReq)).toBe('203.0.113.77');
 
-      expect(getClientIp(req)).toBe('198.51.100.42');
-      expect(await rateLimit(req, 1, 60000)).toBeNull();
-      const blocked = await rateLimit(req, 1, 60000);
-      expect(blocked?.status).toBe(429);
+      // Rotating x-real-ip headers without x-forwarded-for cannot bypass the 5-attempt auth lockout
+      for (let i = 0; i < 5; i++) {
+        const loginAttempt = new NextRequest('http://localhost/api/guest/login', {
+          method: 'POST',
+          headers: createVerifiedSocketIpHeaders('203.0.113.88', {
+            'x-real-ip': `198.51.100.${i + 10}`,
+          }),
+        });
+        expect(getClientIp(loginAttempt)).toBe('203.0.113.88');
+        expect(await checkAuthLockout(loginAttempt)).toBeNull();
+        await recordFailedAuthAttempt(loginAttempt);
+      }
+
+      const sixthAttempt = new NextRequest('http://localhost/api/guest/login', {
+        method: 'POST',
+        headers: createVerifiedSocketIpHeaders('203.0.113.88', {
+          'x-real-ip': '198.51.100.250',
+        }),
+      });
+      const lockedOut = await checkAuthLockout(sixthAttempt);
+      expect(lockedOut?.status).toBe(429);
     });
 
     test('prevents forged x-real-ip headers from bypassing request limits when x-forwarded-for is present', async () => {

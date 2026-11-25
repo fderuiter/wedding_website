@@ -1,4 +1,5 @@
 import { env } from '@/env';
+import { isLocalOrInternalHostname } from '@/lib/trustProxyPolicy';
 
 /**
  * Retrieves the parsed list of allowed host rules from environment settings.
@@ -22,7 +23,7 @@ function getAllowedHosts(): string[] {
     .filter(Boolean);
 }
 
-interface ParsedHostHeader {
+export interface ParsedHostHeader {
   cleanHost: string;
   hostname: string;
   port: string | undefined;
@@ -33,7 +34,7 @@ interface ParsedHostHeader {
  * Rejects empty strings, whitespace, control/CRLF characters, comma-separated
  * host lists, malformed IPv6 brackets, invalid characters, and invalid ports.
  */
-function parseHostHeader(hostHeader: string | null | undefined): ParsedHostHeader | null {
+export function parseHostHeader(hostHeader: string | null | undefined): ParsedHostHeader | null {
   if (!hostHeader || typeof hostHeader !== 'string') {
     return null;
   }
@@ -256,7 +257,8 @@ function resolveTrustedForwardedValue(
 
 /**
  * Resolves the effective request `Host` authority, reading `X-Forwarded-Host` only when
- * `env.TRUST_PROXY` is enabled and falling back to `Host` (or `fallbackHost`).
+ * `env.TRUST_PROXY` is enabled and the selected forwarded hop matches `ALLOWED_HOSTS`,
+ * falling back to `Host` (or `fallbackHost`).
  */
 export function resolveRequestHost(
   headers: HeadersLookup | null | undefined,
@@ -265,7 +267,7 @@ export function resolveRequestHost(
   const forwardedHost = headers
     ? resolveTrustedForwardedValue(headers.get('x-forwarded-host'))
     : null;
-  if (forwardedHost) {
+  if (forwardedHost && isHostAllowed(forwardedHost)) {
     return forwardedHost;
   }
 
@@ -276,6 +278,28 @@ export function resolveRequestHost(
 
   const normalizedFallback = fallbackHost?.trim();
   return normalizedFallback || null;
+}
+
+/**
+ * Normalizes or strips `x-forwarded-host` on downstream middleware request headers so
+ * untrusted or unapproved client-supplied `x-forwarded-host` values never reach SSR or API layers.
+ */
+export function sanitizeForwardedHostHeader(
+  requestHeaders: Headers,
+  resolvedHost: string | null,
+  rawForwardedHost?: string | null
+): void {
+  if (!env.TRUST_PROXY) {
+    requestHeaders.delete('x-forwarded-host');
+    return;
+  }
+  if (rawForwardedHost !== null && rawForwardedHost !== undefined) {
+    if (resolvedHost && isHostAllowed(resolvedHost)) {
+      requestHeaders.set('x-forwarded-host', resolvedHost);
+    } else {
+      requestHeaders.delete('x-forwarded-host');
+    }
+  }
 }
 
 /**
@@ -450,10 +474,12 @@ function resolveStrictExpectedOrigin(req: MutationOriginCheckRequest): string {
     }
   }
 
-  const forwardedHost = resolveTrustedForwardedValue(req.headers.get('x-forwarded-host'));
   const rawHost = req.headers.get('host')?.trim();
   const fallbackUrlHost = req.nextUrl?.host || parsedReqUrl?.host || req.nextUrl?.hostname || '';
-  const effectiveHost = forwardedHost || rawHost || fallbackUrlHost;
+  const effectiveHost = resolveRequestHost(req.headers, fallbackUrlHost) || '';
+  const hasApprovedForwardedHost = Boolean(
+    effectiveHost && effectiveHost !== rawHost && effectiveHost !== fallbackUrlHost
+  );
 
   const forwardedProto = resolveTrustedForwardedValue(
     req.headers.get('x-forwarded-proto')
@@ -470,10 +496,7 @@ function resolveStrictExpectedOrigin(req: MutationOriginCheckRequest): string {
   } else if (rawUrlProto === 'http') {
     const parsedHost = parseHostHeader(effectiveHost);
     const hostname = parsedHost?.hostname ?? '';
-    const isLocal =
-      hostname === 'localhost' ||
-      hostname === '127.0.0.1' ||
-      hostname.endsWith('.localhost');
+    const isLocal = Boolean(hostname && isLocalOrInternalHostname(hostname));
     const isProduction = (process.env.NODE_ENV || env.NODE_ENV) === 'production';
     effectiveProto = isLocal || !isProduction ? 'http' : 'https';
   }
@@ -481,7 +504,7 @@ function resolveStrictExpectedOrigin(req: MutationOriginCheckRequest): string {
   const fallbackHostname = req.nextUrl?.hostname || parsedReqUrl?.hostname || '';
   const fallbackOrigin = req.nextUrl?.origin || parsedReqUrl?.origin || '';
   const safeLocalFallback =
-    !forwardedHost &&
+    !hasApprovedForwardedHost &&
     !rawHost &&
     (fallbackHostname === 'localhost' || fallbackHostname === '127.0.0.1')
       ? fallbackOrigin

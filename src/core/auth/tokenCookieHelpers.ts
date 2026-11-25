@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import type { NextRequest, NextResponse } from 'next/server';
 import { env } from '@/env';
+import { isLocalOrInternalHostname } from '@/lib/trustProxyPolicy';
 import {
   base64urlEncode,
   base64urlDecode,
@@ -8,7 +9,12 @@ import {
   hmacSha256,
   timingSafeEqualJS,
 } from '@/utils/crypto';
-import { resolveRequestProtocol } from '@/utils/hostValidation';
+import {
+  isHostAllowed,
+  parseHostHeader,
+  resolveRequestHost,
+  resolveRequestProtocol,
+} from '@/utils/hostValidation';
 
 const HOST_COOKIE_PREFIX = '__Host-';
 
@@ -24,6 +30,7 @@ interface CookieContextRequest {
   nextUrl?: {
     protocol?: string;
     hostname?: string;
+    host?: string;
   };
 }
 
@@ -33,11 +40,22 @@ function stripHostCookiePrefix(cookieName: string): string {
     : cookieName;
 }
 
+function hasSecureConfiguredSiteOrigin(): boolean {
+  const rawSiteBaseUrl = process.env.SITE_BASE_URL?.trim();
+  if (!rawSiteBaseUrl) return false;
+  try {
+    return new URL(rawSiteBaseUrl).protocol.toLowerCase() === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Determines whether session cookies should be issued with the `__Host-` prefix and `Secure`
- * flag. Returns `true` only in production over HTTPS (trusted `x-forwarded-proto: https`, `https:`
- * URL, or omitted request context), and `false` on plain HTTP local development or loopback servers
- * because browsers reject `__Host-` cookies without `Secure`.
+ * flag. Returns `true` in production over HTTPS, on approved non-local hosts (even when internal
+ * proxy-to-container traffic uses plain HTTP), on non-local requests with an `https:`
+ * `SITE_BASE_URL`, or when request context is omitted; returns `false` on plain HTTP local
+ * development or loopback servers because browsers reject `__Host-` cookies without `Secure`.
  */
 function isSecureCookieContext(req?: CookieContextRequest): boolean {
   const isProduction = (process.env.NODE_ENV || env.NODE_ENV) === 'production';
@@ -49,15 +67,17 @@ function isSecureCookieContext(req?: CookieContextRequest): boolean {
     return true;
   }
 
-  let fallbackProtocol = req.nextUrl?.protocol?.toLowerCase();
-  if (!fallbackProtocol && typeof req.url === 'string' && req.url) {
+  let parsedUrl: URL | null = null;
+  if (typeof req.url === 'string' && req.url) {
     try {
-      fallbackProtocol = new URL(req.url, 'http://localhost').protocol.toLowerCase();
+      parsedUrl = new URL(req.url, 'http://localhost');
     } catch {
-      fallbackProtocol = undefined;
+      parsedUrl = null;
     }
   }
 
+  const fallbackProtocol =
+    req.nextUrl?.protocol?.toLowerCase() || parsedUrl?.protocol?.toLowerCase();
   const headersLookup =
     typeof req.headers?.get === 'function'
       ? { get: (name: string) => req.headers!.get!(name) }
@@ -66,6 +86,24 @@ function isSecureCookieContext(req?: CookieContextRequest): boolean {
   if (resolvedProto === 'https') {
     return true;
   }
+
+  const fallbackHost = req.nextUrl?.host || parsedUrl?.host || req.nextUrl?.hostname || null;
+  const effectiveHost = resolveRequestHost(headersLookup, fallbackHost);
+  const parsedHost = effectiveHost ? parseHostHeader(effectiveHost) : null;
+  const effectiveHostname =
+    parsedHost?.hostname ||
+    req.nextUrl?.hostname?.toLowerCase() ||
+    parsedUrl?.hostname?.toLowerCase() ||
+    '';
+
+  if (effectiveHostname && isLocalOrInternalHostname(effectiveHostname)) {
+    return false;
+  }
+
+  if ((effectiveHost && isHostAllowed(effectiveHost)) || hasSecureConfiguredSiteOrigin()) {
+    return true;
+  }
+
   if (resolvedProto === 'http') {
     return false;
   }

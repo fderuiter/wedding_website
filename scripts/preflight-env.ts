@@ -2,6 +2,10 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { isValidPostgresUrl } from '../src/lib/postgres-url.js';
+import {
+  getProductionTrustProxyError,
+  isValidTrustProxyInput,
+} from '../src/lib/trustProxyPolicy.js';
 
 export type PreflightTarget = 'compose' | 'standalone' | 'host';
 export type PreflightMode = 'development' | 'production';
@@ -576,20 +580,30 @@ export function validateOperatorEnv(
   }
 
   const rawTrustProxy = getVal('TRUST_PROXY');
-  if (rawTrustProxy !== undefined && rawTrustProxy.trim() !== '') {
-    const normalizedTrustProxy = rawTrustProxy.trim().toLowerCase();
-    if (
-      normalizedTrustProxy !== 'true' &&
-      normalizedTrustProxy !== 'false' &&
-      !/^\d+$/.test(normalizedTrustProxy)
-    ) {
-      issues.push({
-        key: 'TRUST_PROXY',
-        rule: 'invalid-trust-proxy',
-        message: 'TRUST_PROXY must be "true", "false", or a non-negative integer hop count.',
-        remediation: 'Set TRUST_PROXY=true (when behind Caddy/Nginx) or TRUST_PROXY=false.',
-      });
-    }
+  const trimmedTrustProxy = rawTrustProxy?.trim() ?? '';
+  if (trimmedTrustProxy !== '' && !isValidTrustProxyInput(trimmedTrustProxy)) {
+    issues.push({
+      key: 'TRUST_PROXY',
+      rule: 'invalid-trust-proxy',
+      message: 'TRUST_PROXY must be a non-negative integer hop count (0, 1, 2, ...) or "false" in local development.',
+      remediation: 'Set TRUST_PROXY=1 (single-hop Caddy/Nginx/Vercel/Railway/Render), TRUST_PROXY=2 (Cloud Run/CDN+LB), or TRUST_PROXY=0 (direct/L4 NLB).',
+    });
+  }
+
+  const productionTrustProxyError = getProductionTrustProxyError({
+    isProduction: effectiveMode === 'production',
+    isE2ETestMode: getVal('E2E_TEST')?.trim().toLowerCase() === 'true',
+    allowedHosts: rawAllowedHosts,
+    rawTrustProxy: trimmedTrustProxy,
+  });
+  if (productionTrustProxyError) {
+    issues.push({
+      key: 'TRUST_PROXY',
+      rule: 'ambiguous-production-trust-proxy',
+      message: `${productionTrustProxyError}; omitted or boolean values are rejected.`,
+      remediation:
+        'Set TRUST_PROXY=1 behind a single reverse proxy (Caddy/Nginx/Vercel/Railway/Render), TRUST_PROXY=2 behind a two-hop load balancer (Cloud Run/CDN+LB), or TRUST_PROXY=0 for direct/L4 connections.',
+    });
   }
 
   const rawHistoryLimit = normalizeOptional(getVal('HISTORY_VERSION_LIMIT'));

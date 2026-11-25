@@ -34,7 +34,7 @@ Release entries distinguish between:
 - Added **7 environment variables** to `envSchema` in [`src/env.ts`](./src/env.ts) (21 runtime schema keys total, documented in [`.env.example`](./.env.example)):
   - `GUEST_SESSION_SECRET`: Dedicated HMAC-SHA256 signing secret for `guest_auth` cookies (required in production, minimum 32 characters, distinct from `GUEST_PASSCODE`).
   - `RUN_MIGRATIONS`: Boolean container startup flag (default `false`) instructing [`docker-entrypoint.sh`](./docker-entrypoint.sh) to execute `prisma migrate deploy` for standalone `docker run` deployments.
-  - `TRUST_PROXY`: Boolean or non-negative proxy hop count (default `false`; `1` for single-hop Caddy/Nginx/Vercel/Railway/Render, `2` for two-hop Cloud Run/CDN+LB) enabling trusted `X-Forwarded-For` / `X-Real-IP` rate-limit client IP extraction.
+  - `TRUST_PROXY`: Non-negative proxy hop count or local boolean flag (default `false` in `src/env.ts`, `docker-compose.yml`, and `docker-compose.rollout.yml`; explicit integer `0` for direct/L4 NLB traffic, `1` for single-hop Caddy/Nginx/Vercel/Railway/Render, `2` for two-hop Cloud Run/CDN+LB; omitted or boolean values are rejected in production when `ALLOWED_HOSTS` includes non-local public domains) enabling right-to-left `X-Forwarded-For`, `X-Forwarded-Proto`, and `ALLOWED_HOSTS`-validated `X-Forwarded-Host` hop selection while ignoring spoofable single-address `X-Real-IP` headers.
   - `CRON_SECRET`: Optional bearer secret authenticating scheduled `/api/cron/broadcasts` requests.
   - `STRIPE_SECRET_KEY`: Conditional server-side Stripe secret/restricted key (`sk_...` or `rk_...`), required whenever `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` is set.
   - `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`: Conditional client-side Stripe publishable key (`pk_...`), required whenever `STRIPE_SECRET_KEY` is set.
@@ -64,7 +64,7 @@ Release entries distinguish between:
    - Regenerate `ADMIN_PASSWORD` if using a plaintext value or legacy non-64-byte scrypt hash: `node scripts/generate-password-hash.mjs "your-strong-password"`.
    - Set non-placeholder values for `GUEST_PASSCODE` (cannot be `wedding2026`) and `GUEST_SESSION_SECRET` (at least 32 characters and distinct from `GUEST_PASSCODE`, e.g., `openssl rand -hex 32`).
    - Set `DB_PASSWORD` in `.env` when using `docker-compose.yml` (`DB_PASSWORD`, `ADMIN_PASSWORD`, `GUEST_PASSCODE`, and `GUEST_SESSION_SECRET` enforce mandatory `${VAR:?...}` guards).
-   - If enabling Stripe card checkout, configure both `STRIPE_SECRET_KEY` and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` together (plus `STRIPE_WEBHOOK_SECRET` for `/api/registry/webhook/stripe`); set `TRUST_PROXY=true` when running behind Caddy or Nginx.
+   - If enabling Stripe card checkout, configure both `STRIPE_SECRET_KEY` and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` together (plus `STRIPE_WEBHOOK_SECRET` for `/api/registry/webhook/stripe`); set an explicit integer `TRUST_PROXY` hop count (`0` for direct/L4 NLB traffic, `1` behind Caddy/Nginx/Vercel/Railway/Render, or `2` behind Cloud Run/CDN+LB — `${TRUST_PROXY:-false}` is the fail-closed Compose default and boolean `TRUST_PROXY=true`/`false` is rejected on public production domains).
 3. **Remove Retired `guestPasscode` Module Override Keys**:
    - If you customized `AppConfig.modules` JSON manually, remove any obsolete `guestPasscode` boolean property (`ModuleConfigSchema` now persists the 9 supported feature toggles and strips unknown keys).
 4. **Run Local `.env` Preflight Before Restarting**:

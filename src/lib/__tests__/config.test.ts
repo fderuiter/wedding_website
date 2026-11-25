@@ -813,7 +813,7 @@ describe('Single-Site vs Multi-Site Config Resolution', () => {
       expect(prisma.appConfig.findFirst).toHaveBeenCalledWith({ where: { subdomain: 'smiths' } });
       expect(forwardedResolved.partner1Name).toBe('Riley');
 
-      // 3. Trusted proxy hop rejected by ALLOWED_HOSTS -> falls back to global profile
+      // 3. Unapproved x-forwarded-host is ignored -> falls back to approved Host ('smiths.wedding.example')
       process.env.TRUST_PROXY = '1';
       globalWithStore.globalFallbackStore?.clear();
       (prisma.appConfig.findFirst as jest.Mock).mockClear();
@@ -822,6 +822,21 @@ describe('Single-Site vs Multi-Site Config Resolution', () => {
         new Headers({
           'x-forwarded-host': 'evil.attacker.invalid',
           host: 'smiths.wedding.example',
+        })
+      );
+
+      const ignoredUnapprovedForwarded = await getAppConfig();
+      expect(prisma.appConfig.findFirst).toHaveBeenCalledWith({ where: { subdomain: 'smiths' } });
+      expect(ignoredUnapprovedForwarded.partner1Name).toBe('Riley');
+
+      // 4. Both x-forwarded-host and upstream Host unapproved -> falls back to global profile
+      globalWithStore.globalFallbackStore?.clear();
+      (prisma.appConfig.findFirst as jest.Mock).mockClear();
+      (prisma.appConfig.findUnique as jest.Mock).mockClear();
+      (headers as jest.Mock).mockResolvedValueOnce(
+        new Headers({
+          'x-forwarded-host': 'evil.attacker.invalid',
+          host: 'ingress.internal:3000',
         })
       );
 

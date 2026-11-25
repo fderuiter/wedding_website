@@ -324,6 +324,7 @@ describe('Production Boot Guest Session Secret Validation', () => {
         ADMIN_PASSWORD: `"${validAdminPassword}"`,
         DATABASE_URL: `"${validDatabaseUrl}"`,
         ALLOWED_HOSTS: '"wedding.example.com,localhost"',
+        TRUST_PROXY: '"1"',
         GUEST_PASSCODE: `"${validGuestPasscode}"`,
         GUEST_SESSION_SECRET: `"${valid32Secret}"`,
       });
@@ -334,10 +335,52 @@ describe('Production Boot Guest Session Secret Validation', () => {
         ADMIN_PASSWORD: `'${validAdminPassword}'`,
         DATABASE_URL: `'${validDatabaseUrl}'`,
         ALLOWED_HOSTS: "'wedding.example.com,localhost'",
+        TRUST_PROXY: "'1'",
         GUEST_PASSCODE: `'${validGuestPasscode}'`,
         GUEST_SESSION_SECRET: `'${valid32Secret}'`,
       });
       expect(singleQuoted.status).toBe(0);
+    });
+
+    it('rejects omitted or boolean TRUST_PROXY values on public production hosts and accepts explicit integer hop counts (0, 1, 2)', () => {
+      for (const ambiguousTrustProxy of [undefined, 'false', 'true']) {
+        const res = runEnvBoot({
+          NODE_ENV: 'production',
+          ADMIN_PASSWORD: validAdminPassword,
+          DATABASE_URL: validDatabaseUrl,
+          ALLOWED_HOSTS: 'wedding.example.com,localhost',
+          ...(ambiguousTrustProxy !== undefined ? { TRUST_PROXY: ambiguousTrustProxy } : {}),
+          GUEST_PASSCODE: validGuestPasscode,
+          GUEST_SESSION_SECRET: valid32Secret,
+        });
+        expect(res.status).not.toBe(0);
+        expect(res.stderr).toContain(
+          'TRUST_PROXY must be set to an explicit non-negative integer hop count'
+        );
+      }
+
+      for (const explicitHops of ['0', '1', '2']) {
+        const okRes = runEnvBoot({
+          NODE_ENV: 'production',
+          ADMIN_PASSWORD: validAdminPassword,
+          DATABASE_URL: validDatabaseUrl,
+          ALLOWED_HOSTS: 'wedding.example.com,localhost',
+          TRUST_PROXY: explicitHops,
+          GUEST_PASSCODE: validGuestPasscode,
+          GUEST_SESSION_SECRET: valid32Secret,
+        });
+        expect(okRes.status).toBe(0);
+      }
+
+      const ciInternalHostsRes = runEnvBoot({
+        NODE_ENV: 'production',
+        ADMIN_PASSWORD: validAdminPassword,
+        DATABASE_URL: validDatabaseUrl,
+        ALLOWED_HOSTS: 'localhost,127.0.0.1,*.localhost,app,db,wedding_website-app-1,0.0.0.0',
+        GUEST_PASSCODE: validGuestPasscode,
+        GUEST_SESSION_SECRET: valid32Secret,
+      });
+      expect(ciInternalHostsRes.status).toBe(0);
     });
 
     it('rejects Cloudflare R2 S3_REGION=auto when S3_ENDPOINT is omitted', () => {
