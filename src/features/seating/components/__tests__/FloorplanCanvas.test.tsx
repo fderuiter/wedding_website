@@ -290,7 +290,7 @@ describe('FloorplanCanvas component', () => {
   it('applies ring-4 ring-primary and border-primary visual feedback when hovering dragged guest over a table', () => {
     render(<FloorplanCanvas {...defaultProps} />);
 
-    const tableOuterDiv = screen.getByRole('button', { name: /Head Table/i });
+    const tableOuterDiv = screen.getByRole('button', { name: /Head Table, shape/i });
     fireEvent.dragEnter(tableOuterDiv, {
       dataTransfer: { types: ['text/plain'] },
     });
@@ -315,7 +315,7 @@ describe('FloorplanCanvas component', () => {
   it('resets active drop target state when leaving or ending drag gesture', () => {
     render(<FloorplanCanvas {...defaultProps} />);
 
-    const tableOuterDiv = screen.getByRole('button', { name: /Head Table/i });
+    const tableOuterDiv = screen.getByRole('button', { name: /Head Table, shape/i });
     fireEvent.dragEnter(tableOuterDiv, {
       dataTransfer: { types: ['text/plain'] },
     });
@@ -357,7 +357,7 @@ describe('FloorplanCanvas component', () => {
     it('includes focus ring classes on table containers and seat circles', () => {
       render(<FloorplanCanvas {...defaultProps} />);
 
-      const headTableContainer = screen.getByLabelText(/Head Table/i);
+      const headTableContainer = screen.getByLabelText(/Head Table, shape/i);
       expect(headTableContainer.className).toContain('focus:outline-none');
       expect(headTableContainer.className).toContain('focus:ring-2');
       expect(headTableContainer.className).toContain('focus:ring-primary');
@@ -372,7 +372,7 @@ describe('FloorplanCanvas component', () => {
       const onSelectTable = jest.fn();
       render(<FloorplanCanvas {...defaultProps} onSelectTable={onSelectTable} />);
 
-      const headTable = screen.getByLabelText(/Head Table/i);
+      const headTable = screen.getByLabelText(/Head Table, shape/i);
 
       fireEvent.keyDown(headTable, { key: 'Enter' });
       expect(onSelectTable).toHaveBeenCalledWith('table-1');
@@ -385,7 +385,7 @@ describe('FloorplanCanvas component', () => {
       const onUpdateTablePosition = jest.fn();
       render(<FloorplanCanvas {...defaultProps} onUpdateTablePosition={onUpdateTablePosition} />);
 
-      const headTable = screen.getByLabelText(/Head Table/i); // initial x: 100, y: 100
+      const headTable = screen.getByLabelText(/Head Table, shape/i); // initial x: 100, y: 100
 
       fireEvent.keyDown(headTable, { key: 'ArrowRight' });
       expect(onUpdateTablePosition).toHaveBeenCalledWith('table-1', 110, 100);
@@ -404,7 +404,7 @@ describe('FloorplanCanvas component', () => {
       const onUpdateTablePosition = jest.fn();
       render(<FloorplanCanvas {...defaultProps} onUpdateTablePosition={onUpdateTablePosition} />);
 
-      const headTable = screen.getByLabelText(/Head Table/i);
+      const headTable = screen.getByLabelText(/Head Table, shape/i);
 
       fireEvent.keyDown(headTable, { key: 'ArrowRight', shiftKey: true });
       expect(onUpdateTablePosition).toHaveBeenCalledWith('table-1', 150, 100);
@@ -448,7 +448,7 @@ describe('FloorplanCanvas component', () => {
         />
       );
 
-      const tableElement = screen.getByLabelText(/Edge Table/i);
+      const tableElement = screen.getByLabelText(/Edge Table, shape/i);
 
       // Moving left by 10px from x=40 should clamp guest table to seat-safe 36px
       fireEvent.keyDown(tableElement, { key: 'ArrowLeft' });
@@ -473,7 +473,7 @@ describe('FloorplanCanvas component', () => {
       expect(assignedSeat).toHaveAttribute('tabIndex', '0');
       expect(assignedSeat).toHaveAttribute('role', 'button');
 
-      const emptySeat = screen.getByLabelText('Seat 2: Empty');
+      const emptySeat = screen.getByLabelText('Head Table, Seat 2: Empty');
       expect(emptySeat).toHaveAttribute('tabIndex', '0');
       expect(emptySeat).toHaveAttribute('role', 'button');
     });
@@ -495,7 +495,7 @@ describe('FloorplanCanvas component', () => {
       const onOpenSeatAssignModal = jest.fn();
       render(<FloorplanCanvas {...defaultProps} onOpenSeatAssignModal={onOpenSeatAssignModal} />);
 
-      const emptySeat = screen.getByLabelText('Seat 2: Empty');
+      const emptySeat = screen.getByLabelText('Head Table, Seat 2: Empty');
       fireEvent.keyDown(emptySeat, { key: 'Enter' });
 
       expect(onOpenSeatAssignModal).toHaveBeenCalledWith('table-1', 2);
@@ -962,7 +962,7 @@ describe('FloorplanCanvas component', () => {
 
       // Click empty seat -> opens modal without dragging or saving table
       onSelectTable.mockClear();
-      const emptySeat = screen.getByLabelText('Seat 2: Empty');
+      const emptySeat = screen.getByLabelText('Head Table, Seat 2: Empty');
       fireEvent.mouseDown(emptySeat, { button: 0, clientX: 160, clientY: 238 });
       fireEvent.mouseMove(canvasElement, { clientX: 165, clientY: 242 });
       fireEvent.mouseUp(emptySeat, { clientX: 165, clientY: 242 });
@@ -993,7 +993,9 @@ describe('FloorplanCanvas component', () => {
 
       render(<FloorplanCanvas {...defaultProps} tables={[headTable]} />);
 
-      const seats = [1, 2, 3, 4].map((n) => screen.getByLabelText(`Seat ${n}: Empty`));
+      const seats = [1, 2, 3, 4].map((n) =>
+        screen.getByLabelText(`Bridal Party Head Table, Seat ${n}: Empty`)
+      );
       const tops = seats.map((s) => s.style.top);
       const lefts = seats.map((s) => parseFloat(s.style.left));
 
@@ -1060,7 +1062,7 @@ describe('FloorplanCanvas component', () => {
         />
       );
 
-      const tableEl = screen.getByRole('button', { name: /Small Table/i });
+      const tableEl = screen.getByRole('button', { name: /Small Table, shape/i });
 
       // 2-member household dropped onto table with only 1 open seat -> rejected with announcement
       fireEvent.drop(tableEl, {
@@ -1081,7 +1083,7 @@ describe('FloorplanCanvas component', () => {
           onDropGuestsOnTable={onDropGuestsOnTable}
         />
       );
-      fireEvent.drop(screen.getByRole('button', { name: /Small Table/i }), {
+      fireEvent.drop(screen.getByRole('button', { name: /Small Table, shape/i }), {
         dataTransfer: {
           getData: (fmt: string) => (fmt === 'text/plain' ? 'household:g-h1,g-h2' : ''),
         },
@@ -1132,10 +1134,10 @@ describe('FloorplanCanvas component', () => {
         />
       );
 
-      const seat1 = screen.getByLabelText('Seat 1: Empty');
+      const seat1 = screen.getByLabelText('Sparse Head Table, Seat 1: Empty');
       const seat2 = screen.getByLabelText('Seat 2: Bride Guest');
       const seat3 = screen.getByLabelText('Seat 3: Groom Guest');
-      const seat4 = screen.getByLabelText('Seat 4: Empty');
+      const seat4 = screen.getByLabelText('Sparse Head Table, Seat 4: Empty');
       expect(seat1).toBeInTheDocument();
       expect(seat2).toBeInTheDocument();
       expect(seat3).toBeInTheDocument();
@@ -1180,8 +1182,8 @@ describe('FloorplanCanvas component', () => {
 
       expect(screen.getByLabelText('Seat 1: Explicit One')).toBeInTheDocument();
       expect(screen.getByLabelText('Seat 2: Unnumbered One')).toBeInTheDocument();
-      expect(screen.getByLabelText('Seat 3: Empty')).toBeInTheDocument();
-      expect(screen.getByLabelText('Seat 4: Empty')).toBeInTheDocument();
+      expect(screen.getByLabelText('Mixed Table, Seat 3: Empty')).toBeInTheDocument();
+      expect(screen.getByLabelText('Mixed Table, Seat 4: Empty')).toBeInTheDocument();
     });
 
     it('distributes rectangular table seats evenly across all four edges within 0..width and 0..height', () => {
@@ -1202,7 +1204,7 @@ describe('FloorplanCanvas component', () => {
       render(<FloorplanCanvas {...defaultProps} tables={[rectTable]} />);
 
       const getCoords = (seatNum: number) => {
-        const el = screen.getByLabelText(`Seat ${seatNum}: Empty`);
+        const el = screen.getByLabelText(`Banquet 8, Seat ${seatNum}: Empty`);
         return {
           left: parseFloat(el.style.left),
           top: parseFloat(el.style.top),
@@ -1780,7 +1782,7 @@ describe('FloorplanCanvas component', () => {
       );
 
       const dimmedAssigned = screen.getByRole('button', { name: 'Seat 2: Donna Noble' });
-      const dimmedEmpty = screen.getByRole('button', { name: 'Seat 3: Empty' });
+      const dimmedEmpty = screen.getByRole('button', { name: 'Rose Table, Seat 3: Empty' });
       expect(dimmedAssigned.className).not.toContain('opacity-60');
       expect(dimmedEmpty.className).not.toContain('opacity-60');
       expect(dimmedAssigned.style.backgroundColor).toContain('--floorplan-seat-dimmed-bg');
@@ -2009,6 +2011,79 @@ describe('FloorplanCanvas component', () => {
       expect(tableNode.style.height).toBe('100px');
 
       fireEvent.mouseUp(canvasElement);
+    });
+  });
+
+  describe('Selection aria-pressed, table-prefixed empty seats, and keyboard-focusable floorplan region', () => {
+    it('exposes tabIndex=0 on scrollable floorplan region, aria-pressed on tables and landmarks, and table-prefixed empty seats', async () => {
+      const landmark: SeatingTableDTO = {
+        id: 'landmark-dance',
+        name: 'Main Dance Floor',
+        shape: 'dance-floor',
+        capacity: 0,
+        x: 420,
+        y: 120,
+        width: 180,
+        height: 180,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [],
+      };
+      const secondTable: SeatingTableDTO = {
+        id: 'table-empty-2',
+        name: 'Garden Table',
+        shape: 'round',
+        capacity: 2,
+        x: 260,
+        y: 260,
+        width: 120,
+        height: 120,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [],
+      };
+
+      const { container, rerender } = render(
+        <FloorplanCanvas
+          {...defaultProps}
+          tables={[mockTables[0], secondTable, landmark]}
+          selectedTableId="table-1"
+        />
+      );
+
+      const region = screen.getByRole('region', {
+        name: 'Interactive 2D Reception Floorplan Canvas',
+      });
+      expect(region).toHaveAttribute('tabIndex', '0');
+
+      const headTableBtn = screen.getByRole('button', { name: /^Head Table, shape rectangular/i });
+      const gardenTableBtn = screen.getByRole('button', { name: /^Garden Table, shape round/i });
+      const landmarkBtn = screen.getByRole('button', { name: /^Main Dance Floor, landmark/i });
+
+      expect(headTableBtn).toHaveAttribute('aria-pressed', 'true');
+      expect(gardenTableBtn).toHaveAttribute('aria-pressed', 'false');
+      expect(landmarkBtn).toHaveAttribute('aria-pressed', 'false');
+
+      // Empty seats across multiple tables have unique table-prefixed accessible names
+      expect(screen.getByRole('button', { name: 'Head Table, Seat 2: Empty' })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Garden Table, Seat 1: Empty' })
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Garden Table, Seat 2: Empty' })
+      ).toBeInTheDocument();
+
+      rerender(
+        <FloorplanCanvas
+          {...defaultProps}
+          tables={[mockTables[0], secondTable, landmark]}
+          selectedTableId="landmark-dance"
+        />
+      );
+      expect(headTableBtn).toHaveAttribute('aria-pressed', 'false');
+      expect(landmarkBtn).toHaveAttribute('aria-pressed', 'true');
+
+      expect(await axe(container)).toHaveNoViolations();
     });
   });
 });

@@ -600,8 +600,13 @@ export function GuestHelpModal({
 interface GuestHelpContextValue {
   hasProvider: boolean;
   isOpen: boolean;
+  activeTriggerId: string | null;
   activeCategory: GuestHelpCategory;
-  openHelp: (_category?: GuestHelpCategory, _configOverride?: GuestHelpConfig | null) => void;
+  openHelp: (
+    _category?: GuestHelpCategory,
+    _configOverride?: GuestHelpConfig | null,
+    _triggerId?: string
+  ) => void;
   closeHelp: () => void;
   syncLiveConfig: (_liveConfig: Partial<GuestHelpConfig> | null) => void;
 }
@@ -609,6 +614,7 @@ interface GuestHelpContextValue {
 const GuestHelpContext = createContext<GuestHelpContextValue>({
   hasProvider: false,
   isOpen: false,
+  activeTriggerId: null,
   activeCategory: 'passcode',
   openHelp: () => {},
   closeHelp: () => {},
@@ -627,6 +633,7 @@ export interface GuestHelpProviderProps {
 
 export function GuestHelpProvider({ children, config, pathname }: GuestHelpProviderProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [activeTriggerId, setActiveTriggerId] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<GuestHelpCategory>(() =>
     resolveHelpCategoryForPath(pathname)
   );
@@ -634,9 +641,10 @@ export function GuestHelpProvider({ children, config, pathname }: GuestHelpProvi
   const [triggerConfig, setTriggerConfig] = useState<GuestHelpConfig | null>(null);
 
   const openHelp = useCallback(
-    (category?: GuestHelpCategory, configOverride?: GuestHelpConfig | null) => {
+    (category?: GuestHelpCategory, configOverride?: GuestHelpConfig | null, triggerId?: string) => {
       setActiveCategory(category ?? resolveHelpCategoryForPath(pathname));
       setTriggerConfig(configOverride ?? null);
+      setActiveTriggerId(triggerId ?? null);
       setIsOpen(true);
     },
     [pathname]
@@ -644,6 +652,7 @@ export function GuestHelpProvider({ children, config, pathname }: GuestHelpProvi
   const closeHelp = useCallback(() => {
     setIsOpen(false);
     setTriggerConfig(null);
+    setActiveTriggerId(null);
   }, []);
   const syncLiveConfig = useCallback((nextLiveConfig: Partial<GuestHelpConfig> | null) => {
     setLiveConfig(nextLiveConfig);
@@ -661,8 +670,16 @@ export function GuestHelpProvider({ children, config, pathname }: GuestHelpProvi
   }, [config, liveConfig, triggerConfig]);
 
   const value = useMemo<GuestHelpContextValue>(
-    () => ({ hasProvider: true, isOpen, activeCategory, openHelp, closeHelp, syncLiveConfig }),
-    [isOpen, activeCategory, openHelp, closeHelp, syncLiveConfig]
+    () => ({
+      hasProvider: true,
+      isOpen,
+      activeTriggerId,
+      activeCategory,
+      openHelp,
+      closeHelp,
+      syncLiveConfig,
+    }),
+    [isOpen, activeTriggerId, activeCategory, openHelp, closeHelp, syncLiveConfig]
   );
 
   return (
@@ -684,6 +701,7 @@ export interface GuestHelpTriggerProps
   label?: string;
   variant?: 'inline' | 'navbar' | 'mobileNav';
   config?: GuestHelpConfig | null;
+  expanded?: boolean;
   onTrigger?: () => void;
   ref?: React.Ref<HTMLButtonElement>;
 }
@@ -702,13 +720,21 @@ export function GuestHelpTrigger({
   label = 'Need Help?',
   variant = 'inline',
   config,
+  expanded,
   onTrigger,
   className,
   ref,
   ...buttonProps
 }: GuestHelpTriggerProps) {
+  const triggerId = useId();
   const context = useGuestHelp();
   const [localOpen, setLocalOpen] = useState(false);
+  const isControlled = expanded !== undefined;
+  const resolvedExpanded = isControlled
+    ? expanded
+    : context.hasProvider
+      ? context.isOpen && context.activeTriggerId === triggerId
+      : localOpen;
 
   return (
     <>
@@ -716,10 +742,11 @@ export function GuestHelpTrigger({
         ref={ref}
         type="button"
         aria-haspopup="dialog"
-        aria-expanded={context.hasProvider ? context.isOpen : localOpen}
+        aria-expanded={resolvedExpanded}
         onClick={() => {
           onTrigger?.();
-          if (context.hasProvider) context.openHelp(defaultCategory, config);
+          if (isControlled) return;
+          if (context.hasProvider) context.openHelp(defaultCategory, config, triggerId);
           else setLocalOpen(true);
         }}
         className={cn('transition-colors', FOCUS_RING, VARIANT_CLS[variant], className)}
@@ -728,7 +755,7 @@ export function GuestHelpTrigger({
         <Icon name="HelpCircle" className="h-4 w-4 shrink-0" />
         <span>{label}</span>
       </button>
-      {!context.hasProvider && (
+      {!isControlled && !context.hasProvider && (
         <GuestHelpModal
           isOpen={localOpen}
           onClose={() => setLocalOpen(false)}

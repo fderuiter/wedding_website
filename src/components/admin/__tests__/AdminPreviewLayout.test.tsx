@@ -333,4 +333,77 @@ describe('AdminPreviewLayout studio draft preservation & accessibility', () => {
       }
     }
   });
+
+  it('applies SegmentedTabs keyboard arrow navigation and tabpanel ARIA contracts on mobile (<768px) while omitting tabpanel roles on desktop (>=768px)', async () => {
+    const originalInnerWidth = window.innerWidth;
+
+    try {
+      Object.defineProperty(window, 'innerWidth', {
+        configurable: true,
+        writable: true,
+        value: 375,
+      });
+      window.dispatchEvent(new Event('resize'));
+
+      const { container } = render(
+        <ToastProvider>
+          <AdminPreviewLayout
+            previewUrl="/photos"
+            draftType="content"
+            draftData={[]}
+          >
+            <MockStudioEditor />
+          </AdminPreviewLayout>
+        </ToastProvider>
+      );
+
+      const mobileTabs = screen.getByTestId('studio-mobile-tabs');
+      expect(mobileTabs).toHaveAttribute('role', 'tablist');
+      const editorTab = within(mobileTabs).getByTestId('studio-mobile-tab-editor');
+      const previewTab = within(mobileTabs).getByTestId('studio-mobile-tab-preview');
+      const leftPane = screen.getByTestId('studio-left-pane');
+      const rightPane = screen.getByTestId('studio-right-pane');
+
+      expect(leftPane).toHaveAttribute('role', 'tabpanel');
+      expect(leftPane).toHaveAttribute('aria-labelledby', 'studio-mobile-tab-editor');
+      expect(leftPane).not.toHaveAttribute('hidden');
+      expect(rightPane).toHaveAttribute('role', 'tabpanel');
+      expect(rightPane).toHaveAttribute('aria-labelledby', 'studio-mobile-tab-preview');
+      expect(rightPane).toHaveAttribute('hidden');
+
+      // ArrowRight on SegmentedTabs activates Live Preview tab and focuses it
+      editorTab.focus();
+      fireEvent.keyDown(editorTab, { key: 'ArrowRight' });
+      expect(previewTab).toHaveFocus();
+      expect(previewTab).toHaveAttribute('aria-selected', 'true');
+      expect(leftPane).toHaveAttribute('hidden');
+      expect(rightPane).not.toHaveAttribute('hidden');
+      expect(await axe(container)).toHaveNoViolations();
+
+      // Resize to desktop split-pane (>=768px): mobile tabpanel roles and hidden attributes are omitted
+      Object.defineProperty(window, 'innerWidth', {
+        configurable: true,
+        writable: true,
+        value: 1024,
+      });
+      fireEvent.resize(window);
+
+      await waitFor(() => {
+        expect(leftPane).not.toHaveAttribute('role');
+      });
+      expect(leftPane).not.toHaveAttribute('aria-labelledby');
+      expect(leftPane).not.toHaveAttribute('hidden');
+      expect(rightPane).not.toHaveAttribute('role');
+      expect(rightPane).not.toHaveAttribute('aria-labelledby');
+      expect(rightPane).not.toHaveAttribute('hidden');
+      expect(await axe(container)).toHaveNoViolations();
+    } finally {
+      Object.defineProperty(window, 'innerWidth', {
+        configurable: true,
+        writable: true,
+        value: originalInnerWidth,
+      });
+      fireEvent(window, new Event('resize'));
+    }
+  });
 });

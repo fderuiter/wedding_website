@@ -198,11 +198,11 @@ describe('Optimistic Seating Chart State Updates', () => {
     render(<SeatingChartAdminPage />);
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Table 1/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^Table 1, shape/i })).toBeInTheDocument();
     });
 
     // Click Table 1 on floorplan canvas to select it
-    fireEvent.click(screen.getByRole('button', { name: /Table 1/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Table 1, shape/i }));
 
     // Wait for selected table inspector bar to show Guest One with unassign button
     await waitFor(() => {
@@ -302,11 +302,11 @@ describe('Optimistic Seating Chart State Updates', () => {
     render(<SeatingChartAdminPage />);
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Table 1/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^Table 1, shape/i })).toBeInTheDocument();
     });
 
     // Select Table 1
-    fireEvent.click(screen.getByRole('button', { name: /Table 1/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Table 1, shape/i }));
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Delete Table' })).toBeInTheDocument();
@@ -321,7 +321,7 @@ describe('Optimistic Seating Chart State Updates', () => {
 
     await waitFor(() => {
       // Table 1 should be gone from canvas and printable view
-      expect(screen.queryByRole('button', { name: /Table 1/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^Table 1, shape/i })).not.toBeInTheDocument();
       // Guest One was assigned to Table 1, now should be unassigned (2 -> 3)
       expect(screen.getByText('3 unassigned')).toBeInTheDocument();
     });
@@ -513,7 +513,7 @@ describe('Optimistic Seating Chart State Updates', () => {
     });
 
     // 2. Select Table 1 and unassign Guest One
-    fireEvent.click(screen.getByRole('button', { name: /Table 1/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Table 1, shape/i }));
     await waitFor(() => {
       expect(screen.getByTitle('Unassign guest')).toBeInTheDocument();
     });

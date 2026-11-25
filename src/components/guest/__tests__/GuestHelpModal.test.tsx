@@ -441,4 +441,40 @@ describe('GuestHelpModal component & WAI-ARIA compliance', () => {
     fireEvent.click(faqTab);
     expect(screen.getByText('Are children invited?')).toBeInTheDocument();
   });
+
+  it('isolates aria-expanded to the active GuestHelpTrigger instance inside GuestHelpProvider', async () => {
+    const { container } = render(
+      <GuestHelpProvider pathname="/guest" config={sampleConfig}>
+        <nav aria-label="Main navigation">
+          <GuestHelpTrigger variant="navbar" label="Help" />
+        </nav>
+        <main>
+          <h1>Guest RSVP &amp; Address Portal</h1>
+          <GuestHelpTrigger defaultCategory="passcode" label="Need Help?" />
+        </main>
+      </GuestHelpProvider>
+    );
+
+    const navbarTrigger = screen.getByRole('button', { name: /^Help$/ });
+    const inlineTrigger = screen.getByRole('button', { name: /^Need Help\?$/ });
+
+    expect(navbarTrigger).toHaveAttribute('aria-expanded', 'false');
+    expect(inlineTrigger).toHaveAttribute('aria-expanded', 'false');
+
+    // Opening via inline trigger marks ONLY inline trigger aria-expanded="true"
+    fireEvent.click(inlineTrigger);
+    expect(inlineTrigger).toHaveAttribute('aria-expanded', 'true');
+    expect(navbarTrigger).toHaveAttribute('aria-expanded', 'false');
+    expect(await axe(container)).toHaveNoViolations();
+
+    // Closing resets both triggers to aria-expanded="false"
+    fireEvent.click(screen.getByRole('button', { name: /^Close$/i }));
+    expect(inlineTrigger).toHaveAttribute('aria-expanded', 'false');
+    expect(navbarTrigger).toHaveAttribute('aria-expanded', 'false');
+
+    // Opening via navbar trigger marks ONLY navbar trigger aria-expanded="true"
+    fireEvent.click(navbarTrigger);
+    expect(navbarTrigger).toHaveAttribute('aria-expanded', 'true');
+    expect(inlineTrigger).toHaveAttribute('aria-expanded', 'false');
+  });
 });

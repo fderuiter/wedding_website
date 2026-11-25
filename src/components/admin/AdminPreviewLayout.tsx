@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 
 import { useToast } from '@/components/ui/ToastProvider';
 import { Icon } from '@/components/ui/Icon';
+import { SegmentedTabs } from '@/components/ui/SegmentedTabs';
 import { formatDate } from '@/utils/intl';
 import { apiClient } from '@/features/admin';
 import { withBasePath } from '@/lib/basePath';
@@ -25,6 +26,15 @@ function buildPreviewIframeSrc(previewUrl: string): string {
   return `${normalizedBase}${separator}preview=true${hashFragment}`;
 }
 
+function computeIsMobileViewport(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (typeof window.matchMedia === 'function') {
+    const mql = window.matchMedia('(max-width: 767px)');
+    if (mql?.matches) return true;
+  }
+  return typeof window.innerWidth === 'number' && window.innerWidth < 768;
+}
+
 export default function AdminPreviewLayout({ 
   children, 
   previewUrl, 
@@ -37,9 +47,34 @@ export default function AdminPreviewLayout({
   const [viewState, setViewState] = useState<'Live' | 'Draft' | 'Historical'>('Live');
   const [viewport, setViewport] = useState<'desktop' | 'mobile'>('desktop');
   const [mobilePane, setMobilePane] = useState<'editor' | 'preview'>('editor');
+  const [isMobileViewport, setIsMobileViewport] = useState<boolean>(computeIsMobileViewport);
   const desktopBtnRef = useRef<HTMLButtonElement>(null);
   const mobileBtnRef = useRef<HTMLButtonElement>(null);
   const [versions, setVersions] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const syncViewport = () => {
+      setIsMobileViewport(computeIsMobileViewport());
+    };
+    syncViewport();
+
+    window.addEventListener('resize', syncViewport);
+    const mql =
+      typeof window.matchMedia === 'function'
+        ? window.matchMedia('(max-width: 767px)')
+        : null;
+    if (mql && typeof mql.addEventListener === 'function') {
+      mql.addEventListener('change', syncViewport);
+    }
+
+    return () => {
+      window.removeEventListener('resize', syncViewport);
+      if (mql && typeof mql.removeEventListener === 'function') {
+        mql.removeEventListener('change', syncViewport);
+      }
+    };
+  }, []);
 
   const handleViewportKeyDown = (
     e: React.KeyboardEvent<HTMLButtonElement>,
@@ -134,45 +169,33 @@ export default function AdminPreviewLayout({
 
   return (
     <div className="flex flex-col md:flex-row h-screen w-full bg-gray-100 dark:bg-gray-900 overflow-hidden">
-      {/* Mobile Full-Width Workspace Switcher */}
-      <div
-        role="tablist"
-        aria-label="Studio workspace views"
-        data-testid="studio-mobile-tabs"
-        className="flex md:hidden w-full border-b border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0 z-20"
-      >
-        <button
-          id="studio-mobile-tab-editor"
-          type="button"
-          role="tab"
-          aria-selected={mobilePane === 'editor'}
-          aria-controls="studio-left-pane"
-          data-testid="studio-mobile-tab-editor"
-          onClick={() => setMobilePane('editor')}
-          className={`flex-1 py-3 px-4 text-sm font-semibold border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${
-            mobilePane === 'editor'
-              ? 'border-primary text-primary bg-gray-50 dark:bg-gray-900/50'
-              : 'border-transparent text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50'
-          }`}
-        >
-          Editor
-        </button>
-        <button
-          id="studio-mobile-tab-preview"
-          type="button"
-          role="tab"
-          aria-selected={mobilePane === 'preview'}
-          aria-controls="studio-right-pane"
-          data-testid="studio-mobile-tab-preview"
-          onClick={() => setMobilePane('preview')}
-          className={`flex-1 py-3 px-4 text-sm font-semibold border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${
-            mobilePane === 'preview'
-              ? 'border-primary text-primary bg-gray-50 dark:bg-gray-900/50'
-              : 'border-transparent text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50'
-          }`}
-        >
-          Live Preview
-        </button>
+      {/* Mobile Segmented Workspace Switcher */}
+      <div className="md:hidden w-full border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-2.5 shrink-0 z-20">
+        <SegmentedTabs<'editor' | 'preview'>
+          aria-label="Studio workspace views"
+          data-testid="studio-mobile-tabs"
+          value={mobilePane}
+          onChange={setMobilePane}
+          className="flex w-full rounded-xl p-1"
+          tabs={[
+            {
+              value: 'editor',
+              id: 'studio-mobile-tab-editor',
+              panelId: 'studio-left-pane',
+              'data-testid': 'studio-mobile-tab-editor',
+              label: 'Editor',
+              className: 'flex-1 rounded-lg',
+            },
+            {
+              value: 'preview',
+              id: 'studio-mobile-tab-preview',
+              panelId: 'studio-right-pane',
+              'data-testid': 'studio-mobile-tab-preview',
+              label: 'Live Preview',
+              className: 'flex-1 rounded-lg',
+            },
+          ]}
+        />
       </div>
 
       {/* Editor Pane */}
@@ -180,6 +203,9 @@ export default function AdminPreviewLayout({
         id="studio-left-pane"
         data-testid="studio-left-pane"
         data-scroll-region=""
+        role={isMobileViewport ? 'tabpanel' : undefined}
+        aria-labelledby={isMobileViewport ? 'studio-mobile-tab-editor' : undefined}
+        hidden={isMobileViewport ? mobilePane !== 'editor' : undefined}
         className={`${
           mobilePane === 'editor' ? 'flex' : 'hidden'
         } md:flex flex-col w-full md:w-1/2 flex-1 min-h-0 md:h-full overflow-y-auto md:border-r border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xl z-10 relative`}
@@ -247,6 +273,9 @@ export default function AdminPreviewLayout({
       <div
         id="studio-right-pane"
         data-testid="studio-right-pane"
+        role={isMobileViewport ? 'tabpanel' : undefined}
+        aria-labelledby={isMobileViewport ? 'studio-mobile-tab-preview' : undefined}
+        hidden={isMobileViewport ? mobilePane !== 'preview' : undefined}
         className={`${
           mobilePane === 'preview' ? 'flex' : 'hidden'
         } md:flex flex-col w-full md:w-1/2 flex-1 min-h-0 md:h-full bg-gray-100 dark:bg-gray-950`}

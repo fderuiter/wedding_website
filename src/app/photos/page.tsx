@@ -136,6 +136,7 @@ export default async function PhotosPage(props?: PhotosPageProps) {
           caption ||
           explicitAltText ||
           (uploaderName ? `Photo by ${uploaderName}` : undefined),
+        ...(explicitAltText ? { altText: explicitAltText } : {}),
         ...(caption ? { caption } : {}),
         ...(uploaderName ? { uploaderName } : {}),
         isGuestUpload,

@@ -99,7 +99,7 @@ describe('SeatingChartAdminPage Dialog integration', () => {
     render(<SeatingChartAdminPage />);
 
     // Click the empty seat button to trigger the seat assignment modal
-    const seatBtn = screen.getByRole('button', { name: 'Seat 1: Empty' });
+    const seatBtn = screen.getByRole('button', { name: 'Table 1 - Head Table, Seat 1: Empty' });
     fireEvent.click(seatBtn);
 
     const dialog = screen.getByRole('dialog');
@@ -117,7 +117,7 @@ describe('SeatingChartAdminPage Dialog integration', () => {
   test('traps keyboard Tab navigation inside the Dialog', () => {
     render(<SeatingChartAdminPage />);
 
-    const seatBtn = screen.getByRole('button', { name: 'Seat 1: Empty' });
+    const seatBtn = screen.getByRole('button', { name: 'Table 1 - Head Table, Seat 1: Empty' });
     fireEvent.click(seatBtn);
 
     const select = screen.getByLabelText(/select guest/i);
@@ -149,7 +149,7 @@ describe('SeatingChartAdminPage Dialog integration', () => {
   test('closes active modal when pressing Escape key and restores focus to triggering seat button', async () => {
     render(<SeatingChartAdminPage />);
 
-    const seatBtn = screen.getByRole('button', { name: 'Seat 1: Empty' });
+    const seatBtn = screen.getByRole('button', { name: 'Table 1 - Head Table, Seat 1: Empty' });
     seatBtn.focus();
     fireEvent.click(seatBtn);
 
@@ -167,7 +167,7 @@ describe('SeatingChartAdminPage Dialog integration', () => {
   test('submits guest assignment and closes dialog upon form submit', async () => {
     render(<SeatingChartAdminPage />);
 
-    const seatBtn = screen.getByRole('button', { name: 'Seat 1: Empty' });
+    const seatBtn = screen.getByRole('button', { name: 'Table 1 - Head Table, Seat 1: Empty' });
     fireEvent.click(seatBtn);
 
     const assignBtn = screen.getByRole('button', { name: /assign guest/i });
@@ -198,7 +198,7 @@ describe('SeatingChartAdminPage Dialog integration', () => {
 
     render(<SeatingChartAdminPage />);
 
-    const seatBtn = screen.getByRole('button', { name: 'Seat 1: Empty' });
+    const seatBtn = screen.getByRole('button', { name: 'Table 1 - Head Table, Seat 1: Empty' });
     fireEvent.click(seatBtn);
 
     expect(screen.getByText('All guests have already been assigned to tables.')).toBeInTheDocument();
@@ -837,5 +837,36 @@ describe('SeatingChartAdminPage Dialog integration', () => {
     // so neither FloorplanCanvas, PrintableFloorplan, nor Selected Table Inspector re-parses any party or dietary badge!
     expect(matchDietarySpy).toHaveBeenCalledTimes(0);
     expect(resolveSeatSpy).toHaveBeenCalledTimes(0);
+  });
+
+  test('wires statusAnnouncement from useSeatingState into polite seating-status-live-region', () => {
+    (useSeatingState as jest.Mock).mockReturnValue({
+      tables: [mockTable],
+      allGuests: [mockGuest],
+      unassignedGuests: [],
+      isLoading: false,
+      errorMsg: null,
+      statusAnnouncement: 'John Doe assigned to Table 1 - Head Table, Seat 1.',
+      canUndo: false,
+      undoLabel: null,
+      assignGuestToTable: mockAssignGuestToTable,
+      assignGuestsToTable: jest.fn(),
+      unassignGuest: mockUnassignGuest,
+      clearTableSeats: jest.fn(),
+      undoLastBatchAction: jest.fn(),
+      applyAutoAssignResult: mockApplyAutoAssignResult,
+      saveTable: mockSaveTable,
+      deleteTable: mockDeleteTable,
+      updateTablePosition: mockUpdateTablePosition,
+      updateTableRotation: mockUpdateTableRotation,
+    });
+
+    render(<SeatingChartAdminPage />);
+
+    const liveRegion = screen.getByTestId('seating-status-live-region');
+    expect(liveRegion).toHaveAttribute('role', 'status');
+    expect(liveRegion).toHaveAttribute('aria-live', 'polite');
+    expect(liveRegion).toHaveAttribute('aria-atomic', 'true');
+    expect(liveRegion).toHaveTextContent('John Doe assigned to Table 1 - Head Table, Seat 1.');
   });
 });

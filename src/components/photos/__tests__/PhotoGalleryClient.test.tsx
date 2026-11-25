@@ -323,7 +323,7 @@ describe('PhotoGalleryClient', () => {
       expect(curatedTab).toHaveAttribute('role', 'tab');
       expect(guestTab).toHaveAttribute('role', 'tab');
       expect(curatedTab).toHaveAttribute('aria-controls', 'tabpanel-curated');
-      expect(guestTab).toHaveAttribute('aria-controls', 'tabpanel-guest');
+      expect(guestTab).not.toHaveAttribute('aria-controls');
 
       // Curated tab starts selected
       expect(curatedTab).toHaveAttribute('aria-selected', 'true');
@@ -335,11 +335,15 @@ describe('PhotoGalleryClient', () => {
       curatedTab.focus();
       fireEvent.keyDown(curatedTab, { key: 'ArrowRight' });
       expect(guestTab).toHaveAttribute('aria-selected', 'true');
+      expect(guestTab).toHaveAttribute('aria-controls', 'tabpanel-guest');
+      expect(curatedTab).not.toHaveAttribute('aria-controls');
       expect(screen.getByTestId('guest-photos-section')).toBeInTheDocument();
 
       // ArrowLeft navigates back to Curated tab
       fireEvent.keyDown(guestTab, { key: 'ArrowLeft' });
       expect(curatedTab).toHaveAttribute('aria-selected', 'true');
+      expect(curatedTab).toHaveAttribute('aria-controls', 'tabpanel-curated');
+      expect(guestTab).not.toHaveAttribute('aria-controls');
       expect(screen.getByTestId('curated-photos-section')).toBeInTheDocument();
     });
 
@@ -1012,6 +1016,71 @@ describe('PhotoGalleryClient', () => {
     fireEvent.click(screen.getByTestId('tab-guest'));
     const guestThumb = screen.getByTestId('photo-thumbnail-0');
     expect(guestThumb).toHaveAttribute('aria-label', 'View Champagne Toast');
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it('preserves dedicated altText on MediaImage and exposes uploader attribution on guest cards and lightbox without duplicate speech', async () => {
+    const { container } = render(
+      <main>
+        <h1>Photo Gallery</h1>
+        <PhotoGalleryClient
+          initialPhotos={[
+            {
+              id: 'curated-alt-1',
+              url: '/uploads/curated-arch.jpg',
+              title: 'Floral Arch',
+              altText: 'Bride and groom standing beneath a white rose arch at sunset',
+              isGuestUpload: false,
+            },
+            {
+              id: 'guest-alt-1',
+              url: '/uploads/guest-sparkler.jpg',
+              title: 'Sparkler Send-Off',
+              altText: 'Guests holding lit sparklers along the stone walkway',
+              caption: 'Sparkler Send-Off',
+              uploaderName: 'Aunt Clara',
+              isGuestUpload: true,
+            },
+          ]}
+        />
+      </main>
+    );
+
+    // Curated thumbnail button uses concise title while MediaImage receives dedicated altText
+    expect(screen.getByTestId('photo-thumbnail-0')).toHaveAttribute(
+      'aria-label',
+      'View Floral Arch'
+    );
+    expect(
+      screen.getByAltText('Bride and groom standing beneath a white rose arch at sunset')
+    ).toBeInTheDocument();
+
+    // Switch to Guest Uploads tab
+    fireEvent.click(screen.getByTestId('tab-guest'));
+    expect(
+      screen.getByAltText('Guests holding lit sparklers along the stone walkway')
+    ).toBeInTheDocument();
+
+    const guestUploader = screen.getByTestId('guest-photo-uploader-0');
+    expect(guestUploader).toHaveTextContent('Photo by Aunt Clara');
+    expect(guestUploader.closest('[aria-hidden="true"]')).toBeNull();
+    // Primary caption inside card overlay stays aria-hidden so it is not read twice with thumbnail button aria-label
+    expect(guestUploader.previousElementSibling).toHaveAttribute('aria-hidden', 'true');
+    expect(await axe(container)).toHaveNoViolations();
+
+    // Open lightbox on guest photo: dedicated altText + accessible uploader credit without duplicating primary caption
+    fireEvent.click(screen.getByTestId('photo-thumbnail-0'));
+    const lightboxImg = screen.getByTestId('lightbox-image');
+    expect(lightboxImg).toHaveAttribute(
+      'alt',
+      'Guests holding lit sparklers along the stone walkway'
+    );
+    const lightboxCaption = screen.getByTestId('lightbox-caption');
+    expect(lightboxCaption).not.toHaveAttribute('aria-hidden');
+    const lightboxUploader = screen.getByTestId('lightbox-uploader');
+    expect(lightboxUploader).toHaveTextContent('Photo by Aunt Clara');
+    expect(lightboxUploader.closest('[aria-hidden="true"]')).toBeNull();
+    expect(lightboxUploader.previousElementSibling).toHaveAttribute('aria-hidden', 'true');
     expect(await axe(container)).toHaveNoViolations();
   });
 });

@@ -11,6 +11,7 @@ interface MediaData {
 
 interface MediaImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
   media?: MediaData | null;
+  altText?: string | null; // Optional dedicated alt text from content node or caller
   fallbackUrl?: string; // Optional fallback if media is not provided or missing URL
   fallbackAlt?: string; // Optional fallback alt if not decorative and no altText
 }
@@ -49,7 +50,16 @@ export function extractFilenameAsAlt(url?: string): string | undefined {
   }
 }
 
-export function MediaImage({ media, fallbackUrl, fallbackAlt, alt, src, onError, ...props }: MediaImageProps) {
+export function MediaImage({
+  media,
+  altText,
+  fallbackUrl,
+  fallbackAlt,
+  alt,
+  src,
+  onError,
+  ...props
+}: MediaImageProps) {
   const [hasError, setHasError] = useState(false);
   
   const originalUrl = media?.url || fallbackUrl || (typeof src === 'string' ? src : undefined);
@@ -81,23 +91,21 @@ export function MediaImage({ media, fallbackUrl, fallbackAlt, alt, src, onError,
     finalAlt = '';
   } else {
     const extractedFilenameAlt = extractFilenameAsAlt(originalUrl);
-
-    if (media) {
-      finalAlt = (media.altText && media.altText.trim() !== '')
+    const resolvedExplicitAltText =
+      media?.altText && media.altText.trim() !== ''
         ? media.altText
-        : (alt !== undefined)
-          ? alt
-          : (fallbackAlt && fallbackAlt.trim() !== '')
-            ? fallbackAlt
-            : (extractedFilenameAlt || 'Unlabelled image');
+        : altText && altText.trim() !== ''
+          ? altText
+          : undefined;
+
+    if (resolvedExplicitAltText !== undefined) {
+      finalAlt = resolvedExplicitAltText;
+    } else if (alt !== undefined) {
+      finalAlt = alt;
+    } else if (fallbackAlt && fallbackAlt.trim() !== '') {
+      finalAlt = fallbackAlt;
     } else {
-      if (alt !== undefined) {
-        finalAlt = alt;
-      } else if (fallbackAlt && fallbackAlt.trim() !== '') {
-        finalAlt = fallbackAlt;
-      } else {
-        finalAlt = extractedFilenameAlt || 'Unlabelled image';
-      }
+      finalAlt = extractedFilenameAlt || 'Unlabelled image';
     }
   }
   

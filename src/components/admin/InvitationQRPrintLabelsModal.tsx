@@ -154,7 +154,10 @@ const InvitationQRPrintLabelsContent: React.FC<InvitationQRPrintLabelsContentPro
       <div
         data-testid="qr-print-sheet"
         data-template={template}
-        className={`qr-print-sheet ${sheetTemplateClass} grid gap-3 max-h-[70vh] overflow-y-auto p-2 border border-gray-100 dark:border-zinc-800 rounded-lg bg-white ${
+        tabIndex={0}
+        role="region"
+        aria-label="Printable invitation QR code labels preview"
+        className={`qr-print-sheet ${sheetTemplateClass} grid gap-3 max-h-[70vh] overflow-y-auto p-2 border border-gray-100 dark:border-zinc-800 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
           isAvery5163 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3'
         }`}
         style={{

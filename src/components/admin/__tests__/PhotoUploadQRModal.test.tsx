@@ -135,7 +135,11 @@ describe('PhotoUploadQRModal Component', () => {
     // Default template is Table Cards (4 per sheet)
     const select = screen.getByTestId('photo-qr-print-template-select') as HTMLSelectElement;
     expect(select.value).toBe('table_cards');
-    expect(screen.getByTestId('qr-print-sheet')).toBeInTheDocument();
+    const sheet = screen.getByTestId('qr-print-sheet');
+    expect(sheet).toBeInTheDocument();
+    expect(sheet).toHaveAttribute('tabIndex', '0');
+    expect(sheet).toHaveAttribute('role', 'region');
+    expect(sheet).toHaveAttribute('aria-label', 'Printable photo upload QR cards preview');
     expect(screen.getAllByTestId('qr-label-card')).toHaveLength(4);
 
     // Switch to Avery 5163 (10 per sheet)
@@ -148,11 +152,12 @@ describe('PhotoUploadQRModal Component', () => {
     expect(select.value).toBe('avery_5160');
     expect(screen.getAllByTestId('qr-label-card')).toHaveLength(30);
 
-    // Accessibility check in print mode (including WCAG 2.5.3 label-content-name-mismatch & heading-order)
+    // Accessibility check in print mode (including WCAG 2.5.3 label-content-name-mismatch, heading-order & scrollable-region-focusable)
     const results = await axe(container, {
       rules: {
         'label-content-name-mismatch': { enabled: true },
         'heading-order': { enabled: true },
+        'scrollable-region-focusable': { enabled: true },
       },
     });
     expect(results).toHaveNoViolations();

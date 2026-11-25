@@ -165,6 +165,20 @@ describe('MediaImage Component', () => {
       expect(getByRole('img')).toHaveAttribute('alt', 'Fallback Only');
     });
 
+    it('prioritizes dedicated altText prop over fallbackAlt without leaking altText onto DOM img attributes', () => {
+      const { getByRole } = render(
+        <MediaImage
+          src="/images/sample.jpg"
+          altText="Couple laughing under string lights"
+          fallbackAlt="Short Title"
+        />
+      );
+      const img = getByRole('img');
+      expect(img).toHaveAttribute('alt', 'Couple laughing under string lights');
+      expect(img).not.toHaveAttribute('alttext');
+      expect(img).not.toHaveAttribute('altText');
+    });
+
     it('extracts humanized filename when media prop is omitted and no alt or fallbackAlt is provided', () => {
       const { getByRole } = render(<MediaImage src="/uploads/reception-dance.png" />);
       expect(getByRole('img')).toHaveAttribute('alt', 'reception dance');

@@ -7,6 +7,7 @@ import { Icon } from '@/components/ui/Icon';
 import { motion, Variants } from 'framer-motion';
 import { useTheme } from '@/components/ThemeProvider';
 import { Overlay } from '@/components/ui/Overlay';
+import { GuestHelpTrigger } from '@/components/guest/GuestHelpModal';
 import { useGuestLoginMachine } from '@/hooks/useGuestLoginMachine';
 
 const fadeUp: Variants = {
@@ -69,6 +70,14 @@ function GuestLoginForm() {
           <p className="text-gray-600 dark:text-gray-300 text-sm">
             Enter your event passcode or personal invitation code to view schedules, event details, and your RSVP.
           </p>
+          <div className="pt-1 flex justify-center">
+            <GuestHelpTrigger
+              label="Need help finding your code?"
+              expanded={showHelp}
+              aria-controls="guest-help-drawer"
+              onTrigger={() => setShowHelp(true)}
+            />
+          </div>
         </div>
 
         <FormGroup
@@ -112,19 +121,6 @@ function GuestLoginForm() {
               aria-label={showPasscode ? 'Hide code' : 'Show code'}
             >
               {showPasscode ? <Icon name="EyeOff" size={22} /> : <Icon name="Eye" size={22} />}
-            </Button>
-          </div>
-          <div className="flex justify-end pt-1">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowHelp(true)}
-              aria-expanded={showHelp}
-              aria-controls="guest-help-drawer"
-              className="h-auto text-xs sm:text-sm font-medium text-primary hover:underline hover:bg-transparent dark:text-primary-light rounded-lg px-1 py-0.5"
-            >
-              Need help finding your code?
             </Button>
           </div>
         </FormGroup>

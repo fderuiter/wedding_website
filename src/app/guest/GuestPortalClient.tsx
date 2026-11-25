@@ -88,6 +88,9 @@ export default function GuestAddressPage() {
               ? 'You are signed in with the shared website passcode. Enter your personal household invitation code to unlock RSVPs, meal selections, private events, and mailing address updates.'
               : 'Enter your personal invitation code to RSVP to your wedding events and share or update your postal mailing address.'}
           </p>
+          <div className="pt-1 flex justify-center">
+            <GuestHelpTrigger defaultCategory="passcode" label="Need Help?" />
+          </div>
         </div>
 
         {codeGuidance && (
@@ -136,12 +139,9 @@ export default function GuestAddressPage() {
 
         <form onSubmit={handleValidateCode} noValidate className="space-y-4">
           <FormGroup state={error ? 'error' : 'default'} busy={isValidating}>
-            <div className="flex items-center justify-between gap-2">
-              <Label htmlFor="guest-invitation-code" className="mb-0">
-                Invitation Code
-              </Label>
-              <GuestHelpTrigger defaultCategory="passcode" label="Need Help?" />
-            </div>
+            <Label htmlFor="guest-invitation-code">
+              Invitation Code
+            </Label>
             <Input
               ref={codeInputRef}
               id="guest-invitation-code"

@@ -764,4 +764,54 @@ describe('MediaDashboardPage', () => {
       );
     });
   });
+
+  test('binds aria-controls="moderation-drawer" only while drawer is open and isolates Decorative vs Publish to Photo Gallery checkbox labels', async () => {
+    mockGet.mockImplementation(async (url: string) => {
+      if (url === '/api/admin/photos/moderation') {
+        return { data: [], count: 0 };
+      }
+      return [
+        {
+          id: 'media-isolated-1',
+          url: '/uploads/photos/ceremony.jpg',
+          altText: 'Ceremony Arch',
+          isDecorative: false,
+          publishToGallery: false,
+        },
+      ];
+    });
+
+    render(<MediaDashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Edit media: Ceremony Arch' })).toBeInTheDocument();
+    });
+
+    const drawerToggle = screen.getByTestId('toggle-moderation-drawer');
+    expect(drawerToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(drawerToggle).not.toHaveAttribute('aria-controls');
+    expect(document.getElementById('moderation-drawer')).toBeNull();
+
+    fireEvent.click(drawerToggle);
+    expect(drawerToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(drawerToggle).toHaveAttribute('aria-controls', 'moderation-drawer');
+    expect(document.getElementById('moderation-drawer')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close moderation drawer' }));
+    expect(drawerToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(drawerToggle).not.toHaveAttribute('aria-controls');
+
+    // Open media edit form and click "Publish to Photo Gallery" label -> must NOT toggle Decorative checkbox
+    fireEvent.click(screen.getByRole('button', { name: 'Edit media: Ceremony Arch' }));
+    const decorativeCheckbox = screen.getByTestId('media-decorative-checkbox') as HTMLInputElement;
+    const publishCheckbox = screen.getByTestId('publish-to-gallery-checkbox') as HTMLInputElement;
+
+    expect(decorativeCheckbox.checked).toBe(false);
+    expect(publishCheckbox.checked).toBe(false);
+    expect(decorativeCheckbox.id).not.toBe(publishCheckbox.id);
+
+    fireEvent.click(screen.getByText('Publish to Photo Gallery'));
+    expect(publishCheckbox.checked).toBe(true);
+    expect(decorativeCheckbox.checked).toBe(false);
+  });
 });

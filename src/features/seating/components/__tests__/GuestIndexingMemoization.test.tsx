@@ -127,7 +127,7 @@ describe('Guest Indexing and Memoization Hooks', () => {
         />
       );
 
-      const tableElement = screen.getByLabelText(/Table A/i);
+      const tableElement = screen.getByLabelText(/^Table A, shape/i);
       fireEvent.keyDown(tableElement, { key: 'ArrowRight' });
 
       expect(onUpdateTablePosition).toHaveBeenCalledWith('table-a', 110, 100);

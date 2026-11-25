@@ -285,6 +285,43 @@ describe('PhotosPage', () => {
     );
   });
 
+  it('preserves dedicated altText alongside distinct title and caption on PublicPhotoItem', async () => {
+    (contentService.getPublicPhotos as jest.Mock).mockResolvedValue([
+      {
+        id: 'curated-alt-node',
+        type: 'Photo',
+        tags: ['gallery', 'curated'],
+        data: {
+          url: '/uploads/curated-arch.jpg',
+          title: 'Ceremony Vows',
+          altText: 'Couple exchanging rings beneath cedar arch',
+          caption: 'Our favorite moment',
+          status: 'APPROVED',
+          isVisible: true,
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ]);
+
+    const pageElement = await PhotosPage();
+    render(pageElement);
+
+    expect(PhotoGalleryClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        initialPhotos: [
+          expect.objectContaining({
+            id: 'curated-alt-node',
+            title: 'Ceremony Vows',
+            altText: 'Couple exchanging rings beneath cedar arch',
+            caption: 'Our favorite moment',
+          }),
+        ],
+      }),
+      undefined
+    );
+  });
+
   it('defaults photo-scoped visitors to the guest upload tab even without ?tab=guest', async () => {
     (getSignedPhotoUploadSession as jest.Mock).mockResolvedValue({
       purpose: 'photo_upload_session',

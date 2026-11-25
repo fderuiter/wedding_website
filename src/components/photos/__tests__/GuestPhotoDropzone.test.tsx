@@ -684,6 +684,9 @@ describe('GuestPhotoDropzone', () => {
     fireEvent.change(screen.getByTestId('guest-photo-file-input'), {
       target: { files: [file] },
     });
+    const stagedBar = screen.getByTestId('staged-uploads-bar');
+    expect(stagedBar).toHaveAttribute('role', 'status');
+    expect(stagedBar).toHaveAttribute('aria-live', 'polite');
     fireEvent.click(screen.getByTestId('confirm-upload-btn'));
 
     await waitFor(() => {

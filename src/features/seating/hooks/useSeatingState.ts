@@ -1,6 +1,6 @@
 'use client';
 
-import { useReducer, useEffect, useLayoutEffect, useRef, useCallback, useContext, useMemo } from 'react';
+import { useReducer, useState, useEffect, useLayoutEffect, useRef, useCallback, useContext, useMemo } from 'react';
 import { QueryClientContext } from '@tanstack/react-query';
 import { SeatingTableDTO } from '../schemas';
 import { InvitationCodeDTO } from '@/features/registry';
@@ -1081,6 +1081,7 @@ export interface UseSeatingStateReturn {
   unassignedGuests: InvitationCodeDTO[];
   isLoading: boolean;
   errorMsg: string | null;
+  statusAnnouncement: string;
   assignGuestToTable: (
     guestId: string,
     tableId: string | null,
@@ -1116,6 +1117,7 @@ export interface UseSeatingStateReturn {
 export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatingStateReturn {
   const { autoFetch = true } = options;
   const [state, dispatch] = useReducer(seatingReducer, initialSeatingState);
+  const [statusAnnouncement, setStatusAnnouncement] = useState('');
   const queryClient = useContext(QueryClientContext);
   const toast = useOptionalToast();
   const stateRef = useRef(state);
@@ -1234,6 +1236,15 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
           assignedGuests: payload.assignedGuests || [],
         },
       });
+      const assignedTotal =
+        typeof payload.assignedCount === 'number'
+          ? payload.assignedCount
+          : (payload.assignedGuests || []).filter((g) => Boolean(g.tableId)).length;
+      if (assignedTotal > 0) {
+        setStatusAnnouncement(
+          `Auto-assigned ${assignedTotal} guest${assignedTotal === 1 ? '' : 's'} to reception tables.`
+        );
+      }
     },
     []
   );
@@ -1357,6 +1368,13 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         }
       }
 
+      const previousTable = currentGuest.tableId
+        ? currentState.tables.find((t) => t.id === currentGuest.tableId)
+        : undefined;
+      const targetTableForAnnouncement = targetTableId
+        ? currentState.tables.find((t) => t.id === targetTableId)
+        : undefined;
+
       // Optimistic update
       dispatch({
         type: 'ASSIGN_GUEST_OPTIMISTIC',
@@ -1371,6 +1389,15 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
           snapshotLabel: shouldPushUndo ? `Unassign ${currentGuest.guestName}` : undefined,
         },
       });
+      if (targetTableId) {
+        const tableLabel = targetTableForAnnouncement?.name || 'table';
+        const seatLabel = optimisticPrimarySeat ? `, Seat ${optimisticPrimarySeat}` : '';
+        setStatusAnnouncement(`${currentGuest.guestName} assigned to ${tableLabel}${seatLabel}.`);
+      } else {
+        const prevTableLabel = previousTable?.name ? ` from ${previousTable.name}` : '';
+        const prevSeatLabel = currentGuest.seatNumber ? `, Seat ${currentGuest.seatNumber}` : '';
+        setStatusAnnouncement(`${currentGuest.guestName} unassigned${prevTableLabel}${prevSeatLabel}.`);
+      }
 
       try {
         const res = await fetch(withBasePath('/api/admin/seating/assign'), {
@@ -1398,6 +1425,16 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
             type: 'CONFIRM_ASSIGN_GUEST',
             payload: returnedGuest,
           });
+          if (
+            targetTableId &&
+            typeof returnedGuest.seatNumber === 'number' &&
+            returnedGuest.seatNumber !== optimisticPrimarySeat
+          ) {
+            const tableLabel = targetTableForAnnouncement?.name || 'table';
+            setStatusAnnouncement(
+              `${currentGuest.guestName} assigned to ${tableLabel}, Seat ${returnedGuest.seatNumber}.`
+            );
+          }
         }
         return true;
       } catch (err: unknown) {
@@ -1413,6 +1450,9 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
             popUndo: shouldPushUndo,
           },
         });
+        setStatusAnnouncement(
+          `Could not update seat for ${currentGuest.guestName}. Reverted previous seat assignment.`
+        );
         const message =
           err instanceof Error && err.message ? err.message : 'Error assigning guest seat';
         toastRef.current?.addToast(message, 'error');
@@ -1615,6 +1655,26 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
           pushUndo: true,
         },
       });
+      if (targetTableId) {
+        const targetTable = currentState.tables.find((t) => t.id === targetTableId);
+        const tableLabel = targetTable?.name || 'table';
+        setStatusAnnouncement(
+          `Assigned ${affectedGuests.length} guest${affectedGuests.length === 1 ? '' : 's'} to ${tableLabel}.`
+        );
+      } else {
+        const clearedTableIds = Array.from(
+          new Set(affectedGuests.map((g) => g.tableId).filter(Boolean))
+        );
+        const clearedTable =
+          clearedTableIds.length === 1
+            ? currentState.tables.find((t) => t.id === clearedTableIds[0])
+            : undefined;
+        setStatusAnnouncement(
+          clearedTable
+            ? `Cleared ${affectedGuests.length} guest${affectedGuests.length === 1 ? '' : 's'} from ${clearedTable.name}.`
+            : `Unassigned ${affectedGuests.length} guest${affectedGuests.length === 1 ? '' : 's'}.`
+        );
+      }
 
       try {
         const res = await fetch(withBasePath('/api/admin/seating/assign'), {
@@ -1656,6 +1716,9 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
             popUndo: true,
           },
         });
+        setStatusAnnouncement(
+          'Could not update batch seat assignments. Reverted previous seats.'
+        );
         const message =
           err instanceof Error && err.message
             ? err.message
@@ -1735,6 +1798,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
       }));
 
     dispatch({ type: 'APPLY_UNDO_OPTIMISTIC' });
+    setStatusAnnouncement(`Restored seats prior to ${snapshot.label}.`);
 
     try {
       const res = await fetch(withBasePath('/api/admin/seating/assign'), {
@@ -1774,6 +1838,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
           restoreUndoSnapshot: snapshot,
         },
       });
+      setStatusAnnouncement(`Could not undo ${snapshot.label}.`);
       const message =
         err instanceof Error && err.message
           ? err.message
@@ -1975,6 +2040,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
     unassignedGuests,
     isLoading: state.isLoading,
     errorMsg: state.error,
+    statusAnnouncement,
     assignGuestToTable,
     assignGuestsToTable,
     clearTableSeats,

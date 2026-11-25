@@ -242,15 +242,15 @@ export default function GuestAddressCollectPage() {
           <h1 className="text-2xl font-extrabold text-heading mb-2">
             Address Received!
           </h1>
-          <p className="text-muted text-sm mb-6">
+          <p className="text-muted text-sm">
             Thank you for providing your mailing details. The couple looks forward to sending your save-the-date or invitation!
           </p>
+          <div className="mt-3 mb-6 flex justify-center">
+            <GuestHelpTrigger defaultCategory="passcode" label="Need Help?" />
+          </div>
           <Button variant="primary" onClick={handleReset} className="w-full">
             Submit Another Address
           </Button>
-          <div className="mt-4 flex justify-center">
-            <GuestHelpTrigger defaultCategory="passcode" label="Need Help?" />
-          </div>
         </div>
       </Container>
     );

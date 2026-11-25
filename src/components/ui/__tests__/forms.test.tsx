@@ -655,4 +655,40 @@ test('focusFirstInvalidControl focuses the first visible enabled aria-invalid="t
   expect(focusFirstInvalidControl(validContainer)).toBeNull();
 });
 
+test('FormGroup guards against silent htmlFor collisions when multiple unlabelled controls or multiple unkeyed Labels share a non-group FormGroup', () => {
+  const { container } = render(
+    <div>
+      <FormGroup>
+        <Checkbox data-testid="colliding-cb-1" />
+        <Label data-testid="colliding-label-1">Decorative Image</Label>
+        <Checkbox data-testid="colliding-cb-2" />
+        <Label data-testid="colliding-label-2">Publish to Gallery</Label>
+      </FormGroup>
+      <FormGroup>
+        <Checkbox data-testid="isolated-cb-1" />
+        <Label data-testid="isolated-label-1">Isolated Decorative</Label>
+      </FormGroup>
+      <FormGroup>
+        <Checkbox data-testid="isolated-cb-2" />
+        <Label data-testid="isolated-label-2">Isolated Publish</Label>
+      </FormGroup>
+    </div>
+  );
+
+  // Guard omits silent htmlFor fallback to controls[0] when multiple unlabelled controls share one non-group FormGroup
+  expect(screen.getByTestId('colliding-label-1')).not.toHaveAttribute('for');
+  expect(screen.getByTestId('colliding-label-2')).not.toHaveAttribute('for');
+  expect(container.querySelectorAll('label[for]')).toHaveLength(2);
+
+  // Separate FormGroups bind each Label cleanly to its own Checkbox
+  const cb1 = screen.getByTestId('isolated-cb-1') as HTMLInputElement;
+  const cb2 = screen.getByTestId('isolated-cb-2') as HTMLInputElement;
+  expect(cb1.checked).toBe(false);
+  expect(cb2.checked).toBe(false);
+
+  fireEvent.click(screen.getByTestId('isolated-label-2'));
+  expect(cb1.checked).toBe(false);
+  expect(cb2.checked).toBe(true);
+});
+
 

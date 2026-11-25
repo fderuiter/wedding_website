@@ -1041,4 +1041,22 @@ describe('GuestAddressPage (/guest)', () => {
     expect(retrySaveBtn).not.toBeDisabled();
     expect(await axe(container)).toHaveNoViolations();
   });
+
+  it('places GuestHelpTrigger in the card header before Invitation Code input on unauthenticated /guest', async () => {
+    globalFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      json: async () => ({ success: false, error: 'Unauthorized' }),
+    });
+
+    const { container } = render(<GuestAddressPage />);
+
+    const codeInput = await screen.findByLabelText('Invitation Code');
+    const helpTrigger = screen.getByRole('button', { name: /Need Help\?/i });
+
+    expect(
+      helpTrigger.compareDocumentPosition(codeInput) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(await axe(container)).toHaveNoViolations();
+  });
 });

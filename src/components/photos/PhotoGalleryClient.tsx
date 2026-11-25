@@ -19,6 +19,7 @@ export interface PublicPhotoItem {
   mediaId?: string;
   url: string;
   title?: string;
+  altText?: string;
   caption?: string;
   uploaderName?: string;
   isGuestUpload?: boolean;
@@ -53,9 +54,11 @@ function normalizeInitialPhotos(items: (PublicPhotoItem | string)[]): Normalized
       const caption = item.caption?.trim() || undefined;
       const uploaderName = item.uploaderName?.trim() || undefined;
       const explicitTitle = item.title?.trim() || undefined;
+      const explicitAltText = item.altText?.trim() || undefined;
       const resolvedTitle =
         explicitTitle ||
         caption ||
+        explicitAltText ||
         (uploaderName ? `Photo by ${uploaderName}` : undefined) ||
         (isGuest ? 'Guest Photo' : `Wedding photo ${index + 1}`);
       return {
@@ -63,6 +66,7 @@ function normalizeInitialPhotos(items: (PublicPhotoItem | string)[]): Normalized
         ...(item.mediaId ? { mediaId: item.mediaId } : {}),
         url: item.url,
         title: resolvedTitle,
+        ...(explicitAltText ? { altText: explicitAltText } : {}),
         ...(caption ? { caption } : {}),
         ...(uploaderName ? { uploaderName } : {}),
         isGuestUpload: isGuest,
@@ -118,6 +122,7 @@ function mapDraftContentNodesToPhotos(draftNodes: unknown[]): NormalizedPhotoIte
         ...(typeof data.mediaId === 'string' && data.mediaId ? { mediaId: data.mediaId } : {}),
         url,
         title: resolvedTitle,
+        ...(explicitAlt ? { altText: explicitAlt } : {}),
         ...(caption ? { caption } : {}),
         ...(uploaderName ? { uploaderName } : {}),
         isGuestUpload: isGuest,
@@ -164,6 +169,9 @@ export function PhotoGalleryClient({
             mediaId: p.mediaId,
             url: p.url,
             title: p.title,
+            ...('altText' in p && typeof p.altText === 'string' && p.altText
+              ? { altText: p.altText }
+              : {}),
             ...(p.caption ? { caption: p.caption } : {}),
             ...(p.uploaderName ? { uploaderName: p.uploaderName } : {}),
             isGuestUpload: p.isGuestUpload,
@@ -265,16 +273,18 @@ export function PhotoGalleryClient({
     }
     const caption = uploaded.caption?.trim() || undefined;
     const uploaderName = uploaded.uploaderName?.trim() || undefined;
+    const altText = uploaded.altText?.trim() || undefined;
     const resolvedTitle =
       caption ||
       uploaded.title ||
-      uploaded.altText ||
+      altText ||
       (uploaderName ? `Photo by ${uploaderName}` : 'Guest Photo');
     setPhotos((prev) => [
       {
         id: uploaded.nodeId || uploaded.id,
         url: uploadedUrl,
         title: resolvedTitle,
+        ...(altText ? { altText } : {}),
         ...(caption ? { caption } : {}),
         ...(uploaderName ? { uploaderName } : {}),
         isGuestUpload: true,
@@ -489,7 +499,7 @@ export function PhotoGalleryClient({
             {
               value: 'curated',
               id: 'tab-curated',
-              panelId: 'tabpanel-curated',
+              panelId: activeTab === 'curated' ? 'tabpanel-curated' : undefined,
               'data-testid': 'tab-curated',
               icon: <Icon name="Camera" className="w-4 h-4 shrink-0" />,
               label: 'Curated Album',
@@ -498,7 +508,7 @@ export function PhotoGalleryClient({
             {
               value: 'guest',
               id: 'tab-guest',
-              panelId: 'tabpanel-guest',
+              panelId: activeTab === 'guest' ? 'tabpanel-guest' : undefined,
               'data-testid': 'tab-guest',
               icon: <Icon name="Upload" className="w-4 h-4 shrink-0" />,
               label: 'Guest Uploads',
@@ -650,7 +660,8 @@ export function PhotoGalleryClient({
                     >
                       <MediaImage
                         src={photo.url}
-                        alt={photo.title || `Curated photo ${index + 1}`}
+                        altText={photo.altText}
+                        fallbackAlt={photo.title || `Curated photo ${index + 1}`}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       />
                       <div
@@ -776,20 +787,21 @@ export function PhotoGalleryClient({
                       >
                         <MediaImage
                           src={photo.url}
-                          alt={photo.title || `Guest photo ${index + 1}`}
+                          altText={photo.altText}
+                          fallbackAlt={photo.title || `Guest photo ${index + 1}`}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />
                       </button>
 
                       <div
-                        aria-hidden="true"
+                        aria-hidden={uploaderLabel ? undefined : 'true'}
                         className={`absolute inset-x-0 bottom-0 z-10 bg-stone-950/90 px-3 py-2 pointer-events-none transition-opacity ${
                           hasCustomAttribution
                             ? 'opacity-100'
                             : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
                         }`}
                       >
-                        <p className="text-xs font-medium text-white truncate">
+                        <p aria-hidden="true" className="text-xs font-medium text-white truncate">
                           {primaryLabel}
                         </p>
                         {uploaderLabel && (
@@ -899,33 +911,41 @@ export function PhotoGalleryClient({
 
             <MediaImage
               src={currentPhoto.url}
-              alt={currentPhoto.title || 'Photo preview'}
+              altText={currentPhoto.altText}
+              fallbackAlt={currentPhoto.title || 'Photo preview'}
               width={1200}
               height={800}
               className="max-h-[85vh] max-w-full object-contain rounded-lg"
               data-testid="lightbox-image"
             />
 
-            {(currentPhoto.caption || currentPhoto.title) && (
-              <div
-                aria-hidden="true"
-                className="absolute bottom-4 left-1/2 -translate-x-1/2 text-center bg-stone-950/90 border border-white/10 px-4 py-2 rounded-2xl max-w-md pointer-events-none shadow-lg"
-                data-testid="lightbox-caption"
-              >
-                <p className="text-white text-sm font-medium truncate">
-                  {currentPhoto.caption || currentPhoto.title}
-                </p>
-                {currentPhoto.uploaderName &&
-                  (currentPhoto.caption || currentPhoto.title) !== `Photo by ${currentPhoto.uploaderName}` && (
-                  <p
-                    className="text-stone-200 text-xs mt-0.5 truncate"
-                    data-testid="lightbox-uploader"
-                  >
-                    Photo by {currentPhoto.uploaderName}
+            {(currentPhoto.caption || currentPhoto.title) && (() => {
+              const lightboxPrimaryText = currentPhoto.caption || currentPhoto.title;
+              const lightboxUploaderLabel =
+                currentPhoto.uploaderName &&
+                lightboxPrimaryText !== `Photo by ${currentPhoto.uploaderName}`
+                  ? `Photo by ${currentPhoto.uploaderName}`
+                  : undefined;
+              return (
+                <div
+                  aria-hidden={lightboxUploaderLabel ? undefined : 'true'}
+                  className="absolute bottom-4 left-1/2 -translate-x-1/2 text-center bg-stone-950/90 border border-white/10 px-4 py-2 rounded-2xl max-w-md pointer-events-none shadow-lg"
+                  data-testid="lightbox-caption"
+                >
+                  <p aria-hidden="true" className="text-white text-sm font-medium truncate">
+                    {lightboxPrimaryText}
                   </p>
-                )}
-              </div>
-            )}
+                  {lightboxUploaderLabel && (
+                    <p
+                      className="text-stone-200 text-xs mt-0.5 truncate"
+                      data-testid="lightbox-uploader"
+                    >
+                      {lightboxUploaderLabel}
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

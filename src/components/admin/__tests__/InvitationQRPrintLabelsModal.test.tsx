@@ -130,8 +130,17 @@ describe('InvitationQRPrintLabelsModal Component', () => {
     );
 
     const dialog = screen.getByRole('dialog', { name: 'Printable Invitation QR Labels' });
+    const sheet = screen.getByTestId('qr-print-sheet');
+    expect(sheet).toHaveAttribute('tabIndex', '0');
+    expect(sheet).toHaveAttribute('role', 'region');
+    expect(sheet).toHaveAttribute('aria-label', 'Printable invitation QR code labels preview');
     expect(
-      await axe(dialog, { rules: { 'label-content-name-mismatch': { enabled: true } } })
+      await axe(dialog, {
+        rules: {
+          'label-content-name-mismatch': { enabled: true },
+          'scrollable-region-focusable': { enabled: true },
+        },
+      })
     ).toHaveNoViolations();
 
     const printBtn = screen.getByRole('button', { name: 'Print Sheet of QR code labels' });

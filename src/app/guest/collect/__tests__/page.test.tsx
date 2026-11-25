@@ -406,9 +406,21 @@ describe('GuestAddressCollectPage (/guest/collect)', () => {
     });
 
     expect(await screen.findByText('Address Received!')).toBeInTheDocument();
+    const submittedHelpTrigger = screen.getByRole('button', { name: /Need Help\?/i });
+    const submitAnotherBtn = screen.getByRole('button', { name: /Submit Another Address/i });
+    expect(
+      submittedHelpTrigger.compareDocumentPosition(submitAnotherBtn) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
 
     // Reset and verify #website honeypot bypasses client error hints so server honeypot handles bots
-    fireEvent.click(screen.getByRole('button', { name: /Submit Another Address/i }));
+    fireEvent.click(submitAnotherBtn);
+    const formHelpTrigger = screen.getByRole('button', { name: /Need Help\?/i });
+    const resetNameInput = screen.getByLabelText(/Full Name/i);
+    expect(
+      formHelpTrigger.compareDocumentPosition(resetNameInput) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
     globalFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ success: true, message: 'Address submitted successfully.' }),

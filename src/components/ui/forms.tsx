@@ -6,13 +6,16 @@ type FormFeedbackState = 'error' | 'success' | 'warning' | 'default';
 
 type RegisteredControl = {
   key: string;
+  resolvedId: string;
   customId?: string;
   required?: boolean;
+  hasExplicitLabel?: boolean;
 };
 
 type FormItemContextValue = {
   id: string;
-  controlId: string;
+  controlId: string | undefined;
+  hasMultiControlCollision: boolean;
   groupLabelId: string;
   isGroup: boolean;
   asFieldset: boolean;
@@ -24,8 +27,16 @@ type FormItemContextValue = {
   messageId: string;
   hasMessage: boolean;
   describedByIds: string[];
-  registerControl: (key: string, customId?: string, required?: boolean) => void;
+  registerControl: (
+    key: string,
+    resolvedId: string,
+    customId?: string,
+    required?: boolean,
+    hasExplicitLabel?: boolean
+  ) => void;
   unregisterControl: (key: string) => void;
+  registerLabel: (key: string) => void;
+  unregisterLabel: (key: string) => void;
   registerMessage: (id: string, active: boolean) => void;
 };
 
@@ -100,25 +111,50 @@ export function FormGroup({
   const isGroup = Boolean(group) || asFieldset;
 
   const [controls, setControls] = React.useState<RegisteredControl[]>([]);
+  const [unkeyedLabelKeys, setUnkeyedLabelKeys] = React.useState<string[]>([]);
   const [describedByIds, setDescribedByIds] = React.useState<string[]>([]);
 
   const registerControl = React.useCallback(
-    (key: string, customId?: string, controlRequired?: boolean) => {
+    (
+      key: string,
+      resolvedId: string,
+      customId?: string,
+      controlRequired?: boolean,
+      hasExplicitLabel?: boolean
+    ) => {
       setControls((prev) => {
         const existingIdx = prev.findIndex((item) => item.key === key);
         const normalizedRequired = Boolean(controlRequired);
+        const normalizedExplicitLabel = Boolean(hasExplicitLabel);
         if (existingIdx >= 0) {
           if (
+            prev[existingIdx].resolvedId === resolvedId &&
             prev[existingIdx].customId === customId &&
-            Boolean(prev[existingIdx].required) === normalizedRequired
+            Boolean(prev[existingIdx].required) === normalizedRequired &&
+            Boolean(prev[existingIdx].hasExplicitLabel) === normalizedExplicitLabel
           ) {
             return prev;
           }
           const next = [...prev];
-          next[existingIdx] = { key, customId, required: normalizedRequired };
+          next[existingIdx] = {
+            key,
+            resolvedId,
+            customId,
+            required: normalizedRequired,
+            hasExplicitLabel: normalizedExplicitLabel,
+          };
           return next;
         }
-        return [...prev, { key, customId, required: normalizedRequired }];
+        return [
+          ...prev,
+          {
+            key,
+            resolvedId,
+            customId,
+            required: normalizedRequired,
+            hasExplicitLabel: normalizedExplicitLabel,
+          },
+        ];
       });
     },
     []
@@ -131,6 +167,14 @@ export function FormGroup({
     });
   }, []);
 
+  const registerLabel = React.useCallback((key: string) => {
+    setUnkeyedLabelKeys((prev) => (prev.includes(key) ? prev : [...prev, key]));
+  }, []);
+
+  const unregisterLabel = React.useCallback((key: string) => {
+    setUnkeyedLabelKeys((prev) => (prev.includes(key) ? prev.filter((item) => item !== key) : prev));
+  }, []);
+
   const registerMessage = React.useCallback((msgId: string, active: boolean) => {
     setDescribedByIds((prev) => {
       const exists = prev.includes(msgId);
@@ -140,8 +184,19 @@ export function FormGroup({
     });
   }, []);
 
-  const primaryControl = controls[0];
-  const controlId = primaryControl ? (primaryControl.customId || id) : id;
+  const unlabelledControls = controls.filter((item) => !item.hasExplicitLabel);
+  const hasMultiControlCollision =
+    !isGroup && (unlabelledControls.length > 1 || unkeyedLabelKeys.length > 1);
+  const primaryControl = hasMultiControlCollision
+    ? undefined
+    : (unlabelledControls[0] ?? (controls.length === 1 ? controls[0] : undefined));
+  const controlId = hasMultiControlCollision
+    ? undefined
+    : primaryControl
+      ? (primaryControl.customId || primaryControl.resolvedId)
+      : controls.length === 0
+        ? id
+        : undefined;
   const hasMessage = describedByIds.length > 0;
   const isRequired = Boolean(groupRequired || controls.some((item) => item.required));
 
@@ -152,6 +207,7 @@ export function FormGroup({
       value={{
         id,
         controlId,
+        hasMultiControlCollision,
         groupLabelId,
         isGroup,
         asFieldset,
@@ -165,6 +221,8 @@ export function FormGroup({
         describedByIds,
         registerControl,
         unregisterControl,
+        registerLabel,
+        unregisterLabel,
         registerMessage,
       }}
     >
@@ -234,6 +292,7 @@ function useFormControl({
   propAriaBusy,
   propAriaDescribedBy,
   propAriaInvalid,
+  hasExplicitLabel = false,
   requireGroup,
 }: {
   propId?: string;
@@ -244,6 +303,7 @@ function useFormControl({
   propAriaBusy?: React.AriaAttributes['aria-busy'];
   propAriaDescribedBy?: string;
   propAriaInvalid?: React.AriaAttributes['aria-invalid'];
+  hasExplicitLabel?: boolean;
   requireGroup: boolean;
 }) {
   const context = useContext(FormItemContext);
@@ -254,10 +314,17 @@ function useFormControl({
   const registerControl = context?.registerControl;
   const unregisterControl = context?.unregisterControl;
 
+  const isPrimary =
+    !context ||
+    context.controls.length === 0 ||
+    context.controls[0]?.key === controlKey;
+
+  const id = propId || (context && isPrimary ? context.id : controlKey);
+
   useIsomorphicLayoutEffect(() => {
     if (!registerControl) return;
-    registerControl(controlKey, propId, Boolean(propRequired));
-  }, [controlKey, propId, propRequired, registerControl]);
+    registerControl(controlKey, id, propId, Boolean(propRequired), Boolean(hasExplicitLabel));
+  }, [controlKey, id, propId, propRequired, hasExplicitLabel, registerControl]);
 
   useIsomorphicLayoutEffect(() => {
     if (!unregisterControl) return;
@@ -265,13 +332,6 @@ function useFormControl({
       unregisterControl(controlKey);
     };
   }, [controlKey, unregisterControl]);
-
-  const isPrimary =
-    !context ||
-    context.controls.length === 0 ||
-    context.controls[0]?.key === controlKey;
-
-  const id = propId || (context && isPrimary ? context.id : controlKey);
   const state: FormFeedbackState = propState || context?.state || 'default';
   const isRequired = propRequired !== undefined ? propRequired : Boolean(context?.groupRequired);
   const ariaRequired: React.AriaAttributes['aria-required'] =
@@ -314,13 +374,27 @@ export function Label({
 }) {
   const {
     controlId,
+    hasMultiControlCollision,
     groupLabelId,
     isGroup,
     asFieldset,
     state,
     required: contextRequired,
     groupRequired,
+    registerLabel,
+    unregisterLabel,
   } = useFormItem();
+  const labelKey = useId();
+  const isUnkeyedControlLabel = !isGroup && !propHtmlFor;
+
+  useIsomorphicLayoutEffect(() => {
+    if (!isUnkeyedControlLabel) return;
+    registerLabel(labelKey);
+    return () => {
+      unregisterLabel(labelKey);
+    };
+  }, [isUnkeyedControlLabel, labelKey, registerLabel, unregisterLabel]);
+
   const isRequired = propRequired !== undefined ? propRequired : contextRequired;
   const showIndicator =
     !hideRequiredIndicator &&
@@ -364,12 +438,15 @@ export function Label({
     );
   }
 
+  const resolvedHtmlFor =
+    propHtmlFor ?? (isGroup || hasMultiControlCollision ? undefined : controlId);
+
   return (
     <label
       ref={ref}
       {...props}
       id={propId || (isGroup ? groupLabelId : undefined)}
-      htmlFor={propHtmlFor ?? (isGroup ? undefined : controlId)}
+      htmlFor={resolvedHtmlFor}
       data-required={isRequired ? 'true' : undefined}
       className={labelClasses}
     >
@@ -424,6 +501,7 @@ export function Input({
     propAriaBusy,
     propAriaDescribedBy,
     propAriaInvalid,
+    hasExplicitLabel: Boolean(props['aria-label'] || props['aria-labelledby']),
     requireGroup: false,
   });
 
@@ -537,6 +615,7 @@ export function Textarea({
     propAriaBusy,
     propAriaDescribedBy,
     propAriaInvalid,
+    hasExplicitLabel: Boolean(props['aria-label'] || props['aria-labelledby']),
     requireGroup: true,
   });
 
@@ -615,6 +694,7 @@ export function Select({
     propAriaBusy,
     propAriaDescribedBy,
     propAriaInvalid,
+    hasExplicitLabel: Boolean(props['aria-label'] || props['aria-labelledby']),
     requireGroup: true,
   });
 
@@ -730,6 +810,7 @@ export function Checkbox({
     propAriaBusy,
     propAriaDescribedBy,
     propAriaInvalid,
+    hasExplicitLabel: Boolean(props['aria-label'] || props['aria-labelledby']),
     requireGroup: true,
   });
 

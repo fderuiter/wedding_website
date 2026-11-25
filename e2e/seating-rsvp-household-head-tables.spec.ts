@@ -165,7 +165,9 @@ test(
       expect(csvText).not.toContain(`Address Entry ${runTag}`);
 
       // Verify 1-sided Head Table & Sweetheart Table seats render along single side
-      const headTableNode = page.getByRole('button', { name: new RegExp(`Head Table ${runTag}`) });
+      const headTableNode = page.getByRole('button', {
+        name: new RegExp(`^Head Table ${runTag}, shape`),
+      });
       await expect(headTableNode).toBeVisible();
       await expect(headTableNode.locator('[data-seat-side="single"]')).toHaveCount(6);
 

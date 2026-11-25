@@ -503,7 +503,7 @@ const FloorplanTableNode = React.memo(function FloorplanTableNode({
                 ? dietarySummary
                   ? `Seat ${i}: ${seatDisplayLabel}, Dietary: ${dietarySummary}`
                   : `Seat ${i}: ${seatDisplayLabel}`
-                : `Seat ${i}: Empty`
+                : `${table.name}, Seat ${i}: Empty`
             }
             onDragEnter={(e) => onSeatDragEnter(e, table.id, i)}
             onDragOver={(e) => onSeatDragOver(e, table.id, i)}
@@ -532,7 +532,7 @@ const FloorplanTableNode = React.memo(function FloorplanTableNode({
                 ? isMatch
                   ? `Seat ${i}: ${seatDisplayLabel}${dietarySummary ? ` (${dietarySummary})` : ''} (Search Match! Double click to unassign)`
                   : `Seat ${i}: ${seatDisplayLabel}${dietarySummary ? ` (${dietarySummary})` : ''} (Double click or press Enter/Space/Delete to unassign)`
-                : `Seat ${i}: Empty (Drop guest or press Enter/Space to assign)`
+                : `${table.name}, Seat ${i}: Empty (Drop guest or press Enter/Space to assign)`
             }
             className={`absolute pointer-events-auto -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border text-xs font-semibold flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-primary ${
               isSeatDropTarget
@@ -673,6 +673,7 @@ const FloorplanTableNode = React.memo(function FloorplanTableNode({
         }}
         tabIndex={0}
         role="button"
+        aria-pressed={isSelected}
         aria-label={
           isLandmark
             ? `${table.name}, landmark ${getSeatingShapeLabel(table.shape)}, 0 seats`
@@ -2105,7 +2106,7 @@ function FloorplanCanvasContent({
         }
         onSelectTable(null);
       }}
-      className={`relative w-full h-[650px] rounded-xl overflow-auto shadow-inner select-none print:border-none print:bg-[var(--print-bg)] ${
+      className={`relative w-full h-[650px] rounded-xl overflow-auto shadow-inner select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary print:border-none print:bg-[var(--print-bg)] ${
         isPlacementMode ? 'cursor-crosshair' : ''
       }`}
       style={{
@@ -2114,6 +2115,7 @@ function FloorplanCanvasContent({
         backgroundImage: 'radial-gradient(circle, var(--canvas-grid-dot, #cbd5e1) 1px, transparent 1px)',
         backgroundSize: '24px 24px',
       }}
+      tabIndex={0}
       aria-label="Interactive 2D Reception Floorplan Canvas"
       role="region"
     >

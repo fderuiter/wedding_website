@@ -448,6 +448,7 @@ function SeatingChartAdminContent() {
     unassignedGuests,
     isLoading,
     errorMsg,
+    statusAnnouncement,
     canUndo,
     undoLabel,
     assignGuestToTable: handleAssignGuestToTable,
@@ -464,7 +465,14 @@ function SeatingChartAdminContent() {
 
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [placementTableId, setPlacementTableId] = useState<string | null>(null);
-  const [inspectorAnnouncement, setInspectorAnnouncement] = useState('');
+  const [announcementOverride, setAnnouncementOverride] = useState<{
+    sourceStatus: string;
+    text: string;
+  } | null>(null);
+  const politeAnnouncement =
+    announcementOverride && announcementOverride.sourceStatus === statusAnnouncement
+      ? announcementOverride.text
+      : statusAnnouncement;
   const [isTableModalOpen, setIsTableModalOpen] = useState(false);
   const [editingTable, setEditingTable] = useState<SeatingTableDTO | null>(null);
   const [assignSeatTarget, setAssignSeatTarget] = useState<{ tableId: string; seatNumber: number } | null>(null);
@@ -491,9 +499,12 @@ function SeatingChartAdminContent() {
       const nextX = Math.max(minX, Math.round(baseX + dx));
       const nextY = Math.max(minY, Math.round(baseY + dy));
       handleUpdateTablePosition(table.id, nextX, nextY);
-      setInspectorAnnouncement(`${table.name} moved to X ${nextX}, Y ${nextY}.`);
+      setAnnouncementOverride({
+        sourceStatus: statusAnnouncement,
+        text: `${table.name} moved to X ${nextX}, Y ${nextY}.`,
+      });
     },
-    [handleUpdateTablePosition]
+    [handleUpdateTablePosition, statusAnnouncement]
   );
 
   // Compute search matching stats with memoization (excluding unseated ineligible records)
@@ -938,8 +949,14 @@ function SeatingChartAdminContent() {
 
           {/* Interactive 2D Floorplan Canvas Area */}
           <div className="lg:col-span-3 space-y-4">
-            <div className="sr-only" aria-live="polite" aria-atomic="true">
-              {inspectorAnnouncement}
+            <div
+              className="sr-only"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              data-testid="seating-status-live-region"
+            >
+              {politeAnnouncement}
             </div>
             <FloorplanCanvas
               tables={tables}

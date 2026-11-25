@@ -382,7 +382,7 @@ function MediaDashboardContent({
             variant={drawerOpen ? 'primary' : 'outline'}
             onClick={() => setDrawerOpen(!drawerOpen)}
             aria-expanded={drawerOpen}
-            aria-controls="moderation-drawer"
+            aria-controls={drawerOpen ? 'moderation-drawer' : undefined}
             data-testid="toggle-moderation-drawer"
             className="relative flex items-center gap-2"
           >
@@ -667,23 +667,26 @@ function MediaDashboardContent({
                 data-testid="media-uploader-input"
               />
             </FormGroup>
-            <FormGroup className="md:col-span-2">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                <div className="flex items-center">
-                  <Checkbox checked={currentMedia.isDecorative || false} onChange={e => setCurrentMedia({...currentMedia, isDecorative: e.target.checked})} className="mr-2" />
-                  <Label className="mb-0">Decorative (no alt text)</Label>
-                </div>
-                <div className="flex items-center">
-                  <Checkbox
-                    checked={Boolean(currentMedia.publishToGallery)}
-                    onChange={e => setCurrentMedia({...currentMedia, publishToGallery: e.target.checked})}
-                    className="mr-2"
-                    data-testid="publish-to-gallery-checkbox"
-                  />
-                  <Label className="mb-0">Publish to Photo Gallery</Label>
-                </div>
-              </div>
-            </FormGroup>
+            <div className="md:col-span-2 flex flex-col sm:flex-row sm:items-center gap-4">
+              <FormGroup className="flex items-center space-y-0">
+                <Checkbox
+                  checked={currentMedia.isDecorative || false}
+                  onChange={e => setCurrentMedia({ ...currentMedia, isDecorative: e.target.checked })}
+                  className="mr-2"
+                  data-testid="media-decorative-checkbox"
+                />
+                <Label className="mb-0">Decorative (no alt text)</Label>
+              </FormGroup>
+              <FormGroup className="flex items-center space-y-0">
+                <Checkbox
+                  checked={Boolean(currentMedia.publishToGallery)}
+                  onChange={e => setCurrentMedia({ ...currentMedia, publishToGallery: e.target.checked })}
+                  className="mr-2"
+                  data-testid="publish-to-gallery-checkbox"
+                />
+                <Label className="mb-0">Publish to Photo Gallery</Label>
+              </FormGroup>
+            </div>
           </div>
           <div className="flex gap-4 mt-6">
             <Button onClick={handleSave} variant="primary">Save</Button>

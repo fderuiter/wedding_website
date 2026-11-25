@@ -1245,5 +1245,154 @@ describe('useSeatingState & seatingReducer', () => {
       expect(result.current.canUndo).toBe(false);
       expect(result.current.undoLabel).toBeNull();
     });
+
+    it('emits polite statusAnnouncement strings across assign, unassign, batch assign, clear, undo, auto-assign, and rollback', async () => {
+      const tableA: SeatingTableDTO = {
+        id: 'tbl-a',
+        name: 'Orchid Table',
+        shape: 'round',
+        capacity: 4,
+        x: 50,
+        y: 50,
+        width: 120,
+        height: 120,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [],
+      };
+      const guestsList: InvitationCodeDTO[] = [
+        {
+          id: 'g-s1',
+          code: 'S1',
+          guestName: 'Elena Gilbert',
+          tableId: null,
+          seatNumber: null,
+          plusOneAllocations: 0,
+          partyTags: [],
+          isSample: false,
+          used: true,
+          extraFields: { attending: true },
+        },
+        {
+          id: 'g-s2',
+          code: 'S2',
+          guestName: 'Bonnie Bennett',
+          tableId: null,
+          seatNumber: null,
+          plusOneAllocations: 0,
+          partyTags: [],
+          isSample: false,
+          used: true,
+          extraFields: { attending: true },
+        },
+      ];
+
+      let failNextAssign = false;
+      fetchMock.mockImplementation((url: string | URL | Request, init?: RequestInit) => {
+        const urlStr = url.toString();
+        if (urlStr.includes('/api/admin/seating-tables')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve([tableA]),
+          } as Response);
+        }
+        if (urlStr.includes('/api/admin/invitation-codes/catalog')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ items: guestsList, total: 2, page: 1, limit: 1000, totalPages: 1 }),
+          } as Response);
+        }
+        if (urlStr.endsWith('/api/admin/seating/assign') && init?.method === 'POST') {
+          if (failNextAssign) {
+            failNextAssign = false;
+            return Promise.resolve({
+              ok: false,
+              status: 500,
+              json: () => Promise.resolve({ error: 'Server error' }),
+            } as Response);
+          }
+          const body = JSON.parse(String(init.body));
+          if (Array.isArray(body.invitationCodeIds)) {
+            return Promise.resolve({
+              ok: true,
+              json: () =>
+                Promise.resolve({
+                  data: {
+                    updatedGuests: body.invitationCodeIds.map((id: string, idx: number) => ({
+                      id,
+                      tableId: body.tableId,
+                      seatNumber: body.tableId ? idx + 1 : null,
+                    })),
+                  },
+                }),
+            } as Response);
+          }
+          if (body.action === 'undo') {
+            return Promise.resolve({
+              ok: true,
+              json: () => Promise.resolve({ data: { updatedGuests: body.assignments } }),
+            } as Response);
+          }
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                id: body.invitationCodeId,
+                tableId: body.tableId,
+                seatNumber: body.tableId ? (body.seatNumber ?? 1) : null,
+              }),
+          } as Response);
+        }
+        return Promise.reject(new Error(`Unhandled URL: ${urlStr}`));
+      });
+
+      const { result } = renderHook(() => useSeatingState());
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(result.current.statusAnnouncement).toBe('');
+
+      await act(async () => {
+        await result.current.assignGuestToTable('g-s1', 'tbl-a', 2);
+      });
+      expect(result.current.statusAnnouncement).toBe('Elena Gilbert assigned to Orchid Table, Seat 2.');
+
+      await act(async () => {
+        await result.current.unassignGuest('g-s1');
+      });
+      expect(result.current.statusAnnouncement).toBe('Elena Gilbert unassigned from Orchid Table, Seat 2.');
+
+      await act(async () => {
+        await result.current.assignGuestsToTable(['g-s1', 'g-s2'], 'tbl-a');
+      });
+      expect(result.current.statusAnnouncement).toBe('Assigned 2 guests to Orchid Table.');
+
+      await act(async () => {
+        await result.current.clearTableSeats('tbl-a');
+      });
+      expect(result.current.statusAnnouncement).toBe('Cleared 2 guests from Orchid Table.');
+
+      await act(async () => {
+        await result.current.undoLastBatchAction();
+      });
+      expect(result.current.statusAnnouncement).toBe('Restored seats prior to Clear Orchid Table.');
+
+      failNextAssign = true;
+      await act(async () => {
+        await result.current.unassignGuest('g-s1');
+      });
+      expect(result.current.statusAnnouncement).toBe(
+        'Could not update seat for Elena Gilbert. Reverted previous seat assignment.'
+      );
+
+      act(() => {
+        result.current.applyAutoAssignResult({
+          assignedGuests: [{ id: 'g-s1', tableId: 'tbl-a', seatNumber: 1 }],
+          assignedCount: 1,
+        });
+      });
+      expect(result.current.statusAnnouncement).toBe('Auto-assigned 1 guest to reception tables.');
+    });
   });
 });

@@ -567,6 +567,8 @@ export function GuestPhotoDropzone({
 
       {uploads.some((item) => item.status === 'staged') && (
         <div
+          role="status"
+          aria-live="polite"
           className="mt-4 p-4 rounded-xl border border-[var(--color-surface-border,#6b7280)] bg-stone-50 dark:bg-stone-900 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
           data-testid="staged-uploads-bar"
         >

@@ -457,4 +457,33 @@ describe('Guest Login Page with Unified Sign-In and Help Drawer', () => {
 
     expect(await axe(container)).toHaveNoViolations();
   });
+
+  it('renders GuestHelpTrigger in the card header before passcode input and keeps Navbar GuestHelpTrigger aria-expanded="false"', async () => {
+    const { GuestHelpProvider, GuestHelpTrigger } = await import(
+      '@/components/guest/GuestHelpModal'
+    );
+    const { container } = render(
+      <GuestHelpProvider pathname="/guest/login">
+        <nav aria-label="Primary">
+          <GuestHelpTrigger variant="navbar" label="Help" />
+        </nav>
+        <GuestLoginPage />
+      </GuestHelpProvider>
+    );
+
+    const navbarHelpBtn = screen.getByRole('button', { name: /^Help$/ });
+    const headerHelpBtn = screen.getByRole('button', { name: /need help finding your code\?/i });
+    const passcodeInput = screen.getByLabelText(/passcode or invitation code/i);
+
+    // Header help trigger precedes passcode input in DOM order (SC 3.2.6 consistent help order)
+    expect(
+      headerHelpBtn.compareDocumentPosition(passcodeInput) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+
+    fireEvent.click(headerHelpBtn);
+    expect(headerHelpBtn).toHaveAttribute('aria-expanded', 'true');
+    expect(navbarHelpBtn).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('dialog')).toHaveAttribute('id', 'guest-help-drawer');
+    expect(await axe(container)).toHaveNoViolations();
+  });
 });

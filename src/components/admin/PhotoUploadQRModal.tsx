@@ -387,7 +387,10 @@ export const PhotoUploadQRModal: React.FC<PhotoUploadQRModalProps> = ({
 
           <div
             data-testid="qr-print-sheet"
-            className={`qr-print-sheet grid gap-3 max-h-[60vh] overflow-y-auto p-2 border border-stone-200 dark:border-zinc-800 rounded-lg bg-white ${printGridClass}`}
+            tabIndex={0}
+            role="region"
+            aria-label="Printable photo upload QR cards preview"
+            className={`qr-print-sheet grid gap-3 max-h-[60vh] overflow-y-auto p-2 border border-stone-200 dark:border-zinc-800 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${printGridClass}`}
             style={{ minHeight: '200px' }}
           >
             {cardIndices.map((idx) =>
