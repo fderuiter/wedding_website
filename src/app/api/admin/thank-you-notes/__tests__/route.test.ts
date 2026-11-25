@@ -459,6 +459,7 @@ describe('Thank-You Notes API Routes', () => {
         status: 'Unsent',
         search: 'Jane',
         template: 'avery_5160',
+        skipUnaddressed: true,
       });
     });
 
@@ -476,6 +477,7 @@ describe('Thank-You Notes API Routes', () => {
         status: undefined,
         search: undefined,
         template: 'avery_5163',
+        skipUnaddressed: true,
       });
     });
 
@@ -496,6 +498,27 @@ describe('Thank-You Notes API Routes', () => {
         search: undefined,
         template: 'avery_5160',
         skipUnaddressed: true,
+      });
+    });
+
+    it('honors skipUnaddressed=false and contributorStatus query parameters', async () => {
+      const mockPdfBuffer = Buffer.from('%PDF-1.5 test pdf content');
+      (thankYouService.exportThankYouNotesPdf as jest.Mock).mockImplementation(() =>
+        createMockStream(mockPdfBuffer)
+      );
+
+      const req = new NextRequest(
+        'http://localhost:3000/api/admin/thank-you-notes/export-labels?template=avery_5160&skipUnaddressed=false&contributorStatus=ALL'
+      );
+      const res = await EXPORT_LABELS_GET(req);
+
+      expect(res.status).toBe(200);
+      expect(thankYouService.exportThankYouNotesPdf).toHaveBeenCalledWith({
+        status: undefined,
+        contributorStatus: 'ALL',
+        search: undefined,
+        template: 'avery_5160',
+        skipUnaddressed: false,
       });
     });
   });

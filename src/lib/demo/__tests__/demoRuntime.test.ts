@@ -928,7 +928,18 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
         ).status
       ).toBe(200);
 
-      const thankYouPayload = await (await window.fetch('/api/admin/thank-you-notes')).json();
+      const defaultThankYouPayload = await (
+        await window.fetch('/api/admin/thank-you-notes')
+      ).json();
+      expect(Array.isArray(defaultThankYouPayload.items)).toBe(true);
+      expect(
+        defaultThankYouPayload.items.some((i: { id: string }) => i.id === targetContributorId)
+      ).toBe(false);
+      expect(defaultThankYouPayload.metrics).toBeDefined();
+
+      const thankYouPayload = await (
+        await window.fetch('/api/admin/thank-you-notes?contributorStatus=ALL')
+      ).json();
       expect(Array.isArray(thankYouPayload.items)).toBe(true);
       const matchedThankYou = thankYouPayload.items.find(
         (i: { id: string }) => i.id === targetContributorId

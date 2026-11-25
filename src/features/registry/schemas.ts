@@ -283,6 +283,7 @@ export const CreateOfflineThankYouNoteSchema = z.object({
     .optional(),
   thankYouStatus: z.enum(['Unsent', 'Sent', 'Not Needed']).optional().default('Unsent'),
   thankYouNote: z.string().max(2000, 'Thank-you note must be under 2000 characters.').nullable().optional(),
+  ...optionalAddressFields,
 });
 
 export const UpdateThankYouNoteSchema = z.object({

@@ -1199,12 +1199,18 @@ export async function handleRegistryAndThankYouRoutes(
       String(b.date).localeCompare(String(a.date))
     );
 
-    const sent = allItems.filter((i) => i.thankYouStatus === 'Sent').length;
-    const notNeeded = allItems.filter((i) => i.thankYouStatus === 'Not Needed').length;
-    const unsent = allItems.length - sent - notNeeded;
+    const confirmedItems = allItems.filter(
+      (i) => String(i.status || 'CONFIRMED').toUpperCase() === 'CONFIRMED'
+    );
+    const sent = confirmedItems.filter((i) => i.thankYouStatus === 'Sent').length;
+    const notNeeded = confirmedItems.filter((i) => i.thankYouStatus === 'Not Needed').length;
+    const unsent = confirmedItems.length - sent - notNeeded;
     const thanked = sent + notNeeded;
 
     const statusFilter = (url.searchParams.get('status') || 'all').trim().toLowerCase();
+    const contributorStatusFilter = (url.searchParams.get('contributorStatus') || 'CONFIRMED')
+      .trim()
+      .toUpperCase();
     const searchFilter = (url.searchParams.get('search') || '').trim().toLowerCase();
     const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10) || 1);
     const pageSize = Math.max(
@@ -1213,6 +1219,10 @@ export async function handleRegistryAndThankYouRoutes(
     );
 
     const filtered = allItems.filter((item) => {
+      if (contributorStatusFilter && contributorStatusFilter !== 'ALL') {
+        const itemLifecycle = String(item.status || 'CONFIRMED').trim().toUpperCase();
+        if (itemLifecycle !== contributorStatusFilter) return false;
+      }
       if (statusFilter && statusFilter !== 'all') {
         const normalizedItem = item.thankYouStatus.toLowerCase().replace(/_/g, ' ');
         const normalizedTarget = statusFilter.replace(/_/g, ' ');
@@ -1237,12 +1247,13 @@ export async function handleRegistryAndThankYouRoutes(
       success: true,
       items: pagedItems,
       metrics: {
-        total: allItems.length,
+        total: confirmedItems.length,
         sent,
         unsent,
         notNeeded,
         thanked,
-        completionPercentage: allItems.length > 0 ? Math.round((thanked / allItems.length) * 100) : 0,
+        completionPercentage:
+          confirmedItems.length > 0 ? Math.round((thanked / confirmedItems.length) * 100) : 0,
       },
       pagination: {
         page,
@@ -1254,6 +1265,9 @@ export async function handleRegistryAndThankYouRoutes(
   }
 
   if (path === '/api/admin/thank-you-notes/export' && (method === 'GET' || method === 'POST')) {
+    const contributorStatusFilter = (url.searchParams.get('contributorStatus') || 'CONFIRMED')
+      .trim()
+      .toUpperCase();
     const dataset = getActiveArchetypeDataset();
     const guestById = new Map(dataset.guests.map((g) => [g.id, g]));
     const rows = [
@@ -1261,7 +1275,11 @@ export async function handleRegistryAndThankYouRoutes(
       ...dataset.registryItems.flatMap((item) =>
         (item.contributors || []).map((c) => toThankYouNoteDto(c, item, guestById))
       ),
-    ];
+    ].filter((r) =>
+      contributorStatusFilter === 'ALL'
+        ? true
+        : String(r.status || 'CONFIRMED').toUpperCase() === contributorStatusFilter
+    );
     const csv = buildDemoCsv(
       [
         'Contributor Name',
@@ -1311,7 +1329,11 @@ export async function handleRegistryAndThankYouRoutes(
     (method === 'GET' || method === 'POST')
   ) {
     const template = url.searchParams.get('template') === 'avery_5163' ? 'avery_5163' : 'avery_5160';
-    const skipUnaddressed = url.searchParams.get('skipUnaddressed') !== 'false';
+    const rawSkip = url.searchParams.get('skipUnaddressed');
+    const skipUnaddressed = rawSkip !== 'false' && rawSkip !== '0';
+    const contributorStatusFilter = (url.searchParams.get('contributorStatus') || 'CONFIRMED')
+      .trim()
+      .toUpperCase();
     const dataset = getActiveArchetypeDataset();
     const guestById = new Map(dataset.guests.map((g) => [g.id, g]));
     const rows = [
@@ -1319,8 +1341,14 @@ export async function handleRegistryAndThankYouRoutes(
       ...dataset.registryItems.flatMap((item) =>
         (item.contributors || []).map((c) => toThankYouNoteDto(c, item, guestById))
       ),
-    ];
+    ].filter((r) =>
+      contributorStatusFilter === 'ALL'
+        ? true
+        : String(r.status || 'CONFIRMED').toUpperCase() === contributorStatusFilter
+    );
     const lines: string[] = [];
+    const seenInviteIds = new Set<string>();
+    const seenAddresses = new Set<string>();
     for (const r of rows) {
       const ownAddr = [r.addressLine1, r.addressLine2, r.city, r.state, r.zipCode]
         .filter(Boolean)
@@ -1338,6 +1366,13 @@ export async function handleRegistryAndThankYouRoutes(
         : '';
       const resolvedAddr = ownAddr || fallbackAddr;
       if (skipUnaddressed && !resolvedAddr) continue;
+      const inviteKey = r.invitationCodeId?.trim() || '';
+      const addrKey = resolvedAddr.trim().toLowerCase().replace(/\s+/g, ' ');
+      if ((inviteKey && seenInviteIds.has(inviteKey)) || (addrKey && seenAddresses.has(addrKey))) {
+        continue;
+      }
+      if (inviteKey) seenInviteIds.add(inviteKey);
+      if (addrKey) seenAddresses.add(addrKey);
       lines.push(`${r.name} — ${resolvedAddr || 'Address pending'}`);
     }
     const title = `Thank-You Mailing Labels (${template === 'avery_5163' ? 'Avery 5163' : 'Avery 5160'})`;

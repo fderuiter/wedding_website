@@ -13,8 +13,13 @@ import type { ProgressMetrics } from '@/features/registry';
 import {
   ContributorLifecycleBadge,
   THANK_YOU_TEMPLATES,
+  hasAddressCollectionTag,
   substituteThankYouTemplateTokens,
 } from '@/features/registry';
+import {
+  resolveAddressCollectionMatches,
+  type AddressCollectionMatchResult,
+} from '@/utils/invitationValidation';
 import { useOverlay } from '@/hooks/useOverlay';
 import { useMenuNavigation } from '@/hooks/useMenuNavigation';
 import { withBasePath } from '@/lib/basePath';
@@ -74,6 +79,8 @@ interface InvitationHouseholdOption {
   guestName: string;
   email?: string | null;
   householdName?: string | null;
+  partyTags?: string[] | null;
+  isSample?: boolean;
   addressLine1?: string | null;
   addressLine2?: string | null;
   city?: string | null;
@@ -141,6 +148,7 @@ function resolveDisplayAddress(item: ThankYouContributorItem): {
 type ThankYouMetrics = ProgressMetrics;
 
 type ThankYouStatusFilter = 'All' | 'Unsent' | 'Sent' | 'Not Needed';
+type ContributorLifecycleFilter = 'CONFIRMED' | 'ALL' | 'RESERVED' | 'CANCELLED' | 'REFUNDED';
 
 const STATUS_TAB_IDS: Record<ThankYouStatusFilter, string> = {
   All: 'thank-you-status-tab-all',
@@ -158,6 +166,7 @@ interface ThankYouPagination {
 
 interface ThankYouNotesQuery {
   statusFilter: ThankYouStatusFilter;
+  contributorStatusFilter: ContributorLifecycleFilter;
   searchQuery: string;
   page: number;
   pageSize: number;
@@ -189,6 +198,9 @@ async function requestThankYouNotes(query: ThankYouNotesQuery): Promise<ThankYou
   const params = new URLSearchParams();
   if (query.statusFilter !== 'All') {
     params.set('status', query.statusFilter);
+  }
+  if (query.contributorStatusFilter !== 'CONFIRMED') {
+    params.set('contributorStatus', query.contributorStatusFilter);
   }
   if (query.searchQuery.trim()) {
     params.set('search', query.searchQuery.trim());
@@ -244,6 +256,8 @@ export default function ThankYouNotesPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [statusFilter, setStatusFilter] = useState<ThankYouStatusFilter>('All');
+  const [contributorStatusFilter, setContributorStatusFilter] =
+    useState<ContributorLifecycleFilter>('CONFIRMED');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 50;
@@ -275,7 +289,7 @@ export default function ThankYouNotesPage() {
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
   const [pendingActionId, setPendingActionId] = useState<string | null>(null);
-  const [skipUnaddressedLabels, setSkipUnaddressedLabels] = useState<boolean>(false);
+  const [skipUnaddressedLabels, setSkipUnaddressedLabels] = useState<boolean>(true);
 
   // Email composer modal state
   const [composerItem, setComposerItem] = useState<ThankYouContributorItem | null>(null);
@@ -304,16 +318,23 @@ export default function ThankYouNotesPage() {
   const [offlineStatus, setOfflineStatus] = useState<'Unsent' | 'Sent' | 'Not Needed'>('Unsent');
   const [offlineMessage, setOfflineMessage] = useState('');
   const [offlineNote, setOfflineNote] = useState('');
+  const [offlineAddressLine1, setOfflineAddressLine1] = useState('');
+  const [offlineAddressLine2, setOfflineAddressLine2] = useState('');
+  const [offlineCity, setOfflineCity] = useState('');
+  const [offlineState, setOfflineState] = useState('');
+  const [offlineZipCode, setOfflineZipCode] = useState('');
+  const [offlineCountry, setOfflineCountry] = useState('');
   const [isCreatingOffline, setIsCreatingOffline] = useState(false);
 
   const [invitationOptions, setInvitationOptions] = useState<InvitationHouseholdOption[]>([]);
   const [registryItemOptions, setRegistryItemOptions] = useState<RegistryItemOption[]>([]);
-  const lookupRequestedRef = useRef(false);
+  const [isAddressMergeModalOpen, setIsAddressMergeModalOpen] = useState(false);
+  const [mergingSubmissionId, setMergingSubmissionId] = useState<string | null>(null);
+  const [isMergingAllMatches, setIsMergingAllMatches] = useState(false);
+  const registryLookupRequestedRef = useRef(false);
+  const invitationCatalogLoadedRef = useRef(false);
 
-  const ensureLookupOptionsLoaded = useCallback(async () => {
-    if (lookupRequestedRef.current) return;
-    lookupRequestedRef.current = true;
-
+  const loadInvitationCatalog = useCallback(async () => {
     try {
       const inviteRes = await fetch(
         withBasePath('/api/admin/invitation-codes/catalog?limit=500')
@@ -326,11 +347,19 @@ export default function ThankYouNotesPage() {
           : Array.isArray(invitePayload?.items)
             ? invitePayload.items
             : [];
-        setInvitationOptions(rawInvites);
+        setInvitationOptions((prev) =>
+          prev.length === 0 && rawInvites.length === 0 ? prev : rawInvites
+        );
       }
     } catch {
       // Optional lookup in isolated environments
     }
+  }, []);
+
+  const ensureLookupOptionsLoaded = useCallback(async () => {
+    void loadInvitationCatalog();
+    if (registryLookupRequestedRef.current) return;
+    registryLookupRequestedRef.current = true;
 
     try {
       const regRes = await fetch(withBasePath('/api/registry/items?limit=500'));
@@ -347,7 +376,17 @@ export default function ThankYouNotesPage() {
     } catch {
       // Optional lookup in isolated environments
     }
-  }, []);
+  }, [loadInvitationCatalog]);
+
+  const invitedHouseholdOptions = useMemo(
+    () => invitationOptions.filter((inv) => !hasAddressCollectionTag(inv.partyTags)),
+    [invitationOptions]
+  );
+
+  const addressCollectionMatches = useMemo(
+    () => resolveAddressCollectionMatches(invitationOptions).matched,
+    [invitationOptions]
+  );
 
   const handleStatusFilterChange = (tab: 'All' | 'Unsent' | 'Sent' | 'Not Needed') => {
     setIsLoading(true);
@@ -361,6 +400,20 @@ export default function ThankYouNotesPage() {
     setError(null);
     setSearchQuery(query);
     setCurrentPage(1);
+  };
+
+  const handleContributorLifecycleChange = (nextFilter: ContributorLifecycleFilter) => {
+    setIsLoading(true);
+    setError(null);
+    setContributorStatusFilter(nextFilter);
+    setSelectedIds([]);
+    setCurrentPage(1);
+  };
+
+  const handleToggleConfirmedOnly = () => {
+    handleContributorLifecycleChange(
+      contributorStatusFilter === 'CONFIRMED' ? 'ALL' : 'CONFIRMED'
+    );
   };
 
   const [isLabelDropdownOpen, setIsLabelDropdownOpen] = useState(false);
@@ -392,6 +445,9 @@ export default function ThankYouNotesPage() {
     if (statusFilter !== 'All') {
       params.set('status', statusFilter);
     }
+    if (contributorStatusFilter !== 'CONFIRMED') {
+      params.set('contributorStatus', contributorStatusFilter);
+    }
     if (searchQuery.trim()) {
       params.set('search', searchQuery.trim());
     }
@@ -419,12 +475,13 @@ export default function ThankYouNotesPage() {
     if (statusFilter !== 'All') {
       params.set('status', statusFilter);
     }
+    if (contributorStatusFilter !== 'CONFIRMED') {
+      params.set('contributorStatus', contributorStatusFilter);
+    }
     if (searchQuery.trim()) {
       params.set('search', searchQuery.trim());
     }
-    if (skipUnaddressedLabels) {
-      params.set('skipUnaddressed', 'true');
-    }
+    params.set('skipUnaddressed', skipUnaddressedLabels ? 'true' : 'false');
     const query = params.toString();
     const url = `/api/admin/thank-you-notes/export-labels?${query}`;
 
@@ -445,22 +502,38 @@ export default function ThankYouNotesPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const snapshot = await requestThankYouNotes({ statusFilter, searchQuery, page: currentPage, pageSize });
+      const snapshot = await requestThankYouNotes({
+        statusFilter,
+        contributorStatusFilter,
+        searchQuery,
+        page: currentPage,
+        pageSize,
+      });
       applyThankYouNotesSnapshot(snapshot, { setItems, setMetrics, setPagination, setError });
     } catch (err: unknown) {
       setError(formatThankYouNotesError(err));
     } finally {
       setIsLoading(false);
     }
-  }, [statusFilter, searchQuery, currentPage, pageSize]);
+  }, [statusFilter, contributorStatusFilter, searchQuery, currentPage, pageSize]);
 
   useEffect(() => {
     let cancelled = false;
 
-    void requestThankYouNotes({ statusFilter, searchQuery, page: currentPage, pageSize })
+    void requestThankYouNotes({
+      statusFilter,
+      contributorStatusFilter,
+      searchQuery,
+      page: currentPage,
+      pageSize,
+    })
       .then((snapshot) => {
         if (cancelled) return;
         applyThankYouNotesSnapshot(snapshot, { setItems, setMetrics, setPagination, setError });
+        if (!invitationCatalogLoadedRef.current) {
+          invitationCatalogLoadedRef.current = true;
+          void loadInvitationCatalog();
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -476,7 +549,14 @@ export default function ThankYouNotesPage() {
     return () => {
       cancelled = true;
     };
-  }, [statusFilter, searchQuery, currentPage, pageSize]);
+  }, [
+    statusFilter,
+    contributorStatusFilter,
+    searchQuery,
+    currentPage,
+    pageSize,
+    loadInvitationCatalog,
+  ]);
 
   // Bulk selection logic
   const isAllSelected = useMemo(() => {
@@ -735,7 +815,110 @@ export default function ThankYouNotesPage() {
     setOfflineStatus('Unsent');
     setOfflineMessage('');
     setOfflineNote('');
+    setOfflineAddressLine1('');
+    setOfflineAddressLine2('');
+    setOfflineCity('');
+    setOfflineState('');
+    setOfflineZipCode('');
+    setOfflineCountry('');
     setIsOfflineFormOpen(false);
+  };
+
+  const handleMergeAddressMatch = async (
+    match: AddressCollectionMatchResult<InvitationHouseholdOption>
+  ) => {
+    setMergingSubmissionId(match.submission.id);
+    try {
+      const res = await fetch(withBasePath('/api/admin/invitation-codes/merge'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          primaryId: match.matchedHousehold.id,
+          secondaryIds: [match.submission.id],
+        }),
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(
+          (typeof errJson?.error === 'string' ? errJson.error : errJson?.error?.message) ||
+            'Failed to merge guest address into household.'
+        );
+      }
+      addToast(
+        `Merged submitted address into ${match.matchedHousehold.householdName || match.matchedHousehold.guestName}.`,
+        'success'
+      );
+      await Promise.all([loadInvitationCatalog(), fetchData()]);
+      if (addressCollectionMatches.length <= 1) {
+        setIsAddressMergeModalOpen(false);
+      }
+    } catch (err: unknown) {
+      addToast(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Failed to merge guest address into household.',
+        'error'
+      );
+    } finally {
+      setMergingSubmissionId(null);
+    }
+  };
+
+  const handleMergeAllAddressMatches = async () => {
+    if (addressCollectionMatches.length === 0) return;
+    setIsMergingAllMatches(true);
+    try {
+      const groupedByPrimary = new Map<
+        string,
+        { householdLabel: string; secondaryIds: string[] }
+      >();
+      for (const match of addressCollectionMatches) {
+        const existing = groupedByPrimary.get(match.matchedHousehold.id);
+        if (existing) {
+          existing.secondaryIds.push(match.submission.id);
+        } else {
+          groupedByPrimary.set(match.matchedHousehold.id, {
+            householdLabel:
+              match.matchedHousehold.householdName || match.matchedHousehold.guestName,
+            secondaryIds: [match.submission.id],
+          });
+        }
+      }
+
+      for (const [primaryId, group] of groupedByPrimary.entries()) {
+        const res = await fetch(withBasePath('/api/admin/invitation-codes/merge'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            primaryId,
+            secondaryIds: group.secondaryIds,
+          }),
+        });
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(
+            (typeof errJson?.error === 'string' ? errJson.error : errJson?.error?.message) ||
+              `Failed to merge address into ${group.householdLabel}.`
+          );
+        }
+      }
+
+      addToast(
+        `Merged ${addressCollectionMatches.length} guest address submission(s) into invited households.`,
+        'success'
+      );
+      setIsAddressMergeModalOpen(false);
+      await Promise.all([loadInvitationCatalog(), fetchData()]);
+    } catch (err: unknown) {
+      addToast(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Failed to merge matched address submissions.',
+        'error'
+      );
+    } finally {
+      setIsMergingAllMatches(false);
+    }
   };
 
   const handleCreateOfflineGift = async (e: React.SubmitEvent<HTMLFormElement>) => {
@@ -766,6 +949,12 @@ export default function ThankYouNotesPage() {
           thankYouStatus: offlineStatus,
           message: offlineMessage.trim() || null,
           thankYouNote: offlineNote.trim() || null,
+          addressLine1: offlineAddressLine1.trim() || null,
+          addressLine2: offlineAddressLine2.trim() || null,
+          city: offlineCity.trim() || null,
+          state: offlineState.trim() || null,
+          zipCode: offlineZipCode.trim() || null,
+          country: offlineCountry.trim() || null,
         }),
       });
 
@@ -1007,6 +1196,54 @@ export default function ThankYouNotesPage() {
         </div>
       </div>
 
+      {addressCollectionMatches.length > 0 && (
+        <div
+          data-testid="matched-households-banner"
+          className="bg-[#fef9ec] dark:bg-amber-950/40 border border-[#f2d078] dark:border-amber-700/60 rounded-xl px-4 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm text-amber-950 dark:text-amber-100 shadow-xs"
+        >
+          <div className="flex items-center gap-2.5">
+            <span
+              aria-hidden="true"
+              className="inline-flex p-1 bg-amber-200/70 dark:bg-amber-800/50 rounded-full text-amber-900 dark:text-amber-200 shrink-0"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                />
+              </svg>
+            </span>
+            <p className="font-normal">
+              <strong className="font-semibold text-amber-950 dark:text-amber-100">
+                {addressCollectionMatches.length} guest address{' '}
+                {addressCollectionMatches.length === 1 ? 'submission' : 'submissions'}
+              </strong>{' '}
+              matched invited households{' '}
+              <span className="text-gray-800 dark:text-amber-200">
+                (
+                {addressCollectionMatches
+                  .slice(0, 3)
+                  .map((m) => m.matchedHousehold.householdName || m.matchedHousehold.guestName)
+                  .join(', ')}
+                {addressCollectionMatches.length > 3
+                  ? `, +${addressCollectionMatches.length - 3} more`
+                  : ''}
+                )
+              </span>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsAddressMergeModalOpen(true)}
+            className="inline-flex items-center text-xs font-semibold text-amber-950 dark:text-amber-100 hover:bg-amber-100 dark:hover:bg-amber-900/60 bg-white dark:bg-gray-800 border border-amber-400 dark:border-amber-600 px-3.5 py-1.5 rounded-lg shadow-2xs transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            Review &amp; Merge into Households
+          </button>
+        </div>
+      )}
+
       {isOfflineFormOpen && (
         <section
           aria-labelledby="offline-gift-heading"
@@ -1080,8 +1317,8 @@ export default function ThankYouNotesPage() {
                 onChange={(e) => setOfflineInvitationCodeId(e.target.value)}
                 className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-white"
               >
-                <option value="">No linked household</option>
-                {invitationOptions.map((inv) => (
+                <option value="">No linked household — enter return address below</option>
+                {invitedHouseholdOptions.map((inv) => (
                   <option key={inv.id} value={inv.id}>
                     {inv.householdName || inv.guestName} ({inv.code})
                     {inv.addressLine1
@@ -1104,6 +1341,73 @@ export default function ThankYouNotesPage() {
                 <option value="Not Needed">Not Needed</option>
               </select>
             </FormGroup>
+            <div className="md:col-span-2 bg-gray-50/80 dark:bg-gray-900/40 rounded-xl p-4 border border-gray-200 dark:border-gray-700 space-y-3">
+              <h3 className="text-xs font-semibold text-gray-800 dark:text-gray-200 uppercase tracking-wider">
+                Guest Physical Address for Label Printing
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+                <FormGroup className="md:col-span-4">
+                  <Label htmlFor="offline-gift-address-line1">Address Line 1</Label>
+                  <Input
+                    id="offline-gift-address-line1"
+                    type="text"
+                    value={offlineAddressLine1}
+                    onChange={(e) => setOfflineAddressLine1(e.target.value)}
+                    placeholder="418 Maple Avenue"
+                  />
+                </FormGroup>
+                <FormGroup className="md:col-span-2">
+                  <Label htmlFor="offline-gift-address-line2">Address Line 2</Label>
+                  <Input
+                    id="offline-gift-address-line2"
+                    type="text"
+                    value={offlineAddressLine2}
+                    onChange={(e) => setOfflineAddressLine2(e.target.value)}
+                    placeholder="Apt 3B"
+                  />
+                </FormGroup>
+                <FormGroup className="md:col-span-2">
+                  <Label htmlFor="offline-gift-city">City</Label>
+                  <Input
+                    id="offline-gift-city"
+                    type="text"
+                    value={offlineCity}
+                    onChange={(e) => setOfflineCity(e.target.value)}
+                    placeholder="Burlington"
+                  />
+                </FormGroup>
+                <FormGroup className="md:col-span-2">
+                  <Label htmlFor="offline-gift-state">State</Label>
+                  <Input
+                    id="offline-gift-state"
+                    type="text"
+                    value={offlineState}
+                    onChange={(e) => setOfflineState(e.target.value)}
+                    placeholder="VT"
+                  />
+                </FormGroup>
+                <FormGroup className="md:col-span-1">
+                  <Label htmlFor="offline-gift-zip">ZIP Code</Label>
+                  <Input
+                    id="offline-gift-zip"
+                    type="text"
+                    value={offlineZipCode}
+                    onChange={(e) => setOfflineZipCode(e.target.value)}
+                    placeholder="05401"
+                  />
+                </FormGroup>
+                <FormGroup className="md:col-span-1">
+                  <Label htmlFor="offline-gift-country">Country</Label>
+                  <Input
+                    id="offline-gift-country"
+                    type="text"
+                    value={offlineCountry}
+                    onChange={(e) => setOfflineCountry(e.target.value)}
+                    placeholder="USA"
+                  />
+                </FormGroup>
+              </div>
+            </div>
             <FormGroup className="md:col-span-2">
               <Label htmlFor="offline-gift-message">Gift Description / Card Message (Optional)</Label>
               <Textarea
@@ -1182,6 +1486,9 @@ export default function ThankYouNotesPage() {
             <span className="text-xs font-medium text-[var(--color-muted-text,#4b5563)]">
               Total Contributions
             </span>
+            <span className="block text-[11px] font-normal text-[var(--color-muted-text,#4b5563)]">
+              (Confirmed only)
+            </span>
           </div>
           <div className="bg-amber-50 dark:bg-amber-950/20 p-3 rounded-lg border border-amber-200/50 dark:border-amber-800/40 text-center">
             <span className="block text-2xl font-bold text-amber-700 dark:text-amber-400">
@@ -1224,22 +1531,67 @@ export default function ThankYouNotesPage() {
           />
         </FormGroup>
 
-        {/* Status Filter Tabs */}
-        <SegmentedTabs
-          idPrefix="thank-you-status"
-          panelId="thank-you-notes-panel"
-          aria-label="Filter contributors by thank-you status"
-          size="sm"
-          value={statusFilter}
-          onChange={handleStatusFilterChange}
-          className="self-start md:self-auto max-w-full"
-          tabs={[
-            { value: 'All', label: 'All', id: STATUS_TAB_IDS.All },
-            { value: 'Unsent', label: 'Unsent', id: STATUS_TAB_IDS.Unsent },
-            { value: 'Sent', label: 'Sent', id: STATUS_TAB_IDS.Sent },
-            { value: 'Not Needed', label: 'Not Needed', id: STATUS_TAB_IDS['Not Needed'] },
-          ]}
-        />
+        <div className="flex flex-wrap items-center gap-3 self-start md:self-auto max-w-full">
+          {/* Confirmed Gifts Only Toggle Switch */}
+          <div className="inline-flex items-center gap-2 bg-white dark:bg-gray-800 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-xs">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={contributorStatusFilter === 'CONFIRMED'}
+              aria-label="Confirmed gifts only"
+              onClick={handleToggleConfirmedOnly}
+              className={`${
+                contributorStatusFilter === 'CONFIRMED'
+                  ? 'bg-primary'
+                  : 'bg-gray-300 dark:bg-gray-600'
+              } relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary`}
+            >
+              <span
+                aria-hidden="true"
+                className={`${
+                  contributorStatusFilter === 'CONFIRMED' ? 'translate-x-3' : 'translate-x-0'
+                } pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out`}
+              />
+            </button>
+            <span className="text-gray-700 dark:text-gray-200 font-medium">
+              Confirmed gifts only
+            </span>
+          </div>
+
+          {contributorStatusFilter !== 'CONFIRMED' && (
+            <select
+              aria-label="Filter by gift lifecycle status"
+              value={contributorStatusFilter}
+              onChange={(e) =>
+                handleContributorLifecycleChange(e.target.value as ContributorLifecycleFilter)
+              }
+              className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2.5 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200"
+            >
+              <option value="ALL">All Lifecycle States</option>
+              <option value="RESERVED">Reserved Claims</option>
+              <option value="CANCELLED">Cancelled / Voided</option>
+              <option value="REFUNDED">Refunded</option>
+              <option value="CONFIRMED">Confirmed Only</option>
+            </select>
+          )}
+
+          {/* Status Filter Tabs */}
+          <SegmentedTabs
+            idPrefix="thank-you-status"
+            panelId="thank-you-notes-panel"
+            aria-label="Filter contributors by thank-you status"
+            size="sm"
+            value={statusFilter}
+            onChange={handleStatusFilterChange}
+            className="max-w-full"
+            tabs={[
+              { value: 'All', label: 'All', id: STATUS_TAB_IDS.All },
+              { value: 'Unsent', label: 'Unsent', id: STATUS_TAB_IDS.Unsent },
+              { value: 'Sent', label: 'Sent', id: STATUS_TAB_IDS.Sent },
+              { value: 'Not Needed', label: 'Not Needed', id: STATUS_TAB_IDS['Not Needed'] },
+            ]}
+          />
+        </div>
       </div>
 
       <SegmentedTabPanel
@@ -1426,7 +1778,9 @@ export default function ThankYouNotesPage() {
                                     handleUnlinkHousehold();
                                     return;
                                   }
-                                  const matched = invitationOptions.find((opt) => opt.id === nextId);
+                                  const matched = invitedHouseholdOptions.find(
+                                    (opt) => opt.id === nextId
+                                  );
                                   if (matched) {
                                     handleSelectHousehold(matched);
                                   } else {
@@ -1437,7 +1791,9 @@ export default function ThankYouNotesPage() {
                               >
                                 <option value="">No linked household</option>
                                 {item.invitationCode?.id &&
-                                  !invitationOptions.some((opt) => opt.id === item.invitationCode?.id) && (
+                                  !invitedHouseholdOptions.some(
+                                    (opt) => opt.id === item.invitationCode?.id
+                                  ) && (
                                   <option value={item.invitationCode.id}>
                                     {item.invitationCode.householdName ||
                                       item.invitationCode.guestName ||
@@ -1446,12 +1802,14 @@ export default function ThankYouNotesPage() {
                                 )}
                                 {editInvitationCodeId &&
                                   editInvitationCodeId !== item.invitationCode?.id &&
-                                  !invitationOptions.some((opt) => opt.id === editInvitationCodeId) && (
+                                  !invitedHouseholdOptions.some(
+                                    (opt) => opt.id === editInvitationCodeId
+                                  ) && (
                                   <option value={editInvitationCodeId}>
                                     {editLinkedHouseholdLabel || editInvitationCodeId}
                                   </option>
                                 )}
-                                {invitationOptions.map((inv) => (
+                                {invitedHouseholdOptions.map((inv) => (
                                   <option key={inv.id} value={inv.id}>
                                     {inv.householdName || inv.guestName} ({inv.code})
                                     {inv.addressLine1
@@ -1874,6 +2232,109 @@ export default function ThankYouNotesPage() {
           </div>
         )}
       </SegmentedTabPanel>
+
+      {/* Matched Address Submissions Review & Merge Modal */}
+      <Dialog
+        isOpen={isAddressMergeModalOpen}
+        onClose={() => {
+          if (!mergingSubmissionId && !isMergingAllMatches) {
+            setIsAddressMergeModalOpen(false);
+          }
+        }}
+        title="Review & Merge Matched Guest Addresses"
+        description="These /guest/collect address submissions matched existing invited households. Merging copies the submitted mailing address onto the invited household and removes the quarantined duplicate row."
+        className="max-w-2xl"
+      >
+        <div className="space-y-4">
+          {addressCollectionMatches.length === 0 ? (
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              All matched address submissions have been merged into invited households.
+            </p>
+          ) : (
+            <ul className="space-y-3 max-h-96 overflow-y-auto pr-1">
+              {addressCollectionMatches.map((match) => {
+                const submittedAddress = [
+                  match.submission.addressLine1,
+                  match.submission.addressLine2,
+                  match.submission.city,
+                  match.submission.state,
+                  match.submission.zipCode,
+                  match.submission.country,
+                ]
+                  .filter(Boolean)
+                  .join(', ');
+                const matchReasonLabel =
+                  match.matchedBy === 'email'
+                    ? 'Matched by Email'
+                    : match.matchedBy === 'name_household'
+                      ? 'Matched by Name & Household'
+                      : 'Matched by Guest Name';
+                const householdLabel =
+                  match.matchedHousehold.householdName || match.matchedHousehold.guestName;
+                const isRowMerging = mergingSubmissionId === match.submission.id;
+
+                return (
+                  <li
+                    key={match.submission.id}
+                    className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/80 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    <div className="space-y-1 text-xs">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-bold text-sm text-gray-900 dark:text-white">
+                          {match.submission.guestName}
+                        </span>
+                        <span className="text-gray-500 dark:text-gray-400">→</span>
+                        <span className="font-semibold text-sm text-primary dark:text-red-300">
+                          {householdLabel} ({match.matchedHousehold.code})
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200 font-medium text-[11px]">
+                          {matchReasonLabel}
+                        </span>
+                      </div>
+                      <div className="text-gray-700 dark:text-gray-300">
+                        📍 {submittedAddress || 'No street address entered'}
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="primary"
+                      data-testid={`thank-you-merge-match-${match.submission.id}`}
+                      disabled={Boolean(mergingSubmissionId) || isMergingAllMatches}
+                      onClick={() => void handleMergeAddressMatch(match)}
+                    >
+                      {isRowMerging ? 'Merging...' : 'Merge into Household'}
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={Boolean(mergingSubmissionId) || isMergingAllMatches}
+              onClick={() => setIsAddressMergeModalOpen(false)}
+            >
+              Close
+            </Button>
+            {addressCollectionMatches.length > 1 && (
+              <Button
+                type="button"
+                variant="primary"
+                disabled={Boolean(mergingSubmissionId) || isMergingAllMatches}
+                onClick={() => void handleMergeAllAddressMatches()}
+              >
+                {isMergingAllMatches
+                  ? 'Merging All...'
+                  : `Merge All (${addressCollectionMatches.length})`}
+              </Button>
+            )}
+          </div>
+        </div>
+      </Dialog>
 
       {/* Thank-You Email Composer Modal */}
       <Dialog
