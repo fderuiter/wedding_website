@@ -576,8 +576,9 @@ export function validateOperatorEnv(
   }
 
   const rawTrustProxy = getVal('TRUST_PROXY');
-  if (rawTrustProxy !== undefined && rawTrustProxy.trim() !== '') {
-    const normalizedTrustProxy = rawTrustProxy.trim().toLowerCase();
+  const trimmedTrustProxy = rawTrustProxy?.trim() ?? '';
+  if (trimmedTrustProxy !== '') {
+    const normalizedTrustProxy = trimmedTrustProxy.toLowerCase();
     if (
       normalizedTrustProxy !== 'true' &&
       normalizedTrustProxy !== 'false' &&
@@ -586,10 +587,51 @@ export function validateOperatorEnv(
       issues.push({
         key: 'TRUST_PROXY',
         rule: 'invalid-trust-proxy',
-        message: 'TRUST_PROXY must be "true", "false", or a non-negative integer hop count.',
-        remediation: 'Set TRUST_PROXY=true (when behind Caddy/Nginx) or TRUST_PROXY=false.',
+        message: 'TRUST_PROXY must be a non-negative integer hop count (0, 1, 2, ...) or "false" in local development.',
+        remediation: 'Set TRUST_PROXY=1 (single-hop Caddy/Nginx/Vercel/Railway/Render), TRUST_PROXY=2 (Cloud Run/CDN+LB), or TRUST_PROXY=0 (direct/L4 NLB).',
       });
     }
+  }
+
+  const hasPublicAllowedHost = Boolean(
+    rawAllowedHosts &&
+      rawAllowedHosts
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .some((entry) => {
+          const withoutPort = entry.startsWith('[')
+            ? entry.replace(/\]:\d+$/, ']')
+            : entry.replace(/:\d+$/, '');
+          const normalized = withoutPort.replace(/^(\*\.|\.)/, '').toLowerCase();
+          if (!normalized) return false;
+          if (
+            normalized === 'localhost' ||
+            normalized === '127.0.0.1' ||
+            normalized === '[::1]' ||
+            normalized === '0.0.0.0' ||
+            normalized.endsWith('.localhost')
+          ) {
+            return false;
+          }
+          return (normalized.startsWith('[') && normalized !== '[::1]') || normalized.includes('.');
+        })
+  );
+  const isE2EEnv = getVal('E2E_TEST')?.trim().toLowerCase() === 'true';
+  if (
+    effectiveMode === 'production' &&
+    !isE2EEnv &&
+    hasPublicAllowedHost &&
+    !/^\d+$/.test(trimmedTrustProxy)
+  ) {
+    issues.push({
+      key: 'TRUST_PROXY',
+      rule: 'ambiguous-production-trust-proxy',
+      message:
+        'TRUST_PROXY must be set to an explicit non-negative integer hop count (e.g., 0, 1, or 2) in production when ALLOWED_HOSTS includes non-local domains; omitted or boolean values are rejected.',
+      remediation:
+        'Set TRUST_PROXY=1 behind a single reverse proxy (Caddy/Nginx/Vercel/Railway/Render), TRUST_PROXY=2 behind a two-hop load balancer (Cloud Run/CDN+LB), or TRUST_PROXY=0 for direct/L4 connections.',
+    });
   }
 
   const rawHistoryLimit = normalizeOptional(getVal('HISTORY_VERSION_LIMIT'));

@@ -473,7 +473,7 @@ export function getClientIp(req: NextRequest): string {
 
   const hops = typeof trustProxy === 'number' ? Math.max(1, Math.trunc(trustProxy)) : 1;
 
-  // 2. Evaluate trusted hop in x-forwarded-for header from reverse proxy
+  // 2. Evaluate trusted hop from the right of x-forwarded-for from reverse proxy
   const rawForwarded = hasHeaderReader ? req.headers.get('x-forwarded-for') : null;
   if (rawForwarded) {
     const parts = rawForwarded
@@ -489,16 +489,7 @@ export function getClientIp(req: NextRequest): string {
     }
   }
 
-  // 3. Fallback: x-real-ip when x-forwarded-for is missing and proxy trust is enabled
-  const realIp = hasHeaderReader ? req.headers.get('x-real-ip') : null;
-  if (realIp) {
-    const sanitizedRealIp = sanitizeIpToken(realIp);
-    if (sanitizedRealIp) {
-      return sanitizedRealIp;
-    }
-  }
-
-  // 4. Fall back to verified socket IP or loopback IP when no valid forwarded address exists
+  // 3. Fall back directly to verified socket IP or loopback IP (ignoring single-address x-real-ip)
   return (hasHeaderReader ? readVerifiedSocketIp(req.headers) : null) ?? '127.0.0.1';
 }
 

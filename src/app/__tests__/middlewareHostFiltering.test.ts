@@ -64,20 +64,39 @@ describe('Perimeter Host Header Filtering Middleware', () => {
     expect(res.status).toBe(200);
   });
 
-  it('blocks requests with spoofed X-Forwarded-Host headers when TRUST_PROXY is enabled', async () => {
+  it('ignores unapproved X-Forwarded-Host headers and validates the effective Host when TRUST_PROXY is enabled', async () => {
     process.env.TRUST_PROXY = '1';
+    const { NextResponse } = await import('next/server');
 
-    const req = new NextRequest('http://localhost:3000/guest/login', {
+    // 1. Approved effective Host proceeds even if client injected an unapproved X-Forwarded-Host
+    const allowedEffectiveHostReq = new NextRequest('http://tenant1.wedding.example/guest/login', {
       headers: {
-        host: 'localhost:3000',
+        host: 'tenant1.wedding.example',
         'x-forwarded-host': 'malicious-domain.org',
       },
     });
+    const allowedRes = await middleware(allowedEffectiveHostReq);
+    expect(allowedRes.status).toBe(200);
+    if (jest.isMockFunction(NextResponse.next)) {
+      const forwardedInit = NextResponse.next.mock.calls.at(-1)?.[0] as
+        | { request?: { headers?: Headers } }
+        | undefined;
+      expect(forwardedInit?.request?.headers?.get('x-forwarded-host')).toBe(
+        'tenant1.wedding.example'
+      );
+    }
 
-    const res = await middleware(req);
-    expect(res.status).toBe(400);
+    // 2. Unapproved X-Forwarded-Host paired with unapproved upstream Host is blocked with HTTP 400
+    const unapprovedEffectiveHostReq = new NextRequest('http://lb.internal:3000/guest/login', {
+      headers: {
+        host: 'lb.internal:3000',
+        'x-forwarded-host': 'malicious-domain.org',
+      },
+    });
+    const blockedRes = await middleware(unapprovedEffectiveHostReq);
+    expect(blockedRes.status).toBe(400);
 
-    const body = await res.json();
+    const body = await blockedRes.json();
     expect(body).toEqual({ error: 'Invalid Host header' });
   });
 
@@ -117,17 +136,17 @@ describe('Perimeter Host Header Filtering Middleware', () => {
   });
 
   it('enforces ALLOWED_HOSTS checks on /api/registry/webhook/stripe, /api/cron/broadcasts, and /uploads/* before exclusions when TRUST_PROXY is enabled', async () => {
-    process.env.TRUST_PROXY = 'true';
+    process.env.TRUST_PROXY = '1';
 
     for (const targetPath of [
       '/api/registry/webhook/stripe',
       '/api/cron/broadcasts',
       '/uploads/photo.png',
     ]) {
-      const req = new NextRequest(`http://localhost:3000${targetPath}`, {
+      const req = new NextRequest(`http://lb.internal:3000${targetPath}`, {
         method: targetPath.includes('webhook') ? 'POST' : 'GET',
         headers: {
-          host: 'localhost:3000',
+          host: 'lb.internal:3000',
           'x-forwarded-host': 'spoofed-host.invalid',
         },
       });

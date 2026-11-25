@@ -99,9 +99,7 @@ export async function middleware(request: NextRequest) {
   const rawForwardedHost = request.headers.get('x-forwarded-host');
   const rawHost = request.headers.get('host');
   const hasMalformedForwardedHost =
-    rawForwardedHost !== null &&
-    (/[\r\n\x00-\x1f\x7f]/.test(rawForwardedHost) ||
-      (trustProxy && !rawForwardedHost.trim()));
+    rawForwardedHost !== null && /[\r\n\x00-\x1f\x7f]/.test(rawForwardedHost);
   const hasInvalidRawHost = rawHost !== null && !isHostSyntaxValid(rawHost);
   const host = resolveRequestHost(request.headers, request.nextUrl?.host);
 
@@ -311,6 +309,15 @@ export async function middleware(request: NextRequest) {
         requestHeaders.set(key, value);
       }
     });
+  }
+  if (!trustProxy) {
+    requestHeaders.delete('x-forwarded-host');
+  } else if (rawForwardedHost !== null && host) {
+    if (isHostAllowed(host)) {
+      requestHeaders.set('x-forwarded-host', host);
+    } else {
+      requestHeaders.delete('x-forwarded-host');
+    }
   }
   stripClientGuestHeaders(requestHeaders);
 

@@ -10,6 +10,7 @@ import {
 import {
   GUEST_COOKIE,
   isGuestRequest,
+  setGuestAuthCookie,
   signGuestToken,
 } from '@/core/auth/guest.server';
 import {
@@ -21,7 +22,9 @@ import {
 } from '@/core/auth/guestInviteToken';
 import {
   GUEST_PHOTO_COOKIE,
+  PHOTO_QR_QUERY_PARAM,
   getSignedPhotoUploadSession,
+  signPhotoQrLinkToken,
   signPhotoUploadSessionToken,
 } from '@/core/auth/photoUploadToken';
 import {
@@ -30,6 +33,7 @@ import {
   readRequestCookieCandidates,
   resolveSessionCookieName,
 } from '@/core/auth/tokenCookieHelpers';
+import { middleware } from '@/middleware';
 import { rateLimit, resetRateLimitsForTesting } from '@/utils/rateLimit';
 
 const ActualNextServer = jest.requireActual('next/server') as {
@@ -150,6 +154,93 @@ describe('__Host- session cookie security and multi-cookie HMAC verification', (
       expect(rawSetCookie).toContain('guest_invite_session=');
       expect(rawSetCookie).not.toContain('__Host-guest_invite_session=');
       expect(rawSetCookie).not.toMatch(/;\s*Secure(?:;|$)/i);
+    });
+
+    it('emits __Host- and Secure across all four session cookies over internal HTTP on approved non-local production hosts while keeping loopback unprefixed', async () => {
+      Object.defineProperty(process.env, 'NODE_ENV', {
+        value: 'production',
+        configurable: true,
+        writable: true,
+      });
+      process.env.TRUST_PROXY = '0';
+
+      // Internal HTTP between TLS-terminating L4/L7 ingress and container on approved public Host
+      const internalHttpPublicReq = new NextRequest('http://wedding.example/api/guest/login', {
+        method: 'POST',
+        headers: {
+          host: 'wedding.example',
+        },
+      });
+
+      expect(resolveSessionCookieName(ADMIN_COOKIE, internalHttpPublicReq)).toBe('__Host-admin_auth');
+      expect(resolveSessionCookieName(GUEST_COOKIE, internalHttpPublicReq)).toBe('__Host-guest_auth');
+      expect(resolveSessionCookieName(GUEST_INVITE_COOKIE, internalHttpPublicReq)).toBe(
+        '__Host-guest_invite_session'
+      );
+      expect(resolveSessionCookieName(GUEST_PHOTO_COOKIE, internalHttpPublicReq)).toBe(
+        '__Host-guest_photo_session'
+      );
+      expect(getSessionCookieOptions(3600, internalHttpPublicReq).secure).toBe(true);
+
+      // 1. admin_auth
+      const adminToken = await signAdminToken({ isAdmin: true });
+      const adminRes = ActualNextServer.NextResponse.json({ ok: true });
+      setAdminAuthCookie(adminRes, adminToken, undefined, internalHttpPublicReq);
+      expect(adminRes.headers.get('set-cookie')).toMatch(/__Host-admin_auth=.*;\s*Secure/i);
+
+      // 2. guest_auth
+      const guestToken = await signGuestToken({ guest: true });
+      const guestRes = ActualNextServer.NextResponse.json({ ok: true });
+      setGuestAuthCookie(guestRes, guestToken, internalHttpPublicReq);
+      expect(guestRes.headers.get('set-cookie')).toMatch(/__Host-guest_auth=.*;\s*Secure/i);
+
+      // 3. guest_invite_session
+      const inviteToken = await signGuestInviteSessionToken({
+        code: 'HTTPPROXY1',
+        guestName: 'Taylor Brooks',
+      });
+      const inviteRes = ActualNextServer.NextResponse.json({ ok: true });
+      setGuestInviteSessionCookie(inviteRes, inviteToken, internalHttpPublicReq);
+      expect(inviteRes.headers.get('set-cookie')).toMatch(
+        /__Host-guest_invite_session=.*;\s*Secure/i
+      );
+
+      // 4. guest_photo_session via middleware QR token exchange over internal HTTP
+      const qrToken = await signPhotoQrLinkToken({ v: 1 });
+      const qrExchangeReq = new NextRequest(
+        `http://wedding.example/photos?${PHOTO_QR_QUERY_PARAM}=${encodeURIComponent(qrToken)}`,
+        {
+          method: 'GET',
+          headers: {
+            host: 'wedding.example',
+          },
+        }
+      );
+      const qrRes = await middleware(qrExchangeReq);
+      expect(qrRes.status).toBe(303);
+      expect(qrRes.headers.get('set-cookie') || '').toMatch(
+        /__Host-guest_photo_session=.*;\s*Secure/i
+      );
+
+      // Loopback and *.localhost remain unprefixed without Secure even when SITE_BASE_URL is https://
+      process.env.SITE_BASE_URL = 'https://wedding.example';
+      for (const localUrl of [
+        'http://localhost:3000/api/guest/login',
+        'http://127.0.0.1:3000/api/guest/login',
+        'http://[::1]:3000/api/guest/login',
+        'http://smiths.localhost:3000/api/guest/login',
+      ]) {
+        const parsed = new URL(localUrl);
+        const localReq = new NextRequest(localUrl, {
+          method: 'POST',
+          headers: {
+            host: parsed.host,
+          },
+        });
+        expect(resolveSessionCookieName(GUEST_COOKIE, localReq)).toBe('guest_auth');
+        expect(getSessionCookieOptions(3600, localReq).secure).toBe(false);
+      }
+      delete process.env.SITE_BASE_URL;
     });
 
     it('clears both __Host- and stale unprefixed cookies when logging out over HTTPS in production', () => {

@@ -785,14 +785,19 @@ export function extractEnvSchemaSpecs(fileContent: string): Map<string, EnvField
         const existing = specs.get(targetKey);
         if (!existing) continue;
 
-        if (nextProdGuard) {
+        const referencesOtherDataField = new RegExp(
+          `\\bdata\\.(?!(?:NODE_ENV|${escapeRegex(targetKey)})\\b)[A-Za-z_][A-Za-z0-9_]*\\b`
+        ).test(nextIfCond);
+
+        if (nextProdGuard && !referencesOtherDataField) {
           existing.classification = upgradeClassification(existing.classification, 'production-required');
         } else if (
-          /\bis required when\b/i.test(messageText) ||
-          /\bincomplete\b/i.test(messageText) ||
-          (/\bpresent\w*\.length\s*>\s*0/.test(nextIfCond) && /\bpresent\w*\.length\s*</.test(nextIfCond)) ||
-          (new RegExp(`!data\\.${escapeRegex(targetKey)}\\b`).test(nextIfCond) &&
-            new RegExp(`\\bdata\\.(?!${escapeRegex(targetKey)}\\b)[A-Za-z_][A-Za-z0-9_]*\\b`).test(nextIfCond))
+          !nextProdGuard &&
+          (/\bis required when\b/i.test(messageText) ||
+            /\bincomplete\b/i.test(messageText) ||
+            (/\bpresent\w*\.length\s*>\s*0/.test(nextIfCond) && /\bpresent\w*\.length\s*</.test(nextIfCond)) ||
+            (new RegExp(`!data\\.${escapeRegex(targetKey)}\\b`).test(nextIfCond) &&
+              new RegExp(`\\bdata\\.(?!${escapeRegex(targetKey)}\\b)[A-Za-z_][A-Za-z0-9_]*\\b`).test(nextIfCond)))
         ) {
           existing.classification = upgradeClassification(existing.classification, 'conditional');
         }

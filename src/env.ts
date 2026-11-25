@@ -98,20 +98,55 @@ function normalizeOptionalEnv(val: string | undefined): string | undefined {
   return unquoted.length > 0 ? unquoted : undefined;
 }
 
+function isExplicitTrustProxyHopCount(val: unknown): boolean {
+  if (typeof val === 'number') {
+    return Number.isInteger(val) && val >= 0;
+  }
+  if (typeof val === 'string') {
+    const trimmed = stripEnvQuotes(val).trim();
+    return /^\d+$/.test(trimmed);
+  }
+  return false;
+}
+
+function hasNonLocalAllowedHosts(allowedHostsRaw: string | undefined): boolean {
+  if (!allowedHostsRaw) return false;
+  const entries = stripEnvQuotes(allowedHostsRaw)
+    .split(',')
+    .map(entry => entry.trim())
+    .filter(Boolean);
+  return entries.some(entry => {
+    const withoutPort = entry.startsWith('[')
+      ? entry.replace(/\]:\d+$/, ']')
+      : entry.replace(/:\d+$/, '');
+    const normalized = withoutPort.replace(/^(\*\.|\.)/, '').toLowerCase();
+    if (!normalized) return false;
+    if (
+      normalized === 'localhost' ||
+      normalized === '127.0.0.1' ||
+      normalized === '[::1]' ||
+      normalized === '0.0.0.0' ||
+      normalized.endsWith('.localhost')
+    ) {
+      return false;
+    }
+    return (normalized.startsWith('[') && normalized !== '[::1]') || normalized.includes('.');
+  });
+}
+
 function parseTrustProxy(val: unknown): boolean | number {
   if (val === undefined || val === null || val === '') return false;
   if (typeof val === 'boolean') return val;
   if (typeof val === 'number') {
     if (!Number.isInteger(val) || val < 0) return false;
-    return val === 0 ? false : val;
+    return val;
   }
   if (typeof val === 'string') {
     const trimmed = stripEnvQuotes(val).toLowerCase();
-    if (trimmed === '' || trimmed === 'false' || trimmed === '0') return false;
+    if (trimmed === '' || trimmed === 'false') return false;
     if (trimmed === 'true') return true;
     if (/^\d+$/.test(trimmed)) {
-      const hops = parseInt(trimmed, 10);
-      return hops > 0 ? hops : false;
+      return parseInt(trimmed, 10);
     }
   }
   return false;
@@ -224,6 +259,18 @@ const envSchema = z.object({
   if (data.NODE_ENV === 'production' && !isBuildTime) {
     const isE2ETestMode = process.env.E2E_TEST === 'true';
     const trimmedAdminHash = data.ADMIN_PASSWORD?.trim() ?? '';
+    if (
+      !isE2ETestMode &&
+      hasNonLocalAllowedHosts(data.ALLOWED_HOSTS) &&
+      typeof data.TRUST_PROXY !== 'number'
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['TRUST_PROXY'],
+        message:
+          'TRUST_PROXY must be set to an explicit non-negative integer hop count (e.g., 0, 1, or 2) in production when ALLOWED_HOSTS includes non-local domains',
+      });
+    }
     if (
       ALWAYS_BLOCKED_PROD_ADMIN_HASHES.has(trimmedAdminHash) ||
       (!isE2ETestMode && E2E_FALLBACK_ADMIN_HASHES.has(trimmedAdminHash))
@@ -427,6 +474,19 @@ if (process.env.NODE_ENV === 'production' && !isBuildTime && process.env.NEXT_RU
   if (normalizedGuestSessionSecret === trimmedGuestPasscode) {
     console.error('❌ Security Error: GUEST_SESSION_SECRET must not match GUEST_PASSCODE.');
     throw new Error('GUEST_SESSION_SECRET must not match GUEST_PASSCODE.');
+  }
+  const bootAllowedHosts = normalizeOptionalEnv(process.env.ALLOWED_HOSTS);
+  if (
+    !isE2ETestMode &&
+    hasNonLocalAllowedHosts(bootAllowedHosts) &&
+    !isExplicitTrustProxyHopCount(process.env.TRUST_PROXY)
+  ) {
+    console.error(
+      '❌ Security Error: TRUST_PROXY must be set to an explicit non-negative integer hop count (e.g., 0, 1, or 2) in production when ALLOWED_HOSTS includes non-local domains.'
+    );
+    throw new Error(
+      'TRUST_PROXY must be set to an explicit non-negative integer hop count (e.g., 0, 1, or 2) in production when ALLOWED_HOSTS includes non-local domains.'
+    );
   }
 }
 

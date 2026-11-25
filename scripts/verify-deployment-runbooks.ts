@@ -1602,17 +1602,17 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       'docker-compose.yml: `app` service must restrict default `ALLOWED_HOSTS` to `localhost,127.0.0.1,*.localhost`'
     );
   }
-  if (composeContract.appEnvMap.get('TRUST_PROXY') !== '${TRUST_PROXY:-1}') {
+  if (composeContract.appEnvMap.get('TRUST_PROXY') !== '${TRUST_PROXY:-false}') {
     errors.push(
-      'docker-compose.yml: `app` service must set `TRUST_PROXY: ${TRUST_PROXY:-1}` by default'
+      'docker-compose.yml: `app` service must set `TRUST_PROXY: ${TRUST_PROXY:-false}` by default'
     );
   }
   const rolloutComposePath = path.join(repoRoot, 'docker-compose.rollout.yml');
   if (fs.existsSync(rolloutComposePath)) {
     const rolloutComposeRaw = fs.readFileSync(rolloutComposePath, 'utf8');
-    if (!/^\s*TRUST_PROXY:\s*\$\{TRUST_PROXY:-1\}\s*(?:#.*)?$/m.test(rolloutComposeRaw)) {
+    if (!/^\s*TRUST_PROXY:\s*\$\{TRUST_PROXY:-false\}\s*(?:#.*)?$/m.test(rolloutComposeRaw)) {
       errors.push(
-        'docker-compose.rollout.yml: `app-standby` service must set `TRUST_PROXY: ${TRUST_PROXY:-1}` by default'
+        'docker-compose.rollout.yml: `app-standby` service must set `TRUST_PROXY: ${TRUST_PROXY:-false}` by default'
       );
     }
     if (

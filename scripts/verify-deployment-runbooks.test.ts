@@ -716,7 +716,7 @@ describe('verify-deployment-runbooks', () => {
     );
   });
 
-  it('rejects gcloud run deploy commands missing TRUST_PROXY=2 and Compose manifests missing TRUST_PROXY: ${TRUST_PROXY:-1}', () => {
+  it('rejects gcloud run deploy commands missing TRUST_PROXY=2 and Compose manifests missing TRUST_PROXY: ${TRUST_PROXY:-false}', () => {
     const gcpPath = path.join(tempDir, 'docs/deployment/gcp-cloud-run.md');
     fs.writeFileSync(
       gcpPath,
@@ -726,21 +726,21 @@ describe('verify-deployment-runbooks', () => {
     const composePath = path.join(tempDir, 'docker-compose.yml');
     fs.writeFileSync(
       composePath,
-      fs.readFileSync(composePath, 'utf8').replace('TRUST_PROXY: ${TRUST_PROXY:-1}', 'TRUST_PROXY: ${TRUST_PROXY:-false}')
+      fs.readFileSync(composePath, 'utf8').replace('TRUST_PROXY: ${TRUST_PROXY:-false}', 'TRUST_PROXY: ${TRUST_PROXY:-1}')
     );
 
     const rolloutComposePath = path.join(tempDir, 'docker-compose.rollout.yml');
     fs.writeFileSync(
       rolloutComposePath,
-      fs.readFileSync(rolloutComposePath, 'utf8').replace('TRUST_PROXY: ${TRUST_PROXY:-1}', 'TRUST_PROXY: ${TRUST_PROXY:-false}')
+      fs.readFileSync(rolloutComposePath, 'utf8').replace('TRUST_PROXY: ${TRUST_PROXY:-false}', 'TRUST_PROXY: ${TRUST_PROXY:-1}')
     );
 
     const errors = verifyDeploymentRunbooks(tempDir);
     expect(errors).toEqual(
       expect.arrayContaining([
         expect.stringContaining('docs/deployment/gcp-cloud-run.md: Manual `gcloud run deploy` command must set TRUST_PROXY=2'),
-        expect.stringContaining('docker-compose.yml: `app` service must set `TRUST_PROXY: ${TRUST_PROXY:-1}` by default'),
-        expect.stringContaining('docker-compose.rollout.yml: `app-standby` service must set `TRUST_PROXY: ${TRUST_PROXY:-1}` by default'),
+        expect.stringContaining('docker-compose.yml: `app` service must set `TRUST_PROXY: ${TRUST_PROXY:-false}` by default'),
+        expect.stringContaining('docker-compose.rollout.yml: `app-standby` service must set `TRUST_PROXY: ${TRUST_PROXY:-false}` by default'),
       ])
     );
   });
