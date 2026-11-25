@@ -60,12 +60,12 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   }
 
   const {
-    itemId, name, email, amount, code, message, coverFee, paymentIntentId,
+    itemId, name, email, amount, code: _ignoredClientCode, message, coverFee, paymentIntentId,
     retailerOrderNumber, carrier, trackingNumber,
   } = parseResult.data;
 
   const targetItemSettledPromise = settle(() => registryService.getItemById(itemId));
-  const guestSessionSettledPromise = !code ? settle(() => getGuestInviteSession(request)) : null;
+  const guestSessionSettledPromise = settle(() => getGuestInviteSession(request));
 
   let hasStripeConfigError = false;
   let stripeConfigError: unknown = null;
@@ -111,15 +111,24 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     );
   }
 
-  let finalCode = code;
-  if (!finalCode && guestSessionSettledPromise) {
-    const sessionSettled = await guestSessionSettledPromise;
-    if (sessionSettled.status === 'rejected') {
-      throw sessionSettled.reason;
-    }
-    if (sessionSettled.value?.code) {
-      finalCode = sessionSettled.value.code;
-    }
+  const [sessionSettled, isAdminSettled] = await Promise.all([
+    guestSessionSettledPromise,
+    isAdminSettledPromise,
+  ]);
+  if (sessionSettled.status === 'rejected') {
+    throw sessionSettled.reason;
+  }
+  if (isAdminSettled.status === 'rejected') {
+    throw isAdminSettled.reason;
+  }
+  const finalCode = sessionSettled.value?.code;
+  const isAdmin = isAdminSettled.value;
+
+  if (!paymentIntentId && !finalCode && !isAdmin) {
+    throw new ApiError(
+      403,
+      'Please verify your household invitation code before claiming a gift or recording a direct transfer.'
+    );
   }
 
   const effectiveCoverFee = isPayableGroupGift && !paymentIntentId ? false : Boolean(coverFee);
@@ -181,15 +190,11 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
       config,
       requestUrl: request.url,
       isReservation: !stripePaymentIntentId,
+      verifiedInvitationCode: finalCode,
     },
     { mode: 'after' }
   );
 
-  const isAdminSettled = await isAdminSettledPromise;
-  if (isAdminSettled.status === 'rejected') {
-    throw isAdminSettled.reason;
-  }
-  const isAdmin = isAdminSettled.value;
   let claimActions: GuestClaimActions | undefined;
   if (!isAdmin && !stripePaymentIntentId) {
     const previousIds = new Set(
@@ -228,4 +233,4 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   }
 
   return NextResponse.json(projectViewerRegistryItem(updatedItem, isAdmin, claimActions));
-});
+}, { limit: 20, windowMs: 60 * 1000, keyPrefix: 'registry-contribute' });

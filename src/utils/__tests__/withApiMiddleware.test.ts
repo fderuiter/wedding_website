@@ -569,6 +569,8 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
       });
       const guestRes = await middleware(guestReq, {});
       expect(guestRes.status).toBe(200);
+      expect(guestRes.headers.get('set-cookie') || '').toContain(`${GUEST_INVITE_COOKIE}=`);
+      expect(guestRes.headers.get('set-cookie') || '').toContain('Max-Age=0');
 
       const adminReq = new NextRequest('http://localhost/api/photos', {
         headers: {
@@ -577,7 +579,64 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
       });
       const adminRes = await middleware(adminReq, {});
       expect(adminRes.status).toBe(200);
+      expect(adminRes.headers.get('set-cookie') || '').toContain(`${GUEST_INVITE_COOKIE}=`);
+      expect(adminRes.headers.get('set-cookie') || '').toContain('Max-Age=0');
       expect(handler).toHaveBeenCalledTimes(2);
+
+      // Also clears revoked invite cookie on 4xx ApiError and non-JSON responses when fallback auth is valid
+      const errorMiddleware = withApiMiddleware(() => {
+        throw new ApiError(403, 'Invitation session required');
+      });
+      const errRes = await errorMiddleware(
+        new NextRequest('http://localhost/api/registry/contribute', {
+          method: 'POST',
+          headers: {
+            cookie: `${GUEST_INVITE_COOKIE}=${revokedToken}; ${GUEST_COOKIE}=${guestToken}`,
+          },
+        }),
+        {}
+      );
+      expect(errRes.status).toBe(403);
+      expect(errRes.headers.get('set-cookie') || '').toContain(`${GUEST_INVITE_COOKIE}=`);
+      expect(errRes.headers.get('set-cookie') || '').toContain('Max-Age=0');
+
+      const csvMiddleware = withApiMiddleware(async () =>
+        new Response('id,name\n1,Test', {
+          status: 200,
+          headers: { 'content-type': 'text/csv' },
+        })
+      );
+      const csvRes = await csvMiddleware(
+        new NextRequest('http://localhost/api/rsvp/export', {
+          headers: {
+            cookie: `${GUEST_INVITE_COOKIE}=${revokedToken}; ${GUEST_COOKIE}=${guestToken}`,
+          },
+        }),
+        {}
+      );
+      expect(csvRes.status).toBe(200);
+      expect(csvRes.headers.get('set-cookie') || '').toContain(`${GUEST_INVITE_COOKIE}=`);
+      expect(csvRes.headers.get('set-cookie') || '').toContain('Max-Age=0');
+
+      // Also expires __Host-guest_invite_session on HTTPS production requests
+      const prevNodeEnv = process.env.NODE_ENV;
+      (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+      try {
+        const httpsCsvRes = await csvMiddleware(
+          new NextRequest('https://wedding.example.com/api/rsvp/export', {
+            headers: {
+              cookie: `__Host-${GUEST_INVITE_COOKIE}=${revokedToken}; __Host-${GUEST_COOKIE}=${guestToken}`,
+            },
+          }),
+          {}
+        );
+        expect(httpsCsvRes.status).toBe(200);
+        const httpsSetCookie = httpsCsvRes.headers.get('set-cookie') || '';
+        expect(httpsSetCookie).toContain(`__Host-${GUEST_INVITE_COOKIE}=`);
+        expect(httpsSetCookie).toContain('Max-Age=0');
+      } finally {
+        (process.env as Record<string, string | undefined>).NODE_ENV = prevNodeEnv;
+      }
     });
 
     test('exempts /api/registry/session from 401 middleware block so session route can return isVerified: false', async () => {

@@ -7,6 +7,7 @@ import { signContributorActionToken } from './lib/contributorToken';
 import { registryRepository } from './repository';
 import { registryService } from './service';
 import type { IRegistryRepository } from './types';
+import { hasAddressCollectionTag } from './utils/invitation';
 import { getPaymentUrl, resolveEffectivePaymentHandle } from './utils/paymentUrls';
 
 const VALID_EMAIL_SCHEMA = z.email();
@@ -29,6 +30,14 @@ interface ContributorCandidate {
   retailerOrderNumber?: string | null;
   carrier?: string | null;
   trackingNumber?: string | null;
+  invitationCodeId?: string | null;
+  invitationCode?: {
+    id?: string;
+    code?: string;
+    email?: string | null;
+    isSample?: boolean;
+    partyTags?: unknown;
+  } | null;
 }
 
 interface ItemSnapshot {
@@ -66,6 +75,7 @@ interface DispatchContributionNotificationsParams {
   requestUrl?: string;
   repository?: IRegistryRepository;
   isReservation?: boolean;
+  verifiedInvitationCode?: string | null;
 }
 
 function isEmailProviderConfigured(config: Record<string, any> | null | undefined): boolean {
@@ -297,6 +307,57 @@ async function releaseSendTimestamp(
   }
 }
 
+async function resolveVerifiedReservationHouseholdEmail(params: {
+  savedContributor: ContributorCandidate;
+  verifiedInvitationCode?: string | null;
+  dbClient: any;
+}): Promise<string | null> {
+  const { savedContributor, verifiedInvitationCode, dbClient } = params;
+
+  const embeddedInvite = savedContributor.invitationCode;
+  if (
+    embeddedInvite &&
+    !embeddedInvite.isSample &&
+    !hasAddressCollectionTag(embeddedInvite.partyTags) &&
+    !(
+      typeof (embeddedInvite as { source?: unknown }).source === 'string' &&
+      ((embeddedInvite as { source: string }).source.trim().toLowerCase() === 'address-collection')
+    )
+  ) {
+    const embeddedEmail =
+      typeof embeddedInvite.email === 'string' ? embeddedInvite.email.trim() : '';
+    return isValidEmail(embeddedEmail) ? embeddedEmail : null;
+  }
+
+  if (typeof dbClient?.invitationCode?.findUnique !== 'function') {
+    return null;
+  }
+
+  let inviteRecord: any = null;
+  if (savedContributor.invitationCodeId) {
+    inviteRecord = await dbClient.invitationCode.findUnique({
+      where: { id: savedContributor.invitationCodeId },
+    });
+  } else if (verifiedInvitationCode && verifiedInvitationCode.trim()) {
+    inviteRecord = await dbClient.invitationCode.findUnique({
+      where: { code: verifiedInvitationCode.trim().toUpperCase(), isSample: false },
+    });
+  }
+
+  if (
+    !inviteRecord ||
+    inviteRecord.isSample ||
+    hasAddressCollectionTag(inviteRecord.partyTags) ||
+    (typeof inviteRecord.source === 'string' &&
+      inviteRecord.source.trim().toLowerCase() === 'address-collection')
+  ) {
+    return null;
+  }
+
+  const householdEmail = typeof inviteRecord.email === 'string' ? inviteRecord.email.trim() : '';
+  return isValidEmail(householdEmail) ? householdEmail : null;
+}
+
 function buildGuestConfirmationEmail(options: {
   contributorName: string;
   itemName: string;
@@ -483,6 +544,7 @@ function buildCoupleAlertEmail(options: {
   carrier?: string | null;
   trackingNumber?: string | null;
   dashboardUrl: string;
+  isReserved?: boolean;
   escapeHtmlEntities: (text: string) => string;
   sanitizeEmailSubject: (subject: string) => string;
 }): { subject: string; body: string } {
@@ -498,11 +560,16 @@ function buildCoupleAlertEmail(options: {
     carrier,
     trackingNumber,
     dashboardUrl,
+    isReserved = false,
     escapeHtmlEntities,
     sanitizeEmailSubject,
   } = options;
 
-  const subject = sanitizeEmailSubject(`New Registry Gift: ${itemName} from ${contributorName}`);
+  const subject = sanitizeEmailSubject(
+    isReserved
+      ? `New Registry Reservation: ${itemName} from ${contributorName}`
+      : `New Registry Gift: ${itemName} from ${contributorName}`
+  );
   const safeContributorName = escapeHtmlEntities(contributorName || 'Anonymous Guest');
   const safeItemName = escapeHtmlEntities(itemName);
   const safePaymentType = escapeHtmlEntities(paymentTypeLabel);
@@ -552,9 +619,15 @@ function buildCoupleAlertEmail(options: {
 
   const body = `
     <div style="font-family:system-ui,-apple-system,sans-serif;max-width:600px;margin:0 auto;color:#1f2937;line-height:1.5;">
-      <h2 style="margin:0 0 12px 0;color:#111827;">New Registry Contribution Recorded</h2>
+      <h2 style="margin:0 0 12px 0;color:#111827;">${
+        isReserved ? 'New Registry Reservation Recorded' : 'New Registry Contribution Recorded'
+      }</h2>
       <p style="margin:0 0 16px 0;">
-        <strong>${safeContributorName}</strong> recorded a gift on your wedding registry.
+        <strong>${safeContributorName}</strong> ${
+          isReserved
+            ? 'reserved a gift on your wedding registry (awaiting external purchase or transfer confirmation).'
+            : 'recorded a gift on your wedding registry.'
+        }
       </p>
       <table style="width:100%;border-collapse:collapse;margin:16px 0;background-color:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;">
         <tbody>
@@ -691,9 +764,33 @@ export async function dispatchContributionNotifications(
       (typeof savedContributor.status === 'string' &&
         savedContributor.status.toUpperCase() === 'RESERVED');
 
+    let recipientGuestEmail = guestEmailRaw;
+    let canSendGuestConfirmation = hasValidGuestEmail;
+    if (isReserved) {
+      const verifiedHouseholdEmail = await resolveVerifiedReservationHouseholdEmail({
+        savedContributor,
+        verifiedInvitationCode: params.verifiedInvitationCode,
+        dbClient,
+      });
+      if (
+        !verifiedHouseholdEmail ||
+        (hasValidGuestEmail &&
+          verifiedHouseholdEmail.toLowerCase() !== guestEmailRaw.toLowerCase())
+      ) {
+        canSendGuestConfirmation = false;
+      } else {
+        recipientGuestEmail = verifiedHouseholdEmail;
+        canSendGuestConfirmation = true;
+      }
+    }
+
+    if (!canSendGuestConfirmation && !hasValidCoupleEmail) {
+      return;
+    }
+
     let confirmActionUrl: string | undefined;
     let cancelActionUrl: string | undefined;
-    if (isReserved && savedContributor.id) {
+    if (canSendGuestConfirmation && isReserved && savedContributor.id) {
       try {
         const [confirmToken, cancelToken] = await Promise.all([
           signContributorActionToken({
@@ -719,6 +816,7 @@ export async function dispatchContributionNotifications(
 
     const sensitiveLiterals = [
       guestEmailRaw,
+      recipientGuestEmail,
       coupleEmailRaw,
       contributorName,
       guestMessage,
@@ -735,7 +833,7 @@ export async function dispatchContributionNotifications(
 
     const emailBranches: Array<Promise<void>> = [];
 
-    if (hasValidGuestEmail) {
+    if (canSendGuestConfirmation) {
       emailBranches.push(
         (async () => {
           let claimedGuestEmail = false;
@@ -768,7 +866,7 @@ export async function dispatchContributionNotifications(
                 sanitizeEmailSubject,
               });
               const result = await messagingProvider.sendEmail({
-                to: guestEmailRaw,
+                to: recipientGuestEmail,
                 subject,
                 body,
                 isHtml: true,
@@ -801,7 +899,7 @@ export async function dispatchContributionNotifications(
       );
     }
 
-    if (hasValidCoupleEmail && !isReserved) {
+    if (hasValidCoupleEmail) {
       emailBranches.push(
         (async () => {
           let claimedAlertEmail = false;
@@ -823,6 +921,9 @@ export async function dispatchContributionNotifications(
               } else if (isGroupGift) {
                 paymentTypeLabel = 'Group Gift Contribution';
               }
+              if (isReserved && !stripePaymentIntentId) {
+                paymentTypeLabel = `${paymentTypeLabel} (Reserved)`;
+              }
 
               const { subject, body } = buildCoupleAlertEmail({
                 contributorName,
@@ -836,6 +937,7 @@ export async function dispatchContributionNotifications(
                 carrier,
                 trackingNumber,
                 dashboardUrl,
+                isReserved,
                 escapeHtmlEntities,
                 sanitizeEmailSubject,
               });

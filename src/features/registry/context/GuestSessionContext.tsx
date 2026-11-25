@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '@/lib/apiClient';
 import { useOptionalToast } from '@/components/ui/ToastProvider';
-import { notifyGuestSessionChanged } from '@/utils/guestSessionEvents';
+import { notifyGuestSessionChanged, subscribeGuestSessionChanged } from '@/utils/guestSessionEvents';
 import { SessionRecoveryModal } from '../components/SessionRecoveryModal';
 
 type GuestSessionStatus = 'authenticated' | 'unauthenticated' | 'expired' | 'error';
@@ -69,6 +69,16 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
     isRecoveryModalOpen: false,
   });
 
+  const isInternalSessionEmitRef = useRef(false);
+  const emitSessionChanged = useCallback(() => {
+    isInternalSessionEmitRef.current = true;
+    try {
+      notifyGuestSessionChanged();
+    } finally {
+      isInternalSessionEmitRef.current = false;
+    }
+  }, []);
+
   const openRecoveryModal = useCallback(() => {
     setSessionState(prev => ({ ...prev, isRecoveryModalOpen: true }));
   }, []);
@@ -77,29 +87,69 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
     setSessionState(prev => ({ ...prev, isRecoveryModalOpen: false }));
   }, []);
 
-  const refreshSession = useCallback(async () => {
-    try {
-      const data = await apiClient.get('/api/registry/session');
-      if (data && (data.isVerified || data.invitationCode || data.code)) {
-        const code = data.invitationCode || data.code || '';
-        const name = data.guestName || '';
-        const sessionEmail =
-          typeof data.email === 'string' && data.email.trim().length > 0
-            ? data.email.trim()
-            : null;
-        setSessionState(prev => ({
-          ...prev,
-          invitationCode: code,
-          guestName: name,
-          email: sessionEmail,
-          isVerified: true,
-          isLoading: false,
-          status: 'authenticated',
-          lastErrorCode: null,
-          draftInvitationCode: code || prev.draftInvitationCode || prev.invitationCode,
-          isRecoveryModalOpen: false,
-        }));
-      } else {
+  const fetchAndApplySession = useCallback(
+    async (options?: { preserveExpiryPrompt?: boolean }) => {
+      const preserveExpiryPrompt = options?.preserveExpiryPrompt ?? true;
+      try {
+        const data = await apiClient.get('/api/registry/session');
+        if (data && (data.isVerified || data.invitationCode || data.code)) {
+          const code = data.invitationCode || data.code || '';
+          const name = data.guestName || '';
+          const sessionEmail =
+            typeof data.email === 'string' && data.email.trim().length > 0
+              ? data.email.trim()
+              : null;
+          setSessionState(prev => ({
+            ...prev,
+            invitationCode: code,
+            guestName: name,
+            email: sessionEmail,
+            isVerified: true,
+            isLoading: false,
+            status: 'authenticated',
+            lastErrorCode: null,
+            draftInvitationCode: code || prev.draftInvitationCode || prev.invitationCode,
+            isRecoveryModalOpen: false,
+          }));
+        } else {
+          setSessionState(prev => {
+            const wasAuth =
+              prev.isVerified ||
+              prev.status === 'authenticated' ||
+              Boolean(prev.invitationCode || prev.draftInvitationCode);
+            const draftCode = prev.invitationCode || prev.draftInvitationCode || '';
+            const currentName = prev.guestName || '';
+
+            if (wasAuth && preserveExpiryPrompt) {
+              return {
+                ...prev,
+                invitationCode: draftCode,
+                guestName: currentName,
+                isVerified: false,
+                isLoading: false,
+                status: 'expired',
+                lastErrorCode: 'SESSION_EXPIRED',
+                draftInvitationCode: draftCode,
+                isRecoveryModalOpen: true,
+              };
+            } else {
+              return {
+                ...prev,
+                invitationCode: '',
+                guestName: '',
+                email: null,
+                isVerified: false,
+                isLoading: false,
+                status: 'unauthenticated',
+                lastErrorCode: null,
+                draftInvitationCode: '',
+                isRecoveryModalOpen: false,
+              };
+            }
+          });
+        }
+      } catch (err: unknown) {
+        const errorCode = err instanceof Error ? err.message : 'NETWORK_ERROR';
         setSessionState(prev => {
           const wasAuth =
             prev.isVerified ||
@@ -108,7 +158,7 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
           const draftCode = prev.invitationCode || prev.draftInvitationCode || '';
           const currentName = prev.guestName || '';
 
-          if (wasAuth) {
+          if (wasAuth && preserveExpiryPrompt) {
             return {
               ...prev,
               invitationCode: draftCode,
@@ -116,7 +166,7 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
               isVerified: false,
               isLoading: false,
               status: 'expired',
-              lastErrorCode: 'SESSION_EXPIRED',
+              lastErrorCode: errorCode,
               draftInvitationCode: draftCode,
               isRecoveryModalOpen: true,
             };
@@ -128,57 +178,38 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
               email: null,
               isVerified: false,
               isLoading: false,
-              status: 'unauthenticated',
-              lastErrorCode: null,
+              status: 'error',
+              lastErrorCode: errorCode,
               draftInvitationCode: '',
               isRecoveryModalOpen: false,
             };
           }
         });
       }
-    } catch (err: unknown) {
-      const errorCode = err instanceof Error ? err.message : 'NETWORK_ERROR';
-      setSessionState(prev => {
-        const wasAuth =
-          prev.isVerified ||
-          prev.status === 'authenticated' ||
-          Boolean(prev.invitationCode || prev.draftInvitationCode);
-        const draftCode = prev.invitationCode || prev.draftInvitationCode || '';
-        const currentName = prev.guestName || '';
+    },
+    []
+  );
 
-        if (wasAuth) {
-          return {
-            ...prev,
-            invitationCode: draftCode,
-            guestName: currentName,
-            isVerified: false,
-            isLoading: false,
-            status: 'expired',
-            lastErrorCode: errorCode,
-            draftInvitationCode: draftCode,
-            isRecoveryModalOpen: true,
-          };
-        } else {
-          return {
-            ...prev,
-            invitationCode: '',
-            guestName: '',
-            email: null,
-            isVerified: false,
-            isLoading: false,
-            status: 'error',
-            lastErrorCode: errorCode,
-            draftInvitationCode: '',
-            isRecoveryModalOpen: false,
-          };
-        }
-      });
-    }
-  }, []);
+  const refreshSession = useCallback(async () => {
+    await fetchAndApplySession({ preserveExpiryPrompt: true });
+  }, [fetchAndApplySession]);
+
+  const syncExternalSession = useCallback(async () => {
+    await fetchAndApplySession({ preserveExpiryPrompt: false });
+  }, [fetchAndApplySession]);
 
   useEffect(() => {
     refreshSession();
   }, [refreshSession]);
+
+  useEffect(() => {
+    return subscribeGuestSessionChanged(() => {
+      if (isInternalSessionEmitRef.current) {
+        return;
+      }
+      void syncExternalSession();
+    });
+  }, [syncExternalSession]);
 
   const prevStatusRef = useRef<GuestSessionStatus>(sessionState.status);
   useEffect(() => {
@@ -244,9 +275,9 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         lastErrorCode: null,
         isRecoveryModalOpen: false,
       }));
-      notifyGuestSessionChanged();
+      emitSessionChanged();
     },
-    []
+    [emitSessionChanged]
   );
 
   const clearSession = useCallback(async () => {
@@ -266,9 +297,9 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         draftInvitationCode: '',
         isRecoveryModalOpen: false,
       });
-      notifyGuestSessionChanged();
+      emitSessionChanged();
     }
-  }, []);
+  }, [emitSessionChanged]);
 
   const recoverSession = useCallback(
     async (codeToVerify?: string): Promise<boolean> => {
@@ -312,7 +343,7 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
           if (toast) {
             toast.addToast('Session restored successfully!', 'success');
           }
-          notifyGuestSessionChanged();
+          emitSessionChanged();
 
           return true;
         } else {
@@ -333,7 +364,7 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
         return false;
       }
     },
-    [toast, sessionState.draftInvitationCode, sessionState.invitationCode]
+    [toast, sessionState.draftInvitationCode, sessionState.invitationCode, emitSessionChanged]
   );
 
   return (
