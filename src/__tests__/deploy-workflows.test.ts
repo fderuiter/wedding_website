@@ -1687,33 +1687,87 @@ process.exit(0);
       gcp_project_id: 'explicit-proj',
     });
 
-    // 5. generic-webhook and docker-host fail closed when DEPLOY_WEBHOOK_URL or DEPLOY_WEBHOOK_SECRET is absent
-    for (const webhookProvider of ['generic-webhook', 'docker-host']) {
-      const noUrlRes = runBashStep(verifyCredsScript, {
-        PROVIDER: webhookProvider,
-        TARGET_ENV: 'production',
-        DEPLOY_WEBHOOK_URL: '',
-        DEPLOY_WEBHOOK_SECRET: 'secret-token',
-      });
-      expect(noUrlRes.status).not.toBe(0);
-      expect(noUrlRes.stdout + noUrlRes.stderr).toContain('Missing DEPLOY_WEBHOOK_URL');
+    // 5. generic-webhook and docker-host fail closed when DEPLOY_WEBHOOK_URL or DEPLOY_WEBHOOK_SECRET is absent, non-HTTPS, or private/internal
+    const dnsMockDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deploy-webhook-dns-'));
+    const dnsMockScript = path.join(dnsMockDir, 'dns-mock.cjs');
+    fs.writeFileSync(
+      dnsMockScript,
+      `const dns = require('dns');
+const origLookup = dns.promises.lookup.bind(dns.promises);
+dns.promises.lookup = async (hostname, options) => {
+  if (hostname === 'hooks.example.com') {
+    return [{ address: '93.184.216.34', family: 4 }];
+  }
+  if (hostname === 'private-hook.example.com') {
+    return [{ address: '10.0.0.42', family: 4 }];
+  }
+  return origLookup(hostname, options);
+};
+`
+    );
+    const nodeOptionsWithDnsMock = `${process.env.NODE_OPTIONS ? `${process.env.NODE_OPTIONS} ` : ''}--require ${dnsMockScript}`;
 
-      const noSecretRes = runBashStep(verifyCredsScript, {
-        PROVIDER: webhookProvider,
-        TARGET_ENV: 'production',
-        DEPLOY_WEBHOOK_URL: 'https://hooks.example.com/deploy',
-        DEPLOY_WEBHOOK_SECRET: '',
-      });
-      expect(noSecretRes.status).not.toBe(0);
-      expect(noSecretRes.stdout + noSecretRes.stderr).toContain('Missing DEPLOY_WEBHOOK_SECRET');
+    try {
+      for (const webhookProvider of ['generic-webhook', 'docker-host']) {
+        const noUrlRes = runBashStep(verifyCredsScript, {
+          PROVIDER: webhookProvider,
+          TARGET_ENV: 'production',
+          DEPLOY_WEBHOOK_URL: '',
+          DEPLOY_WEBHOOK_SECRET: 'secret-token',
+        });
+        expect(noUrlRes.status).not.toBe(0);
+        expect(noUrlRes.stdout + noUrlRes.stderr).toContain('Missing DEPLOY_WEBHOOK_URL');
 
-      const validWebhookRes = runBashStep(verifyCredsScript, {
-        PROVIDER: webhookProvider,
-        TARGET_ENV: 'production',
-        DEPLOY_WEBHOOK_URL: 'https://hooks.example.com/deploy',
-        DEPLOY_WEBHOOK_SECRET: 'secret-token',
-      });
-      expect(validWebhookRes.status).toBe(0);
+        const noSecretRes = runBashStep(verifyCredsScript, {
+          PROVIDER: webhookProvider,
+          TARGET_ENV: 'production',
+          DEPLOY_WEBHOOK_URL: 'https://hooks.example.com/deploy',
+          DEPLOY_WEBHOOK_SECRET: '',
+        });
+        expect(noSecretRes.status).not.toBe(0);
+        expect(noSecretRes.stdout + noSecretRes.stderr).toContain('Missing DEPLOY_WEBHOOK_SECRET');
+
+        const httpRes = runBashStep(verifyCredsScript, {
+          PROVIDER: webhookProvider,
+          TARGET_ENV: 'production',
+          DEPLOY_WEBHOOK_URL: 'http://hooks.example.com/deploy',
+          DEPLOY_WEBHOOK_SECRET: 'secret-token',
+          NODE_OPTIONS: nodeOptionsWithDnsMock,
+        });
+        expect(httpRes.status).not.toBe(0);
+        expect(httpRes.stdout + httpRes.stderr).toContain('must use https:// scheme');
+
+        for (const blockedUrl of [
+          'https://127.0.0.1:8443/deploy',
+          'https://169.254.169.254/latest/meta-data',
+          'https://100.64.0.1/deploy',
+          'https://[::1]/deploy',
+          'https://[::ffff:127.0.0.1]/deploy',
+          'https://localhost/deploy',
+          'https://private-hook.example.com/deploy',
+        ]) {
+          const blockedRes = runBashStep(verifyCredsScript, {
+            PROVIDER: webhookProvider,
+            TARGET_ENV: 'production',
+            DEPLOY_WEBHOOK_URL: blockedUrl,
+            DEPLOY_WEBHOOK_SECRET: 'secret-token',
+            NODE_OPTIONS: nodeOptionsWithDnsMock,
+          });
+          expect(blockedRes.status).not.toBe(0);
+          expect(blockedRes.stdout + blockedRes.stderr).toContain('Blocked DEPLOY_WEBHOOK_URL');
+        }
+
+        const validWebhookRes = runBashStep(verifyCredsScript, {
+          PROVIDER: webhookProvider,
+          TARGET_ENV: 'production',
+          DEPLOY_WEBHOOK_URL: 'https://hooks.example.com/deploy',
+          DEPLOY_WEBHOOK_SECRET: 'secret-token',
+          NODE_OPTIONS: nodeOptionsWithDnsMock,
+        });
+        expect(validWebhookRes.status).toBe(0);
+      }
+    } finally {
+      fs.rmSync(dnsMockDir, { recursive: true, force: true });
     }
 
     // 6. Verify YAML step conditions select OIDC primary auth and GCP_SA_KEY fallback mutually exclusively

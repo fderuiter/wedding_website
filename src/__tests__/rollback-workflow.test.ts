@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import http from 'http';
+import https from 'https';
 import crypto from 'crypto';
 import { execSync, spawn, spawnSync } from 'child_process';
 import { parseDocument } from 'yaml';
@@ -315,7 +316,9 @@ describe('Rollback & Provider Deployment Workflows', () => {
       expect(deployStageYml).toContain('caller_holds_lock: true');
       expect(deployProviderYml).toContain('previous_image_tag:');
       expect(deployProviderYml).toContain('previous_image_digest:');
-      expect(deployProviderYml).toContain('--fail-with-body');
+      expect(deployProviderYml).toContain('--proto =https');
+      expect(deployProviderYml).toContain('--resolve "$WEBHOOK_RESOLVE_ENTRY"');
+      expect(deployProviderYml).not.toContain('--location');
       expect(deployProviderYml).toContain(
         '  deploy:\n    name: Deploy Release Artifact to Provider\n    runs-on: ubuntu-latest\n    permissions:\n      actions: read\n      contents: read\n      packages: read\n      attestations: read\n      deployments: write\n      id-token: write'
       );
@@ -1194,7 +1197,7 @@ fi
       }
     });
 
-    it('enforces HMAC-SHA256 signed --fail-with-body generic webhook deployments and never coerces live runs to dry-run', async () => {
+    it('enforces HTTPS, SSRF private IP blocklists, DNS pinning, 3xx redirect rejection, and HMAC-SHA256 signed generic webhook deployments without coercing live runs to dry-run', async () => {
       const webhookScript = extractStepRunScript(deployProviderYml, 'Deploy via Generic Webhook Adapter');
       const resolveUrlScript = extractStepRunScript(deployProviderYml, 'Resolve Service URL Output');
 
@@ -1220,64 +1223,205 @@ fi
       expect(explicitDryRes.outputs.is_dry_run).toBe('true');
       expect(explicitDryRes.outputs.service_url).toBe('http://127.0.0.1:3000');
 
+      const tlsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webhook-tls-test-'));
+      const keyPath = path.join(tlsDir, 'key.pem');
+      const certPath = path.join(tlsDir, 'cert.pem');
+      const curlLogPath = path.join(tlsDir, 'curl-args.log');
+      const dnsMockPath = path.join(tlsDir, 'dns-mock.cjs');
+      fs.writeFileSync(curlLogPath, '');
+
+      const certGenRes = spawnSync(
+        '/usr/bin/openssl',
+        [
+          'req',
+          '-x509',
+          '-newkey',
+          'rsa:2048',
+          '-nodes',
+          '-keyout',
+          keyPath,
+          '-out',
+          certPath,
+          '-days',
+          '1',
+          '-subj',
+          '/CN=hooks.example.com',
+          '-addext',
+          'subjectAltName=DNS:hooks.example.com',
+        ],
+        { stdio: 'ignore' }
+      );
+      expect(certGenRes.status).toBe(0);
+
+      fs.writeFileSync(
+        dnsMockPath,
+        `const dns = require('dns');
+const origLookup = dns.promises.lookup.bind(dns.promises);
+dns.promises.lookup = async (hostname, options) => {
+  if (hostname === 'hooks.example.com') {
+    return [{ address: '93.184.216.34', family: 4 }];
+  }
+  if (hostname === 'private-hook.example.com') {
+    return [{ address: '192.168.1.25', family: 4 }];
+  }
+  if (hostname === 'rebind-hook.example.com') {
+    return [
+      { address: '93.184.216.34', family: 4 },
+      { address: '127.0.0.1', family: 4 },
+    ];
+  }
+  return origLookup(hostname, options);
+};
+`
+      );
+
       let requestCount = 0;
+      let redirectTargetHit = false;
       let nextStatus = 500;
       let receivedBody = '';
       let receivedHeaders: http.IncomingHttpHeaders = {};
-      const server = http.createServer((req, res) => {
-        requestCount += 1;
-        receivedHeaders = req.headers;
-        let data = '';
-        req.on('data', chunk => {
-          data += chunk;
-        });
-        req.on('end', () => {
-          receivedBody = data;
-          res.writeHead(nextStatus, { 'Content-Type': 'application/json' });
-          res.end(
-            JSON.stringify({
-              ok: nextStatus === 200,
-              message: nextStatus === 200 ? 'deployed' : 'upstream failure',
-            })
-          );
-        });
-      });
+      const server = https.createServer(
+        {
+          key: fs.readFileSync(keyPath),
+          cert: fs.readFileSync(certPath),
+        },
+        (req, res) => {
+          requestCount += 1;
+          if (req.url === '/redirect-target') {
+            redirectTargetHit = true;
+          }
+          receivedHeaders = req.headers;
+          let data = '';
+          req.on('data', chunk => {
+            data += chunk;
+          });
+          req.on('end', () => {
+            receivedBody = data;
+            if (nextStatus >= 300 && nextStatus < 400) {
+              res.writeHead(nextStatus, {
+                Location: `https://hooks.example.com:${port}/redirect-target`,
+                'Content-Type': 'application/json',
+              });
+              res.end(JSON.stringify({ ok: false, message: 'redirect' }));
+              return;
+            }
+            res.writeHead(nextStatus, { 'Content-Type': 'application/json' });
+            res.end(
+              JSON.stringify({
+                ok: nextStatus === 200,
+                message: nextStatus === 200 ? 'deployed' : 'upstream failure',
+              })
+            );
+          });
+        }
+      );
 
       await new Promise<void>(resolve => server.listen(0, '127.0.0.1', () => resolve()));
       const addr = server.address();
       const port = typeof addr === 'object' && addr ? addr.port : 0;
+
+      // Shim curl only to log arguments and rewrite the pinned public IP 93.184.216.34 to local 127.0.0.1 TLS test listener
+      fs.writeFileSync(
+        path.join(tlsDir, 'curl'),
+        `#!/usr/bin/env node
+const fs = require('fs');
+const { spawnSync } = require('child_process');
+const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(curlLogPath)}, JSON.stringify(args) + '\\n');
+const rewritten = args.map((arg) =>
+  arg === 'hooks.example.com:${port}:93.184.216.34'
+    ? 'hooks.example.com:${port}:127.0.0.1'
+    : arg
+);
+const res = spawnSync('/usr/bin/curl', ['--cacert', ${JSON.stringify(certPath)}, ...rewritten], {
+  stdio: 'inherit',
+});
+process.exit(res.status ?? 1);
+`,
+        { mode: 0o755 }
+      );
+
       const webhookSecret = 'super-secret-hmac-signing-key-2026';
       const digest = 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+      const baseWebhookEnv = {
+        PATH: `${tlsDir}:${process.env.PATH || ''}`,
+        NODE_OPTIONS: `${process.env.NODE_OPTIONS ? `${process.env.NODE_OPTIONS} ` : ''}--require ${dnsMockPath}`,
+      };
 
       try {
         // Missing DEPLOY_WEBHOOK_SECRET must fail closed without sending any HTTP request
         const missingSecretRes = await runBashStepAsync(webhookScript, {
+          ...baseWebhookEnv,
           IMAGE_URI: `ghcr.io/example/wedding_website@${digest}`,
           IMAGE_DIGEST: digest,
           TARGET_ENV: 'production',
-          DEPLOY_WEBHOOK_URL: `http://127.0.0.1:${port}/deploy`,
+          DEPLOY_WEBHOOK_URL: `https://hooks.example.com:${port}/deploy`,
           DEPLOY_WEBHOOK_SECRET: '',
         });
         expect(missingSecretRes.status).not.toBe(0);
         expect(missingSecretRes.stdout + missingSecretRes.stderr).toContain('Missing DEPLOY_WEBHOOK_SECRET');
         expect(requestCount).toBe(0);
 
+        // Non-HTTPS and private/loopback/link-local/rebinding targets must fail closed without sending any HTTP request
+        for (const rejectedUrl of [
+          `http://hooks.example.com:${port}/deploy`,
+          `https://127.0.0.1:${port}/deploy`,
+          'https://169.254.169.254/latest/meta-data',
+          'https://[::1]/deploy',
+          'https://[::ffff:10.0.0.1]/deploy',
+          'https://private-hook.example.com/deploy',
+          'https://rebind-hook.example.com/deploy',
+        ]) {
+          const rejectedRes = await runBashStepAsync(webhookScript, {
+            ...baseWebhookEnv,
+            IMAGE_URI: `ghcr.io/example/wedding_website@${digest}`,
+            IMAGE_DIGEST: digest,
+            TARGET_ENV: 'production',
+            DEPLOY_WEBHOOK_URL: rejectedUrl,
+            DEPLOY_WEBHOOK_SECRET: webhookSecret,
+          });
+          expect(rejectedRes.status).not.toBe(0);
+        }
+        expect(requestCount).toBe(0);
+
         const failRes = await runBashStepAsync(webhookScript, {
+          ...baseWebhookEnv,
           IMAGE_URI: `ghcr.io/example/wedding_website@${digest}`,
           IMAGE_DIGEST: digest,
           TARGET_ENV: 'production',
-          DEPLOY_WEBHOOK_URL: `http://127.0.0.1:${port}/deploy`,
+          DEPLOY_WEBHOOK_URL: `https://hooks.example.com:${port}/deploy`,
           DEPLOY_WEBHOOK_SECRET: webhookSecret,
         });
         expect(failRes.status).not.toBe(0);
         expect(failRes.stdout + failRes.stderr).toContain('upstream failure');
 
+        // 3xx HTTP redirect responses must be rejected without following Location headers or leaking signatures
+        for (const redirectCode of [301, 302, 307, 308]) {
+          nextStatus = redirectCode;
+          const countBeforeRedirect = requestCount;
+          const redirectRes = await runBashStepAsync(webhookScript, {
+            ...baseWebhookEnv,
+            IMAGE_URI: `ghcr.io/example/wedding_website@${digest}`,
+            IMAGE_DIGEST: digest,
+            TARGET_ENV: 'production',
+            DEPLOY_WEBHOOK_URL: `https://hooks.example.com:${port}/deploy`,
+            DEPLOY_WEBHOOK_SECRET: webhookSecret,
+          });
+          expect(redirectRes.status).not.toBe(0);
+          expect(redirectRes.stdout + redirectRes.stderr).toContain(
+            `HTTP ${redirectCode} redirect. Redirects are forbidden`
+          );
+          expect(requestCount).toBe(countBeforeRedirect + 1);
+          expect(redirectTargetHit).toBe(false);
+        }
+
         nextStatus = 200;
         const okRes = await runBashStepAsync(webhookScript, {
+          ...baseWebhookEnv,
           IMAGE_URI: `ghcr.io/example/wedding_website@${digest}`,
           IMAGE_DIGEST: digest,
           TARGET_ENV: 'production',
-          DEPLOY_WEBHOOK_URL: `http://127.0.0.1:${port}/deploy`,
+          DEPLOY_WEBHOOK_URL: `https://hooks.example.com:${port}/deploy`,
           DEPLOY_WEBHOOK_SECRET: webhookSecret,
         });
         expect(okRes.status).toBe(0);
@@ -1286,6 +1430,20 @@ fi
           digest,
           environment: 'production',
         });
+
+        const loggedCurlInvocations = fs
+          .readFileSync(curlLogPath, 'utf8')
+          .trim()
+          .split('\n')
+          .filter(Boolean)
+          .map((line) => JSON.parse(line) as string[]);
+        expect(loggedCurlInvocations.length).toBeGreaterThan(0);
+        for (const callArgs of loggedCurlInvocations) {
+          expect(callArgs).toContain('--resolve');
+          expect(callArgs).toContain(`hooks.example.com:${port}:93.184.216.34`);
+          expect(callArgs).not.toContain('--location');
+          expect(callArgs).not.toContain('-L');
+        }
 
         const expectedBodySig = crypto
           .createHmac('sha256', webhookSecret)
@@ -1329,10 +1487,11 @@ fi
 
         // Verify digest field is omitted cleanly when IMAGE_DIGEST is empty while preserving both HMAC formulas
         const noDigestRes = await runBashStepAsync(webhookScript, {
+          ...baseWebhookEnv,
           IMAGE_URI: 'ghcr.io/example/wedding_website:v1.0.0',
           IMAGE_DIGEST: '',
           TARGET_ENV: 'staging',
-          DEPLOY_WEBHOOK_URL: `http://127.0.0.1:${port}/deploy`,
+          DEPLOY_WEBHOOK_URL: `https://hooks.example.com:${port}/deploy`,
           DEPLOY_WEBHOOK_SECRET: webhookSecret,
         });
         expect(noDigestRes.status).toBe(0);
@@ -1349,6 +1508,7 @@ fi
         );
       } finally {
         await new Promise<void>(resolve => server.close(() => resolve()));
+        fs.rmSync(tlsDir, { recursive: true, force: true });
       }
     });
 

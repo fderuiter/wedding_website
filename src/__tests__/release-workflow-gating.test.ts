@@ -240,11 +240,27 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(ciJobs['a11y-report']?.needs).toEqual(['unit-test', 'e2e-test', 'static-export-build']);
     expect(ciJobs['a11y-report']?.if).toBe('always() && !cancelled()');
     expect(ciJobs['a11y-report']?.['timeout-minutes']).toBe(5);
+    expect(ciJobs['a11y-report']?.permissions).toEqual({ contents: 'read' });
     expect(a11yReportSection).toContain('name: static-a11y-violations');
     expect(a11yReportSection).toContain(
       'node scripts/a11y-report.mjs --include-static --require-complete'
     );
+    expect(a11yReportSection).toContain('name: a11y-summary');
+    expect(a11yReportSection).not.toContain('actions/github-script');
     expect(a11yReportSection).toContain('Verify Upstream Accessibility Suite Jobs');
+
+    const a11yReportCommentSection = extractJobSection(ciWorkflow, 'a11y-report-comment');
+    expect(ciJobs['a11y-report-comment']?.needs).toEqual(['a11y-report']);
+    expect(ciJobs['a11y-report-comment']?.['timeout-minutes']).toBe(5);
+    expect(ciJobs['a11y-report-comment']?.permissions).toEqual({
+      contents: 'read',
+      'pull-requests': 'write',
+      issues: 'write',
+    });
+    expect(a11yReportCommentSection).not.toContain('actions/checkout');
+    expect(a11yReportCommentSection).not.toContain('npm ci');
+    expect(a11yReportCommentSection).toContain('name: a11y-summary');
+    expect(a11yReportCommentSection).toContain('actions/github-script');
 
     const pagesVerifySection = extractJobSection(ciWorkflow, 'pages-verify');
     expect(pagesVerifySection).toContain('needs: [verify, static-export-build, storybook-build]');
@@ -869,8 +885,12 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(publishWorkflow).toContain('runner: ubuntu-24.04-arm');
     expect(publishWorkflow).toContain('platform: linux/amd64');
     expect(publishWorkflow).toContain('platform: linux/arm64');
-    expect(publishWorkflow).toContain('cache-from: type=gha,scope=app-${{ matrix.arch }}');
-    expect(publishWorkflow).toContain('cache-to: type=gha,scope=app-${{ matrix.arch }},mode=max');
+    expect(publishWorkflow).toContain('cache-from: type=gha,scope=release-app-${{ matrix.arch }}');
+    expect(publishWorkflow).toContain(
+      'cache-to: type=gha,scope=release-app-${{ matrix.arch }},mode=max'
+    );
+    expect(publishWorkflow).toContain('GHA_CACHE_SCOPE: release-app-${{ matrix.arch }}');
+    expect(publishWorkflow).not.toContain('scope=app-');
     expect(publishWorkflow).toContain('actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9');
     expect(publishWorkflow).toContain('key: release-buildkit-deps-${{ matrix.arch }}-');
     expect(publishWorkflow).toContain('key: release-buildkit-next-${{ matrix.arch }}-');
@@ -1010,6 +1030,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(ciWorkflow).toContain(
       "cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,scope=app-arm64,mode=max' || '' }}"
     );
+    expect(ciWorkflow.match(/validate_cache_archive\(\)/g)).toHaveLength(2);
     for (const mountTarget of ['/var/cache/apt', '/var/lib/apt', '/root/.npm', '/app/.next/cache']) {
       expect(ciWorkflow).toContain(`target=${mountTarget}`);
     }

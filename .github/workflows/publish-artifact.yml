@@ -418,8 +418,8 @@ jobs:
           annotations: |
             manifest:org.opencontainers.image.revision=${{ steps.meta.outputs.revision }}
           outputs: type=oci,dest=/tmp/oci-${{ matrix.arch }}.tar
-          cache-from: type=gha,scope=app-${{ matrix.arch }}
-          cache-to: type=gha,scope=app-${{ matrix.arch }},mode=max
+          cache-from: type=gha,scope=release-app-${{ matrix.arch }}
+          cache-to: type=gha,scope=release-app-${{ matrix.arch }},mode=max
 
       - name: Persist BuildKit Cache Mounts
         if: steps.buildkit-deps-cache.outputs.cache-hit != 'true' || steps.buildkit-next-cache.outputs.cache-hit != 'true'
@@ -477,7 +477,7 @@ jobs:
       - name: Run Native Container & Clean Database Smoke Test
         env:
           SKIP_IMAGE_BUILD: 'true'
-          GHA_CACHE_SCOPE: app-${{ matrix.arch }}
+          GHA_CACHE_SCOPE: release-app-${{ matrix.arch }}
         run: node scripts/test-container.mjs --container-migration
 
       - name: Compress Verified OCI Archive & Export Digest
