@@ -769,12 +769,13 @@ CREATE INDEX "Contributor_coverFee_idx" ON "Contributor"("coverFee");
         resolvePrismaShadowDatabaseUrl(directNeon, pooledNeon, ['node', 'prisma', 'migrate', 'diff'])
       ).toBeUndefined();
 
+      const rewrittenShadowDb = `${shadowDb}&sslmode=require&sslaccept=strict`;
       expect(
         resolvePrismaShadowDatabaseUrl(shadowDb, directDb, ['node', 'prisma', 'migrate', 'dev'])
-      ).toBe(shadowDb);
+      ).toBe(rewrittenShadowDb);
       expect(
         resolvePrismaShadowDatabaseUrl(shadowDb, directDb, ['node', 'prisma', 'migrate', 'reset'])
-      ).toBe(shadowDb);
+      ).toBe(rewrittenShadowDb);
       expect(
         resolvePrismaShadowDatabaseUrl(shadowDb, directDb, [
           'node',
@@ -786,7 +787,7 @@ CREATE INDEX "Contributor_coverFee_idx" ON "Contributor"("coverFee");
           '--to-schema',
           'prisma/schema.prisma',
         ])
-      ).toBe(shadowDb);
+      ).toBe(rewrittenShadowDb);
     });
 
     it('promotes POSTGRES_URL_NON_POOLING for datasource.url only when DATABASE_URL is pooled and POSTGRES_URL_NON_POOLING is unpooled with matching database and schema', () => {
@@ -813,7 +814,7 @@ CREATE INDEX "Contributor_coverFee_idx" ON "Contributor"("coverFee");
           'migrate',
           'deploy',
         ])
-      ).toBe(directExternal);
+      ).toBe(`${directExternal}&sslmode=require&sslaccept=strict`);
 
       // Keeps primary DATABASE_URL when POSTGRES_URL_NON_POOLING points to wedding_shadow
       expect(
@@ -860,12 +861,12 @@ CREATE INDEX "Contributor_coverFee_idx" ON "Contributor"("coverFee");
           'migrate',
           'dev',
         ])
-      ).toBe(shadowDb);
+      ).toBe(`${shadowDb}&sslmode=require&sslaccept=strict`);
 
-      // Keeps primary DATABASE_URL when unpooled or outside deploy/status/resolve
+      // Keeps primary DATABASE_URL when unpooled or outside deploy/status/resolve (with strict TLS rewrite for omitted sslmode on remote host)
       expect(
         resolvePrismaDatasourceUrl(directDb, shadowDb, ['node', 'prisma', 'migrate', 'deploy'])
-      ).toBe(directDb);
+      ).toBe(`${directDb}&sslmode=require&sslaccept=strict`);
       expect(
         resolvePrismaDatasourceUrl(pooledNeon, directNeon, ['node', 'prisma', 'generate'])
       ).toBe(pooledNeon);
@@ -896,11 +897,49 @@ CREATE INDEX "Contributor_coverFee_idx" ON "Contributor"("coverFee");
         rewritePostgresUrlForPrismaCli('postgresql://u:p@db.example.com:5432/wedding?sslmode=allow')
       ).toBe('postgresql://u:p@db.example.com:5432/wedding?sslmode=prefer');
 
+      // Omitted sslmode on remote host triggers needsTlsRewrite via parsed.tlsMode === 'verify-full'
+      expect(
+        rewritePostgresUrlForPrismaCli('postgresql://u:p@db.example.com:5432/wedding')
+      ).toBe('postgresql://u:p@db.example.com:5432/wedding?sslmode=require&sslaccept=strict');
+
+      // Loopback and Unix socket URLs with omitted sslmode remain untouched
+      expect(
+        rewritePostgresUrlForPrismaCli('postgresql://u:p@localhost:5432/wedding')
+      ).toBe('postgresql://u:p@localhost:5432/wedding');
+      expect(
+        rewritePostgresUrlForPrismaCli(
+          'postgresql://u:p@/wedding?host=/cloudsql/proj:us-central1:db'
+        )
+      ).toBe('postgresql://u:p@localhost/wedding?host=/cloudsql/proj:us-central1:db');
+
+      // verify-ca retains sslaccept=strict and maps custom sslrootcert -> sslcert
+      expect(
+        rewritePostgresUrlForPrismaCli(
+          'postgresql://u:p@db.example.com:5432/wedding?sslmode=verify-ca'
+        )
+      ).toBe('postgresql://u:p@db.example.com:5432/wedding?sslmode=require&sslaccept=strict');
+
       expect(
         rewritePostgresUrlForPrismaCli(
           'postgresql://u:p@db.example.com:5432/wedding?sslmode=verify-ca&sslrootcert=/etc/ssl/ca.pem'
         )
-      ).toBe('postgresql://u:p@db.example.com:5432/wedding?sslmode=require');
+      ).toBe(
+        'postgresql://u:p@db.example.com:5432/wedding?sslmode=require&sslaccept=strict&sslcert=%2Fetc%2Fssl%2Fca.pem'
+      );
+
+      // Simultaneous sslrootcert and sslcert collide in Prisma CLI and fail closed without leaking credentials
+      const collisionSecret = 'COLLISION_DB_SECRET_445';
+      let caughtCollision: unknown;
+      try {
+        rewritePostgresUrlForPrismaCli(
+          `postgresql://u:${collisionSecret}@db.example.com:5432/wedding?sslmode=verify-full&sslrootcert=/etc/ssl/ca.pem&sslcert=/etc/ssl/client.pem`
+        );
+      } catch (err) {
+        caughtCollision = err;
+      }
+      expect(caughtCollision).toBeInstanceOf(Error);
+      expect(String(caughtCollision)).toMatch(/cannot specify both "sslrootcert" and "sslcert"/i);
+      expect(String(caughtCollision)).not.toContain(collisionSecret);
 
       expect(
         rewritePostgresUrlForPrismaCli(

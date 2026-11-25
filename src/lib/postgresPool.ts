@@ -57,16 +57,15 @@ function loadCertificateFile(filePath: string, paramName: string): string {
 }
 
 /**
- * Resolves Node `tls.ConnectionOptions | boolean` matching PostgreSQL libpq Table 32.1:
+ * Resolves Node `tls.ConnectionOptions | boolean`:
  * - `disable`: returns `false` (plaintext only).
  * - `allow`: returns `{ rejectUnauthorized: false, ... }` for TLS upgrade fallback after
  *   attempting a plaintext startup first via `createAllowTlsClientConstructor`.
  * - `prefer`: tries TLS `{ rejectUnauthorized: false, ... }` first and falls back to plaintext
  *   when the server does not support SSL (`'N'`) or fails SSL negotiation.
  * - `no-verify`: encrypts traffic without CA or hostname verification (`rejectUnauthorized: false`).
- * - `require` (including `ssl=true` / `ssl=1`): encrypts traffic; accepts self-signed certificates
- *   when `sslrootcert` is omitted (`rejectUnauthorized: false`), or verifies CA when `sslrootcert`
- *   is explicitly provided (`rejectUnauthorized: true`, skipping hostname check per libpq Table 32.1).
+ * - `require` (including `ssl=true` / `ssl=1`): strictly verifies both the CA certificate chain
+ *   (`sslrootcert` or system CAs, `rejectUnauthorized: true`) and server hostname/SAN identity.
  * - `verify-ca`: strictly verifies the server certificate against `sslrootcert` (or system CAs)
  *   with `rejectUnauthorized: true`, skipping hostname identity matching (`checkServerIdentity: () => undefined`).
  * - `verify-full`: strictly verifies both the CA certificate chain (`rejectUnauthorized: true`)
@@ -104,20 +103,6 @@ export function resolvePostgresTlsOptions(
     };
   }
 
-  if (tlsMode === 'require') {
-    if (hasExplicitRootCert) {
-      return {
-        ...certOptions,
-        rejectUnauthorized: true,
-        checkServerIdentity: () => undefined,
-      };
-    }
-    return {
-      ...certOptions,
-      rejectUnauthorized: false,
-    };
-  }
-
   if (tlsMode === 'verify-ca') {
     return {
       ...certOptions,
@@ -126,7 +111,7 @@ export function resolvePostgresTlsOptions(
     };
   }
 
-  // verify-full (including sslrootcert=system)
+  // require (including ssl=true / ssl=1) and verify-full (including sslrootcert=system)
   return {
     ...certOptions,
     rejectUnauthorized: true,

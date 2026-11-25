@@ -410,7 +410,7 @@ export function validateOperatorEnv(
       } else if (!containerDatabaseUrl) {
         const dbUser = normalizeOptional(getVal('DB_USER')) ?? 'wedding';
         const dbName = normalizeOptional(getVal('DB_NAME')) ?? 'wedding';
-        const synthesizedComposeUrl = `postgres://${dbUser}:${dbPassword}@db:5432/${dbName}`;
+        const synthesizedComposeUrl = `postgres://${dbUser}:${dbPassword}@db:5432/${dbName}?sslmode=disable`;
         if (!isValidPostgresUrl(synthesizedComposeUrl)) {
           issues.push({
             key: 'DB_PASSWORD',

@@ -15,6 +15,7 @@ import {
   DEFAULT_POSTGRES_POOL_MAX,
   DEFAULT_POSTGRES_SCHEMA,
   PostgresUrlValidationError,
+  isLoopbackPostgresHost,
   isPooledPostgresUrl,
   isValidPostgresUrl,
   normalizePostgresUrl,
@@ -608,6 +609,47 @@ describe('Shared PostgreSQL URI parser, normalizer, and libpq TLS runtime pool',
       expect(defaultParsed.max).toBe(5);
       expect(defaultParsed.connectionTimeoutMillis).toBe(DEFAULT_POSTGRES_CONNECTION_TIMEOUT_MS);
       expect(defaultParsed.connectionTimeoutMillis).toBe(10_000);
+      expect(defaultParsed.tlsMode).toBe('disable');
+
+      // Non-loopback TCP hosts default to verify-full when sslmode and ssl are omitted
+      for (const remoteHost of [
+        'db.example.com:5432',
+        'ep-cool.us-east-1.aws.neon.tech:5432',
+        '10.0.0.5:5432',
+        '192.168.1.25:5432',
+        '[2001:db8::1]:5432',
+        'db:5432',
+      ]) {
+        const parsedRemote = parsePostgresUrl(`postgresql://u:p@${remoteHost}/wedding`);
+        expect(parsedRemote.tlsMode).toBe('verify-full');
+        expect(parsedRemote.sslmode).toBeUndefined();
+        expect(parsedRemote.sslFlag).toBeUndefined();
+      }
+
+      // Loopback TCP hosts and local Unix sockets default to disable when sslmode and ssl are omitted
+      for (const localUrl of [
+        'postgresql://u:p@localhost:5432/wedding',
+        'postgresql://u:p@sub.localhost:5432/wedding',
+        'postgresql://u:p@127.0.0.1:5432/wedding',
+        'postgresql://u:p@127.255.255.254:5432/wedding',
+        'postgresql://u:p@[::1]:5432/wedding',
+        'postgresql://u:p@[0:0:0:0:0:0:0:1]:5432/wedding',
+        'postgresql://u:p@[::ffff:127.0.0.1]:5432/wedding',
+        'postgresql://u:p@/wedding?host=/cloudsql/proj:us-central1:db',
+        'postgresql://u:p@db.example.com/wedding?host=/var/run/postgresql',
+      ]) {
+        expect(parsePostgresUrl(localUrl).tlsMode).toBe('disable');
+      }
+
+      expect(isLoopbackPostgresHost('localhost')).toBe(true);
+      expect(isLoopbackPostgresHost('api.localhost')).toBe(true);
+      expect(isLoopbackPostgresHost('127.0.0.1')).toBe(true);
+      expect(isLoopbackPostgresHost('::1')).toBe(true);
+      expect(isLoopbackPostgresHost('[::ffff:127.0.0.1]')).toBe(true);
+      expect(isLoopbackPostgresHost('notlocalhost')).toBe(false);
+      expect(isLoopbackPostgresHost('localhost.evil.example')).toBe(false);
+      expect(isLoopbackPostgresHost('10.0.0.1')).toBe(false);
+      expect(isLoopbackPostgresHost('db')).toBe(false);
 
       const customParsed = parsePostgresUrl(
         'postgresql://u:p@localhost:5432/wedding?schema=ceremony&connection_limit=3&connect_timeout=15&socket_timeout=25&statement_timeout=12000'
@@ -733,7 +775,7 @@ describe('Shared PostgreSQL URI parser, normalizer, and libpq TLS runtime pool',
       }
     });
 
-    it('upgrades to TLS under sslmode=prefer, sslmode=require, and ssl=true against self-signed TLS servers, and rejects non-TLS under require', async () => {
+    it('upgrades to TLS under sslmode=prefer and no-verify against self-signed servers while enforcing strict CA + hostname verification on sslmode=require and ssl=true', async () => {
       const tlsKey = fs.readFileSync(certs.selfSignedKeyPath, 'utf8');
       const tlsCert = fs.readFileSync(certs.selfSignedCertPath, 'utf8');
       const tlsServer = await startMockPgServer({
@@ -741,9 +783,21 @@ describe('Shared PostgreSQL URI parser, normalizer, and libpq TLS runtime pool',
         tlsKey,
         tlsCert,
       });
+      const mismatchedHostCaServer = await startMockPgServer({
+        sslSupport: 'tls',
+        tlsKey: fs.readFileSync(certs.otherHostKeyPath, 'utf8'),
+        tlsCert: fs.readFileSync(certs.otherHostCertPath, 'utf8'),
+      });
+      const matchingLocalhostCaServer = await startMockPgServer({
+        sslSupport: 'tls',
+        tlsKey: fs.readFileSync(certs.localhostKeyPath, 'utf8'),
+        tlsCert: fs.readFileSync(certs.localhostCertPath, 'utf8'),
+      });
+      const encodedCa = encodeURIComponent(certs.caCertPath);
 
       try {
-        for (const querySuffix of ['sslmode=prefer', 'sslmode=require', 'ssl=true']) {
+        // Opportunistic/unverified modes accept self-signed certificates when explicitly requested outside production
+        for (const querySuffix of ['sslmode=prefer', 'sslmode=no-verify', 'ssl=no-verify']) {
           const { poolConfig } = buildPostgresRuntimeConfig(
             `postgresql://wedding:pass@127.0.0.1:${tlsServer.port}/wedding?${querySuffix}`
           );
@@ -757,8 +811,57 @@ describe('Shared PostgreSQL URI parser, normalizer, and libpq TLS runtime pool',
         }
         expect(tlsServer.tlsConnectionsCompleted()).toBe(3);
         expect(tlsServer.plaintextStartupsCompleted()).toBe(0);
+
+        // sslmode=require and ssl=true reject untrusted self-signed certificates
+        for (const querySuffix of ['sslmode=require', 'ssl=true', 'ssl=1']) {
+          const untrustedPool = new Pool(
+            buildPostgresRuntimeConfig(
+              `postgresql://wedding:pass@127.0.0.1:${tlsServer.port}/wedding?${querySuffix}`
+            ).poolConfig
+          );
+          try {
+            await expect(untrustedPool.query('SELECT 1')).rejects.toThrow();
+          } finally {
+            await untrustedPool.end();
+          }
+        }
+
+        // sslmode=require and ssl=true reject CA-trusted certificates when hostname/IP SAN mismatches
+        for (const querySuffix of ['sslmode=require', 'ssl=true']) {
+          const mismatchPool = new Pool(
+            buildPostgresRuntimeConfig(
+              `postgresql://wedding:pass@localhost:${mismatchedHostCaServer.port}/wedding?${querySuffix}&sslrootcert=${encodedCa}`
+            ).poolConfig
+          );
+          try {
+            await expect(mismatchPool.query('SELECT 1')).rejects.toThrow(
+              /Hostname\/IP does not match certificate/i
+            );
+          } finally {
+            await mismatchPool.end();
+          }
+        }
+
+        // sslmode=require and ssl=true succeed when CA chain and hostname/IP SAN both validate
+        for (const host of ['localhost', '127.0.0.1']) {
+          for (const querySuffix of ['sslmode=require', 'ssl=true']) {
+            const verifiedPool = new Pool(
+              buildPostgresRuntimeConfig(
+                `postgresql://wedding:pass@${host}:${matchingLocalhostCaServer.port}/wedding?${querySuffix}&sslrootcert=${encodedCa}`
+              ).poolConfig
+            );
+            try {
+              const res = await verifiedPool.query<{ ok: number }>('SELECT 1');
+              expect(res.rows).toEqual([{ ok: 1 }]);
+            } finally {
+              await verifiedPool.end();
+            }
+          }
+        }
       } finally {
         await tlsServer.close();
+        await mismatchedHostCaServer.close();
+        await matchingLocalhostCaServer.close();
       }
 
       const plainServer = await startMockPgServer({ sslSupport: 'none-keep-open' });
@@ -1021,7 +1124,19 @@ describe('Shared PostgreSQL URI parser, normalizer, and libpq TLS runtime pool',
           )
         ).resolves.toEqual({ ok: true, tlsMode: 'allow', upgraded: true });
 
-        // 3. Untrusted self-signed cert without sslrootcert is rejected under verify-ca and verify-full
+        // 3. Untrusted self-signed cert without sslrootcert is rejected under require, ssl=true, verify-ca, and verify-full
+        await expect(
+          verifyPostgresTlsHandshake(
+            `postgresql://wedding:${secret}@localhost:${untrustedServer.port}/wedding?sslmode=require`
+          )
+        ).rejects.toThrow();
+
+        await expect(
+          verifyPostgresTlsHandshake(
+            `postgresql://wedding:${secret}@localhost:${untrustedServer.port}/wedding?ssl=true`
+          )
+        ).rejects.toThrow();
+
         await expect(
           verifyPostgresTlsHandshake(
             `postgresql://wedding:${secret}@localhost:${untrustedServer.port}/wedding?sslmode=verify-ca`
@@ -1034,7 +1149,7 @@ describe('Shared PostgreSQL URI parser, normalizer, and libpq TLS runtime pool',
           )
         ).rejects.toThrow();
 
-        // 4. verify-ca with trusted sslrootcert succeeds on mismatched hostname, while verify-full rejects
+        // 4. verify-ca with trusted sslrootcert succeeds on mismatched hostname, while require and verify-full reject
         await expect(
           verifyPostgresTlsHandshake(
             `postgresql://wedding:${secret}@localhost:${mismatchedHostCaServer.port}/wedding?sslmode=verify-ca&sslrootcert=${encodedCa}`
@@ -1043,11 +1158,23 @@ describe('Shared PostgreSQL URI parser, normalizer, and libpq TLS runtime pool',
 
         await expect(
           verifyPostgresTlsHandshake(
+            `postgresql://wedding:${secret}@localhost:${mismatchedHostCaServer.port}/wedding?sslmode=require&sslrootcert=${encodedCa}`
+          )
+        ).rejects.toThrow(/Hostname\/IP does not match certificate/i);
+
+        await expect(
+          verifyPostgresTlsHandshake(
             `postgresql://wedding:${secret}@localhost:${mismatchedHostCaServer.port}/wedding?sslmode=verify-full&sslrootcert=${encodedCa}`
           )
         ).rejects.toThrow(/Hostname\/IP does not match certificate/i);
 
-        // 5. verify-full with trusted sslrootcert succeeds when hostname matches
+        // 5. require and verify-full with trusted sslrootcert succeed when hostname/IP SAN matches
+        await expect(
+          verifyPostgresTlsHandshake(
+            `postgresql://wedding:${secret}@127.0.0.1:${matchingLocalhostCaServer.port}/wedding?sslmode=require&sslrootcert=${encodedCa}`
+          )
+        ).resolves.toEqual({ ok: true, tlsMode: 'require', upgraded: true });
+
         await expect(
           verifyPostgresTlsHandshake(
             `postgresql://wedding:${secret}@localhost:${matchingLocalhostCaServer.port}/wedding?sslmode=verify-full&sslrootcert=${encodedCa}`

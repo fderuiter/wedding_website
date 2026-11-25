@@ -391,4 +391,80 @@ describe('Production Boot Guest Session Secret Validation', () => {
       expect(validR2.status).toBe(0);
     });
   });
+
+  describe('Production Remote PostgreSQL TLS Enforcement', () => {
+    it('blocks disable, allow, prefer, and no-verify on remote DATABASE_URL and POSTGRES_URL_NON_POOLING in production without leaking secrets', () => {
+      const dbSecret = 'REMOTE_PG_SECRET_99182';
+      for (const insecureQuery of [
+        'sslmode=disable',
+        'ssl=false',
+        'ssl=0',
+        'sslmode=allow',
+        'sslmode=prefer',
+        'sslmode=no-verify',
+        'ssl=no-verify',
+      ]) {
+        const remoteDbRes = runEnvBoot({
+          NODE_ENV: 'production',
+          ADMIN_PASSWORD: validAdminPassword,
+          DATABASE_URL: `postgresql://wedding:${dbSecret}@db.example.com:5432/wedding?${insecureQuery}`,
+          GUEST_PASSCODE: validGuestPasscode,
+          GUEST_SESSION_SECRET: valid32Secret,
+        });
+        expect(remoteDbRes.status).not.toBe(0);
+        expect(remoteDbRes.stderr).toContain('DATABASE_URL must not use insecure TLS mode');
+        expect(remoteDbRes.stderr).not.toContain(dbSecret);
+
+        const remoteNonPoolingRes = runEnvBoot({
+          NODE_ENV: 'production',
+          ADMIN_PASSWORD: validAdminPassword,
+          DATABASE_URL: `postgresql://wedding:${dbSecret}@ep-pooler.us-east-1.aws.neon.tech:5432/wedding?sslmode=require`,
+          POSTGRES_URL_NON_POOLING: `postgresql://wedding:${dbSecret}@10.0.0.25:5432/wedding?${insecureQuery}`,
+          GUEST_PASSCODE: validGuestPasscode,
+          GUEST_SESSION_SECRET: valid32Secret,
+        });
+        expect(remoteNonPoolingRes.status).not.toBe(0);
+        expect(remoteNonPoolingRes.stderr).toContain(
+          'POSTGRES_URL_NON_POOLING must not use insecure TLS mode'
+        );
+        expect(remoteNonPoolingRes.stderr).not.toContain(dbSecret);
+      }
+
+      // Opportunistic/unverified modes on internal `db` host are also blocked in production
+      for (const disallowedComposeMode of ['sslmode=prefer', 'sslmode=allow', 'sslmode=no-verify']) {
+        const composePreferRes = runEnvBoot({
+          NODE_ENV: 'production',
+          ADMIN_PASSWORD: validAdminPassword,
+          DATABASE_URL: `postgres://wedding:${dbSecret}@db:5432/wedding?${disallowedComposeMode}`,
+          GUEST_PASSCODE: validGuestPasscode,
+          GUEST_SESSION_SECRET: valid32Secret,
+        });
+        expect(composePreferRes.status).not.toBe(0);
+        expect(composePreferRes.stderr).not.toContain(dbSecret);
+      }
+    });
+
+    it('allows omitted sslmode (verify-full), require, verify-ca, verify-full on remote hosts, plus loopback, Unix sockets, and Compose @db?sslmode=disable', () => {
+      for (const allowedDbUrl of [
+        'postgresql://wedding:wedding123@db.example.com:5432/wedding',
+        'postgresql://wedding:wedding123@db.example.com:5432/wedding?sslmode=require',
+        'postgresql://wedding:wedding123@db.example.com:5432/wedding?ssl=true',
+        'postgresql://wedding:wedding123@db.example.com:5432/wedding?sslmode=verify-ca',
+        'postgresql://wedding:wedding123@db.example.com:5432/wedding?sslmode=verify-full',
+        'postgresql://wedding:wedding123@127.0.0.1:5432/wedding?sslmode=disable',
+        'postgresql://wedding:wedding123@[::1]:5432/wedding?sslmode=disable',
+        'postgresql://wedding:wedding123@/wedding?host=/cloudsql/proj:us-central1:wedding-db',
+        'postgres://wedding:wedding123@db:5432/wedding?sslmode=disable',
+      ]) {
+        const res = runEnvBoot({
+          NODE_ENV: 'production',
+          ADMIN_PASSWORD: validAdminPassword,
+          DATABASE_URL: allowedDbUrl,
+          GUEST_PASSCODE: validGuestPasscode,
+          GUEST_SESSION_SECRET: valid32Secret,
+        });
+        expect(res.status).toBe(0);
+      }
+    });
+  });
 });

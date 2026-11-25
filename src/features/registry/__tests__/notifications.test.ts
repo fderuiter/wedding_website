@@ -1,5 +1,6 @@
 /** @jest-environment node */
 
+import * as crypto from 'node:crypto';
 import * as net from 'node:net';
 import * as tls from 'node:tls';
 import { validateAndResolveHost } from '@/utils/ssrf';
@@ -13,6 +14,141 @@ import {
   dispatchLedgerAdjustmentNotification,
 } from '../notifications';
 import { ThankYouService } from '../thank-you.service';
+
+function derLen(len: number): Buffer {
+  if (len < 0x80) return Buffer.from([len]);
+  const bytes: number[] = [];
+  let rem = len;
+  while (rem > 0) {
+    bytes.unshift(rem & 0xff);
+    rem >>= 8;
+  }
+  return Buffer.from([0x80 | bytes.length, ...bytes]);
+}
+function derTlv(tag: number, content: Buffer): Buffer {
+  return Buffer.concat([Buffer.from([tag]), derLen(content.length), content]);
+}
+function derSeq(items: Buffer[]): Buffer {
+  return derTlv(0x30, Buffer.concat(items));
+}
+function derUtc(d: Date): Buffer {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return derTlv(
+    0x17,
+    Buffer.from(
+      `${p(d.getUTCFullYear() % 100)}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`,
+      'ascii'
+    )
+  );
+}
+function derCn(cn: string): Buffer {
+  return derSeq([
+    derTlv(
+      0x31,
+      derSeq([derTlv(0x06, Buffer.from([0x55, 0x04, 0x03])), derTlv(0x0c, Buffer.from(cn, 'utf8'))])
+    ),
+  ]);
+}
+function issueEcCert(opts: {
+  subjectCn: string;
+  issuerCn: string;
+  spkiDer: Buffer;
+  issuerKey: crypto.KeyObject;
+  serial: number;
+  isCa: boolean;
+  dnsNames?: string[];
+  ipv4?: string[];
+}): string {
+  const sigAlg = derSeq([derTlv(0x06, Buffer.from([0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03, 0x02]))]);
+  const now = new Date(Date.now() - 60_000);
+  const exp = new Date(Date.now() + 2 * 24 * 3600_000);
+  const exts: Buffer[] = [
+    opts.isCa
+      ? derSeq([
+        derTlv(0x06, Buffer.from([0x55, 0x1d, 0x13])),
+        derTlv(0x01, Buffer.from([0xff])),
+        derTlv(0x04, derSeq([derTlv(0x01, Buffer.from([0xff]))])),
+      ])
+      : derSeq([derTlv(0x06, Buffer.from([0x55, 0x1d, 0x13])), derTlv(0x04, derSeq([]))]),
+  ];
+  const sans: Buffer[] = [];
+  for (const d of opts.dnsNames ?? []) sans.push(derTlv(0x82, Buffer.from(d, 'ascii')));
+  for (const ip of opts.ipv4 ?? []) {
+    sans.push(derTlv(0x87, Buffer.from(ip.split('.').map(Number))));
+  }
+  if (sans.length > 0) {
+    exts.push(
+      derSeq([derTlv(0x06, Buffer.from([0x55, 0x1d, 0x11])), derTlv(0x04, derSeq(sans))])
+    );
+  }
+  const tbs = derSeq([
+    derTlv(0xa0, derTlv(0x02, Buffer.from([0x02]))),
+    derTlv(0x02, Buffer.from([opts.serial])),
+    sigAlg,
+    derCn(opts.issuerCn),
+    derSeq([derUtc(now), derUtc(exp)]),
+    derCn(opts.subjectCn),
+    opts.spkiDer,
+    derTlv(0xa3, derSeq(exts)),
+  ]);
+  const sig = crypto.sign('sha256', tbs, opts.issuerKey);
+  const certDer = derSeq([tbs, sigAlg, derTlv(0x03, Buffer.concat([Buffer.from([0x00]), sig]))]);
+  const b64 = certDer.toString('base64').match(/.{1,64}/g)?.join('\n') ?? '';
+  return `-----BEGIN CERTIFICATE-----\n${b64}\n-----END CERTIFICATE-----\n`;
+}
+
+const TEST_REGISTRY_SMTP_PKI = (() => {
+  const caKeys = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const caCn = 'Registry Test SMTP Root CA';
+  const caCert = issueEcCert({
+    subjectCn: caCn,
+    issuerCn: caCn,
+    spkiDer: caKeys.publicKey.export({ type: 'spki', format: 'der' }),
+    issuerKey: caKeys.privateKey,
+    serial: 1,
+    isCa: true,
+  });
+  const serverKeys = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const serverCert = issueEcCert({
+    subjectCn: '127.0.0.1',
+    issuerCn: caCn,
+    spkiDer: serverKeys.publicKey.export({ type: 'spki', format: 'der' }),
+    issuerKey: caKeys.privateKey,
+    serial: 2,
+    isCa: false,
+    dnsNames: ['localhost'],
+    ipv4: ['127.0.0.1'],
+  });
+  return {
+    caCert,
+    serverKey: serverKeys.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+    serverCert,
+  };
+})();
+
+jest.mock('node:tls', () => {
+  const actualTls = jest.requireActual('node:tls') as typeof import('node:tls');
+  return {
+    ...actualTls,
+    connect: jest.fn((...args: unknown[]) => {
+      const [firstArg, ...rest] = args;
+      if (
+        firstArg &&
+        typeof firstArg === 'object' &&
+        !('ca' in firstArg && (firstArg as tls.ConnectionOptions).ca !== undefined)
+      ) {
+        return (actualTls.connect as (...a: unknown[]) => tls.TLSSocket)(
+          {
+            ...(firstArg as tls.ConnectionOptions),
+            ca: [...actualTls.rootCertificates, TEST_REGISTRY_SMTP_PKI.caCert],
+          },
+          ...rest
+        );
+      }
+      return (actualTls.connect as (...a: unknown[]) => tls.TLSSocket)(...args);
+    }),
+  };
+});
 
 jest.mock('@/lib/config', () => ({
   getAppConfig: jest.fn(),
@@ -39,58 +175,8 @@ jest.mock('@/utils/validationPrimitives', () => {
   };
 });
 
-const TEST_TLS_KEY = [
-  '-----BEGIN PRIVATE KEY-----',
-  'MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDtavb/rvKg/rcK',
-  'TyjZcxCjyNCnnKnSXddlW5NmavTBbvbdgXHt497aXrZPbBoWFR8VnZIwz4hWSnkr',
-  '/Batn0gD9ay16vVN8rYwdJGJrEnLjxXiUaFx3TeoLfFBGieOPKpHSXXFy1D4r1OA',
-  'C4HUypvbsA37cqnikKEBUZyr0KQ3bsNu33vV2X0mDCqeRFKbKmF1tJ+Tzl9aswdm',
-  'dyB9wpqOhkv5Z3ZQmkVqUVZyrb0lZxaybq02bFQejYLTFHiuesnMO0/AfBBrQTbI',
-  '9utKOs8nhZf8ZJb7oIFu7pxmFv4QjP7IfYXH2T/LTNxor3NAVsAqVxxJchWOuvtv',
-  '9jG+zCVPAgMBAAECggEAPW7WJubgBWSjfFlrWoj5n0fRJe3Vy4dYuvNtOq0mU/8g',
-  'hcR+9G1oNt0XE4oHXfttJay2LUcmIh33KLh8LcTvX4bsf84iV18cYYFoP1WDatbF',
-  'dOBmhA4X3r60lIHuBlIQRY3umZW4iADl/FX97E/Y8ImntI7BAs0lvC+f+J1uQKE6',
-  '+poEirMhEpY97xsaFpDXKQzJUOyl+K1Ko0ma3eds+kw+yViLOMpE1BXD96mqJ50H',
-  'xnU2xF8b+srB/SPpiP7y4E9PM/PVs9am+sl5pmoVnricWtPNdMXQ/uz5RgplVPmO',
-  'Rfkp0kWy7LEGxv90YxcyacmizXTfC9WHuedhnC/DAQKBgQD6hDb9XzCc7vgUmgVi',
-  'WYbMFfGYqRNDciSW/M9MUbeAdTUfRAhQOG3i7cFHXiTI1tOZV7cSm732f0y8qJ9p',
-  'SF9CPf93KrhuPMKmCgNrgaPww7bSaLkO2BNFtfHKBrMQaO+OpTtQd7i4HdzgHZIU',
-  'rvCGhPyggdwexwJmz7msNYL+wQKBgQDynVnbLE0YSVMuDzheZxfy0hnDiD6NcQGa',
-  'R9Yr6wj5pXsvlTof4oeKdKxwVopvvmPqehJvEsHsy5Bo0B+i2BNwnuWnkF/SvFUJ',
-  '6nOJsDKwuh+zcJWT57i+aeJminMQal8prRg+f/0v32BLJ7nVun9Kz3iLy5N7Cq2/',
-  'iaLKQqU4DwKBgQDuIK+EuO8kvaLjMmTbz+3qIRG94zmEawOM4lLKYQLlAIS2a5zb',
-  'ZEhP5WBLzpl4r3wDzvUeoxw3K1puGnstQLYL6ZLkW59kai08V1hY4KpNOjyWVSVT',
-  'juEC6qgjOasMdjMAjN+M5cCYgwppnrI1JvVLaS4aBFaQiuslf18m6tbSAQKBgEwT',
-  'NwfYvlvtMh3xO9WuMf48D0QWxraHRt9fwzKGQow1bYkgG9e/qoypxSB8onAjnST7',
-  'HiiiExjzQ9b529GuO3pG+PAv/zwPPgMb9xqnm117H1Ge7egw8ucSQKGyrB3rnOdu',
-  'lXmTnIqUWpd2X3k7P4rvv3bmYNpmINE8kUUm3LPVAoGBALofmrkfRT4YtMENbnHs',
-  'p1BZWsStT3DhGU2Y+kYuSkJqYa6CSinMZoSptGhBzHOMgTluvhMwVvoGFE12s3DP',
-  'HODdDbcOMhyH34buesM4uTaKjJHNKMFPHW+MOcvJivSCnmH6awMRgRixmuxpnBzp',
-  '/OVQXbb/Xo/eQxI0eEBTxHGI',
-  '-----END PRIVATE KEY-----',
-].join('\n');
-
-const TEST_TLS_CERT = [
-  '-----BEGIN CERTIFICATE-----',
-  'MIIDJTCCAg2gAwIBAgIUINWwA0gdFWF/kVWwWoQrl+dXYMowDQYJKoZIhvcNAQEL',
-  'BQAwFDESMBAGA1UEAwwJMTI3LjAuMC4xMB4XDTI2MTEyMzA0NTMzM1oXDTM2MTEy',
-  'MDA0NTMzM1owFDESMBAGA1UEAwwJMTI3LjAuMC4xMIIBIjANBgkqhkiG9w0BAQEF',
-  'AAOCAQ8AMIIBCgKCAQEA7Wr2/67yoP63Ck8o2XMQo8jQp5yp0l3XZVuTZmr0wW72',
-  '3YFx7ePe2l62T2waFhUfFZ2SMM+IVkp5K/wWrZ9IA/Wster1TfK2MHSRiaxJy48V',
-  '4lGhcd03qC3xQRonjjyqR0l1xctQ+K9TgAuB1Mqb27AN+3Kp4pChAVGcq9CkN27D',
-  'bt971dl9JgwqnkRSmyphdbSfk85fWrMHZncgfcKajoZL+Wd2UJpFalFWcq29JWcW',
-  'sm6tNmxUHo2C0xR4rnrJzDtPwHwQa0E2yPbrSjrPJ4WX/GSW+6CBbu6cZhb+EIz+',
-  'yH2Fx9k/y0zcaK9zQFbAKlccSXIVjrr7b/YxvswlTwIDAQABo28wbTAdBgNVHQ4E',
-  'FgQUbkXukpc+ilw3igPU5dqZ+8XPIrwwHwYDVR0jBBgwFoAUbkXukpc+ilw3igPU',
-  '5dqZ+8XPIrwwDwYDVR0TAQH/BAUwAwEB/zAaBgNVHREEEzARhwR/AAABgglsb2Nh',
-  'bGhvc3QwDQYJKoZIhvcNAQELBQADggEBAGE7u1UEvaWTObLrQF7rKivMt6cIfIxr',
-  'P6FrTmew2jYaUc3t4SbY3Lrwe4q2oFAyF0wPBh99nQeqU1XnMS7nPIV1xQb7Bfjl',
-  'ghsFdzs7SoAHbhkBXtIc2REJ0kQYreJEUMrIiTpIOvG0/ptglTXwr/mD/zVE2ba0',
-  'UjXh4menmp0gRbmvhFhFoJACvly8JD41pLU2Ngn5PPNIBuyOKLXiA71mXY4EmpsV',
-  '6pNr8osXuLA3daHat68RUhLHkA6tjPX1BNpLwUa/sLW4IeCO7/m4TgxRof5xunDv',
-  'yPhLDn0njXceSfKj7K0T5/GaTS1E0P/IJF0NamFLDLzxKitgr5mF/W4=',
-  '-----END CERTIFICATE-----',
-].join('\n');
+const TEST_TLS_KEY = TEST_REGISTRY_SMTP_PKI.serverKey;
+const TEST_TLS_CERT = TEST_REGISTRY_SMTP_PKI.serverCert;
 
 const mockValidateAndResolveHost = validateAndResolveHost as jest.MockedFunction<
   typeof validateAndResolveHost

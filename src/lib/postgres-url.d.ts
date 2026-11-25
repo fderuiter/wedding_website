@@ -63,6 +63,8 @@ export declare class PostgresUrlValidationError extends Error {
 
 export declare function redactPostgresUrl(_raw: unknown): string;
 
+export declare function isLoopbackPostgresHost(_host: unknown): boolean;
+
 export declare function parsePostgresUrl(
   _rawUrl: string,
   _options?: ParsePostgresUrlOptions

@@ -67,6 +67,155 @@ export function redactPostgresUrl(raw) {
 }
 
 /**
+ * Parses an IPv4 dotted-quad string into 4 octet values (0..255), or null if invalid.
+ *
+ * @param {string} candidate
+ * @returns {number[] | null}
+ */
+function parseIpv4Octets(candidate) {
+  const parts = candidate.split('.');
+  if (parts.length !== 4) {
+    return null;
+  }
+  /** @type {number[]} */
+  const octets = [];
+  for (const part of parts) {
+    if (!/^(?:0|[1-9]\d{0,2})$/.test(part)) {
+      return null;
+    }
+    const num = Number(part);
+    if (num < 0 || num > 255) {
+      return null;
+    }
+    octets.push(num);
+  }
+  return octets;
+}
+
+/**
+ * Parses an IPv6 literal (without brackets or zone ID) into 8 16-bit groups, or null if invalid.
+ *
+ * @param {string} candidate
+ * @returns {number[] | null}
+ */
+function parseIpv6Groups(candidate) {
+  if (!candidate.includes(':')) {
+    return null;
+  }
+  let normalized = candidate;
+  const lastColon = normalized.lastIndexOf(':');
+  const tail = normalized.slice(lastColon + 1);
+  if (tail.includes('.')) {
+    const v4 = parseIpv4Octets(tail);
+    if (!v4) {
+      return null;
+    }
+    const high = ((v4[0] << 8) | v4[1]).toString(16);
+    const low = ((v4[2] << 8) | v4[3]).toString(16);
+    normalized = `${normalized.slice(0, lastColon + 1)}${high}:${low}`;
+  }
+
+  const doubleColonParts = normalized.split('::');
+  if (doubleColonParts.length > 2) {
+    return null;
+  }
+
+  const headTokens =
+    doubleColonParts[0].length === 0 ? [] : doubleColonParts[0].split(':');
+  const tailTokens =
+    doubleColonParts.length === 2 && doubleColonParts[1].length > 0
+      ? doubleColonParts[1].split(':')
+      : [];
+
+  if (doubleColonParts.length === 1 && headTokens.length !== 8) {
+    return null;
+  }
+  if (doubleColonParts.length === 2 && headTokens.length + tailTokens.length >= 8) {
+    return null;
+  }
+
+  /**
+   * @param {string[]} tokens
+   * @returns {number[] | null}
+   */
+  const parseTokens = (tokens) => {
+    /** @type {number[]} */
+    const out = [];
+    for (const token of tokens) {
+      if (!/^[0-9a-f]{1,4}$/i.test(token)) {
+        return null;
+      }
+      out.push(Number.parseInt(token, 16));
+    }
+    return out;
+  };
+
+  const headGroups = parseTokens(headTokens);
+  const tailGroups = parseTokens(tailTokens);
+  if (!headGroups || !tailGroups) {
+    return null;
+  }
+
+  const zeroCount =
+    doubleColonParts.length === 2 ? 8 - headGroups.length - tailGroups.length : 0;
+  return [...headGroups, ...new Array(zeroCount).fill(0), ...tailGroups];
+}
+
+/**
+ * Returns true if `host` is a local loopback hostname or IP literal
+ * (`localhost`, `*.localhost`, `127.0.0.0/8`, `::1`, or `::ffff:127.0.0.0/8`).
+ *
+ * @param {unknown} host
+ * @returns {boolean}
+ */
+export function isLoopbackPostgresHost(host) {
+  if (typeof host !== 'string') {
+    return false;
+  }
+  let cleaned = host.trim().toLowerCase();
+  if (cleaned.startsWith('[') && cleaned.endsWith(']')) {
+    cleaned = cleaned.slice(1, -1);
+  }
+  if (cleaned.length === 0) {
+    return false;
+  }
+  if (cleaned === 'localhost' || cleaned.endsWith('.localhost')) {
+    return true;
+  }
+  const v4 = parseIpv4Octets(cleaned);
+  if (v4) {
+    return v4[0] === 127;
+  }
+  const zoneIdx = cleaned.indexOf('%');
+  const withoutZone = zoneIdx === -1 ? cleaned : cleaned.slice(0, zoneIdx);
+  const v6 = parseIpv6Groups(withoutZone);
+  if (!v6) {
+    return false;
+  }
+  const isV6Loopback =
+    v6[0] === 0 &&
+    v6[1] === 0 &&
+    v6[2] === 0 &&
+    v6[3] === 0 &&
+    v6[4] === 0 &&
+    v6[5] === 0 &&
+    v6[6] === 0 &&
+    v6[7] === 1;
+  if (isV6Loopback) {
+    return true;
+  }
+  return (
+    v6[0] === 0 &&
+    v6[1] === 0 &&
+    v6[2] === 0 &&
+    v6[3] === 0 &&
+    v6[4] === 0 &&
+    v6[5] === 0xffff &&
+    (v6[6] >> 8) === 127
+  );
+}
+
+/**
  * @param {string} value
  * @param {string} label
  * @returns {string}
@@ -525,7 +674,7 @@ export function parsePostgresUrl(rawUrl, options = {}) {
   const pgOptions = searchParams.get('options') || undefined;
 
   /** @type {'disable' | 'allow' | 'prefer' | 'require' | 'no-verify' | 'verify-ca' | 'verify-full'} */
-  let tlsMode = 'disable';
+  let tlsMode = isUnixSocket || isLoopbackPostgresHost(host) ? 'disable' : 'verify-full';
   if (certParams.sslrootcert === 'system') {
     tlsMode = 'verify-full';
   } else if (sslmode !== undefined) {
@@ -788,18 +937,11 @@ export async function verifyPostgresTlsHandshake(rawUrl, options = {}) {
     parsed.tlsMode === 'no-verify'
   ) {
     tlsConnectOptions.rejectUnauthorized = false;
-  } else if (parsed.tlsMode === 'require') {
-    if (hasExplicitRootCert) {
-      tlsConnectOptions.rejectUnauthorized = true;
-      tlsConnectOptions.checkServerIdentity = () => undefined;
-    } else {
-      tlsConnectOptions.rejectUnauthorized = false;
-    }
   } else if (parsed.tlsMode === 'verify-ca') {
     tlsConnectOptions.rejectUnauthorized = true;
     tlsConnectOptions.checkServerIdentity = () => undefined;
   } else {
-    // verify-full (including sslrootcert=system)
+    // require (including ssl=true / ssl=1) and verify-full (including sslrootcert=system)
     tlsConnectOptions.rejectUnauthorized = true;
   }
 

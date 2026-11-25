@@ -1,5 +1,6 @@
 /** @jest-environment node */
 
+import * as crypto from 'node:crypto';
 import * as dns from 'node:dns';
 import * as net from 'node:net';
 import * as tls from 'node:tls';
@@ -8,6 +9,187 @@ import { isAllowedSmtpPort } from '@/utils/validationPrimitives';
 import { UpdateAppConfigSchema } from '@/features/content';
 import { MultiChannelMessagingProvider, formatEmailHtmlBody } from '../providers';
 import { TestConnectionSchema } from '../schemas';
+
+function derLen(len: number): Buffer {
+  if (len < 0x80) return Buffer.from([len]);
+  const bytes: number[] = [];
+  let rem = len;
+  while (rem > 0) {
+    bytes.unshift(rem & 0xff);
+    rem >>= 8;
+  }
+  return Buffer.from([0x80 | bytes.length, ...bytes]);
+}
+function derTlv(tag: number, content: Buffer): Buffer {
+  return Buffer.concat([Buffer.from([tag]), derLen(content.length), content]);
+}
+function derSeq(items: Buffer[]): Buffer {
+  return derTlv(0x30, Buffer.concat(items));
+}
+function derUtc(d: Date): Buffer {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return derTlv(
+    0x17,
+    Buffer.from(
+      `${p(d.getUTCFullYear() % 100)}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`,
+      'ascii'
+    )
+  );
+}
+function derCn(cn: string): Buffer {
+  return derSeq([
+    derTlv(
+      0x31,
+      derSeq([derTlv(0x06, Buffer.from([0x55, 0x04, 0x03])), derTlv(0x0c, Buffer.from(cn, 'utf8'))])
+    ),
+  ]);
+}
+function issueEcCert(opts: {
+  subjectCn: string;
+  issuerCn: string;
+  spkiDer: Buffer;
+  issuerKey: crypto.KeyObject;
+  serial: number;
+  isCa: boolean;
+  dnsNames?: string[];
+  ipv4?: string[];
+}): string {
+  const sigAlg = derSeq([derTlv(0x06, Buffer.from([0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03, 0x02]))]);
+  const now = new Date(Date.now() - 60_000);
+  const exp = new Date(Date.now() + 2 * 24 * 3600_000);
+  const exts: Buffer[] = [
+    opts.isCa
+      ? derSeq([
+        derTlv(0x06, Buffer.from([0x55, 0x1d, 0x13])),
+        derTlv(0x01, Buffer.from([0xff])),
+        derTlv(0x04, derSeq([derTlv(0x01, Buffer.from([0xff]))])),
+      ])
+      : derSeq([derTlv(0x06, Buffer.from([0x55, 0x1d, 0x13])), derTlv(0x04, derSeq([]))]),
+  ];
+  const sans: Buffer[] = [];
+  for (const d of opts.dnsNames ?? []) sans.push(derTlv(0x82, Buffer.from(d, 'ascii')));
+  for (const ip of opts.ipv4 ?? []) {
+    sans.push(derTlv(0x87, Buffer.from(ip.split('.').map(Number))));
+  }
+  if (sans.length > 0) {
+    exts.push(
+      derSeq([derTlv(0x06, Buffer.from([0x55, 0x1d, 0x11])), derTlv(0x04, derSeq(sans))])
+    );
+  }
+  const tbs = derSeq([
+    derTlv(0xa0, derTlv(0x02, Buffer.from([0x02]))),
+    derTlv(0x02, Buffer.from([opts.serial])),
+    sigAlg,
+    derCn(opts.issuerCn),
+    derSeq([derUtc(now), derUtc(exp)]),
+    derCn(opts.subjectCn),
+    opts.spkiDer,
+    derTlv(0xa3, derSeq(exts)),
+  ]);
+  const sig = crypto.sign('sha256', tbs, opts.issuerKey);
+  const certDer = derSeq([tbs, sigAlg, derTlv(0x03, Buffer.concat([Buffer.from([0x00]), sig]))]);
+  const b64 = certDer.toString('base64').match(/.{1,64}/g)?.join('\n') ?? '';
+  return `-----BEGIN CERTIFICATE-----\n${b64}\n-----END CERTIFICATE-----\n`;
+}
+
+const TEST_SMTP_PKI = (() => {
+  const caKeys = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const caCn = 'Wedding Test SMTP Root CA';
+  const caCert = issueEcCert({
+    subjectCn: caCn,
+    issuerCn: caCn,
+    spkiDer: caKeys.publicKey.export({ type: 'spki', format: 'der' }),
+    issuerKey: caKeys.privateKey,
+    serial: 1,
+    isCa: true,
+  });
+
+  const serverKeys = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const serverCert = issueEcCert({
+    subjectCn: 'localhost',
+    issuerCn: caCn,
+    spkiDer: serverKeys.publicKey.export({ type: 'spki', format: 'der' }),
+    issuerKey: caKeys.privateKey,
+    serial: 2,
+    isCa: false,
+    dnsNames: [
+      'localhost',
+      'smtp.mailgun.org',
+      'smtp.sendgrid.net',
+      'smtp.example.org',
+      'relay.example.org',
+    ],
+    ipv4: ['127.0.0.1'],
+  });
+
+  const untrustedKeys = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const untrustedCert = issueEcCert({
+    subjectCn: 'relay.example.org',
+    issuerCn: 'Untrusted Self-Signed SMTP',
+    spkiDer: untrustedKeys.publicKey.export({ type: 'spki', format: 'der' }),
+    issuerKey: untrustedKeys.privateKey,
+    serial: 3,
+    isCa: false,
+    dnsNames: ['relay.example.org', 'localhost'],
+    ipv4: ['127.0.0.1'],
+  });
+
+  return {
+    caCert,
+    serverKey: serverKeys.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+    serverCert,
+    untrustedKey: untrustedKeys.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+    untrustedCert,
+  };
+})();
+
+let mockSmtpTcpPortOverride: number | null = null;
+
+jest.mock('node:net', () => {
+  const actualNet = jest.requireActual('node:net') as typeof import('node:net');
+  return {
+    ...actualNet,
+    connect: jest.fn((...args: unknown[]) => {
+      const [firstArg, ...rest] = args;
+      if (
+        mockSmtpTcpPortOverride !== null &&
+        firstArg &&
+        typeof firstArg === 'object' &&
+        'port' in firstArg
+      ) {
+        return (actualNet.connect as (...a: unknown[]) => net.Socket)(
+          { ...(firstArg as net.NetConnectOpts), port: mockSmtpTcpPortOverride },
+          ...rest
+        );
+      }
+      return (actualNet.connect as (...a: unknown[]) => net.Socket)(...args);
+    }),
+  };
+});
+
+jest.mock('node:tls', () => {
+  const actualTls = jest.requireActual('node:tls') as typeof import('node:tls');
+  return {
+    ...actualTls,
+    connect: jest.fn((...args: unknown[]) => {
+      const [firstArg, ...rest] = args;
+      if (
+        firstArg &&
+        typeof firstArg === 'object' &&
+        !('ca' in firstArg && (firstArg as tls.ConnectionOptions).ca !== undefined)
+      ) {
+        return (actualTls.connect as (...a: unknown[]) => tls.TLSSocket)(
+          {
+            ...(firstArg as tls.ConnectionOptions),
+            ca: [...actualTls.rootCertificates, TEST_SMTP_PKI.caCert],
+          },
+          ...rest
+        );
+      }
+      return (actualTls.connect as (...a: unknown[]) => tls.TLSSocket)(...args);
+    }),
+  };
+});
 
 jest.mock('@/utils/ssrf', () => {
   const actual = jest.requireActual('@/utils/ssrf');
@@ -41,58 +223,8 @@ function allowLoopbackTestTarget(ephemeralPort: number, resolvedIp = '127.0.0.1'
   );
 }
 
-const TEST_TLS_KEY = [
-  '-----BEGIN PRIVATE KEY-----',
-  'MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDtavb/rvKg/rcK',
-  'TyjZcxCjyNCnnKnSXddlW5NmavTBbvbdgXHt497aXrZPbBoWFR8VnZIwz4hWSnkr',
-  '/Batn0gD9ay16vVN8rYwdJGJrEnLjxXiUaFx3TeoLfFBGieOPKpHSXXFy1D4r1OA',
-  'C4HUypvbsA37cqnikKEBUZyr0KQ3bsNu33vV2X0mDCqeRFKbKmF1tJ+Tzl9aswdm',
-  'dyB9wpqOhkv5Z3ZQmkVqUVZyrb0lZxaybq02bFQejYLTFHiuesnMO0/AfBBrQTbI',
-  '9utKOs8nhZf8ZJb7oIFu7pxmFv4QjP7IfYXH2T/LTNxor3NAVsAqVxxJchWOuvtv',
-  '9jG+zCVPAgMBAAECggEAPW7WJubgBWSjfFlrWoj5n0fRJe3Vy4dYuvNtOq0mU/8g',
-  'hcR+9G1oNt0XE4oHXfttJay2LUcmIh33KLh8LcTvX4bsf84iV18cYYFoP1WDatbF',
-  'dOBmhA4X3r60lIHuBlIQRY3umZW4iADl/FX97E/Y8ImntI7BAs0lvC+f+J1uQKE6',
-  '+poEirMhEpY97xsaFpDXKQzJUOyl+K1Ko0ma3eds+kw+yViLOMpE1BXD96mqJ50H',
-  'xnU2xF8b+srB/SPpiP7y4E9PM/PVs9am+sl5pmoVnricWtPNdMXQ/uz5RgplVPmO',
-  'Rfkp0kWy7LEGxv90YxcyacmizXTfC9WHuedhnC/DAQKBgQD6hDb9XzCc7vgUmgVi',
-  'WYbMFfGYqRNDciSW/M9MUbeAdTUfRAhQOG3i7cFHXiTI1tOZV7cSm732f0y8qJ9p',
-  'SF9CPf93KrhuPMKmCgNrgaPww7bSaLkO2BNFtfHKBrMQaO+OpTtQd7i4HdzgHZIU',
-  'rvCGhPyggdwexwJmz7msNYL+wQKBgQDynVnbLE0YSVMuDzheZxfy0hnDiD6NcQGa',
-  'R9Yr6wj5pXsvlTof4oeKdKxwVopvvmPqehJvEsHsy5Bo0B+i2BNwnuWnkF/SvFUJ',
-  '6nOJsDKwuh+zcJWT57i+aeJminMQal8prRg+f/0v32BLJ7nVun9Kz3iLy5N7Cq2/',
-  'iaLKQqU4DwKBgQDuIK+EuO8kvaLjMmTbz+3qIRG94zmEawOM4lLKYQLlAIS2a5zb',
-  'ZEhP5WBLzpl4r3wDzvUeoxw3K1puGnstQLYL6ZLkW59kai08V1hY4KpNOjyWVSVT',
-  'juEC6qgjOasMdjMAjN+M5cCYgwppnrI1JvVLaS4aBFaQiuslf18m6tbSAQKBgEwT',
-  'NwfYvlvtMh3xO9WuMf48D0QWxraHRt9fwzKGQow1bYkgG9e/qoypxSB8onAjnST7',
-  'HiiiExjzQ9b529GuO3pG+PAv/zwPPgMb9xqnm117H1Ge7egw8ucSQKGyrB3rnOdu',
-  'lXmTnIqUWpd2X3k7P4rvv3bmYNpmINE8kUUm3LPVAoGBALofmrkfRT4YtMENbnHs',
-  'p1BZWsStT3DhGU2Y+kYuSkJqYa6CSinMZoSptGhBzHOMgTluvhMwVvoGFE12s3DP',
-  'HODdDbcOMhyH34buesM4uTaKjJHNKMFPHW+MOcvJivSCnmH6awMRgRixmuxpnBzp',
-  '/OVQXbb/Xo/eQxI0eEBTxHGI',
-  '-----END PRIVATE KEY-----',
-].join('\n');
-
-const TEST_TLS_CERT = [
-  '-----BEGIN CERTIFICATE-----',
-  'MIIDJTCCAg2gAwIBAgIUINWwA0gdFWF/kVWwWoQrl+dXYMowDQYJKoZIhvcNAQEL',
-  'BQAwFDESMBAGA1UEAwwJMTI3LjAuMC4xMB4XDTI2MTEyMzA0NTMzM1oXDTM2MTEy',
-  'MDA0NTMzM1owFDESMBAGA1UEAwwJMTI3LjAuMC4xMIIBIjANBgkqhkiG9w0BAQEF',
-  'AAOCAQ8AMIIBCgKCAQEA7Wr2/67yoP63Ck8o2XMQo8jQp5yp0l3XZVuTZmr0wW72',
-  '3YFx7ePe2l62T2waFhUfFZ2SMM+IVkp5K/wWrZ9IA/Wster1TfK2MHSRiaxJy48V',
-  '4lGhcd03qC3xQRonjjyqR0l1xctQ+K9TgAuB1Mqb27AN+3Kp4pChAVGcq9CkN27D',
-  'bt971dl9JgwqnkRSmyphdbSfk85fWrMHZncgfcKajoZL+Wd2UJpFalFWcq29JWcW',
-  'sm6tNmxUHo2C0xR4rnrJzDtPwHwQa0E2yPbrSjrPJ4WX/GSW+6CBbu6cZhb+EIz+',
-  'yH2Fx9k/y0zcaK9zQFbAKlccSXIVjrr7b/YxvswlTwIDAQABo28wbTAdBgNVHQ4E',
-  'FgQUbkXukpc+ilw3igPU5dqZ+8XPIrwwHwYDVR0jBBgwFoAUbkXukpc+ilw3igPU',
-  '5dqZ+8XPIrwwDwYDVR0TAQH/BAUwAwEB/zAaBgNVHREEEzARhwR/AAABgglsb2Nh',
-  'bGhvc3QwDQYJKoZIhvcNAQELBQADggEBAGE7u1UEvaWTObLrQF7rKivMt6cIfIxr',
-  'P6FrTmew2jYaUc3t4SbY3Lrwe4q2oFAyF0wPBh99nQeqU1XnMS7nPIV1xQb7Bfjl',
-  'ghsFdzs7SoAHbhkBXtIc2REJ0kQYreJEUMrIiTpIOvG0/ptglTXwr/mD/zVE2ba0',
-  'UjXh4menmp0gRbmvhFhFoJACvly8JD41pLU2Ngn5PPNIBuyOKLXiA71mXY4EmpsV',
-  '6pNr8osXuLA3daHat68RUhLHkA6tjPX1BNpLwUa/sLW4IeCO7/m4TgxRof5xunDv',
-  'yPhLDn0njXceSfKj7K0T5/GaTS1E0P/IJF0NamFLDLzxKitgr5mF/W4=',
-  '-----END CERTIFICATE-----',
-].join('\n');
+const TEST_TLS_KEY = TEST_SMTP_PKI.serverKey;
+const TEST_TLS_CERT = TEST_SMTP_PKI.serverCert;
 
 interface MockSmtpServerOptions {
   implicitTls?: boolean;
@@ -109,6 +241,8 @@ interface MockSmtpServerOptions {
   rcptToRejectLine?: string;
   dataRejectLine?: string;
   queuedRejectLine?: string;
+  tlsKey?: string;
+  tlsCert?: string;
 }
 
 interface RunningSmtpServer {
@@ -136,13 +270,15 @@ async function startTestSmtpServer(options: MockSmtpServerOptions = {}): Promise
     rcptToRejectLine,
     dataRejectLine,
     queuedRejectLine,
+    tlsKey = TEST_TLS_KEY,
+    tlsCert = TEST_TLS_CERT,
   } = options;
 
   const commands: string[] = [];
   const receivedMessages: string[] = [];
   const observedServernames: string[] = [];
   let didUpgradeTls = implicitTls;
-  const secureContext = tls.createSecureContext({ key: TEST_TLS_KEY, cert: TEST_TLS_CERT });
+  const secureContext = tls.createSecureContext({ key: tlsKey, cert: tlsCert });
 
   const attachProtocol = (sock: net.Socket | tls.TLSSocket, isTlsConn: boolean) => {
     let buffer = '';
@@ -213,8 +349,8 @@ async function startTestSmtpServer(options: MockSmtpServerOptions = {}): Promise
         sock.write('220 2.0.0 Ready to start TLS\r\n', () => {
           const tlsSock = new tls.TLSSocket(sock, {
             isServer: true,
-            key: TEST_TLS_KEY,
-            cert: TEST_TLS_CERT,
+            key: tlsKey,
+            cert: tlsCert,
             SNICallback: (servername, cb) => {
               observedServernames.push(servername);
               cb(null, secureContext);
@@ -297,8 +433,8 @@ async function startTestSmtpServer(options: MockSmtpServerOptions = {}): Promise
   const server = implicitTls
     ? tls.createServer(
       {
-        key: TEST_TLS_KEY,
-        cert: TEST_TLS_CERT,
+        key: tlsKey,
+        cert: tlsCert,
         SNICallback: (servername, cb) => {
           observedServernames.push(servername);
           cb(null, secureContext);
@@ -922,13 +1058,18 @@ describe('MultiChannelMessagingProvider', () => {
     }
   });
 
-  it('requires implicit TLS or STARTTLS before sending AUTH PLAIN / AUTH LOGIN while allowing unauthenticated relays', async () => {
+  it('requires STARTTLS on non-implicit-TLS ports (25, 587, 2525) for both authenticated and unauthenticated relays and aborts when omitted or rejected', async () => {
     const cleartextServer = await startTestSmtpServer({
       implicitTls: false,
       advertiseStartTls: false,
       authMode: 'PLAIN',
       expectedUser: 'mailer@wedding.test',
       expectedPass: 'never-send-in-cleartext',
+    });
+    const rejectingStartTlsServer = await startTestSmtpServer({
+      implicitTls: false,
+      advertiseStartTls: true,
+      startTlsRejectLine: '454 4.7.0 TLS not available due to temporary reason',
     });
 
     try {
@@ -949,7 +1090,7 @@ describe('MultiChannelMessagingProvider', () => {
         provider: 'smtp',
       });
       expect(testRes.success).toBe(false);
-      expect(testRes.error).toMatch(/TLS or STARTTLS is required before authentication/i);
+      expect(testRes.error).toMatch(/does not advertise STARTTLS/i);
       expect(cleartextServer.commands.some((cmd) => cmd.toUpperCase().startsWith('AUTH'))).toBe(
         false
       );
@@ -960,27 +1101,124 @@ describe('MultiChannelMessagingProvider', () => {
         body: 'Must fail before AUTH',
       });
       expect(sendRes.success).toBe(false);
-      expect(sendRes.error).toMatch(/TLS or STARTTLS is required before authentication/i);
+      expect(sendRes.error).toMatch(/does not advertise STARTTLS/i);
       expect(cleartextServer.commands.some((cmd) => cmd.toUpperCase().startsWith('AUTH'))).toBe(
         false
       );
 
-      // Unauthenticated relay (no user/pass) can still send without AUTH
-      const unauthRelayProvider = new MultiChannelMessagingProvider({
+      // Unauthenticated relays without STARTTLS must also abort before MAIL FROM across ports 25, 587, and 2525
+      mockSmtpTcpPortOverride = cleartextServer.port;
+
+      try {
+        for (const nonImplicitPort of [25, 587, 2525]) {
+          const unauthRelayProvider = new MultiChannelMessagingProvider({
+            emailProvider: 'smtp',
+            smtpHost: 'relay.example.org',
+            smtpPort: nonImplicitPort,
+            smtpSecure: false,
+          });
+          const relayRes = await unauthRelayProvider.sendEmail({
+            to: 'guest@example.com',
+            subject: 'Invite Link https://wedding.example/?code=INVITE123',
+            body: 'Must never transmit invite code in cleartext',
+          });
+          expect(relayRes).toEqual({
+            success: false,
+            error: `SMTP server on port ${nonImplicitPort} does not advertise STARTTLS`,
+          });
+        }
+      } finally {
+        mockSmtpTcpPortOverride = null;
+      }
+      expect(
+        cleartextServer.commands.some((cmd) => cmd.toUpperCase().startsWith('MAIL FROM:'))
+      ).toBe(false);
+      expect(cleartextServer.receivedMessages).toHaveLength(0);
+
+      // Server advertising STARTTLS but rejecting the upgrade command aborts immediately
+      allowLoopbackTestTarget(rejectingStartTlsServer.port);
+      const rejectProvider = new MultiChannelMessagingProvider({
         emailProvider: 'smtp',
         smtpHost: 'relay.example.org',
-        smtpPort: cleartextServer.port,
+        smtpPort: rejectingStartTlsServer.port,
         smtpSecure: false,
       });
-      const relayRes = await unauthRelayProvider.sendEmail({
+      const rejectRes = await rejectProvider.sendEmail({
         to: 'guest@example.com',
-        subject: 'Unauthenticated Relay',
-        body: 'Allowed without credentials',
+        subject: 'Claim Link https://wedding.example/guest/claim?token=CLAIM_SIG',
+        body: 'Must abort on STARTTLS rejection',
       });
-      expect(relayRes).toEqual({ success: true });
-      expect(cleartextServer.receivedMessages).toHaveLength(1);
+      expect(rejectRes).toEqual({
+        success: false,
+        error: 'SMTP STARTTLS rejected (454)',
+      });
+      expect(rejectingStartTlsServer.receivedMessages).toHaveLength(0);
     } finally {
       await cleartextServer.close();
+      await rejectingStartTlsServer.close();
+    }
+  });
+
+  it('enforces rejectUnauthorized: true in sendSmtpEmail and testConnection even if smtpRejectUnauthorized: false is configured', async () => {
+    const untrustedStartTlsServer = await startTestSmtpServer({
+      implicitTls: false,
+      advertiseStartTls: true,
+      tlsKey: TEST_SMTP_PKI.untrustedKey,
+      tlsCert: TEST_SMTP_PKI.untrustedCert,
+    });
+    const trustedServer = await startTestSmtpServer({
+      implicitTls: true,
+    });
+
+    try {
+      allowLoopbackTestTarget(untrustedStartTlsServer.port);
+      const untrustedProvider = new MultiChannelMessagingProvider({
+        emailProvider: 'smtp',
+        smtpHost: 'relay.example.org',
+        smtpPort: untrustedStartTlsServer.port,
+        smtpSecure: false,
+        smtpRejectUnauthorized: false,
+      });
+
+      const untrustedTestRes = await untrustedProvider.testConnection({
+        type: 'email',
+        provider: 'smtp',
+      });
+      expect(untrustedTestRes.success).toBe(false);
+
+      const untrustedSendRes = await untrustedProvider.sendEmail({
+        to: 'guest@example.com',
+        subject: 'Untrusted Cert',
+        body: 'Must fail TLS verification',
+      });
+      expect(untrustedSendRes.success).toBe(false);
+      expect(untrustedStartTlsServer.receivedMessages).toHaveLength(0);
+
+      // Mismatched hostname against CA-signed server certificate must also fail closed
+      allowLoopbackTestTarget(trustedServer.port);
+      const mismatchProvider = new MultiChannelMessagingProvider({
+        emailProvider: 'smtp',
+        smtpHost: 'wrong-san.example.org',
+        smtpPort: trustedServer.port,
+        smtpSecure: true,
+        smtpRejectUnauthorized: false,
+      });
+      const mismatchTestRes = await mismatchProvider.testConnection({
+        type: 'email',
+        provider: 'smtp',
+      });
+      expect(mismatchTestRes.success).toBe(false);
+
+      const mismatchSendRes = await mismatchProvider.sendEmail({
+        to: 'guest@example.com',
+        subject: 'Mismatched SAN',
+        body: 'Must fail hostname verification',
+      });
+      expect(mismatchSendRes.success).toBe(false);
+      expect(trustedServer.receivedMessages).toHaveLength(0);
+    } finally {
+      await untrustedStartTlsServer.close();
+      await trustedServer.close();
     }
   });
 

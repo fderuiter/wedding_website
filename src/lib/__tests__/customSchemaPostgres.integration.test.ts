@@ -15,7 +15,7 @@ import { NextRequest } from 'next/server';
 import { Pool } from 'pg';
 import { env } from '@/env';
 import { prisma as defaultPrisma, getPgPool as getDefaultPgPool } from '@/lib/prisma';
-import { parsePostgresUrl } from '@/lib/postgres-url.js';
+import { parsePostgresUrl, verifyPostgresTlsHandshake } from '@/lib/postgres-url.js';
 import { buildPostgresRuntimeConfig } from '@/lib/postgresPool';
 import { runPreflightCheck } from '../../../scripts/preflight-migration-summary';
 
@@ -78,6 +78,7 @@ function createX509PemCertificate(params: {
   serialNumber: number;
   isCa: boolean;
   dnsNames?: string[];
+  ipv4Addresses?: string[];
 }): string {
   const sigAlg = derSequence([derOid([0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03, 0x02])]);
   const versionV3 = derTlv(0xa0, derTlv(0x02, Buffer.from([0x02])));
@@ -100,9 +101,12 @@ function createX509PemCertificate(params: {
     extItems.push(derSequence([derOid([0x55, 0x1d, 0x13]), derTlv(0x04, derSequence([]))]));
   }
 
-  const sanEntries = (params.dnsNames ?? []).map((dns) =>
-    derTlv(0x82, Buffer.from(dns, 'ascii'))
-  );
+  const sanEntries = [
+    ...(params.dnsNames ?? []).map((dns) => derTlv(0x82, Buffer.from(dns, 'ascii'))),
+    ...(params.ipv4Addresses ?? []).map((ip) =>
+      derTlv(0x87, Buffer.from(ip.split('.').map(Number)))
+    ),
+  ];
   if (sanEntries.length > 0) {
     extItems.push(
       derSequence([
@@ -310,6 +314,8 @@ describe('Custom PostgreSQL schema & TLS migration/runtime parity integration', 
   let caCertPath: string;
   let mismatchedHostKeyPem: string;
   let mismatchedHostCertPem: string;
+  let matchingHostKeyPem: string;
+  let matchingHostCertPem: string;
 
   beforeAll(async () => {
     jest.setTimeout(60_000);
@@ -367,6 +373,21 @@ describe('Custom PostgreSQL schema & TLS migration/runtime parity integration', 
       serialNumber: 12,
       isCa: false,
       dnsNames: ['db-internal.example.invalid'],
+    });
+
+    const matchingLeafKeys = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+    matchingHostKeyPem = matchingLeafKeys.privateKey
+      .export({ type: 'pkcs8', format: 'pem' })
+      .toString();
+    matchingHostCertPem = createX509PemCertificate({
+      subjectCn: 'localhost',
+      issuerCn: caCn,
+      subjectPublicKeySpkiDer: matchingLeafKeys.publicKey.export({ type: 'spki', format: 'der' }),
+      issuerPrivateKey: caKeys.privateKey,
+      serialNumber: 13,
+      isCa: false,
+      dnsNames: ['localhost'],
+      ipv4Addresses: ['127.0.0.1'],
     });
   }, 60_000);
 
@@ -842,7 +863,7 @@ describe('Custom PostgreSQL schema & TLS migration/runtime parity integration', 
     });
   }, 30_000);
 
-  it('rejects sslmode=verify-ca and sslmode=verify-full without sslrootcert against an untrusted self-signed certificate in both pre-flight and GET /api/ready', async () => {
+  it('rejects sslmode=require, sslmode=verify-ca, and sslmode=verify-full without sslrootcert against an untrusted self-signed certificate in both pre-flight and GET /api/ready', async () => {
     const untrustedProxy = await startTlsPostgresProxy({
       backendHost: pgHost,
       backendPort: pgPort,
@@ -851,7 +872,7 @@ describe('Custom PostgreSQL schema & TLS migration/runtime parity integration', 
     });
 
     try {
-      for (const mode of ['verify-ca', 'verify-full'] as const) {
+      for (const mode of ['require', 'verify-ca', 'verify-full'] as const) {
         const targetUrl = `postgresql://${authPart}127.0.0.1:${untrustedProxy.port}/${CUSTOM_DB_NAME}?schema=${CUSTOM_SCHEMA_NAME}&sslmode=${mode}`;
 
         const preflight = runPreflightCheck({
@@ -871,26 +892,39 @@ describe('Custom PostgreSQL schema & TLS migration/runtime parity integration', 
     }
   }, 45_000);
 
-  it('succeeds under sslmode=verify-ca with a trusted sslrootcert on a mismatched hostname in both pre-flight and GET /api/ready, while rejecting sslmode=verify-full', async () => {
-    const caSignedProxy = await startTlsPostgresProxy({
+  it('retains sslaccept=strict with custom sslrootcert in Prisma CLI for verify-ca and verify-full while preserving CA-only verify-ca vs hostname-checked require/verify-full in runtime and handshake probes', async () => {
+    const mismatchedProxy = await startTlsPostgresProxy({
       backendHost: pgHost,
       backendPort: pgPort,
       tlsKeyPem: mismatchedHostKeyPem,
       tlsCertPem: mismatchedHostCertPem,
     });
+    const matchingProxy = await startTlsPostgresProxy({
+      backendHost: pgHost,
+      backendPort: pgPort,
+      tlsKeyPem: matchingHostKeyPem,
+      tlsCertPem: matchingHostCertPem,
+    });
 
     try {
       const encodedRootCert = encodeURIComponent(caCertPath);
-      const verifyCaUrl = `postgresql://${authPart}127.0.0.1:${caSignedProxy.port}/${CUSTOM_DB_NAME}?schema=${CUSTOM_SCHEMA_NAME}&sslmode=verify-ca&sslrootcert=${encodedRootCert}`;
+      const mismatchedVerifyCaUrl = `postgresql://${authPart}127.0.0.1:${mismatchedProxy.port}/${CUSTOM_DB_NAME}?schema=${CUSTOM_SCHEMA_NAME}&sslmode=verify-ca&sslrootcert=${encodedRootCert}`;
 
-      const preflightVerifyCa = runPreflightCheck({
-        requireDb: true,
-        databaseUrl: verifyCaUrl,
+      // Node handshake probe and pg.Pool honor CA-only verify-ca on mismatched SAN
+      await expect(verifyPostgresTlsHandshake(mismatchedVerifyCaUrl)).resolves.toMatchObject({
+        ok: true,
+        tlsMode: 'verify-ca',
+        upgraded: true,
       });
-      expect(preflightVerifyCa.success).toBe(true);
-      expect(preflightVerifyCa.summary).toContain('**Pre-Flight Gate:** `PASSED`');
 
-      await runWithIsolatedDatabaseUrl(verifyCaUrl, async () => {
+      // Prisma CLI now retains sslaccept=strict + sslcert=<caCertPath> on verify-ca, rejecting SAN mismatch
+      const preflightMismatchedVerifyCa = runPreflightCheck({
+        requireDb: true,
+        databaseUrl: mismatchedVerifyCaUrl,
+      });
+      expect(preflightMismatchedVerifyCa.success).toBe(false);
+
+      await runWithIsolatedDatabaseUrl(mismatchedVerifyCaUrl, async () => {
         const { GET } = await import('@/app/api/ready/route');
         const res = await GET();
         expect(res.status).toBe(200);
@@ -901,21 +935,47 @@ describe('Custom PostgreSQL schema & TLS migration/runtime parity integration', 
         });
       });
 
-      const verifyFullUrl = `postgresql://${authPart}127.0.0.1:${caSignedProxy.port}/${CUSTOM_DB_NAME}?schema=${CUSTOM_SCHEMA_NAME}&sslmode=verify-full&sslrootcert=${encodedRootCert}`;
+      for (const strictMode of ['require', 'verify-full'] as const) {
+        const mismatchedStrictUrl = `postgresql://${authPart}127.0.0.1:${mismatchedProxy.port}/${CUSTOM_DB_NAME}?schema=${CUSTOM_SCHEMA_NAME}&sslmode=${strictMode}&sslrootcert=${encodedRootCert}`;
 
-      const preflightVerifyFull = runPreflightCheck({
-        requireDb: true,
-        databaseUrl: verifyFullUrl,
-      });
-      expect(preflightVerifyFull.success).toBe(false);
+        const preflightStrict = runPreflightCheck({
+          requireDb: true,
+          databaseUrl: mismatchedStrictUrl,
+        });
+        expect(preflightStrict.success).toBe(false);
 
-      await runWithIsolatedDatabaseUrl(verifyFullUrl, async () => {
-        const { GET } = await import('@/app/api/ready/route');
-        const res = await GET();
-        expect(res.status).toBe(503);
-      });
+        await runWithIsolatedDatabaseUrl(mismatchedStrictUrl, async () => {
+          const { GET } = await import('@/app/api/ready/route');
+          const res = await GET();
+          expect(res.status).toBe(503);
+        });
+      }
+
+      // With matching SAN + custom sslrootcert, both pre-flight Prisma CLI (sslaccept=strict) and GET /api/ready succeed across require, verify-ca, and verify-full
+      for (const validMode of ['require', 'verify-ca', 'verify-full'] as const) {
+        const matchingUrl = `postgresql://${authPart}127.0.0.1:${matchingProxy.port}/${CUSTOM_DB_NAME}?schema=${CUSTOM_SCHEMA_NAME}&sslmode=${validMode}&sslrootcert=${encodedRootCert}`;
+
+        const preflightValid = runPreflightCheck({
+          requireDb: true,
+          databaseUrl: matchingUrl,
+        });
+        expect(preflightValid.success).toBe(true);
+        expect(preflightValid.summary).toContain('**Pre-Flight Gate:** `PASSED`');
+
+        await runWithIsolatedDatabaseUrl(matchingUrl, async () => {
+          const { GET } = await import('@/app/api/ready/route');
+          const res = await GET();
+          expect(res.status).toBe(200);
+          await expect(res.json()).resolves.toEqual({
+            status: 'ready',
+            database: 'connected',
+            timestamp: expect.any(String),
+          });
+        });
+      }
     } finally {
-      await caSignedProxy.close();
+      await mismatchedProxy.close();
+      await matchingProxy.close();
     }
-  }, 45_000);
+  }, 60_000);
 });
