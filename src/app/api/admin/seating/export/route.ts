@@ -118,12 +118,14 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     }),
   ]);
 
-  const tables = rawTables.map((table) => ({
-    ...table,
-    invitationCodes: (table.invitationCodes || []).filter((guest) =>
-      isGuestEligibleForSeating(guest)
-    ),
-  }));
+  const tables = rawTables
+    .filter((table) => !table.isSample)
+    .map((table) => ({
+      ...table,
+      invitationCodes: (table.invitationCodes || []).filter((guest) =>
+        isGuestEligibleForSeating(guest)
+      ),
+    }));
   const unassignedGuests = rawUnassignedGuests.filter((guest) =>
     isGuestEligibleForSeating(guest)
   );

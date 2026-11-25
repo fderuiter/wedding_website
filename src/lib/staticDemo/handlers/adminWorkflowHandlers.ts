@@ -2438,7 +2438,7 @@ export async function handleAdminWorkflowRoutes(
     const result = store.mutate((draft) => {
       const nowIso = new Date().toISOString();
       const guestTables = draft.seatingTable.filter(
-        (t) => !isDemoLandmarkShape(t.shape) && t.capacity > 0,
+        (t) => !t.isSample && !isDemoLandmarkShape(t.shape) && t.capacity > 0,
       );
 
       const getPartyChairs = (inv: DemoInvitationCodeRecord): number => {
@@ -2452,6 +2452,9 @@ export async function handleAdminWorkflowRoutes(
       };
 
       const isEligible = (inv: DemoInvitationCodeRecord): boolean => {
+        if (inv.isSample) {
+          return false;
+        }
         if (
           inv.partyTags.some(
             (tag) => tag.trim().toLowerCase() === 'address-collection',
@@ -2539,13 +2542,14 @@ export async function handleAdminWorkflowRoutes(
     const snapshot = store.getSnapshot();
     const format = (searchParams.get('format') || 'csv').toLowerCase();
     const guestTables = snapshot.seatingTable.filter(
-      (t) => !isDemoLandmarkShape(t.shape) && t.capacity > 0,
+      (t) => !t.isSample && !isDemoLandmarkShape(t.shape) && t.capacity > 0,
     );
+    const liveInvitations = snapshot.invitationCode.filter((i) => !i.isSample);
     const dateStamp = new Date().toISOString().slice(0, 10);
 
     if (format === 'pdf') {
       const lines = guestTables.flatMap((t) => {
-        const guests = snapshot.invitationCode.filter((i) => i.tableId === t.id);
+        const guests = liveInvitations.filter((i) => i.tableId === t.id);
         return [
           `${t.name} (${guests.length}/${t.capacity} seated):`,
           ...guests.map((g) => {
@@ -2573,7 +2577,7 @@ export async function handleAdminWorkflowRoutes(
           ? 'seating-place-cards.pdf'
           : 'seating-escort-cards.pdf';
       const lines = guestTables.flatMap((t) => {
-        const guests = snapshot.invitationCode.filter((i) => i.tableId === t.id);
+        const guests = liveInvitations.filter((i) => i.tableId === t.id);
         return guests.flatMap((g) => {
           const baseLine = `${g.guestName} - ${t.name}, Seat ${g.seatNumber ?? '-'}`;
           const companionSeats = Array.isArray(g.plusOneSeatNumbers)
@@ -2604,8 +2608,8 @@ export async function handleAdminWorkflowRoutes(
     }
 
     const csv = buildSeatingCsv(
-      snapshot.seatingTable,
-      snapshot.invitationCode,
+      snapshot.seatingTable.filter((t) => !t.isSample),
+      liveInvitations,
       snapshot,
     );
     return binaryResponse(csv, 'text/csv; charset=utf-8', {

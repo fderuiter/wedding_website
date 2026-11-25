@@ -2010,6 +2010,141 @@ describe('FloorplanCanvas component', () => {
 
       fireEvent.mouseUp(canvasElement);
     });
+
+    it('makes primary occupied seats draggable onto open chairs (including internal moves on full tables) while keeping companion +1 seats linked and keyboard shortcuts intact', async () => {
+      const onDropGuestOnTable = jest.fn();
+      const onUnassignGuest = jest.fn();
+
+      const tablesForDirectMoves: SeatingTableDTO[] = [
+        {
+          id: 'tbl-move-source',
+          name: 'Source Table',
+          shape: 'round',
+          capacity: 3,
+          x: 100,
+          y: 100,
+          width: 120,
+          height: 120,
+          rotation: 0,
+          isSample: false,
+          invitationCodes: [
+            {
+              id: 'g-party-2',
+              code: 'PARTY2',
+              guestName: 'Maya Lin',
+              tableId: 'tbl-move-source',
+              seatNumber: 1,
+              plusOneSeatNumbers: [2],
+              plusOneAllocations: 1,
+              partyTags: [],
+              used: true,
+              isSample: false,
+              extraFields: {
+                attending: true,
+                plusOneCount: 1,
+                plusOneNames: ['Ethan Lin'],
+              },
+            } as InvitationCodeDTO,
+          ],
+        },
+        {
+          id: 'tbl-move-dest',
+          name: 'Destination Table',
+          shape: 'round',
+          capacity: 4,
+          x: 340,
+          y: 100,
+          width: 120,
+          height: 120,
+          rotation: 0,
+          isSample: false,
+          invitationCodes: [
+            {
+              id: 'g-other-seated',
+              code: 'OTHER1',
+              guestName: 'Other Seated',
+              tableId: 'tbl-move-dest',
+              seatNumber: 1,
+              plusOneAllocations: 0,
+              partyTags: [],
+              used: true,
+              isSample: false,
+              extraFields: { attending: true },
+            } as InvitationCodeDTO,
+          ],
+        },
+      ];
+
+      const { container } = render(
+        <FloorplanCanvas
+          {...defaultProps}
+          tables={tablesForDirectMoves}
+          onDropGuestOnTable={onDropGuestOnTable}
+          onUnassignGuest={onUnassignGuest}
+        />
+      );
+
+      const primarySeatBtn = container.querySelector(
+        'button[data-table-id="tbl-move-source"][data-seat-number="1"]'
+      ) as HTMLButtonElement;
+      const companionSeatBtn = container.querySelector(
+        'button[data-table-id="tbl-move-source"][data-seat-number="2"]'
+      ) as HTMLButtonElement;
+      const sameTableOpenSeatBtn = container.querySelector(
+        'button[data-table-id="tbl-move-source"][data-seat-number="3"]'
+      ) as HTMLButtonElement;
+      const destOccupiedSeatBtn = container.querySelector(
+        'button[data-table-id="tbl-move-dest"][data-seat-number="1"]'
+      ) as HTMLButtonElement;
+      const destOpenSeatBtn = container.querySelector(
+        'button[data-table-id="tbl-move-dest"][data-seat-number="3"]'
+      ) as HTMLButtonElement;
+
+      // Primary seat is draggable; companion +1 seat stays linked (not draggable)
+      expect(primarySeatBtn).toHaveAttribute('draggable', 'true');
+      expect(companionSeatBtn).toHaveAttribute('draggable', 'false');
+      expect(primarySeatBtn.className).toContain('focus:outline-none');
+      expect(primarySeatBtn.className).toContain('focus:ring-2');
+      expect(primarySeatBtn.className).toContain('w-8');
+      expect(primarySeatBtn.className).toContain('h-8');
+
+      // 1. Same-table move of a 2-seat party onto Seat 3 (raw openSeats is 1, but subtracting moving party leaves 3 >= 2)
+      const dataTransferStore = new Map<string, string>();
+      const mockDataTransfer = {
+        setData: (type: string, val: string) => dataTransferStore.set(type, val),
+        getData: (type: string) => dataTransferStore.get(type) || '',
+        effectAllowed: 'none',
+        dropEffect: 'none',
+      };
+
+      fireEvent.dragStart(primarySeatBtn, { dataTransfer: mockDataTransfer });
+      expect(dataTransferStore.get('text/plain')).toBe('g-party-2');
+
+      fireEvent.dragOver(sameTableOpenSeatBtn, { dataTransfer: mockDataTransfer });
+      expect(mockDataTransfer.dropEffect).toBe('move');
+
+      fireEvent.drop(sameTableOpenSeatBtn, { dataTransfer: mockDataTransfer });
+      expect(onDropGuestOnTable).toHaveBeenCalledWith('g-party-2', 'tbl-move-source', 3);
+
+      // 2. Dropping a seated guest onto another guest's occupied seat is blocked (no swap)
+      onDropGuestOnTable.mockClear();
+      fireEvent.dragStart(primarySeatBtn, { dataTransfer: mockDataTransfer });
+      fireEvent.dragOver(destOccupiedSeatBtn, { dataTransfer: mockDataTransfer });
+      expect(mockDataTransfer.dropEffect).toBe('none');
+      fireEvent.drop(destOccupiedSeatBtn, { dataTransfer: mockDataTransfer });
+      expect(onDropGuestOnTable).not.toHaveBeenCalled();
+
+      // 3. Dragging primary seat onto an open seat on Destination Table moves the party
+      fireEvent.dragStart(primarySeatBtn, { dataTransfer: mockDataTransfer });
+      fireEvent.drop(destOpenSeatBtn, { dataTransfer: mockDataTransfer });
+      expect(onDropGuestOnTable).toHaveBeenCalledWith('g-party-2', 'tbl-move-dest', 3);
+
+      // 4. Delete and Backspace keyboard shortcuts still unassign seated guests
+      fireEvent.keyDown(primarySeatBtn, { key: 'Delete' });
+      expect(onUnassignGuest).toHaveBeenCalledWith('g-party-2');
+
+      expect(await axe(container)).toHaveNoViolations();
+    });
   });
 });
 

@@ -1120,7 +1120,7 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
       }
 
       const tableStates: TableState[] = (tables || [])
-        .filter((t: any) => !isLandmarkTable(t) && Number(t.capacity) > 0)
+        .filter((t: any) => !t.isSample && !isLandmarkTable(t) && Number(t.capacity) > 0)
         .map((t: any) => {
           const occupants: any[] = (t.invitationCodes || []).filter((g: any) =>
             isGuestEligibleForSeating(g)

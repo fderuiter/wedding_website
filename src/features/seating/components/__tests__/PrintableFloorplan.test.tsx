@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import { PrintableFloorplan } from '../PrintableFloorplan';
 import { resolveDetailedSeatAssignments } from '../../seatLayout';
 import { getInvitationPartyMembers, summarizeAttendeeMeals } from '../../utils/seatingHelpers';
@@ -22,6 +23,8 @@ jest.mock('../../utils/seatingHelpers', () => {
     summarizeAttendeeMeals: jest.fn(actual.summarizeAttendeeMeals),
   };
 });
+
+expect.extend(toHaveNoViolations);
 
 describe('PrintableFloorplan component', () => {
   const mockTables: SeatingTableDTO[] = [
@@ -538,6 +541,126 @@ describe('PrintableFloorplan component', () => {
       expect(resolveSeatsSpy).toHaveBeenCalledTimes(1);
       expect(partyMembersSpy).toHaveBeenCalledTimes(2);
       expect(screen.getByText('Seat 3: Added Guest')).toBeInTheDocument();
+    });
+
+    it('renders a scaled 2D SVG diagram with rotated tables, seat circles, dashed landmarks, excludes sample rows, and passes jest-axe', async () => {
+      const mixedTables: SeatingTableDTO[] = [
+        {
+          id: 'tbl-rot-rect',
+          name: 'Cypress Banquet',
+          shape: 'rectangular',
+          capacity: 4,
+          x: 120,
+          y: 110,
+          width: 180,
+          height: 90,
+          rotation: 90,
+          isSample: false,
+          invitationCodes: [
+            createMockInvitationCode({
+              id: 'g-real-1',
+              guestName: 'Real Host',
+              seatNumber: 1,
+              used: true,
+              isSample: false,
+              extraFields: { attending: true },
+            }),
+            createMockInvitationCode({
+              id: 'g-sample-1',
+              guestName: 'Hidden Sample Seated',
+              seatNumber: 2,
+              used: true,
+              isSample: true,
+              extraFields: { attending: true },
+            }),
+          ],
+        },
+        {
+          id: 'lm-dance',
+          name: 'Main Dance Floor',
+          shape: 'dance-floor',
+          capacity: 0,
+          x: 380,
+          y: 110,
+          width: 160,
+          height: 160,
+          rotation: 45,
+          isSample: false,
+          invitationCodes: [],
+        },
+        {
+          id: 'tbl-sample-hidden',
+          name: 'Hidden Sample Table',
+          shape: 'round',
+          capacity: 8,
+          x: 620,
+          y: 110,
+          width: 120,
+          height: 120,
+          rotation: 0,
+          isSample: true,
+          invitationCodes: [],
+        },
+      ];
+
+      const mixedUnassigned: InvitationCodeDTO[] = [
+        createMockInvitationCode({
+          id: 'u-real',
+          guestName: 'Real Unassigned',
+          isSample: false,
+          used: true,
+          extraFields: { attending: true },
+        }),
+        createMockInvitationCode({
+          id: 'u-sample',
+          guestName: 'Hidden Sample Unassigned',
+          isSample: true,
+          used: true,
+          extraFields: { attending: true },
+        }),
+      ];
+
+      const { container } = render(
+        <PrintableFloorplan tables={mixedTables} unassignedGuests={mixedUnassigned} />
+      );
+
+      const svg = screen.getByTestId('printable-floorplan-svg');
+      expect(svg).toBeInTheDocument();
+
+      const rotatedTableGroup = container.querySelector(
+        '[data-testid="printable-svg-table"][data-table-id="tbl-rot-rect"] [data-testid="printable-svg-table-rotated"]'
+      );
+      expect(rotatedTableGroup?.getAttribute('transform')).toMatch(/^rotate\(90\s+/);
+
+      const seatCircles = container.querySelectorAll(
+        '[data-testid="printable-svg-table"][data-table-id="tbl-rot-rect"] [data-testid="printable-svg-seat"]'
+      );
+      expect(seatCircles).toHaveLength(4);
+      expect(seatCircles[0]).toHaveAttribute('data-occupied', 'true');
+      // Seat 2 had isSample: true guest -> excluded, so Seat 2 remains unoccupied
+      expect(seatCircles[1]).toHaveAttribute('data-occupied', 'false');
+
+      const landmarkRect = container.querySelector(
+        '[data-testid="printable-svg-landmark"][data-table-id="lm-dance"] rect'
+      );
+      expect(landmarkRect).toHaveAttribute('stroke-dasharray', '6 4');
+      const rotatedLandmarkGroup = container.querySelector(
+        '[data-testid="printable-svg-landmark"][data-table-id="lm-dance"] [data-testid="printable-svg-landmark-rotated"]'
+      );
+      expect(rotatedLandmarkGroup?.getAttribute('transform')).toMatch(/^rotate\(45\s+/);
+
+      // Upright label sits outside the rotated <g>
+      const uprightTableLabel = screen.getByTestId('printable-svg-table-label');
+      expect(uprightTableLabel).toHaveTextContent('Cypress Banquet (1/4)');
+      expect(uprightTableLabel.parentElement).not.toBe(rotatedTableGroup);
+
+      // Sample rows excluded everywhere
+      expect(screen.queryByText(/Hidden Sample Table/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Hidden Sample Seated/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Hidden Sample Unassigned/)).not.toBeInTheDocument();
+      expect(screen.getByText('Real Unassigned')).toBeInTheDocument();
+
+      expect(await axe(container)).toHaveNoViolations();
     });
   });
 });

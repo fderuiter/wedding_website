@@ -728,5 +728,219 @@ describe('pdf.service - generateSeatingChartPdf', () => {
         jest.restoreAllMocks();
       }
     });
+
+    it('applies doc.rotate around rotated rectangular tables and landmarks while keeping table names, capacities, and landmark labels upright', async () => {
+      const rotationCalls: Array<{ angle: number; origin?: [number, number] }> = [];
+      const textStates: Array<{ text: string; rotationDepth: number }> = [];
+      let activeRotationDepth = 0;
+
+      const originalSave = PDFDocument.prototype.save;
+      const originalRestore = PDFDocument.prototype.restore;
+      const originalRotate = PDFDocument.prototype.rotate;
+      const originalText = PDFDocument.prototype.text;
+      const depthStack: boolean[] = [];
+
+      jest.spyOn(PDFDocument.prototype, 'save').mockImplementation(function (
+        this: PDFKit.PDFDocument
+      ) {
+        depthStack.push(false);
+        return originalSave.call(this);
+      });
+
+      jest.spyOn(PDFDocument.prototype, 'rotate').mockImplementation(function (
+        this: PDFKit.PDFDocument,
+        ...args: unknown[]
+      ) {
+        const [angle, options] = args as [number, { origin?: [number, number] } | undefined];
+        rotationCalls.push({ angle, origin: options?.origin });
+        if (depthStack.length > 0 && !depthStack[depthStack.length - 1]) {
+          depthStack[depthStack.length - 1] = true;
+          activeRotationDepth += 1;
+        }
+        return (originalRotate as (...a: unknown[]) => PDFKit.PDFDocument).apply(this, args);
+      });
+
+      jest.spyOn(PDFDocument.prototype, 'restore').mockImplementation(function (
+        this: PDFKit.PDFDocument
+      ) {
+        const hadRotation = depthStack.pop();
+        if (hadRotation) {
+          activeRotationDepth = Math.max(0, activeRotationDepth - 1);
+        }
+        return originalRestore.call(this);
+      });
+
+      jest.spyOn(PDFDocument.prototype, 'text').mockImplementation(function (
+        this: PDFKit.PDFDocument,
+        ...args: unknown[]
+      ) {
+        if (typeof args[0] === 'string') {
+          textStates.push({ text: args[0], rotationDepth: activeRotationDepth });
+        }
+        return (originalText as (...a: unknown[]) => PDFKit.PDFDocument).apply(this, args);
+      });
+
+      try {
+        const rotatedRectTable: SeatingTableDTO = {
+          id: 'tbl-rot-90',
+          name: 'Rotated Banquet',
+          shape: 'rectangular',
+          capacity: 6,
+          x: 150,
+          y: 120,
+          width: 200,
+          height: 90,
+          rotation: 90,
+          isSample: false,
+          invitationCodes: [
+            {
+              id: 'g-rot-1',
+              guestName: 'Nora Vance',
+              seatNumber: 1,
+              isSample: false,
+            } as InvitationCodeDTO,
+          ],
+        };
+        const rotatedLandmark: SeatingTableDTO = {
+          id: 'lm-rot-45',
+          name: 'Angled Stage',
+          shape: 'dj',
+          capacity: 0,
+          x: 420,
+          y: 120,
+          width: 180,
+          height: 80,
+          rotation: 45,
+          isSample: false,
+          invitationCodes: [],
+        };
+
+        const pdfBuffer = await generateSeatingChartPdf([rotatedRectTable, rotatedLandmark], []);
+        expect(pdfBuffer.slice(0, 5).toString('ascii')).toBe('%PDF-');
+
+        expect(rotationCalls).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              angle: 45,
+              origin: [expect.any(Number), expect.any(Number)],
+            }),
+            expect.objectContaining({
+              angle: 90,
+              origin: [expect.any(Number), expect.any(Number)],
+            }),
+          ])
+        );
+
+        const uprightTableTitle = textStates.find((t) => t.text === 'Rotated Banquet');
+        const uprightCapacity = textStates.find((t) => t.text === '1/6 seats');
+        const uprightLandmarkTitle = textStates.find((t) => t.text === 'Angled Stage');
+        expect(uprightTableTitle?.rotationDepth).toBe(0);
+        expect(uprightCapacity?.rotationDepth).toBe(0);
+        expect(uprightLandmarkTitle?.rotationDepth).toBe(0);
+      } finally {
+        jest.restoreAllMocks();
+      }
+    });
+
+    it('sorts escort-cards by parsed surname first, then given name, table name, and seat number while excluding sample records', async () => {
+      const renderedTexts: string[] = [];
+      const originalText = PDFDocument.prototype.text;
+
+      jest.spyOn(PDFDocument.prototype, 'text').mockImplementation(function (
+        this: PDFKit.PDFDocument,
+        ...args: unknown[]
+      ) {
+        if (typeof args[0] === 'string') {
+          renderedTexts.push(args[0]);
+        }
+        return (originalText as (...a: unknown[]) => PDFKit.PDFDocument).apply(this, args);
+      });
+
+      try {
+        const escortTables: SeatingTableDTO[] = [
+          {
+            id: 'tbl-b',
+            name: 'Willow Table',
+            shape: 'round',
+            capacity: 6,
+            x: 100,
+            y: 100,
+            width: 120,
+            height: 120,
+            rotation: 0,
+            isSample: false,
+            invitationCodes: [
+              {
+                id: 'g-zimmerman',
+                guestName: 'Aaron Zimmerman',
+                seatNumber: 1,
+                isSample: false,
+              } as InvitationCodeDTO,
+              {
+                id: 'g-adams-zoe',
+                guestName: 'Zoe Adams',
+                seatNumber: 2,
+                isSample: false,
+              } as InvitationCodeDTO,
+              {
+                id: 'g-adams-ben-w',
+                guestName: 'Ben Adams Jr.',
+                seatNumber: 3,
+                isSample: false,
+              } as InvitationCodeDTO,
+            ],
+          },
+          {
+            id: 'tbl-a',
+            name: 'Alder Table',
+            shape: 'round',
+            capacity: 6,
+            x: 300,
+            y: 100,
+            width: 120,
+            height: 120,
+            rotation: 0,
+            isSample: false,
+            invitationCodes: [
+              {
+                id: 'g-adams-ben-a',
+                guestName: 'Ben Adams Jr.',
+                seatNumber: 4,
+                isSample: false,
+              } as InvitationCodeDTO,
+              {
+                id: 'g-sample-card',
+                guestName: 'AAA Sample',
+                seatNumber: 1,
+                isSample: true,
+              } as InvitationCodeDTO,
+            ],
+          },
+        ];
+
+        const pdfBuffer = await generateAveryCardsPdf(escortTables, 'escort-cards');
+        expect(pdfBuffer.slice(0, 5).toString('ascii')).toBe('%PDF-');
+
+        expect(renderedTexts).not.toContain('AAA Sample');
+
+        const firstBenIdx = renderedTexts.indexOf('Ben Adams Jr.');
+        const secondBenIdx = renderedTexts.indexOf('Ben Adams Jr.', firstBenIdx + 1);
+        const zoeIdx = renderedTexts.indexOf('Zoe Adams');
+        const aaronIdx = renderedTexts.indexOf('Aaron Zimmerman');
+
+        expect(firstBenIdx).toBeGreaterThanOrEqual(0);
+        expect(secondBenIdx).toBeGreaterThan(firstBenIdx);
+        expect(zoeIdx).toBeGreaterThan(secondBenIdx);
+        expect(aaronIdx).toBeGreaterThan(zoeIdx);
+
+        // Alder Table precedes Willow Table for identical surname + given name tie
+        const alderIdx = renderedTexts.indexOf('Alder Table (Seat 4)');
+        const willowIdx = renderedTexts.indexOf('Willow Table (Seat 3)');
+        expect(alderIdx).toBeGreaterThanOrEqual(0);
+        expect(willowIdx).toBeGreaterThan(alderIdx);
+      } finally {
+        jest.restoreAllMocks();
+      }
+    });
   });
 });

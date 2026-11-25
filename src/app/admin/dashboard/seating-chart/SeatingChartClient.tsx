@@ -28,6 +28,7 @@ import { Dialog } from '@/components/ui/Dialog';
 import { Input } from '@/components/ui/forms';
 import { Icon } from '@/components/ui/Icon';
 import { EnsureToastProvider, useToast } from '@/components/ui/ToastProvider';
+import { SeatingSampleDataBanner } from '@/components/admin/SampleDataBanner';
 import {
   InvitationCodeDTO,
   formatGuestCustomAnswers,
@@ -446,6 +447,8 @@ function SeatingChartAdminContent() {
     tables,
     allGuests,
     unassignedGuests,
+    hiddenSampleTableCount = 0,
+    hiddenSampleGuestCount = 0,
     isLoading,
     errorMsg,
     canUndo,
@@ -816,6 +819,13 @@ function SeatingChartAdminContent() {
           </div>
         </div>
 
+        {(hiddenSampleTableCount > 0 || hiddenSampleGuestCount > 0) && (
+          <SeatingSampleDataBanner
+            hiddenTableCount={hiddenSampleTableCount}
+            hiddenGuestCount={hiddenSampleGuestCount}
+          />
+        )}
+
         {/* Flagged Declined Seated Guests Alert Banner */}
         {declinedSeatedGuests.length > 0 && (
           <div
@@ -996,88 +1006,169 @@ function SeatingChartAdminContent() {
         }
         className="max-w-sm w-full"
       >
-        {assignSeatTarget && (
-          unassignedGuests.length === 0 ? (
-            <div className="space-y-3">
-              <p className="text-xs text-gray-600 dark:text-gray-300">
-                All guests have already been assigned to tables.
-              </p>
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => setAssignSeatTarget(null)}
-                  className="min-h-[30px] px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          ) : (() => {
-            const modalTable = tables.find((t) => t.id === assignSeatTarget.tableId);
-            const openSeats = modalTable
-              ? Math.max(0, modalTable.capacity - getGuestsHeadcount(modalTable.invitationCodes || []))
-              : Infinity;
-            const firstFittingGuest = unassignedGuests.find((g) => getGuestPartySize(g) <= openSeats);
+        {assignSeatTarget && (() => {
+          const modalTable = tables.find((t) => t.id === assignSeatTarget.tableId);
+          const modalTableOccupants = modalTable?.invitationCodes || [];
+          const totalSeatedAtModalTable = modalTable ? getGuestsHeadcount(modalTableOccupants) : 0;
 
+          const getOpenSeatsForGuest = (guest: InvitationCodeDTO): number => {
+            if (!modalTable) return Infinity;
+            const isSameTable =
+              guest.tableId === modalTable.id ||
+              modalTableOccupants.some((occ) => occ.id === guest.id);
+            const effectiveOccupied = isSameTable
+              ? Math.max(0, totalSeatedAtModalTable - getGuestPartySize(guest))
+              : totalSeatedAtModalTable;
+            return Math.max(0, modalTable.capacity - effectiveOccupied);
+          };
+
+          const seatedTableGroups = tables
+            .filter((t) => !isLandmarkTable(t) && !t.isSample)
+            .map((t) => {
+              const eligibleCodes = (t.invitationCodes || []).filter((g) =>
+                isGuestEligibleForSeating(g)
+              );
+              const seatMap = resolveSeatAssignments(eligibleCodes, t.capacity);
+              const resolvedPrimarySeatById = new Map<string, number>();
+              seatMap.forEach((g, seatNum) => {
+                if (g.id) resolvedPrimarySeatById.set(g.id, seatNum);
+              });
+
+              const entries = eligibleCodes
+                .map((guest) => ({
+                  guest,
+                  resolvedSeat: guest.seatNumber ?? resolvedPrimarySeatById.get(guest.id) ?? null,
+                }))
+                .filter(
+                  ({ resolvedSeat }) =>
+                    !(t.id === assignSeatTarget.tableId && resolvedSeat === assignSeatTarget.seatNumber)
+                );
+
+              return { table: t, entries };
+            })
+            .filter((group) => group.entries.length > 0);
+
+          const allSeatedCandidates = seatedTableGroups.flatMap((group) =>
+            group.entries.map((entry) => entry.guest)
+          );
+
+          if (unassignedGuests.length === 0 && allSeatedCandidates.length === 0) {
             return (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const formData = new FormData(e.currentTarget);
-                  const guestId = formData.get('guestId') as string;
-                  if (guestId && assignSeatTarget) {
-                    handleAssignGuestToTable(guestId, assignSeatTarget.tableId, assignSeatTarget.seatNumber);
-                    setAssignSeatTarget(null);
-                  }
-                }}
-                className="space-y-3"
-              >
-                <div>
-                  <label htmlFor="modal-assign-guest" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Select Guest
-                  </label>
-                  <select
-                    id="modal-assign-guest"
-                    name="guestId"
-                    required
-                    defaultValue={firstFittingGuest?.id || unassignedGuests[0]?.id || ''}
-                    className="w-full min-h-[32px] px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
-                  >
-                    {unassignedGuests.map((g) => {
-                      const pSize = getGuestPartySize(g);
-                      const plusOneNames = getGuestPlusOneNamesList(g);
-                      const fits = pSize <= openSeats;
-                      return (
-                        <option key={g.id} value={g.id} disabled={!fits}>
-                          {g.guestName}
-                          {plusOneNames.length > 0 ? ` (+1: ${plusOneNames.join(', ')})` : ''}
-                          {pSize > 1 ? ` — ${pSize} seats` : ''}
-                          {!fits ? ' (insufficient open seats)' : ''}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
-                <div className="flex justify-end gap-2 pt-2">
+              <div className="space-y-3">
+                <p className="text-xs text-gray-600 dark:text-gray-300">
+                  All guests have already been assigned to tables.
+                </p>
+                <div className="flex justify-end">
                   <button
                     type="button"
                     onClick={() => setAssignSeatTarget(null)}
                     className="min-h-[30px] px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
                   >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={!firstFittingGuest}
-                    className="min-h-[30px] px-3 py-1.5 text-xs bg-primary text-white font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50"
-                  >
-                    Assign Guest
+                    Close
                   </button>
                 </div>
-              </form>
+              </div>
             );
-          })()
-        )}
+          }
+
+          const firstFittingUnassigned = unassignedGuests.find(
+            (g) => getGuestPartySize(g) <= getOpenSeatsForGuest(g)
+          );
+          const firstFittingSeated = allSeatedCandidates.find(
+            (g) => getGuestPartySize(g) <= getOpenSeatsForGuest(g)
+          );
+          const firstFittingGuest = firstFittingUnassigned || firstFittingSeated;
+          const fallbackGuest = unassignedGuests[0] || allSeatedCandidates[0];
+
+          const renderGuestOption = (g: InvitationCodeDTO, seatSuffix?: string) => {
+            const pSize = getGuestPartySize(g);
+            const plusOneNames = getGuestPlusOneNamesList(g);
+            const fits = pSize <= getOpenSeatsForGuest(g);
+            return (
+              <option key={g.id} value={g.id} disabled={!fits}>
+                {g.guestName}
+                {plusOneNames.length > 0 ? ` (+1: ${plusOneNames.join(', ')})` : ''}
+                {seatSuffix ? ` · ${seatSuffix}` : ''}
+                {pSize > 1 ? ` — ${pSize} seats` : ''}
+                {!fits ? ' (insufficient open seats)' : ''}
+              </option>
+            );
+          };
+
+          return (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const formData = new FormData(e.currentTarget);
+                const guestId = formData.get('guestId') as string;
+                if (guestId && assignSeatTarget) {
+                  handleAssignGuestToTable(
+                    guestId,
+                    assignSeatTarget.tableId,
+                    assignSeatTarget.seatNumber
+                  );
+                  setAssignSeatTarget(null);
+                }
+              }}
+              className="space-y-3"
+            >
+              <div>
+                <label
+                  htmlFor="modal-assign-guest"
+                  className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
+                >
+                  Select Guest
+                </label>
+                <select
+                  id="modal-assign-guest"
+                  name="guestId"
+                  required
+                  defaultValue={firstFittingGuest?.id || fallbackGuest?.id || ''}
+                  className="w-full min-h-[32px] px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                >
+                  {unassignedGuests.length > 0 && (
+                    <optgroup label="Unassigned Guests">
+                      {unassignedGuests.map((g) => renderGuestOption(g))}
+                    </optgroup>
+                  )}
+                  {seatedTableGroups.map(({ table: groupTable, entries }) => (
+                    <optgroup
+                      key={groupTable.id}
+                      label={
+                        groupTable.id === assignSeatTarget.tableId
+                          ? `${groupTable.name} (Same Table)`
+                          : `${groupTable.name} (Move Seated)`
+                      }
+                    >
+                      {entries.map(({ guest, resolvedSeat }) =>
+                        renderGuestOption(
+                          guest,
+                          resolvedSeat ? `Seat ${resolvedSeat}` : 'Seated'
+                        )
+                      )}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setAssignSeatTarget(null)}
+                  className="min-h-[30px] px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!firstFittingGuest}
+                  className="min-h-[30px] px-3 py-1.5 text-xs bg-primary text-white font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50"
+                >
+                  Assign Guest
+                </button>
+              </div>
+            </form>
+          );
+        })()}
       </Dialog>
     </div>
   );
