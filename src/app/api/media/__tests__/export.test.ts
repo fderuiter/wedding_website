@@ -11,6 +11,8 @@ import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { safeFetch } from '@/utils/safeFetch';
+import { MAX_REMOTE_EXPORT_BYTES } from '@/utils/boundedStream';
+import { getStorageProvider } from '@/utils/storage';
 
 jest.mock('@/lib/prisma', () => ({
   prisma: {
@@ -39,6 +41,14 @@ jest.mock('@/utils/safeFetch', () => ({
   safeFetch: jest.fn(),
 }));
 
+jest.mock('@/utils/storage', () => {
+  const actual = jest.requireActual('@/utils/storage') as typeof import('@/utils/storage');
+  return {
+    ...actual,
+    getStorageProvider: jest.fn(actual.getStorageProvider),
+  };
+});
+
 const mockPrisma = prisma as unknown as {
   media: { findMany: jest.Mock };
   contentNode: { findMany: jest.Mock };
@@ -48,6 +58,7 @@ const mockGetAppConfig = getAppConfig as jest.Mock;
 const mockIsFeatureEnabled = isFeatureEnabled as jest.Mock;
 const mockIsAdminRequest = isAdminRequest as jest.MockedFunction<typeof isAdminRequest>;
 const mockSafeFetch = safeFetch as jest.MockedFunction<typeof safeFetch>;
+const mockGetStorageProvider = getStorageProvider as jest.MockedFunction<typeof getStorageProvider>;
 
 async function readStream(res: unknown): Promise<Buffer> {
   const stream = (res as { body?: ReadableStream<Uint8Array>; bodyContent?: ReadableStream<Uint8Array> })?.body ||
@@ -944,6 +955,119 @@ describe('GET & POST /api/media/export Integration Tests', () => {
           delete process.env.TRUST_PROXY;
         } else {
           process.env.TRUST_PROXY = prevTrustProxy;
+        }
+      }
+    });
+
+    test('streams remote and S3 assets without Response.arrayBuffer() and writes error_${filename}.txt on Content-Length, chunked, data URL, or S3 byte overflows', async () => {
+      const prevS3Bucket = process.env.S3_BUCKET;
+      process.env.S3_BUCKET = 'wedding-test-bucket';
+
+      const arrayBufferSpy = jest.spyOn(Response.prototype, 'arrayBuffer');
+      try {
+        const oversizedBase64 = 'A'.repeat(Math.ceil(((MAX_REMOTE_EXPORT_BYTES + 1024) * 4) / 3));
+
+        mockPrisma.media.findMany.mockResolvedValue([
+          { id: 'm-ok', url: 'https://cdn.example.com/ok.jpg', altText: 'Valid_Stream' },
+          { id: 'm-cl', url: 'https://cdn.example.com/cl-huge.jpg', altText: 'Header_Overflow' },
+          { id: 'm-chunk', url: 'https://cdn.example.com/chunk-huge.jpg', altText: 'Chunk_Overflow' },
+          { id: 'm-data', url: `data:image/jpeg;base64,${oversizedBase64}`, altText: 'Data_Overflow' },
+          { id: 'm-s3', url: '/uploads/s3-huge.jpg', altText: 'S3_Overflow' },
+        ]);
+        mockPrisma.contentNode.findMany.mockResolvedValue([]);
+
+        let headerOverflowBodyRead = false;
+        let chunkOverflowCancelled = false;
+
+        mockSafeFetch.mockImplementation(async (url: string, options?: RequestInit) => {
+          expect(options?.signal).toBeDefined();
+          if (url.endsWith('/ok.jpg')) {
+            return new Response(Buffer.from('streamed-jpeg-bytes'), {
+              status: 200,
+              headers: { 'Content-Type': 'image/jpeg' },
+            });
+          }
+          if (url.endsWith('/cl-huge.jpg')) {
+            const unpulledBody = new ReadableStream<Uint8Array>(
+              {
+                pull(controller) {
+                  headerOverflowBodyRead = true;
+                  controller.enqueue(new Uint8Array(1024));
+                },
+              },
+              { highWaterMark: 0 }
+            );
+            return new Response(unpulledBody, {
+              status: 200,
+              headers: { 'Content-Length': String(MAX_REMOTE_EXPORT_BYTES + 4096) },
+            });
+          }
+          const eightMiBChunk = new Uint8Array(8 * 1024 * 1024).fill(0x58);
+          const runawayStream = new ReadableStream<Uint8Array>({
+            pull(controller) {
+              controller.enqueue(eightMiBChunk);
+            },
+            cancel() {
+              chunkOverflowCancelled = true;
+            },
+          });
+          return new Response(runawayStream, { status: 200 });
+        });
+
+        let s3StreamCancelled = false;
+        const nineMiBChunk = new Uint8Array(9 * 1024 * 1024).fill(0x59);
+        mockGetStorageProvider.mockReturnValue({
+          upload: jest.fn(),
+          delete: jest.fn(),
+          getPublicUrl: jest.fn(),
+          getMetadata: jest.fn(),
+          validateConfig: jest.fn(),
+          openReadStream: jest.fn().mockResolvedValue({
+            stream: new ReadableStream<Uint8Array>({
+              pull(controller) {
+                controller.enqueue(nineMiBChunk);
+              },
+              cancel() {
+                s3StreamCancelled = true;
+              },
+            }),
+          }),
+        });
+
+        const req = new NextRequest(
+          'http://localhost/api/media/export?ids=m-ok,m-cl,m-chunk,m-data,m-s3'
+        );
+        const res = await GET(req);
+        expect(res.status).toBe(200);
+
+        const zipBuffer = await readStream(res);
+        const entries = parseZipArchive(zipBuffer);
+        const entryNames = entries.map((e) => e.name);
+
+        expect(arrayBufferSpy).not.toHaveBeenCalled();
+        expect(headerOverflowBodyRead).toBe(false);
+        expect(chunkOverflowCancelled).toBe(true);
+        expect(s3StreamCancelled).toBe(true);
+
+        const okEntry = entries.find((e) => e.name === 'Valid_Stream.jpg');
+        expect(okEntry).toBeDefined();
+        expect(okEntry!.data.toString('utf8')).toBe('streamed-jpeg-bytes');
+
+        expect(entryNames).toContain('error_Header_Overflow.jpg.txt');
+        expect(entryNames).toContain('error_Chunk_Overflow.jpg.txt');
+        expect(entryNames).toContain('error_Data_Overflow.jpg.txt');
+        expect(entryNames).toContain('error_S3_Overflow.jpg.txt');
+
+        const s3Notice = entries.find((e) => e.name === 'error_S3_Overflow.jpg.txt')!;
+        expect(s3Notice.data.toString('utf8')).toContain(
+          `Storage stream error: Response body exceeded maximum size of ${MAX_REMOTE_EXPORT_BYTES} bytes`
+        );
+      } finally {
+        arrayBufferSpy.mockRestore();
+        if (prevS3Bucket === undefined) {
+          delete process.env.S3_BUCKET;
+        } else {
+          process.env.S3_BUCKET = prevS3Bucket;
         }
       }
     });

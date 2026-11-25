@@ -4,8 +4,11 @@ import dns from 'dns';
 import type { NextRequest } from 'next/server';
 import { POST as rawPOST } from '@/app/api/registry/scrape/route';
 import { isAdminRequest } from '@/core/auth/auth.server';
+import { getAppConfig } from '@/lib/config';
+import { DEFAULT_MODULE_CONFIG } from '@/lib/modules';
 import { server } from '@/mocks/server';
 import { http, HttpResponse } from 'msw';
+import { MAX_SCRAPE_HTML_BYTES, scrapeProductUrl, type ScrapedProductData } from '../scrape';
 
 const POST = (request: Request) => rawPOST(request as unknown as NextRequest);
 
@@ -29,7 +32,12 @@ jest.mock('@/core/auth/auth.server', () => ({
   isAdminRequest: jest.fn(),
 }));
 
+jest.mock('@/lib/config', () => ({
+  getAppConfig: jest.fn(),
+}));
+
 const mockIsAdminRequest = isAdminRequest as jest.Mock;
+const mockGetAppConfig = getAppConfig as jest.Mock;
 
 const runIfMock = process.env.LIVE_TESTS !== 'true' ? it : it.skip;
 const runIfLive = process.env.LIVE_TESTS === 'true' ? it : it.skip;
@@ -38,6 +46,7 @@ describe('POST /api/registry/scrape', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsAdminRequest.mockResolvedValue(true);
+    mockGetAppConfig.mockResolvedValue({ modules: { ...DEFAULT_MODULE_CONFIG } });
   });
 
   runIfMock('should return an empty image string and extract favicon when no image tags exist and the URL is not from Amazon', async () => {
@@ -858,6 +867,63 @@ describe('POST /api/registry/scrape', () => {
     } finally {
       dns.promises.lookup = originalLookup;
     }
+  });
+
+  runIfMock('enforces MAX_SCRAPE_HTML_BYTES (1 MiB) and keeps timeout/externalSignal active across stalled body streams', async () => {
+    expect(MAX_SCRAPE_HTML_BYTES).toBe(1024 * 1024);
+
+    // 1. Stalled response body after 200 OK headers must abort when timeoutMs elapses
+    const stalledUrl = 'https://www.example.com/stalled-body';
+    const makeStalledResponse = () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('<html><head><title>Slow'));
+          },
+          pull() {
+            return new Promise<void>(() => {});
+          },
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' },
+        }
+      );
+
+    const fetchSpy = jest.spyOn(global, 'fetch');
+    try {
+      fetchSpy.mockResolvedValueOnce(makeStalledResponse());
+      await expect(scrapeProductUrl(stalledUrl, 45)).rejects.toMatchObject({
+        statusCode: 422,
+        data: { errorDomain: 'NETWORK_TIMEOUT' },
+      });
+
+      // 2. External AbortSignal cancellation during body read aborts cleanly
+      fetchSpy.mockResolvedValueOnce(makeStalledResponse());
+      const externalController = new AbortController();
+      setTimeout(() => externalController.abort(), 30);
+      await expect(
+        scrapeProductUrl(stalledUrl, 5_000, externalController.signal)
+      ).rejects.toMatchObject({
+        statusCode: 422,
+        data: { errorDomain: 'NETWORK_TIMEOUT' },
+      });
+    } finally {
+      fetchSpy.mockRestore();
+    }
+
+    // 3. Valid payload under MAX_SCRAPE_HTML_BYTES returns typed ScrapedProductData
+    const validUrl = 'https://www.example.com/within-cap';
+    server.use(
+      http.get(validUrl, () => {
+        return new HttpResponse(
+          '<html><head><meta property="og:title" content="Bounded Product" /></head><body></body></html>',
+          { status: 200, headers: { 'Content-Type': 'text/html' } }
+        );
+      })
+    );
+    const data: ScrapedProductData = await scrapeProductUrl(validUrl, 2_000);
+    expect(data.name).toBe('Bounded Product');
   });
 
   runIfLive('should perform genuine outbound calls to actual public websites in live mode', async () => {
