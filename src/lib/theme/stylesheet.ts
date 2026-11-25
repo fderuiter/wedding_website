@@ -270,6 +270,113 @@ function resolveLightSurfaceBg(fallbackBgHex: string, candidateBgHex?: string | 
   return fallbackBgHex;
 }
 
+function resolveMinLightSurfaceBg(
+  maxLightBgHex: string,
+  candidateBgHex?: string | null,
+  minLumThreshold: number = 0.5
+): string {
+  const maxLum = getLuminance(hexToRgb(maxLightBgHex));
+  if (!candidateBgHex || !hexColorRegex.test(candidateBgHex)) {
+    return maxLightBgHex;
+  }
+  const candLum = getLuminance(hexToRgb(candidateBgHex));
+  if (candLum < maxLum && candLum >= minLumThreshold) {
+    return candidateBgHex;
+  }
+  return maxLightBgHex;
+}
+
+interface LightSurfaceTokenSet {
+  primaryText: string;
+  secondaryText: string;
+  errorText: string;
+  focusRing: string;
+  surfaceBorder: string;
+  mutedText: string;
+  warningBg: string;
+  warningBorder: string;
+  warningText: string;
+  statusWarningText: string;
+  statusSuccessText: string;
+  statusInfoText: string;
+}
+
+function calibrateLightSurfaceTokensForBg(
+  safePrimary: string,
+  safeSecondary: string,
+  surfaceBgHex: string
+): LightSurfaceTokenSet {
+  return {
+    primaryText: optimizeContrast(safePrimary, surfaceBgHex, 4.5),
+    secondaryText: optimizeContrast(safeSecondary, surfaceBgHex, 4.5),
+    errorText: optimizeContrast('#DC2626', surfaceBgHex, 4.5),
+    focusRing: optimizeContrast(safePrimary, surfaceBgHex, 3.0),
+    surfaceBorder: optimizeContrast('#6B7280', surfaceBgHex, 3.0),
+    mutedText: optimizeContrast('#4B5563', surfaceBgHex, 4.5),
+    warningBg: 'rgba(245, 158, 11, 0.1)',
+    warningBorder: 'rgba(245, 158, 11, 0.3)',
+    warningText: optimizeContrast('#78350F', surfaceBgHex, 4.5),
+    statusWarningText: optimizeContrast(
+      '#92400E',
+      resolveMinLightSurfaceBg('#FEF3C7', surfaceBgHex, 0.18),
+      4.5
+    ),
+    statusSuccessText: optimizeContrast(
+      '#166534',
+      resolveMinLightSurfaceBg('#F0FDF4', surfaceBgHex, 0.18),
+      4.5
+    ),
+    statusInfoText: optimizeContrast(
+      '#1E40AF',
+      resolveMinLightSurfaceBg('#EFF6FF', surfaceBgHex, 0.18),
+      4.5
+    ),
+  };
+}
+
+function renderLightContainerDeclarations(
+  solidPrimary: string,
+  solidSecondary: string,
+  tokens: LightSurfaceTokenSet
+): string {
+  return `      --color-primary: ${solidPrimary};
+      --color-secondary: ${solidSecondary};
+      --color-primary-text: ${tokens.primaryText};
+      --color-secondary-text: ${tokens.secondaryText};
+      --color-error-text: ${tokens.errorText};
+      --color-focus-ring: ${tokens.focusRing};
+      --color-surface-border: ${tokens.surfaceBorder};
+      --color-muted-text: ${tokens.mutedText};
+      --color-text-muted: ${tokens.mutedText};
+      --color-warning-bg: ${tokens.warningBg};
+      --color-warning-border: ${tokens.warningBorder};
+      --color-warning-text: ${tokens.warningText};
+      --color-status-warning-text: ${tokens.statusWarningText};
+      --color-status-unsent-text: ${tokens.statusWarningText};
+      --color-status-success-text: ${tokens.statusSuccessText};
+      --color-status-sent-text: ${tokens.statusSuccessText};
+      --color-status-info-text: ${tokens.statusInfoText};
+      --color-status-not-needed-text: ${tokens.statusInfoText};
+      --color-foreground: #111827;
+      --foreground: #111827;`;
+}
+
+function buildLightShadeSelectors(shades: readonly string[]): string[] {
+  const base: string[] = [];
+  const variants: string[] = [];
+
+  for (const family of NEUTRAL_SURFACE_FAMILIES) {
+    for (const shade of shades) {
+      base.push(`    .bg-${family}-${shade}`);
+      variants.push(`    html:not(.dark) .hover\\:bg-${family}-${shade}:hover`);
+      variants.push(`    [class^="bg-${family}-${shade}/"]`);
+      variants.push(`    [class*=" bg-${family}-${shade}/"]`);
+    }
+  }
+
+  return [...base, ...variants];
+}
+
 interface DarkSurfaceTokenSet {
   primaryText: string;
   secondaryText: string;
@@ -369,6 +476,8 @@ export function generateDynamicStyles(
 ): string {
   const safePrimary = sanitizeColor(primaryColor, '#B91C1C');
   const safeSecondary = sanitizeColor(secondaryColor, '#B45309');
+  const solidPrimary = optimizeContrast(safePrimary, '#FFFFFF', 4.5);
+  const solidSecondary = optimizeContrast(safeSecondary, '#FFFFFF', 4.5);
   const preset = sanitizePreset(themePreset, DEFAULT_THEME_PRESET);
   const baseLightTokens = getPresetTokens(preset, 'light');
   const baseDarkTokens = getPresetTokens(preset, 'dark');
@@ -412,6 +521,39 @@ export function generateDynamicStyles(
       return { r, g, b };
     }
     return null;
+  };
+
+  const resolveTokenColorHex = (raw: string | undefined, fallbackHex: string): string => {
+    if (!raw) return fallbackHex;
+    const trimmed = raw.trim();
+    const directRgb = parseColorRgb(trimmed);
+    if (directRgb) {
+      return rgbToHex(directRgb.r, directRgb.g, directRgb.b);
+    }
+    if (/^var\(\s*--color-primary\b/i.test(trimmed)) {
+      return solidPrimary;
+    }
+    if (/^var\(\s*--color-secondary\b/i.test(trimmed)) {
+      return solidSecondary;
+    }
+    const varFallbackMatch = trimmed.match(/^var\([^,]+,\s*([^)]+)\)$/i);
+    if (varFallbackMatch) {
+      return resolveTokenColorHex(varFallbackMatch[1], fallbackHex);
+    }
+    const mixMatch = trimmed.match(
+      /^color-mix\(\s*in\s+srgb\s*,\s*(.+?)\s+(\d+(?:\.\d+)?)%\s*,\s*(.+?)(?:\s+(\d+(?:\.\d+)?)%)?\s*\)$/i
+    );
+    if (mixMatch) {
+      const c1 = hexToRgb(resolveTokenColorHex(mixMatch[1], fallbackHex));
+      const p1 = Math.max(0, Math.min(100, Number(mixMatch[2]))) / 100;
+      const c2 = hexToRgb(resolveTokenColorHex(mixMatch[3], '#000000'));
+      const p2 = mixMatch[4] !== undefined ? Math.max(0, Math.min(100, Number(mixMatch[4]))) / 100 : 1 - p1;
+      const sum = p1 + p2 > 0 ? p1 + p2 : 1;
+      const w1 = p1 / sum;
+      const w2 = p2 / sum;
+      return rgbToHex(c1.r * w1 + c2.r * w2, c1.g * w1 + c2.g * w2, c1.b * w1 + c2.b * w2);
+    }
+    return fallbackHex;
   };
 
   const darkSurfaceBgTokenKeys = new Set([
@@ -473,8 +615,70 @@ export function generateDynamicStyles(
     ...darkCustomTokenOverrides,
   };
 
+  const calibrateSolidButtonPair = (
+    targetTokens: Record<string, string>,
+    customOverrides: Record<string, string>,
+    bgKey: string,
+    hoverBgKey: string,
+    textKey: string,
+    fallbackBgHex: string
+  ) => {
+    const rawLabelHex = resolveTokenColorHex(targetTokens[textKey], '#ffffff');
+    const evaluatedBgHex = resolveTokenColorHex(targetTokens[bgKey], fallbackBgHex);
+    const evaluatedHoverBgHex = resolveTokenColorHex(targetTokens[hoverBgKey], evaluatedBgHex);
+
+    const hasCustomBg = bgKey in customOverrides;
+    const hasCustomHoverBg = hoverBgKey in customOverrides;
+    const hasCustomText = textKey in customOverrides;
+
+    let finalBgHex = evaluatedBgHex;
+    let finalHoverBgHex = evaluatedHoverBgHex;
+
+    if (
+      hasCustomBg ||
+      (!hasCustomText &&
+        getContrastRatio(hexToRgb(rawLabelHex), hexToRgb(evaluatedBgHex)) < 4.5)
+    ) {
+      finalBgHex = optimizeContrast(evaluatedBgHex, rawLabelHex, 4.5);
+      targetTokens[bgKey] = finalBgHex;
+    }
+
+    if (
+      hasCustomHoverBg ||
+      (!hasCustomText &&
+        getContrastRatio(hexToRgb(rawLabelHex), hexToRgb(evaluatedHoverBgHex)) < 4.5)
+    ) {
+      finalHoverBgHex = optimizeContrast(evaluatedHoverBgHex, rawLabelHex, 4.5);
+      targetTokens[hoverBgKey] = finalHoverBgHex;
+    }
+
+    if (
+      getContrastRatio(hexToRgb(rawLabelHex), hexToRgb(finalBgHex)) < 4.5 ||
+      getContrastRatio(hexToRgb(rawLabelHex), hexToRgb(finalHoverBgHex)) < 4.5
+    ) {
+      let calibratedLabelHex = optimizeContrast(
+        optimizeContrast(rawLabelHex, finalBgHex, 4.5),
+        finalHoverBgHex,
+        4.5
+      );
+      if (getContrastRatio(hexToRgb(calibratedLabelHex), hexToRgb(finalBgHex)) < 4.5) {
+        finalBgHex = optimizeContrast(finalBgHex, rawLabelHex, 4.5);
+        finalHoverBgHex = optimizeContrast(finalHoverBgHex, rawLabelHex, 4.5);
+        targetTokens[bgKey] = finalBgHex;
+        targetTokens[hoverBgKey] = finalHoverBgHex;
+        calibratedLabelHex = optimizeContrast(
+          optimizeContrast(rawLabelHex, finalBgHex, 4.5),
+          finalHoverBgHex,
+          4.5
+        );
+      }
+      targetTokens[textKey] = calibratedLabelHex;
+    }
+  };
+
   const calibrateInverseAndToastTokens = (
     targetTokens: Record<string, string>,
+    customOverrides: Record<string, string>,
     hasCustomBadgeText: boolean
   ) => {
     const resolveHex = (raw: string | undefined, fallback: string): string => {
@@ -556,33 +760,185 @@ export function generateDynamicStyles(
     targetTokens['--btn-success-hover-bg'] = calibratedSuccessHoverBgHex;
     targetTokens['--btn-success-text'] = calibratedSuccessTextHex;
     targetTokens['--btn-success-border'] = targetTokens['--btn-success-border'] || 'transparent';
+
+    calibrateSolidButtonPair(
+      targetTokens,
+      customOverrides,
+      '--btn-primary-bg',
+      '--btn-primary-hover-bg',
+      '--btn-primary-text',
+      solidPrimary
+    );
+    calibrateSolidButtonPair(
+      targetTokens,
+      customOverrides,
+      '--btn-secondary-bg',
+      '--btn-secondary-hover-bg',
+      '--btn-secondary-text',
+      solidSecondary
+    );
   };
 
   calibrateInverseAndToastTokens(
     lightPresetTokens,
+    sanitizedCustomTokens,
     '--badge-inverse-text' in sanitizedCustomTokens
   );
   calibrateInverseAndToastTokens(
     darkPresetTokens,
+    darkCustomTokenOverrides,
     '--badge-inverse-text' in darkCustomTokenOverrides
   );
 
-  const lightCardBg = resolveLightSurfaceBg('#ffffff', lightPresetTokens['--card-bg']);
-  const lightInputBg = resolveLightSurfaceBg(lightCardBg, lightPresetTokens['--input-bg']);
+  const compositeOverlayOnLight = (baseBgHex: string, rawOverlay?: string): string => {
+    if (!rawOverlay) return baseBgHex;
+    let candidate = rawOverlay.trim();
+    const varFallback = candidate.match(/^var\([^,]+,\s*([^)]+)\)$/i);
+    if (varFallback) {
+      candidate = varFallback[1].trim();
+    }
+    if (/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(candidate)) {
+      const rgb = hexToRgb(candidate);
+      const hex = rgbToHex(rgb.r, rgb.g, rgb.b);
+      return resolveLightSurfaceBg(baseBgHex, hex);
+    }
+    const rgbaMatch = candidate.match(
+      /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*(0|1|0?\.\d+))?\s*\)$/i
+    );
+    if (rgbaMatch) {
+      const baseRgb = hexToRgb(baseBgHex);
+      const r = Math.min(255, Number(rgbaMatch[1]));
+      const g = Math.min(255, Number(rgbaMatch[2]));
+      const b = Math.min(255, Number(rgbaMatch[3]));
+      const a = rgbaMatch[4] !== undefined ? Math.max(0, Math.min(1, Number(rgbaMatch[4]))) : 1;
+      const blendedHex = rgbToHex(
+        r * a + baseRgb.r * (1 - a),
+        g * a + baseRgb.g * (1 - a),
+        b * a + baseRgb.b * (1 - a)
+      );
+      return resolveLightSurfaceBg(baseBgHex, blendedHex);
+    }
+    return baseBgHex;
+  };
+
+  const blendAlphaOnLight = (fgHex: string, alpha: number, baseBgHex: string): string => {
+    const fg = hexToRgb(fgHex);
+    const bg = hexToRgb(baseBgHex);
+    return rgbToHex(
+      fg.r * alpha + bg.r * (1 - alpha),
+      fg.g * alpha + bg.g * (1 - alpha),
+      fg.b * alpha + bg.b * (1 - alpha)
+    );
+  };
+
+  const lightContainerBg = compositeOverlayOnLight('#ffffff', lightPresetTokens['--container-bg']);
+  const lightCardBg = resolveLightSurfaceBg(
+    '#ffffff',
+    compositeOverlayOnLight(lightContainerBg, lightPresetTokens['--card-bg'])
+  );
+  const lightDialogBg = resolveLightSurfaceBg(
+    '#ffffff',
+    compositeOverlayOnLight('#ffffff', lightPresetTokens['--dialog-bg'])
+  );
+  const lightInputBg = resolveLightSurfaceBg(
+    lightCardBg,
+    compositeOverlayOnLight(lightCardBg, lightPresetTokens['--input-bg'])
+  );
+  const lightScheduleCardBg = compositeOverlayOnLight(
+    lightContainerBg,
+    lightPresetTokens['--schedule-card-bg']
+  );
+  const lightScheduleFilterBg = compositeOverlayOnLight(
+    '#f3f4f6',
+    lightPresetTokens['--schedule-filter-bg']
+  );
+  const lightScheduleFilterHoverBg = compositeOverlayOnLight(
+    lightScheduleFilterBg,
+    lightPresetTokens['--schedule-filter-hover-bg']
+  );
+  const lightScheduleTagBg = compositeOverlayOnLight(
+    '#f3f4f6',
+    lightPresetTokens['--schedule-tag-bg']
+  );
+  const lightCanvasBg = compositeOverlayOnLight('#ffffff', lightPresetTokens['--canvas-bg']);
+  const lightFloorplanTableBg = compositeOverlayOnLight(
+    '#ffffff',
+    lightPresetTokens['--floorplan-table-bg']
+  );
+
+  // Lower-bound light surface across active preset tints, ghost/outline hovers, bg-primary/10, bg-red-50, and .bg-*-100
+  const baseLightCandidates = [
+    '#FFFFFF',
+    '#FEF2F2', // bg-red-50
+    '#FFF1F2', // bg-rose-50
+    '#F3F4F6', // darkest .bg-*-100 across gray/slate/zinc/stone/neutral
+    lightContainerBg,
+    lightCardBg,
+    lightDialogBg,
+    lightInputBg,
+    lightScheduleCardBg,
+    lightScheduleFilterBg,
+    lightScheduleTagBg,
+    lightCanvasBg,
+    lightFloorplanTableBg,
+    compositeOverlayOnLight(lightCardBg, lightPresetTokens['--btn-ghost-hover-bg']),
+    compositeOverlayOnLight(lightContainerBg, lightPresetTokens['--btn-ghost-hover-bg']),
+    compositeOverlayOnLight(lightCardBg, lightPresetTokens['--btn-outline-hover-bg']),
+    compositeOverlayOnLight(lightContainerBg, lightPresetTokens['--btn-outline-hover-bg']),
+    blendAlphaOnLight(solidPrimary, 0.1, lightCardBg),
+    blendAlphaOnLight(solidPrimary, 0.1, lightContainerBg),
+    blendAlphaOnLight(solidPrimary, 0.1, '#F3F4F6'),
+    blendAlphaOnLight(safePrimary, 0.1, lightCardBg),
+    blendAlphaOnLight(safePrimary, 0.1, lightContainerBg),
+    blendAlphaOnLight(safePrimary, 0.1, '#F3F4F6'),
+  ];
+
+  let baseLightSurfaceBg = '#FFFFFF';
+  for (const candidateBg of baseLightCandidates) {
+    baseLightSurfaceBg = resolveMinLightSurfaceBg(baseLightSurfaceBg, candidateBg, 0.5);
+  }
+
+  const lightFormSurfaceBg = resolveMinLightSurfaceBg(
+    resolveMinLightSurfaceBg(lightCardBg, lightInputBg, 0.5),
+    lightContainerBg,
+    0.5
+  );
   const lightTextSurfaceMap: Record<string, string> = {
-    '--form-label-text': lightInputBg,
-    '--form-message-text': lightCardBg,
-    '--form-error-text': lightCardBg,
-    '--form-success-text': lightCardBg,
-    '--form-warning-text': lightCardBg,
-    '--dialog-desc-color': resolveLightSurfaceBg('#ffffff', lightPresetTokens['--dialog-bg']),
-    '--schedule-filter-text': resolveLightSurfaceBg('#f3f4f6', lightPresetTokens['--schedule-filter-bg']),
-    '--schedule-tag-text': resolveLightSurfaceBg('#f3f4f6', lightPresetTokens['--schedule-tag-bg']),
+    '--heading-color': baseLightSurfaceBg,
+    '--btn-outline-text': baseLightSurfaceBg,
+    '--btn-ghost-text': baseLightSurfaceBg,
+    '--dialog-title-color': resolveMinLightSurfaceBg(lightDialogBg, baseLightSurfaceBg, 0.5),
+    '--form-label-text': lightFormSurfaceBg,
+    '--form-message-text': lightFormSurfaceBg,
+    '--form-error-text': lightFormSurfaceBg,
+    '--form-success-text': lightFormSurfaceBg,
+    '--form-warning-text': lightFormSurfaceBg,
+    '--dialog-desc-color': lightDialogBg,
+    '--schedule-filter-text': resolveMinLightSurfaceBg(
+      lightScheduleFilterBg,
+      lightScheduleFilterHoverBg,
+      0.5
+    ),
+    '--schedule-tag-text': lightScheduleTagBg,
   };
 
   for (const [textKey, surfaceBg] of Object.entries(lightTextSurfaceMap)) {
     const rawVal = lightPresetTokens[textKey];
     if (!rawVal) continue;
+    if (/var\(\s*--color-primary(?![a-z0-9-])/i.test(rawVal)) {
+      lightPresetTokens[textKey] = rawVal.replace(
+        /var\(\s*--color-primary(?![a-z0-9-])/gi,
+        'var(--color-primary-text'
+      );
+      continue;
+    }
+    if (/var\(\s*--color-secondary(?![a-z0-9-])/i.test(rawVal)) {
+      lightPresetTokens[textKey] = rawVal.replace(
+        /var\(\s*--color-secondary(?![a-z0-9-])/gi,
+        'var(--color-secondary-text'
+      );
+      continue;
+    }
     const parsedText = parseColorRgb(rawVal);
     if (parsedText) {
       const rawHex = rgbToHex(parsedText.r, parsedText.g, parsedText.b);
@@ -642,20 +998,41 @@ export function generateDynamicStyles(
   const safeFontBody = sanitizeFontToken(fontTokens?.fontBody, lightPresetTokens['--font-body']);
   const safeFontMono = sanitizeFontToken(fontTokens?.fontMono, lightPresetTokens['--font-mono']);
 
-  const primaryTextLight = optimizeContrast(safePrimary, '#FFFFFF', 4.5);
-  const secondaryTextLight = optimizeContrast(safeSecondary, '#FFFFFF', 4.5);
-  const errorTextLight = optimizeContrast('#DC2626', '#FFFFFF', 4.5);
-  const focusRingLight = optimizeContrast(safePrimary, '#FFFFFF', 3.0);
-  const surfaceBorderLight = optimizeContrast('#6B7280', '#FFFFFF', 3.0);
-  const mutedTextLight = optimizeContrast('#4B5563', '#FFFFFF', 4.5);
+  const baseLightTokensCalibrated = calibrateLightSurfaceTokensForBg(
+    safePrimary,
+    safeSecondary,
+    baseLightSurfaceBg
+  );
 
-  const warningBgLight = 'rgba(245, 158, 11, 0.1)';
-  const warningBorderLight = 'rgba(245, 158, 11, 0.3)';
-  const warningTextLight = optimizeContrast('#78350F', '#FFFFFF', 4.5);
+  // Neutral light container shade tiers: 200 (#E4E4E7), 300 (#CBD5E1 bounded by Tailwind v4 stone-300 #D6D3D1),
+  // and 400 (#94A3B8 bounded by Tailwind v4 slate-400 #90A1B9)
+  const light200SurfaceBg = resolveMinLightSurfaceBg('#E4E4E7', baseLightSurfaceBg, 0.18);
+  const light300SurfaceBg = resolveMinLightSurfaceBg(
+    resolveMinLightSurfaceBg('#CBD5E1', '#D6D3D1', 0.18),
+    light200SurfaceBg,
+    0.18
+  );
+  const light400SurfaceBg = resolveMinLightSurfaceBg(
+    resolveMinLightSurfaceBg('#94A3B8', '#90A1B9', 0.18),
+    light300SurfaceBg,
+    0.18
+  );
 
-  const statusWarningTextLight = optimizeContrast('#92400E', '#FEF3C7', 4.5);
-  const statusSuccessTextLight = optimizeContrast('#166534', '#F0FDF4', 4.5);
-  const statusInfoTextLight = optimizeContrast('#1E40AF', '#EFF6FF', 4.5);
+  const light200TokensCalibrated = calibrateLightSurfaceTokensForBg(
+    safePrimary,
+    safeSecondary,
+    light200SurfaceBg
+  );
+  const light300TokensCalibrated = calibrateLightSurfaceTokensForBg(
+    safePrimary,
+    safeSecondary,
+    light300SurfaceBg
+  );
+  const light400TokensCalibrated = calibrateLightSurfaceTokensForBg(
+    safePrimary,
+    safeSecondary,
+    light400SurfaceBg
+  );
 
   const darkCardSurfaceBg = resolveDarkSurfaceBg(
     resolveDarkSurfaceBg('#1D293D', darkPresetTokens['--card-bg']),
@@ -704,20 +1081,19 @@ export function generateDynamicStyles(
   const dark600TokensCalibrated = calibrateDarkSurfaceTokens(safePrimary, safeSecondary, dark600SurfaceBg);
 
   // Translucent bg-white/* light containers composited over dark backdrops (#B3B3B3 for 70/75%, #CCCCCC for 80–95%)
-  const calibrateLightSurfaceTokens = (surfaceBgHex: string) => ({
-    primaryText: optimizeContrast(safePrimary, surfaceBgHex, 4.5),
-    secondaryText: optimizeContrast(safeSecondary, surfaceBgHex, 4.5),
-    errorText: optimizeContrast('#DC2626', surfaceBgHex, 4.5),
-    focusRing: optimizeContrast(safePrimary, surfaceBgHex, 3.0),
-    surfaceBorder: optimizeContrast('#6B7280', surfaceBgHex, 3.0),
-    mutedText: optimizeContrast('#4B5563', surfaceBgHex, 4.5),
-    warningText: optimizeContrast('#78350F', surfaceBgHex, 4.5),
-  });
-  const translucent80LightTokens = calibrateLightSurfaceTokens('#CCCCCC');
-  const translucent70LightTokens = calibrateLightSurfaceTokens('#B3B3B3');
+  const translucent80LightTokens = calibrateLightSurfaceTokensForBg(
+    safePrimary,
+    safeSecondary,
+    resolveMinLightSurfaceBg('#CCCCCC', baseLightSurfaceBg, 0.18)
+  );
+  const translucent70LightTokens = calibrateLightSurfaceTokensForBg(
+    safePrimary,
+    safeSecondary,
+    resolveMinLightSurfaceBg('#B3B3B3', baseLightSurfaceBg, 0.18)
+  );
 
-  const seatAssignedTextLight = optimizeContrast('#ffffff', primaryTextLight, 4.5);
-  const seatAssignedTextDark = optimizeContrast('#ffffff', primaryTextLight, 4.5);
+  const seatAssignedTextLight = optimizeContrast('#ffffff', solidPrimary, 4.5);
+  const seatAssignedTextDark = optimizeContrast('#ffffff', solidPrimary, 4.5);
 
   const lightPresetCssRules = Object.entries(lightPresetTokens)
     .filter(([key, value]) => key.startsWith('--') && typeof value === 'string')
@@ -728,6 +1104,15 @@ export function generateDynamicStyles(
     .filter(([key, value]) => key.startsWith('--') && typeof value === 'string')
     .map(([key, value]) => `      ${key}: ${value};`)
     .join('\n');
+
+  const baseLightContainerSelectors = [
+    '    .bg-white',
+    '    [data-surface="light"]',
+    ...buildLightShadeSelectors(['50', '100']),
+  ].join(',\n');
+  const light200ContainerSelectors = buildLightShadeSelectors(['200']).join(',\n');
+  const light300ContainerSelectors = buildLightShadeSelectors(['300']).join(',\n');
+  const light400ContainerSelectors = buildLightShadeSelectors(['400']).join(',\n');
 
   const baseDarkContainerSelectors = [
     '    .dark .dark\\:bg-black',
@@ -785,7 +1170,7 @@ export function generateDynamicStyles(
 
   return `
     :root {
-${renderDarkContainerDeclarations(primaryTextLight, secondaryTextLight, baseDarkTokensCalibrated)}
+${renderDarkContainerDeclarations(solidPrimary, solidSecondary, baseDarkTokensCalibrated)}
 ${lightPresetCssRules}
       --font-heading: ${safeFontHeading};
       --font-body: ${safeFontBody};
@@ -801,24 +1186,24 @@ ${lightPresetCssRules}
     html:not(.dark),
     html.light,
     [data-surface="light"] {
-      --color-primary: ${primaryTextLight};
-      --color-secondary: ${secondaryTextLight};
-      --color-primary-text: ${primaryTextLight};
-      --color-secondary-text: ${secondaryTextLight};
-      --color-error-text: ${errorTextLight};
-      --color-focus-ring: ${focusRingLight};
-      --color-surface-border: ${surfaceBorderLight};
-      --color-muted-text: ${mutedTextLight};
-      --color-text-muted: ${mutedTextLight};
-      --color-warning-bg: ${warningBgLight};
-      --color-warning-border: ${warningBorderLight};
-      --color-warning-text: ${warningTextLight};
-      --color-status-warning-text: ${statusWarningTextLight};
-      --color-status-unsent-text: ${statusWarningTextLight};
-      --color-status-success-text: ${statusSuccessTextLight};
-      --color-status-sent-text: ${statusSuccessTextLight};
-      --color-status-info-text: ${statusInfoTextLight};
-      --color-status-not-needed-text: ${statusInfoTextLight};
+      --color-primary: ${solidPrimary};
+      --color-secondary: ${solidSecondary};
+      --color-primary-text: ${baseLightTokensCalibrated.primaryText};
+      --color-secondary-text: ${baseLightTokensCalibrated.secondaryText};
+      --color-error-text: ${baseLightTokensCalibrated.errorText};
+      --color-focus-ring: ${baseLightTokensCalibrated.focusRing};
+      --color-surface-border: ${baseLightTokensCalibrated.surfaceBorder};
+      --color-muted-text: ${baseLightTokensCalibrated.mutedText};
+      --color-text-muted: ${baseLightTokensCalibrated.mutedText};
+      --color-warning-bg: ${baseLightTokensCalibrated.warningBg};
+      --color-warning-border: ${baseLightTokensCalibrated.warningBorder};
+      --color-warning-text: ${baseLightTokensCalibrated.warningText};
+      --color-status-warning-text: ${baseLightTokensCalibrated.statusWarningText};
+      --color-status-unsent-text: ${baseLightTokensCalibrated.statusWarningText};
+      --color-status-success-text: ${baseLightTokensCalibrated.statusSuccessText};
+      --color-status-sent-text: ${baseLightTokensCalibrated.statusSuccessText};
+      --color-status-info-text: ${baseLightTokensCalibrated.statusInfoText};
+      --color-status-not-needed-text: ${baseLightTokensCalibrated.statusInfoText};
       --floorplan-seat-assigned-text: ${seatAssignedTextLight};
       --floorplan-seat-dimmed-bg: ${lightPresetTokens['--floorplan-seat-dimmed-bg']};
       --floorplan-seat-dimmed-text: ${lightPresetTokens['--floorplan-seat-dimmed-text']};
@@ -826,7 +1211,7 @@ ${lightPresetCssRules}
     }
 
     .dark {
-${renderDarkContainerDeclarations(primaryTextLight, secondaryTextLight, baseDarkTokensCalibrated)}
+${renderDarkContainerDeclarations(solidPrimary, solidSecondary, baseDarkTokensCalibrated)}
 ${darkPresetCssRules}
       --container-max-w: ${safeContainerMaxWidth};
       --grid-gap: ${safeGridGap};
@@ -834,54 +1219,24 @@ ${darkPresetCssRules}
       --radius-card: ${safeBorderRadius};
     }
 
-    /* Light containers in any document mode */
-    .bg-white,
-    [data-surface="light"],
-    .bg-gray-50,
-    .bg-gray-100,
-    .bg-gray-200,
-    .bg-gray-300,
-    .bg-gray-400,
-    .bg-slate-50,
-    .bg-slate-100,
-    .bg-slate-200,
-    .bg-slate-300,
-    .bg-slate-400,
-    .bg-zinc-50,
-    .bg-zinc-100,
-    .bg-zinc-200,
-    .bg-zinc-300,
-    .bg-zinc-400,
-    .bg-stone-50,
-    .bg-stone-100,
-    .bg-stone-200,
-    .bg-stone-300,
-    .bg-stone-400,
-    .bg-neutral-50,
-    .bg-neutral-100,
-    .bg-neutral-200,
-    .bg-neutral-300,
-    .bg-neutral-400 {
-      --color-primary: ${primaryTextLight};
-      --color-secondary: ${secondaryTextLight};
-      --color-primary-text: ${primaryTextLight};
-      --color-secondary-text: ${secondaryTextLight};
-      --color-error-text: ${errorTextLight};
-      --color-focus-ring: ${focusRingLight};
-      --color-surface-border: ${surfaceBorderLight};
-      --color-muted-text: ${mutedTextLight};
-      --color-text-muted: ${mutedTextLight};
-      --color-warning-bg: ${warningBgLight};
-      --color-warning-border: ${warningBorderLight};
-      --color-warning-text: ${warningTextLight};
-      --color-status-warning-text: ${statusWarningTextLight};
-      --color-status-unsent-text: ${statusWarningTextLight};
-      --color-status-success-text: ${statusSuccessTextLight};
-      --color-status-sent-text: ${statusSuccessTextLight};
-      --color-status-info-text: ${statusInfoTextLight};
-      --color-status-not-needed-text: ${statusInfoTextLight};
-      --color-foreground: #111827;
-      --foreground: #111827;
+    /* Light containers in any document mode (white / 50 / 100 tier) */
+${baseLightContainerSelectors} {
+${renderLightContainerDeclarations(solidPrimary, solidSecondary, baseLightTokensCalibrated)}
+    }
+
+    /* Elevated light surfaces (200 tier: #E4E4E7) */
+${light200ContainerSelectors} {
+${renderLightContainerDeclarations(solidPrimary, solidSecondary, light200TokensCalibrated)}
+    }
+
+    /* Elevated light surfaces (300 tier: #CBD5E1 / #D6D3D1) */
+${light300ContainerSelectors} {
+${renderLightContainerDeclarations(solidPrimary, solidSecondary, light300TokensCalibrated)}
+    }
+
+    /* Elevated light surfaces (400 tier: #94A3B8 / #90A1B9) */
+${light400ContainerSelectors} {
+${renderLightContainerDeclarations(solidPrimary, solidSecondary, light400TokensCalibrated)}
     }
 
     /* Translucent high-opacity light containers (bg-white/80..95) */
@@ -890,66 +1245,28 @@ ${darkPresetCssRules}
     .bg-white\\/90,
     .bg-white\\/95,
     .hover\\:bg-white:hover {
-      --color-primary: ${primaryTextLight};
-      --color-secondary: ${secondaryTextLight};
-      --color-primary-text: ${translucent80LightTokens.primaryText};
-      --color-secondary-text: ${translucent80LightTokens.secondaryText};
-      --color-error-text: ${translucent80LightTokens.errorText};
-      --color-focus-ring: ${translucent80LightTokens.focusRing};
-      --color-surface-border: ${translucent80LightTokens.surfaceBorder};
-      --color-muted-text: ${translucent80LightTokens.mutedText};
-      --color-text-muted: ${translucent80LightTokens.mutedText};
-      --color-warning-bg: ${warningBgLight};
-      --color-warning-border: ${warningBorderLight};
-      --color-warning-text: ${translucent80LightTokens.warningText};
-      --color-status-warning-text: ${statusWarningTextLight};
-      --color-status-unsent-text: ${statusWarningTextLight};
-      --color-status-success-text: ${statusSuccessTextLight};
-      --color-status-sent-text: ${statusSuccessTextLight};
-      --color-status-info-text: ${statusInfoTextLight};
-      --color-status-not-needed-text: ${statusInfoTextLight};
-      --color-foreground: #111827;
-      --foreground: #111827;
+${renderLightContainerDeclarations(solidPrimary, solidSecondary, translucent80LightTokens)}
     }
 
     /* Translucent medium-high light containers (bg-white/70..75) */
     .bg-white\\/70,
     .bg-white\\/75 {
-      --color-primary: ${primaryTextLight};
-      --color-secondary: ${secondaryTextLight};
-      --color-primary-text: ${translucent70LightTokens.primaryText};
-      --color-secondary-text: ${translucent70LightTokens.secondaryText};
-      --color-error-text: ${translucent70LightTokens.errorText};
-      --color-focus-ring: ${translucent70LightTokens.focusRing};
-      --color-surface-border: ${translucent70LightTokens.surfaceBorder};
-      --color-muted-text: ${translucent70LightTokens.mutedText};
-      --color-text-muted: ${translucent70LightTokens.mutedText};
-      --color-warning-bg: ${warningBgLight};
-      --color-warning-border: ${warningBorderLight};
-      --color-warning-text: ${translucent70LightTokens.warningText};
-      --color-status-warning-text: ${statusWarningTextLight};
-      --color-status-unsent-text: ${statusWarningTextLight};
-      --color-status-success-text: ${statusSuccessTextLight};
-      --color-status-sent-text: ${statusSuccessTextLight};
-      --color-status-info-text: ${statusInfoTextLight};
-      --color-status-not-needed-text: ${statusInfoTextLight};
-      --color-foreground: #111827;
-      --foreground: #111827;
+${renderLightContainerDeclarations(solidPrimary, solidSecondary, translucent70LightTokens)}
     }
 
     /* Re-assert dark mode variables for base dark backgrounds (black / 800–950) */
 ${baseDarkContainerSelectors} {
-${renderDarkContainerDeclarations(primaryTextLight, secondaryTextLight, baseDarkTokensCalibrated)}
+${renderDarkContainerDeclarations(solidPrimary, solidSecondary, baseDarkTokensCalibrated)}
     }
 
     /* Elevated dark surfaces (700 tier: #374151 and low-alpha accent badges) */
 ${dark700ContainerSelectors} {
-${renderDarkContainerDeclarations(primaryTextLight, secondaryTextLight, dark700TokensCalibrated)}
+${renderDarkContainerDeclarations(solidPrimary, solidSecondary, dark700TokensCalibrated)}
     }
 
     /* Elevated dark surfaces (600 tier: #4B5563) */
 ${dark600ContainerSelectors} {
-${renderDarkContainerDeclarations(primaryTextLight, secondaryTextLight, dark600TokensCalibrated)}
+${renderDarkContainerDeclarations(solidPrimary, solidSecondary, dark600TokensCalibrated)}
     }
   `;
 }

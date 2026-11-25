@@ -155,4 +155,45 @@ describe('local-rules/no-uncalibrated-contrast-utilities', () => {
     });
     expect(messages).toEqual([]);
   });
+
+  it('flags uncalibrated text-*-500 on .bg-*-200..400 and text-*-600 on .bg-*-400 while allowing calibrated semantic tokens', () => {
+    const validNeutralTiersCode = `
+      export function ValidNeutralTiers() {
+        return (
+          <div>
+            <div className="bg-gray-200 text-muted-text">Tier 200 muted</div>
+            <div className="bg-stone-300 text-primary">Tier 300 primary</div>
+            <div className="bg-slate-400 text-error-text">Tier 400 error</div>
+            <div className="bg-white/80 text-error-text">Translucent error pill</div>
+            <div className="bg-gray-400 text-gray-600 text-xl font-bold">Large heading on 400</div>
+          </div>
+        );
+      }
+    `;
+    expect(
+      linter.verify(validNeutralTiersCode, ruleConfig, {
+        filename: 'src/components/ValidNeutralTiers.tsx',
+      })
+    ).toEqual([]);
+
+    const invalidNeutralTiersCode = `
+      export function InvalidNeutralTiers() {
+        return (
+          <div>
+            <span className="bg-gray-200 text-gray-500 dark:text-gray-400">Fails on 200</span>
+            <span className="bg-stone-300 text-stone-500 dark:text-stone-300">Fails on 300</span>
+            <span className="bg-slate-400 text-slate-600 dark:text-slate-200">Fails on 400</span>
+          </div>
+        );
+      }
+    `;
+    const messages = linter.verify(invalidNeutralTiersCode, ruleConfig, {
+      filename: 'src/components/InvalidNeutralTiers.tsx',
+    });
+    expect(messages.map((m) => m.messageId)).toEqual([
+      'uncalibratedNeutralText',
+      'uncalibratedNeutralText',
+      'uncalibratedNeutralText',
+    ]);
+  });
 });
