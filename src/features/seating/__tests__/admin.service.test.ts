@@ -1302,5 +1302,76 @@ describe('SeatingTableAdminService', () => {
       expect(updated.invitationCodes?.[0]?.seatNumber).toBe(1);
       expect(createBatchAuditSnapshots).toHaveBeenCalled();
     });
+
+    it('excludes isSample: true tables and guests during autoAssignSeats so real guests never land on sample tables and sample guests stay unassigned', async () => {
+      mockTxSeatingTableFindMany.mockResolvedValueOnce([
+        {
+          id: 'sample-table-1',
+          name: 'Sample Table A',
+          shape: 'round',
+          capacity: 8,
+          isSample: true,
+          invitationCodes: [
+            {
+              id: 'sample-seated-1',
+              guestName: 'Sample Seated',
+              seatNumber: 1,
+              isSample: true,
+              partyTags: ['vip'],
+            },
+          ],
+        },
+        {
+          id: 'real-table-1',
+          name: 'Real Table 1',
+          shape: 'round',
+          capacity: 4,
+          isSample: false,
+          invitationCodes: [
+            {
+              id: 'sample-on-real-table',
+              guestName: 'Hidden Sample Occupant',
+              seatNumber: 1,
+              isSample: true,
+              partyTags: ['wrong-affinity'],
+            },
+          ],
+        },
+      ]);
+
+      mockTxInvitationCodeFindMany.mockResolvedValueOnce([
+        {
+          id: 'sample-unassigned',
+          guestName: 'Demo Guest',
+          isSample: true,
+          householdName: null,
+          partyTags: ['vip'],
+          tableId: null,
+        },
+        {
+          id: 'real-unassigned',
+          guestName: 'Real Guest',
+          isSample: false,
+          householdName: null,
+          partyTags: ['vip'],
+          tableId: null,
+        },
+      ]);
+
+      mockTxExecuteRaw.mockResolvedValueOnce(1);
+
+      const result = await service.autoAssignSeats('Admin');
+
+      expect(result.assignedCount).toBe(1);
+      expect(result.unassignedCount).toBe(0);
+      expect(result.assignedGuests).toHaveLength(1);
+      expect(result.assignedGuests[0]).toEqual(
+        expect.objectContaining({
+          id: 'real-unassigned',
+          tableId: 'real-table-1',
+          seatNumber: 1,
+        })
+      );
+    });
   });
 });

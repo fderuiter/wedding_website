@@ -1033,7 +1033,7 @@ describe('ReceptionSlideshowClient', () => {
     expect(playPauseBtn).toHaveAttribute('aria-label', 'Pause slideshow');
   });
 
-  it('allows turning off Space, f, and q shortcuts via the toolbar toggle while preserving Arrow and Escape keys', () => {
+  it('allows turning off Arrow, Space, f, and q shortcuts via the toolbar toggle while preserving Escape', () => {
     const requestFullscreenMock = jest.fn().mockResolvedValue(undefined);
     Object.defineProperty(document.documentElement, 'requestFullscreen', {
       configurable: true,
@@ -1050,17 +1050,52 @@ describe('ReceptionSlideshowClient', () => {
 
     const shortcutsBtn = screen.getByTestId('slideshow-shortcuts-toggle-btn');
     const playPauseBtn = screen.getByTestId('slideshow-play-pause-btn');
+    const prevBtn = screen.getByTestId('slideshow-prev-btn');
 
     expect(shortcutsBtn.tagName).toBe('BUTTON');
     expect(shortcutsBtn).toHaveAttribute('type', 'button');
     expect(shortcutsBtn).toHaveAttribute('aria-pressed', 'true');
-    expect(shortcutsBtn).toHaveAttribute('aria-label', 'Keyboard shortcuts (Space, F, Q)');
+    expect(shortcutsBtn).toHaveAttribute(
+      'aria-label',
+      'Keyboard shortcuts (Arrow keys, Space, F, Q)'
+    );
 
-    // Turn off single-key shortcuts
+    // Arrow keys inside interactive controls do not trigger global slide jumps even when shortcuts are enabled
+    act(() => {
+      prevBtn.focus();
+    });
+    const arrowOnBtn = createEvent.keyDown(prevBtn, { key: 'ArrowRight' });
+    fireEvent(prevBtn, arrowOnBtn);
+    expect(arrowOnBtn.defaultPrevented).toBe(false);
+    expect(screen.getByTestId('slideshow-image')).toHaveAttribute(
+      'src',
+      'https://example.com/photo1.jpg'
+    );
+    act(() => {
+      prevBtn.blur();
+    });
+
+    // Turn off shortcuts
     fireEvent.click(shortcutsBtn);
     expect(shortcutsBtn).toHaveAttribute('aria-pressed', 'false');
 
-    // Unmodified Space, f, and q are now ignored
+    // Unmodified ArrowRight, ArrowLeft, Space, f, and q are all ignored when shortcuts are off
+    const rightEvt = createEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent(window, rightEvt);
+    expect(rightEvt.defaultPrevented).toBe(false);
+    expect(screen.getByTestId('slideshow-image')).toHaveAttribute(
+      'src',
+      'https://example.com/photo1.jpg'
+    );
+
+    const leftEvt = createEvent.keyDown(window, { key: 'ArrowLeft' });
+    fireEvent(window, leftEvt);
+    expect(leftEvt.defaultPrevented).toBe(false);
+    expect(screen.getByTestId('slideshow-image')).toHaveAttribute(
+      'src',
+      'https://example.com/photo1.jpg'
+    );
+
     const spaceEvt = createEvent.keyDown(window, { key: ' ', code: 'Space' });
     fireEvent(window, spaceEvt);
     expect(spaceEvt.defaultPrevented).toBe(false);
@@ -1076,7 +1111,14 @@ describe('ReceptionSlideshowClient', () => {
     expect(qEvt.defaultPrevented).toBe(false);
     expect(screen.getByTestId('slideshow-qr-overlay')).toBeInTheDocument();
 
-    // ArrowRight, ArrowLeft, and Escape still work when character shortcuts are disabled
+    // Escape still dismisses the QR overlay when shortcuts are disabled
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByTestId('slideshow-qr-overlay')).not.toBeInTheDocument();
+
+    // Re-enable shortcuts and verify ArrowRight, ArrowLeft, q, and Space work again outside controls
+    fireEvent.click(shortcutsBtn);
+    expect(shortcutsBtn).toHaveAttribute('aria-pressed', 'true');
+
     fireEvent.keyDown(window, { key: 'ArrowRight' });
     expect(screen.getByTestId('slideshow-image')).toHaveAttribute(
       'src',
@@ -1089,18 +1131,243 @@ describe('ReceptionSlideshowClient', () => {
       'https://example.com/photo1.jpg'
     );
 
-    fireEvent.keyDown(window, { key: 'Escape' });
-    expect(screen.queryByTestId('slideshow-qr-overlay')).not.toBeInTheDocument();
-
-    // Re-enable single-key shortcuts and verify they work again
-    fireEvent.click(shortcutsBtn);
-    expect(shortcutsBtn).toHaveAttribute('aria-pressed', 'true');
-
     fireEvent.keyDown(window, { key: 'q' });
     expect(screen.getByTestId('slideshow-qr-overlay')).toBeInTheDocument();
 
     fireEvent.keyDown(window, { key: ' ', code: 'Space' });
     expect(playPauseBtn).toHaveAttribute('aria-label', 'Play slideshow');
+  });
+
+  it('starts paused under prefers-reduced-motion: reduce while keeping 30-second photo polling active', async () => {
+    const originalMatchMedia = window.matchMedia;
+    let changeHandler: ((_e: MediaQueryListEvent) => void) | null = null;
+    window.matchMedia = jest.fn().mockImplementation((query: string) => ({
+      matches: query === '(prefers-reduced-motion: reduce)',
+      media: query,
+      onchange: null,
+      addEventListener: (_evt: string, cb: (_e: MediaQueryListEvent) => void) => {
+        if (query === '(prefers-reduced-motion: reduce)') {
+          changeHandler = cb;
+        }
+      },
+      removeEventListener: jest.fn(),
+      dispatchEvent: jest.fn(),
+    }));
+
+    const mockFetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        photos: [
+          ...samplePhotos,
+          { id: '4', url: 'https://example.com/photo4.jpg', title: 'Sparkler Send-off' },
+        ],
+      }),
+    });
+    global.fetch = mockFetch;
+
+    try {
+      render(
+        <ReceptionSlideshowClient
+          initialPhotos={samplePhotos}
+          uploadUrl="https://wedding.example.com/photos"
+        />
+      );
+
+      const playPauseBtn = screen.getByTestId('slideshow-play-pause-btn');
+      expect(playPauseBtn).toHaveAttribute('aria-label', 'Play slideshow');
+      expect(screen.getByTestId('slideshow-live-region')).toHaveAttribute('aria-live', 'polite');
+
+      // Advance 30 seconds: slide does not auto-rotate, but background polling still runs
+      await act(async () => {
+        jest.advanceTimersByTime(30000);
+      });
+      expect(screen.getByTestId('slideshow-image')).toHaveAttribute(
+        'src',
+        'https://example.com/photo1.jpg'
+      );
+      expect(mockFetch).toHaveBeenCalledWith('/api/photos');
+      expect(screen.getByText('4')).toBeInTheDocument();
+
+      // Guest can manually start playback
+      fireEvent.click(playPauseBtn);
+      expect(playPauseBtn).toHaveAttribute('aria-label', 'Pause slideshow');
+
+      act(() => {
+        jest.advanceTimersByTime(8000);
+      });
+      expect(screen.getByTestId('slideshow-image')).toHaveAttribute(
+        'src',
+        'https://example.com/photo2.jpg'
+      );
+
+      // Re-enabling OS reduced motion pauses automatic cycling again
+      act(() => {
+        changeHandler?.({ matches: false } as MediaQueryListEvent);
+      });
+      act(() => {
+        changeHandler?.({ matches: true } as MediaQueryListEvent);
+      });
+      expect(playPauseBtn).toHaveAttribute('aria-label', 'Play slideshow');
+    } finally {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: originalMatchMedia,
+      });
+    }
+  });
+
+  it('pauses automatic slide rotation during pointer hover or focus inside header, toolbar, or QR card', () => {
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={samplePhotos}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    const header = screen.getByTestId('slideshow-top-header');
+    const toolbar = screen.getByTestId('slideshow-controls');
+    const qrOverlay = screen.getByTestId('slideshow-qr-overlay');
+    const backLink = screen.getByTestId('slideshow-back-link');
+
+    // 1. Focus inside header pauses automatic slide rotation
+    act(() => {
+      backLink.focus();
+    });
+    act(() => {
+      jest.advanceTimersByTime(16000);
+    });
+    expect(screen.getByTestId('slideshow-image')).toHaveAttribute(
+      'src',
+      'https://example.com/photo1.jpg'
+    );
+
+    // Leaving focus resumes slide rotation
+    act(() => {
+      backLink.blur();
+    });
+    act(() => {
+      jest.advanceTimersByTime(8000);
+    });
+    expect(screen.getByTestId('slideshow-image')).toHaveAttribute(
+      'src',
+      'https://example.com/photo2.jpg'
+    );
+
+    // 2. Hovering toolbar or QR card pauses automatic slide rotation until pointer leaves all controls
+    fireEvent.mouseEnter(toolbar);
+    act(() => {
+      jest.advanceTimersByTime(16000);
+    });
+    expect(screen.getByTestId('slideshow-image')).toHaveAttribute(
+      'src',
+      'https://example.com/photo2.jpg'
+    );
+
+    fireEvent.mouseEnter(qrOverlay);
+    fireEvent.mouseLeave(toolbar);
+    act(() => {
+      jest.advanceTimersByTime(16000);
+    });
+    expect(screen.getByTestId('slideshow-image')).toHaveAttribute(
+      'src',
+      'https://example.com/photo2.jpg'
+    );
+
+    fireEvent.mouseLeave(qrOverlay);
+    act(() => {
+      jest.advanceTimersByTime(8000);
+    });
+    expect(screen.getByTestId('slideshow-image')).toHaveAttribute(
+      'src',
+      'https://example.com/photo3.jpg'
+    );
+
+    // 3. Hovering header also pauses until pointer leaves
+    fireEvent.mouseEnter(header);
+    act(() => {
+      jest.advanceTimersByTime(16000);
+    });
+    expect(screen.getByTestId('slideshow-image')).toHaveAttribute(
+      'src',
+      'https://example.com/photo3.jpg'
+    );
+
+    fireEvent.mouseLeave(header);
+    act(() => {
+      jest.advanceTimersByTime(8000);
+    });
+    expect(screen.getByTestId('slideshow-image')).toHaveAttribute(
+      'src',
+      'https://example.com/photo1.jpg'
+    );
+  });
+
+  it('collapses QR overlay into a compact Upload Photos chip below 768px width or 500px height and transfers focus on expand', async () => {
+    const originalInnerWidth = window.innerWidth;
+    const originalInnerHeight = window.innerHeight;
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 320 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: 256 });
+
+    try {
+      const { container } = render(
+        <ReceptionSlideshowClient
+          initialPhotos={samplePhotos}
+          uploadUrl="https://wedding.example.com/photos"
+        />
+      );
+
+      // Compact chip rendered initially instead of full QR card
+      const chipBtn = screen.getByTestId('slideshow-qr-chip-btn');
+      expect(chipBtn).toBeInTheDocument();
+      expect(chipBtn).toHaveTextContent('Upload Photos');
+      expect(chipBtn).toHaveAttribute('aria-expanded', 'false');
+      expect(screen.queryByTestId('themed-qr-code')).not.toBeInTheDocument();
+
+      // Expand QR card on click -> Dismiss QR code overlay button is reachable and receives focus
+      act(() => {
+        chipBtn.focus();
+      });
+      fireEvent.click(chipBtn);
+      expect(screen.queryByTestId('slideshow-qr-chip-btn')).not.toBeInTheDocument();
+      expect(screen.getByTestId('themed-qr-code')).toBeInTheDocument();
+      const closeBtn = screen.getByTestId('slideshow-qr-close-btn');
+      expect(closeBtn).toHaveAttribute('aria-label', 'Dismiss QR code overlay');
+      expect(closeBtn).toHaveFocus();
+
+      act(() => {
+        jest.advanceTimersByTime(50);
+      });
+      jest.useRealTimers();
+      const axeRules = {
+        ...a11yConfig,
+        rules: { ...a11yConfig.rules, 'label-content-name-mismatch': { enabled: true } },
+      };
+      expect(await axe(container, axeRules)).toHaveNoViolations();
+
+      // Dismissing while focused inside QR card restores focus to toolbar QR toggle, and re-opening returns to compact chip state
+      closeBtn.focus();
+      fireEvent.click(closeBtn);
+      expect(screen.queryByTestId('slideshow-qr-overlay')).not.toBeInTheDocument();
+      const qrToggleBtn = screen.getByTestId('slideshow-qr-toggle-btn');
+      expect(qrToggleBtn).toHaveFocus();
+
+      fireEvent.click(qrToggleBtn);
+      expect(screen.getByTestId('slideshow-qr-chip-btn')).toBeInTheDocument();
+      expect(await axe(container, axeRules)).toHaveNoViolations();
+    } finally {
+      Object.defineProperty(window, 'innerWidth', {
+        configurable: true,
+        writable: true,
+        value: originalInnerWidth,
+      });
+      Object.defineProperty(window, 'innerHeight', {
+        configurable: true,
+        writable: true,
+        value: originalInnerHeight,
+      });
+    }
   });
 
   it('sets aria-live to off during automatic playback and restores polite when paused', () => {
@@ -1455,6 +1722,63 @@ describe('ReceptionSlideshowClient', () => {
     expect(await axe(container, a11yConfig)).toHaveNoViolations();
   });
 
+  it('evicts unpublished or rejected slides missing from activeIds on incremental ?since= polls and clamps currentIndex', async () => {
+    const initialSlides = [
+      {
+        id: 'slide-keep-1',
+        url: 'https://example.com/keep1.jpg',
+        title: 'Ceremony Kiss',
+        updatedAt: '2026-06-20T20:00:00.000Z',
+      },
+      {
+        id: 'slide-keep-2',
+        url: 'https://example.com/keep2.jpg',
+        title: 'First Dance',
+        updatedAt: '2026-06-20T20:05:00.000Z',
+      },
+      {
+        id: 'slide-unpublished-3',
+        url: 'https://example.com/removed3.jpg',
+        title: 'Removed Guest Upload',
+        updatedAt: '2026-06-20T20:10:00.000Z',
+      },
+    ];
+
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        photos: [],
+        activeIds: ['slide-keep-1', 'slide-keep-2'],
+      }),
+    });
+
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={initialSlides}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    // Navigate to the 3rd slide (index 2) before it is unpublished
+    fireEvent.click(screen.getByTestId('slideshow-next-btn'));
+    fireEvent.click(screen.getByTestId('slideshow-next-btn'));
+    expect(screen.getByTestId('slideshow-photo-title')).toHaveTextContent('Removed Guest Upload');
+
+    // Trigger 30s incremental poll -> slide-unpublished-3 is omitted from activeIds
+    await act(async () => {
+      jest.advanceTimersByTime(30000);
+    });
+
+    // Slide count drops from 3 to 2, removed slide disappears, and currentIndex clamps to index 1 (First Dance)
+    expect(screen.queryByText('Removed Guest Upload')).not.toBeInTheDocument();
+    expect(screen.getByTestId('slideshow-photo-title')).toHaveTextContent('First Dance');
+    expect(screen.getByTestId('slideshow-image')).toHaveAttribute(
+      'src',
+      'https://example.com/keep2.jpg'
+    );
+  });
+
   it('applies mobile reflow classes on top header, floating control bar, and QR overlay', () => {
     render(
       <ReceptionSlideshowClient
@@ -1466,12 +1790,17 @@ describe('ReceptionSlideshowClient', () => {
     expect(screen.getByTestId('slideshow-top-header')).toHaveClass('flex-wrap');
     expect(screen.getByTestId('slideshow-controls')).toHaveClass(
       'w-[calc(100vw-1.5rem)]',
-      'max-w-[calc(100vw-1.5rem)]'
+      'max-w-md',
+      'md:flex-wrap'
     );
-    expect(screen.getByTestId('slideshow-secondary-controls')).toHaveClass('flex-wrap');
+    expect(screen.getByTestId('slideshow-secondary-controls')).toHaveClass(
+      'flex-col',
+      'md:flex-row',
+      'md:flex-wrap'
+    );
     expect(screen.getByTestId('slideshow-qr-overlay')).toHaveClass(
-      'left-4',
-      'right-4',
+      'left-3',
+      'right-3',
       'max-w-[290px]'
     );
     expect(screen.getByTestId('slideshow-upload-url')).toHaveClass('truncate');

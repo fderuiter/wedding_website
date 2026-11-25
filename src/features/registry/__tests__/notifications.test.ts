@@ -583,6 +583,42 @@ describe('Registry Transactional HTML Notifications & Plain-Text Thank-You Escap
 
     expect(fetchCalls).toHaveLength(1);
     expect(fetchCalls[0].html).toContain('https://cash.app/$happycouple/45.00');
+
+    // Passcode RESERVED claim (no invitation code linked) sends guest confirmation email with signed /guest/claim links
+    fetchCalls.length = 0;
+    await dispatchContributionNotifications({
+      itemId: 'item-phys-passcode',
+      updatedItem: {
+        id: 'item-phys-passcode',
+        name: 'Espresso Machine',
+        itemType: 'PHYSICAL',
+        isGroupGift: false,
+        vendorUrl: 'https://retailer.example.com/espresso',
+        contributors: [
+          {
+            id: 'c-passcode-mail',
+            name: 'Passcode Claimer',
+            email: 'claimer@example.com',
+            amount: 250,
+            status: 'RESERVED',
+          },
+        ],
+      },
+      contribution: {
+        name: 'Passcode Claimer',
+        email: 'claimer@example.com',
+        amount: 250,
+      },
+      verifiedInvitationCode: null,
+      allowPasscodeReservationEmail: true,
+      config,
+      repository: mockRepo,
+      isReservation: true,
+    });
+
+    expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0].to).toBe('claimer@example.com');
+    expect(fetchCalls[0].html).toContain('/guest/claim?token=');
   });
 
   it.each(['resend', 'sendgrid', 'smtp'] as const)(

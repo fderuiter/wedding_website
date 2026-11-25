@@ -75,6 +75,7 @@ interface ActiveDropTarget {
   type: 'table' | 'seat';
   tableId: string;
   seatNumber?: number;
+  blocked?: boolean;
 }
 
 type ActivePointerGesture =
@@ -205,6 +206,7 @@ interface FloorplanTableNodeProps {
   matchingGuestIdsKey: string;
   isTableDropTarget: boolean;
   dropTargetSeatNumber: number | null;
+  isDropTargetBlocked: boolean;
   gestureMode: 'drag' | 'rotate' | null;
   previewX: number | undefined;
   previewY: number | undefined;
@@ -227,6 +229,8 @@ interface FloorplanTableNodeProps {
   onSeatDragEnter: (e: React.DragEvent, tableId: string, seatNumber: number) => void;
   onSeatDragOver: (e: React.DragEvent, tableId: string, seatNumber: number) => void;
   onSeatDragLeave: (e: React.DragEvent, tableId: string, seatNumber: number) => void;
+  onSeatDragStart: (e: React.DragEvent, guestId: string) => void;
+  onSeatDragEnd: (e: React.DragEvent) => void;
   onDropOnTable: (e: React.DragEvent, tableId: string, seatNumber?: number) => void;
   onSeatClick: (tableId: string, seatNumber: number, hasAssignedGuest: boolean) => void;
   onSeatDoubleClick: (
@@ -258,6 +262,7 @@ function areFloorplanTableNodePropsEqual(
     prev.matchingGuestIdsKey === next.matchingGuestIdsKey &&
     prev.isTableDropTarget === next.isTableDropTarget &&
     prev.dropTargetSeatNumber === next.dropTargetSeatNumber &&
+    prev.isDropTargetBlocked === next.isDropTargetBlocked &&
     prev.gestureMode === next.gestureMode &&
     prev.previewX === next.previewX &&
     prev.previewY === next.previewY &&
@@ -281,6 +286,8 @@ function areFloorplanTableNodePropsEqual(
     prev.onSeatDragEnter === next.onSeatDragEnter &&
     prev.onSeatDragOver === next.onSeatDragOver &&
     prev.onSeatDragLeave === next.onSeatDragLeave &&
+    prev.onSeatDragStart === next.onSeatDragStart &&
+    prev.onSeatDragEnd === next.onSeatDragEnd &&
     prev.onDropOnTable === next.onDropOnTable &&
     prev.onSeatClick === next.onSeatClick &&
     prev.onSeatDoubleClick === next.onSeatDoubleClick &&
@@ -301,6 +308,7 @@ const FloorplanTableNode = React.memo(function FloorplanTableNode({
   matchingGuestIdsKey,
   isTableDropTarget,
   dropTargetSeatNumber,
+  isDropTargetBlocked,
   gestureMode,
   previewX,
   previewY,
@@ -323,6 +331,8 @@ const FloorplanTableNode = React.memo(function FloorplanTableNode({
   onSeatDragEnter,
   onSeatDragOver,
   onSeatDragLeave,
+  onSeatDragStart,
+  onSeatDragEnd,
   onDropOnTable,
   onSeatClick,
   onSeatDoubleClick,
@@ -421,7 +431,7 @@ const FloorplanTableNode = React.memo(function FloorplanTableNode({
 
   const isOverCapacity = !isLandmark && assignedCount > table.capacity;
   const isFull = !isLandmark && assignedCount >= table.capacity;
-  const isDropDisabled = isTableDropTarget && (isLandmark || isFull);
+  const isDropDisabled = isTableDropTarget && (isLandmark || isDropTargetBlocked);
   const renderedX =
     isDraggingThisTable && previewX !== undefined ? previewX : Math.max(minX, table.x);
   const renderedY =
@@ -484,7 +494,8 @@ const FloorplanTableNode = React.memo(function FloorplanTableNode({
       const dietarySummary = occupant ? occupant.dietarySummary : '';
       const isMatch = assignedGuest ? matchingGuestIds.has(assignedGuest.id) : false;
       const isSeatDropTarget = dropTargetSeatNumber === i;
-      const isSeatDropDisabled = isSeatDropTarget && assignedCount >= capacity;
+      const isSeatDropDisabled = isSeatDropTarget && isDropTargetBlocked;
+      const isDraggablePrimarySeat = Boolean(assignedGuest && !isCompanionSeat);
       const coords = seatCoordinates[i];
       const seatX = coords ? coords.x : 0;
       const seatY = coords ? coords.y : 0;
@@ -495,6 +506,7 @@ const FloorplanTableNode = React.memo(function FloorplanTableNode({
             type="button"
             tabIndex={0}
             role="button"
+            draggable={isDraggablePrimarySeat}
             data-table-id={table.id}
             data-seat-number={i}
             data-is-plus-one={isCompanionSeat ? 'true' : undefined}
@@ -504,6 +516,22 @@ const FloorplanTableNode = React.memo(function FloorplanTableNode({
                   ? `Seat ${i}: ${seatDisplayLabel}, Dietary: ${dietarySummary}`
                   : `Seat ${i}: ${seatDisplayLabel}`
                 : `Seat ${i}: Empty`
+            }
+            onDragStart={
+              isDraggablePrimarySeat && assignedGuest
+                ? (e) => {
+                  e.stopPropagation();
+                  onSeatDragStart(e, assignedGuest.id);
+                }
+                : undefined
+            }
+            onDragEnd={
+              isDraggablePrimarySeat
+                ? (e) => {
+                  e.stopPropagation();
+                  onSeatDragEnd(e);
+                }
+                : undefined
             }
             onDragEnter={(e) => onSeatDragEnter(e, table.id, i)}
             onDragOver={(e) => onSeatDragOver(e, table.id, i)}
@@ -530,11 +558,15 @@ const FloorplanTableNode = React.memo(function FloorplanTableNode({
             title={
               assignedGuest
                 ? isMatch
-                  ? `Seat ${i}: ${seatDisplayLabel}${dietarySummary ? ` (${dietarySummary})` : ''} (Search Match! Double click to unassign)`
-                  : `Seat ${i}: ${seatDisplayLabel}${dietarySummary ? ` (${dietarySummary})` : ''} (Double click or press Enter/Space/Delete to unassign)`
+                  ? `Seat ${i}: ${seatDisplayLabel}${dietarySummary ? ` (${dietarySummary})` : ''} (Search Match! Drag to open seat or double click to unassign)`
+                  : isDraggablePrimarySeat
+                    ? `Seat ${i}: ${seatDisplayLabel}${dietarySummary ? ` (${dietarySummary})` : ''} (Drag to open seat, double click, or press Enter/Space/Delete to unassign)`
+                    : `Seat ${i}: ${seatDisplayLabel}${dietarySummary ? ` (${dietarySummary})` : ''} (Double click or press Enter/Space/Delete to unassign)`
                 : `Seat ${i}: Empty (Drop guest or press Enter/Space to assign)`
             }
             className={`absolute pointer-events-auto -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border text-xs font-semibold flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-primary ${
+              isDraggablePrimarySeat ? 'cursor-grab active:cursor-grabbing ' : ''
+            }${
               isSeatDropTarget
                 ? isSeatDropDisabled
                   ? 'scale-125 bg-red-100 dark:bg-red-950/40 border-red-500 ring-2 ring-red-500 z-30 font-bold shadow-lg cursor-not-allowed'
@@ -1000,6 +1032,7 @@ function FloorplanCanvasContent({
   const suppressClickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [liveAnnouncement, setLiveAnnouncement] = useState('');
   const [activeDropTarget, setActiveDropTarget] = useState<ActiveDropTarget | null>(null);
+  const draggedGuestIdRef = useRef<string | null>(null);
   const [internalPlacementTableId, setInternalPlacementTableId] = useState<string | null>(null);
   const [measuredViewportBounds, setMeasuredViewportBounds] = useState<{
     width: number;
@@ -1812,10 +1845,51 @@ function FloorplanCanvasContent({
     []
   );
 
-  // HTML5 Drag and Drop Handlers for Dropzones
-  const isTableBlockedForDrop = (targetTable: SeatingTableDTO | undefined): boolean => {
+  // HTML5 Drag and Drop Handlers for Seated Draggables and Dropzones
+  const handleSeatDragStart = useCallback((e: React.DragEvent, guestId: string) => {
+    draggedGuestIdRef.current = guestId;
+    if (e.dataTransfer) {
+      e.dataTransfer.setData('text/plain', guestId);
+      e.dataTransfer.effectAllowed = 'move';
+    }
+  }, []);
+
+  const handleSeatDragEnd = useCallback(() => {
+    draggedGuestIdRef.current = null;
+    setActiveDropTarget(null);
+  }, []);
+
+  const isTableBlockedForDrop = (
+    targetTable: SeatingTableDTO | undefined,
+    seatNumber?: number
+  ): boolean => {
     if (!targetTable) return false;
     if (isLandmarkTable(targetTable)) return true;
+
+    const draggedGuestId = draggedGuestIdRef.current;
+    if (draggedGuestId) {
+      const otherGuests = (targetTable.invitationCodes || []).filter(
+        (g) => g.id !== draggedGuestId
+      );
+      const otherHeadcount = getGuestsHeadcount(otherGuests);
+      const draggedGuest = canvasContextRef.current.guestLookupById.get(draggedGuestId);
+      const incomingHeadcount = draggedGuest ? getGuestPartySize(draggedGuest) : 1;
+      if (otherHeadcount + incomingHeadcount > targetTable.capacity) {
+        return true;
+      }
+      if (seatNumber !== undefined) {
+        const resolved = resolveDetailedSeatAssignments(
+          targetTable.invitationCodes,
+          targetTable.capacity
+        );
+        const occupant = resolved.get(seatNumber);
+        if (occupant && occupant.guest.id !== draggedGuestId) {
+          return true;
+        }
+      }
+      return false;
+    }
+
     return getGuestsHeadcount(targetTable.invitationCodes || []) >= targetTable.capacity;
   };
 
@@ -1828,7 +1902,9 @@ function FloorplanCanvasContent({
       e.dataTransfer.dropEffect = blocked ? 'none' : 'move';
     }
     setActiveDropTarget((prev) =>
-      prev?.type === 'table' && prev.tableId === tableId ? prev : { type: 'table', tableId }
+      prev?.type === 'table' && prev.tableId === tableId && prev.blocked === blocked
+        ? prev
+        : { type: 'table', tableId, blocked }
     );
   }, []);
 
@@ -1841,7 +1917,9 @@ function FloorplanCanvasContent({
       e.dataTransfer.dropEffect = blocked ? 'none' : 'move';
     }
     setActiveDropTarget((prev) =>
-      prev?.type === 'table' && prev.tableId === tableId ? prev : { type: 'table', tableId }
+      prev?.type === 'table' && prev.tableId === tableId && prev.blocked === blocked
+        ? prev
+        : { type: 'table', tableId, blocked }
     );
   }, []);
 
@@ -1859,14 +1937,17 @@ function FloorplanCanvasContent({
       e.preventDefault();
       e.stopPropagation();
       const targetTable = canvasContextRef.current.tables.find((t) => t.id === tableId);
-      const blocked = isTableBlockedForDrop(targetTable);
+      const blocked = isTableBlockedForDrop(targetTable, seatNumber);
       if (e.dataTransfer) {
         e.dataTransfer.dropEffect = blocked ? 'none' : 'move';
       }
       setActiveDropTarget((prev) =>
-        prev?.type === 'seat' && prev.tableId === tableId && prev.seatNumber === seatNumber
+        prev?.type === 'seat' &&
+        prev.tableId === tableId &&
+        prev.seatNumber === seatNumber &&
+        prev.blocked === blocked
           ? prev
-          : { type: 'seat', tableId, seatNumber }
+          : { type: 'seat', tableId, seatNumber, blocked }
       );
     },
     []
@@ -1877,14 +1958,17 @@ function FloorplanCanvasContent({
       e.preventDefault();
       e.stopPropagation();
       const targetTable = canvasContextRef.current.tables.find((t) => t.id === tableId);
-      const blocked = isTableBlockedForDrop(targetTable);
+      const blocked = isTableBlockedForDrop(targetTable, seatNumber);
       if (e.dataTransfer) {
         e.dataTransfer.dropEffect = blocked ? 'none' : 'move';
       }
       setActiveDropTarget((prev) =>
-        prev?.type === 'seat' && prev.tableId === tableId && prev.seatNumber === seatNumber
+        prev?.type === 'seat' &&
+        prev.tableId === tableId &&
+        prev.seatNumber === seatNumber &&
+        prev.blocked === blocked
           ? prev
-          : { type: 'seat', tableId, seatNumber }
+          : { type: 'seat', tableId, seatNumber, blocked }
       );
     },
     []
@@ -1902,8 +1986,12 @@ function FloorplanCanvasContent({
         (e.relatedTarget as HTMLElement).closest?.(`[data-table-id="${tableId}"]`) &&
         !(e.relatedTarget as HTMLElement).closest?.('[data-seat-number]')
       ) {
+        const targetTable = canvasContextRef.current.tables.find((t) => t.id === tableId);
+        const blocked = isTableBlockedForDrop(targetTable);
         setActiveDropTarget((prev) =>
-          prev?.type === 'table' && prev.tableId === tableId ? prev : { type: 'table', tableId }
+          prev?.type === 'table' && prev.tableId === tableId && prev.blocked === blocked
+            ? prev
+            : { type: 'table', tableId, blocked }
         );
       } else {
         setActiveDropTarget((prev) =>
@@ -1918,8 +2006,11 @@ function FloorplanCanvasContent({
     (e: React.DragEvent, tableId: string, seatNumber?: number) => {
       e.preventDefault();
       e.stopPropagation();
+      const activeSeatDragId = draggedGuestIdRef.current;
+      draggedGuestIdRef.current = null;
       setActiveDropTarget(null);
-      const rawData = e.dataTransfer ? e.dataTransfer.getData('text/plain') : '';
+      const rawData =
+        (e.dataTransfer ? e.dataTransfer.getData('text/plain') : '') || activeSeatDragId || '';
       if (!rawData) return;
 
       const {
@@ -1970,29 +2061,49 @@ function FloorplanCanvasContent({
       }
 
       const guestId = rawData;
+      const draggedGuest = currentGuestLookup.get(guestId);
+      const isSeatedMove = Boolean(draggedGuest?.tableId);
+
       if (targetTable) {
-        const isGuestAlreadyAtTable = targetTable.invitationCodes?.some((g) => g.id === guestId);
-        if (!isGuestAlreadyAtTable) {
-          const otherSeatedHeadcount = getGuestsHeadcount(
-            (targetTable.invitationCodes || []).filter((g) => g.id !== guestId)
+        const resolved = resolveDetailedSeatAssignments(
+          targetTable.invitationCodes,
+          targetTable.capacity
+        );
+        if (seatNumber !== undefined) {
+          const currentOccupant = resolved.get(seatNumber);
+          if (
+            currentOccupant &&
+            currentOccupant.guest.id === guestId &&
+            !currentOccupant.isCompanion
+          ) {
+            return;
+          }
+          if (isSeatedMove && currentOccupant && currentOccupant.guest.id !== guestId) {
+            setLiveAnnouncement(
+              `Seat ${seatNumber} on "${targetTable.name}" is already occupied. Drop onto an open seat.`
+            );
+            return;
+          }
+        }
+
+        const otherSeatedHeadcount = getGuestsHeadcount(
+          (targetTable.invitationCodes || []).filter((g) => g.id !== guestId)
+        );
+        const availableSeats = Math.max(0, targetTable.capacity - otherSeatedHeadcount);
+        const requiredChairs = draggedGuest ? getGuestPartySize(draggedGuest) : 1;
+
+        if (availableSeats <= 0) {
+          setLiveAnnouncement(
+            `Table "${targetTable.name}" has reached its maximum capacity of ${targetTable.capacity}.`
           );
-          const availableSeats = Math.max(0, targetTable.capacity - otherSeatedHeadcount);
-          const draggedGuest = currentGuestLookup.get(guestId);
-          const requiredChairs = draggedGuest ? getGuestPartySize(draggedGuest) : 1;
+          return;
+        }
 
-          if (availableSeats <= 0) {
-            setLiveAnnouncement(
-              `Table "${targetTable.name}" has reached its maximum capacity of ${targetTable.capacity}.`
-            );
-            return;
-          }
-
-          if (requiredChairs > availableSeats) {
-            setLiveAnnouncement(
-              `Table "${targetTable.name}" only has ${availableSeats} open seat${availableSeats === 1 ? '' : 's'} for ${draggedGuest?.guestName || 'Guest'} (${requiredChairs} chairs needed).`
-            );
-            return;
-          }
+        if (requiredChairs > availableSeats) {
+          setLiveAnnouncement(
+            `Table "${targetTable.name}" only has ${availableSeats} open seat${availableSeats === 1 ? '' : 's'} for ${draggedGuest?.guestName || 'Guest'} (${requiredChairs} chairs needed).`
+          );
+          return;
         }
       }
 
@@ -2188,6 +2299,8 @@ function FloorplanCanvasContent({
             activeDropTarget?.tableId === table.id && activeDropTarget.type === 'seat'
               ? (activeDropTarget.seatNumber ?? null)
               : null;
+          const isDropTargetBlocked =
+            activeDropTarget?.tableId === table.id && Boolean(activeDropTarget.blocked);
 
           return (
             <FloorplanTableNode
@@ -2202,6 +2315,7 @@ function FloorplanCanvasContent({
               }
               isTableDropTarget={isTableDropTarget}
               dropTargetSeatNumber={dropTargetSeatNumber}
+              isDropTargetBlocked={isDropTargetBlocked}
               gestureMode={gestureMode}
               previewX={previewX}
               previewY={previewY}
@@ -2224,6 +2338,8 @@ function FloorplanCanvasContent({
               onSeatDragEnter={handleSeatDragEnter}
               onSeatDragOver={handleSeatDragOver}
               onSeatDragLeave={handleSeatDragLeave}
+              onSeatDragStart={handleSeatDragStart}
+              onSeatDragEnd={handleSeatDragEnd}
               onDropOnTable={handleDropOnTable}
               onSeatClick={handleSeatClick}
               onSeatDoubleClick={handleSeatDoubleClick}

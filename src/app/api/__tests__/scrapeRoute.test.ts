@@ -2,13 +2,20 @@
 
 import { POST } from '../registry/scrape/route';
 import { isAdminRequest } from '@/core/auth/auth.server';
+import { getAppConfig } from '@/lib/config';
+import { DEFAULT_MODULE_CONFIG } from '@/lib/modules';
 import type { NextRequest } from 'next/server';
 
 jest.mock('@/core/auth/auth.server', () => ({
   isAdminRequest: jest.fn(),
 }));
 
+jest.mock('@/lib/config', () => ({
+  getAppConfig: jest.fn(),
+}));
+
 const mockIsAdminRequest = isAdminRequest as jest.Mock;
+const mockGetAppConfig = getAppConfig as jest.Mock;
 
 const fetchMock = jest.fn();
 global.fetch = fetchMock;
@@ -16,6 +23,7 @@ global.fetch = fetchMock;
 describe('POST /api/registry/scrape', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetAppConfig.mockResolvedValue({ modules: { ...DEFAULT_MODULE_CONFIG } });
     jest.spyOn(console, 'error').mockImplementation(() => {});
   });
 
@@ -167,5 +175,101 @@ describe('POST /api/registry/scrape', () => {
     expect(res.status).toBe(400);
     const json = await res.json();
     expect(json.error).toContain('Blocked: Too many redirects (maximum of 5 hops allowed)');
+  });
+
+  it('returns 404 when registry feature module is disabled', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    mockGetAppConfig.mockResolvedValueOnce({
+      modules: { ...DEFAULT_MODULE_CONFIG, registry: false, groupGifting: false },
+    });
+
+    const req = new Request('http://localhost/api/registry/scrape', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: 'https://example.com/product' }),
+    });
+
+    const res = await POST(req as unknown as NextRequest);
+    expect(res.status).toBe(404);
+    const json = await res.json();
+    expect(json.error).toContain("Feature 'registry' is disabled");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('blocks non-canonical IPv6, NAT64, and benchmarking literals with 400 before fetching', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+
+    for (const blockedUrl of [
+      'http://[0:0:0:0:0:0:0:1]/admin',
+      'http://[0:0:0:0:0:ffff:127.0.0.1]/admin',
+      'http://[64:ff9b::a9fe:a9fe]/latest/meta-data',
+      'http://198.18.0.1/internal',
+    ]) {
+      const req = new Request('http://localhost/api/registry/scrape', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: blockedUrl }),
+      });
+
+      const res = await POST(req as unknown as NextRequest);
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.error).toContain('Blocked: URL resolves to a private or restricted IP address');
+    }
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects oversized HTML responses exceeding 1 MiB via Content-Length or chunked stream with 422 NETWORK_TIMEOUT', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+
+    fetchMock.mockResolvedValueOnce(
+      new Response('<html></html>', {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/html',
+          'Content-Length': String(2 * 1024 * 1024),
+        },
+      })
+    );
+
+    const headerReq = new Request('http://localhost/api/registry/scrape', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: 'https://example.com/huge-header' }),
+    });
+    const headerRes = await POST(headerReq as unknown as NextRequest);
+    expect(headerRes.status).toBe(422);
+    const headerJson = await headerRes.json();
+    expect(headerJson.details.errorDomain).toBe('NETWORK_TIMEOUT');
+    expect(headerJson.error).toContain('Response body exceeded maximum size of 1048576 bytes');
+
+    let streamCancelled = false;
+    const chunk = new Uint8Array(300 * 1024).fill(0x61);
+    const infiniteHtmlStream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(chunk);
+      },
+      cancel() {
+        streamCancelled = true;
+      },
+    });
+    fetchMock.mockResolvedValueOnce(
+      new Response(infiniteHtmlStream, {
+        status: 200,
+        headers: { 'Content-Type': 'text/html' },
+      })
+    );
+
+    const streamReq = new Request('http://localhost/api/registry/scrape', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: 'https://example.com/huge-stream' }),
+    });
+    const streamRes = await POST(streamReq as unknown as NextRequest);
+    expect(streamRes.status).toBe(422);
+    const streamJson = await streamRes.json();
+    expect(streamJson.details.errorDomain).toBe('NETWORK_TIMEOUT');
+    expect(streamCancelled).toBe(true);
   });
 });

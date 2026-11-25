@@ -3,6 +3,7 @@ import net from 'node:net';
 import tls from 'node:tls';
 import { validateAndResolveHost } from '@/utils/ssrf';
 import { isAllowedSmtpPort } from '@/utils/validationPrimitives';
+import { buildPinnedSmtpNetOptions, buildPinnedSmtpTlsOptions } from './smtpSocket';
 import {
   StationeryCardConfig,
   parseStationeryCardDirective,
@@ -453,12 +454,14 @@ async function openSmtpSession(params: {
   const servername = resolveSniServername(host);
 
   if (secure) {
-    const tlsSock = tls.connect({
-      host: resolved.address,
-      port,
-      servername,
-      rejectUnauthorized,
-    });
+    const tlsSock = tls.connect(
+      buildPinnedSmtpTlsOptions({
+        resolved,
+        port,
+        servername,
+        rejectUnauthorized,
+      })
+    );
     tlsSock.setTimeout(timeoutMs);
     const session = new SmtpSocketSession(tlsSock, null);
 
@@ -487,11 +490,12 @@ async function openSmtpSession(params: {
     return session;
   }
 
-  const rawSock = net.connect({
-    host: resolved.address,
-    port,
-    family: resolved.family,
-  });
+  const rawSock = net.connect(
+    buildPinnedSmtpNetOptions({
+      resolved,
+      port,
+    })
+  );
   rawSock.setTimeout(timeoutMs);
   const session = new SmtpSocketSession(rawSock, rawSock);
 

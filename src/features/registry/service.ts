@@ -8,6 +8,7 @@ import type {
   CreateRegistryItemInput,
   GetItemsOptions,
   IRegistryRepository,
+  OrderTrackingDetails,
   PaginatedRegistryItems,
   RegistryItem,
   StripeLedgerReconciliationResult,
@@ -170,10 +171,17 @@ class RegistryService {
    */
   async confirmContribution(
     contributorId: string,
-    author: string = 'Guest'
+    author: string = 'Guest',
+    orderDetails?: OrderTrackingDetails
   ): Promise<ContributorLifecycleResult> {
     if (typeof this.repository.confirmContribution === 'function') {
+      if (orderDetails !== undefined) {
+        return this.repository.confirmContribution(contributorId, author, orderDetails);
+      }
       return this.repository.confirmContribution(contributorId, author);
+    }
+    if (orderDetails !== undefined) {
+      return registryRepository.confirmContribution!(contributorId, author, orderDetails);
     }
     return registryRepository.confirmContribution!(contributorId, author);
   }

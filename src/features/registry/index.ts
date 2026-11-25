@@ -35,6 +35,7 @@ export type {
   CreateRegistryItemInput,
   ThankYouTemplateTokens,
   RegistryShippingAddress,
+  OrderTrackingDetails,
   GuestClaimActions,
   ContributorRecord,
 } from './types';
@@ -84,7 +85,10 @@ export {
 export { POST as registryScrapePOST } from './api/scrape';
 export { POST as registryBatchScrapePOST } from './api/batch-scrape';
 export { ContributorLifecycleBadge } from './components/ContributorLifecycleBadge';
-export { getPaymentUrl } from './utils/paymentUrls';
+export {
+  getPaymentUrl,
+  formatRegistryShippingAddress,
+} from './utils/paymentUrls';
 export {
   extractDietaryTags,
   matchDietaryCategory,

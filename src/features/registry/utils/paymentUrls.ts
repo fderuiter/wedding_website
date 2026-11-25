@@ -1,6 +1,7 @@
 /**
  * Utility functions to format payment deep links for Venmo, Cash App, PayPal, Zelle, and custom handles.
  */
+import type { RegistryShippingAddress } from '../types';
 
 /**
  * Sanitizes a raw payment handle by removing leading symbols (@, $, u/, paypal.me/, etc.).
@@ -346,4 +347,47 @@ export function formatRegistryShippingAddress(shipping: {
   if (notes) lines.push(`Delivery Notes: ${notes}`);
 
   return lines.join('\n');
+}
+
+/**
+ * Extracts normalized couple shipping address fields and presence boolean from AppConfig.
+ */
+export function extractShippingAddressFromConfig(
+  config?: {
+    shippingRecipientName?: string | null;
+    shippingAddressLine1?: string | null;
+    shippingAddressLine2?: string | null;
+    shippingCity?: string | null;
+    shippingState?: string | null;
+    shippingZip?: string | null;
+    shippingCountry?: string | null;
+    shippingPhone?: string | null;
+    shippingDeliveryNotes?: string | null;
+  } | null
+): {
+  shippingCandidate: RegistryShippingAddress;
+  hasShippingAddress: boolean;
+} {
+  const shippingCandidate: RegistryShippingAddress = {
+    recipientName: config?.shippingRecipientName?.trim() || '',
+    addressLine1: config?.shippingAddressLine1?.trim() || '',
+    addressLine2: config?.shippingAddressLine2?.trim() || '',
+    city: config?.shippingCity?.trim() || '',
+    state: config?.shippingState?.trim() || '',
+    zip: config?.shippingZip?.trim() || '',
+    country: config?.shippingCountry?.trim() || '',
+    phone: config?.shippingPhone?.trim() || '',
+    deliveryNotes: config?.shippingDeliveryNotes?.trim() || '',
+  };
+
+  const hasShippingAddress = Boolean(
+    shippingCandidate.recipientName ||
+      shippingCandidate.addressLine1 ||
+      shippingCandidate.city ||
+      shippingCandidate.state ||
+      shippingCandidate.zip ||
+      shippingCandidate.country
+  );
+
+  return { shippingCandidate, hasShippingAddress };
 }

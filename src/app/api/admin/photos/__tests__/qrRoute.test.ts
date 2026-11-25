@@ -98,7 +98,7 @@ describe('/api/admin/photos/qr Route', () => {
     expect(res.status).toBe(404);
   });
 
-  it('returns signed upload URL, tokenVersion, and autoApproveGuestPhotos on GET', async () => {
+  it('returns signed upload URL, activeUploadUrl, configuredUploadUrl, tokenVersion, and autoApproveGuestPhotos on GET', async () => {
     const req = new NextRequest('http://localhost:3000/api/admin/photos/qr');
     const res = await getPhotoQr(req);
     const json = await res.json();
@@ -111,6 +111,13 @@ describe('/api/admin/photos/qr Route', () => {
     const url = new URL(json.uploadUrl);
     expect(url.origin).toBe('https://wedding.example.com');
     expect(url.pathname).toBe('/photos');
+    expect(json.configuredUploadUrl).toBe(json.uploadUrl);
+
+    const activeUrl = new URL(json.activeUploadUrl);
+    expect(activeUrl.origin).toBe('http://localhost:3000');
+    expect(activeUrl.pathname).toBe('/photos');
+    expect(activeUrl.searchParams.get('qr')).toBe(url.searchParams.get('qr'));
+
     const verified = await verifyPhotoQrLinkToken(url.searchParams.get('qr'));
     expect(verified?.v).toBe(2);
   });

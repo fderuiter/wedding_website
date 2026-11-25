@@ -1006,6 +1006,46 @@ describe('RegistryRepository', () => {
         data: { status: 'CONFIRMED', alertEmailSentAt: null },
       });
 
+      // 1b. Confirming with optional order tracking details persists trimmed fields
+      const txConfirmWithTracking = {
+        ...txConfirm,
+        contributor: {
+          findUnique: jest.fn().mockResolvedValue(reservedRow),
+          update: jest.fn().mockResolvedValue({
+            ...reservedRow,
+            status: 'CONFIRMED',
+            retailerOrderNumber: '114-9988776',
+            carrier: 'UPS',
+            trackingNumber: '1Z999AA10123456784',
+          }),
+          findMany: jest.fn().mockResolvedValue([
+            {
+              ...reservedRow,
+              status: 'CONFIRMED',
+              retailerOrderNumber: '114-9988776',
+              carrier: 'UPS',
+              trackingNumber: '1Z999AA10123456784',
+            },
+          ]),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txConfirmWithTracking));
+      await registryRepository.confirmContribution!('c-res-1', 'Guest', {
+        retailerOrderNumber: '  114-9988776 ',
+        carrier: ' UPS ',
+        trackingNumber: ' 1Z999AA10123456784 ',
+      });
+      expect(txConfirmWithTracking.contributor.update).toHaveBeenCalledWith({
+        where: { id: 'c-res-1' },
+        data: {
+          status: 'CONFIRMED',
+          alertEmailSentAt: null,
+          retailerOrderNumber: '114-9988776',
+          carrier: 'UPS',
+          trackingNumber: '1Z999AA10123456784',
+        },
+      });
+
       // 2. Guest cancel on CONFIRMED is rejected with 409
       const txCancelConfirmed = {
         contributor: {
@@ -1369,6 +1409,88 @@ describe('RegistryRepository', () => {
       });
       expect(stripeAllowedRes.amountContributed).toBe(50);
       expect(txStripeAllowed.contributor.count).not.toHaveBeenCalled();
+
+      // Enforces 5-hold RESERVED physical cap per normalized email for passcode claims and cites /guest/claim release links
+      const txEmailCapped = {
+        $queryRaw: jest.fn().mockResolvedValue([{ locked: '' }]),
+        contributor: {
+          count: jest.fn().mockResolvedValue(5),
+        },
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue({
+            ...mockRegistryItem,
+            itemType: 'PHYSICAL',
+          }),
+          update: jest.fn(),
+        },
+        invitationCode: {
+          findUnique: jest.fn(),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txEmailCapped));
+
+      await expect(
+        registryRepository.contributeToItem('1', {
+          name: 'Passcode Guest',
+          email: '  Passcode.Guest@Example.com ',
+          amount: 25,
+        })
+      ).rejects.toMatchObject({
+        statusCode: 429,
+        message: expect.stringMatching(/\/guest\/claim/i),
+      });
+      expect(txEmailCapped.contributor.count).toHaveBeenCalledWith({
+        where: {
+          email: { equals: 'passcode.guest@example.com', mode: 'insensitive' },
+          status: 'RESERVED',
+          registryItem: { itemType: 'PHYSICAL' },
+        },
+      });
+      expect(txEmailCapped.registryItem.update).not.toHaveBeenCalled();
+
+      // Peer-to-peer CASH_FUND / EXPERIENCE_FUND transfers are exempt from the 5-hold physical reservation cap
+      const fundItem = {
+        ...mockRegistryItem,
+        id: 'fund-exempt-1',
+        itemType: 'CASH_FUND',
+        isGroupGift: true,
+        price: 1000,
+        amountContributed: 0,
+      };
+      const txFundExempt = {
+        $queryRaw: jest.fn().mockResolvedValue([{ id: 'fund-exempt-1' }]),
+        contributor: {
+          count: jest.fn().mockResolvedValue(5),
+        },
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(fundItem),
+          update: jest.fn().mockResolvedValue({ ...fundItem, amountContributed: 100 }),
+        },
+        invitationCode: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'inv-capped',
+            code: 'CAPPED05',
+            guestName: 'Capped Household',
+            isSample: false,
+            source: 'admin',
+          }),
+        },
+        snapshotVersion: {
+          create: jest.fn(),
+          findMany: jest.fn(),
+          deleteMany: jest.fn(),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txFundExempt));
+
+      const fundTransferRes = await registryRepository.contributeToItem('fund-exempt-1', {
+        name: 'Capped Household',
+        email: 'passcode.guest@example.com',
+        amount: 100,
+        code: 'CAPPED05',
+      });
+      expect(fundTransferRes.amountContributed).toBe(100);
+      expect(txFundExempt.contributor.count).not.toHaveBeenCalled();
     });
 
     it('never overwrites an existing household street address or partially mismatched address during verified contributor checkout backfill', async () => {
@@ -1858,11 +1980,11 @@ describe('RegistryRepository', () => {
       expect(prisma.registryItem.findFirst).toHaveBeenNthCalledWith(1, {
         where: {
           isSample: false,
-          purchased: false,
           itemType: 'PHYSICAL',
           OR: [
             { vendorUrl: { startsWith: 'http://', mode: 'insensitive' } },
             { vendorUrl: { startsWith: 'https://', mode: 'insensitive' } },
+            { isGroupGift: true },
           ],
         },
         select: { id: true },
@@ -1870,8 +1992,13 @@ describe('RegistryRepository', () => {
       expect(prisma.registryItem.findFirst).toHaveBeenNthCalledWith(2, {
         where: {
           isSample: false,
-          purchased: false,
           AND: [
+            {
+              OR: [
+                { purchased: false },
+                { contributors: { some: { status: 'RESERVED' } } },
+              ],
+            },
             {
               OR: [
                 { itemType: { in: ['CASH_FUND', 'EXPERIENCE_FUND'] } },

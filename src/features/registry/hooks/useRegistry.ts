@@ -131,12 +131,14 @@ export function useRegistry() {
     stripePublishableKey,
     defaultPaymentHandleType: detectedDefaultPaymentHandleType,
     defaultPaymentHandle: detectedDefaultPaymentHandle,
+    hasShippingAddress: detectedHasShippingAddress,
     shippingAddress: detectedShippingAddress,
     isCapabilitiesLoading,
   } = useRegistryCapabilities();
   const cardCheckoutEnabled = isCapabilitiesLoading ? undefined : detectedCardCheckoutEnabled;
   const defaultPaymentHandleType = isCapabilitiesLoading ? null : detectedDefaultPaymentHandleType;
   const defaultPaymentHandle = isCapabilitiesLoading ? null : detectedDefaultPaymentHandle;
+  const hasShippingAddress = isCapabilitiesLoading ? false : detectedHasShippingAddress;
   const shippingAddress = isCapabilitiesLoading ? null : detectedShippingAddress;
   const [selectedItem, setSelectedItem] = useState<RegistryItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -790,6 +792,7 @@ export function useRegistry() {
     stripePublishableKey,
     defaultPaymentHandleType,
     defaultPaymentHandle,
+    hasShippingAddress,
     shippingAddress,
     filteredItems,
     visibleItems,

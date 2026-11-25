@@ -293,4 +293,99 @@ describe('POST /api/guest/photos/upload (Scoped Auth, Sanitization, & Auto-Appro
     expect(otherIpRes.status).toBe(201);
     expect(mockSanitizeImage).toHaveBeenCalledTimes(21);
   });
+
+  it('applies aligned per-file captions in a multi-file batch while preserving fallback attribution for empty captions', async () => {
+    const formData = new FormData();
+    formData.append(
+      'files',
+      new File([Buffer.from('img-1')], 'one.jpg', { type: 'image/jpeg' })
+    );
+    formData.append(
+      'files',
+      new File([Buffer.from('img-2')], 'two.jpg', { type: 'image/jpeg' })
+    );
+    formData.append(
+      'files',
+      new File([Buffer.from('img-3')], 'three.jpg', { type: 'image/jpeg' })
+    );
+    formData.append('captions', 'Sparkler exit!');
+    formData.append('captions', '   ');
+    formData.append('captions', 'Table 4 toast');
+    formData.append('uploaderName', 'Elena Rivera');
+
+    const req = await buildScopedUploadRequest(formData);
+    const res = await uploadGuestPhoto(req);
+    const json = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(json.data).toHaveLength(3);
+    expect(mockCreateContentNode).toHaveBeenCalledTimes(3);
+
+    expect(mockCreateContentNode.mock.calls[0][0].data).toEqual(
+      expect.objectContaining({
+        title: 'Sparkler exit!',
+        altText: 'Sparkler exit!',
+        caption: 'Sparkler exit!',
+        uploaderName: 'Elena Rivera',
+      })
+    );
+    expect(mockCreateContentNode.mock.calls[1][0].data).toEqual(
+      expect.objectContaining({
+        title: 'Photo by Elena Rivera',
+        altText: 'Photo by Elena Rivera',
+        uploaderName: 'Elena Rivera',
+      })
+    );
+    expect(mockCreateContentNode.mock.calls[1][0].data.caption).toBeUndefined();
+    expect(mockCreateContentNode.mock.calls[2][0].data).toEqual(
+      expect.objectContaining({
+        title: 'Table 4 toast',
+        altText: 'Table 4 toast',
+        caption: 'Table 4 toast',
+        uploaderName: 'Elena Rivera',
+      })
+    );
+  });
+
+  it('gives distinct guest_photo_session cookies sharing one venue IP independent 15-request/min buckets without hitting 429', async () => {
+    const tokenA = await signPhotoUploadSessionToken({ v: 1 });
+    const tokenB = await signPhotoUploadSessionToken({ v: 1 });
+    expect(tokenA).not.toBe(tokenB);
+
+    const sendBatchForSession = async (token: string): Promise<Response> => {
+      const formData = new FormData();
+      formData.append(
+        'files',
+        new File([Buffer.from('venue-photo')], 'venue.jpg', { type: 'image/jpeg' })
+      );
+      const req = new NextRequest('http://localhost:3000/api/guest/photos/upload', {
+        method: 'POST',
+        headers: createVerifiedSocketIpHeaders('198.51.100.77', {
+          host: 'localhost:3000',
+          cookie: `${GUEST_PHOTO_COOKIE}=${token}`,
+        }),
+      });
+      return uploadGuestPhoto(
+        Object.assign(req, {
+          formData: async () => formData,
+        })
+      );
+    };
+
+    // Guest A makes 15 upload requests on venue Wi-Fi IP 198.51.100.77 -> all 201
+    for (let i = 0; i < 15; i += 1) {
+      const resA = await sendBatchForSession(tokenA);
+      expect(resA.status).toBe(201);
+    }
+
+    // Guest B on the exact same venue Wi-Fi IP 198.51.100.77 ALSO makes 15 upload requests -> all 201 (30 total on IP)
+    for (let i = 0; i < 15; i += 1) {
+      const resB = await sendBatchForSession(tokenB);
+      expect(resB.status).toBe(201);
+    }
+
+    // Guest A's 16th request within the same minute is rate limited (per-session bucket = 15)
+    const sixteenthA = await sendBatchForSession(tokenA);
+    expect(sixteenthA.status).toBe(429);
+  });
 });

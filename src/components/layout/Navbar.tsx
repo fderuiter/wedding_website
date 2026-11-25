@@ -115,8 +115,10 @@ export default function Navbar({
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isGuideMenuOpen, setIsGuideMenuOpen] = useState(false);
   const [hasInviteSession, setHasInviteSession] = useState(false);
+  const [isPhotoQrSession, setIsPhotoQrSession] = useState(false);
   const [isSwitchingHousehold, setIsSwitchingHousehold] = useState(false);
   const hasInviteSessionRef = useRef(false);
+  const isPhotoQrSessionRef = useRef(false);
   const [trackedPathname, setTrackedPathname] = useState(pathname);
   const guideTriggerRef = useRef<HTMLButtonElement>(null);
   const mobileMenuTriggerRef = useRef<HTMLButtonElement>(null);
@@ -145,16 +147,23 @@ export default function Navbar({
     setManualHashOverride({ base: getHashSnapshot(), hash });
   }, []);
 
-  const applyInviteSessionFlag = useCallback((nextValue: boolean) => {
-    if (hasInviteSessionRef.current === nextValue) return;
-    hasInviteSessionRef.current = nextValue;
-    setHasInviteSession(nextValue);
+  const applyGuestSessionStatus = useCallback((nextStatus: string) => {
+    const nextInvite = nextStatus === 'invitation';
+    const nextPhotoQr = nextStatus === 'photo_qr';
+    if (hasInviteSessionRef.current !== nextInvite) {
+      hasInviteSessionRef.current = nextInvite;
+      setHasInviteSession(nextInvite);
+    }
+    if (isPhotoQrSessionRef.current !== nextPhotoQr) {
+      isPhotoQrSessionRef.current = nextPhotoQr;
+      setIsPhotoQrSession(nextPhotoQr);
+    }
   }, []);
 
   const refreshGuestSession = useCallback(
     async (signal?: AbortSignal) => {
       if (isAdmin || isPreview || typeof fetch !== 'function') {
-        applyInviteSessionFlag(false);
+        applyGuestSessionStatus('none');
         return;
       }
       try {
@@ -167,13 +176,13 @@ export default function Navbar({
         if (signal?.aborted) return;
         const payload = json?.data ?? json;
         if (payload && typeof payload === 'object' && 'status' in payload) {
-          applyInviteSessionFlag(payload.status === 'invitation');
+          applyGuestSessionStatus(String(payload.status ?? 'none'));
         }
       } catch {
         // Ignore transient or mocked-out fetch errors in global navigation
       }
     },
-    [applyInviteSessionFlag, isAdmin, isPreview]
+    [applyGuestSessionStatus, isAdmin, isPreview]
   );
 
   useEffect(() => {
@@ -199,12 +208,12 @@ export default function Navbar({
     } catch {
       // Proceed to clear client session state even on network failure
     } finally {
-      applyInviteSessionFlag(false);
+      applyGuestSessionStatus('none');
       setIsSwitchingHousehold(false);
       setIsMenuOpen(false);
       notifyGuestSessionChanged();
     }
-  }, [applyInviteSessionFlag, isSwitchingHousehold]);
+  }, [applyGuestSessionStatus, isSwitchingHousehold]);
 
   const handleCloseGuideMenu = useCallback(() => {
     setIsGuideMenuOpen(false);
@@ -304,16 +313,45 @@ export default function Navbar({
     return href.includes('#') ? 'location' : 'page';
   };
   const role = isAdmin ? 'admin' : 'public';
-  const baseLinks = getNavLinks(role, config.modules);
+  const baseLinks = useMemo(() => getNavLinks(role, config.modules), [role, config.modules]);
+  const isScopedPhotoQrMode = !isAdmin && !isPreview && isPhotoQrSession;
 
-  const adminLinks = baseLinks.filter((l) => l.href.startsWith('/admin'));
-  const regularLinks = baseLinks.filter((l) => !l.href.startsWith('/admin'));
+  const adminLinks = useMemo(
+    () => (isScopedPhotoQrMode ? [] : baseLinks.filter((l) => l.href.startsWith('/admin'))),
+    [baseLinks, isScopedPhotoQrMode]
+  );
+  const regularLinks = useMemo(
+    () => baseLinks.filter((l) => !l.href.startsWith('/admin')),
+    [baseLinks]
+  );
 
-  const primaryLinks = regularLinks.filter((l) => PRIMARY_GUEST_PATHS.has(l.href));
-  const rawGuidePageLinks = regularLinks.filter((l) => !PRIMARY_GUEST_PATHS.has(l.href));
+  const primaryLinks = useMemo<NavLinkItem[]>(() => {
+    if (isScopedPhotoQrMode) {
+      return [
+        { href: '/photos', label: 'Photos' },
+        { href: '/photos/slideshow', label: 'Live Slideshow' },
+        { href: '/guest/login', label: 'Enter Invite Code' },
+      ];
+    }
+    return regularLinks.filter((l) => PRIMARY_GUEST_PATHS.has(l.href));
+  }, [isScopedPhotoQrMode, regularLinks]);
+  const rawGuidePageLinks = useMemo<NavLinkItem[]>(
+    () =>
+      isScopedPhotoQrMode
+        ? []
+        : regularLinks.filter((l) => !PRIMARY_GUEST_PATHS.has(l.href)),
+    [isScopedPhotoQrMode, regularLinks]
+  );
   const hasThingsToDoPage = rawGuidePageLinks.some((l) => l.href === '/things-to-do');
 
   const { sectionLinks, guidePageLinks, secondaryLinks } = useMemo(() => {
+    if (isScopedPhotoQrMode) {
+      return {
+        sectionLinks: [] as NavLinkItem[],
+        guidePageLinks: [] as NavLinkItem[],
+        secondaryLinks: [] as NavLinkItem[],
+      };
+    }
     const seenHrefs = new Set<string>(primaryLinks.map((l) => l.href));
     const dedupedSections: NavLinkItem[] = [];
     const dedupedGuides: NavLinkItem[] = [];
@@ -339,10 +377,11 @@ export default function Navbar({
       guidePageLinks: dedupedGuides,
       secondaryLinks: [...dedupedSections, ...dedupedGuides],
     };
-  }, [features, hasThingsToDoPage, hasVisibleFaqs, isAdmin, primaryLinks, rawGuidePageLinks]);
+  }, [features, hasThingsToDoPage, hasVisibleFaqs, isAdmin, isScopedPhotoQrMode, primaryLinks, rawGuidePageLinks]);
 
   const mobileLinks = [...primaryLinks, ...secondaryLinks, ...adminLinks];
   const isSecondaryActive = secondaryLinks.some((link) => isLinkActive(link.href));
+  const brandHref = isScopedPhotoQrMode ? '/photos' : '/';
 
   const brandLogoUrl = config.brandLogoUrl;
   const partner1 = config.partner1Name || config.brideName || '';
@@ -482,7 +521,7 @@ export default function Navbar({
       <div className="flex items-center justify-between min-h-16 py-1.5 gap-3">
         <div className="flex-shrink-0 flex items-center min-h-12">
           <Link
-            href="/"
+            href={brandHref}
             prefetch={disablePrefetch ? false : undefined}
             className="flex items-center min-h-[24px] min-w-[24px] text-2xl font-bold text-[var(--color-primary-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2 rounded"
           >

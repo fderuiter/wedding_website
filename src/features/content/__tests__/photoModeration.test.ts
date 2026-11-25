@@ -7,11 +7,16 @@ describe('Photo Moderation Service & Visibility Rules', () => {
   let mockRepo: jest.Mocked<
     Omit<
       Required<IContentRepository>,
-      'getPendingPhotos' | 'getPublicPhotos' | 'approvePhotosBatch' | 'rejectPhotosBatch'
+      | 'getPendingPhotos'
+      | 'getPublicPhotos'
+      | 'getActivePublicPhotoIds'
+      | 'approvePhotosBatch'
+      | 'rejectPhotosBatch'
     >
   > & {
     getPendingPhotos?: jest.Mock;
     getPublicPhotos?: jest.Mock;
+    getActivePublicPhotoIds?: jest.Mock;
     approvePhotosBatch?: jest.Mock;
     rejectPhotosBatch?: jest.Mock;
   };
@@ -667,6 +672,106 @@ describe('Photo Moderation Service & Visibility Rules', () => {
           data: { id: 'p1', deleted: true, status: 'REJECTED' },
         },
       ]);
+    });
+
+    it('forwards per-photo edits to repo.approvePhotosBatch and applies edits in fallback sequential approval', async () => {
+      const now = new Date();
+      const edits = {
+        p1: { caption: 'First dance sparklers', uploaderName: 'Uncle Leo' },
+        p2: { caption: 'Table 7 toast' },
+      };
+      const approvedP1 = {
+        id: 'p1',
+        type: 'Photo' as const,
+        tags: ['gallery', 'guest-upload'],
+        data: {
+          url: '/uploads/photos/p1.jpg',
+          title: 'First dance sparklers',
+          altText: 'First dance sparklers',
+          caption: 'First dance sparklers',
+          uploaderName: 'Uncle Leo',
+          status: 'APPROVED' as const,
+          isVisible: true,
+        },
+        createdAt: now,
+        updatedAt: now,
+      };
+      const approvedP2 = {
+        id: 'p2',
+        type: 'Photo' as const,
+        tags: ['gallery', 'guest-upload'],
+        data: {
+          url: '/uploads/photos/p2.jpg',
+          title: 'Table 7 toast',
+          altText: 'Table 7 toast',
+          caption: 'Table 7 toast',
+          uploaderName: 'Aunt Clara',
+          status: 'APPROVED' as const,
+          isVisible: true,
+        },
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      mockRepo.approvePhotosBatch = jest.fn().mockResolvedValueOnce([approvedP1, approvedP2]);
+
+      const delegatedRes = await service.moderatePhotosBatch(
+        ['p1', 'p2'],
+        'approve',
+        'CoupleAdmin',
+        edits
+      );
+      expect(mockRepo.approvePhotosBatch).toHaveBeenCalledWith(
+        ['p1', 'p2'],
+        'CoupleAdmin',
+        edits
+      );
+      expect(delegatedRes.succeededCount).toBe(2);
+      expect(delegatedRes.results[0].data).toEqual(approvedP1);
+      expect(delegatedRes.results[1].data).toEqual(approvedP2);
+
+      // Verify sequential fallback when approvePhotosBatch is absent
+      delete mockRepo.approvePhotosBatch;
+      mockRepo.getNodeById!.mockImplementation(async (id: string) => ({
+        id,
+        type: 'Photo' as const,
+        tags: ['gallery', 'guest-upload'],
+        data: {
+          url: `/uploads/photos/${id}.jpg`,
+          title: 'Photo by Guest',
+          altText: 'Photo by Guest',
+          uploaderName: 'Guest',
+          status: 'PENDING' as const,
+          isVisible: false,
+        },
+        createdAt: now,
+        updatedAt: now,
+      }));
+      mockRepo.updateNode!.mockImplementation(async (id: string, payload: { data?: unknown }) => ({
+        id,
+        type: 'Photo' as const,
+        tags: ['gallery', 'guest-upload'],
+        data: payload.data as Record<string, unknown>,
+        createdAt: now,
+        updatedAt: now,
+      }));
+
+      const fallbackRes = await service.moderatePhotosBatch(
+        ['p1', 'p2'],
+        'approve',
+        'CoupleAdmin',
+        edits
+      );
+      expect(fallbackRes.succeededCount).toBe(2);
+      expect((fallbackRes.results[0].data as typeof approvedP1).data.caption).toBe(
+        'First dance sparklers'
+      );
+      expect((fallbackRes.results[0].data as typeof approvedP1).data.uploaderName).toBe(
+        'Uncle Leo'
+      );
+      expect((fallbackRes.results[1].data as typeof approvedP2).data.caption).toBe(
+        'Table 7 toast'
+      );
     });
   });
 });

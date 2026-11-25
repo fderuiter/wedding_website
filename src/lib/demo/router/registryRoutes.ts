@@ -318,6 +318,7 @@ export async function handleRegistryAndThankYouRoutes(
     return jsonResponse({
       cardCheckoutEnabled: true,
       stripePublishableKey: null,
+      hasShippingAddress: true,
       defaultPaymentHandleType: 'Venmo',
       defaultPaymentHandle: '@alex-and-taylor',
       shippingAddress: DEMO_SHIPPING_ADDRESS,
@@ -786,11 +787,18 @@ export async function handleRegistryAndThankYouRoutes(
     }
 
     if (method === 'POST') {
-      const token = String((await parseJsonBody(init, rawInput)).token || '').trim();
+      const body = await parseJsonBody(init, rawInput);
+      const token = String(body.token || '').trim();
       if (!token) {
         return jsonResponse({ error: 'Missing claim token.' }, 400);
       }
-      const result = processDemoClaimToken(token);
+      const result = processDemoClaimToken(token, {
+        retailerOrderNumber:
+          typeof body.retailerOrderNumber === 'string' ? body.retailerOrderNumber : undefined,
+        carrier: typeof body.carrier === 'string' ? body.carrier : undefined,
+        trackingNumber:
+          typeof body.trackingNumber === 'string' ? body.trackingNumber : undefined,
+      });
       if (!result) {
         return jsonResponse({ error: 'Invalid or expired reservation token.' }, 404);
       }

@@ -1,4 +1,10 @@
-import { IContentRepository, PendingPhotosOptions, PaginatedPendingPhotosResult, GetNodesByTypeOptions } from './types';
+import {
+  IContentRepository,
+  PendingPhotosOptions,
+  PaginatedPendingPhotosResult,
+  GetNodesByTypeOptions,
+  BatchPhotoModerationOverrides,
+} from './types';
 import { ContentNodeDTO } from './schemas';
 import { contentRepository } from './repository';
 
@@ -78,6 +84,14 @@ export class ContentService {
         return isVisible !== false;
       })
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async getActivePublicPhotoIds(): Promise<string[]> {
+    if (typeof this.repo.getActivePublicPhotoIds === 'function') {
+      return await this.repo.getActivePublicPhotoIds();
+    }
+    const activePhotos = await this.getPublicPhotos();
+    return activePhotos.map((node) => node.id);
   }
 
   async getPendingPhotos(options: PendingPhotosOptions = {}): Promise<ContentNodeDTO[] & PaginatedPendingPhotosResult> {
@@ -286,7 +300,8 @@ export class ContentService {
   async moderatePhotosBatch(
     ids: string[],
     action: 'approve' | 'reject',
-    author: string = 'Admin'
+    author: string = 'Admin',
+    pendingEdits?: BatchPhotoModerationOverrides
   ) {
     if (!Array.isArray(ids)) {
       throw new Error('Photo IDs must be an array');
@@ -298,8 +313,16 @@ export class ContentService {
       throw new Error('Batch request cannot exceed 100 items');
     }
 
+    const hasPendingEdits =
+      pendingEdits !== undefined &&
+      pendingEdits !== null &&
+      typeof pendingEdits === 'object' &&
+      Object.keys(pendingEdits).length > 0;
+
     if (action === 'approve' && typeof this.repo.approvePhotosBatch === 'function') {
-      const approvedNodes = await this.repo.approvePhotosBatch(ids, author);
+      const approvedNodes = hasPendingEdits
+        ? await this.repo.approvePhotosBatch(ids, author, pendingEdits)
+        : await this.repo.approvePhotosBatch(ids, author);
       const approvedById = new Map<string, ContentNodeDTO>(
         approvedNodes.map((node) => [node.id, node])
       );
@@ -368,7 +391,11 @@ export class ContentService {
     const results = await Promise.all(
       ids.map(async (id) => {
         try {
-          const result = await this.moderatePhoto(id, action, author);
+          const itemOverride = hasPendingEdits ? pendingEdits?.[id] : undefined;
+          const result =
+            itemOverride !== undefined
+              ? await this.moderatePhoto(id, action, author, itemOverride)
+              : await this.moderatePhoto(id, action, author);
           return {
             id,
             success: true,

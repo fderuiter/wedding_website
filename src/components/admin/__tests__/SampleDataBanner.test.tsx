@@ -2,7 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { SampleDataBanner } from '../SampleDataBanner';
+import { SampleDataBanner, SeatingSampleDataBanner } from '../SampleDataBanner';
 import { OnboardingChecklist } from '../OnboardingChecklist';
 import { useSeatingState } from '@/features/seating';
 
@@ -29,8 +29,13 @@ jest.mock('@/components/ui/ToastProvider', () => ({
 }));
 
 function SeatingObserverProbe() {
-  const { tables } = useSeatingState();
-  return <div data-testid="seating-table-count">{tables.length}</div>;
+  const { tables, hiddenSampleTableCount } = useSeatingState();
+  return (
+    <div>
+      <div data-testid="seating-table-count">{tables.length}</div>
+      <div data-testid="seating-hidden-sample-count">{hiddenSampleTableCount}</div>
+    </div>
+  );
 }
 
 describe('SampleDataBanner', () => {
@@ -240,7 +245,8 @@ describe('SampleDataBanner', () => {
       name: 'Purge Sample Data',
     });
     await waitFor(() => {
-      expect(screen.getByTestId('seating-table-count')).toHaveTextContent('1');
+      expect(screen.getByTestId('seating-table-count')).toHaveTextContent('0');
+      expect(screen.getByTestId('seating-hidden-sample-count')).toHaveTextContent('1');
       expect(
         screen.getByText('0 of 1 milestones completed (1 pending)'),
       ).toBeInTheDocument();
@@ -281,9 +287,42 @@ describe('SampleDataBanner', () => {
       expect(seatingFetchCalls).toBeGreaterThanOrEqual(2);
       expect(milestoneFetchCalls).toBeGreaterThanOrEqual(2);
       expect(screen.getByTestId('seating-table-count')).toHaveTextContent('0');
+      expect(screen.getByTestId('seating-hidden-sample-count')).toHaveTextContent('0');
       expect(
         screen.getByText('1 of 1 milestones completed (0 pending)'),
       ).toBeInTheDocument();
+    });
+  });
+
+  it('renders SeatingSampleDataBanner with hidden counts, purges via DELETE /api/admin/sample-data, and passes jest-axe', async () => {
+    global.fetch = jest.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ success: true }),
+    } as Response);
+
+    const { container } = render(
+      <SeatingSampleDataBanner hiddenTableCount={2} hiddenGuestCount={6} />,
+    );
+
+    const banner = screen.getByTestId('seating-sample-data-banner');
+    expect(banner).toHaveTextContent(
+      'Sample records hidden: 2 sample tables and 6 sample guests are excluded from live seating, auto-assign, and caterer exports.',
+    );
+    expect(await axe(container)).toHaveNoViolations();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Purge Sample Data' }));
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/admin/sample-data',
+        expect.objectContaining({ method: 'DELETE' }),
+      );
+      expect(mockAddToast).toHaveBeenCalledWith(
+        'All sample data has been successfully purged.',
+        'success',
+      );
+      expect(mockRefresh).toHaveBeenCalled();
+      expect(screen.queryByTestId('seating-sample-data-banner')).not.toBeInTheDocument();
     });
   });
 });

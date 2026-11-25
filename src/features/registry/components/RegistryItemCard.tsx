@@ -1,5 +1,6 @@
 'use client';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import Link from 'next/link';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import type { Stripe, StripeElements } from '@stripe/stripe-js';
 import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
@@ -21,6 +22,7 @@ import { formatCurrency, formatDate } from '@/utils/intl';
 import { Button } from '@/components/ui/Button';
 import { useOptionalToast } from '@/components/ui/ToastProvider';
 import { useShareItem } from '../hooks/useShareItem';
+import { useGuestSession } from '../context/GuestSessionContext';
 import { useRegistryCapabilities } from '../hooks/useRegistryCapabilities';
 import { useRegistryContributionMachine } from '../hooks/useRegistryContributionMachine';
 import {
@@ -91,6 +93,7 @@ interface RegistryItemCardProps {
   stripePublishableKey?: string | null;
   defaultPaymentHandleType?: string | null;
   defaultPaymentHandle?: string | null;
+  hasShippingAddress?: boolean;
   shippingAddress?: RegistryShippingAddress | null;
   isAdmin?: boolean;
   reconciledReceipt?: ReconciledContributionReceipt | null;
@@ -199,6 +202,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   stripePublishableKey,
   defaultPaymentHandleType,
   defaultPaymentHandle,
+  hasShippingAddress,
   shippingAddress,
   isAdmin = false,
   reconciledReceipt = null,
@@ -208,6 +212,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   const { resolvedTheme } = useTheme();
   const demo = useOptionalDemo();
   const isDemoMode = Boolean(demo?.isDemoMode);
+  const { hasPasscodeSession } = useGuestSession();
   const isSampleLocked = Boolean(item.isSample && !isDemoMode);
   const stripeControllerRef = useRef<StripeControllerHandle | null>(null);
   const syncedPaymentIntentRef = useRef<SyncedPaymentIntentSnapshot | null>(null);
@@ -287,7 +292,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     ? activePaymentMode === 'card'
     : isPayableGroupGift && activePaymentMode === 'card';
   const showFeeDisclosurePanel = isDemoMode ? isDirectMode || isCardMode : isPayableGroupGift;
-  const requiresCodeVerification = !isDemoMode && !isAdmin && (isClaimMode || isDirectMode);
+  const requireEmailWhenUnverified = !isDemoMode && !isAdmin && (isClaimMode || isDirectMode);
 
   const {
     isValidatingCode,
@@ -350,23 +355,29 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   } = useRegistryContributionMachine({
     item,
     onContribute,
-    requireVerifiedCode: requiresCodeVerification,
+    requireEmailWhenUnverified,
   });
+
+  const isEmailRequired = requireEmailWhenUnverified && !isCodeLocked;
 
   const shouldFetchStandaloneCapabilities =
     shippingAddress === undefined &&
     !isDemoMode &&
     Boolean(item.vendorUrl) &&
-    (isAdmin || isCodeLocked);
+    (isAdmin || isCodeLocked || hasPasscodeSession);
   const standaloneCapabilities = useRegistryCapabilities({
     enabled: shouldFetchStandaloneCapabilities,
   });
-  const canDisplayShippingAddress = isDemoMode || isAdmin || isCodeLocked;
+  const canDisplayShippingAddress =
+    isDemoMode || isAdmin || isCodeLocked || hasPasscodeSession;
   const resolvedShippingAddress = canDisplayShippingAddress
     ? shippingAddress !== undefined
       ? shippingAddress
       : standaloneCapabilities.shippingAddress
     : null;
+  const resolvedHasShippingAddress = Boolean(
+    hasShippingAddress || standaloneCapabilities.hasShippingAddress || shippingAddress
+  );
 
   const { handleShare, copied } = useShareItem(item);
   const toastContext = useOptionalToast();
@@ -1007,12 +1018,21 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     setClaimActionError(null);
 
     try {
+      const claimPayload: Record<string, string> = { token };
+      if (action === 'confirm' && isVendorUrlSafe && isClaimMode) {
+        const cleanOrderNumber = retailerOrderNumber.trim();
+        const cleanCarrier = carrier.trim();
+        const cleanTracking = trackingNumber.trim();
+        if (cleanOrderNumber) claimPayload.retailerOrderNumber = cleanOrderNumber;
+        if (cleanCarrier) claimPayload.carrier = cleanCarrier;
+        if (cleanTracking) claimPayload.trackingNumber = cleanTracking;
+      }
       const response = await apiClient.post<{
         action: 'confirm' | 'cancel';
         status: string;
         changed: boolean;
         item?: RegistryItem | null;
-      }>('/api/registry/claim', { token });
+      }>('/api/registry/claim', claimPayload);
 
       setPostClaimOverride({
         key: activeClaimKey,
@@ -1561,7 +1581,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
         </Button>
       </div>
 
-      {hasFormattedShipping && !isClaimedReadOnly && (
+      {hasFormattedShipping && !isClaimedReadOnly && postClaimStatus !== 'CANCELLED' && (
         <div
           data-testid="registry-shipping-address-card"
           className="mb-4 p-3.5 rounded-lg bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700 text-sm"
@@ -1585,6 +1605,32 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
           <pre className="whitespace-pre-wrap font-sans text-xs text-gray-700 dark:text-gray-300 leading-relaxed m-0">
             {formattedShippingText}
           </pre>
+        </div>
+      )}
+
+      {isVendorUrlSafe &&
+        !isClaimedReadOnly &&
+        !isSampleLocked &&
+        !hasFormattedShipping &&
+        resolvedHasShippingAddress && (
+        <div
+          data-testid="registry-shipping-signin-prompt"
+          className="mb-4 p-3.5 rounded-lg bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700 text-sm flex flex-wrap items-center justify-between gap-2.5"
+        >
+          <div className="space-y-0.5">
+            <p className="font-semibold text-gray-800 dark:text-gray-100">
+              Ship Directly to Couple
+            </p>
+            <p className="text-xs text-gray-700 dark:text-gray-300">
+              Sign in with the wedding passcode or verify your invitation code below to view the couple&apos;s shipping address.
+            </p>
+          </div>
+          <Link
+            href="/guest/login?callbackUrl=/registry"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary underline hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded px-2 py-1"
+          >
+            Sign in with Wedding Passcode
+          </Link>
         </div>
       )}
 
@@ -1692,6 +1738,51 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                   <p className="text-xs text-gray-700 dark:text-gray-300">
                     Your claim holds this gift so no one else buys a duplicate. Confirm below once your payment or order is sent, or cancel if your plans change.
                   </p>
+                  {isVendorUrlSafe && isClaimMode && (
+                    <div
+                      data-testid="external-order-tracking-fields"
+                      className="p-3 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-2.5"
+                    >
+                      <p className="text-xs font-semibold text-gray-800 dark:text-gray-200">
+                        Order &amp; Shipping Details (Optional)
+                      </p>
+                      <FormGroup busy={isClaimActionPending} className="mb-0">
+                        <Label>Retailer Order Number (Optional)</Label>
+                        <Input
+                          type="text"
+                          placeholder="e.g. 114-3941689-8772232"
+                          value={retailerOrderNumber}
+                          onChange={(e) => setRetailerOrderNumber(e.target.value)}
+                          busy={isClaimActionPending}
+                          maxLength={120}
+                        />
+                      </FormGroup>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <FormGroup busy={isClaimActionPending} className="mb-0">
+                          <Label>Shipping Carrier (Optional)</Label>
+                          <Input
+                            type="text"
+                            placeholder="e.g. UPS, FedEx, USPS"
+                            value={carrier}
+                            onChange={(e) => setCarrier(e.target.value)}
+                            busy={isClaimActionPending}
+                            maxLength={100}
+                          />
+                        </FormGroup>
+                        <FormGroup busy={isClaimActionPending} className="mb-0">
+                          <Label>Tracking Number (Optional)</Label>
+                          <Input
+                            type="text"
+                            placeholder="e.g. 1Z999AA10123456784"
+                            value={trackingNumber}
+                            onChange={(e) => setTrackingNumber(e.target.value)}
+                            busy={isClaimActionPending}
+                            maxLength={120}
+                          />
+                        </FormGroup>
+                      </div>
+                    </div>
+                  )}
                   {claimActionError && (
                     <p role="alert" className="text-xs font-medium text-rose-800 dark:text-rose-300">
                       {claimActionError}
@@ -1724,9 +1815,30 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                 </>
               )}
               {postClaimStatus === 'CONFIRMED' && (
-                <p className="text-xs font-medium text-emerald-800 dark:text-emerald-300">
-                  Payment completion confirmed — the couple has been notified of your gift!
-                </p>
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-emerald-800 dark:text-emerald-300">
+                    Payment completion confirmed — the couple has been notified of your gift!
+                  </p>
+                  {isVendorUrlSafe &&
+                    isClaimMode &&
+                    (retailerOrderNumber.trim() || carrier.trim() || trackingNumber.trim()) && (
+                    <div
+                      data-testid="external-order-tracking-fields"
+                      className="p-2.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-gray-700 dark:text-gray-300 space-y-1"
+                    >
+                      <p className="font-semibold text-gray-800 dark:text-gray-200">
+                        Recorded Order &amp; Shipping Details
+                      </p>
+                      {retailerOrderNumber.trim() && (
+                        <p>Order #: {retailerOrderNumber.trim()}</p>
+                      )}
+                      {carrier.trim() && <p>Carrier: {carrier.trim()}</p>}
+                      {trackingNumber.trim() && (
+                        <p>Tracking #: {trackingNumber.trim()}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -1793,21 +1905,16 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             </div>
           )}
           <FormGroup
-            required={requiresCodeVerification}
             state={codeError ? 'error' : isCodeLocked ? 'success' : 'default'}
             busy={isBusy || isValidatingCode}
             className="mb-3"
           >
-            <Label>
-              Invitation Code {requiresCodeVerification ? '(Required to claim)' : '(Optional)'}
-            </Label>
+            <Label>Invitation Code (Optional — pre-fills household)</Label>
             <div className="flex gap-2">
               <Input
                 ref={invitationCodeInputRef}
                 type="text"
                 placeholder="ABCDEF12"
-                required={requiresCodeVerification}
-                aria-required={requiresCodeVerification ? 'true' : undefined}
                 value={invitationCode}
                 onChange={handleCodeChange}
                 onKeyDown={(e) => {
@@ -1872,17 +1979,9 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
               )}
             </div>
             <FormMessage
-              role={!codeError && !isCodeLocked && requiresCodeVerification ? 'none' : undefined}
-              className={
-                !codeError && (isCodeLocked || requiresCodeVerification) ? 'text-sm' : undefined
-              }
+              className={!codeError && isCodeLocked ? 'text-sm' : undefined}
             >
-              {codeError ||
-                (isCodeLocked
-                  ? 'Code verified! Name pre-filled.'
-                  : requiresCodeVerification
-                    ? 'Enter the 8-character code from your wedding invitation (not the shared site password).'
-                    : null)}
+              {codeError || (isCodeLocked ? 'Code verified! Name pre-filled.' : null)}
             </FormMessage>
           </FormGroup>
           <FormGroup
@@ -1905,15 +2004,20 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             {fieldErrors.name && <FormMessage>{fieldErrors.name}</FormMessage>}
           </FormGroup>
           <FormGroup
+            required={isEmailRequired}
             busy={isBusy}
             state={fieldErrors.email ? 'error' : 'default'}
             className="mb-3"
           >
-            <Label>Email Address (Optional)</Label>
+            <Label>
+              {isEmailRequired ? 'Email Address (For confirmation)' : 'Email Address (Optional)'}
+            </Label>
             <Input
               type="email"
               name="email"
               autoComplete="email"
+              required={isEmailRequired}
+              aria-required={isEmailRequired ? 'true' : undefined}
               busy={isBusy}
               placeholder="jane@example.com"
               value={email}

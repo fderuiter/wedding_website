@@ -43,6 +43,7 @@ export interface DietaryBadgeInfo {
 export interface SeatingGuestCandidate {
   guestName?: string | null;
   used?: boolean | null;
+  isSample?: boolean | null;
   extraFields?: unknown;
   partyTags?: unknown;
   dietaryNotes?: string | null;
@@ -140,9 +141,12 @@ export function getGuestAttendanceStatus(guest: SeatingGuestCandidate): Attendan
 
 /**
  * Returns true if the guest is eligible for reception seating pools and rosters
- * (excludes declined RSVPs and public `address-collection` submissions).
+ * (excludes sample rows, declined RSVPs, and public `address-collection` submissions).
  */
 export function isGuestEligibleForSeating(guest: SeatingGuestCandidate): boolean {
+  if (!guest || guest.isSample === true) {
+    return false;
+  }
   if (hasAddressCollectionTag(guest.partyTags)) {
     return false;
   }
@@ -150,6 +154,65 @@ export function isGuestEligibleForSeating(guest: SeatingGuestCandidate): boolean
     return false;
   }
   return true;
+}
+
+const GENERATIONAL_SUFFIX_PATTERN = /^(jr\.?|sr\.?|ii|iii|iv|v)$/i;
+
+/**
+ * Extracts normalized `{ surname, givenName }` tokens from an attendee display name
+ * for alphabetical escort card sorting (surname first, then given name).
+ */
+export function parseAttendeeSortName(rawName: string): {
+  surname: string;
+  givenName: string;
+} {
+  const trimmed = (rawName || '').trim();
+  if (!trimmed) {
+    return { surname: '', givenName: '' };
+  }
+
+  // Strip trailing parenthetical companion annotations such as "(+1)" or "(John Doe +1)"
+  const withoutTrailingParen = trimmed.replace(/\s*\([^)]*\)\s*$/, '').trim() || trimmed;
+
+  // Handle explicit "Last, First" formatting (excluding generational suffixes like "Smith, Jr.")
+  const commaParts = withoutTrailingParen
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (
+    commaParts.length >= 2 &&
+    !GENERATIONAL_SUFFIX_PATTERN.test(commaParts[commaParts.length - 1])
+  ) {
+    return {
+      surname: commaParts[0],
+      givenName: commaParts.slice(1).join(' '),
+    };
+  }
+
+  const normalized = withoutTrailingParen.replace(/,/g, ' ').trim();
+  const tokens = normalized.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) {
+    return { surname: '', givenName: '' };
+  }
+  if (tokens.length === 1) {
+    return { surname: tokens[0], givenName: '' };
+  }
+
+  let surnameIndex = tokens.length - 1;
+  if (tokens.length >= 3 && GENERATIONAL_SUFFIX_PATTERN.test(tokens[surnameIndex])) {
+    surnameIndex -= 1;
+  }
+
+  const surname = tokens[surnameIndex];
+  const givenTokens = [
+    ...tokens.slice(0, surnameIndex),
+    ...tokens.slice(surnameIndex + 1),
+  ];
+
+  return {
+    surname,
+    givenName: givenTokens.join(' '),
+  };
 }
 
 /**

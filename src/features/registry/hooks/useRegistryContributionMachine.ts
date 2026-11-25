@@ -18,8 +18,8 @@ import { notifyCapabilitiesRefresh } from './useRegistryCapabilities';
 import { formatCurrency } from '@/utils/intl';
 import { getItemRemainingAmount, getItemUnitCounts } from '../lib/registryStatusUtils';
 
-export const VERIFIED_CODE_REQUIRED_MESSAGE =
-  'Please verify your 8-character invitation code to claim this gift.';
+export const EMAIL_REQUIRED_FOR_CLAIM_MESSAGE =
+  'Email address is required for confirmation.';
 
 type ContributionPhase =
   | 'idle'
@@ -77,7 +77,7 @@ interface UseRegistryContributionMachineOptions {
   initialState?: string;
   initialZipCode?: string;
   initialCountry?: string;
-  requireVerifiedCode?: boolean;
+  requireEmailWhenUnverified?: boolean;
 }
 
 interface VerifiedSubmissionIdentity {
@@ -184,7 +184,7 @@ export function useRegistryContributionMachine({
   initialState = '',
   initialZipCode = '',
   initialCountry = '',
-  requireVerifiedCode = false,
+  requireEmailWhenUnverified = false,
 }: UseRegistryContributionMachineOptions): UseRegistryContributionMachineReturn {
   const {
     invitationCode: sessionCode,
@@ -765,6 +765,13 @@ export function useRegistryContributionMachine({
       const effectiveName = overrides?.contributorName ?? contributorName;
       const effectiveEmail = overrides?.email ?? email;
       const effectiveCode = overrides?.code ?? invitationCode;
+      const isIdentityVerified = Boolean(
+        hasVerifiedCode ||
+          phase === 'code_locked' ||
+          (effectiveCode && lockedCodeRef.current === effectiveCode)
+      );
+      const isMissingRequiredEmail =
+        requireEmailWhenUnverified && !isIdentityVerified && !effectiveEmail.trim();
 
       const result = ContributionSchema.safeParse({
         itemId: item.id,
@@ -793,7 +800,16 @@ export function useRegistryContributionMachine({
             errors[field] = issue.message;
           }
         }
+        if (isMissingRequiredEmail && !errors.email) {
+          errors.email = EMAIL_REQUIRED_FOR_CLAIM_MESSAGE;
+        }
         setFieldErrors(errors);
+        setPhase('error');
+        return false;
+      }
+
+      if (isMissingRequiredEmail) {
+        setFieldErrors({ email: EMAIL_REQUIRED_FOR_CLAIM_MESSAGE });
         setPhase('error');
         return false;
       }
@@ -819,6 +835,9 @@ export function useRegistryContributionMachine({
       contributorName,
       email,
       invitationCode,
+      hasVerifiedCode,
+      phase,
+      requireEmailWhenUnverified,
       message,
       coverFee,
       retailerOrderNumber,
@@ -886,8 +905,11 @@ export function useRegistryContributionMachine({
           phase === 'code_locked' ||
           (resolvedIdentity.code && lockedCodeRef.current === resolvedIdentity.code)
       );
-      const isMissingRequiredCode =
-        requireVerifiedCode && !paymentIntentId && !isIdentityVerified;
+      const isMissingRequiredEmail =
+        requireEmailWhenUnverified &&
+        !paymentIntentId &&
+        !isIdentityVerified &&
+        !resolvedIdentity.email.trim();
 
       if (!item.isGroupGift && requestedUnits > 1) {
         if (
@@ -895,14 +917,12 @@ export function useRegistryContributionMachine({
           selectedUnits < 1 ||
           selectedUnits > remainingUnits
         ) {
-          if (isMissingRequiredCode) {
-            setCodeError(VERIFIED_CODE_REQUIRED_MESSAGE);
-          }
           setFieldErrors({
             units:
               remainingUnits > 0
                 ? `Please select between 1 and ${remainingUnits} available units.`
                 : 'No units are currently available.',
+            ...(isMissingRequiredEmail ? { email: EMAIL_REQUIRED_FOR_CLAIM_MESSAGE } : {}),
           });
           setPhase('error');
           return;
@@ -939,15 +959,15 @@ export function useRegistryContributionMachine({
       });
 
       if (!result.success) {
-        if (isMissingRequiredCode) {
-          setCodeError(VERIFIED_CODE_REQUIRED_MESSAGE);
-        }
         const errors: ContributionFieldErrors = {};
         for (const issue of result.error.issues) {
           const field = issue.path[0] as keyof ContributionFieldErrors;
           if (field && !errors[field]) {
             errors[field] = issue.message;
           }
+        }
+        if (isMissingRequiredEmail && !errors.email) {
+          errors.email = EMAIL_REQUIRED_FOR_CLAIM_MESSAGE;
         }
         setFieldErrors(errors);
         setPhase('error');
@@ -960,20 +980,19 @@ export function useRegistryContributionMachine({
       if (item.isGroupGift) {
         const remainingAmount = getItemRemainingAmount(item);
         if (finalAmount > remainingAmount) {
-          if (isMissingRequiredCode) {
-            setCodeError(VERIFIED_CODE_REQUIRED_MESSAGE);
-          }
           const msg = `Amount cannot exceed the remaining ${formatCurrency(remainingAmount)}.`;
-          setFieldErrors({ amount: msg });
+          setFieldErrors({
+            amount: msg,
+            ...(isMissingRequiredEmail ? { email: EMAIL_REQUIRED_FOR_CLAIM_MESSAGE } : {}),
+          });
           setPhase('error');
           return;
         }
       }
 
-      if (isMissingRequiredCode) {
-        setCodeError(VERIFIED_CODE_REQUIRED_MESSAGE);
-        setPhase('idle');
-        setCodeFailureCount((count) => count + 1);
+      if (isMissingRequiredEmail) {
+        setFieldErrors({ email: EMAIL_REQUIRED_FOR_CLAIM_MESSAGE });
+        setPhase('error');
         return;
       }
 
@@ -1110,7 +1129,7 @@ export function useRegistryContributionMachine({
     [
       phase,
       hasVerifiedCode,
-      requireVerifiedCode,
+      requireEmailWhenUnverified,
       ensureCodeVerifiedForSubmit,
       item,
       requestedUnits,
