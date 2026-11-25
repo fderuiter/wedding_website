@@ -475,9 +475,9 @@ describe('verify-doc-sync', () => {
       const drifted = withRepoBinPath(() => runDocGeneration(tempDir));
       expect(drifted).toEqual([]);
       expect(fs.readFileSync(counterFile, 'utf8')).toBe('1');
-      expect(fs.readFileSync(flagsFile, 'utf8').trim().split('\n')).toEqual([
-        'openapi:--check',
+      expect(fs.readFileSync(flagsFile, 'utf8').trim().split('\n').sort()).toEqual([
         'docs:--skip-openapi,--check',
+        'openapi:--check',
       ]);
 
       const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as {

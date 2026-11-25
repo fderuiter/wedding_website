@@ -205,16 +205,32 @@ function resolveOperationTag(routePath: string): string {
   return 'General';
 }
 
-const project = new Project({ tsConfigFilePath: path.join(rootPath, 'tsconfig.json') });
+const project = new Project({
+  tsConfigFilePath: path.join(rootPath, 'tsconfig.json'),
+  skipAddingFilesFromTsConfig: true,
+  compilerOptions: {
+    types: ['node'],
+  },
+});
+const sourceGlobs = [
+  path.join(rootPath, 'src/app/api/**/route.ts'),
+  path.join(rootPath, 'src/app/api/**/route.tsx'),
+  `!${path.join(rootPath, 'src/app/api/**/__tests__/**')}`,
+];
 const extraAppDir = process.env.OPENAPI_EXTRA_APP_DIR
   ? path.resolve(process.env.OPENAPI_EXTRA_APP_DIR)
   : null;
 if (extraAppDir && fs.existsSync(extraAppDir)) {
-  project.addSourceFilesAtPaths([
+  sourceGlobs.push(
     path.join(extraAppDir, 'api/**/route.ts'),
     path.join(extraAppDir, 'api/**/route.tsx'),
-  ]);
+    `!${path.join(extraAppDir, 'api/**/__tests__/**')}`
+  );
 }
+project.addSourceFilesAtPaths(sourceGlobs);
+project.addSourceFileAtPathIfExists(path.join(rootPath, 'src/features/admin/registry.ts'));
+project.resolveSourceFileDependencies();
+
 const mainAppPrefix = `${path.join(rootPath, 'src/app').replace(/\\/g, '/')}/api/`;
 const extraAppPrefix = extraAppDir ? `${extraAppDir.replace(/\\/g, '/')}/api/` : null;
 const routeFiles = project.getSourceFiles().filter((file) => {

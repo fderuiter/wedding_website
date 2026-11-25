@@ -4,6 +4,12 @@ import { spawnSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import {
+  resolvePoolConcurrency,
+  runBoundedPool,
+  spawnBufferedCommand,
+} from '../scripts/quality/parallel-pool.mjs';
+import { hydrateWorktreeCaches } from '../scripts/quality/worktree-cache.mjs';
 
 const ZERO_OID_REGEX = /^0+$/;
 const LOCKFILE_PATHS = [
@@ -197,33 +203,6 @@ function pushedCommitsTouchLockfiles(repoRoot, remoteName, commitSha, remoteShas
   return false;
 }
 
-function hydrateWorktreeCaches(repoRoot, worktreeDir) {
-  const srcNodeModules = path.join(repoRoot, 'node_modules');
-  const destNodeModules = path.join(worktreeDir, 'node_modules');
-  if (fs.existsSync(srcNodeModules) && !fs.existsSync(destNodeModules)) {
-    fs.symlinkSync(
-      srcNodeModules,
-      destNodeModules,
-      process.platform === 'win32' ? 'junction' : 'dir'
-    );
-  }
-
-  for (const entry of fs.readdirSync(repoRoot)) {
-    if (entry !== '.eslintcache' && !entry.endsWith('.tsbuildinfo')) {
-      continue;
-    }
-    const srcCache = path.join(repoRoot, entry);
-    const destCache = path.join(worktreeDir, entry);
-    try {
-      if (fs.statSync(srcCache).isFile()) {
-        fs.copyFileSync(srcCache, destCache);
-      }
-    } catch {
-      // Ignore concurrent cache rotation during copy
-    }
-  }
-}
-
 function buildIsolatedWorktreeEnv() {
   const childEnv = { ...process.env };
   for (const key of LOCAL_GIT_ENV_VARS) {
@@ -232,24 +211,64 @@ function buildIsolatedWorktreeEnv() {
   return childEnv;
 }
 
-function executeChecks(targetDir, childEnv, includeLockfileAudit) {
-  const orderedChecks = includeLockfileAudit
+function flushCheckOutput(stdout, stderr) {
+  if (stdout) {
+    process.stdout.write(stdout.endsWith('\n') ? stdout : `${stdout}\n`);
+  }
+  if (stderr) {
+    process.stderr.write(stderr.endsWith('\n') ? stderr : `${stderr}\n`);
+  }
+}
+
+async function executeChecks(targetDir, childEnv, includeLockfileAudit) {
+  const baseChecks = includeLockfileAudit
     ? [...checks.slice(0, 3), lockfileAuditCheck, ...checks.slice(3)]
     : checks;
+  const docSyncCheck = baseChecks.find((item) => item.script === 'check:doc-sync');
+  const orderedChecks = docSyncCheck
+    ? [
+      ...baseChecks.slice(0, 2),
+      docSyncCheck,
+      ...baseChecks.slice(2).filter((item) => item.script !== 'check:doc-sync'),
+    ]
+    : baseChecks;
 
-  for (const check of orderedChecks) {
-    console.log(`Running ${check.name}...`);
-    const result = spawnSync('npm', ['run', check.script, ...(check.args ?? [])], {
-      cwd: targetDir,
-      env: childEnv,
-      stdio: 'inherit',
-      shell: true,
-    });
+  const concurrency = resolvePoolConcurrency({
+    envValue: childEnv.PRE_PUSH_CONCURRENCY,
+    taskCount: orderedChecks.length,
+  });
 
-    if (result.status !== 0) {
-      console.error(`\n❌ Pre-push check failed: ${check.name} failed.`);
-      return result.status ?? 1;
-    }
+  const { failed } = await runBoundedPool({
+    items: orderedChecks,
+    concurrency,
+    runItem: async (check, _index, signal) => {
+      console.log(`Running ${check.name}...`);
+      const result = await spawnBufferedCommand({
+        command: 'npm',
+        args: ['run', check.script, ...(check.args ?? [])],
+        cwd: targetDir,
+        env: childEnv,
+        signal,
+      });
+      if (!result.aborted && result.status !== 0) {
+        throw Object.assign(new Error(`${check.name} failed`), {
+          status: result.status || 1,
+          stdout: result.stdout,
+          stderr: result.stderr,
+        });
+      }
+      return result;
+    },
+    onSuccess: (_check, result) => {
+      flushCheckOutput(result.stdout, result.stderr);
+    },
+  });
+
+  if (failed !== null) {
+    const err = /** @type {{ status?: number, stdout?: string, stderr?: string }} */ (failed.error);
+    flushCheckOutput(err?.stdout ?? '', err?.stderr ?? '');
+    console.error(`\n❌ Pre-push check failed: ${failed.item.name} failed.`);
+    return err?.status || 1;
   }
 
   return 0;
@@ -332,7 +351,7 @@ if (canRunInPlace) {
     commitSha,
     commitUpdates.get(commitSha)
   );
-  const status = executeChecks(repoRoot, process.env, includeAudit);
+  const status = await executeChecks(repoRoot, process.env, includeAudit);
   if (status !== 0) {
     process.exit(status);
   }
@@ -360,7 +379,7 @@ if (canRunInPlace) {
         status = addRes.status ?? 1;
       } else {
         hydrateWorktreeCaches(repoRoot, worktreeDir);
-        status = executeChecks(worktreeDir, worktreeEnv, includeAudit);
+        status = await executeChecks(worktreeDir, worktreeEnv, includeAudit);
       }
     } finally {
       cleanupWorktree(worktreeDir);
