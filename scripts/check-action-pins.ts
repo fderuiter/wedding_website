@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { isMap, isPair, isScalar, isSeq, LineCounter, parseDocument } from 'yaml';
+import { isMap, isPair, isScalar, isSeq, LineCounter, Pair, parseDocument } from 'yaml';
 
 interface Violation {
   filePath: string;
@@ -21,19 +21,30 @@ interface PinnedActionOccurrence {
   owner: string;
   repo: string;
   sha: string;
+  versionTag: string;
 }
 
 interface VerifyUpstreamOptions {
   apiBaseUrl?: string;
+  gitBaseUrl?: string;
   token?: string;
   timeoutMs?: number;
 }
+
+type TriState = 'true' | 'false' | 'unknown';
 
 const WORKFLOWS_DIR = path.join(process.cwd(), '.github', 'workflows');
 const COMMIT_SHA_REGEX = /^[a-fA-F0-9]{40}$/;
 const VERSION_COMMENT_REGEX = /^v\d+(?:\.\d+)*(?:-[0-9A-Za-z.-]+)?(?:\s.*)?$/;
 const DEFAULT_GITHUB_API_BASE_URL = 'https://api.github.com';
+const DEFAULT_GITHUB_GIT_BASE_URL = 'https://github.com';
 const DEFAULT_UPSTREAM_TIMEOUT_MS = 15000;
+const MAX_TAG_PEEL_DEPTH = 5;
+const UNTRUSTED_WORKFLOW_TRIGGERS = new Set([
+  'pull_request',
+  'pull_request_target',
+  'workflow_run',
+]);
 
 function getNodeLineNumber(node: unknown, lineCounter: LineCounter): number {
   if (
@@ -55,47 +66,379 @@ function getScalarString(node: unknown): string | null {
   return null;
 }
 
-function workflowTriggersOnPullRequest(onNode: unknown): boolean {
-  if (isScalar(onNode)) {
-    return onNode.value === 'pull_request';
+function findMapPair(mapNode: unknown, keyName: string): Pair | undefined {
+  if (!isMap(mapNode)) {
+    return undefined;
   }
-  if (isSeq(onNode)) {
-    return onNode.items.some(
-      (item) => isScalar(item) && item.value === 'pull_request'
-    );
+  for (const item of mapNode.items) {
+    if (isPair(item) && isScalar(item.key) && item.key.value === keyName) {
+      return item;
+    }
   }
-  if (isMap(onNode)) {
-    return onNode.items.some(
-      (pair) => isPair(pair) && isScalar(pair.key) && pair.key.value === 'pull_request'
-    );
-  }
-  return false;
+  return undefined;
 }
 
-function conditionExcludesPullRequest(ifValue: string | null): boolean {
-  if (!ifValue) return false;
-  const normalized = ifValue.replace(/\s+/g, ' ').trim();
-  if (
-    /github\.event_name\s*!=\s*['"]pull_request['"]/.test(normalized) ||
-    /['"]pull_request['"]\s*!=\s*github\.event_name/.test(normalized)
-  ) {
-    return true;
+function getUntrustedWorkflowTriggers(onNode: unknown): string[] {
+  if (isScalar(onNode)) {
+    return typeof onNode.value === 'string' && UNTRUSTED_WORKFLOW_TRIGGERS.has(onNode.value)
+      ? [onNode.value]
+      : [];
+  }
+  if (isSeq(onNode)) {
+    const triggers: string[] = [];
+    for (const item of onNode.items) {
+      if (
+        isScalar(item) &&
+        typeof item.value === 'string' &&
+        UNTRUSTED_WORKFLOW_TRIGGERS.has(item.value) &&
+        !triggers.includes(item.value)
+      ) {
+        triggers.push(item.value);
+      }
+    }
+    return triggers;
+  }
+  if (isMap(onNode)) {
+    const triggers: string[] = [];
+    for (const pair of onNode.items) {
+      if (
+        isPair(pair) &&
+        isScalar(pair.key) &&
+        typeof pair.key.value === 'string' &&
+        UNTRUSTED_WORKFLOW_TRIGGERS.has(pair.key.value) &&
+        !triggers.includes(pair.key.value)
+      ) {
+        triggers.push(pair.key.value);
+      }
+    }
+    return triggers;
+  }
+  return [];
+}
+
+interface ConditionToken {
+  type: 'lparen' | 'rparen' | 'not' | 'and' | 'or' | 'atom';
+  value: string;
+}
+
+function unwrapIfExpression(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (!trimmed.includes('${{')) {
+    return trimmed;
+  }
+  if (!trimmed.startsWith('${{') || !trimmed.endsWith('}}')) {
+    return null;
+  }
+  const inner = trimmed.slice(3, -2).trim();
+  // Reject multiple `${{ ... }}` interpolations concatenated within a single string
+  let inSingle = false;
+  let inDouble = false;
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i];
+    if (ch === '\'' && !inDouble) {
+      if (inSingle && inner[i + 1] === '\'') {
+        i++;
+        continue;
+      }
+      inSingle = !inSingle;
+    } else if (inDouble && ch === '\\') {
+      i++;
+      continue;
+    } else if (ch === '"' && !inSingle) {
+      inDouble = !inDouble;
+    } else if (!inSingle && !inDouble) {
+      if (inner.startsWith('}}', i) || inner.startsWith('${{', i)) {
+        return null;
+      }
+    }
+  }
+  return inner || null;
+}
+
+function tokenizeCondition(expr: string): ConditionToken[] | null {
+  const tokens: ConditionToken[] = [];
+  let i = 0;
+
+  const readQuoted = (quote: '\'' | '"'): string | null => {
+    const start = i;
+    i++; // consume opening quote
+    while (i < expr.length) {
+      const ch = expr[i];
+      if (quote === '\'' && ch === '\'') {
+        if (expr[i + 1] === '\'') {
+          i += 2;
+          continue;
+        }
+        i++;
+        return expr.slice(start, i);
+      }
+      if (quote === '"') {
+        if (ch === '\\') {
+          i += 2;
+          continue;
+        }
+        if (ch === '"') {
+          i++;
+          return expr.slice(start, i);
+        }
+      }
+      i++;
+    }
+    return null;
+  };
+
+  while (i < expr.length) {
+    while (i < expr.length && /\s/.test(expr[i])) {
+      i++;
+    }
+    if (i >= expr.length) {
+      break;
+    }
+
+    if (expr.startsWith('&&', i)) {
+      tokens.push({ type: 'and', value: '&&' });
+      i += 2;
+      continue;
+    }
+    if (expr.startsWith('||', i)) {
+      tokens.push({ type: 'or', value: '||' });
+      i += 2;
+      continue;
+    }
+    if (expr[i] === '(') {
+      tokens.push({ type: 'lparen', value: '(' });
+      i++;
+      continue;
+    }
+    if (expr[i] === ')') {
+      tokens.push({ type: 'rparen', value: ')' });
+      i++;
+      continue;
+    }
+    if (expr[i] === '!' && expr[i + 1] !== '=') {
+      tokens.push({ type: 'not', value: '!' });
+      i++;
+      continue;
+    }
+
+    // Read an atomic clause (such as `github.event_name != 'pull_request'`, `always()`, `cancelled()`)
+    // stopping at top-level `&&`, `||`, or `)` while respecting nested function-call parentheses and quotes.
+    let atom = '';
+    let callParenDepth = 0;
+    while (i < expr.length) {
+      const ch = expr[i];
+      if (ch === '\'' || ch === '"') {
+        const quoted = readQuoted(ch);
+        if (quoted === null) {
+          return null;
+        }
+        atom += quoted;
+        continue;
+      }
+      if (callParenDepth === 0) {
+        if (expr.startsWith('&&', i) || expr.startsWith('||', i) || ch === ')') {
+          break;
+        }
+      }
+      if (ch === '(') {
+        callParenDepth++;
+        atom += ch;
+        i++;
+        continue;
+      }
+      if (ch === ')') {
+        callParenDepth--;
+        atom += ch;
+        i++;
+        continue;
+      }
+      atom += ch;
+      i++;
+    }
+
+    if (callParenDepth !== 0) {
+      return null;
+    }
+    const normalizedAtom = atom.replace(/\s+/g, ' ').trim();
+    if (!normalizedAtom) {
+      return null;
+    }
+    tokens.push({ type: 'atom', value: normalizedAtom });
   }
 
-  const eqMatches = [
-    ...normalized.matchAll(/github\.event_name\s*==\s*['"]([^'"]+)['"]/g),
-    ...normalized.matchAll(/['"]([^'"]+)['"]\s*==\s*github\.event_name/g),
-  ];
-  if (eqMatches.length > 0) {
-    return eqMatches.every((m) => m[1] !== 'pull_request');
+  return tokens;
+}
+
+function unquoteLiteral(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (trimmed.length >= 2 && trimmed.startsWith('\'') && trimmed.endsWith('\'')) {
+    return trimmed.slice(1, -1).replace(/''/g, '\'');
+  }
+  if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    return trimmed.slice(1, -1).replace(/\\(.)/g, '$1');
+  }
+  return null;
+}
+
+function evaluateAtomForTrigger(atom: string, trigger: string): TriState {
+  const trimmed = atom.trim();
+  const triggerLower = trigger.toLowerCase();
+
+  if (trimmed === 'false') {
+    return 'false';
+  }
+  if (trimmed === 'true' || /^always\s*\(\s*\)$/.test(trimmed)) {
+    return 'true';
   }
 
-  return false;
+  const lhsMatch = trimmed.match(
+    /^github\.event_name\s*(==|!=)\s*('(?:''|[^'])*'|"(?:\\.|[^"])*")$/
+  );
+  if (lhsMatch) {
+    const op = lhsMatch[1];
+    const compared = unquoteLiteral(lhsMatch[2])?.toLowerCase();
+    if (compared !== undefined) {
+      const isEqual = compared === triggerLower;
+      return op === '=='
+        ? isEqual
+          ? 'true'
+          : 'false'
+        : isEqual
+          ? 'false'
+          : 'true';
+    }
+  }
+
+  const rhsMatch = trimmed.match(
+    /^('(?:''|[^'])*'|"(?:\\.|[^"])*")\s*(==|!=)\s*github\.event_name$/
+  );
+  if (rhsMatch) {
+    const compared = unquoteLiteral(rhsMatch[1])?.toLowerCase();
+    const op = rhsMatch[2];
+    if (compared !== undefined) {
+      const isEqual = compared === triggerLower;
+      return op === '=='
+        ? isEqual
+          ? 'true'
+          : 'false'
+        : isEqual
+          ? 'false'
+          : 'true';
+    }
+  }
+
+  return 'unknown';
+}
+
+function conditionExcludesTrigger(ifValue: string | null, trigger: string): boolean {
+  if (!ifValue) {
+    return false;
+  }
+  const expr = unwrapIfExpression(ifValue);
+  if (!expr) {
+    return false;
+  }
+  const tokens = tokenizeCondition(expr);
+  if (!tokens || tokens.length === 0) {
+    return false;
+  }
+
+  let pos = 0;
+
+  const parseOr = (): TriState | null => {
+    let left = parseAnd();
+    if (left === null) {
+      return null;
+    }
+    while (pos < tokens.length && tokens[pos].type === 'or') {
+      pos++;
+      const right = parseAnd();
+      if (right === null) {
+        return null;
+      }
+      if (left === 'true' || right === 'true') {
+        left = 'true';
+      } else if (left === 'false' && right === 'false') {
+        left = 'false';
+      } else {
+        left = 'unknown';
+      }
+    }
+    return left;
+  };
+
+  const parseAnd = (): TriState | null => {
+    let left = parseUnary();
+    if (left === null) {
+      return null;
+    }
+    while (pos < tokens.length && tokens[pos].type === 'and') {
+      pos++;
+      const right = parseUnary();
+      if (right === null) {
+        return null;
+      }
+      if (left === 'false' || right === 'false') {
+        left = 'false';
+      } else if (left === 'true' && right === 'true') {
+        left = 'true';
+      } else {
+        left = 'unknown';
+      }
+    }
+    return left;
+  };
+
+  const parseUnary = (): TriState | null => {
+    if (pos >= tokens.length) {
+      return null;
+    }
+    if (tokens[pos].type === 'not') {
+      pos++;
+      const inner = parseUnary();
+      if (inner === null) {
+        return null;
+      }
+      if (inner === 'true') return 'false';
+      if (inner === 'false') return 'true';
+      return 'unknown';
+    }
+    if (tokens[pos].type === 'lparen') {
+      pos++;
+      const inner = parseOr();
+      if (inner === null || pos >= tokens.length || tokens[pos].type !== 'rparen') {
+        return null;
+      }
+      pos++;
+      return inner;
+    }
+    if (tokens[pos].type === 'atom') {
+      const atomVal = tokens[pos].value;
+      pos++;
+      return evaluateAtomForTrigger(atomVal, trigger);
+    }
+    return null;
+  };
+
+  const outcome = parseOr();
+  if (outcome === null || pos !== tokens.length) {
+    return false;
+  }
+  return outcome === 'false';
 }
 
 function permissionsHaveWriteScope(permissionsNode: unknown): boolean {
+  if (permissionsNode === undefined || permissionsNode === null) {
+    return true;
+  }
   if (isScalar(permissionsNode)) {
-    return permissionsNode.value === 'write-all';
+    if (permissionsNode.value === 'read-all') {
+      return false;
+    }
+    return true;
   }
   if (isMap(permissionsNode)) {
     return permissionsNode.items.some(
@@ -106,7 +449,7 @@ function permissionsHaveWriteScope(permissionsNode: unknown): boolean {
         pair.value.value.trim() === 'write'
     );
   }
-  return false;
+  return true;
 }
 
 function concurrencyAlwaysCancelsInProgress(concurrencyNode: unknown): boolean {
@@ -142,13 +485,174 @@ function hasGithubPagesFifoConcurrency(concurrencyNode: unknown): boolean {
   );
 }
 
+function validateUsesPair(
+  usesPair: Pair,
+  scopeRef: string,
+  lineCounter: LineCounter,
+  lines: string[],
+  relPath: string,
+  violations: Violation[],
+  pinnedOccurrences: PinnedActionOccurrence[]
+): string {
+  const usesNode: unknown = usesPair.value;
+  const locationNode: unknown = usesNode ?? usesPair.key;
+  const lineNumber = getNodeLineNumber(locationNode, lineCounter);
+  const lineContent = (lines[lineNumber - 1] ?? '').trim();
+
+  if (usesNode === null || usesNode === undefined) {
+    violations.push({
+      filePath: relPath,
+      lineNumber,
+      lineContent,
+      actionRef: scopeRef,
+      reason: 'Empty "uses" directive; specify a local "./..." path or "<owner>/<repo>@<40-char-commit-sha> # v...".',
+    });
+    return '';
+  }
+
+  if (!isScalar(usesNode)) {
+    violations.push({
+      filePath: relPath,
+      lineNumber,
+      lineContent,
+      actionRef: scopeRef,
+      reason: 'Non-scalar "uses" directive; "uses" must be a string scalar.',
+    });
+    return '';
+  }
+
+  if (usesNode.value === null) {
+    violations.push({
+      filePath: relPath,
+      lineNumber,
+      lineContent,
+      actionRef: scopeRef,
+      reason: 'Empty "uses" directive; specify a local "./..." path or "<owner>/<repo>@<40-char-commit-sha> # v...".',
+    });
+    return '';
+  }
+
+  if (typeof usesNode.value !== 'string') {
+    violations.push({
+      filePath: relPath,
+      lineNumber,
+      lineContent,
+      actionRef: scopeRef,
+      reason: 'Non-scalar "uses" directive; "uses" must be a string scalar.',
+    });
+    return '';
+  }
+
+  const actionTarget = usesNode.value.trim();
+  if (!actionTarget) {
+    violations.push({
+      filePath: relPath,
+      lineNumber,
+      lineContent,
+      actionRef: scopeRef,
+      reason: 'Empty "uses" directive; specify a local "./..." path or "<owner>/<repo>@<40-char-commit-sha> # v...".',
+    });
+    return '';
+  }
+
+  // Skip local path references (e.g., ./.github/workflows/publish-artifact.yml)
+  if (actionTarget.startsWith('./')) {
+    return actionTarget;
+  }
+
+  if (/\s/.test(actionTarget)) {
+    violations.push({
+      filePath: relPath,
+      lineNumber,
+      lineContent,
+      actionRef: actionTarget,
+      reason: `Invalid whitespace in action target "${actionTarget}".`,
+    });
+    return actionTarget;
+  }
+
+  const lastAtIdx = actionTarget.lastIndexOf('@');
+  if (lastAtIdx === -1) {
+    violations.push({
+      filePath: relPath,
+      lineNumber,
+      lineContent,
+      actionRef: actionTarget,
+      reason: 'Missing "@<commit-sha>" reference specifier.',
+    });
+    return actionTarget;
+  }
+
+  const actionPath = actionTarget.substring(0, lastAtIdx);
+  const ref = actionTarget.substring(lastAtIdx + 1);
+  let hasPinViolation = false;
+
+  const rawSegments = actionPath.split('/');
+  if (
+    actionPath.startsWith('.') ||
+    actionPath.startsWith('docker://') ||
+    rawSegments.length < 2 ||
+    rawSegments.some((seg) => !seg || seg === '.' || seg === '..')
+  ) {
+    violations.push({
+      filePath: relPath,
+      lineNumber,
+      lineContent,
+      actionRef: actionTarget,
+      reason: `Action target "${actionPath}" must specify "<owner>/<repo>".`,
+    });
+    hasPinViolation = true;
+  }
+
+  if (!COMMIT_SHA_REGEX.test(ref)) {
+    violations.push({
+      filePath: relPath,
+      lineNumber,
+      lineContent,
+      actionRef: actionTarget,
+      reason: `Action tag "${ref}" is not a 40-character commit SHA.`,
+    });
+    hasPinViolation = true;
+  }
+
+  const rawComment = typeof usesNode.comment === 'string' ? usesNode.comment : '';
+  const inlineComment = rawComment.split(/\r?\n/)[0].trim();
+  if (!inlineComment || !VERSION_COMMENT_REGEX.test(inlineComment)) {
+    violations.push({
+      filePath: relPath,
+      lineNumber,
+      lineContent,
+      actionRef: actionTarget,
+      reason: 'Missing inline "# v..." version comment (e.g., "# v4.2.2").',
+    });
+    hasPinViolation = true;
+  }
+
+  if (!hasPinViolation && rawSegments.length >= 2) {
+    const versionTag = inlineComment.split(/\s+/)[0];
+    pinnedOccurrences.push({
+      filePath: relPath,
+      lineNumber,
+      lineContent,
+      actionRef: actionTarget,
+      owner: rawSegments[0],
+      repo: rawSegments[1],
+      sha: ref.toLowerCase(),
+      versionTag,
+    });
+  }
+
+  return actionTarget;
+}
+
 function evaluateAstPolicies(
   doc: ReturnType<typeof parseDocument>,
   lineCounter: LineCounter,
   lines: string[],
   relPath: string,
   fileName: string,
-  violations: Violation[]
+  violations: Violation[],
+  pinnedOccurrences: PinnedActionOccurrence[]
 ): void {
   if (!isMap(doc.contents)) {
     return;
@@ -193,7 +697,9 @@ function evaluateAstPolicies(
   };
 
   const onNode: unknown = doc.contents.get('on', true);
-  const hasPullRequestTrigger = workflowTriggersOnPullRequest(onNode);
+  const untrustedTriggers = getUntrustedWorkflowTriggers(onNode);
+  const hasUntrustedTrigger = untrustedTriggers.length > 0;
+  const untrustedTriggerLabel = untrustedTriggers.join('/');
   const topPermissionsNode: unknown = doc.contents.get('permissions', true);
   const topConcurrencyNode: unknown = doc.contents.get('concurrency', true);
 
@@ -233,9 +739,21 @@ function evaluateAstPolicies(
     }
     const jobId = String(jobPair.key.value);
     const jobMap = jobPair.value;
-    const jobIf = getScalarString(jobMap.get('if', true));
-    const jobExcludesPr = conditionExcludesPullRequest(jobIf);
 
+    const jobUsesPair = findMapPair(jobMap, 'uses');
+    if (jobUsesPair) {
+      validateUsesPair(
+        jobUsesPair,
+        `jobs.${jobId}.uses`,
+        lineCounter,
+        lines,
+        relPath,
+        violations,
+        pinnedOccurrences
+      );
+    }
+
+    const jobIf = getScalarString(jobMap.get('if', true));
     const jobPermissionsNode: unknown = jobMap.has('permissions')
       ? jobMap.get('permissions', true)
       : topPermissionsNode;
@@ -273,15 +791,33 @@ function evaluateAstPolicies(
       continue;
     }
 
-    for (const stepNode of stepsNode.items) {
+    stepsNode.items.forEach((stepNode, stepIdx) => {
       if (!isMap(stepNode)) {
-        continue;
+        return;
       }
 
-      const usesNode: unknown = stepNode.get('uses', true);
-      const usesRaw = getScalarString(usesNode)?.trim() ?? '';
+      const stepUsesPair = findMapPair(stepNode, 'uses');
+      const usesNode: unknown = stepUsesPair?.value;
+      const usesRaw = stepUsesPair
+        ? validateUsesPair(
+          stepUsesPair,
+          `jobs.${jobId}.steps[${stepIdx}].uses`,
+          lineCounter,
+          lines,
+          relPath,
+          violations,
+          pinnedOccurrences
+        )
+        : '';
+
       const stepIf = getScalarString(stepNode.get('if', true));
-      const stepExcludesPr = jobExcludesPr || conditionExcludesPullRequest(stepIf);
+      const stepExcludesAllUntrustedTriggers =
+        hasUntrustedTrigger &&
+        untrustedTriggers.every(
+          (trigger) =>
+            conditionExcludesTrigger(jobIf, trigger) ||
+            conditionExcludesTrigger(stepIf, trigger)
+        );
       const withNode: unknown = stepNode.get('with', true);
       const runNode: unknown = stepNode.get('run', true);
       const runScript = getScalarString(runNode);
@@ -305,24 +841,27 @@ function evaluateAstPolicies(
         }
       }
 
-      // Rule 2a: crazy-max/ghaction-github-runtime must be guarded against pull_request
+      // Rule 2a: crazy-max/ghaction-github-runtime must be guarded against untrusted triggers
       if (
-        hasPullRequestTrigger &&
+        hasUntrustedTrigger &&
         (usesRaw === 'crazy-max/ghaction-github-runtime' ||
           usesRaw.startsWith('crazy-max/ghaction-github-runtime@')) &&
-        !stepExcludesPr
+        !stepExcludesAllUntrustedTriggers
       ) {
+        const guardHint = untrustedTriggers
+          .map((trigger) => `github.event_name != '${trigger}'`)
+          .join(' && ');
         addAstViolation(
           usesNode ?? stepNode,
           usesRaw,
-          'crazy-max/ghaction-github-runtime must be guarded with "if: github.event_name != \'pull_request\'" in pull_request workflows.'
+          `crazy-max/ghaction-github-runtime must be guarded with "if: ${guardHint}" in ${untrustedTriggerLabel} workflows.`
         );
       }
 
-      // Rule 2b: Jobs running npm ci / npm install on pull_request must not hold write permissions
+      // Rule 2b: Jobs running npm ci / npm install on untrusted triggers must not hold write permissions
       if (
-        hasPullRequestTrigger &&
-        !stepExcludesPr &&
+        hasUntrustedTrigger &&
+        !stepExcludesAllUntrustedTriggers &&
         jobHasWritePermissions &&
         runScript &&
         /\bnpm\s+(?:ci|install|i)\b/.test(runScript)
@@ -330,7 +869,16 @@ function evaluateAstPolicies(
         addAstViolation(
           runNode ?? stepNode,
           `jobs.${jobId}.permissions`,
-          `Job "${jobId}" executes npm install/ci on pull_request while holding write permissions; drop write scopes before running package scripts.`
+          `Job "${jobId}" executes npm install/ci on ${untrustedTriggerLabel} while holding write permissions; drop write scopes before running package scripts.`
+        );
+      }
+
+      // Rule 2c: steps[].run must never interpolate ${{ ... }} expressions directly into shell scripts
+      if (runScript && /\$\{\{/.test(runScript)) {
+        addAstViolation(
+          runNode ?? stepNode,
+          `jobs.${jobId}.run`,
+          `Job "${jobId}" interpolates "\${{ ... }}" directly inside a step "run" script; bind GitHub Actions expressions via "env:" instead.`
         );
       }
 
@@ -386,7 +934,7 @@ function evaluateAstPolicies(
           );
         }
       }
-    }
+    });
   }
 }
 
@@ -431,96 +979,15 @@ function checkWorkflowFile(
     });
   }
 
-  if (doc.errors.length === 0) {
-    evaluateAstPolicies(doc, lineCounter, lines, relPath, fileName, violations);
-  }
-
-  lines.forEach((line, index) => {
-    const trimmed = line.trim();
-    if (trimmed.startsWith('#')) {
-      return; // Skip full-line comments
-    }
-
-    // Match lines containing a `uses:` directive
-    const usesMatch = line.match(/(?:^|\s|-)\s*uses:\s*([^\r\n]+)/);
-    if (!usesMatch) {
-      return;
-    }
-
-    const rawValue = usesMatch[1].trim();
-    // Separate inline comments starting with '#'
-    const hashIdx = rawValue.indexOf('#');
-    const rawTarget = hashIdx === -1 ? rawValue : rawValue.slice(0, hashIdx);
-    const inlineComment = hashIdx === -1 ? '' : rawValue.slice(hashIdx + 1).trim();
-    const actionTarget = rawTarget.trim().replace(/^['"]|['"]$/g, '');
-
-    // Skip local path references (e.g., ./.github/workflows/publish-artifact.yml)
-    if (actionTarget.startsWith('.')) {
-      return;
-    }
-
-    const lastAtIdx = actionTarget.lastIndexOf('@');
-    if (lastAtIdx === -1) {
-      violations.push({
-        filePath: relPath,
-        lineNumber: index + 1,
-        lineContent: line.trim(),
-        actionRef: actionTarget,
-        reason: 'Missing "@<commit-sha>" reference specifier.',
-      });
-      return;
-    }
-
-    const actionPath = actionTarget.substring(0, lastAtIdx);
-    const ref = actionTarget.substring(lastAtIdx + 1);
-    let hasLineViolation = false;
-
-    const repoSegments = actionPath.split('/').filter(Boolean);
-    if (repoSegments.length < 2) {
-      violations.push({
-        filePath: relPath,
-        lineNumber: index + 1,
-        lineContent: line.trim(),
-        actionRef: actionTarget,
-        reason: `Action target "${actionPath}" must specify "<owner>/<repo>".`,
-      });
-      hasLineViolation = true;
-    }
-
-    if (!COMMIT_SHA_REGEX.test(ref)) {
-      violations.push({
-        filePath: relPath,
-        lineNumber: index + 1,
-        lineContent: line.trim(),
-        actionRef: actionTarget,
-        reason: `Action tag "${ref}" is not a 40-character commit SHA.`,
-      });
-      hasLineViolation = true;
-    }
-
-    if (!inlineComment || !VERSION_COMMENT_REGEX.test(inlineComment)) {
-      violations.push({
-        filePath: relPath,
-        lineNumber: index + 1,
-        lineContent: line.trim(),
-        actionRef: actionTarget,
-        reason: 'Missing inline "# v..." version comment (e.g., "# v4.2.2").',
-      });
-      hasLineViolation = true;
-    }
-
-    if (!hasLineViolation && repoSegments.length >= 2) {
-      pinnedOccurrences.push({
-        filePath: relPath,
-        lineNumber: index + 1,
-        lineContent: line.trim(),
-        actionRef: actionTarget,
-        owner: repoSegments[0],
-        repo: repoSegments[1],
-        sha: ref.toLowerCase(),
-      });
-    }
-  });
+  evaluateAstPolicies(
+    doc,
+    lineCounter,
+    lines,
+    relPath,
+    fileName,
+    violations,
+    pinnedOccurrences
+  );
 }
 
 function collectActionPins(workflowsDir: string = WORKFLOWS_DIR): {
@@ -561,53 +1028,391 @@ function verifyCommitViaGitSmartHttp(
   owner: string,
   repo: string,
   sha: string,
-  timeoutMs: number
+  versionTag: string,
+  timeoutMs: number,
+  gitBaseUrl: string = DEFAULT_GITHUB_GIT_BASE_URL
 ): string | null {
   const tempGitDir = fs.mkdtempSync(path.join(os.tmpdir(), 'check-action-pins-git-'));
+  const gitEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
+  const normalizedGitBase = gitBaseUrl.replace(/\/+$/, '');
+  const remoteUrl = `${normalizedGitBase}/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}.git`;
+
   try {
     const initRes = spawnSync('git', ['init', '--bare', '--quiet'], {
       cwd: tempGitDir,
       encoding: 'utf8',
       timeout: timeoutMs,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      env: gitEnv,
     });
     if (initRes.status !== 0) {
       return `Upstream git fallback failed to initialize repository: ${(initRes.stderr || '').trim()}`;
     }
 
-    const remoteUrl = `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}.git`;
-    const fetchRes = spawnSync(
+    const lsRemoteRes = spawnSync(
       'git',
-      ['fetch', '--depth=1', '--filter=blob:none', '--no-tags', '--quiet', remoteUrl, sha],
+      ['ls-remote', remoteUrl, 'refs/heads/*', 'refs/tags/*'],
       {
         cwd: tempGitDir,
         encoding: 'utf8',
         timeout: timeoutMs,
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+        env: gitEnv,
+      }
+    );
+    if (lsRemoteRes.status !== 0) {
+      const stderr = (lsRemoteRes.stderr || '').trim();
+      if (/Repository not found|does not appear to be a git repository/i.test(stderr)) {
+        return `Upstream repository "${owner}/${repo}" does not exist or is unreachable.`;
+      }
+      return `Failed to query upstream refs for "${owner}/${repo}": ${stderr || 'git ls-remote failed'}`;
+    }
+
+    const headCommits = new Set<string>();
+    const rawTags = new Map<string, string>();
+    const peeledTags = new Map<string, string>();
+
+    for (const line of lsRemoteRes.stdout.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const tabIdx = trimmed.indexOf('\t');
+      if (tabIdx === -1) continue;
+      const refSha = trimmed.slice(0, tabIdx).trim().toLowerCase();
+      const refName = trimmed.slice(tabIdx + 1).trim();
+      if (!COMMIT_SHA_REGEX.test(refSha)) continue;
+
+      if (refName.startsWith('refs/heads/')) {
+        headCommits.add(refSha);
+      } else if (refName.startsWith('refs/tags/')) {
+        if (refName.endsWith('^{}')) {
+          peeledTags.set(refName.slice(0, -3), refSha);
+        } else {
+          rawTags.set(refName, refSha);
+        }
+      }
+    }
+
+    // Resolve tag commit SHAs, preferring peeled annotated tag targets (`^{}`) over tag object SHAs.
+    const tagCommits = new Map<string, string>();
+    for (const [tagRef, rawSha] of rawTags.entries()) {
+      tagCommits.set(tagRef, peeledTags.get(tagRef) ?? rawSha);
+    }
+    for (const [tagRef, peeledSha] of peeledTags.entries()) {
+      tagCommits.set(tagRef, peeledSha);
+    }
+
+    const expectedTagRef = `refs/tags/${versionTag}`;
+    if (tagCommits.get(expectedTagRef) === sha || headCommits.has(sha)) {
+      return null;
+    }
+    for (const tagCommitSha of tagCommits.values()) {
+      if (tagCommitSha === sha) {
+        return null;
+      }
+    }
+
+    // Commit is not at the exact tip of a head or tag; fetch upstream heads and tags only
+    // (never fetching `<sha>` directly, which would admit unmerged fork commits).
+    const remoteAddRes = spawnSync('git', ['remote', 'add', 'origin', remoteUrl], {
+      cwd: tempGitDir,
+      encoding: 'utf8',
+      timeout: timeoutMs,
+      env: gitEnv,
+    });
+    if (remoteAddRes.status !== 0) {
+      return `Upstream git fallback failed to configure origin: ${(remoteAddRes.stderr || '').trim()}`;
+    }
+
+    const fetchRes = spawnSync(
+      'git',
+      [
+        'fetch',
+        '--filter=blob:none',
+        '--no-tags',
+        '--quiet',
+        'origin',
+        '+refs/heads/*:refs/remotes/origin/*',
+        '+refs/tags/*:refs/tags/*',
+      ],
+      {
+        cwd: tempGitDir,
+        encoding: 'utf8',
+        timeout: timeoutMs,
+        env: gitEnv,
       }
     );
     if (fetchRes.status !== 0) {
       const stderr = (fetchRes.stderr || '').trim();
-      if (/not our ref|couldn't find remote ref|Repository not found/i.test(stderr)) {
-        return `Upstream commit "${sha}" does not exist in "${owner}/${repo}".`;
-      }
-      return `Failed to verify upstream commit "${sha}" in "${owner}/${repo}": ${stderr || 'git fetch failed'}`;
+      return `Failed to fetch upstream branches and tags in "${owner}/${repo}": ${stderr || 'git fetch failed'}`;
     }
 
     const revParseRes = spawnSync('git', ['rev-parse', '--verify', `${sha}^{commit}`], {
       cwd: tempGitDir,
       encoding: 'utf8',
       timeout: timeoutMs,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      env: gitEnv,
     });
     if (revParseRes.status !== 0 || revParseRes.stdout.trim().toLowerCase() !== sha) {
-      return `Upstream commit "${sha}" does not exist in "${owner}/${repo}".`;
+      return `Upstream commit "${sha}" is not reachable from tag "${versionTag}" or any branch/tag in "${owner}/${repo}" (nonexistent or unmerged fork commit).`;
+    }
+
+    const containsRes = spawnSync(
+      'git',
+      [
+        'for-each-ref',
+        '--contains',
+        sha,
+        '--format=%(refname)',
+        'refs/remotes/origin',
+        'refs/tags',
+      ],
+      {
+        cwd: tempGitDir,
+        encoding: 'utf8',
+        timeout: timeoutMs,
+        env: gitEnv,
+      }
+    );
+    if (containsRes.status !== 0 || !containsRes.stdout.trim()) {
+      return `Upstream commit "${sha}" is not reachable from tag "${versionTag}" or any branch/tag in "${owner}/${repo}" (unmerged fork commit).`;
     }
 
     return null;
   } finally {
     fs.rmSync(tempGitDir, { recursive: true, force: true });
   }
+}
+
+async function verifyUpstreamAncestryViaRestApi(
+  apiBaseUrl: string,
+  headers: Record<string, string>,
+  owner: string,
+  repo: string,
+  sha: string,
+  versionTag: string,
+  timeoutMs: number,
+  canFallbackToGit: boolean,
+  gitBaseUrl: string
+): Promise<string | null> {
+  const encodedOwner = encodeURIComponent(owner);
+  const encodedRepo = encodeURIComponent(repo);
+
+  const checkCompareIsAncestor = async (
+    baseRefOrSha: string
+  ): Promise<{ verified: boolean; error: string | null; rateLimited: boolean }> => {
+    const compareUrl = `${apiBaseUrl}/repos/${encodedOwner}/${encodedRepo}/compare/${encodeURIComponent(baseRefOrSha)}...${encodeURIComponent(sha)}`;
+    const compareRes = await fetch(compareUrl, {
+      method: 'GET',
+      headers,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (
+      (compareRes.status === 403 || compareRes.status === 429) &&
+      canFallbackToGit
+    ) {
+      return { verified: false, error: null, rateLimited: true };
+    }
+    if (compareRes.status === 404) {
+      return { verified: false, error: null, rateLimited: false };
+    }
+    if (!compareRes.ok) {
+      return {
+        verified: false,
+        error: `Failed to verify upstream ancestry for "${owner}/${repo}@${sha}" (HTTP ${compareRes.status} ${compareRes.statusText}).`,
+        rateLimited: false,
+      };
+    }
+    const compareBody = (await compareRes.json()) as { status?: string };
+    return {
+      verified:
+        compareBody.status === 'identical' || compareBody.status === 'behind',
+      error: null,
+      rateLimited: false,
+    };
+  };
+
+  // 1. Check `# v...` tag ref (peeling annotated tags when object.type === 'tag').
+  if (versionTag) {
+    const tagRefUrl = `${apiBaseUrl}/repos/${encodedOwner}/${encodedRepo}/git/ref/tags/${encodeURIComponent(versionTag)}`;
+    const tagRefRes = await fetch(tagRefUrl, {
+      method: 'GET',
+      headers,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+
+    if (
+      (tagRefRes.status === 403 || tagRefRes.status === 429) &&
+      canFallbackToGit
+    ) {
+      return verifyCommitViaGitSmartHttp(owner, repo, sha, versionTag, timeoutMs, gitBaseUrl);
+    }
+
+    if (tagRefRes.ok) {
+      const tagRefBody = (await tagRefRes.json()) as {
+        object?: { type?: string; sha?: string };
+      };
+      let currentType = tagRefBody.object?.type;
+      let currentSha = tagRefBody.object?.sha;
+      let peelDepth = 0;
+
+      while (
+        currentType === 'tag' &&
+        typeof currentSha === 'string' &&
+        currentSha.length > 0 &&
+        peelDepth < MAX_TAG_PEEL_DEPTH
+      ) {
+        peelDepth++;
+        const tagObjUrl = `${apiBaseUrl}/repos/${encodedOwner}/${encodedRepo}/git/tags/${encodeURIComponent(currentSha)}`;
+        const tagObjRes = await fetch(tagObjUrl, {
+          method: 'GET',
+          headers,
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+        if (
+          (tagObjRes.status === 403 || tagObjRes.status === 429) &&
+          canFallbackToGit
+        ) {
+          return verifyCommitViaGitSmartHttp(
+            owner,
+            repo,
+            sha,
+            versionTag,
+            timeoutMs,
+            gitBaseUrl
+          );
+        }
+        if (!tagObjRes.ok) {
+          return `Failed to peel annotated tag "${versionTag}" for "${owner}/${repo}@${sha}" (HTTP ${tagObjRes.status} ${tagObjRes.statusText}).`;
+        }
+        const tagObjBody = (await tagObjRes.json()) as {
+          object?: { type?: string; sha?: string };
+        };
+        currentType = tagObjBody.object?.type;
+        currentSha = tagObjBody.object?.sha;
+      }
+
+      if (currentType === 'commit' && typeof currentSha === 'string') {
+        const resolvedTagSha = currentSha.toLowerCase();
+        if (resolvedTagSha === sha) {
+          return null;
+        }
+        const tagCompare = await checkCompareIsAncestor(resolvedTagSha);
+        if (tagCompare.rateLimited) {
+          return verifyCommitViaGitSmartHttp(
+            owner,
+            repo,
+            sha,
+            versionTag,
+            timeoutMs,
+            gitBaseUrl
+          );
+        }
+        if (tagCompare.error) {
+          return tagCompare.error;
+        }
+        if (tagCompare.verified) {
+          return null;
+        }
+      }
+    } else if (tagRefRes.status !== 404) {
+      return `Failed to query upstream tag "${versionTag}" for "${owner}/${repo}@${sha}" (HTTP ${tagRefRes.status} ${tagRefRes.statusText}).`;
+    }
+  }
+
+  // 2. Check upstream default branch and repository branches (`refs/heads/*`).
+  const checkedBranches = new Set<string>();
+  const repoUrl = `${apiBaseUrl}/repos/${encodedOwner}/${encodedRepo}`;
+  const repoRes = await fetch(repoUrl, {
+    method: 'GET',
+    headers,
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if ((repoRes.status === 403 || repoRes.status === 429) && canFallbackToGit) {
+    return verifyCommitViaGitSmartHttp(owner, repo, sha, versionTag, timeoutMs, gitBaseUrl);
+  }
+  if (repoRes.ok) {
+    const repoBody = (await repoRes.json()) as { default_branch?: string };
+    const defaultBranch =
+      typeof repoBody.default_branch === 'string'
+        ? repoBody.default_branch.trim()
+        : '';
+    if (defaultBranch) {
+      checkedBranches.add(defaultBranch);
+      const defaultCompare = await checkCompareIsAncestor(defaultBranch);
+      if (defaultCompare.rateLimited) {
+        return verifyCommitViaGitSmartHttp(
+          owner,
+          repo,
+          sha,
+          versionTag,
+          timeoutMs,
+          gitBaseUrl
+        );
+      }
+      if (defaultCompare.error) {
+        return defaultCompare.error;
+      }
+      if (defaultCompare.verified) {
+        return null;
+      }
+    }
+  } else if (repoRes.status !== 404) {
+    return `Failed to query upstream repository metadata for "${owner}/${repo}" (HTTP ${repoRes.status} ${repoRes.statusText}).`;
+  }
+
+  const branchesUrl = `${apiBaseUrl}/repos/${encodedOwner}/${encodedRepo}/branches?per_page=100`;
+  const branchesRes = await fetch(branchesUrl, {
+    method: 'GET',
+    headers,
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (
+    (branchesRes.status === 403 || branchesRes.status === 429) &&
+    canFallbackToGit
+  ) {
+    return verifyCommitViaGitSmartHttp(owner, repo, sha, versionTag, timeoutMs, gitBaseUrl);
+  }
+  if (branchesRes.ok) {
+    const branchesBody = (await branchesRes.json()) as Array<{
+      name?: string;
+      commit?: { sha?: string };
+    }>;
+    if (Array.isArray(branchesBody)) {
+      for (const branch of branchesBody) {
+        const branchName = typeof branch.name === 'string' ? branch.name.trim() : '';
+        const branchSha =
+          typeof branch.commit?.sha === 'string'
+            ? branch.commit.sha.trim().toLowerCase()
+            : '';
+        if (branchSha === sha) {
+          return null;
+        }
+        if (!branchName || checkedBranches.has(branchName)) {
+          continue;
+        }
+        checkedBranches.add(branchName);
+        const branchCompare = await checkCompareIsAncestor(branchSha || branchName);
+        if (branchCompare.rateLimited) {
+          return verifyCommitViaGitSmartHttp(
+            owner,
+            repo,
+            sha,
+            versionTag,
+            timeoutMs,
+            gitBaseUrl
+          );
+        }
+        if (branchCompare.error) {
+          return branchCompare.error;
+        }
+        if (branchCompare.verified) {
+          return null;
+        }
+      }
+    }
+  } else if (branchesRes.status !== 404) {
+    return `Failed to query upstream branches for "${owner}/${repo}" (HTTP ${branchesRes.status} ${branchesRes.statusText}).`;
+  }
+
+  return `Upstream commit "${sha}" is not reachable from tag "${versionTag}" or any branch in "${owner}/${repo}" (unmerged fork commit).`;
 }
 
 export async function verifyUpstreamActionPins(
@@ -624,6 +1429,10 @@ export async function verifyUpstreamActionPins(
     process.env.GITHUB_API_URL ??
     DEFAULT_GITHUB_API_BASE_URL
   ).replace(/\/+$/, '');
+  const gitBaseUrl = (options.gitBaseUrl ?? DEFAULT_GITHUB_GIT_BASE_URL).replace(
+    /\/+$/,
+    ''
+  );
   const token = (
     options.token ??
     process.env.GITHUB_TOKEN ??
@@ -631,10 +1440,13 @@ export async function verifyUpstreamActionPins(
     ''
   ).trim();
   const timeoutMs = options.timeoutMs ?? DEFAULT_UPSTREAM_TIMEOUT_MS;
+  const canFallbackToGit =
+    !token &&
+    (apiBaseUrl === DEFAULT_GITHUB_API_BASE_URL || Boolean(options.gitBaseUrl));
 
   const groupedByPin = new Map<string, PinnedActionOccurrence[]>();
   for (const occurrence of pinnedOccurrences) {
-    const key = `${occurrence.owner}/${occurrence.repo}@${occurrence.sha}`;
+    const key = `${occurrence.owner}/${occurrence.repo}@${occurrence.sha}#${occurrence.versionTag}`;
     const existing = groupedByPin.get(key);
     if (existing) {
       existing.push(occurrence);
@@ -653,7 +1465,7 @@ export async function verifyUpstreamActionPins(
   }
 
   for (const [, occurrences] of groupedByPin.entries()) {
-    const { owner, repo, sha } = occurrences[0];
+    const { owner, repo, sha, versionTag } = occurrences[0];
     const commitUrl = `${apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(sha)}`;
 
     let failureReason: string | null = null;
@@ -666,18 +1478,33 @@ export async function verifyUpstreamActionPins(
 
       if (response.status === 404 || response.status === 422) {
         failureReason = `Upstream commit "${sha}" does not exist in "${owner}/${repo}" (HTTP ${response.status}).`;
-      } else if (
-        (response.status === 403 || response.status === 429) &&
-        !token &&
-        apiBaseUrl === DEFAULT_GITHUB_API_BASE_URL
-      ) {
-        failureReason = verifyCommitViaGitSmartHttp(owner, repo, sha, timeoutMs);
+      } else if ((response.status === 403 || response.status === 429) && canFallbackToGit) {
+        failureReason = verifyCommitViaGitSmartHttp(
+          owner,
+          repo,
+          sha,
+          versionTag,
+          timeoutMs,
+          gitBaseUrl
+        );
       } else if (!response.ok) {
         failureReason = `Failed to verify upstream commit "${sha}" in "${owner}/${repo}" (HTTP ${response.status} ${response.statusText}).`;
       } else {
         const body = (await response.json()) as { sha?: string };
         if (typeof body.sha === 'string' && body.sha.toLowerCase() !== sha) {
           failureReason = `Upstream commit lookup for "${owner}/${repo}@${sha}" resolved to mismatched SHA "${body.sha}".`;
+        } else {
+          failureReason = await verifyUpstreamAncestryViaRestApi(
+            apiBaseUrl,
+            headers,
+            owner,
+            repo,
+            sha,
+            versionTag,
+            timeoutMs,
+            canFallbackToGit,
+            gitBaseUrl
+          );
         }
       }
     } catch (err) {
@@ -721,13 +1548,14 @@ ACTIONABLE REMEDIATION:
 --------------------------------------------------------------------------------
 1. All workflow files in .github/workflows/ must be valid YAML 1.2 with zero
    parser errors or unresolved tag warnings (quote conditionals starting with "!").
-2. All third-party GitHub Actions must be pinned to full 40-character commit SHAs
-   that exist in the upstream GitHub repository.
-3. Every third-party uses: line must include an inline "# v..." version comment:
+2. All third-party GitHub Actions and reusable workflows must be pinned to full
+   40-character commit SHAs reachable from an upstream tag or branch.
+3. Every third-party uses: directive must include an inline "# v..." version comment:
    uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-4. Local workflow references (starting with ./ or ./.github/) do not require commit SHAs.
+4. Local workflow references (starting with ./) do not require commit SHAs.
 5. Every non-cancelling concurrency block must set "queue: max" to queue pending runs in FIFO order.
 6. Every job invoking actions/deploy-pages must set concurrency: { group: github-pages, cancel-in-progress: false, queue: max }.
+7. Step "run" scripts must bind GitHub Actions expressions via "env:" instead of interpolating "\${{ ... }}" directly.
 ================================================================================
 `);
   process.exit(1);
