@@ -5,6 +5,7 @@ import { ContributionSchema } from '../schemas';
 import {
   buildOptionalAddressFields,
   buildStripeUnavailableResponse,
+  mapStripeMetadataToContributor,
   projectViewerRegistryItem,
   runContributionNotifications,
   validateSettlementPaymentIntent,
@@ -22,6 +23,7 @@ import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { getStripeInstance } from '@/lib/stripe';
+import { checkAuthLockout, recordAuthFailure } from '@/utils/rateLimit';
 import { signContributorActionToken } from '../lib/contributorToken';
 import type { GuestClaimActions } from '../types';
 import { resolveEffectivePaymentHandle } from '../utils/paymentUrls';
@@ -31,6 +33,14 @@ function settle<T>(operation: () => Promise<T> | T): Promise<PromiseSettledResul
 }
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
+  const hasHeaders = Boolean(request?.headers && typeof request.headers.get === 'function');
+  if (hasHeaders) {
+    const lockoutResponse = await checkAuthLockout(request);
+    if (lockoutResponse) {
+      return lockoutResponse;
+    }
+  }
+
   const hasJsonContentType = isJsonMediaType(getRequestMediaType(request));
   const configSettledPromise = settle(() => getAppConfig());
   const bodySettledPromise = hasJsonContentType ? settle(() => request.json()) : null;
@@ -60,8 +70,18 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   }
 
   const {
-    itemId, name, email, amount, code: _ignoredClientCode, message, coverFee, paymentIntentId,
-    retailerOrderNumber, carrier, trackingNumber,
+    itemId,
+    name,
+    email,
+    amount,
+    code,
+    message,
+    coverFee,
+    paymentIntentId,
+    clientSecret,
+    retailerOrderNumber,
+    carrier,
+    trackingNumber,
   } = parseResult.data;
 
   const targetItemSettledPromise = settle(() => registryService.getItemById(itemId));
@@ -74,7 +94,9 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   if (paymentIntentId) {
     try {
       const stripe = getStripeInstance();
-      paymentIntentSettledPromise = settle(() => stripe.paymentIntents.retrieve(paymentIntentId));
+      if (clientSecret) {
+        paymentIntentSettledPromise = settle(() => stripe.paymentIntents.retrieve(paymentIntentId));
+      }
     } catch (err: unknown) {
       hasStripeConfigError = true;
       stripeConfigError = err;
@@ -121,17 +143,40 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   if (isAdminSettled.status === 'rejected') {
     throw isAdminSettled.reason;
   }
-  const finalCode = sessionSettled.value?.code;
-  const isAdmin = isAdminSettled.value;
 
-  if (!paymentIntentId && !finalCode && !isAdmin) {
+  const session = sessionSettled.value;
+  const isAdmin = isAdminSettled.value;
+  const submittedCode = code?.trim() ? code.trim() : undefined;
+  const sessionCode = session?.code?.trim() ? session.code.trim() : undefined;
+
+  if (!isAdmin && submittedCode) {
+    if (!sessionCode || sessionCode.toUpperCase() !== submittedCode.toUpperCase()) {
+      if (hasHeaders) {
+        await recordAuthFailure(request);
+      }
+      throw new ApiError(
+        403,
+        'Forbidden: Please verify your household invitation code before linking a contribution to a household.'
+      );
+    }
+  }
+
+  const verifiedHouseholdCode = isAdmin ? submittedCode : sessionCode;
+
+  if (!paymentIntentId && !verifiedHouseholdCode && !isAdmin) {
     throw new ApiError(
       403,
       'Please verify your household invitation code before claiming a gift or recording a direct transfer.'
     );
   }
 
-  const effectiveCoverFee = isPayableGroupGift && !paymentIntentId ? false : Boolean(coverFee);
+  let effectiveName = name;
+  let effectiveEmail: string | null | undefined = email;
+  let effectiveCode: string | undefined = verifiedHouseholdCode;
+  let effectiveMessage: string | null | undefined = message;
+  let effectiveAddressFields = buildOptionalAddressFields(parseResult.data);
+  let effectiveAmount = amount;
+  let effectiveCoverFee = isPayableGroupGift && !paymentIntentId ? false : Boolean(coverFee);
 
   let stripePaymentIntentId: string | null = null;
   let stripeChargeId: string | null = null;
@@ -140,10 +185,31 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   if (paymentIntentId) {
     if (hasStripeConfigError) return buildStripeUnavailableResponse(stripeConfigError);
 
-    const { paymentIntent } = await verifyPaymentIntentOwnership(
-      { source: { settledResult: await paymentIntentSettledPromise! }, requireClientSecret: false },
-      400
-    );
+    let paymentIntent: Stripe.PaymentIntent;
+    try {
+      const ownership = await verifyPaymentIntentOwnership(
+        {
+          source: paymentIntentSettledPromise
+            ? { settledResult: await paymentIntentSettledPromise }
+            : {
+              settledResult: {
+                status: 'rejected',
+                reason: new Error('Missing clientSecret'),
+              },
+            },
+          requireClientSecret: true,
+          clientSecret,
+        },
+        403
+      );
+      paymentIntent = ownership.paymentIntent;
+    } catch (err: unknown) {
+      if (err instanceof ApiError && err.statusCode === 403 && hasHeaders) {
+        await recordAuthFailure(request);
+      }
+      throw err;
+    }
+
     const settlement = validateSettlementPaymentIntent(
       paymentIntent,
       { itemId, expectedAmounts: { baseAmount: amount, coverFee: effectiveCoverFee }, errorMode: 'api-error' },
@@ -152,23 +218,45 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     stripePaymentIntentId = settlement.stripePaymentIntentId;
     stripeChargeId = settlement.stripeChargeId;
     transactionTimestamp = settlement.transactionTimestamp;
+    effectiveAmount = settlement.baseAmount;
+    effectiveCoverFee = settlement.coverFee;
+
+    const mapped = mapStripeMetadataToContributor(paymentIntent.metadata, {
+      trimIdentity: true,
+    });
+    effectiveName = mapped.name;
+    effectiveEmail = mapped.email;
+    effectiveCode = mapped.code;
+    effectiveMessage = mapped.message;
+    effectiveAddressFields = mapped.addressFields;
   }
 
   const updatedItem = await registryService.contributeToItem(itemId, {
-    name,
-    email,
-    amount,
-    code: finalCode,
-    message,
+    name: effectiveName,
+    email: effectiveEmail,
+    amount: effectiveAmount,
+    code: effectiveCode,
+    message: effectiveMessage,
     coverFee: effectiveCoverFee,
     ...(retailerOrderNumber ? { retailerOrderNumber } : {}),
     ...(carrier ? { carrier } : {}),
     ...(trackingNumber ? { trackingNumber } : {}),
-    ...buildOptionalAddressFields(parseResult.data),
+    ...effectiveAddressFields,
     ...(stripePaymentIntentId
       ? { stripePaymentIntentId, stripeChargeId, transactionTimestamp }
       : {}),
   });
+
+  const savedContributor =
+    stripePaymentIntentId && Array.isArray(updatedItem.contributors)
+      ? updatedItem.contributors.find((c) => c?.stripePaymentIntentId === stripePaymentIntentId)
+      : undefined;
+  const notificationName = stripePaymentIntentId
+    ? savedContributor?.name || effectiveName
+    : effectiveName;
+  const notificationEmail = stripePaymentIntentId
+    ? savedContributor?.email ?? effectiveEmail
+    : effectiveEmail;
 
   await runContributionNotifications(
     {
@@ -176,10 +264,10 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
       targetItem,
       updatedItem,
       contribution: {
-        name,
-        email,
-        amount,
-        message,
+        name: notificationName,
+        email: notificationEmail,
+        amount: effectiveAmount,
+        message: effectiveMessage,
         coverFee: effectiveCoverFee,
         stripePaymentIntentId,
         transactionTimestamp,
@@ -190,7 +278,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
       config,
       requestUrl: request.url,
       isReservation: !stripePaymentIntentId,
-      verifiedInvitationCode: finalCode,
+      verifiedInvitationCode: effectiveCode,
     },
     { mode: 'after' }
   );
@@ -211,7 +299,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
         ? newlyAdded[newlyAdded.length - 1]
         : [...updatedContributors]
           .reverse()
-          .find((c) => c?.id && c.name === name && c.amount === amount);
+          .find((c) => c?.id && c.name === effectiveName && c.amount === effectiveAmount);
 
     if (matchedContributor?.id) {
       try {

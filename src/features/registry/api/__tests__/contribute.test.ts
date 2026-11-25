@@ -10,6 +10,7 @@ import { getAppConfig } from '@/lib/config';
 import { MultiChannelMessagingProvider } from '@/features/broadcast';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
+import { resetRateLimitsForTesting } from '@/utils/rateLimit';
 
 jest.mock('../../service', () => ({
   registryService: {
@@ -74,6 +75,8 @@ describe('POST /api/registry/contribute', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPaymentIntentsRetrieve.mockReset();
+    resetRateLimitsForTesting();
     (getAppConfig as jest.Mock).mockResolvedValue({
       modules: ['registry', 'groupGifting'],
     });
@@ -107,7 +110,23 @@ describe('POST /api/registry/contribute', () => {
     expect(registryService.contributeToItem).not.toHaveBeenCalled();
   });
 
-  it('successfully processes contribution with verified guest_invite_session, ignores spoofed body.code, and strips relational contributors for non-admin callers', async () => {
+  it('rejects non-admin contribution with HTTP 403 when submitted code does not match guest_invite_session, and succeeds when code matches or is omitted while stripping relational contributors', async () => {
+    const mismatchRequest = new NextRequest('http://localhost:3000/api/registry/contribute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        itemId: 'item-123',
+        name: 'John Wellwisher',
+        email: 'john@example.com',
+        amount: 50,
+        code: 'CLIENT99',
+        message: 'Best wishes!',
+      }),
+    });
+    const mismatchRes = await POST(mismatchRequest);
+    expect(mismatchRes.status).toBe(403);
+    expect(registryService.contributeToItem).not.toHaveBeenCalled();
+
     (registryService.contributeToItem as jest.Mock).mockResolvedValueOnce({
       ...mockItem,
       amountContributed: 75,
@@ -150,7 +169,7 @@ describe('POST /api/registry/contribute', () => {
         name: 'John Wellwisher',
         email: 'john@example.com',
         amount: 50,
-        code: 'CLIENT99',
+        code: 'invite26',
         message: 'Best wishes!',
       }),
     });
@@ -313,10 +332,11 @@ describe('POST /api/registry/contribute', () => {
   });
 
   describe('Stripe PaymentIntent Verification (Requirement 4 & Requirement 6)', () => {
-    it('Requirement 4: verifies PaymentIntent status is succeeded before creating contributor records', async () => {
+    it('Requirement 4 & 6 & 7: verifies clientSecret ownership, PaymentIntent succeeded status, and reads attribution from metadata before creating contributor records', async () => {
       (getGuestInviteSession as jest.Mock).mockResolvedValueOnce(null);
       mockPaymentIntentsRetrieve.mockResolvedValueOnce({
         id: 'pi_verified_999',
+        client_secret: 'pi_verified_999_secret_valid',
         status: 'succeeded',
         amount: 5125,
         amount_received: 5125,
@@ -325,6 +345,10 @@ describe('POST /api/registry/contribute', () => {
           itemId: 'item-123',
           baseAmount: '50.00',
           coverFee: 'true',
+          contributorName: 'Verified Guest',
+          contributorEmail: 'verified@example.com',
+          contributorMessage: '',
+          invitationCode: '',
         },
         latest_charge: 'ch_verified_999',
         created: 1731763200,
@@ -335,11 +359,11 @@ describe('POST /api/registry/contribute', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: 'item-123',
-          name: 'Verified Guest',
-          email: 'verified@example.com',
+          name: 'Tampered Body Name',
+          email: 'attacker@example.com',
           amount: 50,
-          code: 'SPOOFED8',
           paymentIntentId: 'pi_verified_999',
+          clientSecret: 'pi_verified_999_secret_valid',
           coverFee: true,
         }),
       });
@@ -353,7 +377,7 @@ describe('POST /api/registry/contribute', () => {
         email: 'verified@example.com',
         amount: 50,
         code: undefined,
-        message: undefined,
+        message: null,
         coverFee: true,
         stripePaymentIntentId: 'pi_verified_999',
         stripeChargeId: 'ch_verified_999',
@@ -364,6 +388,7 @@ describe('POST /api/registry/contribute', () => {
     it('rejects contribution when PaymentIntent is not in succeeded status', async () => {
       mockPaymentIntentsRetrieve.mockResolvedValueOnce({
         id: 'pi_declined_111',
+        client_secret: 'pi_declined_111_secret_ok',
         status: 'requires_payment_method',
         amount: 5000,
         currency: 'usd',
@@ -378,6 +403,7 @@ describe('POST /api/registry/contribute', () => {
           name: 'Declined Guest',
           amount: 50,
           paymentIntentId: 'pi_declined_111',
+          clientSecret: 'pi_declined_111_secret_ok',
         }),
       });
 
@@ -388,8 +414,10 @@ describe('POST /api/registry/contribute', () => {
       expect(registryService.contributeToItem).not.toHaveBeenCalled();
     });
 
-    it('rejects contribution when Stripe PaymentIntent cannot be retrieved', async () => {
-      mockPaymentIntentsRetrieve.mockRejectedValueOnce(new Error('No such payment_intent'));
+    it('masks raw Stripe lookup failures with generic HTTP 403 matching reconcile-payment', async () => {
+      mockPaymentIntentsRetrieve.mockRejectedValueOnce(
+        new Error('No such payment_intent: pi_nonexistent; secret_key_hint')
+      );
 
       const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
         method: 'POST',
@@ -399,13 +427,16 @@ describe('POST /api/registry/contribute', () => {
           name: 'Error Guest',
           amount: 50,
           paymentIntentId: 'pi_nonexistent',
+          clientSecret: 'pi_nonexistent_secret_probe',
         }),
       });
 
       const response = await POST(request);
-      expect(response.status).toBe(400);
+      expect(response.status).toBe(403);
       const body = await response.json();
-      expect(body.error).toMatch(/Invalid or unresolved Stripe PaymentIntent/i);
+      expect(body.error).toBe('Unable to verify ownership of the specified PaymentIntent.');
+      expect(JSON.stringify(body)).not.toContain('No such payment_intent');
+      expect(JSON.stringify(body)).not.toContain('secret_key_hint');
       expect(registryService.contributeToItem).not.toHaveBeenCalled();
     });
 
@@ -420,6 +451,7 @@ describe('POST /api/registry/contribute', () => {
 
       mockPaymentIntentsRetrieve.mockResolvedValueOnce({
         id: 'pi_one_dollar_100',
+        client_secret: 'pi_one_dollar_100_secret_owner',
         status: 'succeeded',
         amount: 100,
         amount_received: 100,
@@ -440,6 +472,7 @@ describe('POST /api/registry/contribute', () => {
           amount: 5000,
           coverFee: true,
           paymentIntentId: 'pi_one_dollar_100',
+          clientSecret: 'pi_one_dollar_100_secret_owner',
         }),
       });
 
@@ -451,6 +484,7 @@ describe('POST /api/registry/contribute', () => {
     it('rejects PaymentIntent when currency is not usd', async () => {
       mockPaymentIntentsRetrieve.mockResolvedValueOnce({
         id: 'pi_wrong_currency',
+        client_secret: 'pi_wrong_currency_secret_ok',
         status: 'succeeded',
         amount: 5000,
         amount_received: 5000,
@@ -471,6 +505,7 @@ describe('POST /api/registry/contribute', () => {
           amount: 50,
           coverFee: false,
           paymentIntentId: 'pi_wrong_currency',
+          clientSecret: 'pi_wrong_currency_secret_ok',
         }),
       });
 
@@ -485,6 +520,7 @@ describe('POST /api/registry/contribute', () => {
       // Case 1: Mismatched cent amount on same item
       mockPaymentIntentsRetrieve.mockResolvedValueOnce({
         id: 'pi_underpaid',
+        client_secret: 'pi_underpaid_secret_ok',
         status: 'succeeded',
         amount: 100,
         amount_received: 100,
@@ -505,6 +541,7 @@ describe('POST /api/registry/contribute', () => {
             amount: 50,
             coverFee: false,
             paymentIntentId: 'pi_underpaid',
+            clientSecret: 'pi_underpaid_secret_ok',
           }),
         })
       );
@@ -513,6 +550,7 @@ describe('POST /api/registry/contribute', () => {
       // Case 2: Partial amount_received < totalChargeCents
       mockPaymentIntentsRetrieve.mockResolvedValueOnce({
         id: 'pi_partial_capture',
+        client_secret: 'pi_partial_capture_secret_ok',
         status: 'succeeded',
         amount: 5000,
         amount_received: 2500,
@@ -534,6 +572,7 @@ describe('POST /api/registry/contribute', () => {
             amount: 50,
             coverFee: false,
             paymentIntentId: 'pi_partial_capture',
+            clientSecret: 'pi_partial_capture_secret_ok',
           }),
         })
       );
@@ -542,6 +581,7 @@ describe('POST /api/registry/contribute', () => {
       // Case 3: Mismatched coverFee metadata
       mockPaymentIntentsRetrieve.mockResolvedValueOnce({
         id: 'pi_cover_mismatch',
+        client_secret: 'pi_cover_mismatch_secret_ok',
         status: 'succeeded',
         amount: 5125,
         amount_received: 5125,
@@ -563,6 +603,7 @@ describe('POST /api/registry/contribute', () => {
             amount: 50,
             coverFee: true,
             paymentIntentId: 'pi_cover_mismatch',
+            clientSecret: 'pi_cover_mismatch_secret_ok',
           }),
         })
       );
@@ -613,6 +654,7 @@ describe('POST /api/registry/contribute', () => {
       });
       mockPaymentIntentsRetrieve.mockResolvedValueOnce({
         id: 'pi_card_gift_777',
+        client_secret: 'pi_card_gift_777_secret_ok',
         status: 'succeeded',
         amount: 10250,
         amount_received: 10250,
@@ -624,6 +666,10 @@ describe('POST /api/registry/contribute', () => {
           baseAmount: '100.00',
           feeAmount: '2.50',
           coverFee: 'true',
+          contributorName: 'Clara Guest',
+          contributorEmail: 'clara@example.com',
+          contributorMessage: 'Have an amazing trip!',
+          invitationCode: 'INVITE26',
         },
       });
       (registryService.contributeToItem as jest.Mock).mockResolvedValueOnce({
@@ -659,6 +705,7 @@ describe('POST /api/registry/contribute', () => {
           coverFee: true,
           message: 'Have an amazing trip!',
           paymentIntentId: 'pi_card_gift_777',
+          clientSecret: 'pi_card_gift_777_secret_ok',
         }),
       });
 
@@ -958,11 +1005,18 @@ describe('POST /api/registry/contribute', () => {
 
       mockPaymentIntentsRetrieve.mockResolvedValue({
         id: 'pi_retry_test',
+        client_secret: 'pi_retry_test_secret_ok',
         status: 'succeeded',
         amount: 5000,
         amount_received: 5000,
         currency: 'usd',
-        metadata: { itemId: 'item-123', baseAmount: '50.00', coverFee: 'false' },
+        metadata: {
+          itemId: 'item-123',
+          baseAmount: '50.00',
+          coverFee: 'false',
+          contributorName: 'Retry Guest',
+          contributorEmail: 'retry@example.com',
+        },
         latest_charge: 'ch_retry_test',
         created: 1731763200,
       });
@@ -996,6 +1050,7 @@ describe('POST /api/registry/contribute', () => {
           email: 'retry@example.com',
           amount: 50,
           paymentIntentId: 'pi_retry_test',
+          clientSecret: 'pi_retry_test_secret_ok',
         }),
       });
       const res1 = await POST(req1);
@@ -1014,6 +1069,7 @@ describe('POST /api/registry/contribute', () => {
           email: 'retry@example.com',
           amount: 50,
           paymentIntentId: 'pi_retry_test',
+          clientSecret: 'pi_retry_test_secret_ok',
         }),
       });
       const res2 = await POST(req2);
@@ -1059,6 +1115,7 @@ describe('POST /api/registry/contribute', () => {
       });
       mockPaymentIntentsRetrieve.mockResolvedValueOnce({
         id: 'pi_deferred_after_1',
+        client_secret: 'pi_deferred_after_1_secret_ok',
         status: 'succeeded',
         amount: 10000,
         amount_received: 10000,
@@ -1069,6 +1126,8 @@ describe('POST /api/registry/contribute', () => {
           itemId: 'fund-deferred-1',
           baseAmount: '100.00',
           coverFee: 'false',
+          contributorName: 'Fast Modal Guest',
+          contributorEmail: 'fast@example.com',
         },
       });
       (registryService.contributeToItem as jest.Mock).mockResolvedValueOnce({
@@ -1105,6 +1164,7 @@ describe('POST /api/registry/contribute', () => {
           amount: 100,
           coverFee: false,
           paymentIntentId: 'pi_deferred_after_1',
+          clientSecret: 'pi_deferred_after_1_secret_ok',
         }),
       });
 
@@ -1161,6 +1221,7 @@ describe('POST /api/registry/contribute', () => {
         await new Promise((resolve) => setTimeout(resolve, 25));
         return {
           id: 'pi_parallel_1',
+          client_secret: 'pi_parallel_1_secret_ok',
           status: 'succeeded',
           amount: 5000,
           amount_received: 5000,
@@ -1169,6 +1230,8 @@ describe('POST /api/registry/contribute', () => {
             itemId: 'item-123',
             baseAmount: '50.00',
             coverFee: 'false',
+            contributorName: 'Parallel Guest',
+            invitationCode: 'INVITE77',
           },
           latest_charge: 'ch_parallel_1',
           created: 1731763200,
@@ -1184,6 +1247,7 @@ describe('POST /api/registry/contribute', () => {
           amount: 50,
           coverFee: false,
           paymentIntentId: 'pi_parallel_1',
+          clientSecret: 'pi_parallel_1_secret_ok',
         }),
       });
 
@@ -1236,6 +1300,7 @@ describe('POST /api/registry/contribute', () => {
             name: 'Sample Tester',
             amount: 50,
             paymentIntentId: 'pi_broken_on_sample',
+            clientSecret: 'pi_broken_on_sample_secret_ok',
           }),
         })
       );
@@ -1263,6 +1328,7 @@ describe('POST /api/registry/contribute', () => {
             name: 'Group Disabled Tester',
             amount: 50,
             paymentIntentId: 'pi_broken_on_group',
+            clientSecret: 'pi_broken_on_group_secret_ok',
           }),
         })
       );
@@ -1332,5 +1398,258 @@ describe('POST /api/registry/contribute', () => {
     expect(serialized).not.toContain('Springfield');
     expect(serialized).not.toContain('62704');
     expect(serialized).not.toContain('alex@example.com');
+  });
+
+  describe('Household Session Isolation, Admin Optional Code, Secret Proofs & 5-Attempt IP Lockouts', () => {
+    it('allows administrators to record contributions with an optional household code without a guest session, and omits code when admin leaves it blank', async () => {
+      (isAdminRequest as jest.Mock).mockResolvedValue(true);
+      (getGuestInviteSession as jest.Mock).mockResolvedValue(null);
+
+      const withCodeRes = await POST(
+        new NextRequest('http://localhost:3000/api/registry/contribute', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            itemId: 'item-123',
+            name: 'Admin Recorded Household',
+            amount: 50,
+            code: 'HOUSEHOLD9',
+          }),
+        })
+      );
+      expect(withCodeRes.status).toBe(200);
+      expect(registryService.contributeToItem).toHaveBeenCalledWith(
+        'item-123',
+        expect.objectContaining({
+          name: 'Admin Recorded Household',
+          amount: 50,
+          code: 'HOUSEHOLD9',
+        })
+      );
+
+      (registryService.contributeToItem as jest.Mock).mockClear();
+      (getGuestInviteSession as jest.Mock).mockResolvedValueOnce({
+        code: 'STALE_COOKIE',
+        guestName: 'Stale Session',
+      });
+
+      const withoutCodeRes = await POST(
+        new NextRequest('http://localhost:3000/api/registry/contribute', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            itemId: 'item-123',
+            name: 'Admin Walk-in Gift',
+            amount: 40,
+          }),
+        })
+      );
+      expect(withoutCodeRes.status).toBe(200);
+      expect(registryService.contributeToItem).toHaveBeenCalledWith(
+        'item-123',
+        expect.objectContaining({
+          name: 'Admin Walk-in Gift',
+          amount: 40,
+          code: undefined,
+        })
+      );
+    });
+
+    it('rejects card contributions missing clientSecret or with mismatched clientSecret (HTTP 403) and reads postal + note fields strictly from PaymentIntent metadata', async () => {
+      (getGuestInviteSession as jest.Mock).mockResolvedValue(null);
+
+      // 1. Missing clientSecret -> 403 without calling Stripe retrieve
+      const missingSecretRes = await POST(
+        new NextRequest('http://localhost:3000/api/registry/contribute', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            itemId: 'item-123',
+            name: 'Replay Attacker',
+            amount: 50,
+            paymentIntentId: 'pi_settled_target',
+          }),
+        })
+      );
+      expect(missingSecretRes.status).toBe(403);
+      expect(mockPaymentIntentsRetrieve).not.toHaveBeenCalled();
+      expect(registryService.contributeToItem).not.toHaveBeenCalled();
+
+      // 2. Mismatched clientSecret -> 403 via constant-time check
+      mockPaymentIntentsRetrieve.mockResolvedValueOnce({
+        id: 'pi_settled_target',
+        client_secret: 'pi_settled_target_secret_real_value',
+        status: 'succeeded',
+        amount: 5000,
+        amount_received: 5000,
+        currency: 'usd',
+        metadata: {
+          itemId: 'item-123',
+          baseAmount: '50.00',
+          coverFee: 'false',
+          contributorName: 'True Cardholder',
+        },
+      });
+      const wrongSecretRes = await POST(
+        new NextRequest('http://localhost:3000/api/registry/contribute', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            itemId: 'item-123',
+            name: 'Replay Attacker',
+            amount: 50,
+            paymentIntentId: 'pi_settled_target',
+            clientSecret: 'pi_settled_target_secret_wrong_guess',
+          }),
+        })
+      );
+      expect(wrongSecretRes.status).toBe(403);
+      expect(registryService.contributeToItem).not.toHaveBeenCalled();
+
+      // 3. Matching clientSecret -> reads name, email, verified code, message, and postal details from metadata
+      mockPaymentIntentsRetrieve.mockResolvedValueOnce({
+        id: 'pi_settled_target',
+        client_secret: 'pi_settled_target_secret_real_value',
+        status: 'succeeded',
+        amount: 5000,
+        amount_received: 5000,
+        currency: 'usd',
+        created: 1732500000,
+        latest_charge: 'ch_settled_target',
+        metadata: {
+          itemId: 'item-123',
+          baseAmount: '50.00',
+          coverFee: 'false',
+          contributorName: 'True Cardholder',
+          contributorEmail: 'cardholder@example.com',
+          contributorMessage: 'True metadata note',
+          invitationCode: 'VERIFIED1',
+          addressLine1: '100 Metadata Way',
+          addressLine2: 'Unit 5',
+          city: 'Austin',
+          state: 'TX',
+          zipCode: '78701',
+          country: 'USA',
+        },
+      });
+
+      const validSecretRes = await POST(
+        new NextRequest('http://localhost:3000/api/registry/contribute', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            itemId: 'item-123',
+            name: 'Spoofed Name Override',
+            email: 'spoofed@example.com',
+            amount: 50,
+            message: 'Spoofed note override',
+            addressLine1: '999 Attacker St',
+            city: 'Nowhere',
+            state: 'ZZ',
+            zipCode: '00000',
+            paymentIntentId: 'pi_settled_target',
+            clientSecret: 'pi_settled_target_secret_real_value',
+          }),
+        })
+      );
+      expect(validSecretRes.status).toBe(200);
+      expect(registryService.contributeToItem).toHaveBeenCalledWith('item-123', {
+        name: 'True Cardholder',
+        email: 'cardholder@example.com',
+        amount: 50,
+        code: 'VERIFIED1',
+        message: 'True metadata note',
+        coverFee: false,
+        addressLine1: '100 Metadata Way',
+        addressLine2: 'Unit 5',
+        city: 'Austin',
+        state: 'TX',
+        zipCode: '78701',
+        country: 'USA',
+        stripePaymentIntentId: 'pi_settled_target',
+        stripeChargeId: 'ch_settled_target',
+        transactionTimestamp: new Date(1732500000 * 1000),
+      });
+    });
+
+    it('locks out the client IP with HTTP 429 after 5 failed household or clientSecret checks, while HTTP 404/400 errors do not count toward lockout', async () => {
+      (getGuestInviteSession as jest.Mock).mockResolvedValue(null);
+
+      // Six HTTP 404/400 requests must NOT lock out the client IP
+      for (let i = 0; i < 6; i += 1) {
+        (registryService.contributeToItem as jest.Mock).mockRejectedValueOnce(
+          Object.assign(new Error('Item not found'), { statusCode: 404 })
+        );
+        const badPayloadRes = await POST(
+          new NextRequest('http://localhost:3000/api/registry/contribute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ itemId: 'item-123', name: '', amount: -10 }),
+          })
+        );
+        expect(badPayloadRes.status).toBe(400);
+      }
+
+      // 5 failed household/clientSecret ownership attempts (mix of household mismatch & secret mismatch) -> HTTP 403
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        const res = await POST(
+          new NextRequest('http://localhost:3000/api/registry/contribute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              itemId: 'item-123',
+              name: 'Brute Force Caller',
+              amount: 50,
+              code: `GUESS00${attempt}`,
+            }),
+          })
+        );
+        expect(res.status).toBe(403);
+      }
+
+      for (let attempt = 4; attempt <= 5; attempt += 1) {
+        mockPaymentIntentsRetrieve.mockResolvedValueOnce({
+          id: 'pi_target_lockout',
+          client_secret: 'pi_target_lockout_secret_real',
+          status: 'succeeded',
+          amount: 5000,
+          amount_received: 5000,
+          currency: 'usd',
+          metadata: { itemId: 'item-123', baseAmount: '50.00', coverFee: 'false' },
+        });
+        const res = await POST(
+          new NextRequest('http://localhost:3000/api/registry/contribute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              itemId: 'item-123',
+              name: 'Brute Force Caller',
+              amount: 50,
+              paymentIntentId: 'pi_target_lockout',
+              clientSecret: `pi_target_lockout_secret_wrong_${attempt}`,
+            }),
+          })
+        );
+        expect(res.status).toBe(403);
+      }
+
+      // 6th attempt from the same IP is immediately blocked by checkAuthLockout -> HTTP 429
+      const sixthRes = await POST(
+        new NextRequest('http://localhost:3000/api/registry/contribute', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            itemId: 'item-123',
+            name: 'Locked Out Caller',
+            amount: 50,
+            paymentIntentId: 'pi_target_lockout',
+            clientSecret: 'pi_target_lockout_secret_real',
+          }),
+        })
+      );
+      expect(sixthRes.status).toBe(429);
+      const sixthBody = await sixthRes.json();
+      expect(sixthBody.error).toMatch(/Too many requests/i);
+    });
   });
 });

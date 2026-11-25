@@ -14,8 +14,10 @@ import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { prisma } from '@/lib/prisma';
 import { getHydratedGuestInvitation } from '@/lib/requestContext';
+import { isAdminRequest } from '@/core/auth/auth.server';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { calculateContributionAmounts } from '@/lib/stripe';
+import { checkAuthLockout, recordAuthFailure } from '@/utils/rateLimit';
 
 async function resolveInviteFallbackEmail(
   code: string,
@@ -66,6 +68,14 @@ async function resolveInviteFallbackEmail(
 }
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
+  const hasHeaders = Boolean(request?.headers && typeof request.headers.get === 'function');
+  if (hasHeaders) {
+    const lockoutResponse = await checkAuthLockout(request);
+    if (lockoutResponse) {
+      return lockoutResponse;
+    }
+  }
+
   const config = await getAppConfig();
   if (!isFeatureEnabled('registry', config.modules)) {
     throw new ApiError(404, "Feature 'registry' is disabled");
@@ -80,7 +90,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
 
   const {
     itemId, amount, coverFee, paymentIntentId, clientSecret,
-    name, email, message, code: _ignoredClientCode, ...addressFields
+    name, email, message, code, ...addressFields
   } = parseResult.data;
 
   const targetItem = await registryService.getItemById(itemId);
@@ -121,10 +131,28 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     }
   }
 
-  const session = await getGuestInviteSession(request);
-  const finalCode = session?.code;
+  const [session, isAdmin] = await Promise.all([
+    getGuestInviteSession(request),
+    isAdminRequest(request),
+  ]);
+  const submittedCode = code?.trim() ? code.trim() : undefined;
+  const sessionCode = session?.code?.trim() ? session.code.trim() : undefined;
+
+  if (!isAdmin && submittedCode) {
+    if (!sessionCode || sessionCode.toUpperCase() !== submittedCode.toUpperCase()) {
+      if (hasHeaders) {
+        await recordAuthFailure(request);
+      }
+      throw new ApiError(
+        403,
+        'Forbidden: Please verify your household invitation code before linking a contribution to a household.'
+      );
+    }
+  }
+
+  const finalCode = isAdmin ? submittedCode : sessionCode;
   const sessionEmail =
-    typeof session?.email === 'string' && session.email.trim().length > 0
+    !isAdmin && typeof session?.email === 'string' && session.email.trim().length > 0
       ? session.email.trim()
       : null;
 
@@ -158,15 +186,24 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   });
 
   if (paymentIntentId) {
-    const { paymentIntent: existingIntent } = await verifyPaymentIntentOwnership(
-      {
-        source: { stripe, paymentIntentId },
-        requireClientSecret: true,
-        clientSecret,
-        expectedItemId: targetItem.id,
-      },
-      403
-    );
+    let existingIntent;
+    try {
+      const ownership = await verifyPaymentIntentOwnership(
+        {
+          source: { stripe, paymentIntentId },
+          requireClientSecret: true,
+          clientSecret,
+          expectedItemId: targetItem.id,
+        },
+        403
+      );
+      existingIntent = ownership.paymentIntent;
+    } catch (err: unknown) {
+      if (err instanceof ApiError && err.statusCode === 403 && hasHeaders) {
+        await recordAuthFailure(request);
+      }
+      throw err;
+    }
 
     if (existingIntent.status === 'requires_payment_method') {
       try {

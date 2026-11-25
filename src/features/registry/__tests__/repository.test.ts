@@ -1432,6 +1432,176 @@ describe('RegistryRepository', () => {
         })
       );
     });
+
+    it('validates remainingCents and whole-unit multiples before querying invitationCode.findUnique', async () => {
+      const txOverBalance = {
+        $queryRaw: jest.fn().mockResolvedValue([{ id: '1' }]),
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue({
+            ...mockRegistryItem,
+            price: 100,
+            amountContributed: 80,
+            isGroupGift: true,
+          }),
+          update: jest.fn(),
+        },
+        invitationCode: {
+          findUnique: jest.fn(),
+          update: jest.fn(),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txOverBalance));
+
+      await expect(
+        registryRepository.contributeToItem('1', {
+          name: 'Probe Caller',
+          amount: 50,
+          code: 'PROBECOD',
+        })
+      ).rejects.toThrow('Contribution cannot be greater than the remaining amount.');
+      expect(txOverBalance.invitationCode.findUnique).not.toHaveBeenCalled();
+
+      const txFractionalUnit = {
+        $queryRaw: jest.fn().mockResolvedValue([{ id: '1' }]),
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue({
+            ...mockRegistryItem,
+            price: 60,
+            quantity: 2,
+            amountContributed: 0,
+            isGroupGift: false,
+            itemType: 'PHYSICAL',
+          }),
+          update: jest.fn(),
+        },
+        invitationCode: {
+          findUnique: jest.fn(),
+          update: jest.fn(),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txFractionalUnit));
+
+      await expect(
+        registryRepository.contributeToItem('1', {
+          name: 'Probe Caller',
+          amount: 90,
+          code: 'PROBECOD',
+        })
+      ).rejects.toThrow('Contribution amount must match a whole number of available units.');
+      expect(txFractionalUnit.invitationCode.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('stores email and postal details strictly on Contributor for unverified guests and backfills empty postal fields only for verified households', async () => {
+      // 1. Unverified/passcode guest with matching household email + complete address -> zero InvitationCode lookups or updates
+      const txPasscodeGuest = {
+        $queryRaw: jest.fn().mockResolvedValue([{ id: '1' }]),
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
+          update: jest.fn().mockResolvedValue({ ...mockRegistryItem, amountContributed: 50 }),
+        },
+        invitationCode: {
+          findUnique: jest.fn(),
+          update: jest.fn(),
+        },
+        snapshotVersion: {
+          create: jest.fn(),
+          findMany: jest.fn(),
+          deleteMany: jest.fn(),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txPasscodeGuest));
+
+      await registryRepository.contributeToItem('1', {
+        name: 'Passcode Friend',
+        email: 'household@example.com',
+        amount: 50,
+        stripePaymentIntentId: 'pi_passcode_friend_1',
+        addressLine1: '400 Friend Ln',
+        city: 'Denver',
+        state: 'CO',
+        zipCode: '80202',
+        country: 'USA',
+      });
+
+      expect(txPasscodeGuest.invitationCode.findUnique).not.toHaveBeenCalled();
+      expect(txPasscodeGuest.invitationCode.update).not.toHaveBeenCalled();
+      expect(txPasscodeGuest.registryItem.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            contributors: {
+              create: expect.objectContaining({
+                name: 'Passcode Friend',
+                email: 'household@example.com',
+                addressLine1: '400 Friend Ln',
+                city: 'Denver',
+                state: 'CO',
+                zipCode: '80202',
+                country: 'USA',
+              }),
+            },
+          }),
+        })
+      );
+      const createdUnverifiedData = txPasscodeGuest.registryItem.update.mock.calls[0][0].data.contributors.create;
+      expect(createdUnverifiedData).not.toHaveProperty('invitationCodeId');
+
+      // 2. Verified household with empty postal fields -> backfills only own household row
+      const txVerifiedBackfill = {
+        $queryRaw: jest.fn().mockResolvedValue([{ id: 'inv-empty-addr' }]),
+        contributor: {
+          count: jest.fn().mockResolvedValue(0),
+        },
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
+          update: jest.fn().mockResolvedValue({ ...mockRegistryItem, amountContributed: 50 }),
+        },
+        invitationCode: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'inv-empty-addr',
+            code: 'OWNHOUSE',
+            guestName: 'Own Household',
+            isSample: false,
+            partyTags: [],
+            addressLine1: null,
+            addressLine2: null,
+            city: null,
+            state: null,
+            zipCode: null,
+            country: null,
+          }),
+          update: jest.fn().mockResolvedValue({ id: 'inv-empty-addr' }),
+        },
+        snapshotVersion: {
+          create: jest.fn(),
+          findMany: jest.fn(),
+          deleteMany: jest.fn(),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txVerifiedBackfill));
+
+      await registryRepository.contributeToItem('1', {
+        name: 'Own Household',
+        amount: 50,
+        code: 'OWNHOUSE',
+        addressLine1: '777 Verified Rd',
+        city: 'Chicago',
+        state: 'IL',
+        zipCode: '60601',
+        country: 'USA',
+      });
+
+      expect(txVerifiedBackfill.invitationCode.update).toHaveBeenCalledTimes(1);
+      expect(txVerifiedBackfill.invitationCode.update).toHaveBeenCalledWith({
+        where: { id: 'inv-empty-addr' },
+        data: {
+          addressLine1: '777 Verified Rd',
+          city: 'Chicago',
+          state: 'IL',
+          zipCode: '60601',
+          country: 'USA',
+        },
+      });
+    });
   });
 
   describe('admin claim reconciliation: unclaimItem, updateContributor, deleteContributor', () => {

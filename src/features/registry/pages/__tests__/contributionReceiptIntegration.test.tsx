@@ -266,6 +266,7 @@ describe('RegistryPage end-to-end contribution receipt and cache sync integratio
       purchaserName: 'Jane Donor',
       amount: 50,
       paymentIntentId: 'pi_verified_receipt_456',
+      clientSecret: 'pi_live_test_secret_123',
     });
 
     const getRegistryCardArticle = (name: string) => {

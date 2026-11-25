@@ -232,10 +232,27 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
       expect(unverifiedRes.status).toBe(403);
       expect(registryService.contributeToItem).not.toHaveBeenCalled();
 
-      (getGuestInviteSession as jest.Mock).mockResolvedValueOnce({
+      (getGuestInviteSession as jest.Mock).mockResolvedValue({
         code: 'INVITE26',
         guestName: 'Sam Household',
       });
+
+      const mismatchedCodeRes = await contributeToRegistry(
+        new NextRequest('http://localhost:3000/api/registry/contribute', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            itemId: 'fund-dual-1',
+            name: 'Sam Direct',
+            amount: 120,
+            code: 'SPOOFED1',
+            message: 'Sent via Venmo!',
+            coverFee: true,
+          }),
+        })
+      );
+      expect(mismatchedCodeRes.status).toBe(403);
+      expect(registryService.contributeToItem).not.toHaveBeenCalled();
 
       const req = new NextRequest('http://localhost:3000/api/registry/contribute', {
         method: 'POST',
@@ -244,9 +261,9 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
           itemId: 'fund-dual-1',
           name: 'Sam Direct',
           amount: 120,
-          code: 'SPOOFED1',
+          code: 'INVITE26',
           message: 'Sent via Venmo!',
-          coverFee: true, // Should be forced to false for unverified direct transfers
+          coverFee: true, // Should be forced to false for direct transfers
         }),
       });
 
@@ -261,11 +278,13 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
         message: 'Sent via Venmo!',
         coverFee: false,
       });
+      (getGuestInviteSession as jest.Mock).mockResolvedValue(null);
     });
 
-    it('applies coverFee=true on a dual-mode fund when a verified Stripe paymentIntentId is provided', async () => {
+    it('applies coverFee=true on a dual-mode fund when a verified Stripe paymentIntentId and clientSecret are provided', async () => {
       mockPaymentIntentsRetrieve.mockResolvedValueOnce({
         id: 'pi_dual_succeeded_1',
+        client_secret: 'pi_dual_succeeded_1_secret_ok',
         status: 'succeeded',
         amount: 10250,
         amount_received: 10250,
@@ -274,6 +293,7 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
           itemId: 'fund-dual-1',
           baseAmount: '100.00',
           coverFee: 'true',
+          contributorName: 'Casey Card',
         },
         latest_charge: 'ch_dual_1',
         created: 1731763200,
@@ -288,6 +308,7 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
           amount: 100,
           coverFee: true,
           paymentIntentId: 'pi_dual_succeeded_1',
+          clientSecret: 'pi_dual_succeeded_1_secret_ok',
         }),
       });
 
@@ -446,6 +467,7 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
       const oneDollarPiId = 'pi_one_dollar_small_item';
       mockPaymentIntentsRetrieve.mockResolvedValueOnce({
         id: oneDollarPiId,
+        client_secret: 'pi_one_dollar_small_item_secret_owner',
         status: 'succeeded',
         amount: 100,
         amount_received: 100,
@@ -467,6 +489,7 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
             amount: 5000,
             coverFee: true,
             paymentIntentId: oneDollarPiId,
+            clientSecret: 'pi_one_dollar_small_item_secret_owner',
           }),
         })
       );

@@ -406,6 +406,27 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
         ).status
       ).toBe(404);
 
+      // Unverified invitation code without active guestSession is rejected with 403
+      expect(
+        (
+          await window.fetch('/api/registry/contribute', {
+            method: 'POST',
+            body: JSON.stringify({
+              itemId: createdItem.id,
+              purchaserName: 'Pat Guest',
+              amount: 250,
+              code: 'SMITH2026',
+            }),
+          })
+        ).status
+      ).toBe(403);
+
+      const seededGuest = getActiveArchetypeDataset().guests[0]!;
+      await window.fetch('/api/registry/validate-code', {
+        method: 'POST',
+        body: JSON.stringify({ code: seededGuest.code }),
+      });
+
       const contribRes = await (
         await window.fetch('/api/registry/contribute', {
           method: 'POST',
@@ -413,7 +434,7 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
             itemId: createdItem.id,
             purchaserName: 'Pat Guest',
             amount: 250,
-            code: 'SMITH2026',
+            code: seededGuest.code,
             message: 'Enjoy!',
             coverFee: true,
             email: 'pat@example.com',
@@ -425,19 +446,43 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
       ).json();
       expect(contribRes.claimActions.confirmToken).toBeDefined();
 
-      // Card contribution with paymentIntentId on group fund
+      await window.fetch('/api/registry/session', { method: 'DELETE' });
+
+      // Card contribution with paymentIntentId requires matching clientSecret (403 if omitted)
+      expect(
+        (
+          await window.fetch('/api/registry/contribute', {
+            method: 'POST',
+            body: JSON.stringify({
+              itemId: createdFund.id,
+              purchaserName: 'Card Guest',
+              amount: 40,
+              paymentIntentId: 'pi_demo_test123',
+            }),
+          })
+        ).status
+      ).toBe(403);
+
+      const guestAddressBefore = getActiveArchetypeDataset().guests[0]!.addressLine1;
       const cardContrib = await (
         await window.fetch('/api/registry/contribute', {
           method: 'POST',
           body: JSON.stringify({
             itemId: createdFund.id,
             purchaserName: 'Card Guest',
+            email: seededGuest.email || 'guest@example.com',
+            addressLine1: '999 Unverified Email Way',
+            city: 'Chicago',
+            state: 'IL',
+            zipCode: '60699',
             amount: 40,
             paymentIntentId: 'pi_demo_test123',
+            clientSecret: 'pi_demo_test123_secret_demo',
           }),
         })
       ).json();
       expect(cardContrib.amountContributed).toBe(40);
+      expect(getActiveArchetypeDataset().guests[0]!.addressLine1).toBe(guestAddressBefore);
 
       expect((await window.fetch('/api/registry/claim')).status).toBe(400);
       expect((await window.fetch('/api/registry/claim?token=bad')).status).toBe(404);

@@ -82,7 +82,8 @@ interface RegistryItemCardProps {
     email?: string,
     paymentIntentId?: string,
     orderDetails?: OrderTrackingDetails,
-    addressDetails?: ContributorAddressDetails
+    addressDetails?: ContributorAddressDetails,
+    clientSecret?: string
   ) => Promise<unknown>;
   onItemUpdated?: (item: RegistryItem) => void;
   titleId?: string;
@@ -741,7 +742,11 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
       try {
         const cleanSuffix = item.id.replace(/[^a-zA-Z0-9]/g, '').slice(-8) || 'gift';
         const demoIntentId = `pi_demo_${cleanSuffix}_${Date.now().toString(36)}`;
-        await handleSubmit(e, demoIntentId, { identityOverride: verifiedIdentity });
+        const demoClientSecret = `${demoIntentId}_secret_demo`;
+        await handleSubmit(e, demoIntentId, {
+          identityOverride: verifiedIdentity,
+          clientSecret: demoClientSecret,
+        });
         setPaymentTransactionId(demoIntentId);
       } catch (err: unknown) {
         setPhase('error');
@@ -828,7 +833,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             name: verifiedIdentity.contributorName,
             email: verifiedIdentity.email,
             message,
-            code: verifiedIdentity.code,
+            ...(verifiedIdentity.code ? { code: verifiedIdentity.code } : {}),
             ...(normalizedAddressLine1 ? { addressLine1: normalizedAddressLine1 } : {}),
             ...(normalizedAddressLine2 ? { addressLine2: normalizedAddressLine2 } : {}),
             ...(normalizedCity ? { city: normalizedCity } : {}),
@@ -931,11 +936,17 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
 
         if (confirmResult.paymentIntent) {
           intentId = confirmResult.paymentIntent.id;
+          if (confirmResult.paymentIntent.client_secret) {
+            secret = confirmResult.paymentIntent.client_secret;
+          }
         }
       }
 
-      // 3. Record contribution in repository with verified Stripe PaymentIntent ID
-      await handleSubmit(e, intentId || undefined, { identityOverride: verifiedIdentity });
+      // 3. Record contribution in repository with verified Stripe PaymentIntent ID and clientSecret
+      await handleSubmit(e, intentId || undefined, {
+        identityOverride: verifiedIdentity,
+        clientSecret: intentId ? secret || undefined : undefined,
+      });
       if (intentId) {
         setPaymentTransactionId(intentId);
       }
