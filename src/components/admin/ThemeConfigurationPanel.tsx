@@ -298,15 +298,16 @@ export function ThemeConfigurationPanel({
 
       {/* Primary & Secondary Color Pickers */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <FormGroup>
+        <FormGroup state={externalErrors.colorPrimary ? 'error' : 'default'}>
           <Label htmlFor="colorPrimary">Primary Color (Hex)</Label>
           <div className="flex gap-2">
             <Input
               type="color"
               id="colorPrimaryPicker"
               aria-label="Primary Color Picker"
-              value={primaryColor}
+              value={primaryColor.startsWith('#') && /^#[0-9a-fA-F]{6}$/.test(primaryColor) ? primaryColor : '#B91C1C'}
               onChange={(e) => onChange({ colorPrimary: e.target.value })}
+              aria-invalid={false}
               className="w-12 h-10 p-1 rounded border cursor-pointer"
             />
             <Input
@@ -317,19 +318,26 @@ export function ThemeConfigurationPanel({
               onChange={(e) => onChange({ colorPrimary: e.target.value })}
               placeholder="#B91C1C"
               aria-label="Primary Color Code"
+              aria-invalid={Boolean(externalErrors.colorPrimary)}
             />
           </div>
+          {externalErrors.colorPrimary ? (
+            <FormMessage id="colorPrimary-error" role="alert">
+              {externalErrors.colorPrimary}
+            </FormMessage>
+          ) : null}
         </FormGroup>
 
-        <FormGroup>
+        <FormGroup state={externalErrors.colorSecondary ? 'error' : 'default'}>
           <Label htmlFor="colorSecondary">Secondary Color (Hex)</Label>
           <div className="flex gap-2">
             <Input
               type="color"
               id="colorSecondaryPicker"
               aria-label="Secondary Color Picker"
-              value={secondaryColor}
+              value={secondaryColor.startsWith('#') && /^#[0-9a-fA-F]{6}$/.test(secondaryColor) ? secondaryColor : '#B45309'}
               onChange={(e) => onChange({ colorSecondary: e.target.value })}
+              aria-invalid={false}
               className="w-12 h-10 p-1 rounded border cursor-pointer"
             />
             <Input
@@ -340,8 +348,14 @@ export function ThemeConfigurationPanel({
               onChange={(e) => onChange({ colorSecondary: e.target.value })}
               placeholder="#B45309"
               aria-label="Secondary Color Code"
+              aria-invalid={Boolean(externalErrors.colorSecondary)}
             />
           </div>
+          {externalErrors.colorSecondary ? (
+            <FormMessage id="colorSecondary-error" role="alert">
+              {externalErrors.colorSecondary}
+            </FormMessage>
+          ) : null}
         </FormGroup>
       </div>
 

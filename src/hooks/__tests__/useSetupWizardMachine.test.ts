@@ -6,7 +6,10 @@ import {
   SETUP_WIZARD_STORAGE_KEY,
   SetupWizardMachineState,
   initialSetupWizardState,
+  isValidIanaTimezone,
+  detectBrowserTimezone,
 } from '../useSetupWizardMachine';
+import { DEFAULT_MODULE_CONFIG } from '@/lib/modules';
 import * as authClient from '@/core/auth/auth.client';
 
 jest.mock('@/core/auth/auth.client', () => ({
@@ -372,5 +375,121 @@ describe('useSetupWizardMachine Hook', () => {
     expect(window.sessionStorage.getItem(SETUP_WIZARD_STORAGE_KEY)).toBeNull();
     expect(result.current.state.partner1Name).toBe('');
     expect(result.current.state.step).toBe(1);
+  });
+
+  it('persists and hydrates themePreset, colorPrimary, colorSecondary, and enabledFeatures across reloads while enforcing module dependencies', async () => {
+    (authClient.checkAdminClient as jest.Mock).mockResolvedValue(true);
+    const { result, unmount } = renderHook(() => useSetupWizardMachine());
+
+    await waitFor(() => {
+      expect(result.current.state.isAuthenticated).toBe(true);
+    });
+
+    act(() => {
+      result.current.updateDraft({
+        themePreset: 'editorial',
+        colorPrimary: '#1E3A8A',
+        colorSecondary: '#D97706',
+        enabledFeatures: {
+          ...DEFAULT_MODULE_CONFIG,
+          registry: false,
+          groupGifting: true,
+          countdown: false,
+        },
+      });
+      result.current.setStep(3);
+    });
+
+    // Disabling registry automatically resolves groupGifting to false and strips 'registry' sample module
+    expect(result.current.state.enabledFeatures.registry).toBe(false);
+    expect(result.current.state.enabledFeatures.groupGifting).toBe(false);
+    expect(result.current.state.enabledFeatures.countdown).toBe(false);
+    expect(result.current.state.selectedModules).not.toContain('registry');
+
+    const storedRaw = window.sessionStorage.getItem(SETUP_WIZARD_STORAGE_KEY);
+    expect(storedRaw).not.toBeNull();
+    const stored = JSON.parse(storedRaw!);
+    expect(stored.themePreset).toBe('editorial');
+    expect(stored.colorPrimary).toBe('#1E3A8A');
+    expect(stored.colorSecondary).toBe('#D97706');
+    expect(stored.enabledFeatures.registry).toBe(false);
+    expect(stored.enabledFeatures.groupGifting).toBe(false);
+
+    unmount();
+
+    const { result: remounted } = renderHook(() => useSetupWizardMachine());
+    await waitFor(() => {
+      expect(remounted.current.state.step).toBe(3);
+    });
+    expect(remounted.current.state.themePreset).toBe('editorial');
+    expect(remounted.current.state.colorPrimary).toBe('#1E3A8A');
+    expect(remounted.current.state.colorSecondary).toBe('#D97706');
+    expect(remounted.current.state.enabledFeatures.registry).toBe(false);
+    expect(remounted.current.state.enabledFeatures.groupGifting).toBe(false);
+    expect(remounted.current.state.selectedModules).not.toContain('registry');
+  });
+
+  it('maintains backwards compatibility with legacy setup_wizard_draft payloads lacking theme or feature keys', async () => {
+    (authClient.checkAdminClient as jest.Mock).mockResolvedValue(true);
+    window.sessionStorage.setItem(
+      SETUP_WIZARD_STORAGE_KEY,
+      JSON.stringify({
+        step: 2,
+        partner1Name: 'LegacyOne',
+        partner2Name: 'LegacyTwo',
+      })
+    );
+
+    const { result } = renderHook(() =>
+      useSetupWizardMachine({
+        themePreset: 'romantic',
+        colorPrimary: '#9F1239',
+        colorSecondary: '#065F46',
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current.state.step).toBe(2);
+    });
+
+    expect(result.current.state.partner1Name).toBe('LegacyOne');
+    expect(result.current.state.themePreset).toBe('romantic');
+    expect(result.current.state.colorPrimary).toBe('#9F1239');
+    expect(result.current.state.colorSecondary).toBe('#065F46');
+    expect(result.current.state.enabledFeatures).toEqual(DEFAULT_MODULE_CONFIG);
+  });
+});
+
+describe('Timezone detection helpers', () => {
+  it('validates IANA timezones and falls back to America/Chicago when browser timezone is invalid', () => {
+    expect(isValidIanaTimezone('America/New_York')).toBe(true);
+    expect(isValidIanaTimezone('UTC')).toBe(true);
+    expect(isValidIanaTimezone('Mars/Olympus_Mons')).toBe(false);
+    expect(isValidIanaTimezone('')).toBe(false);
+
+    const originalDateTimeFormat = Intl.DateTimeFormat;
+    try {
+      Intl.DateTimeFormat = jest.fn().mockImplementation((_locales?: unknown, options?: { timeZone?: string }) => {
+        if (options?.timeZone) {
+          return originalDateTimeFormat(undefined, options);
+        }
+        return {
+          resolvedOptions: () => ({ timeZone: 'Europe/Paris' }),
+        };
+      }) as unknown as typeof Intl.DateTimeFormat;
+      expect(detectBrowserTimezone()).toBe('Europe/Paris');
+
+      Intl.DateTimeFormat = jest.fn().mockImplementation((_locales?: unknown, options?: { timeZone?: string }) => {
+        if (options?.timeZone) {
+          return originalDateTimeFormat(undefined, options);
+        }
+        return {
+          resolvedOptions: () => ({ timeZone: 'Invalid/NotReal' }),
+        };
+      }) as unknown as typeof Intl.DateTimeFormat;
+      expect(detectBrowserTimezone()).toBe('America/Chicago');
+    } finally {
+      Intl.DateTimeFormat = originalDateTimeFormat;
+    }
   });
 });

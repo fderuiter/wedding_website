@@ -8,7 +8,7 @@ import type {
   RsvpSummaryResponse,
   SubEventRsvpSummaryItem,
 } from '@/features/sub-events';
-import { resolveModuleConfig, type ModuleConfig } from '@/lib/modules';
+import { isFeatureEnabled, resolveModuleConfig, type ModuleConfig } from '@/lib/modules';
 import {
   cleanOptionalSetupText,
   hasCustomStoryText,
@@ -284,12 +284,23 @@ export async function handleAdminWorkflowRoutes(
       }
       if (typeof body.colorPrimary === 'string') overrides.colorPrimary = body.colorPrimary;
       if (typeof body.colorSecondary === 'string') overrides.colorSecondary = body.colorSecondary;
+      if (typeof body.showCountdown === 'boolean') overrides.showCountdown = body.showCountdown;
+      if (typeof body.showAddToCalendar === 'boolean') {
+        overrides.showAddToCalendar = body.showAddToCalendar;
+      }
       if (body.modules && typeof body.modules === 'object' && !Array.isArray(body.modules)) {
         const currentModules = getDemoState().configOverrides.modules;
-        overrides.modules = resolveModuleConfig({
+        const resolvedModules = resolveModuleConfig({
           ...(currentModules ?? {}),
           ...(body.modules as Record<string, unknown>),
         });
+        overrides.modules = resolvedModules;
+        if (overrides.showCountdown === undefined) {
+          overrides.showCountdown = resolvedModules.countdown;
+        }
+        if (overrides.showAddToCalendar === undefined) {
+          overrides.showAddToCalendar = resolvedModules.addToCalendar;
+        }
       }
       updateDemoConfigOverrides(overrides);
       setDemoSetupAuthenticated(true);
@@ -463,14 +474,18 @@ export async function handleAdminWorkflowRoutes(
         href: '/admin/dashboard/invitation-codes',
         actionLabel: guestListCompleted ? 'Manage Guest List' : 'Add Guest List',
       },
-      {
-        id: 'registry',
-        title: 'Gift Registry',
-        description: 'Add gifts or cash funds to your wedding registry.',
-        completed: registryCompleted,
-        href: '/registry/add-item',
-        actionLabel: registryCompleted ? 'Add More Gifts' : 'Add Registry Gifts',
-      },
+      ...(isFeatureEnabled('registry', effectiveConfig.modules)
+        ? [
+          {
+            id: 'registry',
+            title: 'Gift Registry',
+            description: 'Add gifts or cash funds to your wedding registry.',
+            completed: registryCompleted,
+            href: '/registry/add-item',
+            actionLabel: registryCompleted ? 'Add More Gifts' : 'Add Registry Gifts',
+          },
+        ]
+        : []),
       {
         id: 'seating-layout',
         title: 'Seating Layout',

@@ -1118,5 +1118,64 @@ describe('Setup API Route (/api/admin/setup)', () => {
         scryptSpy.mockRestore();
       }
     });
+
+    test('persists Step 3 partial modules, showCountdown, and showAddToCalendar for authenticated admins while blocking unauthenticated callers with 403', async () => {
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue({
+        ...initializedConfig,
+        setupCompleted: false,
+      });
+      (mockPrisma.appConfig.upsert as jest.Mock).mockImplementation(async (args) => ({
+        ...initializedConfig,
+        ...args.update,
+      }));
+
+      // Unauthenticated replay attempt must still be blocked with 403
+      const anonReq = new NextRequest('http://localhost/api/admin/setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          setupCompleted: false,
+          modules: { registry: false, groupGifting: true },
+          showCountdown: false,
+          showAddToCalendar: false,
+        }),
+      });
+      const anonRes = await POST(anonReq);
+      expect(anonRes.status).toBe(403);
+      expect(mockPrisma.appConfig.upsert).not.toHaveBeenCalled();
+
+      // Authenticated admin Step 3 save persists normalized modules + countdown + calendar flags
+      const adminToken = await signAdminToken({ isAdmin: true, iat: Date.now() });
+      const adminReq = new NextRequest('http://localhost/api/admin/setup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: `admin_auth=${adminToken}`,
+        },
+        body: JSON.stringify({
+          setupCompleted: false,
+          modules: { registry: false, groupGifting: true, countdown: false, addToCalendar: false },
+          showCountdown: false,
+          showAddToCalendar: false,
+        }),
+      });
+      const adminRes = await POST(adminReq);
+      expect(adminRes.status).toBe(200);
+      expect(mockPrisma.appConfig.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({
+            setupCompleted: false,
+            showCountdown: false,
+            showAddToCalendar: false,
+            modules: expect.objectContaining({
+              registry: false,
+              groupGifting: false,
+              countdown: false,
+              addToCalendar: false,
+            }),
+          }),
+        })
+      );
+    });
   });
 });
