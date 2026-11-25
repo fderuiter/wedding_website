@@ -2,7 +2,11 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
-import SetupWizard from '../SetupWizard';
+import SetupWizard, {
+  resolveStep2BackendErrorField,
+  type Step2ErrorField,
+} from '../SetupWizard';
+import { getPresetTokens } from '@/lib/theme/presets';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { checkAdminClient } from '@/core/auth/auth.client';
 
@@ -192,23 +196,29 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     expect(errorMessage).toHaveTextContent(/Please use your own URL/i);
   });
 
-  test('backend save error in Step 2 shifts focus to site URL input', async () => {
+  test('routes generic Step 2 backend errors to the form-level alert without marking #siteUrl invalid, while routing URL backend errors to #siteUrl', async () => {
     let callCount = 0;
     global.fetch = jest.fn((_url: string | URL | Request) => {
       callCount++;
       if (callCount === 1) {
-        // First call: login succeeds
         return Promise.resolve({
           ok: true,
           json: () => Promise.resolve({ success: true }),
         } as Response);
-      } else {
-        // Second call: config save fails
+      }
+      if (callCount === 2) {
         return Promise.resolve({
           ok: false,
           json: () => Promise.resolve({ error: 'Backend validation failed.' }),
         } as Response);
       }
+      return Promise.resolve({
+        ok: false,
+        json: () =>
+          Promise.resolve({
+            error: 'Validation Error: Site base URL cannot use a reserved placeholder domain.',
+          }),
+      } as Response);
     }) as jest.Mock;
 
     renderWithProviders(<SetupWizard />);
@@ -233,11 +243,18 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
 
-    await waitFor(() => {
-      expect(screen.getByText('Backend validation failed.')).toBeInTheDocument();
-    });
+    const formBanner = await screen.findByTestId('step2-form-error-banner');
+    expect(formBanner).toHaveTextContent('Backend validation failed.');
+    expect(document.activeElement).toBe(formBanner);
+    expect(siteUrlInput).toHaveAttribute('aria-invalid', 'false');
 
-    // Check focus shift
+    // Subsequent URL-specific backend error routes directly to #siteUrl
+    fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Site base URL cannot use a reserved placeholder domain/i)
+      ).toBeInTheDocument();
+    });
     expect(document.activeElement).toBe(siteUrlInput);
     expect(siteUrlInput).toHaveAttribute('aria-invalid', 'true');
   });
@@ -1489,6 +1506,390 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
       expect(window.sessionStorage.getItem('setup_wizard_draft')).toBeNull();
     } finally {
       consoleErrorSpy.mockRestore();
+    }
+  });
+
+  test('AC 1: persists selected theme preset, custom hex colors, and feature toggles across reload via setup_wizard_draft', async () => {
+    (checkAdminClient as jest.Mock).mockResolvedValue(true);
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ success: true }),
+      } as Response)
+    ) as jest.Mock;
+
+    const firstRender = renderWithProviders(<SetupWizard />);
+    await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('radio', { name: /Editorial Preset/i }));
+    fireEvent.change(screen.getByLabelText(/Primary Color Code/i), {
+      target: { value: '#1E40AF' },
+    });
+    fireEvent.change(screen.getByLabelText(/Secondary Color Code/i), {
+      target: { value: '#B45309' },
+    });
+    fireEvent.change(screen.getByLabelText(/Partner 1/i), { target: { value: 'Taylor' } });
+    fireEvent.change(screen.getByLabelText(/Partner 2/i), { target: { value: 'Jordan' } });
+    fireEvent.change(screen.getByLabelText(/Wedding Date/i), { target: { value: '2027-09-18' } });
+    fireEvent.change(screen.getByLabelText(/Site URL/i), {
+      target: { value: 'https://taylorandjordan.com' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
+    await waitFor(() =>
+      expect(screen.getByText('Step 3: Sample Data Selection')).toBeInTheDocument()
+    );
+
+    const countdownToggle = screen.getByTestId('setup-feature-toggle-countdown');
+    fireEvent.click(countdownToggle);
+    expect(countdownToggle).not.toBeChecked();
+
+    firstRender.unmount();
+
+    // Remount simulating browser reload: Step 3 and Step 2 draft state remain intact
+    renderWithProviders(<SetupWizard />);
+    await waitFor(() =>
+      expect(screen.getByText('Step 3: Sample Data Selection')).toBeInTheDocument()
+    );
+    expect(screen.getByTestId('setup-feature-toggle-countdown')).not.toBeChecked();
+
+    const storedDraft = JSON.parse(window.sessionStorage.getItem('setup_wizard_draft')!);
+    expect(storedDraft.themePreset).toBe('editorial');
+    expect(storedDraft.colorPrimary).toBe('#1E40AF');
+    expect(storedDraft.colorSecondary).toBe('#B45309');
+    expect(storedDraft.enabledFeatures.countdown).toBe(false);
+  });
+
+  test('AC 2: updates Step 2 Live Guest Preview colors in dark mode from getPresetTokens without hardcoded #111827/#374151 and passes jest-axe', async () => {
+    (checkAdminClient as jest.Mock).mockResolvedValue(true);
+    const { container } = renderWithProviders(<SetupWizard />);
+
+    await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('radio', { name: /Romantic Preset/i }));
+
+    const previewCanvas = screen.getByTestId('step2-preview-frame');
+    const previewStoryCard = screen.getByTestId('step2-preview-story-card');
+    expect(previewCanvas).toHaveAttribute('data-theme-mode', 'light');
+
+    const lightAxe = await axe(container);
+    expect(lightAxe).toHaveNoViolations();
+
+    // Switch preview to Dark Mode via the accessible Preview color mode group
+    const modeGroup = screen.getByRole('group', { name: /Preview color mode/i });
+    const darkBtn = within(modeGroup).getByRole('button', { name: /Dark/i });
+    fireEvent.click(darkBtn);
+
+    await waitFor(() => {
+      expect(previewCanvas).toHaveAttribute('data-theme-mode', 'dark');
+    });
+
+    const darkTokens = getPresetTokens('romantic', 'dark');
+    expect(darkTokens['--container-bg']).not.toBe('#111827');
+    expect(previewCanvas).toHaveStyle({ backgroundColor: darkTokens['--container-bg'] });
+    expect(previewStoryCard).toHaveStyle({ backgroundColor: darkTokens['--card-bg'] });
+    expect(screen.getByTestId('step2-preview-headline')).not.toHaveStyle({
+      color: 'rgb(17, 24, 39)',
+    });
+
+    const darkAxe = await axe(container);
+    expect(darkAxe).toHaveNoViolations();
+  });
+
+  test('AC 3: defaults fresh session #timezone to browser IANA timezone and supports SearchableTimezoneSelect filtering & keyboard selection', async () => {
+    (checkAdminClient as jest.Mock).mockResolvedValue(true);
+    const originalDateTimeFormat = Intl.DateTimeFormat;
+
+    try {
+      Intl.DateTimeFormat = jest.fn().mockImplementation(
+        (_locales?: unknown, options?: { timeZone?: string }) => {
+          if (options?.timeZone) {
+            return originalDateTimeFormat(undefined, options);
+          }
+          return {
+            resolvedOptions: () => ({ timeZone: 'America/Denver' }),
+          };
+        }
+      ) as unknown as typeof Intl.DateTimeFormat;
+
+      renderWithProviders(<SetupWizard />);
+      await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
+
+      const timezoneCombobox = screen.getByRole('combobox', { name: /Timezone/i });
+      expect(timezoneCombobox).toHaveValue('America/Denver');
+
+      fireEvent.focus(timezoneCombobox);
+      fireEvent.change(timezoneCombobox, { target: { value: 'Honolulu' } });
+      fireEvent.keyDown(timezoneCombobox, { key: 'Home' });
+      fireEvent.keyDown(timezoneCombobox, { key: 'Enter' });
+
+      expect(timezoneCombobox).toHaveValue('Pacific/Honolulu');
+    } finally {
+      Intl.DateTimeFormat = originalDateTimeFormat;
+    }
+  });
+
+  test('AC 4: routes timezone, weddingDate, colorPrimary, and colorSecondary backend errors to exact controls without marking #siteUrl invalid', async () => {
+    const cases: Array<{ message: string; expected: Step2ErrorField }> = [
+      { message: 'Validation Error: Invalid IANA timezone.', expected: 'timezone' },
+      { message: 'Validation Error: Invalid weddingDate format.', expected: 'weddingDate' },
+      {
+        message: 'Validation Error: Primary color must be a valid hex code.',
+        expected: 'colorPrimary',
+      },
+      {
+        message: 'Validation Error: Secondary color must be a valid hex code.',
+        expected: 'colorSecondary',
+      },
+      { message: 'Database connection temporarily unavailable.', expected: 'form' },
+    ];
+    for (const item of cases) {
+      expect(resolveStep2BackendErrorField(item.message)).toBe(item.expected);
+    }
+
+    (checkAdminClient as jest.Mock).mockResolvedValue(true);
+    const errorQueue = [
+      'Validation Error: Invalid IANA timezone.',
+      'Validation Error: Invalid weddingDate format.',
+      'Validation Error: Primary color must be a valid hex code.',
+      'Validation Error: Secondary color must be a valid hex code.',
+    ];
+    global.fetch = jest.fn(() => {
+      const nextErr = errorQueue.shift() || 'Validation Error';
+      return Promise.resolve({
+        ok: false,
+        json: () => Promise.resolve({ error: nextErr }),
+      } as Response);
+    }) as jest.Mock;
+
+    renderWithProviders(<SetupWizard />);
+    await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
+
+    fireEvent.change(screen.getByLabelText(/Partner 1/i), { target: { value: 'Alex' } });
+    fireEvent.change(screen.getByLabelText(/Partner 2/i), { target: { value: 'Sam' } });
+    fireEvent.change(screen.getByLabelText(/Wedding Date/i), { target: { value: '2027-08-14' } });
+    const siteUrlInput = screen.getByLabelText(/Site URL/i);
+    fireEvent.change(siteUrlInput, { target: { value: 'https://alexandsamwedding.com' } });
+
+    const timezoneCombobox = screen.getByRole('combobox', { name: /Timezone/i });
+    const weddingDateInput = screen.getByLabelText(/Wedding Date/i);
+    const primaryColorInput = screen.getByLabelText(/Primary Color Code/i);
+    const secondaryColorInput = screen.getByLabelText(/Secondary Color Code/i);
+
+    // 1. Timezone error
+    fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
+    await waitFor(() => expect(timezoneCombobox).toHaveAttribute('aria-invalid', 'true'));
+    expect(document.activeElement).toBe(timezoneCombobox);
+    expect(siteUrlInput).toHaveAttribute('aria-invalid', 'false');
+
+    // 2. Wedding date error
+    fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
+    await waitFor(() => expect(weddingDateInput).toHaveAttribute('aria-invalid', 'true'));
+    expect(document.activeElement).toBe(weddingDateInput);
+    expect(siteUrlInput).toHaveAttribute('aria-invalid', 'false');
+
+    // 3. Primary color error
+    fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
+    await waitFor(() => expect(primaryColorInput).toHaveAttribute('aria-invalid', 'true'));
+    expect(document.activeElement).toBe(primaryColorInput);
+    expect(document.getElementById('colorPrimary-error')).toHaveTextContent(
+      /Primary color must be a valid hex code/i
+    );
+    expect(siteUrlInput).toHaveAttribute('aria-invalid', 'false');
+
+    // 4. Secondary color error
+    fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
+    await waitFor(() => expect(secondaryColorInput).toHaveAttribute('aria-invalid', 'true'));
+    expect(document.activeElement).toBe(secondaryColorInput);
+    expect(document.getElementById('colorSecondary-error')).toHaveTextContent(
+      /Secondary color must be a valid hex code/i
+    );
+    expect(siteUrlInput).toHaveAttribute('aria-invalid', 'false');
+  });
+
+  test('AC 5: enforces registry->groupGifting dependency in Step 3, persists modules via POST /api/admin/setup, and purges sample data on Skip', async () => {
+    (checkAdminClient as jest.Mock).mockResolvedValue(true);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
+
+    const requests: Array<{ url: string; method: string; body?: Record<string, unknown> }> = [];
+    global.fetch = jest.fn((url: string | URL | Request, init?: RequestInit) => {
+      requests.push({
+        url: url.toString(),
+        method: init?.method || 'GET',
+        body: init?.body ? JSON.parse(init.body as string) : undefined,
+      });
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ success: true }),
+      } as Response);
+    }) as jest.Mock;
+
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <SetupWizard
+          initialSavedConfig={{
+            step: 3,
+            partner1Name: 'Alex',
+            partner2Name: 'Sam',
+            weddingDate: '2027-06-20',
+            timezone: 'America/Chicago',
+            baseUrl: 'https://alexandsam.com',
+          }}
+        />
+      </QueryClientProvider>
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText('Step 3: Sample Data Selection')).toBeInTheDocument()
+    );
+
+    const step3Axe = await axe(container);
+    expect(step3Axe).toHaveNoViolations();
+
+    const registryToggle = screen.getByTestId('setup-feature-toggle-registry');
+    const groupGiftingToggle = screen.getByTestId('setup-feature-toggle-groupGifting');
+    const countdownToggle = screen.getByTestId('setup-feature-toggle-countdown');
+    const calendarToggle = screen.getByTestId('setup-feature-toggle-addToCalendar');
+
+    expect(registryToggle).toBeChecked();
+    expect(groupGiftingToggle).toBeChecked();
+    expect(screen.getByText(/Registry Items & Cash Funds/i)).toBeInTheDocument();
+
+    // Disable registry -> groupGifting becomes unchecked & disabled, and registry sample checkbox hides
+    fireEvent.click(registryToggle);
+    expect(registryToggle).not.toBeChecked();
+    expect(groupGiftingToggle).not.toBeChecked();
+    expect(groupGiftingToggle).toBeDisabled();
+    expect(screen.queryByText(/Registry Items & Cash Funds/i)).not.toBeInTheDocument();
+
+    fireEvent.click(countdownToggle);
+    fireEvent.click(calendarToggle);
+
+    // Click Skip -> persists modules via POST /api/admin/setup, calls DELETE /api/admin/sample-data, invalidates caches, advances to Step 4
+    const skipSampleBtn = screen.getByRole('button', {
+      name: /^Skip$/i,
+    });
+    fireEvent.click(skipSampleBtn);
+
+    await waitFor(() => expect(screen.getByText('Step 4: Guest List Import')).toBeInTheDocument());
+
+    const setupPost = requests.find(
+      (req) => req.url.includes('/api/admin/setup') && req.method === 'POST'
+    );
+    expect(setupPost).toBeDefined();
+    expect(setupPost?.body).toMatchObject({
+      setupCompleted: false,
+      showCountdown: false,
+      showAddToCalendar: false,
+      modules: expect.objectContaining({
+        registry: false,
+        groupGifting: false,
+        countdown: false,
+        addToCalendar: false,
+      }),
+    });
+
+    const sampleDelete = requests.find(
+      (req) => req.url.includes('/api/admin/sample-data') && req.method === 'DELETE'
+    );
+    expect(sampleDelete).toBeDefined();
+    expect(invalidateSpy).toHaveBeenCalled();
+  });
+
+  test('AC 6: filters isSample items out of Step 5 Wedding Party & Attractions counts and renders live OnboardingChecklist progress with zero axe violations', async () => {
+    (checkAdminClient as jest.Mock).mockResolvedValue(true);
+    const partyModule = jest.requireMock('@/hooks/admin/useAdminWeddingParty');
+    const attractionsModule = jest.requireMock('@/hooks/admin/useAdminAttractions');
+    const origParty = partyModule.useAdminWeddingParty;
+    const origAttractions = attractionsModule.useAdminAttractions;
+
+    partyModule.useAdminWeddingParty = () => ({
+      data: [
+        { id: 'sample-1', name: 'Sample Best Man', isSample: true },
+        { id: 'sample-2', name: 'Sample Maid of Honor', isSample: true },
+        { id: 'real-1', name: 'Jordan Lee', isSample: false },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    attractionsModule.useAdminAttractions = () => ({
+      data: [
+        { id: 'attr-sample', name: 'Sample Museum', isSample: true },
+        { id: 'attr-real-1', name: 'Art Institute', isSample: false },
+        { id: 'attr-real-2', name: 'Riverwalk', isSample: false },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    global.fetch = jest.fn((url: string | URL | Request) => {
+      if (url.toString().includes('/api/admin/onboarding-milestones')) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              milestones: [
+                {
+                  id: 'wedding-details',
+                  title: 'Wedding Details & Theme',
+                  description: 'Configured core wedding date, venue, and visual theme.',
+                  completed: true,
+                  href: '/admin/dashboard/settings',
+                  actionLabel: 'Review Settings',
+                },
+                {
+                  id: 'guest-list',
+                  title: 'Guest List & Invitations',
+                  description: 'Import households and generate invitation codes.',
+                  completed: false,
+                  href: '/admin/dashboard/rsvps',
+                  actionLabel: 'Manage Guests',
+                },
+              ],
+            }),
+        } as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ success: true }),
+      } as Response);
+    }) as jest.Mock;
+
+    try {
+      const { container } = renderWithProviders(
+        <SetupWizard
+          initialSavedConfig={{
+            step: 5,
+            partner1Name: 'Alex',
+            partner2Name: 'Sam',
+            weddingDate: '2027-06-20',
+            timezone: 'America/Chicago',
+            baseUrl: 'https://alexandsam.com',
+          }}
+        />
+      );
+
+      await waitFor(() => expect(screen.getByText('Step 5: Complete Setup')).toBeInTheDocument());
+
+      // Only non-sample items are counted: 1 member and 2 items (not 3 and 3)
+      expect(
+        screen.getByRole('button', { name: /Manage Wedding Party \(1 member\)/i })
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: /Manage Attractions \(2 items\)/i })
+      ).toBeInTheDocument();
+
+      // OnboardingChecklist renders live readiness progress from /api/admin/onboarding-milestones
+      const checklist = await screen.findByTestId('onboarding-checklist');
+      expect(checklist).toBeInTheDocument();
+      expect(within(checklist).getByText(/1 of 2 milestones completed/i)).toBeInTheDocument();
+
+      const step5Axe = await axe(container);
+      expect(step5Axe).toHaveNoViolations();
+    } finally {
+      partyModule.useAdminWeddingParty = origParty;
+      attractionsModule.useAdminAttractions = origAttractions;
     }
   });
 });

@@ -29,6 +29,9 @@ export interface OnboardingMilestone {
 
 interface OnboardingChecklistProps {
   refreshTrigger?: number;
+  headingLevel?: 'h2' | 'h3';
+  onNavigate?: (href: string) => void;
+  className?: string;
 }
 
 function readPersistedCollapsedState(): boolean {
@@ -49,8 +52,21 @@ function writePersistedCollapsedState(collapsed: boolean): void {
   }
 }
 
-export function OnboardingChecklist({ refreshTrigger }: OnboardingChecklistProps) {
-  const router = useRouter();
+function useSafeRouter() {
+  try {
+    return useRouter();
+  } catch {
+    return null;
+  }
+}
+
+export function OnboardingChecklist({
+  refreshTrigger,
+  headingLevel = 'h2',
+  onNavigate,
+  className,
+}: OnboardingChecklistProps) {
+  const router = useSafeRouter();
   const queryClient = useContext(QueryClientContext);
   const isHydrated = useSyncExternalStore(
     emptySubscribe,
@@ -116,20 +132,26 @@ export function OnboardingChecklist({ refreshTrigger }: OnboardingChecklistProps
   const allComplete = totalCount > 0 && completedCount === totalCount;
   const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
+  const HeadingTag = headingLevel;
+  const ItemHeadingTag = headingLevel === 'h3' ? 'h4' : 'h3';
+
   return (
     <section
       aria-labelledby="onboarding-checklist-heading"
       data-testid="onboarding-checklist"
-      className="mb-8 rounded-xl shadow-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-5 sm:p-6"
+      className={cn(
+        'mb-8 rounded-xl shadow-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-5 sm:p-6 text-left',
+        className
+      )}
     >
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2.5">
-          <h2
+          <HeadingTag
             id="onboarding-checklist-heading"
             className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100"
           >
             Setup Checklist
-          </h2>
+          </HeadingTag>
           {allComplete && (
             <span
               data-testid="onboarding-all-complete-badge"
@@ -215,9 +237,9 @@ export function OnboardingChecklist({ refreshTrigger }: OnboardingChecklistProps
                     {milestone.completed ? <Icon name="Check" size={14} /> : '•'}
                   </span>
                   <div>
-                    <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                    <ItemHeadingTag className="text-base font-semibold text-gray-900 dark:text-gray-100">
                       {milestone.title}
-                    </h3>
+                    </ItemHeadingTag>
                     <p className="mt-1 text-sm text-gray-700 dark:text-gray-300">
                       {milestone.description}
                     </p>
@@ -240,7 +262,15 @@ export function OnboardingChecklist({ refreshTrigger }: OnboardingChecklistProps
                   type="button"
                   variant={milestone.completed ? 'outline' : 'primary'}
                   size="sm"
-                  onClick={() => router.push(milestone.href)}
+                  onClick={() => {
+                    if (onNavigate) {
+                      onNavigate(milestone.href);
+                    } else if (router) {
+                      router.push(milestone.href);
+                    } else if (typeof window !== 'undefined') {
+                      window.location.assign(withBasePath(milestone.href));
+                    }
+                  }}
                 >
                   {milestone.actionLabel}
                 </Button>

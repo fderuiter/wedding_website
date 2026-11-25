@@ -5,6 +5,7 @@ import { createPageMetadata } from '@/app/metadata';
 import SetupWizard, { type SetupWizardSavedConfig } from '@/components/setup/SetupWizard';
 import { enforceAdminPageSession, isStaticExportBuild } from '@/core/auth/adminPageGuard';
 import { getAppConfig, isSiteInitialized, isSetupCompleted } from '@/lib/config';
+import { resolveModuleConfig } from '@/lib/modules';
 import { isNonPlaceholderVenueText } from '@/utils/maps';
 
 export const metadata: Metadata = createPageMetadata({
@@ -40,6 +41,19 @@ export default async function AdminSetupPage() {
         : '';
     const cleanVenue = (val: string | null | undefined) =>
       isNonPlaceholderVenueText(val) ? val.trim() : '';
+    const hasSavedModuleFields =
+      config.modules !== undefined ||
+      typeof config.showCountdown === 'boolean' ||
+      typeof config.showAddToCalendar === 'boolean';
+    const hydratedEnabledFeatures = hasSavedModuleFields
+      ? resolveModuleConfig({
+        ...resolveModuleConfig(config.modules),
+        ...(typeof config.showCountdown === 'boolean' ? { countdown: config.showCountdown } : {}),
+        ...(typeof config.showAddToCalendar === 'boolean'
+          ? { addToCalendar: config.showAddToCalendar }
+          : {}),
+      })
+      : undefined;
 
     initialSavedConfig = {
       step: 3,
@@ -65,6 +79,7 @@ export default async function AdminSetupPage() {
       themePreset: config.themePreset,
       colorPrimary: config.colorPrimary,
       colorSecondary: config.colorSecondary,
+      ...(hydratedEnabledFeatures ? { enabledFeatures: hydratedEnabledFeatures } : {}),
     };
   }
 

@@ -19,6 +19,7 @@ import {
   toAppConfigDbPayload,
 } from '@/features/content';
 import { stripPresetDefaultTokens } from '@/lib/theme/presets';
+import { resolveModuleConfig } from '@/lib/modules';
 import { AdminSetupSchema, formatZodError } from '@/utils/validation';
 import {
   isAdminRequest,
@@ -155,12 +156,77 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     body.contactEmail !== undefined;
 
   if (!hasConfigPayload) {
-    if (initialized && isAdmin && typeof body.setupCompleted === 'boolean') {
+    const hasPartialSetupFlags =
+      typeof body.setupCompleted === 'boolean' ||
+      body.modules !== undefined ||
+      typeof body.showCountdown === 'boolean' ||
+      typeof body.showAddToCalendar === 'boolean';
+
+    if (initialized && isAdmin && hasPartialSetupFlags) {
       const targetId = config.id || 'global';
+      const hasModuleUpdates =
+        body.modules !== undefined ||
+        typeof body.showCountdown === 'boolean' ||
+        typeof body.showAddToCalendar === 'boolean';
+      const resolvedPartialModules = hasModuleUpdates
+        ? resolveModuleConfig({
+          ...(config.modules ?? {}),
+          ...(typeof body.showCountdown === 'boolean'
+            ? { countdown: body.showCountdown }
+            : {}),
+          ...(typeof body.showAddToCalendar === 'boolean'
+            ? { addToCalendar: body.showAddToCalendar }
+            : {}),
+          ...(body.modules ?? {}),
+        })
+        : undefined;
+      const resolvedShowCountdown =
+        resolvedPartialModules !== undefined
+          ? body.modules && typeof body.modules.countdown === 'boolean'
+            ? resolvedPartialModules.countdown
+            : typeof body.showCountdown === 'boolean'
+              ? body.showCountdown
+              : resolvedPartialModules.countdown
+          : undefined;
+      const resolvedShowAddToCalendar =
+        resolvedPartialModules !== undefined
+          ? body.modules && typeof body.modules.addToCalendar === 'boolean'
+            ? resolvedPartialModules.addToCalendar
+            : typeof body.showAddToCalendar === 'boolean'
+              ? body.showAddToCalendar
+              : resolvedPartialModules.addToCalendar
+          : undefined;
+
+      const partialUpdate: Prisma.AppConfigUpdateInput = {
+        ...(typeof body.setupCompleted === 'boolean'
+          ? { setupCompleted: body.setupCompleted }
+          : {}),
+        ...(resolvedPartialModules !== undefined
+          ? {
+            modules: resolvedPartialModules as unknown as Prisma.InputJsonValue,
+            showCountdown: resolvedShowCountdown,
+            showAddToCalendar: resolvedShowAddToCalendar,
+          }
+          : {}),
+      };
+      const partialCreate: Prisma.AppConfigCreateInput = {
+        id: targetId,
+        ...(typeof body.setupCompleted === 'boolean'
+          ? { setupCompleted: body.setupCompleted }
+          : {}),
+        ...(resolvedPartialModules !== undefined
+          ? {
+            modules: resolvedPartialModules as unknown as Prisma.InputJsonValue,
+            showCountdown: resolvedShowCountdown,
+            showAddToCalendar: resolvedShowAddToCalendar,
+          }
+          : {}),
+      };
+
       await prisma.appConfig.upsert({
         where: { id: targetId },
-        update: { setupCompleted: body.setupCompleted },
-        create: { id: targetId, setupCompleted: body.setupCompleted },
+        update: partialUpdate,
+        create: partialCreate,
       });
 
       try {
@@ -171,6 +237,10 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
         // Ignore in non-Next runtime/test environments
       }
 
+      const nextCompleted =
+        typeof body.setupCompleted === 'boolean'
+          ? body.setupCompleted
+          : isSetupCompleted(config);
       const tenantClaims = await resolveTenantClaimsForSigning(req, config);
       const iat = Date.now();
       const exp = iat + 60 * 60 * 8 * 1000;
@@ -178,8 +248,15 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
       const response = NextResponse.json({
         success: true,
         initialized: true,
-        setupCompleted: body.setupCompleted,
-        requiresSetup: !body.setupCompleted,
+        setupCompleted: nextCompleted,
+        requiresSetup: !nextCompleted,
+        ...(resolvedPartialModules
+          ? {
+            modules: resolvedPartialModules,
+            showCountdown: resolvedShowCountdown,
+            showAddToCalendar: resolvedShowAddToCalendar,
+          }
+          : {}),
       });
       setAdminAuthCookie(response, token, undefined, req);
       return response;

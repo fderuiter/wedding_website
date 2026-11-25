@@ -274,4 +274,45 @@ describe('ThemeConfigurationPanel Component', () => {
       },
     });
   });
+
+  test('renders inline FormMessage errors on Primary and Secondary Color controls and passes jest-axe', async () => {
+    const handleChange = jest.fn();
+    const { container } = render(
+      <ThemeConfigurationPanel
+        mode="essentials"
+        values={{
+          themePreset: 'classic',
+          colorPrimary: 'not-a-hex',
+          colorSecondary: '#ZZZZZZ',
+        }}
+        onChange={handleChange}
+        errors={{
+          colorPrimary: 'Primary color must be a valid hex code.',
+          colorSecondary: 'Secondary color must be a valid hex code.',
+        }}
+      />
+    );
+
+    const primaryTextInput = screen.getByLabelText(/Primary Color Code/i);
+    const secondaryTextInput = screen.getByLabelText(/Secondary Color Code/i);
+
+    expect(primaryTextInput).toHaveAttribute('aria-invalid', 'true');
+    expect(primaryTextInput).toHaveAttribute('aria-describedby', 'colorPrimary-error');
+    expect(document.getElementById('colorPrimary-error')).toHaveTextContent(
+      'Primary color must be a valid hex code.'
+    );
+
+    expect(secondaryTextInput).toHaveAttribute('aria-invalid', 'true');
+    expect(secondaryTextInput).toHaveAttribute('aria-describedby', 'colorSecondary-error');
+    expect(document.getElementById('colorSecondary-error')).toHaveTextContent(
+      'Secondary color must be a valid hex code.'
+    );
+
+    // Native <input type="color"> safely falls back to valid hex so browsers do not warn
+    expect(screen.getByLabelText(/Primary Color Picker/i)).toHaveValue('#b91c1c');
+    expect(screen.getByLabelText(/Secondary Color Picker/i)).toHaveValue('#b45309');
+
+    const axeResults = await axe(container);
+    expect(axeResults).toHaveNoViolations();
+  });
 });

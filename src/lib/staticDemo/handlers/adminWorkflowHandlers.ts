@@ -1,5 +1,6 @@
 import { formatCurrency } from '@/utils/intl';
 import { withBasePath } from '@/lib/basePath';
+import { isFeatureEnabled, resolveModuleConfig } from '@/lib/modules';
 import {
   cleanOptionalSetupText,
   hasCustomStoryText,
@@ -213,23 +214,56 @@ export async function handleAdminWorkflowRoutes(
         const outcome = store.mutate((draft) => {
           draft.isAdminAuthenticated = true;
           const config = getActiveAppConfig(draft);
+          let didMutate = false;
+          if (
+            body.modules !== undefined ||
+            typeof body.showCountdown === 'boolean' ||
+            typeof body.showAddToCalendar === 'boolean'
+          ) {
+            const resolvedModules = resolveModuleConfig({
+              ...(config.modules ?? {}),
+              ...(typeof body.showCountdown === 'boolean'
+                ? { countdown: body.showCountdown }
+                : {}),
+              ...(typeof body.showAddToCalendar === 'boolean'
+                ? { addToCalendar: body.showAddToCalendar }
+                : {}),
+              ...(body.modules && typeof body.modules === 'object' && !Array.isArray(body.modules)
+                ? (body.modules as Record<string, unknown>)
+                : {}),
+            });
+            config.modules = resolvedModules;
+            config.showCountdown =
+              typeof body.showCountdown === 'boolean'
+                ? body.showCountdown
+                : resolvedModules.countdown;
+            config.showAddToCalendar =
+              typeof body.showAddToCalendar === 'boolean'
+                ? body.showAddToCalendar
+                : resolvedModules.addToCalendar;
+            didMutate = true;
+          }
           if (typeof body.setupCompleted === 'boolean') {
             config.setupCompleted = body.setupCompleted;
             if (body.setupCompleted) {
               draft.isSetupMode = false;
               draft.setupStep2Saved = false;
             }
+            didMutate = true;
+          }
+          if (didMutate) {
             config.updatedAt = new Date().toISOString();
           }
           const initialized = !draft.isSetupMode;
           const setupCompleted = initialized && config.setupCompleted !== false;
-          return { initialized, setupCompleted };
+          return { initialized, setupCompleted, modules: config.modules };
         });
         return wrapMiddlewareJson({
           success: true,
           initialized: outcome.initialized,
           setupCompleted: outcome.setupCompleted,
           requiresSetup: !outcome.initialized || !outcome.setupCompleted,
+          modules: outcome.modules,
         });
       }
 
@@ -325,6 +359,33 @@ export async function handleAdminWorkflowRoutes(
         }
         if (typeof body.colorSecondary === 'string' && body.colorSecondary.trim()) {
           config.colorSecondary = body.colorSecondary.trim();
+        }
+        if (
+          body.modules !== undefined ||
+          typeof body.showCountdown === 'boolean' ||
+          typeof body.showAddToCalendar === 'boolean'
+        ) {
+          const resolvedModules = resolveModuleConfig({
+            ...(config.modules ?? {}),
+            ...(typeof body.showCountdown === 'boolean'
+              ? { countdown: body.showCountdown }
+              : {}),
+            ...(typeof body.showAddToCalendar === 'boolean'
+              ? { addToCalendar: body.showAddToCalendar }
+              : {}),
+            ...(body.modules && typeof body.modules === 'object' && !Array.isArray(body.modules)
+              ? (body.modules as Record<string, unknown>)
+              : {}),
+          });
+          config.modules = resolvedModules;
+          config.showCountdown =
+            typeof body.showCountdown === 'boolean'
+              ? body.showCountdown
+              : resolvedModules.countdown;
+          config.showAddToCalendar =
+            typeof body.showAddToCalendar === 'boolean'
+              ? body.showAddToCalendar
+              : resolvedModules.addToCalendar;
         }
         if (body.venueDescription !== undefined) {
           config.venueDescription = cleanOptionalSetupText(body.venueDescription);
@@ -526,14 +587,18 @@ export async function handleAdminWorkflowRoutes(
         href: '/admin/dashboard/invitation-codes',
         actionLabel: guestListCompleted ? 'Manage Guest List' : 'Add Guest List',
       },
-      {
-        id: 'registry',
-        title: 'Gift Registry',
-        description: 'Add gifts or cash funds to your wedding registry.',
-        completed: registryCompleted,
-        href: '/registry/add-item',
-        actionLabel: registryCompleted ? 'Add More Gifts' : 'Add Registry Gifts',
-      },
+      ...(isFeatureEnabled('registry', config.modules)
+        ? [
+          {
+            id: 'registry',
+            title: 'Gift Registry',
+            description: 'Add gifts or cash funds to your wedding registry.',
+            completed: registryCompleted,
+            href: '/registry/add-item',
+            actionLabel: registryCompleted ? 'Add More Gifts' : 'Add Registry Gifts',
+          },
+        ]
+        : []),
       {
         id: 'seating-layout',
         title: 'Seating Layout',

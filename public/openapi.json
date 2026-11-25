@@ -18209,7 +18209,8 @@
                         "initialized",
                         "setupCompleted",
                         "requiresSetup"
-                      ]
+                      ],
+                      "additionalProperties": true
                     },
                     {
                       "type": "object",

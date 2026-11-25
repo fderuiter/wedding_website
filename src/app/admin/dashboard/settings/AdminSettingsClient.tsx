@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
@@ -20,6 +20,7 @@ import { MAX_UPLOAD_SIZE, ACCEPTED_IMAGE_TYPES } from '@/utils/validation';
 import { FEATURE_METADATA, FeatureId, resolveModuleConfig } from '@/lib/modules';
 import { ThemeConfigurationPanel } from '@/components/admin/ThemeConfigurationPanel';
 import { AddressLookupInput } from '@/components/admin/AddressLookupInput';
+import { SearchableTimezoneSelect } from '@/components/admin/SearchableTimezoneSelect';
 import { isNonPlaceholderVenueText } from '@/utils/maps';
 import { MediaImage } from '@/components/MediaImage';
 import { stripPresetDefaultTokens, type ThemePreset } from '@/lib/theme/presets';
@@ -28,172 +29,6 @@ import {
   DEFAULT_RSVP_CLOSED_MESSAGE,
   RSVP_GRACE_PERIOD_HOURS_OPTIONS,
 } from '@/utils/rsvpDeadline';
-
-interface SearchableTimezoneSelectProps {
-  value: string;
-  onChange: (val: string) => void;
-}
-
-function SearchableTimezoneSelect({ value, onChange }: SearchableTimezoneSelectProps) {
-  const ianaTimezones = useMemo(() => {
-    try {
-      return Intl.supportedValuesOf('timeZone');
-    } catch {
-      return ['America/Chicago', 'UTC'];
-    }
-  }, []);
-
-  const [draftSearch, setDraftSearch] = useState<string | null>(null);
-  const search = draftSearch ?? (value || 'America/Chicago');
-  const [isOpen, setIsOpen] = useState(false);
-  const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const optionRefs = useRef<(HTMLDivElement | null)[]>([]);
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-        setHighlightedIndex(-1);
-        if (ianaTimezones.includes(search)) {
-          onChange(search);
-        }
-        setDraftSearch(null);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [search, ianaTimezones, onChange]);
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return ianaTimezones;
-    return ianaTimezones.filter((tz) => tz.toLowerCase().includes(q));
-  }, [search, ianaTimezones]);
-
-  const handleSelect = (tz: string) => {
-    onChange(tz);
-    setDraftSearch(null);
-    setIsOpen(false);
-    setHighlightedIndex(-1);
-  };
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setDraftSearch(e.target.value);
-    setIsOpen(true);
-    setHighlightedIndex(-1);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      if (!isOpen) {
-        setIsOpen(true);
-      }
-      if (filtered.length > 0) {
-        setHighlightedIndex((prev) => (prev < filtered.length - 1 ? prev + 1 : 0));
-      }
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      if (!isOpen) {
-        setIsOpen(true);
-      }
-      if (filtered.length > 0) {
-        setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : filtered.length - 1));
-      }
-    } else if (e.key === 'Enter') {
-      if (isOpen && highlightedIndex >= 0 && highlightedIndex < filtered.length) {
-        e.preventDefault();
-        handleSelect(filtered[highlightedIndex]);
-      }
-    } else if (e.key === 'Escape') {
-      if (isOpen) {
-        e.preventDefault();
-        setIsOpen(false);
-        setHighlightedIndex(-1);
-        setDraftSearch(null);
-      }
-    } else if (e.key === 'Home') {
-      if (isOpen && filtered.length > 0) {
-        e.preventDefault();
-        setHighlightedIndex(0);
-      }
-    } else if (e.key === 'End') {
-      if (isOpen && filtered.length > 0) {
-        e.preventDefault();
-        setHighlightedIndex(filtered.length - 1);
-      }
-    }
-  };
-
-  useEffect(() => {
-    if (highlightedIndex >= 0 && optionRefs.current[highlightedIndex]) {
-      optionRefs.current[highlightedIndex]?.scrollIntoView?.({ block: 'nearest' });
-    }
-  }, [highlightedIndex]);
-
-  return (
-    <div ref={containerRef} className="relative w-full">
-      <Input
-        type="text"
-        placeholder="Search and select timezone (e.g. Europe/Paris)..."
-        value={search}
-        onChange={handleInputChange}
-        onFocus={() => setIsOpen(true)}
-        onKeyDown={handleKeyDown}
-        role="combobox"
-        aria-expanded={isOpen}
-        aria-haspopup="listbox"
-        aria-controls="timezone-listbox"
-        aria-autocomplete="list"
-        aria-activedescendant={
-          isOpen && highlightedIndex >= 0 && filtered[highlightedIndex]
-            ? `timezone-option-${highlightedIndex}`
-            : undefined
-        }
-        className="w-full"
-      />
-      {isOpen && (
-        <div
-          id="timezone-listbox"
-          role="listbox"
-          aria-label="Timezone options"
-          className="absolute left-0 mt-1 max-h-60 w-full overflow-y-auto rounded-md border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-lg z-50"
-        >
-          {filtered.length > 0 ? (
-            filtered.map((tz, index) => {
-              const isHighlighted = index === highlightedIndex;
-              return (
-                <div
-                  key={tz}
-                  ref={(el) => {
-                    optionRefs.current[index] = el;
-                  }}
-                  id={`timezone-option-${index}`}
-                  role="option"
-                  aria-selected={isHighlighted}
-                  onClick={() => handleSelect(tz)}
-                  onMouseEnter={() => setHighlightedIndex(index)}
-                  className={`block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-zinc-200 cursor-pointer ${
-                    isHighlighted
-                      ? 'bg-gray-100 dark:bg-zinc-700'
-                      : 'hover:bg-gray-100 dark:hover:bg-zinc-700'
-                  }`}
-                >
-                  {tz}
-                </div>
-              );
-            })
-          ) : (
-            <div className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">
-              No matching standard IANA timezones found
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
 interface ThemeOverrideRow {
   id: string;
