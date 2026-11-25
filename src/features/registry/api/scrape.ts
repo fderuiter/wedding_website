@@ -2,10 +2,19 @@ import { ScrapeUrlSchema } from '@/utils/validation';
 import { NextResponse, NextRequest } from 'next/server';
 import { parse } from 'node-html-parser';
 import { safeFetch } from '@/utils/safeFetch';
+import {
+  BoundedStreamOverflowError,
+  createLinkedAbortScope,
+  readBoundedResponseText,
+} from '@/utils/boundedStream';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { parseJsonRequestBody } from '@/utils/contentType';
+import { getAppConfig } from '@/lib/config';
+import { isFeatureEnabled } from '@/lib/modules';
 import { logger } from '@/lib/logger';
+
+export const MAX_SCRAPE_HTML_BYTES = 1024 * 1024;
 
 export interface ScrapedProductData {
   name: string;
@@ -200,23 +209,13 @@ export async function scrapeProductUrl(
   timeoutMs: number = 4500,
   externalSignal?: AbortSignal
 ): Promise<ScrapedProductData> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-  const abortHandler = () => controller.abort();
-  if (externalSignal) {
-    if (externalSignal.aborted) {
-      controller.abort();
-    } else {
-      externalSignal.addEventListener('abort', abortHandler, { once: true });
-    }
-  }
+  const abortScope = createLinkedAbortScope({ timeoutMs, externalSignal });
 
   try {
     let response: Response;
     try {
       response = await safeFetch(url, {
-        signal: controller.signal,
+        signal: abortScope.controller.signal,
         headers: {
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36',
@@ -226,7 +225,6 @@ export async function scrapeProductUrl(
         },
       });
     } catch (fetchErr: any) {
-      clearTimeout(timeoutId);
       if (fetchErr instanceof ApiError) {
         throw fetchErr;
       }
@@ -242,14 +240,10 @@ export async function scrapeProductUrl(
         'NETWORK_TIMEOUT: Network request timed out or failed while reaching vendor site.',
         { errorDomain: 'NETWORK_TIMEOUT' }
       );
-    } finally {
-      clearTimeout(timeoutId);
-      if (externalSignal) {
-        externalSignal.removeEventListener('abort', abortHandler);
-      }
     }
 
     if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
       if (response.status === 403 || response.status === 401 || response.status === 429) {
         throw new ApiError(
           422,
@@ -269,12 +263,23 @@ export async function scrapeProductUrl(
       }
     }
 
-    const html = await response.text();
+    const html = await readBoundedResponseText(response, {
+      maxBytes: MAX_SCRAPE_HTML_BYTES,
+      signal: abortScope.controller.signal,
+      onOverflow: () => abortScope.controller.abort(),
+    });
     return extractProductMetadataFromHtml(html, url);
   } catch (error: any) {
     logger.error('Scraping failed:', error);
     if (error instanceof ApiError) {
       throw error;
+    }
+    if (error instanceof BoundedStreamOverflowError) {
+      throw new ApiError(
+        422,
+        `NETWORK_TIMEOUT: ${error.message}`,
+        { errorDomain: 'NETWORK_TIMEOUT' }
+      );
     }
     if (
       error &&
@@ -301,10 +306,17 @@ export async function scrapeProductUrl(
       'NETWORK_TIMEOUT: Failed to scrape product info due to network error.',
       { errorDomain: 'NETWORK_TIMEOUT' }
     );
+  } finally {
+    abortScope.cleanup();
   }
 }
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
+  const config = await getAppConfig();
+  if (!isFeatureEnabled('registry', config.modules)) {
+    throw new ApiError(404, "Feature 'registry' is disabled");
+  }
+
   const body = await parseJsonRequestBody(request);
   const parseResult = ScrapeUrlSchema.safeParse(body);
 

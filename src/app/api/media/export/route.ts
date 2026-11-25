@@ -22,6 +22,7 @@ function getArchiver(format: string, options?: any) {
 }
 import path from 'path';
 import fs from 'fs';
+import { Readable } from 'node:stream';
 import { prisma } from '@/lib/prisma';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
@@ -34,6 +35,12 @@ import {
 } from '@/utils/contentType';
 import { validateMutatingRequestOrigin } from '@/utils/hostValidation';
 import { safeFetch } from '@/utils/safeFetch';
+import {
+  MAX_REMOTE_EXPORT_BYTES,
+  openBoundedReadableStream,
+  openBoundedRemoteResponse,
+  REMOTE_EXPORT_TIMEOUT_MS,
+} from '@/utils/boundedStream';
 import { PathContainmentError, resolveContainedExistingPath } from '@/utils/pathContainment';
 import { getStorageProvider } from '@/utils/storage';
 import { isAdminRequest } from '@/core/auth/auth.server';
@@ -225,7 +232,8 @@ function validatePostExportOrigin(req: NextRequest): void {
 
 type ArchiveBatchEntry =
   | { type: 'file'; filePath: string; name: string; stats: fs.Stats }
-  | { type: 'buffer'; buffer: Buffer; name: string };
+  | { type: 'buffer'; buffer: Buffer; name: string }
+  | { type: 'stream'; stream: Readable; name: string };
 
 async function handleExport(req: NextRequest) {
   if (!(await isAdminRequest(req))) {
@@ -549,6 +557,7 @@ async function handleExport(req: NextRequest) {
       }
 
       const batch = mediaTasks.slice(i, i + CONCURRENCY_LIMIT);
+      const midStreamNotices: Array<{ name: string; message: string }> = [];
       const batchResults = await Promise.all(
         batch.map(async ({ item, filename }): Promise<ArchiveBatchEntry[]> => {
           if (exportAbortController.signal.aborted || streamClosed) {
@@ -559,6 +568,18 @@ async function handleExport(req: NextRequest) {
             if (item.url.startsWith('data:')) {
               const matches = item.url.match(/^data:([^;]+);base64,(.+)$/);
               if (matches && matches[2]) {
+                const estimatedBytes = Math.floor((matches[2].length * 3) / 4);
+                if (estimatedBytes > MAX_REMOTE_EXPORT_BYTES) {
+                  return [
+                    {
+                      type: 'buffer',
+                      buffer: Buffer.from(
+                        `Fetch error: Data URL exceeded maximum size of ${MAX_REMOTE_EXPORT_BYTES} bytes`
+                      ),
+                      name: `error_${filename}.txt`,
+                    },
+                  ];
+                }
                 const buffer = Buffer.from(matches[2], 'base64');
                 return [{ type: 'buffer', buffer, name: filename }];
               }
@@ -566,41 +587,49 @@ async function handleExport(req: NextRequest) {
             }
 
             if (item.url.startsWith('http://') || item.url.startsWith('https://')) {
-              try {
-                const res = await safeFetch(item.url, {
-                  signal: exportAbortController.signal,
-                });
-                if (exportAbortController.signal.aborted || streamClosed) {
-                  return [];
-                }
-                if (res.ok) {
-                  const buffer = Buffer.from(await res.arrayBuffer());
-                  if (exportAbortController.signal.aborted || streamClosed) {
-                    return [];
-                  }
-                  return [{ type: 'buffer', buffer, name: filename }];
-                } else {
-                  return [
-                    {
-                      type: 'buffer',
-                      buffer: Buffer.from(`Failed to download resource: HTTP ${res.status}`),
+              const remoteResult = await openBoundedRemoteResponse(
+                (signal) => safeFetch(item.url, { signal }),
+                {
+                  maxBytes: MAX_REMOTE_EXPORT_BYTES,
+                  timeoutMs: REMOTE_EXPORT_TIMEOUT_MS,
+                  parentSignal: exportAbortController.signal,
+                  isCancelled: () => exportAbortController.signal.aborted || streamClosed,
+                  onMidStreamError: (detail) => {
+                    midStreamNotices.push({
                       name: `error_${filename}.txt`,
-                    },
-                  ];
+                      message: `Fetch error: ${detail}`,
+                    });
+                  },
                 }
-              } catch (fetchErr: unknown) {
-                if (exportAbortController.signal.aborted || streamClosed) {
-                  return [];
-                }
-                const message = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+              );
+
+              if (remoteResult.status === 'cancelled') {
+                return [];
+              }
+              if (remoteResult.status === 'http-error') {
                 return [
                   {
                     type: 'buffer',
-                    buffer: Buffer.from(`Fetch error: ${message}`),
+                    buffer: Buffer.from(
+                      `Failed to download resource: HTTP ${remoteResult.httpStatus}`
+                    ),
                     name: `error_${filename}.txt`,
                   },
                 ];
               }
+              if (remoteResult.status === 'error') {
+                return [
+                  {
+                    type: 'buffer',
+                    buffer: Buffer.from(`Fetch error: ${remoteResult.message}`),
+                    name: `error_${filename}.txt`,
+                  },
+                ];
+              }
+              if (remoteResult.status === 'empty') {
+                return [{ type: 'buffer', buffer: Buffer.alloc(0), name: filename }];
+              }
+              return [{ type: 'stream', stream: remoteResult.stream, name: filename }];
             }
 
             try {
@@ -618,20 +647,18 @@ async function handleExport(req: NextRequest) {
                 ) {
                   const providerAsset = await getStorageProvider().openReadStream(target.cleanKey);
                   if (providerAsset?.stream) {
-                    const reader = providerAsset.stream.getReader();
-                    const chunks: Buffer[] = [];
-                    while (true) {
-                      if (exportAbortController.signal.aborted || streamClosed) {
-                        await reader.cancel().catch(() => undefined);
-                        return [];
-                      }
-                      const { done, value } = await reader.read();
-                      if (done) break;
-                      if (value) {
-                        chunks.push(Buffer.from(value));
-                      }
-                    }
-                    return [{ type: 'buffer', buffer: Buffer.concat(chunks), name: filename }];
+                    const boundedS3Stream = openBoundedReadableStream(providerAsset.stream, {
+                      maxBytes: MAX_REMOTE_EXPORT_BYTES,
+                      timeoutMs: REMOTE_EXPORT_TIMEOUT_MS,
+                      parentSignal: exportAbortController.signal,
+                      onMidStreamError: (detail) => {
+                        midStreamNotices.push({
+                          name: `error_${filename}.txt`,
+                          message: `Storage stream error: ${detail}`,
+                        });
+                      },
+                    });
+                    return [{ type: 'stream', stream: boundedS3Stream, name: filename }];
                   }
                 }
                 return [
@@ -712,6 +739,11 @@ async function handleExport(req: NextRequest) {
             stats: entry.stats,
             store,
           });
+        } else if (entry.type === 'stream') {
+          archive.append(entry.stream, {
+            name: entry.name,
+            store,
+          });
         } else {
           archive.append(entry.buffer, {
             name: entry.name,
@@ -721,6 +753,17 @@ async function handleExport(req: NextRequest) {
       }
 
       await drainPromise;
+
+      if (midStreamNotices.length > 0 && !exportAbortController.signal.aborted && !streamClosed) {
+        const noticeDrainPromise = waitForBatchDrain(midStreamNotices.length);
+        for (const notice of midStreamNotices) {
+          archive.append(Buffer.from(notice.message), {
+            name: notice.name,
+            store: false,
+          });
+        }
+        await noticeDrainPromise;
+      }
     }
 
     if (!exportAbortController.signal.aborted && !streamClosed) {
