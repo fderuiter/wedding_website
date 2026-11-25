@@ -55,6 +55,7 @@ export default defineConfig({
   } : undefined,
   use: {
     baseURL: 'http://localhost:3000',
+    trace: 'retain-on-failure',
     contextOptions: {
       reducedMotion: 'reduce',
     },

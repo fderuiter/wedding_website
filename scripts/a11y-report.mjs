@@ -30,24 +30,36 @@ export function generateReport(options = {}) {
   const cwd = options.cwd || process.cwd();
   const onlyStatic = Boolean(options.onlyStatic);
   const requireStatic = Boolean(options.requireStatic || onlyStatic);
+  const requireComplete = Boolean(options.requireComplete);
   let totalViolations = 0;
   const incompleteSuites = [];
+  const parseErrors = [];
   let report = '## Accessibility Health Summary\n\n';
 
   const jestFile = path.join(cwd, 'test-results', 'jest-a11y-violations.json');
   if (!onlyStatic || fs.existsSync(jestFile)) {
     report += '### Component Level (Jest)\n';
     if (fs.existsSync(jestFile)) {
-      const jestViolations = JSON.parse(fs.readFileSync(jestFile, 'utf8'));
-      if (jestViolations.length === 0) {
-        report += '✅ No accessibility violations found in components.\n\n';
-      } else {
-        totalViolations += jestViolations.length;
-        report += `❌ Found ${jestViolations.length} violations in components.\n`;
-        jestViolations.forEach((v) => {
-          report += `- **${v.id}**: ${v.description} (${v.impact})\n`;
-        });
-        report += '\n';
+      try {
+        const jestViolations = JSON.parse(fs.readFileSync(jestFile, 'utf8'));
+        if (!Array.isArray(jestViolations)) {
+          throw new TypeError('Expected JSON array of Jest accessibility violations');
+        }
+        if (jestViolations.length === 0) {
+          report += '✅ No accessibility violations found in components.\n\n';
+        } else {
+          totalViolations += jestViolations.length;
+          report += `❌ Found ${jestViolations.length} violations in components.\n`;
+          jestViolations.forEach((v) => {
+            report += `- **${v.id}**: ${v.description} (${v.impact})\n`;
+          });
+          report += '\n';
+        }
+      } catch {
+        incompleteSuites.push('jest');
+        parseErrors.push('jest');
+        report +=
+          '⚠️ Incomplete: Jest accessibility artifact (`test-results/jest-a11y-violations.json`) could not be parsed.\n\n';
       }
     } else {
       incompleteSuites.push('jest');
@@ -60,18 +72,28 @@ export function generateReport(options = {}) {
   if (!onlyStatic || fs.existsSync(pwFile)) {
     report += '### Page Level (Playwright)\n';
     if (fs.existsSync(pwFile)) {
-      const parsedPw = JSON.parse(fs.readFileSync(pwFile, 'utf8'));
-      const pwViolations = normalizePlaywrightViolations(parsedPw);
-      if (pwViolations.length === 0) {
-        report += '✅ No accessibility violations found in pages.\n\n';
-      } else {
-        totalViolations += pwViolations.length;
-        report += `❌ Found ${pwViolations.length} violations in pages.\n`;
-        pwViolations.forEach((v) => {
-          const routeLabel = v.route ? ` (\`${v.route}\`)` : '';
-          report += `- **${v.id}**${routeLabel}: ${v.description} (${v.impact})\n`;
-        });
-        report += '\n';
+      try {
+        const parsedPw = JSON.parse(fs.readFileSync(pwFile, 'utf8'));
+        if (!parsedPw || typeof parsedPw !== 'object') {
+          throw new TypeError('Expected JSON object or array of Playwright accessibility violations');
+        }
+        const pwViolations = normalizePlaywrightViolations(parsedPw);
+        if (pwViolations.length === 0) {
+          report += '✅ No accessibility violations found in pages.\n\n';
+        } else {
+          totalViolations += pwViolations.length;
+          report += `❌ Found ${pwViolations.length} violations in pages.\n`;
+          pwViolations.forEach((v) => {
+            const routeLabel = v.route ? ` (\`${v.route}\`)` : '';
+            report += `- **${v.id}**${routeLabel}: ${v.description} (${v.impact})\n`;
+          });
+          report += '\n';
+        }
+      } catch {
+        incompleteSuites.push('playwright');
+        parseErrors.push('playwright');
+        report +=
+          '⚠️ Incomplete: Playwright accessibility artifact (`test-results/playwright-a11y-violations.json`) could not be parsed.\n\n';
       }
     } else {
       incompleteSuites.push('playwright');
@@ -84,25 +106,32 @@ export function generateReport(options = {}) {
   if (fs.existsSync(staticFile) || requireStatic) {
     report += '### Static Showcase (Playwright Light & Dark)\n';
     if (fs.existsSync(staticFile)) {
-      const parsedStatic = JSON.parse(fs.readFileSync(staticFile, 'utf8'));
-      const scanCount =
-        parsedStatic && typeof parsedStatic === 'object' && !Array.isArray(parsedStatic)
-          ? Object.keys(parsedStatic).length
-          : 0;
-      const staticViolations = normalizePlaywrightViolations(parsedStatic);
-      if (staticViolations.length === 0) {
+      try {
+        const parsedStatic = JSON.parse(fs.readFileSync(staticFile, 'utf8'));
+        if (!parsedStatic || typeof parsedStatic !== 'object') {
+          throw new TypeError('Expected JSON object or array of static showcase accessibility violations');
+        }
+        const scanCount = !Array.isArray(parsedStatic) ? Object.keys(parsedStatic).length : 0;
+        const staticViolations = normalizePlaywrightViolations(parsedStatic);
+        if (staticViolations.length === 0) {
+          report +=
+            scanCount > 0
+              ? `✅ No accessibility violations found across ${scanCount} static showcase route/theme scans.\n\n`
+              : '✅ No accessibility violations found in static showcase.\n\n';
+        } else {
+          totalViolations += staticViolations.length;
+          report += `❌ Found ${staticViolations.length} violations in static showcase.\n`;
+          staticViolations.forEach((v) => {
+            const routeLabel = v.route ? ` (\`${v.route}\`)` : '';
+            report += `- **${v.id}**${routeLabel}: ${v.description} (${v.impact})\n`;
+          });
+          report += '\n';
+        }
+      } catch {
+        incompleteSuites.push('static-showcase');
+        parseErrors.push('static-showcase');
         report +=
-          scanCount > 0
-            ? `✅ No accessibility violations found across ${scanCount} static showcase route/theme scans.\n\n`
-            : '✅ No accessibility violations found in static showcase.\n\n';
-      } else {
-        totalViolations += staticViolations.length;
-        report += `❌ Found ${staticViolations.length} violations in static showcase.\n`;
-        staticViolations.forEach((v) => {
-          const routeLabel = v.route ? ` (\`${v.route}\`)` : '';
-          report += `- **${v.id}**${routeLabel}: ${v.description} (${v.impact})\n`;
-        });
-        report += '\n';
+          '⚠️ Incomplete: Static showcase accessibility artifact (`test-results/static-a11y-violations.json`) could not be parsed.\n\n';
       }
     } else {
       incompleteSuites.push('static-showcase');
@@ -124,6 +153,8 @@ export function generateReport(options = {}) {
     report,
     totalViolations,
     incompleteSuites,
+    parseErrors,
+    requireComplete,
     outputPath,
   };
 }
@@ -328,11 +359,19 @@ export function main(argv = process.argv.slice(2), options = {}) {
     return;
   }
 
-  const reportOptions = argv.includes('--include-static')
-    ? { ...options, requireStatic: true }
-    : options;
-  const { totalViolations } = generateReport(reportOptions);
-  if (totalViolations > 0) {
+  const requireComplete =
+    Boolean(options.requireComplete) || argv.includes('--require-complete');
+  const reportOptions = {
+    ...options,
+    ...(argv.includes('--include-static') ? { requireStatic: true } : {}),
+    ...(requireComplete ? { requireComplete: true } : {}),
+  };
+  const { totalViolations, incompleteSuites, parseErrors } = generateReport(reportOptions);
+  if (
+    totalViolations > 0 ||
+    parseErrors.length > 0 ||
+    (requireComplete && incompleteSuites.length > 0)
+  ) {
     process.exit(1);
     return;
   }
