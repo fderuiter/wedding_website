@@ -89,8 +89,8 @@
     "postinstall": "([ \"$SKIP_NEXT_TYPEGEN\" = \"true\" ] || [ \"$STATIC_EXPORT\" = \"true\" ] || next typegen) && prisma generate && node scripts/pretest.mjs --record-install-state || node -e \"process.exit(process.env.npm_config_package_lock_only === 'true' ? 0 : 1)\""
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1173.0",
-    "@dimforge/rapier3d-compat": "0.19.2",
+    "@aws-sdk/client-s3": "^3.1175.0",
+    "@dimforge/rapier3d-compat": "0.21.0",
     "@hello-pangea/dnd": "^18.0.1",
     "@prisma/adapter-pg": "^7.10.1",
     "@prisma/client": "^7.10.1",
@@ -120,7 +120,7 @@
     "sharp": "0.35.5",
     "stripe": "^23.2.0",
     "three": "^0.187.0",
-    "undici": "^8.13.0",
+    "undici": "^8.13.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
