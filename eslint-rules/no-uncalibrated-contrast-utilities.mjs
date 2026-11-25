@@ -9,16 +9,25 @@ const UNCALIBRATED_DARK_500_RE = new RegExp(
 const LIGHT_500_RE = new RegExp(
   `^!?text-${NEUTRAL_FAMILIES}-500(?:\\/\\d+)?$`
 );
+const LIGHT_600_RE = new RegExp(
+  `^!?text-${NEUTRAL_FAMILIES}-600(?:\\/\\d+)?$`
+);
 const CALIBRATED_DARK_TEXT_COMPANION_RE = new RegExp(
-  `^!?dark:text-(?:white|${NEUTRAL_FAMILIES}-(?:50|100|200|300|400)|primary(?:-text|-light)?|secondary(?:-text|-light)?|muted-text|\\[var\\(--)`
+  `^!?dark:text-(?:white|${NEUTRAL_FAMILIES}-(?:50|100|200|300|400)|primary(?:-text|-light)?|secondary(?:-text|-light)?|muted-text|error-text|\\[var\\(--)`
 );
 const ELEVATED_DARK_BG_RE = new RegExp(
   `^!?(?:dark:)?bg-${NEUTRAL_FAMILIES}-(?:600|700)(?:\\/\\d+)?$`
 );
+const ELEVATED_LIGHT_NEUTRAL_BG_RE = new RegExp(
+  `^!?bg-${NEUTRAL_FAMILIES}-(?:200|300|400)(?:\\/(?:[7-9]\\d|100))?$`
+);
+const LIGHT_400_BG_RE = new RegExp(
+  `^!?bg-${NEUTRAL_FAMILIES}-400(?:\\/(?:[7-9]\\d|100))?$`
+);
 const TRANSLUCENT_WHITE_BG_RE = /^!?bg-white\/(?:[5-9]\d|100)$/;
 const DARK_BG_COMPANION_RE = /^!?dark:bg-/;
 const EXPLICIT_DARK_FG_TEXT_RE = new RegExp(
-  `^!?text-(?:black|${NEUTRAL_FAMILIES}-(?:700|800|900|950)|primary(?:-text)?|secondary(?:-text)?|muted-text|\\[var\\(--(?:toast-action-text|color-primary-text|color-foreground|form-label-text))`
+  `^!?text-(?:black|${NEUTRAL_FAMILIES}-(?:700|800|900|950)|primary(?:-text)?|secondary(?:-text)?|muted-text|error-text|\\[var\\(--(?:toast-action-text|color-(?:primary|secondary|muted|error|warning)-text|color-foreground|form-label-text))`
 );
 
 const STATUS_FAMILIES = '(?:emerald|amber)';
@@ -317,6 +326,8 @@ const noUncalibratedContrastUtilitiesRule = {
       const tokens = entries.map((entry) => entry.token);
       const hasDarkTextCompanion = tokens.some((t) => CALIBRATED_DARK_TEXT_COMPANION_RE.test(t));
       const hasElevatedDarkBg = tokens.some((t) => ELEVATED_DARK_BG_RE.test(t));
+      const hasElevatedLightNeutralBg = tokens.some((t) => ELEVATED_LIGHT_NEUTRAL_BG_RE.test(t));
+      const hasLight400Bg = tokens.some((t) => LIGHT_400_BG_RE.test(t));
       const hasDarkBgCompanion = tokens.some((t) => DARK_BG_COMPANION_RE.test(t));
       const hasExplicitDarkFg = tokens.some((t) => EXPLICIT_DARK_FG_TEXT_RE.test(t));
 
@@ -335,7 +346,15 @@ const noUncalibratedContrastUtilitiesRule = {
           continue;
         }
 
-        if (LIGHT_500_RE.test(token) && (!hasDarkTextCompanion || hasElevatedDarkBg)) {
+        if (
+          LIGHT_500_RE.test(token) &&
+          (!hasDarkTextCompanion || hasElevatedDarkBg || hasElevatedLightNeutralBg)
+        ) {
+          reportOnce(node, 'uncalibratedNeutralText', token);
+          continue;
+        }
+
+        if (LIGHT_600_RE.test(token) && hasLight400Bg && !hasLargeScaleText) {
           reportOnce(node, 'uncalibratedNeutralText', token);
           continue;
         }

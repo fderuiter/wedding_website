@@ -550,4 +550,15 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       }
     }
   });
+
+  it('darkens --btn-primary-hover-bg with #000000 across all light presets including romantic so hovered white labels maintain >= 4.5:1 contrast', () => {
+    expect(THEME_PRESETS.romantic['--btn-primary-hover-bg']).toBe(
+      'color-mix(in srgb, var(--color-primary, #B91C1C) 88%, #000000)'
+    );
+
+    for (const presetKey of THEME_PRESET_KEYS) {
+      const hoverExpr = getPresetTokens(presetKey, 'light')['--btn-primary-hover-bg'];
+      expect(hoverExpr).toMatch(/color-mix\(in srgb,\s*var\(--color-primary,\s*#[0-9a-fA-F]{6}\)\s*\d+%,\s*#000000\)/i);
+    }
+  });
 });
