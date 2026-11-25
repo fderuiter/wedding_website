@@ -191,9 +191,22 @@ export const ContributorSchema = z.object({
     .optional(),
 });
 
-export const GuestClaimQuerySchema = z.object({
-  token: z.string({ message: 'Missing or invalid claim token.' }).trim().min(1, 'Missing or invalid claim token.'),
-});
+export const GuestClaimQuerySchema = z
+  .object({
+    token: z.string().trim().optional(),
+    hub: z.string().trim().optional(),
+    tokens: z.string().trim().optional(),
+  })
+  .superRefine((data, ctx) => {
+    const isHubMode = data.hub === '1' || data.hub === 'true';
+    if (!isHubMode && (!data.token || data.token.length === 0)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['token'],
+        message: 'Missing or invalid claim token.',
+      });
+    }
+  });
 
 export const GuestClaimActionSchema = z.object({
   token: z.string({ message: 'Missing or invalid claim token.' }).trim().min(1, 'Missing or invalid claim token.'),

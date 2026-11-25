@@ -1003,5 +1003,66 @@ describe('AdminSettingsPage Unsaved Draft Guard & Secret Storage Safety', () => 
       })
     );
   }, 15000);
+
+  it('renders Registry Access Tiers & Reservation Limits controls, passes axe, and persists updated tiers and hold limit on save', async () => {
+    let savedBody: Record<string, unknown> | null = null;
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (typeof url === 'string' && url.startsWith('/api/admin/settings')) {
+        if (init?.method === 'PUT') {
+          savedBody = JSON.parse(String(init.body || '{}'));
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ ...mockConfig, ...savedBody }),
+          });
+        }
+        if (url.includes('list=true')) {
+          return Promise.resolve({ ok: true, json: async () => [mockConfig] });
+        }
+        return Promise.resolve({ ok: true, json: async () => mockConfig });
+      }
+      return Promise.reject(new Error(`Unhandled: ${url}`));
+    });
+
+    const { container } = render(<AdminSettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
+    });
+
+    const giftTierSelect = screen.getByLabelText(/Registry Gift Access Tier/i) as HTMLSelectElement;
+    const shippingTierSelect = screen.getByLabelText(/Shipping Address Disclosure Tier/i) as HTMLSelectElement;
+    const maxHoldsInput = screen.getByLabelText(/Maximum Pending Physical Reservations/i) as HTMLInputElement;
+
+    expect(giftTierSelect.value).toBe('PASSCODE_GUESTS');
+    expect(shippingTierSelect.value).toBe('PASSCODE_GUESTS');
+    expect(maxHoldsInput.value).toBe('5');
+
+    fireEvent.change(giftTierSelect, {
+      target: { name: 'registryGiftAccessTier', value: 'INVITED_HOUSEHOLDS' },
+    });
+    fireEvent.change(shippingTierSelect, {
+      target: { name: 'shippingDisclosureTier', value: 'POST_CLAIM_ONLY' },
+    });
+    fireEvent.change(maxHoldsInput, {
+      target: { name: 'maxPendingReservations', value: '3' },
+    });
+
+    const axeResults = await axe(container);
+    expect(axeResults).toHaveNoViolations();
+
+    fireEvent.click(screen.getByRole('button', { name: /Save Settings/i }));
+
+    await waitFor(() => {
+      expect(savedBody).not.toBeNull();
+    });
+
+    expect(savedBody).toEqual(
+      expect.objectContaining({
+        registryGiftAccessTier: 'INVITED_HOUSEHOLDS',
+        shippingDisclosureTier: 'POST_CLAIM_ONLY',
+        maxPendingReservations: 3,
+      })
+    );
+  }, 15000);
 });
 

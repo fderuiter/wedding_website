@@ -92,6 +92,9 @@ model AppConfig {
   shippingDeliveryNotes    String @default("")
   defaultPaymentHandleType String @default("")
   defaultPaymentHandle     String @default("")
+  registryGiftAccessTier   String @default("PASSCODE_GUESTS")
+  shippingDisclosureTier   String @default("PASSCODE_GUESTS")
+  maxPendingReservations   Int    @default(5)
   setupCompleted           Boolean @default(true)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt

@@ -17,6 +17,7 @@ import { useGuestSession } from '../context/GuestSessionContext';
 import { notifyCapabilitiesRefresh } from './useRegistryCapabilities';
 import { formatCurrency } from '@/utils/intl';
 import { getItemRemainingAmount, getItemUnitCounts } from '../lib/registryStatusUtils';
+import { recordStoredSessionClaimHold } from '../lib/claimHubStorage';
 
 export const EMAIL_REQUIRED_FOR_CLAIM_MESSAGE =
   'Email address is required for confirmation.';
@@ -78,6 +79,7 @@ interface UseRegistryContributionMachineOptions {
   initialZipCode?: string;
   initialCountry?: string;
   requireEmailWhenUnverified?: boolean;
+  requireInvitationCode?: boolean;
 }
 
 interface VerifiedSubmissionIdentity {
@@ -141,6 +143,7 @@ interface UseRegistryContributionMachineReturn {
   setCountry: (value: string) => void;
   setPaymentTransactionId: (id: string | null) => void;
   setPhase: (phase: ContributionPhase) => void;
+  setCodeError: (error: string | null) => void;
   setSubmissionError: (error: string | null) => void;
 
   // Actions
@@ -185,6 +188,7 @@ export function useRegistryContributionMachine({
   initialZipCode = '',
   initialCountry = '',
   requireEmailWhenUnverified = false,
+  requireInvitationCode = false,
 }: UseRegistryContributionMachineOptions): UseRegistryContributionMachineReturn {
   const {
     invitationCode: sessionCode,
@@ -905,6 +909,14 @@ export function useRegistryContributionMachine({
           phase === 'code_locked' ||
           (resolvedIdentity.code && lockedCodeRef.current === resolvedIdentity.code)
       );
+      if (requireInvitationCode && !isIdentityVerified) {
+        setCodeError(
+          'Please enter and verify your household invitation code to claim or contribute to gifts.'
+        );
+        setPhase('error');
+        invitationCodeInputRef.current?.focus();
+        return;
+      }
       const isMissingRequiredEmail =
         requireEmailWhenUnverified &&
         !paymentIntentId &&
@@ -1109,9 +1121,18 @@ export function useRegistryContributionMachine({
           'claimActions' in contributeResult &&
           (contributeResult as { claimActions?: GuestClaimActions }).claimActions
         ) {
-          setClaimActions(
-            (contributeResult as { claimActions?: GuestClaimActions }).claimActions ?? null
-          );
+          const nextClaimActions =
+            (contributeResult as { claimActions?: GuestClaimActions }).claimActions ?? null;
+          setClaimActions(nextClaimActions);
+          if (nextClaimActions?.confirmToken && nextClaimActions?.cancelToken) {
+            recordStoredSessionClaimHold({
+              confirmToken: nextClaimActions.confirmToken,
+              cancelToken: nextClaimActions.cancelToken,
+              itemId: item.id,
+              itemName: item.name,
+              amount: finalAmount,
+            });
+          }
         } else {
           setClaimActions(null);
         }
@@ -1130,6 +1151,7 @@ export function useRegistryContributionMachine({
       phase,
       hasVerifiedCode,
       requireEmailWhenUnverified,
+      requireInvitationCode,
       ensureCodeVerifiedForSubmit,
       item,
       requestedUnits,
@@ -1217,6 +1239,7 @@ export function useRegistryContributionMachine({
     setCountry,
     setPaymentTransactionId,
     setPhase,
+    setCodeError,
     setSubmissionError,
 
     validateContribution,

@@ -543,7 +543,12 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
 
     const claimGet = openapi.paths['/api/registry/claim']?.get as OpenApiOperation;
     const claimTokenParam = claimGet.parameters?.find((p) => p.in === 'query' && p.name === 'token');
-    expect(claimTokenParam?.required).toBe(true);
+    const claimHubParam = claimGet.parameters?.find((p) => p.in === 'query' && p.name === 'hub');
+    const claimTokensParam = claimGet.parameters?.find((p) => p.in === 'query' && p.name === 'tokens');
+    expect(claimTokenParam).toBeDefined();
+    expect(Boolean(claimTokenParam?.required)).toBe(false);
+    expect(claimHubParam).toBeDefined();
+    expect(claimTokensParam).toBeDefined();
 
     const inviteRsvpsGet = openapi.paths['/api/admin/invitation-codes/rsvps']?.get as OpenApiOperation;
     const inviteIdParam = inviteRsvpsGet.parameters?.find(

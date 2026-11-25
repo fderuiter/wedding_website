@@ -1,12 +1,19 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
+import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { Dialog } from '@/components/ui/Dialog';
 import { VisibilitySentinel } from '@/components/VisibilitySentinel';
 
 import RegistryCard from '../components/RegistryCard';
 import RegistryItemCard from '../components/RegistryItemCard';
+import { ClaimFulfillmentHub } from '../components/ClaimFulfillmentHub';
+import {
+  CLAIM_HUB_UPDATED_EVENT,
+  readStoredSessionClaimHolds,
+} from '../lib/claimHubStorage';
+import { useOptionalDemo } from '@/components/demo/DemoContext';
 import { CategoryFilter } from '@/components/ui/CategoryFilter';
 import { PriceRangeFilter } from '../components/PriceRangeFilter';
 import RegistryCardSkeleton from '../components/RegistryCardSkeleton';
@@ -22,7 +29,7 @@ import {
   REGISTRY_LOAD_MORE_INCREMENT,
 } from '@/utils/registryPagination';
 
-import { GuestSessionProvider } from '../context/GuestSessionContext';
+import { GuestSessionProvider, useGuestSession } from '../context/GuestSessionContext';
 
 /**
  * @page RegistryPage
@@ -61,6 +68,9 @@ function RegistryPageContent() {
     defaultPaymentHandle,
     hasShippingAddress,
     shippingAddress,
+    giftAccessTier,
+    shippingDisclosureTier,
+    maxPendingReservations,
     filteredItems,
     visibleItems,
     categories,
@@ -86,6 +96,34 @@ function RegistryPageContent() {
     handleContribute,
     syncItemInCache,
   } = useRegistry();
+
+  const demo = useOptionalDemo();
+  const isDemoMode = Boolean(demo?.isDemoMode);
+  const { isVerified: isHouseholdVerified, hasPasscodeSession } = useGuestSession();
+  const [isClaimHubOpen, setIsClaimHubOpen] = useState(false);
+  const [storedHoldCount, setStoredHoldCount] = useState(0);
+
+  useEffect(() => {
+    const syncStoredCount = () => {
+      setStoredHoldCount(readStoredSessionClaimHolds().length);
+    };
+    syncStoredCount();
+    window.addEventListener(CLAIM_HUB_UPDATED_EVENT, syncStoredCount);
+    return () => {
+      window.removeEventListener(CLAIM_HUB_UPDATED_EVENT, syncStoredCount);
+    };
+  }, []);
+
+  const showMyReservedGiftsLink = Boolean(
+    isHouseholdVerified || hasPasscodeSession || storedHoldCount > 0 || isDemoMode
+  );
+  const showPageShippingDisclosureNotice = Boolean(
+    !isAdmin &&
+      hasShippingAddress &&
+      !shippingAddress &&
+      (shippingDisclosureTier === 'INVITED_HOUSEHOLDS' ||
+        shippingDisclosureTier === 'POST_CLAIM_ONLY')
+  );
 
   const [isLoadingMoreState, setIsLoadingMoreState] = useState(false);
   const isLoadingMore = useRef(false);
@@ -297,8 +335,79 @@ function RegistryPageContent() {
                 Clear Filters
               </Button>
             )}
+            {showMyReservedGiftsLink && (
+              <Link
+                href="/guest/claim"
+                data-testid="open-claim-hub-button"
+                onClick={(e) => {
+                  if (
+                    !e.metaKey &&
+                    !e.ctrlKey &&
+                    !e.shiftKey &&
+                    !e.altKey &&
+                    e.button === 0
+                  ) {
+                    e.preventDefault();
+                    setIsClaimHubOpen(true);
+                  }
+                }}
+                className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                <Icon name="Gift" className="w-4 h-4 shrink-0" />
+                <span>My Reserved Gifts</span>
+                {storedHoldCount > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-primary text-[var(--color-text-on-primary,#ffffff)] text-xs font-bold">
+                    {storedHoldCount}
+                  </span>
+                )}
+              </Link>
+            )}
           </div>
         </nav>
+
+        {showPageShippingDisclosureNotice && (
+          <div
+            role="note"
+            data-testid="registry-page-shipping-disclosure-notice"
+            className="max-w-4xl mx-auto mb-8 px-4 py-3.5 rounded-xl bg-amber-50/90 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 text-amber-950 dark:text-amber-100 text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs"
+          >
+            <div className="flex items-start gap-2.5">
+              <Icon name="MapPin" className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold">
+                  {shippingDisclosureTier === 'POST_CLAIM_ONLY'
+                    ? "Couple's Shipping Address Revealed After Reserving a Gift"
+                    : 'Household Verification Required for Direct Shipping Address'}
+                </p>
+                <p className="text-xs text-amber-900/90 dark:text-amber-200 mt-0.5">
+                  {shippingDisclosureTier === 'POST_CLAIM_ONLY'
+                    ? "Select any physical gift and reserve it to immediately view and copy the couple's shipping address, or open My Reserved Gifts to manage existing holds."
+                    : "Verify the personal household code printed on your wedding invitation inside any gift card to reveal the couple's direct shipping address."}
+                </p>
+              </div>
+            </div>
+            {showMyReservedGiftsLink && (
+              <Link
+                href="/guest/claim"
+                onClick={(e) => {
+                  if (
+                    !e.metaKey &&
+                    !e.ctrlKey &&
+                    !e.shiftKey &&
+                    !e.altKey &&
+                    e.button === 0
+                  ) {
+                    e.preventDefault();
+                    setIsClaimHubOpen(true);
+                  }
+                }}
+                className="text-xs font-semibold text-primary underline whitespace-nowrap shrink-0"
+              >
+                View My Reserved Gifts
+              </Link>
+            )}
+          </div>
+        )}
 
         {error ? (
           <div
@@ -414,9 +523,38 @@ function RegistryPageContent() {
               defaultPaymentHandle={defaultPaymentHandle}
               hasShippingAddress={hasShippingAddress}
               shippingAddress={shippingAddress}
+              giftAccessTier={giftAccessTier}
+              shippingDisclosureTier={shippingDisclosureTier}
+              maxPendingReservations={maxPendingReservations}
+              onOpenClaimHub={() => setIsClaimHubOpen(true)}
               isAdmin={isAdmin}
               reconciledReceipt={reconciledReceipt}
               redirectRecoveryError={redirectRecoveryError}
+            />
+          )}
+        </Dialog>
+
+        <Dialog
+          isOpen={isClaimHubOpen}
+          onClose={() => setIsClaimHubOpen(false)}
+          aria-labelledby="registry-claim-hub-modal-title"
+          className="max-w-5xl w-full p-0 border-none bg-transparent shadow-none"
+          contentClassName="p-0 max-h-[92vh] overflow-y-auto"
+          style={{
+            backgroundColor: 'transparent',
+            borderColor: 'transparent',
+            boxShadow: 'none',
+          }}
+        >
+          {isClaimHubOpen && (
+            <ClaimFulfillmentHub
+              mode="modal"
+              titleId="registry-claim-hub-modal-title"
+              onClose={() => setIsClaimHubOpen(false)}
+              onItemUpdated={syncItemInCache}
+              onHoldsChanged={() => {
+                void refetch();
+              }}
             />
           )}
         </Dialog>

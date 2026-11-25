@@ -448,6 +448,7 @@ class RegistryRepository implements IRegistryRepository {
       state?: string | null;
       zipCode?: string | null;
       country?: string | null;
+      maxPendingReservations?: number;
     }
   ) {
     const runTransaction = async (txClient: any) => {
@@ -531,6 +532,12 @@ class RegistryRepository implements IRegistryRepository {
       let invitationCodeId: string | null = null;
       let linkedInviteRecord: any = null;
 
+      const effectiveMaxPendingReservations =
+        typeof contribution.maxPendingReservations === 'number' &&
+        Number.isFinite(contribution.maxPendingReservations)
+          ? Math.min(100, Math.max(1, Math.trunc(contribution.maxPendingReservations)))
+          : MAX_ACTIVE_HOUSEHOLD_RESERVATIONS;
+
       if (contribution.code && contribution.code.trim()) {
         const inviteRecord = await txClient.invitationCode.findUnique({
           where: { code: contribution.code.trim().toUpperCase(), isSample: false },
@@ -561,10 +568,10 @@ class RegistryRepository implements IRegistryRepository {
                 registryItem: { itemType: 'PHYSICAL' },
               },
             });
-            if (activeReservationCount >= MAX_ACTIVE_HOUSEHOLD_RESERVATIONS) {
+            if (activeReservationCount >= effectiveMaxPendingReservations) {
               throw new ApiError(
                 429,
-                `Your household already has ${MAX_ACTIVE_HOUSEHOLD_RESERVATIONS} pending physical gift reservations. Please confirm or release an existing reservation using the /guest/claim links in your confirmation email before claiming another gift.`
+                `Your household already has ${effectiveMaxPendingReservations} pending physical gift reservations. Please confirm or release an existing reservation at /guest/claim before claiming another gift.`
               );
             }
           }
@@ -597,10 +604,10 @@ class RegistryRepository implements IRegistryRepository {
               registryItem: { itemType: 'PHYSICAL' },
             },
           });
-          if (activeEmailReservationCount >= MAX_ACTIVE_HOUSEHOLD_RESERVATIONS) {
+          if (activeEmailReservationCount >= effectiveMaxPendingReservations) {
             throw new ApiError(
               429,
-              `This email address already has ${MAX_ACTIVE_HOUSEHOLD_RESERVATIONS} pending physical gift reservations. Please confirm or release an existing reservation using the /guest/claim links in your confirmation email before claiming another gift.`
+              `This email address already has ${effectiveMaxPendingReservations} pending physical gift reservations. Please confirm or release an existing reservation at /guest/claim before claiming another gift.`
             );
           }
         }
@@ -937,6 +944,91 @@ class RegistryRepository implements IRegistryRepository {
       contributor: ContributorSchema.parse(contributor),
       item,
     };
+  }
+
+  async getReservedContributionsByInvitationCode(
+    code: string
+  ): Promise<Array<{ contributor: ContributorRecord; item: RegistryItemDTO }>> {
+    const normalizedCode = code?.trim().toUpperCase() || '';
+    if (!normalizedCode) return [];
+    if (isStaticExportBuild()) {
+      return [];
+    }
+
+    const inviteRecord = await this.client.invitationCode?.findUnique?.({
+      where: { code: normalizedCode, isSample: false },
+    });
+    if (
+      !inviteRecord ||
+      inviteRecord.isSample ||
+      hasAddressCollectionTag(inviteRecord.partyTags) ||
+      (typeof inviteRecord.source === 'string' &&
+        inviteRecord.source.trim().toLowerCase() === 'address-collection')
+    ) {
+      return [];
+    }
+
+    if (typeof this.client.contributor?.findMany !== 'function') {
+      return [];
+    }
+
+    const contributors = await this.client.contributor.findMany({
+      where: {
+        invitationCodeId: inviteRecord.id,
+        status: 'RESERVED',
+      },
+      orderBy: { date: 'desc' },
+    });
+
+    if (!Array.isArray(contributors) || contributors.length === 0) {
+      return [];
+    }
+
+    const itemIds = Array.from(
+      new Set(
+        contributors
+          .map((c: { registryItemId?: string | null }) => c.registryItemId)
+          .filter((id): id is string => Boolean(id))
+      )
+    );
+    if (itemIds.length === 0) {
+      return [];
+    }
+
+    const rawItems =
+      typeof this.client.registryItem?.findMany === 'function'
+        ? await this.client.registryItem.findMany({
+          where: { id: { in: itemIds }, isSample: false },
+          include: { image: true, contributors: true },
+        })
+        : await Promise.all(
+          itemIds.map((id) =>
+            this.client.registryItem.findUnique({
+              where: { id },
+              include: { image: true, contributors: true },
+            })
+          )
+        );
+
+    const parsedItemsById = new Map<string, RegistryItemDTO>();
+    for (const rawItem of rawItems ?? []) {
+      if (rawItem && !rawItem.isSample) {
+        const parsed = RegistryItemSchema.parse(rawItem);
+        parsedItemsById.set(parsed.id, parsed);
+      }
+    }
+
+    const results: Array<{ contributor: ContributorRecord; item: RegistryItemDTO }> = [];
+    for (const rawContributor of contributors) {
+      if (!rawContributor.registryItemId) continue;
+      const item = parsedItemsById.get(rawContributor.registryItemId);
+      if (!item) continue;
+      results.push({
+        contributor: ContributorSchema.parse(rawContributor),
+        item,
+      });
+    }
+    return results;
   }
 
   async markContributorReminderSent(contributorId: string): Promise<ContributorRecord> {

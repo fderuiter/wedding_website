@@ -391,6 +391,29 @@ const rawUpdateAppConfigBaseSchema = z.object({
     .nullable()
     .transform((val) => val ?? '')
     .optional(),
+  registryGiftAccessTier: z
+    .enum(['PASSCODE_GUESTS', 'INVITED_HOUSEHOLDS'])
+    .optional(),
+  shippingDisclosureTier: z
+    .enum(['PASSCODE_GUESTS', 'INVITED_HOUSEHOLDS', 'POST_CLAIM_ONLY'])
+    .optional(),
+  maxPendingReservations: z
+    .union([
+      z.number(),
+      z
+        .string()
+        .trim()
+        .min(1, 'Maximum pending reservations must be between 1 and 100.')
+        .transform((v) => Number(v)),
+    ])
+    .pipe(
+      z
+        .number({ message: 'Maximum pending reservations must be a valid integer.' })
+        .int('Maximum pending reservations must be a whole number.')
+        .min(1, 'Maximum pending reservations must be at least 1.')
+        .max(100, 'Maximum pending reservations cannot exceed 100.'),
+    )
+    .optional(),
   setupCompleted: z.boolean().optional(),
   modules: ModuleConfigSchema.partial().optional(),
   timezone: z
@@ -516,6 +539,9 @@ export const CreateAppConfigProfileSchema = rawUpdateAppConfigBaseSchema
       shippingDeliveryNotes: data.shippingDeliveryNotes ?? '',
       defaultPaymentHandleType: data.defaultPaymentHandleType ?? '',
       defaultPaymentHandle: data.defaultPaymentHandle ?? '',
+      registryGiftAccessTier: data.registryGiftAccessTier ?? 'PASSCODE_GUESTS',
+      shippingDisclosureTier: data.shippingDisclosureTier ?? 'PASSCODE_GUESTS',
+      maxPendingReservations: data.maxPendingReservations ?? 5,
       autoApproveGuestPhotos: data.autoApproveGuestPhotos ?? false,
       setupCompleted: data.setupCompleted ?? true,
       subdomain: data.subdomain || null,
@@ -674,6 +700,15 @@ export function toAppConfigDbPayload(
     shippingDeliveryNotes: data.shippingDeliveryNotes,
     defaultPaymentHandleType: data.defaultPaymentHandleType,
     defaultPaymentHandle: data.defaultPaymentHandle,
+    ...(data.registryGiftAccessTier !== undefined
+      ? { registryGiftAccessTier: data.registryGiftAccessTier }
+      : {}),
+    ...(data.shippingDisclosureTier !== undefined
+      ? { shippingDisclosureTier: data.shippingDisclosureTier }
+      : {}),
+    ...(typeof data.maxPendingReservations === 'number'
+      ? { maxPendingReservations: data.maxPendingReservations }
+      : {}),
     ...(typeof data.setupCompleted === 'boolean' ? { setupCompleted: data.setupCompleted } : {}),
   };
 }
@@ -1345,6 +1380,21 @@ export const AppConfigSchema = z.object({
   shippingDeliveryNotes: z.string().default('').describe('Optional carrier or concierge instructions for registry gift deliveries; omitted from public DTOs.'),
   defaultPaymentHandleType: z.string().default('').describe('Site-wide fallback peer-to-peer payment service (Venmo, PayPal, Cash App, Zelle, or Custom) for group gifts without an item-level handle; omitted from public DTOs.'),
   defaultPaymentHandle: z.string().default('').describe('Site-wide fallback peer-to-peer payment handle or username for group gifts without an item-level handle; omitted from public DTOs.'),
+  registryGiftAccessTier: z
+    .enum(['PASSCODE_GUESTS', 'INVITED_HOUSEHOLDS'])
+    .default('PASSCODE_GUESTS')
+    .describe('Controls whether website passcode guests (PASSCODE_GUESTS) or only verified invited households (INVITED_HOUSEHOLDS) can claim physical gifts and record zero-fee direct transfers; omitted from public DTOs.'),
+  shippingDisclosureTier: z
+    .enum(['PASSCODE_GUESTS', 'INVITED_HOUSEHOLDS', 'POST_CLAIM_ONLY'])
+    .default('PASSCODE_GUESTS')
+    .describe('Controls when the couple shipping address is revealed: to passcode and invited guests (PASSCODE_GUESTS), verified invited households only (INVITED_HOUSEHOLDS), or strictly after claiming a gift (POST_CLAIM_ONLY); omitted from public DTOs.'),
+  maxPendingReservations: z
+    .number()
+    .int()
+    .min(1)
+    .max(100)
+    .default(5)
+    .describe('Maximum concurrent RESERVED physical gift holds allowed per household or email before requiring confirmation or release; omitted from public DTOs.'),
   setupCompleted: z.boolean().default(true).describe('Admin-only flag tracking whether the five-step onboarding setup wizard has been completed; omitted from public DTOs.'),
   modules: z.any().optional().transform((val): z.input<typeof ModuleConfigSchema> => resolveModuleConfig(val)).pipe(ModuleConfigSchema).default(DEFAULT_MODULE_CONFIG).describe('Persisted feature module enablement map validated against ModuleConfigSchema with dependency resolution.'),
   features: z.union([
@@ -2030,6 +2080,45 @@ export function translateAppConfigSnapshot(
     } else {
       create[key] = '';
     }
+  }
+
+  const parsedGiftAccessTier = AppConfigSchema.shape.registryGiftAccessTier.safeParse(
+    snapshotData.registryGiftAccessTier,
+  );
+  const resolvedGiftAccessTier = parsedGiftAccessTier.success
+    ? parsedGiftAccessTier.data
+    : 'PASSCODE_GUESTS';
+  create.registryGiftAccessTier = resolvedGiftAccessTier;
+  if (snapshotData.registryGiftAccessTier !== undefined) {
+    update.registryGiftAccessTier = resolvedGiftAccessTier;
+  }
+
+  const parsedShippingDisclosureTier = AppConfigSchema.shape.shippingDisclosureTier.safeParse(
+    snapshotData.shippingDisclosureTier,
+  );
+  const resolvedShippingDisclosureTier = parsedShippingDisclosureTier.success
+    ? parsedShippingDisclosureTier.data
+    : 'PASSCODE_GUESTS';
+  create.shippingDisclosureTier = resolvedShippingDisclosureTier;
+  if (snapshotData.shippingDisclosureTier !== undefined) {
+    update.shippingDisclosureTier = resolvedShippingDisclosureTier;
+  }
+
+  if (
+    snapshotData.maxPendingReservations !== undefined &&
+    snapshotData.maxPendingReservations !== null
+  ) {
+    const numericMaxHolds = Number(snapshotData.maxPendingReservations);
+    const resolvedMaxHolds =
+      Number.isInteger(numericMaxHolds) &&
+      numericMaxHolds >= 1 &&
+      numericMaxHolds <= 100
+        ? numericMaxHolds
+        : 5;
+    update.maxPendingReservations = resolvedMaxHolds;
+    create.maxPendingReservations = resolvedMaxHolds;
+  } else {
+    create.maxPendingReservations = 5;
   }
 
   if (

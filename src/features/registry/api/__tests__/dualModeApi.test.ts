@@ -129,6 +129,9 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
         data: {
           cardCheckoutEnabled: false,
           stripePublishableKey: null,
+          giftAccessTier: 'PASSCODE_GUESTS',
+          shippingDisclosureTier: 'PASSCODE_GUESTS',
+          maxPendingReservations: 5,
           hasShippingAddress: false,
         },
       });
@@ -147,6 +150,9 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
         data: {
           cardCheckoutEnabled: true,
           stripePublishableKey: 'pk_test_valid_pub_12345',
+          giftAccessTier: 'PASSCODE_GUESTS',
+          shippingDisclosureTier: 'PASSCODE_GUESTS',
+          maxPendingReservations: 5,
           hasShippingAddress: false,
         },
       });

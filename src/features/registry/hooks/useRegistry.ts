@@ -133,6 +133,9 @@ export function useRegistry() {
     defaultPaymentHandle: detectedDefaultPaymentHandle,
     hasShippingAddress: detectedHasShippingAddress,
     shippingAddress: detectedShippingAddress,
+    giftAccessTier: detectedGiftAccessTier,
+    shippingDisclosureTier: detectedShippingDisclosureTier,
+    maxPendingReservations: detectedMaxPendingReservations,
     isCapabilitiesLoading,
   } = useRegistryCapabilities();
   const cardCheckoutEnabled = isCapabilitiesLoading ? undefined : detectedCardCheckoutEnabled;
@@ -140,6 +143,9 @@ export function useRegistry() {
   const defaultPaymentHandle = isCapabilitiesLoading ? null : detectedDefaultPaymentHandle;
   const hasShippingAddress = isCapabilitiesLoading ? false : detectedHasShippingAddress;
   const shippingAddress = isCapabilitiesLoading ? null : detectedShippingAddress;
+  const giftAccessTier = detectedGiftAccessTier;
+  const shippingDisclosureTier = detectedShippingDisclosureTier;
+  const maxPendingReservations = detectedMaxPendingReservations;
   const [selectedItem, setSelectedItem] = useState<RegistryItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [reconciledReceipt, setReconciledReceipt] = useState<ReconciledContributionReceipt | null>(
@@ -794,6 +800,9 @@ export function useRegistry() {
     defaultPaymentHandle,
     hasShippingAddress,
     shippingAddress,
+    giftAccessTier,
+    shippingDisclosureTier,
+    maxPendingReservations,
     filteredItems,
     visibleItems,
     categories,

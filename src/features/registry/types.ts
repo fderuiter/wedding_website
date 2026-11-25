@@ -10,10 +10,54 @@ import { formatCurrency } from '@/utils/intl';
 export type RegistryItem = RegistryItemDTO;
 export type ContributorRecord = z.infer<typeof ContributorSchema>;
 
+export type RegistryGiftAccessTier = 'PASSCODE_GUESTS' | 'INVITED_HOUSEHOLDS';
+export type ShippingDisclosureTier =
+  | 'PASSCODE_GUESTS'
+  | 'INVITED_HOUSEHOLDS'
+  | 'POST_CLAIM_ONLY';
+
 export interface GuestClaimActions {
   confirmToken: string;
   cancelToken: string;
   status?: ContributorStatus;
+  shippingAddress?: RegistryShippingAddress | null;
+}
+
+export interface ClaimHubHold {
+  contributorId: string;
+  confirmToken: string;
+  cancelToken: string;
+  action?: 'confirm' | 'cancel';
+  status: ContributorStatus;
+  amount: number;
+  itemId: string;
+  itemName: string;
+  itemDescription: string;
+  itemImageUrl?: string | null;
+  itemCategory?: string | null;
+  itemType: 'PHYSICAL' | 'CASH_FUND' | 'EXPERIENCE_FUND';
+  isGroupGift: boolean;
+  vendorUrl: string | null;
+  paymentHandle: string | null;
+  paymentHandleType: string | null;
+  retailerOrderNumber?: string | null;
+  carrier?: string | null;
+  trackingNumber?: string | null;
+  createdAt?: string | null;
+}
+
+export interface ContributorWithItemRecord {
+  contributor: ContributorRecord;
+  item: RegistryItemDTO | null;
+}
+
+export interface ClaimHubResponse {
+  holds: ClaimHubHold[];
+  maxPendingReservations: number;
+  coupleNames: string;
+  shippingAddress?: RegistryShippingAddress | null;
+  selectedContributorId?: string | null;
+  selectedAction?: 'confirm' | 'cancel';
 }
 
 export interface ContributorLifecycleResult {
@@ -175,6 +219,7 @@ export interface IRegistryRepository {
     state?: string | null;
     zipCode?: string | null;
     country?: string | null;
+    maxPendingReservations?: number;
   }): Promise<RegistryItemDTO>;
   claimContributorEmailSend?(
     contributorId: string,
@@ -200,6 +245,9 @@ export interface IRegistryRepository {
   getContributorWithItem?(
     contributorId: string
   ): Promise<{ contributor: ContributorRecord; item: RegistryItemDTO | null } | null>;
+  getReservedContributionsByInvitationCode?(
+    code: string
+  ): Promise<Array<{ contributor: ContributorRecord; item: RegistryItemDTO }>>;
   markContributorReminderSent?(
     contributorId: string
   ): Promise<ContributorRecord>;

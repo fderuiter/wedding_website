@@ -6,7 +6,11 @@ import { isValidStripePublishableKey, type StripeCapability } from '@/lib/stripe
 import { useOptionalDemo } from '@/components/demo/DemoContext';
 import { subscribeGuestSessionChanged } from '@/utils/guestSessionEvents';
 import { useGuestSession } from '../context/GuestSessionContext';
-import type { RegistryShippingAddress } from '../types';
+import type {
+  RegistryGiftAccessTier,
+  RegistryShippingAddress,
+  ShippingDisclosureTier,
+} from '../types';
 
 const REGISTRY_CAPABILITIES_REFRESH_EVENT = 'registry:capabilities-refresh';
 
@@ -17,6 +21,9 @@ export function notifyCapabilitiesRefresh(): void {
 }
 
 interface RegistryCapabilitiesPayload extends StripeCapability {
+  giftAccessTier?: RegistryGiftAccessTier;
+  shippingDisclosureTier?: ShippingDisclosureTier;
+  maxPendingReservations?: number;
   defaultPaymentHandleType?: string | null;
   defaultPaymentHandle?: string | null;
   hasShippingAddress?: boolean;
@@ -24,6 +31,9 @@ interface RegistryCapabilitiesPayload extends StripeCapability {
 }
 
 interface NormalizedCapabilities extends StripeCapability {
+  giftAccessTier: RegistryGiftAccessTier;
+  shippingDisclosureTier: ShippingDisclosureTier;
+  maxPendingReservations: number;
   defaultPaymentHandleType: string | null;
   defaultPaymentHandle: string | null;
   hasShippingAddress: boolean;
@@ -37,6 +47,9 @@ function getClientEnvCapabilityFallback(): NormalizedCapabilities {
   return {
     cardCheckoutEnabled: valid,
     stripePublishableKey: valid && envKey ? envKey.trim() : null,
+    giftAccessTier: 'PASSCODE_GUESTS',
+    shippingDisclosureTier: 'PASSCODE_GUESTS',
+    maxPendingReservations: 5,
     defaultPaymentHandleType: null,
     defaultPaymentHandle: null,
     hasShippingAddress: false,
@@ -55,7 +68,7 @@ interface InternalCapabilitiesState extends NormalizedCapabilities {
 /**
  * Queries the runtime registry capabilities endpoint without requiring a QueryClientProvider,
  * ensuring pre-built container deployments accurately reflect runtime Stripe configuration,
- * site-wide default payment handle fallback, and authenticated shipping details.
+ * site-wide default payment handle fallback, access tiers, and authenticated shipping details.
  */
 export function useRegistryCapabilities(
   options: { enabled?: boolean } = {}
@@ -108,6 +121,20 @@ export function useRegistryCapabilities(
           resolved = {
             cardCheckoutEnabled: res.cardCheckoutEnabled,
             stripePublishableKey: res.stripePublishableKey ?? null,
+            giftAccessTier:
+              res.giftAccessTier === 'INVITED_HOUSEHOLDS'
+                ? 'INVITED_HOUSEHOLDS'
+                : 'PASSCODE_GUESTS',
+            shippingDisclosureTier:
+              res.shippingDisclosureTier === 'INVITED_HOUSEHOLDS' ||
+              res.shippingDisclosureTier === 'POST_CLAIM_ONLY'
+                ? res.shippingDisclosureTier
+                : 'PASSCODE_GUESTS',
+            maxPendingReservations:
+              typeof res.maxPendingReservations === 'number' &&
+              Number.isFinite(res.maxPendingReservations)
+                ? Math.min(100, Math.max(1, Math.trunc(res.maxPendingReservations)))
+                : 5,
             defaultPaymentHandleType: res.defaultPaymentHandleType ?? null,
             defaultPaymentHandle: res.defaultPaymentHandle ?? null,
             hasShippingAddress:
@@ -126,6 +153,9 @@ export function useRegistryCapabilities(
         if (
           prev.cardCheckoutEnabled === resolved.cardCheckoutEnabled &&
           prev.stripePublishableKey === resolved.stripePublishableKey &&
+          prev.giftAccessTier === resolved.giftAccessTier &&
+          prev.shippingDisclosureTier === resolved.shippingDisclosureTier &&
+          prev.maxPendingReservations === resolved.maxPendingReservations &&
           prev.defaultPaymentHandleType === resolved.defaultPaymentHandleType &&
           prev.defaultPaymentHandle === resolved.defaultPaymentHandle &&
           prev.hasShippingAddress === resolved.hasShippingAddress &&
@@ -152,6 +182,9 @@ export function useRegistryCapabilities(
     return {
       cardCheckoutEnabled: true,
       stripePublishableKey: null,
+      giftAccessTier: 'PASSCODE_GUESTS',
+      shippingDisclosureTier: 'PASSCODE_GUESTS',
+      maxPendingReservations: 5,
       defaultPaymentHandleType: 'Venmo',
       defaultPaymentHandle: '@alex-and-taylor',
       hasShippingAddress: Boolean(demo.shippingAddress),
@@ -163,6 +196,9 @@ export function useRegistryCapabilities(
   return {
     cardCheckoutEnabled: state.cardCheckoutEnabled,
     stripePublishableKey: state.stripePublishableKey,
+    giftAccessTier: state.giftAccessTier,
+    shippingDisclosureTier: state.shippingDisclosureTier,
+    maxPendingReservations: state.maxPendingReservations,
     defaultPaymentHandleType: state.defaultPaymentHandleType,
     defaultPaymentHandle: state.defaultPaymentHandle,
     hasShippingAddress: state.hasShippingAddress,
