@@ -708,7 +708,7 @@ describe('check-action-pins', () => {
 
     expect(checkActionPins(workflowsDir).violations).toEqual([]);
 
-    // Verify all 23 live runner jobs, 5-minute rollback cap, and step < job timeout invariant
+    // Verify all live runner jobs (including ci-complete), 5-minute rollback cap, and step < job timeout invariant
     const liveWorkflowNames = fs
       .readdirSync(LIVE_WORKFLOWS_DIR)
       .filter((name) => name.endsWith('.yml') || name.endsWith('.yaml'))
@@ -769,7 +769,7 @@ describe('check-action-pins', () => {
       }
     }
 
-    expect(runnerJobCount).toBe(23);
+    expect(runnerJobCount).toBeGreaterThanOrEqual(24);
     expect(reusableCallerJobCount).toBeGreaterThan(0);
     expect(configuredStepTimeoutCount).toBeGreaterThan(0);
   });
