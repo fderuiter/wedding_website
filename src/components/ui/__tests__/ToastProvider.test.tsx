@@ -2,6 +2,7 @@ import { render, screen, act, fireEvent, renderHook } from '@testing-library/rea
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import { ToastProvider, useToast, useOptionalToast } from '../ToastProvider';
+import { Dialog } from '../Dialog';
 
 expect.extend(toHaveNoViolations);
 
@@ -55,7 +56,7 @@ describe('ToastProvider', () => {
     expect(alertToast).toHaveTextContent('Error notification');
   });
 
-  test('applies CSS custom property styles for background, text color, and border radius', () => {
+  test('applies CSS custom property styles for background, text color, and border radius on toast card while scoping live role to message span', () => {
     render(
       <ToastProvider>
         <TestComponent />
@@ -64,7 +65,9 @@ describe('ToastProvider', () => {
 
     fireEvent.click(screen.getByText('Add Info'));
     const statusToast = screen.getByRole('status');
-    expect(statusToast).toHaveStyle({
+    expect(statusToast.tagName).toBe('SPAN');
+    expect(statusToast.querySelector('button')).toBeNull();
+    expect(statusToast.closest('[data-toast-item]')).toHaveStyle({
       backgroundColor: 'var(--toast-info-bg)',
       color: 'var(--toast-info-text)',
       borderRadius: 'var(--toast-radius)',
@@ -72,7 +75,9 @@ describe('ToastProvider', () => {
 
     fireEvent.click(screen.getByText('Add Error'));
     const alertToast = screen.getByRole('alert');
-    expect(alertToast).toHaveStyle({
+    expect(alertToast.tagName).toBe('SPAN');
+    expect(alertToast.querySelector('button')).toBeNull();
+    expect(alertToast.closest('[data-toast-item]')).toHaveStyle({
       backgroundColor: 'var(--toast-error-bg)',
       color: 'var(--toast-error-text)',
       borderRadius: 'var(--toast-radius)',
@@ -81,7 +86,8 @@ describe('ToastProvider', () => {
     fireEvent.click(screen.getByText('Add Success'));
     const toasts = screen.getAllByRole('status');
     const successToast = toasts.find(t => t.textContent?.includes('Success notification'));
-    expect(successToast).toHaveStyle({
+    expect(successToast?.tagName).toBe('SPAN');
+    expect(successToast?.closest('[data-toast-item]')).toHaveStyle({
       backgroundColor: 'var(--toast-success-bg)',
       color: 'var(--toast-success-text)',
       borderRadius: 'var(--toast-radius)',
@@ -156,7 +162,8 @@ describe('ToastProvider', () => {
 
     unmount();
 
-    expect(clearTimeoutSpy).toHaveBeenCalledTimes(2);
+    // Only the timed info toast starts a setTimeout; persistent error toasts do not
+    expect(clearTimeoutSpy).toHaveBeenCalledTimes(1);
 
     clearTimeoutSpy.mockRestore();
   });
@@ -177,6 +184,11 @@ describe('ToastProvider', () => {
 
     expect(assertiveContainer).toBeInTheDocument();
     expect(politeContainer).toBeInTheDocument();
+    expect(assertiveContainer).not.toHaveAttribute('aria-atomic');
+    expect(politeContainer).not.toHaveAttribute('aria-atomic');
+
+    const notificationRegion = screen.getByRole('region', { name: 'Notifications' });
+    expect(notificationRegion).toHaveAttribute('data-toast-container');
 
     expect(assertiveContainer).toHaveTextContent('Error notification');
     expect(assertiveContainer).not.toHaveTextContent('Info notification');
@@ -395,5 +407,244 @@ describe('ToastProvider', () => {
     const alerts = screen.getAllByRole('alert');
     expect(alerts).toHaveLength(1);
     expect(alerts[0]).toHaveTextContent('Error notification');
+
+    // Once dismissed, identical error message can be dispatched again
+    fireEvent.click(screen.getByRole('button', { name: /close notification/i }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.click(addErrorBtn);
+    expect(screen.getByRole('alert')).toHaveTextContent('Error notification');
+  });
+
+  test('persists error and action toasts indefinitely by default while honoring explicit duration overrides', () => {
+    const DurationHarness = () => {
+      const { addToast } = useToast();
+      return (
+        <div>
+          <button onClick={() => addToast('Persistent error', 'error')}>Add Persistent Error</button>
+          <button
+            onClick={() =>
+              addToast('Action info', 'info', undefined, undefined, {
+                label: 'Undo',
+                onClick: () => {},
+              })
+            }
+          >
+            Add Action Toast
+          </button>
+          <button
+            onClick={() => addToast('Timed error', 'error', undefined, undefined, undefined, 2000)}
+          >
+            Add Timed Error
+          </button>
+          <button
+            onClick={() => addToast('Persistent info', 'info', undefined, undefined, undefined, null)}
+          >
+            Add Persistent Info
+          </button>
+        </div>
+      );
+    };
+
+    render(
+      <ToastProvider>
+        <DurationHarness />
+      </ToastProvider>
+    );
+
+    fireEvent.click(screen.getByText('Add Persistent Error'));
+    fireEvent.click(screen.getByText('Add Action Toast'));
+    fireEvent.click(screen.getByText('Add Persistent Info'));
+
+    act(() => {
+      jest.advanceTimersByTime(60_000);
+    });
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Persistent error');
+    const statuses = screen.getAllByRole('status');
+    expect(statuses.map((el) => el.textContent)).toEqual(
+      expect.arrayContaining(['Action info', 'Persistent info'])
+    );
+
+    // Explicit numeric duration on error toast still auto-dismisses
+    fireEvent.click(screen.getByText('Add Timed Error'));
+    expect(screen.getAllByRole('alert')).toHaveLength(2);
+
+    act(() => {
+      jest.advanceTimersByTime(2000);
+    });
+
+    const remainingAlerts = screen.getAllByRole('alert');
+    expect(remainingAlerts).toHaveLength(1);
+    expect(remainingAlerts[0]).toHaveTextContent('Persistent error');
+  });
+
+  test('toggles focus between prior control and active toast controls via Alt+T and F6', () => {
+    const ShortcutHarness = () => {
+      const { addToast } = useToast();
+      return (
+        <div>
+          <button
+            type="button"
+            onClick={() =>
+              addToast('Failed to dispatch test broadcast', 'error', undefined, undefined, {
+                label: 'Retry',
+                onClick: () => {},
+              })
+            }
+          >
+            Send Test to Me
+          </button>
+        </div>
+      );
+    };
+
+    render(
+      <ToastProvider>
+        <ShortcutHarness />
+      </ToastProvider>
+    );
+
+    const triggerBtn = screen.getByRole('button', { name: 'Send Test to Me' });
+    triggerBtn.focus();
+    expect(triggerBtn).toHaveFocus();
+
+    // Alt+T does nothing when no visible toasts exist
+    fireEvent.keyDown(document, { key: 't', code: 'KeyT', altKey: true });
+    expect(triggerBtn).toHaveFocus();
+
+    fireEvent.click(triggerBtn);
+    expect(screen.getByText('Notifications · Alt+T')).toBeInTheDocument();
+
+    const retryBtn = screen.getByRole('button', { name: 'Retry' });
+
+    // Alt+T jumps focus into the active toast's first interactive control
+    fireEvent.keyDown(document, { key: 't', code: 'KeyT', altKey: true });
+    expect(retryBtn).toHaveFocus();
+
+    // Pressing Alt+T again returns focus to the prior element
+    fireEvent.keyDown(document, { key: 't', code: 'KeyT', altKey: true });
+    expect(triggerBtn).toHaveFocus();
+
+    // F6 also toggles focus into the notification region and back
+    fireEvent.keyDown(document, { key: 'F6' });
+    expect(retryBtn).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: 'F6' });
+    expect(triggerBtn).toHaveFocus();
+  });
+
+  test('dismisses focused or hovered toast on Escape with stopPropagation and restores focus to active Dialog without closing it', () => {
+    const onDialogClose = jest.fn();
+    const onRetry = jest.fn();
+
+    const ModalWithToastHarness = () => {
+      const { addToast } = useToast();
+      return (
+        <Dialog isOpen={true} onClose={onDialogClose} title="Compose Multi-Channel Broadcast">
+          <button
+            type="button"
+            onClick={() =>
+              addToast('Failed to dispatch test broadcast', 'error', undefined, undefined, {
+                label: 'Retry',
+                onClick: onRetry,
+              })
+            }
+          >
+            Send Test to Me
+          </button>
+        </Dialog>
+      );
+    };
+
+    render(
+      <ToastProvider>
+        <ModalWithToastHarness />
+      </ToastProvider>
+    );
+
+    const sendTestBtn = screen.getByRole('button', { name: 'Send Test to Me' });
+    sendTestBtn.focus();
+    fireEvent.click(sendTestBtn);
+
+    const retryBtn = screen.getByRole('button', { name: 'Retry' });
+
+    // Jump to toast via Alt+T, then press Escape on focused toast control
+    fireEvent.keyDown(document, { key: 't', code: 'KeyT', altKey: true });
+    expect(retryBtn).toHaveFocus();
+
+    const escapeOnFocused = new KeyboardEvent('keydown', {
+      key: 'Escape',
+      bubbles: true,
+      cancelable: true,
+    });
+    const stopPropSpy = jest.spyOn(escapeOnFocused, 'stopPropagation');
+    fireEvent(retryBtn, escapeOnFocused);
+
+    expect(stopPropSpy).toHaveBeenCalled();
+    expect(escapeOnFocused.defaultPrevented).toBe(true);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(onDialogClose).not.toHaveBeenCalled();
+    expect(sendTestBtn).toHaveFocus();
+
+    // Re-trigger toast and dismiss via Escape while hovered (with focus still inside Dialog)
+    fireEvent.click(sendTestBtn);
+    const hoveredAlertCard = screen.getByRole('alert').closest('[data-toast-item]')!;
+    fireEvent.mouseEnter(hoveredAlertCard);
+    expect(sendTestBtn).toHaveFocus();
+
+    fireEvent.keyDown(sendTestBtn, { key: 'Escape' });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(onDialogClose).not.toHaveBeenCalled();
+    expect(sendTestBtn).toHaveFocus();
+
+    // Re-trigger toast, focus Retry, and click Retry -> invokes action and restores focus to Dialog
+    fireEvent.click(sendTestBtn);
+    const retryBtnAgain = screen.getByRole('button', { name: 'Retry' });
+    retryBtnAgain.focus();
+    fireEvent.click(retryBtnAgain);
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(onDialogClose).not.toHaveBeenCalled();
+    expect(sendTestBtn).toHaveFocus();
+  });
+
+  test('avoids duplicate Notifications landmarks when multiple standalone Dialogs mount EnsureToastProvider', async () => {
+    jest.useRealTimers();
+    const { container } = render(
+      <div>
+        <Dialog isOpen={true} onClose={() => {}} title="First Dialog">
+          <button type="button">First Action</button>
+        </Dialog>
+        <Dialog isOpen={false} onClose={() => {}} title="Second Dialog">
+          <button type="button">Second Action</button>
+        </Dialog>
+      </div>
+    );
+
+    const results = await axe(container, {
+      rules: {
+        'landmark-unique': { enabled: true },
+      },
+    });
+    expect(results).toHaveNoViolations();
+  });
+
+  test('suppresses empty Notifications landmark inside ?preview=true studio preview iframes', () => {
+    const originalUrl = window.location.href;
+    window.history.replaceState({}, '', '/?preview=true');
+    try {
+      render(
+        <ToastProvider>
+          <TestComponent />
+        </ToastProvider>
+      );
+
+      expect(screen.queryByRole('region', { name: /notifications/i })).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByText('Add Error'));
+      expect(screen.getByRole('region', { name: 'Preview Notifications' })).toBeInTheDocument();
+    } finally {
+      window.history.replaceState({}, '', originalUrl);
+    }
   });
 });

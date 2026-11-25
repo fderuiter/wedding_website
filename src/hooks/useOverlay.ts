@@ -72,32 +72,72 @@ export function useOverlay(
       if (!isTopmost) return;
 
       if (e.key === 'Escape') {
+        const targetElement =
+          e.target instanceof Element
+            ? e.target
+            : (e.target as Node | null)?.parentElement ?? null;
+        const activeElement =
+          document.activeElement instanceof Element ? document.activeElement : null;
+        if (
+          e.defaultPrevented ||
+          Boolean(targetElement?.closest('[data-toast-container]')) ||
+          Boolean(activeElement?.closest('[data-toast-container]'))
+        ) {
+          return;
+        }
         e.preventDefault();
         closeRef.current();
       } else if (e.key === 'Tab') {
         const modal = overlayRef.current;
         if (!modal) return;
-        const focusableEls = modal.querySelectorAll<HTMLElement>(focusableSelectors.join(','));
-        const focusable = Array.from(focusableEls);
+        const selector = focusableSelectors.join(',');
+        const modalFocusable = Array.from(modal.querySelectorAll<HTMLElement>(selector));
+        const toastContainers = Array.from(
+          document.querySelectorAll<HTMLElement>('[data-toast-container]')
+        );
+        const toastFocusable = toastContainers
+          .flatMap((container) => Array.from(container.querySelectorAll<HTMLElement>(selector)))
+          .filter((el) => !modal.contains(el));
+
+        const focusable = [...modalFocusable, ...toastFocusable];
         if (focusable.length === 0) return;
+
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
+        const lastModalEl =
+          modalFocusable.length > 0 ? modalFocusable[modalFocusable.length - 1] : null;
+        const firstToastEl = toastFocusable.length > 0 ? toastFocusable[0] : null;
 
-        if (!modal.contains(document.activeElement)) {
+        const activeEl =
+          document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        const isInsideModal = Boolean(activeEl && modal.contains(activeEl));
+        const isInsideToast = Boolean(activeEl?.closest('[data-toast-container]'));
+
+        if (!isInsideModal && !isInsideToast) {
           e.preventDefault();
           (e.shiftKey ? last : first).focus();
           return;
         }
 
         if (e.shiftKey) {
-          if (document.activeElement === first) {
+          if (activeEl === first) {
             e.preventDefault();
-            (last as HTMLElement).focus();
+            last.focus();
+          } else if (
+            lastModalEl &&
+            (activeEl === firstToastEl ||
+              (isInsideToast && activeEl !== null && !toastFocusable.includes(activeEl)))
+          ) {
+            e.preventDefault();
+            lastModalEl.focus();
           }
         } else {
-          if (document.activeElement === last) {
+          if (activeEl === last) {
             e.preventDefault();
-            (first as HTMLElement).focus();
+            first.focus();
+          } else if (activeEl === lastModalEl && firstToastEl) {
+            e.preventDefault();
+            firstToastEl.focus();
           }
         }
       }
@@ -110,6 +150,12 @@ export function useOverlay(
       if (!isTopmost) return;
 
       const target = e.target as Node | null;
+      const targetElement =
+        target instanceof Element ? target : target?.parentElement ?? null;
+      if (targetElement?.closest('[data-toast-container]')) {
+        return;
+      }
+
       if (target && triggerRefHolder.current?.current?.contains(target)) {
         return;
       }
