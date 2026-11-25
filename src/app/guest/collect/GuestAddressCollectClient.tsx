@@ -11,10 +11,16 @@ import {
   focusFirstInvalidControl,
 } from '@/components/ui/forms';
 import { Button } from '@/components/ui/Button';
+import { Icon } from '@/components/ui/Icon';
 import { Container } from '@/components/ui/Layout';
 import { GuestHelpTrigger } from '@/components/guest/GuestHelpModal';
-import { PublicAddressCollectSchema } from '@/features/registry';
+import {
+  PublicAddressCollectSchema,
+  useGuestSession,
+  useHasActiveInviteSession,
+} from '@/features/registry';
 import { withBasePath } from '@/lib/basePath';
+import { subscribeGuestSessionChanged } from '@/utils/guestSessionEvents';
 
 type AddressFieldKey =
   | 'guestName'
@@ -75,21 +81,37 @@ function extractFieldErrors(details: unknown): Partial<Record<AddressFieldKey, s
   return mapped;
 }
 
-export default function GuestAddressCollectPage() {
-  const [formData, setFormData] = useState({
-    guestName: '',
-    householdName: '',
-    email: '',
-    phone: '',
-    addressLine1: '',
-    addressLine2: '',
-    city: '',
-    state: '',
-    zipCode: '',
-    country: '',
-    notes: '',
-    website: '', // Honeypot field
-  });
+export interface GuestAddressCollectClientProps {
+  hasActiveSession?: boolean;
+}
+
+const EMPTY_COLLECT_FORM = {
+  guestName: '',
+  householdName: '',
+  email: '',
+  phone: '',
+  addressLine1: '',
+  addressLine2: '',
+  city: '',
+  state: '',
+  zipCode: '',
+  country: '',
+  notes: '',
+  website: '', // Honeypot field
+};
+
+export default function GuestAddressCollectPage({
+  hasActiveSession: hasActiveSessionProp,
+}: GuestAddressCollectClientProps = {}) {
+  const guestSession = useGuestSession();
+  const layoutHasInviteSession = useHasActiveInviteSession();
+  const hasActiveSession =
+    hasActiveSessionProp ?? Boolean(guestSession.isVerified || layoutHasInviteSession);
+
+  const [draftFormData, setDraftFormData] = useState(EMPTY_COLLECT_FORM);
+  const [editedFields, setEditedFields] = useState<Partial<Record<AddressFieldKey, boolean>>>({});
+  const [apiPrefill, setApiPrefill] = useState<Partial<Record<AddressFieldKey, string>>>({});
+  const [isResetForAnother, setIsResetForAnother] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -98,6 +120,114 @@ export default function GuestAddressCollectPage() {
   const [invalidFocusTick, setInvalidFocusTick] = useState(0);
   const formRef = useRef<HTMLFormElement | null>(null);
   const isSubmittingRef = useRef(false);
+
+  const sessionReturnAddress = guestSession.returnAddress;
+  const sessionPrefill: Partial<Record<AddressFieldKey, string>> = guestSession.isVerified
+    ? {
+      guestName: guestSession.guestName || '',
+      householdName: guestSession.householdName || '',
+      email: guestSession.email || '',
+      addressLine1: sessionReturnAddress?.addressLine1 || guestSession.addressLine1 || '',
+      addressLine2: sessionReturnAddress?.addressLine2 || guestSession.addressLine2 || '',
+      city: sessionReturnAddress?.city || guestSession.city || '',
+      state: sessionReturnAddress?.state || guestSession.state || '',
+      zipCode: sessionReturnAddress?.zipCode || guestSession.zipCode || '',
+      country: sessionReturnAddress?.country || guestSession.country || '',
+    }
+    : {};
+
+  const resolveFieldValue = (key: AddressFieldKey): string => {
+    if (editedFields[key] || isResetForAnother) {
+      return draftFormData[key];
+    }
+    if (!hasActiveSession) {
+      return '';
+    }
+    const fromApi = apiPrefill[key];
+    if (typeof fromApi === 'string' && fromApi.length > 0) {
+      return fromApi;
+    }
+    const fromSession = sessionPrefill[key];
+    if (typeof fromSession === 'string' && fromSession.length > 0) {
+      return fromSession;
+    }
+    return draftFormData[key];
+  };
+
+  const formData = {
+    guestName: resolveFieldValue('guestName'),
+    householdName: resolveFieldValue('householdName'),
+    email: resolveFieldValue('email'),
+    phone: resolveFieldValue('phone'),
+    addressLine1: resolveFieldValue('addressLine1'),
+    addressLine2: resolveFieldValue('addressLine2'),
+    city: resolveFieldValue('city'),
+    state: resolveFieldValue('state'),
+    zipCode: resolveFieldValue('zipCode'),
+    country: resolveFieldValue('country'),
+    notes: resolveFieldValue('notes'),
+    website: draftFormData.website,
+  };
+
+  const hasPrefilledFromSession = Boolean(
+    !isResetForAnother &&
+      hasActiveSession &&
+      (Object.keys(apiPrefill).length > 0 || guestSession.isVerified)
+  );
+
+  useEffect(() => {
+    if (!hasActiveSession || isResetForAnother || typeof fetch !== 'function') {
+      return;
+    }
+    let active = true;
+    const controller = new AbortController();
+
+    const loadSavedAddress = async (signal?: AbortSignal) => {
+      try {
+        const res = await fetch(
+          withBasePath('/api/guest/address'),
+          signal ? { signal } : undefined
+        );
+        if (!active || signal?.aborted || !res) {
+          return;
+        }
+        if (res.status === 401 || res.status === 403) {
+          setApiPrefill({});
+          return;
+        }
+        if (!res.ok || typeof res.json !== 'function') {
+          return;
+        }
+        const json = await res.json().catch(() => null);
+        if (!active || signal?.aborted) {
+          return;
+        }
+        const payload = (json?.data ?? json) as Partial<Record<AddressFieldKey, unknown>> | null;
+        if (payload && typeof payload === 'object') {
+          const nextPrefill: Partial<Record<AddressFieldKey, string>> = {};
+          for (const key of ADDRESS_FIELD_KEYS) {
+            const rawVal = payload[key];
+            if (typeof rawVal === 'string' && rawVal.trim().length > 0) {
+              nextPrefill[key] = rawVal.trim();
+            }
+          }
+          setApiPrefill(nextPrefill);
+        }
+      } catch {
+        // Gracefully ignore network or aborted hydration errors
+      }
+    };
+
+    void loadSavedAddress(controller.signal);
+    const unsubscribe = subscribeGuestSessionChanged(() => {
+      void loadSavedAddress();
+    });
+    return () => {
+      active = false;
+      controller.abort();
+      unsubscribe();
+    };
+  }, [hasActiveSession, isResetForAnother]);
 
   useEffect(() => {
     if (invalidFocusTick === 0) return;
@@ -108,7 +238,10 @@ export default function GuestAddressCollectPage() {
     if (isSubmitting || isSubmittingRef.current) return;
     const { name, value } = e.target;
     const field = name as AddressFieldKey;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    if (ADDRESS_FIELD_KEYS.includes(field)) {
+      setEditedFields((prev) => (prev[field] ? prev : { ...prev, [field]: true }));
+    }
+    setDraftFormData((prev) => ({ ...prev, [name]: value }));
     if (fieldErrors[field]) {
       const nextFieldErrors = { ...fieldErrors };
       delete nextFieldErrors[field];
@@ -213,20 +346,10 @@ export default function GuestAddressCollectPage() {
   };
 
   const handleReset = () => {
-    setFormData({
-      guestName: '',
-      householdName: '',
-      email: '',
-      phone: '',
-      addressLine1: '',
-      addressLine2: '',
-      city: '',
-      state: '',
-      zipCode: '',
-      country: '',
-      notes: '',
-      website: '',
-    });
+    setIsResetForAnother(true);
+    setEditedFields({});
+    setApiPrefill({});
+    setDraftFormData(EMPTY_COLLECT_FORM);
     setSubmitted(false);
     setErrorMessage(null);
     setFieldErrors({});
@@ -270,6 +393,21 @@ export default function GuestAddressCollectPage() {
             <GuestHelpTrigger defaultCategory="passcode" label="Need Help?" />
           </div>
         </div>
+
+        {hasPrefilledFromSession && (
+          <div
+            data-testid="address-collect-prefill-notice"
+            className="mb-6 flex items-center gap-2 rounded-xl border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50/80 dark:bg-emerald-950/40 px-3.5 py-2.5 text-xs font-medium text-emerald-900 dark:text-emerald-200"
+          >
+            <Icon
+              name="Check"
+              className="h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-300"
+            />
+            <span>
+              Auto-filled from your verified household invitation — feel free to edit any field.
+            </span>
+          </div>
+        )}
 
         {errorMessage && (
           <div

@@ -718,6 +718,7 @@ function SetupWizardContent({
                   ref={passwordInputRef}
                   id="adminPassword"
                   type="password"
+                  autoComplete="current-password"
                   placeholder="Admin Password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -785,6 +786,7 @@ function SetupWizardContent({
                   ref={siteUrlInputRef}
                   id="siteUrl" 
                   type="url" 
+                  autoComplete="url"
                   value={baseUrl} 
                   onChange={(e) => setBaseUrl(e.target.value)} 
                   required 
@@ -801,6 +803,7 @@ function SetupWizardContent({
                   ref={contactEmailInputRef}
                   id="contactEmail"
                   type="email"
+                  autoComplete="email"
                   value={contactEmail}
                   onChange={(e) => setContactEmail(e.target.value)}
                   placeholder="e.g. hosts@ourwedding.com"

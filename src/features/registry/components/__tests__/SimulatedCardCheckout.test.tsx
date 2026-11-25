@@ -323,6 +323,8 @@ describe('SimulatedCardCheckout & Demo Registry Item Flows', () => {
     expect(visaBtn).toHaveAttribute('aria-checked', 'true');
 
     const zipInput = screen.getByLabelText(/Billing ZIP \/ Postal Code/i);
+    expect(zipInput).toHaveAttribute('id', 'simulated-billing-zip');
+    expect(zipInput).toHaveAttribute('autocomplete', 'postal-code');
     fireEvent.change(zipInput, { target: { value: '94559' } });
     expect(zipInput).toHaveValue('94559');
   });

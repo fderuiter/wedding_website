@@ -1332,19 +1332,33 @@ describe('InteractiveTimeline Component', () => {
         expect(el).toHaveAttribute('aria-hidden', 'true');
       });
 
-      // Attempting to save a pending card marks the RSVP radiogroup aria-invalid and focuses Attending radio
+      // Attempting to save a pending card marks the RSVP radiogroup aria-invalid, links aria-describedby, and focuses Attending radio
       const saveCard2PendingBtn = within(card2).getByRole('button', { name: 'Save RSVP' });
       const card2AttendingRadio = within(card2).getByRole('radio', { name: /^attending$/i });
       saveCard2PendingBtn.focus();
       fireEvent.click(saveCard2PendingBtn);
 
       await waitFor(() => {
-        expect(
-          within(card2).getByRole('radiogroup', { name: /Your RSVP for Farewell Brunch/i })
-        ).toHaveAttribute('aria-invalid', 'true');
+        const card2RadioGroup = within(card2).getByRole('radiogroup', {
+          name: /Your RSVP for Farewell Brunch/i,
+        });
+        expect(card2RadioGroup).toHaveAttribute('aria-invalid', 'true');
+        expect(card2RadioGroup).toHaveAttribute('aria-describedby', 'rsvp-card-error-se-a11y-2');
         expect(document.activeElement).toBe(card2AttendingRadio);
       });
       expect(screen.getAllByRole('alert')).toHaveLength(1);
+      expect(
+        screen.getByRole('alert').querySelector('#rsvp-card-error-se-a11y-2')
+      ).not.toBeNull();
+
+      // Submitting card 1 while card 2 still has an active error moves role="alert" to card 1 so every newly invalid card is announced
+      fireEvent.click(within(card1).getByRole('button', { name: 'Save RSVP' }));
+      await waitFor(() => {
+        expect(screen.getAllByRole('alert')).toHaveLength(1);
+        expect(
+          screen.getByRole('alert').querySelector('#rsvp-card-error-se-a11y-1')
+        ).not.toBeNull();
+      });
       expect(await axe(container)).toHaveNoViolations();
 
       // Dirty both cards without selecting required meals -> Batch Save fails client validation

@@ -1041,4 +1041,45 @@ describe('GuestAddressPage (/guest)', () => {
     expect(retrySaveBtn).not.toBeDisabled();
     expect(await axe(container)).toHaveNoViolations();
   });
+
+  it('marks #guest-invitation-code aria-invalid, links #guest-portal-passcode-guidance via aria-describedby, and restores focus when shared_passcode is entered', async () => {
+    globalFetch
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({ success: false, error: 'Unauthorized' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          valid: false,
+          reason: 'shared_passcode',
+          error:
+            'That is the shared website passcode. Please enter the personal household invitation code printed on your invitation.',
+        }),
+      });
+
+    const { container } = render(<GuestAddressPage />);
+
+    const codeInput = await screen.findByLabelText('Invitation Code');
+    const submitBtn = screen.getByRole('button', { name: /Access Guest Portal/i });
+
+    fireEvent.change(codeInput, { target: { value: 'WEDDINGPASS' } });
+    submitBtn.focus();
+    fireEvent.click(submitBtn);
+
+    const guidanceBanner = await screen.findByTestId('guest-portal-passcode-guidance');
+    expect(guidanceBanner).toHaveAttribute('id', 'guest-portal-passcode-guidance');
+    expect(guidanceBanner).toHaveAttribute('role', 'status');
+    expect(guidanceBanner).toHaveTextContent(/shared website passcode/i);
+
+    await waitFor(() => {
+      expect(codeInput).toHaveAttribute('aria-invalid', 'true');
+      expect(codeInput).toHaveAttribute('aria-describedby', 'guest-portal-passcode-guidance');
+      expect(document.activeElement).toBe(codeInput);
+    });
+
+    expect(await axe(container)).toHaveNoViolations();
+  });
 });

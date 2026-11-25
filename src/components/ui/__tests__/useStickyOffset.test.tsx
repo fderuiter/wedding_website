@@ -167,4 +167,57 @@ describe('useStickyOffset and StickyBar', () => {
 
     expect(document.documentElement.style.getPropertyValue('--sticky-bottom-extra')).toBe('52px');
   });
+
+  test('disables sticky offset CSS variable when viewport height is at or below disableAtMaxHeight', () => {
+    const originalInnerHeight = window.innerHeight;
+    Object.defineProperty(window, 'innerHeight', {
+      configurable: true,
+      writable: true,
+      value: 500,
+    });
+
+    try {
+      const { getByTestId } = render(
+        <StickyBar
+          as="nav"
+          edge="top"
+          scope="document"
+          disableAtMaxHeight={560}
+          data-testid="registry-filters-bar"
+        >
+          Filters
+        </StickyBar>
+      );
+
+      const navBar = getByTestId('registry-filters-bar');
+      mockElementRect(navBar, 64);
+
+      act(() => {
+        resizeCallbacks.forEach((cb) => cb([], {} as ResizeObserver));
+      });
+
+      // At 500px tall (<= 560px), --sticky-top-extra is suppressed so sticky chrome stays minimal
+      expect(document.documentElement.style.getPropertyValue('--sticky-top-extra')).toBe('');
+
+      // Resize viewport taller than 560px -> restores --sticky-top-extra measurement
+      window.innerHeight = 800;
+      act(() => {
+        window.dispatchEvent(new Event('resize'));
+      });
+      expect(document.documentElement.style.getPropertyValue('--sticky-top-extra')).toBe('64px');
+
+      // Resize back down to 256px -> clears --sticky-top-extra immediately
+      window.innerHeight = 256;
+      act(() => {
+        window.dispatchEvent(new Event('resize'));
+      });
+      expect(document.documentElement.style.getPropertyValue('--sticky-top-extra')).toBe('');
+    } finally {
+      Object.defineProperty(window, 'innerHeight', {
+        configurable: true,
+        writable: true,
+        value: originalInnerHeight,
+      });
+    }
+  });
 });

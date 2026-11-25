@@ -42,6 +42,12 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
       state: record.state || '',
       zipCode: record.zipCode || '',
       country: record.country || '',
+      ...(typeof record.email === 'string' && record.email.trim()
+        ? { email: record.email.trim() }
+        : {}),
+      ...(typeof record.householdName === 'string' && record.householdName.trim()
+        ? { householdName: record.householdName.trim() }
+        : {}),
     },
   });
 });

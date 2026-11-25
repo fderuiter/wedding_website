@@ -457,4 +457,64 @@ describe('RegistryPage Dialog integration', () => {
       'Showing 0 of 0 gifts'
     );
   });
+
+  test('condenses mobile filters behind a Filters disclosure pill with active filter count and disables sticky positioning on short viewports', () => {
+    const baseState = {
+      items: [mockItem],
+      isLoading: false,
+      error: null,
+      refetch: jest.fn(),
+      selectedItem: null,
+      isModalOpen: false,
+      setVisibleItemsCount: jest.fn(),
+      isAdmin: false,
+      filteredItems: [mockItem],
+      visibleItems: [mockItem],
+      categories: ['Kitchen', 'Travel'],
+      minPrice: 0,
+      maxPrice: 500,
+      categoryFilter: ['Kitchen'],
+      setCategoryFilter: jest.fn(),
+      priceRange: [0, 500] as [number, number],
+      setPriceRange: jest.fn(),
+      showGroupGiftsOnly: true,
+      setShowGroupGiftsOnly: jest.fn(),
+      showAvailableOnly: true,
+      setShowAvailableOnly: jest.fn(),
+      searchQuery: '',
+      setSearchQuery: jest.fn(),
+      sortOption: 'default' as const,
+      setSortOption: jest.fn(),
+      handleClearFilters: jest.fn(),
+      handleCardClick: jest.fn(),
+      handleCloseModal: mockHandleCloseModal,
+      handleEdit: jest.fn(),
+      handleDelete: jest.fn(),
+      handleContribute: mockHandleContribute,
+    };
+
+    (useRegistry as jest.Mock).mockReturnValue(baseState);
+    const { container } = render(<RegistryPage />);
+
+    const filterNav = screen.getByRole('navigation', { name: 'Registry Filters' });
+    expect(filterNav.className).toContain('[@media(max-height:560px)]:static');
+
+    const toggleBtn = screen.getByTestId('mobile-filters-toggle');
+    const secondaryPanel = container.querySelector('#registry-secondary-filters') as HTMLElement;
+    expect(toggleBtn).toHaveAttribute('aria-expanded', 'false');
+    expect(toggleBtn).toHaveAttribute('aria-controls', 'registry-secondary-filters');
+    // 2 active secondary filters: showGroupGiftsOnly + showAvailableOnly
+    expect(toggleBtn).toHaveTextContent('Filters');
+    expect(toggleBtn).toHaveTextContent('2');
+    expect(secondaryPanel).toHaveClass('hidden', 'md:flex');
+
+    fireEvent.click(toggleBtn);
+    expect(toggleBtn).toHaveAttribute('aria-expanded', 'true');
+    expect(secondaryPanel).toHaveClass('flex');
+    expect(secondaryPanel).not.toHaveClass('hidden');
+
+    fireEvent.click(toggleBtn);
+    expect(toggleBtn).toHaveAttribute('aria-expanded', 'false');
+    expect(secondaryPanel).toHaveClass('hidden', 'md:flex');
+  });
 });

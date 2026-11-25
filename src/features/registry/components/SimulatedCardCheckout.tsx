@@ -177,6 +177,7 @@ export function SimulatedCardCheckout({
           id="simulated-billing-zip"
           type="text"
           inputMode="numeric"
+          autoComplete="postal-code"
           maxLength={10}
           value={billingZip}
           onChange={(e) => onBillingZipChange(e.target.value)}

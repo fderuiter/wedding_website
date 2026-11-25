@@ -199,7 +199,7 @@ export function FormGroup({
 }
 
 const INVALID_CONTROL_SELECTOR =
-  'input[aria-invalid="true"]:not([disabled]):not([type="hidden"]), select[aria-invalid="true"]:not([disabled]), textarea[aria-invalid="true"]:not([disabled]), [role="combobox"][aria-invalid="true"]:not([aria-disabled="true"]), [aria-invalid="true"][tabindex]:not([tabindex="-1"]):not([disabled])';
+  'input[aria-invalid="true"]:not([disabled]):not([type="hidden"]), select[aria-invalid="true"]:not([disabled]), textarea[aria-invalid="true"]:not([disabled]), [role="combobox"][aria-invalid="true"]:not([aria-disabled="true"]), [role="radiogroup"][aria-invalid="true"] [role="radio"]:not([aria-disabled="true"]):not([disabled]), [role="radiogroup"][aria-invalid="true"] input[type="radio"]:not([disabled]), [aria-invalid="true"][tabindex]:not([tabindex="-1"]):not([disabled])';
 
 export function focusFirstInvalidControl(
   root?: ParentNode | null
@@ -210,6 +210,9 @@ export function focusFirstInvalidControl(
   for (const el of Array.from(candidates)) {
     if (el.closest('[aria-hidden="true"], .hidden, [hidden]')) {
       continue;
+    }
+    if (typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
     el.focus();
     return el;

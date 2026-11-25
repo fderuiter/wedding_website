@@ -340,6 +340,9 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
     if (typeof document === 'undefined') return false;
     const codeInput = document.getElementById('guest-invitation-code');
     if (codeInput instanceof HTMLElement) {
+      if (typeof codeInput.scrollIntoView === 'function') {
+        codeInput.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      }
       codeInput.focus();
       return true;
     }
@@ -576,6 +579,9 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
             'That is the shared website passcode. Please enter the personal household invitation code printed on your invitation.';
           dispatch({ type: 'VALIDATE_SHARED_PASSCODE', guidance: guidanceMsg });
           addToast(guidanceMsg, 'info');
+          if (!isAutoMount) {
+            requestCodeInputFocus();
+          }
           return;
         }
 

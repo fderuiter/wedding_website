@@ -2,6 +2,7 @@ import { NextResponse, NextRequest } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import {
   clearGuestInviteSessionCookie,
+  extractOptionalInvitePostalFields,
   getGuestInviteSession,
   GUEST_INVITE_COOKIE,
 } from '@/core/auth/guestInviteSession';
@@ -35,6 +36,7 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     code: session.code,
     guestName: session.guestName,
     email: session.email ?? null,
+    ...extractOptionalInvitePostalFields(session),
   });
 });
 

@@ -343,4 +343,109 @@ test.describe('Sticky Bar Focus Occlusion (WCAG 2.4.11 & C43)', { tag: ['@a11y']
     );
     expect(shortViewportMetrics.scrollBehavior).toBe('auto');
   });
+
+  test('condenses mobile filters, disables sticky filter chrome at 320x256 and 768x500 so gift cards remain clickable, and shrinks gift modal hero media on short viewports', async ({
+    context,
+    page,
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    await seedGuestAuthCookies(context);
+
+    // 1. Mobile portrait (375x667): compact summary bar hides secondary filters behind Filters disclosure pill
+    await page.setViewportSize({ width: 375, height: 667 });
+    await page.goto('/registry', { waitUntil: 'domcontentloaded' });
+    const mobileToggle = page.getByTestId('mobile-filters-toggle');
+    await expect(mobileToggle).toBeVisible();
+    await expect(mobileToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('#registry-secondary-filters')).toBeHidden();
+
+    await page.screenshot({
+      path: testInfo.outputPath('registry-mobile-compact-filters.png'),
+      animations: 'disabled',
+    });
+
+    await mobileToggle.click();
+    await expect(mobileToggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('#registry-secondary-filters')).toBeVisible();
+    await mobileToggle.click();
+    await expect(page.locator('#registry-secondary-filters')).toBeHidden();
+
+    // 2. Short viewports (768x500 and 320x256): Registry Filters drops sticky positioning so gift cards stay clickable and focus is unobscured
+    for (const viewport of [
+      { width: 768, height: 500 },
+      { width: 320, height: 256 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await page.goto('/registry', { waitUntil: 'domcontentloaded' });
+
+      const filterNav = page.getByRole('navigation', { name: 'Registry Filters' });
+      await expect(filterNav).toBeVisible();
+      const firstCard = page.getByTestId('registry-card').first();
+      await expect(firstCard).toBeVisible();
+
+      const shortMetrics = await page.evaluate(() => {
+        const header = document.querySelector('header[aria-label="Site header"]');
+        const filters = document.querySelector('nav[aria-label="Registry Filters"]')!;
+        const htmlStyle = window.getComputedStyle(document.documentElement);
+        const headerStyle = header ? window.getComputedStyle(header) : null;
+        const filterStyle = window.getComputedStyle(filters);
+        const stickyHeaderHeight =
+          header && (headerStyle?.position === 'sticky' || headerStyle?.position === 'fixed')
+            ? header.getBoundingClientRect().height
+            : 0;
+        const stickyFilterHeight =
+          filterStyle.position === 'sticky' || filterStyle.position === 'fixed'
+            ? filters.getBoundingClientRect().height
+            : 0;
+        return {
+          filterPosition: filterStyle.position,
+          stickyTopExtra: document.documentElement.style.getPropertyValue('--sticky-top-extra'),
+          combinedStickyChrome: stickyHeaderHeight + stickyFilterHeight,
+          scrollPaddingTop: Number.parseFloat(htmlStyle.scrollPaddingTop) || 0,
+        };
+      });
+
+      expect(shortMetrics.filterPosition).toBe('static');
+      expect(shortMetrics.stickyTopExtra).toBe('');
+      expect(shortMetrics.combinedStickyChrome).toBeLessThanOrEqual(
+        shortMetrics.scrollPaddingTop + 1
+      );
+
+      // Scroll down to gift grid and verify gift cards receive pointer clicks without sticky toolbar interception
+      await firstCard.scrollIntoViewIfNeeded();
+      if (viewport.width === 768) {
+        await page.screenshot({
+          path: testInfo.outputPath('registry-short-viewport-768x500.png'),
+          animations: 'disabled',
+        });
+      }
+
+      await firstCard.click();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog).toBeVisible();
+
+      // Verify modal hero media shrinks on short viewports (h-20 = 80px) so form fields fit WCAG 1.4.10
+      const heroHeight = await dialog.evaluate((dlg) => {
+        const hero = dlg.querySelector('[data-testid="registry-item-hero-media"]');
+        return hero ? hero.getBoundingClientRect().height : 0;
+      });
+      if (heroHeight > 0) {
+        expect(heroHeight).toBeLessThanOrEqual(84);
+      }
+
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+
+      // Audit keyboard Tab / Shift+Tab on short viewport
+      await page.focus('body');
+      const forward = await tabAndAuditControls(page, 12, 'forward');
+      const backward = await tabAndAuditControls(page, 8, 'backward');
+      for (const sample of [...forward, ...backward]) {
+        expect(
+          sample.fullyObscured,
+          `Obscured on /registry at ${viewport.width}x${viewport.height}: ${JSON.stringify(sample)}`
+        ).toBe(false);
+      }
+    }
+  });
 });

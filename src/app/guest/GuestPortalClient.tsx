@@ -92,6 +92,7 @@ export default function GuestAddressPage() {
 
         {codeGuidance && (
           <div
+            id="guest-portal-passcode-guidance"
             role="status"
             data-testid="guest-portal-passcode-guidance"
             className="rounded-2xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/35 p-4 text-sm text-amber-950 dark:text-amber-100"
@@ -135,7 +136,7 @@ export default function GuestAddressPage() {
         )}
 
         <form onSubmit={handleValidateCode} noValidate className="space-y-4">
-          <FormGroup state={error ? 'error' : 'default'} busy={isValidating}>
+          <FormGroup state={error || codeGuidance ? 'error' : 'default'} busy={isValidating}>
             <div className="flex items-center justify-between gap-2">
               <Label htmlFor="guest-invitation-code" className="mb-0">
                 Invitation Code
@@ -152,7 +153,12 @@ export default function GuestAddressPage() {
               className="uppercase font-mono tracking-wider"
               busy={isValidating}
               aria-describedby={
-                error && status === 'error' ? 'guest-portal-error-alert' : undefined
+                [
+                  error && status === 'error' ? 'guest-portal-error-alert' : null,
+                  codeGuidance ? 'guest-portal-passcode-guidance' : null,
+                ]
+                  .filter(Boolean)
+                  .join(' ') || undefined
               }
               required
             />

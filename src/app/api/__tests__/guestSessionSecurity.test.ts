@@ -79,6 +79,8 @@ describe('Guest Session Security Integration', () => {
         id: 'code-1',
         code: 'VALIDGUEST',
         guestName: 'Valid Guest',
+        householdName: 'The Valid Household',
+        email: 'valid.guest@example.com',
         addressLine1: '123 Harbor View',
         addressLine2: 'Suite 400',
         city: 'Newport',
@@ -99,6 +101,8 @@ describe('Guest Session Security Integration', () => {
       const json = await res.json();
       expect(json.success).toBe(true);
       expect(json.data.guestName).toBe('Valid Guest');
+      expect(json.data.householdName).toBe('The Valid Household');
+      expect(json.data.email).toBe('valid.guest@example.com');
       expect(json.data.code).toBe('VALIDGUEST');
       expect(json.data.addressLine1).toBe('123 Harbor View');
     });

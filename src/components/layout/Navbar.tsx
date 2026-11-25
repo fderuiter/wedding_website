@@ -47,6 +47,7 @@ interface NavbarProps {
   config: PublicAppConfig;
   hasVisibleFaqs?: boolean;
   isPreview?: boolean;
+  onInviteSessionChange?: (hasSession: boolean) => void;
 }
 
 interface NavLinkItem {
@@ -107,6 +108,7 @@ export default function Navbar({
   config,
   hasVisibleFaqs,
   isPreview = false,
+  onInviteSessionChange,
 }: NavbarProps) {
   const pathname = usePathname();
   const normalizedPathname =
@@ -145,7 +147,13 @@ export default function Navbar({
     setManualHashOverride({ base: getHashSnapshot(), hash });
   }, []);
 
+  const onInviteSessionChangeRef = useRef(onInviteSessionChange);
+  useEffect(() => {
+    onInviteSessionChangeRef.current = onInviteSessionChange;
+  }, [onInviteSessionChange]);
+
   const applyInviteSessionFlag = useCallback((nextValue: boolean) => {
+    onInviteSessionChangeRef.current?.(nextValue);
     if (hasInviteSessionRef.current === nextValue) return;
     hasInviteSessionRef.current = nextValue;
     setHasInviteSession(nextValue);

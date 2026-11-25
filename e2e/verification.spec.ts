@@ -3,7 +3,12 @@ import AxeBuilder from '@axe-core/playwright';
 import { a11yConfig } from '../src/a11y-config';
 import fs from 'fs';
 import path from 'path';
-import { seedAdminAndGuestAuthCookies, seedGuestAuthCookies } from './helpers/auth';
+import {
+  generateAdminCookieValue,
+  generateGuestInviteSessionCookieValue,
+  seedAdminAndGuestAuthCookies,
+  seedGuestAuthCookies,
+} from './helpers/auth';
 
 function recordRouteViolations(route: string, violations: unknown[]) {
   const reportDir = path.join(process.cwd(), 'test-results');
@@ -486,6 +491,7 @@ test.describe('UI Verification', { tag: '@a11y' }, () => {
       const codeInput = dialog.getByLabel(/Invitation Code/i);
       if ((await codeInput.count()) > 0 && !(await codeInput.inputValue())) {
         await codeInput.fill('WED2026A');
+        await dialog.getByRole('button', { name: 'Verify' }).click();
         await expect(dialog.getByText(/Code verified! Name pre-filled\./i)).toBeVisible();
         const clearBtn = dialog.getByRole('button', { name: 'Clear' });
         await expect(clearBtn).toBeFocused();
@@ -545,6 +551,182 @@ test.describe('UI Verification', { tag: '@a11y' }, () => {
       const results = await axeBuilder.analyze();
       recordRouteViolations(route, results.violations);
       expect(results.violations).toEqual([]);
+    }
+  });
+
+  test('pre-fills /guest/collect and /registry gift modals from verified household session, persists return address across item switches, and isolates shared-passcode visitors', async ({
+    context,
+    page,
+    request,
+  }, testInfo) => {
+    const adminCookie = generateAdminCookieValue();
+    const inviteCode = `RV${Math.random().toString(36).slice(2, 8).toUpperCase().padEnd(6, 'A')}`;
+    let createdInviteId: string | null = null;
+
+    const createRes = await request.post('/api/admin/invitation-codes', {
+      headers: { Cookie: `admin_auth=${adminCookie}` },
+      data: {
+        code: inviteCode,
+        guestName: 'Jane Rivera',
+        householdName: 'Rivera Family',
+        email: 'jane@riverahousehold.com',
+        addressLine1: '123 Maple Street',
+        addressLine2: 'Apt 4B',
+        city: 'Austin',
+        state: 'TX',
+        zipCode: '78701',
+        country: 'United States',
+      },
+    });
+    expect(createRes.ok()).toBe(true);
+    const createdBody = (await createRes.json()) as {
+      id?: string;
+      data?: { id?: string };
+    };
+    createdInviteId = createdBody.data?.id ?? createdBody.id ?? null;
+
+    const mockRegistryItems = [
+      {
+        id: 'prefill-item-1',
+        name: 'Artisan Stand Mixer',
+        description: 'Tilt-head stand mixer for weekend baking.',
+        price: 349.99,
+        image: '',
+        url: 'https://example.com/mixer',
+        vendor: 'Kitchen Co',
+        category: 'Kitchen',
+        quantity: 1,
+        isGroupGift: false,
+        isMostWanted: true,
+        purchased: false,
+        purchaserName: null,
+        amountContributed: 0,
+        contributors: [],
+        itemType: 'product',
+      },
+      {
+        id: 'prefill-item-2',
+        name: 'Cast Iron Dutch Oven',
+        description: 'Enameled cast iron pot for slow-cooked stews.',
+        price: 280,
+        image: '',
+        url: 'https://example.com/dutch-oven',
+        vendor: 'Kitchen Co',
+        category: 'Kitchen',
+        quantity: 1,
+        isGroupGift: false,
+        isMostWanted: false,
+        purchased: false,
+        purchaserName: null,
+        amountContributed: 0,
+        contributors: [],
+        itemType: 'product',
+      },
+    ];
+
+    await page.route('**/api/registry/items*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            items: mockRegistryItems,
+            total: mockRegistryItems.length,
+            page: 1,
+            limit: 200,
+          },
+        }),
+      });
+    });
+
+    try {
+      // 1. Shared-passcode-only visitor must NEVER receive another household's saved postal address
+      await seedGuestAuthCookies(context);
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto('/guest/collect', { waitUntil: 'domcontentloaded' });
+      await expect(page.getByLabel(/^Full Name/i)).toHaveValue('');
+      await expect(page.getByLabel(/^Street Address/i)).toHaveValue('');
+      await expect(page.getByTestId('address-collect-prefill-notice')).toHaveCount(0);
+
+      // 2. Verified household session pre-populates /guest/collect and /registry gift modals
+      const inviteSessionCookie = generateGuestInviteSessionCookieValue(inviteCode, 'Jane Rivera');
+      await context.addCookies([
+        { name: 'guest_invite_session', value: inviteSessionCookie, url: 'http://localhost:3000' },
+        { name: 'guest_invite_session', value: inviteSessionCookie, url: 'http://127.0.0.1:3000' },
+      ]);
+
+      await page.goto('/guest/collect', { waitUntil: 'domcontentloaded' });
+      await expect(page.getByTestId('address-collect-prefill-notice')).toBeVisible();
+      await expect(page.getByLabel(/^Full Name/i)).toHaveValue('Jane Rivera');
+      await expect(page.getByLabel(/^Household Name/i)).toHaveValue('Rivera Family');
+      await expect(page.getByLabel(/^Email/i)).toHaveValue('jane@riverahousehold.com');
+      await expect(page.getByLabel(/^Street Address/i)).toHaveValue('123 Maple Street');
+      await expect(page.getByLabel(/^City/i)).toHaveValue('Austin');
+      await expect(page.getByLabel(/^State/i)).toHaveValue('TX');
+      await expect(page.getByLabel(/^ZIP \/ Postal Code/i)).toHaveValue('78701');
+      await expect(page.getByLabel(/^Country/i)).toHaveValue('United States');
+
+      await page.screenshot({
+        path: testInfo.outputPath('guest-collect-session-prefill.png'),
+        animations: 'disabled',
+      });
+
+      const collectAxe = await new AxeBuilder({ page })
+        .withTags(a11yConfig.runOnly.values)
+        .options({ rules: a11yConfig.rules })
+        .analyze();
+      recordRouteViolations('/guest/collect (prefilled)', collectAxe.violations);
+      expect(collectAxe.violations).toEqual([]);
+
+      // 3. Visit /registry at mobile viewport (390x844), open gift modal, verify contact + return address prefill
+      await page.goto('/registry', { waitUntil: 'domcontentloaded' });
+      await expect(page.getByTestId('mobile-filters-toggle')).toBeVisible();
+      await expect(page.getByTestId('registry-card').first()).toBeVisible();
+
+      await page.getByTestId('registry-card').first().click();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByLabel(/^Your Name/i)).toHaveValue('Jane Rivera');
+      await expect(dialog.getByLabel(/^Email Address/i)).toHaveValue('jane@riverahousehold.com');
+      await expect(dialog.getByText(/Auto-filled from verified household invite/i)).toBeVisible();
+      await expect(dialog.getByLabel(/^Address Line 1/i)).toHaveValue('123 Maple Street');
+      await expect(dialog.getByLabel(/^City/i)).toHaveValue('Austin');
+      await expect(dialog.getByLabel(/^State \/ Province/i)).toHaveValue('TX');
+      await expect(dialog.getByLabel(/^ZIP \/ Postal Code/i)).toHaveValue('78701');
+      await expect(dialog.getByLabel(/^Country/i)).toHaveValue('United States');
+
+      await dialog.getByLabel(/^Address Line 1/i).scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: testInfo.outputPath('registry-session-prefill-mobile.png'),
+        animations: 'disabled',
+      });
+
+      const modalAxe = await new AxeBuilder({ page })
+        .exclude('iframe')
+        .withTags(a11yConfig.runOnly.values)
+        .options({ rules: a11yConfig.rules })
+        .analyze();
+      recordRouteViolations('/registry modal (household prefilled)', modalAxe.violations);
+      expect(modalAxe.violations).toEqual([]);
+
+      // 4. Edit return address in modal #1, close, open modal #2 (remount via key={selectedItem.id}), verify edit persists
+      await dialog.getByLabel(/^Address Line 1/i).fill('456 Oak Avenue');
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+
+      await page.getByTestId('registry-card').nth(1).click();
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByLabel(/^Address Line 1/i)).toHaveValue('456 Oak Avenue');
+      await expect(dialog.getByLabel(/^City/i)).toHaveValue('Austin');
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+    } finally {
+      if (createdInviteId) {
+        await request.delete(`/api/admin/invitation-codes/${createdInviteId}`, {
+          headers: { Cookie: `admin_auth=${adminCookie}` },
+        });
+      }
     }
   });
 });

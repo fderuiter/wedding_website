@@ -886,4 +886,43 @@ describe('useScheduleRsvpManager', () => {
     expect(result.current.isAnySubmitting).toBe(false);
     expect(result.current.liveMessage).toBe('Successfully saved RSVP.');
   });
+
+  it('updates lastErrorEventId and increments errorAlertRevision for each invalid card submission and clears on edit', async () => {
+    const { result } = renderHook(() =>
+      useScheduleRsvpManager({
+        initialEvents: [
+          {
+            id: 'card-1',
+            title: 'Welcome Drinks',
+            userRsvp: { status: 'pending', plusOneCount: 0, dietaryNotes: '' },
+          },
+          {
+            id: 'card-2',
+            title: 'Farewell Brunch',
+            userRsvp: { status: 'pending', plusOneCount: 0, dietaryNotes: '' },
+          },
+        ],
+      })
+    );
+
+    expect(result.current.lastErrorEventId).toBeNull();
+    expect(result.current.errorAlertRevision).toBe(0);
+
+    await act(async () => {
+      await result.current.submitSingle('card-1');
+    });
+    expect(result.current.lastErrorEventId).toBe('card-1');
+    expect(result.current.errorAlertRevision).toBe(1);
+
+    await act(async () => {
+      await result.current.submitSingle('card-2');
+    });
+    expect(result.current.lastErrorEventId).toBe('card-2');
+    expect(result.current.errorAlertRevision).toBe(2);
+
+    act(() => {
+      result.current.updateRsvp('card-2', { status: 'attending' });
+    });
+    expect(result.current.lastErrorEventId).toBeNull();
+  });
 });

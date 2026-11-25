@@ -13,7 +13,10 @@ import {
   findDemoGuestByCode,
   isDemoRuntimeActive,
 } from '@/lib/demo/demoRuntimeBridge';
-import { useGuestSession } from '../context/GuestSessionContext';
+import {
+  useGuestSession,
+  type GuestPostalAddress,
+} from '../context/GuestSessionContext';
 import { notifyCapabilitiesRefresh } from './useRegistryCapabilities';
 import { formatCurrency } from '@/utils/intl';
 import { getItemRemainingAmount, getItemUnitCounts } from '../lib/registryStatusUtils';
@@ -93,6 +96,8 @@ interface UseRegistryContributionMachineReturn {
   isSubmitting: boolean;
   isSuccess: boolean;
   isSubmitDisabled: boolean;
+  isPostalAutoFilledFromSession: boolean;
+  invalidFocusTick: number;
   invitationCodeInputRef: React.RefObject<HTMLInputElement | null>;
 
   // Form values
@@ -188,8 +193,17 @@ export function useRegistryContributionMachine({
     invitationCode: sessionCode,
     guestName: sessionGuestName,
     email: sessionEmail,
+    addressLine1: sessionAddressLine1,
+    addressLine2: sessionAddressLine2,
+    city: sessionCity,
+    state: sessionState,
+    zipCode: sessionZipCode,
+    country: sessionCountry,
+    returnAddress: sessionReturnAddress,
+    status: sessionStatus,
     isVerified: isSessionVerified,
     setSession,
+    setReturnAddress,
     clearSession,
   } = useGuestSession();
 
@@ -208,12 +222,23 @@ export function useRegistryContributionMachine({
   const [retailerOrderNumber, setRetailerOrderNumberState] = useState(initialRetailerOrderNumber);
   const [carrier, setCarrierState] = useState(initialCarrier);
   const [trackingNumber, setTrackingNumberState] = useState(initialTrackingNumber);
-  const [addressLine1, setAddressLine1State] = useState(initialAddressLine1);
-  const [addressLine2, setAddressLine2State] = useState(initialAddressLine2);
-  const [city, setCityState] = useState(initialCity);
-  const [state, setStateValue] = useState(initialState);
-  const [zipCode, setZipCodeState] = useState(initialZipCode);
-  const [country, setCountryState] = useState(initialCountry);
+  const [addressLine1State, setAddressLine1State] = useState(initialAddressLine1);
+  const [hasEditedAddressLine1, setHasEditedAddressLine1] = useState(false);
+  const [addressLine2State, setAddressLine2State] = useState(initialAddressLine2);
+  const [hasEditedAddressLine2, setHasEditedAddressLine2] = useState(false);
+  const [cityState, setCityState] = useState(initialCity);
+  const [hasEditedCity, setHasEditedCity] = useState(false);
+  const [stateValueState, setStateValue] = useState(initialState);
+  const [hasEditedState, setHasEditedState] = useState(false);
+  const [zipCodeState, setZipCodeState] = useState(initialZipCode);
+  const [hasEditedZipCode, setHasEditedZipCode] = useState(false);
+  const [countryState, setCountryState] = useState(initialCountry);
+  const [hasEditedCountry, setHasEditedCountry] = useState(false);
+  const [verifiedSessionPostalState, setVerifiedSessionPostalState] = useState<
+    Partial<GuestPostalAddress>
+  >({});
+  const [wasSessionVerifiedState, setWasSessionVerifiedState] = useState(Boolean(isSessionVerified));
+  const [hadReturnAddressState, setHadReturnAddressState] = useState(Boolean(sessionReturnAddress));
   const [dismissedSessionKey, setDismissedSessionKey] = useState<string | null>(null);
 
   // Partitioned error states
@@ -230,6 +255,55 @@ export function useRegistryContributionMachine({
   const lockedCodeRef = useRef<string | null>(null);
   const [verifiedCodeState, setVerifiedCodeState] = useState<string | null>(null);
   const [codeFailureCount, setCodeFailureCount] = useState(0);
+  const [invalidFocusTick, setInvalidFocusTick] = useState(0);
+
+  if (wasSessionVerifiedState !== Boolean(isSessionVerified)) {
+    setWasSessionVerifiedState(Boolean(isSessionVerified));
+    if (
+      wasSessionVerifiedState &&
+      !isSessionVerified &&
+      (sessionStatus === 'expired' || sessionStatus === 'unauthenticated' || sessionStatus === 'error')
+    ) {
+      setVerifiedCodeState(null);
+      setVerifiedSessionPostalState({});
+      setInvitationCodeState('');
+      setPhase('idle');
+      setHasEditedContributorName(false);
+      setContributorNameState('');
+      setHasEditedEmail(false);
+      setEmailState('');
+      setHasEditedAddressLine1(false);
+      setAddressLine1State('');
+      setHasEditedAddressLine2(false);
+      setAddressLine2State('');
+      setHasEditedCity(false);
+      setCityState('');
+      setHasEditedState(false);
+      setStateValue('');
+      setHasEditedZipCode(false);
+      setZipCodeState('');
+      setHasEditedCountry(false);
+      setCountryState('');
+    }
+  }
+
+  if (hadReturnAddressState !== Boolean(sessionReturnAddress)) {
+    setHadReturnAddressState(Boolean(sessionReturnAddress));
+    if (hadReturnAddressState && !sessionReturnAddress && !isSessionVerified) {
+      setHasEditedAddressLine1(false);
+      setAddressLine1State('');
+      setHasEditedAddressLine2(false);
+      setAddressLine2State('');
+      setHasEditedCity(false);
+      setCityState('');
+      setHasEditedState(false);
+      setStateValue('');
+      setHasEditedZipCode(false);
+      setZipCodeState('');
+      setHasEditedCountry(false);
+      setCountryState('');
+    }
+  }
 
   if (trackedItemId !== item.id) {
     setTrackedItemId(item.id);
@@ -266,6 +340,101 @@ export function useRegistryContributionMachine({
   const email = hasEditedEmail
     ? emailState
     : emailState || (isSessionSynced ? sessionEmail || '' : '');
+
+  const resolvePostalField = (
+    hasEdited: boolean,
+    localVal: string,
+    returnVal: string | undefined,
+    sessionVal: string | null | undefined,
+    verifiedLocalVal: string | undefined
+  ): string => {
+    if (hasEdited) {
+      return localVal;
+    }
+    if (localVal) {
+      return localVal;
+    }
+    if (returnVal !== undefined) {
+      return returnVal;
+    }
+    if (isSessionSynced && sessionVal) {
+      return sessionVal;
+    }
+    if (hasVerifiedCode && verifiedLocalVal) {
+      return verifiedLocalVal;
+    }
+    return '';
+  };
+
+  const addressLine1 = resolvePostalField(
+    hasEditedAddressLine1,
+    addressLine1State,
+    sessionReturnAddress?.addressLine1,
+    sessionAddressLine1,
+    verifiedSessionPostalState.addressLine1
+  );
+  const addressLine2 = resolvePostalField(
+    hasEditedAddressLine2,
+    addressLine2State,
+    sessionReturnAddress?.addressLine2,
+    sessionAddressLine2,
+    verifiedSessionPostalState.addressLine2
+  );
+  const city = resolvePostalField(
+    hasEditedCity,
+    cityState,
+    sessionReturnAddress?.city,
+    sessionCity,
+    verifiedSessionPostalState.city
+  );
+  const state = resolvePostalField(
+    hasEditedState,
+    stateValueState,
+    sessionReturnAddress?.state,
+    sessionState,
+    verifiedSessionPostalState.state
+  );
+  const zipCode = resolvePostalField(
+    hasEditedZipCode,
+    zipCodeState,
+    sessionReturnAddress?.zipCode,
+    sessionZipCode,
+    verifiedSessionPostalState.zipCode
+  );
+  const country = resolvePostalField(
+    hasEditedCountry,
+    countryState,
+    sessionReturnAddress?.country,
+    sessionCountry,
+    verifiedSessionPostalState.country
+  );
+
+  const hasEditedAnyPostal =
+    hasEditedAddressLine1 ||
+    hasEditedAddressLine2 ||
+    hasEditedCity ||
+    hasEditedState ||
+    hasEditedZipCode ||
+    hasEditedCountry;
+  const hasAnySessionPostal = Boolean(
+    (isSessionSynced &&
+      (sessionAddressLine1 ||
+        sessionAddressLine2 ||
+        sessionCity ||
+        sessionState ||
+        sessionZipCode ||
+        sessionCountry)) ||
+      (hasVerifiedCode &&
+        (verifiedSessionPostalState.addressLine1 ||
+          verifiedSessionPostalState.addressLine2 ||
+          verifiedSessionPostalState.city ||
+          verifiedSessionPostalState.state ||
+          verifiedSessionPostalState.zipCode ||
+          verifiedSessionPostalState.country))
+  );
+  const isPostalAutoFilledFromSession = Boolean(
+    hasAnySessionPostal && !hasEditedAnyPostal && !sessionReturnAddress
+  );
   const codeError = isSessionSynced ? null : codeErrorState;
 
   // Clean up any pending validation request on unmount
@@ -359,71 +528,101 @@ export function useRegistryContributionMachine({
     setSubmissionError(null);
   }, []);
 
-  const setAddressLine1 = useCallback((val: string) => {
-    setAddressLine1State(val);
-    setFieldErrors((prev) => {
-      if (!prev.addressLine1) return prev;
-      const next = { ...prev };
-      delete next.addressLine1;
-      return next;
-    });
-    setSubmissionError(null);
-  }, []);
+  const setAddressLine1 = useCallback(
+    (val: string) => {
+      setHasEditedAddressLine1(true);
+      setAddressLine1State(val);
+      setReturnAddress?.({ addressLine1: val });
+      setFieldErrors((prev) => {
+        if (!prev.addressLine1) return prev;
+        const next = { ...prev };
+        delete next.addressLine1;
+        return next;
+      });
+      setSubmissionError(null);
+    },
+    [setReturnAddress]
+  );
 
-  const setAddressLine2 = useCallback((val: string) => {
-    setAddressLine2State(val);
-    setFieldErrors((prev) => {
-      if (!prev.addressLine2) return prev;
-      const next = { ...prev };
-      delete next.addressLine2;
-      return next;
-    });
-    setSubmissionError(null);
-  }, []);
+  const setAddressLine2 = useCallback(
+    (val: string) => {
+      setHasEditedAddressLine2(true);
+      setAddressLine2State(val);
+      setReturnAddress?.({ addressLine2: val });
+      setFieldErrors((prev) => {
+        if (!prev.addressLine2) return prev;
+        const next = { ...prev };
+        delete next.addressLine2;
+        return next;
+      });
+      setSubmissionError(null);
+    },
+    [setReturnAddress]
+  );
 
-  const setCity = useCallback((val: string) => {
-    setCityState(val);
-    setFieldErrors((prev) => {
-      if (!prev.city) return prev;
-      const next = { ...prev };
-      delete next.city;
-      return next;
-    });
-    setSubmissionError(null);
-  }, []);
+  const setCity = useCallback(
+    (val: string) => {
+      setHasEditedCity(true);
+      setCityState(val);
+      setReturnAddress?.({ city: val });
+      setFieldErrors((prev) => {
+        if (!prev.city) return prev;
+        const next = { ...prev };
+        delete next.city;
+        return next;
+      });
+      setSubmissionError(null);
+    },
+    [setReturnAddress]
+  );
 
-  const setState = useCallback((val: string) => {
-    setStateValue(val);
-    setFieldErrors((prev) => {
-      if (!prev.state) return prev;
-      const next = { ...prev };
-      delete next.state;
-      return next;
-    });
-    setSubmissionError(null);
-  }, []);
+  const setState = useCallback(
+    (val: string) => {
+      setHasEditedState(true);
+      setStateValue(val);
+      setReturnAddress?.({ state: val });
+      setFieldErrors((prev) => {
+        if (!prev.state) return prev;
+        const next = { ...prev };
+        delete next.state;
+        return next;
+      });
+      setSubmissionError(null);
+    },
+    [setReturnAddress]
+  );
 
-  const setZipCode = useCallback((val: string) => {
-    setZipCodeState(val);
-    setFieldErrors((prev) => {
-      if (!prev.zipCode) return prev;
-      const next = { ...prev };
-      delete next.zipCode;
-      return next;
-    });
-    setSubmissionError(null);
-  }, []);
+  const setZipCode = useCallback(
+    (val: string) => {
+      setHasEditedZipCode(true);
+      setZipCodeState(val);
+      setReturnAddress?.({ zipCode: val });
+      setFieldErrors((prev) => {
+        if (!prev.zipCode) return prev;
+        const next = { ...prev };
+        delete next.zipCode;
+        return next;
+      });
+      setSubmissionError(null);
+    },
+    [setReturnAddress]
+  );
 
-  const setCountry = useCallback((val: string) => {
-    setCountryState(val);
-    setFieldErrors((prev) => {
-      if (!prev.country) return prev;
-      const next = { ...prev };
-      delete next.country;
-      return next;
-    });
-    setSubmissionError(null);
-  }, []);
+  const setCountry = useCallback(
+    (val: string) => {
+      setHasEditedCountry(true);
+      setCountryState(val);
+      setReturnAddress?.({ country: val });
+      setFieldErrors((prev) => {
+        if (!prev.country) return prev;
+        const next = { ...prev };
+        delete next.country;
+        return next;
+      });
+      setSubmissionError(null);
+    },
+    [setReturnAddress]
+  );
 
   const setMessage = useCallback((val: string) => {
     setMessageState(val);
@@ -465,6 +664,7 @@ export function useRegistryContributionMachine({
       if (!code) {
         setCodeError('Please enter an invitation code.');
         setCodeFailureCount((count) => count + 1);
+        setInvalidFocusTick((tick) => tick + 1);
         return { valid: false };
       }
 
@@ -475,8 +675,30 @@ export function useRegistryContributionMachine({
             typeof matched.email === 'string' && matched.email.trim().length > 0
               ? matched.email.trim()
               : null;
+          const matchedRecord = matched as unknown as Record<string, unknown>;
+          const nextPostal: Partial<GuestPostalAddress> = {
+            ...(typeof matchedRecord.addressLine1 === 'string' && matchedRecord.addressLine1.trim()
+              ? { addressLine1: matchedRecord.addressLine1.trim() }
+              : {}),
+            ...(typeof matchedRecord.addressLine2 === 'string' && matchedRecord.addressLine2.trim()
+              ? { addressLine2: matchedRecord.addressLine2.trim() }
+              : {}),
+            ...(typeof matchedRecord.city === 'string' && matchedRecord.city.trim()
+              ? { city: matchedRecord.city.trim() }
+              : {}),
+            ...(typeof matchedRecord.state === 'string' && matchedRecord.state.trim()
+              ? { state: matchedRecord.state.trim() }
+              : {}),
+            ...(typeof matchedRecord.zipCode === 'string' && matchedRecord.zipCode.trim()
+              ? { zipCode: matchedRecord.zipCode.trim() }
+              : {}),
+            ...(typeof matchedRecord.country === 'string' && matchedRecord.country.trim()
+              ? { country: matchedRecord.country.trim() }
+              : {}),
+          };
           lockedCodeRef.current = matched.code;
           setVerifiedCodeState(matched.code);
+          setVerifiedSessionPostalState(nextPostal);
           setInvitationCodeState(matched.code);
           if (matched.guestName && (!hasEditedContributorName || !contributorNameState.trim())) {
             setContributorNameState(matched.guestName);
@@ -492,6 +714,10 @@ export function useRegistryContributionMachine({
             invitationCode: matched.code,
             guestName: matched.guestName,
             email: resolvedEmail,
+            ...(typeof matchedRecord.householdName === 'string' && matchedRecord.householdName.trim()
+              ? { householdName: matchedRecord.householdName.trim() }
+              : {}),
+            ...nextPostal,
             isVerified: true,
           });
           notifyCapabilitiesRefresh();
@@ -504,9 +730,11 @@ export function useRegistryContributionMachine({
         }
         lockedCodeRef.current = null;
         setVerifiedCodeState(null);
+        setVerifiedSessionPostalState({});
         setPhase('idle');
         setCodeError('Invalid invitation code.');
         setCodeFailureCount((count) => count + 1);
+        setInvalidFocusTick((tick) => tick + 1);
         return { valid: false };
       }
 
@@ -527,7 +755,14 @@ export function useRegistryContributionMachine({
           valid?: boolean;
           code?: string;
           guestName?: string;
+          householdName?: string | null;
           email?: string | null;
+          addressLine1?: string | null;
+          addressLine2?: string | null;
+          city?: string | null;
+          state?: string | null;
+          zipCode?: string | null;
+          country?: string | null;
           error?: string;
           reason?: string;
         }>(
@@ -546,8 +781,29 @@ export function useRegistryContributionMachine({
             typeof data.email === 'string' && data.email.trim().length > 0
               ? data.email.trim()
               : null;
+          const nextPostal: Partial<GuestPostalAddress> = {
+            ...(typeof data.addressLine1 === 'string' && data.addressLine1.trim()
+              ? { addressLine1: data.addressLine1.trim() }
+              : {}),
+            ...(typeof data.addressLine2 === 'string' && data.addressLine2.trim()
+              ? { addressLine2: data.addressLine2.trim() }
+              : {}),
+            ...(typeof data.city === 'string' && data.city.trim()
+              ? { city: data.city.trim() }
+              : {}),
+            ...(typeof data.state === 'string' && data.state.trim()
+              ? { state: data.state.trim() }
+              : {}),
+            ...(typeof data.zipCode === 'string' && data.zipCode.trim()
+              ? { zipCode: data.zipCode.trim() }
+              : {}),
+            ...(typeof data.country === 'string' && data.country.trim()
+              ? { country: data.country.trim() }
+              : {}),
+          };
           lockedCodeRef.current = verifiedCode;
           setVerifiedCodeState(verifiedCode);
+          setVerifiedSessionPostalState(nextPostal);
           setInvitationCodeState(verifiedCode);
           if (data.guestName && (!hasEditedContributorName || !contributorNameState.trim())) {
             setContributorNameState(data.guestName);
@@ -561,6 +817,10 @@ export function useRegistryContributionMachine({
             invitationCode: verifiedCode,
             guestName: data.guestName || '',
             email: resolvedEmail,
+            ...(typeof data.householdName === 'string' && data.householdName.trim()
+              ? { householdName: data.householdName.trim() }
+              : {}),
+            ...nextPostal,
             isVerified: true,
           });
           notifyCapabilitiesRefresh();
@@ -573,6 +833,7 @@ export function useRegistryContributionMachine({
         } else {
           lockedCodeRef.current = null;
           setVerifiedCodeState(null);
+          setVerifiedSessionPostalState({});
           setPhase('idle');
           setCodeError(
             typeof data?.error === 'string' && data.error.trim()
@@ -580,6 +841,7 @@ export function useRegistryContributionMachine({
               : 'Invalid invitation code.'
           );
           setCodeFailureCount((count) => count + 1);
+          setInvalidFocusTick((tick) => tick + 1);
           return { valid: false };
         }
       } catch (err: unknown) {
@@ -588,10 +850,12 @@ export function useRegistryContributionMachine({
         }
         lockedCodeRef.current = null;
         setVerifiedCodeState(null);
+        setVerifiedSessionPostalState({});
         setPhase('idle');
         const msg = err instanceof Error ? err.message : 'Invalid invitation code.';
         setCodeError(msg || 'Invalid invitation code.');
         setCodeFailureCount((count) => count + 1);
+        setInvalidFocusTick((tick) => tick + 1);
         return { valid: false };
       } finally {
         if (abortControllerRef.current === controller) {
@@ -629,6 +893,7 @@ export function useRegistryContributionMachine({
 
       lockedCodeRef.current = null;
       setVerifiedCodeState(null);
+      setVerifiedSessionPostalState({});
 
       if (currentSessionKey && val !== sessionCode) {
         setDismissedSessionKey(currentSessionKey);
@@ -713,6 +978,7 @@ export function useRegistryContributionMachine({
     }
     lockedCodeRef.current = null;
     setVerifiedCodeState(null);
+    setVerifiedSessionPostalState({});
     if (currentSessionKey) {
       setDismissedSessionKey(currentSessionKey);
     }
@@ -724,6 +990,18 @@ export function useRegistryContributionMachine({
     setContributorNameState('');
     setHasEditedEmail(false);
     setEmailState('');
+    setHasEditedAddressLine1(false);
+    setAddressLine1State('');
+    setHasEditedAddressLine2(false);
+    setAddressLine2State('');
+    setHasEditedCity(false);
+    setCityState('');
+    setHasEditedState(false);
+    setStateValue('');
+    setHasEditedZipCode(false);
+    setZipCodeState('');
+    setHasEditedCountry(false);
+    setCountryState('');
     setCodeError(null);
     setFieldErrors({});
     setSubmissionError(null);
@@ -750,6 +1028,7 @@ export function useRegistryContributionMachine({
                 : 'No units are currently available.',
           });
           setPhase('error');
+          setInvalidFocusTick((tick) => tick + 1);
           return false;
         }
       }
@@ -793,6 +1072,7 @@ export function useRegistryContributionMachine({
         }
         setFieldErrors(errors);
         setPhase('error');
+        setInvalidFocusTick((tick) => tick + 1);
         return false;
       }
 
@@ -802,6 +1082,7 @@ export function useRegistryContributionMachine({
           const msg = `Amount cannot exceed the remaining ${formatCurrency(remainingAmount)}.`;
           setFieldErrors({ amount: msg });
           setPhase('error');
+          setInvalidFocusTick((tick) => tick + 1);
           return false;
         }
       }
@@ -902,6 +1183,7 @@ export function useRegistryContributionMachine({
                 : 'No units are currently available.',
           });
           setPhase('error');
+          setInvalidFocusTick((tick) => tick + 1);
           return;
         }
       }
@@ -947,6 +1229,7 @@ export function useRegistryContributionMachine({
         }
         setFieldErrors(errors);
         setPhase('error');
+        setInvalidFocusTick((tick) => tick + 1);
         return;
       }
 
@@ -962,6 +1245,7 @@ export function useRegistryContributionMachine({
           const msg = `Amount cannot exceed the remaining ${formatCurrency(remainingAmount)}.`;
           setFieldErrors({ amount: msg });
           setPhase('error');
+          setInvalidFocusTick((tick) => tick + 1);
           return;
         }
       }
@@ -970,6 +1254,7 @@ export function useRegistryContributionMachine({
         setCodeError(VERIFIED_CODE_REQUIRED_MESSAGE);
         setPhase('idle');
         setCodeFailureCount((count) => count + 1);
+        setInvalidFocusTick((tick) => tick + 1);
         return;
       }
 
@@ -1121,6 +1406,7 @@ export function useRegistryContributionMachine({
     if (codeFailureCount === 0 || phase !== 'idle' || !codeError) {
       return;
     }
+    invitationCodeInputRef.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
     invitationCodeInputRef.current?.focus();
   }, [codeFailureCount, phase, codeError]);
 
@@ -1137,6 +1423,8 @@ export function useRegistryContributionMachine({
     isSubmitting,
     isSuccess,
     isSubmitDisabled,
+    isPostalAutoFilledFromSession,
+    invalidFocusTick,
     invitationCodeInputRef,
 
     contributorName,

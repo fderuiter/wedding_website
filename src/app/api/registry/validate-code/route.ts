@@ -9,6 +9,7 @@ import { ValidateInvitationCodeSchema } from '@/utils/validation';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import {
   GUEST_INVITE_COOKIE,
+  extractOptionalInvitePostalFields,
   setGuestInviteSessionCookie,
   signGuestInviteSessionToken,
   verifyGuestInviteSessionToken,
@@ -108,6 +109,7 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     guestName: invite.guestName,
     code: invite.code,
     email: resolvedEmail,
+    ...extractOptionalInvitePostalFields(invite),
   });
 });
 
@@ -195,6 +197,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     guestName: invite.guestName,
     code: invite.code,
     email: resolvedEmail,
+    ...extractOptionalInvitePostalFields(invite),
   });
 
   setGuestInviteSessionCookie(response, token, request);

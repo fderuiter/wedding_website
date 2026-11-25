@@ -824,5 +824,74 @@ describe('useRegistryContributionMachine Hook', () => {
       expect(result.current.isCodeLocked).toBe(true);
       expect(result.current.invitationCode).toBe('LOCKED88');
     });
+
+    it('hydrates household postal fields, persists transient returnAddress edits across item switches, and increments invalidFocusTick on validation errors', async () => {
+      const setReturnAddressMock = jest.fn();
+      const sessionValue: GuestSessionContextType = {
+        invitationCode: 'RIVERA26',
+        guestName: 'Jane Rivera',
+        email: 'jane@riverahousehold.com',
+        addressLine1: '123 Maple Street',
+        city: 'Austin',
+        state: 'TX',
+        zipCode: '78701',
+        country: 'United States',
+        returnAddress: null,
+        isVerified: true,
+        isLoading: false,
+        status: 'authenticated',
+        lastErrorCode: null,
+        draftInvitationCode: 'RIVERA26',
+        isRecoveryModalOpen: false,
+        setSession: jest.fn(),
+        setReturnAddress: setReturnAddressMock,
+        clearSession: jest.fn(),
+        refreshSession: jest.fn(),
+        openRecoveryModal: jest.fn(),
+        closeRecoveryModal: jest.fn(),
+        recoverSession: jest.fn(),
+      };
+
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <GuestSessionContext.Provider value={sessionValue}>{children}</GuestSessionContext.Provider>
+      );
+
+      const { result, rerender } = renderHook(
+        ({ activeItem }) =>
+          useRegistryContributionMachine({
+            item: activeItem,
+            onContribute: mockOnContribute,
+          }),
+        { initialProps: { activeItem: mockGroupItem }, wrapper }
+      );
+
+      expect(result.current.addressLine1).toBe('123 Maple Street');
+      expect(result.current.city).toBe('Austin');
+      expect(result.current.state).toBe('TX');
+      expect(result.current.zipCode).toBe('78701');
+      expect(result.current.isPostalAutoFilledFromSession).toBe(true);
+      expect(result.current.invalidFocusTick).toBe(0);
+
+      // Submitting group item without amount increments invalidFocusTick
+      await act(async () => {
+        await result.current.handleSubmit();
+      });
+      expect(result.current.invalidFocusTick).toBe(1);
+
+      // Guest edits return address -> persists into GuestSessionContext
+      act(() => {
+        result.current.setAddressLine1('456 Barton Springs Rd');
+      });
+      expect(setReturnAddressMock).toHaveBeenCalledWith({
+        addressLine1: '456 Barton Springs Rd',
+      });
+      expect(result.current.isPostalAutoFilledFromSession).toBe(false);
+
+      // Simulate session context holding transient returnAddress when switching to another item
+      sessionValue.returnAddress = { addressLine1: '456 Barton Springs Rd' };
+      rerender({ activeItem: mockSingleItem });
+      expect(result.current.addressLine1).toBe('456 Barton Springs Rd');
+      expect(result.current.city).toBe('Austin');
+    });
   });
 });

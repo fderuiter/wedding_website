@@ -35,6 +35,7 @@ import {
   invalidateSampleDataCaches,
 } from '@/lib/adminCacheSync';
 import { isFeatureEnabled } from '@/lib/modules';
+import { ActiveInviteSessionContext } from '@/features/registry';
 
 if (
   typeof window !== 'undefined' &&
@@ -65,6 +66,7 @@ interface RootLayoutClientProps {
   faqs?: ContentNodeDTO[];
   isStaticExport?: boolean;
   isPreview?: boolean;
+  hasInviteSession?: boolean;
 }
 
 function subscribeToPreviewLocation(onStoreChange: () => void) {
@@ -93,6 +95,7 @@ function RootLayoutInner({
   config: baseConfig,
   faqs: baseFaqs,
   isPreview: isPreviewProp,
+  hasInviteSession: initialHasInviteSession = false,
   queryClient,
 }: Omit<RootLayoutClientProps, 'isStaticExport'> & { queryClient: QueryClient }) {
   const demo = useOptionalDemo();
@@ -108,6 +111,9 @@ function RootLayoutInner({
   const [previewDraftConfig, setPreviewDraftConfig] =
     useState<Partial<PublicAppConfig> | null>(null);
   const [storageIsAdmin, setStorageIsAdmin] = useState(false);
+  const [hasActiveInviteSession, setHasActiveInviteSession] = useState<boolean>(
+    Boolean(initialHasInviteSession)
+  );
   const router = useRouter();
   const pathname = usePathname();
   const headerRef = useRef<HTMLElement>(null);
@@ -290,80 +296,83 @@ function RootLayoutInner({
     : '';
 
   return (
-    <GuestHelpProvider config={helpConfig} pathname={pathname}>
-      <GlobalRadialGlow />
-      {isSetupPersona ? (
-        <DemoSetupSlot
-          className={bottomToolbarClearance}
-          resetCounter={demo?.resetCounter ?? 0}
-          onDemoComplete={() => router.push('/admin/dashboard')}
-        />
-      ) : (
-        <>
-          {!isStandalonePage && (
-            <Navbar
-              headerRef={headerRef}
-              isAdmin={isAdmin}
-              handleLogout={handleLogout}
-              config={effectiveConfig}
-              hasVisibleFaqs={effectiveFaqs ? effectiveFaqs.length > 0 : undefined}
-              isPreview={isPreview}
-            />
-          )}
-          {delegatesMainLandmark ? (
-            <div
-              className={bottomToolbarClearance}
-              style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}
-            >
-              {children}
-            </div>
-          ) : isPreview ? (
-            <MainLandmark
-              ref={previewRegionRef}
-              suppressLandmark
-              role="region"
-              aria-label="Live Preview"
-              data-scroll-region={isInlinePreview ? '' : undefined}
-              className={bottomToolbarClearance}
-              style={
-                {
-                  paddingTop: isStandalonePage ? 0 : mainPaddingTop,
-                  ...(mainPaddingTop > 0
-                    ? {
-                      '--header-h': `${mainPaddingTop}px`,
-                      '--local-sticky-top': `${mainPaddingTop}px`,
-                    }
-                    : {}),
-                } as React.CSSProperties
-              }
-            >
-              {children}
-              {isHomePage && (
-                <SiteFooter suppressLandmark>
-                  <HomeFooterContent config={effectiveConfig} />
-                </SiteFooter>
-              )}
-            </MainLandmark>
-          ) : (
-            <>
-              <MainLandmark
-                aria-label="Application Content"
-                className={!isHomePage ? bottomToolbarClearance : undefined}
+    <ActiveInviteSessionContext.Provider value={hasActiveInviteSession}>
+      <GuestHelpProvider config={helpConfig} pathname={pathname}>
+        <GlobalRadialGlow />
+        {isSetupPersona ? (
+          <DemoSetupSlot
+            className={bottomToolbarClearance}
+            resetCounter={demo?.resetCounter ?? 0}
+            onDemoComplete={() => router.push('/admin/dashboard')}
+          />
+        ) : (
+          <>
+            {!isStandalonePage && (
+              <Navbar
+                headerRef={headerRef}
+                isAdmin={isAdmin}
+                handleLogout={handleLogout}
+                config={effectiveConfig}
+                hasVisibleFaqs={effectiveFaqs ? effectiveFaqs.length > 0 : undefined}
+                isPreview={isPreview}
+                onInviteSessionChange={setHasActiveInviteSession}
+              />
+            )}
+            {delegatesMainLandmark ? (
+              <div
+                className={bottomToolbarClearance}
                 style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}
               >
                 {children}
+              </div>
+            ) : isPreview ? (
+              <MainLandmark
+                ref={previewRegionRef}
+                suppressLandmark
+                role="region"
+                aria-label="Live Preview"
+                data-scroll-region={isInlinePreview ? '' : undefined}
+                className={bottomToolbarClearance}
+                style={
+                  {
+                    paddingTop: isStandalonePage ? 0 : mainPaddingTop,
+                    ...(mainPaddingTop > 0
+                      ? {
+                        '--header-h': `${mainPaddingTop}px`,
+                        '--local-sticky-top': `${mainPaddingTop}px`,
+                      }
+                      : {}),
+                  } as React.CSSProperties
+                }
+              >
+                {children}
+                {isHomePage && (
+                  <SiteFooter suppressLandmark>
+                    <HomeFooterContent config={effectiveConfig} />
+                  </SiteFooter>
+                )}
               </MainLandmark>
-              {isHomePage && (
-                <SiteFooter className={bottomToolbarClearance}>
-                  <HomeFooterContent config={effectiveConfig} />
-                </SiteFooter>
-              )}
-            </>
-          )}
-        </>
-      )}
-      {!isPreview && (isDemoMode ? <DemoToolbar /> : <StaticDemoMount queryClient={queryClient} />)}
-    </GuestHelpProvider>
+            ) : (
+              <>
+                <MainLandmark
+                  aria-label="Application Content"
+                  className={!isHomePage ? bottomToolbarClearance : undefined}
+                  style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}
+                >
+                  {children}
+                </MainLandmark>
+                {isHomePage && (
+                  <SiteFooter className={bottomToolbarClearance}>
+                    <HomeFooterContent config={effectiveConfig} />
+                  </SiteFooter>
+                )}
+              </>
+            )}
+          </>
+        )}
+        {!isPreview && (isDemoMode ? <DemoToolbar /> : <StaticDemoMount queryClient={queryClient} />)}
+      </GuestHelpProvider>
+    </ActiveInviteSessionContext.Provider>
   );
 }
 
@@ -381,6 +390,7 @@ export default function RootLayoutClient({
   faqs,
   isStaticExport = false,
   isPreview,
+  hasInviteSession,
 }: RootLayoutClientProps) {
   if (isStaticExport || process.env.NODE_ENV === 'test') {
     ensureStaticDemoRuntime();
@@ -425,7 +435,13 @@ export default function RootLayoutClient({
 
   const layoutTree = (
     <DemoProvider enabled={isStaticExport}>
-      <RootLayoutInner config={config} faqs={faqs} isPreview={isPreview} queryClient={queryClient}>
+      <RootLayoutInner
+        config={config}
+        faqs={faqs}
+        isPreview={isPreview}
+        hasInviteSession={hasInviteSession}
+        queryClient={queryClient}
+      >
         {children}
       </RootLayoutInner>
     </DemoProvider>

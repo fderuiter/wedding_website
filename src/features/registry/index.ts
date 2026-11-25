@@ -65,6 +65,11 @@ export { GET as registryClaimGET, POST as registryClaimPOST } from './api/claim'
 export { InvitationCodeAdminService } from './invitation-code.admin.service';
 export { RegistryItemAdminService } from './admin.service';
 export { useRegistryCapabilities } from './hooks/useRegistryCapabilities';
+export {
+  ActiveInviteSessionContext,
+  useGuestSession,
+  useHasActiveInviteSession,
+} from './context/GuestSessionContext';
 export { default as RegistryPage } from './pages/index';
 export { default as AddItemPage } from './pages/add-item';
 export { default as EditItemPage } from './pages/edit-item';

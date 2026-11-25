@@ -34,7 +34,17 @@ export function clearGuestInviteSessionCookie(
   return clearSessionCookie(response, GUEST_INVITE_COOKIE, req);
 }
 
-export interface GuestInviteSessionPayload {
+export interface GuestInvitePostalFields {
+  householdName?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zipCode?: string | null;
+  country?: string | null;
+}
+
+export interface GuestInviteSessionPayload extends GuestInvitePostalFields {
   code: string;
   guestName: string;
   email?: string | null;
@@ -42,6 +52,32 @@ export interface GuestInviteSessionPayload {
   subdomain?: string | null;
   iat?: number;
   exp?: number;
+}
+
+export function extractOptionalInvitePostalFields(
+  source: object | null | undefined
+): Partial<Record<keyof GuestInvitePostalFields, string>> {
+  if (!source || typeof source !== 'object') {
+    return {};
+  }
+  const record = source as Partial<Record<keyof GuestInvitePostalFields, unknown>>;
+  const fields: Array<keyof GuestInvitePostalFields> = [
+    'householdName',
+    'addressLine1',
+    'addressLine2',
+    'city',
+    'state',
+    'zipCode',
+    'country',
+  ];
+  const extracted: Partial<Record<keyof GuestInvitePostalFields, string>> = {};
+  for (const key of fields) {
+    const raw = record[key];
+    if (typeof raw === 'string' && raw.trim().length > 0) {
+      extracted[key] = raw.trim();
+    }
+  }
+  return extracted;
 }
 
 export async function getGuestSessionSecret(): Promise<string> {

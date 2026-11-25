@@ -387,6 +387,8 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
   const [batchError, setBatchError] = useState<string | null>(null);
   const [batchSuccessMessage, setBatchSuccessMessage] = useState<string | null>(null);
   const [liveMessage, setLiveMessage] = useState<string | null>(null);
+  const [lastErrorEventId, setLastErrorEventId] = useState<string | null>(null);
+  const [errorAlertRevision, setErrorAlertRevision] = useState(0);
   const inFlightSubmittingRef = useRef(false);
 
   // Keep options in a ref to avoid recreating callbacks
@@ -489,6 +491,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
       if (readOnlyIdsRef.current.has(subEventId)) return;
       setBatchError(null);
       setBatchSuccessMessage(null);
+      setLastErrorEventId((prev) => (prev === subEventId ? null : prev));
 
       setEventsMap((prev) => {
         const existing = prev[subEventId] || {
@@ -698,6 +701,8 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
             fieldErrors,
           },
         }));
+        setLastErrorEventId(subEventId);
+        setErrorAlertRevision((rev) => rev + 1);
         setLiveMessage(null);
         optionsRef.current?.onError?.(err);
         return false;
@@ -765,6 +770,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
           },
         }));
 
+        setLastErrorEventId((prev) => (prev === subEventId ? null : prev));
         setLiveMessage('Successfully saved RSVP.');
         optionsRef.current?.onSuccess?.(json.data);
         return true;
@@ -783,6 +789,8 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
             fieldErrors: {},
           },
         }));
+        setLastErrorEventId(subEventId);
+        setErrorAlertRevision((rev) => rev + 1);
         setLiveMessage(isRsvpClosedError ? errorMessage : null);
         if (isRsvpClosedError) {
           optionsRef.current?.onRsvpClosed?.(errorMessage);
@@ -984,5 +992,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
     batchError,
     batchSuccessMessage,
     liveMessage,
+    lastErrorEventId,
+    errorAlertRevision,
   };
 }

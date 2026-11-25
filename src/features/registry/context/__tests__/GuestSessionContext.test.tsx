@@ -306,4 +306,142 @@ describe('GuestSessionContext', () => {
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
+
+  it('hydrates household postal fields, persists transient returnAddress, and wipes both immediately on clearSession or session expiry', async () => {
+    const PostalConsumer = () => {
+      const {
+        invitationCode,
+        householdName,
+        addressLine1,
+        city,
+        state,
+        zipCode,
+        returnAddress,
+        status,
+        setSession,
+        setReturnAddress,
+        clearSession,
+        refreshSession,
+      } = useGuestSession();
+
+      return (
+        <div>
+          <div data-testid="postal-status">{status}</div>
+          <div data-testid="postal-code">{invitationCode}</div>
+          <div data-testid="postal-household">{householdName || ''}</div>
+          <div data-testid="postal-line1">{addressLine1 || ''}</div>
+          <div data-testid="postal-city-state-zip">
+            {[city, state, zipCode].filter(Boolean).join(',')}
+          </div>
+          <div data-testid="transient-return-line1">{returnAddress?.addressLine1 || ''}</div>
+          <button
+            onClick={() =>
+              setReturnAddress?.({
+                addressLine1: '999 Transient Way',
+                addressLine2: 'Suite 5',
+                city: 'Boston',
+                state: 'MA',
+                zipCode: '02110',
+                country: 'United States',
+              })
+            }
+          >
+            Save Return Address
+          </button>
+          <button
+            onClick={() =>
+              setSession({
+                invitationCode: 'OTHER999',
+                guestName: 'Other Household',
+                isVerified: true,
+                addressLine1: '500 New Ave',
+              })
+            }
+          >
+            Switch Household
+          </button>
+          <button onClick={() => clearSession()}>Wipe Session</button>
+          <button onClick={() => refreshSession()}>Trigger Refresh</button>
+        </div>
+      );
+    };
+
+    (apiClient.get as jest.Mock).mockResolvedValueOnce({
+      isVerified: true,
+      invitationCode: 'HOUSEHOLD1',
+      guestName: 'Pat & Chris',
+      householdName: 'The Morgan Family',
+      addressLine1: '101 Maple St',
+      city: 'Portland',
+      state: 'OR',
+      zipCode: '97201',
+      country: 'United States',
+    });
+    (apiClient.delete as jest.Mock).mockResolvedValue({ success: true });
+
+    render(
+      <GuestSessionProvider>
+        <PostalConsumer />
+      </GuestSessionProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('postal-status')).toHaveTextContent('authenticated');
+      expect(screen.getByTestId('postal-household')).toHaveTextContent('The Morgan Family');
+      expect(screen.getByTestId('postal-line1')).toHaveTextContent('101 Maple St');
+      expect(screen.getByTestId('postal-city-state-zip')).toHaveTextContent('Portland,OR,97201');
+    });
+
+    // Persist guest-entered return address in memory
+    act(() => {
+      screen.getByText('Save Return Address').click();
+    });
+    expect(screen.getByTestId('transient-return-line1')).toHaveTextContent('999 Transient Way');
+
+    // Switching to another household resets the previous household's transient returnAddress
+    act(() => {
+      screen.getByText('Switch Household').click();
+    });
+    expect(screen.getByTestId('postal-code')).toHaveTextContent('OTHER999');
+    expect(screen.getByTestId('postal-line1')).toHaveTextContent('500 New Ave');
+    expect(screen.getByTestId('transient-return-line1')).toHaveTextContent('');
+
+    // Re-enter transient return address, then expire session -> wipes both immediately
+    act(() => {
+      screen.getByText('Save Return Address').click();
+    });
+    expect(screen.getByTestId('transient-return-line1')).toHaveTextContent('999 Transient Way');
+
+    (apiClient.get as jest.Mock).mockResolvedValueOnce({
+      isVerified: false,
+      invitationCode: null,
+      guestName: null,
+    });
+    await act(async () => {
+      screen.getByText('Trigger Refresh').click();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('postal-status')).toHaveTextContent('expired');
+      expect(screen.getByTestId('postal-household')).toHaveTextContent('');
+      expect(screen.getByTestId('postal-line1')).toHaveTextContent('');
+      expect(screen.getByTestId('postal-city-state-zip')).toHaveTextContent('');
+      expect(screen.getByTestId('transient-return-line1')).toHaveTextContent('');
+    });
+
+    // Clear session also wipes all household & transient return-address fields immediately
+    act(() => {
+      screen.getByText('Switch Household').click();
+      screen.getByText('Save Return Address').click();
+    });
+    expect(screen.getByTestId('postal-line1')).toHaveTextContent('500 New Ave');
+    expect(screen.getByTestId('transient-return-line1')).toHaveTextContent('999 Transient Way');
+
+    await act(async () => {
+      screen.getByText('Wipe Session').click();
+    });
+    expect(screen.getByTestId('postal-status')).toHaveTextContent('unauthenticated');
+    expect(screen.getByTestId('postal-line1')).toHaveTextContent('');
+    expect(screen.getByTestId('transient-return-line1')).toHaveTextContent('');
+  });
 });

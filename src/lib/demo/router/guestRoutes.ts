@@ -502,6 +502,8 @@ export async function handleGuestRoutes(ctx: DemoRouteContext): Promise<Response
           state: guest.state || '',
           zipCode: guest.zipCode || '',
           country: guest.country || '',
+          ...(guest.email?.trim() ? { email: guest.email.trim() } : {}),
+          ...(guest.householdName?.trim() ? { householdName: guest.householdName.trim() } : {}),
         },
       });
     }

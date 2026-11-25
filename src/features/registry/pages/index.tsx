@@ -87,6 +87,7 @@ function RegistryPageContent() {
   } = useRegistry();
 
   const [isLoadingMoreState, setIsLoadingMoreState] = useState(false);
+  const [isMobileFiltersExpanded, setIsMobileFiltersExpanded] = useState(false);
   const isLoadingMore = useRef(false);
   const loadMoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const counterRef = useRef<HTMLParagraphElement>(null);
@@ -95,6 +96,7 @@ function RegistryPageContent() {
   const filterNavRef = useStickyOffset<HTMLElement>({
     edge: 'top',
     scope: 'document',
+    disableAtMaxHeight: 560,
   });
 
   useEffect(() => {
@@ -142,6 +144,11 @@ function RegistryPageContent() {
       showAvailableOnly ||
       hasSortSelection
   );
+
+  const activeSecondaryFilterCount =
+    (hasPriceSelection ? 1 : 0) +
+    (showGroupGiftsOnly ? 1 : 0) +
+    (showAvailableOnly ? 1 : 0);
 
   const liveAnnouncement = isLoadingMoreState
     ? 'Loading more gifts...'
@@ -202,71 +209,114 @@ function RegistryPageContent() {
         <nav
           ref={filterNavRef}
           style={{ top: 'var(--header-h)' }}
-          className="sticky top-[var(--header-h)] z-30 bg-white/90 dark:bg-gray-800/90 backdrop-blur border-b border-primary dark:border-gray-700 max-w-4xl mx-auto px-2 sm:px-6 mb-10 flex flex-col gap-4 py-4 rounded-xl shadow-md"
+          className="sticky top-[var(--header-h)] [@media(max-height:560px)]:static z-30 bg-white/90 dark:bg-gray-800/90 backdrop-blur border-b border-primary dark:border-gray-700 max-w-4xl mx-auto px-2 sm:px-6 mb-6 md:mb-10 [@media(max-height:560px)]:mb-4 flex flex-col gap-2.5 md:gap-4 py-2.5 md:py-4 rounded-xl shadow-md"
           aria-label="Registry Filters"
           role="navigation"
         >
-          <FormGroup className="w-full">
-            <Label htmlFor="registry-search-input" className="sr-only">
-              Search gifts
-            </Label>
-            <div className="relative flex items-center w-full">
+          <div className="flex items-center gap-2 w-full">
+            <FormGroup className="flex-1 min-w-0 space-y-0">
+              <Label htmlFor="registry-search-input" className="sr-only">
+                Search gifts
+              </Label>
+              <div className="relative flex items-center w-full">
+                <Icon
+                  name="Search"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-text pointer-events-none"
+                />
+                <Input
+                  id="registry-search-input"
+                  type="text"
+                  placeholder="Search gifts by name or description..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery?.(e.target.value)}
+                  className="pl-9 pr-9"
+                  aria-label="Search gifts"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery?.('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 min-w-6 min-h-6 flex items-center justify-center text-muted-text hover:text-gray-700 dark:hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary rounded p-1"
+                    aria-label="Clear search query"
+                  >
+                    <Icon name="X" className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            </FormGroup>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsMobileFiltersExpanded((prev) => !prev)}
+              aria-expanded={isMobileFiltersExpanded}
+              aria-controls="registry-secondary-filters"
+              data-testid="mobile-filters-toggle"
+              className="md:hidden shrink-0 inline-flex items-center gap-1.5 px-3"
+            >
+              <Icon name="Tag" className="w-3.5 h-3.5" />
+              <span>
+                Filters{activeSecondaryFilterCount > 0 ? ` (${activeSecondaryFilterCount})` : ''}
+              </span>
               <Icon
-                name="Search"
-                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-text pointer-events-none"
+                name="ChevronDown"
+                className={`w-3.5 h-3.5 transition-transform ${
+                  isMobileFiltersExpanded ? 'rotate-180' : ''
+                }`}
               />
-              <Input
-                id="registry-search-input"
-                type="text"
-                placeholder="Search gifts by name or description..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery?.(e.target.value)}
-                className="pl-9 pr-9"
-                aria-label="Search gifts"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery?.('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 min-w-6 min-h-6 flex items-center justify-center text-muted-text hover:text-gray-700 dark:hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary rounded p-1"
-                  aria-label="Clear search query"
-                >
-                  <Icon name="X" className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-          </FormGroup>
-          <div className="flex flex-col md:flex-row md:items-center gap-4">
+            </Button>
+          </div>
+          <div className="flex flex-wrap md:flex-row items-center justify-between gap-2 md:gap-4">
             <CategoryFilter
               categories={categories}
               selected={categoryFilter}
               onChange={setCategoryFilter}
               label="Filter gifts by category"
+              className="flex-nowrap overflow-x-auto max-w-full pb-1 mb-0 md:flex-wrap md:overflow-visible md:pb-0"
             />
+            <div className="flex items-center gap-2 ml-auto shrink-0">
+              <FormGroup className="flex items-center space-y-0 space-x-2">
+                <Label className="hidden sm:inline font-semibold text-sm whitespace-nowrap">
+                  Sort by:
+                </Label>
+                <Select
+                  value={sortOption}
+                  onChange={(e) => setSortOption(e.target.value as SortOption)}
+                  aria-label="Sort gifts"
+                  className="w-auto text-xs sm:text-sm py-1.5 sm:py-2"
+                >
+                  <option value="default">Default</option>
+                  <option value="price-asc">Price: Low to High</option>
+                  <option value="price-desc">Price: High to Low</option>
+                  <option value="most-wanted">Most Wanted</option>
+                </Select>
+              </FormGroup>
+              {hasActiveFilters && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleClearFilters}
+                  data-testid="inline-clear-filters-button"
+                >
+                  Clear Filters
+                </Button>
+              )}
+            </div>
+          </div>
+          <div
+            id="registry-secondary-filters"
+            data-testid="registry-secondary-filters"
+            className={`${
+              isMobileFiltersExpanded ? 'flex' : 'hidden'
+            } md:flex flex-col md:flex-row flex-wrap justify-center items-center gap-3 md:gap-4 pt-2 md:pt-0 border-t border-slate-200/70 dark:border-gray-700/70 md:border-t-0`}
+          >
             <PriceRangeFilter
               min={minPrice}
               max={maxPrice}
               value={priceRange}
               onChange={setPriceRange}
             />
-            <FormGroup className="flex items-center space-y-0 space-x-2">
-              <Label className="font-semibold text-sm whitespace-nowrap">
-                Sort by:
-              </Label>
-              <Select
-                value={sortOption}
-                onChange={(e) => setSortOption(e.target.value as SortOption)}
-                aria-label="Sort gifts"
-                className="w-auto"
-              >
-                <option value="default">Default</option>
-                <option value="price-asc">Price: Low to High</option>
-                <option value="price-desc">Price: High to Low</option>
-                <option value="most-wanted">Most Wanted</option>
-              </Select>
-            </FormGroup>
-          </div>
-          <div className="flex flex-wrap justify-center items-center gap-4 mt-4">
             <FormGroup className="flex items-center space-y-0 space-x-2">
               <Checkbox
                 checked={showGroupGiftsOnly}
@@ -285,17 +335,6 @@ function RegistryPageContent() {
                 Show only available gifts
               </Label>
             </FormGroup>
-            {hasActiveFilters && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleClearFilters}
-                data-testid="inline-clear-filters-button"
-              >
-                Clear Filters
-              </Button>
-            )}
           </div>
         </nav>
 

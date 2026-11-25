@@ -16,6 +16,7 @@ import {
   GUEST_INVITE_COOKIE,
   type GuestInviteSessionPayload,
   clearGuestInviteSessionCookie,
+  extractOptionalInvitePostalFields,
   getSignedGuestInviteSession,
   setGuestInviteSessionCookie,
   signGuestInviteSessionToken,
@@ -38,6 +39,7 @@ export {
   GUEST_INVITE_COOKIE,
   type GuestInviteSessionPayload,
   clearGuestInviteSessionCookie,
+  extractOptionalInvitePostalFields,
   setGuestInviteSessionCookie,
   signGuestInviteSessionToken,
   verifyGuestInviteSessionToken,
@@ -139,6 +141,7 @@ async function resolveActiveInvitationSession(
       code: payload.code,
       guestName: resolvedGuestName,
       email: resolvedEmail,
+      ...extractOptionalInvitePostalFields(invite),
     };
   } catch {
     return null;

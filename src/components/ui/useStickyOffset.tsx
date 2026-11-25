@@ -156,6 +156,7 @@ export interface UseStickyOffsetOptions<T extends HTMLElement = HTMLElement> {
   containerSelector?: string;
   combineMode?: StickyOffsetCombineMode;
   enabled?: boolean;
+  disableAtMaxHeight?: number;
   onMeasure?: (height: number) => void;
 }
 
@@ -171,6 +172,7 @@ export function useStickyOffset<T extends HTMLElement = HTMLElement>(
     containerSelector,
     combineMode = edge === 'bottom' ? 'max' : 'sum',
     enabled = true,
+    disableAtMaxHeight,
     onMeasure,
   } = options;
 
@@ -203,12 +205,35 @@ export function useStickyOffset<T extends HTMLElement = HTMLElement>(
     );
     const contributorId = Symbol(effectiveCssVar);
 
+    const isDisabledByViewportHeight = (currentEl: HTMLElement): boolean => {
+      if (typeof disableAtMaxHeight !== 'number' || disableAtMaxHeight <= 0) {
+        return false;
+      }
+      const currentWin = currentEl.ownerDocument?.defaultView;
+      if (!currentWin) {
+        return false;
+      }
+      if (typeof currentWin.matchMedia === 'function') {
+        const mql = currentWin.matchMedia(`(max-height: ${disableAtMaxHeight}px)`);
+        if (mql?.matches) {
+          return true;
+        }
+      }
+      return (
+        typeof currentWin.innerHeight === 'number' &&
+        currentWin.innerHeight > 0 &&
+        currentWin.innerHeight <= disableAtMaxHeight
+      );
+    };
+
     const updateMeasurement = () => {
       const currentEl = resolvedRef.current;
       if (!currentEl) {
         return;
       }
-      const clearance = measureElementClearance(currentEl, edge);
+      const clearance = isDisabledByViewportHeight(currentEl)
+        ? 0
+        : measureElementClearance(currentEl, edge);
       onMeasureRef.current?.(clearance);
       if (container) {
         setContributorOffset(container, effectiveCssVar, contributorId, {
@@ -234,10 +259,19 @@ export function useStickyOffset<T extends HTMLElement = HTMLElement>(
 
     const win = el.ownerDocument?.defaultView;
     win?.addEventListener('resize', updateMeasurement, { passive: true });
+    const maxHeightMql =
+      typeof disableAtMaxHeight === 'number' &&
+      disableAtMaxHeight > 0 &&
+      win &&
+      typeof win.matchMedia === 'function'
+        ? win.matchMedia(`(max-height: ${disableAtMaxHeight}px)`)
+        : null;
+    maxHeightMql?.addEventListener?.('change', updateMeasurement);
 
     return () => {
       observer?.disconnect();
       win?.removeEventListener('resize', updateMeasurement);
+      maxHeightMql?.removeEventListener?.('change', updateMeasurement);
       if (container) {
         removeContributorOffset(container, effectiveCssVar, contributorId);
       }
@@ -246,6 +280,7 @@ export function useStickyOffset<T extends HTMLElement = HTMLElement>(
     combineMode,
     containerRef,
     containerSelector,
+    disableAtMaxHeight,
     edge,
     effectiveCssVar,
     enabled,
@@ -267,6 +302,7 @@ export interface StickyBarProps extends React.HTMLAttributes<HTMLElement> {
   containerSelector?: string;
   combineMode?: StickyOffsetCombineMode;
   enabled?: boolean;
+  disableAtMaxHeight?: number;
   onMeasure?: (height: number) => void;
   ref?: React.Ref<HTMLElement>;
 }
@@ -280,6 +316,7 @@ export function StickyBar({
   containerSelector,
   combineMode,
   enabled = true,
+  disableAtMaxHeight,
   onMeasure,
   className,
   children,
@@ -294,6 +331,7 @@ export function StickyBar({
     containerSelector,
     combineMode,
     enabled,
+    disableAtMaxHeight,
     onMeasure,
   });
 

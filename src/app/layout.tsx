@@ -110,14 +110,17 @@ export default async function RootLayout({
 
   let initialThemeMode: ThemeMode = 'system';
   let isAuthenticated = isStaticExport;
+  let hasInviteSession = false;
   if (!isStaticExport) {
     await enforceActiveGuestPageSession();
 
     try {
-      isAuthenticated =
-        (await isAdminRequest()) ||
-        (await isGuestRequest()) ||
-        Boolean(await getGuestInviteSession());
+      const adminAuth = await isAdminRequest();
+      const guestAuth = adminAuth ? false : await isGuestRequest();
+      if (!adminAuth) {
+        hasInviteSession = Boolean(await getGuestInviteSession());
+      }
+      isAuthenticated = adminAuth || guestAuth || hasInviteSession;
     } catch {
       isAuthenticated = false;
     }
@@ -170,7 +173,12 @@ export default async function RootLayout({
             <SetupWizard />
           ) : (
             <ToastProvider>
-              <RootLayoutClient config={layoutConfig} faqs={visibleFaqs} isStaticExport={isStaticExport}>
+              <RootLayoutClient
+                config={layoutConfig}
+                faqs={visibleFaqs}
+                isStaticExport={isStaticExport}
+                hasInviteSession={hasInviteSession}
+              >
                 {children}
               </RootLayoutClient>
             </ToastProvider>

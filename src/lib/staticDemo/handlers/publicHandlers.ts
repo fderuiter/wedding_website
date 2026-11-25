@@ -823,6 +823,8 @@ export async function handlePublicRoutes(
         state: invite.state || '',
         zipCode: invite.zipCode || '',
         country: invite.country || '',
+        ...(invite.email?.trim() ? { email: invite.email.trim() } : {}),
+        ...(invite.householdName?.trim() ? { householdName: invite.householdName.trim() } : {}),
       });
     }
 

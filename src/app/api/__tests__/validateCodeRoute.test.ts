@@ -181,4 +181,62 @@ describe('validate-code Route', () => {
       email: 'jane.smith@example.com',
     });
   });
+
+  it('hydrates saved household postal fields across GET and POST validate-code and never exposes postal data on shared_passcode', async () => {
+    mockFindUnique.mockResolvedValue({
+      id: 'invite-postal-99',
+      code: 'HOUSEHOLD99',
+      guestName: 'Elena & Marco Rossi',
+      householdName: 'Rossi Family',
+      email: 'rossi@example.com',
+      addressLine1: '18 Vineyard Lane',
+      addressLine2: 'Cottage B',
+      city: 'Napa',
+      state: 'CA',
+      zipCode: '94558',
+      country: 'United States',
+      used: false,
+      isSample: false,
+    });
+
+    const getRes = await validateCodeRoute(
+      new Request('http://localhost/api/registry/validate-code?code=HOUSEHOLD99', {
+        method: 'GET',
+      }) as any
+    );
+    expect(getRes.status).toBe(200);
+    const getJson = await getRes.json();
+    expect(getJson.data).toEqual({
+      valid: true,
+      guestName: 'Elena & Marco Rossi',
+      householdName: 'Rossi Family',
+      code: 'HOUSEHOLD99',
+      email: 'rossi@example.com',
+      addressLine1: '18 Vineyard Lane',
+      addressLine2: 'Cottage B',
+      city: 'Napa',
+      state: 'CA',
+      zipCode: '94558',
+      country: 'United States',
+    });
+
+    const postRes = await validateCodePostRoute(
+      new Request('http://localhost/api/registry/validate-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: 'HOUSEHOLD99' }),
+      }) as any
+    );
+    expect(postRes.status).toBe(200);
+    const postJson = await postRes.json();
+    expect(postJson.data).toMatchObject({
+      valid: true,
+      householdName: 'Rossi Family',
+      addressLine1: '18 Vineyard Lane',
+      city: 'Napa',
+      state: 'CA',
+      zipCode: '94558',
+      country: 'United States',
+    });
+  });
 });

@@ -837,6 +837,13 @@ export async function handleRegistryRoutes(
       guestName: invite.guestName,
       code: invite.code,
       email: resolvedEmail,
+      ...(invite.householdName?.trim() ? { householdName: invite.householdName.trim() } : {}),
+      ...(invite.addressLine1?.trim() ? { addressLine1: invite.addressLine1.trim() } : {}),
+      ...(invite.addressLine2?.trim() ? { addressLine2: invite.addressLine2.trim() } : {}),
+      ...(invite.city?.trim() ? { city: invite.city.trim() } : {}),
+      ...(invite.state?.trim() ? { state: invite.state.trim() } : {}),
+      ...(invite.zipCode?.trim() ? { zipCode: invite.zipCode.trim() } : {}),
+      ...(invite.country?.trim() ? { country: invite.country.trim() } : {}),
     });
   }
 
@@ -873,6 +880,13 @@ export async function handleRegistryRoutes(
         code: invite.code,
         guestName: invite.guestName,
         email: resolvedEmail,
+        ...(invite.householdName?.trim() ? { householdName: invite.householdName.trim() } : {}),
+        ...(invite.addressLine1?.trim() ? { addressLine1: invite.addressLine1.trim() } : {}),
+        ...(invite.addressLine2?.trim() ? { addressLine2: invite.addressLine2.trim() } : {}),
+        ...(invite.city?.trim() ? { city: invite.city.trim() } : {}),
+        ...(invite.state?.trim() ? { state: invite.state.trim() } : {}),
+        ...(invite.zipCode?.trim() ? { zipCode: invite.zipCode.trim() } : {}),
+        ...(invite.country?.trim() ? { country: invite.country.trim() } : {}),
       });
     }
 

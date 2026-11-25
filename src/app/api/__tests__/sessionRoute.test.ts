@@ -176,4 +176,74 @@ describe('session Route', () => {
     expect(setCookieHeader).toContain(`${GUEST_INVITE_COOKIE}=`);
     expect(setCookieHeader).toContain('Max-Age=0');
   });
+
+  it('hydrates saved household postal fields on active guest_invite_session and never leaks data for shared guest_auth cookie', async () => {
+    mockFindUnique.mockResolvedValue({
+      id: 'inv-postal-1',
+      code: 'POSTAL2026',
+      guestName: 'Alex & Sam Rivera',
+      householdName: 'The Rivera Household',
+      email: 'rivera@example.com',
+      addressLine1: '742 Evergreen Terrace',
+      addressLine2: 'Apt 4B',
+      city: 'Springfield',
+      state: 'IL',
+      zipCode: '62704',
+      country: 'United States',
+      isSample: false,
+    });
+
+    const inviteToken = await signGuestInviteSessionToken({
+      code: 'POSTAL2026',
+      guestName: 'Alex & Sam Rivera',
+    });
+
+    const verifiedReq = new Request('http://localhost/api/registry/session', {
+      method: 'GET',
+      headers: {
+        cookie: `${GUEST_INVITE_COOKIE}=${inviteToken}`,
+      },
+    });
+    const verifiedRes = await sessionGetRoute(verifiedReq as any);
+    expect(verifiedRes.status).toBe(200);
+    const verifiedJson = await verifiedRes.json();
+    expect(verifiedJson).toEqual({
+      success: true,
+      data: {
+        isVerified: true,
+        invitationCode: 'POSTAL2026',
+        code: 'POSTAL2026',
+        guestName: 'Alex & Sam Rivera',
+        householdName: 'The Rivera Household',
+        email: 'rivera@example.com',
+        addressLine1: '742 Evergreen Terrace',
+        addressLine2: 'Apt 4B',
+        city: 'Springfield',
+        state: 'IL',
+        zipCode: '62704',
+        country: 'United States',
+      },
+    });
+
+    // Shared-passcode guest_auth cookie without guest_invite_session must never receive household postal data
+    const sharedPasscodeReq = new Request('http://localhost/api/registry/session', {
+      method: 'GET',
+      headers: {
+        cookie: 'guest_auth=shared-passcode-token',
+      },
+    });
+    const sharedPasscodeRes = await sessionGetRoute(sharedPasscodeReq as any);
+    expect(sharedPasscodeRes.status).toBe(200);
+    const sharedPasscodeJson = await sharedPasscodeRes.json();
+    expect(sharedPasscodeJson).toEqual({
+      success: true,
+      data: {
+        isVerified: false,
+        invitationCode: null,
+        code: null,
+        guestName: null,
+        email: null,
+      },
+    });
+  });
 });

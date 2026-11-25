@@ -1,8 +1,9 @@
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import { Overlay } from '@/components/ui/Overlay';
 import { Dialog } from '@/components/ui/Dialog';
+import { notifyGuestSessionChanged } from '@/utils/guestSessionEvents';
 
 expect.extend(toHaveNoViolations);
 import { ThemeProvider } from '@/components/ThemeProvider';
@@ -2317,6 +2318,165 @@ describe('RegistryItemCard Component', () => {
         expect(within(dialog).getByTestId('registry-modal-status')).toHaveTextContent(
           'Receipt copied to clipboard for Single Item.'
         );
+      });
+    });
+
+    it('auto-populates and expands Return Address from verified household session, preserves user edits across refreshes, and wipes fields on Clear', async () => {
+      let sessionFetchCount = 0;
+      (apiClient.get as jest.Mock).mockImplementation((url: string) => {
+        if (url.includes('/api/registry/session')) {
+          sessionFetchCount += 1;
+          if (sessionFetchCount === 1) {
+            return Promise.resolve({
+              isVerified: true,
+              invitationCode: 'MORGAN26',
+              guestName: 'Alex & Taylor Morgan',
+              email: 'morgan@example.com',
+              addressLine1: '101 Maple Ave',
+              addressLine2: 'Suite 4',
+              city: 'Portland',
+              state: 'OR',
+              zipCode: '97201',
+              country: 'United States',
+            });
+          }
+          return Promise.resolve({
+            isVerified: true,
+            invitationCode: 'MORGAN26',
+            guestName: 'Alex & Taylor Morgan',
+            email: 'refreshed@example.com',
+            addressLine1: '999 Refreshed Blvd',
+            addressLine2: 'Suite 4',
+            city: 'Seattle',
+            state: 'WA',
+            zipCode: '98101',
+            country: 'United States',
+          });
+        }
+        return Promise.resolve({ cardCheckoutEnabled: false, shippingAddress: null });
+      });
+      (apiClient.delete as jest.Mock).mockResolvedValue({ success: true });
+
+      render(
+        <GuestSessionProvider>
+          <Overlay isOpen={true} onClose={mockOnClose}>
+            <RegistryItemCard
+              item={mockSingleItem}
+              onClose={mockOnClose}
+              onContribute={mockOnContribute}
+            />
+          </Overlay>
+        </GuestSessionProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('return-address-autofill-badge')).toBeInTheDocument();
+      });
+
+      expect(screen.getByLabelText(/Your Name/i)).toHaveValue('Alex & Taylor Morgan');
+      expect(screen.getByLabelText(/Email Address/i)).toHaveValue('morgan@example.com');
+      expect(screen.getByLabelText(/^Address Line 1$/i)).toHaveValue('101 Maple Ave');
+      expect(screen.getByLabelText(/Address Line 2/i)).toHaveValue('Suite 4');
+      expect(screen.getByLabelText(/^City$/i)).toHaveValue('Portland');
+      expect(screen.getByLabelText(/State \/ Province/i)).toHaveValue('OR');
+      expect(screen.getByLabelText(/ZIP \/ Postal Code/i)).toHaveValue('97201');
+
+      // User edits Address Line 1 -> preserved across session refresh
+      fireEvent.change(screen.getByLabelText(/^Address Line 1$/i), {
+        target: { value: '555 Guest Override Rd' },
+      });
+
+      await act(async () => {
+        notifyGuestSessionChanged();
+      });
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/^City$/i)).toHaveValue('Seattle');
+      });
+      expect(screen.getByLabelText(/^Address Line 1$/i)).toHaveValue('555 Guest Override Rd');
+
+      // Clearing the session wipes all household and return-address fields immediately
+      fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Your Name/i)).toHaveValue('');
+      });
+      expect(screen.getByLabelText(/Email Address/i)).toHaveValue('');
+      expect(screen.queryByTestId('return-address-autofill-badge')).not.toBeInTheDocument();
+      if (screen.queryByLabelText(/^Address Line 1$/i)) {
+        expect(screen.getByLabelText(/^Address Line 1$/i)).toHaveValue('');
+      }
+    });
+
+    it('persists guest-entered return address in GuestSessionProvider memory across gift modal switches, shrinks hero media on short viewports, and focuses first invalid control on validation error', async () => {
+      (apiClient.get as jest.Mock).mockResolvedValue({ isVerified: false });
+
+      const secondItem: RegistryItem = {
+        ...mockGroupItem,
+        id: 'item-second-gift',
+        name: 'Artisan Espresso Machine',
+      };
+
+      const { container, rerender } = render(
+        <GuestSessionProvider>
+          <Overlay isOpen={true} onClose={mockOnClose}>
+            <RegistryItemCard
+              key={mockSingleItem.id}
+              item={mockSingleItem}
+              onClose={mockOnClose}
+              onContribute={mockOnContribute}
+            />
+          </Overlay>
+        </GuestSessionProvider>
+      );
+
+      // Verify short-viewport media & modal classes for WCAG 1.4.10 Reflow
+      const heroContainer = screen.getByTestId('registry-item-hero-media');
+      expect(heroContainer.className).toContain('[@media(max-height:560px)]:h-20');
+
+      // Expand Return Address on item 1 and type postal details as an unverified guest
+      fireEvent.click(screen.getByTestId('toggle-return-address-button'));
+      fireEvent.change(screen.getByLabelText(/^Address Line 1$/i), {
+        target: { value: '88 Transient Memory Ln' },
+      });
+      fireEvent.change(screen.getByLabelText(/^City$/i), {
+        target: { value: 'Austin' },
+      });
+      fireEvent.change(screen.getByLabelText(/State \/ Province/i), {
+        target: { value: 'TX' },
+      });
+      fireEvent.change(screen.getByLabelText(/ZIP \/ Postal Code/i), {
+        target: { value: '78701' },
+      });
+
+      // Switch modal to secondItem (remounting RegistryItemCard via key={selectedItem.id})
+      rerender(
+        <GuestSessionProvider>
+          <Overlay isOpen={true} onClose={mockOnClose}>
+            <RegistryItemCard
+              key={secondItem.id}
+              item={secondItem}
+              onClose={mockOnClose}
+              onContribute={mockOnContribute}
+            />
+          </Overlay>
+        </GuestSessionProvider>
+      );
+
+      // Return address auto-expands and retains guest-entered values across gift modal switches
+      expect(screen.getByLabelText(/^Address Line 1$/i)).toHaveValue('88 Transient Memory Ln');
+      expect(screen.getByLabelText(/^City$/i)).toHaveValue('Austin');
+      expect(screen.getByLabelText(/State \/ Province/i)).toHaveValue('TX');
+      expect(screen.getByLabelText(/ZIP \/ Postal Code/i)).toHaveValue('78701');
+
+      // Submit without entering Your Name -> marks Your Name aria-invalid and focuses it immediately
+      const submitBtn = screen.getByRole('button', { name: /Submit Contribution/i });
+      submitBtn.focus();
+      fireEvent.submit(container.querySelector('form')!);
+
+      const nameInput = screen.getByLabelText(/Your Name/i);
+      await waitFor(() => {
+        expect(nameInput).toHaveAttribute('aria-invalid', 'true');
+        expect(document.activeElement).toBe(nameInput);
       });
     });
   });

@@ -642,13 +642,21 @@ export default function InteractiveTimeline({
     }
   };
 
-  const firstVisibleErrorEventId = effectiveRsvpOpen
-    ? filteredEvents.find((ev) => {
-      const hasExplicitUserRsvp = ev.userRsvp !== undefined && ev.userRsvp !== null;
-      if (ev.isReadOnly || !(isGuest || hasExplicitUserRsvp)) return false;
-      return Boolean(rsvpManager.getRsvpState(ev.id).error);
-    })?.id ?? null
-    : null;
+  const visibleErrorEventIds = effectiveRsvpOpen
+    ? filteredEvents
+      .filter((ev) => {
+        const hasExplicitUserRsvp = ev.userRsvp !== undefined && ev.userRsvp !== null;
+        if (ev.isReadOnly || !(isGuest || hasExplicitUserRsvp)) return false;
+        return Boolean(rsvpManager.getRsvpState(ev.id).error);
+      })
+      .map((ev) => ev.id)
+    : [];
+  const activeErrorAlertEventId =
+    !rsvpManager.batchError &&
+    rsvpManager.lastErrorEventId &&
+    visibleErrorEventIds.includes(rsvpManager.lastErrorEventId)
+      ? rsvpManager.lastErrorEventId
+      : (visibleErrorEventIds[0] ?? null);
 
   return (
     <section className={`mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8 ${className}`} id={sectionId}>
@@ -774,7 +782,7 @@ export default function InteractiveTimeline({
             </div>
             {rsvpManager.batchError && (
               <span
-                role={firstVisibleErrorEventId === null ? 'alert' : undefined}
+                role={activeErrorAlertEventId === null ? 'alert' : undefined}
                 className="text-xs text-rose-700 dark:text-rose-300"
               >
                 {rsvpManager.batchError}
@@ -1143,7 +1151,7 @@ export default function InteractiveTimeline({
                       const attendingPartySize = isAttending ? 1 + attendingPlusOneCount : 0;
                       const hasCardOrBatchAlert = Boolean(itemState.error || rsvpManager.batchError);
                       const isPrimaryErrorAlertCard =
-                        Boolean(itemState.error) && firstVisibleErrorEventId === event.id;
+                        Boolean(itemState.error) && activeErrorAlertEventId === event.id;
                       const statusFieldError = itemState.fieldErrors.status;
                       const plusOneFieldError = itemState.fieldErrors.plusOneCount;
 
@@ -1177,6 +1185,11 @@ export default function InteractiveTimeline({
                           <ToggleButtonGroup
                             mode="radiogroup"
                             aria-labelledby={`rsvp-heading-${event.id}`}
+                            aria-describedby={
+                              statusFieldError && itemState.error
+                                ? `rsvp-card-error-${event.id}`
+                                : undefined
+                            }
                             aria-invalid={statusFieldError ? true : undefined}
                             data-rsvp-status-invalid={statusFieldError ? 'true' : undefined}
                             busy={isControlDisabled}
@@ -1552,10 +1565,15 @@ export default function InteractiveTimeline({
 
                           {itemState.error && (
                             <div
+                              key={
+                                isPrimaryErrorAlertCard
+                                  ? `alert-${event.id}-${rsvpManager.errorAlertRevision}`
+                                  : `error-${event.id}`
+                              }
                               role={isPrimaryErrorAlertCard ? 'alert' : undefined}
                               className="mt-2 text-xs text-rose-700 dark:text-rose-300 flex items-center justify-between"
                             >
-                              <span>{itemState.error}</span>
+                              <span id={`rsvp-card-error-${event.id}`}>{itemState.error}</span>
                               <Button
                                 type="button"
                                 variant="ghost"

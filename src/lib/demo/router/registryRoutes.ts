@@ -646,6 +646,15 @@ export async function handleRegistryAndThankYouRoutes(
       typeof matched.email === 'string' && matched.email.trim().length > 0
         ? matched.email.trim()
         : null;
+    const postalExtras = {
+      ...(matched.householdName?.trim() ? { householdName: matched.householdName.trim() } : {}),
+      ...(matched.addressLine1?.trim() ? { addressLine1: matched.addressLine1.trim() } : {}),
+      ...(matched.addressLine2?.trim() ? { addressLine2: matched.addressLine2.trim() } : {}),
+      ...(matched.city?.trim() ? { city: matched.city.trim() } : {}),
+      ...(matched.state?.trim() ? { state: matched.state.trim() } : {}),
+      ...(matched.zipCode?.trim() ? { zipCode: matched.zipCode.trim() } : {}),
+      ...(matched.country?.trim() ? { country: matched.country.trim() } : {}),
+    };
     if (method === 'POST') {
       setDemoGuestSession({
         invitationCode: matched.code,
@@ -658,11 +667,13 @@ export async function handleRegistryAndThankYouRoutes(
       code: matched.code,
       guestName: matched.guestName,
       email: resolvedEmail,
+      ...postalExtras,
       data: {
         valid: true,
         code: matched.code,
         guestName: matched.guestName,
         email: resolvedEmail,
+        ...postalExtras,
       },
     });
   }
@@ -680,6 +691,19 @@ export async function handleRegistryAndThankYouRoutes(
         code: activeGuest.code,
         guestName: activeGuest.guestName || session.guestName,
         email: activeGuest.email ?? null,
+        ...(activeGuest.householdName?.trim()
+          ? { householdName: activeGuest.householdName.trim() }
+          : {}),
+        ...(activeGuest.addressLine1?.trim()
+          ? { addressLine1: activeGuest.addressLine1.trim() }
+          : {}),
+        ...(activeGuest.addressLine2?.trim()
+          ? { addressLine2: activeGuest.addressLine2.trim() }
+          : {}),
+        ...(activeGuest.city?.trim() ? { city: activeGuest.city.trim() } : {}),
+        ...(activeGuest.state?.trim() ? { state: activeGuest.state.trim() } : {}),
+        ...(activeGuest.zipCode?.trim() ? { zipCode: activeGuest.zipCode.trim() } : {}),
+        ...(activeGuest.country?.trim() ? { country: activeGuest.country.trim() } : {}),
       });
     }
     if (method === 'DELETE') {

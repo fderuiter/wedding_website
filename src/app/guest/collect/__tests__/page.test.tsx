@@ -1,6 +1,8 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
+import { ActiveInviteSessionContext } from '@/features/registry';
+import { notifyGuestSessionChanged } from '@/utils/guestSessionEvents';
 import GuestAddressCollectPage from '../page';
 
 expect.extend(toHaveNoViolations);
@@ -420,5 +422,96 @@ describe('GuestAddressCollectPage (/guest/collect)', () => {
     await waitFor(() => {
       expect(globalFetch).toHaveBeenCalledTimes(2);
     });
+  });
+
+  test('pre-populates saved household contact and postal fields from /api/guest/address when an active invite session exists and preserves user edits across session refreshes', async () => {
+    globalFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: {
+            guestName: 'Clara & Leo Vance',
+            householdName: 'The Vance Household',
+            email: 'clara@vance.example',
+            addressLine1: '42 Willow Creek Rd',
+            addressLine2: 'Unit 3',
+            city: 'Boulder',
+            state: 'CO',
+            zipCode: '80302',
+            country: 'United States',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: {
+            guestName: 'Clara & Leo Vance',
+            householdName: 'Updated Server Household',
+            email: 'new-server@vance.example',
+            addressLine1: '999 Server Refresh Blvd',
+            addressLine2: 'Unit 3',
+            city: 'Denver',
+            state: 'CO',
+            zipCode: '80202',
+            country: 'United States',
+          },
+        }),
+      });
+
+    render(
+      <ActiveInviteSessionContext.Provider value={true}>
+        <GuestAddressCollectPage />
+      </ActiveInviteSessionContext.Provider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Full Name/i)).toHaveValue('Clara & Leo Vance');
+    });
+    expect(screen.getByLabelText(/Household Name/i)).toHaveValue('The Vance Household');
+    expect(screen.getByLabelText(/Email Address/i)).toHaveValue('clara@vance.example');
+    expect(screen.getByLabelText(/Street Address Line 1/i)).toHaveValue('42 Willow Creek Rd');
+    expect(screen.getByLabelText(/Address Line 2/i)).toHaveValue('Unit 3');
+    expect(screen.getByLabelText(/City/i)).toHaveValue('Boulder');
+    expect(screen.getByLabelText(/State \/ Province/i)).toHaveValue('CO');
+    expect(screen.getByLabelText(/ZIP \/ Postal Code/i)).toHaveValue('80302');
+    expect(screen.getByTestId('address-collect-prefill-notice')).toBeInTheDocument();
+
+    // User edits Street Address Line 1 and Email Address -> must take precedence over subsequent session refresh
+    fireEvent.change(screen.getByLabelText(/Street Address Line 1/i), {
+      target: { value: '777 User Edited Way' },
+    });
+    fireEvent.change(screen.getByLabelText(/Email Address/i), {
+      target: { value: 'user-edited@vance.example' },
+    });
+
+    await act(async () => {
+      notifyGuestSessionChanged();
+    });
+
+    await waitFor(() => {
+      expect(globalFetch).toHaveBeenCalledTimes(2);
+      expect(screen.getByLabelText(/City/i)).toHaveValue('Denver');
+    });
+
+    // User-edited fields remain untouched while unedited fields pick up refreshed values
+    expect(screen.getByLabelText(/Street Address Line 1/i)).toHaveValue('777 User Edited Way');
+    expect(screen.getByLabelText(/Email Address/i)).toHaveValue('user-edited@vance.example');
+    expect(screen.getByLabelText(/Household Name/i)).toHaveValue('Updated Server Household');
+  });
+
+  test('makes zero /api/guest/address requests when visitor is unauthenticated or passcode-only', () => {
+    render(
+      <ActiveInviteSessionContext.Provider value={false}>
+        <GuestAddressCollectPage />
+      </ActiveInviteSessionContext.Provider>
+    );
+
+    expect(globalFetch).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('address-collect-prefill-notice')).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/Full Name/i)).toHaveValue('');
+    expect(screen.getByLabelText(/Street Address Line 1/i)).toHaveValue('');
   });
 });

@@ -1491,4 +1491,31 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
       consoleErrorSpy.mockRestore();
     }
   });
+
+  test('exposes WCAG 1.3.5 autocomplete attributes on #adminPassword, #siteUrl, and #contactEmail', async () => {
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ success: true }),
+      } as Response)
+    ) as jest.Mock;
+
+    const { container } = renderWithProviders(<SetupWizard />);
+
+    const passwordInput = container.querySelector('#adminPassword') as HTMLInputElement;
+    expect(passwordInput).toBeInTheDocument();
+    expect(passwordInput).toHaveAttribute('autocomplete', 'current-password');
+
+    fireEvent.change(passwordInput, { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
+
+    const siteUrlInput = container.querySelector('#siteUrl') as HTMLInputElement;
+    const contactEmailInput = container.querySelector('#contactEmail') as HTMLInputElement;
+    expect(siteUrlInput).toBeInTheDocument();
+    expect(siteUrlInput).toHaveAttribute('autocomplete', 'url');
+    expect(contactEmailInput).toBeInTheDocument();
+    expect(contactEmailInput).toHaveAttribute('autocomplete', 'email');
+  });
 });
