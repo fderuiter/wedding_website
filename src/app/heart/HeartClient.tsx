@@ -5,8 +5,8 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 
 import { useTheme } from '@/components/ThemeProvider';
+import { useOptionalDemo } from '@/components/demo/DemoContext';
 import { Button, BUTTON_DEFAULT_STYLE, getButtonClassName } from '@/components/ui/Button';
-import { useOverlay } from '@/hooks/useOverlay';
 import type { PerformanceTier } from './components/HeartScene';
 
 const HeartScene = dynamic(() => import('./components/HeartScene'), {
@@ -64,6 +64,7 @@ function WebGLFallback({
   primaryColor,
   secondaryColor,
   accentColor,
+  isPaused = false,
 }: {
   partner1Name?: string;
   partner2Name?: string;
@@ -72,6 +73,7 @@ function WebGLFallback({
   primaryColor: string;
   secondaryColor: string;
   accentColor: string;
+  isPaused?: boolean;
 }) {
   const { glowFilter } = useTheme();
   const p1 = partner1Name || brideName || '';
@@ -171,7 +173,7 @@ function WebGLFallback({
           xmlns="http://www.w3.org/2000/svg"
           aria-hidden="true"
           role="img"
-          className="animate-pulse motion-reduce:animate-none"
+          className={isPaused ? 'animate-none' : 'animate-pulse motion-reduce:animate-none'}
           style={{ filter: glowFilter || `drop-shadow(0 0 10px ${accentColor})` }}
         >
           <path
@@ -216,7 +218,16 @@ export default function HeartClient({
   const p1 = partner1Name || brideName || '';
   const p2 = partner2Name || groomName || '';
   const { themePrimary, themeSecondary, themeAccent, lighting } = useTheme();
+  const demo = useOptionalDemo();
+  const hasExpandedDemoToolbar = Boolean(demo?.isDemoMode && !demo.isToolbarCollapsed);
+  const hasCollapsedDemoToolbar = Boolean(demo?.isDemoMode && demo.isToolbarCollapsed);
+  const hintBottomClass = hasExpandedDemoToolbar
+    ? 'bottom-20'
+    : hasCollapsedDemoToolbar
+      ? 'bottom-16'
+      : 'bottom-6';
   const [interacted, setInteracted] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [scale, setScale] = useState(0.6);
   const [resetKey, setResetKey] = useState(0);
   const [sceneReady, setSceneReady] = useState(false);
@@ -232,8 +243,9 @@ export default function HeartClient({
   const handleInteract = useCallback(() => {
     setInteracted(true);
   }, []);
-
-  const { overlayRef } = useOverlay(true, () => {});
+  const handleTogglePause = useCallback(() => {
+    setIsPaused((prev) => !prev);
+  }, []);
 
   const handleReset = () => {
     setInteracted(false);
@@ -257,9 +269,18 @@ export default function HeartClient({
 
   if (webglSupported === false) {
     return (
-      <div ref={overlayRef} className="fixed inset-0 bg-black select-none" data-testid="webgl-fallback-container">
+      <div className="fixed inset-0 bg-black select-none" data-testid="webgl-fallback-container">
         <h1 className="sr-only">{pageHeading}</h1>
-        <div className="absolute top-0 right-0 z-[60] m-4 flex gap-2">
+        <div className="absolute top-0 right-0 z-[60] m-4 flex flex-wrap justify-end gap-2">
+          <Button
+            type="button"
+            variant="inverse"
+            size="sm"
+            pressed={isPaused}
+            onClick={handleTogglePause}
+          >
+            {isPaused ? 'Resume Animation' : 'Pause Animation'}
+          </Button>
           <Button
             type="button"
             variant="inverse"
@@ -284,15 +305,31 @@ export default function HeartClient({
           primaryColor={themePrimary}
           secondaryColor={themeSecondary}
           accentColor={themeAccent}
+          isPaused={isPaused}
         />
+        <div
+          data-testid="heart-keyboard-hint"
+          className={`pointer-events-none absolute ${hintBottomClass} left-1/2 z-20 w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-full border border-white/15 bg-stone-900/90 px-4 py-1.5 text-center text-xs tracking-wide text-stone-100 shadow-lg backdrop-blur-md`}
+        >
+          Use arrow keys to move the heart
+        </div>
       </div>
     );
   }
 
   return (
-    <div ref={overlayRef} className="fixed inset-0 bg-black select-none">
+    <div className="fixed inset-0 bg-black select-none">
       <h1 className="sr-only">{pageHeading}</h1>
-      <div className="absolute top-0 right-0 z-[60] m-4 flex gap-2">
+      <div className="absolute top-0 right-0 z-[60] m-4 flex flex-wrap justify-end gap-2">
+        <Button
+          type="button"
+          variant="inverse"
+          size="sm"
+          pressed={isPaused}
+          onClick={handleTogglePause}
+        >
+          {isPaused ? 'Resume Animation' : 'Pause Animation'}
+        </Button>
         <Button
           type="button"
           variant="inverse"
@@ -323,6 +360,7 @@ export default function HeartClient({
           scale={scale}
           interacted={interacted}
           onInteract={handleInteract}
+          isPaused={isPaused}
           performanceTier={performanceTier}
           onTierChange={setPerformanceTier}
           resetKey={resetKey}
@@ -335,6 +373,12 @@ export default function HeartClient({
           partner2Name={p2}
         />
       )}
+      <div
+        data-testid="heart-keyboard-hint"
+        className={`pointer-events-none absolute ${hintBottomClass} left-1/2 z-20 w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-full border border-white/15 bg-stone-900/90 px-4 py-1.5 text-center text-xs tracking-wide text-stone-100 shadow-lg backdrop-blur-md`}
+      >
+        Use arrow keys to move the heart, Space or Enter to break it
+      </div>
     </div>
   );
 }

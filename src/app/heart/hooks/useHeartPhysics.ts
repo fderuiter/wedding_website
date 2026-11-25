@@ -17,6 +17,8 @@ interface UseHeartPhysicsProps {
   groupRef: React.RefObject<THREE.Group>
   isBroken: boolean
   reduceMotion: boolean
+  isPaused?: boolean
+  isKeyboardControlled?: boolean
   interacted: boolean
   viewportWidth: number
   viewportHeight: number
@@ -32,6 +34,8 @@ export function useHeartPhysics({
   groupRef,
   isBroken,
   reduceMotion,
+  isPaused = false,
+  isKeyboardControlled = false,
   interacted,
   viewportWidth,
   viewportHeight,
@@ -143,7 +147,7 @@ export function useHeartPhysics({
       }
 
       if (!interacted) {
-        if (!reduceMotion) {
+        if (!reduceMotion && !isPaused) {
           const rotation = mainRbRef.current.rotation();
           if (typeof tempQuaternion.set === 'function') {
             tempQuaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
@@ -162,10 +166,10 @@ export function useHeartPhysics({
           }
           mainRbRef.current.setRotation(tempQuaternion, true);
         }
-      } else {
+      } else if (!isKeyboardControlled) {
         const distance = Math.sqrt(position.x ** 2 + position.y ** 2);
         if (distance > 0.1) {
-          if (!reduceMotion) {
+          if (!reduceMotion && !isPaused) {
             if (typeof tempVector.set === 'function') {
               tempVector.set(-position.x, -position.y, 0);
             } else {
@@ -180,9 +184,12 @@ export function useHeartPhysics({
               tempVector.multiplyScalar(physics.returnForceMultiplier);
             }
             mainRbRef.current.addForce(tempVector, true);
-          } else {
+          } else if (reduceMotion) {
             mainRbRef.current.setTranslation({ x: 0, y: 0, z: position.z }, true);
             mainRbRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
+          } else {
+            mainRbRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
+            mainRbRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true);
           }
         } else {
           mainRbRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
@@ -190,7 +197,7 @@ export function useHeartPhysics({
       }
     }
 
-    if (!reduceMotion) {
+    if (!reduceMotion && !isPaused) {
       const t = state.clock.getElapsedTime();
       const pulseScale = 1 + Math.sin(t * pulseSpeed) * physics.pulseScaleMultiplier;
       if (groupRef.current) {
