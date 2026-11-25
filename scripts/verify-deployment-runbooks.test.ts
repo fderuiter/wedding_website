@@ -41,6 +41,7 @@ function copyRepoFixture(srcRoot: string, destRoot: string): void {
     'docs/deployment/docker-vps.md',
     'docs/deployment/railway-render.md',
     'scripts/generate-docs.ts',
+    'docker/prisma-cli/package.json',
     '.github/dependabot.yml',
   ];
 
@@ -652,6 +653,64 @@ describe('verify-deployment-runbooks', () => {
         ),
         expect.stringContaining(
           '.github/dependabot.yml: Missing `versions: [">= 23.0.0"]` ignore rule for `node` under `docker` ecosystem'
+        ),
+      ])
+    );
+  });
+
+  it('rejects missing Dependabot minor/patch container tag ignores, debian suite bounds, github-actions grouping, prisma security grouping, and prisma-cli manifest range drift', () => {
+    const dependabotPath = path.join(tempDir, '.github/dependabot.yml');
+    fs.writeFileSync(
+      dependabotPath,
+      fs
+        .readFileSync(dependabotPath, 'utf8')
+        .replace('open-pull-requests-limit: 10', 'open-pull-requests-limit: 5')
+        .replace(
+          /\s*- dependency-name: "node"\n\s*update-types:\n\s*- "version-update:semver-minor"\n\s*- "version-update:semver-patch"/,
+          ''
+        )
+        .replace(/\s*- dependency-name: "debian"\n\s*update-types: \["version-update:semver-major"\]/, '')
+        .replace(/\s*- "version-update:semver-minor"\n\s*- "version-update:semver-patch"/, '')
+        .replace('applies-to: "security-updates"', 'applies-to: "version-updates"')
+    );
+
+    const prismaCliPkgPath = path.join(tempDir, 'docker/prisma-cli/package.json');
+    const prismaCliPkg = JSON.parse(fs.readFileSync(prismaCliPkgPath, 'utf8')) as {
+      dependencies: Record<string, string>;
+      overrides: Record<string, string>;
+    };
+    prismaCliPkg.dependencies.prisma = '7.10.1';
+    prismaCliPkg.overrides.effect = '3.22.5';
+    fs.writeFileSync(prismaCliPkgPath, `${JSON.stringify(prismaCliPkg, null, 2)}\n`, 'utf8');
+
+    const architecturePath = path.join(tempDir, 'ARCHITECTURE.md');
+    fs.writeFileSync(
+      architecturePath,
+      fs.readFileSync(architecturePath, 'utf8').replace('- **Next.js**: 16.x', '- **Next.js**: ^16.4.6')
+    );
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          '.github/dependabot.yml: Missing unscoped `version-update:semver-minor` ignore rule for `node` under `docker` ecosystem'
+        ),
+        expect.stringContaining(
+          '.github/dependabot.yml: Missing `version-update:semver-major` ignore rule for `debian` under `docker` ecosystem'
+        ),
+        expect.stringContaining(
+          '.github/dependabot.yml: Missing unscoped `version-update:semver-minor` ignore rule for `postgres` under `docker-compose` ecosystem'
+        ),
+        expect.stringContaining(
+          '.github/dependabot.yml: `github-actions` ecosystem must configure `open-pull-requests-limit: 10` and a minor/patch update group'
+        ),
+        expect.stringContaining(
+          '.github/dependabot.yml: Missing `applies-to: "security-updates"` Prisma group declaring `prisma`, `@prisma/*`, and `effect` under `npm` ecosystem'
+        ),
+        expect.stringContaining('docker/prisma-cli/package.json: `dependencies["prisma"]` ("7.10.1") must match'),
+        expect.stringContaining('docker/prisma-cli/package.json: `overrides["effect"]` ("3.22.5") must match'),
+        expect.stringContaining(
+          'ARCHITECTURE.md: Must specify major release line `- **Next.js**: 16.x` instead of raw semver range'
         ),
       ])
     );

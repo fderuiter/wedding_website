@@ -7,6 +7,7 @@ import http from 'http';
 import os from 'os';
 import path from 'path';
 import { http as mswHttp, HttpResponse } from 'msw';
+import { parseDocument, isMap, isPair, isScalar, isSeq } from 'yaml';
 import { server as mswServer } from '../src/mocks/server';
 import { checkActionPins, verifyUpstreamActionPins } from './check-action-pins';
 
@@ -47,6 +48,7 @@ describe('check-action-pins', () => {
         'jobs:',
         '  deploy:',
         '    runs-on: ubuntu-latest',
+        '    timeout-minutes: 10',
         '    steps:',
         '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
         '        with:',
@@ -63,7 +65,7 @@ describe('check-action-pins', () => {
     expect(violations).toHaveLength(1);
     expect(violations[0]).toMatchObject({
       filePath: '.github/workflows/broken-tag.yml',
-      lineNumber: 15,
+      lineNumber: 16,
       actionRef: 'TAG_RESOLVE_FAILED',
     });
     expect(violations[0].reason).toContain('TAG_RESOLVE_FAILED');
@@ -88,6 +90,7 @@ describe('check-action-pins', () => {
         'jobs:',
         '  deploy:',
         '    runs-on: ubuntu-latest',
+        '    timeout-minutes: 10',
         '    steps:',
         '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
         '        with:',
@@ -135,6 +138,7 @@ describe('check-action-pins', () => {
         'jobs:',
         '  verify:',
         '    runs-on: ubuntu-latest',
+        '    timeout-minutes: 10',
         '    steps:',
         '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
         '        with:',
@@ -149,13 +153,13 @@ describe('check-action-pins', () => {
     expect(violations).toHaveLength(2);
     expect(violations[0]).toMatchObject({
       filePath: '.github/workflows/missing-version-comment.yml',
-      lineNumber: 10,
+      lineNumber: 11,
       actionRef: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
     });
     expect(violations[0].reason).toContain('Missing inline "# v..." version comment');
     expect(violations[1]).toMatchObject({
       filePath: '.github/workflows/missing-version-comment.yml',
-      lineNumber: 13,
+      lineNumber: 14,
       actionRef: 'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1',
     });
     expect(violations[1].reason).toContain('Missing inline "# v..." version comment');
@@ -233,6 +237,7 @@ describe('check-action-pins', () => {
           'jobs:',
           '  publish:',
           '    runs-on: ubuntu-latest',
+          '    timeout-minutes: 10',
           '    steps:',
           `      - uses: actions/checkout@${validCheckoutSha} # v7.0.1`,
           '        with:',
@@ -265,7 +270,7 @@ describe('check-action-pins', () => {
       expect(upstreamRes.violations).toHaveLength(1);
       expect(upstreamRes.violations[0]).toMatchObject({
         filePath: '.github/workflows/upstream-check.yml',
-        lineNumber: 17,
+        lineNumber: 18,
         actionRef: `actions/attest-build-provenance@${brokenAttestSha}`,
       });
       expect(upstreamRes.violations[0].reason).toContain(
@@ -455,6 +460,7 @@ describe('check-action-pins', () => {
         'jobs:',
         '  deploy-docs:',
         '    runs-on: ubuntu-latest',
+        '    timeout-minutes: 10',
         '    concurrency:',
         '      group: github-pages',
         '      cancel-in-progress: true',
@@ -496,6 +502,7 @@ describe('check-action-pins', () => {
         'jobs:',
         '  pr-lint:',
         '    runs-on: ubuntu-latest',
+        '    timeout-minutes: 10',
         '    concurrency:',
         '      group: pr-lint-${{ github.ref }}',
         '      cancel-in-progress: true',
@@ -504,6 +511,7 @@ describe('check-action-pins', () => {
         '  deploy-docs:',
         '    if: github.ref == \'refs/heads/main\' && github.event_name == \'push\'',
         '    runs-on: ubuntu-latest',
+        '    timeout-minutes: 15',
         '    concurrency:',
         '      group: github-pages',
         '      cancel-in-progress: false',
@@ -518,5 +526,265 @@ describe('check-action-pins', () => {
     );
 
     expect(checkActionPins(workflowsDir).violations).toEqual([]);
+
+    const cliPositionalPass = spawnSync(
+      process.execPath,
+      [TSX_CLI_PATH, CHECK_SCRIPT_PATH, path.join(workflowsDir, 'compliant-queues.yml')],
+      { cwd: tempDir, encoding: 'utf8' }
+    );
+    expect(cliPositionalPass.status).toBe(0);
+
+    const cliUnknownFlag = spawnSync(
+      process.execPath,
+      [TSX_CLI_PATH, CHECK_SCRIPT_PATH, '--unknown-flag'],
+      { cwd: tempDir, encoding: 'utf8' }
+    );
+    expect(cliUnknownFlag.status).toBe(1);
+  });
+
+  it('rejects runs-on jobs with missing, non-integer, zero, negative, or over-60 timeout-minutes and invalid step timeouts', () => {
+    fs.writeFileSync(
+      path.join(workflowsDir, 'invalid-timeouts.yml'),
+      [
+        'name: Invalid Timeouts',
+        'on:',
+        '  workflow_dispatch:',
+        'permissions:',
+        '  contents: read',
+        'jobs:',
+        '  missing-timeout:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - run: echo "missing"',
+        '  float-timeout:',
+        '    runs-on: ubuntu-latest',
+        '    timeout-minutes: 12.5',
+        '    steps:',
+        '      - run: echo "float"',
+        '  string-timeout:',
+        '    runs-on: ubuntu-latest',
+        "    timeout-minutes: '10'",
+        '    steps:',
+        '      - run: echo "string"',
+        '  null-timeout:',
+        '    runs-on: ubuntu-latest',
+        '    timeout-minutes:',
+        '    steps:',
+        '      - run: echo "null"',
+        '  zero-timeout:',
+        '    runs-on: ubuntu-latest',
+        '    timeout-minutes: 0',
+        '    steps:',
+        '      - run: echo "zero"',
+        '  negative-timeout:',
+        '    runs-on: ubuntu-latest',
+        '    timeout-minutes: -5',
+        '    steps:',
+        '      - run: echo "negative"',
+        '  over-max-timeout:',
+        '    runs-on: ubuntu-latest',
+        '    timeout-minutes: 61',
+        '    steps:',
+        '      - run: echo "over-60"',
+        '  step-budget-overflow:',
+        '    runs-on: ubuntu-latest',
+        '    timeout-minutes: 10',
+        '    steps:',
+        '      - name: Equal to job timeout',
+        '        timeout-minutes: 10',
+        '        run: echo "equal"',
+        '      - name: Exceeds job timeout',
+        '        timeout-minutes: 15',
+        '        run: echo "exceeds"',
+        '      - name: Zero step timeout',
+        '        timeout-minutes: 0',
+        '        run: echo "zero-step"',
+        '',
+      ].join('\n')
+    );
+
+    const { violations } = checkActionPins(workflowsDir);
+    expect(violations).toEqual([
+      expect.objectContaining({
+        filePath: '.github/workflows/invalid-timeouts.yml',
+        lineNumber: 7,
+        actionRef: 'jobs.missing-timeout.timeout-minutes',
+        reason: expect.stringContaining(
+          'Job "missing-timeout" with runs-on must set an explicit integer "timeout-minutes" between 1 and 60'
+        ),
+      }),
+      expect.objectContaining({
+        filePath: '.github/workflows/invalid-timeouts.yml',
+        lineNumber: 13,
+        actionRef: 'jobs.float-timeout.timeout-minutes',
+        reason: expect.stringContaining('integer between 1 and 60 (got 12.5)'),
+      }),
+      expect.objectContaining({
+        filePath: '.github/workflows/invalid-timeouts.yml',
+        lineNumber: 18,
+        actionRef: 'jobs.string-timeout.timeout-minutes',
+        reason: expect.stringContaining('integer between 1 and 60 (got "10")'),
+      }),
+      expect.objectContaining({
+        filePath: '.github/workflows/invalid-timeouts.yml',
+        lineNumber: 23,
+        actionRef: 'jobs.null-timeout.timeout-minutes',
+        reason: expect.stringContaining('integer between 1 and 60 (got null)'),
+      }),
+      expect.objectContaining({
+        filePath: '.github/workflows/invalid-timeouts.yml',
+        lineNumber: 28,
+        actionRef: 'jobs.zero-timeout.timeout-minutes',
+        reason: expect.stringContaining('integer between 1 and 60 (got 0)'),
+      }),
+      expect.objectContaining({
+        filePath: '.github/workflows/invalid-timeouts.yml',
+        lineNumber: 33,
+        actionRef: 'jobs.negative-timeout.timeout-minutes',
+        reason: expect.stringContaining('integer between 1 and 60 (got -5)'),
+      }),
+      expect.objectContaining({
+        filePath: '.github/workflows/invalid-timeouts.yml',
+        lineNumber: 38,
+        actionRef: 'jobs.over-max-timeout.timeout-minutes',
+        reason: expect.stringContaining('integer between 1 and 60 (got 61)'),
+      }),
+      expect.objectContaining({
+        filePath: '.github/workflows/invalid-timeouts.yml',
+        lineNumber: 46,
+        actionRef: 'jobs.step-budget-overflow.steps[0].timeout-minutes',
+        reason: expect.stringContaining('strictly less than enclosing job "timeout-minutes: 10"'),
+      }),
+      expect.objectContaining({
+        filePath: '.github/workflows/invalid-timeouts.yml',
+        lineNumber: 49,
+        actionRef: 'jobs.step-budget-overflow.steps[1].timeout-minutes',
+        reason: expect.stringContaining('strictly less than enclosing job "timeout-minutes: 10"'),
+      }),
+      expect.objectContaining({
+        filePath: '.github/workflows/invalid-timeouts.yml',
+        lineNumber: 52,
+        actionRef: 'jobs.step-budget-overflow.steps[2].timeout-minutes',
+        reason: expect.stringContaining('integer between 1 and 60 (got 0)'),
+      }),
+    ]);
+
+    const cliResult = spawnSync(process.execPath, [TSX_CLI_PATH, CHECK_SCRIPT_PATH], {
+      cwd: tempDir,
+      encoding: 'utf8',
+    });
+    expect(cliResult.status).toBe(1);
+    expect(cliResult.stderr).toContain('.github/workflows/invalid-timeouts.yml:7');
+    expect(cliResult.stderr).toContain(
+      'Job "missing-timeout" with runs-on must set an explicit integer "timeout-minutes" between 1 and 60'
+    );
+    expect(cliResult.stderr).toContain(
+      'Every runs-on job must declare an integer "timeout-minutes" between 1 and 60'
+    );
+  });
+
+  it('accepts reusable workflow caller jobs without runs-on or timeout-minutes and verifies live workflow timeout budgets', () => {
+    fs.writeFileSync(
+      path.join(workflowsDir, 'reusable-caller.yml'),
+      [
+        'name: Reusable Caller Workflow',
+        'on:',
+        '  workflow_call:',
+        'permissions:',
+        '  contents: read',
+        'jobs:',
+        '  database-migration:',
+        '    uses: ./.github/workflows/db-migrate.yml',
+        '    with:',
+        '      environment: staging',
+        '    secrets: inherit',
+        '  deploy-provider:',
+        '    needs: [database-migration]',
+        '    uses: ./.github/workflows/deploy-provider.yml',
+        '    with:',
+        '      environment: staging',
+        '    secrets: inherit',
+        '  min-bound:',
+        '    runs-on: ubuntu-latest',
+        '    timeout-minutes: 1',
+        '    steps:',
+        '      - run: echo "min"',
+        '  max-bound:',
+        '    runs-on: ubuntu-latest',
+        '    timeout-minutes: 60',
+        '    steps:',
+        '      - name: Bounded step',
+        '        timeout-minutes: 59',
+        '        run: echo "max"',
+        '',
+      ].join('\n')
+    );
+
+    expect(checkActionPins(workflowsDir).violations).toEqual([]);
+
+    // Verify all 23 live runner jobs, 5-minute rollback cap, and step < job timeout invariant
+    const liveWorkflowNames = fs
+      .readdirSync(LIVE_WORKFLOWS_DIR)
+      .filter((name) => name.endsWith('.yml') || name.endsWith('.yaml'))
+      .sort();
+
+    let runnerJobCount = 0;
+    let reusableCallerJobCount = 0;
+    let configuredStepTimeoutCount = 0;
+
+    for (const fileName of liveWorkflowNames) {
+      const content = fs.readFileSync(path.join(LIVE_WORKFLOWS_DIR, fileName), 'utf8');
+      const doc = parseDocument(content, { version: '1.2', strict: true });
+      expect(doc.errors).toEqual([]);
+      expect(isMap(doc.contents)).toBe(true);
+      if (!isMap(doc.contents)) continue;
+
+      const jobsNode: unknown = doc.contents.get('jobs', true);
+      if (!isMap(jobsNode)) continue;
+
+      for (const jobPair of jobsNode.items) {
+        if (!isPair(jobPair) || !isScalar(jobPair.key) || !isMap(jobPair.value)) continue;
+        const jobMap = jobPair.value;
+
+        if (!jobMap.has('runs-on')) {
+          expect(jobMap.has('uses')).toBe(true);
+          reusableCallerJobCount += 1;
+          continue;
+        }
+
+        runnerJobCount += 1;
+        const jobTimeoutNode: unknown = jobMap.get('timeout-minutes', true);
+        expect(isScalar(jobTimeoutNode)).toBe(true);
+        if (!isScalar(jobTimeoutNode)) continue;
+
+        const jobTimeout = jobTimeoutNode.value;
+        expect(typeof jobTimeout).toBe('number');
+        expect(Number.isInteger(jobTimeout)).toBe(true);
+        expect(jobTimeout).toBeGreaterThanOrEqual(1);
+        expect(jobTimeout).toBeLessThanOrEqual(60);
+
+        if (fileName === 'rollback.yml') {
+          expect(jobTimeout).toBeLessThanOrEqual(5);
+        }
+
+        const stepsNode: unknown = jobMap.get('steps', true);
+        if (!isSeq(stepsNode)) continue;
+        for (const stepNode of stepsNode.items) {
+          if (!isMap(stepNode) || !stepNode.has('timeout-minutes')) continue;
+          configuredStepTimeoutCount += 1;
+          const stepTimeoutNode: unknown = stepNode.get('timeout-minutes', true);
+          expect(isScalar(stepTimeoutNode)).toBe(true);
+          if (!isScalar(stepTimeoutNode)) continue;
+          expect(typeof stepTimeoutNode.value).toBe('number');
+          expect(Number.isInteger(stepTimeoutNode.value)).toBe(true);
+          expect(stepTimeoutNode.value).toBeGreaterThanOrEqual(1);
+          expect(stepTimeoutNode.value).toBeLessThan(jobTimeout as number);
+        }
+      }
+    }
+
+    expect(runnerJobCount).toBe(23);
+    expect(reusableCallerJobCount).toBeGreaterThan(0);
+    expect(configuredStepTimeoutCount).toBeGreaterThan(0);
   });
 });

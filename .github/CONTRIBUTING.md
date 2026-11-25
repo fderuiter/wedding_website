@@ -51,7 +51,7 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
     git commit -m "fix: Correct spelling on registry item description"
     ```
 
-    Committing triggers [`.githooks/pre-commit`](../.githooks/pre-commit) (installed automatically by `npm ci`), which runs `npx lint-staged` (`eslint --cache --cache-location .eslintcache --no-warn-ignored --fix --max-warnings=0` on staged `*.{js,jsx,ts,tsx,mjs,cjs}` files) without stashing or resetting unstaged edits or untracked files.
+    Committing triggers [`.githooks/pre-commit`](../.githooks/pre-commit) (installed automatically by `npm ci`), which runs `npx lint-staged` (`eslint --cache --cache-location .eslintcache --no-warn-ignored --fix --max-warnings=0` on staged `*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}` and `.githooks/*` files, plus `check:action-pins`, `lint:migrations`, `check:standalone -- --static-only`, and `check:links` on staged workflows, SQL migrations, container files, and Markdown docs) without stashing or resetting unstaged edits or untracked files.
 
 8. **Push to Your Fork:**
 
@@ -59,7 +59,7 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
     git push origin fix/registry-typo
     ```
 
-    Pushing triggers [`.githooks/pre-push`](../.githooks/pre-push) (installed automatically by `npm ci`), which parses pushed refs from `stdin` (skipping branch deletions and up-to-date refs), runs in place when `HEAD` and tracked files match the pushed commit or inside an ephemeral detached `git worktree` (hydrating `node_modules`, `.eslintcache`, and `*.tsbuildinfo` caches) without stashing or resetting local files, and executes the checks aligned with the shared `npm run check:pre-push` profile in [`scripts/check-quality.ts`](../scripts/check-quality.ts) (`--pre-push`: `type-check`, `lint`, `lint:unused`, conditional `check:audit` when pushed commits modify `package-lock.json` or `docker/prisma-cli/package-lock.json`, and all lightweight static checks including `check:standalone -- --static-only`).
+    Pushing triggers [`.githooks/pre-push`](../.githooks/pre-push) (installed automatically by `npm ci`), which parses pushed refs from `stdin` (skipping branch deletions and up-to-date refs), runs in place when `HEAD` and tracked files match the pushed commit or inside an ephemeral detached `git worktree` (hydrating `node_modules`, `.eslintcache`, and `*.tsbuildinfo` caches) without stashing or resetting local files, and executes the checks aligned with the shared `npm run check:pre-push` profile in [`scripts/check-quality.ts`](../scripts/check-quality.ts) (`--pre-push`: `type-check`, `lint`, `lint:unused`, conditional `check:audit` when pushed commits modify `package.json`, `package-lock.json`, `docker/prisma-cli/package.json`, or `docker/prisma-cli/package-lock.json`, and all lightweight static checks including `check:standalone -- --static-only` for container digest pins and `package.json` lockfile specifier sync).
 
 9. **Open a Pull Request (PR):** Go back to the *original* `fderuiter/wedding_website` repository on GitHub. You should see a prompt to create a Pull Request from your new branch. Click it!
     * Give your PR a clear title and description.

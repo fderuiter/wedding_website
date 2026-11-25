@@ -1610,6 +1610,12 @@ export function generateApiRoutesSection(rootDir: string = ROOT_DIR): string {
   return sections.join('\n\n') + '\n';
 }
 
+function formatMajorReleaseLine(versionRange: unknown): string {
+  const raw = typeof versionRange === 'string' ? versionRange.trim() : '';
+  const match = raw.match(/^(?:[\^~>=<v\s]*)(\d+)(?:\.\d+|\.x|\.\*|\b|$)/i);
+  return match ? `${match[1]}.x` : raw;
+}
+
 // 3. Generate Environment Specs
 export function generateEnvSpecs(rootDir: string = ROOT_DIR) {
   const pkgPath = path.join(rootDir, 'package.json');
@@ -1621,12 +1627,21 @@ export function generateEnvSpecs(rootDir: string = ROOT_DIR) {
 
   // Derived from .nvmrc / package.json engines.node (Node 22 LTS)
   const nodeVersion = /^\d+$/.test(nvmrcMajor) ? `${nvmrcMajor}.x` : (pkg.engines?.node || '22.x');
+  const nextVersion = formatMajorReleaseLine(pkg.dependencies?.next);
+  const reactVersion = formatMajorReleaseLine(pkg.dependencies?.react);
+  const prismaVersion = formatMajorReleaseLine(
+    pkg.dependencies?.['@prisma/client'] ||
+      pkg.dependencies?.['@prisma/config'] ||
+      pkg.devDependencies?.['@prisma/client'] ||
+      pkg.devDependencies?.prisma,
+  );
+  const zodVersion = formatMajorReleaseLine(pkg.dependencies?.zod);
 
   return `- **Node.js**: v${nodeVersion}
-- **Next.js**: ${pkg.dependencies.next}
-- **React**: ${pkg.dependencies.react}
-- **Prisma**: ${pkg.dependencies['@prisma/client'] || pkg.dependencies['@prisma/config'] || pkg.devDependencies['@prisma/client']}
-- **Zod**: ${pkg.dependencies.zod}`;
+- **Next.js**: ${nextVersion}
+- **React**: ${reactVersion}
+- **Prisma**: ${prismaVersion}
+- **Zod**: ${zodVersion}`;
 }
 
 // 4. Update ARCHITECTURE.md

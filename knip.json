@@ -21,16 +21,15 @@
     "scripts/*.js"
   ],
   "project": [
-    "src/**/*.{ts,tsx}",
+    "src/**/*.{ts,tsx,css,mdx}",
+    "prisma/**/*.prisma",
     "scripts/**/*.{ts,mjs}",
     "e2e/**/*.ts",
     "eslint-rules/**/*.mjs"
   ],
-  "github-actions": false,
+  "github-actions": true,
   "ignoreDependencies": [
     "lint-staged",
-    "mermaid",
-    "vitepress-plugin-mermaid",
     "swagger-ui-dist"
   ],
   "rules": {
@@ -43,5 +42,5 @@
     "types": "error",
     "nsTypes": "error"
   },
-  "treatConfigHintsAsErrors": false
+  "treatConfigHintsAsErrors": true
 }

@@ -1115,7 +1115,9 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       runtime?: { name?: string; version?: string; onFail?: string };
       packageManager?: { name?: string; version?: string; onFail?: string };
     };
+    dependencies?: Record<string, string>;
     devDependencies?: Record<string, string>;
+    overrides?: Record<string, unknown>;
   };
 
   const prismaConfigRaw = fs.readFileSync(path.join(repoRoot, 'prisma.config.ts'), 'utf8');
@@ -1960,6 +1962,52 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     );
   }
 
+  for (const [specLabel, rawRange] of [
+    ['Next.js', packageJson.dependencies?.next],
+    ['React', packageJson.dependencies?.react],
+    [
+      'Prisma',
+      packageJson.dependencies?.['@prisma/client'] ??
+        packageJson.dependencies?.['@prisma/config'] ??
+        packageJson.devDependencies?.prisma,
+    ],
+    ['Zod', packageJson.dependencies?.zod],
+  ] as const) {
+    const expectedMajor = extractSemverMajor(rawRange);
+    if (expectedMajor && !architectureMd.includes(`- **${specLabel}**: ${expectedMajor}.x`)) {
+      errors.push(
+        `ARCHITECTURE.md: Must specify major release line \`- **${specLabel}**: ${expectedMajor}.x\` instead of raw semver range`
+      );
+    }
+  }
+
+  const prismaCliPkgPath = path.join(repoRoot, 'docker/prisma-cli/package.json');
+  if (fs.existsSync(prismaCliPkgPath)) {
+    const prismaCliPkg = JSON.parse(fs.readFileSync(prismaCliPkgPath, 'utf8')) as {
+      dependencies?: Record<string, string>;
+      overrides?: Record<string, unknown>;
+    };
+    for (const [label, cliVal, rootVal] of [
+      [
+        'dependencies["@prisma/config"]',
+        prismaCliPkg.dependencies?.['@prisma/config'],
+        packageJson.dependencies?.['@prisma/config'],
+      ],
+      ['dependencies["prisma"]', prismaCliPkg.dependencies?.prisma, packageJson.devDependencies?.prisma],
+      [
+        'overrides["effect"]',
+        typeof prismaCliPkg.overrides?.effect === 'string' ? prismaCliPkg.overrides.effect : undefined,
+        typeof packageJson.overrides?.effect === 'string' ? packageJson.overrides.effect : undefined,
+      ],
+    ] as const) {
+      if (rootVal && cliVal !== rootVal) {
+        errors.push(
+          `docker/prisma-cli/package.json: \`${label}\` ("${cliVal ?? ''}") must match \`${rootVal}\` in package.json`
+        );
+      }
+    }
+  }
+
   const generateDocsRaw = fs.readFileSync(path.join(repoRoot, 'scripts/generate-docs.ts'), 'utf8');
   const generateEnvSpecsSection =
     generateDocsRaw.split('export function generateEnvSpecs')[1]?.split('// 4. Update ARCHITECTURE.md')[0] ?? '';
@@ -2394,6 +2442,161 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
         `.github/dependabot.yml: Group \`${groupName}\` under \`npm\` ecosystem must restrict \`update-types\` to \`["minor", "patch"]\``
       );
     }
+  }
+
+  const hasDependabotUnscopedUpdateTypeIgnore = (
+    ecosystem: string,
+    dependencyName: string,
+    expectedUpdateType: string
+  ): boolean => {
+    const updatesNode: unknown = isMap(dependabotDoc.contents)
+      ? dependabotDoc.contents.get('updates', true)
+      : null;
+    if (!isSeq(updatesNode)) {
+      return false;
+    }
+    for (const updateEntry of updatesNode.items) {
+      if (!isMap(updateEntry)) {
+        continue;
+      }
+      const ecoNode: unknown = updateEntry.get('package-ecosystem', true);
+      if (!isScalar(ecoNode) || String(ecoNode.value).trim() !== ecosystem) {
+        continue;
+      }
+      const ignoreNode: unknown = updateEntry.get('ignore', true);
+      if (!isSeq(ignoreNode)) {
+        continue;
+      }
+      for (const ignoreRule of ignoreNode.items) {
+        if (!isMap(ignoreRule)) {
+          continue;
+        }
+        const depNode: unknown = ignoreRule.get('dependency-name', true);
+        const versionsNode: unknown = ignoreRule.get('versions', true);
+        const typesNode: unknown = ignoreRule.get('update-types', true);
+        if (
+          !isScalar(depNode) ||
+          String(depNode.value).trim() !== dependencyName ||
+          versionsNode !== undefined ||
+          !isSeq(typesNode)
+        ) {
+          continue;
+        }
+        if (
+          typesNode.items.some(
+            (item) => isScalar(item) && String(item.value).trim() === expectedUpdateType
+          )
+        ) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+  for (const updateType of ['version-update:semver-minor', 'version-update:semver-patch']) {
+    if (!hasDependabotUnscopedUpdateTypeIgnore('docker', 'node', updateType)) {
+      errors.push(
+        `.github/dependabot.yml: Missing unscoped \`${updateType}\` ignore rule for \`node\` under \`docker\` ecosystem`
+      );
+    }
+    if (!hasDependabotUnscopedUpdateTypeIgnore('docker-compose', 'postgres', updateType)) {
+      errors.push(
+        `.github/dependabot.yml: Missing unscoped \`${updateType}\` ignore rule for \`postgres\` under \`docker-compose\` ecosystem`
+      );
+    }
+  }
+  if (!hasDependabotMajorIgnore('docker', 'debian')) {
+    errors.push(
+      '.github/dependabot.yml: Missing `version-update:semver-major` ignore rule for `debian` under `docker` ecosystem'
+    );
+  }
+
+  const hasGithubActionsGroupingAndLimit = (): boolean => {
+    const updatesNode: unknown = isMap(dependabotDoc.contents)
+      ? dependabotDoc.contents.get('updates', true)
+      : null;
+    if (!isSeq(updatesNode)) {
+      return false;
+    }
+    for (const updateEntry of updatesNode.items) {
+      if (!isMap(updateEntry)) {
+        continue;
+      }
+      const ecoNode: unknown = updateEntry.get('package-ecosystem', true);
+      if (!isScalar(ecoNode) || String(ecoNode.value).trim() !== 'github-actions') {
+        continue;
+      }
+      const limitNode: unknown = updateEntry.get('open-pull-requests-limit', true);
+      if (!isScalar(limitNode) || Number(limitNode.value) !== 10) {
+        return false;
+      }
+      const groupsNode: unknown = updateEntry.get('groups', true);
+      if (!isMap(groupsNode)) {
+        return false;
+      }
+      for (const groupPair of groupsNode.items) {
+        const groupName = isScalar(groupPair.key) ? String(groupPair.key.value).trim() : '';
+        if (groupName && hasMinorPatchOnlyGroup('github-actions', groupName)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+  if (!hasGithubActionsGroupingAndLimit()) {
+    errors.push(
+      '.github/dependabot.yml: `github-actions` ecosystem must configure `open-pull-requests-limit: 10` and a minor/patch update group'
+    );
+  }
+
+  const hasPrismaSecurityGroup = (): boolean => {
+    const updatesNode: unknown = isMap(dependabotDoc.contents)
+      ? dependabotDoc.contents.get('updates', true)
+      : null;
+    if (!isSeq(updatesNode)) {
+      return false;
+    }
+    for (const updateEntry of updatesNode.items) {
+      if (!isMap(updateEntry)) {
+        continue;
+      }
+      const ecoNode: unknown = updateEntry.get('package-ecosystem', true);
+      if (!isScalar(ecoNode) || String(ecoNode.value).trim() !== 'npm') {
+        continue;
+      }
+      const groupsNode: unknown = updateEntry.get('groups', true);
+      if (!isMap(groupsNode)) {
+        continue;
+      }
+      for (const groupPair of groupsNode.items) {
+        const groupNode: unknown = groupPair.value;
+        if (!isMap(groupNode)) {
+          continue;
+        }
+        const appliesToNode: unknown = groupNode.get('applies-to', true);
+        if (!isScalar(appliesToNode) || String(appliesToNode.value).trim() !== 'security-updates') {
+          continue;
+        }
+        const patternsNode: unknown = groupNode.get('patterns', true);
+        if (!isSeq(patternsNode)) {
+          continue;
+        }
+        const patterns = new Set(
+          patternsNode.items
+            .map((item) => (isScalar(item) ? String(item.value).trim() : ''))
+            .filter(Boolean)
+        );
+        if (patterns.has('prisma') && patterns.has('@prisma/*') && patterns.has('effect')) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+  if (!hasPrismaSecurityGroup()) {
+    errors.push(
+      '.github/dependabot.yml: Missing `applies-to: "security-updates"` Prisma group declaring `prisma`, `@prisma/*`, and `effect` under `npm` ecosystem'
+    );
   }
 
   // Verify PostgreSQL 15 parity across docker-compose.yml, .github/workflows/ci.yml, and runtime/deployment docs

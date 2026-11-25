@@ -421,14 +421,31 @@ for (const file of process.argv.slice(2)) {
         'lint-staged'?: Record<string, string>;
       };
       expect(pkg['lint-staged']).toEqual({
-        '*.{js,jsx,ts,tsx,mjs,cjs}':
+        '*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}':
           'eslint --cache --cache-location .eslintcache --no-warn-ignored --fix --max-warnings=0',
+        '.githooks/*':
+          'eslint --cache --cache-location .eslintcache --no-warn-ignored --fix --max-warnings=0',
+        '.github/workflows/*.{yml,yaml}': 'npm run check:action-pins',
+        'prisma/migrations/**/*.sql': 'npm run lint:migrations',
+        '{Dockerfile,.dockerignore,docker-entrypoint.sh,docker-compose*.yml,docker/**}':
+          'npm run check:standalone -- --static-only',
+        '*.md': 'npm run check:links',
       });
 
       fs.writeFileSync(
         path.join(tempDir, 'package.json'),
         JSON.stringify(
-          { name: 'temp-lint-test', private: true, 'lint-staged': pkg['lint-staged'] },
+          {
+            name: 'temp-lint-test',
+            private: true,
+            scripts: {
+              'check:action-pins': `${process.execPath} ${TSX_CLI_PATH} ${path.join(REPO_ROOT, 'scripts', 'check-action-pins.ts')}`,
+              'lint:migrations': `${process.execPath} --experimental-strip-types ${path.join(REPO_ROOT, 'scripts', 'verify-migration-compatibility.ts')}`,
+              'check:standalone': `${process.execPath} -e "process.exit(0)" --`,
+              'check:links': `${process.execPath} ${TSX_CLI_PATH} ${path.join(REPO_ROOT, 'scripts', 'check-doc-links.ts')}`,
+            },
+            'lint-staged': pkg['lint-staged'],
+          },
           null,
           2
         ) + '\n'
@@ -455,13 +472,22 @@ for (const file of process.argv.slice(2)) {
       expect(failOutput).toContain('Pre-commit check failed: ESLint / lint-staged validation failed.');
       execSync('git rm -f bad-script.mjs', { cwd: tempDir, stdio: 'ignore' });
 
-      // 2. Staging ESLint-ignored tracked files alongside auto-fixable files must pass with exit code 0 and populate .eslintcache
-      fs.mkdirSync(path.join(tempDir, 'docs-portal', '.vitepress', 'theme'), { recursive: true });
+      // 2. Staging ESLint-ignored build outputs alongside linted .githooks/*, .mts, and auto-fixable files must pass with exit code 0 and populate .eslintcache
+      fs.mkdirSync(path.join(tempDir, 'docs-portal', '.vitepress', 'dist'), { recursive: true });
+      fs.mkdirSync(path.join(tempDir, '.githooks'), { recursive: true });
       fs.mkdirSync(path.join(tempDir, 'docker', 'prisma-cli', 'stubs', 'empty'), { recursive: true });
       fs.writeFileSync(path.join(tempDir, 'public', 'mockServiceWorker.js'), '/* eslint-ignored msw */\nvar x = "ignored"\n');
       fs.writeFileSync(
-        path.join(tempDir, 'docs-portal', '.vitepress', 'theme', 'index.ts'),
-        'export const portalTheme: any = "ignored"\n'
+        path.join(tempDir, 'docs-portal', '.vitepress', 'dist', 'app.js'),
+        'var ignoredPortalBundle = "ignored"\n'
+      );
+      fs.writeFileSync(
+        path.join(tempDir, 'docs-portal', '.vitepress', 'config.mts'),
+        "export const portalTitle = 'Docs';\n"
+      );
+      fs.writeFileSync(
+        path.join(tempDir, '.githooks', 'custom-hook'),
+        "#!/usr/bin/env node\nconsole.log('hook ok');\n"
       );
       fs.writeFileSync(
         path.join(tempDir, 'docker', 'prisma-cli', 'stubs', 'empty', 'index.cjs'),
@@ -473,7 +499,7 @@ for (const file of process.argv.slice(2)) {
         'const path = require("path")\nmodule.exports = path\n'
       );
       execSync(
-        'git add public/mockServiceWorker.js docs-portal/.vitepress/theme/index.ts docker/prisma-cli/stubs/empty/index.cjs helper.mjs env-shim.cjs',
+        'git add -f public/mockServiceWorker.js docs-portal/.vitepress/dist/app.js docs-portal/.vitepress/config.mts .githooks/custom-hook docker/prisma-cli/stubs/empty/index.cjs helper.mjs env-shim.cjs',
         { cwd: tempDir, stdio: 'ignore' }
       );
 
@@ -486,6 +512,52 @@ for (const file of process.argv.slice(2)) {
       );
       expect(fs.readFileSync(path.join(tempDir, 'env-shim.cjs'), 'utf-8')).toBe(
         "const path = require('path');\nmodule.exports = path;\n"
+      );
+
+      // 3. Staging a broken action pin in .github/workflows/ci.yml or destructive SQL in prisma/migrations/ must fail pre-commit
+      execSync('git commit -m "Commit clean staged files"', { cwd: tempDir, stdio: 'ignore' });
+
+      fs.mkdirSync(path.join(tempDir, '.github', 'workflows'), { recursive: true });
+      fs.writeFileSync(
+        path.join(tempDir, '.github', 'workflows', 'ci.yml'),
+        [
+          'name: CI',
+          'on: [pull_request]',
+          'permissions:',
+          '  contents: read',
+          'jobs:',
+          '  lint:',
+          '    runs-on: ubuntu-latest',
+          '    steps:',
+          '      - uses: actions/checkout@v4',
+          '',
+        ].join('\n')
+      );
+      execSync('git add .github/workflows/ci.yml', { cwd: tempDir, stdio: 'ignore' });
+
+      const workflowFail = runHook(PRE_COMMIT_PATH, {
+        USE_REAL_LINT_STAGED: '1',
+      });
+      expect(workflowFail.status).not.toBe(0);
+      expect(`${workflowFail.stdout}\n${workflowFail.stderr}`).toContain(
+        'Pre-commit check failed: ESLint / lint-staged validation failed.'
+      );
+      execSync('git rm -f .github/workflows/ci.yml', { cwd: tempDir, stdio: 'ignore' });
+
+      const migrationDir = path.join(tempDir, 'prisma', 'migrations', '20261201000000_drop');
+      fs.mkdirSync(migrationDir, { recursive: true });
+      fs.writeFileSync(path.join(migrationDir, 'migration.sql'), 'DROP TABLE "Guest";\n');
+      execSync('git add prisma/migrations/20261201000000_drop/migration.sql', {
+        cwd: tempDir,
+        stdio: 'ignore',
+      });
+
+      const migrationFail = runHook(PRE_COMMIT_PATH, {
+        USE_REAL_LINT_STAGED: '1',
+      });
+      expect(migrationFail.status).not.toBe(0);
+      expect(`${migrationFail.stdout}\n${migrationFail.stderr}`).toContain(
+        'Pre-commit check failed: ESLint / lint-staged validation failed.'
       );
     });
   });
@@ -505,6 +577,12 @@ for (const file of process.argv.slice(2)) {
     });
 
     it('passes in place when HEAD and tracked files match the pushed commit, executing all fourteen standard checks in order', () => {
+      fs.writeFileSync(path.join(tempDir, 'notes.txt'), 'non-manifest commit\n');
+      execSync('git add notes.txt && git commit -m "Update notes without touching manifests"', {
+        cwd: tempDir,
+        stdio: 'ignore',
+      });
+
       const result = runHook(PRE_PUSH_PATH);
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('Running Documentation synchronization check...');
@@ -624,7 +702,7 @@ for (const file of process.argv.slice(2)) {
       expect(fs.readFileSync(path.join(tempDir, 'partial.ts'), 'utf-8')).toBe(unstagedFix);
     });
 
-    it('runs check:audit only when pushed commits modify package-lock.json or docker/prisma-cli/package-lock.json', () => {
+    it('runs check:audit when pushed commits modify package.json, package-lock.json, or docker/prisma-cli manifests/lockfiles', () => {
       const baseSha = execSync('git rev-parse HEAD', { cwd: tempDir, encoding: 'utf-8' }).trim();
 
       // 1. Commit touching root package-lock.json
@@ -643,9 +721,49 @@ for (const file of process.argv.slice(2)) {
       expect(rootLockResult.status).toBe(0);
       expect(fs.readFileSync(logFile, 'utf-8').trim().split('\n')).toContain('npm:check:audit');
 
-      // 2. Subsequent commit touching docker/prisma-cli/package-lock.json
+      // 2. Subsequent commit touching root package.json only
+      fs.unlinkSync(logFile);
+      fs.writeFileSync(
+        path.join(tempDir, 'package.json'),
+        JSON.stringify({ name: 'hook-test-fixture', version: '1.0.1', private: true }, null, 2) + '\n'
+      );
+      execSync('git add package.json && git commit -m "Update root manifest"', {
+        cwd: tempDir,
+        stdio: 'ignore',
+      });
+      const rootPkgSha = execSync('git rev-parse HEAD', { cwd: tempDir, encoding: 'utf-8' }).trim();
+
+      const rootPkgResult = runHook(
+        PRE_PUSH_PATH,
+        {},
+        { stdin: `refs/heads/main ${rootPkgSha} refs/heads/main ${rootLockSha}\n` }
+      );
+      expect(rootPkgResult.status).toBe(0);
+      expect(fs.readFileSync(logFile, 'utf-8').trim().split('\n')).toContain('npm:check:audit');
+
+      // 3. Subsequent commit touching docker/prisma-cli/package.json
       fs.unlinkSync(logFile);
       fs.mkdirSync(path.join(tempDir, 'docker', 'prisma-cli'), { recursive: true });
+      fs.writeFileSync(
+        path.join(tempDir, 'docker', 'prisma-cli', 'package.json'),
+        '{"name": "prisma-cli", "private": true}\n'
+      );
+      execSync('git add docker/prisma-cli/package.json && git commit -m "Update prisma-cli manifest"', {
+        cwd: tempDir,
+        stdio: 'ignore',
+      });
+      const prismaPkgSha = execSync('git rev-parse HEAD', { cwd: tempDir, encoding: 'utf-8' }).trim();
+
+      const prismaPkgResult = runHook(
+        PRE_PUSH_PATH,
+        {},
+        { stdin: `refs/heads/main ${prismaPkgSha} refs/heads/main ${rootPkgSha}\n` }
+      );
+      expect(prismaPkgResult.status).toBe(0);
+      expect(fs.readFileSync(logFile, 'utf-8').trim().split('\n')).toContain('npm:check:audit');
+
+      // 4. Subsequent commit touching docker/prisma-cli/package-lock.json
+      fs.unlinkSync(logFile);
       fs.writeFileSync(
         path.join(tempDir, 'docker', 'prisma-cli', 'package-lock.json'),
         '{"lockfileVersion": 3}\n'
@@ -659,12 +777,12 @@ for (const file of process.argv.slice(2)) {
       const prismaLockResult = runHook(
         PRE_PUSH_PATH,
         {},
-        { stdin: `refs/heads/main ${prismaLockSha} refs/heads/main ${rootLockSha}\n` }
+        { stdin: `refs/heads/main ${prismaLockSha} refs/heads/main ${prismaPkgSha}\n` }
       );
       expect(prismaLockResult.status).toBe(0);
       expect(fs.readFileSync(logFile, 'utf-8').trim().split('\n')).toContain('npm:check:audit');
 
-      // 3. Subsequent commit NOT touching lockfiles skips check:audit
+      // 5. Subsequent commit NOT touching manifests or lockfiles skips check:audit
       fs.unlinkSync(logFile);
       fs.writeFileSync(path.join(tempDir, 'notes.txt'), 'no lockfile change\n');
       execSync('git add notes.txt && git commit -m "Docs note"', {

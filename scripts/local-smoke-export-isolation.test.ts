@@ -323,6 +323,32 @@ describe('local smoke isolation, staged static exports, and untracked next-env.d
       expect(isAllowlisted('.api-backup-export/route.ts', false)).toBe(true);
       expect(isAllowlisted('.next/export-stage/src/app/page.tsx', false)).toBe(true);
       expect(isAllowlisted('src/app/page.tsx', false)).toBe(false);
+      expect(isAllowlisted('docs-portal', true)).toBe(false);
+      expect(isAllowlisted('docs-portal/index.md', false)).toBe(false);
+      expect(isAllowlisted('docs-portal/.vitepress/config.mts', false)).toBe(false);
+      expect(isAllowlisted('docs-portal/.vitepress/dist/index.html', false)).toBe(true);
+      expect(isAllowlisted('docs-portal/.vitepress/cache/deps.js', false)).toBe(true);
+      expect(isAllowlisted('docs-portal/.vitepress/.temp/app.js', false)).toBe(true);
+      expect(isAllowlisted('docs-portal/architecture/overview.md', false)).toBe(true);
+      expect(isAllowlisted('docs-portal/guides/getting-started.md', false)).toBe(true);
+
+      const portalScanDir = path.join(tempDir, 'portal-identifier-probe');
+      fs.mkdirSync(path.join(portalScanDir, 'docs-portal'), { recursive: true });
+      const prohibitedToken = ['abbi', 'fred'].join('');
+      fs.writeFileSync(
+        path.join(portalScanDir, 'docs-portal', 'index.md'),
+        `# Docs Portal\n\nLeaked domain: ${prohibitedToken}.com\n`
+      );
+      const idCheckRes = spawnSync(
+        process.execPath,
+        [
+          path.join(repoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs'),
+          path.join(repoRoot, 'scripts', 'check-personal-identifiers.ts'),
+        ],
+        { cwd: portalScanDir, encoding: 'utf8' }
+      );
+      expect(idCheckRes.status).toBe(1);
+      expect(idCheckRes.stderr).toContain('docs-portal/index.md');
 
       const gitIgnoreCheck = spawnSync(
         'git',
