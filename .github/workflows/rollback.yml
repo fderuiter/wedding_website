@@ -134,6 +134,7 @@ jobs:
   preflight:
     name: Validate Inputs & Database Compatibility
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       deployments: read
@@ -250,6 +251,7 @@ jobs:
       - name: Verify Rollback Digest Deployment History
         id: verify_deployment
         if: "!inputs.dry_run && (steps.validate.outputs.effective_digest != '' || github.event_name == 'workflow_dispatch')"
+        timeout-minutes: 3
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_ACTOR_LOGIN: ${{ github.actor }}
@@ -524,6 +526,7 @@ jobs:
     steps:
       - name: Poll Restored Service Health
         id: health_probe
+        timeout-minutes: 2
         env:
           VAR_SERVICE_URL: ${{ vars.SERVICE_URL }}
           ENV_SERVICE_URL: ${{ secrets.SERVICE_URL }}
@@ -694,6 +697,7 @@ jobs:
     needs: [preflight, redeploy, verify]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Send Rollback Notification
         env:
