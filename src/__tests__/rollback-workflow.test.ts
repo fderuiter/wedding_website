@@ -214,7 +214,10 @@ describe('Rollback & Provider Deployment Workflows', () => {
         };
       };
       const provenanceStep = parsed.jobs?.deploy?.steps?.find((step) => step.id === 'provenance');
-      expect(provenanceStep?.if).toBe(
+      expect(provenanceStep?.if).toContain('always()');
+      expect(provenanceStep?.if).toContain("steps.validate-sha.outputs.is_rollback_call == 'true'");
+      expect(provenanceStep?.if).toContain("steps.resolve.outcome == 'success'");
+      expect(provenanceStep?.if).toContain(
         "!(inputs.dry_run && inputs.image_digest == '' && inputs.image_tag == 'latest')"
       );
     });
@@ -2905,6 +2908,415 @@ exit 1
           auto_inactive: true,
           environment: 'production',
         });
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+        fs.rmSync(binDir, { recursive: true, force: true });
+      }
+    });
+
+    it('guards preflight, redeploy, verify, and report in rollback.yml with cancellation-safe always() and upstream/prior outcome conditions', () => {
+      const rollbackDoc = parseDocument(rollbackYml, { version: '1.2', strict: true }).toJS() as {
+        jobs?: {
+          preflight?: {
+            if?: string;
+            steps?: Array<{ id?: string; name?: string; if?: string }>;
+          };
+          redeploy?: {
+            if?: string;
+            needs?: string[];
+            with?: Record<string, unknown>;
+          };
+          verify?: {
+            if?: string;
+            needs?: string[];
+            steps?: Array<{ id?: string; name?: string; if?: string }>;
+          };
+          report?: {
+            if?: string;
+            needs?: string[];
+            steps?: Array<{ id?: string; name?: string; if?: string }>;
+          };
+        };
+      };
+
+      expect(rollbackDoc.jobs?.preflight?.if).toBe('always()');
+      expect(rollbackDoc.jobs?.redeploy?.if).toBe("always() && needs.preflight.result == 'success'");
+      expect(rollbackDoc.jobs?.redeploy?.with?.is_rollback).toBe(true);
+      expect(rollbackDoc.jobs?.verify?.if).toBe(
+        "always() && needs.preflight.result == 'success' && needs.redeploy.result == 'success'"
+      );
+      expect(rollbackDoc.jobs?.report?.if).toBe('always()');
+
+      const preflightSteps = rollbackDoc.jobs?.preflight?.steps ?? [];
+      const byId = (id: string) => preflightSteps.find((s) => s.id === id);
+
+      expect(byId('validate')?.if).toBe('always()');
+      expect(byId('verify_deployment')?.if).toContain('always()');
+      expect(byId('verify_deployment')?.if).toContain("steps.validate.outcome == 'success'");
+      expect(byId('checkout')?.if).toContain('always()');
+      expect(byId('checkout')?.if).toContain("steps.validate.outcome == 'success'");
+      expect(byId('checkout')?.if).toContain(
+        "(steps.verify_deployment.outcome == 'success' || steps.verify_deployment.outcome == 'skipped')"
+      );
+      expect(byId('setup_node')?.if).toBe("always() && steps.checkout.outcome == 'success'");
+      expect(byId('db_safety_check')?.if).toBe("always() && steps.setup_node.outcome == 'success'");
+      expect(byId('record_failure')?.if).toContain('always()');
+      expect(byId('record_failure')?.if).toContain("steps.db_safety_check.outcome != 'success'");
+
+      const verifyProbe = rollbackDoc.jobs?.verify?.steps?.find((s) => s.id === 'health_probe');
+      expect(verifyProbe?.if).toBe('always()');
+
+      const reportNotification = rollbackDoc.jobs?.report?.steps?.find(
+        (s) => s.id === 'send_notification'
+      );
+      expect(reportNotification?.if).toBe('always()');
+    });
+
+    it('resolves and restores C1 across both inline-rollback and rollback.yml when publish-artifact.yml signed C1 after main advanced to C2 and C2 failed rollout, while failing closed on OCI/SLSA conflicts', async () => {
+      const verifyDeploymentScript = extractStepRunScript(
+        rollbackYml,
+        'Verify Rollback Digest Deployment History'
+      );
+      const inlineRollbackScript = extractStepRunScript(
+        deployProviderYml,
+        'Execute Inline Fallback Rollback'
+      );
+
+      const c1BuiltSha = '1111111111111111111111111111111111111111';
+      const c2FailingSha = '2222222222222222222222222222222222222222';
+      const conflictingSha = '3333333333333333333333333333333333333333';
+      const c1Digest = 'sha256:1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a';
+      const c2Digest = 'sha256:2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b';
+      const unattestedDigest = 'sha256:4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d';
+
+      const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'c1-c2-drift-bin-'));
+      const cliLog = path.join(binDir, 'cli.log');
+      fs.writeFileSync(cliLog, '');
+
+      fs.writeFileSync(
+        path.join(binDir, 'gcloud'),
+        `#!/usr/bin/env bash
+printf 'gcloud %s\\n' "$*" >> ${JSON.stringify(cliLog)}
+if [[ "$*" == *"auth list"* ]]; then
+  echo "deployer@oidc-project.iam.gserviceaccount.com"
+  exit 0
+fi
+if [[ "$*" == *"run deploy"* ]]; then
+  echo '{"status":{"url":""}}'
+  exit 0
+fi
+exit 0
+`,
+        { mode: 0o755 }
+      );
+
+      // Simulate workflow_run provenance drift: OIDC certificate & SLSA github.sha / resolvedDependencies
+      // point to C2 (HEAD when signing ran), while OCI index annotation (and optional inputs.commit_sha) stamp C1.
+      fs.writeFileSync(
+        path.join(binDir, 'gh'),
+        `#!/usr/bin/env node
+const fs = require('fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(cliLog)}, 'gh ' + args.join(' ') + '\\n');
+if (args[0] === 'attestation' && args[1] === 'verify') {
+  const uri = args[2] || '';
+  if (uri.includes('${unattestedDigest}') || process.env.MOCK_ATTEST_FAIL === 'true') {
+    process.exit(1);
+  }
+  const inputSha = process.env.MOCK_SLSA_INPUT_SHA || '${c1BuiltSha}';
+  const payload = [
+    {
+      verificationResult: {
+        signature: {
+          certificate: {
+            sourceRepositoryDigest: '${c2FailingSha}',
+            sourceRepositoryRef: 'refs/heads/main',
+          },
+        },
+        statement: {
+          subject: [{ name: 'ghcr.io/example/wedding_website', digest: { sha256: uri.split('@sha256:')[1] || '' } }],
+          predicate: {
+            buildDefinition: {
+              externalParameters: process.env.MOCK_OMIT_INPUT_SHA === 'true' ? {} : { inputs: { commit_sha: inputSha } },
+              internalParameters: { github: { sha: '${c2FailingSha}' } },
+              resolvedDependencies: [{ digest: { gitCommit: '${c2FailingSha}', sha1: '${c2FailingSha}' } }],
+            },
+            invocation: { configSource: { digest: { sha1: '${c2FailingSha}' } } },
+          },
+        },
+      },
+    },
+  ];
+  process.stdout.write(JSON.stringify(payload));
+  process.exit(0);
+}
+process.exit(1);
+`,
+        { mode: 0o755 }
+      );
+
+      fs.writeFileSync(
+        path.join(binDir, 'docker'),
+        `#!/usr/bin/env node
+const fs = require('fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(cliLog)}, 'docker ' + args.join(' ') + '\\n');
+if (args[0] === 'login') process.exit(0);
+if (args[0] === 'buildx' && args[1] === 'imagetools' && args[2] === 'inspect') {
+  if (args.includes('--raw')) {
+    const rev = process.env.MOCK_OCI_INDEX_REV || '${c1BuiltSha}';
+    process.stdout.write(JSON.stringify({ annotations: { 'org.opencontainers.image.revision': rev }, manifests: [] }));
+    process.exit(0);
+  }
+  const ref = args[args.length - 1] || '';
+  if (ref.endsWith(':${c2FailingSha}')) {
+    process.stdout.write('${c2Digest}\\n');
+    process.exit(0);
+  }
+}
+process.exit(1);
+`,
+        { mode: 0o755 }
+      );
+
+      const deployments: Array<{
+        id: number;
+        sha: string;
+        environment: string;
+        payload: Record<string, unknown>;
+        statuses: Array<{ state: string; auto_inactive?: boolean }>;
+      }> = [
+        {
+          id: 3002,
+          sha: c2FailingSha,
+          environment: 'production',
+          payload: {
+            commit_sha: c2FailingSha,
+            image_tag: c2FailingSha,
+            image_digest: c2Digest,
+            dry_run: false,
+          },
+          statuses: [{ state: 'failure' }, { state: 'in_progress' }],
+        },
+        {
+          id: 3001,
+          sha: c1BuiltSha,
+          environment: 'production',
+          payload: {
+            commit_sha: c1BuiltSha,
+            image_tag: c1BuiltSha,
+            image_digest: c1Digest,
+            dry_run: false,
+          },
+          statuses: [{ state: 'inactive' }, { state: 'success' }],
+        },
+      ];
+
+      const server = http.createServer((req, res) => {
+        const url = new URL(req.url || '/', 'http://127.0.0.1');
+        if (url.pathname === '/api/health') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, data: { status: 'ok', database: 'connected' } }));
+          return;
+        }
+        if (url.pathname === '/api/ready') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ready', database: 'connected' }));
+          return;
+        }
+        let body = '';
+        req.on('data', (c) => {
+          body += c.toString();
+        });
+        req.on('end', () => {
+          res.setHeader('Content-Type', 'application/json');
+          if (req.method === 'GET' && url.pathname === '/repos/example/wedding_website/deployments') {
+            res.writeHead(200);
+            res.end(JSON.stringify(deployments));
+            return;
+          }
+          const statusMatch = url.pathname.match(/^\/repos\/example\/wedding_website\/deployments\/(\d+)\/statuses$/);
+          if (req.method === 'GET' && statusMatch) {
+            const dep = deployments.find((d) => d.id === Number(statusMatch[1]));
+            res.writeHead(200);
+            res.end(JSON.stringify(dep?.statuses ?? []));
+            return;
+          }
+          if (req.method === 'GET' && url.pathname === '/repos/example/wedding_website/actions/workflows/ci.yml/runs') {
+            res.writeHead(200);
+            res.end(
+              JSON.stringify({
+                workflow_runs: [
+                  {
+                    id: 91,
+                    status: 'completed',
+                    conclusion: 'success',
+                    head_sha: c1BuiltSha,
+                    head_repository: { full_name: 'example/wedding_website' },
+                  },
+                ],
+              })
+            );
+            return;
+          }
+          if (req.method === 'POST' && url.pathname === '/repos/example/wedding_website/deployments') {
+            const parsed = JSON.parse(body) as { ref: string; environment: string; payload: Record<string, unknown> };
+            const id = 3000 + deployments.length + 1;
+            deployments.unshift({ id, sha: parsed.ref, environment: parsed.environment, payload: parsed.payload, statuses: [] });
+            res.writeHead(201);
+            res.end(JSON.stringify({ id }));
+            return;
+          }
+          if (req.method === 'POST' && statusMatch) {
+            const id = Number(statusMatch[1]);
+            const parsed = JSON.parse(body) as { state: string; auto_inactive?: boolean };
+            deployments.find((d) => d.id === id)?.statuses.unshift(parsed);
+            res.writeHead(201);
+            res.end(JSON.stringify(parsed));
+            return;
+          }
+          res.writeHead(404);
+          res.end('{}');
+        });
+      });
+
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+      const addr = server.address();
+      const port = typeof addr === 'object' && addr ? addr.port : 0;
+      const baseUrl = `http://127.0.0.1:${port}`;
+
+      try {
+        // 1. rollback.yml Verify Rollback Digest Deployment History resolves C1 (even when OIDC sourceRepositoryDigest == C2) and succeeds
+        const rollbackPreflightRes = await runBashStepAsync(verifyDeploymentScript, {
+          PATH: `${binDir}:${process.env.PATH || ''}`,
+          GH_TOKEN: 'ghs_test_token',
+          GITHUB_ACTOR_LOGIN: 'ci-bot',
+          GITHUB_REPOSITORY: 'example/wedding_website',
+          GITHUB_API_URL: baseUrl,
+          REPO_OWNER: 'example',
+          SIGNER_WORKFLOW: 'example/wedding_website/.github/workflows/publish-artifact.yml',
+          TARGET_ENV: 'production',
+          EFFECTIVE_DIGEST: c1Digest,
+          EFFECTIVE_TAG: c1BuiltSha,
+          INPUT_COMMIT_SHA: c2FailingSha,
+          CURRENT_SHA: c2FailingSha,
+          MOCK_OMIT_INPUT_SHA: 'true',
+          MOCK_OCI_INDEX_REV: c1BuiltSha,
+        });
+        expect(rollbackPreflightRes.status).toBe(0);
+        expect(rollbackPreflightRes.outputs.verified_deployment_id).toBe('3001');
+        expect(rollbackPreflightRes.outputs.verified_digest).toBe(c1Digest);
+
+        // 2. deploy-provider.yml Execute Inline Fallback Rollback resolves C1 (not C2) and restores C1 cleanly
+        const inlineDriftRes = await runBashStepAsync(
+          inlineRollbackScript,
+          {
+            PATH: `${binDir}:${process.env.PATH || ''}`,
+            GH_TOKEN: 'ghs_test_token',
+            GITHUB_TOKEN: 'ghs_test_token',
+            GITHUB_ACTOR_LOGIN: 'ci-bot',
+            GITHUB_REPOSITORY: 'example/wedding_website',
+            GITHUB_API_URL: baseUrl,
+            REPO_OWNER: 'example',
+            SIGNER_WORKFLOW: 'example/wedding_website/.github/workflows/publish-artifact.yml',
+            TARGET_ENV: 'production',
+            PROVIDER: 'google-cloud-run',
+            FAILING_SOURCE_REVISION: c2FailingSha,
+            INPUT_COMMIT_SHA: c2FailingSha,
+            CURRENT_SHA: c2FailingSha,
+            FAILING_IMAGE_DIGEST: c2Digest,
+            PREVIOUS_TAG_OVERRIDE: '',
+            CAPTURED_PREVIOUS_TAG: c1BuiltSha,
+            CAPTURED_PREVIOUS_DIGEST: c1Digest,
+            CLOUD_RUN_SERVICE: 'wedding-website',
+            CLOUD_RUN_REGION: 'us-central1',
+            GCP_PROJECT_ID: 'oidc-project',
+            VAR_SERVICE_URL: baseUrl,
+            CLOUDRUN_URL: '',
+            SECRET_SERVICE_URL: '',
+            MOCK_OMIT_INPUT_SHA: 'true',
+            MOCK_OCI_INDEX_REV: c1BuiltSha,
+          },
+          ROOT_DIR
+        );
+        expect(inlineDriftRes.status).toBe(1);
+        expect(inlineDriftRes.outputs.inline_rollback_completed).toBe('true');
+        expect(inlineDriftRes.outputs.restored_source_revision).toBe(c1BuiltSha);
+        expect(fs.readFileSync(cliLog, 'utf8')).toContain(`--update-labels=commit-sha=${c1BuiltSha}`);
+
+        // 3. Conflicting OCI index revision vs SLSA inputs.commit_sha fails closed in both rollback paths
+        const conflictRollbackRes = await runBashStepAsync(verifyDeploymentScript, {
+          PATH: `${binDir}:${process.env.PATH || ''}`,
+          GH_TOKEN: 'ghs_test_token',
+          GITHUB_ACTOR_LOGIN: 'ci-bot',
+          GITHUB_REPOSITORY: 'example/wedding_website',
+          GITHUB_API_URL: baseUrl,
+          REPO_OWNER: 'example',
+          SIGNER_WORKFLOW: 'example/wedding_website/.github/workflows/publish-artifact.yml',
+          TARGET_ENV: 'production',
+          EFFECTIVE_DIGEST: c1Digest,
+          EFFECTIVE_TAG: c1BuiltSha,
+          INPUT_COMMIT_SHA: c2FailingSha,
+          CURRENT_SHA: c2FailingSha,
+          MOCK_OCI_INDEX_REV: c1BuiltSha,
+          MOCK_SLSA_INPUT_SHA: conflictingSha,
+        });
+        expect(conflictRollbackRes.status).toBe(1);
+        expect(conflictRollbackRes.stdout + conflictRollbackRes.stderr).toContain(
+          'conflicts with SLSA input commit_sha'
+        );
+
+        const conflictInlineRes = await runBashStepAsync(
+          inlineRollbackScript,
+          {
+            PATH: `${binDir}:${process.env.PATH || ''}`,
+            GH_TOKEN: 'ghs_test_token',
+            GITHUB_TOKEN: 'ghs_test_token',
+            GITHUB_ACTOR_LOGIN: 'ci-bot',
+            GITHUB_REPOSITORY: 'example/wedding_website',
+            GITHUB_API_URL: baseUrl,
+            REPO_OWNER: 'example',
+            SIGNER_WORKFLOW: 'example/wedding_website/.github/workflows/publish-artifact.yml',
+            TARGET_ENV: 'production',
+            PROVIDER: 'google-cloud-run',
+            FAILING_SOURCE_REVISION: c2FailingSha,
+            INPUT_COMMIT_SHA: c2FailingSha,
+            CURRENT_SHA: c2FailingSha,
+            FAILING_IMAGE_DIGEST: c2Digest,
+            PREVIOUS_TAG_OVERRIDE: '',
+            CAPTURED_PREVIOUS_TAG: c1BuiltSha,
+            CAPTURED_PREVIOUS_DIGEST: c1Digest,
+            GCP_PROJECT_ID: 'oidc-project',
+            VAR_SERVICE_URL: baseUrl,
+            MOCK_OCI_INDEX_REV: c1BuiltSha,
+            MOCK_SLSA_INPUT_SHA: conflictingSha,
+          },
+          ROOT_DIR
+        );
+        expect(conflictInlineRes.status).toBe(1);
+        expect(conflictInlineRes.outputs.inline_rollback_completed).toBe('false');
+        expect(conflictInlineRes.stdout + conflictInlineRes.stderr).toContain(
+          'conflicts with SLSA input commit_sha'
+        );
+
+        // 4. Unattested digests never run docker buildx imagetools inspect --raw before gh attestation verify
+        fs.writeFileSync(cliLog, '');
+        const unattestedRes = await runBashStepAsync(verifyDeploymentScript, {
+          PATH: `${binDir}:${process.env.PATH || ''}`,
+          GH_TOKEN: 'ghs_test_token',
+          GITHUB_ACTOR_LOGIN: 'ci-bot',
+          GITHUB_REPOSITORY: 'example/wedding_website',
+          GITHUB_API_URL: baseUrl,
+          REPO_OWNER: 'example',
+          SIGNER_WORKFLOW: 'example/wedding_website/.github/workflows/publish-artifact.yml',
+          TARGET_ENV: 'production',
+          EFFECTIVE_DIGEST: unattestedDigest,
+          EFFECTIVE_TAG: '',
+          INPUT_COMMIT_SHA: c2FailingSha,
+          CURRENT_SHA: c2FailingSha,
+        });
+        expect(unattestedRes.status).toBe(1);
+        expect(fs.readFileSync(cliLog, 'utf8')).not.toContain('imagetools inspect --raw');
       } finally {
         await new Promise<void>((resolve) => server.close(() => resolve()));
         fs.rmSync(binDir, { recursive: true, force: true });
