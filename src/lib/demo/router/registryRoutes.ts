@@ -315,13 +315,40 @@ export async function handleRegistryAndThankYouRoutes(
 
   // 1. Registry Capabilities
   if (path === '/api/registry/capabilities' && method === 'GET') {
+    const dataset = getActiveArchetypeDataset();
+    const appCfg = dataset.siteConfig;
+    const demoState = getDemoState();
+    const giftAccessTier =
+      appCfg.registryGiftAccessTier === 'INVITED_HOUSEHOLDS'
+        ? 'INVITED_HOUSEHOLDS'
+        : 'PASSCODE_GUESTS';
+    const shippingDisclosureTier =
+      appCfg.shippingDisclosureTier === 'INVITED_HOUSEHOLDS' ||
+      appCfg.shippingDisclosureTier === 'POST_CLAIM_ONLY'
+        ? appCfg.shippingDisclosureTier
+        : 'PASSCODE_GUESTS';
+    const maxPendingReservations =
+      typeof appCfg.maxPendingReservations === 'number' && appCfg.maxPendingReservations >= 1
+        ? appCfg.maxPendingReservations
+        : 5;
+    const canRevealShipping =
+      demoState.persona === 'admin'
+        ? true
+        : shippingDisclosureTier === 'POST_CLAIM_ONLY'
+          ? false
+          : shippingDisclosureTier === 'INVITED_HOUSEHOLDS'
+            ? Boolean(demoState.guestSession)
+            : true;
     return jsonResponse({
       cardCheckoutEnabled: true,
       stripePublishableKey: null,
       hasShippingAddress: true,
-      defaultPaymentHandleType: 'Venmo',
-      defaultPaymentHandle: '@alex-and-taylor',
-      shippingAddress: DEMO_SHIPPING_ADDRESS,
+      giftAccessTier,
+      shippingDisclosureTier,
+      maxPendingReservations,
+      defaultPaymentHandleType: appCfg.defaultPaymentHandleType || 'Venmo',
+      defaultPaymentHandle: appCfg.defaultPaymentHandle || '@alex-and-taylor',
+      ...(canRevealShipping ? { shippingAddress: DEMO_SHIPPING_ADDRESS } : {}),
     });
   }
 
@@ -775,7 +802,108 @@ export async function handleRegistryAndThankYouRoutes(
 
   if (path === '/api/registry/claim') {
     if (method === 'GET') {
+      const isHubMode =
+        url.searchParams.get('hub') === '1' || url.searchParams.get('hub') === 'true';
       const token = (url.searchParams.get('token') || '').trim();
+      if (isHubMode) {
+        const demoState = getDemoState();
+        const dataset = getActiveArchetypeDataset();
+        const sessionCode = demoState.guestSession?.invitationCode?.trim() || '';
+        const sessionGuest = sessionCode ? findDemoGuestByCode(sessionCode) : null;
+        const extraTokens = (url.searchParams.get('tokens') || '')
+          .split(',')
+          .map((t) => t.trim())
+          .filter((t) => t.length > 0 && t !== token);
+
+        if (!sessionGuest && !token && extraTokens.length === 0) {
+          return jsonResponse({ error: 'Missing claim token.' }, 400);
+        }
+
+        const holdsMap = new Map<string, Record<string, unknown>>();
+        let selectedContributorId: string | null = null;
+        let selectedAction: 'confirm' | 'cancel' = 'confirm';
+
+        const addByContributorId = (contributorId: string, item: RegistryItem, c: ContributorRecord) => {
+          const itemType =
+            item.itemType === 'CASH_FUND' || item.itemType === 'EXPERIENCE_FUND'
+              ? item.itemType
+              : 'PHYSICAL';
+          holdsMap.set(contributorId, {
+            contributorId,
+            status: c.status ?? 'RESERVED',
+            amount: c.amount,
+            date: c.date || new Date().toISOString(),
+            itemId: item.id,
+            itemName: item.name,
+            itemDescription: item.description ?? '',
+            itemImageUrl: item.image?.url ?? null,
+            itemCategory: item.category ?? null,
+            itemType,
+            isGroupGift: Boolean(item.isGroupGift),
+            vendorUrl: item.vendorUrl ?? null,
+            paymentHandle: item.paymentHandle || dataset.siteConfig.defaultPaymentHandle || '@alex-and-taylor',
+            paymentHandleType: item.paymentHandleType || dataset.siteConfig.defaultPaymentHandleType || 'Venmo',
+            retailerOrderNumber: c.retailerOrderNumber ?? null,
+            carrier: c.carrier ?? null,
+            trackingNumber: c.trackingNumber ?? null,
+            confirmToken: `demo_confirm_${contributorId}`,
+            cancelToken: `demo_cancel_${contributorId}`,
+          });
+        };
+
+        for (const candidateToken of [token, ...extraTokens].filter(Boolean)) {
+          const preview = previewDemoClaimToken(candidateToken);
+          if (!preview) continue;
+          const matchedItem = dataset.registryItems.find((i) => i.id === preview.itemId);
+          const matchedContrib = matchedItem?.contributors.find(
+            (c) => `demo_${preview.action}_${c.id}` === candidateToken || c.name === preview.contributorName
+          );
+          if (matchedItem && matchedContrib && matchedContrib.id) {
+            addByContributorId(matchedContrib.id, matchedItem, matchedContrib);
+            if (candidateToken === token) {
+              selectedContributorId = matchedContrib.id;
+              selectedAction = preview.action;
+            }
+          }
+        }
+
+        if (sessionGuest) {
+          for (const item of dataset.registryItems) {
+            for (const c of item.contributors || []) {
+              if (
+                c.id &&
+                c.status === 'RESERVED' &&
+                (c.invitationCodeId === sessionGuest.id ||
+                  c.invitationCode?.code?.toUpperCase() === sessionGuest.code.toUpperCase())
+              ) {
+                if (!holdsMap.has(c.id)) {
+                  addByContributorId(c.id, item, c);
+                }
+              }
+            }
+          }
+        }
+
+        const holds = Array.from(holdsMap.values());
+        if (!sessionGuest && holds.length === 0) {
+          return jsonResponse({ error: 'Invalid or expired reservation token.' }, 404);
+        }
+
+        return jsonResponse({
+          holds,
+          maxPendingReservations: dataset.siteConfig.maxPendingReservations ?? 5,
+          coupleNames:
+            [dataset.siteConfig.partner1Name, dataset.siteConfig.partner2Name]
+              .filter(Boolean)
+              .join(' & ') || 'Alex & Taylor',
+          shippingAddress: DEMO_SHIPPING_ADDRESS,
+          selectedContributorId:
+            selectedContributorId ??
+            (holds[0] ? String(holds[0].contributorId) : null),
+          selectedAction,
+        });
+      }
+
       if (!token) {
         return jsonResponse({ error: 'Missing claim token.' }, 400);
       }

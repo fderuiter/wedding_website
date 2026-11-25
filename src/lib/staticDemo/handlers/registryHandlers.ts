@@ -76,6 +76,29 @@ function resolveClientSafeCapabilities(
     : null;
   const hasShippingAddress = Boolean(shippingAddress);
 
+  const giftAccessTier =
+    config.registryGiftAccessTier === 'INVITED_HOUSEHOLDS'
+      ? ('INVITED_HOUSEHOLDS' as const)
+      : ('PASSCODE_GUESTS' as const);
+  const shippingDisclosureTier =
+    config.shippingDisclosureTier === 'INVITED_HOUSEHOLDS' ||
+    config.shippingDisclosureTier === 'POST_CLAIM_ONLY'
+      ? config.shippingDisclosureTier
+      : ('PASSCODE_GUESTS' as const);
+  const maxPendingReservations =
+    typeof config.maxPendingReservations === 'number' && config.maxPendingReservations >= 1
+      ? config.maxPendingReservations
+      : 5;
+  const hasInviteSession = Boolean(snapshot.guestSession?.code);
+  const canDiscloseShipping =
+    snapshot.isAdminAuthenticated
+      ? true
+      : shippingDisclosureTier === 'POST_CLAIM_ONLY'
+        ? false
+        : shippingDisclosureTier === 'INVITED_HOUSEHOLDS'
+          ? hasInviteSession
+          : true;
+
   if (mode === 'msw') {
     const pubKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
     const secKey = process.env.STRIPE_SECRET_KEY;
@@ -93,12 +116,18 @@ function resolveClientSafeCapabilities(
         cardCheckoutEnabled,
         stripePublishableKey: cardCheckoutEnabled && pubKey ? pubKey.trim() : null,
         hasShippingAddress,
+        giftAccessTier,
+        shippingDisclosureTier,
+        maxPendingReservations,
       };
     }
     return {
       cardCheckoutEnabled: true,
       stripePublishableKey: 'pk_test_msw_mock_publishable_key',
       hasShippingAddress,
+      giftAccessTier,
+      shippingDisclosureTier,
+      maxPendingReservations,
     };
   }
 
@@ -108,9 +137,12 @@ function resolveClientSafeCapabilities(
     cardCheckoutEnabled: false,
     stripePublishableKey: validLiveKey ? candidateKey.trim() : null,
     hasShippingAddress,
+    giftAccessTier,
+    shippingDisclosureTier,
+    maxPendingReservations,
     defaultPaymentHandle: config.defaultPaymentHandle || '@AlexAndTaylor2026',
     defaultPaymentHandleType: config.defaultPaymentHandleType || 'Venmo',
-    shippingAddress,
+    shippingAddress: canDiscloseShipping ? shippingAddress : null,
   };
 }
 
@@ -655,7 +687,140 @@ export async function handleRegistryRoutes(
     (method === 'GET' || method === 'POST')
   ) {
     if (method === 'GET') {
+      const isHubMode =
+        searchParams.get('hub') === '1' || searchParams.get('hub') === 'true';
       const token = searchParams.get('token')?.trim() ?? '';
+
+      if (isHubMode) {
+        const snapshot = store.getSnapshot();
+        const config = getActiveAppConfig(snapshot);
+        const sessionCode = snapshot.guestSession?.code?.trim() || '';
+        const sessionInvite = sessionCode
+          ? snapshot.invitationCode.find(
+            (inv) => inv.code.toUpperCase() === sessionCode.toUpperCase(),
+          )
+          : null;
+        const extraTokens = (searchParams.get('tokens') || '')
+          .split(',')
+          .map((t) => t.trim())
+          .filter((t) => t.length > 0 && t !== token);
+
+        if (!sessionInvite && !token && extraTokens.length === 0) {
+          return errorJson(400, 'Missing or invalid claim token.');
+        }
+
+        const holdsMap = new Map<string, Record<string, unknown>>();
+        let selectedContributorId: string | null = null;
+        let selectedAction: 'confirm' | 'cancel' = 'confirm';
+
+        const addContributorHold = (
+          c: DemoContributorRecord,
+          item: DemoRegistryItemRecord,
+        ) => {
+          const itemType = item.itemType || 'PHYSICAL';
+          const mediaRecord = item.imageId
+            ? snapshot.media.find((m) => m.id === item.imageId)
+            : null;
+          holdsMap.set(c.id, {
+            contributorId: c.id,
+            status: c.status,
+            amount: c.amount,
+            date: c.date,
+            itemId: item.id,
+            itemName: item.name,
+            itemDescription: item.description,
+            itemImageUrl: mediaRecord?.url ?? null,
+            itemCategory: item.category,
+            itemType,
+            isGroupGift: Boolean(item.isGroupGift),
+            vendorUrl: item.vendorUrl,
+            paymentHandle: item.paymentHandle || config.defaultPaymentHandle || null,
+            paymentHandleType:
+              item.paymentHandleType || config.defaultPaymentHandleType || null,
+            retailerOrderNumber: c.retailerOrderNumber,
+            carrier: c.carrier,
+            trackingNumber: c.trackingNumber,
+            confirmToken: encodeDemoClaimToken('confirm', c.id),
+            cancelToken: encodeDemoClaimToken('cancel', c.id),
+          });
+        };
+
+        for (const candidate of [token, ...extraTokens].filter(Boolean)) {
+          const decodedCandidate = decodeDemoClaimToken(candidate);
+          if (!decodedCandidate) continue;
+          const c = snapshot.contributor.find(
+            (row) => row.id === decodedCandidate.contributorId,
+          );
+          const item = c?.registryItemId
+            ? snapshot.registryItem.find((r) => r.id === c.registryItemId)
+            : null;
+          if (c && item && !item.isSample) {
+            addContributorHold(c, item);
+            if (candidate === token) {
+              selectedContributorId = c.id;
+              selectedAction = decodedCandidate.action;
+            }
+          }
+        }
+
+        if (sessionInvite) {
+          for (const c of snapshot.contributor) {
+            if (c.invitationCodeId === sessionInvite.id && c.status === 'RESERVED') {
+              const item = c.registryItemId
+                ? snapshot.registryItem.find((r) => r.id === c.registryItemId)
+                : null;
+              if (item && !item.isSample && !holdsMap.has(c.id)) {
+                addContributorHold(c, item);
+              }
+            }
+          }
+        }
+
+        const holds = Array.from(holdsMap.values());
+        if (!sessionInvite && holds.length === 0) {
+          return errorJson(401, 'This gift link is invalid or has expired.');
+        }
+
+        const hasPhysicalHold = holds.some(
+          (h) => h.itemType === 'PHYSICAL' && h.status !== 'CANCELLED' && h.status !== 'REFUNDED',
+        );
+        const canDiscloseShipping =
+          hasPhysicalHold ||
+          (Boolean(sessionInvite) && config.shippingDisclosureTier !== 'POST_CLAIM_ONLY');
+        const claimShipping =
+          canDiscloseShipping && config.shippingAddressLine1
+            ? {
+              recipientName:
+                config.shippingRecipientName ||
+                `${config.partner1Name} & ${config.partner2Name}`,
+              addressLine1: config.shippingAddressLine1,
+              addressLine2: config.shippingAddressLine2 ?? '',
+              city: config.shippingCity ?? '',
+              state: config.shippingState ?? '',
+              zip: config.shippingZip ?? '',
+              country: config.shippingCountry ?? 'United States',
+              phone: config.shippingPhone ?? '',
+              deliveryNotes: config.shippingDeliveryNotes ?? '',
+            }
+            : null;
+
+        return wrapMiddlewareJson({
+          holds,
+          maxPendingReservations: config.maxPendingReservations ?? 5,
+          coupleNames:
+            [config.partner1Name, config.partner2Name].filter(Boolean).join(' & ') ||
+            'Alex & Taylor',
+          shippingAddress: claimShipping,
+          selectedContributorId:
+            selectedContributorId ??
+            (holds[0] ? String(holds[0].contributorId) : null),
+          selectedAction,
+        });
+      }
+
+      if (!token) {
+        return errorJson(400, 'Missing or invalid claim token.');
+      }
       const decoded = decodeDemoClaimToken(token);
       if (!decoded) {
         return errorJson(401, 'This gift link is invalid or has expired.');

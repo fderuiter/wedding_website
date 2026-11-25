@@ -139,6 +139,9 @@ export const APP_DEFAULTS: LocalAppConfig = {
   shippingDeliveryNotes: '',
   defaultPaymentHandleType: '',
   defaultPaymentHandle: '',
+  registryGiftAccessTier: 'PASSCODE_GUESTS',
+  shippingDisclosureTier: 'PASSCODE_GUESTS',
+  maxPendingReservations: 5,
   setupCompleted: true,
   modules: DEFAULT_MODULE_CONFIG,
   features: [],
@@ -384,6 +387,9 @@ export interface AdminAppConfig extends PublicAppConfig {
   shippingDeliveryNotes: string;
   defaultPaymentHandleType: string;
   defaultPaymentHandle: string;
+  registryGiftAccessTier: 'PASSCODE_GUESTS' | 'INVITED_HOUSEHOLDS';
+  shippingDisclosureTier: 'PASSCODE_GUESTS' | 'INVITED_HOUSEHOLDS' | 'POST_CLAIM_ONLY';
+  maxPendingReservations: number;
   setupCompleted: boolean;
   hasSmtpPass: boolean;
   hasResendApiKey: boolean;
@@ -604,6 +610,22 @@ export function toAdminAppConfig<T extends AppConfigDTO | Record<string, any>>(
     shippingDeliveryNotes: raw.shippingDeliveryNotes ?? '',
     defaultPaymentHandleType: raw.defaultPaymentHandleType ?? '',
     defaultPaymentHandle: raw.defaultPaymentHandle ?? '',
+    registryGiftAccessTier:
+      raw.registryGiftAccessTier === 'INVITED_HOUSEHOLDS'
+        ? 'INVITED_HOUSEHOLDS'
+        : 'PASSCODE_GUESTS',
+    shippingDisclosureTier:
+      raw.shippingDisclosureTier === 'INVITED_HOUSEHOLDS' ||
+      raw.shippingDisclosureTier === 'POST_CLAIM_ONLY'
+        ? raw.shippingDisclosureTier
+        : 'PASSCODE_GUESTS',
+    maxPendingReservations:
+      typeof raw.maxPendingReservations === 'number' &&
+      Number.isInteger(raw.maxPendingReservations) &&
+      raw.maxPendingReservations >= 1 &&
+      raw.maxPendingReservations <= 100
+        ? raw.maxPendingReservations
+        : 5,
     setupCompleted: raw.setupCompleted !== false,
     hasSmtpPass: hasConfiguredSecret(raw.smtpPass),
     hasResendApiKey: hasConfiguredSecret(raw.resendApiKey),

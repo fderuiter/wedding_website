@@ -85,10 +85,7 @@ export {
 export { POST as registryScrapePOST } from './api/scrape';
 export { POST as registryBatchScrapePOST } from './api/batch-scrape';
 export { ContributorLifecycleBadge } from './components/ContributorLifecycleBadge';
-export {
-  getPaymentUrl,
-  formatRegistryShippingAddress,
-} from './utils/paymentUrls';
+export { ClaimFulfillmentHub } from './components/ClaimFulfillmentHub';
 export {
   extractDietaryTags,
   matchDietaryCategory,

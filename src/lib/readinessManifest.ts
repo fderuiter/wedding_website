@@ -72,4 +72,5 @@ export const REQUIRED_MIGRATION_NAMES = [
   '20261123000000_reconcile_schema_drift_and_registry_media_contract',
   '20261123010000_add_appconfig_setup_completed',
   '20261123020000_add_plus_one_seat_numbers',
+  '20261124000000_add_registry_access_tiers_and_hold_limits',
 ] as const;

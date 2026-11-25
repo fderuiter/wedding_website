@@ -76,6 +76,9 @@ interface SettingsDraftConfig {
   shippingDeliveryNotes?: string;
   defaultPaymentHandleType?: string;
   defaultPaymentHandle?: string;
+  registryGiftAccessTier?: 'PASSCODE_GUESTS' | 'INVITED_HOUSEHOLDS' | string;
+  shippingDisclosureTier?: 'PASSCODE_GUESTS' | 'INVITED_HOUSEHOLDS' | 'POST_CLAIM_ONLY' | string;
+  maxPendingReservations?: number | string;
   rsvpOpen?: boolean;
   rsvpDeadlineDate?: string;
   rsvpGracePeriodHours?: number;
@@ -468,8 +471,15 @@ export default function AdminSettingsPage() {
         Object.keys(rawTokens).length >= 25
           ? stripPresetDefaultTokens(rawTokens, localConfig.themePreset)
           : rawTokens;
+      const normalizedMaxPendingReservations =
+        localConfig.maxPendingReservations !== undefined && localConfig.maxPendingReservations !== ''
+          ? Math.min(100, Math.max(1, Math.trunc(Number(localConfig.maxPendingReservations))))
+          : undefined;
       const payloadToSave = {
         ...localConfig,
+        ...(normalizedMaxPendingReservations !== undefined && !Number.isNaN(normalizedMaxPendingReservations)
+          ? { maxPendingReservations: normalizedMaxPendingReservations }
+          : {}),
         themeTokens: payloadThemeTokens,
       };
       const saved = (await saveSettings(payloadToSave)) as Partial<SettingsDraftConfig> | null;
@@ -550,7 +560,11 @@ export default function AdminSettingsPage() {
     const nextFieldValue =
       e.target instanceof HTMLInputElement && e.target.type === 'checkbox'
         ? e.target.checked
-        : value;
+        : name === 'maxPendingReservations'
+          ? value === ''
+            ? ''
+            : Number(value)
+          : value;
     setLocalConfig((prev) => {
       const next: SettingsDraftConfig = {
         ...(prev ?? {}),
@@ -982,6 +996,81 @@ export default function AdminSettingsPage() {
                         onChange={handleChange}
                         placeholder="e.g. @couple-venmo or https://paypal.me/couple"
                       />
+                    </FormGroup>
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
+                  <div>
+                    <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                      Registry Access Tiers &amp; Reservation Limits
+                    </h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      Control who can claim registry gifts, when your private shipping address is disclosed, and how many pending physical gift holds each guest or household can keep open at once.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormGroup>
+                      <Label htmlFor="registry-gift-access-tier">Registry Gift Access Tier</Label>
+                      <Select
+                        id="registry-gift-access-tier"
+                        name="registryGiftAccessTier"
+                        value={localConfig.registryGiftAccessTier || 'PASSCODE_GUESTS'}
+                        onChange={handleChange}
+                      >
+                        <option value="PASSCODE_GUESTS">
+                          All Passcode Guests (site passcode or household code)
+                        </option>
+                        <option value="INVITED_HOUSEHOLDS">
+                          Invited Households Only (requires household invitation code)
+                        </option>
+                      </Select>
+                      <FormMessage>
+                        Determines whether site-passcode guests can reserve gifts or if a verified household invitation code is required.
+                      </FormMessage>
+                    </FormGroup>
+
+                    <FormGroup>
+                      <Label htmlFor="shipping-disclosure-tier">Shipping Address Disclosure Tier</Label>
+                      <Select
+                        id="shipping-disclosure-tier"
+                        name="shippingDisclosureTier"
+                        value={localConfig.shippingDisclosureTier || 'PASSCODE_GUESTS'}
+                        onChange={handleChange}
+                      >
+                        <option value="PASSCODE_GUESTS">
+                          All Passcode Guests (shown on physical gifts)
+                        </option>
+                        <option value="INVITED_HOUSEHOLDS">
+                          Invited Households Only (requires household invitation code)
+                        </option>
+                        <option value="POST_CLAIM_ONLY">
+                          Post-Claim Only (revealed after claiming a physical gift)
+                        </option>
+                      </Select>
+                      <FormMessage>
+                        Controls when your delivery address is revealed to guests browsing or claiming physical items.
+                      </FormMessage>
+                    </FormGroup>
+
+                    <FormGroup>
+                      <Label htmlFor="max-pending-reservations">
+                        Maximum Pending Physical Reservations
+                      </Label>
+                      <Input
+                        id="max-pending-reservations"
+                        type="number"
+                        name="maxPendingReservations"
+                        min={1}
+                        max={100}
+                        step={1}
+                        value={localConfig.maxPendingReservations ?? 5}
+                        onChange={handleChange}
+                      />
+                      <FormMessage>
+                        Maximum simultaneous unconfirmed physical gift holds per household or email (1–100). Peer-to-peer cash and experience funds do not count against physical holds.
+                      </FormMessage>
                     </FormGroup>
                   </div>
                 </div>

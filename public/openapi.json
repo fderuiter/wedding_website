@@ -10997,6 +10997,26 @@
                             "type": "string",
                             "maxLength": 255
                           },
+                          "registryGiftAccessTier": {
+                            "type": "string",
+                            "enum": [
+                              "PASSCODE_GUESTS",
+                              "INVITED_HOUSEHOLDS"
+                            ]
+                          },
+                          "shippingDisclosureTier": {
+                            "type": "string",
+                            "enum": [
+                              "PASSCODE_GUESTS",
+                              "INVITED_HOUSEHOLDS",
+                              "POST_CLAIM_ONLY"
+                            ]
+                          },
+                          "maxPendingReservations": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100
+                          },
                           "setupCompleted": {
                             "type": "boolean"
                           },
@@ -12696,6 +12716,26 @@
                         "defaultPaymentHandle": {
                           "type": "string",
                           "maxLength": 255
+                        },
+                        "registryGiftAccessTier": {
+                          "type": "string",
+                          "enum": [
+                            "PASSCODE_GUESTS",
+                            "INVITED_HOUSEHOLDS"
+                          ]
+                        },
+                        "shippingDisclosureTier": {
+                          "type": "string",
+                          "enum": [
+                            "PASSCODE_GUESTS",
+                            "INVITED_HOUSEHOLDS",
+                            "POST_CLAIM_ONLY"
+                          ]
+                        },
+                        "maxPendingReservations": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 100
                         },
                         "setupCompleted": {
                           "type": "boolean"
@@ -17098,6 +17138,32 @@
                     "type": "string",
                     "maxLength": 255
                   },
+                  "registryGiftAccessTier": {
+                    "type": "string",
+                    "enum": [
+                      "PASSCODE_GUESTS",
+                      "INVITED_HOUSEHOLDS"
+                    ]
+                  },
+                  "shippingDisclosureTier": {
+                    "type": "string",
+                    "enum": [
+                      "PASSCODE_GUESTS",
+                      "INVITED_HOUSEHOLDS",
+                      "POST_CLAIM_ONLY"
+                    ]
+                  },
+                  "maxPendingReservations": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    ]
+                  },
                   "setupCompleted": {
                     "type": "boolean"
                   },
@@ -17663,6 +17729,32 @@
                     "nullable": true,
                     "type": "string",
                     "maxLength": 255
+                  },
+                  "registryGiftAccessTier": {
+                    "type": "string",
+                    "enum": [
+                      "PASSCODE_GUESTS",
+                      "INVITED_HOUSEHOLDS"
+                    ]
+                  },
+                  "shippingDisclosureTier": {
+                    "type": "string",
+                    "enum": [
+                      "PASSCODE_GUESTS",
+                      "INVITED_HOUSEHOLDS",
+                      "POST_CLAIM_ONLY"
+                    ]
+                  },
+                  "maxPendingReservations": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    ]
                   },
                   "setupCompleted": {
                     "type": "boolean"
@@ -23935,6 +24027,24 @@
                           "type": "string",
                           "nullable": true
                         },
+                        "giftAccessTier": {
+                          "type": "string",
+                          "enum": [
+                            "PASSCODE_GUESTS",
+                            "INVITED_HOUSEHOLDS"
+                          ]
+                        },
+                        "shippingDisclosureTier": {
+                          "type": "string",
+                          "enum": [
+                            "PASSCODE_GUESTS",
+                            "INVITED_HOUSEHOLDS",
+                            "POST_CLAIM_ONLY"
+                          ]
+                        },
+                        "maxPendingReservations": {
+                          "type": "number"
+                        },
                         "hasShippingAddress": {
                           "type": "boolean"
                         }
@@ -23942,6 +24052,9 @@
                       "required": [
                         "cardCheckoutEnabled",
                         "stripePublishableKey",
+                        "giftAccessTier",
+                        "shippingDisclosureTier",
+                        "maxPendingReservations",
                         "hasShippingAddress"
                       ],
                       "additionalProperties": true
@@ -24004,15 +24117,30 @@
           "Registry"
         ],
         "summary": "GET /api/registry/claim",
-        "description": "Scanner-safe read endpoint for signed guest claim confirmation/cancellation links.\nPerforms zero database mutations so email security link scanners cannot confirm or cancel gifts.",
+        "description": "Scanner-safe read endpoint for signed guest claim confirmation/cancellation links\nand the multi-item Guest Claim & Fulfillment Hub.\nPerforms zero database mutations so email security link scanners cannot confirm or cancel gifts.\nSecurity guardrail: A shared guest_auth cookie alone never lists holds; multi-item lookup\nstrictly requires a verified guest_invite_session or contributor-scoped signed claim token(s).",
         "parameters": [
           {
             "name": "token",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": "string",
-              "minLength": 1
+              "type": "string"
+            }
+          },
+          {
+            "name": "hub",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tokens",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -24023,84 +24151,183 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": [
-                    "success",
-                    "data"
-                  ],
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "enum": [
-                        true
-                      ]
-                    },
-                    "data": {
+                  "anyOf": [
+                    {
                       "type": "object",
-                      "properties": {
-                        "action": {
-                          "type": "string",
-                          "enum": [
-                            "confirm",
-                            "cancel"
-                          ]
-                        },
-                        "status": {
-                          "type": "string",
-                          "enum": [
-                            "CANCELLED",
-                            "RESERVED",
-                            "CONFIRMED",
-                            "REFUNDED"
-                          ]
-                        },
-                        "amount": {
-                          "type": "number"
-                        },
-                        "itemId": {
-                          "type": "string"
-                        },
-                        "itemName": {
-                          "type": "string"
-                        },
-                        "itemType": {
-                          "type": "string",
-                          "enum": [
-                            "PHYSICAL",
-                            "CASH_FUND",
-                            "EXPERIENCE_FUND"
-                          ]
-                        },
-                        "isGroupGift": {
-                          "type": "boolean"
-                        },
-                        "vendorUrl": {
-                          "type": "string",
-                          "nullable": true
-                        },
-                        "paymentHandle": {
-                          "type": "string",
-                          "nullable": true
-                        },
-                        "paymentHandleType": {
-                          "type": "string",
-                          "nullable": true
-                        }
-                      },
                       "required": [
-                        "action",
-                        "status",
-                        "amount",
-                        "itemId",
-                        "itemName",
-                        "itemType",
-                        "isGroupGift",
-                        "vendorUrl",
-                        "paymentHandle",
-                        "paymentHandleType"
+                        "success",
+                        "data"
                       ],
-                      "additionalProperties": true
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "holds": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                              }
+                            },
+                            "maxPendingReservations": {
+                              "type": "number"
+                            },
+                            "coupleNames": {
+                              "type": "string"
+                            },
+                            "shippingAddress": {
+                              "type": "object",
+                              "properties": {
+                                "recipientName": {
+                                  "type": "string"
+                                },
+                                "addressLine1": {
+                                  "type": "string"
+                                },
+                                "addressLine2": {
+                                  "type": "string"
+                                },
+                                "city": {
+                                  "type": "string"
+                                },
+                                "state": {
+                                  "type": "string"
+                                },
+                                "zip": {
+                                  "type": "string"
+                                },
+                                "country": {
+                                  "type": "string"
+                                },
+                                "phone": {
+                                  "type": "string"
+                                },
+                                "deliveryNotes": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "recipientName",
+                                "addressLine1",
+                                "addressLine2",
+                                "city",
+                                "state",
+                                "zip",
+                                "country",
+                                "phone",
+                                "deliveryNotes"
+                              ],
+                              "nullable": true
+                            },
+                            "selectedContributorId": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "selectedAction": {
+                              "type": "string",
+                              "enum": [
+                                "confirm",
+                                "cancel"
+                              ],
+                              "nullable": true
+                            }
+                          },
+                          "required": [
+                            "holds",
+                            "maxPendingReservations",
+                            "coupleNames"
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "success",
+                        "data"
+                      ],
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "action": {
+                              "type": "string",
+                              "enum": [
+                                "confirm",
+                                "cancel"
+                              ]
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "CANCELLED",
+                                "RESERVED",
+                                "CONFIRMED",
+                                "REFUNDED"
+                              ]
+                            },
+                            "amount": {
+                              "type": "number"
+                            },
+                            "itemId": {
+                              "type": "string"
+                            },
+                            "itemName": {
+                              "type": "string"
+                            },
+                            "itemType": {
+                              "type": "string",
+                              "enum": [
+                                "PHYSICAL",
+                                "CASH_FUND",
+                                "EXPERIENCE_FUND"
+                              ]
+                            },
+                            "isGroupGift": {
+                              "type": "boolean"
+                            },
+                            "vendorUrl": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "paymentHandle": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "paymentHandleType": {
+                              "type": "string",
+                              "nullable": true
+                            }
+                          },
+                          "required": [
+                            "action",
+                            "status",
+                            "amount",
+                            "itemId",
+                            "itemName",
+                            "itemType",
+                            "isGroupGift",
+                            "vendorUrl",
+                            "paymentHandle",
+                            "paymentHandleType"
+                          ],
+                          "additionalProperties": true
+                        }
+                      }
                     }
-                  }
+                  ]
                 }
               }
             }

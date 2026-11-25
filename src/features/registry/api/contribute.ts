@@ -27,7 +27,10 @@ import { getStripeInstance } from '@/lib/stripe';
 import { checkAuthLockout, recordAuthFailure } from '@/utils/rateLimit';
 import { signContributorActionToken } from '../lib/contributorToken';
 import type { GuestClaimActions } from '../types';
-import { resolveEffectivePaymentHandle } from '../utils/paymentUrls';
+import {
+  extractShippingAddressFromConfig,
+  resolveEffectivePaymentHandle,
+} from '../utils/paymentUrls';
 
 function settle<T>(operation: () => Promise<T> | T): Promise<PromiseSettledResult<T>> {
   return Promise.allSettled([Promise.resolve().then(operation)]).then(([result]) => result);
@@ -169,13 +172,28 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   }
 
   const verifiedHouseholdCode = isAdmin ? submittedCode : sessionCode;
-  const isAuthorizedClaimer = isAdmin || Boolean(verifiedHouseholdCode) || isPasscodeGuest;
+  const giftAccessTier =
+    config.registryGiftAccessTier === 'INVITED_HOUSEHOLDS'
+      ? 'INVITED_HOUSEHOLDS'
+      : 'PASSCODE_GUESTS';
 
-  if (!paymentIntentId && !isAuthorizedClaimer) {
-    throw new ApiError(
-      403,
-      'Please sign in with the wedding passcode or verify your household invitation code before claiming a gift or recording a direct transfer.'
-    );
+  if (!paymentIntentId) {
+    if (giftAccessTier === 'INVITED_HOUSEHOLDS') {
+      if (!isAdmin && !verifiedHouseholdCode) {
+        throw new ApiError(
+          403,
+          'This wedding registry requires a verified household invitation code before claiming a gift or recording a direct transfer. Please verify the invitation code from your wedding invitation.'
+        );
+      }
+    } else {
+      const isAuthorizedClaimer = isAdmin || Boolean(verifiedHouseholdCode) || isPasscodeGuest;
+      if (!isAuthorizedClaimer) {
+        throw new ApiError(
+          403,
+          'Please sign in with the wedding passcode or verify your household invitation code before claiming a gift or recording a direct transfer.'
+        );
+      }
+    }
   }
 
   if (!paymentIntentId && !verifiedHouseholdCode && !isAdmin) {
@@ -249,6 +267,12 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     effectiveAddressFields = mapped.addressFields;
   }
 
+  const configuredMaxPendingReservations =
+    typeof config.maxPendingReservations === 'number' &&
+    Number.isFinite(config.maxPendingReservations)
+      ? Math.min(100, Math.max(1, Math.trunc(config.maxPendingReservations)))
+      : undefined;
+
   const updatedItem = await registryService.contributeToItem(itemId, {
     name: effectiveName,
     email: effectiveEmail,
@@ -260,6 +284,9 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     ...(carrier ? { carrier } : {}),
     ...(trackingNumber ? { trackingNumber } : {}),
     ...effectiveAddressFields,
+    ...(configuredMaxPendingReservations !== undefined
+      ? { maxPendingReservations: configuredMaxPendingReservations }
+      : {}),
     ...(stripePaymentIntentId
       ? { stripePaymentIntentId, stripeChargeId, transactionTimestamp }
       : {}),
@@ -332,7 +359,15 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
             action: 'cancel',
           }),
         ]);
-        claimActions = { confirmToken, cancelToken };
+        const resolvedItemType = targetItem?.itemType ?? updatedItem.itemType ?? 'PHYSICAL';
+        const { shippingCandidate, hasShippingAddress } = extractShippingAddressFromConfig(config);
+        claimActions = {
+          confirmToken,
+          cancelToken,
+          ...(resolvedItemType === 'PHYSICAL' && hasShippingAddress
+            ? { shippingAddress: shippingCandidate }
+            : {}),
+        };
       } catch {
         claimActions = undefined;
       }

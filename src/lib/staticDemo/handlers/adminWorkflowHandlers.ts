@@ -874,6 +874,8 @@ export async function handleAdminWorkflowRoutes(
           'shippingDeliveryNotes',
           'defaultPaymentHandleType',
           'defaultPaymentHandle',
+          'registryGiftAccessTier',
+          'shippingDisclosureTier',
         ] as const;
 
         const configMap = config as unknown as Record<string, unknown>;
@@ -895,6 +897,9 @@ export async function handleAdminWorkflowRoutes(
         }
         if (typeof body.rsvpGracePeriodHours === 'number') {
           config.rsvpGracePeriodHours = body.rsvpGracePeriodHours;
+        }
+        if (typeof body.maxPendingReservations === 'number' && Number.isFinite(body.maxPendingReservations)) {
+          config.maxPendingReservations = Math.min(100, Math.max(1, Math.trunc(body.maxPendingReservations)));
         }
         if (
           body.themeTokens &&
