@@ -30,6 +30,8 @@ const REMEDIATION_STEPS = [
   'Every job invoking actions/deploy-pages must set concurrency: { group: github-pages, cancel-in-progress: false, queue: max }.',
   'Every runs-on job must declare an integer "timeout-minutes" between 1 and 60 (reusable workflow caller jobs with uses: and no runs-on are exempt), and any step "timeout-minutes" must be an integer strictly less than its enclosing job "timeout-minutes".',
   'Step "run" scripts must bind GitHub Actions expressions via "env:" instead of interpolating "${{ ... }}" directly.',
+  'Jobs triggered by untrusted events (pull_request, pull_request_target, workflow_run) must not execute actions/checkout or npm ci/install while holding write permissions.',
+  'publish-artifact.yml must isolate BuildKit GHA cache scopes under "release-*" and validate cache tar archives before extraction; webhook curl calls must never follow redirects (--location / -L).',
 ];
 
 function concurrencyAlwaysCancelsInProgress(concurrencyNode: unknown): boolean {
@@ -344,7 +346,20 @@ function evaluateAstPolicies(
         );
       }
 
-      // Rule 2b: Jobs running npm ci / npm install on untrusted triggers must not hold write permissions
+      // Rule 2b: Jobs running actions/checkout or npm ci / npm install on untrusted triggers must not hold write permissions
+      if (
+        hasUntrustedTrigger &&
+        !stepExcludesAllUntrustedTriggers &&
+        jobHasWritePermissions &&
+        (usesRaw === 'actions/checkout' || usesRaw.startsWith('actions/checkout@'))
+      ) {
+        addAstViolation(
+          usesNode ?? stepNode,
+          `jobs.${jobId}.permissions`,
+          `Job "${jobId}" executes actions/checkout on ${untrustedTriggerLabel} while holding write permissions; isolate repository checkouts to read-only jobs and move write operations to a checkout-free job.`
+        );
+      }
+
       if (
         hasUntrustedTrigger &&
         !stepExcludesAllUntrustedTriggers &&
@@ -382,7 +397,8 @@ function evaluateAstPolicies(
         }
       }
 
-      // Rule 4: Release cache isolation & safe tar extraction in publish-artifact.yml
+      // Rule 4: Release cache isolation, safe tar extraction, and non-redirecting webhook curl checks
+      const stepEnvNode: unknown = stepNode.get('env', true);
       if (fileName === 'publish-artifact.yml') {
         if (
           usesRaw === 'actions/cache' ||
@@ -408,16 +424,111 @@ function evaluateAstPolicies(
         }
 
         if (
-          runScript &&
-          /\btar\b[^\n]*(?:\s-[a-zA-Z]*x[a-zA-Z]*\b|\s--extract\b)/.test(runScript) &&
-          (!runScript.includes('--no-same-owner') ||
-            !runScript.includes('--no-same-permissions'))
+          usesRaw === 'docker/build-push-action' ||
+          usesRaw.startsWith('docker/build-push-action@')
+        ) {
+          for (const cacheField of ['cache-from', 'cache-to'] as const) {
+            const cacheFieldNode: unknown = isMap(withNode)
+              ? withNode.get(cacheField, true)
+              : undefined;
+            const cacheVal = getScalarString(cacheFieldNode)?.trim() ?? '';
+            if (cacheVal) {
+              const cacheEntries = cacheVal
+                .split(/\r?\n/)
+                .map((entry) => entry.trim())
+                .filter(Boolean);
+              const hasSharedGhaScope = cacheEntries.some(
+                (entry) =>
+                  /\btype=gha\b/.test(entry) &&
+                  !/\bscope=release-[^\s,]+/.test(entry)
+              );
+              if (hasSharedGhaScope) {
+                addAstViolation(
+                  cacheFieldNode ?? usesNode ?? stepNode,
+                  usesRaw,
+                  `docker/build-push-action "${cacheField}" in publish-artifact.yml must isolate BuildKit GitHub Actions caches under a "scope=release-..." cache scope.`
+                );
+              }
+            }
+          }
+        }
+
+        if (isMap(stepEnvNode) && stepEnvNode.has('GHA_CACHE_SCOPE')) {
+          const ghaScopeNode: unknown = stepEnvNode.get('GHA_CACHE_SCOPE', true);
+          const ghaScopeVal = getScalarString(ghaScopeNode)?.trim() ?? '';
+          if (!ghaScopeVal.startsWith('release-')) {
+            addAstViolation(
+              ghaScopeNode ?? stepEnvNode ?? stepNode,
+              `jobs.${jobId}.steps[${stepIdx}].env.GHA_CACHE_SCOPE`,
+              'GHA_CACHE_SCOPE in publish-artifact.yml must use a "release-" namespaced cache scope.'
+            );
+          }
+        }
+      }
+
+      if (
+        runScript &&
+        /\btar\b[^\n]*(?:\s-[a-zA-Z]*x[a-zA-Z]*\b|\s--extract\b)/.test(runScript)
+      ) {
+        if (
+          !runScript.includes('--no-same-owner') ||
+          !runScript.includes('--no-same-permissions')
         ) {
           addAstViolation(
             runNode ?? stepNode,
             `jobs.${jobId}.tar`,
-            'tar archive extraction in publish-artifact.yml must pass "--no-same-owner --no-same-permissions".'
+            `tar archive extraction in ${fileName} must pass "--no-same-owner --no-same-permissions".`
           );
+        } else if (
+          (runScript.includes('mounts.tar') ||
+            runScript.includes('/ctx/deps.tar') ||
+            runScript.includes('/ctx/next.tar')) &&
+          !runScript.includes('validate_cache_archive')
+        ) {
+          addAstViolation(
+            runNode ?? stepNode,
+            `jobs.${jobId}.tar`,
+            `BuildKit cache archive extraction in ${fileName} must run "validate_cache_archive" before extracting tar archives.`
+          );
+        }
+      }
+
+      if (runScript && /\bcurl\b/.test(runScript)) {
+        const flattenedRun = runScript.replace(/\\\r?\n/g, ' ');
+        const stepEnvHasWebhook =
+          isMap(stepEnvNode) &&
+          stepEnvNode.items.some(
+            (pair) =>
+              isPair(pair) &&
+              isScalar(pair.key) &&
+              /webhook/i.test(String(pair.key.value))
+          );
+        const stepReferencesWebhook =
+          stepEnvHasWebhook ||
+          /DEPLOY_WEBHOOK_URL|WEBHOOK_URL|X-Hub-Signature|X-Deploy-Signature/i.test(
+            flattenedRun
+          );
+        for (const statement of flattenedRun.split(/\r?\n|;|&&|\|\|/)) {
+          if (!/\bcurl\b/.test(statement)) {
+            continue;
+          }
+          const hasLongLocation = /(?:^|\s)--location(?:-trusted)?(?:\s|$)/.test(
+            statement
+          );
+          const hasShortLocation = /(?:^|\s)-[a-zA-Z]*L[a-zA-Z]*(?:\s|$)/.test(
+            statement
+          );
+          const statementTargetsWebhook =
+            /WEBHOOK|X-Hub-Signature|X-Deploy-Signature/i.test(statement) ||
+            (stepReferencesWebhook && !/\bAPI_BASE\b|api\.github\.com/i.test(statement));
+          if (hasLongLocation || (hasShortLocation && statementTargetsWebhook)) {
+            addAstViolation(
+              runNode ?? stepNode,
+              `jobs.${jobId}.steps[${stepIdx}].curl`,
+              `Job "${jobId}" invokes curl with "--location" / "-L" redirect following; signed webhook requests must fail on redirects without following them.`
+            );
+            break;
+          }
         }
       }
     }

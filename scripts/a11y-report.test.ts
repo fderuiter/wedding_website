@@ -246,6 +246,57 @@ describe('a11y-report', () => {
       expect(shapeResult.incompleteSuites).toEqual(['jest', 'playwright', 'static-showcase']);
       expect(shapeResult.parseErrors).toEqual(['jest', 'playwright', 'static-showcase']);
     });
+
+    it('escapes HTML tags, Markdown links, backticks, and newlines in violation fields', () => {
+      const resultsDir = path.join(tempDir, 'test-results');
+      fs.mkdirSync(resultsDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(resultsDir, 'jest-a11y-violations.json'),
+        JSON.stringify([
+          {
+            id: 'rule-<script>alert(1)</script>\n`id`-[link](https://evil.example)',
+            description:
+              'Fix <img src=x onerror=alert(1)> & see [phishing](https://evil.example)\r\nwith `inline` ![tracker](https://evil.example/p.png)',
+            impact: 'critical\n<svg onload=alert(1)> `[bad](https://evil.example)`',
+          },
+        ])
+      );
+      fs.writeFileSync(
+        path.join(resultsDir, 'playwright-a11y-violations.json'),
+        JSON.stringify({
+          '/guest?next=[click](https://evil.example)<script>alert(1)</script>`break`\n## Fake Heading': [
+            {
+              id: 'link-name',
+              description: 'Links must have discernible text',
+              impact: 'serious',
+            },
+          ],
+        })
+      );
+
+      const { report, totalViolations } = generateReport({ cwd: tempDir });
+
+      expect(totalViolations).toBe(2);
+      expect(report).not.toContain('<script>');
+      expect(report).not.toContain('</script>');
+      expect(report).not.toContain('<img');
+      expect(report).not.toContain('<svg');
+      expect(report).not.toContain('[link](https://evil.example)');
+      expect(report).not.toContain('[phishing](https://evil.example)');
+      expect(report).not.toContain('![tracker](https://evil.example/p.png)');
+      expect(report).not.toContain('[click](https://evil.example)');
+      expect(report).not.toContain('\n## Fake Heading');
+      expect(report).not.toContain('\r');
+
+      expect(report).toContain('&lt;script&gt;alert\\(1\\)&lt;/script&gt;');
+      expect(report).toContain('\\`id\\`-\\[link\\]\\(https://evil.example\\)');
+      expect(report).toContain('&lt;img src=x onerror=alert\\(1\\)&gt; &amp; see \\[phishing\\]\\(https://evil.example\\)');
+      expect(report).toContain('with \\`inline\\` \\!\\[tracker\\]\\(https://evil.example/p.png\\)');
+      expect(report).toContain('critical &lt;svg onload=alert\\(1\\)&gt; \\`\\[bad\\]\\(https://evil.example\\)\\`');
+      expect(report).toContain(
+        '(`/guest?next=[click\\]\\(https://evil.example\\)&lt;script&gt;alert\\(1\\)&lt;/script&gt;&#96;break&#96; ## Fake Heading`)'
+      );
+    });
   });
 
   describe('standalone CLI exit codes', () => {

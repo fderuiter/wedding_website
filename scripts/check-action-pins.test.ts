@@ -314,7 +314,7 @@ describe('check-action-pins', () => {
     }
   });
 
-  it('enforces AST policies for persist-credentials, PR runtime/write tokens, rollback_environment, and release caches', () => {
+  it('enforces AST policies for persist-credentials, PR runtime/write tokens, || bypasses, write-scoped PR checkouts, rollback_environment, shared release caches, and curl --location webhooks', () => {
     fs.writeFileSync(
       path.join(workflowsDir, 'ci.yml'),
       [
@@ -324,6 +324,7 @@ describe('check-action-pins', () => {
         'jobs:',
         '  verify:',
         '    runs-on: ubuntu-latest',
+        '    timeout-minutes: 10',
         '    permissions:',
         '      contents: read',
         '      pull-requests: write',
@@ -331,6 +332,18 @@ describe('check-action-pins', () => {
         '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
         '      - run: npm ci',
         '      - uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0',
+        '  checkout-only-write:',
+        '    runs-on: ubuntu-latest',
+        '    timeout-minutes: 10',
+        "    if: github.event_name != 'pull_request' || github.ref == 'refs/heads/main'",
+        '    permissions:',
+        '      contents: read',
+        '      issues: write',
+        '    steps:',
+        '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
+        '        with:',
+        '          persist-credentials: false',
+        '      - run: tar --no-same-owner --no-same-permissions -xf /ctx/deps.tar -C /',
         '',
       ].join('\n')
     );
@@ -347,9 +360,18 @@ describe('check-action-pins', () => {
         'jobs:',
         '  deploy:',
         '    runs-on: ubuntu-latest',
+        '    timeout-minutes: 10',
         "    environment: ${{ inputs.rollback_environment || inputs.environment || 'production' }}",
         '    steps:',
-        '      - run: echo "deploy"',
+        '      - env:',
+        '          DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}',
+        '        run: |',
+        '          curl --silent --show-error --location --fail-with-body \\',
+        '            -X POST "$DEPLOY_WEBHOOK_URL" -d "$PAYLOAD"',
+        '      - env:',
+        '          DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}',
+        '        run: |',
+        '          curl -fsSL -X POST "$DEPLOY_WEBHOOK_URL" -H "X-Deploy-Signature-256: sha256=abc"',
         '',
       ].join('\n')
     );
@@ -363,6 +385,7 @@ describe('check-action-pins', () => {
         'jobs:',
         '  build:',
         '    runs-on: ubuntu-latest',
+        '    timeout-minutes: 20',
         '    steps:',
         '      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0',
         '        with:',
@@ -370,6 +393,14 @@ describe('check-action-pins', () => {
         "          key: buildkit-deps-amd64-${{ hashFiles('package-lock.json') }}",
         '          restore-keys: |',
         '            buildkit-deps-amd64-',
+        '      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0',
+        '        with:',
+        '          context: .',
+        '          cache-from: type=gha,scope=app-amd64',
+        '          cache-to: type=gha,scope=app-amd64,mode=max',
+        '      - env:',
+        '          GHA_CACHE_SCOPE: app-amd64',
+        '        run: node scripts/test-container.mjs',
         '      - run: tar -xf /ctx/deps.tar -C /',
         '',
       ].join('\n')
@@ -380,10 +411,38 @@ describe('check-action-pins', () => {
     expect(reasons.some((r) => r.includes('with.persist-credentials: false'))).toBe(true);
     expect(reasons.some((r) => r.includes('crazy-max/ghaction-github-runtime must be guarded'))).toBe(true);
     expect(reasons.some((r) => r.includes('executes npm install/ci on pull_request while holding write permissions'))).toBe(true);
+    expect(
+      reasons.some((r) =>
+        r.includes('Job "checkout-only-write" executes actions/checkout on pull_request while holding write permissions')
+      )
+    ).toBe(true);
+    expect(
+      reasons.some((r) =>
+        r.includes('BuildKit cache archive extraction in ci.yml must run "validate_cache_archive"')
+      )
+    ).toBe(true);
     expect(reasons.some((r) => r.includes('"rollback_environment" must not be exposed on workflow_dispatch'))).toBe(true);
     expect(reasons.some((r) => r.includes('references rollback_environment without guarding on "github.event_name == \'workflow_call\'"'))).toBe(true);
+    expect(
+      reasons.filter((r) => r.includes('invokes curl with "--location" / "-L" redirect following')).length
+    ).toBe(2);
     expect(reasons.some((r) => r.includes('"release-" namespaced cache key'))).toBe(true);
     expect(reasons.some((r) => r.includes('omit prefix "restore-keys"'))).toBe(true);
+    expect(
+      reasons.some((r) =>
+        r.includes('docker/build-push-action "cache-from" in publish-artifact.yml must isolate BuildKit GitHub Actions caches under a "scope=release-..."')
+      )
+    ).toBe(true);
+    expect(
+      reasons.some((r) =>
+        r.includes('docker/build-push-action "cache-to" in publish-artifact.yml must isolate BuildKit GitHub Actions caches under a "scope=release-..."')
+      )
+    ).toBe(true);
+    expect(
+      reasons.some((r) =>
+        r.includes('GHA_CACHE_SCOPE in publish-artifact.yml must use a "release-" namespaced cache scope')
+      )
+    ).toBe(true);
     expect(reasons.some((r) => r.includes('--no-same-owner --no-same-permissions'))).toBe(true);
   });
 

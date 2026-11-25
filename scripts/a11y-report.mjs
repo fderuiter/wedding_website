@@ -30,6 +30,32 @@ function isPlainViolationRecord(item) {
   return Boolean(item) && typeof item === 'object' && !Array.isArray(item);
 }
 
+function normalizeSingleLineField(value) {
+  return String(value ?? '')
+    .replace(/\r\n|\r|\n/g, ' ')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
+}
+
+function escapeViolationMarkdown(value) {
+  return normalizeSingleLineField(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/([`[\]()!*_~])/g, '\\$1');
+}
+
+function escapeViolationRoute(value) {
+  return normalizeSingleLineField(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/`/g, '&#96;')
+    .replace(/!\[/g, '\\!\\[')
+    .replace(/\]\[/g, '\\]\\[')
+    .replace(/\](?=\()/g, '\\]')
+    .replace(/([()])/g, '\\$1');
+}
+
 function parseJestViolations(rawData) {
   if (!Array.isArray(rawData) || !rawData.every(isPlainViolationRecord)) {
     throw new TypeError('Expected JSON array of Jest accessibility violation objects');
@@ -133,8 +159,12 @@ export function generateReport(options = {}) {
         totalViolations += violations.length;
         report += spec.formatViolationHeader(violations.length);
         for (const v of violations) {
-          const routeLabel = spec.includeRouteLabel && v.route ? ` (\`${v.route}\`)` : '';
-          report += `- **${v.id}**${routeLabel}: ${v.description} (${v.impact})\n`;
+          const safeId = escapeViolationMarkdown(v.id);
+          const safeDescription = escapeViolationMarkdown(v.description);
+          const safeImpact = escapeViolationMarkdown(v.impact);
+          const routeLabel =
+            spec.includeRouteLabel && v.route ? ` (\`${escapeViolationRoute(v.route)}\`)` : '';
+          report += `- **${safeId}**${routeLabel}: ${safeDescription} (${safeImpact})\n`;
         }
         report += '\n';
       }

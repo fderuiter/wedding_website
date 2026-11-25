@@ -424,12 +424,30 @@ jobs:
           BASE_IMAGE=$(awk '/^FROM / {print $2; exit}' Dockerfile)
           CTX_DIR=$(mktemp -d)
           trap 'rm -rf "$CTX_DIR"' EXIT
+          validate_cache_archive() {
+            local archive="$1"
+            local allowed_regex="$2"
+            if tar -tvf "$archive" | awk '{print substr($1,1,1)}' | grep -Eq '^[lhbcps]'; then
+              echo "::error::Cache archive '${archive}' contains disallowed link or device entries."
+              exit 1
+            fi
+            while IFS= read -r member; do
+              [ -z "$member" ] && continue
+              local normalized="${member#./}"
+              if [[ "$member" == /* ]] || [[ "$normalized" == *".."* ]] || [[ ! "$normalized" =~ $allowed_regex ]]; then
+                echo "::error::Cache archive '${archive}' contains unexpected path '${member}'."
+                exit 1
+              fi
+            done < <(tar -tf "$archive")
+          }
           HAS_ARCHIVE=false
           if [ -f "$MOUNT_CACHE_DIR/deps/mounts.tar" ]; then
+            validate_cache_archive "$MOUNT_CACHE_DIR/deps/mounts.tar" '^(var(/cache(/apt(/.*)?)?|/lib(/apt(/.*)?)?)?|root(/\.npm(/.*)?)?)$'
             cp "$MOUNT_CACHE_DIR/deps/mounts.tar" "$CTX_DIR/deps.tar"
             HAS_ARCHIVE=true
           fi
           if [ -f "$MOUNT_CACHE_DIR/next/mounts.tar" ]; then
+            validate_cache_archive "$MOUNT_CACHE_DIR/next/mounts.tar" '^app(/\.next(/cache(/.*)?)?)?$'
             cp "$MOUNT_CACHE_DIR/next/mounts.tar" "$CTX_DIR/next.tar"
             HAS_ARCHIVE=true
           fi
@@ -570,12 +588,30 @@ jobs:
           BASE_IMAGE=$(awk '/^FROM / {print $2; exit}' Dockerfile)
           CTX_DIR=$(mktemp -d)
           trap 'rm -rf "$CTX_DIR"' EXIT
+          validate_cache_archive() {
+            local archive="$1"
+            local allowed_regex="$2"
+            if tar -tvf "$archive" | awk '{print substr($1,1,1)}' | grep -Eq '^[lhbcps]'; then
+              echo "::error::Cache archive '${archive}' contains disallowed link or device entries."
+              exit 1
+            fi
+            while IFS= read -r member; do
+              [ -z "$member" ] && continue
+              local normalized="${member#./}"
+              if [[ "$member" == /* ]] || [[ "$normalized" == *".."* ]] || [[ ! "$normalized" =~ $allowed_regex ]]; then
+                echo "::error::Cache archive '${archive}' contains unexpected path '${member}'."
+                exit 1
+              fi
+            done < <(tar -tf "$archive")
+          }
           HAS_ARCHIVE=false
           if [ -f "$MOUNT_CACHE_DIR/deps/mounts.tar" ]; then
+            validate_cache_archive "$MOUNT_CACHE_DIR/deps/mounts.tar" '^(var(/cache(/apt(/.*)?)?|/lib(/apt(/.*)?)?)?|root(/\.npm(/.*)?)?)$'
             cp "$MOUNT_CACHE_DIR/deps/mounts.tar" "$CTX_DIR/deps.tar"
             HAS_ARCHIVE=true
           fi
           if [ -f "$MOUNT_CACHE_DIR/next/mounts.tar" ]; then
+            validate_cache_archive "$MOUNT_CACHE_DIR/next/mounts.tar" '^app(/\.next(/cache(/.*)?)?)?$'
             cp "$MOUNT_CACHE_DIR/next/mounts.tar" "$CTX_DIR/next.tar"
             HAS_ARCHIVE=true
           fi
@@ -891,8 +927,6 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-      pull-requests: write
-      issues: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -920,47 +954,14 @@ jobs:
           path: test-results
       - name: Generate A11y Report
         run: node scripts/a11y-report.mjs --include-static --require-complete
-      - name: Post A11y Report to PR
+      - name: Upload A11y Summary Artifact
         if: always() && !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        timeout-minutes: 2
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          script: |
-            const fs = require('fs');
-            const signature = '<!-- a11y-report -->';
-            const reportPath = 'test-results/a11y-summary.md';
-
-            try {
-              if (fs.existsSync(reportPath)) {
-                const report = fs.readFileSync(reportPath, 'utf8');
-                const commentBody = report.includes(signature) ? report : `${signature}\n${report}`;
-                const comments = await github.paginate(github.rest.issues.listComments, {
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: context.issue.number,
-                  per_page: 100
-                });
-                const existing = comments.find(c => c.body && c.body.includes(signature));
-
-                if (existing) {
-                  await github.rest.issues.updateComment({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    comment_id: existing.id,
-                    body: commentBody
-                  });
-                } else {
-                  await github.rest.issues.createComment({
-                    issue_number: context.issue.number,
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    body: commentBody
-                  });
-                }
-              }
-            } catch (err) {
-              console.warn('Failed to post A11y report via GitHub API:', err);
-            }
+          name: a11y-summary
+          path: test-results/a11y-summary.md
+          retention-days: 1
+          if-no-files-found: ignore
       - name: Write A11y Report to Job Summary
         if: always() && !cancelled()
         run: |
@@ -989,6 +990,85 @@ jobs:
             echo "::error::Upstream accessibility suite job(s) did not succeed: ${FAILED_SUITES[*]}"
             exit 1
           fi
+
+  a11y-report-comment:
+    needs: [a11y-report]
+    if: always() && !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Download A11y Summary Artifact
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: a11y-summary
+          path: /tmp/a11y-summary
+
+      - name: Post A11y Report to PR
+        timeout-minutes: 2
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            const signature = '<!-- a11y-report -->';
+            const reportPath = '/tmp/a11y-summary/a11y-summary.md';
+
+            try {
+              if (!fs.existsSync(reportPath)) {
+                return;
+              }
+              const stat = fs.lstatSync(reportPath);
+              if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 65536) {
+                console.warn('Skipping invalid or oversized a11y-summary.md artifact.');
+                return;
+              }
+              const ALLOWED_LINE_RE = /^(?:|## Accessibility Health Summary|### (?:Component Level \(Jest\)|Page Level \(Playwright\)|Static Showcase \(Playwright Light & Dark\))|✅ [^\r\n<>]{1,300}|❌ Found \d+ violations in (?:components|pages|static showcase)\.|⚠️ Incomplete: [^\r\n<>]{1,300}|- \*\*[^\r\n<>]{1,300}\*\*(?: \(`[^\r\n<>`]{1,500}`\))?: [^\r\n<>]{1,2000} \([^\r\n<>]{1,200}\)|\*\*Status:\*\* Incomplete \([a-z0-9, -]{1,120} results missing\)|\*\*Total Accessibility Violations:\*\* \d+)$/u;
+              const rawLines = fs
+                .readFileSync(reportPath, 'utf8')
+                .replace(/\r\n?/g, '\n')
+                .split('\n');
+              const safeLines = rawLines.filter(
+                line =>
+                  ALLOWED_LINE_RE.test(line) &&
+                  !/(?:^|[^\\])\]\s*\(/.test(line) &&
+                  !/(?:^|[^\\])!\[/.test(line)
+              );
+              if (!safeLines.includes('## Accessibility Health Summary')) {
+                console.warn('Skipping malformed a11y-summary.md artifact.');
+                return;
+              }
+              const sanitizedReport = `${safeLines.join('\n').trim()}\n`;
+              const commentBody = `${signature}\n${sanitizedReport}`;
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                per_page: 100
+              });
+              const existing = comments.find(c => c.body && c.body.includes(signature));
+
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body: commentBody
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  issue_number: context.issue.number,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  body: commentBody
+                });
+              }
+            } catch (err) {
+              console.warn('Failed to post A11y report via GitHub API:', err);
+            }
 
   pages-verify:
     needs: [verify, static-export-build, storybook-build]
