@@ -53,16 +53,20 @@ jest.mock('@/lib/prisma', () => ({
 }));
 
 import { POST as uploadGuestPhoto } from '../route';
+import { GUEST_COOKIE, signGuestToken } from '@/core/auth/guest.server';
 import {
   GUEST_PHOTO_COOKIE,
   signPhotoUploadSessionToken,
 } from '@/core/auth/photoUploadToken';
+import { createVerifiedSocketIpHeaders } from '@/lib/socket-ip-boundary.js';
+import { resetRateLimitsForTesting } from '@/utils/rateLimit';
 
 describe('POST /api/guest/photos/upload (Scoped Auth, Sanitization, & Auto-Approval)', () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    resetRateLimitsForTesting();
     process.env = {
       ...originalEnv,
       GUEST_SESSION_SECRET: 'upload-route-test-secret-at-least-32-characters',
@@ -102,6 +106,7 @@ describe('POST /api/guest/photos/upload (Scoped Auth, Sanitization, & Auto-Appro
   });
 
   afterAll(() => {
+    resetRateLimitsForTesting();
     process.env = originalEnv;
   });
 
@@ -244,5 +249,48 @@ describe('POST /api/guest/photos/upload (Scoped Auth, Sanitization, & Auto-Appro
     const rotatedReq = await buildScopedUploadRequest(formData, 1);
     const rotatedRes = await uploadGuestPhoto(rotatedReq);
     expect(rotatedRes.status).toBe(401);
+  });
+
+  it('caps per-IP uploads at 20 requests per minute across rotated guest_auth jti tokens', async () => {
+    const buildGuestJtiUploadRequest = async (ip: string, jti: string): Promise<NextRequest> => {
+      const token = await signGuestToken({ guest: true, jti });
+      const formData = new FormData();
+      formData.append(
+        'files',
+        new File([Buffer.from('raw-image-bytes')], 'party.jpg', { type: 'image/jpeg' })
+      );
+      const req = new NextRequest('http://localhost:3000/api/guest/photos/upload', {
+        method: 'POST',
+        headers: createVerifiedSocketIpHeaders(ip, {
+          host: 'localhost:3000',
+          cookie: `${GUEST_COOKIE}=${token}`,
+        }),
+      });
+      return Object.assign(req, {
+        formData: async () => formData,
+      });
+    };
+
+    // Rotate a brand-new guest_auth jti on every request so per-session limit (15) is never hit
+    for (let i = 1; i <= 20; i += 1) {
+      const req = await buildGuestJtiUploadRequest('203.0.113.44', `rotated-jti-${i}`);
+      const res = await uploadGuestPhoto(req);
+      expect(res.status).toBe(201);
+    }
+    expect(mockSanitizeImage).toHaveBeenCalledTimes(20);
+
+    // 21st request from the same IP with another fresh jti is blocked by ipLimit: 20
+    const blockedReq = await buildGuestJtiUploadRequest('203.0.113.44', 'rotated-jti-21');
+    const blockedRes = await uploadGuestPhoto(blockedReq);
+    const blockedJson = await blockedRes.json();
+    expect(blockedRes.status).toBe(429);
+    expect(blockedJson.success).toBe(false);
+    expect(mockSanitizeImage).toHaveBeenCalledTimes(20);
+
+    // A distinct client IP remains unaffected
+    const otherIpReq = await buildGuestJtiUploadRequest('203.0.113.45', 'distinct-ip-jti-1');
+    const otherIpRes = await uploadGuestPhoto(otherIpReq);
+    expect(otherIpRes.status).toBe(201);
+    expect(mockSanitizeImage).toHaveBeenCalledTimes(21);
   });
 });

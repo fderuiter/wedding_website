@@ -1,7 +1,25 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import sharp from 'sharp';
 
-type HeicDecodeFn = typeof import('heic-decode');
+interface HeicDecodedFrame {
+  width: number;
+  height: number;
+  data: Uint8ClampedArray;
+}
+
+interface HeicDecodableFrame {
+  width: number;
+  height: number;
+  decode(): Promise<HeicDecodedFrame>;
+}
+
+interface HeicDecodableImages extends Array<HeicDecodableFrame> {
+  dispose?: () => void;
+}
+
+interface HeicDecoder {
+  all(_input: { buffer: Uint8Array }): Promise<HeicDecodableImages>;
+}
 
 interface WorkerSuccessResult {
   id?: number;
@@ -44,17 +62,27 @@ export interface HeicSpatialExtent {
 export const MAX_WORKER_INPUT_BYTES = 10 * 1024 * 1024;
 export const MAX_IMAGE_PIXELS = 64000000;
 export const MAX_IMAGE_DIMENSION = 12000;
+export const MAX_ISOBMFF_BOX_DEPTH = 6;
 
-let cachedHeicDecoderPromise: Promise<HeicDecodeFn> | null = null;
+let cachedHeicDecoderPromise: Promise<HeicDecoder> | null = null;
 let heicDecoderLoaded = false;
 
-function getHeicDecoder(): Promise<HeicDecodeFn> {
+function getHeicDecoder(): Promise<HeicDecoder> {
   if (!cachedHeicDecoderPromise) {
     cachedHeicDecoderPromise = import('heic-decode')
       .then((heicDecodeModule) => {
         heicDecoderLoaded = true;
-        const candidate = heicDecodeModule as unknown as HeicDecodeFn | { default: HeicDecodeFn };
-        return typeof candidate === 'function' ? candidate : candidate.default;
+        const candidate = heicDecodeModule as unknown as {
+          all?: HeicDecoder['all'];
+          default?: { all?: HeicDecoder['all'] };
+        };
+        if (typeof candidate.all === 'function') {
+          return { all: candidate.all.bind(candidate) };
+        }
+        if (candidate.default && typeof candidate.default.all === 'function') {
+          return { all: candidate.default.all.bind(candidate.default) };
+        }
+        throw new Error('HEIC decoder is missing all() frame inspection support');
       })
       .catch((err) => {
         cachedHeicDecoderPromise = null;
@@ -124,8 +152,10 @@ function collectIsobmffIspeExtents(
   depth: number,
   extents: HeicSpatialExtent[]
 ): void {
-  if (depth > 6) {
-    return;
+  if (depth > MAX_ISOBMFF_BOX_DEPTH) {
+    throw new Error(
+      `ISOBMFF box nesting depth (${depth}) exceeds maximum allowed limit (${MAX_ISOBMFF_BOX_DEPTH})`
+    );
   }
 
   let pos = start;
@@ -280,8 +310,27 @@ export async function processImageWorkerBuffer(
       assertWithinImageDimensionLimits(extent.width, extent.height, 'HEIC image');
     }
 
-    const decodeHeic = await getHeicDecoder();
-    const decoded = await decodeHeic({ buffer: uint8View });
+    const heicDecoder = await getHeicDecoder();
+    const images = await heicDecoder.all({ buffer: uint8View });
+    let decoded: HeicDecodedFrame;
+    try {
+      if (!Array.isArray(images) || images.length === 0) {
+        throw new Error('Failed to decode primary HEIC frame');
+      }
+      for (const frame of images) {
+        assertWithinImageDimensionLimits(frame?.width ?? 0, frame?.height ?? 0, 'HEIC frame');
+      }
+      const primaryFrame = images[0];
+      if (!primaryFrame || typeof primaryFrame.decode !== 'function') {
+        throw new Error('Failed to decode primary HEIC frame');
+      }
+      decoded = await primaryFrame.decode();
+    } finally {
+      if (typeof images?.dispose === 'function') {
+        images.dispose();
+      }
+    }
+
     if (
       !decoded ||
       !decoded.width ||

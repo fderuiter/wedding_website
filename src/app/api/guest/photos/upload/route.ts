@@ -187,4 +187,4 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     },
     { status: 201 }
   );
-}, { limit: 15, windowMs: 60 * 1000, keyPrefix: 'guest-photo-upload' });
+}, { limit: 15, ipLimit: 20, windowMs: 60 * 1000, keyPrefix: 'guest-photo-upload' });
