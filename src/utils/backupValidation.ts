@@ -535,7 +535,37 @@ const BackupSnapshotVersionSchema = z.object({
   author: z.string().max(255).nullable().optional(),
 });
 
-// Full database backup structure schema across the 15 domain Prisma models (excludes ephemeral AuthLockout rows)
+// HouseholdMember database-aligned schema
+export const BackupHouseholdMemberSchema = z.object({
+  id: z.string().min(1).max(255),
+  invitationCodeId: z.string().min(1).max(255),
+  firstName: z.string().nullable().optional(),
+  lastName: z.string().nullable().optional(),
+  fullName: z.string(),
+  role: z.enum(['PRIMARY', 'PARTNER', 'CHILD', 'PLUS_ONE']).optional(),
+  email: z.string().max(255).nullable().optional(),
+  phone: z.string().max(100).nullable().optional(),
+  dietaryNotes: z.string().nullable().optional(),
+  tags: z.array(z.string()).optional(),
+  displayOrder: z.number().int().min(0).optional(),
+  seatNumber: z.number().int().nullable().optional(),
+  createdAt: z.date().optional(),
+  updatedAt: z.date().optional(),
+});
+
+// SubEventMemberRsvp database-aligned schema
+export const BackupSubEventMemberRsvpSchema = z.object({
+  id: z.string().min(1).max(255),
+  subEventRsvpId: z.string().min(1).max(255),
+  householdMemberId: z.string().min(1).max(255),
+  status: z.string().min(1).max(100).optional(),
+  mealOptionId: z.string().max(255).nullable().optional(),
+  dietaryNotes: z.string().nullable().optional(),
+  createdAt: z.date().optional(),
+  updatedAt: z.date().optional(),
+});
+
+// Full database backup structure schema across the 17 domain Prisma models (excludes ephemeral AuthLockout rows)
 export const DatabaseBackupSchema = z.object({
   version: z.string().optional(),
   schemaVersion: z.string().optional(),
@@ -545,6 +575,7 @@ export const DatabaseBackupSchema = z.object({
   media: z.array(BackupMediaSchema).optional(),
   seatingTable: z.array(BackupSeatingTableSchema).optional(),
   invitationCode: z.array(BackupInvitationCodeSchema).optional(),
+  householdMember: z.array(BackupHouseholdMemberSchema).optional(),
   weddingPartyMember: z.array(BackupWeddingPartyMemberSchema).optional(),
   attraction: z.array(BackupAttractionSchema).optional(),
   registryItem: z.array(BackupRegistryItemSchema),
@@ -552,6 +583,7 @@ export const DatabaseBackupSchema = z.object({
   subEvent: z.array(BackupSubEventSchema).optional(),
   subEventAccess: z.array(BackupSubEventAccessSchema).optional(),
   subEventRsvp: z.array(BackupSubEventRsvpSchema).optional(),
+  subEventMemberRsvp: z.array(BackupSubEventMemberRsvpSchema).optional(),
   broadcastMessage: z.array(BackupBroadcastMessageSchema).optional(),
   broadcastRecipient: z.array(BackupBroadcastRecipientSchema).optional(),
   snapshotVersion: z.array(BackupSnapshotVersionSchema).optional(),

@@ -1,5 +1,6 @@
 import { ARCHETYPE_PRESETS, type ArchetypeId } from '@/lib/sampleData/archetypes';
 import { DEFAULT_MODULE_CONFIG } from '@/lib/modules';
+import { splitMemberFullName } from '@/utils/invitationValidation';
 import { createDemoSvgDataUrl } from './svgAssets';
 import {
   STATIC_DEMO_BACKUP_SCHEMA_VERSION,
@@ -10,17 +11,135 @@ import {
   type DemoBroadcastRecipientRecord,
   type DemoContentNodeRecord,
   type DemoContributorRecord,
+  type DemoHouseholdMemberRecord,
+  type DemoHouseholdRole,
   type DemoInvitationCodeRecord,
   type DemoMediaRecord,
   type DemoRegistryItemRecord,
   type DemoSeatingTableRecord,
   type DemoSnapshotVersionRecord,
   type DemoSubEventAccessRecord,
+  type DemoSubEventMemberRsvpRecord,
   type DemoSubEventRecord,
   type DemoSubEventRsvpRecord,
   type DemoWeddingPartyMemberRecord,
   type StaticDemoSnapshot,
 } from './types';
+
+export function synthesizeDemoHouseholdMembersFromInvitations(
+  invitations: DemoInvitationCodeRecord[],
+  nowIso = '2026-05-01T12:00:00.000Z',
+): DemoHouseholdMemberRecord[] {
+  const members: DemoHouseholdMemberRecord[] = [];
+  for (const inv of invitations) {
+    const primaryParts = splitMemberFullName(inv.guestName);
+    const primaryPhone =
+      inv.extraFields && typeof inv.extraFields === 'object'
+        ? (typeof inv.extraFields.phone === 'string' && inv.extraFields.phone.trim()) ||
+          (typeof inv.extraFields.mobile === 'string' && inv.extraFields.mobile.trim()) ||
+          null
+        : null;
+    members.push({
+      id: `${inv.id}-member-1`,
+      invitationCodeId: inv.id,
+      firstName: primaryParts.firstName,
+      lastName: primaryParts.lastName,
+      fullName: inv.guestName,
+      role: 'PRIMARY',
+      email: inv.email,
+      phone: primaryPhone,
+      dietaryNotes: inv.dietaryNotes,
+      tags: [...(inv.partyTags ?? [])],
+      displayOrder: 0,
+      seatNumber: inv.tableId ? inv.seatNumber : null,
+      createdAt: inv.createdAt || nowIso,
+      updatedAt: inv.updatedAt || nowIso,
+    });
+
+    const companionCount = Math.max(0, inv.plusOneAllocations || 0);
+    const namedCompanion = [inv.plusOneFirstName, inv.plusOneLastName]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+    for (let i = 0; i < companionCount; i += 1) {
+      const fullName =
+        i === 0 && namedCompanion
+          ? namedCompanion
+          : companionCount === 1
+            ? `${inv.guestName} (Plus One)`
+            : `${inv.guestName} (Guest ${i + 1})`;
+      const parts = splitMemberFullName(fullName);
+      const seat =
+        inv.tableId && Array.isArray(inv.plusOneSeatNumbers)
+          ? (inv.plusOneSeatNumbers[i] ?? null)
+          : null;
+      members.push({
+        id: `${inv.id}-member-${i + 2}`,
+        invitationCodeId: inv.id,
+        firstName: i === 0 && inv.plusOneFirstName ? inv.plusOneFirstName : parts.firstName,
+        lastName: i === 0 && inv.plusOneLastName ? inv.plusOneLastName : parts.lastName,
+        fullName,
+        role: i === 0 && namedCompanion ? 'PARTNER' : 'PLUS_ONE',
+        email: null,
+        phone: null,
+        dietaryNotes: null,
+        tags: [],
+        displayOrder: i + 1,
+        seatNumber: seat,
+        createdAt: inv.createdAt || nowIso,
+        updatedAt: inv.updatedAt || nowIso,
+      });
+    }
+  }
+  return members;
+}
+
+export function synthesizeDemoSubEventMemberRsvps(
+  rsvps: DemoSubEventRsvpRecord[],
+  members: DemoHouseholdMemberRecord[],
+  nowIso = '2026-05-01T12:00:00.000Z',
+): DemoSubEventMemberRsvpRecord[] {
+  const byInvite = new Map<string, DemoHouseholdMemberRecord[]>();
+  for (const m of members) {
+    const list = byInvite.get(m.invitationCodeId) ?? [];
+    list.push(m);
+    byInvite.set(m.invitationCodeId, list);
+  }
+  byInvite.forEach((list) => list.sort((a, b) => a.displayOrder - b.displayOrder));
+
+  const out: DemoSubEventMemberRsvpRecord[] = [];
+  for (const rsvp of rsvps) {
+    const inviteMembers = byInvite.get(rsvp.invitationCodeId) ?? [];
+    inviteMembers.forEach((member, idx) => {
+      const status =
+        rsvp.status === 'declined'
+          ? 'declined'
+          : rsvp.status === 'attending'
+            ? idx <= (rsvp.plusOneCount ?? 0)
+              ? 'attending'
+              : 'declined'
+            : 'pending';
+      const mealOptionId =
+        status === 'attending' && Array.isArray(rsvp.mealSelections) && rsvp.mealSelections[idx]
+          ? rsvp.mealSelections[idx]
+          : null;
+      out.push({
+        id: `mrsvp-${rsvp.id}-${member.id}`,
+        subEventRsvpId: rsvp.id,
+        householdMemberId: member.id,
+        status,
+        mealOptionId,
+        dietaryNotes:
+          status === 'attending'
+            ? member.dietaryNotes || (idx === 0 ? rsvp.dietaryNotes : null)
+            : null,
+        createdAt: rsvp.createdAt || nowIso,
+        updatedAt: rsvp.updatedAt || nowIso,
+      });
+    });
+  }
+  return out;
+}
 
 interface ArchetypeMeta {
   partner1Name: string;
@@ -208,12 +327,17 @@ export function buildArchetypeSeedSnapshot(
     }
   }
 
+  const householdMember: DemoHouseholdMemberRecord[] = [];
   const invitationCode: DemoInvitationCodeRecord[] = preset.guests.map((guest, idx) => {
     const resolvedTableId = guest.seatTableName
       ? (tableIdByName.get(guest.seatTableName) ?? null)
       : null;
     const primarySeat = guest.seatNumber ?? null;
-    const plusOneCount = guest.plusOnesAllowed ?? 0;
+    const presetMembers = Array.isArray(guest.members) ? guest.members : [];
+    const plusOneCount = Math.max(
+      guest.plusOnesAllowed ?? 0,
+      presetMembers.length > 1 ? presetMembers.length - 1 : 0,
+    );
     const plusOneSeatNumbers: number[] = [];
     if (resolvedTableId && primarySeat !== null && plusOneCount > 0) {
       const tableCap = tableById.get(resolvedTableId)?.capacity ?? 8;
@@ -227,8 +351,86 @@ export function buildArchetypeSeedSnapshot(
       }
     }
 
+    const invId = `inv-${resolvedArchetype}-${idx + 1}`;
+    const defaultDietary = idx === 0 ? 'Vegetarian' : idx === 1 ? 'Gluten-free' : '';
+    const firstSecondaryPreset = presetMembers.find((m) => m.role !== 'PRIMARY');
+    const firstSecondaryParts = firstSecondaryPreset
+      ? splitMemberFullName(firstSecondaryPreset.fullName)
+      : null;
+
+    if (presetMembers.length > 0) {
+      let secIdx = 0;
+      presetMembers.forEach((pm, mIdx) => {
+        const parts = splitMemberFullName(pm.fullName);
+        const role: DemoHouseholdRole =
+          pm.role === 'PRIMARY' || pm.role === 'PARTNER' || pm.role === 'CHILD'
+            ? pm.role
+            : 'PLUS_ONE';
+        const seat =
+          resolvedTableId === null
+            ? null
+            : mIdx === 0
+              ? primarySeat
+              : (plusOneSeatNumbers[secIdx++] ?? null);
+        householdMember.push({
+          id: `${invId}-member-${mIdx + 1}`,
+          invitationCodeId: invId,
+          firstName: parts.firstName,
+          lastName: parts.lastName,
+          fullName: pm.fullName,
+          role,
+          email: pm.email ?? (mIdx === 0 ? `guest${idx + 1}@example.org` : null),
+          phone: pm.phone ?? null,
+          dietaryNotes: pm.dietaryNotes ?? (mIdx === 0 ? defaultDietary || null : null),
+          tags: pm.tags ? [...pm.tags] : mIdx === 0 ? [...guest.partyTags] : [],
+          displayOrder: mIdx,
+          seatNumber: seat,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        });
+      });
+    } else {
+      const primaryParts = splitMemberFullName(guest.guestName);
+      householdMember.push({
+        id: `${invId}-member-1`,
+        invitationCodeId: invId,
+        firstName: primaryParts.firstName,
+        lastName: primaryParts.lastName,
+        fullName: guest.guestName,
+        role: 'PRIMARY',
+        email: `guest${idx + 1}@example.org`,
+        phone: null,
+        dietaryNotes: defaultDietary || null,
+        tags: [...guest.partyTags],
+        displayOrder: 0,
+        seatNumber: resolvedTableId ? primarySeat : null,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      });
+      for (let cIdx = 0; cIdx < plusOneCount; cIdx += 1) {
+        const compName = cIdx === 0 ? 'Sam Guest' : `${guest.guestName} (Guest ${cIdx + 1})`;
+        const compParts = splitMemberFullName(compName);
+        householdMember.push({
+          id: `${invId}-member-${cIdx + 2}`,
+          invitationCodeId: invId,
+          firstName: compParts.firstName,
+          lastName: compParts.lastName,
+          fullName: compName,
+          role: cIdx === 0 ? 'PARTNER' : 'PLUS_ONE',
+          email: null,
+          phone: null,
+          dietaryNotes: null,
+          tags: [],
+          displayOrder: cIdx + 1,
+          seatNumber: resolvedTableId ? (plusOneSeatNumbers[cIdx] ?? null) : null,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        });
+      }
+    }
+
     return {
-      id: `inv-${resolvedArchetype}-${idx + 1}`,
+      id: invId,
       code: guest.code,
       guestName: guest.guestName,
       email: `guest${idx + 1}@example.org`,
@@ -238,10 +440,12 @@ export function buildArchetypeSeedSnapshot(
       state: meta.venueState,
       zipCode: meta.venueZip,
       country: 'US',
-      dietaryNotes: idx === 0 ? 'Vegetarian' : idx === 1 ? 'Gluten-free' : '',
+      dietaryNotes: defaultDietary,
       plusOneAllocations: plusOneCount,
-      plusOneFirstName: plusOneCount > 0 ? 'Sam' : null,
-      plusOneLastName: plusOneCount > 0 ? 'Guest' : null,
+      plusOneFirstName:
+        plusOneCount > 0 ? (firstSecondaryParts?.firstName ?? 'Sam') : null,
+      plusOneLastName:
+        plusOneCount > 0 ? (firstSecondaryParts?.lastName ?? 'Guest') : null,
       householdName: guest.householdName,
       partyGroup: guest.partyGroup,
       partyTags: [...guest.partyTags],
@@ -505,6 +709,12 @@ export function buildArchetypeSeedSnapshot(
       }
     });
   });
+
+  const subEventMemberRsvp = synthesizeDemoSubEventMemberRsvps(
+    subEventRsvp,
+    householdMember,
+    nowIso,
+  );
 
   const curatedPhotoMediaId = `media-photo-curated-${resolvedArchetype}-1`;
   const curatedPhotoUrl = createDemoSvgDataUrl(
@@ -793,6 +1003,7 @@ export function buildArchetypeSeedSnapshot(
     media,
     seatingTable,
     invitationCode,
+    householdMember,
     weddingPartyMember,
     attraction,
     registryItem,
@@ -800,6 +1011,7 @@ export function buildArchetypeSeedSnapshot(
     subEvent,
     subEventAccess,
     subEventRsvp,
+    subEventMemberRsvp,
     broadcastMessage,
     broadcastRecipient,
     snapshotVersion,

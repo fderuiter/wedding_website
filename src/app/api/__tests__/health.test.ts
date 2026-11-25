@@ -23,11 +23,13 @@ describe('Health and Readiness Endpoints', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    (process.env as Record<string, string | undefined>).NODE_ENV = originalNodeEnv;
+    (process.env as Record<string, string | undefined>).NODE_ENV =
+      originalNodeEnv;
   });
 
   afterAll(() => {
-    (process.env as Record<string, string | undefined>).NODE_ENV = originalNodeEnv;
+    (process.env as Record<string, string | undefined>).NODE_ENV =
+      originalNodeEnv;
   });
 
   describe('GET /api/live (Process Liveness)', () => {
@@ -55,8 +57,11 @@ describe('Health and Readiness Endpoints', () => {
     });
 
     it('returns 503 with status, database, and timestamp in development mode when database query fails', async () => {
-      (process.env as Record<string, string | undefined>).NODE_ENV = 'development';
-      mockQueryRaw.mockRejectedValue(new Error('connect ECONNREFUSED 127.0.0.1:5432'));
+      (process.env as Record<string, string | undefined>).NODE_ENV =
+        'development';
+      mockQueryRaw.mockRejectedValue(
+        new Error('connect ECONNREFUSED 127.0.0.1:5432'),
+      );
       const res = await healthRoute();
       expect(res.status).toBe(503);
       expect(res.headers.get('Cache-Control')).toBe('no-store');
@@ -69,11 +74,12 @@ describe('Health and Readiness Endpoints', () => {
     });
 
     it('preserves status, database, and timestamp with sanitized error text in production mode without leaking driver strings', async () => {
-      (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+      (process.env as Record<string, string | undefined>).NODE_ENV =
+        'production';
       mockQueryRaw.mockRejectedValue(
         new Error(
-          'FATAL: password authentication failed for postgresql://wedding:supersecret@10.0.0.12:5432/wedding'
-        )
+          'FATAL: password authentication failed for postgresql://wedding:supersecret@10.0.0.12:5432/wedding',
+        ),
       );
       const res = await healthRoute();
       expect(res.status).toBe(503);
@@ -91,16 +97,23 @@ describe('Health and Readiness Endpoints', () => {
   });
 
   describe('GET /api/ready (Readiness)', () => {
-    const coreTableRows = REQUIRED_SCHEMA_TABLES.map((table_name) => ({ table_name }));
-    const appliedMigrationRows = REQUIRED_MIGRATION_NAMES.map((migration_name) => ({
-      migration_name,
-      finished_at: '2026-11-22T00:00:00.000Z',
-      rolled_back_at: null,
+    const coreTableRows = REQUIRED_SCHEMA_TABLES.map((table_name) => ({
+      table_name,
     }));
+    const appliedMigrationRows = REQUIRED_MIGRATION_NAMES.map(
+      (migration_name) => ({
+        migration_name,
+        finished_at: '2026-11-22T00:00:00.000Z',
+        rolled_back_at: null,
+      }),
+    );
 
     it('returns 200 OK on an unseeded migrated database when core tables and applied migrations exist', async () => {
       mockQueryRaw
-        .mockResolvedValueOnce([...coreTableRows, { table_name: '_prisma_migrations' }])
+        .mockResolvedValueOnce([
+          ...coreTableRows,
+          { table_name: '_prisma_migrations' },
+        ])
         .mockResolvedValueOnce(appliedMigrationRows);
 
       const res = await readyRoute();
@@ -130,7 +143,10 @@ describe('Health and Readiness Endpoints', () => {
         'postgresql://wedding:wedding123@localhost:5432/wedding?schema=custom_tenant';
       try {
         mockQueryRaw
-          .mockResolvedValueOnce([...coreTableRows, { table_name: '_prisma_migrations' }])
+          .mockResolvedValueOnce([
+            ...coreTableRows,
+            { table_name: '_prisma_migrations' },
+          ])
           .mockResolvedValueOnce(appliedMigrationRows);
 
         const res = await readyRoute();
@@ -144,8 +160,12 @@ describe('Health and Readiness Endpoints', () => {
         expect(tablesSqlArg.values).toEqual(['custom_tenant']);
         expect(tablesSqlArg.sql).not.toContain('current_schema()');
 
-        const migrationsSqlArg = mockQueryRaw.mock.calls[1]?.[0] as { sql?: string };
-        expect(migrationsSqlArg.sql).toContain('FROM "custom_tenant"."_prisma_migrations"');
+        const migrationsSqlArg = mockQueryRaw.mock.calls[1]?.[0] as {
+          sql?: string;
+        };
+        expect(migrationsSqlArg.sql).toContain(
+          'FROM "custom_tenant"."_prisma_migrations"',
+        );
       } finally {
         if (originalDbUrl === undefined) {
           delete process.env.DATABASE_URL;
@@ -157,7 +177,10 @@ describe('Health and Readiness Endpoints', () => {
 
     it('returns 200 OK when a previously failed migration was rolled back and subsequent migrations succeeded', async () => {
       mockQueryRaw
-        .mockResolvedValueOnce([...coreTableRows, { table_name: '_prisma_migrations' }])
+        .mockResolvedValueOnce([
+          ...coreTableRows,
+          { table_name: '_prisma_migrations' },
+        ])
         .mockResolvedValueOnce([
           ...appliedMigrationRows,
           {
@@ -175,7 +198,7 @@ describe('Health and Readiness Endpoints', () => {
     });
 
     it('returns 200 OK during N-1 rollout or rollback when _prisma_migrations includes finished and unfinished forward migrations from an N+1 release', async () => {
-      expect(REQUIRED_MIGRATION_NAMES).toHaveLength(47);
+      expect(REQUIRED_MIGRATION_NAMES).toHaveLength(48);
       const migrationsWithForwardRows = [
         ...appliedMigrationRows,
         {
@@ -195,9 +218,13 @@ describe('Health and Readiness Endpoints', () => {
         },
       ];
 
-      (process.env as Record<string, string | undefined>).NODE_ENV = 'development';
+      (process.env as Record<string, string | undefined>).NODE_ENV =
+        'development';
       mockQueryRaw
-        .mockResolvedValueOnce([...coreTableRows, { table_name: '_prisma_migrations' }])
+        .mockResolvedValueOnce([
+          ...coreTableRows,
+          { table_name: '_prisma_migrations' },
+        ])
         .mockResolvedValueOnce(migrationsWithForwardRows);
 
       const devRes = await readyRoute();
@@ -208,10 +235,14 @@ describe('Health and Readiness Endpoints', () => {
       expect(devJson.database).toBe('connected');
       expect(mockQueryRaw).toHaveBeenCalledTimes(2);
 
-      (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+      (process.env as Record<string, string | undefined>).NODE_ENV =
+        'production';
       mockQueryRaw.mockReset();
       mockQueryRaw
-        .mockResolvedValueOnce([...coreTableRows, { table_name: '_prisma_migrations' }])
+        .mockResolvedValueOnce([
+          ...coreTableRows,
+          { table_name: '_prisma_migrations' },
+        ])
         .mockResolvedValueOnce(migrationsWithForwardRows);
 
       const prodRes = await readyRoute();
@@ -227,7 +258,10 @@ describe('Health and Readiness Endpoints', () => {
       const retriedMigrationName = REQUIRED_MIGRATION_NAMES[0];
 
       mockQueryRaw
-        .mockResolvedValueOnce([...coreTableRows, { table_name: '_prisma_migrations' }])
+        .mockResolvedValueOnce([
+          ...coreTableRows,
+          { table_name: '_prisma_migrations' },
+        ])
         .mockResolvedValueOnce([
           {
             migration_name: retriedMigrationName,
@@ -244,10 +278,14 @@ describe('Health and Readiness Endpoints', () => {
       expect(retryJson.status).toBe('ready');
       expect(retryJson.database).toBe('connected');
 
-      (process.env as Record<string, string | undefined>).NODE_ENV = 'development';
+      (process.env as Record<string, string | undefined>).NODE_ENV =
+        'development';
       mockQueryRaw.mockReset();
       mockQueryRaw
-        .mockResolvedValueOnce([...coreTableRows, { table_name: '_prisma_migrations' }])
+        .mockResolvedValueOnce([
+          ...coreTableRows,
+          { table_name: '_prisma_migrations' },
+        ])
         .mockResolvedValueOnce(
           appliedMigrationRows.map((row) =>
             row.migration_name === retriedMigrationName
@@ -256,8 +294,8 @@ describe('Health and Readiness Endpoints', () => {
                 finished_at: null,
                 rolled_back_at: '2026-11-22T01:00:00.000Z',
               }
-              : row
-          )
+              : row,
+          ),
         );
 
       const rolledBackOnlyRes = await readyRoute();
@@ -266,19 +304,27 @@ describe('Health and Readiness Endpoints', () => {
       const rolledBackOnlyJson = await rolledBackOnlyRes.json();
       expect(rolledBackOnlyJson.status).toBe('unhealthy');
       expect(rolledBackOnlyJson.database).toBe('connected');
-      expect(rolledBackOnlyJson.error).toContain('Missing required database migrations');
+      expect(rolledBackOnlyJson.error).toContain(
+        'Missing required database migrations',
+      );
       expect(rolledBackOnlyJson.error).toContain(retriedMigrationName);
     });
 
-    it('returns 503 Service Unavailable whenever any of the 16 required schema tables is missing and masks names in production', async () => {
-      expect(REQUIRED_SCHEMA_TABLES).toHaveLength(16);
+    it('returns 503 Service Unavailable whenever any of the 18 required schema tables is missing and masks names in production', async () => {
+      expect(REQUIRED_SCHEMA_TABLES).toHaveLength(18);
 
       for (const omittedTable of REQUIRED_SCHEMA_TABLES) {
-        const subsetTables = coreTableRows.filter((row) => row.table_name !== omittedTable);
+        const subsetTables = coreTableRows.filter(
+          (row) => row.table_name !== omittedTable,
+        );
 
-        (process.env as Record<string, string | undefined>).NODE_ENV = 'development';
+        (process.env as Record<string, string | undefined>).NODE_ENV =
+          'development';
         mockQueryRaw.mockReset();
-        mockQueryRaw.mockResolvedValueOnce([...subsetTables, { table_name: '_prisma_migrations' }]);
+        mockQueryRaw.mockResolvedValueOnce([
+          ...subsetTables,
+          { table_name: '_prisma_migrations' },
+        ]);
 
         const devRes = await readyRoute();
         expect(devRes.status).toBe(503);
@@ -289,9 +335,13 @@ describe('Health and Readiness Endpoints', () => {
         expect(devJson.error).toContain('Missing required database tables');
         expect(devJson.error).toContain(omittedTable);
 
-        (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+        (process.env as Record<string, string | undefined>).NODE_ENV =
+          'production';
         mockQueryRaw.mockReset();
-        mockQueryRaw.mockResolvedValueOnce([...subsetTables, { table_name: '_prisma_migrations' }]);
+        mockQueryRaw.mockResolvedValueOnce([
+          ...subsetTables,
+          { table_name: '_prisma_migrations' },
+        ]);
 
         const prodRes = await readyRoute();
         expect(prodRes.status).toBe(503);
@@ -303,18 +353,22 @@ describe('Health and Readiness Endpoints', () => {
       }
     });
 
-    it('returns 503 Service Unavailable whenever any of the 47 required migrations is missing and masks names in production', async () => {
-      expect(REQUIRED_MIGRATION_NAMES).toHaveLength(47);
+    it('returns 503 Service Unavailable whenever any of the 48 required migrations is missing and masks names in production', async () => {
+      expect(REQUIRED_MIGRATION_NAMES).toHaveLength(48);
 
       for (const omittedMigration of REQUIRED_MIGRATION_NAMES) {
         const subsetMigrations = appliedMigrationRows.filter(
-          (row) => row.migration_name !== omittedMigration
+          (row) => row.migration_name !== omittedMigration,
         );
 
-        (process.env as Record<string, string | undefined>).NODE_ENV = 'development';
+        (process.env as Record<string, string | undefined>).NODE_ENV =
+          'development';
         mockQueryRaw.mockReset();
         mockQueryRaw
-          .mockResolvedValueOnce([...coreTableRows, { table_name: '_prisma_migrations' }])
+          .mockResolvedValueOnce([
+            ...coreTableRows,
+            { table_name: '_prisma_migrations' },
+          ])
           .mockResolvedValueOnce(subsetMigrations);
 
         const devRes = await readyRoute();
@@ -326,10 +380,14 @@ describe('Health and Readiness Endpoints', () => {
         expect(devJson.error).toContain('Missing required database migrations');
         expect(devJson.error).toContain(omittedMigration);
 
-        (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+        (process.env as Record<string, string | undefined>).NODE_ENV =
+          'production';
         mockQueryRaw.mockReset();
         mockQueryRaw
-          .mockResolvedValueOnce([...coreTableRows, { table_name: '_prisma_migrations' }])
+          .mockResolvedValueOnce([
+            ...coreTableRows,
+            { table_name: '_prisma_migrations' },
+          ])
           .mockResolvedValueOnce(subsetMigrations);
 
         const prodRes = await readyRoute();
@@ -356,7 +414,8 @@ describe('Health and Readiness Endpoints', () => {
     });
 
     it('masks missing table details in production on a zero-table database', async () => {
-      (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+      (process.env as Record<string, string | undefined>).NODE_ENV =
+        'production';
       mockQueryRaw.mockResolvedValueOnce([]);
 
       const res = await readyRoute();
@@ -367,10 +426,15 @@ describe('Health and Readiness Endpoints', () => {
     });
 
     it('returns 503 Service Unavailable when _prisma_migrations contains a failed migration', async () => {
-      (process.env as Record<string, string | undefined>).NODE_ENV = 'development';
-      const failedMigrationName = REQUIRED_MIGRATION_NAMES[REQUIRED_MIGRATION_NAMES.length - 1];
+      (process.env as Record<string, string | undefined>).NODE_ENV =
+        'development';
+      const failedMigrationName =
+        REQUIRED_MIGRATION_NAMES[REQUIRED_MIGRATION_NAMES.length - 1];
       mockQueryRaw
-        .mockResolvedValueOnce([...coreTableRows, { table_name: '_prisma_migrations' }])
+        .mockResolvedValueOnce([
+          ...coreTableRows,
+          { table_name: '_prisma_migrations' },
+        ])
         .mockResolvedValueOnce(
           appliedMigrationRows.map((row) =>
             row.migration_name === failedMigrationName
@@ -379,8 +443,8 @@ describe('Health and Readiness Endpoints', () => {
                 finished_at: null,
                 rolled_back_at: null,
               }
-              : row
-          )
+              : row,
+          ),
         );
 
       const res = await readyRoute();
@@ -394,10 +458,15 @@ describe('Health and Readiness Endpoints', () => {
     });
 
     it('masks failed migration names in production while returning 503', async () => {
-      (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
-      const failedMigrationName = REQUIRED_MIGRATION_NAMES[REQUIRED_MIGRATION_NAMES.length - 1];
+      (process.env as Record<string, string | undefined>).NODE_ENV =
+        'production';
+      const failedMigrationName =
+        REQUIRED_MIGRATION_NAMES[REQUIRED_MIGRATION_NAMES.length - 1];
       mockQueryRaw
-        .mockResolvedValueOnce([...coreTableRows, { table_name: '_prisma_migrations' }])
+        .mockResolvedValueOnce([
+          ...coreTableRows,
+          { table_name: '_prisma_migrations' },
+        ])
         .mockResolvedValueOnce(
           appliedMigrationRows.map((row) =>
             row.migration_name === failedMigrationName
@@ -406,8 +475,8 @@ describe('Health and Readiness Endpoints', () => {
                 finished_at: null,
                 rolled_back_at: null,
               }
-              : row
-          )
+              : row,
+          ),
         );
 
       const res = await readyRoute();
@@ -422,7 +491,10 @@ describe('Health and Readiness Endpoints', () => {
 
     it('returns 503 Service Unavailable when _prisma_migrations has zero applied migrations', async () => {
       mockQueryRaw
-        .mockResolvedValueOnce([...coreTableRows, { table_name: '_prisma_migrations' }])
+        .mockResolvedValueOnce([
+          ...coreTableRows,
+          { table_name: '_prisma_migrations' },
+        ])
         .mockResolvedValueOnce([]);
 
       const res = await readyRoute();
@@ -444,9 +516,12 @@ describe('Health and Readiness Endpoints', () => {
     });
 
     it('masks internal database error messages in production while returning 503', async () => {
-      (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+      (process.env as Record<string, string | undefined>).NODE_ENV =
+        'production';
       mockQueryRaw.mockRejectedValue(
-        new Error('FATAL: password authentication failed for user "wedding" at 10.0.0.12:5432')
+        new Error(
+          'FATAL: password authentication failed for user "wedding" at 10.0.0.12:5432',
+        ),
       );
       const res = await readyRoute();
       expect(res.status).toBe(503);
@@ -463,22 +538,26 @@ describe('Health and Readiness Endpoints', () => {
           () =>
             new Promise((resolve) => {
               setTimeout(
-                () => resolve([...coreTableRows, { table_name: '_prisma_migrations' }]),
-                20
+                () =>
+                  resolve([
+                    ...coreTableRows,
+                    { table_name: '_prisma_migrations' },
+                  ]),
+                20,
               );
-            })
+            }),
         )
         .mockImplementationOnce(
           () =>
             new Promise((resolve) => {
               setTimeout(() => resolve(appliedMigrationRows), 20);
-            })
+            }),
         );
 
       const concurrentResponses = await Promise.all(
         Array.from({ length: 20 }, () =>
-          readyRoute(new NextRequest('http://localhost:3000/api/ready'))
-        )
+          readyRoute(new NextRequest('http://localhost:3000/api/ready')),
+        ),
       );
 
       for (const res of concurrentResponses) {
@@ -489,7 +568,9 @@ describe('Health and Readiness Endpoints', () => {
       }
 
       // Subsequent call inside the 5-second healthy window should also reuse the memoized result
-      const followUpRes = await readyRoute(new NextRequest('http://localhost:3000/api/ready'));
+      const followUpRes = await readyRoute(
+        new NextRequest('http://localhost:3000/api/ready'),
+      );
       expect(followUpRes.status).toBe(200);
       expect(followUpRes.headers.get('Cache-Control')).toBe('no-store');
       expect(mockQueryRaw).toHaveBeenCalledTimes(2);
@@ -497,7 +578,10 @@ describe('Health and Readiness Endpoints', () => {
 
     it('returns HTTP 429 after 100 rapid unauthenticated requests within the burst window', async () => {
       mockQueryRaw
-        .mockResolvedValueOnce([...coreTableRows, { table_name: '_prisma_migrations' }])
+        .mockResolvedValueOnce([
+          ...coreTableRows,
+          { table_name: '_prisma_migrations' },
+        ])
         .mockResolvedValueOnce(appliedMigrationRows);
 
       const statuses: number[] = [];

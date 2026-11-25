@@ -259,11 +259,36 @@ model InvitationCode {
   updatedAt          DateTime      @updatedAt
 
   contributors Contributor[]
+  members          HouseholdMember[]
   subEventAccesses SubEventAccess[]
   subEventRsvps    SubEventRsvp[]
   broadcastRecipients BroadcastRecipient[]
 
   @@index([partyTags], type: Gin)
+}
+
+model HouseholdMember {
+  id               String         @id @default(uuid())
+  invitationCodeId String
+  invitationCode   InvitationCode @relation(fields: [invitationCodeId], references: [id], onDelete: Cascade)
+  fullName         String
+  firstName        String?
+  lastName         String?
+  role             String         @default("PRIMARY")
+  email            String?
+  phone            String?
+  dietaryNotes     String?
+  tags             String[]       @default([])
+  displayOrder     Int            @default(0)
+  seatNumber       Int?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  eventRsvps SubEventMemberRsvp[]
+
+  @@index([invitationCodeId, displayOrder])
+  @@index([email])
+  @@index([phone])
 }
 
 model SeatingTable {
@@ -351,7 +376,25 @@ model SubEventRsvp {
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
+  memberRsvps SubEventMemberRsvp[]
+
   @@unique([subEventId, invitationCodeId])
+}
+
+model SubEventMemberRsvp {
+  id                String          @id @default(uuid())
+  subEventRsvpId    String
+  subEventRsvp      SubEventRsvp    @relation(fields: [subEventRsvpId], references: [id], onDelete: Cascade)
+  householdMemberId String
+  householdMember   HouseholdMember @relation(fields: [householdMemberId], references: [id], onDelete: Cascade)
+  status            String          @default("pending")
+  mealOptionId      String?
+  dietaryNotes      String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([subEventRsvpId, householdMemberId])
+  @@index([householdMemberId])
 }
 
 model BroadcastMessage {

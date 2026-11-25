@@ -1,7 +1,10 @@
 import type {
   DemoContentNodeRecord,
+  DemoHouseholdMemberRecord,
+  DemoHouseholdRole,
   DemoInvitationCodeRecord,
   DemoRsvpStatus,
+  DemoSubEventMemberRsvpRecord,
   DemoSubEventRsvpRecord,
   NormalizedDemoRequest,
   StaticDemoSnapshot,
@@ -16,12 +19,14 @@ import {
 } from '../responseHelpers';
 import {
   getActiveAppConfig,
+  getOrderedDemoHouseholdMembers,
   pushAuditVersion,
   toPhotoDto,
 } from '../dtoMappers';
 import { buildSubEventIcs } from '../exporters';
+import { synthesizeDemoHouseholdMembersFromInvitations } from '../seeds';
 import { createCompactUploadThumbnail, createDemoSvgDataUrl } from '../svgAssets';
-import { normalizePartyTags } from '@/utils/invitationValidation';
+import { normalizePartyTags, splitMemberFullName } from '@/utils/invitationValidation';
 import type { CustomRsvpQuestionDTO, MealOptionDTO } from '@/utils/rsvpPrompts';
 
 function hasUnpromotedAddressCollectionTag(partyTags: unknown): boolean {
@@ -199,6 +204,11 @@ export async function handlePublicRoutes(
       );
     });
 
+    const householdMembers = activeInvite
+      ? getOrderedDemoHouseholdMembers(snapshot, activeInvite)
+      : [];
+    const memberById = new Map(householdMembers.map((m) => [m.id, m]));
+
     const eventsWithRsvp = visibleEvents.map((event) => {
       const existingRsvp = activeInvite
         ? snapshot.subEventRsvp.find(
@@ -214,6 +224,14 @@ export async function handlePublicRoutes(
       )
         ? event.customQuestions
         : [];
+      const memberRsvps = existingRsvp
+        ? (snapshot.subEventMemberRsvp ?? [])
+          .filter((mr) => mr.subEventRsvpId === existingRsvp.id)
+          .map((mr) => ({
+            ...mr,
+            member: memberById.get(mr.householdMemberId) ?? undefined,
+          }))
+        : [];
 
       return {
         ...event,
@@ -227,6 +245,7 @@ export async function handlePublicRoutes(
             mealSelections: existingRsvp.mealSelections ?? [],
             customAnswers: existingRsvp.customAnswers ?? {},
             plusOneNames: existingRsvp.plusOneNames ?? [],
+            memberRsvps,
           }
           : {
             status: 'pending',
@@ -235,24 +254,33 @@ export async function handlePublicRoutes(
             mealSelections: [],
             customAnswers: {},
             plusOneNames: [],
+            memberRsvps: [],
           },
       };
     });
 
+    const secondaryMemberNames = householdMembers
+      .filter((m) => m.role !== 'PRIMARY')
+      .map((m) => m.fullName.trim())
+      .filter(Boolean);
     const savedPlusOneNames =
-      activeInvite?.plusOneFirstName || activeInvite?.plusOneLastName
-        ? [
-          [activeInvite.plusOneFirstName, activeInvite.plusOneLastName]
-            .filter(Boolean)
-            .join(' '),
-        ]
-        : [];
+      secondaryMemberNames.length > 0
+        ? secondaryMemberNames
+        : activeInvite?.plusOneFirstName || activeInvite?.plusOneLastName
+          ? [
+            [activeInvite.plusOneFirstName, activeInvite.plusOneLastName]
+              .filter(Boolean)
+              .join(' '),
+          ]
+          : [];
 
     return wrapMiddlewareJson({
       success: true,
       data: eventsWithRsvp,
       isGuest: Boolean(snapshot.guestSession || activeInvite),
       guestName: activeInvite?.guestName ?? 'Alex & Jordan',
+      householdName: activeInvite?.householdName ?? '',
+      householdMembers,
       plusOneAllocations: activeInvite?.plusOneAllocations ?? 2,
       savedPlusOneNames,
       rsvpOpen: config.rsvpOpen !== false,
@@ -336,7 +364,20 @@ export async function handlePublicRoutes(
           updatedAt: nowIso,
         };
         draft.invitationCode.push(invite);
+        draft.householdMember.push(
+          ...synthesizeDemoHouseholdMembersFromInvitations([invite], nowIso),
+        );
       }
+
+      if (!draft.householdMember.some((m) => m.invitationCodeId === invite!.id)) {
+        draft.householdMember.push(
+          ...synthesizeDemoHouseholdMembersFromInvitations([invite], nowIso),
+        );
+      }
+      const inviteMembers = draft.householdMember
+        .filter((m) => m.invitationCodeId === invite.id)
+        .sort((a, b) => a.displayOrder - b.displayOrder);
+      const validMemberIds = new Set(inviteMembers.map((m) => m.id));
 
       const results: Array<Record<string, unknown>> = [];
       for (const entry of rawList) {
@@ -346,14 +387,37 @@ export async function handlePublicRoutes(
           typeof item.subEventId === 'string' ? item.subEventId : '';
         if (!subEventId) continue;
 
+        const rawMemberRsvps = Array.isArray(item.memberRsvps)
+          ? item.memberRsvps.filter(
+            (mr): mr is Record<string, unknown> =>
+              Boolean(mr && typeof mr === 'object') &&
+                typeof (mr as Record<string, unknown>).householdMemberId === 'string' &&
+                validMemberIds.has(
+                  (mr as Record<string, unknown>).householdMemberId as string,
+                ),
+          )
+          : [];
+
+        const hasExplicitMembers = rawMemberRsvps.length > 0;
+        const attendingMemberEntries = rawMemberRsvps.filter(
+          (mr) => String(mr.status ?? '').toLowerCase() === 'attending',
+        );
+
         const rawStatus =
           typeof item.status === 'string' ? item.status.trim().toLowerCase() : 'attending';
-        const status: DemoRsvpStatus =
-          rawStatus === 'declined' ? 'declined' : 'attending';
+        const status: DemoRsvpStatus = hasExplicitMembers
+          ? attendingMemberEntries.length > 0
+            ? 'attending'
+            : 'declined'
+          : rawStatus === 'declined'
+            ? 'declined'
+            : 'attending';
         const isDeclined = status === 'declined';
-        const plusOneCount = isDeclined
-          ? 0
-          : Math.max(0, Number(item.plusOneCount ?? 0) || 0);
+        const plusOneCount = hasExplicitMembers
+          ? Math.max(0, attendingMemberEntries.length - 1)
+          : isDeclined
+            ? 0
+            : Math.max(0, Number(item.plusOneCount ?? 0) || 0);
         const existingIdx = draft.subEventRsvp.findIndex(
           (r) =>
             r.subEventId === subEventId && r.invitationCodeId === invite!.id,
@@ -374,8 +438,13 @@ export async function handlePublicRoutes(
             : shouldClearDietary
               ? ''
               : (existingRsvp?.dietaryNotes ?? invite.dietaryNotes ?? '');
-        const mealSelections =
-          !isDeclined && Array.isArray(item.mealSelections)
+        const mealSelections = hasExplicitMembers
+          ? attendingMemberEntries
+            .map((mr) =>
+              typeof mr.mealOptionId === 'string' ? mr.mealOptionId.trim() : '',
+            )
+            .filter(Boolean)
+          : !isDeclined && Array.isArray(item.mealSelections)
             ? item.mealSelections.filter((m): m is string => typeof m === 'string')
             : [];
         const customAnswers =
@@ -385,16 +454,24 @@ export async function handlePublicRoutes(
           !Array.isArray(item.customAnswers)
             ? (item.customAnswers as Record<string, unknown>)
             : {};
-        const plusOneNames =
-          !isDeclined && Array.isArray(item.plusOneNames)
+        const plusOneNames = hasExplicitMembers
+          ? attendingMemberEntries
+            .map((mr) =>
+              inviteMembers.find((m) => m.id === mr.householdMemberId),
+            )
+            .filter((m): m is DemoHouseholdMemberRecord => Boolean(m && m.role !== 'PRIMARY'))
+            .map((m) => m.fullName)
+          : !isDeclined && Array.isArray(item.plusOneNames)
             ? item.plusOneNames.filter((n): n is string => typeof n === 'string')
             : [];
 
+        const rsvpId =
+          existingIdx >= 0
+            ? draft.subEventRsvp[existingIdx].id
+            : generateDemoId('rsvp');
+
         const record: DemoSubEventRsvpRecord = {
-          id:
-            existingIdx >= 0
-              ? draft.subEventRsvp[existingIdx].id
-              : generateDemoId('rsvp'),
+          id: rsvpId,
           subEventId,
           invitationCodeId: invite.id,
           status,
@@ -413,6 +490,67 @@ export async function handlePublicRoutes(
         } else {
           draft.subEventRsvp.push(record);
         }
+
+        draft.subEventMemberRsvp = draft.subEventMemberRsvp.filter(
+          (mr) => mr.subEventRsvpId !== rsvpId,
+        );
+        const persistedMemberRsvps: DemoSubEventMemberRsvpRecord[] = hasExplicitMembers
+          ? rawMemberRsvps.map((mr) => {
+            const memberId = mr.householdMemberId as string;
+            const mStatus: DemoRsvpStatus =
+              String(mr.status ?? '').toLowerCase() === 'attending'
+                ? 'attending'
+                : 'declined';
+            const mMeal =
+              mStatus === 'attending' &&
+                typeof mr.mealOptionId === 'string' &&
+                mr.mealOptionId.trim()
+                ? mr.mealOptionId.trim()
+                : null;
+            const mDiet =
+              typeof mr.dietaryNotes === 'string'
+                ? mr.dietaryNotes.trim() || null
+                : null;
+            const targetMember = inviteMembers.find((m) => m.id === memberId);
+            if (targetMember && typeof mr.dietaryNotes === 'string') {
+              targetMember.dietaryNotes = mDiet;
+              targetMember.updatedAt = nowIso;
+            }
+            return {
+              id: generateDemoId('mrsvp'),
+              subEventRsvpId: rsvpId,
+              householdMemberId: memberId,
+              status: mStatus,
+              mealOptionId: mMeal,
+              dietaryNotes: mDiet ?? targetMember?.dietaryNotes ?? null,
+              createdAt: nowIso,
+              updatedAt: nowIso,
+            };
+          })
+          : inviteMembers.map((member, mIdx) => {
+            const mStatus: DemoRsvpStatus = isDeclined
+              ? 'declined'
+              : mIdx <= plusOneCount
+                ? 'attending'
+                : 'declined';
+            return {
+              id: generateDemoId('mrsvp'),
+              subEventRsvpId: rsvpId,
+              householdMemberId: member.id,
+              status: mStatus,
+              mealOptionId:
+                mStatus === 'attending' && mealSelections[mIdx]
+                  ? mealSelections[mIdx]
+                  : null,
+              dietaryNotes:
+                mStatus === 'attending'
+                  ? member.dietaryNotes || (mIdx === 0 ? dietaryNotes || null : null)
+                  : null,
+              createdAt: nowIso,
+              updatedAt: nowIso,
+            };
+          });
+        draft.subEventMemberRsvp.push(...persistedMemberRsvps);
 
         invite.used = true;
         invite.usedAt = nowIso;
@@ -442,6 +580,7 @@ export async function handlePublicRoutes(
           mealSelections,
           customAnswers,
           plusOneNames,
+          memberRsvps: persistedMemberRsvps,
         });
       }
 
@@ -776,13 +915,23 @@ export async function handlePublicRoutes(
 
     const snapshot = store.getSnapshot();
     const lowered = query.toLowerCase();
-    const found = snapshot.invitationCode.find(
-      (inv) =>
-        !hasUnpromotedAddressCollectionTag(inv.partyTags) &&
-        (inv.guestName.toLowerCase().includes(lowered) ||
-          (inv.email && inv.email.toLowerCase() === lowered) ||
-          inv.code.toLowerCase() === lowered),
-    );
+    const found = snapshot.invitationCode.find((inv) => {
+      if (hasUnpromotedAddressCollectionTag(inv.partyTags)) return false;
+      if (
+        inv.guestName.toLowerCase().includes(lowered) ||
+        (inv.email && inv.email.toLowerCase() === lowered) ||
+        inv.code.toLowerCase() === lowered
+      ) {
+        return true;
+      }
+      return (snapshot.householdMember ?? []).some(
+        (m) =>
+          m.invitationCodeId === inv.id &&
+          m.role !== 'CHILD' &&
+          (m.fullName.toLowerCase().includes(lowered) ||
+            (m.email && m.email.toLowerCase() === lowered)),
+      );
+    });
 
     if (!found) {
       return errorJson(404, 'No invitation found matching the provided details.');
@@ -816,6 +965,7 @@ export async function handlePublicRoutes(
       }
       return wrapMiddlewareJson({
         guestName: invite.guestName,
+        householdName: invite.householdName || '',
         code: invite.code,
         addressLine1: invite.addressLine1 || '',
         addressLine2: invite.addressLine2 || '',
@@ -823,6 +973,7 @@ export async function handlePublicRoutes(
         state: invite.state || '',
         zipCode: invite.zipCode || '',
         country: invite.country || '',
+        members: getOrderedDemoHouseholdMembers(snapshot, invite),
       });
     }
 
@@ -830,6 +981,7 @@ export async function handlePublicRoutes(
     const updated = store.mutate((draft) => {
       const invite = resolveActiveInvitation(draft);
       if (!invite) return null;
+      const nowIso = new Date().toISOString();
       invite.addressLine1 =
         typeof body.addressLine1 === 'string'
           ? body.addressLine1
@@ -844,9 +996,93 @@ export async function handlePublicRoutes(
         typeof body.zipCode === 'string' ? body.zipCode : invite.zipCode;
       invite.country =
         typeof body.country === 'string' ? body.country : invite.country;
-      invite.updatedAt = new Date().toISOString();
+      if (typeof body.householdName === 'string') {
+        invite.householdName = body.householdName.trim() || null;
+      }
+
+      if (Array.isArray(body.members) && body.members.length > 0) {
+        const existingMembers = getOrderedDemoHouseholdMembers(draft, invite);
+        const existingById = new Map(existingMembers.map((m) => [m.id, m]));
+        const nextMembers: DemoHouseholdMemberRecord[] = [];
+        body.members.forEach((raw, idx) => {
+          if (!raw || typeof raw !== 'object') return;
+          const rec = raw as Record<string, unknown>;
+          const fullName =
+            typeof rec.fullName === 'string' ? rec.fullName.trim() : '';
+          if (!fullName) return;
+          const existing =
+            typeof rec.id === 'string' ? existingById.get(rec.id) : undefined;
+          const parts = splitMemberFullName(fullName);
+          const roleRaw = typeof rec.role === 'string' ? rec.role.toUpperCase() : '';
+          const role: DemoHouseholdRole =
+            idx === 0
+              ? 'PRIMARY'
+              : roleRaw === 'PARTNER' || roleRaw === 'CHILD' || roleRaw === 'PLUS_ONE'
+                ? roleRaw
+                : (existing?.role && existing.role !== 'PRIMARY'
+                  ? existing.role
+                  : 'PLUS_ONE');
+          nextMembers.push({
+            id: existing?.id ?? generateDemoId('member'),
+            invitationCodeId: invite.id,
+            firstName:
+              typeof rec.firstName === 'string' && rec.firstName.trim()
+                ? rec.firstName.trim()
+                : parts.firstName,
+            lastName:
+              typeof rec.lastName === 'string' && rec.lastName.trim()
+                ? rec.lastName.trim()
+                : parts.lastName,
+            fullName,
+            role,
+            email:
+              rec.email !== undefined
+                ? typeof rec.email === 'string' && rec.email.trim()
+                  ? rec.email.trim()
+                  : null
+                : (existing?.email ?? null),
+            phone:
+              rec.phone !== undefined
+                ? typeof rec.phone === 'string' && rec.phone.trim()
+                  ? rec.phone.trim()
+                  : null
+                : (existing?.phone ?? null),
+            dietaryNotes:
+              rec.dietaryNotes !== undefined
+                ? typeof rec.dietaryNotes === 'string' && rec.dietaryNotes.trim()
+                  ? rec.dietaryNotes.trim()
+                  : null
+                : (existing?.dietaryNotes ?? null),
+            tags: existing?.tags ?? [],
+            displayOrder: idx,
+            seatNumber: existing?.seatNumber ?? null,
+            createdAt: existing?.createdAt ?? nowIso,
+            updatedAt: nowIso,
+          });
+        });
+
+        if (nextMembers.length > 0) {
+          draft.householdMember = draft.householdMember
+            .filter((m) => m.invitationCodeId !== invite.id)
+            .concat(nextMembers);
+          const primary = nextMembers[0];
+          invite.guestName = primary.fullName;
+          invite.email = primary.email;
+          invite.dietaryNotes = primary.dietaryNotes;
+          invite.plusOneAllocations = Math.max(
+            invite.plusOneAllocations,
+            nextMembers.length - 1,
+          );
+          const firstSecondary = nextMembers[1];
+          invite.plusOneFirstName = firstSecondary?.firstName ?? null;
+          invite.plusOneLastName = firstSecondary?.lastName ?? null;
+        }
+      }
+
+      invite.updatedAt = nowIso;
       return {
         guestName: invite.guestName,
+        householdName: invite.householdName || '',
         code: invite.code,
         addressLine1: invite.addressLine1 || '',
         addressLine2: invite.addressLine2 || '',
@@ -854,6 +1090,7 @@ export async function handlePublicRoutes(
         state: invite.state || '',
         zipCode: invite.zipCode || '',
         country: invite.country || '',
+        members: getOrderedDemoHouseholdMembers(draft, invite),
       };
     });
 
@@ -955,8 +1192,123 @@ export async function handlePublicRoutes(
           ? body.householdNotes.trim()
           : '';
 
+    const rawDietaryNotes =
+      typeof body.dietaryNotes === 'string' && body.dietaryNotes.trim()
+        ? body.dietaryNotes.trim()
+        : '';
+    const rawPartner =
+      body.partner && typeof body.partner === 'object' && !Array.isArray(body.partner)
+        ? (body.partner as Record<string, unknown>)
+        : null;
+    const partnerFullName =
+      rawPartner && typeof rawPartner.fullName === 'string'
+        ? rawPartner.fullName.trim()
+        : '';
+    const partnerEmail =
+      rawPartner && typeof rawPartner.email === 'string'
+        ? rawPartner.email.trim()
+        : '';
+    if (partnerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(partnerEmail)) {
+      return errorJson(400, 'Invalid partner email address.');
+    }
+    const partnerPhone =
+      rawPartner && typeof rawPartner.phone === 'string'
+        ? rawPartner.phone.trim()
+        : '';
+    const partnerDietary =
+      rawPartner && typeof rawPartner.dietaryNotes === 'string'
+        ? rawPartner.dietaryNotes.trim()
+        : '';
+    const parsedChildren = Array.isArray(body.children)
+      ? body.children
+        .filter((c): c is Record<string, unknown> => Boolean(c && typeof c === 'object'))
+        .map((c) => ({
+          fullName: typeof c.fullName === 'string' ? c.fullName.trim() : '',
+          dietaryNotes:
+            typeof c.dietaryNotes === 'string' ? c.dietaryNotes.trim() : '',
+        }))
+        .filter((c) => c.fullName.length > 0)
+      : [];
+
     const outcome = store.mutate((draft) => {
       const nowIso = new Date().toISOString();
+      const appendSubmittedMembers = (targetInvite: DemoInvitationCodeRecord) => {
+        if (!draft.householdMember.some((m) => m.invitationCodeId === targetInvite.id)) {
+          draft.householdMember.push(
+            ...synthesizeDemoHouseholdMembersFromInvitations([targetInvite], nowIso),
+          );
+        }
+        const existingForInvite = draft.householdMember
+          .filter((m) => m.invitationCodeId === targetInvite.id)
+          .sort((a, b) => a.displayOrder - b.displayOrder);
+        const primaryMember = existingForInvite[0];
+        if (primaryMember) {
+          if (!primaryMember.email && rawEmail) primaryMember.email = rawEmail;
+          if (!primaryMember.phone && rawPhone) primaryMember.phone = rawPhone;
+          if (!primaryMember.dietaryNotes && rawDietaryNotes) {
+            primaryMember.dietaryNotes = rawDietaryNotes;
+          }
+          primaryMember.updatedAt = nowIso;
+        }
+        let nextOrder = existingForInvite.length;
+        const hasName = (candidate: string) =>
+          draft.householdMember.some(
+            (m) =>
+              m.invitationCodeId === targetInvite.id &&
+              m.fullName.trim().toLowerCase() === candidate.toLowerCase(),
+          );
+        if (partnerFullName && !hasName(partnerFullName)) {
+          const pParts = splitMemberFullName(partnerFullName);
+          draft.householdMember.push({
+            id: generateDemoId('member'),
+            invitationCodeId: targetInvite.id,
+            firstName: pParts.firstName,
+            lastName: pParts.lastName,
+            fullName: partnerFullName,
+            role: 'PARTNER',
+            email: partnerEmail || null,
+            phone: partnerPhone || null,
+            dietaryNotes: partnerDietary || null,
+            tags: [],
+            displayOrder: nextOrder++,
+            seatNumber: null,
+            createdAt: nowIso,
+            updatedAt: nowIso,
+          });
+          if (!targetInvite.plusOneFirstName && !targetInvite.plusOneLastName) {
+            targetInvite.plusOneFirstName = pParts.firstName;
+            targetInvite.plusOneLastName = pParts.lastName;
+          }
+        }
+        for (const child of parsedChildren) {
+          if (hasName(child.fullName)) continue;
+          const cParts = splitMemberFullName(child.fullName);
+          draft.householdMember.push({
+            id: generateDemoId('member'),
+            invitationCodeId: targetInvite.id,
+            firstName: cParts.firstName,
+            lastName: cParts.lastName,
+            fullName: child.fullName,
+            role: 'CHILD',
+            email: null,
+            phone: null,
+            dietaryNotes: child.dietaryNotes || null,
+            tags: ['kid'],
+            displayOrder: nextOrder++,
+            seatNumber: null,
+            createdAt: nowIso,
+            updatedAt: nowIso,
+          });
+        }
+        const totalMembers = draft.householdMember.filter(
+          (m) => m.invitationCodeId === targetInvite.id,
+        ).length;
+        targetInvite.plusOneAllocations = Math.max(
+          targetInvite.plusOneAllocations,
+          totalMembers - 1,
+        );
+      };
+
       const matchedRecord = draft.invitationCode.find((inv) => {
         if (inv.isSample) return false;
         if (rawEmail && inv.email && inv.email.toLowerCase() === rawEmail.toLowerCase()) {
@@ -1026,6 +1378,10 @@ export async function handlePublicRoutes(
           }
           matchedRecord.extraFields = nextExtra;
         }
+        if (!matchedRecord.dietaryNotes?.trim() && rawDietaryNotes) {
+          matchedRecord.dietaryNotes = rawDietaryNotes;
+        }
+        appendSubmittedMembers(matchedRecord);
         matchedRecord.updatedAt = nowIso;
         pushAuditVersion(draft, 'InvitationCode', matchedRecord.id, matchedRecord, guestName);
         return { record: matchedRecord, status: 200 as const };
@@ -1063,10 +1419,10 @@ export async function handlePublicRoutes(
           typeof body.country === 'string' && body.country.trim()
             ? body.country.trim()
             : 'United States',
-        dietaryNotes: null,
-        plusOneAllocations: 0,
-        plusOneFirstName: null,
-        plusOneLastName: null,
+        dietaryNotes: rawDietaryNotes || null,
+        plusOneAllocations: (partnerFullName ? 1 : 0) + parsedChildren.length,
+        plusOneFirstName: partnerFullName ? splitMemberFullName(partnerFullName).firstName : null,
+        plusOneLastName: partnerFullName ? splitMemberFullName(partnerFullName).lastName : null,
         partyGroup: 'Address Book',
         partyTags: ['Submitted Address', 'address-collection'],
         extraFields: Object.keys(extraFields).length > 0 ? extraFields : null,
@@ -1080,6 +1436,24 @@ export async function handlePublicRoutes(
         updatedAt: nowIso,
       };
       draft.invitationCode.unshift(newInvite);
+      const primaryParts = splitMemberFullName(guestName);
+      draft.householdMember.push({
+        id: generateDemoId('member'),
+        invitationCodeId: newInvite.id,
+        firstName: primaryParts.firstName,
+        lastName: primaryParts.lastName,
+        fullName: guestName,
+        role: 'PRIMARY',
+        email: rawEmail || null,
+        phone: rawPhone || null,
+        dietaryNotes: rawDietaryNotes || null,
+        tags: [...newInvite.partyTags],
+        displayOrder: 0,
+        seatNumber: null,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      });
+      appendSubmittedMembers(newInvite);
       pushAuditVersion(draft, 'InvitationCode', newInvite.id, newInvite, guestName);
       return { record: newInvite, status: 201 as const };
     });

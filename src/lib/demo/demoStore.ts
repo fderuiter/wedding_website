@@ -4,6 +4,8 @@ import type { PublicAppConfig } from '@/lib/config';
 import type {
   ContributorRecord,
   GuestClaimActions,
+  HouseholdMemberDTO,
+  HouseholdMemberRole,
   InvitationCodeDTO,
   OrderTrackingDetails,
   RegistryItem,
@@ -19,9 +21,10 @@ import { resolveModuleConfig, type ModuleConfig } from '@/lib/modules';
 import { CARD_PROCESSING_FEE_RATE } from '@/lib/stripe.client';
 import { withBasePath } from '@/lib/basePath';
 import { notifyGuestSessionChanged } from '@/utils/guestSessionEvents';
-import { normalizePartyTags } from '@/utils/invitationValidation';
+import { normalizePartyTags, splitMemberFullName } from '@/utils/invitationValidation';
 import {
   buildArchetypeDataset,
+  buildDemoHouseholdMembersForGuest,
   DEMO_SHIPPING_ADDRESS,
   type ArchetypeDataset,
   type DemoBroadcastRecord,
@@ -29,6 +32,7 @@ import {
   type DemoPhotoRecord,
   type DemoSnapshotVersionRecord,
   type DemoSubEventAccessRecord,
+  type DemoSubEventMemberRsvpRecord,
 } from './demoSeed';
 import {
   isDemoRuntimeActive,
@@ -962,7 +966,7 @@ export function findDemoGuestByCode(rawCode: string): InvitationCodeDTO | null {
     return null;
   }
 
-  return {
+  const fallback: InvitationCodeDTO = {
     id: `demo-${currentState.archetype}-preset-${normalized}`,
     code: presetMatch.code.toUpperCase(),
     guestName: presetMatch.guestName,
@@ -972,6 +976,10 @@ export function findDemoGuestByCode(rawCode: string): InvitationCodeDTO | null {
     plusOneAllocations: presetMatch.plusOnesAllowed ?? 0,
     used: true,
     isSample: true,
+  };
+  return {
+    ...fallback,
+    members: buildDemoHouseholdMembersForGuest(fallback),
   };
 }
 
@@ -983,33 +991,108 @@ export function setDemoGuestSession(session: DemoGuestSession | null): void {
   syncStaticDemoGuestSession(session);
 }
 
+export interface DemoGuestAddressUpdateInput {
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  country?: string;
+  householdName?: string;
+  members?: Array<{
+    id?: string;
+    fullName: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    role?: HouseholdMemberRole;
+    email?: string | null;
+    phone?: string | null;
+    dietaryNotes?: string | null;
+    tags?: string[];
+  }>;
+}
+
 export function updateDemoGuestAddress(
   code: string,
-  address: {
-    addressLine1?: string;
-    addressLine2?: string;
-    city?: string;
-    state?: string;
-    zipCode?: string;
-    country?: string;
-  }
+  address: DemoGuestAddressUpdateInput
 ): InvitationCodeDTO | null {
   const normalized = code.trim().toUpperCase();
   let updatedGuest: InvitationCodeDTO | null = null;
 
   updateState((prev) => {
     const current = prev.datasets[prev.archetype];
+    const nowIso = new Date().toISOString();
+    let nextSession = prev.guestSession;
     const nextGuests = current.guests.map((g) => {
       if (g.code.toUpperCase() !== normalized) return g;
+
+      let nextMembers = g.members ? [...g.members] : buildDemoHouseholdMembersForGuest(g);
+      let nextGuestName = g.guestName;
+      let nextEmail = g.email;
+      let nextDietary = g.dietaryNotes;
+      let nextAllocations = g.plusOneAllocations ?? 0;
+
+      if (Array.isArray(address.members) && address.members.length > 0) {
+        const existingById = new Map(nextMembers.map((m) => [m.id, m]));
+        nextMembers = address.members.map((m, idx) => {
+          const prevMember = m.id ? existingById.get(m.id) : undefined;
+          const fullName = m.fullName.trim();
+          const split = splitMemberFullName(fullName);
+          const role: HouseholdMemberRole =
+            idx === 0
+              ? 'PRIMARY'
+              : m.role && m.role !== 'PRIMARY'
+                ? m.role
+                : (prevMember?.role && prevMember.role !== 'PRIMARY' ? prevMember.role : 'PARTNER');
+          return {
+            id: prevMember?.id || m.id || `${g.id}-member-${idx + 1}`,
+            invitationCodeId: g.id,
+            fullName,
+            firstName: m.firstName ?? split.firstName,
+            lastName: m.lastName ?? split.lastName,
+            role,
+            email: m.email !== undefined ? (m.email?.trim() || null) : (prevMember?.email ?? null),
+            phone: m.phone !== undefined ? (m.phone?.trim() || null) : (prevMember?.phone ?? null),
+            dietaryNotes:
+              m.dietaryNotes !== undefined
+                ? (m.dietaryNotes?.trim() || null)
+                : (prevMember?.dietaryNotes ?? null),
+            tags: Array.isArray(m.tags) ? m.tags.map(String) : (prevMember?.tags ?? []),
+            displayOrder: idx,
+            seatNumber: prevMember?.seatNumber ?? null,
+            createdAt: prevMember?.createdAt ?? nowIso,
+            updatedAt: nowIso,
+          };
+        });
+        const primary = nextMembers[0];
+        if (primary) {
+          nextGuestName = primary.fullName;
+          nextEmail = primary.email ?? nextEmail ?? null;
+          nextDietary = primary.dietaryNotes ?? '';
+        }
+        nextAllocations = Math.max(nextAllocations, Math.max(0, nextMembers.length - 1));
+        if (nextSession && nextSession.invitationCode.toUpperCase() === normalized) {
+          nextSession = { ...nextSession, guestName: nextGuestName };
+        }
+      }
+
       const next: InvitationCodeDTO = {
         ...g,
-        addressLine1: address.addressLine1 ?? g.addressLine1 ?? '',
-        addressLine2: address.addressLine2 ?? g.addressLine2 ?? '',
-        city: address.city ?? g.city ?? '',
-        state: address.state ?? g.state ?? '',
-        zipCode: address.zipCode ?? g.zipCode ?? '',
-        country: address.country ?? g.country ?? '',
-        updatedAt: new Date().toISOString(),
+        guestName: nextGuestName,
+        email: nextEmail,
+        dietaryNotes: nextDietary,
+        plusOneAllocations: nextAllocations,
+        ...(address.householdName !== undefined ? { householdName: address.householdName } : {}),
+        addressLine1:
+          address.addressLine1 !== undefined ? address.addressLine1 : (g.addressLine1 ?? ''),
+        addressLine2:
+          address.addressLine2 !== undefined ? address.addressLine2 : (g.addressLine2 ?? ''),
+        city: address.city !== undefined ? address.city : (g.city ?? ''),
+        state: address.state !== undefined ? address.state : (g.state ?? ''),
+        zipCode: address.zipCode !== undefined ? address.zipCode : (g.zipCode ?? ''),
+        country: address.country !== undefined ? address.country : (g.country ?? ''),
+        members: nextMembers,
+        updatedAt: nowIso,
       };
       updatedGuest = next;
       return next;
@@ -1017,6 +1100,7 @@ export function updateDemoGuestAddress(
 
     return {
       ...prev,
+      guestSession: nextSession,
       datasets: withUpdatedDataset(prev.datasets, prev.archetype, {
         ...current,
         guests: nextGuests,
@@ -1878,12 +1962,30 @@ export function buildDemoDatabaseBackup(): Record<string, unknown> {
       createdAt: toDateInstance(rest.createdAt).toISOString(),
       updatedAt: toDateInstance(rest.updatedAt).toISOString(),
     })),
-    invitationCode: ds.guests.map((g) => ({
+    invitationCode: ds.guests.map(({ members: _omitMembers, ...g }) => ({
       ...g,
       usedAt: g.usedAt ? toDateInstance(g.usedAt).toISOString() : null,
       createdAt: toDateInstance(g.createdAt).toISOString(),
       updatedAt: toDateInstance(g.updatedAt).toISOString(),
     })),
+    householdMember: ds.guests.flatMap((g) =>
+      buildDemoHouseholdMembersForGuest(g).map((m, idx) => ({
+        id: m.id,
+        invitationCodeId: g.id,
+        firstName: m.firstName ?? null,
+        lastName: m.lastName ?? null,
+        fullName: m.fullName,
+        role: m.role,
+        email: m.email || null,
+        phone: m.phone || null,
+        dietaryNotes: m.dietaryNotes || null,
+        tags: m.tags ?? [],
+        displayOrder: m.displayOrder ?? idx,
+        seatNumber: m.seatNumber ?? null,
+        createdAt: toDateInstance(m.createdAt ?? g.createdAt).toISOString(),
+        updatedAt: toDateInstance(m.updatedAt ?? g.updatedAt).toISOString(),
+      }))
+    ),
     subEvent: ds.subEvents.map((se) => ({
       id: se.id,
       title: se.title,
@@ -1918,6 +2020,25 @@ export function buildDemoDatabaseBackup(): Record<string, unknown> {
       createdAt: toDateInstance(r.respondedAt).toISOString(),
       updatedAt: toDateInstance(r.updatedAt).toISOString(),
     })),
+    subEventMemberRsvp: (() => {
+      const validMemberIds = new Set(
+        ds.guests.flatMap((g) => buildDemoHouseholdMembersForGuest(g).map((m) => m.id))
+      );
+      return ds.subEventRsvps.flatMap((r) =>
+        (r.memberRsvps ?? [])
+          .filter((mr) => validMemberIds.has(mr.householdMemberId))
+          .map((mr, idx) => ({
+            id: mr.id || `${r.id}-mr-${idx + 1}`,
+            subEventRsvpId: r.id,
+            householdMemberId: mr.householdMemberId,
+            status: mr.status,
+            mealOptionId: mr.mealOptionId ?? null,
+            dietaryNotes: mr.dietaryNotes ?? null,
+            createdAt: toDateInstance(r.respondedAt).toISOString(),
+            updatedAt: toDateInstance(r.updatedAt).toISOString(),
+          }))
+      );
+    })(),
     broadcastMessage: broadcastMessages,
     broadcastRecipient: broadcastRecipients,
     snapshotVersion: ds.snapshotVersions.map((v) => ({
@@ -2051,7 +2172,60 @@ export function importDemoDatabaseBackup(rawPayload: Record<string, unknown>): {
     }
 
     if (Array.isArray(rawPayload.invitationCode)) {
-      next.guests = rawPayload.invitationCode as InvitationCodeDTO[];
+      const rawMembers = Array.isArray(rawPayload.householdMember)
+        ? (rawPayload.householdMember as Array<Record<string, unknown>>)
+        : null;
+      const membersByInvite = new Map<string, HouseholdMemberDTO[]>();
+      if (rawMembers) {
+        importedCounts.householdMember = rawMembers.length;
+        for (const rm of rawMembers) {
+          const invId = String(rm.invitationCodeId ?? '');
+          if (!invId) continue;
+          const list = membersByInvite.get(invId) ?? [];
+          const fullName = String(rm.fullName ?? 'Guest');
+          const split = splitMemberFullName(fullName);
+          const role: HouseholdMemberRole =
+            rm.role === 'PRIMARY' ||
+            rm.role === 'PARTNER' ||
+            rm.role === 'CHILD' ||
+            rm.role === 'PLUS_ONE'
+              ? rm.role
+              : list.length === 0
+                ? 'PRIMARY'
+                : 'PARTNER';
+          list.push({
+            id: String(rm.id ?? `${invId}-member-${list.length + 1}`),
+            invitationCodeId: invId,
+            fullName,
+            firstName: typeof rm.firstName === 'string' ? rm.firstName : split.firstName,
+            lastName: typeof rm.lastName === 'string' ? rm.lastName : split.lastName,
+            role,
+            email: typeof rm.email === 'string' && rm.email.trim() ? rm.email.trim() : null,
+            phone: typeof rm.phone === 'string' && rm.phone.trim() ? rm.phone.trim() : null,
+            dietaryNotes:
+              typeof rm.dietaryNotes === 'string' && rm.dietaryNotes.trim()
+                ? rm.dietaryNotes.trim()
+                : null,
+            tags: Array.isArray(rm.tags) ? rm.tags.map(String) : [],
+            displayOrder: typeof rm.displayOrder === 'number' ? rm.displayOrder : list.length,
+            seatNumber: typeof rm.seatNumber === 'number' ? rm.seatNumber : null,
+            createdAt: toDateInstance(rm.createdAt).toISOString(),
+            updatedAt: toDateInstance(rm.updatedAt).toISOString(),
+          });
+          membersByInvite.set(invId, list);
+        }
+      }
+      next.guests = (rawPayload.invitationCode as InvitationCodeDTO[]).map((g) => {
+        const explicitMembers = membersByInvite.get(g.id);
+        const members =
+          explicitMembers && explicitMembers.length > 0
+            ? [...explicitMembers].sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0))
+            : buildDemoHouseholdMembersForGuest(g);
+        return {
+          ...g,
+          members,
+        };
+      });
       importedCounts.invitationCode = next.guests.length;
     }
 
@@ -2150,7 +2324,32 @@ export function importDemoDatabaseBackup(rawPayload: Record<string, unknown>): {
     }
     if (Array.isArray(rawPayload.subEventRsvp)) {
       const guestById = new Map(next.guests.map((g) => [g.id, g]));
+      const rawMemberRsvps = Array.isArray(rawPayload.subEventMemberRsvp)
+        ? (rawPayload.subEventMemberRsvp as Array<Record<string, unknown>>)
+        : null;
+      const memberRsvpsByRsvpId = new Map<string, DemoSubEventMemberRsvpRecord[]>();
+      if (rawMemberRsvps) {
+        importedCounts.subEventMemberRsvp = rawMemberRsvps.length;
+        for (const mr of rawMemberRsvps) {
+          const rsvpId = String(mr.subEventRsvpId ?? '');
+          if (!rsvpId) continue;
+          const list = memberRsvpsByRsvpId.get(rsvpId) ?? [];
+          const rawSt = String(mr.status ?? 'pending').toLowerCase();
+          const st: 'attending' | 'declined' | 'pending' =
+            rawSt === 'attending' ? 'attending' : rawSt === 'declined' ? 'declined' : 'pending';
+          list.push({
+            id: String(mr.id ?? `${rsvpId}-mr-${list.length + 1}`),
+            subEventRsvpId: rsvpId,
+            householdMemberId: String(mr.householdMemberId ?? ''),
+            status: st,
+            mealOptionId: typeof mr.mealOptionId === 'string' ? mr.mealOptionId : null,
+            dietaryNotes: typeof mr.dietaryNotes === 'string' ? mr.dietaryNotes : null,
+          });
+          memberRsvpsByRsvpId.set(rsvpId, list);
+        }
+      }
       next.subEventRsvps = (rawPayload.subEventRsvp as Array<Record<string, unknown>>).map((r) => {
+        const rsvpId = String(r.id);
         const guest = guestById.get(String(r.invitationCodeId));
         const rawStatus = String(r.status ?? 'ATTENDING').toUpperCase();
         const normalizedStatus: 'ATTENDING' | 'DECLINED' | 'PENDING' =
@@ -2162,14 +2361,40 @@ export function importDemoDatabaseBackup(rawPayload: Record<string, unknown>): {
         const meals = Array.isArray(r.mealSelections)
           ? r.mealSelections.map(String)
           : [];
+        const plusOneCount = Number(r.plusOneCount ?? 0);
+        const explicitMr = memberRsvpsByRsvpId.get(rsvpId);
+        const memberRsvps: DemoSubEventMemberRsvpRecord[] =
+          explicitMr && explicitMr.length > 0
+            ? explicitMr
+            : guest
+              ? buildDemoHouseholdMembersForGuest(guest).map((m, mIdx) => {
+                const cap = normalizedStatus === 'ATTENDING' ? 1 + Math.max(0, plusOneCount) : 0;
+                const st: 'attending' | 'declined' | 'pending' =
+                  normalizedStatus === 'DECLINED'
+                    ? 'declined'
+                    : normalizedStatus === 'PENDING'
+                      ? 'pending'
+                      : mIdx < cap
+                        ? 'attending'
+                        : 'declined';
+                return {
+                  id: `${rsvpId}-mr-${mIdx + 1}`,
+                  subEventRsvpId: rsvpId,
+                  householdMemberId: m.id,
+                  status: st,
+                  mealOptionId: st === 'attending' ? (meals[mIdx] ?? null) : null,
+                  dietaryNotes: st === 'declined' ? null : (m.dietaryNotes ?? null),
+                };
+              })
+              : [];
         return {
-          id: String(r.id),
+          id: rsvpId,
           subEventId: String(r.subEventId),
           invitationCodeId: String(r.invitationCodeId),
           guestCode: guest?.code ?? '',
           guestName: guest?.guestName ?? 'Guest',
           status: normalizedStatus,
-          plusOneCount: Number(r.plusOneCount ?? 0),
+          plusOneCount,
           plusOneNames: Array.isArray(r.plusOneNames) ? r.plusOneNames.map(String) : [],
           mealSelection: meals[0] ?? null,
           mealSelections: meals,
@@ -2178,6 +2403,7 @@ export function importDemoDatabaseBackup(rawPayload: Record<string, unknown>): {
             r.customAnswers && typeof r.customAnswers === 'object'
               ? (r.customAnswers as Record<string, string>)
               : {},
+          memberRsvps,
           respondedAt: toDateInstance(r.createdAt).toISOString(),
           updatedAt: toDateInstance(r.updatedAt).toISOString(),
         };

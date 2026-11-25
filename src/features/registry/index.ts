@@ -45,6 +45,9 @@ export {
 } from './types';
 export type {
   InvitationCodeDTO,
+  HouseholdMemberDTO,
+  HouseholdMemberInputDTO,
+  HouseholdMemberRole,
   BatchDeleteInvitationCodesDTO,
   BatchUpdateInvitationTagsDTO,
   DryRunValidateBatchDTO,
@@ -101,5 +104,7 @@ export {
   extractHouseholdNotes,
   isAddressComplete,
   generateRandomCode,
+  deriveHouseholdMembersFromInvitation,
+  isPlaceholderPlusOneName,
 } from './utils/invitation';
 export type { AttendanceStatus } from './utils/invitation';

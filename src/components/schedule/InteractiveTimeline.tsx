@@ -18,7 +18,11 @@ import type {
   MealOptionDTO,
   CustomRsvpQuestionDTO,
 } from '@/features/sub-events';
-import { useScheduleRsvpManager } from '@/hooks/useScheduleRsvpManager';
+import {
+  useScheduleRsvpManager,
+  type ScheduleHouseholdMember,
+  type ScheduleMemberRsvpItem,
+} from '@/hooks/useScheduleRsvpManager';
 import { Button } from '@/components/ui/Button';
 import {
   FormGroup,
@@ -69,6 +73,7 @@ interface ScheduleEventItem {
     mealSelections?: string[];
     customAnswers?: Record<string, string>;
     plusOneNames?: string[];
+    memberRsvps?: ScheduleMemberRsvpItem[];
   } | null;
   createdAt?: Date;
 }
@@ -89,6 +94,7 @@ interface InteractiveTimelineProps {
   sectionId?: string;
   isPreview?: boolean;
   maxPlusOnes?: number | null;
+  householdMembers?: ScheduleHouseholdMember[] | null;
   emptyStateMessage?: string;
   rsvpOpen?: boolean;
   rsvpFormattedDeadline?: string | null;
@@ -96,6 +102,20 @@ interface InteractiveTimelineProps {
   hideStatusBanner?: boolean;
   onRsvpStatusChange?: (_status: ScheduleRsvpStatusInfo) => void;
   onRequestInvitationCode?: () => void;
+}
+
+function formatHouseholdMemberRole(role: ScheduleHouseholdMember['role']): string {
+  switch (role) {
+    case 'PRIMARY':
+      return 'Primary Adult';
+    case 'PARTNER':
+      return 'Partner';
+    case 'CHILD':
+      return 'Child';
+    case 'PLUS_ONE':
+    default:
+      return 'Plus-One';
+  }
 }
 
 /**
@@ -236,6 +256,7 @@ export default function InteractiveTimeline({
   sectionId = 'schedule-timeline',
   isPreview = false,
   maxPlusOnes,
+  householdMembers: householdMembersProp,
   emptyStateMessage,
   rsvpOpen: rsvpOpenProp,
   rsvpFormattedDeadline: rsvpFormattedDeadlineProp,
@@ -250,6 +271,9 @@ export default function InteractiveTimeline({
   const [guestName, setGuestName] = useState<string | null>(null);
   const [apiMaxPlusOnes, setApiMaxPlusOnes] = useState<number | null | undefined>(undefined);
   const [apiSavedPlusOneNames, setApiSavedPlusOneNames] = useState<string[] | null>(null);
+  const [apiHouseholdMembers, setApiHouseholdMembers] = useState<ScheduleHouseholdMember[] | null>(
+    null
+  );
   const [apiRsvpOpen, setApiRsvpOpen] = useState<boolean | undefined>(undefined);
   const [apiDeadlineDate, setApiDeadlineDate] = useState<string | null | undefined>(undefined);
   const [apiFormattedDeadline, setApiFormattedDeadline] = useState<string | null | undefined>(
@@ -347,10 +371,21 @@ export default function InteractiveTimeline({
     setHasResolvedRsvpStatus(true);
   }, []);
 
+  const effectiveHouseholdMembers = useMemo(
+    () =>
+      Array.isArray(apiHouseholdMembers)
+        ? apiHouseholdMembers
+        : Array.isArray(householdMembersProp)
+          ? householdMembersProp
+          : [],
+    [apiHouseholdMembers, householdMembersProp]
+  );
+
   const rsvpManager = useScheduleRsvpManager({
     initialEvents,
     maxPlusOnes: resolvedMaxPlusOnes,
     defaultPlusOneNames: apiSavedPlusOneNames,
+    householdMembers: effectiveHouseholdMembers,
     onRsvpClosed: handleRsvpClosedMidSession,
   });
   const { initializeEvents } = rsvpManager;
@@ -386,9 +421,41 @@ export default function InteractiveTimeline({
         } else if ('isGuest' in json) {
           setIsGuest(false);
           setGuestName(null);
+          setApiHouseholdMembers(null);
           if (json.plusOneAllocations === undefined) {
             setApiMaxPlusOnes(undefined);
           }
+        }
+        const resolvedHouseholdMembers: ScheduleHouseholdMember[] | null = Array.isArray(
+          json.householdMembers
+        )
+          ? json.householdMembers
+            .filter(
+              (m: unknown): m is ScheduleHouseholdMember =>
+                Boolean(
+                  m &&
+                    typeof m === 'object' &&
+                    typeof (m as ScheduleHouseholdMember).id === 'string' &&
+                    typeof (m as ScheduleHouseholdMember).fullName === 'string'
+                )
+            )
+            .map((m: ScheduleHouseholdMember) => ({
+              id: m.id,
+              fullName: m.fullName,
+              firstName: m.firstName,
+              lastName: m.lastName,
+              role: m.role || 'PLUS_ONE',
+              email: m.email ?? null,
+              phone: m.phone ?? null,
+              dietaryNotes: m.dietaryNotes ?? null,
+              tags: Array.isArray(m.tags) ? m.tags : [],
+              displayOrder: m.displayOrder ?? 0,
+            }))
+          : null;
+        if (resolvedHouseholdMembers !== null) {
+          setApiHouseholdMembers(resolvedHouseholdMembers);
+        } else if (json.householdMembers === null) {
+          setApiHouseholdMembers(null);
         }
         const rawSavedNames = Array.isArray(json.savedPlusOneNames)
           ? json.savedPlusOneNames
@@ -440,7 +507,7 @@ export default function InteractiveTimeline({
             userRsvp: item.userRsvp !== undefined ? item.userRsvp : null,
           }));
           setSubEventsFromApi(mapped);
-          initializeEvents(mapped, resolvedSavedNames);
+          initializeEvents(mapped, resolvedSavedNames, resolvedHouseholdMembers ?? undefined);
         }
         setScheduleLoadError(null);
       } else if (res.status >= 500 && initialNodes.length === 0 && emptyStateMessage) {
@@ -1013,6 +1080,7 @@ export default function InteractiveTimeline({
                       const itemState = rsvpManager.getRsvpState(event.id);
                       const eventMealOptions = event.mealOptions ?? [];
                       const eventCustomQuestions = event.customQuestions ?? [];
+                      const isRelationalHouseholdMode = effectiveHouseholdMembers.length > 0;
 
                       if (!effectiveRsvpOpen) {
                         const savedRsvp = itemState.baseline;
@@ -1036,20 +1104,34 @@ export default function InteractiveTimeline({
                             : savedRsvp.plusOneNames.filter((n) => n.trim().length > 0);
                         const mealMap = new Map(eventMealOptions.map((m) => [m.id, m]));
                         const savedMealsSummary =
-                          savedRsvp.status === 'attending' && eventMealOptions.length > 0
-                            ? savedRsvp.mealSelections
-                              .map((optId, idx) => {
-                                if (!optId) return null;
-                                const opt = mealMap.get(optId);
-                                const who =
-                                  idx === 0
-                                    ? guestName || 'Primary Guest'
-                                    : savedPlusOneNames[idx - 1] || `Plus-One #${idx}`;
-                                return `${who}: ${opt?.label || optId}`;
+                          isRelationalHouseholdMode && Array.isArray(savedRsvp.memberRsvps)
+                            ? effectiveHouseholdMembers
+                              .map((member) => {
+                                const mr = savedRsvp.memberRsvps?.find(
+                                  (r) => r.householdMemberId === member.id
+                                );
+                                if (!mr || mr.status !== 'attending') return null;
+                                const opt = mr.mealOptionId ? mealMap.get(mr.mealOptionId) : null;
+                                return opt
+                                  ? `${member.fullName}: ${opt.label}`
+                                  : `${member.fullName}: Attending`;
                               })
                               .filter(Boolean)
                               .join('; ')
-                            : '';
+                            : savedRsvp.status === 'attending' && eventMealOptions.length > 0
+                              ? savedRsvp.mealSelections
+                                .map((optId, idx) => {
+                                  if (!optId) return null;
+                                  const opt = mealMap.get(optId);
+                                  const who =
+                                    idx === 0
+                                      ? guestName || 'Primary Guest'
+                                      : savedPlusOneNames[idx - 1] || `Plus-One #${idx}`;
+                                  return `${who}: ${opt?.label || optId}`;
+                                })
+                                .filter(Boolean)
+                                .join('; ')
+                              : '';
                         const savedAnswersSummary =
                           savedRsvp.status === 'attending' && eventCustomQuestions.length > 0
                             ? eventCustomQuestions
@@ -1146,6 +1228,388 @@ export default function InteractiveTimeline({
                         Boolean(itemState.error) && firstVisibleErrorEventId === event.id;
                       const statusFieldError = itemState.fieldErrors.status;
                       const plusOneFieldError = itemState.fieldErrors.plusOneCount;
+
+                      if (isRelationalHouseholdMode) {
+                        const memberRsvpList = Array.isArray(itemState.current.memberRsvps)
+                          ? itemState.current.memberRsvps
+                          : [];
+                        const memberRsvpById = new Map(
+                          memberRsvpList.map((mr) => [mr.householdMemberId, mr])
+                        );
+                        const relationalAttendingCount = effectiveHouseholdMembers.filter(
+                          (m) => memberRsvpById.get(m.id)?.status === 'attending'
+                        ).length;
+                        const anyRelationalAttending = relationalAttendingCount > 0;
+
+                        return (
+                          <div
+                            className={`mb-6 p-4 sm:p-5 rounded-xl border text-gray-900 dark:text-white transition-all ${
+                              itemState.state === 'error'
+                                ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-300 dark:border-rose-800'
+                                : itemState.isDirty
+                                  ? 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-300 dark:border-amber-700 ring-1 ring-amber-300 dark:ring-amber-700'
+                                  : 'bg-gray-50 dark:bg-gray-800/80 border-gray-200 dark:border-gray-700'
+                            }`}
+                            data-testid={`rsvp-card-${event.id}`}
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span
+                                  id={`rsvp-heading-${event.id}`}
+                                  className="font-bold text-sm sm:text-base"
+                                >
+                                  Your RSVP for {event.title}
+                                </span>
+                                {itemState.isDirty && (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200">
+                                    Unsaved changes
+                                  </span>
+                                )}
+                              </div>
+                              <span
+                                data-testid={`rsvp-attending-counter-${event.id}`}
+                                className="inline-flex items-center rounded-full bg-white dark:bg-zinc-900 px-3 py-1 text-xs font-semibold text-gray-700 dark:text-zinc-200 border border-gray-200 dark:border-zinc-700"
+                              >
+                                {`${relationalAttendingCount} of ${effectiveHouseholdMembers.length} household ${
+                                  effectiveHouseholdMembers.length === 1 ? 'guest' : 'guests'
+                                } attending`}
+                              </span>
+                            </div>
+
+                            <div className="overflow-x-auto mb-3 rounded-xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900/60">
+                              <table
+                                className="w-full text-left border-collapse"
+                                aria-labelledby={`rsvp-heading-${event.id}`}
+                              >
+                                <thead>
+                                  <tr className="border-b border-gray-200 dark:border-zinc-700 bg-gray-100/80 dark:bg-zinc-800/80 text-[11px] font-bold uppercase tracking-wider text-gray-700 dark:text-zinc-200">
+                                    <th scope="col" className="py-2.5 px-3 sm:px-4">
+                                      Attendee &amp; Standing Profile
+                                    </th>
+                                    <th scope="col" className="py-2.5 px-3 sm:px-4">
+                                      Response
+                                    </th>
+                                    {eventMealOptions.length > 0 && (
+                                      <th scope="col" className="py-2.5 px-3 sm:px-4">
+                                        Entrée Selection
+                                      </th>
+                                    )}
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200/80 dark:divide-zinc-700/80">
+                                  {effectiveHouseholdMembers.map((member) => {
+                                    const mr = memberRsvpById.get(member.id);
+                                    const memberStatus = mr?.status ?? 'pending';
+                                    const memberMealId = mr?.mealOptionId ?? '';
+                                    const memberStatusError =
+                                      itemState.fieldErrors[`memberStatus.${member.id}`];
+                                    const memberMealError =
+                                      itemState.fieldErrors[`memberMeal.${member.id}`];
+                                    const selectedMealObj = eventMealOptions.find(
+                                      (m) => m.id === memberMealId
+                                    );
+                                    const mealSelectId = `rsvp-member-meal-${event.id}-${member.id}`;
+
+                                    return (
+                                      <tr
+                                        key={member.id}
+                                        data-testid={`rsvp-member-row-${event.id}-${member.id}`}
+                                        className="align-top"
+                                      >
+                                        <td className="py-3 px-3 sm:px-4">
+                                          <div className="font-semibold text-xs sm:text-sm text-gray-900 dark:text-zinc-100">
+                                            {member.fullName}
+                                          </div>
+                                          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-gray-600 dark:text-zinc-300">
+                                            <span className="font-medium">
+                                              {formatHouseholdMemberRole(member.role)}
+                                            </span>
+                                            {member.role === 'CHILD' && (
+                                              <span className="inline-flex items-center rounded bg-amber-100 dark:bg-amber-950/60 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700">
+                                                Kids Meal
+                                              </span>
+                                            )}
+                                            {member.dietaryNotes && member.dietaryNotes.trim() && (
+                                              <span className="inline-flex items-center rounded bg-rose-50 dark:bg-rose-950/50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-800 dark:text-rose-200 border border-rose-200 dark:border-rose-800">
+                                                {member.dietaryNotes}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </td>
+
+                                        <td className="py-3 px-3 sm:px-4">
+                                          <ToggleButtonGroup
+                                            mode="radiogroup"
+                                            aria-label={`Attendance for ${member.fullName} at ${event.title}`}
+                                            aria-invalid={memberStatusError ? true : undefined}
+                                            data-rsvp-status-invalid={
+                                              memberStatusError ? 'true' : undefined
+                                            }
+                                            busy={isControlDisabled}
+                                            value={
+                                              memberStatus === 'pending' ? null : memberStatus
+                                            }
+                                            onChange={(st) =>
+                                              rsvpManager.updateMemberRsvp(event.id, member.id, {
+                                                status: st,
+                                              })
+                                            }
+                                            className="flex flex-wrap gap-1.5 bg-transparent dark:bg-transparent p-0 border-0 rounded-none"
+                                            options={(['attending', 'declined'] as const).map(
+                                              (st) => ({
+                                                value: st,
+                                                label: st === 'attending' ? 'Attending' : 'Declined',
+                                                className:
+                                                  'px-2.5 py-1 rounded-lg text-xs font-semibold',
+                                                activeClassName:
+                                                  st === 'attending'
+                                                    ? 'bg-emerald-700 text-white border border-emerald-900 ring-2 ring-offset-1 ring-emerald-700 dark:ring-emerald-400 shadow-sm'
+                                                    : 'bg-rose-700 text-white border border-rose-900 ring-2 ring-offset-1 ring-rose-700 dark:ring-rose-400 shadow-sm',
+                                                inactiveClassName:
+                                                  'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-100',
+                                              })
+                                            )}
+                                          />
+                                          {memberStatusError && (
+                                            <FormMessage
+                                              role={hasCardOrBatchAlert ? 'none' : undefined}
+                                              className="mt-1"
+                                            >
+                                              {memberStatusError}
+                                            </FormMessage>
+                                          )}
+                                        </td>
+
+                                        {eventMealOptions.length > 0 && (
+                                          <td className="py-3 px-3 sm:px-4 min-w-[190px]">
+                                            {memberStatus === 'attending' ? (
+                                              <FormGroup
+                                                required
+                                                state={memberMealError ? 'error' : 'default'}
+                                                busy={isControlDisabled}
+                                                className="mb-0"
+                                              >
+                                                <Label htmlFor={mealSelectId} className="sr-only">
+                                                  {`Entrée selection for ${member.fullName} at ${event.title}`}
+                                                </Label>
+                                                <Select
+                                                  id={mealSelectId}
+                                                  aria-label={`Entrée selection for ${member.fullName} at ${event.title}`}
+                                                  busy={isControlDisabled}
+                                                  value={memberMealId}
+                                                  onChange={(e) => {
+                                                    if (isControlDisabled) return;
+                                                    rsvpManager.updateMemberRsvp(
+                                                      event.id,
+                                                      member.id,
+                                                      { mealOptionId: e.target.value }
+                                                    );
+                                                  }}
+                                                  style={{ borderRadius: '0.5rem' }}
+                                                  className="h-auto px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                                >
+                                                  <option value="">Select an entrée...</option>
+                                                  {memberMealId && !selectedMealObj && (
+                                                    <option value={memberMealId}>
+                                                      {`${memberMealId} (Unavailable — previously selected)`}
+                                                    </option>
+                                                  )}
+                                                  {eventMealOptions.map((opt) => (
+                                                    <option key={opt.id} value={opt.id}>
+                                                      {opt.dietaryTags.length > 0
+                                                        ? `${opt.label} (${opt.dietaryTags.join(', ')})`
+                                                        : opt.label}
+                                                    </option>
+                                                  ))}
+                                                </Select>
+                                                {memberMealError && (
+                                                  <FormMessage
+                                                    role={hasCardOrBatchAlert ? 'none' : undefined}
+                                                  >
+                                                    {memberMealError}
+                                                  </FormMessage>
+                                                )}
+                                              </FormGroup>
+                                            ) : memberStatus === 'declined' ? (
+                                              <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700">
+                                                Not attending
+                                              </span>
+                                            ) : (
+                                              <span className="text-xs text-gray-600 dark:text-zinc-300 italic">
+                                                Select attendance first
+                                              </span>
+                                            )}
+                                          </td>
+                                        )}
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+
+                            {anyRelationalAttending && eventCustomQuestions.length > 0 && (
+                              <div
+                                className="mb-3 space-y-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900/60 p-3"
+                                data-testid={`rsvp-questions-${event.id}`}
+                              >
+                                <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                                  Additional RSVP Questions
+                                </p>
+                                <div className="space-y-2.5">
+                                  {eventCustomQuestions.map((question) => {
+                                    const qControlId = `rsvp-question-${event.id}-${question.id}`;
+                                    const currentAnswer =
+                                      itemState.current.customAnswers[question.id] ?? '';
+                                    const questionFieldError =
+                                      itemState.fieldErrors[`customAnswers.${question.id}`];
+
+                                    return (
+                                      <FormGroup
+                                        key={question.id}
+                                        required={question.required}
+                                        state={questionFieldError ? 'error' : 'default'}
+                                        busy={isControlDisabled}
+                                      >
+                                        <Label
+                                          htmlFor={qControlId}
+                                          className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
+                                        >
+                                          {question.prompt}
+                                        </Label>
+                                        {question.type === 'choice' ? (
+                                          <Select
+                                            id={qControlId}
+                                            busy={isControlDisabled}
+                                            value={currentAnswer}
+                                            onChange={(e) => {
+                                              if (isControlDisabled) return;
+                                              rsvpManager.updateRsvp(event.id, {
+                                                customAnswers: {
+                                                  ...itemState.current.customAnswers,
+                                                  [question.id]: e.target.value,
+                                                },
+                                              });
+                                            }}
+                                            style={{ borderRadius: '0.5rem' }}
+                                            className="h-auto px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                          >
+                                            <option value="">Select an option...</option>
+                                            {currentAnswer &&
+                                              !question.options.includes(currentAnswer) && (
+                                              <option value={currentAnswer}>
+                                                {`${currentAnswer} (Unavailable — previously selected)`}
+                                              </option>
+                                            )}
+                                            {question.options.map((choice) => (
+                                              <option key={choice} value={choice}>
+                                                {choice}
+                                              </option>
+                                            ))}
+                                          </Select>
+                                        ) : (
+                                          <Input
+                                            id={qControlId}
+                                            type="text"
+                                            sizeVariant="compact"
+                                            busy={isControlDisabled}
+                                            value={currentAnswer}
+                                            onChange={(e) => {
+                                              if (isControlDisabled) return;
+                                              rsvpManager.updateRsvp(event.id, {
+                                                customAnswers: {
+                                                  ...itemState.current.customAnswers,
+                                                  [question.id]: e.target.value,
+                                                },
+                                              });
+                                            }}
+                                            style={{ borderRadius: '0.5rem' }}
+                                            className="h-auto px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                          />
+                                        )}
+                                        {questionFieldError && (
+                                          <FormMessage role={hasCardOrBatchAlert ? 'none' : undefined}>
+                                            {questionFieldError}
+                                          </FormMessage>
+                                        )}
+                                      </FormGroup>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="mb-3">
+                              <FormGroup busy={isControlDisabled}>
+                                <Label
+                                  htmlFor={`rsvp-dietary-notes-${event.id}`}
+                                  className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1"
+                                >
+                                  Event-Specific Dietary / Catering Note (Optional)
+                                </Label>
+                                <Input
+                                  id={`rsvp-dietary-notes-${event.id}`}
+                                  type="text"
+                                  sizeVariant="compact"
+                                  placeholder="Standing allergies carry over automatically; add any event-specific note here"
+                                  busy={isControlDisabled}
+                                  value={itemState.current.dietaryNotes}
+                                  onChange={(e) => {
+                                    if (isControlDisabled) return;
+                                    rsvpManager.updateRsvp(event.id, {
+                                      dietaryNotes: e.target.value,
+                                    });
+                                  }}
+                                  style={{ borderRadius: '0.5rem' }}
+                                  className="h-auto px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                />
+                              </FormGroup>
+                            </div>
+
+                            <div className="flex flex-wrap justify-between items-center gap-2">
+                              <Button
+                                type="button"
+                                variant="primary"
+                                size="sm"
+                                busy={isControlDisabled}
+                                onClick={() => {
+                                  void handleSingleRsvpSubmit(event.id);
+                                }}
+                                className="px-4 py-1.5 h-auto bg-primary text-white font-semibold text-xs rounded-lg shadow hover:opacity-90 transition-opacity"
+                              >
+                                {itemState.isSubmitting ? 'Submitting...' : 'Save RSVP'}
+                              </Button>
+
+                              {itemState.message && !itemState.error && (
+                                <span className="text-xs font-medium text-status-success-text">
+                                  {itemState.message}
+                                </span>
+                              )}
+                            </div>
+
+                            {itemState.error && (
+                              <div
+                                role={isPrimaryErrorAlertCard ? 'alert' : undefined}
+                                className="mt-2 text-xs text-rose-700 dark:text-rose-300 flex items-center justify-between"
+                              >
+                                <span>{itemState.error}</span>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  busy={isControlDisabled}
+                                  onClick={() => {
+                                    void handleSingleRsvpSubmit(event.id);
+                                  }}
+                                  className="h-auto px-1 py-0.5 text-xs text-rose-700 dark:text-rose-300 underline font-medium hover:text-rose-800 dark:hover:text-rose-200 ml-2"
+                                >
+                                  Retry
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      }
 
                       return (
                         <div

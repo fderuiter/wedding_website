@@ -4,9 +4,12 @@ import type { AppConfigDTO, ContentNodeDTO } from '@/features/content';
 import type { MediaDTO } from '@/features/media';
 import type {
   ContributorRecord,
+  HouseholdMemberDTO,
+  HouseholdMemberRole,
   InvitationCodeDTO,
   RegistryItem,
 } from '@/features/registry';
+import { splitMemberFullName } from '@/utils/invitationValidation';
 import type { SeatingTableDTO } from '@/features/seating';
 import type {
   CustomRsvpQuestionDTO,
@@ -28,6 +31,17 @@ export const SAMPLE_SUBEVENT_ID_PREFIX = 'sample-subevent-';
 
 const BASE_SEED_TIMESTAMP_MS = Date.parse('2026-01-15T12:00:00.000Z');
 
+interface SeededSubEventMemberRsvpRecord {
+  id: string;
+  subEventRsvpId: string;
+  householdMemberId: string;
+  status: 'attending' | 'declined' | 'pending';
+  mealOptionId: string | null;
+  dietaryNotes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 interface SeededSubEventRsvpRecord {
   id: string;
   subEventId: string;
@@ -39,6 +53,7 @@ interface SeededSubEventRsvpRecord {
   mealSelections: string[];
   dietaryNotes: string;
   customAnswers: Record<string, string>;
+  memberRsvps: SeededSubEventMemberRsvpRecord[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -304,13 +319,102 @@ function createSeedDataForArchetype(archetypeId: ArchetypeId): ArchetypeSeedData
     };
   });
 
-  // 2. Guests (InvitationCodes)
+  // 2. Guests (InvitationCodes) + Relational HouseholdMembers
   const guestByCode = new Map<string, SeededGuestRecord>();
   const guests: SeededGuestRecord[] = preset.guests.map((guest, idx) => {
     const guestStamp = deterministicDate(10 + idx);
     const tableId = guest.seatTableName
       ? (tableIdByName.get(guest.seatTableName) ?? null)
       : null;
+
+    const members: HouseholdMemberDTO[] =
+      guest.members && guest.members.length > 0
+        ? guest.members.map((m, mIdx) => {
+          const split = splitMemberFullName(m.fullName);
+          return {
+            id: m.id || `${guest.id}-member-${mIdx + 1}`,
+            invitationCodeId: guest.id,
+            fullName: m.fullName,
+            firstName: m.firstName ?? split.firstName,
+            lastName: m.lastName ?? split.lastName,
+            role: m.role,
+            email: m.email ?? null,
+            phone: m.phone ?? null,
+            dietaryNotes: m.dietaryNotes ?? null,
+            tags: [...(m.tags ?? [])],
+            displayOrder: mIdx,
+            seatNumber: tableId ? (m.seatNumber ?? null) : null,
+            createdAt: guestStamp,
+            updatedAt: guestStamp,
+          };
+        })
+        : (() => {
+          const primarySplit = splitMemberFullName(guest.guestName);
+          const derived: HouseholdMemberDTO[] = [
+            {
+              id: `${guest.id}-member-1`,
+              invitationCodeId: guest.id,
+              fullName: guest.guestName,
+              firstName: primarySplit.firstName,
+              lastName: primarySplit.lastName,
+              role: 'PRIMARY',
+              email: guest.email ?? null,
+              phone: null,
+              dietaryNotes: guest.dietaryNotes ?? null,
+              tags: [...guest.partyTags],
+              displayOrder: 0,
+              seatNumber: tableId ? (guest.seatNumber ?? null) : null,
+              createdAt: guestStamp,
+              updatedAt: guestStamp,
+            },
+          ];
+          const explicitNames = guest.plusOneNames ?? [];
+          const firstComp = [guest.plusOneFirstName, guest.plusOneLastName]
+            .filter(Boolean)
+            .join(' ')
+            .trim();
+          const compCount = Math.max(
+            guest.plusOnesAllowed ?? 0,
+            explicitNames.length,
+            firstComp ? 1 : 0
+          );
+          for (let c = 0; c < compCount; c += 1) {
+            const name =
+              explicitNames[c] || (c === 0 ? firstComp : '') || `Plus-One #${c + 1}`;
+            const split =
+              explicitNames[c] || (c === 0 && firstComp)
+                ? splitMemberFullName(name)
+                : { firstName: null, lastName: null };
+            const role: HouseholdMemberRole =
+              c === 0 && (explicitNames[c] || firstComp) ? 'PARTNER' : 'PLUS_ONE';
+            derived.push({
+              id: `${guest.id}-member-${c + 2}`,
+              invitationCodeId: guest.id,
+              fullName: name,
+              firstName: split.firstName,
+              lastName: split.lastName,
+              role,
+              email: null,
+              phone: null,
+              dietaryNotes: null,
+              tags: [],
+              displayOrder: c + 1,
+              seatNumber:
+                tableId && typeof guest.seatNumber === 'number'
+                  ? guest.seatNumber + c + 1
+                  : null,
+              createdAt: guestStamp,
+              updatedAt: guestStamp,
+            });
+          }
+          return derived;
+        })();
+
+    const companionSeats = members
+      .slice(1)
+      .map((m) => m.seatNumber)
+      .filter((s): s is number => typeof s === 'number' && s > 0);
+
     const record: SeededGuestRecord = {
       id: guest.id,
       code: guest.code,
@@ -336,8 +440,9 @@ function createSeedDataForArchetype(archetypeId: ArchetypeId): ArchetypeSeedData
       used: false,
       usedAt: null,
       tableId,
-      seatNumber: guest.seatNumber ?? null,
-      plusOneSeatNumbers: [],
+      seatNumber: tableId ? (members[0]?.seatNumber ?? guest.seatNumber ?? null) : null,
+      plusOneSeatNumbers: companionSeats,
+      members,
       seatTableName: guest.seatTableName,
       isSample: true,
       createdAt: guestStamp,
@@ -618,6 +723,32 @@ function createSeedDataForArchetype(archetypeId: ArchetypeId): ArchetypeSeedData
       .map((rsvp) => {
         const guest = guestByCode.get(rsvp.guestCode.toUpperCase());
         if (!guest) return null;
+        const guestMembers = guest.members ?? [];
+        const attendingCap = rsvp.status === 'attending' ? 1 + Math.max(0, rsvp.plusOneCount) : 0;
+        const memberRsvps: SeededSubEventMemberRsvpRecord[] = guestMembers.map((member, mIdx) => {
+          const memberStatus: 'attending' | 'declined' | 'pending' =
+            rsvp.status === 'declined'
+              ? 'declined'
+              : rsvp.status === 'pending'
+                ? 'pending'
+                : mIdx < attendingCap
+                  ? 'attending'
+                  : 'declined';
+          return {
+            id: `${rsvp.id}-member-rsvp-${mIdx + 1}`,
+            subEventRsvpId: rsvp.id,
+            householdMemberId: member.id,
+            status: memberStatus,
+            mealOptionId:
+              memberStatus === 'attending' ? (rsvp.mealSelections[mIdx] ?? null) : null,
+            dietaryNotes:
+              memberStatus === 'declined'
+                ? null
+                : member.dietaryNotes ?? (mIdx === 0 && rsvp.dietaryNotes ? rsvp.dietaryNotes : null),
+            createdAt: evtStamp,
+            updatedAt: evtStamp,
+          };
+        });
         return {
           id: rsvp.id,
           subEventId: evt.id,
@@ -629,6 +760,7 @@ function createSeedDataForArchetype(archetypeId: ArchetypeId): ArchetypeSeedData
           mealSelections: [...rsvp.mealSelections],
           dietaryNotes: rsvp.dietaryNotes,
           customAnswers: { ...rsvp.customAnswers },
+          memberRsvps,
           createdAt: evtStamp,
           updatedAt: evtStamp,
         };

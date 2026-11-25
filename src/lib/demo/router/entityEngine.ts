@@ -1,11 +1,17 @@
 import type { AttractionDTO } from '@/features/attractions';
 import type { ContentNodeDTO } from '@/features/content';
-import type { InvitationCodeDTO, RegistryItem } from '@/features/registry';
+import type {
+  HouseholdMemberDTO,
+  HouseholdMemberRole,
+  InvitationCodeDTO,
+  RegistryItem,
+} from '@/features/registry';
 import type { SeatingTableDTO } from '@/features/seating';
 import type { SubEventDTO } from '@/features/sub-events';
 import type { WeddingPartyMemberDTO, WeddingPartySide } from '@/features/wedding-party';
-import { normalizePartyTags } from '@/utils/invitationValidation';
+import { normalizePartyTags, splitMemberFullName } from '@/utils/invitationValidation';
 import {
+  buildDemoHouseholdMembersForGuest,
   createSampleItemSvgDataUrl,
   type ArchetypeDataset,
   type DemoPhotoRecord,
@@ -421,7 +427,15 @@ const seatingTablesDescriptor: DemoEntityDescriptor<SeatingTableDTO> = {
         seatingTables: remaining,
         guests: curr.guests.map((g) =>
           g.tableId && ids.has(g.tableId)
-            ? { ...g, tableId: null, seatNumber: null, plusOneSeatNumbers: [] }
+            ? {
+              ...g,
+              tableId: null,
+              seatNumber: null,
+              plusOneSeatNumbers: [],
+              ...(Array.isArray(g.members)
+                ? { members: g.members.map((m) => ({ ...m, seatNumber: null })) }
+                : {}),
+            }
             : g
         ),
       },
@@ -440,14 +454,23 @@ const invitationCodesDescriptor: DemoEntityDescriptor<InvitationCodeDTO> = {
     const groupFilter = (url.searchParams.get('partyGroup') || '').trim();
     let filtered = guests;
     if (search) {
-      filtered = filtered.filter(
-        (g) =>
+      filtered = filtered.filter((g) => {
+        if (
           g.guestName.toLowerCase().includes(search) ||
           (g.householdName || '').toLowerCase().includes(search) ||
           g.code.toLowerCase().includes(search) ||
           (g.email || '').toLowerCase().includes(search) ||
           (g.city || '').toLowerCase().includes(search)
-      );
+        ) {
+          return true;
+        }
+        return (g.members ?? []).some(
+          (m) =>
+            m.fullName.toLowerCase().includes(search) ||
+            (m.email || '').toLowerCase().includes(search) ||
+            (m.phone || '').toLowerCase().includes(search)
+        );
+      });
     }
     if (tagFilter && tagFilter !== 'all') {
       filtered = filtered.filter((g) => (g.partyTags || []).includes(tagFilter));
@@ -461,11 +484,49 @@ const invitationCodesDescriptor: DemoEntityDescriptor<InvitationCodeDTO> = {
     const nowIso = now.toISOString();
     const suffix = Date.now().toString().slice(-4);
     const code = String(body.code || `GUEST${suffix}`).toUpperCase();
-    return {
-      id: nextDemoId('demo-guest'),
+    const id = nextDemoId('demo-guest');
+    const rawMembers = Array.isArray(body.members)
+      ? (body.members as Array<Record<string, unknown>>)
+      : null;
+    const explicitMembers: HouseholdMemberDTO[] | undefined =
+      rawMembers && rawMembers.length > 0
+        ? rawMembers.map((m, idx) => {
+          const fullName = String(m.fullName || (idx === 0 ? body.guestName : '') || `Guest #${idx + 1}`).trim();
+          const split = splitMemberFullName(fullName);
+          const role: HouseholdMemberRole =
+            idx === 0
+              ? 'PRIMARY'
+              : m.role === 'PARTNER' || m.role === 'CHILD' || m.role === 'PLUS_ONE'
+                ? m.role
+                : 'PARTNER';
+          return {
+            id: typeof m.id === 'string' && m.id ? m.id : `${id}-member-${idx + 1}`,
+            invitationCodeId: id,
+            fullName,
+            firstName: typeof m.firstName === 'string' ? m.firstName : split.firstName,
+            lastName: typeof m.lastName === 'string' ? m.lastName : split.lastName,
+            role,
+            email: typeof m.email === 'string' && m.email.trim() ? m.email.trim() : null,
+            phone: typeof m.phone === 'string' && m.phone.trim() ? m.phone.trim() : null,
+            dietaryNotes:
+              typeof m.dietaryNotes === 'string' && m.dietaryNotes.trim()
+                ? m.dietaryNotes.trim()
+                : null,
+            tags: Array.isArray(m.tags) ? m.tags.map(String) : [],
+            displayOrder: idx,
+            seatNumber: typeof m.seatNumber === 'number' ? m.seatNumber : null,
+            createdAt: nowIso,
+            updatedAt: nowIso,
+          };
+        })
+        : undefined;
+    const base: InvitationCodeDTO = {
+      id,
       code,
-      guestName: String(body.guestName || 'Invited Guest'),
-      email: typeof body.email === 'string' ? body.email : null,
+      guestName: String(explicitMembers?.[0]?.fullName || body.guestName || 'Invited Guest'),
+      email:
+        explicitMembers?.[0]?.email ??
+        (typeof body.email === 'string' ? body.email : null),
       addressLine1: typeof body.addressLine1 === 'string' ? body.addressLine1 : '',
       addressLine2: typeof body.addressLine2 === 'string' ? body.addressLine2 : '',
       city: typeof body.city === 'string' ? body.city : '',
@@ -476,61 +537,156 @@ const invitationCodesDescriptor: DemoEntityDescriptor<InvitationCodeDTO> = {
       householdName: typeof body.householdName === 'string' ? body.householdName : '',
       partyGroup: typeof body.partyGroup === 'string' ? body.partyGroup : 'Friends',
       partyTags: normalizePartyTags(body.partyTags, { dedupe: true }),
-      plusOneAllocations: Number(body.plusOneAllocations ?? 0),
+      plusOneAllocations: explicitMembers
+        ? Math.max(Number(body.plusOneAllocations ?? 0), explicitMembers.length - 1)
+        : Number(body.plusOneAllocations ?? 0),
       plusOneFirstName: typeof body.plusOneFirstName === 'string' ? body.plusOneFirstName : '',
       plusOneLastName: typeof body.plusOneLastName === 'string' ? body.plusOneLastName : '',
+      ...(explicitMembers ? { members: explicitMembers } : {}),
       used: false,
       isSample: false,
       createdAt: nowIso,
       updatedAt: nowIso,
     };
+    return {
+      ...base,
+      members: explicitMembers ?? buildDemoHouseholdMembersForGuest(base),
+    };
   },
   writeCreated: (curr, guest) => ({ ...curr, guests: [...curr.guests, guest] }),
   describeItem: (g) => `household invitation "${g.guestName}" (${g.code})`,
-  mergeUpdated: (existing, body, now) => ({
-    ...existing,
-    ...(typeof body.code === 'string' && body.code.trim()
-      ? { code: body.code.trim().toUpperCase() }
-      : {}),
-    ...(typeof body.guestName === 'string' ? { guestName: body.guestName } : {}),
-    ...(body.email === null || typeof body.email === 'string' ? { email: body.email } : {}),
-    ...(body.addressLine1 === null || typeof body.addressLine1 === 'string'
-      ? { addressLine1: body.addressLine1 }
-      : {}),
-    ...(body.addressLine2 === null || typeof body.addressLine2 === 'string'
-      ? { addressLine2: body.addressLine2 }
-      : {}),
-    ...(body.city === null || typeof body.city === 'string' ? { city: body.city } : {}),
-    ...(body.state === null || typeof body.state === 'string' ? { state: body.state } : {}),
-    ...(body.zipCode === null || typeof body.zipCode === 'string' ? { zipCode: body.zipCode } : {}),
-    ...(body.country === null || typeof body.country === 'string' ? { country: body.country } : {}),
-    ...(body.dietaryNotes === null || typeof body.dietaryNotes === 'string'
-      ? { dietaryNotes: body.dietaryNotes }
-      : {}),
-    ...(body.householdName === null || typeof body.householdName === 'string'
-      ? { householdName: body.householdName }
-      : {}),
-    ...(body.partyGroup === null || typeof body.partyGroup === 'string'
-      ? { partyGroup: body.partyGroup }
-      : {}),
-    ...(Array.isArray(body.partyTags)
-      ? { partyTags: normalizePartyTags(body.partyTags, { dedupe: true }) }
-      : {}),
-    ...(typeof body.plusOneAllocations === 'number'
-      ? { plusOneAllocations: body.plusOneAllocations }
-      : {}),
-    ...(body.plusOneFirstName === null || typeof body.plusOneFirstName === 'string'
-      ? { plusOneFirstName: body.plusOneFirstName }
-      : {}),
-    ...(body.plusOneLastName === null || typeof body.plusOneLastName === 'string'
-      ? { plusOneLastName: body.plusOneLastName }
-      : {}),
-    ...(body.extraFields && typeof body.extraFields === 'object'
-      ? { extraFields: body.extraFields as Record<string, unknown> }
-      : {}),
-    isSample: false,
-    updatedAt: now.toISOString(),
-  }),
+  mergeUpdated: (existing, body, now) => {
+    const nowIso = now.toISOString();
+    const prevMembers = buildDemoHouseholdMembersForGuest(existing);
+    const prevById = new Map(prevMembers.map((m) => [m.id, m]));
+    let nextMembers: HouseholdMemberDTO[] = prevMembers;
+
+    if (Array.isArray(body.members) && body.members.length > 0) {
+      nextMembers = (body.members as Array<Record<string, unknown>>).map((m, idx) => {
+        const prev = typeof m.id === 'string' ? prevById.get(m.id) : undefined;
+        const fullName = String(m.fullName || prev?.fullName || `Member #${idx + 1}`).trim();
+        const split = splitMemberFullName(fullName);
+        const role: HouseholdMemberRole =
+          idx === 0
+            ? 'PRIMARY'
+            : m.role === 'PARTNER' || m.role === 'CHILD' || m.role === 'PLUS_ONE'
+              ? m.role
+              : (prev?.role && prev.role !== 'PRIMARY' ? prev.role : 'PARTNER');
+        return {
+          id: prev?.id || (typeof m.id === 'string' && m.id ? m.id : `${existing.id}-member-${idx + 1}`),
+          invitationCodeId: existing.id,
+          fullName,
+          firstName: typeof m.firstName === 'string' ? m.firstName : split.firstName,
+          lastName: typeof m.lastName === 'string' ? m.lastName : split.lastName,
+          role,
+          email:
+            m.email === null || typeof m.email === 'string'
+              ? (m.email?.trim() || null)
+              : (prev?.email ?? null),
+          phone:
+            m.phone === null || typeof m.phone === 'string'
+              ? (m.phone?.trim() || null)
+              : (prev?.phone ?? null),
+          dietaryNotes:
+            m.dietaryNotes === null || typeof m.dietaryNotes === 'string'
+              ? (m.dietaryNotes?.trim() || null)
+              : (prev?.dietaryNotes ?? null),
+          tags: Array.isArray(m.tags) ? m.tags.map(String) : (prev?.tags ?? []),
+          displayOrder: idx,
+          seatNumber:
+            typeof m.seatNumber === 'number'
+              ? m.seatNumber
+              : m.seatNumber === null
+                ? null
+                : (prev?.seatNumber ?? null),
+          createdAt: prev?.createdAt ?? nowIso,
+          updatedAt: nowIso,
+        };
+      });
+    } else if (nextMembers[0]) {
+      const updatedName = typeof body.guestName === 'string' ? body.guestName : existing.guestName;
+      const split = splitMemberFullName(updatedName);
+      nextMembers = nextMembers.map((m, idx) =>
+        idx === 0
+          ? {
+            ...m,
+            fullName: updatedName,
+            firstName: split.firstName,
+            lastName: split.lastName,
+            email:
+              body.email === null || typeof body.email === 'string'
+                ? body.email
+                : m.email,
+            dietaryNotes:
+              body.dietaryNotes === null || typeof body.dietaryNotes === 'string'
+                ? body.dietaryNotes
+                : m.dietaryNotes,
+            updatedAt: nowIso,
+          }
+          : m
+      );
+    }
+
+    const resolvedGuestName =
+      Array.isArray(body.members) && nextMembers[0]
+        ? nextMembers[0].fullName
+        : typeof body.guestName === 'string'
+          ? body.guestName
+          : existing.guestName;
+
+    return {
+      ...existing,
+      ...(typeof body.code === 'string' && body.code.trim()
+        ? { code: body.code.trim().toUpperCase() }
+        : {}),
+      guestName: resolvedGuestName,
+      ...(body.email === null || typeof body.email === 'string' ? { email: body.email } : {}),
+      ...(body.addressLine1 === null || typeof body.addressLine1 === 'string'
+        ? { addressLine1: body.addressLine1 }
+        : {}),
+      ...(body.addressLine2 === null || typeof body.addressLine2 === 'string'
+        ? { addressLine2: body.addressLine2 }
+        : {}),
+      ...(body.city === null || typeof body.city === 'string' ? { city: body.city } : {}),
+      ...(body.state === null || typeof body.state === 'string' ? { state: body.state } : {}),
+      ...(body.zipCode === null || typeof body.zipCode === 'string' ? { zipCode: body.zipCode } : {}),
+      ...(body.country === null || typeof body.country === 'string' ? { country: body.country } : {}),
+      ...(body.dietaryNotes === null || typeof body.dietaryNotes === 'string'
+        ? { dietaryNotes: body.dietaryNotes }
+        : {}),
+      ...(body.householdName === null || typeof body.householdName === 'string'
+        ? { householdName: body.householdName }
+        : {}),
+      ...(body.partyGroup === null || typeof body.partyGroup === 'string'
+        ? { partyGroup: body.partyGroup }
+        : {}),
+      ...(Array.isArray(body.partyTags)
+        ? { partyTags: normalizePartyTags(body.partyTags, { dedupe: true }) }
+        : {}),
+      plusOneAllocations: Array.isArray(body.members)
+        ? Math.max(
+          typeof body.plusOneAllocations === 'number'
+            ? body.plusOneAllocations
+            : (existing.plusOneAllocations ?? 0),
+          Math.max(0, nextMembers.length - 1)
+        )
+        : typeof body.plusOneAllocations === 'number'
+          ? body.plusOneAllocations
+          : existing.plusOneAllocations,
+      ...(body.plusOneFirstName === null || typeof body.plusOneFirstName === 'string'
+        ? { plusOneFirstName: body.plusOneFirstName }
+        : {}),
+      ...(body.plusOneLastName === null || typeof body.plusOneLastName === 'string'
+        ? { plusOneLastName: body.plusOneLastName }
+        : {}),
+      ...(body.extraFields && typeof body.extraFields === 'object'
+        ? { extraFields: body.extraFields as Record<string, unknown> }
+        : {}),
+      members: nextMembers,
+      isSample: false,
+      updatedAt: nowIso,
+    };
+  },
   writeUpdated: (curr, updated) => ({
     ...curr,
     guests: curr.guests.map((g) => (g.id === updated.id ? updated : g)),
