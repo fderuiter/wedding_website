@@ -1,5 +1,6 @@
 /** @jest-environment node */
 
+import { spawnSync as nodeSpawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import net from 'node:net';
@@ -10,6 +11,7 @@ import { server as mswServer } from '../src/mocks/server';
 import {
   DEFAULT_TEST_DATABASE_URL,
   isCiEnv,
+  isDatabaseRequired,
   main,
   parseDatabaseEndpoint,
   probeTcpReadiness,
@@ -454,6 +456,173 @@ describe('CI-aware pretest & Jest setup environment orchestration', () => {
       expect(resetCalls).toEqual([{ url: DEFAULT_TEST_DATABASE_URL, schema: 'public' }]);
     });
 
+    it('logs a warning, skips offline migrations, still generates Prisma Client when missing, and runs migrations once PostgreSQL becomes reachable', async () => {
+      const lockContent = '{"name":"wedding_website","lockfileVersion":3}\n';
+      fs.writeFileSync(path.join(tempDir, 'package-lock.json'), lockContent, 'utf8');
+      fs.mkdirSync(path.join(tempDir, 'prisma/migrations/20260101000000_init'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, 'prisma/schema.prisma'), 'model AppConfig { id Int @id }\n', 'utf8');
+      fs.writeFileSync(
+        path.join(tempDir, 'prisma/migrations/20260101000000_init/migration.sql'),
+        'CREATE TABLE "AppConfig" ("id" INTEGER PRIMARY KEY);\n',
+        'utf8'
+      );
+      writeLockfileHash(tempDir);
+
+      // Seed stale dbSync to confirm offline fallback leaves dbSync unset
+      const pretestStatePath = path.join(tempDir, 'node_modules/.cache/pretest-state.json');
+      fs.mkdirSync(path.dirname(pretestStatePath), { recursive: true });
+      fs.writeFileSync(
+        pretestStatePath,
+        JSON.stringify({ dbSync: { schemaHash: 'stale', testDbUrl: DEFAULT_TEST_DATABASE_URL } }),
+        'utf8'
+      );
+
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const spawned: string[] = [];
+      let ensureDbCalled = 0;
+
+      try {
+        await main({
+          rootDir: tempDir,
+          env: { TEST_DATABASE_URL: DEFAULT_TEST_DATABASE_URL },
+          argv: ['node', 'scripts/pretest.mjs'],
+          ensureDatabase: async () => {
+            ensureDbCalled += 1;
+          },
+          probeTcp: async () => false,
+          spawnSync: (cmd: string, args: string[]) => {
+            const fullCmd = `${cmd} ${args.join(' ')}`;
+            spawned.push(fullCmd);
+            if (fullCmd === 'docker info') {
+              return { status: 1 };
+            }
+            if (fullCmd === 'npm run prisma:generate') {
+              fs.mkdirSync(path.join(tempDir, 'node_modules/.prisma/client'), { recursive: true });
+              fs.writeFileSync(
+                path.join(tempDir, 'node_modules/.prisma/client/index.js'),
+                'export {};\n',
+                'utf8'
+              );
+            }
+            return { status: 0 };
+          },
+          exit: (code: number) => {
+            throw new Error(`Unexpected exit(${code})`);
+          },
+        });
+
+        expect(ensureDbCalled).toBe(0);
+        expect(spawned).toEqual(['docker info', 'npm run prisma:generate']);
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.stringContaining('PostgreSQL is offline at localhost:5432; skipping Prisma migrations')
+        );
+
+        const offlineState = JSON.parse(fs.readFileSync(pretestStatePath, 'utf8')) as {
+          dbSync?: unknown;
+          prismaClientSchemaHash?: string;
+        };
+        expect(offlineState.dbSync).toBeUndefined();
+        expect(offlineState.prismaClientSchemaHash).toBeDefined();
+
+        // Once PostgreSQL becomes reachable, migrations run automatically and populate dbSync
+        spawned.length = 0;
+        await main({
+          rootDir: tempDir,
+          env: { TEST_DATABASE_URL: DEFAULT_TEST_DATABASE_URL },
+          argv: ['node', 'scripts/pretest.mjs'],
+          ensureDatabase: async () => {
+            ensureDbCalled += 1;
+          },
+          probeTcp: async () => true,
+          probeDbState: async () => ({ hasAppConfigTable: true, allMigrationsApplied: true }),
+          spawnSync: (cmd: string, args: string[]) => {
+            spawned.push(`${cmd} ${args.join(' ')}`);
+            return { status: 0 };
+          },
+          exit: (code: number) => {
+            throw new Error(`Unexpected exit(${code})`);
+          },
+        });
+
+        expect(ensureDbCalled).toBe(1);
+        expect(spawned).toEqual(['npx prisma migrate deploy']);
+        const onlineState = JSON.parse(fs.readFileSync(pretestStatePath, 'utf8')) as {
+          dbSync?: { schemaHash?: string; testDbUrl?: string };
+        };
+        expect(onlineState.dbSync?.testDbUrl).toBe(DEFAULT_TEST_DATABASE_URL);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('fails preflight immediately with exit(1) when PostgreSQL is offline and CI_REQUIRE_DB=true or --require-db is set', async () => {
+      expect(isDatabaseRequired({ env: {}, argv: ['node', 'scripts/pretest.mjs'] })).toBe(false);
+      expect(
+        isDatabaseRequired({ env: { CI_REQUIRE_DB: 'false' }, argv: ['node', 'scripts/pretest.mjs'] })
+      ).toBe(false);
+      expect(
+        isDatabaseRequired({ env: { CI_REQUIRE_DB: 'true' }, argv: ['node', 'scripts/pretest.mjs'] })
+      ).toBe(true);
+      expect(
+        isDatabaseRequired({ env: { CI_REQUIRE_DB: '1' }, argv: ['node', 'scripts/pretest.mjs'] })
+      ).toBe(true);
+      expect(
+        isDatabaseRequired({ env: {}, argv: ['node', 'scripts/pretest.mjs', '--require-db'] })
+      ).toBe(true);
+
+      fs.writeFileSync(path.join(tempDir, 'package-lock.json'), '{"lockfileVersion":3}\n', 'utf8');
+      const nmDir = path.join(tempDir, 'node_modules');
+      fs.mkdirSync(path.join(nmDir, '.prisma/client'), { recursive: true });
+      fs.writeFileSync(path.join(nmDir, '.package-lock.json'), '{"lockfileVersion":3}\n', 'utf8');
+      fs.writeFileSync(path.join(nmDir, '.prisma/client/index.js'), 'export {};\n', 'utf8');
+      writeLockfileHash(tempDir);
+
+      const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const ciExitCodes: number[] = [];
+        const ciSpawned: string[] = [];
+        await main({
+          rootDir: tempDir,
+          env: {
+            CI: 'true',
+            CI_REQUIRE_DB: 'true',
+            DATABASE_URL: DEFAULT_TEST_DATABASE_URL,
+          },
+          argv: ['node', 'scripts/pretest.mjs'],
+          probeTcp: async () => false,
+          spawnSync: (cmd: string, args: string[]) => {
+            ciSpawned.push(`${cmd} ${args.join(' ')}`);
+            return { status: 0 };
+          },
+          exit: (code: number) => {
+            ciExitCodes.push(code);
+          },
+        });
+        expect(ciExitCodes).toEqual([1]);
+        expect(ciSpawned).toEqual([]);
+
+        const flagExitCodes: number[] = [];
+        const flagSpawned: string[] = [];
+        await main({
+          rootDir: tempDir,
+          env: { TEST_DATABASE_URL: DEFAULT_TEST_DATABASE_URL },
+          argv: ['node', 'scripts/pretest.mjs', '--require-db'],
+          probeTcp: async () => false,
+          spawnSync: (cmd: string, args: string[]) => {
+            flagSpawned.push(`${cmd} ${args.join(' ')}`);
+            return { status: 1 };
+          },
+          exit: (code: number) => {
+            flagExitCodes.push(code);
+          },
+        });
+        expect(flagExitCodes).toEqual([1]);
+        expect(flagSpawned).toEqual(['docker info']);
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
+
     it('prunes unpacked unreachable WASM optional packages on non-wasm32 hosts and skips hash recording on --package-lock-only', async () => {
       const lockPayload = {
         name: 'wedding_website',
@@ -552,6 +721,104 @@ describe('CI-aware pretest & Jest setup environment orchestration', () => {
         fs.readFileSync(path.join(nmDir, '.package-lock.json'), 'utf8')
       ) as { packages: Record<string, unknown> };
       expect(Object.keys(hiddenLock.packages)).toEqual(['node_modules/@img/sharp-linux-x64']);
+    });
+  });
+
+  describe('jest.config.mjs targeted coverageThreshold scoping', () => {
+    it('enforces global coverageThreshold only on unfiltered coverage runs and skips targeted CLI flags', () => {
+      const probeScript = `
+        import defaultCfgPromise, {
+          isTargetedJestRun,
+          shouldEnforceGlobalCoverageThreshold,
+        } from './jest.config.mjs';
+
+        const unfiltered = [
+          [],
+          ['--coverage'],
+          ['--coverage', '--maxWorkers=2'],
+          ['--coverage', '--maxWorkers', '2'],
+          ['--coverage', '-w', '50%', '--bail', '1'],
+          ['--coverage', '--coverageReporters', 'json', 'lcov'],
+        ];
+        const targeted = [
+          ['--coverage', 'src/utils/__tests__/ApiError.test.ts'],
+          ['--coverage', '--', 'src/utils/__tests__/ApiError.test.ts'],
+          ['--coverage', '--testPathPatterns', 'ApiError'],
+          ['--coverage', '--testPathPatterns=ApiError'],
+          ['--coverage', '--testPathPattern', 'ApiError'],
+          ['--coverage', '--selectProjects', 'unit-node'],
+          ['--coverage', '--selectProjects=unit-jsdom'],
+          ['--coverage', '--onlyChanged'],
+          ['--coverage', '-o'],
+          ['--coverage', '--findRelatedTests', 'src/utils/ApiError.ts'],
+          ['--coverage', '--shard=1/2'],
+          ['--coverage', '--shard', '1/2'],
+          ['--coverage', '-t', 'formats errors'],
+          ['--coverage', '--runTestsByPath', 'src/utils/__tests__/ApiError.test.ts'],
+        ];
+
+        const cfg = await defaultCfgPromise;
+        const payload = {
+          unfilteredTargetedFlags: unfiltered.map((args) => isTargetedJestRun(args)),
+          unfilteredEnforceCov: shouldEnforceGlobalCoverageThreshold({
+            args: ['--coverage', '--maxWorkers', '2'],
+            env: { NODE_ENV: 'test', npm_lifecycle_event: 'test:cov' },
+          }),
+          nonCovEnforce: shouldEnforceGlobalCoverageThreshold({
+            args: [],
+            env: { NODE_ENV: 'test', npm_lifecycle_event: 'test' },
+          }),
+          targetedFlags: targeted.map((args) => isTargetedJestRun(args)),
+          targetedEnforceCov: targeted.map((args) =>
+            shouldEnforceGlobalCoverageThreshold({
+              args,
+              env: { NODE_ENV: 'test', npm_lifecycle_event: 'test:cov' },
+            })
+          ),
+          coverageThreshold: cfg.coverageThreshold ?? null,
+        };
+        process.stdout.write('\\n__JEST_THRESHOLD_PROBE__:' + JSON.stringify(payload));
+      `;
+
+      const runProbe = (cliArgs: string[]) => {
+        const res = nodeSpawnSync(
+          process.execPath,
+          ['--input-type=module', '-e', probeScript, '--', ...cliArgs],
+          {
+            cwd: process.cwd(),
+            encoding: 'utf8',
+            env: { ...process.env, npm_lifecycle_event: 'test:cov' },
+          }
+        );
+        expect(res.status).toBe(0);
+        const jsonPart = res.stdout.split('__JEST_THRESHOLD_PROBE__:')[1] ?? 'null';
+        return JSON.parse(jsonPart) as {
+          unfilteredTargetedFlags: boolean[];
+          unfilteredEnforceCov: boolean;
+          nonCovEnforce: boolean;
+          targetedFlags: boolean[];
+          targetedEnforceCov: boolean[];
+          coverageThreshold: unknown;
+        };
+      };
+
+      const fullRunResult = runProbe(['--coverage']);
+      expect(fullRunResult.unfilteredTargetedFlags.every((flag) => flag === false)).toBe(true);
+      expect(fullRunResult.unfilteredEnforceCov).toBe(true);
+      expect(fullRunResult.nonCovEnforce).toBe(false);
+      expect(fullRunResult.targetedFlags.every((flag) => flag === true)).toBe(true);
+      expect(fullRunResult.targetedEnforceCov.every((flag) => flag === false)).toBe(true);
+      expect(fullRunResult.coverageThreshold).toEqual({
+        global: {
+          branches: 68,
+          functions: 0,
+          lines: 80,
+          statements: 0,
+        },
+      });
+
+      const targetedRunResult = runProbe(['--coverage', 'src/utils/__tests__/ApiError.test.ts']);
+      expect(targetedRunResult.coverageThreshold).toBeNull();
     });
   });
 });

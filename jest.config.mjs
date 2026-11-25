@@ -6,23 +6,197 @@ const createJestConfig = nextJest({
 });
 
 const cliArgs = process.argv.slice(2);
+
+const TARGETED_JEST_FLAGS = new Set([
+  '--changedFilesWithAncestor',
+  '--changedSince',
+  '--findRelatedTests',
+  '--ignoreProjects',
+  '--lastCommit',
+  '--onlyChanged',
+  '--onlyFailures',
+  '--projects',
+  '--runTestsByPath',
+  '--selectProjects',
+  '--shard',
+  '--testMatch',
+  '--testNamePattern',
+  '--testPathPattern',
+  '--testPathPatterns',
+  '--testRegex',
+  '--watch',
+  '--watchAll',
+  '-f',
+  '-o',
+  '-t',
+]);
+
+const KNOWN_COVERAGE_REPORTERS = new Set([
+  'clover',
+  'cobertura',
+  'html',
+  'html-spa',
+  'json',
+  'json-summary',
+  'lcov',
+  'lcovonly',
+  'none',
+  'teamcity',
+  'text',
+  'text-lcov',
+  'text-summary',
+]);
+
+const VALUE_CONSUMING_NON_TARGET_FLAGS = new Set([
+  '--cacheDirectory',
+  '--collectCoverageFrom',
+  '--config',
+  '--coverageDirectory',
+  '--coveragePathIgnorePatterns',
+  '--coverageProvider',
+  '--coverageThreshold',
+  '--env',
+  '--filter',
+  '--globalSetup',
+  '--globalTeardown',
+  '--globals',
+  '--haste',
+  '--maxConcurrency',
+  '--maxWorkers',
+  '--moduleDirectories',
+  '--moduleFileExtensions',
+  '--moduleNameMapper',
+  '--modulePathIgnorePatterns',
+  '--modulePaths',
+  '--notifyMode',
+  '--openHandlesTimeout',
+  '--outputFile',
+  '--preset',
+  '--prettierPath',
+  '--reporters',
+  '--resolver',
+  '--rootDir',
+  '--roots',
+  '--runner',
+  '--seed',
+  '--setupFiles',
+  '--setupFilesAfterEnv',
+  '--snapshotSerializers',
+  '--testEnvironment',
+  '--testEnvironmentOptions',
+  '--testFailureExitCode',
+  '--testPathIgnorePatterns',
+  '--testResultsProcessor',
+  '--testRunner',
+  '--testSequencer',
+  '--testTimeout',
+  '--transform',
+  '--transformIgnorePatterns',
+  '--unmockedModulePathPatterns',
+  '--watchPathIgnorePatterns',
+  '--workerGracefulExitTimeout',
+  '-c',
+  '-w',
+]);
+
+/**
+ * Detects CLI invocations that filter or shard Jest suites rather than running the full suite.
+ * @param {readonly string[]} [args]
+ * @returns {boolean}
+ */
+export function isTargetedJestRun(args = cliArgs) {
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (!arg) {
+      continue;
+    }
+    if (arg === '--') {
+      return args.slice(i + 1).some((restArg) => Boolean(restArg));
+    }
+    const eqIdx = arg.indexOf('=');
+    const flagName = eqIdx === -1 ? arg : arg.slice(0, eqIdx);
+
+    if (TARGETED_JEST_FLAGS.has(flagName)) {
+      return true;
+    }
+
+    if (eqIdx === -1 && (flagName === '--bail' || flagName === '-b')) {
+      const nextArg = args[i + 1];
+      if (nextArg && /^\d+$/.test(nextArg)) {
+        i += 1;
+      }
+      continue;
+    }
+
+    if (eqIdx === -1 && flagName === '--coverageReporters') {
+      while (args[i + 1] && KNOWN_COVERAGE_REPORTERS.has(args[i + 1])) {
+        i += 1;
+      }
+      continue;
+    }
+
+    if (eqIdx === -1 && VALUE_CONSUMING_NON_TARGET_FLAGS.has(flagName)) {
+      const nextArg = args[i + 1];
+      if (nextArg && !nextArg.startsWith('-')) {
+        i += 1;
+      }
+      continue;
+    }
+
+    if (!arg.startsWith('-')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Determines whether coverage instrumentation is enabled for a Jest invocation.
+ * @param {{ args?: readonly string[]; env?: NodeJS.ProcessEnv }} [options]
+ * @returns {boolean}
+ */
+function resolveIsCoverageRun(options = {}) {
+  const args = options.args ?? cliArgs;
+  const env = options.env ?? process.env;
+  const coverageDisabled = args.some(
+    (arg) => arg === '--coverage=false' || arg === '--collectCoverage=false' || arg === '--no-coverage'
+  );
+  const coverageEnabled = args.some(
+    (arg) =>
+      arg === '--coverage' ||
+      arg === '--collectCoverage' ||
+      arg === '--coverage=true' ||
+      arg === '--collectCoverage=true'
+  );
+  const event = env.npm_lifecycle_event || '';
+  return (
+    !coverageDisabled &&
+    (event === 'test:cov' ||
+      event === 'test:cov:html' ||
+      env.COLLECT_COVERAGE === 'true' ||
+      coverageEnabled)
+  );
+}
+
+/**
+ * Determines whether global coverage thresholds apply to a Jest invocation.
+ * @param {{ args?: readonly string[]; env?: NodeJS.ProcessEnv }} [options]
+ * @returns {boolean}
+ */
+export function shouldEnforceGlobalCoverageThreshold(options = {}) {
+  const args = options.args ?? cliArgs;
+  return resolveIsCoverageRun(options) && !isTargetedJestRun(args);
+}
+
 const hasCoverageDisableFlag = cliArgs.some(
   (arg) => arg === '--coverage=false' || arg === '--collectCoverage=false' || arg === '--no-coverage'
 );
-const hasCoverageEnableFlag = cliArgs.some(
-  (arg) =>
-    arg === '--coverage' ||
-    arg === '--collectCoverage' ||
-    arg === '--coverage=true' ||
-    arg === '--collectCoverage=true'
-);
 const lifecycleEvent = process.env.npm_lifecycle_event || '';
-const isCoverageRun =
-  !hasCoverageDisableFlag &&
-  (lifecycleEvent === 'test:cov' ||
-    lifecycleEvent === 'test:cov:html' ||
-    process.env.COLLECT_COVERAGE === 'true' ||
-    hasCoverageEnableFlag);
+const isCoverageRun = resolveIsCoverageRun({ args: cliArgs, env: process.env });
+const enforceGlobalCoverageThreshold = shouldEnforceGlobalCoverageThreshold({
+  args: cliArgs,
+  env: process.env,
+});
 const includeHtmlCoverage =
   lifecycleEvent === 'test:cov:html' ||
   process.env.COVERAGE_HTML === 'true' ||
@@ -91,7 +265,7 @@ const sharedProjectInput = {
 };
 
 // createJestConfig is exported this way to ensure that next/jest can load the Next.js config which is async
-export default (async () => {
+const jestConfigPromise = (async () => {
   const baseProjectConfig = await createJestConfig(sharedProjectInput)();
   const sharedProjectBase = {
     ...baseProjectConfig,
@@ -175,7 +349,7 @@ export default (async () => {
       '!<rootDir>/postcss.config.mjs',
       '!<rootDir>/eslint.config.mjs',
     ],
-    ...(isCoverageRun
+    ...(enforceGlobalCoverageThreshold
       ? {
         coverageThreshold: {
           global: {
@@ -189,3 +363,5 @@ export default (async () => {
       : {}),
   };
 })();
+
+export default jestConfigPromise;

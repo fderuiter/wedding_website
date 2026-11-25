@@ -1628,6 +1628,7 @@ process.exit(1);
 
     const unitTestSection = (ciWorkflow.split(/\n  unit-test:\n/)[1] ?? '').split(/\n  build:\n/)[0] ?? '';
     expect(unitTestSection).toContain('image: ${{ needs.verify.outputs.db_image }}');
+    expect(unitTestSection).toContain("CI_REQUIRE_DB: 'true'");
 
     const buildSection = (ciWorkflow.split(/\n  build:\n/)[1] ?? '').split(/\n  container-arm64:\n/)[0] ?? '';
     expect(buildSection).toContain("SKIP_NEXT_TYPEGEN: 'true'");
@@ -1652,7 +1653,33 @@ process.exit(1);
     const storybookWorkflow = readWorkflow('storybook.yml');
     expect(storybookWorkflow).toContain('run: npm ci --ignore-scripts');
 
+    const staticExportSection =
+      (ciWorkflow.split(/\n  static-export-build:\n/)[1] ?? '').split(/\n  e2e-test:\n/)[0] ?? '';
     const e2eSection = (ciWorkflow.split(/\n  e2e-test:\n/)[1] ?? '').split(/\n  a11y-report:\n/)[0] ?? '';
+    const pagesVerifySection =
+      (ciWorkflow.split(/\n  pages-verify:\n/)[1] ?? '').split(/\n  deploy-docs:\n/)[0] ?? '';
+
+    for (const [jobName, section] of [
+      ['static-export-build', staticExportSection],
+      ['e2e-test', e2eSection],
+      ['pages-verify', pagesVerifySection],
+    ] as const) {
+      expect({ jobName, hasChromiumCacheId: section.includes('id: playwright-chromium-cache') }).toEqual({
+        jobName,
+        hasChromiumCacheId: true,
+      });
+      expect(section).toContain(
+        "key: ${{ runner.os }}-playwright-chromium-${{ hashFiles('package-lock.json') }}"
+      );
+      expect(section).not.toContain(
+        "${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}"
+      );
+      expect(section).toContain('run: npx playwright install --with-deps chromium');
+      expect(section).toContain('run: npx playwright install-deps chromium');
+      expect(section).not.toMatch(/run:\s*npx playwright install --with-deps\s*$/m);
+      expect(section).not.toMatch(/run:\s*npx playwright install-deps\s*$/m);
+    }
+
     expect(e2eSection).toContain('needs: [verify, build]');
     expect(e2eSection).toContain('run: npm ci --ignore-scripts');
     expect(e2eSection).toContain('name: next-build-artifact');
