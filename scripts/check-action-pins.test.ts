@@ -758,6 +758,11 @@ describe('check-action-pins', () => {
         'name: Reusable Caller Workflow',
         'on:',
         '  workflow_call:',
+        '    secrets:',
+        '      DATABASE_URL:',
+        '        required: true',
+        '      GCP_SA_KEY:',
+        '        required: false',
         'permissions:',
         '  contents: read',
         'jobs:',
@@ -765,13 +770,15 @@ describe('check-action-pins', () => {
         '    uses: ./.github/workflows/db-migrate.yml',
         '    with:',
         '      environment: staging',
-        '    secrets: inherit',
+        '    secrets:',
+        '      DATABASE_URL: ${{ secrets.DATABASE_URL }}',
         '  deploy-provider:',
         '    needs: [database-migration]',
         '    uses: ./.github/workflows/deploy-provider.yml',
         '    with:',
         '      environment: staging',
-        '    secrets: inherit',
+        '    secrets:',
+        '      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}',
         '  min-bound:',
         '    runs-on: ubuntu-latest',
         '    timeout-minutes: 1',
@@ -930,5 +937,70 @@ describe('check-action-pins', () => {
     });
     expect(fullScanFail.status).toBe(1);
     expect(fullScanFail.stderr).toContain('.github/workflows/broken-draft.yml');
+
+    // Scoped CLI call propagates workflow_run across local workflow_call peers in both directions
+    const callerPath = path.join(workflowsDir, 'scoped-caller.yml');
+    const calleePath = path.join(workflowsDir, 'scoped-callee.yml');
+    fs.writeFileSync(
+      callerPath,
+      [
+        'name: Scoped Untrusted Caller',
+        'on:',
+        '  workflow_run:',
+        '    workflows: [CI]',
+        '    types: [completed]',
+        'permissions:',
+        '  contents: read',
+        'jobs:',
+        '  invoke:',
+        '    permissions:',
+        '      contents: read',
+        '      packages: write',
+        '    uses: ./.github/workflows/scoped-callee.yml',
+        '',
+      ].join('\n')
+    );
+    fs.writeFileSync(
+      calleePath,
+      [
+        'name: Scoped Reusable Callee',
+        'on:',
+        '  workflow_call:',
+        'permissions:',
+        '  contents: read',
+        'jobs:',
+        '  unsafe-write:',
+        '    runs-on: ubuntu-latest',
+        '    timeout-minutes: 10',
+        '    permissions:',
+        '      contents: read',
+        '      packages: write',
+        '    steps:',
+        '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
+        '        with:',
+        '          persist-credentials: false',
+        '',
+      ].join('\n')
+    );
+
+    const scopedCalleeFail = spawnSync(
+      process.execPath,
+      [TSX_CLI_PATH, CHECK_SCRIPT_PATH, '.github/workflows/scoped-callee.yml'],
+      { cwd: tempDir, encoding: 'utf8' }
+    );
+    expect(scopedCalleeFail.status).toBe(1);
+    expect(scopedCalleeFail.stderr).toContain(
+      'workflow_run (via workflow_call from scoped-caller.yml)'
+    );
+
+    const scopedCallerFail = spawnSync(
+      process.execPath,
+      [TSX_CLI_PATH, CHECK_SCRIPT_PATH, '.github/workflows/scoped-caller.yml'],
+      { cwd: tempDir, encoding: 'utf8' }
+    );
+    expect(scopedCallerFail.status).toBe(1);
+    expect(scopedCallerFail.stderr).toContain(
+      'workflow_run (via workflow_call from scoped-caller.yml)'
+    );
   });
 });

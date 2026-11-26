@@ -13,6 +13,22 @@ const UNTRUSTED_WORKFLOW_TRIGGERS = new Set([
   'workflow_run',
 ]);
 
+export interface UntrustedTriggerInfo {
+  trigger: string;
+  viaWorkflowCall: boolean;
+  callerChain?: string;
+}
+
+export interface ConditionEvalOptions {
+  viaWorkflowCall?: boolean;
+}
+
+export function extractLocalWorkflowCallTarget(usesValue: string): string | null {
+  const trimmed = usesValue.trim();
+  const match = trimmed.match(/^\.\/\.github\/workflows\/([^/\s@]+\.ya?ml)$/);
+  return match ? match[1] : null;
+}
+
 export function getUntrustedWorkflowTriggers(onNode: unknown): string[] {
   if (isScalar(onNode)) {
     return typeof onNode.value === 'string' && UNTRUSTED_WORKFLOW_TRIGGERS.has(onNode.value)
@@ -213,7 +229,11 @@ function unquoteLiteral(raw: string): string | null {
   return null;
 }
 
-function evaluateAtomForTrigger(atom: string, trigger: string): TriState {
+function evaluateAtomForTrigger(
+  atom: string,
+  trigger: string,
+  viaWorkflowCall: boolean
+): TriState {
   const trimmed = atom.trim();
   const triggerLower = trigger.toLowerCase();
 
@@ -231,6 +251,9 @@ function evaluateAtomForTrigger(atom: string, trigger: string): TriState {
     const op = lhsMatch[1];
     const compared = unquoteLiteral(lhsMatch[2])?.toLowerCase();
     if (compared !== undefined) {
+      if (viaWorkflowCall && compared === 'workflow_call') {
+        return 'unknown';
+      }
       const isEqual = compared === triggerLower;
       return op === '=='
         ? isEqual
@@ -249,6 +272,9 @@ function evaluateAtomForTrigger(atom: string, trigger: string): TriState {
     const compared = unquoteLiteral(rhsMatch[1])?.toLowerCase();
     const op = rhsMatch[2];
     if (compared !== undefined) {
+      if (viaWorkflowCall && compared === 'workflow_call') {
+        return 'unknown';
+      }
       const isEqual = compared === triggerLower;
       return op === '=='
         ? isEqual
@@ -263,7 +289,11 @@ function evaluateAtomForTrigger(atom: string, trigger: string): TriState {
   return 'unknown';
 }
 
-export function conditionExcludesTrigger(ifValue: string | null, trigger: string): boolean {
+export function conditionExcludesTrigger(
+  ifValue: string | null,
+  trigger: string,
+  options: ConditionEvalOptions = {}
+): boolean {
   if (!ifValue) {
     return false;
   }
@@ -276,6 +306,7 @@ export function conditionExcludesTrigger(ifValue: string | null, trigger: string
     return false;
   }
 
+  const viaWorkflowCall = options.viaWorkflowCall === true;
   let pos = 0;
 
   const parseOr = (): TriState | null => {
@@ -348,7 +379,7 @@ export function conditionExcludesTrigger(ifValue: string | null, trigger: string
     if (tokens[pos].type === 'atom') {
       const atomVal = tokens[pos].value;
       pos += 1;
-      return evaluateAtomForTrigger(atomVal, trigger);
+      return evaluateAtomForTrigger(atomVal, trigger, viaWorkflowCall);
     }
     return null;
   };
