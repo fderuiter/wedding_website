@@ -65,6 +65,8 @@ jobs:
     name: Execute Database Migrations
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
     environment: ${{ inputs.environment || 'production' }}
     outputs:
       schema_compatibility_status: ${{ steps.lint_migrations.outputs.schema_compatibility_status }}
@@ -116,6 +118,8 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
+        env:
+          SKIP_NEXT_TYPEGEN: 'true'
         run: npm ci
 
       - name: Run preflight migration linter

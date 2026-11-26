@@ -94,7 +94,7 @@ function DialogInner({
       isOpen={isOpen}
       onClose={handleRequestClose}
       className={cn(
-        'bg-white dark:bg-zinc-900 rounded-lg shadow-[var(--shadow-overlay)] w-full max-w-md overflow-hidden text-gray-900 dark:text-zinc-50 border',
+        'bg-white dark:bg-zinc-900 rounded-lg shadow-[var(--shadow-overlay)] w-full max-w-md max-h-[calc(100vh-2rem)] print:max-h-none print:overflow-visible overflow-hidden text-gray-900 dark:text-zinc-50 border',
         className
       )}
       style={{
@@ -110,11 +110,11 @@ function DialogInner({
         aria-modal="true"
         aria-labelledby={finalLabelId}
         aria-describedby={finalDescId}
-        className="w-full h-full"
+        className="w-full max-h-[calc(100vh-2rem)] flex flex-col print:max-h-none"
       >
         {title && (
           <div
-            className="px-6 py-4 border-b border-[var(--dialog-border-color,var(--color-border,#e5e7eb))] dark:border-zinc-800"
+            className="shrink-0 px-6 py-4 border-b border-[var(--dialog-border-color,var(--color-border,#e5e7eb))] dark:border-zinc-800"
             style={{ color: 'var(--dialog-title-color, inherit)' }}
           >
             {typeof title === 'string' ? (
@@ -134,7 +134,7 @@ function DialogInner({
         )}
         {description && (
           <div
-            className="px-6 pt-4 pb-2 text-sm text-gray-500 dark:text-zinc-400"
+            className="shrink-0 px-6 pt-4 pb-2 text-sm text-gray-500 dark:text-zinc-400"
             id={finalDescId}
             style={{ color: 'var(--dialog-desc-color, var(--color-muted-foreground, #6b7280))' }}
           >
@@ -143,7 +143,10 @@ function DialogInner({
         )}
         <div
           data-scroll-region={scrollRegion ? '' : undefined}
-          className={contentClassName ?? 'px-6 py-4'}
+          className={cn(
+            scrollRegion && 'min-h-0 flex-1 overflow-y-auto print:overflow-visible',
+            contentClassName ?? 'px-6 py-4'
+          )}
         >
           {children}
         </div>
