@@ -18,7 +18,7 @@ The project strictly follows [Semantic Versioning 2.0.0](https://semver.org/) (`
 
 ## 2. Release Notes & Changelog Expectations
 
-Every release published to GitHub and logged in `CHANGELOG.md` must clearly categorize changes into standardized sections. This allows maintainers and downstream adopters to quickly assess the impact of an upgrade.
+Every release published to GitHub and logged in `CHANGELOG.md` must clearly categorize changes into standardized sections. Pushing a `v*` version tag runs [`.github/workflows/publish-artifact.yml`](../.github/workflows/publish-artifact.yml) to promote or build multi-platform GHCR images and then triggers [`.github/workflows/release.yml`](../.github/workflows/release.yml) (`Publish GitHub Release`), which extracts the matching version entry (or `## [Unreleased]` prior to section cutover) from `CHANGELOG.md` via [`scripts/release-integrity.sh`](../scripts/release-integrity.sh) and publishes an OIDC-attested GitHub Release containing `SHA256SUMS`, `sbom-index.spdx.json`, `sbom-amd64.spdx.json`, `sbom-arm64.spdx.json`, and the Track C source archive (`wedding-website-<tag>.tar.gz`). This allows maintainers and downstream adopters to quickly assess the impact of an upgrade and verify artifact integrity before deploying.
 
 ### Categorization Standards
 

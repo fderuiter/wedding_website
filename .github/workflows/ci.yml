@@ -701,6 +701,10 @@ jobs:
             ${{ runner.os }}-storybook-${{ hashFiles('package-lock.json') }}-
       - name: Build static Storybook showcase
         run: npm run build-storybook
+      - name: Generate and verify Storybook bundle checksums
+        run: |
+          bash scripts/release-integrity.sh generate-tree-sums storybook-static
+          bash scripts/release-integrity.sh verify-tree-sums storybook-static
       - name: Upload Storybook Static Showcase Artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -1101,6 +1105,8 @@ jobs:
         with:
           name: storybook-static
           path: docs-portal/.vitepress/dist/storybook
+      - name: Verify Storybook Static Showcase Checksums
+        run: bash scripts/release-integrity.sh verify-tree-sums docs-portal/.vitepress/dist/storybook
       - name: Assemble and verify unified Pages bundle files
         run: |
           touch docs-portal/.vitepress/dist/.nojekyll
@@ -1130,6 +1136,10 @@ jobs:
         run: npx playwright install-deps chromium
       - name: Verify unified GitHub Pages showcase bundle
         run: npm run pages:verify
+      - name: Generate and verify unified Pages bundle checksums
+        run: |
+          bash scripts/release-integrity.sh generate-tree-sums docs-portal/.vitepress/dist
+          bash scripts/release-integrity.sh verify-tree-sums docs-portal/.vitepress/dist
       - name: Upload Unified Pages Bundle Artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -1191,6 +1201,60 @@ jobs:
             exit 1
           fi
           echo "All 9 CI verification jobs succeeded."
+
+  attest-bundles:
+    name: Attest Static Showcase Bundle Provenance
+    needs: [ci-complete, storybook-build, pages-verify]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download Storybook Static Showcase Artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: storybook-static
+          path: /tmp/storybook-static
+
+      - name: Download Unified Pages Bundle Artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: pages-bundle
+          path: /tmp/pages-bundle
+
+      - name: Verify Bundle SHA256SUMS Before Signing
+        run: |
+          for bundle_dir in /tmp/storybook-static /tmp/pages-bundle; do
+            if [ -n "$(find "$bundle_dir" -type l -print -quit 2>/dev/null || true)" ]; then
+              echo "::error::Symbolic links are forbidden inside '${bundle_dir}'."
+              exit 1
+            fi
+            if [ ! -s "${bundle_dir}/SHA256SUMS" ]; then
+              echo "::error::Missing or empty '${bundle_dir}/SHA256SUMS'."
+              exit 1
+            fi
+            (
+              cd "$bundle_dir"
+              sha256sum --check --strict SHA256SUMS
+            )
+            ACTUAL_FILES=$(cd "$bundle_dir" && find . -type f ! -path './SHA256SUMS' -print | sed 's|^\./||' | LC_ALL=C sort)
+            MANIFEST_FILES=$(sed 's/^[a-f0-9]\{64\}  //' "${bundle_dir}/SHA256SUMS" | LC_ALL=C sort)
+            if [ "$ACTUAL_FILES" != "$MANIFEST_FILES" ]; then
+              echo "::error::Unindexed or mismatched files detected in '${bundle_dir}'."
+              exit 1
+            fi
+          done
+
+      - name: Attest Static Showcase Bundle Checksums Provenance
+        timeout-minutes: 3
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            /tmp/storybook-static/SHA256SUMS
+            /tmp/pages-bundle/SHA256SUMS
 
   deploy-docs:
     needs: [ci-complete, static-export-build, storybook-build, pages-verify]
@@ -1285,6 +1349,9 @@ jobs:
         with:
           name: pages-bundle
           path: docs-portal/.vitepress/dist
+      - name: Verify Reused Pages Bundle Checksums
+        if: steps.freshness.outputs.is_latest == 'true' && steps.base-check.outputs.reuse_bundle == 'true'
+        run: bash scripts/release-integrity.sh verify-tree-sums docs-portal/.vitepress/dist
       - name: Setup Node.js for fallback Pages rebuild
         if: steps.freshness.outputs.is_latest == 'true' && steps.base-check.outputs.reuse_bundle != 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -1331,10 +1398,16 @@ jobs:
         with:
           name: storybook-static
           path: docs-portal/.vitepress/dist/storybook
+      - name: Verify Fallback Storybook Checksums & Generate Pages Bundle Checksums
+        if: steps.freshness.outputs.is_latest == 'true' && steps.base-check.outputs.reuse_bundle != 'true'
+        run: |
+          bash scripts/release-integrity.sh verify-tree-sums docs-portal/.vitepress/dist/storybook
+          touch docs-portal/.vitepress/dist/.nojekyll
+          bash scripts/release-integrity.sh generate-tree-sums docs-portal/.vitepress/dist
       - name: Add .nojekyll and verify unified Pages bundle
         if: steps.freshness.outputs.is_latest == 'true'
         run: |
-          touch docs-portal/.vitepress/dist/.nojekyll
+          bash scripts/release-integrity.sh verify-tree-sums docs-portal/.vitepress/dist
           for required_file in \
             docs-portal/.vitepress/dist/index.html \
             docs-portal/.vitepress/dist/demo/index.html \

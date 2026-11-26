@@ -501,13 +501,20 @@ jobs:
           fi
           mkdir -p /tmp/oci-handoff
           SBOM_FILE="sbom-${ARCH}.spdx.json"
-          if [ ! -f "$SBOM_FILE" ] || ! jq -e '.spdxVersion and (.packages | type == "array")' "$SBOM_FILE" >/dev/null; then
-            echo "::error::Missing or invalid SPDX JSON SBOM '${SBOM_FILE}' for architecture '${ARCH}'."
-            exit 1
-          fi
+          bash scripts/release-integrity.sh verify-spdx "$SBOM_FILE"
           cp "$SBOM_FILE" "/tmp/oci-handoff/sbom-${ARCH}.spdx.json"
           zstd -T0 -f "$OCI_TAR" -o "/tmp/oci-handoff/oci-${ARCH}.tar.zst"
           printf '%s\n' "$ARCHIVE_DIGEST" > "/tmp/oci-handoff/${ARCH}.digest"
+          bash scripts/release-integrity.sh generate-sums \
+            --dir /tmp/oci-handoff \
+            --output "/tmp/oci-handoff/sha256-${ARCH}.sums" \
+            "oci-${ARCH}.tar.zst" \
+            "sbom-${ARCH}.spdx.json"
+          bash scripts/release-integrity.sh verify-sums \
+            --dir /tmp/oci-handoff \
+            --manifest "/tmp/oci-handoff/sha256-${ARCH}.sums" \
+            "oci-${ARCH}.tar.zst" \
+            "sbom-${ARCH}.spdx.json"
 
       - name: Upload Verified OCI Archive Artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -517,6 +524,7 @@ jobs:
             /tmp/oci-handoff/oci-${{ matrix.arch }}.tar.zst
             /tmp/oci-handoff/${{ matrix.arch }}.digest
             /tmp/oci-handoff/sbom-${{ matrix.arch }}.spdx.json
+            /tmp/oci-handoff/sha256-${{ matrix.arch }}.sums
           compression-level: 0
           if-no-files-found: error
           retention-days: 1
@@ -705,14 +713,19 @@ jobs:
         run: |
           if [ "${PROMOTE_EXISTING:-false}" = "true" ]; then
             bash scripts/ghcr-release-promotion.sh extract-promoted-sboms
+          else
+            for required_arch in amd64 arm64; do
+              bash scripts/release-integrity.sh verify-sums \
+                --dir /tmp/oci-handoff \
+                --manifest "/tmp/oci-handoff/sha256-${required_arch}.sums" \
+                "oci-${required_arch}.tar.zst" \
+                "sbom-${required_arch}.spdx.json"
+            done
           fi
 
           for required_arch in amd64 arm64; do
             SBOM_FILE="/tmp/oci-handoff/sbom-${required_arch}.spdx.json"
-            if [ ! -f "$SBOM_FILE" ] || ! jq -e '.spdxVersion and (.packages | type == "array")' "$SBOM_FILE" >/dev/null; then
-              echo "::error::Missing or invalid SPDX JSON SBOM '${SBOM_FILE}' for architecture '${required_arch}'."
-              exit 1
-            fi
+            bash scripts/release-integrity.sh verify-spdx "$SBOM_FILE"
           done
 
       - name: Verify and Push Architecture OCI Archives
@@ -736,13 +749,22 @@ jobs:
 
           for required_arch in amd64 arm64; do
             DIGEST_FILE="/tmp/oci-handoff/${required_arch}.digest"
+            SUMS_FILE="/tmp/oci-handoff/sha256-${required_arch}.sums"
+            SBOM_FILE="/tmp/oci-handoff/sbom-${required_arch}.spdx.json"
             COMPRESSED_ARCHIVE="/tmp/oci-handoff/oci-${required_arch}.tar.zst"
             DECOMPRESSED_ARCHIVE="/tmp/oci-handoff/oci-${required_arch}.tar"
 
-            if [ ! -f "$DIGEST_FILE" ] || [ ! -f "$COMPRESSED_ARCHIVE" ]; then
-              echo "::error::Missing OCI archive or digest artifact for architecture '${required_arch}'."
+            if [ ! -f "$DIGEST_FILE" ] || [ ! -f "$COMPRESSED_ARCHIVE" ] || [ ! -f "$SUMS_FILE" ] || [ ! -f "$SBOM_FILE" ]; then
+              echo "::error::Missing OCI archive, SPDX SBOM, checksum manifest, or digest artifact for architecture '${required_arch}'."
               exit 1
             fi
+
+            bash scripts/release-integrity.sh verify-sums \
+              --dir /tmp/oci-handoff \
+              --manifest "$SUMS_FILE" \
+              "oci-${required_arch}.tar.zst" \
+              "sbom-${required_arch}.spdx.json"
+            bash scripts/release-integrity.sh verify-spdx "$SBOM_FILE"
 
             EXPECTED_DIGEST=$(tr -d '[:space:]' < "$DIGEST_FILE")
             if [[ ! "$EXPECTED_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
@@ -900,10 +922,7 @@ jobs:
           SOURCE_REVISION=$(printf '%s' "${REVISION:-${RESOLVED_SHA:-${GITHUB_SHA:-}}}" | tr '[:upper:]' '[:lower:]')
           for required_arch in amd64 arm64; do
             SBOM_FILE="/tmp/oci-handoff/sbom-${required_arch}.spdx.json"
-            if [ ! -f "$SBOM_FILE" ] || ! jq -e '.spdxVersion and (.packages | type == "array")' "$SBOM_FILE" >/dev/null; then
-              echo "::error::Missing or invalid SPDX JSON SBOM '${SBOM_FILE}' for multi-platform index synthesis."
-              exit 1
-            fi
+            bash scripts/release-integrity.sh verify-spdx "$SBOM_FILE"
           done
           CREATED_AT=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
           jq -n \
@@ -996,8 +1015,10 @@ jobs:
                 )
               }
             ' > /tmp/oci-handoff/sbom-index.spdx.json
+          bash scripts/release-integrity.sh verify-spdx /tmp/oci-handoff/sbom-index.spdx.json
 
       - name: Attest amd64 Build Provenance
+        if: needs.preflight.outputs.promote_existing != 'true'
         timeout-minutes: 3
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -1006,6 +1027,7 @@ jobs:
           push-to-registry: true
 
       - name: Attest arm64 Build Provenance
+        if: needs.preflight.outputs.promote_existing != 'true'
         timeout-minutes: 3
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -1022,6 +1044,7 @@ jobs:
           push-to-registry: true
 
       - name: Attest amd64 SPDX SBOM
+        if: needs.preflight.outputs.promote_existing != 'true'
         timeout-minutes: 3
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
@@ -1031,6 +1054,7 @@ jobs:
           push-to-registry: true
 
       - name: Attest arm64 SPDX SBOM
+        if: needs.preflight.outputs.promote_existing != 'true'
         timeout-minutes: 3
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
@@ -1049,7 +1073,7 @@ jobs:
           push-to-registry: true
 
       - name: Attest Docker Hub amd64 Build Provenance (optional)
-        if: steps.meta.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
+        if: needs.preflight.outputs.promote_existing != 'true' && steps.meta.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
         timeout-minutes: 3
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -1059,7 +1083,7 @@ jobs:
           create-storage-record: false
 
       - name: Attest Docker Hub arm64 Build Provenance (optional)
-        if: steps.meta.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
+        if: needs.preflight.outputs.promote_existing != 'true' && steps.meta.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
         timeout-minutes: 3
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:

@@ -160,9 +160,18 @@ docker run -d --name wedding-app \
 
 #### Track C: Host Node.js Runtime (Node.js v22.x LTS)
 
-For bare-metal or VM deployments running Node.js directly without Docker:
+For bare-metal or VM deployments running Node.js directly without Docker, verify the published GitHub Release's OIDC build provenance attestation and `SHA256SUMS` manifest (published by [`.github/workflows/release.yml`](../.github/workflows/release.yml) alongside categorized release notes per [`docs/versioning.md`](./versioning.md)) before applying dependencies and forward-only migrations:
 
 ```bash
+# 0. Verify GitHub Release OIDC provenance and strict SHA256SUMS for the target v* release tag
+RELEASE_TAG="v0.1.0"
+mkdir -p /tmp/wedding-release
+gh release download "$RELEASE_TAG" --repo fderuiter/wedding_website --dir /tmp/wedding-release --clobber
+gh attestation verify /tmp/wedding-release/SHA256SUMS \
+  --repo fderuiter/wedding_website \
+  --signer-workflow fderuiter/wedding_website/.github/workflows/release.yml
+(cd /tmp/wedding-release && sha256sum --check --strict SHA256SUMS)
+
 # 1. Install deterministic lockfile dependencies
 npm ci
 

@@ -42,6 +42,11 @@ jobs:
       - name: Build Storybook Static Showcase
         run: npm run build-storybook
 
+      - name: Generate and Verify Storybook Bundle Checksums
+        run: |
+          bash scripts/release-integrity.sh generate-tree-sums storybook-static
+          bash scripts/release-integrity.sh verify-tree-sums storybook-static
+
       - name: Upload Storybook Static Showcase Artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -49,4 +54,47 @@ jobs:
           path: storybook-static/
           if-no-files-found: error
           retention-days: 7
+
+  attest-storybook:
+    name: Attest Storybook Bundle Provenance
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download Storybook Static Showcase Artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: storybook-static
+          path: /tmp/storybook-static
+
+      - name: Verify Storybook SHA256SUMS Before Signing
+        run: |
+          if [ -n "$(find /tmp/storybook-static -type l -print -quit 2>/dev/null || true)" ]; then
+            echo "::error::Symbolic links are forbidden inside storybook-static."
+            exit 1
+          fi
+          if [ ! -s /tmp/storybook-static/SHA256SUMS ]; then
+            echo "::error::Missing or empty /tmp/storybook-static/SHA256SUMS."
+            exit 1
+          fi
+          (
+            cd /tmp/storybook-static
+            sha256sum --check --strict SHA256SUMS
+          )
+          ACTUAL_FILES=$(cd /tmp/storybook-static && find . -type f ! -path './SHA256SUMS' -print | sed 's|^\./||' | LC_ALL=C sort)
+          MANIFEST_FILES=$(sed 's/^[a-f0-9]\{64\}  //' /tmp/storybook-static/SHA256SUMS | LC_ALL=C sort)
+          if [ "$ACTUAL_FILES" != "$MANIFEST_FILES" ]; then
+            echo "::error::Unindexed or mismatched files detected in storybook-static."
+            exit 1
+          fi
+
+      - name: Attest Storybook Bundle Checksums Provenance
+        timeout-minutes: 3
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: /tmp/storybook-static/SHA256SUMS
 
