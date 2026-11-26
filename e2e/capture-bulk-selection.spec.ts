@@ -4,8 +4,9 @@ import { seedAdminAndGuestAuthCookies } from './helpers/auth';
 test('capture bulk selection toolbar and batch delete modal screenshots', async ({ context, page }, testInfo) => {
   test.setTimeout(90000);
 
-  await seedAdminAndGuestAuthCookies(context);
+  const { adminCookieValue } = await seedAdminAndGuestAuthCookies(context);
   const createdIds: string[] = [];
+  let createdTemporaryCodes = false;
 
   try {
     // Go to invitation codes dashboard
@@ -18,6 +19,7 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
     await expect(countBtn).toBeVisible({ timeout: 30000 });
     const countText = await countBtn.innerText();
     if (countText.includes('All (0)')) {
+      createdTemporaryCodes = true;
       for (const guestName of ['Alex Johnson', 'Sam Taylor']) {
         await generateBtn.click();
         await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeVisible({ timeout: 30000 });
@@ -68,11 +70,31 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
       animations: 'disabled',
     });
   } finally {
-    if (createdIds.length > 0) {
-      await context.request.delete('/api/admin/invitation-codes/batch', {
-        headers: { 'Content-Type': 'application/json' },
-        data: { ids: createdIds },
-      });
+    if (createdTemporaryCodes) {
+      const headers = { Cookie: `admin_auth=${adminCookieValue}` };
+      const idsToDelete = new Set<string>(createdIds);
+      const listRes = await context.request.get('/api/admin/invitation-codes?limit=100', { headers });
+      if (listRes.ok()) {
+        const payload = (await listRes.json()) as
+          | Array<{ id: string; guestName?: string; isSample?: boolean }>
+          | { data?: Array<{ id: string; guestName?: string; isSample?: boolean }> };
+        const records = Array.isArray(payload)
+          ? payload
+          : Array.isArray(payload?.data)
+            ? payload.data
+            : [];
+        for (const r of records) {
+          if (!r.isSample && (r.guestName === 'Alex Johnson' || r.guestName === 'Sam Taylor')) {
+            idsToDelete.add(r.id);
+          }
+        }
+      }
+      if (idsToDelete.size > 0) {
+        await context.request.delete('/api/admin/invitation-codes/batch', {
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          data: { ids: Array.from(idsToDelete) },
+        });
+      }
     }
   }
 });

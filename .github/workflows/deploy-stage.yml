@@ -136,11 +136,12 @@ jobs:
 
   verify-deployment:
     name: Post-Deployment Health Verification (${{ inputs.environment }})
-    permissions: {}
     needs: [deploy-provider]
     if: "!cancelled() && needs.deploy-provider.result == 'success'"
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
     outputs:
       health_status: ${{ steps.health-probe.outputs.health_status }}
       http_status: ${{ steps.health-probe.outputs.http_status }}

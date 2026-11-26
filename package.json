@@ -32,8 +32,8 @@
     "build:export": "node scripts/build-export.mjs",
     "postbuild": "[ -d .next/standalone ] && rm -rf .next/standalone/.next/static .next/standalone/public .next/standalone/src .next/standalone/node_modules/pdfkit/.yarn .next/standalone/node_modules/pdfkit/js/pdfkit.standalone.js .next/standalone/node_modules/pdfkit/js/pdfkit.browser.js .next/standalone/node_modules/pdfkit/js/pdfkit.browser.mjs .next/standalone/node_modules/pdfkit/js/pdfkit.browser.old.js .next/standalone/node_modules/pdfkit/js/pdfkit.browser.old.mjs .next/standalone/node_modules/pdfkit/js/pdfkit.old.js .next/standalone/node_modules/pdfkit/lib/fs/browser.js .next/standalone/node_modules/pdfkit/lib/zlib/browser.js .next/standalone/node_modules/pdfkit/lib/stream/browser.js .next/standalone/node_modules/fontkit/dist/browser.cjs .next/standalone/node_modules/fontkit/dist/browser-module.mjs .next/standalone/node_modules/fontkit/src && find .next/standalone/node_modules -type d \\( -name test -o -name tests -o -name __tests__ \\) -prune -exec rm -rf {} + && find .next/standalone -type f \\( -name '*.nft.json' -o -name '*.d.ts' -o -name '*.map' -o -path '*/src/*.ts' -o -path '*/src/*.tsx' \\) -delete && cp -r .next/static .next/standalone/.next/static && cp -r public .next/standalone/public && rm -f .next/standalone/public/mockServiceWorker.js && node src/lib/patch-standalone-server.js || true",
     "start": "node .next/standalone/server.js",
-    "lint": "eslint . --cache --cache-location .eslintcache --max-warnings 0",
-    "lint:fix": "eslint . --cache --cache-location .eslintcache --fix --max-warnings 0",
+    "lint": "eslint . --cache --cache-location .eslintcache --cache-strategy content --max-warnings 0",
+    "lint:fix": "eslint . --cache --cache-location .eslintcache --cache-strategy content --fix --max-warnings 0",
     "lint:migrations": "node --experimental-strip-types scripts/verify-migration-compatibility.ts",
     "lint:unused": "knip",
     "lint:unused:fix": "knip --fix --allow-remove-files",
@@ -250,8 +250,8 @@
     "webpack-dev-middleware": "^7.4.6"
   },
   "lint-staged": {
-    "*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}": "eslint --cache --cache-location .eslintcache --no-warn-ignored --fix --max-warnings=0",
-    ".githooks/*": "eslint --cache --cache-location .eslintcache --no-warn-ignored --fix --max-warnings=0",
+    "*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}": "eslint --cache --cache-location .eslintcache --cache-strategy content --no-warn-ignored --fix --max-warnings=0",
+    ".githooks/*": "eslint --cache --cache-location .eslintcache --cache-strategy content --no-warn-ignored --fix --max-warnings=0",
     ".github/workflows/*.{yml,yaml}": "npm run check:action-pins",
     "prisma/migrations/**/*.sql": "npm run lint:migrations",
     "{Dockerfile,.dockerignore,docker-entrypoint.sh,docker-compose*.yml,docker/**}": "npm run check:standalone -- --static-only",

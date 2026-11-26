@@ -118,6 +118,8 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
+        env:
+          SKIP_NEXT_TYPEGEN: 'true'
         run: npm ci
 
       - name: Run preflight migration linter

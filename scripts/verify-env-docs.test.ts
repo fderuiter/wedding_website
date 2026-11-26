@@ -326,18 +326,22 @@ describe('verify-env-docs section-aware validation', () => {
           .readFileSync(path.join(tempDir, 'docker-compose.yml'), 'utf8')
           .replace('CRON_SECRET: ${CRON_SECRET:-}', 'CRON_SECRET: ${CRON_SECRET:-}\n      SYNTHETIC_FEATURE_FLAG: ${SYNTHETIC_FEATURE_FLAG:-}')
       );
-      const updatedRuntimeContract = fs
-        .readFileSync(path.join(tempDir, 'docs/runtime-contract.md'), 'utf8')
-        .replace(
-          /^\|\s*`CRON_SECRET`\s*\|\s*(?:\*None\*|_None_)\s*\|/m,
-          '| `SYNTHETIC_FEATURE_FLAG` | _None_ | Synthetic test variable. |\n$&'
-        );
+      const originalRuntimeContract = fs.readFileSync(
+        path.join(tempDir, 'docs/runtime-contract.md'),
+        'utf8'
+      );
+      const updatedRuntimeContract = originalRuntimeContract.replace(
+        /^(\|\s*`CRON_SECRET`\s*\|)/m,
+        '| `SYNTHETIC_FEATURE_FLAG` | _None_ | Synthetic test variable. |\n$1'
+      );
       expect(updatedRuntimeContract).toContain('SYNTHETIC_FEATURE_FLAG');
       fs.writeFileSync(path.join(tempDir, 'docs/runtime-contract.md'), updatedRuntimeContract);
 
-      const mockExit = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
-        throw new Error(`Unexpected process.exit(${code})`);
-      }) as never);
+      const mockExit = jest
+        .spyOn(process, 'exit')
+        .mockImplementation(((code?: string | number | null) => {
+          throw new Error(`Unexpected process.exit(${code ?? ''})`);
+        }) as never);
       try {
         expect(() => verifyEnvDocs(tempDir)).not.toThrow();
         expect(mockErr).not.toHaveBeenCalled();

@@ -16,6 +16,119 @@ import { resetRateLimitsForTesting } from '@/utils/rateLimit';
 import { validateAndResolveHost } from '@/utils/ssrf';
 import { isAllowedSmtpPort } from '@/utils/validationPrimitives';
 
+function derLen(len: number): Buffer {
+  if (len < 0x80) return Buffer.from([len]);
+  const bytes: number[] = [];
+  let rem = len;
+  while (rem > 0) {
+    bytes.unshift(rem & 0xff);
+    rem >>= 8;
+  }
+  return Buffer.from([0x80 | bytes.length, ...bytes]);
+}
+function derTlv(tag: number, content: Buffer): Buffer {
+  return Buffer.concat([Buffer.from([tag]), derLen(content.length), content]);
+}
+function derSeq(items: Buffer[]): Buffer {
+  return derTlv(0x30, Buffer.concat(items));
+}
+function derUtc(d: Date): Buffer {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return derTlv(
+    0x17,
+    Buffer.from(
+      `${p(d.getUTCFullYear() % 100)}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`,
+      'ascii'
+    )
+  );
+}
+function derCn(cn: string): Buffer {
+  return derSeq([
+    derTlv(
+      0x31,
+      derSeq([derTlv(0x06, Buffer.from([0x55, 0x04, 0x03])), derTlv(0x0c, Buffer.from(cn, 'utf8'))])
+    ),
+  ]);
+}
+function issueEcCert(opts: {
+  subjectCn: string;
+  issuerCn: string;
+  spkiDer: Buffer;
+  issuerKey: crypto.KeyObject;
+  serial: number;
+  isCa: boolean;
+  dnsNames?: string[];
+  ipv4?: string[];
+}): string {
+  const sigAlg = derSeq([derTlv(0x06, Buffer.from([0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03, 0x02]))]);
+  const now = new Date(Date.now() - 60_000);
+  const exp = new Date(Date.now() + 2 * 24 * 3600_000);
+  const exts: Buffer[] = [
+    opts.isCa
+      ? derSeq([
+        derTlv(0x06, Buffer.from([0x55, 0x1d, 0x13])),
+        derTlv(0x01, Buffer.from([0xff])),
+        derTlv(0x04, derSeq([derTlv(0x01, Buffer.from([0xff]))])),
+      ])
+      : derSeq([derTlv(0x06, Buffer.from([0x55, 0x1d, 0x13])), derTlv(0x04, derSeq([]))]),
+  ];
+  const sans: Buffer[] = [];
+  for (const d of opts.dnsNames ?? []) sans.push(derTlv(0x82, Buffer.from(d, 'ascii')));
+  for (const ip of opts.ipv4 ?? []) {
+    sans.push(derTlv(0x87, Buffer.from(ip.split('.').map(Number))));
+  }
+  if (sans.length > 0) {
+    exts.push(
+      derSeq([derTlv(0x06, Buffer.from([0x55, 0x1d, 0x11])), derTlv(0x04, derSeq(sans))])
+    );
+  }
+  const tbs = derSeq([
+    derTlv(0xa0, derTlv(0x02, Buffer.from([0x02]))),
+    derTlv(0x02, Buffer.from([opts.serial])),
+    sigAlg,
+    derCn(opts.issuerCn),
+    derSeq([derUtc(now), derUtc(exp)]),
+    derCn(opts.subjectCn),
+    opts.spkiDer,
+    derTlv(0xa3, derSeq(exts)),
+  ]);
+  const sig = crypto.sign('sha256', tbs, opts.issuerKey);
+  const certDer = derSeq([tbs, sigAlg, derTlv(0x03, Buffer.concat([Buffer.from([0x00]), sig]))]);
+  const b64 = certDer.toString('base64').match(/.{1,64}/g)?.join('\n') ?? '';
+  return `-----BEGIN CERTIFICATE-----\n${b64}\n-----END CERTIFICATE-----\n`;
+}
+
+const TEST_SMTP_PKI = (() => {
+  const caKeys = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const caCn = 'Wedding Routes Test SMTP Root CA';
+  const caCert = issueEcCert({
+    subjectCn: caCn,
+    issuerCn: caCn,
+    spkiDer: caKeys.publicKey.export({ type: 'spki', format: 'der' }),
+    issuerKey: caKeys.privateKey,
+    serial: 1,
+    isCa: true,
+  });
+
+  const serverKeys = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const serverCert = issueEcCert({
+    subjectCn: 'smtp.example.org',
+    issuerCn: caCn,
+    spkiDer: serverKeys.publicKey.export({ type: 'spki', format: 'der' }),
+    issuerKey: caKeys.privateKey,
+    serial: 2,
+    isCa: false,
+    dnsNames: ['localhost', 'smtp.example.org'],
+    ipv4: ['127.0.0.1'],
+  });
+
+  return {
+    caCert,
+    serverKey: serverKeys.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+    serverCert,
+  };
+})();
+
 jest.mock('node:tls', () => {
   const actualTls = jest.requireActual('node:tls') as typeof import('node:tls');
   return {
@@ -23,7 +136,6 @@ jest.mock('node:tls', () => {
     connect: jest.fn((...args: unknown[]) => {
       const [firstArg, ...rest] = args;
       if (
-        testSmtpCaCert &&
         firstArg &&
         typeof firstArg === 'object' &&
         !('ca' in firstArg && (firstArg as tls.ConnectionOptions).ca !== undefined)
@@ -31,7 +143,7 @@ jest.mock('node:tls', () => {
         return (actualTls.connect as (...a: unknown[]) => tls.TLSSocket)(
           {
             ...(firstArg as tls.ConnectionOptions),
-            ca: [...actualTls.rootCertificates, testSmtpCaCert],
+            ca: [...actualTls.rootCertificates, TEST_SMTP_PKI.caCert],
           },
           ...rest
         );
@@ -40,116 +152,6 @@ jest.mock('node:tls', () => {
     }),
   };
 });
-
-let testSmtpCaCert: string | null = null;
-
-function createTestSmtpPki(): { caCert: string; serverKey: string; serverCert: string } {
-  const derLen = (len: number): Buffer => {
-    if (len < 0x80) return Buffer.from([len]);
-    const bytes: number[] = [];
-    let rem = len;
-    while (rem > 0) {
-      bytes.unshift(rem & 0xff);
-      rem >>= 8;
-    }
-    return Buffer.from([0x80 | bytes.length, ...bytes]);
-  };
-  const derTlv = (tag: number, content: Buffer): Buffer =>
-    Buffer.concat([Buffer.from([tag]), derLen(content.length), content]);
-  const derSeq = (items: Buffer[]): Buffer => derTlv(0x30, Buffer.concat(items));
-  const derUtc = (d: Date): Buffer => {
-    const p = (n: number) => String(n).padStart(2, '0');
-    return derTlv(
-      0x17,
-      Buffer.from(
-        `${p(d.getUTCFullYear() % 100)}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`,
-        'ascii'
-      )
-    );
-  };
-  const derCn = (cn: string): Buffer =>
-    derSeq([
-      derTlv(
-        0x31,
-        derSeq([derTlv(0x06, Buffer.from([0x55, 0x04, 0x03])), derTlv(0x0c, Buffer.from(cn, 'utf8'))])
-      ),
-    ]);
-  const issueCert = (opts: {
-    subjectCn: string;
-    issuerCn: string;
-    spkiDer: Buffer;
-    issuerKey: crypto.KeyObject;
-    serial: number;
-    isCa: boolean;
-    dnsNames?: string[];
-    ipv4?: string[];
-  }): string => {
-    const sigAlg = derSeq([
-      derTlv(0x06, Buffer.from([0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03, 0x02])),
-    ]);
-    const now = new Date(Date.now() - 60_000);
-    const exp = new Date(Date.now() + 2 * 24 * 3600_000);
-    const exts: Buffer[] = [
-      opts.isCa
-        ? derSeq([
-          derTlv(0x06, Buffer.from([0x55, 0x1d, 0x13])),
-          derTlv(0x01, Buffer.from([0xff])),
-          derTlv(0x04, derSeq([derTlv(0x01, Buffer.from([0xff]))])),
-        ])
-        : derSeq([derTlv(0x06, Buffer.from([0x55, 0x1d, 0x13])), derTlv(0x04, derSeq([]))]),
-    ];
-    const sans: Buffer[] = [];
-    for (const d of opts.dnsNames ?? []) sans.push(derTlv(0x82, Buffer.from(d, 'ascii')));
-    for (const ip of opts.ipv4 ?? []) {
-      sans.push(derTlv(0x87, Buffer.from(ip.split('.').map(Number))));
-    }
-    if (sans.length > 0) {
-      exts.push(derSeq([derTlv(0x06, Buffer.from([0x55, 0x1d, 0x11])), derTlv(0x04, derSeq(sans))]));
-    }
-    const tbs = derSeq([
-      derTlv(0xa0, derTlv(0x02, Buffer.from([0x02]))),
-      derTlv(0x02, Buffer.from([opts.serial])),
-      sigAlg,
-      derCn(opts.issuerCn),
-      derSeq([derUtc(now), derUtc(exp)]),
-      derCn(opts.subjectCn),
-      opts.spkiDer,
-      derTlv(0xa3, derSeq(exts)),
-    ]);
-    const sig = crypto.sign('sha256', tbs, opts.issuerKey);
-    const certDer = derSeq([tbs, sigAlg, derTlv(0x03, Buffer.concat([Buffer.from([0x00]), sig]))]);
-    const b64 = certDer.toString('base64').match(/.{1,64}/g)?.join('\n') ?? '';
-    return `-----BEGIN CERTIFICATE-----\n${b64}\n-----END CERTIFICATE-----\n`;
-  };
-
-  const caKeys = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
-  const caCn = 'Broadcast Route Test Root CA';
-  const caCert = issueCert({
-    subjectCn: caCn,
-    issuerCn: caCn,
-    spkiDer: caKeys.publicKey.export({ type: 'spki', format: 'der' }),
-    issuerKey: caKeys.privateKey,
-    serial: 1,
-    isCa: true,
-  });
-  const serverKeys = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
-  const serverCert = issueCert({
-    subjectCn: 'smtp.example.org',
-    issuerCn: caCn,
-    spkiDer: serverKeys.publicKey.export({ type: 'spki', format: 'der' }),
-    issuerKey: caKeys.privateKey,
-    serial: 2,
-    isCa: false,
-    dnsNames: ['smtp.example.org', 'localhost'],
-    ipv4: ['127.0.0.1'],
-  });
-  return {
-    caCert,
-    serverKey: serverKeys.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
-    serverCert,
-  };
-}
-
 jest.mock('@/utils/ssrf', () => {
   const actual = jest.requireActual('@/utils/ssrf');
   return {
@@ -515,9 +517,6 @@ describe('Broadcast API Routes', () => {
 
   it('POST /api/admin/broadcast/test-connection verifies live SMTP greeting/EHLO/STARTTLS/QUIT and fails when unreachable', async () => {
     const net = await import('node:net');
-    const pki = createTestSmtpPki();
-    testSmtpCaCert = pki.caCert;
-
     const attachSmtpProtocol = (sock: import('node:net').Socket | tls.TLSSocket, isTls: boolean) => {
       let buf = '';
       sock.on('data', (chunk) => {
@@ -538,8 +537,8 @@ describe('Broadcast API Routes', () => {
             sock.write('220 2.0.0 Ready to start TLS\r\n', () => {
               const tlsSock = new tls.TLSSocket(sock, {
                 isServer: true,
-                key: pki.serverKey,
-                cert: pki.serverCert,
+                key: TEST_SMTP_PKI.serverKey,
+                cert: TEST_SMTP_PKI.serverCert,
               });
               attachSmtpProtocol(tlsSock, true);
             });
@@ -582,7 +581,6 @@ describe('Broadcast API Routes', () => {
       const json = await res.json();
       expect(json.success).toBe(true);
     } finally {
-      testSmtpCaCert = null;
       await new Promise<void>((resolve) => smtpServer.close(() => resolve()));
     }
 

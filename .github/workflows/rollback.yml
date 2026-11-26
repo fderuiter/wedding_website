@@ -608,11 +608,12 @@ jobs:
 
   verify:
     name: Verify Restored Container Health
-    permissions: {}
     needs: [preflight, redeploy]
     if: "always() && needs.preflight.result == 'success' && needs.redeploy.result == 'success'"
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
     outputs:
       health_status: ${{ steps.health_probe.outputs.health_status }}
       service_url: ${{ steps.health_probe.outputs.service_url }}
@@ -789,11 +790,12 @@ jobs:
 
   report:
     name: Send Rollback Notification
-    permissions: {}
     needs: [preflight, redeploy, verify]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
     steps:
       - name: Send Rollback Notification
         id: send_notification
