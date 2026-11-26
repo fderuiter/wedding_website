@@ -3053,12 +3053,12 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     );
   }
   if (
-    !/schema-compatibility:[\s\S]*?Align Workspace to Verified Commit SHA[\s\S]*?inputs\.release_ref != ''[\s\S]*?inputs\.image_digest != ''/.test(
+    !/schema-compatibility:[\s\S]*?Align Workspace to Verified Commit SHA[\s\S]*?RELEASE_REF: \$\{\{ inputs\.release_ref \}\}[\s\S]*?INPUT_IMAGE_DIGEST: \$\{\{ inputs\.image_digest \}\}[\s\S]*?verify-release-target\.sh[\s\S]*?git checkout --detach/.test(
       deployWorkflowRaw
     )
   ) {
     errors.push(
-      '.github/workflows/deploy.yml: `schema-compatibility` must align checkout to `target_sha` when `release_ref` or `image_digest` is supplied'
+      '.github/workflows/deploy.yml: `schema-compatibility` must align checkout to `target_sha` via `verify-release-target.sh` and `git checkout --detach`'
     );
   }
   for (const [docLabel, docText] of [

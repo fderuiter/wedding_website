@@ -82,6 +82,16 @@ describe('Release & Provider Deployment Workflow Digest Pinning and Provenance C
     fs.writeFileSync(mockCiRunsFile, JSON.stringify({ workflow_runs: runs }));
   }
 
+  function copyReleaseGateScripts(targetRepoDir: string) {
+    const scriptsDest = path.join(targetRepoDir, 'scripts');
+    fs.mkdirSync(scriptsDest, { recursive: true });
+    for (const scriptName of ['resolve-oci-provenance.sh', 'verify-release-target.sh']) {
+      const destPath = path.join(scriptsDest, scriptName);
+      fs.copyFileSync(path.join(REPO_ROOT, 'scripts', scriptName), destPath);
+      fs.chmodSync(destPath, 0o755);
+    }
+  }
+
   beforeEach(async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deploy-provider-test-'));
     binDir = path.join(tempDir, 'bin');
@@ -91,6 +101,7 @@ describe('Release & Provider Deployment Workflow Digest Pinning and Provenance C
     mockCiRunsFile = path.join(tempDir, 'mock_ci_runs.json');
 
     fs.mkdirSync(binDir, { recursive: true });
+    copyReleaseGateScripts(tempDir);
     fs.writeFileSync(outputFile, '');
     fs.writeFileSync(summaryFile, '');
     fs.writeFileSync(callLogFile, '');
@@ -843,89 +854,134 @@ process.exit(1);
     const alignWorkspaceScript = extractStepRunScript(deployYml, 'Align Workspace to Verified Commit SHA');
     const confirmMigrationScript = extractStepRunScript(dbMigrateYml, 'Verify Manual Migration Confirmation');
 
-    const headMainSha = '9999999999999999999999999999999999999999';
-    const pinnedDigestSha = '4455667788990011223344556677889900112233';
-
-    // 1. Orchestrated digest dispatch resolves target_sha from pinned digest's OCI revision instead of github.sha
-    fs.writeFileSync(outputFile, '');
-    const digestRes = runBashStep(resolveTargetShaScript, {
-      GH_TOKEN: 'ghs_test_token',
-      GITHUB_ACTOR_LOGIN: 'octocat',
-      EVENT_NAME: 'workflow_dispatch',
-      WORKFLOW_RUN_HEAD_SHA: '',
-      CURRENT_SHA: headMainSha,
-      INPUT_IMAGE_DIGEST: VALID_DIGEST,
-      REPO_OWNER: 'OwnerOrg',
-      SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
-      MOCK_INDEX_REVISION: pinnedDigestSha,
-    });
-    expect(digestRes.status).toBe(0);
-    expect(fs.readFileSync(outputFile, 'utf8')).toContain(`target_sha=${pinnedDigestSha}`);
-    expect(fs.readFileSync(outputFile, 'utf8')).not.toContain(headMainSha);
-
-    // 2. Falls back to SLSA provenance revision when OCI index revision annotation is absent
-    fs.writeFileSync(outputFile, '');
-    const slsaDigestRes = runBashStep(resolveTargetShaScript, {
-      GH_TOKEN: 'ghs_test_token',
-      GITHUB_ACTOR_LOGIN: 'octocat',
-      EVENT_NAME: 'workflow_dispatch',
-      WORKFLOW_RUN_HEAD_SHA: '',
-      CURRENT_SHA: headMainSha,
-      INPUT_IMAGE_DIGEST: VALID_DIGEST,
-      REPO_OWNER: 'OwnerOrg',
-      SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
-      MOCK_OMIT_INDEX_REVISION: 'true',
-      MOCK_SLSA_REVISION: pinnedDigestSha,
-    });
-    expect(slsaDigestRes.status).toBe(0);
-    expect(fs.readFileSync(outputFile, 'utf8')).toContain(`target_sha=${pinnedDigestSha}`);
-
-    // 3. Rejects malformed or unattested digests in Resolve Target Commit SHA
-    const badDigestRes = runBashStep(resolveTargetShaScript, {
-      GH_TOKEN: 'ghs_test_token',
-      GITHUB_ACTOR_LOGIN: 'octocat',
-      EVENT_NAME: 'workflow_dispatch',
-      CURRENT_SHA: headMainSha,
-      INPUT_IMAGE_DIGEST: 'sha256:bad',
-      REPO_OWNER: 'OwnerOrg',
-      SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
-    });
-    expect(badDigestRes.status).not.toBe(0);
-
-    const unattestedRes = runBashStep(resolveTargetShaScript, {
-      GH_TOKEN: 'ghs_test_token',
-      GITHUB_ACTOR_LOGIN: 'octocat',
-      EVENT_NAME: 'workflow_dispatch',
-      CURRENT_SHA: headMainSha,
-      INPUT_IMAGE_DIGEST: VALID_DIGEST,
-      REPO_OWNER: 'OwnerOrg',
-      SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
-      MOCK_ATTESTATION_FAIL: 'true',
-    });
-    expect(unattestedRes.status).not.toBe(0);
-
-    // 4. Align Workspace to Verified Commit SHA checks out maintenance-branch or older digest SHA on workflow_dispatch
+    const bareOriginDir = path.join(tempDir, 'align-origin.git');
     const repoDir = path.join(tempDir, 'align-repo');
     fs.mkdirSync(repoDir, { recursive: true });
+    copyReleaseGateScripts(repoDir);
+    execFileSync('git', ['init', '--bare', bareOriginDir], { stdio: 'ignore' });
     execFileSync('git', ['init', '-b', 'main'], { cwd: repoDir, stdio: 'ignore' });
     execFileSync('git', ['config', 'user.name', 'Test'], { cwd: repoDir, stdio: 'ignore' });
     execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: repoDir, stdio: 'ignore' });
+    execFileSync('git', ['remote', 'add', 'origin', bareOriginDir], { cwd: repoDir, stdio: 'ignore' });
     fs.writeFileSync(path.join(repoDir, 'schema.txt'), 'v1\n');
     execFileSync('git', ['add', 'schema.txt'], { cwd: repoDir, stdio: 'ignore' });
     execFileSync('git', ['commit', '-m', 'v1 base'], { cwd: repoDir, stdio: 'ignore' });
+    const pinnedDigestSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf8' }).trim();
 
     execFileSync('git', ['checkout', '-b', 'release/v1.4'], { cwd: repoDir, stdio: 'ignore' });
     fs.writeFileSync(path.join(repoDir, 'schema.txt'), 'v1.4.3\n');
     execFileSync('git', ['add', 'schema.txt'], { cwd: repoDir, stdio: 'ignore' });
     execFileSync('git', ['commit', '-m', 'v1.4.3 patch'], { cwd: repoDir, stdio: 'ignore' });
     const maintenanceSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf8' }).trim();
+    execFileSync('git', ['tag', 'v1.4.3', maintenanceSha], { cwd: repoDir, stdio: 'ignore' });
 
     execFileSync('git', ['checkout', 'main'], { cwd: repoDir, stdio: 'ignore' });
     fs.writeFileSync(path.join(repoDir, 'schema.txt'), 'v2.0.0\n');
     execFileSync('git', ['add', 'schema.txt'], { cwd: repoDir, stdio: 'ignore' });
     execFileSync('git', ['commit', '-m', 'v2.0.0 main'], { cwd: repoDir, stdio: 'ignore' });
+    const headMainSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf8' }).trim();
+    execFileSync('git', ['push', 'origin', 'main', '--tags'], { cwd: repoDir, stdio: 'ignore' });
 
-    // On workflow_run (main push), non-ancestor commit is rejected
+    setMockCiRuns([
+      {
+        id: 7101,
+        head_sha: pinnedDigestSha,
+        status: 'completed',
+        conclusion: 'success',
+        head_repository: { full_name: 'OwnerOrg/Wedding_Website' },
+      },
+      {
+        id: 7102,
+        head_sha: maintenanceSha,
+        status: 'completed',
+        conclusion: 'success',
+        head_repository: { full_name: 'OwnerOrg/Wedding_Website' },
+      },
+      {
+        id: 7103,
+        head_sha: headMainSha,
+        status: 'completed',
+        conclusion: 'success',
+        head_repository: { full_name: 'OwnerOrg/Wedding_Website' },
+      },
+    ]);
+
+    // 1. Orchestrated digest dispatch resolves target_sha from pinned digest's OCI revision instead of github.sha
+    fs.writeFileSync(outputFile, '');
+    const digestRes = runBashStep(
+      resolveTargetShaScript,
+      {
+        GH_TOKEN: 'ghs_test_token',
+        GITHUB_ACTOR_LOGIN: 'octocat',
+        EVENT_NAME: 'workflow_dispatch',
+        WORKFLOW_RUN_HEAD_SHA: '',
+        CURRENT_SHA: headMainSha,
+        INPUT_IMAGE_DIGEST: VALID_DIGEST,
+        REPO_OWNER: 'OwnerOrg',
+        SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+        MOCK_INDEX_REVISION: pinnedDigestSha,
+        MOCK_SLSA_REVISION: pinnedDigestSha,
+      },
+      repoDir
+    );
+    expect(digestRes.status).toBe(0);
+    expect(fs.readFileSync(outputFile, 'utf8')).toContain(`target_sha=${pinnedDigestSha}`);
+    expect(fs.readFileSync(outputFile, 'utf8')).not.toContain(headMainSha);
+
+    // 2. Falls back to SLSA provenance revision when OCI index revision annotation is absent
+    fs.writeFileSync(outputFile, '');
+    const slsaDigestRes = runBashStep(
+      resolveTargetShaScript,
+      {
+        GH_TOKEN: 'ghs_test_token',
+        GITHUB_ACTOR_LOGIN: 'octocat',
+        EVENT_NAME: 'workflow_dispatch',
+        WORKFLOW_RUN_HEAD_SHA: '',
+        CURRENT_SHA: headMainSha,
+        INPUT_IMAGE_DIGEST: VALID_DIGEST,
+        REPO_OWNER: 'OwnerOrg',
+        SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+        MOCK_OMIT_INDEX_REVISION: 'true',
+        MOCK_SLSA_REVISION: pinnedDigestSha,
+      },
+      repoDir
+    );
+    expect(slsaDigestRes.status).toBe(0);
+    expect(fs.readFileSync(outputFile, 'utf8')).toContain(`target_sha=${pinnedDigestSha}`);
+
+    // 3. Rejects malformed or unattested digests in Resolve Target Commit SHA
+    const badDigestRes = runBashStep(
+      resolveTargetShaScript,
+      {
+        GH_TOKEN: 'ghs_test_token',
+        GITHUB_ACTOR_LOGIN: 'octocat',
+        EVENT_NAME: 'workflow_dispatch',
+        CURRENT_SHA: headMainSha,
+        INPUT_IMAGE_DIGEST: 'sha256:bad',
+        REPO_OWNER: 'OwnerOrg',
+        SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+      },
+      repoDir
+    );
+    expect(badDigestRes.status).not.toBe(0);
+
+    const unattestedRes = runBashStep(
+      resolveTargetShaScript,
+      {
+        GH_TOKEN: 'ghs_test_token',
+        GITHUB_ACTOR_LOGIN: 'octocat',
+        EVENT_NAME: 'workflow_dispatch',
+        CURRENT_SHA: headMainSha,
+        INPUT_IMAGE_DIGEST: VALID_DIGEST,
+        REPO_OWNER: 'OwnerOrg',
+        SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+        MOCK_ATTESTATION_FAIL: 'true',
+      },
+      repoDir
+    );
+    expect(unattestedRes.status).not.toBe(0);
+
+    // 4. Align Workspace to Verified Commit SHA rejects non-ancestor on workflow_run and unattested maintenance branch on workflow_dispatch
     const wfRunNonAncestor = runBashStep(
       alignWorkspaceScript,
       {
@@ -937,12 +993,35 @@ process.exit(1);
     );
     expect(wfRunNonAncestor.status).not.toBe(0);
 
-    // On workflow_dispatch with pinned image_digest, maintenance branch revision aligns cleanly
+    const unattestedMaintAlignRes = runBashStep(
+      alignWorkspaceScript,
+      {
+        GH_TOKEN: 'ghs_test_token',
+        GITHUB_ACTOR_LOGIN: 'octocat',
+        EVENT_NAME: 'workflow_dispatch',
+        TARGET_SHA: maintenanceSha,
+        REPO_OWNER: 'OwnerOrg',
+        SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+        MOCK_ATTESTATION_FAIL: 'true',
+      },
+      repoDir
+    );
+    expect(unattestedMaintAlignRes.status).not.toBe(0);
+
+    // On workflow_dispatch with OIDC-attested maintenance v* tag / pinned image_digest, maintenance branch revision aligns cleanly
     const dispatchAlignRes = runBashStep(
       alignWorkspaceScript,
       {
+        GH_TOKEN: 'ghs_test_token',
+        GITHUB_ACTOR_LOGIN: 'octocat',
         EVENT_NAME: 'workflow_dispatch',
         TARGET_SHA: maintenanceSha,
+        INPUT_IMAGE_DIGEST: VALID_DIGEST,
+        REPO_OWNER: 'OwnerOrg',
+        SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+        MOCK_INDEX_REVISION: maintenanceSha,
+        MOCK_SLSA_REVISION: maintenanceSha,
+        MOCK_ATTESTATION_SOURCE_REF: 'refs/tags/v1.4.3',
       },
       repoDir
     );
@@ -1416,10 +1495,14 @@ process.exit(1);
     const alignMigrateScript = extractStepRunScript(dbMigrateYml, 'Align Migration Workspace to Target Commit SHA');
 
     const repoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'manual-digest-repo-'));
+    const bareOriginDir = path.join(tempDir, 'manual-digest-origin.git');
     try {
+      copyReleaseGateScripts(repoDir);
+      execFileSync('git', ['init', '--bare', bareOriginDir], { stdio: 'ignore' });
       execSync('git init -b main', { cwd: repoDir, stdio: 'ignore' });
       execSync('git config user.name "Test"', { cwd: repoDir, stdio: 'ignore' });
       execSync('git config user.email "test@example.com"', { cwd: repoDir, stdio: 'ignore' });
+      execFileSync('git', ['remote', 'add', 'origin', bareOriginDir], { cwd: repoDir, stdio: 'ignore' });
 
       const mig1Dir = path.join(repoDir, 'prisma', 'migrations', '20260101000000_base');
       fs.mkdirSync(mig1Dir, { recursive: true });
@@ -1432,6 +1515,24 @@ process.exit(1);
       fs.writeFileSync(path.join(mig2Dir, 'migration.sql'), 'ALTER TABLE "Guest" ADD COLUMN "future_col" TEXT;\n');
       execSync('git add . && git commit -m "unreleased HEAD migration"', { cwd: repoDir, stdio: 'ignore' });
       const headSha = execSync('git rev-parse HEAD', { cwd: repoDir, encoding: 'utf8' }).trim();
+      execFileSync('git', ['push', 'origin', 'main'], { cwd: repoDir, stdio: 'ignore' });
+
+      setMockCiRuns([
+        {
+          id: 7201,
+          head_sha: attestedSha,
+          status: 'completed',
+          conclusion: 'success',
+          head_repository: { full_name: 'OwnerOrg/Wedding_Website' },
+        },
+        {
+          id: 7202,
+          head_sha: headSha,
+          status: 'completed',
+          conclusion: 'success',
+          head_repository: { full_name: 'OwnerOrg/Wedding_Website' },
+        },
+      ]);
 
       // Shim gh attestation verify --format json to return SLSA provenance with attestedSha
       const ghAttestShim = path.join(binDir, 'gh');
@@ -1459,34 +1560,42 @@ process.exit(1);
       );
 
       fs.writeFileSync(outputFile, '');
-      const resolveRes = runBashStep(resolveTargetShaScript, {
-        GH_TOKEN: 'ghs_test_token',
-        GITHUB_ACTOR_LOGIN: 'octocat',
-        EVENT_NAME: 'workflow_dispatch',
-        WORKFLOW_RUN_HEAD_SHA: '',
-        INPUT_COMMIT_SHA: '',
-        INPUT_IMAGE_DIGEST: VALID_DIGEST,
-        CURRENT_SHA: headSha,
-        REPO_OWNER: 'OwnerOrg',
-        SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
-        MOCK_OMIT_INDEX_REVISION: 'true',
-      });
+      const resolveRes = runBashStep(
+        resolveTargetShaScript,
+        {
+          GH_TOKEN: 'ghs_test_token',
+          GITHUB_ACTOR_LOGIN: 'octocat',
+          EVENT_NAME: 'workflow_dispatch',
+          WORKFLOW_RUN_HEAD_SHA: '',
+          INPUT_COMMIT_SHA: '',
+          INPUT_IMAGE_DIGEST: VALID_DIGEST,
+          CURRENT_SHA: headSha,
+          REPO_OWNER: 'OwnerOrg',
+          SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+          MOCK_OMIT_INDEX_REVISION: 'true',
+        },
+        repoDir
+      );
       expect(resolveRes.status).toBe(0);
       expect(fs.readFileSync(outputFile, 'utf8')).toContain(`target_sha=${attestedSha}`);
 
       // Rejects mismatched explicit commit_sha when image_digest provenance attests a different commit
-      const mismatchRes = runBashStep(resolveTargetShaScript, {
-        GH_TOKEN: 'ghs_test_token',
-        GITHUB_ACTOR_LOGIN: 'octocat',
-        EVENT_NAME: 'workflow_dispatch',
-        WORKFLOW_RUN_HEAD_SHA: '',
-        INPUT_COMMIT_SHA: headSha,
-        INPUT_IMAGE_DIGEST: VALID_DIGEST,
-        CURRENT_SHA: headSha,
-        REPO_OWNER: 'OwnerOrg',
-        SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
-        MOCK_OMIT_INDEX_REVISION: 'true',
-      });
+      const mismatchRes = runBashStep(
+        resolveTargetShaScript,
+        {
+          GH_TOKEN: 'ghs_test_token',
+          GITHUB_ACTOR_LOGIN: 'octocat',
+          EVENT_NAME: 'workflow_dispatch',
+          WORKFLOW_RUN_HEAD_SHA: '',
+          INPUT_COMMIT_SHA: headSha,
+          INPUT_IMAGE_DIGEST: VALID_DIGEST,
+          CURRENT_SHA: headSha,
+          REPO_OWNER: 'OwnerOrg',
+          SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+          MOCK_OMIT_INDEX_REVISION: 'true',
+        },
+        repoDir
+      );
       expect(mismatchRes.status).toBe(1);
       expect(mismatchRes.stdout + mismatchRes.stderr).toContain('does not match attested provenance commit SHA');
 
@@ -1916,7 +2025,7 @@ process.exit(0);
 
     expect(deployYml).toContain("inputs.image_digest == '' &&\n        inputs.image_tag == ''");
     const tagPassMatches = deployYml.match(
-      /image_tag: \$\{\{ inputs\.image_tag \|\| needs\.publish-artifact\.outputs\.image_tag \|\| needs\.ci-gate\.outputs\.target_sha \}\}/g
+      /image_tag: \$\{\{ inputs\.image_tag \|\| inputs\.release_ref \|\| needs\.publish-artifact\.outputs\.image_tag \|\| needs\.ci-gate\.outputs\.target_sha \}\}/g
     );
     expect(tagPassMatches).toHaveLength(2);
 
@@ -1927,6 +2036,7 @@ process.exit(0);
     const workRepo = path.join(tempDir, 'work');
     spawnSync('git', ['init', '--bare', bareOrigin], { stdio: 'pipe' });
     spawnSync('git', ['init', '-b', 'main', workRepo], { stdio: 'pipe' });
+    copyReleaseGateScripts(workRepo);
     spawnSync('git', ['-C', workRepo, 'config', 'user.email', 'ci@example.com'], { stdio: 'pipe' });
     spawnSync('git', ['-C', workRepo, 'config', 'user.name', 'CI Bot'], { stdio: 'pipe' });
     spawnSync('git', ['-C', workRepo, 'remote', 'add', 'origin', bareOrigin], { stdio: 'pipe' });
@@ -1945,6 +2055,23 @@ process.exit(0);
     const unmergedSha = spawnSync('git', ['-C', workRepo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
     spawnSync('git', ['-C', workRepo, 'tag', 'v0.2.0-unmerged', unmergedSha], { stdio: 'pipe' });
 
+    setMockCiRuns([
+      {
+        id: 7301,
+        head_sha: taggedSha,
+        status: 'completed',
+        conclusion: 'success',
+        head_repository: { full_name: 'OwnerOrg/Wedding_Website' },
+      },
+      {
+        id: 7302,
+        head_sha: unmergedSha,
+        status: 'completed',
+        conclusion: 'success',
+        head_repository: { full_name: 'OwnerOrg/Wedding_Website' },
+      },
+    ]);
+
     // Valid v* tag on origin/main resolves to its 40-char commit SHA
     fs.writeFileSync(outputFile, '');
     const okTagRes = spawnSync('bash', ['-eo', 'pipefail', '-c', resolveTargetScript], {
@@ -1952,6 +2079,10 @@ process.exit(0);
       encoding: 'utf8',
       env: {
         ...process.env,
+        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+        GITHUB_API_URL: apiBaseUrl,
+        GITHUB_REPOSITORY: 'OwnerOrg/Wedding_Website',
+        GH_TOKEN: 'ghs_test_token',
         GITHUB_OUTPUT: outputFile,
         EVENT_NAME: 'workflow_dispatch',
         WORKFLOW_RUN_HEAD_SHA: '',
@@ -1968,6 +2099,10 @@ process.exit(0);
       encoding: 'utf8',
       env: {
         ...process.env,
+        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+        GITHUB_API_URL: apiBaseUrl,
+        GITHUB_REPOSITORY: 'OwnerOrg/Wedding_Website',
+        GH_TOKEN: 'ghs_test_token',
         GITHUB_OUTPUT: outputFile,
         EVENT_NAME: 'workflow_dispatch',
         CURRENT_SHA: taggedSha,
@@ -1976,12 +2111,19 @@ process.exit(0);
     });
     expect(latestTagRes.status).not.toBe(0);
 
-    // Unmerged tag rejected
+    // Unmerged tag rejected even if ci.yml passed
     const unmergedTagRes = spawnSync('bash', ['-eo', 'pipefail', '-c', resolveTargetScript], {
       cwd: workRepo,
       encoding: 'utf8',
       env: {
         ...process.env,
+        PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+        GITHUB_API_URL: apiBaseUrl,
+        GITHUB_REPOSITORY: 'OwnerOrg/Wedding_Website',
+        GH_TOKEN: 'ghs_test_token',
+        REPO_OWNER: 'OwnerOrg',
+        SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+        MOCK_ATTESTATION_FAIL: 'true',
         GITHUB_OUTPUT: outputFile,
         EVENT_NAME: 'workflow_dispatch',
         CURRENT_SHA: taggedSha,
@@ -2055,6 +2197,7 @@ process.exit(0);
     const workRepo = path.join(tempDir, 'work-provider');
     spawnSync('git', ['init', '--bare', bareOrigin], { stdio: 'pipe' });
     spawnSync('git', ['init', '-b', 'main', workRepo], { stdio: 'pipe' });
+    copyReleaseGateScripts(workRepo);
     spawnSync('git', ['-C', workRepo, 'config', 'user.email', 'ci@example.com'], { stdio: 'pipe' });
     spawnSync('git', ['-C', workRepo, 'config', 'user.name', 'CI Bot'], { stdio: 'pipe' });
     spawnSync('git', ['-C', workRepo, 'remote', 'add', 'origin', bareOrigin], { stdio: 'pipe' });
@@ -2066,6 +2209,16 @@ process.exit(0);
     spawnSync('git', ['-C', workRepo, 'tag', 'v1.0.0', mainSha], { stdio: 'pipe' });
     spawnSync('git', ['-C', workRepo, 'push', 'origin', 'main', '--tags'], { stdio: 'pipe' });
 
+    setMockCiRuns([
+      {
+        id: 7401,
+        head_sha: mainSha,
+        status: 'completed',
+        conclusion: 'success',
+        head_repository: { full_name: 'OwnerOrg/Wedding_Website' },
+      },
+    ]);
+
     // Digest-only standalone dispatch extracts sourceRepositoryDigest via gh attestation verify --format json and validates ancestry
     fs.writeFileSync(outputFile, '');
     const digestOnlyRes = spawnSync('bash', ['-eo', 'pipefail', '-c', standaloneTargetScript], {
@@ -2074,6 +2227,8 @@ process.exit(0);
       env: {
         ...process.env,
         PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+        GITHUB_API_URL: apiBaseUrl,
+        GITHUB_REPOSITORY: 'OwnerOrg/Wedding_Website',
         GITHUB_OUTPUT: outputFile,
         GH_TOKEN: 'ghs_test_token',
         IMAGE_URI: `ghcr.io/ownerorg/wedding_website@${VALID_DIGEST}`,
@@ -2081,6 +2236,7 @@ process.exit(0);
         EXPECTED_SOURCE_REF: 'refs/heads/main',
         REPO_OWNER: 'OwnerOrg',
         SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+        MOCK_INDEX_REVISION: mainSha,
         MOCK_ATTESTATION_SHA: mainSha,
       },
     });
@@ -2436,10 +2592,16 @@ process.exit(1);
       extractStepRunScript(deployYml, 'Resolve Target Commit SHA'),
       extractStepRunScript(deployYml, 'Align Workspace to Verified Commit SHA'),
       extractStepRunScript(deployProviderYml, 'Resolve Standalone Promotion Commit & Main Ancestry'),
+      extractStepRunScript(dbMigrateYml, 'Verify Release Commit Ancestry & CI Status'),
     ]) {
-      expect(script).toContain('http.${ORIGIN_SERVER}/.extraheader=AUTHORIZATION: basic');
-      expect(script).toContain('git "${GIT_AUTH_ARGS[@]}" fetch');
+      expect(script).toContain('verify-release-target.sh');
     }
+    const verifyReleaseTargetSh = fs.readFileSync(
+      path.join(REPO_ROOT, 'scripts', 'verify-release-target.sh'),
+      'utf8'
+    );
+    expect(verifyReleaseTargetSh).toContain('http.${ORIGIN_SERVER}/.extraheader=AUTHORIZATION: basic');
+    expect(verifyReleaseTargetSh).toContain('git "${GIT_AUTH_ARGS[@]}" fetch');
   });
 
   it('verifies scripts/rollout-vps.sh polls /api/live, /api/health, and /api/ready and rejects targets that fail /api/ready or /api/health', async () => {
@@ -2936,6 +3098,7 @@ exit 0
     const workRepo = path.join(tempDir, 'work-oci-rev');
     spawnSync('git', ['init', '--bare', bareOrigin], { stdio: 'pipe' });
     spawnSync('git', ['init', '-b', 'main', workRepo], { stdio: 'pipe' });
+    copyReleaseGateScripts(workRepo);
     spawnSync('git', ['-C', workRepo, 'config', 'user.email', 'ci@example.com'], { stdio: 'pipe' });
     spawnSync('git', ['-C', workRepo, 'config', 'user.name', 'CI Bot'], { stdio: 'pipe' });
     spawnSync('git', ['-C', workRepo, 'remote', 'add', 'origin', bareOrigin], { stdio: 'pipe' });
@@ -2950,6 +3113,23 @@ exit 0
     spawnSync('git', ['-C', workRepo, 'commit', '-m', 'c2 drifted head'], { stdio: 'pipe' });
     const c2Sha = spawnSync('git', ['-C', workRepo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
     spawnSync('git', ['-C', workRepo, 'push', 'origin', 'main'], { stdio: 'pipe' });
+
+    setMockCiRuns([
+      {
+        id: 7501,
+        head_sha: c1Sha,
+        status: 'completed',
+        conclusion: 'success',
+        head_repository: { full_name: 'OwnerOrg/Wedding_Website' },
+      },
+      {
+        id: 7502,
+        head_sha: c2Sha,
+        status: 'completed',
+        conclusion: 'success',
+        head_repository: { full_name: 'OwnerOrg/Wedding_Website' },
+      },
+    ]);
 
     // 0. validate-sha emits single-source is_rollback_call output consumed by downstream steps
     fs.writeFileSync(outputFile, '');
@@ -2968,6 +3148,8 @@ exit 0
       env: {
         ...process.env,
         PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+        GITHUB_API_URL: apiBaseUrl,
+        GITHUB_REPOSITORY: 'OwnerOrg/Wedding_Website',
         GITHUB_OUTPUT: outputFile,
         GH_TOKEN: 'ghs_test_token',
         GITHUB_ACTOR_LOGIN: 'octocat',
@@ -2991,6 +3173,8 @@ exit 0
       env: {
         ...process.env,
         PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+        GITHUB_API_URL: apiBaseUrl,
+        GITHUB_REPOSITORY: 'OwnerOrg/Wedding_Website',
         GITHUB_OUTPUT: outputFile,
         GH_TOKEN: 'ghs_test_token',
         GITHUB_ACTOR_LOGIN: 'octocat',
@@ -3131,5 +3315,188 @@ exit 0
     expect(inlineStep?.if).toContain("steps.setup-node-rollback.outcome == 'success'");
     expect(inlineStep?.if).toContain("steps.health-probe.outcome != 'success'");
     expect(inlineStep?.if).toContain('!inputs.is_rollback');
+  });
+
+  it('gates db-migrate.yml on preflight before unlocking DATABASE_URL, aligns deploy-provider.yml empty-commit_sha checkouts to source_revision, and prioritizes STANDALONE_TARGET_SHA and SOURCE_REVISION in capture-previous', () => {
+    const dbMigratePreflightScript = extractStepRunScript(
+      dbMigrateYml,
+      'Verify Release Commit Ancestry & CI Status'
+    );
+    const alignSourceRevScript = extractStepRunScript(
+      deployProviderYml,
+      'Align Workspace to Attested Source Revision'
+    );
+    const standaloneTargetScript = extractStepRunScript(
+      deployProviderYml,
+      'Resolve Standalone Promotion Commit & Main Ancestry'
+    );
+    const capturePreviousScript = extractStepRunScript(
+      deployProviderYml,
+      'Capture Active Image Tag Before Rollout'
+    );
+
+    const parsedDbMigrate = parseDocument(dbMigrateYml, { version: '1.2', strict: true }).toJS() as {
+      jobs?: {
+        preflight?: { environment?: unknown; permissions?: Record<string, string> };
+        migrate?: { needs?: string[]; environment?: string; steps?: Array<{ run?: string }> };
+      };
+    };
+    expect(parsedDbMigrate.jobs?.preflight?.environment).toBeUndefined();
+    expect(parsedDbMigrate.jobs?.preflight?.permissions).toEqual({
+      contents: 'read',
+      actions: 'read',
+      packages: 'read',
+      attestations: 'read',
+    });
+    expect(parsedDbMigrate.jobs?.migrate?.needs).toEqual(['preflight']);
+    expect(
+      parsedDbMigrate.jobs?.migrate?.steps?.some((step) => step.run === 'npm ci --ignore-scripts')
+    ).toBe(true);
+    expect(parsedDbMigrate.jobs?.migrate?.steps?.some((step) => step.run === 'npm ci')).toBe(false);
+
+    const bareOrigin = path.join(tempDir, 'origin-shared-gate.git');
+    const workRepo = path.join(tempDir, 'work-shared-gate');
+    spawnSync('git', ['init', '--bare', bareOrigin], { stdio: 'pipe' });
+    spawnSync('git', ['init', '-b', 'main', workRepo], { stdio: 'pipe' });
+    copyReleaseGateScripts(workRepo);
+    spawnSync('git', ['-C', workRepo, 'config', 'user.email', 'ci@example.com'], { stdio: 'pipe' });
+    spawnSync('git', ['-C', workRepo, 'config', 'user.name', 'CI Bot'], { stdio: 'pipe' });
+    spawnSync('git', ['-C', workRepo, 'remote', 'add', 'origin', bareOrigin], { stdio: 'pipe' });
+
+    fs.writeFileSync(path.join(workRepo, 'release.txt'), 'c1\n');
+    spawnSync('git', ['-C', workRepo, 'add', 'release.txt'], { stdio: 'pipe' });
+    spawnSync('git', ['-C', workRepo, 'commit', '-m', 'c1 release'], { stdio: 'pipe' });
+    const c1Sha = spawnSync('git', ['-C', workRepo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+
+    fs.writeFileSync(path.join(workRepo, 'release.txt'), 'c2\n');
+    spawnSync('git', ['-C', workRepo, 'add', 'release.txt'], { stdio: 'pipe' });
+    spawnSync('git', ['-C', workRepo, 'commit', '-m', 'c2 release'], { stdio: 'pipe' });
+    const c2Sha = spawnSync('git', ['-C', workRepo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+
+    fs.writeFileSync(path.join(workRepo, 'release.txt'), 'c3-main-head\n');
+    spawnSync('git', ['-C', workRepo, 'add', 'release.txt'], { stdio: 'pipe' });
+    spawnSync('git', ['-C', workRepo, 'commit', '-m', 'c3 main head'], { stdio: 'pipe' });
+    const c3Sha = spawnSync('git', ['-C', workRepo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+    spawnSync('git', ['-C', workRepo, 'push', 'origin', 'main'], { stdio: 'pipe' });
+
+    spawnSync('git', ['-C', workRepo, 'checkout', '-b', 'feature/unmerged', c2Sha], { stdio: 'pipe' });
+    fs.writeFileSync(path.join(workRepo, 'release.txt'), 'unmerged\n');
+    spawnSync('git', ['-C', workRepo, 'add', 'release.txt'], { stdio: 'pipe' });
+    spawnSync('git', ['-C', workRepo, 'commit', '-m', 'unmerged commit'], { stdio: 'pipe' });
+    const unmergedSha = spawnSync('git', ['-C', workRepo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+    spawnSync('git', ['-C', workRepo, 'checkout', 'main'], { stdio: 'pipe' });
+
+    setMockCiRuns([
+      {
+        id: 7601,
+        head_sha: c1Sha,
+        status: 'completed',
+        conclusion: 'success',
+        head_repository: { full_name: 'OwnerOrg/Wedding_Website' },
+      },
+      {
+        id: 7602,
+        head_sha: c2Sha,
+        status: 'completed',
+        conclusion: 'success',
+        head_repository: { full_name: 'OwnerOrg/Wedding_Website' },
+      },
+      {
+        id: 7603,
+        head_sha: unmergedSha,
+        status: 'completed',
+        conclusion: 'success',
+        head_repository: { full_name: 'OwnerOrg/Wedding_Website' },
+      },
+    ]);
+
+    // 1. db-migrate.yml preflight rejects unmerged commits before migrate runs, and accepts merged c2Sha
+    const unmergedPreflightRes = runBashStep(
+      dbMigratePreflightScript,
+      {
+        GH_TOKEN: 'ghs_test_token',
+        GITHUB_ACTOR_LOGIN: 'octocat',
+        INPUT_COMMIT_SHA: unmergedSha,
+        CURRENT_SHA: c3Sha,
+        REPO_OWNER: 'OwnerOrg',
+        SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+      },
+      workRepo
+    );
+    expect(unmergedPreflightRes.status).toBe(1);
+
+    fs.writeFileSync(outputFile, '');
+    const mergedPreflightRes = runBashStep(
+      dbMigratePreflightScript,
+      {
+        GH_TOKEN: 'ghs_test_token',
+        GITHUB_ACTOR_LOGIN: 'octocat',
+        INPUT_COMMIT_SHA: c2Sha,
+        CURRENT_SHA: c3Sha,
+        REPO_OWNER: 'OwnerOrg',
+        SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+      },
+      workRepo
+    );
+    expect(mergedPreflightRes.status).toBe(0);
+    expect(fs.readFileSync(outputFile, 'utf8')).toContain(`target_sha=${c2Sha}`);
+
+    // 2. Align Workspace to Attested Source Revision detaches HEAD to c2Sha (with parent c1Sha intact) when inputs.commit_sha is empty
+    const alignRevRes = runBashStep(
+      alignSourceRevScript,
+      {
+        GH_TOKEN: 'ghs_test_token',
+        SOURCE_REVISION: c2Sha,
+      },
+      workRepo
+    );
+    expect(alignRevRes.status).toBe(0);
+    expect(spawnSync('git', ['-C', workRepo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim()).toBe(c2Sha);
+    expect(spawnSync('git', ['-C', workRepo, 'rev-parse', 'HEAD^1'], { encoding: 'utf8' }).stdout.trim()).toBe(c1Sha);
+
+    // Reset back to c3Sha and verify standalone-target also detaches HEAD to c2Sha
+    spawnSync('git', ['-C', workRepo, 'checkout', 'main'], { stdio: 'pipe' });
+    fs.writeFileSync(outputFile, '');
+    const standaloneDetachRes = runBashStep(
+      standaloneTargetScript,
+      {
+        GH_TOKEN: 'ghs_test_token',
+        GITHUB_ACTOR_LOGIN: 'octocat',
+        IMAGE_URI: `ghcr.io/ownerorg/wedding_website@${VALID_DIGEST}`,
+        RAW_TAG: '',
+        SOURCE_REVISION: c2Sha,
+        INPUT_COMMIT_SHA: '',
+        EXPECTED_SOURCE_REF: 'refs/heads/main',
+        REPO_OWNER: 'OwnerOrg',
+        SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+      },
+      workRepo
+    );
+    expect(standaloneDetachRes.status).toBe(0);
+    expect(spawnSync('git', ['-C', workRepo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim()).toBe(c2Sha);
+
+    // 3. capture-previous resolves git-parent-sha from STANDALONE_TARGET_SHA / SOURCE_REVISION (c2Sha -> parent c1Sha) instead of drifted github.sha (c3Sha -> parent c2Sha)
+    fs.writeFileSync(outputFile, '');
+    const captureParentRes = runBashStep(
+      capturePreviousScript,
+      {
+        PROVIDER: 'generic-webhook',
+        TARGET_ENV: 'production',
+        INCOMING_TAG: c2Sha,
+        INCOMING_DIGEST: VALID_DIGEST,
+        INPUT_COMMIT_SHA: '',
+        STANDALONE_TARGET_SHA: c2Sha,
+        SOURCE_REVISION: c2Sha,
+        CURRENT_SHA: c3Sha,
+        DRY_RUN: 'false',
+        GITHUB_TOKEN: '',
+        GH_TOKEN: 'ghs_test_token',
+        GITHUB_ACTOR_LOGIN: 'octocat',
+      },
+      workRepo
+    );
+    expect(captureParentRes.status).toBe(0);
+    expect(fs.readFileSync(outputFile, 'utf8')).toContain(`previous_image_tag=${c1Sha}`);
+    expect(fs.readFileSync(outputFile, 'utf8')).toContain('previous_tag_source=git-parent-sha');
   });
 });
