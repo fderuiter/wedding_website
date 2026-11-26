@@ -69,6 +69,7 @@ export const PhotoUploadQRModal: React.FC<PhotoUploadQRModalProps> = ({
   onRotateToken,
 }) => {
   const { addToast, confirm } = useToast();
+  const dialogRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [copied, setCopied] = useState(false);
   const [activeMode, setActiveMode] = useState<'preview' | 'print'>('preview');
@@ -137,6 +138,10 @@ export const PhotoUploadQRModal: React.FC<PhotoUploadQRModalProps> = ({
       : resolvedConfiguredUrl;
 
   useEffect(() => {
+    const scrollEl = dialogRef.current?.querySelector<HTMLElement>('[data-scroll-region]');
+    if (scrollEl) {
+      scrollEl.scrollTop = 0;
+    }
     if (typeof document === 'undefined') return;
     if (isOpen && activeMode === 'print') {
       document.body.classList.add('printing-qr-labels');
@@ -296,10 +301,13 @@ export const PhotoUploadQRModal: React.FC<PhotoUploadQRModalProps> = ({
 
   return (
     <Dialog
+      ref={dialogRef}
       isOpen={isOpen}
       onClose={handleClose}
       title="Guest Photo Upload QR & Printable Cards"
-      className={`${activeMode === 'print' ? 'max-w-4xl' : 'max-w-lg'} w-full p-6 printable-qr-modal-dialog`}
+      className={`${activeMode === 'print' ? 'max-w-4xl' : 'max-w-lg'} w-full max-h-[calc(100vh-2rem)] print:max-h-none print:overflow-visible printable-qr-modal-dialog`}
+      style={{ maxWidth: activeMode === 'print' ? '56rem' : '32rem' }}
+      contentClassName="px-6 py-4 max-h-[calc(100vh-7rem)] overflow-y-auto print:max-h-none print:overflow-visible"
     >
       {activeMode === 'preview' ? (
         <div className="space-y-5" data-testid="photo-qr-preview-panel">
