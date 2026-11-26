@@ -6,6 +6,7 @@ import {
   computeTableMealCounts,
   generateAveryCardsPdf,
   generateSeatingChartPdf,
+  getInvitationPartyMembers,
   getTableOccupiedChairCount,
   isGuestEligibleForSeating,
   isLandmarkTable,
@@ -103,11 +104,28 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     ? new URL(request.url).searchParams.get('format')?.toLowerCase()
     : null;
 
+  const hasRelationalMembers =
+    typeof (prisma as unknown as { householdMember?: { findMany?: unknown } }).householdMember
+      ?.findMany === 'function';
+
+  const relationalGuestInclude = hasRelationalMembers
+    ? {
+      members: { orderBy: { displayOrder: 'asc' as const } },
+      subEventRsvps: {
+        include: {
+          memberRsvps: true,
+          subEvent: { select: { id: true, title: true, mealOptions: true } },
+        },
+      },
+    }
+    : undefined;
+
   const [rawTables, rawUnassignedGuests] = await Promise.all([
     prisma.seatingTable.findMany({
       include: {
         invitationCodes: {
           orderBy: { seatNumber: 'asc' },
+          ...(relationalGuestInclude ? { include: relationalGuestInclude } : {}),
         },
       },
       orderBy: { name: 'asc' },
@@ -115,6 +133,7 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     prisma.invitationCode.findMany({
       where: { tableId: null },
       orderBy: { guestName: 'asc' },
+      ...(relationalGuestInclude ? { include: relationalGuestInclude } : {}),
     }),
   ]);
 
@@ -249,20 +268,53 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
       });
 
       for (const guest of table.invitationCodes) {
-        const primarySeat = guest.seatNumber || primarySeatByGuestId.get(guest.id);
+        const partyMembers = getInvitationPartyMembers(guest as unknown as InvitationCodeDTO);
+        const hasMemberBindings = partyMembers.some((m) => Boolean(m.memberId));
+        const primarySeat = hasMemberBindings
+          ? primarySeatByGuestId.get(guest.id) ?? guest.seatNumber
+          : guest.seatNumber || primarySeatByGuestId.get(guest.id);
         const plusOneSeats = (plusOneSeatsByGuestId.get(guest.id) ?? []).sort((a, b) => a - b);
+
+        const primaryDisplayName = hasMemberBindings
+          ? partyMembers[0]?.attendeeName || guest.guestName
+          : guest.guestName;
+        const plusOneDisplayNames = hasMemberBindings
+          ? partyMembers
+            .slice(1)
+            .map((m) => m.attendeeName)
+            .join(', ')
+          : formatGuestPlusOneNames(guest);
+        const dietaryNotesText = hasMemberBindings
+          ? partyMembers
+            .map((m) => {
+              const badges = m.dietaryBadges
+                .filter((b) => b.category === 'kids')
+                .map((b) => b.label);
+              const combined = [m.dietaryNotesText, ...badges].filter(Boolean).join(', ');
+              if (!combined) return '';
+              return partyMembers.length > 1 ? `${m.attendeeName}: ${combined}` : combined;
+            })
+            .filter(Boolean)
+            .join('; ')
+          : guest.dietaryNotes || '';
+        const mealSelectionsText = hasMemberBindings
+          ? partyMembers
+            .filter((m) => Boolean(m.mealChoice))
+            .map((m) => `${m.attendeeName}: ${m.mealChoice}`)
+            .join('; ') || formatGuestMealSelections(guest)
+          : formatGuestMealSelections(guest);
 
         exportRecords.push({
           'Table Name': table.name,
           'Table Shape': table.shape,
           'Capacity': String(table.capacity),
           'Seat Number': primarySeat ? String(primarySeat) : '',
-          'Guest Name': guest.guestName,
-          'Dietary Notes': guest.dietaryNotes || '',
-          'Plus-One Name': formatGuestPlusOneNames(guest),
+          'Guest Name': primaryDisplayName,
+          'Dietary Notes': dietaryNotesText,
+          'Plus-One Name': plusOneDisplayNames,
           'Plus-One Seats': plusOneSeats.map(String).join(', '),
           'Attendance': formatAttendanceLabel(guest as unknown as InvitationCodeDTO),
-          'Meal Selections': formatGuestMealSelections(guest),
+          'Meal Selections': mealSelectionsText,
           'Table Meal Counts': mealSummary.formattedMeals,
           'Custom Answers': formatGuestCustomAnswers(guest),
         });
@@ -271,17 +323,48 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
   }
 
   for (const guest of unassignedGuests) {
+    const partyMembers = getInvitationPartyMembers(guest as unknown as InvitationCodeDTO);
+    const hasMemberBindings = partyMembers.some((m) => Boolean(m.memberId));
+    const primaryDisplayName = hasMemberBindings
+      ? partyMembers[0]?.attendeeName || guest.guestName
+      : guest.guestName;
+    const plusOneDisplayNames = hasMemberBindings
+      ? partyMembers
+        .slice(1)
+        .map((m) => m.attendeeName)
+        .join(', ')
+      : formatGuestPlusOneNames(guest);
+    const dietaryNotesText = hasMemberBindings
+      ? partyMembers
+        .map((m) => {
+          const badges = m.dietaryBadges
+            .filter((b) => b.category === 'kids')
+            .map((b) => b.label);
+          const combined = [m.dietaryNotesText, ...badges].filter(Boolean).join(', ');
+          if (!combined) return '';
+          return partyMembers.length > 1 ? `${m.attendeeName}: ${combined}` : combined;
+        })
+        .filter(Boolean)
+        .join('; ')
+      : guest.dietaryNotes || '';
+    const mealSelectionsText = hasMemberBindings
+      ? partyMembers
+        .filter((m) => Boolean(m.mealChoice))
+        .map((m) => `${m.attendeeName}: ${m.mealChoice}`)
+        .join('; ') || formatGuestMealSelections(guest)
+      : formatGuestMealSelections(guest);
+
     exportRecords.push({
       'Table Name': 'Unassigned',
       'Table Shape': '',
       'Capacity': '',
       'Seat Number': '',
-      'Guest Name': guest.guestName,
-      'Dietary Notes': guest.dietaryNotes || '',
-      'Plus-One Name': formatGuestPlusOneNames(guest),
+      'Guest Name': primaryDisplayName,
+      'Dietary Notes': dietaryNotesText,
+      'Plus-One Name': plusOneDisplayNames,
       'Plus-One Seats': '',
       'Attendance': formatAttendanceLabel(guest as unknown as InvitationCodeDTO),
-      'Meal Selections': formatGuestMealSelections(guest),
+      'Meal Selections': mealSelectionsText,
       'Table Meal Counts': '',
       'Custom Answers': formatGuestCustomAnswers(guest),
     });

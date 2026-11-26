@@ -223,45 +223,23 @@ jobs:
             echo "is_rollback_call=${IS_ROLLBACK_CALL:-false}" >> "$GITHUB_OUTPUT"
           fi
 
-      - id: checkout
+      - name: Checkout Default Branch Helpers & Migration Linter
+        id: checkout-default
         if: >-
           always() &&
           (!cancelled() || steps.validate-sha.outputs.is_rollback_call == 'true') &&
           steps.validate-sha.outcome == 'success'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.commit_sha }}
           fetch-depth: 0
           persist-credentials: false
-
-      - name: Capture Git Parent SHAs for Rollback Fallback
-        id: git-ancestors
-        if: >-
-          always() &&
-          (!cancelled() || steps.validate-sha.outputs.is_rollback_call == 'true') &&
-          steps.checkout.outcome == 'success'
-        env:
-          INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
-          INCOMING_TAG: ${{ inputs.image_tag || '' }}
-          CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}
-        run: |
-          GIT_REF_TARGET="HEAD"
-          if [[ "${INPUT_COMMIT_SHA:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
-            GIT_REF_TARGET="$INPUT_COMMIT_SHA"
-          elif [[ "${INCOMING_TAG:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
-            GIT_REF_TARGET="$INCOMING_TAG"
-          elif [[ "${CURRENT_SHA:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
-            GIT_REF_TARGET="$CURRENT_SHA"
-          fi
-          PARENT_SHAS=$(git rev-list --first-parent --skip=1 --max-count=10 "$GIT_REF_TARGET" 2>/dev/null | paste -sd ',' - || true)
-          echo "git_parent_shas=${PARENT_SHAS}" >> "$GITHUB_OUTPUT"
 
       - name: Resolve Artifact Image URI
         id: resolve
         if: >-
           always() &&
           (!cancelled() || steps.validate-sha.outputs.is_rollback_call == 'true') &&
-          steps.checkout.outcome == 'success'
+          steps.checkout-default.outcome == 'success'
         timeout-minutes: 3
         env:
           GH_TOKEN: ${{ github.token }}
@@ -893,6 +871,41 @@ jobs:
         run: |
           npm run lint:migrations
           echo "migration_lint_status=compatible" >> "$GITHUB_OUTPUT"
+
+      - id: checkout
+        if: >-
+          always() &&
+          (!cancelled() || steps.validate-sha.outputs.is_rollback_call == 'true') &&
+          steps.lint-migrations.outcome == 'success'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          path: target-commit
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Capture Git Parent SHAs for Rollback Fallback
+        id: git-ancestors
+        if: >-
+          always() &&
+          (!cancelled() || steps.validate-sha.outputs.is_rollback_call == 'true') &&
+          steps.checkout.outcome == 'success'
+        env:
+          INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
+          INCOMING_TAG: ${{ inputs.image_tag || '' }}
+          CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}
+        run: |
+          GIT_REF_TARGET="HEAD"
+          if [[ "${INPUT_COMMIT_SHA:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            GIT_REF_TARGET="$INPUT_COMMIT_SHA"
+          elif [[ "${INCOMING_TAG:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            GIT_REF_TARGET="$INCOMING_TAG"
+          elif [[ "${CURRENT_SHA:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            GIT_REF_TARGET="$CURRENT_SHA"
+          fi
+          PARENT_SHAS=$(git -C target-commit rev-list --first-parent --skip=1 --max-count=10 "$GIT_REF_TARGET" 2>/dev/null | paste -sd ',' - || true)
+          rm -rf target-commit
+          echo "git_parent_shas=${PARENT_SHAS}" >> "$GITHUB_OUTPUT"
 
   deploy:
     name: Deploy Release Artifact to Provider

@@ -12,6 +12,7 @@ import {
 import {
   ADDRESS_COLLECTION_TAG,
   ALL_SEATING_TABLE_SHAPES,
+  getAttendingHouseholdMembersForSeating,
   getDefaultShapeDimensions,
   getGuestAttendanceStatus,
   getGuestPartySize,
@@ -92,21 +93,136 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
 
   constructor() {
     super(new BaseRepository<SeatingTableDTO>('seatingTable'), 'SeatingTable');
+    const hasRelational =
+      typeof (this.repo.client as any)?.householdMember?.findMany === 'function';
     this.defaultQueryArgs = {
       include: {
         invitationCodes: {
           orderBy: { seatNumber: 'asc' },
+          ...(hasRelational
+            ? {
+              include: {
+                members: { orderBy: { displayOrder: 'asc' } },
+                subEventRsvps: {
+                  include: {
+                    memberRsvps: true,
+                    subEvent: { select: { id: true, title: true, mealOptions: true } },
+                  },
+                },
+              },
+            }
+            : {}),
         },
       },
     };
+  }
+
+  private getGuestRelationalInclude(client: any) {
+    if (typeof client?.householdMember?.findMany !== 'function') {
+      return undefined;
+    }
+    return {
+      members: { orderBy: { displayOrder: 'asc' as const } },
+      subEventRsvps: {
+        include: {
+          memberRsvps: true,
+          subEvent: { select: { id: true, title: true, mealOptions: true } },
+        },
+      },
+    };
+  }
+
+  private async syncHouseholdMemberSeatsForBatch(
+    client: any,
+    updates: PlannedSeatUpdate[],
+    guestById: Map<string, any>
+  ): Promise<void> {
+    if (updates.length === 0 || typeof client?.householdMember?.findMany !== 'function') {
+      return;
+    }
+
+    const clearedGuestIds = updates
+      .filter((u) => u.tableId === null)
+      .map((u) => u.guestId);
+    if (clearedGuestIds.length > 0 && typeof client.householdMember.updateMany === 'function') {
+      await client.householdMember.updateMany({
+        where: { invitationCodeId: { in: clearedGuestIds } },
+        data: { seatNumber: null },
+      });
+    }
+
+    const assignedUpdates = updates.filter((u) => u.tableId !== null);
+    if (assignedUpdates.length === 0) {
+      return;
+    }
+
+    const assignedGuestIds = assignedUpdates.map((u) => u.guestId);
+    const existingMembers = await client.householdMember.findMany({
+      where: { invitationCodeId: { in: assignedGuestIds } },
+      orderBy: { displayOrder: 'asc' },
+    });
+    if (!Array.isArray(existingMembers) || existingMembers.length === 0) {
+      return;
+    }
+
+    const membersByInvite = new Map<string, any[]>();
+    for (const m of existingMembers) {
+      const list = membersByInvite.get(m.invitationCodeId) ?? [];
+      list.push(m);
+      membersByInvite.set(m.invitationCodeId, list);
+    }
+
+    const memberSeatRows: Array<{ id: string; seatNumber: number | null }> = [];
+    for (const upd of assignedUpdates) {
+      const allMembers = membersByInvite.get(upd.guestId) ?? [];
+      if (allMembers.length === 0) continue;
+      const guestObj = {
+        ...(guestById.get(upd.guestId) || {}),
+        members: allMembers,
+      };
+      const attendingMembers = getAttendingHouseholdMembersForSeating(guestObj);
+      const seatSequence: Array<number | null> = [
+        upd.seatNumber,
+        ...upd.plusOneSeatNumbers,
+      ];
+      const seatByMemberId = new Map<string, number | null>();
+      attendingMembers.forEach((m, idx) => {
+        if (m.id) {
+          seatByMemberId.set(m.id, seatSequence[idx] ?? null);
+        }
+      });
+
+      for (const m of allMembers) {
+        if (!m.id) continue;
+        const desiredSeat = seatByMemberId.has(m.id) ? seatByMemberId.get(m.id)! : null;
+        if ((m.seatNumber ?? null) !== desiredSeat) {
+          memberSeatRows.push({ id: m.id, seatNumber: desiredSeat });
+        }
+      }
+    }
+
+    if (memberSeatRows.length > 0 && typeof client.$executeRaw === 'function') {
+      const hmTable = Prisma.raw(qualifyPostgresTable('HouseholdMember'));
+      const valueRows = memberSeatRows.map(
+        (r) => Prisma.sql`(${r.id}::text, ${r.seatNumber}::integer)`
+      );
+      await client.$executeRaw(Prisma.sql`
+        UPDATE ${hmTable} AS hm
+        SET "seatNumber" = v."seatNumber", "updatedAt" = NOW()
+        FROM (VALUES ${Prisma.join(valueRows, ', ')}) AS v("id", "seatNumber")
+        WHERE hm."id" = v."id"
+      `);
+    }
   }
 
   private async loadGuestsByIds(
     client: any,
     uniqueIds: string[]
   ): Promise<{ targetGuests: any[]; guestById: Map<string, any> }> {
+    const relInclude = this.getGuestRelationalInclude(client);
     const targetGuests = await client.invitationCode.findMany({
       where: { id: { in: uniqueIds } },
+      ...(relInclude ? { include: relInclude } : {}),
     });
 
     if (!targetGuests || targetGuests.length !== uniqueIds.length) {
@@ -118,12 +234,19 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
   }
 
   private async loadOptionalGuestById(client: any, guestId: string): Promise<any | null> {
+    const relInclude = this.getGuestRelationalInclude(client);
     if (typeof client?.invitationCode?.findUnique === 'function') {
-      const found = await client.invitationCode.findUnique({ where: { id: guestId } });
+      const found = await client.invitationCode.findUnique({
+        where: { id: guestId },
+        ...(relInclude ? { include: relInclude } : {}),
+      });
       if (found && (!found.id || found.id === guestId)) return found;
     }
     if (typeof client?.invitationCode?.findMany === 'function') {
-      const rows = await client.invitationCode.findMany({ where: { id: { in: [guestId] } } });
+      const rows = await client.invitationCode.findMany({
+        where: { id: { in: [guestId] } },
+        ...(relInclude ? { include: relInclude } : {}),
+      });
       if (Array.isArray(rows) && rows.length > 0) {
         const matched = rows.find((r: any) => r?.id === guestId);
         if (matched) return matched;
@@ -133,9 +256,12 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
   }
 
   private async findTableWithOccupants(client: any, tableId: string): Promise<any> {
+    const relInclude = this.getGuestRelationalInclude(client);
     const table = await client.seatingTable.findUnique({
       where: { id: tableId },
-      include: { invitationCodes: true },
+      include: {
+        invitationCodes: relInclude ? { include: relInclude } : true,
+      },
     });
 
     if (!table) {
@@ -388,6 +514,7 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
     `;
 
     await client.$executeRaw(bulkUpdateQuery);
+    await this.syncHouseholdMemberSeatsForBatch(client, updates, guestById);
 
     const auditRecords = updates.map((item) => ({
       entityId: item.guestId,
@@ -583,6 +710,22 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
           : { tableId: null, seatNumber: null },
       });
 
+      if (
+        Array.isArray(existingAtTable) &&
+        existingAtTable.length > 0 &&
+        typeof txRepo.client?.householdMember?.updateMany === 'function'
+      ) {
+        const clearedIds = existingAtTable
+          .map((g: any) => g?.id)
+          .filter((gid: unknown): gid is string => typeof gid === 'string' && gid.length > 0);
+        if (clearedIds.length > 0) {
+          await txRepo.client.householdMember.updateMany({
+            where: { invitationCodeId: { in: clearedIds } },
+            data: { seatNumber: null },
+          });
+        }
+      }
+
       const deletedRecord = await txRepo.delete(id, author);
       return deletedRecord;
     });
@@ -683,6 +826,19 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
           data: updateData,
         });
 
+        await this.syncHouseholdMemberSeatsForBatch(
+          client,
+          [
+            {
+              guestId: invitationCodeId,
+              tableId,
+              seatNumber: resolvedPrimarySeat,
+              plusOneSeatNumbers: resolvedPlusOneSeats ?? [],
+            },
+          ],
+          new Map([[invitationCodeId, targetGuest || updatedGuest]])
+        );
+
         await createAuditSnapshot(
           'InvitationCode',
           invitationCodeId,
@@ -712,6 +868,13 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
           ? { tableId: null, seatNumber: null, plusOneSeatNumbers: [] }
           : { tableId: null, seatNumber: null },
       });
+
+      if (typeof client?.householdMember?.updateMany === 'function') {
+        await client.householdMember.updateMany({
+          where: { invitationCodeId },
+          data: { seatNumber: null },
+        });
+      }
 
       await createAuditSnapshot(
         'InvitationCode',
@@ -1042,11 +1205,14 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
     return this.repo.transaction(async (txRepo) => {
       const client = txRepo.client;
 
+      const relInclude = this.getGuestRelationalInclude(client);
+
       // 1. Query all tables with their current occupants
       const tables = await client.seatingTable.findMany({
         include: {
           invitationCodes: {
             orderBy: { seatNumber: 'asc' },
+            ...(relInclude ? { include: relInclude } : {}),
           },
         },
         orderBy: { name: 'asc' },
@@ -1056,6 +1222,7 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
       const rawUnassignedGuests = await client.invitationCode.findMany({
         where: { tableId: null },
         orderBy: [{ householdName: 'asc' }, { guestName: 'asc' }],
+        ...(relInclude ? { include: relInclude } : {}),
       });
 
       interface CachedGuestPartyMetadata {

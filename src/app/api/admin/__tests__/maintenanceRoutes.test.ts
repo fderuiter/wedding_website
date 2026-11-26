@@ -14,13 +14,16 @@ jest.mock('next/server', () => {
       const responseCookies = new Map();
       const headers = new Headers();
       if (init?.headers) {
-        Object.entries(init.headers).forEach(([k, v]) => headers.set(k, v as string));
+        Object.entries(init.headers).forEach(([k, v]) =>
+          headers.set(k, v as string),
+        );
       }
       const cookies = {
         set: jest.fn((key, value, options) => {
           responseCookies.set(key, { name: key, value });
           let cookieString = `${key}=${value}; Path=/`;
-          if (options?.expires) cookieString += `; Expires=${options.expires.toUTCString()}`;
+          if (options?.expires)
+            cookieString += `; Expires=${options.expires.toUTCString()}`;
           if (options?.maxAge === 0) cookieString += '; Max-Age=0';
           headers.set('set-cookie', cookieString);
         }),
@@ -54,7 +57,10 @@ jest.mock('next/server', () => {
       if (typeof this.bodyContent === 'string') {
         return JSON.parse(this.bodyContent);
       }
-      if (this.bodyContent && typeof (this.bodyContent as any).getReader === 'function') {
+      if (
+        this.bodyContent &&
+        typeof (this.bodyContent as any).getReader === 'function'
+      ) {
         const reader = (this.bodyContent as any).getReader();
         const decoder = new TextDecoder();
         let result = '';
@@ -95,7 +101,8 @@ jest.mock('next/server', () => {
         get: jest.fn((key) => requestCookies.get(key)),
         set: jest.fn(),
       },
-      json: () => Promise.resolve(init && init.body ? JSON.parse(init.body) : {}),
+      json: () =>
+        Promise.resolve(init && init.body ? JSON.parse(init.body) : {}),
     };
   });
 
@@ -108,21 +115,91 @@ jest.mock('next/server', () => {
 jest.mock('@/lib/prisma', () => ({
   prisma: {
     $transaction: jest.fn(),
-    appConfig: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
-    contentNode: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
-    media: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
-    seatingTable: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
-    invitationCode: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
-    weddingPartyMember: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
-    attraction: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
-    registryItem: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
-    contributor: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
-    subEvent: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
-    subEventAccess: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
-    subEventRsvp: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
-    broadcastMessage: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
-    broadcastRecipient: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
-    snapshotVersion: { findMany: jest.fn(), createMany: jest.fn(), deleteMany: jest.fn() },
+    appConfig: {
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    contentNode: {
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    media: {
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    seatingTable: {
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    invitationCode: {
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    householdMember: {
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    weddingPartyMember: {
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    attraction: {
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    registryItem: {
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    contributor: {
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    subEvent: {
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    subEventAccess: {
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    subEventRsvp: {
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    subEventMemberRsvp: {
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    broadcastMessage: {
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    broadcastRecipient: {
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    snapshotVersion: {
+      findMany: jest.fn(),
+      createMany: jest.fn(),
+      deleteMany: jest.fn(),
+    },
   },
 }));
 
@@ -136,9 +213,15 @@ jest.mock('@/lib/audit', () => ({
 }));
 
 const mockPrisma = prisma as any;
-const mockIsAdminRequest = isAdminRequest as jest.MockedFunction<typeof isAdminRequest>;
-const mockCreateAuditSnapshot = createAuditSnapshot as jest.MockedFunction<typeof createAuditSnapshot>;
-const mockPruneSnapshotsBulk = pruneSnapshotsBulk as jest.MockedFunction<typeof pruneSnapshotsBulk>;
+const mockIsAdminRequest = isAdminRequest as jest.MockedFunction<
+  typeof isAdminRequest
+>;
+const mockCreateAuditSnapshot = createAuditSnapshot as jest.MockedFunction<
+  typeof createAuditSnapshot
+>;
+const mockPruneSnapshotsBulk = pruneSnapshotsBulk as jest.MockedFunction<
+  typeof pruneSnapshotsBulk
+>;
 
 describe('Maintenance API Routes Integration Tests', () => {
   beforeEach(() => {
@@ -149,7 +232,9 @@ describe('Maintenance API Routes Integration Tests', () => {
   describe('GET /api/admin/maintenance/export', () => {
     test('requires admin authorization', async () => {
       mockIsAdminRequest.mockResolvedValue(false);
-      const req = new NextRequest('http://localhost/api/admin/maintenance/export');
+      const req = new NextRequest(
+        'http://localhost/api/admin/maintenance/export',
+      );
       const res = await GET(req);
 
       expect(res.status).toBe(401);
@@ -157,43 +242,114 @@ describe('Maintenance API Routes Integration Tests', () => {
 
     test('returns 200 with JSON file attachment containing all 15 models in schemaVersion 2.0', async () => {
       const mockAppConfig = [{ id: 'global', brideName: 'Alice' }];
-      const mockContentNode = [{ id: 'cn1', type: 'FAQ', tags: ['FAQ'], data: { q: 'When?' } }];
-      const mockMedia = [{ id: 'm1', url: 'https://example.com/photo.jpg', isDecorative: false }];
+      const mockContentNode = [
+        { id: 'cn1', type: 'FAQ', tags: ['FAQ'], data: { q: 'When?' } },
+      ];
+      const mockMedia = [
+        { id: 'm1', url: 'https://example.com/photo.jpg', isDecorative: false },
+      ];
       const mockSeatingTable = [{ id: 'st1', name: 'Table 1', capacity: 8 }];
-      const mockInvitationCode = [{ id: 'ic1', code: 'INV001', guestName: 'Sam', tableId: 'st1' }];
+      const mockInvitationCode = [
+        { id: 'ic1', code: 'INV001', guestName: 'Sam', tableId: 'st1' },
+      ];
       const mockWeddingParty = [{ id: 'wp1', name: 'Bob' }];
       const mockAttraction = [{ id: 'att1', name: 'Beach' }];
       const mockRegistry = [{ id: 'ri1', name: 'Kitchenware' }];
-      const mockContributor = [{ id: 'c1', name: 'John', invitationCodeId: 'ic1' }];
+      const mockContributor = [
+        { id: 'c1', name: 'John', invitationCodeId: 'ic1' },
+      ];
       const mockSubEvent = [{ id: 'se1', title: 'Ceremony' }];
-      const mockSubEventAccess = [{ id: 'sea1', subEventId: 'se1', invitationCodeId: 'ic1' }];
-      const mockSubEventRsvp = [{ id: 'rsvp1', subEventId: 'se1', invitationCodeId: 'ic1', status: 'attending' }];
-      const mockBroadcastMessage = [{ id: 'bm1', channel: 'EMAIL', body: 'Hello guests' }];
-      const mockBroadcastRecipient = [{ id: 'br1', broadcastId: 'bm1', guestName: 'Sam', destination: 'sam@example.com' }];
-      const mockSnapshot = [{ id: 'sv1', entityType: 'Media', entityId: 'm1', data: {} }];
+      const mockSubEventAccess = [
+        { id: 'sea1', subEventId: 'se1', invitationCodeId: 'ic1' },
+      ];
+      const mockSubEventRsvp = [
+        {
+          id: 'rsvp1',
+          subEventId: 'se1',
+          invitationCodeId: 'ic1',
+          status: 'attending',
+        },
+      ];
+      const mockHouseholdMember = [
+        {
+          id: 'hm1',
+          invitationCodeId: 'ic1',
+          fullName: 'Sam',
+          role: 'PRIMARY',
+          displayOrder: 0,
+        },
+      ];
+      const mockSubEventMemberRsvp = [
+        {
+          id: 'semr1',
+          subEventRsvpId: 'rsvp1',
+          householdMemberId: 'hm1',
+          status: 'attending',
+        },
+      ];
+      const mockBroadcastMessage = [
+        { id: 'bm1', channel: 'EMAIL', body: 'Hello guests' },
+      ];
+      const mockBroadcastRecipient = [
+        {
+          id: 'br1',
+          broadcastId: 'bm1',
+          guestName: 'Sam',
+          destination: 'sam@example.com',
+        },
+      ];
+      const mockSnapshot = [
+        { id: 'sv1', entityType: 'Media', entityId: 'm1', data: {} },
+      ];
 
       mockPrisma.appConfig.findMany.mockResolvedValue(mockAppConfig as any);
       mockPrisma.contentNode.findMany.mockResolvedValue(mockContentNode as any);
       mockPrisma.media.findMany.mockResolvedValue(mockMedia as any);
-      mockPrisma.seatingTable.findMany.mockResolvedValue(mockSeatingTable as any);
-      mockPrisma.invitationCode.findMany.mockResolvedValue(mockInvitationCode as any);
-      mockPrisma.weddingPartyMember.findMany.mockResolvedValue(mockWeddingParty as any);
+      mockPrisma.seatingTable.findMany.mockResolvedValue(
+        mockSeatingTable as any,
+      );
+      mockPrisma.invitationCode.findMany.mockResolvedValue(
+        mockInvitationCode as any,
+      );
+      mockPrisma.householdMember.findMany.mockResolvedValue(
+        mockHouseholdMember as any,
+      );
+      mockPrisma.weddingPartyMember.findMany.mockResolvedValue(
+        mockWeddingParty as any,
+      );
       mockPrisma.attraction.findMany.mockResolvedValue(mockAttraction as any);
       mockPrisma.registryItem.findMany.mockResolvedValue(mockRegistry as any);
       mockPrisma.contributor.findMany.mockResolvedValue(mockContributor as any);
       mockPrisma.subEvent.findMany.mockResolvedValue(mockSubEvent as any);
-      mockPrisma.subEventAccess.findMany.mockResolvedValue(mockSubEventAccess as any);
-      mockPrisma.subEventRsvp.findMany.mockResolvedValue(mockSubEventRsvp as any);
-      mockPrisma.broadcastMessage.findMany.mockResolvedValue(mockBroadcastMessage as any);
-      mockPrisma.broadcastRecipient.findMany.mockResolvedValue(mockBroadcastRecipient as any);
-      mockPrisma.snapshotVersion.findMany.mockResolvedValue(mockSnapshot as any);
+      mockPrisma.subEventAccess.findMany.mockResolvedValue(
+        mockSubEventAccess as any,
+      );
+      mockPrisma.subEventRsvp.findMany.mockResolvedValue(
+        mockSubEventRsvp as any,
+      );
+      mockPrisma.subEventMemberRsvp.findMany.mockResolvedValue(
+        mockSubEventMemberRsvp as any,
+      );
+      mockPrisma.broadcastMessage.findMany.mockResolvedValue(
+        mockBroadcastMessage as any,
+      );
+      mockPrisma.broadcastRecipient.findMany.mockResolvedValue(
+        mockBroadcastRecipient as any,
+      );
+      mockPrisma.snapshotVersion.findMany.mockResolvedValue(
+        mockSnapshot as any,
+      );
 
-      const req = new NextRequest('http://localhost/api/admin/maintenance/export');
+      const req = new NextRequest(
+        'http://localhost/api/admin/maintenance/export',
+      );
       const res = await GET(req);
 
       expect(res.status).toBe(200);
       expect(res.headers.get('Content-Type')).toBe('application/json');
-      expect(res.headers.get('Content-Disposition')).toContain('attachment; filename="wedding-backup-');
+      expect(res.headers.get('Content-Disposition')).toContain(
+        'attachment; filename="wedding-backup-',
+      );
 
       const data = await res.json();
       expect(data).toEqual({
@@ -205,6 +361,7 @@ describe('Maintenance API Routes Integration Tests', () => {
         media: mockMedia,
         seatingTable: mockSeatingTable,
         invitationCode: mockInvitationCode,
+        householdMember: mockHouseholdMember,
         weddingPartyMember: mockWeddingParty,
         attraction: mockAttraction,
         registryItem: mockRegistry,
@@ -212,6 +369,7 @@ describe('Maintenance API Routes Integration Tests', () => {
         subEvent: mockSubEvent,
         subEventAccess: mockSubEventAccess,
         subEventRsvp: mockSubEventRsvp,
+        subEventMemberRsvp: mockSubEventMemberRsvp,
         broadcastMessage: mockBroadcastMessage,
         broadcastRecipient: mockBroadcastRecipient,
         snapshotVersion: mockSnapshot,
@@ -219,14 +377,22 @@ describe('Maintenance API Routes Integration Tests', () => {
     });
 
     test('fetches records sequentially using cursor pagination across multiple chunks', async () => {
-      const chunk1 = Array.from({ length: 100 }, (_, i) => ({ id: `ri_${i + 1}`, name: `Item ${i + 1}` }));
-      const chunk2 = Array.from({ length: 50 }, (_, i) => ({ id: `ri_${i + 101}`, name: `Item ${i + 101}` }));
+      const chunk1 = Array.from({ length: 100 }, (_, i) => ({
+        id: `ri_${i + 1}`,
+        name: `Item ${i + 1}`,
+      }));
+      const chunk2 = Array.from({ length: 50 }, (_, i) => ({
+        id: `ri_${i + 101}`,
+        name: `Item ${i + 101}`,
+      }));
 
       mockPrisma.appConfig.findMany.mockResolvedValue([]);
       mockPrisma.contentNode.findMany.mockResolvedValue([]);
       mockPrisma.media.findMany.mockResolvedValue([]);
       mockPrisma.seatingTable.findMany.mockResolvedValue([]);
       mockPrisma.invitationCode.findMany.mockResolvedValue([]);
+      mockPrisma.householdMember.findMany.mockResolvedValue([]);
+      mockPrisma.subEventMemberRsvp.findMany.mockResolvedValue([]);
       mockPrisma.weddingPartyMember.findMany.mockResolvedValue([]);
       mockPrisma.attraction.findMany.mockResolvedValue([]);
       mockPrisma.registryItem.findMany
@@ -240,7 +406,9 @@ describe('Maintenance API Routes Integration Tests', () => {
       mockPrisma.broadcastRecipient.findMany.mockResolvedValue([]);
       mockPrisma.snapshotVersion.findMany.mockResolvedValue([]);
 
-      const req = new NextRequest('http://localhost/api/admin/maintenance/export');
+      const req = new NextRequest(
+        'http://localhost/api/admin/maintenance/export',
+      );
       const res = await GET(req);
 
       expect(res.status).toBe(200);
@@ -294,6 +462,8 @@ describe('Maintenance API Routes Integration Tests', () => {
       mockPrisma.media.findMany.mockResolvedValue([]);
       mockPrisma.seatingTable.findMany.mockResolvedValue([]);
       mockPrisma.invitationCode.findMany.mockResolvedValue([]);
+      mockPrisma.householdMember.findMany.mockResolvedValue([]);
+      mockPrisma.subEventMemberRsvp.findMany.mockResolvedValue([]);
       mockPrisma.weddingPartyMember.findMany.mockResolvedValue([]);
       mockPrisma.attraction.findMany.mockResolvedValue([]);
       mockPrisma.registryItem.findMany.mockResolvedValue([]);
@@ -320,7 +490,9 @@ describe('Maintenance API Routes Integration Tests', () => {
         },
       ] as any);
 
-      const req = new NextRequest('http://localhost/api/admin/maintenance/export');
+      const req = new NextRequest(
+        'http://localhost/api/admin/maintenance/export',
+      );
       const res = await GET(req);
 
       const data = await res.json();
@@ -342,8 +514,12 @@ describe('Maintenance API Routes Integration Tests', () => {
       expect(data.appConfig[0].sendgridApiKey).toBeUndefined();
       expect(data.appConfig[0].twilioAuthToken).toBeUndefined();
       expect(data.snapshotVersion[0].data.brideName).toBe('Alice');
-      expect(data.snapshotVersion[0].data.smtpHost).toBe('smtp.historical.invalid');
-      expect(data.snapshotVersion[0].data.twilioAccountSid).toBe('AC_HISTORICAL_SID');
+      expect(data.snapshotVersion[0].data.smtpHost).toBe(
+        'smtp.historical.invalid',
+      );
+      expect(data.snapshotVersion[0].data.twilioAccountSid).toBe(
+        'AC_HISTORICAL_SID',
+      );
       expect(data.snapshotVersion[0].data.multisiteEnabled).toBeUndefined();
       expect(data.snapshotVersion[0].data.smtpPass).toBeUndefined();
       expect(data.snapshotVersion[0].data.twilioAuthToken).toBeUndefined();
@@ -353,11 +529,14 @@ describe('Maintenance API Routes Integration Tests', () => {
   describe('POST /api/admin/maintenance/import', () => {
     test('requires admin authorization', async () => {
       mockIsAdminRequest.mockResolvedValue(false);
-      const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
+      const req = new NextRequest(
+        'http://localhost/api/admin/maintenance/import',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        },
+      );
       const res = await POST(req);
 
       expect(res.status).toBe(401);
@@ -368,11 +547,14 @@ describe('Maintenance API Routes Integration Tests', () => {
         weddingPartyMember: [{ id: 'wp1', name: 'Only Wedding Party' }],
       };
 
-      const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(invalidBackup),
-      });
+      const req = new NextRequest(
+        'http://localhost/api/admin/maintenance/import',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(invalidBackup),
+        },
+      );
       const res = await POST(req);
 
       expect(res.status).toBe(400);
@@ -398,7 +580,10 @@ describe('Maintenance API Routes Integration Tests', () => {
             id: 'cn1',
             type: 'FAQ',
             tags: ['FAQ'],
-            data: { question: 'What is the dress code?', answer: 'Semi-formal' },
+            data: {
+              question: 'What is the dress code?',
+              answer: 'Semi-formal',
+            },
             createdAt: '2026-06-20T00:00:00.000Z',
             updatedAt: '2026-06-20T00:00:00.000Z',
           },
@@ -410,7 +595,7 @@ describe('Maintenance API Routes Integration Tests', () => {
             isDecorative: false,
             createdAt: '2026-06-20T00:00:00.000Z',
             updatedAt: '2026-06-20T00:00:00.000Z',
-          }
+          },
         ],
         weddingPartyMember: [
           {
@@ -471,15 +656,20 @@ describe('Maintenance API Routes Integration Tests', () => {
         appConfig: { deleteMany: jest.fn(), createMany: jest.fn() },
       };
 
-      mockPrisma.$transaction.mockImplementation(async (callback: (tx: typeof mockTx) => unknown) => {
-        return callback(mockTx);
-      });
+      mockPrisma.$transaction.mockImplementation(
+        async (callback: (tx: typeof mockTx) => unknown) => {
+          return callback(mockTx);
+        },
+      );
 
-      const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(validBackup),
-      });
+      const req = new NextRequest(
+        'http://localhost/api/admin/maintenance/import',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(validBackup),
+        },
+      );
       const res = await POST(req);
 
       expect(res.status).toBe(200);
@@ -512,7 +702,10 @@ describe('Maintenance API Routes Integration Tests', () => {
             id: 'cn1',
             type: 'FAQ',
             tags: ['FAQ'],
-            data: { question: 'What is the dress code?', answer: 'Semi-formal' },
+            data: {
+              question: 'What is the dress code?',
+              answer: 'Semi-formal',
+            },
             createdAt: new Date('2026-06-20T00:00:00.000Z'),
             updatedAt: new Date('2026-06-20T00:00:00.000Z'),
           },
@@ -608,7 +801,10 @@ describe('Maintenance API Routes Integration Tests', () => {
               id: 'cn1',
               type: 'FAQ',
               tags: ['FAQ'],
-              data: { question: 'What is the dress code?', answer: 'Semi-formal' },
+              data: {
+                question: 'What is the dress code?',
+                answer: 'Semi-formal',
+              },
               createdAt: new Date('2026-06-20T00:00:00.000Z'),
               updatedAt: new Date('2026-06-20T00:00:00.000Z'),
             },
@@ -661,7 +857,7 @@ describe('Maintenance API Routes Integration Tests', () => {
             },
             author: 'Admin/BulkImport',
           },
-        ]
+        ],
       });
 
       // Assert bulk pruning is triggered
@@ -699,13 +895,18 @@ describe('Maintenance API Routes Integration Tests', () => {
         ],
       };
 
-      mockPrisma.$transaction.mockRejectedValue(new Error('Transaction Failed'));
+      mockPrisma.$transaction.mockRejectedValue(
+        new Error('Transaction Failed'),
+      );
 
-      const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(validBackup),
-      });
+      const req = new NextRequest(
+        'http://localhost/api/admin/maintenance/import',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(validBackup),
+        },
+      );
       const res = await POST(req);
 
       expect(res.status).toBe(500);
@@ -715,7 +916,10 @@ describe('Maintenance API Routes Integration Tests', () => {
     });
 
     test('returns 400 when importing a Photo ContentNode with parent or percent-encoded traversal URL', async () => {
-      for (const badUrl of ['/../canary-outside-public.txt', '/%2e%2e/canary-outside-public.txt']) {
+      for (const badUrl of [
+        '/../canary-outside-public.txt',
+        '/%2e%2e/canary-outside-public.txt',
+      ]) {
         const backupWithBadPhoto = {
           appConfig: [
             {
@@ -738,11 +942,14 @@ describe('Maintenance API Routes Integration Tests', () => {
           registryItem: [],
         };
 
-        const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(backupWithBadPhoto),
-        });
+        const req = new NextRequest(
+          'http://localhost/api/admin/maintenance/import',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(backupWithBadPhoto),
+          },
+        );
         const res = await POST(req);
         expect(res.status).toBe(400);
       }
@@ -784,19 +991,28 @@ describe('Maintenance API Routes Integration Tests', () => {
         appConfig: { deleteMany: jest.fn(), createMany: jest.fn() },
       };
 
-      mockPrisma.$transaction.mockImplementation(async (callback: (tx: typeof mockTx) => unknown) => {
-        return callback(mockTx);
-      });
+      mockPrisma.$transaction.mockImplementation(
+        async (callback: (tx: typeof mockTx) => unknown) => {
+          return callback(mockTx);
+        },
+      );
 
       mockCreateAuditSnapshot.mockRejectedValueOnce(new Error('Audit Failed'));
-      mockPrisma.snapshotVersion.createMany.mockRejectedValueOnce(new Error('Audit Failed'));
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      mockPrisma.snapshotVersion.createMany.mockRejectedValueOnce(
+        new Error('Audit Failed'),
+      );
+      const consoleErrorSpy = jest
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
 
-      const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(validBackup),
-      });
+      const req = new NextRequest(
+        'http://localhost/api/admin/maintenance/import',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(validBackup),
+        },
+      );
       const res = await POST(req);
 
       expect(res.status).toBe(200);
@@ -822,7 +1038,10 @@ describe('Maintenance API Routes Integration Tests', () => {
             undefinedField: undefined,
             numberField: 42,
             booleanField: true,
-            arrayField: ['2026-06-20T00:00:00.000Z', { nestedDate: '2026-06-20T00:00:00.000Z' }],
+            arrayField: [
+              '2026-06-20T00:00:00.000Z',
+              { nestedDate: '2026-06-20T00:00:00.000Z' },
+            ],
           },
         ],
         contentNode: [
@@ -834,7 +1053,10 @@ describe('Maintenance API Routes Integration Tests', () => {
               nullField: null,
               numberField: 42,
               booleanField: true,
-              items: ['2026-06-20T00:00:00.000Z', { nestedDate: '2026-06-20T00:00:00.000Z' }],
+              items: [
+                '2026-06-20T00:00:00.000Z',
+                { nestedDate: '2026-06-20T00:00:00.000Z' },
+              ],
             },
             createdAt: '2026-06-20T00:00:00.000Z',
             updatedAt: '2026-06-20T00:00:00.000Z',
@@ -865,15 +1087,20 @@ describe('Maintenance API Routes Integration Tests', () => {
         appConfig: { deleteMany: jest.fn(), createMany: jest.fn() },
       };
 
-      mockPrisma.$transaction.mockImplementation(async (callback: (tx: typeof mockTx) => unknown) => {
-        return callback(mockTx);
-      });
+      mockPrisma.$transaction.mockImplementation(
+        async (callback: (tx: typeof mockTx) => unknown) => {
+          return callback(mockTx);
+        },
+      );
 
-      const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(backupWithAllTypes),
-      });
+      const req = new NextRequest(
+        'http://localhost/api/admin/maintenance/import',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(backupWithAllTypes),
+        },
+      );
       const res = await POST(req);
 
       expect(res.status).toBe(200);
@@ -977,15 +1204,20 @@ describe('Maintenance API Routes Integration Tests', () => {
         },
       };
 
-      mockPrisma.$transaction.mockImplementation(async (callback: (tx: typeof mockTx) => unknown) => {
-        return callback(mockTx);
-      });
+      mockPrisma.$transaction.mockImplementation(
+        async (callback: (tx: typeof mockTx) => unknown) => {
+          return callback(mockTx);
+        },
+      );
 
-      const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(legacyBackup),
-      });
+      const req = new NextRequest(
+        'http://localhost/api/admin/maintenance/import',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(legacyBackup),
+        },
+      );
       const res = await POST(req);
 
       expect(res.status).toBe(200);
@@ -1051,15 +1283,20 @@ describe('Maintenance API Routes Integration Tests', () => {
         appConfig: { deleteMany: jest.fn(), createMany: jest.fn() },
       };
 
-      mockPrisma.$transaction.mockImplementation(async (callback: (tx: typeof mockTx) => unknown) => {
-        return callback(mockTx);
-      });
+      mockPrisma.$transaction.mockImplementation(
+        async (callback: (tx: typeof mockTx) => unknown) => {
+          return callback(mockTx);
+        },
+      );
 
-      const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(emptyBackup),
-      });
+      const req = new NextRequest(
+        'http://localhost/api/admin/maintenance/import',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(emptyBackup),
+        },
+      );
       const res = await POST(req);
 
       expect(res.status).toBe(200);
@@ -1095,11 +1332,14 @@ describe('Maintenance API Routes Integration Tests', () => {
         ],
       };
 
-      const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(invalidBackup),
-      });
+      const req = new NextRequest(
+        'http://localhost/api/admin/maintenance/import',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(invalidBackup),
+        },
+      );
       const res = await POST(req);
 
       expect(res.status).toBe(400);
@@ -1131,11 +1371,14 @@ describe('Maintenance API Routes Integration Tests', () => {
         ],
       };
 
-      const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(invalidBackup),
-      });
+      const req = new NextRequest(
+        'http://localhost/api/admin/maintenance/import',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(invalidBackup),
+        },
+      );
       const res = await POST(req);
 
       expect(res.status).toBe(400);
@@ -1169,11 +1412,14 @@ describe('Maintenance API Routes Integration Tests', () => {
         ],
       };
 
-      const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(invalidBackup),
-      });
+      const req = new NextRequest(
+        'http://localhost/api/admin/maintenance/import',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(invalidBackup),
+        },
+      );
       const res = await POST(req);
 
       expect(res.status).toBe(400);
@@ -1208,11 +1454,14 @@ describe('Maintenance API Routes Integration Tests', () => {
         ],
       };
 
-      const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(invalidBackup),
-      });
+      const req = new NextRequest(
+        'http://localhost/api/admin/maintenance/import',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(invalidBackup),
+        },
+      );
       const res = await POST(req);
 
       expect(res.status).toBe(400);

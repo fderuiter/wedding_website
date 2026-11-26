@@ -99,7 +99,17 @@ export async function purgeSampleData() {
       },
     });
 
-    // 2. Delete SubEventAccess / SubEventRsvp for sample invitation codes or sample sub-events
+    // 2. Delete SubEventMemberRsvp / SubEventAccess / SubEventRsvp for sample invitation codes or sample sub-events
+    if (tx.subEventMemberRsvp?.deleteMany) {
+      await tx.subEventMemberRsvp.deleteMany({
+        where: {
+          OR: [
+            { householdMember: { invitationCode: { isSample: true } } },
+            { subEventRsvp: { subEventId: { startsWith: SAMPLE_SUBEVENT_ID_PREFIX } } },
+          ],
+        },
+      });
+    }
     await tx.subEventAccess.deleteMany({
       where: {
         OR: [
@@ -125,7 +135,12 @@ export async function purgeSampleData() {
       });
     }
 
-    // 3. Delete sample invitation codes and seating tables
+    // 3. Delete sample household members, invitation codes, and seating tables
+    if (tx.householdMember?.deleteMany) {
+      await tx.householdMember.deleteMany({
+        where: { invitationCode: { isSample: true } },
+      });
+    }
     await tx.invitationCode.deleteMany({ where: { isSample: true } });
     await tx.seatingTable.deleteMany({ where: { isSample: true } });
 
@@ -214,8 +229,9 @@ export async function generateSampleData(
       }
     }
 
-    // B. Guest list
+    // B. Guest list & relational HouseholdMember rows
     const createdGuestIds = new Set<string>();
+    const createdMemberIds = new Set<string>();
     if (enabledModules.has('guests')) {
       for (const guest of seed.guests) {
         const tableId =
@@ -248,10 +264,34 @@ export async function generateSampleData(
             usedAt: guest.usedAt ? new Date(guest.usedAt) : null,
             tableId,
             seatNumber: tableId ? (guest.seatNumber ?? null) : null,
+            plusOneSeatNumbers: tableId ? (guest.plusOneSeatNumbers ?? []) : [],
             isSample: true,
           },
         });
         createdGuestIds.add(createdGuest.id);
+
+        if (tx.householdMember?.create && Array.isArray(guest.members)) {
+          for (const member of guest.members) {
+            const createdMember = await tx.householdMember.create({
+              data: {
+                id: member.id,
+                invitationCodeId: createdGuest.id,
+                firstName: member.firstName ?? null,
+                lastName: member.lastName ?? null,
+                fullName: member.fullName,
+                role: member.role,
+                email: member.email ?? null,
+                phone: member.phone ?? null,
+                dietaryNotes: member.dietaryNotes ?? null,
+                tags: member.tags ?? [],
+                displayOrder: member.displayOrder,
+                seatNumber: tableId ? (member.seatNumber ?? null) : null,
+              },
+            });
+            createdMemberIds.add(createdMember.id);
+          }
+        }
+
         createdCounts.guests++;
       }
     }
@@ -490,7 +530,7 @@ export async function generateSampleData(
         if (tx.subEventRsvp?.create) {
           for (const rsvp of evt.rsvps) {
             if (!createdGuestIds.has(rsvp.invitationCodeId)) continue;
-            await tx.subEventRsvp.create({
+            const createdRsvp = await tx.subEventRsvp.create({
               data: {
                 id: rsvp.id,
                 subEventId: evt.id,
@@ -503,6 +543,22 @@ export async function generateSampleData(
                 customAnswers: rsvp.customAnswers as Prisma.InputJsonValue,
               },
             });
+
+            if (tx.subEventMemberRsvp?.create && Array.isArray(rsvp.memberRsvps)) {
+              for (const mr of rsvp.memberRsvps) {
+                if (!createdMemberIds.has(mr.householdMemberId)) continue;
+                await tx.subEventMemberRsvp.create({
+                  data: {
+                    id: mr.id,
+                    subEventRsvpId: createdRsvp.id,
+                    householdMemberId: mr.householdMemberId,
+                    status: mr.status,
+                    mealOptionId: mr.mealOptionId ?? null,
+                    dietaryNotes: mr.dietaryNotes ?? null,
+                  },
+                });
+              }
+            }
           }
         }
 

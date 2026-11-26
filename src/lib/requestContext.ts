@@ -3,6 +3,21 @@ import { cache } from 'react';
 import type { NextRequest } from 'next/server';
 import { normalizePlusOneNames } from '@/utils/rsvpPrompts';
 
+interface HydratedGuestHouseholdMember {
+  id: string;
+  invitationCodeId: string;
+  fullName: string;
+  firstName: string | null;
+  lastName: string | null;
+  role: 'PRIMARY' | 'PARTNER' | 'CHILD' | 'PLUS_ONE';
+  email: string | null;
+  phone: string | null;
+  dietaryNotes: string | null;
+  tags: string[];
+  displayOrder: number;
+  seatNumber: number | null;
+}
+
 export interface HydratedGuestInvitation {
   id: string;
   code: string;
@@ -26,6 +41,7 @@ export interface HydratedGuestInvitation {
   zipCode: string | null;
   country: string | null;
   isSample: boolean;
+  members?: HydratedGuestHouseholdMember[];
 }
 
 interface RequestContextStore {

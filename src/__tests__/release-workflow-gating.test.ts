@@ -116,7 +116,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
   const migrateWorkflow = readWorkflow('db-migrate.yml');
   const rollbackWorkflow = readWorkflow('rollback.yml');
 
-  it('triggers ci.yml once on main pushes and pull requests without duplicate v* tag runs while restricting deploy-docs to serialized main tip pushes', () => {
+  it('triggers ci.yml once on main pushes, pull requests, and merge_group runs without duplicate v* tag runs while restricting deploy-docs to serialized main tip pushes', () => {
     expect(ciWorkflow).toContain('name: CI');
     const onSection = extractTopLevelSection(ciWorkflow, 'on');
     expect(onSection).toContain('push:');
@@ -124,12 +124,15 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(onSection).not.toContain('tags:');
     expect(onSection).not.toContain("'v*'");
     expect(onSection).toContain('pull_request:');
+    expect(onSection).toContain('merge_group:');
     expect(onSection).not.toContain('release:');
     expect(onSection).not.toContain('published');
 
     const ciConcurrency = extractTopLevelSection(ciWorkflow, 'concurrency');
     expect(ciConcurrency).toContain('group: ${{ github.workflow }}-${{ github.ref }}');
-    expect(ciConcurrency).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}");
+    expect(ciConcurrency).toContain(
+      "cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}"
+    );
     expect(ciConcurrency).toContain('queue: max');
 
     const storybookWorkflow = readWorkflow('storybook.yml');
@@ -307,7 +310,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       'pages-verify',
     ];
     expect(ciJobs['ci-complete']?.needs).toEqual(expectedVerificationJobs);
-    expect(ciJobs['ci-complete']?.if).toBe('always()');
+    expect(ciJobs['ci-complete']?.if).toBe('always() && !cancelled()');
     expect(ciJobs['ci-complete']?.['runs-on']).toBe('ubuntu-latest');
     expect(ciJobs['ci-complete']?.['timeout-minutes']).toBe(5);
     expect(ciJobs['ci-complete']?.permissions).toEqual({ contents: 'read' });
@@ -2090,5 +2093,36 @@ process.exit(1);
       expect(failCi.status).toBe(1);
       expect(failCi.stdout + failCi.stderr).toContain(`${jobName} (skipped)`);
     }
+  });
+
+  it('isolates trusted default-branch execution before commit_sha checkout in deploy-provider.yml preflight to prevent cache poisoning', () => {
+    const preflightSection =
+      deployProviderWorkflow.split('\n  preflight:\n')[1]?.split('\n  deploy:\n')[0] ?? '';
+    expect(preflightSection).not.toBe('');
+
+    const defaultCheckoutIdx = preflightSection.indexOf('id: checkout-default');
+    const resolveStepIdx = preflightSection.indexOf('- name: Resolve Artifact Image URI');
+    const lintMigrationsIdx = preflightSection.indexOf('id: lint-migrations');
+    const shaCheckoutIdx = preflightSection.indexOf('- id: checkout\n');
+    const gitAncestorsIdx = preflightSection.indexOf('id: git-ancestors');
+
+    expect(defaultCheckoutIdx).toBeGreaterThan(-1);
+    expect(resolveStepIdx).toBeGreaterThan(defaultCheckoutIdx);
+    expect(lintMigrationsIdx).toBeGreaterThan(resolveStepIdx);
+    expect(shaCheckoutIdx).toBeGreaterThan(lintMigrationsIdx);
+    expect(gitAncestorsIdx).toBeGreaterThan(shaCheckoutIdx);
+
+    const defaultCheckoutBlock = preflightSection.slice(defaultCheckoutIdx, resolveStepIdx);
+    expect(defaultCheckoutBlock).not.toContain('ref:');
+    expect(defaultCheckoutBlock).toContain('persist-credentials: false');
+
+    const postShaCheckoutSection = preflightSection.slice(shaCheckoutIdx);
+    expect(postShaCheckoutSection).toContain('ref: ${{ inputs.commit_sha }}');
+    expect(postShaCheckoutSection).toContain('path: target-commit');
+    expect(postShaCheckoutSection).toContain("steps.lint-migrations.outcome == 'success'");
+    expect(postShaCheckoutSection).toContain('git -C target-commit rev-list');
+    expect(postShaCheckoutSection).toContain('rm -rf target-commit');
+    expect(postShaCheckoutSection).not.toMatch(/\b(?:npm|pnpm|yarn|npx|tsx)\s+/);
+    expect(postShaCheckoutSection).not.toContain('./scripts/');
   });
 });
