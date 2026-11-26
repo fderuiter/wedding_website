@@ -716,7 +716,7 @@ describe('verify-setup-guides contract check', () => {
       pkgPath,
       fs
         .readFileSync(pkgPath, 'utf8')
-        .replace('--cache --cache-location .eslintcache --no-warn-ignored ', '')
+        .replace('--cache --cache-location .eslintcache --cache-strategy content --no-warn-ignored ', '')
         .replace('    ".github/workflows/*.{yml,yaml}": "npm run check:action-pins",\n', '')
         .replace('    "docs:sync": "npx tsx scripts/generate-openapi.ts && npx tsx scripts/generate-docs.ts --skip-openapi",\n', '')
     );
@@ -740,7 +740,7 @@ describe('verify-setup-guides contract check', () => {
     const errors = verifySetupGuides(tempDir);
     expect(errors).toEqual(
       expect.arrayContaining([
-        'package.json: "lint-staged" must pass "--cache --cache-location .eslintcache --no-warn-ignored --fix --max-warnings=0"',
+        'package.json: "lint-staged" must pass "--cache --cache-location .eslintcache --cache-strategy content --no-warn-ignored --fix --max-warnings=0"',
         'package.json: "lint-staged" must route staged files to "check:action-pins"',
         'package.json: "docs:sync" must invoke "scripts/generate-openapi.ts" and "scripts/generate-docs.ts"',
         'tsconfig.build.json: Must enable "incremental": true with "tsBuildInfoFile": "./tsconfig.build.tsbuildinfo"',

@@ -42,7 +42,7 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
    - **Targeted Quality & Documentation Sync Commands:**
      - `npm run check:static` - Run the shared static and container configuration checks defined in [`scripts/check-quality.ts`](../scripts/check-quality.ts) (`--static`).
      - `npm run check:doc-sync` & `npm run docs:sync` - Verify generated documentation (`public/openapi.json`, `ARCHITECTURE.md`, and `FEATURE_MODULES.md`) is synchronized with codebase schemas in memory without modifying files on disk (`--check`), or explicitly regenerate them on disk with `npm run docs:sync` (`npx tsx scripts/generate-openapi.ts && npx tsx scripts/generate-docs.ts --skip-openapi`).
-     - `npm run typecheck`, `npm run lint`, & `npm run lint:unused` - Check TypeScript types (see [AGENTS.md](../AGENTS.md) for the five-file `tsconfig*.json` split), ESLint rules (`--max-warnings 0` with `.eslintcache` and the shrink-only `LEGACY_EXPLICIT_ANY_BASELINE_FILES` ratchet), and Knip unused exports.
+     - `npm run typecheck`, `npm run lint`, & `npm run lint:unused` - Check TypeScript types (see [AGENTS.md](../AGENTS.md) for the five-file `tsconfig*.json` split), ESLint rules (`--max-warnings 0` with content-hashed `.eslintcache` via `--cache-strategy content` and the shrink-only `LEGACY_EXPLICIT_ANY_BASELINE_FILES` ratchet), and Knip unused exports.
      - `npm test`, `npm run test:cov`, `npm run test:e2e`, & `npm run test:a11y` - Run fast local Jest unit/integration tests (`npm test`, or `npm test -- <path>`), enforce global `80%` line / `68%` branch coverage (`npm run test:cov`), run Playwright E2E specs, and run WCAG 2.2 AA accessibility audits (see [TESTING.md](TESTING.md) for `wedding_test` database isolation, E2E secret alignment, and container smoke tests).
 7. **Commit Your Changes:** Write clear commit messages. Something like `fix: Correct spelling on registry item description` or `feat: Add animation to RSVP button`.
 
@@ -51,7 +51,7 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
     git commit -m "fix: Correct spelling on registry item description"
     ```
 
-    Committing triggers [`.githooks/pre-commit`](../.githooks/pre-commit) (installed automatically by `npm ci`), which runs `npx lint-staged` (`eslint --cache --cache-location .eslintcache --no-warn-ignored --fix --max-warnings=0` on staged `*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}` and `.githooks/*` files, plus `check:action-pins`, `lint:migrations`, `check:standalone -- --static-only`, and `check:links` on staged workflows, SQL migrations, container files, and Markdown docs) without stashing or resetting unstaged edits or untracked files.
+    Committing triggers [`.githooks/pre-commit`](../.githooks/pre-commit) (installed automatically by `npm ci`), which runs `npx lint-staged` (`eslint --cache --cache-location .eslintcache --cache-strategy content --no-warn-ignored --fix --max-warnings=0` on staged `*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}` and `.githooks/*` files, plus `check:action-pins`, `lint:migrations`, `check:standalone -- --static-only`, and `check:links` on staged workflows, SQL migrations, container files, and Markdown docs) without stashing or resetting unstaged edits or untracked files.
 
 8. **Push to Your Fork:**
 
