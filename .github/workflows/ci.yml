@@ -7,10 +7,11 @@ on:
   push:
     branches: [ main ]
   pull_request:
+  merge_group:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
   queue: max
 
 jobs:
@@ -394,18 +395,20 @@ jobs:
           TEST_DATABASE_URL: postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public
         run: npm run test:cov
       - name: Upload Test Coverage
-        if: always()
+        if: always() && !cancelled()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: lcov-report
           path: coverage/
+          retention-days: 7
       - name: Upload Jest A11y Violations
-        if: always()
+        if: always() && !cancelled()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: jest-a11y-violations
           path: test-results/jest-a11y-violations.json
           if-no-files-found: warn
+          retention-days: 7
 
   build:
     needs: verify
@@ -848,12 +851,13 @@ jobs:
           NEXT_PUBLIC_BASE_PATH: ${{ steps.base-path.outputs.demo_base }}
         run: npm run test:e2e:static
       - name: Upload Static Showcase A11y Violations
-        if: always()
+        if: always() && !cancelled()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: static-a11y-violations
           path: test-results/static-a11y-violations.json
           if-no-files-found: warn
+          retention-days: 7
       - name: Upload Static Showcase Playwright Traces
         if: failure()
         timeout-minutes: 3
@@ -940,12 +944,13 @@ jobs:
           GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
         run: npx playwright test
       - name: Upload Playwright A11y Violations
-        if: always()
+        if: always() && !cancelled()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-a11y-violations
           path: test-results/playwright-a11y-violations.json
           if-no-files-found: warn
+          retention-days: 7
       - name: Upload Playwright Failure Traces
         if: failure()
         timeout-minutes: 3
@@ -1186,7 +1191,7 @@ jobs:
       - e2e-test
       - a11y-report
       - pages-verify
-    if: always()
+    if: always() && !cancelled()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

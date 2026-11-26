@@ -502,7 +502,19 @@ export async function generateSeatingChartPdf(
                   : '';
 
               let dietaryText = badgePrefix || '—';
-              if (!entry.isCompanion) {
+              if (entry.memberId) {
+                const customAnswers = !entry.isCompanion
+                  ? formatGuestCustomAnswers(entry.guest)
+                  : '';
+                const baseDietLine = entry.dietaryNotesText
+                  ? `${badgePrefix ? `${badgePrefix} ` : ''}${entry.dietaryNotesText}`
+                  : badgePrefix;
+                const detailLines = [
+                  baseDietLine,
+                  customAnswers ? `Responses: ${customAnswers}` : '',
+                ].filter(Boolean);
+                dietaryText = detailLines.length > 0 ? detailLines.join('\n') : '—';
+              } else if (!entry.isCompanion) {
                 const mealSelections = formatGuestMealSelections(entry.guest);
                 const customAnswers = formatGuestCustomAnswers(entry.guest);
                 const primaryBadges = getDietaryBadges(
@@ -527,6 +539,10 @@ export async function generateSeatingChartPdf(
                   customAnswers ? `Responses: ${customAnswers}` : '',
                 ].filter(Boolean);
                 dietaryText = detailLines.length > 0 ? detailLines.join('\n') : '—';
+              } else if (entry.dietaryNotesText) {
+                dietaryText = badgePrefix
+                  ? `${badgePrefix} ${entry.dietaryNotesText}`
+                  : entry.dietaryNotesText;
               }
 
               doc.fontSize(8).font('Helvetica');
@@ -595,39 +611,72 @@ export async function generateSeatingChartPdf(
 
           for (let idx = 0; idx < eligibleUnassignedGuests.length; idx++) {
             const guest = eligibleUnassignedGuests[idx];
+            const partyMembers = getInvitationPartyMembers(guest);
+            const hasRelational = partyMembers.some((m) => Boolean(m.memberId));
             const companions = getGuestCompanionNames(guest);
+            const primaryUnassignedName = hasRelational
+              ? partyMembers[0]?.attendeeName || guest.guestName
+              : guest.guestName;
             const guestDisplay =
               companions.length > 0
-                ? `${guest.guestName} (+${companions.length}: ${companions.join(', ')})`
-                : guest.guestName;
+                ? `${primaryUnassignedName} (+${companions.length}: ${companions.join(', ')})`
+                : primaryUnassignedName;
 
-            const partyMembers = getInvitationPartyMembers(guest);
             const mealLabels = partyMembers
-              .map((m) => m.mealChoice)
+              .map((m) =>
+                m.mealChoice
+                  ? hasRelational && partyMembers.length > 1
+                    ? `${m.attendeeName}: ${m.mealChoice}`
+                    : m.mealChoice
+                  : null
+              )
               .filter((m): m is string => Boolean(m));
             const mealColumnText = mealLabels.length > 0 ? mealLabels.join('; ') : '—';
 
-            const mealSelections = formatGuestMealSelections(guest);
             const customAnswers = formatGuestCustomAnswers(guest);
-            const unassignedBadges = getDietaryBadges(
-              guest.dietaryNotes,
-              guest.extraFields,
-              guest.partyTags
-            );
-            const unassignedPrefix =
-              unassignedBadges.length > 0
-                ? `[${unassignedBadges.map((b) => b.shortLabel).join(', ')}]`
-                : '';
-            const baseUnassignedDiet = guest.dietaryNotes
-              ? `${unassignedPrefix ? `${unassignedPrefix} ` : ''}${guest.dietaryNotes}`
-              : unassignedPrefix;
-            const unassignedDetailLines = [
-              baseUnassignedDiet,
-              mealSelections ? `Meals: ${mealSelections}` : '',
-              customAnswers ? `Responses: ${customAnswers}` : '',
-            ].filter(Boolean);
-            const unassignedDietText =
-              unassignedDetailLines.length > 0 ? unassignedDetailLines.join('\n') : '—';
+            let unassignedDietText = '—';
+
+            if (hasRelational) {
+              const memberDietLines = partyMembers
+                .map((m) => {
+                  const bp =
+                    m.dietaryBadges.length > 0
+                      ? `[${m.dietaryBadges.map((b) => b.shortLabel).join(', ')}]`
+                      : '';
+                  const note = m.dietaryNotesText
+                    ? `${bp ? `${bp} ` : ''}${m.dietaryNotesText}`
+                    : bp;
+                  if (!note) return '';
+                  return partyMembers.length > 1 ? `${m.attendeeName}: ${note}` : note;
+                })
+                .filter(Boolean);
+              const detailLines = [
+                ...memberDietLines,
+                customAnswers ? `Responses: ${customAnswers}` : '',
+              ].filter(Boolean);
+              unassignedDietText = detailLines.length > 0 ? detailLines.join('\n') : '—';
+            } else {
+              const mealSelections = formatGuestMealSelections(guest);
+              const unassignedBadges = getDietaryBadges(
+                guest.dietaryNotes,
+                guest.extraFields,
+                guest.partyTags
+              );
+              const unassignedPrefix =
+                unassignedBadges.length > 0
+                  ? `[${unassignedBadges.map((b) => b.shortLabel).join(', ')}]`
+                  : '';
+              const baseUnassignedDiet = guest.dietaryNotes
+                ? `${unassignedPrefix ? `${unassignedPrefix} ` : ''}${guest.dietaryNotes}`
+                : unassignedPrefix;
+              const unassignedDetailLines = [
+                baseUnassignedDiet,
+                mealSelections ? `Meals: ${mealSelections}` : '',
+                customAnswers ? `Responses: ${customAnswers}` : '',
+              ].filter(Boolean);
+              unassignedDietText =
+                unassignedDetailLines.length > 0 ? unassignedDetailLines.join('\n') : '—';
+            }
 
             doc.fontSize(8).font('Helvetica');
             const unassignedNameH = doc.heightOfString(guestDisplay, {

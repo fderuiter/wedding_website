@@ -116,7 +116,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
   const migrateWorkflow = readWorkflow('db-migrate.yml');
   const rollbackWorkflow = readWorkflow('rollback.yml');
 
-  it('triggers ci.yml once on main pushes and pull requests without duplicate v* tag runs while restricting deploy-docs to serialized main tip pushes', () => {
+  it('triggers ci.yml once on main pushes, pull requests, and merge_group runs without duplicate v* tag runs while restricting deploy-docs to serialized main tip pushes', () => {
     expect(ciWorkflow).toContain('name: CI');
     const onSection = extractTopLevelSection(ciWorkflow, 'on');
     expect(onSection).toContain('push:');
@@ -124,12 +124,15 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(onSection).not.toContain('tags:');
     expect(onSection).not.toContain("'v*'");
     expect(onSection).toContain('pull_request:');
+    expect(onSection).toContain('merge_group:');
     expect(onSection).not.toContain('release:');
     expect(onSection).not.toContain('published');
 
     const ciConcurrency = extractTopLevelSection(ciWorkflow, 'concurrency');
     expect(ciConcurrency).toContain('group: ${{ github.workflow }}-${{ github.ref }}');
-    expect(ciConcurrency).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}");
+    expect(ciConcurrency).toContain(
+      "cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}"
+    );
     expect(ciConcurrency).toContain('queue: max');
 
     const storybookWorkflow = readWorkflow('storybook.yml');
@@ -284,7 +287,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       'pages-verify',
     ];
     expect(ciJobs['ci-complete']?.needs).toEqual(expectedVerificationJobs);
-    expect(ciJobs['ci-complete']?.if).toBe('always()');
+    expect(ciJobs['ci-complete']?.if).toBe('always() && !cancelled()');
     expect(ciJobs['ci-complete']?.['runs-on']).toBe('ubuntu-latest');
     expect(ciJobs['ci-complete']?.['timeout-minutes']).toBe(5);
     expect(ciJobs['ci-complete']?.permissions).toEqual({ contents: 'read' });
@@ -2099,6 +2102,52 @@ process.exit(1);
       });
       expect(failCi.status).toBe(1);
       expect(failCi.stdout + failCi.stderr).toContain(`${jobName} (skipped)`);
+    }
+  });
+
+  it('declares explicit least-privilege permissions at workflow root and every job across all workflows without unsafe script interpolation', () => {
+    const workflowsDir = path.join(path.resolve(__dirname, '../..'), '.github', 'workflows');
+    const workflowFiles = fs
+      .readdirSync(workflowsDir)
+      .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
+      .sort();
+
+    expect(workflowFiles.length).toBeGreaterThanOrEqual(8);
+
+    for (const file of workflowFiles) {
+      const raw = fs.readFileSync(path.join(workflowsDir, file), 'utf8');
+      const doc = parseDocument(raw, { version: '1.2', strict: true });
+      expect(doc.errors).toEqual([]);
+      const parsed = doc.toJS() as {
+        permissions?: Record<string, string>;
+        jobs?: Record<
+          string,
+          {
+            'runs-on'?: unknown;
+            permissions?: Record<string, string>;
+            steps?: Array<{ run?: string; with?: { script?: string } }>;
+          }
+        >;
+      };
+
+      expect(parsed.permissions).toEqual({ contents: 'read' });
+
+      for (const [jobId, job] of Object.entries(parsed.jobs ?? {})) {
+        expect({
+          file,
+          jobId,
+          hasPermissions:
+            job.permissions !== undefined && Object.keys(job.permissions).length > 0,
+        }).toEqual({ file, jobId, hasPermissions: true });
+        for (const step of job.steps ?? []) {
+          if (typeof step.run === 'string') {
+            expect(step.run).not.toMatch(/\$\{\{/);
+          }
+          if (typeof step.with?.script === 'string') {
+            expect(step.with.script).not.toMatch(/\$\{\{/);
+          }
+        }
+      }
     }
   });
 });

@@ -235,6 +235,9 @@ function validateEditableWizardRow(
       plusOneNames: r.extraFields.plusOneNames,
     };
   }
+  if (Array.isArray(r.members) && r.members.length > 0) {
+    validated.members = r.members;
+  }
   return validated;
 }
 
@@ -314,6 +317,19 @@ function buildBatchImportPayload(
         partyGroup: r.partyGroup.trim() || undefined,
         partyTags: r.partyTags ? normalizePartyTags(r.partyTags) : undefined,
         extraFields: Object.keys(recordExtra).length > 0 ? recordExtra : undefined,
+        ...(Array.isArray(r.members) && r.members.length > 0
+          ? {
+            members: r.members.map((m, idx) =>
+              idx === 0 && r.guestName.trim()
+                ? {
+                  ...m,
+                  fullName: r.guestName.trim(),
+                  email: r.email.trim() || m.email || null,
+                }
+                : m
+            ),
+          }
+          : {}),
       };
     }),
     collisionStrategy,

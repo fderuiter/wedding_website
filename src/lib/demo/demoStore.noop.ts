@@ -15,6 +15,7 @@ import { buildArchetypeDataset } from './demoSeed.noop';
 import type {
   DemoClaimPreview,
   DemoContributionInput,
+  DemoGuestAddressUpdateInput,
   DemoGuestSession,
   DemoPersona,
   DemoStoreState,
@@ -113,14 +114,7 @@ export function setDemoGuestSession(_session: DemoGuestSession | null): void {}
 
 export function updateDemoGuestAddress(
   _code: string,
-  _address: {
-    addressLine1?: string;
-    addressLine2?: string;
-    city?: string;
-    state?: string;
-    zipCode?: string;
-    country?: string;
-  }
+  _address: DemoGuestAddressUpdateInput
 ): InvitationCodeDTO | null {
   return null;
 }

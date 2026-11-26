@@ -1689,6 +1689,135 @@
                           "maximum": 9007199254740991
                         }
                       },
+                      "members": {
+                        "maxItems": 25,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "fullName": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "firstName": {
+                              "anyOf": [
+                                {
+                                  "nullable": true,
+                                  "type": "string",
+                                  "maxLength": 100
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    ""
+                                  ]
+                                }
+                              ]
+                            },
+                            "lastName": {
+                              "anyOf": [
+                                {
+                                  "nullable": true,
+                                  "type": "string",
+                                  "maxLength": 100
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    ""
+                                  ]
+                                }
+                              ]
+                            },
+                            "role": {
+                              "default": "PARTNER",
+                              "type": "string",
+                              "enum": [
+                                "PRIMARY",
+                                "PARTNER",
+                                "CHILD",
+                                "PLUS_ONE"
+                              ]
+                            },
+                            "email": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    ""
+                                  ]
+                                }
+                              ]
+                            },
+                            "phone": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 30
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    ""
+                                  ]
+                                }
+                              ]
+                            },
+                            "dietaryNotes": {
+                              "anyOf": [
+                                {
+                                  "nullable": true,
+                                  "type": "string",
+                                  "maxLength": 500
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    ""
+                                  ]
+                                }
+                              ]
+                            },
+                            "tags": {
+                              "anyOf": [
+                                {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "displayOrder": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "seatNumber": {
+                              "nullable": true,
+                              "type": "integer",
+                              "minimum": 0,
+                              "exclusiveMinimum": true,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "fullName"
+                          ]
+                        }
+                      },
                       "isSample": {
                         "default": false,
                         "type": "boolean"
@@ -4400,6 +4529,135 @@
                           "minimum": 0,
                           "exclusiveMinimum": true,
                           "maximum": 9007199254740991
+                        }
+                      },
+                      "members": {
+                        "maxItems": 25,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "fullName": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "firstName": {
+                              "anyOf": [
+                                {
+                                  "nullable": true,
+                                  "type": "string",
+                                  "maxLength": 100
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    ""
+                                  ]
+                                }
+                              ]
+                            },
+                            "lastName": {
+                              "anyOf": [
+                                {
+                                  "nullable": true,
+                                  "type": "string",
+                                  "maxLength": 100
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    ""
+                                  ]
+                                }
+                              ]
+                            },
+                            "role": {
+                              "default": "PARTNER",
+                              "type": "string",
+                              "enum": [
+                                "PRIMARY",
+                                "PARTNER",
+                                "CHILD",
+                                "PLUS_ONE"
+                              ]
+                            },
+                            "email": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    ""
+                                  ]
+                                }
+                              ]
+                            },
+                            "phone": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 30
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    ""
+                                  ]
+                                }
+                              ]
+                            },
+                            "dietaryNotes": {
+                              "anyOf": [
+                                {
+                                  "nullable": true,
+                                  "type": "string",
+                                  "maxLength": 500
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    ""
+                                  ]
+                                }
+                              ]
+                            },
+                            "tags": {
+                              "anyOf": [
+                                {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "displayOrder": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "seatNumber": {
+                              "nullable": true,
+                              "type": "integer",
+                              "minimum": 0,
+                              "exclusiveMinimum": true,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "fullName"
+                          ]
                         }
                       },
                       "isSample": {
@@ -7885,6 +8143,135 @@
                               "nullable": true,
                               "type": "object",
                               "additionalProperties": {}
+                            },
+                            "members": {
+                              "maxItems": 25,
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "fullName": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 100
+                                  },
+                                  "firstName": {
+                                    "anyOf": [
+                                      {
+                                        "nullable": true,
+                                        "type": "string",
+                                        "maxLength": 100
+                                      },
+                                      {
+                                        "type": "string",
+                                        "enum": [
+                                          ""
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  "lastName": {
+                                    "anyOf": [
+                                      {
+                                        "nullable": true,
+                                        "type": "string",
+                                        "maxLength": 100
+                                      },
+                                      {
+                                        "type": "string",
+                                        "enum": [
+                                          ""
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  "role": {
+                                    "default": "PARTNER",
+                                    "type": "string",
+                                    "enum": [
+                                      "PRIMARY",
+                                      "PARTNER",
+                                      "CHILD",
+                                      "PLUS_ONE"
+                                    ]
+                                  },
+                                  "email": {
+                                    "nullable": true,
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "enum": [
+                                          ""
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  "phone": {
+                                    "nullable": true,
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "maxLength": 30
+                                      },
+                                      {
+                                        "type": "string",
+                                        "enum": [
+                                          ""
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  "dietaryNotes": {
+                                    "anyOf": [
+                                      {
+                                        "nullable": true,
+                                        "type": "string",
+                                        "maxLength": 500
+                                      },
+                                      {
+                                        "type": "string",
+                                        "enum": [
+                                          ""
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  "tags": {
+                                    "anyOf": [
+                                      {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      {
+                                        "type": "string"
+                                      }
+                                    ]
+                                  },
+                                  "displayOrder": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "seatNumber": {
+                                    "nullable": true,
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "exclusiveMinimum": true,
+                                    "maximum": 9007199254740991
+                                  }
+                                },
+                                "required": [
+                                  "fullName"
+                                ]
+                              }
                             }
                           },
                           "required": [
@@ -8878,6 +9265,135 @@
                           "nullable": true,
                           "type": "object",
                           "additionalProperties": {}
+                        },
+                        "members": {
+                          "maxItems": 25,
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "fullName": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              },
+                              "firstName": {
+                                "anyOf": [
+                                  {
+                                    "nullable": true,
+                                    "type": "string",
+                                    "maxLength": 100
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      ""
+                                    ]
+                                  }
+                                ]
+                              },
+                              "lastName": {
+                                "anyOf": [
+                                  {
+                                    "nullable": true,
+                                    "type": "string",
+                                    "maxLength": 100
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      ""
+                                    ]
+                                  }
+                                ]
+                              },
+                              "role": {
+                                "default": "PARTNER",
+                                "type": "string",
+                                "enum": [
+                                  "PRIMARY",
+                                  "PARTNER",
+                                  "CHILD",
+                                  "PLUS_ONE"
+                                ]
+                              },
+                              "email": {
+                                "nullable": true,
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      ""
+                                    ]
+                                  }
+                                ]
+                              },
+                              "phone": {
+                                "nullable": true,
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "maxLength": 30
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      ""
+                                    ]
+                                  }
+                                ]
+                              },
+                              "dietaryNotes": {
+                                "anyOf": [
+                                  {
+                                    "nullable": true,
+                                    "type": "string",
+                                    "maxLength": 500
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      ""
+                                    ]
+                                  }
+                                ]
+                              },
+                              "tags": {
+                                "anyOf": [
+                                  {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  {
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "displayOrder": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "seatNumber": {
+                                "nullable": true,
+                                "type": "integer",
+                                "minimum": 0,
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "fullName"
+                            ]
+                          }
                         }
                       },
                       "required": [
@@ -9594,6 +10110,14 @@
                           "type": "object",
                           "additionalProperties": true
                         },
+                        "members": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": true
+                          },
+                          "nullable": true
+                        },
                         "subEvents": {
                           "type": "array",
                           "items": {
@@ -9764,6 +10288,41 @@
                               "additionalProperties": {
                                 "type": "string",
                                 "maxLength": 1000
+                              }
+                            },
+                            "memberRsvps": {
+                              "maxItems": 21,
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "householdMemberId": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "attending",
+                                      "declined",
+                                      "pending"
+                                    ]
+                                  },
+                                  "mealOptionId": {
+                                    "nullable": true,
+                                    "type": "string",
+                                    "maxLength": 100
+                                  },
+                                  "dietaryNotes": {
+                                    "nullable": true,
+                                    "type": "string",
+                                    "maxLength": 500
+                                  }
+                                },
+                                "required": [
+                                  "householdMemberId",
+                                  "status"
+                                ]
                               }
                             }
                           },
@@ -10232,6 +10791,135 @@
                           "nullable": true,
                           "type": "object",
                           "additionalProperties": {}
+                        },
+                        "members": {
+                          "maxItems": 25,
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "fullName": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              },
+                              "firstName": {
+                                "anyOf": [
+                                  {
+                                    "nullable": true,
+                                    "type": "string",
+                                    "maxLength": 100
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      ""
+                                    ]
+                                  }
+                                ]
+                              },
+                              "lastName": {
+                                "anyOf": [
+                                  {
+                                    "nullable": true,
+                                    "type": "string",
+                                    "maxLength": 100
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      ""
+                                    ]
+                                  }
+                                ]
+                              },
+                              "role": {
+                                "default": "PARTNER",
+                                "type": "string",
+                                "enum": [
+                                  "PRIMARY",
+                                  "PARTNER",
+                                  "CHILD",
+                                  "PLUS_ONE"
+                                ]
+                              },
+                              "email": {
+                                "nullable": true,
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      ""
+                                    ]
+                                  }
+                                ]
+                              },
+                              "phone": {
+                                "nullable": true,
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "maxLength": 30
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      ""
+                                    ]
+                                  }
+                                ]
+                              },
+                              "dietaryNotes": {
+                                "anyOf": [
+                                  {
+                                    "nullable": true,
+                                    "type": "string",
+                                    "maxLength": 500
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      ""
+                                    ]
+                                  }
+                                ]
+                              },
+                              "tags": {
+                                "anyOf": [
+                                  {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  {
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "displayOrder": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "seatNumber": {
+                                "nullable": true,
+                                "type": "integer",
+                                "minimum": 0,
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "fullName"
+                            ]
+                          }
                         }
                       },
                       "required": [
@@ -11332,6 +12020,88 @@
                         ]
                       }
                     },
+                    "householdMember": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 255
+                          },
+                          "invitationCodeId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 255
+                          },
+                          "firstName": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "lastName": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "fullName": {
+                            "type": "string"
+                          },
+                          "role": {
+                            "type": "string",
+                            "enum": [
+                              "PRIMARY",
+                              "PARTNER",
+                              "CHILD",
+                              "PLUS_ONE"
+                            ]
+                          },
+                          "email": {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 255
+                          },
+                          "phone": {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          "dietaryNotes": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "tags": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "displayOrder": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "seatNumber": {
+                            "nullable": true,
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "updatedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "invitationCodeId",
+                          "fullName"
+                        ]
+                      }
+                    },
                     "weddingPartyMember": {
                       "type": "array",
                       "items": {
@@ -12022,6 +12792,56 @@
                           "id",
                           "subEventId",
                           "invitationCodeId"
+                        ]
+                      }
+                    },
+                    "subEventMemberRsvp": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 255
+                          },
+                          "subEventRsvpId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 255
+                          },
+                          "householdMemberId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 255
+                          },
+                          "status": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                          },
+                          "mealOptionId": {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 255
+                          },
+                          "dietaryNotes": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "updatedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "subEventRsvpId",
+                          "householdMemberId"
                         ]
                       }
                     },
@@ -13052,6 +13872,88 @@
                       ]
                     }
                   },
+                  "householdMember": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "invitationCodeId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "firstName": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "lastName": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "fullName": {
+                          "type": "string"
+                        },
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "PRIMARY",
+                            "PARTNER",
+                            "CHILD",
+                            "PLUS_ONE"
+                          ]
+                        },
+                        "email": {
+                          "nullable": true,
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "phone": {
+                          "nullable": true,
+                          "type": "string",
+                          "maxLength": 100
+                        },
+                        "dietaryNotes": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "tags": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "displayOrder": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "seatNumber": {
+                          "nullable": true,
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "invitationCodeId",
+                        "fullName"
+                      ]
+                    }
+                  },
                   "weddingPartyMember": {
                     "type": "array",
                     "items": {
@@ -13742,6 +14644,56 @@
                         "id",
                         "subEventId",
                         "invitationCodeId"
+                      ]
+                    }
+                  },
+                  "subEventMemberRsvp": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "subEventRsvpId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "householdMemberId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "status": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "mealOptionId": {
+                          "nullable": true,
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "dietaryNotes": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "subEventRsvpId",
+                        "householdMemberId"
                       ]
                     }
                   },
@@ -21205,6 +22157,21 @@
                     "nullable": true,
                     "type": "string"
                   },
+                  "dietaryNotes": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
                   "addressLine1": {
                     "type": "string",
                     "minLength": 1,
@@ -21269,6 +22236,103 @@
                         ]
                       }
                     ]
+                  },
+                  "partner": {
+                    "nullable": true,
+                    "type": "object",
+                    "properties": {
+                      "fullName": {
+                        "nullable": true,
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "email": {
+                        "nullable": true,
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "phone": {
+                        "nullable": true,
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 30
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "dietaryNotes": {
+                        "nullable": true,
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "children": {
+                    "maxItems": 15,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "fullName": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "dietaryNotes": {
+                          "nullable": true,
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 500
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                ""
+                              ]
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "fullName"
+                      ]
+                    }
                   },
                   "notes": {
                     "nullable": true,
@@ -21376,6 +22440,16 @@
             "guestInviteCookieAuth": []
           }
         ],
+        "parameters": [
+          {
+            "name": "includeRoster",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -21427,13 +22501,24 @@
                         "state",
                         "zipCode",
                         "country"
-                      ]
+                      ],
+                      "additionalProperties": true
                     }
                   },
                   "required": [
                     "success",
                     "data"
                   ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
                 }
               }
             }
@@ -21500,6 +22585,87 @@
                 "properties": {
                   "code": {
                     "type": "string"
+                  },
+                  "householdName": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "members": {
+                    "maxItems": 25,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "fullName": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "email": {
+                          "nullable": true,
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                ""
+                              ]
+                            }
+                          ]
+                        },
+                        "phone": {
+                          "nullable": true,
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 30
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                ""
+                              ]
+                            }
+                          ]
+                        },
+                        "dietaryNotes": {
+                          "anyOf": [
+                            {
+                              "nullable": true,
+                              "type": "string",
+                              "maxLength": 500
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                ""
+                              ]
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "fullName"
+                      ]
+                    }
                   },
                   "addressLine1": {
                     "nullable": true,
@@ -21647,7 +22813,8 @@
                         "state",
                         "zipCode",
                         "country"
-                      ]
+                      ],
+                      "additionalProperties": true
                     }
                   },
                   "required": [
@@ -28425,11 +29592,45 @@
                                 "type": "string",
                                 "maxLength": 120
                               }
+                            },
+                            "memberRsvps": {
+                              "minItems": 1,
+                              "maxItems": 21,
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "householdMemberId": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "attending",
+                                      "declined"
+                                    ]
+                                  },
+                                  "mealOptionId": {
+                                    "nullable": true,
+                                    "type": "string",
+                                    "maxLength": 100
+                                  },
+                                  "dietaryNotes": {
+                                    "nullable": true,
+                                    "type": "string",
+                                    "maxLength": 500
+                                  }
+                                },
+                                "required": [
+                                  "householdMemberId",
+                                  "status"
+                                ]
+                              }
                             }
                           },
                           "required": [
-                            "subEventId",
-                            "status"
+                            "subEventId"
                           ]
                         }
                       }
@@ -28487,11 +29688,45 @@
                           "type": "string",
                           "maxLength": 120
                         }
+                      },
+                      "memberRsvps": {
+                        "minItems": 1,
+                        "maxItems": 21,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "householdMemberId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "attending",
+                                "declined"
+                              ]
+                            },
+                            "mealOptionId": {
+                              "nullable": true,
+                              "type": "string",
+                              "maxLength": 100
+                            },
+                            "dietaryNotes": {
+                              "nullable": true,
+                              "type": "string",
+                              "maxLength": 500
+                            }
+                          },
+                          "required": [
+                            "householdMemberId",
+                            "status"
+                          ]
+                        }
                       }
                     },
                     "required": [
-                      "subEventId",
-                      "status"
+                      "subEventId"
                     ]
                   }
                 ]
@@ -28728,6 +29963,17 @@
                       "type": "string",
                       "nullable": true
                     },
+                    "householdName": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "householdMembers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
                     "plusOneAllocations": {
                       "type": "number",
                       "nullable": true
@@ -28761,6 +30007,8 @@
                     "data",
                     "isGuest",
                     "guestName",
+                    "householdName",
+                    "householdMembers",
                     "plusOneAllocations",
                     "savedPlusOneNames",
                     "rsvpOpen",

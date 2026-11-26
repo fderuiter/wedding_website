@@ -486,6 +486,7 @@ test.describe('UI Verification', { tag: '@a11y' }, () => {
       const codeInput = dialog.getByLabel(/Invitation Code/i);
       if ((await codeInput.count()) > 0 && !(await codeInput.inputValue())) {
         await codeInput.fill('WED2026A');
+        await dialog.getByRole('button', { name: 'Verify' }).click();
         await expect(dialog.getByText(/Code verified! Name pre-filled\./i)).toBeVisible();
         const clearBtn = dialog.getByRole('button', { name: 'Clear' });
         await expect(clearBtn).toBeFocused();

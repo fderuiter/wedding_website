@@ -130,6 +130,13 @@ function summarizeGuestRsvpFields(
         ? 'Attending'
         : 'Pending';
 
+  const members = (snapshot.householdMember ?? [])
+    .filter((m) => m.invitationCodeId === inv.id)
+    .sort((a, b) => a.displayOrder - b.displayOrder);
+  const secondaryMemberNames = members
+    .filter((m) => m.role !== 'PRIMARY')
+    .map((m) => m.fullName.trim())
+    .filter(Boolean);
   const rsvpNames = rsvps.flatMap((r) =>
     Array.isArray(r.plusOneNames) ? r.plusOneNames.filter(Boolean) : [],
   );
@@ -138,9 +145,22 @@ function summarizeGuestRsvpFields(
     .join(' ')
     .trim();
   const plusOneName =
-    rsvpNames.length > 0
-      ? Array.from(new Set(rsvpNames)).join(', ')
-      : fallbackCompanion;
+    secondaryMemberNames.length > 0
+      ? secondaryMemberNames.join(', ')
+      : rsvpNames.length > 0
+        ? Array.from(new Set(rsvpNames)).join(', ')
+        : fallbackCompanion;
+
+  const rsvpIds = new Set(rsvps.map((r) => r.id));
+  const memberRsvps = (snapshot.subEventMemberRsvp ?? []).filter((mr) =>
+    rsvpIds.has(mr.subEventRsvpId),
+  );
+  const maxAttendingMembersOnSingleEvent = rsvps.reduce((max, r) => {
+    const attendingHere = memberRsvps.filter(
+      (mr) => mr.subEventRsvpId === r.id && mr.status === 'attending',
+    ).length;
+    return Math.max(max, attendingHere);
+  }, 0);
 
   const maxRsvpPlusOnes = rsvps.reduce(
     (max, r) => (r.status === 'declined' ? max : Math.max(max, r.plusOneCount ?? 0)),
@@ -148,15 +168,31 @@ function summarizeGuestRsvpFields(
   );
   const companionCount = allDeclined
     ? 0
-    : Math.max(maxRsvpPlusOnes, inv.plusOneAllocations ?? 0);
-  const headcount = allDeclined ? 0 : 1 + companionCount;
+    : Math.max(
+      maxRsvpPlusOnes,
+      inv.plusOneAllocations ?? 0,
+      Math.max(0, members.length - 1),
+    );
+  const headcount = allDeclined
+    ? 0
+    : maxAttendingMembersOnSingleEvent > 0
+      ? maxAttendingMembersOnSingleEvent
+      : 1 + companionCount;
 
   const meals: string[] = [];
-  for (const r of rsvps) {
-    if (r.status === 'declined') continue;
-    for (const rawMeal of r.mealSelections ?? []) {
-      const label = mealLabelById.get(rawMeal) ?? rawMeal;
+  if (memberRsvps.some((mr) => mr.status === 'attending' && mr.mealOptionId)) {
+    for (const mr of memberRsvps) {
+      if (mr.status !== 'attending' || !mr.mealOptionId) continue;
+      const label = mealLabelById.get(mr.mealOptionId) ?? mr.mealOptionId;
       if (label.trim()) meals.push(label.trim());
+    }
+  } else {
+    for (const r of rsvps) {
+      if (r.status === 'declined') continue;
+      for (const rawMeal of r.mealSelections ?? []) {
+        const label = mealLabelById.get(rawMeal) ?? rawMeal;
+        if (label.trim()) meals.push(label.trim());
+      }
     }
   }
 
@@ -198,10 +234,19 @@ function summarizeTableMealsAndDietary(
         mealCounts.set(m, (mealCounts.get(m) ?? 0) + 1);
       }
     }
-    const notes = (g.dietaryNotes ?? '').trim();
-    if (notes) {
-      for (const token of notes.split(/[,;]/).map((s) => s.trim()).filter(Boolean)) {
-        dietaryCounts.set(token, (dietaryCounts.get(token) ?? 0) + 1);
+    const guestMembers = (snapshot.householdMember ?? []).filter(
+      (m) => m.invitationCodeId === g.id,
+    );
+    const noteSources =
+      guestMembers.length > 0
+        ? guestMembers.map((m) => m.dietaryNotes ?? '')
+        : [g.dietaryNotes ?? ''];
+    for (const rawNote of noteSources) {
+      const notes = rawNote.trim();
+      if (notes) {
+        for (const token of notes.split(/[,;]/).map((s) => s.trim()).filter(Boolean)) {
+          dietaryCounts.set(token, (dietaryCounts.get(token) ?? 0) + 1);
+        }
       }
     }
   }
@@ -621,6 +666,7 @@ export function buildBackupExportPayload(snapshot: StaticDemoSnapshot): Record<s
     media: snapshot.media,
     seatingTable: snapshot.seatingTable,
     invitationCode: snapshot.invitationCode,
+    householdMember: snapshot.householdMember ?? [],
     weddingPartyMember: snapshot.weddingPartyMember,
     attraction: snapshot.attraction,
     registryItem: snapshot.registryItem,
@@ -628,6 +674,7 @@ export function buildBackupExportPayload(snapshot: StaticDemoSnapshot): Record<s
     subEvent: snapshot.subEvent.map(({ attireRules: _attireRules, ...rest }) => rest),
     subEventAccess: snapshot.subEventAccess,
     subEventRsvp: snapshot.subEventRsvp,
+    subEventMemberRsvp: snapshot.subEventMemberRsvp ?? [],
     broadcastMessage: snapshot.broadcastMessage,
     broadcastRecipient: snapshot.broadcastRecipient,
     snapshotVersion: snapshot.snapshotVersion,
