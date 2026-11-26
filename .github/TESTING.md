@@ -167,9 +167,9 @@ A variety of verification scripts in [package.json](../package.json) support com
 - **Unified GitHub Pages Bundle Verification:**
   ```bash
   PAGES_BASE_PATH=/wedding_website/ npm run pages:build
-  npm run pages:verify
+  PAGES_BASE_PATH=/wedding_website/ npm run pages:verify
   ```
-  Assembles the VitePress documentation portal (`docs-portal/.vitepress/dist/`), interactive static demo (`docs-portal/.vitepress/dist/demo/`), and Storybook showcase (`docs-portal/.vitepress/dist/storybook/`) with `.nojekyll` via [scripts/build-pages-bundle.mjs](../scripts/build-pages-bundle.mjs), then runs all 4 unified bundle browser and cross-app navigation tests in [e2e/pages-showcase.spec.ts](../e2e/pages-showcase.spec.ts) with zero skips, matching the `pages-verify` CI job (`npm ci --ignore-scripts`) in [.github/workflows/ci.yml](workflows/ci.yml) that uploads `pages-bundle` and joins the read-only `ci-complete` terminal check in gating `deploy-docs`.
+  Assembles the VitePress documentation portal (`docs-portal/.vitepress/dist/`), interactive static demo (`docs-portal/.vitepress/dist/demo/`), and Storybook showcase (`docs-portal/.vitepress/dist/storybook/`) with `.nojekyll` via [scripts/build-pages-bundle.mjs](../scripts/build-pages-bundle.mjs), then runs all 4 unified bundle browser and cross-app navigation tests in [e2e/pages-showcase.spec.ts](../e2e/pages-showcase.spec.ts) parameterized by `PAGES_BASE_PATH` (such as `/`, `/wedding_website/`, or `/<repo>/`) with zero skips, matching the `pages-verify` CI job (`npm ci --ignore-scripts`, receiving `PAGES_BASE_PATH` from `needs.verify.outputs.portal_base_path`) in [.github/workflows/ci.yml](workflows/ci.yml) that uploads `pages-bundle` and joins the read-only `ci-complete` terminal check in gating `deploy-docs`.
 
 - **Complete Quality Gate:**
   ```bash

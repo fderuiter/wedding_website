@@ -2971,6 +2971,53 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
+  // 4b-pages. Verify unified Pages base-path propagation from `verify` without hardcoded `/wedding_website` gates
+  if (/\/wedding_website\b/.test(ciWorkflowRaw)) {
+    errors.push(
+      '.github/workflows/ci.yml: Must not hardcode `/wedding_website` base-path gates; resolve dynamic `portal_base_path`, `demo_base_path`, and `storybook_base_path` outputs in `verify`'
+    );
+  }
+  const ciJobsNode: unknown = isMap(ciDoc.contents) ? ciDoc.contents.get('jobs', true) : null;
+  const ciVerifyJob: unknown = isMap(ciJobsNode) ? ciJobsNode.get('verify', true) : null;
+  const ciVerifyOutputs: unknown = isMap(ciVerifyJob) ? ciVerifyJob.get('outputs', true) : null;
+  for (const requiredPagesOutput of ['portal_base_path', 'demo_base_path', 'storybook_base_path'] as const) {
+    if (!isMap(ciVerifyOutputs) || !ciVerifyOutputs.has(requiredPagesOutput)) {
+      errors.push(
+        `.github/workflows/ci.yml: \`verify\` job must export \`outputs.${requiredPagesOutput}\` for unified GitHub Pages alignment`
+      );
+    }
+  }
+  if (!ciWorkflowRaw.includes('needs.verify.outputs.storybook_base_path')) {
+    errors.push(
+      '.github/workflows/ci.yml: `storybook-build` and `deploy-docs` must consume `needs.verify.outputs.storybook_base_path`'
+    );
+  }
+  if (!ciWorkflowRaw.includes('needs.verify.outputs.demo_base_path')) {
+    errors.push(
+      '.github/workflows/ci.yml: `static-export-build` and `deploy-docs` must consume `needs.verify.outputs.demo_base_path`'
+    );
+  }
+  if (!ciWorkflowRaw.includes('needs.verify.outputs.portal_base_path')) {
+    errors.push(
+      '.github/workflows/ci.yml: `pages-verify` and `deploy-docs` must consume `needs.verify.outputs.portal_base_path`'
+    );
+  }
+
+  const pagesShowcaseSpecPath = path.join(repoRoot, 'e2e/pages-showcase.spec.ts');
+  if (fs.existsSync(pagesShowcaseSpecPath)) {
+    const pagesShowcaseSpecRaw = fs.readFileSync(pagesShowcaseSpecPath, 'utf8');
+    if (/\/wedding_website\b/.test(pagesShowcaseSpecRaw)) {
+      errors.push(
+        'e2e/pages-showcase.spec.ts: Must not hardcode `/wedding_website` base-path strings; parameterize routes and `window.fetch` endpoints via `PAGES_BASE_PATH`'
+      );
+    }
+    if (!pagesShowcaseSpecRaw.includes('PAGES_BASE_PATH')) {
+      errors.push(
+        'e2e/pages-showcase.spec.ts: Must parameterize portal, demo, and Storybook prefixes via `PAGES_BASE_PATH`'
+      );
+    }
+  }
+
   // 4c. Verify deploy-provider.yml signed webhook wire contract is documented in DEPLOYMENT.md & docs/deployment/docker-vps.md
   const usesSignedWebhookAdapter =
     deployProviderRaw.includes('DEPLOY_WEBHOOK_URL') &&

@@ -34,6 +34,121 @@ export function resolveDemoBasePath(rawBase) {
 }
 
 /**
+ * Resolves the Storybook `NEXT_PUBLIC_BASE_PATH` (must start with `/` and have NO trailing slash)
+ * for mounting the static Storybook showcase under `<portalBase>storybook`.
+ * Examples:
+ * - '/' -> '/storybook'
+ * - '/wedding_website/' -> '/wedding_website/storybook'
+ */
+export function resolveStorybookBasePath(rawBase) {
+  const portalBase = normalizePagesBasePath(rawBase);
+  return portalBase === '/' ? '/storybook' : `${portalBase.slice(0, -1)}/storybook`;
+}
+
+/**
+ * Computes aligned portal, demo, and Storybook base-path prefixes from a raw Pages base path.
+ */
+export function resolvePagesPrefixes(rawBase) {
+  const portalBasePath = normalizePagesBasePath(rawBase);
+  const demoBasePath = resolveDemoBasePath(portalBasePath);
+  const storybookBasePath = resolveStorybookBasePath(portalBasePath);
+  return {
+    portalBasePath,
+    demoBasePath,
+    storybookBasePath,
+  };
+}
+
+const CNAME_CANDIDATE_FILES = ['CNAME', 'public/CNAME', 'docs-portal/public/CNAME'];
+
+/**
+ * Resolves the normalized GitHub Pages portal base path (`'/'` or `'/<repo>/'`) from explicit
+ * overrides, repository custom-domain `CNAME` files, `<owner>.github.io` naming, GitHub Pages API
+ * metadata (`cname` / `html_url`), or the repository name fallback.
+ */
+export function resolveRepositoryPagesBasePath(options = {}) {
+  const env = options.env ?? process.env;
+  if (options.pagesBasePath !== undefined) {
+    return normalizePagesBasePath(options.pagesBasePath);
+  }
+  if (options.vitepressBase !== undefined) {
+    return normalizePagesBasePath(options.vitepressBase);
+  }
+  if (env.PAGES_BASE_PATH !== undefined) {
+    return normalizePagesBasePath(env.PAGES_BASE_PATH);
+  }
+  if (env.VITEPRESS_BASE !== undefined) {
+    return normalizePagesBasePath(env.VITEPRESS_BASE);
+  }
+
+  const rootDir = options.rootDir ? path.resolve(options.rootDir) : defaultRootDir;
+  for (const relPath of CNAME_CANDIDATE_FILES) {
+    const candidatePath = path.join(rootDir, relPath);
+    if (fs.existsSync(candidatePath) && fs.statSync(candidatePath).isFile()) {
+      return '/';
+    }
+  }
+
+  const rawRepo = String(options.repository ?? env.GH_REPO ?? env.GITHUB_REPOSITORY ?? '').trim();
+  let owner = '';
+  let repo = '';
+  if (rawRepo.includes('/')) {
+    const slashIdx = rawRepo.indexOf('/');
+    owner = rawRepo.slice(0, slashIdx).trim();
+    repo = rawRepo.slice(slashIdx + 1).trim();
+  } else {
+    repo = rawRepo;
+  }
+
+  if (owner && repo && repo.toLowerCase() === `${owner.toLowerCase()}.github.io`) {
+    return '/';
+  }
+
+  let resolvedRawBase = repo ? `/${repo}` : '/';
+  const pagesApiJson = String(options.pagesApiJson ?? env.PAGES_API_JSON ?? '').trim();
+  if (pagesApiJson) {
+    try {
+      const parsed = JSON.parse(pagesApiJson);
+      if (parsed && typeof parsed === 'object') {
+        if (typeof parsed.cname === 'string' && parsed.cname.trim().length > 0) {
+          return '/';
+        }
+        if (typeof parsed.html_url === 'string' && parsed.html_url.trim().length > 0) {
+          resolvedRawBase = new URL(parsed.html_url).pathname;
+        }
+      }
+    } catch {
+      // Ignore malformed Pages API responses and preserve repository fallback
+    }
+  }
+
+  return normalizePagesBasePath(resolvedRawBase);
+}
+
+/**
+ * Formats resolved Pages base paths for `$GITHUB_OUTPUT` (`github`) or JSON (`json`).
+ */
+export function formatPagesBasePathsOutput(prefixes, format = 'github') {
+  if (format === 'json') {
+    return `${JSON.stringify(
+      {
+        portal_base_path: prefixes.portalBasePath,
+        demo_base_path: prefixes.demoBasePath,
+        storybook_base_path: prefixes.storybookBasePath,
+      },
+      null,
+      2
+    )}\n`;
+  }
+  return [
+    `portal_base_path=${prefixes.portalBasePath}`,
+    `demo_base_path=${prefixes.demoBasePath}`,
+    `storybook_base_path=${prefixes.storybookBasePath}`,
+    '',
+  ].join('\n');
+}
+
+/**
  * Resolves all filesystem directories and normalized URL prefixes for the unified Pages bundle.
  */
 export function resolvePagesBundleConfig(options = {}) {
@@ -145,7 +260,7 @@ export function buildPagesBundle(options = {}) {
       ['run', 'build-storybook'],
       config.rootDir,
       {
-        NEXT_PUBLIC_BASE_PATH: config.storybookBasePath.replace(/\/+$/, ''),
+        NEXT_PUBLIC_BASE_PATH: resolveStorybookBasePath(config.portalBasePath),
       }
     );
 
@@ -171,13 +286,88 @@ export function buildPagesBundle(options = {}) {
   }
 }
 
+export function parseCliArgs(argv = []) {
+  const parsed = {
+    resolveOnly: false,
+    format: 'github',
+    pagesBasePath: undefined,
+    repository: undefined,
+    pagesApiJson: undefined,
+    rootDir: undefined,
+  };
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === '--resolve-base-paths' || arg === '--print-base-paths') {
+      parsed.resolveOnly = true;
+    } else if (arg === '--json') {
+      parsed.format = 'json';
+    } else if (arg === '--format' && i + 1 < argv.length) {
+      parsed.format = argv[++i];
+    } else if (arg.startsWith('--format=')) {
+      parsed.format = arg.slice('--format='.length);
+    } else if (arg === '--base-path' && i + 1 < argv.length) {
+      parsed.pagesBasePath = argv[++i];
+    } else if (arg.startsWith('--base-path=')) {
+      parsed.pagesBasePath = arg.slice('--base-path='.length);
+    } else if (arg === '--repo' && i + 1 < argv.length) {
+      parsed.repository = argv[++i];
+    } else if (arg.startsWith('--repo=')) {
+      parsed.repository = arg.slice('--repo='.length);
+    } else if (arg === '--pages-json' && i + 1 < argv.length) {
+      parsed.pagesApiJson = argv[++i];
+    } else if (arg.startsWith('--pages-json=')) {
+      parsed.pagesApiJson = arg.slice('--pages-json='.length);
+    } else if (arg === '--root-dir' && i + 1 < argv.length) {
+      parsed.rootDir = argv[++i];
+    } else if (arg.startsWith('--root-dir=')) {
+      parsed.rootDir = arg.slice('--root-dir='.length);
+    } else {
+      throw new Error(`Unknown option: ${arg}`);
+    }
+  }
+
+  if (parsed.format !== 'github' && parsed.format !== 'json') {
+    throw new Error(`Unsupported --format "${parsed.format}" (expected "github" or "json")`);
+  }
+
+  return parsed;
+}
+
+export function runPagesCli(argv = process.argv.slice(2), options = {}) {
+  const cli = parseCliArgs(argv);
+  const env = options.env ?? process.env;
+  const writeStdout = options.writeStdout ?? ((chunk) => process.stdout.write(chunk));
+
+  if (cli.resolveOnly) {
+    const portalBase = resolveRepositoryPagesBasePath({
+      rootDir: cli.rootDir ?? options.rootDir,
+      pagesBasePath: cli.pagesBasePath,
+      repository: cli.repository,
+      pagesApiJson: cli.pagesApiJson,
+      env,
+    });
+    const prefixes = resolvePagesPrefixes(portalBase);
+    const output = formatPagesBasePathsOutput(prefixes, cli.format);
+    writeStdout(output);
+    return prefixes;
+  }
+
+  return buildPagesBundle({
+    ...options,
+    rootDir: cli.rootDir ?? options.rootDir,
+    ...(cli.pagesBasePath !== undefined ? { pagesBasePath: cli.pagesBasePath } : {}),
+    env,
+  });
+}
+
 const isMain =
   typeof process.argv[1] === 'string' &&
   path.resolve(process.argv[1]) === path.resolve(currentScriptFile);
 
 if (isMain) {
   try {
-    buildPagesBundle();
+    runPagesCli();
   } catch (error) {
     console.error('Unified GitHub Pages bundle build failed:', error);
     process.exit(1);
