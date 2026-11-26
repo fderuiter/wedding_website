@@ -17,6 +17,7 @@ export const STATIC_DEMO_MAX_STORAGE_BYTES = 1_900_000;
 
 type DemoContributorStatus = 'RESERVED' | 'CONFIRMED' | 'CANCELLED' | 'REFUNDED';
 export type DemoRsvpStatus = 'attending' | 'declined' | 'pending';
+export type DemoHouseholdRole = 'PRIMARY' | 'PARTNER' | 'CHILD' | 'PLUS_ONE';
 
 export interface DemoAppConfigRecord {
   id: string;
@@ -315,6 +316,34 @@ export interface DemoSubEventRsvpRecord {
   updatedAt: string;
 }
 
+export interface DemoHouseholdMemberRecord {
+  id: string;
+  invitationCodeId: string;
+  firstName: string | null;
+  lastName: string | null;
+  fullName: string;
+  role: DemoHouseholdRole;
+  email: string | null;
+  phone: string | null;
+  dietaryNotes: string | null;
+  tags: string[];
+  displayOrder: number;
+  seatNumber: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DemoSubEventMemberRsvpRecord {
+  id: string;
+  subEventRsvpId: string;
+  householdMemberId: string;
+  status: DemoRsvpStatus;
+  mealOptionId: string | null;
+  dietaryNotes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface DemoBroadcastMessageRecord {
   id: string;
   channel: 'EMAIL' | 'SMS';
@@ -374,6 +403,7 @@ export interface StaticDemoSnapshot {
   media: DemoMediaRecord[];
   seatingTable: DemoSeatingTableRecord[];
   invitationCode: DemoInvitationCodeRecord[];
+  householdMember: DemoHouseholdMemberRecord[];
   weddingPartyMember: DemoWeddingPartyMemberRecord[];
   attraction: DemoAttractionRecord[];
   registryItem: DemoRegistryItemRecord[];
@@ -381,6 +411,7 @@ export interface StaticDemoSnapshot {
   subEvent: DemoSubEventRecord[];
   subEventAccess: DemoSubEventAccessRecord[];
   subEventRsvp: DemoSubEventRsvpRecord[];
+  subEventMemberRsvp: DemoSubEventMemberRsvpRecord[];
   broadcastMessage: DemoBroadcastMessageRecord[];
   broadcastRecipient: DemoBroadcastRecipientRecord[];
   snapshotVersion: DemoSnapshotVersionRecord[];

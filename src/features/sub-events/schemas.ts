@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { deriveAdminInputSchema } from '@/utils/validationPrimitives';
+import type { HouseholdMemberDTO } from '@/features/registry';
 import {
   MAX_RSVP_PLUS_ONE_COUNT,
   MealOptionSchema,
@@ -84,24 +85,52 @@ export const SubEventUpdateInputSchema = deriveAdminInputSchema(SubEventSchema, 
     .optional(),
 });
 
-export const SubEventRsvpSubmissionItemSchema = z.object({
-  subEventId: z.string().min(1, 'Sub-event ID is required.'),
+export const SubEventMemberRsvpItemSchema = z.object({
+  householdMemberId: z.string().trim().min(1, 'Household member ID is required.'),
   status: z.enum(['attending', 'declined'], {
-    message: 'Please select Attending or Declined before saving.',
+    message: 'Please select Attending or Declined for each household member.',
   }),
-  plusOneCount: z
-    .number()
-    .int()
-    .min(0)
-    .max(MAX_RSVP_PLUS_ONE_COUNT, `Plus-one count cannot exceed ${MAX_RSVP_PLUS_ONE_COUNT}.`)
-    .optional()
-    .default(0),
-  dietaryNotes: z.string().optional().default(''),
-  clearDietaryNotes: z.boolean().optional(),
-  mealSelections: z.array(z.string().max(100)).max(MAX_RSVP_PLUS_ONE_COUNT + 1).optional(),
-  customAnswers: z.record(z.string().max(100), z.string().max(1000)).optional(),
-  plusOneNames: z.array(z.string().max(120)).max(MAX_RSVP_PLUS_ONE_COUNT).optional(),
+  mealOptionId: z.string().trim().max(100).nullable().optional(),
+  dietaryNotes: z.string().trim().max(500).nullable().optional(),
 });
+
+export type SubEventMemberRsvpItem = z.infer<typeof SubEventMemberRsvpItemSchema>;
+
+export const SubEventRsvpSubmissionItemSchema = z
+  .object({
+    subEventId: z.string().min(1, 'Sub-event ID is required.'),
+    status: z
+      .enum(['attending', 'declined'], {
+        message: 'Please select Attending or Declined before saving.',
+      })
+      .optional(),
+    plusOneCount: z
+      .number()
+      .int()
+      .min(0)
+      .max(MAX_RSVP_PLUS_ONE_COUNT, `Plus-one count cannot exceed ${MAX_RSVP_PLUS_ONE_COUNT}.`)
+      .optional()
+      .default(0),
+    dietaryNotes: z.string().optional().default(''),
+    clearDietaryNotes: z.boolean().optional(),
+    mealSelections: z.array(z.string().max(100)).max(MAX_RSVP_PLUS_ONE_COUNT + 1).optional(),
+    customAnswers: z.record(z.string().max(100), z.string().max(1000)).optional(),
+    plusOneNames: z.array(z.string().max(120)).max(MAX_RSVP_PLUS_ONE_COUNT).optional(),
+    memberRsvps: z
+      .array(SubEventMemberRsvpItemSchema)
+      .min(1, 'At least one household member RSVP is required.')
+      .max(MAX_RSVP_PLUS_ONE_COUNT + 1)
+      .optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (!val.status && (!val.memberRsvps || val.memberRsvps.length === 0)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['status'],
+        message: 'Please select Attending or Declined before saving.',
+      });
+    }
+  });
 
 export const SubEventRsvpBatchSubmissionSchema = z.object({
   rsvps: z.array(SubEventRsvpSubmissionItemSchema).min(1, 'At least one RSVP submission is required.'),
@@ -157,6 +186,17 @@ export const AdminInvitationRsvpsQuerySchema = z.object({
   invitationCodeId: z.string().trim().min(1, 'invitationCodeId is required.'),
 });
 
+export const AdminSubEventMemberRsvpOverrideSchema = z.object({
+  householdMemberId: z.string().trim().min(1, 'householdMemberId is required.'),
+  status: z.enum(['attending', 'declined', 'pending']),
+  mealOptionId: z.string().trim().max(100).nullable().optional(),
+  dietaryNotes: z.string().trim().max(500).nullable().optional(),
+});
+
+export type AdminSubEventMemberRsvpOverrideDTO = z.infer<
+  typeof AdminSubEventMemberRsvpOverrideSchema
+>;
+
 const AdminSubEventRsvpOverrideItemSchema = z.object({
   subEventId: z.string().trim().min(1, 'subEventId is required.'),
   status: z.enum(['attending', 'declined', 'pending', 'clear']),
@@ -170,6 +210,10 @@ const AdminSubEventRsvpOverrideItemSchema = z.object({
   mealSelections: z.array(z.string().trim().max(100)).max(MAX_RSVP_PLUS_ONE_COUNT + 1).optional(),
   dietaryNotes: z.string().trim().max(500).nullable().optional(),
   customAnswers: z.record(z.string().max(100), z.string().max(1000)).optional(),
+  memberRsvps: z
+    .array(AdminSubEventMemberRsvpOverrideSchema)
+    .max(MAX_RSVP_PLUS_ONE_COUNT + 1)
+    .optional(),
 });
 
 export type AdminSubEventRsvpOverrideItemDTO = z.infer<typeof AdminSubEventRsvpOverrideItemSchema>;
@@ -293,6 +337,7 @@ export interface AdminInvitationRsvpsDetail {
     dietaryNotes: string | null;
     extraFields: Record<string, unknown> | null;
   };
+  members?: HouseholdMemberDTO[];
   subEvents: Array<{
     id: string;
     title: string;
@@ -310,6 +355,13 @@ export interface AdminInvitationRsvpsDetail {
     mealSelections: string[];
     dietaryNotes: string | null;
     customAnswers: Record<string, string>;
+    memberRsvps?: Array<{
+      id?: string;
+      householdMemberId: string;
+      status: 'attending' | 'declined' | 'pending';
+      mealOptionId: string | null;
+      dietaryNotes: string | null;
+    }>;
   }>;
 }
 

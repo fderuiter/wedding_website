@@ -331,8 +331,8 @@ describe('verify-env-docs section-aware validation', () => {
         fs
           .readFileSync(path.join(tempDir, 'docs/runtime-contract.md'), 'utf8')
           .replace(
-            '| `CRON_SECRET` | *None* |',
-            '| `SYNTHETIC_FEATURE_FLAG` | *None* | Synthetic test variable. |\n| `CRON_SECRET` | *None* |'
+            /^(\|\s*`CRON_SECRET`\s*\|)/m,
+            '| `SYNTHETIC_FEATURE_FLAG` | _None_ | Synthetic test variable. |\n$1'
           )
       );
 

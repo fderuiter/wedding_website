@@ -1,5 +1,10 @@
 import type { ArchetypeId } from '@/lib/sampleData/archetypes';
-import { buildArchetypeSeedSnapshot, isValidArchetypeId } from './seeds';
+import {
+  buildArchetypeSeedSnapshot,
+  isValidArchetypeId,
+  synthesizeDemoHouseholdMembersFromInvitations,
+  synthesizeDemoSubEventMemberRsvps,
+} from './seeds';
 import { createDemoSvgDataUrl } from './svgAssets';
 import {
   STATIC_DEMO_MAX_STORAGE_BYTES,
@@ -87,6 +92,23 @@ function compactSnapshotForStorage(
   }
 
   return next;
+}
+
+function hydrateSnapshotRelations(snapshot: StaticDemoSnapshot): StaticDemoSnapshot {
+  if (!Array.isArray(snapshot.householdMember)) {
+    snapshot.householdMember = synthesizeDemoHouseholdMembersFromInvitations(
+      snapshot.invitationCode ?? [],
+      snapshot.updatedAt,
+    );
+  }
+  if (!Array.isArray(snapshot.subEventMemberRsvp)) {
+    snapshot.subEventMemberRsvp = synthesizeDemoSubEventMemberRsvps(
+      snapshot.subEventRsvp ?? [],
+      snapshot.householdMember,
+      snapshot.updatedAt,
+    );
+  }
+  return snapshot;
 }
 
 function isValidStoredSnapshot(parsed: unknown): parsed is StaticDemoSnapshot {
@@ -210,6 +232,7 @@ export function createDemoStore(options: CreateDemoStoreOptions = {}): StaticDem
         if (raw) {
           const parsed: unknown = JSON.parse(raw);
           if (isValidStoredSnapshot(parsed)) {
+            hydrateSnapshotRelations(parsed);
             lastSerializedLength = measureUtf8Bytes(raw);
             syncAdminFlag(parsed.isAdminAuthenticated);
             return parsed;
@@ -245,7 +268,7 @@ export function createDemoStore(options: CreateDemoStoreOptions = {}): StaticDem
       try {
         const incoming: unknown = JSON.parse(event.newValue);
         if (isValidStoredSnapshot(incoming)) {
-          state = incoming;
+          state = hydrateSnapshotRelations(incoming);
           lastSerializedLength = measureUtf8Bytes(event.newValue);
           notify();
         }

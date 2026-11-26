@@ -2,6 +2,7 @@ import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
 import {
   InvitationCodeDTO,
+  HouseholdMemberDTO,
   DryRunValidatedRow,
   DryRunValidationSummary,
   DryRunValidationResponse,
@@ -11,7 +12,7 @@ import { executeInTransaction } from '@/lib/transaction';
 import { createAuditSnapshot } from '@/lib/audit';
 import { qualifyPostgresTable } from '@/lib/postgres-url.js';
 import { Prisma } from '@prisma/client';
-import { generateRandomCode } from './utils/invitation';
+import { deriveHouseholdMembersFromInvitation, generateRandomCode } from './utils/invitation';
 import {
   normalizeMealOptions,
   normalizeCustomQuestions,
@@ -22,17 +23,147 @@ import {
 import {
   BatchInvitationCodeRecord,
   InvitationCollisionStrategy,
+  NormalizedHouseholdMemberInput,
   NormalizedInvitationCodeRecord,
   computeMergedInvitationPreview,
   mergeDietaryNotes,
   normalizeBatchInvitationRecord,
+  normalizeHouseholdMemberInputs,
   normalizeInvitationCode,
   normalizePartialInvitationFields,
   normalizePartyTags,
   resolveBatchGuestMatches,
+  splitMemberFullName,
   validateInvitationGuestFields,
   validateInvitationGuestFieldsWithColumns,
 } from '@/utils/invitationValidation';
+
+function buildSynthesizedMemberInputsFromRecord(record: {
+  guestName?: string | null;
+  email?: string | null;
+  dietaryNotes?: string | null;
+  partyTags?: string[] | null;
+  plusOneAllocations?: number | null;
+  plusOneFirstName?: string | null;
+  plusOneLastName?: string | null;
+  seatNumber?: number | null;
+  plusOneSeatNumbers?: number[] | null;
+  extraFields?: unknown;
+}): NormalizedHouseholdMemberInput[] {
+  const derived = deriveHouseholdMembersFromInvitation(record);
+  return derived.map((m, idx) => ({
+    fullName: m.fullName,
+    firstName: m.firstName ?? null,
+    lastName: m.lastName ?? null,
+    role: m.role,
+    email: m.email ?? null,
+    phone: m.phone ?? null,
+    dietaryNotes: m.dietaryNotes ?? null,
+    tags: m.tags,
+    displayOrder: idx,
+    seatNumber: m.seatNumber ?? null,
+  }));
+}
+
+interface HouseholdMemberTxClient {
+  householdMember?: {
+    findMany?: (args: {
+      where: { invitationCodeId: string };
+      orderBy: { displayOrder: 'asc' };
+    }) => Promise<HouseholdMemberDTO[]>;
+    update?: (args: {
+      where: { id: string };
+      data: Record<string, unknown>;
+    }) => Promise<HouseholdMemberDTO>;
+    create?: (args: {
+      data: Record<string, unknown>;
+    }) => Promise<{ id?: string }>;
+    deleteMany?: (args: {
+      where: { id: { in: string[] } };
+    }) => Promise<unknown>;
+  };
+}
+
+async function reconcileHouseholdMembersInTx(
+  client: unknown,
+  invitationCodeId: string,
+  desiredMembers: NormalizedHouseholdMemberInput[]
+): Promise<HouseholdMemberDTO[]> {
+  const typedClient = client as HouseholdMemberTxClient | null | undefined;
+  if (typeof typedClient?.householdMember?.findMany !== 'function') {
+    return [];
+  }
+
+  const existing: HouseholdMemberDTO[] = await typedClient.householdMember.findMany({
+    where: { invitationCodeId },
+    orderBy: { displayOrder: 'asc' },
+  });
+  const existingById = new Map(existing.map((m) => [m.id, m]));
+  const usedIds = new Set<string>();
+
+  for (let idx = 0; idx < desiredMembers.length; idx++) {
+    const m = desiredMembers[idx];
+    let targetId: string | undefined;
+    if (m.id && existingById.has(m.id) && !usedIds.has(m.id)) {
+      targetId = m.id;
+    } else if (idx === 0) {
+      const existingPrimary = existing.find((em) => em.role === 'PRIMARY' && !usedIds.has(em.id));
+      if (existingPrimary) {
+        targetId = existingPrimary.id;
+      }
+    }
+
+    if (targetId && typeof typedClient.householdMember.update === 'function') {
+      usedIds.add(targetId);
+      await typedClient.householdMember.update({
+        where: { id: targetId },
+        data: {
+          fullName: m.fullName,
+          firstName: m.firstName,
+          lastName: m.lastName,
+          role: m.role,
+          email: m.email,
+          phone: m.phone,
+          dietaryNotes: m.dietaryNotes,
+          tags: m.tags,
+          displayOrder: idx,
+          ...(m.seatNumber !== undefined ? { seatNumber: m.seatNumber } : {}),
+        },
+      });
+    } else if (typeof typedClient.householdMember.create === 'function') {
+      const created = await typedClient.householdMember.create({
+        data: {
+          invitationCodeId,
+          fullName: m.fullName,
+          firstName: m.firstName,
+          lastName: m.lastName,
+          role: m.role,
+          email: m.email,
+          phone: m.phone,
+          dietaryNotes: m.dietaryNotes,
+          tags: m.tags,
+          displayOrder: idx,
+          seatNumber: m.seatNumber ?? null,
+        },
+      });
+      if (created?.id) {
+        usedIds.add(created.id);
+      }
+    }
+  }
+
+  const idsToDelete = existing.filter((m) => !usedIds.has(m.id)).map((m) => m.id);
+  if (idsToDelete.length > 0 && typeof typedClient.householdMember.deleteMany === 'function') {
+    await typedClient.householdMember.deleteMany({
+      where: { id: { in: idsToDelete } },
+    });
+  }
+
+  return typedClient.householdMember.findMany({
+    where: { invitationCodeId },
+    orderBy: { displayOrder: 'asc' },
+  });
+}
 
 function parseExtraObject(raw: unknown): Record<string, unknown> {
   if (!raw) return {};
@@ -128,6 +259,115 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
     super(new BaseRepository<InvitationCodeDTO>('invitationCode'), 'InvitationCode');
   }
 
+  async findMany(
+    args?: Record<string, unknown> & {
+      select?: Record<string, unknown>;
+      include?: Record<string, unknown>;
+    }
+  ): Promise<InvitationCodeDTO[]> {
+    if (
+      typeof this.repo.client?.householdMember?.findMany === 'function' &&
+      !args?.select &&
+      args?.include?.members === undefined
+    ) {
+      return super.findMany({
+        ...args,
+        include: {
+          ...(args?.include || {}),
+          members: { orderBy: { displayOrder: 'asc' } },
+        },
+      });
+    }
+    return super.findMany(args);
+  }
+
+  async findById(id: string): Promise<InvitationCodeDTO | null> {
+    if (
+      typeof this.repo.client?.householdMember?.findMany === 'function' &&
+      typeof this.repo.client?.invitationCode?.findUnique === 'function'
+    ) {
+      return this.repo.client.invitationCode.findUnique({
+        where: { id },
+        include: { members: { orderBy: { displayOrder: 'asc' } } },
+      });
+    }
+    return super.findById(id);
+  }
+
+  async create(
+    data: Partial<InvitationCodeDTO> & Record<string, unknown>,
+    author: string = 'Admin'
+  ): Promise<InvitationCodeDTO> {
+    return this.repo.transaction(async (txRepo) => {
+      await this.validate(data, txRepo.client);
+      const { members: rawMembers, ...dataWithoutMembers } = data;
+      const normalizedMembers = normalizeHouseholdMemberInputs(rawMembers);
+
+      if (normalizedMembers && normalizedMembers.length > 0) {
+        const primary =
+          normalizedMembers.find((m) => m.role === 'PRIMARY') ?? normalizedMembers[0];
+        primary.role = 'PRIMARY';
+        if (!dataWithoutMembers.guestName) {
+          dataWithoutMembers.guestName = primary.fullName;
+        }
+        if (dataWithoutMembers.email === undefined && primary.email) {
+          dataWithoutMembers.email = primary.email;
+        }
+        if (dataWithoutMembers.dietaryNotes === undefined) {
+          dataWithoutMembers.dietaryNotes = mergeDietaryNotes(
+            normalizedMembers.map((m) => m.dietaryNotes)
+          );
+        }
+        const companions = normalizedMembers.filter((m) => m !== primary);
+        if (dataWithoutMembers.plusOneAllocations === undefined) {
+          dataWithoutMembers.plusOneAllocations = companions.length;
+        }
+        if (companions[0]) {
+          if (dataWithoutMembers.plusOneFirstName === undefined) {
+            dataWithoutMembers.plusOneFirstName = companions[0].firstName;
+          }
+          if (dataWithoutMembers.plusOneLastName === undefined) {
+            dataWithoutMembers.plusOneLastName = companions[0].lastName;
+          }
+        }
+      }
+
+      const processedData = await this.preSave(dataWithoutMembers, txRepo.client, author);
+      const record = await txRepo.create(processedData);
+
+      if (typeof txRepo.client?.householdMember?.createMany === 'function' && record?.id) {
+        const desired =
+          normalizedMembers && normalizedMembers.length > 0
+            ? normalizedMembers
+            : buildSynthesizedMemberInputsFromRecord(record);
+        await txRepo.client.householdMember.createMany({
+          data: desired.map((m, idx) => ({
+            invitationCodeId: record.id,
+            fullName: m.fullName,
+            firstName: m.firstName,
+            lastName: m.lastName,
+            role: idx === 0 && !desired.some((d) => d.role === 'PRIMARY') ? 'PRIMARY' : m.role,
+            email: m.email,
+            phone: m.phone,
+            dietaryNotes: m.dietaryNotes,
+            tags: m.tags,
+            displayOrder: idx,
+            seatNumber: m.seatNumber ?? null,
+          })),
+        });
+        if (typeof txRepo.client.householdMember.findMany === 'function') {
+          record.members = await txRepo.client.householdMember.findMany({
+            where: { invitationCodeId: record.id },
+            orderBy: { displayOrder: 'asc' },
+          });
+        }
+      }
+
+      await this.createSnapshot(record.id, record, author, txRepo.client);
+      return record;
+    });
+  }
+
   protected async validate(data: unknown, _client?: Prisma.TransactionClient): Promise<void> {
     const errors = validateInvitationGuestFields(data, { mode: 'service' });
     if (errors.length > 0) {
@@ -186,7 +426,44 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         throw new Error(errors[0]);
       }
 
-      const processedData = normalizePartialInvitationFields(data);
+      const { members: rawMembers, ...dataWithoutMembers } = data;
+      const normalizedMembers = normalizeHouseholdMemberInputs(rawMembers);
+
+      if (normalizedMembers && normalizedMembers.length > 0) {
+        const primaryIndex = normalizedMembers.findIndex((m) => m.role === 'PRIMARY');
+        if (primaryIndex === -1) {
+          normalizedMembers[0].role = 'PRIMARY';
+        } else if (primaryIndex > 0) {
+          const [primaryItem] = normalizedMembers.splice(primaryIndex, 1);
+          normalizedMembers.unshift(primaryItem);
+        }
+        const primary = normalizedMembers[0];
+        if (dataWithoutMembers.guestName === undefined) {
+          dataWithoutMembers.guestName = primary.fullName;
+        }
+        if (dataWithoutMembers.email === undefined) {
+          dataWithoutMembers.email = primary.email;
+        }
+        if (dataWithoutMembers.dietaryNotes === undefined) {
+          dataWithoutMembers.dietaryNotes = mergeDietaryNotes(
+            normalizedMembers.map((m) => m.dietaryNotes)
+          );
+        }
+        const companions = normalizedMembers.slice(1);
+        if (dataWithoutMembers.plusOneAllocations === undefined) {
+          dataWithoutMembers.plusOneAllocations = companions.length;
+        }
+        dataWithoutMembers.plusOneFirstName =
+          dataWithoutMembers.plusOneFirstName !== undefined
+            ? dataWithoutMembers.plusOneFirstName
+            : (companions[0]?.firstName ?? null);
+        dataWithoutMembers.plusOneLastName =
+          dataWithoutMembers.plusOneLastName !== undefined
+            ? dataWithoutMembers.plusOneLastName
+            : (companions[0]?.lastName ?? null);
+      }
+
+      const processedData = normalizePartialInvitationFields(dataWithoutMembers);
 
       if (processedData.code !== undefined) {
         const normalizedCode = normalizeInvitationCode(processedData.code);
@@ -503,6 +780,76 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
       }
 
       const record = await txRepo.update(id, processedData);
+
+      if (normalizedMembers && normalizedMembers.length > 0) {
+        const syncedMembers = await reconcileHouseholdMembersInTx(
+          txRepo.client,
+          record.id,
+          normalizedMembers
+        );
+        if (syncedMembers.length > 0) {
+          record.members = syncedMembers;
+        }
+      } else if (
+        typeof txRepo.client?.householdMember?.findMany === 'function' &&
+        ('guestName' in processedData ||
+          'email' in processedData ||
+          'dietaryNotes' in processedData ||
+          'plusOneFirstName' in processedData ||
+          'plusOneLastName' in processedData)
+      ) {
+        const existingMembers: HouseholdMemberDTO[] = await txRepo.client.householdMember.findMany({
+          where: { invitationCodeId: record.id },
+          orderBy: { displayOrder: 'asc' },
+        });
+        if (existingMembers.length > 0) {
+          const primaryMember =
+            existingMembers.find((m) => m.role === 'PRIMARY') ?? existingMembers[0];
+          const primaryPatch: Record<string, unknown> = {};
+          if ('guestName' in processedData && typeof record.guestName === 'string') {
+            const split = splitMemberFullName(record.guestName);
+            primaryPatch.fullName = record.guestName;
+            primaryPatch.firstName = split.firstName;
+            primaryPatch.lastName = split.lastName;
+          }
+          if ('email' in processedData) {
+            primaryPatch.email = record.email ?? null;
+          }
+          if ('dietaryNotes' in processedData && existingMembers.length === 1) {
+            primaryPatch.dietaryNotes = record.dietaryNotes ?? null;
+          }
+          if (Object.keys(primaryPatch).length > 0) {
+            await txRepo.client.householdMember.update({
+              where: { id: primaryMember.id },
+              data: primaryPatch,
+            });
+          }
+
+          if ('plusOneFirstName' in processedData || 'plusOneLastName' in processedData) {
+            const firstCompanion = existingMembers.find((m) => m.id !== primaryMember.id);
+            const nextCompFullName = [record.plusOneFirstName, record.plusOneLastName]
+              .filter(Boolean)
+              .join(' ')
+              .trim();
+            if (firstCompanion && nextCompFullName) {
+              await txRepo.client.householdMember.update({
+                where: { id: firstCompanion.id },
+                data: {
+                  fullName: nextCompFullName,
+                  firstName: record.plusOneFirstName ?? null,
+                  lastName: record.plusOneLastName ?? null,
+                },
+              });
+            }
+          }
+
+          record.members = await txRepo.client.householdMember.findMany({
+            where: { invitationCodeId: record.id },
+            orderBy: { displayOrder: 'asc' },
+          });
+        }
+      }
+
       await this.createSnapshot(record.id, record, author, txRepo.client);
       return record;
     });
@@ -657,6 +1004,8 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
       const allKnownCodes = new Set<string>(dbCodeMap.keys());
       const toCreate: Prisma.InvitationCodeCreateManyInput[] = [];
       const toUpdate: Array<{ id: string; data: Record<string, unknown> }> = [];
+      const createdMembersByCode = new Map<string, NormalizedHouseholdMemberInput[]>();
+      const updatedMembersById = new Map<string, NormalizedHouseholdMemberInput[]>();
 
       for (let i = 0; i < records.length; i++) {
         const row = records[i];
@@ -704,6 +1053,9 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
                 id: existingRecord.id,
                 data: this.buildBatchUpdateData(row, normalized),
               });
+              if (normalized.members && normalized.members.length > 0) {
+                updatedMembersById.set(existingRecord.id, normalized.members);
+              }
               updated++;
             }
             continue;
@@ -722,10 +1074,13 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
               id: existingRecord.id,
               data: this.buildBatchUpdateData(row, normalized),
             });
+            if (normalized.members && normalized.members.length > 0) {
+              updatedMembersById.set(existingRecord.id, normalized.members);
+            }
             updated++;
           }
         } else {
-          toCreate.push({
+          const createItem: Prisma.InvitationCodeCreateManyInput = {
             guestName,
             code,
             email: normalized.email,
@@ -744,7 +1099,23 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
             partyTags: normalized.partyTags,
             extraFields: (normalized.extraFields as Prisma.InputJsonValue | null) ?? undefined,
             used: false,
-          });
+          };
+          toCreate.push(createItem);
+          createdMembersByCode.set(
+            code,
+            normalized.members && normalized.members.length > 0
+              ? normalized.members
+              : buildSynthesizedMemberInputsFromRecord({
+                guestName: normalized.guestName,
+                email: normalized.email,
+                dietaryNotes: normalized.dietaryNotes,
+                partyTags: normalized.partyTags,
+                plusOneAllocations: normalized.plusOneAllocations ?? 0,
+                plusOneFirstName: normalized.plusOneFirstName,
+                plusOneLastName: normalized.plusOneLastName,
+                extraFields: normalized.extraFields,
+              })
+          );
           imported++;
         }
       }
@@ -753,6 +1124,45 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         await tx.invitationCode.createMany({
           data: toCreate,
         });
+
+        const txMemberDelegate = (
+          tx as unknown as {
+            householdMember?: {
+              createMany?: (args: { data: Array<Record<string, unknown>> }) => Promise<unknown>;
+            };
+          }
+        )?.householdMember;
+
+        if (typeof txMemberDelegate?.createMany === 'function') {
+          const insertedCodes = Array.from(createdMembersByCode.keys());
+          const insertedRecords = await tx.invitationCode.findMany({
+            where: { code: { in: insertedCodes } },
+            select: { id: true, code: true },
+          });
+          const memberCreateRows: Array<Record<string, unknown>> = [];
+          for (const inserted of insertedRecords) {
+            const desired = createdMembersByCode.get(inserted.code);
+            if (!desired || desired.length === 0) continue;
+            desired.forEach((m, idx) => {
+              memberCreateRows.push({
+                invitationCodeId: inserted.id,
+                fullName: m.fullName,
+                firstName: m.firstName,
+                lastName: m.lastName,
+                role: idx === 0 && !desired.some((d) => d.role === 'PRIMARY') ? 'PRIMARY' : m.role,
+                email: m.email,
+                phone: m.phone,
+                dietaryNotes: m.dietaryNotes,
+                tags: m.tags,
+                displayOrder: idx,
+                seatNumber: m.seatNumber ?? null,
+              });
+            });
+          }
+          if (memberCreateRows.length > 0) {
+            await txMemberDelegate.createMany({ data: memberCreateRows });
+          }
+        }
       }
 
       if (toUpdate.length > 0) {
@@ -906,6 +1316,16 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         `;
 
         await tx.$executeRaw(bulkUpdateQuery);
+
+        if (
+          updatedMembersById.size > 0 &&
+          typeof (tx as unknown as { householdMember?: { findMany?: unknown } })?.householdMember
+            ?.findMany === 'function'
+        ) {
+          for (const [updatedId, desired] of updatedMembersById.entries()) {
+            await reconcileHouseholdMembersInTx(tx, updatedId, desired);
+          }
+        }
       }
 
       await createAuditSnapshot(
@@ -1540,12 +1960,155 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         }
       }
 
+      // 4b. Reconcile HouseholdMember records across primary and secondary invitations before deleting secondaries
+      let consolidatedCompanionCount = 0;
+      interface MergeMemberRecord {
+        id: string;
+        invitationCodeId: string;
+        fullName?: string | null;
+        role?: string | null;
+        email?: string | null;
+        phone?: string | null;
+        dietaryNotes?: string | null;
+        tags?: string[] | null;
+        displayOrder?: number | null;
+      }
+      interface MergeSubEventMemberRsvpRecord {
+        id: string;
+        subEventRsvpId: string;
+        householdMemberId: string;
+      }
+      const txAny = tx as unknown as {
+        householdMember?: {
+          findMany?: (args: Record<string, unknown>) => Promise<MergeMemberRecord[]>;
+          update?: (args: Record<string, unknown>) => Promise<MergeMemberRecord>;
+          deleteMany?: (args: Record<string, unknown>) => Promise<unknown>;
+        };
+        subEventMemberRsvp?: {
+          findMany?: (args: Record<string, unknown>) => Promise<MergeSubEventMemberRsvpRecord[]>;
+          update?: (args: Record<string, unknown>) => Promise<MergeSubEventMemberRsvpRecord>;
+        };
+      };
+
+      if (typeof txAny.householdMember?.findMany === 'function') {
+        const allMembers = await txAny.householdMember.findMany({
+          where: { invitationCodeId: { in: allIds } },
+          orderBy: { displayOrder: 'asc' },
+        });
+        const primaryMembers = allMembers.filter((m) => m.invitationCodeId === cleanPrimaryId);
+        const secondaryMembers = allMembers
+          .filter((m) => m.invitationCodeId !== cleanPrimaryId)
+          .sort(
+            (a, b) =>
+              (secOrder.get(a.invitationCodeId) ?? 0) - (secOrder.get(b.invitationCodeId) ?? 0) ||
+              (a.displayOrder ?? 0) - (b.displayOrder ?? 0)
+          );
+
+        const keptByNormalizedName = new Map<string, MergeMemberRecord>();
+        for (const pm of primaryMembers) {
+          const normKey = String(pm.fullName || '').trim().toLowerCase();
+          if (normKey) {
+            keptByNormalizedName.set(normKey, pm);
+          }
+        }
+
+        let nextDisplayOrder = primaryMembers.length;
+        for (const sm of secondaryMembers) {
+          const normKey = String(sm.fullName || '').trim().toLowerCase();
+          const matchedPrimaryMember = normKey ? keptByNormalizedName.get(normKey) : undefined;
+          const cleanedSecTags = Array.isArray(sm.tags)
+            ? sm.tags.filter(
+              (t: unknown): t is string =>
+                typeof t === 'string' && t.trim().toLowerCase() !== 'address-collection'
+            )
+            : [];
+
+          if (matchedPrimaryMember && typeof txAny.householdMember.update === 'function') {
+            const mergedMemberTags = Array.from(
+              new Set([
+                ...(Array.isArray(matchedPrimaryMember.tags) ? matchedPrimaryMember.tags : []),
+                ...cleanedSecTags,
+              ])
+            ).filter((t) => t.trim().toLowerCase() !== 'address-collection');
+            const mergedMemberDietary = mergeDietaryNotes([
+              matchedPrimaryMember.dietaryNotes,
+              sm.dietaryNotes,
+            ]);
+            const nextEmail = matchedPrimaryMember.email || sm.email || null;
+            const nextPhone = matchedPrimaryMember.phone || sm.phone || null;
+
+            await txAny.householdMember.update({
+              where: { id: matchedPrimaryMember.id },
+              data: {
+                email: nextEmail,
+                phone: nextPhone,
+                dietaryNotes: mergedMemberDietary,
+                tags: mergedMemberTags,
+              },
+            });
+            matchedPrimaryMember.email = nextEmail;
+            matchedPrimaryMember.phone = nextPhone;
+            matchedPrimaryMember.dietaryNotes = mergedMemberDietary;
+            matchedPrimaryMember.tags = mergedMemberTags;
+
+            if (
+              typeof txAny.subEventMemberRsvp?.findMany === 'function' &&
+              typeof txAny.subEventMemberRsvp?.update === 'function'
+            ) {
+              const secMemberRsvps = await txAny.subEventMemberRsvp.findMany({
+                where: { householdMemberId: sm.id },
+              });
+              for (const smr of secMemberRsvps) {
+                const existingTarget = await txAny.subEventMemberRsvp.findMany({
+                  where: {
+                    subEventRsvpId: smr.subEventRsvpId,
+                    householdMemberId: matchedPrimaryMember.id,
+                  },
+                });
+                if (existingTarget.length === 0) {
+                  await txAny.subEventMemberRsvp.update({
+                    where: { id: smr.id },
+                    data: { householdMemberId: matchedPrimaryMember.id },
+                  });
+                }
+              }
+            }
+          } else if (typeof txAny.householdMember.update === 'function') {
+            const transferredRole =
+              sm.role === 'PRIMARY' && primaryMembers.length > 0 ? 'PARTNER' : sm.role;
+            await txAny.householdMember.update({
+              where: { id: sm.id },
+              data: {
+                invitationCodeId: cleanPrimaryId,
+                role: transferredRole,
+                tags: cleanedSecTags,
+                displayOrder: nextDisplayOrder++,
+              },
+            });
+            if (normKey) {
+              keptByNormalizedName.set(normKey, {
+                ...sm,
+                invitationCodeId: cleanPrimaryId,
+                role: transferredRole,
+                tags: cleanedSecTags,
+              });
+            }
+          }
+        }
+
+        consolidatedCompanionCount = Math.max(0, nextDisplayOrder - 1);
+      }
+
       // 5. Delete secondary InvitationCode records before consolidating seating onto primary
       await tx.invitationCode.deleteMany({
         where: { id: { in: trimmedSecondaries } },
       });
 
       // 6. Consolidate profile & seating fields onto primary InvitationCode
+      const resolvedMergedPlusOnes = Math.max(
+        merged.plusOneAllocations ?? 0,
+        consolidatedCompanionCount
+      );
       const updatedPrimary = await tx.invitationCode.update({
         where: { id: cleanPrimaryId },
         data: {
@@ -1558,7 +2121,7 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
           zipCode: merged.zipCode,
           country: merged.country,
           dietaryNotes: merged.dietaryNotes,
-          plusOneAllocations: merged.plusOneAllocations,
+          plusOneAllocations: resolvedMergedPlusOnes,
           plusOneFirstName: merged.plusOneFirstName,
           plusOneLastName: merged.plusOneLastName,
           householdName: merged.householdName,

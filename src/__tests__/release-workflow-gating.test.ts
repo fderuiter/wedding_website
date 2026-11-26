@@ -116,7 +116,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
   const migrateWorkflow = readWorkflow('db-migrate.yml');
   const rollbackWorkflow = readWorkflow('rollback.yml');
 
-  it('triggers ci.yml once on main pushes and pull requests without duplicate v* tag runs while restricting deploy-docs to serialized main tip pushes', () => {
+  it('triggers ci.yml once on main pushes, pull requests, and merge_group runs without duplicate v* tag runs while restricting deploy-docs to serialized main tip pushes', () => {
     expect(ciWorkflow).toContain('name: CI');
     const onSection = extractTopLevelSection(ciWorkflow, 'on');
     expect(onSection).toContain('push:');
@@ -124,12 +124,15 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(onSection).not.toContain('tags:');
     expect(onSection).not.toContain("'v*'");
     expect(onSection).toContain('pull_request:');
+    expect(onSection).toContain('merge_group:');
     expect(onSection).not.toContain('release:');
     expect(onSection).not.toContain('published');
 
     const ciConcurrency = extractTopLevelSection(ciWorkflow, 'concurrency');
     expect(ciConcurrency).toContain('group: ${{ github.workflow }}-${{ github.ref }}');
-    expect(ciConcurrency).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}");
+    expect(ciConcurrency).toContain(
+      "cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}"
+    );
     expect(ciConcurrency).toContain('queue: max');
 
     const storybookWorkflow = readWorkflow('storybook.yml');
@@ -173,6 +176,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(docDriftCommentBlock).not.toContain('actions/checkout');
     expect(docDriftCommentBlock).not.toContain('npm ci');
     expect(ciJobs['deploy-docs']?.needs).toEqual([
+      'verify',
       'ci-complete',
       'static-export-build',
       'storybook-build',
@@ -284,7 +288,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       'pages-verify',
     ];
     expect(ciJobs['ci-complete']?.needs).toEqual(expectedVerificationJobs);
-    expect(ciJobs['ci-complete']?.if).toBe('always()');
+    expect(ciJobs['ci-complete']?.if).toBe('always() && !cancelled()');
     expect(ciJobs['ci-complete']?.['runs-on']).toBe('ubuntu-latest');
     expect(ciJobs['ci-complete']?.['timeout-minutes']).toBe(5);
     expect(ciJobs['ci-complete']?.permissions).toEqual({ contents: 'read' });

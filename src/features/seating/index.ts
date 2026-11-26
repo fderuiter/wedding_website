@@ -27,6 +27,7 @@ export {
   getGuestPartySize,
   getGuestPlusOneNamesList,
   getGuestsHeadcount,
+  getInvitationPartyMembers,
   getSeatingShapeLabel,
   getTableOccupiedChairCount,
   isGuestEligibleForSeating,

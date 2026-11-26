@@ -67,6 +67,19 @@ const SampleRegistryPresetSchema = z.object({
   contributors: z.array(SampleContributorPresetSchema).default([]),
 });
 
+const SampleHouseholdMemberPresetSchema = z.object({
+  id: z.string().min(1).optional(),
+  fullName: z.string().min(1).max(160),
+  firstName: z.string().max(80).optional(),
+  lastName: z.string().max(80).optional(),
+  role: z.enum(['PRIMARY', 'PARTNER', 'CHILD', 'PLUS_ONE']),
+  email: z.email().optional(),
+  phone: z.string().max(60).optional(),
+  dietaryNotes: z.string().max(500).optional(),
+  tags: z.array(z.string().min(1)).default([]),
+  seatNumber: z.number().int().positive().optional(),
+});
+
 const SampleGuestPresetSchema = z.object({
   id: z.string().min(1),
   guestName: z.string().min(1).max(120),
@@ -87,6 +100,7 @@ const SampleGuestPresetSchema = z.object({
   country: z.string().max(120).optional(),
   seatTableName: z.string().optional(),
   seatNumber: z.number().int().positive().optional(),
+  members: z.array(SampleHouseholdMemberPresetSchema).optional(),
 });
 
 const SampleSeatingPresetSchema = z.object({

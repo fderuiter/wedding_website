@@ -1,5 +1,6 @@
 import {
   getAttendanceStatus,
+  isPlaceholderPlusOneName,
   matchDietaryCategory,
   type AttendanceStatus,
 } from '@/features/registry';
@@ -40,6 +41,28 @@ export interface DietaryBadgeInfo {
   label: string;
 }
 
+export interface SeatingHouseholdMemberCandidate {
+  id?: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  fullName?: string | null;
+  role?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  dietaryNotes?: string | null;
+  tags?: unknown;
+  displayOrder?: number | null;
+  seatNumber?: number | null;
+}
+
+export interface SeatingSubEventMemberRsvpCandidate {
+  id?: string;
+  householdMemberId?: string;
+  status?: string | null;
+  mealOptionId?: string | null;
+  dietaryNotes?: string | null;
+}
+
 export interface SeatingGuestCandidate {
   guestName?: string | null;
   used?: boolean | null;
@@ -50,10 +73,20 @@ export interface SeatingGuestCandidate {
   plusOneAllocations?: number | null;
   plusOneFirstName?: string | null;
   plusOneLastName?: string | null;
+  members?: ReadonlyArray<SeatingHouseholdMemberCandidate> | null;
   subEventRsvps?: Array<{
+    id?: string;
+    subEventId?: string;
     status?: string | null;
     plusOneCount?: number | null;
     plusOneNames?: unknown;
+    mealSelections?: unknown;
+    subEvent?: {
+      id?: string;
+      title?: string | null;
+      mealOptions?: unknown;
+    } | null;
+    memberRsvps?: ReadonlyArray<SeatingSubEventMemberRsvpCandidate> | null;
   }> | null;
 }
 
@@ -81,10 +114,15 @@ export interface SeatingPartyGuestCandidate extends SeatingGuestCandidate {
 }
 
 export interface PartyMemberAttendeeInfo {
+  memberId?: string;
+  role?: string | null;
   attendeeName: string;
+  displayNameOverride?: string;
   isPlusOne: boolean;
   plusOneIndex: number | null;
+  explicitSeatNumber?: number | null;
   mealChoice: string | null;
+  dietaryNotesText?: string | null;
   dietaryBadges: DietaryBadgeInfo[];
 }
 
@@ -139,6 +177,111 @@ export function getGuestAttendanceStatus(guest: SeatingGuestCandidate): Attendan
   });
 }
 
+function hasRelationalMembers(
+  guest: SeatingGuestCandidate | null | undefined
+): guest is SeatingGuestCandidate & { members: ReadonlyArray<SeatingHouseholdMemberCandidate> } {
+  return Boolean(guest && Array.isArray(guest.members) && guest.members.length > 0);
+}
+
+function sortHouseholdMembers(
+  members: ReadonlyArray<SeatingHouseholdMemberCandidate>
+): SeatingHouseholdMemberCandidate[] {
+  return [...members].sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+}
+
+function collectMemberRsvpDecisions(guest: SeatingGuestCandidate): {
+  hasDecidedMemberRsvps: boolean;
+  attendingMemberIds: Set<string>;
+} {
+  const attendingMemberIds = new Set<string>();
+  let hasDecidedMemberRsvps = false;
+
+  if (Array.isArray(guest.subEventRsvps)) {
+    for (const rsvp of guest.subEventRsvps) {
+      if (!rsvp || !Array.isArray(rsvp.memberRsvps)) continue;
+      for (const mr of rsvp.memberRsvps) {
+        if (!mr || typeof mr.householdMemberId !== 'string' || !mr.householdMemberId) continue;
+        const normalized = typeof mr.status === 'string' ? mr.status.trim().toLowerCase() : '';
+        if (normalized === 'attending') {
+          hasDecidedMemberRsvps = true;
+          attendingMemberIds.add(mr.householdMemberId);
+        } else if (normalized === 'declined') {
+          hasDecidedMemberRsvps = true;
+        }
+      }
+    }
+  }
+
+  return { hasDecidedMemberRsvps, attendingMemberIds };
+}
+
+/**
+ * Resolves ordered eligible/attending `HouseholdMember` rows for seating when `guest.members` is populated.
+ * Supports solo partner/companion attendance when the primary guest declines an event.
+ */
+export function getAttendingHouseholdMembersForSeating(
+  guest: SeatingPartyGuestCandidate
+): SeatingHouseholdMemberCandidate[] {
+  if (!hasRelationalMembers(guest)) {
+    return [];
+  }
+
+  const sorted = sortHouseholdMembers(guest.members);
+  const { hasDecidedMemberRsvps, attendingMemberIds } = collectMemberRsvpDecisions(guest);
+
+  if (hasDecidedMemberRsvps) {
+    if (attendingMemberIds.size === 0) {
+      return [];
+    }
+    return sorted.filter((m) => Boolean(m.id && attendingMemberIds.has(m.id)));
+  }
+
+  const overallStatus = getGuestAttendanceStatus(guest);
+  if (overallStatus === 'declined') {
+    return [];
+  }
+
+  const extra = normalizeExtraFields(guest.extraFields);
+  if (extra && Array.isArray(extra.attendingMemberIds) && extra.attendingMemberIds.length > 0) {
+    const idSet = new Set(
+      extra.attendingMemberIds.filter((id): id is string => typeof id === 'string' && id.length > 0)
+    );
+    if (idSet.size > 0) {
+      const matched = sorted.filter((m) => Boolean(m.id && idSet.has(m.id)));
+      if (matched.length > 0) {
+        return matched;
+      }
+    }
+  }
+
+  if (overallStatus === 'attending') {
+    const legacyPlusOnes = getLegacyGuestPlusOneCount(guest);
+    const desiredTotal = 1 + legacyPlusOnes;
+    const namedMembers = sorted.filter(
+      (m, idx) =>
+        idx === 0 ||
+        String(m.role || '').toUpperCase() !== 'PLUS_ONE' ||
+        !isPlaceholderPlusOneName(m.fullName)
+    );
+    const explicitExtraCount = extra ? toNonNegativeInt(extra.plusOneCount) : null;
+    if (explicitExtraCount !== null && explicitExtraCount === 0 && sorted.length > namedMembers.length) {
+      return namedMembers.slice(0, Math.max(1, namedMembers.length));
+    }
+    const targetCount = Math.max(namedMembers.length, Math.min(sorted.length, desiredTotal));
+    return sorted.slice(0, Math.max(1, targetCount));
+  }
+
+  // Pending household: include named members plus allocated placeholder plus-ones
+  const namedPending = sorted.filter(
+    (m, idx) =>
+      idx === 0 ||
+      String(m.role || '').toUpperCase() !== 'PLUS_ONE' ||
+      !isPlaceholderPlusOneName(m.fullName)
+  );
+  const legacyPendingTotal = 1 + getLegacyGuestPlusOneCount(guest);
+  return sorted.slice(0, Math.max(namedPending.length, Math.min(sorted.length, legacyPendingTotal)));
+}
+
 /**
  * Returns true if the guest is eligible for reception seating pools and rosters
  * (excludes sample rows, declined RSVPs, and public `address-collection` submissions).
@@ -149,6 +292,12 @@ export function isGuestEligibleForSeating(guest: SeatingGuestCandidate): boolean
   }
   if (hasAddressCollectionTag(guest.partyTags)) {
     return false;
+  }
+  if (hasRelationalMembers(guest)) {
+    const { hasDecidedMemberRsvps, attendingMemberIds } = collectMemberRsvpDecisions(guest);
+    if (hasDecidedMemberRsvps) {
+      return attendingMemberIds.size > 0;
+    }
   }
   if (getGuestAttendanceStatus(guest) === 'declined') {
     return false;
@@ -285,7 +434,7 @@ export function getDietaryBadges(
  *   falling back to attending `subEventRsvps`, `extraFields.plusOneNames`, `plusOneAllocations`, or legacy plus-one name columns.
  * - Pending RSVPs prefer positive `extraFields.plusOneCount`, falling back to `plusOneAllocations` or plus-one names.
  */
-function getGuestPlusOneCount(guest: SeatingPartyGuestCandidate): number {
+function getLegacyGuestPlusOneCount(guest: SeatingPartyGuestCandidate): number {
   const status = getGuestAttendanceStatus(guest);
   if (status === 'declined') {
     return 0;
@@ -376,10 +525,22 @@ function getGuestPlusOneCount(guest: SeatingPartyGuestCandidate): number {
   return 0;
 }
 
+function getGuestPlusOneCount(guest: SeatingPartyGuestCandidate): number {
+  if (hasRelationalMembers(guest)) {
+    const attending = getAttendingHouseholdMembersForSeating(guest);
+    return Math.max(0, attending.length - 1);
+  }
+  return getLegacyGuestPlusOneCount(guest);
+}
+
 /**
  * Computes total chairs required for an `InvitationCode` party (`1 + plusOneCount`).
  */
 export function getGuestPartySize(guest: SeatingGuestCandidate): number {
+  if (hasRelationalMembers(guest)) {
+    const attending = getAttendingHouseholdMembersForSeating(guest);
+    return Math.max(1, attending.length);
+  }
   return 1 + getGuestPlusOneCount(guest);
 }
 
@@ -453,6 +614,23 @@ function extractRawCompanionNames(guest: SeatingGuestCandidate): Array<string | 
  * Returns display names for each companion of a multi-person invitation (`length === partySize - 1`).
  */
 export function getGuestCompanionNames(guest: SeatingGuestCandidate): string[] {
+  if (hasRelationalMembers(guest)) {
+    const attending = getAttendingHouseholdMembersForSeating(guest);
+    if (attending.length <= 1) {
+      return [];
+    }
+    const primaryName =
+      (attending[0]?.fullName || guest.guestName || 'Guest').trim() || 'Guest';
+    return attending.slice(1).map((member, idx) => {
+      const fullName = (member.fullName || '').trim();
+      if (fullName && !isPlaceholderPlusOneName(fullName)) {
+        return fullName;
+      }
+      return attending.length - 1 === 1
+        ? `${primaryName} (+1)`
+        : `${primaryName} (+${idx + 1})`;
+    });
+  }
   const rawList = extractRawCompanionNames(guest);
   if (rawList.length === 0) {
     return [];
@@ -788,6 +966,181 @@ function extractAttendeeMeals(
   return results;
 }
 
+function resolveRelationalMemberMealAndNotes(
+  guest: SeatingPartyGuestCandidate,
+  member: SeatingHouseholdMemberCandidate,
+  fallbackMeal: ParsedAttendeeMeal
+): {
+  mealChoice: string | null;
+  dietaryTags: string[];
+  dietaryNotesText: string | null;
+} {
+  const mealLabels: string[] = [];
+  const dietaryTags: string[] = [];
+  const noteParts: string[] = [];
+
+  const pushUniqueNote = (raw: string | null | undefined) => {
+    const trimmed = typeof raw === 'string' ? raw.trim() : '';
+    if (!trimmed) return;
+    if (!noteParts.some((existing) => existing.toLowerCase() === trimmed.toLowerCase())) {
+      noteParts.push(trimmed);
+    }
+  };
+
+  pushUniqueNote(member.dietaryNotes);
+
+  const extra = normalizeExtraFields(guest.extraFields);
+  const structuredMealLookup = new Map<
+    string,
+    { label: string; dietaryTags: string[] }
+  >();
+
+  if (extra && Array.isArray(extra.mealSelections)) {
+    for (const block of extra.mealSelections) {
+      if (!block || typeof block !== 'object') continue;
+      const subEventId =
+        typeof (block as { subEventId?: unknown }).subEventId === 'string'
+          ? (block as { subEventId: string }).subEventId
+          : '';
+      const selections = Array.isArray((block as { selections?: unknown }).selections)
+        ? ((block as { selections: unknown[] }).selections)
+        : [block];
+      for (const sel of selections) {
+        if (!sel || typeof sel !== 'object') continue;
+        const entry = sel as {
+          memberId?: unknown;
+          attendeeName?: unknown;
+          attendee?: unknown;
+          optionId?: unknown;
+          label?: unknown;
+          mealOptionLabel?: unknown;
+          dietaryTags?: unknown;
+        };
+        const resolvedLabel =
+          (typeof entry.label === 'string' && entry.label.trim()) ||
+          (typeof entry.mealOptionLabel === 'string' && entry.mealOptionLabel.trim()) ||
+          (typeof entry.optionId === 'string' && entry.optionId.trim()) ||
+          '';
+        if (!resolvedLabel) continue;
+        const tags = Array.isArray(entry.dietaryTags)
+          ? entry.dietaryTags.filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
+          : [];
+        if (typeof entry.memberId === 'string' && entry.memberId) {
+          structuredMealLookup.set(`${subEventId}:member:${entry.memberId}`, {
+            label: resolvedLabel,
+            dietaryTags: tags,
+          });
+          structuredMealLookup.set(`member:${entry.memberId}`, {
+            label: resolvedLabel,
+            dietaryTags: tags,
+          });
+        }
+        if (typeof entry.optionId === 'string' && entry.optionId) {
+          structuredMealLookup.set(`${subEventId}:opt:${entry.optionId}`, {
+            label: resolvedLabel,
+            dietaryTags: tags,
+          });
+          structuredMealLookup.set(`opt:${entry.optionId}`, {
+            label: resolvedLabel,
+            dietaryTags: tags,
+          });
+        }
+      }
+    }
+  }
+
+  if (Array.isArray(guest.subEventRsvps) && member.id) {
+    for (const rsvp of guest.subEventRsvps) {
+      if (!rsvp || !Array.isArray(rsvp.memberRsvps)) continue;
+      const subEventId = typeof rsvp.subEventId === 'string' ? rsvp.subEventId : '';
+      const rawOptions = Array.isArray(rsvp.subEvent?.mealOptions)
+        ? (rsvp.subEvent!.mealOptions as Array<Record<string, unknown>>)
+        : [];
+
+      for (const mr of rsvp.memberRsvps) {
+        if (!mr || mr.householdMemberId !== member.id) continue;
+        const mrStatus = typeof mr.status === 'string' ? mr.status.trim().toLowerCase() : '';
+        if (mrStatus === 'declined') continue;
+
+        pushUniqueNote(mr.dietaryNotes);
+
+        const optId = typeof mr.mealOptionId === 'string' ? mr.mealOptionId.trim() : '';
+        if (!optId) continue;
+
+        let matchedLabel: string | null = null;
+        let matchedTags: string[] = [];
+
+        const matchedSubEventOpt = rawOptions.find(
+          (opt) =>
+            opt &&
+            typeof opt === 'object' &&
+            (opt.id === optId ||
+              (typeof opt.label === 'string' && opt.label.trim().toLowerCase() === optId.toLowerCase()))
+        );
+        if (matchedSubEventOpt) {
+          matchedLabel =
+            typeof matchedSubEventOpt.label === 'string' && matchedSubEventOpt.label.trim()
+              ? matchedSubEventOpt.label.trim()
+              : optId;
+          if (Array.isArray(matchedSubEventOpt.dietaryTags)) {
+            matchedTags = matchedSubEventOpt.dietaryTags.filter(
+              (t): t is string => typeof t === 'string' && t.trim().length > 0
+            );
+          }
+        } else {
+          const fromStructured =
+            structuredMealLookup.get(`${subEventId}:member:${member.id}`) ||
+            structuredMealLookup.get(`${subEventId}:opt:${optId}`) ||
+            structuredMealLookup.get(`opt:${optId}`);
+          if (fromStructured) {
+            matchedLabel = fromStructured.label;
+            matchedTags = fromStructured.dietaryTags;
+          } else {
+            matchedLabel = optId;
+          }
+        }
+
+        if (matchedLabel && !mealLabels.includes(matchedLabel)) {
+          mealLabels.push(matchedLabel);
+        }
+        for (const tag of matchedTags) {
+          if (!dietaryTags.includes(tag)) {
+            dietaryTags.push(tag);
+          }
+        }
+      }
+    }
+  }
+
+  if (mealLabels.length === 0 && member.id) {
+    const directStructured = structuredMealLookup.get(`member:${member.id}`);
+    if (directStructured) {
+      mealLabels.push(directStructured.label);
+      for (const tag of directStructured.dietaryTags) {
+        if (!dietaryTags.includes(tag)) {
+          dietaryTags.push(tag);
+        }
+      }
+    }
+  }
+
+  if (mealLabels.length === 0 && fallbackMeal.label) {
+    mealLabels.push(fallbackMeal.label);
+    for (const tag of fallbackMeal.dietaryTags) {
+      if (!dietaryTags.includes(tag)) {
+        dietaryTags.push(tag);
+      }
+    }
+    pushUniqueNote(fallbackMeal.dietaryNoteHint);
+  }
+
+  return {
+    mealChoice: mealLabels.length > 0 ? mealLabels.join(' / ') : null,
+    dietaryTags,
+    dietaryNotesText: noteParts.length > 0 ? noteParts.join(', ') : null,
+  };
+}
+
 /**
  * Expands an eligible invitation into its ordered party members (primary guest + attending plus-ones)
  * with individual display names, entrée choices, and dietary badges.
@@ -797,6 +1150,70 @@ export function getInvitationPartyMembers(
 ): PartyMemberAttendeeInfo[] {
   if (!isGuestEligibleForSeating(guest)) {
     return [];
+  }
+
+  if (hasRelationalMembers(guest)) {
+    const attendingMembers = getAttendingHouseholdMembersForSeating(guest);
+    if (attendingMembers.length === 0) {
+      return [];
+    }
+
+    const primaryDisplay =
+      (attendingMembers[0]?.fullName || guest.guestName || 'Guest').trim() || 'Guest';
+    const attendeeNames = attendingMembers.map((member, idx) => {
+      const rawName = (member.fullName || '').trim();
+      if (rawName && (idx === 0 || !isPlaceholderPlusOneName(rawName))) {
+        return rawName;
+      }
+      return idx === 0
+        ? primaryDisplay
+        : attendingMembers.length - 1 === 1
+          ? `${primaryDisplay} (+1)`
+          : `${primaryDisplay} (+${idx})`;
+    });
+
+    const fallbackMeals = extractAttendeeMeals(guest, attendeeNames);
+
+    return attendingMembers.map((member, index) => {
+      const attendeeName = attendeeNames[index];
+      const { mealChoice, dietaryTags, dietaryNotesText } = resolveRelationalMemberMealAndNotes(
+        guest,
+        member,
+        fallbackMeals[index]
+      );
+
+      const memberRole = typeof member.role === 'string' ? member.role.trim().toUpperCase() : null;
+      const memberTags: string[] = Array.isArray(member.tags)
+        ? member.tags.filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
+        : [];
+      if (memberRole === 'CHILD' && !memberTags.some((t) => /^kids?$/i.test(t.trim()))) {
+        memberTags.push('kids');
+      }
+
+      const explicitSeatNumber =
+        typeof member.seatNumber === 'number' &&
+        Number.isInteger(member.seatNumber) &&
+        member.seatNumber >= 1
+          ? member.seatNumber
+          : null;
+
+      return {
+        memberId: member.id,
+        role: memberRole,
+        attendeeName,
+        displayNameOverride: attendeeName,
+        isPlusOne: index > 0,
+        plusOneIndex: index > 0 ? index - 1 : null,
+        explicitSeatNumber,
+        mealChoice,
+        dietaryNotesText,
+        dietaryBadges: getDietaryBadges(
+          dietaryNotesText,
+          dietaryTags.length > 0 ? { dietaryTags } : undefined,
+          memberTags
+        ),
+      };
+    });
   }
 
   const primaryName = (guest.guestName || 'Guest').trim() || 'Guest';
@@ -823,6 +1240,7 @@ export function getInvitationPartyMembers(
       isPlusOne: index > 0,
       plusOneIndex: index > 0 ? index - 1 : null,
       mealChoice: mealInfo.label,
+      dietaryNotesText: notesForAttendee,
       dietaryBadges: getDietaryBadges(
         notesForAttendee,
         structuredSource,
