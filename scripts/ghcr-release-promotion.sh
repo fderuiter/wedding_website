@@ -141,7 +141,12 @@ cmd_inspect_preflight() {
   resolved_owner="${REPO_OWNER:-${GITHUB_REPOSITORY%%/*}}"
   resolved_signer="${SIGNER_WORKFLOW:-${GITHUB_REPOSITORY}/.github/workflows/publish-artifact.yml}"
 
+  local scoped_docker_config=""
   if [ -n "${GH_TOKEN:-}" ] && [ -n "${GITHUB_ACTOR_LOGIN:-}" ] && command -v docker >/dev/null 2>&1; then
+    scoped_docker_config=$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/docker-config-XXXXXX")
+    chmod 700 "$scoped_docker_config"
+    export DOCKER_CONFIG="$scoped_docker_config"
+    trap 'rm -rf "${scoped_docker_config:-}"' EXIT
     printf '%s\n' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR_LOGIN" --password-stdin >/dev/null 2>&1 || true
   fi
 

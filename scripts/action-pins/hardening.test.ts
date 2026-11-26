@@ -354,6 +354,239 @@ describe('action-pins modular hardening', () => {
     expect(checkActionPins(workflowsDir).violations).toEqual([]);
   });
 
+  it('propagates workflow_run across local workflow_call chains and blocks secrets: inherit, unused workflow_call.secrets, and unscoped docker logins', () => {
+    const validCheckoutSha = '3d3c42e5aac5ba805825da76410c181273ba90b1';
+    const validDockerLoginSha = '65827bcbf780a503db4802a746dd7ef81ee58d33';
+
+    fs.writeFileSync(
+      path.join(workflowsDir, 'deploy-caller.yml'),
+      [
+        'name: Untrusted Workflow Run Caller',
+        'on:',
+        '  workflow_run:',
+        '    workflows: [CI]',
+        '    types: [completed]',
+        'permissions:',
+        '  contents: read',
+        'jobs:',
+        '  call-stage:',
+        '    permissions:',
+        '      contents: read',
+        '      packages: write',
+        '    uses: ./.github/workflows/stage-callee.yml',
+        '    secrets: inherit',
+        '',
+      ].join('\n')
+    );
+
+    fs.writeFileSync(
+      path.join(workflowsDir, 'stage-callee.yml'),
+      [
+        'name: Intermediate Reusable Stage',
+        'on:',
+        '  workflow_call:',
+        '    secrets:',
+        '      USED_TOKEN:',
+        '        required: false',
+        '      UNUSED_DATABASE_URL:',
+        '        required: false',
+        'permissions:',
+        '  contents: read',
+        'jobs:',
+        '  call-leaf:',
+        '    permissions:',
+        '      contents: read',
+        '      packages: write',
+        '    uses: ./.github/workflows/leaf-callee.yml',
+        '    secrets:',
+        '      USED_TOKEN: ${{ secrets.USED_TOKEN }}',
+        '',
+      ].join('\n')
+    );
+
+    fs.writeFileSync(
+      path.join(workflowsDir, 'leaf-callee.yml'),
+      [
+        'name: Leaf Write Callee',
+        'on:',
+        '  workflow_call:',
+        '    secrets:',
+        '      USED_TOKEN:',
+        '        required: false',
+        'permissions:',
+        '  contents: read',
+        'jobs:',
+        '  unsafe-publish:',
+        '    runs-on: ubuntu-latest',
+        '    timeout-minutes: 10',
+        '    permissions:',
+        '      contents: read',
+        '      packages: write',
+        '    steps:',
+        `      - uses: actions/checkout@${validCheckoutSha} # v7.0.1`,
+        "        if: github.event_name == 'workflow_call'",
+        '        with:',
+        '          persist-credentials: false',
+        '      - run: bash ./scripts/ghcr-release-promotion.sh extract-promoted-sboms',
+        `      - uses: docker/login-action@${validDockerLoginSha} # v4.1.0`,
+        '        with:',
+        '          registry: ghcr.io',
+        '          username: ${{ github.actor }}',
+        '          password: ${{ secrets.USED_TOKEN }}',
+        '      - env:',
+        '          GH_TOKEN: ${{ github.token }}',
+        '        run: echo "$GH_TOKEN" | docker login ghcr.io -u octocat --password-stdin',
+        '',
+      ].join('\n')
+    );
+
+    const { violations } = checkActionPins(workflowsDir);
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filePath: '.github/workflows/deploy-caller.yml',
+          actionRef: 'jobs.call-stage.secrets',
+          reason: expect.stringContaining('uses "secrets: inherit"'),
+        }),
+        expect.objectContaining({
+          filePath: '.github/workflows/stage-callee.yml',
+          actionRef: 'on.workflow_call.secrets.UNUSED_DATABASE_URL',
+          reason: expect.stringContaining('UNUSED_DATABASE_URL'),
+        }),
+        expect.objectContaining({
+          filePath: '.github/workflows/leaf-callee.yml',
+          actionRef: 'jobs.unsafe-publish.permissions',
+          reason: expect.stringContaining(
+            'Job "unsafe-publish" executes actions/checkout on workflow_run (via workflow_call from deploy-caller.yml -> stage-callee.yml) while holding write permissions'
+          ),
+        }),
+        expect.objectContaining({
+          filePath: '.github/workflows/leaf-callee.yml',
+          actionRef: 'jobs.unsafe-publish.permissions',
+          reason: expect.stringContaining(
+            'Job "unsafe-publish" executes npm or repository scripts on workflow_run (via workflow_call from deploy-caller.yml -> stage-callee.yml) while holding write permissions'
+          ),
+        }),
+        expect.objectContaining({
+          filePath: '.github/workflows/leaf-callee.yml',
+          actionRef: `docker/login-action@${validDockerLoginSha}`,
+          reason: expect.stringContaining('uses docker/login-action without binding a temporary "DOCKER_CONFIG"'),
+        }),
+        expect.objectContaining({
+          filePath: '.github/workflows/leaf-callee.yml',
+          actionRef: 'jobs.unsafe-publish.steps[3].docker-login',
+          reason: expect.stringContaining('runs "docker login" without scoping credentials to a temporary "DOCKER_CONFIG"'),
+        }),
+      ])
+    );
+
+    // Replace with split read-only preflight + checkout-free write job, explicit secret maps, and temporary DOCKER_CONFIG cleanup
+    fs.writeFileSync(
+      path.join(workflowsDir, 'deploy-caller.yml'),
+      [
+        'name: Hardened Workflow Run Caller',
+        'on:',
+        '  workflow_run:',
+        '    workflows: [CI]',
+        '    types: [completed]',
+        'permissions:',
+        '  contents: read',
+        'jobs:',
+        '  call-stage:',
+        '    permissions:',
+        '      contents: read',
+        '      packages: write',
+        '    uses: ./.github/workflows/stage-callee.yml',
+        '    secrets:',
+        '      USED_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}',
+        '',
+      ].join('\n')
+    );
+
+    fs.writeFileSync(
+      path.join(workflowsDir, 'stage-callee.yml'),
+      [
+        'name: Hardened Reusable Stage',
+        'on:',
+        '  workflow_call:',
+        '    secrets:',
+        '      USED_TOKEN:',
+        '        required: false',
+        'permissions:',
+        '  contents: read',
+        'jobs:',
+        '  call-leaf:',
+        '    permissions:',
+        '      contents: read',
+        '      packages: write',
+        '    uses: ./.github/workflows/leaf-callee.yml',
+        '    secrets:',
+        '      USED_TOKEN: ${{ secrets.USED_TOKEN }}',
+        '',
+      ].join('\n')
+    );
+
+    fs.writeFileSync(
+      path.join(workflowsDir, 'leaf-callee.yml'),
+      [
+        'name: Hardened Split Leaf Callee',
+        'on:',
+        '  workflow_call:',
+        '    secrets:',
+        '      USED_TOKEN:',
+        '        required: false',
+        'permissions:',
+        '  contents: read',
+        'jobs:',
+        '  preflight:',
+        '    runs-on: ubuntu-latest',
+        '    timeout-minutes: 10',
+        '    permissions:',
+        '      contents: read',
+        '    steps:',
+        `      - uses: actions/checkout@${validCheckoutSha} # v7.0.1`,
+        '        with:',
+        '          persist-credentials: false',
+        '      - env:',
+        '          GH_TOKEN: ${{ github.token }}',
+        '        run: |',
+        '          SCOPED_DOCKER_CONFIG="$(mktemp -d)"',
+        '          chmod 700 "$SCOPED_DOCKER_CONFIG"',
+        '          export DOCKER_CONFIG="$SCOPED_DOCKER_CONFIG"',
+        '          trap \'rm -rf "$SCOPED_DOCKER_CONFIG"\' EXIT',
+        '          printf "%s\\n" "$GH_TOKEN" | docker login ghcr.io -u octocat --password-stdin',
+        '          bash ./scripts/ghcr-release-promotion.sh extract-promoted-sboms',
+        '  publish:',
+        '    needs: [preflight]',
+        '    runs-on: ubuntu-latest',
+        '    timeout-minutes: 10',
+        '    permissions:',
+        '      contents: read',
+        '      packages: write',
+        '    steps:',
+        '      - id: docker-config',
+        '        run: |',
+        '          SCOPED_DIR="$(mktemp -d)"',
+        '          chmod 700 "$SCOPED_DIR"',
+        '          echo "path=${SCOPED_DIR}" >> "$GITHUB_OUTPUT"',
+        `      - uses: docker/login-action@${validDockerLoginSha} # v4.1.0`,
+        '        env:',
+        '          DOCKER_CONFIG: ${{ steps.docker-config.outputs.path }}',
+        '        with:',
+        '          registry: ghcr.io',
+        '          username: ${{ github.actor }}',
+        '          password: ${{ secrets.USED_TOKEN }}',
+        '      - if: always()',
+        '        env:',
+        '          SCOPED_DOCKER_CONFIG: ${{ steps.docker-config.outputs.path }}',
+        '        run: rm -rf "$SCOPED_DOCKER_CONFIG"',
+        '',
+      ].join('\n')
+    );
+
+    expect(checkActionPins(workflowsDir).violations).toEqual([]);
+  });
+
   it('peels annotated tags, checks branch ancestry with per-repo memoization, and rejects unmerged fork SHAs via REST API', async () => {
     const validCheckoutSha = '3d3c42e5aac5ba805825da76410c181273ba90b1';
     const checkoutAnnotatedTagSha = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';

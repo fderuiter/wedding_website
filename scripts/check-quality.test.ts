@@ -374,4 +374,41 @@ describe('check-quality', () => {
     expect(errorOutput).toContain('Failing Check FAILED!');
     expect(errorOutput).toContain('Fix failing-check contract drift.');
   });
+
+  it('completes check:prisma before starting parallel steps that consume @prisma/client', async () => {
+    const customSteps: Step[] = [
+      { name: 'Doc Sync', script: 'check:doc-sync', command: 'npm run check:doc-sync' },
+      { name: 'Typecheck', script: 'typecheck', command: 'npm run typecheck' },
+      {
+        name: 'Validate Prisma Schema',
+        script: 'check:prisma',
+        command: 'npx tsx scripts/check-prisma-schema.ts',
+      },
+    ];
+
+    let prismaFinished = false;
+    const parallelObservedAfterPrisma: string[] = [];
+
+    await expect(
+      runQualityChecks({
+        cwd: tempDir,
+        stepsToRun: customSteps,
+        concurrency: 3,
+        execAsyncCommand: async (command) => {
+          if (command.includes('check-prisma-schema.ts')) {
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            prismaFinished = true;
+            return;
+          }
+          expect(prismaFinished).toBe(true);
+          parallelObservedAfterPrisma.push(command);
+        },
+      })
+    ).rejects.toThrow('process.exit: 0');
+
+    expect(parallelObservedAfterPrisma.sort()).toEqual([
+      'npm run check:doc-sync',
+      'npm run typecheck',
+    ]);
+  });
 });

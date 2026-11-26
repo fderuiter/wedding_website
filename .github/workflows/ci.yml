@@ -1212,22 +1212,16 @@ jobs:
           fi
           echo "All 9 CI verification jobs succeeded."
 
-  deploy-docs:
+  prepare-docs:
     needs: [ci-complete, static-export-build, storybook-build, pages-verify]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
-    concurrency:
-      group: github-pages
-      cancel-in-progress: false
-      queue: max
     timeout-minutes: 30
     permissions:
       contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      is_latest: ${{ steps.freshness.outputs.is_latest }}
+      main_head_sha: ${{ steps.freshness.outputs.main_head_sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1391,9 +1385,26 @@ jobs:
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: docs-portal/.vitepress/dist
+
+  deploy-docs:
+    needs: [ci-complete, prepare-docs]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.prepare-docs.outputs.is_latest == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+      queue: max
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        if: steps.freshness.outputs.is_latest == 'true'
         timeout-minutes: 5
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
 
