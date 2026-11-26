@@ -11,6 +11,7 @@ const DEPLOY_YML_PATH = path.join(WORKFLOWS_DIR, 'deploy.yml');
 const DEPLOY_STAGE_YML_PATH = path.join(WORKFLOWS_DIR, 'deploy-stage.yml');
 const DEPLOY_PROVIDER_YML_PATH = path.join(WORKFLOWS_DIR, 'deploy-provider.yml');
 const DB_MIGRATE_YML_PATH = path.join(WORKFLOWS_DIR, 'db-migrate.yml');
+const ROLLBACK_YML_PATH = path.join(WORKFLOWS_DIR, 'rollback.yml');
 const CI_YML_PATH = path.join(WORKFLOWS_DIR, 'ci.yml');
 const STORYBOOK_YML_PATH = path.join(WORKFLOWS_DIR, 'storybook.yml');
 const DEPLOYMENT_DOC_PATH = path.join(REPO_ROOT, 'DEPLOYMENT.md');
@@ -63,6 +64,7 @@ describe('Release & Provider Deployment Workflow Digest Pinning and Provenance C
   const deployStageYml = fs.readFileSync(DEPLOY_STAGE_YML_PATH, 'utf8');
   const deployProviderYml = fs.readFileSync(DEPLOY_PROVIDER_YML_PATH, 'utf8');
   const dbMigrateYml = fs.readFileSync(DB_MIGRATE_YML_PATH, 'utf8');
+  const rollbackYml = fs.readFileSync(ROLLBACK_YML_PATH, 'utf8');
   const ciYml = fs.readFileSync(CI_YML_PATH, 'utf8');
   const storybookYml = fs.readFileSync(STORYBOOK_YML_PATH, 'utf8');
 
@@ -305,12 +307,12 @@ process.exit(1);
     const deployProviderDoc = parseDocument(deployProviderYml, { version: '1.2', strict: true });
     const parsed = deployProviderDoc.toJS() as {
       jobs?: {
-        deploy?: {
+        preflight?: {
           steps?: Array<{ id?: string; if?: string }>;
         };
       };
     };
-    const provenanceStep = parsed.jobs?.deploy?.steps?.find((step) => step.id === 'provenance');
+    const provenanceStep = parsed.jobs?.preflight?.steps?.find((step) => step.id === 'provenance');
     expect(provenanceStep?.if).toContain('always()');
     expect(provenanceStep?.if).toContain("steps.validate-sha.outputs.is_rollback_call == 'true'");
     expect(provenanceStep?.if).toContain("steps.resolve.outcome == 'success'");
@@ -348,13 +350,14 @@ process.exit(1);
       on?: {
         workflow_call?: {
           inputs?: Record<string, { type?: string; default?: unknown; required?: boolean }>;
+          secrets?: Record<string, { required?: boolean }>;
         };
       };
       jobs?: Record<
         string,
         {
           uses?: string;
-          secrets?: string;
+          secrets?: string | Record<string, string>;
           concurrency?: unknown;
           with?: Record<string, unknown>;
         }
@@ -365,35 +368,66 @@ process.exit(1);
     const deployStageDoc = parseDocument(deployStageYml, { version: '1.2', strict: true }).toJS() as WorkflowShape;
     const dbMigrateDoc = parseDocument(dbMigrateYml, { version: '1.2', strict: true }).toJS() as WorkflowShape;
     const deployProviderDoc = parseDocument(deployProviderYml, { version: '1.2', strict: true }).toJS() as WorkflowShape;
+    const rollbackDoc = parseDocument(rollbackYml, { version: '1.2', strict: true }).toJS() as WorkflowShape;
 
-    // 1. deploy.yml removes root concurrency and delegates staging/production to deploy-stage.yml
+    // 1. deploy.yml removes root concurrency, bans secrets: inherit, and delegates staging/production to deploy-stage.yml
     expect(deployDoc.concurrency).toBeUndefined();
     for (const jobId of ['ci-gate', 'schema-compatibility', 'publish-artifact', 'staging', 'production']) {
       expect(deployDoc.jobs?.[jobId]?.concurrency).toBeUndefined();
+      expect(deployDoc.jobs?.[jobId]?.secrets).not.toBe('inherit');
     }
+    expect(deployDoc.jobs?.['publish-artifact']?.secrets).toEqual({
+      DOCKERHUB_USERNAME: '${{ secrets.DOCKERHUB_USERNAME }}',
+      DOCKERHUB_TOKEN: '${{ secrets.DOCKERHUB_TOKEN }}',
+    });
+    const expectedStageSecrets = {
+      DATABASE_URL: '${{ secrets.DATABASE_URL }}',
+      POSTGRES_URL_NON_POOLING: '${{ secrets.POSTGRES_URL_NON_POOLING }}',
+      GCP_SA_KEY: '${{ secrets.GCP_SA_KEY }}',
+      GCP_PROJECT_ID: '${{ secrets.GCP_PROJECT_ID }}',
+      DEPLOY_WEBHOOK_URL: '${{ secrets.DEPLOY_WEBHOOK_URL }}',
+      DEPLOY_WEBHOOK_SECRET: '${{ secrets.DEPLOY_WEBHOOK_SECRET }}',
+      SERVICE_URL: '${{ secrets.SERVICE_URL }}',
+    };
     expect(deployDoc.jobs?.staging?.uses).toBe('./.github/workflows/deploy-stage.yml');
-    expect(deployDoc.jobs?.staging?.secrets).toBe('inherit');
+    expect(deployDoc.jobs?.staging?.secrets).toEqual(expectedStageSecrets);
     expect(deployDoc.jobs?.staging?.with).toMatchObject({
       environment: 'staging',
       commit_sha: '${{ needs.ci-gate.outputs.target_sha }}',
     });
     expect(deployDoc.jobs?.production?.uses).toBe('./.github/workflows/deploy-stage.yml');
-    expect(deployDoc.jobs?.production?.secrets).toBe('inherit');
+    expect(deployDoc.jobs?.production?.secrets).toEqual(expectedStageSecrets);
     expect(deployDoc.jobs?.production?.with).toMatchObject({
       environment: 'production',
       commit_sha: '${{ needs.ci-gate.outputs.target_sha }}',
     });
 
-    // 2. deploy-stage.yml holds deploy-env-<environment> with queue: max and passes caller_holds_lock: true
+    // 2. deploy-stage.yml holds deploy-env-<environment> with queue: max, passes caller_holds_lock: true, and isolates DATABASE_URL strictly to db-migrate.yml
     expect(deployStageDoc.concurrency).toEqual({
       group: 'deploy-env-${{ inputs.environment }}',
       'cancel-in-progress': false,
       queue: 'max',
     });
     for (const stageChildJob of ['database-migration', 'deploy-provider', 'rollback']) {
-      expect(deployStageDoc.jobs?.[stageChildJob]?.secrets).toBe('inherit');
+      expect(deployStageDoc.jobs?.[stageChildJob]?.secrets).not.toBe('inherit');
       expect(deployStageDoc.jobs?.[stageChildJob]?.with?.caller_holds_lock).toBe(true);
     }
+    expect(deployStageDoc.jobs?.['database-migration']?.secrets).toEqual({
+      DATABASE_URL: '${{ secrets.DATABASE_URL }}',
+      POSTGRES_URL_NON_POOLING: '${{ secrets.POSTGRES_URL_NON_POOLING }}',
+    });
+    const expectedProviderSecrets = {
+      GCP_SA_KEY: '${{ secrets.GCP_SA_KEY }}',
+      GCP_PROJECT_ID: '${{ secrets.GCP_PROJECT_ID }}',
+      DEPLOY_WEBHOOK_URL: '${{ secrets.DEPLOY_WEBHOOK_URL }}',
+      DEPLOY_WEBHOOK_SECRET: '${{ secrets.DEPLOY_WEBHOOK_SECRET }}',
+      SERVICE_URL: '${{ secrets.SERVICE_URL }}',
+    };
+    expect(deployStageDoc.jobs?.['deploy-provider']?.secrets).toEqual(expectedProviderSecrets);
+    expect(deployStageDoc.jobs?.rollback?.secrets).toEqual(expectedProviderSecrets);
+    expect(rollbackDoc.jobs?.redeploy?.secrets).toEqual(expectedProviderSecrets);
+    expect(deployProviderDoc.on?.workflow_call?.secrets).not.toHaveProperty('DATABASE_URL');
+    expect(deployProviderDoc.on?.workflow_call?.secrets).not.toHaveProperty('POSTGRES_URL_NON_POOLING');
 
     // 3. db-migrate.yml and deploy-provider.yml expose caller_holds_lock and queue: max without forbidden contexts
     for (const [label, doc, callerPrefix] of [
@@ -441,8 +475,11 @@ process.exit(1);
       'cancel-in-progress': false,
       queue: 'max',
     });
-    expect(ciDoc.jobs?.['deploy-docs']?.if).toBe(
+    expect(ciDoc.jobs?.['prepare-docs']?.if).toBe(
       "github.ref == 'refs/heads/main' && github.event_name == 'push'"
+    );
+    expect(ciDoc.jobs?.['deploy-docs']?.if).toBe(
+      "github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.prepare-docs.outputs.is_latest == 'true'"
     );
     expect(ciDoc.jobs?.['deploy-docs']?.concurrency).toEqual({
       group: 'github-pages',
@@ -1785,7 +1822,7 @@ dns.promises.lookup = async (hostname, options) => {
     const dryRunStep = steps.find((s) => s.id === 'dry-run-adapter');
 
     expect(verifyStep?.if).toContain('always()');
-    expect(verifyStep?.if).toContain("steps.resolve.outcome == 'success'");
+    expect(verifyStep?.if).toContain("needs.preflight.outputs.is_rollback_call == 'true'");
     expect(verifyStep?.if).toContain('!inputs.dry_run');
     expect(oidcStep?.if).toContain('vars.GCP_WORKLOAD_IDENTITY_PROVIDER !=');
     expect(oidcStep?.if).toContain('vars.GCP_SERVICE_ACCOUNT !=');
@@ -2004,7 +2041,7 @@ process.exit(0);
         workflow_call?: { inputs?: Record<string, unknown> };
       };
       jobs?: {
-        deploy?: {
+        preflight?: {
           steps?: Array<{ id?: string; name?: string; if?: string; env?: Record<string, string>; with?: { script?: string } }>;
         };
       };
@@ -2012,7 +2049,7 @@ process.exit(0);
     expect(deployProviderDoc.on?.workflow_dispatch?.inputs).toHaveProperty('source_ref');
     expect(deployProviderDoc.on?.workflow_call?.inputs).toHaveProperty('source_ref');
 
-    const steps = deployProviderDoc.jobs?.deploy?.steps ?? [];
+    const steps = deployProviderDoc.jobs?.preflight?.steps ?? [];
     const provenanceMeta = steps.find((s) => s.id === 'provenance');
     expect(provenanceMeta?.env?.INPUT_SOURCE_REF).toBe('${{ inputs.source_ref }}');
 
@@ -2402,9 +2439,13 @@ process.exit(1);
         workflow_call?: { inputs?: Record<string, unknown> };
       };
       jobs?: {
+        preflight?: {
+          permissions?: Record<string, string>;
+          steps?: Array<{ uses?: string; with?: Record<string, unknown> }>;
+        };
         deploy?: {
           environment?: string;
-          steps?: Array<{ uses?: string; with?: Record<string, unknown> }>;
+          steps?: Array<{ uses?: string; run?: string; with?: Record<string, unknown> }>;
         };
       };
     };
@@ -2424,12 +2465,21 @@ process.exit(1);
       "${{ (github.event_name == 'workflow_call' && inputs.rollback_environment) || vars.PRODUCTION_ROLLBACK_ENVIRONMENT || '' }}"
     );
 
-    const checkoutSteps = (providerDoc.jobs?.deploy?.steps ?? []).filter((s) =>
+    const preflightCheckoutSteps = (providerDoc.jobs?.preflight?.steps ?? []).filter((s) =>
       s.uses?.startsWith('actions/checkout@')
     );
-    expect(checkoutSteps.length).toBeGreaterThan(0);
-    for (const step of checkoutSteps) {
+    expect(preflightCheckoutSteps.length).toBeGreaterThan(0);
+    for (const step of preflightCheckoutSteps) {
       expect(step.with?.['persist-credentials']).toBe(false);
+    }
+    const deployCheckoutSteps = (providerDoc.jobs?.deploy?.steps ?? []).filter((s) =>
+      s.uses?.startsWith('actions/checkout@')
+    );
+    expect(deployCheckoutSteps).toHaveLength(0);
+    for (const step of providerDoc.jobs?.deploy?.steps ?? []) {
+      expect(step.uses ?? '').not.toContain('actions/setup-node');
+      expect(step.run ?? '').not.toMatch(/\bnpm\b/);
+      expect(step.run ?? '').not.toContain('scripts/');
     }
 
     for (const script of [
@@ -2593,6 +2643,19 @@ exit 0
         workflow_call?: { inputs?: Record<string, unknown>; outputs?: Record<string, unknown> };
       };
       jobs?: {
+        preflight?: {
+          if?: string;
+          'timeout-minutes'?: number;
+          outputs?: Record<string, string>;
+          steps?: Array<{
+            id?: string;
+            name?: string;
+            if?: string;
+            'timeout-minutes'?: number;
+            uses?: string;
+            with?: Record<string, unknown>;
+          }>;
+        };
         deploy?: {
           if?: string;
           'timeout-minutes'?: number;
@@ -2616,7 +2679,13 @@ exit 0
       };
     };
 
-    expect(providerDoc.jobs?.deploy?.if).toBe('always()');
+    expect(providerDoc.jobs?.preflight?.if).toBe('always()');
+    expect(providerDoc.jobs?.preflight?.outputs?.cloud_run_labels).toBe(
+      '${{ steps.provenance.outputs.cloud_run_labels || steps.standalone-target.outputs.cloud_run_labels || steps.resolve.outputs.cloud_run_labels }}'
+    );
+    expect(providerDoc.jobs?.deploy?.if).toBe(
+      "always() && (!cancelled() || needs.preflight.outputs.is_rollback_call == 'true') && needs.preflight.result == 'success'"
+    );
     expect(providerDoc.jobs?.deploy?.['timeout-minutes']).toBe(20);
     expect(providerDoc.on?.workflow_dispatch?.inputs).not.toHaveProperty('auto_rollback_on_failure');
     expect(providerDoc.on?.workflow_dispatch?.inputs).not.toHaveProperty('is_rollback');
@@ -2626,12 +2695,11 @@ exit 0
     expect(providerDoc.on?.workflow_call?.outputs).toHaveProperty('http_status');
     expect(providerDoc.on?.workflow_call?.outputs).toHaveProperty('inline_rollback_completed');
 
+    const preflightSteps = providerDoc.jobs?.preflight?.steps ?? [];
     const deploySteps = providerDoc.jobs?.deploy?.steps ?? [];
     const cloudrunStep = deploySteps.find((s) => s.id === 'cloudrun');
     expect(cloudrunStep?.['timeout-minutes']).toBe(5);
-    expect(cloudrunStep?.with?.labels).toBe(
-      '${{ steps.provenance.outputs.cloud_run_labels || steps.standalone-target.outputs.cloud_run_labels || steps.resolve.outputs.cloud_run_labels }}'
-    );
+    expect(cloudrunStep?.with?.labels).toBe('${{ needs.preflight.outputs.cloud_run_labels }}');
 
     const webhookStep = deploySteps.find((s) => s.id === 'webhook');
     expect(webhookStep?.['timeout-minutes']).toBe(2);
@@ -2642,7 +2710,7 @@ exit 0
     const finalizeStep = deploySteps.find((s) => s.id === 'finalize-deployment');
     expect(finalizeStep?.if).toContain('always()');
 
-    const setupNodeStep = deploySteps.find((s) => s.name === 'Setup Node.js for Migration Linter');
+    const setupNodeStep = preflightSteps.find((s) => s.name === 'Setup Node.js for Migration Linter');
     expect(setupNodeStep?.uses).toContain('actions/setup-node@');
     expect(setupNodeStep?.with?.['node-version-file']).toBe('.nvmrc');
 
@@ -3078,20 +3146,28 @@ exit 0
       `docker buildx imagetools inspect --raw ghcr.io/ownerorg/wedding_website@${servingDigest}`
     );
 
-    // 4. Every rollback-path step in deploy-provider.yml (validate-sha through health-probe) evaluates always() and prior step outcomes
+    // 4. Every rollback-path step across preflight and deploy in deploy-provider.yml evaluates always() and prior step outcomes
     const parsedProvider = parseDocument(deployProviderYml, { version: '1.2', strict: true }).toJS() as {
       jobs?: {
+        preflight?: {
+          steps?: Array<{ id?: string; name?: string; if?: string }>;
+        };
         deploy?: {
           steps?: Array<{ id?: string; name?: string; if?: string }>;
         };
       };
     };
+    const preflightSteps = parsedProvider.jobs?.preflight?.steps ?? [];
     const steps = parsedProvider.jobs?.deploy?.steps ?? [];
+    for (const stepId of ['validate-sha', 'checkout', 'resolve', 'provenance']) {
+      const step = preflightSteps.find((s) => s.id === stepId);
+      expect(step?.if).toContain('always()');
+    }
+    for (const stepId of ['checkout', 'resolve', 'provenance']) {
+      const step = preflightSteps.find((s) => s.id === stepId);
+      expect(step?.if).toContain("steps.validate-sha.outputs.is_rollback_call == 'true'");
+    }
     for (const stepId of [
-      'validate-sha',
-      'checkout',
-      'resolve',
-      'provenance',
       'verify-credentials',
       'gcp-auth-oidc',
       'gcp-auth-key',
@@ -3103,16 +3179,12 @@ exit 0
       'dry-run-adapter',
       'health-probe',
       'finalize-deployment',
-      'setup-node-rollback',
       'inline-rollback',
     ]) {
       const step = steps.find((s) => s.id === stepId);
       expect(step?.if).toContain('always()');
     }
     for (const stepId of [
-      'checkout',
-      'resolve',
-      'provenance',
       'verify-credentials',
       'gcp-auth-oidc',
       'gcp-auth-key',
@@ -3125,10 +3197,9 @@ exit 0
       'health-probe',
     ]) {
       const step = steps.find((s) => s.id === stepId);
-      expect(step?.if).toContain("steps.validate-sha.outputs.is_rollback_call == 'true'");
+      expect(step?.if).toContain("needs.preflight.outputs.is_rollback_call == 'true'");
     }
     const inlineStep = steps.find((s) => s.id === 'inline-rollback');
-    expect(inlineStep?.if).toContain("steps.setup-node-rollback.outcome == 'success'");
     expect(inlineStep?.if).toContain("steps.health-probe.outcome != 'success'");
     expect(inlineStep?.if).toContain('!inputs.is_rollback');
   });

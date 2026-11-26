@@ -135,8 +135,6 @@ on:
         required: false
       DEPLOY_WEBHOOK_SECRET:
         required: false
-      DATABASE_URL:
-        required: false
       SERVICE_URL:
         required: false
     outputs:
@@ -186,33 +184,27 @@ concurrency:
   queue: max
 
 jobs:
-  deploy:
-    name: Deploy Release Artifact to Provider
+  preflight:
+    name: Preflight Artifact Provenance & Migration Gate
     runs-on: ubuntu-latest
     permissions:
       actions: read
       contents: read
       packages: read
       attestations: read
-      deployments: write
-      id-token: write
     if: always()
-    environment: ${{ (github.event_name == 'workflow_call' && inputs.rollback_environment) || inputs.environment || 'production' }}
-    timeout-minutes: 20
+    timeout-minutes: 10
     outputs:
-      service_url: ${{ steps.resolve-url.outputs.service_url }}
-      is_dry_run: ${{ steps.resolve-url.outputs.is_dry_run }}
-      previous_image_tag: ${{ steps.capture-previous.outputs.previous_image_tag }}
-      previous_image_digest: ${{ steps.capture-previous.outputs.previous_image_digest }}
+      is_rollback_call: ${{ steps.validate-sha.outputs.is_rollback_call }}
       image_digest: ${{ steps.resolve.outputs.image_digest }}
       image_uri: ${{ steps.resolve.outputs.image_uri }}
       attestation_status: ${{ steps.provenance.outputs.attestation_status }}
-      cloud_run_service: ${{ steps.capture-previous.outputs.cloud_run_service }}
-      cloud_run_region: ${{ steps.capture-previous.outputs.cloud_run_region }}
-      health_status: ${{ steps.health-probe.outputs.health_status }}
-      http_status: ${{ steps.health-probe.outputs.http_status }}
-      rollout_executed: ${{ steps.rollout-marker.outputs.rollout_executed }}
-      inline_rollback_completed: ${{ steps.inline-rollback.outputs.inline_rollback_completed }}
+      source_ref: ${{ steps.provenance.outputs.source_ref }}
+      source_revision: ${{ steps.provenance.outputs.source_revision }}
+      standalone_target_sha: ${{ steps.standalone-target.outputs.target_sha }}
+      cloud_run_labels: ${{ steps.provenance.outputs.cloud_run_labels || steps.standalone-target.outputs.cloud_run_labels || steps.resolve.outputs.cloud_run_labels }}
+      migration_lint_status: ${{ steps.lint-migrations.outputs.migration_lint_status }}
+      git_parent_shas: ${{ steps.git-ancestors.outputs.git_parent_shas }}
     steps:
       - name: Validate Commit SHA Input
         id: validate-sha
@@ -239,8 +231,30 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.commit_sha }}
-          fetch-depth: 2
+          fetch-depth: 0
           persist-credentials: false
+
+      - name: Capture Git Parent SHAs for Rollback Fallback
+        id: git-ancestors
+        if: >-
+          always() &&
+          (!cancelled() || steps.validate-sha.outputs.is_rollback_call == 'true') &&
+          steps.checkout.outcome == 'success'
+        env:
+          INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
+          INCOMING_TAG: ${{ inputs.image_tag || '' }}
+          CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}
+        run: |
+          GIT_REF_TARGET="HEAD"
+          if [[ "${INPUT_COMMIT_SHA:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            GIT_REF_TARGET="$INPUT_COMMIT_SHA"
+          elif [[ "${INCOMING_TAG:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            GIT_REF_TARGET="$INCOMING_TAG"
+          elif [[ "${CURRENT_SHA:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            GIT_REF_TARGET="$CURRENT_SHA"
+          fi
+          PARENT_SHAS=$(git rev-list --first-parent --skip=1 --max-count=10 "$GIT_REF_TARGET" 2>/dev/null | paste -sd ',' - || true)
+          echo "git_parent_shas=${PARENT_SHAS}" >> "$GITHUB_OUTPUT"
 
       - name: Resolve Artifact Image URI
         id: resolve
@@ -308,17 +322,25 @@ jobs:
             fi
           fi
 
+          SCOPED_DOCKER_CONFIG=""
+          if [ -n "$GH_TOKEN" ] && command -v docker >/dev/null 2>&1; then
+            SCOPED_DOCKER_CONFIG=$(mktemp -d "${RUNNER_TEMP:-/tmp}/docker-config-XXXXXX")
+            chmod 700 "$SCOPED_DOCKER_CONFIG"
+            export DOCKER_CONFIG="$SCOPED_DOCKER_CONFIG"
+            trap 'rm -rf "${SCOPED_DOCKER_CONFIG:-}"' EXIT
+          fi
+
           if [ -n "$RAW_DIGEST" ]; then
             if [[ ! "$RAW_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
               echo "::error::Invalid image digest '${RAW_DIGEST}'. Must match ^sha256:[a-f0-9]{64}$."
               exit 1
             fi
             RESOLVED_DIGEST="$RAW_DIGEST"
-            if [ -n "$GH_TOKEN" ]; then
+            if [ -n "$GH_TOKEN" ] && command -v docker >/dev/null 2>&1; then
               printf '%s\n' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR_LOGIN" --password-stdin
             fi
           else
-            if [ -n "$GH_TOKEN" ]; then
+            if [ -n "$GH_TOKEN" ] && command -v docker >/dev/null 2>&1; then
               printf '%s\n' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR_LOGIN" --password-stdin
             fi
 
@@ -357,6 +379,7 @@ jobs:
         timeout-minutes: 3
         env:
           GH_TOKEN: ${{ github.token }}
+          GITHUB_ACTOR_LOGIN: ${{ github.actor }}
           IMAGE_URI: ${{ steps.resolve.outputs.image_uri }}
           IMAGE_DIGEST: ${{ steps.resolve.outputs.image_digest }}
           RAW_TAG: ${{ inputs.image_tag }}
@@ -417,6 +440,14 @@ jobs:
             --format json); then
             echo "::error::OIDC build provenance JSON verification failed for oci://${IMAGE_URI}. Blocking deployment."
             exit 1
+          fi
+
+          SCOPED_DOCKER_CONFIG="$(mktemp -d "${RUNNER_TEMP:-/tmp}/ghcr-provenance-docker-config.XXXXXX")"
+          chmod 700 "$SCOPED_DOCKER_CONFIG"
+          export DOCKER_CONFIG="$SCOPED_DOCKER_CONFIG"
+          trap 'rm -rf "$SCOPED_DOCKER_CONFIG"' EXIT
+          if [ -n "${GH_TOKEN:-}" ] && command -v docker >/dev/null 2>&1; then
+            printf '%s\n' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR_LOGIN" --password-stdin >/dev/null 2>&1 || true
           fi
 
           RAW_INDEX_JSON=$(docker buildx imagetools inspect --raw "$IMAGE_URI" 2>/dev/null || true)
@@ -574,8 +605,13 @@ jobs:
               --format json)
 
             RAW_INDEX_JSON=""
+            SCOPED_DOCKER_CONFIG=""
             if command -v docker >/dev/null 2>&1 && [ -n "${GITHUB_ACTOR_LOGIN:-}" ]; then
               if [ -n "$EFFECTIVE_GIT_TOKEN" ]; then
+                SCOPED_DOCKER_CONFIG=$(mktemp -d "${RUNNER_TEMP:-/tmp}/docker-config-XXXXXX")
+                chmod 700 "$SCOPED_DOCKER_CONFIG"
+                export DOCKER_CONFIG="$SCOPED_DOCKER_CONFIG"
+                trap 'rm -rf "${SCOPED_DOCKER_CONFIG:-}"' EXIT
                 printf '%s\n' "$EFFECTIVE_GIT_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR_LOGIN" --password-stdin >/dev/null 2>&1 || true
               fi
               RAW_INDEX_JSON=$(docker buildx imagetools inspect --raw "$IMAGE_URI" 2>/dev/null || true)
@@ -835,15 +871,66 @@ jobs:
               `Verified CI run #${successfulCiRun.run_number} and database migration run #${verifiedMigrateRun.run_number} (${targetEnv}) for commit ${targetSha}.`
             );
 
-      - name: Verify Selected Provider Credentials
-        id: verify-credentials
+      - name: Setup Node.js for Migration Linter
+        id: setup-node-lint
         if: >-
           always() &&
           (!cancelled() || steps.validate-sha.outputs.is_rollback_call == 'true') &&
           steps.resolve.outcome == 'success' &&
           (steps.provenance.outcome == 'success' || steps.provenance.outcome == 'skipped') &&
           (steps.standalone-target.outcome == 'success' || steps.standalone-target.outcome == 'skipped') &&
-          (steps.standalone-gate.outcome == 'success' || steps.standalone-gate.outcome == 'skipped') &&
+          (steps.standalone-gate.outcome == 'success' || steps.standalone-gate.outcome == 'skipped')
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Verify Migration Backward Compatibility
+        id: lint-migrations
+        if: >-
+          always() &&
+          (!cancelled() || steps.validate-sha.outputs.is_rollback_call == 'true') &&
+          steps.setup-node-lint.outcome == 'success'
+        run: |
+          npm run lint:migrations
+          echo "migration_lint_status=compatible" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Deploy Release Artifact to Provider
+    needs: [preflight]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      attestations: read
+      deployments: write
+      id-token: write
+    if: >-
+      always() &&
+      (!cancelled() || needs.preflight.outputs.is_rollback_call == 'true') &&
+      needs.preflight.result == 'success'
+    environment: ${{ (github.event_name == 'workflow_call' && inputs.rollback_environment) || inputs.environment || 'production' }}
+    timeout-minutes: 20
+    outputs:
+      service_url: ${{ steps.resolve-url.outputs.service_url }}
+      is_dry_run: ${{ steps.resolve-url.outputs.is_dry_run }}
+      previous_image_tag: ${{ steps.capture-previous.outputs.previous_image_tag }}
+      previous_image_digest: ${{ steps.capture-previous.outputs.previous_image_digest }}
+      image_digest: ${{ needs.preflight.outputs.image_digest }}
+      image_uri: ${{ needs.preflight.outputs.image_uri }}
+      attestation_status: ${{ needs.preflight.outputs.attestation_status }}
+      cloud_run_service: ${{ steps.capture-previous.outputs.cloud_run_service }}
+      cloud_run_region: ${{ steps.capture-previous.outputs.cloud_run_region }}
+      health_status: ${{ steps.health-probe.outputs.health_status }}
+      http_status: ${{ steps.health-probe.outputs.http_status }}
+      rollout_executed: ${{ steps.rollout-marker.outputs.rollout_executed }}
+      inline_rollback_completed: ${{ steps.inline-rollback.outputs.inline_rollback_completed }}
+    steps:
+      - name: Verify Selected Provider Credentials
+        id: verify-credentials
+        if: >-
+          always() &&
+          (!cancelled() || needs.preflight.outputs.is_rollback_call == 'true') &&
           !inputs.dry_run
         env:
           PROVIDER: ${{ inputs.provider || 'google-cloud-run' }}
@@ -1043,7 +1130,7 @@ jobs:
         id: gcp-auth-oidc
         if: >-
           always() &&
-          (!cancelled() || steps.validate-sha.outputs.is_rollback_call == 'true') &&
+          (!cancelled() || needs.preflight.outputs.is_rollback_call == 'true') &&
           steps.verify-credentials.outcome == 'success' &&
           (!inputs.dry_run) &&
           (inputs.provider == 'google-cloud-run' || inputs.provider == '') &&
@@ -1059,7 +1146,7 @@ jobs:
         id: gcp-auth-key
         if: >-
           always() &&
-          (!cancelled() || steps.validate-sha.outputs.is_rollback_call == 'true') &&
+          (!cancelled() || needs.preflight.outputs.is_rollback_call == 'true') &&
           steps.verify-credentials.outcome == 'success' &&
           (!inputs.dry_run) &&
           (inputs.provider == 'google-cloud-run' || inputs.provider == '') &&
@@ -1073,11 +1160,7 @@ jobs:
       - name: Record Target Environment (staging)
         if: >-
           always() &&
-          (!cancelled() || steps.validate-sha.outputs.is_rollback_call == 'true') &&
-          steps.resolve.outcome == 'success' &&
-          (steps.provenance.outcome == 'success' || steps.provenance.outcome == 'skipped') &&
-          (steps.standalone-target.outcome == 'success' || steps.standalone-target.outcome == 'skipped') &&
-          (steps.standalone-gate.outcome == 'success' || steps.standalone-gate.outcome == 'skipped') &&
+          (!cancelled() || needs.preflight.outputs.is_rollback_call == 'true') &&
           (inputs.dry_run || (steps.verify-credentials.outcome == 'success' && steps.gcp-auth-oidc.outcome != 'failure' && steps.gcp-auth-key.outcome != 'failure')) &&
           inputs.environment == 'staging'
         run: |
@@ -1086,11 +1169,7 @@ jobs:
       - name: Record Target Environment (production)
         if: >-
           always() &&
-          (!cancelled() || steps.validate-sha.outputs.is_rollback_call == 'true') &&
-          steps.resolve.outcome == 'success' &&
-          (steps.provenance.outcome == 'success' || steps.provenance.outcome == 'skipped') &&
-          (steps.standalone-target.outcome == 'success' || steps.standalone-target.outcome == 'skipped') &&
-          (steps.standalone-gate.outcome == 'success' || steps.standalone-gate.outcome == 'skipped') &&
+          (!cancelled() || needs.preflight.outputs.is_rollback_call == 'true') &&
           (inputs.dry_run || (steps.verify-credentials.outcome == 'success' && steps.gcp-auth-oidc.outcome != 'failure' && steps.gcp-auth-key.outcome != 'failure')) &&
           (inputs.environment == 'production' || inputs.environment == '')
         run: |
@@ -1100,11 +1179,7 @@ jobs:
         id: capture-previous
         if: >-
           always() &&
-          (!cancelled() || steps.validate-sha.outputs.is_rollback_call == 'true') &&
-          steps.resolve.outcome == 'success' &&
-          (steps.provenance.outcome == 'success' || steps.provenance.outcome == 'skipped') &&
-          (steps.standalone-target.outcome == 'success' || steps.standalone-target.outcome == 'skipped') &&
-          (steps.standalone-gate.outcome == 'success' || steps.standalone-gate.outcome == 'skipped') &&
+          (!cancelled() || needs.preflight.outputs.is_rollback_call == 'true') &&
           (inputs.dry_run || (steps.verify-credentials.outcome == 'success' && steps.gcp-auth-oidc.outcome != 'failure' && steps.gcp-auth-key.outcome != 'failure'))
         timeout-minutes: 3
         env:
@@ -1115,7 +1190,8 @@ jobs:
           INPUT_CLOUD_RUN_REGION: ${{ inputs.cloud_run_region }}
           CLOUD_RUN_REGION: ${{ vars.CLOUD_RUN_REGION }}
           INCOMING_TAG: ${{ inputs.image_tag || '' }}
-          INCOMING_DIGEST: ${{ steps.resolve.outputs.image_digest }}
+          INCOMING_DIGEST: ${{ needs.preflight.outputs.image_digest }}
+          PREFLIGHT_PARENT_SHAS: ${{ needs.preflight.outputs.git_parent_shas }}
           INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
           CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
@@ -1189,11 +1265,16 @@ jobs:
             return 0
           }
 
+          SCOPED_DOCKER_CONFIG=""
           ensure_ghcr_login() {
             if [ "$GHCR_LOGGED_IN" = "true" ]; then
               return 0
             fi
             if [ -n "${GITHUB_TOKEN:-}" ] && [ -n "${GITHUB_ACTOR_LOGIN:-}" ] && command -v docker >/dev/null 2>&1; then
+              SCOPED_DOCKER_CONFIG=$(mktemp -d "${RUNNER_TEMP:-/tmp}/docker-config-XXXXXX")
+              chmod 700 "$SCOPED_DOCKER_CONFIG"
+              export DOCKER_CONFIG="$SCOPED_DOCKER_CONFIG"
+              trap 'rm -rf "${SCOPED_DOCKER_CONFIG:-}"' EXIT
               printf '%s\n' "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR_LOGIN" --password-stdin >/dev/null 2>&1 || true
             fi
             GHCR_LOGGED_IN="true"
@@ -1352,78 +1433,65 @@ jobs:
                     RAW_MANIFEST=$(docker buildx imagetools inspect --raw "${SERVING_REPO}@${CANDIDATE_DIGEST}" 2>/dev/null || true)
                   fi
 
-                  if [ -f ./scripts/resolve-oci-provenance.sh ]; then
-                    PROVENANCE_ROW=$(ATTESTATION_JSON="$ATTESTATION_JSON" RAW_MANIFEST_JSON="$RAW_MANIFEST" bash ./scripts/resolve-oci-provenance.sh --conflict-mode warn --image-label "${SERVING_REPO}@${CANDIDATE_DIGEST}")
-                    IFS='|' read -r ATTESTED_TAG SERVING_INDEX_REVISION _ _ <<< "$PROVENANCE_ROW"
-                    if [ -n "$ATTESTED_TAG" ] && is_valid_previous_tag "$ATTESTED_TAG"; then
+                  SERVING_INDEX_REVISION=""
+                  if [[ "${RAW_MANIFEST#"${RAW_MANIFEST%%[![:space:]]*}"}" == \{* ]]; then
+                    SERVING_INDEX_REVISION=$(printf '%s' "$RAW_MANIFEST" | jq -r '
+                      (
+                        .annotations["org.opencontainers.image.revision"]
+                        // .config.Labels["org.opencontainers.image.revision"]
+                        // ([.manifests[]?.annotations["org.opencontainers.image.revision"] | select(type == "string" and test("^[a-fA-F0-9]{40}$"))][0])
+                        // empty
+                      )
+                    ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+                    if [[ ! "$SERVING_INDEX_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
+                      SERVING_INDEX_REVISION=""
+                    fi
+                  fi
+
+                  SERVING_SLSA_INPUT_REVISION=$(printf '%s' "$ATTESTATION_JSON" | jq -r '
+                    [
+                      (if type == "array" then .[] else . end)
+                      | (.verificationResult.statement.predicate // .statement.predicate // .predicate // empty)
+                      | .buildDefinition.externalParameters.inputs.commit_sha
+                      | select(type == "string" and test("^[a-fA-F0-9]{40}$"))
+                    ][0] // empty
+                  ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+                  if [[ ! "$SERVING_SLSA_INPUT_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
+                    SERVING_SLSA_INPUT_REVISION=""
+                  fi
+
+                  if [ -n "$SERVING_INDEX_REVISION" ] && [ -n "$SERVING_SLSA_INPUT_REVISION" ] && [ "$SERVING_INDEX_REVISION" != "$SERVING_SLSA_INPUT_REVISION" ]; then
+                    echo "::warning::Attested OCI index revision '${SERVING_INDEX_REVISION}' conflicts with SLSA input commit_sha '${SERVING_SLSA_INPUT_REVISION}' on serving image '${SERVING_REPO}@${CANDIDATE_DIGEST}'; skipping conflicting revision tag."
+                  else
+                    SERVING_SLSA_REVISION=$(printf '%s' "$ATTESTATION_JSON" | jq -r '
+                      [
+                        (if type == "array" then .[] else . end)
+                        | (
+                            .verificationResult.statement.subject[]?.annotations["org.opencontainers.image.revision"],
+                            .statement.subject[]?.annotations["org.opencontainers.image.revision"],
+                            ((.verificationResult.statement.predicate // .statement.predicate // .predicate // empty) | (
+                              .buildDefinition.externalParameters.inputs.commit_sha,
+                              (.buildDefinition.resolvedDependencies[]? | (.digest.gitCommit, .digest.sha1)),
+                              .buildDefinition.internalParameters.github.sha,
+                              .invocation.configSource.digest.sha1,
+                              (.materials[]? | (.digest.gitCommit, .digest.sha1))
+                            )),
+                            .verificationResult.signature.certificate.sourceRepositoryDigest
+                          )
+                        | select(type == "string" and test("^[a-fA-F0-9]{40}$"))
+                      ][0] // empty
+                    ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+                    if [[ ! "$SERVING_SLSA_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
+                      SERVING_SLSA_REVISION=""
+                    fi
+
+                    ATTESTED_TAG="${SERVING_INDEX_REVISION:-${SERVING_SLSA_REVISION}}"
+                    if is_valid_previous_tag "$ATTESTED_TAG"; then
                       PREVIOUS_IMAGE_TAG="$ATTESTED_TAG"
                       if [ -n "$SERVING_INDEX_REVISION" ]; then
                         TAG_SOURCE="oci-revision-label"
                       else
                         TAG_SOURCE="cloud-run-attestation"
-                      fi
-                    fi
-                  else
-                    SERVING_INDEX_REVISION=""
-                    if [[ "${RAW_MANIFEST#"${RAW_MANIFEST%%[![:space:]]*}"}" == \{* ]]; then
-                      SERVING_INDEX_REVISION=$(printf '%s' "$RAW_MANIFEST" | jq -r '
-                        (
-                          .annotations["org.opencontainers.image.revision"]
-                          // .config.Labels["org.opencontainers.image.revision"]
-                          // ([.manifests[]?.annotations["org.opencontainers.image.revision"] | select(type == "string" and test("^[a-fA-F0-9]{40}$"))][0])
-                          // empty
-                        )
-                      ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
-                      if [[ ! "$SERVING_INDEX_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
-                        SERVING_INDEX_REVISION=""
-                      fi
-                    fi
-
-                    SERVING_SLSA_INPUT_REVISION=$(printf '%s' "$ATTESTATION_JSON" | jq -r '
-                      [
-                        (if type == "array" then .[] else . end)
-                        | (.verificationResult.statement.predicate // .statement.predicate // .predicate // empty)
-                        | .buildDefinition.externalParameters.inputs.commit_sha
-                        | select(type == "string" and test("^[a-fA-F0-9]{40}$"))
-                      ][0] // empty
-                    ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
-                    if [[ ! "$SERVING_SLSA_INPUT_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
-                      SERVING_SLSA_INPUT_REVISION=""
-                    fi
-
-                    if [ -n "$SERVING_INDEX_REVISION" ] && [ -n "$SERVING_SLSA_INPUT_REVISION" ] && [ "$SERVING_INDEX_REVISION" != "$SERVING_SLSA_INPUT_REVISION" ]; then
-                      echo "::warning::Attested OCI index revision '${SERVING_INDEX_REVISION}' conflicts with SLSA input commit_sha '${SERVING_SLSA_INPUT_REVISION}' on serving image '${SERVING_REPO}@${CANDIDATE_DIGEST}'; skipping conflicting revision tag."
-                    else
-                      SERVING_SLSA_REVISION=$(printf '%s' "$ATTESTATION_JSON" | jq -r '
-                        [
-                          (if type == "array" then .[] else . end)
-                          | (
-                              .verificationResult.statement.subject[]?.annotations["org.opencontainers.image.revision"],
-                              .statement.subject[]?.annotations["org.opencontainers.image.revision"],
-                              ((.verificationResult.statement.predicate // .statement.predicate // .predicate // empty) | (
-                                .buildDefinition.externalParameters.inputs.commit_sha,
-                                (.buildDefinition.resolvedDependencies[]? | (.digest.gitCommit, .digest.sha1)),
-                                .buildDefinition.internalParameters.github.sha,
-                                .invocation.configSource.digest.sha1,
-                                (.materials[]? | (.digest.gitCommit, .digest.sha1))
-                              )),
-                              .verificationResult.signature.certificate.sourceRepositoryDigest
-                            )
-                          | select(type == "string" and test("^[a-fA-F0-9]{40}$"))
-                        ][0] // empty
-                      ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
-                      if [[ ! "$SERVING_SLSA_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
-                        SERVING_SLSA_REVISION=""
-                      fi
-
-                      ATTESTED_TAG="${SERVING_INDEX_REVISION:-${SERVING_SLSA_REVISION}}"
-                      if is_valid_previous_tag "$ATTESTED_TAG"; then
-                        PREVIOUS_IMAGE_TAG="$ATTESTED_TAG"
-                        if [ -n "$SERVING_INDEX_REVISION" ]; then
-                          TAG_SOURCE="oci-revision-label"
-                        else
-                          TAG_SOURCE="cloud-run-attestation"
-                        fi
                       fi
                     fi
                   fi
@@ -1692,6 +1760,16 @@ jobs:
             fi
           fi
 
+          if [ -z "$PREVIOUS_IMAGE_TAG" ] && [ -n "${PREFLIGHT_PARENT_SHAS:-}" ]; then
+            IFS=',' read -r -a PARENT_SHA_LIST <<< "$PREFLIGHT_PARENT_SHAS"
+            for ANCESTOR_SHA in "${PARENT_SHA_LIST[@]}"; do
+              [ -z "$ANCESTOR_SHA" ] && continue
+              if verify_and_accept_candidate "$ANCESTOR_SHA" "git-parent-sha"; then
+                break
+              fi
+            done
+          fi
+
           if [ -z "$PREVIOUS_IMAGE_TAG" ]; then
             GIT_REF_TARGET="${EFFECTIVE_TARGET_SHA:-${CURRENT_SHA:-HEAD}}"
             GIT_PREV_SHA=$(git rev-parse --verify "${GIT_REF_TARGET}^1" 2>/dev/null || true)
@@ -1781,7 +1859,7 @@ jobs:
         id: cloudrun
         if: >-
           always() &&
-          (!cancelled() || steps.validate-sha.outputs.is_rollback_call == 'true') &&
+          (!cancelled() || needs.preflight.outputs.is_rollback_call == 'true') &&
           steps.capture-previous.outcome == 'success' &&
           (!inputs.dry_run) &&
           (inputs.provider == 'google-cloud-run' || inputs.provider == '') &&
@@ -1790,23 +1868,23 @@ jobs:
         uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d # v3.0.1
         with:
           service: ${{ steps.verify-credentials.outputs.cloud_run_service || inputs.cloud_run_service || vars.CLOUD_RUN_SERVICE || (inputs.environment == 'staging' && 'wedding-website-staging') || 'wedding-website' }}
-          image: ${{ steps.resolve.outputs.image_uri }}
+          image: ${{ needs.preflight.outputs.image_uri }}
           region: ${{ steps.verify-credentials.outputs.cloud_run_region || inputs.cloud_run_region || vars.CLOUD_RUN_REGION || 'us-central1' }}
           project_id: ${{ secrets.GCP_PROJECT_ID || steps.gcp-auth-oidc.outputs.project_id || steps.gcp-auth-key.outputs.project_id || steps.verify-credentials.outputs.gcp_project_id }}
-          labels: ${{ steps.provenance.outputs.cloud_run_labels || steps.standalone-target.outputs.cloud_run_labels || steps.resolve.outputs.cloud_run_labels }}
+          labels: ${{ needs.preflight.outputs.cloud_run_labels }}
 
       - name: Deploy via Generic Webhook Adapter
         id: webhook
         if: >-
           always() &&
-          (!cancelled() || steps.validate-sha.outputs.is_rollback_call == 'true') &&
+          (!cancelled() || needs.preflight.outputs.is_rollback_call == 'true') &&
           steps.capture-previous.outcome == 'success' &&
           (!inputs.dry_run) &&
           (inputs.provider == 'generic-webhook' || inputs.provider == 'docker-host')
         timeout-minutes: 2
         env:
-          IMAGE_URI: ${{ steps.resolve.outputs.image_uri }}
-          IMAGE_DIGEST: ${{ steps.resolve.outputs.image_digest }}
+          IMAGE_URI: ${{ needs.preflight.outputs.image_uri }}
+          IMAGE_DIGEST: ${{ needs.preflight.outputs.image_digest }}
           TARGET_ENV: ${{ inputs.environment || 'production' }}
           DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
           DEPLOY_WEBHOOK_SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
@@ -1993,7 +2071,7 @@ jobs:
         id: rollout-marker
         if: >-
           always() &&
-          (!cancelled() || steps.validate-sha.outputs.is_rollback_call == 'true') &&
+          (!cancelled() || needs.preflight.outputs.is_rollback_call == 'true') &&
           !inputs.dry_run &&
           (steps.cloudrun.outcome == 'success' || steps.webhook.outcome == 'success')
         run: |
@@ -2003,7 +2081,7 @@ jobs:
         id: record-deployment
         if: >-
           always() &&
-          (!cancelled() || steps.validate-sha.outputs.is_rollback_call == 'true') &&
+          (!cancelled() || needs.preflight.outputs.is_rollback_call == 'true') &&
           !inputs.dry_run &&
           steps.rollout-marker.outputs.rollout_executed == 'true'
         timeout-minutes: 2
@@ -2011,11 +2089,11 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           TARGET_ENV: ${{ inputs.environment || 'production' }}
           PROVIDER: ${{ inputs.provider || 'google-cloud-run' }}
-          IMAGE_URI: ${{ steps.resolve.outputs.image_uri }}
-          IMAGE_DIGEST: ${{ steps.resolve.outputs.image_digest }}
+          IMAGE_URI: ${{ needs.preflight.outputs.image_uri }}
+          IMAGE_DIGEST: ${{ needs.preflight.outputs.image_digest }}
           IMAGE_TAG: ${{ inputs.image_tag || '' }}
-          SOURCE_REVISION: ${{ steps.provenance.outputs.source_revision }}
-          STANDALONE_TARGET_SHA: ${{ steps.standalone-target.outputs.target_sha }}
+          SOURCE_REVISION: ${{ needs.preflight.outputs.source_revision }}
+          STANDALONE_TARGET_SHA: ${{ needs.preflight.outputs.standalone_target_sha }}
           INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
           CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}
           VAR_SERVICE_URL: ${{ vars.SERVICE_URL }}
@@ -2119,12 +2197,12 @@ jobs:
         id: dry-run-adapter
         if: >-
           always() &&
-          (!cancelled() || steps.validate-sha.outputs.is_rollback_call == 'true') &&
+          (!cancelled() || needs.preflight.outputs.is_rollback_call == 'true') &&
           steps.capture-previous.outcome == 'success' &&
           inputs.dry_run
         env:
-          IMAGE_URI: ${{ steps.resolve.outputs.image_uri }}
-          IMAGE_DIGEST: ${{ steps.resolve.outputs.image_digest }}
+          IMAGE_URI: ${{ needs.preflight.outputs.image_uri }}
+          IMAGE_DIGEST: ${{ needs.preflight.outputs.image_digest }}
         run: |
           echo "::notice::Explicit dry-run mode enabled. Validated provider adapter deployment parameters for pinned image URI ${IMAGE_URI} (${IMAGE_DIGEST})."
 
@@ -2132,7 +2210,7 @@ jobs:
         id: health-probe
         if: >-
           always() &&
-          (!cancelled() || steps.validate-sha.outputs.is_rollback_call == 'true') &&
+          (!cancelled() || needs.preflight.outputs.is_rollback_call == 'true') &&
           (
             (inputs.dry_run && steps.dry-run-adapter.outcome == 'success') ||
             (!inputs.dry_run && steps.rollout-marker.outputs.rollout_executed == 'true')
@@ -2327,26 +2405,10 @@ jobs:
             -d "$STATUS_BODY" >/dev/null 2>&1 || true
           echo "deployment_state=${FINAL_STATE}" >> "$GITHUB_OUTPUT"
 
-      - name: Setup Node.js for Migration Linter
-        id: setup-node-rollback
-        if: >-
-          always() &&
-          (failure() || cancelled() || steps.health-probe.outcome != 'success') &&
-          !inputs.is_rollback &&
-          github.event_name == 'workflow_call' &&
-          !inputs.dry_run &&
-          inputs.auto_rollback_on_failure &&
-          inputs.rollback_environment == '' &&
-          steps.rollout-marker.outputs.rollout_executed == 'true'
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: '.nvmrc'
-
       - name: Execute Inline Fallback Rollback
         id: inline-rollback
         if: >-
           always() &&
-          steps.setup-node-rollback.outcome == 'success' &&
           (failure() || cancelled() || steps.health-probe.outcome != 'success') &&
           !inputs.is_rollback &&
           github.event_name == 'workflow_call' &&
@@ -2363,10 +2425,11 @@ jobs:
           SIGNER_WORKFLOW: ${{ github.repository }}/.github/workflows/publish-artifact.yml
           TARGET_ENV: ${{ inputs.environment || 'production' }}
           PROVIDER: ${{ inputs.provider || 'google-cloud-run' }}
-          FAILING_SOURCE_REVISION: ${{ steps.provenance.outputs.source_revision }}
+          PREFLIGHT_MIGRATION_LINT: ${{ needs.preflight.outputs.migration_lint_status }}
+          FAILING_SOURCE_REVISION: ${{ needs.preflight.outputs.source_revision }}
           INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
           CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}
-          FAILING_IMAGE_DIGEST: ${{ steps.resolve.outputs.image_digest }}
+          FAILING_IMAGE_DIGEST: ${{ needs.preflight.outputs.image_digest }}
           PREVIOUS_TAG_OVERRIDE: ${{ inputs.previous_tag }}
           CAPTURED_PREVIOUS_TAG: ${{ steps.capture-previous.outputs.previous_image_tag }}
           CAPTURED_PREVIOUS_DIGEST: ${{ steps.capture-previous.outputs.previous_image_digest }}
@@ -2392,9 +2455,9 @@ jobs:
           echo "=================================================="
           echo "   INLINE FALLBACK ROLLBACK (${EFFECTIVE_ENV})    "
           echo "=================================================="
-          echo "Verifying N-1 database migration backward compatibility before restoring prior container..."
-          if ! npm run lint:migrations; then
-            echo "::error::Inline fallback rollback aborted: npm run lint:migrations failed."
+          echo "Verifying preflight N-1 database migration backward compatibility status before restoring prior container..."
+          if [ "${PREFLIGHT_MIGRATION_LINT:-compatible}" != "compatible" ]; then
+            echo "::error::Inline fallback rollback aborted: preflight migration backward compatibility check failed."
             fail_inline_rollback
           fi
 
@@ -2530,9 +2593,25 @@ jobs:
           fi
 
           IMAGE_REPO_LOWER=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          GHCR_LOGGED_IN="false"
+          SCOPED_DOCKER_CONFIG=""
+          ensure_ghcr_login() {
+            if [ "$GHCR_LOGGED_IN" = "true" ]; then
+              return 0
+            fi
+            if [ -n "$TOKEN" ] && command -v docker >/dev/null 2>&1; then
+              SCOPED_DOCKER_CONFIG=$(mktemp -d "${RUNNER_TEMP:-/tmp}/docker-config-XXXXXX")
+              chmod 700 "$SCOPED_DOCKER_CONFIG"
+              export DOCKER_CONFIG="$SCOPED_DOCKER_CONFIG"
+              trap 'rm -rf "${SCOPED_DOCKER_CONFIG:-}"' EXIT
+              printf '%s\n' "$TOKEN" | docker login ghcr.io -u "${GITHUB_ACTOR_LOGIN:-github-actions}" --password-stdin >/dev/null 2>&1 || true
+            fi
+            GHCR_LOGGED_IN="true"
+          }
+
           RESTORED_DIGEST="$CANDIDATE_DIGEST"
           if [ -z "$RESTORED_DIGEST" ]; then
-            printf '%s\n' "$TOKEN" | docker login ghcr.io -u "${GITHUB_ACTOR_LOGIN:-github-actions}" --password-stdin >/dev/null 2>&1 || true
+            ensure_ghcr_login
             RAW_MANIFEST_FILE=$(mktemp)
             if ! docker buildx imagetools inspect "ghcr.io/${IMAGE_REPO_LOWER}:${CANDIDATE_TAG}" --raw > "$RAW_MANIFEST_FILE" || [ ! -s "$RAW_MANIFEST_FILE" ]; then
               rm -f "$RAW_MANIFEST_FILE"
@@ -2589,74 +2668,66 @@ jobs:
           RAW_RESTORED_INDEX=""
           if command -v docker >/dev/null 2>&1; then
             if [ -n "$TOKEN" ] && [ -n "${GITHUB_ACTOR_LOGIN:-}" ]; then
-              printf '%s\n' "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR_LOGIN" --password-stdin >/dev/null 2>&1 || true
+              ensure_ghcr_login
             fi
             RAW_RESTORED_INDEX=$(docker buildx imagetools inspect --raw "$RESTORED_IMAGE_URI" 2>/dev/null || true)
           fi
 
-          if [ -f ./scripts/resolve-oci-provenance.sh ]; then
-            if ! PROVENANCE_ROW=$(ATTESTATION_JSON="$ATTESTATION_JSON" RAW_MANIFEST_JSON="$RAW_RESTORED_INDEX" bash ./scripts/resolve-oci-provenance.sh --image-label "$RESTORED_IMAGE_URI"); then
-              echo "::error::Inline fallback rollback aborted due to conflicting OCI/SLSA provenance metadata on '${RESTORED_IMAGE_URI}'."
-              fail_inline_rollback
-            fi
-            IFS='|' read -r RESTORED_SOURCE_REVISION _ _ _ <<< "$PROVENANCE_ROW"
-          else
-            RESTORED_INDEX_REVISION=""
-            if [[ "${RAW_RESTORED_INDEX#"${RAW_RESTORED_INDEX%%[![:space:]]*}"}" == \{* ]]; then
-              RESTORED_INDEX_REVISION=$(printf '%s' "$RAW_RESTORED_INDEX" | jq -r '
-                (
-                  .annotations["org.opencontainers.image.revision"]
-                  // .config.Labels["org.opencontainers.image.revision"]
-                  // ([.manifests[]?.annotations["org.opencontainers.image.revision"] | select(type == "string" and test("^[a-fA-F0-9]{40}$"))][0])
-                  // empty
-                )
-              ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
-              if [[ ! "$RESTORED_INDEX_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
-                RESTORED_INDEX_REVISION=""
-              fi
-            fi
-
-            RESTORED_SLSA_INPUT_REVISION=$(printf '%s' "$ATTESTATION_JSON" | jq -r '
-              [
-                (if type == "array" then .[] else . end)
-                | (.verificationResult.statement.predicate // .statement.predicate // .predicate // empty)
-                | .buildDefinition.externalParameters.inputs.commit_sha
-                | select(type == "string" and test("^[a-fA-F0-9]{40}$"))
-              ][0] // empty
+          RESTORED_INDEX_REVISION=""
+          if [[ "${RAW_RESTORED_INDEX#"${RAW_RESTORED_INDEX%%[![:space:]]*}"}" == \{* ]]; then
+            RESTORED_INDEX_REVISION=$(printf '%s' "$RAW_RESTORED_INDEX" | jq -r '
+              (
+                .annotations["org.opencontainers.image.revision"]
+                // .config.Labels["org.opencontainers.image.revision"]
+                // ([.manifests[]?.annotations["org.opencontainers.image.revision"] | select(type == "string" and test("^[a-fA-F0-9]{40}$"))][0])
+                // empty
+              )
             ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
-            if [[ ! "$RESTORED_SLSA_INPUT_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
-              RESTORED_SLSA_INPUT_REVISION=""
+            if [[ ! "$RESTORED_INDEX_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
+              RESTORED_INDEX_REVISION=""
             fi
-
-            if [ -n "$RESTORED_INDEX_REVISION" ] && [ -n "$RESTORED_SLSA_INPUT_REVISION" ] && [ "$RESTORED_INDEX_REVISION" != "$RESTORED_SLSA_INPUT_REVISION" ]; then
-              echo "::error::Inline fallback rollback aborted: attested OCI index revision '${RESTORED_INDEX_REVISION}' conflicts with SLSA input commit_sha '${RESTORED_SLSA_INPUT_REVISION}' for '${RESTORED_IMAGE_URI}'."
-              fail_inline_rollback
-            fi
-
-            RESTORED_SLSA_REVISION=$(printf '%s' "$ATTESTATION_JSON" | jq -r '
-              [
-                (if type == "array" then .[] else . end)
-                | (
-                    .verificationResult.statement.subject[]?.annotations["org.opencontainers.image.revision"],
-                    .statement.subject[]?.annotations["org.opencontainers.image.revision"],
-                    ((.verificationResult.statement.predicate // .statement.predicate // .predicate // empty) | (
-                      .buildDefinition.externalParameters.inputs.commit_sha,
-                      (.buildDefinition.resolvedDependencies[]? | (.digest.gitCommit, .digest.sha1)),
-                      .buildDefinition.internalParameters.github.sha,
-                      .invocation.configSource.digest.sha1,
-                      (.materials[]? | (.digest.gitCommit, .digest.sha1))
-                    )),
-                    .verificationResult.signature.certificate.sourceRepositoryDigest
-                  )
-                | select(type == "string" and test("^[a-fA-F0-9]{40}$"))
-              ][0] // empty
-            ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
-            if [[ ! "$RESTORED_SLSA_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
-              RESTORED_SLSA_REVISION=""
-            fi
-
-            RESTORED_SOURCE_REVISION="${RESTORED_INDEX_REVISION:-${RESTORED_SLSA_REVISION}}"
           fi
+
+          RESTORED_SLSA_INPUT_REVISION=$(printf '%s' "$ATTESTATION_JSON" | jq -r '
+            [
+              (if type == "array" then .[] else . end)
+              | (.verificationResult.statement.predicate // .statement.predicate // .predicate // empty)
+              | .buildDefinition.externalParameters.inputs.commit_sha
+              | select(type == "string" and test("^[a-fA-F0-9]{40}$"))
+            ][0] // empty
+          ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+          if [[ ! "$RESTORED_SLSA_INPUT_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
+            RESTORED_SLSA_INPUT_REVISION=""
+          fi
+
+          if [ -n "$RESTORED_INDEX_REVISION" ] && [ -n "$RESTORED_SLSA_INPUT_REVISION" ] && [ "$RESTORED_INDEX_REVISION" != "$RESTORED_SLSA_INPUT_REVISION" ]; then
+            echo "::error::Inline fallback rollback aborted: attested OCI index revision '${RESTORED_INDEX_REVISION}' conflicts with SLSA input commit_sha '${RESTORED_SLSA_INPUT_REVISION}' for '${RESTORED_IMAGE_URI}'."
+            fail_inline_rollback
+          fi
+
+          RESTORED_SLSA_REVISION=$(printf '%s' "$ATTESTATION_JSON" | jq -r '
+            [
+              (if type == "array" then .[] else . end)
+              | (
+                  .verificationResult.statement.subject[]?.annotations["org.opencontainers.image.revision"],
+                  .statement.subject[]?.annotations["org.opencontainers.image.revision"],
+                  ((.verificationResult.statement.predicate // .statement.predicate // .predicate // empty) | (
+                    .buildDefinition.externalParameters.inputs.commit_sha,
+                    (.buildDefinition.resolvedDependencies[]? | (.digest.gitCommit, .digest.sha1)),
+                    .buildDefinition.internalParameters.github.sha,
+                    .invocation.configSource.digest.sha1,
+                    (.materials[]? | (.digest.gitCommit, .digest.sha1))
+                  )),
+                  .verificationResult.signature.certificate.sourceRepositoryDigest
+                )
+              | select(type == "string" and test("^[a-fA-F0-9]{40}$"))
+            ][0] // empty
+          ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+          if [[ ! "$RESTORED_SLSA_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
+            RESTORED_SLSA_REVISION=""
+          fi
+
+          RESTORED_SOURCE_REVISION="${RESTORED_INDEX_REVISION:-${RESTORED_SLSA_REVISION}}"
 
           if [[ ! "$RESTORED_SOURCE_REVISION" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error::Inline fallback rollback aborted: missing valid 40-char source_revision in provenance attestation."
@@ -3113,9 +3184,9 @@ jobs:
         env:
           TARGET_ENV: ${{ inputs.environment || 'production' }}
           PROVIDER: ${{ inputs.provider || 'google-cloud-run' }}
-          IMAGE_DIGEST: ${{ steps.resolve.outputs.image_digest }}
-          IMAGE_URI: ${{ steps.resolve.outputs.image_uri }}
-          ATTESTATION_STATUS: ${{ steps.provenance.outputs.attestation_status || 'dry-run-skipped' }}
+          IMAGE_DIGEST: ${{ needs.preflight.outputs.image_digest }}
+          IMAGE_URI: ${{ needs.preflight.outputs.image_uri }}
+          ATTESTATION_STATUS: ${{ needs.preflight.outputs.attestation_status || 'dry-run-skipped' }}
           SERVICE_URL: ${{ steps.resolve-url.outputs.service_url }}
           PREVIOUS_TAG: ${{ steps.capture-previous.outputs.previous_image_tag }}
           PREVIOUS_DIGEST: ${{ steps.capture-previous.outputs.previous_image_digest }}

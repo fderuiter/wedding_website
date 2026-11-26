@@ -280,11 +280,16 @@ jobs:
           RESOLVED_SIGNER="${SIGNER_WORKFLOW:-${GITHUB_REPOSITORY}/.github/workflows/publish-artifact.yml}"
 
           GHCR_LOGGED_IN="false"
+          SCOPED_DOCKER_CONFIG=""
           ensure_ghcr_login() {
             if [ "$GHCR_LOGGED_IN" = "true" ]; then
               return 0
             fi
             if [ -n "$TOKEN" ] && [ -n "${GITHUB_ACTOR_LOGIN:-}" ] && command -v docker >/dev/null 2>&1; then
+              SCOPED_DOCKER_CONFIG=$(mktemp -d "${RUNNER_TEMP:-/tmp}/docker-config-XXXXXX")
+              chmod 700 "$SCOPED_DOCKER_CONFIG"
+              export DOCKER_CONFIG="$SCOPED_DOCKER_CONFIG"
+              trap 'rm -rf "${SCOPED_DOCKER_CONFIG:-}"' EXIT
               printf '%s\n' "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR_LOGIN" --password-stdin >/dev/null 2>&1 || true
             fi
             GHCR_LOGGED_IN="true"
@@ -565,7 +570,12 @@ jobs:
       dry_run: ${{ inputs.dry_run || false }}
       caller_holds_lock: true
       is_rollback: true
-    secrets: inherit
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+      DEPLOY_WEBHOOK_SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
+      SERVICE_URL: ${{ secrets.SERVICE_URL }}
 
   verify:
     name: Verify Restored Container Health

@@ -117,6 +117,25 @@ on:
         required: false
         default: ''
         type: string
+    secrets:
+      DOCKERHUB_USERNAME:
+        required: false
+      DOCKERHUB_TOKEN:
+        required: false
+      DATABASE_URL:
+        required: false
+      POSTGRES_URL_NON_POOLING:
+        required: false
+      GCP_SA_KEY:
+        required: false
+      GCP_PROJECT_ID:
+        required: false
+      DEPLOY_WEBHOOK_URL:
+        required: false
+      DEPLOY_WEBHOOK_SECRET:
+        required: false
+      SERVICE_URL:
+        required: false
     outputs:
       schema_compatibility_status:
         description: 'Schema compatibility check status'
@@ -258,7 +277,12 @@ jobs:
               REPO_LOWER=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
               IMAGE_URI="ghcr.io/${REPO_LOWER}@${EFFECTIVE_IMAGE_DIGEST}"
 
+              SCOPED_DOCKER_CONFIG=""
               if command -v docker >/dev/null 2>&1 && [ -n "${GITHUB_ACTOR_LOGIN:-}" ]; then
+                SCOPED_DOCKER_CONFIG=$(mktemp -d "${RUNNER_TEMP:-/tmp}/docker-config-XXXXXX")
+                chmod 700 "$SCOPED_DOCKER_CONFIG"
+                export DOCKER_CONFIG="$SCOPED_DOCKER_CONFIG"
+                trap 'rm -rf "${SCOPED_DOCKER_CONFIG:-}"' EXIT
                 printf '%s\n' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR_LOGIN" --password-stdin >/dev/null 2>&1 || true
               fi
 
@@ -564,7 +588,9 @@ jobs:
     with:
       commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
       tag_name: ${{ needs.ci-gate.outputs.target_sha }}
-    secrets: inherit
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
   # ============================================================================
   # STAGING ENVIRONMENT PIPELINE (Automated after CI succeeds on main push)
@@ -608,7 +634,14 @@ jobs:
       cloud_run_region: ${{ inputs.cloud_run_region || '' }}
       rollback_environment: ${{ (github.event_name == 'workflow_call' && inputs.rollback_environment) || vars.STAGING_ROLLBACK_ENVIRONMENT || '' }}
       dry_run: ${{ inputs.dry_run || false }}
-    secrets: inherit
+    secrets:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      POSTGRES_URL_NON_POOLING: ${{ secrets.POSTGRES_URL_NON_POOLING }}
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+      DEPLOY_WEBHOOK_SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
+      SERVICE_URL: ${{ secrets.SERVICE_URL }}
 
   # ============================================================================
   # PRODUCTION ENVIRONMENT PIPELINE (Mandatory Reviewer Gate & Promotion)
@@ -653,4 +686,11 @@ jobs:
       cloud_run_region: ${{ inputs.cloud_run_region || '' }}
       rollback_environment: ${{ (github.event_name == 'workflow_call' && inputs.rollback_environment) || vars.PRODUCTION_ROLLBACK_ENVIRONMENT || '' }}
       dry_run: ${{ inputs.dry_run || false }}
-    secrets: inherit
+    secrets:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      POSTGRES_URL_NON_POOLING: ${{ secrets.POSTGRES_URL_NON_POOLING }}
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+      DEPLOY_WEBHOOK_SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
+      SERVICE_URL: ${{ secrets.SERVICE_URL }}
