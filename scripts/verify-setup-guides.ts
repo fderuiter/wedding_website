@@ -434,6 +434,8 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     'jest.setup.js',
     'scripts/install-git-hooks.js',
     'scripts/check-quality.ts',
+    'scripts/quality/run-typecheck.mjs',
+    'scripts/quality/worktree-cache.mjs',
     'scripts/pretest.mjs',
     'scripts/a11y-report.mjs',
     'scripts/seed.ts',
@@ -475,6 +477,32 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   const packageJsonRaw = fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8');
   const tsconfigRaw = fs.readFileSync(path.join(repoRoot, 'tsconfig.json'), 'utf8');
   const tsconfigBuildRaw = fs.readFileSync(path.join(repoRoot, 'tsconfig.build.json'), 'utf8');
+  const tsconfigScriptsPath = path.join(repoRoot, 'tsconfig.scripts.json');
+  const tsconfigE2ePath = path.join(repoRoot, 'tsconfig.e2e.json');
+  const tsconfigTestPath = path.join(repoRoot, 'tsconfig.test.json');
+  for (const [extraTsLabel, extraTsPath] of [
+    ['tsconfig.scripts.json', tsconfigScriptsPath],
+    ['tsconfig.e2e.json', tsconfigE2ePath],
+    ['tsconfig.test.json', tsconfigTestPath],
+  ] as const) {
+    if (!fs.existsSync(extraTsPath)) {
+      errors.push(`Required repository file not found: ${extraTsLabel}`);
+    }
+  }
+  if (errors.length > 0) {
+    return errors;
+  }
+  const tsconfigScriptsRaw = fs.readFileSync(tsconfigScriptsPath, 'utf8');
+  const tsconfigE2eRaw = fs.readFileSync(tsconfigE2ePath, 'utf8');
+  const tsconfigTestRaw = fs.readFileSync(tsconfigTestPath, 'utf8');
+  const runTypecheckRaw = fs.readFileSync(
+    path.join(repoRoot, 'scripts/quality/run-typecheck.mjs'),
+    'utf8'
+  );
+  const worktreeCacheRaw = fs.readFileSync(
+    path.join(repoRoot, 'scripts/quality/worktree-cache.mjs'),
+    'utf8'
+  );
   const composeRaw = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf8');
   const ciComposeRaw = fs.readFileSync(path.join(repoRoot, 'docker-compose.ci.yml'), 'utf8');
   const buildExportRaw = fs.readFileSync(path.join(repoRoot, 'scripts/build-export.mjs'), 'utf8');
@@ -1136,6 +1164,87 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
       errors.push(`.githooks/pre-push: Must run "${staticSubscript}"`);
     }
   }
+  for (const typecheckScriptName of ['typecheck', 'type-check'] as const) {
+    const typecheckCmd = scripts[typecheckScriptName] ?? '';
+    if (!typecheckCmd.includes('scripts/quality/run-typecheck.mjs')) {
+      errors.push(
+        `package.json: "${typecheckScriptName}" must invoke "scripts/quality/run-typecheck.mjs"`
+      );
+    }
+    if (typecheckCmd.includes('utimesSync') || /\btsc\s+-b\b/.test(typecheckCmd)) {
+      errors.push(
+        `package.json: "${typecheckScriptName}" must not rely on "utimesSync" or timestamp-based "tsc -b"`
+      );
+    }
+  }
+  if (
+    !runTypecheckRaw.includes('createIncrementalProgram') ||
+    !runTypecheckRaw.includes('sha256') ||
+    !runTypecheckRaw.includes('validator.ts') ||
+    !runTypecheckRaw.includes('.route-manifest.json') ||
+    runTypecheckRaw.includes('utimesSync')
+  ) {
+    errors.push(
+      'scripts/quality/run-typecheck.mjs: Must run ts.createIncrementalProgram with SHA-256 file hashes and validate .next/types/validator.ts plus .next/types/.route-manifest.json without fs.utimesSync'
+    );
+  }
+  for (const expectedTsconfig of [
+    'tsconfig.build.json',
+    'tsconfig.scripts.json',
+    'tsconfig.e2e.json',
+    'tsconfig.test.json',
+    'tsconfig.json',
+  ]) {
+    if (!runTypecheckRaw.includes(expectedTsconfig)) {
+      errors.push(
+        `scripts/quality/run-typecheck.mjs: Must check TypeScript project "${expectedTsconfig}"`
+      );
+    }
+  }
+
+  if (
+    !worktreeCacheRaw.includes('computeRouteTypesDigest') ||
+    !worktreeCacheRaw.includes('shouldIsolateWorktreePrisma') ||
+    !worktreeCacheRaw.includes('ensurePrismaClientReady')
+  ) {
+    errors.push(
+      'scripts/quality/worktree-cache.mjs: Must gate .next/types hydration on computeRouteTypesDigest and isolate node_modules/.prisma via shouldIsolateWorktreePrisma / ensurePrismaClientReady'
+    );
+  }
+
+  if (
+    !prePushRaw.includes('--untracked-files=normal') ||
+    /--untracked-files=no\b/.test(prePushRaw)
+  ) {
+    errors.push(
+      '.githooks/pre-push: trackedFilesMatchCommit must use "--untracked-files=normal" (not "--untracked-files=no") so non-ignored untracked files force detached worktree verification'
+    );
+  }
+  if (!prePushRaw.includes('ensurePrismaClientReady')) {
+    errors.push(
+      '.githooks/pre-push: Must prepare Prisma Client via "ensurePrismaClientReady" before starting parallel worker pool'
+    );
+  }
+  if (!/script:\s*['"]check:prisma['"][^}]*--skip-generate/.test(prePushRaw)) {
+    errors.push(
+      '.githooks/pre-push: Must pass "--skip-generate" to "check:prisma" after pre-pool Prisma Client preparation'
+    );
+  }
+  if (!checkQualityRaw.includes('ensurePrismaClientReady')) {
+    errors.push(
+      'scripts/check-quality.ts: Must prepare Prisma Client via "ensurePrismaClientReady" before starting parallel worker pool'
+    );
+  }
+  if (
+    !/check:prisma[\s\S]{0,160}--skip-generate|check-prisma-schema\.ts\s+--skip-generate/.test(
+      checkQualityRaw
+    )
+  ) {
+    errors.push(
+      'scripts/check-quality.ts: staticSteps must pass "--skip-generate" to "scripts/check-prisma-schema.ts"'
+    );
+  }
+
   if (!/script:\s*['"]check:standalone['"][^}]*--static-only/.test(prePushRaw)) {
     errors.push(
       '.githooks/pre-push: Must invoke "check:standalone" with "--static-only" so pre-push runs without a prior .next build'
@@ -1432,9 +1541,13 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
       '.github/CONTRIBUTING.md: Push to Your Fork section must document ".githooks/pre-push"'
     );
   }
-  if (!contributingPushSection.includes('worktree')) {
+  if (
+    !contributingPushSection.includes('--untracked-files=normal') ||
+    !contributingPushSection.includes('.route-manifest.json') ||
+    !contributingPushSection.includes('node_modules/.prisma')
+  ) {
     errors.push(
-      '.github/CONTRIBUTING.md: Push to Your Fork section must document ephemeral "git worktree" verification'
+      '.github/CONTRIBUTING.md: Push to Your Fork section must document "--untracked-files=normal", ".route-manifest.json" route-digest hydration, and "node_modules/.prisma" schema isolation'
     );
   }
   if (
@@ -1575,11 +1688,23 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   }
 
   // 6. AGENTS.md concise workflow & TypeScript configuration split checks
-  const tsconfig = JSON.parse(tsconfigRaw) as { exclude?: string[] };
+  const tsconfig = JSON.parse(tsconfigRaw) as {
+    compilerOptions?: { incremental?: boolean; tsBuildInfoFile?: string };
+    exclude?: string[];
+  };
   const tsconfigExcludes = tsconfig.exclude ?? [];
   const tsconfigBuild = JSON.parse(tsconfigBuildRaw) as {
     compilerOptions?: { incremental?: boolean; tsBuildInfoFile?: string };
     exclude?: string[];
+  };
+  const tsconfigScripts = JSON.parse(tsconfigScriptsRaw) as {
+    compilerOptions?: { incremental?: boolean; tsBuildInfoFile?: string };
+  };
+  const tsconfigE2e = JSON.parse(tsconfigE2eRaw) as {
+    compilerOptions?: { incremental?: boolean; tsBuildInfoFile?: string };
+  };
+  const tsconfigTest = JSON.parse(tsconfigTestRaw) as {
+    compilerOptions?: { incremental?: boolean; tsBuildInfoFile?: string };
   };
   const tsconfigBuildExcludes = tsconfigBuild.exclude ?? [];
   if (
@@ -1590,11 +1715,44 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
       'tsconfig.build.json: Must enable "incremental": true with "tsBuildInfoFile": "./tsconfig.build.tsbuildinfo"'
     );
   }
+  const resolvedBuildInfoPaths = new Set<string>();
+  for (const [tsLabel, parsedTs, defaultBuildInfo] of [
+    ['tsconfig.json', tsconfig, './tsconfig.tsbuildinfo'],
+    ['tsconfig.build.json', tsconfigBuild, './tsconfig.build.tsbuildinfo'],
+    ['tsconfig.scripts.json', tsconfigScripts, './tsconfig.scripts.tsbuildinfo'],
+    ['tsconfig.e2e.json', tsconfigE2e, './tsconfig.e2e.tsbuildinfo'],
+    ['tsconfig.test.json', tsconfigTest, './tsconfig.test.tsbuildinfo'],
+  ] as const) {
+    if (parsedTs.compilerOptions?.incremental !== true) {
+      errors.push(`${tsLabel}: Must keep "incremental": true enabled`);
+    }
+    const buildInfoPath =
+      parsedTs.compilerOptions?.tsBuildInfoFile ??
+      (tsLabel === 'tsconfig.json' ? defaultBuildInfo : '');
+    if (!buildInfoPath) {
+      errors.push(`${tsLabel}: Must declare a distinct "tsBuildInfoFile" path`);
+    } else if (resolvedBuildInfoPaths.has(buildInfoPath)) {
+      errors.push(
+        `${tsLabel}: Duplicate "tsBuildInfoFile" ("${buildInfoPath}") across tsconfig*.json projects`
+      );
+    } else {
+      resolvedBuildInfoPaths.add(buildInfoPath);
+    }
+  }
   const agentsTsSection = extractMarkdownSection(
     agentsRaw,
     /^##\s+3\.\s+TypeScript Configuration Split\b/,
     /^##\s+/
   );
+  if (
+    !agentsTsSection.includes('scripts/quality/run-typecheck.mjs') ||
+    !agentsTsSection.includes('.route-manifest.json') ||
+    /\btsc\s+-b\s+--noEmit\b/.test(agentsTsSection)
+  ) {
+    errors.push(
+      'AGENTS.md: TypeScript Configuration Split section must document content-hashed "scripts/quality/run-typecheck.mjs" and ".route-manifest.json" (not stale "tsc -b --noEmit")'
+    );
+  }
   if (
     !agentsTsSection.includes('tsconfig.build.tsbuildinfo') ||
     agentsTsSection.includes('incremental: false')
