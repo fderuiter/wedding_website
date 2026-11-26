@@ -91,6 +91,8 @@ concurrency:
 jobs:
   database-migration:
     name: Database Migration (${{ inputs.environment }})
+    permissions:
+      contents: read
     uses: ./.github/workflows/db-migrate.yml
     with:
       environment: ${{ inputs.environment }}
@@ -131,6 +133,8 @@ jobs:
     if: "!cancelled() && needs.deploy-provider.result == 'success'"
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
     outputs:
       health_status: ${{ steps.health-probe.outputs.health_status }}
       http_status: ${{ steps.health-probe.outputs.http_status }}

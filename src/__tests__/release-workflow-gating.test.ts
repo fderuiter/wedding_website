@@ -1723,15 +1723,74 @@ process.exit(1);
     expect(pkg.scripts?.postinstall).not.toContain('generate-docs');
     expect(pkg.scripts?.build).toBe('prisma generate && next build');
 
+    expect(pkg.scripts?.lint).toBe(
+      'eslint . --cache --cache-location .eslintcache --cache-strategy content --max-warnings 0'
+    );
+    expect(pkg.scripts?.['lint:fix']).toBe(
+      'eslint . --cache --cache-location .eslintcache --cache-strategy content --fix --max-warnings 0'
+    );
+
     const verifySection = ciWorkflow.split(/\n  doc-drift-comment:\n/)[0] ?? '';
     expect(verifySection).not.toContain('run: npm run prisma:generate');
     expect(verifySection).toContain('db_image: ${{ steps.resolve-db-image.outputs.db_image }}');
+    expect(verifySection).toContain('uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0');
+    for (const cachedVerifyFile of [
+      '.eslintcache',
+      'tsconfig.tsbuildinfo',
+      'tsconfig.build.tsbuildinfo',
+      'tsconfig.scripts.tsbuildinfo',
+      'tsconfig.e2e.tsbuildinfo',
+      'tsconfig.test.tsbuildinfo',
+    ]) {
+      expect(verifySection).toContain(cachedVerifyFile);
+    }
+    expect(verifySection).toContain('CACHE_HIT: ${{ steps.ts-eslint-cache.outputs.cache-hit }}');
+    expect(verifySection).toContain('2000-01-01T00:00:00Z');
+    const verifyRunBlocks = extractRunBlocks(verifySection);
+    const parallelVerifyScript = verifyRunBlocks.find((block) => block.includes('process.env.CACHE_HIT'));
+    expect(parallelVerifyScript).toBeDefined();
+    const tsNormalizeSnippet = (parallelVerifyScript ?? '').split('LOG_DIR=')[0] ?? '';
+    const tsTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-tsbuildinfo-mtime-'));
+    try {
+      const sampleBuildInfo = path.join(tsTempDir, 'tsconfig.build.tsbuildinfo');
+      fs.writeFileSync(sampleBuildInfo, '{"version":"5.9.3"}\n');
+      const midTime = new Date('2024-06-01T00:00:00Z');
+      fs.utimesSync(sampleBuildInfo, midTime, midTime);
+
+      const partialRes = spawnSync('bash', ['-eo', 'pipefail', '-c', tsNormalizeSnippet], {
+        cwd: tsTempDir,
+        encoding: 'utf8',
+        env: { ...process.env, CACHE_HIT: 'false' },
+      });
+      expect(partialRes.status).toBe(0);
+      expect(fs.statSync(sampleBuildInfo).mtime.toISOString()).toBe('2000-01-01T00:00:00.000Z');
+
+      const beforeExactMs = Date.now() - 2000;
+      const exactRes = spawnSync('bash', ['-eo', 'pipefail', '-c', tsNormalizeSnippet], {
+        cwd: tsTempDir,
+        encoding: 'utf8',
+        env: { ...process.env, CACHE_HIT: 'true' },
+      });
+      expect(exactRes.status).toBe(0);
+      expect(fs.statSync(sampleBuildInfo).mtimeMs).toBeGreaterThanOrEqual(beforeExactMs);
+    } finally {
+      fs.rmSync(tsTempDir, { recursive: true, force: true });
+    }
     expect(verifySection).toContain('npx tsx scripts/generate-docs.ts --skip-openapi');
     expect(verifySection).toContain("SKIP_DOC_SYNC: 'true'");
     expect(verifySection).toContain('name: docs-portal-static');
 
     const unitTestSection = (ciWorkflow.split(/\n  unit-test:\n/)[1] ?? '').split(/\n  build:\n/)[0] ?? '';
     expect(unitTestSection).toContain('image: ${{ needs.verify.outputs.db_image }}');
+    expect(unitTestSection).toContain("SKIP_NEXT_TYPEGEN: 'true'");
+    expect(unitTestSection).toContain('uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0');
+    expect(unitTestSection).toContain('path: node_modules/.cache/jest');
+    const unitNpmCiIdx = unitTestSection.indexOf('run: npm ci');
+    const unitJestCacheIdx = unitTestSection.indexOf('path: node_modules/.cache/jest');
+    const unitRunTestsIdx = unitTestSection.indexOf('run: npm run test:cov');
+    expect(unitNpmCiIdx).toBeGreaterThan(-1);
+    expect(unitJestCacheIdx).toBeGreaterThan(unitNpmCiIdx);
+    expect(unitRunTestsIdx).toBeGreaterThan(unitJestCacheIdx);
 
     const buildSection = (ciWorkflow.split(/\n  build:\n/)[1] ?? '').split(/\n  container-arm64:\n/)[0] ?? '';
     expect(buildSection).toContain("SKIP_NEXT_TYPEGEN: 'true'");
@@ -2044,6 +2103,52 @@ process.exit(1);
       });
       expect(failCi.status).toBe(1);
       expect(failCi.stdout + failCi.stderr).toContain(`${jobName} (skipped)`);
+    }
+  });
+
+  it('declares explicit least-privilege permissions at workflow root and every job across all workflows without unsafe script interpolation', () => {
+    const workflowsDir = path.join(path.resolve(__dirname, '../..'), '.github', 'workflows');
+    const workflowFiles = fs
+      .readdirSync(workflowsDir)
+      .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
+      .sort();
+
+    expect(workflowFiles.length).toBeGreaterThanOrEqual(8);
+
+    for (const file of workflowFiles) {
+      const raw = fs.readFileSync(path.join(workflowsDir, file), 'utf8');
+      const doc = parseDocument(raw, { version: '1.2', strict: true });
+      expect(doc.errors).toEqual([]);
+      const parsed = doc.toJS() as {
+        permissions?: Record<string, string>;
+        jobs?: Record<
+          string,
+          {
+            'runs-on'?: unknown;
+            permissions?: Record<string, string>;
+            steps?: Array<{ run?: string; with?: { script?: string } }>;
+          }
+        >;
+      };
+
+      expect(parsed.permissions).toEqual({ contents: 'read' });
+
+      for (const [jobId, job] of Object.entries(parsed.jobs ?? {})) {
+        expect({
+          file,
+          jobId,
+          hasPermissions:
+            job.permissions !== undefined && Object.keys(job.permissions).length > 0,
+        }).toEqual({ file, jobId, hasPermissions: true });
+        for (const step of job.steps ?? []) {
+          if (typeof step.run === 'string') {
+            expect(step.run).not.toMatch(/\$\{\{/);
+          }
+          if (typeof step.with?.script === 'string') {
+            expect(step.with.script).not.toMatch(/\$\{\{/);
+          }
+        }
+      }
     }
   });
 });
