@@ -126,8 +126,7 @@ if (args[0] === 'attestation' && args[1] === 'verify' && args.includes('--format
   const signer = signerIdx >= 0 ? args[signerIdx + 1] : '';
   if (
     sourceRef === 'refs/tags/v1.0.1' &&
-    signer === 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml' &&
-    process.env.MOCK_ATTESTATION_CONFLICT !== 'true'
+    signer === 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml'
   ) {
     process.stdout.write(JSON.stringify([
       {

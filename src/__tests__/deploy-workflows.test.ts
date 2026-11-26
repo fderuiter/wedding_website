@@ -444,7 +444,8 @@ process.exit(1);
 
     expect(ciDoc.concurrency).toEqual({
       group: '${{ github.workflow }}-${{ github.ref }}',
-      'cancel-in-progress': "${{ github.event_name == 'pull_request' }}",
+      'cancel-in-progress':
+        "${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}",
       queue: 'max',
     });
     expect(storybookDoc.concurrency).toEqual({
@@ -3464,11 +3465,12 @@ exit 0
         GITHUB_ACTOR_LOGIN: 'octocat',
         IMAGE_URI: `ghcr.io/ownerorg/wedding_website@${VALID_DIGEST}`,
         RAW_TAG: '',
-        SOURCE_REVISION: c2Sha,
-        INPUT_COMMIT_SHA: '',
         EXPECTED_SOURCE_REF: 'refs/heads/main',
         REPO_OWNER: 'OwnerOrg',
         SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+        MOCK_INDEX_REVISION: c2Sha,
+        MOCK_ATTESTATION_SHA: c2Sha,
+        MOCK_SLSA_REVISION: c2Sha,
       },
       workRepo
     );
@@ -3492,6 +3494,8 @@ exit 0
         GITHUB_TOKEN: '',
         GH_TOKEN: 'ghs_test_token',
         GITHUB_ACTOR_LOGIN: 'octocat',
+        MOCK_RESOLVED_DIGEST:
+          'sha256:1111111111111111111111111111111111111111111111111111111111111111',
       },
       workRepo
     );
