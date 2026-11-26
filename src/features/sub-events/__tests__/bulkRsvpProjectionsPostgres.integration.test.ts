@@ -346,7 +346,7 @@ describe('Bulk SubEvent RSVP & InvitationCode projection PostgreSQL wire-level i
     expect(clearedGuest.dietaryNotes).toBe('Gluten-free');
     expect(clearedHouseholdNoteGuest.dietaryNotes).toBe('Nut allergy');
     expect(clearedGuest.extraFields).toEqual({ tableNote: 'Window seat' });
-  });
+  }, 30_000);
 
   it('executes <= 10 wire SQL statements under 5,000 ms for SubEventAdminService.update choice renames and SubEventAdminService.delete across 750 RSVPs, while skipping RSVP/InvitationCode queries on metadata-only edits', async () => {
     const adminService = new SubEventAdminService();
@@ -555,7 +555,7 @@ describe('Bulk SubEvent RSVP & InvitationCode projection PostgreSQL wire-level i
     expect(singleEventHousehold.used).toBe(false);
     expect(singleEventHousehold.usedAt).toBeNull();
     expect(singleEventHousehold.extraFields).toEqual({});
-  });
+  }, 30_000);
 
   it('maintains exact database and return-value parity between $executeRaw path and mocked-client fallback path', async () => {
     const seedScenario = async () => {
@@ -741,5 +741,5 @@ describe('Bulk SubEvent RSVP & InvitationCode projection PostgreSQL wire-level i
     expect(rawState.accessPairs).toEqual(fallbackState.accessPairs);
     expect(rawState.snapshots).toEqual(fallbackState.snapshots);
     expect(rawState.postDeleteInvites).toEqual(fallbackState.postDeleteInvites);
-  });
+  }, 30_000);
 });

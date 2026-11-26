@@ -91,6 +91,8 @@ concurrency:
 jobs:
   database-migration:
     name: Database Migration (${{ inputs.environment }})
+    permissions:
+      contents: read
     uses: ./.github/workflows/db-migrate.yml
     with:
       environment: ${{ inputs.environment }}
@@ -134,6 +136,7 @@ jobs:
 
   verify-deployment:
     name: Post-Deployment Health Verification (${{ inputs.environment }})
+    permissions: {}
     needs: [deploy-provider]
     if: "!cancelled() && needs.deploy-provider.result == 'success'"
     runs-on: ubuntu-latest

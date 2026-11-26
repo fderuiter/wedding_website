@@ -64,6 +64,8 @@ jobs:
   migrate:
     name: Execute Database Migrations
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 10
     environment: ${{ inputs.environment || 'production' }}
     outputs:

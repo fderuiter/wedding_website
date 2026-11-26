@@ -460,6 +460,8 @@ jobs:
 
   schema-compatibility:
     name: Verify Schema Compatibility
+    permissions:
+      contents: read
     needs: [ci-gate]
     if: |
       (

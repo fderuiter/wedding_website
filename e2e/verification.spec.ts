@@ -238,7 +238,6 @@ test.describe('UI Verification', { tag: '@a11y' }, () => {
 
   test('should pass axe accessibility scan across all admin studio preview routes without duplicate iframe landmarks', async ({
     context,
-    page,
   }) => {
     test.setTimeout(120_000);
     await seedAdminAndGuestAuthCookies(context);
@@ -251,41 +250,46 @@ test.describe('UI Verification', { tag: '@a11y' }, () => {
     ] as const;
 
     for (const studioRoute of studioPreviewRoutes) {
-      await page.goto(studioRoute, { waitUntil: 'domcontentloaded' });
-      expect(new URL(page.url()).pathname).toBe(studioRoute);
+      const studioPage = await context.newPage();
+      try {
+        await studioPage.goto(studioRoute, { waitUntil: 'domcontentloaded' });
+        expect(new URL(studioPage.url()).pathname).toBe(studioRoute);
 
-      const previewIframe = page.locator('iframe[title="Live Preview"]');
-      await expect(previewIframe).toBeVisible({ timeout: 15_000 });
+        const previewIframe = studioPage.locator('iframe[title="Live Preview"]');
+        await expect(previewIframe).toBeVisible({ timeout: 15_000 });
 
-      const previewFrame = page.frameLocator('iframe[title="Live Preview"]');
-      await expect(previewFrame.getByRole('region', { name: 'Live Preview' })).toBeAttached({
-        timeout: 15_000,
-      });
-      await expect(previewFrame.locator('h1').first()).toBeVisible({
-        timeout: 15_000,
-      });
-      await expect
-        .poll(
-          async () =>
-            previewFrame
-              .locator('#home-main > section:first-child [style*="opacity"]')
-              .evaluateAll((els) => els.every((el) => Number(getComputedStyle(el).opacity) >= 0.99)),
-          { timeout: 10_000 }
-        )
-        .toBe(true);
-      await expect(previewFrame.locator('main')).toHaveCount(0);
-      await expect(previewFrame.locator('header')).toHaveCount(0);
-      await expect(previewFrame.locator('footer')).toHaveCount(0);
+        const previewFrame = studioPage.frameLocator('iframe[title="Live Preview"]');
+        await expect(previewFrame.getByRole('region', { name: 'Live Preview' })).toBeAttached({
+          timeout: 15_000,
+        });
+        await expect(previewFrame.locator('h1').first()).toBeVisible({
+          timeout: 15_000,
+        });
+        await expect
+          .poll(
+            async () =>
+              previewFrame
+                .locator('#home-main > section:first-child [style*="opacity"]')
+                .evaluateAll((els) => els.every((el) => Number(getComputedStyle(el).opacity) >= 0.99)),
+            { timeout: 10_000 }
+          )
+          .toBe(true);
+        await expect(previewFrame.locator('main')).toHaveCount(0);
+        await expect(previewFrame.locator('header')).toHaveCount(0);
+        await expect(previewFrame.locator('footer')).toHaveCount(0);
 
-      await expect(page.locator('main')).toHaveCount(1);
-      await expect(page.locator('main main')).toHaveCount(0);
+        await expect(studioPage.locator('main')).toHaveCount(1);
+        await expect(studioPage.locator('main main')).toHaveCount(0);
 
-      const axeBuilder = new AxeBuilder({ page })
-        .withTags(a11yConfig.runOnly.values)
-        .options({ rules: a11yConfig.rules });
-      const results = await axeBuilder.analyze();
-      recordRouteViolations(studioRoute, results.violations);
-      expect(results.violations).toEqual([]);
+        const axeBuilder = new AxeBuilder({ page: studioPage })
+          .withTags(a11yConfig.runOnly.values)
+          .options({ rules: a11yConfig.rules });
+        const results = await axeBuilder.analyze();
+        recordRouteViolations(studioRoute, results.violations);
+        expect(results.violations).toEqual([]);
+      } finally {
+        await studioPage.close();
+      }
     }
   });
 
@@ -486,6 +490,7 @@ test.describe('UI Verification', { tag: '@a11y' }, () => {
       const codeInput = dialog.getByLabel(/Invitation Code/i);
       if ((await codeInput.count()) > 0 && !(await codeInput.inputValue())) {
         await codeInput.fill('WED2026A');
+        await dialog.getByRole('button', { name: 'Verify' }).click();
         await expect(dialog.getByText(/Code verified! Name pre-filled\./i)).toBeVisible();
         const clearBtn = dialog.getByRole('button', { name: 'Clear' });
         await expect(clearBtn).toBeFocused();

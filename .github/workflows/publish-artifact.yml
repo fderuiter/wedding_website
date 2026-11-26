@@ -478,10 +478,50 @@ jobs:
             platform: linux/arm64
             runner: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: checkout-default
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.commit_sha }}
+          fetch-depth: 0
           persist-credentials: false
+
+      - name: Align Workspace to Verified Main-Branch Commit
+        id: align-commit
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESOLVED_SHA: ${{ needs.preflight.outputs.resolved_sha }}
+          TRUSTED_SCRIPTS_DIR: ${{ runner.temp }}/trusted-ci-scripts
+        run: |
+          if [[ ! "$RESOLVED_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            echo "::error::Invalid resolved_sha '${RESOLVED_SHA}'. Must be a 40-character hexadecimal commit SHA."
+            exit 1
+          fi
+
+          rm -rf "$TRUSTED_SCRIPTS_DIR"
+          mkdir -p "$TRUSTED_SCRIPTS_DIR"
+          cp scripts/persist-buildkit-mounts.sh scripts/test-container.mjs scripts/smoke-runner.mjs "$TRUSTED_SCRIPTS_DIR/"
+
+          GIT_AUTH_ARGS=()
+          ORIGIN_URL=$(git remote get-url origin 2>/dev/null || true)
+          EFFECTIVE_GIT_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+          if [ -n "$EFFECTIVE_GIT_TOKEN" ] && [[ "$ORIGIN_URL" =~ ^https?://[^/]+ ]]; then
+            ORIGIN_SERVER="${BASH_REMATCH[0]}"
+            BASIC_TOKEN=$(printf 'x-access-token:%s' "$EFFECTIVE_GIT_TOKEN" | base64 | tr -d '\r\n')
+            GIT_AUTH_ARGS=(-c "http.${ORIGIN_SERVER}/.extraheader=AUTHORIZATION: basic ${BASIC_TOKEN}")
+          fi
+
+          if git remote get-url origin >/dev/null 2>&1; then
+            git "${GIT_AUTH_ARGS[@]}" fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          fi
+          if ! git cat-file -e "${RESOLVED_SHA}^{commit}" 2>/dev/null && git remote get-url origin >/dev/null 2>&1; then
+            git "${GIT_AUTH_ARGS[@]}" fetch --no-tags origin "$RESOLVED_SHA" || true
+          fi
+          if ! git merge-base --is-ancestor "$RESOLVED_SHA" refs/remotes/origin/main; then
+            echo "::error::Target commit '${RESOLVED_SHA}' is not an ancestor of origin/main."
+            exit 1
+          fi
+
+          git checkout --detach "$RESOLVED_SHA"
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -577,6 +617,16 @@ jobs:
           outputs: type=oci,dest=/tmp/oci-${{ matrix.arch }}.tar
           cache-from: type=gha,scope=release-app-${{ matrix.arch }}
           cache-to: type=gha,scope=release-app-${{ matrix.arch }},mode=max
+
+      - name: Restore Trusted Default-Branch Runner Scripts
+        env:
+          TRUSTED_SCRIPTS_DIR: ${{ runner.temp }}/trusted-ci-scripts
+        run: |
+          mkdir -p scripts
+          cp -f "$TRUSTED_SCRIPTS_DIR/persist-buildkit-mounts.sh" \
+            "$TRUSTED_SCRIPTS_DIR/test-container.mjs" \
+            "$TRUSTED_SCRIPTS_DIR/smoke-runner.mjs" \
+            scripts/
 
       - name: Persist BuildKit Cache Mounts
         if: steps.buildkit-deps-cache.outputs.cache-hit != 'true' || steps.buildkit-next-cache.outputs.cache-hit != 'true'

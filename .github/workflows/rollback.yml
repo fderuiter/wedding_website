@@ -495,12 +495,40 @@ jobs:
         if: "always() && steps.validate.outcome == 'success' && (steps.verify_deployment.outcome == 'success' || steps.verify_deployment.outcome == 'skipped')"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.commit_sha }}
+          fetch-depth: 0
           persist-credentials: false
+
+      - name: Align Migrations Directory to Target Commit
+        id: align_migrations
+        if: "always() && steps.checkout.outcome == 'success' && inputs.commit_sha != ''"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          if [[ ! "$INPUT_COMMIT_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            echo "::error::Invalid commit_sha '${INPUT_COMMIT_SHA}'. Must be a 40-character hexadecimal commit SHA."
+            exit 1
+          fi
+          if ! git cat-file -e "${INPUT_COMMIT_SHA}^{commit}" 2>/dev/null; then
+            GIT_AUTH_ARGS=()
+            ORIGIN_URL=$(git remote get-url origin 2>/dev/null || true)
+            if [ -n "${GH_TOKEN:-}" ] && [[ "$ORIGIN_URL" =~ ^https?://[^/]+ ]]; then
+              ORIGIN_SERVER="${BASH_REMATCH[0]}"
+              BASIC_TOKEN=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\r\n')
+              GIT_AUTH_ARGS=(-c "http.${ORIGIN_SERVER}/.extraheader=AUTHORIZATION: basic ${BASIC_TOKEN}")
+            fi
+            git "${GIT_AUTH_ARGS[@]}" fetch --no-tags origin "$INPUT_COMMIT_SHA" --depth=1 || true
+          fi
+          if ! git cat-file -e "${INPUT_COMMIT_SHA}^{commit}" 2>/dev/null; then
+            echo "::error::Target commit '${INPUT_COMMIT_SHA}' does not exist in repository history."
+            exit 1
+          fi
+          git rm -rf --ignore-unmatch prisma/migrations >/dev/null 2>&1 || true
+          git checkout "$INPUT_COMMIT_SHA" -- prisma/migrations
 
       - name: Setup Node.js
         id: setup_node
-        if: "always() && steps.checkout.outcome == 'success'"
+        if: "always() && steps.checkout.outcome == 'success' && (steps.align_migrations.outcome == 'success' || steps.align_migrations.outcome == 'skipped')"
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: '.nvmrc'
@@ -529,6 +557,7 @@ jobs:
             steps.validate.outcome != 'success' ||
             steps.verify_deployment.outcome == 'failure' ||
             steps.checkout.outcome != 'success' ||
+            steps.align_migrations.outcome == 'failure' ||
             steps.setup_node.outcome != 'success' ||
             steps.db_safety_check.outcome != 'success'
           )
@@ -579,6 +608,7 @@ jobs:
 
   verify:
     name: Verify Restored Container Health
+    permissions: {}
     needs: [preflight, redeploy]
     if: "always() && needs.preflight.result == 'success' && needs.redeploy.result == 'success'"
     runs-on: ubuntu-latest
@@ -759,6 +789,7 @@ jobs:
 
   report:
     name: Send Rollback Notification
+    permissions: {}
     needs: [preflight, redeploy, verify]
     if: always()
     runs-on: ubuntu-latest

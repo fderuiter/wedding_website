@@ -512,9 +512,11 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(deployWorkflow).toContain('tag_name: ${{ needs.ci-gate.outputs.target_sha }}');
     expect(deployWorkflow).not.toContain('|| github.sha');
 
-    expect(publishWorkflow).toContain('ref: ${{ inputs.commit_sha }}');
+    expect(publishWorkflow).not.toContain('ref: ${{ inputs.commit_sha }}');
     expect(publishWorkflow).toContain('fetch-depth: 0');
     expect(publishWorkflow).toContain('INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}');
+    expect(publishWorkflow).toContain('RESOLVED_SHA: ${{ needs.preflight.outputs.resolved_sha }}');
+    expect(publishWorkflow).toContain('git checkout --detach "$RESOLVED_SHA"');
     expect(publishWorkflow).toContain('org.opencontainers.image.revision=${{ needs.preflight.outputs.revision }}');
     expect(migrateWorkflow).toContain('ref: ${{ inputs.commit_sha }}');
     expect(migrateWorkflow).toContain('INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}');
@@ -522,8 +524,9 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(deployProviderWorkflow).toContain('ref: ${{ inputs.commit_sha }}');
     expect(deployProviderWorkflow).toContain('fetch-depth: 0');
     expect(deployProviderWorkflow).toContain('CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}');
-    expect(rollbackWorkflow).toContain('ref: ${{ inputs.commit_sha }}');
+    expect(rollbackWorkflow).not.toContain('ref: ${{ inputs.commit_sha }}');
     expect(rollbackWorkflow).toContain('INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}');
+    expect(rollbackWorkflow).toContain('git checkout "$INPUT_COMMIT_SHA" -- prisma/migrations');
     expect(rollbackWorkflow).toContain('CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}');
     const redeployChunk = rollbackWorkflow.split('  redeploy:\n')[1]?.split('\n  verify:\n')[0] ?? '';
     expect(redeployChunk).toContain('uses: ./.github/workflows/deploy-provider.yml');
@@ -2124,5 +2127,16 @@ process.exit(1);
     expect(postShaCheckoutSection).toContain('rm -rf target-commit');
     expect(postShaCheckoutSection).not.toMatch(/\b(?:npm|pnpm|yarn|npx|tsx)\s+/);
     expect(postShaCheckoutSection).not.toContain('./scripts/');
+
+    const publishBuildSection =
+      publishWorkflow.split('\n  build:\n')[1]?.split('\n  upload-sarif:\n')[0] ?? '';
+    expect(publishBuildSection).toContain('id: checkout-default');
+    expect(publishBuildSection).not.toMatch(/^\s+ref:/m);
+    expect(publishBuildSection).toContain('Restore Trusted Default-Branch Runner Scripts');
+
+    const rollbackPreflightSection =
+      rollbackWorkflow.split('\n  preflight:\n')[1]?.split('\n  redeploy:\n')[0] ?? '';
+    expect(rollbackPreflightSection).not.toMatch(/^\s+ref:/m);
+    expect(rollbackPreflightSection).toContain('git checkout "$INPUT_COMMIT_SHA" -- prisma/migrations');
   });
 });
