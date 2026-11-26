@@ -713,9 +713,10 @@ describe('FloorplanCanvas component', () => {
       expect(rotationHandle.className).toContain('flex-col-reverse');
       expect(rotationHandle.className).not.toContain('-top-[76px]');
 
-      // Floating toolbar also flips below table AND clears the flipped rotation-handle (toolbarLocalY >= cy + 150 = 210 > handle knob center 182)
+      // Floating toolbar also flips below table AND clears both the flipped rotation-handle and left stage border
       const toolbar = screen.getByTestId('rotation-controls');
       expect(parseFloat(toolbar.style.top)).toBeGreaterThanOrEqual(210);
+      expect(parseFloat(toolbar.style.left)).toBeGreaterThanOrEqual(140);
 
       // Dragging flipped handle directly below center (center = 96, 96; pointer at 96, 218 -> 0 deg; move slightly left to 3 o'clock/9 o'clock):
       // At 9 o'clock (dx = -60, dy = 0 -> clientX = 36, clientY = 96), flipped bottom pole at 9 o'clock means table rotation = 90 deg (no 180 deg jump!)
