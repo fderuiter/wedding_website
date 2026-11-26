@@ -13,6 +13,37 @@ export const PHONE_MAX_LENGTH = 30;
 export const INVITATION_COLLISION_STRATEGIES = ['skip', 'update', 'reject'] as const;
 export type InvitationCollisionStrategy = (typeof INVITATION_COLLISION_STRATEGIES)[number];
 
+export const HOUSEHOLD_MEMBER_ROLES = ['PRIMARY', 'PARTNER', 'CHILD', 'PLUS_ONE'] as const;
+export type HouseholdMemberRole = (typeof HOUSEHOLD_MEMBER_ROLES)[number];
+
+export interface BatchHouseholdMemberInput {
+  id?: string;
+  fullName: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  role?: HouseholdMemberRole;
+  email?: string | null;
+  phone?: string | null;
+  dietaryNotes?: string | null;
+  tags?: string[] | string | null;
+  displayOrder?: number;
+  seatNumber?: number | null;
+}
+
+export interface NormalizedHouseholdMemberInput {
+  id?: string;
+  fullName: string;
+  firstName: string | null;
+  lastName: string | null;
+  role: HouseholdMemberRole;
+  email: string | null;
+  phone: string | null;
+  dietaryNotes: string | null;
+  tags: string[];
+  displayOrder: number;
+  seatNumber: number | null;
+}
+
 /**
  * Pure, client-bundle-safe input shape for batch invitation validation and import.
  */
@@ -34,6 +65,7 @@ export interface BatchInvitationCodeRecord {
   partyGroup?: string | null;
   partyTags?: string[] | string | null;
   extraFields?: Record<string, unknown> | null;
+  members?: BatchHouseholdMemberInput[];
 }
 
 export interface NormalizedInvitationCodeRecord {
@@ -54,6 +86,7 @@ export interface NormalizedInvitationCodeRecord {
   partyGroup: string | null;
   partyTags: string[];
   extraFields: Record<string, unknown> | null;
+  members?: NormalizedHouseholdMemberInput[];
 }
 
 type InvitationValidationMode = 'service' | 'batch' | 'row';
@@ -221,9 +254,82 @@ export function normalizePartialInvitationFields(
   return finalData;
 }
 
+export function splitMemberFullName(fullName: string): {
+  firstName: string | null;
+  lastName: string | null;
+} {
+  const cleaned = fullName.trim().replace(/\s+/g, ' ');
+  if (!cleaned) return { firstName: null, lastName: null };
+  const parts = cleaned.split(' ');
+  return {
+    firstName: parts[0] || null,
+    lastName: parts.length > 1 ? parts.slice(1).join(' ') : null,
+  };
+}
+
+function normalizeHouseholdMemberRole(
+  rawRole: unknown,
+  fallbackOrder: number
+): HouseholdMemberRole {
+  if (typeof rawRole === 'string') {
+    const upper = rawRole.trim().toUpperCase();
+    if ((HOUSEHOLD_MEMBER_ROLES as readonly string[]).includes(upper)) {
+      return upper as HouseholdMemberRole;
+    }
+  }
+  return fallbackOrder === 0 ? 'PRIMARY' : 'PARTNER';
+}
+
+export function normalizeHouseholdMemberInputs(
+  members?: ReadonlyArray<BatchHouseholdMemberInput> | null
+): NormalizedHouseholdMemberInput[] | undefined {
+  if (!Array.isArray(members) || members.length === 0) {
+    return undefined;
+  }
+
+  const normalized: NormalizedHouseholdMemberInput[] = [];
+  for (let idx = 0; idx < members.length; idx++) {
+    const item = members[idx];
+    if (!item || typeof item !== 'object') continue;
+    const rawName = typeof item.fullName === 'string' ? item.fullName.trim().replace(/\s+/g, ' ') : '';
+    if (!rawName) continue;
+    const split = splitMemberFullName(rawName);
+    const rawPhone = sanitizeGuestPhoneInput(item.phone);
+    const phoneErr = rawPhone ? validateGuestPhone(rawPhone) : null;
+    const normalizedPhone = rawPhone
+      ? phoneErr
+        ? rawPhone
+        : (normalizeGuestPhone(rawPhone) ?? rawPhone)
+      : null;
+
+    normalized.push({
+      ...(typeof item.id === 'string' && item.id.trim() ? { id: item.id.trim() } : {}),
+      fullName: rawName,
+      firstName: normalizeNullableString(item.firstName) ?? split.firstName,
+      lastName: normalizeNullableString(item.lastName) ?? split.lastName,
+      role: normalizeHouseholdMemberRole(item.role, normalized.length),
+      email: normalizeNullableString(item.email),
+      phone: normalizedPhone,
+      dietaryNotes: normalizeNullableString(item.dietaryNotes),
+      tags: normalizePartyTags(item.tags, { dedupe: true }),
+      displayOrder:
+        typeof item.displayOrder === 'number' && Number.isInteger(item.displayOrder) && item.displayOrder >= 0
+          ? item.displayOrder
+          : normalized.length,
+      seatNumber:
+        typeof item.seatNumber === 'number' && Number.isInteger(item.seatNumber) && item.seatNumber > 0
+          ? item.seatNumber
+          : null,
+    });
+  }
+
+  return normalized.length > 0 ? normalized : undefined;
+}
+
 export function normalizeBatchInvitationRecord(
   item: BatchInvitationCodeRecord
 ): NormalizedInvitationCodeRecord {
+  const normalizedMembers = normalizeHouseholdMemberInputs(item.members);
   return {
     guestName: typeof item.guestName === 'string' ? item.guestName.trim() : '',
     code: normalizeInvitationCode(item.code),
@@ -248,6 +354,7 @@ export function normalizeBatchInvitationRecord(
       Object.keys(item.extraFields).length > 0
         ? item.extraFields
         : null,
+    ...(normalizedMembers ? { members: normalizedMembers } : {}),
   };
 }
 
@@ -370,6 +477,58 @@ export function validateInvitationGuestFieldsWithColumns(
       const phoneErr = validateGuestPhone(extraRecord.phone);
       if (phoneErr) {
         pushError('phone', formatModeMessage(mode, rowNumber, phoneErr));
+      }
+    }
+  }
+
+  if (Array.isArray(record.members)) {
+    for (let mIdx = 0; mIdx < record.members.length; mIdx++) {
+      const member = record.members[mIdx];
+      if (!member || typeof member !== 'object') continue;
+      const mRec = member as Record<string, unknown>;
+      const mName = typeof mRec.fullName === 'string' ? mRec.fullName.trim() : '';
+      if (!mName) {
+        pushError(
+          'members',
+          formatModeMessage(
+            mode,
+            rowNumber,
+            `Household member #${mIdx + 1} full name is required.`,
+            `has an empty household member name at position ${mIdx + 1}.`
+          )
+        );
+      } else if (mName.length > GUEST_NAME_MAX_LENGTH) {
+        pushError(
+          'members',
+          formatModeMessage(
+            mode,
+            rowNumber,
+            `Household member #${mIdx + 1} name must be under ${GUEST_NAME_MAX_LENGTH} characters.`
+          )
+        );
+      }
+      if (typeof mRec.email === 'string' && mRec.email.trim() !== '' && !EMAIL_REGEX.test(mRec.email.trim())) {
+        pushError(
+          'members',
+          formatModeMessage(
+            mode,
+            rowNumber,
+            `Household member "${mName || `#${mIdx + 1}`}" has an invalid email format.`
+          )
+        );
+      }
+      if (mRec.phone !== undefined && mRec.phone !== null && String(mRec.phone).trim() !== '') {
+        const mPhoneErr = validateGuestPhone(mRec.phone);
+        if (mPhoneErr) {
+          pushError(
+            'members',
+            formatModeMessage(
+              mode,
+              rowNumber,
+              `Household member "${mName || `#${mIdx + 1}`}" ${mPhoneErr.charAt(0).toLowerCase()}${mPhoneErr.slice(1)}`
+            )
+          );
+        }
       }
     }
   }

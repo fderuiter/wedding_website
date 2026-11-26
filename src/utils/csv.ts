@@ -1,10 +1,13 @@
 import {
+  type BatchHouseholdMemberInput,
+  type HouseholdMemberRole,
   PLUS_ONE_NAME_MAX_LENGTH,
   mergeDietaryNotes,
   normalizeGuestPhone,
   normalizeInvitationCode,
   normalizePartyTags,
   sanitizeGuestPhoneInput,
+  validateGuestPhone,
   validateInvitationGuestFieldsWithColumns,
 } from './invitationValidation';
 
@@ -29,6 +32,7 @@ export interface ParsedCsvRow {
   partyGroup?: string;
   partyTags?: string[];
   extraFields?: Record<string, string | string[]>;
+  members?: BatchHouseholdMemberInput[];
   isValid: boolean;
   errors: string[];
   fieldErrors?: Record<string, string[]>;
@@ -882,6 +886,33 @@ export interface EditableCsvRow {
   partyGroup: string;
   partyTags: string;
   extraFields: Record<string, string | string[]>;
+  members?: BatchHouseholdMemberInput[];
+}
+
+function inferCsvCompanionRole(
+  fullName: string,
+  dietaryNotes: string | null,
+  tags: string[],
+  hasPartnerAlready: boolean
+): HouseholdMemberRole {
+  const lowerTags = tags.map((t) => t.toLowerCase());
+  if (
+    lowerTags.some((t) => t === 'kids' || t === 'kid' || t === 'child' || t === 'children') ||
+    /\b(kid|kids|child|children|infant|toddler)\b/i.test(fullName) ||
+    (dietaryNotes !== null && /\b(kids?\s+meal|child\s+meal)\b/i.test(dietaryNotes))
+  ) {
+    return 'CHILD';
+  }
+  return hasPartnerAlready ? 'PLUS_ONE' : 'PARTNER';
+}
+
+function extractRowPhone(row: EditableCsvRow): string | null {
+  const raw = sanitizeGuestPhoneInput(
+    row.phone ?? (typeof row.extraFields?.phone === 'string' ? row.extraFields.phone : '')
+  );
+  if (!raw) return null;
+  const err = validateGuestPhone(raw);
+  return err ? raw : (normalizeGuestPhone(raw) ?? raw);
 }
 
 export interface FailedCsvExportRow {
@@ -1103,8 +1134,142 @@ export function consolidateHouseholdCsvRows(
       )
     );
 
+    // Build relational HouseholdMember payloads for every row in the household without discarding secondary contacts
+    const primaryIdx = bucket.indices[0];
+    const resolvedPrimaryName = primary.guestName.trim() || pickFirst((r) => r.guestName);
+    const primaryExplicitFirst = (options.rawFirstNames?.[primaryIdx] || '').trim();
+    const primaryExplicitLast = (options.rawLastNames?.[primaryIdx] || '').trim();
+    const primarySplit =
+      primaryExplicitFirst || primaryExplicitLast
+        ? { firstName: primaryExplicitFirst, lastName: primaryExplicitLast }
+        : splitFullName(resolvedPrimaryName);
+
+    const householdMembers: BatchHouseholdMemberInput[] = [
+      {
+        fullName: resolvedPrimaryName,
+        firstName: primarySplit.firstName || null,
+        lastName: primarySplit.lastName || null,
+        role: 'PRIMARY',
+        email: primary.email.trim() || null,
+        phone: extractRowPhone(primary),
+        dietaryNotes: primary.dietaryNotes.trim() || null,
+        tags: normalizePartyTags(primary.partyTags, { dedupe: true }),
+        displayOrder: 0,
+      },
+    ];
+
+    let hasPartnerAlready = false;
+    const seenMemberNamesLower = new Set<string>([resolvedPrimaryName.toLowerCase()]);
+
+    const pushCompanionMember = (member: Omit<BatchHouseholdMemberInput, 'displayOrder'>) => {
+      const cleanName = member.fullName.trim().replace(/\s+/g, ' ');
+      if (!cleanName) return;
+      if (member.role === 'PARTNER') {
+        hasPartnerAlready = true;
+      }
+      seenMemberNamesLower.add(cleanName.toLowerCase());
+      householdMembers.push({
+        ...member,
+        fullName: cleanName,
+        displayOrder: householdMembers.length,
+      });
+    };
+
+    // If primary row had its own explicit inline plus-one (not absorbed from companions[0])
+    if (extraCompanionStartIdx === 0 && primaryCompanionFullName) {
+      const pCompSplit = splitFullName(primaryCompanionFullName);
+      pushCompanionMember({
+        fullName: primaryCompanionFullName,
+        firstName: pCompSplit.firstName || null,
+        lastName: pCompSplit.lastName || null,
+        role: inferCsvCompanionRole(primaryCompanionFullName, null, [], hasPartnerAlready),
+        email: null,
+        phone: null,
+        dietaryNotes: null,
+        tags: [],
+      });
+    }
+
+    for (let c = 0; c < companions.length; c++) {
+      const compRow = companions[c];
+      const compRowIdx = companionIndices[c];
+      const compFullName = compRow.guestName.trim().replace(/\s+/g, ' ');
+      if (compFullName) {
+        const compFirst = (options.rawFirstNames?.[compRowIdx] || '').trim();
+        const compLast = (options.rawLastNames?.[compRowIdx] || '').trim();
+        const compSplit =
+          compFirst || compLast ? { firstName: compFirst, lastName: compLast } : splitFullName(compFullName);
+        const compTags = normalizePartyTags(compRow.partyTags, { dedupe: true });
+        const compDietary = compRow.dietaryNotes.trim() || null;
+        const compRole = inferCsvCompanionRole(compFullName, compDietary, compTags, hasPartnerAlready);
+        pushCompanionMember({
+          fullName: compFullName,
+          firstName: compSplit.firstName || null,
+          lastName: compSplit.lastName || null,
+          role: compRole,
+          email: compRow.email.trim() || null,
+          phone: extractRowPhone(compRow),
+          dietaryNotes: compDietary,
+          tags: compTags,
+        });
+      }
+
+      const inlineCompPlusOne = combineFirstAndLastName(
+        compRow.plusOneFirstName,
+        compRow.plusOneLastName
+      );
+      if (inlineCompPlusOne && !seenMemberNamesLower.has(inlineCompPlusOne.toLowerCase())) {
+        const inlineSplit = splitFullName(inlineCompPlusOne);
+        pushCompanionMember({
+          fullName: inlineCompPlusOne,
+          firstName: inlineSplit.firstName || null,
+          lastName: inlineSplit.lastName || null,
+          role: inferCsvCompanionRole(inlineCompPlusOne, null, [], hasPartnerAlready),
+          email: null,
+          phone: null,
+          dietaryNotes: null,
+          tags: [],
+        });
+      }
+    }
+
+    for (const extraCompName of existingPlusOneNames) {
+      const cleaned = extraCompName.trim().replace(/\s+/g, ' ');
+      if (cleaned && !seenMemberNamesLower.has(cleaned.toLowerCase())) {
+        const extraSplit = splitFullName(cleaned);
+        pushCompanionMember({
+          fullName: cleaned,
+          firstName: extraSplit.firstName || null,
+          lastName: extraSplit.lastName || null,
+          role: inferCsvCompanionRole(cleaned, null, [], hasPartnerAlready),
+          email: null,
+          phone: null,
+          dietaryNotes: null,
+          tags: [],
+        });
+      }
+    }
+
+    if (malformedAlloc === null && /^\d+$/.test(resolvedAllocations)) {
+      const targetCompanions = parseInt(resolvedAllocations, 10);
+      while (householdMembers.length - 1 < targetCompanions) {
+        const slotIdx = householdMembers.length;
+        householdMembers.push({
+          fullName: `Plus-One #${slotIdx}`,
+          firstName: null,
+          lastName: null,
+          role: 'PLUS_ONE',
+          email: null,
+          phone: null,
+          dietaryNotes: null,
+          tags: [],
+          displayOrder: slotIdx,
+        });
+      }
+    }
+
     const consolidatedRow: EditableCsvRow = {
-      guestName: primary.guestName.trim() || pickFirst((r) => r.guestName),
+      guestName: resolvedPrimaryName,
       code: pickFirst((r) => r.code),
       email: pickFirst((r) => r.email),
       addressLine1: pickFirst((r) => r.addressLine1),
@@ -1121,6 +1286,7 @@ export function consolidateHouseholdCsvRows(
       partyGroup: pickFirst((r) => r.partyGroup),
       partyTags: mergedTags,
       extraFields: mergedExtra,
+      members: householdMembers,
     };
     if (consolidatedPhone) {
       consolidatedRow.phone = consolidatedPhone;

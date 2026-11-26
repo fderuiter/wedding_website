@@ -3,6 +3,7 @@ import type {
   DemoAttractionRecord,
   DemoContentNodeRecord,
   DemoContributorRecord,
+  DemoHouseholdMemberRecord,
   DemoInvitationCodeRecord,
   DemoMediaRecord,
   DemoRegistryItemRecord,
@@ -10,7 +11,10 @@ import type {
   DemoWeddingPartyMemberRecord,
   StaticDemoSnapshot,
 } from './types';
-import { buildArchetypeSeedSnapshot } from './seeds';
+import {
+  buildArchetypeSeedSnapshot,
+  synthesizeDemoHouseholdMembersFromInvitations,
+} from './seeds';
 import { createDemoSvgDataUrl } from './svgAssets';
 import { generateDemoId } from './responseHelpers';
 
@@ -275,31 +279,59 @@ export function toAttractionDto(
   };
 }
 
+export function getOrderedDemoHouseholdMembers(
+  snapshot: StaticDemoSnapshot,
+  invite: DemoInvitationCodeRecord,
+): DemoHouseholdMemberRecord[] {
+  const existing = (snapshot.householdMember ?? [])
+    .filter((m) => m.invitationCodeId === invite.id)
+    .slice()
+    .sort((a, b) => a.displayOrder - b.displayOrder);
+  if (existing.length > 0) {
+    return existing;
+  }
+  return synthesizeDemoHouseholdMembersFromInvitations([invite], invite.updatedAt);
+}
+
 export function toInvitationSubEventRsvps(
   snapshot: StaticDemoSnapshot,
   invitationCodeId: string,
 ): Array<Record<string, unknown>> {
   const subEventTitleById = new Map(snapshot.subEvent.map((ev) => [ev.id, ev.title]));
+  const memberById = new Map(
+    (snapshot.householdMember ?? [])
+      .filter((m) => m.invitationCodeId === invitationCodeId)
+      .map((m) => [m.id, m]),
+  );
   return snapshot.subEventRsvp
     .filter((rsvp) => rsvp.invitationCodeId === invitationCodeId)
-    .map((rsvp) => ({
-      id: rsvp.id,
-      subEventId: rsvp.subEventId,
-      subEventTitle: subEventTitleById.get(rsvp.subEventId) ?? 'Event',
-      status:
-        rsvp.status === 'attending' || rsvp.status === 'declined'
-          ? rsvp.status
-          : 'pending',
-      plusOneCount: rsvp.plusOneCount ?? 0,
-      plusOneNames: Array.isArray(rsvp.plusOneNames) ? rsvp.plusOneNames : [],
-      mealSelections: Array.isArray(rsvp.mealSelections) ? rsvp.mealSelections : [],
-      dietaryNotes: rsvp.dietaryNotes ?? null,
-      customAnswers:
-        rsvp.customAnswers && typeof rsvp.customAnswers === 'object'
-          ? rsvp.customAnswers
-          : {},
-      updatedAt: rsvp.updatedAt,
-    }));
+    .map((rsvp) => {
+      const memberRsvps = (snapshot.subEventMemberRsvp ?? [])
+        .filter((mr) => mr.subEventRsvpId === rsvp.id)
+        .map((mr) => ({
+          ...mr,
+          member: memberById.get(mr.householdMemberId) ?? undefined,
+        }));
+      return {
+        id: rsvp.id,
+        subEventId: rsvp.subEventId,
+        subEventTitle: subEventTitleById.get(rsvp.subEventId) ?? 'Event',
+        status:
+          rsvp.status === 'attending' || rsvp.status === 'declined'
+            ? rsvp.status
+            : 'pending',
+        plusOneCount: rsvp.plusOneCount ?? 0,
+        plusOneNames: Array.isArray(rsvp.plusOneNames) ? rsvp.plusOneNames : [],
+        mealSelections: Array.isArray(rsvp.mealSelections) ? rsvp.mealSelections : [],
+        dietaryNotes: rsvp.dietaryNotes ?? null,
+        customAnswers:
+          rsvp.customAnswers && typeof rsvp.customAnswers === 'object'
+            ? rsvp.customAnswers
+            : {},
+        memberRsvps,
+        updatedAt: rsvp.updatedAt,
+      };
+    });
 }
 
 export function toSeatingTableDto(
@@ -314,6 +346,7 @@ export function toSeatingTableDto(
       plusOneSeatNumbers: Array.isArray(inv.plusOneSeatNumbers)
         ? inv.plusOneSeatNumbers
         : [],
+      members: getOrderedDemoHouseholdMembers(snapshot, inv),
       subEventRsvps: toInvitationSubEventRsvps(snapshot, inv.id),
     }));
   return {
@@ -334,6 +367,7 @@ export function toInvitationCodeDto(
     plusOneSeatNumbers: Array.isArray(invite.plusOneSeatNumbers)
       ? invite.plusOneSeatNumbers
       : [],
+    members: getOrderedDemoHouseholdMembers(snapshot, invite),
     subEventRsvps: toInvitationSubEventRsvps(snapshot, invite.id),
     table: table
       ? {

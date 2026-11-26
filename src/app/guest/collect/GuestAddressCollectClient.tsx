@@ -21,6 +21,7 @@ type AddressFieldKey =
   | 'householdName'
   | 'email'
   | 'phone'
+  | 'dietaryNotes'
   | 'addressLine1'
   | 'addressLine2'
   | 'city'
@@ -29,11 +30,18 @@ type AddressFieldKey =
   | 'country'
   | 'notes';
 
+interface ChildMemberFormItem {
+  id: string;
+  fullName: string;
+  dietaryNotes: string;
+}
+
 const ADDRESS_FIELD_KEYS: ReadonlyArray<AddressFieldKey> = [
   'guestName',
   'householdName',
   'email',
   'phone',
+  'dietaryNotes',
   'addressLine1',
   'addressLine2',
   'city',
@@ -81,6 +89,7 @@ export default function GuestAddressCollectPage() {
     householdName: '',
     email: '',
     phone: '',
+    dietaryNotes: '',
     addressLine1: '',
     addressLine2: '',
     city: '',
@@ -90,6 +99,15 @@ export default function GuestAddressCollectPage() {
     notes: '',
     website: '', // Honeypot field
   });
+  const [showPartner, setShowPartner] = useState(false);
+  const [partnerData, setPartnerData] = useState({
+    fullName: '',
+    email: '',
+    phone: '',
+    dietaryNotes: '',
+  });
+  const [childrenList, setChildrenList] = useState<ChildMemberFormItem[]>([]);
+  const nextChildSeqRef = useRef(1);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -130,11 +148,35 @@ export default function GuestAddressCollectPage() {
     setErrorMessage(null);
     setFieldErrors({});
 
+    const hasPartnerValues =
+      showPartner &&
+      Boolean(
+        partnerData.fullName.trim() ||
+          partnerData.email.trim() ||
+          partnerData.phone.trim() ||
+          partnerData.dietaryNotes.trim()
+      );
+
+    if (showPartner && hasPartnerValues && !partnerData.fullName.trim()) {
+      setErrorMessage('Please enter your partner or spouse’s full name, or remove the partner section.');
+      setInvalidFocusTick((prev) => prev + 1);
+      return;
+    }
+
+    for (let idx = 0; idx < childrenList.length; idx++) {
+      if (!childrenList[idx].fullName.trim()) {
+        setErrorMessage(`Please enter a full name for Child #${idx + 1}, or remove the row.`);
+        setInvalidFocusTick((prev) => prev + 1);
+        return;
+      }
+    }
+
     const rawPayload = {
       guestName: formData.guestName.trim(),
       householdName: formData.householdName.trim() || undefined,
       email: formData.email.trim() || undefined,
       phone: formData.phone.trim() || undefined,
+      dietaryNotes: formData.dietaryNotes.trim() || undefined,
       addressLine1: formData.addressLine1.trim() || undefined,
       addressLine2: formData.addressLine2.trim() || undefined,
       city: formData.city.trim() || undefined,
@@ -142,6 +184,24 @@ export default function GuestAddressCollectPage() {
       zipCode: formData.zipCode.trim() || undefined,
       country: formData.country.trim() || undefined,
       notes: formData.notes.trim() || undefined,
+      ...(showPartner && partnerData.fullName.trim()
+        ? {
+          partner: {
+            fullName: partnerData.fullName.trim(),
+            email: partnerData.email.trim() || undefined,
+            phone: partnerData.phone.trim() || undefined,
+            dietaryNotes: partnerData.dietaryNotes.trim() || undefined,
+          },
+        }
+        : {}),
+      ...(childrenList.length > 0
+        ? {
+          children: childrenList.map((child) => ({
+            fullName: child.fullName.trim(),
+            dietaryNotes: child.dietaryNotes.trim() || undefined,
+          })),
+        }
+        : {}),
       website: formData.website, // Honeypot
     };
 
@@ -218,6 +278,7 @@ export default function GuestAddressCollectPage() {
       householdName: '',
       email: '',
       phone: '',
+      dietaryNotes: '',
       addressLine1: '',
       addressLine2: '',
       city: '',
@@ -227,6 +288,14 @@ export default function GuestAddressCollectPage() {
       notes: '',
       website: '',
     });
+    setShowPartner(false);
+    setPartnerData({
+      fullName: '',
+      email: '',
+      phone: '',
+      dietaryNotes: '',
+    });
+    setChildrenList([]);
     setSubmitted(false);
     setErrorMessage(null);
     setFieldErrors({});
@@ -397,6 +466,246 @@ export default function GuestAddressCollectPage() {
               </FormMessage>
             )}
           </FormGroup>
+
+          <FormGroup
+            busy={isSubmitting}
+            state={fieldErrors.dietaryNotes ? 'error' : 'default'}
+          >
+            <Label>Standing Allergies / Dietary Restrictions (Optional)</Label>
+            <Input
+              type="text"
+              name="dietaryNotes"
+              placeholder="e.g. Nut allergy, Gluten-Free, Vegetarian"
+              value={formData.dietaryNotes}
+              onChange={handleChange}
+              busy={isSubmitting}
+              maxLength={500}
+            />
+            {fieldErrors.dietaryNotes && (
+              <FormMessage
+                id="dietaryNotes-error"
+                role={errorMessage ? 'none' : undefined}
+              >
+                {fieldErrors.dietaryNotes}
+              </FormMessage>
+            )}
+          </FormGroup>
+
+          {/* Optional Partner / Spouse & Children Household Roster */}
+          <div
+            data-testid="collect-household-members-section"
+            className="rounded-xl border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-900/50 p-4 space-y-4"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-bold text-gray-900 dark:text-zinc-100">
+                  Partner &amp; Children (Optional)
+                </h2>
+                <p className="text-xs text-gray-600 dark:text-zinc-300">
+                  Include your spouse/partner or children living in your household.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {!showPartner && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isSubmitting}
+                    data-testid="collect-add-partner-button"
+                    onClick={() => setShowPartner(true)}
+                  >
+                    + Add Partner / Spouse
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={isSubmitting || childrenList.length >= 10}
+                  data-testid="collect-add-child-button"
+                  onClick={() => {
+                    const id = `child-${nextChildSeqRef.current++}`;
+                    setChildrenList((prev) => [...prev, { id, fullName: '', dietaryNotes: '' }]);
+                  }}
+                >
+                  + Add Child
+                </Button>
+              </div>
+            </div>
+
+            {showPartner && (
+              <div
+                data-testid="collect-partner-section"
+                className="rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 p-3.5 space-y-3"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-zinc-200">
+                    Partner / Spouse Details
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={isSubmitting}
+                    onClick={() => {
+                      setShowPartner(false);
+                      setPartnerData({ fullName: '', email: '', phone: '', dietaryNotes: '' });
+                    }}
+                  >
+                    Remove Partner
+                  </Button>
+                </div>
+
+                <FormGroup busy={isSubmitting}>
+                  <Label htmlFor="partner-fullName">Partner Full Name</Label>
+                  <Input
+                    id="partner-fullName"
+                    type="text"
+                    sizeVariant="compact"
+                    placeholder="e.g. Alex Doe"
+                    value={partnerData.fullName}
+                    onChange={(e) =>
+                      setPartnerData((prev) => ({ ...prev, fullName: e.target.value }))
+                    }
+                    busy={isSubmitting}
+                    maxLength={100}
+                  />
+                </FormGroup>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <FormGroup busy={isSubmitting}>
+                    <Label htmlFor="partner-email">Partner Email (Optional)</Label>
+                    <Input
+                      id="partner-email"
+                      type="email"
+                      sizeVariant="compact"
+                      placeholder="alex@example.com"
+                      value={partnerData.email}
+                      onChange={(e) =>
+                        setPartnerData((prev) => ({ ...prev, email: e.target.value }))
+                      }
+                      busy={isSubmitting}
+                    />
+                  </FormGroup>
+
+                  <FormGroup busy={isSubmitting}>
+                    <Label htmlFor="partner-phone">Partner Phone (Optional)</Label>
+                    <Input
+                      id="partner-phone"
+                      type="tel"
+                      sizeVariant="compact"
+                      placeholder="+1 (555) 987-6543"
+                      value={partnerData.phone}
+                      onChange={(e) =>
+                        setPartnerData((prev) => ({ ...prev, phone: e.target.value }))
+                      }
+                      busy={isSubmitting}
+                      maxLength={30}
+                    />
+                  </FormGroup>
+                </div>
+
+                <FormGroup busy={isSubmitting}>
+                  <Label htmlFor="partner-dietaryNotes">
+                    Partner Standing Allergies (Optional)
+                  </Label>
+                  <Input
+                    id="partner-dietaryNotes"
+                    type="text"
+                    sizeVariant="compact"
+                    placeholder="e.g. Tree nut allergy"
+                    value={partnerData.dietaryNotes}
+                    onChange={(e) =>
+                      setPartnerData((prev) => ({ ...prev, dietaryNotes: e.target.value }))
+                    }
+                    busy={isSubmitting}
+                    maxLength={500}
+                  />
+                </FormGroup>
+              </div>
+            )}
+
+            {childrenList.length > 0 && (
+              <div className="space-y-3">
+                {childrenList.map((child, idx) => (
+                  <div
+                    key={child.id}
+                    data-testid={`collect-child-row-${idx}`}
+                    className="rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 p-3.5 space-y-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-zinc-200">
+                        {`Child #${idx + 1}`}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        aria-label={`Remove Child #${idx + 1}`}
+                        disabled={isSubmitting}
+                        onClick={() =>
+                          setChildrenList((prev) => prev.filter((item) => item.id !== child.id))
+                        }
+                      >
+                        Remove
+                      </Button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <FormGroup busy={isSubmitting}>
+                        <Label htmlFor={`child-fullName-${child.id}`}>
+                          {`Child #${idx + 1} Full Name`}
+                        </Label>
+                        <Input
+                          id={`child-fullName-${child.id}`}
+                          type="text"
+                          sizeVariant="compact"
+                          placeholder="e.g. Leo Doe"
+                          value={child.fullName}
+                          onChange={(e) =>
+                            setChildrenList((prev) =>
+                              prev.map((item) =>
+                                item.id === child.id
+                                  ? { ...item, fullName: e.target.value }
+                                  : item
+                              )
+                            )
+                          }
+                          busy={isSubmitting}
+                          maxLength={100}
+                        />
+                      </FormGroup>
+
+                      <FormGroup busy={isSubmitting}>
+                        <Label htmlFor={`child-dietary-${child.id}`}>
+                          {`Child #${idx + 1} Standing Allergies (Optional)`}
+                        </Label>
+                        <Input
+                          id={`child-dietary-${child.id}`}
+                          type="text"
+                          sizeVariant="compact"
+                          placeholder="e.g. Dairy-Free, Kids meal"
+                          value={child.dietaryNotes}
+                          onChange={(e) =>
+                            setChildrenList((prev) =>
+                              prev.map((item) =>
+                                item.id === child.id
+                                  ? { ...item, dietaryNotes: e.target.value }
+                                  : item
+                              )
+                            )
+                          }
+                          busy={isSubmitting}
+                          maxLength={500}
+                        />
+                      </FormGroup>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           <FormGroup
             required

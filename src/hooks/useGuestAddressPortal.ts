@@ -22,6 +22,28 @@ export interface AddressFormData {
   country: string;
 }
 
+export interface GuestHouseholdMemberItem {
+  id: string;
+  fullName: string;
+  firstName: string;
+  lastName: string;
+  role: 'PRIMARY' | 'PARTNER' | 'CHILD' | 'PLUS_ONE';
+  email: string | null;
+  phone: string | null;
+  dietaryNotes: string | null;
+  tags: string[];
+  displayOrder: number;
+  seatNumber: number | null;
+}
+
+export interface GuestPartyRosterMemberInput {
+  id: string;
+  fullName: string;
+  email?: string | null;
+  phone?: string | null;
+  dietaryNotes?: string | null;
+}
+
 export interface GuestAddressPortalState {
   status: GuestPortalStatus;
   sessionActive: boolean;
@@ -30,6 +52,8 @@ export interface GuestAddressPortalState {
   isInitialLoading: boolean;
   code: string;
   guestName: string;
+  householdName: string;
+  members: GuestHouseholdMemberItem[];
   form: AddressFormData;
   baseline: AddressFormData;
   error: string | null;
@@ -48,6 +72,8 @@ export type GuestAddressPortalAction =
     type: 'VALIDATE_SUCCESS';
     guestName: string;
     code: string;
+    householdName?: string | null;
+    members?: GuestHouseholdMemberItem[];
     address?: Partial<AddressFormData>;
     hasPasscodeSession?: boolean;
   }
@@ -59,7 +85,19 @@ export type GuestAddressPortalAction =
     hasPasscodeSession: boolean;
   }
   | { type: 'SAVE_START' }
-  | { type: 'SAVE_SUCCESS'; address: AddressFormData }
+  | {
+    type: 'SAVE_SUCCESS';
+    address: AddressFormData;
+    guestName?: string;
+    householdName?: string | null;
+    members?: GuestHouseholdMemberItem[];
+  }
+  | {
+    type: 'SAVE_ROSTER_SUCCESS';
+    guestName?: string;
+    householdName?: string | null;
+    members: GuestHouseholdMemberItem[];
+  }
   | { type: 'SAVE_FAILURE'; error: string; isAuthError: boolean }
   | { type: 'SET_FIELD'; field: keyof AddressFormData; value: string }
   | { type: 'SET_CODE'; code: string };
@@ -81,6 +119,8 @@ export const initialGuestPortalState: GuestAddressPortalState = {
   isInitialLoading: true,
   code: '',
   guestName: '',
+  householdName: '',
+  members: [],
   form: { ...initialAddressData },
   baseline: { ...initialAddressData },
   error: null,
@@ -125,6 +165,8 @@ export function guestAddressPortalReducer(
           ? {
             code: '',
             guestName: '',
+            householdName: '',
+            members: [],
             form: { ...initialAddressData },
             baseline: { ...initialAddressData },
           }
@@ -161,6 +203,8 @@ export function guestAddressPortalReducer(
         isInitialLoading: false,
         guestName: action.guestName,
         code: action.code,
+        householdName: action.householdName ?? '',
+        members: Array.isArray(action.members) ? action.members : [],
         form: nextAddress,
         baseline: nextAddress,
         error: null,
@@ -210,6 +254,8 @@ export function guestAddressPortalReducer(
         isInitialLoading: false,
         code: '',
         guestName: '',
+        householdName: '',
+        members: [],
         form: { ...initialAddressData },
         baseline: { ...initialAddressData },
         error: null,
@@ -227,8 +273,23 @@ export function guestAddressPortalReducer(
       return {
         ...state,
         status: 'authenticated',
+        guestName: action.guestName ?? state.guestName,
+        householdName:
+          action.householdName !== undefined ? (action.householdName ?? '') : state.householdName,
+        members: Array.isArray(action.members) ? action.members : state.members,
         baseline: { ...action.address },
         form: { ...action.address },
+        error: null,
+      };
+
+    case 'SAVE_ROSTER_SUCCESS':
+      return {
+        ...state,
+        status: 'authenticated',
+        guestName: action.guestName ?? state.guestName,
+        householdName:
+          action.householdName !== undefined ? (action.householdName ?? '') : state.householdName,
+        members: action.members,
         error: null,
       };
 
@@ -283,6 +344,8 @@ export interface UseGuestAddressPortalOptions {
 interface GuestAddressApiResponse {
   guestName?: string;
   code?: string;
+  householdName?: string | null;
+  members?: GuestHouseholdMemberItem[];
   addressLine1?: string;
   addressLine2?: string;
   city?: string;
@@ -411,7 +474,15 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
     async (
       signal: AbortSignal
     ): Promise<
-      | { kind: 'authenticated'; guestName: string; code: string; address: Partial<AddressFormData>; hasPasscodeSession: boolean }
+      | {
+        kind: 'authenticated';
+        guestName: string;
+        code: string;
+        householdName?: string | null;
+        members?: GuestHouseholdMemberItem[];
+        address: Partial<AddressFormData>;
+        hasPasscodeSession: boolean;
+      }
       | { kind: 'unauthenticated'; sessionType: GuestSessionType; hasPasscodeSession: boolean }
       | { kind: 'error'; error: string }
       | { kind: 'aborted' }
@@ -447,6 +518,8 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
                 kind: 'authenticated',
                 guestName: addrResult.data.guestName || payload.guestName || '',
                 code: addrResult.data.code || payload.invitationCode || payload.code || '',
+                householdName: addrResult.data.householdName ?? null,
+                members: addrResult.data.members,
                 address: addrResult.data,
                 hasPasscodeSession,
               };
@@ -511,6 +584,8 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
           type: 'VALIDATE_SUCCESS',
           guestName: result.guestName,
           code: result.code,
+          householdName: result.householdName,
+          members: result.members,
           address: result.address,
           hasPasscodeSession: result.hasPasscodeSession,
         });
@@ -596,6 +671,8 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
                 type: 'VALIDATE_SUCCESS',
                 guestName: fallback.guestName,
                 code: fallback.code,
+                householdName: fallback.householdName,
+                members: fallback.members,
                 address: fallback.address,
                 hasPasscodeSession: fallback.hasPasscodeSession,
               });
@@ -634,6 +711,8 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
             type: 'VALIDATE_SUCCESS',
             guestName: addrResult.data.guestName || guest,
             code: addrResult.data.code || trimmedCode,
+            householdName: addrResult.data.householdName ?? null,
+            members: addrResult.data.members,
             address: addrResult.data,
           });
         } else {
@@ -680,6 +759,8 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
               type: 'VALIDATE_SUCCESS',
               guestName: fallback.guestName,
               code: fallback.code,
+              householdName: fallback.householdName,
+              members: fallback.members,
               address: fallback.address,
               hasPasscodeSession: fallback.hasPasscodeSession,
             });
@@ -837,6 +918,9 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
         dispatch({
           type: 'SAVE_SUCCESS',
           address: updatedAddress,
+          guestName: data.data?.guestName,
+          householdName: data.data?.householdName,
+          members: data.data?.members,
         });
 
         addToast('Your mailing address has been updated successfully!', 'success');
@@ -855,6 +939,85 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
       }
     },
     [addToast, dispatch, requestCodeInputFocus]
+  );
+
+  const handleSaveRoster = useCallback(
+    async (membersPayload: GuestPartyRosterMemberInput[]): Promise<boolean> => {
+      if (
+        isSavingRef.current ||
+        stateRef.current.status === 'saving' ||
+        stateRef.current.status === 'validating'
+      ) {
+        return false;
+      }
+
+      isSavingRef.current = true;
+      dispatch({ type: 'SAVE_START' });
+
+      try {
+        const res = await fetch(withBasePath('/api/guest/address'), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ members: membersPayload }),
+        });
+
+        if (isAuthError(res.status)) {
+          dispatch({
+            type: 'SAVE_FAILURE',
+            error: 'Session expired. Please enter your invitation code.',
+            isAuthError: true,
+          });
+          addToast('Session expired. Please enter your invitation code.', 'error');
+          requestCodeInputFocus();
+          return false;
+        }
+
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.success) {
+          const errMsg =
+            data?.error ||
+            (res.status >= 500
+              ? 'Server error occurred while updating party roster.'
+              : 'Failed to update party roster.');
+          dispatch({
+            type: 'SAVE_FAILURE',
+            error: errMsg,
+            isAuthError: false,
+          });
+          addToast(errMsg, 'error');
+          return false;
+        }
+
+        const updatedMembers: GuestHouseholdMemberItem[] = Array.isArray(data.data?.members)
+          ? data.data.members
+          : stateRef.current.members;
+
+        dispatch({
+          type: 'SAVE_ROSTER_SUCCESS',
+          guestName: data.data?.guestName ?? stateRef.current.guestName,
+          householdName: data.data?.householdName ?? stateRef.current.householdName,
+          members: updatedMembers,
+        });
+
+        emitSessionChanged();
+        addToast('Party roster and standing allergies updated!', 'success');
+        return true;
+      } catch (err: unknown) {
+        if (isAbortError(err)) return false;
+        const errorMsg =
+          err instanceof Error ? err.message : 'An error occurred while updating party roster.';
+        dispatch({
+          type: 'SAVE_FAILURE',
+          error: errorMsg,
+          isAuthError: false,
+        });
+        addToast(errorMsg, 'error');
+        return false;
+      } finally {
+        isSavingRef.current = false;
+      }
+    },
+    [addToast, dispatch, emitSessionChanged, requestCodeInputFocus]
   );
 
   const setField = useCallback((field: keyof AddressFormData, value: string) => {
@@ -930,6 +1093,7 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
     state,
     handleValidateCode,
     handleSaveAddress,
+    handleSaveRoster,
     handleSwitchHousehold,
     handleRetry,
     setField,

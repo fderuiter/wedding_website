@@ -9,6 +9,7 @@ import {
   PublicAddressCollectDTO,
   generateRandomCode,
 } from '@/features/registry';
+import { mergeDietaryNotes, splitMemberFullName } from '@/utils/invitationValidation';
 
 function toPlainObject(value: unknown): Record<string, unknown> {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -74,6 +75,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     guestName,
     email,
     phone,
+    dietaryNotes,
     addressLine1,
     addressLine2,
     city,
@@ -81,12 +83,15 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     zipCode,
     country,
     householdName,
+    partner,
+    children,
     notes,
   } = payloadData;
 
   const normalizedPhone = phone ? phone.trim() : '';
   const normalizedEmail = email ? email.trim() : '';
   const normalizedGuestName = guestName ? guestName.trim() : '';
+  const normalizedDietaryNotes = dietaryNotes ? dietaryNotes.trim() : '';
   const normalizedHouseholdName = householdName ? householdName.trim() : '';
   const normalizedAddressLine1 = addressLine1 ? addressLine1.trim() : '';
   const normalizedAddressLine2 = addressLine2 ? addressLine2.trim() : '';
@@ -95,6 +100,17 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   const normalizedZipCode = zipCode ? zipCode.trim() : '';
   const normalizedCountry = country ? country.trim() : '';
   const normalizedNotes = notes ? notes.trim() : '';
+
+  const partnerFullName = partner?.fullName ? partner.fullName.trim() : '';
+  const partnerEmail = partner?.email ? partner.email.trim() : '';
+  const partnerPhone = partner?.phone ? partner.phone.trim() : '';
+  const partnerDietaryNotes = partner?.dietaryNotes ? partner.dietaryNotes.trim() : '';
+  const validChildren = (children ?? [])
+    .map((child) => ({
+      fullName: child.fullName.trim(),
+      dietaryNotes: child.dietaryNotes ? child.dietaryNotes.trim() : '',
+    }))
+    .filter((child) => child.fullName.length > 0);
 
   // 4. Generate Unique Invitation Code for quarantined address-collection submission
   let uniqueCode = '';
@@ -119,7 +135,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   }
 
   // 5. Create InvitationCode Record Tagged with 'address-collection' for admin review/merge
-  const extraFields: Record<string, string> = {};
+  const extraFields: Record<string, unknown> = {};
   if (normalizedPhone) {
     extraFields.phone = normalizedPhone;
     extraFields.mobile = normalizedPhone;
@@ -127,6 +143,24 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   if (normalizedNotes) {
     extraFields.householdNotes = normalizedNotes;
   }
+
+  const companionNames = [
+    ...(partnerFullName ? [partnerFullName] : []),
+    ...validChildren.map((c) => c.fullName),
+  ];
+  if (companionNames.length > 0) {
+    extraFields.plusOneNames = companionNames;
+  }
+
+  const combinedDietary = mergeDietaryNotes([
+    normalizedDietaryNotes || null,
+    partnerDietaryNotes || null,
+    ...validChildren.map((c) => c.dietaryNotes || null),
+  ]);
+
+  const partnerSplit = partnerFullName
+    ? splitMemberFullName(partnerFullName)
+    : { firstName: null, lastName: null };
 
   const createData: Record<string, unknown> = {
     code: uniqueCode,
@@ -139,15 +173,77 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     zipCode: normalizedZipCode || null,
     country: normalizedCountry || null,
     householdName: normalizedHouseholdName || null,
-    dietaryNotes: null,
+    dietaryNotes: combinedDietary,
+    ...(companionNames.length > 0 ? { plusOneAllocations: companionNames.length } : {}),
+    ...(partnerSplit.firstName ? { plusOneFirstName: partnerSplit.firstName } : {}),
+    ...(partnerSplit.lastName ? { plusOneLastName: partnerSplit.lastName } : {}),
     partyTags: ['address-collection'],
     used: false,
     ...(Object.keys(extraFields).length > 0 ? { extraFields } : {}),
   };
 
-  await prisma.invitationCode.create({
+  const createdInvite = await prisma.invitationCode.create({
     data: createData as any,
   });
+
+  const memberDelegate = (
+    prisma as unknown as {
+      householdMember?: {
+        createMany?: (args: { data: Array<Record<string, unknown>> }) => Promise<unknown>;
+      };
+    }
+  )?.householdMember;
+
+  if (createdInvite?.id && typeof memberDelegate?.createMany === 'function') {
+    const primarySplit = splitMemberFullName(normalizedGuestName);
+    const memberRows: Array<Record<string, unknown>> = [
+      {
+        invitationCodeId: createdInvite.id,
+        fullName: normalizedGuestName,
+        firstName: primarySplit.firstName,
+        lastName: primarySplit.lastName,
+        role: 'PRIMARY',
+        email: normalizedEmail || null,
+        phone: normalizedPhone || null,
+        dietaryNotes: normalizedDietaryNotes || null,
+        tags: ['address-collection'],
+        displayOrder: 0,
+      },
+    ];
+
+    if (partnerFullName) {
+      memberRows.push({
+        invitationCodeId: createdInvite.id,
+        fullName: partnerFullName,
+        firstName: partnerSplit.firstName,
+        lastName: partnerSplit.lastName,
+        role: 'PARTNER',
+        email: partnerEmail || null,
+        phone: partnerPhone || null,
+        dietaryNotes: partnerDietaryNotes || null,
+        tags: ['address-collection'],
+        displayOrder: memberRows.length,
+      });
+    }
+
+    for (const child of validChildren) {
+      const childSplit = splitMemberFullName(child.fullName);
+      memberRows.push({
+        invitationCodeId: createdInvite.id,
+        fullName: child.fullName,
+        firstName: childSplit.firstName,
+        lastName: childSplit.lastName,
+        role: 'CHILD',
+        email: null,
+        phone: null,
+        dietaryNotes: child.dietaryNotes || null,
+        tags: ['address-collection', 'kids'],
+        displayOrder: memberRows.length,
+      });
+    }
+
+    await memberDelegate.createMany({ data: memberRows });
+  }
 
   return NextResponse.json(
     {

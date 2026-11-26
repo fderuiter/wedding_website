@@ -35,7 +35,51 @@ function parseGuestExtraFields(extraFields: unknown): Record<string, unknown> {
   return {};
 }
 
-export function getGuestPhone(guest: { extraFields?: unknown } | null | undefined): string {
+interface BroadcastMemberCandidate {
+  fullName?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  role?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  dietaryNotes?: string | null;
+  displayOrder?: number | null;
+}
+
+function getAdultHouseholdMembers(
+  guest: { members?: unknown } | null | undefined
+): BroadcastMemberCandidate[] {
+  if (!guest || !Array.isArray(guest.members)) {
+    return [];
+  }
+  return (guest.members as BroadcastMemberCandidate[])
+    .filter(
+      (m) =>
+        m !== null &&
+        typeof m === 'object' &&
+        String(m.role || 'PRIMARY').trim().toUpperCase() !== 'CHILD'
+    )
+    .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+}
+
+export function getGuestEmail(
+  guest: { email?: string | null; members?: unknown } | null | undefined
+): string {
+  if (!guest) return '';
+  if (typeof guest.email === 'string' && guest.email.trim()) {
+    return guest.email.trim();
+  }
+  for (const member of getAdultHouseholdMembers(guest)) {
+    if (typeof member.email === 'string' && member.email.trim()) {
+      return member.email.trim();
+    }
+  }
+  return '';
+}
+
+export function getGuestPhone(
+  guest: { extraFields?: unknown; members?: unknown } | null | undefined
+): string {
   if (!guest) return '';
   const extra = parseGuestExtraFields(guest.extraFields);
   const candidates = [extra.phone, extra.mobile, extra.phoneNumber, extra['Phone Number']];
@@ -47,16 +91,21 @@ export function getGuestPhone(guest: { extraFields?: unknown } | null | undefine
       return String(val);
     }
   }
+  for (const member of getAdultHouseholdMembers(guest)) {
+    if (typeof member.phone === 'string' && member.phone.trim()) {
+      return member.phone.trim().replace(/^'(?=[+\d(])/, '').trim();
+    }
+  }
   return '';
 }
 
 export function hasBroadcastChannelContact(
-  guest: { email?: string | null; extraFields?: unknown } | null | undefined,
+  guest: { email?: string | null; extraFields?: unknown; members?: unknown } | null | undefined,
   channel: BroadcastChannel
 ): boolean {
   if (!guest) return false;
   if (channel === 'EMAIL') {
-    return Boolean(typeof guest.email === 'string' && guest.email.trim());
+    return Boolean(getGuestEmail(guest));
   }
   return Boolean(getGuestPhone(guest));
 }
@@ -98,6 +147,19 @@ function matchesGuestSearchQuery(item: Record<string, any>, rawQuery: string): b
   const matchesTags = Array.isArray(item.partyTags)
     ? item.partyTags.some((t: unknown) => String(t).toLowerCase().includes(query))
     : false;
+  const adultMembers = getAdultHouseholdMembers(item);
+  const matchesAdultMember = adultMembers.some((member) => {
+    const fields = [
+      member.fullName,
+      member.firstName,
+      member.lastName,
+      member.email,
+      member.phone,
+    ];
+    return fields.some(
+      (field) => typeof field === 'string' && field.toLowerCase().includes(query)
+    );
+  });
 
   return (
     matchesName ||
@@ -109,7 +171,8 @@ function matchesGuestSearchQuery(item: Record<string, any>, rawQuery: string): b
     matchesDietary ||
     matchesHousehold ||
     matchesPartyGroup ||
-    matchesTags
+    matchesTags ||
+    matchesAdultMember
   );
 }
 
@@ -164,7 +227,20 @@ export function filterTargetGuestsInMemory<T extends Record<string, any>>(
 
       const effectiveDietary = filters.dietaryCategory ?? filters.dietaryFilter;
       if (effectiveDietary && effectiveDietary !== 'all') {
-        if (!matchDietaryCategory(item.dietaryNotes, effectiveDietary, item.extraFields)) {
+        const matchesPrimaryDietary = matchDietaryCategory(
+          item.dietaryNotes,
+          effectiveDietary,
+          item.extraFields
+        );
+        const matchesMemberDietary =
+          Array.isArray(item.members) &&
+          item.members.some(
+            (m: any) =>
+              m &&
+              typeof m.dietaryNotes === 'string' &&
+              matchDietaryCategory(m.dietaryNotes, effectiveDietary)
+          );
+        if (!matchesPrimaryDietary && !matchesMemberDietary) {
           return false;
         }
       }

@@ -11,6 +11,7 @@ import {
 } from './template';
 import {
   filterTargetGuestsInMemory,
+  getGuestEmail,
   getGuestPhone,
   hasBroadcastChannelContact,
 } from './audience';
@@ -360,9 +361,17 @@ export class BroadcastService {
   static async resolveTargetGuests(filters?: BroadcastTargetFilters) {
     const excludeSampleGuests =
       process.env.STATIC_EXPORT !== 'true' && process.env.STATIC_EXPORT !== '1';
+    const hasHouseholdMembers =
+      typeof (prisma as unknown as { householdMember?: { findMany?: unknown } }).householdMember
+        ?.findMany === 'function';
+    const membersInclude = hasHouseholdMembers
+      ? { members: { orderBy: { displayOrder: 'asc' as const } } }
+      : undefined;
 
     if (!filters) {
-      const allRecords = await prisma.invitationCode.findMany();
+      const allRecords = membersInclude
+        ? await prisma.invitationCode.findMany({ include: membersInclude })
+        : await prisma.invitationCode.findMany();
       if (!Array.isArray(allRecords)) {
         return allRecords;
       }
@@ -461,7 +470,10 @@ export class BroadcastService {
       }
     }
 
-    const records = await prisma.invitationCode.findMany({ where });
+    const records = await prisma.invitationCode.findMany({
+      where,
+      ...(membersInclude ? { include: membersInclude } : {}),
+    });
 
     if (!Array.isArray(records)) {
       return records;
@@ -490,8 +502,14 @@ export class BroadcastService {
     let matchedGuests: any[] | null = null;
 
     if (input.sampleGuestId) {
+      const hasHouseholdMembers =
+        typeof (prisma as unknown as { householdMember?: { findMany?: unknown } }).householdMember
+          ?.findMany === 'function';
       sampleGuest = await prisma.invitationCode.findUnique({
         where: { id: input.sampleGuestId },
+        ...(hasHouseholdMembers
+          ? { include: { members: { orderBy: { displayOrder: 'asc' } } } }
+          : {}),
       });
     }
 
@@ -529,7 +547,7 @@ export class BroadcastService {
     });
 
     const destination = input.channel === 'EMAIL'
-      ? (sampleGuest.email || 'jane@example.com')
+      ? (getGuestEmail(sampleGuest) || 'jane@example.com')
       : (getGuestPhone(sampleGuest) || '+15551234567');
 
     const audienceCounts =
@@ -729,7 +747,7 @@ export class BroadcastService {
 
     for (const guest of guests) {
       const destination = channel === 'EMAIL'
-        ? (guest.email || '')
+        ? getGuestEmail(guest)
         : getGuestPhone(guest);
 
       const isValid = Boolean(destination);

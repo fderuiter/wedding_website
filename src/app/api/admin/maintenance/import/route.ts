@@ -17,6 +17,8 @@ import {
   sanitizeSnapshotForBackup,
 } from '@/lib/backupPersistence';
 import { resolveModuleConfig } from '@/lib/modules';
+import { deriveHouseholdMembersFromInvitation } from '@/features/registry';
+import { generateSecureUUID } from '@/utils/uuid';
 
 function serializeDatesForJson(value: unknown): Prisma.InputJsonValue {
   if (value instanceof Date) {
@@ -58,6 +60,11 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
 
   const validTableIds = new Set((data.seatingTable ?? []).map((t) => t.id));
   const validInvitationIds = new Set((data.invitationCode ?? []).map((ic) => ic.id));
+  const orphanTableInvitationIds = new Set(
+    (data.invitationCode ?? [])
+      .filter((inv) => Boolean(inv.tableId && !validTableIds.has(inv.tableId)))
+      .map((inv) => inv.id),
+  );
   const validRegistryItemIds = new Set((data.registryItem ?? []).map((ri) => ri.id));
   const validSubEventIds = new Set((data.subEvent ?? []).map((se) => se.id));
   const validBroadcastIds = new Set((data.broadcastMessage ?? []).map((bm) => bm.id));
@@ -155,6 +162,106 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
         ...(plusOneNames !== undefined ? { plusOneNames: serializeDatesForJson(plusOneNames) } : {}),
       };
     });
+
+  // Normalize or synthesize HouseholdMember rows (backward-compatible with v2.0 archives omitting householdMember)
+  const normalizedHouseholdMembers: Prisma.HouseholdMemberCreateManyInput[] =
+    data.householdMember !== undefined
+      ? data.householdMember
+        .filter((hm) => validInvitationIds.has(hm.invitationCodeId))
+        .map((hm) => ({
+          ...hm,
+          role: hm.role ?? 'PRIMARY',
+          tags: hm.tags ?? [],
+          displayOrder: hm.displayOrder ?? 0,
+          seatNumber: orphanTableInvitationIds.has(hm.invitationCodeId)
+            ? null
+            : (hm.seatNumber ?? null),
+        }))
+      : (data.invitationCode ?? []).flatMap((inv) => {
+        const clearSeats = orphanTableInvitationIds.has(inv.id);
+        return deriveHouseholdMembersFromInvitation(inv).map((derived, idx) => ({
+          id: generateSecureUUID(),
+          invitationCodeId: inv.id,
+          firstName: derived.firstName ?? null,
+          lastName: derived.lastName ?? null,
+          fullName: derived.fullName,
+          role: derived.role ?? (idx === 0 ? 'PRIMARY' : 'PLUS_ONE'),
+          email: derived.email ?? null,
+          phone: derived.phone ?? null,
+          dietaryNotes: derived.dietaryNotes ?? null,
+          tags: derived.tags ?? [],
+          displayOrder: derived.displayOrder ?? idx,
+          seatNumber: clearSeats ? null : (derived.seatNumber ?? null),
+        }));
+      });
+
+  const validHouseholdMemberIds = new Set(
+    normalizedHouseholdMembers.map((hm) => hm.id).filter((id): id is string => Boolean(id)),
+  );
+  const validSubEventRsvpIds = new Set(
+    normalizedSubEventRsvps.map((r) => r.id).filter((id): id is string => Boolean(id)),
+  );
+
+  const membersByInvitationId = new Map<string, Prisma.HouseholdMemberCreateManyInput[]>();
+  for (const hm of normalizedHouseholdMembers) {
+    const bucket = membersByInvitationId.get(hm.invitationCodeId) ?? [];
+    bucket.push(hm);
+    membersByInvitationId.set(hm.invitationCodeId, bucket);
+  }
+  membersByInvitationId.forEach((list) =>
+    list.sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0)),
+  );
+
+  const normalizedSubEventMemberRsvps: Prisma.SubEventMemberRsvpCreateManyInput[] =
+    data.subEventMemberRsvp !== undefined
+      ? data.subEventMemberRsvp
+        .filter(
+          (mr) =>
+            validSubEventRsvpIds.has(mr.subEventRsvpId) &&
+              validHouseholdMemberIds.has(mr.householdMemberId),
+        )
+        .map((mr) => ({
+          ...mr,
+          status: mr.status ?? 'pending',
+          mealOptionId: mr.mealOptionId ?? null,
+          dietaryNotes: mr.dietaryNotes ?? null,
+        }))
+      : (data.subEventRsvp ?? [])
+        .filter(
+          (entry) =>
+            validSubEventIds.has(entry.subEventId) &&
+              validInvitationIds.has(entry.invitationCodeId),
+        )
+        .flatMap((rsvp) => {
+          const inviteMembers = membersByInvitationId.get(rsvp.invitationCodeId) ?? [];
+          const normalizedStatus = (rsvp.status ?? 'pending').toLowerCase();
+          const plusOneCount = rsvp.plusOneCount ?? 0;
+          const rawMeals = Array.isArray(rsvp.mealSelections) ? rsvp.mealSelections : [];
+          return inviteMembers
+            .filter((hm): hm is Prisma.HouseholdMemberCreateManyInput & { id: string } => Boolean(hm.id))
+            .map((hm, idx) => {
+              const memberStatus =
+                normalizedStatus === 'declined'
+                  ? 'declined'
+                  : normalizedStatus === 'attending'
+                    ? idx <= plusOneCount
+                      ? 'attending'
+                      : 'declined'
+                    : 'pending';
+              const mealOpt =
+                memberStatus === 'attending' && typeof rawMeals[idx] === 'string' && rawMeals[idx]
+                  ? rawMeals[idx]
+                  : null;
+              return {
+                id: generateSecureUUID(),
+                subEventRsvpId: rsvp.id,
+                householdMemberId: hm.id,
+                status: memberStatus,
+                mealOptionId: mealOpt,
+                dietaryNotes: idx === 0 ? (rsvp.dietaryNotes ?? null) : null,
+              };
+            });
+        });
 
   const normalizedBroadcastMessages: Prisma.BroadcastMessageCreateManyInput[] = (data.broadcastMessage ?? []).map(
     (msg) => {
@@ -258,11 +365,13 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     // Delete child tables before parent tables to satisfy foreign-key constraints
     if (tx.broadcastRecipient?.deleteMany) await tx.broadcastRecipient.deleteMany();
     if (tx.broadcastMessage?.deleteMany) await tx.broadcastMessage.deleteMany();
+    if (tx.subEventMemberRsvp?.deleteMany) await tx.subEventMemberRsvp.deleteMany();
     if (tx.subEventRsvp?.deleteMany) await tx.subEventRsvp.deleteMany();
     if (tx.subEventAccess?.deleteMany) await tx.subEventAccess.deleteMany();
     if (tx.subEvent?.deleteMany) await tx.subEvent.deleteMany();
     await tx.contributor.deleteMany();
     await tx.registryItem.deleteMany();
+    if (tx.householdMember?.deleteMany) await tx.householdMember.deleteMany();
     if (tx.invitationCode?.deleteMany) await tx.invitationCode.deleteMany();
     if (tx.seatingTable?.deleteMany) await tx.seatingTable.deleteMany();
     await tx.attraction.deleteMany();
@@ -281,6 +390,9 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     if (normalizedInvitationCodes.length && tx.invitationCode?.createMany) {
       await tx.invitationCode.createMany({ data: normalizedInvitationCodes });
     }
+    if (normalizedHouseholdMembers.length && tx.householdMember?.createMany) {
+      await tx.householdMember.createMany({ data: normalizedHouseholdMembers });
+    }
     if (data.weddingPartyMember?.length) {
       await tx.weddingPartyMember.createMany({ data: data.weddingPartyMember });
     }
@@ -295,6 +407,9 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     }
     if (normalizedSubEventRsvps.length && tx.subEventRsvp?.createMany) {
       await tx.subEventRsvp.createMany({ data: normalizedSubEventRsvps });
+    }
+    if (normalizedSubEventMemberRsvps.length && tx.subEventMemberRsvp?.createMany) {
+      await tx.subEventMemberRsvp.createMany({ data: normalizedSubEventMemberRsvps });
     }
     if (normalizedBroadcastMessages.length && tx.broadcastMessage?.createMany) {
       await tx.broadcastMessage.createMany({ data: normalizedBroadcastMessages });

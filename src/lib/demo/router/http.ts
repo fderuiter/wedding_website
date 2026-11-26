@@ -279,6 +279,7 @@ export function upsertInvitationsIntoStaticDemoStore(records: InvitationCodeDTO[
           mutate?: (
             mutator: (draft: {
               invitationCode: Array<Record<string, unknown>>;
+              householdMember?: Array<Record<string, unknown>>;
             }) => void
           ) => void;
         };
@@ -293,6 +294,7 @@ export function upsertInvitationsIntoStaticDemoStore(records: InvitationCodeDTO[
         (inv) =>
           inv.id === dto.id || String(inv.code || '').toUpperCase() === dto.code.toUpperCase()
       );
+      const resolvedInviteId = existing ? String(existing.id) : dto.id;
       if (existing) {
         existing.guestName = dto.guestName;
         existing.householdName = dto.householdName ?? '';
@@ -340,6 +342,29 @@ export function upsertInvitationsIntoStaticDemoStore(records: InvitationCodeDTO[
           createdAt: nowIso,
           updatedAt: nowIso,
         });
+      }
+      if (Array.isArray(draft.householdMember) && Array.isArray(dto.members) && dto.members.length > 0) {
+        draft.householdMember = draft.householdMember.filter(
+          (m) => m.invitationCodeId !== resolvedInviteId
+        );
+        for (const [mIdx, m] of dto.members.entries()) {
+          draft.householdMember.push({
+            id: m.id || `${resolvedInviteId}-member-${mIdx + 1}`,
+            invitationCodeId: resolvedInviteId,
+            firstName: m.firstName ?? null,
+            lastName: m.lastName ?? null,
+            fullName: m.fullName,
+            role: m.role,
+            email: m.email ?? null,
+            phone: m.phone ?? null,
+            dietaryNotes: m.dietaryNotes ?? null,
+            tags: [...(m.tags ?? [])],
+            displayOrder: m.displayOrder ?? mIdx,
+            seatNumber: m.seatNumber ?? null,
+            createdAt: nowIso,
+            updatedAt: nowIso,
+          });
+        }
       }
     }
   });
