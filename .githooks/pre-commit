@@ -1,14 +1,466 @@
 #!/usr/bin/env node
 
-import { spawnSync } from 'child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { terminateChildTree } from '../scripts/quality/parallel-pool.mjs';
+import {
+  hydrateWorktreeCaches,
+  rewriteEslintCacheForWorktree,
+} from '../scripts/quality/worktree-cache.mjs';
 
-// Run lint-staged to filter staged files and apply ESLint auto-fixes
-console.log('Running lint-staged...');
-const lintStagedResult = spawnSync('npx', ['lint-staged'], { stdio: 'inherit', shell: true });
+const LOCAL_GIT_ENV_VARS = [
+  'GIT_DIR',
+  'GIT_WORK_TREE',
+  'GIT_INDEX_FILE',
+  'GIT_COMMON_DIR',
+  'GIT_PREFIX',
+];
 
-if (lintStagedResult.status !== 0) {
+const LINT_STAGED_ARGS = [
+  'lint-staged',
+  '--no-stash',
+  '--no-revert',
+  '--no-hide-partially-staged',
+  '--diff=--staged',
+  '--diff-filter=ACMRD',
+];
+
+function runGit(args, cwd, env = process.env, encoding = 'utf8') {
+  return spawnSync('git', args, {
+    cwd,
+    env,
+    encoding,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
+function buildIsolatedSnapshotEnv() {
+  const childEnv = { ...process.env };
+  for (const key of LOCAL_GIT_ENV_VARS) {
+    delete childEnv[key];
+  }
+  return childEnv;
+}
+
+function parseNulTokens(raw) {
+  if (!raw) {
+    return [];
+  }
+  const parts = raw.split('\0');
+  if (parts[parts.length - 1] === '') {
+    parts.pop();
+  }
+  return parts;
+}
+
+function collectStagedEntries(repoRoot, headSha, treeSha) {
+  const entries = new Map();
+
+  if (!headSha) {
+    const lsRes = runGit(['ls-tree', '-r', '-z', treeSha], repoRoot);
+    if (lsRes.status !== 0) {
+      return entries;
+    }
+    for (const record of parseNulTokens(lsRes.stdout)) {
+      const tabIdx = record.indexOf('\t');
+      if (tabIdx === -1) {
+        continue;
+      }
+      const meta = record.slice(0, tabIdx).trim().split(/\s+/);
+      const relPath = record.slice(tabIdx + 1);
+      const [mode, type, oid] = meta;
+      if (type !== 'blob' || mode === '120000' || mode === '160000' || !relPath) {
+        continue;
+      }
+      entries.set(relPath, { mode, oid });
+    }
+    return entries;
+  }
+
+  const diffRes = runGit(
+    ['diff-tree', '-r', '--no-commit-id', '--no-renames', '-z', headSha, treeSha],
+    repoRoot
+  );
+  if (diffRes.status !== 0) {
+    return entries;
+  }
+
+  const tokens = parseNulTokens(diffRes.stdout);
+  for (let i = 0; i + 1 < tokens.length; i += 2) {
+    const info = tokens[i].replace(/^:/, '').trim();
+    const relPath = tokens[i + 1];
+    const parts = info.split(/\s+/);
+    if (parts.length < 5 || !relPath) {
+      continue;
+    }
+    const [, dstMode, , dstOid, statusWithScore] = parts;
+    const status = statusWithScore[0];
+    if (status === 'D' || dstMode === '120000' || dstMode === '160000') {
+      continue;
+    }
+    entries.set(relPath, { mode: dstMode, oid: dstOid });
+  }
+
+  return entries;
+}
+
+function spawnInheritedCommand(command, args, cwd, env) {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, {
+      cwd,
+      env,
+      shell: process.platform === 'win32',
+      detached: process.platform !== 'win32',
+      stdio: 'inherit',
+    });
+    activeChild = child;
+
+    child.on('error', (err) => {
+      if (activeChild === child) {
+        activeChild = null;
+      }
+      console.error(`Failed to execute ${command}: ${err.message}`);
+      resolve(1);
+    });
+
+    child.on('close', (code) => {
+      if (activeChild === child) {
+        activeChild = null;
+      }
+      resolve(code ?? 1);
+    });
+  });
+}
+
+function mergeFixIntoWorkingTreeFile(liveFilePath, beforeBuf, afterBuf, scratchDir, isolatedEnv) {
+  let liveStat;
+  try {
+    liveStat = fs.lstatSync(liveFilePath);
+  } catch {
+    return;
+  }
+  if (!liveStat.isFile() || liveStat.isSymbolicLink()) {
+    return;
+  }
+
+  let liveBuf;
+  try {
+    liveBuf = fs.readFileSync(liveFilePath);
+  } catch {
+    return;
+  }
+
+  if (liveBuf.equals(afterBuf)) {
+    return;
+  }
+
+  const writeIfUnchanged = (nextBuf) => {
+    try {
+      const latestStat = fs.lstatSync(liveFilePath);
+      if (!latestStat.isFile() || latestStat.isSymbolicLink()) {
+        return false;
+      }
+      const latestBuf = fs.readFileSync(liveFilePath);
+      if (!latestBuf.equals(liveBuf)) {
+        return false;
+      }
+      fs.writeFileSync(liveFilePath, nextBuf, { mode: liveStat.mode });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  if (liveBuf.equals(beforeBuf)) {
+    if (writeIfUnchanged(afterBuf)) {
+      return;
+    }
+    try {
+      liveBuf = fs.readFileSync(liveFilePath);
+    } catch {
+      return;
+    }
+    if (liveBuf.equals(afterBuf)) {
+      return;
+    }
+  }
+
+  fs.mkdirSync(scratchDir, { recursive: true });
+  const baseTmp = path.join(scratchDir, 'base');
+  const afterTmp = path.join(scratchDir, 'after');
+  const liveTmp = path.join(scratchDir, 'live');
+  const patchTmp = path.join(scratchDir, 'fix.patch');
+
+  fs.writeFileSync(baseTmp, beforeBuf);
+  fs.writeFileSync(afterTmp, afterBuf);
+  fs.writeFileSync(liveTmp, liveBuf);
+
+  const mergeRes = runGit(
+    ['merge-file', '--stdout', '-q', liveTmp, baseTmp, afterTmp],
+    scratchDir,
+    isolatedEnv,
+    'buffer'
+  );
+  if (mergeRes.status === 0 && Buffer.isBuffer(mergeRes.stdout)) {
+    writeIfUnchanged(mergeRes.stdout);
+    return;
+  }
+
+  const diffRes = runGit(
+    ['diff', '--no-index', '--binary', '--unified=0', 'base', 'after'],
+    scratchDir,
+    isolatedEnv,
+    'utf8'
+  );
+  if ((diffRes.status !== 0 && diffRes.status !== 1) || !diffRes.stdout) {
+    return;
+  }
+
+  const rewrittenPatch = diffRes.stdout
+    .replace(/^diff --git a\/base b\/after$/m, 'diff --git a/live b/live')
+    .replace(/^--- a\/base$/m, '--- a/live')
+    .replace(/^\+\+\+ b\/after$/m, '+++ b/live');
+
+  fs.writeFileSync(patchTmp, rewrittenPatch, 'utf8');
+  const applyRes = runGit(
+    ['apply', '--unidiff-zero', '--whitespace=nowarn', 'fix.patch'],
+    scratchDir,
+    isolatedEnv
+  );
+  if (applyRes.status === 0) {
+    const patchedBuf = fs.readFileSync(liveTmp);
+    writeIfUnchanged(patchedBuf);
+  }
+}
+
+function resolveDefaultIndexLock(repoRoot, gitDir) {
+  const activeIndex = process.env.GIT_INDEX_FILE;
+  if (!activeIndex || !activeIndex.endsWith('.lock')) {
+    return null;
+  }
+  const resolvedActive = path.resolve(repoRoot, activeIndex);
+  const defaultLock = path.resolve(gitDir, 'index.lock');
+  if (resolvedActive !== defaultLock && fs.existsSync(defaultLock)) {
+    return defaultLock;
+  }
+  return null;
+}
+
+function syncSnapshotFixesToLiveRepo(
+  repoRoot,
+  gitDir,
+  snapshotDir,
+  tempBaseDir,
+  stagedEntries,
+  originalBuffers,
+  isolatedEnv
+) {
+  const defaultIndexLock = resolveDefaultIndexLock(repoRoot, gitDir);
+  const scratchDir = path.join(tempBaseDir, 'merge-scratch');
+
+  for (const [relPath, entry] of stagedEntries.entries()) {
+    const snapshotFilePath = path.join(snapshotDir, relPath);
+    let stat;
+    try {
+      stat = fs.lstatSync(snapshotFilePath);
+    } catch {
+      continue;
+    }
+    if (!stat.isFile() || stat.isSymbolicLink()) {
+      continue;
+    }
+
+    const afterBuf = fs.readFileSync(snapshotFilePath);
+    const beforeBuf = originalBuffers.get(relPath);
+    if (!beforeBuf || afterBuf.equals(beforeBuf)) {
+      continue;
+    }
+
+    const hashRes = runGit(
+      ['hash-object', '-w', '--path', relPath, snapshotFilePath],
+      repoRoot
+    );
+    if (hashRes.status !== 0 || !hashRes.stdout.trim()) {
+      throw new Error(
+        `Failed to write updated blob for ${relPath}: ${hashRes.stderr || hashRes.stdout}`
+      );
+    }
+    const newBlobSha = hashRes.stdout.trim();
+    if (newBlobSha === entry.oid) {
+      continue;
+    }
+
+    const cacheInfo = `${entry.mode},${newBlobSha},${relPath}`;
+    const updateRes = runGit(['update-index', '--cacheinfo', cacheInfo], repoRoot);
+    if (updateRes.status !== 0) {
+      throw new Error(
+        `Failed to update active Git index for ${relPath}: ${updateRes.stderr || updateRes.stdout}`
+      );
+    }
+
+    if (defaultIndexLock) {
+      runGit(
+        ['update-index', '--cacheinfo', cacheInfo],
+        repoRoot,
+        { ...process.env, GIT_INDEX_FILE: defaultIndexLock }
+      );
+    }
+
+    const liveFilePath = path.join(repoRoot, relPath);
+    mergeFixIntoWorkingTreeFile(liveFilePath, beforeBuf, afterBuf, scratchDir, isolatedEnv);
+  }
+}
+
+const activeSnapshots = new Set();
+let activeChild = null;
+
+function cleanupAllSnapshots() {
+  for (const tempBaseDir of Array.from(activeSnapshots)) {
+    activeSnapshots.delete(tempBaseDir);
+    try {
+      fs.rmSync(tempBaseDir, { recursive: true, force: true });
+    } catch {
+      // Ignore best-effort temporary snapshot cleanup errors
+    }
+  }
+}
+
+process.on('exit', cleanupAllSnapshots);
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  process.on(sig, () => {
+    if (activeChild) {
+      terminateChildTree(activeChild);
+      activeChild = null;
+    }
+    cleanupAllSnapshots();
+    process.exit(1);
+  });
+}
+
+const topLevelRes = runGit(['rev-parse', '--show-toplevel'], process.cwd());
+if (topLevelRes.status !== 0 || !topLevelRes.stdout.trim()) {
+  console.error('❌ Pre-commit check failed: Unable to determine Git repository root.');
+  process.exit(1);
+}
+const repoRoot = topLevelRes.stdout.trim();
+
+const gitDirRes = runGit(['rev-parse', '--path-format=absolute', '--git-dir'], repoRoot);
+const gitCommonDirRes = runGit(
+  ['rev-parse', '--path-format=absolute', '--git-common-dir'],
+  repoRoot
+);
+if (gitDirRes.status !== 0 || gitCommonDirRes.status !== 0) {
+  console.error('❌ Pre-commit check failed: Unable to resolve Git metadata directories.');
+  process.exit(1);
+}
+const gitDir = gitDirRes.stdout.trim();
+const gitCommonDir = gitCommonDirRes.stdout.trim();
+
+const headRes = runGit(['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], repoRoot);
+const headSha = headRes.status === 0 ? headRes.stdout.trim() : null;
+
+const writeTreeRes = runGit(['write-tree'], repoRoot);
+if (writeTreeRes.status !== 0 || !writeTreeRes.stdout.trim()) {
+  console.error(
+    `❌ Pre-commit check failed: Unable to materialize staged Git index:\n${writeTreeRes.stderr || writeTreeRes.stdout}`
+  );
+  process.exit(writeTreeRes.status ?? 1);
+}
+const treeSha = writeTreeRes.stdout.trim();
+const stagedEntries = collectStagedEntries(repoRoot, headSha, treeSha);
+
+const isolatedEnv = buildIsolatedSnapshotEnv();
+const tempBaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wedding-pre-commit-'));
+const snapshotDir = path.join(tempBaseDir, 'snapshot');
+activeSnapshots.add(tempBaseDir);
+
+let exitStatus = 0;
+try {
+  fs.mkdirSync(snapshotDir, { recursive: true });
+
+  const initRes = runGit(['init', '-q'], snapshotDir, isolatedEnv);
+  if (initRes.status !== 0) {
+    throw new Error(
+      `Unable to initialize ephemeral snapshot repository: ${initRes.stderr || initRes.stdout}`
+    );
+  }
+
+  const alternatesPath = path.join(snapshotDir, '.git', 'objects', 'info', 'alternates');
+  fs.mkdirSync(path.dirname(alternatesPath), { recursive: true });
+  fs.writeFileSync(alternatesPath, `${path.join(gitCommonDir, 'objects')}\n`, 'utf8');
+
+  if (headSha) {
+    fs.writeFileSync(path.join(snapshotDir, '.git', 'HEAD'), `${headSha}\n`, 'utf8');
+  }
+
+  const liveMergeHead = path.join(gitDir, 'MERGE_HEAD');
+  if (fs.existsSync(liveMergeHead)) {
+    fs.copyFileSync(liveMergeHead, path.join(snapshotDir, '.git', 'MERGE_HEAD'));
+  }
+
+  const readTreeRes = runGit(['read-tree', '-m', '-u', treeSha], snapshotDir, isolatedEnv);
+  if (readTreeRes.status !== 0) {
+    throw new Error(
+      `Unable to materialize staged snapshot tree ${treeSha}: ${readTreeRes.stderr || readTreeRes.stdout}`
+    );
+  }
+
+  const originalBuffers = new Map();
+  for (const relPath of stagedEntries.keys()) {
+    const snapshotFilePath = path.join(snapshotDir, relPath);
+    try {
+      const stat = fs.lstatSync(snapshotFilePath);
+      if (stat.isFile() && !stat.isSymbolicLink()) {
+        originalBuffers.set(relPath, fs.readFileSync(snapshotFilePath));
+      }
+    } catch {
+      // Ignore missing entries
+    }
+  }
+
+  hydrateWorktreeCaches(repoRoot, snapshotDir);
+
+  console.log('Running lint-staged in ephemeral staged snapshot...');
+  exitStatus = await spawnInheritedCommand('npx', LINT_STAGED_ARGS, snapshotDir, isolatedEnv);
+
+  if (exitStatus === 0) {
+    const snapshotEslintCache = path.join(snapshotDir, '.eslintcache');
+    const repoEslintCache = path.join(repoRoot, '.eslintcache');
+    if (fs.existsSync(snapshotEslintCache) && !stagedEntries.has('.eslintcache')) {
+      try {
+        rewriteEslintCacheForWorktree(
+          snapshotEslintCache,
+          repoEslintCache,
+          snapshotDir,
+          repoRoot
+        );
+      } catch {
+        // Ignore best-effort .eslintcache write-back errors
+      }
+    }
+
+    syncSnapshotFixesToLiveRepo(
+      repoRoot,
+      gitDir,
+      snapshotDir,
+      tempBaseDir,
+      stagedEntries,
+      originalBuffers,
+      isolatedEnv
+    );
+  }
+} catch (err) {
+  console.error(`\n❌ Pre-commit check failed: ${err instanceof Error ? err.message : String(err)}`);
+  exitStatus = exitStatus || 1;
+} finally {
+  cleanupAllSnapshots();
+}
+
+if (exitStatus !== 0) {
   console.error('\n❌ Pre-commit check failed: ESLint / lint-staged validation failed.');
-  process.exit(lintStagedResult.status ?? 1);
+  process.exit(exitStatus);
 }
 
 console.log('✅ All pre-commit checks passed.');
