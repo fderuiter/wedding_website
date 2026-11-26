@@ -19,7 +19,7 @@ test.describe('Resumable Setup Route & Unified Sample Cache Invalidation', () =>
         partner1Name: 'Jane',
         partner2Name: 'John',
         weddingDate: '2027-06-20',
-        baseUrl: 'https://janeandjohn.example.org',
+        baseUrl: 'http://localhost:3000',
         venueName: 'The Conservatory',
         venueCity: 'Minneapolis',
         venueState: 'MN',
@@ -39,8 +39,28 @@ test.describe('Resumable Setup Route & Unified Sample Cache Invalidation', () =>
     const headers = { Cookie: `admin_auth=${adminCookie}` };
     const request = context.request;
 
-    // Ensure clean sample data state and mark setup incomplete on Step 2
+    // Ensure clean sample data and invitation code state, then mark setup incomplete on Step 2
     await request.delete('/api/admin/sample-data', { headers });
+    const existingCodesRes = await request.get('/api/admin/invitation-codes?limit=100', {
+      headers,
+    });
+    if (existingCodesRes.ok()) {
+      const payload = (await existingCodesRes.json()) as
+        | Array<{ id: string; isSample?: boolean }>
+        | { data?: Array<{ id: string; isSample?: boolean }> };
+      const existingCodes = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.data)
+          ? payload.data
+          : [];
+      const nonSampleIds = existingCodes.filter((c) => !c.isSample).map((c) => c.id);
+      if (nonSampleIds.length > 0) {
+        await request.delete('/api/admin/invitation-codes/batch', {
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          data: { ids: nonSampleIds },
+        });
+      }
+    }
     const resetRes = await request.post('/api/admin/setup', {
       headers,
       data: {
@@ -62,7 +82,9 @@ test.describe('Resumable Setup Route & Unified Sample Cache Invalidation', () =>
     // then seed Step 2 in sessionStorage to exercise the full Step 2 -> Step 3 -> Step 4 -> Step 5 flow
     await page.goto('/admin/setup', { waitUntil: 'domcontentloaded' });
     expect(new URL(page.url()).pathname).toBe('/admin/setup');
-    await expect(page.getByRole('heading', { name: 'Step 3: Sample Data Selection' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Step 3: Sample Data Selection' })).toBeVisible({
+      timeout: 15000,
+    });
 
     await page.evaluate(() => {
       window.sessionStorage.setItem(

@@ -77,6 +77,7 @@ describe('Dialog', () => {
     const dialog = getByRole('dialog');
     const scrollRegionEl = dialog.querySelector('[data-scroll-region]');
     expect(scrollRegionEl).not.toBeNull();
+    expect(scrollRegionEl).toHaveClass('overflow-y-auto');
 
     rerender(
       <Dialog isOpen={true} onClose={() => {}} title="Scrollable Dialog" scrollRegion={false}>
@@ -85,6 +86,7 @@ describe('Dialog', () => {
     );
 
     expect(getByRole('dialog').querySelector('[data-scroll-region]')).toBeNull();
+    expect(screen.getByTestId('dialog-inner-child').parentElement).not.toHaveClass('overflow-y-auto');
   });
 
   test('prompts via ToastProvider.confirm when isDirty=true on Escape or outside click and closes cleanly when isDirty=false', async () => {

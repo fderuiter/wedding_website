@@ -466,8 +466,8 @@ const FloorplanTableNode = React.memo(function FloorplanTableNode({
     const clearanceBelowCenter = Math.max(rotatedHalfExtentY, handleScreenExtentBelow) + 21;
     const placeToolbarBelow = renderedY + cy - clearanceAboveCenter < 14;
     const screenOffsetY = placeToolbarBelow ? clearanceBelowCenter : -clearanceAboveCenter;
-    const minToolbarCenterX = 165;
-    const maxToolbarCenterX = Math.max(minToolbarCenterX, stageWidth - 165);
+    const minToolbarCenterX = 176;
+    const maxToolbarCenterX = Math.max(minToolbarCenterX, stageWidth - 176);
     const clampedToolbarCenterX = Math.min(
       maxToolbarCenterX,
       Math.max(minToolbarCenterX, renderedX + cx)
