@@ -347,8 +347,10 @@ describe('Global Jest Setup (jest.setup.js)', () => {
       );
       const rawConfigJson = rawStdout.split('__JEST_CFG__:')[1] ?? '{}';
       const resolvedJestConfig = JSON.parse(rawConfigJson) as {
+        cacheDirectory?: string;
         workerIdleMemoryLimit?: string;
         projects?: Array<{
+          cacheDirectory?: string;
           displayName?: string | { name?: string };
           runner?: string;
           testEnvironment?: string;
@@ -356,6 +358,7 @@ describe('Global Jest Setup (jest.setup.js)', () => {
           testPathIgnorePatterns?: string[];
         }>;
       };
+      expect(resolvedJestConfig.cacheDirectory).toBe('<rootDir>/node_modules/.cache/jest');
       expect(resolvedJestConfig.workerIdleMemoryLimit).toBe('1024MB');
       const projects = resolvedJestConfig.projects ?? [];
       expect(Array.isArray(projects)).toBe(true);
@@ -363,6 +366,9 @@ describe('Global Jest Setup (jest.setup.js)', () => {
         typeof proj.displayName === 'string' ? proj.displayName : proj.displayName?.name
       );
       expect(projectNames).toEqual(['unit-node', 'unit-jsdom', 'db-serial']);
+      for (const proj of projects) {
+        expect(proj.cacheDirectory).toBe('<rootDir>/node_modules/.cache/jest');
+      }
 
       const nodeProject = projects.find((proj) => proj.displayName === 'unit-node');
       const jsdomProject = projects.find((proj) => proj.displayName === 'unit-jsdom');

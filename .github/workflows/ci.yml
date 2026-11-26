@@ -62,9 +62,36 @@ jobs:
             process.stdout.write(image);
           ')
           echo "db_image=${DB_IMAGE}" >> "$GITHUB_OUTPUT"
+      - name: Cache TypeScript and ESLint incremental state
+        id: ts-eslint-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .eslintcache
+            tsconfig.tsbuildinfo
+            tsconfig.build.tsbuildinfo
+            tsconfig.scripts.tsbuildinfo
+            tsconfig.e2e.tsbuildinfo
+            tsconfig.test.tsbuildinfo
+          key: ${{ runner.os }}-ts-eslint-${{ hashFiles('package-lock.json', 'package.json', 'tsconfig*.json', 'eslint.config.mjs', 'eslint-rules/**', 'prisma/schema.prisma') }}-${{ hashFiles('next.config.ts', 'playwright*.config.ts', 'prisma.config.ts', '*.mts', '*.js', '*.mjs', '*.cjs', 'src/**', 'scripts/**', 'e2e/**', '.storybook/**', 'docs-portal/**', '.githooks/**', 'docker/**') }}
+          restore-keys: |
+            ${{ runner.os }}-ts-eslint-${{ hashFiles('package-lock.json', 'package.json', 'tsconfig*.json', 'eslint.config.mjs', 'eslint-rules/**', 'prisma/schema.prisma') }}-
+
       - name: Run Parallel Typecheck, ESLint, and Knip Analysis
         timeout-minutes: 10
+        env:
+          CACHE_HIT: ${{ steps.ts-eslint-cache.outputs.cache-hit }}
         run: |
+          node -e '
+            const fs = require("fs");
+            const target = process.env.CACHE_HIT === "true" ? new Date() : new Date("2000-01-01T00:00:00Z");
+            for (const file of fs.readdirSync(".")) {
+              if (file.endsWith(".tsbuildinfo") && fs.lstatSync(file).isFile()) {
+                fs.utimesSync(file, target, target);
+              }
+            }
+          '
+
           LOG_DIR=$(mktemp -d)
           trap 'rm -rf "$LOG_DIR"' EXIT
 
@@ -322,7 +349,16 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
       - name: Install dependencies
+        env:
+          SKIP_NEXT_TYPEGEN: 'true'
         run: npm ci
+      - name: Cache Jest transform state
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: node_modules/.cache/jest
+          key: ${{ runner.os }}-jest-${{ hashFiles('package-lock.json', 'jest*.js', 'jest*.mjs', 'jest*.cjs', 'jsdom-env.cjs', 'next.config.ts', 'prisma/schema.prisma') }}-${{ hashFiles('src/**', 'scripts/**') }}
+          restore-keys: |
+            ${{ runner.os }}-jest-${{ hashFiles('package-lock.json', 'jest*.js', 'jest*.mjs', 'jest*.cjs', 'jsdom-env.cjs', 'next.config.ts', 'prisma/schema.prisma') }}-
       - name: Verify Prisma Migration Sync
         env:
           DATABASE_URL: postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public
