@@ -2903,7 +2903,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
-  // 4b. Verify storybook.yml `actions/cache` parity with ci.yml `storybook-build`
+  // 4b. Verify reusable storybook.yml caller contract in ci.yml `storybook-build` and subpath-scoped `actions/cache` keys
   const extractCacheConfig = (
     steps: unknown[]
   ): { uses: string; paths: string[]; key: string; restoreKeys: string[] } | null => {
@@ -2941,15 +2941,48 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     return null;
   };
 
-  const ciStorybookCache = extractCacheConfig(extractJobSteps(ciDoc, 'storybook-build'));
-  const standaloneStorybookCache = extractCacheConfig(extractJobSteps(storybookDoc, 'build'));
-  if (!ciStorybookCache) {
-    errors.push('.github/workflows/ci.yml: `storybook-build` job is missing `actions/cache` step');
-  }
-  if (!standaloneStorybookCache) {
+  const ciJobsNode: unknown = isMap(ciDoc.contents) ? ciDoc.contents.get('jobs', true) : null;
+  const ciStorybookJobNode: unknown = isMap(ciJobsNode)
+    ? ciJobsNode.get('storybook-build', true)
+    : null;
+  const ciStorybookUsesNode: unknown = isMap(ciStorybookJobNode)
+    ? ciStorybookJobNode.get('uses', true)
+    : null;
+  const ciStorybookUses =
+    isScalar(ciStorybookUsesNode) && typeof ciStorybookUsesNode.value === 'string'
+      ? ciStorybookUsesNode.value.trim()
+      : '';
+  if (ciStorybookUses !== './.github/workflows/storybook.yml') {
     errors.push(
-      '.github/workflows/storybook.yml: `build` job is missing `actions/cache` step matching .github/workflows/ci.yml `storybook-build`'
+      '.github/workflows/ci.yml: `storybook-build` job must delegate to reusable workflow `./.github/workflows/storybook.yml`'
     );
+  }
+  if (isMap(ciStorybookJobNode) && ciStorybookJobNode.get('steps', true) !== undefined) {
+    errors.push(
+      '.github/workflows/ci.yml: `storybook-build` reusable caller job must not duplicate inline `steps`'
+    );
+  }
+
+  const storybookOnNode: unknown = isMap(storybookDoc.contents)
+    ? storybookDoc.contents.get('on', true)
+    : null;
+  if (!isMap(storybookOnNode) || !storybookOnNode.has('workflow_call') || !storybookOnNode.has('workflow_dispatch')) {
+    errors.push(
+      '.github/workflows/storybook.yml: `on` must declare both `workflow_call` and `workflow_dispatch` triggers'
+    );
+  } else {
+    const wfCallNode: unknown = storybookOnNode.get('workflow_call', true);
+    const wfCallOutputs: unknown = isMap(wfCallNode) ? wfCallNode.get('outputs', true) : null;
+    if (!isMap(wfCallOutputs) || !wfCallOutputs.has('storybook_base_path')) {
+      errors.push(
+        '.github/workflows/storybook.yml: `on.workflow_call.outputs` must export `storybook_base_path`'
+      );
+    }
+  }
+
+  const standaloneStorybookCache = extractCacheConfig(extractJobSteps(storybookDoc, 'build'));
+  if (!standaloneStorybookCache) {
+    errors.push('.github/workflows/storybook.yml: `build` job is missing `actions/cache` step');
   } else {
     for (const requiredCachePath of ['node_modules/.cache/webpack', 'node_modules/.cache/storybook']) {
       if (!standaloneStorybookCache.paths.includes(requiredCachePath)) {
@@ -2959,14 +2992,16 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       }
     }
     if (
-      ciStorybookCache &&
-      (standaloneStorybookCache.uses !== ciStorybookCache.uses ||
-        standaloneStorybookCache.paths.join('\n') !== ciStorybookCache.paths.join('\n') ||
-        standaloneStorybookCache.key !== ciStorybookCache.key ||
-        standaloneStorybookCache.restoreKeys.join('\n') !== ciStorybookCache.restoreKeys.join('\n'))
+      !standaloneStorybookCache.key.includes('steps.base-path.outputs.storybook_base') ||
+      !standaloneStorybookCache.key.includes("hashFiles('package-lock.json')") ||
+      !standaloneStorybookCache.key.includes('.storybook/**') ||
+      standaloneStorybookCache.restoreKeys.length === 0 ||
+      !standaloneStorybookCache.restoreKeys.every((rk) =>
+        rk.includes('steps.base-path.outputs.storybook_base')
+      )
     ) {
       errors.push(
-        '.github/workflows/storybook.yml: `actions/cache` configuration (`uses`, `path`, `key`, `restore-keys`) must match .github/workflows/ci.yml `storybook-build`'
+        '.github/workflows/storybook.yml: `actions/cache` `key` and `restore-keys` must include `steps.base-path.outputs.storybook_base` and lockfile/.storybook hash'
       );
     }
   }

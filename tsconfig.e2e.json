@@ -10,6 +10,7 @@
   "include": [
     "playwright.config.ts",
     "playwright.static.config.ts",
+    "playwright.storybook.config.ts",
     "e2e/**/*.ts"
   ],
   "exclude": [

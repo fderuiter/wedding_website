@@ -134,15 +134,26 @@ describe('check-quality', () => {
     }).toThrow('process.exit: 0');
   });
 
-  it('configures parallel storybook-build job in .github/workflows/ci.yml and Webpack fsCache in .storybook/main.ts', () => {
+  it('configures reusable storybook-build job in .github/workflows/ci.yml, subpath cache/audit in .github/workflows/storybook.yml, and Webpack fsCache in .storybook/main.ts', () => {
     const repoRoot = process.cwd();
     const ciWorkflow = fs.readFileSync(path.join(repoRoot, '.github', 'workflows', 'ci.yml'), 'utf8');
+    const storybookWorkflow = fs.readFileSync(
+      path.join(repoRoot, '.github', 'workflows', 'storybook.yml'),
+      'utf8'
+    );
     const storybookMain = fs.readFileSync(path.join(repoRoot, '.storybook', 'main.ts'), 'utf8');
 
     expect(ciWorkflow).toContain('  storybook-build:\n    needs: verify');
-    expect(ciWorkflow).toContain('node_modules/.cache/webpack');
-    expect(ciWorkflow).toContain('node_modules/.cache/storybook');
-    expect(ciWorkflow).toContain('run: npm run build-storybook');
+    expect(ciWorkflow).toContain('uses: ./.github/workflows/storybook.yml');
+    expect(storybookWorkflow).toContain('workflow_call:');
+    expect(storybookWorkflow).toContain('storybook_base_path:');
+    expect(storybookWorkflow).toContain('workflow_dispatch:');
+    expect(storybookWorkflow).toContain('node_modules/.cache/webpack');
+    expect(storybookWorkflow).toContain('node_modules/.cache/storybook');
+    expect(storybookWorkflow).toContain('steps.base-path.outputs.storybook_base');
+    expect(storybookWorkflow).toContain('NEXT_PUBLIC_BASE_PATH: ${{ steps.base-path.outputs.storybook_base }}');
+    expect(storybookWorkflow).toContain('run: npm run build-storybook');
+    expect(storybookWorkflow).toContain('run: npm run test:e2e:storybook');
     expect(storybookMain).toContain('fsCache: true');
     expect(storybookMain).toContain("'@storybook/addon-docs'");
     expect(storybookMain).toContain('onlyRemoveTypeImports: false');

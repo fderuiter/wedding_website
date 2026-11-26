@@ -44,7 +44,7 @@ const mockTables: SeatingTableDTO[] = [
     shape: 'round',
     capacity: 8,
     x: 360,
-    y: 260,
+    y: 330,
     width: 130,
     height: 130,
     rotation: 0,

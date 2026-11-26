@@ -88,12 +88,15 @@ function attachStrictRuntimeMonitors(page: Page) {
   return { pageErrors, consoleErrors, failedResponses };
 }
 
-async function expectZeroAxeViolations(page: Page) {
+async function expectZeroAxeViolations(page: Page, includeSelector?: string | string[]) {
   await page.waitForFunction(() => {
     const heroNav = document.querySelector('nav[aria-label="Primary navigation"]');
     return !heroNav || window.getComputedStyle(heroNav).opacity === '1';
   });
   const builder = new AxeBuilder({ page }).withTags(a11yConfig.runOnly.values);
+  if (includeSelector) {
+    builder.include(includeSelector);
+  }
   if (a11yConfig.rules) {
     builder.options({ rules: a11yConfig.rules });
   }
@@ -215,7 +218,20 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
     await expect(page.locator('body')).toContainText('API');
 
     await page.goto(`${origin}${SUBPATH_PREFIX}/storybook/`, { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('#root, #storybook-root, body').first()).toBeVisible();
+    await expect(page.locator('#root')).toBeVisible({ timeout: 15_000 });
+    const firstStoryLink = page
+      .locator('#storybook-explorer-tree [data-nodetype="story"] a, #storybook-explorer-tree a[href*="/story/"]')
+      .first();
+    await expect(firstStoryLink).toBeVisible({ timeout: 15_000 });
+    await firstStoryLink.click();
+
+    const storybookPreviewFrame = page.frameLocator('iframe#storybook-preview-iframe');
+    await expect(storybookPreviewFrame.locator('#storybook-root')).toBeVisible({ timeout: 15_000 });
+    await expect(storybookPreviewFrame.locator('#storybook-root > *').first()).toBeAttached({
+      timeout: 15_000,
+    });
+    expect(await storybookPreviewFrame.locator('#storybook-root > *').count()).toBeGreaterThan(0);
+    await expectZeroAxeViolations(page, ['#storybook-preview-iframe', '#storybook-root']);
     await page.screenshot({ path: '/tmp/pages-storybook.png', animations: 'disabled' });
 
     expect(monitors.pageErrors).toEqual([]);

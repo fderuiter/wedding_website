@@ -27,6 +27,7 @@
     "docs-portal",
     "playwright.config.ts",
     "playwright.static.config.ts",
+    "playwright.storybook.config.ts",
     "prisma.config.ts",
     "src/mocks",
     "src/testing",
