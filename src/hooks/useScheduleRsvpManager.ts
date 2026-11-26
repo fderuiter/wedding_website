@@ -18,6 +18,26 @@ import { withBasePath } from '@/lib/basePath';
 
 export type EventRsvpFiniteState = 'idle' | 'dirty' | 'submitting' | 'success' | 'error';
 
+export interface ScheduleHouseholdMember {
+  id: string;
+  fullName: string;
+  firstName?: string;
+  lastName?: string;
+  role: 'PRIMARY' | 'PARTNER' | 'CHILD' | 'PLUS_ONE';
+  email?: string | null;
+  phone?: string | null;
+  dietaryNotes?: string | null;
+  tags?: string[];
+  displayOrder?: number;
+}
+
+export interface ScheduleMemberRsvpItem {
+  householdMemberId: string;
+  status: 'attending' | 'declined' | 'pending';
+  mealOptionId: string;
+  dietaryNotes: string;
+}
+
 export interface SubEventRsvpData {
   status: 'attending' | 'declined' | 'pending';
   plusOneCount: number;
@@ -25,6 +45,7 @@ export interface SubEventRsvpData {
   mealSelections: string[];
   customAnswers: Record<string, string>;
   plusOneNames: string[];
+  memberRsvps?: ScheduleMemberRsvpItem[];
 }
 
 export interface SubEventRsvpItemState {
@@ -58,6 +79,7 @@ export interface UseScheduleRsvpManagerOptions {
   initialEvents?: ScheduleRsvpEventInit[];
   maxPlusOnes?: number | null;
   defaultPlusOneNames?: string[] | null;
+  householdMembers?: ScheduleHouseholdMember[] | null;
   apiEndpoint?: string;
   onSuccess?: (_updatedRsvps: any[]) => void;
   onError?: (_error: Error) => void;
@@ -99,10 +121,63 @@ function validateEventRsvp(
   current: SubEventRsvpData,
   effectivePlusOneCount: number,
   maxPlusOnes?: number | null,
-  meta?: EventPromptMeta
+  meta?: EventPromptMeta,
+  householdMembers?: ScheduleHouseholdMember[] | null
 ): EventValidationResult {
   const fieldErrors: Record<string, string> = {};
   let summaryError: string | null = null;
+
+  const activeMembers = Array.isArray(householdMembers) ? householdMembers : [];
+  if (activeMembers.length > 0 && Array.isArray(current.memberRsvps)) {
+    const memberRsvpMap = new Map(current.memberRsvps.map((mr) => [mr.householdMemberId, mr]));
+    const validMealIds =
+      meta && meta.mealOptions.length > 0 ? new Set(meta.mealOptions.map((m) => m.id)) : null;
+
+    let anyAttending = false;
+    for (const member of activeMembers) {
+      const mr = memberRsvpMap.get(member.id);
+      const memberStatus = mr?.status ?? 'pending';
+      if (memberStatus !== 'attending' && memberStatus !== 'declined') {
+        const stErr = `Please select Attending or Declined for ${member.fullName} before saving.`;
+        fieldErrors[`memberStatus.${member.id}`] = 'Please select Attending or Declined.';
+        if (!summaryError) {
+          summaryError = stErr;
+        }
+      } else if (memberStatus === 'attending') {
+        anyAttending = true;
+        if (validMealIds) {
+          const mealId = (mr?.mealOptionId ?? '').trim();
+          if (!mealId || !validMealIds.has(mealId)) {
+            fieldErrors[`memberMeal.${member.id}`] = 'Please select an entrée option.';
+            if (!summaryError) {
+              summaryError = `Please select an entrée option for ${member.fullName}.`;
+            }
+          }
+        }
+      }
+    }
+
+    if (anyAttending && meta && meta.customQuestions.length > 0) {
+      for (const question of meta.customQuestions) {
+        const answer = (current.customAnswers[question.id] ?? '').trim();
+        if (question.required && !answer) {
+          const qErr = `Please answer required question: "${question.prompt}".`;
+          fieldErrors[`customAnswers.${question.id}`] = qErr;
+          if (!summaryError) {
+            summaryError = qErr;
+          }
+        } else if (answer && question.type === 'choice' && !question.options.includes(answer)) {
+          const qErr = `Please choose a valid option for "${question.prompt}".`;
+          fieldErrors[`customAnswers.${question.id}`] = qErr;
+          if (!summaryError) {
+            summaryError = qErr;
+          }
+        }
+      }
+    }
+
+    return { summaryError, fieldErrors };
+  }
 
   const statusError = getStatusValidationError(current.status);
   if (statusError) {
@@ -179,10 +254,16 @@ function cloneRsvpData(data: SubEventRsvpData): SubEventRsvpData {
     mealSelections: [...data.mealSelections],
     customAnswers: { ...data.customAnswers },
     plusOneNames: [...data.plusOneNames],
+    ...(Array.isArray(data.memberRsvps)
+      ? { memberRsvps: data.memberRsvps.map((mr) => ({ ...mr })) }
+      : {}),
   };
 }
 
-function createEmptyRsvpData(): SubEventRsvpData {
+function createEmptyRsvpData(
+  householdMembers?: ScheduleHouseholdMember[] | null
+): SubEventRsvpData {
+  const activeMembers = Array.isArray(householdMembers) ? householdMembers : [];
   return {
     status: 'pending',
     plusOneCount: 0,
@@ -190,10 +271,128 @@ function createEmptyRsvpData(): SubEventRsvpData {
     mealSelections: [],
     customAnswers: {},
     plusOneNames: [],
+    ...(activeMembers.length > 0
+      ? {
+        memberRsvps: activeMembers.map((m) => ({
+          householdMemberId: m.id,
+          status: 'pending' as const,
+          mealOptionId: '',
+          dietaryNotes: '',
+        })),
+      }
+      : {}),
   };
 }
 
-function normalizeRsvpData(userRsvp?: Partial<SubEventRsvpData> | null): SubEventRsvpData {
+function deriveSummaryFromMemberRsvps(
+  memberRsvps: ScheduleMemberRsvpItem[],
+  activeMembers: ScheduleHouseholdMember[]
+): {
+  status: 'attending' | 'declined' | 'pending';
+  plusOneCount: number;
+  mealSelections: string[];
+  plusOneNames: string[];
+} {
+  const memberById = new Map(activeMembers.map((m) => [m.id, m]));
+  const attending = memberRsvps.filter((mr) => mr.status === 'attending');
+  const allDeclined =
+    memberRsvps.length > 0 && memberRsvps.every((mr) => mr.status === 'declined');
+  const status: 'attending' | 'declined' | 'pending' =
+    attending.length > 0 ? 'attending' : allDeclined ? 'declined' : 'pending';
+  const plusOneCount = attending.length > 0 ? Math.max(0, attending.length - 1) : 0;
+  const mealSelections = attending.map((mr) => mr.mealOptionId.trim());
+  const plusOneNames = attending
+    .map((mr) => memberById.get(mr.householdMemberId))
+    .filter((m): m is ScheduleHouseholdMember => Boolean(m && m.role !== 'PRIMARY'))
+    .map((m) => m.fullName);
+
+  return {
+    status,
+    plusOneCount,
+    mealSelections,
+    plusOneNames,
+  };
+}
+
+function normalizeRsvpData(
+  userRsvp?: Partial<SubEventRsvpData> | null,
+  householdMembers?: ScheduleHouseholdMember[] | null
+): SubEventRsvpData {
+  const activeMembers = Array.isArray(householdMembers) ? householdMembers : [];
+  if (activeMembers.length > 0) {
+    const rawMemberRsvps = Array.isArray(userRsvp?.memberRsvps) ? userRsvp!.memberRsvps : null;
+    let resolvedMemberRsvps: ScheduleMemberRsvpItem[];
+
+    if (rawMemberRsvps && rawMemberRsvps.length > 0) {
+      const byMemberId = new Map(
+        rawMemberRsvps
+          .filter((mr): mr is ScheduleMemberRsvpItem => Boolean(mr && mr.householdMemberId))
+          .map((mr) => [mr.householdMemberId, mr])
+      );
+      const fallbackStatus: 'declined' | 'pending' =
+        userRsvp?.status === 'declined' ? 'declined' : 'pending';
+      resolvedMemberRsvps = activeMembers.map((member) => {
+        const existing = byMemberId.get(member.id);
+        if (!existing) {
+          return {
+            householdMemberId: member.id,
+            status: fallbackStatus,
+            mealOptionId: '',
+            dietaryNotes: '',
+          };
+        }
+        const st: 'attending' | 'declined' | 'pending' =
+          existing.status === 'attending' || existing.status === 'declined'
+            ? existing.status
+            : 'pending';
+        return {
+          householdMemberId: member.id,
+          status: st,
+          mealOptionId: st === 'attending' ? (existing.mealOptionId ?? '').trim() : '',
+          dietaryNotes: st === 'attending' ? (existing.dietaryNotes ?? '').trim() : '',
+        };
+      });
+    } else if (userRsvp?.status === 'declined') {
+      resolvedMemberRsvps = activeMembers.map((member) => ({
+        householdMemberId: member.id,
+        status: 'declined',
+        mealOptionId: '',
+        dietaryNotes: '',
+      }));
+    } else if (userRsvp?.status === 'attending') {
+      const attendingCount = 1 + Math.max(0, userRsvp.plusOneCount ?? 0);
+      const legacyMeals = normalizeMealSelections(userRsvp.mealSelections);
+      resolvedMemberRsvps = activeMembers.map((member, idx) => {
+        const isAttending = idx < attendingCount;
+        return {
+          householdMemberId: member.id,
+          status: isAttending ? 'attending' : 'declined',
+          mealOptionId: isAttending ? (legacyMeals[idx] ?? '').trim() : '',
+          dietaryNotes: '',
+        };
+      });
+    } else {
+      resolvedMemberRsvps = activeMembers.map((member) => ({
+        householdMemberId: member.id,
+        status: 'pending',
+        mealOptionId: '',
+        dietaryNotes: '',
+      }));
+    }
+
+    const derived = deriveSummaryFromMemberRsvps(resolvedMemberRsvps, activeMembers);
+    return {
+      status: derived.status,
+      plusOneCount: derived.plusOneCount,
+      dietaryNotes: (userRsvp?.dietaryNotes ?? '').trim(),
+      mealSelections: derived.mealSelections,
+      customAnswers:
+        derived.status === 'declined' ? {} : normalizeCustomAnswers(userRsvp?.customAnswers),
+      plusOneNames: derived.plusOneNames,
+      memberRsvps: resolvedMemberRsvps,
+    };
+  }
+
   const status = userRsvp?.status || 'pending';
   const plusOneCount = status === 'declined' ? 0 : Math.max(0, userRsvp?.plusOneCount ?? 0);
   return {
@@ -236,7 +435,37 @@ function areAnswerRecordsEqual(
   return true;
 }
 
+function areMemberRsvpsEqual(
+  a?: ScheduleMemberRsvpItem[],
+  b?: ScheduleMemberRsvpItem[]
+): boolean {
+  if (!a && !b) return true;
+  const listA = a ?? [];
+  const listB = b ?? [];
+  if (listA.length !== listB.length) return false;
+  for (let i = 0; i < listA.length; i++) {
+    const itemA = listA[i];
+    const itemB = listB[i];
+    if (
+      itemA.householdMemberId !== itemB.householdMemberId ||
+      itemA.status !== itemB.status ||
+      itemA.mealOptionId.trim() !== itemB.mealOptionId.trim() ||
+      itemA.dietaryNotes.trim() !== itemB.dietaryNotes.trim()
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function isRsvpDirty(current: SubEventRsvpData, baseline: SubEventRsvpData): boolean {
+  if (Array.isArray(current.memberRsvps) || Array.isArray(baseline.memberRsvps)) {
+    return (
+      !areMemberRsvpsEqual(current.memberRsvps, baseline.memberRsvps) ||
+      current.dietaryNotes.trim() !== baseline.dietaryNotes.trim() ||
+      !areAnswerRecordsEqual(current.customAnswers, baseline.customAnswers)
+    );
+  }
   return (
     current.status !== baseline.status ||
     current.plusOneCount !== baseline.plusOneCount ||
@@ -249,8 +478,63 @@ function isRsvpDirty(current: SubEventRsvpData, baseline: SubEventRsvpData): boo
 
 function buildSubmissionPayloadItem(
   item: SubEventRsvpItemState,
-  meta?: EventPromptMeta
+  meta?: EventPromptMeta,
+  householdMembers?: ScheduleHouseholdMember[] | null
 ): SubEventRsvpSubmissionItem {
+  const activeMembers = Array.isArray(householdMembers) ? householdMembers : [];
+  if (activeMembers.length > 0 && Array.isArray(item.current.memberRsvps)) {
+    const derived = deriveSummaryFromMemberRsvps(item.current.memberRsvps, activeMembers);
+    const isDeclined = derived.status === 'declined';
+    const resolvedStatus: 'attending' | 'declined' = isDeclined ? 'declined' : 'attending';
+    const hasMealsConfigured = (meta?.mealOptions.length ?? 0) > 0;
+
+    const payloadItem: SubEventRsvpSubmissionItem = {
+      subEventId: item.id,
+      status: resolvedStatus,
+      plusOneCount: derived.plusOneCount,
+      dietaryNotes: item.current.dietaryNotes,
+      memberRsvps: item.current.memberRsvps.map((mr) => ({
+        householdMemberId: mr.householdMemberId,
+        status: mr.status === 'attending' ? 'attending' : 'declined',
+        mealOptionId:
+          mr.status === 'attending' && hasMealsConfigured
+            ? mr.mealOptionId.trim() || null
+            : null,
+        ...(mr.status === 'attending' && mr.dietaryNotes.trim()
+          ? { dietaryNotes: mr.dietaryNotes.trim() }
+          : {}),
+      })),
+    };
+
+    if (
+      !isDeclined &&
+      item.baseline.dietaryNotes.trim().length > 0 &&
+      item.current.dietaryNotes.trim().length === 0
+    ) {
+      payloadItem.clearDietaryNotes = true;
+    }
+
+    if (hasMealsConfigured) {
+      payloadItem.mealSelections = isDeclined ? [] : derived.mealSelections;
+    }
+
+    const hasQuestionsConfigured = (meta?.customQuestions.length ?? 0) > 0;
+    const hasAnswerValues =
+      Object.values(item.current.customAnswers).some((v) => v.trim().length > 0) ||
+      Object.values(item.baseline.customAnswers).some((v) => v.trim().length > 0);
+    if (hasQuestionsConfigured || hasAnswerValues) {
+      payloadItem.customAnswers = isDeclined
+        ? {}
+        : normalizeCustomAnswers(item.current.customAnswers);
+    }
+
+    if (derived.plusOneNames.length > 0 || item.baseline.plusOneNames.length > 0) {
+      payloadItem.plusOneNames = isDeclined ? [] : derived.plusOneNames;
+    }
+
+    return payloadItem;
+  }
+
   const isDeclined = item.current.status === 'declined';
   const resolvedStatus: 'attending' | 'declined' = isDeclined ? 'declined' : 'attending';
   const effectivePlusOneCount = isDeclined ? 0 : item.current.plusOneCount;
@@ -336,6 +620,9 @@ function extractSharedPlusOneNames(
 
 export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) {
   const apiEndpoint = options?.apiEndpoint || '/api/rsvp';
+  const householdMembersRef = useRef<ScheduleHouseholdMember[]>(
+    Array.isArray(options?.householdMembers) ? options.householdMembers : []
+  );
   const sharedPlusOneNamesRef = useRef<string[]>(
     extractSharedPlusOneNames(options?.initialEvents, options?.defaultPlusOneNames)
   );
@@ -366,7 +653,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
     if (options?.initialEvents) {
       options.initialEvents.forEach((ev) => {
         if (ev.isReadOnly) return;
-        const baseline = normalizeRsvpData(ev.userRsvp);
+        const baseline = normalizeRsvpData(ev.userRsvp, options?.householdMembers);
         map[ev.id] = {
           id: ev.id,
           baseline,
@@ -393,6 +680,9 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
   const optionsRef = useRef(options);
   useEffect(() => {
     optionsRef.current = options;
+    if (Array.isArray(options?.householdMembers)) {
+      householdMembersRef.current = options.householdMembers;
+    }
     if (Array.isArray(options?.defaultPlusOneNames)) {
       options.defaultPlusOneNames.forEach((raw, idx) => {
         const trimmed = typeof raw === 'string' ? raw.trim() : '';
@@ -404,7 +694,18 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
   }, [options]);
 
   const initializeEvents = useCallback(
-    (events: ScheduleRsvpEventInit[], defaultNamesOverride?: string[] | null) => {
+    (
+      events: ScheduleRsvpEventInit[],
+      defaultNamesOverride?: string[] | null,
+      householdMembersOverride?: ScheduleHouseholdMember[] | null
+    ) => {
+      if (householdMembersOverride !== undefined) {
+        householdMembersRef.current = Array.isArray(householdMembersOverride)
+          ? householdMembersOverride
+          : [];
+      }
+      const activeMembers = householdMembersRef.current;
+
       const discovered = extractSharedPlusOneNames(
         events,
         defaultNamesOverride !== undefined
@@ -438,7 +739,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
             delete next[ev.id];
             return;
           }
-          const newBaseline = normalizeRsvpData(ev.userRsvp);
+          const newBaseline = normalizeRsvpData(ev.userRsvp, activeMembers);
           const existing = prev[ev.id];
           if (!existing) {
             next[ev.id] = {
@@ -491,10 +792,11 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
       setBatchSuccessMessage(null);
 
       setEventsMap((prev) => {
+        const activeMembers = householdMembersRef.current;
         const existing = prev[subEventId] || {
           id: subEventId,
-          baseline: createEmptyRsvpData(),
-          current: createEmptyRsvpData(),
+          baseline: createEmptyRsvpData(activeMembers),
+          current: createEmptyRsvpData(activeMembers),
           state: 'idle' as const,
           isDirty: false,
           isSubmitting: false,
@@ -502,6 +804,68 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
           error: null,
           fieldErrors: {},
         };
+
+        if (activeMembers.length > 0) {
+          const baseMemberRsvps =
+            updates.memberRsvps !== undefined
+              ? updates.memberRsvps.map((mr) => ({ ...mr }))
+              : Array.isArray(existing.current.memberRsvps)
+                ? existing.current.memberRsvps.map((mr) => ({ ...mr }))
+                : activeMembers.map((m) => ({
+                  householdMemberId: m.id,
+                  status: 'pending' as const,
+                  mealOptionId: '',
+                  dietaryNotes: '',
+                }));
+
+          let resolvedMemberRsvps = baseMemberRsvps;
+          if (
+            updates.memberRsvps === undefined &&
+            (updates.status === 'attending' || updates.status === 'declined')
+          ) {
+            resolvedMemberRsvps = baseMemberRsvps.map((mr) => ({
+              ...mr,
+              status: updates.status as 'attending' | 'declined',
+              mealOptionId: updates.status === 'declined' ? '' : mr.mealOptionId,
+              dietaryNotes: updates.status === 'declined' ? '' : mr.dietaryNotes,
+            }));
+          }
+
+          const derived = deriveSummaryFromMemberRsvps(resolvedMemberRsvps, activeMembers);
+          const nextCustomAnswers =
+            derived.status === 'declined'
+              ? {}
+              : updates.customAnswers !== undefined
+                ? { ...updates.customAnswers }
+                : { ...existing.current.customAnswers };
+
+          const newCurrent: SubEventRsvpData = {
+            status: derived.status,
+            plusOneCount: derived.plusOneCount,
+            dietaryNotes:
+              updates.dietaryNotes !== undefined
+                ? updates.dietaryNotes
+                : existing.current.dietaryNotes,
+            mealSelections: derived.mealSelections,
+            customAnswers: nextCustomAnswers,
+            plusOneNames: derived.plusOneNames,
+            memberRsvps: resolvedMemberRsvps,
+          };
+
+          const dirty = isRsvpDirty(newCurrent, existing.baseline);
+          return {
+            ...prev,
+            [subEventId]: {
+              ...existing,
+              current: newCurrent,
+              isDirty: dirty,
+              state: dirty ? 'dirty' : 'idle',
+              message: null,
+              error: null,
+              fieldErrors: {},
+            },
+          };
+        }
 
         const prevSharedSnapshot = [...sharedPlusOneNamesRef.current];
         const nextStatus = updates.status ?? existing.current.status;
@@ -637,13 +1001,107 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
     []
   );
 
+  const updateMemberRsvp = useCallback(
+    (
+      subEventId: string,
+      householdMemberId: string,
+      patch: Partial<Omit<ScheduleMemberRsvpItem, 'householdMemberId'>>
+    ) => {
+      if (readOnlyIdsRef.current.has(subEventId)) return;
+      const activeMembers = householdMembersRef.current;
+      if (activeMembers.length === 0) return;
+
+      setBatchError(null);
+      setBatchSuccessMessage(null);
+
+      setEventsMap((prev) => {
+        const existing = prev[subEventId] || {
+          id: subEventId,
+          baseline: createEmptyRsvpData(activeMembers),
+          current: createEmptyRsvpData(activeMembers),
+          state: 'idle' as const,
+          isDirty: false,
+          isSubmitting: false,
+          message: null,
+          error: null,
+          fieldErrors: {},
+        };
+
+        const currentRows = Array.isArray(existing.current.memberRsvps)
+          ? existing.current.memberRsvps
+          : activeMembers.map((m) => ({
+            householdMemberId: m.id,
+            status: 'pending' as const,
+            mealOptionId: '',
+            dietaryNotes: '',
+          }));
+
+        const nextMemberRsvps = activeMembers.map((member) => {
+          const cur = currentRows.find((r) => r.householdMemberId === member.id) ?? {
+            householdMemberId: member.id,
+            status: 'pending' as const,
+            mealOptionId: '',
+            dietaryNotes: '',
+          };
+          if (member.id !== householdMemberId) {
+            return { ...cur };
+          }
+          const nextStatus = patch.status ?? cur.status;
+          return {
+            householdMemberId: member.id,
+            status: nextStatus,
+            mealOptionId:
+              nextStatus === 'declined'
+                ? ''
+                : patch.mealOptionId !== undefined
+                  ? patch.mealOptionId
+                  : cur.mealOptionId,
+            dietaryNotes:
+              nextStatus === 'declined'
+                ? ''
+                : patch.dietaryNotes !== undefined
+                  ? patch.dietaryNotes
+                  : cur.dietaryNotes,
+          };
+        });
+
+        const derived = deriveSummaryFromMemberRsvps(nextMemberRsvps, activeMembers);
+        const newCurrent: SubEventRsvpData = {
+          ...existing.current,
+          status: derived.status,
+          plusOneCount: derived.plusOneCount,
+          mealSelections: derived.mealSelections,
+          plusOneNames: derived.plusOneNames,
+          customAnswers:
+            derived.status === 'declined' ? {} : { ...existing.current.customAnswers },
+          memberRsvps: nextMemberRsvps,
+        };
+
+        const dirty = isRsvpDirty(newCurrent, existing.baseline);
+        return {
+          ...prev,
+          [subEventId]: {
+            ...existing,
+            current: newCurrent,
+            isDirty: dirty,
+            state: dirty ? 'dirty' : 'idle',
+            message: null,
+            error: null,
+            fieldErrors: {},
+          },
+        };
+      });
+    },
+    []
+  );
+
   const getRsvpState = useCallback(
     (subEventId: string): SubEventRsvpItemState => {
       return (
         eventsMap[subEventId] || {
           id: subEventId,
-          baseline: createEmptyRsvpData(),
-          current: createEmptyRsvpData(),
+          baseline: createEmptyRsvpData(householdMembersRef.current),
+          current: createEmptyRsvpData(householdMembersRef.current),
           state: 'idle',
           isDirty: false,
           isSubmitting: false,
@@ -679,11 +1137,13 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
       const effectivePlusOneCount =
         item.current.status === 'declined' ? 0 : item.current.plusOneCount;
       const meta = eventMetaRef.current[subEventId];
+      const activeMembers = householdMembersRef.current;
       const { summaryError: validationError, fieldErrors } = validateEventRsvp(
         item.current,
         effectivePlusOneCount,
         optionsRef.current?.maxPlusOnes,
-        meta
+        meta,
+        activeMembers
       );
       if (validationError) {
         const err = new Error(validationError);
@@ -718,7 +1178,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
         },
       }));
 
-      const payloadBody = buildSubmissionPayloadItem(item, meta);
+      const payloadBody = buildSubmissionPayloadItem(item, meta, activeMembers);
 
       try {
         const res = await fetch(withBasePath(apiEndpoint), {
@@ -740,14 +1200,18 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
         const record = returnedRecords.find((r: any) => r.subEventId === subEventId);
 
         const newBaseline: SubEventRsvpData = record
-          ? normalizeRsvpData({
-            status: record.status ?? item.current.status,
-            plusOneCount: record.plusOneCount ?? effectivePlusOneCount,
-            dietaryNotes: record.dietaryNotes ?? item.current.dietaryNotes,
-            mealSelections: record.mealSelections ?? item.current.mealSelections,
-            customAnswers: record.customAnswers ?? item.current.customAnswers,
-            plusOneNames: record.plusOneNames ?? item.current.plusOneNames,
-          })
+          ? normalizeRsvpData(
+            {
+              status: record.status ?? item.current.status,
+              plusOneCount: record.plusOneCount ?? effectivePlusOneCount,
+              dietaryNotes: record.dietaryNotes ?? item.current.dietaryNotes,
+              mealSelections: record.mealSelections ?? item.current.mealSelections,
+              customAnswers: record.customAnswers ?? item.current.customAnswers,
+              plusOneNames: record.plusOneNames ?? item.current.plusOneNames,
+              memberRsvps: record.memberRsvps ?? item.current.memberRsvps,
+            },
+            activeMembers
+          )
           : cloneRsvpData(item.current);
 
         setEventsMap((prev) => ({
@@ -810,6 +1274,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
     }
 
     const configuredMax = optionsRef.current?.maxPlusOnes;
+    const activeMembers = householdMembersRef.current;
     const invalidItems = dirtyItems
       .map((item) => {
         const effectiveCount =
@@ -819,7 +1284,8 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
           item.current,
           effectiveCount,
           configuredMax,
-          meta
+          meta,
+          activeMembers
         );
         return {
           id: item.id,
@@ -879,7 +1345,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
 
     const payload: { rsvps: SubEventRsvpSubmissionItem[] } = {
       rsvps: dirtyItems.map((item) =>
-        buildSubmissionPayloadItem(item, eventMetaRef.current[item.id])
+        buildSubmissionPayloadItem(item, eventMetaRef.current[item.id], activeMembers)
       ),
     };
 
@@ -908,14 +1374,18 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
           const effectivePlusOnes =
             item.current.status === 'declined' ? 0 : item.current.plusOneCount;
           const newBaseline: SubEventRsvpData = record
-            ? normalizeRsvpData({
-              status: record.status ?? item.current.status,
-              plusOneCount: record.plusOneCount ?? effectivePlusOnes,
-              dietaryNotes: record.dietaryNotes ?? item.current.dietaryNotes,
-              mealSelections: record.mealSelections ?? item.current.mealSelections,
-              customAnswers: record.customAnswers ?? item.current.customAnswers,
-              plusOneNames: record.plusOneNames ?? item.current.plusOneNames,
-            })
+            ? normalizeRsvpData(
+              {
+                status: record.status ?? item.current.status,
+                plusOneCount: record.plusOneCount ?? effectivePlusOnes,
+                dietaryNotes: record.dietaryNotes ?? item.current.dietaryNotes,
+                mealSelections: record.mealSelections ?? item.current.mealSelections,
+                customAnswers: record.customAnswers ?? item.current.customAnswers,
+                plusOneNames: record.plusOneNames ?? item.current.plusOneNames,
+                memberRsvps: record.memberRsvps ?? item.current.memberRsvps,
+              },
+              activeMembers
+            )
             : cloneRsvpData(item.current);
 
           next[item.id] = {
@@ -975,6 +1445,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
   return {
     getRsvpState,
     updateRsvp,
+    updateMemberRsvp,
     submitSingle,
     submitBatch,
     initializeEvents,

@@ -128,11 +128,13 @@ export async function seedGuestAuthCookies(
 ): Promise<string> {
   const guestCookieValue = options?.cookieValue ?? generateGuestCookieValue();
   const origins = resolveCookieOrigins(options?.extraOrigins);
+  const expires = Math.floor((Date.now() + SESSION_TTL_MS) / 1000);
   await context.addCookies(
     origins.map((url) => ({
       name: 'guest_auth',
       value: guestCookieValue,
       url,
+      expires,
     }))
   );
   return guestCookieValue;
@@ -149,17 +151,20 @@ export async function seedAdminAndGuestAuthCookies(
   const adminCookieValue = options?.adminCookieValue ?? generateAdminCookieValue();
   const guestCookieValue = options?.guestCookieValue ?? generateGuestCookieValue();
   const origins = resolveCookieOrigins(options?.extraOrigins);
+  const expires = Math.floor((Date.now() + SESSION_TTL_MS) / 1000);
   await context.addCookies(
     origins.flatMap((url) => [
       {
         name: 'admin_auth',
         value: adminCookieValue,
         url,
+        expires,
       },
       {
         name: 'guest_auth',
         value: guestCookieValue,
         url,
+        expires,
       },
     ])
   );

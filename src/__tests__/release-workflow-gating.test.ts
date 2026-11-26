@@ -116,7 +116,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
   const migrateWorkflow = readWorkflow('db-migrate.yml');
   const rollbackWorkflow = readWorkflow('rollback.yml');
 
-  it('triggers ci.yml once on main pushes and pull requests without duplicate v* tag runs while restricting deploy-docs to serialized main tip pushes', () => {
+  it('triggers ci.yml once on main pushes, pull requests, and merge_group runs without duplicate v* tag runs while restricting deploy-docs to serialized main tip pushes', () => {
     expect(ciWorkflow).toContain('name: CI');
     const onSection = extractTopLevelSection(ciWorkflow, 'on');
     expect(onSection).toContain('push:');
@@ -124,18 +124,23 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(onSection).not.toContain('tags:');
     expect(onSection).not.toContain("'v*'");
     expect(onSection).toContain('pull_request:');
+    expect(onSection).toContain('merge_group:');
     expect(onSection).not.toContain('release:');
     expect(onSection).not.toContain('published');
 
     const ciConcurrency = extractTopLevelSection(ciWorkflow, 'concurrency');
     expect(ciConcurrency).toContain('group: ${{ github.workflow }}-${{ github.ref }}');
-    expect(ciConcurrency).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}");
+    expect(ciConcurrency).toContain(
+      "cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}"
+    );
     expect(ciConcurrency).toContain('queue: max');
 
     const storybookWorkflow = readWorkflow('storybook.yml');
     const storybookConcurrency = extractTopLevelSection(storybookWorkflow, 'concurrency');
-    expect(storybookConcurrency).toContain('group: storybook');
-    expect(storybookConcurrency).toContain('cancel-in-progress: false');
+    expect(storybookConcurrency).toContain('group: storybook-${{ github.ref }}');
+    expect(storybookConcurrency).toContain(
+      "cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}"
+    );
     expect(storybookConcurrency).toContain('queue: max');
 
     for (const jobId of [
@@ -182,7 +187,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       "github.ref == 'refs/heads/main' && github.event_name == 'push'"
     );
     expect(ciJobs['deploy-docs']?.['runs-on']).toBe('ubuntu-latest');
-    expect(ciJobs['deploy-docs']?.['timeout-minutes']).toBe(20);
+    expect(ciJobs['deploy-docs']?.['timeout-minutes']).toBe(30);
     expect(ciJobs['deploy-docs']?.concurrency).toEqual({
       group: 'github-pages',
       'cancel-in-progress': false,
@@ -237,13 +242,19 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     );
 
     const a11yReportSection = extractJobSection(ciWorkflow, 'a11y-report');
-    expect(ciJobs['a11y-report']?.needs).toEqual(['unit-test', 'e2e-test', 'static-export-build']);
+    expect(ciJobs['a11y-report']?.needs).toEqual([
+      'unit-test',
+      'e2e-test',
+      'static-export-build',
+      'storybook-build',
+    ]);
     expect(ciJobs['a11y-report']?.if).toBe('always() && !cancelled()');
     expect(ciJobs['a11y-report']?.['timeout-minutes']).toBe(5);
     expect(ciJobs['a11y-report']?.permissions).toEqual({ contents: 'read' });
     expect(a11yReportSection).toContain('name: static-a11y-violations');
+    expect(a11yReportSection).toContain('name: storybook-a11y-violations');
     expect(a11yReportSection).toContain(
-      'node scripts/a11y-report.mjs --include-static --require-complete'
+      'node scripts/a11y-report.mjs --include-static --include-storybook --require-complete'
     );
     expect(a11yReportSection).toContain('name: a11y-summary');
     expect(a11yReportSection).not.toContain('actions/github-script');
@@ -284,7 +295,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       'pages-verify',
     ];
     expect(ciJobs['ci-complete']?.needs).toEqual(expectedVerificationJobs);
-    expect(ciJobs['ci-complete']?.if).toBe('always()');
+    expect(ciJobs['ci-complete']?.if).toBe('always() && !cancelled()');
     expect(ciJobs['ci-complete']?.['runs-on']).toBe('ubuntu-latest');
     expect(ciJobs['ci-complete']?.['timeout-minutes']).toBe(5);
     expect(ciJobs['ci-complete']?.permissions).toEqual({ contents: 'read' });
@@ -1043,6 +1054,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
 
     const storybookWorkflow = readWorkflow('storybook.yml');
     const storybookOnSection = extractTopLevelSection(storybookWorkflow, 'on');
+    expect(storybookOnSection).toContain('workflow_call:');
     expect(storybookOnSection).toContain('workflow_dispatch:');
     expect(storybookOnSection).not.toContain('push:');
     expect(storybookOnSection).not.toMatch(/-\s*main\b/);
@@ -1719,15 +1731,74 @@ process.exit(1);
     expect(pkg.scripts?.postinstall).not.toContain('generate-docs');
     expect(pkg.scripts?.build).toBe('prisma generate && next build');
 
+    expect(pkg.scripts?.lint).toBe(
+      'eslint . --cache --cache-location .eslintcache --cache-strategy content --max-warnings 0'
+    );
+    expect(pkg.scripts?.['lint:fix']).toBe(
+      'eslint . --cache --cache-location .eslintcache --cache-strategy content --fix --max-warnings 0'
+    );
+
     const verifySection = ciWorkflow.split(/\n  doc-drift-comment:\n/)[0] ?? '';
     expect(verifySection).not.toContain('run: npm run prisma:generate');
     expect(verifySection).toContain('db_image: ${{ steps.resolve-db-image.outputs.db_image }}');
+    expect(verifySection).toContain('uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0');
+    for (const cachedVerifyFile of [
+      '.eslintcache',
+      'tsconfig.tsbuildinfo',
+      'tsconfig.build.tsbuildinfo',
+      'tsconfig.scripts.tsbuildinfo',
+      'tsconfig.e2e.tsbuildinfo',
+      'tsconfig.test.tsbuildinfo',
+    ]) {
+      expect(verifySection).toContain(cachedVerifyFile);
+    }
+    expect(verifySection).toContain('CACHE_HIT: ${{ steps.ts-eslint-cache.outputs.cache-hit }}');
+    expect(verifySection).toContain('2000-01-01T00:00:00Z');
+    const verifyRunBlocks = extractRunBlocks(verifySection);
+    const parallelVerifyScript = verifyRunBlocks.find((block) => block.includes('process.env.CACHE_HIT'));
+    expect(parallelVerifyScript).toBeDefined();
+    const tsNormalizeSnippet = (parallelVerifyScript ?? '').split('LOG_DIR=')[0] ?? '';
+    const tsTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-tsbuildinfo-mtime-'));
+    try {
+      const sampleBuildInfo = path.join(tsTempDir, 'tsconfig.build.tsbuildinfo');
+      fs.writeFileSync(sampleBuildInfo, '{"version":"5.9.3"}\n');
+      const midTime = new Date('2024-06-01T00:00:00Z');
+      fs.utimesSync(sampleBuildInfo, midTime, midTime);
+
+      const partialRes = spawnSync('bash', ['-eo', 'pipefail', '-c', tsNormalizeSnippet], {
+        cwd: tsTempDir,
+        encoding: 'utf8',
+        env: { ...process.env, CACHE_HIT: 'false' },
+      });
+      expect(partialRes.status).toBe(0);
+      expect(fs.statSync(sampleBuildInfo).mtime.toISOString()).toBe('2000-01-01T00:00:00.000Z');
+
+      const beforeExactMs = Date.now() - 2000;
+      const exactRes = spawnSync('bash', ['-eo', 'pipefail', '-c', tsNormalizeSnippet], {
+        cwd: tsTempDir,
+        encoding: 'utf8',
+        env: { ...process.env, CACHE_HIT: 'true' },
+      });
+      expect(exactRes.status).toBe(0);
+      expect(fs.statSync(sampleBuildInfo).mtimeMs).toBeGreaterThanOrEqual(beforeExactMs);
+    } finally {
+      fs.rmSync(tsTempDir, { recursive: true, force: true });
+    }
     expect(verifySection).toContain('npx tsx scripts/generate-docs.ts --skip-openapi');
     expect(verifySection).toContain("SKIP_DOC_SYNC: 'true'");
     expect(verifySection).toContain('name: docs-portal-static');
 
     const unitTestSection = (ciWorkflow.split(/\n  unit-test:\n/)[1] ?? '').split(/\n  build:\n/)[0] ?? '';
     expect(unitTestSection).toContain('image: ${{ needs.verify.outputs.db_image }}');
+    expect(unitTestSection).toContain("SKIP_NEXT_TYPEGEN: 'true'");
+    expect(unitTestSection).toContain('uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0');
+    expect(unitTestSection).toContain('path: node_modules/.cache/jest');
+    const unitNpmCiIdx = unitTestSection.indexOf('run: npm ci');
+    const unitJestCacheIdx = unitTestSection.indexOf('path: node_modules/.cache/jest');
+    const unitRunTestsIdx = unitTestSection.indexOf('run: npm run test:cov');
+    expect(unitNpmCiIdx).toBeGreaterThan(-1);
+    expect(unitJestCacheIdx).toBeGreaterThan(unitNpmCiIdx);
+    expect(unitRunTestsIdx).toBeGreaterThan(unitJestCacheIdx);
 
     const buildSection = (ciWorkflow.split(/\n  build:\n/)[1] ?? '').split(/\n  container-arm64:\n/)[0] ?? '';
     expect(buildSection).toContain("SKIP_NEXT_TYPEGEN: 'true'");
@@ -1747,7 +1818,7 @@ process.exit(1);
 
     const storybookCiSection =
       (ciWorkflow.split(/\n  storybook-build:\n/)[1] ?? '').split(/\n  static-export-build:\n/)[0] ?? '';
-    expect(storybookCiSection).toContain('run: npm ci --ignore-scripts');
+    expect(storybookCiSection).toContain('uses: ./.github/workflows/storybook.yml');
 
     const storybookWorkflow = readWorkflow('storybook.yml');
     expect(storybookWorkflow).toContain('run: npm ci --ignore-scripts');
@@ -1985,6 +2056,7 @@ process.exit(1);
       UNIT_TEST_RESULT: 'success',
       E2E_TEST_RESULT: 'success',
       STATIC_EXPORT_BUILD_RESULT: 'success',
+      STORYBOOK_BUILD_RESULT: 'success',
     };
     const passA11y = spawnSync('bash', ['-eo', 'pipefail', '-c', a11yUpstreamScript!], {
       encoding: 'utf8',
@@ -1996,6 +2068,7 @@ process.exit(1);
       ['UNIT_TEST_RESULT', 'unit-test'],
       ['E2E_TEST_RESULT', 'e2e-test'],
       ['STATIC_EXPORT_BUILD_RESULT', 'static-export-build'],
+      ['STORYBOOK_BUILD_RESULT', 'storybook-build'],
     ] as const) {
       const failA11y = spawnSync('bash', ['-eo', 'pipefail', '-c', a11yUpstreamScript!], {
         encoding: 'utf8',
@@ -2040,6 +2113,52 @@ process.exit(1);
       });
       expect(failCi.status).toBe(1);
       expect(failCi.stdout + failCi.stderr).toContain(`${jobName} (skipped)`);
+    }
+  });
+
+  it('declares explicit least-privilege permissions at workflow root and every job across all workflows without unsafe script interpolation', () => {
+    const workflowsDir = path.join(path.resolve(__dirname, '../..'), '.github', 'workflows');
+    const workflowFiles = fs
+      .readdirSync(workflowsDir)
+      .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
+      .sort();
+
+    expect(workflowFiles.length).toBeGreaterThanOrEqual(8);
+
+    for (const file of workflowFiles) {
+      const raw = fs.readFileSync(path.join(workflowsDir, file), 'utf8');
+      const doc = parseDocument(raw, { version: '1.2', strict: true });
+      expect(doc.errors).toEqual([]);
+      const parsed = doc.toJS() as {
+        permissions?: Record<string, string>;
+        jobs?: Record<
+          string,
+          {
+            'runs-on'?: unknown;
+            permissions?: Record<string, string>;
+            steps?: Array<{ run?: string; with?: { script?: string } }>;
+          }
+        >;
+      };
+
+      expect(parsed.permissions).toEqual({ contents: 'read' });
+
+      for (const [jobId, job] of Object.entries(parsed.jobs ?? {})) {
+        expect({
+          file,
+          jobId,
+          hasPermissions:
+            job.permissions !== undefined && Object.keys(job.permissions).length > 0,
+        }).toEqual({ file, jobId, hasPermissions: true });
+        for (const step of job.steps ?? []) {
+          if (typeof step.run === 'string') {
+            expect(step.run).not.toMatch(/\$\{\{/);
+          }
+          if (typeof step.with?.script === 'string') {
+            expect(step.with.script).not.toMatch(/\$\{\{/);
+          }
+        }
+      }
     }
   });
 });

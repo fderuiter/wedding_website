@@ -51,6 +51,18 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
         { householdName: { contains: search, mode: 'insensitive' as const } },
         { partyGroup: { contains: search, mode: 'insensitive' as const } },
         { dietaryNotes: { contains: search, mode: 'insensitive' as const } },
+        {
+          members: {
+            some: {
+              OR: [
+                { fullName: { contains: search, mode: 'insensitive' as const } },
+                { email: { contains: search, mode: 'insensitive' as const } },
+                { phone: { contains: search, mode: 'insensitive' as const } },
+                { dietaryNotes: { contains: search, mode: 'insensitive' as const } },
+              ],
+            },
+          },
+        },
       ],
     }
     : undefined;
@@ -63,8 +75,12 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
       take: limit,
       orderBy: { [orderBy]: orderDir },
       include: {
+        members: {
+          orderBy: { displayOrder: 'asc' },
+        },
         subEventRsvps: {
           include: {
+            memberRsvps: true,
             subEvent: {
               select: { id: true, title: true },
             },
@@ -88,6 +104,16 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
       mealSelections: normalizeMealSelections(rsvp.mealSelections),
       dietaryNotes: rsvp.dietaryNotes ?? null,
       customAnswers: normalizeCustomAnswers(rsvp.customAnswers),
+      memberRsvps: Array.isArray(rsvp.memberRsvps)
+        ? rsvp.memberRsvps.map((mr) => ({
+          id: mr.id,
+          householdMemberId: mr.householdMemberId,
+          status:
+            mr.status === 'attending' || mr.status === 'declined' ? mr.status : 'pending',
+          mealOptionId: mr.mealOptionId ?? null,
+          dietaryNotes: mr.dietaryNotes ?? null,
+        }))
+        : [],
       updatedAt: rsvp.updatedAt instanceof Date ? rsvp.updatedAt.toISOString() : undefined,
     }));
 

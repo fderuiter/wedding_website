@@ -1,6 +1,8 @@
 import type {
   DemoAttractionRecord,
   DemoContentNodeRecord,
+  DemoHouseholdMemberRecord,
+  DemoHouseholdRole,
   DemoInvitationCodeRecord,
   DemoRegistryItemRecord,
   DemoSeatingTableRecord,
@@ -18,6 +20,7 @@ import {
   wrapMiddlewareJson,
 } from '../responseHelpers';
 import {
+  getOrderedDemoHouseholdMembers,
   pushAuditVersion,
   toAttractionDto,
   toInvitationCodeDto,
@@ -26,8 +29,10 @@ import {
   toWeddingPartyDto,
 } from '../dtoMappers';
 import { isDemoLandmarkShape } from '../exporters';
+import { synthesizeDemoHouseholdMembersFromInvitations } from '../seeds';
 import { createDemoSvgDataUrl } from '../svgAssets';
 import { INVITATION_MAX_CATALOG_LIMIT } from '@/utils/invitationPagination';
+import { splitMemberFullName } from '@/utils/invitationValidation';
 
 const VALID_DEMO_TABLE_SHAPES = new Set<DemoSeatingTableShape>([
   'round',
@@ -47,6 +52,82 @@ function normalizePositiveSeatList(value: unknown): number[] {
   return value.filter(
     (n): n is number => typeof n === 'number' && Number.isInteger(n) && n > 0,
   );
+}
+
+function buildMembersFromAdminPayload(
+  invite: DemoInvitationCodeRecord,
+  rawMembers: unknown,
+  existingMembers: DemoHouseholdMemberRecord[],
+  nowIso: string,
+): DemoHouseholdMemberRecord[] | null {
+  if (!Array.isArray(rawMembers) || rawMembers.length === 0) return null;
+  const existingById = new Map(existingMembers.map((m) => [m.id, m]));
+  const parsed: DemoHouseholdMemberRecord[] = [];
+  let secSeatCursor = 0;
+
+  rawMembers.forEach((raw, idx) => {
+    if (!raw || typeof raw !== 'object') return;
+    const item = raw as Record<string, unknown>;
+    const fullName = typeof item.fullName === 'string' ? item.fullName.trim() : '';
+    if (!fullName) return;
+    const existing = typeof item.id === 'string' ? existingById.get(item.id) : undefined;
+    const parts = splitMemberFullName(fullName);
+    const roleRaw = typeof item.role === 'string' ? item.role.toUpperCase() : '';
+    const role: DemoHouseholdRole =
+      idx === 0
+        ? 'PRIMARY'
+        : roleRaw === 'PARTNER' || roleRaw === 'CHILD' || roleRaw === 'PLUS_ONE'
+          ? roleRaw
+          : (existing?.role && existing.role !== 'PRIMARY' ? existing.role : 'PLUS_ONE');
+    const resolvedSeat = !invite.tableId
+      ? null
+      : typeof item.seatNumber === 'number'
+        ? item.seatNumber
+        : idx === 0
+          ? invite.seatNumber
+          : (existing?.seatNumber ?? invite.plusOneSeatNumbers[secSeatCursor++] ?? null);
+    parsed.push({
+      id: existing?.id ?? generateDemoId('member'),
+      invitationCodeId: invite.id,
+      firstName:
+        typeof item.firstName === 'string' && item.firstName.trim()
+          ? item.firstName.trim()
+          : parts.firstName,
+      lastName:
+        typeof item.lastName === 'string' && item.lastName.trim()
+          ? item.lastName.trim()
+          : parts.lastName,
+      fullName,
+      role,
+      email:
+        item.email !== undefined
+          ? typeof item.email === 'string' && item.email.trim()
+            ? item.email.trim()
+            : null
+          : (existing?.email ?? null),
+      phone:
+        item.phone !== undefined
+          ? typeof item.phone === 'string' && item.phone.trim()
+            ? item.phone.trim()
+            : null
+          : (existing?.phone ?? null),
+      dietaryNotes:
+        item.dietaryNotes !== undefined
+          ? typeof item.dietaryNotes === 'string' && item.dietaryNotes.trim()
+            ? item.dietaryNotes.trim()
+            : null
+          : (existing?.dietaryNotes ?? null),
+      tags: Array.isArray(item.tags)
+        ? item.tags.filter((t): t is string => typeof t === 'string')
+        : (existing?.tags ?? []),
+      displayOrder: idx,
+      seatNumber: resolvedSeat,
+      createdAt: existing?.createdAt ?? nowIso,
+      updatedAt: nowIso,
+    });
+  });
+
+  return parsed.length > 0 ? parsed : null;
 }
 
 type AdminEntitySlug =
@@ -328,6 +409,32 @@ function createEntityRecord(
         updatedAt: nowIso,
       };
       draft.invitationCode.unshift(record);
+      const explicitMembers = buildMembersFromAdminPayload(
+        record,
+        body.members,
+        [],
+        nowIso,
+      );
+      if (explicitMembers) {
+        draft.householdMember.push(...explicitMembers);
+        const primary = explicitMembers[0];
+        record.guestName = primary.fullName;
+        if (primary.email !== null) record.email = primary.email;
+        if (primary.dietaryNotes !== null) record.dietaryNotes = primary.dietaryNotes;
+        record.plusOneAllocations = Math.max(
+          record.plusOneAllocations,
+          explicitMembers.length - 1,
+        );
+        const firstSec = explicitMembers[1];
+        if (firstSec) {
+          record.plusOneFirstName = firstSec.firstName;
+          record.plusOneLastName = firstSec.lastName;
+        }
+      } else {
+        draft.householdMember.push(
+          ...synthesizeDemoHouseholdMembersFromInvitations([record], nowIso),
+        );
+      }
       pushAuditVersion(draft, 'InvitationCode', record.id, record);
       return toInvitationCodeDto(draft, record);
     }
@@ -548,6 +655,47 @@ function updateEntityRecordById(
           ? normalizePositiveSeatList(patch.plusOneSeatNumbers)
           : [];
       }
+      const existingMembers = getOrderedDemoHouseholdMembers(draft, inv);
+      const explicitMembers = buildMembersFromAdminPayload(
+        inv,
+        patch.members,
+        existingMembers,
+        nowIso,
+      );
+      if (explicitMembers) {
+        draft.householdMember = draft.householdMember
+          .filter((m) => m.invitationCodeId !== inv.id)
+          .concat(explicitMembers);
+        const primary = explicitMembers[0];
+        inv.guestName = primary.fullName;
+        inv.email = primary.email;
+        inv.dietaryNotes = primary.dietaryNotes;
+        inv.plusOneAllocations = Math.max(0, explicitMembers.length - 1);
+        const firstSec = explicitMembers[1];
+        inv.plusOneFirstName = firstSec?.firstName ?? null;
+        inv.plusOneLastName = firstSec?.lastName ?? null;
+      } else {
+        if (!draft.householdMember.some((m) => m.invitationCodeId === inv.id)) {
+          draft.householdMember.push(...existingMembers);
+        }
+        const linked = draft.householdMember
+          .filter((m) => m.invitationCodeId === inv.id)
+          .sort((a, b) => a.displayOrder - b.displayOrder);
+        if (linked[0]) {
+          linked[0].fullName = inv.guestName;
+          const pParts = splitMemberFullName(inv.guestName);
+          linked[0].firstName = pParts.firstName;
+          linked[0].lastName = pParts.lastName;
+          linked[0].email = inv.email;
+          linked[0].dietaryNotes = inv.dietaryNotes;
+          linked[0].seatNumber = inv.tableId ? inv.seatNumber : null;
+          linked[0].updatedAt = nowIso;
+        }
+        linked.slice(1).forEach((sec, idx) => {
+          sec.seatNumber = inv.tableId ? (inv.plusOneSeatNumbers[idx] ?? null) : null;
+          sec.updatedAt = nowIso;
+        });
+      }
       inv.updatedAt = nowIso;
       pushAuditVersion(draft, 'InvitationCode', inv.id, inv);
       return toInvitationCodeDto(draft, inv);
@@ -569,6 +717,9 @@ function updateEntityRecordById(
             inv.tableId = null;
             inv.seatNumber = null;
             inv.plusOneSeatNumbers = [];
+            for (const m of draft.householdMember) {
+              if (m.invitationCodeId === inv.id) m.seatNumber = null;
+            }
           }
         }
       } else if (patch.capacity !== undefined) {
@@ -648,8 +799,19 @@ function deleteEntityRecordById(
       const idx = draft.invitationCode.findIndex((i) => i.id === id);
       if (idx < 0) return false;
       const [removed] = draft.invitationCode.splice(idx, 1);
+      const removedRsvpIds = new Set(
+        draft.subEventRsvp
+          .filter((r) => r.invitationCodeId === id)
+          .map((r) => r.id),
+      );
+      draft.householdMember = draft.householdMember.filter(
+        (m) => m.invitationCodeId !== id,
+      );
       draft.subEventAccess = draft.subEventAccess.filter((a) => a.invitationCodeId !== id);
       draft.subEventRsvp = draft.subEventRsvp.filter((r) => r.invitationCodeId !== id);
+      draft.subEventMemberRsvp = draft.subEventMemberRsvp.filter(
+        (mr) => !removedRsvpIds.has(mr.subEventRsvpId),
+      );
       pushAuditVersion(draft, entityType, id, { deleted: true, previous: removed });
       return true;
     }
@@ -662,6 +824,9 @@ function deleteEntityRecordById(
           inv.tableId = null;
           inv.seatNumber = null;
           inv.plusOneSeatNumbers = [];
+          for (const m of draft.householdMember) {
+            if (m.invitationCodeId === inv.id) m.seatNumber = null;
+          }
         }
       }
       pushAuditVersion(draft, entityType, id, { deleted: true, previous: removed });
@@ -671,8 +836,14 @@ function deleteEntityRecordById(
       const idx = draft.subEvent.findIndex((e) => e.id === id);
       if (idx < 0) return false;
       const [removed] = draft.subEvent.splice(idx, 1);
+      const removedRsvpIds = new Set(
+        draft.subEventRsvp.filter((r) => r.subEventId === id).map((r) => r.id),
+      );
       draft.subEventAccess = draft.subEventAccess.filter((a) => a.subEventId !== id);
       draft.subEventRsvp = draft.subEventRsvp.filter((r) => r.subEventId !== id);
+      draft.subEventMemberRsvp = draft.subEventMemberRsvp.filter(
+        (mr) => !removedRsvpIds.has(mr.subEventRsvpId),
+      );
       pushAuditVersion(draft, entityType, id, { deleted: true, previous: removed });
       return true;
     }

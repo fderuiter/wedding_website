@@ -1,4 +1,8 @@
-import type { RegistryShippingAddress } from '@/features/registry';
+import type {
+  HouseholdMemberDTO,
+  InvitationCodeDTO,
+  RegistryShippingAddress,
+} from '@/features/registry';
 import type { ArchetypeId } from '@/lib/sampleData/archetypes';
 import type { ArchetypeDataset } from './demoSeed';
 
@@ -19,6 +23,12 @@ export function createSampleItemSvgDataUrl(
   _category: string
 ): string {
   return '';
+}
+
+export function buildDemoHouseholdMembersForGuest(
+  _guest: Partial<InvitationCodeDTO> & { id: string; guestName: string }
+): HouseholdMemberDTO[] {
+  return [];
 }
 
 export function buildArchetypeDataset(

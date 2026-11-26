@@ -60,8 +60,11 @@ const JSDOM_TS_IGNORE_PATTERNS = [
   toPathIgnoreRegex('src/utils/__tests__/exportDownload.test.ts'),
 ];
 
+const JEST_CACHE_DIRECTORY = '<rootDir>/node_modules/.cache/jest';
+
 /** @type {import('jest').Config} */
 const sharedProjectInput = {
+  cacheDirectory: JEST_CACHE_DIRECTORY,
   setupFiles: ['<rootDir>/jest.polyfills.js'],
   testTimeout: resolvedTestTimeout,
   moduleNameMapper: {
@@ -90,6 +93,7 @@ export default (async () => {
   const baseProjectConfig = await createJestConfig(sharedProjectInput)();
   const sharedProjectBase = {
     ...baseProjectConfig,
+    cacheDirectory: JEST_CACHE_DIRECTORY,
     transformIgnorePatterns: TRANSFORM_IGNORE_PATTERNS,
   };
   const sharedIgnorePatterns = sharedProjectBase.testPathIgnorePatterns ?? [];
@@ -142,6 +146,7 @@ export default (async () => {
 
   /** @type {import('jest').Config} */
   return {
+    cacheDirectory: JEST_CACHE_DIRECTORY,
     projects: [unitNodeProject, unitJsdomProject, dbSerialProject],
     reporters: ['default', '<rootDir>/jest-a11y-reporter.cjs'],
     testTimeout: resolvedTestTimeout,

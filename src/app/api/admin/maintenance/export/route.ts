@@ -43,6 +43,13 @@ export const GET = withApiMiddleware(async (_request: NextRequest) => {
     { key: 'media', fetchChunks: createChunkFetcher(prisma.media) },
     { key: 'seatingTable', fetchChunks: createChunkFetcher(prisma.seatingTable) },
     { key: 'invitationCode', fetchChunks: createChunkFetcher(prisma.invitationCode) },
+    {
+      key: 'householdMember',
+      fetchChunks:
+        typeof prisma.householdMember?.findMany === 'function'
+          ? createChunkFetcher(prisma.householdMember)
+          : async () => [],
+    },
     { key: 'weddingPartyMember', fetchChunks: createChunkFetcher(prisma.weddingPartyMember) },
     { key: 'attraction', fetchChunks: createChunkFetcher(prisma.attraction) },
     { key: 'registryItem', fetchChunks: createChunkFetcher(prisma.registryItem) },
@@ -50,6 +57,13 @@ export const GET = withApiMiddleware(async (_request: NextRequest) => {
     { key: 'subEvent', fetchChunks: createChunkFetcher(prisma.subEvent) },
     { key: 'subEventAccess', fetchChunks: createChunkFetcher(prisma.subEventAccess) },
     { key: 'subEventRsvp', fetchChunks: createChunkFetcher(prisma.subEventRsvp) },
+    {
+      key: 'subEventMemberRsvp',
+      fetchChunks:
+        typeof prisma.subEventMemberRsvp?.findMany === 'function'
+          ? createChunkFetcher(prisma.subEventMemberRsvp)
+          : async () => [],
+    },
     { key: 'broadcastMessage', fetchChunks: createChunkFetcher(prisma.broadcastMessage) },
     { key: 'broadcastRecipient', fetchChunks: createChunkFetcher(prisma.broadcastRecipient) },
     {

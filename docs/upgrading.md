@@ -11,11 +11,13 @@ To ensure a smooth upgrade path for downstream adopters, the template adheres to
 > **Personal content and deployment configuration must remain outside frequently modified application internals.**
 
 ### Personal Content Isolation
+
 - **Database-Driven Content**: Personal details (e.g., couple's names, wedding date, venue details, story text, hero titles, theme colors, FAQs, wedding party members, attractions, registry items, guest invitations, seating tables, sub-events, RSVPs, broadcasts, and audit snapshots) are stored in PostgreSQL records across the 15 domain Prisma models (`AppConfig`, `ContentNode`, `Media`, `SeatingTable`, `InvitationCode`, `WeddingPartyMember`, `Attraction`, `RegistryItem`, `Contributor`, `SubEvent`, `SubEventAccess`, `SubEventRsvp`, `BroadcastMessage`, `BroadcastRecipient`, `SnapshotVersion`), while ephemeral brute-force lockout counters in `AuthLockout` (16 Prisma models total) are managed automatically at runtime.
 - **Avoid Hardcoding Details**: Do not hardcode couple names, dates, or custom copy inside core React components (`src/app/` or `src/features/`). Modify content through the **Admin Dashboard** (`/admin/dashboard`) or database seeds rather than core source code files.
 - **Media Storage**: Upload custom images through the Admin Dashboard (persisted under `/app/public/uploads` via the `uploads_data` Docker volume or in S3/Cloudflare R2) or store static assets in `public/` using custom file names to avoid upstream merge conflicts.
 
 ### Deployment Isolation
+
 - **Environment Variables**: Server configuration, credentials, and deployment flags are injected strictly through environment variables (`DB_PASSWORD`, `DATABASE_URL`, `CONTAINER_DATABASE_URL`, `ADMIN_PASSWORD`, `GUEST_PASSCODE`, `GUEST_SESSION_SECRET`, `TRUST_PROXY`, `STRIPE_*`, `S3_*`, etc.).
 - **Containerization**: Deployments use hardened, provider-neutral container setups ([`Dockerfile`](../Dockerfile), [`docker-compose.yml`](../docker-compose.yml), [`docker-entrypoint.sh`](../docker-entrypoint.sh)) aligned with [`docs/deployment/docker-vps.md`](./deployment/docker-vps.md) or standard Node.js v22.x LTS host environments.
 
@@ -64,6 +66,7 @@ git log HEAD..upstream/main --oneline CHANGELOG.md
 ```
 
 Pay special attention to:
+
 - **Adopter Action Required**: Check if the release is flagged with `Adopter Action Required: Yes`.
 - **Breaking Changes & Migration Guide**: Review new environment variables (`src/env.ts`), Docker Compose `:?` secret guards (`docker-compose.yml`), retired `AppConfig.modules` toggles (`src/lib/modules.ts`), and schema migrations (`prisma/migrations/`).
 
@@ -192,6 +195,7 @@ npx tsx scripts/preflight-env.ts --mode production --no-compose --env-file .env
 ```
 
 `scripts/preflight-env.ts` never prints raw secret values, connection URLs, or password hashes and fails with a non-zero exit code in `--mode production` (or when `NODE_ENV=production` is set) when any of the following are detected:
+
 - **Missing or Default Docker Compose `:?` Secret Guards**: `DB_PASSWORD`, `ADMIN_PASSWORD`, `GUEST_PASSCODE`, or `GUEST_SESSION_SECRET` unset/empty in `.env`, `DB_PASSWORD` left at the disposable `.env.example` / `.env.ci` default, invalid `CONTAINER_DATABASE_URL` or `CONTAINER_POSTGRES_URL_NON_POOLING` overrides, or values containing unescaped `$` characters that Docker Compose would interpolate (escape literal `$` as `$$` or use single quotes).
 - **Legacy or Placeholder `ADMIN_PASSWORD` Hashes**: Plaintext passwords, legacy non-64-byte scrypt hashes, `.env.example` dummy hashes, or E2E test hashes (generate a valid 16-byte salt / 64-byte scrypt key with `node scripts/generate-password-hash.mjs "your-strong-password"`).
 - **Blocked `GUEST_PASSCODE` or Weak `GUEST_SESSION_SECRET`**: Default `wedding2026` or placeholder guest passcodes, session secrets shorter than 32 characters (`openssl rand -hex 32`), or `GUEST_SESSION_SECRET` matching `GUEST_PASSCODE`.
@@ -258,7 +262,9 @@ If an upgraded deployment fails health checks after Step 6, revert immediately t
 4. **Forward-Only Database Migrations (`Expand-Migrate-Contract`)**: Prisma migrations are strictly forward-only (automatic destructive down-migrations are intentionally unsupported). Phase 1/2 additive migrations enforced by `npm run lint:migrations` remain backward-compatible with `wedding-website:previous`; if a major Phase 3 contract upgrade requires full database recovery, restore from the pre-upgrade `pg_dump` snapshot or `/admin/dashboard/maintenance` backup below.
 
 ### Prisma Migration Drift
+
 If you edited `prisma/schema.prisma` directly in your local fork without generating a migration, Prisma may report schema drift during upgrade.
+
 - **Recommended Fix**: Create a custom migration for your local changes prior to pulling upstream:
   ```bash
   npm run migrate:dev -- --name custom_local_changes
@@ -266,7 +272,9 @@ If you edited `prisma/schema.prisma` directly in your local fork without generat
 - Do not modify existing upstream migration folders in `prisma/migrations/`. Always apply downstream changes as new migration steps.
 
 ### Backup & Restore
+
 Before performing major version upgrades, export a unified full-database backup from the Admin Dashboard:
+
 1. Navigate to `/admin/dashboard/maintenance`.
 2. Click **Export All Data** to download a single `schemaVersion: "2.0"` JSON backup (`src/app/api/admin/maintenance/export/route.ts`) covering all 15 domain database models (site settings, content nodes, media metadata, seating tables, guest invitation codes, wedding party members, attractions and hotel blocks, registry items, gift contributors, sub-events, event access grants, RSVPs, broadcast messages, broadcast recipients, and snapshot history; ephemeral `AuthLockout` counters are excluded).
 3. Back up your `.env` file (`DB_PASSWORD`, `ADMIN_PASSWORD`, `GUEST_PASSCODE`, `GUEST_SESSION_SECRET`, `DATABASE_URL`, `STRIPE_*`, `S3_*`), persistent `uploads_data` media files, and outbound messaging provider secrets (`smtpPass`, `resendApiKey`, `sendgridApiKey`, `twilioAuthToken`) separately. For security, raw provider credentials and server environment secrets are redacted from JSON exports (non-secret delivery settings such as `emailProvider`, `smtpHost`, `smtpPort`, `smtpUser`, `smtpFrom`, `resendFrom`, `sendgridFrom`, `smsProvider`, `twilioAccountSid`, and `twilioFromNumber` are included).
@@ -285,3 +293,5 @@ Use this checklist for every upstream upgrade:
 - [ ] Validated local `.env` secrets via `npm run preflight:env -- --mode production` (`npx tsx scripts/preflight-env.ts --mode production --env-file .env`).
 - [ ] Applied forward-only migrations and rebuilt (`docker compose up -d --build` preserving `db_data` & `uploads_data`, standalone `docker run` with `RUN_MIGRATIONS=true`, production host `npm ci && dotenv -e .env -- npx prisma migrate deploy && npm run build` against `DATABASE_URL` / `POSTGRES_URL_NON_POOLING`, or local fork `npm run migrate:deploy` via `dotenv -c development`).
 - [ ] Verified `/api/live` and `/api/health` readiness probes (and local `npm test` if running a modified fork).
+
+- `20261125000000_add_household_members_and_member_rsvps`: Adds `HouseholdMember` and `SubEventMemberRsvp` relational tables and idempotently backfills existing household primaries, companions, seat numbers, and sub-event RSVP meal/dietary selections. Full-site JSON backups (`v2.0`) include `householdMember` and `subEventMemberRsvp` collections while remaining backward-compatible with pre-migration `v2.0` archives.

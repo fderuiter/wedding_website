@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Dialog, useDirtyConfirmClose } from '@/components/ui/Dialog';
 import { EnsureToastProvider } from '@/components/ui/ToastProvider';
 import { Button } from '@/components/ui/Button';
@@ -8,7 +8,11 @@ import { FormGroup, Label, Input, Textarea } from '@/components/ui/forms';
 import {
   getAttendanceStatus,
   formatGuestPlusOneNames,
+  deriveHouseholdMembersFromInvitation,
   type InvitationCodeDTO,
+  type HouseholdMemberDTO,
+  type HouseholdMemberInputDTO,
+  type HouseholdMemberRole,
 } from '@/features/registry';
 import type {
   AdminInvitationRsvpsDetail,
@@ -172,6 +176,8 @@ type GuestEditorFormProps =
     mode: 'edit';
     guest: InvitationCodeDTO;
     onSave: (_id: string, _payload: Partial<InvitationCodeDTO>) => Promise<unknown>;
+    householdMembersSlot?: React.ReactNode;
+    membersDirty?: boolean;
     rsvpOverrideSlot?: React.ReactNode;
     rsvpDirty?: boolean;
     onSaveRsvpOverrides?: (_profileContext?: {
@@ -186,6 +192,7 @@ function GuestEditorFormInner(props: GuestEditorFormProps) {
   const { onClose, onDirtyChange, actionsAlign = 'end', className, ref } = props;
   const isEditMode = props.mode === 'edit';
   const guest = isEditMode ? props.guest : null;
+  const membersDirty = isEditMode ? Boolean(props.membersDirty) : false;
   const rsvpDirty = isEditMode ? Boolean(props.rsvpDirty) : false;
 
   const initialFormState = useMemo(() => createInitialGuestFormState(guest), [guest]);
@@ -194,7 +201,7 @@ function GuestEditorFormInner(props: GuestEditorFormProps) {
   const [isSaving, setIsSaving] = useState(false);
 
   const isProfileDirty = isGuestFormDirty(formState, initialFormState);
-  const isDirty = isProfileDirty || rsvpDirty;
+  const isDirty = isProfileDirty || membersDirty || rsvpDirty;
   const handleRequestClose = useDirtyConfirmClose(isDirty, onClose);
 
   const originalCodeNormalized = guest ? normalizeInvitationCode(guest.code) : '';
@@ -205,7 +212,7 @@ function GuestEditorFormInner(props: GuestEditorFormProps) {
   const updateField = <K extends keyof GuestFormState>(field: K, value: GuestFormState[K]) => {
     const next = { ...formState, [field]: value };
     setFormState(next);
-    onDirtyChange?.(isGuestFormDirty(next, initialFormState) || rsvpDirty);
+    onDirtyChange?.(isGuestFormDirty(next, initialFormState) || membersDirty || rsvpDirty);
     if (
       props.mode === 'edit' &&
       (field === 'plusOneFirstName' || field === 'plusOneLastName')
@@ -628,6 +635,7 @@ function GuestEditorFormInner(props: GuestEditorFormProps) {
         </div>
       </div>
 
+      {isEditMode && props.householdMembersSlot}
       {isEditMode && props.rsvpOverrideSlot}
 
       {actionsAlign === 'start' ? (
@@ -661,6 +669,13 @@ export function GuestEditorForm(props: GuestEditorFormProps) {
   );
 }
 
+interface AdminMemberRsvpDraftItem {
+  householdMemberId: string;
+  status: 'attending' | 'declined' | 'pending';
+  mealOptionId: string;
+  dietaryNotes: string;
+}
+
 interface EventRsvpDraft {
   status: 'unresponded' | 'attending' | 'declined' | 'pending' | 'clear';
   plusOneCount: number;
@@ -668,6 +683,46 @@ interface EventRsvpDraft {
   mealSelections: string[];
   dietaryNotes: string;
   customAnswers: Record<string, string>;
+  useMemberRsvps?: boolean;
+  memberRsvps?: AdminMemberRsvpDraftItem[];
+}
+
+interface AdminHouseholdMemberDraft {
+  id: string;
+  fullName: string;
+  role: HouseholdMemberRole;
+  email: string;
+  phone: string;
+  dietaryNotes: string;
+  tagsText: string;
+  seatNumber: number | null;
+}
+
+function mapMemberDtoToAdminDraft(member: HouseholdMemberDTO): AdminHouseholdMemberDraft {
+  return {
+    id: member.id,
+    fullName: member.fullName || '',
+    role: member.role || 'PLUS_ONE',
+    email: member.email || '',
+    phone: member.phone || '',
+    dietaryNotes: member.dietaryNotes || '',
+    tagsText: Array.isArray(member.tags) ? member.tags.join(', ') : '',
+    seatNumber: member.seatNumber ?? null,
+  };
+}
+
+function formatAdminMemberRoleLabel(role: HouseholdMemberRole): string {
+  switch (role) {
+    case 'PRIMARY':
+      return 'Primary';
+    case 'PARTNER':
+      return 'Partner';
+    case 'CHILD':
+      return 'Child';
+    case 'PLUS_ONE':
+    default:
+      return 'Plus-One';
+  }
 }
 
 const selectControlClassName =
@@ -690,6 +745,13 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
 }) => {
   const initialExtra = useMemo(() => getInitialExtraFieldsObject(guest.extraFields), [guest]);
   const [profileDirty, setProfileDirty] = useState(false);
+  const [membersDirty, setMembersDirty] = useState(false);
+  const membersDirtyRef = useRef(false);
+  const nextMemberSeqRef = useRef(1);
+  const [membersDraft, setMembersDraft] = useState<AdminHouseholdMemberDraft[]>(() =>
+    deriveHouseholdMembersFromInvitation(guest).map(mapMemberDtoToAdminDraft)
+  );
+  const [expandedMemberIds, setExpandedMemberIds] = useState<string[]>([]);
   const [rsvpDirty, setRsvpDirty] = useState(false);
   const [clearAllPending, setClearAllPending] = useState(false);
   const [overallStatus, setOverallStatus] = useState<'attending' | 'declined' | 'pending'>(() =>
@@ -764,6 +826,15 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
             });
         }
 
+        const resolvedDetailMembers =
+          Array.isArray(detail.members) && detail.members.length > 0
+            ? detail.members
+            : deriveHouseholdMembersFromInvitation(guest);
+
+        if (!membersDirtyRef.current && Array.isArray(detail.members) && detail.members.length > 0) {
+          setMembersDraft(detail.members.map(mapMemberDtoToAdminDraft));
+        }
+
         const initialDrafts: Record<string, EventRsvpDraft> = {};
         for (const se of detail.subEvents) {
           const existing = rsvpMap.get(se.id);
@@ -779,6 +850,31 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
                 }
               }
             }
+            const rawExistingMemberRsvps = Array.isArray(existing.memberRsvps)
+              ? existing.memberRsvps
+              : [];
+            const hasExplicitMemberSplit =
+              rawExistingMemberRsvps.length > 0 &&
+              rawExistingMemberRsvps.some((mr, idx) => {
+                const expectedLegacyAttending =
+                  existing.status === 'attending' && idx <= poCount;
+                return (mr.status === 'attending') !== expectedLegacyAttending;
+              });
+            const hydratedMemberRsvps: AdminMemberRsvpDraftItem[] | undefined =
+              rawExistingMemberRsvps.length > 0
+                ? resolvedDetailMembers.map((m) => {
+                  const found = rawExistingMemberRsvps.find(
+                    (mr) => mr.householdMemberId === m.id
+                  );
+                  return {
+                    householdMemberId: m.id,
+                    status: found?.status ?? 'declined',
+                    mealOptionId: found?.mealOptionId ?? '',
+                    dietaryNotes: found?.dietaryNotes ?? '',
+                  };
+                })
+                : undefined;
+
             initialDrafts[se.id] = {
               status: existing.status,
               plusOneCount: poCount,
@@ -786,6 +882,8 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
               mealSelections: Array.isArray(existing.mealSelections) ? existing.mealSelections : [],
               dietaryNotes: existing.dietaryNotes ?? '',
               customAnswers: existing.customAnswers ? { ...existing.customAnswers } : {},
+              useMemberRsvps: hasExplicitMemberSplit,
+              memberRsvps: hydratedMemberRsvps,
             };
           } else {
             initialDrafts[se.id] = {
@@ -815,12 +913,130 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
 
   const markRsvpDirty = (nextRsvpDirty: boolean) => {
     setRsvpDirty(nextRsvpDirty);
-    onCombinedDirtyChange(profileDirty || nextRsvpDirty);
+    onCombinedDirtyChange(profileDirty || membersDirtyRef.current || nextRsvpDirty);
+  };
+
+  const markMembersDirty = (nextMembersDirty: boolean) => {
+    membersDirtyRef.current = nextMembersDirty;
+    setMembersDirty(nextMembersDirty);
+    onCombinedDirtyChange(profileDirty || nextMembersDirty || rsvpDirty);
   };
 
   const handleProfileDirtyChange = (nextProfileDirty: boolean) => {
     setProfileDirty(nextProfileDirty);
-    onCombinedDirtyChange(nextProfileDirty || rsvpDirty);
+    onCombinedDirtyChange(nextProfileDirty || membersDirtyRef.current || rsvpDirty);
+  };
+
+  const toggleMemberExpanded = (memberId: string) => {
+    setExpandedMemberIds((prev) =>
+      prev.includes(memberId) ? prev.filter((id) => id !== memberId) : [...prev, memberId]
+    );
+  };
+
+  const handleAddHouseholdMember = () => {
+    const newId = `new-member-${nextMemberSeqRef.current++}`;
+    const hasPartnerAlready = membersDraft.some((m) => m.role === 'PARTNER');
+    const defaultRole: HouseholdMemberRole = hasPartnerAlready ? 'CHILD' : 'PARTNER';
+    setMembersDraft((prev) => [
+      ...prev,
+      {
+        id: newId,
+        fullName: '',
+        role: defaultRole,
+        email: '',
+        phone: '',
+        dietaryNotes: '',
+        tagsText: '',
+        seatNumber: null,
+      },
+    ]);
+    setExpandedMemberIds((prev) => [...prev, newId]);
+    markMembersDirty(true);
+  };
+
+  const handleMoveHouseholdMember = (index: number, direction: -1 | 1) => {
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= membersDraft.length) return;
+    setMembersDraft((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(index, 1);
+      next.splice(targetIndex, 0, moved);
+      return next;
+    });
+    markMembersDirty(true);
+  };
+
+  const handleRemoveHouseholdMember = (memberId: string) => {
+    if (membersDraft.length <= 1) return;
+    setMembersDraft((prev) => prev.filter((m) => m.id !== memberId));
+    setExpandedMemberIds((prev) => prev.filter((id) => id !== memberId));
+    markMembersDirty(true);
+  };
+
+  const handleUpdateHouseholdMember = (
+    memberId: string,
+    patch: Partial<Omit<AdminHouseholdMemberDraft, 'id'>>
+  ) => {
+    setMembersDraft((prev) =>
+      prev.map((m) => (m.id === memberId ? { ...m, ...patch } : m))
+    );
+    markMembersDirty(true);
+  };
+
+  const handleSaveWithMembers = async (
+    id: string,
+    basePayload: Partial<InvitationCodeDTO>
+  ): Promise<unknown> => {
+    if (!membersDirtyRef.current) {
+      return onSave(id, basePayload);
+    }
+
+    for (let idx = 0; idx < membersDraft.length; idx++) {
+      const member = membersDraft[idx];
+      if (!member.fullName.trim()) {
+        throw new Error(`Please enter a full name for Household Member #${idx + 1}.`);
+      }
+      if (member.phone.trim()) {
+        const phoneErr = validateGuestPhone(member.phone);
+        if (phoneErr) {
+          throw new Error(`Member "${member.fullName.trim()}": ${phoneErr}`);
+        }
+      }
+    }
+
+    const normalizedMembers: HouseholdMemberInputDTO[] = membersDraft.map((member, idx) => {
+      const isExistingDbRow =
+        !member.id.startsWith('synthetic-') && !member.id.startsWith('new-member-');
+      const fullName = member.fullName.trim();
+      const parts = fullName.split(/\s+/);
+      const firstName = parts[0] || '';
+      const lastName = parts.slice(1).join(' ');
+      return {
+        ...(isExistingDbRow ? { id: member.id } : {}),
+        fullName,
+        firstName,
+        lastName,
+        role: member.role,
+        email: normalizeNullableString(member.email),
+        phone: normalizeGuestPhone(member.phone),
+        dietaryNotes: normalizeNullableString(member.dietaryNotes),
+        tags: normalizePartyTags(member.tagsText, { dedupe: true }),
+        displayOrder: idx,
+        seatNumber: member.seatNumber,
+      };
+    });
+
+    const nonPrimaryCount = normalizedMembers.filter((m) => m.role !== 'PRIMARY').length;
+    const mergedAllocations = Math.max(
+      Number(basePayload.plusOneAllocations ?? 0),
+      nonPrimaryCount
+    );
+
+    return onSave(id, {
+      ...basePayload,
+      plusOneAllocations: mergedAllocations,
+      members: normalizedMembers as unknown as HouseholdMemberDTO[],
+    });
   };
 
   const handleProfileCompanionChange = (firstName: string, lastName: string) => {
@@ -963,6 +1179,59 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
       for (const se of subEvents) {
         const draft = eventDrafts[se.id];
         if (!draft || draft.status === 'unresponded') continue;
+
+        if (draft.useMemberRsvps && Array.isArray(draft.memberRsvps) && draft.memberRsvps.length > 0) {
+          const validMemberIds = new Set(
+            membersDraft
+              .filter(
+                (m) => !m.id.startsWith('synthetic-') && !m.id.startsWith('new-member-')
+              )
+              .map((m) => m.id)
+          );
+          const persistedMemberRsvps = draft.memberRsvps.filter((mr) =>
+            validMemberIds.has(mr.householdMemberId)
+          );
+          const attendingRows = draft.memberRsvps.filter((mr) => mr.status === 'attending');
+          const allDeclined = draft.memberRsvps.every((mr) => mr.status === 'declined');
+          const resolvedStatus: 'attending' | 'declined' | 'pending' =
+            draft.status === 'clear'
+              ? 'pending'
+              : attendingRows.length > 0
+                ? 'attending'
+                : allDeclined
+                  ? 'declined'
+                  : 'pending';
+          const derivedPoCount =
+            attendingRows.length > 0 ? Math.max(0, attendingRows.length - 1) : 0;
+          const derivedMeals = attendingRows.map((mr) => mr.mealOptionId).filter(Boolean);
+          const derivedPoNames = attendingRows
+            .map((mr) => membersDraft.find((m) => m.id === mr.householdMemberId))
+            .filter((m): m is AdminHouseholdMemberDraft => Boolean(m && m.role !== 'PRIMARY'))
+            .map((m) => m.fullName.trim())
+            .filter(Boolean);
+
+          rsvpsPayload.push({
+            subEventId: se.id,
+            status: draft.status === 'clear' ? 'clear' : resolvedStatus,
+            plusOneCount: derivedPoCount,
+            plusOneNames: derivedPoNames,
+            mealSelections: derivedMeals,
+            dietaryNotes: draft.dietaryNotes.trim() || null,
+            customAnswers: resolvedStatus !== 'declined' ? draft.customAnswers : {},
+            ...(persistedMemberRsvps.length > 0
+              ? {
+                memberRsvps: persistedMemberRsvps.map((mr) => ({
+                  householdMemberId: mr.householdMemberId,
+                  status: mr.status,
+                  mealOptionId: mr.status === 'attending' ? mr.mealOptionId || null : null,
+                  dietaryNotes: mr.dietaryNotes.trim() || null,
+                })),
+              }
+              : {}),
+          });
+          continue;
+        }
+
         const poCount = draft.status === 'attending' ? Math.max(0, draft.plusOneCount) : 0;
         const resolvedPoNames =
           draft.status === 'attending' ? draft.plusOneNames.slice(0, poCount) : [];
@@ -1179,127 +1448,323 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
 
                 {draft.status === 'attending' && (
                   <div className="space-y-3 pt-1">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <FormGroup>
-                        <Label htmlFor={`rsvp-plus-ones-${se.id}`}>Attending Plus-Ones</Label>
-                        <Input
-                          id={`rsvp-plus-ones-${se.id}`}
-                          aria-label={`Attending plus-ones for ${se.title}`}
-                          type="number"
-                          min={0}
-                          max={20}
-                          value={String(draft.plusOneCount)}
-                          onChange={(e) => {
-                            const count = Math.max(0, Math.min(20, parseInt(e.target.value, 10) || 0));
-                            updateEventDraft(se.id, (prev) => ({
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-gray-700 dark:text-zinc-200">
+                        Household Party Attendance Mode
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        data-testid={`toggle-member-rsvps-${se.id}`}
+                        onClick={() => {
+                          updateEventDraft(se.id, (prev) => {
+                            const nextUse = !prev.useMemberRsvps;
+                            if (!nextUse) {
+                              return { ...prev, useMemberRsvps: false };
+                            }
+                            const seeded: AdminMemberRsvpDraftItem[] = membersDraft.map(
+                              (member, idx) => {
+                                const existingRow = prev.memberRsvps?.find(
+                                  (r) => r.householdMemberId === member.id
+                                );
+                                if (existingRow) return { ...existingRow };
+                                const isAtt =
+                                  prev.status === 'attending' &&
+                                  idx < 1 + Math.max(0, prev.plusOneCount);
+                                return {
+                                  householdMemberId: member.id,
+                                  status: isAtt ? 'attending' : 'declined',
+                                  mealOptionId: isAtt ? (prev.mealSelections[idx] ?? '') : '',
+                                  dietaryNotes: '',
+                                };
+                              }
+                            );
+                            return {
                               ...prev,
-                              plusOneCount: count,
-                            }));
-                          }}
-                        />
-                      </FormGroup>
-
-                      <FormGroup className="sm:col-span-2">
-                        <Label htmlFor={`rsvp-dietary-${se.id}`}>Event Dietary Notes</Label>
-                        <Input
-                          id={`rsvp-dietary-${se.id}`}
-                          aria-label={`Event dietary notes for ${se.title}`}
-                          type="text"
-                          maxLength={500}
-                          value={draft.dietaryNotes}
-                          onChange={(e) =>
-                            updateEventDraft(se.id, (prev) => ({
-                              ...prev,
-                              dietaryNotes: e.target.value,
-                            }))
-                          }
-                          placeholder="e.g. No shellfish"
-                        />
-                      </FormGroup>
+                              useMemberRsvps: true,
+                              memberRsvps: seeded,
+                            };
+                          });
+                        }}
+                      >
+                        {draft.useMemberRsvps
+                          ? 'Use Household Summary Counts'
+                          : 'Customize Per-Member RSVPs'}
+                      </Button>
                     </div>
 
-                    {draft.plusOneCount > 0 && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {Array.from({ length: draft.plusOneCount }, (_, idx) => (
-                          <FormGroup key={`po-name-${se.id}-${idx}`}>
-                            <Label htmlFor={`rsvp-po-name-${se.id}-${idx}`}>
-                              Plus-One #{idx + 1} Name
-                            </Label>
-                            <Input
-                              id={`rsvp-po-name-${se.id}-${idx}`}
-                              aria-label={`Plus-one ${idx + 1} name for ${se.title}`}
-                              type="text"
-                              maxLength={120}
-                              value={draft.plusOneNames[idx] ?? ''}
-                              onChange={(e) =>
-                                updateEventDraft(
-                                  se.id,
-                                  (prev) => {
-                                    const nextNames = [...prev.plusOneNames];
-                                    nextNames[idx] = e.target.value;
-                                    return { ...prev, plusOneNames: nextNames };
-                                  },
-                                  { index: idx, value: e.target.value }
-                                )
-                              }
-                              placeholder={`Plus-One #${idx + 1} full name`}
-                            />
-                          </FormGroup>
-                        ))}
-                      </div>
-                    )}
-
-                    {se.mealOptions.length > 0 && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {Array.from({ length: partySize }, (_, attendeeIdx) => {
-                          const attendeeLabel =
-                            attendeeIdx === 0
-                              ? `${guest.guestName || 'Primary Guest'} Meal`
-                              : `${draft.plusOneNames[attendeeIdx - 1]?.trim() || `Plus-One #${attendeeIdx}`} Meal`;
-                          const selectAriaLabel =
-                            attendeeIdx === 0
-                              ? `Meal selection for primary guest (${se.title})`
-                              : `Meal selection for plus-one ${attendeeIdx} (${se.title})`;
-                          const fieldId = `rsvp-meal-${se.id}-${attendeeIdx}`;
+                    {draft.useMemberRsvps ? (
+                      <div
+                        data-testid={`admin-member-rsvps-${se.id}`}
+                        className="space-y-2.5 rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3"
+                      >
+                        {membersDraft.map((member, mIdx) => {
+                          const mr = draft.memberRsvps?.find(
+                            (r) => r.householdMemberId === member.id
+                          ) ?? {
+                            householdMemberId: member.id,
+                            status: 'pending' as const,
+                            mealOptionId: '',
+                            dietaryNotes: '',
+                          };
+                          const statusSelectId = `admin-member-status-${se.id}-${mIdx}`;
+                          const mealSelectId = `admin-member-meal-${se.id}-${mIdx}`;
 
                           return (
-                            <FormGroup key={fieldId}>
-                              <Label htmlFor={fieldId}>{attendeeLabel}</Label>
-                              <select
-                                id={fieldId}
-                                aria-label={selectAriaLabel}
-                                value={draft.mealSelections[attendeeIdx] ?? ''}
-                                onChange={(e) =>
-                                  updateEventDraft(se.id, (prev) => {
-                                    const nextMeals = [...prev.mealSelections];
-                                    nextMeals[attendeeIdx] = e.target.value;
-                                    return { ...prev, mealSelections: nextMeals };
-                                  })
-                                }
-                                className={selectControlClassName}
-                              >
-                                <option value="">-- Select meal --</option>
-                                {draft.mealSelections[attendeeIdx] &&
-                                  !se.mealOptions.some(
-                                    (opt) => opt.id === draft.mealSelections[attendeeIdx]
-                                  ) && (
-                                  <option value={draft.mealSelections[attendeeIdx]}>
-                                    {`${draft.mealSelections[attendeeIdx]} (Unavailable — previously selected)`}
-                                  </option>
-                                )}
-                                {se.mealOptions.map((opt) => (
-                                  <option key={opt.id} value={opt.id}>
-                                    {opt.label}
-                                    {opt.dietaryTags.length > 0
-                                      ? ` (${opt.dietaryTags.join(', ')})`
-                                      : ''}
-                                  </option>
-                                ))}
-                              </select>
-                            </FormGroup>
+                            <div
+                              key={member.id}
+                              className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 items-end border-b border-gray-100 dark:border-zinc-800 pb-2.5 last:border-b-0 last:pb-0"
+                            >
+                              <div>
+                                <div className="text-xs font-semibold text-gray-900 dark:text-zinc-100">
+                                  {member.fullName || `Member #${mIdx + 1}`}
+                                </div>
+                                <div className="text-[11px] text-gray-600 dark:text-zinc-300">
+                                  {formatAdminMemberRoleLabel(member.role)}
+                                  {member.dietaryNotes ? ` • ${member.dietaryNotes}` : ''}
+                                </div>
+                              </div>
+
+                              <FormGroup className="mb-0">
+                                <Label htmlFor={statusSelectId} className="sr-only">
+                                  {`Member status for ${member.fullName || `Member #${mIdx + 1}`} (${se.title})`}
+                                </Label>
+                                <select
+                                  id={statusSelectId}
+                                  aria-label={`Member status for ${member.fullName || `Member #${mIdx + 1}`} (${se.title})`}
+                                  value={mr.status}
+                                  onChange={(e) => {
+                                    const nextMemberStatus = e.target.value as
+                                      | 'attending'
+                                      | 'declined'
+                                      | 'pending';
+                                    updateEventDraft(se.id, (prev) => {
+                                      const baseList =
+                                        prev.memberRsvps ??
+                                        membersDraft.map((m) => ({
+                                          householdMemberId: m.id,
+                                          status: 'pending' as const,
+                                          mealOptionId: '',
+                                          dietaryNotes: '',
+                                        }));
+                                      const nextList = baseList.map((row) =>
+                                        row.householdMemberId === member.id
+                                          ? {
+                                            ...row,
+                                            status: nextMemberStatus,
+                                            mealOptionId:
+                                              nextMemberStatus === 'attending'
+                                                ? row.mealOptionId
+                                                : '',
+                                          }
+                                          : row
+                                      );
+                                      return { ...prev, memberRsvps: nextList };
+                                    });
+                                  }}
+                                  className={selectControlClassName}
+                                >
+                                  <option value="attending">Attending</option>
+                                  <option value="declined">Declined</option>
+                                  <option value="pending">Pending</option>
+                                </select>
+                              </FormGroup>
+
+                              {se.mealOptions.length > 0 && (
+                                <FormGroup className="mb-0">
+                                  <Label htmlFor={mealSelectId} className="sr-only">
+                                    {`Member meal for ${member.fullName || `Member #${mIdx + 1}`} (${se.title})`}
+                                  </Label>
+                                  <select
+                                    id={mealSelectId}
+                                    aria-label={`Member meal for ${member.fullName || `Member #${mIdx + 1}`} (${se.title})`}
+                                    disabled={mr.status !== 'attending'}
+                                    value={mr.status === 'attending' ? mr.mealOptionId : ''}
+                                    onChange={(e) => {
+                                      const nextMeal = e.target.value;
+                                      updateEventDraft(se.id, (prev) => {
+                                        const baseList =
+                                          prev.memberRsvps ??
+                                          membersDraft.map((m) => ({
+                                            householdMemberId: m.id,
+                                            status: 'pending' as const,
+                                            mealOptionId: '',
+                                            dietaryNotes: '',
+                                          }));
+                                        const nextList = baseList.map((row) =>
+                                          row.householdMemberId === member.id
+                                            ? { ...row, mealOptionId: nextMeal }
+                                            : row
+                                        );
+                                        return { ...prev, memberRsvps: nextList };
+                                      });
+                                    }}
+                                    className={selectControlClassName}
+                                  >
+                                    <option value="">
+                                      {mr.status === 'attending'
+                                        ? '-- Select meal --'
+                                        : 'Not attending'}
+                                    </option>
+                                    {se.mealOptions.map((opt) => (
+                                      <option key={opt.id} value={opt.id}>
+                                        {opt.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </FormGroup>
+                              )}
+                            </div>
                           );
                         })}
+
+                        <FormGroup>
+                          <Label htmlFor={`rsvp-dietary-${se.id}`}>Event Dietary Notes</Label>
+                          <Input
+                            id={`rsvp-dietary-${se.id}`}
+                            aria-label={`Event dietary notes for ${se.title}`}
+                            type="text"
+                            maxLength={500}
+                            value={draft.dietaryNotes}
+                            onChange={(e) =>
+                              updateEventDraft(se.id, (prev) => ({
+                                ...prev,
+                                dietaryNotes: e.target.value,
+                              }))
+                            }
+                            placeholder="e.g. No shellfish"
+                          />
+                        </FormGroup>
                       </div>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <FormGroup>
+                            <Label htmlFor={`rsvp-plus-ones-${se.id}`}>Attending Plus-Ones</Label>
+                            <Input
+                              id={`rsvp-plus-ones-${se.id}`}
+                              aria-label={`Attending plus-ones for ${se.title}`}
+                              type="number"
+                              min={0}
+                              max={20}
+                              value={String(draft.plusOneCount)}
+                              onChange={(e) => {
+                                const count = Math.max(
+                                  0,
+                                  Math.min(20, parseInt(e.target.value, 10) || 0)
+                                );
+                                updateEventDraft(se.id, (prev) => ({
+                                  ...prev,
+                                  plusOneCount: count,
+                                }));
+                              }}
+                            />
+                          </FormGroup>
+
+                          <FormGroup className="sm:col-span-2">
+                            <Label htmlFor={`rsvp-dietary-${se.id}`}>Event Dietary Notes</Label>
+                            <Input
+                              id={`rsvp-dietary-${se.id}`}
+                              aria-label={`Event dietary notes for ${se.title}`}
+                              type="text"
+                              maxLength={500}
+                              value={draft.dietaryNotes}
+                              onChange={(e) =>
+                                updateEventDraft(se.id, (prev) => ({
+                                  ...prev,
+                                  dietaryNotes: e.target.value,
+                                }))
+                              }
+                              placeholder="e.g. No shellfish"
+                            />
+                          </FormGroup>
+                        </div>
+
+                        {draft.plusOneCount > 0 && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {Array.from({ length: draft.plusOneCount }, (_, idx) => (
+                              <FormGroup key={`po-name-${se.id}-${idx}`}>
+                                <Label htmlFor={`rsvp-po-name-${se.id}-${idx}`}>
+                                  Plus-One #{idx + 1} Name
+                                </Label>
+                                <Input
+                                  id={`rsvp-po-name-${se.id}-${idx}`}
+                                  aria-label={`Plus-one ${idx + 1} name for ${se.title}`}
+                                  type="text"
+                                  maxLength={120}
+                                  value={draft.plusOneNames[idx] ?? ''}
+                                  onChange={(e) =>
+                                    updateEventDraft(
+                                      se.id,
+                                      (prev) => {
+                                        const nextNames = [...prev.plusOneNames];
+                                        nextNames[idx] = e.target.value;
+                                        return { ...prev, plusOneNames: nextNames };
+                                      },
+                                      { index: idx, value: e.target.value }
+                                    )
+                                  }
+                                  placeholder={`Plus-One #${idx + 1} full name`}
+                                />
+                              </FormGroup>
+                            ))}
+                          </div>
+                        )}
+
+                        {se.mealOptions.length > 0 && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {Array.from({ length: partySize }, (_, attendeeIdx) => {
+                              const attendeeLabel =
+                                attendeeIdx === 0
+                                  ? `${guest.guestName || 'Primary Guest'} Meal`
+                                  : `${draft.plusOneNames[attendeeIdx - 1]?.trim() || `Plus-One #${attendeeIdx}`} Meal`;
+                              const selectAriaLabel =
+                                attendeeIdx === 0
+                                  ? `Meal selection for primary guest (${se.title})`
+                                  : `Meal selection for plus-one ${attendeeIdx} (${se.title})`;
+                              const fieldId = `rsvp-meal-${se.id}-${attendeeIdx}`;
+
+                              return (
+                                <FormGroup key={fieldId}>
+                                  <Label htmlFor={fieldId}>{attendeeLabel}</Label>
+                                  <select
+                                    id={fieldId}
+                                    aria-label={selectAriaLabel}
+                                    value={draft.mealSelections[attendeeIdx] ?? ''}
+                                    onChange={(e) =>
+                                      updateEventDraft(se.id, (prev) => {
+                                        const nextMeals = [...prev.mealSelections];
+                                        nextMeals[attendeeIdx] = e.target.value;
+                                        return { ...prev, mealSelections: nextMeals };
+                                      })
+                                    }
+                                    className={selectControlClassName}
+                                  >
+                                    <option value="">-- Select meal --</option>
+                                    {draft.mealSelections[attendeeIdx] &&
+                                      !se.mealOptions.some(
+                                        (opt) => opt.id === draft.mealSelections[attendeeIdx]
+                                      ) && (
+                                      <option value={draft.mealSelections[attendeeIdx]}>
+                                        {`${draft.mealSelections[attendeeIdx]} (Unavailable — previously selected)`}
+                                      </option>
+                                    )}
+                                    {se.mealOptions.map((opt) => (
+                                      <option key={opt.id} value={opt.id}>
+                                        {opt.label}
+                                        {opt.dietaryTags.length > 0
+                                          ? ` (${opt.dietaryTags.join(', ')})`
+                                          : ''}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </FormGroup>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 )}
@@ -1375,12 +1840,220 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
     </div>
   );
 
+  const householdMembersSection = (
+    <div
+      className="pt-3 border-t border-gray-100 dark:border-zinc-800 space-y-3"
+      data-testid="admin-household-members-section"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-zinc-300">
+            Household Party Members
+          </h3>
+          <p className="text-xs text-gray-600 dark:text-zinc-300 mt-0.5">
+            Manage individual adults, partners, children, and standing dietary profiles for seating and RSVPs.
+          </p>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          data-testid="admin-add-household-member-btn"
+          onClick={handleAddHouseholdMember}
+        >
+          + Add Member
+        </Button>
+      </div>
+
+      <div className="space-y-2.5">
+        {membersDraft.map((member, idx) => {
+          const isExpanded = expandedMemberIds.includes(member.id);
+          return (
+            <div
+              key={member.id}
+              data-testid={`admin-member-row-${idx}`}
+              className="rounded-xl border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-900/60 p-3 space-y-3"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2 min-w-0">
+                  <span className="text-xs font-mono font-bold text-gray-600 dark:text-zinc-300">
+                    #{idx + 1}
+                  </span>
+                  <span className="text-sm font-semibold text-gray-900 dark:text-zinc-100 truncate">
+                    {member.fullName.trim() || 'Unnamed Member'}
+                  </span>
+                  <span className="inline-flex items-center rounded bg-gray-200/80 dark:bg-zinc-700 px-2 py-0.5 text-[10px] font-bold uppercase text-gray-800 dark:text-zinc-100">
+                    {formatAdminMemberRoleLabel(member.role)}
+                  </span>
+                  {member.dietaryNotes.trim() && (
+                    <span className="inline-flex items-center rounded bg-rose-50 dark:bg-rose-950/50 px-2 py-0.5 text-[10px] font-semibold text-rose-800 dark:text-rose-200 border border-rose-200 dark:border-rose-800">
+                      {member.dietaryNotes.trim()}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Move member ${idx + 1} up`}
+                    disabled={idx === 0}
+                    onClick={() => handleMoveHouseholdMember(idx, -1)}
+                  >
+                    ↑
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Move member ${idx + 1} down`}
+                    disabled={idx === membersDraft.length - 1}
+                    onClick={() => handleMoveHouseholdMember(idx, 1)}
+                  >
+                    ↓
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    data-testid={`admin-edit-member-btn-${idx}`}
+                    onClick={() => toggleMemberExpanded(member.id)}
+                  >
+                    {isExpanded ? 'Done' : 'Edit'}
+                  </Button>
+                  {membersDraft.length > 1 && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      data-testid={`admin-remove-member-btn-${idx}`}
+                      aria-label={`Remove member ${idx + 1}`}
+                      onClick={() => handleRemoveHouseholdMember(member.id)}
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {isExpanded && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-gray-200/80 dark:border-zinc-700/80">
+                  <FormGroup>
+                    <Label htmlFor={`admin-member-name-${idx}`}>
+                      {`Member #${idx + 1} Full Name`}
+                    </Label>
+                    <Input
+                      id={`admin-member-name-${idx}`}
+                      type="text"
+                      maxLength={120}
+                      value={member.fullName}
+                      onChange={(e) =>
+                        handleUpdateHouseholdMember(member.id, { fullName: e.target.value })
+                      }
+                      placeholder="e.g. Sam Oswald"
+                    />
+                  </FormGroup>
+
+                  <FormGroup>
+                    <Label htmlFor={`admin-member-role-${idx}`}>
+                      {`Member #${idx + 1} Role`}
+                    </Label>
+                    <select
+                      id={`admin-member-role-${idx}`}
+                      value={member.role}
+                      onChange={(e) =>
+                        handleUpdateHouseholdMember(member.id, {
+                          role: e.target.value as HouseholdMemberRole,
+                        })
+                      }
+                      className={selectControlClassName}
+                    >
+                      <option value="PRIMARY">Primary Adult</option>
+                      <option value="PARTNER">Partner / Spouse</option>
+                      <option value="CHILD">Child</option>
+                      <option value="PLUS_ONE">Plus-One</option>
+                    </select>
+                  </FormGroup>
+
+                  <FormGroup>
+                    <Label htmlFor={`admin-member-email-${idx}`}>
+                      {`Member #${idx + 1} Email`}
+                    </Label>
+                    <Input
+                      id={`admin-member-email-${idx}`}
+                      type="email"
+                      value={member.email}
+                      onChange={(e) =>
+                        handleUpdateHouseholdMember(member.id, { email: e.target.value })
+                      }
+                      placeholder="companion@example.com"
+                    />
+                  </FormGroup>
+
+                  <FormGroup>
+                    <Label htmlFor={`admin-member-phone-${idx}`}>
+                      {`Member #${idx + 1} Phone`}
+                    </Label>
+                    <Input
+                      id={`admin-member-phone-${idx}`}
+                      type="tel"
+                      maxLength={PHONE_MAX_LENGTH}
+                      value={member.phone}
+                      onChange={(e) =>
+                        handleUpdateHouseholdMember(member.id, { phone: e.target.value })
+                      }
+                      placeholder="+15551234567"
+                    />
+                  </FormGroup>
+
+                  <FormGroup>
+                    <Label htmlFor={`admin-member-dietary-${idx}`}>
+                      {`Member #${idx + 1} Standing Allergies`}
+                    </Label>
+                    <Input
+                      id={`admin-member-dietary-${idx}`}
+                      type="text"
+                      maxLength={500}
+                      value={member.dietaryNotes}
+                      onChange={(e) =>
+                        handleUpdateHouseholdMember(member.id, { dietaryNotes: e.target.value })
+                      }
+                      placeholder="e.g. Nut-Free, Kids Meal"
+                    />
+                  </FormGroup>
+
+                  <FormGroup>
+                    <Label htmlFor={`admin-member-tags-${idx}`}>
+                      {`Member #${idx + 1} Tags`}
+                    </Label>
+                    <Input
+                      id={`admin-member-tags-${idx}`}
+                      type="text"
+                      value={member.tagsText}
+                      onChange={(e) =>
+                        handleUpdateHouseholdMember(member.id, { tagsText: e.target.value })
+                      }
+                      placeholder="e.g. Bridal Party, Kids"
+                    />
+                  </FormGroup>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   return (
     <GuestEditorForm
       mode="edit"
       guest={guest}
       onClose={onClose}
-      onSave={onSave}
+      onSave={handleSaveWithMembers}
+      householdMembersSlot={householdMembersSection}
+      membersDirty={membersDirty}
       rsvpOverrideSlot={rsvpOverrideSection}
       rsvpDirty={rsvpDirty}
       onSaveRsvpOverrides={handleSaveRsvpOverrides}

@@ -19,8 +19,10 @@ import {
   HOUSEHOLD_NAME_MAX_LENGTH,
   PARTY_GROUP_MAX_LENGTH,
   INVITATION_COLLISION_STRATEGIES,
+  HOUSEHOLD_MEMBER_ROLES,
   normalizePartyTags,
   type BatchInvitationCodeRecord,
+  type HouseholdMemberRole,
 } from '@/utils/invitationValidation';
 import {
   REGISTRY_DEFAULT_PAGE_LIMIT,
@@ -827,6 +829,68 @@ export function translateContributorSnapshot(
   return { update, create };
 }
 
+const HouseholdMemberRoleSchema = z.enum(HOUSEHOLD_MEMBER_ROLES);
+export type { HouseholdMemberRole };
+
+const optionalMemberPhoneField = z
+  .string()
+  .trim()
+  .max(30, 'Phone number must be under 30 characters.')
+  .refine(
+    (val) => {
+      if (!val) return true;
+      if (!/^\+?[\d\s().\/-]{7,30}$/.test(val)) return false;
+      const digits = val.replace(/\D/g, '');
+      return digits.length >= 7 && digits.length <= 15;
+    },
+    { message: 'Invalid phone number format.' },
+  )
+  .transform((val) => (val ? val.replace(/[^\d+]/g, '') : val))
+  .optional()
+  .or(z.literal(''))
+  .nullable();
+
+const HouseholdMemberSchema = z.object({
+  id: z.string(),
+  invitationCodeId: z.string().optional(),
+  fullName: requiredGuestNameField,
+  firstName: nullableOptionalTrimmedField(PLUS_ONE_NAME_MAX_LENGTH, 'First name'),
+  lastName: nullableOptionalTrimmedField(PLUS_ONE_NAME_MAX_LENGTH, 'Last name'),
+  role: HouseholdMemberRoleSchema.default('PRIMARY'),
+  email: optionalNullableEmailField,
+  phone: optionalMemberPhoneField,
+  dietaryNotes: z.string().trim().max(500, 'Dietary notes must be under 500 characters.').nullable().optional().or(z.literal('')),
+  tags: z.array(z.string().trim()).optional().default([]),
+  displayOrder: z.coerce.number().int().nonnegative().default(0),
+  seatNumber: z.number().int().positive().nullable().optional(),
+  createdAt: z.union([z.string(), z.date()]).optional(),
+  updatedAt: z.union([z.string(), z.date()]).optional(),
+});
+
+export type HouseholdMemberDTO = z.infer<typeof HouseholdMemberSchema>;
+
+const HouseholdMemberInputSchema = z.object({
+  id: z.string().trim().optional(),
+  fullName: requiredGuestNameField,
+  firstName: nullableOptionalTrimmedField(PLUS_ONE_NAME_MAX_LENGTH, 'First name'),
+  lastName: nullableOptionalTrimmedField(PLUS_ONE_NAME_MAX_LENGTH, 'Last name'),
+  role: HouseholdMemberRoleSchema.optional().default('PARTNER'),
+  email: optionalNullableEmailField,
+  phone: optionalMemberPhoneField,
+  dietaryNotes: z.string().trim().max(500, 'Dietary notes must be under 500 characters.').nullable().optional().or(z.literal('')),
+  tags: z
+    .union([
+      z.array(z.string()),
+      z.string().transform((val) => normalizePartyTags(val, { dedupe: true })),
+    ])
+    .optional()
+    .default([]),
+  displayOrder: z.coerce.number().int().nonnegative().optional(),
+  seatNumber: z.coerce.number().int().positive().nullable().optional(),
+});
+
+export type HouseholdMemberInputDTO = z.infer<typeof HouseholdMemberInputSchema>;
+
 export const InvitationCodeSchema = z.object({
   id: z.string(),
   code: z
@@ -881,6 +945,7 @@ export const InvitationCodeSchema = z.object({
   tableId: z.string().nullable().optional(),
   seatNumber: z.number().int().positive().nullable().optional(),
   plusOneSeatNumbers: z.array(z.number().int().positive()).optional(),
+  members: z.array(HouseholdMemberSchema).optional(),
   isSample: z.boolean().default(false),
   createdAt: z.union([z.string(), z.date()]).optional(),
   updatedAt: z.union([z.string(), z.date()]).optional(),
@@ -895,11 +960,14 @@ export const InvitationCodeInputSchema = deriveAdminInputSchema(
   false,
 ).extend({
   code: InvitationCodeSchema.shape.code.optional().or(z.literal('')),
+  members: z.array(HouseholdMemberInputSchema).max(25).optional(),
 });
 export const InvitationCodeUpdateInputSchema = deriveAdminInputSchema(
   InvitationCodeSchema,
   true,
-);
+).extend({
+  members: z.array(HouseholdMemberInputSchema).max(25).optional(),
+});
 
 const BatchImportInvitationCodeItemSchema = z.object({
   guestName: z
@@ -943,6 +1011,7 @@ const BatchImportInvitationCodeItemSchema = z.object({
     .optional()
     .default([]),
   extraFields: z.record(z.string(), z.any()).optional().nullable(),
+  members: z.array(HouseholdMemberInputSchema).max(25).optional(),
 });
 
 export const BatchDeleteInvitationCodesSchema = z.object({
@@ -1057,8 +1126,24 @@ export interface DryRunValidationResponse {
   rows: DryRunValidatedRow[];
 }
 
+const GuestPartyMemberUpdateSchema = z.object({
+  id: z.string().trim().min(1, 'Household member ID is required.'),
+  fullName: requiredGuestNameField,
+  email: optionalNullableEmailField,
+  phone: optionalMemberPhoneField,
+  dietaryNotes: z
+    .string()
+    .trim()
+    .max(500, 'Dietary notes must be under 500 characters.')
+    .nullable()
+    .optional()
+    .or(z.literal('')),
+});
+
 export const GuestAddressUpdateSchema = z.object({
   code: z.string().trim().optional(),
+  householdName: optionalNullableTrimmedField(HOUSEHOLD_NAME_MAX_LENGTH, 'Household name'),
+  members: z.array(GuestPartyMemberUpdateSchema).max(25).optional(),
   ...optionalAddressFields,
 });
 
@@ -1117,6 +1202,43 @@ const createOptionalPublicAddressField = (max: number, label: string) =>
     .or(z.literal(''))
     .nullable();
 
+const publicOptionalMemberNameField = z
+  .string()
+  .refine((val) => !disallowedPublicTextPattern.test(val), {
+    message: 'Member name cannot contain HTML brackets or control characters.',
+  })
+  .trim()
+  .max(
+    GUEST_NAME_MAX_LENGTH,
+    `Member name must be under ${GUEST_NAME_MAX_LENGTH} characters.`,
+  )
+  .optional()
+  .or(z.literal(''))
+  .nullable();
+
+const publicOptionalDietaryField = z
+  .string()
+  .refine((val) => !disallowedPublicTextPattern.test(val), {
+    message: 'Dietary notes cannot contain HTML brackets or control characters.',
+  })
+  .trim()
+  .max(500, 'Dietary notes must be under 500 characters.')
+  .optional()
+  .or(z.literal(''))
+  .nullable();
+
+const PublicPartnerCollectSchema = z.object({
+  fullName: publicOptionalMemberNameField,
+  email: optionalNullableEmailField,
+  phone: optionalMemberPhoneField,
+  dietaryNotes: publicOptionalDietaryField,
+});
+
+const PublicChildCollectSchema = z.object({
+  fullName: publicGuestNameField,
+  dietaryNotes: publicOptionalDietaryField,
+});
+
 export const PublicAddressCollectSchema = z.object({
   guestName: publicGuestNameField,
   email: optionalNullableEmailField,
@@ -1141,6 +1263,7 @@ export const PublicAddressCollectSchema = z.object({
     .nullable(),
   mobile: z.string().optional().nullable(),
   phoneNumber: z.string().optional().nullable(),
+  dietaryNotes: publicOptionalDietaryField,
   addressLine1: createRequiredPublicAddressField(ADDRESS_LINE_MAX_LENGTH, 'Street address'),
   addressLine2: createOptionalPublicAddressField(ADDRESS_LINE_MAX_LENGTH, 'Address Line 2'),
   city: createRequiredPublicAddressField(CITY_MAX_LENGTH, 'City'),
@@ -1148,6 +1271,8 @@ export const PublicAddressCollectSchema = z.object({
   zipCode: createRequiredPublicAddressField(ZIP_CODE_MAX_LENGTH, 'ZIP / Postal code'),
   country: createOptionalPublicAddressField(COUNTRY_MAX_LENGTH, 'Country'),
   householdName: publicHouseholdNameField,
+  partner: PublicPartnerCollectSchema.optional().nullable(),
+  children: z.array(PublicChildCollectSchema).max(15, 'Maximum of 15 children per submission.').optional(),
   notes: z
     .string()
     .trim()
@@ -1257,6 +1382,14 @@ export const InvitationCatalogQuerySchema = z.object({
   orderDir: z.enum(['asc', 'desc']).default('desc'),
 });
 
+interface InvitationSubEventMemberRsvpSummaryDTO {
+  id?: string;
+  householdMemberId: string;
+  status: 'attending' | 'declined' | 'pending';
+  mealOptionId?: string | null;
+  dietaryNotes?: string | null;
+}
+
 export interface InvitationSubEventRsvpSummaryDTO {
   id: string;
   subEventId: string;
@@ -1267,5 +1400,6 @@ export interface InvitationSubEventRsvpSummaryDTO {
   mealSelections: string[];
   dietaryNotes: string | null;
   customAnswers: Record<string, string>;
+  memberRsvps?: InvitationSubEventMemberRsvpSummaryDTO[];
   updatedAt?: string;
 }

@@ -21,10 +21,13 @@ import {
   getAttendanceStatus,
   extractDietaryTags,
   hasAddressCollectionTag,
+  deriveHouseholdMembersFromInvitation,
+  type HouseholdMemberDTO,
 } from '@/features/registry';
 import { buildArchetypeSeedData, isStaticExportBuild } from '@/lib/sampleData/builder';
 import {
   SubEventRsvpSubmissionItem,
+  SubEventMemberRsvpItem,
   BatchUpdateSubEventAccessDTO,
   AdminSingleGuestRsvpOverrideDTO,
   AdminBatchAttendanceOverrideDTO,
@@ -66,7 +69,43 @@ export interface ScheduleEventWithRsvp {
     mealSelections?: string[];
     customAnswers?: Record<string, string>;
     plusOneNames?: string[];
+    memberRsvps?: Array<{
+      householdMemberId: string;
+      status: 'attending' | 'declined' | 'pending';
+      mealOptionId: string | null;
+      dietaryNotes: string | null;
+    }>;
   } | null;
+}
+
+function mapDbMemberRsvps(
+  raw: unknown
+): Array<{
+  householdMemberId: string;
+  status: 'attending' | 'declined' | 'pending';
+  mealOptionId: string | null;
+  dietaryNotes: string | null;
+}> {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === 'object'))
+    .map((entry) => {
+      const status: 'attending' | 'declined' | 'pending' =
+        entry.status === 'attending' || entry.status === 'declined' ? entry.status : 'pending';
+      return {
+        householdMemberId: typeof entry.householdMemberId === 'string' ? entry.householdMemberId : '',
+        status,
+        mealOptionId:
+          typeof entry.mealOptionId === 'string' && entry.mealOptionId.trim()
+            ? entry.mealOptionId.trim()
+            : null,
+        dietaryNotes:
+          typeof entry.dietaryNotes === 'string' && entry.dietaryNotes.trim()
+            ? entry.dietaryNotes.trim()
+            : null,
+      };
+    })
+    .filter((entry) => Boolean(entry.householdMemberId));
 }
 
 function parseExtraFieldsObject(raw: unknown): Record<string, unknown> {
@@ -381,6 +420,97 @@ export class SubEventService {
   }
 
   /**
+   * Retrieves the household name and ordered relational HouseholdMember roster for an
+   * authenticated guest session, lazily materializing initial member rows in PostgreSQL if needed.
+   */
+  async getHouseholdProfileForGuest(
+    code?: string | null
+  ): Promise<{ householdName: string | null; members: HouseholdMemberDTO[] } | null> {
+    if (!code || typeof code !== 'string' || !code.trim()) {
+      return null;
+    }
+
+    const normalizedCode = code.trim().toUpperCase();
+
+    if (isStaticExportBuild()) {
+      const guest = buildArchetypeSeedData('classic').guests.find(
+        (g) => g.code.toUpperCase() === normalizedCode
+      );
+      if (!guest) return null;
+      return {
+        householdName: guest.householdName ?? null,
+        members: deriveHouseholdMembersFromInvitation(guest),
+      };
+    }
+
+    const hydrated = this.getHydratedInvitation(code);
+    const invite =
+      hydrated && hydrated.id
+        ? hydrated
+        : await this.client.invitationCode.findUnique({
+          where: { code: normalizedCode, isSample: false },
+        });
+
+    if (!invite || invite.isSample || hasAddressCollectionTag(invite.partyTags)) {
+      return null;
+    }
+
+    let dbMembers: HouseholdMemberDTO[] | undefined =
+      Array.isArray((invite as { members?: HouseholdMemberDTO[] }).members) &&
+      (invite as { members?: HouseholdMemberDTO[] }).members!.length > 0
+        ? (invite as { members?: HouseholdMemberDTO[] }).members
+        : undefined;
+
+    if (
+      !dbMembers &&
+      invite.id &&
+      typeof this.client?.householdMember?.findMany === 'function'
+    ) {
+      dbMembers = await this.client.householdMember.findMany({
+        where: { invitationCodeId: invite.id },
+        orderBy: { displayOrder: 'asc' },
+      });
+
+      if (
+        Array.isArray(dbMembers) &&
+        dbMembers.length === 0 &&
+        typeof this.client?.householdMember?.createMany === 'function'
+      ) {
+        const synthesized = deriveHouseholdMembersFromInvitation(invite);
+        await this.client.householdMember.createMany({
+          data: synthesized.map((m, idx) => ({
+            invitationCodeId: invite.id,
+            fullName: m.fullName,
+            firstName: m.firstName,
+            lastName: m.lastName,
+            role: m.role,
+            email: m.email,
+            phone: m.phone,
+            dietaryNotes: m.dietaryNotes,
+            tags: m.tags,
+            displayOrder: idx,
+            seatNumber: m.seatNumber,
+          })),
+        });
+        dbMembers = await this.client.householdMember.findMany({
+          where: { invitationCodeId: invite.id },
+          orderBy: { displayOrder: 'asc' },
+        });
+      }
+    }
+
+    const resolvedMembers = deriveHouseholdMembersFromInvitation({
+      ...invite,
+      members: Array.isArray(dbMembers) && dbMembers.length > 0 ? dbMembers : undefined,
+    });
+
+    return {
+      householdName: typeof invite.householdName === 'string' ? invite.householdName : null,
+      members: resolvedMembers,
+    };
+  }
+
+  /**
    * Retrieves a single sub-event by ID for a visitor or authenticated guest.
    * Public sub-events are accessible to everyone.
    * Private sub-events require an authenticated guest invitation code session with granted access.
@@ -490,6 +620,9 @@ export class SubEventService {
             where: {
               invitationCodeId: invitationCodeId,
             },
+            ...(typeof this.client?.subEventMemberRsvp?.findMany === 'function'
+              ? { include: { memberRsvps: true } }
+              : {}),
           }
           : false,
       },
@@ -568,6 +701,9 @@ export class SubEventService {
             : {}),
           ...(rsvp.plusOneNames !== undefined
             ? { plusOneNames: normalizePlusOneNames(rsvp.plusOneNames) }
+            : {}),
+          ...(Array.isArray(rsvp.memberRsvps)
+            ? { memberRsvps: mapDbMemberRsvps(rsvp.memberRsvps) }
             : {}),
         }
         : invitationCodeId && inviteDietaryNotes
@@ -689,6 +825,9 @@ export class SubEventService {
             where: {
               invitationCodeId: invitationCodeId,
             },
+            ...(typeof this.client?.subEventMemberRsvp?.findMany === 'function'
+              ? { include: { memberRsvps: true } }
+              : {}),
           },
         },
         orderBy: {
@@ -779,6 +918,9 @@ export class SubEventService {
             ...(rsvp.plusOneNames !== undefined
               ? { plusOneNames: normalizePlusOneNames(rsvp.plusOneNames) }
               : {}),
+            ...(Array.isArray(rsvp.memberRsvps)
+              ? { memberRsvps: mapDbMemberRsvps(rsvp.memberRsvps) }
+              : {}),
           }
           : invitationCodeId && inviteDietaryNotes
             ? {
@@ -830,6 +972,63 @@ export class SubEventService {
 
     const maxPlusOnes = Math.max(0, invite.plusOneAllocations ?? 0);
 
+    let householdMembers: HouseholdMemberDTO[] = [];
+    if (typeof this.client?.householdMember?.findMany === 'function') {
+      const dbMembers = await this.client.householdMember.findMany({
+        where: { invitationCodeId: invite.id },
+        orderBy: { displayOrder: 'asc' },
+      });
+      if (Array.isArray(dbMembers) && dbMembers.length > 0) {
+        householdMembers = deriveHouseholdMembersFromInvitation({
+          ...invite,
+          members: dbMembers,
+        });
+      } else if (
+        submissions.some((s) => Array.isArray(s.memberRsvps) && s.memberRsvps.length > 0)
+      ) {
+        const fullInvite =
+          hydrated && hydrated.id === invite.id
+            ? hydrated
+            : await this.client.invitationCode.findUnique({ where: { id: invite.id } });
+        const synthesized = deriveHouseholdMembersFromInvitation(fullInvite ?? invite);
+        if (typeof this.client?.householdMember?.createMany === 'function') {
+          await this.client.householdMember.createMany({
+            data: synthesized.map((m, idx) => ({
+              invitationCodeId: invite.id,
+              fullName: m.fullName,
+              firstName: m.firstName,
+              lastName: m.lastName,
+              role: m.role,
+              email: m.email,
+              phone: m.phone,
+              dietaryNotes: m.dietaryNotes,
+              tags: m.tags,
+              displayOrder: idx,
+              seatNumber: m.seatNumber,
+            })),
+          });
+          const reloaded = await this.client.householdMember.findMany({
+            where: { invitationCodeId: invite.id },
+            orderBy: { displayOrder: 'asc' },
+          });
+          householdMembers = deriveHouseholdMembersFromInvitation({
+            ...(fullInvite ?? invite),
+            members: reloaded,
+          });
+        } else {
+          householdMembers = synthesized;
+        }
+      }
+    } else if (
+      submissions.some((s) => Array.isArray(s.memberRsvps) && s.memberRsvps.length > 0)
+    ) {
+      householdMembers = deriveHouseholdMembersFromInvitation(hydrated ?? invite);
+    }
+
+    const memberById = new Map<string, HouseholdMemberDTO>(
+      householdMembers.map((m) => [m.id, m])
+    );
+
     // Collect all unique identifiers from the submissions array before query execution
     const subEventIds = Array.from(new Set(submissions.map((s) => s.subEventId)));
 
@@ -870,6 +1069,13 @@ export class SubEventService {
       }
     }
 
+    interface NormalizedMemberRsvpWrite {
+      householdMemberId: string;
+      status: 'attending' | 'declined';
+      mealOptionId: string | null;
+      dietaryNotes: string | null;
+    }
+
     interface NormalizedRsvpWrite {
       subEventId: string;
       status: 'attending' | 'declined';
@@ -880,13 +1086,19 @@ export class SubEventService {
       customAnswers: Record<string, string>;
       plusOneNames: string[];
       hadExplicitPlusOneNames: boolean;
+      memberRsvps?: NormalizedMemberRsvpWrite[];
     }
 
     const normalizedSubmissions: NormalizedRsvpWrite[] = [];
 
     // Validate event existence, read-only status, private permissions, plus-one limits, meal options, and custom questions
     for (const sub of submissions) {
-      if ((sub.status as string) !== 'attending' && (sub.status as string) !== 'declined') {
+      const hasMemberRsvps = Array.isArray(sub.memberRsvps) && sub.memberRsvps.length > 0;
+      if (
+        !hasMemberRsvps &&
+        (sub.status as string) !== 'attending' &&
+        (sub.status as string) !== 'declined'
+      ) {
         throw new ApiError(400, 'Please select Attending or Declined before saving.');
       }
 
@@ -905,7 +1117,142 @@ export class SubEventService {
         throw new ApiError(403, `Forbidden: You do not have access to private event "${subEvent.title}".`);
       }
 
-      const requestedPlusOnes = sub.status === 'declined' ? 0 : (sub.plusOneCount ?? 0);
+      const activeMeals = normalizeMealOptions(subEvent.mealOptions);
+      const activeQuestions = normalizeCustomQuestions(subEvent.customQuestions);
+
+      if (hasMemberRsvps) {
+        const submittedMap = new Map<string, SubEventMemberRsvpItem>();
+        for (const item of sub.memberRsvps!) {
+          const memberId = item.householdMemberId.trim();
+          if (!memberById.has(memberId)) {
+            throw new ApiError(
+              400,
+              `Household member "${memberId}" does not belong to your invitation.`
+            );
+          }
+          if (item.status !== 'attending' && item.status !== 'declined') {
+            throw new ApiError(
+              400,
+              'Please select Attending or Declined for each household member.'
+            );
+          }
+          submittedMap.set(memberId, item);
+        }
+
+        const validMealIds = new Set(activeMeals.map((opt) => opt.id));
+        const resolvedMemberWrites: NormalizedMemberRsvpWrite[] = [];
+
+        for (const member of householdMembers) {
+          const submitted = submittedMap.get(member.id);
+          const memberStatus: 'attending' | 'declined' = submitted ? submitted.status : 'declined';
+          const rawMealId =
+            submitted?.mealOptionId && submitted.mealOptionId.trim()
+              ? submitted.mealOptionId.trim()
+              : null;
+          const rawMemberDietary =
+            submitted?.dietaryNotes && submitted.dietaryNotes.trim()
+              ? submitted.dietaryNotes.trim()
+              : null;
+
+          if (activeMeals.length === 0) {
+            if (rawMealId) {
+              throw new ApiError(
+                400,
+                `Event "${subEvent.title}" does not accept meal selections.`
+              );
+            }
+          } else if (memberStatus === 'attending') {
+            if (!rawMealId) {
+              throw new ApiError(
+                400,
+                `Please select a meal option for ${member.fullName} for "${subEvent.title}".`
+              );
+            }
+            if (!validMealIds.has(rawMealId)) {
+              throw new ApiError(
+                400,
+                `Invalid meal option "${rawMealId}" for event "${subEvent.title}".`
+              );
+            }
+          }
+
+          resolvedMemberWrites.push({
+            householdMemberId: member.id,
+            status: memberStatus,
+            mealOptionId: memberStatus === 'attending' ? rawMealId : null,
+            dietaryNotes: memberStatus === 'attending' ? rawMemberDietary : null,
+          });
+        }
+
+        const attendingMemberWrites = resolvedMemberWrites.filter(
+          (mr) => mr.status === 'attending'
+        );
+        const derivedStatus: 'attending' | 'declined' =
+          attendingMemberWrites.length > 0 ? 'attending' : 'declined';
+        const derivedPlusOneCount =
+          attendingMemberWrites.length > 0 ? Math.max(0, attendingMemberWrites.length - 1) : 0;
+        const derivedMeals =
+          activeMeals.length > 0
+            ? attendingMemberWrites.map((mr) => mr.mealOptionId || '').filter(Boolean)
+            : [];
+        const derivedPlusOneNames = attendingMemberWrites
+          .map((mr) => memberById.get(mr.householdMemberId))
+          .filter((m): m is HouseholdMemberDTO => Boolean(m && m.role !== 'PRIMARY'))
+          .map((m) => m.fullName);
+
+        const rawAnswers =
+          sub.customAnswers && typeof sub.customAnswers === 'object' ? sub.customAnswers : {};
+        const questionMap = new Map(activeQuestions.map((q) => [q.id, q]));
+        const cleanedAnswers: Record<string, string> = {};
+
+        if (derivedStatus === 'attending') {
+          for (const [qId, rawVal] of Object.entries(rawAnswers)) {
+            const question = questionMap.get(qId);
+            if (!question) {
+              throw new ApiError(
+                400,
+                `Invalid custom question "${qId}" for event "${subEvent.title}".`
+              );
+            }
+            const trimmedVal = typeof rawVal === 'string' ? rawVal.trim() : '';
+            if (trimmedVal) {
+              if (question.type === 'choice' && !question.options.includes(trimmedVal)) {
+                throw new ApiError(
+                  400,
+                  `Invalid choice "${trimmedVal}" for question "${question.prompt}" in "${subEvent.title}".`
+                );
+              }
+              cleanedAnswers[qId] = trimmedVal;
+            }
+          }
+
+          for (const question of activeQuestions) {
+            if (question.required && !cleanedAnswers[question.id]) {
+              throw new ApiError(
+                400,
+                `Please answer required question "${question.prompt}" for "${subEvent.title}".`
+              );
+            }
+          }
+        }
+
+        normalizedSubmissions.push({
+          subEventId: sub.subEventId,
+          status: derivedStatus,
+          plusOneCount: derivedPlusOneCount,
+          dietaryNotes: sub.dietaryNotes || '',
+          clearDietaryNotes: Boolean(sub.clearDietaryNotes),
+          mealSelections: derivedMeals,
+          customAnswers: derivedStatus === 'attending' ? cleanedAnswers : {},
+          plusOneNames: derivedPlusOneNames,
+          hadExplicitPlusOneNames: false,
+          memberRsvps: resolvedMemberWrites,
+        });
+        continue;
+      }
+
+      const effectiveStatus = sub.status as 'attending' | 'declined';
+      const requestedPlusOnes = effectiveStatus === 'declined' ? 0 : (sub.plusOneCount ?? 0);
       if (requestedPlusOnes > maxPlusOnes) {
         if (maxPlusOnes === 0) {
           throw new ApiError(400, 'Plus-one guests are not allocated for your invitation.');
@@ -916,10 +1263,7 @@ export class SubEventService {
         );
       }
 
-      const activeMeals = normalizeMealOptions(subEvent.mealOptions);
-      const activeQuestions = normalizeCustomQuestions(subEvent.customQuestions);
-
-      if (sub.status === 'declined') {
+      if (effectiveStatus === 'declined') {
         normalizedSubmissions.push({
           subEventId: sub.subEventId,
           status: 'declined',
@@ -961,7 +1305,7 @@ export class SubEventService {
         }
 
         const expectedPartySize = 1 + requestedPlusOnes;
-        if (sub.status === 'attending') {
+        if (effectiveStatus === 'attending') {
           const partyMeals = rawMeals.slice(0, expectedPartySize);
           if (partyMeals.length < expectedPartySize || partyMeals.some((id) => !id)) {
             throw new ApiError(
@@ -1010,7 +1354,7 @@ export class SubEventService {
         }
       }
 
-      if (sub.status === 'attending') {
+      if (effectiveStatus === 'attending') {
         for (const question of activeQuestions) {
           if (question.required && !cleanedAnswers[question.id]) {
             throw new ApiError(
@@ -1023,7 +1367,7 @@ export class SubEventService {
 
       normalizedSubmissions.push({
         subEventId: sub.subEventId,
-        status: sub.status,
+        status: effectiveStatus,
         plusOneCount: requestedPlusOnes,
         dietaryNotes: sub.dietaryNotes || '',
         clearDietaryNotes: Boolean(sub.clearDietaryNotes),
@@ -1037,12 +1381,18 @@ export class SubEventService {
     let syncedHydrationPatch: Partial<HydratedGuestInvitation> | null = null;
 
     // Execute all upsert operations and InvitationCode sync within a single Prisma transaction
+    const hasRelationalSubmission = normalizedSubmissions.some((s) => Array.isArray(s.memberRsvps));
     const results = await this.client.$transaction(async (tx: any) => {
       const priorRsvpRows =
         typeof tx.subEventRsvp?.findMany === 'function'
           ? await tx.subEventRsvp.findMany({
             where: { invitationCodeId: invite.id },
-            include: { subEvent: true },
+            include: {
+              subEvent: true,
+              ...(typeof tx.subEventMemberRsvp?.findMany === 'function'
+                ? { memberRsvps: true }
+                : {}),
+            },
             orderBy: { createdAt: 'asc' },
           })
           : [];
@@ -1056,8 +1406,8 @@ export class SubEventService {
       }
 
       const upserted = await Promise.all(
-        normalizedSubmissions.map((item) =>
-          tx.subEventRsvp.upsert({
+        normalizedSubmissions.map(async (item) => {
+          const rsvpRecord = await tx.subEventRsvp.upsert({
             where: {
               subEventId_invitationCodeId: {
                 subEventId: item.subEventId,
@@ -1082,8 +1432,46 @@ export class SubEventService {
               customAnswers: item.customAnswers,
               plusOneNames: item.plusOneNames,
             },
-          })
-        )
+          });
+
+          if (
+            rsvpRecord?.id &&
+            typeof tx.subEventMemberRsvp?.deleteMany === 'function' &&
+            typeof tx.subEventMemberRsvp?.createMany === 'function'
+          ) {
+            let memberWrites = item.memberRsvps;
+            if (!memberWrites && householdMembers.length > 0) {
+              memberWrites = householdMembers.map((m, idx) => {
+                const isAttending =
+                  item.status === 'attending' && idx <= item.plusOneCount;
+                return {
+                  householdMemberId: m.id,
+                  status: isAttending ? 'attending' : 'declined',
+                  mealOptionId:
+                    isAttending && item.mealSelections[idx] ? item.mealSelections[idx] : null,
+                  dietaryNotes: null,
+                };
+              });
+            }
+            if (memberWrites && memberWrites.length > 0) {
+              await tx.subEventMemberRsvp.deleteMany({
+                where: { subEventRsvpId: rsvpRecord.id },
+              });
+              await tx.subEventMemberRsvp.createMany({
+                data: memberWrites.map((mw) => ({
+                  subEventRsvpId: rsvpRecord.id,
+                  householdMemberId: mw.householdMemberId,
+                  status: mw.status,
+                  mealOptionId: mw.mealOptionId,
+                  dietaryNotes: mw.dietaryNotes,
+                })),
+              });
+              rsvpRecord.memberRsvps = memberWrites;
+            }
+          }
+
+          return rsvpRecord;
+        })
       );
 
       if (typeof tx.invitationCode?.update === 'function') {
@@ -1123,6 +1511,7 @@ export class SubEventService {
             mealSelections: item.mealSelections,
             customAnswers: item.customAnswers,
             plusOneNames: item.plusOneNames,
+            ...(item.memberRsvps ? { memberRsvps: item.memberRsvps } : {}),
             subEvent: prevRow?.subEvent ?? subEventMap.get(item.subEventId),
           });
         }
@@ -1162,10 +1551,18 @@ export class SubEventService {
         let nextLastName: string | null = existingInvite?.plusOneLastName ?? null;
         let syncedPlusOneNames: string[] = collectedPlusOneNames;
 
+        const rosterCompanions = householdMembers.filter((m) => m.role !== 'PRIMARY');
+
         if (maxAttendingPlusOnes === 0) {
-          nextFirstName = null;
-          nextLastName = null;
-          syncedPlusOneNames = [];
+          if (hasRelationalSubmission && rosterCompanions.length > 0) {
+            nextFirstName = rosterCompanions[0].firstName ?? existingInvite?.plusOneFirstName ?? null;
+            nextLastName = rosterCompanions[0].lastName ?? existingInvite?.plusOneLastName ?? null;
+            syncedPlusOneNames = rosterCompanions.map((c) => c.fullName);
+          } else {
+            nextFirstName = null;
+            nextLastName = null;
+            syncedPlusOneNames = [];
+          }
         } else if (collectedPlusOneNames.length > 0) {
           const split = splitFullName(collectedPlusOneNames[0]);
           nextFirstName = split.firstName;
@@ -1258,7 +1655,41 @@ export class SubEventService {
           const rNames = normalizePlusOneNames(r.plusOneNames);
           const rAnswers = normalizeCustomAnswers(r.customAnswers);
 
-          if (evtMealOpts.length > 0 && rMeals.some(Boolean)) {
+          const rMemberRsvps = Array.isArray(r.memberRsvps) ? r.memberRsvps : null;
+
+          if (evtMealOpts.length > 0 && rMemberRsvps && rMemberRsvps.length > 0) {
+            const optMap = new Map(evtMealOpts.map((o) => [o.id, o]));
+            const resolvedSelections: Array<{
+              attendee: string;
+              optionId: string;
+              label: string;
+              dietaryTags: string[];
+            }> = [];
+
+            for (const mr of rMemberRsvps) {
+              if (mr.status !== 'attending' || !mr.mealOptionId) continue;
+              const opt = optMap.get(mr.mealOptionId);
+              const label = opt?.label || mr.mealOptionId;
+              const tags = opt?.dietaryTags ?? [];
+              tags.forEach((tag) => dietaryTagSet.add(tag));
+              const attendee =
+                memberById.get(mr.householdMemberId)?.fullName || invite.guestName || 'Guest';
+              resolvedSelections.push({
+                attendee,
+                optionId: mr.mealOptionId,
+                label,
+                dietaryTags: tags,
+              });
+            }
+
+            if (resolvedSelections.length > 0) {
+              structuredMeals.push({
+                subEventId: r.subEventId,
+                subEventTitle: evtTitle,
+                selections: resolvedSelections,
+              });
+            }
+          } else if (evtMealOpts.length > 0 && rMeals.some(Boolean)) {
             const optMap = new Map(evtMealOpts.map((o) => [o.id, o]));
             const resolvedSelections: Array<{
               attendee: string;
@@ -2186,6 +2617,7 @@ export class SubEventService {
    */
   async getRsvpSummary(): Promise<RsvpSummaryResponse> {
     const isStatic = isStaticExportBuild();
+    const hasRelationalDelegate = typeof this.client?.householdMember?.findMany === 'function';
     const [invitations, subEvents] = isStatic
       ? (() => {
         const seed = buildArchetypeSeedData('classic');
@@ -2205,6 +2637,9 @@ export class SubEventService {
             dietaryNotes: true,
             partyTags: true,
             extraFields: true,
+            ...(hasRelationalDelegate
+              ? { members: { orderBy: { displayOrder: 'asc' } } }
+              : {}),
           },
         }),
         this.client.subEvent.findMany({
@@ -2223,6 +2658,19 @@ export class SubEventService {
                 mealSelections: true,
                 dietaryNotes: true,
                 customAnswers: true,
+                ...(hasRelationalDelegate
+                  ? {
+                    memberRsvps: {
+                      select: {
+                        id: true,
+                        householdMemberId: true,
+                        status: true,
+                        mealOptionId: true,
+                        dietaryNotes: true,
+                      },
+                    },
+                  }
+                  : {}),
               },
             },
           },
@@ -2274,17 +2722,32 @@ export class SubEventService {
       }
 
       const extra = parseExtraFieldsObject(inv.extraFields);
-      const allocatedPlusOnes = Math.max(0, Number(inv.plusOneAllocations ?? 0) || 0);
+      const invMembers: HouseholdMemberDTO[] = Array.isArray(inv.members) ? inv.members : [];
+      const invMemberById = new Map<string, HouseholdMemberDTO>(invMembers.map((m) => [m.id, m]));
+      const allocatedPlusOnes =
+        invMembers.length > 0
+          ? Math.max(0, invMembers.length - 1, Number(inv.plusOneAllocations ?? 0) || 0)
+          : Math.max(0, Number(inv.plusOneAllocations ?? 0) || 0);
 
       if (status === 'attending') {
         attendingHouseholds += 1;
         let guestAttendingPlusOnes = 0;
-        const attendingEventRsvps = guestRsvps.filter((r) => r.status === 'attending');
+        const attendingEventRsvps = guestRsvps.filter((r) => {
+          if (Array.isArray(r.memberRsvps) && r.memberRsvps.length > 0) {
+            return r.memberRsvps.some((mr: any) => mr.status === 'attending');
+          }
+          return r.status === 'attending';
+        });
         if (attendingEventRsvps.length > 0) {
-          guestAttendingPlusOnes = attendingEventRsvps.reduce(
-            (max, r) => Math.max(max, Math.max(0, Number(r.plusOneCount ?? 0) || 0)),
-            0
-          );
+          guestAttendingPlusOnes = attendingEventRsvps.reduce((max, r) => {
+            if (Array.isArray(r.memberRsvps) && r.memberRsvps.length > 0) {
+              const attendingMembersCount = r.memberRsvps.filter(
+                (mr: any) => mr.status === 'attending'
+              ).length;
+              return Math.max(max, Math.max(0, attendingMembersCount - 1));
+            }
+            return Math.max(max, Math.max(0, Number(r.plusOneCount ?? 0) || 0));
+          }, 0);
         } else if (typeof extra.plusOneCount === 'number' && extra.plusOneCount >= 0) {
           guestAttendingPlusOnes = Math.floor(extra.plusOneCount);
         } else if (
@@ -2317,6 +2780,89 @@ export class SubEventService {
 
       // Skip declined invitations in global catering & dietary summary
       if (status === 'declined') {
+        continue;
+      }
+
+      const hasRelationalGuestRsvps = guestRsvps.some(
+        (r) => Array.isArray(r.memberRsvps) && r.memberRsvps.length > 0
+      );
+
+      if (hasRelationalGuestRsvps && invMembers.length > 0) {
+        const attendingMemberIdsAcrossEvents = new Set<string>();
+        const memberExtraTags = new Map<string, Set<string>>();
+        const memberExtraNotes = new Map<string, string[]>();
+        let maxKidsForGuest = 0;
+
+        for (const rsvp of guestRsvps) {
+          const mrs: any[] = Array.isArray(rsvp.memberRsvps) ? rsvp.memberRsvps : [];
+          const opts = normalizeMealOptions(rsvp.subEvent?.mealOptions);
+          const optMap = new Map(opts.map((o) => [o.id, o]));
+          let eventKids = 0;
+
+          for (const mr of mrs) {
+            if (mr.status !== 'attending') continue;
+            attendingMemberIdsAcrossEvents.add(mr.householdMemberId);
+            const member = invMemberById.get(mr.householdMemberId);
+            const opt = mr.mealOptionId ? optMap.get(mr.mealOptionId) : undefined;
+            const isKid =
+              member?.role === 'CHILD' ||
+              (Array.isArray(member?.tags) &&
+                member!.tags.some((t) => t.trim().toLowerCase() === 'kids')) ||
+              Boolean(opt && opt.dietaryTags.some((t) => t.trim().toLowerCase() === 'kids'));
+            if (isKid) {
+              eventKids += 1;
+            }
+            if (opt) {
+              const set = memberExtraTags.get(mr.householdMemberId) ?? new Set<string>();
+              opt.dietaryTags.forEach((t) => set.add(t));
+              memberExtraTags.set(mr.householdMemberId, set);
+            }
+            if (typeof mr.dietaryNotes === 'string' && mr.dietaryNotes.trim()) {
+              const list = memberExtraNotes.get(mr.householdMemberId) ?? [];
+              list.push(mr.dietaryNotes.trim());
+              memberExtraNotes.set(mr.householdMemberId, list);
+            }
+          }
+          maxKidsForGuest = Math.max(maxKidsForGuest, eventKids);
+        }
+
+        const householdCollectedTags = new Set<string>();
+        const householdNotesParts: string[] = [];
+        for (const memberId of attendingMemberIdsAcrossEvents) {
+          const member = invMemberById.get(memberId);
+          if (member?.dietaryNotes && member.dietaryNotes.trim()) {
+            householdNotesParts.push(member.dietaryNotes.trim());
+          }
+          for (const note of memberExtraNotes.get(memberId) ?? []) {
+            householdNotesParts.push(note);
+          }
+          for (const tag of memberExtraTags.get(memberId) ?? []) {
+            householdCollectedTags.add(tag.trim().toLowerCase());
+          }
+        }
+        for (const rsvp of guestRsvps) {
+          if (rsvp.status === 'declined') continue;
+          if (typeof rsvp.dietaryNotes === 'string' && rsvp.dietaryNotes.trim()) {
+            householdNotesParts.push(rsvp.dietaryNotes.trim());
+          }
+        }
+
+        const evalResult = evaluateDietaryEntry(
+          householdNotesParts.join('; '),
+          Array.from(householdCollectedTags),
+          Array.isArray(inv.partyTags) ? inv.partyTags : []
+        );
+
+        if (evalResult.hasRestriction) globalDietary.totalWithRestrictions += 1;
+        if (evalResult.glutenFree) globalDietary.glutenFree += 1;
+        if (evalResult.vegetarian) globalDietary.vegetarian += 1;
+        if (evalResult.vegan) globalDietary.vegan += 1;
+        if (evalResult.dairyFree) globalDietary.dairyFree += 1;
+        if (evalResult.nutFree) globalDietary.nutFree += 1;
+        if (evalResult.halal) globalDietary.halal += 1;
+        if (evalResult.kosher) globalDietary.kosher += 1;
+        if (evalResult.other) globalDietary.other += 1;
+        globalDietary.kids += maxKidsForGuest;
         continue;
       }
 
@@ -2451,7 +2997,89 @@ export class SubEventService {
 
       for (const rsvp of rsvps) {
         const guest = inviteById.get(rsvp.invitationCodeId);
-        if (rsvp.status === 'attending') {
+        const guestMembers: HouseholdMemberDTO[] = Array.isArray(guest?.members)
+          ? guest.members
+          : [];
+        const guestMemberById = new Map<string, HouseholdMemberDTO>(
+          guestMembers.map((m) => [m.id, m])
+        );
+        const memberRsvpsList: any[] = Array.isArray(rsvp.memberRsvps) ? rsvp.memberRsvps : [];
+
+        if (memberRsvpsList.length > 0) {
+          const attendingMembers = memberRsvpsList.filter((mr) => mr.status === 'attending');
+          const allMembersDeclined =
+            memberRsvpsList.length > 0 && memberRsvpsList.every((mr) => mr.status === 'declined');
+
+          if (attendingMembers.length > 0) {
+            seAttendingCount += 1;
+            seAttendingPlusOnes += Math.max(0, attendingMembers.length - 1);
+
+            const rsvpTags: string[] = [];
+            const notesParts: string[] = [];
+            let rsvpKidsCount = 0;
+
+            for (const mr of attendingMembers) {
+              const member = guestMemberById.get(mr.householdMemberId);
+              if (member?.dietaryNotes && member.dietaryNotes.trim()) {
+                notesParts.push(member.dietaryNotes.trim());
+              }
+              if (typeof mr.dietaryNotes === 'string' && mr.dietaryNotes.trim()) {
+                notesParts.push(mr.dietaryNotes.trim());
+              }
+              let mealIsKid = false;
+              if (mr.mealOptionId) {
+                let entry = mealCountMap.get(mr.mealOptionId);
+                if (!entry) {
+                  entry = {
+                    optionId: mr.mealOptionId,
+                    label: mr.mealOptionId,
+                    dietaryTags: [],
+                    count: 0,
+                  };
+                  mealCountMap.set(mr.mealOptionId, entry);
+                }
+                entry.count += 1;
+                for (const tag of entry.dietaryTags) {
+                  rsvpTags.push(tag);
+                }
+                mealIsKid = entry.dietaryTags.some((t) => t.trim().toLowerCase() === 'kids');
+              }
+              const memberIsKid =
+                member?.role === 'CHILD' ||
+                Boolean(
+                  Array.isArray(member?.tags) &&
+                  member!.tags.some((t) => t.trim().toLowerCase() === 'kids')
+                );
+              if (mealIsKid || memberIsKid) {
+                rsvpKidsCount += 1;
+              }
+            }
+
+            if (typeof rsvp.dietaryNotes === 'string' && rsvp.dietaryNotes.trim()) {
+              notesParts.push(rsvp.dietaryNotes.trim());
+            }
+
+            const evalDietary = evaluateDietaryEntry(
+              notesParts.join('; '),
+              rsvpTags,
+              Array.isArray(guest?.partyTags) ? guest.partyTags : []
+            );
+
+            if (evalDietary.hasRestriction) seDietary.totalWithRestrictions += 1;
+            if (evalDietary.glutenFree) seDietary.glutenFree += 1;
+            if (evalDietary.vegetarian) seDietary.vegetarian += 1;
+            if (evalDietary.vegan) seDietary.vegan += 1;
+            if (evalDietary.dairyFree) seDietary.dairyFree += 1;
+            if (evalDietary.nutFree) seDietary.nutFree += 1;
+            if (evalDietary.halal) seDietary.halal += 1;
+            if (evalDietary.kosher) seDietary.kosher += 1;
+            if (evalDietary.other) seDietary.other += 1;
+            seDietary.kids += rsvpKidsCount;
+            seKidsCount += rsvpKidsCount;
+          } else if (allMembersDeclined || rsvp.status === 'declined') {
+            seDeclinedCount += 1;
+          }
+        } else if (rsvp.status === 'attending') {
           seAttendingCount += 1;
           const plusOnes = Math.max(0, Number(rsvp.plusOneCount ?? 0) || 0);
           seAttendingPlusOnes += plusOnes;
@@ -2706,7 +3334,7 @@ export class SubEventService {
       throw new ApiError(404, 'Invitation code not found.');
     }
 
-    const [subEvents, rsvps] = await Promise.all([
+    const [subEvents, rsvps, dbMembers] = await Promise.all([
       this.client.subEvent.findMany({
         orderBy: [{ startTime: 'asc' }, { createdAt: 'asc' }],
         include: {
@@ -2718,8 +3346,17 @@ export class SubEventService {
       }),
       this.client.subEventRsvp.findMany({
         where: { invitationCodeId },
+        ...(typeof this.client?.subEventMemberRsvp?.findMany === 'function'
+          ? { include: { memberRsvps: true } }
+          : {}),
         orderBy: { createdAt: 'asc' },
       }),
+      typeof this.client?.householdMember?.findMany === 'function'
+        ? this.client.householdMember.findMany({
+          where: { invitationCodeId },
+          orderBy: { displayOrder: 'asc' },
+        })
+        : Promise.resolve(undefined),
     ]);
 
     return {
@@ -2734,6 +3371,10 @@ export class SubEventService {
         dietaryNotes: invite.dietaryNotes ?? null,
         extraFields: parseExtraFieldsObject(invite.extraFields),
       },
+      members: deriveHouseholdMembersFromInvitation({
+        ...invite,
+        members: Array.isArray(dbMembers) && dbMembers.length > 0 ? dbMembers : undefined,
+      }),
       subEvents: (subEvents || []).map((se: any) => ({
         id: se.id,
         title: se.title,
@@ -2751,6 +3392,9 @@ export class SubEventService {
         mealSelections: normalizeMealSelections(r.mealSelections),
         dietaryNotes: r.dietaryNotes ?? null,
         customAnswers: normalizeCustomAnswers(r.customAnswers),
+        ...(Array.isArray(r.memberRsvps)
+          ? { memberRsvps: mapDbMemberRsvps(r.memberRsvps) }
+          : {}),
       })),
     };
   }
@@ -3376,6 +4020,21 @@ export class SubEventService {
     });
     const subEventMap = new Map<string, any>((subEvents || []).map((se: any) => [se.id, se]));
 
+    const dbMembers =
+      typeof this.client?.householdMember?.findMany === 'function'
+        ? await this.client.householdMember.findMany({
+          where: { invitationCodeId: invite.id },
+          orderBy: { displayOrder: 'asc' },
+        })
+        : undefined;
+    const householdMembers = deriveHouseholdMembersFromInvitation({
+      ...invite,
+      members: Array.isArray(dbMembers) && dbMembers.length > 0 ? dbMembers : undefined,
+    });
+    const memberById = new Map<string, HouseholdMemberDTO>(
+      householdMembers.map((m) => [m.id, m])
+    );
+
     const items = input.rsvps ?? [];
     for (const item of items) {
       const se = subEventMap.get(item.subEventId);
@@ -3392,6 +4051,22 @@ export class SubEventService {
               400,
               `Invalid meal option "${selectedId}" for event "${se.title}".`
             );
+          }
+        }
+        if (Array.isArray(item.memberRsvps)) {
+          for (const mr of item.memberRsvps) {
+            if (!memberById.has(mr.householdMemberId)) {
+              throw new ApiError(
+                400,
+                `Household member "${mr.householdMemberId}" does not belong to invitation.`
+              );
+            }
+            if (mr.mealOptionId && mr.mealOptionId.trim() && !validMealIds.has(mr.mealOptionId.trim())) {
+              throw new ApiError(
+                400,
+                `Invalid meal option "${mr.mealOptionId.trim()}" for event "${se.title}".`
+              );
+            }
           }
         }
 
@@ -3452,24 +4127,46 @@ export class SubEventService {
             });
           }
 
-          const effectivePlusOnes =
-            item.status === 'attending' ? Math.max(0, item.plusOneCount ?? 0) : 0;
-          const plusOneNames =
+          let resolvedStatus = item.status as 'attending' | 'declined' | 'pending';
+          let effectivePlusOnes =
+            resolvedStatus === 'attending' ? Math.max(0, item.plusOneCount ?? 0) : 0;
+          let plusOneNames =
             effectivePlusOnes > 0
               ? normalizePlusOneNames(item.plusOneNames).slice(0, effectivePlusOnes)
               : [];
-          const mealSelections =
-            item.status === 'attending'
+          let mealSelections =
+            resolvedStatus === 'attending'
               ? normalizeMealSelections(item.mealSelections).slice(0, 1 + effectivePlusOnes)
               : [];
+
+          if (Array.isArray(item.memberRsvps) && item.memberRsvps.length > 0) {
+            const attendingMrs = item.memberRsvps.filter((mr) => mr.status === 'attending');
+            const anyPending = item.memberRsvps.some((mr) => mr.status === 'pending');
+            resolvedStatus =
+              attendingMrs.length > 0
+                ? 'attending'
+                : anyPending
+                  ? 'pending'
+                  : 'declined';
+            effectivePlusOnes =
+              attendingMrs.length > 0 ? Math.max(0, attendingMrs.length - 1) : 0;
+            mealSelections = attendingMrs
+              .map((mr) => (mr.mealOptionId ? mr.mealOptionId.trim() : ''))
+              .filter(Boolean);
+            plusOneNames = attendingMrs
+              .map((mr) => memberById.get(mr.householdMemberId))
+              .filter((m): m is HouseholdMemberDTO => Boolean(m && m.role !== 'PRIMARY'))
+              .map((m) => m.fullName);
+          }
+
           const customAnswers =
-            item.status !== 'declined' ? normalizeCustomAnswers(item.customAnswers) : {};
+            resolvedStatus !== 'declined' ? normalizeCustomAnswers(item.customAnswers) : {};
           const dietaryNotes =
             item.dietaryNotes !== undefined && item.dietaryNotes !== null
               ? item.dietaryNotes.trim()
               : '';
 
-          await tx.subEventRsvp.upsert({
+          const upsertedRsvp = await tx.subEventRsvp.upsert({
             where: {
               subEventId_invitationCodeId: {
                 subEventId: item.subEventId,
@@ -3479,7 +4176,7 @@ export class SubEventService {
             create: {
               subEventId: item.subEventId,
               invitationCodeId: invite.id,
-              status: item.status,
+              status: resolvedStatus,
               plusOneCount: effectivePlusOnes,
               plusOneNames,
               mealSelections,
@@ -3487,7 +4184,7 @@ export class SubEventService {
               dietaryNotes,
             },
             update: {
-              status: item.status,
+              status: resolvedStatus,
               plusOneCount: effectivePlusOnes,
               plusOneNames,
               mealSelections,
@@ -3495,6 +4192,31 @@ export class SubEventService {
               dietaryNotes,
             },
           });
+
+          if (
+            upsertedRsvp?.id &&
+            Array.isArray(item.memberRsvps) &&
+            item.memberRsvps.length > 0 &&
+            typeof tx.subEventMemberRsvp?.deleteMany === 'function' &&
+            typeof tx.subEventMemberRsvp?.createMany === 'function'
+          ) {
+            await tx.subEventMemberRsvp.deleteMany({
+              where: { subEventRsvpId: upsertedRsvp.id },
+            });
+            await tx.subEventMemberRsvp.createMany({
+              data: item.memberRsvps.map((mr) => ({
+                subEventRsvpId: upsertedRsvp.id,
+                householdMemberId: mr.householdMemberId,
+                status: mr.status,
+                mealOptionId:
+                  mr.status === 'attending' && mr.mealOptionId && mr.mealOptionId.trim()
+                    ? mr.mealOptionId.trim()
+                    : null,
+                dietaryNotes:
+                  mr.dietaryNotes && mr.dietaryNotes.trim() ? mr.dietaryNotes.trim() : null,
+              })),
+            });
+          }
         }
       } else if (input.overallAttendanceStatus && subEventMap.size > 0) {
         // Apply overall status across accessible sub-events when no per-event items were specified
@@ -3548,6 +4270,9 @@ export class SubEventService {
 
       const currentRsvps = await tx.subEventRsvp.findMany({
         where: { invitationCodeId: invite.id },
+        ...(typeof tx.subEventMemberRsvp?.findMany === 'function'
+          ? { include: { memberRsvps: true } }
+          : {}),
         orderBy: { createdAt: 'asc' },
       });
 

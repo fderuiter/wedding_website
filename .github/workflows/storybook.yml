@@ -13,7 +13,7 @@ on:
 
 concurrency:
   group: storybook-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
   queue: max
 
 jobs:
@@ -111,12 +111,13 @@ jobs:
         run: npm run test:e2e:storybook
 
       - name: Upload Storybook A11y Violations
-        if: always()
+        if: always() && !cancelled()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: storybook-a11y-violations
           path: test-results/storybook-a11y-violations.json
           if-no-files-found: warn
+          retention-days: 7
 
       - name: Upload Storybook Playwright Traces
         if: failure()

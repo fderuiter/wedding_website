@@ -13,6 +13,7 @@ import {
   getSafeHostEmailLink,
   getSafeHostPhoneLink,
 } from '@/components/guest/GuestHelpModal';
+import { HouseholdPartyRosterCard } from '@/components/guest/HouseholdPartyRosterCard';
 import { useTheme } from '@/components/ThemeProvider';
 import { useGuestAddressPortal } from '@/hooks/useGuestAddressPortal';
 import { formatFriendlyTimezone } from '@/utils/dateTime';
@@ -22,6 +23,7 @@ export default function GuestAddressPage() {
     state,
     handleValidateCode,
     handleSaveAddress,
+    handleSaveRoster,
     handleSwitchHousehold,
     handleRetry,
     setField,
@@ -50,7 +52,8 @@ export default function GuestAddressPage() {
     [theme.contactPhone]
   );
 
-  const { form, code, guestName, error, codeGuidance, status, sessionType } = state;
+  const { form, code, guestName, householdName, members, error, codeGuidance, status, sessionType } =
+    state;
   const hasActiveErrorToast = Boolean(
     error &&
       Array.isArray(toastContext?.toasts) &&
@@ -368,6 +371,16 @@ export default function GuestAddressPage() {
               />
             </div>
           </section>
+        )}
+
+        {/* Household Party Roster & Standing Allergies */}
+        {members.length > 0 && (
+          <HouseholdPartyRosterCard
+            members={members}
+            householdName={householdName || undefined}
+            isSaving={isSaving}
+            onSaveRoster={handleSaveRoster}
+          />
         )}
 
         {/* Primary Section: Personalized Event Schedule & RSVPs */}
