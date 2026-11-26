@@ -8,6 +8,7 @@ import {
   runBoundedPool,
   spawnBufferedCommand,
 } from './quality/parallel-pool.mjs';
+import { ensurePrismaClientReady } from './quality/worktree-cache.mjs';
 
 export interface Step {
   name: string;
@@ -137,7 +138,7 @@ export const staticSteps: Step[] = [
   {
     name: 'Validate Prisma Schema',
     script: 'check:prisma',
-    command: 'npx tsx scripts/check-prisma-schema.ts',
+    command: 'npx tsx scripts/check-prisma-schema.ts --skip-generate',
   },
   {
     name: 'Verify Migration Compatibility',
@@ -355,6 +356,7 @@ export async function runQualityChecks(options: QualityRunOptions = {}): Promise
   const total = activeSteps.length;
   let passed = 0;
 
+  const indexedPrerequisiteSteps: Array<{ step: Step; index: number }> = [];
   const indexedParallelSteps: Array<{ step: Step; index: number }> = [];
   const indexedSerialSteps: Array<{ step: Step; index: number }> = [];
 
@@ -362,8 +364,32 @@ export async function runQualityChecks(options: QualityRunOptions = {}): Promise
     const step = activeSteps[i];
     if (isSerialHeavyStep(step)) {
       indexedSerialSteps.push({ step, index: i });
+    } else if (
+      step.script === 'check:prisma' ||
+      step.command.includes('check-prisma-schema.ts')
+    ) {
+      indexedPrerequisiteSteps.push({ step, index: i });
     } else {
       indexedParallelSteps.push({ step, index: i });
+    }
+  }
+
+  const runStep = options.execAsyncCommand ?? runDefaultParallelStep;
+
+  for (const { step, index } of indexedPrerequisiteSteps) {
+    console.log(`[${index + 1}/${total}] ⏳ ${step.name}...`);
+    try {
+      const prereqAbort = new AbortController();
+      const result = await runStep(step.command, cwd, prereqAbort.signal);
+      flushBufferedOutput(result);
+      console.log(`[${index + 1}/${total}] ✅ ${step.name} passed!\n`);
+      passed++;
+    } catch (err: unknown) {
+      const errWithIo = err as { stdout?: string; stderr?: string } | undefined;
+      flushBufferedOutput({ stdout: errWithIo?.stdout, stderr: errWithIo?.stderr });
+      cleanupStepArtifactsOnFailure(step, cwd);
+      reportStepFailure(step, index, total);
+      process.exit(1);
     }
   }
 
@@ -373,7 +399,6 @@ export async function runQualityChecks(options: QualityRunOptions = {}): Promise
       'typecheck',
       'lint',
       'lint:unused',
-      'check:prisma',
     ]);
     indexedParallelSteps.sort((a, b) => {
       const aPriority = a.step.script && priorityScripts.has(a.step.script) ? 0 : 1;
@@ -383,13 +408,32 @@ export async function runQualityChecks(options: QualityRunOptions = {}): Promise
   }
 
   if (indexedParallelSteps.length > 0) {
+    const needsPrismaPrep =
+      !options.execAsyncCommand &&
+      !options.execCommand &&
+      activeSteps.some(
+        (step) =>
+          step.script === 'check:prisma' ||
+          step.script === 'typecheck' ||
+          step.script === 'lint' ||
+          step.script === 'lint:unused' ||
+          step.script === 'check:doc-sync'
+      );
+    if (needsPrismaPrep) {
+      const prismaPrep = await ensurePrismaClientReady(cwd, { env: process.env });
+      if (!prismaPrep.ok) {
+        flushBufferedOutput({ stdout: prismaPrep.stdout, stderr: prismaPrep.stderr });
+        console.error('\n❌ Prisma Client pre-generation failed before parallel quality checks.');
+        process.exit(prismaPrep.status || 1);
+      }
+    }
+
     const concurrency = resolvePoolConcurrency({
       explicitConcurrency: options.concurrency,
       envValue: process.env.QUALITY_CONCURRENCY,
       taskCount: indexedParallelSteps.length,
       defaultConcurrency: DEFAULT_QUALITY_CONCURRENCY,
     });
-    const runStep = options.execAsyncCommand ?? runDefaultParallelStep;
 
     const { failed } = await runBoundedPool({
       items: indexedParallelSteps,

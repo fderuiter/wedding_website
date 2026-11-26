@@ -152,7 +152,6 @@ jest.mock('node:tls', () => {
     }),
   };
 });
-
 jest.mock('@/utils/ssrf', () => {
   const actual = jest.requireActual('@/utils/ssrf');
   return {
@@ -516,36 +515,45 @@ describe('Broadcast API Routes', () => {
     expect(res.status).toBe(500);
   });
 
-  it('POST /api/admin/broadcast/test-connection verifies live SMTP greeting/EHLO/QUIT and fails when unreachable', async () => {
+  it('POST /api/admin/broadcast/test-connection verifies live SMTP greeting/EHLO/STARTTLS/QUIT and fails when unreachable', async () => {
     const net = await import('node:net');
+    const attachSmtpProtocol = (sock: import('node:net').Socket | tls.TLSSocket, isTls: boolean) => {
+      let buf = '';
+      sock.on('data', (chunk) => {
+        buf += chunk.toString('utf8');
+        let idx = buf.indexOf('\r\n');
+        while (idx !== -1) {
+          const line = buf.slice(0, idx).trim();
+          buf = buf.slice(idx + 2);
+          const upper = line.toUpperCase();
+          if (upper.startsWith('EHLO ')) {
+            if (!isTls) {
+              sock.write('250-127.0.0.1\r\n250-STARTTLS\r\n250 OK\r\n');
+            } else {
+              sock.write('250-127.0.0.1\r\n250 OK\r\n');
+            }
+          } else if (upper === 'STARTTLS' && !isTls) {
+            sock.removeAllListeners('data');
+            sock.write('220 2.0.0 Ready to start TLS\r\n', () => {
+              const tlsSock = new tls.TLSSocket(sock, {
+                isServer: true,
+                key: TEST_SMTP_PKI.serverKey,
+                cert: TEST_SMTP_PKI.serverCert,
+              });
+              attachSmtpProtocol(tlsSock, true);
+            });
+            return;
+          } else if (upper.startsWith('QUIT')) {
+            sock.write('221 Bye\r\n', () => sock.end());
+          }
+          idx = buf.indexOf('\r\n');
+        }
+      });
+    };
+
     const smtpServer = net.createServer((sock) => {
       sock.write('220 127.0.0.1 ESMTP Ready\r\n');
-      const onPlainData = (chunk: Buffer) => {
-        const text = chunk.toString('utf8').toUpperCase();
-        if (text.startsWith('EHLO ')) {
-          sock.write('250-127.0.0.1\r\n250-STARTTLS\r\n250 OK\r\n');
-        } else if (text.startsWith('STARTTLS')) {
-          sock.off('data', onPlainData);
-          sock.write('220 2.0.0 Ready to start TLS\r\n', () => {
-            const tlsSock = new tls.TLSSocket(sock, {
-              isServer: true,
-              key: TEST_SMTP_PKI.serverKey,
-              cert: TEST_SMTP_PKI.serverCert,
-            });
-            tlsSock.on('data', (tlsChunk: Buffer) => {
-              const tlsText = tlsChunk.toString('utf8').toUpperCase();
-              if (tlsText.startsWith('EHLO ')) {
-                tlsSock.write('250-127.0.0.1\r\n250 OK\r\n');
-              } else if (tlsText.startsWith('QUIT')) {
-                tlsSock.write('221 Bye\r\n', () => tlsSock.end());
-              }
-            });
-          });
-        } else if (text.startsWith('QUIT')) {
-          sock.write('221 Bye\r\n', () => sock.end());
-        }
-      };
-      sock.on('data', onPlainData);
+      attachSmtpProtocol(sock, false);
     });
     await new Promise<void>((resolve) => smtpServer.listen(0, '127.0.0.1', () => resolve()));
     const port = (smtpServer.address() as import('node:net').AddressInfo).port;

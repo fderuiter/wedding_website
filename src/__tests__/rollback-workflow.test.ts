@@ -209,12 +209,16 @@ describe('Rollback & Provider Deployment Workflows', () => {
       const deployProviderDoc = parseDocument(deployProviderYml, { version: '1.2', strict: true });
       const parsed = deployProviderDoc.toJS() as {
         jobs?: {
+          preflight?: {
+            steps?: Array<{ id?: string; if?: string }>;
+          };
           deploy?: {
             steps?: Array<{ id?: string; if?: string }>;
           };
         };
       };
-      const provenanceStep = parsed.jobs?.deploy?.steps?.find((step) => step.id === 'provenance');
+      const provenanceStep = parsed.jobs?.preflight?.steps?.find((step) => step.id === 'provenance');
+      expect(parsed.jobs?.deploy?.steps?.find((step) => step.id === 'provenance')).toBeUndefined();
       expect(provenanceStep?.if).toContain('always()');
       expect(provenanceStep?.if).toContain("steps.validate-sha.outputs.is_rollback_call == 'true'");
       expect(provenanceStep?.if).toContain("steps.resolve.outcome == 'success'");
@@ -274,7 +278,7 @@ describe('Rollback & Provider Deployment Workflows', () => {
       }
       expect(rollbackYml).toContain('uses: ./.github/workflows/deploy-provider.yml');
       expect(rollbackYml).toMatch(
-        /Checkout Repository[\s\S]*?ref:\s*\$\{\{\s*inputs\.commit_sha\s*\}\}[\s\S]*?npm run lint:migrations/
+        /Checkout Repository[\s\S]*?fetch-depth:\s*0[\s\S]*?INPUT_COMMIT_SHA:\s*\$\{\{\s*inputs\.commit_sha\s*\}\}[\s\S]*?git checkout "\$INPUT_COMMIT_SHA" -- prisma\/migrations[\s\S]*?npm run lint:migrations/
       );
       expect(rollbackYml).not.toContain('npm ci');
       expect(rollbackYml).not.toContain("cache: 'npm'");
@@ -320,7 +324,7 @@ describe('Rollback & Provider Deployment Workflows', () => {
       expect(deployProviderYml).toContain('--resolve "$WEBHOOK_RESOLVE_ENTRY"');
       expect(deployProviderYml).not.toContain('--location');
       expect(deployProviderYml).toContain(
-        '  deploy:\n    name: Deploy Release Artifact to Provider\n    runs-on: ubuntu-latest\n    permissions:\n      actions: read\n      contents: read\n      packages: read\n      attestations: read\n      deployments: write\n      id-token: write'
+        '  deploy:\n    name: Deploy Release Artifact to Provider\n    needs: [preflight]\n    runs-on: ubuntu-latest\n    permissions:\n      actions: read\n      contents: read\n      packages: read\n      attestations: read\n      deployments: write\n      id-token: write'
       );
       expect(rollbackYml).toContain(
         '  redeploy:\n    name: Redeploy Previous Validated Container Image\n    permissions:\n      actions: read\n      contents: read\n      packages: read\n      attestations: read\n      deployments: write\n      id-token: write'
@@ -3118,7 +3122,12 @@ exit 1
       expect(byId('checkout')?.if).toContain(
         "(steps.verify_deployment.outcome == 'success' || steps.verify_deployment.outcome == 'skipped')"
       );
-      expect(byId('setup_node')?.if).toBe("always() && steps.checkout.outcome == 'success'");
+      expect(byId('align_migrations')?.if).toBe(
+        "always() && steps.checkout.outcome == 'success' && inputs.commit_sha != ''"
+      );
+      expect(byId('setup_node')?.if).toBe(
+        "always() && steps.checkout.outcome == 'success' && (steps.align_migrations.outcome == 'success' || steps.align_migrations.outcome == 'skipped')"
+      );
       expect(byId('db_safety_check')?.if).toBe("always() && steps.setup_node.outcome == 'success'");
       expect(byId('record_failure')?.if).toContain('always()');
       expect(byId('record_failure')?.if).toContain("steps.db_safety_check.outcome != 'success'");
