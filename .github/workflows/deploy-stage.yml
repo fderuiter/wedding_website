@@ -102,7 +102,9 @@ jobs:
       commit_sha: ${{ inputs.commit_sha }}
       confirm: true
       caller_holds_lock: true
-    secrets: inherit
+    secrets:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      POSTGRES_URL_NON_POOLING: ${{ secrets.POSTGRES_URL_NON_POOLING }}
 
   deploy-provider:
     name: Provider Deployment (${{ inputs.environment }})
@@ -128,7 +130,12 @@ jobs:
       caller_holds_lock: true
       auto_rollback_on_failure: ${{ inputs.rollback_environment == '' }}
       previous_tag: ${{ inputs.previous_tag || '' }}
-    secrets: inherit
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+      DEPLOY_WEBHOOK_SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
+      SERVICE_URL: ${{ secrets.SERVICE_URL }}
 
   verify-deployment:
     name: Post-Deployment Health Verification (${{ inputs.environment }})
@@ -382,4 +389,9 @@ jobs:
       reason: ${{ format('Automated {0} post-deployment verification failure on /api/health or /api/ready', inputs.environment) }}
       dry_run: ${{ inputs.dry_run || false }}
       caller_holds_lock: true
-    secrets: inherit
+    secrets:
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+      DEPLOY_WEBHOOK_SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
+      SERVICE_URL: ${{ secrets.SERVICE_URL }}

@@ -119,9 +119,9 @@ jobs:
     name: Execute Database Migrations
     needs: [preflight]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     permissions:
       contents: read
+    timeout-minutes: 10
     environment: ${{ inputs.environment || 'production' }}
     outputs:
       schema_compatibility_status: ${{ steps.lint_migrations.outputs.schema_compatibility_status }}

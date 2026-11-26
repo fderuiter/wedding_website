@@ -5,6 +5,7 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
   test.setTimeout(90000);
 
   const { adminCookieValue } = await seedAdminAndGuestAuthCookies(context);
+  const createdIds: string[] = [];
   let createdTemporaryCodes = false;
 
   try {
@@ -19,21 +20,26 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
     const countText = await countBtn.innerText();
     if (countText.includes('All (0)')) {
       createdTemporaryCodes = true;
-      // Generate code 1
-      await generateBtn.click();
-      await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeVisible({ timeout: 30000 });
-      await page.getByPlaceholder('e.g. John Doe').fill('Alex Johnson');
-      await page.getByRole('button', { name: 'Generate', exact: true }).click();
-      await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeHidden({ timeout: 30000 });
-      await expect(page.getByText('Alex Johnson')).toBeVisible({ timeout: 30000 });
-
-      // Generate code 2
-      await generateBtn.click();
-      await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeVisible({ timeout: 30000 });
-      await page.getByPlaceholder('e.g. John Doe').fill('Sam Taylor');
-      await page.getByRole('button', { name: 'Generate', exact: true }).click();
-      await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeHidden({ timeout: 30000 });
-      await expect(page.getByText('Sam Taylor')).toBeVisible({ timeout: 30000 });
+      for (const guestName of ['Alex Johnson', 'Sam Taylor']) {
+        await generateBtn.click();
+        await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeVisible({ timeout: 30000 });
+        await page.getByPlaceholder('e.g. John Doe').fill(guestName);
+        const [createRes] = await Promise.all([
+          page.waitForResponse(
+            (res) =>
+              res.url().includes('/api/admin/invitation-codes') &&
+              res.request().method() === 'POST'
+          ),
+          page.getByRole('button', { name: 'Generate', exact: true }).click(),
+        ]);
+        const createJson = await createRes.json().catch(() => null);
+        const createdId = createJson?.data?.id ?? createJson?.id;
+        if (typeof createdId === 'string' && createdId.length > 0) {
+          createdIds.push(createdId);
+        }
+        await expect(page.getByRole('heading', { name: 'Generate Invitation Code' })).toBeHidden({ timeout: 30000 });
+        await expect(page.getByText(guestName)).toBeVisible({ timeout: 30000 });
+      }
     }
 
     // Select all filtered items
@@ -66,6 +72,7 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
   } finally {
     if (createdTemporaryCodes) {
       const headers = { Cookie: `admin_auth=${adminCookieValue}` };
+      const idsToDelete = new Set<string>(createdIds);
       const listRes = await context.request.get('/api/admin/invitation-codes?limit=100', { headers });
       if (listRes.ok()) {
         const payload = (await listRes.json()) as
@@ -76,18 +83,17 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
           : Array.isArray(payload?.data)
             ? payload.data
             : [];
-        const tempIds = records
-          .filter(
-            (r) =>
-              !r.isSample && (r.guestName === 'Alex Johnson' || r.guestName === 'Sam Taylor')
-          )
-          .map((r) => r.id);
-        if (tempIds.length > 0) {
-          await context.request.delete('/api/admin/invitation-codes/batch', {
-            headers: { ...headers, 'Content-Type': 'application/json' },
-            data: { ids: tempIds },
-          });
+        for (const r of records) {
+          if (!r.isSample && (r.guestName === 'Alex Johnson' || r.guestName === 'Sam Taylor')) {
+            idsToDelete.add(r.id);
+          }
         }
+      }
+      if (idsToDelete.size > 0) {
+        await context.request.delete('/api/admin/invitation-codes/batch', {
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          data: { ids: Array.from(idsToDelete) },
+        });
       }
     }
   }

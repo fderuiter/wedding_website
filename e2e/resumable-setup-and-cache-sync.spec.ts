@@ -24,7 +24,7 @@ test.describe('Resumable Setup Route & Unified Sample Cache Invalidation', () =>
         venueCity: 'Minneapolis',
         venueState: 'MN',
         heroTitle: 'Jane & John',
-        heroSubtitle: '',
+        heroSubtitle: 'Are getting married!',
         setupCompleted: true,
       },
     });

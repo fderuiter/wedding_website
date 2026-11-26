@@ -184,7 +184,12 @@ else
   fi
   REPO_LOWER=$(printf '%s' "$RESOLVED_REPO" | tr '[:upper:]' '[:lower:]')
 
+  SCOPED_DOCKER_CONFIG=""
   if [ -n "$EFFECTIVE_GIT_TOKEN" ] && [ -n "${GITHUB_ACTOR_LOGIN:-}" ] && command -v docker >/dev/null 2>&1; then
+    SCOPED_DOCKER_CONFIG=$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/docker-config-XXXXXX")
+    chmod 700 "$SCOPED_DOCKER_CONFIG"
+    export DOCKER_CONFIG="$SCOPED_DOCKER_CONFIG"
+    trap 'rm -rf "${SCOPED_DOCKER_CONFIG:-}"' EXIT
     printf '%s\n' "$EFFECTIVE_GIT_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR_LOGIN" --password-stdin >/dev/null 2>&1 || true
   fi
 
