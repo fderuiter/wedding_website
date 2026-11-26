@@ -990,4 +990,425 @@ for (const file of process.argv.slice(2)) {
       expect(gitignore).toContain('*.tsbuildinfo');
     });
   });
+
+  describe('Real content-hashed typecheck, next typegen, and pre-push regressions', () => {
+    const RUN_TYPECHECK_PATH = path.join(REPO_ROOT, 'scripts', 'quality', 'run-typecheck.mjs');
+    let realRepoDir: string;
+    let realHookBinDir: string;
+
+    function writeMinimalRepoConfigs(dir: string): void {
+      fs.mkdirSync(path.join(dir, 'src', 'app'), { recursive: true });
+      fs.mkdirSync(path.join(dir, 'scripts'), { recursive: true });
+      fs.mkdirSync(path.join(dir, 'e2e'), { recursive: true });
+
+      fs.writeFileSync(
+        path.join(dir, '.gitignore'),
+        [
+          '.hook-bin/',
+          'node_modules',
+          '.next',
+          'next-env.d.ts',
+          '*.tsbuildinfo',
+          '.eslintcache',
+          '',
+        ].join('\n')
+      );
+
+      const runTypecheckCmd = `${JSON.stringify(process.execPath)} ${JSON.stringify(RUN_TYPECHECK_PATH)}`;
+      fs.writeFileSync(
+        path.join(dir, 'package.json'),
+        JSON.stringify(
+          {
+            name: 'real-typecheck-fixture',
+            private: true,
+            scripts: {
+              typecheck: runTypecheckCmd,
+              'type-check': runTypecheckCmd,
+              lint: 'node -e "process.exit(0)"',
+              'lint:unused': 'node -e "process.exit(0)"',
+              'check:env-docs': 'node -e "process.exit(0)"',
+              'check:runbooks': 'node -e "process.exit(0)"',
+              'check:setup-guides': 'node -e "process.exit(0)"',
+              'check:identifiers': 'node -e "process.exit(0)"',
+              'check:action-pins': 'node -e "process.exit(0)"',
+              'check:standalone': 'node -e "process.exit(0)"',
+              'check:links': 'node -e "process.exit(0)"',
+              'check:spec-contracts': 'node -e "process.exit(0)"',
+              'check:prisma': 'node -e "process.exit(0)"',
+              'lint:migrations': 'node -e "process.exit(0)"',
+              'check:doc-sync': 'node -e "process.exit(0)"',
+              'check:audit': 'node -e "process.exit(0)"',
+            },
+          },
+          null,
+          2
+        ) + '\n'
+      );
+
+      fs.writeFileSync(
+        path.join(dir, 'next.config.ts'),
+        'const nextConfig = {};\nexport default nextConfig;\n'
+      );
+      fs.writeFileSync(
+        path.join(dir, 'src', 'middleware.ts'),
+        'export function middleware(): undefined {\n  return undefined;\n}\n'
+      );
+      fs.writeFileSync(
+        path.join(dir, 'src', 'app', 'layout.tsx'),
+        "import type { ReactNode } from 'react';\nexport default function RootLayout({ children }: { children: ReactNode }): ReactNode {\n  return children;\n}\n"
+      );
+      fs.writeFileSync(
+        path.join(dir, 'src', 'app', 'page.tsx'),
+        'export default function HomePage(): null {\n  return null;\n}\n'
+      );
+      fs.writeFileSync(path.join(dir, 'scripts', 'helper.ts'), 'export const scriptOk = true;\n');
+      fs.writeFileSync(path.join(dir, 'e2e', 'smoke.ts'), 'export const e2eOk = true;\n');
+      fs.writeFileSync(path.join(dir, 'src', 'unit.test.ts'), 'export const testOk = true;\n');
+
+      const sharedCompilerOptions = {
+        target: 'ES2022',
+        lib: ['dom', 'esnext'],
+        allowJs: true,
+        strict: true,
+        noEmit: true,
+        esModuleInterop: true,
+        module: 'esnext',
+        moduleResolution: 'bundler',
+        resolveJsonModule: true,
+        isolatedModules: true,
+        jsx: 'react-jsx',
+        incremental: true,
+        skipLibCheck: true,
+        types: ['node'],
+        plugins: [{ name: 'next' }],
+      };
+
+      fs.writeFileSync(
+        path.join(dir, 'tsconfig.json'),
+        JSON.stringify(
+          {
+            compilerOptions: sharedCompilerOptions,
+            include: [
+              'next-env.d.ts',
+              '*.ts',
+              'src/**/*.d.ts',
+              '.next/types/**/*.ts',
+              '.next/dev/types/**/*.ts',
+            ],
+            exclude: ['node_modules', 'scripts', 'e2e', '**/*.test.ts'],
+          },
+          null,
+          2
+        ) + '\n'
+      );
+      fs.writeFileSync(
+        path.join(dir, 'tsconfig.build.json'),
+        JSON.stringify(
+          {
+            extends: './tsconfig.json',
+            compilerOptions: {
+              incremental: true,
+              tsBuildInfoFile: './tsconfig.build.tsbuildinfo',
+            },
+            include: ['next-env.d.ts', 'src/**/*.ts', 'src/**/*.tsx', '.next/types/**/*.ts'],
+            exclude: ['node_modules', 'scripts', 'e2e', '**/*.test.ts'],
+          },
+          null,
+          2
+        ) + '\n'
+      );
+      fs.writeFileSync(
+        path.join(dir, 'tsconfig.scripts.json'),
+        JSON.stringify(
+          {
+            extends: './tsconfig.json',
+            compilerOptions: {
+              incremental: true,
+              tsBuildInfoFile: './tsconfig.scripts.tsbuildinfo',
+            },
+            include: ['scripts/**/*.ts'],
+            exclude: ['node_modules'],
+          },
+          null,
+          2
+        ) + '\n'
+      );
+      fs.writeFileSync(
+        path.join(dir, 'tsconfig.e2e.json'),
+        JSON.stringify(
+          {
+            extends: './tsconfig.json',
+            compilerOptions: {
+              incremental: true,
+              tsBuildInfoFile: './tsconfig.e2e.tsbuildinfo',
+            },
+            include: ['e2e/**/*.ts'],
+            exclude: ['node_modules'],
+          },
+          null,
+          2
+        ) + '\n'
+      );
+      fs.writeFileSync(
+        path.join(dir, 'tsconfig.test.json'),
+        JSON.stringify(
+          {
+            extends: './tsconfig.json',
+            compilerOptions: {
+              incremental: true,
+              tsBuildInfoFile: './tsconfig.test.tsbuildinfo',
+            },
+            include: ['next-env.d.ts', 'src/**/*.test.ts'],
+            exclude: ['node_modules'],
+          },
+          null,
+          2
+        ) + '\n'
+      );
+    }
+
+    function runNpmTypecheck(cwd = realRepoDir) {
+      return spawnSync('npm', ['run', 'typecheck'], {
+        cwd,
+        encoding: 'utf-8',
+        env: process.env,
+      });
+    }
+
+    function runRealPrePush(extraEnv: Record<string, string> = {}) {
+      const headSha = execSync('git rev-parse HEAD', {
+        cwd: realRepoDir,
+        encoding: 'utf-8',
+      }).trim();
+      const parentRes = spawnSync('git', ['rev-parse', '--verify', '--quiet', 'HEAD^'], {
+        cwd: realRepoDir,
+        encoding: 'utf-8',
+      });
+      const remoteSha = parentRes.status === 0 ? parentRes.stdout.trim() : ZERO_SHA;
+      return spawnSync(process.execPath, [PRE_PUSH_PATH], {
+        cwd: realRepoDir,
+        encoding: 'utf-8',
+        input: `refs/heads/main ${headSha} refs/heads/main ${remoteSha}\n`,
+        env: {
+          ...process.env,
+          PRE_PUSH_CONCURRENCY: '2',
+          ...extraEnv,
+          PATH: `${realHookBinDir}${path.delimiter}${process.env.PATH ?? ''}`,
+        },
+      });
+    }
+
+    beforeEach(() => {
+      realRepoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'real-typecheck-hook-'));
+      realHookBinDir = path.join(realRepoDir, '.hook-bin');
+      fs.mkdirSync(realHookBinDir, { recursive: true });
+
+      // Fast npm shim for pre-push that runs real run-typecheck.mjs for type-check/typecheck and exits 0 for unrelated checks
+      const fastNpmShim = path.join(realHookBinDir, 'npm');
+      fs.writeFileSync(
+        fastNpmShim,
+        `#!/usr/bin/env node
+const { spawnSync } = require('child_process');
+const args = process.argv.slice(2);
+if (args[0] === 'run' && (args[1] === 'type-check' || args[1] === 'typecheck')) {
+  const res = spawnSync(${JSON.stringify(process.execPath)}, [${JSON.stringify(RUN_TYPECHECK_PATH)}], {
+    cwd: process.cwd(),
+    stdio: 'inherit',
+    env: process.env,
+  });
+  process.exit(res.status ?? 1);
+}
+process.exit(0);
+`
+      );
+      fs.chmodSync(fastNpmShim, 0o755);
+
+      writeMinimalRepoConfigs(realRepoDir);
+      fs.symlinkSync(
+        path.join(REPO_ROOT, 'node_modules'),
+        path.join(realRepoDir, 'node_modules'),
+        process.platform === 'win32' ? 'junction' : 'dir'
+      );
+
+      execSync('git init -b main', { cwd: realRepoDir, stdio: 'ignore' });
+      execSync('git config user.name "Test Runner"', { cwd: realRepoDir, stdio: 'ignore' });
+      execSync('git config user.email "test@example.com"', { cwd: realRepoDir, stdio: 'ignore' });
+      execSync('git add . && git commit -m "Initial baseline"', {
+        cwd: realRepoDir,
+        stdio: 'ignore',
+      });
+    });
+
+    afterEach(() => {
+      fs.rmSync(realRepoDir, { recursive: true, force: true });
+    });
+
+    it(
+      'fails in .githooks/pre-push on a committed TS2322 error when unstaged edits trigger detached worktree hydration over warm .tsbuildinfo',
+      () => {
+        const targetFile = path.join(realRepoDir, 'src', 'checked.ts');
+        fs.writeFileSync(targetFile, "export const brokenCount: number = 'not-a-number';\n");
+        execSync('git add src/checked.ts && git commit -m "Commit TS2322 error"', {
+          cwd: realRepoDir,
+          stdio: 'ignore',
+        });
+
+        // Unstaged fix in working tree + warm passing .tsbuildinfo with newer mtime
+        const unstagedCleanFix = 'export const brokenCount: number = 42;\n';
+        fs.writeFileSync(targetFile, unstagedCleanFix);
+        const warmCheck = runNpmTypecheck();
+        expect(warmCheck.status).toBe(0);
+
+        const futureTime = new Date(Date.now() + 60_000);
+        for (const entry of fs.readdirSync(realRepoDir)) {
+          if (entry.endsWith('.tsbuildinfo')) {
+            fs.utimesSync(path.join(realRepoDir, entry), futureTime, futureTime);
+          }
+        }
+
+        const pushRes = runRealPrePush();
+        const combined = `${pushRes.stdout}\n${pushRes.stderr}`;
+        expect(pushRes.status).not.toBe(0);
+        expect(combined).toContain('ephemeral Git worktree');
+        expect(combined).toContain('TS2322');
+
+        // Unstaged working tree fix remains intact
+        expect(fs.readFileSync(targetFile, 'utf-8')).toBe(unstagedCleanFix);
+      },
+      60_000
+    );
+
+    it(
+      'fails in npm run typecheck on a TS2322 edit saved while a prior npm run typecheck run is active',
+      async () => {
+        const targetFile = path.join(realRepoDir, 'src', 'concurrent.ts');
+        fs.writeFileSync(targetFile, 'export const liveCount: number = 1;\n');
+        expect(runNpmTypecheck().status).toBe(0);
+
+        const { runTypecheck } = await import('../../scripts/quality/run-typecheck.mjs');
+        let midRunSaved = false;
+        const activeRun = await runTypecheck({
+          cwd: realRepoDir,
+          onAfterProjectCheck: (projectPath: string) => {
+            if (projectPath === 'tsconfig.build.json' && !midRunSaved) {
+              midRunSaved = true;
+              fs.writeFileSync(targetFile, "export const liveCount: number = 'race-ts2322';\n");
+              // Backdate file mtime behind .tsbuildinfo to simulate same-tick/prior-tick editor save during active run
+              const pastTime = new Date(Date.now() - 10_000);
+              fs.utimesSync(targetFile, pastTime, pastTime);
+            }
+          },
+        });
+        expect(activeRun.ok).toBe(true);
+        expect(midRunSaved).toBe(true);
+
+        const secondRun = runNpmTypecheck();
+        const combined = `${secondRun.stdout}\n${secondRun.stderr}`;
+        expect(secondRun.status).not.toBe(0);
+        expect(combined).toContain('TS2322');
+      },
+      60_000
+    );
+
+    it(
+      'fails with TS2344 in both npm run typecheck and .githooks/pre-push on a new route handler with an invalid signature, and exits 0 after deleting a committed route without manual .next/types cleanup',
+      () => {
+        // Warm initial route types and tsbuildinfo caches
+        expect(runNpmTypecheck().status).toBe(0);
+        expect(
+          fs.existsSync(path.join(realRepoDir, '.next', 'types', '.route-manifest.json'))
+        ).toBe(true);
+
+        // 1. Add a new route handler with an invalid signature while prior .next/types exists
+        const invalidRouteFile = path.join(realRepoDir, 'src', 'app', 'api', 'bad-sig', 'route.ts');
+        fs.mkdirSync(path.dirname(invalidRouteFile), { recursive: true });
+        fs.writeFileSync(
+          invalidRouteFile,
+          'export function GET(invalidArg: number): number {\n  return invalidArg;\n}\n'
+        );
+        execSync('git add src/app/api/bad-sig/route.ts && git commit -m "Add invalid route"', {
+          cwd: realRepoDir,
+          stdio: 'ignore',
+        });
+
+        const invalidTypecheck = runNpmTypecheck();
+        expect(invalidTypecheck.status).not.toBe(0);
+        expect(`${invalidTypecheck.stdout}\n${invalidTypecheck.stderr}`).toContain('TS2344');
+
+        const invalidPrePush = runRealPrePush();
+        expect(invalidPrePush.status).not.toBe(0);
+        expect(`${invalidPrePush.stdout}\n${invalidPrePush.stderr}`).toContain('TS2344');
+
+        // 2. Replace with a valid route handler and commit
+        fs.writeFileSync(
+          invalidRouteFile,
+          'export async function GET(): Promise<Response> {\n  return Response.json({ ok: true });\n}\n'
+        );
+        execSync('git add src/app/api/bad-sig/route.ts && git commit -m "Fix route signature"', {
+          cwd: realRepoDir,
+          stdio: 'ignore',
+        });
+        expect(runNpmTypecheck().status).toBe(0);
+        expect(
+          fs.readFileSync(path.join(realRepoDir, '.next', 'types', 'validator.ts'), 'utf-8')
+        ).toContain('bad-sig/route');
+
+        // 3. Delete the committed route WITHOUT manually cleaning .next/types
+        fs.rmSync(path.dirname(invalidRouteFile), { recursive: true, force: true });
+        execSync('git add -A && git commit -m "Delete committed route"', {
+          cwd: realRepoDir,
+          stdio: 'ignore',
+        });
+
+        // Also place an unstaged note so .githooks/pre-push exercises detached worktree hydration first
+        fs.writeFileSync(path.join(realRepoDir, 'unstaged-note.txt'), 'trigger worktree\n');
+        const deletePrePush = runRealPrePush();
+        expect(deletePrePush.status).toBe(0);
+        expect(deletePrePush.stdout).toContain('ephemeral Git worktree');
+        fs.unlinkSync(path.join(realRepoDir, 'unstaged-note.txt'));
+
+        // And npm run typecheck in the main workspace also cleans stale .next/types and exits 0
+        const deleteTypecheck = runNpmTypecheck();
+        expect(deleteTypecheck.status).toBe(0);
+        expect(
+          fs.readFileSync(path.join(realRepoDir, '.next', 'types', 'validator.ts'), 'utf-8')
+        ).not.toContain('bad-sig/route');
+      },
+      90_000
+    );
+
+    it(
+      'runs .githooks/pre-push in a detached worktree and fails with TS2307 when a commit imports an untracked local file',
+      () => {
+        expect(runNpmTypecheck().status).toBe(0);
+
+        // Unstaged, non-ignored untracked helper file present on disk
+        const untrackedFile = path.join(realRepoDir, 'src', 'untracked-local.ts');
+        fs.writeFileSync(untrackedFile, 'export const localOnlySecret = 99;\n');
+
+        // Commit a tracked file that imports the untracked file without staging the untracked file
+        const consumerFile = path.join(realRepoDir, 'src', 'consumer.ts');
+        fs.writeFileSync(
+          consumerFile,
+          "import { localOnlySecret } from './untracked-local';\nexport const exportedSecret = localOnlySecret;\n"
+        );
+        execSync('git add src/consumer.ts && git commit -m "Import untracked file"', {
+          cwd: realRepoDir,
+          stdio: 'ignore',
+        });
+
+        const pushRes = runRealPrePush();
+        const combined = `${pushRes.stdout}\n${pushRes.stderr}`;
+        expect(pushRes.status).not.toBe(0);
+        expect(combined).toContain('ephemeral Git worktree');
+        expect(combined).toContain('TS2307');
+
+        // Untracked local file is preserved untouched
+        expect(fs.readFileSync(untrackedFile, 'utf-8')).toBe(
+          'export const localOnlySecret = 99;\n'
+        );
+      },
+      60_000
+    );
+  });
 });
