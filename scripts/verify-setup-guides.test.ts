@@ -14,6 +14,9 @@ function copyFixtureFiles(srcRoot: string, destRoot: string): void {
     'package.json',
     'tsconfig.json',
     'tsconfig.build.json',
+    'tsconfig.scripts.json',
+    'tsconfig.e2e.json',
+    'tsconfig.test.json',
     'docker-compose.yml',
     'docker-compose.ci.yml',
     'eslint.config.mjs',
@@ -23,6 +26,8 @@ function copyFixtureFiles(srcRoot: string, destRoot: string): void {
     'jest.setup.js',
     'scripts/install-git-hooks.js',
     'scripts/check-quality.ts',
+    'scripts/quality/run-typecheck.mjs',
+    'scripts/quality/worktree-cache.mjs',
     'scripts/pretest.mjs',
     'scripts/a11y-report.mjs',
     'scripts/seed.ts',
@@ -768,5 +773,59 @@ describe('verify-setup-guides contract check', () => {
     fs.writeFileSync(readmePath, updatedReadme, 'utf8');
 
     expect(verifySetupGuides(tempDir)).toEqual([]);
+  });
+
+  it('rejects utimesSync/tsc -b typecheck scripts, --untracked-files=no pre-push regression, duplicate tsBuildInfoFile paths, missing --skip-generate, and stale tsc -b docs', () => {
+    const pkgPath = path.join(tempDir, 'package.json');
+    fs.writeFileSync(
+      pkgPath,
+      fs
+        .readFileSync(pkgPath, 'utf8')
+        .replace(
+          '"typecheck": "node --max-old-space-size=4096 scripts/quality/run-typecheck.mjs"',
+          '"typecheck": "node -e \\"fs.utimesSync\\" && tsc -b --noEmit"'
+        )
+    );
+
+    const prePushPath = path.join(tempDir, '.githooks/pre-push');
+    fs.writeFileSync(
+      prePushPath,
+      fs
+        .readFileSync(prePushPath, 'utf8')
+        .replace('--untracked-files=normal', '--untracked-files=no')
+        .replace("args: ['--', '--skip-generate']", 'args: []')
+    );
+
+    const tsconfigTestPath = path.join(tempDir, 'tsconfig.test.json');
+    fs.writeFileSync(
+      tsconfigTestPath,
+      fs
+        .readFileSync(tsconfigTestPath, 'utf8')
+        .replace('./tsconfig.test.tsbuildinfo', './tsconfig.e2e.tsbuildinfo')
+    );
+
+    const agentsPath = path.join(tempDir, 'AGENTS.md');
+    fs.writeFileSync(
+      agentsPath,
+      fs
+        .readFileSync(agentsPath, 'utf8')
+        .replace('content-hashed `scripts/quality/run-typecheck.mjs` pass', 'unified `tsc -b --noEmit` build graph')
+    );
+
+    const errors = verifySetupGuides(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        'package.json: "typecheck" must invoke "scripts/quality/run-typecheck.mjs"',
+        'package.json: "typecheck" must not rely on "utimesSync" or timestamp-based "tsc -b"',
+        expect.stringContaining(
+          '.githooks/pre-push: trackedFilesMatchCommit must use "--untracked-files=normal"'
+        ),
+        '.githooks/pre-push: Must pass "--skip-generate" to "check:prisma" after pre-pool Prisma Client preparation',
+        'tsconfig.test.json: Duplicate "tsBuildInfoFile" ("./tsconfig.e2e.tsbuildinfo") across tsconfig*.json projects',
+        expect.stringContaining(
+          'AGENTS.md: TypeScript Configuration Split section must document content-hashed "scripts/quality/run-typecheck.mjs"'
+        ),
+      ])
+    );
   });
 });
