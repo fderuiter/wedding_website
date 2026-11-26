@@ -155,6 +155,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       'pages-verify:',
       'ci-complete:',
       'attest-bundles:',
+      'prepare-docs:',
       'deploy-docs:',
     ]) {
       expect(ciWorkflow).toContain(`  ${jobId}`);
@@ -177,27 +178,49 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(docDriftCommentBlock).toContain('issues: write');
     expect(docDriftCommentBlock).not.toContain('actions/checkout');
     expect(docDriftCommentBlock).not.toContain('npm ci');
-    expect(ciJobs['deploy-docs']?.needs).toEqual([
+    expect(ciJobs['prepare-docs']?.needs).toEqual([
       'ci-complete',
       'static-export-build',
       'storybook-build',
       'pages-verify',
     ]);
-    expect(ciJobs['deploy-docs']?.if).toBe(
+    expect(ciJobs['prepare-docs']?.if).toBe(
       "github.ref == 'refs/heads/main' && github.event_name == 'push'"
     );
+    expect(ciJobs['prepare-docs']?.['runs-on']).toBe('ubuntu-latest');
+    expect(ciJobs['prepare-docs']?.['timeout-minutes']).toBe(20);
+    expect(ciJobs['prepare-docs']?.permissions).toEqual({ contents: 'read' });
+
+    expect(ciJobs['deploy-docs']?.needs).toEqual([
+      'ci-complete',
+      'prepare-docs',
+    ]);
+    expect(ciJobs['deploy-docs']?.if).toBe(
+      "github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.prepare-docs.outputs.is_latest == 'true'"
+    );
     expect(ciJobs['deploy-docs']?.['runs-on']).toBe('ubuntu-latest');
-    expect(ciJobs['deploy-docs']?.['timeout-minutes']).toBe(20);
+    expect(ciJobs['deploy-docs']?.['timeout-minutes']).toBe(10);
+    expect(ciJobs['deploy-docs']?.permissions).toEqual({
+      contents: 'read',
+      pages: 'write',
+      'id-token': 'write',
+    });
     expect(ciJobs['deploy-docs']?.concurrency).toEqual({
       group: 'github-pages',
       'cancel-in-progress': false,
       queue: 'max',
     });
     expect(ciWorkflow).not.toContain("github.event_name == 'release'");
+    const prepareDocsSection = extractJobSection(ciWorkflow, 'prepare-docs');
     const deployDocsSection = extractJobSection(ciWorkflow, 'deploy-docs');
-    expect(deployDocsSection).toContain('- name: Verify Main Branch Tip Freshness');
-    expect(deployDocsSection).toContain('fetch --depth=1 --no-tags origin +refs/heads/main:refs/remotes/origin/main');
-    expect(deployDocsSection).toContain("if: steps.freshness.outputs.is_latest == 'true'");
+    expect(prepareDocsSection).toContain('- name: Verify Main Branch Tip Freshness');
+    expect(prepareDocsSection).toContain('fetch --depth=1 --no-tags origin +refs/heads/main:refs/remotes/origin/main');
+    expect(prepareDocsSection).toContain("if: steps.freshness.outputs.is_latest == 'true'");
+    expect(prepareDocsSection).not.toContain('pages: write');
+    expect(prepareDocsSection).not.toContain('id-token: write');
+    expect(deployDocsSection).not.toContain('actions/checkout');
+    expect(deployDocsSection).not.toContain('npm ');
+    expect(deployDocsSection).toContain('actions/deploy-pages@');
     expect(ciWorkflow).toContain('docs-portal/.vitepress/dist/index.html');
     expect(ciWorkflow).toContain('docs-portal/.vitepress/dist/demo/index.html');
     expect(ciWorkflow).toContain('docs-portal/.vitepress/dist/storybook/index.html');
@@ -340,14 +363,14 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       expect(ciCompleteSection).toContain(`needs.${gatedJob}.result`);
     }
 
-    expect(deployDocsSection).toContain(
+    expect(prepareDocsSection).toContain(
       "if: steps.freshness.outputs.is_latest == 'true' && steps.base-check.outputs.reuse_bundle == 'true'"
     );
-    expect(deployDocsSection).toContain('name: pages-bundle');
-    expect(deployDocsSection).toContain(
+    expect(prepareDocsSection).toContain('name: pages-bundle');
+    expect(prepareDocsSection).toContain(
       "if: steps.freshness.outputs.is_latest == 'true' && steps.base-check.outputs.reuse_bundle != 'true'"
     );
-    expect(deployDocsSection).toContain("SKIP_DOC_SYNC: 'true'");
+    expect(prepareDocsSection).toContain("SKIP_DOC_SYNC: 'true'");
 
     // e2e-test does not depend on static-export-build so static export checks never delay Playwright runs
     expect(ciWorkflow).toMatch(/  e2e-test:\n\s+needs: \[verify, build\]\n/);
@@ -408,24 +431,28 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     });
     expect(publishReleaseSection).not.toContain('actions/checkout');
     expect(publishReleaseSection).not.toContain('npm ci');
+    expect(publishReleaseSection).not.toContain('scripts/');
     expect(publishReleaseSection).toContain('sha256sum --check --strict SHA256SUMS');
     expect(publishReleaseSection).toContain('actions/attest-build-provenance@');
     expect(publishReleaseSection).toContain('gh release create');
 
-    const [beforePublishSection = '', publishJobSection = ''] = publishWorkflow.split(/\n  publish:\n/);
-    const [preflightJobSection = '', buildJobSection = ''] = beforePublishSection.split(/\n  build:\n/);
+    const preflightJobSection = extractJobSection(publishWorkflow, 'preflight');
+    const buildJobSection = extractJobSection(publishWorkflow, 'build');
+    const uploadSarifJobSection = extractJobSection(publishWorkflow, 'upload-sarif');
+    const publishJobSection = extractJobSection(publishWorkflow, 'publish');
 
     // Job preflight scopes strictly read-only permissions (contents, actions, packages, attestations) with zero write scopes
     expect(preflightJobSection).toMatch(
-      /preflight:\n[\s\S]*?permissions:\n\s+contents: read\n\s+actions: read\n\s+packages: read\n\s+attestations: read/
+      /permissions:\n\s+contents: read\n\s+actions: read\n\s+packages: read\n\s+attestations: read/
     );
     expect(preflightJobSection).not.toContain(': write');
     expect(publishWorkflow.match(/actions:\s*read/g) ?? []).toHaveLength(1);
 
-    // Job build retains only contents: read and security-events: write, with zero registry credentials
+    // Job build retains strictly contents: read (dropping security-events: write), with zero registry credentials
     expect(buildJobSection).toMatch(
-      /permissions:\n\s+contents: read\n\s+security-events: write\n\s+strategy:/
+      /permissions:\n\s+contents: read\n\s+strategy:/
     );
+    expect(buildJobSection).not.toContain('security-events: write');
     expect(buildJobSection).not.toContain('packages: write');
     expect(buildJobSection).not.toContain('id-token: write');
     expect(buildJobSection).not.toContain('attestations: write');
@@ -433,11 +460,22 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(buildJobSection).not.toContain('DOCKERHUB_USERNAME');
     expect(buildJobSection).not.toContain('DOCKERHUB_TOKEN');
 
-    // Job publish scopes registry write + OIDC provenance signing and drops unused security-events: write
+    // Job upload-sarif is checkout-free and holds only contents: read + security-events: write
+    expect(uploadSarifJobSection).toMatch(
+      /permissions:\n\s+contents: read\n\s+security-events: write/
+    );
+    expect(uploadSarifJobSection).not.toContain('actions/checkout');
+    expect(uploadSarifJobSection).not.toContain('npm ');
+    expect(uploadSarifJobSection).not.toContain('scripts/');
+
+    // Job publish is checkout-free and scopes registry write + OIDC provenance signing without security-events: write
     expect(publishJobSection).toMatch(
       /permissions:\n\s+contents: read\n\s+packages: write\n\s+id-token: write\n\s+attestations: write\n\s+outputs:/
     );
     expect(publishJobSection).not.toContain('security-events: write');
+    expect(publishJobSection).not.toContain('actions/checkout');
+    expect(publishJobSection).not.toContain('npm ');
+    expect(publishJobSection).not.toContain('scripts/');
 
     // Caller deploy.yml retains union of callee-required permissions for publish-artifact workflow_call
     expect(deployWorkflow).toMatch(
@@ -550,18 +588,21 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(deployWorkflow).toContain('tag_name: ${{ needs.ci-gate.outputs.target_sha }}');
     expect(deployWorkflow).not.toContain('|| github.sha');
 
-    expect(publishWorkflow).toContain('ref: ${{ inputs.commit_sha }}');
+    expect(publishWorkflow).not.toContain('ref: ${{ inputs.commit_sha }}');
     expect(publishWorkflow).toContain('fetch-depth: 0');
     expect(publishWorkflow).toContain('INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}');
-    expect(publishWorkflow).toContain('org.opencontainers.image.revision=${{ steps.meta.outputs.revision }}');
+    expect(publishWorkflow).toContain('RESOLVED_SHA: ${{ needs.preflight.outputs.resolved_sha }}');
+    expect(publishWorkflow).toContain('git checkout --detach "$RESOLVED_SHA"');
+    expect(publishWorkflow).toContain('org.opencontainers.image.revision=${{ needs.preflight.outputs.revision }}');
     expect(migrateWorkflow).toContain('ref: ${{ inputs.commit_sha }}');
     expect(migrateWorkflow).toContain('INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}');
     expect(migrateWorkflow).toContain('fetch-depth: 0');
     expect(deployProviderWorkflow).toContain('ref: ${{ inputs.commit_sha }}');
-    expect(deployProviderWorkflow).toContain('fetch-depth: 2');
+    expect(deployProviderWorkflow).toContain('fetch-depth: 0');
     expect(deployProviderWorkflow).toContain('CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}');
-    expect(rollbackWorkflow).toContain('ref: ${{ inputs.commit_sha }}');
+    expect(rollbackWorkflow).not.toContain('ref: ${{ inputs.commit_sha }}');
     expect(rollbackWorkflow).toContain('INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}');
+    expect(rollbackWorkflow).toContain('git checkout "$INPUT_COMMIT_SHA" -- prisma/migrations');
     expect(rollbackWorkflow).toContain('CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}');
     const redeployChunk = rollbackWorkflow.split('  redeploy:\n')[1]?.split('\n  verify:\n')[0] ?? '';
     expect(redeployChunk).toContain('uses: ./.github/workflows/deploy-provider.yml');
@@ -981,33 +1022,35 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
 
     // Verify build job depends on preflight, compiles once as an OCI archive with provenance: false & sbom: false, loads wedding-website:latest, scans, smoke-tests, and uploads zstd archive without registry login
     expect(publishWorkflow.match(/uses:\s*docker\/build-push-action@/g)).toHaveLength(1);
-    const buildJobSection = publishWorkflow.split(/\n  publish:\n/)[0]?.split(/\n  build:\n/)[1] ?? '';
+    const buildJobSection = extractJobSection(publishWorkflow, 'build');
+    const uploadSarifJobSection = extractJobSection(publishWorkflow, 'upload-sarif');
     expect(buildJobSection).toContain('needs: [preflight]');
     expect(buildJobSection).toContain("if: needs.preflight.outputs.promote_existing != 'true'");
     expect(buildJobSection.match(/uses:\s*docker\/build-push-action@/g)).toHaveLength(1);
     expect(buildJobSection).toContain('provenance: false');
     expect(buildJobSection).toContain('sbom: false');
-    expect(buildJobSection).toContain('org.opencontainers.image.revision=${{ steps.meta.outputs.revision }}');
+    expect(buildJobSection).toContain('org.opencontainers.image.revision=${{ needs.preflight.outputs.revision }}');
     expect(buildJobSection).toContain(
-      'manifest:org.opencontainers.image.revision=${{ steps.meta.outputs.revision }}'
+      'manifest:org.opencontainers.image.revision=${{ needs.preflight.outputs.revision }}'
     );
     expect(buildJobSection).toContain('outputs: type=oci,dest=/tmp/oci-${{ matrix.arch }}.tar');
     expect(buildJobSection).not.toContain('push-by-digest=true');
     expect(buildJobSection).not.toContain('docker/login-action');
+    expect(buildJobSection).not.toContain('github/codeql-action/upload-sarif');
 
     const buildArchiveIdx = buildJobSection.indexOf('outputs: type=oci,dest=/tmp/oci-${{ matrix.arch }}.tar');
     const loadDaemonIdx = buildJobSection.indexOf('skopeo copy "oci-archive:${OCI_TAR}" "docker-daemon:wedding-website:latest"');
     const trivyIdx = buildJobSection.indexOf('aquasecurity/trivy-action');
-    const sarifIdx = buildJobSection.indexOf('github/codeql-action/upload-sarif');
+    const sarifArtifactIdx = buildJobSection.indexOf('name: trivy-sarif-${{ matrix.arch }}');
     const smokeIdx = buildJobSection.indexOf('node scripts/test-container.mjs');
     const compressIdx = buildJobSection.indexOf('zstd -T0 -f "$OCI_TAR"');
-    const uploadArtifactIdx = buildJobSection.indexOf('actions/upload-artifact@');
+    const uploadArtifactIdx = buildJobSection.indexOf('name: oci-archive-${{ matrix.arch }}');
 
     expect(buildArchiveIdx).toBeGreaterThan(-1);
     expect(loadDaemonIdx).toBeGreaterThan(buildArchiveIdx);
     expect(trivyIdx).toBeGreaterThan(loadDaemonIdx);
-    expect(sarifIdx).toBeGreaterThan(trivyIdx);
-    expect(smokeIdx).toBeGreaterThan(sarifIdx);
+    expect(sarifArtifactIdx).toBeGreaterThan(trivyIdx);
+    expect(smokeIdx).toBeGreaterThan(sarifArtifactIdx);
     expect(compressIdx).toBeGreaterThan(smokeIdx);
     expect(uploadArtifactIdx).toBeGreaterThan(compressIdx);
 
@@ -1017,22 +1060,27 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(buildJobSection).toContain("exit-code: '1'");
     expect(buildJobSection).toContain("format: 'spdx-json'");
     expect(buildJobSection).toContain("output: 'sbom-${{ matrix.arch }}.spdx.json'");
-    expect(buildJobSection).toContain("category: 'trivy-${{ matrix.arch }}'");
     expect(buildJobSection).toContain('/tmp/oci-handoff/sha256-${{ matrix.arch }}.sums');
     expect(buildJobSection).toContain('compression-level: 0');
 
-    // Verify publish job step ordering: download -> login -> verify SBOMs -> skopeo inspect & copy --preserve-digests -> merge -> index SBOM -> v4.2.2 per-arch & index provenance + SPDX SBOM attestations
-    const publishJobSection = publishWorkflow.split(/\n  publish:\n/)[1] ?? '';
+    expect(uploadSarifJobSection).toContain('needs: [preflight, build]');
+    expect(uploadSarifJobSection).toContain('github/codeql-action/upload-sarif');
+    expect(uploadSarifJobSection).toContain("category: 'trivy-${{ matrix.arch }}'");
+    expect(uploadSarifJobSection).not.toContain('actions/checkout');
+
+    // Verify publish job step ordering: download -> verify SBOMs -> scoped DOCKER_CONFIG -> login -> skopeo inspect & copy --preserve-digests -> merge -> index SBOM -> v4.2.2 per-arch & index provenance + SPDX SBOM attestations -> DOCKER_CONFIG cleanup
+    const publishJobSection = extractJobSection(publishWorkflow, 'publish');
     expect(publishJobSection).toContain('needs: [preflight, build]');
     expect(publishJobSection).toContain(
       "(needs.build.result == 'success' || (needs.preflight.outputs.promote_existing == 'true' && needs.build.result == 'skipped'))"
     );
 
     const downloadIdx = publishJobSection.indexOf('actions/download-artifact@');
-    const ghcrLoginIdx = publishJobSection.indexOf('registry: ghcr.io');
     const verifySbomIdx = publishJobSection.indexOf('- name: Verify Per-Architecture SPDX SBOM Artifacts');
+    const createScopedConfigIdx = publishJobSection.indexOf('- name: Create Scoped Registry Auth Directory');
+    const ghcrLoginIdx = publishJobSection.indexOf('registry: ghcr.io');
     const skopeoInspectIdx = publishJobSection.indexOf("skopeo inspect --format '{{.Digest}}'");
-    const skopeoCopyIdx = publishJobSection.indexOf('skopeo copy --preserve-digests');
+    const skopeoCopyIdx = publishJobSection.indexOf('skopeo copy --preserve-digests', skopeoInspectIdx);
     const mergeIdx = publishJobSection.indexOf('docker buildx imagetools create');
     const indexSbomIdx = publishJobSection.indexOf('- name: Generate Multi-Platform Index SPDX SBOM');
     const primaryAmd64AttestIdx = publishJobSection.indexOf('- name: Attest amd64 Build Provenance');
@@ -1046,9 +1094,10 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     );
 
     expect(downloadIdx).toBeGreaterThan(-1);
-    expect(ghcrLoginIdx).toBeGreaterThan(downloadIdx);
-    expect(verifySbomIdx).toBeGreaterThan(ghcrLoginIdx);
-    expect(skopeoInspectIdx).toBeGreaterThan(verifySbomIdx);
+    expect(verifySbomIdx).toBeGreaterThan(downloadIdx);
+    expect(createScopedConfigIdx).toBeGreaterThan(verifySbomIdx);
+    expect(ghcrLoginIdx).toBeGreaterThan(createScopedConfigIdx);
+    expect(skopeoInspectIdx).toBeGreaterThan(ghcrLoginIdx);
     expect(skopeoCopyIdx).toBeGreaterThan(skopeoInspectIdx);
     expect(mergeIdx).toBeGreaterThan(skopeoCopyIdx);
     expect(indexSbomIdx).toBeGreaterThan(mergeIdx);
@@ -1076,12 +1125,16 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(publishJobSection).toContain('sbom-path: /tmp/oci-handoff/sbom-amd64.spdx.json');
     expect(publishJobSection).toContain('sbom-path: /tmp/oci-handoff/sbom-arm64.spdx.json');
     expect(publishJobSection).toContain('sbom-path: /tmp/oci-handoff/sbom-index.spdx.json');
-    expect(publishJobSection).toContain('subject-name: docker.io/${{ steps.meta.outputs.dockerhub_repository }}');
+    expect(publishJobSection).toContain('subject-name: docker.io/${{ needs.preflight.outputs.dockerhub_repository }}');
     expect(publishJobSection).toContain('subject-digest: ${{ steps.merge.outputs.dockerhub_digest }}');
     expect(publishJobSection).toContain('create-storage-record: false');
-    expect(publishJobSection).toContain('image_uri: ${{ steps.meta.outputs.primary_uri }}');
-    expect(publishJobSection).toContain('image_tag: ${{ steps.meta.outputs.tag_name }}');
+    expect(publishJobSection).toContain('image_uri: ${{ needs.preflight.outputs.primary_uri }}');
+    expect(publishJobSection).toContain('image_tag: ${{ needs.preflight.outputs.tag_name }}');
     expect(publishJobSection).toContain('image_digest: ${{ steps.merge.outputs.digest }}');
+    const cleanupDockerIdx = publishJobSection.indexOf('- name: Clean Up Scoped Registry Auth Directory');
+    const summaryIdx = publishJobSection.indexOf('- name: Summary');
+    expect(cleanupDockerIdx).toBeGreaterThan(secondaryAttestIdx);
+    expect(summaryIdx).toBeGreaterThan(cleanupDockerIdx);
 
     // Verify per-architecture provenance and GHCR per-architecture SBOM signing skip when promote_existing == 'true', while index attestations always stay active
     const parsedPublishDoc = parseDocument(publishWorkflow, { version: '1.2', strict: true }).toJS() as {
@@ -2314,7 +2367,7 @@ process.exit(1);
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'release-bundle-integrity-test-'));
     const integrityScript = path.join(process.cwd(), 'scripts', 'release-integrity.sh');
     try {
-      // 1. Simulate storybook-static -> pages-bundle handoff and deploy-docs verification
+      // 1. Simulate storybook-static -> pages-bundle handoff and prepare-docs verification
       const workDir = path.join(tempDir, 'ci-work');
       const distDir = path.join(workDir, 'docs-portal', '.vitepress', 'dist');
       const demoDir = path.join(distDir, 'demo');
@@ -2341,7 +2394,7 @@ process.exit(1);
       );
       expect(deployDocsVerifyBlock).toBeDefined();
 
-      // Valid pages-bundle passes before actions/deploy-pages
+      // Valid pages-bundle passes before actions/upload-pages-artifact / actions/deploy-pages
       const validPagesRes = spawnSync('bash', ['-eo', 'pipefail', '-c', deployDocsVerifyBlock!], {
         cwd: workDir,
         encoding: 'utf8',
@@ -2527,6 +2580,48 @@ process.exit(1);
       fs.rmSync('/tmp/release-bundle', { recursive: true, force: true });
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
+  });
+
+  it('isolates trusted default-branch execution before commit_sha checkout in deploy-provider.yml preflight to prevent cache poisoning', () => {
+    const preflightSection =
+      deployProviderWorkflow.split('\n  preflight:\n')[1]?.split('\n  deploy:\n')[0] ?? '';
+    expect(preflightSection).not.toBe('');
+
+    const defaultCheckoutIdx = preflightSection.indexOf('id: checkout-default');
+    const resolveStepIdx = preflightSection.indexOf('- name: Resolve Artifact Image URI');
+    const lintMigrationsIdx = preflightSection.indexOf('id: lint-migrations');
+    const shaCheckoutIdx = preflightSection.indexOf('- id: checkout\n');
+    const gitAncestorsIdx = preflightSection.indexOf('id: git-ancestors');
+
+    expect(defaultCheckoutIdx).toBeGreaterThan(-1);
+    expect(resolveStepIdx).toBeGreaterThan(defaultCheckoutIdx);
+    expect(lintMigrationsIdx).toBeGreaterThan(resolveStepIdx);
+    expect(shaCheckoutIdx).toBeGreaterThan(lintMigrationsIdx);
+    expect(gitAncestorsIdx).toBeGreaterThan(shaCheckoutIdx);
+
+    const defaultCheckoutBlock = preflightSection.slice(defaultCheckoutIdx, resolveStepIdx);
+    expect(defaultCheckoutBlock).not.toContain('ref:');
+    expect(defaultCheckoutBlock).toContain('persist-credentials: false');
+
+    const postShaCheckoutSection = preflightSection.slice(shaCheckoutIdx);
+    expect(postShaCheckoutSection).toContain('ref: ${{ inputs.commit_sha }}');
+    expect(postShaCheckoutSection).toContain('path: target-commit');
+    expect(postShaCheckoutSection).toContain("steps.lint-migrations.outcome == 'success'");
+    expect(postShaCheckoutSection).toContain('git -C target-commit rev-list');
+    expect(postShaCheckoutSection).toContain('rm -rf target-commit');
+    expect(postShaCheckoutSection).not.toMatch(/\b(?:npm|pnpm|yarn|npx|tsx)\s+/);
+    expect(postShaCheckoutSection).not.toContain('./scripts/');
+
+    const publishBuildSection =
+      publishWorkflow.split('\n  build:\n')[1]?.split('\n  upload-sarif:\n')[0] ?? '';
+    expect(publishBuildSection).toContain('id: checkout-default');
+    expect(publishBuildSection).not.toMatch(/^\s+ref:/m);
+    expect(publishBuildSection).toContain('Restore Trusted Default-Branch Runner Scripts');
+
+    const rollbackPreflightSection =
+      rollbackWorkflow.split('\n  preflight:\n')[1]?.split('\n  redeploy:\n')[0] ?? '';
+    expect(rollbackPreflightSection).not.toMatch(/^\s+ref:/m);
+    expect(rollbackPreflightSection).toContain('git checkout "$INPUT_COMMIT_SHA" -- prisma/migrations');
   });
 
   it('declares explicit least-privilege permissions at workflow root and every job across all workflows without unsafe script interpolation', () => {

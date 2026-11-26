@@ -2220,7 +2220,9 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
         continue;
       }
       let jobHasSetupNode = false;
+      let jobHasCheckout = false;
       let jobInvokesNodeRuntime = false;
+      let jobInvokesNpmOrNpx = false;
       for (const stepItem of stepsNode.items) {
         if (!isMap(stepItem)) {
           continue;
@@ -2232,8 +2234,18 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
           /(?:^|\s|&&|\|\||;)(?:node|npm|npx)\s/.test(runNode.value)
         ) {
           jobInvokesNodeRuntime = true;
+          if (/(?:^|\s|&&|\|\||;)(?:npm|npx)\s/.test(runNode.value)) {
+            jobInvokesNpmOrNpx = true;
+          }
         }
         const usesNode: unknown = stepItem.get('uses', true);
+        if (
+          isScalar(usesNode) &&
+          typeof usesNode.value === 'string' &&
+          usesNode.value.trim().startsWith('actions/checkout@')
+        ) {
+          jobHasCheckout = true;
+        }
         if (
           !isScalar(usesNode) ||
           typeof usesNode.value !== 'string' ||
@@ -2260,7 +2272,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
           );
         }
       }
-      if (jobInvokesNodeRuntime && !jobHasSetupNode) {
+      if (jobInvokesNodeRuntime && (jobHasCheckout || jobInvokesNpmOrNpx) && !jobHasSetupNode) {
         errors.push(
           `${wfRelPath} (job "${jobKey}"): Workflow job invokes node/npm/npx without \`actions/setup-node\` bound to \`.nvmrc\``
         );
@@ -2843,11 +2855,21 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     'storybook-build',
     'pages-verify',
     'attest-bundles',
+    'prepare-docs',
     'deploy-docs',
   ]) {
     if (ciJobIds.includes(requiredCiJob) && !deploymentMd.includes(requiredCiJob)) {
       errors.push(`DEPLOYMENT.md: Missing ci.yml job reference "${requiredCiJob}"`);
     }
+  }
+  if (!deploymentMd.includes('upload-sarif')) {
+    errors.push('DEPLOYMENT.md: Missing publish-artifact.yml job reference "upload-sarif"');
+  }
+  if (/\bsecrets:\s*inherit\b/.test(deploymentMd)) {
+    errors.push('DEPLOYMENT.md: Must not instruct or claim `secrets: inherit` for reusable workflow calls');
+  }
+  if (/\bsecrets:\s*inherit\b/.test(gcpMd)) {
+    errors.push('docs/deployment/gcp-cloud-run.md: Must not show `secrets: inherit` in reusable workflow snippets');
   }
 
   // 4a. Verify ci.yml `verify` job npm scripts are documented in DEPLOYMENT.md (`verify` (`ci.yml`) overview)

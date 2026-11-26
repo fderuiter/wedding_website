@@ -4,8 +4,10 @@ import { fileURLToPath } from 'url';
 import { isMap, isPair, isScalar, isSeq, LineCounter, parseDocument } from 'yaml';
 import {
   conditionExcludesTrigger,
+  extractLocalWorkflowCallTarget,
   getUntrustedWorkflowTriggers,
   permissionsHaveWriteScope,
+  UntrustedTriggerInfo,
 } from './action-pins/condition-parser';
 import {
   findMapPair,
@@ -30,9 +32,78 @@ const REMEDIATION_STEPS = [
   'Every job invoking actions/deploy-pages must set concurrency: { group: github-pages, cancel-in-progress: false, queue: max }.',
   'Every runs-on job must declare an integer "timeout-minutes" between 1 and 60 (reusable workflow caller jobs with uses: and no runs-on are exempt), and any step "timeout-minutes" must be an integer strictly less than its enclosing job "timeout-minutes".',
   'Step "run" scripts must bind GitHub Actions expressions via "env:" instead of interpolating "${{ ... }}" directly.',
-  'Jobs triggered by untrusted events (pull_request, pull_request_target, workflow_run) must not execute actions/checkout or npm ci/install while holding write permissions.',
+  'Jobs triggered directly or via local workflow_call by untrusted events (pull_request, pull_request_target, workflow_run) must not execute actions/checkout, npm, or repository scripts while holding write permissions.',
+  'Reusable workflow callers must pass minimal explicit secret maps instead of "secrets: inherit", and workflow_call.secrets must omit unused secret declarations.',
+  'Every "docker login" command and "docker/login-action" step must isolate credentials to a temporary DOCKER_CONFIG directory (mktemp -d) and delete it before later steps run.',
   'publish-artifact.yml must isolate BuildKit GHA cache scopes under "release-*" and validate cache tar archives before extraction; webhook curl calls must never follow redirects (--location / -L).',
 ];
+
+function escapeRegExp(raw: string): string {
+  return raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function collectScalarStrings(node: unknown, out: string[] = []): string[] {
+  if (isScalar(node)) {
+    const str = getScalarString(node);
+    if (str !== null) {
+      out.push(str);
+    }
+    return out;
+  }
+  if (isSeq(node)) {
+    for (const item of node.items) {
+      collectScalarStrings(item, out);
+    }
+    return out;
+  }
+  if (isMap(node)) {
+    for (const pair of node.items) {
+      if (isPair(pair)) {
+        collectScalarStrings(pair.key, out);
+        collectScalarStrings(pair.value, out);
+      }
+    }
+  }
+  return out;
+}
+
+function getScopedDockerConfigBinding(envNode: unknown): string | null {
+  if (!isMap(envNode) || !envNode.has('DOCKER_CONFIG')) {
+    return null;
+  }
+  const val = getScalarString(envNode.get('DOCKER_CONFIG', true))?.trim() ?? '';
+  if (!val || /^~\/\.docker\b|^\$HOME\/\.docker\b|^\$\{HOME\}\/\.docker\b/.test(val)) {
+    return null;
+  }
+  return val;
+}
+
+function subsequentStepCleansDockerConfig(
+  stepsItems: unknown[],
+  fromIdx: number
+): boolean {
+  for (let idx = fromIdx + 1; idx < stepsItems.length; idx += 1) {
+    const candidate = stepsItems[idx];
+    if (!isMap(candidate)) {
+      continue;
+    }
+    const candidateIf = getConditionString(candidate.get('if', true)) ?? '';
+    const candidateRun = getScalarString(candidate.get('run', true)) ?? '';
+    if (
+      /\balways\s*\(\s*\)/.test(candidateIf) &&
+      /\brm\s+-rf\b/.test(candidateRun) &&
+      (/DOCKER_CONFIG/.test(candidateRun) ||
+        Boolean(getScopedDockerConfigBinding(candidate.get('env', true))) ||
+        (isMap(candidate.get('env', true)) &&
+          collectScalarStrings(candidate.get('env', true)).some((s) =>
+            /docker-config|DOCKER_CONFIG/i.test(s)
+          )))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
 
 function concurrencyAlwaysCancelsInProgress(concurrencyNode: unknown): boolean {
   if (!isMap(concurrencyNode)) {
@@ -74,7 +145,8 @@ function evaluateAstPolicies(
   relPath: string,
   fileName: string,
   violations: Violation[],
-  pinnedOccurrences: PinnedActionOccurrence[]
+  pinnedOccurrences: PinnedActionOccurrence[],
+  propagatedTriggers: UntrustedTriggerInfo[] = []
 ): void {
   if (!isMap(doc.contents)) {
     return;
@@ -119,13 +191,61 @@ function evaluateAstPolicies(
   };
 
   const onNode: unknown = doc.contents.get('on', true);
-  const untrustedTriggers = getUntrustedWorkflowTriggers(onNode);
-  const hasUntrustedTrigger = untrustedTriggers.length > 0;
-  const untrustedTriggerLabel = untrustedTriggers.join('/');
+  const directTriggers = getUntrustedWorkflowTriggers(onNode);
+  const triggerInfos: UntrustedTriggerInfo[] = directTriggers.map((trigger) => ({
+    trigger,
+    viaWorkflowCall: false,
+  }));
+  for (const prop of propagatedTriggers) {
+    if (!triggerInfos.some((existing) => existing.trigger === prop.trigger)) {
+      triggerInfos.push(prop);
+    }
+  }
+  const hasUntrustedTrigger = triggerInfos.length > 0;
+  const untrustedTriggerLabel = triggerInfos
+    .map((info) =>
+      info.viaWorkflowCall && info.callerChain
+        ? `${info.trigger} (via workflow_call from ${info.callerChain})`
+        : info.trigger
+    )
+    .join('/');
   const topPermissionsNode: unknown = doc.contents.get('permissions', true);
   const topConcurrencyNode: unknown = doc.contents.get('concurrency', true);
 
   checkConcurrencyFifoQueue(topConcurrencyNode, 'concurrency');
+
+  // Rule: workflow_call.secrets must not declare unused secrets
+  const jobsNode: unknown = doc.contents.get('jobs', true);
+  if (isMap(onNode)) {
+    const workflowCallNode: unknown = onNode.get('workflow_call', true);
+    if (isMap(workflowCallNode)) {
+      const secretsDeclNode: unknown = workflowCallNode.get('secrets', true);
+      if (isMap(secretsDeclNode)) {
+        const jobsScalarStrings = collectScalarStrings(jobsNode);
+        for (const pair of secretsDeclNode.items) {
+          if (isPair(pair) && isScalar(pair.key) && typeof pair.key.value === 'string') {
+            const secretName = pair.key.value.trim();
+            if (!secretName) {
+              continue;
+            }
+            const secretRefPattern = new RegExp(
+              `\\bsecrets\\.${escapeRegExp(secretName)}\\b|\\bsecrets\\[\\s*['"]${escapeRegExp(secretName)}['"]\\s*\\]`
+            );
+            const isReferencedInJobs = jobsScalarStrings.some((str) =>
+              secretRefPattern.test(str)
+            );
+            if (!isReferencedInJobs) {
+              addAstViolation(
+                pair.key,
+                `on.workflow_call.secrets.${secretName}`,
+                `Reusable workflow secret "${secretName}" is declared under workflow_call.secrets in ${fileName} but never referenced in jobs.`
+              );
+            }
+          }
+        }
+      }
+    }
+  }
 
   // Rule: rollback_environment must not appear under workflow_dispatch.inputs outside rollback.yml
   if (fileName !== 'rollback.yml' && isMap(onNode)) {
@@ -150,7 +270,6 @@ function evaluateAstPolicies(
     }
   }
 
-  const jobsNode: unknown = doc.contents.get('jobs', true);
   if (!isMap(jobsNode)) {
     return;
   }
@@ -174,6 +293,20 @@ function evaluateAstPolicies(
         pinnedOccurrences
       );
     }
+
+    const jobSecretsPair = findMapPair(jobMap, 'secrets');
+    if (jobSecretsPair) {
+      const secretsScalar = getScalarString(jobSecretsPair.value)?.trim();
+      if (secretsScalar === 'inherit') {
+        addAstViolation(
+          jobSecretsPair.value ?? jobSecretsPair.key,
+          `jobs.${jobId}.secrets`,
+          `Job "${jobId}" uses "secrets: inherit"; pass only minimal explicit secrets required by the called reusable workflow.`
+        );
+      }
+    }
+
+    const jobEnvNode: unknown = jobMap.get('env', true);
 
     const jobIf = getConditionString(jobMap.get('if', true));
     const jobPermissionsNode: unknown = jobMap.has('permissions')
@@ -301,10 +434,14 @@ function evaluateAstPolicies(
       const stepIf = getConditionString(stepNode.get('if', true));
       const stepExcludesAllUntrustedTriggers =
         hasUntrustedTrigger &&
-        untrustedTriggers.every(
-          (trigger) =>
-            conditionExcludesTrigger(jobIf, trigger) ||
-            conditionExcludesTrigger(stepIf, trigger)
+        triggerInfos.every(
+          (info) =>
+            conditionExcludesTrigger(jobIf, info.trigger, {
+              viaWorkflowCall: info.viaWorkflowCall,
+            }) ||
+            conditionExcludesTrigger(stepIf, info.trigger, {
+              viaWorkflowCall: info.viaWorkflowCall,
+            })
         );
       const withNode: unknown = stepNode.get('with', true);
       const runNode: unknown = stepNode.get('run', true);
@@ -336,8 +473,8 @@ function evaluateAstPolicies(
           usesRaw.startsWith('crazy-max/ghaction-github-runtime@')) &&
         !stepExcludesAllUntrustedTriggers
       ) {
-        const guardHint = untrustedTriggers
-          .map((trigger) => `github.event_name != '${trigger}'`)
+        const guardHint = triggerInfos
+          .map((info) => `github.event_name != '${info.trigger}'`)
           .join(' && ');
         addAstViolation(
           usesNode ?? stepNode,
@@ -346,7 +483,7 @@ function evaluateAstPolicies(
         );
       }
 
-      // Rule 2b: Jobs running actions/checkout or npm ci / npm install on untrusted triggers must not hold write permissions
+      // Rule 2b: Jobs running actions/checkout, npm, or repository scripts on untrusted triggers must not hold write permissions
       if (
         hasUntrustedTrigger &&
         !stepExcludesAllUntrustedTriggers &&
@@ -371,6 +508,19 @@ function evaluateAstPolicies(
           runNode ?? stepNode,
           `jobs.${jobId}.permissions`,
           `Job "${jobId}" executes npm install/ci on ${untrustedTriggerLabel} while holding write permissions; drop write scopes before running package scripts.`
+        );
+      } else if (
+        hasUntrustedTrigger &&
+        !stepExcludesAllUntrustedTriggers &&
+        jobHasWritePermissions &&
+        runScript &&
+        (/\bnpm\s+(?:run|exec|test|t)\b/.test(runScript) ||
+          /(?:^|[\s;&|()])(?:\.\/)?scripts\/[A-Za-z0-9_./-]+/.test(runScript))
+      ) {
+        addAstViolation(
+          runNode ?? stepNode,
+          `jobs.${jobId}.permissions`,
+          `Job "${jobId}" executes npm or repository scripts on ${untrustedTriggerLabel} while holding write permissions; move workspace script execution to a read-only preflight job.`
         );
       }
 
@@ -397,8 +547,44 @@ function evaluateAstPolicies(
         }
       }
 
-      // Rule 4: Release cache isolation, safe tar extraction, and non-redirecting webhook curl checks
+      // Rule 4: Release cache isolation, safe tar extraction, scoped DOCKER_CONFIG registry logins, and non-redirecting webhook curl checks
       const stepEnvNode: unknown = stepNode.get('env', true);
+      const effectiveStepDockerConfig =
+        getScopedDockerConfigBinding(stepEnvNode) ??
+        getScopedDockerConfigBinding(jobEnvNode);
+
+      if (
+        usesRaw === 'docker/login-action' ||
+        usesRaw.startsWith('docker/login-action@')
+      ) {
+        if (
+          !effectiveStepDockerConfig ||
+          !subsequentStepCleansDockerConfig(stepsNode.items, stepIdx)
+        ) {
+          addAstViolation(
+            usesNode ?? stepNode,
+            usesRaw,
+            `Job "${jobId}" uses docker/login-action without binding a temporary "DOCKER_CONFIG" directory and deleting it in a subsequent "if: always()" cleanup step.`
+          );
+        }
+      }
+
+      if (runScript && /\bdocker\s+login\b/.test(runScript)) {
+        const inlineScopedAndCleaned =
+          /\bmktemp\s+-d\b/.test(runScript) &&
+          /\bDOCKER_CONFIG=/.test(runScript) &&
+          /\btrap\b[^\n]*\brm\s+-rf\b/.test(runScript);
+        const envScopedAndCleaned =
+          Boolean(effectiveStepDockerConfig) &&
+          subsequentStepCleansDockerConfig(stepsNode.items, stepIdx);
+        if (!inlineScopedAndCleaned && !envScopedAndCleaned) {
+          addAstViolation(
+            runNode ?? stepNode,
+            `jobs.${jobId}.steps[${stepIdx}].docker-login`,
+            `Job "${jobId}" runs "docker login" without scoping credentials to a temporary "DOCKER_CONFIG" directory and deleting it on step exit.`
+          );
+        }
+      }
       if (fileName === 'publish-artifact.yml') {
         if (
           usesRaw === 'actions/cache' ||
@@ -535,12 +721,27 @@ function evaluateAstPolicies(
   }
 }
 
-function checkWorkflowFile(
+interface ParsedWorkflowRecord {
+  fileName: string;
+  filePath: string;
+  relPath: string;
+  lines: string[];
+  lineCounter: LineCounter;
+  doc: ReturnType<typeof parseDocument>;
+  directTriggers: Set<string>;
+  propagatedTriggers: Map<string, string>;
+}
+
+interface LocalWorkflowCallEdge {
+  callerFile: string;
+  targetFile: string;
+  callerJobIf: string | null;
+}
+
+function parseWorkflowRecord(
   filePath: string,
-  violations: Violation[],
-  pinnedOccurrences: PinnedActionOccurrence[],
   baseDir: string = process.cwd()
-): void {
+): ParsedWorkflowRecord {
   const relPath = path.relative(baseDir, filePath).replace(/\\/g, '/');
   const fileName = path.basename(filePath);
   const content = fs.readFileSync(filePath, 'utf8');
@@ -552,38 +753,149 @@ function checkWorkflowFile(
     strict: true,
     lineCounter,
   });
-  for (const err of doc.errors) {
+
+  const onNode: unknown = isMap(doc.contents) ? doc.contents.get('on', true) : undefined;
+  const directTriggers = new Set<string>(getUntrustedWorkflowTriggers(onNode));
+
+  return {
+    fileName,
+    filePath,
+    relPath,
+    lines,
+    lineCounter,
+    doc,
+    directTriggers,
+    propagatedTriggers: new Map<string, string>(),
+  };
+}
+
+function extractLocalCallEdges(record: ParsedWorkflowRecord): LocalWorkflowCallEdge[] {
+  if (!isMap(record.doc.contents)) {
+    return [];
+  }
+  const jobsNode: unknown = record.doc.contents.get('jobs', true);
+  if (!isMap(jobsNode)) {
+    return [];
+  }
+  const edges: LocalWorkflowCallEdge[] = [];
+  for (const jobPair of jobsNode.items) {
+    if (!isPair(jobPair) || !isScalar(jobPair.key) || !isMap(jobPair.value)) {
+      continue;
+    }
+    const jobMap = jobPair.value;
+    const jobUsesPair = findMapPair(jobMap, 'uses');
+    if (!jobUsesPair) {
+      continue;
+    }
+    const usesVal = getScalarString(jobUsesPair.value);
+    if (!usesVal) {
+      continue;
+    }
+    const targetFile = extractLocalWorkflowCallTarget(usesVal);
+    if (!targetFile) {
+      continue;
+    }
+    const callerJobIf = getConditionString(jobMap.get('if', true));
+    edges.push({
+      callerFile: record.fileName,
+      targetFile,
+      callerJobIf,
+    });
+  }
+  return edges;
+}
+
+function propagateUntrustedTriggersAcrossWorkflows(
+  records: ParsedWorkflowRecord[]
+): void {
+  const recordByFile = new Map<string, ParsedWorkflowRecord>();
+  for (const record of records) {
+    recordByFile.set(record.fileName, record);
+  }
+  const edges = records.flatMap((record) => extractLocalCallEdges(record));
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const edge of edges) {
+      const caller = recordByFile.get(edge.callerFile);
+      const callee = recordByFile.get(edge.targetFile);
+      if (!caller || !callee) {
+        continue;
+      }
+      const activeCallerTriggers = new Set<string>([
+        ...caller.directTriggers,
+        ...caller.propagatedTriggers.keys(),
+      ]);
+      for (const trigger of activeCallerTriggers) {
+        const callerViaWorkflowCall = !caller.directTriggers.has(trigger);
+        if (
+          conditionExcludesTrigger(edge.callerJobIf, trigger, {
+            viaWorkflowCall: callerViaWorkflowCall,
+          })
+        ) {
+          continue;
+        }
+        if (
+          !callee.directTriggers.has(trigger) &&
+          !callee.propagatedTriggers.has(trigger)
+        ) {
+          const chainPrefix = caller.directTriggers.has(trigger)
+            ? caller.fileName
+            : `${caller.propagatedTriggers.get(trigger)} -> ${caller.fileName}`;
+          callee.propagatedTriggers.set(trigger, chainPrefix);
+          changed = true;
+        }
+      }
+    }
+  }
+}
+
+function evaluateWorkflowRecord(
+  record: ParsedWorkflowRecord,
+  violations: Violation[],
+  pinnedOccurrences: PinnedActionOccurrence[]
+): void {
+  for (const err of record.doc.errors) {
     const lineNumber = err.linePos?.[0]?.line ?? 1;
     const summary = err.message.split(/\r?\n/)[0].trim();
     violations.push({
-      filePath: relPath,
+      filePath: record.relPath,
       lineNumber,
-      lineContent: (lines[lineNumber - 1] ?? '').trim(),
+      lineContent: (record.lines[lineNumber - 1] ?? '').trim(),
       actionRef: err.code,
       reason: `YAML 1.2 parse error (${err.code}): ${summary}`,
     });
   }
 
-  for (const warn of doc.warnings) {
+  for (const warn of record.doc.warnings) {
     const lineNumber = warn.linePos?.[0]?.line ?? 1;
     const summary = warn.message.split(/\r?\n/)[0].trim();
     violations.push({
-      filePath: relPath,
+      filePath: record.relPath,
       lineNumber,
-      lineContent: (lines[lineNumber - 1] ?? '').trim(),
+      lineContent: (record.lines[lineNumber - 1] ?? '').trim(),
       actionRef: warn.code,
       reason: `YAML 1.2 warning (${warn.code}): ${summary}`,
     });
   }
 
+  const propagatedList: UntrustedTriggerInfo[] = Array.from(
+    record.propagatedTriggers.entries()
+  ).map(([trigger, callerChain]) => ({
+    trigger,
+    viaWorkflowCall: true,
+    callerChain,
+  }));
+
   evaluateAstPolicies(
-    doc,
-    lineCounter,
-    lines,
-    relPath,
-    fileName,
+    record.doc,
+    record.lineCounter,
+    record.lines,
+    record.relPath,
+    record.fileName,
     violations,
-    pinnedOccurrences
+    pinnedOccurrences,
+    propagatedList
   );
 }
 
@@ -601,13 +913,13 @@ function collectActionPins(workflowsDir: string = WORKFLOWS_DIR): {
   const violations: Violation[] = [];
   const pinnedOccurrences: PinnedActionOccurrence[] = [];
 
-  for (const file of workflowFiles) {
-    checkWorkflowFile(
-      path.join(workflowsDir, file),
-      violations,
-      pinnedOccurrences,
-      baseDir
-    );
+  const records = workflowFiles.map((file) =>
+    parseWorkflowRecord(path.join(workflowsDir, file), baseDir)
+  );
+  propagateUntrustedTriggersAcrossWorkflows(records);
+
+  for (const record of records) {
+    evaluateWorkflowRecord(record, violations, pinnedOccurrences);
   }
 
   return { workflowFiles, violations, pinnedOccurrences };

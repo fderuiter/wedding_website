@@ -34,6 +34,11 @@ on:
       image_digest:
         description: 'Published image digest'
         value: ${{ jobs.publish.outputs.image_digest }}
+    secrets:
+      DOCKERHUB_USERNAME:
+        required: false
+      DOCKERHUB_TOKEN:
+        required: false
 
 permissions:
   contents: read
@@ -59,6 +64,12 @@ jobs:
       amd64_digest: ${{ steps.inspect-ghcr.outputs.amd64_digest }}
       arm64_digest: ${{ steps.inspect-ghcr.outputs.arm64_digest }}
       source_index_digest: ${{ steps.inspect-ghcr.outputs.source_index_digest }}
+      image_repository: ${{ steps.meta.outputs.image_repository }}
+      dockerhub_repository: ${{ steps.meta.outputs.dockerhub_repository }}
+      revision: ${{ steps.meta.outputs.revision }}
+      tag_name: ${{ steps.meta.outputs.tag_name }}
+      primary_uri: ${{ steps.meta.outputs.primary_uri }}
+      tags: ${{ steps.meta.outputs.tags }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -277,298 +288,22 @@ jobs:
               `Verified successful CI run #${successfulRun.run_number} (ID: ${successfulRun.id}) for commit ${targetSha}.`
             );
 
-      - name: Inspect Existing Attested GHCR Release Image
-        id: inspect-ghcr
-        timeout-minutes: 5
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GITHUB_ACTOR_LOGIN: ${{ github.actor }}
-          EVENT_NAME: ${{ github.event_name }}
-          RESOLVED_SHA: ${{ steps.resolve.outputs.resolved_sha }}
-          REPO_OWNER: ${{ github.repository_owner }}
-          SIGNER_WORKFLOW: ${{ github.repository }}/.github/workflows/publish-artifact.yml
-        run: bash scripts/ghcr-release-promotion.sh inspect-preflight
-
-  build:
-    name: Build, Scan & Smoke Test (${{ matrix.platform }})
-    needs: [preflight]
-    if: needs.preflight.outputs.promote_existing != 'true'
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 35
-    permissions:
-      contents: read
-      security-events: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: amd64
-            platform: linux/amd64
-            runner: ubuntu-latest
-          - arch: arm64
-            platform: linux/arm64
-            runner: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ inputs.commit_sha }}
-          persist-credentials: false
-
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: '.nvmrc'
-
-      - name: Validate Commit SHA Input
-        id: meta
-        env:
-          INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
-        run: |
-          if [ -n "$INPUT_COMMIT_SHA" ] && [[ ! "$INPUT_COMMIT_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
-            echo "::error::Invalid commit_sha '${INPUT_COMMIT_SHA}'. Must be a 40-character hexadecimal commit SHA."
-            exit 1
-          fi
-          RESOLVED_SHA="${INPUT_COMMIT_SHA:-${GITHUB_SHA}}"
-          echo "revision=${RESOLVED_SHA}" >> "$GITHUB_OUTPUT"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
-      - name: Cache BuildKit APT and npm mounts
-        id: buildkit-deps-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: /tmp/buildkit-mounts/deps
-          key: release-buildkit-deps-${{ matrix.arch }}-${{ hashFiles('Dockerfile', 'package-lock.json', 'docker/prisma-cli/package-lock.json', 'docker/prisma-cli/engine-digests.json', '.npmrc') }}
-
-      - name: Cache BuildKit Next.js mount
-        id: buildkit-next-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: /tmp/buildkit-mounts/next
-          key: release-buildkit-next-${{ matrix.arch }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('next.config.ts', 'postcss.config.mjs', 'tsconfig.json', 'tsconfig.build.json', 'prisma/schema.prisma', 'src/**') }}
-
-      - name: Hydrate BuildKit Cache Mounts
-        env:
-          TARGET_PLATFORM: ${{ matrix.platform }}
-          MOUNT_CACHE_DIR: /tmp/buildkit-mounts
-        run: |
-          BASE_IMAGE=$(awk '/^FROM / {print $2; exit}' Dockerfile)
-          CTX_DIR=$(mktemp -d)
-          trap 'rm -rf "$CTX_DIR"' EXIT
-          validate_cache_archive() {
-            local archive="$1"
-            local allowed_regex="$2"
-            if tar -tvf "$archive" | awk '{print substr($1,1,1)}' | grep -Eq '^[lhbcps]'; then
-              echo "::error::Cache archive '${archive}' contains disallowed link or device entries."
-              exit 1
-            fi
-            while IFS= read -r member; do
-              [ -z "$member" ] && continue
-              local normalized="${member#./}"
-              if [[ "$member" == /* ]] || [[ "$normalized" == *".."* ]] || [[ ! "$normalized" =~ $allowed_regex ]]; then
-                echo "::error::Cache archive '${archive}' contains unexpected path '${member}'."
-                exit 1
-              fi
-            done < <(tar -tf "$archive")
-          }
-          HAS_ARCHIVE=false
-          if [ -f "$MOUNT_CACHE_DIR/deps/mounts.tar" ]; then
-            validate_cache_archive "$MOUNT_CACHE_DIR/deps/mounts.tar" '^(var(/cache(/apt(/.*)?)?|/lib(/apt(/.*)?)?)?|root(/\.npm(/.*)?)?)$'
-            cp "$MOUNT_CACHE_DIR/deps/mounts.tar" "$CTX_DIR/deps.tar"
-            HAS_ARCHIVE=true
-          fi
-          if [ -f "$MOUNT_CACHE_DIR/next/mounts.tar" ]; then
-            validate_cache_archive "$MOUNT_CACHE_DIR/next/mounts.tar" '^app(/\.next(/cache(/.*)?)?)?$'
-            cp "$MOUNT_CACHE_DIR/next/mounts.tar" "$CTX_DIR/next.tar"
-            HAS_ARCHIVE=true
-          fi
-          if [ "$HAS_ARCHIVE" = "false" ]; then
-            echo "No persisted BuildKit cache mounts found; skipping hydration."
-            exit 0
-          fi
-          printf '%s\n' \
-            '# syntax=docker/dockerfile:1' \
-            "FROM ${BASE_IMAGE}" \
-            'ARG CACHEBUST=1' \
-            'RUN --mount=type=bind,target=/ctx \' \
-            '    --mount=type=cache,target=/var/cache/apt,sharing=locked \' \
-            '    --mount=type=cache,target=/var/lib/apt,sharing=locked \' \
-            '    --mount=type=cache,target=/root/.npm,sharing=locked \' \
-            '    --mount=type=cache,target=/app/.next/cache,sharing=locked \' \
-            '    echo "$CACHEBUST" >/dev/null && \' \
-            '    if [ -f /ctx/deps.tar ]; then mkdir -p /var/cache/apt /var/lib/apt /root/.npm && tar --no-same-owner --no-same-permissions -xf /ctx/deps.tar -C / var/cache/apt var/lib/apt root/.npm; fi && \' \
-            '    if [ -f /ctx/next.tar ]; then mkdir -p /app/.next/cache && tar --no-same-owner --no-same-permissions -xf /ctx/next.tar -C / app/.next/cache; fi' \
-            | docker buildx build \
-              --platform "$TARGET_PLATFORM" \
-              --build-arg "CACHEBUST=$(date +%s%N)" \
-              --output type=cacheonly \
-              -f - "$CTX_DIR"
-
-      - name: Build Native Container Image
-        id: build_image
-        timeout-minutes: 20
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          platforms: ${{ matrix.platform }}
-          provenance: false
-          sbom: false
-          labels: |
-            org.opencontainers.image.revision=${{ steps.meta.outputs.revision }}
-          annotations: |
-            manifest:org.opencontainers.image.revision=${{ steps.meta.outputs.revision }}
-          outputs: type=oci,dest=/tmp/oci-${{ matrix.arch }}.tar
-          cache-from: type=gha,scope=release-app-${{ matrix.arch }}
-          cache-to: type=gha,scope=release-app-${{ matrix.arch }},mode=max
-
-      - name: Persist BuildKit Cache Mounts
-        if: steps.buildkit-deps-cache.outputs.cache-hit != 'true' || steps.buildkit-next-cache.outputs.cache-hit != 'true'
-        timeout-minutes: 5
-        env:
-          TARGET_PLATFORM: ${{ matrix.platform }}
-          MOUNT_CACHE_DIR: /tmp/buildkit-mounts
-          DEPS_CACHE_HIT: ${{ steps.buildkit-deps-cache.outputs.cache-hit }}
-          NEXT_CACHE_HIT: ${{ steps.buildkit-next-cache.outputs.cache-hit }}
-        run: |
-          if [ -f scripts/persist-buildkit-mounts.sh ]; then
-            bash scripts/persist-buildkit-mounts.sh
-          else
-            echo "::notice::Skipping BuildKit mount persistence because scripts/persist-buildkit-mounts.sh is absent at checked-out revision."
-          fi
-
-      - name: Load OCI Archive into Local Docker Daemon
-        env:
-          ARCH: ${{ matrix.arch }}
-        run: |
-          OCI_TAR="/tmp/oci-${ARCH}.tar"
-          if [ ! -f "$OCI_TAR" ]; then
-            echo "::error::Missing exported OCI archive '${OCI_TAR}'."
-            exit 1
-          fi
-          skopeo copy "oci-archive:${OCI_TAR}" "docker-daemon:wedding-website:latest"
-
-      - name: Scan Native Container Image with Trivy
-        timeout-minutes: 5
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: wedding-website:latest
-          format: 'sarif'
-          output: 'trivy-results-${{ matrix.arch }}.sarif'
-          ignore-unfixed: 'true'
-          severity: 'CRITICAL,HIGH,MEDIUM'
-          exit-code: '1'
-
-      - name: Generate Native Container SPDX SBOM
-        timeout-minutes: 5
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: wedding-website:latest
-          format: 'spdx-json'
-          output: 'sbom-${{ matrix.arch }}.spdx.json'
-
-      - name: Upload Trivy Scan Results to GitHub Code Scanning
-        timeout-minutes: 5
-        uses: github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
-        if: always() && hashFiles(format('trivy-results-{0}.sarif', matrix.arch)) != ''
-        with:
-          sarif_file: 'trivy-results-${{ matrix.arch }}.sarif'
-          category: 'trivy-${{ matrix.arch }}'
-
-      - name: Run Native Container & Clean Database Smoke Test
-        env:
-          SKIP_IMAGE_BUILD: 'true'
-          GHA_CACHE_SCOPE: release-app-${{ matrix.arch }}
-        run: node scripts/test-container.mjs --container-migration
-
-      - name: Compress Verified OCI Archive & Export Digest
-        env:
-          ARCH: ${{ matrix.arch }}
-          BUILD_DIGEST: ${{ steps.build_image.outputs.digest }}
-        run: |
-          OCI_TAR="/tmp/oci-${ARCH}.tar"
-          if [ ! -f "$OCI_TAR" ]; then
-            echo "::error::Missing verified OCI archive '${OCI_TAR}'."
-            exit 1
-          fi
-          ARCHIVE_DIGEST=$(skopeo inspect --format '{{.Digest}}' "oci-archive:${OCI_TAR}" | tr -d '[:space:]')
-          if [[ ! "$ARCHIVE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
-            echo "::error::Invalid OCI manifest digest '${ARCHIVE_DIGEST}' inspected from '${OCI_TAR}'."
-            exit 1
-          fi
-          if [ -n "$BUILD_DIGEST" ] && [ "$BUILD_DIGEST" != "$ARCHIVE_DIGEST" ]; then
-            echo "::error::Buildx digest '${BUILD_DIGEST}' does not match inspected OCI archive digest '${ARCHIVE_DIGEST}'."
-            exit 1
-          fi
-          mkdir -p /tmp/oci-handoff
-          SBOM_FILE="sbom-${ARCH}.spdx.json"
-          bash scripts/release-integrity.sh verify-spdx "$SBOM_FILE"
-          cp "$SBOM_FILE" "/tmp/oci-handoff/sbom-${ARCH}.spdx.json"
-          zstd -T0 -f "$OCI_TAR" -o "/tmp/oci-handoff/oci-${ARCH}.tar.zst"
-          printf '%s\n' "$ARCHIVE_DIGEST" > "/tmp/oci-handoff/${ARCH}.digest"
-          bash scripts/release-integrity.sh generate-sums \
-            --dir /tmp/oci-handoff \
-            --output "/tmp/oci-handoff/sha256-${ARCH}.sums" \
-            "oci-${ARCH}.tar.zst" \
-            "sbom-${ARCH}.spdx.json"
-          bash scripts/release-integrity.sh verify-sums \
-            --dir /tmp/oci-handoff \
-            --manifest "/tmp/oci-handoff/sha256-${ARCH}.sums" \
-            "oci-${ARCH}.tar.zst" \
-            "sbom-${ARCH}.spdx.json"
-
-      - name: Upload Verified OCI Archive Artifact
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: oci-archive-${{ matrix.arch }}
-          path: |
-            /tmp/oci-handoff/oci-${{ matrix.arch }}.tar.zst
-            /tmp/oci-handoff/${{ matrix.arch }}.digest
-            /tmp/oci-handoff/sbom-${{ matrix.arch }}.spdx.json
-            /tmp/oci-handoff/sha256-${{ matrix.arch }}.sums
-          compression-level: 0
-          if-no-files-found: error
-          retention-days: 1
-
-  publish:
-    name: Merge Multi-Arch Index & Attest Provenance
-    needs: [preflight, build]
-    if: |
-      !cancelled() &&
-      needs.preflight.result == 'success' &&
-      (needs.build.result == 'success' || (needs.preflight.outputs.promote_existing == 'true' && needs.build.result == 'skipped'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-      attestations: write
-    outputs:
-      image_uri: ${{ steps.meta.outputs.primary_uri }}
-      image_tag: ${{ steps.meta.outputs.tag_name }}
-      image_digest: ${{ steps.merge.outputs.digest }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ inputs.commit_sha }}
-          fetch-depth: 0
-          persist-credentials: false
-
       - name: Compute Image Tag & Targets
         id: meta
         env:
           EVENT_NAME: ${{ github.event_name }}
           RAW_INPUT_TAG: ${{ inputs.tag_name }}
           INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
+          STEPS_RESOLVED_SHA: ${{ steps.resolve.outputs.resolved_sha }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN != '' && 'configured' || '' }}
         run: |
           if [ -n "$INPUT_COMMIT_SHA" ] && [[ ! "$INPUT_COMMIT_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
             echo "::error::Invalid commit_sha '${INPUT_COMMIT_SHA}'. Must be a 40-character hexadecimal commit SHA."
             exit 1
           fi
 
-          RESOLVED_SHA="${INPUT_COMMIT_SHA:-${GITHUB_SHA}}"
+          RESOLVED_SHA="${INPUT_COMMIT_SHA:-${STEPS_RESOLVED_SHA:-${GITHUB_SHA}}}"
 
           if [ -n "$RAW_INPUT_TAG" ]; then
             if [[ ! "$RAW_INPUT_TAG" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
@@ -671,6 +406,397 @@ jobs:
           echo "primary_uri=${GHCR_PRIMARY}" >> "$GITHUB_OUTPUT"
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
 
+      - name: Inspect Existing Attested GHCR Release Image
+        id: inspect-ghcr
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_ACTOR_LOGIN: ${{ github.actor }}
+          EVENT_NAME: ${{ github.event_name }}
+          RESOLVED_SHA: ${{ steps.resolve.outputs.resolved_sha }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          SIGNER_WORKFLOW: ${{ github.repository }}/.github/workflows/publish-artifact.yml
+        run: bash scripts/ghcr-release-promotion.sh inspect-preflight
+
+      - name: Extract & Verify Promoted GHCR Metadata
+        if: steps.inspect-ghcr.outputs.promote_existing == 'true'
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_ACTOR_LOGIN: ${{ github.actor }}
+          IMAGE_REPOSITORY: ${{ steps.meta.outputs.image_repository }}
+          PROMOTED_INDEX_DIGEST: ${{ steps.inspect-ghcr.outputs.source_index_digest }}
+          PROMOTED_AMD64_DIGEST: ${{ steps.inspect-ghcr.outputs.amd64_digest }}
+          PROMOTED_ARM64_DIGEST: ${{ steps.inspect-ghcr.outputs.arm64_digest }}
+          REVISION: ${{ steps.meta.outputs.revision }}
+          RESOLVED_SHA: ${{ steps.resolve.outputs.resolved_sha }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          SIGNER_WORKFLOW: ${{ github.repository }}/.github/workflows/publish-artifact.yml
+          OCI_HANDOFF_DIR: /tmp/oci-handoff
+          DIGESTS_DIR: /tmp/oci-handoff
+          DOCKERHUB_REPOSITORY: ''
+        run: |
+          SCOPED_DOCKER_CONFIG=$(mktemp -d "${RUNNER_TEMP:-/tmp}/docker-config-XXXXXX")
+          chmod 700 "$SCOPED_DOCKER_CONFIG"
+          export DOCKER_CONFIG="$SCOPED_DOCKER_CONFIG"
+          trap 'rm -rf "$SCOPED_DOCKER_CONFIG"' EXIT
+          if [ -n "${GH_TOKEN:-}" ] && [ -n "${GITHUB_ACTOR_LOGIN:-}" ] && command -v docker >/dev/null 2>&1; then
+            printf '%s\n' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR_LOGIN" --password-stdin >/dev/null 2>&1 || true
+          fi
+          bash scripts/ghcr-release-promotion.sh extract-promoted-sboms
+          bash scripts/ghcr-release-promotion.sh mirror-promoted-digests
+
+      - name: Upload Verified Promoted Metadata Artifact
+        if: steps.inspect-ghcr.outputs.promote_existing == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: promoted-oci-metadata
+          path: |
+            /tmp/oci-handoff/amd64.digest
+            /tmp/oci-handoff/arm64.digest
+            /tmp/oci-handoff/sbom-amd64.spdx.json
+            /tmp/oci-handoff/sbom-arm64.spdx.json
+          if-no-files-found: error
+          retention-days: 1
+
+  build:
+    name: Build, Scan & Smoke Test (${{ matrix.platform }})
+    needs: [preflight]
+    if: needs.preflight.outputs.promote_existing != 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - id: checkout-default
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Align Workspace to Verified Main-Branch Commit
+        id: align-commit
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESOLVED_SHA: ${{ needs.preflight.outputs.resolved_sha }}
+          TRUSTED_SCRIPTS_DIR: ${{ runner.temp }}/trusted-ci-scripts
+        run: |
+          if [[ ! "$RESOLVED_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            echo "::error::Invalid resolved_sha '${RESOLVED_SHA}'. Must be a 40-character hexadecimal commit SHA."
+            exit 1
+          fi
+
+          rm -rf "$TRUSTED_SCRIPTS_DIR"
+          mkdir -p "$TRUSTED_SCRIPTS_DIR"
+          cp scripts/persist-buildkit-mounts.sh scripts/release-integrity.sh scripts/test-container.mjs scripts/smoke-runner.mjs "$TRUSTED_SCRIPTS_DIR/"
+
+          GIT_AUTH_ARGS=()
+          ORIGIN_URL=$(git remote get-url origin 2>/dev/null || true)
+          EFFECTIVE_GIT_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+          if [ -n "$EFFECTIVE_GIT_TOKEN" ] && [[ "$ORIGIN_URL" =~ ^https?://[^/]+ ]]; then
+            ORIGIN_SERVER="${BASH_REMATCH[0]}"
+            BASIC_TOKEN=$(printf 'x-access-token:%s' "$EFFECTIVE_GIT_TOKEN" | base64 | tr -d '\r\n')
+            GIT_AUTH_ARGS=(-c "http.${ORIGIN_SERVER}/.extraheader=AUTHORIZATION: basic ${BASIC_TOKEN}")
+          fi
+
+          if git remote get-url origin >/dev/null 2>&1; then
+            git "${GIT_AUTH_ARGS[@]}" fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          fi
+          if ! git cat-file -e "${RESOLVED_SHA}^{commit}" 2>/dev/null && git remote get-url origin >/dev/null 2>&1; then
+            git "${GIT_AUTH_ARGS[@]}" fetch --no-tags origin "$RESOLVED_SHA" || true
+          fi
+          if ! git merge-base --is-ancestor "$RESOLVED_SHA" refs/remotes/origin/main; then
+            echo "::error::Target commit '${RESOLVED_SHA}' is not an ancestor of origin/main."
+            exit 1
+          fi
+
+          git checkout --detach "$RESOLVED_SHA"
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Cache BuildKit APT and npm mounts
+        id: buildkit-deps-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /tmp/buildkit-mounts/deps
+          key: release-buildkit-deps-${{ matrix.arch }}-${{ hashFiles('Dockerfile', 'package-lock.json', 'docker/prisma-cli/package-lock.json', 'docker/prisma-cli/engine-digests.json', '.npmrc') }}
+
+      - name: Cache BuildKit Next.js mount
+        id: buildkit-next-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /tmp/buildkit-mounts/next
+          key: release-buildkit-next-${{ matrix.arch }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('next.config.ts', 'postcss.config.mjs', 'tsconfig.json', 'tsconfig.build.json', 'prisma/schema.prisma', 'src/**') }}
+
+      - name: Hydrate BuildKit Cache Mounts
+        env:
+          TARGET_PLATFORM: ${{ matrix.platform }}
+          MOUNT_CACHE_DIR: /tmp/buildkit-mounts
+        run: |
+          BASE_IMAGE=$(awk '/^FROM / {print $2; exit}' Dockerfile)
+          CTX_DIR=$(mktemp -d)
+          trap 'rm -rf "$CTX_DIR"' EXIT
+          validate_cache_archive() {
+            local archive="$1"
+            local allowed_regex="$2"
+            if tar -tvf "$archive" | awk '{print substr($1,1,1)}' | grep -Eq '^[lhbcps]'; then
+              echo "::error::Cache archive '${archive}' contains disallowed link or device entries."
+              exit 1
+            fi
+            while IFS= read -r member; do
+              [ -z "$member" ] && continue
+              local normalized="${member#./}"
+              if [[ "$member" == /* ]] || [[ "$normalized" == *".."* ]] || [[ ! "$normalized" =~ $allowed_regex ]]; then
+                echo "::error::Cache archive '${archive}' contains unexpected path '${member}'."
+                exit 1
+              fi
+            done < <(tar -tf "$archive")
+          }
+          HAS_ARCHIVE=false
+          if [ -f "$MOUNT_CACHE_DIR/deps/mounts.tar" ]; then
+            validate_cache_archive "$MOUNT_CACHE_DIR/deps/mounts.tar" '^(var(/cache(/apt(/.*)?)?|/lib(/apt(/.*)?)?)?|root(/\.npm(/.*)?)?)$'
+            cp "$MOUNT_CACHE_DIR/deps/mounts.tar" "$CTX_DIR/deps.tar"
+            HAS_ARCHIVE=true
+          fi
+          if [ -f "$MOUNT_CACHE_DIR/next/mounts.tar" ]; then
+            validate_cache_archive "$MOUNT_CACHE_DIR/next/mounts.tar" '^app(/\.next(/cache(/.*)?)?)?$'
+            cp "$MOUNT_CACHE_DIR/next/mounts.tar" "$CTX_DIR/next.tar"
+            HAS_ARCHIVE=true
+          fi
+          if [ "$HAS_ARCHIVE" = "false" ]; then
+            echo "No persisted BuildKit cache mounts found; skipping hydration."
+            exit 0
+          fi
+          printf '%s\n' \
+            '# syntax=docker/dockerfile:1' \
+            "FROM ${BASE_IMAGE}" \
+            'ARG CACHEBUST=1' \
+            'RUN --mount=type=bind,target=/ctx \' \
+            '    --mount=type=cache,target=/var/cache/apt,sharing=locked \' \
+            '    --mount=type=cache,target=/var/lib/apt,sharing=locked \' \
+            '    --mount=type=cache,target=/root/.npm,sharing=locked \' \
+            '    --mount=type=cache,target=/app/.next/cache,sharing=locked \' \
+            '    echo "$CACHEBUST" >/dev/null && \' \
+            '    if [ -f /ctx/deps.tar ]; then mkdir -p /var/cache/apt /var/lib/apt /root/.npm && tar --no-same-owner --no-same-permissions -xf /ctx/deps.tar -C / var/cache/apt var/lib/apt root/.npm; fi && \' \
+            '    if [ -f /ctx/next.tar ]; then mkdir -p /app/.next/cache && tar --no-same-owner --no-same-permissions -xf /ctx/next.tar -C / app/.next/cache; fi' \
+            | docker buildx build \
+              --platform "$TARGET_PLATFORM" \
+              --build-arg "CACHEBUST=$(date +%s%N)" \
+              --output type=cacheonly \
+              -f - "$CTX_DIR"
+
+      - name: Build Native Container Image
+        id: build_image
+        timeout-minutes: 20
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          provenance: false
+          sbom: false
+          labels: |
+            org.opencontainers.image.revision=${{ needs.preflight.outputs.revision }}
+          annotations: |
+            manifest:org.opencontainers.image.revision=${{ needs.preflight.outputs.revision }}
+          outputs: type=oci,dest=/tmp/oci-${{ matrix.arch }}.tar
+          cache-from: type=gha,scope=release-app-${{ matrix.arch }}
+          cache-to: type=gha,scope=release-app-${{ matrix.arch }},mode=max
+
+      - name: Restore Trusted Default-Branch Runner Scripts
+        env:
+          TRUSTED_SCRIPTS_DIR: ${{ runner.temp }}/trusted-ci-scripts
+        run: |
+          mkdir -p scripts
+          cp -f "$TRUSTED_SCRIPTS_DIR/persist-buildkit-mounts.sh" \
+            "$TRUSTED_SCRIPTS_DIR/release-integrity.sh" \
+            "$TRUSTED_SCRIPTS_DIR/test-container.mjs" \
+            "$TRUSTED_SCRIPTS_DIR/smoke-runner.mjs" \
+            scripts/
+
+      - name: Persist BuildKit Cache Mounts
+        if: steps.buildkit-deps-cache.outputs.cache-hit != 'true' || steps.buildkit-next-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 5
+        env:
+          TARGET_PLATFORM: ${{ matrix.platform }}
+          MOUNT_CACHE_DIR: /tmp/buildkit-mounts
+          DEPS_CACHE_HIT: ${{ steps.buildkit-deps-cache.outputs.cache-hit }}
+          NEXT_CACHE_HIT: ${{ steps.buildkit-next-cache.outputs.cache-hit }}
+        run: |
+          if [ -f scripts/persist-buildkit-mounts.sh ]; then
+            bash scripts/persist-buildkit-mounts.sh
+          else
+            echo "::notice::Skipping BuildKit mount persistence because scripts/persist-buildkit-mounts.sh is absent at checked-out revision."
+          fi
+
+      - name: Load OCI Archive into Local Docker Daemon
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          OCI_TAR="/tmp/oci-${ARCH}.tar"
+          if [ ! -f "$OCI_TAR" ]; then
+            echo "::error::Missing exported OCI archive '${OCI_TAR}'."
+            exit 1
+          fi
+          skopeo copy "oci-archive:${OCI_TAR}" "docker-daemon:wedding-website:latest"
+
+      - name: Scan Native Container Image with Trivy
+        timeout-minutes: 5
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: wedding-website:latest
+          format: 'sarif'
+          output: 'trivy-results-${{ matrix.arch }}.sarif'
+          ignore-unfixed: 'true'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          exit-code: '1'
+
+      - name: Generate Native Container SPDX SBOM
+        timeout-minutes: 5
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: wedding-website:latest
+          format: 'spdx-json'
+          output: 'sbom-${{ matrix.arch }}.spdx.json'
+
+      - name: Upload Trivy SARIF Report Artifact
+        timeout-minutes: 5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && hashFiles(format('trivy-results-{0}.sarif', matrix.arch)) != ''
+        with:
+          name: trivy-sarif-${{ matrix.arch }}
+          path: trivy-results-${{ matrix.arch }}.sarif
+          if-no-files-found: warn
+          retention-days: 1
+
+      - name: Run Native Container & Clean Database Smoke Test
+        env:
+          SKIP_IMAGE_BUILD: 'true'
+          GHA_CACHE_SCOPE: release-app-${{ matrix.arch }}
+        run: node scripts/test-container.mjs --container-migration
+
+      - name: Compress Verified OCI Archive & Export Digest
+        env:
+          ARCH: ${{ matrix.arch }}
+          BUILD_DIGEST: ${{ steps.build_image.outputs.digest }}
+        run: |
+          OCI_TAR="/tmp/oci-${ARCH}.tar"
+          if [ ! -f "$OCI_TAR" ]; then
+            echo "::error::Missing verified OCI archive '${OCI_TAR}'."
+            exit 1
+          fi
+          ARCHIVE_DIGEST=$(skopeo inspect --format '{{.Digest}}' "oci-archive:${OCI_TAR}" | tr -d '[:space:]')
+          if [[ ! "$ARCHIVE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "::error::Invalid OCI manifest digest '${ARCHIVE_DIGEST}' inspected from '${OCI_TAR}'."
+            exit 1
+          fi
+          if [ -n "$BUILD_DIGEST" ] && [ "$BUILD_DIGEST" != "$ARCHIVE_DIGEST" ]; then
+            echo "::error::Buildx digest '${BUILD_DIGEST}' does not match inspected OCI archive digest '${ARCHIVE_DIGEST}'."
+            exit 1
+          fi
+          mkdir -p /tmp/oci-handoff
+          SBOM_FILE="sbom-${ARCH}.spdx.json"
+          bash scripts/release-integrity.sh verify-spdx "$SBOM_FILE"
+          cp "$SBOM_FILE" "/tmp/oci-handoff/sbom-${ARCH}.spdx.json"
+          zstd -T0 -f "$OCI_TAR" -o "/tmp/oci-handoff/oci-${ARCH}.tar.zst"
+          printf '%s\n' "$ARCHIVE_DIGEST" > "/tmp/oci-handoff/${ARCH}.digest"
+          bash scripts/release-integrity.sh generate-sums \
+            --dir /tmp/oci-handoff \
+            --output "/tmp/oci-handoff/sha256-${ARCH}.sums" \
+            "oci-${ARCH}.tar.zst" \
+            "sbom-${ARCH}.spdx.json"
+          bash scripts/release-integrity.sh verify-sums \
+            --dir /tmp/oci-handoff \
+            --manifest "/tmp/oci-handoff/sha256-${ARCH}.sums" \
+            "oci-${ARCH}.tar.zst" \
+            "sbom-${ARCH}.spdx.json"
+
+      - name: Upload Verified OCI Archive Artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: oci-archive-${{ matrix.arch }}
+          path: |
+            /tmp/oci-handoff/oci-${{ matrix.arch }}.tar.zst
+            /tmp/oci-handoff/${{ matrix.arch }}.digest
+            /tmp/oci-handoff/sbom-${{ matrix.arch }}.spdx.json
+            /tmp/oci-handoff/sha256-${{ matrix.arch }}.sums
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
+
+  upload-sarif:
+    name: Upload Trivy SARIF (${{ matrix.arch }})
+    needs: [preflight, build]
+    if: |
+      always() &&
+      !cancelled() &&
+      needs.preflight.result == 'success' &&
+      needs.preflight.outputs.promote_existing != 'true' &&
+      needs.build.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - amd64
+          - arm64
+    steps:
+      - name: Download Trivy SARIF Report Artifact
+        id: download-sarif
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: trivy-sarif-${{ matrix.arch }}
+          path: /tmp/trivy-sarif
+
+      - name: Upload Trivy Scan Results to GitHub Code Scanning
+        if: steps.download-sarif.outcome == 'success'
+        timeout-minutes: 5
+        uses: github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+        with:
+          sarif_file: /tmp/trivy-sarif/trivy-results-${{ matrix.arch }}.sarif
+          category: 'trivy-${{ matrix.arch }}'
+          sha: ${{ needs.preflight.outputs.resolved_sha }}
+          ref: ${{ github.ref }}
+
+  publish:
+    name: Merge Multi-Arch Index & Attest Provenance
+    needs: [preflight, build]
+    if: |
+      !cancelled() &&
+      needs.preflight.result == 'success' &&
+      (needs.build.result == 'success' || (needs.preflight.outputs.promote_existing == 'true' && needs.build.result == 'skipped'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      image_uri: ${{ needs.preflight.outputs.primary_uri }}
+      image_tag: ${{ needs.preflight.outputs.tag_name }}
+      image_digest: ${{ steps.merge.outputs.digest }}
+    steps:
       - name: Download Verified OCI Archive Artifacts
         if: needs.preflight.outputs.promote_existing != 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -679,11 +805,65 @@ jobs:
           merge-multiple: true
           path: /tmp/oci-handoff
 
+      - name: Download Verified Promoted Metadata Artifact
+        if: needs.preflight.outputs.promote_existing == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: promoted-oci-metadata
+          path: /tmp/oci-handoff
+
+      - name: Verify Per-Architecture SPDX SBOM Artifacts
+        timeout-minutes: 5
+        env:
+          PROMOTE_EXISTING: ${{ needs.preflight.outputs.promote_existing }}
+        run: |
+          if [ -n "$(find /tmp/oci-handoff -type l -print -quit 2>/dev/null || true)" ]; then
+            echo "::error::Symbolic links are forbidden inside /tmp/oci-handoff."
+            exit 1
+          fi
+
+          if [ "${PROMOTE_EXISTING:-false}" != "true" ]; then
+            for required_arch in amd64 arm64; do
+              SUMS_FILE="/tmp/oci-handoff/sha256-${required_arch}.sums"
+              if [ ! -s "$SUMS_FILE" ]; then
+                echo "::error::Missing or empty checksum manifest '${SUMS_FILE}' for architecture '${required_arch}'."
+                exit 1
+              fi
+              EXPECTED_LIST=$(printf '%s\n' "oci-${required_arch}.tar.zst" "sbom-${required_arch}.spdx.json" | LC_ALL=C sort)
+              ACTUAL_LIST=$(sed 's/^[a-f0-9]\{64\}  //' "$SUMS_FILE" | LC_ALL=C sort)
+              if [ "$EXPECTED_LIST" != "$ACTUAL_LIST" ]; then
+                echo "::error::Checksum manifest '${SUMS_FILE}' does not match expected handoff files."
+                exit 1
+              fi
+              if ! (cd /tmp/oci-handoff && sha256sum --check --strict "sha256-${required_arch}.sums"); then
+                echo "::error::SHA-256 checksum verification failed for '${SUMS_FILE}'."
+                exit 1
+              fi
+            done
+          fi
+
+          for required_arch in amd64 arm64; do
+            SBOM_FILE="/tmp/oci-handoff/sbom-${required_arch}.spdx.json"
+            if [ ! -s "$SBOM_FILE" ] || ! jq -e 'type == "object" and (.spdxVersion | type == "string" and length > 0) and (.packages | type == "array" and length > 0)' "$SBOM_FILE" >/dev/null; then
+              echo "::error::SPDX SBOM '${SBOM_FILE}' for architecture '${required_arch}' is missing .spdxVersion or a non-empty .packages array."
+              exit 1
+            fi
+          done
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
+      - name: Create Scoped Registry Auth Directory
+        id: docker-config
+        run: |
+          SCOPED_DOCKER_CONFIG=$(mktemp -d "${RUNNER_TEMP:-/tmp}/docker-config-XXXXXX")
+          chmod 700 "$SCOPED_DOCKER_CONFIG"
+          echo "docker_config=${SCOPED_DOCKER_CONFIG}" >> "$GITHUB_OUTPUT"
+
       - name: Log in to GHCR
         timeout-minutes: 2
+        env:
+          DOCKER_CONFIG: ${{ steps.docker-config.outputs.docker_config }}
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
@@ -693,57 +873,87 @@ jobs:
       - name: Log in to Docker Hub (optional)
         if: secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != ''
         timeout-minutes: 2
+        env:
+          DOCKER_CONFIG: ${{ steps.docker-config.outputs.docker_config }}
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Verify Per-Architecture SPDX SBOM Artifacts
-        timeout-minutes: 5
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PROMOTE_EXISTING: ${{ needs.preflight.outputs.promote_existing }}
-          IMAGE_REPOSITORY: ${{ steps.meta.outputs.image_repository }}
-          PROMOTED_AMD64_DIGEST: ${{ needs.preflight.outputs.amd64_digest }}
-          PROMOTED_ARM64_DIGEST: ${{ needs.preflight.outputs.arm64_digest }}
-          REVISION: ${{ steps.meta.outputs.revision }}
-          RESOLVED_SHA: ${{ steps.meta.outputs.resolved_sha }}
-          REPO_OWNER: ${{ github.repository_owner }}
-          SIGNER_WORKFLOW: ${{ github.repository }}/.github/workflows/publish-artifact.yml
-        run: |
-          if [ "${PROMOTE_EXISTING:-false}" = "true" ]; then
-            bash scripts/ghcr-release-promotion.sh extract-promoted-sboms
-          else
-            for required_arch in amd64 arm64; do
-              bash scripts/release-integrity.sh verify-sums \
-                --dir /tmp/oci-handoff \
-                --manifest "/tmp/oci-handoff/sha256-${required_arch}.sums" \
-                "oci-${required_arch}.tar.zst" \
-                "sbom-${required_arch}.spdx.json"
-            done
-          fi
-
-          for required_arch in amd64 arm64; do
-            SBOM_FILE="/tmp/oci-handoff/sbom-${required_arch}.spdx.json"
-            bash scripts/release-integrity.sh verify-spdx "$SBOM_FILE"
-          done
-
       - name: Verify and Push Architecture OCI Archives
         timeout-minutes: 5
         env:
+          DOCKER_CONFIG: ${{ steps.docker-config.outputs.docker_config }}
+          REGISTRY_AUTH_FILE: ${{ format('{0}/config.json', steps.docker-config.outputs.docker_config) }}
           PROMOTE_EXISTING: ${{ needs.preflight.outputs.promote_existing }}
-          IMAGE_REPOSITORY: ${{ steps.meta.outputs.image_repository }}
-          DOCKERHUB_REPOSITORY: ${{ steps.meta.outputs.dockerhub_repository }}
+          IMAGE_REPOSITORY: ${{ needs.preflight.outputs.image_repository }}
+          DOCKERHUB_REPOSITORY: ${{ needs.preflight.outputs.dockerhub_repository }}
           PROMOTED_INDEX_DIGEST: ${{ needs.preflight.outputs.source_index_digest }}
           PROMOTED_AMD64_DIGEST: ${{ needs.preflight.outputs.amd64_digest }}
           PROMOTED_ARM64_DIGEST: ${{ needs.preflight.outputs.arm64_digest }}
-          REVISION: ${{ steps.meta.outputs.revision }}
-          RESOLVED_SHA: ${{ steps.meta.outputs.resolved_sha }}
+          REVISION: ${{ needs.preflight.outputs.revision }}
+          RESOLVED_SHA: ${{ needs.preflight.outputs.resolved_sha }}
         run: |
           mkdir -p /tmp/digests
 
           if [ "${PROMOTE_EXISTING:-false}" = "true" ]; then
-            bash scripts/ghcr-release-promotion.sh mirror-promoted-digests
+            SOURCE_REVISION=$(printf '%s' "${REVISION:-${RESOLVED_SHA:-${GITHUB_SHA:-}}}" | tr '[:upper:]' '[:lower:]')
+            if [[ ! "$SOURCE_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
+              echo "::error::Missing or invalid 40-character source revision '${SOURCE_REVISION}' for promoted GHCR index."
+              exit 1
+            fi
+
+            INDEX_DIGEST=$(printf '%s' "${PROMOTED_INDEX_DIGEST:-}" | tr -d '[:space:]')
+            AMD64_DIGEST=$(printf '%s' "${PROMOTED_AMD64_DIGEST:-}" | tr -d '[:space:]')
+            ARM64_DIGEST=$(printf '%s' "${PROMOTED_ARM64_DIGEST:-}" | tr -d '[:space:]')
+            for candidate_digest in "$INDEX_DIGEST" "$AMD64_DIGEST" "$ARM64_DIGEST"; do
+              if [[ ! "$candidate_digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+                echo "::error::Invalid promoted OCI digest '${candidate_digest}'."
+                exit 1
+              fi
+            done
+
+            for required_arch in amd64 arm64; do
+              HANDOFF_DIGEST_FILE="/tmp/oci-handoff/${required_arch}.digest"
+              if [ ! -f "$HANDOFF_DIGEST_FILE" ]; then
+                echo "::error::Missing verified promoted digest file '${HANDOFF_DIGEST_FILE}'."
+                exit 1
+              fi
+              HANDOFF_DIGEST=$(tr -d '[:space:]' < "$HANDOFF_DIGEST_FILE")
+              EXPECTED_ARCH_DIGEST="$AMD64_DIGEST"
+              if [ "$required_arch" = "arm64" ]; then
+                EXPECTED_ARCH_DIGEST="$ARM64_DIGEST"
+              fi
+              if [ "$HANDOFF_DIGEST" != "$EXPECTED_ARCH_DIGEST" ]; then
+                echo "::error::Promoted digest artifact '${HANDOFF_DIGEST}' for '${required_arch}' does not match preflight digest '${EXPECTED_ARCH_DIGEST}'."
+                exit 1
+              fi
+              printf '%s\n' "$HANDOFF_DIGEST" > "/tmp/digests/${required_arch}.digest"
+            done
+
+            SOURCE_INDEX_URI="${IMAGE_REPOSITORY}@${INDEX_DIGEST}"
+            RAW_SOURCE_INDEX=$(docker buildx imagetools inspect --raw "$SOURCE_INDEX_URI")
+            INSPECTED_AMD64=$(printf '%s' "$RAW_SOURCE_INDEX" | jq -r '[.manifests[]? | select(.platform.os == "linux" and .platform.architecture == "amd64") | .digest][0] // empty' | tr -d '[:space:]')
+            INSPECTED_ARM64=$(printf '%s' "$RAW_SOURCE_INDEX" | jq -r '[.manifests[]? | select(.platform.os == "linux" and .platform.architecture == "arm64") | .digest][0] // empty' | tr -d '[:space:]')
+            INSPECTED_REVISION=$(printf '%s' "$RAW_SOURCE_INDEX" | jq -r '.annotations["org.opencontainers.image.revision"] // empty' | tr '[:upper:]' '[:lower:]')
+
+            if [ "$INSPECTED_AMD64" != "$AMD64_DIGEST" ] || [ "$INSPECTED_ARM64" != "$ARM64_DIGEST" ]; then
+              echo "::error::Promoted GHCR index '${SOURCE_INDEX_URI}' architecture digests ('${INSPECTED_AMD64}', '${INSPECTED_ARM64}') do not match preflight digests ('${AMD64_DIGEST}', '${ARM64_DIGEST}')."
+              exit 1
+            fi
+            if [ "$INSPECTED_REVISION" != "$SOURCE_REVISION" ]; then
+              echo "::error::Promoted GHCR index '${SOURCE_INDEX_URI}' revision '${INSPECTED_REVISION}' does not match '${SOURCE_REVISION}'."
+              exit 1
+            fi
+
+            if [ -n "${DOCKERHUB_REPOSITORY:-}" ]; then
+              for required_arch in amd64 arm64; do
+                ARCH_DIGEST=$(tr -d '[:space:]' < "/tmp/digests/${required_arch}.digest")
+                skopeo copy --preserve-digests \
+                  "docker://${IMAGE_REPOSITORY}@${ARCH_DIGEST}" \
+                  "docker://docker.io/${DOCKERHUB_REPOSITORY}@${ARCH_DIGEST}"
+              done
+            fi
             exit 0
           fi
 
@@ -754,17 +964,26 @@ jobs:
             COMPRESSED_ARCHIVE="/tmp/oci-handoff/oci-${required_arch}.tar.zst"
             DECOMPRESSED_ARCHIVE="/tmp/oci-handoff/oci-${required_arch}.tar"
 
-            if [ ! -f "$DIGEST_FILE" ] || [ ! -f "$COMPRESSED_ARCHIVE" ] || [ ! -f "$SUMS_FILE" ] || [ ! -f "$SBOM_FILE" ]; then
+            if [ ! -f "$DIGEST_FILE" ] || [ ! -f "$COMPRESSED_ARCHIVE" ] || [ ! -s "$SUMS_FILE" ] || [ ! -s "$SBOM_FILE" ]; then
               echo "::error::Missing OCI archive, SPDX SBOM, checksum manifest, or digest artifact for architecture '${required_arch}'."
               exit 1
             fi
 
-            bash scripts/release-integrity.sh verify-sums \
-              --dir /tmp/oci-handoff \
-              --manifest "$SUMS_FILE" \
-              "oci-${required_arch}.tar.zst" \
-              "sbom-${required_arch}.spdx.json"
-            bash scripts/release-integrity.sh verify-spdx "$SBOM_FILE"
+            if [ -n "$(find /tmp/oci-handoff -type l -print -quit 2>/dev/null || true)" ]; then
+              echo "::error::Symbolic links are forbidden inside /tmp/oci-handoff."
+              exit 1
+            fi
+            EXPECTED_LIST=$(printf '%s\n' "oci-${required_arch}.tar.zst" "sbom-${required_arch}.spdx.json" | LC_ALL=C sort)
+            ACTUAL_LIST=$(sed 's/^[a-f0-9]\{64\}  //' "$SUMS_FILE" | LC_ALL=C sort)
+            if [ "$EXPECTED_LIST" != "$ACTUAL_LIST" ]; then
+              echo "::error::Checksum manifest '${SUMS_FILE}' does not match expected handoff files."
+              exit 1
+            fi
+            if ! (cd /tmp/oci-handoff && sha256sum --check --strict "sha256-${required_arch}.sums"); then
+              echo "::error::SHA-256 checksum verification failed for '${SUMS_FILE}'."
+              exit 1
+            fi
+            jq -e 'type == "object" and (.spdxVersion | type == "string" and length > 0) and (.packages | type == "array" and length > 0)' "$SBOM_FILE" >/dev/null
 
             EXPECTED_DIGEST=$(tr -d '[:space:]' < "$DIGEST_FILE")
             if [[ ! "$EXPECTED_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
@@ -801,12 +1020,13 @@ jobs:
         id: merge
         timeout-minutes: 5
         env:
-          IMAGE_REPOSITORY: ${{ steps.meta.outputs.image_repository }}
-          DOCKERHUB_REPOSITORY: ${{ steps.meta.outputs.dockerhub_repository }}
-          PRIMARY_URI: ${{ steps.meta.outputs.primary_uri }}
-          REVISION: ${{ steps.meta.outputs.revision }}
-          TAGS: ${{ steps.meta.outputs.tags }}
-          RESOLVED_SHA: ${{ steps.meta.outputs.resolved_sha }}
+          DOCKER_CONFIG: ${{ steps.docker-config.outputs.docker_config }}
+          IMAGE_REPOSITORY: ${{ needs.preflight.outputs.image_repository }}
+          DOCKERHUB_REPOSITORY: ${{ needs.preflight.outputs.dockerhub_repository }}
+          PRIMARY_URI: ${{ needs.preflight.outputs.primary_uri }}
+          REVISION: ${{ needs.preflight.outputs.revision }}
+          TAGS: ${{ needs.preflight.outputs.tags }}
+          RESOLVED_SHA: ${{ needs.preflight.outputs.resolved_sha }}
         run: |
           RAW_REVISION="${REVISION:-${RESOLVED_SHA:-${GITHUB_SHA:-}}}"
           SOURCE_REVISION=$(printf '%s' "$RAW_REVISION" | tr '[:upper:]' '[:lower:]')
@@ -912,17 +1132,20 @@ jobs:
 
       - name: Generate Multi-Platform Index SPDX SBOM
         env:
-          IMAGE_REPOSITORY: ${{ steps.meta.outputs.image_repository }}
+          IMAGE_REPOSITORY: ${{ needs.preflight.outputs.image_repository }}
           AMD64_DIGEST: ${{ steps.merge.outputs.amd64_digest }}
           ARM64_DIGEST: ${{ steps.merge.outputs.arm64_digest }}
           INDEX_DIGEST: ${{ steps.merge.outputs.digest }}
-          REVISION: ${{ steps.meta.outputs.revision }}
-          RESOLVED_SHA: ${{ steps.meta.outputs.resolved_sha }}
+          REVISION: ${{ needs.preflight.outputs.revision }}
+          RESOLVED_SHA: ${{ needs.preflight.outputs.resolved_sha }}
         run: |
           SOURCE_REVISION=$(printf '%s' "${REVISION:-${RESOLVED_SHA:-${GITHUB_SHA:-}}}" | tr '[:upper:]' '[:lower:]')
           for required_arch in amd64 arm64; do
             SBOM_FILE="/tmp/oci-handoff/sbom-${required_arch}.spdx.json"
-            bash scripts/release-integrity.sh verify-spdx "$SBOM_FILE"
+            if [ ! -s "$SBOM_FILE" ] || ! jq -e 'type == "object" and (.spdxVersion | type == "string" and length > 0) and (.packages | type == "array" and length > 0)' "$SBOM_FILE" >/dev/null; then
+              echo "::error::SPDX SBOM '${SBOM_FILE}' is missing .spdxVersion or a non-empty .packages array."
+              exit 1
+            fi
           done
           CREATED_AT=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
           jq -n \
@@ -1015,40 +1238,48 @@ jobs:
                 )
               }
             ' > /tmp/oci-handoff/sbom-index.spdx.json
-          bash scripts/release-integrity.sh verify-spdx /tmp/oci-handoff/sbom-index.spdx.json
+          jq -e 'type == "object" and (.spdxVersion | type == "string" and length > 0) and (.packages | type == "array" and length > 0)' /tmp/oci-handoff/sbom-index.spdx.json >/dev/null
 
       - name: Attest amd64 Build Provenance
         if: needs.preflight.outputs.promote_existing != 'true'
         timeout-minutes: 3
+        env:
+          DOCKER_CONFIG: ${{ steps.docker-config.outputs.docker_config }}
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-name: ${{ steps.meta.outputs.image_repository }}
+          subject-name: ${{ needs.preflight.outputs.image_repository }}
           subject-digest: ${{ steps.merge.outputs.amd64_digest }}
           push-to-registry: true
 
       - name: Attest arm64 Build Provenance
         if: needs.preflight.outputs.promote_existing != 'true'
         timeout-minutes: 3
+        env:
+          DOCKER_CONFIG: ${{ steps.docker-config.outputs.docker_config }}
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-name: ${{ steps.meta.outputs.image_repository }}
+          subject-name: ${{ needs.preflight.outputs.image_repository }}
           subject-digest: ${{ steps.merge.outputs.arm64_digest }}
           push-to-registry: true
 
       - name: Attest Build Provenance
         timeout-minutes: 3
+        env:
+          DOCKER_CONFIG: ${{ steps.docker-config.outputs.docker_config }}
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-name: ${{ steps.meta.outputs.image_repository }}
+          subject-name: ${{ needs.preflight.outputs.image_repository }}
           subject-digest: ${{ steps.merge.outputs.digest }}
           push-to-registry: true
 
       - name: Attest amd64 SPDX SBOM
         if: needs.preflight.outputs.promote_existing != 'true'
         timeout-minutes: 3
+        env:
+          DOCKER_CONFIG: ${{ steps.docker-config.outputs.docker_config }}
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-name: ${{ steps.meta.outputs.image_repository }}
+          subject-name: ${{ needs.preflight.outputs.image_repository }}
           subject-digest: ${{ steps.merge.outputs.amd64_digest }}
           sbom-path: /tmp/oci-handoff/sbom-amd64.spdx.json
           push-to-registry: true
@@ -1056,89 +1287,114 @@ jobs:
       - name: Attest arm64 SPDX SBOM
         if: needs.preflight.outputs.promote_existing != 'true'
         timeout-minutes: 3
+        env:
+          DOCKER_CONFIG: ${{ steps.docker-config.outputs.docker_config }}
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-name: ${{ steps.meta.outputs.image_repository }}
+          subject-name: ${{ needs.preflight.outputs.image_repository }}
           subject-digest: ${{ steps.merge.outputs.arm64_digest }}
           sbom-path: /tmp/oci-handoff/sbom-arm64.spdx.json
           push-to-registry: true
 
       - name: Attest Index SPDX SBOM
         timeout-minutes: 3
+        env:
+          DOCKER_CONFIG: ${{ steps.docker-config.outputs.docker_config }}
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-name: ${{ steps.meta.outputs.image_repository }}
+          subject-name: ${{ needs.preflight.outputs.image_repository }}
           subject-digest: ${{ steps.merge.outputs.digest }}
           sbom-path: /tmp/oci-handoff/sbom-index.spdx.json
           push-to-registry: true
 
       - name: Attest Docker Hub amd64 Build Provenance (optional)
-        if: needs.preflight.outputs.promote_existing != 'true' && steps.meta.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
+        if: needs.preflight.outputs.promote_existing != 'true' && needs.preflight.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
         timeout-minutes: 3
+        env:
+          DOCKER_CONFIG: ${{ steps.docker-config.outputs.docker_config }}
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-name: docker.io/${{ steps.meta.outputs.dockerhub_repository }}
+          subject-name: docker.io/${{ needs.preflight.outputs.dockerhub_repository }}
           subject-digest: ${{ steps.merge.outputs.amd64_digest }}
           push-to-registry: true
           create-storage-record: false
 
       - name: Attest Docker Hub arm64 Build Provenance (optional)
-        if: needs.preflight.outputs.promote_existing != 'true' && steps.meta.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
+        if: needs.preflight.outputs.promote_existing != 'true' && needs.preflight.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
         timeout-minutes: 3
+        env:
+          DOCKER_CONFIG: ${{ steps.docker-config.outputs.docker_config }}
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-name: docker.io/${{ steps.meta.outputs.dockerhub_repository }}
+          subject-name: docker.io/${{ needs.preflight.outputs.dockerhub_repository }}
           subject-digest: ${{ steps.merge.outputs.arm64_digest }}
           push-to-registry: true
           create-storage-record: false
 
       - name: Attest Docker Hub Build Provenance (optional)
-        if: steps.meta.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
+        if: needs.preflight.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
         timeout-minutes: 3
+        env:
+          DOCKER_CONFIG: ${{ steps.docker-config.outputs.docker_config }}
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-name: docker.io/${{ steps.meta.outputs.dockerhub_repository }}
+          subject-name: docker.io/${{ needs.preflight.outputs.dockerhub_repository }}
           subject-digest: ${{ steps.merge.outputs.dockerhub_digest }}
           push-to-registry: true
           create-storage-record: false
 
       - name: Attest Docker Hub amd64 SPDX SBOM (optional)
-        if: steps.meta.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
+        if: needs.preflight.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
         timeout-minutes: 3
+        env:
+          DOCKER_CONFIG: ${{ steps.docker-config.outputs.docker_config }}
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-name: docker.io/${{ steps.meta.outputs.dockerhub_repository }}
+          subject-name: docker.io/${{ needs.preflight.outputs.dockerhub_repository }}
           subject-digest: ${{ steps.merge.outputs.amd64_digest }}
           sbom-path: /tmp/oci-handoff/sbom-amd64.spdx.json
           push-to-registry: true
           create-storage-record: false
 
       - name: Attest Docker Hub arm64 SPDX SBOM (optional)
-        if: steps.meta.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
+        if: needs.preflight.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
         timeout-minutes: 3
+        env:
+          DOCKER_CONFIG: ${{ steps.docker-config.outputs.docker_config }}
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-name: docker.io/${{ steps.meta.outputs.dockerhub_repository }}
+          subject-name: docker.io/${{ needs.preflight.outputs.dockerhub_repository }}
           subject-digest: ${{ steps.merge.outputs.arm64_digest }}
           sbom-path: /tmp/oci-handoff/sbom-arm64.spdx.json
           push-to-registry: true
           create-storage-record: false
 
       - name: Attest Docker Hub Index SPDX SBOM (optional)
-        if: steps.meta.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
+        if: needs.preflight.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
         timeout-minutes: 3
+        env:
+          DOCKER_CONFIG: ${{ steps.docker-config.outputs.docker_config }}
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-name: docker.io/${{ steps.meta.outputs.dockerhub_repository }}
+          subject-name: docker.io/${{ needs.preflight.outputs.dockerhub_repository }}
           subject-digest: ${{ steps.merge.outputs.dockerhub_digest }}
           sbom-path: /tmp/oci-handoff/sbom-index.spdx.json
           push-to-registry: true
           create-storage-record: false
 
+      - name: Clean Up Scoped Registry Auth Directory
+        if: always()
+        env:
+          SCOPED_DOCKER_CONFIG: ${{ steps.docker-config.outputs.docker_config }}
+        run: |
+          if [ -n "${SCOPED_DOCKER_CONFIG:-}" ] && [ -d "$SCOPED_DOCKER_CONFIG" ]; then
+            rm -rf "$SCOPED_DOCKER_CONFIG"
+          fi
+
       - name: Summary
         env:
-          PRIMARY_URI: ${{ steps.meta.outputs.primary_uri }}
-          TAG_NAME: ${{ steps.meta.outputs.tag_name }}
+          PRIMARY_URI: ${{ needs.preflight.outputs.primary_uri }}
+          TAG_NAME: ${{ needs.preflight.outputs.tag_name }}
           DIGEST: ${{ steps.merge.outputs.digest }}
         run: |
           echo "### 🚀 Release Artifact Published" >> "$GITHUB_STEP_SUMMARY"
