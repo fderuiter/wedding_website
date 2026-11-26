@@ -8,6 +8,7 @@ import {
   runBoundedPool,
   spawnBufferedCommand,
 } from './quality/parallel-pool.mjs';
+import { ensurePrismaClientReady } from './quality/worktree-cache.mjs';
 
 export interface Step {
   name: string;
@@ -137,7 +138,7 @@ export const staticSteps: Step[] = [
   {
     name: 'Validate Prisma Schema',
     script: 'check:prisma',
-    command: 'npx tsx scripts/check-prisma-schema.ts',
+    command: 'npx tsx scripts/check-prisma-schema.ts --skip-generate',
   },
   {
     name: 'Verify Migration Compatibility',
@@ -407,6 +408,26 @@ export async function runQualityChecks(options: QualityRunOptions = {}): Promise
   }
 
   if (indexedParallelSteps.length > 0) {
+    const needsPrismaPrep =
+      !options.execAsyncCommand &&
+      !options.execCommand &&
+      activeSteps.some(
+        (step) =>
+          step.script === 'check:prisma' ||
+          step.script === 'typecheck' ||
+          step.script === 'lint' ||
+          step.script === 'lint:unused' ||
+          step.script === 'check:doc-sync'
+      );
+    if (needsPrismaPrep) {
+      const prismaPrep = await ensurePrismaClientReady(cwd, { env: process.env });
+      if (!prismaPrep.ok) {
+        flushBufferedOutput({ stdout: prismaPrep.stdout, stderr: prismaPrep.stderr });
+        console.error('\n❌ Prisma Client pre-generation failed before parallel quality checks.');
+        process.exit(prismaPrep.status || 1);
+      }
+    }
+
     const concurrency = resolvePoolConcurrency({
       explicitConcurrency: options.concurrency,
       envValue: process.env.QUALITY_CONCURRENCY,
