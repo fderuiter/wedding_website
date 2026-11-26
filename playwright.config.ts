@@ -65,6 +65,8 @@ export default defineConfig({
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-gpu',
+        '--disable-dev-shm-usage',
+        ...(runsPagesShowcaseExplicitly ? [] : ['--disk-cache-size=1']),
       ],
     },
   },

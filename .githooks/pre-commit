@@ -426,6 +426,16 @@ try {
   exitStatus = await spawnInheritedCommand('npx', LINT_STAGED_ARGS, snapshotDir, isolatedEnv);
 
   if (exitStatus === 0) {
+    syncSnapshotFixesToLiveRepo(
+      repoRoot,
+      gitDir,
+      snapshotDir,
+      tempBaseDir,
+      stagedEntries,
+      originalBuffers,
+      isolatedEnv
+    );
+
     const snapshotEslintCache = path.join(snapshotDir, '.eslintcache');
     const repoEslintCache = path.join(repoRoot, '.eslintcache');
     if (fs.existsSync(snapshotEslintCache) && !stagedEntries.has('.eslintcache')) {
@@ -440,16 +450,6 @@ try {
         // Ignore best-effort .eslintcache write-back errors
       }
     }
-
-    syncSnapshotFixesToLiveRepo(
-      repoRoot,
-      gitDir,
-      snapshotDir,
-      tempBaseDir,
-      stagedEntries,
-      originalBuffers,
-      isolatedEnv
-    );
   }
 } catch (err) {
   console.error(`\n❌ Pre-commit check failed: ${err instanceof Error ? err.message : String(err)}`);

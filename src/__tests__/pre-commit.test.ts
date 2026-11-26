@@ -514,9 +514,9 @@ for (const file of process.argv.slice(2)) {
       };
       expect(pkg['lint-staged']).toEqual({
         '*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}':
-          'eslint --cache --cache-location .eslintcache --no-warn-ignored --no-error-on-unmatched-pattern --fix --max-warnings=0',
+          'eslint --cache --cache-location .eslintcache --cache-strategy content --no-warn-ignored --no-error-on-unmatched-pattern --fix --max-warnings=0',
         '.githooks/*':
-          'eslint --cache --cache-location .eslintcache --no-warn-ignored --no-error-on-unmatched-pattern --fix --max-warnings=0',
+          'eslint --cache --cache-location .eslintcache --cache-strategy content --no-warn-ignored --no-error-on-unmatched-pattern --fix --max-warnings=0',
         '.github/workflows/*.{yml,yaml}': 'npm run check:action-pins',
         'prisma/migrations/**/*.sql': 'npm run lint:migrations',
         '{Dockerfile,.dockerignore,docker-entrypoint.sh,docker-compose*.yml,docker/**,package.json,package-lock.json}':
@@ -787,6 +787,7 @@ for (const file of process.argv.slice(2)) {
       expect(passResult.status).toBe(0);
       expect(passResult.stdout).toContain('All pre-commit checks passed.');
       expect(fs.existsSync(path.join(tempDir, '.eslintcache'))).toBe(true);
+      expect(fs.readFileSync(path.join(tempDir, '.eslintcache'), 'utf-8')).toContain('"hash"');
 
       // Fully staged scripts are updated both in the active Git index and on disk
       expect(fs.readFileSync(path.join(tempDir, 'helper.mjs'), 'utf-8')).toBe(

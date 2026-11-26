@@ -1024,12 +1024,13 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   const hasRequiredEslintStagedFlags = (cmd: string): boolean =>
     cmd.includes('--cache') &&
     cmd.includes('.eslintcache') &&
+    cmd.includes('--cache-strategy content') &&
     cmd.includes('--no-warn-ignored') &&
     cmd.includes('--fix') &&
     cmd.includes('--max-warnings=0');
   if (!hasRequiredEslintStagedFlags(lintStagedJsCmd) || !hasRequiredEslintStagedFlags(lintStagedHooksCmd)) {
     errors.push(
-      'package.json: "lint-staged" must pass "--cache --cache-location .eslintcache --no-warn-ignored --fix --max-warnings=0"'
+      'package.json: "lint-staged" must pass "--cache --cache-location .eslintcache --cache-strategy content --no-warn-ignored --fix --max-warnings=0"'
     );
   }
   const lintStagedValues = Object.values(lintStagedConfig);
