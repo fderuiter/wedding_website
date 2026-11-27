@@ -1,4 +1,4 @@
-import { execSync, spawnSync } from 'child_process';
+import { execSync, spawn, spawnSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -218,9 +218,18 @@ process.exit(0);
       path.join(tempDir, '.lint-task.cjs'),
       `const fs = require('fs');
 const path = require('path');
-const concurrentPath = path.join(process.cwd(), 'notes.txt');
+if (process.env.SNAPSHOT_MARKER_FILE) {
+  fs.writeFileSync(process.env.SNAPSHOT_MARKER_FILE, fs.realpathSync(process.cwd()), 'utf8');
+}
 if (process.env.SIMULATE_CONCURRENT_SAVE === '1') {
-  fs.writeFileSync(concurrentPath, 'concurrent editor save during commit\\n');
+  fs.writeFileSync(path.join(__dirname, 'notes.txt'), 'concurrent editor save during commit\\n');
+  if (fs.existsSync(path.join(__dirname, 'unstaged.txt'))) {
+    fs.writeFileSync(path.join(__dirname, 'unstaged.txt'), 'concurrent unstaged save during commit\\n');
+  }
+}
+if (process.env.SLOW_LINT_TASK_MS) {
+  setTimeout(() => process.exit(0), Number(process.env.SLOW_LINT_TASK_MS));
+  return;
 }
 for (const file of process.argv.slice(2)) {
   if (!fs.existsSync(file)) {
@@ -278,15 +287,22 @@ for (const file of process.argv.slice(2)) {
   }
 
   describe('.githooks/pre-commit', () => {
-    it('removes stash helpers and forbids git stash, git reset, and git checkout -- .', () => {
+    it('removes stash helpers, enforces --no-stash/--no-revert snapshot flags, and forbids git stash, git reset, and git checkout -- .', () => {
       const hookContent = fs.readFileSync(PRE_COMMIT_PATH, 'utf-8');
       expect(hookContent).toContain('lint-staged');
+      expect(hookContent).toContain('write-tree');
+      expect(hookContent).toContain('hydrateWorktreeCaches');
+      expect(hookContent).toContain('--no-stash');
+      expect(hookContent).toContain('--no-revert');
+      expect(hookContent).toContain('--no-hide-partially-staged');
+      expect(hookContent).toContain('--diff=--staged');
       expect(hookContent).not.toContain('hasUnstagedChanges');
       expect(hookContent).not.toContain('pushStash');
       expect(hookContent).not.toContain('popStash');
       expect(hookContent).not.toMatch(/\bgit\s+stash\b|['"]stash['"]/);
       expect(hookContent).not.toMatch(/\bgit\s+reset\b|['"]reset['"]/);
       expect(hookContent).not.toMatch(/\bgit\s+checkout\b|['"]checkout['"]/);
+      expect(hookContent).not.toMatch(/\bgit\s+restore\b|['"]restore['"]/);
       expect(hookContent).not.toContain("'npm'");
     });
 
@@ -308,7 +324,7 @@ for (const file of process.argv.slice(2)) {
       );
     });
 
-    it('preserves MM partial staging, ?? untracked files, and concurrent saves with zero UU conflicts', () => {
+    it('preserves MM partial staging, ?? untracked files, and concurrent notes.txt + unstaged.txt saves across passing and failing runs without staging them', () => {
       fs.writeFileSync(path.join(tempDir, 'scratch-untracked.ts'), 'export const scratch = true;\n');
       fs.writeFileSync(path.join(tempDir, 'unstaged.txt'), 'initial unstaged baseline\n');
       execSync('git add unstaged.txt && git commit -m "Add unstaged baseline"', {
@@ -331,36 +347,95 @@ for (const file of process.argv.slice(2)) {
       expect(statusBefore).toContain(' M unstaged.txt');
       expect(statusBefore).toContain('?? scratch-untracked.ts');
 
-      const result = runHook(PRE_COMMIT_PATH, {
+      const markerPath = path.join(tempDir, '.snapshot-cwd.txt');
+      const passResult = runHook(PRE_COMMIT_PATH, {
         USE_REAL_LINT_STAGED: '1',
         SIMULATE_CONCURRENT_SAVE: '1',
+        SNAPSHOT_MARKER_FILE: markerPath,
       });
-      expect(result.status).toBe(0);
+      expect(passResult.status).toBe(0);
 
-      const statusAfter = execSync('git status --porcelain', { cwd: tempDir, encoding: 'utf-8' });
-      expect(statusAfter).not.toContain('UU');
-      expect(statusAfter).toContain('MM partial.ts');
-      expect(statusAfter).toContain(' M unstaged.txt');
-      expect(statusAfter).toContain('?? scratch-untracked.ts');
+      const passSnapshotCwd = fs.readFileSync(markerPath, 'utf-8').trim();
+      expect(passSnapshotCwd).not.toBe(fs.realpathSync(tempDir));
+      expect(fs.existsSync(passSnapshotCwd)).toBe(false);
+      fs.unlinkSync(markerPath);
+
+      const statusAfterPass = execSync('git status --porcelain', { cwd: tempDir, encoding: 'utf-8' });
+      expect(statusAfterPass).not.toContain('UU');
+      expect(statusAfterPass).toContain('MM partial.ts');
+      expect(statusAfterPass).toContain(' M notes.txt');
+      expect(statusAfterPass).toContain(' M unstaged.txt');
+      expect(statusAfterPass).toContain('?? scratch-untracked.ts');
 
       expect(fs.readFileSync(path.join(tempDir, 'partial.ts'), 'utf-8')).toBe(
         ['export const alpha = 10;', 'export const beta = 20;', 'export const gamma = 30;', ''].join('\n')
       );
+      expect(fs.readFileSync(path.join(tempDir, 'notes.txt'), 'utf-8')).toBe(
+        'concurrent editor save during commit\n'
+      );
       expect(fs.readFileSync(path.join(tempDir, 'unstaged.txt'), 'utf-8')).toBe(
-        'unstaged local edit\n'
+        'concurrent unstaged save during commit\n'
       );
       expect(fs.readFileSync(path.join(tempDir, 'scratch-untracked.ts'), 'utf-8')).toBe(
         'export const scratch = true;\n'
       );
+
+      expect(execSync('git show :partial.ts', { cwd: tempDir, encoding: 'utf-8' })).toBe(
+        ['export const alpha = 10;', 'export const beta = 2;', ''].join('\n')
+      );
+      expect(execSync('git show :notes.txt', { cwd: tempDir, encoding: 'utf-8' })).toBe(
+        'initial notes\n'
+      );
+      expect(execSync('git show :unstaged.txt', { cwd: tempDir, encoding: 'utf-8' })).toBe(
+        'initial unstaged baseline\n'
+      );
+      expect(execSync('git stash list', { cwd: tempDir, encoding: 'utf-8' }).trim()).toBe('');
+
+      // Reset concurrent files to baseline before testing a FAILING pre-commit run with concurrent saves
+      fs.writeFileSync(path.join(tempDir, 'notes.txt'), 'initial notes\n');
+      fs.writeFileSync(path.join(tempDir, 'unstaged.txt'), 'unstaged local edit\n');
+      fs.writeFileSync(
+        path.join(tempDir, 'partial.ts'),
+        ['export const alpha = LINT_ERROR_TOKEN;', 'export const beta = 2;', ''].join('\n')
+      );
+      execSync('git add partial.ts', { cwd: tempDir, stdio: 'ignore' });
+      fs.writeFileSync(
+        path.join(tempDir, 'partial.ts'),
+        ['export const alpha = LINT_ERROR_TOKEN;', 'export const beta = 20;', 'export const gamma = 30;', ''].join('\n')
+      );
+
+      const failResult = runHook(PRE_COMMIT_PATH, {
+        USE_REAL_LINT_STAGED: '1',
+        SIMULATE_CONCURRENT_SAVE: '1',
+        SNAPSHOT_MARKER_FILE: markerPath,
+      });
+      expect(failResult.status).not.toBe(0);
+
+      const failSnapshotCwd = fs.readFileSync(markerPath, 'utf-8').trim();
+      expect(failSnapshotCwd).not.toBe(fs.realpathSync(tempDir));
+      expect(fs.existsSync(failSnapshotCwd)).toBe(false);
+      fs.unlinkSync(markerPath);
+
+      const statusAfterFail = execSync('git status --porcelain', { cwd: tempDir, encoding: 'utf-8' });
+      expect(statusAfterFail).not.toContain('UU');
+      expect(statusAfterFail).toContain('MM partial.ts');
+      expect(statusAfterFail).toContain(' M notes.txt');
+      expect(statusAfterFail).toContain(' M unstaged.txt');
+      expect(statusAfterFail).toContain('?? scratch-untracked.ts');
+
       expect(fs.readFileSync(path.join(tempDir, 'notes.txt'), 'utf-8')).toBe(
         'concurrent editor save during commit\n'
       );
-
-      const stagedPartial = execSync('git show :partial.ts', { cwd: tempDir, encoding: 'utf-8' });
-      expect(stagedPartial).toBe(['export const alpha = 10;', 'export const beta = 2;', ''].join('\n'));
-
-      const stashList = execSync('git stash list', { cwd: tempDir, encoding: 'utf-8' }).trim();
-      expect(stashList).toBe('');
+      expect(fs.readFileSync(path.join(tempDir, 'unstaged.txt'), 'utf-8')).toBe(
+        'concurrent unstaged save during commit\n'
+      );
+      expect(execSync('git show :notes.txt', { cwd: tempDir, encoding: 'utf-8' })).toBe(
+        'initial notes\n'
+      );
+      expect(execSync('git show :unstaged.txt', { cwd: tempDir, encoding: 'utf-8' })).toBe(
+        'initial unstaged baseline\n'
+      );
+      expect(execSync('git stash list', { cwd: tempDir, encoding: 'utf-8' }).trim()).toBe('');
     });
 
     it('preserves AM, MD, RM, same-line MM, binary unstaged edits, nested untracked files, pre-existing git stash entries, and MERGE_HEAD', () => {
@@ -431,48 +506,200 @@ for (const file of process.argv.slice(2)) {
       expect(fs.readFileSync(path.join(tempDir, '.git', 'MERGE_HEAD'), 'utf-8')).toBe(`${headSha}\n`);
     });
 
-    it('configures lint-staged with --cache and --no-warn-ignored so ignored tracked files pass while staged lint errors fail', () => {
+    it('configures lint-staged with --cache, manifest routing, and snapshot isolation so unstaged/untracked drafts do not block clean commits while broken staged commits and MERGE_HEAD merges fail', () => {
       const pkg = JSON.parse(fs.readFileSync(PACKAGE_JSON_PATH, 'utf-8')) as {
+        engines?: Record<string, string>;
+        devEngines?: Record<string, unknown>;
         'lint-staged'?: Record<string, string>;
       };
       expect(pkg['lint-staged']).toEqual({
         '*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}':
-          'eslint --cache --cache-location .eslintcache --cache-strategy content --no-warn-ignored --fix --max-warnings=0',
+          'eslint --cache --cache-location .eslintcache --cache-strategy content --no-warn-ignored --no-error-on-unmatched-pattern --fix --max-warnings=0',
         '.githooks/*':
-          'eslint --cache --cache-location .eslintcache --cache-strategy content --no-warn-ignored --fix --max-warnings=0',
+          'eslint --cache --cache-location .eslintcache --cache-strategy content --no-warn-ignored --no-error-on-unmatched-pattern --fix --max-warnings=0',
         '.github/workflows/*.{yml,yaml}': 'npm run check:action-pins',
         'prisma/migrations/**/*.sql': 'npm run lint:migrations',
-        '{Dockerfile,.dockerignore,docker-entrypoint.sh,docker-compose*.yml,docker/**}':
+        '{Dockerfile,.dockerignore,docker-entrypoint.sh,docker-compose*.yml,docker/**,package.json,package-lock.json}':
           'npm run check:standalone -- --static-only',
         '*.md': 'npm run check:links',
       });
 
+      const nodeDigest = 'sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee';
+      const debianDigest = 'sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc';
+      const postgresDigest = 'sha256:e18480a22d6e48f4d816a6696769b1ec09ac73a824c5649e49c7d8b684913f3d';
+      const validSha512 = `sha512-${Buffer.alloc(64, 0x42).toString('base64')}`;
+
+      const basePackageJson = {
+        name: 'temp-lint-test',
+        private: true,
+        engines: pkg.engines,
+        devEngines: pkg.devEngines,
+        scripts: {
+          'check:action-pins': `${process.execPath} ${TSX_CLI_PATH} ${path.join(REPO_ROOT, 'scripts', 'check-action-pins.ts')}`,
+          'lint:migrations': `${process.execPath} --experimental-strip-types ${path.join(REPO_ROOT, 'scripts', 'verify-migration-compatibility.ts')}`,
+          'check:standalone': `${process.execPath} ${TSX_CLI_PATH} ${path.join(REPO_ROOT, 'scripts', 'check-docker-build.ts')}`,
+          'check:links': `${process.execPath} ${TSX_CLI_PATH} ${path.join(REPO_ROOT, 'scripts', 'check-doc-links.ts')}`,
+        },
+        'lint-staged': pkg['lint-staged'],
+      };
+      const basePackageLock = {
+        name: 'temp-lint-test',
+        lockfileVersion: 3,
+        requires: true,
+        packages: {
+          '': {
+            name: 'temp-lint-test',
+          },
+        },
+      };
+
+      fs.writeFileSync(path.join(tempDir, '.nvmrc'), '22\n');
       fs.writeFileSync(
         path.join(tempDir, 'package.json'),
-        JSON.stringify(
+        JSON.stringify(basePackageJson, null, 2) + '\n'
+      );
+      fs.writeFileSync(
+        path.join(tempDir, 'package-lock.json'),
+        JSON.stringify(basePackageLock, null, 2) + '\n'
+      );
+      const fixtureEnginesCommit = 'd1b3f377ca835d73fd50954a5e22128b9ebdd6b8';
+      const fixtureEnginesVersion = `8.1.0-1.${fixtureEnginesCommit}`;
+      fs.writeFileSync(
+        path.join(tempDir, 'Dockerfile'),
+        [
+          '# syntax=docker/dockerfile:1',
+          `FROM node:22-bookworm-slim@${nodeDigest} AS base`,
+          'WORKDIR /app',
+          'RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \\',
+          '    --mount=type=cache,target=/var/lib/apt,sharing=locked \\',
+          '    rm -f /etc/apt/apt.conf.d/docker-clean && \\',
+          '    apt-get update && apt-get install -y --no-install-recommends \\',
+          '    openssl \\',
+          '    ca-certificates \\',
+          '    binutils && \\',
+          "    printf 'update-notifier=false\\n' > /usr/local/etc/npmrc",
+          'FROM base AS prisma-cli',
+          'WORKDIR /opt/prisma-cli',
+          'COPY docker/prisma-cli/package.json docker/prisma-cli/package-lock.json docker/prisma-cli/engine-digests.json ./',
+          'COPY docker/prisma-cli/stubs ./stubs',
+          'RUN --mount=type=cache,target=/root/.npm,sharing=locked \\',
+          '    npm ci --ignore-scripts --install-links --omit=dev --no-audit --no-fund && \\',
+          '    printf \'%s  %s\\n\' "$EXPECTED_BIN_SHA256" "$ENGINE_BIN" | sha256sum -c - && \\',
+          '    find /opt/prisma-cli/node_modules -type f -name "schema-engine-*" -exec strip --strip-unneeded {} +',
+          'FROM base AS builder',
+          'COPY package.json package-lock.json .npmrc ./',
+          'RUN --mount=type=cache,target=/root/.npm,sharing=locked \\',
+          '    npm ci --ignore-scripts',
+          'COPY prisma ./prisma',
+          'COPY prisma.config.ts next.config.ts postcss.config.mjs tsconfig.json tsconfig.build.json ./',
+          'COPY assets ./assets',
+          'COPY public ./public',
+          'COPY src ./src',
+          'COPY scripts/generate-password-hash.mjs ./scripts/generate-password-hash.mjs',
+          'RUN --mount=type=cache,target=/app/.next/cache,sharing=locked \\',
+          '    npm run build:docker',
+          `FROM debian:bookworm-slim@${debianDigest} AS runner`,
+          'WORKDIR /app',
+          'RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \\',
+          '    --mount=type=cache,target=/var/lib/apt,sharing=locked \\',
+          '    rm -f /etc/apt/apt.conf.d/docker-clean && \\',
+          '    apt-get update && apt-get install -y --no-install-recommends \\',
+          '    openssl ca-certificates tini libstdc++6 && \\',
+          '    addgroup --system --gid 1001 nodejs && \\',
+          '    adduser --system --uid 1001 --ingroup nodejs nextjs',
+          'COPY --from=base /usr/local/bin/node /usr/local/bin/node',
+          'COPY --from=prisma-cli /opt/prisma-cli /opt/prisma-cli',
+          'COPY --from=builder /app/prisma.config.ts ./prisma.config.ts',
+          'COPY --from=builder /app/scripts/generate-password-hash.mjs ./scripts/generate-password-hash.mjs',
+          'RUN ln -sf /usr/local/bin/prisma /app/node_modules/.bin/prisma && \\',
+          '    find / -xdev -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true',
+          'HEALTHCHECK CMD node -e "fetch(\'http://127.0.0.1:3000/api/live\')"',
+          'ENTRYPOINT ["/usr/bin/tini", "-s", "--", "docker-entrypoint.sh"]',
+          'CMD ["node", "server.js"]',
+          '',
+        ].join('\n')
+      );
+      fs.mkdirSync(path.join(tempDir, 'docker', 'prisma-cli'), { recursive: true });
+      fs.writeFileSync(
+        path.join(tempDir, 'docker', 'prisma-cli', 'engine-digests.json'),
+        `${JSON.stringify(
           {
-            name: 'temp-lint-test',
-            private: true,
-            scripts: {
-              'check:action-pins': `${process.execPath} ${TSX_CLI_PATH} ${path.join(REPO_ROOT, 'scripts', 'check-action-pins.ts')}`,
-              'lint:migrations': `${process.execPath} --experimental-strip-types ${path.join(REPO_ROOT, 'scripts', 'verify-migration-compatibility.ts')}`,
-              'check:standalone': `${process.execPath} -e "process.exit(0)" --`,
-              'check:links': `${process.execPath} ${TSX_CLI_PATH} ${path.join(REPO_ROOT, 'scripts', 'check-doc-links.ts')}`,
+            enginesVersion: fixtureEnginesVersion,
+            enginesCommit: fixtureEnginesCommit,
+            platforms: {
+              'linux/amd64': {
+                binaryTarget: 'debian-openssl-3.0.x',
+                binaryName: 'schema-engine-debian-openssl-3.0.x',
+                url: `https://binaries.prisma.sh/all_commits/${fixtureEnginesCommit}/debian-openssl-3.0.x/schema-engine.gz`,
+                gzipSha256: '5827f56149193f0249b2f4b8a64e60c300c3129ed6514bad0a11c340e1cffad6',
+                sha256: '7116e00278a793ee13db6f0a732c1aaec10f795a37bc02e3a7df3b06b2f1311f',
+              },
+              'linux/arm64': {
+                binaryTarget: 'linux-arm64-openssl-3.0.x',
+                binaryName: 'schema-engine-linux-arm64-openssl-3.0.x',
+                url: `https://binaries.prisma.sh/all_commits/${fixtureEnginesCommit}/linux-arm64-openssl-3.0.x/schema-engine.gz`,
+                gzipSha256: 'aee61c23442accf150d3b253d3b829c15085ea810fd690c5f38944cd64f9cb0e',
+                sha256: '81d8f205f0e6ed3240d0bebf2e45a85646dca2c8acb2679781832d5ace7876ce',
+              },
             },
-            'lint-staged': pkg['lint-staged'],
           },
           null,
           2
-        ) + '\n'
+        )}\n`
       );
+      fs.writeFileSync(
+        path.join(tempDir, '.dockerignore'),
+        ['node_modules', '.next', '.dockerignore', 'Dockerfile', 'docker-compose*.yml', ''].join('\n')
+      );
+      fs.writeFileSync(
+        path.join(tempDir, 'docker-compose.yml'),
+        [
+          'services:',
+          '  db:',
+          `    image: postgres:15-alpine@${postgresDigest}`,
+          '  migration:',
+          '    image: wedding-website:latest',
+          '    pull_policy: never',
+          '  app:',
+          '    image: wedding-website:latest',
+          '    init: true',
+          '    stop_grace_period: 15s',
+          '    build:',
+          '      context: .',
+          '',
+        ].join('\n')
+      );
+      fs.writeFileSync(
+        path.join(tempDir, 'docker-entrypoint.sh'),
+        [
+          '#!/bin/sh',
+          'export NPM_CONFIG_UPDATE_NOTIFIER=false',
+          'if [ "$RUN_MIGRATIONS" = "true" ] || [ "$RUN_MIGRATIONS" = "1" ]; then',
+          '  ./node_modules/.bin/prisma migrate deploy',
+          'fi',
+          'exec "$@"',
+          '',
+        ].join('\n')
+      );
+      fs.writeFileSync(
+        path.join(tempDir, 'next.config.ts'),
+        ["const nextConfig = { output: 'standalone' };", 'export default nextConfig;', ''].join('\n')
+      );
+      fs.mkdirSync(path.join(tempDir, 'docs'), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, 'docs', 'guide.md'), '# Guide\n\nBaseline docs.\n');
+      fs.writeFileSync(path.join(tempDir, 'docs', 'orphan.md'), '# Orphan\n\nStandalone note.\n');
+      fs.writeFileSync(path.join(tempDir, 'README.md'), '# Project\n\nSee [Guide](docs/guide.md).\n');
+
       fs.symlinkSync(path.join(REPO_ROOT, 'node_modules'), path.join(tempDir, 'node_modules'));
-      fs.symlinkSync(path.join(REPO_ROOT, 'eslint.config.mjs'), path.join(tempDir, 'eslint.config.mjs'));
-      fs.symlinkSync(path.join(REPO_ROOT, 'eslint-rules'), path.join(tempDir, 'eslint-rules'));
+      fs.copyFileSync(path.join(REPO_ROOT, 'eslint.config.mjs'), path.join(tempDir, 'eslint.config.mjs'));
+      fs.cpSync(path.join(REPO_ROOT, 'eslint-rules'), path.join(tempDir, 'eslint-rules'), {
+        recursive: true,
+      });
       fs.writeFileSync(
         path.join(tempDir, '.gitignore'),
-        '.test-bin/\n.executed-checks.log\n.executed-cwds.log\n.worktree-probe.json\n.lint-task.cjs\nnode_modules\neslint.config.mjs\neslint-rules\n.eslintcache\n'
+        '.test-bin/\n.executed-checks.log\n.executed-cwds.log\n.worktree-probe.json\n.lint-task.cjs\nnode_modules\n.eslintcache\n'
       );
-      execSync('git add package.json .gitignore && git commit -m "Configure real ESLint lint-staged"', {
+      execSync('git add . && git commit -m "Configure real validators and ESLint lint-staged"', {
         cwd: tempDir,
         stdio: 'ignore',
       });
@@ -487,10 +714,11 @@ for (const file of process.argv.slice(2)) {
       expect(failOutput).toContain('Pre-commit check failed: ESLint / lint-staged validation failed.');
       execSync('git rm -f bad-script.mjs', { cwd: tempDir, stdio: 'ignore' });
 
-      // 2. Staging ESLint-ignored build outputs alongside linted .githooks/*, .mts, and auto-fixable files must pass with exit code 0 and populate .eslintcache
+      // 2. Staging ESLint-ignored build outputs alongside linted .githooks/*, .mts, auto-fixable files (including partial non-conflicting & conflicting working-tree files), AND unstaged/untracked drafts in Markdown, workflows, and Compose files must pass!
       fs.mkdirSync(path.join(tempDir, 'docs-portal', '.vitepress', 'dist'), { recursive: true });
       fs.mkdirSync(path.join(tempDir, '.githooks'), { recursive: true });
       fs.mkdirSync(path.join(tempDir, 'docker', 'prisma-cli', 'stubs', 'empty'), { recursive: true });
+      fs.mkdirSync(path.join(tempDir, '.github', 'workflows'), { recursive: true });
       fs.writeFileSync(path.join(tempDir, 'public', 'mockServiceWorker.js'), '/* eslint-ignored msw */\nvar x = "ignored"\n');
       fs.writeFileSync(
         path.join(tempDir, 'docs-portal', '.vitepress', 'dist', 'app.js'),
@@ -513,9 +741,46 @@ for (const file of process.argv.slice(2)) {
         path.join(tempDir, 'env-shim.cjs'),
         'const path = require("path")\nmodule.exports = path\n'
       );
+      fs.writeFileSync(
+        path.join(tempDir, 'partial-fix.mjs'),
+        ['export const fixedLine = "needs-quotes"', 'export const secondLine = 1;', ''].join('\n')
+      );
+      fs.writeFileSync(
+        path.join(tempDir, 'conflict-fix.mjs'),
+        'export const sameLine = "staged-double-quotes"\n'
+      );
       execSync(
-        'git add -f public/mockServiceWorker.js docs-portal/.vitepress/dist/app.js docs-portal/.vitepress/config.mts .githooks/custom-hook docker/prisma-cli/stubs/empty/index.cjs helper.mjs env-shim.cjs',
+        'git add -f public/mockServiceWorker.js docs-portal/.vitepress/dist/app.js docs-portal/.vitepress/config.mts .githooks/custom-hook docker/prisma-cli/stubs/empty/index.cjs helper.mjs env-shim.cjs partial-fix.mjs conflict-fix.mjs',
         { cwd: tempDir, stdio: 'ignore' }
+      );
+
+      // Add non-conflicting unstaged edit on partial-fix.mjs and conflicting same-line edit on conflict-fix.mjs
+      fs.writeFileSync(
+        path.join(tempDir, 'partial-fix.mjs'),
+        ['export const fixedLine = "needs-quotes"', 'export const secondLine = 99;', 'export const localDraft = true;', ''].join('\n')
+      );
+      fs.writeFileSync(
+        path.join(tempDir, 'conflict-fix.mjs'),
+        'export const sameLine = "conflicting-working-tree-draft"\n'
+      );
+
+      // Add broken UNSTAGED and UNTRACKED drafts across Markdown, workflows, and Compose files
+      const originalCompose = fs.readFileSync(path.join(tempDir, 'docker-compose.yml'), 'utf-8');
+      fs.writeFileSync(
+        path.join(tempDir, 'README.md'),
+        '# Project\n\nUnstaged broken draft link: [Missing](docs/does-not-exist.md)\n'
+      );
+      fs.writeFileSync(
+        path.join(tempDir, 'docs', 'untracked-draft.md'),
+        '# Draft\n\n[Broken Link](./nowhere.md)\n'
+      );
+      fs.writeFileSync(
+        path.join(tempDir, '.github', 'workflows', 'untracked-draft.yml'),
+        'name: Draft\non: [push]\njobs:\n  bad:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n'
+      );
+      fs.writeFileSync(
+        path.join(tempDir, 'docker-compose.yml'),
+        originalCompose.replace(`postgres:15-alpine@${postgresDigest}`, 'postgres:15-alpine')
       );
 
       const passResult = runHook(PRE_COMMIT_PATH, { USE_REAL_LINT_STAGED: '1' });
@@ -523,17 +788,58 @@ for (const file of process.argv.slice(2)) {
       expect(passResult.stdout).toContain('All pre-commit checks passed.');
       expect(fs.existsSync(path.join(tempDir, '.eslintcache'))).toBe(true);
       expect(fs.readFileSync(path.join(tempDir, '.eslintcache'), 'utf-8')).toContain('"hash"');
+
+      // Fully staged scripts are updated both in the active Git index and on disk
       expect(fs.readFileSync(path.join(tempDir, 'helper.mjs'), 'utf-8')).toBe(
+        "export const greeting = 'hello';\n"
+      );
+      expect(execSync('git show :helper.mjs', { cwd: tempDir, encoding: 'utf-8' })).toBe(
         "export const greeting = 'hello';\n"
       );
       expect(fs.readFileSync(path.join(tempDir, 'env-shim.cjs'), 'utf-8')).toBe(
         "const path = require('path');\nmodule.exports = path;\n"
       );
 
-      // 3. Staging a broken action pin in .github/workflows/ci.yml or destructive SQL in prisma/migrations/ must fail pre-commit
+      // Partially staged non-conflicting file updates staged blob AND merges fix hunk into working tree
+      expect(execSync('git show :partial-fix.mjs', { cwd: tempDir, encoding: 'utf-8' })).toBe(
+        ["export const fixedLine = 'needs-quotes';", 'export const secondLine = 1;', ''].join('\n')
+      );
+      expect(fs.readFileSync(path.join(tempDir, 'partial-fix.mjs'), 'utf-8')).toBe(
+        ["export const fixedLine = 'needs-quotes';", 'export const secondLine = 99;', 'export const localDraft = true;', ''].join('\n')
+      );
+
+      // Conflicting working-tree file updates staged blob in active Git index while leaving live file untouched
+      expect(execSync('git show :conflict-fix.mjs', { cwd: tempDir, encoding: 'utf-8' })).toBe(
+        "export const sameLine = 'staged-double-quotes';\n"
+      );
+      expect(fs.readFileSync(path.join(tempDir, 'conflict-fix.mjs'), 'utf-8')).toBe(
+        'export const sameLine = "conflicting-working-tree-draft"\n'
+      );
+
+      // Unstaged and untracked drafts remain intact on disk
+      expect(fs.readFileSync(path.join(tempDir, 'docs', 'untracked-draft.md'), 'utf-8')).toContain(
+        './nowhere.md'
+      );
+      expect(
+        fs.readFileSync(path.join(tempDir, '.github', 'workflows', 'untracked-draft.yml'), 'utf-8')
+      ).toContain('actions/checkout@v4');
+
+      // Clean up working-tree drafts and commit the clean staged files
+      fs.writeFileSync(path.join(tempDir, 'README.md'), '# Project\n\nSee [Guide](docs/guide.md).\n');
+      fs.writeFileSync(path.join(tempDir, 'docker-compose.yml'), originalCompose);
+      fs.unlinkSync(path.join(tempDir, 'docs', 'untracked-draft.md'));
+      fs.unlinkSync(path.join(tempDir, '.github', 'workflows', 'untracked-draft.yml'));
+      fs.writeFileSync(
+        path.join(tempDir, 'partial-fix.mjs'),
+        ["export const fixedLine = 'needs-quotes';", 'export const secondLine = 1;', ''].join('\n')
+      );
+      fs.writeFileSync(
+        path.join(tempDir, 'conflict-fix.mjs'),
+        "export const sameLine = 'staged-double-quotes';\n"
+      );
       execSync('git commit -m "Commit clean staged files"', { cwd: tempDir, stdio: 'ignore' });
 
-      fs.mkdirSync(path.join(tempDir, '.github', 'workflows'), { recursive: true });
+      // 3. Staged workflow with unpinned action must fail even if another workflow exists cleanly
       fs.writeFileSync(
         path.join(tempDir, '.github', 'workflows', 'ci.yml'),
         [
@@ -551,15 +857,14 @@ for (const file of process.argv.slice(2)) {
       );
       execSync('git add .github/workflows/ci.yml', { cwd: tempDir, stdio: 'ignore' });
 
-      const workflowFail = runHook(PRE_COMMIT_PATH, {
-        USE_REAL_LINT_STAGED: '1',
-      });
+      const workflowFail = runHook(PRE_COMMIT_PATH, { USE_REAL_LINT_STAGED: '1' });
       expect(workflowFail.status).not.toBe(0);
       expect(`${workflowFail.stdout}\n${workflowFail.stderr}`).toContain(
         'Pre-commit check failed: ESLint / lint-staged validation failed.'
       );
       execSync('git rm -f .github/workflows/ci.yml', { cwd: tempDir, stdio: 'ignore' });
 
+      // 4. Staged destructive SQL migration must fail
       const migrationDir = path.join(tempDir, 'prisma', 'migrations', '20261201000000_drop');
       fs.mkdirSync(migrationDir, { recursive: true });
       fs.writeFileSync(path.join(migrationDir, 'migration.sql'), 'DROP TABLE "Guest";\n');
@@ -568,13 +873,210 @@ for (const file of process.argv.slice(2)) {
         stdio: 'ignore',
       });
 
-      const migrationFail = runHook(PRE_COMMIT_PATH, {
-        USE_REAL_LINT_STAGED: '1',
-      });
+      const migrationFail = runHook(PRE_COMMIT_PATH, { USE_REAL_LINT_STAGED: '1' });
       expect(migrationFail.status).not.toBe(0);
       expect(`${migrationFail.stdout}\n${migrationFail.stderr}`).toContain(
         'Pre-commit check failed: ESLint / lint-staged validation failed.'
       );
+      execSync('git rm -f prisma/migrations/20261201000000_drop/migration.sql', {
+        cwd: tempDir,
+        stdio: 'ignore',
+      });
+
+      // 5. Untracked docs/ files and unstaged target headings must NEVER mask broken staged Markdown commits
+      fs.writeFileSync(path.join(tempDir, 'docs', 'untracked-target.md'), '# Untracked Target\n');
+      fs.writeFileSync(
+        path.join(tempDir, 'docs', 'guide.md'),
+        '# Guide\n\n## Unstaged Section\n'
+      );
+      fs.writeFileSync(
+        path.join(tempDir, 'README.md'),
+        '# Project\n\nSee [Untracked](docs/untracked-target.md) and [Section](docs/guide.md#unstaged-section).\n'
+      );
+      execSync('git add README.md', { cwd: tempDir, stdio: 'ignore' });
+
+      const untrackedTargetFail = runHook(PRE_COMMIT_PATH, { USE_REAL_LINT_STAGED: '1' });
+      expect(untrackedTargetFail.status).not.toBe(0);
+      fs.unlinkSync(path.join(tempDir, 'docs', 'untracked-target.md'));
+      fs.writeFileSync(path.join(tempDir, 'docs', 'guide.md'), '# Guide\n\nBaseline docs.\n');
+      fs.writeFileSync(path.join(tempDir, 'README.md'), '# Project\n\nSee [Guide](docs/guide.md).\n');
+      execSync('git add README.md', { cwd: tempDir, stdio: 'ignore' });
+
+      // 6. Staged Markdown deletion triggers check:links (rejecting broken incoming links, allowing unreferenced deletions + script deletions)
+      execSync('git rm docs/guide.md', { cwd: tempDir, stdio: 'ignore' });
+      const deletedDocFail = runHook(PRE_COMMIT_PATH, { USE_REAL_LINT_STAGED: '1' });
+      expect(deletedDocFail.status).not.toBe(0);
+      fs.writeFileSync(path.join(tempDir, 'docs', 'guide.md'), '# Guide\n\nBaseline docs.\n');
+      execSync('git add docs/guide.md', { cwd: tempDir, stdio: 'ignore' });
+
+      execSync('git rm docs/orphan.md helper.mjs', { cwd: tempDir, stdio: 'ignore' });
+      const deletedOrphanPass = runHook(PRE_COMMIT_PATH, { USE_REAL_LINT_STAGED: '1' });
+      expect(deletedOrphanPass.status).toBe(0);
+      execSync('git commit -m "Remove unreferenced orphan doc and helper"', {
+        cwd: tempDir,
+        stdio: 'ignore',
+      });
+
+      // 7. Staged package.json edit with UNSTAGED package-lock.json must fail until package-lock.json is also staged
+      fs.writeFileSync(
+        path.join(tempDir, 'package.json'),
+        JSON.stringify({ ...basePackageJson, dependencies: { zod: '^4.6.7' } }, null, 2) + '\n'
+      );
+      fs.writeFileSync(
+        path.join(tempDir, 'package-lock.json'),
+        JSON.stringify(
+          {
+            ...basePackageLock,
+            packages: {
+              '': {
+                name: 'temp-lint-test',
+                dependencies: { zod: '^4.6.7' },
+              },
+              'node_modules/zod': {
+                version: '4.6.7',
+                resolved: 'https://registry.npmjs.org/zod/-/zod-4.6.7.tgz',
+                integrity: validSha512,
+              },
+            },
+          },
+          null,
+          2
+        ) + '\n'
+      );
+      execSync('git add package.json', { cwd: tempDir, stdio: 'ignore' });
+
+      const unstagedLockFail = runHook(PRE_COMMIT_PATH, { USE_REAL_LINT_STAGED: '1' });
+      expect(unstagedLockFail.status).not.toBe(0);
+
+      execSync('git add package-lock.json', { cwd: tempDir, stdio: 'ignore' });
+      const stagedLockPass = runHook(PRE_COMMIT_PATH, { USE_REAL_LINT_STAGED: '1' });
+      expect(stagedLockPass.status).toBe(0);
+      execSync('git commit -m "Add synchronized zod dependency and lockfile"', {
+        cwd: tempDir,
+        stdio: 'ignore',
+      });
+
+      // 8. MERGE_HEAD merge commits reject unconflicted broken workflows, Dockerfiles, and Markdown links
+      const baseBranch = 'main';
+      for (const scenario of [
+        {
+          branch: 'merge-broken-workflow',
+          setup: () => {
+            fs.mkdirSync(path.join(tempDir, '.github', 'workflows'), { recursive: true });
+            fs.writeFileSync(
+              path.join(tempDir, '.github', 'workflows', 'merged.yml'),
+              [
+                'name: Merged Broken Workflow',
+                'on: [push]',
+                'permissions:',
+                '  contents: read',
+                'jobs:',
+                '  verify:',
+                '    runs-on: ubuntu-latest',
+                '    timeout-minutes: 5',
+                '    steps:',
+                '      - uses: actions/checkout@v4',
+                '',
+              ].join('\n')
+            );
+          },
+        },
+        {
+          branch: 'merge-broken-dockerfile',
+          setup: () => {
+            const df = fs.readFileSync(path.join(tempDir, 'Dockerfile'), 'utf-8');
+            fs.writeFileSync(
+              path.join(tempDir, 'Dockerfile'),
+              df.replace(`node:22-bookworm-slim@${nodeDigest}`, 'node:22-bookworm-slim')
+            );
+          },
+        },
+        {
+          branch: 'merge-broken-markdown',
+          setup: () => {
+            fs.writeFileSync(
+              path.join(tempDir, 'docs', 'merge-broken.md'),
+              '# Merge Doc\n\nBroken link: [Missing](./nonexistent-target.md)\n'
+            );
+          },
+        },
+      ]) {
+        execSync(`git checkout -b ${scenario.branch}`, { cwd: tempDir, stdio: 'ignore' });
+        scenario.setup();
+        execSync('git add . && git commit -m "Introduce defect on side branch"', {
+          cwd: tempDir,
+          stdio: 'ignore',
+        });
+
+        execSync(`git checkout ${baseBranch}`, { cwd: tempDir, stdio: 'ignore' });
+        fs.writeFileSync(path.join(tempDir, 'notes.txt'), `main divergence before ${scenario.branch}\n`);
+        execSync('git add notes.txt && git commit -m "Advance main"', {
+          cwd: tempDir,
+          stdio: 'ignore',
+        });
+
+        execSync(`git merge --no-commit --no-ff ${scenario.branch}`, {
+          cwd: tempDir,
+          stdio: 'ignore',
+        });
+        expect(fs.existsSync(path.join(tempDir, '.git', 'MERGE_HEAD'))).toBe(true);
+
+        const mergeHookRes = runHook(PRE_COMMIT_PATH, { USE_REAL_LINT_STAGED: '1' });
+        expect(mergeHookRes.status).not.toBe(0);
+        expect(fs.existsSync(path.join(tempDir, '.git', 'MERGE_HEAD'))).toBe(true);
+
+        execSync('git merge --abort', { cwd: tempDir, stdio: 'ignore' });
+      }
+    });
+
+    it('removes the temporary snapshot directory on SIGINT, SIGTERM, and SIGHUP', async () => {
+      fs.writeFileSync(path.join(tempDir, 'partial.ts'), 'export const alpha = 77;\n');
+      execSync('git add partial.ts', { cwd: tempDir, stdio: 'ignore' });
+
+      for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
+        const markerPath = path.join(tempDir, `.snapshot-${sig}.txt`);
+        const child = spawn(process.execPath, [PRE_COMMIT_PATH], {
+          cwd: tempDir,
+          env: {
+            ...process.env,
+            USE_REAL_LINT_STAGED: '1',
+            SLOW_LINT_TASK_MS: '8000',
+            SNAPSHOT_MARKER_FILE: markerPath,
+            PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+          },
+          stdio: 'ignore',
+        });
+
+        const snapshotCwd = await new Promise<string>((resolve, reject) => {
+          const deadline = Date.now() + 5000;
+          const poll = () => {
+            if (fs.existsSync(markerPath)) {
+              const recorded = fs.readFileSync(markerPath, 'utf-8').trim();
+              if (recorded) {
+                resolve(recorded);
+                return;
+              }
+            }
+            if (Date.now() > deadline) {
+              reject(new Error(`Timed out waiting for snapshot marker before ${sig}`));
+              return;
+            }
+            setTimeout(poll, 25);
+          };
+          poll();
+        });
+
+        const tempBaseDir = path.dirname(snapshotCwd);
+        expect(fs.existsSync(tempBaseDir)).toBe(true);
+
+        child.kill(sig);
+        const code = await new Promise<number | null>((resolve) => {
+          child.on('close', (exitCode) => resolve(exitCode));
+        });
+        expect(code).not.toBe(0);
+        expect(fs.existsSync(tempBaseDir)).toBe(false);
+        fs.unlinkSync(markerPath);
+      }
     });
   });
 
@@ -990,5 +1492,426 @@ for (const file of process.argv.slice(2)) {
       expect(new Set(buildInfoFiles.map((entry) => path.normalize(entry))).size).toBe(5);
       expect(gitignore).toContain('*.tsbuildinfo');
     });
+  });
+
+  describe('Real content-hashed typecheck, next typegen, and pre-push regressions', () => {
+    const RUN_TYPECHECK_PATH = path.join(REPO_ROOT, 'scripts', 'quality', 'run-typecheck.mjs');
+    let realRepoDir: string;
+    let realHookBinDir: string;
+
+    function writeMinimalRepoConfigs(dir: string): void {
+      fs.mkdirSync(path.join(dir, 'src', 'app'), { recursive: true });
+      fs.mkdirSync(path.join(dir, 'scripts'), { recursive: true });
+      fs.mkdirSync(path.join(dir, 'e2e'), { recursive: true });
+
+      fs.writeFileSync(
+        path.join(dir, '.gitignore'),
+        [
+          '.hook-bin/',
+          'node_modules',
+          '.next',
+          'next-env.d.ts',
+          '*.tsbuildinfo',
+          '.eslintcache',
+          '',
+        ].join('\n')
+      );
+
+      const runTypecheckCmd = `${JSON.stringify(process.execPath)} ${JSON.stringify(RUN_TYPECHECK_PATH)}`;
+      fs.writeFileSync(
+        path.join(dir, 'package.json'),
+        JSON.stringify(
+          {
+            name: 'real-typecheck-fixture',
+            private: true,
+            scripts: {
+              typecheck: runTypecheckCmd,
+              'type-check': runTypecheckCmd,
+              lint: 'node -e "process.exit(0)"',
+              'lint:unused': 'node -e "process.exit(0)"',
+              'check:env-docs': 'node -e "process.exit(0)"',
+              'check:runbooks': 'node -e "process.exit(0)"',
+              'check:setup-guides': 'node -e "process.exit(0)"',
+              'check:identifiers': 'node -e "process.exit(0)"',
+              'check:action-pins': 'node -e "process.exit(0)"',
+              'check:standalone': 'node -e "process.exit(0)"',
+              'check:links': 'node -e "process.exit(0)"',
+              'check:spec-contracts': 'node -e "process.exit(0)"',
+              'check:prisma': 'node -e "process.exit(0)"',
+              'lint:migrations': 'node -e "process.exit(0)"',
+              'check:doc-sync': 'node -e "process.exit(0)"',
+              'check:audit': 'node -e "process.exit(0)"',
+            },
+          },
+          null,
+          2
+        ) + '\n'
+      );
+
+      fs.writeFileSync(
+        path.join(dir, 'next.config.ts'),
+        'const nextConfig = {};\nexport default nextConfig;\n'
+      );
+      fs.writeFileSync(
+        path.join(dir, 'src', 'middleware.ts'),
+        'export function middleware(): undefined {\n  return undefined;\n}\n'
+      );
+      fs.writeFileSync(
+        path.join(dir, 'src', 'app', 'layout.tsx'),
+        "import type { ReactNode } from 'react';\nexport default function RootLayout({ children }: { children: ReactNode }): ReactNode {\n  return children;\n}\n"
+      );
+      fs.writeFileSync(
+        path.join(dir, 'src', 'app', 'page.tsx'),
+        'export default function HomePage(): null {\n  return null;\n}\n'
+      );
+      fs.writeFileSync(path.join(dir, 'scripts', 'helper.ts'), 'export const scriptOk = true;\n');
+      fs.writeFileSync(path.join(dir, 'e2e', 'smoke.ts'), 'export const e2eOk = true;\n');
+      fs.writeFileSync(path.join(dir, 'src', 'unit.test.ts'), 'export const testOk = true;\n');
+
+      const sharedCompilerOptions = {
+        target: 'ES2022',
+        lib: ['dom', 'esnext'],
+        allowJs: true,
+        strict: true,
+        noEmit: true,
+        esModuleInterop: true,
+        module: 'esnext',
+        moduleResolution: 'bundler',
+        resolveJsonModule: true,
+        isolatedModules: true,
+        jsx: 'react-jsx',
+        incremental: true,
+        skipLibCheck: true,
+        types: ['node'],
+        plugins: [{ name: 'next' }],
+      };
+
+      fs.writeFileSync(
+        path.join(dir, 'tsconfig.json'),
+        JSON.stringify(
+          {
+            compilerOptions: sharedCompilerOptions,
+            include: [
+              'next-env.d.ts',
+              '*.ts',
+              'src/**/*.d.ts',
+              '.next/types/**/*.ts',
+              '.next/dev/types/**/*.ts',
+            ],
+            exclude: ['node_modules', 'scripts', 'e2e', '**/*.test.ts'],
+          },
+          null,
+          2
+        ) + '\n'
+      );
+      fs.writeFileSync(
+        path.join(dir, 'tsconfig.build.json'),
+        JSON.stringify(
+          {
+            extends: './tsconfig.json',
+            compilerOptions: {
+              incremental: true,
+              tsBuildInfoFile: './tsconfig.build.tsbuildinfo',
+            },
+            include: ['next-env.d.ts', 'src/**/*.ts', 'src/**/*.tsx', '.next/types/**/*.ts'],
+            exclude: ['node_modules', 'scripts', 'e2e', '**/*.test.ts'],
+          },
+          null,
+          2
+        ) + '\n'
+      );
+      fs.writeFileSync(
+        path.join(dir, 'tsconfig.scripts.json'),
+        JSON.stringify(
+          {
+            extends: './tsconfig.json',
+            compilerOptions: {
+              incremental: true,
+              tsBuildInfoFile: './tsconfig.scripts.tsbuildinfo',
+            },
+            include: ['scripts/**/*.ts'],
+            exclude: ['node_modules'],
+          },
+          null,
+          2
+        ) + '\n'
+      );
+      fs.writeFileSync(
+        path.join(dir, 'tsconfig.e2e.json'),
+        JSON.stringify(
+          {
+            extends: './tsconfig.json',
+            compilerOptions: {
+              incremental: true,
+              tsBuildInfoFile: './tsconfig.e2e.tsbuildinfo',
+            },
+            include: ['e2e/**/*.ts'],
+            exclude: ['node_modules'],
+          },
+          null,
+          2
+        ) + '\n'
+      );
+      fs.writeFileSync(
+        path.join(dir, 'tsconfig.test.json'),
+        JSON.stringify(
+          {
+            extends: './tsconfig.json',
+            compilerOptions: {
+              incremental: true,
+              tsBuildInfoFile: './tsconfig.test.tsbuildinfo',
+            },
+            include: ['next-env.d.ts', 'src/**/*.test.ts'],
+            exclude: ['node_modules'],
+          },
+          null,
+          2
+        ) + '\n'
+      );
+    }
+
+    function runNpmTypecheck(cwd = realRepoDir) {
+      return spawnSync('npm', ['run', 'typecheck'], {
+        cwd,
+        encoding: 'utf-8',
+        env: process.env,
+      });
+    }
+
+    function runRealPrePush(extraEnv: Record<string, string> = {}) {
+      const headSha = execSync('git rev-parse HEAD', {
+        cwd: realRepoDir,
+        encoding: 'utf-8',
+      }).trim();
+      const parentRes = spawnSync('git', ['rev-parse', '--verify', '--quiet', 'HEAD^'], {
+        cwd: realRepoDir,
+        encoding: 'utf-8',
+      });
+      const remoteSha = parentRes.status === 0 ? parentRes.stdout.trim() : ZERO_SHA;
+      return spawnSync(process.execPath, [PRE_PUSH_PATH], {
+        cwd: realRepoDir,
+        encoding: 'utf-8',
+        input: `refs/heads/main ${headSha} refs/heads/main ${remoteSha}\n`,
+        env: {
+          ...process.env,
+          PRE_PUSH_CONCURRENCY: '2',
+          ...extraEnv,
+          PATH: `${realHookBinDir}${path.delimiter}${process.env.PATH ?? ''}`,
+        },
+      });
+    }
+
+    beforeEach(() => {
+      realRepoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'real-typecheck-hook-'));
+      realHookBinDir = path.join(realRepoDir, '.hook-bin');
+      fs.mkdirSync(realHookBinDir, { recursive: true });
+
+      // Fast npm shim for pre-push that runs real run-typecheck.mjs for type-check/typecheck and exits 0 for unrelated checks
+      const fastNpmShim = path.join(realHookBinDir, 'npm');
+      fs.writeFileSync(
+        fastNpmShim,
+        `#!/usr/bin/env node
+const { spawnSync } = require('child_process');
+const args = process.argv.slice(2);
+if (args[0] === 'run' && (args[1] === 'type-check' || args[1] === 'typecheck')) {
+  const res = spawnSync(${JSON.stringify(process.execPath)}, [${JSON.stringify(RUN_TYPECHECK_PATH)}], {
+    cwd: process.cwd(),
+    stdio: 'inherit',
+    env: process.env,
+  });
+  process.exit(res.status ?? 1);
+}
+process.exit(0);
+`
+      );
+      fs.chmodSync(fastNpmShim, 0o755);
+
+      writeMinimalRepoConfigs(realRepoDir);
+      fs.symlinkSync(
+        path.join(REPO_ROOT, 'node_modules'),
+        path.join(realRepoDir, 'node_modules'),
+        process.platform === 'win32' ? 'junction' : 'dir'
+      );
+
+      execSync('git init -b main', { cwd: realRepoDir, stdio: 'ignore' });
+      execSync('git config user.name "Test Runner"', { cwd: realRepoDir, stdio: 'ignore' });
+      execSync('git config user.email "test@example.com"', { cwd: realRepoDir, stdio: 'ignore' });
+      execSync('git add . && git commit -m "Initial baseline"', {
+        cwd: realRepoDir,
+        stdio: 'ignore',
+      });
+    });
+
+    afterEach(() => {
+      fs.rmSync(realRepoDir, { recursive: true, force: true });
+    });
+
+    it(
+      'fails in .githooks/pre-push on a committed TS2322 error when unstaged edits trigger detached worktree hydration over warm .tsbuildinfo',
+      () => {
+        const targetFile = path.join(realRepoDir, 'src', 'checked.ts');
+        fs.writeFileSync(targetFile, "export const brokenCount: number = 'not-a-number';\n");
+        execSync('git add src/checked.ts && git commit -m "Commit TS2322 error"', {
+          cwd: realRepoDir,
+          stdio: 'ignore',
+        });
+
+        // Unstaged fix in working tree + warm passing .tsbuildinfo with newer mtime
+        const unstagedCleanFix = 'export const brokenCount: number = 42;\n';
+        fs.writeFileSync(targetFile, unstagedCleanFix);
+        const warmCheck = runNpmTypecheck();
+        expect(warmCheck.status).toBe(0);
+
+        const futureTime = new Date(Date.now() + 60_000);
+        for (const entry of fs.readdirSync(realRepoDir)) {
+          if (entry.endsWith('.tsbuildinfo')) {
+            fs.utimesSync(path.join(realRepoDir, entry), futureTime, futureTime);
+          }
+        }
+
+        const pushRes = runRealPrePush();
+        const combined = `${pushRes.stdout}\n${pushRes.stderr}`;
+        expect(pushRes.status).not.toBe(0);
+        expect(combined).toContain('ephemeral Git worktree');
+        expect(combined).toContain('TS2322');
+
+        // Unstaged working tree fix remains intact
+        expect(fs.readFileSync(targetFile, 'utf-8')).toBe(unstagedCleanFix);
+      },
+      60_000
+    );
+
+    it(
+      'fails in npm run typecheck on a TS2322 edit saved while a prior npm run typecheck run is active',
+      async () => {
+        const targetFile = path.join(realRepoDir, 'src', 'concurrent.ts');
+        fs.writeFileSync(targetFile, 'export const liveCount: number = 1;\n');
+        expect(runNpmTypecheck().status).toBe(0);
+
+        const { runTypecheck } = await import('../../scripts/quality/run-typecheck.mjs');
+        let midRunSaved = false;
+        const activeRun = await runTypecheck({
+          cwd: realRepoDir,
+          onAfterProjectCheck: (projectPath: string) => {
+            if (projectPath === 'tsconfig.build.json' && !midRunSaved) {
+              midRunSaved = true;
+              fs.writeFileSync(targetFile, "export const liveCount: number = 'race-ts2322';\n");
+              // Backdate file mtime behind .tsbuildinfo to simulate same-tick/prior-tick editor save during active run
+              const pastTime = new Date(Date.now() - 10_000);
+              fs.utimesSync(targetFile, pastTime, pastTime);
+            }
+          },
+        });
+        expect(activeRun.ok).toBe(true);
+        expect(midRunSaved).toBe(true);
+
+        const secondRun = runNpmTypecheck();
+        const combined = `${secondRun.stdout}\n${secondRun.stderr}`;
+        expect(secondRun.status).not.toBe(0);
+        expect(combined).toContain('TS2322');
+      },
+      60_000
+    );
+
+    it(
+      'fails with TS2344 in both npm run typecheck and .githooks/pre-push on a new route handler with an invalid signature, and exits 0 after deleting a committed route without manual .next/types cleanup',
+      () => {
+        // Warm initial route types and tsbuildinfo caches
+        expect(runNpmTypecheck().status).toBe(0);
+        expect(
+          fs.existsSync(path.join(realRepoDir, '.next', 'types', '.route-manifest.json'))
+        ).toBe(true);
+
+        // 1. Add a new route handler with an invalid signature while prior .next/types exists
+        const invalidRouteFile = path.join(realRepoDir, 'src', 'app', 'api', 'bad-sig', 'route.ts');
+        fs.mkdirSync(path.dirname(invalidRouteFile), { recursive: true });
+        fs.writeFileSync(
+          invalidRouteFile,
+          'export function GET(invalidArg: number): number {\n  return invalidArg;\n}\n'
+        );
+        execSync('git add src/app/api/bad-sig/route.ts && git commit -m "Add invalid route"', {
+          cwd: realRepoDir,
+          stdio: 'ignore',
+        });
+
+        const invalidTypecheck = runNpmTypecheck();
+        expect(invalidTypecheck.status).not.toBe(0);
+        expect(`${invalidTypecheck.stdout}\n${invalidTypecheck.stderr}`).toContain('TS2344');
+
+        const invalidPrePush = runRealPrePush();
+        expect(invalidPrePush.status).not.toBe(0);
+        expect(`${invalidPrePush.stdout}\n${invalidPrePush.stderr}`).toContain('TS2344');
+
+        // 2. Replace with a valid route handler and commit
+        fs.writeFileSync(
+          invalidRouteFile,
+          'export async function GET(): Promise<Response> {\n  return Response.json({ ok: true });\n}\n'
+        );
+        execSync('git add src/app/api/bad-sig/route.ts && git commit -m "Fix route signature"', {
+          cwd: realRepoDir,
+          stdio: 'ignore',
+        });
+        expect(runNpmTypecheck().status).toBe(0);
+        expect(
+          fs.readFileSync(path.join(realRepoDir, '.next', 'types', 'validator.ts'), 'utf-8')
+        ).toContain('bad-sig/route');
+
+        // 3. Delete the committed route WITHOUT manually cleaning .next/types
+        fs.rmSync(path.dirname(invalidRouteFile), { recursive: true, force: true });
+        execSync('git add -A && git commit -m "Delete committed route"', {
+          cwd: realRepoDir,
+          stdio: 'ignore',
+        });
+
+        // Also place an unstaged note so .githooks/pre-push exercises detached worktree hydration first
+        fs.writeFileSync(path.join(realRepoDir, 'unstaged-note.txt'), 'trigger worktree\n');
+        const deletePrePush = runRealPrePush();
+        expect(deletePrePush.status).toBe(0);
+        expect(deletePrePush.stdout).toContain('ephemeral Git worktree');
+        fs.unlinkSync(path.join(realRepoDir, 'unstaged-note.txt'));
+
+        // And npm run typecheck in the main workspace also cleans stale .next/types and exits 0
+        const deleteTypecheck = runNpmTypecheck();
+        expect(deleteTypecheck.status).toBe(0);
+        expect(
+          fs.readFileSync(path.join(realRepoDir, '.next', 'types', 'validator.ts'), 'utf-8')
+        ).not.toContain('bad-sig/route');
+      },
+      90_000
+    );
+
+    it(
+      'runs .githooks/pre-push in a detached worktree and fails with TS2307 when a commit imports an untracked local file',
+      () => {
+        expect(runNpmTypecheck().status).toBe(0);
+
+        // Unstaged, non-ignored untracked helper file present on disk
+        const untrackedFile = path.join(realRepoDir, 'src', 'untracked-local.ts');
+        fs.writeFileSync(untrackedFile, 'export const localOnlySecret = 99;\n');
+
+        // Commit a tracked file that imports the untracked file without staging the untracked file
+        const consumerFile = path.join(realRepoDir, 'src', 'consumer.ts');
+        fs.writeFileSync(
+          consumerFile,
+          "import { localOnlySecret } from './untracked-local';\nexport const exportedSecret = localOnlySecret;\n"
+        );
+        execSync('git add src/consumer.ts && git commit -m "Import untracked file"', {
+          cwd: realRepoDir,
+          stdio: 'ignore',
+        });
+
+        const pushRes = runRealPrePush();
+        const combined = `${pushRes.stdout}\n${pushRes.stderr}`;
+        expect(pushRes.status).not.toBe(0);
+        expect(combined).toContain('ephemeral Git worktree');
+        expect(combined).toContain('TS2307');
+
+        // Untracked local file is preserved untouched
+        expect(fs.readFileSync(untrackedFile, 'utf-8')).toBe(
+          'export const localOnlySecret = 99;\n'
+        );
+      },
+      60_000
+    );
   });
 });

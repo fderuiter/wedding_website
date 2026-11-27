@@ -1,3 +1,4 @@
+import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -1911,10 +1912,92 @@ export function checkLinksInFile(
   );
 }
 
+function hasStagedMarkdownRemoval(rootDir: string): boolean {
+  if (!fs.existsSync(path.join(rootDir, '.git'))) {
+    return false;
+  }
+  const res = spawnSync(
+    'git',
+    ['diff', '--cached', '--diff-filter=DR', '--name-only', '-z'],
+    {
+      cwd: rootDir,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }
+  );
+  if (res.status !== 0 || !res.stdout) {
+    return false;
+  }
+  return res.stdout
+    .split('\0')
+    .some((entry) => entry.toLowerCase().endsWith('.md'));
+}
+
+function resolveScopedMarkdownSelection(
+  rootDir: string,
+  targetFiles?: string[]
+): { mdFiles: string[]; checkPortalConfig: boolean } {
+  if (!targetFiles || targetFiles.length === 0) {
+    return {
+      mdFiles: findMarkdownFiles(rootDir),
+      checkPortalConfig: true,
+    };
+  }
+
+  const seen = new Set<string>();
+  const scopedMdFiles: string[] = [];
+  let hasMissingMarkdownTarget = false;
+  let touchesPortalConfig = false;
+
+  for (const rawTarget of targetFiles) {
+    const absPath = path.resolve(rootDir, rawTarget);
+    const relPath = path.relative(rootDir, absPath).replace(/\\/g, '/');
+    if (relPath === 'docs-portal/.vitepress/config.mts') {
+      touchesPortalConfig = true;
+    }
+    if (!absPath.toLowerCase().endsWith('.md')) {
+      continue;
+    }
+    if (seen.has(absPath)) {
+      continue;
+    }
+    seen.add(absPath);
+
+    let isExistingFile = false;
+    try {
+      isExistingFile = fs.existsSync(absPath) && fs.statSync(absPath).isFile();
+    } catch {
+      isExistingFile = false;
+    }
+
+    if (!isExistingFile) {
+      hasMissingMarkdownTarget = true;
+      continue;
+    }
+
+    if (!relPath.startsWith('..') && !path.isAbsolute(relPath) && !isExcludedRelPath(relPath)) {
+      scopedMdFiles.push(absPath);
+    }
+  }
+
+  if (hasMissingMarkdownTarget || hasStagedMarkdownRemoval(rootDir)) {
+    return {
+      mdFiles: findMarkdownFiles(rootDir),
+      checkPortalConfig: true,
+    };
+  }
+
+  return {
+    mdFiles: scopedMdFiles,
+    checkPortalConfig: touchesPortalConfig,
+  };
+}
+
 export async function checkDocLinks(
-  rootDir: string = ROOT_DIR
+  rootDir: string = ROOT_DIR,
+  targetFiles?: string[]
 ): Promise<{ passed: boolean; errors: LinkError[]; count: number }> {
-  const mdFiles = findMarkdownFiles(rootDir);
+  const { mdFiles, checkPortalConfig } = resolveScopedMarkdownSelection(rootDir, targetFiles);
   const errors: LinkError[] = [];
   const lineCountCache = new Map<string, number>();
   const headingSlugCache = new Map<string, Set<string>>();
@@ -1933,14 +2016,24 @@ export async function checkDocLinks(
     );
   }
 
-  checkVitePressConfigLinks(rootDir, errors, lineCountCache, headingSlugCache);
+  if (checkPortalConfig) {
+    checkVitePressConfigLinks(rootDir, errors, lineCountCache, headingSlugCache);
+  }
   await validateMermaidBlocks(mermaidBlocks, errors);
 
   return { passed: errors.length === 0, errors, count: mdFiles.length };
 }
 
 async function main() {
-  const { passed, errors, count } = await checkDocLinks();
+  const cliArgs = process.argv.slice(2);
+  const unknownFlags = cliArgs.filter((arg) => arg.startsWith('-'));
+  if (unknownFlags.length > 0) {
+    console.error(`❌ Unknown option(s) passed to check-doc-links.ts: ${unknownFlags.join(', ')}`);
+    process.exit(1);
+  }
+
+  const scopedFiles = cliArgs.length > 0 ? cliArgs : undefined;
+  const { passed, errors, count } = await checkDocLinks(ROOT_DIR, scopedFiles);
 
   if (!passed) {
     console.error('\n❌ Dead documentation link(s) detected:\n');

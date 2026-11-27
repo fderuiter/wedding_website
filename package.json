@@ -37,8 +37,8 @@
     "lint:migrations": "node --experimental-strip-types scripts/verify-migration-compatibility.ts",
     "lint:unused": "knip",
     "lint:unused:fix": "knip --fix --allow-remove-files",
-    "type-check": "([ -f next-env.d.ts ] && [ -f .next/types/routes.d.ts ] || next typegen) && tsc -b --noEmit tsconfig.build.json tsconfig.scripts.json tsconfig.e2e.json tsconfig.test.json tsconfig.json && node -e \"const fs=require('fs'),t=new Date();for(const f of fs.readdirSync('.'))if(f.endsWith('.tsbuildinfo'))fs.utimesSync(f,t,t)\"",
-    "typecheck": "([ -f next-env.d.ts ] && [ -f .next/types/routes.d.ts ] || next typegen) && tsc -b --noEmit tsconfig.build.json tsconfig.scripts.json tsconfig.e2e.json tsconfig.test.json tsconfig.json && node -e \"const fs=require('fs'),t=new Date();for(const f of fs.readdirSync('.'))if(f.endsWith('.tsbuildinfo'))fs.utimesSync(f,t,t)\"",
+    "type-check": "node --max-old-space-size=4096 scripts/quality/run-typecheck.mjs",
+    "typecheck": "node --max-old-space-size=4096 scripts/quality/run-typecheck.mjs",
     "pretest": "node scripts/pretest.mjs",
     "pretest:watch": "npm run pretest",
     "pretest:cov": "npm run pretest",
@@ -250,11 +250,11 @@
     "webpack-dev-middleware": "^7.4.6"
   },
   "lint-staged": {
-    "*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}": "eslint --cache --cache-location .eslintcache --cache-strategy content --no-warn-ignored --fix --max-warnings=0",
-    ".githooks/*": "eslint --cache --cache-location .eslintcache --cache-strategy content --no-warn-ignored --fix --max-warnings=0",
+    "*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}": "eslint --cache --cache-location .eslintcache --cache-strategy content --no-warn-ignored --no-error-on-unmatched-pattern --fix --max-warnings=0",
+    ".githooks/*": "eslint --cache --cache-location .eslintcache --cache-strategy content --no-warn-ignored --no-error-on-unmatched-pattern --fix --max-warnings=0",
     ".github/workflows/*.{yml,yaml}": "npm run check:action-pins",
     "prisma/migrations/**/*.sql": "npm run lint:migrations",
-    "{Dockerfile,.dockerignore,docker-entrypoint.sh,docker-compose*.yml,docker/**}": "npm run check:standalone -- --static-only",
+    "{Dockerfile,.dockerignore,docker-entrypoint.sh,docker-compose*.yml,docker/**,package.json,package-lock.json}": "npm run check:standalone -- --static-only",
     "*.md": "npm run check:links"
   }
 }

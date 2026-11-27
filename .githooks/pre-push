@@ -9,7 +9,10 @@ import {
   runBoundedPool,
   spawnBufferedCommand,
 } from '../scripts/quality/parallel-pool.mjs';
-import { hydrateWorktreeCaches } from '../scripts/quality/worktree-cache.mjs';
+import {
+  ensurePrismaClientReady,
+  hydrateWorktreeCaches,
+} from '../scripts/quality/worktree-cache.mjs';
 
 const ZERO_OID_REGEX = /^0+$/;
 const LOCKFILE_PATHS = [
@@ -44,7 +47,11 @@ const checks = [
   },
   { name: 'Documentation relative links check', script: 'check:links' },
   { name: 'Specification route and symbol contracts check', script: 'check:spec-contracts' },
-  { name: 'Prisma schema validation', script: 'check:prisma' },
+  {
+    name: 'Prisma schema validation',
+    script: 'check:prisma',
+    args: ['--', '--skip-generate'],
+  },
   { name: 'Migration compatibility check', script: 'lint:migrations' },
   { name: 'Documentation synchronization check', script: 'check:doc-sync' },
 ];
@@ -107,7 +114,7 @@ function parsePrePushStdin(repoRoot) {
 }
 
 function trackedFilesMatchCommit(repoRoot, commitSha) {
-  const statusRes = runGit(['status', '--porcelain', '--untracked-files=no'], repoRoot);
+  const statusRes = runGit(['status', '--porcelain', '--untracked-files=normal'], repoRoot);
   if (statusRes.status !== 0 || statusRes.stdout.trim() !== '') {
     return false;
   }
@@ -222,6 +229,17 @@ function flushCheckOutput(stdout, stderr) {
 }
 
 async function executeChecks(targetDir, childEnv, includeLockfileAudit) {
+  const prismaPrep = await ensurePrismaClientReady(targetDir, {
+    env: childEnv,
+    repoRoot,
+    isIsolatedWorktree: path.resolve(targetDir) !== path.resolve(repoRoot),
+  });
+  if (!prismaPrep.ok) {
+    flushCheckOutput(prismaPrep.stdout, prismaPrep.stderr);
+    console.error('\n❌ Pre-push check failed: Prisma Client generation failed.');
+    return prismaPrep.status || 1;
+  }
+
   const baseChecks = includeLockfileAudit
     ? [...checks.slice(0, 3), lockfileAuditCheck, ...checks.slice(3)]
     : checks;
