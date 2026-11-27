@@ -246,24 +246,35 @@ describe('AddToCalendar', () => {
 
     const firstTriggerId = triggers[0].getAttribute('id');
     const secondTriggerId = triggers[1].getAttribute('id');
-    const firstMenuId = triggers[0].getAttribute('aria-controls');
-    const secondMenuId = triggers[1].getAttribute('aria-controls');
 
     expect(firstTriggerId).toBeTruthy();
     expect(secondTriggerId).toBeTruthy();
     expect(firstTriggerId).not.toBe(secondTriggerId);
-
-    expect(firstMenuId).toMatch(/^add-to-calendar-menu-/);
-    expect(secondMenuId).toMatch(/^add-to-calendar-menu-/);
-    expect(firstMenuId).not.toBe(secondMenuId);
+    expect(triggers[0]).not.toHaveAttribute('aria-controls');
+    expect(triggers[1]).not.toHaveAttribute('aria-controls');
 
     fireEvent.click(triggers[0]);
+    const firstMenuId = triggers[0].getAttribute('aria-controls');
+    expect(firstMenuId).toMatch(/^add-to-calendar-menu-/);
+
     const menu = screen.getByRole('menu');
     expect(menu).toHaveAttribute('id', firstMenuId);
     expect(menu).toHaveAttribute('aria-labelledby', firstTriggerId);
     expect(document.getElementById(firstMenuId!)).toBe(menu);
 
     expect(await axe(container)).toHaveNoViolations();
+
+    // Pressing Tab inside the first menu closes it and moves focus sequentially to the second trigger
+    const firstMenuItem = screen.getByRole('menuitem', { name: 'Google' });
+    fireEvent.keyDown(firstMenuItem, { key: 'Tab' });
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(triggers[0]).not.toHaveAttribute('aria-controls');
+    expect(triggers[1]).toHaveFocus();
+
+    fireEvent.click(triggers[1]);
+    const secondMenuId = triggers[1].getAttribute('aria-controls');
+    expect(secondMenuId).toMatch(/^add-to-calendar-menu-/);
+    expect(firstMenuId).not.toBe(secondMenuId);
   });
 
   it('closes an open calendar menu on the first pointer click on its trigger button', () => {

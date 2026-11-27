@@ -305,12 +305,17 @@ export const PhotoUploadQRModal: React.FC<PhotoUploadQRModalProps> = ({
       isOpen={isOpen}
       onClose={handleClose}
       title="Guest Photo Upload QR & Printable Cards"
-      className={`${activeMode === 'print' ? 'max-w-4xl' : 'max-w-lg'} w-full max-h-[calc(100vh-2rem)] print:max-h-none print:overflow-visible printable-qr-modal-dialog`}
+      showCloseButton
+      className={`${activeMode === 'print' ? 'max-w-4xl' : 'max-w-lg'} w-full print:max-h-none print:overflow-visible printable-qr-modal-dialog`}
       style={{ maxWidth: activeMode === 'print' ? '56rem' : '32rem' }}
-      contentClassName="px-6 py-4 max-h-[calc(100vh-7rem)] overflow-y-auto print:max-h-none print:overflow-visible"
+      contentClassName={
+        activeMode === 'preview'
+          ? 'px-6 pt-4 pb-0 print:max-h-none print:overflow-visible'
+          : 'px-6 py-4 print:max-h-none print:overflow-visible'
+      }
     >
       {activeMode === 'preview' ? (
-        <div className="space-y-5" data-testid="photo-qr-preview-panel">
+        <div className="space-y-4" data-testid="photo-qr-preview-panel">
           {originMismatchBanner}
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-stone-100 dark:bg-stone-800/80 px-3.5 py-2.5 border border-stone-200 dark:border-stone-700">
             <div className="text-xs text-stone-700 dark:text-stone-300">
@@ -374,35 +379,8 @@ export const PhotoUploadQRModal: React.FC<PhotoUploadQRModalProps> = ({
             </div>
           </FormGroup>
 
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-stone-200 dark:border-stone-700">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleRotateClick}
-              disabled={isRotating}
-              data-testid="rotate-photo-qr-token-btn"
-              className="flex items-center gap-1.5 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800 hover:bg-rose-50 dark:hover:bg-rose-950/40"
-            >
-              <Icon
-                name="RotateCw"
-                size={15}
-                className={isRotating ? 'animate-spin' : ''}
-                aria-hidden="true"
-              />
-              <span>{isRotating ? 'Rotating...' : 'Rotate Link'}</span>
-            </Button>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => setActiveMode('print')}
-                data-testid="switch-photo-qr-print-view-btn"
-              >
-                Print Cards / Sheets
-              </Button>
+          <div className="-mx-6 px-6 py-3.5 border-t border-stone-200 dark:border-stone-700 bg-[var(--dialog-bg,var(--background,#ffffff))] dark:bg-zinc-900 space-y-2.5 [@media(min-height:520px)]:sticky [@media(min-height:520px)]:bottom-0 z-10">
+            <div className="grid grid-cols-1 min-[340px]:grid-cols-2 gap-2.5">
               <Button
                 type="button"
                 variant="primary"
@@ -410,11 +388,56 @@ export const PhotoUploadQRModal: React.FC<PhotoUploadQRModalProps> = ({
                 onClick={handleDownloadPng}
                 data-testid="download-photo-qr-png-btn"
                 srContext="512x512 QR code image"
-                className="flex items-center gap-1.5"
+                className="w-full justify-center flex items-center gap-1.5"
               >
                 <Icon name="Download" size={15} aria-hidden="true" />
                 <span>Download PNG</span>
               </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => setActiveMode('print')}
+                data-testid="switch-photo-qr-print-view-btn"
+                className="w-full justify-center flex items-center gap-1.5"
+              >
+                <svg
+                  className="w-3.5 h-3.5 shrink-0"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4H7v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                  />
+                </svg>
+                <span>Print Cards / Sheets</span>
+              </Button>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleRotateClick}
+                disabled={isRotating}
+                data-testid="rotate-photo-qr-token-btn"
+                className="flex items-center gap-1.5 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+              >
+                <Icon
+                  name="RotateCw"
+                  size={15}
+                  className={isRotating ? 'animate-spin' : ''}
+                  aria-hidden="true"
+                />
+                <span>{isRotating ? 'Rotating...' : 'Rotate Link'}</span>
+              </Button>
+
               <Button
                 type="button"
                 variant="ghost"
@@ -535,7 +558,10 @@ export const PhotoUploadQRModal: React.FC<PhotoUploadQRModalProps> = ({
 
           <div
             data-testid="qr-print-sheet"
-            className={`qr-print-sheet grid gap-3 max-h-[60vh] overflow-y-auto p-2 border border-stone-200 dark:border-zinc-800 rounded-lg bg-white ${printGridClass}`}
+            tabIndex={0}
+            role="region"
+            aria-label="Printable QR card preview"
+            className={`qr-print-sheet grid gap-3 max-h-[60vh] overflow-y-auto p-2 border border-stone-200 dark:border-zinc-800 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${printGridClass}`}
             style={{ minHeight: '200px' }}
           >
             {cardIndices.map((idx) =>

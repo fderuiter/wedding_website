@@ -165,6 +165,270 @@ const MapController: React.FC<MapControllerProps> = ({ attractions, defaultCente
     }
   }, [map, attractions, defaultLat, defaultLng, venueLat, venueLng]);
 
+  useEffect(() => {
+    if (!map || typeof map.on !== 'function' || typeof map.off !== 'function') {
+      return;
+    }
+
+    type PopupWithSource = L.Popup & {
+      _source?: {
+        getElement?: () => HTMLElement | null;
+      };
+    };
+
+    let activePopupInstance: L.Popup | null = null;
+    let activeOriginMarker: HTMLElement | null = null;
+    let pendingCloseFocusFrame: number | null = null;
+    let activePopupCleanups: Array<() => void> = [];
+
+    const clearPopupListeners = () => {
+      for (const cleanup of activePopupCleanups) {
+        cleanup();
+      }
+      activePopupCleanups = [];
+    };
+
+    const focusPopupElement = (popup: L.Popup) => {
+      const popupEl = popup.getElement?.() ?? null;
+      if (!popupEl) return;
+
+      const interactiveTarget = popupEl.querySelector<HTMLElement>(
+        '.leaflet-popup-content a[href], .leaflet-popup-content button:not(:disabled), .leaflet-popup-content [tabindex]:not([tabindex="-1"]), .leaflet-popup-close-button'
+      );
+      if (interactiveTarget) {
+        interactiveTarget.focus();
+        return;
+      }
+
+      const contentWrapper =
+        popupEl.querySelector<HTMLElement>('.leaflet-popup-content') ?? popupEl;
+      if (!contentWrapper.hasAttribute('tabindex')) {
+        contentWrapper.setAttribute('tabindex', '-1');
+      }
+      contentWrapper.focus();
+    };
+
+    const handlePopupOpen = (event: L.PopupEvent) => {
+      if (event.popup === activePopupInstance) {
+        return;
+      }
+      activePopupInstance = event.popup;
+
+      if (pendingCloseFocusFrame !== null) {
+        cancelAnimationFrame(pendingCloseFocusFrame);
+        pendingCloseFocusFrame = null;
+      }
+      clearPopupListeners();
+
+      const sourceMarker = (event.popup as PopupWithSource)?._source?.getElement?.() ?? null;
+      const fallbackActiveMarker =
+        document.activeElement instanceof HTMLElement &&
+        document.activeElement.classList.contains('leaflet-marker-icon')
+          ? document.activeElement
+          : null;
+
+      activeOriginMarker = sourceMarker ?? fallbackActiveMarker ?? activeOriginMarker;
+
+      const popupEl = event.popup.getElement?.() ?? null;
+      if (popupEl) {
+        const handlePopupKeyDown = (e: KeyboardEvent) => {
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            e.stopPropagation();
+            if (typeof map.closePopup === 'function') {
+              map.closePopup(event.popup);
+            }
+          }
+        };
+        popupEl.addEventListener('keydown', handlePopupKeyDown);
+        activePopupCleanups.push(() => {
+          popupEl.removeEventListener('keydown', handlePopupKeyDown);
+        });
+      }
+
+      const ensurePopupFocus = (preferPrimaryContentControl: boolean): boolean => {
+        const currentPopupEl = event.popup.getElement?.() ?? null;
+        if (!currentPopupEl || !currentPopupEl.isConnected) {
+          return false;
+        }
+
+        const primaryContentControl = currentPopupEl.querySelector<HTMLElement>(
+          '.leaflet-popup-content a[href], .leaflet-popup-content button:not(:disabled), .leaflet-popup-content [tabindex]:not([tabindex="-1"])'
+        );
+        if (preferPrimaryContentControl && primaryContentControl) {
+          if (document.activeElement !== primaryContentControl) {
+            primaryContentControl.focus();
+          }
+          return document.activeElement === primaryContentControl;
+        }
+
+        if (!currentPopupEl.contains(document.activeElement)) {
+          focusPopupElement(event.popup);
+        }
+        return currentPopupEl.contains(document.activeElement);
+      };
+
+      const isFocusStillUnclaimed = () => {
+        const activeEl = document.activeElement;
+        return (
+          !activeEl ||
+          activeEl === document.body ||
+          activeEl === document.documentElement ||
+          activeEl === activeOriginMarker
+        );
+      };
+
+      focusPopupElement(event.popup);
+
+      let initialPortalUpgradeDone = false;
+      if (popupEl && typeof MutationObserver !== 'undefined') {
+        const observer = new MutationObserver(() => {
+          if (!popupEl.isConnected) {
+            return;
+          }
+          const activeEl = document.activeElement;
+          const unclaimed = isFocusStillUnclaimed();
+
+          if (!initialPortalUpgradeDone) {
+            const hasPrimaryControl = Boolean(
+              popupEl.querySelector(
+                '.leaflet-popup-content a[href], .leaflet-popup-content button:not(:disabled)'
+              )
+            );
+            if (hasPrimaryControl && (unclaimed || popupEl.contains(activeEl))) {
+              if (ensurePopupFocus(true)) {
+                initialPortalUpgradeDone = true;
+              }
+              return;
+            }
+          }
+
+          if (unclaimed) {
+            ensurePopupFocus(true);
+          }
+        });
+
+        observer.observe(popupEl, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ['style'],
+        });
+        activePopupCleanups.push(() => observer.disconnect());
+      }
+
+      let rafId: number | null = null;
+      let attempts = 0;
+      const maxAttempts = 40;
+
+      const pollUntilFocused = () => {
+        rafId = null;
+        const currentPopupEl = event.popup.getElement?.() ?? null;
+        if (!currentPopupEl || !currentPopupEl.isConnected) {
+          return;
+        }
+
+        const hasPrimaryControl = Boolean(
+          currentPopupEl.querySelector(
+            '.leaflet-popup-content a[href], .leaflet-popup-content button:not(:disabled)'
+          )
+        );
+
+        if (isFocusStillUnclaimed() || (hasPrimaryControl && !initialPortalUpgradeDone && currentPopupEl.contains(document.activeElement))) {
+          const focused = ensurePopupFocus(true);
+          if (focused && (hasPrimaryControl || attempts >= 3)) {
+            if (hasPrimaryControl) {
+              initialPortalUpgradeDone = true;
+            }
+            return;
+          }
+        } else if (currentPopupEl.contains(document.activeElement)) {
+          return;
+        } else {
+          // Focus explicitly moved elsewhere by user
+          return;
+        }
+
+        attempts += 1;
+        if (attempts < maxAttempts) {
+          rafId = requestAnimationFrame(pollUntilFocused);
+        }
+      };
+
+      rafId = requestAnimationFrame(pollUntilFocused);
+
+      const handleMapSettle = () => {
+        if (isFocusStillUnclaimed()) {
+          ensurePopupFocus(true);
+        }
+      };
+      map.on('zoomend', handleMapSettle);
+      map.on('moveend', handleMapSettle);
+
+      activePopupCleanups.push(() => {
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+        if (typeof map.off === 'function') {
+          map.off('zoomend', handleMapSettle);
+          map.off('moveend', handleMapSettle);
+        }
+      });
+    };
+
+    const handlePopupClose = (event: L.PopupEvent) => {
+      if (activePopupInstance === event.popup) {
+        activePopupInstance = null;
+      }
+      clearPopupListeners();
+      const closingPopupEl = event.popup.getElement?.() ?? null;
+      const sourceMarker =
+        (event.popup as PopupWithSource)?._source?.getElement?.() ?? activeOriginMarker;
+      activeOriginMarker = null;
+
+      if (!sourceMarker) return;
+
+      const restoreFocusIfAppropriate = () => {
+        if (!sourceMarker.isConnected) return;
+        const activeEl = document.activeElement;
+        const activePopupEl =
+          activeEl instanceof HTMLElement ? activeEl.closest('.leaflet-popup') : null;
+        const movedToAnotherMarkerOrPopup =
+          activeEl instanceof HTMLElement &&
+          activeEl !== sourceMarker &&
+          (activeEl.classList.contains('leaflet-marker-icon') ||
+            Boolean(activePopupEl && activePopupEl !== closingPopupEl));
+        if (!movedToAnotherMarkerOrPopup) {
+          sourceMarker.focus();
+        }
+      };
+
+      restoreFocusIfAppropriate();
+      if (pendingCloseFocusFrame !== null) {
+        cancelAnimationFrame(pendingCloseFocusFrame);
+      }
+      pendingCloseFocusFrame = requestAnimationFrame(() => {
+        pendingCloseFocusFrame = null;
+        restoreFocusIfAppropriate();
+      });
+    };
+
+    map.on('popupopen', handlePopupOpen);
+    map.on('popupclose', handlePopupClose);
+
+    return () => {
+      if (pendingCloseFocusFrame !== null) {
+        cancelAnimationFrame(pendingCloseFocusFrame);
+      }
+      clearPopupListeners();
+      if (typeof map.off === 'function') {
+        map.off('popupopen', handlePopupOpen);
+        map.off('popupclose', handlePopupClose);
+      }
+    };
+  }, [map]);
+
   return null;
 };
 

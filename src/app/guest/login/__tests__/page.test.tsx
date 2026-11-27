@@ -45,7 +45,7 @@ describe('Guest Login Page with Unified Sign-In and Help Drawer', () => {
     const helpTrigger = screen.getByRole('button', { name: /need help finding your code\?/i });
     expect(helpTrigger).toBeInTheDocument();
     expect(helpTrigger).toHaveAttribute('aria-expanded', 'false');
-    expect(helpTrigger).toHaveAttribute('aria-controls', 'guest-help-drawer');
+    expect(helpTrigger).not.toHaveAttribute('aria-controls');
 
     const results = await axe(container);
     expect(results).toHaveNoViolations();
@@ -58,6 +58,7 @@ describe('Guest Login Page with Unified Sign-In and Help Drawer', () => {
     fireEvent.click(helpTrigger);
 
     expect(helpTrigger).toHaveAttribute('aria-expanded', 'true');
+    expect(helpTrigger).toHaveAttribute('aria-controls', 'guest-help-drawer');
 
     const drawer = screen.getByRole('dialog');
     expect(drawer).toBeInTheDocument();
@@ -78,6 +79,7 @@ describe('Guest Login Page with Unified Sign-In and Help Drawer', () => {
     expect(container.innerHTML).not.toContain('hosts@wedding.example');
     expect(screen.getByText(/please message the hosts directly/i)).toBeInTheDocument();
 
+    expect(await axe(drawer)).toHaveNoViolations();
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });

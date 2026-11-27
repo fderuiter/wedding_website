@@ -1058,4 +1058,55 @@ describe('AdminRegistryPage', () => {
       setDemoRuntimeFlag(false);
     }
   });
+
+  it('isolates background with inert, closes Edit Contribution dialog on Escape, and restores focus to trigger button', async () => {
+    const itemWithContrib = createMockRegistryItem({
+      id: 'item-focus-dialog',
+      name: 'Cast Iron Skillet',
+      price: 80,
+      purchased: true,
+      amountContributed: 80,
+      contributors: [
+        createMockContributor({
+          id: 'c-focus-1',
+          name: 'Taylor Keyboard',
+          email: 'taylor@example.com',
+          amount: 80,
+          status: 'CONFIRMED',
+        }),
+      ],
+    });
+
+    mockFetch.mockImplementation((url: string) => {
+      if (url === '/api/registry/items?limit=500') {
+        return Promise.resolve({ ok: true, json: async () => [itemWithContrib] });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    renderWithProviders(
+      <main>
+        <AdminRegistryPage />
+      </main>
+    );
+
+    const mainEl = screen.getByRole('main');
+    const editButtons = await screen.findAllByRole('button', {
+      name: 'Edit contribution from Taylor Keyboard',
+    });
+    const triggerBtn = editButtons[0];
+    triggerBtn.focus();
+    fireEvent.click(triggerBtn);
+
+    const dialog = await screen.findByRole('dialog', { name: 'Edit Contribution' });
+    expect(dialog).toBeInTheDocument();
+    expect(mainEl.closest('[inert]')).not.toBeNull();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Edit Contribution' })).not.toBeInTheDocument();
+    });
+    expect(mainEl.closest('[inert]')).toBeNull();
+    expect(triggerBtn).toHaveFocus();
+  });
 });
