@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/Button';
 import { Heading, type HeadingLevel } from '@/components/ui/Layout';
+import { Overlay } from '@/components/ui/Overlay';
 import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
 import { EnsureToastProvider } from '@/components/ui/ToastProvider';
 import { resolveConfiguredBaseUrl, useAdminSettings } from '@/hooks/admin/useAdminSettings';
@@ -154,7 +154,10 @@ const InvitationQRPrintLabelsContent: React.FC<InvitationQRPrintLabelsContentPro
       <div
         data-testid="qr-print-sheet"
         data-template={template}
-        className={`qr-print-sheet ${sheetTemplateClass} grid gap-3 max-h-[70vh] overflow-y-auto p-2 border border-gray-100 dark:border-zinc-800 rounded-lg bg-white ${
+        tabIndex={0}
+        role="region"
+        aria-label="Printable QR label preview"
+        className={`qr-print-sheet ${sheetTemplateClass} grid gap-3 max-h-[70vh] overflow-y-auto p-2 border border-gray-100 dark:border-zinc-800 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
           isAvery5163 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3'
         }`}
         style={{
@@ -246,55 +249,33 @@ export const InvitationQRPrintLabelsModal: React.FC<InvitationQRPrintLabelsModal
     };
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!isOpen || typeof window === 'undefined') return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.stopPropagation();
-        if (typeof document !== 'undefined') {
-          document.body.classList.remove('printing-qr-labels', 'printing-qr-portal');
-        }
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-
-  if (!isOpen || typeof document === 'undefined') return null;
-
-  const modalContent = (
-    <EnsureToastProvider>
-      <div
-        className="printable-qr-portal-root fixed inset-0 z-50 flex items-center justify-center p-4"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="printable-qr-modal-title"
-      >
-        <div
-          className="printable-qr-backdrop no-print fixed inset-0 bg-black/60 backdrop-blur-sm"
-          onClick={handleClose}
-          aria-hidden="true"
+  return (
+    <Overlay
+      isOpen={isOpen}
+      onClose={handleClose}
+      modal
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="printable-qr-modal-title"
+      layoutClassName="printable-qr-portal-root fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="printable-qr-dialog-panel relative z-10 max-w-4xl w-full max-h-[calc(100vh-2rem)] overflow-y-auto print:max-h-none print:overflow-visible rounded-2xl bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 shadow-2xl p-6"
+    >
+      <EnsureToastProvider>
+        <Heading
+          as={headingLevel}
+          variant="none"
+          unstyledColor
+          id="printable-qr-modal-title"
+          className="sr-only no-print"
+        >
+          Printable Invitation QR Labels
+        </Heading>
+        <InvitationQRPrintLabelsContent
+          key={codes.length}
+          codes={codes}
+          onClose={handleClose}
         />
-        <div className="printable-qr-dialog-panel relative z-10 max-w-4xl w-full rounded-2xl bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 shadow-2xl p-6">
-          <Heading
-            as={headingLevel}
-            variant="none"
-            unstyledColor
-            id="printable-qr-modal-title"
-            className="sr-only no-print"
-          >
-            Printable Invitation QR Labels
-          </Heading>
-          <InvitationQRPrintLabelsContent
-            key={codes.length}
-            codes={codes}
-            onClose={handleClose}
-          />
-        </div>
-      </div>
-    </EnsureToastProvider>
+      </EnsureToastProvider>
+    </Overlay>
   );
-
-  return createPortal(modalContent, document.body);
 };

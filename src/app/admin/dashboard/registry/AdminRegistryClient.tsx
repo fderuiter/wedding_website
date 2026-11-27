@@ -18,6 +18,7 @@ import {
   type RegistryItem,
 } from '@/features/registry';
 import { Button } from '@/components/ui/Button';
+import { Dialog } from '@/components/ui/Dialog';
 import { Input, Label, Textarea, FormGroup } from '@/components/ui/forms';
 import { Icon } from '@/components/ui/Icon';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
@@ -1006,20 +1007,18 @@ export default function AdminRegistryPage() {
           </Droppable>
         </DragDropContext>
 
-        {editingContributor && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="edit-contributor-dialog-title"
-          >
-            <div className="w-full max-w-md rounded-xl bg-white dark:bg-gray-800 p-6 shadow-xl border border-gray-200 dark:border-gray-700 space-y-4">
-              <h2
-                id="edit-contributor-dialog-title"
-                className="text-xl font-bold text-gray-900 dark:text-white"
-              >
-                Edit Contribution
-              </h2>
+        <Dialog
+          isOpen={Boolean(editingContributor)}
+          onClose={() => {
+            if (!isSavingContributorEdit) {
+              closeEditContributor();
+            }
+          }}
+          title="Edit Contribution"
+          className="max-w-md w-full"
+        >
+          {editingContributor && (
+            <div className="space-y-4">
               {(editingContributor.stripeChargeId || editingContributor.stripePaymentIntentId) && (
                 <div
                   role="alert"
@@ -1102,8 +1101,8 @@ export default function AdminRegistryPage() {
                 </div>
               </form>
             </div>
-          </div>
-        )}
+          )}
+        </Dialog>
       </div>
     </div>
   );

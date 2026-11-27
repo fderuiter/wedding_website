@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
@@ -59,6 +59,7 @@ function GuestLoginForm() {
   const searchParams = useSearchParams();
   const codeParam = searchParams?.get('code')?.trim() ?? '';
   const mailtoUrl = getSafeMailtoUrl(contactEmail);
+  const helpTriggerRef = useRef<HTMLButtonElement>(null);
   const [hasPhotoQrSession, setHasPhotoQrSession] = useState(false);
 
   useEffect(() => {
@@ -142,12 +143,13 @@ function GuestLoginForm() {
           </div>
           <div className="flex justify-end pt-1">
             <Button
+              ref={helpTriggerRef}
               type="button"
               variant="ghost"
               size="sm"
               onClick={() => setShowHelp(true)}
               aria-expanded={showHelp}
-              aria-controls="guest-help-drawer"
+              aria-controls={showHelp ? 'guest-help-drawer' : undefined}
               className="h-auto text-xs sm:text-sm font-medium text-primary hover:underline hover:bg-transparent dark:text-primary-light rounded-lg px-1 py-0.5"
             >
               Need help finding your code?
@@ -191,12 +193,13 @@ function GuestLoginForm() {
       <Overlay
         isOpen={showHelp}
         onClose={() => setShowHelp(false)}
+        triggerRef={helpTriggerRef}
         id="guest-help-drawer"
         role="dialog"
         aria-modal="true"
         aria-labelledby="help-drawer-title"
         layoutClassName="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
-        className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl p-6 sm:p-8 w-full max-w-md border border-gray-100 dark:border-gray-700 space-y-5 text-gray-800 dark:text-gray-100 relative"
+        className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl p-6 sm:p-8 w-full max-w-md max-h-[calc(100vh-2rem)] overflow-y-auto border border-gray-100 dark:border-gray-700 space-y-5 text-gray-800 dark:text-gray-100 relative"
       >
         <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-700 pb-3">
           <div className="flex items-center gap-2">
